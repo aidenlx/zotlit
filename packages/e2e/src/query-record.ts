@@ -1,6 +1,6 @@
-// The pure half of the Item Query measurement script: the thresholds of the
+// The pure half of the ZotLit Query measurement script: the thresholds of the
 // performance acceptance criteria (spec #1314), their evaluation, and the
-// summary for the release pull request. `item-query-measure.ts` produces the measurements.
+// summary for the release pull request. `query-measure.ts` produces the measurements.
 
 /** The thresholds of the reference machine: macOS arm64, a visible window. */
 export const THRESHOLDS = {
@@ -501,7 +501,7 @@ export function formatSummary(record: MeasurementRecord): string {
       : `**Result: FAILED.** ${failed.length} of ${thresholds.length} thresholds failed.`;
 
   const parts = [
-    "## Item Query measurement record",
+    "## ZotLit Query measurement record",
     [
       `Measured ${record.startedAt} in a visible Obsidian window.`,
       ...record.environment,

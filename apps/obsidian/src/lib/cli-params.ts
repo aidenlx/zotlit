@@ -61,6 +61,7 @@ export interface CliRejection {
   /** The first validation issue, at its path inside the CLI parameters. */
   issue?: {
     path: string;
+    span?: { from: number; to: number };
     expected: string;
     received: string;
     keys?: readonly (string | number)[];

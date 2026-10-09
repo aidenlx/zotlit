@@ -1,10 +1,10 @@
-// The measurement commands of Item Query, registered in a dev build only. The
-// release-time measurement script (packages/e2e/src/item-query-measure.ts) calls
-// them to read what `zotlit:item-query` cannot report: the slices of the
+// The measurement command of ZotLit Query, registered in a dev build only. The
+// release-time measurement script (packages/e2e/src/query-measure.ts) calls
+// them to read what `zotlit:query` cannot report: the slices of the
 // engine, its statements, the heap, and the time from a cancel request to
-// settlement. Each run goes through the handler of `zotlit:item-query` itself,
+// settlement. Each run goes through the handler of `zotlit:query` itself,
 // with the two observer references of the engine provided. A run with `id` is
-// a named query: the production `zotlit:item-query-cancel` stops it.
+// a named query: the production `zotlit:query-cancel` stops it.
 //
 // Command, flag, and diagnostic text is all hardcoded English: an
 // agent-facing contract surface, not localized UI. See
@@ -22,15 +22,15 @@ import {
   rejectionText,
 } from "@/lib/cli-params";
 
-import { itemQueryFlags } from "./contract";
-import { decodeItemQuery } from "./decode";
-import type { ItemQueryService } from "./service";
+import { queryFlags } from "./contract";
+import { decodeQuery } from "./decode";
+import type { QueryService } from "./service";
 import type { CancellationEvent, WorkerMeasurement } from "./trace";
 
-export const ITEM_QUERY_MEASURE_COMMAND = "zotlit:item-query-measure" as const;
+export const QUERY_MEASURE_COMMAND = "zotlit:query-measure" as const;
 
-const itemQueryMeasureFlags: CliFlags = {
-  ...itemQueryFlags,
+const queryMeasureFlags: CliFlags = {
+  ...queryFlags,
   cancelAfterMs: {
     value: "<ms>",
     description:
@@ -50,7 +50,7 @@ interface SliceRecord {
 }
 
 /** The report of one measured run. Times are milliseconds from the run start. */
-export interface ItemQueryMeasureReport {
+export interface QueryMeasureReport {
   /** `answered`: the handler returned an envelope. `cancelled`: it rejected after an abort. */
   outcome: "answered" | "cancelled" | "failed";
   error?: string;
@@ -118,7 +118,7 @@ const round = (ms: number): number => Math.round(ms * 100) / 100;
 
 /**
  * The parameters of a measured run; the rest are the query's own, which
- * `zotlit:item-query` decodes.
+ * `zotlit:query` decodes.
  */
 const measureParams = cliParams({
   cancelAfterMs: v.optional(
@@ -138,9 +138,9 @@ const measureParams = cliParams({
   heap: cliSwitch("heap is a switch: name it alone, as heap."),
 });
 
-export function registerItemQueryMeasureCli(
+export function registerQueryMeasureCli(
   plugin: Plugin,
-  queryService: Pick<ItemQueryService, "measure">,
+  queryService: Pick<QueryService, "measure">,
 ): void {
   const unload = new AbortController();
   plugin.register(() => unload.abort());
@@ -157,10 +157,10 @@ export function registerItemQueryMeasureCli(
         value;
     }
     const decoded = decodeCliParams(runParams, measureParams, {
-      command: ITEM_QUERY_MEASURE_COMMAND,
+      command: QUERY_MEASURE_COMMAND,
     });
     if (decoded.kind === "invalid") throw new TypeError(rejectionText(decoded));
-    const forwarded = decodeItemQuery(query);
+    const forwarded = decodeQuery(query);
     if (forwarded.kind === "invalid")
       throw new TypeError(rejectionText(forwarded));
     const measured = decoded.value;
@@ -187,14 +187,14 @@ export function registerItemQueryMeasureCli(
     const startedAt = now();
     const startedAtEpochMs = Temporal.Now.instant().epochMilliseconds;
     // The service reports the request from any source: the timer, an unload,
-    // or `zotlit:item-query-cancel` for a run with `id`.
+    // or `zotlit:query-cancel` for a run with `id`.
     let firedAt: number | undefined;
     const timer =
       measured.cancelAfterMs === undefined
         ? undefined
         : window.setTimeout(() => own.abort(), measured.cancelAfterMs);
 
-    let outcome: ItemQueryMeasureReport["outcome"];
+    let outcome: QueryMeasureReport["outcome"];
     let answer: string | undefined;
     let error: string | undefined;
     try {
@@ -230,7 +230,7 @@ export function registerItemQueryMeasureCli(
             diagnostic?: { code: string };
           });
 
-    const report: ItemQueryMeasureReport = {
+    const report: QueryMeasureReport = {
       outcome,
       error,
       ok: envelope?.ok,
@@ -276,9 +276,9 @@ export function registerItemQueryMeasureCli(
   };
 
   plugin.registerCliHandler(
-    ITEM_QUERY_MEASURE_COMMAND,
-    "Run one Item Query and report its slices, statements, heap, and cancel times (dev build)",
-    itemQueryMeasureFlags,
+    QUERY_MEASURE_COMMAND,
+    "Run one ZotLit Query and report its slices, statements, heap, and cancel times (dev build)",
+    queryMeasureFlags,
     measure,
   );
 }

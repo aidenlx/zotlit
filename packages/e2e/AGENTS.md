@@ -5,11 +5,11 @@ The End-to-end Run suite — the plugin running in a real desktop Obsidian windo
 ## Commands
 
 - `pnpm e2e` (root) or `pnpm --filter @zotlit/e2e e2e` — runs the suite.
-- `pnpm e2e:item-query` (root) — builds dependencies and runs only the Item Query CLI cases, including cancellation.
+- `pnpm e2e:query` (root) — builds dependencies and runs only the ZotLit Query CLI cases, including cancellation.
 - For another focused desktop run, pass a file and test name: `pnpm e2e --project=desktop src/end-to-end.e2e.ts -t '<test name>'`. Add the paired project only when the changed behavior needs Zotero. After the build is current, `pnpm --filter @zotlit/e2e exec vitest run` accepts the same selection for an inner loop.
 - `pnpm --filter @zotlit/e2e typecheck` — type-checks the suite.
 
-- `pnpm --filter @zotlit/e2e measure:item-query` — the release-time measurement of Item Query (see below).
+- `pnpm --filter @zotlit/e2e measure:query` — the release-time measurement of ZotLit Query (see below).
 - `pnpm --filter @zotlit/e2e test` — unit tests of the measurement record (`src/**/*.test.ts`, `vitest.unit.config.ts`). They touch no Obsidian.
 
 The End-to-end Run and the measurement drive a real Electron app and stay out of `pnpm test` / CI: the `test` script runs the unit tests alone.
@@ -33,13 +33,13 @@ Each suite builds its own Fixture and new purged vaults under `.scratch/e2e-*`. 
 - A Paired Zotero that fails to start or to serve its Local API fails the file.
 - `src/paired-zotero.ts` holds the Local API client and the RDP levers. The [Fixture guide](../../docs/fixture.md) has the paths.
 
-## Item Query measurement
+## ZotLit Query measurement
 
-`src/item-query-measure.ts` proves the performance acceptance criteria of Item Query in a visible Obsidian window, on the Stress Build Libraries of 10,000, 50,000, and 100,000 Items. Each tier has two parts: the queries of one Library on the Stress Build of My Library, then the `two-` queries over My Library and the group Library on the Stress Build that fills both to the Item count of the tier. Run it before a release and after a planner change; its header has the usage. The vault window must stay visible for the whole run.
+`src/query-measure.ts` proves the performance acceptance criteria of ZotLit Query in a visible Obsidian window, on the Stress Build Libraries of 10,000, 50,000, and 100,000 Items. Each tier has two parts: the queries of one Library on the Stress Build of My Library, then the `two-` queries over My Library and the group Library on the Stress Build that fills both to the Item count of the tier. Run it before a release and after a planner change; its header has the usage. The vault window must stay visible for the whole run.
 
-- Thresholds, their evaluation, and the summary format: `src/item-query-record.ts`, with unit tests beside it. The queries over two Libraries (`twoLibraries` of a tier) have the execution-slice, encoding, renderer responsiveness, and cancel limits, and their totals are recorded. A tier whose run did not end that part has a failed check.
+- Thresholds, their evaluation, and the summary format: `src/query-record.ts`, with unit tests beside it. The queries over two Libraries (`twoLibraries` of a tier) have the execution-slice, encoding, renderer responsiveness, and cancel limits, and their totals are recorded. A tier whose run did not end that part has a failed check.
 - The measurement vault uses `keepRendering`, like the End-to-end Run, so background timer throttling does not enter responsiveness samples. It remains visible and leaves OS focus with the developer.
-- Each tier waits for the normal initial Item Lookup index build before timing Item Query. Its separate renderer hydration and indexing work would otherwise contaminate query responsiveness and total-time samples.
+- Each tier waits for the normal initial Item Lookup index build before timing ZotLit Query. Its separate renderer hydration and indexing work would otherwise contaminate query responsiveness and total-time samples.
 - Worker runs check execution slices and encoding steps against the spec's limits, and check renderer timer gaps against the same limits. Unlimited queries write complete JSON files; the runner deletes each file after its receipt.
-- The numbers come from the dev-build command `zotlit:item-query-measure` (`apps/obsidian/src/services/item-query/measure.ts`). A cancel through the CLI uses the production command `zotlit:item-query-cancel` with the `id` of the measured run.
-- Output goes to `.scratch/item-query-measure/<time>/`: `raw.json` and `summary.md`, the comment for the release pull request.
+- The numbers come from the dev-build command `zotlit:query-measure` (`apps/obsidian/src/services/item-query/measure.ts`). A cancel through the CLI uses the production command `zotlit:query-cancel` with the `id` of the measured run.
+- Output goes to `.scratch/query-measure/<time>/`: `raw.json` and `summary.md`, the comment for the release pull request.

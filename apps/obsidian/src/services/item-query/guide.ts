@@ -1,20 +1,24 @@
-// The Item Query guide: tiered literal-English text, after the Template
+// The ZotLit Query guide: tiered literal-English text, after the Template
 // Workbench guide. Every command and Filter Expression it shows comes from
 // `example` or `filter` below, so a test runs each one against a real query.
 // Command names, parameters, and defaults come from the constants the
 // handlers run.
 
-import { ITEMS } from "@zotlit/item-query";
+import { ANNOTATIONS, ITEMS } from "@zotlit/item-query";
 
+import {
+  ANNOTATION_GUIDE_SECTIONS,
+  ANNOTATION_GUIDE_EXAMPLES,
+} from "./annotation-guide";
 import {
   DEFAULT_CLI_LIMIT,
   DIAGNOSTIC_HINTS,
-  ITEM_QUERY_CANCEL_COMMAND,
-  ITEM_QUERY_COMMAND,
+  QUERY_CANCEL_COMMAND,
+  QUERY_COMMAND,
   INLINE_MAX_BYTES,
-  ITEM_QUERY_GUIDE_COMMAND,
-  ITEM_QUERY_SCHEMA_COMMAND,
-  itemQueryFlags,
+  QUERY_GUIDE_COMMAND,
+  QUERY_SCHEMA_COMMAND,
+  queryFlags,
   QUERY_ID_FORM,
   queryCancelledText,
 } from "./contract";
@@ -36,7 +40,7 @@ function example(args: GuideExample): string {
   const parts = Object.entries(args).map(([name, value]) =>
     /^[\w:-]+$/.test(value) ? `${name}=${value}` : `${name}='${value}'`,
   );
-  return [`obsidian ${ITEM_QUERY_COMMAND}`, ...parts].join(" ");
+  return [`obsidian ${QUERY_COMMAND}`, ...parts].join(" ");
 }
 
 /** "a, b, and c". */
@@ -55,8 +59,8 @@ const DEFAULT_SORT_TEXT = listOf(
 
 /** The query command with each parameter, wrapped as the synopsis shows it. */
 function querySynopsis(): string {
-  const lines = [`obsidian ${ITEM_QUERY_COMMAND}`];
-  for (const [name, flag] of Object.entries(itemQueryFlags)) {
+  const lines = [`obsidian ${QUERY_COMMAND}`];
+  for (const [name, flag] of Object.entries(queryFlags)) {
     const parameter = `[${name}=${flag.value}]`;
     const last = lines.at(-1)!;
     if (last.length + parameter.length < 72) {
@@ -102,7 +106,7 @@ DESCRIPTION
 
 FIELDS
   A bare name is a built-in field. In the downloaded schema catalog,
-  fields[].filter gives the type a filter reads. Examples:
+  datasets.items.fields[].filter gives the type an Item filter reads. Examples:
     ${filter('itemType == "book"')}
     ${filter('title.startsWith("The")')}
   key is the Zotero Key of the Item inside its Library. Two Libraries can
@@ -225,7 +229,9 @@ const FIELDS_SECTION = `FIELDS AND PROJECTION PATHS
 
 DESCRIPTION
   library is personal for My Library or group:<groupID> for a group.
-  fields is a JSON array of Projection Paths: the values each row returns.
+  fields is a comma list or JSON array of Projection Paths: the values each row returns.
+  Commas split only outside single or double quotes and [...] brackets.
+  Empty elements and trailing commas are request errors.
   Without fields, each row has ${DEFAULT_FIELD_LIST}.
   Use fields='[]' to return only the Indexed Keys.
     ${example({ fields: "[]", limit: "all" })}
@@ -236,12 +242,13 @@ PATHS
   the downloaded catalog's fields with projection true is a path.
   A numeric list path shows index 0;
   any index works.
-    ${example({ fields: '["title","date.year","creators[0].fullName","tags","attachments"]' })}
+    ${example({ fields: "title,date.year,creators[0].fullName,tags,attachments" })}
   Use creators[].fullName to read one property of every element in a Relation
   List. The result keeps source order, with null for each missing value.
-    ${example({ fields: '["creators[].fullName"]' })}
+    ${example({ fields: "creators[].fullName" })}
   A custom field is the path custom["<exact name>"]; copy it from
-  customFields[].path in the schema command's response.
+  customFields[].path in the schema command's response. On annotations,
+  prefix that path with item.; datasets.annotations.customPrefix reports it.
 
 VALUES
   Each row has every requested path. A missing value is null; an empty list
@@ -251,11 +258,11 @@ VALUES
 const SORT_SECTION = `SORT AND LIMIT
 
 SORT
-  sort is a JSON array of {"field","direction"} objects; direction is "asc"
-  or "desc". The first entry orders first. A Sortable Field has sort true in
+  sort takes a comma list: -field is descending, +field or field is ascending.
+  A JSON array of {"field","direction"} objects is also accepted. The first entry orders first. A Sortable Field has sort true in
   the downloaded catalog's fields: one value per Item, such as title, date,
   or dateModified.
-    ${example({ sort: '[{"field":"date","direction":"desc"},{"field":"title","direction":"asc"}]' })}
+    ${example({ sort: "-date,title" })}
   The default is ${DEFAULT_SORT_TEXT}.
   Items without a value come last in both directions. The Indexed Key orders
   Items that tie on every entry, also Items of two Libraries.
@@ -274,11 +281,12 @@ LIMIT
   limit is the most rows to return: a positive integer, or all for every
   match. The default is ${DEFAULT_CLI_LIMIT}. truncated is true when more Items match.
   The Items of all the Libraries of a query are sorted and limited together.
-    ${example({ sort: '[{"field":"title","direction":"asc"}]', limit: "all" })}`;
+    ${example({ sort: "title", limit: "all" })}`;
 
 const RESULTS_SECTION = `RESULTS AND DIAGNOSTICS
 
 ENVELOPE
+  diagnostic.hint repeats the recovery action in diagnostic.report.
   Query, schema, and cancel answers are JSON with contractVersion, command,
   and ok. The guide prints text.
   On success, the query answer has identity (the vault and the Zotero
@@ -289,8 +297,9 @@ ENVELOPE
   Read warnings before you report an empty result. File receipts include it too.
   libraries lists each Library the query read, My Library first and then
   the groups by group ID. Each entry is {"type":"personal"} or
-  {"type":"group","groupID","name"}. request.libraries has the same
-  Libraries in the form of the libraries argument.
+  {"type":"group","groupID","name"}. request.library has the same
+  Libraries in the form of the library argument. request.from always names
+  the effective dataset. The contract version is 3.
   The Indexed Key of an Item in a group ends with g and the group ID.
 
 FILE EXPORTS
@@ -343,7 +352,7 @@ NAME THE QUERY
 
 CANCEL
   From a second terminal, while the query runs:
-    obsidian ${ITEM_QUERY_CANCEL_COMMAND} id=export-1
+    obsidian ${QUERY_CANCEL_COMMAND} id=export-1
   The answer is JSON with contractVersion, command, ok, id, and
   cancelRequested. cancelRequested is true when a query with this id was
   running: it stops within a moment. The cancelled call prints this text in
@@ -360,7 +369,7 @@ QUERY ALREADY FINISHED
 const SCHEMA_SECTION = `SCHEMA DOWNLOAD AND SOURCE FIELDS
 
 PUBLISHED CATALOG
-  ${ITEM_QUERY_SCHEMA_COMMAND} returns identity, schema, customFields, and
+  ${QUERY_SCHEMA_COMMAND} returns identity, schema, customFields, and
   defaults. schema.url downloads the static catalog for this plugin version;
   schema.fileName gives a versioned local filename. The catalog contains
   fields, functions, methods, properties, and types. customFields and defaults
@@ -369,29 +378,47 @@ PUBLISHED CATALOG
 CHOOSE THE CATALOG SOURCE
   An unpublished development version has no Resource Release. For a .dev
   build, use the matching source checkout: build @zotlit/item-query and read
-  packages/item-query/dist/item-query.schema.json. For a released version,
+  packages/item-query/dist/query.schema.json. For a released version,
   download schema.url once, using the steps below.
 
 INSPECT LOCALLY
   Save the small live response:
-    obsidian vault=<vault> ${ITEM_QUERY_SCHEMA_COMMAND} > query-source.json
+    obsidian vault=<vault> ${QUERY_SCHEMA_COMMAND} > query-source.json
     jq '{ok, identity, diagnostic}' query-source.json
   Continue when ok is true and identity names the intended source:
     curl --fail --location "$(jq -r '.schema.url' query-source.json)" --output "$(jq -r '.schema.fileName' query-source.json)"
+  The catalog has datasets.items and datasets.annotations, with functions,
+  methods, properties, and types shared at the top level. The live response
+  lists fields and defaults by dataset; from=items or from=annotations narrows
+  those entries. customFields describes the source once.
   The catalog is large. Use jq to read only the entries the task needs:
-    jq '.fields[] | select(.path == "title" or .path == "date.year")' "$(jq -r '.schema.fileName' query-source.json)"
+    jq '.datasets.items.fields[] | select(.path == "title" or .path == "date.year")' "$(jq -r '.schema.fileName' query-source.json)"
     jq '.customFields' query-source.json
   Keep the downloaded catalog while schema.url is unchanged. Refresh the
   live response when the Zotero source or its custom fields change.`;
 
+const DATASETS_SECTION = `Query datasets
+
+  from=items (the default) reads top-level items outside the trash.
+  from=annotations reads annotations outside the trash on attachments of
+  top-level items outside the trash. Trashed attachments and standalone
+  attachments and their annotations are outside this dataset.
+  On annotations, item. reaches the parent item's fields and attachment.
+  reaches the parent attachment's fields. Every annotation has both parents.
+  The annotation default fields are ${listOf(ANNOTATIONS.defaultFields)}.
+  Its default sort is ${listOf(ANNOTATIONS.defaultSort.map(({ field, direction }) => `${field} ${direction}`))}.
+    ${example({ from: "items", fields: "title,date.year", limit: "5" })}
+    ${example({ from: "annotations", fields: "text,item.title,attachment.path", limit: "5" })}`;
+
 /** Canonical topic registry shared by parsing, generated help, and the index. */
 export const GUIDE_TOPICS = {
+  datasets: DATASETS_SECTION,
   schema: SCHEMA_SECTION,
-  filter: FILTER_SECTION,
-  fields: FIELDS_SECTION,
-  sort: SORT_SECTION,
+  filter: `${FILTER_SECTION}\n\n${ANNOTATION_GUIDE_SECTIONS.filter}`,
+  fields: `${FIELDS_SECTION}\n\n${ANNOTATION_GUIDE_SECTIONS.fields}`,
+  sort: `${SORT_SECTION}\n\n${ANNOTATION_GUIDE_SECTIONS.sort}`,
   results: RESULTS_SECTION,
-  cancel: CANCEL_SECTION,
+  cancel: `${CANCEL_SECTION}\n\n${ANNOTATION_GUIDE_SECTIONS.cancel}`,
 } as const satisfies Record<string, string>;
 
 export type GuideTopic = keyof typeof GUIDE_TOPICS;
@@ -399,11 +426,11 @@ export const GUIDE_TOPIC_NAMES = Object.keys(
   GUIDE_TOPICS,
 ) as readonly GuideTopic[];
 
-const QUICKSTART = `ZOTLIT ITEM QUERY
+const QUICKSTART = `ZotLit Query
 
-Item Query finds Items in your Zotero Libraries and returns the values you
-select as JSON. It reads the top-level Items outside the trash and changes
-nothing in Zotero.
+ZotLit Query reads items and annotations in your Zotero libraries and returns
+the selected values as JSON. Choose the dataset with from=items or
+from=annotations.
 
 WORKFLOW
   Put vault=<vault> before each command and check identity in its JSON answer.
@@ -413,39 +440,43 @@ WORKFLOW
   3. On ok false, follow diagnostic.hint and run the query again.
 
 SYNOPSIS
-  obsidian ${ITEM_QUERY_SCHEMA_COMMAND}
+  obsidian ${QUERY_SCHEMA_COMMAND}
   ${querySynopsis()}
-  obsidian ${ITEM_QUERY_CANCEL_COMMAND} id=<id>
-  obsidian ${ITEM_QUERY_GUIDE_COMMAND} [topic=<${GUIDE_TOPIC_NAMES.join("|")}>]
+  obsidian ${QUERY_CANCEL_COMMAND} id=<id>
+  obsidian ${QUERY_GUIDE_COMMAND} [topic=<${GUIDE_TOPIC_NAMES.join("|")}>]
 
 DEFAULTS
   Without arguments, a query reads the Libraries that ZotLit searches (the
   Library scope setting) as one result set and returns at most
   ${DEFAULT_CLI_LIMIT} rows, sorted by ${DEFAULT_SORT_TEXT}.
   Each row has ${DEFAULT_FIELD_LIST}.
-  defaults.libraries in the schema response names their source: the Library
-  scope setting. It is no value of the libraries argument.
+  defaults.items.library in the schema response names their source: the
+  Library scope setting. defaults.annotations describes the annotation defaults.
 
 LIBRARIES
   library names one Library: personal (My Library), or group:<groupID>.
   The group ID is the number in the group's address on zotero.org.
     ${example({ library: "personal", limit: "5" })}
-  libraries names a set as a JSON array, or all for every Library:
-    ${example({ libraries: '["personal"]', limit: "5" })}
-    ${example({ libraries: "all", limit: "5" })}
-  When a query has both, libraries wins and library has no effect.
+  library also takes a comma list, a JSON array, or all for every Library:
+    ${example({ library: "personal", limit: "5" })}
+    ${example({ library: "all", limit: "5" })}
+  Name each Library once. Omit library to use the Library scope setting.
 
 EXAMPLES
-  ${example({ filter: 'tags.contains("to-read")', fields: '["title","date.year","creators[0].fullName"]', limit: "20" })}
-  ${example({ filter: 'itemType == "journalArticle" && dateAdded >= today() - duration("30 days")', sort: '[{"field":"title","direction":"asc"}]' })}
+  ${example({ filter: 'tags.contains("to-read")', fields: "title,date.year,creators[0].fullName", limit: "20" })}
+  ${example({ filter: 'itemType == "journalArticle" && dateAdded >= today() - duration("30 days")', sort: "title" })}
 
 TOPICS
   ${GUIDE_TOPIC_NAMES.join(", ")}
-  Read one topic with obsidian ${ITEM_QUERY_GUIDE_COMMAND} topic=<name>.
+  Read one topic with obsidian ${QUERY_GUIDE_COMMAND} topic=<name>.
 
 SEE ALSO
-  obsidian help ${ITEM_QUERY_COMMAND}`;
+  obsidian help ${QUERY_COMMAND}`;
 
 export function renderGuide(topic: GuideTopic | null): string {
-  return topic === null ? QUICKSTART : GUIDE_TOPICS[topic];
+  return topic === null
+    ? [QUICKSTART, ...Object.values(GUIDE_TOPICS)].join("\n\n")
+    : GUIDE_TOPICS[topic];
 }
+
+examples.push(...ANNOTATION_GUIDE_EXAMPLES);

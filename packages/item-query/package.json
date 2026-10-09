@@ -12,7 +12,7 @@
     ".": "./dist/index.mjs",
     "./schema": "./dist/schema.mjs",
     "./package.json": "./package.json",
-    "./item-query.schema.json": "./dist/item-query.schema.json"
+    "./query.schema.json": "./dist/query.schema.json"
   },
   "scripts": {
     "build": "tsdown && node scripts/write-schema.mjs",

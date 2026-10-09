@@ -1,4 +1,4 @@
-// Cancels a running Item Query through the two production commands, on a
+// Cancels a running ZotLit Query through the two production commands, on a
 // Stress Build large enough that an export of every Item is still running when
 // a second CLI call arrives. The suite builds its own Fixture and vault, like
 // every e2e file, and removes both at its end.
@@ -25,16 +25,16 @@ import {
 
 const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
 const fixture = getFixtureLayout(
-  join(workspaceRoot, ".scratch", "e2e-item-query-cancel-fixture"),
+  join(workspaceRoot, ".scratch", "e2e-query-cancel-fixture"),
 );
-const vaultPath = e2eVaultDir(workspaceRoot, "item-query-cancel-vault");
+const vaultPath = e2eVaultDir(workspaceRoot, "query-cancel-vault");
 const pluginBundleDir = join(workspaceRoot, "apps", "obsidian", "dist-dev");
 const runVaultScript = vaultScript(workspaceRoot, fixture.root);
 const reachable = await isObsidianReachable(workspaceRoot);
 
 /** Items in My Library: an export of all of them runs for longer than a CLI call. */
 const STRESS_ITEMS = 100_000;
-const EXPORT_FIELDS = JSON.stringify([
+const EXPORT_FIELDS = [
   "title",
   "creators",
   "tags",
@@ -43,7 +43,7 @@ const EXPORT_FIELDS = JSON.stringify([
   "dateAdded",
   "dateModified",
   "attachments",
-]);
+].join(",");
 /** One `limit=all` export of the Stress Build. */
 const EXPORT_TIMEOUT_MS = 120_000;
 
@@ -63,17 +63,17 @@ interface CancelAnswer {
   cancelRequested: boolean;
 }
 
-describe.skipIf(!reachable)("Item Query cancel", () => {
+describe.skipIf(!reachable)("ZotLit Query cancel", () => {
   let vaultId = "";
 
   const query = (args: Record<string, string>) =>
-    cliCommand(vaultId, "zotlit:item-query", {
+    cliCommand(vaultId, "zotlit:query", {
       args: { library: "personal", fields: EXPORT_FIELDS, ...args },
       timeoutMs: EXPORT_TIMEOUT_MS,
     });
   const cancel = async (id: string) =>
     JSON.parse(
-      await cliCommand(vaultId, "zotlit:item-query-cancel", { args: { id } }),
+      await cliCommand(vaultId, "zotlit:query-cancel", { args: { id } }),
     ) as CancelAnswer;
 
   beforeAll(async () => {
@@ -151,8 +151,9 @@ describe.skipIf(!reachable)("Item Query cancel", () => {
     // namespace and can be cancelled while its export waits for a slot.
     const annotationDir = join(exportsDir, "annotations");
     await mkdir(annotationDir);
-    const annotation = cliCommand(vaultId, "zotlit:annotation-query", {
+    const annotation = cliCommand(vaultId, "zotlit:query", {
       args: {
+        from: "annotations",
         id: "annotation-export",
         library: "personal",
         limit: "all",
@@ -167,13 +168,13 @@ describe.skipIf(!reachable)("Item Query cancel", () => {
       ),
     ).toBe(true);
     expect(await annotation).toBe(
-      "Error: The query 'annotation-export' was cancelled by zotlit:item-query-cancel.",
+      "Error: The query 'annotation-export' was cancelled by zotlit:query-cancel.",
     );
     expect(await readdir(annotationDir)).toEqual([]);
 
     expect(await cancel("export-a")).toEqual({
-      contractVersion: 2,
-      command: "zotlit:item-query-cancel",
+      contractVersion: 3,
+      command: "zotlit:query-cancel",
       ok: true,
       id: "export-a",
       cancelRequested: true,
@@ -183,7 +184,7 @@ describe.skipIf(!reachable)("Item Query cancel", () => {
     const stopped = await cancelled;
     expect(stopped).not.toHaveProperty("error");
     expect("output" in stopped && stopped.output).toBe(
-      "Error: The query 'export-a' was cancelled by zotlit:item-query-cancel.",
+      "Error: The query 'export-a' was cancelled by zotlit:query-cancel.",
     );
     expect(await readdir(cancelledDir)).toEqual([]);
 

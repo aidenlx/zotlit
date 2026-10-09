@@ -49,7 +49,7 @@ async function exercise(
     }
     if (args.includes("--code"))
       return { code: 0, stdout: "=> configured", stderr: "", timedOut: false };
-    if (args.includes("zotlit:item-query-schema"))
+    if (args.includes("zotlit:query-schema"))
       return {
         code: 0,
         stdout: JSON.stringify({
@@ -234,8 +234,8 @@ async function exercise(
           JSON.stringify(answer),
         );
         const events = [
-          "zotlit:annotation-query",
-          ...(caseName === "reading_plan" ? ["zotlit:item-query"] : []),
+          "zotlit:query from=annotations",
+          ...(caseName === "reading_plan" ? ["zotlit:query"] : []),
         ];
         return {
           code: 0,
@@ -385,7 +385,7 @@ async function exercise(
               id: "annotation",
               type: "command_execution",
               command:
-                "node obsidian-cli.ts vault=fake-vault-id zotlit:annotation-query",
+                "node obsidian-cli.ts vault=fake-vault-id zotlit:query from=annotations",
               aggregated_output: "result",
               exit_code: 0,
             },
@@ -454,7 +454,7 @@ async function exercise(
             type: "command_execution",
             command: noQuery
               ? "echo done"
-              : "node obsidian-cli.ts vault=fake-vault-id zotlit:item-query",
+              : "node obsidian-cli.ts vault=fake-vault-id zotlit:query",
             aggregated_output: "result",
             exit_code: 0,
           },
@@ -554,7 +554,7 @@ await test("failed vault removal retains its database and reports recovery paths
 });
 
 await test("metrics count completed commands once and distinguish retries from extra queries", () => {
-  const query = "node obsidian-cli.ts vault=fake zotlit:item-query";
+  const query = "node obsidian-cli.ts vault=fake zotlit:query";
   const event = (id, output, exit_code = 0) =>
     JSON.stringify({
       type: "item.completed",
@@ -606,8 +606,8 @@ await test("metrics distinguish Item, Annotation, and Excerpt Image commands", (
     });
   const metrics = measureEvents(
     [
-      event("item", "zotlit:item-query"),
-      event("annotation", "zotlit:annotation-query"),
+      event("item", "zotlit:query"),
+      event("annotation", "zotlit:query from=annotations"),
       event("image", "zotlit:annotation-image key=FDRFQ7C2"),
     ].join("\n"),
   );

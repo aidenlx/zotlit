@@ -23,6 +23,7 @@ import {
   consumeQuery,
   describeQueryCustomFields,
   SLICE_BUDGET_MS,
+  ITEMS,
 } from "@zotlit/item-query";
 import type {
   AnnotationQueryRequest,
@@ -51,7 +52,7 @@ import {
   failure,
   INLINE_MAX_BYTES,
 } from "./contract";
-import type { Diagnostic, ItemQueryCommand, LibraryWire } from "./contract";
+import type { Diagnostic, QueryCliCommand, LibraryWire } from "./contract";
 import { CLI_DATASETS } from "./datasets";
 import type { DecodedQuery, NamedLibraries } from "./decode";
 import type { QueryCommand, QueryReply } from "./worker-protocol";
@@ -74,7 +75,7 @@ export interface AnswerEnv {
   /** Resolves the file of an Attachment that an Annotation Query projects. */
   attachmentFiles?: ResolveAttachmentFile;
   /** Observes the engine of each query run; the measurement command sets it. */
-  instrument?: ItemQueryInstrument;
+  instrument?: QueryInstrument;
   /**
    * Receives the duration of each step of the answer of a query, in
    * milliseconds; the measurement command sets it.
@@ -86,26 +87,24 @@ export interface AnswerEnv {
    */
   openOutput?: (
     path: string,
-  ) => Effect.Effect<QueryWriter, ItemQueryOutputError, Scope.Scope>;
+  ) => Effect.Effect<QueryWriter, QueryOutputError, Scope.Scope>;
 }
 
 /**
  * Wraps the operation of one run before it starts, to provide the observer
  * references of the engine. Only the dev-build measurement command passes one.
  */
-export type ItemQueryInstrument = <A, E, R>(
+export type QueryInstrument = <A, E, R>(
   operation: Effect.Effect<A, E, R>,
 ) => Effect.Effect<A, E, R>;
 
 /** The output file of an export: each write finishes before the next. */
 export interface QueryWriter {
-  write(text: string): Effect.Effect<void, ItemQueryOutputError>;
+  write(text: string): Effect.Effect<void, QueryOutputError>;
 }
 
 /** The output of the answer failed: the envelope carries `diagnostic`. */
-export class ItemQueryOutputError extends Data.TaggedError(
-  "ItemQueryOutputError",
-)<{
+export class QueryOutputError extends Data.TaggedError("QueryOutputError")<{
   diagnostic: Diagnostic;
 }> {}
 
@@ -150,8 +149,10 @@ function answerSchema(
   pluginVersion: string,
 ): Effect.Effect<QueryReply, never, ItemQueryDatabase> {
   const { command } = job;
-  const { engine, schemaAsset: asset } = CLI_DATASETS[job.dataset];
-  return describeQueryCustomFields(engine).pipe(
+  const selected = Object.entries(CLI_DATASETS).filter(
+    ([id]) => job.dataset === undefined || id === job.dataset,
+  );
+  return describeQueryCustomFields(ITEMS).pipe(
     Effect.map((customFields) =>
       inline(
         command,
@@ -159,16 +160,30 @@ function answerSchema(
           ok: true,
           identity: env.identity,
           schema: {
-            url: `${resourceReleaseUrl(pluginVersion)}/${asset}.schema.json`,
-            fileName: `zotlit-${asset}-${pluginVersion}.schema.json`,
+            url: `${resourceReleaseUrl(pluginVersion)}/query.schema.json`,
+            fileName: `zotlit-query-${pluginVersion}.schema.json`,
           },
           customFields,
-          defaults: {
-            fields: engine.defaultFields,
-            sort: engine.defaultSort,
-            limit: DEFAULT_CLI_LIMIT,
-            libraries: { source: "library-scope" },
-          },
+          datasets: Object.fromEntries(
+            selected.map(([id, { engine }]) => [
+              id,
+              {
+                fields: engine.names,
+                customPrefix: engine.customPrefix,
+              },
+            ]),
+          ),
+          defaults: Object.fromEntries(
+            selected.map(([id, { engine }]) => [
+              id,
+              {
+                fields: engine.defaultFields,
+                sort: engine.defaultSort,
+                limit: DEFAULT_CLI_LIMIT,
+                library: { source: "library-scope" as const },
+              },
+            ]),
+          ),
         }),
       ),
     ),
@@ -218,11 +233,12 @@ function answerQuery(
     };
     // The Query Clock is the system clock and zone.
     return yield* consumeQuery(
-      CLI_DATASETS[job.dataset].engine,
+      CLI_DATASETS[decoded.from].engine,
       request,
       (summary) =>
         createAnswer(summary, {
           command,
+          from: decoded.from,
           identity: env.identity,
           libraries: available.map(({ selector, name }) =>
             selector.type === "group"
@@ -245,7 +261,7 @@ function answerQuery(
   );
 }
 
-const inline = (command: ItemQueryCommand, text: string): QueryReply => ({
+const inline = (command: QueryCliCommand, text: string): QueryReply => ({
   command,
   answer: text,
   receipt: { kind: "inline" },
@@ -260,7 +276,8 @@ const FIRST_CHUNK_ROWS = 64;
 const CHUNK_TEXT_LENGTH = 256 * 1024;
 
 interface AnswerContext {
-  command: ItemQueryCommand;
+  from: DecodedQuery["from"];
+  command: QueryCliCommand;
   /** The identity of the source the run leased. */
   identity: WorkbenchIdentity;
   /** The Target Libraries of the run, in the canonical order. */
@@ -283,7 +300,11 @@ const createAnswer = Effect.fnUntraced(function* (
     ok: true as const,
     identity: context.identity,
     libraries: context.libraries,
-    request: { libraries: context.libraries.map(selectorKey), ...result.query },
+    request: {
+      from: context.from,
+      library: context.libraries.map(selectorKey),
+      ...result.query,
+    },
     returnedCount: result.returnedCount,
     truncated: result.truncated,
     warnings: result.warnings,
@@ -299,7 +320,7 @@ const createAnswer = Effect.fnUntraced(function* (
   if (output !== undefined) {
     if (!openOutput)
       return yield* Effect.die(
-        new Error("Item Query export has no file writer"),
+        new Error("ZotLit Query export has no file writer"),
       );
     file = yield* openOutput(output);
   }
@@ -309,7 +330,7 @@ const createAnswer = Effect.fnUntraced(function* (
       if (file) return file.write(chunk);
       if (bytes > INLINE_MAX_BYTES)
         return Effect.fail(
-          new ItemQueryOutputError({
+          new QueryOutputError({
             diagnostic: diagnostic(
               "result-too-large",
               `The JSON response exceeds the inline limit of ${INLINE_MAX_BYTES} bytes.`,
@@ -367,7 +388,7 @@ type AnswerFailure =
   | ItemQueryError
   | ItemQueryLayoutError
   | ItemQueryDatabaseError
-  | ItemQueryOutputError
+  | QueryOutputError
   | TargetLibrariesUnavailable;
 
 /**
@@ -376,7 +397,7 @@ type AnswerFailure =
  * an interruption.
  */
 function answerFailure(
-  command: ItemQueryCommand,
+  command: QueryCliCommand,
   /** The argument that named the Target Libraries, if the caller named them. */
   parameter?: NamedLibraries["parameter"],
 ) {
@@ -393,11 +414,11 @@ function answerFailure(
         ),
       ),
       Effect.catchDefect((defect) => {
-        logger.error("Item Query failed with a defect", {
+        logger.error("ZotLit Query failed with a defect", {
           cause: Cause.pretty(Cause.die(defect)),
         });
         return Effect.die(
-          new Error("Item Query failed with an internal error.", {
+          new Error("ZotLit Query failed with an internal error.", {
             cause: defect,
           }),
         );
@@ -409,7 +430,7 @@ function failureDiagnostic(
   failed: AnswerFailure,
   parameter: NamedLibraries["parameter"] | undefined,
 ): Diagnostic {
-  if (failed._tag === "ItemQueryOutputError") return failed.diagnostic;
+  if (failed._tag === "QueryOutputError") return failed.diagnostic;
   if (failed._tag === "TargetLibrariesUnavailable") {
     return targetLibrariesFailure(failed, parameter);
   }
@@ -418,12 +439,12 @@ function failureDiagnostic(
     // `@zotlit/db` logs the missing layout and the versions once per copy.
     return diagnostic("unsupported-database-layout", failed.message);
   }
-  logger.error("Item Query failed to read the Zotero database", {
+  logger.error("ZotLit Query failed to read the Zotero database", {
     error: failed,
   });
   return diagnostic(
     "database-error",
-    `Item Query could not read the Zotero database: ${messageOf(failed.cause)}`,
+    `ZotLit Query could not read the Zotero database: ${messageOf(failed.cause)}`,
   );
 }
 

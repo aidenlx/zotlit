@@ -20,15 +20,11 @@ import {
 } from "@/services/library-scope/scope";
 import type { LibraryScope } from "@/services/library-scope/scope";
 
-import { answer, ItemQueryOutputError } from "./answer";
+import { answer, QueryOutputError } from "./answer";
 import type { AnswerEnv, QueryWriter } from "./answer";
-import {
-  diagnostic,
-  ITEM_QUERY_COMMAND,
-  ITEM_QUERY_SCHEMA_COMMAND,
-} from "./contract";
+import { diagnostic, QUERY_COMMAND, QUERY_SCHEMA_COMMAND } from "./contract";
 import type { Diagnostic } from "./contract";
-import { decodeItemQuery } from "./decode";
+import { decodeQuery } from "./decode";
 import type { DecodedQuery } from "./decode";
 import type { QueryReply } from "./worker-protocol";
 
@@ -64,7 +60,7 @@ const PERSONAL_BY_MODIFIED = [
  * plain JSON. The decoder tests cover malformed arguments.
  */
 function decoded(params: CliData = {}): DecodedQuery {
-  const query = decodeItemQuery(params);
+  const query = decodeQuery(params);
   if (query.kind === "invalid")
     throw new Error(`Malformed test query: ${query.message}`);
   return JSON.parse(JSON.stringify(query.value)) as DecodedQuery;
@@ -110,8 +106,8 @@ function queryOf(
       answer(
         {
           schema: false,
-          dataset: "items",
-          command: ITEM_QUERY_COMMAND,
+          dataset: decoded(params).from,
+          command: QUERY_COMMAND,
           query: decoded(params),
           scope,
         },
@@ -157,7 +153,7 @@ function expectInterrupted<A, E>(exit: Exit.Exit<A, E>): void {
 const keys = (answer: Record<string, unknown>) =>
   (answer.rows as { indexedKey: string }[]).map((row) => row.indexedKey);
 
-describe("zotlit:item-query without arguments", () => {
+describe("zotlit:query without arguments", () => {
   it("answers the versioned envelope for the Library Scope with the CLI defaults", async () => {
     using scenario = openScenarioDatabase();
     const { run } = setup(scenario);
@@ -165,13 +161,14 @@ describe("zotlit:item-query without arguments", () => {
     const answer = await run();
 
     expect(answer).toMatchObject({
-      contractVersion: 2,
-      command: ITEM_QUERY_COMMAND,
+      contractVersion: 3,
+      command: QUERY_COMMAND,
       ok: true,
       identity: IDENTITY,
       libraries: [{ type: "personal" }],
       request: {
-        libraries: ["personal"],
+        from: "items",
+        library: ["personal"],
         filter: null,
         sort: [{ field: "dateModified", direction: "desc" }],
         limit: 100,
@@ -184,7 +181,7 @@ describe("zotlit:item-query without arguments", () => {
   });
 });
 
-describe("zotlit:item-query answer", () => {
+describe("zotlit:query answer", () => {
   /**
    * A clock that moves 2 ms at each read: the second read of a step is at
    * the budget of 4 ms, so a step of the answer holds two chunks of rows.
@@ -253,7 +250,7 @@ describe("zotlit:item-query answer", () => {
   });
 });
 
-describe("zotlit:item-query limit", () => {
+describe("zotlit:query limit", () => {
   it("returns the first rows and reports truncation for a numeric limit", async () => {
     using scenario = openScenarioDatabase();
     const { run } = setup(scenario);
@@ -303,7 +300,7 @@ const BULK_GROUP_WIRE = {
   name: BULK_LIBRARY.name,
 };
 
-describe("zotlit:item-query library", () => {
+describe("zotlit:query library", () => {
   it("reads a group Library by its group ID and reports it with its name", async () => {
     using scenario = openScenarioDatabase();
     const { run } = setup(scenario);
@@ -311,7 +308,7 @@ describe("zotlit:item-query library", () => {
     const answer = await run({ library: "group:4815" });
 
     expect(answer.libraries).toEqual([METHODS_GROUP_WIRE]);
-    expect(answer.request).toMatchObject({ libraries: ["group:4815"] });
+    expect(answer.request).toMatchObject({ library: ["group:4815"] });
     expect(keys(answer)).toEqual(["ART2FULLg4815", "GRP2BK22g4815"]);
   });
 
@@ -322,7 +319,7 @@ describe("zotlit:item-query library", () => {
     const answer = await run({ library: "personal" });
 
     expect(answer.libraries).toEqual([PERSONAL_WIRE]);
-    expect(answer.request).toMatchObject({ libraries: ["personal"] });
+    expect(answer.request).toMatchObject({ library: ["personal"] });
     expect(keys(answer)).toEqual(PERSONAL_BY_MODIFIED);
   });
 
@@ -343,17 +340,17 @@ describe("zotlit:item-query library", () => {
   });
 });
 
-describe("zotlit:item-query libraries", () => {
+describe("zotlit:query libraries", () => {
   it("reads the named Libraries as one result set", async () => {
     using scenario = openScenarioDatabase();
     const { run } = setup(scenario);
 
-    const answer = await run({ libraries: '["personal","group:4815"]' });
+    const answer = await run({ library: '["personal","group:4815"]' });
 
     expect(answer).toMatchObject({
       ok: true,
       libraries: [PERSONAL_WIRE, METHODS_GROUP_WIRE],
-      request: { libraries: ["personal", "group:4815"] },
+      request: { library: ["personal", "group:4815"] },
       returnedCount: 12,
       truncated: false,
       warnings: [],
@@ -366,7 +363,7 @@ describe("zotlit:item-query libraries", () => {
     const { run } = setup(scenario);
 
     const answer = await run({
-      libraries: '["personal","group:4815"]',
+      library: '["personal","group:4815"]',
       limit: "3",
     });
 
@@ -380,7 +377,7 @@ describe("zotlit:item-query libraries", () => {
     const { run } = setup(scenario);
 
     const answer = await run({
-      libraries: `["group:4815","group:${BULK_LIBRARY.groupID}","personal"]`,
+      library: `["group:4815","group:${BULK_LIBRARY.groupID}","personal"]`,
       fields: "[]",
     });
 
@@ -391,7 +388,7 @@ describe("zotlit:item-query libraries", () => {
       METHODS_GROUP_WIRE,
     ]);
     expect(answer.request).toMatchObject({
-      libraries: ["personal", `group:${BULK_LIBRARY.groupID}`, "group:4815"],
+      library: ["personal", `group:${BULK_LIBRARY.groupID}`, "group:4815"],
     });
     expect(answer.returnedCount).toBe(13);
   });
@@ -400,7 +397,7 @@ describe("zotlit:item-query libraries", () => {
     using scenario = openScenarioDatabase();
     const { run } = setup(scenario);
 
-    const answer = await run({ libraries: '["group:4815"]' });
+    const answer = await run({ library: '["group:4815"]' });
 
     expect(answer.libraries).toEqual([METHODS_GROUP_WIRE]);
     expect(keys(answer)).toEqual(["ART2FULLg4815", "GRP2BK22g4815"]);
@@ -410,11 +407,11 @@ describe("zotlit:item-query libraries", () => {
     using scenario = openScenarioDatabase();
     const { run } = setup(scenario);
 
-    const answer = await run({ libraries: "all" });
+    const answer = await run({ library: "all" });
 
     expect(answer.libraries).toEqual([PERSONAL_WIRE, METHODS_GROUP_WIRE]);
     expect(answer.request).toMatchObject({
-      libraries: ["personal", "group:4815"],
+      library: ["personal", "group:4815"],
     });
     expect(keys(answer)).toEqual(BOTH_BY_MODIFIED);
   });
@@ -426,7 +423,7 @@ describe("zotlit:item-query libraries", () => {
     );
     const { run } = setup(scenario);
 
-    const answer = await run({ libraries: "all" });
+    const answer = await run({ library: "all" });
 
     expect(answer).toMatchObject({
       ok: false,
@@ -442,7 +439,7 @@ describe("zotlit:item-query libraries", () => {
     using scenario = openScenarioDatabase();
     const { run } = setup(scenario);
 
-    const answer = await run({ libraries: "all", limit: "1" });
+    const answer = await run({ library: "all", limit: "1" });
 
     expect(JSON.stringify(answer)).not.toContain("libraryID");
   });
@@ -451,20 +448,20 @@ describe("zotlit:item-query libraries", () => {
     using scenario = openScenarioDatabase();
     const { run } = setup(scenario);
 
-    const answer = await run({ libraries: '["personal","group:999"]' });
+    const answer = await run({ library: '["personal","group:999"]' });
 
     expect(answer).toMatchObject({
       ok: false,
       diagnostic: {
         code: "library-not-found",
         report: { 0: expect.stringContaining("999") },
-        details: { parameter: "libraries" },
+        details: { parameter: "library" },
       },
     });
   });
 });
 
-describe("zotlit:item-query default Libraries", () => {
+describe("zotlit:query default Libraries", () => {
   const scoped = (scope: LibraryScope) => ({ scope });
   const selected = (
     ...libraries: Extract<LibraryScope, { mode: "selected" }>["libraries"]
@@ -479,7 +476,7 @@ describe("zotlit:item-query default Libraries", () => {
     expect(answer).toMatchObject({
       ok: true,
       libraries: [PERSONAL_WIRE, METHODS_GROUP_WIRE],
-      request: { libraries: ["personal", "group:4815"], limit: 100 },
+      request: { library: ["personal", "group:4815"], limit: 100 },
       returnedCount: 12,
     });
     expect(keys(answer)).toEqual(BOTH_BY_MODIFIED);
@@ -496,7 +493,7 @@ describe("zotlit:item-query default Libraries", () => {
     const answer = await run();
 
     expect(answer.libraries).toEqual([METHODS_GROUP_WIRE]);
-    expect(answer.request).toMatchObject({ libraries: ["group:4815"] });
+    expect(answer.request).toMatchObject({ library: ["group:4815"] });
     expect(keys(answer)).toEqual(["ART2FULLg4815", "GRP2BK22g4815"]);
   });
 
@@ -518,7 +515,7 @@ describe("zotlit:item-query default Libraries", () => {
     expect(answer).toMatchObject({
       ok: true,
       libraries: [PERSONAL_WIRE, METHODS_GROUP_WIRE],
-      request: { libraries: ["personal", "group:4815"] },
+      request: { library: ["personal", "group:4815"] },
       returnedCount: 12,
     });
   });
@@ -533,12 +530,12 @@ describe("zotlit:item-query default Libraries", () => {
     const answer = await run();
 
     expect(answer).toMatchObject({
-      contractVersion: 2,
-      command: ITEM_QUERY_COMMAND,
+      contractVersion: 3,
+      command: QUERY_COMMAND,
       ok: false,
       diagnostic: {
         code: "no-library-available",
-        hint: expect.stringContaining("libraries="),
+        hint: expect.stringContaining("library="),
       },
     });
   });
@@ -556,7 +553,7 @@ describe("zotlit:item-query default Libraries", () => {
   });
 });
 
-describe("zotlit:item-query fields", () => {
+describe("zotlit:query fields", () => {
   it("returns identity-only rows for fields=[]", async () => {
     using scenario = openScenarioDatabase();
     const { run } = setup(scenario);
@@ -614,7 +611,7 @@ describe("zotlit:item-query fields", () => {
   });
 });
 
-describe("zotlit:item-query filter and sort", () => {
+describe("zotlit:query filter and sort", () => {
   it("passes a well-formed filter through to the engine and echoes it", async () => {
     using scenario = openScenarioDatabase();
     const { run } = setup(scenario);
@@ -669,7 +666,7 @@ describe("zotlit:item-query filter and sort", () => {
   });
 });
 
-describe("zotlit:item-query borrowed source", () => {
+describe("zotlit:query borrowed source", () => {
   it("answers the source identity supplied by its caller", async () => {
     using scenario = openScenarioDatabase();
     const source = {
@@ -719,8 +716,8 @@ describe("zotlit:item-query borrowed source", () => {
     const answer = await run();
 
     expect(answer).toMatchObject({
-      contractVersion: 2,
-      command: ITEM_QUERY_COMMAND,
+      contractVersion: 3,
+      command: QUERY_COMMAND,
       ok: false,
       diagnostic: {
         code: "unsupported-database-layout",
@@ -743,14 +740,14 @@ describe("zotlit:item-query borrowed source", () => {
     const answering = run({ output: "/exports/items.json" });
 
     await expect(answering).rejects.toThrow(
-      "Item Query failed with an internal error.",
+      "ZotLit Query failed with an internal error.",
     );
     await expect(answering).rejects.toMatchObject({ cause: defect });
     await expect(answering).rejects.not.toMatchObject({ name: "AbortError" });
   });
 });
 
-describe("zotlit:item-query on the layout of the Zotero database", () => {
+describe("zotlit:query on the layout of the Zotero database", () => {
   it.each([
     ["the lowest supported layout", null],
     ["the lowest layout stamped outside the supported range", 999],
@@ -767,7 +764,7 @@ describe("zotlit:item-query on the layout of the Zotero database", () => {
 
       const personal = await run({ fields: "[]" });
       const group = await run({ fields: "[]", library: "group:4815" });
-      const all = await run({ fields: "[]", libraries: "all" });
+      const all = await run({ fields: "[]", library: "all" });
 
       expect(personal).toMatchObject({
         ok: true,
@@ -788,7 +785,7 @@ describe("zotlit:item-query on the layout of the Zotero database", () => {
   );
 });
 
-describe("zotlit:item-query cancellation", () => {
+describe("zotlit:query cancellation", () => {
   it("ends interrupted when the interrupt comes before it answers", async () => {
     using scenario = openScenarioDatabase();
     const controller = new AbortController();
@@ -845,7 +842,7 @@ function setupSchema(scenario: ScenarioDatabase) {
           {
             schema: true,
             dataset: "items",
-            command: ITEM_QUERY_SCHEMA_COMMAND,
+            command: QUERY_SCHEMA_COMMAND,
             pluginVersion: "2.2.0-beta.2",
             scope: MY_LIBRARY_SCOPE,
           },
@@ -859,7 +856,7 @@ function setupSchema(scenario: ScenarioDatabase) {
   };
 }
 
-describe("zotlit:item-query-schema", () => {
+describe("zotlit:query-schema", () => {
   it("answers unsupported-database-layout for a copy that lacks a manifest column", async () => {
     using scenario = openScenarioDatabase();
     scenario.sqlite.exec('alter table "fieldsCombined" drop column "custom"');
@@ -868,7 +865,7 @@ describe("zotlit:item-query-schema", () => {
     const answer = await run();
 
     expect(answer).toMatchObject({
-      command: ITEM_QUERY_SCHEMA_COMMAND,
+      command: QUERY_SCHEMA_COMMAND,
       ok: false,
       diagnostic: {
         code: "unsupported-database-layout",
@@ -882,7 +879,7 @@ it("answers contract v2 reports and warnings through the query envelope", async 
   using scenario = openScenarioDatabase();
   const run = setup(scenario).run;
   const failed = await run({ filter: 'creators.lastName == "Smith"' });
-  expect(failed.contractVersion).toBe(2);
+  expect(failed.contractVersion).toBe(3);
   const diagnostic = failed.diagnostic as Diagnostic;
   expect(diagnostic.report[0]).toBe(diagnostic.message);
   expect(diagnostic.report.at(-1)).toBe(diagnostic.hint);
@@ -939,7 +936,7 @@ it("keeps warning diagnostics before rows and drops them on failure", async () =
   }
 });
 
-describe("zotlit:item-query export writer", () => {
+describe("zotlit:query export writer", () => {
   /** The bulk Library: more rows than the first chunk of an answer. */
   const BULK = {
     library: `group:${BULK_LIBRARY.groupID}`,
@@ -954,7 +951,7 @@ describe("zotlit:item-query export writer", () => {
    */
   function memoryExport(
     scenario: ScenarioDatabase,
-    write: (count: number) => Effect.Effect<void, ItemQueryOutputError>,
+    write: (count: number) => Effect.Effect<void, QueryOutputError>,
   ) {
     const events: string[] = [];
     let writes = 0;
@@ -975,7 +972,7 @@ describe("zotlit:item-query export writer", () => {
       {
         schema: false,
         dataset: "items",
-        command: ITEM_QUERY_COMMAND,
+        command: QUERY_COMMAND,
         query: decoded({ ...BULK, output: "/exports/items.json" }),
         scope: MY_LIBRARY_SCOPE,
       },
@@ -1018,7 +1015,7 @@ describe("zotlit:item-query export writer", () => {
     const { events, run } = memoryExport(scenario, (count) =>
       count === 2
         ? Effect.fail(
-            new ItemQueryOutputError({
+            new QueryOutputError({
               diagnostic: diagnostic("output-error", "The disk is full."),
             }),
           )

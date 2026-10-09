@@ -20,14 +20,7 @@ const fixtureTool = join(repo, "packages/scripts/scripts/obsidian-vault.ts");
 const cliTool = join(repo, "packages/scripts/scripts/obsidian-cli.ts");
 const prepareTool = fileURLToPath(new URL("./prepare.mjs", import.meta.url));
 const skillFile = join(repo, "skills/zotlit-query/SKILL.md");
-const itemCatalogFile = join(
-  repo,
-  "packages/item-query/dist/item-query.schema.json",
-);
-const annotationCatalogFile = join(
-  repo,
-  "packages/item-query/dist/annotation-query.schema.json",
-);
+const catalogFile = join(repo, "packages/item-query/dist/query.schema.json");
 const itemCases = new Set(["include", "export", "edge"]);
 const mixedQueryCases = new Set(["reading_plan"]);
 const answerItem = {
@@ -393,15 +386,12 @@ export function measureEvents(jsonl) {
     const isCli =
       typeof item.command === "string" &&
       item.command.includes("obsidian-cli.ts");
-    const queryKind = !isCli
-      ? null
-      : /\bzotlit:annotation-query\b/.test(item.command) &&
-          !/\bzotlit:annotation-query-(guide|schema)\b/.test(item.command)
-        ? "annotation"
-        : /\bzotlit:item-query\b/.test(item.command) &&
-            !/\bzotlit:item-query-(guide|schema|cancel)\b/.test(item.command)
-          ? "item"
-          : null;
+    const queryKind =
+      isCli && /\bzotlit:query(?=\s|$)/.test(item.command)
+        ? /\bfrom=(?:["']?annotations["']?)(?=\s|$)/.test(item.command)
+          ? "annotation"
+          : "item"
+        : null;
     if (queryKind) {
       queryAttempts++;
       if (queryKind === "item") itemQueryAttempts++;
@@ -628,29 +618,22 @@ export function checkAnswer(caseName, answer, context) {
 function prompt(caseName, vaultId, agentRoot) {
   const result = join(agentRoot, "query-result.json");
   const retained = resolve(agentRoot, "..", "result.json");
-  const itemCatalog = join(
-    agentRoot,
-    "packages/item-query/dist/item-query.schema.json",
-  );
-  const annotationCatalog = join(
-    agentRoot,
-    "packages/item-query/dist/annotation-query.schema.json",
-  );
-  const preamble = `Read ${join(agentRoot, "SKILL.md")} and follow it for this request. Use only the evaluation vault ID ${vaultId}. The Obsidian CLI executable for this session is: node ${cliTool}. Put vault=${vaultId} before every Obsidian command name. The matching development schema catalogs are ${itemCatalog} and ${annotationCatalog}. Read only the copied skill, those catalogs, live CLI output, and files you make for this task; do not read evaluator sources.\n\nUser request: ${cases[caseName]}\n\n`;
+  const catalog = join(agentRoot, "packages/item-query/dist/query.schema.json");
+  const preamble = `Read ${join(agentRoot, "SKILL.md")} and follow it for this request. Use only the evaluation vault ID ${vaultId}. The Obsidian CLI executable for this session is: node ${cliTool}. Put vault=${vaultId} before every Obsidian command name. The matching development schema catalog is ${catalog}. Read only the copied skill, that catalog, live CLI output, and files you make for this task; do not read evaluator sources.\n\nUser request: ${cases[caseName]}\n\n`;
   if (itemCases.has(caseName))
-    return `${preamble}Save the complete successful zotlit:item-query JSON envelope at ${result}. If the CLI returns a file receipt, copy the complete file envelope to this evidence path. Read the saved envelope and verify it before answering. The runner will retain this envelope at ${retained} after cleanup. In your final JSON, items must contain every Item detail the user requested (use My Library and Lab Archive as library names); use null for a missing year, author, or editor. For the export case use an empty items array and set exportPath to ${retained}; otherwise use null. Put the libraries that share a bare key in duplicateKeyGroups when the request asks about it; otherwise use an empty array. State the exact count and missing publication-year count (use null when the request does not ask for it).`;
+    return `${preamble}Save the complete successful zotlit:query JSON envelope at ${result}. If the CLI returns a file receipt, copy the complete file envelope to this evidence path. Read the saved envelope and verify it before answering. The runner will retain this envelope at ${retained} after cleanup. In your final JSON, items must contain every Item detail the user requested (use My Library and Lab Archive as library names); use null for a missing year, author, or editor. For the export case use an empty items array and set exportPath to ${retained}; otherwise use null. Put the libraries that share a bare key in duplicateKeyGroups when the request asks about it; otherwise use an empty array. State the exact count and missing publication-year count (use null when the request does not ask for it).`;
   const imageResult = join(agentRoot, "image-result.json");
   const imageInstruction =
     caseName === "image"
       ? ` Save the successful zotlit:annotation-image JSON response at ${imageResult}, read the returned file, and verify its PNG signature. Set the four image result fields from that response and check.`
       : " Set imagePath, imageProvenance, imageFormat, and validPng to null.";
   const itemInstruction = mixedQueryCases.has(caseName)
-    ? ` Save the complete successful zotlit:item-query JSON envelope at ${join(agentRoot, "item-result.json")}; use limit=all and keep rows inline. Derive papers, including zero-mark papers, from that Item result.`
+    ? ` Save the complete successful zotlit:query JSON envelope at ${join(agentRoot, "item-result.json")}; use limit=all and keep rows inline. Derive papers, including zero-mark papers, from that Item result.`
     : "";
   const queryInstruction =
     caseName === "export_annotations"
-      ? ` Use zotlit:annotation-query output=${result} to create the complete JSON export with limit=all. Save the command's JSON file receipt at ${join(agentRoot, "export-receipt.json")}. Read and verify the exported envelope. The runner will retain the file at ${retained}; report that retained path as exportPath.`
-      : ` Save the complete successful zotlit:annotation-query JSON envelope at ${result}; use limit=all and keep rows inline. Read and verify the saved envelope before answering.`;
+      ? ` Use zotlit:query from=annotations output=${result} to create the complete JSON export with limit=all. Save the command's JSON file receipt at ${join(agentRoot, "export-receipt.json")}. Read and verify the exported envelope. The runner will retain the file at ${retained}; report that retained path as exportPath.`
+      : ` Save the complete successful zotlit:query from=annotations JSON envelope at ${result}; use limit=all and keep rows inline. Read and verify the saved envelope before answering.`;
   return `${preamble}${itemInstruction}${queryInstruction} In your final JSON, annotations must contain every requested detail from those rows, with null for an unavailable value.${imageInstruction}`;
 }
 
@@ -724,7 +707,7 @@ export async function runCase(
       if (signal?.aborted) fail("evaluation interrupted");
       const schema = await processRunner(
         process.execPath,
-        [cliTool, `vault=${vaultId}`, "zotlit:item-query-schema"],
+        [cliTool, `vault=${vaultId}`, "zotlit:query-schema"],
         { cwd: repo, timeoutMs: 35_000, signal },
       );
       try {
@@ -745,17 +728,12 @@ export async function runCase(
     if (!ready) fail("evaluation vault did not resolve the seeded database");
     report.state = "agent";
     await cp(skillFile, join(agent, "SKILL.md"));
-    const copiedItemCatalog = join(
+    const copiedCatalog = join(
       agent,
-      "packages/item-query/dist/item-query.schema.json",
+      "packages/item-query/dist/query.schema.json",
     );
-    const copiedAnnotationCatalog = join(
-      agent,
-      "packages/item-query/dist/annotation-query.schema.json",
-    );
-    await mkdir(resolve(copiedItemCatalog, ".."), { recursive: true });
-    await cp(itemCatalogFile, copiedItemCatalog);
-    await cp(annotationCatalogFile, copiedAnnotationCatalog);
+    await mkdir(resolve(copiedCatalog, ".."), { recursive: true });
+    await cp(catalogFile, copiedCatalog);
     await writeFile(
       join(agent, "answer.schema.json"),
       JSON.stringify(

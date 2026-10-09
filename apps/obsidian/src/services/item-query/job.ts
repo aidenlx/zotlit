@@ -12,7 +12,7 @@ import type { ResolveAttachmentFile } from "@zotlit/item-query";
 
 import type { WorkbenchIdentity } from "@/services/template-workbench/envelope";
 
-import { answer, ItemQueryOutputError } from "./answer";
+import { answer, QueryOutputError } from "./answer";
 import type { QueryWriter } from "./answer";
 import { diagnostic, failure } from "./contract";
 import { createTrace, finishTrace } from "./trace";
@@ -95,7 +95,7 @@ interface StageState {
 function openStage(
   stagePath: string | undefined,
   stage: StageState,
-): Effect.Effect<QueryWriter, ItemQueryOutputError, Scope.Scope> {
+): Effect.Effect<QueryWriter, QueryOutputError, Scope.Scope> {
   if (stagePath === undefined)
     return Effect.die(new Error("Item Query export has no staging path"));
   return Effect.acquireRelease(
@@ -119,12 +119,12 @@ function openStage(
 /** A file operation: a system error is the `output-error` of the envelope. */
 function fileStep<A>(
   step: () => Promise<A>,
-): Effect.Effect<A, ItemQueryOutputError> {
+): Effect.Effect<A, QueryOutputError> {
   return Effect.tryPromise({ try: step, catch: (error) => error }).pipe(
     Effect.catch((error) =>
       error instanceof Error && "code" in error
         ? Effect.fail(
-            new ItemQueryOutputError({
+            new QueryOutputError({
               diagnostic: diagnostic("output-error", error.message),
             }),
           )

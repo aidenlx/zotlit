@@ -7,13 +7,13 @@ import {
   median,
   percentile,
   totalBudgetMs,
-} from "./item-query-record.ts";
+} from "./query-record.ts";
 import type {
   MeasurementRecord,
   QueryMeasurement,
   TierMeasurement,
   TwoLibraryMeasurement,
-} from "./item-query-record.ts";
+} from "./query-record.ts";
 
 function query(
   overrides: Partial<QueryMeasurement> & Pick<QueryMeasurement, "id">,
@@ -488,7 +488,7 @@ describe("summary", () => {
     startedAt: "2026-10-05T08:00:00Z",
     environment: ["Machine: macOS arm64."],
     notes: ["Keyset paging meets the budgets."],
-    rawPath: ".scratch/item-query-measure/raw.json",
+    rawPath: ".scratch/query-measure/raw.json",
     tiers: [
       tier({
         queries: [
@@ -569,8 +569,6 @@ describe("summary", () => {
     });
     expect(passed).toContain("**Result: passed.** All 3 thresholds hold.");
     expect(passed).toContain("- Keyset paging meets the budgets.");
-    expect(passed).toContain(
-      "Raw output: `.scratch/item-query-measure/raw.json`",
-    );
+    expect(passed).toContain("Raw output: `.scratch/query-measure/raw.json`");
   });
 });

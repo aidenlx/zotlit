@@ -4,7 +4,7 @@ import type { QueryDataset } from "@zotlit/item-query";
 import type { LibraryScope } from "@/services/library-scope/scope";
 import type { WorkbenchIdentity } from "@/services/template-workbench/envelope";
 
-import type { ItemQueryCommand } from "./contract";
+import type { QueryCliCommand } from "./contract";
 import type { DecodedQuery } from "./decode";
 import type { WorkerMeasurement } from "./trace";
 
@@ -16,11 +16,10 @@ export type QueryDatasetId = QueryDataset["id"];
  * of one Query Dataset. `command` is the CLI command that the envelope names.
  */
 export type QueryCommand = {
-  dataset: QueryDatasetId;
-  command: ItemQueryCommand;
+  command: QueryCliCommand;
 } & (
-  | { schema: true; pluginVersion: string }
-  | { schema: false; query: DecodedQuery }
+  | { schema: true; pluginVersion: string; dataset?: QueryDatasetId }
+  | { schema: false; query: DecodedQuery; dataset: QueryDatasetId }
 );
 
 /** Small request data for the ZoteroReads worker. Query rows stay in that worker. */
@@ -45,7 +44,7 @@ export type QueryReceipt =
 
 /** The envelope text of a job, with its command and receipt. */
 export interface QueryReply {
-  command: ItemQueryCommand;
+  command: QueryCliCommand;
   answer: string;
   receipt: QueryReceipt;
 }

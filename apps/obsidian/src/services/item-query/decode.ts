@@ -1,4 +1,4 @@
-// Decodes the flat CLI arguments of the Item Query commands, once, in the
+// Decodes the flat CLI arguments of the ZotLit Query commands, once, in the
 // renderer: the query command into a `DecodedQuery` that crosses the
 // ZoteroReads worker seam as plain JSON, or into the diagnostic of the first
 // malformed argument.
@@ -15,13 +15,11 @@ import { formatIndexedKey, parseIndexedKey } from "@zotlit/db";
 import { UNLIMITED_LIMIT } from "@zotlit/item-query";
 
 import {
-  cliMaybeEmpty,
   cliNotApplicable,
   cliParams,
   cliText,
   cliVariants,
   decodeCliParams,
-  noCliParams,
 } from "@/lib/cli-params";
 import type { CliParamName, CliRequest } from "@/lib/cli-params";
 import {
@@ -34,18 +32,15 @@ import type {
   LibrarySelector,
 } from "@/services/library-scope/scope";
 
-import { ANNOTATION_GUIDE_TOPIC_NAMES } from "./annotation-guide";
 import {
-  ANNOTATION_QUERY_COMMAND,
-  ANNOTATION_QUERY_GUIDE_COMMAND,
   DEFAULT_CLI_LIMIT,
-  ITEM_QUERY_CANCEL_COMMAND,
-  ITEM_QUERY_COMMAND,
-  ITEM_QUERY_GUIDE_COMMAND,
+  QUERY_CANCEL_COMMAND,
+  QUERY_COMMAND,
+  QUERY_GUIDE_COMMAND,
+  QUERY_SCHEMA_COMMAND,
   QUERY_ID_FORM,
   QUERY_ID_MAX_LENGTH,
 } from "./contract";
-import type { ItemQueryCommand } from "./contract";
 import { GUIDE_TOPIC_NAMES } from "./guide";
 import type { GuideTopic } from "./guide";
 
@@ -55,7 +50,7 @@ export { rejectionDiagnostic } from "./contract";
 export interface NamedLibraries {
   scope: LibraryScope;
   /** The argument that names them. */
-  parameter: "library" | "libraries" | "item" | "attachment";
+  parameter: "library" | "item" | "attachment";
 }
 
 const QUERY_ID = /^[\w.-]+$/;
@@ -86,28 +81,91 @@ function jsonParameter<TSchema extends v.GenericSchema>(
   );
 }
 
-/** `libraries`: the word `all`, or a JSON array of selector texts. */
-const libraries = v.lazy((input) =>
+/** Split a comma list only outside quotes and bracketed Projection Paths. */
+function splitList(text: string): { value: string; start: number }[] {
+  const parts: { value: string; start: number }[] = [];
+  let start = 0;
+  let depth = 0;
+  let quote: string | null = null;
+  let escaped = false;
+  for (let index = 0; index < text.length; index++) {
+    const char = text[index]!;
+    if (quote !== null) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === quote) quote = null;
+    } else if (char === '"' || char === "'") quote = char;
+    else if (char === "[") depth++;
+    else if (char === "]") depth--;
+    else if (char === "," && depth === 0) {
+      parts.push({ value: text.slice(start, index).trim(), start });
+      start = index + 1;
+    }
+  }
+  parts.push({ value: text.slice(start).trim(), start });
+  return parts;
+}
+
+const commaList = v.pipe(
+  v.string(),
+  v.rawCheck<string>(({ dataset, addIssue }) => {
+    if (!dataset.typed) return;
+    const parts = splitList(dataset.value);
+    const empty = parts.findIndex(({ value }) => value === "");
+    if (empty !== -1)
+      addIssue({
+        message: `List element ${empty + 1} is empty at position ${parts[empty]!.start + 1}. Give a value between commas.`,
+        path: [
+          {
+            type: "array",
+            origin: "value",
+            input: parts.map(({ value }) => value),
+            key: empty,
+            value: "",
+          },
+        ],
+      });
+  }),
+  v.transform((text) => splitList(text).map(({ value }) => value)),
+);
+
+function listParameter<TSchema extends v.GenericSchema>(
+  parameter: string,
+  expected: string,
+  schema: TSchema,
+) {
+  return v.pipe(
+    v.lazy((input) =>
+      typeof input === "string" && input.trimStart().startsWith("[")
+        ? jsonParameter(parameter, expected, v.unknown())
+        : commaList,
+    ),
+    schema,
+  );
+}
+
+/** One library argument names one or more Target Libraries. */
+const library = v.lazy((input) =>
   input === "all"
     ? v.pipe(
         v.literal("all"),
         v.transform((): LibraryScope => ({ mode: "all" })),
       )
-    : jsonParameter(
-        "libraries",
-        'all, or a JSON array of at least one Library, each "personal" or "group:<groupID>"',
+    : listParameter(
+        "library",
+        "a JSON array of Library selectors",
         v.pipe(
           v.array(
             selectorKeySchema(
               (text) =>
-                `'${text}' in libraries is not a Library: use "personal" or "group:<groupID>".`,
+                `'${text}' is not a Library: use personal or group:<groupID>.`,
             ),
           ),
           v.minLength(1),
           v.check(
             (selectors) => !firstRepeat(selectors),
             (issue) =>
-              `libraries names '${firstRepeat(issue.input)}' twice: name each Library once.`,
+              `library names '${firstRepeat(issue.input)}' twice: name each Library once.`,
           ),
           v.transform(
             (selectors): LibraryScope => ({
@@ -117,6 +175,12 @@ const libraries = v.lazy((input) =>
           ),
         ),
       ),
+);
+
+const from = v.picklist(
+  ["items", "annotations"],
+  (issue) =>
+    `from '${String(issue.input)}' is not a Query Dataset: use items, annotations.`,
 );
 
 /** The key of the first selector `selectors` names twice. */
@@ -131,10 +195,6 @@ function firstRepeat(
   }
   return undefined;
 }
-
-const library = selectorKeySchema(
-  (text) => `'${text}' is not a Library: use personal or group:<groupID>.`,
-);
 
 const notPositiveInteger = (issue: { input: unknown }) =>
   `limit '${String(issue.input)}' is not a positive integer: use a positive integer, or all for every match.`;
@@ -158,25 +218,46 @@ const limit = v.lazy((input) =>
 
 /** The arguments every query takes, whichever Libraries it reads. */
 const queryOptions = {
+  from: v.optional(from, "items"),
   filter: v.optional(
     cliText(
-      "filter is empty: give a Filter Expression, or omit filter to match every Item.",
+      "filter is empty: give a Filter Expression, or omit filter to match every row in the dataset.",
     ),
   ),
   fields: v.optional(
-    jsonParameter(
+    listParameter(
       "fields",
       "a JSON array of Projection Path strings",
       v.array(v.string()),
     ),
   ),
   sort: v.optional(
-    jsonParameter(
-      "sort",
-      'a JSON array of {"field","direction"} objects with direction "asc" or "desc"',
+    v.pipe(
+      v.lazy((input) =>
+        typeof input === "string" && input.trimStart().startsWith("[")
+          ? jsonParameter(
+              "sort",
+              'a JSON array of {"field","direction"} objects with direction "asc" or "desc"',
+              v.unknown(),
+            )
+          : v.pipe(
+              commaList,
+              v.transform((parts) =>
+                parts.map((part) => ({
+                  field:
+                    part.startsWith("-") || part.startsWith("+")
+                      ? part.slice(1)
+                      : part,
+                  direction: part.startsWith("-")
+                    ? ("desc" as const)
+                    : ("asc" as const),
+                })),
+              ),
+            ),
+      ),
       v.array(
         v.strictObject({
-          field: v.string(),
+          field: cliText("Give a Sortable Field after the sort sign."),
           direction: v.picklist(["asc", "desc"]),
         }),
       ),
@@ -205,44 +286,25 @@ function decodedQuery(
   options: v.InferOutput<v.StrictObjectSchema<typeof queryOptions, undefined>>,
   libraries: NamedLibraries | null,
 ) {
-  const { filter, fields, sort, limit, output, id } = options;
+  const { from, filter, fields, sort, limit, output, id } = options;
   return {
+    from,
     libraries,
     limit,
     ...(filter === undefined ? {} : { filter }),
     ...(fields === undefined ? {} : { fields }),
     ...(sort === undefined ? {} : { sort }),
     ...(output === undefined ? {} : { output }),
-    // The id that `zotlit:item-query-cancel` names the query by.
+    // The id that `zotlit:query-cancel` names the query by.
     ...(id === undefined ? {} : { id }),
   };
 }
 
-const queryVariant = ({ libraries, library }: CliData) =>
-  libraries !== undefined
-    ? "libraries"
-    : library !== undefined
-      ? "library"
-      : "scope";
 const queryVariants = {
-  libraries: v.pipe(
-    // `libraries` wins over `library`, which this variant reads no further.
-    cliParams({
-      libraries,
-      library: cliMaybeEmpty(),
-      ...queryOptions,
-    }),
-    v.transform(({ libraries: scope, library: _, ...options }) =>
-      decodedQuery(options, { scope, parameter: "libraries" }),
-    ),
-  ),
   library: v.pipe(
     cliParams({ library, ...queryOptions }),
-    v.transform(({ library: selector, ...options }) =>
-      decodedQuery(options, {
-        scope: { mode: "selected", libraries: [selector] },
-        parameter: "library",
-      }),
+    v.transform(({ library: scope, ...options }) =>
+      decodedQuery(options, { scope, parameter: "library" }),
     ),
   ),
   scope: v.pipe(
@@ -250,32 +312,14 @@ const queryVariants = {
     v.transform((options) => decodedQuery(options, null)),
   ),
 };
-const queryParams = cliVariants(queryVariant, queryVariants);
+const queryVariant = (params: CliData) =>
+  params.library !== undefined ? "library" : "scope";
 
-export type DecodedItemQuery = v.InferOutput<typeof queryParams>;
-/**
- * The decoded arguments of either query command. The Annotation selectors
- * are optional keys, so a reader takes both datasets in one shape.
- */
-export type DecodedQuery = (DecodedItemQuery | DecodedAnnotationQuery) & {
-  readonly item?: string[];
-  readonly attachment?: string[];
-};
-
-/** The parameters of `zotlit:item-query`, to type its `CliFlags`. */
-export type ItemQueryParam = CliParamName<typeof queryParams>;
-
-/** Decode the flat arguments of a query, or answer the first malformed one. */
-export function decodeItemQuery(params: CliData): CliRequest<DecodedItemQuery> {
-  return decodeCliParams(params, queryParams, { command: ITEM_QUERY_COMMAND });
-}
-
-/** The schema command `command` takes no parameter. */
-export function decodeSchemaArguments(
-  params: CliData,
-  command: ItemQueryCommand,
-): CliRequest<object> {
-  return decodeCliParams(params, noCliParams, { command });
+/** The schema command optionally narrows its live dataset listing. */
+export function decodeSchemaArguments(params: CliData) {
+  return decodeCliParams(params, cliParams({ from: v.optional(from) }), {
+    command: QUERY_SCHEMA_COMMAND,
+  });
 }
 
 const guideParams = v.pipe(
@@ -296,7 +340,7 @@ export function decodeGuideArguments(
   params: CliData,
 ): CliRequest<GuideTopic | null> {
   return decodeCliParams(params, guideParams, {
-    command: ITEM_QUERY_GUIDE_COMMAND,
+    command: QUERY_GUIDE_COMMAND,
   });
 }
 
@@ -311,7 +355,7 @@ const cancelParams = v.pipe(
 /** The id of the query to cancel. */
 export function decodeCancelArguments(params: CliData): CliRequest<string> {
   return decodeCliParams(params, cancelParams, {
-    command: ITEM_QUERY_CANCEL_COMMAND,
+    command: QUERY_CANCEL_COMMAND,
   });
 }
 
@@ -339,9 +383,10 @@ const annotationSelector = (name: string) =>
           v.transform((key) => [key]),
         ),
   );
-const annotationParams = cliVariants(
+const queryParams = cliVariants(
   (params) =>
-    params.item !== undefined || params.attachment !== undefined
+    params.from === "annotations" &&
+    (params.item !== undefined || params.attachment !== undefined)
       ? "selectors"
       : queryVariant(params),
   {
@@ -353,59 +398,73 @@ const annotationParams = cliVariants(
         library: cliNotApplicable(
           "An Indexed Key selects its Library. Omit library beside Item or Attachment keys.",
         ),
-        libraries: cliNotApplicable(
-          "An Indexed Key selects its Library. Omit libraries beside Item or Attachment keys.",
-        ),
         ...queryOptions,
       }),
-      v.transform(
-        ({ item, attachment, library: _, libraries: __, ...options }) => {
-          const selected = new Map<string, LibrarySelector>();
-          for (const text of [...(item ?? []), ...(attachment ?? [])]) {
-            const key = parseIndexedKey(text)!;
-            selected.set(
-              String(key.groupID),
-              key.groupID === null
-                ? { type: "personal" }
-                : { type: "group", groupID: key.groupID },
-            );
-          }
-          return {
-            ...decodedQuery(options, {
-              scope: {
-                mode: "selected",
-                libraries: [...selected.values()].toSorted(compareSelectors),
-              },
-              parameter: item !== undefined ? "item" : "attachment",
-            }),
-            ...(item === undefined ? {} : { item: [...new Set(item)] }),
-            ...(attachment === undefined
-              ? {}
-              : { attachment: [...new Set(attachment)] }),
-          };
-        },
-      ),
+      v.transform(({ item, attachment, library: _, ...options }) => {
+        const selected = new Map<string, LibrarySelector>();
+        for (const text of [...(item ?? []), ...(attachment ?? [])]) {
+          const key = parseIndexedKey(text)!;
+          selected.set(
+            String(key.groupID),
+            key.groupID === null
+              ? { type: "personal" }
+              : { type: "group", groupID: key.groupID },
+          );
+        }
+        return {
+          ...decodedQuery(options, {
+            scope: {
+              mode: "selected",
+              libraries: [...selected.values()].toSorted(compareSelectors),
+            },
+            parameter: item !== undefined ? "item" : "attachment",
+          }),
+          ...(item === undefined ? {} : { item: [...new Set(item)] }),
+          ...(attachment === undefined
+            ? {}
+            : { attachment: [...new Set(attachment)] }),
+        };
+      }),
     ),
   },
 );
 
-export type DecodedAnnotationQuery = v.InferOutput<typeof annotationParams>;
-export type AnnotationQueryParam = CliParamName<typeof annotationParams>;
+/** The decoded query crosses the worker seam as plain JSON. */
+export type DecodedQuery = v.InferOutput<typeof queryParams> & {
+  readonly item?: string[];
+  readonly attachment?: string[];
+};
+export type QueryParam = CliParamName<typeof queryParams>;
 
-export function decodeAnnotationQuery(
-  params: CliData,
-): CliRequest<DecodedAnnotationQuery> {
-  return decodeCliParams(params, annotationParams, {
-    command: ANNOTATION_QUERY_COMMAND,
+export function decodeQuery(params: CliData): CliRequest<DecodedQuery> {
+  const request = decodeCliParams(params, queryParams, {
+    command: QUERY_COMMAND,
   });
-}
-
-const annotationGuideParams = v.pipe(
-  cliParams({ topic: v.optional(v.picklist(ANNOTATION_GUIDE_TOPIC_NAMES)) }),
-  v.transform(({ topic }) => topic ?? null),
-);
-export function decodeAnnotationGuideArguments(params: CliData) {
-  return decodeCliParams(params, annotationGuideParams, {
-    command: ANNOTATION_QUERY_GUIDE_COMMAND,
-  });
+  if (request.kind === "invalid" && request.parameter === "libraries") {
+    return {
+      ...request,
+      hint: "Use library=<list|all> to select the Target Libraries.",
+    };
+  }
+  if (request.kind === "invalid" && request.issue) {
+    const { parameter, issue } = request;
+    const input = params[parameter];
+    const index = issue.keys?.[0];
+    if (
+      ["fields", "sort", "library"].includes(parameter) &&
+      input !== undefined &&
+      !input.trimStart().startsWith("[") &&
+      typeof index === "number"
+    ) {
+      const part = splitList(input)[index];
+      if (part?.value === "") {
+        // Keep the list element index and the UTF-16 character span distinct.
+        return {
+          ...request,
+          issue: { ...issue, span: { from: part.start, to: part.start } },
+        };
+      }
+    }
+  }
+  return request;
 }

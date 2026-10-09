@@ -1,4 +1,4 @@
-// The names, parameters, and defaults of the Item Query commands: the
+// The names, parameters, and defaults of the ZotLit Query commands: the
 // constants that the handlers run and the guide prints.
 //
 // Command, flag, and diagnostic text is all hardcoded English: an
@@ -22,33 +22,24 @@ import type { WorkbenchIdentity } from "@/services/template-workbench/envelope";
 import type { SchemaAsset } from "@/services/template-workbench/schema";
 
 import contractVersion from "./contract-version.json" with { type: "json" };
-import type { AnnotationQueryParam, ItemQueryParam } from "./decode";
+import type { QueryParam } from "./decode";
 
 /**
- * The wire format of the Item Query commands, versioned on its own (ADR 0065):
+ * The wire format of the ZotLit Query commands, versioned on its own (ADR 0065):
  * it evolves independently from the Template Contract.
  */
 export const CONTRACT_VERSION = contractVersion.contractVersion;
 
-export const ANNOTATION_QUERY_SCHEMA_COMMAND =
-  "zotlit:annotation-query-schema" as const;
-export const ANNOTATION_QUERY_COMMAND = "zotlit:annotation-query" as const;
-export const ANNOTATION_QUERY_GUIDE_COMMAND =
-  "zotlit:annotation-query-guide" as const;
+export const QUERY_COMMAND = "zotlit:query" as const;
+export const QUERY_CANCEL_COMMAND = "zotlit:query-cancel" as const;
+export const QUERY_SCHEMA_COMMAND = "zotlit:query-schema" as const;
+export const QUERY_GUIDE_COMMAND = "zotlit:query-guide" as const;
 
-export const ITEM_QUERY_COMMAND = "zotlit:item-query" as const;
-export const ITEM_QUERY_CANCEL_COMMAND = "zotlit:item-query-cancel" as const;
-export const ITEM_QUERY_SCHEMA_COMMAND = "zotlit:item-query-schema" as const;
-export const ITEM_QUERY_GUIDE_COMMAND = "zotlit:item-query-guide" as const;
-
-export type ItemQueryCommand =
-  | typeof ANNOTATION_QUERY_SCHEMA_COMMAND
-  | typeof ANNOTATION_QUERY_COMMAND
-  | typeof ANNOTATION_QUERY_GUIDE_COMMAND
-  | typeof ITEM_QUERY_COMMAND
-  | typeof ITEM_QUERY_CANCEL_COMMAND
-  | typeof ITEM_QUERY_SCHEMA_COMMAND
-  | typeof ITEM_QUERY_GUIDE_COMMAND;
+export type QueryCliCommand =
+  | typeof QUERY_COMMAND
+  | typeof QUERY_CANCEL_COMMAND
+  | typeof QUERY_SCHEMA_COMMAND
+  | typeof QUERY_GUIDE_COMMAND;
 
 /** The rows a CLI query returns when the caller gives no limit. */
 export const DEFAULT_CLI_LIMIT = 100;
@@ -60,38 +51,47 @@ export const QUERY_ID_FORM = `1 to ${QUERY_ID_MAX_LENGTH} ASCII letters, digits,
 
 /** The text a cancelled query rejects with; Obsidian prints it after "Error: ". */
 export function queryCancelledText(id: string): string {
-  return `The query '${id}' was cancelled by ${ITEM_QUERY_CANCEL_COMMAND}.`;
+  return `The query '${id}' was cancelled by ${QUERY_CANCEL_COMMAND}.`;
 }
 
-export const itemQueryFlags = {
+export const queryFlags = {
+  from: {
+    value: "<items|annotations>",
+    description: "Query Dataset to read (default: items)",
+  },
   filter: {
     value: "<expression>",
     description:
-      "Filter Expression that selects the Items; omit it to match every Item",
+      "Filter Expression that selects rows; omit it to match every row in the dataset",
   },
   fields: {
-    value: "<json>",
+    value: "<list|json>",
     description:
-      'JSON array of Projection Paths, such as ["title","date.year"]; [] returns only Indexed Keys',
+      "Comma list or JSON array of Projection Paths, such as title,date.year; [] returns only row identities",
   },
   sort: {
-    value: "<json>",
+    value: "<list|json>",
     description:
-      'JSON array of {"field","direction"} objects; direction is "asc" or "desc"',
+      'Comma list: -field descending, +field or field ascending; or a JSON array of {"field","direction"}',
   },
   limit: {
     value: "<n|all>",
     description: `Most rows to return: a positive integer, or all (default ${DEFAULT_CLI_LIMIT})`,
   },
   library: {
-    value: "<personal|group:id>",
+    value: "<list|all>",
     description:
-      "One Library to read: personal, or group:<groupID>; libraries overrides it",
+      "Target Libraries: personal, group:<groupID>, a comma list or JSON array, or all (default: Library scope)",
   },
-  libraries: {
-    value: "<json|all>",
+  item: {
+    value: "<indexed-key|json>",
     description:
-      'Libraries to read as one result set: a JSON array such as ["personal","group:123"], or all for every Library (default: the available Libraries of the Library scope setting)',
+      "For from=annotations: Item Indexed Key or JSON array of Item keys; selects their Libraries",
+  },
+  attachment: {
+    value: "<indexed-key|json>",
+    description:
+      "For from=annotations: Attachment Indexed Key or JSON array of Attachment keys; selects their Libraries",
   },
   output: {
     value: "<absolute-path>",
@@ -100,14 +100,14 @@ export const itemQueryFlags = {
   },
   id: {
     value: "<id>",
-    description: `Name this query so that ${ITEM_QUERY_CANCEL_COMMAND} can stop it: ${QUERY_ID_FORM}`,
+    description: `Name this query so that ${QUERY_CANCEL_COMMAND} can stop it: ${QUERY_ID_FORM}`,
   },
-} satisfies Record<ItemQueryParam, CliFlag>;
+} satisfies Record<QueryParam, CliFlag>;
 
-export const itemQueryCancelFlags: CliFlags = {
+export const queryCancelFlags: CliFlags = {
   id: {
     value: "<id>",
-    description: `The id of a running ${ITEM_QUERY_COMMAND} call in this vault`,
+    description: `The id of a running ${QUERY_COMMAND} call in this vault`,
   },
 } satisfies Record<"id", CliFlag>;
 
@@ -123,13 +123,13 @@ export const DIAGNOSTIC_HINTS = {
     "Use an absolute output path in an existing writable directory, with a filename that does not exist.",
   "invalid-argument":
     "Correct the parameter named in details.parameter, then run the command again.",
-  "query-id-in-use": `Give this query another id. A query with this id is still running in this vault; the id is free again when that query finishes or is cancelled with ${ITEM_QUERY_CANCEL_COMMAND}.`,
+  "query-id-in-use": `Give this query another id. A query with this id is still running in this vault; the id is free again when that query finishes or is cancelled with ${QUERY_CANCEL_COMMAND}.`,
   "source-unavailable":
     "Run the command again once the connected Zotero source is readable; when the message reports a failure, ask the user to check the plugin log.",
   "library-not-found":
-    "Use personal, or group:<groupID> with the group ID of a group Library that the connected Zotero source holds; libraries=all reads every Library of the source.",
+    "Use personal, or group:<groupID> with the group ID of a group Library that the connected Zotero source holds; library=all reads every Library of the source.",
   "no-library-available":
-    "Name the Libraries with libraries=<JSON array> or use libraries=all; to change the default, ask the user to select an available Library in the Library scope setting of ZotLit.",
+    "Name the Libraries with library=<list> or use library=all; to change the default, ask the user to select an available Library in the Library scope setting of ZotLit.",
   "database-error":
     "Run the command again; if it fails again, ask the user to check the plugin log.",
   "unsupported-database-layout":
@@ -164,20 +164,6 @@ export function rejectionDiagnostic(rejection: CliRejection): Diagnostic {
   return { ...value, ...diagnoseDecode(rejection, value.hint) };
 }
 
-export const annotationQueryFlags = {
-  ...itemQueryFlags,
-  item: {
-    value: "<indexed-key|json>",
-    description:
-      "Item Indexed Key or JSON array of Item keys; selects their Libraries",
-  },
-  attachment: {
-    value: "<indexed-key|json>",
-    description:
-      "Attachment Indexed Key or JSON array of Attachment keys; selects their Libraries",
-  },
-} satisfies Record<AnnotationQueryParam, CliFlag>;
-
 /** A Target Library on the wire: local `libraryID` values stay inside. */
 export type LibraryWire =
   | { type: "personal" }
@@ -201,12 +187,23 @@ export type EnvelopeTail =
       identity: WorkbenchIdentity;
       schema: SchemaAsset;
       customFields: readonly SchemaCustomField[];
-      defaults: {
-        fields: readonly string[];
-        sort: readonly SortSpec[];
-        limit: number;
-        libraries: { source: "library-scope" };
-      };
+      datasets: Partial<
+        Record<
+          "items" | "annotations",
+          { fields: readonly string[]; customPrefix: string }
+        >
+      >;
+      defaults: Partial<
+        Record<
+          "items" | "annotations",
+          {
+            fields: readonly string[];
+            sort: readonly SortSpec[];
+            limit: number;
+            library: { source: "library-scope" };
+          }
+        >
+      >;
     }
   | {
       ok: true;
@@ -216,10 +213,7 @@ export type EnvelopeTail =
     };
 
 /** The pretty JSON of the versioned envelope of `command`. */
-export function envelope(
-  command: ItemQueryCommand,
-  tail: EnvelopeTail,
-): string {
+export function envelope(command: QueryCliCommand, tail: EnvelopeTail): string {
   return JSON.stringify(
     { contractVersion: CONTRACT_VERSION, command, ...tail },
     null,
@@ -228,7 +222,7 @@ export function envelope(
 }
 
 export function failure(
-  command: ItemQueryCommand,
+  command: QueryCliCommand,
   diagnostic: Diagnostic,
 ): string {
   return envelope(command, { ok: false, diagnostic });
@@ -237,7 +231,7 @@ export function failure(
 /** The answer of a query whose id names a query that is still running. */
 export function queryIdInUseFailure(
   id: string,
-  command: ItemQueryCommand,
+  command: QueryCliCommand,
 ): string {
   return failure(
     command,

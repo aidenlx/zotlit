@@ -1052,6 +1052,7 @@ export interface DecodeFault {
   readonly hint?: string;
   readonly issue?: {
     readonly path: string;
+    readonly span?: { readonly from: number; readonly to: number };
     readonly expected: string;
     readonly received: string;
     readonly keys?: readonly (string | number)[];
@@ -1105,13 +1106,18 @@ export function diagnoseDecode(
     issue?.input !== null && typeof issue?.input === "object"
       ? JSON.stringify(issue.input)
       : issue?.received;
-  const message = jsonIssue
-    ? `${issue.path} received ${found}; expected ${expected.map((value) => (issue.allowed ? JSON.stringify(value) : value)).join(" or ")}.`
-    : fault.message;
+  const message =
+    jsonIssue && !issue.span
+      ? `${issue.path} received ${found}; expected ${expected.map((value) => (issue.allowed ? JSON.stringify(value) : value)).join(" or ")}.`
+      : fault.message;
   const hint = suggestions.length
     ? `Try: ${suggestions[0]}`
     : (fault.hint ?? action);
-  const entry = typeof issue?.input === "string" ? issue.input : (found ?? "");
+  const entry = issue?.span
+    ? raw
+    : typeof issue?.input === "string"
+      ? issue.input
+      : (found ?? "");
   const diagnostic = renderDiagnostic(
     {
       code: "invalid-argument",
@@ -1119,7 +1125,11 @@ export function diagnoseDecode(
       hint,
       location: {
         argument: fault.parameter,
-        ...(jsonIssue ? { span: { from: 0, to: entry.length } } : {}),
+        ...(issue?.span
+          ? { span: issue.span }
+          : jsonIssue
+            ? { span: { from: 0, to: entry.length } }
+            : {}),
         ...(issue
           ? {
               path: issue.path,
@@ -1137,6 +1147,7 @@ export function diagnoseDecode(
     ...diagnostic,
     location: {
       argument: fault.parameter,
+      ...(issue?.span ? { span: issue.span } : {}),
       ...(issue
         ? {
             path: issue.path,

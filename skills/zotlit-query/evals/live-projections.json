@@ -1,8 +1,8 @@
 {
   "reading_plan": {
     "envelope": {
-      "contractVersion": 2,
-      "command": "zotlit:annotation-query",
+      "contractVersion": 3,
+      "command": "zotlit:query",
       "ok": true,
       "identity": {
         "vault": {
@@ -35,7 +35,8 @@
         }
       ],
       "request": {
-        "libraries": ["personal", "group:118", "group:990117", "group:4200309"],
+        "from": "annotations",
+        "library": ["personal", "group:118", "group:990117", "group:4200309"],
         "filter": "item.itemType == \"journalArticle\" && item.tags.contains(\"query-annotation-eval\")",
         "fields": [
           "type",
@@ -182,8 +183,8 @@
       "validPng": null
     },
     "itemEnvelope": {
-      "contractVersion": 2,
-      "command": "zotlit:item-query",
+      "contractVersion": 3,
+      "command": "zotlit:query",
       "ok": true,
       "identity": {
         "vault": {
@@ -216,7 +217,8 @@
         }
       ],
       "request": {
-        "libraries": ["personal", "group:118", "group:990117", "group:4200309"],
+        "from": "items",
+        "library": ["personal", "group:118", "group:990117", "group:4200309"],
         "filter": "itemType == \"journalArticle\" && tags.contains(\"query-annotation-eval\")",
         "fields": ["title", "itemType", "tags"],
         "sort": [
@@ -275,8 +277,8 @@
   },
   "attachment": {
     "envelope": {
-      "contractVersion": 2,
-      "command": "zotlit:annotation-query",
+      "contractVersion": 3,
+      "command": "zotlit:query",
       "ok": true,
       "identity": {
         "vault": {
@@ -296,7 +298,8 @@
         }
       ],
       "request": {
-        "libraries": ["group:118"],
+        "from": "annotations",
+        "library": ["group:118"],
         "filter": null,
         "fields": [
           "type",
@@ -380,8 +383,8 @@
   },
   "colors": {
     "envelope": {
-      "contractVersion": 2,
-      "command": "zotlit:annotation-query",
+      "contractVersion": 3,
+      "command": "zotlit:query",
       "ok": true,
       "identity": {
         "vault": {
@@ -399,7 +402,8 @@
         }
       ],
       "request": {
-        "libraries": ["personal"],
+        "from": "annotations",
+        "library": ["personal"],
         "filter": "type == \"highlight\" && colorName == \"blue\" && tags.contains(\"query-annotation-method\") && pageLabel == \"1\" && item.title == \"Figure design reading copy\"",
         "fields": [
           "text",
@@ -464,8 +468,8 @@
   },
   "missing_source": {
     "envelope": {
-      "contractVersion": 2,
-      "command": "zotlit:annotation-query",
+      "contractVersion": 3,
+      "command": "zotlit:query",
       "ok": true,
       "identity": {
         "vault": {
@@ -498,7 +502,8 @@
         }
       ],
       "request": {
-        "libraries": ["personal", "group:118", "group:990117", "group:4200309"],
+        "from": "annotations",
+        "library": ["personal", "group:118", "group:990117", "group:4200309"],
         "filter": "comment == \"Check this source when the file arrives.\"",
         "fields": [
           "comment",
@@ -558,8 +563,8 @@
   },
   "export_annotations": {
     "envelope": {
-      "contractVersion": 2,
-      "command": "zotlit:annotation-query",
+      "contractVersion": 3,
+      "command": "zotlit:query",
       "ok": true,
       "identity": {
         "vault": {
@@ -579,7 +584,8 @@
         }
       ],
       "request": {
-        "libraries": ["group:118"],
+        "from": "annotations",
+        "library": ["group:118"],
         "filter": null,
         "fields": ["type", "pageLabel", "text", "comment", "attachment.path"],
         "sort": [
@@ -661,8 +667,8 @@
       "validPng": null
     },
     "receipt": {
-      "contractVersion": 2,
-      "command": "zotlit:annotation-query",
+      "contractVersion": 3,
+      "command": "zotlit:query",
       "ok": true,
       "identity": {
         "vault": {
@@ -682,7 +688,8 @@
         }
       ],
       "request": {
-        "libraries": ["group:118"],
+        "from": "annotations",
+        "library": ["group:118"],
         "filter": null,
         "fields": ["type", "pageLabel", "text", "comment", "attachment.path"],
         "sort": [

@@ -34,7 +34,7 @@ const request: ExcerptRequest = {
   zoteroPngPath: "/zotero/cache/ABCDEFGH.png",
 };
 
-it("returns the Zotero cache path unchanged in the Item Query envelope", async () => {
+it("returns the Zotero cache path unchanged in the Annotation Image envelope", async () => {
   const answer = JSON.parse(
     await answerAnnotationImage(
       { key: "ABCDEFGH" },
