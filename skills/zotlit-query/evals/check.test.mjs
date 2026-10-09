@@ -14,16 +14,20 @@ function envelope(caseName) {
   const expected = oracle.cases[caseName];
   return {
     ok: true,
+    contractVersion: 3,
+    command: "zotlit:query",
+    warnings: [],
     identity: {
       source: { databasePath: join(root, "zotero-data", "zotero.sqlite") },
       vault: { path: join(root, "zt-fixture-vault") },
     },
     libraries: [{ type: "personal" }, { type: "group", groupID: 118 }],
     request: {
+      from: "items",
       limit: null,
       fields:
         caseName === "edge"
-          ? ["title", "date.year", "creators"]
+          ? ["title", "date.year", "creators", "library"]
           : [
               "title",
               "date.year",
@@ -39,6 +43,7 @@ function envelope(caseName) {
       values: {
         title: row.title,
         "date.year": row.year,
+        library: row.indexedKey.endsWith("g118") ? "group:118" : "personal",
         creators: [
           {
             fullName: row.firstCreator,
@@ -62,12 +67,16 @@ function annotationEnvelope(caseName) {
   const keys = expected.keys;
   return {
     ok: true,
+    contractVersion: 3,
+    command: "zotlit:query",
+    warnings: [],
     identity: {
       source: { databasePath: join(root, "zotero-data", "zotero.sqlite") },
       vault: { path: join(root, "zt-fixture-vault") },
     },
     libraries: [{ type: "personal" }],
     request: {
+      from: "annotations",
       limit: null,
       fields:
         caseName === "position"
@@ -112,12 +121,14 @@ function annotationEnvelope(caseName) {
 function expandedEnvelope(caseName) {
   const expected = oracle.cases[caseName];
   const request = {
+    from: "annotations",
     limit: null,
     fields: [
       "type",
       "pageLabel",
       "text",
       "comment",
+      "library",
       "colorName",
       "tags",
       "pageIndex",
@@ -138,6 +149,9 @@ function expandedEnvelope(caseName) {
   };
   return {
     ok: true,
+    contractVersion: 3,
+    command: "zotlit:query",
+    warnings: [],
     identity: {
       source: { databasePath: join(root, "zotero-data", "zotero.sqlite") },
       vault: { path: join(root, "zt-fixture-vault") },
@@ -158,6 +172,7 @@ function expandedEnvelope(caseName) {
           text: row.text,
           comment: row.comment,
           colorName: row.colorName,
+          library: row.library,
           tags: row.tags,
           pageIndex: row.pageIndex,
           attachment: {
@@ -178,25 +193,20 @@ function expandedEnvelope(caseName) {
 }
 
 function readingPlanItems() {
-  const expected = oracle.cases.reading_plan;
+  const spec = oracle.cases.reading_plan;
   return {
     ok: true,
+    contractVersion: 3,
+    command: "zotlit:query",
+    warnings: [],
     identity: {
       source: { databasePath: join(root, "zotero-data", "zotero.sqlite") },
       vault: { path: join(root, "zt-fixture-vault") },
     },
-    libraries: [{ type: "personal" }, { type: "group", groupID: 118 }],
-    request: {
-      limit: null,
-      filter: 'tags.contains("query-annotation-eval")',
-      fields: ["title"],
-    },
+    request: { from: "items", fields: spec.fields, limit: null },
     truncated: false,
-    returnedCount: expected.items.length,
-    rows: expected.items.map((item) => ({
-      indexedKey: item.indexedKey,
-      values: { title: item.title },
-    })),
+    returnedCount: 3,
+    rows: structuredClone(spec.rows),
   };
 }
 
@@ -217,26 +227,27 @@ await test("accepts eight expanded Annotation Query cases and rejects missing ta
     "export_annotations",
   ])
     assert.deepEqual(
-      validate(name, expandedEnvelope(name), {
-        runRoot: root,
-        itemEnvelope: name === "reading_plan" ? readingPlanItems() : undefined,
-      }),
+      validate(
+        name,
+        name === "reading_plan" ? readingPlanItems() : expandedEnvelope(name),
+        {
+          runRoot: root,
+        },
+      ),
       [],
     );
 
-  const noItems = expandedEnvelope("reading_plan");
-  assert.match(
-    validate("reading_plan", noItems, { runRoot: root }).join("\n"),
-    /Item Query evidence is missing/,
-  );
   const wrongItem = readingPlanItems();
   wrongItem.rows.pop();
   assert.match(
-    validate("reading_plan", noItems, {
-      runRoot: root,
-      itemEnvelope: wrongItem,
-    }).join("\n"),
-    /Item Query has wrong papers/,
+    validate("reading_plan", wrongItem, { runRoot: root }).join("\n"),
+    /missing/,
+  );
+  const noItems = readingPlanItems();
+  delete noItems.rows;
+  assert.match(
+    validate("reading_plan", noItems, { runRoot: root }).join("\n"),
+    /rows are missing/,
   );
 
   const shared = expandedEnvelope("shared_marks");

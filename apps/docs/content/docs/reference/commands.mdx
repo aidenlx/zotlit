@@ -454,42 +454,95 @@ Opens the release notes for the installed ZotLit version.
 
 The two <UiLabel name={m.template_workbench_open_layout()} /> rows are separate commands. The first opens the profile document you are editing; the second brings the Workbench forward from inside the view.
 
-## Query CLI
+## Query CLI [#query-cli]
 
-The Query CLI reads Zotero Items and Annotations for agents and scripts. The `items` dataset contains top-level Items outside the trash. The `annotations` dataset contains their Annotations through non-trashed Attachments.
+The Query CLI reads works, files, and reading marks for agents and scripts. One `zotlit:query` command selects a Query Dataset with `from`.
 
-| Command                   | Parameters                                                                                   | Result                                                                    |
-| ------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `zotlit:query`            | `from`, `filter`, `fields`, `sort`, `limit`, `library`, `item`, `attachment`, `output`, `id` | One Query Row per matching Item or Annotation                             |
-| `zotlit:query-schema`     | `from`                                                                                       | The schema URL, source custom fields, and defaults                        |
-| `zotlit:query-guide`      | `topic`                                                                                      | Instructions for one topic, or the full guide when `topic` is omitted     |
-| `zotlit:annotation-image` | `key`                                                                                        | The local PNG path, format, and provenance for an image or ink Annotation |
-| `zotlit:query-cancel`     | `id`                                                                                         | Whether ZotLit found the named query and requested its cancel             |
+| Command                   | Parameters                                                                      | Result                                                                    |
+| ------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `zotlit:query`            | `from`, `filter`, `fields`, `sort`, `group`, `limit`, `library`, `output`, `id` | One Query Row per matching Item, Attachment, or Annotation                |
+| `zotlit:query-schema`     | `from`                                                                          | The schema URL, source custom fields, dataset fields, and defaults        |
+| `zotlit:query-guide`      | `topic`                                                                         | Instructions for one topic, or the full guide when `topic` is omitted     |
+| `zotlit:annotation-image` | `key`                                                                           | The local PNG path, format, and provenance for an image or ink Annotation |
+| `zotlit:query-cancel`     | `id`                                                                            | Whether ZotLit found the named query and requested its cancel             |
 
 `zotlit:query` uses these parameters:
 
-| Parameter | Value                                                                                                                                                        |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `from`    | `items` or `annotations`. The default is `items`.                                                                                                            |
-| `filter`  | A Filter Expression. Annotation fields use bare names. Parent Item fields use the `item.` prefix.                                                            |
-| `fields`  | A comma-separated list of Projection Paths or a JSON array. `fields=[]` returns identity-only rows.                                                          |
-| `sort`    | A comma-separated list or a JSON array of `{ "field", "direction" }` objects. Use `-field` for descending order and `field` or `+field` for ascending order. |
-| `limit`   | A positive integer or `all`. The default is 100.                                                                                                             |
-| `library` | `personal`, `group:<groupID>`, a comma-separated list, a JSON array, or `all`. The default comes from the Library Scope setting.                             |
-| `output`  | A new absolute file path for the complete JSON result.                                                                                                       |
-| `id`      | A query ID used by `zotlit:query-cancel`.                                                                                                                    |
+| Parameter | Value                                                                                                                                              |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `from`    | `items`, `attachments`, or `annotations`. The default is `items`.                                                                                  |
+| `filter`  | A Filter Expression over the selected dataset and its related records.                                                                             |
+| `fields`  | A comma list of Projection Paths or a JSON array. `fields=[]` returns identity-only rows.                                                          |
+| `sort`    | A comma list or a JSON array of `{ "field", "direction" }` objects. Use `-field` for descending order and `field` or `+field` for ascending order. |
+| `group`   | One scalar Projection Path. The result contains one group for each value.                                                                          |
+| `limit`   | A positive integer or `all`. The default is 100. In a grouped query, the limit applies inside each group.                                          |
+| `library` | `personal`, `group:<groupID>`, a comma list, a JSON array, or `all`. The default comes from the Library Scope setting.                             |
+| `output`  | A new absolute file path for the complete JSON result.                                                                                             |
+| `id`      | A query ID used by `zotlit:query-cancel`.                                                                                                          |
 
 ZotLit splits `fields` and `sort` at commas outside quotes and brackets.
 
-For `from=annotations`, the `item` and `attachment` parameters select one Indexed Key or a JSON array of Indexed Keys. Each key selects its own Library. A request with `item` or `attachment` cannot also use `library`.
+### Query datasets
 
-The single `query.schema.json` catalog has `datasets.items` and `datasets.annotations`, plus the shared functions, methods, properties, and types. `zotlit:query-schema` returns one `schema.url`, one `customFields` list, and `defaults` keyed by dataset. Add `from=items` or `from=annotations` to narrow `datasets` and `defaults` to one dataset.
+Choose the dataset that represents one result row:
 
-`zotlit:query-guide` accepts `datasets`, `filter`, `fields`, `sort`, `results`, `schema`, or `cancel` as its topic. Omit `topic` to print the full guide.
+| `from` value  | One row represents | Dataset contents                                                                   | Related records              |
+| ------------- | ------------------ | ---------------------------------------------------------------------------------- | ---------------------------- |
+| `items`       | A work             | Top-level Items outside the trash                                                  | `attachments`, `annotations` |
+| `attachments` | A file or URL      | Non-trashed Attachments of top-level, non-trashed Items                            | `item`, `annotations`        |
+| `annotations` | A reading mark     | Non-trashed Annotations on non-trashed Attachments of top-level, non-trashed Items | `item`, `attachment`         |
+
+Standalone Attachments are outside these datasets. Relation Lists contain records from the same dataset universes. Use list methods in filters and an explicit `[]` in Projection Paths.
+
+For example, this query finds papers with no PDF that ZotLit can open on this computer:
+
+```bash
+obsidian zotlit:query filter='attachments.filter(value.contentType == "application/pdf" && value.exists).isEmpty()' fields=title,citationKey
+```
+
+Start from Attachments when each file must be one row. This query finds missing linked files:
+
+```bash
+obsidian zotlit:query from=attachments filter='linkMode == "linked_file" && !exists' fields=item.title,path
+```
+
+Select a record by Indexed Key in the filter. Use `indexedKey` for a row, `item.indexedKey` for its parent Item, or `attachment.indexedKey` for an Annotation's parent Attachment. A key outside the Target Libraries gives a Query Warning. The Target Libraries stay unchanged.
+
+### Projection and grouping
+
+A path such as `attachments[].path` returns one value for each Attachment. It keeps source order and keeps `null` in its original position. A complete related record has a fixed summary:
+
+| Record     | Summary fields                                                     |
+| ---------- | ------------------------------------------------------------------ |
+| Item       | `indexedKey`, `title`, `citationKey`                               |
+| Attachment | `indexedKey`, `title`, `contentType`, `linkMode`, `path`, `exists` |
+| Annotation | `indexedKey`, `type`, `text`, `comment`, `pageLabel`, `pageIndex`  |
+
+`group` accepts one scalar path. This command counts Attachments by content type:
+
+```bash
+obsidian zotlit:query from=attachments group=contentType
+```
+
+Each group contains `value`, `count`, and `rows`. `count` is the number of matches before the per-group limit. `totalCount` counts all matches, and `returnedCount` counts the returned rows.
+
+This command returns the three most recent marks for each paper:
+
+```bash
+obsidian zotlit:query from=annotations group=item.indexedKey sort=-dateModified limit=3 fields=text,item.title
+```
+
+### Schema, guide, and results
+
+The single `query.schema.json` catalog has `datasets.items`, `datasets.attachments`, and `datasets.annotations`. It also has the shared functions, methods, properties, and types. `zotlit:query-schema` returns the catalog URL, source custom fields, and defaults by dataset. Add `from=items`, `from=attachments`, or `from=annotations` to narrow the live response.
+
+`zotlit:query-guide` accepts `datasets`, `filter`, `fields`, `sort`, `group`, `results`, `schema`, or `cancel` as its topic. Omit `topic` to print the full guide.
 
 Query results use CLI Contract version 3. The JSON envelope has `command: "zotlit:query"`; `request.from` names the dataset, and `request.library` names its Libraries. The top-level `libraries` field describes the Libraries that ZotLit read.
 
-Every Annotation Row contains the Annotation, Attachment, and parent Item Indexed Keys. Its default values include `pageLabel`, `pageIndex`, `hasExcerptImage`, Attachment details, Item title, and Citation Key. Request `position` in `fields` when source geometry is required. Read `attachment.path` to open the source document when `attachment.exists` is true.
+Read `warnings` before you report an empty result. On failure, read `diagnostic.report` and follow its final recovery action.
+
+Every Attachment Row contains the Attachment and parent Item Indexed Keys. Every Annotation Row also contains its parent Attachment Indexed Key. Annotation default values include `pageLabel`, `pageIndex`, `hasExcerptImage`, Attachment details, Item title, and Citation Key. Request `position` in `fields` when source geometry is required. Read `attachment.path` to open the source document when `attachment.exists` is true.
 
 When `hasExcerptImage` is true, pass the Annotation Indexed Key as `key` to `zotlit:annotation-image`. The command returns a file path instead of image bytes.
 
@@ -510,6 +563,11 @@ See [Template Workbench CLI](/docs/reference/template-workbench-cli) for every c
 ## See also
 
 <Cards>
+  <Card
+    title="Query your Zotero library"
+    description="Find works, inspect files, and summarize reading marks from the Obsidian CLI."
+    href="/docs/how-to/query-zotero-library"
+  />
   <Card
     title="Install the ZotLit skill"
     description="Install the agent workflow that uses the Template Workbench."

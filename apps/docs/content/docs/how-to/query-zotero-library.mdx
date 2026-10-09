@@ -1,0 +1,125 @@
+---
+title: "How to query your Zotero library"
+description: "Use ZotLit Query to find works, inspect files, and summarize reading marks from the Obsidian CLI."
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+
+ZotLit Query reads works, files, and reading marks from your Zotero libraries. Use it when you need a result as JSON.
+
+## Before you start
+
+You need Obsidian desktop with ZotLit loaded and the [Obsidian CLI](https://obsidian.md/help/cli) activated. Run the commands from a terminal.
+
+## Run a query
+
+<Steps>
+  <Step>
+    ### Choose one result row
+
+    Set `from` to the record that each result row represents:
+
+    - Use `from=items` for papers and books. This is the default.
+    - Use `from=attachments` for files and links.
+    - Use `from=annotations` for highlights, notes, images, and ink.
+
+  </Step>
+  <Step>
+    ### Check the available fields
+
+    Run the schema command for your Query Dataset:
+
+    ```bash
+    obsidian zotlit:query-schema from=items
+    ```
+
+    The response gives the schema download, source custom fields, and defaults. Use `from=attachments` or `from=annotations` to inspect another dataset.
+
+  </Step>
+  <Step>
+    ### Run the question
+
+    This command finds papers with no PDF that ZotLit can open on this computer:
+
+    ```bash
+    obsidian zotlit:query filter='attachments.filter(value.contentType == "application/pdf" && value.exists).isEmpty()' fields=title,citationKey
+    ```
+
+    Add `vault=<vault-name>` after `obsidian` when more than one vault is open.
+
+  </Step>
+  <Step>
+    ### Read the response
+
+    A successful response has `ok: true`, the effective request, and `rows` or `groups`. Read `warnings` before you treat an empty result as final.
+
+    Check `truncated` to see whether more rows matched. Add `limit=all` when you need every match.
+
+    A failed response has `ok: false`. Read `diagnostic.report`, follow its final recovery action, and run the corrected query.
+
+  </Step>
+</Steps>
+
+## Adapt common research questions
+
+### Which linked files are missing?
+
+Start from Attachments so each file has one row:
+
+```bash
+obsidian zotlit:query from=attachments filter='linkMode == "linked_file" && !exists' fields=item.title,path
+```
+
+### How many files have each content type?
+
+Group Attachments by `contentType`:
+
+```bash
+obsidian zotlit:query from=attachments group=contentType
+```
+
+Each group has a `value`, an exact `count`, and its returned `rows`.
+
+### Which papers in a collection have no highlights?
+
+Filter the Item's Annotation Relation List:
+
+```bash
+obsidian zotlit:query filter='collections.within("Thesis") && annotations.filter(value.type == "highlight").isEmpty()' fields=title,citationKey
+```
+
+### What are the three most recent marks on each paper?
+
+Start from Annotations and group by the parent paper:
+
+```bash
+obsidian zotlit:query from=annotations group=item.indexedKey sort=-dateModified limit=3 fields=text,item.title
+```
+
+`limit` applies inside each group. The group's `count` gives the total matches before that limit.
+
+### Where are the files for one paper?
+
+Select the parent Item by its Indexed Key in the filter:
+
+```bash
+obsidian zotlit:query from=attachments filter='item.indexedKey == "ABCD2345"' fields=title,contentType,path
+```
+
+Replace `ABCD2345` with the paper's Indexed Key. A key from a group library ends with `g` and the group ID.
+
+## See also
+
+<Cards>
+  <Card
+    title="Commands"
+    description="Query parameters, datasets, Relation Lists, projections, grouping, and result envelopes."
+    href="/docs/reference/commands#query-cli"
+  />
+  <Card
+    title="Explore template data"
+    description="Copy an Item or Annotation Indexed Key from Obsidian or Zotero."
+    href="/docs/how-to/explore-template-data#indexed-key"
+  />
+</Cards>

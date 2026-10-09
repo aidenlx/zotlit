@@ -1,43 +1,75 @@
-# ZotLit Query persona evaluations
+# ZotLit Query research evaluations
 
-These 15 cases test the ZotLit Query skill with a controlled Zotero Fixture. The Item Query cases cover selection, export, and Indexed Key edge cases. The Annotation Query cases cover reading records, parent filters, Item-to-Annotation work, Library and Attachment identities, colors, pages, source files, file export, diagnostic recovery, positions, and Excerpt Images.
+The 28 cases test research answers and contract usability: 15 existing tasks and all 13 extra questions from `prototype/query-cli-redesign:packages/item-query/prototype-query-cli/cases.mjs`. Questions in `cases.json` are the agent's task; `oracle.json` holds expected answers and reference requests. Agents see the skill, one version-matched schema catalog, live CLI output, and their own files. Observed reads of evaluator sources fail the run.
 
-Each run creates a private vault and a copy of the generated Fixture database under `.scratch/zotlit-query-evals/`. The runner seeds the Query corpus, checks the live source identity, runs one Codex agent, checks its saved query result and final answer, writes a report, then removes the private vault and database. It keeps the database and reports recovery paths when vault removal fails. It never reads a personal Zotero database.
+Each run builds a private Fixture vault, copies and seeds its database, checks source identity, runs one agent, checks the saved Query Result and final answer, and removes the private vault and database. If vault removal fails, it retains the database and reports recovery paths. It does not use a personal Zotero database.
 
-Build the Obsidian development plugin and keep desktop Obsidian open with a host vault. The Codex CLI must be signed in. Pass the model and reasoning effort explicitly. For this bounded CLI workflow, `gpt-5.6-sol` with `high` effort fits the multiple command surfaces and the cost of accepting a false positive.
+## Run
 
-```sh
-pnpm exec turbo run build:dev --filter=@zotlit/obsidian
-node skills/zotlit-query/evals/run.mjs include --model gpt-5.6-sol --effort high
-node skills/zotlit-query/evals/run.mjs export --model gpt-5.6-sol --effort high
-node skills/zotlit-query/evals/run.mjs edge --model gpt-5.6-sol --effort high
-node skills/zotlit-query/evals/run.mjs annotations --model gpt-5.6-sol --effort high
-node skills/zotlit-query/evals/run.mjs mixed --model gpt-5.6-sol --effort high
-node skills/zotlit-query/evals/run.mjs position --model gpt-5.6-sol --effort high
-node skills/zotlit-query/evals/run.mjs image --model gpt-5.6-sol --effort high
-node skills/zotlit-query/evals/run.mjs reading_plan --model gpt-5.6-sol --effort high
-node skills/zotlit-query/evals/run.mjs shared_marks --model gpt-5.6-sol --effort high
-node skills/zotlit-query/evals/run.mjs attachment --model gpt-5.6-sol --effort high
-node skills/zotlit-query/evals/run.mjs colors --model gpt-5.6-sol --effort high
-node skills/zotlit-query/evals/run.mjs reverse_pages --model gpt-5.6-sol --effort high
-node skills/zotlit-query/evals/run.mjs missing_source --model gpt-5.6-sol --effort high
-node skills/zotlit-query/evals/run.mjs repair_filter --model gpt-5.6-sol --effort high
-node skills/zotlit-query/evals/run.mjs export_annotations --model gpt-5.6-sol --effort high
-```
-
-`--timeout-minutes` sets the agent deadline from 1 to 30 minutes; the default is 10. The runner prints the report path. It keeps `report.json`, `check.json`, `answer.json`, `result.json`, `agent-events.jsonl`, and `agent-stderr.txt` for each run. The image case also keeps `image.json`; `reading_plan` keeps `item-result.json`; `export_annotations` keeps `export-receipt.json`. The agent receives a copy of the skill, both query schema catalogs, and one prompt from [cases.json](cases.json). It does not receive [oracle.json](oracle.json). The runner rejects observed reads of evaluator sources.
-
-The Item Query corpus has 125 tagged journal articles and three edge-case books across My Library and Lab Archive. The Annotation Query corpus adds two marked copies of a figure-design paper with shared bare Zotero keys, one unmarked paper, and one mark whose source file is missing. Its PDF copies contain the committed *Ten Simple Rules for Better Figures* PDF; their quoted text and positions follow reviewed Fixture Annotations. The Fixture's original paper has eight Annotations in reading order, including the image Annotation `FDRFQ7C2`. The image case requires the agent to query that Annotation, follow `hasExcerptImage`, call `zotlit:annotation-image`, and read the returned PNG.
-
-The report separates `environment` failures during setup or process execution, `agent` failures for missing or malformed agent output, and `task` failures in a complete result or answer. Its metrics distinguish Item Query, Annotation Query, and Excerpt Image calls. `contextualBytes` counts completed shell output visible in the Codex event log as a context-use proxy.
-
-The helper and checker can also run without an agent. Prepare requires an existing generated Fixture root and a new destination inside this repository's `.scratch` directory:
+Keep desktop Obsidian open with its CLI enabled. Build the development plugin. Sign in to the selected CLI. Run desktop work sequentially through the shared lock:
 
 ```sh
-node skills/zotlit-query/evals/prepare.mjs "$PWD/.scratch/acceptance-fixture" "$PWD/.scratch/zotlit-query-eval-manual"
-node skills/zotlit-query/evals/check.mjs annotations "$PWD/.scratch/zotlit-query-eval-manual/results/annotations.json" "$PWD/.scratch/zotlit-query-eval-manual"
-node skills/zotlit-query/evals/check.mjs reading_plan "$PWD/.scratch/zotlit-query-eval-manual/results/reading-plan-annotations.json" "$PWD/.scratch/zotlit-query-eval-manual" "$PWD/.scratch/zotlit-query-eval-manual/results/reading-plan-items.json"
-node --test skills/zotlit-query/evals/*.test.mjs
+taskpolicy -c utility lockf -k /tmp/zotlit-query-gate.lock pnpm exec turbo run build:dev --filter=@zotlit/obsidian --concurrency=1
+taskpolicy -c utility lockf -k /tmp/zotlit-query-gate.lock caffeinate -i node skills/zotlit-query/evals/run.mjs include --agent codex --model gpt-6.1-sol --effort high
+taskpolicy -c utility lockf -k /tmp/zotlit-query-gate.lock caffeinate -i node skills/zotlit-query/evals/run.mjs include --agent claude --model claude-sonnet-5-5 --effort high
 ```
 
-The checker reads the complete JSON envelope saved at the result path. Its database and vault identity must match the prepared copy. The tests build a temporary Fixture, prove byte-identical seeds, and use a fake agent to check pass, wrong answer, timeout, and cleanup paths. They do not start a model session.
+Run every case once per model on the final integration branch:
+
+```sh
+taskpolicy -c utility lockf -k /tmp/zotlit-query-gate.lock caffeinate -i node skills/zotlit-query/evals/run.mjs all --agent codex --model gpt-6.1-sol --effort high
+taskpolicy -c utility lockf -k /tmp/zotlit-query-gate.lock caffeinate -i node skills/zotlit-query/evals/run.mjs all --agent claude --model claude-sonnet-5-5 --effort high
+```
+
+`--agent` defaults to `codex`; model and effort are explicit. `--timeout-minutes` accepts 1–30 and defaults to 10. A batch runs cases sequentially, continues after a failed case, and writes `summary.json` and `summary.md` under `.scratch/zotlit-query-evals/<run>/`. Interrupting a run stops the agent process group and cleans up its vault.
+
+Codex runs `exec --json --ephemeral --sandbox workspace-write --output-schema`. Claude runs `-p --output-format stream-json --verbose --json-schema`, with the prompt on stdin and the agent folder as its working directory. Both receive the same answer schema. Claude's `--effort` accepts the requested effort. Its restricted mode confines file tools to the working directory; Bash runs in its enabled sandbox with unsandboxed execution disabled. `dontAsk` plus allowed Bash/Read/Write/Edit tools permits unattended work. The sandbox allows the Obsidian CLI socket and denies writes to the shared Git directory. It fails at startup if sandboxing is unavailable. Safe mode and strict MCP configuration keep local hooks and connectors out of the evaluation. OS temporary files remain available to the CLI runtime. These settings follow the [Claude sandbox documentation](https://code.claude.com/docs/en/sandboxing).
+
+The tiny `claude-sample.jsonl` records a real Claude Code 2.1.296 Bash exchange and structured final output. Session IDs, billing, and unrelated metadata were removed. Parser tests also cover warnings, failures, retries, duplicate events, and evaluator reads.
+
+## Corpus and coverage
+
+The base Fixture provides real source documents, an Excerpt Image, multiple Libraries, and a deliberately missing linked file. The eval seed adds:
+
+- 125 tagged articles and three books for completeness, long exports, custom fields, creator roles, and shared bare keys.
+- The same marked paper and bare Annotation key in My Library and Lab Archive, an unmarked paper, and a mark on a missing source.
+- Five papers in **Query thesis**, with zero, one, and two PDFs; marks on both PDF editions; a missing linked file; a publisher link with no local path; EPUB and snapshot Attachments; and an Attachment Tag.
+
+| Prototype case | Research task |
+| --- | --- |
+| no_usable_pdf | Papers without an available PDF |
+| broken_links | Missing linked files |
+| duplicate_pdfs | Papers with two PDFs and each file's tags |
+| recently_annotated | Papers marked in a fixed date interval, each once |
+| count_per_paper | Marks per paper across editions |
+| count_by_year | Papers by publication year, including missing years |
+| unread_in_collection | Collection papers without highlights |
+| attachment_types | Files counted by type |
+| fuzzy_search | Explain unavailable fuzzy search, then use the requested literal fallback |
+| files_of_paper | All files of one paper, including a publisher link |
+| csv_for_advisor | Convert verified JSON locally to a CSV |
+| recent_with_pdf_unread | Recent papers with files and no to-read tag |
+| chinese_title | Titles containing Chinese text |
+
+The prototype's `search=` and `format=csv` forms are outside ADR 0071. Those tasks test honest capability reporting and local conversion. The date case uses January–April 2024 so the expected answer stays stable. The reading-plan case now starts from Items and returns Annotation summaries, retaining zero-mark papers in one query.
+
+## Evidence and design issues
+
+Each case keeps `report.json`, `report.md`, `check.json`, `answer.json`, `result.json`, `agent-events.jsonl`, and `agent-stderr.txt`. Image and export cases retain their receipts; the CSV case retains `advisor.csv`.
+
+Reports separate environment failures, missing or malformed agent output, and wrong task answers. Metrics count observed Query calls by dataset, schema, guide, and Annotation Image calls. `contextualBytes` measures completed tool-output bytes visible to the agent, including Claude Read results. It is a context-use proxy, not a token count.
+
+Each report has **Misreadings**: the command, Diagnostic Report or Query Warnings, retry status, and observed recovery command. A successful final answer can still have misreadings. Recovery means a later successful response on that command surface; a maintainer must confirm whether it resolves the original mistake. Review these entries, excess calls, and task failures together for wrong datasets, path forms, guessed fields, and recovery loops. Triage each candidate design issue before closing the spec.
+
+`live-projections.json` contains saved live projections and labelled contract examples. `corpus-query.test.mjs` checks all 28 reference queries against the real seeded database, independently of the final-answer checker. Runner tests exercise both agent paths and batch ordering without starting model sessions.
+
+```sh
+taskpolicy -c utility lockf -k /tmp/zotlit-query-gate.lock node --test skills/zotlit-query/evals/*.test.mjs
+```
+
+For manual evidence checks, prepare a new corpus inside `.scratch`, then run the checker on a saved full envelope:
+
+```sh
+node skills/zotlit-query/evals/prepare.mjs "$PWD/.scratch/acceptance-fixture" "$PWD/.scratch/query-manual"
+node skills/zotlit-query/evals/check.mjs no_usable_pdf /absolute/query-result.json "$PWD/.scratch/query-manual"
+```
