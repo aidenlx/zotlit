@@ -122,10 +122,13 @@ export interface FilterPlan {
    * The custom fields the filter names. The source decides whether each one
    * exists, so the engine checks them when it has read the field vocabulary.
    */
-  readonly customFields: readonly (Span & {
-    readonly name: string;
-    readonly bare: boolean;
-  })[];
+  readonly customFields: readonly FilterCustomFieldUse[];
+}
+
+interface FilterCustomFieldUse extends Span {
+  readonly name: string;
+  readonly bare: boolean;
+  readonly deferred?: Extract<Fault, { kind: "unknown" }>;
 }
 
 type FilterFailure = Extract<
@@ -168,7 +171,7 @@ export function planFilter(text: string): FilterPlan | FilterProblem {
     return { kind: "syntax", fault: error };
   }
   const needs: FieldNeeds[] = [];
-  const customFields: (Span & { name: string; bare: boolean })[] = [];
+  const customFields: FilterCustomFieldUse[] = [];
   try {
     const warnings: Extract<Fault, { kind: "constant" }>[] = [];
     const root = new Validator(needs, customFields, warnings).node(ast);
@@ -328,13 +331,13 @@ function mismatch(
 
 class Validator {
   readonly #needs: FieldNeeds[];
-  readonly #customFields: (Span & { name: string; bare: boolean })[];
+  readonly #customFields: FilterCustomFieldUse[];
   /** The names the enclosing element expressions bind, innermost last. */
   readonly #scopes: (readonly string[])[] = [];
 
   constructor(
     needs: FieldNeeds[],
-    customFields: (Span & { name: string; bare: boolean })[],
+    customFields: FilterCustomFieldUse[],
     readonly warnings: Extract<Fault, { kind: "constant" }>[],
   ) {
     this.#needs = needs;
@@ -421,7 +424,7 @@ class Validator {
         if (isCustomRoot(ast.object)) {
           return this.#customField(ast.property, span, false);
         }
-        return this.#property(this.node(ast.object), ast.property, span);
+        return this.#objectAccess(ast, span);
       case "array-access": {
         if (isCustomRoot(ast.object)) {
           if (ast.index.type !== "string") {
@@ -447,6 +450,52 @@ class Validator {
       case "call":
         return this.#call(ast, span);
     }
+  }
+
+  #objectAccess(
+    ast: Extract<ExpressionNode, { type: "object-access" }>,
+    span: Span,
+  ): FilterNode {
+    const subject = this.node(ast.object);
+    // Only a chain of identifiers has the ambiguous source-field spelling.
+    // Bracket access already names an exact custom field.
+    let root: ExpressionNode = ast;
+    const parts: string[] = [];
+    while (root.type === "object-access") {
+      parts.unshift(root.property);
+      root = root.object;
+    }
+    if (root.type === "identifier" && root.name !== "custom")
+      parts.unshift(root.name);
+    const useIndex =
+      root.type === "identifier"
+        ? this.#customFields.findIndex((use) => use.from === root.from)
+        : -1;
+    const use = this.#customFields[useIndex];
+    let deferred = use?.deferred;
+    if (!deferred) {
+      try {
+        return this.#property(subject, ast.property, span);
+      } catch (error) {
+        if (
+          !(error instanceof Invalid) ||
+          error.problem.kind !== "unknown" ||
+          error.problem.role !== "property" ||
+          !use
+        )
+          throw error;
+        deferred = error.problem;
+      }
+    }
+    const name = parts.join(".");
+    this.#customFields[useIndex] = { ...span, name, bare: use!.bare, deferred };
+    return {
+      ...span,
+      kind: "property",
+      name: ast.property,
+      subject,
+      valueType: "unknown",
+    };
   }
 
   /** The RegExp of a literal, built once; a pattern or flag the engine rejects fails the query. */

@@ -25,6 +25,14 @@ export interface ScenarioQuery {
  * sorted query with a projection.
  */
 const FILTERS: readonly string[] = [
+  'review.status == "include"',
+  'custom.review.status == "include"',
+  'custom["reviewStatus"] == "include"',
+  'mood2 == "include"',
+  'review.status.more == "include"',
+  'custom.review.status.more == "include"',
+  'tags == "bulk" && review.status == "include"',
+  'mood.length > 0 && custom["review.status"].length > 0',
   'tags == "bulk"',
   'tags != "bulk"',
   'date.year == "2019"',
