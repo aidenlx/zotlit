@@ -7,6 +7,8 @@
 
 import type { CliFlag, CliFlags } from "obsidian";
 
+import type { ItemQueryError } from "@zotlit/item-query";
+
 export const ITEM_QUERY_COMMAND = "zotlit:item-query" as const;
 export const ITEM_QUERY_CANCEL_COMMAND = "zotlit:item-query-cancel" as const;
 export const ITEM_QUERY_SCHEMA_COMMAND = "zotlit:item-query-schema" as const;
@@ -116,3 +118,28 @@ export const DIAGNOSTIC_HINTS = {
   "unsupported-database-layout":
     "Ask the user to update ZotLit: this ZotLit version cannot read the way their Zotero version stores its data. Running the command again gives the same result until then.",
 } as const satisfies Record<string, string>;
+
+type AdapterDiagnosticCode = keyof typeof DIAGNOSTIC_HINTS;
+
+/** The failure of an Item Query command, as its envelope carries it. */
+export interface Diagnostic {
+  code: AdapterDiagnosticCode | ItemQueryError["code"];
+  message: string;
+  hint: string;
+  /** Where an invalid query went wrong. */
+  location?: ItemQueryError["location"];
+  details?: { parameter: string };
+}
+
+export function diagnostic(
+  code: AdapterDiagnosticCode,
+  message: string,
+  options: { details?: Diagnostic["details"] } = {},
+): Diagnostic {
+  return {
+    code,
+    message,
+    hint: DIAGNOSTIC_HINTS[code],
+    details: options.details,
+  };
+}

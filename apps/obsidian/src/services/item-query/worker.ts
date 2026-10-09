@@ -70,10 +70,9 @@ async function answer(
           : undefined,
         openOutput,
       };
-      const handler = job.schema
-        ? createItemQuerySchemaHandler(deps)
-        : createItemQueryHandler(deps);
-      const text = await handler(job.params);
+      const text = job.schema
+        ? await createItemQuerySchemaHandler(deps)()
+        : await createItemQueryHandler(deps)(job.query);
       signal.throwIfAborted();
       return {
         answer: text,
