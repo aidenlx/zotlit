@@ -201,6 +201,7 @@ export {
 export { attachmentToTemplateData } from "./lib/context/zt-template-attach";
 export {
   annotationColorToName,
+  annotationColorsForName,
   type AnnotationColorName,
   highlightColorToName,
   textColorToName,

@@ -55,3 +55,5 @@ export {
   type AnnotationQueryOptions,
 } from "./query-annotations";
 export { DEFAULT_ANNOTATION_FIELDS } from "./annotation-fields";
+
+export { describeAnnotationQueryCustomFields } from "./describe-item-query-custom-fields";

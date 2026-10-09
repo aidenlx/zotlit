@@ -1,5 +1,6 @@
 import {
   annotationColorToName,
+  annotationColorsForName,
   annotationHasCacheImage,
   annotationTypeToName,
   formatIndexedKey,
@@ -10,10 +11,18 @@ import type {
   HydratedAnnotation,
 } from "@zotlit/db/item-query";
 
-import { annotationPageIndex } from "./annotation-position";
+import {
+  annotationPageIndex,
+  ANNOTATION_POSITION_SHAPE,
+  readAnnotationPosition,
+} from "./annotation-position";
 import { compareStrings } from "./collation";
-import { fieldDefinition } from "./fields";
+import { fieldDefinition, filterField, customFilterValue } from "./fields";
 import type { FieldDefinition, QueryItem, ValueShape } from "./fields";
+import { timestamp } from "./filter-dates";
+import { planFilter } from "./filter-plan";
+import type { FilterRegistry } from "./filter-plan";
+import type { FilterValue } from "./filter-values";
 import type { ProjectionValue } from "./request";
 
 export interface QueryAnnotation {
@@ -46,12 +55,31 @@ const boolean: ValueShape = { kind: "scalar", type: "boolean" };
 const field = (
   shape: ValueShape,
   read: (item: QueryAnnotation) => ProjectionValue,
-): FieldDefinition<QueryAnnotation> => ({ shape, needs: () => ({}), read });
+): FieldDefinition<QueryAnnotation> => ({
+  shape,
+  needs: () => ({}),
+  read,
+  ...(shape.kind === "scalar" || shape.kind === "list"
+    ? {
+        filter: {
+          type: shape.kind === "list" ? ("list" as const) : shape.type,
+          read: (item: QueryAnnotation) => read(item) as FilterValue,
+        },
+      }
+    : {}),
+});
 
 export const ANNOTATION_FIELDS = new Map<
   string,
   FieldDefinition<QueryAnnotation>
 >([
+  [
+    "position",
+    field(
+      ANNOTATION_POSITION_SHAPE,
+      (item) => readAnnotationPosition(item.annotation) as ProjectionValue,
+    ),
+  ],
   ["type", field(string, (item) => annotationTypeToName(item.annotation.type))],
   ...(["text", "comment", "color", "pageLabel", "authorName"] as const).map(
     (name) => [name, field(string, (item) => item.annotation[name])] as const,
@@ -119,8 +147,24 @@ export const ANNOTATION_FIELDS = new Map<
 export function annotationFieldDefinition(
   name: string,
 ): FieldDefinition<QueryAnnotation> | undefined {
+  if (name === "item.indexedKey")
+    return field(string, (item) =>
+      formatIndexedKey(item.scan.parent.key, item.groupID),
+    );
+  if (name === "item")
+    return {
+      shape: {
+        kind: "object",
+        keys: { indexedKey: string, title: string, citationKey: string },
+      },
+      needs: () => ({ builtIn: ["title", "citationKey"] }),
+      read: (item) => ({
+        indexedKey: formatIndexedKey(item.scan.parent.key, item.groupID),
+        title: fieldDefinition("title")!.read(item.parent),
+        citationKey: fieldDefinition("citationKey")!.read(item.parent),
+      }),
+    };
   if (!name.startsWith("item.")) return ANNOTATION_FIELDS.get(name);
-  if (name !== "item.title" && name !== "item.citationKey") return undefined;
   const parent = fieldDefinition(name.slice(5));
   return parent
     ? {
@@ -138,3 +182,81 @@ export function annotationFieldDefinition(
       }
     : undefined;
 }
+
+export const ANNOTATION_SORT_FIELDS = new Set([
+  "dateAdded",
+  "dateModified",
+  "type",
+  "color",
+  "pageIndex",
+  "sortIndex",
+  "item.title",
+  "item.date",
+  "item.dateModified",
+]);
+
+for (const name of ["dateAdded", "dateModified"] as const) {
+  const definition = ANNOTATION_FIELDS.get(name)!;
+  ANNOTATION_FIELDS.set(name, {
+    ...definition,
+    filter: {
+      type: "date",
+      read: (item) =>
+        item.scan[name] === null
+          ? null
+          : timestamp(Temporal.Instant.fromEpochMilliseconds(item.scan[name])),
+    },
+    sortKey: (item) => item.scan[name],
+  });
+}
+for (const name of ["type", "color", "pageIndex", "sortIndex"]) {
+  const definition = ANNOTATION_FIELDS.get(name)!;
+  ANNOTATION_FIELDS.set(name, {
+    ...definition,
+    sortKey: (item) => definition.read(item) as string | number | null,
+  });
+}
+
+export const annotationFilterRegistry: FilterRegistry<QueryAnnotation> = {
+  prefix: "item",
+  equalityField: (name, value) =>
+    name === "color" && annotationColorsForName(value).length
+      ? "colorName"
+      : name,
+  field(name) {
+    if (name.startsWith("item.")) {
+      const parent = filterField(name.slice(5));
+      return parent?.filterable
+        ? {
+            ...parent,
+            value: {
+              ...parent.value,
+              read: (item) => parent.value.read(item.parent),
+            },
+          }
+        : parent;
+    }
+    const definition = ANNOTATION_FIELDS.get(name);
+    return definition?.filter
+      ? {
+          filterable: true,
+          value: definition.filter,
+          needs: definition.needs([]),
+        }
+      : definition
+        ? { filterable: false }
+        : undefined;
+  },
+  custom(name) {
+    const parent = customFilterValue(name);
+    return {
+      ...parent,
+      value: {
+        ...parent.value,
+        read: (item) => parent.value.read(item.parent),
+      },
+    };
+  },
+};
+export const planAnnotationFilter = (text: string) =>
+  planFilter(text, annotationFilterRegistry);

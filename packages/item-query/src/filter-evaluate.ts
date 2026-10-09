@@ -1,6 +1,5 @@
 // The evaluator of a validated Filter Expression: the authority for every
 // match. A failure that depends on the Item's data gives null for that node.
-import type { QueryItem } from "./fields";
 import { addDuration } from "./filter-dates";
 import { finite, invoke, methodOf, propertyOf } from "./filter-functions";
 import type { FilterNode } from "./filter-plan";
@@ -21,16 +20,16 @@ import type { QueryClock } from "./query-clock";
 type Bindings = ReadonlyMap<string, FilterValue>;
 
 /** What one evaluation reads: the Item, the Query Clock, and the bindings. */
-interface Context {
-  readonly item: QueryItem;
+interface Context<Item> {
+  readonly item: Item;
   readonly clock: QueryClock;
   readonly bindings: Bindings;
 }
 
 /** Whether the filter selects the Item: null is falsy. */
-export function matches(
-  root: FilterNode,
-  item: QueryItem,
+export function matches<Item>(
+  root: FilterNode<Item>,
+  item: Item,
   clock: QueryClock,
 ): boolean {
   return truthy(evaluate(root, item, clock));
@@ -40,18 +39,21 @@ export function matches(
  * The value of a node for one Item. Every date function and every
  * calendar-day comparison reads `clock`, the Query Clock of the query.
  */
-export function evaluate(
-  node: FilterNode,
-  item: QueryItem,
+export function evaluate<Item>(
+  node: FilterNode<Item>,
+  item: Item,
   clock: QueryClock,
 ): FilterValue {
   return valueOf(node, { item, clock, bindings: new Map() });
 }
 
 /** The value of a node in `context`. */
-function valueOf(node: FilterNode, context: Context): FilterValue {
+function valueOf<Item>(
+  node: FilterNode<Item>,
+  context: Context<Item>,
+): FilterValue {
   const { item, clock, bindings } = context;
-  const value = (child: FilterNode) => valueOf(child, context);
+  const value = (child: FilterNode<Item>) => valueOf(child, context);
   switch (node.kind) {
     case "literal":
       return node.value;
@@ -109,9 +111,9 @@ function valueOf(node: FilterNode, context: Context): FilterValue {
  * list with `value` and `index` bound, and `acc` in `reduce`. A subject that
  * is not a list gives null; `initial` is evaluated once, outside the binding.
  */
-function element(
-  node: Extract<FilterNode, { kind: "element" }>,
-  context: Context,
+function element<Item>(
+  node: Extract<FilterNode<Item>, { kind: "element" }>,
+  context: Context<Item>,
 ): FilterValue {
   const subject = valueOf(node.subject, context);
   if (!isList(subject)) return null;
@@ -141,13 +143,13 @@ function element(
   }
 }
 
-function binary(
-  node: Extract<FilterNode, { kind: "binary" }>,
-  context: Context,
+function binary<Item>(
+  node: Extract<FilterNode<Item>, { kind: "binary" }>,
+  context: Context<Item>,
 ): FilterValue {
   const { operator } = node;
   const { clock } = context;
-  const value = (child: FilterNode) => valueOf(child, context);
+  const value = (child: FilterNode<Item>) => valueOf(child, context);
   // `&&` and `||` evaluate the right side only when the left side needs it.
   if (operator === "&&") {
     return truthy(value(node.left)) && truthy(value(node.right));

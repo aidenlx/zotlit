@@ -6,7 +6,9 @@ import {
   SCENARIO_LIBRARIES,
 } from "@zotlit/db/test-scenario";
 
+import { ANNOTATION_SCENARIO_QUERIES } from "./annotation-scenario-queries";
 import { queryAnnotations } from "./query-annotations";
+import type { RunOptions } from "./test-helpers";
 import { runEffect } from "./test-helpers";
 
 it("returns the reading record of one Item, with three identities and default fields", async () => {
@@ -119,3 +121,86 @@ it.each([
     );
   },
 );
+
+it("combines Annotation fields with parent dates, Tags, and projections", async () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  const { exit } = await runEffect(
+    queryAnnotations({
+      libraries: [SCENARIO_LIBRARIES.personal],
+      filter:
+        'type == "underline" && tags.contains("method") && item.title.contains("Exact Matching") && item.date.year == 2020',
+      fields: ["item.title", "item.date.year", "item.tags"],
+      sort: [{ field: "pageIndex", direction: "asc" }],
+    }),
+    { client: scenario.db },
+  );
+  if (exit._tag === "Failure") throw new Error(String(exit.cause));
+  expect(exit.value.rows.map((row) => row.indexedKey)).toEqual(["ANN2UNDR"]);
+  expect(exit.value.rows[0]?.values["item.date.year"]).toBe(2020);
+});
+
+it("reads parent custom fields, relations, timestamps and identities through their Item semantics", async () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  const { exit } = await runEffect(
+    queryAnnotations({
+      libraries: [SCENARIO_LIBRARIES.personal],
+      item: ["ART2FULL"],
+      filter:
+        'item.custom["review.status"] == "done" && item.mood == "calm" && item.tags.contains("methods") && item.collections.within("Thesis") && item.dateModified.year == 2024',
+      fields: [
+        "item.indexedKey",
+        'item.custom["review.status"]',
+        "item.creators[0].family",
+        "item.tags[0].name",
+        "item.dateModified",
+      ],
+      limit: 1,
+    }),
+    { client: scenario.db },
+  );
+  if (exit._tag === "Failure") throw new Error(String(exit.cause));
+  expect(exit.value.returnedCount).toBe(1);
+  expect(exit.value.rows[0]?.values).toMatchObject({
+    "item.indexedKey": "ART2FULL",
+    'item.custom["review.status"]': "done",
+    "item.creators[0].family": "Lovelace",
+  });
+  expect(
+    JSON.parse(JSON.stringify(exit.value.rows[0]?.values["item.dateModified"])),
+  ).toBe("2024-06-01T10:00:00Z");
+});
+
+it("matches the forced scan for every Annotation scenario, Library combination, cap, and chunk size", async () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  for (const libraries of [
+    [SCENARIO_LIBRARIES.personal],
+    [SCENARIO_LIBRARIES.group],
+    [SCENARIO_LIBRARIES.personal, SCENARIO_LIBRARIES.group],
+  ]) {
+    for (const request of ANNOTATION_SCENARIO_QUERIES) {
+      const run = async (tuning: RunOptions["tuning"]) => {
+        const { exit } = await runEffect(
+          queryAnnotations({ ...request, libraries }),
+          { client: scenario.db, tuning },
+        );
+        return JSON.parse(JSON.stringify(exit));
+      };
+      const expected = await run({ forceScan: true });
+      for (const tuning of [
+        {},
+        { capRatio: 1 },
+        { capRatio: 0 },
+        { capRatio: 0.1 },
+        { capRatio: 1, scanPageSize: 3, hydrateChunkSize: 2 },
+        { scanPageSize: 1, hydrateChunkSize: 1, mergeStepSize: 1 },
+      ]) {
+        expect({
+          request,
+          libraries,
+          tuning,
+          outcome: await run(tuning),
+        }).toEqual({ request, libraries, tuning, outcome: expected });
+      }
+    }
+  }
+}, 30000);

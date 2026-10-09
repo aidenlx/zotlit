@@ -53,6 +53,7 @@ export function runQueryJob(
       ? yield* answerItemQuerySchema(
           { identity: env.identity },
           job.pluginVersion,
+          job.kind,
         )
       : yield* answerItemQuery(
           {
