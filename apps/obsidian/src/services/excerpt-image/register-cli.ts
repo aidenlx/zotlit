@@ -43,7 +43,7 @@ export function registerAnnotationImageCli(
               baseAttachmentPath: deps.zoteroPref.baseAttachmentPath,
             };
             await using lease = await deps.zoteroReads.acquireRead();
-            return excerptRequestForKey({
+            return await excerptRequestForKey({
               reads: lease.reads,
               key,
               paths,
