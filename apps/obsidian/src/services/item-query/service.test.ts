@@ -79,81 +79,167 @@ const bulk = {
   fields: '["title","tags"]',
 };
 
-describe("Item Query worker jobs", () => {
-  it("answers the schema through the worker and maps an unavailable connection for both commands", async () => {
-    using scenario = openScenarioDatabase({ storage: "temp-directory" });
-    const available = setup(scenario);
-    await using _available = available.service;
-    expect(
-      JSON.parse(await available.service.schema({}, signal())),
-    ).toMatchObject({
-      command: "zotlit:item-query-schema",
-      ok: true,
-      schema: {
-        url: "https://github.com/aidenlx/zotlit/releases/download/res-2.2.0-beta.2/item-query.schema.json",
-        fileName: "zotlit-item-query-2.2.0-beta.2.schema.json",
-      },
-    });
-    const unavailable = setup(scenario, () => {
-      throw new Error("source closed");
-    });
-    await using _unavailable = unavailable.service;
-    for (const answer of [
-      await unavailable.service.answer({}, signal()),
-      await unavailable.service.schema({}, signal()),
-    ])
-      expect(JSON.parse(answer)).toMatchObject({
-        ok: false,
-        diagnostic: { code: "source-unavailable" },
-      });
-    expect(unavailable.leases()).toBe(0);
-  });
+/** One CLI dataset as the service seam sees it, with its expected wire. */
+const DATASETS = [
+  {
+    dataset: "items",
+    command: "zotlit:item-query",
+    schemaCommand: "zotlit:item-query-schema",
+    asset: "item-query",
+    params: { limit: "all", fields: '["title","date","creators"]' },
+    returnedCount: 10,
+    defaults: {
+      fields: ["itemType", "title", "creators", "date", "dateModified"],
+      sort: [{ field: "dateModified", direction: "desc" }],
+      limit: 100,
+      libraries: { source: "library-scope" },
+    },
+    customField: { path: 'custom["review.status"]' },
+  },
+  {
+    dataset: "annotations",
+    command: "zotlit:annotation-query",
+    schemaCommand: "zotlit:annotation-query-schema",
+    asset: "annotation-query",
+    params: { item: "ART2FULL", limit: "all" },
+    returnedCount: 12,
+    defaults: {
+      fields: [
+        "type",
+        "text",
+        "comment",
+        "color",
+        "colorName",
+        "pageLabel",
+        "pageIndex",
+        "tags",
+        "dateAdded",
+        "dateModified",
+        "hasExcerptImage",
+        "attachment",
+        "item.title",
+        "item.citationKey",
+      ],
+      sort: [
+        { field: "item.dateModified", direction: "desc" },
+        { field: "attachment.indexedKey", direction: "asc" },
+        { field: "sortIndex", direction: "asc" },
+      ],
+      limit: 100,
+      libraries: { source: "library-scope" },
+    },
+    customField: { path: 'item.custom["review.status"]' },
+  },
+] as const;
 
-  it("answers the schema envelope for a parameter, without a lease", async () => {
-    using scenario = openScenarioDatabase({ storage: "temp-directory" });
-    const { service, leases } = setup(scenario);
-    await using _owned = service;
+describe.each(DATASETS)("$dataset CLI dataset through the service", (cli) => {
+  const { dataset, command, schemaCommand } = cli;
+  const annotated = () =>
+    openScenarioDatabase({ storage: "temp-directory", annotations: true });
 
-    const answer = await service.schema({ library: "personal" }, signal());
-
-    expect(JSON.parse(answer)).toMatchObject({
-      contractVersion: 2,
-      command: "zotlit:item-query-schema",
-      ok: false,
-      diagnostic: {
-        code: "invalid-argument",
-        details: { parameter: "library" },
-      },
-    });
-    expect(leases()).toBe(0);
-  });
-
-  it("exports the same envelope as inline, preserves existing files, and releases each lease", async () => {
-    using scenario = openScenarioDatabase({ storage: "temp-directory" });
+  it("answers the pretty versioned envelope of the source and keeps the id out of the request", async () => {
+    using scenario = annotated();
     const { service, leases, jobs } = setup(scenario);
     await using _owned = service;
-    const query = { limit: "all", fields: '["title","date","creators"]' };
-    const inline = await service.answer(query, signal());
+
+    const text = await service.query(
+      dataset,
+      { ...cli.params, id: "envelope" },
+      signal(),
+    );
+
+    const answer = JSON.parse(text);
+    expect(text).toBe(JSON.stringify(answer, null, 2));
+    expect(Object.keys(answer)).toEqual([
+      "contractVersion",
+      "command",
+      "ok",
+      "identity",
+      "libraries",
+      "request",
+      "returnedCount",
+      "truncated",
+      "warnings",
+      "rows",
+    ]);
+    expect(answer).toMatchObject({
+      contractVersion: 2,
+      command,
+      ok: true,
+      identity: {
+        vault: { name: "Query tests" },
+        source: { id: "captured-source", databasePath: scenario.path },
+      },
+      returnedCount: cli.returnedCount,
+    });
+    expect(answer.request).not.toHaveProperty("id");
+    expect(jobs).toEqual([
+      expect.objectContaining({ schema: false, dataset, command }),
+    ]);
     expect(jobs[0]?.attachmentPaths).toEqual({
       dataDir: dirname(scenario.path),
       baseAttachmentPath: join(dirname(scenario.path), "linked"),
     });
-    const output = join(dirname(scenario.path), "items.json");
-    const receipt = JSON.parse(
-      await service.answer({ ...query, output }, signal()),
+    expect(leases()).toBe(0);
+  });
+
+  it("answers query-id-in-use for an id that a query of either dataset holds", async () => {
+    using scenario = annotated();
+    const { service } = setup(scenario);
+    await using _owned = service;
+    const other = DATASETS.find((entry) => entry.dataset !== dataset)!;
+    const first = service.query(
+      dataset,
+      { ...cli.params, id: "job" },
+      signal(),
     );
+
+    for (const { dataset: second, command: answered } of [cli, other]) {
+      expect(
+        JSON.parse(await service.query(second, { id: "job" }, signal())),
+      ).toEqual({
+        contractVersion: 2,
+        command: answered,
+        ok: false,
+        diagnostic: expect.objectContaining({
+          code: "query-id-in-use",
+          details: { parameter: "id" },
+        }),
+      });
+    }
+    expect(JSON.parse(await first)).toMatchObject({ command, ok: true });
+    expect(service.cancel("job")).toBe(false);
+  });
+
+  it("exports the inline envelope to a new file, answers its receipt, and keeps an existing file", async () => {
+    using scenario = annotated();
+    const { service, leases } = setup(scenario);
+    await using _owned = service;
+    const inline = await service.query(dataset, cli.params, signal());
+    const output = join(dirname(scenario.path), `${dataset}.json`);
+
+    const receipt = JSON.parse(
+      await service.query(dataset, { ...cli.params, output }, signal()),
+    );
+
     expect(receipt).toMatchObject({
+      command,
       ok: true,
-      returnedCount: 10,
+      returnedCount: cli.returnedCount,
       file: { path: output, bytes: Buffer.byteLength(inline), format: "json" },
     });
     expect(receipt).not.toHaveProperty("rows");
     expect(await readFile(output, "utf8")).toBe(inline);
-    expect(JSON.parse(inline).identity.source.id).toBe("captured-source");
     await writeFile(output, "keep this content");
     expect(
-      JSON.parse(await service.answer({ ...query, output }, signal())),
-    ).toMatchObject({ ok: false, diagnostic: { code: "output-error" } });
+      JSON.parse(
+        await service.query(dataset, { ...cli.params, output }, signal()),
+      ),
+    ).toMatchObject({
+      command,
+      ok: false,
+      diagnostic: { code: "output-error" },
+    });
     expect(await readFile(output, "utf8")).toBe("keep this content");
     expect(leases()).toBe(0);
     expect(
@@ -161,20 +247,152 @@ describe("Item Query worker jobs", () => {
     ).toEqual([]);
   });
 
+  it("cancels a named export by its id and frees the id", async () => {
+    using scenario = annotated();
+    const { service, leases } = setup(scenario);
+    await using _owned = service;
+    await service.ready;
+    const output = join(dirname(scenario.path), `cancelled-${dataset}.json`);
+    const running = service.query(
+      dataset,
+      { ...cli.params, id: "shared", output },
+      signal(),
+    );
+    const cancelled = expect(running).rejects.toMatchObject({
+      name: "AbortError",
+      message: queryCancelledText("shared"),
+    });
+
+    expect(service.cancel("shared")).toBe(true);
+    await cancelled;
+
+    expect(service.cancel("shared")).toBe(false);
+    expect(service.runningJobs).toBe(0);
+    expect(leases()).toBe(0);
+    const files = await readdir(dirname(output));
+    expect(files).not.toContain(`cancelled-${dataset}.json`);
+    expect(files.filter((name) => name.endsWith(".tmp"))).toEqual([]);
+    expect(
+      JSON.parse(
+        await service.query(dataset, { ...cli.params, id: "shared" }, signal()),
+      ),
+    ).toMatchObject({ command, ok: true });
+  });
+
+  it("answers the schema download, source custom fields and CLI defaults", async () => {
+    using scenario = annotated();
+    const { service, leases, jobs } = setup(scenario);
+    await using _owned = service;
+
+    const text = await service.schema(dataset, {}, signal());
+
+    const answer = JSON.parse(text);
+    expect(text).toBe(JSON.stringify(answer, null, 2));
+    expect(Object.keys(answer)).toEqual([
+      "contractVersion",
+      "command",
+      "ok",
+      "identity",
+      "schema",
+      "customFields",
+      "defaults",
+    ]);
+    expect(answer).toMatchObject({
+      contractVersion: 2,
+      command: schemaCommand,
+      ok: true,
+      identity: { source: { id: "captured-source" } },
+      schema: {
+        url: `https://github.com/aidenlx/zotlit/releases/download/res-2.2.0-beta.2/${cli.asset}.schema.json`,
+        fileName: `zotlit-${cli.asset}-2.2.0-beta.2.schema.json`,
+      },
+      customFields: expect.arrayContaining([
+        expect.objectContaining(cli.customField),
+      ]),
+    });
+    expect(Object.keys(answer.schema)).toEqual(["url", "fileName"]);
+    expect(answer.defaults).toEqual(cli.defaults);
+    expect(jobs).toEqual([
+      expect.objectContaining({
+        schema: true,
+        dataset,
+        command: schemaCommand,
+      }),
+    ]);
+    // The renderer rejects a parameter, without a lease.
+    expect(
+      JSON.parse(
+        await service.schema(dataset, { library: "personal" }, signal()),
+      ),
+    ).toMatchObject({
+      contractVersion: 2,
+      command: schemaCommand,
+      ok: false,
+      diagnostic: {
+        code: "invalid-argument",
+        details: { parameter: "library" },
+      },
+    });
+    expect(jobs).toHaveLength(1);
+    expect(leases()).toBe(0);
+  });
+
+  it("answers a failure with its command: an unknown field, and an unavailable source", async () => {
+    using scenario = annotated();
+    const available = setup(scenario);
+    await using _available = available.service;
+    expect(
+      JSON.parse(
+        await available.service.query(
+          dataset,
+          { ...cli.params, fields: '["notAField"]' },
+          signal(),
+        ),
+      ),
+    ).toMatchObject({
+      contractVersion: 2,
+      command,
+      ok: false,
+      diagnostic: { code: "unknown-field" },
+    });
+    const unavailable = setup(scenario, () => {
+      throw new Error("source closed");
+    });
+    await using _unavailable = unavailable.service;
+    for (const [answered, answer] of [
+      [command, await unavailable.service.query(dataset, {}, signal())],
+      [schemaCommand, await unavailable.service.schema(dataset, {}, signal())],
+    ] as const)
+      expect(JSON.parse(answer)).toMatchObject({
+        command: answered,
+        ok: false,
+        diagnostic: { code: "source-unavailable" },
+      });
+    expect(unavailable.leases()).toBe(0);
+  });
+});
+
+describe("Item Query worker jobs", () => {
   it("reports invalid paths and write failures, and leaves no file on a query failure", async () => {
     using scenario = openScenarioDatabase({ storage: "temp-directory" });
     const { service, leases } = setup(scenario);
     await using _owned = service;
     expect(
-      JSON.parse(await service.answer({ output: "relative.json" }, signal())),
+      JSON.parse(
+        await service.query("items", { output: "relative.json" }, signal()),
+      ),
     ).toMatchObject({ diagnostic: { code: "invalid-argument" } });
     const output = join(dirname(scenario.path), "missing", "items.json");
     expect(
-      JSON.parse(await service.answer({ output }, signal())),
+      JSON.parse(await service.query("items", { output }, signal())),
     ).toMatchObject({ diagnostic: { code: "output-error" } });
     expect(
       JSON.parse(
-        await service.answer({ output, fields: '["notAField"]' }, signal()),
+        await service.query(
+          "items",
+          { output, fields: '["notAField"]' },
+          signal(),
+        ),
       ),
     ).toMatchObject({ diagnostic: { code: "unknown-field" } });
     const denied = join(dirname(scenario.path), "denied");
@@ -182,7 +400,8 @@ describe("Item Query worker jobs", () => {
     try {
       expect(
         JSON.parse(
-          await service.answer(
+          await service.query(
+            "items",
             { output: join(denied, "items.json") },
             signal(),
           ),
@@ -199,12 +418,14 @@ describe("Item Query worker jobs", () => {
     seedBulkLibrary(scenario.sqlite, 6000);
     const { service } = setup(scenario);
     await using _owned = service;
-    expect(JSON.parse(await service.answer(bulk, signal()))).toMatchObject({
+    expect(
+      JSON.parse(await service.query("items", bulk, signal())),
+    ).toMatchObject({
       diagnostic: { code: "result-too-large" },
     });
     const output = join(dirname(scenario.path), "large.json");
     const receipt = JSON.parse(
-      await service.answer({ ...bulk, output }, signal()),
+      await service.query("items", { ...bulk, output }, signal()),
     );
     const text = await readFile(output, "utf8");
     expect(receipt).toMatchObject({
@@ -231,15 +452,16 @@ describe("Item Query worker jobs", () => {
     const output = join(dirname(scenario.path), "cancelled.json");
     const cancel = new AbortController();
     const queued = new AbortController();
-    const running = service.answer({ ...bulk, output }, cancel.signal);
+    const running = service.query("items", { ...bulk, output }, cancel.signal);
     const rejected = expect(running).rejects.toMatchObject({
       name: "AbortError",
     });
-    const other = service.answer(
+    const other = service.query(
+      "items",
       { ...bulk, fields: "[]", limit: "100" },
       signal(),
     );
-    const waiting = service.answer({ limit: "1" }, queued.signal);
+    const waiting = service.query("items", { limit: "1" }, queued.signal);
     const rejectedQueue = expect(waiting).rejects.toMatchObject({
       name: "AbortError",
     });
@@ -264,7 +486,7 @@ describe("Item Query worker jobs", () => {
     expect(files).not.toContain("cancelled.json");
     expect(files.filter((name) => name.endsWith(".tmp"))).toEqual([]);
     expect(
-      JSON.parse(await service.answer({ limit: "1" }, signal())),
+      JSON.parse(await service.query("items", { limit: "1" }, signal())),
     ).toMatchObject({ ok: true, returnedCount: 1 });
   });
 
@@ -275,16 +497,21 @@ describe("Item Query worker jobs", () => {
     await using _owned = service;
     await service.ready;
     const output = join(dirname(scenario.path), "named.json");
-    const running = service.answer({ ...bulk, id: "export", output }, signal());
+    const running = service.query(
+      "items",
+      { ...bulk, id: "export", output },
+      signal(),
+    );
     const rejected = expect(running).rejects.toMatchObject({
       name: "AbortError",
       message: queryCancelledText("export"),
     });
-    const other = service.answer(
+    const other = service.query(
+      "items",
       { ...bulk, id: "other", limit: "100" },
       signal(),
     );
-    const unnamed = service.answer({ ...bulk, limit: "100" }, signal());
+    const unnamed = service.query("items", { ...bulk, limit: "100" }, signal());
     // The private file exists from the first row the export writes.
     await vi.waitFor(
       async () => {
@@ -311,37 +538,10 @@ describe("Item Query worker jobs", () => {
     expect(service.cancel("other")).toBe(false);
     expect(service.runningJobs).toBe(0);
     expect(
-      JSON.parse(await service.answer({ id: "export", limit: "1" }, signal())),
+      JSON.parse(
+        await service.query("items", { id: "export", limit: "1" }, signal()),
+      ),
     ).toMatchObject({ ok: true, returnedCount: 1 });
-  });
-
-  it("answers query-id-in-use for an active ID and leaves the running query alone", async () => {
-    using scenario = openScenarioDatabase({ storage: "temp-directory" });
-    seedBulkLibrary(scenario.sqlite, 6000);
-    const { service } = setup(scenario);
-    await using _owned = service;
-    await service.ready;
-    const output = join(dirname(scenario.path), "first.json");
-    const first = service.answer({ ...bulk, id: "job", output }, signal());
-
-    const duplicate = JSON.parse(
-      await service.answer({ ...bulk, id: "job" }, signal()),
-    );
-
-    expect(duplicate).toMatchObject({
-      contractVersion: 2,
-      command: "zotlit:item-query",
-      ok: false,
-      diagnostic: {
-        code: "query-id-in-use",
-        details: { parameter: "id" },
-      },
-    });
-    expect(JSON.parse(await first)).toMatchObject({
-      ok: true,
-      returnedCount: 6000,
-    });
-    expect(service.cancel("job")).toBe(false);
   });
 
   it("frees the ID of a query that fails, and of a request that is invalid", async () => {
@@ -350,22 +550,30 @@ describe("Item Query worker jobs", () => {
     await using _owned = service;
     expect(
       JSON.parse(
-        await service.answer({ id: "job", fields: '["notAField"]' }, signal()),
+        await service.query(
+          "items",
+          { id: "job", fields: '["notAField"]' },
+          signal(),
+        ),
       ),
     ).toMatchObject({ diagnostic: { code: "unknown-field" } });
     expect(
-      JSON.parse(await service.answer({ id: "job", limit: "0" }, signal())),
+      JSON.parse(
+        await service.query("items", { id: "job", limit: "0" }, signal()),
+      ),
     ).toMatchObject({ diagnostic: { code: "invalid-argument" } });
     const missing = join(dirname(scenario.path), "missing", "items.json");
     expect(
       JSON.parse(
-        await service.answer({ id: "job", output: missing }, signal()),
+        await service.query("items", { id: "job", output: missing }, signal()),
       ),
     ).toMatchObject({ diagnostic: { code: "output-error" } });
     expect(service.cancel("job")).toBe(false);
     expect(service.runningJobs).toBe(0);
     expect(
-      JSON.parse(await service.answer({ id: "job", limit: "1" }, signal())),
+      JSON.parse(
+        await service.query("items", { id: "job", limit: "1" }, signal()),
+      ),
     ).toMatchObject({ ok: true });
     expect(leases()).toBe(0);
   });
@@ -382,7 +590,7 @@ describe("Item Query worker jobs", () => {
       if (outcomes.has("answered")) break;
       const output = join(dirname(scenario.path), `race-${turns}.json`);
       const running = service
-        .answer({ id: "race", limit: "all", output }, signal())
+        .query("items", { id: "race", limit: "all", output }, signal())
         .then(
           (answer) => ({ answer: JSON.parse(answer) as { ok: boolean } }),
           (error: unknown) => ({ error }),
@@ -421,11 +629,16 @@ describe("Item Query worker jobs", () => {
     await using _second = second.service;
     await Promise.all([first.service.ready, second.service.ready]);
     const output = join(dirname(scenario.path), "second.json");
-    const cancelled = first.service.answer({ ...bulk, id: "job" }, signal());
+    const cancelled = first.service.query(
+      "items",
+      { ...bulk, id: "job" },
+      signal(),
+    );
     const rejected = expect(cancelled).rejects.toMatchObject({
       name: "AbortError",
     });
-    const kept = second.service.answer(
+    const kept = second.service.query(
+      "items",
       { ...bulk, id: "job", output },
       signal(),
     );
@@ -445,7 +658,9 @@ describe("Item Query worker jobs", () => {
     const { service, leases } = setup(scenario);
     await service.ready;
     const runs = ["a", "b", "c"].map((id) =>
-      expect(service.answer({ ...bulk, id }, signal())).rejects.toMatchObject({
+      expect(
+        service.query("items", { ...bulk, id }, signal()),
+      ).rejects.toMatchObject({
         name: "AbortError",
       }),
     );
@@ -460,7 +675,7 @@ describe("Item Query worker jobs", () => {
     seedBulkLibrary(scenario.sqlite, 2000);
     const { service, leases } = setup(scenario);
     await service.ready;
-    const running = service.answer(bulk, signal());
+    const running = service.query("items", bulk, signal());
     const rejected = expect(running).rejects.toMatchObject({
       name: "AbortError",
     });
@@ -469,7 +684,7 @@ describe("Item Query worker jobs", () => {
     await rejected;
     expect(leases()).toBe(0);
     expect(service.runningJobs).toBe(0);
-    await expect(service.answer({}, signal())).rejects.toMatchObject({
+    await expect(service.query("items", {}, signal())).rejects.toMatchObject({
       name: "AbortError",
     });
   });
@@ -500,133 +715,38 @@ describe("Item Query worker jobs", () => {
     });
     await using _owned = service;
     // One request starts before startup fails, the others after it.
-    const early = service.answer({ id: "early" }, signal());
+    const early = service.query("items", { id: "early" }, signal());
 
     await expect(early).rejects.toBe(startup);
     await expect(service.ready).rejects.toBe(startup);
-    await expect(service.answer({}, signal())).rejects.toBe(startup);
-    await expect(service.schema({}, signal())).rejects.toBe(startup);
+    await expect(service.query("items", {}, signal())).rejects.toBe(startup);
+    await expect(service.schema("items", {}, signal())).rejects.toBe(startup);
   });
 });
 
-describe("Annotation Query worker jobs", () => {
-  it("exports the same annotation envelope as inline and resolves each Attachment file", async () => {
-    using scenario = openScenarioDatabase({
-      storage: "temp-directory",
-      annotations: true,
-    });
-    const { service, leases } = setup(scenario);
-    await using _owned = service;
-    const directory = join(dirname(scenario.path), "storage", "PDF2LIVE");
-    await mkdir(directory, { recursive: true });
-    await writeFile(join(directory, "exact.pdf"), "fixture");
-    const params = { item: "ART2FULL", limit: "all" };
-    const inline = await service.annotations(params, signal());
-    const result = JSON.parse(inline);
-    expect(result).toMatchObject({
-      command: "zotlit:annotation-query",
-      contractVersion: 2,
-      ok: true,
-      returnedCount: 12,
-    });
-    expect(
-      result.rows.find(
-        (row: { indexedKey: string }) => row.indexedKey === "ANN2HGHT",
-      ).values.attachment,
-    ).toMatchObject({ path: join(directory, "exact.pdf"), exists: true });
-    const output = join(dirname(scenario.path), "annotations.json");
-    expect(
-      JSON.parse(await service.annotations({ ...params, output }, signal())),
-    ).toMatchObject({
-      command: "zotlit:annotation-query",
-      ok: true,
-      file: { path: output },
-    });
-    expect(await readFile(output, "utf8")).toBe(inline);
-    expect(
-      JSON.parse(await service.annotations({ ...params, output }, signal())),
-    ).toMatchObject({
-      command: "zotlit:annotation-query",
-      ok: false,
-      diagnostic: { code: "output-error" },
-    });
-    expect(leases()).toBe(0);
+it("resolves the file of each Attachment that an Annotation Query projects", async () => {
+  using scenario = openScenarioDatabase({
+    storage: "temp-directory",
+    annotations: true,
   });
-  it("claims one id namespace across query kinds and cancels an Annotation export", async () => {
-    using scenario = openScenarioDatabase({
-      storage: "temp-directory",
-      annotations: true,
-    });
-    const { service, leases } = setup(scenario);
-    await using _owned = service;
-    await service.ready;
-    const output = join(dirname(scenario.path), "cancelled-annotations.json");
-    const first = service.annotations(
-      { item: "ART2FULL", id: "shared", output },
+  const { service, leases } = setup(scenario);
+  await using _owned = service;
+  const directory = join(dirname(scenario.path), "storage", "PDF2LIVE");
+  await mkdir(directory, { recursive: true });
+  await writeFile(join(directory, "exact.pdf"), "fixture");
+  const result = JSON.parse(
+    await service.query(
+      "annotations",
+      { item: "ART2FULL", limit: "all" },
       signal(),
-    );
-    const cancelled = expect(first).rejects.toMatchObject({
-      name: "AbortError",
-      message: queryCancelledText("shared"),
-    });
-    expect(
-      JSON.parse(await service.answer({ id: "shared" }, signal())),
-    ).toMatchObject({
-      command: "zotlit:item-query",
-      diagnostic: { code: "query-id-in-use" },
-    });
-    expect(service.cancel("shared")).toBe(true);
-    await cancelled;
-    expect(await readdir(dirname(output))).not.toContain(
-      "cancelled-annotations.json",
-    );
-    expect(
-      (await readdir(dirname(output))).filter((name) => name.endsWith(".tmp")),
-    ).toEqual([]);
-    const second = service.answer({ id: "shared" }, signal());
-    expect(
-      JSON.parse(await service.annotations({ id: "shared" }, signal())),
-    ).toMatchObject({
-      command: "zotlit:annotation-query",
-      diagnostic: { code: "query-id-in-use" },
-    });
-    expect(JSON.parse(await second)).toMatchObject({ ok: true });
-    expect(leases()).toBe(0);
-  });
-});
-
-it("runs Annotation schema through the shared worker with its command, asset, defaults and parent custom fields", async () => {
-  using scenario = openScenarioDatabase({ annotations: true });
-  const { service, jobs } = setup(scenario);
-  await using _running = service;
-  const answer = JSON.parse(
-    await service.schema({}, new AbortController().signal, "annotations"),
-  );
-  expect(jobs).toContainEqual(
-    expect.objectContaining({ schema: true, kind: "annotations" }),
-  );
-  expect(answer).toMatchObject({
-    contractVersion: 2,
-    command: "zotlit:annotation-query-schema",
-    ok: true,
-    schema: { fileName: "zotlit-annotation-query-2.2.0-beta.2.schema.json" },
-    customFields: expect.arrayContaining([
-      expect.objectContaining({ path: 'item.custom["review.status"]' }),
-    ]),
-    defaults: {
-      limit: 100,
-      fields: expect.arrayContaining(["colorName", "item.title"]),
-    },
-  });
-  expect(
-    JSON.parse(
-      await service.schema(
-        { filter: "true" },
-        new AbortController().signal,
-        "annotations",
-      ),
     ),
-  ).toMatchObject({ command: "zotlit:annotation-query-schema", ok: false });
+  );
+  expect(
+    result.rows.find(
+      (row: { indexedKey: string }) => row.indexedKey === "ANN2HGHT",
+    ).values.attachment,
+  ).toMatchObject({ path: join(directory, "exact.pdf"), exists: true });
+  expect(leases()).toBe(0);
 });
 
 it.each([
@@ -647,7 +767,11 @@ it.each([
     const { service } = setup(scenario);
     await using _owned = service;
     const result = JSON.parse(
-      await service.annotations({ filter }, new AbortController().signal),
+      await service.query(
+        "annotations",
+        { filter },
+        new AbortController().signal,
+      ),
     );
     expect(result).toMatchObject({
       contractVersion: 2,
@@ -673,7 +797,8 @@ it("writes Annotation warnings before rows in inline and exported results", asyn
   const { service } = setup(scenario);
   await using _owned = service;
   const params = { filter: 'item.date.year == "2014"' };
-  const inline = await service.annotations(
+  const inline = await service.query(
+    "annotations",
     params,
     new AbortController().signal,
   );
@@ -685,7 +810,8 @@ it("writes Annotation warnings before rows in inline and exported results", asyn
   });
   expect(inline.indexOf('"warnings"')).toBeLessThan(inline.indexOf('"rows"'));
   const output = join(dirname(scenario.path), "warning-annotations.json");
-  await service.annotations(
+  await service.query(
+    "annotations",
     { ...params, output },
     new AbortController().signal,
   );
@@ -712,7 +838,7 @@ it.each([
     const { service } = setup(scenario);
     await using _owned = service;
     const result = JSON.parse(
-      await service.annotations(params, new AbortController().signal),
+      await service.query("annotations", params, new AbortController().signal),
     );
     expect(result).toMatchObject({
       ok: false,

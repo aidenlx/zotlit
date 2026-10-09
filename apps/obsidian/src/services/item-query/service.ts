@@ -14,23 +14,19 @@ import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import {
   diagnostic,
   failure,
-  ITEM_QUERY_COMMAND,
-  ITEM_QUERY_SCHEMA_COMMAND,
-  queryIdInUseFailure,
-} from "./cli";
-import {
-  ANNOTATION_QUERY_COMMAND,
-  ANNOTATION_QUERY_SCHEMA_COMMAND,
   queryCancelledText,
-} from "./contract";
-import {
-  decodeAnnotationQuery,
-  decodeItemQuery,
-  decodeSchemaArguments,
+  queryIdInUseFailure,
   rejectionDiagnostic,
-} from "./decode";
+} from "./contract";
+import type { ItemQueryCommand } from "./contract";
+import { CLI_DATASETS } from "./datasets";
+import { decodeSchemaArguments } from "./decode";
 import type { CancellationEvent, QueryObserver } from "./trace";
-import type { QueryAnswer, QueryCommand } from "./worker-protocol";
+import type {
+  QueryAnswer,
+  QueryCommand,
+  QueryDatasetId,
+} from "./worker-protocol";
 
 interface ItemQueryServiceDeps {
   pluginVersion: string;
@@ -97,42 +93,54 @@ export class ItemQueryService extends Service {
     this.commit(stack.move());
   }
 
-  annotations(params: CliData, signal: AbortSignal): Promise<string> {
-    return this.#answer(params, signal, { annotations: true });
-  }
-
-  answer(
+  /** Answer the query command of the CLI dataset `dataset`. */
+  query(
+    dataset: QueryDatasetId,
     params: CliData,
     signal: AbortSignal,
-    measure?: QueryObserver & { heap: boolean },
   ): Promise<string> {
-    return this.#answer(params, signal, { measure });
+    return this.#query({ dataset, params, signal });
   }
 
-  #answer(
+  /** Answer an Item Query and report its measurement to `measure`. */
+  measure(
     params: CliData,
     signal: AbortSignal,
-    {
-      annotations = false,
-      measure,
-    }: { annotations?: boolean; measure?: QueryObserver & { heap: boolean } },
+    measure: QueryObserver & { heap: boolean },
   ): Promise<string> {
+    return this.#query({ dataset: "items", params, signal, measure });
+  }
+
+  #query({
+    dataset,
+    params,
+    signal,
+    measure,
+  }: {
+    dataset: QueryDatasetId;
+    params: CliData;
+    signal: AbortSignal;
+    measure?: QueryObserver & { heap: boolean };
+  }): Promise<string> {
     // Decode and claim the id synchronously, so two calls with one id
     // cannot both start. The worker receives the decoded query.
-    const command = annotations ? ANNOTATION_QUERY_COMMAND : ITEM_QUERY_COMMAND;
-    const request = annotations
-      ? decodeAnnotationQuery(params)
-      : decodeItemQuery(params);
+    const { decode, query: command } = CLI_DATASETS[dataset];
+    const request = decode(params);
     if (request.kind === "invalid") {
-      return Promise.resolve(failure(command, rejectionDiagnostic(request)));
+      return Promise.resolve(
+        failure(command.name, rejectionDiagnostic(request)),
+      );
     }
     const query = request.value;
     const { id } = query;
     if (id !== undefined && FiberMap.hasUnsafe(this.#jobs, id)) {
-      return Promise.resolve(queryIdInUseFailure(id, command));
+      return Promise.resolve(queryIdInUseFailure(id, command.name));
     }
     return this.#start(
-      this.#job({ schema: false, query }, measure),
+      this.#job(
+        { schema: false, dataset, command: command.name, query },
+        measure,
+      ),
       signal,
       id,
     );
@@ -153,27 +161,23 @@ export class ItemQueryService extends Service {
     return true;
   }
 
+  /** Answer the schema command of the CLI dataset `dataset`. */
   schema(
+    dataset: QueryDatasetId,
     params: CliData,
     signal: AbortSignal,
-    kind?: "annotations",
   ): Promise<string> {
-    const rejected = decodeSchemaArguments(params);
+    const { name: command } = CLI_DATASETS[dataset].schema;
+    const rejected = decodeSchemaArguments(params, command);
     if (rejected.kind === "invalid") {
-      return Promise.resolve(
-        failure(
-          kind === "annotations"
-            ? ANNOTATION_QUERY_SCHEMA_COMMAND
-            : ITEM_QUERY_SCHEMA_COMMAND,
-          rejectionDiagnostic(rejected),
-        ),
-      );
+      return Promise.resolve(failure(command, rejectionDiagnostic(rejected)));
     }
     return this.#start(
       this.#job({
         schema: true,
+        dataset,
+        command,
         pluginVersion: this.#deps.pluginVersion,
-        ...(kind ? { kind } : {}),
       }),
       signal,
     );
@@ -265,15 +269,9 @@ export class ItemQueryService extends Service {
           .pipe(
             Effect.catchTag("DbUnavailable", (error) =>
               Effect.succeed<QueryAnswer>({
+                command: command.command,
                 answer: failure(
-                  command.schema
-                    ? command.kind === "annotations"
-                      ? ANNOTATION_QUERY_SCHEMA_COMMAND
-                      : ITEM_QUERY_SCHEMA_COMMAND
-                    : "kind" in command.query &&
-                        command.query.kind === "annotations"
-                      ? ANNOTATION_QUERY_COMMAND
-                      : ITEM_QUERY_COMMAND,
+                  command.command,
                   diagnostic("source-unavailable", error.message),
                 ),
                 receipt: { kind: "inline" },
@@ -298,12 +296,7 @@ export class ItemQueryService extends Service {
           stagePath,
           output: result.receipt.path,
           answer: result.answer,
-          command:
-            !command.schema &&
-            "kind" in command.query &&
-            command.query.kind === "annotations"
-              ? ANNOTATION_QUERY_COMMAND
-              : ITEM_QUERY_COMMAND,
+          command: result.command,
         });
       return result.answer;
     }).pipe(
@@ -345,7 +338,7 @@ function publishExport({
   stagePath: string;
   output: string;
   answer: string;
-  command: typeof ITEM_QUERY_COMMAND | typeof ANNOTATION_QUERY_COMMAND;
+  command: ItemQueryCommand;
 }): Effect.Effect<string> {
   return Effect.tryPromise({
     try: () => link(stagePath, output),

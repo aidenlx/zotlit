@@ -15,14 +15,17 @@ import {
   ANNOTATION_GUIDE_TOPICS,
   ANNOTATION_GUIDE_TOPIC_NAMES,
 } from "./annotation-guide";
+import { answer } from "./answer";
+import { guideHandler, registerItemQueryCli } from "./cli";
 import {
+  ANNOTATION_QUERY_COMMAND,
   ANNOTATION_QUERY_GUIDE_COMMAND,
-  annotationQueryGuideHandler,
-  answerItemQuery,
-  registerItemQueryCli,
-} from "./cli";
+} from "./contract";
+import { CLI_DATASETS } from "./datasets";
 import { decodeAnnotationQuery } from "./decode";
 import type { QueryReply } from "./worker-protocol";
+
+const annotationQueryGuideHandler = guideHandler(CLI_DATASETS.annotations);
 
 const IDENTITY = {
   vault: { name: "Research", path: "/vaults/research" },
@@ -36,16 +39,22 @@ function runAnnotationQuery(
   const decoded = decodeAnnotationQuery(params);
   if (decoded.kind === "invalid")
     throw new Error(`Malformed guide query: ${decoded.message}`);
-  const answer = answerItemQuery(
-    { identity: IDENTITY, scope: MY_LIBRARY_SCOPE },
-    decoded.value,
+  const reply = answer(
+    {
+      schema: false,
+      dataset: "annotations",
+      command: ANNOTATION_QUERY_COMMAND,
+      query: decoded.value,
+      scope: MY_LIBRARY_SCOPE,
+    },
+    { identity: IDENTITY },
   ).pipe(
     Effect.scoped,
     Effect.provideService(ItemQueryDatabase, { client: scenario.db }),
     Effect.provideService(Scheduler.Scheduler, new ItemQueryScheduler()),
     Effect.map((reply: QueryReply) => JSON.parse(reply.answer)),
   );
-  return Effect.runPromise(answer);
+  return Effect.runPromise(reply);
 }
 
 describe("zotlit:annotation-query-guide", () => {
@@ -143,8 +152,7 @@ describe("zotlit:annotation-query-guide", () => {
     } as unknown as Plugin;
 
     registerItemQueryCli(plugin, {
-      annotations: async () => "",
-      answer: async () => "",
+      query: async () => "",
       cancel: () => false,
       schema: async () => "",
     });
@@ -153,7 +161,13 @@ describe("zotlit:annotation-query-guide", () => {
       ANNOTATION_QUERY_GUIDE_COMMAND,
       expect.any(String),
       expect.objectContaining({ topic: expect.any(Object) }),
-      annotationQueryGuideHandler,
+      expect.any(Function),
+    );
+    const guide = registerCliHandler.mock.calls.find(
+      ([command]) => command === ANNOTATION_QUERY_GUIDE_COMMAND,
+    )![3] as (params: CliData) => string;
+    expect(guide({ topic: "images" })).toBe(
+      annotationQueryGuideHandler({ topic: "images" }),
     );
   });
 });

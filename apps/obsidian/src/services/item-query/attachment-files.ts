@@ -1,17 +1,18 @@
+import { Effect } from "effect";
 import { stat } from "node:fs/promises";
 
 import type { Attachment } from "@zotlit/db";
 import { attachmentAbsPath } from "@zotlit/db/path";
 import type { AttachmentPathContext } from "@zotlit/db/path";
+import type { ResolveAttachmentFile } from "@zotlit/item-query";
 
 export interface AttachmentFile {
   readonly path: string | null;
   readonly exists: boolean;
 }
 
-export interface AttachmentFileResolver {
-  (attachment: Attachment): Promise<AttachmentFile>;
-}
+/** Resolves the file of an Attachment, as the engine takes it. */
+export type AttachmentFileResolver = ResolveAttachmentFile;
 
 type Stat = (path: string) => Promise<unknown>;
 
@@ -25,7 +26,7 @@ export function makeAttachmentFileResolver(
 ): AttachmentFileResolver {
   const probe = options.stat ?? stat;
   const memo = new Map<number, Promise<AttachmentFile>>();
-  return (attachment) => {
+  const resolve = (attachment: Attachment): Promise<AttachmentFile> => {
     const cached = memo.get(attachment.itemID);
     if (cached) return cached;
     const path = attachmentAbsPath(attachment, paths);
@@ -39,4 +40,5 @@ export function makeAttachmentFileResolver(
     memo.set(attachment.itemID, resolved);
     return resolved;
   };
+  return (attachment) => Effect.promise(() => resolve(attachment));
 }

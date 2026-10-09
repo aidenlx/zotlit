@@ -18,7 +18,9 @@ const answered =
 const decodeItemQuery = answered(decode.decodeItemQuery);
 const decodeGuideArguments = answered(decode.decodeGuideArguments);
 const decodeCancelArguments = answered(decode.decodeCancelArguments);
-const decodeSchemaArguments = answered(decode.decodeSchemaArguments);
+const decodeSchemaArguments = answered((params) =>
+  decode.decodeSchemaArguments(params, "zotlit:item-query-schema"),
+);
 
 /** The diagnostic of an argument that the decoder rejects. */
 const rejected = (parameter: string) => ({
@@ -469,7 +471,6 @@ describe("decodeAnnotationQuery", () => {
       fields: "[]",
     });
     expect(decoded).toEqual({
-      kind: "annotations",
       item: ["ART2FULLg4815", "ART2FULL"],
       libraries: {
         scope: {

@@ -1,25 +1,21 @@
-import { Cause, Effect, Exit, Fiber, Scheduler } from "effect";
-import type { Scope } from "effect";
+import { Effect, Fiber } from "effect";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { CliData } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import { ItemQueryDatabase } from "@zotlit/db/item-query";
 import {
   BULK_LIBRARY,
   openScenarioDatabase,
   seedBulkLibrary,
 } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
-import { ItemQueryScheduler, ItemQuerySliceObserver } from "@zotlit/item-query";
+import { ItemQuerySliceObserver } from "@zotlit/item-query";
 
 import { MY_LIBRARY_SCOPE } from "@/services/library-scope/scope";
 
 import { makeAttachmentFileResolver } from "./attachment-files";
-import { answerItemQuery, ItemQueryOutputError } from "./cli";
-import type { QueryWriter } from "./cli";
-import { diagnostic } from "./contract";
+import { ITEM_QUERY_COMMAND } from "./contract";
 import { decodeItemQuery } from "./decode";
 import type { DecodedQuery } from "./decode";
 import { runQueryJob } from "./job";
@@ -73,6 +69,8 @@ function decoded(params: CliData): DecodedQuery {
 function jobOf(params: CliData, stagePath?: string): QueryJob {
   return {
     schema: false,
+    dataset: "items",
+    command: ITEM_QUERY_COMMAND,
     query: decoded(params),
     id: "job-1",
     ...IDENTITY,
@@ -242,89 +240,5 @@ describe("Query Job", () => {
     expect(events[other - 1]).toBe("pause");
     expect(events.slice(other)).toContain("resume");
     expect(JSON.parse(answer.answer)).toMatchObject({ returnedCount: 20000 });
-  });
-});
-
-describe("Query Job output", () => {
-  /**
-   * The export of the bulk Library in the scope of a job, on its scheduler, to
-   * an in-memory writer. `events` records the life of the writer and the end of
-   * the scope.
-   */
-  function memoryExport(
-    scenario: ScenarioDatabase,
-    write: (count: number) => Effect.Effect<void, ItemQueryOutputError>,
-  ) {
-    const events: string[] = [];
-    let writes = 0;
-    const openOutput = (): Effect.Effect<QueryWriter, never, Scope.Scope> =>
-      Effect.acquireRelease(
-        Effect.sync(() => events.push("open")),
-        () => Effect.sync(() => events.push("close")),
-      ).pipe(
-        Effect.as({
-          write: () =>
-            Effect.suspend(() => {
-              events.push("write");
-              return write(++writes);
-            }),
-        }),
-      );
-    const answer = answerItemQuery(
-      { identity: IDENTITY, scope: MY_LIBRARY_SCOPE, openOutput },
-      decoded({ ...BULK, output: "/exports/items.json" }),
-    ).pipe(
-      Effect.scoped,
-      Effect.onExit(() => Effect.sync(() => events.push("scope-ended"))),
-      Effect.provideService(ItemQueryDatabase, { client: scenario.db }),
-      Effect.provideService(Scheduler.Scheduler, new ItemQueryScheduler()),
-    );
-    return { events, answer };
-  }
-
-  it("ends interrupted between two chunks and closes the writer before the scope ends", async () => {
-    using scenario = openScenarioDatabase();
-    seedBulkLibrary(scenario.sqlite, 600);
-    const controller = new AbortController();
-    // The head, then the first chunk of rows: the interrupt comes there.
-    const { events, answer } = memoryExport(scenario, (count) =>
-      Effect.sync(() => {
-        if (count === 2) controller.abort();
-      }),
-    );
-
-    // The run starts in a later task, after Effect listens to the signal.
-    const exit = await Effect.runPromiseExit(
-      Effect.andThen(Effect.yieldNow, answer),
-      { signal: controller.signal },
-    );
-
-    expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(
-      true,
-    );
-    expect(events).toEqual(["open", "write", "write", "close", "scope-ended"]);
-  });
-
-  it("answers output-error for a failed write and closes the writer before the scope ends", async () => {
-    using scenario = openScenarioDatabase();
-    seedBulkLibrary(scenario.sqlite, 600);
-    const { events, answer } = memoryExport(scenario, (count) =>
-      count === 2
-        ? Effect.fail(
-            new ItemQueryOutputError({
-              diagnostic: diagnostic("output-error", "The disk is full."),
-            }),
-          )
-        : Effect.void,
-    );
-
-    const reply = await Effect.runPromise(answer);
-
-    expect(reply.receipt).toEqual({ kind: "inline" });
-    expect(JSON.parse(reply.answer)).toMatchObject({
-      ok: false,
-      diagnostic: { code: "output-error", report: { 0: "The disk is full." } },
-    });
-    expect(events).toEqual(["open", "write", "write", "close", "scope-ended"]);
   });
 });

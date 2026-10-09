@@ -63,6 +63,8 @@ function jobOf(
     throw new Error(`Malformed test query: ${query.message}`);
   return {
     schema: false,
+    dataset: "items",
+    command: "zotlit:item-query",
     query: JSON.parse(JSON.stringify(query.value)) as DecodedQuery,
     id,
     ...IDENTITY,
@@ -184,6 +186,7 @@ describe("ZoteroReads ItemQuery", () => {
     );
 
     expect(answers.cancelled).toEqual({
+      command: "zotlit:item-query",
       answer: "",
       receipt: { kind: "inline" },
       cancelled: true,
@@ -268,13 +271,18 @@ describe("ZoteroReads Attachment files", () => {
       linkMode: 3,
     });
 
-    const resolved = await Promise.all([
-      resolve(imported),
-      resolve({ ...imported }),
-      resolve(linked),
-      resolve(missing),
-      resolve(linkedUrl),
-    ]);
+    const resolved = await Effect.runPromise(
+      Effect.all(
+        [
+          resolve(imported),
+          resolve({ ...imported }),
+          resolve(linked),
+          resolve(missing),
+          resolve(linkedUrl),
+        ],
+        { concurrency: "unbounded" },
+      ),
+    );
 
     expect(resolved).toEqual([
       { path: importedPath, exists: true },
@@ -301,12 +309,14 @@ describe("ZoteroReads Attachment files", () => {
     );
 
     await expect(
-      resolve(
-        attachment(20, {
-          key: "LINKD456",
-          path: "attachments:papers/linked.pdf",
-          linkMode: 2,
-        }),
+      Effect.runPromise(
+        resolve(
+          attachment(20, {
+            key: "LINKD456",
+            path: "attachments:papers/linked.pdf",
+            linkMode: 2,
+          }),
+        ),
       ),
     ).resolves.toEqual({ path: null, exists: false });
     expect(probe).not.toHaveBeenCalled();
