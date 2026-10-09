@@ -6,6 +6,8 @@ import { openScenarioDatabase, SCENARIO_LIBRARIES } from "@/test-scenario";
 import {
   ItemQueryDatabase,
   readAnnotationScanPage,
+  readAnnotationRowCount,
+  readAnnotationCandidateSet,
   readAnnotationUniverseRows,
   readAnnotationHydrateChunk,
   readFieldVocabulary,
@@ -81,4 +83,37 @@ it("scans only live annotations of live attached Items, across keyset pages", ()
   expect(
     hydrated.get(rows.find((row) => row.key === "ANN2BAD2")!.itemID)?.position,
   ).toBe("invalid JSON");
+});
+
+it("counts the live Annotation universe and applies a candidate limit after the parent join", () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  const run = <A, E>(effect: Effect.Effect<A, E, ItemQueryDatabase>) =>
+    Effect.runSync(
+      Effect.provideService(effect, ItemQueryDatabase, { client: scenario.db }),
+    );
+  expect(run(readAnnotationRowCount(1))).toBe(12);
+  expect(run(readAnnotationRowCount(SCENARIO_LIBRARIES.group.libraryID))).toBe(
+    1,
+  );
+  const candidates = run(
+    readAnnotationCandidateSet({
+      libraryID: 1,
+      leaf: { kind: "parent", leaf: { kind: "key", key: "ART2FULL" } },
+      limit: 4,
+    }),
+  );
+  expect(candidates).toHaveLength(4);
+  const live = run(
+    readAnnotationUniverseRows({ libraryID: 1, itemIDs: candidates }),
+  );
+  expect(live.every((row) => row.parent.key === "ART2FULL")).toBe(true);
+  expect(
+    run(
+      readAnnotationCandidateSet({
+        libraryID: SCENARIO_LIBRARIES.group.libraryID,
+        leaf: { kind: "parent", leaf: { kind: "key", key: "ART2FULL" } },
+        limit: 4,
+      }),
+    ),
+  ).toHaveLength(1);
 });

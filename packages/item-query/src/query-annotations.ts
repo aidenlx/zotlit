@@ -226,10 +226,8 @@ export function consumeQueryAnnotations<A, E, R>(
                 });
             }
             if (!plans.length) return null;
-            const cap = Math.floor(
-              (yield* readAnnotationRowCount(library.libraryID)) *
-                tuning.capRatio,
-            );
+            const rowCount = yield* readAnnotationRowCount(library.libraryID);
+            const cap = Math.floor(rowCount * tuning.capRatio);
             return yield* readCandidatePlan(
               { kind: "all", plans },
               {

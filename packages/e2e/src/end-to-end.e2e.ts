@@ -2921,6 +2921,70 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
     });
     expect(report.rows![0]!.values).not.toHaveProperty("position");
+    const filtered = JSON.parse(
+      await cliCommand(queryVaultId, "zotlit:annotation-query", {
+        args: {
+          item: annotationItem.key,
+          filter: `type == "image" && item.title == ${JSON.stringify(annotationItem.title)}`,
+          fields: '["type","item.title","item.date"]',
+          sort: '[{"field":"pageIndex","direction":"asc"}]',
+          limit: "all",
+        },
+      }),
+    ) as ItemQueryReport;
+    expect(filtered).toMatchObject({
+      ok: true,
+      command: "zotlit:annotation-query",
+    });
+    expect(filtered.rows!.map((row) => row.indexedKey).toSorted()).toEqual(
+      expected
+        .filter((annotation) => annotation.type === 3)
+        .map((annotation) => annotation.key)
+        .toSorted(),
+    );
+    const schema = JSON.parse(
+      await cliCommand(queryVaultId, "zotlit:annotation-query-schema"),
+    ) as ItemQuerySchemaReport;
+    expect(schema).toMatchObject({
+      contractVersion: 1,
+      command: "zotlit:annotation-query-schema",
+      ok: true,
+      schema: { url: expect.stringContaining("/annotation-query.schema.json") },
+      defaults: {
+        fields: expect.arrayContaining(["type", "item.title"]),
+        limit: 100,
+      },
+    });
+    const catalog = JSON.parse(
+      await readFile(
+        join(
+          workspaceRoot,
+          "packages/item-query/dist/annotation-query.schema.json",
+        ),
+        "utf8",
+      ),
+    ) as { fields: object[] };
+    expect(catalog.fields).toContainEqual({
+      path: "item.title",
+      type: "string",
+      filter: "string",
+      projection: true,
+      sort: true,
+    });
+    const invalid = JSON.parse(
+      await cliCommand(queryVaultId, "zotlit:annotation-query", {
+        args: { filter: "item.title.startsWith(1)" },
+      }),
+    ) as ItemQueryReport;
+    expect(invalid).toMatchObject({
+      contractVersion: 1,
+      command: "zotlit:annotation-query",
+      ok: false,
+      diagnostic: {
+        code: "wrong-argument-type",
+        location: { argument: "filter", span: { from: 22, to: 23 } },
+      },
+    });
   });
 
   it("describes Item Query through zotlit:item-query-schema", async () => {

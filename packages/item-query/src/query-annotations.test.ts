@@ -183,7 +183,15 @@ it("matches the forced scan for every Annotation scenario, Library combination, 
           queryAnnotations({ ...request, libraries }),
           { client: scenario.db, tuning },
         );
-        return JSON.parse(JSON.stringify(exit));
+        if (exit._tag === "Success")
+          return JSON.parse(JSON.stringify({ result: exit.value }));
+        const failure = Cause.findErrorOption(exit.cause);
+        if (failure._tag === "None") throw new Error(String(exit.cause));
+        return JSON.parse(
+          JSON.stringify({
+            failure: { ...failure.value, message: failure.value.message },
+          }),
+        );
       };
       const expected = await run({ forceScan: true });
       for (const tuning of [
@@ -204,3 +212,56 @@ it("matches the forced scan for every Annotation scenario, Library combination, 
     }
   }
 }, 30000);
+
+it("caps after parent expansion and uses a bounded Annotation candidate when available", async () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  const run = (filter: string, capRatio: number) =>
+    runEffect(
+      queryAnnotations({
+        libraries: [SCENARIO_LIBRARIES.personal],
+        filter,
+        fields: [],
+      }),
+      { client: scenario.db, tuning: { capRatio } },
+    );
+  const overflow = await run('item.key == "ART2FULL"', 0.25);
+  expect(overflow.exit).toMatchObject({
+    _tag: "Success",
+    value: { returnedCount: 12 },
+  });
+  const candidateReads = overflow.events.filter(
+    (event) =>
+      event.type === "statement" &&
+      event.statement.reader === "annotation-candidate-set",
+  );
+  expect(candidateReads).toHaveLength(1);
+  expect(candidateReads[0]).toMatchObject({
+    statement: { rows: expect.any(Array) },
+  });
+  expect(
+    overflow.events.some(
+      (event) =>
+        event.type === "statement" &&
+        event.statement.reader === "annotation-scan-page",
+    ),
+  ).toBe(true);
+  const bounded = await run('type == "image"', 1);
+  expect(bounded.exit).toMatchObject({
+    _tag: "Success",
+    value: { returnedCount: 2 },
+  });
+  expect(
+    bounded.events.some(
+      (event) =>
+        event.type === "statement" &&
+        event.statement.reader === "annotation-candidate-set",
+    ),
+  ).toBe(true);
+  expect(
+    bounded.events.some(
+      (event) =>
+        event.type === "statement" &&
+        event.statement.reader === "annotation-scan-page",
+    ),
+  ).toBe(false);
+});
