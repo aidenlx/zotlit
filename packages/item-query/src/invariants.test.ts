@@ -101,6 +101,14 @@ const PLAN_PATHS: readonly {
   reads: Record<string, number[]>;
 }[] = [
   {
+    name: "a grouped scan",
+    request: { group: "library", fields: ["title"], limit: 10 },
+    reads: {
+      "scan-page": [500, 500, 500, 500, 500, 100],
+      "hydrate-chunk": [10],
+    },
+  },
+  {
     name: "an Indexed Key list within the candidate cap",
     request: {
       filter: '["BLK22222g2718", "BLK22223g2718"].contains(indexedKey)',
@@ -375,7 +383,7 @@ describe("the rows a limited query projects", () => {
 
     const result = resultOf(limited);
     expect(result).toMatchObject({ returnedCount: 10, truncated: true });
-    expect(result.rows.map((row) => row.values.title)).toEqual([
+    expect(result.rows!.map((row) => row.values.title)).toEqual([
       "Bulk item 02599",
       "Bulk item 02598",
       "Bulk item 02597",
@@ -394,7 +402,7 @@ describe("the rows a limited query projects", () => {
         : [],
     );
     expect(new Set(hydrated)).toEqual(
-      new Set(result.rows.map((row) => row.values.title)),
+      new Set(result.rows!.map((row) => row.values.title)),
     );
     expect(hydrated).toHaveLength(10);
   });
@@ -409,7 +417,7 @@ describe("the rows a limited query projects", () => {
     const result = resultOf(limited);
     expect(result).toMatchObject({ returnedCount: 4, truncated: true });
     // Two personal titles come before the bulk titles.
-    expect(result.rows.map((row) => row.values.title)).toEqual([
+    expect(result.rows!.map((row) => row.values.title)).toEqual([
       "A Chapter on Sampling",
       "Alias Conflict",
       "Bulk item 00000",
@@ -424,7 +432,7 @@ describe("the rows a limited query projects", () => {
       )
       .at(-1)!;
     expect(new Set(projected.map((row) => row.value))).toEqual(
-      new Set(result.rows.map((row) => row.values.title)),
+      new Set(result.rows!.map((row) => row.values.title)),
     );
     expect(projected).toHaveLength(4);
   });
@@ -607,7 +615,7 @@ describe("Annotation projection and active cancellation", () => {
         .at(-1)!;
       expect(details).toHaveLength(result.returnedCount);
       expect(details.map((row) => row.text)).toEqual(
-        result.rows.map((row) => row.values.text),
+        result.rows!.map((row) => row.values.text),
       );
     },
   );

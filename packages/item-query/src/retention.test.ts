@@ -55,44 +55,59 @@ const READS_UNIVERSE = new Set(["scan-page", "universe-rows"]);
 
 describe("the rows a limited query retains", () => {
   const LIMIT = 10;
-  const QUERIES: readonly { name: string; request: Request; items: number }[] =
-    [
-      {
-        name: "a scan that hydrates the returned rows only",
-        request: { fields: ["title"], limit: LIMIT },
-        items: BULK_ITEMS,
+  const QUERIES: readonly {
+    name: string;
+    request: Request;
+    items: number;
+    groups?: number;
+  }[] = [
+    {
+      name: "a grouped scan of two Libraries",
+      request: {
+        libraries: [SCENARIO_LIBRARIES.personal, BULK_LIBRARY],
+        fields: ["title"],
+        group: "library",
+        limit: LIMIT,
       },
-      {
-        name: "a scan that hydrates every Item for the sort",
-        request: { fields: ["title", "tags"], sort: byTitle, limit: LIMIT },
-        items: BULK_ITEMS,
+      items: 10 + BULK_ITEMS,
+      groups: 2,
+    },
+    {
+      name: "a scan that hydrates the returned rows only",
+      request: { fields: ["title"], limit: LIMIT },
+      items: BULK_ITEMS,
+    },
+    {
+      name: "a scan that hydrates every Item for the sort",
+      request: { fields: ["title", "tags"], sort: byTitle, limit: LIMIT },
+      items: BULK_ITEMS,
+    },
+    {
+      name: "a candidate set",
+      request: {
+        filter: `tags.contains("${BULK_FIFTH_TAG}")`,
+        fields: ["title"],
+        sort: byTitle,
+        limit: LIMIT,
       },
-      {
-        name: "a candidate set",
-        request: {
-          filter: `tags.contains("${BULK_FIFTH_TAG}")`,
-          fields: ["title"],
-          sort: byTitle,
-          limit: LIMIT,
-        },
-        items: 520,
+      items: 520,
+    },
+    {
+      name: "a scan of two Libraries",
+      // Each of the first rows by title has a title.
+      request: {
+        libraries: [SCENARIO_LIBRARIES.personal, BULK_LIBRARY],
+        fields: ["title"],
+        sort: byTitle,
+        limit: LIMIT,
       },
-      {
-        name: "a scan of two Libraries",
-        // Each of the first rows by title has a title.
-        request: {
-          libraries: [SCENARIO_LIBRARIES.personal, BULK_LIBRARY],
-          fields: ["title"],
-          sort: byTitle,
-          limit: LIMIT,
-        },
-        items: 10 + BULK_ITEMS,
-      },
-    ];
+      items: 10 + BULK_ITEMS,
+    },
+  ];
 
   it.each(QUERIES)(
     "holds the limit plus one row, one page, and one hydrate chunk at most in $name",
-    async ({ request, items }) => {
+    async ({ request, items, groups = 1 }) => {
       // The rows of the query universe and the rows of the hydrate statements
       // that the collector has not freed.
       const scanned: WeakRef<object>[] = [];
@@ -130,7 +145,7 @@ describe("the rows a limited query retains", () => {
       if (!Exit.isSuccess(limited.exit))
         throw new Error(String(limited.exit.cause));
       expect(limited.exit.value).toMatchObject({
-        returnedCount: LIMIT,
+        returnedCount: LIMIT * groups,
         truncated: true,
       });
       expect(scanned).toHaveLength(items);
@@ -140,7 +155,7 @@ describe("the rows a limited query retains", () => {
         Math.min(items, 500),
       );
       expect(most(samples.map((entry) => entry.rows))).toBeLessThanOrEqual(
-        LIMIT + 1 + 500,
+        (LIMIT + 1) * groups + 500,
       );
       expect(
         most(samples.map((entry) => entry.hydratedItems)),
@@ -148,48 +163,52 @@ describe("the rows a limited query retains", () => {
       // The projection starts with the matches only: the pages are released.
       expect(samples.at(-1)).toEqual({
         at: "hydrate-chunk",
-        rows: LIMIT + 1,
-        hydratedItems: LIMIT,
+        rows: groups === 1 ? LIMIT + 1 : LIMIT * groups + 1,
+        hydratedItems: groups === 1 ? LIMIT : 9,
       });
     },
   );
 });
 
-it("incremental delivery retains one projected batch instead of the complete result", async () => {
-  const projected: WeakRef<object>[] = [];
-  let peak = 0;
-  const run = await runEffect(
-    consumeQuery(
-      ITEMS,
+it.each([undefined, "library"])(
+  "incremental delivery retains one projected batch (group: %s)",
+  async (group) => {
+    const projected: WeakRef<object>[] = [];
+    let peak = 0;
+    const run = await runEffect(
+      consumeQuery(
+        ITEMS,
+        {
+          libraries: [BULK_LIBRARY],
+          fields: ["title", "tags"],
+          group,
+          limit: null,
+        },
+        (summary) =>
+          Effect.succeed({
+            write: (rows) =>
+              Effect.sync(() => {
+                collectGarbage();
+                collectGarbage();
+                for (const row of rows) projected.push(new WeakRef(row));
+                peak = Math.max(
+                  peak,
+                  projected.filter((row) => row.deref()).length,
+                );
+              }),
+            end: () => Effect.succeed(summary),
+          }),
+      ),
       {
-        libraries: [BULK_LIBRARY],
-        fields: ["title", "tags"],
-        limit: null,
+        client: scenario.db,
+        keepStatements: false,
+        tuning: { hydrateChunkSize: 100 },
       },
-      (summary) =>
-        Effect.succeed({
-          write: (rows) =>
-            Effect.sync(() => {
-              collectGarbage();
-              collectGarbage();
-              for (const row of rows) projected.push(new WeakRef(row));
-              peak = Math.max(
-                peak,
-                projected.filter((row) => row.deref()).length,
-              );
-            }),
-          end: () => Effect.succeed(summary),
-        }),
-    ),
-    {
-      client: scenario.db,
-      keepStatements: false,
-      tuning: { hydrateChunkSize: 100 },
-    },
-  );
-  expect(Exit.isSuccess(run.exit) && run.exit.value.returnedCount).toBe(
-    BULK_ITEMS,
-  );
-  expect(projected).toHaveLength(BULK_ITEMS);
-  expect(peak).toBeLessThanOrEqual(100);
-});
+    );
+    expect(Exit.isSuccess(run.exit) && run.exit.value.returnedCount).toBe(
+      BULK_ITEMS,
+    );
+    expect(projected).toHaveLength(BULK_ITEMS);
+    expect(peak).toBeLessThanOrEqual(100);
+  },
+);

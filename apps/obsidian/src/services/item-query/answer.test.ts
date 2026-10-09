@@ -206,6 +206,9 @@ describe("zotlit:query answer", () => {
     { filter: "false" },
     { ...BULK, fields: '["title","dateAdded","tags"]' },
     { ...BULK, fields: "[]" },
+    { ...BULK, group: "library", fields: '["title","dateAdded","tags"]' },
+    { ...BULK, group: "title", fields: "[]" },
+    { group: "library", filter: "false" },
   ])("is the pretty JSON of its envelope for %j", async (params) => {
     using scenario = openScenarioDatabase();
     seedBulkLibrary(scenario.sqlite, 600);
@@ -214,7 +217,9 @@ describe("zotlit:query answer", () => {
     const answer = await handlerOf(scenario)(params);
 
     expect(answer).toBe(JSON.stringify(JSON.parse(answer), null, 2));
-    expect(Object.keys(JSON.parse(answer) as object).at(-1)).toBe("rows");
+    expect(Object.keys(JSON.parse(answer) as object).at(-1)).toBe(
+      params.group === undefined ? "rows" : "groups",
+    );
   });
 
   it("builds the rows in steps and gives the window a turn between them", async () => {
@@ -1030,5 +1035,60 @@ describe("zotlit:query export writer", () => {
       diagnostic: { code: "output-error", report: { 0: "The disk is full." } },
     });
     expect(events).toEqual(["open", "write", "write", "close", "scope-ended"]);
+  });
+});
+
+it("answers and exports byte-identical grouped envelopes with exact counts", async () => {
+  using scenario = openScenarioDatabase();
+  let output = "";
+  const { run } = setup(scenario, {
+    openOutput: () =>
+      Effect.succeed({
+        write: (text) =>
+          Effect.sync(() => {
+            output += text;
+          }),
+      }),
+  });
+  const params = { group: "library", library: "all", limit: "1", fields: "[]" };
+  const found = await run(params);
+  expect(found).toMatchObject({
+    request: { group: "library" },
+    totalCount: 12,
+    returnedCount: 2,
+    truncated: true,
+    groups: [
+      { value: "group:4815", count: 2 },
+      { value: "personal", count: 10 },
+    ],
+  });
+  expect(found).not.toHaveProperty("rows");
+  const receipt = await run({ ...params, output: "/exports/groups.json" });
+  expect(output).toBe(JSON.stringify(found, null, 2));
+  expect(receipt).toMatchObject({
+    request: { group: "library" },
+    totalCount: 12,
+    returnedCount: 2,
+    file: { bytes: Buffer.byteLength(output), format: "json" },
+  });
+  expect(receipt).not.toHaveProperty("rows");
+  expect(receipt).not.toHaveProperty("groups");
+});
+
+it("encodes an empty grouped answer and the scalar-path Diagnostic Report", async () => {
+  using scenario = openScenarioDatabase();
+  const { run } = setup(scenario);
+  const empty = await run({ group: "library", filter: "false" });
+  expect(empty).toMatchObject({
+    groups: [],
+    totalCount: 0,
+    returnedCount: 0,
+    truncated: false,
+  });
+  expect(empty).not.toHaveProperty("rows");
+  const invalid = await run({ group: "tags" });
+  expect(invalid).toMatchObject({
+    ok: false,
+    diagnostic: { code: "invalid-group", location: { argument: "group" } },
   });
 });

@@ -222,6 +222,11 @@ function querySpecs(uniqueKey: string): QuerySpec[] {
       },
     },
     limited("scan-no-match", "other", 'title.contains("no such title")'),
+    {
+      id: "annotations-group-all",
+      class: "all",
+      args: { from: "annotations", group: "item.citationKey", limit: "all" },
+    },
     { id: "all", class: "all", args: { limit: "all" } },
     { id: "all-keys", class: "all", args: { limit: "all", fields: "[]" } },
     {

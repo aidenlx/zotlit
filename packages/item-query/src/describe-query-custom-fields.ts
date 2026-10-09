@@ -46,6 +46,7 @@ function customSchemaField(name: string): SchemaCustomField {
     type: jsonType(CUSTOM_FIELD_VALUE_SHAPE),
     filter: value.type,
     projection: true,
+    group: true,
     sort: custom.sortKey !== undefined,
   };
 }

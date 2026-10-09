@@ -588,3 +588,13 @@ it("narrows the schema to the requested Query Dataset", () => {
     from: "annotations",
   });
 });
+
+it("decodes one group Projection Path and preserves custom-field punctuation", () => {
+  expect(decodeQuery({ group: 'custom["review,status"]' })).toEqual({
+    from: "items",
+    libraries: null,
+    limit: 100,
+    group: 'custom["review,status"]',
+  });
+  expect(decodeQuery({ group: "" })).toMatchObject(rejected("group"));
+});

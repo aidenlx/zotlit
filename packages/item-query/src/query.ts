@@ -7,22 +7,36 @@ import type {
   ItemQueryDatabaseError,
   ItemQueryLayoutError,
 } from "@zotlit/db/item-query";
+import { readFieldVocabulary } from "@zotlit/db/item-query";
 
 import type { QueryDataset } from "./dataset";
 import { diagnoseWarning } from "./diagnose";
-import type { ItemQueryError } from "./error";
+import { ItemQueryError } from "./error";
 import { consumeDataset } from "./execution";
 import { indexedKeyWarnings } from "./indexed-key-selection";
 import { readQueryClock } from "./query-clock";
 import { planRequest } from "./request";
-import type { ItemQueryRequest, QueryResult, QueryRow } from "./request";
+import type {
+  ItemQueryRequest,
+  QueryResult,
+  QueryRow,
+  QueryMetadata,
+  QueryGroup,
+} from "./request";
 
 /** Metadata known before the projection pass begins. */
-export type QuerySummary = Omit<QueryResult, "rows">;
+export interface QuerySummary extends QueryMetadata {
+  readonly groups?: readonly Omit<QueryGroup, "rows">[];
+  readonly totalCount?: number;
+}
 
 /** Each write completes before the engine projects the next chunk. */
 export interface QueryConsumer<A, E = never, R = never> {
-  write(rows: readonly QueryRow[]): Effect.Effect<void, E, R>;
+  /** groupIndex addresses summary.groups; each chunk belongs to one group. */
+  write(
+    rows: readonly QueryRow[],
+    groupIndex?: number,
+  ): Effect.Effect<void, E, R>;
   end(): Effect.Effect<A, E, R>;
 }
 
@@ -42,12 +56,26 @@ export function collectQuery<Request extends ItemQueryRequest>(
   return consumeQuery(dataset, request, (summary) =>
     Effect.sync(() => {
       const rows: QueryRow[] = [];
+      const { groups: summaries, totalCount, ...metadata } = summary;
+      const groups = summaries?.map((group) => ({
+        ...group,
+        rows: [] as QueryRow[],
+      }));
       return {
-        write: (chunk) =>
+        write: (chunk, groupIndex) =>
           Effect.sync(() => {
-            for (const row of chunk) rows.push(row);
+            const target =
+              groups && groupIndex !== undefined
+                ? groups[groupIndex]!.rows
+                : rows;
+            for (const row of chunk) target.push(row);
           }),
-        end: () => Effect.succeed({ ...summary, rows }),
+        end: () =>
+          Effect.succeed<QueryResult>(
+            groups
+              ? { ...metadata, totalCount: totalCount!, groups }
+              : { ...metadata, rows },
+          ),
       };
     }),
   );
@@ -71,6 +99,22 @@ export function consumeQuery<Request extends ItemQueryRequest, A, E, R>(
   return Effect.gen(function* () {
     const plan = yield* planRequest(dataset, request);
     const { query, sorts } = plan;
+    if (plan.group && plan.group.customField !== null) {
+      const { customFieldNames } = yield* readFieldVocabulary();
+      if (!customFieldNames.includes(plan.group.customField))
+        return yield* new ItemQueryError({
+          dataset,
+          fault: {
+            kind: "unknown",
+            role: "custom-field",
+            name: plan.group.customField,
+            customFields: customFieldNames,
+            at: { from: 0, to: plan.group.text.length },
+          },
+          location: { argument: "group" },
+          argumentText: plan.group.text,
+        });
+    }
     const clock = yield* readQueryClock;
     const run = yield* dataset.open(plan, request, clock);
     return yield* consumeDataset(

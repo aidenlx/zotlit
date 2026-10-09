@@ -221,6 +221,7 @@ function answerQuery(
     }
     const request: ItemQueryRequest = {
       filter: decoded.filter,
+      group: decoded.group,
       fields: decoded.fields,
       sort: decoded.sort,
       limit: decoded.limit,
@@ -305,9 +306,17 @@ const createAnswer = Effect.fnUntraced(function* (
     },
     returnedCount: result.returnedCount,
     truncated: result.truncated,
+    ...(result.totalCount === undefined
+      ? {}
+      : { totalCount: result.totalCount }),
     warnings: result.warnings,
   };
-  const head = envelope(context.command, { ...summary, rows: [] });
+  const grouped = result.groups !== undefined;
+  const head = envelope(context.command, {
+    ...summary,
+    ...(grouped ? { groups: [] } : { rows: [] }),
+  });
+  let activeGroup: number | undefined;
   let text = "";
   let bytes = 0;
   let first = true;
@@ -342,7 +351,20 @@ const createAnswer = Effect.fnUntraced(function* (
     result.returnedCount === 0 ? head : `${head.slice(0, -NO_ROWS.length)}[`,
   );
   return {
-    write: Effect.fnUntraced(function* (rows: readonly QueryRow[]) {
+    write: Effect.fnUntraced(function* (
+      rows: readonly QueryRow[],
+      groupIndex?: number,
+    ) {
+      if (grouped && groupIndex !== activeGroup) {
+        if (activeGroup !== undefined) yield* append("\n      ]\n    },");
+        const group = result.groups![groupIndex!]!;
+        const header = JSON.stringify({ ...group, rows: [] }, null, 2);
+        yield* append(
+          `\n    ${header.slice(0, -NO_ROWS.length).replaceAll("\n", "\n    ")}[`,
+        );
+        activeGroup = groupIndex;
+        first = true;
+      }
       let stepMs = 0;
       for (let start = 0; start < rows.length; ) {
         const stepStart = performance.now();
@@ -351,7 +373,8 @@ const createAnswer = Effect.fnUntraced(function* (
           CHUNK_START.length,
           -CHUNK_END.length,
         );
-        const part = first ? wire : `,${wire}`;
+        const indented = grouped ? wire.replaceAll("\n", "\n    ") : wire;
+        const part = first ? indented : `,${indented}`;
         first = false;
         start += chunk.length;
         chunkRows = Math.max(
@@ -367,6 +390,7 @@ const createAnswer = Effect.fnUntraced(function* (
       context.onAnswerStep?.(stepMs);
     }),
     end: Effect.fnUntraced(function* () {
+      if (activeGroup !== undefined) yield* append("\n      ]\n    }");
       if (result.returnedCount > 0) yield* append(CHUNK_END);
       if (output === undefined) return inline(context.command, text);
       return {

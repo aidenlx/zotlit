@@ -7,7 +7,7 @@ import type { Diagnostic } from "./diagnose";
 import { ItemQueryError } from "./error";
 import type { FieldNeeds, QueryItem, SortKey } from "./fields";
 import type { FilterPlan } from "./filter-plan";
-import { planPath } from "./projection";
+import { planPath, readPath } from "./projection";
 import type { PlannedPath } from "./projection";
 import type { QueryClock } from "./query-clock";
 
@@ -43,6 +43,8 @@ export interface ItemQueryRequest {
    * tie.
    */
   readonly sort?: readonly SortSpec[] | undefined;
+  /** One scalar Projection Path; the limit applies inside each group. */
+  readonly group?: string | undefined;
   /** The most rows to return. Omitted or `null`: every match. */
   readonly limit?: number | null | undefined;
 }
@@ -59,6 +61,7 @@ export interface ItemQuery {
   readonly fields: readonly string[];
   readonly sort: readonly SortSpec[];
   readonly limit: number | null;
+  readonly group?: string;
 }
 
 /** A value of one Projection Path in a Query Row. */
@@ -81,13 +84,34 @@ export interface QueryRow {
   readonly values: Readonly<Record<string, ProjectionValue>>;
 }
 
-export interface QueryResult {
+export type GroupValue = string | number | boolean | null;
+
+export interface QueryGroup {
+  readonly value: GroupValue;
+  readonly count: number;
+  readonly rows: readonly QueryRow[];
+}
+
+export type QueryResult = QueryMetadata &
+  (
+    | {
+        readonly rows: readonly QueryRow[];
+        readonly groups?: never;
+        readonly totalCount?: never;
+      }
+    | {
+        readonly groups: readonly QueryGroup[];
+        readonly totalCount: number;
+        readonly rows?: never;
+      }
+  );
+
+export interface QueryMetadata {
   readonly warnings: readonly Diagnostic<
     "never-true" | "always-true" | "key-outside-target-libraries"
   >[];
   /** The normalized request. */
   readonly query: ItemQuery;
-  readonly rows: readonly QueryRow[];
   readonly returnedCount: number;
   /** More Items match than the limit returned. */
   readonly truncated: boolean;
@@ -101,13 +125,14 @@ export interface ItemQueryPlan<Item = any, Needs = any> {
   /** `null`: every record matches. */
   readonly filter: FilterPlan<Item, Needs> | null;
   readonly paths: readonly PlannedPath<Item, Needs>[];
-  /** The request's sort, then the tie-breakers of the dataset. */
+  readonly group: PlannedPath<Item, Needs> | null;
+  /** The group value when given, then the request's sort and dataset tie-breakers. */
   readonly order: readonly SortSpec[];
   /** One entry for each entry of {@link ItemQueryPlan.order}. */
   readonly sorts: readonly PlannedSort<Item, Needs>[];
 }
 
-/** A validated entry of the sort list. */
+/** A validated ordering key: the group value or a Sortable Field. */
 export interface PlannedSort<Item = QueryItem, Needs = FieldNeeds> {
   readonly direction: SortSpec["direction"];
   /** What hydration loads before {@link PlannedSort.key} runs. */
@@ -180,6 +205,29 @@ export function planRequest(
       paths.push(path);
     }
 
+    let group: PlannedPath | null = null;
+    if (request.group !== undefined) {
+      const path = planPath(request.group, dataset.resolvePath);
+      const fault =
+        "kind" in path
+          ? path
+          : !path.scalar
+            ? {
+                kind: "group-scalar" as const,
+                name: request.group,
+                at: { from: 0, to: request.group.length },
+              }
+            : null;
+      if (fault)
+        return yield* new ItemQueryError({
+          dataset,
+          fault,
+          location: { argument: "group" },
+          argumentText: request.group,
+        });
+      if (!("kind" in path)) group = path;
+    }
+
     const sort = request.sort ?? dataset.defaultSort;
     const sorts: PlannedSort<any, any>[] = [];
     for (const [index, { field, direction }] of sort.entries()) {
@@ -222,6 +270,17 @@ export function planRequest(
       });
     }
 
+    // Group value leads the internal order. Dataset hydration already loads
+    // every ordering key, so grouping needs no dataset-specific execution.
+    if (group) {
+      const path = group;
+      sorts.unshift({
+        direction: "asc",
+        needs: path.needs,
+        key: (item) =>
+          JSON.parse(JSON.stringify(readPath(path, item))) as GroupValue,
+      });
+    }
     const normalized = sort.map(({ field, direction }) => ({
       field,
       direction,
@@ -233,11 +292,17 @@ export function planRequest(
         fields: [...fields],
         sort: normalized,
         limit,
+        ...(request.group === undefined ? {} : { group: request.group }),
       },
       filter,
       warnings: filter?.warnings ?? [],
       paths,
-      order: [...normalized, ...tieBreakers],
+      group,
+      order: [
+        ...(group ? [{ field: group.text, direction: "asc" as const }] : []),
+        ...normalized,
+        ...tieBreakers,
+      ],
       sorts,
     };
   });

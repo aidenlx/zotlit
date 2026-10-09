@@ -78,6 +78,20 @@ export function diagnose(
   const at = "at" in fault ? fault.at : undefined;
   const faultLocation = { ...location, ...(at ? { span: at } : {}) };
   switch (fault.kind) {
+    case "group-scalar":
+      return renderDiagnostic(
+        {
+          code: "invalid-group",
+          message: `The group path ${JSON.stringify(fault.name)} must resolve to a scalar value.`,
+          hint: "Use one scalar Projection Path, such as library, date.year, or item.citationKey. List and record values and [] paths cannot group.",
+          location: faultLocation,
+        },
+        text,
+        {
+          found: fault.name,
+          expected: ["one scalar Projection Path without []"],
+        },
+      );
     case "syntax":
       return diagnoseSyntax(fault.fault, text, location);
     case "arity": {
@@ -199,6 +213,7 @@ export function codeOfFault(
   fault: ItemQueryFault,
   dataset: QueryDataset<any>,
 ): PlainFault["code"] {
+  if (fault.kind === "group-scalar") return "invalid-group";
   if (fault.kind === "plain") return fault.code;
   if (fault.kind === "syntax" || fault.kind === "custom-key")
     return "invalid-filter";

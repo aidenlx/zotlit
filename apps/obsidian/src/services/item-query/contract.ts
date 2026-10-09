@@ -12,6 +12,7 @@ import type {
   Diagnostic as QueryDiagnostic,
   ItemQueryError,
   QuerySummary,
+  QueryGroup,
   SchemaCustomField,
   SortSpec,
 } from "@zotlit/item-query";
@@ -73,6 +74,11 @@ export const queryFlags = {
     value: "<list|json>",
     description:
       'Comma list: -field descending, +field or field ascending; or a JSON array of {"field","direction"}',
+  },
+  group: {
+    value: "<path>",
+    description:
+      "Group by one scalar Projection Path; limit applies inside each group",
   },
   limit: {
     value: "<n|all>",
@@ -167,6 +173,8 @@ export type EnvelopeTail =
       libraries: readonly LibraryWire[];
       request: object;
       returnedCount: number;
+      totalCount?: number;
+      groups?: readonly QueryGroup[];
       truncated: boolean;
       warnings: QuerySummary["warnings"];
       rows?: readonly { indexedKey: string; values: object }[];

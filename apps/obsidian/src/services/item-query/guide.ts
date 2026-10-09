@@ -421,6 +421,25 @@ const DATASETS_SECTION = `Query datasets
     ${example({ from: "annotations", fields: "text,item.title,attachment.path", limit: "5" })}
     ${example({ from: "annotations", filter: 'item.indexedKey == "ART2FULL"', fields: "text,item.title", limit: "all" })}`;
 
+const GROUP_SECTION = `GROUP RESULTS
+
+  group takes exactly one scalar Projection Path. It works on each Query
+  Dataset and on parent scalar paths. Lists, records, and [] paths give a
+  request Fault; use a scalar such as date.year or item.citationKey.
+  Groups use the sort collation, with null last. Rows inside each group keep
+  the request's sort, or the dataset default. The limit applies to each group.
+  Each group carries value, count before the limit, and rows. totalCount is
+  the number of all matched rows; returnedCount sums the returned rows.
+  truncated is true when any group was cut. limit=all returns every match.
+  The answer and output exports carry groups in place of rows.
+
+  Three most recent marks per paper:
+    ${example({ from: "annotations", group: "item.citationKey", limit: "3", sort: "-dateModified" })}
+  Papers per year, with each count and one example paper (limit is positive):
+    ${example({ group: "date.year", limit: "1", fields: "title,date.year" })}
+  Split papers by library:
+    ${example({ group: "library", library: "all", limit: "3" })}`;
+
 /** Canonical topic registry shared by parsing, generated help, and the index. */
 export const GUIDE_TOPICS = {
   datasets: DATASETS_SECTION,
@@ -428,6 +447,7 @@ export const GUIDE_TOPICS = {
   filter: `${FILTER_SECTION}\n\n${ANNOTATION_GUIDE_SECTIONS.filter}`,
   fields: `${FIELDS_SECTION}\n\n${ANNOTATION_GUIDE_SECTIONS.fields}`,
   sort: `${SORT_SECTION}\n\n${ANNOTATION_GUIDE_SECTIONS.sort}`,
+  group: GROUP_SECTION,
   results: RESULTS_SECTION,
   cancel: `${CANCEL_SECTION}\n\n${ANNOTATION_GUIDE_SECTIONS.cancel}`,
 } as const satisfies Record<string, string>;
