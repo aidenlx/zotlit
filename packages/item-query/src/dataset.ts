@@ -11,6 +11,7 @@ import type {
   ScanRow,
 } from "@zotlit/db/item-query";
 
+import type { CandidateSources } from "./candidate-plan";
 import type { ItemQueryError } from "./error";
 import type { DatasetRun } from "./execution";
 import type {
@@ -19,7 +20,7 @@ import type {
   FilterField,
   SortKey,
 } from "./fields";
-import type { FilterPlan, FilterProblem } from "./filter-plan";
+import type { FilterNode, FilterPlan, FilterProblem } from "./filter-plan";
 import type { PathSegment } from "./projection-path";
 import type { QueryClock } from "./query-clock";
 import type { ItemQueryPlan, ItemQueryRequest, SortSpec } from "./request";
@@ -50,6 +51,21 @@ export const AttachmentFileResolver =
     "@zotlit/item-query/AttachmentFileResolver",
     { defaultValue: () => null },
   );
+
+/** A dataset leaf; Relation List elements page in ascending source ID order. */
+export type CandidateReader = (page: {
+  libraryID: number;
+  limit: number;
+  afterItemID?: number;
+}) => Effect.Effect<number[], ItemQueryReaderError, ItemQueryDatabase>;
+
+export interface CandidateRelation {
+  readonly dataset: () => QueryDataset;
+  readonly readParents: (chunk: {
+    libraryID: number;
+    itemIDs: readonly number[];
+  }) => Effect.Effect<number[], ItemQueryReaderError, ItemQueryDatabase>;
+}
 
 /**
  * One Query Dataset: Items, Attachments, or Annotations. `Request` is the request the
@@ -82,6 +98,11 @@ export interface QueryDataset<
   /** The meaning of a bare name in a Filter Expression. */
   readonly filterField: (name: string) => FilterField<any, any> | undefined;
   readonly planFilter: (text: string) => FilterPlan<any, any> | FilterProblem;
+  readonly lowerCandidate: (
+    node: FilterNode<never>,
+    sources: CandidateSources,
+  ) => CandidateReader | null;
+  readonly candidateRelations: Readonly<Record<string, CandidateRelation>>;
   /** The Sortable Field of a name, or nothing for a name that does not sort. */
   readonly sortable: (name: string) => SortableField<any, any> | undefined;
   /** The field that the leading segments of a Projection Path name. */

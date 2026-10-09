@@ -116,7 +116,16 @@ export type HydrationRequest<Needs> = Pick<
 };
 
 /** One lazy source vocabulary shared by every record loader of a query. */
-export const openHydrationVocabulary = Effect.cached(readFieldVocabulary());
+export const openHydrationVocabulary = Effect.sync(() => {
+  // Loaders open sequentially in one fiber. Cache the completed read without
+  // adding a cache-completion finalizer to cancellation.
+  let vocabulary: FieldVocabulary | undefined;
+  return Effect.gen(function* () {
+    if (vocabulary) return vocabulary;
+    vocabulary = yield* readFieldVocabulary();
+    return vocabulary;
+  });
+});
 export type HydrationVocabulary = Effect.Effect<
   FieldVocabulary,
   ItemQueryReaderError,

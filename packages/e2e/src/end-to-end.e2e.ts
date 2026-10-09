@@ -3630,6 +3630,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       type: "string",
       filter: "string",
       projection: true,
+      group: true,
       sort: true,
     });
     expect(catalog.functions.map(({ name }) => name)).toContain("today");

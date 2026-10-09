@@ -70,6 +70,27 @@ function response(output) {
     );
   return prefix ? { ok: prefix[1] === "true", partial: true } : null;
 }
+
+function outputRedirect(command) {
+  let quote = null;
+  for (let index = 0; index < command.length; index++) {
+    const char = command[index];
+    if (char === "\\" && quote !== "'") {
+      index++;
+    } else if (quote) {
+      if (char === quote) quote = null;
+    } else if (char === "'" || char === '"') {
+      quote = char;
+    } else if (char === ">") {
+      const target = /^>+\s*(?:"([^"\n]+)"|'([^'\n]+)'|([^\s;]+))/.exec(
+        command.slice(index),
+      );
+      return target?.[1] ?? target?.[2] ?? target?.[3];
+    }
+  }
+  return undefined;
+}
+
 function linkRedirectedResponses(commands) {
   const pending = new Map();
   for (const tool of commands) {
@@ -87,10 +108,7 @@ function linkRedirectedResponses(commands) {
       /\bzotlit:(?:query|annotation-image)\b/.test(command) &&
       !response(tool.output)
     ) {
-      const redirected = />\s*(?:"([^"\n]+)"|'([^'\n]+)'|([^\s;]+))/.exec(
-        command,
-      );
-      const path = redirected?.[1] ?? redirected?.[2] ?? redirected?.[3];
+      const path = outputRedirect(command);
       if (path) pending.set(path, tool);
     }
   }

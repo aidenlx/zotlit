@@ -420,6 +420,7 @@ export const readAnnotationRowCount = (libraryID: number) =>
 
 interface AnnotationCandidateParams extends Record<string, unknown> {
   libraryID: number;
+  afterItemID: number;
   limit: number;
   value: string;
   list: string;
@@ -509,7 +510,14 @@ const annotationCandidates = (
         )
         .innerJoin(attachment, eq(attachment.itemID, itemAttachments.itemID))
         .innerJoin(parent, eq(parent.itemID, itemAttachments.parentItemID))
-        .where(and(eq(unindexed(items.libraryID), p("libraryID")), condition))
+        .where(
+          and(
+            eq(unindexed(items.libraryID), p("libraryID")),
+            gt(items.itemID, p("afterItemID")),
+            condition,
+          ),
+        )
+        .orderBy(items.itemID)
         .limit(p("limit"));
     },
   );
@@ -532,10 +540,12 @@ export function readAnnotationCandidateSet({
   libraryID,
   leaf,
   limit,
+  afterItemID = 0,
 }: {
   libraryID: number;
   leaf: AnnotationCandidateLeaf;
   limit: number;
+  afterItemID?: number;
 }) {
   let value = "";
   let list: readonly (number | string)[] = [];
@@ -571,6 +581,7 @@ export function readAnnotationCandidateSet({
   return Effect.map(
     annotationCandidateStatements[kind].all({
       libraryID,
+      afterItemID,
       limit,
       value,
       list: JSON.stringify(list),

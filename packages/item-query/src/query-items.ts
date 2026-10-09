@@ -5,11 +5,14 @@ import { Effect } from "effect";
 
 import { formatIndexedKey } from "@zotlit/db";
 import {
+  readCandidateSet,
+  readRelationCandidateSet,
   readLibraryRowCount,
   readScanPage,
   readUniverseRows,
 } from "@zotlit/db/item-query";
 
+import { lowerItemCandidate } from "./candidate-plan";
 import { fieldRoot } from "./dataset";
 import type { QueryDataset } from "./dataset";
 import type { DatasetRun } from "./execution";
@@ -24,6 +27,8 @@ import { matches as isMatch } from "./filter-evaluate";
 import { planFilter } from "./filter-plan";
 import { openHydration } from "./hydration";
 import { readPath, resolveItemPath } from "./projection";
+import { ANNOTATIONS } from "./query-annotations";
+import { ATTACHMENTS } from "./query-attachments";
 import {
   planDatasetCandidates,
   readDatasetCandidates,
@@ -49,6 +54,22 @@ export const ITEMS: QueryDataset<ItemQueryRequest> = {
   defaultSort: [{ field: "dateModified", direction: "desc" }],
   tieBreakers: [],
   names: BUILT_IN_NAMES,
+  lowerCandidate: (node, sources) => {
+    const leaf = lowerItemCandidate(node, sources);
+    return leaf ? (options) => readCandidateSet({ ...options, leaf }) : null;
+  },
+  candidateRelations: {
+    attachments: {
+      dataset: () => ATTACHMENTS,
+      readParents: (chunk) =>
+        readRelationCandidateSet({ ...chunk, relation: "item-attachments" }),
+    },
+    annotations: {
+      dataset: () => ANNOTATIONS,
+      readParents: (chunk) =>
+        readRelationCandidateSet({ ...chunk, relation: "item-annotations" }),
+    },
+  },
   sortableFields: BUILT_IN_NAMES.filter((name) => sortable(name)),
   definition: fieldDefinition,
   filterField,
@@ -72,7 +93,7 @@ export const ITEMS: QueryDataset<ItemQueryRequest> = {
                 ? planDatasetCandidates(
                     filter.root,
                     hydration.candidateSources(library),
-                    "items",
+                    { dataset: ITEMS },
                   )
                 : null;
             const cap = candidatePlan

@@ -20,8 +20,49 @@ import type {
   SchemaFunction,
   SchemaParameter,
 } from ".";
-import { describeItemQuery, describeItemQueryVocabulary } from "./schema";
+import {
+  describeItemQuery,
+  describeItemQueryVocabulary,
+  describeQuery,
+} from "./schema";
 import { runEffect } from "./test-helpers";
+
+it("generates field capabilities from the supplied Query Dataset descriptor", async () => {
+  using scenario = openScenarioDatabase();
+  const { exit } = await runEffect(
+    describeQuery(
+      {
+        ...ITEMS,
+        names: ["title", "library"],
+        sortable: () => undefined,
+      },
+      {},
+    ),
+    { client: scenario.db },
+  );
+  if (exit._tag === "Failure") throw Cause.squash(exit.cause);
+  expect(exit.value).toMatchObject({
+    fields: [
+      {
+        path: "title",
+        type: "string",
+        filter: "string",
+        projection: true,
+        sort: false,
+        group: true,
+      },
+      {
+        path: "library",
+        type: "string",
+        filter: "string",
+        projection: true,
+        sort: false,
+        group: true,
+        valueForms: ["personal", "group:<groupID>"],
+      },
+    ],
+  });
+});
 
 async function schema(scenario: ScenarioDatabase): Promise<ItemQuerySchema> {
   const { exit } = await runEffect(describeItemQuery(), {
