@@ -100,7 +100,6 @@ const annotationOutputSchema = {
           tags: { type: "array", items: { type: "string" } },
           itemTitle: { type: "string" },
           attachmentPath: { type: ["string", "null"] },
-          attachmentExists: { type: "boolean" },
           hasExcerptImage: { type: "boolean" },
           position: {
             anyOf: [
@@ -124,19 +123,6 @@ const annotationOutputSchema = {
             ],
           },
         },
-        required: [
-          "indexedKey",
-          "type",
-          "pageLabel",
-          "text",
-          "comment",
-          "tags",
-          "itemTitle",
-          "attachmentPath",
-          "attachmentExists",
-          "hasExcerptImage",
-          "position",
-        ],
       },
     },
     imagePath: { type: ["string", "null"] },
@@ -154,6 +140,34 @@ const annotationOutputSchema = {
     "validPng",
   ],
 };
+
+const annotationAnswerFields = {
+  annotations: ["type", "pageLabel", "text", "comment", "attachmentPath"],
+  mixed: ["itemTitle", "tags", "hasExcerptImage"],
+  position: ["position", "attachmentPath"],
+  image: [],
+};
+
+function annotationSchema(caseName) {
+  const fields = ["indexedKey", ...annotationAnswerFields[caseName]];
+  const annotations = annotationOutputSchema.properties.annotations;
+  return {
+    ...annotationOutputSchema,
+    properties: {
+      ...annotationOutputSchema.properties,
+      annotations: {
+        ...annotations,
+        items: {
+          ...annotations.items,
+          properties: Object.fromEntries(
+            fields.map((field) => [field, annotations.items.properties[field]]),
+          ),
+          required: fields,
+        },
+      },
+    },
+  };
+}
 
 function fail(message) {
   throw new Error(message);
@@ -460,19 +474,18 @@ function checkAnnotationAnswer(caseName, answer, { envelope, imageReceipt }) {
   for (const annotation of answer.annotations ?? []) {
     const values = rows.get(annotation.indexedKey);
     if (!values) continue;
-    if (annotation.type !== values.type)
-      errors.push(`answer has wrong type for ${annotation.indexedKey}`);
-    if (annotation.itemTitle !== values["item.title"])
-      errors.push(`answer has wrong Item title for ${annotation.indexedKey}`);
-    const attachmentPath =
-      values.attachment?.path ?? values["attachment.path"] ?? null;
-    const attachmentExists =
-      values.attachment?.exists ?? values["attachment.exists"] ?? false;
-    if (
-      annotation.attachmentPath !== attachmentPath ||
-      annotation.attachmentExists !== attachmentExists
-    )
-      errors.push(`answer has wrong source path for ${annotation.indexedKey}`);
+    for (const field of annotationAnswerFields[caseName]) {
+      const value =
+        field === "attachmentPath"
+          ? (values.attachment?.path ?? values["attachment.path"] ?? null)
+          : field === "itemTitle"
+            ? values["item.title"]
+            : (values[field] ?? null);
+      if (JSON.stringify(annotation[field]) !== JSON.stringify(value))
+        errors.push(
+          `answer has wrong ${field === "attachmentPath" ? "source path" : field} for ${annotation.indexedKey}`,
+        );
+    }
   }
   if (caseName === "position") {
     const annotation = answer.annotations?.[0];
@@ -632,7 +645,7 @@ export async function runCase(
     await writeFile(
       join(agent, "answer.schema.json"),
       JSON.stringify(
-        itemCases.has(caseName) ? itemOutputSchema : annotationOutputSchema,
+        itemCases.has(caseName) ? itemOutputSchema : annotationSchema(caseName),
         null,
         2,
       ),
