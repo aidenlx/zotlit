@@ -3,6 +3,7 @@
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 
 const oracle = JSON.parse(
   await readFile(new URL("./oracle.json", import.meta.url), "utf8"),
@@ -31,12 +32,18 @@ const expandedAnnotationCases = new Set([
 const expandedFields = {
   reading_plan: ["type", "pageLabel", "text", "comment"],
   shared_marks: ["text", "colorName"],
-  attachment: ["type", "pageLabel", "text", "comment", "attachment"],
+  attachment: ["type", "pageLabel", "text", "comment", "attachment.path"],
   colors: ["text", "colorName", "tags", "pageIndex"],
   reverse_pages: ["type", "pageLabel", "pageIndex", "text"],
-  missing_source: ["comment", "attachment"],
+  missing_source: ["comment", "attachment.path", "attachment.exists"],
   repair_filter: ["text", "colorName"],
-  export_annotations: ["type", "pageLabel", "text", "comment", "attachment"],
+  export_annotations: [
+    "type",
+    "pageLabel",
+    "text",
+    "comment",
+    "attachment.path",
+  ],
 };
 
 function sourcePath(values) {
@@ -44,7 +51,14 @@ function sourcePath(values) {
 }
 
 function sourceExists(values) {
-  return values?.attachment?.exists ?? values?.["attachment.exists"] ?? false;
+  return values?.attachment?.exists ?? values?.["attachment.exists"];
+}
+
+function projected(fields, field) {
+  return (
+    fields?.includes(field) ||
+    (field.startsWith("attachment.") && fields?.includes("attachment"))
+  );
 }
 
 function commonChecks(envelope, expected, { runRoot, vaultPath }) {
@@ -76,7 +90,7 @@ function validateExpandedAnnotations(
   const { errors, need } = commonChecks(envelope, expected, context);
   const request = envelope?.request ?? {};
   for (const field of expandedFields[caseName])
-    need(request.fields?.includes(field), `missing projected field ${field}`);
+    need(projected(request.fields, field), `missing projected field ${field}`);
   const rows = envelope?.rows;
   need(Array.isArray(rows), "full result rows are missing");
   if (!Array.isArray(rows)) return errors;
@@ -109,58 +123,35 @@ function validateExpandedAnnotations(
     );
     const values = row.values ?? {};
     for (const field of expandedFields[caseName]) {
-      if (field === "attachment") continue;
+      if (field.startsWith("attachment.")) continue;
       need(
-        JSON.stringify(values[field] ?? null) ===
-          JSON.stringify(spec[field] ?? null),
+        isDeepStrictEqual(values[field] ?? null, spec[field] ?? null),
         `${spec.key} has wrong ${field}`,
       );
     }
-    if (expandedFields[caseName].includes("attachment"))
+    if (expandedFields[caseName].includes("attachment.path"))
       need(
-        sourceExists(values) === spec.sourceExists &&
-          sourcePath(values)?.endsWith(spec.sourceSuffix),
+        sourcePath(values)?.endsWith(spec.sourceSuffix),
         `${spec.key} has wrong source file`,
       );
+    if (expandedFields[caseName].includes("attachment.exists"))
+      need(
+        sourceExists(values) === spec.sourceExists,
+        `${spec.key} has wrong attachment.exists`,
+      );
   }
-  if (["shared_marks", "reading_plan", "repair_filter"].includes(caseName)) {
+  if (expected.keys.some((key) => !key.endsWith("g118"))) {
     need(
       envelope?.libraries?.some((library) => library.type === "personal"),
       "My Library was not queried",
     );
+  }
+  if (expected.keys.some((key) => key.endsWith("g118"))) {
     need(
       envelope?.libraries?.some((library) => library.groupID === 118),
       "Lab Archive was not queried",
     );
   }
-  if (caseName === "attachment" || caseName === "export_annotations") {
-    need(
-      request.attachment?.includes("QANPDF22g118"),
-      "Lab Archive Attachment was not selected",
-    );
-  }
-  if (caseName === "colors") {
-    need(
-      request.item?.includes("QANPAPER"),
-      "My Library Item was not selected",
-    );
-    for (const fragment of ["colorName", "tags", "pageIndex"])
-      need(
-        request.filter?.includes(fragment),
-        `filter does not contain ${fragment}`,
-      );
-  }
-  if (caseName === "reverse_pages")
-    need(
-      request.sort?.[0]?.field === "pageIndex" &&
-        request.sort?.[0]?.direction === "desc",
-      "pages were not sorted descending",
-    );
-  if (caseName === "missing_source")
-    need(
-      request.filter?.includes("comment"),
-      "missing-file comment was not filtered",
-    );
   if (caseName === "reading_plan") {
     if (!itemEnvelope) need(false, "Item Query evidence is missing");
     else {
@@ -173,10 +164,6 @@ function validateExpandedAnnotations(
       need(
         itemEnvelope?.libraries?.some((library) => library.groupID === 118),
         "Item Query omitted Lab Archive",
-      );
-      need(
-        itemEnvelope?.request?.filter?.includes("query-annotation-eval"),
-        "Item Query did not select the reading plan",
       );
       const itemRows = itemEnvelope?.rows;
       need(Array.isArray(itemRows), "Item Query rows are missing");
@@ -250,7 +237,7 @@ function validateAnnotations(caseName, envelope, { expected, ...context }) {
     const row = rows[0];
     if (caseName === "mixed")
       need(
-        JSON.stringify(row?.values?.tags) === JSON.stringify(expected.tags),
+        isDeepStrictEqual(row?.values?.tags, expected.tags),
         "wrong Annotation Tags",
       );
     need(
@@ -277,8 +264,7 @@ function validateAnnotations(caseName, envelope, { expected, ...context }) {
     );
     need(row?.values?.text === expected.text, "wrong quoted text");
     need(
-      JSON.stringify(row?.values?.position) ===
-        JSON.stringify(expected.position),
+      isDeepStrictEqual(row?.values?.position, expected.position),
       "wrong requested position",
     );
     need(

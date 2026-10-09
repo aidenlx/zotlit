@@ -241,11 +241,18 @@ await test("accepts eight expanded Annotation Query cases and rejects missing ta
     /wrong parent Item/,
   );
 
+  const wrongScope = expandedEnvelope("colors");
+  wrongScope.libraries = [{ type: "group", groupID: 118 }];
+  assert.match(
+    validate("colors", wrongScope, { runRoot: root }).join("\n"),
+    /My Library was not queried/,
+  );
+
   const missing = expandedEnvelope("missing_source");
   missing.rows[0].values.attachment.exists = true;
   assert.match(
     validate("missing_source", missing, { runRoot: root }).join("\n"),
-    /wrong source file/,
+    /wrong attachment\.exists/,
   );
 
   const reverse = expandedEnvelope("reverse_pages");
@@ -262,6 +269,18 @@ await test("accepts the four complete Annotation Query cases", () => {
       validate(name, annotationEnvelope(name), { runRoot: root }),
       [],
     );
+});
+
+await test("position object property order does not change its coordinates", () => {
+  const position = annotationEnvelope("position");
+  const { kind, pageIndex, rects } = position.rows[0].values.position;
+  position.rows[0].values.position = { rects, pageIndex, kind };
+  assert.deepEqual(validate("position", position, { runRoot: root }), []);
+  position.rows[0].values.position.rects[0][0] += 1;
+  assert.match(
+    validate("position", position, { runRoot: root }).join("\n"),
+    /wrong requested position/,
+  );
 });
 
 await test("accepts live-style projected source paths and a filter-proven image type", () => {

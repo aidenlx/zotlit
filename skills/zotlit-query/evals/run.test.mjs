@@ -80,6 +80,12 @@ async function exercise(
           Object.hasOwn(schema.properties, "papers"),
           caseName === "reading_plan",
         );
+        if (caseName === "missing_source")
+          assert.ok(
+            schema.properties.annotations.items.required.includes(
+              "attachmentExists",
+            ),
+          );
         const identity = {
           source: {
             databasePath: join(corpus, "zotero-data", "zotero.sqlite"),
@@ -156,10 +162,12 @@ async function exercise(
                     ? row.indexedKey.endsWith("g118")
                       ? "Lab Archive"
                       : "My Library"
-                    : field === "itemIndexedKey" ||
-                        field === "attachmentIndexedKey"
-                      ? row[field]
-                      : row.values[field];
+                    : field === "attachmentExists"
+                      ? row.values.attachment.exists
+                      : field === "itemIndexedKey" ||
+                          field === "attachmentIndexedKey"
+                        ? row[field]
+                        : row.values[field];
             }
             return result;
           }),

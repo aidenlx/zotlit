@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { parseArgs } from "node:util";
+import { isDeepStrictEqual, parseArgs } from "node:util";
 
 import { validate } from "./check.mjs";
 
@@ -96,6 +96,7 @@ const annotationOutputSchema = {
           indexedKey: { type: "string" },
           itemIndexedKey: { type: "string" },
           attachmentIndexedKey: { type: "string" },
+          attachmentExists: { type: "boolean" },
           library: { type: "string" },
           type: { type: "string" },
           colorName: { type: ["string", "null"] },
@@ -180,7 +181,12 @@ const annotationAnswerFields = {
   ],
   colors: ["text", "colorName", "tags", "pageIndex"],
   reverse_pages: ["type", "pageLabel", "pageIndex", "text"],
-  missing_source: ["attachmentIndexedKey", "comment", "attachmentPath"],
+  missing_source: [
+    "attachmentIndexedKey",
+    "comment",
+    "attachmentPath",
+    "attachmentExists",
+  ],
   repair_filter: ["itemIndexedKey", "text", "colorName"],
   export_annotations: [
     "itemIndexedKey",
@@ -545,18 +551,20 @@ function checkAnnotationAnswer(
       const value =
         field === "attachmentPath"
           ? (values.attachment?.path ?? values["attachment.path"] ?? null)
-          : field === "library"
-            ? annotation.indexedKey.endsWith("g118")
-              ? "Lab Archive"
-              : "My Library"
-            : field === "itemIndexedKey" || field === "attachmentIndexedKey"
-              ? envelope.rows.find(
-                  (row) => row.indexedKey === annotation.indexedKey,
-                )?.[field]
-              : field === "itemTitle"
-                ? values["item.title"]
-                : (values[field] ?? null);
-      if (JSON.stringify(annotation[field]) !== JSON.stringify(value))
+          : field === "attachmentExists"
+            ? (values.attachment?.exists ?? values["attachment.exists"] ?? null)
+            : field === "library"
+              ? annotation.indexedKey.endsWith("g118")
+                ? "Lab Archive"
+                : "My Library"
+              : field === "itemIndexedKey" || field === "attachmentIndexedKey"
+                ? envelope.rows.find(
+                    (row) => row.indexedKey === annotation.indexedKey,
+                  )?.[field]
+                : field === "itemTitle"
+                  ? values["item.title"]
+                  : (values[field] ?? null);
+      if (!isDeepStrictEqual(annotation[field], value))
         errors.push(
           `answer has wrong ${field === "attachmentPath" ? "source path" : field} for ${annotation.indexedKey}`,
         );
@@ -564,16 +572,22 @@ function checkAnnotationAnswer(
   }
   if (mixedQueryCases.has(caseName)) {
     const actual = answer.papers;
+    const papers = Array.isArray(actual)
+      ? new Map(actual.map((paper) => [paper?.indexedKey, paper]))
+      : null;
     if (
-      !Array.isArray(actual) ||
-      JSON.stringify(
-        [...actual].sort((a, b) => a.indexedKey.localeCompare(b.indexedKey)),
-      ) !==
-        JSON.stringify(
-          [...expected.items].sort((a, b) =>
-            a.indexedKey.localeCompare(b.indexedKey),
-          ),
-        )
+      !papers ||
+      actual.length !== expected.items.length ||
+      papers.size !== actual.length ||
+      expected.items.some((paper) => {
+        const candidate = papers.get(paper.indexedKey);
+        return (
+          !candidate ||
+          candidate.title !== paper.title ||
+          candidate.library !== paper.library ||
+          candidate.annotationCount !== paper.annotationCount
+        );
+      })
     )
       errors.push("answer has wrong paper counts, including unmarked papers");
   }
@@ -581,9 +595,7 @@ function checkAnnotationAnswer(
     errors.push("answer has wrong retained export path");
   if (caseName === "position") {
     const annotation = answer.annotations?.[0];
-    if (
-      JSON.stringify(annotation?.position) !== JSON.stringify(expected.position)
-    )
+    if (!isDeepStrictEqual(annotation?.position, expected.position))
       errors.push("answer has wrong requested position");
   }
   if (caseName === "image") {
@@ -606,7 +618,8 @@ function checkAnnotationAnswer(
   return errors;
 }
 
-function checkAnswer(caseName, answer, context) {
+/** Pure final-answer check for the runner and saved-response regrades. */
+export function checkAnswer(caseName, answer, context) {
   return itemCases.has(caseName)
     ? checkItemAnswer(caseName, answer, context.resultPath)
     : checkAnnotationAnswer(caseName, answer, context);
