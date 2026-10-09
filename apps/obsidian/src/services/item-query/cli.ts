@@ -23,6 +23,9 @@ import {
   DEFAULT_FIELDS,
   DEFAULT_SORT,
   describeItemQueryCustomFields,
+  describeAnnotationQueryCustomFields,
+  DEFAULT_ANNOTATION_FIELDS,
+  DEFAULT_ANNOTATION_SORT,
   SLICE_BUDGET_MS,
 } from "@zotlit/item-query";
 import type {
@@ -51,6 +54,7 @@ import type { AttachmentFileResolver } from "./attachment-files";
 import {
   ANNOTATION_QUERY_COMMAND,
   ANNOTATION_QUERY_GUIDE_COMMAND,
+  ANNOTATION_QUERY_SCHEMA_COMMAND,
   annotationQueryFlags,
   DEFAULT_CLI_LIMIT,
   diagnostic,
@@ -81,6 +85,7 @@ export const CONTRACT_VERSION = contractVersion.contractVersion;
 
 export {
   ANNOTATION_QUERY_GUIDE_COMMAND,
+  ANNOTATION_QUERY_SCHEMA_COMMAND,
   DEFAULT_CLI_LIMIT,
   diagnostic,
   ITEM_QUERY_CANCEL_COMMAND,
@@ -190,7 +195,11 @@ export interface ItemQueryRuns {
   answer(params: CliData, signal: AbortSignal): Promise<string>;
   /** @returns `false` when no query with this id is running. */
   cancel(id: string): boolean;
-  schema(params: CliData, signal: AbortSignal): Promise<string>;
+  schema(
+    params: CliData,
+    signal: AbortSignal,
+    kind?: "annotations",
+  ): Promise<string>;
 }
 
 export function registerItemQueryCli(
@@ -224,6 +233,12 @@ export function registerItemQueryCli(
     createItemQueryCancelHandler((id) => runs.cancel(id)),
   );
   plugin.registerCliHandler(
+    ANNOTATION_QUERY_SCHEMA_COMMAND,
+    "Get the Annotation Query schema download, source custom fields, and CLI defaults as JSON",
+    null,
+    (params) => runs.schema(params, unload.signal, "annotations"),
+  );
+  plugin.registerCliHandler(
     ITEM_QUERY_SCHEMA_COMMAND,
     "Get the version-pinned schema download, source custom fields, and CLI defaults as JSON",
     null,
@@ -245,28 +260,42 @@ export function registerItemQueryCli(
 export function answerItemQuerySchema(
   deps: Pick<ItemQueryCliDeps, "identity">,
   pluginVersion: string,
+  kind?: "annotations",
 ): Effect.Effect<QueryReply, never, ItemQueryDatabase> {
-  return describeItemQueryCustomFields().pipe(
+  const command =
+    kind === "annotations"
+      ? ANNOTATION_QUERY_SCHEMA_COMMAND
+      : ITEM_QUERY_SCHEMA_COMMAND;
+  const asset = kind === "annotations" ? "annotation-query" : "item-query";
+  return (
+    kind === "annotations"
+      ? describeAnnotationQueryCustomFields()
+      : describeItemQueryCustomFields()
+  ).pipe(
     Effect.map((customFields) =>
       inline(
-        envelope(ITEM_QUERY_SCHEMA_COMMAND, {
+        envelope(command, {
           ok: true,
           identity: deps.identity,
           schema: {
-            url: `${resourceReleaseUrl(pluginVersion)}/item-query.schema.json`,
-            fileName: `zotlit-item-query-${pluginVersion}.schema.json`,
+            url: `${resourceReleaseUrl(pluginVersion)}/${asset}.schema.json`,
+            fileName: `zotlit-${asset}-${pluginVersion}.schema.json`,
           },
           customFields,
           defaults: {
-            fields: DEFAULT_FIELDS,
-            sort: DEFAULT_SORT,
+            fields:
+              kind === "annotations"
+                ? DEFAULT_ANNOTATION_FIELDS
+                : DEFAULT_FIELDS,
+            sort:
+              kind === "annotations" ? DEFAULT_ANNOTATION_SORT : DEFAULT_SORT,
             limit: DEFAULT_CLI_LIMIT,
             libraries: { source: "library-scope" },
           },
         }),
       ),
     ),
-    answerFailure(ITEM_QUERY_SCHEMA_COMMAND),
+    answerFailure(command),
   );
 }
 

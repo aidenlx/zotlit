@@ -11,7 +11,12 @@ import {
   DEFAULT_FIELDS,
   filterField,
 } from "./fields";
-import type { FieldNeeds, FilterValueDefinition } from "./fields";
+import type {
+  FieldNeeds,
+  FilterValueDefinition,
+  QueryItem,
+  FilterField,
+} from "./fields";
 import {
   GLOBAL_FUNCTION_NAMES,
   GLOBAL_FUNCTIONS,
@@ -46,15 +51,15 @@ interface NodeBase extends Span {
 }
 
 /** One node of a validated Filter Expression. */
-export type FilterNode = NodeBase &
+export type FilterNode<Item = QueryItem> = NodeBase &
   (
     | { readonly kind: "literal"; readonly value: FilterValue }
-    | { readonly kind: "list"; readonly elements: readonly FilterNode[] }
+    | { readonly kind: "list"; readonly elements: readonly FilterNode<Item>[] }
     | {
         /** A built-in field, read by its bare name. */
         readonly kind: "field";
         readonly name: string;
-        readonly value: FilterValueDefinition;
+        readonly value: FilterValueDefinition<Item>;
       }
     | {
         /** A custom field of the source, by its exact source name. */
@@ -62,7 +67,7 @@ export type FilterNode = NodeBase &
         readonly name: string;
         /** The filter reads it by a bare name, not as `custom["name"]`. */
         readonly bare: boolean;
-        readonly value: FilterValueDefinition;
+        readonly value: FilterValueDefinition<Item>;
       }
     | {
         /** A name an element expression binds: `value`, `index`, or `acc`. */
@@ -77,56 +82,56 @@ export type FilterNode = NodeBase &
          */
         readonly kind: "element";
         readonly name: string;
-        readonly subject: FilterNode;
+        readonly subject: FilterNode<Item>;
         readonly scope: readonly string[];
-        readonly expression: FilterNode;
-        readonly args: readonly FilterNode[];
+        readonly expression: FilterNode<Item>;
+        readonly args: readonly FilterNode<Item>[];
       }
     | {
         readonly kind: "unary";
         readonly operator: "!" | "-";
-        readonly operand: FilterNode;
+        readonly operand: FilterNode<Item>;
       }
     | {
         readonly kind: "binary";
         readonly operator: BinaryOperator;
-        readonly left: FilterNode;
-        readonly right: FilterNode;
+        readonly left: FilterNode<Item>;
+        readonly right: FilterNode<Item>;
       }
     | {
         readonly kind: "if";
-        readonly condition: FilterNode;
-        readonly whenTrue: FilterNode;
-        readonly whenFalse: FilterNode | null;
+        readonly condition: FilterNode<Item>;
+        readonly whenTrue: FilterNode<Item>;
+        readonly whenFalse: FilterNode<Item> | null;
       }
     | {
         readonly kind: "function";
         readonly name: string;
         readonly definition: FunctionDefinition;
-        readonly args: readonly FilterNode[];
+        readonly args: readonly FilterNode<Item>[];
       }
     | {
         /** The value type of the subject at execution selects the method. */
         readonly kind: "method";
         readonly name: string;
-        readonly subject: FilterNode;
-        readonly args: readonly FilterNode[];
+        readonly subject: FilterNode<Item>;
+        readonly args: readonly FilterNode<Item>[];
       }
     | {
         readonly kind: "property";
         readonly name: string;
-        readonly subject: FilterNode;
+        readonly subject: FilterNode<Item>;
       }
     | {
         readonly kind: "index";
-        readonly subject: FilterNode;
-        readonly index: FilterNode;
+        readonly subject: FilterNode<Item>;
+        readonly index: FilterNode<Item>;
       }
   );
 
 /** A validated Filter Expression. */
-export interface FilterPlan {
-  readonly root: FilterNode;
+export interface FilterPlan<Item = QueryItem> {
+  readonly root: FilterNode<Item>;
   /** What hydration loads before the filter runs: one entry for each field. */
   readonly needs: readonly FieldNeeds[];
   /**
@@ -173,7 +178,23 @@ const HINTS = {
  * A custom field is checked against the source later; see
  * {@link FilterPlan.customFields}.
  */
-export function planFilter(text: string): FilterPlan | FilterProblem {
+export interface FilterRegistry<Item> {
+  readonly field: (name: string) => FilterField<Item> | undefined;
+  readonly custom: (name: string) => {
+    value: FilterValueDefinition<Item>;
+    needs: FieldNeeds;
+  };
+  readonly prefix?: string;
+  readonly equalityField?: (name: string, literal: string) => string;
+}
+
+export function planFilter<Item = QueryItem>(
+  text: string,
+  registry: FilterRegistry<Item> = {
+    field: filterField,
+    custom: customFilterValue,
+  } as FilterRegistry<Item>,
+): FilterPlan<Item> | FilterProblem {
   const { ast, error } = parseExpressionAst(text);
   if (!ast) {
     return {
@@ -189,7 +210,7 @@ export function planFilter(text: string): FilterPlan | FilterProblem {
   const needs: FieldNeeds[] = [];
   const customFields: (Span & { name: string; bare: boolean })[] = [];
   try {
-    const root = new Validator(needs, customFields).node(ast);
+    const root = new Validator(needs, customFields, registry).node(ast);
     return { root, needs, customFields };
   } catch (thrown) {
     if (thrown instanceof Invalid) return thrown.problem;
@@ -253,9 +274,9 @@ function isDefinite(
  * The argument at `index` has a type that the parameter does not take, or is
  * a string literal outside the texts that the parameter takes.
  */
-function mismatch(
+function mismatch<Item>(
   definition: Pick<FunctionDefinition, "parameters" | "optional" | "rest">,
-  args: readonly FilterNode[],
+  args: readonly FilterNode<Item>[],
 ): { index: number; found: string; expected: string } | null {
   for (const [index, arg] of args.entries()) {
     const parameter = parameterAt(definition, index);
@@ -293,7 +314,7 @@ function describeMismatch(
   return `Argument ${wrong.index + 1} of ${name} is ${wrong.found}; ${name} takes ${wrong.expected} there.`;
 }
 
-class Validator {
+class Validator<Item> {
   readonly #needs: FieldNeeds[];
   readonly #customFields: (Span & { name: string; bare: boolean })[];
   /** The names the enclosing element expressions bind, innermost last. */
@@ -302,12 +323,13 @@ class Validator {
   constructor(
     needs: FieldNeeds[],
     customFields: (Span & { name: string; bare: boolean })[],
+    readonly registry: FilterRegistry<Item>,
   ) {
     this.#needs = needs;
     this.#customFields = customFields;
   }
 
-  node(ast: ExpressionNode): FilterNode {
+  node(ast: ExpressionNode): FilterNode<Item> {
     const { from, to } = ast;
     const span = { from, to };
     switch (ast.type) {
@@ -346,8 +368,31 @@ class Validator {
         };
       }
       case "binary": {
-        const left = this.node(ast.left);
-        const right = this.node(ast.right);
+        let left = this.node(ast.left);
+        let right = this.node(ast.right);
+        if (
+          (ast.operator === "==" || ast.operator === "!=") &&
+          this.registry.equalityField
+        ) {
+          const replace = (
+            field: FilterNode<Item>,
+            literal: FilterNode<Item>,
+          ) => {
+            if (
+              field.kind !== "field" ||
+              literal.kind !== "literal" ||
+              typeof literal.value !== "string"
+            )
+              return field;
+            const name = this.registry.equalityField!(
+              field.name,
+              literal.value,
+            );
+            return name === field.name ? field : this.#identifier(name, field);
+          };
+          left = replace(left, right);
+          right = replace(right, left);
+        }
         return {
           ...span,
           kind: "binary",
@@ -358,12 +403,22 @@ class Validator {
         };
       }
       case "object-access":
-        if (isCustomRoot(ast.object)) {
+        if (
+          this.registry.prefix &&
+          ast.object.type === "identifier" &&
+          ast.object.name === this.registry.prefix
+        ) {
+          return this.#identifier(
+            `${this.registry.prefix}.${ast.property}`,
+            span,
+          );
+        }
+        if (this.#isCustomRoot(ast.object)) {
           return this.#customField(ast.property, span, false);
         }
         return this.#property(this.node(ast.object), ast.property, span);
       case "array-access": {
-        if (isCustomRoot(ast.object)) {
+        if (this.#isCustomRoot(ast.object)) {
           if (ast.index.type !== "string") {
             return fail("invalid-filter", ast.index, {
               message:
@@ -399,7 +454,7 @@ class Validator {
     }
   }
 
-  #identifier(name: string, span: Span): FilterNode {
+  #identifier(name: string, span: Span): FilterNode<Item> {
     // Inside an element expression, a bound name comes before every field.
     if (this.#scopes.some((scope) => scope.includes(name))) {
       return {
@@ -409,7 +464,7 @@ class Validator {
         valueType: name === "index" ? "number" : "unknown",
       };
     }
-    const field = filterField(name);
+    const field = this.registry.field(name);
     if (field?.filterable) {
       this.#needs.push(field.needs);
       return {
@@ -440,11 +495,31 @@ class Validator {
       });
     }
     // Outside the built-in names: the bare form of a custom field.
-    return this.#customField(name, span, true);
+    if (this.registry.prefix && !name.startsWith(`${this.registry.prefix}.`)) {
+      return fail("unknown-field", span, {
+        message: `${quote(name)} is not an Annotation Query field.`,
+        hint: "Reach parent Item fields with item.",
+      });
+    }
+    return this.#customField(
+      this.registry.prefix ? name.slice(this.registry.prefix.length + 1) : name,
+      span,
+      true,
+    );
   }
 
-  #customField(name: string, span: Span, bare: boolean): FilterNode {
-    const { value, needs } = customFilterValue(name);
+  #isCustomRoot(ast: ExpressionNode): boolean {
+    if (!this.registry.prefix) return isCustomRoot(ast);
+    return (
+      ast.type === "object-access" &&
+      ast.property === "custom" &&
+      ast.object.type === "identifier" &&
+      ast.object.name === this.registry.prefix
+    );
+  }
+
+  #customField(name: string, span: Span, bare: boolean): FilterNode<Item> {
+    const { value, needs } = this.registry.custom(name);
     this.#needs.push(needs);
     this.#customFields.push({ ...span, name, bare });
     return {
@@ -457,7 +532,11 @@ class Validator {
     };
   }
 
-  #property(subject: FilterNode, name: string, span: Span): FilterNode {
+  #property(
+    subject: FilterNode<Item>,
+    name: string,
+    span: Span,
+  ): FilterNode<Item> {
     const named = propertiesNamed(name);
     const nameSpan = { from: span.to - name.length, to: span.to };
     if (named.length === 0) {
@@ -485,7 +564,7 @@ class Validator {
   #call(
     ast: Extract<ExpressionNode, { type: "call" }>,
     span: Span,
-  ): FilterNode {
+  ): FilterNode<Item> {
     const { callee } = ast;
     if (callee.type === "identifier") {
       return this.#globalCall(
@@ -517,7 +596,7 @@ class Validator {
   #globalCall(
     call: { name: string; nameSpan: Span; args: readonly ExpressionNode[] },
     span: Span,
-  ): FilterNode {
+  ): FilterNode<Item> {
     const { name, nameSpan } = call;
     const definition = name === "if" ? IF_FUNCTION : GLOBAL_FUNCTIONS.get(name);
     if (!definition) {
@@ -576,7 +655,7 @@ class Validator {
   #candidates(
     name: string,
     nameSpan: Span,
-    subject: FilterNode,
+    subject: FilterNode<Item>,
   ): readonly FunctionDefinition[] {
     const named = methodsNamed(name);
     if (named.length === 0) {
@@ -608,11 +687,11 @@ class Validator {
     call: {
       name: string;
       nameSpan: Span;
-      subject: FilterNode;
+      subject: FilterNode<Item>;
       args: readonly ExpressionNode[];
     },
     span: Span,
-  ): FilterNode {
+  ): FilterNode<Item> {
     const { name, nameSpan, subject } = call;
     const definition = this.#candidates(name, nameSpan, subject).find(
       (method) => method.scope,
@@ -624,7 +703,7 @@ class Validator {
       return this.#methodCall({ ...call, args }, span);
     }
     const [first, ...others] = call.args;
-    let expression: FilterNode | null = null;
+    let expression: FilterNode<Item> | null = null;
     if (first) {
       this.#scopes.push(scope);
       try {
@@ -656,11 +735,11 @@ class Validator {
     call: {
       name: string;
       nameSpan: Span;
-      subject: FilterNode;
-      args: readonly FilterNode[];
+      subject: FilterNode<Item>;
+      args: readonly FilterNode<Item>[];
     },
     span: Span,
-  ): FilterNode {
+  ): FilterNode<Item> {
     const { name, nameSpan, subject, args } = call;
     const candidates = this.#candidates(name, nameSpan, subject);
     const fitting = candidates.filter((method) =>

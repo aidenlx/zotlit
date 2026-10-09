@@ -160,3 +160,10 @@ export function textColorToName(
     NOTE_TEXT_COLOR_NAMES[key as keyof typeof NOTE_TEXT_COLOR_NAMES] ?? null
   );
 }
+
+/** Stored hex values that share an Annotation palette name. */
+export function annotationColorsForName(name: string): readonly string[] {
+  return Object.entries(ANNOTATION_COLOR_NAMES)
+    .filter(([, value]) => value === name)
+    .map(([hex]) => hex);
+}

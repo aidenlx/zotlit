@@ -1,24 +1,36 @@
 import { Effect } from "effect";
 
-import { formatIndexedKey } from "@zotlit/db";
+import { formatIndexedKey, parseIndexedKey } from "@zotlit/db";
 import type { Attachment } from "@zotlit/db";
 import {
   readAnnotationHydrateChunk,
+  readAnnotationRowCount,
+  readAnnotationCandidateSet,
   readAnnotationScanPage,
   readAnnotationUniverseRows,
   readFieldVocabulary,
 } from "@zotlit/db/item-query";
 import type { AnnotationScanRow } from "@zotlit/db/item-query";
+import type { AnnotationCandidateLeaf } from "@zotlit/db/item-query";
 
+import { lowerAnnotationCandidate } from "./annotation-candidates";
 import {
   annotationFieldDefinition,
   DEFAULT_ANNOTATION_FIELDS,
+  ANNOTATION_SORT_FIELDS,
+  planAnnotationFilter,
 } from "./annotation-fields";
 import type { QueryAnnotation } from "./annotation-fields";
+import { planCandidates, readCandidatePlan } from "./candidate-plan";
+import type { CandidatePlan } from "./candidate-plan";
 import { ItemQueryError } from "./error";
 import { consumeDataset } from "./execution";
+import type { FieldDefinition, FieldNeeds } from "./fields";
+import { matches as isMatch } from "./filter-evaluate";
+import { openHydration } from "./hydration";
 import { planPath, readPath } from "./projection";
 import type { PlannedPath } from "./projection";
+import { readQueryClock } from "./query-clock";
 import type { QueryConsumer, QuerySummary } from "./query-items";
 import { planRequest } from "./request";
 import type { ItemQueryRequest, QueryRow, SortSpec } from "./request";
@@ -75,13 +87,17 @@ export function consumeQueryAnnotations<A, E, R>(
       fields: [],
       sort: [],
     });
-    if (request.filter !== undefined)
+    const plannedFilter =
+      request.filter === undefined
+        ? null
+        : planAnnotationFilter(request.filter);
+    if (plannedFilter && "code" in plannedFilter)
       return yield* new ItemQueryError({
-        code: "invalid-filter",
-        location: { argument: "filter" },
-        message: "The Annotation Filter Expression is not supported.",
-        hint: "Select an Item with item.",
+        ...plannedFilter,
+        location: { argument: "filter", span: plannedFilter.span },
       });
+    const filter = plannedFilter;
+    const clock = yield* readQueryClock;
     const fields = request.fields ?? DEFAULT_ANNOTATION_FIELDS;
     const paths: PlannedPath<QueryAnnotation>[] = [];
     for (const [index, text] of fields.entries()) {
@@ -99,16 +115,29 @@ export function consumeQueryAnnotations<A, E, R>(
         });
       paths.push({ ...path, text });
     }
-    if (request.sort !== undefined && request.sort.length > 0)
-      return yield* new ItemQueryError({
-        code: "unsortable-field",
-        location: { argument: "sort", index: 0 },
-        message: "The requested Annotation sort is not supported.",
-        hint: "Omit sort to use reading order.",
-      });
+    const sorts: {
+      needs: FieldNeeds;
+      key: NonNullable<FieldDefinition<QueryAnnotation>["sortKey"]>;
+    }[] = [];
+    for (const [index, sort] of (request.sort ?? []).entries()) {
+      const definition = annotationFieldDefinition(sort.field);
+      if (!ANNOTATION_SORT_FIELDS.has(sort.field) || !definition?.sortKey)
+        return yield* new ItemQueryError({
+          code: "unsortable-field",
+          location: { argument: "sort", index },
+          message: `"${sort.field}" is not an Annotation Query Sortable Field.`,
+          hint: "Use a Sortable Field of the Annotation Query Schema.",
+        });
+      sorts.push({ needs: definition.needs([]), key: definition.sortKey });
+    }
+    const hydration = yield* openHydration(
+      { filter, paths, sorts },
+      request.libraries,
+    );
     const vocabulary = yield* readFieldVocabulary();
     const query = {
       ...base.query,
+      filter: request.filter ?? null,
       ...(request.item ? { item: request.item } : {}),
       ...(request.attachment ? { attachment: request.attachment } : {}),
       fields: [...fields],
@@ -119,8 +148,15 @@ export function consumeQueryAnnotations<A, E, R>(
         const hydrated = yield* readAnnotationHydrateChunk({
           rows: chunk,
           vocabulary,
-          fields: { builtIn: ["title", "citationKey"], custom: [] },
+          fields: { builtIn: [], custom: [] },
         });
+        const parents = new Map(
+          (yield* (projection ? hydration.projection : hydration.scan).load([
+            ...new Map(
+              chunk.map((row) => [row.parent.itemID, row.parent]),
+            ).values(),
+          ])).map((parent) => [parent.scan.itemID, parent]),
+        );
         const result: QueryAnnotation[] = [];
         for (const scan of chunk) {
           const annotation = hydrated.get(scan.itemID)!;
@@ -146,11 +182,7 @@ export function consumeQueryAnnotations<A, E, R>(
             annotation,
             groupID,
             file,
-            parent: {
-              scan: scan.parent,
-              hydrated: annotation.parent,
-              customFieldNames: vocabulary.customFieldNames,
-            },
+            parent: parents.get(scan.parent.itemID)!,
           });
         }
         return result;
@@ -159,13 +191,54 @@ export function consumeQueryAnnotations<A, E, R>(
       {
         query,
         libraries: request.libraries,
-        sort: query.sort,
+        sort: [...query.sort, { field: "sortIndex", direction: "asc" }],
         scan: { plan: true, load: load(false) },
         projection: { plan: true, load: load(true) },
         readScanPage: readAnnotationScanPage,
         readUniverseRows: readAnnotationUniverseRows,
-        candidates: () => Effect.succeed(null),
+        candidates: (library, tuning) =>
+          Effect.gen(function* () {
+            if (tuning.forceScan) return null;
+            const plans: CandidatePlan<AnnotationCandidateLeaf>[] = [];
+            const plan =
+              filter &&
+              planCandidates(
+                filter.root,
+                hydration.candidateSources(library),
+                lowerAnnotationCandidate,
+              );
+            if (plan) plans.push(plan);
+            for (const target of ["item", "attachment"] as const) {
+              const keys = request[target];
+              if (keys)
+                plans.push({
+                  kind: "leaf",
+                  leaf: {
+                    kind: "selector",
+                    target,
+                    keys: keys.flatMap((key) => {
+                      const parsed = parseIndexedKey(key);
+                      return parsed && parsed.groupID === library.groupID
+                        ? [parsed.key]
+                        : [];
+                    }),
+                  },
+                });
+            }
+            if (!plans.length) return null;
+            const rowCount = yield* readAnnotationRowCount(library.libraryID);
+            const cap = Math.floor(rowCount * tuning.capRatio);
+            return yield* readCandidatePlan(
+              { kind: "all", plans },
+              {
+                libraryID: library.libraryID,
+                cap,
+                readLeaf: readAnnotationCandidateSet,
+              },
+            );
+          }),
         matches: (item) =>
+          (!filter || isMatch(filter.root, item, clock)) &&
           (!request.item ||
             request.item.includes(
               formatIndexedKey(item.scan.parent.key, item.groupID),
@@ -174,14 +247,16 @@ export function consumeQueryAnnotations<A, E, R>(
             request.attachment.includes(
               formatIndexedKey(item.scan.attachmentKey, item.groupID),
             )),
-        keys: (item) =>
-          request.sort?.length === 0
-            ? []
-            : [
+        keys: (item) => [
+          ...(request.sort === undefined
+            ? [
                 item.scan.parent.dateModified,
                 item.scan.attachmentKey,
                 item.scan.sortIndex,
-              ],
+              ]
+            : sorts.map((sort) => sort.key(item, clock))),
+          item.scan.sortIndex,
+        ],
         project: (item, library, scan) => ({
           indexedKey: formatIndexedKey(scan.key, library.groupID),
           attachmentIndexedKey: formatIndexedKey(

@@ -18,7 +18,11 @@ import {
   ITEM_QUERY_SCHEMA_COMMAND,
   queryIdInUseFailure,
 } from "./cli";
-import { ANNOTATION_QUERY_COMMAND, queryCancelledText } from "./contract";
+import {
+  ANNOTATION_QUERY_COMMAND,
+  ANNOTATION_QUERY_SCHEMA_COMMAND,
+  queryCancelledText,
+} from "./contract";
 import {
   decodeAnnotationQuery,
   decodeItemQuery,
@@ -147,13 +151,28 @@ export class ItemQueryService extends Service {
     return true;
   }
 
-  schema(params: CliData, signal: AbortSignal): Promise<string> {
+  schema(
+    params: CliData,
+    signal: AbortSignal,
+    kind?: "annotations",
+  ): Promise<string> {
     const rejected = decodeSchemaArguments(params);
     if (rejected) {
-      return Promise.resolve(failure(ITEM_QUERY_SCHEMA_COMMAND, rejected));
+      return Promise.resolve(
+        failure(
+          kind === "annotations"
+            ? ANNOTATION_QUERY_SCHEMA_COMMAND
+            : ITEM_QUERY_SCHEMA_COMMAND,
+          rejected,
+        ),
+      );
     }
     return this.#start(
-      this.#job({ schema: true, pluginVersion: this.#deps.pluginVersion }),
+      this.#job({
+        schema: true,
+        pluginVersion: this.#deps.pluginVersion,
+        ...(kind ? { kind } : {}),
+      }),
       signal,
     );
   }
@@ -246,7 +265,9 @@ export class ItemQueryService extends Service {
               Effect.succeed<QueryAnswer>({
                 answer: failure(
                   command.schema
-                    ? ITEM_QUERY_SCHEMA_COMMAND
+                    ? command.kind === "annotations"
+                      ? ANNOTATION_QUERY_SCHEMA_COMMAND
+                      : ITEM_QUERY_SCHEMA_COMMAND
                     : command.query.kind === "annotations"
                       ? ANNOTATION_QUERY_COMMAND
                       : ITEM_QUERY_COMMAND,

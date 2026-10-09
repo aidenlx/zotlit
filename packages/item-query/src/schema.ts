@@ -3,3 +3,7 @@ export {
   describeItemQuery,
   describeItemQueryVocabulary,
 } from "./describe-item-query";
+export {
+  describeAnnotationQuery,
+  describeAnnotationQueryVocabulary,
+} from "./describe-annotation-query";

@@ -9,6 +9,7 @@ import {
 import {
   ANNOTATION_QUERY_COMMAND,
   ANNOTATION_QUERY_GUIDE_COMMAND,
+  ANNOTATION_QUERY_SCHEMA_COMMAND,
   DEFAULT_CLI_LIMIT,
   ITEM_QUERY_CANCEL_COMMAND,
   INLINE_MAX_BYTES,
@@ -16,7 +17,6 @@ import {
   queryCancelledText,
 } from "./contract";
 
-const ANNOTATION_QUERY_SCHEMA_COMMAND = "zotlit:annotation-query-schema";
 const ANNOTATION_IMAGE_COMMAND = "zotlit:annotation-image";
 
 /** One Annotation Query command from the guide, as flat CLI arguments. */

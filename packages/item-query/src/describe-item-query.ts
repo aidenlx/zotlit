@@ -204,16 +204,20 @@ function filterCapability(path: string): SchemaCapabilities["filter"] {
  * The Projection Paths below a value. A list element is written at index 0;
  * every other index reaches the element at that position.
  */
-function pathsBelow(path: string, shape: ValueShape): SchemaField[] {
+export function pathsBelow(
+  path: string,
+  shape: ValueShape,
+  capability = filterCapability,
+): SchemaField[] {
   const below = (child: string, childShape: ValueShape): SchemaField[] => [
     {
       path: child,
       type: jsonType(childShape),
-      filter: filterCapability(child),
+      filter: capability(child),
       projection: true,
       sort: false,
     },
-    ...pathsBelow(child, childShape),
+    ...pathsBelow(child, childShape, capability),
   ];
   switch (shape.kind) {
     case "scalar":
@@ -229,7 +233,7 @@ function pathsBelow(path: string, shape: ValueShape): SchemaField[] {
   }
 }
 
-function jsonType(shape: ValueShape): JsonType {
+export function jsonType(shape: ValueShape): JsonType {
   switch (shape.kind) {
     case "scalar":
       return shape.type;
