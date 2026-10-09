@@ -50,3 +50,18 @@ export {
   type AnnotationDetails,
   type HydratedAnnotation,
 } from "./annotations";
+
+export {
+  readAttachmentScanPage,
+  readAttachmentUniverseRows,
+  readAttachmentRowCount,
+  readAttachmentHydrateChunk,
+  type AttachmentScanRow,
+  type AttachmentDetails,
+  type HydratedAttachment,
+} from "./attachments";
+
+export {
+  readAttachmentCandidateSet,
+  type AttachmentCandidateLeaf,
+} from "./attachments";

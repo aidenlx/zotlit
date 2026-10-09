@@ -3338,6 +3338,7 @@ it.each([
   "tags",
   "creators",
   "creators[].fullName",
+  "title[]",
   "tags[]",
   "creators[0]",
   "date",
@@ -3384,4 +3385,21 @@ it("returns empty groups and exact zero counts when no rows match", async () => 
     truncated: false,
   });
   expect(found).not.toHaveProperty("rows");
+});
+
+it("keeps invalid group paths and corrections on the group argument", async () => {
+  using scenario = openScenarioDatabase();
+  for (const group of ["titl", 'custom["review.statu"]']) {
+    const error = await failure(scenario, { libraries: [personal], group });
+    if (!(error instanceof ItemQueryError)) throw error;
+    expect(error.diagnostic.location).toMatchObject({
+      argument: "group",
+      path: "group",
+    });
+    expect(
+      error.diagnostic.suggestions.some((suggestion) =>
+        suggestion.startsWith("group="),
+      ),
+    ).toBe(true);
+  }
 });

@@ -57,7 +57,7 @@ export function queryCancelledText(id: string): string {
 
 export const queryFlags = {
   from: {
-    value: "<items|annotations>",
+    value: "<items|attachments|annotations>",
     description: "Query Dataset to read (default: items)",
   },
   filter: {

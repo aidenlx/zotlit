@@ -1,5 +1,5 @@
-// The Query Dataset descriptor: everything that differs between Item Query and
-// Annotation Query. The request planner, the diagnoser, the schema description
+// The Query Dataset descriptor: everything that differs between Item,
+// Attachment, and Annotation Query. The request planner, the diagnoser, the schema description
 // and the operations read a descriptor and branch on nothing else.
 import { Context } from "effect";
 import type { Effect } from "effect";
@@ -35,14 +35,14 @@ export interface SortableField<Item, Needs = FieldNeeds> {
   readonly key: (item: Item, clock: QueryClock) => SortKey;
 }
 
-/** Resolves the file of an Attachment that an Annotation Query projects. */
+/** Resolves the file of an Attachment that a query reads. */
 export type ResolveAttachmentFile = (attachment: Attachment) => Effect.Effect<{
   readonly path: string | null;
   readonly exists: boolean;
 }>;
 
 /**
- * The Attachment file resolver of one run. Without one, an Annotation Query
+ * The Attachment file resolver of one run. Without one, a query
  * projects each Attachment file as absent.
  */
 export const AttachmentFileResolver =
@@ -52,13 +52,13 @@ export const AttachmentFileResolver =
   );
 
 /**
- * One Query Dataset: Items or Annotations. `Request` is the request the
+ * One Query Dataset: Items, Attachments, or Annotations. `Request` is the request the
  * dataset takes. The record type of a row is internal to the descriptor.
  */
 export interface QueryDataset<
   Request extends ItemQueryRequest = ItemQueryRequest,
 > {
-  readonly id: "items" | "annotations";
+  readonly id: "items" | "attachments" | "annotations";
   /** The record of one row in prose: `Item` or `Annotation`. */
   readonly noun: string;
   /** The query in prose: `Item Query` or `Annotation Query`. */

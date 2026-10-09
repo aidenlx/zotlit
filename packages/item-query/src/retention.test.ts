@@ -18,10 +18,11 @@ import {
   openScenarioDatabase,
   SCENARIO_LIBRARIES,
   seedBulkLibrary,
+  seedBulkAttachments,
 } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
-import { collectQuery, consumeQuery, ITEMS } from ".";
+import { ATTACHMENTS, collectQuery, consumeQuery, ITEMS } from ".";
 import type { ItemQueryRequest } from ".";
 import { runEffect } from "./test-helpers";
 
@@ -34,14 +35,19 @@ const collectGarbage = runInNewContext("gc") as () => void;
 const BULK_ITEMS = 2600;
 
 let scenario: ScenarioDatabase;
+let attachments: ScenarioDatabase;
 
 beforeAll(() => {
   scenario = openScenarioDatabase();
   seedBulkLibrary(scenario.sqlite, BULK_ITEMS);
+  attachments = openScenarioDatabase();
+  seedBulkLibrary(attachments.sqlite, BULK_ITEMS);
+  seedBulkAttachments(attachments.sqlite, BULK_ITEMS);
 });
 
 afterAll(() => {
   scenario.close();
+  attachments.close();
 });
 
 /** A request of the bulk Library, or of the Libraries it names. */
@@ -51,7 +57,12 @@ type Request = Omit<ItemQueryRequest, "libraries"> &
 const byTitle = [{ field: "title", direction: "asc" }] as const;
 
 /** The readers whose rows are the rows of the query universe. */
-const READS_UNIVERSE = new Set(["scan-page", "universe-rows"]);
+const READS_UNIVERSE = new Set([
+  "scan-page",
+  "universe-rows",
+  "attachment-scan-page",
+  "attachment-universe-rows",
+]);
 
 describe("the rows a limited query retains", () => {
   const LIMIT = 10;
@@ -59,6 +70,7 @@ describe("the rows a limited query retains", () => {
     name: string;
     request: Request;
     items: number;
+    attachment?: boolean;
     groups?: number;
   }[] = [
     {
@@ -71,6 +83,49 @@ describe("the rows a limited query retains", () => {
       },
       items: 10 + BULK_ITEMS,
       groups: 2,
+    },
+    {
+      name: "an Attachment scan",
+      attachment: true,
+      request: { fields: ["title"], limit: LIMIT },
+      items: BULK_ITEMS,
+    },
+    {
+      name: "an Attachment candidate set",
+      attachment: true,
+      request: {
+        filter: 'contentType == "text/html"',
+        fields: ["title"],
+        limit: LIMIT,
+      },
+      items: 520,
+    },
+    ...[
+      'tags.contains("bulk-fifth")',
+      'linkMode == "linked_url"',
+      'item.collections.contains("Bulk collection")',
+    ].map((filter) => ({
+      name: `an Attachment candidate for ${filter}`,
+      attachment: true,
+      request: { filter, fields: ["title"], limit: LIMIT },
+      items: 520,
+    })),
+    ...[
+      'indexedKey == "ATT22222g2718"',
+      '["ATT22222g2718"].contains(indexedKey)',
+      'item.indexedKey == "BLK22222g2718"',
+      '["BLK22222g2718"].contains(item.indexedKey)',
+    ].map((filter) => ({
+      name: `an Attachment Indexed Key candidate for ${filter}`,
+      attachment: true,
+      request: { filter, fields: ["title"], limit: LIMIT },
+      items: 1,
+    })),
+    {
+      name: "an Attachment key candidate",
+      attachment: true,
+      request: { filter: 'key == "ATT22222"', fields: ["title"], limit: LIMIT },
+      items: 1,
     },
     {
       name: "a scan that hydrates the returned rows only",
@@ -107,7 +162,7 @@ describe("the rows a limited query retains", () => {
 
   it.each(QUERIES)(
     "holds the limit plus one row, one page, and one hydrate chunk at most in $name",
-    async ({ request, items, groups = 1 }) => {
+    async ({ request, items, attachment, groups = 1 }) => {
       // The rows of the query universe and the rows of the hydrate statements
       // that the collector has not freed.
       const scanned: WeakRef<object>[] = [];
@@ -115,9 +170,12 @@ describe("the rows a limited query retains", () => {
       const samples: { at: string; rows: number; hydratedItems: number }[] = [];
 
       const limited = await runEffect(
-        collectQuery(ITEMS, { libraries: [BULK_LIBRARY], ...request }),
+        collectQuery(attachment ? ATTACHMENTS : ITEMS, {
+          libraries: [BULK_LIBRARY],
+          ...request,
+        }),
         {
-          client: scenario.db,
+          client: attachment ? attachments.db : scenario.db,
           keepStatements: false,
           onEvent: (event) => {
             if (event.type !== "statement") return;
@@ -127,8 +185,15 @@ describe("the rows a limited query retains", () => {
             collectGarbage();
             collectGarbage();
             const { reader, rows } = event.statement;
-            const kept = reader === "hydrate-chunk" ? hydrated : scanned;
-            if (reader === "hydrate-chunk" || READS_UNIVERSE.has(reader)) {
+            const kept =
+              reader === "hydrate-chunk" || reader === "attachment-details"
+                ? hydrated
+                : scanned;
+            if (
+              reader === "hydrate-chunk" ||
+              reader === "attachment-details" ||
+              READS_UNIVERSE.has(reader)
+            ) {
               for (const row of rows) kept.push(new WeakRef(row as never));
             }
             samples.push({
@@ -145,8 +210,8 @@ describe("the rows a limited query retains", () => {
       if (!Exit.isSuccess(limited.exit))
         throw new Error(String(limited.exit.cause));
       expect(limited.exit.value).toMatchObject({
-        returnedCount: LIMIT * groups,
-        truncated: true,
+        returnedCount: Math.min(LIMIT * groups, items),
+        truncated: items > LIMIT * groups,
       });
       expect(scanned).toHaveLength(items);
       const most = (values: number[]) => Math.max(0, ...values);
@@ -162,9 +227,9 @@ describe("the rows a limited query retains", () => {
       ).toBeLessThanOrEqual(250);
       // The projection starts with the matches only: the pages are released.
       expect(samples.at(-1)).toEqual({
-        at: "hydrate-chunk",
-        rows: groups === 1 ? LIMIT + 1 : LIMIT * groups + 1,
-        hydratedItems: groups === 1 ? LIMIT : 9,
+        at: attachment ? "attachment-details" : "hydrate-chunk",
+        rows: groups === 1 ? Math.min(LIMIT + 1, items) : LIMIT * groups + 1,
+        hydratedItems: groups === 1 ? Math.min(LIMIT, items) : 9,
       });
     },
   );

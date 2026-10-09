@@ -530,14 +530,14 @@ it("decodes comma lists with quoted commas and the effective Query Dataset", () 
   });
 });
 
-it.each(["attachments", "unknown"])(
+it.each(["unknown"])(
   "rejects unavailable Query Dataset %s with available datasets",
   (from) => {
     expect(decodeQuery({ from })).toMatchObject({
       ...rejected("from"),
-      expected: ["items", "annotations"],
+      expected: ["items", "attachments", "annotations"],
       report: expect.arrayContaining([
-        expect.stringContaining("items, annotations"),
+        expect.stringContaining("items, attachments, annotations"),
       ]),
     });
   },
@@ -597,4 +597,13 @@ it("decodes one group Projection Path and preserves custom-field punctuation", (
     group: 'custom["review,status"]',
   });
   expect(decodeQuery({ group: "" })).toMatchObject(rejected("group"));
+});
+
+it("accepts Attachment queries and narrowed Attachment schemas", () => {
+  expect(
+    decodeQuery({ from: "attachments", fields: "title,path" }),
+  ).toMatchObject({ from: "attachments", fields: ["title", "path"] });
+  expect(decodeSchemaArguments({ from: "attachments" })).toEqual({
+    from: "attachments",
+  });
 });

@@ -869,7 +869,7 @@ it.each([
   },
 );
 
-it("describes both Query Datasets once when from is omitted", async () => {
+it("describes all three Query Datasets once when from is omitted", async () => {
   using scenario = openScenarioDatabase({
     storage: "temp-directory",
     annotations: true,
@@ -882,8 +882,16 @@ it("describes both Query Datasets once when from is omitted", async () => {
     command: "zotlit:query-schema",
     ok: true,
   });
-  expect(Object.keys(result.defaults)).toEqual(["items", "annotations"]);
-  expect(Object.keys(result.datasets)).toEqual(["items", "annotations"]);
+  expect(Object.keys(result.defaults)).toEqual([
+    "items",
+    "attachments",
+    "annotations",
+  ]);
+  expect(Object.keys(result.datasets)).toEqual([
+    "items",
+    "attachments",
+    "annotations",
+  ]);
   expect(
     result.customFields.filter(
       (field: { name: string }) => field.name === "review.status",
@@ -895,4 +903,54 @@ it("describes both Query Datasets once when from is omitted", async () => {
   expect(Object.keys(selected.defaults)).toEqual(["annotations"]);
   expect(Object.keys(selected.datasets)).toEqual(["annotations"]);
   expect(selected.datasets.annotations.fields).toContain("item.title");
+});
+
+it("returns Attachment rows and narrows the live schema to Attachments", async () => {
+  using scenario = openScenarioDatabase({
+    storage: "temp-directory",
+    annotations: true,
+  });
+  const { service } = setup(scenario);
+  await using _owned = service;
+  const answer = JSON.parse(
+    await service.query(
+      {
+        from: "attachments",
+        filter: 'linkMode == "linked_file" && !exists',
+        fields: "title,library,item.title",
+      },
+      signal(),
+    ),
+  );
+  expect(answer).toMatchObject({
+    ok: true,
+    request: { from: "attachments" },
+    returnedCount: 1,
+    rows: [
+      {
+        indexedKey: "PDF2LINK",
+        itemIndexedKey: "ART2FULL",
+        values: {
+          title: "linkedAttachment",
+          library: "personal",
+          "item.title": "Exact Matching in Literature Review",
+        },
+      },
+    ],
+  });
+  const schema = JSON.parse(
+    await service.schema({ from: "attachments" }, signal()),
+  );
+  expect(Object.keys(schema.datasets)).toEqual(["attachments"]);
+  expect(Object.keys(schema.defaults)).toEqual(["attachments"]);
+  expect(schema.datasets.attachments).toMatchObject({ customPrefix: "item." });
+  expect(schema.defaults.attachments.fields).toEqual([
+    "title",
+    "contentType",
+    "linkMode",
+    "path",
+    "exists",
+    "item.title",
+    "item.citationKey",
+  ]);
 });

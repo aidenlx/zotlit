@@ -823,7 +823,7 @@ function seedDatabase(
   );
 
   const tags = new Map<string, number>();
-  for (const tag of [...items, ...annotations].flatMap(
+  for (const tag of [...items, ...attachments, ...annotations].flatMap(
     (item) => item.tags ?? [],
   )) {
     if (!tags.has(tag.name)) tags.set(tag.name, tags.size + 1);
@@ -834,7 +834,7 @@ function seedDatabase(
   );
   insert(
     "insert into itemTags (itemID, tagID, type) values (?, ?, ?)",
-    [...items, ...annotations].flatMap((item) =>
+    [...items, ...attachments, ...annotations].flatMap((item) =>
       (item.tags ?? []).map((tag) => [
         item.itemID,
         tags.get(tag.name)!,

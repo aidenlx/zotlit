@@ -584,7 +584,11 @@ describe("the Item Query Schema and collectQuery", () => {
 it("publishes one catalog with datasets and shared language vocabulary", async () => {
   const { describeQueryVocabulary } = await import("./schema");
   const catalog = describeQueryVocabulary();
-  expect(Object.keys(catalog.datasets)).toEqual(["items", "annotations"]);
+  expect(Object.keys(catalog.datasets)).toEqual([
+    "items",
+    "attachments",
+    "annotations",
+  ]);
   expect(catalog.datasets.items.fields).toContainEqual(
     expect.objectContaining({ path: "title" }),
   );

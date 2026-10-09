@@ -176,9 +176,9 @@ const library = v.lazy((input) =>
 );
 
 const from = v.picklist(
-  ["items", "annotations"],
+  ["items", "attachments", "annotations"],
   (issue) =>
-    `from '${String(issue.input)}' is not a Query Dataset: use items, annotations.`,
+    `from '${String(issue.input)}' is not a Query Dataset: use items, attachments, annotations.`,
 );
 
 /** The key of the first selector `selectors` names twice. */

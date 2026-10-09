@@ -23,6 +23,7 @@ export default defineConfig({
           include: [
             "src/query-items.test.ts",
             "src/query-annotations.test.ts",
+            "src/query-attachments.test.ts",
             "src/parity.test.ts",
           ],
           env: { ZOTLIT_SCENARIO_LAYOUT: "lowest" },

@@ -428,6 +428,62 @@ const BASE_ITEMS = {
 } as const satisfies Record<string, ScenarioItemSpec>;
 
 const ANNOTATION_ITEMS = {
+  linkedUrlAttachment: {
+    library: "personal",
+    key: "URL2LIVE",
+    itemType: "attachment",
+    dateAdded: SAME_DAY_ADDED,
+    dateModified: SAME_MODIFIED,
+    parent: "fullDateArticle",
+    fields: { title: "linkedUrlAttachment", url: "https://example.org/paper" },
+    attachment: { linkMode: 3, contentType: "text/html", path: "" },
+  },
+  snapshotAttachment: {
+    library: "personal",
+    key: "WEB2LIVE",
+    itemType: "attachment",
+    dateAdded: SAME_DAY_ADDED,
+    dateModified: SAME_MODIFIED,
+    parent: "fullDateArticle",
+    fields: {
+      title: "snapshotAttachment",
+      url: "https://example.org/snapshot",
+    },
+    attachment: {
+      linkMode: 1,
+      contentType: "text/html",
+      path: "storage:snapshot.html",
+    },
+  },
+  childItemAttachment: {
+    library: "personal",
+    key: "PDF2CHLD",
+    itemType: "attachment",
+    dateAdded: SAME_DAY_ADDED,
+    dateModified: SAME_MODIFIED,
+    parent: "childNote",
+    fields: { title: "childItemAttachment", url: "" },
+    attachment: {
+      linkMode: 0,
+      contentType: "application/pdf",
+      path: "storage:child.pdf",
+    },
+  },
+  embeddedImage: {
+    library: "personal",
+    key: "IMG2EMBD",
+    itemType: "attachment",
+    dateAdded: SAME_DAY_ADDED,
+    dateModified: SAME_MODIFIED,
+    parent: "liveAttachment",
+    fields: { title: "embeddedImage", url: "" },
+    attachment: {
+      linkMode: 4,
+      contentType: "image/png",
+      path: "storage:image.png",
+    },
+  },
+
   linkedAttachment: {
     library: "personal",
     key: "PDF2LINK",
@@ -436,6 +492,7 @@ const ANNOTATION_ITEMS = {
     dateModified: SAME_MODIFIED,
     parent: "fullDateArticle",
     fields: { title: "linkedAttachment" },
+    tags: [{ name: "attachment-method", type: 0 }],
     attachment: {
       linkMode: 2,
       contentType: "application/pdf",

@@ -21,6 +21,7 @@ export {
   bulkItemKey,
   seedBulkLibrary,
   seedBulkAnnotations,
+  seedBulkAttachments,
 } from "./bulk";
 export {
   SCENARIO_ITEMS,

@@ -9,6 +9,7 @@ import type { FieldNeeds, QueryItem, SortKey } from "./fields";
 import type { FilterPlan } from "./filter-plan";
 import { planPath, readPath } from "./projection";
 import type { PlannedPath } from "./projection";
+import { parseProjectionPath } from "./projection-path";
 import type { QueryClock } from "./query-clock";
 
 /**
@@ -207,17 +208,21 @@ export function planRequest(
 
     let group: PlannedPath | null = null;
     if (request.group !== undefined) {
+      const parsed = parseProjectionPath(request.group);
       const path = planPath(request.group, dataset.resolvePath);
-      const fault =
-        "kind" in path
+      const nonScalar =
+        (parsed.ok &&
+          parsed.segments.some((segment) => typeof segment === "object")) ||
+        (!("kind" in path) && !path.scalar);
+      const fault = nonScalar
+        ? {
+            kind: "group-scalar" as const,
+            name: request.group,
+            at: { from: 0, to: request.group.length },
+          }
+        : "kind" in path
           ? path
-          : !path.scalar
-            ? {
-                kind: "group-scalar" as const,
-                name: request.group,
-                at: { from: 0, to: request.group.length },
-              }
-            : null;
+          : null;
       if (fault)
         return yield* new ItemQueryError({
           dataset,

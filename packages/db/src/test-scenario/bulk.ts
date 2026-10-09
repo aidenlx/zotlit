@@ -168,3 +168,92 @@ export function seedBulkAnnotations(sqlite: DatabaseSync, count: number): void {
     throw error;
   }
 }
+
+/** One Attachment per bulk Item; every fifth is tagged and URL-only. */
+export function seedBulkAttachments(sqlite: DatabaseSync, count: number): void {
+  const attachmentType = lookupID(
+    sqlite,
+    "select itemTypeID as id from itemTypesCombined where typeName = ?",
+    "attachment",
+  );
+  const titleField = lookupID(
+    sqlite,
+    "select fieldID as id from fieldsCombined where fieldName = ? and custom = 0",
+    "title",
+  );
+  const fifthTag = lookupID(
+    sqlite,
+    "select tagID as id from tags where name = ?",
+    BULK_FIFTH_TAG,
+  );
+  const parentOf = sqlite.prepare(
+    "select itemID, dateAdded, dateModified from items where key = ? and libraryID = ?",
+  );
+  const insertItem = sqlite.prepare(
+    "insert into items (itemTypeID, libraryID, key, dateAdded, dateModified) values (?, ?, ?, ?, ?)",
+  );
+  const insertAttachment = sqlite.prepare(
+    "insert into itemAttachments (itemID, parentItemID, linkMode, contentType, path) values (?, ?, ?, ?, ?)",
+  );
+  const insertValue = sqlite.prepare(
+    "insert into itemDataValues (value) values (?)",
+  );
+  const insertData = sqlite.prepare(
+    "insert into itemData (itemID, fieldID, valueID) values (?, ?, ?)",
+  );
+  const tag = sqlite.prepare(
+    "insert into itemTags (itemID, tagID, type) values (?, ?, 0)",
+  );
+  const member = sqlite.prepare(
+    "insert into collectionItems (collectionID, itemID, orderIndex) values (?, ?, ?)",
+  );
+  sqlite.exec("begin");
+  try {
+    const collection = Number(
+      sqlite
+        .prepare(
+          "insert into collections (collectionName, libraryID, key) values ('Bulk collection', ?, 'BULKCOL2')",
+        )
+        .run(BULK_LIBRARY.libraryID).lastInsertRowid,
+    );
+    for (let index = 0; index < count; index++) {
+      const parent = parentOf.get(
+        bulkItemKey(index),
+        BULK_LIBRARY.libraryID,
+      ) as { itemID: number; dateAdded: string; dateModified: string };
+      const id = Number(
+        insertItem.run(
+          attachmentType,
+          BULK_LIBRARY.libraryID,
+          `ATT${bulkItemKey(index).slice(3)}`,
+          parent.dateAdded,
+          parent.dateModified,
+        ).lastInsertRowid,
+      );
+      const fifth = index % 5 === 0;
+      insertAttachment.run(
+        id,
+        parent.itemID,
+        fifth ? 3 : 0,
+        fifth ? "text/html" : "application/pdf",
+        fifth ? null : "storage:bulk.pdf",
+      );
+      insertData.run(
+        id,
+        titleField,
+        Number(
+          insertValue.run(`Bulk attachment ${String(index).padStart(5, "0")}`)
+            .lastInsertRowid,
+        ),
+      );
+      if (fifth) {
+        tag.run(id, fifthTag);
+        member.run(collection, parent.itemID, index);
+      }
+    }
+    sqlite.exec("commit");
+  } catch (error) {
+    sqlite.exec("rollback");
+    throw error;
+  }
+}
