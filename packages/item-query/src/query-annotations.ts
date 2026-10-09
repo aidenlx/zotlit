@@ -5,12 +5,10 @@ import { Effect } from "effect";
 import { formatIndexedKey } from "@zotlit/db";
 import {
   readAnnotationRowCount,
-  readAnnotationCandidateSet,
   readAnnotationScanPage,
   readAnnotationUniverseRows,
 } from "@zotlit/db/item-query";
 
-import { lowerAnnotationCandidate } from "./annotation-candidates";
 import {
   ANNOTATION_FIELDS,
   ANNOTATION_SORT_FIELDS,
@@ -21,7 +19,6 @@ import {
 } from "./annotation-fields";
 import type { QueryAnnotation } from "./annotation-fields";
 import { openAnnotationHydration } from "./annotation-hydration";
-import { planCandidates, readCandidatePlan } from "./candidate-plan";
 import { fieldRoot } from "./dataset";
 import type { QueryDataset } from "./dataset";
 import type { DatasetRun } from "./execution";
@@ -29,6 +26,10 @@ import { BUILT_IN_NAMES } from "./fields";
 import { matches as isMatch } from "./filter-evaluate";
 import { planFilter } from "./filter-plan";
 import { readPath } from "./projection";
+import {
+  planDatasetCandidates,
+  readDatasetCandidates,
+} from "./relation-candidates";
 import type { ItemQueryRequest } from "./request";
 
 const PARENT = "item.";
@@ -89,19 +90,15 @@ export const ANNOTATIONS: QueryDataset<ItemQueryRequest> = {
             if (tuning.forceScan) return null;
             const plan =
               filter &&
-              planCandidates(
+              planDatasetCandidates(
                 filter.root,
                 hydration.candidateSources(library),
-                lowerAnnotationCandidate,
+                "annotations",
               );
             if (!plan) return null;
             const rowCount = yield* readAnnotationRowCount(library.libraryID);
             const cap = Math.floor(rowCount * tuning.capRatio);
-            return yield* readCandidatePlan(plan, {
-              libraryID: library.libraryID,
-              cap,
-              readLeaf: readAnnotationCandidateSet,
-            });
+            return yield* readDatasetCandidates(plan, library.libraryID, cap);
           }),
         matches: (item) => !filter || isMatch(filter.root, item, clock),
         project: (item, library) => ({

@@ -3,7 +3,6 @@
 // evaluator decides each match.
 import { Effect } from "effect";
 
-import { readCandidateSet } from "@zotlit/db/item-query";
 import type {
   CandidateLeaf,
   CollectionPaths,
@@ -178,14 +177,8 @@ export const lowerItemCandidate: Lowering = (node, sources) => {
 /**
  * Read the candidate set of a plan: Item IDs of one Target Library, not yet
  * restricted to the query universe. Null: the set is above `cap`, and the
- * query uses the scan. Each statement reads `cap + 1` IDs at most.
+ * query uses the scan. Each leaf returns `cap + 1` candidate IDs at most.
  */
-export const readCandidates = (
-  plan: CandidatePlan,
-  libraryID: number,
-  cap: number,
-) => readCandidatePlan(plan, { libraryID, cap, readLeaf: readCandidateSet });
-
 export function readCandidatePlan<Leaf>(
   plan: CandidatePlan<Leaf>,
   options: {

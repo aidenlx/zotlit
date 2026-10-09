@@ -201,6 +201,7 @@ export function openHydration(
         : undefined;
     const customFieldNames = vocabulary?.customFieldNames ?? [];
 
+    const relatedSources: Hydration["candidateSources"][] = [];
     const loader = Effect.fnUntraced(function* (needs: readonly FieldNeeds[]) {
       const annotations = needs.some((need) => need.annotations !== undefined)
         ? yield* openAnnotationHydration(
@@ -220,6 +221,9 @@ export function openHydration(
             libraries,
           )
         : null;
+      for (const related of [annotations, attachments]) {
+        if (related) relatedSources.push(related.candidateSources);
+      }
       const passPlan =
         vocabulary && needs.some(needsHydration)
           ? loadPlan(needs, vocabulary)
@@ -303,11 +307,19 @@ export function openHydration(
     return {
       scan: yield* loader(scanNeeds),
       projection: yield* loader(pathNeeds),
-      candidateSources: (library) => ({
-        library,
-        vocabulary,
-        collectionPaths: pathsOf.get(library),
-      }),
+      candidateSources: (library) => {
+        const related = relatedSources.map((source) => source(library));
+        return {
+          library,
+          vocabulary:
+            vocabulary ??
+            related.find((source) => source.vocabulary)?.vocabulary ??
+            null,
+          collectionPaths:
+            pathsOf.get(library) ??
+            related.find((source) => source.collectionPaths)?.collectionPaths,
+        };
+      },
     };
   });
 }

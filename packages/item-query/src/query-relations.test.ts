@@ -345,3 +345,173 @@ it.each([
       expect(Cause.squash(exit.cause)).toMatchObject({ code: "unknown-field" });
   },
 );
+
+it("reads fewer rows for a selective relation filter than its forced scan", async () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  const request = {
+    libraries: [SCENARIO_LIBRARIES.personal],
+    filter: 'annotations.filter(value.tags.contains("method")).length > 0',
+    fields: [],
+    sort: [],
+  };
+  const planned = await runEffect(collectQuery(ITEMS, request), {
+    client: scenario.db,
+  });
+  const scanned = await runEffect(collectQuery(ITEMS, request), {
+    client: scenario.db,
+    tuning: { forceScan: true },
+  });
+  expect(planned.exit).toEqual(scanned.exit);
+  const rows = (events: typeof planned.events) =>
+    events.flatMap((event) =>
+      event.type === "statement" &&
+      ["scan-page", "universe-rows"].includes(event.statement.reader)
+        ? event.statement.rows
+        : [],
+    ).length;
+  expect(rows(planned.events)).toBeLessThan(rows(scanned.events));
+  expect(
+    planned.events.some(
+      (event) =>
+        event.type === "statement" &&
+        event.statement.reader === "relation-candidate-set",
+    ),
+  ).toBe(true);
+});
+
+it.each([
+  'attachments.filter(value.item.collections.contains("Thesis/Methods")).length > 0',
+  'annotations.filter(value.item.collections.within("Thesis")).length >= 1',
+  'attachments.filter(value.annotations.filter(value.item.collections.within("Thesis")).length > 0).length > 0',
+])("lowers parent Collection paths inside %s", async (filter) => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  const request = {
+    libraries: [SCENARIO_LIBRARIES.personal],
+    filter,
+    fields: [],
+    sort: [],
+  };
+  const actual = await runEffect(collectQuery(ITEMS, request), {
+    client: scenario.db,
+  });
+  const scan = await runEffect(collectQuery(ITEMS, request), {
+    client: scenario.db,
+    tuning: { forceScan: true },
+  });
+  expect(actual.exit).toEqual(scan.exit);
+  expect(
+    actual.events.some(
+      (event) =>
+        event.type === "statement" &&
+        event.statement.reader === "relation-candidate-set",
+    ),
+  ).toBe(true);
+});
+
+it.each([
+  [
+    ITEMS,
+    'attachments.filter(value.tags.contains("downloaded")).length > 0',
+    "attachment-candidate-set",
+  ],
+  [
+    ITEMS,
+    'attachments.filter(value.indexedKey == "PDF2LIVE").length >= 1',
+    "attachment-candidate-set",
+  ],
+  [
+    ITEMS,
+    '!attachments.filter(value.contentType == "application/pdf").isEmpty()',
+    "attachment-candidate-set",
+  ],
+  [
+    ITEMS,
+    'attachments.filter(value.linkMode == "linked_file").length > 0',
+    "attachment-candidate-set",
+  ],
+  [
+    ITEMS,
+    'annotations.filter(value.color == "#ffd400").length >= 1',
+    "annotation-candidate-set",
+  ],
+  [
+    ITEMS,
+    '!annotations.filter(value.type == "highlight").isEmpty()',
+    "annotation-candidate-set",
+  ],
+  [
+    ATTACHMENTS,
+    'annotations.filter(value.key == "ANN2HGHT").length > 0',
+    "annotation-candidate-set",
+  ],
+  [
+    ATTACHMENTS,
+    'annotations.filter(value.tags.contains("method")).length >= 1',
+    "annotation-candidate-set",
+  ],
+  [
+    ATTACHMENTS,
+    '!annotations.filter(value.color == "#ffd400").isEmpty()',
+    "annotation-candidate-set",
+  ],
+] as const)(
+  "uses the element dataset's reader for %s %s",
+  async (dataset, filter, reader) => {
+    using scenario = openScenarioDatabase({ annotations: true });
+    const request = {
+      libraries: [SCENARIO_LIBRARIES.personal],
+      filter,
+      fields: [],
+      sort: [],
+    };
+    const actual = await runEffect(collectQuery(dataset, request), {
+      client: scenario.db,
+    });
+    const scan = await runEffect(collectQuery(dataset, request), {
+      client: scenario.db,
+      tuning: { forceScan: true },
+    });
+    expect(actual.exit).toEqual(scan.exit);
+    expect(
+      actual.events.some(
+        (event) =>
+          event.type === "statement" && event.statement.reader === reader,
+      ),
+    ).toBe(true);
+  },
+);
+
+it.each([
+  "attachments.filter(value.exists).length > 0",
+  'annotations.filter(value.tags.contains("method")).isEmpty()',
+  '!(annotations.filter(value.tags.contains("method")).length > 0)',
+  'annotations.filter(value.tags.contains("method")).length > 1',
+  'annotations.filter(value.tags.contains("method")).length >= 2',
+  'annotations.filter(key == "ART2FULL").length > 0',
+  'annotations.filter(value.type == "highlight" || index == 0).length > 0',
+])("keeps the scan for %s", async (filter) => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  const actual = await runEffect(
+    collectQuery(ITEMS, {
+      libraries: [SCENARIO_LIBRARIES.personal],
+      filter,
+      fields: [],
+      sort: [],
+    }),
+    { client: scenario.db },
+  );
+  if (actual.exit._tag === "Failure") throw Cause.squash(actual.exit.cause);
+  expect(
+    actual.events.some(
+      (event) =>
+        event.type === "statement" && event.statement.reader === "scan-page",
+    ),
+  ).toBe(true);
+  expect(
+    actual.events.some(
+      (event) =>
+        event.type === "statement" &&
+        event.statement.reader.endsWith("candidate-set"),
+    ),
+  ).toBe(false);
+});

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  DATASET_QUERY_SPECS,
   evaluateTier,
   failedEngineChecks,
   formatSummary,
@@ -571,4 +572,49 @@ describe("summary", () => {
     expect(passed).toContain("- Keyset paging meets the budgets.");
     expect(passed).toContain("Raw output: `.scratch/query-measure/raw.json`");
   });
+});
+
+it("holds relation filters and dataset defaults to the existing budgets at each tier", () => {
+  expect(DATASET_QUERY_SPECS.map((spec) => spec.id)).toEqual([
+    "items-default",
+    "attachments-default",
+    "annotations-default",
+    "relation-tag",
+    "relation-scan",
+    "all-attachment-paths",
+  ]);
+  for (const items of [10_000, 50_000, 100_000]) {
+    const measured = tier({
+      items,
+      queries: DATASET_QUERY_SPECS.map((spec) =>
+        query({
+          ...spec,
+          runs: [
+            {
+              totalMs: 51,
+              slices: [4],
+              answerSteps: [1],
+              uiGaps: [4],
+              worstSliceReaders: [],
+            },
+          ],
+        }),
+      ),
+    });
+    const checks = statuses(measured);
+    expect(checks).toContain(
+      `total relation-tag: ${items === 100_000 ? "recorded" : "failed"}`,
+    );
+    expect(checks).toContain("total all-attachment-paths: recorded");
+    expect(checks).toContain("slices all-attachment-paths: passed");
+    for (const id of [
+      "items-default",
+      "attachments-default",
+      "annotations-default",
+      "relation-scan",
+    ])
+      expect(checks).toContain(
+        `total ${id}: ${items === 100_000 ? "recorded" : "passed"}`,
+      );
+  }
 });

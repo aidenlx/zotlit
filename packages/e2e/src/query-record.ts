@@ -28,6 +28,50 @@ export const THRESHOLDS = {
  */
 export type QueryClass = "selective" | "other" | "all";
 
+/** The same cross-dataset workload at every measurement tier. */
+export const DATASET_QUERY_SPECS: readonly Pick<
+  QueryMeasurement,
+  "id" | "class" | "args"
+>[] = [
+  {
+    id: "items-default",
+    class: "other",
+    args: { from: "items", limit: "100" },
+  },
+  {
+    id: "attachments-default",
+    class: "other",
+    args: { from: "attachments", limit: "100" },
+  },
+  {
+    id: "annotations-default",
+    class: "other",
+    args: { from: "annotations", limit: "100" },
+  },
+  {
+    id: "relation-tag",
+    class: "selective",
+    args: {
+      filter:
+        'annotations.filter(value.tags.contains("methodology")).length > 0',
+      limit: "100",
+    },
+  },
+  {
+    id: "relation-scan",
+    class: "other",
+    args: {
+      filter: "attachments.filter(value.exists).isEmpty()",
+      limit: "100",
+    },
+  },
+  {
+    id: "all-attachment-paths",
+    class: "all",
+    args: { fields: "attachments[].path", limit: "all" },
+  },
+];
+
 /** One run of one query, as the measurement command reports it. */
 export interface RunSample {
   totalMs: number;
