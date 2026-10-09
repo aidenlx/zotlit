@@ -12,6 +12,7 @@ import type { QueryDataset } from "./dataset";
 import { diagnoseWarning } from "./diagnose";
 import type { ItemQueryError } from "./error";
 import { consumeDataset } from "./execution";
+import { indexedKeyWarnings } from "./indexed-key-selection";
 import { readQueryClock } from "./query-clock";
 import { planRequest } from "./request";
 import type { ItemQueryRequest, QueryResult, QueryRow } from "./request";
@@ -76,9 +77,20 @@ export function consumeQuery<Request extends ItemQueryRequest, A, E, R>(
       {
         ...run,
         query,
-        warnings: plan.warnings.map((fault) =>
-          diagnoseWarning(fault, query.filter!, { clock, dataset }),
-        ),
+        warnings: [
+          ...plan.warnings,
+          ...(plan.filter
+            ? indexedKeyWarnings(
+                plan.filter.root,
+                dataset.id,
+                request.libraries,
+              )
+            : []),
+        ]
+          .sort((a, b) => a.at.from - b.at.from)
+          .map((fault) =>
+            diagnoseWarning(fault, query.filter!, { clock, dataset }),
+          ),
         libraries: request.libraries,
         sort: plan.order,
         readScanPage: dataset.readScanPage,

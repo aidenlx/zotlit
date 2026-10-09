@@ -435,42 +435,27 @@ it("preserves received quote characters in a reconstructed shell argument", () =
 const decodeAnnotationQuery = answered((params) =>
   decode.decodeQuery({ ...params, from: "annotations" }),
 );
-describe("decodeAnnotationQuery", () => {
-  it("infers Libraries from Item keys and keeps the worker request JSON-only", () => {
-    const decoded = decodeAnnotationQuery({
-      item: '["ART2FULLg4815","ART2FULL"]',
-      fields: "[]",
-    });
-    expect(decoded).toEqual({
-      from: "annotations",
-      item: ["ART2FULLg4815", "ART2FULL"],
-      libraries: {
-        scope: {
-          mode: "selected",
-          libraries: [{ type: "personal" }, { type: "group", groupID: 4815 }],
-        },
-        parameter: "item",
-      },
-      fields: [],
-      limit: 100,
-    });
-    expect(JSON.parse(JSON.stringify(decoded))).toEqual(decoded);
+// Failure modes: selectors still resolve Libraries, or their rejection omits recovery.
+it.each([
+  ["items", "item", "indexedKey"],
+  ["items", "attachment", "indexedKey"],
+  ["annotations", "item", "item.indexedKey"],
+  ["annotations", "attachment", "attachment.indexedKey"],
+])("rejects %s %s with filter selection guidance", (from, parameter, field) => {
+  const diagnostic = decodeQuery({
+    from,
+    [parameter]: "ART2FULL",
+    library: "personal",
   });
-  it.each<CliData>([
-    { item: "ART2FULL", library: "personal" },
-    { item: "ART2FULL", library: "all" },
-    { item: "invalid" },
-    { attachment: "[]" },
-  ])("rejects a malformed key or key/Library conflict: %j", (params) => {
-    expect(decodeAnnotationQuery(params)).toMatchObject({
-      code: "invalid-argument",
-    });
+  expect(diagnostic).toMatchObject({
+    code: "invalid-argument",
+    message: expect.stringContaining("Unknown parameter"),
+    location: { argument: parameter },
+    hint: `Use filter='${field} == "<key>"' to select by Indexed Key.`,
   });
 });
 
 it.each([
-  [{ item: '["ART2FULL", 3]' }, "item", "item[1]"],
-  [{ attachment: '["PDF2LIVE", "bad"]' }, "attachment", "attachment[1]"],
   [{ fields: '["text", 3]' }, "fields", "fields[1]"],
   [
     { sort: '[{"field":"pageIndex","direction":"ascending"}]' },
@@ -505,19 +490,20 @@ it("preserves shell-split evidence for Annotation filters", () => {
   });
 });
 
-it.each([
-  [{ item: "ART2FULL", library: "personal", limit: "bad" }, "library"],
-  [{ attachment: "PDF2LIVE", library: "all", fields: "bad" }, "library"],
-] as const)(
-  "rejects an excluded Library argument before other invalid options: %j",
-  (params, parameter) => {
-    expect(decodeAnnotationQuery(params)).toMatchObject({
-      code: "invalid-argument",
-      location: { argument: parameter },
-      message: expect.stringContaining("An Indexed Key selects its Library"),
-    });
-  },
-);
+it("keeps Target Libraries independent of an Annotation key filter", () => {
+  expect(
+    decodeAnnotationQuery({
+      filter: 'item.indexedKey == "ART2FULLg4815"',
+      library: "personal",
+    }),
+  ).toMatchObject({
+    filter: 'item.indexedKey == "ART2FULLg4815"',
+    libraries: {
+      parameter: "library",
+      scope: { mode: "selected", libraries: [{ type: "personal" }] },
+    },
+  });
+});
 
 it("decodes comma lists with quoted commas and the effective Query Dataset", () => {
   expect(

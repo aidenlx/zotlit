@@ -26,7 +26,7 @@ import {
   ITEMS,
 } from "@zotlit/item-query";
 import type {
-  AnnotationQueryRequest,
+  ItemQueryRequest,
   ItemQueryError,
   QueryRow,
   QuerySummary,
@@ -219,9 +219,7 @@ function answerQuery(
         reason: requireEach ? "named-none" : "scope-none",
       });
     }
-    const request: AnnotationQueryRequest = {
-      item: decoded.item,
-      attachment: decoded.attachment,
+    const request: ItemQueryRequest = {
       filter: decoded.filter,
       fields: decoded.fields,
       sort: decoded.sort,

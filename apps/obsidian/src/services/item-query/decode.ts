@@ -11,11 +11,9 @@ import { isAbsolute } from "node:path";
 import type { CliData } from "obsidian";
 import * as v from "valibot";
 
-import { formatIndexedKey, parseIndexedKey } from "@zotlit/db";
 import { UNLIMITED_LIMIT } from "@zotlit/item-query";
 
 import {
-  cliNotApplicable,
   cliParams,
   cliText,
   cliVariants,
@@ -50,7 +48,7 @@ export { rejectionDiagnostic } from "./contract";
 export interface NamedLibraries {
   scope: LibraryScope;
   /** The argument that names them. */
-  parameter: "library" | "item" | "attachment";
+  parameter: "library";
 }
 
 const QUERY_ID = /^[\w.-]+$/;
@@ -359,87 +357,29 @@ export function decodeCancelArguments(params: CliData): CliRequest<string> {
   });
 }
 
-const indexedKey = v.pipe(
-  v.string(),
-  v.check((text) => {
-    const key = parseIndexedKey(text);
-    return key !== null && (key.groupID === null || key.groupID > 0);
-  }, "Use a valid Indexed Key."),
-  v.transform((text) => {
-    const key = parseIndexedKey(text)!;
-    return formatIndexedKey(key.key, key.groupID);
-  }),
-);
-const annotationSelector = (name: string) =>
-  v.lazy((input) =>
-    typeof input === "string" && input.startsWith("[")
-      ? jsonParameter(
-          name,
-          "a nonempty JSON array of Indexed Keys",
-          v.pipe(v.array(indexedKey), v.minLength(1)),
-        )
-      : v.pipe(
-          indexedKey,
-          v.transform((key) => [key]),
-        ),
-  );
-const queryParams = cliVariants(
-  (params) =>
-    params.from === "annotations" &&
-    (params.item !== undefined || params.attachment !== undefined)
-      ? "selectors"
-      : queryVariant(params),
-  {
-    ...queryVariants,
-    selectors: v.pipe(
-      cliParams({
-        item: v.optional(annotationSelector("item")),
-        attachment: v.optional(annotationSelector("attachment")),
-        library: cliNotApplicable(
-          "An Indexed Key selects its Library. Omit library beside Item or Attachment keys.",
-        ),
-        ...queryOptions,
-      }),
-      v.transform(({ item, attachment, library: _, ...options }) => {
-        const selected = new Map<string, LibrarySelector>();
-        for (const text of [...(item ?? []), ...(attachment ?? [])]) {
-          const key = parseIndexedKey(text)!;
-          selected.set(
-            String(key.groupID),
-            key.groupID === null
-              ? { type: "personal" }
-              : { type: "group", groupID: key.groupID },
-          );
-        }
-        return {
-          ...decodedQuery(options, {
-            scope: {
-              mode: "selected",
-              libraries: [...selected.values()].toSorted(compareSelectors),
-            },
-            parameter: item !== undefined ? "item" : "attachment",
-          }),
-          ...(item === undefined ? {} : { item: [...new Set(item)] }),
-          ...(attachment === undefined
-            ? {}
-            : { attachment: [...new Set(attachment)] }),
-        };
-      }),
-    ),
-  },
-);
+const queryParams = cliVariants(queryVariant, queryVariants);
 
 /** The decoded query crosses the worker seam as plain JSON. */
-export type DecodedQuery = v.InferOutput<typeof queryParams> & {
-  readonly item?: string[];
-  readonly attachment?: string[];
-};
+export type DecodedQuery = v.InferOutput<typeof queryParams>;
 export type QueryParam = CliParamName<typeof queryParams>;
 
 export function decodeQuery(params: CliData): CliRequest<DecodedQuery> {
   const request = decodeCliParams(params, queryParams, {
     command: QUERY_COMMAND,
   });
+  if (
+    request.kind === "invalid" &&
+    (request.parameter === "item" || request.parameter === "attachment")
+  ) {
+    const field =
+      params.from === "annotations"
+        ? `${request.parameter}.indexedKey`
+        : "indexedKey";
+    return {
+      ...request,
+      hint: `Use filter='${field} == "<key>"' to select by Indexed Key.`,
+    };
+  }
   if (request.kind === "invalid" && request.parameter === "libraries") {
     return {
       ...request,

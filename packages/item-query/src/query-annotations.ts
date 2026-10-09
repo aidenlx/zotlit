@@ -2,14 +2,13 @@
 // of the Target Libraries, on the same bounded execution as Item Query.
 import { Effect } from "effect";
 
-import { formatIndexedKey, parseIndexedKey } from "@zotlit/db";
+import { formatIndexedKey } from "@zotlit/db";
 import {
   readAnnotationRowCount,
   readAnnotationCandidateSet,
   readAnnotationScanPage,
   readAnnotationUniverseRows,
 } from "@zotlit/db/item-query";
-import type { AnnotationCandidateLeaf } from "@zotlit/db/item-query";
 
 import { lowerAnnotationCandidate } from "./annotation-candidates";
 import {
@@ -24,19 +23,18 @@ import {
 import type { QueryAnnotation } from "./annotation-fields";
 import { openAnnotationHydration } from "./annotation-hydration";
 import { planCandidates, readCandidatePlan } from "./candidate-plan";
-import type { CandidatePlan } from "./candidate-plan";
 import { fieldRoot } from "./dataset";
 import type { QueryDataset } from "./dataset";
 import type { DatasetRun } from "./execution";
 import { BUILT_IN_NAMES } from "./fields";
 import { matches as isMatch } from "./filter-evaluate";
 import { readPath } from "./projection";
-import type { AnnotationQueryRequest } from "./request";
+import type { ItemQueryRequest } from "./request";
 
 const PARENT = "item.";
 
 /** Annotation Query: one Annotation Row for each non-trashed Annotation. */
-export const ANNOTATIONS: QueryDataset<AnnotationQueryRequest> = {
+export const ANNOTATIONS: QueryDataset<ItemQueryRequest> = {
   id: "annotations",
   noun: "Annotation",
   family: "Annotation Query",
@@ -50,8 +48,10 @@ export const ANNOTATIONS: QueryDataset<AnnotationQueryRequest> = {
   tieBreakers: [{ field: "sortIndex", direction: "asc" }],
   names: [
     ...ANNOTATION_FIELDS.keys(),
+    "key",
+    "indexedKey",
+    "attachment.indexedKey",
     "item",
-    "item.indexedKey",
     ...BUILT_IN_NAMES.map((name) => PARENT + name),
   ],
   sortableFields: ANNOTATION_SORT_FIELDS,
@@ -87,7 +87,6 @@ export const ANNOTATIONS: QueryDataset<AnnotationQueryRequest> = {
         candidates: (library, tuning) =>
           Effect.gen(function* () {
             if (tuning.forceScan) return null;
-            const plans: CandidatePlan<AnnotationCandidateLeaf>[] = [];
             const plan =
               filter &&
               planCandidates(
@@ -95,46 +94,16 @@ export const ANNOTATIONS: QueryDataset<AnnotationQueryRequest> = {
                 hydration.candidateSources(library),
                 lowerAnnotationCandidate,
               );
-            if (plan) plans.push(plan);
-            for (const target of ["item", "attachment"] as const) {
-              const keys = request[target];
-              if (keys)
-                plans.push({
-                  kind: "leaf",
-                  leaf: {
-                    kind: "selector",
-                    target,
-                    keys: keys.flatMap((key) => {
-                      const parsed = parseIndexedKey(key);
-                      return parsed && parsed.groupID === library.groupID
-                        ? [parsed.key]
-                        : [];
-                    }),
-                  },
-                });
-            }
-            if (!plans.length) return null;
+            if (!plan) return null;
             const rowCount = yield* readAnnotationRowCount(library.libraryID);
             const cap = Math.floor(rowCount * tuning.capRatio);
-            return yield* readCandidatePlan(
-              { kind: "all", plans },
-              {
-                libraryID: library.libraryID,
-                cap,
-                readLeaf: readAnnotationCandidateSet,
-              },
-            );
+            return yield* readCandidatePlan(plan, {
+              libraryID: library.libraryID,
+              cap,
+              readLeaf: readAnnotationCandidateSet,
+            });
           }),
-        matches: (item) =>
-          (!filter || isMatch(filter.root, item, clock)) &&
-          (!request.item ||
-            request.item.includes(
-              formatIndexedKey(item.scan.parent.key, item.groupID),
-            )) &&
-          (!request.attachment ||
-            request.attachment.includes(
-              formatIndexedKey(item.scan.attachmentKey, item.groupID),
-            )),
+        matches: (item) => !filter || isMatch(filter.root, item, clock),
         project: (item, library) => ({
           indexedKey: formatIndexedKey(item.scan.key, library.groupID),
           attachmentIndexedKey: formatIndexedKey(

@@ -14,6 +14,8 @@ import type {
 
 import { isStoredStringField } from "./fields";
 import type { FilterNode } from "./filter-plan";
+import { lowerIndexedKeySelection } from "./indexed-key-selection";
+import type { TargetLibrary } from "./request";
 
 /** How the engine gets a candidate set for a filter. */
 export type CandidatePlan<Leaf = CandidateLeaf> =
@@ -28,6 +30,7 @@ export type CandidatePlan<Leaf = CandidateLeaf> =
  * source the query did not read lowers nothing.
  */
 export interface CandidateSources {
+  readonly library: TargetLibrary;
   readonly vocabulary: FieldVocabulary | null;
   readonly collectionPaths: CollectionPaths | undefined;
 }
@@ -163,6 +166,8 @@ export function planCandidates<Item, Leaf = CandidateLeaf>(
 }
 
 export const lowerItemCandidate: Lowering = (node, sources) => {
+  const keys = lowerIndexedKeySelection(node, "items", sources.library);
+  if (keys) return { kind: "keys", keys: keys.keys };
   for (const lower of LOWERINGS) {
     const leaf = lower(node, sources);
     if (leaf) return leaf;

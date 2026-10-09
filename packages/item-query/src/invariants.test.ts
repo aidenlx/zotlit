@@ -94,11 +94,49 @@ const PLAN_PATHS: readonly {
   name: string;
   request: Request;
   annotation?: boolean;
+  result?: Pick<QueryResult, "returnedCount" | "truncated">;
   /** @default the bulk Library */
   libraries?: ItemQueryRequest["libraries"];
   /** The Items that each statement of a reader reads, in order. */
   reads: Record<string, number[]>;
 }[] = [
+  {
+    name: "an Indexed Key list within the candidate cap",
+    request: {
+      filter: '["BLK22222g2718", "BLK22223g2718"].contains(indexedKey)',
+      fields: [],
+      limit: 10,
+    },
+    reads: { "candidate-set": [2], "universe-rows": [2] },
+  },
+  {
+    name: "an Annotation Indexed Key within the candidate cap",
+    annotation: true,
+    request: {
+      filter: 'indexedKey == "ANN22222g2718"',
+      fields: ["text"],
+      limit: 10,
+    },
+    result: { returnedCount: 1, truncated: false },
+    reads: {
+      "annotation-candidate-set": [1],
+      "annotation-universe-rows": [1],
+      "annotation-details": [1],
+    },
+  },
+  ...[
+    'item.indexedKey == "BLK22222g2718"',
+    '["BULKPDF2g2718"].contains(attachment.indexedKey)',
+  ].map((filter) => ({
+    name: `an Annotation parent selection above the candidate cap: ${filter}`,
+    annotation: true,
+    request: { filter, fields: ["text"], limit: 10 },
+    reads: {
+      "annotation-candidate-set": [BULK_CAP + 1],
+      "annotation-scan-page": [500, 500, 500, 500, 500, 100],
+      "annotation-details": [10],
+    },
+  })),
   {
     name: "a limited scan that hydrates the returned rows only",
     request: { fields: ["title"], limit: 10 },
@@ -552,10 +590,12 @@ describe("Annotation projection and active cancellation", () => {
   });
   it.each(paths)(
     "projects only the returned rows in $name",
-    async ({ request }) => {
+    async ({ request, result: expected }) => {
       const complete = await run(request, { annotation: true });
       const result = resultOf(complete);
-      expect(result).toMatchObject({ returnedCount: 10, truncated: true });
+      expect(result).toMatchObject(
+        expected ?? { returnedCount: 10, truncated: true },
+      );
       const details = complete.events
         .flatMap((event) =>
           event.type === "statement" &&
@@ -565,7 +605,7 @@ describe("Annotation projection and active cancellation", () => {
             : [],
         )
         .at(-1)!;
-      expect(details).toHaveLength(10);
+      expect(details).toHaveLength(result.returnedCount);
       expect(details.map((row) => row.text)).toEqual(
         result.rows.map((row) => row.values.text),
       );

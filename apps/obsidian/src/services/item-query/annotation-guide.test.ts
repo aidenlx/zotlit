@@ -65,7 +65,16 @@ describe("zotlit:query-guide", () => {
   it.each([
     ["datasets", ["from=items", "from=annotations", "item."]],
     ["filter", ["item.title", "tags.contains", "one expression"]],
-    ["filter", ["attachmentIndexedKey", "itemIndexedKey", "combine with AND"]],
+    [
+      "filter",
+      [
+        "attachmentIndexedKey",
+        "itemIndexedKey",
+        "&& to combine conditions",
+        "Query Warning",
+        "item.indexedKey",
+      ],
+    ],
     ["fields", ["position.kind", "unknown", "attachment"]],
     ["sort", ["Sortable Fields", "Sort Index", "truncated"]],
     [

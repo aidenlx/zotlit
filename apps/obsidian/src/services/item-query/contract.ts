@@ -83,16 +83,6 @@ export const queryFlags = {
     description:
       "Target Libraries: personal, group:<groupID>, a comma list or JSON array, or all (default: Library scope)",
   },
-  item: {
-    value: "<indexed-key|json>",
-    description:
-      "For from=annotations: Item Indexed Key or JSON array of Item keys; selects their Libraries",
-  },
-  attachment: {
-    value: "<indexed-key|json>",
-    description:
-      "For from=annotations: Attachment Indexed Key or JSON array of Attachment keys; selects their Libraries",
-  },
   output: {
     value: "<absolute-path>",
     description:

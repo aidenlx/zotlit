@@ -215,6 +215,7 @@ export function openHydration(
       scan: loader(scanNeeds),
       projection: loader(pathNeeds),
       candidateSources: (library) => ({
+        library,
         vocabulary,
         collectionPaths: pathsOf.get(library),
       }),

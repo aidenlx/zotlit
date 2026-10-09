@@ -125,15 +125,12 @@ function expandedEnvelope(caseName) {
     ],
     filter:
       caseName === "colors"
-        ? 'colorName == "blue" && tags.contains("query-annotation-method") && pageIndex == 0'
+        ? 'item.indexedKey == "QANPAPER" && colorName == "blue" && tags.contains("query-annotation-method") && pageIndex == 0'
         : caseName === "missing_source"
           ? 'comment == "Check this source when the file arrives."'
-          : null,
-    item: caseName === "colors" ? ["QANPAPER"] : null,
-    attachment:
-      caseName === "attachment" || caseName === "export_annotations"
-        ? ["QANPDF22g118"]
-        : null,
+          : caseName === "attachment" || caseName === "export_annotations"
+            ? 'attachment.indexedKey == "QANPDF22g118"'
+            : null,
     sort:
       caseName === "reverse_pages"
         ? [{ field: "pageIndex", direction: "desc" }]

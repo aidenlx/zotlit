@@ -4,11 +4,16 @@ import type { QueryAnnotation } from "./annotation-fields";
 import { equality, lowerItemCandidate } from "./candidate-plan";
 import type { CandidateSources } from "./candidate-plan";
 import type { FilterNode } from "./filter-plan";
+import { lowerIndexedKeySelection } from "./indexed-key-selection";
 
 export function lowerAnnotationCandidate(
   node: FilterNode<QueryAnnotation>,
   sources: CandidateSources,
 ): AnnotationCandidateLeaf | null {
+  const keys = lowerIndexedKeySelection(node, "annotations", sources.library);
+  if (keys) return { kind: "keys", ...keys };
+  const ownKey = equality(node, (name) => name === "key");
+  if (ownKey) return { kind: "keys", target: "self", keys: [ownKey.value] };
   const equals = equality(
     node,
     (name) => name === "type" || name === "color" || name === "colorName",

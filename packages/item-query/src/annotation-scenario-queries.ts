@@ -1,17 +1,31 @@
-import type { AnnotationQueryRequest } from "./request";
+import type { ItemQueryRequest } from "./request";
 
 /** Every Annotation scenario request is checked against the forced scan. */
 export const ANNOTATION_SCENARIO_QUERIES: readonly Omit<
-  AnnotationQueryRequest,
+  ItemQueryRequest,
   "libraries"
 >[] = [
   { fields: ["item.creators[].fullName", "tags[]", "position.rects[][]"] },
   {},
   { fields: [], limit: 2 },
-  { item: ["ART2FULL", "ART2FULLg4815"] },
-  { attachment: ["PDF2LIVE", "PDF2GRUPg4815"] },
-  { item: ["ART2FULL"], attachment: ["PDF2LIVE"], filter: 'type == "image"' },
+  { filter: '["ART2FULL", "ART2FULLg4815"].contains(item.indexedKey)' },
+  { filter: '["PDF2LIVE", "PDF2GRUPg4815"].contains(attachment.indexedKey)' },
+  {
+    filter:
+      'item.indexedKey == "ART2FULL" && attachment.indexedKey == "PDF2LIVE" && type == "image"',
+  },
   ...[
+    'indexedKey == "ANN2HGHT"',
+    '"ANN2GRUPg4815" == indexedKey',
+    '["ANN2HGHT", "ANN2GRUPg4815"].contains(indexedKey)',
+    'item.indexedKey == "ART2FULL"',
+    'item.indexedKey == "ART2FULLg4815"',
+    'attachment.indexedKey == "PDF2LIVE"',
+    'attachment.indexedKey == "PDF2GRUPg4815"',
+    '["PDF2LIVE", "bad"].contains(attachment.indexedKey)',
+    'indexedKey == "bad"',
+    'item.indexedKey == "ART2FULLg999" || type == "image"',
+    '!(attachment.indexedKey == "PDF2LIVE")',
     'library == "personal"',
     'library != "personal"',
     'library == "group:4815"',
