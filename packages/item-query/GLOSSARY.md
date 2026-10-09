@@ -4,12 +4,16 @@ The field-oriented query capability for Zotero Items and their Annotations. It e
 
 ## Language
 
+**Query Dataset**:
+The kind of record that a query reads and returns, with everything that differs between the kinds: the fields and their Projection Paths, the Sortable Fields, the defaults, the Filter Expression vocabulary, and the readers. The engine has two Query Datasets, Item Query and Annotation Query. One request planner, one diagnoser, and one execution serve both; each takes the Query Dataset as a parameter.
+_Avoid_: kind, dataset flag, query mode
+
 **Item Query**:
-A query over the top-level, non-trashed Items of its Target Libraries. It contains one optional Filter Expression, selected fields, sort fields, and an optional result limit. The Items of all its Target Libraries are filtered, sorted, and limited as one set.
+The Query Dataset of Items: a query over the top-level, non-trashed Items of its Target Libraries. It contains one optional Filter Expression, selected fields, sort fields, and an optional result limit. The Items of all its Target Libraries are filtered, sorted, and limited as one set.
 _Avoid_: Base Query, Zotero Query, DB Query
 
 **Annotation Query**:
-A query over the non-trashed Annotations of the non-trashed Attachments of top-level, non-trashed Items in its Target Libraries. It selects Annotations by their parent Item, by named Items or Attachments, and by Annotation predicates, and returns one Annotation Row per Annotation. A sibling of Item Query: the two share Target Libraries, the result envelope, and the Query Clock.
+The Query Dataset of Annotations: a query over the non-trashed Annotations of the non-trashed Attachments of top-level, non-trashed Items in its Target Libraries. It selects Annotations by their parent Item, by named Items or Attachments, and by Annotation predicates, and returns one Annotation Row per Annotation. A sibling of Item Query: the two share Target Libraries, the result envelope, and the Query Clock.
 _Avoid_: PDF annotation query (Attachments can be PDF, EPUB, or snapshot), annotation search, highlight query
 
 **Annotation Row**:
