@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import test from "node:test";
 
 import { measureEvents, runCase, runProcess } from "./run.mjs";
@@ -80,6 +80,12 @@ async function exercise(
           Object.hasOwn(schema.properties, "papers"),
           caseName === "reading_plan",
         );
+        if (caseName === "missing_source")
+          assert.ok(
+            schema.properties.annotations.items.required.includes(
+              "attachmentExists",
+            ),
+          );
         const identity = {
           source: {
             databasePath: join(corpus, "zotero-data", "zotero.sqlite"),
@@ -101,7 +107,15 @@ async function exercise(
               tags: spec.tags,
               pageIndex: spec.pageIndex,
               attachment: {
-                path: join(corpus, "zotero-data", spec.sourceSuffix),
+                path: join(
+                  corpus,
+                  "zotero-data",
+                  "storage",
+                  spec.attachment.endsWith("g118")
+                    ? spec.attachment.slice(0, -4)
+                    : spec.attachment,
+                  basename(spec.sourceSuffix),
+                ),
                 exists: spec.sourceExists,
               },
             },
@@ -156,10 +170,12 @@ async function exercise(
                     ? row.indexedKey.endsWith("g118")
                       ? "Lab Archive"
                       : "My Library"
-                    : field === "itemIndexedKey" ||
-                        field === "attachmentIndexedKey"
-                      ? row[field]
-                      : row.values[field];
+                    : field === "attachmentExists"
+                      ? row.values.attachment.exists
+                      : field === "itemIndexedKey" ||
+                          field === "attachmentIndexedKey"
+                        ? row[field]
+                        : row.values[field];
             }
             return result;
           }),
