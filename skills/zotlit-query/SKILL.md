@@ -36,7 +36,7 @@ Use the vault's Library scope by default. Use `libraries=all` for every Library 
 
 Keep every `indexedKey`. A bare Zotero key is unique only inside its Library; a group Indexed Key ends in `g<groupID>`. Compare source identity before joining separate calls.
 
-An Annotation Row has three identities: `indexedKey`, `attachmentIndexedKey`, and `itemIndexedKey`. The `item` and `attachment` parameters accept one Indexed Key or a JSON array. Each key selects its Library; combine keys and `filter` as an AND selection. Select the parent Item with Item Query first when the user names a work without its key.
+Read `zotlit:annotation-query-guide topic=keys` before selecting Annotations by Item or Attachment. Select the parent Item with Item Query first when the user names a work without its key.
 
 ## Item Query
 
@@ -80,7 +80,7 @@ Read `zotlit:annotation-query-guide topic=fields` before opening a source docume
 
 ### Excerpt Images
 
-When `hasExcerptImage` is true, pass the Annotation Row's `indexedKey` to `zotlit:annotation-image`. The response gives `path`, `format`, and `provenance`. Read the file at that path. The image command applies to image and ink Annotations; its diagnostic explains an unavailable source or inapplicable Annotation.
+Read `zotlit:annotation-query-guide topic=images` before retrieving an Excerpt Image. When `hasExcerptImage` is true, pass the Annotation Row's `indexedKey` to `zotlit:annotation-image` and read the file at the returned path.
 
 ## Completeness, exports, and cancellation
 
