@@ -40,6 +40,12 @@ it("publishes executable Annotation and parent Projection Paths with active-sour
     "snapshot-text",
     "unknown",
   ]);
+  expect(schema.fields).toContainEqual(
+    expect.objectContaining({ path: "position.raw", type: "any" }),
+  );
+  expect(schema.positionKinds.unknown).toMatchObject({
+    keys: { raw: { kind: "json" } },
+  });
   const projected = await runEffect(
     queryAnnotations({
       libraries: [SCENARIO_LIBRARIES.personal],

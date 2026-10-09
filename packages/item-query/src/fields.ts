@@ -48,6 +48,7 @@ export type ScalarType = "string" | "number" | "boolean";
  */
 export type ValueShape =
   | { readonly kind: "scalar"; readonly type: ScalarType }
+  | { readonly kind: "json" }
   | {
       readonly kind: "object";
       readonly keys: Readonly<Record<string, ValueShape>>;

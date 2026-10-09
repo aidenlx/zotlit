@@ -71,6 +71,7 @@ export function planPath<Item = QueryItem>(
 function step(shape: ValueShape, segment: PathSegment): ValueShape | null {
   switch (shape.kind) {
     case "scalar":
+    case "json":
       return null;
     case "object":
       return typeof segment === "string" && Object.hasOwn(shape.keys, segment)

@@ -45,6 +45,8 @@ function jsonType(shape: ValueShape): SchemaCustomField["type"] {
   switch (shape.kind) {
     case "scalar":
       return shape.type;
+    case "json":
+      return "any";
     case "object":
     case "custom-fields":
       return "object";
