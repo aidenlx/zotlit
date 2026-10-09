@@ -12,10 +12,11 @@ import {
   openScenarioDatabase,
   SCENARIO_LIBRARIES,
   seedBulkLibrary,
+  seedBulkAnnotations,
 } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
-import { queryItems } from ".";
+import { ANNOTATIONS, collectQuery, ITEMS } from ".";
 import type { ItemQueryRequest, QueryResult } from ".";
 import { runEffect } from "./test-helpers";
 import type { Run, RunEvent, RunOptions } from "./test-helpers";
@@ -29,6 +30,7 @@ const BULK_ITEMS = 2600;
 const BULK_CAP = 650;
 
 let scenario: ScenarioDatabase;
+let annotations: ScenarioDatabase;
 
 beforeAll(async () => {
   scenario = openScenarioDatabase();
@@ -36,10 +38,15 @@ beforeAll(async () => {
   // The first statement on a copy runs the layout check. Its two statements
   // are in the events of that run only, so each test starts after it.
   resultOf(await run({ fields: [], limit: 1 }));
+  annotations = openScenarioDatabase();
+  seedBulkLibrary(annotations.sqlite, BULK_ITEMS);
+  seedBulkAnnotations(annotations.sqlite, BULK_ITEMS);
+  resultOf(await run({ fields: [], limit: 1 }, { annotation: true }));
 });
 
 afterAll(() => {
   scenario.close();
+  annotations.close();
 });
 
 type Request = Omit<ItemQueryRequest, "libraries">;
@@ -48,13 +55,17 @@ function run(
   request: Request,
   options: Omit<RunOptions, "client"> & {
     libraries?: ItemQueryRequest["libraries"];
+    annotation?: boolean;
   } = {},
 ) {
-  const { libraries = [BULK_LIBRARY], ...rest } = options;
-  return runEffect(queryItems({ ...request, libraries }), {
-    client: scenario.db,
-    ...rest,
-  });
+  const { libraries = [BULK_LIBRARY], annotation = false, ...rest } = options;
+  return runEffect(
+    collectQuery(annotation ? ANNOTATIONS : ITEMS, { ...request, libraries }),
+    {
+      client: annotation ? annotations.db : scenario.db,
+      ...rest,
+    },
+  );
 }
 
 function resultOf(of: Run<QueryResult, unknown>): QueryResult {
@@ -70,7 +81,7 @@ function itemsRead(events: readonly RunEvent[], reader: string): number[] {
     }
     const { rows } = event.statement;
     // A hydrate statement returns one row for each value: count its Items.
-    return reader === "hydrate-chunk"
+    return reader.endsWith("hydrate-chunk")
       ? new Set(rows.map((row) => (row as { itemID: number }).itemID)).size
       : rows.length;
   });
@@ -82,6 +93,7 @@ const byTitle = [{ field: "title", direction: "asc" }] as const;
 const PLAN_PATHS: readonly {
   name: string;
   request: Request;
+  annotation?: boolean;
   /** @default the bulk Library */
   libraries?: ItemQueryRequest["libraries"];
   /** The Items that each statement of a reader reads, in order. */
@@ -192,30 +204,84 @@ const PLAN_PATHS: readonly {
       ],
     },
   },
+  {
+    name: "a limited Annotation scan",
+    annotation: true,
+    request: { fields: ["text"], limit: 10 },
+    reads: {
+      // The scan pass reads the scan rows only; the projection loads details.
+      "annotation-scan-page": [500, 500, 500, 500, 500, 100],
+      "annotation-details": [10],
+    },
+  },
+  {
+    name: "an Annotation candidate set within the cap",
+    annotation: true,
+    request: { filter: 'type == "image"', fields: ["text"], limit: 10 },
+    reads: {
+      "annotation-candidate-set": [520],
+      "annotation-universe-rows": [500, 20],
+      "annotation-details": [250, 250, 20, 10],
+    },
+  },
+  {
+    name: "an Annotation candidate set above the cap",
+    annotation: true,
+    request: { filter: 'type == "highlight"', fields: ["text"], limit: 10 },
+    reads: {
+      "annotation-candidate-set": [BULK_CAP + 1],
+      "annotation-scan-page": [500, 500, 500, 500, 500, 100],
+      "annotation-details": [
+        250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 100, 10,
+      ],
+    },
+  },
 ];
 
 describe("the Items one statement reads", () => {
   it.each(PLAN_PATHS)(
     "reads at most 500 Item rows in $name",
-    async ({ request, libraries, reads }) => {
-      const { events } = await run(request, { libraries });
+    async ({ request, libraries, reads, annotation }) => {
+      const { events, exit } = await run(request, { libraries, annotation });
+      expect(Exit.isSuccess(exit)).toBe(true);
 
       for (const reader of [
         "scan-page",
         "universe-rows",
         "hydrate-chunk",
         "candidate-set",
+        "annotation-scan-page",
+        "annotation-universe-rows",
+        "annotation-details",
+        "annotation-tags",
+        "annotation-attachment-titles",
+        "annotation-candidate-set",
       ]) {
         expect(itemsRead(events, reader), reader).toEqual(reads[reader] ?? []);
       }
       // A candidate statement reads Item IDs only, the cap plus one at most.
-      for (const reader of ["scan-page", "universe-rows", "hydrate-chunk"]) {
+      for (const reader of [
+        "scan-page",
+        "universe-rows",
+        "hydrate-chunk",
+        "annotation-scan-page",
+        "annotation-universe-rows",
+        "annotation-details",
+        "annotation-tags",
+        "annotation-attachment-titles",
+      ]) {
         expect(Math.max(0, ...itemsRead(events, reader))).toBeLessThanOrEqual(
           500,
         );
       }
       expect(
-        Math.max(0, ...itemsRead(events, "candidate-set")),
+        Math.max(
+          0,
+          ...itemsRead(
+            events,
+            annotation ? "annotation-candidate-set" : "candidate-set",
+          ),
+        ),
       ).toBeLessThanOrEqual(BULK_CAP + 1);
     },
   );
@@ -224,8 +290,8 @@ describe("the Items one statement reads", () => {
 describe("the pauses between two chunks", () => {
   it.each(PLAN_PATHS)(
     "pauses between every two statements of $name",
-    async ({ request, libraries }) => {
-      const { events } = await run(request, { libraries });
+    async ({ request, libraries, annotation }) => {
+      const { events } = await run(request, { libraries, annotation });
 
       const statements = events.filter((event) => event.type === "statement");
       const withoutPause = events.filter(
@@ -464,5 +530,98 @@ describe("a cancel request", () => {
       }
     },
     PAUSE_CANCEL_TIMEOUT_MS,
+  );
+});
+
+// Annotation projection reads follow the full scan/filter pass. The final
+// details statement must contain exactly the rows returned to the caller.
+describe("Annotation projection and active cancellation", () => {
+  const paths = PLAN_PATHS.filter((path) => path.annotation);
+  it("returns every Annotation candidate across a full universe chunk", async () => {
+    const request: Request = {
+      filter: 'type == "image"',
+      fields: ["text"],
+      limit: null,
+    };
+    const candidates = resultOf(await run(request, { annotation: true }));
+    expect(candidates).toMatchObject({ returnedCount: 520, truncated: false });
+    const scan = resultOf(
+      await run(request, { annotation: true, tuning: { forceScan: true } }),
+    );
+    expect(candidates).toEqual(scan);
+  });
+  it.each(paths)(
+    "projects only the returned rows in $name",
+    async ({ request }) => {
+      const complete = await run(request, { annotation: true });
+      const result = resultOf(complete);
+      expect(result).toMatchObject({ returnedCount: 10, truncated: true });
+      const details = complete.events
+        .flatMap((event) =>
+          event.type === "statement" &&
+          event.statement.reader === "annotation-details" &&
+          event.statement.rows.some((row) => "text" in (row as object))
+            ? [event.statement.rows as { text: string }[]]
+            : [],
+        )
+        .at(-1)!;
+      expect(details).toHaveLength(10);
+      expect(details.map((row) => row.text)).toEqual(
+        result.rows.map((row) => row.values.text),
+      );
+    },
+  );
+
+  it.each(paths)(
+    "starts no statement after active cancellation in $name",
+    async ({ request }) => {
+      const options = {
+        annotation: true,
+      };
+      const complete = await run(request, options);
+      resultOf(complete);
+      const checkpoints = new Map<string, number>();
+      for (const [index, event] of complete.events.entries()) {
+        if (
+          event.type === "statement" &&
+          event.statement.reader.startsWith("annotation-")
+        ) {
+          const first = `${event.statement.reader}-first`;
+          if (!checkpoints.has(first)) checkpoints.set(first, index);
+          checkpoints.set(event.statement.reader, index);
+          const pause = complete.events.findIndex(
+            (next, nextIndex) => nextIndex > index && next.type === "pause",
+          );
+          if (pause !== -1)
+            checkpoints.set(`${event.statement.reader}-pause`, pause);
+        }
+      }
+      expect(checkpoints.has("annotation-details")).toBe(true);
+      for (const index of checkpoints.values()) {
+        const controller = new AbortController();
+        let seen = 0;
+        const cancelled = await run(request, {
+          ...options,
+          signal: controller.signal,
+          onEvent: (event) => {
+            if (seen++ === index) {
+              if (event.type === "pause")
+                queueMicrotask(() => controller.abort());
+              else controller.abort();
+            }
+          },
+        });
+        expect(
+          Exit.isFailure(cancelled.exit) &&
+            Cause.hasInterruptsOnly(cancelled.exit.cause),
+        ).toBe(true);
+        expect(
+          cancelled.events
+            .slice(index + 1)
+            .filter((event) => event.type === "statement"),
+        ).toEqual([]);
+      }
+    },
+    60_000,
   );
 });

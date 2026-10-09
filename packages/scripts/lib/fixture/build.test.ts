@@ -28,6 +28,7 @@ import {
   getNoteItemIDsByCollection,
   getNoteItemIDsByLibrary,
   getNoteRefsByItemIDs,
+  parseAnnotationPosition,
   getRelatedKeysByItemID,
   getSchemaVersions,
   isItemKey,
@@ -385,6 +386,13 @@ describe("the generated Zotero database", () => {
         charsetID: null,
         title: "Ioannidis 2005 PDF",
         url: null,
+      },
+      {
+        key: "EPUBS222",
+        path: null,
+        charsetID: null,
+        title: "Sakima's Song EPUB",
+        url: "https://example.invalid/sakimas-song.epub",
       },
       {
         key: "RGRPDF24",
@@ -837,6 +845,47 @@ describe("the generated Zotero database", () => {
         expect(minY! <= bottom && bottom < top && top <= maxY!).toBe(true);
       }
     }
+  });
+
+  it("builds EPUB and snapshot Annotations with their document position kinds", () => {
+    using db = openClient();
+    const attachments = new Map(
+      getAttachmentsByParents(db, [20]).map((attachment) => [
+        attachment.key,
+        attachment,
+      ]),
+    );
+    const annotations = getAnnotationsByKey(db, ["EPUBAN22", "SNAPAN22"], 1);
+
+    expect(
+      Object.fromEntries(
+        annotations.map((annotation) => {
+          const attachment = attachments.get(annotation.parentKey)!;
+          return [
+            annotation.key,
+            {
+              attachment: attachment.key,
+              contentType: attachment.contentType,
+              positionKind: parseAnnotationPosition(
+                annotation.position,
+                attachment.contentType ?? "",
+              ).kind,
+            },
+          ];
+        }),
+      ),
+    ).toEqual({
+      EPUBAN22: {
+        attachment: "EPUBS222",
+        contentType: "application/epub+zip",
+        positionKind: "epub-cfi",
+      },
+      SNAPAN22: {
+        attachment: "HTMLSNAP",
+        contentType: "text/html",
+        positionKind: "snapshot-css",
+      },
+    });
   });
 
   it("reproduces every Zotero PDF annotation type from one real session", async () => {

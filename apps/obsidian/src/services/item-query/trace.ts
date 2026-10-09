@@ -6,7 +6,7 @@ import { ItemQueryStatementObserver } from "@zotlit/db/item-query";
 import type { ItemQueryReader } from "@zotlit/db/item-query";
 import { ItemQuerySliceObserver } from "@zotlit/item-query";
 
-import type { ItemQueryInstrument } from "./run";
+import type { ItemQueryInstrument } from "./answer";
 const now = (): number => performance.timeOrigin + performance.now();
 
 export interface CancellationEvent {

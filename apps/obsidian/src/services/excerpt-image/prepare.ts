@@ -5,7 +5,6 @@ import type { App, TFile } from "obsidian";
 import {
   annotationHasCacheImage,
   annotationOpenUri,
-  annotationTypeToName,
   parseAnnotationPosition,
 } from "@zotlit/db";
 import type { Annotation, AnnotationResolvers, TemplateLink } from "@zotlit/db";
@@ -23,6 +22,7 @@ import { materializeExcerpt, retainExcerpt } from "./materialize";
 import type { MaterializedExcerpt } from "./materialize";
 import type { ExcerptOutcomeScope } from "./outcome-scope";
 import { referencedExcerptPaths } from "./references";
+import { annotationRecordOf } from "./request";
 import type { ExcerptImageService, ExcerptRequest } from "./service";
 export type { ExcerptSummary } from "./helper";
 
@@ -158,20 +158,7 @@ export function createExcerptPreparation(deps: {
                 page: "pageIndex" in position ? position.pageIndex + 1 : null,
               })() ?? candidate.sourceLink;
             const request: ExcerptRequest = {
-              annotation: {
-                key: a.indexedKey,
-                parentKey: attachment.indexedKey,
-                type: annotationTypeToName(a.type),
-                color: a.color,
-                text: a.text,
-                comment: a.comment,
-                pageLabel: a.pageLabel,
-                sortIndex: a.sortIndex,
-                tags: a.tags,
-                position,
-                version: a.version,
-                lock: null,
-              },
+              annotation: annotationRecordOf(a, attachment, position),
               source: {
                 kind: "zotero-db",
                 database,

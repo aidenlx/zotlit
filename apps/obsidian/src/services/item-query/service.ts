@@ -14,23 +14,27 @@ import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import {
   diagnostic,
   failure,
-  ITEM_QUERY_COMMAND,
-  ITEM_QUERY_SCHEMA_COMMAND,
+  queryCancelledText,
   queryIdInUseFailure,
-} from "./cli";
-import { queryCancelledText } from "./contract";
-import {
-  decodeItemQuery,
-  decodeSchemaArguments,
   rejectionDiagnostic,
-} from "./decode";
+} from "./contract";
+import type { ItemQueryCommand } from "./contract";
+import { CLI_DATASETS } from "./datasets";
+import { decodeSchemaArguments } from "./decode";
 import type { CancellationEvent, QueryObserver } from "./trace";
-import type { QueryAnswer, QueryCommand } from "./worker-protocol";
+import type {
+  QueryAnswer,
+  QueryCommand,
+  QueryDatasetId,
+} from "./worker-protocol";
 
 interface ItemQueryServiceDeps {
   pluginVersion: string;
   reads: ZoteroReadsService;
-  zoteroPref: Pick<ZoteroPrefService, "sourceId" | "databasePath">;
+  zoteroPref: Pick<
+    ZoteroPrefService,
+    "sourceId" | "databasePath" | "dataDir" | "baseAttachmentPath"
+  >;
   libraryScope: LibraryScopeService;
   vault: Vault;
 }
@@ -89,26 +93,54 @@ export class ItemQueryService extends Service {
     this.commit(stack.move());
   }
 
-  answer(
+  /** Answer the query command of the CLI dataset `dataset`. */
+  query(
+    dataset: QueryDatasetId,
     params: CliData,
     signal: AbortSignal,
-    measure?: QueryObserver & { heap: boolean },
   ): Promise<string> {
+    return this.#query({ dataset, params, signal });
+  }
+
+  /** Answer an Item Query and report its measurement to `measure`. */
+  measure(
+    params: CliData,
+    signal: AbortSignal,
+    measure: QueryObserver & { heap: boolean },
+  ): Promise<string> {
+    return this.#query({ dataset: "items", params, signal, measure });
+  }
+
+  #query({
+    dataset,
+    params,
+    signal,
+    measure,
+  }: {
+    dataset: QueryDatasetId;
+    params: CliData;
+    signal: AbortSignal;
+    measure?: QueryObserver & { heap: boolean };
+  }): Promise<string> {
     // Decode and claim the id synchronously, so two calls with one id
     // cannot both start. The worker receives the decoded query.
-    const request = decodeItemQuery(params);
+    const { decode, query: command } = CLI_DATASETS[dataset];
+    const request = decode(params);
     if (request.kind === "invalid") {
       return Promise.resolve(
-        failure(ITEM_QUERY_COMMAND, rejectionDiagnostic(request)),
+        failure(command.name, rejectionDiagnostic(request)),
       );
     }
     const query = request.value;
     const { id } = query;
     if (id !== undefined && FiberMap.hasUnsafe(this.#jobs, id)) {
-      return Promise.resolve(queryIdInUseFailure(id));
+      return Promise.resolve(queryIdInUseFailure(id, command.name));
     }
     return this.#start(
-      this.#job({ schema: false, query }, measure),
+      this.#job(
+        { schema: false, dataset, command: command.name, query },
+        measure,
+      ),
       signal,
       id,
     );
@@ -129,15 +161,24 @@ export class ItemQueryService extends Service {
     return true;
   }
 
-  schema(params: CliData, signal: AbortSignal): Promise<string> {
-    const request = decodeSchemaArguments(params);
-    if (request.kind === "invalid") {
-      return Promise.resolve(
-        failure(ITEM_QUERY_SCHEMA_COMMAND, rejectionDiagnostic(request)),
-      );
+  /** Answer the schema command of the CLI dataset `dataset`. */
+  schema(
+    dataset: QueryDatasetId,
+    params: CliData,
+    signal: AbortSignal,
+  ): Promise<string> {
+    const { name: command } = CLI_DATASETS[dataset].schema;
+    const rejected = decodeSchemaArguments(params, command);
+    if (rejected.kind === "invalid") {
+      return Promise.resolve(failure(command, rejectionDiagnostic(rejected)));
     }
     return this.#start(
-      this.#job({ schema: true, pluginVersion: this.#deps.pluginVersion }),
+      this.#job({
+        schema: true,
+        dataset,
+        command,
+        pluginVersion: this.#deps.pluginVersion,
+      }),
       signal,
     );
   }
@@ -217,6 +258,10 @@ export class ItemQueryService extends Service {
                 path: (deps.vault.adapter as FileSystemAdapter).getBasePath(),
               },
               scope: deps.libraryScope.effective,
+              attachmentPaths: {
+                dataDir: deps.zoteroPref.dataDir,
+                baseAttachmentPath: deps.zoteroPref.baseAttachmentPath,
+              },
               measure: measure !== undefined,
               ...(measure ? { heap: measure.heap } : {}),
             },
@@ -224,10 +269,9 @@ export class ItemQueryService extends Service {
           .pipe(
             Effect.catchTag("DbUnavailable", (error) =>
               Effect.succeed<QueryAnswer>({
+                command: command.command,
                 answer: failure(
-                  command.schema
-                    ? ITEM_QUERY_SCHEMA_COMMAND
-                    : ITEM_QUERY_COMMAND,
+                  command.command,
                   diagnostic("source-unavailable", error.message),
                 ),
                 receipt: { kind: "inline" },
@@ -248,11 +292,12 @@ export class ItemQueryService extends Service {
       if (result.cancelled) return yield* Effect.interrupt;
       if (result.measurement) measure?.completed(result.measurement);
       if (stagePath !== undefined && result.receipt.kind === "file")
-        return yield* publishExport(
+        return yield* publishExport({
           stagePath,
-          result.receipt.path,
-          result.answer,
-        );
+          output: result.receipt.path,
+          answer: result.answer,
+          command: result.command,
+        });
       return result.answer;
     }).pipe(
       Effect.scoped,
@@ -284,11 +329,17 @@ function stageExport(
  * Publish the closed staging file at `output`. A file at `output` stays: the
  * answer is then `output-error`.
  */
-function publishExport(
-  stagePath: string,
-  output: string,
-  answer: string,
-): Effect.Effect<string> {
+function publishExport({
+  stagePath,
+  output,
+  answer,
+  command,
+}: {
+  stagePath: string;
+  output: string;
+  answer: string;
+  command: ItemQueryCommand;
+}): Effect.Effect<string> {
   return Effect.tryPromise({
     try: () => link(stagePath, output),
     catch: (error) => error,
@@ -297,10 +348,7 @@ function publishExport(
     Effect.catch((error) =>
       error instanceof Error && "code" in error
         ? Effect.succeed(
-            failure(
-              ITEM_QUERY_COMMAND,
-              diagnostic("output-error", error.message),
-            ),
+            failure(command, diagnostic("output-error", error.message)),
           )
         : Effect.die(error),
     ),

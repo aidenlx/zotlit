@@ -20,7 +20,11 @@ export default defineConfig({
         extends: true,
         test: {
           name: "lowest",
-          include: ["src/query-items.test.ts", "src/parity.test.ts"],
+          include: [
+            "src/query-items.test.ts",
+            "src/query-annotations.test.ts",
+            "src/parity.test.ts",
+          ],
           env: { ZOTLIT_SCENARIO_LAYOUT: "lowest" },
         },
       },

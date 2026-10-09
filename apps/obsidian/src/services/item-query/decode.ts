@@ -11,10 +11,12 @@ import { isAbsolute } from "node:path";
 import type { CliData } from "obsidian";
 import * as v from "valibot";
 
+import { formatIndexedKey, parseIndexedKey } from "@zotlit/db";
 import { UNLIMITED_LIMIT } from "@zotlit/item-query";
 
 import {
   cliMaybeEmpty,
+  cliNotApplicable,
   cliParams,
   cliText,
   cliVariants,
@@ -32,15 +34,18 @@ import type {
   LibrarySelector,
 } from "@/services/library-scope/scope";
 
+import { ANNOTATION_GUIDE_TOPIC_NAMES } from "./annotation-guide";
 import {
+  ANNOTATION_QUERY_COMMAND,
+  ANNOTATION_QUERY_GUIDE_COMMAND,
   DEFAULT_CLI_LIMIT,
   ITEM_QUERY_CANCEL_COMMAND,
   ITEM_QUERY_COMMAND,
   ITEM_QUERY_GUIDE_COMMAND,
-  ITEM_QUERY_SCHEMA_COMMAND,
   QUERY_ID_FORM,
   QUERY_ID_MAX_LENGTH,
 } from "./contract";
+import type { ItemQueryCommand } from "./contract";
 import { GUIDE_TOPIC_NAMES } from "./guide";
 import type { GuideTopic } from "./guide";
 
@@ -50,7 +55,7 @@ export { rejectionDiagnostic } from "./contract";
 export interface NamedLibraries {
   scope: LibraryScope;
   /** The argument that names them. */
-  parameter: "library" | "libraries";
+  parameter: "library" | "libraries" | "item" | "attachment";
 }
 
 const QUERY_ID = /^[\w.-]+$/;
@@ -213,56 +218,64 @@ function decodedQuery(
   };
 }
 
-const queryParams = cliVariants(
-  ({ libraries, library }) =>
-    libraries !== undefined
-      ? "libraries"
-      : library !== undefined
-        ? "library"
-        : "scope",
-  {
-    libraries: v.pipe(
-      // `libraries` wins over `library`, which this variant reads no further.
-      cliParams({
-        libraries,
-        library: cliMaybeEmpty(),
-        ...queryOptions,
+const queryVariant = ({ libraries, library }: CliData) =>
+  libraries !== undefined
+    ? "libraries"
+    : library !== undefined
+      ? "library"
+      : "scope";
+const queryVariants = {
+  libraries: v.pipe(
+    // `libraries` wins over `library`, which this variant reads no further.
+    cliParams({
+      libraries,
+      library: cliMaybeEmpty(),
+      ...queryOptions,
+    }),
+    v.transform(({ libraries: scope, library: _, ...options }) =>
+      decodedQuery(options, { scope, parameter: "libraries" }),
+    ),
+  ),
+  library: v.pipe(
+    cliParams({ library, ...queryOptions }),
+    v.transform(({ library: selector, ...options }) =>
+      decodedQuery(options, {
+        scope: { mode: "selected", libraries: [selector] },
+        parameter: "library",
       }),
-      v.transform(({ libraries: scope, library: _, ...options }) =>
-        decodedQuery(options, { scope, parameter: "libraries" }),
-      ),
     ),
-    library: v.pipe(
-      cliParams({ library, ...queryOptions }),
-      v.transform(({ library: selector, ...options }) =>
-        decodedQuery(options, {
-          scope: { mode: "selected", libraries: [selector] },
-          parameter: "library",
-        }),
-      ),
-    ),
-    scope: v.pipe(
-      cliParams(queryOptions),
-      v.transform((options) => decodedQuery(options, null)),
-    ),
-  },
-);
+  ),
+  scope: v.pipe(
+    cliParams(queryOptions),
+    v.transform((options) => decodedQuery(options, null)),
+  ),
+};
+const queryParams = cliVariants(queryVariant, queryVariants);
 
-export type DecodedQuery = v.InferOutput<typeof queryParams>;
+export type DecodedItemQuery = v.InferOutput<typeof queryParams>;
+/**
+ * The decoded arguments of either query command. The Annotation selectors
+ * are optional keys, so a reader takes both datasets in one shape.
+ */
+export type DecodedQuery = (DecodedItemQuery | DecodedAnnotationQuery) & {
+  readonly item?: string[];
+  readonly attachment?: string[];
+};
 
 /** The parameters of `zotlit:item-query`, to type its `CliFlags`. */
 export type ItemQueryParam = CliParamName<typeof queryParams>;
 
 /** Decode the flat arguments of a query, or answer the first malformed one. */
-export function decodeItemQuery(params: CliData): CliRequest<DecodedQuery> {
+export function decodeItemQuery(params: CliData): CliRequest<DecodedItemQuery> {
   return decodeCliParams(params, queryParams, { command: ITEM_QUERY_COMMAND });
 }
 
-/** The schema command takes no parameter. */
-export function decodeSchemaArguments(params: CliData): CliRequest<object> {
-  return decodeCliParams(params, noCliParams, {
-    command: ITEM_QUERY_SCHEMA_COMMAND,
-  });
+/** The schema command `command` takes no parameter. */
+export function decodeSchemaArguments(
+  params: CliData,
+  command: ItemQueryCommand,
+): CliRequest<object> {
+  return decodeCliParams(params, noCliParams, { command });
 }
 
 const guideParams = v.pipe(
@@ -299,5 +312,100 @@ const cancelParams = v.pipe(
 export function decodeCancelArguments(params: CliData): CliRequest<string> {
   return decodeCliParams(params, cancelParams, {
     command: ITEM_QUERY_CANCEL_COMMAND,
+  });
+}
+
+const indexedKey = v.pipe(
+  v.string(),
+  v.check((text) => {
+    const key = parseIndexedKey(text);
+    return key !== null && (key.groupID === null || key.groupID > 0);
+  }, "Use a valid Indexed Key."),
+  v.transform((text) => {
+    const key = parseIndexedKey(text)!;
+    return formatIndexedKey(key.key, key.groupID);
+  }),
+);
+const annotationSelector = (name: string) =>
+  v.lazy((input) =>
+    typeof input === "string" && input.startsWith("[")
+      ? jsonParameter(
+          name,
+          "a nonempty JSON array of Indexed Keys",
+          v.pipe(v.array(indexedKey), v.minLength(1)),
+        )
+      : v.pipe(
+          indexedKey,
+          v.transform((key) => [key]),
+        ),
+  );
+const annotationParams = cliVariants(
+  (params) =>
+    params.item !== undefined || params.attachment !== undefined
+      ? "selectors"
+      : queryVariant(params),
+  {
+    ...queryVariants,
+    selectors: v.pipe(
+      cliParams({
+        item: v.optional(annotationSelector("item")),
+        attachment: v.optional(annotationSelector("attachment")),
+        library: cliNotApplicable(
+          "An Indexed Key selects its Library. Omit library beside Item or Attachment keys.",
+        ),
+        libraries: cliNotApplicable(
+          "An Indexed Key selects its Library. Omit libraries beside Item or Attachment keys.",
+        ),
+        ...queryOptions,
+      }),
+      v.transform(
+        ({ item, attachment, library: _, libraries: __, ...options }) => {
+          const selected = new Map<string, LibrarySelector>();
+          for (const text of [...(item ?? []), ...(attachment ?? [])]) {
+            const key = parseIndexedKey(text)!;
+            selected.set(
+              String(key.groupID),
+              key.groupID === null
+                ? { type: "personal" }
+                : { type: "group", groupID: key.groupID },
+            );
+          }
+          return {
+            ...decodedQuery(options, {
+              scope: {
+                mode: "selected",
+                libraries: [...selected.values()].toSorted(compareSelectors),
+              },
+              parameter: item !== undefined ? "item" : "attachment",
+            }),
+            ...(item === undefined ? {} : { item: [...new Set(item)] }),
+            ...(attachment === undefined
+              ? {}
+              : { attachment: [...new Set(attachment)] }),
+          };
+        },
+      ),
+    ),
+  },
+);
+
+export type DecodedAnnotationQuery = v.InferOutput<typeof annotationParams>;
+export type AnnotationQueryParam = CliParamName<typeof annotationParams>;
+
+export function decodeAnnotationQuery(
+  params: CliData,
+): CliRequest<DecodedAnnotationQuery> {
+  return decodeCliParams(params, annotationParams, {
+    command: ANNOTATION_QUERY_COMMAND,
+  });
+}
+
+const annotationGuideParams = v.pipe(
+  cliParams({ topic: v.optional(v.picklist(ANNOTATION_GUIDE_TOPIC_NAMES)) }),
+  v.transform(({ topic }) => topic ?? null),
+);
+export function decodeAnnotationGuideArguments(params: CliData) {
+  return decodeCliParams(params, annotationGuideParams, {
+    command: ANNOTATION_QUERY_GUIDE_COMMAND,
   });
 }

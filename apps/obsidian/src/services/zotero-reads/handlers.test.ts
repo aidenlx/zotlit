@@ -1,8 +1,9 @@
 import { Effect, Fiber, Layer } from "effect";
-import { readFile, readdir } from "node:fs/promises";
+import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
+import type { Attachment } from "@zotlit/db";
 import {
   BULK_LIBRARY,
   openScenarioDatabase,
@@ -10,6 +11,7 @@ import {
 } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
+import { makeAttachmentFileResolver } from "@/services/item-query/attachment-files";
 import { decodeItemQuery } from "@/services/item-query/decode";
 import type { DecodedQuery } from "@/services/item-query/decode";
 import type { QueryJob } from "@/services/item-query/worker-protocol";
@@ -29,6 +31,28 @@ const BULK = {
   fields: '["title","tags"]',
 };
 
+const ATTACHMENT_PATHS = {
+  dataDir: "/zotero",
+  baseAttachmentPath: null,
+};
+
+function attachment(
+  itemID: number,
+  overrides: Pick<Attachment, "key" | "path" | "linkMode">,
+): Attachment {
+  return {
+    itemID,
+    libraryID: 1,
+    groupID: null,
+    indexedKey: overrides.key,
+    parentItemID: 1,
+    contentType: "application/pdf",
+    dateAdded: Temporal.Instant.from("2024-01-01T00:00:00Z"),
+    dateModified: Temporal.Instant.from("2024-01-01T00:00:00Z"),
+    ...overrides,
+  };
+}
+
 function jobOf(
   id: string,
   params: Record<string, string>,
@@ -39,10 +63,13 @@ function jobOf(
     throw new Error(`Malformed test query: ${query.message}`);
   return {
     schema: false,
+    dataset: "items",
+    command: "zotlit:item-query",
     query: JSON.parse(JSON.stringify(query.value)) as DecodedQuery,
     id,
     ...IDENTITY,
     scope: MY_LIBRARY_SCOPE,
+    attachmentPaths: ATTACHMENT_PATHS,
     ...(stagePath === undefined ? {} : { stagePath }),
   };
 }
@@ -159,6 +186,7 @@ describe("ZoteroReads ItemQuery", () => {
     );
 
     expect(answers.cancelled).toEqual({
+      command: "zotlit:item-query",
       answer: "",
       receipt: { kind: "inline" },
       cancelled: true,
@@ -201,5 +229,96 @@ describe("ZoteroReads ItemQuery", () => {
       "abandoned.json",
     );
     expect(JSON.parse(next.answer)).toMatchObject({ ok: true });
+  });
+});
+
+describe("ZoteroReads Attachment files", () => {
+  it("resolves and probes each Attachment once within one query", async () => {
+    using scenario = openScenarioDatabase({ storage: "temp-directory" });
+    const dataDir = dirname(scenario.path);
+    const baseAttachmentPath = join(dataDir, "linked");
+    const importedPath = join(dataDir, "storage", "IMPRT223", "paper.pdf");
+    const linkedPath = join(baseAttachmentPath, "papers", "linked.pdf");
+    await mkdir(dirname(importedPath), { recursive: true });
+    await mkdir(dirname(linkedPath), { recursive: true });
+    await Promise.all([
+      writeFile(importedPath, "imported"),
+      writeFile(linkedPath, "linked"),
+    ]);
+    const probe = vi.fn(stat);
+    const resolve = makeAttachmentFileResolver(
+      { dataDir, baseAttachmentPath },
+      { stat: probe },
+    );
+    const imported = attachment(10, {
+      key: "IMPRT223",
+      path: "storage:paper.pdf",
+      linkMode: 0,
+    });
+    const linked = attachment(11, {
+      key: "LINKD223",
+      path: "attachments:papers/linked.pdf",
+      linkMode: 2,
+    });
+    const missing = attachment(12, {
+      key: "MISSI223",
+      path: "storage:missing.pdf",
+      linkMode: 0,
+    });
+    const linkedUrl = attachment(13, {
+      key: "LINKU223",
+      path: "https://example.com/paper.pdf",
+      linkMode: 3,
+    });
+
+    const resolved = await Effect.runPromise(
+      Effect.all(
+        [
+          resolve(imported),
+          resolve({ ...imported }),
+          resolve(linked),
+          resolve(missing),
+          resolve(linkedUrl),
+        ],
+        { concurrency: "unbounded" },
+      ),
+    );
+
+    expect(resolved).toEqual([
+      { path: importedPath, exists: true },
+      { path: importedPath, exists: true },
+      { path: linkedPath, exists: true },
+      {
+        path: join(dataDir, "storage", "MISSI223", "missing.pdf"),
+        exists: false,
+      },
+      { path: null, exists: false },
+    ]);
+    expect(probe.mock.calls.map(([path]) => path)).toEqual([
+      importedPath,
+      linkedPath,
+      join(dataDir, "storage", "MISSI223", "missing.pdf"),
+    ]);
+  });
+
+  it("does not probe a linked file when its base directory is unset", async () => {
+    const probe = vi.fn(stat);
+    const resolve = makeAttachmentFileResolver(
+      { dataDir: "/zotero", baseAttachmentPath: null },
+      { stat: probe },
+    );
+
+    await expect(
+      Effect.runPromise(
+        resolve(
+          attachment(20, {
+            key: "LINKD456",
+            path: "attachments:papers/linked.pdf",
+            linkMode: 2,
+          }),
+        ),
+      ),
+    ).resolves.toEqual({ path: null, exists: false });
+    expect(probe).not.toHaveBeenCalled();
   });
 });

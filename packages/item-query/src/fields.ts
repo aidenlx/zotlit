@@ -48,6 +48,7 @@ export type ScalarType = "string" | "number" | "boolean";
  */
 export type ValueShape =
   | { readonly kind: "scalar"; readonly type: ScalarType }
+  | { readonly kind: "json" }
   | {
       readonly kind: "object";
       readonly keys: Readonly<Record<string, ValueShape>>;
@@ -75,33 +76,33 @@ export type SortKey = string | number | null;
  * One entry of the field registry. Validation, execution, and the Item Query
  * Schema read the same entries, so a field exists only here.
  */
-export interface FieldDefinition {
+export interface FieldDefinition<Item = QueryItem, Needs = FieldNeeds> {
   readonly shape: ValueShape;
   /** What hydration loads for a path that starts at this field. */
-  readonly needs: (rest: readonly PathSegment[]) => FieldNeeds;
+  readonly needs: (rest: readonly PathSegment[]) => Needs;
   /** Reads the complete value of the field. */
-  readonly read: (item: QueryItem) => ProjectionValue;
+  readonly read: (item: Item) => ProjectionValue;
   /**
    * Present on a Sortable Field: the value that orders the Item. Hydration
    * loads `needs([])` before it runs. The Query Clock places a calendar-day
    * `accessDate` at its start in the query time zone.
    */
-  readonly sortKey?: (item: QueryItem, clock: QueryClock) => SortKey;
+  readonly sortKey?: (item: Item, clock: QueryClock) => SortKey;
   /**
    * Present on a field that a Filter Expression can read. Hydration loads
    * `needs([])` before it runs.
    */
-  readonly filter?: FilterValueDefinition;
+  readonly filter?: FilterValueDefinition<Item>;
 }
 
 /**
  * The value of a field in a Filter Expression. A relation list is a list of
  * strings here; projection gives the richer structure.
  */
-export interface FilterValueDefinition {
+export interface FilterValueDefinition<Item = QueryItem> {
   /** The type of the value when the Item has one. */
   readonly type: Exclude<FilterValueType, "null">;
-  readonly read: (item: QueryItem) => FilterValue;
+  readonly read: (item: Item) => FilterValue;
 }
 
 const STRING: ValueShape = { kind: "scalar", type: "string" };
@@ -422,11 +423,11 @@ const FILTER_ONLY_FIELDS: ReadonlyMap<string, FilterValueDefinition> = new Map([
 ]);
 
 /** A built-in name as a Filter Expression reads it. */
-export type FilterField =
+export type FilterField<Item = QueryItem, Needs = FieldNeeds> =
   | {
       readonly filterable: true;
-      readonly value: FilterValueDefinition;
-      readonly needs: FieldNeeds;
+      readonly value: FilterValueDefinition<Item>;
+      readonly needs: Needs;
     }
   | { readonly filterable: false };
 

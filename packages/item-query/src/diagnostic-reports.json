@@ -882,5 +882,57 @@
       "^^^^^^^^^^^^^^^^^^^^",
       "Try: custom[\"review.length\"] == 4"
     ]
+  },
+  {
+    "name": "annotation-field-near-match",
+    "dataset": "annotations",
+    "request": {
+      "filter": "pageLable == \"1\""
+    },
+    "report": [
+      "\"pageLable\" is not a field of Annotation Query.",
+      "pageLable == \"1\"",
+      "^^^^^^^^^",
+      "Try: pageLabel == \"1\""
+    ]
+  },
+  {
+    "name": "annotation-parent-dotted-custom",
+    "dataset": "annotations",
+    "request": {
+      "filter": "item.review.status == \"done\""
+    },
+    "report": [
+      "\"review.status\" is a custom field of the connected Zotero source; read it with bracket access.",
+      "item.review.status == \"done\"",
+      "^^^^^^^^^^^^^^^^^^",
+      "Try: item.custom[\"review.status\"] == \"done\""
+    ]
+  },
+  {
+    "name": "annotation-parent-explicit-dotted-custom",
+    "dataset": "annotations",
+    "request": {
+      "filter": "item.custom.review.status == \"done\""
+    },
+    "report": [
+      "\"review.status\" is a custom field of the connected Zotero source; read it with bracket access.",
+      "item.custom.review.status == \"done\"",
+      "^^^^^^^^^^^^^^^^^^^^^^^^^",
+      "Try: item.custom[\"review.status\"] == \"done\""
+    ]
+  },
+  {
+    "name": "annotation-custom-key-type",
+    "dataset": "annotations",
+    "request": {
+      "filter": "item.custom[1] == null"
+    },
+    "report": [
+      "custom takes the name of one custom field as a quoted string.",
+      "item.custom[1] == null",
+      "            ^",
+      "Name one custom field, such as item.custom[\"review.status\"]."
+    ]
   }
 ]

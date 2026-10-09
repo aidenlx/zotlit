@@ -22,7 +22,7 @@ import {
   rejectionText,
 } from "@/lib/cli-params";
 
-import { itemQueryFlags } from "./cli";
+import { itemQueryFlags } from "./contract";
 import { decodeItemQuery } from "./decode";
 import type { ItemQueryService } from "./service";
 import type { CancellationEvent, WorkerMeasurement } from "./trace";
@@ -140,7 +140,7 @@ const measureParams = cliParams({
 
 export function registerItemQueryMeasureCli(
   plugin: Plugin,
-  queryService: Pick<ItemQueryService, "answer">,
+  queryService: Pick<ItemQueryService, "measure">,
 ): void {
   const unload = new AbortController();
   plugin.register(() => unload.abort());
@@ -198,7 +198,7 @@ export function registerItemQueryMeasureCli(
     let answer: string | undefined;
     let error: string | undefined;
     try {
-      answer = await queryService.answer(query, signal, {
+      answer = await queryService.measure(query, signal, {
         completed: (report) => {
           measurement = report;
         },

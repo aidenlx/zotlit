@@ -1,0 +1,714 @@
+{
+  "reading_plan": {
+    "envelope": {
+      "contractVersion": 2,
+      "command": "zotlit:annotation-query",
+      "ok": true,
+      "identity": {
+        "vault": {
+          "name": "vault-c5517c2c-06da-4246-8c5b-ac01d7ac81eb",
+          "path": "/evaluation-run/vault-c5517c2c-06da-4246-8c5b-ac01d7ac81eb"
+        },
+        "source": {
+          "databasePath": "/evaluation-run/corpus/zotero-data/zotero.sqlite",
+          "id": "8a55b063"
+        }
+      },
+      "libraries": [
+        {
+          "type": "personal"
+        },
+        {
+          "type": "group",
+          "groupID": 118,
+          "name": "Lab Archive"
+        },
+        {
+          "type": "group",
+          "groupID": 990117,
+          "name": "Consortium Reading Room"
+        },
+        {
+          "type": "group",
+          "groupID": 4200309,
+          "name": "Shared Reading"
+        }
+      ],
+      "request": {
+        "libraries": ["personal", "group:118", "group:990117", "group:4200309"],
+        "filter": "item.itemType == \"journalArticle\" && item.tags.contains(\"query-annotation-eval\")",
+        "fields": [
+          "type",
+          "pageLabel",
+          "text",
+          "comment",
+          "item.title",
+          "item.indexedKey"
+        ],
+        "sort": [
+          {
+            "field": "item.dateModified",
+            "direction": "desc"
+          },
+          {
+            "field": "attachment.indexedKey",
+            "direction": "asc"
+          },
+          {
+            "field": "sortIndex",
+            "direction": "asc"
+          }
+        ],
+        "limit": null
+      },
+      "returnedCount": 4,
+      "truncated": false,
+      "warnings": [],
+      "rows": [
+        {
+          "indexedKey": "QANMARK2",
+          "attachmentIndexedKey": "QANPDF22",
+          "itemIndexedKey": "QANPAPER",
+          "values": {
+            "type": "highlight",
+            "pageLabel": "1",
+            "text": "Identify Your Message",
+            "comment": null,
+            "item.title": "Figure design reading copy",
+            "item.indexedKey": "QANPAPER"
+          }
+        },
+        {
+          "indexedKey": "QANMARK2g118",
+          "attachmentIndexedKey": "QANPDF22g118",
+          "itemIndexedKey": "QANPAPERg118",
+          "values": {
+            "type": "highlight",
+            "pageLabel": "1",
+            "text": "Identify Your Message",
+            "comment": null,
+            "item.title": "Figure design reading copy",
+            "item.indexedKey": "QANPAPERg118"
+          }
+        },
+        {
+          "indexedKey": "QANNOTE2g118",
+          "attachmentIndexedKey": "QANPDF22g118",
+          "itemIndexedKey": "QANPAPERg118",
+          "values": {
+            "type": "note",
+            "pageLabel": "1",
+            "text": null,
+            "comment": "Compare the chart with the methods section.",
+            "item.title": "Figure design reading copy",
+            "item.indexedKey": "QANPAPERg118"
+          }
+        },
+        {
+          "indexedKey": "QANPAGE2",
+          "attachmentIndexedKey": "QANPDF22",
+          "itemIndexedKey": "QANPAPER",
+          "values": {
+            "type": "image",
+            "pageLabel": "2",
+            "text": null,
+            "comment": null,
+            "item.title": "Figure design reading copy",
+            "item.indexedKey": "QANPAPER"
+          }
+        }
+      ]
+    },
+    "answer": {
+      "answer": "Found 3 tagged journal articles across all libraries, including one with no Annotations. The 4 Annotation results are complete.",
+      "count": 4,
+      "annotations": [
+        {
+          "indexedKey": "QANMARK2",
+          "itemIndexedKey": "QANPAPER",
+          "type": "highlight",
+          "pageLabel": "1",
+          "text": "Identify Your Message",
+          "comment": null
+        },
+        {
+          "indexedKey": "QANMARK2g118",
+          "itemIndexedKey": "QANPAPERg118",
+          "type": "highlight",
+          "pageLabel": "1",
+          "text": "Identify Your Message",
+          "comment": null
+        },
+        {
+          "indexedKey": "QANNOTE2g118",
+          "itemIndexedKey": "QANPAPERg118",
+          "type": "note",
+          "pageLabel": "1",
+          "text": null,
+          "comment": "Compare the chart with the methods section."
+        },
+        {
+          "indexedKey": "QANPAGE2",
+          "itemIndexedKey": "QANPAPER",
+          "type": "image",
+          "pageLabel": "2",
+          "text": null,
+          "comment": null
+        }
+      ],
+      "imagePath": null,
+      "papers": [
+        {
+          "indexedKey": "QANPAPER",
+          "title": "Figure design reading copy",
+          "library": "My Library",
+          "annotationCount": 2
+        },
+        {
+          "indexedKey": "QANPAPERg118",
+          "title": "Figure design reading copy",
+          "library": "Lab Archive",
+          "annotationCount": 2
+        },
+        {
+          "indexedKey": "QANZERO2",
+          "title": "Figure design reading plan",
+          "library": "My Library",
+          "annotationCount": 0
+        }
+      ],
+      "imageProvenance": null,
+      "imageFormat": null,
+      "validPng": null
+    },
+    "itemEnvelope": {
+      "contractVersion": 2,
+      "command": "zotlit:item-query",
+      "ok": true,
+      "identity": {
+        "vault": {
+          "name": "vault-c5517c2c-06da-4246-8c5b-ac01d7ac81eb",
+          "path": "/evaluation-run/vault-c5517c2c-06da-4246-8c5b-ac01d7ac81eb"
+        },
+        "source": {
+          "databasePath": "/evaluation-run/corpus/zotero-data/zotero.sqlite",
+          "id": "8a55b063"
+        }
+      },
+      "libraries": [
+        {
+          "type": "personal"
+        },
+        {
+          "type": "group",
+          "groupID": 118,
+          "name": "Lab Archive"
+        },
+        {
+          "type": "group",
+          "groupID": 990117,
+          "name": "Consortium Reading Room"
+        },
+        {
+          "type": "group",
+          "groupID": 4200309,
+          "name": "Shared Reading"
+        }
+      ],
+      "request": {
+        "libraries": ["personal", "group:118", "group:990117", "group:4200309"],
+        "filter": "itemType == \"journalArticle\" && tags.contains(\"query-annotation-eval\")",
+        "fields": ["title", "itemType", "tags"],
+        "sort": [
+          {
+            "field": "dateModified",
+            "direction": "desc"
+          }
+        ],
+        "limit": null
+      },
+      "returnedCount": 3,
+      "truncated": false,
+      "warnings": [],
+      "rows": [
+        {
+          "indexedKey": "QANPAPER",
+          "values": {
+            "title": "Figure design reading copy",
+            "itemType": "journalArticle",
+            "tags": [
+              {
+                "name": "query-annotation-eval",
+                "type": "manual"
+              }
+            ]
+          }
+        },
+        {
+          "indexedKey": "QANPAPERg118",
+          "values": {
+            "title": "Figure design reading copy",
+            "itemType": "journalArticle",
+            "tags": [
+              {
+                "name": "query-annotation-eval",
+                "type": "manual"
+              }
+            ]
+          }
+        },
+        {
+          "indexedKey": "QANZERO2",
+          "values": {
+            "title": "Figure design reading plan",
+            "itemType": "journalArticle",
+            "tags": [
+              {
+                "name": "query-annotation-eval",
+                "type": "manual"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "attachment": {
+    "envelope": {
+      "contractVersion": 2,
+      "command": "zotlit:annotation-query",
+      "ok": true,
+      "identity": {
+        "vault": {
+          "name": "vault-23b92c04-3cd3-41df-92d9-2051f7bfdb3c",
+          "path": "/evaluation-run/vault-23b92c04-3cd3-41df-92d9-2051f7bfdb3c"
+        },
+        "source": {
+          "databasePath": "/evaluation-run/corpus/zotero-data/zotero.sqlite",
+          "id": "8babeee3"
+        }
+      },
+      "libraries": [
+        {
+          "type": "group",
+          "groupID": 118,
+          "name": "Lab Archive"
+        }
+      ],
+      "request": {
+        "libraries": ["group:118"],
+        "filter": null,
+        "fields": [
+          "type",
+          "pageLabel",
+          "text",
+          "comment",
+          "item.title",
+          "attachment.path"
+        ],
+        "sort": [
+          {
+            "field": "sortIndex",
+            "direction": "asc"
+          }
+        ],
+        "limit": null,
+        "attachment": ["QANPDF22g118"]
+      },
+      "returnedCount": 2,
+      "truncated": false,
+      "warnings": [],
+      "rows": [
+        {
+          "indexedKey": "QANMARK2g118",
+          "attachmentIndexedKey": "QANPDF22g118",
+          "itemIndexedKey": "QANPAPERg118",
+          "values": {
+            "type": "highlight",
+            "pageLabel": "1",
+            "text": "Identify Your Message",
+            "comment": null,
+            "item.title": "Figure design reading copy",
+            "attachment.path": "/evaluation-run/corpus/zotero-data/storage/QANPDF22/rougier-2014.pdf"
+          }
+        },
+        {
+          "indexedKey": "QANNOTE2g118",
+          "attachmentIndexedKey": "QANPDF22g118",
+          "itemIndexedKey": "QANPAPERg118",
+          "values": {
+            "type": "note",
+            "pageLabel": "1",
+            "text": null,
+            "comment": "Compare the chart with the methods section.",
+            "item.title": "Figure design reading copy",
+            "attachment.path": "/evaluation-run/corpus/zotero-data/storage/QANPDF22/rougier-2014.pdf"
+          }
+        }
+      ]
+    },
+    "answer": {
+      "answer": "Found 2 annotations in Lab Archive, in reading order. The saved envelope is at `/evaluation-run/agent/query-result.json`. The result is complete (`truncated: false`).",
+      "count": 2,
+      "annotations": [
+        {
+          "indexedKey": "QANMARK2g118",
+          "itemIndexedKey": "QANPAPERg118",
+          "attachmentIndexedKey": "QANPDF22g118",
+          "type": "highlight",
+          "pageLabel": "1",
+          "text": "Identify Your Message",
+          "comment": null,
+          "attachmentPath": "/evaluation-run/corpus/zotero-data/storage/QANPDF22/rougier-2014.pdf"
+        },
+        {
+          "indexedKey": "QANNOTE2g118",
+          "itemIndexedKey": "QANPAPERg118",
+          "attachmentIndexedKey": "QANPDF22g118",
+          "type": "note",
+          "pageLabel": "1",
+          "text": null,
+          "comment": "Compare the chart with the methods section.",
+          "attachmentPath": "/evaluation-run/corpus/zotero-data/storage/QANPDF22/rougier-2014.pdf"
+        }
+      ],
+      "imagePath": null,
+      "imageProvenance": null,
+      "imageFormat": null,
+      "validPng": null
+    }
+  },
+  "colors": {
+    "envelope": {
+      "contractVersion": 2,
+      "command": "zotlit:annotation-query",
+      "ok": true,
+      "identity": {
+        "vault": {
+          "name": "vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a",
+          "path": "/evaluation-run/vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a"
+        },
+        "source": {
+          "databasePath": "/evaluation-run/corpus/zotero-data/zotero.sqlite",
+          "id": "34ecb303"
+        }
+      },
+      "libraries": [
+        {
+          "type": "personal"
+        }
+      ],
+      "request": {
+        "libraries": ["personal"],
+        "filter": "type == \"highlight\" && colorName == \"blue\" && tags.contains(\"query-annotation-method\") && pageLabel == \"1\" && item.title == \"Figure design reading copy\"",
+        "fields": [
+          "text",
+          "colorName",
+          "tags",
+          "pageIndex",
+          "pageLabel",
+          "item.title"
+        ],
+        "sort": [
+          {
+            "field": "item.dateModified",
+            "direction": "desc"
+          },
+          {
+            "field": "attachment.indexedKey",
+            "direction": "asc"
+          },
+          {
+            "field": "sortIndex",
+            "direction": "asc"
+          }
+        ],
+        "limit": null
+      },
+      "returnedCount": 1,
+      "truncated": false,
+      "warnings": [],
+      "rows": [
+        {
+          "indexedKey": "QANMARK2",
+          "attachmentIndexedKey": "QANPDF22",
+          "itemIndexedKey": "QANPAPER",
+          "values": {
+            "text": "Identify Your Message",
+            "colorName": "blue",
+            "tags": ["query-annotation-method"],
+            "pageIndex": 0,
+            "pageLabel": "1",
+            "item.title": "Figure design reading copy"
+          }
+        }
+      ]
+    },
+    "answer": {
+      "answer": "Found 1 matching annotation. The saved envelope was read back and verified; the query is complete (`truncated: false`).",
+      "count": 1,
+      "annotations": [
+        {
+          "indexedKey": "QANMARK2",
+          "text": "Identify Your Message",
+          "colorName": "blue",
+          "tags": ["query-annotation-method"],
+          "pageIndex": 0
+        }
+      ],
+      "imagePath": null,
+      "imageProvenance": null,
+      "imageFormat": null,
+      "validPng": null
+    }
+  },
+  "missing_source": {
+    "envelope": {
+      "contractVersion": 2,
+      "command": "zotlit:annotation-query",
+      "ok": true,
+      "identity": {
+        "vault": {
+          "name": "vault-79535da2-ed2f-4a90-b100-f14c6b6fd8fa",
+          "path": "/evaluation-run/vault-79535da2-ed2f-4a90-b100-f14c6b6fd8fa"
+        },
+        "source": {
+          "databasePath": "/evaluation-run/corpus/zotero-data/zotero.sqlite",
+          "id": "11e35383"
+        }
+      },
+      "libraries": [
+        {
+          "type": "personal"
+        },
+        {
+          "type": "group",
+          "groupID": 118,
+          "name": "Lab Archive"
+        },
+        {
+          "type": "group",
+          "groupID": 990117,
+          "name": "Consortium Reading Room"
+        },
+        {
+          "type": "group",
+          "groupID": 4200309,
+          "name": "Shared Reading"
+        }
+      ],
+      "request": {
+        "libraries": ["personal", "group:118", "group:990117", "group:4200309"],
+        "filter": "comment == \"Check this source when the file arrives.\"",
+        "fields": [
+          "comment",
+          "attachment.indexedKey",
+          "attachment.path",
+          "attachment.exists"
+        ],
+        "sort": [
+          {
+            "field": "item.dateModified",
+            "direction": "desc"
+          },
+          {
+            "field": "attachment.indexedKey",
+            "direction": "asc"
+          },
+          {
+            "field": "sortIndex",
+            "direction": "asc"
+          }
+        ],
+        "limit": null
+      },
+      "returnedCount": 1,
+      "truncated": false,
+      "warnings": [],
+      "rows": [
+        {
+          "indexedKey": "QANMISS2",
+          "attachmentIndexedKey": "MISSNG22",
+          "itemIndexedKey": "SAKIMA22",
+          "values": {
+            "comment": "Check this source when the file arrives.",
+            "attachment.indexedKey": "MISSNG22",
+            "attachment.path": "/evaluation-run/corpus/zotero-data/storage/MISSNG22/deliberately-missing.pdf",
+            "attachment.exists": false
+          }
+        }
+      ]
+    },
+    "answer": {
+      "answer": "Found one matching Annotation. The complete query envelope is saved at [query-result.json](/evaluation-run/agent/query-result.json) and verified.",
+      "count": 1,
+      "annotations": [
+        {
+          "indexedKey": "QANMISS2",
+          "attachmentIndexedKey": "MISSNG22",
+          "comment": "Check this source when the file arrives.",
+          "attachmentPath": "/evaluation-run/corpus/zotero-data/storage/MISSNG22/deliberately-missing.pdf"
+        }
+      ],
+      "imagePath": null,
+      "imageProvenance": null,
+      "imageFormat": null,
+      "validPng": null
+    }
+  },
+  "export_annotations": {
+    "envelope": {
+      "contractVersion": 2,
+      "command": "zotlit:annotation-query",
+      "ok": true,
+      "identity": {
+        "vault": {
+          "name": "vault-ff63b5aa-0fc3-417f-a5c5-0f0bbf7f116b",
+          "path": "/evaluation-run/vault-ff63b5aa-0fc3-417f-a5c5-0f0bbf7f116b"
+        },
+        "source": {
+          "databasePath": "/evaluation-run/corpus/zotero-data/zotero.sqlite",
+          "id": "661048c3"
+        }
+      },
+      "libraries": [
+        {
+          "type": "group",
+          "groupID": 118,
+          "name": "Lab Archive"
+        }
+      ],
+      "request": {
+        "libraries": ["group:118"],
+        "filter": null,
+        "fields": ["type", "pageLabel", "text", "comment", "attachment.path"],
+        "sort": [
+          {
+            "field": "item.dateModified",
+            "direction": "desc"
+          },
+          {
+            "field": "attachment.indexedKey",
+            "direction": "asc"
+          },
+          {
+            "field": "sortIndex",
+            "direction": "asc"
+          }
+        ],
+        "limit": null,
+        "attachment": ["QANPDF22g118"]
+      },
+      "returnedCount": 2,
+      "truncated": false,
+      "warnings": [],
+      "rows": [
+        {
+          "indexedKey": "QANMARK2g118",
+          "attachmentIndexedKey": "QANPDF22g118",
+          "itemIndexedKey": "QANPAPERg118",
+          "values": {
+            "type": "highlight",
+            "pageLabel": "1",
+            "text": "Identify Your Message",
+            "comment": null,
+            "attachment.path": "/evaluation-run/corpus/zotero-data/storage/QANPDF22/rougier-2014.pdf"
+          }
+        },
+        {
+          "indexedKey": "QANNOTE2g118",
+          "attachmentIndexedKey": "QANPDF22g118",
+          "itemIndexedKey": "QANPAPERg118",
+          "values": {
+            "type": "note",
+            "pageLabel": "1",
+            "text": null,
+            "comment": "Compare the chart with the methods section.",
+            "attachment.path": "/evaluation-run/corpus/zotero-data/storage/QANPDF22/rougier-2014.pdf"
+          }
+        }
+      ]
+    },
+    "answer": {
+      "answer": "Complete export: 2 Annotations from Lab Archive attachment QANPDF22g118. Annotation Indexed Keys: QANMARK2g118, QANNOTE2g118.",
+      "count": 2,
+      "annotations": [
+        {
+          "indexedKey": "QANMARK2g118",
+          "itemIndexedKey": "QANPAPERg118",
+          "attachmentIndexedKey": "QANPDF22g118",
+          "type": "highlight",
+          "pageLabel": "1",
+          "text": "Identify Your Message",
+          "comment": null,
+          "attachmentPath": "/evaluation-run/corpus/zotero-data/storage/QANPDF22/rougier-2014.pdf"
+        },
+        {
+          "indexedKey": "QANNOTE2g118",
+          "itemIndexedKey": "QANPAPERg118",
+          "attachmentIndexedKey": "QANPDF22g118",
+          "type": "note",
+          "pageLabel": "1",
+          "text": null,
+          "comment": "Compare the chart with the methods section.",
+          "attachmentPath": "/evaluation-run/corpus/zotero-data/storage/QANPDF22/rougier-2014.pdf"
+        }
+      ],
+      "imagePath": null,
+      "exportPath": "/evaluation-run/result.json",
+      "imageProvenance": null,
+      "imageFormat": null,
+      "validPng": null
+    },
+    "receipt": {
+      "contractVersion": 2,
+      "command": "zotlit:annotation-query",
+      "ok": true,
+      "identity": {
+        "vault": {
+          "name": "vault-ff63b5aa-0fc3-417f-a5c5-0f0bbf7f116b",
+          "path": "/evaluation-run/vault-ff63b5aa-0fc3-417f-a5c5-0f0bbf7f116b"
+        },
+        "source": {
+          "databasePath": "/evaluation-run/corpus/zotero-data/zotero.sqlite",
+          "id": "661048c3"
+        }
+      },
+      "libraries": [
+        {
+          "type": "group",
+          "groupID": 118,
+          "name": "Lab Archive"
+        }
+      ],
+      "request": {
+        "libraries": ["group:118"],
+        "filter": null,
+        "fields": ["type", "pageLabel", "text", "comment", "attachment.path"],
+        "sort": [
+          {
+            "field": "item.dateModified",
+            "direction": "desc"
+          },
+          {
+            "field": "attachment.indexedKey",
+            "direction": "asc"
+          },
+          {
+            "field": "sortIndex",
+            "direction": "asc"
+          }
+        ],
+        "limit": null,
+        "attachment": ["QANPDF22g118"]
+      },
+      "returnedCount": 2,
+      "truncated": false,
+      "file": {
+        "path": "/evaluation-run/agent/query-result.json",
+        "bytes": 2269,
+        "format": "json"
+      }
+    }
+  }
+}

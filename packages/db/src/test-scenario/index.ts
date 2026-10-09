@@ -20,6 +20,7 @@ export {
   BULK_TAG,
   bulkItemKey,
   seedBulkLibrary,
+  seedBulkAnnotations,
 } from "./bulk";
 export {
   SCENARIO_ITEMS,
@@ -32,6 +33,8 @@ export {
 export type ScenarioLayout = "highest" | "lowest";
 
 export interface ScenarioDatabaseOptions {
+  /** Add the Annotation Query scenario to the Item scenario. */
+  annotations?: boolean;
   /**
    * `"memory"` (default) holds the copy in memory. `"temp-directory"` writes it
    * to `zotero.sqlite` in a new temporary directory that `close` removes.
@@ -101,7 +104,7 @@ export function openScenarioDatabase(
   }
 
   try {
-    seedScenario(sqlite);
+    seedScenario(sqlite, options.annotations);
     const layout =
       options.layout ??
       (process.env.ZOTLIT_SCENARIO_LAYOUT as ScenarioLayout | undefined);

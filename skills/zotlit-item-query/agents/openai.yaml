@@ -1,4 +1,0 @@
-interface:
-  display_name: "ZotLit Item Query"
-  short_description: "Find and export Zotero Item metadata"
-  default_prompt: "Use $zotlit-item-query to find Zotero Items and return the metadata I need."

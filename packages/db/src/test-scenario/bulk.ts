@@ -113,3 +113,58 @@ export function seedBulkLibrary(sqlite: DatabaseSync, count: number): void {
     throw error;
   }
 }
+
+/** Add `count` Annotations on one PDF in the seeded bulk Library. Every fifth is an image. */
+export function seedBulkAnnotations(sqlite: DatabaseSync, count: number): void {
+  const typeID = (name: string) =>
+    lookupID(
+      sqlite,
+      "select itemTypeID as id from itemTypesCombined where typeName = ?",
+      name,
+    );
+  const parentID = lookupID(
+    sqlite,
+    "select itemID as id from items where key = ?",
+    bulkItemKey(0),
+  );
+  const insertItem = sqlite.prepare(
+    "insert into items (itemTypeID, libraryID, key) values (?, ?, ?)",
+  );
+  const annotationTypeID = typeID("annotation");
+  sqlite.exec("begin");
+  try {
+    const attachmentID = Number(
+      insertItem.run(typeID("attachment"), BULK_LIBRARY.libraryID, "BULKPDF2")
+        .lastInsertRowid,
+    );
+    sqlite
+      .prepare(
+        "insert into itemAttachments (itemID, parentItemID, linkMode, contentType, path) values (?, ?, 0, 'application/pdf', 'storage:bulk.pdf')",
+      )
+      .run(attachmentID, parentID);
+    const insertAnnotation = sqlite.prepare(
+      "insert into itemAnnotations (itemID, parentItemID, type, text, sortIndex, position, isExternal) values (?, ?, ?, ?, ?, ?, 0)",
+    );
+    for (let index = 0; index < count; index++) {
+      const itemID = Number(
+        insertItem.run(
+          annotationTypeID,
+          BULK_LIBRARY.libraryID,
+          `ANN${bulkItemKey(index).slice(3)}`,
+        ).lastInsertRowid,
+      );
+      insertAnnotation.run(
+        itemID,
+        attachmentID,
+        index % 5 === 0 ? 3 : 1,
+        `Annotation ${index}`,
+        String(index).padStart(8, "0"),
+        '{"pageIndex":0,"rects":[[0,0,10,10]]}',
+      );
+    }
+    sqlite.exec("commit");
+  } catch (error) {
+    sqlite.exec("rollback");
+    throw error;
+  }
+}

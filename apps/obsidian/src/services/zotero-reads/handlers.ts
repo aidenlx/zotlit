@@ -56,6 +56,7 @@ import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { ItemIndex, layerItemIndex } from "@zotlit/item-lookup";
 import { exportItemSnapshot } from "@zotlit/workbench/snapshot";
 
+import { makeAttachmentFileResolver } from "@/services/item-query/attachment-files";
 import { runQueryJob } from "@/services/item-query/job";
 
 import { Connection, toDbUnavailable } from "./connection";
@@ -337,6 +338,9 @@ export function handlersLayer(options?: HandlersOptions) {
                       job.source.databasePath;
                     return yield* runQueryJob(job, {
                       client,
+                      attachmentFiles: makeAttachmentFileResolver(
+                        job.attachmentPaths,
+                      ),
                       identity: {
                         vault: job.vault,
                         source: {
@@ -359,6 +363,7 @@ export function handlersLayer(options?: HandlersOptions) {
             );
             if (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause))
               return {
+                command: job.command,
                 answer: "",
                 receipt: { kind: "inline" },
                 cancelled: true,

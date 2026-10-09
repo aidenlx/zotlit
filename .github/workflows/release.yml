@@ -79,6 +79,7 @@ jobs:
           done
           cp packages/db/src/contract/generated/*.schema.json apps/obsidian/dist/resources/
           cp packages/item-query/dist/item-query.schema.json apps/obsidian/dist/resources/
+          cp packages/item-query/dist/annotation-query.schema.json apps/obsidian/dist/resources/
 
       # The plugin release carries only the three files the Obsidian community
       # scanner accepts, so everything else lives on a Resource Release pinned to

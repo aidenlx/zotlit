@@ -1,6 +1,7 @@
 import { parseExpressionAst } from "@zotlit/filter-expression";
 import type { ExpressionNode } from "@zotlit/filter-expression";
 
+import type { QueryDataset } from "./dataset";
 import type { ItemQueryErrorCode, ItemQueryErrorLocation } from "./error";
 import type {
   Callee,
@@ -12,12 +13,6 @@ import type {
   Span,
   SyntaxFault,
 } from "./fault";
-import {
-  BUILT_IN_NAMES,
-  DEFAULT_FIELDS,
-  fieldDefinition,
-  filterField,
-} from "./fields";
 import type { ValueShape } from "./fields";
 import {
   GLOBAL_FUNCTION_NAMES,
@@ -34,11 +29,19 @@ import {
   takesType,
 } from "./filter-functions";
 import type { FunctionDefinition } from "./filter-functions";
-import { hasBareForm, planFilter } from "./filter-plan";
+import { hasBareForm } from "./filter-plan";
 import type { StaticType } from "./filter-plan";
 import { nearMatches } from "./near-match";
 import type { QueryClock } from "./query-clock";
 import { COUNT_FIELDS, UNLIMITED_LIMIT } from "./request";
+
+interface DiagnosisContext extends ItemQueryErrorLocation {
+  readonly dataset: QueryDataset<any>;
+}
+interface WarningContext {
+  readonly clock: QueryClock;
+  readonly dataset: QueryDataset<any>;
+}
 
 export interface DiagnosticLocation {
   readonly argument?: string;
@@ -67,7 +70,7 @@ export interface Diagnostic<Code extends string = string> {
 export function diagnose(
   fault: ItemQueryFault,
   text: string,
-  location: ItemQueryErrorLocation,
+  { dataset, ...location }: DiagnosisContext,
 ): Diagnostic<ItemQueryErrorCode> {
   const at = "at" in fault ? fault.at : undefined;
   const faultLocation = { ...location, ...(at ? { span: at } : {}) };
@@ -100,10 +103,13 @@ export function diagnose(
       );
     }
     case "unreadable": {
-      const custom = fault.name === "custom";
+      const prefix = dataset.customPrefix;
+      const custom = fault.name === `${prefix}custom`;
       const expected = custom
-        ? ['custom["name"]']
-        : DEFAULT_FIELDS.filter((name) => filterField(name)?.filterable);
+        ? [`${prefix}custom["name"]`]
+        : dataset.defaultFields.filter(
+            (name) => dataset.filterField(name)?.filterable,
+          );
       return renderDiagnostic(
         {
           code: "unfilterable-field",
@@ -111,14 +117,25 @@ export function diagnose(
             ? "custom is the set of all custom fields; a filter reads one of them."
             : `A filter cannot read ${JSON.stringify(fault.name)}.`,
           hint: custom
-            ? 'Name one custom field, such as custom["review.status"].'
-            : `Use a field that the Item Query Schema lists as filterable, such as ${expected.join(", ")}.`,
+            ? `Name one custom field, such as ${prefix}custom["review.status"].`
+            : `Use a field that the ${dataset.family} Schema lists as filterable, such as ${expected.join(", ")}.`,
           location: faultLocation,
         },
         text,
         { found: fault.name, expected },
       );
     }
+    case "custom-key":
+      return renderDiagnostic(
+        {
+          code: "invalid-filter",
+          message:
+            "custom takes the name of one custom field as a quoted string.",
+          hint: `Name one custom field, such as ${dataset.customPrefix}custom["review.status"].`,
+          location: faultLocation,
+        },
+        text,
+      );
     case "plain": {
       const entry =
         location.argument === "fields"
@@ -139,7 +156,7 @@ export function diagnose(
         : diagnostic;
     }
     case "unknown":
-      return diagnoseUnknown(fault, text, location);
+      return diagnoseUnknown(fault, text, { ...location, dataset });
   }
 }
 
@@ -175,9 +192,13 @@ function describeCount(
   return least === most ? plural(least) : `${least} to ${plural(most)}`;
 }
 
-export function codeOfFault(fault: ItemQueryFault): PlainFault["code"] {
+export function codeOfFault(
+  fault: ItemQueryFault,
+  dataset: QueryDataset<any>,
+): PlainFault["code"] {
   if (fault.kind === "plain") return fault.code;
-  if (fault.kind === "syntax") return "invalid-filter";
+  if (fault.kind === "syntax" || fault.kind === "custom-key")
+    return "invalid-filter";
   if (fault.kind === "arity") return "wrong-argument-count";
   if (fault.kind === "argument-type") return "wrong-argument-type";
   if (fault.kind === "unreadable") return "unfilterable-field";
@@ -188,11 +209,11 @@ export function codeOfFault(fault: ItemQueryFault): PlainFault["code"] {
     case "property":
       return "unknown-property";
     case "projection-path":
-      return fieldDefinition(fault.name.split(".")[0]!.split("[")[0]!)
+      return dataset.definition(dataset.rootName(fault.name))
         ? "unknown-path"
         : "unknown-field";
     case "sortable-field":
-      return fieldDefinition(fault.name.split(".")[0]!.split("[")[0]!)
+      return dataset.definition(dataset.rootName(fault.name))
         ? "unsortable-field"
         : "unknown-field";
     case "field":
@@ -202,24 +223,29 @@ export function codeOfFault(fault: ItemQueryFault): PlainFault["code"] {
 }
 
 function diagnoseUnknown(
-  fault: Extract<Fault, { readonly kind: "unknown" }>,
+  sourceFault: Extract<Fault, { readonly kind: "unknown" }>,
   text: string,
-  location: ItemQueryErrorLocation,
+  { dataset, ...location }: DiagnosisContext,
 ): Diagnostic<PlainFault["code"]> {
+  const prefix = dataset.customPrefix;
+  const fault =
+    prefix && sourceFault.role === "field" && sourceFault.customFields
+      ? { ...sourceFault, name: prefix + sourceFault.name }
+      : sourceFault;
   if (
     fault.role === "projection-path" ||
     fault.role === "sortable-field" ||
     (fault.role === "custom-field" && location.argument === "fields")
   )
-    return diagnoseRequestName(fault, text, location);
+    return diagnoseRequestName(fault, text, { ...location, dataset });
   const candidates =
     fault.role === "custom-field"
       ? (fault.customFields ?? [])
-      : candidatesFor(fault.role, fault.receiver?.type);
+      : candidatesFor(fault.role, fault.receiver?.type, dataset);
   const nearby = fault.dotted
-    ? [`custom[${JSON.stringify(fault.name)}]`]
+    ? [`${prefix}custom[${JSON.stringify(fault.name)}]`]
     : nearMatches(fault.name, candidates);
-  const receiverSwap = receiverSwapCorrection(fault, text);
+  const receiverSwap = receiverSwapCorrection(fault, text, dataset);
   const guidance = crossRoleGuidance(fault);
   const caseCorrection = nearby[0]?.toLowerCase() === fault.name.toLowerCase();
   const hint = receiverSwap
@@ -230,7 +256,7 @@ function diagnoseUnknown(
             role: fault.role,
             suggestion:
               fault.role === "custom-field" && !fault.dotted
-                ? `custom[${JSON.stringify(nearby[0]!)}]`
+                ? `${prefix}custom[${JSON.stringify(nearby[0]!)}]`
                 : nearby[0]!,
             text,
             at: fault.at,
@@ -245,7 +271,7 @@ function diagnoseUnknown(
                 role: fault.role,
                 suggestion:
                   fault.role === "custom-field" && !fault.dotted
-                    ? `custom[${JSON.stringify(nearby[0]!)}]`
+                    ? `${prefix}custom[${JSON.stringify(nearby[0]!)}]`
                     : nearby[0]!,
                 text,
                 at: fault.at,
@@ -254,13 +280,16 @@ function diagnoseUnknown(
             )
           : fault.customFields?.length === 0
             ? "The connected Zotero source has no custom fields."
-            : recoveryAction(fault.role, candidates, fault.receiver?.type);
+            : recoveryAction(fault.role, candidates, {
+                receiverType: fault.receiver?.type,
+                dataset,
+              });
   const suggestions =
     nearby.length > 0 ? nearby : receiverSwap ? [receiverSwap] : [];
-  const message = unknownMessage(fault);
+  const message = unknownMessage(fault, dataset);
   const diagnostic = renderDiagnostic(
     {
-      code: codeOfFault(fault),
+      code: codeOfFault(fault, dataset),
       message,
       hint,
       location: {
@@ -272,7 +301,7 @@ function diagnoseUnknown(
     { found: fault.name, expected: candidates },
   );
   const notes = [
-    ...receiverNotes(fault.receiver),
+    ...receiverNotes(fault.receiver, dataset),
     ...roleNotes(fault, guidance),
     ...(fault.role === "field" && fault.customFields?.some(hasBareForm)
       ? [
@@ -290,7 +319,7 @@ function diagnoseUnknown(
   };
 }
 
-function projectionCandidates(): readonly string[] {
+function projectionCandidates(dataset: QueryDataset<any>): readonly string[] {
   const paths = (path: string, shape: ValueShape): string[] => [
     path,
     ...(shape.kind === "object"
@@ -301,25 +330,27 @@ function projectionCandidates(): readonly string[] {
         ? paths(`${path}[0]`, shape.element)
         : []),
   ];
-  return BUILT_IN_NAMES.flatMap((name) => {
-    const definition = fieldDefinition(name);
-    return definition ? paths(name, definition.shape) : [];
-  });
+  return unique(
+    dataset.names.flatMap((name) => {
+      const definition = dataset.definition(name);
+      return definition ? paths(name, definition.shape) : [];
+    }),
+  );
 }
 
 function diagnoseRequestName(
   fault: Extract<Fault, { kind: "unknown" }>,
   text: string,
-  location: ItemQueryErrorLocation,
+  { dataset, ...location }: DiagnosisContext,
 ): Diagnostic<ItemQueryErrorCode> {
   const sort = fault.role === "sortable-field";
   const custom = fault.role === "custom-field";
   const candidates = sort
-    ? BUILT_IN_NAMES.filter((name) => fieldDefinition(name)?.sortKey)
+    ? dataset.sortableFields
     : custom
       ? (fault.customFields ?? [])
-      : projectionCandidates();
-  const root = fault.name.split(".")[0]!.split("[")[0]!;
+      : projectionCandidates(dataset);
+  const root = dataset.rootName(fault.name);
   const exact = candidates.filter(
     (name) => name.toLowerCase() === fault.name.toLowerCase(),
   );
@@ -341,7 +372,9 @@ function diagnoseRequestName(
       ? replaceJsonValue(
           text,
           keys,
-          custom ? `custom[${JSON.stringify(nearby[0])}]` : nearby[0]!,
+          custom
+            ? `${dataset.customPrefix}custom[${JSON.stringify(nearby[0])}]`
+            : nearby[0]!,
         )
       : undefined;
   const entry = custom
@@ -354,11 +387,11 @@ function diagnoseRequestName(
       ? `Try: ${suggestions[0]}`
       : nearby.length
         ? `Similar ${sort ? "Sortable Fields" : "Projection Paths"}: ${nearby.join(", ")}.`
-        : recoveryAction(fault.role, candidates);
+        : recoveryAction(fault.role, candidates, { dataset });
   const diagnostic = renderDiagnostic(
     {
-      code: codeOfFault(fault),
-      message: unknownMessage(fault),
+      code: codeOfFault(fault, dataset),
+      message: unknownMessage(fault, dataset),
       hint,
       location: {
         ...location,
@@ -374,10 +407,10 @@ function diagnoseRequestName(
   const notes = sort
     ? [
         "A Sortable Field is a top-level field with one value.",
-        `Sortable Fields include ${DEFAULT_FIELDS.filter((name) => candidates.includes(name)).join(", ")}.`,
+        `Sortable Fields include ${dataset.defaultFields.filter((name) => candidates.includes(name)).join(", ")}.`,
       ]
     : [];
-  const definition = fieldDefinition(root);
+  const definition = dataset.definition(root);
   if (!sort && definition) {
     const shape =
       definition.shape.kind === "list"
@@ -414,6 +447,7 @@ function projectionEntry(text: string, index?: number): string | undefined {
 function receiverSwapCorrection(
   fault: Extract<Fault, { readonly kind: "unknown" }>,
   text: string,
+  dataset: QueryDataset<any>,
 ): string | undefined {
   if (fault.role !== "method" || !fault.receiver) return undefined;
   const receiver = fault.receiver;
@@ -425,7 +459,7 @@ function receiverSwapCorrection(
   if (!call || call.args.length !== 1) return undefined;
   const argument = call.args[0]!;
   const argumentText = text.slice(argument.from, argument.to);
-  const argumentPlan = planFilter(argumentText);
+  const argumentPlan = dataset.planFilter(argumentText);
   if ("kind" in argumentPlan || argumentPlan.root.valueType === "unknown")
     return undefined;
   const methods = methodsNamed(fault.name).filter(([owner, definition]) => {
@@ -444,7 +478,7 @@ function receiverSwapCorrection(
   const replacement = `${argumentText}.${fault.name}(${receiverText})`;
   const corrected =
     text.slice(0, call.from) + replacement + text.slice(call.to);
-  return "kind" in planFilter(corrected) ? undefined : corrected;
+  return "kind" in dataset.planFilter(corrected) ? undefined : corrected;
 }
 
 function findMethodCall(
@@ -488,11 +522,12 @@ function findMethodCall(
 
 function candidatesFor(
   role: Role,
-  receiverType?: StaticType,
+  receiverType: StaticType | undefined,
+  dataset: QueryDataset<any>,
 ): readonly string[] {
   switch (role) {
     case "field":
-      return fieldCandidates();
+      return fieldCandidates(dataset);
     case "global":
       return GLOBAL_FUNCTION_NAMES;
     case "method":
@@ -518,11 +553,11 @@ function candidatesFor(
   }
 }
 
-function fieldCandidates(): readonly string[] {
-  return BUILT_IN_NAMES.flatMap((name) => {
-    const filter = filterField(name);
+function fieldCandidates(dataset: QueryDataset<any>): readonly string[] {
+  return dataset.names.flatMap((name) => {
+    const filter = dataset.filterField(name);
     if (!filter?.filterable) return [];
-    const definition = fieldDefinition(name);
+    const definition = dataset.definition(name);
     if (!definition) return [name];
     const { shape } = definition;
     if (shape.kind === "list") return [name, `${name}[0]`];
@@ -542,21 +577,23 @@ const unique = (names: readonly string[]): readonly string[] => [
 
 function unknownMessage(
   fault: Extract<Fault, { readonly kind: "unknown" }>,
+  dataset: QueryDataset<any>,
 ): string {
+  const family = dataset.family;
   const { role, name, receiver } = fault;
   const quoted = JSON.stringify(name);
   switch (role) {
     case "field": {
       if (name === "if" || GLOBAL_FUNCTIONS.has(name))
         return `${quoted} is a function, not a field.`;
-      return `${quoted} is not a field of Item Query.`;
+      return `${quoted} is not a field of ${family}.`;
     }
     case "global":
-      return `${quoted} is not a global function of Item Query.`;
+      return `${quoted} is not a global function of ${family}.`;
     case "method":
       return receiver && receiver.type !== "unknown"
         ? `A ${receiver.type} has no method ${quoted}.`
-        : `${quoted} is not a method of Item Query.`;
+        : `${quoted} is not a method of ${family}.`;
     case "property":
       return receiver && receiver.type !== "unknown"
         ? `A ${receiver.type} has no property ${quoted}.`
@@ -566,21 +603,25 @@ function unknownMessage(
         ? `${quoted} is a custom field of the connected Zotero source; read it with bracket access.`
         : `The Zotero source has no custom field named ${quoted}.`;
     case "projection-path":
-      return `${quoted} is not a Projection Path of Item Query.`;
+      return `${quoted} is not a Projection Path of ${family}.`;
     case "sortable-field":
-      return `${quoted} is not a Sortable Field of Item Query.`;
+      return `${quoted} is not a Sortable Field of ${family}.`;
   }
 }
 
 function recoveryAction(
   role: Role,
   candidates: readonly string[],
-  receiverType?: StaticType,
+  {
+    receiverType,
+    dataset,
+  }: { receiverType?: StaticType; dataset: QueryDataset<any> },
 ): string {
+  const family = dataset.family;
   const joined = candidates.join(", ");
   switch (role) {
     case "field":
-      return "Use a field from the Item Query Schema; field names are case-sensitive.";
+      return `Use a field from the ${family} Schema; field names are case-sensitive.`;
     case "global":
       return `Use a global function: ${joined}.`;
     case "method":
@@ -596,9 +637,9 @@ function recoveryAction(
         ? `Use the exact name of a custom field: ${candidates.map((name) => JSON.stringify(name)).join(", ")}.`
         : "Use the exact name of a custom field from the source.";
     case "projection-path":
-      return "Use a Projection Path from the Item Query Schema.";
+      return `Use a Projection Path from the ${family} Schema.`;
     case "sortable-field":
-      return "Use a Sortable Field from the Item Query Schema.";
+      return `Use a Sortable Field from the ${family} Schema.`;
   }
 }
 
@@ -638,7 +679,10 @@ function suggestionAction(
   }
 }
 
-function receiverNotes(receiver?: Receiver): readonly string[] {
+function receiverNotes(
+  receiver: Receiver | undefined,
+  dataset: QueryDataset<any>,
+): readonly string[] {
   if (!receiver) return [];
   if (receiver.type === "unknown" && !receiver.field)
     return ["The receiver's type depends on the Item."];
@@ -649,7 +693,7 @@ function receiverNotes(receiver?: Receiver): readonly string[] {
       : `a ${receiver.type}`;
   const notes = [`${subject} is ${type} in a filter.`];
   if (!receiver.field) return notes;
-  const shape = fieldDefinition(receiver.field)?.shape;
+  const shape = dataset.definition(receiver.field)?.shape;
   if (!shape) return notes;
   const paths = structuredPaths(receiver.field, shape);
   if (paths.length === 0) return notes;
@@ -665,6 +709,7 @@ function receiverNotes(receiver?: Receiver): readonly string[] {
 function structuredPaths(path: string, shape: ValueShape): readonly string[] {
   switch (shape.kind) {
     case "scalar":
+    case "json":
     case "custom-fields":
       return [];
     case "object":
@@ -870,11 +915,11 @@ function diagnoseSyntax(
 export function diagnoseWarning(
   fault: Extract<Fault, { kind: "constant" }>,
   text: string,
-  clock: QueryClock,
+  { clock, dataset }: WarningContext,
 ): Diagnostic<"never-true" | "always-true"> {
   const left = text.slice(fault.left.at.from, fault.left.at.to);
   const right = text.slice(fault.right.at.from, fault.right.at.to);
-  const suggestion = constantCorrection(fault, text, clock);
+  const suggestion = constantCorrection(fault, text, { clock, dataset });
   const whole = parseExpressionAst(text).ast;
   const ungroup = (node: ExpressionNode): ExpressionNode =>
     node.type === "group" ? ungroup(node.expression) : node;
@@ -884,7 +929,7 @@ export function diagnoseWarning(
   const diagnostic = renderDiagnostic(
     {
       code: fault.value ? "always-true" : "never-true",
-      message: `${left} is a ${fault.left.type} and ${right} is a ${fault.right.type}: ${fault.operator} between them is ${fault.value ? "always" : "never"} true.${selectsAll ? " The filter selects every Item." : ""}`,
+      message: `${left} is a ${fault.left.type} and ${right} is a ${fault.right.type}: ${fault.operator} between them is ${fault.value ? "always" : "never"} true.${selectsAll ? ` The filter selects every ${dataset.noun}.` : ""}`,
       hint: suggestion
         ? `Try: ${suggestion}`
         : "Compare values of the same type.",
@@ -916,7 +961,7 @@ export function diagnoseWarning(
 function constantCorrection(
   fault: Extract<Fault, { kind: "constant" }>,
   text: string,
-  clock: QueryClock,
+  { clock, dataset }: WarningContext,
 ): string | undefined {
   const left = text.slice(fault.left.at.from, fault.left.at.to);
   const right = text.slice(fault.right.at.from, fault.right.at.to);
@@ -983,7 +1028,7 @@ function constantCorrection(
   if (!replacement) return undefined;
   const corrected =
     text.slice(0, fault.at.from) + replacement + text.slice(fault.at.to);
-  return "kind" in planFilter(corrected) ? undefined : corrected;
+  return "kind" in dataset.planFilter(corrected) ? undefined : corrected;
 }
 
 /** Decoder facts are independent of the Obsidian adapter and validation library. */

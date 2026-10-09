@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Copy a generated Fixture, then seed an isolated Item Query evaluation corpus.
+// Copy a generated Fixture, then seed an isolated Query evaluation corpus.
 import { cp, lstat, mkdir, readFile, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -71,7 +71,9 @@ function seed(db) {
       name,
     );
   const article = type("journalArticle"),
-    book = type("book");
+    book = type("book"),
+    attachmentType = type("attachment"),
+    annotationType = type("annotation");
   const title = field("title"),
     date = field("date"),
     abstract = field("abstractNote");
@@ -92,7 +94,18 @@ function seed(db) {
       .get()
   )
     fail("source already has evaluation tags");
-  for (const key of [keyAt(0), "EVALSAME", "EVALED33"]) {
+  for (const key of [
+    keyAt(0),
+    "EVALSAME",
+    "EVALED33",
+    "QANPAPER",
+    "QANPDF22",
+    "QANMARK2",
+    "QANPAGE2",
+    "QANNOTE2",
+    "QANMISS2",
+    "QANZERO2",
+  ]) {
     if (db.prepare("select 1 from items where key = ?").get(key))
       fail(`source already has ${key}`);
   }
@@ -114,6 +127,16 @@ function seed(db) {
     const edgeTagID = Number(
       db.prepare("insert into tags (name) values ('query-eval-edge')").run()
         .lastInsertRowid,
+    );
+    const annotationTagID = Number(
+      db
+        .prepare("insert into tags (name) values ('query-annotation-eval')")
+        .run().lastInsertRowid,
+    );
+    const annotationMethodTagID = Number(
+      db
+        .prepare("insert into tags (name) values ('query-annotation-method')")
+        .run().lastInsertRowid,
     );
     const addItem = db.prepare(
       "insert into items (itemTypeID, dateAdded, dateModified, clientDateModified, libraryID, key) values (?, ?, ?, ?, ?, ?)",
@@ -226,6 +249,128 @@ function seed(db) {
       });
       addTag.run(itemID, edgeTagID);
     }
+    // These marks reuse text and PDF coordinates reviewed in the Fixture Spec
+    // for rougier-2014.pdf. The copied vault holds that same real PDF.
+    const sourcePdf = "storage:rougier-2014.pdf";
+    const addAttachment = db.prepare(
+      "insert into itemAttachments (itemID, parentItemID, linkMode, contentType, path) values (?, ?, 0, 'application/pdf', ?)",
+    );
+    const addAnnotation = db.prepare(
+      "insert into itemAnnotations (itemID, parentItemID, type, text, comment, color, pageLabel, sortIndex, position, isExternal) values (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
+    );
+    function markedPaper(libraryID) {
+      const parentID = Number(
+        addItem.run(article, stamp, stamp, stamp, libraryID, "QANPAPER")
+          .lastInsertRowid,
+      );
+      put(parentID, title, "Figure design reading copy");
+      put(parentID, date, "2014");
+      addTag.run(parentID, annotationTagID);
+      const pdfID = Number(
+        addItem.run(attachmentType, stamp, stamp, stamp, libraryID, "QANPDF22")
+          .lastInsertRowid,
+      );
+      addAttachment.run(pdfID, parentID, sourcePdf);
+      return { libraryID, pdfID };
+    }
+    function mark(
+      { libraryID, pdfID },
+      {
+        key,
+        typeID,
+        text,
+        comment = null,
+        color,
+        pageLabel,
+        sortIndex,
+        position,
+        tagged = false,
+      },
+    ) {
+      const id = Number(
+        addItem.run(annotationType, stamp, stamp, stamp, libraryID, key)
+          .lastInsertRowid,
+      );
+      addAnnotation.run(
+        id,
+        pdfID,
+        typeID,
+        text,
+        comment,
+        color,
+        pageLabel,
+        sortIndex,
+        JSON.stringify(position),
+      );
+      if (tagged) addTag.run(id, annotationMethodTagID);
+    }
+    const personal = markedPaper(1);
+    const group = markedPaper(3);
+    const messagePosition = {
+      pageIndex: 0,
+      rects: [[265.833, 611.202, 374.503, 620.019]],
+    };
+    for (const paper of [personal, group])
+      mark(paper, {
+        key: "QANMARK2",
+        typeID: 1,
+        text: "Identify Your Message",
+        color: "#2ea8e5",
+        pageLabel: "1",
+        sortIndex: "00000|002041|00170",
+        position: messagePosition,
+        tagged: true,
+      });
+    mark(personal, {
+      key: "QANPAGE2",
+      typeID: 3,
+      text: null,
+      color: "#ffd400",
+      pageLabel: "2",
+      sortIndex: "00001|001860|00047",
+      position: { pageIndex: 1, rects: [[48.75, 395.509, 570, 743.723]] },
+    });
+    mark(group, {
+      key: "QANNOTE2",
+      typeID: 2,
+      text: null,
+      comment: "Compare the chart with the methods section.",
+      color: "#ff6666",
+      pageLabel: "1",
+      sortIndex: "00000|002042|00171",
+      position: messagePosition,
+    });
+    const zeroID = Number(
+      addItem.run(article, stamp, stamp, stamp, 1, "QANZERO2").lastInsertRowid,
+    );
+    put(zeroID, title, "Figure design reading plan");
+    addTag.run(zeroID, annotationTagID);
+    const missingAttachment = db
+      .prepare(
+        "select itemID from items where libraryID = 1 and key = 'MISSNG22'",
+      )
+      .get()?.itemID;
+    if (!missingAttachment)
+      fail("Fixture is missing the deliberate missing-file Attachment");
+    mark(
+      { libraryID: 1, pdfID: missingAttachment },
+      {
+        key: "QANMISS2",
+        typeID: 2,
+        text: null,
+        comment: "Check this source when the file arrives.",
+        color: "#ff6666",
+        pageLabel: "2",
+        sortIndex: "00001|000000|00389",
+        position: {
+          pageIndex: 1,
+          rects: [
+            [389, 531, 710, 553],
+            [389, 505, 688, 527],
+          ],
+        },
+      },
+    );
     db.exec("commit");
   } catch (error) {
     db.exec("rollback");
@@ -300,6 +445,17 @@ async function main() {
   } finally {
     copiedDb.close();
   }
+  const annotationPdfDir = join(
+    destination,
+    "zotero-data",
+    "storage",
+    "QANPDF22",
+  );
+  await mkdir(annotationPdfDir, { recursive: true });
+  await cp(
+    join(destination, "zt-fixture-vault", "attachments", "rougier-2014.pdf"),
+    join(annotationPdfDir, "rougier-2014.pdf"),
+  );
   await mkdir(join(destination, "results"));
   console.log(
     JSON.stringify(

@@ -16,12 +16,12 @@ import { isStoredStringField } from "./fields";
 import type { FilterNode } from "./filter-plan";
 
 /** How the engine gets a candidate set for a filter. */
-export type CandidatePlan =
-  | { readonly kind: "leaf"; readonly leaf: CandidateLeaf }
+export type CandidatePlan<Leaf = CandidateLeaf> =
+  | { readonly kind: "leaf"; readonly leaf: Leaf }
   /** `&&`: the intersection of the sets within the cap; one set is enough. */
-  | { readonly kind: "all"; readonly plans: readonly CandidatePlan[] }
+  | { readonly kind: "all"; readonly plans: readonly CandidatePlan<Leaf>[] }
   /** `||`: the union of the sets; it needs every set. */
-  | { readonly kind: "any"; readonly plans: readonly CandidatePlan[] };
+  | { readonly kind: "any"; readonly plans: readonly CandidatePlan<Leaf>[] };
 
 /**
  * What the query read from the source before planning. A leaf that needs a
@@ -37,12 +37,14 @@ export interface CandidateSources {
  * null for a node of another form. Every Item for which the node is truthy
  * must be in the candidate set of the leaf.
  */
-type Lowering = (
-  node: FilterNode,
+type Lowering = <Item>(
+  node: FilterNode<Item>,
   sources: CandidateSources,
 ) => CandidateLeaf | null;
 
-const stringLiteral = (node: FilterNode | undefined): string | null =>
+const stringLiteral = <Item>(
+  node: FilterNode<Item> | undefined,
+): string | null =>
   node?.kind === "literal" && typeof node.value === "string"
     ? node.value
     : null;
@@ -58,8 +60,8 @@ const lowerTagContains: Lowering = (node) => {
 };
 
 /** The field and the literal of `field == literal`, in either operand order. */
-function equality(
-  node: FilterNode,
+export function equality<Item>(
+  node: FilterNode<Item>,
   accepts: (name: string) => boolean,
 ): { name: string; value: string } | null {
   if (node.kind !== "binary" || node.operator !== "==") return null;
@@ -133,46 +135,72 @@ const LOWERINGS: readonly Lowering[] = [
  * set, and the query uses the scan. `&&` uses the sides that lower, `||`
  * needs both sides, and `!` and every other expression lower nothing.
  */
-export function planCandidates(
-  node: FilterNode,
+export function planCandidates<Item, Leaf = CandidateLeaf>(
+  node: FilterNode<Item>,
   sources: CandidateSources,
-): CandidatePlan | null {
+  lowerLeaf: (
+    node: FilterNode<Item>,
+    sources: CandidateSources,
+  ) => Leaf | null = lowerItemCandidate as (
+    node: FilterNode<Item>,
+    sources: CandidateSources,
+  ) => Leaf | null,
+): CandidatePlan<Leaf> | null {
   if (node.kind === "binary" && node.operator === "&&") {
     const plans = [node.left, node.right]
-      .map((side) => planCandidates(side, sources))
+      .map((side) => planCandidates(side, sources, lowerLeaf))
       .filter((plan) => plan !== null);
     if (plans.length === 0) return null;
     return plans.length === 1 ? plans[0]! : { kind: "all", plans };
   }
   if (node.kind === "binary" && node.operator === "||") {
-    const left = planCandidates(node.left, sources);
-    const right = planCandidates(node.right, sources);
+    const left = planCandidates(node.left, sources, lowerLeaf);
+    const right = planCandidates(node.right, sources, lowerLeaf);
     return left && right ? { kind: "any", plans: [left, right] } : null;
   }
+  const leaf = lowerLeaf(node, sources);
+  return leaf ? { kind: "leaf", leaf } : null;
+}
+
+export const lowerItemCandidate: Lowering = (node, sources) => {
   for (const lower of LOWERINGS) {
     const leaf = lower(node, sources);
-    if (leaf) return { kind: "leaf", leaf };
+    if (leaf) return leaf;
   }
   return null;
-}
+};
 
 /**
  * Read the candidate set of a plan: Item IDs of one Target Library, not yet
  * restricted to the query universe. Null: the set is above `cap`, and the
  * query uses the scan. Each statement reads `cap + 1` IDs at most.
  */
-export function readCandidates(
+export const readCandidates = (
   plan: CandidatePlan,
   libraryID: number,
   cap: number,
+) => readCandidatePlan(plan, { libraryID, cap, readLeaf: readCandidateSet });
+
+export function readCandidatePlan<Leaf>(
+  plan: CandidatePlan<Leaf>,
+  options: {
+    libraryID: number;
+    cap: number;
+    readLeaf: (candidates: {
+      libraryID: number;
+      leaf: Leaf;
+      limit: number;
+    }) => Effect.Effect<number[], ItemQueryReaderError, ItemQueryDatabase>;
+  },
 ): Effect.Effect<
   ReadonlySet<number> | null,
   ItemQueryReaderError,
   ItemQueryDatabase
 > {
   return Effect.gen(function* () {
+    const { libraryID, cap, readLeaf } = options;
     if (plan.kind === "leaf") {
-      const itemIDs = yield* readCandidateSet({
+      const itemIDs = yield* readLeaf({
         libraryID,
         leaf: plan.leaf,
         limit: cap + 1,
@@ -182,7 +210,7 @@ export function readCandidates(
     if (plan.kind === "any") {
       const union = new Set<number>();
       for (const branch of plan.plans) {
-        const set = yield* readCandidates(branch, libraryID, cap);
+        const set = yield* readCandidatePlan(branch, options);
         if (!set) return null;
         for (const itemID of set) union.add(itemID);
         if (union.size > cap) return null;
@@ -191,7 +219,7 @@ export function readCandidates(
     }
     const sets: ReadonlySet<number>[] = [];
     for (const branch of plan.plans) {
-      const set = yield* readCandidates(branch, libraryID, cap);
+      const set = yield* readCandidatePlan(branch, options);
       if (set) sets.push(set);
     }
     if (sets.length === 0) return null;

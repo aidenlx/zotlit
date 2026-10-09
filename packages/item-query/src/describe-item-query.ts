@@ -6,13 +6,9 @@ import type {
   ItemQueryLayoutError,
 } from "@zotlit/db/item-query";
 
-import { describeItemQueryCustomFields } from "./describe-item-query-custom-fields";
-import {
-  BUILT_IN_NAMES,
-  DEFAULT_FIELDS,
-  fieldDefinition,
-  filterField,
-} from "./fields";
+import type { QueryDataset } from "./dataset";
+import { describeQueryCustomFields } from "./describe-query-custom-fields";
+import { BUILT_IN_NAMES, fieldDefinition, filterField } from "./fields";
 import type { ValueShape } from "./fields";
 import {
   GLOBAL_FUNCTIONS,
@@ -24,11 +20,17 @@ import {
 import type { FunctionDefinition, FunctionParameter } from "./filter-functions";
 import { planFilter } from "./filter-plan";
 import type { FilterValueType } from "./filter-values";
-import { DEFAULT_SORT } from "./request";
+import { ITEMS } from "./query-items";
 import type { SortSpec } from "./request";
 
 /** The JSON type of a value in a Query Row. Every value can also be null. */
-export type JsonType = "string" | "number" | "boolean" | "object" | "array";
+export type JsonType =
+  | "string"
+  | "number"
+  | "boolean"
+  | "object"
+  | "array"
+  | "any";
 
 /** A non-null type of the Filter Expression language. */
 export type FilterType = Exclude<FilterValueType, "null">;
@@ -130,21 +132,33 @@ export function describeItemQuery(): Effect.Effect<
   ItemQueryLayoutError | ItemQueryDatabaseError,
   ItemQueryDatabase
 > {
-  return Effect.gen(function* () {
-    const customFields = yield* describeItemQueryCustomFields();
-    return {
-      ...describeItemQueryVocabulary(),
-      customFields,
-      defaults: {
-        fields: [...DEFAULT_FIELDS],
-        sort: DEFAULT_SORT.map(({ field, direction }) => ({
-          field,
-          direction,
-        })),
-        limit: null,
-      },
-    };
-  });
+  return describeQuery(ITEMS, describeItemQueryVocabulary());
+}
+
+/**
+ * The schema of a Query Dataset on the active Zotero source: its vocabulary,
+ * the custom fields of the source, and the defaults of the dataset.
+ */
+export function describeQuery<Vocabulary extends object>(
+  dataset: QueryDataset<any>,
+  vocabulary: Vocabulary,
+): Effect.Effect<
+  Vocabulary & Pick<ItemQuerySchema, "customFields" | "defaults">,
+  ItemQueryLayoutError | ItemQueryDatabaseError,
+  ItemQueryDatabase
+> {
+  return Effect.map(describeQueryCustomFields(dataset), (customFields) => ({
+    ...vocabulary,
+    customFields,
+    defaults: {
+      fields: [...dataset.defaultFields],
+      sort: dataset.defaultSort.map(({ field, direction }) => ({
+        field,
+        direction,
+      })),
+      limit: null,
+    },
+  }));
 }
 
 /** The source-independent Item Query vocabulary, generated into the package asset. */
@@ -183,7 +197,7 @@ const BUILT_IN_FIELDS: readonly SchemaField[] = BUILT_IN_NAMES.flatMap(
       type: jsonType(definition.shape),
       filter: filterType,
       projection: true,
-      sort: definition.sortKey !== undefined,
+      sort: ITEMS.sortable(name) !== undefined,
     };
     return [root, ...pathsBelow(name, definition.shape)];
   },
@@ -204,19 +218,24 @@ function filterCapability(path: string): SchemaCapabilities["filter"] {
  * The Projection Paths below a value. A list element is written at index 0;
  * every other index reaches the element at that position.
  */
-function pathsBelow(path: string, shape: ValueShape): SchemaField[] {
+export function pathsBelow(
+  path: string,
+  shape: ValueShape,
+  capability = filterCapability,
+): SchemaField[] {
   const below = (child: string, childShape: ValueShape): SchemaField[] => [
     {
       path: child,
       type: jsonType(childShape),
-      filter: filterCapability(child),
+      filter: capability(child),
       projection: true,
       sort: false,
     },
-    ...pathsBelow(child, childShape),
+    ...pathsBelow(child, childShape, capability),
   ];
   switch (shape.kind) {
     case "scalar":
+    case "json":
     case "custom-fields":
       // The custom fields are listed with the source in `customFields`.
       return [];
@@ -229,10 +248,12 @@ function pathsBelow(path: string, shape: ValueShape): SchemaField[] {
   }
 }
 
-function jsonType(shape: ValueShape): JsonType {
+export function jsonType(shape: ValueShape): JsonType {
   switch (shape.kind) {
     case "scalar":
       return shape.type;
+    case "json":
+      return "any";
     case "object":
     case "custom-fields":
       return "object";

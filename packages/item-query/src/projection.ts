@@ -11,13 +11,13 @@ import type { PathSegment } from "./projection-path";
 import type { ProjectionValue } from "./request";
 
 /** A validated Projection Path. */
-export interface PlannedPath {
+export interface PlannedPath<Item = QueryItem, Needs = FieldNeeds> {
   /** The path as the caller wrote it: the key of the value in a Query Row. */
   readonly text: string;
-  readonly field: FieldDefinition;
+  readonly field: FieldDefinition<Item, Needs>;
   /** The segments after the field name. */
   readonly rest: readonly PathSegment[];
-  readonly needs: FieldNeeds;
+  readonly needs: Needs;
   /** The custom field the path names, checked against the source later. */
   readonly customField: string | null;
 }
@@ -27,8 +27,27 @@ export type PathProblem = Extract<
   { kind: "plain" | "unknown" }
 >;
 
-/** Check a Projection Path against the field registry. */
-export function planPath(text: string): PlannedPath | PathProblem {
+/** The field that the leading segments of a path name, and the segments after it. */
+export type PathResolver<Item = QueryItem, Needs = FieldNeeds> = (
+  segments: readonly PathSegment[],
+) =>
+  | {
+      readonly field: FieldDefinition<Item, Needs>;
+      readonly rest: readonly PathSegment[];
+    }
+  | undefined;
+
+/** The Item Query resolver: the first segment names a field of the registry. */
+export const resolveItemPath: PathResolver = ([root, ...rest]) => {
+  const field = typeof root === "string" ? fieldDefinition(root) : undefined;
+  return field && { field, rest };
+};
+
+/** Check a Projection Path against the field registry of its dataset. */
+export function planPath<Item = QueryItem, Needs = FieldNeeds>(
+  text: string,
+  resolve: PathResolver<Item, Needs>,
+): PlannedPath<Item, Needs> | PathProblem {
   const parsed = parseProjectionPath(text);
   if (!parsed.ok) {
     return {
@@ -40,9 +59,8 @@ export function planPath(text: string): PlannedPath | PathProblem {
       message: `"${text}" is not a valid Projection Path. ${parsed.message}`,
     };
   }
-  const [root, ...rest] = parsed.segments;
-  const field = typeof root === "string" ? fieldDefinition(root) : undefined;
-  if (!field) {
+  const resolved = resolve(parsed.segments);
+  if (!resolved) {
     return {
       kind: "unknown",
       role: "projection-path",
@@ -50,6 +68,7 @@ export function planPath(text: string): PlannedPath | PathProblem {
       at: { from: 0, to: text.length },
     };
   }
+  const { field, rest } = resolved;
   let shape: ValueShape = field.shape;
   let customField: string | null = null;
   for (const [index, segment] of rest.entries()) {
@@ -73,6 +92,7 @@ export function planPath(text: string): PlannedPath | PathProblem {
 function step(shape: ValueShape, segment: PathSegment): ValueShape | null {
   switch (shape.kind) {
     case "scalar":
+    case "json":
       return null;
     case "object":
       return typeof segment === "string" && Object.hasOwn(shape.keys, segment)
@@ -89,7 +109,10 @@ function step(shape: ValueShape, segment: PathSegment): ValueShape | null {
  * The value of a planned path for one Item. A missing key or array element is
  * null; array access does not vectorize.
  */
-export function readPath(path: PlannedPath, item: QueryItem): ProjectionValue {
+export function readPath<Item>(
+  path: PlannedPath<Item, unknown>,
+  item: Item,
+): ProjectionValue {
   let value = path.field.read(item);
   for (const segment of path.rest) {
     if (value === null || typeof value !== "object") return null;

@@ -153,12 +153,12 @@ const candidateStatements = {
  * it as a number, or null. A stored number reads as its JavaScript string, so
  * `"12"` and `"1.5"` have one and `"012"` and `"12.0"` have none.
  */
-function storedNumberOf(value: string): number | null {
+export function storedNumberOf(value: string): number | null {
   const number = Number(value);
   return Number.isNaN(number) || String(number) !== value ? null : number;
 }
 
-function storedIntegerOf(value: string): bigint | null {
+export function storedIntegerOf(value: string): bigint | null {
   // Preserve the full SQLite INTEGER range; Number loses digits before the
   // index lookup. The round trip keeps spelling such as "012" text-only.
   try {

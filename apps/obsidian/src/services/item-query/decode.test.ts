@@ -18,7 +18,9 @@ const answered =
 const decodeItemQuery = answered(decode.decodeItemQuery);
 const decodeGuideArguments = answered(decode.decodeGuideArguments);
 const decodeCancelArguments = answered(decode.decodeCancelArguments);
-const decodeSchemaArguments = answered(decode.decodeSchemaArguments);
+const decodeSchemaArguments = answered((params) =>
+  decode.decodeSchemaArguments(params, "zotlit:item-query-schema"),
+);
 
 /** The diagnostic of an argument that the decoder rejects. */
 const rejected = (parameter: string) => ({
@@ -460,3 +462,86 @@ it("preserves received quote characters in a reconstructed shell argument", () =
     suggestions: ["filter='title == \"O'\"'\"'Brien\"'"],
   });
 });
+
+const decodeAnnotationQuery = answered(decode.decodeAnnotationQuery);
+describe("decodeAnnotationQuery", () => {
+  it("infers Libraries from Item keys and keeps the worker request JSON-only", () => {
+    const decoded = decodeAnnotationQuery({
+      item: '["ART2FULLg4815","ART2FULL"]',
+      fields: "[]",
+    });
+    expect(decoded).toEqual({
+      item: ["ART2FULLg4815", "ART2FULL"],
+      libraries: {
+        scope: {
+          mode: "selected",
+          libraries: [{ type: "personal" }, { type: "group", groupID: 4815 }],
+        },
+        parameter: "item",
+      },
+      fields: [],
+      limit: 100,
+    });
+    expect(JSON.parse(JSON.stringify(decoded))).toEqual(decoded);
+  });
+  it.each<CliData>([
+    { item: "ART2FULL", library: "personal" },
+    { item: "ART2FULL", libraries: "all" },
+    { item: "invalid" },
+    { attachment: "[]" },
+  ])("rejects a malformed key or key/Library conflict: %j", (params) => {
+    expect(decodeAnnotationQuery(params)).toMatchObject({
+      code: "invalid-argument",
+    });
+  });
+});
+
+it.each([
+  [{ item: '["ART2FULL", 3]' }, "item", "item[1]"],
+  [{ attachment: '["PDF2LIVE", "bad"]' }, "attachment", "attachment[1]"],
+  [{ fields: '["text", 3]' }, "fields", "fields[1]"],
+  [
+    { sort: '[{"field":"pageIndex","direction":"ascending"}]' },
+    "sort",
+    "sort[0].direction",
+  ],
+] as const)(
+  "preserves Annotation JSON issue locations for %j",
+  (params, argument, path) => {
+    expect(decodeAnnotationQuery(params)).toMatchObject({
+      code: "invalid-argument",
+      location: { argument, path },
+      found: expect.any(String),
+      expected: expect.any(Array),
+    });
+  },
+);
+
+it("preserves shell-split evidence for Annotation filters", () => {
+  const request = decode.decodeAnnotationQuery({
+    filter: "tags",
+    "==": "true",
+    '"figure"': "true",
+  });
+  expect(request).toMatchObject({ kind: "invalid", shellSplit: true });
+  expect(
+    decodeAnnotationQuery({ filter: "tags", "==": "true", '"figure"': "true" }),
+  ).toMatchObject({
+    code: "invalid-argument",
+    suggestions: ["filter='tags == \"figure\"'"],
+  });
+});
+
+it.each([
+  [{ item: "ART2FULL", library: "personal", limit: "bad" }, "library"],
+  [{ attachment: "PDF2LIVE", libraries: "all", fields: "bad" }, "libraries"],
+] as const)(
+  "rejects an excluded Library argument before other invalid options: %j",
+  (params, parameter) => {
+    expect(decodeAnnotationQuery(params)).toMatchObject({
+      code: "invalid-argument",
+      location: { argument: parameter },
+      message: expect.stringContaining("An Indexed Key selects its Library"),
+    });
+  },
+);
