@@ -24,6 +24,11 @@ import type { PathSegment } from "./projection-path";
 import type { QueryClock } from "./query-clock";
 import type { ItemQueryPlan, ItemQueryRequest, SortSpec } from "./request";
 
+/** The field part of a dotted name: the text before its first `.` or `[`. */
+export function fieldRoot(name: string): string {
+  return name.split(".")[0]!.split("[")[0]!;
+}
+
 /** What a Sortable Field gives the planner: its hydration needs and its key. */
 export interface SortableField<Item, Needs = FieldNeeds> {
   readonly needs: Needs;

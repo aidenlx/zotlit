@@ -11,6 +11,7 @@ import {
 } from "@zotlit/db/item-query";
 
 import { planCandidates, readCandidates } from "./candidate-plan";
+import { fieldRoot } from "./dataset";
 import type { QueryDataset } from "./dataset";
 import type { DatasetRun } from "./execution";
 import {
@@ -51,7 +52,7 @@ export const ITEMS: QueryDataset<ItemQueryRequest> = {
   planFilter: (text) => planFilter(text),
   sortable,
   resolvePath: resolveItemPath,
-  rootName: (name) => name.split(".")[0]!.split("[")[0]!,
+  rootName: fieldRoot,
   readScanPage,
   readUniverseRows,
   open: (plan, { libraries }, clock) =>

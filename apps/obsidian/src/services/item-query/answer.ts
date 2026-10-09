@@ -29,6 +29,7 @@ import type {
   ItemQueryError,
   QueryRow,
   QuerySummary,
+  ResolveAttachmentFile,
 } from "@zotlit/item-query";
 
 import { resourceReleaseUrl } from "@/lib/constants";
@@ -43,7 +44,6 @@ import type {
 } from "@/services/library-scope/scope";
 import type { WorkbenchIdentity } from "@/services/template-workbench/envelope";
 
-import type { AttachmentFileResolver as ResolveAttachmentFile } from "./attachment-files";
 import {
   DEFAULT_CLI_LIMIT,
   diagnostic,
@@ -205,8 +205,8 @@ function answerQuery(
       });
     }
     const request: AnnotationQueryRequest = {
-      item: "item" in decoded ? decoded.item : undefined,
-      attachment: "attachment" in decoded ? decoded.attachment : undefined,
+      item: decoded.item,
+      attachment: decoded.attachment,
       filter: decoded.filter,
       fields: decoded.fields,
       sort: decoded.sort,
@@ -362,6 +362,14 @@ const createAnswer = Effect.fnUntraced(function* (
   };
 });
 
+/** Every typed failure of one run. */
+type AnswerFailure =
+  | ItemQueryError
+  | ItemQueryLayoutError
+  | ItemQueryDatabaseError
+  | ItemQueryOutputError
+  | TargetLibrariesUnavailable;
+
 /**
  * Map the failure of one run to the answer of `command`: every typed failure
  * becomes the envelope, and a defect dies with an `Error`. Cancellation stays
@@ -373,15 +381,7 @@ function answerFailure(
   parameter?: NamedLibraries["parameter"],
 ) {
   return <R>(
-    run: Effect.Effect<
-      QueryReply,
-      | ItemQueryError
-      | ItemQueryLayoutError
-      | ItemQueryDatabaseError
-      | ItemQueryOutputError
-      | TargetLibrariesUnavailable,
-      R
-    >,
+    run: Effect.Effect<QueryReply, AnswerFailure, R>,
   ): Effect.Effect<QueryReply, never, R> =>
     run.pipe(
       Effect.catch((failed) =>
@@ -406,12 +406,7 @@ function answerFailure(
 }
 
 function failureDiagnostic(
-  failed:
-    | ItemQueryError
-    | ItemQueryLayoutError
-    | ItemQueryDatabaseError
-    | ItemQueryOutputError
-    | TargetLibrariesUnavailable,
+  failed: AnswerFailure,
   parameter: NamedLibraries["parameter"] | undefined,
 ): Diagnostic {
   if (failed._tag === "ItemQueryOutputError") return failed.diagnostic;

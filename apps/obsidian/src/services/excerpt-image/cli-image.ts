@@ -12,7 +12,6 @@ import { contractVersion } from "@/services/item-query/contract-version.json";
 
 import type { ExcerptRequest } from "./contract";
 import type { ExcerptImage } from "./format";
-import { ExcerptSourceUnavailable } from "./request";
 import type { ExcerptOutcome } from "./service";
 
 export const ANNOTATION_IMAGE_COMMAND = "zotlit:annotation-image";
@@ -68,9 +67,7 @@ export async function answerAnnotationImage(
       ok: false,
       diagnostic: diagnostic(
         "source-unavailable",
-        error instanceof ExcerptSourceUnavailable
-          ? error.message
-          : String(error),
+        error instanceof Error ? error.message : String(error),
       ),
     });
   }

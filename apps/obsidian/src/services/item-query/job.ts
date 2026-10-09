@@ -8,12 +8,12 @@ import { open } from "node:fs/promises";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { ItemQueryDatabase } from "@zotlit/db/item-query";
 import { ItemQueryScheduler } from "@zotlit/item-query";
+import type { ResolveAttachmentFile } from "@zotlit/item-query";
 
 import type { WorkbenchIdentity } from "@/services/template-workbench/envelope";
 
 import { answer, ItemQueryOutputError } from "./answer";
 import type { QueryWriter } from "./answer";
-import type { AttachmentFileResolver } from "./attachment-files";
 import { diagnostic, failure } from "./contract";
 import { createTrace, finishTrace } from "./trace";
 import type { WorkerMeasurement } from "./trace";
@@ -23,7 +23,7 @@ import type { QueryAnswer, QueryJob } from "./worker-protocol";
 export interface QueryJobEnv {
   client: NodeDatabaseClient;
   identity: WorkbenchIdentity;
-  attachmentFiles: AttachmentFileResolver;
+  attachmentFiles: ResolveAttachmentFile;
 }
 
 /**

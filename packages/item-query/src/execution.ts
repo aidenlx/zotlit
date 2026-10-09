@@ -60,11 +60,11 @@ export interface QueryRun<I extends { scan: ScanRow }> extends DatasetRun<I> {
 }
 
 export function consumeDataset<I extends { scan: ScanRow }, A, E, R>(
-  dataset: QueryRun<I>,
+  run: QueryRun<I>,
   begin: (summary: QuerySummary) => Effect.Effect<QueryConsumer<A, E, R>, E, R>,
 ): Effect.Effect<A, ItemQueryReaderError | E, ItemQueryDatabase | R> {
   return Effect.gen(function* () {
-    const { libraries, query } = dataset;
+    const { libraries, query } = run;
     const { limit } = query;
     const tuning = yield* ItemQueryTuning;
     const scanPageSize = sizeWithin(tuning.scanPageSize, SCAN_PAGE_SIZE);
@@ -74,7 +74,7 @@ export function consumeDataset<I extends { scan: ScanRow }, A, E, R>(
     );
     // The scan pass: every Item is hydrated with the filter and sort fields
     // only, and the query keeps the scan row and the sort keys of a match.
-    const compare = byKeysThenKey<I["scan"]>(dataset.sort, libraries);
+    const compare = byKeysThenKey<I["scan"]>(run.sort, libraries);
     const matches =
       limit === null
         ? allMatches(compare, sizeWithin(tuning.mergeStepSize, Infinity))
@@ -84,12 +84,12 @@ export function consumeDataset<I extends { scan: ScanRow }, A, E, R>(
     /** Hydrate one chunk of a page and keep its matches. */
     const takeChunk = (library: number, chunk: readonly I["scan"][]) =>
       Effect.gen(function* () {
-        const items = yield* dataset.scan.load(chunk);
+        const items = yield* run.scan.load(chunk);
         yield* Effect.sync(() => {
           const matching: Match<I["scan"]>[] = [];
           for (const item of items) {
-            if (!dataset.matches(item)) continue;
-            const keys = dataset.keys(item);
+            if (!run.matches(item)) continue;
+            const keys = run.keys(item);
             matching.push({ scan: item.scan, keys, library });
           }
           matches.add(matching);
@@ -100,7 +100,7 @@ export function consumeDataset<I extends { scan: ScanRow }, A, E, R>(
       Effect.gen(function* () {
         // A pass without a plan runs no statement: it takes a page at once.
         const chunkSize =
-          dataset.scan.plan === null ? scanPageSize : hydrateChunkSize;
+          run.scan.plan === null ? scanPageSize : hydrateChunkSize;
         for (let start = 0; start < page.length; start += chunkSize) {
           yield* takeChunk(library, page.slice(start, start + chunkSize));
         }
@@ -108,7 +108,7 @@ export function consumeDataset<I extends { scan: ScanRow }, A, E, R>(
     /** Read and take the scan page after `afterKey`. Null: the last page. */
     const takeScanPage = (library: number, afterKey: string | null) =>
       Effect.gen(function* () {
-        const page = yield* dataset.readScanPage({
+        const page = yield* run.readScanPage({
           libraryID: libraries[library]!.libraryID,
           afterKey,
           size: scanPageSize,
@@ -124,13 +124,13 @@ export function consumeDataset<I extends { scan: ScanRow }, A, E, R>(
     // result order.
     for (const [index, library] of libraries.entries()) {
       const { libraryID } = library;
-      const candidates = yield* dataset.candidates(library, tuning);
+      const candidates = yield* run.candidates(library, tuning);
       if (candidates) {
         const itemIDs = [...candidates];
         for (let start = 0; start < itemIDs.length; start += scanPageSize) {
           yield* takePage(
             index,
-            yield* dataset.readUniverseRows({
+            yield* run.readUniverseRows({
               libraryID,
               itemIDs: itemIDs.slice(start, start + scanPageSize),
             }),
@@ -150,20 +150,18 @@ export function consumeDataset<I extends { scan: ScanRow }, A, E, R>(
     // The projection pass: only the returned rows are hydrated.
     const consumer = yield* begin({
       query,
-      warnings: dataset.warnings,
+      warnings: run.warnings,
       returnedCount: returned.length,
       truncated,
     });
     for (let start = 0; start < returned.length; start += hydrateChunkSize) {
       const chunk = returned.slice(start, start + hydrateChunkSize);
-      const items = yield* dataset.projection.load(
-        chunk.map((row) => row.scan),
-      );
+      const items = yield* run.projection.load(chunk.map((row) => row.scan));
       const rows = yield* Effect.sync(() => {
         const rows: QueryRow[] = [];
         for (const [index, { library, scan }] of chunk.entries()) {
           const item = items[index]!;
-          rows.push(dataset.project(item, libraries[library]!, scan));
+          rows.push(run.project(item, libraries[library]!, scan));
         }
         return rows;
       });

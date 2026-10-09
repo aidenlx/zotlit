@@ -11,9 +11,6 @@ export interface AttachmentFile {
   readonly exists: boolean;
 }
 
-/** Resolves the file of an Attachment, as the engine takes it. */
-export type AttachmentFileResolver = ResolveAttachmentFile;
-
 type Stat = (path: string) => Promise<unknown>;
 
 /**
@@ -23,7 +20,7 @@ type Stat = (path: string) => Promise<unknown>;
 export function makeAttachmentFileResolver(
   paths: AttachmentPathContext,
   options: { stat?: Stat } = {},
-): AttachmentFileResolver {
+): ResolveAttachmentFile {
   const probe = options.stat ?? stat;
   const memo = new Map<number, Promise<AttachmentFile>>();
   const resolve = (attachment: Attachment): Promise<AttachmentFile> => {

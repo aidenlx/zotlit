@@ -25,6 +25,7 @@ import type { QueryAnnotation } from "./annotation-fields";
 import { openAnnotationHydration } from "./annotation-hydration";
 import { planCandidates, readCandidatePlan } from "./candidate-plan";
 import type { CandidatePlan } from "./candidate-plan";
+import { fieldRoot } from "./dataset";
 import type { QueryDataset } from "./dataset";
 import type { DatasetRun } from "./execution";
 import { BUILT_IN_NAMES } from "./fields";
@@ -72,7 +73,7 @@ export const ANNOTATIONS: QueryDataset<AnnotationQueryRequest> = {
   },
   rootName: (name) => {
     const prefix = name.startsWith(PARENT) ? PARENT : "";
-    return prefix + name.slice(prefix.length).split(".")[0]!.split("[")[0]!;
+    return prefix + fieldRoot(name.slice(prefix.length));
   },
   readScanPage: readAnnotationScanPage,
   readUniverseRows: readAnnotationUniverseRows,
