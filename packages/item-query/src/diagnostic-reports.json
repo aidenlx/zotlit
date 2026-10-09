@@ -133,7 +133,7 @@
       "^^^^",
       "Custom fields with a bare form: mood.",
       "Similar fields: date.year, issueDate.year, filingDate.year.",
-      "Try: date.year"
+      "Choose a matching field, such as date.year."
     ]
   },
   {
@@ -855,6 +855,32 @@
       "tags != \"bulk\" && title == \"x\"",
       "----    ^^^^^^^^",
       "Try: !tags.contains(\"bulk\") && title == \"x\""
+    ]
+  },
+  {
+    "name": "dotted-property-suffix-review.length",
+    "customFieldName": "review.length",
+    "request": {
+      "filter": "review.length == 4"
+    },
+    "report": [
+      "\"review.length\" is a custom field of the connected Zotero source; read it with bracket access.",
+      "review.length == 4",
+      "^^^^^^^^^^^^^",
+      "Try: custom[\"review.length\"] == 4"
+    ]
+  },
+  {
+    "name": "dotted-property-suffix-custom.review.length",
+    "customFieldName": "review.length",
+    "request": {
+      "filter": "custom.review.length == 4"
+    },
+    "report": [
+      "\"review.length\" is a custom field of the connected Zotero source; read it with bracket access.",
+      "custom.review.length == 4",
+      "^^^^^^^^^^^^^^^^^^^^",
+      "Try: custom[\"review.length\"] == 4"
     ]
   }
 ]

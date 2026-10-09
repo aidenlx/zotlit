@@ -87,15 +87,27 @@ export function openHydration(
       ? yield* readFieldVocabulary()
       : null;
     if (vocabulary) {
+      const known = new Set(vocabulary.customFieldNames);
       // The filter first, then the Projection Paths.
       const customFields: CustomFieldUse[] = [
         ...(filter?.customFields ?? []).map(
-          ({ name, bare, from, to, deferred }): CustomFieldUse => ({
-            name,
-            bare,
-            deferred,
-            location: { argument: "filter", span: { from, to } },
-          }),
+          ({ name, bare, from, to, deferred, dotted }): CustomFieldUse =>
+            dotted && !known.has(name) && known.has(dotted.name)
+              ? {
+                  name: dotted.name,
+                  bare,
+                  dotted: true,
+                  location: {
+                    argument: "filter",
+                    span: { from: dotted.from, to: dotted.to },
+                  },
+                }
+              : {
+                  name,
+                  bare,
+                  deferred,
+                  location: { argument: "filter", span: { from, to } },
+                },
         ),
         ...paths.flatMap(({ customField: name }, index): CustomFieldUse[] =>
           name === null
@@ -114,9 +126,8 @@ export function openHydration(
               ],
         ),
       ];
-      const known = new Set(vocabulary.customFieldNames);
       const missing = customFields.find(
-        ({ name, deferred }) => deferred || !known.has(name),
+        ({ name, deferred, dotted }) => dotted || deferred || !known.has(name),
       );
       if (missing) {
         return yield* unknownCustomField(vocabulary.customFieldNames, missing);
@@ -191,6 +202,7 @@ interface CustomFieldUse {
   /** The filter names it with its bare form. */
   readonly bare: boolean;
   readonly deferred?: Extract<ItemQueryFault, { kind: "unknown" }>;
+  readonly dotted?: boolean;
   readonly location: ItemQueryErrorLocation;
   readonly argumentText?: string;
 }
@@ -202,18 +214,18 @@ interface CustomFieldUse {
  */
 function unknownCustomField(
   names: readonly string[],
-  { name, bare, location, deferred, argumentText }: CustomFieldUse,
+  { name, bare, location, deferred, dotted, argumentText }: CustomFieldUse,
 ): Effect.Effect<never, ItemQueryError> {
   const fault: ItemQueryFault =
     deferred && !names.includes(name)
       ? deferred
       : {
           kind: "unknown",
-          role: bare && !deferred ? "field" : "custom-field",
+          role: bare && !deferred && !dotted ? "field" : "custom-field",
           name,
           at: location.span ?? { from: 0, to: 0 },
           customFields: names,
-          ...(deferred ? { dotted: true } : {}),
+          ...(deferred || dotted ? { dotted: true } : {}),
         };
   return Effect.fail(
     new ItemQueryError({

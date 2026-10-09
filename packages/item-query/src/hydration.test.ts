@@ -421,3 +421,22 @@ it.each(["review.status.phase", "mood.length.unit"])(
     });
   },
 );
+
+// Failure modes: a valid property suffix can hide a dotted source name; the
+// correction must consume the full bare or custom-root chain.
+it.each(["review.length", "custom.review.length"])(
+  "corrects the complete source name %s when its prefix is absent",
+  async (access) => {
+    using scenario = openScenarioDatabase();
+    scenario.sqlite.exec(
+      "update fieldsCombined set fieldName = 'review.length' where fieldName = 'review.status'",
+    );
+    const filter = `${access} == 4`;
+    const error = await failure(scenario, { filter });
+    if (!(error instanceof ItemQueryError))
+      throw new Error("Expected query fault");
+    const diagnostic = diagnose(error.fault, filter, error.location);
+    expect(diagnostic.hint).toBe('Try: custom["review.length"] == 4');
+    expect(diagnostic.found).toBe("review.length");
+  },
+);

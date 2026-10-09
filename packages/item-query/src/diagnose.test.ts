@@ -64,6 +64,10 @@ it("ranks field name corrections", () => {
     { argument: "filter" },
   );
 
+  // Failure modes: a unique correction keeps the whole expression; ambiguous
+  // candidates remain choices and never become a mechanically certain Try.
+  expect(title.hint).toBe('Try: title.contains("x")');
+  expect(year.hint).toBe("Choose a matching field, such as date.year.");
   expect(title.suggestions).toEqual(["title"]);
   expect(year.suggestions).toEqual([
     "date.year",
@@ -245,6 +249,12 @@ it.each(reports)("reports $name", async ({ request, report, ...setup }) => {
   using scenario = openScenarioDatabase();
   if ("withoutCustomFields" in setup && setup.withoutCustomFields)
     scenario.sqlite.exec("update fieldsCombined set custom = 0");
+  if (setup.customFieldName !== undefined)
+    scenario.sqlite
+      .prepare(
+        "update fieldsCombined set fieldName = ? where fieldName = 'review.status'",
+      )
+      .run(setup.customFieldName);
   const query: ItemQueryRequest = {
     libraries: [{ libraryID: 1, groupID: null }],
     ...request,
