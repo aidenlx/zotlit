@@ -1,5 +1,6 @@
 /** Build-only access to the registry-derived Query Schema catalog. */
 import { describeAnnotationQueryVocabulary } from "./describe-annotation-query";
+import { describeAttachmentQueryVocabulary } from "./describe-attachment-query";
 import { describeItemQueryVocabulary } from "./describe-item-query";
 
 export {
@@ -23,11 +24,23 @@ export function describeQueryVocabulary() {
     types: _types,
     ...annotations
   } = describeAnnotationQueryVocabulary();
+  const {
+    functions: _af,
+    methods: _am,
+    properties: _ap,
+    types: _at,
+    ...attachments
+  } = describeAttachmentQueryVocabulary();
   return {
-    datasets: { items, annotations },
+    datasets: { items, attachments, annotations },
     functions,
     methods,
     properties,
     types,
   };
 }
+
+export {
+  describeAttachmentQuery,
+  describeAttachmentQueryVocabulary,
+} from "./describe-attachment-query";

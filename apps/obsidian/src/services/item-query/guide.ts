@@ -4,7 +4,7 @@
 // Command names, parameters, and defaults come from the constants the
 // handlers run.
 
-import { ANNOTATIONS, ITEMS } from "@zotlit/item-query";
+import { ANNOTATIONS, ATTACHMENTS, ITEMS } from "@zotlit/item-query";
 
 import {
   ANNOTATION_GUIDE_SECTIONS,
@@ -387,10 +387,11 @@ INSPECT LOCALLY
     jq '{ok, identity, diagnostic}' query-source.json
   Continue when ok is true and identity names the intended source:
     curl --fail --location "$(jq -r '.schema.url' query-source.json)" --output "$(jq -r '.schema.fileName' query-source.json)"
-  The catalog has datasets.items and datasets.annotations, with functions,
-  methods, properties, and types shared at the top level. The live response
-  lists fields and defaults by dataset; from=items or from=annotations narrows
-  those entries. customFields describes the source once.
+  The catalog has datasets.items, datasets.attachments, and datasets.annotations.
+  Functions, methods, properties, and types are shared at the top level.
+  The live response lists fields and defaults by dataset. from=items,
+  from=attachments, or from=annotations narrows those entries.
+  customFields describes the source once.
   The catalog is large. Use jq to read only the entries the task needs:
     jq '.datasets.items.fields[] | select(.path == "title" or .path == "date.year")' "$(jq -r '.schema.fileName' query-source.json)"
     jq '.customFields' query-source.json
@@ -400,11 +401,20 @@ INSPECT LOCALLY
 const DATASETS_SECTION = `Query datasets
 
   from=items (the default) reads top-level items outside the trash.
+  from=attachments reads non-trashed Attachments of top-level, non-trashed
+  Items. Every Attachment has a parent Item, reached through item.
   from=annotations reads annotations outside the trash on attachments of
   top-level items outside the trash. Trashed attachments and standalone
   attachments and their annotations are outside this dataset.
   On annotations, item. reaches the parent item's fields and attachment.
   reaches the parent attachment's fields. Every annotation has both parents.
+  The Attachment default fields are ${listOf(ATTACHMENTS.defaultFields)}.
+  Attachments sort by dateModified descending, then Indexed Key.
+  path is null for URL-only or unresolved files; exists is false then.
+  Broken linked files:
+    ${example({ from: "attachments", filter: 'linkMode == "linked_file" && !exists' })}
+  Files of one paper (replace the citation key with the paper's key):
+    ${example({ from: "attachments", filter: 'item.citationKey == "rougierTenSimpleRules2014"', fields: "title,contentType,path" })}
   The annotation default fields are ${listOf(ANNOTATIONS.defaultFields)}.
   Its default sort is ${listOf(ANNOTATIONS.defaultSort.map(({ field, direction }) => `${field} ${direction}`))}.
     ${example({ from: "items", fields: "title,date.year", limit: "5" })}
@@ -428,9 +438,9 @@ export const GUIDE_TOPIC_NAMES = Object.keys(
 
 const QUICKSTART = `ZotLit Query
 
-ZotLit Query reads items and annotations in your Zotero libraries and returns
-the selected values as JSON. Choose the dataset with from=items or
-from=annotations.
+ZotLit Query reads items, attachments, and annotations in your Zotero libraries.
+It returns the selected values as JSON. Choose the dataset with from=items,
+from=attachments, or from=annotations.
 
 WORKFLOW
   Put vault=<vault> before each command and check identity in its JSON answer.
@@ -451,7 +461,8 @@ DEFAULTS
   ${DEFAULT_CLI_LIMIT} rows, sorted by ${DEFAULT_SORT_TEXT}.
   Each row has ${DEFAULT_FIELD_LIST}.
   defaults.items.library in the schema response names their source: the
-  Library scope setting. defaults.annotations describes the annotation defaults.
+  Library scope setting. defaults.attachments and defaults.annotations describe
+  the other dataset defaults.
 
 LIBRARIES
   library names one Library: personal (My Library), or group:<groupID>.

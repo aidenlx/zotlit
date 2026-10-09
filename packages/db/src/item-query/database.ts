@@ -63,6 +63,12 @@ export type ItemQueryReaderError =
 
 /** The reader a statement belongs to. */
 export type ItemQueryReader =
+  | "attachment-row-count"
+  | "attachment-candidate-set"
+  | "attachment-scan-page"
+  | "attachment-universe-rows"
+  | "attachment-details"
+  | "attachment-tags"
   | "annotation-row-count"
   | "annotation-candidate-set"
   | "annotation-scan-page"

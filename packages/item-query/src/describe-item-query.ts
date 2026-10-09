@@ -50,6 +50,8 @@ export interface SchemaCapabilities {
 
 /** A built-in field or a Projection Path below one. */
 export interface SchemaField extends SchemaCapabilities {
+  /** The Query Dataset reached by this parent or Relation List. */
+  readonly relation?: "items" | "attachments" | "annotations";
   /** The Projection Path; a field is the path without `.` or `[`. */
   readonly path: string;
   readonly type: JsonType;

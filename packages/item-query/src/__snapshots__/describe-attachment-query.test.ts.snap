@@ -1,0 +1,122 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`publishes executable Attachment fields, parent paths, defaults and Sortable Fields in the single catalog 1`] = `
+[
+  {
+    "filter": "string",
+    "path": "library",
+    "projection": true,
+    "sort": false,
+    "type": "string",
+    "valueForms": [
+      "personal",
+      "group:<groupID>",
+    ],
+  },
+  {
+    "filter": "string",
+    "path": "indexedKey",
+    "projection": true,
+    "sort": false,
+    "type": "string",
+  },
+  {
+    "filter": "string",
+    "path": "key",
+    "projection": true,
+    "sort": false,
+    "type": "string",
+  },
+  {
+    "filter": "string",
+    "path": "title",
+    "projection": true,
+    "sort": true,
+    "type": "string",
+  },
+  {
+    "filter": "string",
+    "path": "contentType",
+    "projection": true,
+    "sort": true,
+    "type": "string",
+  },
+  {
+    "filter": "string",
+    "path": "linkMode",
+    "projection": true,
+    "sort": true,
+    "type": "string",
+    "valueForms": [
+      "imported_file",
+      "imported_url",
+      "linked_file",
+      "linked_url",
+    ],
+  },
+  {
+    "filter": "string",
+    "path": "path",
+    "projection": true,
+    "sort": false,
+    "type": "string",
+  },
+  {
+    "filter": "boolean",
+    "path": "exists",
+    "projection": true,
+    "sort": false,
+    "type": "boolean",
+  },
+  {
+    "filter": "string",
+    "path": "url",
+    "projection": true,
+    "sort": false,
+    "type": "string",
+  },
+  {
+    "filter": "list",
+    "path": "tags",
+    "projection": true,
+    "sort": false,
+    "type": "array",
+  },
+  {
+    "filter": "any",
+    "path": "tags[0]",
+    "projection": true,
+    "sort": false,
+    "type": "string",
+  },
+  {
+    "filter": null,
+    "path": "tags[]",
+    "projection": true,
+    "sort": false,
+    "type": "array",
+  },
+  {
+    "filter": "date",
+    "path": "dateAdded",
+    "projection": true,
+    "sort": true,
+    "type": "string",
+  },
+  {
+    "filter": "date",
+    "path": "dateModified",
+    "projection": true,
+    "sort": true,
+    "type": "string",
+  },
+  {
+    "filter": null,
+    "path": "item",
+    "projection": true,
+    "relation": "items",
+    "sort": false,
+    "type": "object",
+  },
+]
+`;
