@@ -2514,19 +2514,35 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   });
 
   it("answers zotlit:annotation-image with Zotero's PNG and a rendered ink PNG without an open reader", async () => {
+    // Other cases rebuild the shared Fixture for disposable vaults. Keep this
+    // database's linked PDF paths tied to the vault this case owns.
+    const imageFixture = getFixtureLayout(
+      join(workspaceRoot, ".scratch", "e2e-annotation-image-fixture"),
+    );
+    const imageVaultPath = e2eVaultDir(workspaceRoot, "annotation-image-vault");
+    const imageVaultScript = vaultScript(workspaceRoot, imageFixture.root);
+    await clearVault(imageVaultScript, imageVaultPath);
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await imageVaultScript(["remove", imageVaultPath, "--purge"]);
+      await discardFixture(imageFixture);
+    });
+    const created = await imageVaultScript(["create", imageVaultPath]);
+    const imageVaultId = created.stdout.trim().split("\n")[0]!.trim();
+    await keepRendering(imageVaultId);
     await obEval(
-      vaultId,
+      imageVaultId,
       "(async()=>{app.workspace.detachLeavesOfType('pdf');app.workspace.detachLeavesOfType('zotero-annotation-view');await app.plugins.plugins.zotlit.services.excerptImage.clear();return true;})()",
     );
     const imageKey = "FDRFQ7C2";
     const inkKey = "TYY6Z6ZF";
-    const cacheDirectory = join(e2eFixture.dataDir, "cache", "library");
+    const cacheDirectory = join(imageFixture.dataDir, "cache", "library");
     const imagePath = join(cacheDirectory, `${imageKey}.png`);
     const inkCachePath = join(cacheDirectory, `${inkKey}.png`);
-    const pdfPath = join(e2eVaultPath, annotationAttachment.path!);
+    const pdfPath = join(imageVaultPath, annotationAttachment.path!);
     const answer = async (key: string) =>
       JSON.parse(
-        await cliCommand(vaultId, "zotlit:annotation-image", {
+        await cliCommand(imageVaultId, "zotlit:annotation-image", {
           args: { key },
           timeoutMs: 60_000,
         }),
@@ -2559,7 +2575,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await rename(inkCachePath, `${inkCachePath}.image-test`);
     try {
       const rendered = await answer(inkKey);
-      expect(rendered).toMatchObject({
+      expect(rendered, JSON.stringify(rendered)).toMatchObject({
         ok: true,
         key: inkKey,
         format: "png",
@@ -2571,7 +2587,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
       const dimensions = JSON.parse(
         await obEval(
-          vaultId,
+          imageVaultId,
           `(async()=>{const bytes=require('node:fs').readFileSync(${JSON.stringify(rendered.path)});const bitmap=await createImageBitmap(new Blob([bytes],{type:'image/png'}));const result={width:bitmap.width,height:bitmap.height};bitmap.close();return JSON.stringify(result);})()`,
         ),
       ) as { width: number; height: number };
