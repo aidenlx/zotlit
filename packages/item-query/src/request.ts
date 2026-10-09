@@ -107,6 +107,10 @@ export interface PlannedSort {
   readonly key: (item: QueryItem, clock: QueryClock) => SortKey;
 }
 
+/** CLI forms for the query that counts every match with identity-only rows. */
+export const COUNT_FIELDS: readonly string[] = [];
+export const UNLIMITED_LIMIT = "all";
+
 /** The sort of a request that names no sort. */
 export const DEFAULT_SORT: readonly SortSpec[] = [
   { field: "dateModified", direction: "desc" },
@@ -155,10 +159,11 @@ export function planRequest(
     const paths: PlannedPath[] = [];
     for (const [index, text] of fields.entries()) {
       const path = planPath(text);
-      if ("code" in path) {
+      if ("kind" in path) {
         return yield* new ItemQueryError({
           fault: path,
-          location: { argument: "fields", index },
+          location: { argument: "fields", index, path: `fields[${index}]` },
+          argumentText: JSON.stringify(fields),
         });
       }
       paths.push(path);
@@ -169,17 +174,14 @@ export function planRequest(
     for (const [index, { field, direction }] of sort.entries()) {
       const definition = fieldDefinition(field);
       if (!definition?.sortKey) {
-        const known = definition !== undefined || !("code" in planPath(field));
         return yield* new ItemQueryError({
-          location: { argument: "sort", index },
+          location: { argument: "sort", index, path: `sort[${index}].field` },
+          argumentText: JSON.stringify(sort),
           fault: {
-            kind: "plain",
-            code: known ? "unsortable-field" : "unknown-field",
-            message: known
-              ? `"${field}" is not a Sortable Field: a sort takes a top-level field with one value.`
-              : `"${field}" is not a field of Item Query.`,
-            action:
-              "Sort by a field that the Item Query Schema lists as sortable, such as title, date, or dateModified.",
+            kind: "unknown",
+            role: "sortable-field",
+            name: field,
+            at: { from: 0, to: field.length },
           },
         });
       }

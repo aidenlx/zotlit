@@ -38,6 +38,7 @@ import { hasBareForm, planFilter } from "./filter-plan";
 import type { StaticType } from "./filter-plan";
 import { nearMatches } from "./near-match";
 import type { QueryClock } from "./query-clock";
+import { COUNT_FIELDS, UNLIMITED_LIMIT } from "./request";
 
 export interface DiagnosticLocation {
   readonly argument?: string;
@@ -118,16 +119,25 @@ export function diagnose(
         { found: fault.name, expected },
       );
     }
-    case "plain":
-      return renderDiagnostic(
+    case "plain": {
+      const entry =
+        location.argument === "fields"
+          ? (projectionEntry(text, location.index) ?? text)
+          : text;
+      const diagnostic = renderDiagnostic(
         {
           code: fault.code,
           message: fault.message,
           hint: fault.action,
           location: faultLocation,
         },
-        text,
+        entry,
       );
+      if (location.argument === "fields") return { ...diagnostic, location };
+      return fault.code === "invalid-limit"
+        ? withCountNote(diagnostic)
+        : diagnostic;
+    }
     case "unknown":
       return diagnoseUnknown(fault, text, location);
   }
@@ -178,10 +188,15 @@ export function codeOfFault(fault: ItemQueryFault): PlainFault["code"] {
     case "property":
       return "unknown-property";
     case "projection-path":
-      return "unknown-path";
+      return fieldDefinition(fault.name.split(".")[0]!.split("[")[0]!)
+        ? "unknown-path"
+        : "unknown-field";
+    case "sortable-field":
+      return fieldDefinition(fault.name.split(".")[0]!.split("[")[0]!)
+        ? "unsortable-field"
+        : "unknown-field";
     case "field":
     case "custom-field":
-    case "sortable-field":
       return "unknown-field";
   }
 }
@@ -191,6 +206,12 @@ function diagnoseUnknown(
   text: string,
   location: ItemQueryErrorLocation,
 ): Diagnostic<PlainFault["code"]> {
+  if (
+    fault.role === "projection-path" ||
+    fault.role === "sortable-field" ||
+    (fault.role === "custom-field" && location.argument === "fields")
+  )
+    return diagnoseRequestName(fault, text, location);
   const candidates =
     fault.role === "custom-field"
       ? (fault.customFields ?? [])
@@ -267,6 +288,127 @@ function diagnoseUnknown(
     report: [...diagnostic.report.slice(0, -1), ...notes, hint],
     suggestions,
   };
+}
+
+function projectionCandidates(): readonly string[] {
+  const paths = (path: string, shape: ValueShape): string[] => [
+    path,
+    ...(shape.kind === "object"
+      ? Object.entries(shape.keys).flatMap(([key, child]) =>
+          paths(`${path}.${key}`, child),
+        )
+      : shape.kind === "list"
+        ? paths(`${path}[0]`, shape.element)
+        : []),
+  ];
+  return BUILT_IN_NAMES.flatMap((name) => {
+    const definition = fieldDefinition(name);
+    return definition ? paths(name, definition.shape) : [];
+  });
+}
+
+function diagnoseRequestName(
+  fault: Extract<Fault, { kind: "unknown" }>,
+  text: string,
+  location: ItemQueryErrorLocation,
+): Diagnostic<ItemQueryErrorCode> {
+  const sort = fault.role === "sortable-field";
+  const custom = fault.role === "custom-field";
+  const candidates = sort
+    ? BUILT_IN_NAMES.filter((name) => fieldDefinition(name)?.sortKey)
+    : custom
+      ? (fault.customFields ?? [])
+      : projectionCandidates();
+  const root = fault.name.split(".")[0]!.split("[")[0]!;
+  const exact = candidates.filter(
+    (name) => name.toLowerCase() === fault.name.toLowerCase(),
+  );
+  const nearby =
+    sort && root !== fault.name && candidates.includes(root)
+      ? [root]
+      : exact.length
+        ? exact
+        : nearMatches(fault.name, candidates);
+  const keys =
+    location.index === undefined
+      ? []
+      : sort
+        ? [location.index, "field"]
+        : [location.index];
+  const argument = sort ? "sort" : "fields";
+  const corrected =
+    nearby.length === 1
+      ? replaceJsonValue(
+          text,
+          keys,
+          custom ? `custom[${JSON.stringify(nearby[0])}]` : nearby[0]!,
+        )
+      : undefined;
+  const entry = custom
+    ? (projectionEntry(text, location.index) ?? fault.name)
+    : fault.name;
+  const suggestions =
+    corrected === undefined ? nearby : [shellArgument(argument, corrected)];
+  const hint =
+    corrected !== undefined
+      ? `Try: ${suggestions[0]}`
+      : nearby.length
+        ? `Similar ${sort ? "Sortable Fields" : "Projection Paths"}: ${nearby.join(", ")}.`
+        : recoveryAction(fault.role, candidates);
+  const diagnostic = renderDiagnostic(
+    {
+      code: codeOfFault(fault),
+      message: unknownMessage(fault),
+      hint,
+      location: {
+        ...location,
+        path:
+          location.path ??
+          `${argument}[${location.index ?? 0}]${sort ? ".field" : ""}`,
+        span: { from: 0, to: entry.length },
+      },
+    },
+    entry,
+    { found: fault.name, expected: candidates },
+  );
+  const notes = sort
+    ? [
+        "A Sortable Field is a top-level field with one value.",
+        `Sortable Fields include ${DEFAULT_FIELDS.filter((name) => candidates.includes(name)).join(", ")}.`,
+      ]
+    : [];
+  const definition = fieldDefinition(root);
+  if (!sort && definition) {
+    const shape =
+      definition.shape.kind === "list"
+        ? definition.shape.element
+        : definition.shape;
+    if (shape.kind === "object")
+      notes.push(
+        `${root}${definition.shape.kind === "list" ? " entries have" : " has"} these Projection Paths: ${Object.keys(shape.keys).join(", ")}.`,
+      );
+  }
+  return {
+    ...diagnostic,
+    location: {
+      argument,
+      index: location.index,
+      path: diagnostic.location!.path,
+    },
+    suggestions,
+    report: [...diagnostic.report.slice(0, -1), ...notes, hint],
+  };
+}
+
+function projectionEntry(text: string, index?: number): string | undefined {
+  try {
+    const fields: unknown = JSON.parse(text);
+    return Array.isArray(fields) && typeof fields[index ?? 0] === "string"
+      ? fields[index ?? 0]
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function receiverSwapCorrection(
@@ -637,7 +779,10 @@ export function renderDiagnostic<Code extends string>(
     readonly location?: DiagnosticLocation;
   },
   text = "",
-  data: { readonly found?: string; readonly expected?: readonly string[] } = {},
+  data: {
+    readonly found?: string | undefined;
+    readonly expected?: readonly string[];
+  } = {},
 ): Diagnostic<Code> {
   const span = base.location?.span;
   const excerpt = span
@@ -839,4 +984,157 @@ function constantCorrection(
   const corrected =
     text.slice(0, fault.at.from) + replacement + text.slice(fault.at.to);
   return "kind" in planFilter(corrected) ? undefined : corrected;
+}
+
+/** Decoder facts are independent of the Obsidian adapter and validation library. */
+export interface DecodeFault {
+  readonly parameter: string;
+  readonly message: string;
+  readonly hint?: string;
+  readonly issue?: {
+    readonly path: string;
+    readonly expected: string;
+    readonly received: string;
+    readonly keys?: readonly (string | number)[];
+    readonly input?: unknown;
+    readonly allowed?: readonly string[];
+  };
+  readonly received?: readonly (readonly [string, string])[];
+  readonly shellSplit?: boolean;
+  readonly accepted?: readonly string[];
+}
+
+/** Render an argument decoder's structured rejection through the same report. */
+export function diagnoseDecode(
+  fault: DecodeFault,
+  action: string,
+): Diagnostic<"invalid-argument"> {
+  const issue = fault.issue;
+  const expected = issue?.allowed ?? (issue ? [issue.expected] : []);
+  const raw =
+    fault.received?.find(([key]) => key === fault.parameter)?.[1] ?? "";
+  const suggestions: string[] = [];
+  if (issue?.allowed && typeof issue.input === "string") {
+    const input = issue.input;
+    const prefixes = issue.allowed.filter((value) => input.startsWith(value));
+    const matches = prefixes.length
+      ? prefixes
+      : nearMatches(input, issue.allowed);
+    if (matches.length === 1) {
+      const corrected = replaceJsonValue(raw, issue.keys ?? [], matches[0]!);
+      if (corrected !== undefined)
+        suggestions.push(shellArgument(fault.parameter, corrected));
+    }
+  }
+  if (fault.shellSplit && fault.received) {
+    const index = fault.received.findIndex(([key]) => key === fault.parameter);
+    const previous = fault.received[index - 1];
+    if (previous) {
+      const rest = fault.received.slice(index);
+      const next = rest.findIndex(([key]) => fault.accepted?.includes(key));
+      const tokens = rest
+        .slice(0, next === -1 ? undefined : next)
+        .map(([key, value]) => (value === "true" ? key : `${key}=${value}`));
+      suggestions.push(
+        shellArgument(previous[0], [previous[1], ...tokens].join(" ")),
+      );
+    }
+  }
+  const jsonIssue =
+    issue && (fault.parameter === "fields" || fault.parameter === "sort");
+  const found =
+    issue?.input !== null && typeof issue?.input === "object"
+      ? JSON.stringify(issue.input)
+      : issue?.received;
+  const message = jsonIssue
+    ? `${issue.path} received ${found}; expected ${expected.map((value) => (issue.allowed ? JSON.stringify(value) : value)).join(" or ")}.`
+    : fault.message;
+  const hint = suggestions.length
+    ? `Try: ${suggestions[0]}`
+    : (fault.hint ?? action);
+  const entry = typeof issue?.input === "string" ? issue.input : (found ?? "");
+  const diagnostic = renderDiagnostic(
+    {
+      code: "invalid-argument",
+      message,
+      hint,
+      location: {
+        argument: fault.parameter,
+        ...(jsonIssue ? { span: { from: 0, to: entry.length } } : {}),
+        ...(issue
+          ? {
+              path: issue.path,
+              ...(typeof issue.keys?.[0] === "number"
+                ? { index: issue.keys[0] }
+                : {}),
+            }
+          : {}),
+      },
+    },
+    entry,
+    { found, expected },
+  );
+  const result = {
+    ...diagnostic,
+    location: {
+      argument: fault.parameter,
+      ...(issue
+        ? {
+            path: issue.path,
+            ...(typeof issue.keys?.[0] === "number"
+              ? { index: issue.keys[0] }
+              : {}),
+          }
+        : {}),
+    },
+    suggestions,
+    ...(fault.shellSplit && fault.received
+      ? {
+          report: [
+            ...diagnostic.report.slice(0, -1),
+            `Received arguments: ${JSON.stringify(fault.received)}.`,
+            hint,
+          ],
+        }
+      : {}),
+  };
+  return fault.parameter === "limit" ? withCountNote(result) : result;
+}
+
+function withCountNote<Code extends string>(
+  diagnostic: Diagnostic<Code>,
+): Diagnostic<Code> {
+  const note = `To count every match, use ${shellArgument("fields", JSON.stringify(COUNT_FIELDS))} limit=${UNLIMITED_LIMIT}.`;
+  return {
+    ...diagnostic,
+    report: [...diagnostic.report.slice(0, -1), note, diagnostic.hint],
+  };
+}
+
+function shellArgument(name: string, value: string): string {
+  return `${name}='${value.replaceAll("'", "'\"'\"'")}'`;
+}
+
+function replaceJsonValue(
+  text: string,
+  keys: readonly (string | number)[],
+  value: string,
+): string | undefined {
+  try {
+    const root: unknown = JSON.parse(text);
+    if (!keys.length) return JSON.stringify(value);
+    let parent: unknown = root;
+    for (const key of keys.slice(0, -1)) {
+      if (!parent || typeof parent !== "object" || !Object.hasOwn(parent, key))
+        return undefined;
+      parent = (parent as Record<string | number, unknown>)[key];
+    }
+    const key = keys.at(-1)!;
+    if (!parent || typeof parent !== "object" || !Object.hasOwn(parent, key))
+      return undefined;
+    (parent as Record<string | number, unknown>)[key] = value;
+    return JSON.stringify(root);
+  } catch {
+    return undefined;
+  }
 }

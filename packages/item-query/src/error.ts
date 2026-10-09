@@ -23,6 +23,7 @@ export interface ItemQueryErrorLocation {
   readonly argument: "libraries" | "filter" | "fields" | "sort" | "limit";
   /** The position of the entry in a list argument. */
   readonly index?: number;
+  readonly path?: string;
   /** The part of the filter text, in UTF-16 offsets; `to` is exclusive. */
   readonly span?: Span;
 }
@@ -33,6 +34,7 @@ export interface ItemQueryErrorLocation {
  */
 export class ItemQueryError extends Data.TaggedError("ItemQueryError")<{
   readonly fault: ItemQueryFault;
+  readonly argumentText?: string;
   readonly location: ItemQueryErrorLocation;
 }> {
   get code(): ItemQueryErrorCode {
@@ -46,6 +48,6 @@ export class ItemQueryError extends Data.TaggedError("ItemQueryError")<{
   }
 
   #diagnostic() {
-    return diagnose(this.fault, "", this.location);
+    return diagnose(this.fault, this.argumentText ?? "", this.location);
   }
 }

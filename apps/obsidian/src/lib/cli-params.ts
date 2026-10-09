@@ -63,7 +63,13 @@ export interface CliRejection {
     path: string;
     expected: string;
     received: string;
+    keys?: readonly (string | number)[];
+    input?: unknown;
+    allowed?: readonly string[];
   };
+  received?: readonly (readonly [string, string])[];
+  shellSplit?: boolean;
+  accepted?: readonly string[];
   /** The recovery action, when it differs from the code's own hint. */
   hint?: string;
 }
@@ -246,7 +252,7 @@ export function decodeCliParams<TSchema extends CliSchema>(
     if (accepted.includes(key)) continue;
     return rejectToken(key, entries, {
       ...options,
-      received: Object.keys(params),
+      received: Object.entries(params),
     });
   }
   for (const key of Object.keys(params)) {
@@ -264,12 +270,58 @@ export function decodeCliParams<TSchema extends CliSchema>(
       `The ${options.command} schema raised an issue without a parameter: ${issue.message}`,
     );
   }
-  return invalid(parameter, issue.message, {
-    path: issuePath(issue.path),
-    expected:
-      issue.expected ?? (issue.type === "parse_json" ? "JSON" : issue.message),
-    received: issue.received,
-  });
+  return {
+    ...invalid(parameter, issue.message, {
+      path: issuePath(issue.path),
+      expected:
+        issue.expected ??
+        (issue.type === "parse_json" ? "JSON" : issue.message),
+      received: issue.received,
+      keys: issue.path
+        ?.slice(1)
+        .map(({ key }: v.IssuePathItem) =>
+          typeof key === "number" ? key : String(key),
+        ),
+      input: issue.input,
+      allowed: allowedAt(entries[parameter], issue.path?.slice(1) ?? []),
+    }),
+    received: Object.entries(params),
+  };
+}
+
+/** Read closed values from the schema, without parsing its display text. */
+function allowedAt(
+  entry: unknown,
+  path: readonly v.IssuePathItem[],
+): readonly string[] | undefined {
+  if (!entry || typeof entry !== "object") return undefined;
+  const node = entry as {
+    options?: readonly unknown[];
+    wrapped?: unknown;
+    pipe?: readonly unknown[];
+    entries?: Record<string, unknown>;
+    item?: unknown;
+  };
+  if (node.wrapped) return allowedAt(node.wrapped, path);
+  if (node.pipe) {
+    for (const item of node.pipe) {
+      const found = allowedAt(item, path);
+      if (found) return found;
+    }
+    return undefined;
+  }
+  if (path.length) {
+    const [head, ...tail] = path;
+    return allowedAt(
+      typeof head!.key === "number"
+        ? node.item
+        : node.entries?.[String(head!.key)],
+      tail,
+    );
+  }
+  return node.options?.every((value) => typeof value === "string")
+    ? (node.options as readonly string[])
+    : undefined;
 }
 
 /** A Valibot issue path in the form callers use to address the invalid value. */
@@ -322,7 +374,7 @@ export function rejectionText(rejection: CliRejection): string {
 function rejectToken(
   key: string,
   entries: v.ObjectEntries,
-  options: CliCommand & { received: readonly string[] },
+  options: CliCommand & { received: readonly (readonly [string, string])[] },
 ): CliRejection {
   const { command, received } = options;
   const accepted = Object.keys(entries);
@@ -346,13 +398,20 @@ function rejectToken(
           : "Use a supported parameter as name=value, without --; see the command help for its parameters.",
     };
   }
-  if (SHELL_SPLIT_INITIALS.has(key[0] ?? "")) {
+  if (
+    SHELL_SPLIT_INITIALS.has(key[0] ?? "") ||
+    (key === "" &&
+      received.some(([name, value]) => name === key && value.startsWith("=")))
+  ) {
     return {
       ...invalid(
         key,
-        `Unknown parameter '${key}': Obsidian received these parameters in order: ${received.join(", ")}.`,
+        `Unknown parameter '${key}': Obsidian received these parameters in order: ${received.map(([name]) => name || '""').join(", ")}.`,
       ),
       hint: "Quote the whole value as one shell argument.",
+      received,
+      shellSplit: true,
+      accepted,
     };
   }
   return invalid(

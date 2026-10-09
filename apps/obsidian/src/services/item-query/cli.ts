@@ -505,7 +505,10 @@ function failureText(
     return failure(command, targetLibrariesFailure(failed, parameter));
   }
   if (failed._tag === "ItemQueryError") {
-    return failure(command, diagnose(failed.fault, filter, failed.location));
+    return failure(
+      command,
+      diagnose(failed.fault, failed.argumentText ?? filter, failed.location),
+    );
   }
   if (failed._tag === "ItemQueryLayoutError") {
     // `@zotlit/db` logs the missing layout and the versions once per copy.

@@ -3,7 +3,7 @@ import { expect, it } from "vitest";
 
 import { openScenarioDatabase } from "@zotlit/db/test-scenario";
 
-import { diagnose, renderDiagnostic } from "./diagnose";
+import { diagnose, diagnoseDecode, renderDiagnostic } from "./diagnose";
 import reports from "./diagnostic-reports.json";
 import { ItemQueryError } from "./error";
 import { queryItems } from "./query-items";
@@ -285,7 +285,7 @@ it.each(reports)("reports $name", async ({ request, report, ...setup }) => {
     throw new Error("Expected an Item Query fault");
   const diagnostic = diagnose(
     error.value.fault,
-    query.filter ?? "",
+    error.value.argumentText ?? query.filter ?? "",
     error.value.location,
   );
   expect(diagnostic.report).toEqual(report);
@@ -306,7 +306,14 @@ it.each(reports)("reports $name", async ({ request, report, ...setup }) => {
     expect(diagnostic.excerpt?.at).toBe(
       query.filter?.slice(span.from, span.to),
     );
-  else expect(diagnostic.excerpt).toBeUndefined();
+  else if (diagnostic.excerpt && diagnostic.location?.index !== undefined) {
+    const index = diagnostic.location.index;
+    expect(diagnostic.excerpt.at).toBe(
+      diagnostic.location.argument === "sort"
+        ? query.sort?.[index]?.field
+        : query.fields?.[index],
+    );
+  } else expect(diagnostic.excerpt).toBeUndefined();
 });
 
 // Failure modes: escaped prefixes must not shift carets, zero-width spans
@@ -453,4 +460,115 @@ it("keeps source order and aligns escaped operand markers", async () => {
   expect(exit.value.warnings[1]!.message).not.toContain(
     "The filter selects every Item",
   );
+});
+
+it("renders projection request facts with the JSON entry and a unique correction", () => {
+  const diagnostic = diagnose(
+    {
+      kind: "unknown",
+      role: "projection-path",
+      name: "Date",
+      at: { from: 0, to: 4 },
+    },
+    '["title","Date"]',
+    { argument: "fields", index: 1 },
+  );
+  expect(diagnostic).toMatchObject({
+    code: "unknown-field",
+    location: { index: 1, path: "fields[1]" },
+    excerpt: { at: "Date" },
+    suggestions: ['fields=\'["title","date"]\''],
+  });
+});
+
+it.each([
+  {
+    name: "direction prefix",
+    raw: '[{"field":"title","direction":"ascending"}]',
+    input: "ascending",
+    received: '"ascending"',
+    path: "sort[0].direction",
+    keys: [0, "direction"],
+    allowed: ["asc", "desc"],
+    expected: '("asc" | "desc")',
+    report: [
+      'sort[0].direction received "ascending"; expected "asc" or "desc".',
+      "ascending",
+      "^^^^^^^^^",
+      'Try: sort=\'[{"field":"title","direction":"asc"}]\'',
+    ],
+  },
+  {
+    name: "missing direction",
+    raw: '[{"field":"title"}]',
+    input: undefined,
+    received: "undefined",
+    path: "sort[0].direction",
+    keys: [0, "direction"],
+    allowed: ["asc", "desc"],
+    expected: '"direction"',
+    report: [
+      'sort[0].direction received undefined; expected "asc" or "desc".',
+      "undefined",
+      "^^^^^^^^^",
+      "Correct sort.",
+    ],
+  },
+  {
+    name: "object instead of array",
+    raw: '{"field":"title","direction":"asc"}',
+    input: { field: "title", direction: "asc" },
+    received: "Object",
+    path: "sort",
+    keys: [],
+    expected: "Array",
+    report: [
+      'sort received {"field":"title","direction":"asc"}; expected Array.',
+      '{"field":"title","direction":"asc"}',
+      "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+      "Correct sort.",
+    ],
+  },
+])(
+  "reports decode $name",
+  ({ raw, input, received, path, keys, allowed, expected, report }) => {
+    const diagnostic = diagnoseDecode(
+      {
+        parameter: "sort",
+        message: "Invalid sort.",
+        received: [["sort", raw]],
+        issue: {
+          path,
+          keys,
+          input,
+          received,
+          expected,
+          ...(allowed ? { allowed } : {}),
+        },
+      },
+      "Correct sort.",
+    );
+    expect(diagnostic.report).toEqual(report);
+    expect(diagnostic.report[0]).toBe(diagnostic.message);
+    expect(diagnostic.report.at(-1)).toBe(diagnostic.hint);
+  },
+);
+
+it("marks the received projection entry for a grammar fault", () => {
+  const diagnostic = diagnose(
+    {
+      kind: "plain",
+      code: "invalid-path",
+      message: "Invalid path.",
+      action: "Correct fields.",
+      at: { from: 0, to: 5 },
+    },
+    '["title","date."]',
+    { argument: "fields", index: 1, path: "fields[1]" },
+  );
+  expect(diagnostic).toMatchObject({
+    excerpt: { at: "date." },
+    location: { path: "fields[1]" },
+  });
+  expect(diagnostic.location?.span).toBeUndefined();
 });

@@ -100,7 +100,18 @@ export function openHydration(
         ...paths.flatMap(({ customField: name }, index): CustomFieldUse[] =>
           name === null
             ? []
-            : [{ name, bare: false, location: { argument: "fields", index } }],
+            : [
+                {
+                  name,
+                  bare: false,
+                  location: {
+                    argument: "fields",
+                    index,
+                    path: `fields[${index}]`,
+                  },
+                  argumentText: JSON.stringify(paths.map((path) => path.text)),
+                },
+              ],
         ),
       ];
       const known = new Set(vocabulary.customFieldNames);
@@ -181,6 +192,7 @@ interface CustomFieldUse {
   readonly bare: boolean;
   readonly deferred?: Extract<ItemQueryFault, { kind: "unknown" }>;
   readonly location: ItemQueryErrorLocation;
+  readonly argumentText?: string;
 }
 
 /**
@@ -190,7 +202,7 @@ interface CustomFieldUse {
  */
 function unknownCustomField(
   names: readonly string[],
-  { name, bare, location, deferred }: CustomFieldUse,
+  { name, bare, location, deferred, argumentText }: CustomFieldUse,
 ): Effect.Effect<never, ItemQueryError> {
   const fault: ItemQueryFault =
     deferred && !names.includes(name)
@@ -206,6 +218,7 @@ function unknownCustomField(
   return Effect.fail(
     new ItemQueryError({
       location,
+      ...(argumentText === undefined ? {} : { argumentText }),
       fault,
     }),
   );

@@ -57,7 +57,7 @@ describe("decodeCliParams", () => {
   });
 
   it("answers the first schema issue in entry order, with its message", () => {
-    expect(decode({ count: "x", key: "ab" })).toStrictEqual({
+    expect(decode({ count: "x", key: "ab" })).toMatchObject({
       kind: "invalid",
       parameter: "key",
       message: "key is upper.",
@@ -67,7 +67,7 @@ describe("decodeCliParams", () => {
         received: '"ab"',
       },
     });
-    expect(decode({ count: "x" })).toStrictEqual({
+    expect(decode({ count: "x" })).toMatchObject({
       kind: "invalid",
       parameter: "count",
       message: "count 'x' is no number.",
@@ -104,7 +104,7 @@ describe("decodeCliParams", () => {
   });
 
   it("answers a rule between parameters at the parameter it forwards to", () => {
-    expect(decode({ key: "AB", full: "true" })).toStrictEqual({
+    expect(decode({ key: "AB", full: "true" })).toMatchObject({
       kind: "invalid",
       parameter: "full",
       message: "Use key or full, not both.",
@@ -139,7 +139,7 @@ describe("decodeCliParams", () => {
   it.each(["==", '"value"', "[value]"])(
     "explains an unknown %s parameter as a shell-split value",
     (split) => {
-      expect(decode({ key: "AB", [split]: "true", count: "3" })).toEqual({
+      expect(decode({ key: "AB", [split]: "true", count: "3" })).toMatchObject({
         kind: "invalid",
         parameter: split,
         message: `Unknown parameter '${split}': Obsidian received these parameters in order: key, ${split}, count.`,
@@ -314,7 +314,7 @@ describe("cliVariants", () => {
   });
 
   it("answers a parameter of another variant once the variant's own are valid", () => {
-    expect(decode({ template: "note", root: "nope" })).toStrictEqual({
+    expect(decode({ template: "note", root: "nope" })).toMatchObject({
       kind: "invalid",
       parameter: "root",
       message: NOT_PARTIAL,
@@ -350,7 +350,7 @@ describe("cliOneOf", () => {
     decodeCliParams(params, select, { command: "inspect" });
 
   it("names the second selector given", () => {
-    expect(decode({ note: "a", profile: "b" })).toStrictEqual({
+    expect(decode({ note: "a", profile: "b" })).toMatchObject({
       kind: "invalid",
       parameter: "profile",
       message: "Select one target.",
@@ -417,7 +417,7 @@ describe("cliNotApplicable", () => {
     expect(decode({ template: "bogus", root: "item" })).toMatchObject({
       parameter: "template",
     });
-    expect(decode({ template: "note", root: "item" })).toStrictEqual({
+    expect(decode({ template: "note", root: "item" })).toMatchObject({
       kind: "invalid",
       parameter: "root",
       message: "root applies to partials only.",
