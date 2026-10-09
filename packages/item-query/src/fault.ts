@@ -43,6 +43,8 @@ export type Fault =
       readonly name: string;
       readonly at: Span;
       readonly receiver?: Receiver;
+      readonly customFields?: readonly string[];
+      readonly dotted?: boolean;
     }
   | {
       readonly kind: "arity";

@@ -248,7 +248,7 @@ describe("decodeItemQuery fields, filter, and sort", () => {
   ])("keeps the issue for sort with $name", ({ value, issue }) => {
     expect(decodeItemQuery({ sort: value })).toMatchObject({
       location: { path: issue.path },
-      found: issue.received,
+      found: issue.received === "Object" ? value : issue.received,
     });
     expect(decode.decodeItemQuery({ sort: value })).toMatchObject({
       kind: "invalid",
@@ -278,7 +278,7 @@ describe("decodeItemQuery fields, filter, and sort", () => {
   ])("distinguishes fields with $name", ({ value, issue }) => {
     expect(decodeItemQuery({ fields: value })).toMatchObject({
       location: { path: issue.path },
-      found: issue.received,
+      found: issue.received === "Object" ? value : issue.received,
     });
     expect(decode.decodeItemQuery({ fields: value })).toMatchObject({
       kind: "invalid",

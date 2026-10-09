@@ -34,7 +34,7 @@ import {
   takesType,
 } from "./filter-functions";
 import type { FunctionDefinition } from "./filter-functions";
-import { planFilter } from "./filter-plan";
+import { hasBareForm, planFilter } from "./filter-plan";
 import type { StaticType } from "./filter-plan";
 import { nearMatches } from "./near-match";
 import type { QueryClock } from "./query-clock";
@@ -120,6 +120,10 @@ export function diagnose(
       );
     }
     case "plain": {
+      const entry =
+        location.argument === "fields"
+          ? (projectionEntry(text, location.index) ?? text)
+          : text;
       const diagnostic = renderDiagnostic(
         {
           code: fault.code,
@@ -127,8 +131,9 @@ export function diagnose(
           hint: fault.action,
           location: faultLocation,
         },
-        text,
+        entry,
       );
+      if (location.argument === "fields") return { ...diagnostic, location };
       return fault.code === "invalid-limit"
         ? withCountNote(diagnostic)
         : diagnostic;
@@ -201,17 +206,29 @@ function diagnoseUnknown(
   text: string,
   location: ItemQueryErrorLocation,
 ): Diagnostic<PlainFault["code"]> {
-  if (fault.role === "projection-path" || fault.role === "sortable-field")
+  if (
+    fault.role === "projection-path" ||
+    fault.role === "sortable-field" ||
+    (fault.role === "custom-field" && location.argument === "fields")
+  )
     return diagnoseRequestName(fault, text, location);
-  const candidates = candidatesFor(fault.role, fault.receiver?.type);
-  const nearby = nearMatches(fault.name, candidates);
+  const candidates =
+    fault.role === "custom-field"
+      ? (fault.customFields ?? [])
+      : candidatesFor(fault.role, fault.receiver?.type);
+  const nearby = fault.dotted
+    ? [`custom[${JSON.stringify(fault.name)}]`]
+    : nearMatches(fault.name, candidates);
   const receiverSwap = receiverSwapCorrection(fault, text);
   const hint =
     nearby.length > 0
       ? suggestionAction(
           {
             role: fault.role,
-            suggestion: nearby[0]!,
+            suggestion:
+              fault.role === "custom-field" && !fault.dotted
+                ? `custom[${JSON.stringify(nearby[0]!)}]`
+                : nearby[0]!,
             text,
             at: fault.at,
           },
@@ -219,7 +236,9 @@ function diagnoseUnknown(
         )
       : receiverSwap
         ? `Try: ${receiverSwap}`
-        : recoveryAction(fault.role, candidates, fault.receiver?.type);
+        : fault.customFields?.length === 0
+          ? "The connected Zotero source has no custom fields."
+          : recoveryAction(fault.role, candidates, fault.receiver?.type);
   const suggestions =
     nearby.length > 0 ? nearby : receiverSwap ? [receiverSwap] : [];
   const message = unknownMessage(fault);
@@ -228,7 +247,10 @@ function diagnoseUnknown(
       code: codeOfFault(fault),
       message,
       hint,
-      location: { ...location, span: fault.at },
+      location: {
+        ...location,
+        ...(location.argument === "filter" ? { span: fault.at } : {}),
+      },
     },
     text,
     { found: fault.name, expected: candidates },
@@ -236,6 +258,11 @@ function diagnoseUnknown(
   const notes = [
     ...receiverNotes(fault.receiver),
     ...roleNotes(fault),
+    ...(fault.role === "field" && fault.customFields?.some(hasBareForm)
+      ? [
+          `Custom fields with a bare form: ${fault.customFields.filter(hasBareForm).join(", ")}.`,
+        ]
+      : []),
     ...(nearby.length > 1
       ? [`Similar ${rolePlural(fault.role)}: ${nearby.join(", ")}.`]
       : []),
@@ -270,9 +297,12 @@ function diagnoseRequestName(
   location: ItemQueryErrorLocation,
 ): Diagnostic<ItemQueryErrorCode> {
   const sort = fault.role === "sortable-field";
+  const custom = fault.role === "custom-field";
   const candidates = sort
     ? BUILT_IN_NAMES.filter((name) => fieldDefinition(name)?.sortKey)
-    : projectionCandidates();
+    : custom
+      ? (fault.customFields ?? [])
+      : projectionCandidates();
   const root = fault.name.split(".")[0]!.split("[")[0]!;
   const exact = candidates.filter(
     (name) => name.toLowerCase() === fault.name.toLowerCase(),
@@ -291,7 +321,16 @@ function diagnoseRequestName(
         : [location.index];
   const argument = sort ? "sort" : "fields";
   const corrected =
-    nearby.length === 1 ? replaceJsonValue(text, keys, nearby[0]!) : undefined;
+    nearby.length === 1
+      ? replaceJsonValue(
+          text,
+          keys,
+          custom ? `custom[${JSON.stringify(nearby[0])}]` : nearby[0]!,
+        )
+      : undefined;
+  const entry = custom
+    ? (projectionEntry(text, location.index) ?? fault.name)
+    : fault.name;
   const suggestions =
     corrected === undefined ? nearby : [shellArgument(argument, corrected)];
   const hint =
@@ -310,10 +349,10 @@ function diagnoseRequestName(
         path:
           location.path ??
           `${argument}[${location.index ?? 0}]${sort ? ".field" : ""}`,
-        span: { from: 0, to: fault.name.length },
+        span: { from: 0, to: entry.length },
       },
     },
-    fault.name,
+    entry,
     { found: fault.name, expected: candidates },
   );
   const notes = sort
@@ -343,6 +382,17 @@ function diagnoseRequestName(
     suggestions,
     report: [...diagnostic.report.slice(0, -1), ...notes, hint],
   };
+}
+
+function projectionEntry(text: string, index?: number): string | undefined {
+  try {
+    const fields: unknown = JSON.parse(text);
+    return Array.isArray(fields) && typeof fields[index ?? 0] === "string"
+      ? fields[index ?? 0]
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function receiverSwapCorrection(
@@ -496,7 +546,9 @@ function unknownMessage(
         ? `A ${receiver.type} has no property ${quoted}.`
         : `${quoted} is not a property of a value.`;
     case "custom-field":
-      return `The Zotero source has no custom field named ${quoted}.`;
+      return fault.dotted
+        ? `${quoted} is a custom field of the connected Zotero source; read it with bracket access.`
+        : `The Zotero source has no custom field named ${quoted}.`;
     case "projection-path":
       return `${quoted} is not a Projection Path of Item Query.`;
     case "sortable-field":
@@ -524,7 +576,9 @@ function recoveryAction(
         ? `${sentenceSubject(receiverType)} has no properties.`
         : `Use a property of ${typeSubject(receiverType)}: ${joined}.`;
     case "custom-field":
-      return "Use the exact name of a custom field from the source.";
+      return candidates.length > 0
+        ? `Use the exact name of a custom field: ${candidates.map((name) => JSON.stringify(name)).join(", ")}.`
+        : "Use the exact name of a custom field from the source.";
     case "projection-path":
       return "Use a Projection Path from the Item Query Schema.";
     case "sortable-field":
@@ -942,14 +996,17 @@ export function diagnoseDecode(
   }
   const jsonIssue =
     issue && (fault.parameter === "fields" || fault.parameter === "sort");
+  const found =
+    issue?.input !== null && typeof issue?.input === "object"
+      ? JSON.stringify(issue.input)
+      : issue?.received;
   const message = jsonIssue
-    ? `${issue.path} received ${issue.received}; expected ${expected.map((value) => (issue.allowed ? JSON.stringify(value) : value)).join(" or ")}.`
+    ? `${issue.path} received ${found}; expected ${expected.map((value) => (issue.allowed ? JSON.stringify(value) : value)).join(" or ")}.`
     : fault.message;
   const hint = suggestions.length
     ? `Try: ${suggestions[0]}`
     : (fault.hint ?? action);
-  const entry =
-    typeof issue?.input === "string" ? issue.input : (issue?.received ?? "");
+  const entry = typeof issue?.input === "string" ? issue.input : (found ?? "");
   const diagnostic = renderDiagnostic(
     {
       code: "invalid-argument",
@@ -969,7 +1026,7 @@ export function diagnoseDecode(
       },
     },
     entry,
-    { found: issue?.received, expected },
+    { found, expected },
   );
   const result = {
     ...diagnostic,

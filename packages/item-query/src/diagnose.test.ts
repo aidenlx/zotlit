@@ -217,8 +217,10 @@ it("swaps a receiver with the one argument when the registered method fits", () 
 
 // Golden diagnostic reports, with excerpt and caret lines. The first 24 entries
 // are the spec's probe cases; the rest replace the former sentence tests.
-it.each(reports)("reports $name", async ({ request, report }) => {
+it.each(reports)("reports $name", async ({ request, report, ...setup }) => {
   using scenario = openScenarioDatabase();
+  if ("withoutCustomFields" in setup && setup.withoutCustomFields)
+    scenario.sqlite.exec("update fieldsCombined set custom = 0");
   const query: ItemQueryRequest = {
     libraries: [{ libraryID: 1, groupID: null }],
     ...request,
@@ -476,9 +478,9 @@ it.each([
     keys: [],
     expected: "Array",
     report: [
-      "sort received Object; expected Array.",
-      "Object",
-      "^^^^^^",
+      'sort received {"field":"title","direction":"asc"}; expected Array.',
+      '{"field":"title","direction":"asc"}',
+      "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
       "Correct sort.",
     ],
   },
@@ -506,3 +508,22 @@ it.each([
     expect(diagnostic.report.at(-1)).toBe(diagnostic.hint);
   },
 );
+
+it("marks the received projection entry for a grammar fault", () => {
+  const diagnostic = diagnose(
+    {
+      kind: "plain",
+      code: "invalid-path",
+      message: "Invalid path.",
+      action: "Correct fields.",
+      at: { from: 0, to: 5 },
+    },
+    '["title","date."]',
+    { argument: "fields", index: 1, path: "fields[1]" },
+  );
+  expect(diagnostic).toMatchObject({
+    excerpt: { at: "date." },
+    location: { path: "fields[1]" },
+  });
+  expect(diagnostic.location?.span).toBeUndefined();
+});

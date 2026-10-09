@@ -32,6 +32,7 @@
       "\"book\" is not a field of Item Query.",
       "itemType == book",
       "            ^^^^",
+      "Custom fields with a bare form: mood.",
       "Try: itemType == bookTitle"
     ]
   },
@@ -130,6 +131,7 @@
       "\"year\" is not a field of Item Query.",
       "year > 2015",
       "^^^^",
+      "Custom fields with a bare form: mood.",
       "Similar fields: date.year, issueDate.year, filingDate.year.",
       "Try: date.year"
     ]
@@ -143,6 +145,7 @@
       "\"Title\" is not a field of Item Query.",
       "Title.contains(\"x\")",
       "^^^^^",
+      "Custom fields with a bare form: mood.",
       "Try: title.contains(\"x\")"
     ]
   },
@@ -152,11 +155,10 @@
       "filter": "review.status == \"include\""
     },
     "report": [
-      "A string has no property \"status\".",
+      "\"review.status\" is a custom field of the connected Zotero source; read it with bracket access.",
       "review.status == \"include\"",
-      "       ^^^^^^",
-      "The receiver is a string in a filter.",
-      "Use a property of a string: length."
+      "^^^^^^^^^^^^^",
+      "Try: custom[\"review.status\"] == \"include\""
     ]
   },
   {
@@ -165,11 +167,10 @@
       "filter": "custom.review.status == \"include\""
     },
     "report": [
-      "A string has no property \"status\".",
+      "\"review.status\" is a custom field of the connected Zotero source; read it with bracket access.",
       "custom.review.status == \"include\"",
-      "              ^^^^^^",
-      "The receiver is a string in a filter.",
-      "Use a property of a string: length."
+      "^^^^^^^^^^^^^^^^^^^^",
+      "Try: custom[\"review.status\"] == \"include\""
     ]
   },
   {
@@ -181,7 +182,7 @@
       "The Zotero source has no custom field named \"reviewStatus\".",
       "custom[\"reviewStatus\"] == \"include\"",
       "^^^^^^^^^^^^^^^^^^^^^^^^",
-      "Use the exact name of a custom field: \"review.status\", \"mood\", \"title\", \"publicationTitle\"."
+      "Try: custom[\"review.status\"] == \"include\""
     ]
   },
   {
@@ -493,6 +494,7 @@
       "\"nope\" is not a field of Item Query.",
       "nope == 1",
       "^^^^",
+      "Custom fields with a bare form: mood.",
       "Use a field from the Item Query Schema; field names are case-sensitive."
     ]
   },
@@ -505,6 +507,7 @@
       "\"Mood\" is not a field of Item Query.",
       "Mood == \"calm\"",
       "^^^^",
+      "Custom fields with a bare form: mood.",
       "Use a field from the Item Query Schema; field names are case-sensitive."
     ]
   },
@@ -517,6 +520,7 @@
       "\"Title\" is not a field of Item Query.",
       "Title == \"x\"",
       "^^^^^",
+      "Custom fields with a bare form: mood.",
       "Try: title == \"x\""
     ]
   },
@@ -529,6 +533,7 @@
       "\"noSuchField\" is not a field of Item Query.",
       "true && noSuchField == \"x\"",
       "        ^^^^^^^^^^^",
+      "Custom fields with a bare form: mood.",
       "Use a field from the Item Query Schema; field names are case-sensitive."
     ]
   },
@@ -541,7 +546,7 @@
       "The Zotero source has no custom field named \"Review.Status\".",
       "itemType == \"book\" || custom[\"Review.Status\"] == \"done\"",
       "                        ^^^^^^^^^^^^^^^^^^^^^^^^^",
-      "Use the exact name of a custom field: \"review.status\", \"mood\", \"title\", \"publicationTitle\"."
+      "Try: itemType == \"book\" || custom[\"review.status\"] == \"done\""
     ]
   },
   {
@@ -563,6 +568,8 @@
     },
     "report": [
       "The Zotero source has no custom field named \"nope\".",
+      "custom[\"nope\"]",
+      "^^^^^^^^^^^^^^^^",
       "Use the exact name of a custom field: \"review.status\", \"mood\", \"title\", \"publicationTitle\"."
     ]
   },
@@ -585,7 +592,9 @@
     },
     "report": [
       "The Zotero source has no custom field named \"Review.Status\".",
-      "Use the exact name of a custom field: \"review.status\", \"mood\", \"title\", \"publicationTitle\"."
+      "custom[\"Review.Status\"]",
+      "^^^^^^^^^^^^^^^^^^^^^^^^^",
+      "Try: fields='[\"custom[\\\"review.status\\\"]\"]'"
     ]
   },
   {
@@ -765,6 +774,32 @@
       "A Sortable Field is a top-level field with one value.",
       "Sortable Fields include itemType, title, date, dateModified.",
       "Try: sort='[{\"field\":\"date\",\"direction\":\"asc\"}]'"
+    ]
+  },
+  {
+    "name": "custom bare unknown",
+    "request": {
+      "filter": "mood2 == \"include\""
+    },
+    "report": [
+      "\"mood2\" is not a field of Item Query.",
+      "mood2 == \"include\"",
+      "^^^^^",
+      "Custom fields with a bare form: mood.",
+      "Use a field from the Item Query Schema; field names are case-sensitive."
+    ]
+  },
+  {
+    "name": "source without custom fields",
+    "withoutCustomFields": true,
+    "request": {
+      "filter": "custom[\"review.status\"] == \"include\""
+    },
+    "report": [
+      "The Zotero source has no custom field named \"review.status\".",
+      "custom[\"review.status\"] == \"include\"",
+      "^^^^^^^^^^^^^^^^^^^^^^^^^",
+      "The connected Zotero source has no custom fields."
     ]
   }
 ]
