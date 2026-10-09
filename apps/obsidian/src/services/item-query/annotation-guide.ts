@@ -1,5 +1,6 @@
-// The Annotation Query guide. Query commands and Filter Expressions shown by
-// this file are collected below, so tests run them against a real source.
+// Annotation-specific text in the ZotLit Query guide. Query commands and
+// Filter Expressions shown here are collected so tests run them against a
+// real source.
 
 import {
   QUERY_COMMAND,
@@ -10,13 +11,13 @@ import {
 
 const ANNOTATION_IMAGE_COMMAND = "zotlit:annotation-image";
 
-/** One Annotation Query command from the guide, as flat CLI arguments. */
+/** One Annotation Query example from the guide, as flat CLI arguments. */
 export type AnnotationGuideExample = Readonly<Record<string, string>>;
 
 const examples: AnnotationGuideExample[] = [];
 const filters: string[] = [];
 
-/** Every Annotation Query command the guide shows. */
+/** Every Annotation Query example that the guide shows. */
 export const ANNOTATION_GUIDE_EXAMPLES: readonly AnnotationGuideExample[] =
   examples;
 /** Every Annotation Filter Expression the guide shows outside a command. */
@@ -36,19 +37,19 @@ function filter(expression: string): string {
   return expression;
 }
 
-const FILTER_SECTION = `FILTER AND PARENT ITEM FIELDS
+const FILTER_SECTION = `ANNOTATION FILTERS
 
-DESCRIPTION
-  filter selects Annotations. Join conditions with &&, ||, and !, and group
-  them with parentheses. Text matches exactly unless a helper changes it.
-  The schema catalog lists every field, function, method, and property.
+FIELDS
+  An Annotation filter uses bare names for its own fields. The schema catalog
+  lists every field, function, method, and property.
     ${filter('type == "highlight"')}
     ${filter('colorName == "yellow"')}
     ${filter('tags.contains("method")')}
 
-PARENT ITEM FIELDS
-  Prefix an Item Query field or Projection Path with item. The parent Item is
-  always present. Annotation and Item conditions can be in one expression:
+PARENT RECORDS
+  Prefix an Item field or Projection Path with item. Prefix an Attachment
+  field or Projection Path with attachment. Both parents are always present.
+  Annotation and Item conditions can be in one expression:
     ${filter('type == "image" && item.title.contains("Exact")')}
     ${example({ filter: 'type == "highlight" && item.title.contains("Exact")', fields: "text,item.title", limit: "20" })}`;
 
@@ -71,10 +72,8 @@ RESULT IDENTITIES
 const FIELDS_SECTION = `FIELDS AND POSITION
 
 PROJECTION PATHS
-  library is personal for My Library or group:<groupID> for a group.
-  fields is a comma list or JSON array of values to return. fields='[]' returns only the
-  three row identities. position is available only when requested and stays
-  out of the default row.
+  fields='[]' returns only the three row identities. position is available
+  only when requested and stays out of the default row.
     ${example({ filter: 'attachment.indexedKey == "PDF2LIVE"', fields: "position", limit: "all" })}
 
 POSITION KINDS
@@ -85,22 +84,17 @@ POSITION KINDS
   Annotations. pageLabel is the document's own page or location label.
 
 ATTACHMENT FILE
-  attachment has indexedKey, title, contentType, linkMode, path, and exists.
-  path is absolute when the file can be resolved on this device; exists states
-  whether that path exists at query time.`;
+  Projecting attachment returns its fixed Attachment summary. path is absolute
+  when the file can be resolved on this device; exists states whether that
+  path exists at query time.`;
 
-const SORT_SECTION = `SORT AND LIMIT
+const SORT_SECTION = `ANNOTATION ORDER
 
-SORT
-  sort takes -field for descending order, or field for ascending order.
-  A JSON array of {"field","direction"} is also accepted.
   The schema catalog marks Sortable Fields. Missing values come last. The
-  Sort Index and then the Annotation Indexed Key resolve ties.
+  Sort Index and then the Annotation Indexed Key resolve ties after the
+  requested sort fields.
     ${example({ sort: "pageIndex", limit: "all" })}
-
-LIMIT
-  limit is a positive integer, or all. All Target Libraries are sorted and
-  limited as one result set. truncated is true when more Annotations match.`;
+  truncated is true when more Annotations match the request than it returns.`;
 
 const IMAGES_SECTION = `EXCERPT IMAGES
 
@@ -115,15 +109,12 @@ FAILURES
   the Annotation has no Excerpt Image. file-unavailable means Zotero has no
   cached image and the source PDF is unavailable on this device.`;
 
-const CANCEL_SECTION = `CANCEL A RUNNING QUERY
+const CANCEL_SECTION = `ANNOTATION CANCEL EXAMPLE
 
-NAME THE QUERY
-  id names one running Item Query or Annotation Query in this vault. It has
-  ${QUERY_ID_FORM}. A second running query with that id fails with
-  query-id-in-use.
+  id names one running ZotLit Query in this vault. It has ${QUERY_ID_FORM}.
+  A second running query with that id fails with query-id-in-use.
     ${example({ id: "annotations-1", limit: "all", fields: "[]" })}
 
-CANCEL
   In another terminal, run:
     obsidian ${QUERY_CANCEL_COMMAND} id=annotations-1
   cancelRequested is true when that call found the running query. The cancelled

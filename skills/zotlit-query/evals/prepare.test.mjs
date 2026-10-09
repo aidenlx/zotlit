@@ -173,6 +173,22 @@ await test("a generated Fixture stays unchanged and gives byte-identical seeded 
         .get().n,
       1,
     );
+    assert.equal(
+      db
+        .prepare(
+          "select count(*) as n from items where key in ('QCPDFA22','QCPDFB22')",
+        )
+        .get().n,
+      2,
+    );
+    assert.equal(
+      db
+        .prepare(
+          "select count(*) as n from itemAnnotations a join items i on i.itemID=a.itemID where i.key like 'QC%'",
+        )
+        .get().n,
+      3,
+    );
     await assert.rejects(
       stat(
         join(

@@ -396,3 +396,69 @@ it("caps parent Indexed Key expansion and falls back to the Attachment scan", as
   if (candidate?.type === "statement")
     expect(candidate.statement.rows).toHaveLength(2);
 });
+
+// Failure modes: counting only returned files, applying a global limit, losing
+// a parent's group, or sorting the absent group before a known value.
+it("groups Attachments by type and parent Citation Key with null last and per-group limits", async () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  scenario.sqlite
+    .prepare(
+      "update itemAttachments set contentType = null where itemID = (select itemID from items where key = 'URL2LIVE')",
+    )
+    .run();
+  const valueID = scenario.sqlite
+    .prepare("insert into itemDataValues (value) values ('review2024')")
+    .run().lastInsertRowid;
+  scenario.sqlite
+    .prepare(
+      "insert into itemData (itemID, fieldID, valueID) select itemID, (select fieldID from fieldsCombined where fieldName = 'citationKey'), ? from items where key = 'ART2FULL' and libraryID = 1",
+    )
+    .run(valueID);
+  const query = (group: string) =>
+    runEffect(
+      collectQuery(ATTACHMENTS, {
+        libraries: [SCENARIO_LIBRARIES.personal, SCENARIO_LIBRARIES.group],
+        group,
+        limit: 1,
+        fields: ["contentType", "item.citationKey"],
+        sort: [],
+      }),
+      { client: scenario.db },
+    );
+  const types = await query("contentType");
+  if (types.exit._tag === "Failure") throw new Error(String(types.exit.cause));
+  expect(types.exit.value).toMatchObject({
+    totalCount: 5,
+    returnedCount: 3,
+    truncated: true,
+  });
+  expect(
+    types.exit.value.groups!.map(({ value, count, rows }) => [
+      value,
+      count,
+      rows.length,
+    ]),
+  ).toEqual([
+    ["application/pdf", 3, 1],
+    ["text/html", 1, 1],
+    [null, 1, 1],
+  ]);
+  const papers = await query("item.citationKey");
+  if (papers.exit._tag === "Failure")
+    throw new Error(String(papers.exit.cause));
+  expect(papers.exit.value).toMatchObject({
+    totalCount: 5,
+    returnedCount: 2,
+    truncated: true,
+  });
+  expect(
+    papers.exit.value.groups!.map(({ value, count, rows }) => [
+      value,
+      count,
+      rows.length,
+    ]),
+  ).toEqual([
+    ["review2024", 4, 1],
+    [null, 1, 1],
+  ]);
+});

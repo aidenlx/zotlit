@@ -18,9 +18,12 @@ async function exercise(
     agentTimedOut = false,
     removalFailure = false,
     noQuery = false,
+    sandboxFailure = false,
+    observedEvaluatorRead = false,
     wrongDetail = false,
     wrongExportReceipt = false,
     caseName = "edge",
+    agent = "codex",
     changeAnnotation = () => {},
   } = {},
 ) {
@@ -54,6 +57,9 @@ async function exercise(
         code: 0,
         stdout: JSON.stringify({
           ok: true,
+          contractVersion: 3,
+          command: "zotlit:query",
+          warnings: [],
           identity: {
             source: {
               databasePath: join(corpus, "zotero-data", "zotero.sqlite"),
@@ -64,11 +70,180 @@ async function exercise(
         stderr: "",
         timedOut: false,
       };
-    if (command === "codex") {
+    if (command === "codex" || command === "claude") {
+      if (command === "claude") {
+        assert.ok(args.includes("--restricted"));
+        assert.ok(args.includes("--json-schema"));
+        assert.ok(args.includes("--effort"));
+      }
       assert.match(options.input, /vault=fake-vault-id/);
       assert.doesNotMatch(options.input, /oracle\.json/);
+      if (sandboxFailure)
+        return {
+          code: 0,
+          stderr: "",
+          timedOut: false,
+          stdout: `${JSON.stringify({
+            type: "assistant",
+            message: {
+              content: [
+                {
+                  type: "tool_use",
+                  id: "denied",
+                  name: "Bash",
+                  input: {
+                    command:
+                      "node obsidian-cli.ts vault=fake zotlit:query-guide",
+                  },
+                },
+              ],
+            },
+          })}\n${JSON.stringify({
+            type: "user",
+            message: {
+              content: [
+                {
+                  type: "tool_result",
+                  tool_use_id: "denied",
+                  is_error: true,
+                  content:
+                    "sandbox-exec: sandbox_apply: Operation not permitted",
+                },
+              ],
+            },
+          })}`,
+        };
       if (agentTimedOut)
         return { code: null, stdout: "", stderr: "", timedOut: true };
+      if (oracle.cases[caseName].kind === "research") {
+        const live = JSON.parse(
+          await readFile(
+            new URL("./live-projections.json", import.meta.url),
+            "utf8",
+          ),
+        )[caseName];
+        const envelope = JSON.parse(
+          JSON.stringify(live.envelope).replaceAll(
+            "/evaluation-run/corpus",
+            corpus,
+          ),
+        );
+        envelope.identity.vault.path = vault;
+        const answer = JSON.parse(
+          JSON.stringify(live.answer)
+            .replaceAll("/evaluation-run/corpus", corpus)
+            .replaceAll(
+              "/evaluation-run/advisor.csv",
+              join(root, "advisor.csv"),
+            ),
+        );
+        changeAnnotation(answer, envelope);
+        await writeFile(
+          join(options.cwd, "query-result.json"),
+          JSON.stringify(envelope),
+        );
+        await writeFile(
+          join(options.cwd, "answer.json"),
+          JSON.stringify(answer),
+        );
+        if (caseName === "csv_for_advisor")
+          await writeFile(
+            join(options.cwd, "advisor.csv"),
+            `title,year\n${oracle.cases[caseName].rows
+              .map((r) => `${r.values.title},${r.values["date.year"] ?? ""}`)
+              .join("\n")}`,
+          );
+        const query = `node obsidian-cli.ts vault=fake-vault-id zotlit:query from=${envelope.request.from}`;
+        const events =
+          command === "claude"
+            ? [
+                {
+                  type: "assistant",
+                  message: {
+                    content: [
+                      {
+                        type: "tool_use",
+                        id: "q",
+                        name: "Bash",
+                        input: { command: query },
+                      },
+                    ],
+                  },
+                },
+                {
+                  type: "user",
+                  message: {
+                    content: [
+                      {
+                        type: "tool_result",
+                        tool_use_id: "q",
+                        content: JSON.stringify(envelope),
+                      },
+                    ],
+                  },
+                },
+                { type: "result", structured_output: answer, is_error: false },
+              ]
+            : [
+                {
+                  type: "item.completed",
+                  item: {
+                    id: "q",
+                    type: "command_execution",
+                    command: query,
+                    aggregated_output: JSON.stringify(envelope),
+                    exit_code: 0,
+                  },
+                },
+              ];
+        if (observedEvaluatorRead) {
+          if (command === "claude")
+            events.push(
+              {
+                type: "assistant",
+                message: {
+                  content: [
+                    {
+                      type: "tool_use",
+                      id: "read-oracle",
+                      name: "Read",
+                      input: { file_path: "../oracle.json" },
+                    },
+                  ],
+                },
+              },
+              {
+                type: "user",
+                message: {
+                  content: [
+                    {
+                      type: "tool_result",
+                      tool_use_id: "read-oracle",
+                      content: "oracle",
+                    },
+                  ],
+                },
+              },
+            );
+          else
+            events.push({
+              type: "item.completed",
+              item: {
+                id: "read-oracle",
+                type: "command_execution",
+                command: "cat ../oracle.json",
+                aggregated_output: "oracle",
+                exit_code: 0,
+              },
+            });
+        }
+        return {
+          code: 0,
+          stderr: "",
+          timedOut: false,
+          stdout: events.map((e) => JSON.stringify(e)).join("\n"),
+        };
+      }
       if (
         oracle.annotationRows[oracle.cases[caseName]?.keys?.[0]]?.sourceSuffix
       ) {
@@ -76,10 +251,7 @@ async function exercise(
         const schema = JSON.parse(
           await readFile(args[args.indexOf("--output-schema") + 1], "utf8"),
         );
-        assert.deepEqual(
-          Object.hasOwn(schema.properties, "papers"),
-          caseName === "reading_plan",
-        );
+        assert.deepEqual(Object.hasOwn(schema.properties, "papers"), false);
         if (caseName === "missing_source")
           assert.ok(
             schema.properties.annotations.items.required.includes(
@@ -104,6 +276,7 @@ async function exercise(
               text: spec.text,
               comment: spec.comment,
               colorName: spec.colorName,
+              library: spec.library,
               tags: spec.tags,
               pageIndex: spec.pageIndex,
               attachment: {
@@ -122,15 +295,20 @@ async function exercise(
           }));
         const envelope = {
           ok: true,
+          contractVersion: 3,
+          command: "zotlit:query",
+          warnings: [],
           identity,
           libraries: [{ type: "personal" }, { type: "group", groupID: 118 }],
           request: {
+            from: "annotations",
             limit: null,
             fields: [
               "type",
               "pageLabel",
               "text",
               "comment",
+              "library",
               "colorName",
               "tags",
               "pageIndex",
@@ -177,7 +355,6 @@ async function exercise(
             }
             return result;
           }),
-          ...(caseName === "reading_plan" ? { papers: expected.items } : {}),
           ...(caseName === "export_annotations"
             ? { exportPath: join(root, "result.json") }
             : {}),
@@ -196,6 +373,9 @@ async function exercise(
             join(options.cwd, "export-receipt.json"),
             JSON.stringify({
               ok: true,
+              contractVersion: 3,
+              command: "zotlit:query",
+              warnings: [],
               file: {
                 path: join(options.cwd, "query-result.json"),
                 bytes:
@@ -205,36 +385,11 @@ async function exercise(
               },
             }),
           );
-        if (caseName === "reading_plan") {
-          const itemEnvelope = {
-            ok: true,
-            identity,
-            libraries: envelope.libraries,
-            request: {
-              limit: null,
-              fields: ["title"],
-              filter: 'tags.contains("query-annotation-eval")',
-            },
-            returnedCount: expected.items.length,
-            truncated: false,
-            rows: expected.items.map((item) => ({
-              indexedKey: item.indexedKey,
-              values: { title: item.title },
-            })),
-          };
-          await writeFile(
-            join(options.cwd, "item-result.json"),
-            JSON.stringify(itemEnvelope),
-          );
-        }
         await writeFile(
           join(options.cwd, "answer.json"),
           JSON.stringify(answer),
         );
-        const events = [
-          "zotlit:query from=annotations",
-          ...(caseName === "reading_plan" ? ["zotlit:query"] : []),
-        ];
+        const events = ["zotlit:query from=annotations"];
         return {
           code: 0,
           stderr: "",
@@ -310,6 +465,9 @@ async function exercise(
         }));
         const envelope = {
           ok: true,
+          contractVersion: 3,
+          command: "zotlit:query",
+          warnings: [],
           identity: {
             source: {
               databasePath: join(corpus, "zotero-data", "zotero.sqlite"),
@@ -317,6 +475,7 @@ async function exercise(
             vault: { path: vault },
           },
           request: {
+            from: "annotations",
             limit: null,
             fields: Object.keys(rows[0].values),
             filter:
@@ -395,6 +554,7 @@ async function exercise(
         values: {
           title: row.title,
           "date.year": row.year,
+          library: row.indexedKey.endsWith("g118") ? "group:118" : "personal",
           creators: [
             {
               fullName: row.firstCreator,
@@ -405,13 +565,20 @@ async function exercise(
       }));
       const envelope = {
         ok: true,
+        contractVersion: 3,
+        command: "zotlit:query",
+        warnings: [],
         identity: {
           source: {
             databasePath: join(corpus, "zotero-data", "zotero.sqlite"),
           },
           vault: { path: vault },
         },
-        request: { limit: null, fields: ["title", "date.year", "creators"] },
+        request: {
+          from: "items",
+          limit: null,
+          fields: ["title", "date.year", "creators", "library"],
+        },
         libraries: [{ type: "personal" }, { type: "group", groupID: 118 }],
         returnedCount: 3,
         truncated: false,
@@ -476,7 +643,7 @@ async function exercise(
   };
   try {
     const report = await runCase(
-      { caseName, model: "fake-model", effort: "low" },
+      { caseName, agent, model: "fake-model", effort: "low" },
       { runId, processRunner },
     );
     assert.equal(
@@ -574,7 +741,7 @@ await test("metrics count completed commands once and distinguish retries from e
     event("q2", '{"ok":false}'),
     event("q3", '{"ok":true}'),
   ].join("\n");
-  assert.deepEqual(measureEvents(events), {
+  assert.partialDeepStrictEqual(measureEvents(events), {
     calls: 3,
     queryAttempts: 3,
     queryExitZero: 3,
@@ -656,11 +823,11 @@ await test("expanded cases pass through the runner and reject a wrong paper coun
   const wrong = await exercise(null, {
     caseName: "reading_plan",
     changeAnnotation(answer) {
-      answer.papers[1].annotationCount = 1;
+      answer.rows[1].values["annotations.length"] = 1;
     },
   });
   assert.equal(wrong.failureKind, "task");
-  assert.match(wrong.errors.join("\n"), /wrong paper counts/);
+  assert.match(wrong.errors.join("\n"), /wrong annotations.length/);
   const badReceipt = await exercise(null, {
     caseName: "export_annotations",
     wrongExportReceipt: true,
@@ -730,3 +897,123 @@ for (const [field, value] of [
     assert.match(report.errors.join("\n"), new RegExp(`wrong ${field}`));
   });
 }
+
+await test("each research case passes with both agent paths", async () => {
+  for (const caseName of Object.keys(oracle.cases).filter(
+    (k) => oracle.cases[k].kind === "research",
+  ))
+    for (const agent of ["codex", "claude"]) {
+      const report = await exercise(null, { caseName, agent });
+      assert.equal(
+        report.state,
+        "passed",
+        `${agent} ${caseName}: ${report.errors.join("\n")}`,
+      );
+    }
+});
+
+await test("batch runs every case sequentially and retains failure kinds and metrics", async () => {
+  const { runBatch, parseOptions } = await import("./run.mjs");
+  assert.equal(
+    parseOptions([
+      "all",
+      "--agent",
+      "claude",
+      "--model",
+      "claude-sonnet-5-5",
+      "--effort",
+      "high",
+    ]).agent,
+    "claude",
+  );
+  assert.equal(
+    parseOptions(["include", "--model", "gpt-6.1-sol", "--effort", "high"])
+      .agent,
+    "codex",
+  );
+  assert.throws(() =>
+    parseOptions([
+      "all",
+      "--agent",
+      "other",
+      "--model",
+      "m",
+      "--effort",
+      "high",
+    ]),
+  );
+  const runId = randomUUID();
+  let active = 0;
+  const order = [];
+  try {
+    const report = await runBatch(
+      { agent: "claude", model: "test", effort: "high" },
+      {
+        runId,
+        caseRunner: async (options) => {
+          assert.equal(active++, 0);
+          await new Promise((resolve) => setImmediate(resolve));
+          active--;
+          order.push(options.caseName);
+          return {
+            case: options.caseName,
+            agent: "claude",
+            model: "test",
+            effort: "high",
+            state: order.length === 2 ? "failed" : "passed",
+            failureKind: order.length === 2 ? "task" : null,
+            errors: [],
+            metrics: {
+              queryAttempts: 1,
+              schemaAttempts: 1,
+              guideAttempts: 1,
+              imageAttempts: 0,
+              contextualBytes: 20,
+            },
+            misreadings: [],
+            files: { report: "/case/report.json" },
+          };
+        },
+      },
+    );
+    assert.equal(order.length, 28);
+    assert.equal(new Set(order).size, 28);
+    assert.equal(report.state, "failed");
+    assert.equal(report.failures.task, 1);
+    const saved = JSON.parse(await readFile(report.files.report, "utf8"));
+    assert.equal(saved.cases.length, 28);
+    assert.match(
+      await readFile(
+        join(repo, ".scratch", "zotlit-query-evals", runId, "summary.md"),
+        "utf8",
+      ),
+      /Context bytes/,
+    );
+  } finally {
+    await rm(join(repo, ".scratch", "zotlit-query-evals", runId), {
+      recursive: true,
+      force: true,
+    });
+  }
+});
+
+await test("a nested Bash sandbox failure is an environment failure, with its command retained", async () => {
+  const report = await exercise(null, {
+    agent: "claude",
+    sandboxFailure: true,
+  });
+  assert.equal(report.failureKind, "environment");
+  assert.equal(report.misreadings.length, 1);
+  assert.match(report.errors.join("\n"), /parent sandbox/);
+});
+await test("both agent paths reject observed evaluator reads even with correct answers", async () => {
+  for (const agent of ["codex", "claude"]) {
+    const report = await exercise(null, {
+      agent,
+      caseName: "chinese_title",
+      observedEvaluatorRead: true,
+    });
+    assert.equal(report.failureKind, "task");
+    assert.ok(report.errors.includes("agent read evaluator sources"));
+  }
+});

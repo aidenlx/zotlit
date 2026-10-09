@@ -2629,6 +2629,43 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         }),
       ) as ItemQueryReport;
 
+    it("groups files by type with a per-group limit", async () => {
+      const answer = await query({
+        group: "contentType",
+        library: "personal",
+        limit: "1",
+        fields: "contentType",
+      });
+      const files = ATTACHMENTS.filter(
+        (file) =>
+          file.libraryID === 1 &&
+          ITEMS.some((item) => item.itemID === file.parentItemID),
+      );
+      const types = [...new Set(files.map((file) => file.contentType))].sort();
+      expect(answer).toMatchObject({
+        ok: true,
+        totalCount: files.length,
+        returnedCount: types.length,
+        truncated: true,
+      });
+      expect(answer).not.toHaveProperty("rows");
+      expect(
+        answer.groups!.map(({ value, count, rows }) => [
+          value,
+          count,
+          rows.length,
+        ]),
+      ).toEqual(
+        types.map((type) => [
+          type,
+          files.filter((file) => file.contentType === type).length,
+          1,
+        ]),
+      );
+      for (const group of answer.groups!)
+        expect(group.rows[0]!.values.contentType).toBe(group.value);
+    });
+
     it("finds broken linked files", async () => {
       // Demo paper files are copied only to the demo Vault Case. Their linked
       // rows remain in the configured Fixture and are also missing here.

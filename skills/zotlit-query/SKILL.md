@@ -1,101 +1,75 @@
 ---
 name: zotlit-query
-description: "Query Zotero Items and Annotations through ZotLit in Obsidian. Use to find works by metadata, find a paper's highlights or notes, combine Annotation and parent Item filters, inspect source positions, open source documents, retrieve Excerpt Images, count matches, or export query data."
+description: "Query Zotero works, files, and reading marks through ZotLit in Obsidian. Use for literature reviews, reading plans, missing PDFs, broken linked files, duplicate PDFs, Annotation evidence, counts by paper or year, and complete exports."
 metadata:
   cli-contract-version: "3"
 ---
 
 # ZotLit Query
 
-This skill targets the Query CLI Contract version in its metadata. Compare it with `contractVersion` in the first response. If they differ, read the live guide again and follow it.
+## Choose what the answer lists
 
-Item Query searches top-level Items outside the trash. Annotation Query searches their Annotations through non-trashed Attachments. One command reads Zotero data and uses the same result envelope, Library scope, Indexed Keys, limits, exports, query IDs, and cancel command.
+Use `zotlit:query` with the Query Dataset that gives one row per thing the researcher wants:
+
+| Research task | Start from | Reach related records |
+| --- | --- | --- |
+| List works, including works without files or marks | `from=items` (default) | `attachments`, `annotations` |
+| List files, check availability, repair links | `from=attachments` | `item`, `annotations` |
+| Read highlights, notes, or other marks | `from=annotations` | `item`, `attachment` |
+
+Items are top-level records outside the trash. Attachments belong to those Items; Annotations belong to those Attachments. Each level excludes trashed records. Standalone Attachments and their marks are outside all three Query Datasets.
 
 ## Discover, query, verify
 
-1. Select the Obsidian vault. Run `obsidian vaults` when the vault is unknown. Keep `vault=<name-or-id>` as the first argument on every call.
-2. Run `zotlit:query-guide`. Choose `from=items` for stored Item metadata or `from=annotations` for reading marks and notes. Read the live guide once, then use `help <command>` and guide topics for details.
-3. Run `zotlit:query-schema`. Save the response and confirm `identity.vault` and `identity.source`. The response identifies a version-pinned catalog and live defaults. Follow guide topic `schema`. The single catalog has `datasets.items` and `datasets.annotations`; shared language definitions are at the top level. Use `from=` on the schema command to narrow its live defaults and field listing. Reuse a catalog while its URL is unchanged.
-4. Translate the request into Library scope, selection, returned fields, sort, and completeness. Use a small sample to check uncertain syntax or shape. Run the complete query after the expression succeeds.
-5. Read `diagnostic.report` first on failure. Read `warnings` before you report an empty result. Check the response body: a successful shell exit alone does not prove success. Use the report to choose the correction before retrying. Treat a plain-text error as a failed call. Retry a transient failure once; report a repeated failure with its recovery action.
-6. Complete when `identity`, `libraries`, `request`, and `truncated` match the task and you have read the rows or exported envelope. Report the Target Libraries, useful results, and whether the result is complete.
+1. Select the vault; use `obsidian vaults` if needed. Put `vault=<name-or-id>` before every Obsidian command.
+2. Read `zotlit:query-guide` and `zotlit:query-schema`. These live commands are the source of truth. Check `contractVersion` against this skill and follow the live guide if it differs. Confirm `identity.vault` and `identity.source`.
+3. Follow guide topic `schema` to save the version-pinned catalog. It contains `datasets.items`, `datasets.attachments`, `datasets.annotations`, and shared language definitions. The live answer adds custom fields and defaults; `from=` narrows it. Reuse the catalog while its URL is unchanged. Inspect relevant entries locally before guessing a field or capability.
+4. Set Target Libraries, the filter, returned fields, order, and completeness for the research task. Read the relevant guide topic: `datasets`, `filter`, `fields`, `sort`, `group`, `results`, `schema`, or `cancel`.
+5. On failure, read `diagnostic.report`, its marked location, and its recovery action before retrying. A shell exit of zero does not prove success: require `ok: true`. Read Query Warnings before treating an empty result as evidence. Correct a type mismatch or an out-of-scope key, then verify the new answer. Retry a transient failure once and report a repeated failure.
+6. Complete when `identity`, `libraries`, `request`, and `truncated` match the task and you have read the rows or exported envelope. Report the useful results, Target Libraries, and completeness.
 
-## Commands
+## Cross from works to files and marks, or back
 
-| Purpose | Command |
-| --- | --- |
-| Query items | `zotlit:query [from=items]` |
-| Query annotations | `zotlit:query from=annotations` |
-| Schema | `zotlit:query-schema [from=items|annotations]` |
-| Guide | `zotlit:query-guide [topic=<name>]` |
-| Cancel | `zotlit:query-cancel id=<id>` |
+An Item's `attachments` and `annotations`, and an Attachment's `annotations`, are Relation Lists of records. In a filter, list methods bind `value` to each record. Parents are single records reached with dotted paths. Start from the desired answer, then follow these paths in either direction.
 
-Use `zotlit:annotation-image key=<annotation-indexed-key>` to retrieve one applicable Annotation's Excerpt Image.
+Works → files: list papers with no usable PDF on this machine, including papers with no files:
 
-Use comma lists such as `fields=title,date.year` and `sort=-date,title`. JSON arrays remain accepted. `fields=[]` returns row identities only.
-
-## Libraries and identities
-
-Use the vault's Library scope by default. Use `library=all` for every Library or name Libraries with `library=personal`, `library=group:<groupID>`, or `library=personal,group:<groupID>`. A JSON array is also accepted. Discover group names and IDs from a small `library=all` result. Confirm an ambiguous Library name with the user.
-
-Keep every `indexedKey`. A bare Zotero key is unique only inside its Library; a group Indexed Key ends in `g<groupID>`. Compare source identity before joining separate calls.
-
-Select through the filter: `filter='indexedKey == "ART2FULL"'` for one Item or Annotation, or `filter='["ART2FULL","ART2FULLg118"].contains(indexedKey)'` for a list. On Annotations, use `item.indexedKey` for the parent Item and `attachment.indexedKey` for its Attachment. Combine selection with other conditions using `&&`.
-
-An Indexed Key without a suffix names My Library. A group suffix names that group. Set `library` to include the required Libraries. A key outside the Target Libraries produces a Query Warning and leaves the scope unchanged. Read its suggested `library` value before retrying. Use `key == "ART2FULL"` to match the same bare Zotero key across all Target Libraries.
-
-Read `zotlit:query-guide topic=filter` for selection details. Select the parent Item with Item Query first when the user names a work without its key.
-
-## Item Query
-
-Use Item Query for metadata, creators, tags, Collections, custom fields, dates, and Attachment presence. Resolve which date the user means before filtering when publication date, date added, or date modified would materially change the result.
-
-For a first author, project `creators` and choose the first entry whose `role` is `author`; `creators[0]` can hold another role. Questions about paper contents need Annotation Query or the source document. Questions about vault notes that cite a work use ZotLit's citation commands.
-
-Read the relevant guide topic:
-
-- `filter`: text, tags, Collection paths, creators, dates, custom fields, and missing values.
-- `schema`: the catalog download and local catalog inspection.
-- `fields`: Projection Paths and returned shapes.
-- `sort`: Sortable Fields, tie order, dates, and limits.
-- `results`: envelopes, diagnostics, and exports.
-- `cancel`: query IDs and cancellation.
-
-Use `from=attachments` to find files of a paper or broken linked files. Attachment Query reads non-trashed Attachments of top-level, non-trashed Items; `item.` reaches the parent Item. For broken linked files, use `filter='linkMode == "linked_file" && !exists'`; for one paper, use `filter='item.citationKey == "<key>"' fields=title,contentType,path`. Read `zotlit:query-schema from=attachments` for its fields and defaults.
-
-## Annotation Query
-
-Use Annotation Query for highlights, underlines, notes, image regions, ink, and text boxes. Its Filter Expression reads Annotation fields directly and parent Item fields with the `item.` prefix. For example:
-
-```text
-type == "highlight" && tags.contains("method") && item.title.contains("Review")
+```sh
+obsidian vault=Research zotlit:query from=items 'filter=attachments.filter(value.contentType == "application/pdf" && value.exists).isEmpty()' 'fields=title,attachments[].path' limit=all
 ```
 
-Read the live `fields` guide before choosing Projection Paths. Select the values needed for the research task.
+Marks → works: read highlights tagged method on papers by Rougier:
 
-Read the relevant guide topic:
+```sh
+obsidian vault=Research zotlit:query from=annotations 'filter=type == "highlight" && tags.contains("method") && item.creators.contains("Nicolas P. Rougier")' fields=text,comment,item.title,attachment.path limit=all
+```
 
-- `datasets`: dataset universes, parent paths, and defaults.
-- `filter`: Annotation predicates and `item.` fields.
-- `fields`: Projection Paths, source files, position shapes, and Excerpt Images.
-- `sort`: Sortable Fields, reading order, and limits.
-- `results`: envelopes, diagnostics, and exports.
-- `cancel`: the shared query ID namespace.
+The same rule supports `annotations.filter(value.type == "highlight").isEmpty()` on Items and `item.citationKey == "rougierTenSimpleRules2014"` on Attachments. An empty Relation List is falsy: `!attachments` means no Attachment. Nest list methods to navigate further.
 
-### Source document and position
+## Select and project
 
-Read `zotlit:query-guide topic=fields` before opening a source document or interpreting a position. Follow its file availability rules and position conventions. Confirm `attachment.exists` before reporting local availability; read the file before reporting its contents. Request source geometry when the task needs it.
+Choose Libraries with `library=personal`, `library=group:<groupID>`, a comma list, or `library=all`. Omission uses Library Scope. Keep each `indexedKey`; project `library` when the answer needs Library identity.
 
-### Excerpt Images
+Select by filter equality: `indexedKey == "ART2FULL"`, `item.indexedKey == "ART2FULLg118"`, or `attachment.indexedKey == "QANPDF22g118"`. Use `["ART2FULL","ART2FULLg118"].contains(indexedKey)` for several records. Combine selection with other conditions using `&&`. An Indexed Key without a suffix names My Library; `key == "ART2FULL"` matches that bare key in every Target Library. A key never widens scope: include its Library in `library` and check warnings.
 
-Read `zotlit:query-guide topic=fields` before retrieving an Excerpt Image. When `hasExcerptImage` is true, pass the Annotation Row's `indexedKey` to `zotlit:annotation-image` and read the file at the returned path.
+Use comma lists: `fields=title,date.year` and `sort=-date,title`. JSON arrays also work; `fields=[]` returns identities only. Quote each shell argument that contains spaces or brackets.
 
-## Completeness, exports, and cancellation
+Use explicit `[]` to cross a list in projection: `attachments[].path` or `attachments[].annotations[].text`. Positions stay aligned and missing values stay null. `attachments.path` does not cross a list. Request specific paths for details. Whole records have fixed summaries:
 
-For a sample or top-N request, set the requested limit and sort. Say it is a sample when `truncated` is true. For every match or an exact count, use `limit=all` and require `truncated: false`. For a count alone, `fields='[]'` minimizes the result; `returnedCount` is exact for a complete result.
+- Item: `indexedKey`, `title`, `citationKey`.
+- Attachment: `indexedKey`, `title`, `contentType`, `linkMode`, `path`, `exists`.
+- Annotation: `indexedKey`, `type`, `text`, `comment`, `pageLabel`, `pageIndex`.
 
-Read the query results guide before exporting or handling `result-too-large`. Use `output=<absolute-path>` with a new filename in an existing directory. Read the returned `file.path`, verify the full envelope, and report its count and completeness.
+For a first author, project `creators` and select the first entry with `role: "author"`; the first creator can be an editor. Use the schema's Sortable Fields. Relation-derived values such as `annotations.length` can be projected but cannot sort a result.
 
-For a long query, assign a unique `id`. From a second call to the same vault, run `zotlit:query-cancel id=<id>`. Check the original query's outcome because the cancel response reports only whether it found a running query.
+## Counts, files, and complete results
 
-Keep lists and Filter Expressions inside one shell argument with correct shell quoting. Follow live help and schemas for the current parameter names, capabilities, and defaults.
+Use `group=date.year` for papers by year, `from=attachments group=contentType` for files by type, and `from=annotations group=item.indexedKey` for marks per paper. Grouping uses a scalar Projection Path and returns `groups: [{ value, count, rows }]`, ordered by value with null last. `limit` applies within each group; `count` and `totalCount` describe matches before that limit. To include papers with zero marks, start from Items and project `annotations.length`.
+
+For all matches, use `limit=all` and verify `truncated: false`. For a sample, set a limit and state that it is a sample. For an ungrouped exact count, use `fields=[] limit=all` and read `returnedCount`.
+
+Read guide topic `results` before export. Use `output=<absolute-path>` with a new filename in an existing directory, then read the complete envelope at `file.path`. JSON is the query output; convert a verified export locally if the researcher needs another format.
+
+For source files, request `path` and `exists` on Attachments, or `attachment.path` and `attachment.exists` on Annotations. A web link can have no local file. Read guide topic `fields` before interpreting Annotation positions or opening files. Read the file before describing its contents. For an Excerpt Image, verify `hasExcerptImage`, call `zotlit:annotation-image key=<annotation-indexed-key>`, and read the returned file.
+
+For a long query, supply a unique `id`. Cancel from another call to the same vault with `zotlit:query-cancel id=<id>` and check the original query's outcome.

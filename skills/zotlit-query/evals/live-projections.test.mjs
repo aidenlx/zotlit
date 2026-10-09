@@ -5,8 +5,7 @@ import test from "node:test";
 import { validate } from "./check.mjs";
 import { checkAnswer } from "./run.mjs";
 
-// Saved live responses with only their run-specific absolute root replaced.
-// The requests, projections, row values, and answer object key order are intact.
+// Saved live responses and explicitly labelled, corpus-verified contract examples.
 const live = JSON.parse(
   await readFile(new URL("./live-projections.json", import.meta.url), "utf8"),
 );
@@ -31,22 +30,34 @@ for (const name of [
 
 await test("reading plan answer compares paper values, including zero, regardless of property order", () => {
   const { envelope, answer } = live.reading_plan;
-  assert.deepEqual(checkAnswer("reading_plan", answer, { envelope }), []);
+  assert.deepEqual(
+    checkAnswer("reading_plan", answer, {
+      envelope,
+      runRoot: "/evaluation-run/corpus",
+    }),
+    [],
+  );
 
   const wrongCount = structuredClone(answer);
-  wrongCount.papers.find(
-    (paper) => paper.indexedKey === "QANZERO2",
-  ).annotationCount = 1;
+  wrongCount.rows.find((paper) => paper.indexedKey === "QANZERO2").values[
+    "annotations.length"
+  ] = 1;
   assert.match(
-    checkAnswer("reading_plan", wrongCount, { envelope }).join("\n"),
-    /wrong paper counts/,
+    checkAnswer("reading_plan", wrongCount, {
+      envelope,
+      runRoot: "/evaluation-run/corpus",
+    }).join("\n"),
+    /wrong annotations.length/,
   );
 
   const duplicate = structuredClone(answer);
-  duplicate.papers[2] = { ...duplicate.papers[0] };
+  duplicate.rows[2] = { ...duplicate.rows[0] };
   assert.match(
-    checkAnswer("reading_plan", duplicate, { envelope }).join("\n"),
-    /wrong paper counts/,
+    checkAnswer("reading_plan", duplicate, {
+      envelope,
+      runRoot: "/evaluation-run/corpus",
+    }).join("\n"),
+    /duplicate identities/,
   );
 });
 

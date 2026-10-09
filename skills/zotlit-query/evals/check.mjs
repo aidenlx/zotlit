@@ -5,6 +5,8 @@ import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 
+import { checkResearch } from "./research.mjs";
+
 const oracle = JSON.parse(
   await readFile(new URL("./oracle.json", import.meta.url), "utf8"),
 );
@@ -17,10 +19,9 @@ const itemFields = {
     'custom["review.status"]',
     "abstractNote",
   ],
-  edge: ["title", "date.year", "creators"],
+  edge: ["title", "date.year", "creators", "library"],
 };
 const expandedAnnotationCases = new Set([
-  "reading_plan",
   "shared_marks",
   "attachment",
   "colors",
@@ -30,8 +31,7 @@ const expandedAnnotationCases = new Set([
   "export_annotations",
 ]);
 const expandedFields = {
-  reading_plan: ["type", "pageLabel", "text", "comment"],
-  shared_marks: ["text", "colorName"],
+  shared_marks: ["text", "colorName", "library"],
   attachment: ["type", "pageLabel", "text", "comment", "attachment.path"],
   colors: ["text", "colorName", "tags", "pageIndex"],
   reverse_pages: ["type", "pageLabel", "pageIndex", "text"],
@@ -68,24 +68,47 @@ function commonChecks(envelope, expected, { runRoot, vaultPath }) {
   };
   need(envelope?.ok === true, "query response is not successful");
   need(
+    envelope?.contractVersion === 3 && envelope?.command === "zotlit:query",
+    "wrong Query contract",
+  );
+  need(envelope?.request?.from === expected.from, "wrong Query Dataset");
+  need(Array.isArray(envelope?.warnings), "Query Warnings are missing");
+  need(
     envelope?.identity?.source?.databasePath ===
       join(runRoot, "zotero-data", "zotero.sqlite"),
     "wrong source database",
   );
   need(envelope?.identity?.vault?.path === vaultPath, "wrong evaluation vault");
-  need(envelope?.request?.limit === null, "limit must be all");
-  need(envelope?.truncated === false, "result is truncated");
-  need(
-    envelope?.returnedCount === expected.count,
-    `expected ${expected.count} returned rows`,
-  );
+  if (expected.groups) {
+    const returned = (envelope.groups ?? []).reduce(
+      (count, group) => count + (group.rows?.length ?? 0),
+      0,
+    );
+    need(envelope.returnedCount === returned, "wrong returnedCount");
+    need(
+      envelope.truncated === returned < expected.count,
+      "wrong grouped truncation",
+    );
+    const limit = envelope.request?.limit;
+    need(
+      limit === null || (Number.isInteger(limit) && limit > 0),
+      "invalid group limit",
+    );
+  } else {
+    need(envelope?.request?.limit === null, "limit must be all");
+    need(envelope?.truncated === false, "result is truncated");
+    need(
+      envelope?.returnedCount === expected.count,
+      `expected ${expected.count} returned rows`,
+    );
+  }
   return { errors, need };
 }
 
 function validateExpandedAnnotations(
   caseName,
   envelope,
-  { expected, itemEnvelope, ...context },
+  { expected, ...context },
 ) {
   const { errors, need } = commonChecks(envelope, expected, context);
   const request = envelope?.request ?? {};
@@ -162,36 +185,6 @@ function validateExpandedAnnotations(
       envelope?.libraries?.some((library) => library.groupID === 118),
       "Lab Archive was not queried",
     );
-  }
-  if (caseName === "reading_plan") {
-    if (!itemEnvelope) need(false, "Item Query evidence is missing");
-    else {
-      const itemCheck = commonChecks(
-        itemEnvelope,
-        { count: expected.items.length },
-        context,
-      );
-      errors.push(...itemCheck.errors.map((error) => `Item Query: ${error}`));
-      need(
-        itemEnvelope?.libraries?.some((library) => library.groupID === 118),
-        "Item Query omitted Lab Archive",
-      );
-      const itemRows = itemEnvelope?.rows;
-      need(Array.isArray(itemRows), "Item Query rows are missing");
-      if (Array.isArray(itemRows)) {
-        const items = new Map(itemRows.map((row) => [row.indexedKey, row]));
-        need(
-          items.size === expected.items.length &&
-            itemRows.length === expected.items.length,
-          "Item Query has wrong papers",
-        );
-        for (const item of expected.items)
-          need(
-            items.get(item.indexedKey)?.values?.title === item.title,
-            `Item Query has wrong title for ${item.indexedKey}`,
-          );
-      }
-    }
   }
   return errors;
 }
@@ -328,6 +321,12 @@ function validateItems(caseName, envelope, { expected, ...context }) {
       `wrong publication year for ${item.indexedKey}`,
     );
     if (values["date.year"] === null) missingYear++;
+    if (caseName === "edge")
+      need(
+        values.library ===
+          (item.indexedKey.endsWith("g118") ? "group:118" : "personal"),
+        `wrong Library for ${item.indexedKey}`,
+      );
     const creators = values.creators;
     need(Array.isArray(creators), `missing creators for ${item.indexedKey}`);
     if (Array.isArray(creators)) {
@@ -365,11 +364,22 @@ function validateItems(caseName, envelope, { expected, ...context }) {
 export function validate(
   caseName,
   envelope,
-  { runRoot, vaultPath = join(runRoot, "zt-fixture-vault"), itemEnvelope },
+  { runRoot, vaultPath = join(runRoot, "zt-fixture-vault") },
 ) {
-  const expected = oracle.cases[caseName];
+  const entry = oracle.cases[caseName];
+  const expected = entry && {
+    ...entry,
+    from:
+      entry.from ??
+      (Object.hasOwn(itemFields, caseName) ? "items" : "annotations"),
+  };
   if (!expected) throw new Error(`unknown case: ${caseName}`);
-  const context = { expected, runRoot, vaultPath, itemEnvelope };
+  const context = { expected, runRoot, vaultPath };
+  if (expected.kind === "research")
+    return [
+      ...commonChecks(envelope, expected, context).errors,
+      ...checkResearch(expected, envelope, runRoot),
+    ];
   return Object.hasOwn(itemFields, caseName)
     ? validateItems(caseName, envelope, context)
     : expandedAnnotationCases.has(caseName)
@@ -378,18 +388,14 @@ export function validate(
 }
 
 async function main() {
-  const [caseName, resultArg, runRootArg, itemResultArg] =
-    process.argv.slice(2);
+  const [caseName, resultArg, runRootArg] = process.argv.slice(2);
   if (!caseName || !resultArg || !runRootArg)
     throw new Error(
-      "usage: node check.mjs <case> <full-envelope.json> <absolute-run-root> [item-envelope.json]",
+      "usage: node check.mjs <case> <full-envelope.json> <absolute-run-root>",
     );
   const runRoot = resolve(runRootArg);
   const envelope = JSON.parse(await readFile(resultArg, "utf8"));
-  const itemEnvelope = itemResultArg
-    ? JSON.parse(await readFile(itemResultArg, "utf8"))
-    : undefined;
-  const errors = validate(caseName, envelope, { runRoot, itemEnvelope });
+  const errors = validate(caseName, envelope, { runRoot });
   console.log(
     JSON.stringify(
       { case: caseName, pass: errors.length === 0, errors },

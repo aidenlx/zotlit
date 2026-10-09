@@ -371,6 +371,131 @@ function seed(db) {
         },
       },
     );
+    // Five papers isolate the research questions from unrelated Fixture content.
+    const crossTag = Number(
+      db.prepare("insert into tags (name) values ('query-cross-eval')").run()
+        .lastInsertRowid,
+    );
+    const fileTag = Number(
+      db.prepare("insert into tags (name) values ('review-file')").run()
+        .lastInsertRowid,
+    );
+    const toRead = Number(
+      db.prepare("insert into tags (name) values ('to-read')").run()
+        .lastInsertRowid,
+    );
+    const collection = Number(
+      db
+        .prepare(
+          "insert into collections (collectionName, libraryID, key, version, synced) values ('Query thesis', 1, 'QCTHESIS', 0, 0)",
+        )
+        .run().lastInsertRowid,
+    );
+    const crossPapers = [
+      ["QCZERO22", "Thesis review without files", "2020"],
+      ["QCONE222", "深度学习 in clinical attention", "2021"],
+      ["QCTWO222", "Clinical attention with two editions", "2021"],
+      ["QCMISS22", "Clinical attention missing its file", null],
+      ["QCWEB222", "Thesis background reading", "2018"],
+    ];
+    const paperIDs = new Map();
+    for (const [key, name, year] of crossPapers) {
+      const id = Number(
+        addItem.run(article, stamp, stamp, stamp, 1, key).lastInsertRowid,
+      );
+      paperIDs.set(key, id);
+      put(id, title, name);
+      if (year) put(id, date, year);
+      addTag.run(id, crossTag);
+      db.prepare(
+        "insert into collectionItems (collectionID, itemID, orderIndex) values (?, ?, 0)",
+      ).run(collection, id);
+    }
+    addTag.run(paperIDs.get("QCONE222"), toRead);
+    const crossFiles = [
+      [
+        "QCPDFONE",
+        "QCONE222",
+        "Reading PDF",
+        "application/pdf",
+        0,
+        "storage:rougier-2014.pdf",
+      ],
+      ["QCURL222", "QCONE222", "Publisher link", "text/html", 3, null],
+      [
+        "QCPDFA22",
+        "QCTWO222",
+        "First edition",
+        "application/pdf",
+        0,
+        "storage:rougier-2014.pdf",
+      ],
+      [
+        "QCPDFB22",
+        "QCTWO222",
+        "Second edition",
+        "application/pdf",
+        0,
+        "storage:rougier-2014.pdf",
+      ],
+      [
+        "QCBROKEN",
+        "QCMISS22",
+        "Missing linked PDF",
+        "application/pdf",
+        2,
+        "/nonexistent/zotlit-query-eval/missing.pdf",
+      ],
+      [
+        "QCEPUB22",
+        "QCWEB222",
+        "Reading EPUB",
+        "application/epub+zip",
+        0,
+        "storage:reading.epub",
+      ],
+      [
+        "QCSNAP22",
+        "QCWEB222",
+        "Web snapshot",
+        "text/html",
+        1,
+        "storage:index.html",
+      ],
+    ];
+    const fileIDs = new Map();
+    for (const [key, parent, name, contentType, linkMode, path] of crossFiles) {
+      const id = Number(
+        addItem.run(attachmentType, stamp, stamp, stamp, 1, key)
+          .lastInsertRowid,
+      );
+      fileIDs.set(key, id);
+      put(id, title, name);
+      db.prepare(
+        "insert into itemAttachments (itemID,parentItemID,linkMode,contentType,path) values (?,?,?,?,?)",
+      ).run(id, paperIDs.get(parent), linkMode, contentType, path);
+      if (key === "QCURL222")
+        put(id, field("url"), "https://example.org/query-paper");
+      if (key === "QCPDFA22") addTag.run(id, fileTag);
+    }
+    for (const [key, file, typeID, text, comment] of [
+      ["QCMARKA2", "QCPDFA22", 1, "Identify Your Message", null],
+      ["QCMARKB2", "QCPDFB22", 1, "Identify Your Message", null],
+      ["QCNOTE22", "QCPDFONE", 2, null, "Read the methods next."],
+    ])
+      mark(
+        { libraryID: 1, pdfID: fileIDs.get(file) },
+        {
+          key,
+          typeID,
+          text,
+          comment,
+          color: "#ffd400",
+          pageLabel: "1",
+          sortIndex: "00000|002041|00170",
+          position: messagePosition,
+        },
+      );
     db.exec("commit");
   } catch (error) {
     db.exec("rollback");
@@ -456,6 +581,14 @@ async function main() {
     join(destination, "zt-fixture-vault", "attachments", "rougier-2014.pdf"),
     join(annotationPdfDir, "rougier-2014.pdf"),
   );
+  for (const key of ["QCPDFONE", "QCPDFA22", "QCPDFB22"]) {
+    const dir = join(destination, "zotero-data", "storage", key);
+    await mkdir(dir, { recursive: true });
+    await cp(
+      join(annotationPdfDir, "rougier-2014.pdf"),
+      join(dir, "rougier-2014.pdf"),
+    );
+  }
   await mkdir(join(destination, "results"));
   console.log(
     JSON.stringify(

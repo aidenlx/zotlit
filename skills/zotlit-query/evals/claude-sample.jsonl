@@ -1,0 +1,5 @@
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "toolu_01QkLW1V3jhah7EM9Mzco7uX", "name": "Bash", "input": {"command": "printf 'sample-output\\n'", "description": "Print sample output"}, "caller": {"type": "direct"}}]}}
+{"type": "user", "message": {"content": [{"tool_use_id": "toolu_01QkLW1V3jhah7EM9Mzco7uX", "type": "tool_result", "content": "sample-output", "is_error": false}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "toolu_01NLwJ7kWsXs8fZXg7bTsLPp", "name": "StructuredOutput", "input": {"answer": "done"}, "caller": {"type": "direct"}}]}}
+{"type": "user", "message": {"content": [{"tool_use_id": "toolu_01NLwJ7kWsXs8fZXg7bTsLPp", "type": "tool_result", "content": "Structured output provided successfully"}]}}
+{"type": "result", "subtype": "success", "is_error": false, "structured_output": {"answer": "done"}}

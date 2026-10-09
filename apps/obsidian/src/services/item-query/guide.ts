@@ -48,9 +48,9 @@ function listOf(names: readonly string[]): string {
   return new Intl.ListFormat("en", { type: "conjunction" }).format(names);
 }
 
-const DEFAULT_FIELD_LIST = listOf(ITEMS.defaultFields);
+const ITEM_DEFAULT_FIELD_LIST = listOf(ITEMS.defaultFields);
 /** The default sort in words, such as "dateModified descending". */
-const DEFAULT_SORT_TEXT = listOf(
+const ITEM_DEFAULT_SORT_TEXT = listOf(
   ITEMS.defaultSort.map(
     ({ field, direction }) =>
       `${field} ${direction === "desc" ? "descending" : "ascending"}`,
@@ -99,14 +99,15 @@ function filter(expression: string): string {
 const FILTER_SECTION = `FILTER EXPRESSIONS
 
 DESCRIPTION
-  filter selects the Items: an Item matches when the expression is true.
-  Omit filter to match every top-level Item that is not in the trash.
+  filter selects rows from the Query Dataset: a row matches when the
+  expression is true. Omit filter to match every row in that dataset.
   Join conditions with &&, ||, and !. Group them with parentheses.
-  Write text in double quotes. Names are case-sensitive.
+  Write text in double quotes. Names are case-sensitive. Examples in this
+  section start from Items; the Annotation examples follow at the end.
 
 FIELDS
   A bare name is a built-in field. In the downloaded schema catalog,
-  datasets.items.fields[].filter gives the type an Item filter reads. Examples:
+  datasets.<name>.fields[].filter gives the type a filter reads. Item examples:
     ${filter('itemType == "book"')}
     ${filter('title.startsWith("The")')}
   key is the Zotero Key of the Item inside its Library. Two Libraries can
@@ -128,8 +129,8 @@ FIELDS
   falsy, so !attachments and attachments.isEmpty() find papers with no file:
     ${filter("!attachments")}
   Each element has its dataset's fields. value and index refer to the element
-  and its position, counted from zero, in the current list method, also inside another
-  list method. Papers with no usable PDF on this machine:
+  and its position from 0 in the current list method. Nested methods bind
+  their own value and index. Papers with no usable PDF on this machine:
     ${filter('attachments.filter(value.contentType == "application/pdf" && value.exists).isEmpty()')}
   Papers in a Collection with no highlight yet:
     ${filter('collections.within("Shared key") && annotations.filter(value.type == "highlight").isEmpty()')}
@@ -150,8 +151,8 @@ TEXT HELPERS
   in Obsidian Bases. replace replaces every occurrence of the text pattern;
   split gives the parts as a list. toFixed(precision) writes a number as
   text with that many decimals. isTruthy() is true when a value selects
-  the Item. list(value) wraps a value that is one text on some Items and
-  a list on others, so it is a list everywhere:
+  the row. list(value) wraps a value that is one text on some rows and a
+  list on others, so it is a list everywhere:
     ${filter('title.trim().split(":")[0] == "Climate"')}
     ${filter('title.title().startsWith("The ")')}
     ${filter('number(volume).toFixed(1) == "12.0"')}
@@ -214,10 +215,10 @@ ELEMENT EXPRESSIONS
 
 DATES
   date and the other Zotero date fields are calendar dates at the precision
-  the Item gives: a year, a month, or a day. dateAdded and dateModified are
-  timestamps. accessDate is a timestamp, or a day when Zotero stores only a
-  day; another stored accessDate is null. Calendar days follow the time zone
-  of this computer.
+  the Item gives: a year, a month, or a day. The dateAdded and dateModified
+  fields of all three Query Datasets are timestamps. Item accessDate is a
+  timestamp, or a day when Zotero stores only a day; another stored accessDate
+  is null. Calendar days follow the time zone of this computer.
     ${filter("date.year >= 2020")}
     ${filter('date == date("2020")')}
     ${filter('dateAdded >= today() - duration("7 days")')}
@@ -238,8 +239,8 @@ ERRORS AND EMPTY VALUES
   query. Read warnings before you report an empty result. A warning describes
   the marked comparison, which can be part of a larger filter. Equality
   warnings require proof that the operands cannot both be null; ordering
-  different types is never true. A filter without warnings can still match no Items.
-  A value that is missing or unreadable for one Item is null for that Item.
+  different types is never true. A filter without warnings can still match no rows.
+  A value that is missing or unreadable for one row is null for that row.
   null is false in a filter, so !x is true when x is null. This selects the
   Items from 2000 on and the Items without a year:
     ${filter("!(date.year < 2000)")}
@@ -251,17 +252,20 @@ SEE ALSO
 const FIELDS_SECTION = `FIELDS AND PROJECTION PATHS
 
 DESCRIPTION
-  library is personal for My Library or group:<groupID> for a group.
-  fields is a comma list or JSON array of Projection Paths: the values each row returns.
+  The library path is personal for My Library or group:<groupID> for a group.
+  fields is a comma list or JSON array of Projection Paths: the values each
+  row returns. Examples start from Items unless they include from.
   Commas split only outside single or double quotes and [...] brackets.
   Empty elements and trailing commas are request errors.
-  Without fields, each row has ${DEFAULT_FIELD_LIST}.
+  Each Query Dataset has its own default fields. For Items, they are
+  ${ITEM_DEFAULT_FIELD_LIST}. topic=datasets lists the Attachment and Annotation
+  defaults.
   Use fields='[]' to return only the Indexed Keys.
     ${example({ fields: "[]", limit: "all" })}
 
 PATHS
   A path selects a field or a value inside it, as in a ZotLit template:
-  date.year, creators[0].fullName, tags[1].name. Each entry of
+  date.year, creators[0].fullName, tags[1]. Each entry of
   the downloaded catalog's fields with projection true is a path.
   A numeric list path shows index 0;
   any index works.
@@ -284,8 +288,9 @@ PATHS
     ${example({ fields: "title,attachments,annotations" })}
     ${example({ from: "annotations", fields: "item,attachment" })}
   A custom field is the path custom["<exact name>"]; copy it from
-  customFields[].path in the schema command's response. On annotations,
-  prefix that path with item.; datasets.annotations.customPrefix reports it.
+  customFields[].path in the schema command's response. On Attachments and
+  Annotations, prefix an Item custom path with item.; each dataset's
+  customPrefix reports the required prefix.
 
 VALUES
   Each row has every requested path. A missing value is null; an empty list
@@ -296,13 +301,16 @@ const SORT_SECTION = `SORT AND LIMIT
 
 SORT
   sort takes a comma list: -field is descending, +field or field is ascending.
-  A JSON array of {"field","direction"} objects is also accepted. The first entry orders first. A Sortable Field has sort true in
-  the downloaded catalog's fields: one value per Item, such as title, date,
-  or dateModified.
+  A JSON array of {"field","direction"} objects is also accepted. The first
+  entry orders first. A Sortable Field has sort true in the selected dataset's
+  catalog fields. Relation Lists and values derived from them are not sortable.
+  This Item example sorts by date descending, then title ascending:
     ${example({ sort: "-date,title" })}
-  The default is ${DEFAULT_SORT_TEXT}.
-  Items without a value come last in both directions. The Indexed Key orders
-  Items that tie on every entry, also Items of two Libraries.
+  Each Query Dataset has its own default sort. For Items, it is
+  ${ITEM_DEFAULT_SORT_TEXT}. topic=datasets lists the Attachment and Annotation
+  defaults.
+  Rows without a value come last in both directions. The Indexed Key orders
+  rows that tie on every entry, also rows from two Libraries.
 
 ORDER OF TEXT
   Text sorts in one alphabetical order on every computer. Digits come before
@@ -310,14 +318,14 @@ ORDER OF TEXT
   only break ties: eclair comes before Éclair, and both come before Zebra.
 
 ORDER OF DATES
-  A date sorts as its first possible day: 2020 sorts as 1 January 2020.
-  A date without a year comes last. accessDate sorts by time; a day sorts
-  from its start in the time zone of this computer.
+  An Item bibliographic date sorts as its first possible day: 2020 sorts as
+  1 January 2020. A date without a year comes last. Timestamps sort by time;
+  a day sorts from its start in the time zone of this computer.
 
 LIMIT
   limit is the most rows to return: a positive integer, or all for every
-  match. The default is ${DEFAULT_CLI_LIMIT}. truncated is true when more Items match.
-  The Items of all the Libraries of a query are sorted and limited together.
+  match. The default is ${DEFAULT_CLI_LIMIT}. truncated is true when more rows match.
+  Rows from all Target Libraries are sorted and limited together.
     ${example({ sort: "title", limit: "all" })}`;
 
 const RESULTS_SECTION = `RESULTS AND DIAGNOSTICS
@@ -328,8 +336,13 @@ ENVELOPE
   and ok. The guide prints text.
   On success, the query answer has identity (the vault and the Zotero
   source), libraries, request (the query after defaults), returnedCount,
-  truncated, warnings, and rows. Each row is {"indexedKey","values"}; values has one
-  entry for each path in request.fields.
+  truncated, warnings, and rows or groups. Each row is
+  {"indexedKey","values"}; values has one entry for each path in
+  request.fields. Attachment Rows also have itemIndexedKey. Annotation Rows
+  also have attachmentIndexedKey and itemIndexedKey.
+  A grouped response has totalCount and groups in place of rows. Each group
+  has value, count, and rows. count and totalCount are before the per-group
+  limit; returnedCount is the number of rows returned across all groups.
   warnings is an array of diagnostics, empty when there are no warnings.
   Read warnings before you report an empty result. File receipts include it too.
   libraries lists each Library the query read, My Library first and then
@@ -337,7 +350,7 @@ ENVELOPE
   {"type":"group","groupID","name"}. request.library has the same
   Libraries in the form of the library argument. request.from always names
   the effective dataset. The contract version is 3.
-  The Indexed Key of an Item in a group ends with g and the group ID.
+  An Indexed Key from a group Library ends with g and the group ID.
 
 FILE EXPORTS
   Inline responses contain at most ${INLINE_MAX_BYTES} UTF-8 bytes. For a large
@@ -345,7 +358,7 @@ FILE EXPORTS
   directory. The file contains the complete JSON envelope described above.
   The CLI returns the same metadata with file instead of rows:
   file.path is the absolute path, file.bytes is the UTF-8 byte count, and
-  file.format is json. Read that file to get the Query Rows.
+  file.format is json. Read that file to get the Query Rows or groups.
   The export becomes available when the complete file is written. An existing
   file is kept intact. Cancellation removes the unpublished file.
   Example: add output=/absolute/path/items.json to a limit=all query.
@@ -435,14 +448,16 @@ INSPECT LOCALLY
   Keep the downloaded catalog while schema.url is unchanged. Refresh the
   live response when the Zotero source or its custom fields change.`;
 
-const DATASETS_SECTION = `Query datasets
+const DATASETS_SECTION = `QUERY DATASETS
 
-  from=items (the default) reads top-level items outside the trash.
+  Choose the dataset that represents one result row. from=items (the default)
+  reads top-level Items outside the trash: start here for papers and books.
   from=attachments reads non-trashed Attachments of top-level, non-trashed
-  Items. Every Attachment has a parent Item, reached through item.
-  from=annotations reads annotations outside the trash on attachments of
-  top-level items outside the trash. Trashed attachments and standalone
-  attachments and their annotations are outside this dataset.
+  Items: start here for files and links. Every Attachment has a parent Item,
+  reached through item. from=annotations reads non-trashed Annotations on
+  non-trashed Attachments of top-level, non-trashed Items: start here for
+  highlights, notes, images, and ink. Standalone Attachments are outside the
+  three datasets.
   Items reach their files through attachments and all their marks through
   annotations. Attachments reach their marks through annotations and their
   parent Item through item. Annotations reach both parents through item and
@@ -482,17 +497,19 @@ const GROUP_SECTION = `GROUP RESULTS
   Papers per year, with each count and one example paper (limit is positive):
     ${example({ group: "date.year", limit: "1", fields: "title,date.year" })}
   Split papers by library:
-    ${example({ group: "library", library: "all", limit: "3" })}`;
+    ${example({ group: "library", library: "all", limit: "3" })}
+  Files by content type:
+    ${example({ from: "attachments", group: "contentType" })}`;
 
 /** Canonical topic registry shared by parsing, generated help, and the index. */
 export const GUIDE_TOPICS = {
   datasets: DATASETS_SECTION,
-  schema: SCHEMA_SECTION,
   filter: `${FILTER_SECTION}\n\n${ANNOTATION_GUIDE_SECTIONS.filter}`,
   fields: `${FIELDS_SECTION}\n\n${ANNOTATION_GUIDE_SECTIONS.fields}`,
   sort: `${SORT_SECTION}\n\n${ANNOTATION_GUIDE_SECTIONS.sort}`,
   group: GROUP_SECTION,
   results: RESULTS_SECTION,
+  schema: SCHEMA_SECTION,
   cancel: `${CANCEL_SECTION}\n\n${ANNOTATION_GUIDE_SECTIONS.cancel}`,
 } as const satisfies Record<string, string>;
 
@@ -521,10 +538,10 @@ SYNOPSIS
   obsidian ${QUERY_GUIDE_COMMAND} [topic=<${GUIDE_TOPIC_NAMES.join("|")}>]
 
 DEFAULTS
-  Without arguments, a query reads the Libraries that ZotLit searches (the
-  Library scope setting) as one result set and returns at most
-  ${DEFAULT_CLI_LIMIT} rows, sorted by ${DEFAULT_SORT_TEXT}.
-  Each row has ${DEFAULT_FIELD_LIST}.
+  Without arguments, from defaults to items. The query reads the Libraries
+  that ZotLit searches (the Library scope setting) as one result set and
+  returns at most ${DEFAULT_CLI_LIMIT} rows, sorted by ${ITEM_DEFAULT_SORT_TEXT}.
+  Each row has ${ITEM_DEFAULT_FIELD_LIST}.
   defaults.items.library in the schema response names their source: the
   Library scope setting. defaults.attachments and defaults.annotations describe
   the other dataset defaults.
@@ -534,7 +551,6 @@ LIBRARIES
   The group ID is the number in the group's address on zotero.org.
     ${example({ library: "personal", limit: "5" })}
   library also takes a comma list, a JSON array, or all for every Library:
-    ${example({ library: "personal", limit: "5" })}
     ${example({ library: "all", limit: "5" })}
   Name each Library once. Omit library to use the Library scope setting.
 

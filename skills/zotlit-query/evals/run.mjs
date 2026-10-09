@@ -7,7 +7,12 @@ import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { isDeepStrictEqual, parseArgs } from "node:util";
 
+import { obsidianCliSocketPath } from "@zotlit/scripts/obsidian-cli";
+
 import { validate } from "./check.mjs";
+import { measureEvents, parseEvents } from "./events.mjs";
+import { researchSchema, checkResearchAnswer } from "./research.mjs";
+export { measureEvents } from "./events.mjs";
 
 const repo = resolve(fileURLToPath(new URL("../../../", import.meta.url)));
 const cases = JSON.parse(
@@ -22,7 +27,6 @@ const prepareTool = fileURLToPath(new URL("./prepare.mjs", import.meta.url));
 const skillFile = join(repo, "skills/zotlit-query/SKILL.md");
 const catalogFile = join(repo, "packages/item-query/dist/query.schema.json");
 const itemCases = new Set(["include", "export", "edge"]);
-const mixedQueryCases = new Set(["reading_plan"]);
 const answerItem = {
   type: "object",
   additionalProperties: false,
@@ -127,20 +131,6 @@ const annotationOutputSchema = {
     },
     imagePath: { type: ["string", "null"] },
     exportPath: { type: "string" },
-    papers: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          indexedKey: { type: "string" },
-          title: { type: "string" },
-          library: { type: "string" },
-          annotationCount: { type: "integer" },
-        },
-        required: ["indexedKey", "title", "library", "annotationCount"],
-      },
-    },
     imageProvenance: { type: ["string", "null"] },
     imageFormat: { type: ["string", "null"] },
     validPng: { type: ["boolean", "null"] },
@@ -161,7 +151,6 @@ const annotationAnswerFields = {
   mixed: ["itemTitle", "tags", "hasExcerptImage"],
   position: ["position", "attachmentPath"],
   image: [],
-  reading_plan: ["itemIndexedKey", "type", "pageLabel", "text", "comment"],
   shared_marks: ["itemIndexedKey", "library", "text", "colorName"],
   attachment: [
     "itemIndexedKey",
@@ -196,7 +185,6 @@ function annotationSchema(caseName) {
   const fields = ["indexedKey", ...annotationAnswerFields[caseName]];
   const annotations = annotationOutputSchema.properties.annotations;
   const properties = { ...annotationOutputSchema.properties };
-  if (!mixedQueryCases.has(caseName)) delete properties.papers;
   if (caseName !== "export_annotations") delete properties.exportPath;
   return {
     ...annotationOutputSchema,
@@ -215,7 +203,6 @@ function annotationSchema(caseName) {
     },
     required: [
       ...annotationOutputSchema.required,
-      ...(mixedQueryCases.has(caseName) ? ["papers"] : []),
       ...(caseName === "export_annotations" ? ["exportPath"] : []),
     ],
   };
@@ -227,13 +214,14 @@ function fail(message) {
 function pause(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-function parseOptions(argv) {
+export function parseOptions(argv) {
   const usage =
-    "usage: node run.mjs <case> --model <model> --effort <low|medium|high|xhigh> [--timeout-minutes 10]";
+    "usage: node run.mjs <case|all> [--agent codex|claude] --model <model> --effort <low|medium|high|xhigh> [--timeout-minutes 10]";
   const { values, positionals } = parseArgs({
     args: argv,
     allowPositionals: true,
     options: {
+      agent: { type: "string", default: "codex" },
       model: { type: "string" },
       effort: { type: "string" },
       "timeout-minutes": { type: "string" },
@@ -244,18 +232,20 @@ function parseOptions(argv) {
   const [caseName] = positionals;
   if (
     positionals.length !== 1 ||
-    !cases[caseName] ||
+    (!cases[caseName] && caseName !== "all") ||
     !values.model ||
     !values.effort
   )
     fail(usage);
   if (!["low", "medium", "high", "xhigh"].includes(values.effort))
     fail("invalid effort");
+  if (!["codex", "claude"].includes(values.agent)) fail("invalid agent");
   const minutes = Number(values["timeout-minutes"] ?? 10);
   if (!Number.isInteger(minutes) || minutes < 1 || minutes > 30)
     fail("timeout must be 1–30 minutes");
   return {
     caseName,
+    agent: values.agent,
     model: values.model,
     effort: values.effort,
     agentTimeoutMs: minutes * 60_000,
@@ -348,90 +338,6 @@ function required(result, stage) {
   return result.stdout;
 }
 
-export function measureEvents(jsonl) {
-  let calls = 0,
-    queryAttempts = 0,
-    queryExitZero = 0,
-    itemQueryAttempts = 0,
-    itemQueryExitZero = 0,
-    annotationQueryAttempts = 0,
-    annotationQueryExitZero = 0,
-    imageAttempts = 0,
-    imageExitZero = 0,
-    queryRetries = 0,
-    contextualBytes = 0,
-    failedQuery = false;
-  const seen = new Set();
-  const forbiddenReads = [];
-  for (const line of jsonl.split("\n")) {
-    let event;
-    try {
-      event = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    const item = event.item;
-    if (event.type !== "item.completed" || item?.type !== "command_execution")
-      continue;
-    if (item.id !== undefined) {
-      if (seen.has(item.id)) continue;
-      seen.add(item.id);
-    }
-    calls++;
-    if (
-      typeof item.command === "string" &&
-      /(?:oracle\.json|skills\/zotlit-query\/evals\/)/.test(item.command)
-    )
-      forbiddenReads.push(item.command);
-    const isCli =
-      typeof item.command === "string" &&
-      item.command.includes("obsidian-cli.ts");
-    const queryKind =
-      isCli && /\bzotlit:query(?=\s|$)/.test(item.command)
-        ? /\bfrom=(?:["']?annotations["']?)(?=\s|$)/.test(item.command)
-          ? "annotation"
-          : "item"
-        : null;
-    if (queryKind) {
-      queryAttempts++;
-      if (queryKind === "item") itemQueryAttempts++;
-      else annotationQueryAttempts++;
-      if (failedQuery) queryRetries++;
-      failedQuery = item.exit_code !== 0;
-      try {
-        if (JSON.parse(item.aggregated_output).ok === false) failedQuery = true;
-      } catch {
-        /* a plain-text error is counted by its nonzero exit */
-      }
-      if (item.exit_code === 0) {
-        queryExitZero++;
-        if (queryKind === "item") itemQueryExitZero++;
-        else annotationQueryExitZero++;
-      }
-    }
-    if (isCli && /\bzotlit:annotation-image\b/.test(item.command)) {
-      imageAttempts++;
-      if (item.exit_code === 0) imageExitZero++;
-    }
-    if (typeof item.aggregated_output === "string")
-      contextualBytes += Buffer.byteLength(item.aggregated_output);
-  }
-  return {
-    calls,
-    queryAttempts,
-    queryExitZero,
-    itemQueryAttempts,
-    itemQueryExitZero,
-    annotationQueryAttempts,
-    annotationQueryExitZero,
-    imageAttempts,
-    imageExitZero,
-    queryRetries,
-    contextualBytes,
-    forbiddenReads,
-  };
-}
-
 function checkItemAnswer(caseName, answer, resultPath) {
   const errors = [];
   const expected = oracle.cases[caseName];
@@ -518,14 +424,24 @@ function checkAnnotationAnswer(
   if (
     !Array.isArray(answer.annotations) ||
     JSON.stringify(
-      ["reverse_pages", "attachment", "export_annotations"].includes(caseName)
+      [
+        "annotations",
+        "reverse_pages",
+        "attachment",
+        "export_annotations",
+      ].includes(caseName)
         ? answer.annotations.map(({ indexedKey }) => indexedKey)
         : answer.annotations
             .map(({ indexedKey }) => indexedKey)
             .sort((a, b) => a.localeCompare(b)),
     ) !==
       JSON.stringify(
-        ["reverse_pages", "attachment", "export_annotations"].includes(caseName)
+        [
+          "annotations",
+          "reverse_pages",
+          "attachment",
+          "export_annotations",
+        ].includes(caseName)
           ? expected.keys
           : [...expected.keys].sort((a, b) => a.localeCompare(b)),
       )
@@ -560,27 +476,6 @@ function checkAnnotationAnswer(
         );
     }
   }
-  if (mixedQueryCases.has(caseName)) {
-    const actual = answer.papers;
-    const papers = Array.isArray(actual)
-      ? new Map(actual.map((paper) => [paper?.indexedKey, paper]))
-      : null;
-    if (
-      !papers ||
-      actual.length !== expected.items.length ||
-      papers.size !== actual.length ||
-      expected.items.some((paper) => {
-        const candidate = papers.get(paper.indexedKey);
-        return (
-          !candidate ||
-          candidate.title !== paper.title ||
-          candidate.library !== paper.library ||
-          candidate.annotationCount !== paper.annotationCount
-        );
-      })
-    )
-      errors.push("answer has wrong paper counts, including unmarked papers");
-  }
   if (caseName === "export_annotations" && answer.exportPath !== resultPath)
     errors.push("answer has wrong retained export path");
   if (caseName === "position") {
@@ -610,6 +505,8 @@ function checkAnnotationAnswer(
 
 /** Pure final-answer check for the runner and saved-response regrades. */
 export function checkAnswer(caseName, answer, context) {
+  if (oracle.cases[caseName].kind === "research")
+    return checkResearchAnswer(oracle.cases[caseName], answer, context);
   return itemCases.has(caseName)
     ? checkItemAnswer(caseName, answer, context.resultPath)
     : checkAnnotationAnswer(caseName, answer, context);
@@ -620,6 +517,8 @@ function prompt(caseName, vaultId, agentRoot) {
   const retained = resolve(agentRoot, "..", "result.json");
   const catalog = join(agentRoot, "packages/item-query/dist/query.schema.json");
   const preamble = `Read ${join(agentRoot, "SKILL.md")} and follow it for this request. Use only the evaluation vault ID ${vaultId}. The Obsidian CLI executable for this session is: node ${cliTool}. Put vault=${vaultId} before every Obsidian command name. The matching development schema catalog is ${catalog}. Read only the copied skill, that catalog, live CLI output, and files you make for this task; do not read evaluator sources.\n\nUser request: ${cases[caseName]}\n\n`;
+  if (oracle.cases[caseName].kind === "research")
+    return `${preamble}Save the complete successful query envelope at ${result} and read it before answering. Use a single complete query when the task can be answered by following relations or grouping. Your final JSON must contain count (the total matched rows), rows (each identity and requested values; flatten grouped rows), groups (value and count, or []), limitation (null unless a requested capability is unavailable), and exportPath (null unless you produced a CSV). For a CSV task, save advisor.csv in this folder, report its retained path ${resolve(agentRoot, "..", "advisor.csv")}, and retain the query JSON as evidence. Express an unavailable fuzzy-search capability as fuzzy-search-unavailable. Use only this folder for files you create.`;
   if (itemCases.has(caseName))
     return `${preamble}Save the complete successful zotlit:query JSON envelope at ${result}. If the CLI returns a file receipt, copy the complete file envelope to this evidence path. Read the saved envelope and verify it before answering. The runner will retain this envelope at ${retained} after cleanup. In your final JSON, items must contain every Item detail the user requested (use My Library and Lab Archive as library names); use null for a missing year, author, or editor. For the export case use an empty items array and set exportPath to ${retained}; otherwise use null. Put the libraries that share a bare key in duplicateKeyGroups when the request asks about it; otherwise use an empty array. State the exact count and missing publication-year count (use null when the request does not ask for it).`;
   const imageResult = join(agentRoot, "image-result.json");
@@ -627,19 +526,22 @@ function prompt(caseName, vaultId, agentRoot) {
     caseName === "image"
       ? ` Save the successful zotlit:annotation-image JSON response at ${imageResult}, read the returned file, and verify its PNG signature. Set the four image result fields from that response and check.`
       : " Set imagePath, imageProvenance, imageFormat, and validPng to null.";
-  const itemInstruction = mixedQueryCases.has(caseName)
-    ? ` Save the complete successful zotlit:query JSON envelope at ${join(agentRoot, "item-result.json")}; use limit=all and keep rows inline. Derive papers, including zero-mark papers, from that Item result.`
-    : "";
   const queryInstruction =
     caseName === "export_annotations"
       ? ` Use zotlit:query from=annotations output=${result} to create the complete JSON export with limit=all. Save the command's JSON file receipt at ${join(agentRoot, "export-receipt.json")}. Read and verify the exported envelope. The runner will retain the file at ${retained}; report that retained path as exportPath.`
       : ` Save the complete successful zotlit:query from=annotations JSON envelope at ${result}; use limit=all and keep rows inline. Read and verify the saved envelope before answering.`;
-  return `${preamble}${itemInstruction}${queryInstruction} In your final JSON, annotations must contain every requested detail from those rows, with null for an unavailable value.${imageInstruction}`;
+  return `${preamble}${queryInstruction} In your final JSON, annotations must contain every requested detail from those rows, with null for an unavailable value.${imageInstruction}`;
 }
 
 /** The lifecycle seam accepts a fake process runner in tests; production uses spawn. */
 export async function runCase(
-  { caseName, model, effort, agentTimeoutMs = 600_000 },
+  {
+    caseName,
+    agent: agentKind = "codex",
+    model,
+    effort,
+    agentTimeoutMs = 600_000,
+  },
   { processRunner = runProcess, runId = randomUUID(), signal } = {},
 ) {
   if (!cases[caseName]) fail(`unknown case: ${caseName}`);
@@ -655,6 +557,7 @@ export async function runCase(
   await mkdir(agent);
   const report = {
     case: caseName,
+    agent: agentKind,
     runId,
     model,
     effort,
@@ -662,12 +565,12 @@ export async function runCase(
     failureKind: null,
     errors: [],
     metrics: null,
+    misreadings: [],
     cleanupRequired: [],
     files: {
       root,
       report: join(root, "report.json"),
       result: join(root, "result.json"),
-      itemResult: join(root, "item-result.json"),
       exportReceipt: join(root, "export-receipt.json"),
       image: join(root, "image.json"),
       answer: join(root, "answer.json"),
@@ -737,51 +640,124 @@ export async function runCase(
     await writeFile(
       join(agent, "answer.schema.json"),
       JSON.stringify(
-        itemCases.has(caseName) ? itemOutputSchema : annotationSchema(caseName),
+        oracle.cases[caseName].kind === "research"
+          ? researchSchema(oracle.cases[caseName])
+          : itemCases.has(caseName)
+            ? itemOutputSchema
+            : annotationSchema(caseName),
         null,
         2,
       ),
     );
     const answerPath = join(agent, "answer.json");
-    const run = await processRunner(
-      "codex",
-      [
-        "exec",
-        "--json",
-        "--ephemeral",
-        "--skip-git-repo-check",
-        "--sandbox",
-        "workspace-write",
-        "--cd",
-        agent,
-        "--model",
-        model,
-        "-c",
-        `model_reasoning_effort=${effort}`,
-        "--output-schema",
-        join(agent, "answer.schema.json"),
-        "--output-last-message",
-        answerPath,
-        "-",
-      ],
-      {
-        cwd: agent,
-        input: prompt(caseName, vaultId, agent),
-        timeoutMs: agentTimeoutMs,
-        signal,
-      },
+    const schema = JSON.parse(
+      await readFile(join(agent, "answer.schema.json"), "utf8"),
     );
+    const gitPointer = await readFile(join(repo, ".git"), "utf8").catch(
+      () => null,
+    );
+    const gitDir = gitPointer?.startsWith("gitdir: ")
+      ? resolve(repo, gitPointer.trim().slice(8))
+      : join(repo, ".git");
+    const commonDir = await readFile(join(gitDir, "commondir"), "utf8").catch(
+      () => ".",
+    );
+    const args =
+      agentKind === "codex"
+        ? [
+            "exec",
+            "--json",
+            "--ephemeral",
+            "--skip-git-repo-check",
+            "--sandbox",
+            "workspace-write",
+            "--cd",
+            agent,
+            "--model",
+            model,
+            "-c",
+            `model_reasoning_effort=${effort}`,
+            "--output-schema",
+            join(agent, "answer.schema.json"),
+            "--output-last-message",
+            answerPath,
+            "-",
+          ]
+        : [
+            "-p",
+            "--model",
+            model,
+            "--effort",
+            effort,
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            "--json-schema",
+            JSON.stringify(schema),
+            "--no-session-persistence",
+            "--safe-mode",
+            "--restricted",
+            "--strict-mcp-config",
+            "--tools",
+            "Bash,Read,Write,Edit",
+            "--allowedTools",
+            "Bash,Read,Write,Edit",
+            "--permission-mode",
+            "dontAsk",
+            "--settings",
+            JSON.stringify({
+              sandbox: {
+                enabled: true,
+                failIfUnavailable: true,
+                autoAllowBashIfSandboxed: true,
+                allowUnsandboxedCommands: false,
+                filesystem: {
+                  allowWrite: [agent],
+                  denyWrite: [gitDir, resolve(gitDir, commonDir.trim())],
+                },
+                network: { allowUnixSockets: [obsidianCliSocketPath()] },
+              },
+            }),
+          ];
+    const run = await processRunner(agentKind, args, {
+      cwd: agent,
+      input: prompt(caseName, vaultId, agent),
+      timeoutMs: agentTimeoutMs,
+      signal,
+    });
     await writeFile(join(root, "agent-events.jsonl"), run.stdout);
     await writeFile(join(root, "agent-stderr.txt"), run.stderr);
-    report.metrics = measureEvents(run.stdout);
+    report.metrics = measureEvents(run.stdout, agentKind);
+    report.misreadings = report.metrics.misreadings;
     report.metrics.agentExitCode = run.code;
     report.metrics.agentTimedOut = run.timedOut;
     report.metrics.agentAborted = run.aborted ?? false;
     if (run.timedOut || run.aborted || run.code !== 0) {
       report.failureKind = "environment";
       fail(
-        `agent execution ${run.timedOut ? "timed out" : run.aborted ? "interrupted" : `exited ${run.code}`}`,
+        `agent execution ${run.timedOut ? "timed out" : run.aborted ? "interrupted" : `exited ${run.code}`}: ${run.stderr.slice(-2000)}`,
       );
+    }
+    const sandboxFailure = report.misreadings.find((entry) =>
+      entry.output?.includes(
+        "sandbox-exec: sandbox_apply: Operation not permitted",
+      ),
+    );
+    if (sandboxFailure && report.metrics.queryExitZero === 0) {
+      report.failureKind = "environment";
+      fail(
+        "The parent sandbox prevented the agent's Bash sandbox from starting: sandbox-exec: sandbox_apply: Operation not permitted",
+      );
+    }
+    if (agentKind === "claude") {
+      const final = parseEvents(run.stdout).findLast(
+        (event) => event.type === "result",
+      );
+      if (final?.is_error || !final?.structured_output)
+        fail(
+          `Claude returned no structured answer: ${final?.subtype ?? "missing result"}`,
+        );
+      await writeFile(answerPath, JSON.stringify(final.structured_output));
     }
     const answer = JSON.parse(await readFile(answerPath, "utf8"));
     report.answer = answer;
@@ -802,13 +778,6 @@ export async function runCase(
         receipt.file?.bytes !== bytes
       )
         exportErrors.push("wrong Annotation Query export receipt");
-    }
-    let itemEnvelope;
-    if (mixedQueryCases.has(caseName)) {
-      await cp(join(agent, "item-result.json"), report.files.itemResult);
-      itemEnvelope = JSON.parse(
-        await readFile(report.files.itemResult, "utf8"),
-      );
     }
     let imageReceipt = null;
     const imageErrors = [];
@@ -838,13 +807,13 @@ export async function runCase(
     report.errors = validate(caseName, envelope, {
       runRoot: corpus,
       vaultPath: vault,
-      itemEnvelope,
     });
     report.errors.push(...exportErrors);
     report.errors.push(...imageErrors);
     report.errors.push(
       ...checkAnswer(caseName, answer, {
         resultPath: report.files.result,
+        runRoot: corpus,
         envelope,
         imageReceipt,
       }),
@@ -853,18 +822,40 @@ export async function runCase(
       report.errors.push(
         "agent made no completed Item Query call with exit code zero",
       );
-    if (!itemCases.has(caseName) && report.metrics.annotationQueryExitZero < 1)
+    if (
+      !itemCases.has(caseName) &&
+      oracle.cases[caseName].kind !== "research" &&
+      report.metrics.annotationQueryExitZero < 1
+    )
       report.errors.push(
         "agent made no completed Annotation Query call with exit code zero",
-      );
-    if (mixedQueryCases.has(caseName) && report.metrics.itemQueryExitZero < 1)
-      report.errors.push(
-        "agent made no completed Item Query call with exit code zero",
       );
     if (caseName === "image" && report.metrics.imageExitZero < 1)
       report.errors.push(
         "agent made no completed Annotation Image call with exit code zero",
       );
+    if (
+      oracle.cases[caseName].kind === "research" &&
+      report.metrics.queryExitZero < 1
+    )
+      report.errors.push("agent made no completed Query call");
+    if (caseName === "csv_for_advisor") {
+      const csv = await readFile(join(agent, "advisor.csv"), "utf8");
+      await writeFile(join(root, "advisor.csv"), csv);
+      const parsed = parseCsv(csv);
+      const expected = oracle.cases[caseName].rows.map((row) => [
+        row.values.title,
+        String(row.values["date.year"] ?? ""),
+      ]);
+      if (
+        parsed.length !== expected.length + 1 ||
+        expected.some(
+          (row) =>
+            !parsed.slice(1).some((found) => isDeepStrictEqual(found, row)),
+        )
+      )
+        report.errors.push("CSV has wrong titles, years, or row count");
+    }
     if (report.metrics.forbiddenReads.length)
       report.errors.push("agent read evaluator sources");
     report.state = report.errors.length ? "failed" : "passed";
@@ -906,6 +897,7 @@ export async function runCase(
         2,
       )}\n`,
     );
+    await writeFile(join(root, "report.md"), renderReport(report));
     await writeFile(
       report.files.report,
       `${JSON.stringify(report, null, 2)}\n`,
@@ -914,11 +906,102 @@ export async function runCase(
   return report;
 }
 
+export function parseCsv(text) {
+  const rows = [];
+  let row = [],
+    value = "",
+    quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (char === '"') {
+      if (quoted && text[i + 1] === '"') {
+        value += '"';
+        i++;
+      } else quoted = !quoted;
+    } else if (char === "," && !quoted) {
+      row.push(value);
+      value = "";
+    } else if (char === "\n" && !quoted) {
+      row.push(value.replace(/\r$/, ""));
+      rows.push(row);
+      row = [];
+      value = "";
+    } else value += char;
+  }
+  if (quoted) throw new Error("CSV has an unclosed quoted value");
+  if (value || row.length) {
+    row.push(value);
+    rows.push(row);
+  }
+  return rows;
+}
+
+export function renderReport(report) {
+  return `# ${report.case}: ${report.state}\n\nAgent: ${report.agent}; model: ${report.model}; effort: ${report.effort}\n\n${report.errors.join("\n")}\n\n## Misreadings\n\n${
+    (report.misreadings ?? [])
+      .map(
+        (entry) =>
+          `- Command: \`${entry.command}\`\n  Diagnostic / warnings: \`${JSON.stringify(entry.diagnostic ?? entry.warnings)}\`\n  Output: ${entry.output ?? "See structured report"}\n  Retried: ${entry.retry}; recovered: ${entry.recovered}\n`,
+      )
+      .join("\n") || "None observed.\n"
+  }`;
+}
+
+export async function runBatch(
+  options,
+  { caseRunner = runCase, signal, runId = randomUUID() } = {},
+) {
+  const root = join(repo, ".scratch", "zotlit-query-evals", runId);
+  await mkdir(root, { recursive: true });
+  const reports = [];
+  const summary = {
+    agent: options.agent ?? "codex",
+    model: options.model,
+    effort: options.effort,
+    state: "running",
+    cases: [],
+    failures: { environment: 0, agent: 0, task: 0 },
+    files: { report: join(root, "summary.json") },
+  };
+  for (const caseName of Object.keys(cases)) {
+    if (signal?.aborted) break;
+    const report = await caseRunner({ ...options, caseName }, { signal });
+    reports.push(report);
+    summary.cases.push({
+      case: caseName,
+      state: report.state,
+      failureKind: report.failureKind,
+      errors: report.errors,
+      metrics: report.metrics,
+      misreadings: report.misreadings ?? [],
+      report: report.files.report,
+    });
+    if (report.failureKind) summary.failures[report.failureKind]++;
+    await writeFile(summary.files.report, JSON.stringify(summary, null, 2));
+  }
+  summary.state =
+    reports.length === Object.keys(cases).length &&
+    reports.every((r) => r.state === "passed")
+      ? "passed"
+      : "failed";
+  await writeFile(summary.files.report, JSON.stringify(summary, null, 2));
+  await writeFile(
+    join(root, "summary.md"),
+    `# ${summary.agent}: ${summary.model}\n\nEffort: ${summary.effort}. State: ${summary.state}.\n\nFailures: ${JSON.stringify(summary.failures)}\n\n| Case | Result | Failure kind | Query / schema / guide / image calls | Context bytes |\n| --- | --- | --- | --- | --- |\n${summary.cases
+      .map(
+        (r) =>
+          `| ${r.case} | ${r.state} | ${r.failureKind ?? ""} | ${[r.metrics?.queryAttempts, r.metrics?.schemaAttempts, r.metrics?.guideAttempts, r.metrics?.imageAttempts].join(" / ")} | ${r.metrics?.contextualBytes ?? 0} |`,
+      )
+      .join("\n")}\n\n${reports.map(renderReport).join("\n")}`,
+  );
+  return summary;
+}
+
 async function main() {
   const options = parseOptions(process.argv.slice(2));
   if (!options) {
     console.log(
-      "usage: node run.mjs <case> --model <model> --effort <low|medium|high|xhigh> [--timeout-minutes 10]",
+      "usage: node run.mjs <case|all> [--agent codex|claude] --model <model> --effort <low|medium|high|xhigh> [--timeout-minutes 10]",
     );
     return;
   }
@@ -932,7 +1015,10 @@ async function main() {
   process.on("SIGTERM", onInterrupt);
   let report;
   try {
-    report = await runCase(options, { signal: controller.signal });
+    report =
+      options.caseName === "all"
+        ? await runBatch(options, { signal: controller.signal })
+        : await runCase(options, { signal: controller.signal });
   } finally {
     process.removeListener("SIGINT", onInterrupt);
     process.removeListener("SIGTERM", onInterrupt);

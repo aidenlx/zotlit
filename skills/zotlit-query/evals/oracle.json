@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 3,
   "corpus": {
     "articles": 125,
     "books": 3
@@ -345,7 +345,15 @@
           "firstAuthor": "Ada Author123",
           "firstCreator": "Eve Editor123"
         }
-      ]
+      ],
+      "request": {
+        "from": "items",
+        "library": "all",
+        "filter": "itemType == \"journalArticle\" && tags.contains(\"query-eval\") && custom[\"review.status\"] == \"include\"",
+        "fields": "title,date.year,creators",
+        "limit": "all"
+      },
+      "command": "zotlit:query 'from=items' 'library=all' 'filter=itemType == \"journalArticle\" && tags.contains(\"query-eval\") && custom[\"review.status\"] == \"include\"' 'fields=title,date.year,creators' 'limit=all'"
     },
     "export": {
       "count": 125,
@@ -1351,7 +1359,16 @@
           "firstAuthor": "Ada Author124",
           "firstCreator": "Eve Editor124"
         }
-      ]
+      ],
+      "request": {
+        "from": "items",
+        "library": "all",
+        "filter": "itemType == \"journalArticle\" && tags.contains(\"query-eval\")",
+        "fields": "title,date.year,creators,custom[\"review.status\"],abstractNote",
+        "limit": "all",
+        "output": "/absolute/new-export.json"
+      },
+      "command": "zotlit:query 'from=items' 'library=all' 'filter=itemType == \"journalArticle\" && tags.contains(\"query-eval\")' 'fields=title,date.year,creators,custom[\"review.status\"],abstractNote' 'limit=all' 'output=/absolute/new-export.json'"
     },
     "edge": {
       "count": 3,
@@ -1378,7 +1395,15 @@
           "firstAuthor": null,
           "firstCreator": "Eve Handbook Editor"
         }
-      ]
+      ],
+      "request": {
+        "from": "items",
+        "library": "all",
+        "filter": "itemType == \"book\" && tags.contains(\"query-eval-edge\")",
+        "fields": "title,date.year,creators,library",
+        "limit": "all"
+      },
+      "command": "zotlit:query 'from=items' 'library=all' 'filter=itemType == \"book\" && tags.contains(\"query-eval-edge\")' 'fields=title,date.year,creators,library' 'limit=all'"
     },
     "annotations": {
       "count": 8,
@@ -1444,7 +1469,16 @@
           "text": null,
           "comment": null
         }
-      }
+      },
+      "request": {
+        "from": "annotations",
+        "library": "personal",
+        "filter": "item.citationKey == \"rougierTenSimpleRules2014\"",
+        "fields": "type,pageLabel,text,comment,attachment.path",
+        "limit": "all",
+        "sort": "attachment.indexedKey,sortIndex"
+      },
+      "command": "zotlit:query 'from=annotations' 'library=personal' 'filter=item.citationKey == \"rougierTenSimpleRules2014\"' 'fields=type,pageLabel,text,comment,attachment.path' 'limit=all' 'sort=attachment.indexedKey,sortIndex'"
     },
     "mixed": {
       "count": 1,
@@ -1452,7 +1486,15 @@
       "itemTitle": "Ten Simple Rules for Better Figures",
       "type": "image",
       "tags": ["figure"],
-      "hasExcerptImage": true
+      "hasExcerptImage": true,
+      "request": {
+        "from": "annotations",
+        "library": "personal",
+        "filter": "type == \"image\" && tags.contains(\"figure\") && item.citationKey == \"rougierTenSimpleRules2014\"",
+        "fields": "item.title,tags,hasExcerptImage",
+        "limit": "all"
+      },
+      "command": "zotlit:query 'from=annotations' 'library=personal' 'filter=type == \"image\" && tags.contains(\"figure\") && item.citationKey == \"rougierTenSimpleRules2014\"' 'fields=item.title,tags,hasExcerptImage' 'limit=all'"
     },
     "position": {
       "count": 1,
@@ -1463,7 +1505,15 @@
         "kind": "pdf-rects",
         "pageIndex": 0,
         "rects": [[265.833, 611.202, 374.503, 620.019]]
-      }
+      },
+      "request": {
+        "from": "annotations",
+        "library": "personal",
+        "filter": "text.contains(\"Identify Your Message\") && item.citationKey == \"rougierTenSimpleRules2014\"",
+        "fields": "text,position,attachment.path",
+        "limit": "all"
+      },
+      "command": "zotlit:query 'from=annotations' 'library=personal' 'filter=text.contains(\"Identify Your Message\") && item.citationKey == \"rougierTenSimpleRules2014\"' 'fields=text,position,attachment.path' 'limit=all'"
     },
     "image": {
       "count": 1,
@@ -1473,59 +1523,674 @@
       "tags": ["figure"],
       "hasExcerptImage": true,
       "format": "png",
-      "provenance": ["zotero", "rendered"]
+      "provenance": ["zotero", "rendered"],
+      "request": {
+        "from": "annotations",
+        "library": "personal",
+        "filter": "type == \"image\" && tags.contains(\"figure\") && item.citationKey == \"rougierTenSimpleRules2014\"",
+        "fields": "hasExcerptImage",
+        "limit": "all"
+      },
+      "command": "zotlit:query 'from=annotations' 'library=personal' 'filter=type == \"image\" && tags.contains(\"figure\") && item.citationKey == \"rougierTenSimpleRules2014\"' 'fields=hasExcerptImage' 'limit=all'"
     },
     "reading_plan": {
-      "count": 4,
-      "keys": ["QANMARK2", "QANPAGE2", "QANMARK2g118", "QANNOTE2g118"],
-      "items": [
+      "kind": "research",
+      "from": "items",
+      "count": 3,
+      "fields": ["title", "library", "annotations.length", "annotations"],
+      "request": {
+        "from": "items",
+        "library": "all",
+        "filter": "itemType == \"journalArticle\" && tags.contains(\"query-annotation-eval\")",
+        "fields": "title,library,annotations.length,annotations",
+        "limit": "all"
+      },
+      "rows": [
         {
           "indexedKey": "QANPAPER",
-          "title": "Figure design reading copy",
-          "annotationCount": 2,
-          "library": "My Library"
+          "values": {
+            "title": "Figure design reading copy",
+            "library": "personal",
+            "annotations.length": 2,
+            "annotations": [
+              {
+                "indexedKey": "QANMARK2",
+                "type": "highlight",
+                "text": "Identify Your Message",
+                "comment": null,
+                "pageLabel": "1",
+                "pageIndex": 0
+              },
+              {
+                "indexedKey": "QANPAGE2",
+                "type": "image",
+                "text": null,
+                "comment": null,
+                "pageLabel": "2",
+                "pageIndex": 1
+              }
+            ]
+          }
         },
         {
           "indexedKey": "QANZERO2",
-          "title": "Figure design reading plan",
-          "annotationCount": 0,
-          "library": "My Library"
+          "values": {
+            "title": "Figure design reading plan",
+            "library": "personal",
+            "annotations.length": 0,
+            "annotations": []
+          }
         },
         {
           "indexedKey": "QANPAPERg118",
-          "title": "Figure design reading copy",
-          "annotationCount": 2,
-          "library": "Lab Archive"
+          "values": {
+            "title": "Figure design reading copy",
+            "library": "group:118",
+            "annotations.length": 2,
+            "annotations": [
+              {
+                "indexedKey": "QANMARK2g118",
+                "type": "highlight",
+                "text": "Identify Your Message",
+                "comment": null,
+                "pageLabel": "1",
+                "pageIndex": 0
+              },
+              {
+                "indexedKey": "QANNOTE2g118",
+                "type": "note",
+                "text": null,
+                "comment": "Compare the chart with the methods section.",
+                "pageLabel": "1",
+                "pageIndex": 0
+              }
+            ]
+          }
         }
-      ]
+      ],
+      "command": "zotlit:query 'from=items' 'library=all' 'filter=itemType == \"journalArticle\" && tags.contains(\"query-annotation-eval\")' 'fields=title,library,annotations.length,annotations' 'limit=all'"
     },
     "shared_marks": {
       "count": 2,
-      "keys": ["QANMARK2", "QANMARK2g118"]
+      "keys": ["QANMARK2", "QANMARK2g118"],
+      "request": {
+        "from": "annotations",
+        "library": "personal,group:118",
+        "filter": "type == \"highlight\" && text == \"Identify Your Message\" && item.title == \"Figure design reading copy\"",
+        "fields": "text,colorName,library",
+        "limit": "all"
+      },
+      "command": "zotlit:query 'from=annotations' 'library=personal,group:118' 'filter=type == \"highlight\" && text == \"Identify Your Message\" && item.title == \"Figure design reading copy\"' 'fields=text,colorName,library' 'limit=all'"
     },
     "attachment": {
       "count": 2,
-      "keys": ["QANMARK2g118", "QANNOTE2g118"]
+      "keys": ["QANMARK2g118", "QANNOTE2g118"],
+      "request": {
+        "from": "annotations",
+        "library": "group:118",
+        "filter": "attachment.indexedKey == \"QANPDF22g118\"",
+        "fields": "type,pageLabel,text,comment,attachment.path",
+        "limit": "all",
+        "sort": "attachment.indexedKey,sortIndex"
+      },
+      "command": "zotlit:query 'from=annotations' 'library=group:118' 'filter=attachment.indexedKey == \"QANPDF22g118\"' 'fields=type,pageLabel,text,comment,attachment.path' 'limit=all' 'sort=attachment.indexedKey,sortIndex'"
     },
     "colors": {
       "count": 1,
-      "keys": ["QANMARK2"]
+      "keys": ["QANMARK2"],
+      "request": {
+        "from": "annotations",
+        "library": "personal",
+        "filter": "item.indexedKey == \"QANPAPER\" && type == \"highlight\" && colorName == \"blue\" && tags.contains(\"query-annotation-method\") && pageLabel == \"1\"",
+        "fields": "text,colorName,tags,pageIndex",
+        "limit": "all"
+      },
+      "command": "zotlit:query 'from=annotations' 'library=personal' 'filter=item.indexedKey == \"QANPAPER\" && type == \"highlight\" && colorName == \"blue\" && tags.contains(\"query-annotation-method\") && pageLabel == \"1\"' 'fields=text,colorName,tags,pageIndex' 'limit=all'"
     },
     "reverse_pages": {
       "count": 2,
-      "keys": ["QANPAGE2", "QANMARK2"]
+      "keys": ["QANPAGE2", "QANMARK2"],
+      "request": {
+        "from": "annotations",
+        "library": "personal",
+        "filter": "item.indexedKey == \"QANPAPER\"",
+        "fields": "type,pageLabel,pageIndex,text",
+        "limit": "all",
+        "sort": "-pageIndex,-sortIndex"
+      },
+      "command": "zotlit:query 'from=annotations' 'library=personal' 'filter=item.indexedKey == \"QANPAPER\"' 'fields=type,pageLabel,pageIndex,text' 'limit=all' 'sort=-pageIndex,-sortIndex'"
     },
     "missing_source": {
       "count": 1,
-      "keys": ["QANMISS2"]
+      "keys": ["QANMISS2"],
+      "request": {
+        "from": "annotations",
+        "library": "personal",
+        "filter": "comment == \"Check this source when the file arrives.\"",
+        "fields": "comment,attachment.path,attachment.exists",
+        "limit": "all"
+      },
+      "command": "zotlit:query 'from=annotations' 'library=personal' 'filter=comment == \"Check this source when the file arrives.\"' 'fields=comment,attachment.path,attachment.exists' 'limit=all'"
     },
     "repair_filter": {
       "count": 2,
-      "keys": ["QANMARK2", "QANMARK2g118"]
+      "keys": ["QANMARK2", "QANMARK2g118"],
+      "request": {
+        "from": "annotations",
+        "library": "personal,group:118",
+        "filter": "tags.contains(\"query-annotation-method\")",
+        "fields": "text,colorName",
+        "limit": "all"
+      },
+      "command": "zotlit:query 'from=annotations' 'library=personal,group:118' 'filter=tags.contains(\"query-annotation-method\")' 'fields=text,colorName' 'limit=all'"
     },
     "export_annotations": {
       "count": 2,
-      "keys": ["QANMARK2g118", "QANNOTE2g118"]
+      "keys": ["QANMARK2g118", "QANNOTE2g118"],
+      "request": {
+        "from": "annotations",
+        "library": "group:118",
+        "filter": "attachment.indexedKey == \"QANPDF22g118\"",
+        "fields": "type,pageLabel,text,comment,attachment.path",
+        "limit": "all",
+        "sort": "attachment.indexedKey,sortIndex",
+        "output": "/absolute/new-export.json"
+      },
+      "command": "zotlit:query 'from=annotations' 'library=group:118' 'filter=attachment.indexedKey == \"QANPDF22g118\"' 'fields=type,pageLabel,text,comment,attachment.path' 'limit=all' 'sort=attachment.indexedKey,sortIndex' 'output=/absolute/new-export.json'"
+    },
+    "no_usable_pdf": {
+      "kind": "research",
+      "from": "items",
+      "count": 3,
+      "fields": ["title", "attachments[].path"],
+      "request": {
+        "from": "items",
+        "library": "personal",
+        "filter": "collections.within(\"Query thesis\") && attachments.filter(value.contentType == \"application/pdf\" && value.exists).isEmpty()",
+        "fields": "title,attachments[].path",
+        "limit": "all"
+      },
+      "rows": [
+        {
+          "indexedKey": "QCZERO22",
+          "values": {
+            "title": "Thesis review without files",
+            "attachments[].path": []
+          }
+        },
+        {
+          "indexedKey": "QCMISS22",
+          "values": {
+            "title": "Clinical attention missing its file",
+            "attachments[].path": ["/nonexistent/zotlit-query-eval/missing.pdf"]
+          }
+        },
+        {
+          "indexedKey": "QCWEB222",
+          "values": {
+            "title": "Thesis background reading",
+            "attachments[].path": [
+              "$RUN/zotero-data/storage/QCEPUB22/reading.epub",
+              "$RUN/zotero-data/storage/QCSNAP22/index.html"
+            ]
+          }
+        }
+      ],
+      "command": "zotlit:query 'from=items' 'library=personal' 'filter=collections.within(\"Query thesis\") && attachments.filter(value.contentType == \"application/pdf\" && value.exists).isEmpty()' 'fields=title,attachments[].path' 'limit=all'"
+    },
+    "broken_links": {
+      "kind": "research",
+      "from": "attachments",
+      "count": 1,
+      "fields": ["title", "path", "item.title"],
+      "request": {
+        "from": "attachments",
+        "library": "personal",
+        "filter": "item.collections.within(\"Query thesis\") && linkMode == \"linked_file\" && !exists",
+        "fields": "title,path,item.title",
+        "limit": "all"
+      },
+      "rows": [
+        {
+          "indexedKey": "QCBROKEN",
+          "values": {
+            "title": "Missing linked PDF",
+            "path": "/nonexistent/zotlit-query-eval/missing.pdf",
+            "item.title": "Clinical attention missing its file"
+          }
+        }
+      ],
+      "command": "zotlit:query 'from=attachments' 'library=personal' 'filter=item.collections.within(\"Query thesis\") && linkMode == \"linked_file\" && !exists' 'fields=title,path,item.title' 'limit=all'"
+    },
+    "duplicate_pdfs": {
+      "kind": "research",
+      "from": "items",
+      "count": 1,
+      "fields": ["title", "attachments[].title", "attachments[].tags"],
+      "request": {
+        "from": "items",
+        "library": "personal",
+        "filter": "collections.within(\"Query thesis\") && attachments.filter(value.contentType == \"application/pdf\").length > 1",
+        "fields": "title,attachments[].title,attachments[].tags",
+        "limit": "all"
+      },
+      "rows": [
+        {
+          "indexedKey": "QCTWO222",
+          "values": {
+            "title": "Clinical attention with two editions",
+            "attachments[].title": ["First edition", "Second edition"],
+            "attachments[].tags": [["review-file"], []]
+          }
+        }
+      ],
+      "command": "zotlit:query 'from=items' 'library=personal' 'filter=collections.within(\"Query thesis\") && attachments.filter(value.contentType == \"application/pdf\").length > 1' 'fields=title,attachments[].title,attachments[].tags' 'limit=all'"
+    },
+    "recently_annotated": {
+      "kind": "research",
+      "from": "items",
+      "count": 2,
+      "fields": ["title", "annotations.length"],
+      "request": {
+        "from": "items",
+        "library": "personal",
+        "filter": "collections.within(\"Query thesis\") && annotations.filter(value.dateModified >= date(\"2024-01-01\") && value.dateModified < date(\"2024-05-01\")).length > 0",
+        "fields": "title,annotations.length",
+        "limit": "all"
+      },
+      "rows": [
+        {
+          "indexedKey": "QCONE222",
+          "values": {
+            "title": "深度学习 in clinical attention",
+            "annotations.length": 1
+          }
+        },
+        {
+          "indexedKey": "QCTWO222",
+          "values": {
+            "title": "Clinical attention with two editions",
+            "annotations.length": 2
+          }
+        }
+      ],
+      "command": "zotlit:query 'from=items' 'library=personal' 'filter=collections.within(\"Query thesis\") && annotations.filter(value.dateModified >= date(\"2024-01-01\") && value.dateModified < date(\"2024-05-01\")).length > 0' 'fields=title,annotations.length' 'limit=all'"
+    },
+    "count_per_paper": {
+      "kind": "research",
+      "from": "annotations",
+      "count": 3,
+      "fields": ["item.title"],
+      "request": {
+        "from": "annotations",
+        "library": "personal",
+        "filter": "item.collections.within(\"Query thesis\")",
+        "fields": "item.title",
+        "limit": "all",
+        "group": "item.indexedKey"
+      },
+      "group": "item.indexedKey",
+      "groups": [
+        {
+          "value": "QCONE222",
+          "count": 1,
+          "rows": [
+            {
+              "indexedKey": "QCNOTE22",
+              "values": {
+                "item.title": "深度学习 in clinical attention"
+              }
+            }
+          ]
+        },
+        {
+          "value": "QCTWO222",
+          "count": 2,
+          "rows": [
+            {
+              "indexedKey": "QCMARKA2",
+              "values": {
+                "item.title": "Clinical attention with two editions"
+              }
+            },
+            {
+              "indexedKey": "QCMARKB2",
+              "values": {
+                "item.title": "Clinical attention with two editions"
+              }
+            }
+          ]
+        }
+      ],
+      "command": "zotlit:query 'from=annotations' 'library=personal' 'filter=item.collections.within(\"Query thesis\")' 'fields=item.title' 'limit=all' 'group=item.indexedKey'"
+    },
+    "count_by_year": {
+      "kind": "research",
+      "from": "items",
+      "count": 5,
+      "fields": [],
+      "request": {
+        "from": "items",
+        "library": "personal",
+        "filter": "collections.within(\"Query thesis\")",
+        "fields": "[]",
+        "limit": "all",
+        "group": "date.year"
+      },
+      "group": "date.year",
+      "groups": [
+        {
+          "value": 2018,
+          "count": 1,
+          "rows": [
+            {
+              "indexedKey": "QCWEB222",
+              "values": {}
+            }
+          ]
+        },
+        {
+          "value": 2020,
+          "count": 1,
+          "rows": [
+            {
+              "indexedKey": "QCZERO22",
+              "values": {}
+            }
+          ]
+        },
+        {
+          "value": 2021,
+          "count": 2,
+          "rows": [
+            {
+              "indexedKey": "QCONE222",
+              "values": {}
+            },
+            {
+              "indexedKey": "QCTWO222",
+              "values": {}
+            }
+          ]
+        },
+        {
+          "value": null,
+          "count": 1,
+          "rows": [
+            {
+              "indexedKey": "QCMISS22",
+              "values": {}
+            }
+          ]
+        }
+      ],
+      "command": "zotlit:query 'from=items' 'library=personal' 'filter=collections.within(\"Query thesis\")' 'fields=[]' 'limit=all' 'group=date.year'"
+    },
+    "unread_in_collection": {
+      "kind": "research",
+      "from": "items",
+      "count": 4,
+      "fields": ["title"],
+      "request": {
+        "from": "items",
+        "library": "personal",
+        "filter": "collections.within(\"Query thesis\") && annotations.filter(value.type == \"highlight\").isEmpty()",
+        "fields": "title",
+        "limit": "all"
+      },
+      "rows": [
+        {
+          "indexedKey": "QCZERO22",
+          "values": {
+            "title": "Thesis review without files"
+          }
+        },
+        {
+          "indexedKey": "QCONE222",
+          "values": {
+            "title": "深度学习 in clinical attention"
+          }
+        },
+        {
+          "indexedKey": "QCMISS22",
+          "values": {
+            "title": "Clinical attention missing its file"
+          }
+        },
+        {
+          "indexedKey": "QCWEB222",
+          "values": {
+            "title": "Thesis background reading"
+          }
+        }
+      ],
+      "command": "zotlit:query 'from=items' 'library=personal' 'filter=collections.within(\"Query thesis\") && annotations.filter(value.type == \"highlight\").isEmpty()' 'fields=title' 'limit=all'"
+    },
+    "attachment_types": {
+      "kind": "research",
+      "from": "attachments",
+      "count": 7,
+      "fields": [],
+      "request": {
+        "from": "attachments",
+        "library": "personal",
+        "filter": "item.collections.within(\"Query thesis\")",
+        "fields": "[]",
+        "limit": "all",
+        "group": "contentType"
+      },
+      "group": "contentType",
+      "groups": [
+        {
+          "value": "application/epub+zip",
+          "count": 1,
+          "rows": [
+            {
+              "indexedKey": "QCEPUB22",
+              "values": {}
+            }
+          ]
+        },
+        {
+          "value": "application/pdf",
+          "count": 4,
+          "rows": [
+            {
+              "indexedKey": "QCBROKEN",
+              "values": {}
+            },
+            {
+              "indexedKey": "QCPDFONE",
+              "values": {}
+            },
+            {
+              "indexedKey": "QCPDFA22",
+              "values": {}
+            },
+            {
+              "indexedKey": "QCPDFB22",
+              "values": {}
+            }
+          ]
+        },
+        {
+          "value": "text/html",
+          "count": 2,
+          "rows": [
+            {
+              "indexedKey": "QCSNAP22",
+              "values": {}
+            },
+            {
+              "indexedKey": "QCURL222",
+              "values": {}
+            }
+          ]
+        }
+      ],
+      "command": "zotlit:query 'from=attachments' 'library=personal' 'filter=item.collections.within(\"Query thesis\")' 'fields=[]' 'limit=all' 'group=contentType'"
+    },
+    "fuzzy_search": {
+      "kind": "research",
+      "from": "items",
+      "count": 2,
+      "fields": ["title"],
+      "request": {
+        "from": "items",
+        "library": "personal",
+        "filter": "collections.within(\"Query thesis\") && title.lower().contains(\"attention\") && title.lower().contains(\"clinical\") && attachments.filter(value.contentType == \"application/pdf\" && value.exists).length > 0",
+        "fields": "title",
+        "limit": "all"
+      },
+      "limitation": "fuzzy-search-unavailable",
+      "rows": [
+        {
+          "indexedKey": "QCONE222",
+          "values": {
+            "title": "深度学习 in clinical attention"
+          }
+        },
+        {
+          "indexedKey": "QCTWO222",
+          "values": {
+            "title": "Clinical attention with two editions"
+          }
+        }
+      ],
+      "command": "zotlit:query 'from=items' 'library=personal' 'filter=collections.within(\"Query thesis\") && title.lower().contains(\"attention\") && title.lower().contains(\"clinical\") && attachments.filter(value.contentType == \"application/pdf\" && value.exists).length > 0' 'fields=title' 'limit=all'"
+    },
+    "files_of_paper": {
+      "kind": "research",
+      "from": "attachments",
+      "count": 2,
+      "fields": ["title", "contentType", "path", "exists", "tags"],
+      "request": {
+        "from": "attachments",
+        "library": "personal",
+        "filter": "item.title == \"深度学习 in clinical attention\"",
+        "fields": "title,contentType,path,exists,tags",
+        "limit": "all"
+      },
+      "rows": [
+        {
+          "indexedKey": "QCPDFONE",
+          "values": {
+            "title": "Reading PDF",
+            "contentType": "application/pdf",
+            "path": "$RUN/zotero-data/storage/QCPDFONE/rougier-2014.pdf",
+            "exists": true,
+            "tags": []
+          }
+        },
+        {
+          "indexedKey": "QCURL222",
+          "values": {
+            "title": "Publisher link",
+            "contentType": "text/html",
+            "path": null,
+            "exists": false,
+            "tags": []
+          }
+        }
+      ],
+      "command": "zotlit:query 'from=attachments' 'library=personal' 'filter=item.title == \"深度学习 in clinical attention\"' 'fields=title,contentType,path,exists,tags' 'limit=all'"
+    },
+    "csv_for_advisor": {
+      "kind": "research",
+      "from": "items",
+      "count": 5,
+      "fields": ["title", "date.year"],
+      "request": {
+        "from": "items",
+        "library": "personal",
+        "filter": "collections.within(\"Query thesis\")",
+        "fields": "title,date.year",
+        "limit": "all"
+      },
+      "rows": [
+        {
+          "indexedKey": "QCZERO22",
+          "values": {
+            "title": "Thesis review without files",
+            "date.year": 2020
+          }
+        },
+        {
+          "indexedKey": "QCONE222",
+          "values": {
+            "title": "深度学习 in clinical attention",
+            "date.year": 2021
+          }
+        },
+        {
+          "indexedKey": "QCTWO222",
+          "values": {
+            "title": "Clinical attention with two editions",
+            "date.year": 2021
+          }
+        },
+        {
+          "indexedKey": "QCMISS22",
+          "values": {
+            "title": "Clinical attention missing its file",
+            "date.year": null
+          }
+        },
+        {
+          "indexedKey": "QCWEB222",
+          "values": {
+            "title": "Thesis background reading",
+            "date.year": 2018
+          }
+        }
+      ],
+      "command": "zotlit:query 'from=items' 'library=personal' 'filter=collections.within(\"Query thesis\")' 'fields=title,date.year' 'limit=all'",
+      "csv": true
+    },
+    "recent_with_pdf_unread": {
+      "kind": "research",
+      "from": "items",
+      "count": 1,
+      "fields": ["title", "date.year"],
+      "request": {
+        "from": "items",
+        "library": "personal",
+        "filter": "collections.within(\"Query thesis\") && date.year >= 2019 && !attachments.isEmpty() && !tags.contains(\"to-read\")",
+        "fields": "title,date.year",
+        "limit": "all"
+      },
+      "rows": [
+        {
+          "indexedKey": "QCTWO222",
+          "values": {
+            "title": "Clinical attention with two editions",
+            "date.year": 2021
+          }
+        }
+      ],
+      "command": "zotlit:query 'from=items' 'library=personal' 'filter=collections.within(\"Query thesis\") && date.year >= 2019 && !attachments.isEmpty() && !tags.contains(\"to-read\")' 'fields=title,date.year' 'limit=all'"
+    },
+    "chinese_title": {
+      "kind": "research",
+      "from": "items",
+      "count": 1,
+      "fields": ["title"],
+      "request": {
+        "from": "items",
+        "library": "personal",
+        "filter": "collections.within(\"Query thesis\") && title.contains(\"深度学习\")",
+        "fields": "title",
+        "limit": "all"
+      },
+      "rows": [
+        {
+          "indexedKey": "QCONE222",
+          "values": {
+            "title": "深度学习 in clinical attention"
+          }
+        }
+      ],
+      "command": "zotlit:query 'from=items' 'library=personal' 'filter=collections.within(\"Query thesis\") && title.contains(\"深度学习\")' 'fields=title' 'limit=all'"
     }
   },
   "annotationRows": {
@@ -1541,7 +2206,8 @@
       "tags": ["query-annotation-method"],
       "pageIndex": 0,
       "sourceSuffix": "storage/QANPDF22/rougier-2014.pdf",
-      "sourceExists": true
+      "sourceExists": true,
+      "library": "personal"
     },
     "QANPAGE2": {
       "key": "QANPAGE2",
@@ -1555,7 +2221,8 @@
       "tags": [],
       "pageIndex": 1,
       "sourceSuffix": "storage/QANPDF22/rougier-2014.pdf",
-      "sourceExists": true
+      "sourceExists": true,
+      "library": "personal"
     },
     "QANMARK2g118": {
       "key": "QANMARK2g118",
@@ -1569,7 +2236,8 @@
       "tags": ["query-annotation-method"],
       "pageIndex": 0,
       "sourceSuffix": "storage/QANPDF22/rougier-2014.pdf",
-      "sourceExists": true
+      "sourceExists": true,
+      "library": "group:118"
     },
     "QANNOTE2g118": {
       "key": "QANNOTE2g118",
@@ -1583,7 +2251,8 @@
       "tags": [],
       "pageIndex": 0,
       "sourceSuffix": "storage/QANPDF22/rougier-2014.pdf",
-      "sourceExists": true
+      "sourceExists": true,
+      "library": "group:118"
     },
     "QANMISS2": {
       "key": "QANMISS2",
@@ -1597,7 +2266,8 @@
       "tags": [],
       "pageIndex": 1,
       "sourceSuffix": "deliberately-missing.pdf",
-      "sourceExists": false
+      "sourceExists": false,
+      "library": "personal"
     }
   }
 }
