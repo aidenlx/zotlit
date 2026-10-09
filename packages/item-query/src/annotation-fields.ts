@@ -11,6 +11,7 @@ import type {
   HydratedAnnotation,
 } from "@zotlit/db/item-query";
 
+import type { AnnotationNeeds } from "./annotation-hydration";
 import {
   annotationPageIndex,
   ANNOTATION_POSITION_SHAPE,
@@ -19,12 +20,18 @@ import {
 import { compareStrings } from "./collation";
 import type { SortableField } from "./dataset";
 import { fieldDefinition, filterField, customFilterValue } from "./fields";
-import type { FieldDefinition, QueryItem, ValueShape } from "./fields";
+import type {
+  FieldDefinition as ItemFieldDefinition,
+  QueryItem,
+  ValueShape,
+} from "./fields";
 import { timestamp } from "./filter-dates";
 import { planFilter } from "./filter-plan";
 import type { FilterRegistry } from "./filter-plan";
 import type { FilterValue } from "./filter-values";
 import type { ProjectionValue } from "./request";
+
+type FieldDefinition = ItemFieldDefinition<QueryAnnotation, AnnotationNeeds>;
 
 export interface QueryAnnotation {
   readonly scan: AnnotationScanRow;
@@ -53,12 +60,14 @@ export const DEFAULT_ANNOTATION_FIELDS = [
 const string: ValueShape = { kind: "scalar", type: "string" };
 const number: ValueShape = { kind: "scalar", type: "number" };
 const boolean: ValueShape = { kind: "scalar", type: "boolean" };
+const DETAILS: AnnotationNeeds = { details: true };
 const field = (
   shape: ValueShape,
+  needs: AnnotationNeeds,
   read: (item: QueryAnnotation) => ProjectionValue,
-): FieldDefinition<QueryAnnotation> => ({
+): FieldDefinition => ({
   shape,
-  needs: () => ({}),
+  needs: () => needs,
   read,
   ...(shape.kind === "scalar" || shape.kind === "list"
     ? {
@@ -70,36 +79,67 @@ const field = (
     : {}),
 });
 
-export const ANNOTATION_FIELDS = new Map<
-  string,
-  FieldDefinition<QueryAnnotation>
->([
+/** What a path below `attachment` loads. */
+const ATTACHMENT_NEEDS = new Map<string, AnnotationNeeds>([
+  ["indexedKey", {}],
+  ["title", { attachmentTitle: true }],
+  ["contentType", DETAILS],
+  ["linkMode", DETAILS],
+  ["path", { file: true }],
+  ["exists", { file: true }],
+]);
+const WHOLE_ATTACHMENT_NEEDS: AnnotationNeeds = {
+  details: true,
+  attachmentTitle: true,
+  file: true,
+};
+
+export const ANNOTATION_FIELDS = new Map<string, FieldDefinition>([
   [
     "position",
-    field(
-      ANNOTATION_POSITION_SHAPE,
-      (item) => readAnnotationPosition(item.annotation) as ProjectionValue,
+    field(ANNOTATION_POSITION_SHAPE, DETAILS, ({ annotation: { details } }) =>
+      details ? (readAnnotationPosition(details) as ProjectionValue) : null,
     ),
   ],
-  ["type", field(string, (item) => annotationTypeToName(item.annotation.type))],
+  [
+    "type",
+    field(string, DETAILS, ({ annotation: { details } }) =>
+      details ? annotationTypeToName(details.type) : null,
+    ),
+  ],
   ...(["text", "comment", "color", "pageLabel", "authorName"] as const).map(
-    (name) => [name, field(string, (item) => item.annotation[name])] as const,
+    (name) =>
+      [
+        name,
+        field(
+          string,
+          DETAILS,
+          (item) => item.annotation.details?.[name] ?? null,
+        ),
+      ] as const,
   ),
   [
     "colorName",
-    field(string, (item) => annotationColorToName(item.annotation.color)),
-  ],
-  ["pageIndex", field(number, (item) => annotationPageIndex(item.annotation))],
-  [
-    "tags",
-    field({ kind: "list", element: string }, (item) =>
-      item.annotation.tags.toSorted(compareStrings),
+    field(string, DETAILS, ({ annotation: { details } }) =>
+      details ? annotationColorToName(details.color) : null,
     ),
   ],
-  ["sortIndex", field(string, (item) => item.scan.sortIndex)],
+  [
+    "pageIndex",
+    field(number, DETAILS, ({ annotation: { details } }) =>
+      details ? annotationPageIndex(details) : null,
+    ),
+  ],
+  [
+    "tags",
+    field({ kind: "list", element: string }, { tags: true }, (item) =>
+      (item.annotation.tags ?? []).toSorted(compareStrings),
+    ),
+  ],
+  ["sortIndex", field(string, {}, (item) => item.scan.sortIndex)],
   [
     "dateAdded",
-    field(string, (item) =>
+    field(string, {}, (item) =>
       item.scan.dateAdded === null
         ? null
         : Temporal.Instant.fromEpochMilliseconds(item.scan.dateAdded),
@@ -107,7 +147,7 @@ export const ANNOTATION_FIELDS = new Map<
   ],
   [
     "dateModified",
-    field(string, (item) =>
+    field(string, {}, (item) =>
       item.scan.dateModified === null
         ? null
         : Temporal.Instant.fromEpochMilliseconds(item.scan.dateModified),
@@ -115,12 +155,14 @@ export const ANNOTATION_FIELDS = new Map<
   ],
   [
     "hasExcerptImage",
-    field(boolean, (item) => annotationHasCacheImage(item.annotation.type)),
+    field(boolean, DETAILS, ({ annotation: { details } }) =>
+      details ? annotationHasCacheImage(details.type) : null,
+    ),
   ],
   [
     "attachment",
-    field(
-      {
+    {
+      shape: {
         kind: "object",
         keys: {
           indexedKey: string,
@@ -131,25 +173,31 @@ export const ANNOTATION_FIELDS = new Map<
           exists: boolean,
         },
       },
-      (item) => ({
-        indexedKey: formatIndexedKey(item.scan.attachmentKey, item.groupID),
-        title: item.annotation.attachment.title,
-        contentType: item.annotation.attachment.contentType,
-        linkMode:
-          item.annotation.attachment.linkMode === null
-            ? null
-            : linkModeToName(item.annotation.attachment.linkMode),
-        ...item.file,
-      }),
-    ),
+      needs: ([key]) =>
+        (typeof key === "string" && ATTACHMENT_NEEDS.get(key)) ||
+        WHOLE_ATTACHMENT_NEEDS,
+      read: ({ scan, annotation, groupID, file }) => {
+        const attachment = annotation.details?.attachment;
+        return {
+          indexedKey: formatIndexedKey(scan.attachmentKey, groupID),
+          title: annotation.attachmentTitle ?? null,
+          contentType: attachment?.contentType ?? null,
+          linkMode:
+            attachment?.linkMode == null
+              ? null
+              : linkModeToName(attachment.linkMode),
+          ...file,
+        };
+      },
+    },
   ],
 ]);
 
 export function annotationFieldDefinition(
   name: string,
-): FieldDefinition<QueryAnnotation> | undefined {
+): FieldDefinition | undefined {
   if (name === "item.indexedKey")
-    return field(string, (item) =>
+    return field(string, {}, (item) =>
       formatIndexedKey(item.scan.parent.key, item.groupID),
     );
   if (name === "item")
@@ -158,7 +206,7 @@ export function annotationFieldDefinition(
         kind: "object",
         keys: { indexedKey: string, title: string, citationKey: string },
       },
-      needs: () => ({ builtIn: ["title", "citationKey"] }),
+      needs: () => ({ item: { builtIn: ["title", "citationKey"] } }),
       read: (item) => ({
         indexedKey: formatIndexedKey(item.scan.parent.key, item.groupID),
         title: fieldDefinition("title")!.read(item.parent),
@@ -170,6 +218,7 @@ export function annotationFieldDefinition(
   return parent
     ? {
         ...parent,
+        needs: (rest) => ({ item: parent.needs(rest) }),
         read: (item) => parent.read(item.parent),
         sortKey: parent.sortKey
           ? (item, clock) => parent.sortKey!(item.parent, clock)
@@ -210,7 +259,10 @@ for (const name of ["type", "color", "pageIndex", "sortIndex"]) {
  * The Sortable Fields of Annotation Query. `attachment.indexedKey` orders by
  * the Attachment's Indexed Key within its Library.
  */
-const ANNOTATION_SORTABLE = new Map<string, SortableField<QueryAnnotation>>([
+const ANNOTATION_SORTABLE = new Map<
+  string,
+  SortableField<QueryAnnotation, AnnotationNeeds>
+>([
   ...[
     "dateAdded",
     "dateModified",
@@ -240,11 +292,14 @@ export const ANNOTATION_SORT_FIELDS: readonly string[] = [
 
 export function annotationSortableField(
   name: string,
-): SortableField<QueryAnnotation> | undefined {
+): SortableField<QueryAnnotation, AnnotationNeeds> | undefined {
   return ANNOTATION_SORTABLE.get(name);
 }
 
-export const annotationFilterRegistry: FilterRegistry<QueryAnnotation> = {
+export const annotationFilterRegistry: FilterRegistry<
+  QueryAnnotation,
+  AnnotationNeeds
+> = {
   prefix: "item",
   equalityField: (name, value) =>
     name === "color" && annotationColorsForName(value).length
@@ -256,6 +311,7 @@ export const annotationFilterRegistry: FilterRegistry<QueryAnnotation> = {
       return parent?.filterable
         ? {
             ...parent,
+            needs: { item: parent.needs },
             value: {
               ...parent.value,
               read: (item) => parent.value.read(item.parent),
@@ -278,6 +334,7 @@ export const annotationFilterRegistry: FilterRegistry<QueryAnnotation> = {
     const parent = customFilterValue(name);
     return {
       ...parent,
+      needs: { item: parent.needs },
       value: {
         ...parent.value,
         read: (item) => parent.value.read(item.parent),

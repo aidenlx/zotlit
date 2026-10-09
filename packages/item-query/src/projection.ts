@@ -11,13 +11,13 @@ import type { PathSegment } from "./projection-path";
 import type { ProjectionValue } from "./request";
 
 /** A validated Projection Path. */
-export interface PlannedPath<Item = QueryItem> {
+export interface PlannedPath<Item = QueryItem, Needs = FieldNeeds> {
   /** The path as the caller wrote it: the key of the value in a Query Row. */
   readonly text: string;
-  readonly field: FieldDefinition<Item>;
+  readonly field: FieldDefinition<Item, Needs>;
   /** The segments after the field name. */
   readonly rest: readonly PathSegment[];
-  readonly needs: FieldNeeds;
+  readonly needs: Needs;
   /** The custom field the path names, checked against the source later. */
   readonly customField: string | null;
 }
@@ -28,11 +28,11 @@ export type PathProblem = Extract<
 >;
 
 /** The field that the leading segments of a path name, and the segments after it. */
-export type PathResolver<Item = QueryItem> = (
+export type PathResolver<Item = QueryItem, Needs = FieldNeeds> = (
   segments: readonly PathSegment[],
 ) =>
   | {
-      readonly field: FieldDefinition<Item>;
+      readonly field: FieldDefinition<Item, Needs>;
       readonly rest: readonly PathSegment[];
     }
   | undefined;
@@ -44,10 +44,10 @@ export const resolveItemPath: PathResolver = ([root, ...rest]) => {
 };
 
 /** Check a Projection Path against the field registry of its dataset. */
-export function planPath<Item = QueryItem>(
+export function planPath<Item = QueryItem, Needs = FieldNeeds>(
   text: string,
-  resolve: PathResolver<Item>,
-): PlannedPath<Item> | PathProblem {
+  resolve: PathResolver<Item, Needs>,
+): PlannedPath<Item, Needs> | PathProblem {
   const parsed = parseProjectionPath(text);
   if (!parsed.ok) {
     return {
@@ -110,7 +110,7 @@ function step(shape: ValueShape, segment: PathSegment): ValueShape | null {
  * null; array access does not vectorize.
  */
 export function readPath<Item>(
-  path: PlannedPath<Item>,
+  path: PlannedPath<Item, unknown>,
   item: Item,
 ): ProjectionValue {
   let value = path.field.read(item);

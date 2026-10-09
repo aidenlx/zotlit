@@ -1,6 +1,6 @@
 import { parseAnnotationPosition } from "@zotlit/db";
 import type { AnnotationPosition, AnnotationPositionRaw } from "@zotlit/db";
-import type { HydratedAnnotation } from "@zotlit/db/item-query";
+import type { AnnotationDetails } from "@zotlit/db/item-query";
 
 import type { ValueShape } from "./fields";
 
@@ -74,7 +74,7 @@ export const ANNOTATION_POSITION_SHAPE: ValueShape = {
 
 /** Parse at the query boundary, preserving an unreadable stored position. */
 export function readAnnotationPosition(
-  annotation: HydratedAnnotation,
+  annotation: AnnotationDetails,
 ): AnnotationPosition {
   let raw: unknown;
   try {
@@ -91,7 +91,7 @@ export function readAnnotationPosition(
 }
 
 export function annotationPageIndex(
-  annotation: HydratedAnnotation,
+  annotation: AnnotationDetails,
 ): number | null {
   const position = readAnnotationPosition(annotation);
   switch (position.kind) {
