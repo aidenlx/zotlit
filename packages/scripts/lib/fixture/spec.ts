@@ -1364,7 +1364,11 @@ interface FixtureAttachmentBase {
   /** Bare Zotero key for the Attachment row. */
   key: string;
   parentItemID: number;
-  contentType: "application/pdf" | "image/png" | "text/html";
+  contentType:
+    | "application/epub+zip"
+    | "application/pdf"
+    | "image/png"
+    | "text/html";
   title: string;
   /** Committed source to copy; `null` makes a URL row or deliberate miss. */
   sourceAsset: FixtureAsset | null;
@@ -1465,6 +1469,19 @@ export const ATTACHMENTS: readonly FixtureAttachment[] = [
     url: "https://www.storybookscanada.ca/stories/en/0315/",
     sourceAsset: "sakimas-song/sakimas-song.html",
     dateModified: "2025-02-19 12:00:00",
+  },
+  {
+    itemID: 30,
+    libraryID: 1,
+    key: "EPUBS222",
+    parentItemID: 20,
+    linkMode: "linked_url",
+    contentType: "application/epub+zip",
+    title: "Sakima's Song EPUB",
+    path: null,
+    url: "https://example.invalid/sakimas-song.epub",
+    sourceAsset: null,
+    dateModified: "2025-02-18 18:00:00",
   },
   {
     itemID: 23,
@@ -1652,6 +1669,15 @@ type FixturePdfInkPosition = {
   width: number;
   paths: readonly (readonly number[])[];
 };
+type FixtureEpubCfiPosition = {
+  type: "FragmentSelector";
+  value: string;
+};
+type FixtureSnapshotPosition = {
+  type: "CssSelector";
+  value: string;
+  refinedBy?: { start: number; end: number };
+};
 
 export type FixtureAnnotation = FixtureAnnotationBase &
   (
@@ -1675,6 +1701,11 @@ export type FixtureAnnotation = FixtureAnnotationBase &
     | {
         type: 6;
         position: FixturePdfTextPosition;
+        cacheImageAsset: null;
+      }
+    | {
+        type: 1;
+        position: FixtureEpubCfiPosition | FixtureSnapshotPosition;
         cacheImageAsset: null;
       }
   );
@@ -1965,6 +1996,45 @@ export const DEMO_ANNOTATIONS: readonly FixtureAnnotation[] = [
 
 /** Reviewed anchors for the committed Fixture documents. */
 export const ANNOTATIONS: readonly FixtureAnnotation[] = [
+  {
+    itemID: 31,
+    libraryID: 1,
+    key: "EPUBAN22",
+    parentItemID: 30,
+    type: 1,
+    text: "Sakima lived with his parents and his four year old sister.",
+    comment: null,
+    color: "#ffd400",
+    pageLabel: "Chapter 1",
+    sortIndex: "00000|000001|00000",
+    position: {
+      type: "FragmentSelector",
+      value: "epubcfi(/6/2!/4/2/2,:0,:66)",
+    },
+    cacheImageAsset: null,
+    dateAdded: "2025-02-15 12:00:00",
+    dateModified: "2025-02-15 12:00:00",
+  },
+  {
+    itemID: 32,
+    libraryID: 1,
+    key: "SNAPAN22",
+    parentItemID: 22,
+    type: 1,
+    text: "Sakima lived with his parents and his four year old sister.",
+    comment: null,
+    color: "#ffd400",
+    pageLabel: "Sakima's Song",
+    sortIndex: "00000|000002|00000",
+    position: {
+      type: "CssSelector",
+      value: "main p:nth-of-type(1)",
+      refinedBy: { start: 0, end: 66 },
+    },
+    cacheImageAsset: null,
+    dateAdded: "2025-02-15 12:00:00",
+    dateModified: "2025-02-15 12:00:00",
+  },
   {
     itemID: 26,
     libraryID: 1,

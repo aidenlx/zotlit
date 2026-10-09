@@ -98,6 +98,7 @@ const annotationKeys = attachmentAnnotations.map(({ key }) => key);
 /** The Annotation Copy citation copies, and the Item it cites. */
 const copiedAnnotation = ANNOTATIONS.find(({ key }) => key === "FDRFQ7C2")!;
 const annotationItem = ITEMS.find(({ key }) => key === "RUGIER24")!;
+const positionDocumentItem = ITEMS.find(({ key }) => key === "SAKIMA22")!;
 /** The tag vocabulary those Annotations carry, which is what the tag Chooser lists. */
 const attachmentTags = [
   ...new Set(
@@ -108,7 +109,7 @@ const attachmentTags = [
 ].sort();
 const annotationKeysByPage = Map.groupBy(
   attachmentAnnotations,
-  ({ position }) => position.pageIndex,
+  ({ position }) => ("pageIndex" in position ? position.pageIndex : -1),
 );
 
 async function availableLoopbackPort(): Promise<number> {
@@ -2984,6 +2985,25 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         code: "wrong-argument-type",
         location: { argument: "filter", span: { from: 22, to: 23 } },
       },
+    });
+
+    const positions = JSON.parse(
+      await cliCommand(queryVaultId, "zotlit:annotation-query", {
+        args: {
+          item: JSON.stringify([annotationItem.key, positionDocumentItem.key]),
+          fields: '["position"]',
+          limit: "all",
+        },
+      }),
+    ) as ItemQueryReport;
+    expect(positions).toMatchObject({ ok: true, truncated: false });
+    const byKey = Object.fromEntries(
+      positions.rows!.map((row) => [row.indexedKey, row.values.position]),
+    );
+    expect(byKey).toMatchObject({
+      HIGHLGHT: { kind: "pdf-rects" },
+      EPUBAN22: { kind: "epub-cfi" },
+      SNAPAN22: { kind: "snapshot-css" },
     });
   });
 

@@ -58,7 +58,7 @@ export const ANNOTATION_POSITION_SHAPES = {
   },
   unknown: {
     kind: "object",
-    keys: { kind: STRING, raw: { kind: "object", keys: {} } },
+    keys: { kind: STRING, raw: { kind: "json" } },
   },
 } as const satisfies Readonly<Record<AnnotationPosition["kind"], ValueShape>>;
 

@@ -28,7 +28,13 @@ import { DEFAULT_SORT } from "./request";
 import type { SortSpec } from "./request";
 
 /** The JSON type of a value in a Query Row. Every value can also be null. */
-export type JsonType = "string" | "number" | "boolean" | "object" | "array";
+export type JsonType =
+  | "string"
+  | "number"
+  | "boolean"
+  | "object"
+  | "array"
+  | "any";
 
 /** A non-null type of the Filter Expression language. */
 export type FilterType = Exclude<FilterValueType, "null">;
@@ -221,6 +227,7 @@ export function pathsBelow(
   ];
   switch (shape.kind) {
     case "scalar":
+    case "json":
     case "custom-fields":
       // The custom fields are listed with the source in `customFields`.
       return [];
@@ -237,6 +244,8 @@ export function jsonType(shape: ValueShape): JsonType {
   switch (shape.kind) {
     case "scalar":
       return shape.type;
+    case "json":
+      return "any";
     case "object":
     case "custom-fields":
       return "object";

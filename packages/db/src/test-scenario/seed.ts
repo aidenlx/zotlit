@@ -549,6 +549,7 @@ const ANNOTATION_ITEMS = {
       color: "#ffd400",
       pageLabel: "iv",
       sortIndex: "00000|000004|00000",
+      position: '{"pageIndex":0,"width":2,"paths":[[0,0,1,1]]}',
     },
   },
   textAnnotation: {
@@ -566,6 +567,8 @@ const ANNOTATION_ITEMS = {
       color: "#ffd400",
       pageLabel: "iv",
       sortIndex: "00000|000006|00000",
+      position:
+        '{"pageIndex":0,"rects":[[0,0,1,1]],"fontSize":12,"rotation":0}',
     },
   },
   linkedHighlight: {
