@@ -122,13 +122,20 @@ export function createTrace(sampleHeap: boolean): Trace {
             resources.clear();
           }),
         ),
+        // A scheduler pause ends the slice too. In the Obsidian worker the
+        // resume is a Chromium MessageChannel task, which async_hooks does not
+        // report, so the resume starts the next slice unless a host callback
+        // started it already.
         Effect.provideService(ItemQuerySliceObserver, {
           paused: (at) => {
             trace.paused.push(performance.timeOrigin + at);
             sample();
+            endWork();
+            currentSlice = undefined;
           },
           resumed: (at) => {
             trace.resumed.push(performance.timeOrigin + at);
+            if (!currentSlice) startSlice();
           },
         }),
         Effect.provideService(ItemQueryStatementObserver, (run) => {

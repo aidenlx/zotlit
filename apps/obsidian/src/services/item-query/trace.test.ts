@@ -115,6 +115,31 @@ describe("Item Query execution slices", () => {
     expect(reportOf(trace).slices.filter((ms) => ms > 0)).toEqual([9, 9]);
   });
 
+  // In the Obsidian worker the pause is a Chromium MessageChannel task, which
+  // async_hooks does not report: the resume is no Node host callback there.
+  it("ends a slice at a scheduler pause that async_hooks does not report", async () => {
+    using time = clock();
+    const trace = createTrace(false);
+    await Effect.runPromise(
+      trace.instrument(
+        Effect.gen(function* () {
+          for (let i = 0; i < 6; i++) yield* Effect.sync(() => time.work(3));
+        }),
+      ),
+      {
+        scheduler: new ItemQueryScheduler({
+          pause: (resume) => {
+            queueMicrotask(resume);
+            return () => {};
+          },
+        }),
+      },
+    );
+    const report = reportOf(trace);
+    expect(report.pauses).toBe(2);
+    expect(report.slices.filter((ms) => ms > 0)).toEqual([9, 9]);
+  });
+
   it("ends a cancelled wait without counting the wait as synchronous work", async () => {
     using time = clock();
     const trace = createTrace(false);
