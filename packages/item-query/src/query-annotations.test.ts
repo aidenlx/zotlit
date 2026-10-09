@@ -58,6 +58,47 @@ it("returns the reading record of one Item, with three identities and default fi
     },
   });
   expect(exit.value.rows[1]?.values.pageIndex).toBeNull();
+  for (const row of exit.value.rows)
+    expect(row.values).not.toHaveProperty("position");
+});
+
+it("projects each PDF position kind and preserves an unknown stored position", async () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  const { exit } = await runEffect(
+    queryAnnotations({
+      libraries: [SCENARIO_LIBRARIES.personal],
+      attachment: ["PDF2LIVE", "PDF2LINK"],
+      fields: ["position"],
+      limit: null,
+    }),
+    { client: scenario.db },
+  );
+  if (exit._tag === "Failure") throw new Error(String(exit.cause));
+  const positions = Object.fromEntries(
+    exit.value.rows.map((row) => [row.indexedKey, row.values.position]),
+  );
+
+  expect(positions).toMatchObject({
+    ANN2IMAG: {
+      kind: "pdf-rects",
+      pageIndex: 0,
+      rects: [[0, 0, 1, 1]],
+    },
+    ANN2INK2: {
+      kind: "pdf-ink",
+      pageIndex: 0,
+      width: 2,
+      paths: [[0, 0, 1, 1]],
+    },
+    ANN2TEXT: {
+      kind: "pdf-text",
+      pageIndex: 0,
+      rects: [[0, 0, 1, 1]],
+      fontSize: 12,
+      rotation: 0,
+    },
+    ANN2BAD2: { kind: "unknown", raw: "invalid JSON" },
+  });
 });
 
 it("limits all Libraries as one set and projects only identities for fields=[]", async () => {

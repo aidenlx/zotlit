@@ -119,9 +119,9 @@ PROJECTION PATHS
 POSITION KINDS
   position.kind is pdf-rects, pdf-ink, pdf-text, epub-cfi, snapshot-css,
   snapshot-text, or unknown. unknown carries the stored JSON in raw. PDF x and
-  y coordinates are PDF points from the bottom-left origin. pageIndex is a
-  zero-based PDF page index and is null for EPUB and snapshot Annotations.
-  pageLabel is the document's own page or location label.
+  y coordinates are PDF points from the bottom-left origin. The row's
+  pageIndex is a zero-based PDF page index and is null for EPUB and snapshot
+  Annotations. pageLabel is the document's own page or location label.
 
 ATTACHMENT FILE
   attachment has indexedKey, title, contentType, linkMode, path, and exists.
