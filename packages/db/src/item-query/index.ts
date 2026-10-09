@@ -68,3 +68,8 @@ export {
   readAttachmentCandidateSet,
   type AttachmentCandidateLeaf,
 } from "./attachments";
+
+export {
+  readRelationCandidateSet,
+  type CandidateRelation,
+} from "./relation-candidates";
