@@ -7,11 +7,10 @@ import type {
   ItemQueryDatabaseError,
   ItemQueryLayoutError,
 } from "@zotlit/db/item-query";
-import { readFieldVocabulary } from "@zotlit/db/item-query";
 
 import type { QueryDataset } from "./dataset";
 import { diagnoseWarning } from "./diagnose";
-import { ItemQueryError } from "./error";
+import type { ItemQueryError } from "./error";
 import { consumeDataset } from "./execution";
 import { indexedKeyWarnings } from "./indexed-key-selection";
 import { readQueryClock } from "./query-clock";
@@ -99,22 +98,6 @@ export function consumeQuery<Request extends ItemQueryRequest, A, E, R>(
   return Effect.gen(function* () {
     const plan = yield* planRequest(dataset, request);
     const { query, sorts } = plan;
-    if (plan.group && plan.group.customField !== null) {
-      const { customFieldNames } = yield* readFieldVocabulary();
-      if (!customFieldNames.includes(plan.group.customField))
-        return yield* new ItemQueryError({
-          dataset,
-          fault: {
-            kind: "unknown",
-            role: "custom-field",
-            name: plan.group.customField,
-            customFields: customFieldNames,
-            at: { from: 0, to: plan.group.text.length },
-          },
-          location: { argument: "group" },
-          argumentText: plan.group.text,
-        });
-    }
     const clock = yield* readQueryClock;
     const run = yield* dataset.open(plan, request, clock);
     return yield* consumeDataset(

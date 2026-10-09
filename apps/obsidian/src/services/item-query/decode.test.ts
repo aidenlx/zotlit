@@ -439,6 +439,8 @@ const decodeAnnotationQuery = answered((params) =>
 it.each([
   ["items", "item", "indexedKey"],
   ["items", "attachment", "indexedKey"],
+  ["attachments", "item", "item.indexedKey"],
+  ["attachments", "attachment", "indexedKey"],
   ["annotations", "item", "item.indexedKey"],
   ["annotations", "attachment", "attachment.indexedKey"],
 ])("rejects %s %s with filter selection guidance", (from, parameter, field) => {

@@ -20,10 +20,11 @@ import type { QueryAttachment } from "./attachment-fields";
 import { AttachmentFileResolver } from "./dataset";
 import type { ItemQueryError } from "./error";
 import type { FieldNeeds } from "./fields";
-import { openHydration } from "./hydration";
+import { openHydration, openHydrationVocabulary } from "./hydration";
 import type {
   Hydration,
   HydrationRequest,
+  HydrationVocabulary,
   LoadPlan,
   Loader,
 } from "./hydration";
@@ -73,6 +74,7 @@ const NO_FILE = { path: null, exists: false } as const;
 export function openAttachmentHydration(
   plan: HydrationRequest<AttachmentNeeds>,
   libraries: readonly TargetLibrary[],
+  source?: HydrationVocabulary,
 ): Effect.Effect<
   AttachmentHydration,
   ItemQueryError | ItemQueryReaderError,
@@ -80,12 +82,14 @@ export function openAttachmentHydration(
 > {
   return Effect.gen(function* () {
     const { filter, paths, sorts } = plan;
+    const readVocabulary = source ?? (yield* openHydrationVocabulary);
     const itemNeeds = (needs: AttachmentNeeds): readonly FieldNeeds[] =>
       needs.item ?? [];
     const parents = yield* openHydration(
       {
         dataset: plan.dataset,
         query: plan.query,
+        group: plan.group,
         filter: filter && {
           customFields: filter.customFields,
           needs: filter.needs.flatMap(itemNeeds),
@@ -102,6 +106,7 @@ export function openAttachmentHydration(
         ),
       },
       libraries,
+      readVocabulary,
     );
     const resolveAttachmentFile = yield* AttachmentFileResolver;
     const groupOf = new Map(
@@ -122,6 +127,7 @@ export function openAttachmentHydration(
               needs.flatMap((need) => need.annotations ?? []),
             ),
             libraries,
+            readVocabulary,
           )
         : null;
       if (annotations) relatedSources.push(annotations.candidateSources);

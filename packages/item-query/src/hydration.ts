@@ -99,6 +99,10 @@ export type HydrationRequest<Needs> = Pick<
   ItemQueryPlan,
   "dataset" | "query"
 > & {
+  readonly group?: {
+    readonly text: string;
+    readonly customField: string | null;
+  } | null;
   readonly filter: {
     readonly needs: readonly Needs[];
     readonly customFields: FilterPlan["customFields"];
@@ -111,16 +115,26 @@ export type HydrationRequest<Needs> = Pick<
   readonly sorts: readonly { readonly needs: Needs }[];
 };
 
+/** One lazy source vocabulary shared by every record loader of a query. */
+export const openHydrationVocabulary = Effect.cached(readFieldVocabulary());
+export type HydrationVocabulary = Effect.Effect<
+  FieldVocabulary,
+  ItemQueryReaderError,
+  ItemQueryDatabase
+>;
+
 export function openHydration(
   plan: HydrationRequest<FieldNeeds>,
   libraries: readonly TargetLibrary[],
+  source?: HydrationVocabulary,
 ): Effect.Effect<
   Hydration,
   ItemQueryError | ItemQueryReaderError,
   ItemQueryDatabase
 > {
   return Effect.gen(function* () {
-    const { dataset, filter, paths, sorts } = plan;
+    const { dataset, filter, paths, sorts, group } = plan;
+    const readVocabulary = source ?? (yield* openHydrationVocabulary);
     const pathNeeds = paths.map((path) => path.needs);
     const scanNeeds = [
       ...(filter?.needs ?? []),
@@ -130,8 +144,9 @@ export function openHydration(
     const vocabulary =
       allNeeds.some(needsHydration) ||
       filter?.customFields.length ||
-      paths.some((path) => path.customField !== null)
-        ? yield* readFieldVocabulary()
+      paths.some((path) => path.customField !== null) ||
+      (group && group.customField !== null)
+        ? yield* readVocabulary
         : null;
     if (vocabulary) {
       const known = new Set(vocabulary.customFieldNames);
@@ -174,6 +189,19 @@ export function openHydration(
                 },
               ],
         ),
+        ...(group && group.customField !== null
+          ? [
+              {
+                name: group.customField,
+                bare: false,
+                location: {
+                  argument: "group" as const,
+                  span: { from: 0, to: group.text.length },
+                },
+                argumentText: group.text,
+              },
+            ]
+          : []),
       ];
       const missing = customFields.find(
         ({ name, deferred, dotted }) => dotted || deferred || !known.has(name),
@@ -210,6 +238,7 @@ export function openHydration(
               needs.flatMap((need) => need.annotations ?? []),
             ),
             libraries,
+            readVocabulary,
           )
         : null;
       const attachments = needs.some((need) => need.attachments !== undefined)
@@ -219,6 +248,7 @@ export function openHydration(
               needs.flatMap((need) => need.attachments ?? []),
             ),
             libraries,
+            readVocabulary,
           )
         : null;
       for (const related of [annotations, attachments]) {

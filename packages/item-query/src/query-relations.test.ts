@@ -16,6 +16,38 @@ import {
 import { runEffect } from "./test-helpers";
 
 it.each([
+  [ITEMS, 'custom["review.status"]'],
+  [ATTACHMENTS, 'item.custom["review.status"]'],
+  [ANNOTATIONS, 'item.custom["review.status"]'],
+  [ITEMS, 'attachments[0].item.custom["review.status"]'],
+] as const)(
+  "reads the source vocabulary once when %s groups by %s",
+  async (dataset, group) => {
+    using scenario = openScenarioDatabase({ annotations: true });
+    const { exit, events } = await runEffect(
+      collectQuery(dataset, {
+        libraries: [SCENARIO_LIBRARIES.personal],
+        group,
+        fields: [],
+        sort: [],
+      }),
+      { client: scenario.db },
+    );
+    if (exit._tag === "Failure") throw Cause.squash(exit.cause);
+    expect(exit.value.groups!.some((group) => group.value === "done")).toBe(
+      true,
+    );
+    const statements = events.flatMap((event) =>
+      event.type === "statement" &&
+      event.statement.reader === "field-vocabulary"
+        ? [event.statement]
+        : [],
+    );
+    expect(statements).toHaveLength(2);
+  },
+);
+
+it.each([
   'if(true, attachments, []).filter(value.title == "Full Text PDF").length > 0',
   'if(false, [], attachments).filter(value.title == "Full Text PDF").length > 0',
   'if(false, attachments, annotations[0].item.attachments).filter(value.title == "Full Text PDF").length > 0',

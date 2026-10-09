@@ -376,7 +376,8 @@ export function decodeQuery(params: CliData): CliRequest<DecodedQuery> {
     (request.parameter === "item" || request.parameter === "attachment")
   ) {
     const field =
-      params.from === "annotations"
+      params.from === "annotations" ||
+      (params.from === "attachments" && request.parameter === "item")
         ? `${request.parameter}.indexedKey`
         : "indexedKey";
     return {
