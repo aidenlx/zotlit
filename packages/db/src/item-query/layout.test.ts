@@ -5,6 +5,7 @@ import { constants } from "node:sqlite";
 import type { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { ITEM_QUERY_LAYOUT, OPTIONAL_LAYOUT_COLUMNS } from "@/layout";
 import { openScenarioDatabase, SCENARIO_LIBRARIES } from "@/test-scenario";
 import type {
   ScenarioDatabase,
@@ -19,7 +20,6 @@ import {
   readScanPage,
 } from ".";
 import { checkLayout, readerStatementSQL } from "./database";
-import { ITEM_QUERY_LAYOUT } from "./layout";
 
 afterEach(async () => {
   await reset();
@@ -102,7 +102,10 @@ describe("ITEM_QUERY_LAYOUT", () => {
     using scenario = openScenarioDatabase();
     const statements = readerStatementSQL(scenario.db);
     const listed = new Set(
-      Object.entries(ITEM_QUERY_LAYOUT).flatMap(([table, columns]) => [
+      [
+        ...Object.entries(ITEM_QUERY_LAYOUT),
+        ...Object.entries(OPTIONAL_LAYOUT_COLUMNS),
+      ].flatMap(([table, columns]) => [
         table,
         ...columns.map((column) => `${table}.${column}`),
       ]),

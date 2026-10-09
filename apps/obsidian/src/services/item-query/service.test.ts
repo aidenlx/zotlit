@@ -19,6 +19,7 @@ import {
   sharedClientOpener,
 } from "@/services/zotero-reads/test-utils";
 
+import { queryCancelledText } from "./contract";
 import { ItemQueryService } from "./service";
 
 function setup(
@@ -92,6 +93,25 @@ describe("Item Query worker jobs", () => {
         diagnostic: { code: "source-unavailable" },
       });
     expect(unavailable.leases()).toBe(0);
+  });
+
+  it("answers the schema envelope for a parameter, without a lease", async () => {
+    using scenario = openScenarioDatabase({ storage: "temp-directory" });
+    const { service, leases } = setup(scenario);
+    await using _owned = service;
+
+    const answer = await service.schema({ library: "personal" }, signal());
+
+    expect(JSON.parse(answer)).toMatchObject({
+      contractVersion: 1,
+      command: "zotlit:item-query-schema",
+      ok: false,
+      diagnostic: {
+        code: "invalid-argument",
+        details: { parameter: "library" },
+      },
+    });
+    expect(leases()).toBe(0);
   });
 
   it("exports the same envelope as inline, preserves existing files, and releases each lease", async () => {
@@ -238,6 +258,7 @@ describe("Item Query worker jobs", () => {
     const running = service.answer({ ...bulk, id: "export", output }, signal());
     const rejected = expect(running).rejects.toMatchObject({
       name: "AbortError",
+      message: queryCancelledText("export"),
     });
     const other = service.answer(
       { ...bulk, id: "other", limit: "100" },
@@ -268,6 +289,7 @@ describe("Item Query worker jobs", () => {
     // Each ID is free once its query settles.
     expect(service.cancel("export")).toBe(false);
     expect(service.cancel("other")).toBe(false);
+    expect(service.runningJobs).toBe(0);
     expect(
       JSON.parse(await service.answer({ id: "export", limit: "1" }, signal())),
     ).toMatchObject({ ok: true, returnedCount: 1 });
@@ -321,6 +343,7 @@ describe("Item Query worker jobs", () => {
       ),
     ).toMatchObject({ diagnostic: { code: "output-error" } });
     expect(service.cancel("job")).toBe(false);
+    expect(service.runningJobs).toBe(0);
     expect(
       JSON.parse(await service.answer({ id: "job", limit: "1" }, signal())),
     ).toMatchObject({ ok: true });
@@ -335,7 +358,8 @@ describe("Item Query worker jobs", () => {
     const outcomes = new Set<string>();
     // Cancel after a growing number of timer turns, from before the lease
     // until completion wins.
-    for (let turns = 0; !outcomes.has("answered") && turns < 1 << 16; ) {
+    for (const turns of [0, 1, 2, 4, 8, 16, 32, 64, 128, 256]) {
+      if (outcomes.has("answered")) break;
       const output = join(dirname(scenario.path), `race-${turns}.json`);
       const running = service
         .answer({ id: "race", limit: "all", output }, signal())
@@ -349,6 +373,7 @@ describe("Item Query worker jobs", () => {
       const requested = service.cancel("race");
       const settled = await running;
       expect(service.cancel("race")).toBe(false);
+      expect(service.runningJobs).toBe(0);
       expect(leases()).toBe(0);
       const files = await readdir(dirname(output));
       expect(files.filter((name) => name.endsWith(".tmp"))).toEqual([]);
@@ -363,7 +388,6 @@ describe("Item Query worker jobs", () => {
         expect(files).not.toContain(`race-${turns}.json`);
         outcomes.add("cancelled");
       }
-      turns = turns === 0 ? 1 : turns * 2;
     }
     expect([...outcomes].toSorted()).toEqual(["answered", "cancelled"]);
   });
@@ -420,11 +444,41 @@ describe("Item Query worker jobs", () => {
     const rejected = expect(running).rejects.toMatchObject({
       name: "AbortError",
     });
+    // Unload closes the scope of the jobs: it interrupts each job and waits.
     await service[Symbol.asyncDispose]();
     await rejected;
     expect(leases()).toBe(0);
+    expect(service.runningJobs).toBe(0);
     await expect(service.answer({}, signal())).rejects.toMatchObject({
       name: "AbortError",
     });
+  });
+
+  it("rejects each query and schema request with the startup failure", async () => {
+    using scenario = openScenarioDatabase();
+    await using reads = inProcessReadsService(sharedClientOpener(scenario.db));
+    const startup = new Error("the Library Scope did not load");
+    const failed: Promise<void> = Promise.reject(startup);
+    failed.catch(() => {});
+    const service = new ItemQueryService({
+      reads,
+      zoteroPref: { sourceId: "captured-source", databasePath: scenario.path },
+      libraryScope: {
+        ready: failed,
+        effective: MY_LIBRARY_SCOPE,
+      } as LibraryScopeService,
+      vault: {
+        getName: () => "Query tests",
+        adapter: { getBasePath: () => dirname(scenario.path) },
+      } as unknown as Vault,
+    });
+    await using _owned = service;
+    // One request starts before startup fails, the others after it.
+    const early = service.answer({ id: "early" }, signal());
+
+    await expect(early).rejects.toBe(startup);
+    await expect(service.ready).rejects.toBe(startup);
+    await expect(service.answer({}, signal())).rejects.toBe(startup);
+    await expect(service.schema({}, signal())).rejects.toBe(startup);
   });
 });

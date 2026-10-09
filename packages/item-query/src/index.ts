@@ -17,6 +17,12 @@ export {
   type ItemQueryErrorLocation,
 } from "./error";
 export { DEFAULT_FIELDS } from "./fields";
+// The typed database failures of `queryItems`, `consumeQueryItems`, and
+// `describeItemQuery`, from the readers of `@zotlit/db/item-query`.
+export {
+  ItemQueryDatabaseError,
+  ItemQueryLayoutError,
+} from "@zotlit/db/item-query";
 export { QueryTimeZone } from "./query-clock";
 export {
   queryItems,

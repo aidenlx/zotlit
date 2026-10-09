@@ -20,7 +20,6 @@ import type { Attachment } from "@/lib/zt-attach";
 import { toTemplateCollection } from "@/lib/zt-collection";
 import type { CollectionCache, TemplateCollection } from "@/lib/zt-collection";
 import type { ItemTag } from "@/lib/zt-tag";
-import type { GroupIDMemo } from "@/queries/_groups";
 import { getZoteroIdentity } from "@/queries/account";
 import { getAnnotationsByParent } from "@/queries/annotations";
 import {
@@ -30,6 +29,7 @@ import {
 import { getRelatedKeysByItemID } from "@/queries/item-relations";
 import { getItemsByID, getItemsByKey } from "@/queries/items";
 import type { Item } from "@/queries/items";
+import type { GroupIDMemo } from "@/queries/libraries";
 import { getChildNotes } from "@/queries/notes";
 import type { ChildNote } from "@/queries/notes";
 import { resolveItemTagsByIDs } from "@/queries/tags";

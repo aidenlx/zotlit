@@ -2,10 +2,10 @@ import type { NodeDatabaseClient } from "@/client/node";
 import type { Attachment } from "@/lib/zt-attach";
 import { formatIndexedKey } from "@/lib/zt-key";
 
-import { groupIDForLibrary, resolveGroupID } from "./_groups";
-import type { GroupIDMemo } from "./_groups";
 import { defineQuery, defineKeyedQuery } from "./_shared";
 import type { FindManyOptions, QueryRow } from "./_shared";
+import { groupIDForLibrary, resolveGroupID } from "./libraries";
+import type { GroupIDMemo } from "./libraries";
 
 const attachmentFindOptions = {
   columns: {

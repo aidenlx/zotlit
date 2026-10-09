@@ -1,18 +1,18 @@
-import { Exit } from "effect";
+import { Cause, Effect, Exit, Scheduler } from "effect";
+import type { Scope } from "effect";
 import { StatementSync } from "node:sqlite";
 import type { CliData, CliHandler, Plugin } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import {
-  ItemQueryDatabaseError,
-  ItemQueryLayoutError,
-} from "@zotlit/db/item-query";
+import type { NodeDatabaseClient } from "@zotlit/db/client/node";
+import { ItemQueryDatabase } from "@zotlit/db/item-query";
 import {
   BULK_LIBRARY,
   openScenarioDatabase,
   seedBulkLibrary,
 } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
+import { ItemQueryScheduler } from "@zotlit/item-query";
 
 import {
   DEFAULT_LIBRARY_SCOPE,
@@ -21,10 +21,9 @@ import {
 import type { LibraryScope } from "@/services/library-scope/scope";
 
 import {
-  answerExit,
+  answerItemQuery,
+  answerItemQuerySchema,
   createItemQueryCancelHandler,
-  createItemQueryHandler,
-  createItemQuerySchemaHandler,
   ITEM_QUERY_CANCEL_COMMAND,
   ITEM_QUERY_COMMAND,
   ITEM_QUERY_GUIDE_COMMAND,
@@ -33,7 +32,10 @@ import {
   registerItemQueryCli,
 } from "./cli";
 import type { ItemQueryCliDeps } from "./cli";
+import { decodeItemQuery } from "./decode";
+import type { DecodedQuery } from "./decode";
 import { GUIDE_EXAMPLES, GUIDE_FILTERS, GUIDE_TOPIC_NAMES } from "./guide";
+import type { QueryReply } from "./worker-protocol";
 
 /** The driver call under every statement of the borrowed client. */
 // oxlint-disable-next-line typescript/unbound-method -- applied to its statement in the test.
@@ -62,26 +64,83 @@ const PERSONAL_BY_MODIFIED = [
   "CNF2TEXT",
 ];
 
-function setup(
+/**
+ * The query that the renderer decodes from `params`, as the worker receives it:
+ * plain JSON. The decoder tests cover malformed arguments.
+ */
+function decoded(params: CliData = {}): DecodedQuery {
+  const query = decodeItemQuery(params);
+  if ("code" in query)
+    throw new Error(`Malformed test query: ${query.message}`);
+  return JSON.parse(JSON.stringify(query)) as DecodedQuery;
+}
+
+/** The parameters of an answer, and the client of the database it reads. */
+type TestDeps = Partial<ItemQueryCliDeps> & { client?: NodeDatabaseClient };
+
+/**
+ * An answer as a Query Job runs it: on the database of `client`, in the scope
+ * of the job, on the time-budget scheduler.
+ */
+function onJob<A>(
+  client: NodeDatabaseClient,
+  answer: Effect.Effect<A, never, ItemQueryDatabase | Scope.Scope>,
+): Effect.Effect<A> {
+  return answer.pipe(
+    Effect.scoped,
+    Effect.provideService(ItemQueryDatabase, { client }),
+    Effect.provideService(Scheduler.Scheduler, new ItemQueryScheduler()),
+  );
+}
+
+/** The query answer on `scenario`, as an Effect of the envelope text. */
+function queryOf(
   scenario: ScenarioDatabase,
-  overrides: Partial<ItemQueryCliDeps> = {},
+  { client = scenario.db, ...overrides }: TestDeps = {},
 ) {
-  const read = vi.spyOn(StatementSync.prototype, "all");
   const deps: ItemQueryCliDeps = {
-    client: scenario.db,
     identity: IDENTITY,
-    libraryScope: async () => MY_LIBRARY_SCOPE,
-    signal: new AbortController().signal,
+    scope: MY_LIBRARY_SCOPE,
     ...overrides,
   };
-  const handler = createItemQueryHandler(deps);
+  return (params: CliData = {}): Effect.Effect<string> =>
+    onJob(client, answerItemQuery(deps, decoded(params))).pipe(
+      Effect.map((reply: QueryReply) => reply.answer),
+    );
+}
+
+function setup(scenario: ScenarioDatabase, overrides: TestDeps = {}) {
+  const read = vi.spyOn(StatementSync.prototype, "all");
+  const query = queryOf(scenario, overrides);
   return {
     read,
+    query,
     run: async (params: CliData = {}) => {
-      const answer = await handler(params);
+      const answer = await Effect.runPromise(query(params));
       return JSON.parse(answer) as Record<string, unknown>;
     },
   };
+}
+
+/**
+ * Run `effect` to its exit; `signal` interrupts it. The run starts in a later
+ * task: Effect listens to the signal once the first synchronous segment of a
+ * run ends.
+ */
+function exitOf<A>(
+  effect: Effect.Effect<A>,
+  signal: AbortSignal,
+): Promise<Exit.Exit<A>> {
+  return Effect.runPromiseExit(Effect.andThen(Effect.yieldNow, effect), {
+    signal,
+  });
+}
+
+/** The run ended by interruption alone. */
+function expectInterrupted<A, E>(exit: Exit.Exit<A, E>): void {
+  expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(
+    true,
+  );
 }
 
 const keys = (answer: Record<string, unknown>) =>
@@ -125,14 +184,8 @@ describe("zotlit:item-query without arguments", () => {
 
   it("answers pretty JSON", async () => {
     using scenario = openScenarioDatabase();
-    const handler = createItemQueryHandler({
-      client: scenario.db,
-      identity: IDENTITY,
-      libraryScope: async () => MY_LIBRARY_SCOPE,
-      signal: new AbortController().signal,
-    });
 
-    const answer = await handler({ limit: "1" });
+    const answer = await Effect.runPromise(queryOf(scenario)({ limit: "1" }));
 
     expect(answer).toMatch(/^\{\n {2}"contractVersion": 1,\n/);
   });
@@ -151,17 +204,9 @@ describe("zotlit:item-query answer", () => {
   /** The bulk Library: more rows than the first chunk of an answer. */
   const BULK = { library: `group:${BULK_LIBRARY.groupID}`, limit: "all" };
 
-  function handlerOf(
-    scenario: ScenarioDatabase,
-    overrides: Partial<ItemQueryCliDeps> = {},
-  ) {
-    return createItemQueryHandler({
-      client: scenario.db,
-      identity: IDENTITY,
-      libraryScope: async () => MY_LIBRARY_SCOPE,
-      signal: new AbortController().signal,
-      ...overrides,
-    });
+  function handlerOf(scenario: ScenarioDatabase, overrides: TestDeps = {}) {
+    const query = queryOf(scenario, overrides);
+    return (params: CliData) => Effect.runPromise(query(params));
   }
 
   it.each<CliData>([
@@ -197,24 +242,21 @@ describe("zotlit:item-query answer", () => {
     expect(steps.length).toBeGreaterThan(1);
   });
 
-  it("rejects with the abort reason when the cancel request comes while it builds the answer", async () => {
+  it("ends interrupted when the interrupt comes while it builds the answer", async () => {
     using scenario = openScenarioDatabase();
     seedBulkLibrary(scenario.sqlite, 600);
     fastClock();
     const controller = new AbortController();
-    const reason = new Error("plugin unloaded");
-    const events: string[] = [];
 
-    const answering = handlerOf(scenario, {
-      signal: controller.signal,
-      onAnswerStep: () => {
-        events.push("step");
-        controller.abort(reason);
-      },
-    })({ ...BULK, fields: "[]" });
+    const exit = await exitOf(
+      queryOf(scenario, { onAnswerStep: () => controller.abort() })({
+        ...BULK,
+        fields: "[]",
+      }),
+      controller.signal,
+    );
 
-    await expect(answering).rejects.toBe(reason);
-    expect(events).toEqual(["step"]);
+    expectInterrupted(exit);
   });
 });
 
@@ -245,28 +287,6 @@ describe("zotlit:item-query limit", () => {
       truncated: false,
     });
   });
-
-  it.each(["0", "-1", "1.5", "ten", "", "1e3", "99999999999999999999"])(
-    "rejects limit=%j with the diagnostic envelope before it reads the source",
-    async (limit) => {
-      using scenario = openScenarioDatabase();
-      const { run, read } = setup(scenario);
-
-      const answer = await run({ limit });
-
-      expect(answer).toMatchObject({
-        contractVersion: 1,
-        command: ITEM_QUERY_COMMAND,
-        ok: false,
-        diagnostic: {
-          code: "invalid-argument",
-          hint: expect.any(String),
-          details: { parameter: "limit" },
-        },
-      });
-      expect(read).not.toHaveBeenCalled();
-    },
-  );
 });
 
 /** Both Libraries of the scenario, most recently modified first. */
@@ -302,9 +322,7 @@ describe("zotlit:item-query library", () => {
 
   it("reads the personal Library alone for library=personal, whatever the Library Scope is", async () => {
     using scenario = openScenarioDatabase();
-    const { run } = setup(scenario, {
-      libraryScope: async () => DEFAULT_LIBRARY_SCOPE,
-    });
+    const { run } = setup(scenario, { scope: DEFAULT_LIBRARY_SCOPE });
 
     const answer = await run({ library: "personal" });
 
@@ -328,25 +346,6 @@ describe("zotlit:item-query library", () => {
       },
     });
   });
-
-  it.each(["group:", "group:abc", "group:0", "My Library", "1", "all"])(
-    "rejects library=%j",
-    async (library) => {
-      using scenario = openScenarioDatabase();
-      const { run, read } = setup(scenario);
-
-      const answer = await run({ library });
-
-      expect(answer).toMatchObject({
-        ok: false,
-        diagnostic: {
-          code: "invalid-argument",
-          details: { parameter: "library" },
-        },
-      });
-      expect(read).not.toHaveBeenCalled();
-    },
-  );
 });
 
 describe("zotlit:item-query libraries", () => {
@@ -467,81 +466,10 @@ describe("zotlit:item-query libraries", () => {
       },
     });
   });
-
-  it.each([
-    ["no JSON", "personal"],
-    ["no array", '"personal"'],
-    ["an empty array", "[]"],
-    ["a selector that is no text", "[1]"],
-    ["a selector object", '[{"type":"personal"}]'],
-    ["an unknown selector", '["My Library"]'],
-    ["a group without a positive ID", '["group:0"]'],
-    ["the word all inside the array", '["all"]'],
-    ["a Library twice", '["personal","personal"]'],
-    ["a group twice", '["group:4815","personal","group:4815"]'],
-  ])("rejects libraries with %s", async (_name, libraries) => {
-    using scenario = openScenarioDatabase();
-    const { run, read } = setup(scenario);
-
-    const answer = await run({ libraries });
-
-    expect(answer).toMatchObject({
-      ok: false,
-      diagnostic: {
-        code: "invalid-argument",
-        details: { parameter: "libraries" },
-      },
-    });
-    expect(read).not.toHaveBeenCalled();
-  });
-});
-
-describe("zotlit:item-query library and libraries together", () => {
-  it("reads the Libraries of libraries and ignores library", async () => {
-    using scenario = openScenarioDatabase();
-    const { run } = setup(scenario);
-
-    const answer = await run({
-      library: "personal",
-      libraries: '["group:4815"]',
-    });
-
-    expect(answer.libraries).toEqual([METHODS_GROUP_WIRE]);
-    expect(answer.request).toMatchObject({ libraries: ["group:4815"] });
-    expect(keys(answer)).toEqual(["ART2FULLg4815", "GRP2BK22g4815"]);
-  });
-
-  it("ignores a library that the source does not hold, and a malformed one", async () => {
-    using scenario = openScenarioDatabase();
-    const { run } = setup(scenario);
-
-    for (const library of ["group:999", "My Library"]) {
-      const answer = await run({ library, libraries: "all" });
-
-      expect(answer).toMatchObject({ ok: true, returnedCount: 12 });
-    }
-  });
-
-  it("answers the diagnostic of a malformed libraries beside a valid library", async () => {
-    using scenario = openScenarioDatabase();
-    const { run } = setup(scenario);
-
-    const answer = await run({ library: "personal", libraries: "[]" });
-
-    expect(answer).toMatchObject({
-      ok: false,
-      diagnostic: {
-        code: "invalid-argument",
-        details: { parameter: "libraries" },
-      },
-    });
-  });
 });
 
 describe("zotlit:item-query default Libraries", () => {
-  const scoped = (scope: LibraryScope) => ({
-    libraryScope: async () => scope,
-  });
+  const scoped = (scope: LibraryScope) => ({ scope });
   const selected = (
     ...libraries: Extract<LibraryScope, { mode: "selected" }>["libraries"]
   ): LibraryScope => ({ mode: "selected", libraries });
@@ -619,43 +547,6 @@ describe("zotlit:item-query default Libraries", () => {
     });
   });
 
-  it("answers source-unavailable when the Library Scope cannot be read, without a database read", async () => {
-    using scenario = openScenarioDatabase();
-    const { run, read } = setup(scenario, {
-      libraryScope: async () => {
-        throw new Error("settings did not load");
-      },
-    });
-
-    const answer = await run();
-
-    expect(answer).toMatchObject({
-      contractVersion: 1,
-      command: ITEM_QUERY_COMMAND,
-      ok: false,
-      diagnostic: {
-        code: "source-unavailable",
-        message: expect.stringContaining("settings did not load"),
-      },
-    });
-    expect(read).not.toHaveBeenCalled();
-  });
-
-  it("rejects with the abort reason when the run is cancelled while it reads the Library Scope", async () => {
-    using scenario = openScenarioDatabase();
-    const controller = new AbortController();
-    const { run, read } = setup(scenario, {
-      signal: controller.signal,
-      libraryScope: async () => {
-        controller.abort();
-        throw new Error("the plugin unloaded");
-      },
-    });
-
-    await expect(run()).rejects.toMatchObject({ name: "AbortError" });
-    expect(read).not.toHaveBeenCalled();
-  });
-
   it("resolves the Library Scope on the borrowed source", async () => {
     using scenario = openScenarioDatabase();
     const { run } = setup(scenario, scoped(DEFAULT_LIBRARY_SCOPE));
@@ -725,45 +616,9 @@ describe("zotlit:item-query fields", () => {
       },
     });
   });
-
-  it.each(['["title"', '"title"', "[1]", '{"0":"title"}'])(
-    "rejects fields=%s",
-    async (fields) => {
-      using scenario = openScenarioDatabase();
-      const { run } = setup(scenario);
-
-      const answer = await run({ fields });
-
-      expect(answer).toMatchObject({
-        ok: false,
-        diagnostic: {
-          code: "invalid-argument",
-          details: { parameter: "fields" },
-        },
-      });
-    },
-  );
 });
 
 describe("zotlit:item-query filter and sort", () => {
-  it.each([
-    ["filter", ""],
-    ["filter", "   "],
-    ["sort", "not json"],
-    ["sort", '[{"field":"title"}]'],
-    ["sort", '[{"field":"title","direction":"up"}]'],
-    ["sort", '{"field":"title","direction":"asc"}'],
-  ])("rejects %s=%j", async (parameter, value) => {
-    using scenario = openScenarioDatabase();
-    const { run } = setup(scenario);
-
-    const answer = await run({ [parameter]: value });
-
-    expect(answer).toMatchObject({
-      ok: false,
-      diagnostic: { code: "invalid-argument", details: { parameter } },
-    });
-  });
   it("passes a well-formed filter through to the engine and echoes it", async () => {
     using scenario = openScenarioDatabase();
     const { run } = setup(scenario);
@@ -818,47 +673,7 @@ describe("zotlit:item-query filter and sort", () => {
   });
 });
 
-describe("zotlit:item-query parameters", () => {
-  it("rejects an undeclared parameter", async () => {
-    using scenario = openScenarioDatabase();
-    const { run } = setup(scenario);
-
-    const answer = await run({ fields: "[]", colour: "red" });
-
-    expect(answer).toMatchObject({
-      ok: false,
-      diagnostic: {
-        code: "invalid-argument",
-        details: { parameter: "colour" },
-      },
-    });
-  });
-
-  it("explains a vault parameter after the command name", async () => {
-    using scenario = openScenarioDatabase();
-    const { run } = setup(scenario);
-
-    const answer = await run({ vault: "Research" });
-
-    expect(answer).toMatchObject({
-      ok: false,
-      diagnostic: {
-        code: "invalid-argument",
-        message: expect.stringContaining("before the command name"),
-        details: { parameter: "vault" },
-      },
-    });
-  });
-
-  it("leaves Obsidian's own -- tokens alone", async () => {
-    using scenario = openScenarioDatabase();
-    const { run } = setup(scenario);
-
-    const answer = await run({ "--copy": "true", limit: "1" });
-
-    expect(answer.ok).toBe(true);
-  });
-
+describe("zotlit:item-query id", () => {
   it("accepts a query ID and keeps it out of the request", async () => {
     using scenario = openScenarioDatabase();
     const { run } = setup(scenario);
@@ -868,22 +683,6 @@ describe("zotlit:item-query parameters", () => {
     expect(answer).toMatchObject({ ok: true, returnedCount: 1 });
     expect(answer.request).not.toHaveProperty("id");
   });
-
-  it.each(["", "two words", "a/b", "x".repeat(129)])(
-    "rejects the query ID %j before it reads the database",
-    async (id) => {
-      using scenario = openScenarioDatabase();
-      const { run, read } = setup(scenario);
-
-      const answer = await run({ id });
-
-      expect(answer).toMatchObject({
-        ok: false,
-        diagnostic: { code: "invalid-argument", details: { parameter: "id" } },
-      });
-      expect(read).not.toHaveBeenCalled();
-    },
-  );
 });
 
 describe("zotlit:item-query-cancel", () => {
@@ -976,8 +775,54 @@ describe("zotlit:item-query borrowed source", () => {
 
     expect(answer).toMatchObject({
       ok: false,
-      diagnostic: { code: "database-error", hint: expect.any(String) },
+      diagnostic: {
+        code: "database-error",
+        message: expect.stringContaining(
+          "Item Query could not read the Zotero database: ",
+        ),
+        hint: expect.any(String),
+      },
     });
+  });
+
+  it("answers unsupported-database-layout for a copy that lacks a manifest table or column", async () => {
+    using scenario = openScenarioDatabase();
+    scenario.sqlite.exec(
+      'pragma foreign_keys = off; drop table "itemDataValues"; alter table "fieldsCombined" drop column "custom"',
+    );
+    const { run } = setup(scenario);
+
+    const answer = await run();
+
+    expect(answer).toMatchObject({
+      contractVersion: 1,
+      command: ITEM_QUERY_COMMAND,
+      ok: false,
+      diagnostic: {
+        code: "unsupported-database-layout",
+        message: expect.stringContaining("fieldsCombined.custom"),
+        hint: expect.stringContaining("update ZotLit"),
+      },
+    });
+    expect((answer.diagnostic as { message: string }).message).toContain(
+      "the table itemDataValues",
+    );
+  });
+
+  it("rejects with an Error for a defect, distinct from a cancellation", async () => {
+    using scenario = openScenarioDatabase();
+    const defect = new TypeError("boom");
+    const { run } = setup(scenario, {
+      openOutput: () => Effect.die(defect),
+    });
+
+    const answering = run({ output: "/exports/items.json" });
+
+    await expect(answering).rejects.toThrow(
+      "Item Query failed with an internal error.",
+    );
+    await expect(answering).rejects.toMatchObject({ cause: defect });
+    await expect(answering).rejects.not.toMatchObject({ name: "AbortError" });
   });
 });
 
@@ -1020,35 +865,22 @@ describe("zotlit:item-query on the layout of the Zotero database", () => {
 });
 
 describe("zotlit:item-query cancellation", () => {
-  it("rejects with the abort reason without a database read when the signal is already aborted", async () => {
+  it("ends interrupted when the interrupt comes before it answers", async () => {
     using scenario = openScenarioDatabase();
     const controller = new AbortController();
-    const reason = new Error("plugin unloaded");
-    controller.abort(reason);
-    const { run, read } = setup(scenario, { signal: controller.signal });
-
-    await expect(run()).rejects.toBe(reason);
-    expect(read).not.toHaveBeenCalled();
-  });
-
-  it("rejects with the abort reason when the run is cancelled, before it answers", async () => {
-    using scenario = openScenarioDatabase();
-    const controller = new AbortController();
-    const reason = new Error("plugin unloaded");
-    const { run } = setup(scenario, { signal: controller.signal });
+    const { query } = setup(scenario);
 
     // A named Library starts execution without awaiting the default scope.
-    const running = run({ library: "personal" });
-    controller.abort(reason);
+    const running = exitOf(query({ library: "personal" }), controller.signal);
+    controller.abort();
 
-    await expect(running).rejects.toBe(reason);
+    expectInterrupted(await running);
   });
 
-  it("stops database reads before a cancelled run settles", async () => {
+  it("stops database reads before an interrupted run settles", async () => {
     using scenario = openScenarioDatabase();
     const controller = new AbortController();
-    const reason = new Error("plugin unloaded");
-    const { run } = setup(scenario, { signal: controller.signal });
+    const { run, query } = setup(scenario);
     // Warm the copy, then count the reads of one complete run.
     await run({ fields: '["title"]' });
     const read = vi.spyOn(StatementSync.prototype, "all");
@@ -1057,119 +889,45 @@ describe("zotlit:item-query cancellation", () => {
     expect(complete).toBeGreaterThan(3);
 
     // Every read of the clock is 3 ms later, so the scheduler ends a slice
-    // after each operation. Effect listens to the signal from the first pause.
+    // after each operation.
     let now = 0;
     vi.spyOn(performance, "now").mockImplementation(() => (now += 3));
-    // Cancel inside the third database read of the query.
+    // Interrupt inside the third database read of the query.
     const events: string[] = [];
     read.mockImplementation(function (this: StatementSync, ...values) {
-      if (events.push("read") === 3) controller.abort(reason);
+      if (events.push("read") === 3) controller.abort();
       return Reflect.apply(readRows, this, values) as ReturnType<
         StatementSync["all"]
       >;
     });
 
-    await expect(run({ fields: '["title"]' })).rejects.toBe(reason);
+    const exit = await exitOf(
+      query({ fields: '["title"]' }),
+      controller.signal,
+    );
     events.push("settled");
 
+    expectInterrupted(exit);
     expect(events).toEqual(["read", "read", "read", "settled"]);
-  });
-});
-
-describe("answerExit", () => {
-  const context = {
-    identity: IDENTITY,
-    libraries: [{ type: "personal" }] as const,
-    signal: new AbortController().signal,
-  };
-
-  it("answers database-error for a database failure", async () => {
-    const exit = Exit.fail(
-      new ItemQueryDatabaseError({
-        query: "select 1",
-        params: [],
-        cause: new Error("disk I/O error"),
-      }),
-    );
-
-    const answer = JSON.parse(await answerExit(exit, context));
-
-    expect(answer).toMatchObject({
-      contractVersion: 1,
-      ok: false,
-      diagnostic: {
-        code: "database-error",
-        message: expect.stringContaining("disk I/O error"),
-      },
-    });
-  });
-
-  it("answers unsupported-database-layout for a layout this ZotLit cannot read", async () => {
-    const exit = Exit.fail(
-      new ItemQueryLayoutError({
-        missing: [
-          { table: "itemData", column: null },
-          { table: "items", column: "itemTypeID" },
-        ],
-        versions: { userdata: 131, compatibility: 10 },
-      }),
-    );
-
-    const answer = JSON.parse(await answerExit(exit, context));
-
-    expect(answer).toMatchObject({
-      contractVersion: 1,
-      command: "zotlit:item-query",
-      ok: false,
-      diagnostic: {
-        code: "unsupported-database-layout",
-        message: expect.stringContaining("items.itemTypeID"),
-        hint: expect.stringContaining("update ZotLit"),
-      },
-    });
-    expect(answer.diagnostic.message).toContain("the table itemData");
-  });
-
-  it("rejects with an Error for a defect, distinct from a cancellation", async () => {
-    const defect = new TypeError("boom");
-
-    const answering = answerExit(Exit.die(defect), context);
-
-    await expect(answering).rejects.toThrow(
-      "Item Query failed with an internal error.",
-    );
-    await expect(answering).rejects.toMatchObject({ cause: defect });
-  });
-
-  it("rejects with an AbortError for an interruption without an abort reason", async () => {
-    const answering = answerExit(Exit.interrupt(), context);
-
-    await expect(answering).rejects.toMatchObject({ name: "AbortError" });
   });
 });
 
 function setupSchema(
   scenario: ScenarioDatabase,
-  overrides: Partial<ItemQueryCliDeps> = {},
+  overrides: Pick<ItemQueryCliDeps, "identity"> = { identity: IDENTITY },
 ) {
-  const read = vi.spyOn(StatementSync.prototype, "all");
-  const handler = createItemQuerySchemaHandler({
-    client: scenario.db,
-    identity: IDENTITY,
-    libraryScope: async () => MY_LIBRARY_SCOPE,
-    signal: new AbortController().signal,
-    ...overrides,
-  });
+  const text = () =>
+    Effect.runPromise(
+      onJob(
+        scenario.db,
+        answerItemQuerySchema(overrides).pipe(
+          Effect.map((reply: QueryReply) => reply.answer),
+        ),
+      ),
+    );
   return {
-    read,
-    text: async (params: CliData = {}) => {
-      const answer = await handler(params);
-      return answer;
-    },
-    run: async (params: CliData = {}) => {
-      const answer = await handler(params);
-      return JSON.parse(answer) as Record<string, unknown>;
-    },
+    text,
+    run: async () => JSON.parse(await text()) as Record<string, unknown>,
   };
 }
 
@@ -1227,24 +985,6 @@ describe("zotlit:item-query-schema", () => {
     });
   });
 
-  it("rejects a parameter before it reads the source", async () => {
-    using scenario = openScenarioDatabase();
-    const { run, read } = setupSchema(scenario);
-
-    const answer = await run({ library: "personal" });
-
-    expect(answer).toMatchObject({
-      contractVersion: 1,
-      command: ITEM_QUERY_SCHEMA_COMMAND,
-      ok: false,
-      diagnostic: {
-        code: "invalid-argument",
-        details: { parameter: "library" },
-      },
-    });
-    expect(read).not.toHaveBeenCalled();
-  });
-
   it("answers the source identity supplied by its caller", async () => {
     using scenario = openScenarioDatabase();
     const source = {
@@ -1279,19 +1019,6 @@ describe("zotlit:item-query-schema", () => {
       },
     });
   });
-
-  it("rejects with the abort reason without a database read when the signal is already aborted", async () => {
-    using scenario = openScenarioDatabase();
-    const controller = new AbortController();
-    const reason = new Error("plugin unloaded");
-    controller.abort(reason);
-    const { run, read } = setupSchema(scenario, {
-      signal: controller.signal,
-    });
-
-    await expect(run()).rejects.toBe(reason);
-    expect(read).not.toHaveBeenCalled();
-  });
 });
 
 describe("zotlit:item-query-guide", () => {
@@ -1325,19 +1052,23 @@ describe("zotlit:item-query-guide", () => {
     const output = itemQueryGuideHandler({ topic: "results" });
     const flat = output.replaceAll(/\s+/g, " ");
     const { run } = setup(scenario, {
-      libraryScope: async () => ({
+      scope: {
         mode: "selected",
         libraries: [{ type: "group", groupID: 999 }],
-      }),
+      },
     });
 
-    const failing: CliData[] = [{}, { library: "group:999" }, { limit: "0" }];
+    type Answered = { code: string; hint: string };
+    // The renderer answers a malformed argument; the handler, the rest.
+    const diagnostics = [decodeItemQuery({ limit: "0" }) as Answered];
+    const failing: CliData[] = [{}, { library: "group:999" }];
     for (const params of failing) {
-      const { diagnostic } = (await run(params)) as {
-        diagnostic: { code: string; hint: string };
-      };
+      const answer = (await run(params)) as { diagnostic: Answered };
+      diagnostics.push(answer.diagnostic);
+    }
 
-      expect(flat).toContain(`${diagnostic.code}: ${diagnostic.hint}`);
+    for (const { code, hint } of diagnostics) {
+      expect(flat).toContain(`${code}: ${hint}`);
     }
   });
 

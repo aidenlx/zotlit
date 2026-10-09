@@ -1,39 +1,34 @@
-// Registers the Item Query commands with Obsidian's CLI: the only Promise edge
-// of `@zotlit/item-query` (ADR 0066). The query command decodes the flat
-// arguments, resolves the Target Libraries on the borrowed client, runs the
-// query, and answers the versioned envelope of ADR 0065. The cancel command
-// stops one running query that the caller named with `id`. The schema command
-// answers the Item Query Schema of the source in the same envelope; the guide
-// command prints plain text.
+// Registers the Item Query commands with Obsidian's CLI (ADR 0066), and answers
+// the versioned envelope of ADR 0065 for one Query Job. The query answer takes
+// the query that `decode.ts` decoded from the flat arguments, resolves the
+// Target Libraries on the database of the job, runs the query, and encodes the
+// envelope. The cancel command stops one running query that the caller named
+// with `id`. The schema command answers the Item Query Schema of the source in
+// the same envelope; the guide command prints plain text.
 //
 // Command, flag, and diagnostic text is all hardcoded English: an
 // agent-facing contract surface, not localized UI. See
 // apps/obsidian/policies/cli-text.md.
 
-import { regex } from "arkregex";
-import { Cause, Data, Effect, Exit } from "effect";
-import { isAbsolute } from "node:path";
+import { Cause, Data, Effect } from "effect";
+import type { Scope } from "effect";
 import type { CliData, CliFlag, CliFlags, CliHandler, Plugin } from "obsidian";
-import * as v from "valibot";
 
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import type {
+  ItemQueryDatabase,
   ItemQueryDatabaseError,
   ItemQueryLayoutError,
 } from "@zotlit/db/item-query";
-import { SLICE_BUDGET_MS } from "@zotlit/item-query";
+import { describeItemQuery, SLICE_BUDGET_MS } from "@zotlit/item-query";
 import type {
   ItemQueryError,
   ItemQuerySchema,
-  QueryResult,
   QueryRow,
   QuerySummary,
-  SortSpec,
 } from "@zotlit/item-query";
 
 import { getLogger } from "@/lib/log";
-import { yieldToMain } from "@/lib/yield-to-main";
-import { compareSelectors, selectorKey } from "@/services/library-scope/scope";
+import { selectorKey } from "@/services/library-scope/scope";
 import type {
   LibraryScope,
   LibrarySelector,
@@ -42,22 +37,22 @@ import type { WorkbenchIdentity } from "@/services/template-workbench/envelope";
 
 import {
   DEFAULT_CLI_LIMIT,
-  DIAGNOSTIC_HINTS,
+  diagnostic,
   ITEM_QUERY_CANCEL_COMMAND,
   ITEM_QUERY_COMMAND,
   INLINE_MAX_BYTES,
   ITEM_QUERY_GUIDE_COMMAND,
-  ITEM_QUERY_PARAMS,
   ITEM_QUERY_SCHEMA_COMMAND,
   itemQueryCancelFlags,
   itemQueryFlags,
-  QUERY_ID_FORM,
-  QUERY_ID_MAX_LENGTH,
 } from "./contract";
-import type { ItemQueryCommand } from "./contract";
+import type { Diagnostic, ItemQueryCommand } from "./contract";
+import { invalid, rejectParameters, rejectQueryId } from "./decode";
+import type { DecodedQuery, NamedLibraries } from "./decode";
 import { GUIDE_TOPIC_NAMES, parseGuideTopic, renderGuide } from "./guide";
-import { runDescribeItemQuery, runItemQueryTo } from "./run";
-import type { ItemQueryInstrument } from "./run";
+import { runItemQueryTo } from "./run";
+import type { ItemQueryInstrument, TargetLibrariesUnavailable } from "./run";
+import type { QueryReply } from "./worker-protocol";
 
 const logger = getLogger(["item-query"]);
 
@@ -69,6 +64,7 @@ export const CONTRACT_VERSION = 1;
 
 export {
   DEFAULT_CLI_LIMIT,
+  diagnostic,
   ITEM_QUERY_CANCEL_COMMAND,
   ITEM_QUERY_COMMAND,
   ITEM_QUERY_GUIDE_COMMAND,
@@ -83,52 +79,10 @@ export const itemQueryGuideFlags: CliFlags = {
   },
 } satisfies Record<"topic", CliFlag>;
 
-type AdapterDiagnosticCode = keyof typeof DIAGNOSTIC_HINTS;
-
-interface Diagnostic {
-  code: AdapterDiagnosticCode | ItemQueryError["code"];
-  message: string;
-  hint: string;
-  /** Where an invalid query went wrong. */
-  location?: ItemQueryError["location"];
-  details?: { parameter: string };
-}
-
-export function diagnostic(
-  code: AdapterDiagnosticCode,
-  message: string,
-  options: { details?: Diagnostic["details"] } = {},
-): Diagnostic {
-  return {
-    code,
-    message,
-    hint: DIAGNOSTIC_HINTS[code],
-    details: options.details,
-  };
-}
-
 /** A Target Library on the wire: local `libraryID` values stay inside. */
 type LibraryWire =
   | { type: "personal" }
   | { type: "group"; groupID: number; name: string };
-
-/** The Libraries the caller names, as a scope that needs each of them. */
-interface NamedLibraries {
-  scope: LibraryScope;
-  /** The argument that names them. */
-  parameter: "library" | "libraries";
-}
-
-/** The flat arguments after decoding. */
-interface DecodedArguments {
-  /** `null`: the Library Scope in force decides. */
-  libraries: NamedLibraries | null;
-  filter: string | undefined;
-  fields: readonly string[] | undefined;
-  sort: readonly SortSpec[] | undefined;
-  limit: number | null;
-  output: string | undefined;
-}
 
 type EnvelopeTail =
   | { ok: false; diagnostic: Diagnostic }
@@ -174,17 +128,14 @@ export function failure(
   return envelope(command, { ok: false, diagnostic });
 }
 
-/** Runs inside the caller's connection scope; the caller owns the client. */
+/** The parameters of one query or schema answer inside a Query Job. */
 export interface ItemQueryCliDeps {
-  client: NodeDatabaseClient;
   identity: WorkbenchIdentity;
   /**
    * The Library Scope in force: the default Target Libraries of a query are
    * its available Libraries.
    */
-  libraryScope(): Promise<LibraryScope>;
-  /** Cancels every run, such as when the plugin unloads. */
-  signal: AbortSignal;
+  scope: LibraryScope;
   /** Observes the engine of each query run; the measurement command sets it. */
   instrument?: ItemQueryInstrument;
   /**
@@ -192,10 +143,18 @@ export interface ItemQueryCliDeps {
    * milliseconds; the measurement command sets it.
    */
   onAnswerStep?: (ms: number) => void;
-  /** Get the job-owned output writer after validation. The caller closes it. */
-  openOutput?: (path: string) => Promise<{
-    write(text: string): Promise<void>;
-  }>;
+  /**
+   * Opens the job-owned output writer after validation. The scope of the job
+   * closes it.
+   */
+  openOutput?: (
+    path: string,
+  ) => Effect.Effect<QueryWriter, ItemQueryOutputError, Scope.Scope>;
+}
+
+/** The output file of an export: each write finishes before the next. */
+export interface QueryWriter {
+  write(text: string): Effect.Effect<void, ItemQueryOutputError>;
 }
 
 export interface ItemQueryRuns {
@@ -238,40 +197,32 @@ export function registerItemQueryCli(
 }
 
 /**
- * The schema handler answers the envelope for the schema and for every typed
- * failure. Cancellation and a defect reject, as in the query handler.
+ * The schema answer is the envelope for the schema and for every typed
+ * failure. Cancellation interrupts it, and a defect dies, as in the query
+ * answer. The caller rejects parameters first, with `decodeSchemaArguments`.
  */
-export function createItemQuerySchemaHandler(
-  deps: ItemQueryCliDeps,
-): CliHandler {
-  return async (params: CliData): Promise<string> => {
-    const rejected = rejectParameters(params, []);
-    if (rejected) return failure(ITEM_QUERY_SCHEMA_COMMAND, rejected);
-
-    deps.signal.throwIfAborted();
-
-    const exit = await runDescribeItemQuery({
-      client: deps.client,
-      signal: deps.signal,
-    });
-
-    if (Exit.isSuccess(exit)) {
-      const schema = exit.value;
-      return envelope(ITEM_QUERY_SCHEMA_COMMAND, {
-        ok: true,
-        identity: deps.identity,
-        schema: {
-          ...schema,
-          defaults: {
-            ...schema.defaults,
-            limit: DEFAULT_CLI_LIMIT,
-            libraries: { source: "library-scope" },
+export function answerItemQuerySchema(
+  deps: Pick<ItemQueryCliDeps, "identity">,
+): Effect.Effect<QueryReply, never, ItemQueryDatabase> {
+  return describeItemQuery().pipe(
+    Effect.map((schema) =>
+      inline(
+        envelope(ITEM_QUERY_SCHEMA_COMMAND, {
+          ok: true,
+          identity: deps.identity,
+          schema: {
+            ...schema,
+            defaults: {
+              ...schema.defaults,
+              limit: DEFAULT_CLI_LIMIT,
+              libraries: { source: "library-scope" },
+            },
           },
-        },
-      });
-    }
-    return answerFailure(exit.cause, ITEM_QUERY_SCHEMA_COMMAND, deps.signal);
-  };
+        }),
+      ),
+    ),
+    answerFailure(ITEM_QUERY_SCHEMA_COMMAND),
+  );
 }
 
 /** The guide is plain text; an unknown topic answers the diagnostic envelope. */
@@ -334,135 +285,48 @@ export function queryIdInUseFailure(id: string): string {
   );
 }
 
-/** Reject malformed CLI parameters before the host acquires a database lease. */
-export function itemQueryArgumentFailure(params: CliData): string | undefined {
-  const decoded = decodeArguments(params);
-  return "code" in decoded ? failure(ITEM_QUERY_COMMAND, decoded) : undefined;
-}
-
 /**
- * The handler answers the envelope for a result and for every typed failure.
- * It rejects with the abort reason when the run is cancelled, and with an
- * `Error` for an implementation defect.
+ * The answer of a decoded query is the envelope for a result and for every
+ * typed failure. Cancellation interrupts it, and an implementation defect dies
+ * with an `Error`.
  */
-export function createItemQueryHandler(deps: ItemQueryCliDeps): CliHandler {
-  return async (params: CliData): Promise<string> => {
-    const decoded = decodeArguments(params);
-    if ("code" in decoded) return failure(ITEM_QUERY_COMMAND, decoded);
-
-    deps.signal.throwIfAborted();
-
-    const named = decoded.libraries;
-    let scope: LibraryScope;
-    if (named) scope = named.scope;
-    else {
-      try {
-        scope = await deps.libraryScope();
-      } catch (error) {
-        deps.signal.throwIfAborted();
-        logger.warn("Item Query could not read the Library Scope", { error });
-        return failure(
-          ITEM_QUERY_COMMAND,
-          diagnostic(
-            "source-unavailable",
-            `The Library Scope of ZotLit is not readable: ${messageOf(error)}`,
-          ),
-        );
-      }
-      deps.signal.throwIfAborted();
-    }
-    const exit = await runItemQueryTo(
-      { scope, requireEach: named !== null },
-      {
-        filter: decoded.filter,
-        fields: decoded.fields,
-        sort: decoded.sort,
-        limit: decoded.limit,
-      },
-      {
-        client: deps.client,
-        signal: deps.signal,
-        instrument: deps.instrument,
-        begin: (summary, libraries) =>
-          outputStep(() =>
-            createAnswer(summary, {
-              identity: deps.identity,
-              libraries: libraries.available.map(({ selector, name }) =>
-                selector.type === "group"
-                  ? { ...selector, name: name ?? "" }
-                  : selector,
-              ),
-              signal: deps.signal,
-              onAnswerStep: deps.onAnswerStep,
-              output: decoded.output,
-              openOutput: deps.openOutput,
-            }),
-          ).pipe(
-            Effect.map((answer) => ({
-              write: (rows) => outputStep(() => answer.write(rows)),
-              end: () => outputStep(() => answer.end()),
-            })),
-          ),
-      },
-    );
-
-    if (Exit.isFailure(exit)) {
-      return answerFailure(exit.cause, ITEM_QUERY_COMMAND, deps.signal);
-    }
-    const { libraries, result } = exit.value;
-    if (result === null) {
-      const [missing] = libraries.unavailable;
-      return failure(
-        ITEM_QUERY_COMMAND,
-        named && missing
-          ? diagnostic(
-              "library-not-found",
-              `The connected Zotero source holds no ${describeSelector(missing)}.`,
-              { details: { parameter: named.parameter } },
-            )
-          : named
-            ? diagnostic(
-                "source-unavailable",
-                "The connected Zotero source holds no Library.",
-              )
-            : diagnostic(
-                "no-library-available",
-                "The connected Zotero source holds no Library of the Library Scope.",
-              ),
-      );
-    }
-    return result;
-  };
+export function answerItemQuery(
+  deps: ItemQueryCliDeps,
+  decoded: DecodedQuery,
+): Effect.Effect<QueryReply, never, ItemQueryDatabase | Scope.Scope> {
+  const named = decoded.libraries;
+  const operation = runItemQueryTo(
+    { scope: named ? named.scope : deps.scope, requireEach: named !== null },
+    {
+      filter: decoded.filter,
+      fields: decoded.fields,
+      sort: decoded.sort,
+      limit: decoded.limit,
+    },
+    (summary, libraries) =>
+      createAnswer(summary, {
+        identity: deps.identity,
+        libraries: libraries.available.map(({ selector, name }) =>
+          selector.type === "group"
+            ? { ...selector, name: name ?? "" }
+            : selector,
+        ),
+        onAnswerStep: deps.onAnswerStep,
+        output: decoded.output,
+        openOutput: deps.openOutput,
+      }),
+  );
+  return (deps.instrument?.(operation) ?? operation).pipe(
+    answerFailure(ITEM_QUERY_COMMAND, named?.parameter),
+  );
 }
 
-type ItemQueryExit = Exit.Exit<
-  QueryResult,
-  ItemQueryError | ItemQueryLayoutError | ItemQueryDatabaseError
->;
+const inline = (answer: string): QueryReply => ({
+  answer,
+  receipt: { kind: "inline" },
+});
 
-/**
- * Map the `Exit` of one run to the answer. A result and every typed failure
- * become the envelope. Cancellation rejects with the abort reason, and a defect
- * rejects with an `Error`, so neither reads as an answer.
- */
-export async function answerExit(
-  exit: ItemQueryExit,
-  context: {
-    /** The identity of the source the run leased. */
-    identity: WorkbenchIdentity;
-    /** The Target Libraries of the run, in the canonical order. */
-    libraries: readonly LibraryWire[];
-    signal: AbortSignal;
-    onAnswerStep?: (ms: number) => void;
-    output?: string;
-    openOutput?: ItemQueryCliDeps["openOutput"];
-  },
-): Promise<string> {
-  if (Exit.isSuccess(exit)) return answerResult(exit.value, context);
-  return answerFailure(exit.cause, ITEM_QUERY_COMMAND, context.signal);
-}
-
-/** Keep cancellation observable between serialization chunks in the worker. */
+/** The time of one step of the answer that `onAnswerStep` reports. */
 const ANSWER_STEP_BUDGET_MS = SLICE_BUDGET_MS / 2;
 const NO_ROWS = "[]\n}";
 const CHUNK_START = '{\n  "rows": [';
@@ -470,53 +334,32 @@ const CHUNK_END = "\n  ]\n}";
 const FIRST_CHUNK_ROWS = 64;
 const CHUNK_TEXT_LENGTH = 256 * 1024;
 
-type AnswerContext = Parameters<typeof answerExit>[1];
+interface AnswerContext {
+  /** The identity of the source the run leased. */
+  identity: WorkbenchIdentity;
+  /** The Target Libraries of the run, in the canonical order. */
+  libraries: readonly LibraryWire[];
+  onAnswerStep?: (ms: number) => void;
+  output?: string;
+  openOutput?: ItemQueryCliDeps["openOutput"];
+}
 
-class ItemQueryOutputError extends Data.TaggedError("ItemQueryOutputError")<{
+/** The output of the answer failed: the envelope carries `diagnostic`. */
+export class ItemQueryOutputError extends Data.TaggedError(
+  "ItemQueryOutputError",
+)<{
   diagnostic: Diagnostic;
 }> {}
 
-function outputFailure(error: unknown): ItemQueryOutputError | undefined {
-  if (error instanceof ItemQueryOutputError) return error;
-  if (error instanceof Error && "code" in error)
-    return new ItemQueryOutputError({
-      diagnostic: diagnostic("output-error", error.message),
-    });
-}
-
-function outputStep<A>(
-  step: () => Promise<A>,
-): Effect.Effect<A, ItemQueryOutputError> {
-  return Effect.tryPromise({ try: step, catch: (error) => error }).pipe(
-    Effect.catch((error) => {
-      const failed = outputFailure(error);
-      return failed ? Effect.fail(failed) : Effect.die(error);
-    }),
-    // File acquisition/writes must settle before the job disposes its files.
-    // Cancellation waits for native I/O before releasing the connection borrow.
-    Effect.uninterruptible,
-  );
-}
-
-/** The materialized-result adapter shares the incremental wire encoder. */
-async function answerResult(
-  result: QueryResult,
+/**
+ * Byte-identical pretty JSON; only the current projection chunk is retained.
+ * Each chunk is one step of the job fiber, so the scheduler of the job can end
+ * a slice and an interrupt can land between two chunks.
+ */
+const createAnswer = Effect.fnUntraced(function* (
+  result: QuerySummary,
   context: AnswerContext,
-): Promise<string> {
-  try {
-    const answer = await createAnswer(result, context);
-    await answer.write(result.rows);
-    return await answer.end();
-  } catch (error) {
-    context.signal.throwIfAborted();
-    const failed = outputFailure(error);
-    if (failed) return failure(ITEM_QUERY_COMMAND, failed.diagnostic);
-    throw error;
-  }
-}
-
-/** Byte-identical pretty JSON; only the current projection chunk is retained. */
-async function createAnswer(result: QuerySummary, context: AnswerContext) {
+) {
   const summary = {
     ok: true as const,
     identity: context.identity,
@@ -531,35 +374,38 @@ async function createAnswer(result: QuerySummary, context: AnswerContext) {
   let first = true;
   let chunkRows = FIRST_CHUNK_ROWS;
   // Open only after query validation and Library resolution succeed.
-  const file =
-    context.output === undefined
-      ? undefined
-      : await context.openOutput?.(context.output);
-  if (context.output !== undefined && !file)
-    throw new Error("Item Query export has no file writer");
-  const append = async (chunk: string) => {
-    context.signal.throwIfAborted();
-    bytes += Buffer.byteLength(chunk);
-    if (file) await file.write(chunk);
-    else {
+  const { output, openOutput } = context;
+  let file: QueryWriter | undefined;
+  if (output !== undefined) {
+    if (!openOutput)
+      return yield* Effect.die(
+        new Error("Item Query export has no file writer"),
+      );
+    file = yield* openOutput(output);
+  }
+  const append = (chunk: string) =>
+    Effect.suspend(() => {
+      bytes += Buffer.byteLength(chunk);
+      if (file) return file.write(chunk);
       if (bytes > INLINE_MAX_BYTES)
-        throw new ItemQueryOutputError({
-          diagnostic: diagnostic(
-            "result-too-large",
-            `The JSON response exceeds the inline limit of ${INLINE_MAX_BYTES} bytes.`,
-          ),
-        });
+        return Effect.fail(
+          new ItemQueryOutputError({
+            diagnostic: diagnostic(
+              "result-too-large",
+              `The JSON response exceeds the inline limit of ${INLINE_MAX_BYTES} bytes.`,
+            ),
+          }),
+        );
       text += chunk;
-    }
-  };
-  await append(
+      return Effect.void;
+    });
+  yield* append(
     result.returnedCount === 0 ? head : `${head.slice(0, -NO_ROWS.length)}[`,
   );
   return {
-    write: async (rows: readonly QueryRow[]) => {
+    write: Effect.fnUntraced(function* (rows: readonly QueryRow[]) {
       let stepMs = 0;
       for (let start = 0; start < rows.length; ) {
-        context.signal.throwIfAborted();
         const stepStart = performance.now();
         const chunk = rows.slice(start, start + chunkRows);
         const wire = JSON.stringify({ rows: chunk }, null, 2).slice(
@@ -574,78 +420,120 @@ async function createAnswer(result: QuerySummary, context: AnswerContext) {
           Math.ceil(CHUNK_TEXT_LENGTH / (wire.length / chunk.length)),
         );
         stepMs += performance.now() - stepStart;
-        await append(part);
+        yield* append(part);
         if (stepMs < ANSWER_STEP_BUDGET_MS) continue;
         context.onAnswerStep?.(stepMs);
-        await yieldToMain();
-        context.signal.throwIfAborted();
         stepMs = 0;
       }
       context.onAnswerStep?.(stepMs);
-    },
-    end: async () => {
-      if (result.returnedCount > 0) await append(CHUNK_END);
-      if (!file) return text;
-      return envelope(ITEM_QUERY_COMMAND, {
-        ...summary,
-        file: { path: context.output!, bytes, format: "json" },
-      });
-    },
+    }),
+    end: Effect.fnUntraced(function* () {
+      if (result.returnedCount > 0) yield* append(CHUNK_END);
+      if (output === undefined) return inline(text);
+      return {
+        answer: envelope(ITEM_QUERY_COMMAND, {
+          ...summary,
+          file: { path: output, bytes, format: "json" },
+        }),
+        receipt: { kind: "file", path: output, bytes },
+      } satisfies QueryReply;
+    }),
   };
-}
+});
 
 /**
  * Map the failure of one run to the answer of `command`: every typed failure
- * becomes the envelope, cancellation rejects with the abort reason, and a
- * defect rejects with an `Error`.
+ * becomes the envelope, and a defect dies with an `Error`. Cancellation stays
+ * an interruption.
  */
 function answerFailure(
-  cause: Cause.Cause<
+  command: ItemQueryCommand,
+  /** The argument that named the Target Libraries, if the caller named them. */
+  parameter?: NamedLibraries["parameter"],
+) {
+  return <R>(
+    run: Effect.Effect<
+      QueryReply,
+      | ItemQueryError
+      | ItemQueryLayoutError
+      | ItemQueryDatabaseError
+      | ItemQueryOutputError
+      | TargetLibrariesUnavailable,
+      R
+    >,
+  ): Effect.Effect<QueryReply, never, R> =>
+    run.pipe(
+      Effect.catch((failed) =>
+        Effect.sync(() => inline(failureText(failed, command, parameter))),
+      ),
+      Effect.catchDefect((defect) => {
+        logger.error("Item Query failed with a defect", {
+          cause: Cause.pretty(Cause.die(defect)),
+        });
+        return Effect.die(
+          new Error("Item Query failed with an internal error.", {
+            cause: defect,
+          }),
+        );
+      }),
+    );
+}
+
+function failureText(
+  failed:
     | ItemQueryError
     | ItemQueryLayoutError
     | ItemQueryDatabaseError
     | ItemQueryOutputError
-  >,
+    | TargetLibrariesUnavailable,
   command: ItemQueryCommand,
-  signal: AbortSignal,
+  parameter: NamedLibraries["parameter"] | undefined,
 ): string {
-  // A masked file operation can finish with the abort reason as a defect.
-  // The caller's cancelled signal remains the authority at this Promise edge.
-  signal.throwIfAborted();
-  const error = Cause.findErrorOption(cause);
-  if (error._tag === "Some") {
-    const failed = error.value;
-    if (failed._tag === "ItemQueryOutputError")
-      return failure(command, failed.diagnostic);
-    if (failed._tag === "ItemQueryError") {
-      return failure(command, {
-        code: failed.code,
-        message: failed.message,
-        hint: failed.hint,
-        location: failed.location,
-      });
-    }
-    if (failed._tag === "ItemQueryLayoutError") {
-      // `@zotlit/db` logs the missing layout and the versions once per copy.
-      return failure(
-        command,
-        diagnostic("unsupported-database-layout", failed.message),
-      );
-    }
-    return databaseFailure(command, failed.cause, { logged: failed });
+  if (failed._tag === "ItemQueryOutputError")
+    return failure(command, failed.diagnostic);
+  if (failed._tag === "TargetLibrariesUnavailable") {
+    return failure(command, targetLibrariesFailure(failed, parameter));
   }
-  if (Cause.hasInterruptsOnly(cause)) {
-    throw (
-      signal.reason ??
-      new DOMException("The query was cancelled.", "AbortError")
+  if (failed._tag === "ItemQueryError") {
+    return failure(command, {
+      code: failed.code,
+      message: failed.message,
+      hint: failed.hint,
+      location: failed.location,
+    });
+  }
+  if (failed._tag === "ItemQueryLayoutError") {
+    // `@zotlit/db` logs the missing layout and the versions once per copy.
+    return failure(
+      command,
+      diagnostic("unsupported-database-layout", failed.message),
     );
   }
-  logger.error("Item Query failed with a defect", {
-    cause: Cause.pretty(cause),
-  });
-  throw new Error("Item Query failed with an internal error.", {
-    cause: Cause.squash(cause),
-  });
+  return databaseFailure(command, failed.cause, { logged: failed });
+}
+
+/** The diagnostic of a run that has no Target Library. */
+function targetLibrariesFailure(
+  { reason, missing }: TargetLibrariesUnavailable,
+  parameter: NamedLibraries["parameter"] | undefined,
+): Diagnostic {
+  if (reason === "named-missing" && missing) {
+    return diagnostic(
+      "library-not-found",
+      `The connected Zotero source holds no ${describeSelector(missing)}.`,
+      { details: parameter && { parameter } },
+    );
+  }
+  if (reason === "named-none") {
+    return diagnostic(
+      "source-unavailable",
+      "The connected Zotero source holds no Library.",
+    );
+  }
+  return diagnostic(
+    "no-library-available",
+    "The connected Zotero source holds no Library of the Library Scope.",
+  );
 }
 
 function databaseFailure(
@@ -676,217 +564,4 @@ function describeSelector(selector: LibrarySelector): string {
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-// ---------------------------------------------------------------------------
-// Argument decoding
-
-const GROUP_SELECTOR = regex("^group:([1-9]\\d*)$");
-const QUERY_ID = /^[\w.-]+$/;
-const POSITIVE_INTEGER = /^[1-9]\d*$/;
-
-const librariesSchema = v.pipe(v.array(v.string()), v.minLength(1));
-const fieldsSchema = v.array(v.string());
-const sortSchema = v.array(
-  v.strictObject({
-    field: v.string(),
-    direction: v.picklist(["asc", "desc"]),
-  }),
-);
-
-/**
- * Decode the flat arguments, or answer the diagnostic of the first malformed
- * one. Obsidian passes every caller token through, so an undeclared parameter
- * is rejected here too.
- */
-function decodeArguments(params: CliData): DecodedArguments | Diagnostic {
-  const rejected = rejectParameters(params, ITEM_QUERY_PARAMS);
-  if (rejected) return rejected;
-
-  // `libraries` wins over `library`; with neither, the Library Scope decides.
-  const named = decodeLibraries(params);
-  if (named !== undefined && "code" in named) return named;
-  let libraries = named ?? null;
-  if (named === undefined && params.library !== undefined) {
-    const selector = parseSelector(params.library);
-    if (selector === null) {
-      return invalid(
-        "library",
-        `'${params.library}' is not a Library: use personal or group:<groupID>.`,
-      );
-    }
-    libraries = {
-      scope: { mode: "selected", libraries: [selector] },
-      parameter: "library",
-    };
-  }
-
-  const filter = params.filter;
-  if (filter !== undefined && filter.trim() === "") {
-    return invalid(
-      "filter",
-      "filter is empty: give a Filter Expression, or omit filter to match every Item.",
-    );
-  }
-
-  const fields = decodeJson(params, "fields");
-  if (fields !== undefined && "code" in fields) return fields;
-
-  const sort = decodeJson(params, "sort");
-  if (sort !== undefined && "code" in sort) return sort;
-
-  let limit: number | null = DEFAULT_CLI_LIMIT;
-  if (params.limit !== undefined) {
-    if (params.limit === "all") limit = null;
-    else if (
-      POSITIVE_INTEGER.test(params.limit) &&
-      Number.isSafeInteger(Number(params.limit))
-    ) {
-      limit = Number(params.limit);
-    } else {
-      return invalid(
-        "limit",
-        `limit '${params.limit}' is not a positive integer: use a positive integer, or all for every match.`,
-      );
-    }
-  }
-
-  const output = params.output;
-  if (output !== undefined && (!isAbsolute(output) || output.includes("\0"))) {
-    return invalid(
-      "output",
-      "output must be an absolute path to a new JSON file.",
-    );
-  }
-
-  if (params.id !== undefined) {
-    const malformed = rejectQueryId(params.id);
-    if (malformed) return malformed;
-  }
-  return { libraries, filter, fields, sort, limit, output };
-}
-
-function rejectQueryId(id: string): Diagnostic | null {
-  if (id.length <= QUERY_ID_MAX_LENGTH && QUERY_ID.test(id)) return null;
-  return invalid("id", `id '${id}' is not a query id: use ${QUERY_ID_FORM}.`);
-}
-
-/** The Library that `personal` or `group:<groupID>` names. */
-function parseSelector(text: string): LibrarySelector | null {
-  if (text === "personal") return { type: "personal" };
-  const group = GROUP_SELECTOR.exec(text);
-  return group ? { type: "group", groupID: Number(group[1]) } : null;
-}
-
-/** Decode `libraries`: the word `all`, or a JSON array of selector texts. */
-function decodeLibraries(
-  params: CliData,
-): NamedLibraries | Diagnostic | undefined {
-  if (params.libraries === "all") {
-    return { scope: { mode: "all" }, parameter: "libraries" };
-  }
-  const texts = decodeJson(params, "libraries");
-  if (texts === undefined || "code" in texts) return texts;
-  const selectors: LibrarySelector[] = [];
-  const seen = new Set<string>();
-  for (const text of texts) {
-    const selector = parseSelector(text);
-    if (selector === null) {
-      return invalid(
-        "libraries",
-        `'${text}' in libraries is not a Library: use "personal" or "group:<groupID>".`,
-      );
-    }
-    if (seen.has(text)) {
-      return invalid(
-        "libraries",
-        `libraries names '${text}' twice: name each Library once.`,
-      );
-    }
-    seen.add(text);
-    selectors.push(selector);
-  }
-  return {
-    scope: {
-      mode: "selected",
-      libraries: selectors.toSorted(compareSelectors),
-    },
-    parameter: "libraries",
-  };
-}
-
-/** The JSON-encoded arguments, with the form each one takes. */
-const JSON_ARGUMENTS = {
-  libraries: {
-    schema: librariesSchema,
-    expected:
-      'all, or a JSON array of at least one Library, each "personal" or "group:<groupID>"',
-  },
-  fields: {
-    schema: fieldsSchema,
-    expected: "a JSON array of Projection Path strings",
-  },
-  sort: {
-    schema: sortSchema,
-    expected:
-      'a JSON array of {"field","direction"} objects with direction "asc" or "desc"',
-  },
-} as const;
-
-type JsonArgument = keyof typeof JSON_ARGUMENTS;
-
-function decodeJson<K extends JsonArgument>(
-  params: CliData,
-  parameter: K,
-):
-  | v.InferOutput<(typeof JSON_ARGUMENTS)[K]["schema"]>
-  | Diagnostic
-  | undefined {
-  const { schema, expected } = JSON_ARGUMENTS[parameter];
-  const raw = params[parameter];
-  if (raw === undefined) return undefined;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return invalid(
-      parameter,
-      `${parameter} is not valid JSON: use ${expected}.`,
-    );
-  }
-  const result = v.safeParse(schema, parsed);
-  if (!result.success) {
-    return invalid(parameter, `${parameter} is not ${expected}.`);
-  }
-  return result.output as v.InferOutput<(typeof JSON_ARGUMENTS)[K]["schema"]>;
-}
-
-/**
- * The diagnostic of the first parameter outside `accepted`. Obsidian passes
- * every caller token through; its own `--` tokens pass.
- */
-function rejectParameters(
-  params: CliData,
-  accepted: readonly string[],
-): Diagnostic | null {
-  for (const key of Object.keys(params)) {
-    if (key.startsWith("--") || accepted.includes(key)) continue;
-    if (key === "vault") {
-      return invalid(
-        "vault",
-        "vault must come before the command name (obsidian vault=<name> zotlit:...); placed after, Obsidian ignores it and routes the call by working directory or focused window instead.",
-      );
-    }
-    return invalid(
-      key,
-      accepted.length === 0
-        ? `Unknown parameter '${key}': this command takes no parameters.`
-        : `Unknown parameter '${key}': use ${accepted.join(", ")}.`,
-    );
-  }
-  return null;
-}
-
-function invalid(parameter: string, message: string): Diagnostic {
-  return diagnostic("invalid-argument", message, { details: { parameter } });
 }

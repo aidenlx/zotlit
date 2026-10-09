@@ -1,8 +1,11 @@
-import { abortable } from "@std/async/abortable";
-import { Effect } from "effect";
+import { Cause, Effect, Exit, Fiber, FiberMap, Scope } from "effect";
 import { randomUUID } from "node:crypto";
-import type { FileSystemAdapter, Vault } from "obsidian";
+import { link, rm } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import type { CliData, FileSystemAdapter, Vault } from "obsidian";
 
+import { openScope } from "@/lib/effect-scope";
+import { getLogger } from "@/lib/log";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import { Service } from "@/services/service-base";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
@@ -11,16 +14,14 @@ import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import {
   diagnostic,
   failure,
-  itemQueryArgumentFailure,
   ITEM_QUERY_COMMAND,
   ITEM_QUERY_SCHEMA_COMMAND,
   queryIdInUseFailure,
 } from "./cli";
 import { queryCancelledText } from "./contract";
-import { QueryExport } from "./export";
-import type { QueryObserver } from "./trace";
-import type { QueryAnswer } from "./worker";
-import type { QueryJob } from "./worker-protocol";
+import { decodeItemQuery, decodeSchemaArguments } from "./decode";
+import type { CancellationEvent, QueryObserver } from "./trace";
+import type { QueryAnswer, QueryCommand } from "./worker-protocol";
 
 interface ItemQueryServiceDeps {
   reads: ZoteroReadsService;
@@ -29,16 +30,32 @@ interface ItemQueryServiceDeps {
   vault: Vault;
 }
 
+/** Forks a job into the map of jobs under its key. */
+type JobRunner = (
+  key: string,
+  job: Effect.Effect<string, unknown>,
+  options: Effect.RunOptions,
+) => Fiber.Fiber<string, unknown>;
+
 /**
- * Owns named CLI jobs over the ZoteroReads worker. A job that the caller names with `id` can be cancelled by that id
- * until it settles; one service serves one vault, so an id names one query in
- * one vault.
+ * The key of a job that the caller does not name. A query id has no `:`, so
+ * this key names no query.
+ */
+const unnamedKey = (): string => `:${randomUUID()}`;
+
+/**
+ * Owns the CLI jobs over the ZoteroReads worker: each job is a fiber in one
+ * map, under its query id or an unnamed key. A job that the caller names with
+ * `id` can be cancelled by that id until it settles; one service serves one
+ * vault, so an id names one query in one vault. Unload interrupts every job
+ * and waits for it.
  */
 export class ItemQueryService extends Service {
   readonly #deps;
-  readonly #unload = new AbortController();
-  readonly #jobs = new Set<Promise<string>>();
-  readonly #named = new Map<string, AbortController>();
+  #jobs!: FiberMap.FiberMap<string, string>;
+  #run!: JobRunner;
+  /** The failure of startup: every job then rejects with it. */
+  #startup: { failed: true; error: unknown } | undefined;
   ready: Promise<void>;
 
   constructor(deps: ItemQueryServiceDeps) {
@@ -49,58 +66,49 @@ export class ItemQueryService extends Service {
 
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
-    await this.#deps.reads.ready;
-    await this.#deps.libraryScope.ready;
-    stack.defer(async () => {
-      this.#unload.abort();
-      await Promise.allSettled(this.#jobs);
-    });
+    // Before the first await: `answer` claims ids from the constructor on.
+    const { scope, close } = openScope();
+    stack.defer(close);
+    this.#jobs = Effect.runSync(
+      Scope.provide(FiberMap.make<string, string>(), scope),
+    );
+    this.#run = Effect.runSync(FiberMap.runtime(this.#jobs)());
+    try {
+      await this.#deps.reads.ready;
+      await this.#deps.libraryScope.ready;
+    } catch (error) {
+      // Recorded before the stack closes the jobs, which then reject with it.
+      this.#startup = { failed: true, error };
+      throw error;
+    }
     this.commit(stack.move());
   }
 
   answer(
-    params: QueryJob["params"],
+    params: CliData,
     signal: AbortSignal,
     measure?: QueryObserver & { heap: boolean },
   ): Promise<string> {
-    // Validate and claim the id synchronously, so two calls with one id
-    // cannot both start.
-    const rejected = itemQueryArgumentFailure(params);
-    if (rejected) return Promise.resolve(rejected);
-    const id = params.id;
-    if (id !== undefined && this.#named.has(id)) {
+    // Decode and claim the id synchronously, so two calls with one id
+    // cannot both start. The worker receives the decoded query.
+    const query = decodeItemQuery(params);
+    if ("code" in query) {
+      return Promise.resolve(failure(ITEM_QUERY_COMMAND, query));
+    }
+    const { id } = query;
+    if (id !== undefined && FiberMap.hasUnsafe(this.#jobs, id)) {
       return Promise.resolve(queryIdInUseFailure(id));
     }
-    const named = new AbortController();
-    if (id !== undefined) this.#named.set(id, named);
-    const combined = AbortSignal.any([
+    return this.#start(
+      this.#job({ schema: false, query }, measure),
       signal,
-      this.#unload.signal,
-      named.signal,
-    ]);
-    const requested = () =>
-      measure?.cancelled?.({
-        phase: "requested",
-        atEpochMs: Temporal.Now.instant().epochMilliseconds,
-      });
-    combined.addEventListener("abort", requested, { once: true });
-    // The id is free before the caller sees the query settle. A listener
-    // keeps the combined signal alive as long as its unload sources.
-    const job = this.#answer(params, combined, { measure }).finally(() => {
-      combined.removeEventListener("abort", requested);
-      if (combined.aborted)
-        measure?.cancelled?.({
-          phase: "cleanup-finished",
-          atEpochMs: Temporal.Now.instant().epochMilliseconds,
-        });
-      if (id !== undefined) this.#named.delete(id);
-    });
-    this.#jobs.add(job);
-    void job.then(
-      () => this.#jobs.delete(job),
-      () => this.#jobs.delete(job),
+      id,
     );
-    return job;
+  }
+
+  /** The jobs that have not settled. */
+  get runningJobs(): number {
+    return Effect.runSync(FiberMap.size(this.#jobs));
   }
 
   /**
@@ -108,107 +116,180 @@ export class ItemQueryService extends Service {
    * @returns `false` when no query with this id is running in this vault.
    */
   cancel(id: string): boolean {
-    const named = this.#named.get(id);
-    if (!named) return false;
-    named.abort(new DOMException(queryCancelledText(id), "AbortError"));
+    if (!FiberMap.hasUnsafe(this.#jobs, id)) return false;
+    Effect.runFork(FiberMap.remove(this.#jobs, id));
     return true;
   }
 
-  schema(params: QueryJob["params"], signal: AbortSignal): Promise<string> {
-    const job = this.#answer(
-      params,
-      AbortSignal.any([signal, this.#unload.signal]),
-      { schema: true },
-    );
-    this.#jobs.add(job);
-    void job.then(
-      () => this.#jobs.delete(job),
-      () => this.#jobs.delete(job),
-    );
-    return job;
+  schema(params: CliData, signal: AbortSignal): Promise<string> {
+    const rejected = decodeSchemaArguments(params);
+    if (rejected) {
+      return Promise.resolve(failure(ITEM_QUERY_SCHEMA_COMMAND, rejected));
+    }
+    return this.#start(this.#job({ schema: true }), signal);
   }
 
-  async #answer(
-    params: QueryJob["params"],
+  /**
+   * Run `job` as a fiber of the map under `id`, or under an unnamed key
+   * without one; `signal` interrupts it. The fiber is uninterruptible outside
+   * the waits of the job, so an answer that arrives wins a later cancel. The
+   * id of a named job is free once the returned promise settles.
+   */
+  #start(
+    job: Effect.Effect<string, unknown>,
     signal: AbortSignal,
-    {
-      measure,
-      schema = false,
-    }: { measure?: QueryObserver & { heap: boolean }; schema?: boolean } = {},
+    id?: string,
   ): Promise<string> {
-    signal.throwIfAborted();
-    await abortable(this.ready, signal);
-    signal.throwIfAborted();
-    const { reads } = await this.#deps.reads.ready;
-    const id = randomUUID();
-    await using output = new QueryExport(
-      schema ? undefined : params.output,
-      id,
-    );
-    const { stagePath } = output;
-    const pending = Effect.runPromise(
-      reads
-        .ItemQuery({
-          job: {
-            id,
-            ...(stagePath ? { stagePath } : {}),
-            params,
-            source: {
-              id: this.#deps.zoteroPref.sourceId,
-              databasePath: this.#deps.zoteroPref.databasePath,
+    const fiber = this.#run(id ?? unnamedKey(), job, {
+      signal,
+      uninterruptible: true,
+    });
+    return Effect.runPromise(Fiber.await(fiber)).then((exit) => {
+      if (Exit.isSuccess(exit)) return exit.value;
+      if (!Cause.hasInterruptsOnly(exit.cause)) throw Cause.squash(exit.cause);
+      if (signal.aborted) throw signal.reason;
+      if (this.#startup) throw this.#startup.error;
+      throw new DOMException(
+        id === undefined || this.disposing
+          ? "The query was cancelled."
+          : queryCancelledText(id),
+        "AbortError",
+      );
+    });
+  }
+
+  /**
+   * One job: send the command to the worker and publish its export. An
+   * interrupt while the worker runs the job sends `CancelItemQuery` and waits
+   * for the answer, so the worker closes its writer and ends its borrow
+   * before the job ends. The staging file is removed when the job ends.
+   */
+  #job(
+    command: QueryCommand,
+    measure?: QueryObserver & { heap: boolean },
+  ): Effect.Effect<string, unknown> {
+    const deps = this.#deps;
+    const ready = this.ready;
+    const report = (phase: CancellationEvent["phase"]) =>
+      Effect.sync(() =>
+        measure?.cancelled?.({
+          phase,
+          atEpochMs: Temporal.Now.instant().epochMilliseconds,
+        }),
+      );
+    return Effect.gen(function* () {
+      const reads = yield* Effect.interruptible(
+        Effect.promise(async () => {
+          await ready;
+          return (await deps.reads.ready).reads;
+        }),
+      ).pipe(Effect.onInterrupt(() => report("requested")));
+      const id = randomUUID();
+      const output = command.schema ? undefined : command.query.output;
+      const stagePath =
+        output === undefined ? undefined : yield* stageExport(output, id);
+      const call = yield* Effect.forkChild(
+        reads
+          .ItemQuery({
+            job: {
+              id,
+              ...(stagePath ? { stagePath } : {}),
+              ...command,
+              source: {
+                id: deps.zoteroPref.sourceId,
+                databasePath: deps.zoteroPref.databasePath,
+              },
+              vault: {
+                name: deps.vault.getName(),
+                path: (deps.vault.adapter as FileSystemAdapter).getBasePath(),
+              },
+              scope: deps.libraryScope.effective,
+              measure: measure !== undefined,
+              ...(measure ? { heap: measure.heap } : {}),
             },
-            vault: {
-              name: this.#deps.vault.getName(),
-              path: (
-                this.#deps.vault.adapter as FileSystemAdapter
-              ).getBasePath(),
-            },
-            scope: this.#deps.libraryScope.effective,
-            schema,
-            measure: measure !== undefined,
-            ...(measure ? { heap: measure.heap } : {}),
-          },
-        })
-        .pipe(
-          Effect.catchTag("DbUnavailable", (error) =>
-            Effect.succeed({
-              answer: failure(
-                schema ? ITEM_QUERY_SCHEMA_COMMAND : ITEM_QUERY_COMMAND,
-                diagnostic("source-unavailable", error.message),
-              ),
-            }),
+          })
+          .pipe(
+            Effect.catchTag("DbUnavailable", (error) =>
+              Effect.succeed<QueryAnswer>({
+                answer: failure(
+                  command.schema
+                    ? ITEM_QUERY_SCHEMA_COMMAND
+                    : ITEM_QUERY_COMMAND,
+                  diagnostic("source-unavailable", error.message),
+                ),
+                receipt: { kind: "inline" },
+              }),
+            ),
+          ),
+      );
+      const result = yield* Effect.interruptible(Fiber.join(call)).pipe(
+        Effect.onInterrupt(() =>
+          report("requested").pipe(
+            Effect.andThen(report("sent")),
+            Effect.andThen(reads.CancelItemQuery({ id })),
+            Effect.ignoreCause,
+            Effect.ensuring(Fiber.await(call)),
           ),
         ),
-    ).catch((error: unknown) => {
-      signal.throwIfAborted();
-      throw error;
-    });
-    const cancel = () => {
-      measure?.cancelled?.({
-        phase: "sent",
-        atEpochMs: Temporal.Now.instant().epochMilliseconds,
-      });
-      void Effect.runPromise(reads.CancelItemQuery({ id })).catch(() => {});
-    };
-    signal.addEventListener("abort", cancel, { once: true });
-    if (signal.aborted) cancel();
-    try {
-      const result: QueryAnswer = await pending;
-      signal.throwIfAborted();
-      if (result.cancelled)
-        throw new DOMException("Item Query cancelled", "AbortError");
-      if (result.measurement) measure?.completed(result.measurement);
-      await output.publish(result.answer, signal);
-      return result.answer;
-    } catch (error) {
-      signal.throwIfAborted();
-      if (!(error instanceof Error) || !("code" in error)) throw error;
-      return failure(
-        ITEM_QUERY_COMMAND,
-        diagnostic("output-error", error.message),
       );
-    } finally {
-      signal.removeEventListener("abort", cancel);
-    }
+      if (result.cancelled) return yield* Effect.interrupt;
+      if (result.measurement) measure?.completed(result.measurement);
+      if (stagePath !== undefined && result.receipt.kind === "file")
+        return yield* publishExport(
+          stagePath,
+          result.receipt.path,
+          result.answer,
+        );
+      return result.answer;
+    }).pipe(
+      Effect.scoped,
+      Effect.onInterrupt(() => report("cleanup-finished")),
+    );
   }
+}
+
+/** The staging path of an export, beside its output; removed with the job. */
+function stageExport(
+  output: string,
+  id: string,
+): Effect.Effect<string, never, Scope.Scope> {
+  return Effect.acquireRelease(
+    Effect.sync(() => join(dirname(output), `.zotlit-query-${id}.tmp`)),
+    (stagePath) =>
+      Effect.promise(() =>
+        rm(stagePath, { force: true }).catch((error: unknown) => {
+          getLogger(["item-query"]).warn(
+            "Item Query could not remove its temporary export {path}",
+            { path: stagePath, error },
+          );
+        }),
+      ),
+  );
+}
+
+/**
+ * Publish the closed staging file at `output`. A file at `output` stays: the
+ * answer is then `output-error`.
+ */
+function publishExport(
+  stagePath: string,
+  output: string,
+  answer: string,
+): Effect.Effect<string> {
+  return Effect.tryPromise({
+    try: () => link(stagePath, output),
+    catch: (error) => error,
+  }).pipe(
+    Effect.as(answer),
+    Effect.catch((error) =>
+      error instanceof Error && "code" in error
+        ? Effect.succeed(
+            failure(
+              ITEM_QUERY_COMMAND,
+              diagnostic("output-error", error.message),
+            ),
+          )
+        : Effect.die(error),
+    ),
+  );
 }
