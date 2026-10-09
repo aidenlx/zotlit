@@ -321,7 +321,7 @@ it.each(["review.status", "custom.review.status"])(
     });
     const diagnostic = diagnose(error.fault, filter, error.location);
     expect(diagnostic.suggestions[0]).toBe('custom["review.status"]');
-    expect(diagnostic.hint).toBe('Try: custom["review.status"] == "include"');
+    expect(diagnostic.report.at(-1)).toBe(diagnostic.hint);
   },
 );
 

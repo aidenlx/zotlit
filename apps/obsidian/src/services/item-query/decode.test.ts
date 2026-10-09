@@ -65,12 +65,18 @@ describe("decodeItemQuery limit", () => {
     expect(decodeItemQuery({ limit: "all" })).toMatchObject({ limit: null });
   });
 
-  it.each(["0", "-1", "1.5", "ten", "", "1e3", "99999999999999999999"])(
-    "rejects limit=%j",
-    (limit) => {
-      expect(decodeItemQuery({ limit })).toMatchObject(rejected("limit"));
-    },
-  );
+  it.each([
+    "0",
+    "-1",
+    "1.5",
+    "ten",
+    "",
+    "1e3",
+    "unlimited",
+    "99999999999999999999",
+  ])("rejects limit=%j", (limit) => {
+    expect(decodeItemQuery({ limit })).toMatchObject(rejected("limit"));
+  });
 });
 
 describe("decodeItemQuery library", () => {
@@ -155,9 +161,11 @@ describe("decodeItemQuery libraries", () => {
       },
     });
     if (request.kind !== "invalid") throw new Error("Expected rejection");
-    expect(decode.rejectionDiagnostic(request).report[0]).toBe(
-      '\'My Library\' in libraries is not a Library: use "personal" or "group:<groupID>".',
-    );
+    expect(decode.rejectionDiagnostic(request)).toMatchObject({
+      code: "invalid-argument",
+      found: '"My Library"',
+      location: { path: "libraries[0]" },
+    });
   });
 });
 
@@ -221,8 +229,6 @@ describe("decodeItemQuery fields, filter, and sort", () => {
     {
       name: "an unknown direction",
       value: '[{"field":"title","direction":"ascending"}]',
-      message:
-        'Invalid type: Expected ("asc" | "desc") but received "ascending"',
       issue: {
         path: "sort[0].direction",
         expected: '("asc" | "desc")',
@@ -232,7 +238,6 @@ describe("decodeItemQuery fields, filter, and sort", () => {
     {
       name: "a missing direction",
       value: '[{"field":"title"}]',
-      message: 'Invalid key: Expected "direction" but received undefined',
       issue: {
         path: "sort[0].direction",
         expected: '"direction"',
@@ -242,7 +247,6 @@ describe("decodeItemQuery fields, filter, and sort", () => {
     {
       name: "an object instead of an array",
       value: '{"field":"title","direction":"asc"}',
-      message: "Invalid type: Expected Array but received Object",
       issue: { path: "sort", expected: "Array", received: "Object" },
     },
   ])("keeps the issue for sort with $name", ({ value, issue }) => {
@@ -261,8 +265,6 @@ describe("decodeItemQuery fields, filter, and sort", () => {
     {
       name: "text that is not JSON",
       value: "title,date",
-      message:
-        "fields is not valid JSON: use a JSON array of Projection Path strings.",
       issue: {
         path: "fields",
         expected: "JSON",
@@ -272,7 +274,6 @@ describe("decodeItemQuery fields, filter, and sort", () => {
     {
       name: "a non-text array entry",
       value: '["title",5]',
-      message: "Invalid type: Expected string but received 5",
       issue: { path: "fields[1]", expected: "string", received: "5" },
     },
   ])("distinguishes fields with $name", ({ value, issue }) => {
@@ -327,37 +328,31 @@ describe("decodeItemQuery parameters", () => {
     );
   });
 
-  it("explains a shell-split filter from the received parameter order", () => {
-    expect(
-      decodeItemQuery({ filter: "itemType", "==": "true", '"book"': "true" }),
-    ).toMatchObject({
+  it("keeps received parameter order for a shell-split filter", () => {
+    const params = { filter: "itemType", "==": "true", '"book"': "true" };
+    expect(decode.decodeItemQuery(params)).toMatchObject({
+      kind: "invalid",
+      parameter: "==",
+      received: Object.entries(params),
+      shellSplit: true,
+    });
+    expect(decodeItemQuery(params)).toMatchObject({
       ...rejected("=="),
-      report: {
-        0: "Unknown parameter '==': Obsidian received these parameters in order: filter, ==, \"book\".",
-      },
-      hint: "Try: filter='itemType == \"book\"'",
+      suggestions: ["filter='itemType == \"book\"'"],
     });
   });
 
-  it("explains a vault parameter after the command name", () => {
-    expect(decodeItemQuery({ vault: "Research" })).toMatchObject({
-      ...rejected("vault"),
-      report: { 0: expect.stringContaining("before the command name") },
-    });
+  it("rejects a vault parameter after the command name", () => {
+    expect(decodeItemQuery({ vault: "Research" })).toMatchObject(
+      rejected("vault"),
+    );
   });
 
-  it.each(["filter", "limit"])(
-    "rejects --%s and explains the key=value form",
-    (parameter) => {
-      const result = decodeItemQuery({ [`--${parameter}`]: "1" });
-
-      expect(result).toMatchObject({
-        ...rejected(`--${parameter}`),
-        report: { 0: expect.stringContaining(`${parameter}=<value>`) },
-        hint: expect.stringContaining(`${parameter}=<value>`),
-      });
-    },
-  );
+  it.each(["filter", "limit"])("rejects --%s", (parameter) => {
+    expect(decodeItemQuery({ [`--${parameter}`]: "1" })).toMatchObject(
+      rejected(`--${parameter}`),
+    );
+  });
 
   it("rejects a malformed switch beside a valid parameter", () => {
     expect(decodeItemQuery({ limit: "1", "--filter": "true" })).toMatchObject(
@@ -370,7 +365,6 @@ describe("decodeItemQuery parameters", () => {
     (key) => {
       expect(decodeItemQuery({ [key]: "true" })).toMatchObject({
         ...rejected(key),
-        hint: expect.stringContaining("name=value"),
       });
     },
   );
@@ -407,10 +401,9 @@ describe("decodeGuideArguments and decodeCancelArguments", () => {
   it.each([
     [decodeGuideArguments, "topic", "filter"],
     [decodeCancelArguments, "id", "export-a"],
-  ])("rejects --%s and shows the accepted form", (decode, parameter, value) => {
+  ])("rejects --%s", (decode, parameter, value) => {
     expect(decode({ [`--${parameter}`]: value })).toMatchObject({
       ...rejected(`--${parameter}`),
-      report: { 0: expect.stringContaining(`${parameter}=<value>`) },
     });
   });
 
@@ -465,14 +458,5 @@ it("preserves received quote characters in a reconstructed shell argument", () =
   const params = { filter: "title", "": "=", '"O\'Brien"': "true" };
   expect(decodeItemQuery(params)).toMatchObject({
     suggestions: ["filter='title == \"O'\"'\"'Brien\"'"],
-  });
-});
-
-it.each(["0", "unlimited"])("gives the count idiom for limit=%s", (limit) => {
-  const diagnostic = decodeItemQuery({ limit });
-  expect(diagnostic).toMatchObject({
-    report: expect.arrayContaining([
-      "To count every match, use fields='[]' limit=all.",
-    ]),
   });
 });

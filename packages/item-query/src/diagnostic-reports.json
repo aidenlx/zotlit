@@ -844,5 +844,17 @@
       "`lower` is a method; call it as `value.lower(...)`.",
       "Call it as `value.lower(...)`."
     ]
+  },
+  {
+    "name": "inequality warning inside a compound filter",
+    "request": {
+      "filter": "tags != \"bulk\" && title == \"x\""
+    },
+    "report": [
+      "tags is a list and \"bulk\" is a string: != between them is always true.",
+      "tags != \"bulk\" && title == \"x\"",
+      "----    ^^^^^^^^",
+      "Try: !tags.contains(\"bulk\") && title == \"x\""
+    ]
   }
 ]
