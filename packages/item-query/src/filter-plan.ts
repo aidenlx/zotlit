@@ -129,6 +129,8 @@ interface FilterCustomFieldUse extends Span {
   readonly name: string;
   readonly bare: boolean;
   readonly deferred?: Extract<Fault, { kind: "unknown" }>;
+  /** A valid property chain to check only when the source lacks its prefix. */
+  readonly dotted?: Span & { readonly name: string };
 }
 
 type FilterFailure = Extract<
@@ -332,16 +334,18 @@ function mismatch(
 class Validator {
   readonly #needs: FieldNeeds[];
   readonly #customFields: FilterCustomFieldUse[];
+  readonly #warnings: Extract<Fault, { kind: "constant" }>[];
   /** The names the enclosing element expressions bind, innermost last. */
   readonly #scopes: (readonly string[])[] = [];
 
   constructor(
     needs: FieldNeeds[],
     customFields: FilterCustomFieldUse[],
-    readonly warnings: Extract<Fault, { kind: "constant" }>[],
+    warnings: Extract<Fault, { kind: "constant" }>[],
   ) {
     this.#needs = needs;
     this.#customFields = customFields;
+    this.#warnings = warnings;
   }
 
   node(ast: ExpressionNode): FilterNode {
@@ -396,7 +400,7 @@ class Validator {
           right.valueType !== "unknown" &&
           left.valueType !== right.valueType
         ) {
-          this.warnings.push({
+          this.#warnings.push({
             kind: "constant",
             value: ast.operator === "!=",
             operator: ast.operator,
@@ -475,7 +479,13 @@ class Validator {
     let deferred = use?.deferred;
     if (!deferred) {
       try {
-        return this.#property(subject, ast.property, span);
+        const property = this.#property(subject, ast.property, span);
+        if (use)
+          this.#customFields[useIndex] = {
+            ...use,
+            dotted: { ...span, name: parts.join(".") },
+          };
+        return property;
       } catch (error) {
         if (
           !(error instanceof Invalid) ||

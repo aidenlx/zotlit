@@ -625,16 +625,16 @@ function suggestionAction(
     return `Try: ${text.slice(0, at.from)}${suggestion}${text.slice(at.to)}`;
   switch (role) {
     case "global":
-      return `Try: ${globalSignature(suggestion)}`;
+      return `Choose a matching function, such as ${globalSignature(suggestion)}.`;
     case "method":
-      return `Try: value.${suggestion}(...)`;
+      return `Choose a matching method, such as value.${suggestion}(...).`;
     case "property":
-      return `Try: value.${suggestion}`;
+      return `Choose a matching property, such as value.${suggestion}.`;
     case "field":
     case "custom-field":
     case "projection-path":
     case "sortable-field":
-      return `Try: ${suggestion}`;
+      return `Choose a matching field, such as ${suggestion}.`;
   }
 }
 
