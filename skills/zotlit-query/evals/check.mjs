@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Check a saved ZotLit Query envelope against the committed evaluation oracle.
 import { readFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 
@@ -129,11 +129,22 @@ function validateExpandedAnnotations(
         `${spec.key} has wrong ${field}`,
       );
     }
-    if (expandedFields[caseName].includes("attachment.path"))
+    if (expandedFields[caseName].includes("attachment.path")) {
+      const attachmentKey = spec.attachment.endsWith("g118")
+        ? spec.attachment.slice(0, -4)
+        : spec.attachment;
       need(
-        sourcePath(values)?.endsWith(spec.sourceSuffix),
+        sourcePath(values) ===
+          join(
+            context.runRoot,
+            "zotero-data",
+            "storage",
+            attachmentKey,
+            basename(spec.sourceSuffix),
+          ),
         `${spec.key} has wrong source file`,
       );
+    }
     if (expandedFields[caseName].includes("attachment.exists"))
       need(
         sourceExists(values) === spec.sourceExists,

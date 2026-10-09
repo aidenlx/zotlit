@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import test from "node:test";
 
 import { validate } from "./check.mjs";
@@ -164,7 +164,15 @@ function expandedEnvelope(caseName) {
           tags: row.tags,
           pageIndex: row.pageIndex,
           attachment: {
-            path: join(root, row.sourceSuffix),
+            path: join(
+              root,
+              "zotero-data",
+              "storage",
+              row.attachment.endsWith("g118")
+                ? row.attachment.slice(0, -4)
+                : row.attachment,
+              basename(row.sourceSuffix),
+            ),
             exists: row.sourceExists,
           },
         },

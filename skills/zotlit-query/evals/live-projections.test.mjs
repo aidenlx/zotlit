@@ -63,6 +63,12 @@ await test("a projected source path proves the requested path; missing-file avai
     validate("attachment", attachment.envelope, context(attachment)).join("\n"),
     /wrong source file/,
   );
+  attachment.envelope.rows[0].values["attachment.path"] =
+    "/wrong/zotero-data/storage/QANPDF22/rougier-2014.pdf";
+  assert.match(
+    validate("attachment", attachment.envelope, context(attachment)).join("\n"),
+    /wrong source file/,
+  );
 
   const missing = structuredClone(live.missing_source);
   assert.match(

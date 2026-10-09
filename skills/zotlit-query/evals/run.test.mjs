@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import test from "node:test";
 
 import { measureEvents, runCase, runProcess } from "./run.mjs";
@@ -107,7 +107,15 @@ async function exercise(
               tags: spec.tags,
               pageIndex: spec.pageIndex,
               attachment: {
-                path: join(corpus, "zotero-data", spec.sourceSuffix),
+                path: join(
+                  corpus,
+                  "zotero-data",
+                  "storage",
+                  spec.attachment.endsWith("g118")
+                    ? spec.attachment.slice(0, -4)
+                    : spec.attachment,
+                  basename(spec.sourceSuffix),
+                ),
                 exists: spec.sourceExists,
               },
             },
