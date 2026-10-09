@@ -29,6 +29,7 @@ import { timestamp } from "./filter-dates";
 import { planFilter } from "./filter-plan";
 import type { FilterRegistry } from "./filter-plan";
 import type { FilterValue } from "./filter-values";
+import { libraryField } from "./library-field";
 import type { ProjectionValue } from "./request";
 
 type FieldDefinition = ItemFieldDefinition<QueryAnnotation, AnnotationNeeds>;
@@ -95,6 +96,7 @@ const WHOLE_ATTACHMENT_NEEDS: AnnotationNeeds = {
 };
 
 export const ANNOTATION_FIELDS = new Map<string, FieldDefinition>([
+  ["library", libraryField],
   [
     "position",
     field(ANNOTATION_POSITION_SHAPE, DETAILS, ({ annotation: { details } }) =>

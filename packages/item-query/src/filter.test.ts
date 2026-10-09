@@ -30,6 +30,7 @@ function item(spec: ItemSpec = {}): QueryItem {
     Temporal.Instant.from(iso).epochMilliseconds;
   const instant = epochMilliseconds("2020-01-01T00:00:00Z");
   return {
+    groupID: null,
     scan: {
       itemID: 1,
       key: spec.key ?? "ABCD2345",

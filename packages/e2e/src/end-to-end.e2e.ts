@@ -2644,6 +2644,41 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     }
   });
 
+  it("projects library selectors through zotlit:item-query across the Fixture Libraries", async () => {
+    const answer = JSON.parse(
+      await cliCommand(vaultId, "zotlit:item-query", {
+        args: { libraries: "all", fields: '["citationKey","library"]' },
+      }),
+    ) as ItemQueryReport;
+    expect(answer.ok).toBe(true);
+    expect(answer.returnedCount).toBe(ITEMS.length);
+    expect(answer.truncated).toBe(false);
+    expect(new Set(answer.rows!.map((row) => row.values.library))).toEqual(
+      new Set(
+        LIBRARIES.map(({ groupID }) =>
+          groupID === null ? "personal" : `group:${groupID}`,
+        ),
+      ),
+    );
+    for (const library of LIBRARIES) {
+      for (const item of ITEMS.filter(
+        (item) => item.libraryID === library.libraryID,
+      )) {
+        const indexedKey =
+          library.groupID === null
+            ? item.key
+            : `${item.key}g${library.groupID}`;
+        expect(
+          answer.rows!.find((row) => row.indexedKey === indexedKey)?.values,
+        ).toEqual({
+          citationKey: item.citationKey,
+          library:
+            library.groupID === null ? "personal" : `group:${library.groupID}`,
+        });
+      }
+    }
+  });
+
   it("answers zotlit:item-query over the Library Scope and over named Libraries with the Fixture's Indexed Keys", async () => {
     const [myLibrary, sharedReading] = LIBRARIES;
     const wireOf = (library: (typeof LIBRARIES)[number]) =>

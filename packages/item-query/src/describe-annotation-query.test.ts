@@ -32,6 +32,20 @@ it("publishes executable Annotation and parent Projection Paths with active-sour
     projection: true,
     sort: false,
   });
+  expect(schema.fields.find((field) => field.path === "library"))
+    .toMatchInlineSnapshot(`
+    {
+      "filter": "string",
+      "path": "library",
+      "projection": true,
+      "sort": false,
+      "type": "string",
+      "valueForms": [
+        "personal",
+        "group:<groupID>",
+      ],
+    }
+  `);
   expect(schema.customFields).toContainEqual(
     expect.objectContaining({
       path: 'item.custom["review.status"]',

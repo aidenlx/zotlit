@@ -224,6 +224,7 @@ SEE ALSO
 const FIELDS_SECTION = `FIELDS AND PROJECTION PATHS
 
 DESCRIPTION
+  library is personal for My Library or group:<groupID> for a group.
   fields is a JSON array of Projection Paths: the values each row returns.
   Without fields, each row has ${DEFAULT_FIELD_LIST}.
   Use fields='[]' to return only the Indexed Keys.
