@@ -9,6 +9,8 @@ import type { CliFlag, CliFlags } from "obsidian";
 
 import type { ItemQueryError } from "@zotlit/item-query";
 
+import { createCliDiagnostics } from "@/lib/cli-diagnostic";
+
 import type { ItemQueryParam } from "./decode";
 
 export const ITEM_QUERY_COMMAND = "zotlit:item-query" as const;
@@ -120,15 +122,7 @@ export interface Diagnostic {
   details?: { parameter: string };
 }
 
-export function diagnostic(
-  code: AdapterDiagnosticCode,
-  message: string,
-  options: { details?: Diagnostic["details"] } = {},
-): Diagnostic {
-  return {
-    code,
-    message,
-    hint: DIAGNOSTIC_HINTS[code],
-    details: options.details,
-  };
-}
+export const { diagnostic, rejectionDiagnostic } = createCliDiagnostics<
+  typeof DIAGNOSTIC_HINTS,
+  Diagnostic["details"]
+>(DIAGNOSTIC_HINTS, "invalid-argument");

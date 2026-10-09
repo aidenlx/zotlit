@@ -19,7 +19,7 @@ import {
   decodeCliParams,
   noCliParams,
 } from "@/lib/cli-params";
-import type { CliParamName, CliRejection, CliRequest } from "@/lib/cli-params";
+import type { CliParamName, CliRequest } from "@/lib/cli-params";
 import {
   compareSelectors,
   selectorKey,
@@ -32,7 +32,6 @@ import type {
 
 import {
   DEFAULT_CLI_LIMIT,
-  diagnostic,
   ITEM_QUERY_CANCEL_COMMAND,
   ITEM_QUERY_COMMAND,
   ITEM_QUERY_GUIDE_COMMAND,
@@ -40,9 +39,10 @@ import {
   QUERY_ID_FORM,
   QUERY_ID_MAX_LENGTH,
 } from "./contract";
-import type { Diagnostic } from "./contract";
 import { GUIDE_TOPIC_NAMES } from "./guide";
 import type { GuideTopic } from "./guide";
+
+export { rejectionDiagnostic } from "./contract";
 
 /** The Libraries the caller names, as a scope that needs each of them. */
 export interface NamedLibraries {
@@ -298,14 +298,4 @@ export function decodeCancelArguments(params: CliData): CliRequest<string> {
   return decodeCliParams(params, cancelParams, {
     command: ITEM_QUERY_CANCEL_COMMAND,
   });
-}
-
-/** The diagnostic of a rejected argument. */
-export function rejectionDiagnostic(rejection: CliRejection): Diagnostic {
-  const rejected = diagnostic("invalid-argument", rejection.message, {
-    details: { parameter: rejection.parameter },
-  });
-  return rejection.hint === undefined
-    ? rejected
-    : { ...rejected, hint: rejection.hint };
 }
