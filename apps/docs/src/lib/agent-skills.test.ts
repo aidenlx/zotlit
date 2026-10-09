@@ -1,5 +1,6 @@
 import { unzipSync } from "fflate";
 import { frontmatter } from "fumadocs-core/content/md/frontmatter";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -15,16 +16,20 @@ const indexRoute = "/.well-known/agent-skills/index.json";
 describe("agentSkillAssets", () => {
   afterEach(() => vi.unstubAllEnvs());
 
-  it("publishes an Item Query skill pinned to the CLI's contract version", async () => {
+  it("publishes the ZotLit Query skill pinned to the CLI's contract version", async () => {
     const assets = await agentSkillAssets(packageRoot, "production");
     const index = JSON.parse(
       new TextDecoder().decode(assets.get(indexRoute)),
     ) as {
-      skills: Array<{ name: string; url: string }>;
+      skills: Array<{ name: string; url: string; digest: string }>;
     };
-    const skill = index.skills.find(({ name }) => name === "zotlit-item-query");
+    const skill = index.skills.find(({ name }) => name === "zotlit-query");
     expect(skill).toBeDefined();
-    const archive = unzipSync(assets.get(new URL(skill!.url).pathname)!);
+    const archiveBytes = assets.get(new URL(skill!.url).pathname)!;
+    expect(skill!.digest).toBe(
+      `sha256:${createHash("sha256").update(archiveBytes).digest("hex")}`,
+    );
+    const archive = unzipSync(archiveBytes);
     // Publish the installable skill; keep the evaluation runtime in the repo.
     expect(Object.keys(archive).sort()).toEqual([
       "SKILL.md",

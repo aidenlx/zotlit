@@ -57,9 +57,76 @@ function envelope(caseName) {
   };
 }
 
+function annotationEnvelope(caseName) {
+  const expected = oracle.cases[caseName];
+  const keys = expected.keys;
+  return {
+    ok: true,
+    identity: {
+      source: { databasePath: join(root, "zotero-data", "zotero.sqlite") },
+      vault: { path: join(root, "zt-fixture-vault") },
+    },
+    libraries: [{ type: "personal" }],
+    request: {
+      limit: null,
+      fields:
+        caseName === "position"
+          ? ["text", "position", "attachment", "item.title"]
+          : ["type", "tags", "hasExcerptImage", "attachment", "item.title"],
+      filter:
+        caseName === "mixed"
+          ? 'type == "image" && tags.contains("figure") && item.citationKey == "rougierTenSimpleRules2014"'
+          : null,
+    },
+    truncated: false,
+    returnedCount: expected.count,
+    rows: keys.map((indexedKey) => ({
+      indexedKey,
+      attachmentIndexedKey: "RGRPDF24",
+      itemIndexedKey: "RUGIER24",
+      values: {
+        type: indexedKey === "FDRFQ7C2" ? "image" : "highlight",
+        text: caseName === "position" ? expected.text : null,
+        pageLabel: indexedKey === "FDRFQ7C2" ? "2" : "1",
+        tags: indexedKey === "FDRFQ7C2" ? ["figure"] : [],
+        hasExcerptImage: indexedKey === "FDRFQ7C2",
+        attachment: {
+          path: "/evaluation-run/attachments/rougier-2014.pdf",
+          exists: true,
+        },
+        "item.title": "Ten Simple Rules for Better Figures",
+        position: caseName === "position" ? expected.position : undefined,
+      },
+    })),
+  };
+}
+
 await test("accepts the three complete oracle cases", () => {
   for (const name of ["include", "export", "edge"])
     assert.deepEqual(validate(name, envelope(name), { runRoot: root }), []);
+});
+
+await test("accepts the four complete Annotation Query cases", () => {
+  for (const name of ["annotations", "mixed", "position", "image"])
+    assert.deepEqual(
+      validate(name, annotationEnvelope(name), { runRoot: root }),
+      [],
+    );
+});
+
+await test("rejects a split mixed filter and an omitted requested position", () => {
+  const mixed = annotationEnvelope("mixed");
+  mixed.request.filter = 'type == "image" && tags.contains("figure")';
+  assert.match(
+    validate("mixed", mixed, { runRoot: root }).join("\n"),
+    /item\.citationKey/,
+  );
+  const position = annotationEnvelope("position");
+  position.request.fields = ["text", "attachment"];
+  assert.match(
+    validate("position", position, { runRoot: root }).join("\n"),
+    /position was not requested/,
+  );
 });
 
 await test("rejects missing rows, truncated responses, and the wrong first author", () => {

@@ -25,7 +25,7 @@ const SKILL_NAMES = [
   "zotlit-template",
   "zotlit-pandoc",
   "zotlit-citations",
-  "zotlit-item-query",
+  "zotlit-query",
 ] as const;
 type AgentSkillName = (typeof SKILL_NAMES)[number];
 

@@ -1,5 +1,0 @@
-{
-  "include": "For my systematic review, search all my Zotero libraries for journal articles tagged query-eval whose custom review.status is include. Give the exact count, each title, the publication year when available, and the first author. Tell me how many lack a publication year.",
-  "export": "Across all my Zotero libraries, export every journal article tagged query-eval. Include each title, publication year, creators, review.status, and abstract. Give the complete count and the number with no publication year, and tell me where you saved the export.",
-  "edge": "Across all my Zotero libraries, find the books tagged query-eval-edge. Show each library, Indexed Key, title, publication year when available, and first author. Tell me how many books have no publication year. Explain the two books that share a Zotero key and identify the edited handbook's editor."
-}

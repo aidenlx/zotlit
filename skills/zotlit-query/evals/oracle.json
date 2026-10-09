@@ -1379,6 +1379,51 @@
           "firstCreator": "Eve Handbook Editor"
         }
       ]
+    },
+    "annotations": {
+      "count": 8,
+      "keys": [
+        "TYY6Z6ZF",
+        "4PE492KU",
+        "HRK7BG32",
+        "K3JRFLFQ",
+        "Q8ZR4TDH",
+        "PUPR5FG5",
+        "C94NJNYG",
+        "FDRFQ7C2"
+      ],
+      "itemKey": "RUGIER24",
+      "itemTitle": "Ten Simple Rules for Better Figures",
+      "attachmentKey": "RGRPDF24"
+    },
+    "mixed": {
+      "count": 1,
+      "keys": ["FDRFQ7C2"],
+      "itemTitle": "Ten Simple Rules for Better Figures",
+      "type": "image",
+      "tags": ["figure"],
+      "hasExcerptImage": true
+    },
+    "position": {
+      "count": 1,
+      "keys": ["PUPR5FG5"],
+      "itemTitle": "Ten Simple Rules for Better Figures",
+      "text": "Identify Your Message",
+      "position": {
+        "kind": "pdf-rects",
+        "pageIndex": 0,
+        "rects": [[265.833, 611.202, 374.503, 620.019]]
+      }
+    },
+    "image": {
+      "count": 1,
+      "keys": ["FDRFQ7C2"],
+      "itemTitle": "Ten Simple Rules for Better Figures",
+      "type": "image",
+      "tags": ["figure"],
+      "hasExcerptImage": true,
+      "format": "png",
+      "provenance": ["zotero", "rendered"]
     }
   }
 }

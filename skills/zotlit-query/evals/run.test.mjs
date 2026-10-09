@@ -22,7 +22,7 @@ async function exercise(
   } = {},
 ) {
   const runId = randomUUID();
-  const root = join(repo, ".scratch", "item-query-evals", runId);
+  const root = join(repo, ".scratch", "zotlit-query-evals", runId);
   const vault = join(root, `vault-${runId}`);
   const corpus = join(root, "corpus");
   const commands = [];
@@ -254,10 +254,40 @@ await test("metrics count completed commands once and distinguish retries from e
     calls: 3,
     queryAttempts: 3,
     queryExitZero: 3,
+    itemQueryAttempts: 3,
+    itemQueryExitZero: 3,
+    annotationQueryAttempts: 0,
+    annotationQueryExitZero: 0,
+    imageAttempts: 0,
+    imageExitZero: 0,
     queryRetries: 1,
     contextualBytes: Buffer.byteLength('{"ok":true}{"ok":false}{"ok":true}'),
     forbiddenReads: [],
   });
+});
+
+await test("metrics distinguish Item, Annotation, and Excerpt Image commands", () => {
+  const event = (id, command) =>
+    JSON.stringify({
+      type: "item.completed",
+      item: {
+        id,
+        type: "command_execution",
+        command: `node obsidian-cli.ts vault=fake ${command}`,
+        aggregated_output: '{"ok":true}',
+        exit_code: 0,
+      },
+    });
+  const metrics = measureEvents(
+    [
+      event("item", "zotlit:item-query"),
+      event("annotation", "zotlit:annotation-query"),
+      event("image", "zotlit:annotation-image key=FDRFQ7C2"),
+    ].join("\n"),
+  );
+  assert.equal(metrics.itemQueryExitZero, 1);
+  assert.equal(metrics.annotationQueryExitZero, 1);
+  assert.equal(metrics.imageExitZero, 1);
 });
 
 await test("a process timeout and an abort stop the process group", async () => {

@@ -19,11 +19,16 @@ const oracle = JSON.parse(
 const fixtureTool = join(repo, "packages/scripts/scripts/obsidian-vault.ts");
 const cliTool = join(repo, "packages/scripts/scripts/obsidian-cli.ts");
 const prepareTool = fileURLToPath(new URL("./prepare.mjs", import.meta.url));
-const skillFile = join(repo, "skills/zotlit-item-query/SKILL.md");
-const catalogFile = join(
+const skillFile = join(repo, "skills/zotlit-query/SKILL.md");
+const itemCatalogFile = join(
   repo,
   "packages/item-query/dist/item-query.schema.json",
 );
+const annotationCatalogFile = join(
+  repo,
+  "packages/item-query/dist/annotation-query.schema.json",
+);
+const itemCases = new Set(["include", "export", "edge"]);
 const answerItem = {
   type: "object",
   additionalProperties: false,
@@ -44,7 +49,7 @@ const answerItem = {
     "editor",
   ],
 };
-const outputSchema = {
+const itemOutputSchema = {
   type: "object",
   additionalProperties: false,
   properties: {
@@ -75,6 +80,80 @@ const outputSchema = {
     "exportPath",
   ],
 };
+const annotationOutputSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    answer: { type: "string" },
+    count: { type: "integer" },
+    annotations: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          indexedKey: { type: "string" },
+          type: { type: "string" },
+          pageLabel: { type: ["string", "null"] },
+          text: { type: ["string", "null"] },
+          comment: { type: ["string", "null"] },
+          tags: { type: "array", items: { type: "string" } },
+          itemTitle: { type: "string" },
+          attachmentPath: { type: ["string", "null"] },
+          attachmentExists: { type: "boolean" },
+          hasExcerptImage: { type: "boolean" },
+          position: {
+            anyOf: [
+              {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  kind: { type: "string" },
+                  pageIndex: { type: ["integer", "null"] },
+                  rects: {
+                    type: "array",
+                    items: {
+                      type: "array",
+                      items: { type: "number" },
+                    },
+                  },
+                },
+                required: ["kind", "pageIndex", "rects"],
+              },
+              { type: "null" },
+            ],
+          },
+        },
+        required: [
+          "indexedKey",
+          "type",
+          "pageLabel",
+          "text",
+          "comment",
+          "tags",
+          "itemTitle",
+          "attachmentPath",
+          "attachmentExists",
+          "hasExcerptImage",
+          "position",
+        ],
+      },
+    },
+    imagePath: { type: ["string", "null"] },
+    imageProvenance: { type: ["string", "null"] },
+    imageFormat: { type: ["string", "null"] },
+    validPng: { type: ["boolean", "null"] },
+  },
+  required: [
+    "answer",
+    "count",
+    "annotations",
+    "imagePath",
+    "imageProvenance",
+    "imageFormat",
+    "validPng",
+  ],
+};
 
 function fail(message) {
   throw new Error(message);
@@ -84,7 +163,7 @@ function pause(ms) {
 }
 function parseOptions(argv) {
   const usage =
-    "usage: node run.mjs <include|export|edge> --model <model> --effort <low|medium|high|xhigh> [--timeout-minutes 10]";
+    "usage: node run.mjs <case> --model <model> --effort <low|medium|high|xhigh> [--timeout-minutes 10]";
   const { values, positionals } = parseArgs({
     args: argv,
     allowPositionals: true,
@@ -207,6 +286,12 @@ export function measureEvents(jsonl) {
   let calls = 0,
     queryAttempts = 0,
     queryExitZero = 0,
+    itemQueryAttempts = 0,
+    itemQueryExitZero = 0,
+    annotationQueryAttempts = 0,
+    annotationQueryExitZero = 0,
+    imageAttempts = 0,
+    imageExitZero = 0,
     queryRetries = 0,
     contextualBytes = 0,
     failedQuery = false;
@@ -229,16 +314,25 @@ export function measureEvents(jsonl) {
     calls++;
     if (
       typeof item.command === "string" &&
-      /(?:oracle\.json|skills\/zotlit-item-query\/evals\/)/.test(item.command)
+      /(?:oracle\.json|skills\/zotlit-query\/evals\/)/.test(item.command)
     )
       forbiddenReads.push(item.command);
-    if (
+    const isCli =
       typeof item.command === "string" &&
-      item.command.includes("obsidian-cli.ts") &&
-      /\bzotlit:item-query\b/.test(item.command) &&
-      !/\bzotlit:item-query-(guide|schema|cancel)\b/.test(item.command)
-    ) {
+      item.command.includes("obsidian-cli.ts");
+    const queryKind = !isCli
+      ? null
+      : /\bzotlit:annotation-query\b/.test(item.command) &&
+          !/\bzotlit:annotation-query-(guide|schema)\b/.test(item.command)
+        ? "annotation"
+        : /\bzotlit:item-query\b/.test(item.command) &&
+            !/\bzotlit:item-query-(guide|schema|cancel)\b/.test(item.command)
+          ? "item"
+          : null;
+    if (queryKind) {
       queryAttempts++;
+      if (queryKind === "item") itemQueryAttempts++;
+      else annotationQueryAttempts++;
       if (failedQuery) queryRetries++;
       failedQuery = item.exit_code !== 0;
       try {
@@ -246,7 +340,15 @@ export function measureEvents(jsonl) {
       } catch {
         /* a plain-text error is counted by its nonzero exit */
       }
-      if (item.exit_code === 0) queryExitZero++;
+      if (item.exit_code === 0) {
+        queryExitZero++;
+        if (queryKind === "item") itemQueryExitZero++;
+        else annotationQueryExitZero++;
+      }
+    }
+    if (isCli && /\bzotlit:annotation-image\b/.test(item.command)) {
+      imageAttempts++;
+      if (item.exit_code === 0) imageExitZero++;
     }
     if (typeof item.aggregated_output === "string")
       contextualBytes += Buffer.byteLength(item.aggregated_output);
@@ -255,13 +357,19 @@ export function measureEvents(jsonl) {
     calls,
     queryAttempts,
     queryExitZero,
+    itemQueryAttempts,
+    itemQueryExitZero,
+    annotationQueryAttempts,
+    annotationQueryExitZero,
+    imageAttempts,
+    imageExitZero,
     queryRetries,
     contextualBytes,
     forbiddenReads,
   };
 }
 
-function checkAnswer(caseName, answer, resultPath) {
+function checkItemAnswer(caseName, answer, resultPath) {
   const errors = [];
   const expected = oracle.cases[caseName];
   if (typeof answer.answer !== "string" || !answer.answer.trim())
@@ -284,9 +392,7 @@ function checkAnswer(caseName, answer, resultPath) {
             : "My Library",
           firstAuthor: row.firstAuthor,
           editor:
-            caseName === "edge" && row.firstAuthor === null
-              ? row.firstCreator
-              : null,
+            row.firstCreator !== row.firstAuthor ? row.firstCreator : null,
         }));
   if (
     !Array.isArray(answer.items) ||
@@ -299,9 +405,18 @@ function checkAnswer(caseName, answer, resultPath) {
       actual.size !== expectedItems.length ||
       expectedItems.some((item) => {
         const found = actual.get(item.indexedKey);
-        return (
-          !found || Object.keys(item).some((key) => found[key] !== item[key])
-        );
+        if (!found) return true;
+        const required = [
+          "indexedKey",
+          "title",
+          "publicationYear",
+          "library",
+          "firstAuthor",
+        ];
+        if (required.some((key) => found[key] !== item[key])) return true;
+        return caseName === "edge" && item.firstAuthor === null
+          ? found.editor !== item.editor
+          : found.editor !== null && found.editor !== item.editor;
       })
     )
       errors.push("answer has wrong Item details");
@@ -326,14 +441,92 @@ function checkAnswer(caseName, answer, resultPath) {
   return errors;
 }
 
+function checkAnnotationAnswer(caseName, answer, { envelope, imageReceipt }) {
+  const errors = [];
+  const expected = oracle.cases[caseName];
+  if (typeof answer.answer !== "string" || !answer.answer.trim())
+    errors.push("answer text is empty");
+  if (answer.count !== expected.count)
+    errors.push(`answer count should be ${expected.count}`);
+  if (
+    !Array.isArray(answer.annotations) ||
+    JSON.stringify(answer.annotations.map(({ indexedKey }) => indexedKey)) !==
+      JSON.stringify(expected.keys)
+  )
+    errors.push("answer has wrong Annotation keys or reading order");
+  const rows = new Map(
+    (envelope.rows ?? []).map((row) => [row.indexedKey, row.values ?? {}]),
+  );
+  for (const annotation of answer.annotations ?? []) {
+    const values = rows.get(annotation.indexedKey);
+    if (!values) continue;
+    if (annotation.type !== values.type)
+      errors.push(`answer has wrong type for ${annotation.indexedKey}`);
+    if (annotation.itemTitle !== values["item.title"])
+      errors.push(`answer has wrong Item title for ${annotation.indexedKey}`);
+    const attachmentPath =
+      values.attachment?.path ?? values["attachment.path"] ?? null;
+    const attachmentExists =
+      values.attachment?.exists ?? values["attachment.exists"] ?? false;
+    if (
+      annotation.attachmentPath !== attachmentPath ||
+      annotation.attachmentExists !== attachmentExists
+    )
+      errors.push(`answer has wrong source path for ${annotation.indexedKey}`);
+  }
+  if (caseName === "position") {
+    const annotation = answer.annotations?.[0];
+    if (
+      JSON.stringify(annotation?.position) !== JSON.stringify(expected.position)
+    )
+      errors.push("answer has wrong requested position");
+  }
+  if (caseName === "image") {
+    if (
+      answer.imagePath !== imageReceipt?.path ||
+      answer.imageProvenance !== imageReceipt?.provenance ||
+      !expected.provenance.includes(answer.imageProvenance) ||
+      answer.imageFormat !== expected.format ||
+      answer.validPng !== true
+    )
+      errors.push("answer has wrong Excerpt Image result");
+  } else if (
+    answer.imagePath !== null ||
+    answer.imageProvenance !== null ||
+    answer.imageFormat !== null ||
+    answer.validPng !== null
+  ) {
+    errors.push("answer has an unexpected Excerpt Image result");
+  }
+  return errors;
+}
+
+function checkAnswer(caseName, answer, context) {
+  return itemCases.has(caseName)
+    ? checkItemAnswer(caseName, answer, context.resultPath)
+    : checkAnnotationAnswer(caseName, answer, context);
+}
+
 function prompt(caseName, vaultId, agentRoot) {
   const result = join(agentRoot, "query-result.json");
   const retained = resolve(agentRoot, "..", "result.json");
-  const catalog = join(
+  const itemCatalog = join(
     agentRoot,
     "packages/item-query/dist/item-query.schema.json",
   );
-  return `Read ${join(agentRoot, "SKILL.md")} and follow it for this request. Use only the evaluation vault ID ${vaultId}. The Obsidian CLI executable for this session is: node ${cliTool}. Put vault=${vaultId} before every Obsidian command name. The matching development schema catalog is at ${catalog}. Read only the copied skill, that catalog, live CLI output, and files you make for this task; do not read evaluator sources.\n\nUser request: ${cases[caseName]}\n\nSave the complete successful zotlit:item-query JSON envelope at ${result}. If the CLI returns a file receipt, copy the complete file envelope to this evidence path. Read the saved envelope and verify it before answering. The runner will retain this envelope at ${retained} after cleanup. In your final JSON, items must contain every Item detail the user requested (use My Library and Lab Archive as library names); use null for a missing year, author, or editor. For the export case use an empty items array and set exportPath to ${retained}; otherwise use null. Put the libraries that share a bare key in duplicateKeyGroups when the request asks about it; otherwise use an empty array. State the exact count and missing publication-year count (use null when the request does not ask for it).`;
+  const annotationCatalog = join(
+    agentRoot,
+    "packages/item-query/dist/annotation-query.schema.json",
+  );
+  const preamble = `Read ${join(agentRoot, "SKILL.md")} and follow it for this request. Use only the evaluation vault ID ${vaultId}. The Obsidian CLI executable for this session is: node ${cliTool}. Put vault=${vaultId} before every Obsidian command name. The matching development schema catalogs are ${itemCatalog} and ${annotationCatalog}. Read only the copied skill, those catalogs, live CLI output, and files you make for this task; do not read evaluator sources.\n\nUser request: ${cases[caseName]}\n\n`;
+  if (itemCases.has(caseName))
+    return `${preamble}Save the complete successful zotlit:item-query JSON envelope at ${result}. If the CLI returns a file receipt, copy the complete file envelope to this evidence path. Read the saved envelope and verify it before answering. The runner will retain this envelope at ${retained} after cleanup. In your final JSON, items must contain every Item detail the user requested (use My Library and Lab Archive as library names); use null for a missing year, author, or editor. For the export case use an empty items array and set exportPath to ${retained}; otherwise use null. Put the libraries that share a bare key in duplicateKeyGroups when the request asks about it; otherwise use an empty array. State the exact count and missing publication-year count (use null when the request does not ask for it).`;
+  const imageResult = join(agentRoot, "image-result.json");
+  const imageInstruction =
+    caseName === "image"
+      ? ` Save the successful zotlit:annotation-image JSON response at ${imageResult}, read the returned file, and verify its PNG signature. Set the four image result fields from that response and check.`
+      : " Set imagePath, imageProvenance, imageFormat, and validPng to null.";
+  return `${preamble}Save the complete successful zotlit:annotation-query JSON envelope at ${result}; use limit=all and keep rows inline. Read and verify the saved envelope before answering. In your final JSON, annotations must contain every requested detail from those rows, with null for an unavailable value.${imageInstruction}`;
 }
 
 /** The lifecycle seam accepts a fake process runner in tests; production uses spawn. */
@@ -343,7 +536,7 @@ export async function runCase(
 ) {
   if (!cases[caseName]) fail(`unknown case: ${caseName}`);
   if (!/^[a-f0-9-]{36}$/i.test(runId)) fail("run ID must be a UUID");
-  const parent = join(repo, ".scratch", "item-query-evals");
+  const parent = join(repo, ".scratch", "zotlit-query-evals");
   await mkdir(parent, { recursive: true });
   const root = join(parent, runId);
   await mkdir(root);
@@ -366,6 +559,7 @@ export async function runCase(
       root,
       report: join(root, "report.json"),
       result: join(root, "result.json"),
+      image: join(root, "image.json"),
       answer: join(root, "answer.json"),
       check: join(root, "check.json"),
     },
@@ -424,15 +618,24 @@ export async function runCase(
     if (!ready) fail("evaluation vault did not resolve the seeded database");
     report.state = "agent";
     await cp(skillFile, join(agent, "SKILL.md"));
-    const copiedCatalog = join(
+    const copiedItemCatalog = join(
       agent,
       "packages/item-query/dist/item-query.schema.json",
     );
-    await mkdir(resolve(copiedCatalog, ".."), { recursive: true });
-    await cp(catalogFile, copiedCatalog);
+    const copiedAnnotationCatalog = join(
+      agent,
+      "packages/item-query/dist/annotation-query.schema.json",
+    );
+    await mkdir(resolve(copiedItemCatalog, ".."), { recursive: true });
+    await cp(itemCatalogFile, copiedItemCatalog);
+    await cp(annotationCatalogFile, copiedAnnotationCatalog);
     await writeFile(
       join(agent, "answer.schema.json"),
-      JSON.stringify(outputSchema, null, 2),
+      JSON.stringify(
+        itemCases.has(caseName) ? itemOutputSchema : annotationOutputSchema,
+        null,
+        2,
+      ),
     );
     const answerPath = join(agent, "answer.json");
     const run = await processRunner(
@@ -480,14 +683,54 @@ export async function runCase(
     await cp(answerPath, report.files.answer);
     await cp(join(agent, "query-result.json"), report.files.result);
     const envelope = JSON.parse(await readFile(report.files.result, "utf8"));
+    let imageReceipt = null;
+    const imageErrors = [];
+    if (caseName === "image") {
+      await cp(join(agent, "image-result.json"), report.files.image);
+      imageReceipt = JSON.parse(await readFile(report.files.image, "utf8"));
+      const expected = oracle.cases.image;
+      if (
+        imageReceipt.ok !== true ||
+        imageReceipt.key !== expected.keys[0] ||
+        imageReceipt.format !== expected.format ||
+        !expected.provenance.includes(imageReceipt.provenance)
+      )
+        imageErrors.push("wrong Excerpt Image receipt");
+      if (typeof imageReceipt.path !== "string")
+        imageErrors.push("Excerpt Image receipt has no path");
+      else {
+        const bytes = await readFile(imageReceipt.path);
+        if (
+          !bytes
+            .subarray(0, 8)
+            .equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+        )
+          imageErrors.push("Excerpt Image is not a PNG");
+      }
+    }
     report.errors = validate(caseName, envelope, {
       runRoot: corpus,
       vaultPath: vault,
     });
-    report.errors.push(...checkAnswer(caseName, answer, report.files.result));
-    if (report.metrics.queryExitZero < 1)
+    report.errors.push(...imageErrors);
+    report.errors.push(
+      ...checkAnswer(caseName, answer, {
+        resultPath: report.files.result,
+        envelope,
+        imageReceipt,
+      }),
+    );
+    if (itemCases.has(caseName) && report.metrics.itemQueryExitZero < 1)
       report.errors.push(
         "agent made no completed Item Query call with exit code zero",
+      );
+    if (!itemCases.has(caseName) && report.metrics.annotationQueryExitZero < 1)
+      report.errors.push(
+        "agent made no completed Annotation Query call with exit code zero",
+      );
+    if (caseName === "image" && report.metrics.imageExitZero < 1)
+      report.errors.push(
+        "agent made no completed Annotation Image call with exit code zero",
       );
     if (report.metrics.forbiddenReads.length)
       report.errors.push("agent read evaluator sources");
@@ -542,7 +785,7 @@ async function main() {
   const options = parseOptions(process.argv.slice(2));
   if (!options) {
     console.log(
-      "usage: node run.mjs <include|export|edge> --model <model> --effort <low|medium|high|xhigh> [--timeout-minutes 10]",
+      "usage: node run.mjs <case> --model <model> --effort <low|medium|high|xhigh> [--timeout-minutes 10]",
     );
     return;
   }
