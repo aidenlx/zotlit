@@ -7,7 +7,7 @@ import type {
 } from "@zotlit/db/item-query";
 
 import type { QueryDataset } from "./dataset";
-import { describeQueryCustomFields } from "./describe-item-query-custom-fields";
+import { describeQueryCustomFields } from "./describe-query-custom-fields";
 import { BUILT_IN_NAMES, fieldDefinition, filterField } from "./fields";
 import type { ValueShape } from "./fields";
 import {

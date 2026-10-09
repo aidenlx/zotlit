@@ -10,7 +10,7 @@ export {
   type SchemaParameter,
   type SchemaProperty,
 } from "./describe-item-query";
-export { describeQueryCustomFields } from "./describe-item-query-custom-fields";
+export { describeQueryCustomFields } from "./describe-query-custom-fields";
 export {
   AttachmentFileResolver,
   type QueryDataset,

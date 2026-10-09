@@ -3851,7 +3851,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 });
 
 /** The `zotlit:item-query` reply shape this suite reads (see
- *  apps/obsidian/src/services/item-query/cli.ts). */
+ *  apps/obsidian/src/services/item-query/contract.ts and answer.ts). */
 interface ItemQueryReport {
   contractVersion: number;
   command: string;
@@ -3881,7 +3881,7 @@ interface ItemQueryDiagnostic {
 }
 
 /** The `zotlit:item-query-schema` reply shape this suite reads (see
- *  apps/obsidian/src/services/item-query/cli.ts). */
+ *  apps/obsidian/src/services/item-query/contract.ts and answer.ts). */
 interface ItemQuerySchemaReport {
   contractVersion: number;
   command: string;

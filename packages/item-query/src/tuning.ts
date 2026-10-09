@@ -4,7 +4,7 @@ import { HYDRATE_CHUNK_SIZE, SCAN_PAGE_SIZE } from "@zotlit/db/item-query";
 
 /**
  * The internal tuning of the engine. Every value changes speed only; each one
- * gives the identical Query Result. It is not an option of `queryItems`.
+ * gives the identical Query Result. It is not an option of `collectQuery` or `consumeQuery`.
  */
 export interface Tuning {
   /**

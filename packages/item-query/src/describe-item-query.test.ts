@@ -433,7 +433,7 @@ function call(name: string, entry: Omit<SchemaFunction, "name">): string {
   return `${name}(${args.join(", ")})`;
 }
 
-describe("the Item Query Schema and queryItems", () => {
+describe("the Item Query Schema and collectQuery", () => {
   const { personal } = SCENARIO_LIBRARIES;
 
   async function codeOf(

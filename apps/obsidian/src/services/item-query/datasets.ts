@@ -1,4 +1,4 @@
-// The CLI datasets: one for each Query Dataset of the engine. A CLI dataset
+// The CLI Datasets: one for each Query Dataset of the engine. A CLI Dataset
 // holds everything that differs between the Item Query and the Annotation
 // Query commands, so the registration, the service and the worker answer look
 // it up and branch on nothing else.

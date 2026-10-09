@@ -129,7 +129,7 @@ const PERSONAL_BY_MODIFIED = [
   "CNF2TEXT",
 ];
 
-describe("queryItems without a filter", () => {
+describe("collectQuery(ITEMS) without a filter", () => {
   it("returns the live top-level Items of the Library, most recently modified first", async () => {
     using scenario = openScenarioDatabase();
     const found = await result(scenario, { libraries: [personal] });
@@ -174,7 +174,7 @@ describe("queryItems without a filter", () => {
   });
 });
 
-describe("queryItems with a limit", () => {
+describe("collectQuery(ITEMS) with a limit", () => {
   it("breaks a tie inside the limit by Indexed Key", async () => {
     using scenario = openScenarioDatabase();
     const found = await result(scenario, { libraries: [personal], limit: 5 });
@@ -184,7 +184,7 @@ describe("queryItems with a limit", () => {
   });
 });
 
-describe("queryItems projection", () => {
+describe("collectQuery(ITEMS) projection", () => {
   it("projects the item type, title, creators, date, and modification time when the caller names no fields", async () => {
     using scenario = openScenarioDatabase();
     const found = await result(scenario, { libraries: [personal], limit: 1 });
@@ -231,7 +231,7 @@ describe("queryItems projection", () => {
 const valuesByKey = (found: QueryResult) =>
   Object.fromEntries(found.rows.map((row) => [row.indexedKey, row.values]));
 
-describe("queryItems Projection Paths", () => {
+describe("collectQuery(ITEMS) Projection Paths", () => {
   it("projects full, partial, text, and missing dates as structured values", async () => {
     using scenario = openScenarioDatabase();
     const found = await result(scenario, {
@@ -487,7 +487,7 @@ describe("queryItems Projection Paths", () => {
   });
 });
 
-describe("queryItems relation lists", () => {
+describe("collectQuery(ITEMS) relation lists", () => {
   it("projects Creators in Zotero's creator order, one element for each row", async () => {
     using scenario = openScenarioDatabase();
     const found = await result(scenario, {
@@ -683,7 +683,7 @@ describe("queryItems relation lists", () => {
   });
 });
 
-describe("queryItems failures", () => {
+describe("collectQuery(ITEMS) failures", () => {
   it("fails a custom field that the source does not define", async () => {
     using scenario = openScenarioDatabase();
     const error = await failure(scenario, {
@@ -716,7 +716,7 @@ describe("queryItems failures", () => {
   });
 });
 
-describe("queryItems on the layout of the Zotero database", () => {
+describe("collectQuery(ITEMS) on the layout of the Zotero database", () => {
   function stamp(
     scenario: ScenarioDatabase,
     versions: { userdata: number; compatibility: number },
@@ -762,7 +762,7 @@ describe("queryItems on the layout of the Zotero database", () => {
   });
 });
 
-describe("queryItems under a scheduler", () => {
+describe("collectQuery(ITEMS) under a scheduler", () => {
   it("pauses between operations and gives the result of the exported scheduler", async () => {
     using scenario = openScenarioDatabase();
     const request: ItemQueryRequest = { libraries: [personal], limit: 4 };
@@ -781,7 +781,7 @@ describe("queryItems under a scheduler", () => {
   });
 });
 
-describe("queryItems sort", () => {
+describe("collectQuery(ITEMS) sort", () => {
   const sortedKeys = async (
     scenario: ScenarioDatabase,
     sort: ItemQueryRequest["sort"],
@@ -995,7 +995,7 @@ describe("queryItems sort", () => {
   });
 });
 
-describe("queryItems sort with a limit", () => {
+describe("collectQuery(ITEMS) sort with a limit", () => {
   const byTitle = [{ field: "title", direction: "asc" }] as const;
   const BY_TITLE = [
     "CHP2YEAR",
@@ -1060,7 +1060,7 @@ describe("queryItems sort with a limit", () => {
   });
 });
 
-describe("queryItems sort of a large Library", () => {
+describe("collectQuery(ITEMS) sort of a large Library", () => {
   /** 1,200 more Items whose titles run against their key order. */
   function seedLargeLibrary(database: ScenarioDatabase) {
     const insertItem = database.sqlite.prepare(
@@ -1133,7 +1133,7 @@ describe("queryItems sort of a large Library", () => {
   });
 });
 
-describe("queryItems accessDate", () => {
+describe("collectQuery(ITEMS) accessDate", () => {
   // The scenario stores 2020-01-07 04:00:00 (UTC) on RPT2NDTE, the calendar
   // day 2020-01-07 on CHP2YEAR, and "yesterday" on UNI2CDE2. New York is
   // UTC-5 in January, so 7 January starts there at 05:00Z.
@@ -1296,7 +1296,7 @@ describe("queryItems accessDate", () => {
   });
 });
 
-describe("queryItems with a filter", () => {
+describe("collectQuery(ITEMS) with a filter", () => {
   /** The Indexed Keys the filter selects, in key order. */
   const matching = async (
     scenario: ScenarioDatabase,
@@ -2016,7 +2016,7 @@ describe("queryItems with a filter", () => {
   });
 });
 
-describe("queryItems candidate sets", () => {
+describe("collectQuery(ITEMS) candidate sets", () => {
   /**
    * Run a filter on the personal Library, and give its Indexed Keys in key
    * order and the keys of the Items that the hydrate statements of `kind`
@@ -2354,7 +2354,7 @@ describe("queryItems candidate sets", () => {
   });
 });
 
-describe("queryItems over several Libraries", () => {
+describe("collectQuery(ITEMS) over several Libraries", () => {
   const both = [personal, group];
   /** Both Libraries, most recently modified first. */
   const BOTH_BY_MODIFIED = [
