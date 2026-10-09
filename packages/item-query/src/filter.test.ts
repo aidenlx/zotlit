@@ -87,15 +87,15 @@ const ARTICLE = item({
 
 function plan(expression: string): FilterPlan {
   const planned = planFilter(expression);
-  if ("code" in planned) {
-    throw new Error(`${expression}: ${planned.code}: ${planned.message}`);
+  if ("kind" in planned) {
+    throw new Error(`${expression}: ${JSON.stringify(planned)}`);
   }
   return planned;
 }
 
 function problem(expression: string): FilterProblem {
   const planned = planFilter(expression);
-  if (!("code" in planned)) throw new Error(`${expression} is valid.`);
+  if (!("kind" in planned)) throw new Error(`${expression} is valid.`);
   return planned;
 }
 
@@ -1401,7 +1401,12 @@ describe("validation", () => {
     ["min == 1", "unknown-field", [0, 3]],
     ['if == "a"', "unknown-field", [0, 2]],
   ] as const)("rejects %j with %s at %j", (expression, code, [from, to]) => {
-    expect(problem(expression)).toMatchObject({
+    const fault = problem(expression);
+    if (fault.kind === "syntax") {
+      expect(fault.fault).toMatchObject({ from, to });
+      return;
+    }
+    expect(fault).toMatchObject({
       kind: "plain",
       code,
       at: { from, to },
@@ -1420,7 +1425,8 @@ describe("validation", () => {
     ["true || title.contains(/a/)", "wrong-argument-type"],
     ["[1, noSuchFunction()].length", "unknown-function"],
   ] as const)("rejects the dead branch of %j with %s", (expression, code) => {
-    expect(problem(expression).code).toBe(code);
+    const fault = problem(expression);
+    expect(fault.kind === "syntax" ? "invalid-filter" : fault.code).toBe(code);
   });
 
   it.each([
