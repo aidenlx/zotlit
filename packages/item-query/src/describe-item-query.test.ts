@@ -224,6 +224,112 @@ describe("describeItemQuery functions", () => {
       on: "any",
       parameters: [{ name: "type", type: "string", values: ["any", ...types] }],
     });
+    // The list helpers of Bases that take no element expression.
+    const listMethod = (name: string) =>
+      methods.find((entry) => entry.on === "list" && entry.name === name);
+    expect(listMethod("slice")).toEqual({
+      name: "slice",
+      on: "list",
+      parameters: [{ name: "start", type: "number" }],
+      optional: [{ name: "end", type: "number" }],
+      rest: null,
+      returns: "list",
+    });
+    expect(listMethod("join")).toEqual({
+      name: "join",
+      on: "list",
+      parameters: [{ name: "separator", type: "string" }],
+      optional: [],
+      rest: null,
+      returns: "string",
+    });
+    for (const name of ["flat", "reverse", "sort", "unique"]) {
+      expect(listMethod(name)).toEqual({
+        name,
+        on: "list",
+        parameters: [],
+        optional: [],
+        rest: null,
+        returns: "list",
+      });
+    }
+    // An element-expression method names the scope its expression can use.
+    for (const name of ["filter", "map"]) {
+      expect(listMethod(name)).toEqual({
+        name,
+        on: "list",
+        parameters: [{ name: "expression", type: "any" }],
+        optional: [],
+        rest: null,
+        returns: "list",
+        scope: ["value", "index"],
+      });
+    }
+    expect(listMethod("reduce")).toEqual({
+      name: "reduce",
+      on: "list",
+      parameters: [
+        { name: "expression", type: "any" },
+        { name: "initial", type: "any" },
+      ],
+      optional: [],
+      rest: null,
+      returns: null,
+      scope: ["value", "index", "acc"],
+    });
+    expect(listMethod("slice")).not.toHaveProperty("scope");
+    expect(methods.find((entry) => entry.name === "isTruthy")).toEqual({
+      name: "isTruthy",
+      on: "any",
+      parameters: [],
+      optional: [],
+      rest: null,
+      returns: "boolean",
+    });
+    expect(functions.find((entry) => entry.name === "list")).toEqual({
+      name: "list",
+      parameters: [{ name: "value", type: "any" }],
+      optional: [],
+      rest: null,
+      returns: "list",
+    });
+    expect(
+      methods.find((entry) => entry.on === "string" && entry.name === "split"),
+    ).toEqual({
+      name: "split",
+      on: "string",
+      parameters: [{ name: "separator", type: ["string", "regexp"] }],
+      optional: [{ name: "n", type: "number" }],
+      rest: null,
+      returns: "list",
+    });
+    expect(
+      methods.find(
+        (entry) => entry.on === "string" && entry.name === "replace",
+      ),
+    ).toMatchObject({
+      parameters: [
+        { name: "pattern", type: ["string", "regexp"] },
+        { name: "replacement", type: "string" },
+      ],
+    });
+    // A regular expression literal is a value of type regexp.
+    expect(methods.filter((entry) => entry.on === "regexp")).toEqual([
+      {
+        name: "matches",
+        on: "regexp",
+        parameters: [{ name: "text", type: "string" }],
+        optional: [],
+        rest: null,
+        returns: "boolean",
+      },
+    ]);
+    expect(properties.filter((entry) => entry.on === "regexp")).toEqual([]);
+    expect(
+      methods.find(
+        (entry) => entry.on === "number" && entry.name === "toFixed",
+      ),
+    ).toMatchObject({ parameters: [{ name: "precision", type: "number" }] });
     expect(
       properties.filter((entry) => entry.name === "length").map((e) => e.on),
     ).toEqual(["string", "list"]);
@@ -235,6 +341,7 @@ describe("describeItemQuery functions", () => {
       "list",
       "date",
       "duration",
+      "regexp",
     ]);
   });
 });
@@ -262,6 +369,7 @@ const ARGUMENT: Record<Extract<SchemaParameter["type"], string>, string> = {
   number: "1",
   list: '["a"]',
   date: "now()",
+  regexp: "/a/",
   any: '"a"',
 };
 
@@ -275,6 +383,7 @@ const SUBJECT: Record<string, string> = {
   list: "tags",
   date: "dateAdded",
   duration: 'duration("1d")',
+  regexp: "/a/i",
 };
 
 function call(name: string, entry: Omit<SchemaFunction, "name">): string {

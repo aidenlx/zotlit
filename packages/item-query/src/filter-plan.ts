@@ -65,6 +65,24 @@ export type FilterNode = NodeBase &
         readonly value: FilterValueDefinition;
       }
     | {
+        /** A name an element expression binds: `value`, `index`, or `acc`. */
+        readonly kind: "binding";
+        readonly name: string;
+      }
+    | {
+        /**
+         * An element-expression method: the evaluator runs `expression` once
+         * for each element of `subject` with the names of `scope` bound. The
+         * further arguments are evaluated once, outside the binding.
+         */
+        readonly kind: "element";
+        readonly name: string;
+        readonly subject: FilterNode;
+        readonly scope: readonly string[];
+        readonly expression: FilterNode;
+        readonly args: readonly FilterNode[];
+      }
+    | {
         readonly kind: "unary";
         readonly operator: "!" | "-";
         readonly operand: FilterNode;
@@ -146,6 +164,8 @@ const HINTS = {
   global: `Use a global function: ${GLOBAL_FUNCTION_NAMES.join(", ")}. Function names are case-sensitive.`,
   method: `Use a method of the Item Query Schema: ${METHOD_NAMES.join(", ")}. Function names are case-sensitive.`,
   property: `Use a property of the Item Query Schema: ${PROPERTY_NAMES.join(", ")}.`,
+  regexp:
+    "Write a regular expression as /pattern/flags with JavaScript syntax, such as /^the /i, and the flags d, g, i, m, s, u, v, and y at most once each.",
 } as const;
 
 /**
@@ -276,6 +296,8 @@ function describeMismatch(
 class Validator {
   readonly #needs: FieldNeeds[];
   readonly #customFields: (Span & { name: string; bare: boolean })[];
+  /** The names the enclosing element expressions bind, innermost last. */
+  readonly #scopes: (readonly string[])[] = [];
 
   constructor(
     needs: FieldNeeds[],
@@ -300,11 +322,10 @@ class Validator {
       case "string":
         return { ...literal(span, ast.value), valueType: "string" };
       case "regexp":
-        return fail("invalid-filter", span, {
-          message:
-            "A Filter Expression of Item Query takes no regular expression.",
-          hint: "Match text with contains, startsWith, or endsWith.",
-        });
+        return {
+          ...literal(span, { type: "regexp", regexp: this.#regexp(ast) }),
+          valueType: "regexp",
+        };
       case "array":
         return {
           ...span,
@@ -365,7 +386,29 @@ class Validator {
     }
   }
 
+  /** The RegExp of a literal, built once; a pattern or flag the engine rejects fails the query. */
+  #regexp(ast: Extract<ExpressionNode, { type: "regexp" }>): RegExp {
+    try {
+      return new RegExp(ast.source, ast.flags);
+    } catch (thrown) {
+      const reason = thrown instanceof Error ? thrown.message : String(thrown);
+      return fail("invalid-filter", ast, {
+        message: `The regular expression /${ast.source}/${ast.flags} is invalid: ${reason}`,
+        hint: HINTS.regexp,
+      });
+    }
+  }
+
   #identifier(name: string, span: Span): FilterNode {
+    // Inside an element expression, a bound name comes before every field.
+    if (this.#scopes.some((scope) => scope.includes(name))) {
+      return {
+        ...span,
+        kind: "binding",
+        name,
+        valueType: name === "index" ? "number" : "unknown",
+      };
+    }
     const field = filterField(name);
     if (field?.filterable) {
       this.#needs.push(field.needs);
@@ -458,11 +501,12 @@ class Validator {
       // `custom.name(...)` calls a method on `custom`, which a filter cannot
       // read; the subject reports it.
       const subject = this.node(callee.object);
+      const call = { name: callee.property, nameSpan, subject };
+      if (methodsNamed(call.name).some(([, method]) => method.scope)) {
+        return this.#elementCall({ ...call, args: ast.args }, span);
+      }
       const args = ast.args.map((arg) => this.node(arg));
-      return this.#methodCall(
-        { name: callee.property, nameSpan, subject, args },
-        span,
-      );
+      return this.#methodCall({ ...call, args }, span);
     }
     return fail("invalid-filter", callee, {
       message: "A call needs the name of a function before its arguments.",
@@ -525,16 +569,15 @@ class Validator {
     };
   }
 
-  #methodCall(
-    call: {
-      name: string;
-      nameSpan: Span;
-      subject: FilterNode;
-      args: readonly FilterNode[];
-    },
-    span: Span,
-  ): FilterNode {
-    const { name, nameSpan, subject, args } = call;
+  /**
+   * The methods `name` can select on `subject`: one for a subject of a known
+   * type; otherwise the method of the value type each Item gives it.
+   */
+  #candidates(
+    name: string,
+    nameSpan: Span,
+    subject: FilterNode,
+  ): readonly FunctionDefinition[] {
     const named = methodsNamed(name);
     if (named.length === 0) {
       const isGlobal = GLOBAL_FUNCTION_NAMES.includes(name);
@@ -545,20 +588,81 @@ class Validator {
           : HINTS.method,
       });
     }
-    // A subject of a known type has one method; another subject takes the
-    // method of the value type each Item gives it.
     const type = subject.valueType;
-    let candidates = named.map(([, method]) => method);
-    if (isDefinite(type)) {
-      const method = methodOf(type, name);
-      if (!method) {
-        return fail("unknown-function", nameSpan, {
-          message: `A ${type} has no method ${quote(name)}.`,
-          hint: `${name} is a method of a ${named.map(([owner]) => owner).join(" or a ")}. ${HINTS.method}`,
-        });
-      }
-      candidates = [method];
+    if (!isDefinite(type)) return named.map(([, method]) => method);
+    const method = methodOf(type, name);
+    if (!method) {
+      return fail("unknown-function", nameSpan, {
+        message: `A ${type} has no method ${quote(name)}.`,
+        hint: `${name} is a method of a ${named.map(([owner]) => owner).join(" or a ")}. ${HINTS.method}`,
+      });
     }
+    return [method];
+  }
+
+  /**
+   * An element-expression method. The first argument is validated with the
+   * names of the method's `scope` bound; the further arguments outside.
+   */
+  #elementCall(
+    call: {
+      name: string;
+      nameSpan: Span;
+      subject: FilterNode;
+      args: readonly ExpressionNode[];
+    },
+    span: Span,
+  ): FilterNode {
+    const { name, nameSpan, subject } = call;
+    const definition = this.#candidates(name, nameSpan, subject).find(
+      (method) => method.scope,
+    );
+    const scope = definition?.scope;
+    // The subject selects a same-named method without a scope.
+    if (!definition || !scope) {
+      const args = call.args.map((arg) => this.node(arg));
+      return this.#methodCall({ ...call, args }, span);
+    }
+    const [first, ...others] = call.args;
+    let expression: FilterNode | null = null;
+    if (first) {
+      this.#scopes.push(scope);
+      try {
+        expression = this.node(first);
+      } finally {
+        this.#scopes.pop();
+      }
+    }
+    const args = others.map((arg) => this.node(arg));
+    if (!expression || !takesCount(definition, args.length + 1)) {
+      return fail("wrong-argument-count", span, {
+        message: `${name} takes ${describeCount(definition)}, not ${call.args.length}.`,
+        hint: `Call ${signature(`value.${name}`, definition)}.`,
+      });
+    }
+    return {
+      ...span,
+      kind: "element",
+      name,
+      subject,
+      scope,
+      expression,
+      args,
+      valueType: definition.returns ?? "unknown",
+    };
+  }
+
+  #methodCall(
+    call: {
+      name: string;
+      nameSpan: Span;
+      subject: FilterNode;
+      args: readonly FilterNode[];
+    },
+    span: Span,
+  ): FilterNode {
+    const { name, nameSpan, subject, args } = call;
+    const candidates = this.#candidates(name, nameSpan, subject);
     const fitting = candidates.filter((method) =>
       takesCount(method, args.length),
     );

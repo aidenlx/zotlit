@@ -14,7 +14,17 @@ export type FilterValue =
   | string
   | readonly FilterValue[]
   | DateValue
-  | DurationValue;
+  | DurationValue
+  | RegexpValue;
+
+/**
+ * A regular expression, from a `/pattern/flags` literal. A filter-only
+ * value: it never enters a Query Row.
+ */
+export interface RegexpValue {
+  readonly type: "regexp";
+  readonly regexp: RegExp;
+}
 
 /** The type of a non-null {@link FilterValue}, or `"null"`. */
 export type FilterValueType =
@@ -24,7 +34,8 @@ export type FilterValueType =
   | "string"
   | "list"
   | "date"
-  | "duration";
+  | "duration"
+  | "regexp";
 
 export function typeOf(value: FilterValue): FilterValueType {
   if (value === null) return "null";
@@ -45,6 +56,10 @@ export function isList(value: FilterValue): value is readonly FilterValue[] {
   return Array.isArray(value);
 }
 
+export function isRegexp(value: FilterValue): value is RegexpValue {
+  return typeOf(value) === "regexp";
+}
+
 /**
  * Whether a value selects the Item: null, `false`, zero, the empty string, the
  * empty list, and a zero duration are falsy. A date is truthy.
@@ -61,7 +76,8 @@ export function truthy(value: FilterValue): boolean {
  * types. Null equals only null. Strings compare by code unit: case-sensitive,
  * no Unicode normalization. Lists compare position by position. Two dates are
  * equal when they share a calendar day (see {@link compareDates}); two
- * durations when every unit holds the same count.
+ * durations when every unit holds the same count; two regexps when their
+ * source and flags are equal.
  */
 export function equals(
   a: FilterValue,
@@ -77,6 +93,13 @@ export function equals(
   }
   if (isDate(a)) return isDate(b) && compareDates("==", [a, b], clock);
   if (isDuration(a)) return isDuration(b) && durationsEqual(a, b);
+  if (isRegexp(a)) {
+    return (
+      isRegexp(b) &&
+      a.regexp.source === b.regexp.source &&
+      a.regexp.flags === b.regexp.flags
+    );
+  }
   return a === b;
 }
 
@@ -112,5 +135,6 @@ export function toText(value: FilterValue): string {
   if (isList(value)) return value.map(toText).join(", ");
   if (isDate(value)) return dateText(value);
   if (isDuration(value)) return value.duration.toString();
+  if (isRegexp(value)) return `/${value.regexp.source}/${value.regexp.flags}`;
   return String(value);
 }

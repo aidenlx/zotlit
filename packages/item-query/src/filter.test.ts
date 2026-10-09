@@ -349,6 +349,21 @@ describe("global functions", () => {
     ["date(dateAdded) == dateAdded", true],
     ['date(date("2020-01")).toString()', "2020-01"],
     ["date(publisher)", null],
+    // list() wraps a value: a list stays, null is the empty list, any other
+    // value is a one-element list.
+    ["list(tags)", ["methods", "to-read", "To-Read"]],
+    ['list(["a"])', ["a"]],
+    ["list([])", []],
+    ["list(null)", []],
+    ["list(publisher)", []],
+    ["list(title)", ["Ecology of Éclairs"]],
+    ["list(1)", [1]],
+    ["list(false)", [false]],
+    ["list(mood).length", 1],
+    ['list(mood).contains("calm")', true],
+    ['list(publisher).contains("calm")', false],
+    ["list(publisher).isEmpty()", true],
+    ["list(today())[0] == today()", true],
   ]);
 });
 
@@ -372,6 +387,23 @@ describe("methods of every value", () => {
     ["title.isType(publisher)", null],
     // A type name that comes from the Item's data and names no type.
     ["title.isType(title)", null],
+    // isTruthy() is the truthiness of a filter: null, false, zero, the empty
+    // text, the empty list, and a zero duration are false.
+    ["title.isTruthy()", true],
+    ["shortTitle.isTruthy()", false],
+    ["publisher.isTruthy()", false],
+    ["null.isTruthy()", false],
+    ["false.isTruthy()", false],
+    ["(0).isTruthy()", false],
+    ["(1).isTruthy()", true],
+    ["[].isTruthy()", false],
+    ["[null].isTruthy()", true],
+    ["tags.isTruthy()", true],
+    ["attachments.isTruthy()", true],
+    ["today().isTruthy()", true],
+    ['duration("0d").isTruthy()', false],
+    ['duration("1d").isTruthy()', true],
+    ['(publisher > "a").isTruthy()', false],
   ]);
 });
 
@@ -436,6 +468,179 @@ describe("string methods", () => {
   });
 });
 
+describe("text helpers", () => {
+  vectors([
+    ['"  a b  ".trim()', "a b"],
+    ["title.trim()", "Ecology of Éclairs"],
+    ['"\\t\\n x \\n".trim()', "x"],
+    ["publisher.trim()", null],
+    // title() upper-cases the first code point of each word that starts the
+    // text or follows whitespace, and leaves the rest as it is.
+    ['"hello wORLD".title()', "Hello WORLD"],
+    ['"  two  spaces ".title()', "  Two  Spaces "],
+    ['"a\\tb\\nc".title()', "A\tB\nC"],
+    ['"éclair ßtraße 🧪x".title()', "Éclair SStraße 🧪x"],
+    ['"pre-print of-things".title()', "Pre-print Of-things"],
+    ['"".title()', ""],
+    ["title.title()", "Ecology Of Éclairs"],
+    ["publisher.title()", null],
+    ['"-".repeat(3)', "---"],
+    ['"ab".repeat(0)', ""],
+    ['"ab".repeat(1)', "ab"],
+    // A count that is negative, not an integer, or above 10 000 gives null;
+    // so does a result above 1 000 000 code units.
+    ['"ab".repeat(-1)', null],
+    ['"ab".repeat(1.5)', null],
+    ['"ab".repeat(10000).length', 20_000],
+    ['"ab".repeat(10001)', null],
+    ['"a".repeat(10000).repeat(100).length', 1_000_000],
+    ['"a".repeat(10000).repeat(101)', null],
+    ['"ab".repeat(null)', null],
+    // A count that comes from the Item and is not a number.
+    ['"ab".repeat(tags[0])', null],
+    ["publisher.repeat(2)", null],
+    // reverse() works by code point, so an emoji survives.
+    ['"abc".reverse()', "cba"],
+    ['"a🧪b".reverse()', "b🧪a"],
+    ['"".reverse()', ""],
+    ["title.reverse()", "srialcÉ fo ygolocE"],
+    ["publisher.reverse()", null],
+    // slice() counts code units, as length and index access do.
+    ["title.slice(0, 7)", "Ecology"],
+    ["title.slice(11)", "Éclairs"],
+    ["title.slice(-7)", "Éclairs"],
+    ["title.slice(0, -8)", "Ecology of"],
+    ["title.slice(5, 2)", ""],
+    ["title.slice(99)", ""],
+    ['"a🧪b".slice(1, 3)', "🧪"],
+    ["title.slice(null)", null],
+    ["title.slice(0, null)", null],
+    ["title.slice(tags[0])", null],
+    ["publisher.slice(0, 1)", null],
+    // replace() with a text pattern replaces every occurrence, with the
+    // replacement as literal text.
+    ['"a  b  c".replace("  ", " ")', "a b c"],
+    ['"aaa".replace("a", "b")', "bbb"],
+    ['"abc".replace("x", "y")', "abc"],
+    ['"abc".replace("", "-")', "-a-b-c-"],
+    ['"a.b".replace(".", "$&$&")', "a$&$&b"],
+    ['"abc".replace("b", "")', "ac"],
+    ['title.replace("of", "and")', "Ecology and Éclairs"],
+    ['title.replace(null, "a")', null],
+    ['title.replace("a", null)', null],
+    ['title.replace([1][0], "a")', null],
+    ['publisher.replace("a", "b")', null],
+    // split() gives the parts as a list of texts; n keeps the first n parts.
+    ['"a:b:c".split(":")', ["a", "b", "c"]],
+    ['"a:b:c".split(":")[0]', "a"],
+    ['"a:b:c".split(":", 2)', ["a", "b"]],
+    ['"a:b:c".split(":", 0)', []],
+    ['"a:b:c".split(":", 9)', ["a", "b", "c"]],
+    ['"a:b:c".split(":", 4294967296)', ["a", "b", "c"]],
+    ['"abc".split(":")', ["abc"]],
+    ['"abc".split("")', ["a", "b", "c"]],
+    ['"".split(":")', [""]],
+    ['"a::b".split("::")', ["a", "b"]],
+    ['"a:b:c".split(":", -1)', null],
+    ['"a:b:c".split(":", 1.5)', null],
+    ['"a:b".split(":", null)', null],
+    ['"a:b".split(null)', null],
+    ['"a:b".split([1][0])', null],
+    ['title.split(" ").length', 3],
+    ['title.split(" ")[1] == "of"', true],
+    ['publisher.split(":")', null],
+  ]);
+});
+
+describe("regular expressions", () => {
+  vectors([
+    // A /pattern/flags literal is a regexp value; matches(text) tests a text.
+    ["/^Eco/.matches(title)", true],
+    ["/^eco/.matches(title)", false],
+    ["/^eco/i.matches(title)", true],
+    ["/clairs$/.matches(title)", true],
+    ["/^.{18}$/u.matches(title)", true],
+    ["/\\d+/.matches(volume)", true],
+    ["/\\d+/.matches(pages)", false],
+    ['/to-read/i.matches("TO-READ")', true],
+    // g and y stay deterministic: the match position is reset before each test.
+    ["/o/g.matches(title) && /o/g.matches(title)", true],
+    [
+      "[/o/g.matches(title), /o/g.matches(title), /o/g.matches(title)]",
+      [true, true, true],
+    ],
+    ["/Eco/y.matches(title) && /Eco/y.matches(title)", true],
+    // One literal, tested once for each element.
+    ['["a", "a"].map(/a/g.matches(value))', [true, true]],
+    ['["a", "a"].map(/a/y.matches(value))', [true, true]],
+    ['["a", "a"].map(value.replace(/a/y, "b"))', ["b", "b"]],
+    // A null or wrongly typed argument gives null.
+    ["/a/.matches(publisher)", null],
+    ["/a/.matches(null)", null],
+    ["/a/.matches([1][0])", null],
+    // An argument whose type depends on the Item.
+    ["/e/.matches(tags[0])", true],
+    // replace() with a regexp follows JavaScript: g decides whether the
+    // first or every occurrence changes, and $1 names a group.
+    ['"a  b   c".replace(/\\s+/g, " ")', "a b c"],
+    ['"a  b   c".replace(/\\s+/, " ")', "a b   c"],
+    ['"Ada Lovelace".replace(/(\\w+) (\\w+)/, "$2, $1")', "Lovelace, Ada"],
+    ['"abc".replace(/B/i, "x")', "axc"],
+    ['"abc".replace(/x/, "y")', "abc"],
+    ['title.replace(/é/i, "e")', "Ecology of eclairs"],
+    ['title.replace(/o/g, "0")', "Ec0l0gy 0f Éclairs"],
+    ["title.replace(/o/g, null)", null],
+    ['publisher.replace(/o/, "0")', null],
+    // split() with a regexp: n keeps the first n parts.
+    ['"a:b—c".split(/[:—]/)', ["a", "b", "c"]],
+    ['"a:b—c".split(/[:—]/, 2)', ["a", "b"]],
+    ['"a1b22c".split(/\\d+/)', ["a", "b", "c"]],
+    ['"abc".split(/x/)', ["abc"]],
+    ["title.split(/\\s+/)[2]", "Éclairs"],
+    ['"a:b:c".split(/:/, 4294967296)', ["a", "b", "c"]],
+    // A group that does not take part in the match is null.
+    ['"a-b".split(/(-)|(,)/)', ["a", "-", null, "b"]],
+    ['"a-b".split(/(-)|(,)/).join("|")', "a|-||b"],
+    ["title.split(/ /, -1)", null],
+    ["publisher.split(/ /)", null],
+    // Equality by source and flags; toString() gives /source/flags.
+    ["/a/ == /a/", true],
+    ["/a/i == /a/i", true],
+    ["/a/ == /a/i", false],
+    ["/a/ == /b/", false],
+    ['/a/ == "/a/"', false],
+    ["/a/ != /a/g", true],
+    ["[/a/] == [/a/]", true],
+    ["/a/.toString()", "/a/"],
+    ["/^the /i.toString()", "/^the /i"],
+    ["/a\\/b/.toString()", "/a\\/b/"],
+    ['"x" + /a/g', "x/a/g"],
+    ['[/a/, /b/].join("|")', "/a/|/b/"],
+    // A regexp is truthy, has no order, and names its type.
+    ["/a/.isTruthy()", true],
+    ["!/a/", false],
+    ["/a/ < /b/", null],
+    ["/a/ >= /a/", null],
+    ['/a/.isType("regexp")', true],
+    ['/a/.isType("string")', false],
+    ['/a/.isType("any")', true],
+    [
+      "[/b/, /a/].sort()",
+      [
+        { type: "regexp", regexp: /b/ },
+        { type: "regexp", regexp: /a/ },
+      ],
+    ],
+    ["[null, /a/, 1].sort()", [1, { type: "regexp", regexp: /a/ }, null]],
+    ["[/a/, /a/, /a/i].unique().length", 2],
+    ["[/a/].contains(/a/)", true],
+    ["list(/a/).length", 1],
+    // A regexp inside an element expression.
+    ["tags.filter(/read/i.matches(value)).length", 2],
+    ["creators.map(/^Ada/.matches(value)).contains(false)", true],
+  ]);
+});
+
 describe("number methods", () => {
   vectors([
     ["(2.5).round()", 3],
@@ -450,6 +655,21 @@ describe("number methods", () => {
     // The value is a string on this Item, so a number method is null.
     ["number(pages).round()", null],
     ["(2.5).round(null)", null],
+    // toFixed gives a text with that many decimals; a precision outside 0 to
+    // 100 gives null.
+    ["(1.005).toFixed(2)", "1.00"],
+    ["(2).toFixed(1)", "2.0"],
+    ["(2.567).toFixed(0)", "3"],
+    ["(-1.5).toFixed(1)", "-1.5"],
+    ["(1).toFixed(100).length", 102],
+    ["(1).toFixed(101)", null],
+    ["(1).toFixed(-1)", null],
+    ["(2.567).toFixed(1.5)", "2.6"],
+    ["(1).toFixed(null)", null],
+    ['(1).toFixed(["a"][0])', null],
+    ["number(volume).toFixed(1)", "12.0"],
+    ['number(volume).toFixed(1) == "12.0"', true],
+    ["number(pages).toFixed(1)", null],
   ]);
 });
 
@@ -484,6 +704,197 @@ describe("list methods", () => {
     ["[1][0].lower()", null],
     ['[1][0].contains("a")', null],
   ]);
+});
+
+describe("list helpers", () => {
+  vectors([
+    // flat opens one level of nested lists.
+    ["[1, [2, 3]].flat()", [1, 2, 3]],
+    ["[1, [2, [3]]].flat()", [1, 2, [3]]],
+    ["[[], [null]].flat()", [null]],
+    ["tags.flat()", ["methods", "to-read", "To-Read"]],
+    ["[].flat()", []],
+    // A null subject gives null.
+    ["null.flat()", null],
+    ["if(attachments, null, tags).flat()", null],
+    // join writes each element as toString() does, and null as empty text.
+    ['tags.join("; ")', "methods; to-read; To-Read"],
+    [
+      'creators.join(", ")',
+      "Ada Lovelace, World Health Organization, Ada Lovelace",
+    ],
+    ['[1, null, "a", true].join("-")', "1--a-true"],
+    ['[null, null].join(",")', ","],
+    ['[[1, 2], 3].join("|")', "1, 2|3"],
+    ['[today(), duration("P1D")].join(" ")', "2024-07-15 P1D"],
+    ['[].join(",")', ""],
+    ['tags.join("")', "methodsto-readTo-Read"],
+    ["tags.join(publisher)", null],
+    ['null.join(",")', null],
+    // reverse and slice give a new list; the subject stays as it is.
+    ["tags.reverse()", ["To-Read", "to-read", "methods"]],
+    ["[1, [2, 3], null].reverse()", [null, [2, 3], 1]],
+    ["[].reverse()", []],
+    ["tags.reverse() == tags", false],
+    ["tags.reverse().reverse() == tags", true],
+    ["null.reverse()", null],
+    // slice follows the index rules of JavaScript, negative indexes included.
+    ["tags.slice(0, 2)", ["methods", "to-read"]],
+    ["tags.slice(1)", ["to-read", "To-Read"]],
+    ["tags.slice(-1)", ["To-Read"]],
+    ["tags.slice(-2, -1)", ["to-read"]],
+    ["tags.slice(0, -1)", ["methods", "to-read"]],
+    ["tags.slice(2, 1)", []],
+    ["tags.slice(5)", []],
+    ["tags.slice(0, 99)", ["methods", "to-read", "To-Read"]],
+    ["tags.slice(0, 0)", []],
+    ["tags.slice(1.5)", ["to-read", "To-Read"]],
+    ["[].slice(0)", []],
+    ["tags.slice(0, 2).length", 2],
+    ["tags.slice(null)", null],
+    ["tags.slice(0, null)", null],
+    ["null.slice(0)", null],
+    // unique keeps the first of the elements that == makes equal.
+    ['["b", "a", "b", "a"].unique()', ["b", "a"]],
+    ["creators.unique()", ["Ada Lovelace", "World Health Organization"]],
+    // Exact equality: case counts, and no coercion between types.
+    ['["a", "A"].unique()', ["a", "A"]],
+    ['[1, "1", true].unique()', [1, "1", true]],
+    ["[null, null, 1].unique()", [null, 1]],
+    [
+      "[[1, 2], [1, 2], [2, 1]].unique()",
+      [
+        [1, 2],
+        [2, 1],
+      ],
+    ],
+    // Two dates are equal when they share a calendar day; the first stays.
+    [
+      '[date("2020-01-15 10:30"), date("2020-01-15"), date("2020")].unique().toString()',
+      "2020-01-15T10:30:00Z",
+    ],
+    ['[date("2020-01-15"), date("2020-01-16")].unique().length', 2],
+    ['[duration("1d"), duration("24h"), duration("P1D")].unique().length', 2],
+    ["[].unique()", []],
+    ["null.unique()", null],
+    // sort: numbers by value, texts in the Item Query string order, dates by
+    // their start, booleans false first.
+    ["[3, 1, 2].sort()", [1, 2, 3]],
+    ["[1.5, -2, 0].sort()", [-2, 0, 1.5]],
+    ['["b", "a", "c"].sort()', ["a", "b", "c"]],
+    // Digits compare digit by digit, so 10 comes before 9.
+    [
+      '["9", "10", "Zebra", "Éclair", "eclair"].sort()',
+      ["10", "9", "eclair", "Éclair", "Zebra"],
+    ],
+    ["tags.reverse().sort()", ["methods", "to-read", "To-Read"]],
+    ["[true, false, true].sort()", [false, true, true]],
+    [
+      '[date("2020-06"), date("2020-01-15 10:30"), date("2020"), date("2020-01-15")].sort().toString()',
+      "2020, 2020-01-15, 2020-01-15T10:30:00Z, 2020-06",
+    ],
+    // Elements of different types group in the order boolean, number, text,
+    // date, duration, list; null comes last.
+    [
+      '[null, [1], duration("1d"), today(), "a", 2, true].sort().toString()',
+      "true, 2, a, 2024-07-15, P1D, 1, null",
+    ],
+    ['[null, "b", null, "a"].sort()', ["a", "b", null, null]],
+    ['[2, "1", 1, "2"].sort()', [1, 2, "1", "2"]],
+    // Stable: equal elements, durations, and lists keep their order.
+    ['[duration("2d"), duration("1d")].sort().toString()', "P2D, P1D"],
+    ["[[2], [1]].sort()", [[2], [1]]],
+    [
+      '[date("2020-01-15"), date("2020-01-15 00:00")].sort().toString()',
+      "2020-01-15, 2020-01-15T00:00:00Z",
+    ],
+    // Dates sort by their start at full precision.
+    [
+      '[date("2020-01-15 10:30:00.0000002Z"), date("2020-01-15 10:30:00.0000001Z")].sort().toString()',
+      "2020-01-15T10:30:00.0000001Z, 2020-01-15T10:30:00.0000002Z",
+    ],
+    ["[].sort()", []],
+    ["tags.sort() == tags", true],
+    ["null.sort()", null],
+  ]);
+});
+
+describe("element expressions", () => {
+  vectors([
+    // filter keeps the elements for which the expression is truthy.
+    ['tags.filter(value.contains("read"))', ["to-read"]],
+    ['tags.filter(value.lower() == "to-read")', ["to-read", "To-Read"]],
+    ['creators.filter(value.contains("Lovelace")).length', 2],
+    ["creators.filter(index == 0)", ["Ada Lovelace"]],
+    ["[1, 2, 3].filter(value > 1)", [2, 3]],
+    ["tags.filter(true)", ["methods", "to-read", "To-Read"]],
+    ["tags.filter(null)", []],
+    // map collects the value of the expression for each element.
+    ["tags.map(value.lower())", ["methods", "to-read", "to-read"]],
+    ["tags.map(index)", [0, 1, 2]],
+    ["[1, 2].map(value * 2)", [2, 4]],
+    ["[1, null].map(value.isEmpty())", [false, true]],
+    // A built-in field keeps its meaning inside the expression.
+    ["[1, 2].map(title)", ["Ecology of Éclairs", "Ecology of Éclairs"]],
+    // reduce folds the list: acc starts at initial.
+    ["tags.reduce(acc + value.length, 0)", 21],
+    ["[1, 2, 3].reduce(acc + value, 0)", 6],
+    ["[1, 2, 3].reduce(acc * value, 1)", 6],
+    ['tags.reduce(acc + ", " + value, "")', ", methods, to-read, To-Read"],
+    ["[1, 2].reduce(index, null)", 1],
+    // A null initial: null adds no text and gives null in arithmetic.
+    ["tags.reduce(acc + value, null)", "methodsto-readTo-Read"],
+    ["[1, 2].reduce(acc + value, null)", null],
+    ["[].reduce(acc, null)", null],
+    // An empty list gives an empty list, or initial.
+    ["[].filter(value)", []],
+    ["[].map(value)", []],
+    ["[].reduce(acc + value, 0)", 0],
+    // A null or non-list subject gives null.
+    ["tags[9].filter(value)", null],
+    ["if(false, tags).map(value)", null],
+    ["tags[9].reduce(acc, 0)", null],
+    ["tags[0].filter(value)", null],
+    ["tags[0].map(value)", null],
+    ["tags[0].reduce(acc, 0)", null],
+    // A nested element expression binds the innermost names; the outer
+    // names stay bound.
+    ["[[1, 2], [3]].map(value.map(value * 10))", [[10, 20], [30]]],
+    ['[["a"], ["b", "c"]].map(value.filter(index == 0))', [["a"], ["b"]]],
+    ["[[1, 2], [3]].reduce(acc + value.filter(value > acc).length, 0)", 3],
+    ["[1, 2].reduce(acc + [10, 20].reduce(acc + value, 0), 0)", 60],
+    ["[[1], [2, 3]].map(index + value.length)", [1, 3]],
+  ]);
+
+  it("binds value, index, and acc only inside the expression", () => {
+    const named = item({
+      custom: { value: "field", index: "5", acc: "sum" },
+      tags: ["a", "b"],
+    });
+    expect(valueOf("value", named)).toBe("field");
+    expect(valueOf("index", named)).toBe("5");
+    expect(valueOf("acc", named)).toBe("sum");
+    expect(valueOf("tags.map(value)", named)).toEqual(["a", "b"]);
+    expect(valueOf("tags.map(index)", named)).toEqual([0, 1]);
+    expect(valueOf('tags.map(custom["value"])', named)).toEqual([
+      "field",
+      "field",
+    ]);
+    expect(valueOf("tags.reduce(acc + value, index)", named)).toBe("5ab");
+    // acc is bound in reduce alone.
+    expect(valueOf("tags.map(acc)", named)).toEqual(["sum", "sum"]);
+    expect(valueOf("tags.filter(acc)", named)).toEqual(["a", "b"]);
+    expect(valueOf("tags.map(acc)")).toEqual([null, null, null]);
+    expect(plan("tags.filter(acc)").customFields).toMatchObject([
+      { name: "acc", bare: true },
+    ]);
+    expect(plan("tags.reduce(acc, value)").customFields).toMatchObject([
+      { name: "value", bare: true },
+    ]);
+    expect(plan("tags.reduce(acc + value + index, 0)").customFields).toEqual(
+      [],
+    );
+  });
 });
 
 describe("relation lists", () => {
@@ -833,7 +1244,7 @@ describe("validation", () => {
     ["   ", "invalid-filter", [3, 3]],
     ['title == "a', "invalid-filter", [11, 11]],
     ["title ==", "invalid-filter", [8, 8]],
-    ["title.contains(/ab/)", "invalid-filter", [15, 19]],
+    ["title.contains(/ab/)", "wrong-argument-type", [15, 19]],
     ["(title)(1)", "invalid-filter", [0, 7]],
     ["custom[mood]", "invalid-filter", [7, 11]],
     ['noSuchFunction("a")', "unknown-function", [0, 14]],
@@ -845,6 +1256,43 @@ describe("validation", () => {
     ["title.round()", "unknown-function", [6, 11]],
     ["attachments.isEmpty()", "unknown-function", [12, 19]],
     ['title.within("a")', "unknown-function", [6, 12]],
+    // A list helper on a subject of a definite non-list type.
+    ["title.sort()", "unknown-function", [6, 10]],
+    ['title.join(",")', "unknown-function", [6, 10]],
+    ["title.flat()", "unknown-function", [6, 10]],
+    ["attachments.unique()", "unknown-function", [12, 18]],
+    ["attachments.reverse()", "unknown-function", [12, 19]],
+    ["(1).slice(0)", "unknown-function", [4, 9]],
+    ["dateAdded.flat()", "unknown-function", [10, 14]],
+    ["tags.join()", "wrong-argument-count", [0, 11]],
+    ["tags.join(1)", "wrong-argument-type", [10, 11]],
+    ["tags.slice()", "wrong-argument-count", [0, 12]],
+    ["tags.slice(0, 1, 2)", "wrong-argument-count", [0, 19]],
+    ['tags.slice("0")', "wrong-argument-type", [11, 14]],
+    ["tags.slice(0, tags)", "wrong-argument-type", [14, 18]],
+    ["tags.sort(1)", "wrong-argument-count", [0, 12]],
+    ["tags.unique(1)", "wrong-argument-count", [0, 14]],
+    ["tags.flat(1)", "wrong-argument-count", [0, 12]],
+    ["tags.reverse(1)", "wrong-argument-count", [0, 15]],
+    // An element expression is validated like every other part, also on an
+    // empty list; value and acc have no known type, index is a number.
+    ["tags.filter(noSuchFunction(value))", "unknown-function", [12, 26]],
+    ["[].map(value.noSuchMethod())", "unknown-function", [13, 25]],
+    ["[].reduce(acc.lenght, 0)", "unknown-property", [14, 20]],
+    ["tags.filter(index.lower())", "unknown-function", [18, 23]],
+    ["tags.filter(value.startsWith(index))", "wrong-argument-type", [29, 34]],
+    ["tags.map(value.contains())", "wrong-argument-count", [9, 25]],
+    ["tags.filter()", "wrong-argument-count", [0, 13]],
+    ["tags.map(value, 1)", "wrong-argument-count", [0, 18]],
+    ["tags.reduce(acc)", "wrong-argument-count", [0, 16]],
+    ["tags.reduce(acc, 0, 1)", "wrong-argument-count", [0, 22]],
+    // An element method on a subject of a definite non-list type.
+    ["title.filter(value)", "unknown-function", [6, 12]],
+    ["(1).map(value)", "unknown-function", [4, 7]],
+    ["attachments.reduce(acc, 0)", "unknown-function", [12, 18]],
+    ["dateAdded.map(value)", "unknown-function", [10, 13]],
+    // The names are bound inside the expression alone.
+    ["value.filter(value)", "unknown-function", [6, 12]],
     // A global function called as a method, and a method called as a global.
     ["title.number()", "unknown-function", [6, 12]],
     ['contains(title, "a")', "unknown-function", [0, 8]],
@@ -890,6 +1338,64 @@ describe("validation", () => {
     ["title.year", "unknown-property", [6, 10]],
     ['duration("1d").days', "unknown-property", [15, 19]],
     ['(now() - duration("1d")).length', "unknown-property", [25, 31]],
+    // Text, number, and wrapping helpers.
+    ["tags.trim()", "unknown-function", [5, 9]],
+    ["(1).title()", "unknown-function", [4, 9]],
+    ["attachments.repeat(2)", "unknown-function", [12, 18]],
+    ["dateAdded.reverse()", "unknown-function", [10, 17]],
+    ["dateAdded.slice(0)", "unknown-function", [10, 15]],
+    ['tags.replace("a", "b")', "unknown-function", [5, 12]],
+    ['tags.split(":")', "unknown-function", [5, 10]],
+    ["title.toFixed(1)", "unknown-function", [6, 13]],
+    ["title.trim(1)", "wrong-argument-count", [0, 13]],
+    ["title.title(1)", "wrong-argument-count", [0, 14]],
+    ["title.repeat()", "wrong-argument-count", [0, 14]],
+    ['title.repeat("2")', "wrong-argument-type", [13, 16]],
+    ["title.reverse(1)", "wrong-argument-count", [0, 16]],
+    ["title.slice()", "wrong-argument-count", [0, 13]],
+    ["title.slice(0, 1, 2)", "wrong-argument-count", [0, 20]],
+    ['title.slice("0")', "wrong-argument-type", [12, 15]],
+    ['title.slice(0, "1")', "wrong-argument-type", [15, 18]],
+    ['title.replace("a")', "wrong-argument-count", [0, 18]],
+    ['title.replace(1, "a")', "wrong-argument-type", [14, 15]],
+    ['title.replace("a", 1)', "wrong-argument-type", [19, 20]],
+    ["title.split()", "wrong-argument-count", [0, 13]],
+    ["title.split(1)", "wrong-argument-type", [12, 13]],
+    ['title.split(":", "2")', "wrong-argument-type", [17, 20]],
+    ["(1).toFixed()", "wrong-argument-count", [0, 13]],
+    ['(1).toFixed("1")', "wrong-argument-type", [12, 15]],
+    ["title.isTruthy(1)", "wrong-argument-count", [0, 17]],
+    ["list()", "wrong-argument-count", [0, 6]],
+    ["list(1, 2)", "wrong-argument-count", [0, 10]],
+    ["title.list()", "unknown-function", [6, 10]],
+    // Regular expressions: a pattern or flag the engine rejects fails at the
+    // literal; a regexp where a text is required is a wrong argument type.
+    ["/(/.matches(title)", "invalid-filter", [0, 3]],
+    ["title == /[/", "invalid-filter", [9, 12]],
+    ["/a/gg.matches(title)", "invalid-filter", [0, 5]],
+    // A letter outside the flags of the grammar is a syntax error at the letter.
+    ["/a/x.matches(title)", "invalid-filter", [3, 4]],
+    ["/a/uv.matches(title)", "invalid-filter", [0, 5]],
+    ["/\\p{Letter/u.matches(title)", "invalid-filter", [0, 12]],
+    ["title.startsWith(/a/)", "wrong-argument-type", [17, 20]],
+    ["title.endsWith(/a/)", "wrong-argument-type", [15, 18]],
+    ['title.containsAny("a", /b/)', "wrong-argument-type", [23, 26]],
+    ["tags.join(/a/)", "wrong-argument-type", [10, 13]],
+    ["/a/.matches(1)", "wrong-argument-type", [12, 13]],
+    ["/a/.matches(tags)", "wrong-argument-type", [12, 16]],
+    ["/a/.matches(/b/)", "wrong-argument-type", [12, 15]],
+    ["/a/.matches()", "wrong-argument-count", [0, 13]],
+    ['/a/.matches("a", "b")', "wrong-argument-count", [0, 21]],
+    ["title.matches(/a/)", "unknown-function", [6, 13]],
+    ["tags.matches(/a/)", "unknown-function", [5, 12]],
+    ["/a/.isEmpty()", "unknown-function", [4, 11]],
+    ["/a/.lower()", "unknown-function", [4, 9]],
+    ["/a/.sort()", "unknown-function", [4, 8]],
+    ["/a/.length", "unknown-property", [4, 10]],
+    ["title.replace(/a/)", "wrong-argument-count", [0, 18]],
+    ["title.replace(/a/, /b/)", "wrong-argument-type", [19, 22]],
+    ['title.split(/a/, "2")', "wrong-argument-type", [17, 20]],
+    ["list == 1", "unknown-field", [0, 4]],
     ["custom", "unfilterable-field", [0, 6]],
     ["custom.isEmpty()", "unfilterable-field", [0, 6]],
     ["min == 1", "unknown-field", [0, 3]],
@@ -930,8 +1436,31 @@ describe("validation", () => {
   it("names the type names that isType takes when the literal is none of them", () => {
     expect(problem('title.isType("strng")')).toMatchObject({
       message:
-        'Argument 1 of isType is "strng"; isType takes one of "any", "null", "boolean", "number", "string", "list", "date", "duration" there.',
+        'Argument 1 of isType is "strng"; isType takes one of "any", "null", "boolean", "number", "string", "list", "date", "duration", "regexp" there.',
       hint: "Call value.isType(type).",
+    });
+  });
+
+  it("points at an invalid regular expression and names its pattern", () => {
+    expect(problem("/(/.matches(title)")).toMatchObject({
+      code: "invalid-filter",
+      message: expect.stringContaining("/(/"),
+      hint: expect.stringContaining("/pattern/flags"),
+    });
+    expect(problem("/a/gg.matches(title)").message).toContain("/a/gg");
+  });
+
+  it("names the owner type of matches when the subject is a text", () => {
+    expect(problem("title.matches(/a/)")).toMatchObject({
+      message: 'A string has no method "matches".',
+      hint: expect.stringContaining("matches is a method of a regexp."),
+    });
+  });
+
+  it("names the owner type of a list helper called on another type", () => {
+    expect(problem("title.sort()")).toMatchObject({
+      message: 'A string has no method "sort".',
+      hint: expect.stringContaining("sort is a method of a list."),
     });
   });
 
@@ -940,6 +1469,17 @@ describe("validation", () => {
       "value.contains(...)",
     );
     expect(problem("title.number()").hint).toContain("number(...)");
+    expect(problem("title.list()").hint).toContain("list(...)");
+  });
+
+  it("names the type a text helper belongs to when the subject has another type", () => {
+    expect(problem("tags.trim()")).toMatchObject({
+      message: 'A list has no method "trim".',
+      hint: expect.stringContaining("trim is a method of a string."),
+    });
+    expect(problem("title.toFixed(1)").hint).toContain(
+      "toFixed is a method of a number.",
+    );
   });
 
   // A branch that never runs is validated like every other part.
@@ -951,7 +1491,7 @@ describe("validation", () => {
     ["if(true, 1, custom)", "unfilterable-field"],
     ["if(true, now(), date(1))", "wrong-argument-type"],
     ['if(false, title.isType("strng"), true)', "wrong-argument-type"],
-    ["true || title.contains(/a/)", "invalid-filter"],
+    ["true || title.contains(/a/)", "wrong-argument-type"],
     ["[1, noSuchFunction()].length", "unknown-function"],
   ] as const)("rejects the dead branch of %j with %s", (expression, code) => {
     expect(problem(expression).code).toBe(code);
@@ -966,7 +1506,28 @@ describe("validation", () => {
     "title.startsWith(publisher)",
     "null.isEmpty()",
     "null.lower()",
+    "null.isTruthy()",
+    // A regexp where a text or a regexp pattern is taken, and a subject
+    // whose type depends on the Item.
+    "/a/.matches(tags[0])",
+    "/a/.matches(publisher)",
+    'title.replace(/a/, "b")',
+    "title.split(/a/, 2)",
+    'tags[0].replace(/a/, "b")',
+    "if(attachments, /a/, title).matches(title)",
+    "/\\//.matches(title)",
+    "/a/dgimsuy.matches(title)",
+    "/a/v.matches(title)",
+    "tags[0].trim()",
+    'title.split(":")[0].trim()',
+    'list(tags[0]).contains("a")',
+    "list(publisher).isEmpty()",
     "min(number(volume), 3)",
+    // A list helper on a subject whose type depends on the Item, and on the
+    // list another list helper gives.
+    "tags[0].sort()",
+    'if(attachments, title, tags).join(",")',
+    "tags.sort().unique().reverse().slice(0, 1).flat().length",
     // A date before and after date arithmetic keeps its methods.
     '(now() - duration("1d")).format("YYYY")',
     '(duration("1d") + today()).relative()',
@@ -1026,6 +1587,7 @@ describe("names", () => {
     ["number", false],
     ["if", false],
     ["min", false],
+    ["list", false],
     ["null", false],
     ["true", false],
     ["false", false],

@@ -117,6 +117,33 @@ TEXT
     ${filter('title.lower().contains("climate")')}
   Values of different types are never equal: 1 == "1" is false.
 
+TEXT HELPERS
+  trim(), title(), reverse(), slice(start, end?), repeat(count),
+  replace(pattern, replacement), and split(separator, n?) work on text as
+  in Obsidian Bases. replace replaces every occurrence of the text pattern;
+  split gives the parts as a list. toFixed(precision) writes a number as
+  text with that many decimals. isTruthy() is true when a value selects
+  the Item. list(value) wraps a value that is one text on some Items and
+  a list on others, so it is a list everywhere:
+    ${filter('title.trim().split(":")[0] == "Climate"')}
+    ${filter('title.title().startsWith("The ")')}
+    ${filter('number(volume).toFixed(1) == "12.0"')}
+    ${filter("publisher.isTruthy()")}
+    ${filter('list(custom["review.status"]).contains("done")')}
+
+REGULAR EXPRESSIONS
+  Write a regular expression as /pattern/flags, with JavaScript syntax
+  and the flags i (ignore case), g (every occurrence), m, s, u, v, y, and d.
+  matches(text) is true when the pattern matches the text. replace and
+  split take a regular expression in place of a text pattern: replace
+  changes the first occurrence, or every occurrence with the g flag, and
+  $1 names a group. The query fails at the literal when the pattern is
+  invalid.
+    ${filter("/^the /i.matches(title)")}
+    ${filter('title.replace(/\\s+/g, " ") == "Lab Report"')}
+    ${filter('title.replace(/(\\w+), (\\w+)/, "$2 $1").startsWith("Ada")')}
+    ${filter('title.split(/[:—]/, 2)[0].trim() == "Climate"')}
+
 TAGS, COLLECTIONS, AND CREATORS
   tags, collections, and creators are lists of text.
     ${filter('tags.contains("to-read")')}
@@ -128,6 +155,34 @@ TAGS, COLLECTIONS, AND CREATORS
     ${filter('collections.within("Thesis")')}
   A Creator is the full name, given name first:
     ${filter('creators.contains("Ada Lovelace")')}
+
+LIST HELPERS
+  sort() orders a list: numbers by value, text in the order a sort on a
+  text field uses, dates by their start, and null last; unique() keeps
+  the first of equal elements; reverse() turns the list around;
+  slice(start, end) takes a part, and a negative index counts from the
+  end; join(separator) writes the elements as one text, a null element as
+  empty text; flat() opens one level of nested lists. Each one gives a new
+  list and leaves the field as it is.
+    ${filter('tags.sort()[0] == "to-read"')}
+    ${filter("creators.unique().length == 1")}
+    ${filter('tags.slice(0, 2).contains("methods")')}
+    ${filter('creators.join("; ").contains("Lovelace; ")')}
+    ${filter('[tags, collections].flat().contains("to-read")')}
+
+ELEMENT EXPRESSIONS
+  filter(expression), map(expression), and reduce(expression, initial)
+  run an expression once for each element of a list. Inside it, value is
+  the element, index is its position from 0, and in reduce acc is the
+  running result, which starts at initial. filter keeps the elements for
+  which the expression is true; map gives the list of results; reduce
+  gives the final acc. Outside the expression, value, index, and acc are
+  custom fields with those names. schema.methods[].scope lists the names.
+    ${filter('creators.filter(value.contains("Lovelace")).length > 0')}
+    ${filter('tags.map(value.lower()).contains("to-read")')}
+    ${filter("tags.reduce(acc + value.length, 0) > 20")}
+    ${filter('creators.filter(index == 0).contains("Ada Lovelace")')}
+    ${filter("[tags, collections].map(value.length).reduce(acc + value, 0) > 2")}
 
 DATES
   date and the other Zotero date fields are calendar dates at the precision
