@@ -217,8 +217,10 @@ it("swaps a receiver with the one argument when the registered method fits", () 
 
 // Golden diagnostic reports, with excerpt and caret lines. The first 24 entries
 // are the spec's probe cases; the rest replace the former sentence tests.
-it.each(reports)("reports $name", async ({ request, report }) => {
+it.each(reports)("reports $name", async ({ request, report, ...setup }) => {
   using scenario = openScenarioDatabase();
+  if ("withoutCustomFields" in setup && setup.withoutCustomFields)
+    scenario.sqlite.exec("update fieldsCombined set custom = 0");
   const query: ItemQueryRequest = {
     libraries: [{ libraryID: 1, groupID: null }],
     ...request,

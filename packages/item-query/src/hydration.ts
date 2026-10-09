@@ -90,9 +90,10 @@ export function openHydration(
       // The filter first, then the Projection Paths.
       const customFields: CustomFieldUse[] = [
         ...(filter?.customFields ?? []).map(
-          ({ name, bare, from, to }): CustomFieldUse => ({
+          ({ name, bare, from, to, deferred }): CustomFieldUse => ({
             name,
             bare,
+            deferred,
             location: { argument: "filter", span: { from, to } },
           }),
         ),
@@ -103,7 +104,9 @@ export function openHydration(
         ),
       ];
       const known = new Set(vocabulary.customFieldNames);
-      const missing = customFields.find(({ name }) => !known.has(name));
+      const missing = customFields.find(
+        ({ name, deferred }) => deferred || !known.has(name),
+      );
       if (missing) {
         return yield* unknownCustomField(vocabulary.customFieldNames, missing);
       }
@@ -176,6 +179,7 @@ interface CustomFieldUse {
   readonly name: string;
   /** The filter names it with its bare form. */
   readonly bare: boolean;
+  readonly deferred?: Extract<ItemQueryFault, { kind: "unknown" }>;
   readonly location: ItemQueryErrorLocation;
 }
 
@@ -186,25 +190,19 @@ interface CustomFieldUse {
  */
 function unknownCustomField(
   names: readonly string[],
-  { name, bare, location }: CustomFieldUse,
+  { name, bare, location, deferred }: CustomFieldUse,
 ): Effect.Effect<never, ItemQueryError> {
-  const fault: ItemQueryFault = bare
-    ? {
-        kind: "unknown",
-        role: "field",
-        name,
-        at: location.span!,
-      }
-    : {
-        kind: "plain",
-        code: "unknown-field",
-        ...(location.span ? { at: location.span } : {}),
-        message: `The Zotero source has no custom field named ${JSON.stringify(name)}.`,
-        action:
-          names.length === 0
-            ? "The Zotero source has no custom fields."
-            : `Use the exact name of a custom field: ${names.map((entry) => JSON.stringify(entry)).join(", ")}.`,
-      };
+  const fault: ItemQueryFault =
+    deferred && !names.includes(name)
+      ? deferred
+      : {
+          kind: "unknown",
+          role: bare && !deferred ? "field" : "custom-field",
+          name,
+          at: location.span ?? { from: 0, to: 0 },
+          customFields: names,
+          ...(deferred ? { dotted: true } : {}),
+        };
   return Effect.fail(
     new ItemQueryError({
       location,
