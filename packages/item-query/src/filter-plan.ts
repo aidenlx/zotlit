@@ -4,26 +4,19 @@
 import { parseExpressionAst } from "@zotlit/filter-expression";
 import type { BinaryOperator, ExpressionNode } from "@zotlit/filter-expression";
 
-import type { PlainFault, Span } from "./fault";
+import type { Fault, Receiver, Role, Span } from "./fault";
 export type { Span } from "./fault";
-import {
-  BUILT_IN_NAMES,
-  customFilterValue,
-  DEFAULT_FIELDS,
-  filterField,
-} from "./fields";
+import { BUILT_IN_NAMES, customFilterValue, filterField } from "./fields";
 import type { FieldNeeds, FilterValueDefinition } from "./fields";
 import {
   GLOBAL_FUNCTION_NAMES,
   GLOBAL_FUNCTIONS,
   IF_FUNCTION,
-  METHOD_NAMES,
   methodOf,
   methodsNamed,
   parameterAt,
   parameterTypes,
   propertiesNamed,
-  PROPERTY_NAMES,
   propertyOf,
   takesType,
 } from "./filter-functions";
@@ -134,11 +127,14 @@ export interface FilterPlan {
   })[];
 }
 
-export type FilterProblem = PlainFault & { readonly at: Span };
+export type FilterProblem = Extract<
+  Fault,
+  { readonly kind: "plain" | "unknown" }
+> & { readonly at: Span };
 
 class Invalid extends Error {
   constructor(readonly problem: FilterProblem) {
-    super(problem.message);
+    super(problem.kind);
   }
 }
 
@@ -147,13 +143,9 @@ const quote = (text: string): string => JSON.stringify(text);
 const HINTS = {
   syntax:
     'Write one Filter Expression, such as itemType == "book" && tags.contains("to-read"). Omit the filter to match every Item.',
-  field: `Use a field of the Item Query Schema, such as ${DEFAULT_FIELDS.join(", ")}. Field names are case-sensitive. Reach a custom field with custom["exact name"].`,
   filterable:
     "Use a field that the Item Query Schema lists as filterable, such as title, itemType, tags, or collections.",
   custom: 'Name one custom field, such as custom["review.status"].',
-  global: `Use a global function: ${GLOBAL_FUNCTION_NAMES.join(", ")}. Function names are case-sensitive.`,
-  method: `Use a method of the Item Query Schema: ${METHOD_NAMES.join(", ")}. Function names are case-sensitive.`,
-  property: `Use a property of the Item Query Schema: ${PROPERTY_NAMES.join(", ")}.`,
   regexp:
     "Write a regular expression as /pattern/flags with JavaScript syntax, such as /^the /i, and the flags d, g, i, m, s, u, v, and y at most once each.",
 } as const;
@@ -207,6 +199,45 @@ const RESERVED_NAMES: ReadonlySet<string> = new Set([
 
 function fail(fault: FilterProblem): never {
   throw new Invalid(fault);
+}
+
+function unknown(fact: {
+  readonly role: Role;
+  readonly name: string;
+  readonly at: Span;
+  readonly receiver?: Receiver;
+}): FilterProblem {
+  const { role, name, at, receiver } = fact;
+  return {
+    kind: "unknown",
+    role,
+    name,
+    at: { from: at.from, to: at.to },
+    ...(receiver ? { receiver } : {}),
+  };
+}
+
+function receiver(subject: FilterNode): Receiver {
+  const field = receiverField(subject);
+  return {
+    type: subject.valueType,
+    at: { from: subject.from, to: subject.to },
+    ...(field ? { field } : {}),
+  };
+}
+
+function receiverField(node: FilterNode): string | undefined {
+  switch (node.kind) {
+    case "field":
+      return node.name;
+    case "element":
+    case "method":
+    case "property":
+    case "index":
+      return receiverField(node.subject);
+    default:
+      return undefined;
+  }
 }
 
 function describeCount(
@@ -433,13 +464,7 @@ class Validator {
       });
     }
     if (GLOBAL_FUNCTION_NAMES.includes(name)) {
-      return fail({
-        kind: "plain",
-        code: "unknown-field",
-        at: { from: span.from, to: span.to },
-        message: `${quote(name)} is a function, not a field.`,
-        action: `Call it with arguments, such as ${name}(...). ${HINTS.field}`,
-      });
+      return fail(unknown({ role: "field", name, at: span }));
     }
     // Outside the built-in names: the bare form of a custom field.
     return this.#customField(name, span, true);
@@ -463,23 +488,25 @@ class Validator {
     const named = propertiesNamed(name);
     const nameSpan = { from: span.to - name.length, to: span.to };
     if (named.length === 0) {
-      return fail({
-        kind: "plain",
-        code: "unknown-property",
-        at: { from: nameSpan.from, to: nameSpan.to },
-        message: `${quote(name)} is not a property of a value.`,
-        action: HINTS.property,
-      });
+      return fail(
+        unknown({
+          role: "property",
+          name,
+          at: nameSpan,
+          receiver: receiver(subject),
+        }),
+      );
     }
     const type = subject.valueType;
     if (isDefinite(type) && !propertyOf(type, name)) {
-      return fail({
-        kind: "plain",
-        code: "unknown-property",
-        at: { from: nameSpan.from, to: nameSpan.to },
-        message: `A ${type} has no property ${quote(name)}.`,
-        action: `${quote(name)} is a property of a ${named.map(([owner]) => owner).join(" or a ")}. ${HINTS.property}`,
-      });
+      return fail(
+        unknown({
+          role: "property",
+          name,
+          at: nameSpan,
+          receiver: receiver(subject),
+        }),
+      );
     }
     return {
       ...span,
@@ -521,7 +548,7 @@ class Validator {
       code: "invalid-filter",
       at: { from: callee.from, to: callee.to },
       message: "A call needs the name of a function before its arguments.",
-      action: `${HINTS.global} Call a method on a value, such as title.lower().`,
+      action: `Use a global function: ${GLOBAL_FUNCTION_NAMES.join(", ")}. Call a method on a value, such as title.lower().`,
     });
   }
 
@@ -532,16 +559,7 @@ class Validator {
     const { name, nameSpan } = call;
     const definition = name === "if" ? IF_FUNCTION : GLOBAL_FUNCTIONS.get(name);
     if (!definition) {
-      const isMethod = methodsNamed(name).length > 0;
-      return fail({
-        kind: "plain",
-        code: "unknown-function",
-        at: { from: nameSpan.from, to: nameSpan.to },
-        message: `${quote(name)} is not a global function of Item Query.`,
-        action: isMethod
-          ? `${name} is a method: call it on a value, such as value.${name}(...).`
-          : HINTS.global,
-      });
+      return fail(unknown({ role: "global", name, at: nameSpan }));
     }
     // Every argument is validated, also in a branch that never runs.
     const args = call.args.map((arg) => this.node(arg));
@@ -600,28 +618,27 @@ class Validator {
   ): readonly FunctionDefinition[] {
     const named = methodsNamed(name);
     if (named.length === 0) {
-      const isGlobal = GLOBAL_FUNCTION_NAMES.includes(name);
-      return fail({
-        kind: "plain",
-        code: "unknown-function",
-        at: { from: nameSpan.from, to: nameSpan.to },
-        message: `${quote(name)} is not a method of Item Query.`,
-        action: isGlobal
-          ? `${name} is a global function: call it as ${name}(...).`
-          : HINTS.method,
-      });
+      return fail(
+        unknown({
+          role: "method",
+          name,
+          at: nameSpan,
+          receiver: receiver(subject),
+        }),
+      );
     }
     const type = subject.valueType;
     if (!isDefinite(type)) return named.map(([, method]) => method);
     const method = methodOf(type, name);
     if (!method) {
-      return fail({
-        kind: "plain",
-        code: "unknown-function",
-        at: { from: nameSpan.from, to: nameSpan.to },
-        message: `A ${type} has no method ${quote(name)}.`,
-        action: `${name} is a method of a ${named.map(([owner]) => owner).join(" or a ")}. ${HINTS.method}`,
-      });
+      return fail(
+        unknown({
+          role: "method",
+          name,
+          at: nameSpan,
+          receiver: receiver(subject),
+        }),
+      );
     }
     return [method];
   }

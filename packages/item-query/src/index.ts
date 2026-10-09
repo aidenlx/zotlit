@@ -55,6 +55,7 @@ export {
 } from "./diagnose";
 export type {
   Fault,
+  ItemQueryFault,
   PlainFault,
   Span,
   Role,
