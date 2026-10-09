@@ -387,9 +387,9 @@ function seed(db) {
     const collection = Number(
       db
         .prepare(
-          "insert into collections (collectionName, libraryID, key, version, synced) values ('Query thesis', 1, 'QCTHESIS', 0, 0)",
+          "insert into collections (collectionName, libraryID, key, version, synced, clientDateModified) values ('Query thesis', 1, 'QCTHESIS', 0, 0, ?)",
         )
-        .run().lastInsertRowid,
+        .run(stamp).lastInsertRowid,
     );
     const crossPapers = [
       ["QCZERO22", "Thesis review without files", "2020"],

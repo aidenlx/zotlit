@@ -4,11 +4,14 @@ import { Effect } from "effect";
 
 import { formatIndexedKey } from "@zotlit/db";
 import {
+  readAttachmentCandidateSet,
+  readRelationCandidateSet,
   readAttachmentRowCount,
   readAttachmentScanPage,
   readAttachmentUniverseRows,
 } from "@zotlit/db/item-query";
 
+import { lowerAttachmentCandidate } from "./attachment-candidates";
 import {
   ATTACHMENT_FIELDS,
   ATTACHMENT_SORT_FIELDS,
@@ -26,6 +29,7 @@ import { BUILT_IN_NAMES } from "./fields";
 import { matches as isMatch } from "./filter-evaluate";
 import { planFilter } from "./filter-plan";
 import { readPath } from "./projection";
+import { ANNOTATIONS } from "./query-annotations";
 import {
   planDatasetCandidates,
   readDatasetCandidates,
@@ -48,6 +52,22 @@ export const ATTACHMENTS: QueryDataset<ItemQueryRequest> = {
     "item",
     ...BUILT_IN_NAMES.map((name) => PARENT + name),
   ],
+  lowerCandidate: (node, sources) => {
+    const leaf = lowerAttachmentCandidate(node, sources);
+    return leaf
+      ? (options) => readAttachmentCandidateSet({ ...options, leaf })
+      : null;
+  },
+  candidateRelations: {
+    annotations: {
+      dataset: () => ANNOTATIONS,
+      readParents: (chunk) =>
+        readRelationCandidateSet({
+          ...chunk,
+          relation: "attachment-annotations",
+        }),
+    },
+  },
   sortableFields: ATTACHMENT_SORT_FIELDS,
   definition: attachmentFieldDefinition,
   filterField: (name) => attachmentFilterRegistry.field(name),
@@ -86,7 +106,7 @@ export const ATTACHMENTS: QueryDataset<ItemQueryRequest> = {
               planDatasetCandidates(
                 filter.root,
                 hydration.candidateSources(library),
-                "attachments",
+                { dataset: ATTACHMENTS },
               );
             if (!candidatePlan) return null;
             const rowCount = yield* readAttachmentRowCount(library.libraryID);

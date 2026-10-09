@@ -1,86 +1,19 @@
-import { ANNOTATION_FIELDS } from "./annotation-fields";
 import { ANNOTATION_POSITION_SHAPES } from "./annotation-position";
 import {
-  describeItemQueryVocabulary,
+  describeDatasetVocabulary,
   describeQuery,
-  pathsBelow,
-  jsonType,
 } from "./describe-item-query";
-import type { SchemaCapabilities, SchemaField } from "./describe-item-query";
 import { ANNOTATIONS } from "./query-annotations";
-
-const filterCapability = (path: string): SchemaCapabilities["filter"] => {
-  const plan = ANNOTATIONS.planFilter(path);
-  if ("kind" in plan) return null;
-  const type = plan.root.valueType;
-  return type === "unknown" ? "any" : type === "null" ? null : type;
-};
 
 /** Source-independent Annotation vocabulary; generated only at build time. */
 export function describeAnnotationQueryVocabulary() {
-  const item = describeItemQueryVocabulary();
-  const fields: SchemaField[] = [...ANNOTATION_FIELDS].flatMap(
-    ([path, definition]) => [
-      {
-        path,
-        type: jsonType(definition.shape),
-        projection: true,
-        group: definition.shape.kind === "scalar",
-        filter: filterCapability(path),
-        sort: false,
-        ...(definition.relation && { relation: definition.relation().id }),
-        ...(definition.valueForms && { valueForms: definition.valueForms }),
-      },
-      ...pathsBelow(path, definition.shape, filterCapability),
-    ],
-  );
-  fields.push(
-    ...item.fields
-      .filter((field) => field.path !== "indexedKey")
-      .map((field) => ({
-        ...field,
-        path: `item.${field.path}`,
-        sort: false,
-      })),
-  );
-  fields.push(
-    ...["key", "indexedKey"].map(
-      (path): SchemaField => ({
-        path,
-        type: "string",
-        projection: false,
-        group: false,
-        filter: "string",
-        sort: false,
-      }),
-    ),
-    {
-      path: "item.indexedKey",
-      group: true,
-      type: "string",
-      projection: true,
-      filter: "string",
-      sort: false,
-    },
-    {
-      path: "item",
-      relation: "items",
-      group: false,
-      type: "object",
-      projection: true,
-      filter: "record",
-      sort: false,
-    },
-  );
   return {
-    ...item,
-    fields: fields.map((field) => ({
-      ...field,
-      sort: ANNOTATIONS.sortable(field.path) !== undefined,
-    })),
+    ...describeDatasetVocabulary(ANNOTATIONS),
     positionKinds: ANNOTATION_POSITION_SHAPES,
   };
 }
 
 export const describeAnnotationQuery = () =>
-  describeQuery(ANNOTATIONS, describeAnnotationQueryVocabulary());
+  describeQuery(ANNOTATIONS, {
+    positionKinds: ANNOTATION_POSITION_SHAPES,
+  });

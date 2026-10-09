@@ -8,7 +8,6 @@ import type {
 
 import type { QueryDataset } from "./dataset";
 import { describeQueryCustomFields } from "./describe-query-custom-fields";
-import { BUILT_IN_NAMES, fieldDefinition, filterField } from "./fields";
 import type { ValueShape } from "./fields";
 import {
   GLOBAL_FUNCTIONS,
@@ -18,7 +17,6 @@ import {
   VALUE_TYPES,
 } from "./filter-functions";
 import type { FunctionDefinition, FunctionParameter } from "./filter-functions";
-import { planFilter } from "./filter-plan";
 import type { FilterValueType } from "./filter-values";
 import { ITEMS } from "./query-items";
 import type { SortSpec } from "./request";
@@ -139,7 +137,7 @@ export function describeItemQuery(): Effect.Effect<
   ItemQueryLayoutError | ItemQueryDatabaseError,
   ItemQueryDatabase
 > {
-  return describeQuery(ITEMS, describeItemQueryVocabulary());
+  return describeQuery(ITEMS, {});
 }
 
 /**
@@ -150,11 +148,12 @@ export function describeQuery<Vocabulary extends object>(
   dataset: QueryDataset<any>,
   vocabulary: Vocabulary,
 ): Effect.Effect<
-  Vocabulary & Pick<ItemQuerySchema, "customFields" | "defaults">,
+  Vocabulary & ItemQuerySchema,
   ItemQueryLayoutError | ItemQueryDatabaseError,
   ItemQueryDatabase
 > {
   return Effect.map(describeQueryCustomFields(dataset), (customFields) => ({
+    ...describeDatasetVocabulary(dataset),
     ...vocabulary,
     customFields,
     defaults: {
@@ -173,9 +172,16 @@ export function describeItemQueryVocabulary(): Omit<
   ItemQuerySchema,
   "customFields" | "defaults"
 > {
+  return describeDatasetVocabulary(ITEMS);
+}
+
+/** Shared capabilities come from the same descriptor as request planning. */
+export function describeDatasetVocabulary(
+  dataset: QueryDataset,
+): Omit<ItemQuerySchema, "customFields" | "defaults"> {
   return {
     projectionPathGrammar: PROJECTION_PATH_GRAMMAR,
-    fields: BUILT_IN_FIELDS,
+    fields: describeFields(dataset),
     functions: FUNCTIONS,
     methods: METHODS,
     properties: PROPERTIES,
@@ -200,47 +206,48 @@ const PROJECTION_PATH_GRAMMAR = {
   },
 } as const;
 
-const BUILT_IN_FIELDS: readonly SchemaField[] = BUILT_IN_NAMES.flatMap(
-  (name) => {
-    const definition = fieldDefinition(name);
-    const filter = filterField(name);
-    const filterType = filter?.filterable ? filter.value.type : null;
+function describeFields(dataset: QueryDataset): SchemaField[] {
+  const capability = (path: string): SchemaCapabilities["filter"] => {
+    const plan = dataset.planFilter(path);
+    if (!("root" in plan)) return null;
+    const type = plan.root.valueType;
+    return type === "unknown" ? "any" : type === "null" ? null : type;
+  };
+  const fields = new Map<string, SchemaField>();
+  for (const name of dataset.names) {
+    const definition = dataset.definition(name);
+    const filter = capability(name);
     if (!definition) {
-      // A name only a filter reads.
-      return [
-        {
+      // A path already emitted below a record keeps its projection capability.
+      if (!fields.has(name))
+        fields.set(name, {
           path: name,
-          type: jsonTypeOf(filterType!),
-          filter: filterType,
+          type: jsonTypeOf(filter!),
+          filter,
           projection: false,
           group: false,
           sort: false,
-        },
-      ];
+        });
+      continue;
     }
-    const root: SchemaField = {
+    fields.set(name, {
       path: name,
       type: jsonType(definition.shape),
-      filter: filterType,
+      filter,
       projection: true,
       group: definition.shape.kind === "scalar",
-      sort: ITEMS.sortable(name) !== undefined,
+      sort: false,
       ...(definition.relation && { relation: definition.relation().id }),
       ...(definition.valueForms && { valueForms: definition.valueForms }),
-    };
-    return [root, ...pathsBelow(name, definition.shape)];
-  },
-);
-
-/**
- * What a Filter Expression reads when its text is the path: the answer of the
- * validation that every filter passes through.
- */
-function filterCapability(path: string): SchemaCapabilities["filter"] {
-  const plan = planFilter(path);
-  if (!("root" in plan)) return null;
-  const type = plan.root.valueType;
-  return type === "unknown" ? "any" : type === "null" ? null : type;
+    });
+    for (const field of pathsBelow(name, definition.shape, capability)) {
+      fields.set(field.path, field);
+    }
+  }
+  return [...fields.values()].map((field) => ({
+    ...field,
+    sort: dataset.sortable(field.path) !== undefined,
+  }));
 }
 
 /**
@@ -250,7 +257,7 @@ function filterCapability(path: string): SchemaCapabilities["filter"] {
 export function pathsBelow(
   path: string,
   shape: ValueShape,
-  capability = filterCapability,
+  capability: (path: string) => SchemaCapabilities["filter"],
 ): SchemaField[] {
   const below = (child: string, childShape: ValueShape): SchemaField[] => [
     {
@@ -311,7 +318,7 @@ export function jsonType(shape: ValueShape): JsonType {
 }
 
 /** The JSON type of a filter value: dates and durations are ISO strings. */
-function jsonTypeOf(type: FilterType): JsonType {
+function jsonTypeOf(type: SchemaCapabilities["filter"]): JsonType {
   return type === "list"
     ? "array"
     : type === "number" || type === "boolean"

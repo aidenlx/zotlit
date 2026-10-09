@@ -1,66 +1,62 @@
 import { Effect } from "effect";
 
-import {
-  readAnnotationCandidateSet,
-  readAttachmentCandidateSet,
-  readCandidateSet,
-  readRelationCandidateSet,
-  SCAN_PAGE_SIZE,
-} from "@zotlit/db/item-query";
-import type {
-  CandidateRelation,
-  ItemQueryDatabase,
-  ItemQueryReaderError,
-} from "@zotlit/db/item-query";
+import { SCAN_PAGE_SIZE } from "@zotlit/db/item-query";
 
-import { lowerAnnotationCandidate } from "./annotation-candidates";
-import { annotationFilterRegistry } from "./annotation-fields";
-import { lowerAttachmentCandidate } from "./attachment-candidates";
-import { attachmentFilterRegistry } from "./attachment-fields";
-import {
-  lowerItemCandidate,
-  planCandidates,
-  readCandidatePlan,
-} from "./candidate-plan";
+import { planCandidates, readCandidatePlan } from "./candidate-plan";
 import type { CandidatePlan, CandidateSources } from "./candidate-plan";
-import type { QueryDataset } from "./dataset";
+import type {
+  CandidateReader,
+  CandidateRelation,
+  QueryDataset,
+} from "./dataset";
 import type { FilterNode } from "./filter-plan";
 
-/** A candidate reader selected by the dataset's existing leaf lowering. */
-type CandidateReader = (options: {
-  libraryID: number;
-  limit: number;
-}) => Effect.Effect<number[], ItemQueryReaderError, ItemQueryDatabase>;
 type Node = FilterNode<never>;
 
 /** Keep the dataset's leaf rules single, including inside a Relation List. */
 export function planDatasetCandidates(
   node: Node,
   sources: CandidateSources,
-  dataset: QueryDataset["id"],
+  {
+    dataset,
+    parents = [],
+  }: {
+    readonly dataset: QueryDataset;
+    readonly parents?: readonly CandidateRelation["readParents"][];
+  },
 ): CandidatePlan<CandidateReader> | null {
-  return planCandidates(
+  const plan = planCandidates(
     node,
     sources,
-    (node, sources): CandidateReader | null => {
-      const relation = lowerRelation(node, sources, dataset);
-      if (relation) return relation;
-      if (dataset === "attachments") {
-        const leaf = lowerAttachmentCandidate(node, sources);
-        return leaf
-          ? (options) => readAttachmentCandidateSet({ ...options, leaf })
-          : null;
+    (node, sources): CandidatePlan<CandidateReader> | null => {
+      const selection = relationSelection(node, dataset);
+      if (selection) {
+        const { relation, expression } = selection;
+        const element = relation.dataset();
+        return planDatasetCandidates(
+          elementPredicate(expression, element),
+          sources,
+          { dataset: element, parents: [relation.readParents, ...parents] },
+        );
       }
-      if (dataset === "annotations") {
-        const leaf = lowerAnnotationCandidate(node, sources);
-        return leaf
-          ? (options) => readAnnotationCandidateSet({ ...options, leaf })
-          : null;
-      }
-      const leaf = lowerItemCandidate(node, sources);
-      return leaf ? (options) => readCandidateSet({ ...options, leaf }) : null;
+      const read = dataset.lowerCandidate(node, sources);
+      return read
+        ? {
+            kind: "leaf",
+            leaf: parents.length ? parentCandidates(read, parents) : read,
+          }
+        : null;
     },
   );
+  return plan && flattenPlan(plan);
+}
+
+function flattenPlan(
+  plan: CandidatePlan<CandidatePlan<CandidateReader>>,
+): CandidatePlan<CandidateReader> {
+  return plan.kind === "leaf"
+    ? plan.leaf
+    : { ...plan, plans: plan.plans.map(flattenPlan) };
 }
 
 export const readDatasetCandidates = (
@@ -74,11 +70,39 @@ export const readDatasetCandidates = (
     readLeaf: ({ leaf, ...options }) => leaf(options),
   });
 
-function lowerRelation(
-  node: Node,
-  sources: CandidateSources,
-  dataset: QueryDataset["id"],
-): CandidateReader | null {
+/**
+ * Page each leaf and retain only distinct ancestors up to the root's cap.
+ * Intersecting ancestor supersets can admit different matching children;
+ * the evaluator still checks the complete predicate on each parent.
+ */
+function parentCandidates(
+  read: CandidateReader,
+  parents: readonly CandidateRelation["readParents"][],
+): CandidateReader {
+  return Effect.fnUntraced(function* ({ libraryID, limit }) {
+    const candidates = new Set<number>();
+    let afterItemID = 0;
+    while (true) {
+      const elements = yield* read({
+        libraryID,
+        limit: SCAN_PAGE_SIZE,
+        afterItemID,
+      });
+      let ids = elements;
+      for (const readParents of parents) {
+        ids = yield* readParents({ libraryID, itemIDs: ids });
+      }
+      for (const id of ids) {
+        candidates.add(id);
+        if (candidates.size >= limit) return [...candidates];
+      }
+      if (elements.length < SCAN_PAGE_SIZE) return [...candidates];
+      afterItemID = elements.at(-1)!;
+    }
+  });
+}
+
+function relationSelection(node: Node, dataset: QueryDataset) {
   let filtered: Node | null = null;
   if (
     node.kind === "binary" &&
@@ -103,66 +127,14 @@ function lowerRelation(
     filtered.subject.kind !== "field"
   )
     return null;
-  const name = filtered.subject.name;
-  const relation: CandidateRelation | null =
-    dataset === "items" && name === "attachments"
-      ? "item-attachments"
-      : dataset === "items" && name === "annotations"
-        ? "item-annotations"
-        : dataset === "attachments" && name === "annotations"
-          ? "attachment-annotations"
-          : null;
-  if (!relation) return null;
-  const elementDataset =
-    relation === "item-attachments" ? "attachments" : "annotations";
-  const plan = planDatasetCandidates(
-    elementPredicate(filtered.expression, elementDataset),
-    sources,
-    elementDataset,
-  );
-  if (!plan) return null;
-  return Effect.fnUntraced(function* ({ libraryID, limit }) {
-    // A large element set can have one parent. Apply the cap only AFTER the
-    // element plan's intersections/unions and the parent join.
-    const elements = yield* readDatasetCandidates(
-      plan,
-      libraryID,
-      Number.MAX_SAFE_INTEGER - 1,
-    );
-    if (!elements)
-      return yield* Effect.die(
-        new RangeError(
-          "The relation element candidate set exceeds the safe ID count.",
-        ),
-      );
-    const ids = [...elements];
-    const parents = new Set<number>();
-    for (let start = 0; start < ids.length; start += SCAN_PAGE_SIZE) {
-      const chunk = yield* readRelationCandidateSet({
-        relation,
-        libraryID,
-        itemIDs: ids.slice(start, start + SCAN_PAGE_SIZE),
-      });
-      for (const id of chunk) {
-        parents.add(id);
-        if (parents.size >= limit) return [...parents];
-      }
-    }
-    return [...parents];
-  });
+  const relation = dataset.candidateRelations[filtered.subject.name];
+  return relation ? { relation, expression: filtered.expression } : null;
 }
 
 /** Rebind this lambda's value paths for planning; keep nested bindings local. */
-function elementPredicate(
-  node: Node,
-  dataset: "attachments" | "annotations",
-): Node {
-  const registry =
-    dataset === "attachments"
-      ? attachmentFilterRegistry
-      : annotationFilterRegistry;
+function elementPredicate(node: Node, dataset: QueryDataset): Node {
   const path = valuePath(node);
-  const field = path === null ? undefined : registry.field(path);
+  const field = path === null ? undefined : dataset.filterField(path);
   if (field?.filterable)
     return { ...node, kind: "field", name: path!, value: field.value };
   const visit = (node: Node) => elementPredicate(node, dataset);

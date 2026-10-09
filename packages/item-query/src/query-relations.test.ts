@@ -15,6 +15,142 @@ import {
 } from ".";
 import { runEffect } from "./test-helpers";
 
+it.each([
+  [ITEMS, 'custom["review.status"]'],
+  [ATTACHMENTS, 'item.custom["review.status"]'],
+  [ANNOTATIONS, 'item.custom["review.status"]'],
+  [ITEMS, 'attachments[0].item.custom["review.status"]'],
+] as const)(
+  "reads the source vocabulary once when %s groups by %s",
+  async (dataset, group) => {
+    using scenario = openScenarioDatabase({ annotations: true });
+    const { exit, events } = await runEffect(
+      collectQuery(dataset, {
+        libraries: [SCENARIO_LIBRARIES.personal],
+        group,
+        fields: [],
+        sort: [],
+      }),
+      { client: scenario.db },
+    );
+    if (exit._tag === "Failure") throw Cause.squash(exit.cause);
+    expect(exit.value.groups!.some((group) => group.value === "done")).toBe(
+      true,
+    );
+    const statements = events.flatMap((event) =>
+      event.type === "statement" &&
+      event.statement.reader === "field-vocabulary"
+        ? [event.statement]
+        : [],
+    );
+    expect(statements).toHaveLength(2);
+  },
+);
+
+it.each([
+  'if(true, attachments, []).filter(value.title == "Full Text PDF").length > 0',
+  'if(false, [], attachments).filter(value.title == "Full Text PDF").length > 0',
+  'if(false, attachments, annotations[0].item.attachments).filter(value.title == "Full Text PDF").length > 0',
+  'if(true, annotations[0].item.attachments, attachments).filter(value.title == "Full Text PDF").length > 0',
+])("keeps record navigation and hydration through %s", async (filter) => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  const { exit } = await runEffect(
+    collectQuery(ITEMS, {
+      libraries: [SCENARIO_LIBRARIES.personal],
+      filter,
+      fields: [],
+      sort: [],
+    }),
+    { client: scenario.db },
+  );
+  if (exit._tag === "Failure") throw Cause.squash(exit.cause);
+  expect(exit.value.rows!.map((row) => row.indexedKey)).toEqual(["ART2FULL"]);
+});
+
+it("reports a typed Fault for record navigation through incompatible conditional lists", async () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  const { exit } = await runEffect(
+    collectQuery(ITEMS, {
+      libraries: [SCENARIO_LIBRARIES.personal],
+      filter:
+        'if(true, attachments, annotations).filter(value.title == "Full Text PDF").length > 0',
+      fields: [],
+    }),
+    { client: scenario.db },
+  );
+  expect(exit._tag).toBe("Failure");
+  if (exit._tag === "Failure")
+    expect(Cause.squash(exit.cause)).toMatchObject({
+      code: "unknown-property",
+    });
+});
+
+it.each([
+  'annotations.filter(value.color == "yellow").length > 0',
+  'annotations.filter("yellow" == value.color).length > 0',
+  'attachments.filter(value.annotations.filter(value.color == "yellow").length > 0).length > 0',
+  'attachments.map(value.annotations).flat().filter(value.color == "yellow").length > 0',
+])("keeps Annotation color aliases inside %s", async (filter) => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  const libraries = [SCENARIO_LIBRARIES.personal];
+  const marks = await runEffect(
+    collectQuery(ANNOTATIONS, {
+      libraries,
+      filter: 'color == "yellow"',
+      fields: [],
+      sort: [],
+    }),
+    { client: scenario.db },
+  );
+  if (marks.exit._tag === "Failure") throw Cause.squash(marks.exit.cause);
+  const expected = [
+    ...new Set(marks.exit.value.rows!.map((row) => row.itemIndexedKey)),
+  ];
+  expect(expected).toEqual(["ART2FULL"]);
+  const { exit } = await runEffect(
+    collectQuery(ITEMS, {
+      libraries,
+      filter,
+      fields: [],
+      sort: [],
+    }),
+    { client: scenario.db },
+  );
+  if (exit._tag === "Failure") throw Cause.squash(exit.cause);
+  expect(exit.value.rows!.map((row) => row.indexedKey)).toEqual(expected);
+});
+
+it.each([
+  'attachments.filter(value.indexedKey == "PDF2LIVEg118").length > 0',
+  'attachments.filter("PDF2LIVEg118" == value.indexedKey).length > 0',
+  'attachments.filter(["PDF2LIVEg118"].contains(value.indexedKey)).length > 0',
+  'attachments.filter(value.item.indexedKey == "ART2FULLg118").length > 0',
+  'attachments.filter(value.annotations.filter(value.indexedKey == "ANN2HGHTg118").length > 0).length > 0',
+  'annotations.filter(value.attachment.indexedKey == "PDF2LIVEg118").length > 0',
+  'annotations.filter(value.item.attachments.filter(value.indexedKey == "PDF2LIVEg118").length > 0).length > 0',
+])("warns for an out-of-scope Indexed Key inside %s", async (filter) => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  const { exit } = await runEffect(
+    collectQuery(ITEMS, {
+      libraries: [SCENARIO_LIBRARIES.personal],
+      filter,
+      fields: [],
+    }),
+    { client: scenario.db },
+  );
+  if (exit._tag === "Failure") throw Cause.squash(exit.cause);
+  expect(exit.value.rows).toEqual([]);
+  expect(exit.value.warnings).toMatchObject([
+    {
+      code: "key-outside-target-libraries",
+      severity: "warning",
+    },
+  ]);
+  expect(exit.value.warnings).toHaveLength(1);
+  expect(exit.value.warnings[0]!.message).toContain("group:118");
+  expect(exit.value.warnings[0]!.hint).toContain("personal,group:118");
+});
+
 it("finds papers with no usable PDF on this machine", async () => {
   using scenario = openScenarioDatabase({ annotations: true });
   const { exit } = await runEffect(

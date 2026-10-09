@@ -1000,6 +1000,38 @@ it("reads a mark's sibling list once even when its paper has several hydrate chu
 });
 
 describe("Relation List candidate bounds", () => {
+  // Failure modes: one parent materializes all of its children, the parent cap
+  // truncates a valid result, or the reader continues after cap fallback.
+  it.each([0, 1])(
+    "bounds matching child pages before the distinct-parent cap (ratio %s)",
+    async (capRatio) => {
+      const query = collectQuery(ITEMS, {
+        libraries: [BULK_LIBRARY],
+        filter: 'annotations.filter(value.type == "highlight").length > 0',
+        fields: [],
+        limit: 1,
+      });
+      const actual = await runEffect(query, {
+        client: annotations.db,
+        tuning: { capRatio },
+      });
+      const scan = await runEffect(query, {
+        client: annotations.db,
+        tuning: { forceScan: true },
+      });
+      expect(resultOf(actual)).toEqual(resultOf(scan));
+      expect(resultOf(actual).returnedCount).toBe(1);
+      const pages = itemsRead(actual.events, "annotation-candidate-set");
+      expect(pages.length).toBeGreaterThan(0);
+      expect(pages.every((size) => size <= 500)).toBe(true);
+      expect(pages.reduce((sum, count) => sum + count, 0)).toBe(
+        capRatio === 0 ? 500 : 2080,
+      );
+      expect(itemsRead(actual.events, "scan-page").length > 0).toBe(
+        capRatio === 0,
+      );
+    },
+  );
   it.each([
     [ITEMS, 'annotations.filter(value.tags.contains("method")).length > 0'],
     [
@@ -1074,7 +1106,10 @@ describe("Relation List candidate bounds", () => {
     expect(itemsRead(actual.events, "scan-page")).toEqual([]);
     expect(itemsRead(actual.events, "universe-rows")).toEqual([1]);
     expect(itemsRead(actual.events, "relation-candidate-set")).toEqual([
-      1, 1, 1, 1, 1, 1,
+      1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    ]);
+    expect(itemsRead(actual.events, "annotation-candidate-set")).toEqual([
+      500, 500, 500, 500, 80,
     ]);
   });
 

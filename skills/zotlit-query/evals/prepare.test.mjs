@@ -5,6 +5,7 @@ import { readFile, rm, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 
 import { buildFixture, getFixtureLayout } from "@zotlit/scripts/fixture";
 
@@ -27,10 +28,13 @@ await test("a generated Fixture stays unchanged and gives byte-identical seeded 
   try {
     await buildFixture(getFixtureLayout(source));
     const original = await digest(database(source));
-    for (const destination of [first, second])
+    for (const destination of [first, second]) {
       execFileSync(process.execPath, [prepare, source, destination], {
         cwd: repo,
       });
+      // SQLite timestamp defaults must not make the corpus depend on seed time.
+      if (destination === first) await delay(1100);
+    }
     assert.equal(await digest(database(source)), original);
     assert.equal(await digest(database(first)), await digest(database(second)));
     using db = new DatabaseSync(database(first), { readOnly: true });

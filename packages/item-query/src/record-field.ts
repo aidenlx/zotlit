@@ -1,4 +1,5 @@
 import type { FieldDefinition, FilterField, ValueShape } from "./fields";
+import type { FilterRegistry } from "./filter-plan";
 import type { FilterValue } from "./filter-values";
 import { readSegments } from "./projection";
 import type { PathSegment } from "./projection-path";
@@ -9,11 +10,13 @@ export interface RecordVocabulary<Row, Needs> {
   readonly id: "items" | "attachments" | "annotations";
   readonly summary: readonly string[];
   readonly field: (name: string) => FieldDefinition<Row, Needs> | undefined;
-  readonly filter: (name: string) => FilterField<Row, Needs> | undefined;
+  readonly filter: FilterRegistry<Row, Needs>;
 }
 
 /** Static navigation carries element needs back to the root of the request. */
 export interface FilterNavigation<Needs> {
+  readonly dataset?: RecordVocabulary<never, never>["id"];
+  readonly equalityField?: FilterRegistry<never, Needs>["equalityField"];
   readonly member?: (
     name: string,
   ) => FilterField<FilterValue, Needs> | undefined;
@@ -26,6 +29,8 @@ export function mapNavigation<A, B>(
 ): FilterNavigation<B> | undefined {
   if (!navigation) return undefined;
   return {
+    dataset: navigation.dataset,
+    equalityField: navigation.equalityField,
     ...(navigation.element && {
       element: mapNavigation(navigation.element, wrap),
     }),
@@ -52,6 +57,23 @@ export function recordField<Item, Needs, Row, ChildNeeds>(options: {
   readonly needs: (needs: readonly ChildNeeds[]) => Needs;
 }): FieldDefinition<Item, Needs> {
   const { vocabulary, rows, list, needs } = options;
+  const filterField = (
+    name: string,
+  ): FilterField<Row, ChildNeeds> | undefined => {
+    const registry = vocabulary().filter;
+    const field = registry.field(name);
+    if (field) return field;
+    if (registry.prefix && !name.startsWith(`${registry.prefix}.`))
+      return undefined;
+    const custom = registry.prefix
+      ? name.slice(registry.prefix.length + 1)
+      : name;
+    return {
+      filterable: true,
+      ...registry.custom(custom),
+      customField: custom,
+    };
+  };
   const shape: ValueShape = {
     kind: "record",
     vocabulary: () => vocabulary(),
@@ -60,13 +82,18 @@ export function recordField<Item, Needs, Row, ChildNeeds>(options: {
     type: "record",
     identity: `${vocabulary().id}:${vocabulary().field("indexedKey")!.read(row) as string}`,
     read: (name) => {
-      const field = vocabulary().filter(name);
+      const field = filterField(name);
       return field?.filterable ? field.value.read(row) : null;
     },
   });
   const navigation: FilterNavigation<Needs> = {
+    get dataset() {
+      return vocabulary().id;
+    },
+    equalityField: (name, literal) =>
+      vocabulary().filter.equalityField?.(name, literal) ?? name,
     member: (name) => {
-      const field = vocabulary().filter(name);
+      const field = filterField(name);
       return field?.filterable
         ? {
             filterable: true,

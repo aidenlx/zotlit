@@ -19,10 +19,11 @@ import type {
 } from "./attachment-hydration";
 import type { ItemQueryError } from "./error";
 import type { FieldNeeds } from "./fields";
-import { openHydration } from "./hydration";
+import { openHydration, openHydrationVocabulary } from "./hydration";
 import type {
   Hydration,
   HydrationRequest,
+  HydrationVocabulary,
   LoadPlan,
   Loader,
 } from "./hydration";
@@ -63,6 +64,7 @@ const NOTHING_HYDRATED: HydratedAnnotation = {};
 export function openAnnotationHydration(
   plan: HydrationRequest<AnnotationNeeds>,
   libraries: readonly TargetLibrary[],
+  source?: HydrationVocabulary,
 ): Effect.Effect<
   AnnotationHydration,
   ItemQueryError | ItemQueryReaderError,
@@ -70,12 +72,14 @@ export function openAnnotationHydration(
 > {
   return Effect.gen(function* () {
     const { filter, paths, sorts } = plan;
+    const readVocabulary = source ?? (yield* openHydrationVocabulary);
     const itemNeeds = (needs: AnnotationNeeds): readonly FieldNeeds[] =>
       needs.item ?? [];
     const parents = yield* openHydration(
       {
         dataset: plan.dataset,
         query: plan.query,
+        group: plan.group,
         filter: filter && {
           customFields: filter.customFields,
           needs: filter.needs.flatMap(itemNeeds),
@@ -92,6 +96,7 @@ export function openAnnotationHydration(
         ),
       },
       libraries,
+      readVocabulary,
     );
     const groupOf = new Map(
       libraries.map((library) => [library.libraryID, library.groupID]),
@@ -108,6 +113,7 @@ export function openAnnotationHydration(
               needs.flatMap((need) => need.attachment ?? []),
             ),
             libraries,
+            readVocabulary,
           )
         : null;
       const loads = {

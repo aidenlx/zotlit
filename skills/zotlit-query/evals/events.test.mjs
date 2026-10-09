@@ -44,6 +44,32 @@ const claude = (id, command, output) => [
   },
 ];
 const jsonl = (events) => events.map((e) => JSON.stringify(e)).join("\n");
+
+for (const agent of ["codex", "claude"]) {
+  for (const quote of ["'", '"']) {
+    for (const comparison of [">", ">="]) {
+      await test(`${agent} links redirection after a ${quote}-quoted ${comparison} filter`, () => {
+        const query = `${command} filter=${quote}annotations.filter(value.typo).length ${comparison} 0${quote} > "response file.json"`;
+        const entries = [
+          ["q", query, ""],
+          ["read", 'cat "response file.json"', failure],
+        ];
+        const events = entries.flatMap((entry) =>
+          agent === "codex" ? [codex(...entry)] : claude(...entry),
+        );
+        const metrics = measureEvents(jsonl(events), agent);
+        assert.equal(metrics.queryAttempts, 1);
+        assert.equal(metrics.misreadings.length, 1);
+        assert.equal(metrics.misreadings[0].command, query);
+        assert.equal(metrics.misreadings[0].failed, true);
+        assert.deepEqual(
+          metrics.misreadings[0].diagnostic,
+          JSON.parse(failure).diagnostic,
+        );
+      });
+    }
+  }
+}
 await test("both event formats measure outputs and recovered Diagnostic Reports", () => {
   const a = measureEvents(
     jsonl([codex("1", command, failure), codex("2", command, success)]),

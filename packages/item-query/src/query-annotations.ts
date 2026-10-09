@@ -4,11 +4,13 @@ import { Effect } from "effect";
 
 import { formatIndexedKey } from "@zotlit/db";
 import {
+  readAnnotationCandidateSet,
   readAnnotationRowCount,
   readAnnotationScanPage,
   readAnnotationUniverseRows,
 } from "@zotlit/db/item-query";
 
+import { lowerAnnotationCandidate } from "./annotation-candidates";
 import {
   ANNOTATION_FIELDS,
   ANNOTATION_SORT_FIELDS,
@@ -55,6 +57,13 @@ export const ANNOTATIONS: QueryDataset<ItemQueryRequest> = {
     "item",
     ...BUILT_IN_NAMES.map((name) => PARENT + name),
   ],
+  lowerCandidate: (node, sources) => {
+    const leaf = lowerAnnotationCandidate(node, sources);
+    return leaf
+      ? (options) => readAnnotationCandidateSet({ ...options, leaf })
+      : null;
+  },
+  candidateRelations: {},
   sortableFields: ANNOTATION_SORT_FIELDS,
   definition: annotationFieldDefinition,
   filterField: (name) => annotationFilterRegistry.field(name),
@@ -93,7 +102,7 @@ export const ANNOTATIONS: QueryDataset<ItemQueryRequest> = {
               planDatasetCandidates(
                 filter.root,
                 hydration.candidateSources(library),
-                "annotations",
+                { dataset: ANNOTATIONS },
               );
             if (!plan) return null;
             const rowCount = yield* readAnnotationRowCount(library.libraryID);

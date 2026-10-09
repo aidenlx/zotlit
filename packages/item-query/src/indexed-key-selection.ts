@@ -27,7 +27,11 @@ interface KeyLiteral {
 }
 
 /** Equality in either order, or a literal list containing one Indexed Key field. */
-function selection<Item>(node: FilterNode<Item>, dataset: QueryDataset["id"]) {
+function selection<Item>(
+  node: FilterNode<Item>,
+  dataset: QueryDataset["id"],
+  recordMembers = false,
+) {
   const pairs =
     node.kind === "binary" && node.operator === "=="
       ? ([
@@ -42,7 +46,13 @@ function selection<Item>(node: FilterNode<Item>, dataset: QueryDataset["id"]) {
         : [];
   for (const [field, literals] of pairs) {
     const target =
-      field.kind === "field" ? KEY_PATHS[dataset][field.name] : undefined;
+      field.kind === "field"
+        ? KEY_PATHS[dataset][field.name]
+        : recordMembers &&
+            field.kind === "property" &&
+            field.subject.recordDataset
+          ? KEY_PATHS[field.subject.recordDataset][field.name]
+          : undefined;
     if (target) return { target, literals };
   }
   return null;
@@ -91,7 +101,7 @@ export function indexedKeyWarnings<Item>(
 ): KeyLibraryWarning[] {
   const warnings: KeyLibraryWarning[] = [];
   const visit = (node: FilterNode<Item>) => {
-    for (const literal of selection(node, dataset)?.literals ?? []) {
+    for (const literal of selection(node, dataset, true)?.literals ?? []) {
       const key = keyLiteral(literal);
       if (
         key &&
