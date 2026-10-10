@@ -601,6 +601,13 @@ it("decodes one group Projection Path and preserves custom-field punctuation", (
   expect(decodeQuery({ group: "" })).toMatchObject(rejected("group"));
 });
 
+it.each(["tags[].name", "collections[]", "attachments[].tags[]"])(
+  "decodes the element group path %s as written",
+  (group) => {
+    expect(decodeQuery({ group })).toMatchObject({ group });
+  },
+);
+
 it("accepts Attachment queries and narrowed Attachment schemas", () => {
   expect(
     decodeQuery({ from: "attachments", fields: "title,path" }),
