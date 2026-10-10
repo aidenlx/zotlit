@@ -3,6 +3,7 @@ import {
   Deferred,
   Effect,
   Exit,
+  Fiber,
   Layer,
   Option,
   Queue,
@@ -491,10 +492,8 @@ describe("ZoteroReads worker adapter", () => {
           makeWorkerReads(workers.connect),
         );
         yield* TestClock.adjust("15 seconds");
-        for (let turn = 0; turn < 100 && !starting.pollUnsafe(); turn++)
-          yield* Effect.yieldNow;
-        const exit = starting.pollUnsafe();
-        if (!exit || Exit.isFailure(exit)) return { exit };
+        const exit = yield* Fiber.await(starting);
+        if (Exit.isFailure(exit)) return { exit };
         const reads = exit.value;
         const seed = yield* Stream.runHead(reads.Changes());
         const ended = workers.ended(1);
@@ -592,7 +591,14 @@ describe("ZoteroReads worker adapter", () => {
   });
 
   it("unload interrupts a hung recovery and repeated unload stays safe", async () => {
-    const workers = fakeWorkers({ hangStart: (n) => n === 2 });
+    const recoveryStarted = Promise.withResolvers<void>();
+    const workers = fakeWorkers({
+      hangStart: (n) => {
+        if (n !== 2) return false;
+        recoveryStarted.resolve();
+        return true;
+      },
+    });
     await Effect.runPromise(
       Effect.gen(function* () {
         const scope = yield* Scope.make();
@@ -605,12 +611,11 @@ describe("ZoteroReads worker adapter", () => {
         yield* workers.kill(1);
         yield* until(changes, "degraded");
         const recovery = yield* Effect.forkChild(reads.Refresh());
-        while (workers.spawned() < 2) yield* Effect.yieldNow;
+        yield* Effect.promise(() => recoveryStarted.promise);
         yield* Scope.close(scope, Exit.void);
         yield* Scope.close(scope, Exit.void);
-        for (let turn = 0; turn < 100 && !recovery.pollUnsafe(); turn++)
-          yield* Effect.yieldNow;
-        expect(recovery.pollUnsafe()).toMatchObject({ _tag: "Failure" });
+        const exit = yield* Fiber.await(recovery);
+        expect(exit).toMatchObject({ _tag: "Failure" });
         expect(workers.ended(2)).toBe(true);
       }).pipe(Effect.scoped),
     );
