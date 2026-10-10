@@ -1,15 +1,14 @@
+import {
+  lineClassNodeProp,
+  syntaxTree,
+  tokenClassNodeProp,
+} from "@codemirror/language";
 // The CodeMirror side of the citekey editor treatment: citekey marks and
 // citation widgets over the visible ranges, the lookup that answers which
 // citekey covers a document position, the click that opens the marked key's
 // Literature Note, and the hover that shows its entry. Wherever a Citation does
 // not open as a link, a plain click on its widget stays the editor's own and
 // places the caret in the source the widget hides.
-
-import {
-  lineClassNodeProp,
-  syntaxTree,
-  tokenClassNodeProp,
-} from "@codemirror/language";
 import { RangeSetBuilder, StateEffect } from "@codemirror/state";
 import type { EditorState, Extension } from "@codemirror/state";
 import {
@@ -25,6 +24,7 @@ import type { Workspace } from "obsidian";
 import { livePreviewOf, overlapsSelection } from "@/lib/editor-decoration";
 import { getLogger } from "@/lib/log";
 import { themeHook } from "@/lib/theme-hooks";
+import { EditorLookup } from "@/services/citation-index/editor-lookup";
 import type {
   CitationLookupAnswer,
   CitationLookupObservation,
@@ -209,20 +209,15 @@ export function citekeyEditorExtension(
       widgets: DecorationSet = Decoration.none;
       #editClick: { from: number; x: number; y: number } | null = null;
       readonly #lookup;
-      #lookupGeneration = 0;
-      #destroyed = false;
 
       constructor(view: EditorView) {
-        this.#lookup = handlers.observeLookup(() => {
-          if (this.#destroyed) return;
+        this.#lookup = new EditorLookup(handlers.observeLookup, () => {
           view.dispatch({ effects: citekeyDecorationsChanged.of(undefined) });
         });
         this.#rebuild(view);
       }
 
       destroy(): void {
-        this.#destroyed = true;
-        this.#lookupGeneration += 1;
         this.#lookup[Symbol.dispose]();
       }
 
@@ -480,15 +475,10 @@ export function citekeyEditorExtension(
         const built = buildDecorations(view, handlers, {
           edited: this.#editedDocument(view),
           resolveCitekey: this.#resolve,
-          lookup: () => this.#lookup.current?.value ?? null,
         });
         this.decorations = built.all;
         this.widgets = built.widgets;
-        const generation = ++this.#lookupGeneration;
-        queueMicrotask(() => {
-          if (this.#destroyed || generation !== this.#lookupGeneration) return;
-          this.#lookup.set({ citekeys: built.citekeys });
-        });
+        this.#lookup.set({ citekeys: built.citekeys });
       }
     },
     {
@@ -557,6 +547,7 @@ class CitationWidget extends WidgetType {
   readonly #themeClasses;
   readonly #footnote;
   readonly #navigable;
+  readonly #lookupRevision;
 
   constructor(options: {
     source: string;
@@ -571,6 +562,7 @@ class CitationWidget extends WidgetType {
     footnote: boolean;
     /** Whether the Citation opens on click, which Citekey Navigation owns. */
     navigable: boolean;
+    lookupRevision: string;
   }) {
     super();
     this.#source = options.source;
@@ -582,10 +574,12 @@ class CitationWidget extends WidgetType {
     this.#themeClasses = options.themeClasses;
     this.#footnote = options.footnote;
     this.#navigable = options.navigable;
+    this.#lookupRevision = options.lookupRevision;
   }
 
   eq(other: CitationWidget): boolean {
     return (
+      other.#lookupRevision === this.#lookupRevision &&
       other.#source === this.#source &&
       other.#content === this.#content &&
       other.#navigable === this.#navigable &&
@@ -706,11 +700,9 @@ function buildDecorations(
   {
     edited,
     resolveCitekey,
-    lookup,
   }: {
     edited: EditedDocument | null;
     resolveCitekey: ResolveCitekey;
-    lookup: () => CitationLookupAnswer | null;
   },
 ): CitekeyDecorations {
   const all = new RangeSetBuilder<Decoration>();
@@ -748,7 +740,6 @@ function buildDecorations(
             start: from,
             edited,
             handlers,
-            lookup,
             footnote: statesFootnoteTreatment(state, from, to),
           });
           if (widget === null) continue;
@@ -804,7 +795,6 @@ function citationWidget(options: {
   start: number;
   edited: EditedDocument;
   handlers: CitekeyEditorHandlers;
-  lookup: () => CitationLookupAnswer | null;
   /** Whether the Citation is written inside a footnote. */
   footnote: boolean;
 }): CitationWidget | null {
@@ -813,7 +803,6 @@ function citationWidget(options: {
     start,
     edited: { citations, path },
     handlers,
-    lookup,
     footnote,
   } = options;
   const at: CitationCoordinate = { kind: "offset", start };
@@ -831,11 +820,13 @@ function citationWidget(options: {
     sourcePath: path,
     handlers: {
       ...handlers,
-      hoverNotePath: (citekey) => handlers.hoverNotePath(citekey, lookup()),
+      hoverNotePath: (citekey) =>
+        handlers.hoverNotePath(citekey, citations.lookup),
     },
     themeClasses,
     footnote,
     navigable: handlers.navigationEnabled(),
+    lookupRevision: citations.lookup.revision,
   });
 }
 

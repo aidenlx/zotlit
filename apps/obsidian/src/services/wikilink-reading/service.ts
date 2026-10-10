@@ -189,7 +189,6 @@ export class WikilinkReading extends Service<void> {
       this.#show(el, ctx, {
         rendered,
         signal: gestures.signal,
-        lookup: lookup.current?.value ?? null,
       });
     };
     this.#sections.hold(el, ctx, show);
@@ -262,11 +261,9 @@ export class WikilinkReading extends Service<void> {
     {
       rendered,
       signal,
-      lookup,
     }: {
       rendered: SectionRuns;
       signal: AbortSignal;
-      lookup: CitationLookupAnswer | null;
     },
   ): void {
     // Read only once a Citation is on screen, so a section that writes none
@@ -275,9 +272,10 @@ export class WikilinkReading extends Service<void> {
     const text = file === null ? null : this.#citationText.peek(file.path);
     if (text === null) return;
 
-    const runs = [...rendered, ...this.#sectionRuns(el, ctx, lookup)].sort(
-      (a, b) => documentOrder(a[0]!.source, b[0]!.source),
-    );
+    const runs = [
+      ...rendered,
+      ...this.#sectionRuns(el, ctx, text.value.lookup),
+    ].sort((a, b) => documentOrder(a[0]!.source, b[0]!.source));
     // Which occurrence each Citation of the section is, so a position-dependent
     // style shows every one of them the text rendered for its own place.
     const citations = runs.map((run) => citationOfRun(run));
