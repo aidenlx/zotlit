@@ -18,10 +18,9 @@ import { CitekeySnapshot } from "@/services/citation-index/snapshot";
 import { resolveLibraryScope } from "@/services/library-scope/scope";
 import type { LibraryScope } from "@/services/library-scope/scope";
 
-import { makeCitationRefresh } from "./citation-refresh";
 import { toDbUnavailable } from "./connection";
 import type { Connection } from "./connection";
-import type { CitationSource, DbUnavailable, ReadsConfig } from "./rpc";
+import type { DbUnavailable } from "./rpc";
 
 export const CITEKEY_WINDOW = 1000;
 
@@ -38,21 +37,14 @@ interface Published {
 export const makeCitationLookup = Effect.fnUntraced(function* (
   connection: Connection["Service"],
   windowSize: number,
-  configure: (
-    config: ReadsConfig,
-  ) => Effect.Effect<void> = connection.configure,
 ) {
   const lifetime = yield* Scope.Scope;
-  const source = yield* makeCitationRefresh(connection, configure);
   const incarnation = crypto.randomUUID();
   let serial = 0;
   let published: Published | undefined;
   let candidate: Fiber.Fiber<void, DbUnavailable> | undefined;
 
-  const build = Effect.fnUntraced(function* (
-    scope: LibraryScope | null,
-    generation: number,
-  ) {
+  const build = Effect.fnUntraced(function* (scope: LibraryScope | null) {
     const client = yield* connection.borrow;
     const database = connection.databaseGeneration(client);
     const previous =
@@ -97,14 +89,6 @@ export const makeCitationLookup = Effect.fnUntraced(function* (
       new Set(selected.available.map(({ libraryID }) => libraryID)),
       { previous },
     ).pipe(Effect.catchDefect((cause) => Effect.fail(toDbUnavailable(cause))));
-    const requestedGeneration = yield* source.generation;
-    if (requestedGeneration !== generation) {
-      logger.debug("Discarding an obsolete citation build", {
-        generation,
-        requestedGeneration,
-      });
-      return;
-    }
     const retained = snapshot === previous && published !== undefined;
     const revision =
       snapshot === previous && published
@@ -118,7 +102,6 @@ export const makeCitationLookup = Effect.fnUntraced(function* (
       revision,
     };
     logger.debug("Citation lookup published", {
-      generation,
       revision,
       retained,
       database,
@@ -126,31 +109,14 @@ export const makeCitationLookup = Effect.fnUntraced(function* (
   });
 
   const lookup = Effect.fnUntraced(function* (
-    request: CitationLookupRequest &
-      CitationSource & { scope: LibraryScope | null },
-  ): Effect.fn.Return<
-    CitationLookupWireAnswer & { readonly generation: number },
-    DbUnavailable
-  > {
+    request: CitationLookupRequest & { scope: LibraryScope | null },
+  ): Effect.fn.Return<CitationLookupWireAnswer, DbUnavailable> {
     const scope = JSON.stringify(request.scope);
     while (true) {
-      const generation = yield* source.refresh({
-        generation: request.generation,
-        config: request.config,
-      });
       const client = yield* Effect.scoped(connection.borrow);
-      const requestedGeneration = yield* source.generation;
-      if (requestedGeneration !== generation) {
-        logger.debug("Retrying a citation borrow after a source change", {
-          generation,
-          requestedGeneration,
-        });
-        continue;
-      }
       const current = published;
       if (current?.client === client && current.scope === scope) {
         return {
-          generation,
           revision: current.revision,
           citekeys: new Map(
             (request.citekeys ?? []).map((key) => [
@@ -173,7 +139,7 @@ export const makeCitationLookup = Effect.fnUntraced(function* (
           if (candidate) return Effect.succeed(candidate);
           return Effect.map(
             Effect.forkIn(
-              Effect.scoped(build(request.scope, generation)).pipe(
+              Effect.scoped(build(request.scope)).pipe(
                 Effect.ensuring(
                   Effect.sync(() => {
                     candidate = undefined;
@@ -187,19 +153,8 @@ export const makeCitationLookup = Effect.fnUntraced(function* (
           );
         }),
       );
-      const result = yield* Effect.result(Fiber.join(running));
-      if (result._tag === "Failure") {
-        const requestedGeneration = yield* source.generation;
-        if (requestedGeneration !== generation) {
-          logger.debug("Discarding an obsolete citation build failure", {
-            generation,
-            requestedGeneration,
-          });
-          continue;
-        }
-        return yield* result.failure;
-      }
+      yield* Fiber.join(running);
     }
   });
-  return { lookup, refresh: source.refresh };
+  return { lookup };
 });
