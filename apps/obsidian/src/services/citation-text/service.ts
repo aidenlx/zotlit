@@ -77,7 +77,7 @@ export interface CitationTextDeps {
   db: Pick<ZoteroReadsService, "state" | "acquireRead">;
   citationIndex: Pick<
     CitationIndex,
-    "getDocumentCitationSet" | "citekeyOf" | "readSnapshot" | "on"
+    "getDocumentCitationSet" | "on"
   >;
   /** What a citekey resolves to, which decides what a Citation can say. */
   noteIndex: Pick<NoteIndex, "on" | "whenIndexed">;
@@ -313,11 +313,10 @@ export class CitationText extends Service<void> {
     await Promise.all([
       this.#noteIndex.whenIndexed(),
       this.#profile.ready,
-      this.#citationIndex.readSnapshot(),
     ]);
     const body = await this.#app.vault.cachedRead(file);
     const set = await this.#citationIndex.getDocumentCitationSet(file);
-    const wikilinks = this.#wikilinkCitations(file, body, set.occurrences);
+    const wikilinks = this.#wikilinkCitations(file, body, set.occurrences, set.lookup);
     const literal = worksByCitekey(set.citations);
     const works = await this.#readCited([
       ...literal.values(),
@@ -479,6 +478,7 @@ export class CitationText extends Service<void> {
     file: TFile,
     body: string,
     occurrences: readonly CitationOccurrence[],
+    lookup: import("../citation-index/lookup").CitationLookupAnswer,
   ): DocumentWikilinks {
     const members = new Set(
       occurrences
@@ -493,7 +493,7 @@ export class CitationText extends Service<void> {
         return (
           note && {
             ...note,
-            citationKey: this.#citationIndex.citekeyOf(note.indexedKey),
+            citationKey: lookup.citekeyOf(note.indexedKey) ?? null,
           }
         );
       },

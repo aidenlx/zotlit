@@ -43,7 +43,7 @@ export interface CitationPopoverDeps {
   db: Pick<ZoteroReadsService, "state" | "ready" | "acquireRead">;
   citationIndex: Pick<
     CitationIndex,
-    "getDocumentCitationSet" | "resolveCitekey" | "resolution" | "on"
+    "getDocumentCitationSet" | "readLookup" | "resolution" | "on"
   >;
   /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
   libraryScope: Pick<LibraryScopeService, "current">;
@@ -313,7 +313,7 @@ async function readWork(
   const work = request.work;
   const resolution =
     work.kind === "citekey"
-      ? deps.citationIndex.resolveCitekey(work.citekey)
+      ? (await deps.citationIndex.readLookup({ citekeys: [work.citekey] }, { signal })).resolve(work.citekey)
       : null;
   const indexedKey =
     work.kind === "item"
@@ -399,7 +399,7 @@ async function readBlocks(
       pending: false,
     };
   }
-  const { citations } = await deps.citationIndex.getDocumentCitationSet(file);
+  const { citations, lookup } = await deps.citationIndex.getDocumentCitationSet(file, { signal });
   // Read beside the citations it qualifies: this read resolved against the
   // snapshot as it stood here, and the popover redraws on the next hover.
   const pending = deps.citationIndex.resolution === null;
@@ -437,7 +437,7 @@ async function readBlocks(
   // described for the citations that resolve.
   const ambiguous = await readAmbiguousCandidates(
     deps,
-    (citekey) => deps.citationIndex.resolveCitekey(citekey),
+    (citekey) => lookup.resolve(citekey),
     request.works.map(({ citekey }) => citekey),
   );
   // A note-class style writes its citation as a note the surfaces stand serials

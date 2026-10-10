@@ -61,7 +61,7 @@ export interface ExportPorts {
    * export cites what Live Preview shows. `null` means no snapshot, which only
    * an unreadable Zotero database leaves behind.
    */
-  resolveCitekey: (citekey: string) => CitekeyResolution | null;
+  readLookup: (request: { citekeys: readonly string[] }) => Promise<{ resolve: (citekey: string) => CitekeyResolution | null }>;
   /**
    * Zotero library addresses of the cited Indexed Keys, read under one lease.
    * A key the database cannot place is absent; `null` means no read lease.
@@ -163,7 +163,7 @@ export async function exportCitedDocument(
     return { error: { kind: "engine", detail: describeError(error) } };
   }
 
-  const spelled = readCitations(prepared.citedIds, wikilinked, ports);
+  const spelled = await readCitations(prepared.citedIds, wikilinked, ports);
   if ("error" in spelled) return spelled;
 
   const cited = await citeItems(spelled.itemsByKey(), spelled.describe, ports);
@@ -239,11 +239,11 @@ function injectedId(indexedKey: string): string {
  * is Pandoc's own undefined-citation output — a bold key and a missing entry —
  * inside a document the user is about to send somewhere.
  */
-function readCitations(
+async function readCitations(
   citedIds: readonly string[],
   wikilinked: ReadonlyMap<string, string>,
   ports: ExportPorts,
-): SpelledCitations | { error: ExportFailure } {
+): Promise<SpelledCitations | { error: ExportFailure }> {
   /** Injected Id → the Indexed Key it names. */
   const injected = new Map(
     [...wikilinked.values()].map((id) => [id, id.slice(1)]),
@@ -255,13 +255,16 @@ function readCitations(
   const unknown: string[] = [];
   const ambiguous: string[] = [];
 
+  let lookup: Awaited<ReturnType<ExportPorts["readLookup"]>>;
+  try { lookup = await ports.readLookup({ citekeys: citedIds.filter((id) => !injected.has(id)) }); }
+  catch { return { error: { kind: "database-unavailable", dataDir: ports.dataDir() } }; }
   for (const id of citedIds) {
     const wikilinkedKey = injected.get(id);
     if (wikilinkedKey !== undefined) {
       cited.add(wikilinkedKey);
       continue;
     }
-    const resolution = ports.resolveCitekey(id);
+    const resolution = lookup.resolve(id);
     if (!resolution) {
       return {
         error: { kind: "database-unavailable", dataDir: ports.dataDir() },
