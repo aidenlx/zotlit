@@ -378,3 +378,41 @@ await test("rejects missing rows, truncated responses, and the wrong first autho
     /wrong first author/,
   );
 });
+
+for (const caseName of ["include", "edge", "export"]) {
+  for (const fields of [
+    ["creators[]"],
+    ["creators[].fullName", "creators[].role"],
+  ]) {
+    await test(`${caseName} accepts creator facts projected through ${fields.join(",")}`, () => {
+      const result = envelope(caseName);
+      result.request.fields = result.request.fields.flatMap((field) =>
+        field === "creators" ? fields : [field],
+      );
+      for (const row of result.rows) {
+        const creators = row.values.creators;
+        delete row.values.creators;
+        if (fields.length === 1) row.values["creators[]"] = creators;
+        else {
+          row.values["creators[].fullName"] = creators.map((c) => c.fullName);
+          row.values["creators[].role"] = creators.map((c) => c.role);
+        }
+      }
+      assert.deepEqual(validate(caseName, result, { runRoot: root }), []);
+      if (fields.length === 1)
+        result.rows[0].values["creators[]"][0].fullName = "Wrong creator";
+      else result.rows[0].values["creators[].fullName"][0] = "Wrong creator";
+      assert.match(
+        validate(caseName, result, { runRoot: root }).join("\n"),
+        /wrong first creator/,
+      );
+      if (fields.length === 2) {
+        result.rows[0].values["creators[].role"].pop();
+        assert.match(
+          validate(caseName, result, { runRoot: root }).join("\n"),
+          /missing creators/,
+        );
+      }
+    });
+  }
+}

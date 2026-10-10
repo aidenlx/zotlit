@@ -153,6 +153,14 @@ export function researchSchema(expected) {
     required: Object.keys(properties),
   };
 }
+function groupCounts(groups) {
+  return groups
+    ?.map(({ value, count }) => ({ value, count }))
+    .sort((a, b) =>
+      JSON.stringify(a.value).localeCompare(JSON.stringify(b.value)),
+    );
+}
+
 export function checkResearchAnswer(
   expected,
   answer,
@@ -179,9 +187,13 @@ export function checkResearchAnswer(
     ).map((e) => `answer: ${e}`),
   );
   if (
-    !isDeepStrictEqual(
-      answer.groups,
-      (groups ?? []).map(({ value, count }) => ({ value, count })),
+    !isDeepStrictEqual(groupCounts(answer.groups), groupCounts(groups ?? [])) &&
+    !(
+      want.group === "item.indexedKey" &&
+      isDeepStrictEqual(
+        groupCounts(answer.groups),
+        groupCounts(expectedGroups(want, "item.title")),
+      )
     )
   )
     errors.push("answer has wrong group counts");

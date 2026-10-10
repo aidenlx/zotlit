@@ -118,3 +118,80 @@ await test("group statistics accept a bounded sample and an equivalent parent ti
   envelope.groups[0].count = 1;
   assert.ok(validate("count_per_paper", envelope, context).length > 0);
 });
+
+await test("group answers can list the same counts in any order", async () => {
+  const live = JSON.parse(
+    await readFile(new URL("./live-projections.json", import.meta.url), "utf8"),
+  );
+  for (const name of ["attachment_types", "count_by_year", "count_per_paper"]) {
+    const { envelope, answer } = structuredClone(live[name]);
+    const context = { runRoot: "/evaluation-run/corpus", envelope };
+    answer.groups.reverse();
+    assert.deepEqual(checkAnswer(name, answer, context), []);
+    const wrongCount = structuredClone(answer);
+    wrongCount.groups[0].count++;
+    assert.match(
+      checkAnswer(name, wrongCount, context).join("\n"),
+      /wrong group counts/,
+    );
+    answer.groups[0] = answer.groups[1];
+    assert.match(
+      checkAnswer(name, answer, context).join("\n"),
+      /wrong group counts/,
+    );
+  }
+});
+
+await test("paper group answers can label Indexed Key groups with their paper titles", async () => {
+  const live = JSON.parse(
+    await readFile(new URL("./live-projections.json", import.meta.url), "utf8"),
+  );
+  const { envelope, answer } = structuredClone(live.count_per_paper);
+  const context = { runRoot: "/evaluation-run/corpus", envelope };
+  answer.groups = envelope.groups.map((g) => ({
+    value: g.rows[0].values["item.title"],
+    count: g.count,
+  }));
+  assert.deepEqual(checkAnswer("count_per_paper", answer, context), []);
+  answer.groups.reverse();
+  assert.deepEqual(checkAnswer("count_per_paper", answer, context), []);
+  const wrong = structuredClone(answer);
+  [wrong.groups[0].count, wrong.groups[1].count] = [
+    wrong.groups[1].count,
+    wrong.groups[0].count,
+  ];
+  assert.match(
+    checkAnswer("count_per_paper", wrong, context).join("\n"),
+    /wrong group counts/,
+  );
+  answer.groups[0].value = "Another paper";
+  assert.match(
+    checkAnswer("count_per_paper", answer, context).join("\n"),
+    /wrong group counts/,
+  );
+});
+
+await test("attachment counts require grouped query evidence even when local counts are correct", async () => {
+  const live = JSON.parse(
+    await readFile(new URL("./live-projections.json", import.meta.url), "utf8"),
+  );
+  const { envelope, answer } = structuredClone(live.attachment_types);
+  envelope.rows = envelope.groups.flatMap((g) => g.rows);
+  delete envelope.groups;
+  delete envelope.request.group;
+  delete envelope.totalCount;
+  answer.groups = [];
+  const context = {
+    runRoot: "/evaluation-run/corpus",
+    vaultPath: envelope.identity.vault.path,
+    envelope,
+  };
+  assert.match(
+    validate("attachment_types", envelope, context).join("\n"),
+    /wrong group path/,
+  );
+  assert.match(
+    checkAnswer("attachment_types", answer, context).join("\n"),
+    /wrong group counts/,
+  );
+});

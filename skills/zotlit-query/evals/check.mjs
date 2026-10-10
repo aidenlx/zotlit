@@ -11,15 +11,9 @@ const oracle = JSON.parse(
   await readFile(new URL("./oracle.json", import.meta.url), "utf8"),
 );
 const itemFields = {
-  include: ["title", "date.year", "creators"],
-  export: [
-    "title",
-    "date.year",
-    "creators",
-    'custom["review.status"]',
-    "abstractNote",
-  ],
-  edge: ["title", "date.year", "creators", "library"],
+  include: ["title", "date.year"],
+  export: ["title", "date.year", 'custom["review.status"]', "abstractNote"],
+  edge: ["title", "date.year", "library"],
 };
 const expandedAnnotationCases = new Set([
   "shared_marks",
@@ -31,7 +25,8 @@ const expandedAnnotationCases = new Set([
   "export_annotations",
 ]);
 const expandedFields = {
-  shared_marks: ["text", "colorName", "library"],
+  // Indexed Keys identify the Library; the answer checker verifies its name.
+  shared_marks: ["text", "colorName"],
   attachment: ["type", "pageLabel", "text", "comment", "attachment.path"],
   colors: ["text", "colorName", "tags", "pageIndex"],
   reverse_pages: ["type", "pageLabel", "pageIndex", "text"],
@@ -279,6 +274,20 @@ function validateAnnotations(caseName, envelope, { expected, ...context }) {
   return errors;
 }
 
+function projectedCreators(values) {
+  const creators = values.creators ?? values["creators[]"];
+  if (Array.isArray(creators)) return creators;
+  const names = values["creators[].fullName"];
+  const roles = values["creators[].role"];
+  if (
+    !Array.isArray(names) ||
+    !Array.isArray(roles) ||
+    names.length !== roles.length
+  )
+    return null;
+  return names.map((fullName, index) => ({ fullName, role: roles[index] }));
+}
+
 function validateItems(caseName, envelope, { expected, ...context }) {
   const { errors, need } = commonChecks(envelope, expected, context);
   for (const field of itemFields[caseName])
@@ -327,7 +336,7 @@ function validateItems(caseName, envelope, { expected, ...context }) {
           (item.indexedKey.endsWith("g118") ? "group:118" : "personal"),
         `wrong Library for ${item.indexedKey}`,
       );
-    const creators = values.creators;
+    const creators = projectedCreators(values);
     need(Array.isArray(creators), `missing creators for ${item.indexedKey}`);
     if (Array.isArray(creators)) {
       need(

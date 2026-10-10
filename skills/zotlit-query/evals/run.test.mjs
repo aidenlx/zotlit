@@ -146,6 +146,23 @@ async function exercise(
           join(options.cwd, "answer.json"),
           JSON.stringify(answer),
         );
+        if (caseName === "csv_for_advisor") {
+          assert.ok(
+            options.input.includes(
+              `save advisor.csv at ${join(options.cwd, "advisor.csv")}`,
+            ),
+          );
+          assert.ok(
+            options.input.includes(
+              `The runner copies advisor.csv to ${join(root, "advisor.csv")} after the run.`,
+            ),
+          );
+          assert.ok(
+            options.input.includes(
+              "Report that retained path; do not write there.",
+            ),
+          );
+        }
         if (caseName === "csv_for_advisor")
           await writeFile(
             join(options.cwd, "advisor.csv"),
@@ -1016,4 +1033,27 @@ await test("both agent paths reject observed evaluator reads even with correct a
     assert.equal(report.failureKind, "task");
     assert.ok(report.errors.includes("agent read evaluator sources"));
   }
+});
+
+await test("shared marks can derive Library names from Indexed Keys and reject wrong names", async () => {
+  const omitLibrary = (answer, envelope) => {
+    envelope.request.fields = envelope.request.fields.filter(
+      (field) => field !== "library",
+    );
+    for (const row of envelope.rows) delete row.values.library;
+  };
+  const valid = await exercise(null, {
+    caseName: "shared_marks",
+    changeAnnotation: omitLibrary,
+  });
+  assert.equal(valid.state, "passed", valid.errors.join("\n"));
+  const wrong = await exercise(null, {
+    caseName: "shared_marks",
+    changeAnnotation(answer, envelope) {
+      omitLibrary(answer, envelope);
+      answer.annotations[1].library = "My Library";
+    },
+  });
+  assert.equal(wrong.failureKind, "task");
+  assert.match(wrong.errors.join("\n"), /wrong library/);
 });
