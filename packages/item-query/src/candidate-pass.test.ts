@@ -28,9 +28,14 @@ beforeAll(() => {
 });
 afterAll(() => resetSync());
 
-function fake(count: number, ids: number[]) {
+function fake(
+  count: number,
+  ids: number[],
+  id: "items" | "attachments" | "annotations" = "items",
+) {
   const reads: number[] = [];
   const dataset: CandidateDataset<string> = {
+    id,
     lowerCandidate: (node) =>
       node.kind === "method" &&
       node.name === "contains" &&
@@ -60,36 +65,43 @@ function fake(count: number, ids: number[]) {
   return { dataset, reads };
 }
 
-it("uses candidates at the cap of one Target Library and logs the decision", async () => {
-  const { dataset, reads } = fake(12, [1, 2, 3]);
-  const filter = planFilter('tags.contains("selected")');
-  if (!("root" in filter)) throw new Error("Invalid test filter");
-  const run = await runEffect(
-    runCandidatePass({
-      dataset,
-      filter: filter.root,
-      library: { libraryID: 1, groupID: null },
-      sources: {
-        candidateContext: (library) => ({
-          library,
-          vocabulary: null,
-          collectionPaths: undefined,
-        }),
-      },
-      tuning: PRODUCTION_TUNING,
-    }),
-  );
-  expect(run.exit).toEqual(Exit.succeed(new Set([1, 2, 3])));
-  expect(reads).toEqual([1]);
-  expect(logs[0]?.properties).toEqual({
-    libraryID: 1,
-    groupID: null,
-    plan: "candidates",
-    candidateCount: 3,
-    candidateCap: 3,
-    reason: null,
-  });
-});
+it.each(["items", "attachments", "annotations"] as const)(
+  "uses candidates at the cap of one Target Library and logs the %s decision",
+  async (id) => {
+    const { dataset, reads } = fake(12, [1, 2, 3], id);
+    const filter = planFilter('tags.contains("selected")');
+    if (!("root" in filter)) throw new Error("Invalid test filter");
+    const run = await runEffect(
+      runCandidatePass({
+        dataset,
+        filter: filter.root,
+        library: { libraryID: 1, groupID: null },
+        sources: {
+          candidateContext: (library) => ({
+            library,
+            vocabulary: null,
+            collectionPaths: undefined,
+          }),
+        },
+        tuning: PRODUCTION_TUNING,
+      }),
+    );
+    expect(run.exit).toEqual(Exit.succeed(new Set([1, 2, 3])));
+    expect(reads).toEqual([1]);
+    expect(logs[0]?.rawMessage).toBe(
+      "ZotLit Query uses {plan} for {dataset} in Library {libraryID}",
+    );
+    expect(logs[0]?.properties).toEqual({
+      dataset: dataset.id,
+      libraryID: 1,
+      groupID: null,
+      plan: "candidates",
+      candidateCount: 3,
+      candidateCap: 3,
+      reason: null,
+    });
+  },
+);
 
 async function choose(
   dataset: CandidateDataset,
@@ -129,6 +141,7 @@ it.each([
       expected === null ? null : new Set(expected),
     );
     expect(logs[0]?.properties).toEqual({
+      dataset: dataset.id,
       libraryID: 1,
       groupID: null,
       plan: expected === null ? "scan" : "candidates",
@@ -153,6 +166,7 @@ it("chooses separately for two Target Libraries of different sizes", async () =>
   ).toBeNull();
   expect(logs.map((log) => log.properties)).toEqual([
     {
+      dataset: "items",
       libraryID: 1,
       groupID: null,
       plan: "candidates",
@@ -161,6 +175,7 @@ it("chooses separately for two Target Libraries of different sizes", async () =>
       reason: null,
     },
     {
+      dataset: "items",
       libraryID: 2,
       groupID: 9,
       plan: "scan",
@@ -207,7 +222,8 @@ it.each([
     expect(logs[0]).toMatchObject({
       category: ["zotlit", "item-query"],
       level: "debug",
-      rawMessage: "Item Query uses {plan} for Library {libraryID}",
+      rawMessage:
+        "ZotLit Query uses {plan} for {dataset} in Library {libraryID}",
       properties: {
         libraryID: 1,
         groupID: null,

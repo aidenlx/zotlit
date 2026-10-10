@@ -77,6 +77,7 @@ export interface CandidateParentRelation {
 
 /** The candidate pass needs only lowering, readers, and the record relations. */
 export interface CandidateDataset<Leaf = any> {
+  readonly id: "items" | "attachments" | "annotations";
   readonly lowerCandidate: (
     node: FilterNode<never>,
     sources: CandidateSources,
@@ -101,7 +102,6 @@ export interface CandidateDataset<Leaf = any> {
 export interface QueryDataset<
   Request extends ItemQueryRequest = ItemQueryRequest,
 > extends CandidateDataset {
-  readonly id: "items" | "attachments" | "annotations";
   /** The record of one row in prose: `Item` or `Annotation`. */
   readonly noun: string;
   /** The query in prose: `Item Query` or `Annotation Query`. */
