@@ -538,6 +538,19 @@ describe("zotlit:cited-by", () => {
     });
   });
 
+  it("reports an unavailable fresh lookup instead of a missing citation key", async () => {
+    const { citedBy, readLookup, getCitedBy } = setup();
+    readLookup.mockRejectedValue(new Error("Citation worker unavailable"));
+
+    const output = await citedBy({ citekey: ITEM_CITEKEY });
+
+    expect(JSON.parse(output)).toMatchObject({
+      ok: false,
+      diagnostic: { code: "INDEX_NOT_READY" },
+    });
+    expect(getCitedBy).not.toHaveBeenCalled();
+  });
+
   it("reports a citation key that resolves to no item", async () => {
     const { citedBy, getCitedBy } = setup({
       citekeyResolution: { kind: "missing" },
