@@ -1,4 +1,4 @@
-import { Deferred, Effect, Exit, Fiber } from "effect";
+import { Deferred, Effect, Exit, Fiber, Layer } from "effect";
 import { expect, it, vi } from "vitest";
 
 import * as db from "@zotlit/db";
@@ -115,6 +115,57 @@ it.each([false, true])(
     );
   },
 );
+
+it("retries a failed old-client build after refresh", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const entered = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        const joined = yield* Deferred.make<void>();
+        let borrows = 0;
+        const connection = Layer.effect(Connection)(
+          Effect.gen(function* () {
+            const source = yield* Connection;
+            return {
+              ...source,
+              borrow: Effect.tap(source.borrow, () => {
+                borrows += 1;
+                if (borrows === 2)
+                  return Deferred.succeed(entered, undefined).pipe(
+                    Effect.andThen(Deferred.await(release)),
+                  );
+                if (borrows === 3) return Deferred.succeed(joined, undefined);
+                return Effect.void;
+              }),
+            };
+          }),
+        ).pipe(Layer.provide(layerRcRef(memoryOpener(seed).open)));
+        const client = yield* inProcessClient(connection);
+        const request = { scope: MY_LIBRARY_SCOPE, citekeys: ["shared"] };
+        using pages = vi
+          .spyOn(db, "getCitekeyWindow")
+          .mockImplementationOnce(() => {
+            throw new Error("old client failed");
+          });
+        const old = yield* Effect.forkChild(client.CitationLookup(request));
+        yield* Deferred.await(entered);
+        yield* client.Refresh();
+        const current = yield* Effect.forkChild(client.CitationLookup(request));
+        yield* Deferred.await(joined);
+        yield* Effect.yieldNow;
+        yield* Deferred.succeed(release, undefined);
+        const answer = yield* Fiber.join(current);
+        expect(answer.citekeys.get("shared")).toMatchObject({
+          kind: "unique",
+          item: { indexedKey: "PERSONAL" },
+        });
+        expect((yield* Fiber.join(old)).revision).toBe(answer.revision);
+        expect(pages).toHaveBeenCalledTimes(2);
+      }),
+    ),
+  );
+});
 
 it("returns DbUnavailable for a failed build and retries the next lookup", async () => {
   await Effect.runPromise(
