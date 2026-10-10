@@ -13,6 +13,8 @@ export interface Tuning {
    * for a larger one.
    */
   readonly capRatio: number;
+  /** Element pages per Relation List candidate read in one Target Library. */
+  readonly relationPageBudget: number;
   /**
    * The Items of one scan page and of one universe chunk. The readers hold it
    * at `SCAN_PAGE_SIZE` at most.
@@ -32,6 +34,7 @@ export interface Tuning {
 /** The production tuning. The measurement record can change these values. */
 export const PRODUCTION_TUNING: Tuning = {
   capRatio: 0.25,
+  relationPageBudget: 4,
   scanPageSize: SCAN_PAGE_SIZE,
   hydrateChunkSize: HYDRATE_CHUNK_SIZE,
   mergeStepSize: 500,

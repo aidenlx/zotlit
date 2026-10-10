@@ -1,9 +1,17 @@
 import { Effect } from "effect";
 
+import type {
+  ItemQueryDatabase,
+  ItemQueryReaderError,
+} from "@zotlit/db/item-query";
 import { SCAN_PAGE_SIZE } from "@zotlit/db/item-query";
 
 import { planCandidates, readCandidatePlan } from "./candidate-plan";
-import type { CandidatePlan, CandidateSources } from "./candidate-plan";
+import type {
+  CandidateFallback,
+  CandidatePlan,
+  CandidateSources,
+} from "./candidate-plan";
 import type {
   CandidateReader,
   CandidateRelation,
@@ -12,6 +20,14 @@ import type {
 import type { FilterNode } from "./filter-plan";
 import type { QuerySources } from "./query-sources";
 import type { TargetLibrary } from "./request";
+
+type PlannedCandidateReader = (
+  page: Parameters<CandidateReader>[0],
+) => Effect.Effect<
+  number[] | CandidateFallback,
+  ItemQueryReaderError,
+  ItemQueryDatabase
+>;
 
 type Node = FilterNode<never>;
 
@@ -22,10 +38,16 @@ export function planDatasetCandidates(
   {
     dataset,
     library,
-  }: { readonly dataset: CandidateDataset; readonly library: TargetLibrary },
+    relationPageBudget,
+  }: {
+    readonly dataset: CandidateDataset;
+    readonly library: TargetLibrary;
+    readonly relationPageBudget: number;
+  },
 ) {
   return planRelatedCandidates(node, sources.candidateContext(library), {
     dataset,
+    relationPageBudget,
   });
 }
 
@@ -36,15 +58,17 @@ function planRelatedCandidates(
   {
     dataset,
     parents = [],
+    relationPageBudget,
   }: {
+    readonly relationPageBudget: number;
     readonly dataset: CandidateDataset;
     readonly parents?: readonly CandidateRelation["readParents"][];
   },
-): CandidatePlan<CandidateReader> | null {
+): CandidatePlan<PlannedCandidateReader> | null {
   const plan = planCandidates(
     node,
     sources,
-    (node, sources): CandidatePlan<CandidateReader> | null => {
+    (node, sources): CandidatePlan<PlannedCandidateReader> | null => {
       const selection = relationSelection(node, dataset);
       if (selection) {
         const { relation, expression } = selection;
@@ -52,7 +76,11 @@ function planRelatedCandidates(
         return planRelatedCandidates(
           elementPredicate(expression, element),
           sources,
-          { dataset: element, parents: [relation.readParents, ...parents] },
+          {
+            dataset: element,
+            parents: [relation.readParents, ...parents],
+            relationPageBudget,
+          },
         );
       }
       for (const parent of dataset.candidateParents) {
@@ -65,7 +93,9 @@ function planRelatedCandidates(
             relation.readChildren({ ...page, leaf });
           return {
             kind: "leaf",
-            leaf: parents.length ? parentCandidates(read, parents) : read,
+            leaf: parents.length
+              ? parentCandidates(read, parents, relationPageBudget)
+              : read,
           };
         }
       }
@@ -77,7 +107,9 @@ function planRelatedCandidates(
       return read
         ? {
             kind: "leaf",
-            leaf: parents.length ? parentCandidates(read, parents) : read,
+            leaf: parents.length
+              ? parentCandidates(read, parents, relationPageBudget)
+              : read,
           }
         : null;
     },
@@ -86,15 +118,15 @@ function planRelatedCandidates(
 }
 
 function flattenPlan(
-  plan: CandidatePlan<CandidatePlan<CandidateReader>>,
-): CandidatePlan<CandidateReader> {
+  plan: CandidatePlan<CandidatePlan<PlannedCandidateReader>>,
+): CandidatePlan<PlannedCandidateReader> {
   return plan.kind === "leaf"
     ? plan.leaf
     : { ...plan, plans: plan.plans.map(flattenPlan) };
 }
 
 export const readDatasetCandidates = (
-  plan: CandidatePlan<CandidateReader>,
+  plan: CandidatePlan<PlannedCandidateReader>,
   libraryID: number,
   cap: number,
 ) =>
@@ -112,11 +144,12 @@ export const readDatasetCandidates = (
 function parentCandidates(
   read: CandidateReader,
   parents: readonly CandidateRelation["readParents"][],
-): CandidateReader {
+  pageBudget: number,
+): PlannedCandidateReader {
   return Effect.fnUntraced(function* ({ libraryID, limit }) {
     const candidates = new Set<number>();
     let afterItemID = 0;
-    while (true) {
+    for (let page = 0; page < pageBudget; page++) {
       const elements = yield* read({
         libraryID,
         limit: SCAN_PAGE_SIZE,
@@ -133,6 +166,7 @@ function parentCandidates(
       if (elements.length < SCAN_PAGE_SIZE) return [...candidates];
       afterItemID = elements.at(-1)!;
     }
+    return "relation-page-budget-exhausted";
   });
 }
 

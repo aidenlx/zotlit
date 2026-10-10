@@ -174,12 +174,17 @@ export const lowerItemCandidate: Lowering = (node, sources) => {
   return null;
 };
 
+/** A complete candidate set, or the reason this branch cannot supply one. */
+export type CandidateFallback =
+  | "candidate-cap-exceeded"
+  | "relation-page-budget-exhausted";
+
 /**
- * Read the candidate set of a plan: Item IDs of one Target Library, not yet
- * restricted to the query universe. Null: the set is above `cap`, and the
- * query uses the scan. Each leaf returns `cap + 1` candidate IDs at most.
+ * Read a plan under the cap. An incomplete leaf cannot supply a candidate
+ * set. An `all` plan keeps complete branches; an `any` plan needs them all.
+ * When no set survives, the first failed branch supplies the reason.
  */
-export function readCandidatePlan<Leaf>(
+export const readCandidatePlan = Effect.fnUntraced(function* <Leaf>(
   plan: CandidatePlan<Leaf>,
   options: {
     libraryID: number;
@@ -188,41 +193,46 @@ export function readCandidatePlan<Leaf>(
       libraryID: number;
       leaf: Leaf;
       limit: number;
-    }) => Effect.Effect<number[], ItemQueryReaderError, ItemQueryDatabase>;
+    }) => Effect.Effect<
+      number[] | CandidateFallback,
+      ItemQueryReaderError,
+      ItemQueryDatabase
+    >;
   },
-): Effect.Effect<
-  ReadonlySet<number> | null,
+): Effect.fn.Return<
+  ReadonlySet<number> | CandidateFallback,
   ItemQueryReaderError,
   ItemQueryDatabase
 > {
-  return Effect.gen(function* () {
-    const { libraryID, cap, readLeaf } = options;
-    if (plan.kind === "leaf") {
-      const itemIDs = yield* readLeaf({
-        libraryID,
-        leaf: plan.leaf,
-        limit: cap + 1,
-      });
-      return itemIDs.length > cap ? null : new Set(itemIDs);
-    }
-    if (plan.kind === "any") {
-      const union = new Set<number>();
-      for (const branch of plan.plans) {
-        const set = yield* readCandidatePlan(branch, options);
-        if (!set) return null;
-        for (const itemID of set) union.add(itemID);
-        if (union.size > cap) return null;
-      }
-      return union;
-    }
-    const sets: ReadonlySet<number>[] = [];
+  const { libraryID, cap, readLeaf } = options;
+  if (plan.kind === "leaf") {
+    const itemIDs = yield* readLeaf({
+      libraryID,
+      leaf: plan.leaf,
+      limit: cap + 1,
+    });
+    if (typeof itemIDs === "string") return itemIDs;
+    return itemIDs.length > cap ? "candidate-cap-exceeded" : new Set(itemIDs);
+  }
+  if (plan.kind === "any") {
+    const union = new Set<number>();
     for (const branch of plan.plans) {
       const set = yield* readCandidatePlan(branch, options);
-      if (set) sets.push(set);
+      if (typeof set === "string") return set;
+      for (const itemID of set) union.add(itemID);
+      if (union.size > cap) return "candidate-cap-exceeded";
     }
-    if (sets.length === 0) return null;
-    return sets.reduce(
-      (kept, set) => new Set([...kept].filter((itemID) => set.has(itemID))),
-    );
-  });
-}
+    return union;
+  }
+  const sets: ReadonlySet<number>[] = [];
+  let reason: CandidateFallback | undefined;
+  for (const branch of plan.plans) {
+    const set = yield* readCandidatePlan(branch, options);
+    if (typeof set === "string") reason ??= set;
+    else sets.push(set);
+  }
+  if (sets.length === 0) return reason!;
+  return sets.reduce(
+    (kept, set) => new Set([...kept].filter((itemID) => set.has(itemID))),
+  );
+});

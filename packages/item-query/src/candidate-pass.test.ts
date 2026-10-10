@@ -45,10 +45,10 @@ function fake(
       typeof node.args[0].value === "string"
         ? node.args[0].value
         : null,
-    readCandidate: ({ libraryID, limit }) =>
+    readCandidate: ({ libraryID, limit, afterItemID = 0 }) =>
       Effect.sync(() => {
         reads.push(libraryID);
-        return ids.slice(0, limit);
+        return ids.filter((id) => id > afterItemID).slice(0, limit);
       }),
     readRowCount: () => Effect.succeed(count),
     candidateParents: [],
@@ -106,7 +106,11 @@ it.each(["items", "attachments", "annotations"] as const)(
 async function choose(
   dataset: CandidateDataset,
   text?: string,
-  { forceScan = false, libraryID = 1 } = {},
+  {
+    forceScan = false,
+    libraryID = 1,
+    relationPageBudget = PRODUCTION_TUNING.relationPageBudget,
+  } = {},
 ) {
   const filter = text === undefined ? undefined : planFilter(text);
   if (filter && !("root" in filter)) throw new Error("Invalid test filter");
@@ -122,7 +126,7 @@ async function choose(
           collectionPaths: undefined,
         }),
       },
-      tuning: { ...PRODUCTION_TUNING, forceScan },
+      tuning: { ...PRODUCTION_TUNING, forceScan, relationPageBudget },
     }),
   );
   if (run.exit._tag === "Failure") throw new Error(String(run.exit.cause));
@@ -298,3 +302,150 @@ it("uses a Relation List candidate through the fake descriptor's reader", async 
     reason: null,
   });
 });
+
+// Failure modes: a Relation List never reaches the parent cap, a partial
+// candidate set loses matches, or a budget outcome is logged as the cap.
+it("scans when a Relation List exhausts its element page budget", async () => {
+  const { dataset, reads } = fake(
+    12,
+    Array.from({ length: 3_000 }, (_, i) => i + 1),
+  );
+  const root: CandidateDataset = {
+    ...dataset,
+    candidateRelations: {
+      attachments: {
+        dataset: () => dataset,
+        readParents: () => Effect.succeed([7]),
+      },
+    },
+  };
+  expect(
+    await choose(
+      root,
+      'attachments.filter(value.tags.contains("selected")).length > 0',
+    ),
+  ).toBeNull();
+  expect(reads).toEqual([1, 1, 1, 1]);
+  expect(logs[0]?.properties).toMatchObject({
+    plan: "scan",
+    candidateCount: null,
+    reason: "relation-page-budget-exhausted",
+  });
+});
+
+// A short final page proves completeness; a full last page does not. The cap
+// wins when that same page supplies too many distinct parents.
+it.each([
+  { elements: 499, parents: [7], budget: 1, expected: [7], reason: null },
+  {
+    elements: 500,
+    parents: [7],
+    budget: 1,
+    expected: null,
+    reason: "relation-page-budget-exhausted",
+  },
+  { elements: 500, parents: [7], budget: 2, expected: [7], reason: null },
+  { elements: 501, parents: [7], budget: 2, expected: [7], reason: null },
+  {
+    elements: 500,
+    parents: [1, 2, 3, 4],
+    budget: 1,
+    expected: null,
+    reason: "candidate-cap-exceeded",
+  },
+])(
+  "keeps completeness at the Relation List budget boundary: $elements elements, $budget pages",
+  async ({ elements, parents, budget, expected, reason }) => {
+    const { dataset } = fake(
+      12,
+      Array.from({ length: elements }, (_, i) => i + 1),
+    );
+    const root: CandidateDataset = {
+      ...dataset,
+      candidateRelations: {
+        attachments: {
+          dataset: () => dataset,
+          readParents: () => Effect.succeed(parents),
+        },
+      },
+    };
+    expect(
+      await choose(
+        root,
+        'attachments.filter(value.tags.contains("selected")).length > 0',
+        { relationPageBudget: budget },
+      ),
+    ).toEqual(expected === null ? null : new Set(expected));
+    expect(logs[0]?.properties).toMatchObject({ reason });
+  },
+);
+
+it.each([
+  {
+    operator: "||",
+    direct: [7],
+    relationFirst: true,
+    expected: null,
+    reason: "relation-page-budget-exhausted",
+  },
+  {
+    operator: "&&",
+    direct: [7],
+    relationFirst: true,
+    expected: [7],
+    reason: null,
+  },
+  {
+    operator: "&&",
+    direct: [],
+    relationFirst: true,
+    expected: [],
+    reason: null,
+  },
+  {
+    operator: "&&",
+    direct: [1, 2, 3, 4],
+    relationFirst: true,
+    expected: null,
+    reason: "relation-page-budget-exhausted",
+  },
+  {
+    operator: "&&",
+    direct: [1, 2, 3, 4],
+    relationFirst: false,
+    expected: null,
+    reason: "candidate-cap-exceeded",
+  },
+  {
+    operator: "||",
+    direct: [1, 2, 3, 4],
+    relationFirst: false,
+    expected: null,
+    reason: "candidate-cap-exceeded",
+  },
+])(
+  "combines an exhausted Relation List branch with $operator, relation first: $relationFirst, direct: $direct",
+  async ({ operator, direct, relationFirst, expected, reason }) => {
+    const element = fake(
+      12,
+      Array.from({ length: 3_000 }, (_, i) => i + 1),
+    );
+    const root: CandidateDataset = {
+      ...fake(12, direct).dataset,
+      candidateRelations: {
+        attachments: {
+          dataset: () => element.dataset,
+          readParents: () => Effect.succeed([7]),
+        },
+      },
+    };
+    const relation =
+      'attachments.filter(value.tags.contains("selected")).length > 0';
+    const parts = [relation, 'tags.contains("direct")'];
+    if (!relationFirst) parts.reverse();
+    expect(await choose(root, parts.join(` ${operator} `))).toEqual(
+      expected === null ? null : new Set(expected),
+    );
+    expect(logs[0]?.properties).toMatchObject({ reason });
+  },
+);
