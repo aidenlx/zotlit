@@ -45,7 +45,7 @@ import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { ItemIndex, layerItemIndex } from "@zotlit/item-lookup";
 import { exportItemSnapshot } from "@zotlit/workbench/snapshot";
 
-import { makeCitationLookup } from "./citation-lookup";
+import { CITEKEY_WINDOW, makeCitationLookup } from "./citation-lookup";
 import { Connection, toDbUnavailable } from "./connection";
 import { layerConnectionItemSource } from "./item-source";
 import { itemsByIndexedKeys } from "./items-by-indexed-keys";
@@ -80,6 +80,8 @@ export interface HandlersOptions {
    * @default {@link DEFAULT_SLICE_SIZE}
    */
   sliceSize?: number;
+  /** ItemID span per citation read, across every Library. */
+  citationWindowSize?: number;
   /**
    * The UI locale the Item Index formats creator names with, until
    * `Configure` sends another.
@@ -284,7 +286,7 @@ export function handlersLayer(options?: HandlersOptions) {
         );
       const citationLookup = yield* makeCitationLookup(
         connection,
-        sliceSize,
+        options?.citationWindowSize ?? CITEKEY_WINDOW,
         configure,
       );
       const pinned = new Map<SnapshotId, Pinned>();

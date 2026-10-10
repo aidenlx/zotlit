@@ -9,10 +9,10 @@ import { createFixtureSchema } from "@/test-utils";
 
 import {
   getCitekeyByItemKey,
-  getCitekeyPage,
+  getCitekeyWindow,
   getCitekeysByLibrary,
   getItemIDByCitekey,
-  getCitekeyLastItemID,
+  getLastItemID,
 } from "./citekey";
 
 let sqlite: DatabaseSync;
@@ -145,86 +145,92 @@ describe("getCitekeysByLibrary", () => {
   });
 });
 
-describe("getCitekeyPage", () => {
-  it("keeps the pages of a small Library beside a large Library with later Item IDs", () => {
-    sqlite.exec(`
-      with recursive ids(id) as (
-        select 100 union all select id + 1 from ids where id < 10099
-      )
-      insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
-        select id, 1, '2024-01-01', '2024-01-01', 1, 'BULK' || id from ids;
-      insert into itemData (itemID, fieldID, valueID)
-        select itemID, 11, 100 from items where itemID >= 100;
-    `);
-
-    expect(getCitekeyLastItemID(db, USER_LIBRARY_ID)).toBe(10099);
-    const beforeItemID = getCitekeyLastItemID(db, 2);
-    expect(beforeItemID).toBe(9);
-    const first = getCitekeyPage(db, {
-      libraryID: 2,
-      afterItemID: 0,
-      beforeItemID,
-      limit: 1,
-    });
-    const second = getCitekeyPage(db, {
-      libraryID: 2,
-      afterItemID: first.next!,
-      beforeItemID,
-      limit: 1,
-    });
-    const last = getCitekeyPage(db, {
-      libraryID: 2,
-      afterItemID: second.next!,
-      beforeItemID,
-      limit: 1,
-    });
-    expect([first.next, second.next, last.next]).toEqual([7, 9, null]);
-    expect([...first.citekeys, ...second.citekeys]).toEqual(
-      getCitekeysByLibrary(db, 2),
+describe("getCitekeyWindow", () => {
+  it("reads all Libraries in itemID order with bare keys", () => {
+    expect(getCitekeyWindow(db, { afterItemID: 5, throughItemID: 9 })).toEqual([
+      { itemID: 6, libraryID: 1, key: "USER2", citekey: "shared2024" },
+      { itemID: 7, libraryID: 2, key: "GRP1", citekey: "shared2024" },
+      { itemID: 9, libraryID: 2, key: "GRP2", citekey: "groupkey2025" },
+    ]);
+  });
+  it("excludes the lower bound and includes the upper bound", () => {
+    expect(
+      getCitekeyWindow(db, { afterItemID: 6, throughItemID: 7 }).map(
+        (row) => row.itemID,
+      ),
+    ).toEqual([7]);
+  });
+  it("excludes trashed Items", () => {
+    expect(getCitekeyWindow(db, { afterItemID: 1, throughItemID: 2 })).toEqual(
+      [],
     );
-    expect(last.citekeys).toEqual([]);
   });
-
-  it("includes the upper bound and ends the page walk at that Item", () => {
-    const page = { libraryID: 2, afterItemID: 0, beforeItemID: 7, limit: 2 };
-    expect(getCitekeyPage(db, page)).toEqual({
-      citekeys: [getCitekeysByLibrary(db, 2)[0]],
-      next: 7,
-    });
-    expect(getCitekeyPage(db, { ...page, afterItemID: 7 })).toEqual({
-      citekeys: [],
-      next: null,
-    });
+  it("excludes absent and empty native citation keys", () => {
+    sqlite.exec(
+      "insert into itemDataValues (valueID, value) values (106, ''); update itemData set valueID = 106 where itemID = 9",
+    );
+    expect(getCitekeyWindow(db, { afterItemID: 7, throughItemID: 9 })).toEqual(
+      [],
+    );
   });
-
-  it.each([
-    { libraryID: USER_LIBRARY_ID, lastItemID: 8, expected: [[1], [6]] },
-    { libraryID: 2, lastItemID: 9, expected: [[7], [9]] },
-    { libraryID: 3, lastItemID: 0, expected: [] },
-  ])(
-    "pages through Library $libraryID in itemID order",
-    ({ libraryID, lastItemID, expected }) => {
-      const pages: number[][] = [];
-      const beforeItemID = getCitekeyLastItemID(db, libraryID);
-      expect(beforeItemID).toBe(lastItemID);
+  it("walks gaps through the last Item across every Library", () => {
+    const actual: [number, number][] = [];
+    for (
       let afterItemID = 0;
-      for (;;) {
-        const { citekeys, next } = getCitekeyPage(db, {
-          libraryID,
+      afterItemID < getLastItemID(db);
+      afterItemID += 2
+    ) {
+      actual.push(
+        ...getCitekeyWindow(db, {
           afterItemID,
-          beforeItemID,
-          limit: 1,
-        });
-        if (next === null) break;
-        pages.push(citekeys.map((row) => row.itemID));
-        afterItemID = next;
-      }
-      expect(pages).toEqual(expected);
-      expect(pages.flat()).toEqual(
-        getCitekeysByLibrary(db, libraryID).map((row) => row.itemID),
+          throughItemID: afterItemID + 2,
+        }).map(({ libraryID, itemID }): [number, number] => [
+          libraryID,
+          itemID,
+        ]),
       );
-    },
-  );
+    }
+    expect(actual).toEqual(
+      [1, 2].flatMap((id) =>
+        getCitekeysByLibrary(db, id).map(({ libraryID, itemID }) => [
+          libraryID,
+          itemID,
+        ]),
+      ),
+    );
+  });
+  it("range-scans the itemData primary key without an ORDER BY sort", () => {
+    sqlite.exec("create index itemData_fieldID on itemData(fieldID)");
+    const queries: { sql: string; params: unknown[] }[] = [];
+    db = drizzle({
+      client: sqlite,
+      relations,
+      logger: {
+        logQuery(sql, params) {
+          queries.push({ sql, params });
+        },
+      },
+    });
+    getCitekeyWindow(db, { afterItemID: 0, throughItemID: 9 });
+    const query = queries[0]!;
+    const details = sqlite
+      .prepare(`EXPLAIN QUERY PLAN ${query.sql}`)
+      .all(...(query.params as (string | number)[]))
+      .map((row) => row.detail)
+      .join("\n");
+    expect(details).toContain(
+      "sqlite_autoindex_itemData_1 (itemID>? AND itemID<?)",
+    );
+    expect(details).not.toContain("TEMP B-TREE");
+  });
+});
+
+describe("getLastItemID", () => {
+  it("finds the last Item and returns zero for an empty database", () => {
+    expect(getLastItemID(db)).toBe(9);
+    sqlite.exec("delete from items");
+    expect(getLastItemID(db)).toBe(0);
+  });
 });
 
 function seedFixture(sqlite: DatabaseSync): void {

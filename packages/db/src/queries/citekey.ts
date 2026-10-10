@@ -1,3 +1,12 @@
+import {
+  itemData,
+  items,
+  itemDataValues,
+  fieldsCombined,
+  deletedItems,
+} from "@drizzle/schema";
+import { eq, sql } from "drizzle-orm";
+
 import type { NodeDatabaseClient } from "@/client/node";
 import { formatIndexedKey } from "@/lib/zt-key";
 
@@ -111,53 +120,40 @@ const citekeysByLibraryQuery = defineQuery<{ libraryID: number }>()(
     }),
 );
 
-const citekeyLastItemIDQuery = defineQuery<{ libraryID: number }>()(
-  (db, { placeholder }) =>
-    db.query.items.findMany({
-      where: { libraryID: placeholder("libraryID") },
-      columns: { itemID: true },
-      orderBy: { itemID: "desc" },
-      limit: 1,
-    }),
-);
-
-/** Read once per snapshot stream to bound its pages to the Library's last Item. */
-export function getCitekeyLastItemID(
-  db: NodeDatabaseClient,
-  libraryID: number,
-): number {
-  return citekeyLastItemIDQuery.prepared(db).all({ libraryID })[0]?.itemID ?? 0;
-}
-
-const citekeyPageQuery = defineQuery<{
-  libraryID: number;
+const citekeyWindowQuery = defineQuery<{
   afterItemID: number;
-  beforeItemID: number;
-  limit: number;
+  throughItemID: number;
 }>()((db, { placeholder }) =>
-  db.query.itemData.findMany({
-    where: {
-      itemID: {
-        gt: placeholder("afterItemID"),
-        lte: placeholder("beforeItemID"),
-      },
-      fieldsCombined: { fieldName: CITEKEY_FIELD },
-      item: {
-        libraryID: placeholder("libraryID"),
-        deletedItem: false,
-      },
-    },
-    columns: { itemID: true },
-    with: {
-      item: { columns: { key: true } },
-      itemDataValue: { columns: { value: true } },
-    },
-    orderBy: { itemID: "asc" },
-    limit: placeholder("limit"),
-  }),
+  db
+    .select({
+      itemID: sql<number>`${itemData.itemID}`,
+      libraryID: items.libraryID,
+      key: items.key,
+      citekey: sql<string>`${itemDataValues.value}`,
+    })
+    .from(itemData)
+    .innerJoin(items, eq(items.itemID, itemData.itemID))
+    .innerJoin(itemDataValues, eq(itemDataValues.valueID, itemData.valueID))
+    // Unary + keeps SQLite on the itemID range index and avoids a page sort.
+    .where(sql`
+      ${itemData.itemID} > ${placeholder("afterItemID")}
+      and ${itemData.itemID} <= ${placeholder("throughItemID")}
+      and ${itemDataValues.value} <> ''
+      and not exists (select 1 from ${deletedItems} where ${deletedItems.itemID} = ${itemData.itemID})
+      and +${itemData.fieldID} = (select ${fieldsCombined.fieldID} from ${fieldsCombined} where ${fieldsCombined.fieldName} = ${CITEKEY_FIELD})
+    `)
+    .orderBy(itemData.itemID),
 );
 
-type CitekeyRow = QueryRow<typeof citekeysByLibraryQuery>;
+export type CitekeyRow = QueryRow<typeof citekeyWindowQuery>;
+
+/** Every live Item with a native citation key, `afterItemID < itemID <= throughItemID`, in itemID order. */
+export function getCitekeyWindow(
+  db: NodeDatabaseClient,
+  window: { afterItemID: number; throughItemID: number },
+): CitekeyRow[] {
+  return citekeyWindowQuery.prepared(db).all(window);
+}
 
 /**
  * Bulk-read every live item of `libraryID` that carries a native citation
@@ -174,34 +170,8 @@ export function getCitekeysByLibrary(
   );
 }
 
-/**
- * One page of {@link getCitekeysByLibrary}, in `itemID` order: at most
- * `limit` rows after `afterItemID`, through `beforeItemID` inclusive.
- * Pass `next` to read the following page;
- * `next` is `null` once the library has no more rows.
- */
-export function getCitekeyPage(
-  db: NodeDatabaseClient,
-  page: {
-    libraryID: number;
-    afterItemID: number;
-    beforeItemID: number;
-    limit: number;
-  },
-): { citekeys: LibraryCitekey[]; next: number | null } {
-  const rows = citekeyPageQuery.prepared(db).all(page);
-  return {
-    citekeys: toLibraryCitekeys(
-      rows,
-      page.libraryID,
-      groupIDForLibrary(db, page.libraryID),
-    ),
-    next: rows.at(-1)?.itemID ?? null,
-  };
-}
-
 function toLibraryCitekeys(
-  rows: readonly CitekeyRow[],
+  rows: readonly QueryRow<typeof citekeysByLibraryQuery>[],
   libraryID: number,
   groupID: number | null,
 ): LibraryCitekey[] {
@@ -221,4 +191,15 @@ function toLibraryCitekeys(
     });
   }
   return citekeys;
+}
+
+const lastItemIDQuery = defineQuery<void>()((db) =>
+  db
+    .select({ itemID: sql<number>`coalesce(max(${items.itemID}), 0)` })
+    .from(items),
+);
+
+/** The largest itemID in the database, or 0 when it has no Items. */
+export function getLastItemID(db: NodeDatabaseClient): number {
+  return lastItemIDQuery.prepared(db).all()[0]!.itemID;
 }

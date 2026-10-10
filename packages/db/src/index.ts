@@ -94,11 +94,12 @@ export {
 } from "./queries/notes";
 export {
   getCitekeyByItemKey,
-  getCitekeyPage,
-  getCitekeyLastItemID,
+  getCitekeyWindow,
+  getLastItemID,
   getCitekeysByLibrary,
   getItemIDByCitekey,
   type LibraryCitekey,
+  type CitekeyRow,
 } from "./queries/citekey";
 export {
   getAllTagNames,
