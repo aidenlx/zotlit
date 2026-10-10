@@ -1,8 +1,9 @@
+import { QueryObserver } from "@tanstack/query-core";
 import { Effect } from "effect";
 import type { App, TFile } from "obsidian";
-// The formatted text of one document's Citations, held for every surface that shows them.
 
 import { isChildItemFields, itemToCsl } from "@zotlit/db";
+// The formatted text of one document's Citations, held for every surface that shows them.
 import type { CslItemData } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import type { PandocTextSpan as TextSpan } from "@zotlit/templates/pandoc-citation";
@@ -12,18 +13,20 @@ import { registerEvent } from "@/lib/disposables";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import { mapsEqual } from "@/lib/maps-equal";
+import type { OpenDocuments } from "@/lib/open-documents";
 import {
   citationOfRun,
   citationRuns,
   wikilinkCitation,
 } from "@/lib/wikilink-citation";
+import type { CitationLookup } from "@/services/citation-index/lookup-service";
 import { scanDocumentCitations } from "@/services/citation-index/service";
 import type {
   Citation,
   CitationIndex,
   CitationOccurrence,
+  DocumentCitationSet,
 } from "@/services/citation-index/service";
-import { resolveLiteratureNote } from "@/services/note-index/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import {
   documentCitationPresentation,
@@ -54,11 +57,19 @@ const logger = getLogger("citation-text");
  * The key prefix every document's citation text is held under; the vault path
  * of the document completes it.
  *
- * Text is retained for the session rather than for a time or a count: a
- * document the author keeps open answers from what it holds however long the
- * pause, and the key is dropped when the file it names is deleted.
+ * Text is retained while its document is open in a workspace leaf: a document
+ * the author keeps open answers from what it holds however long the pause.
+ * Any other document's text, an embed's included, expires {@link TEXT_GC_TIME}
+ * after its last read, and the key is dropped at once
+ * when the file it names is deleted. Each document's text carries its captured
+ * Citation Lookup answer, so no answer outlives the documents shown.
  */
 const CITATION_TEXT = "citation-text";
+
+/** How long the text of a document no longer open stays held. */
+const TEXT_GC_TIME = Temporal.Duration.from({ minutes: 5 }).total(
+  "milliseconds",
+);
 
 /** What a citation shows in place of a note where no serial stands for one. */
 const NO_SERIALS: readonly undefined[] = [];
@@ -75,10 +86,8 @@ interface CitationTextEvents {
 export interface CitationTextDeps {
   app: App;
   db: Pick<ZoteroReadsService, "state" | "acquireRead">;
-  citationIndex: Pick<
-    CitationIndex,
-    "getDocumentCitationSet" | "citekeyOf" | "readSnapshot" | "on"
-  >;
+  citationLookup: Pick<CitationLookup, "on">;
+  citationIndex: Pick<CitationIndex, "getDocumentCitationSet" | "on">;
   /** What a citekey resolves to, which decides what a Citation can say. */
   noteIndex: Pick<NoteIndex, "on" | "whenIndexed">;
   profile: ProfileReader;
@@ -89,6 +98,8 @@ export interface CitationTextDeps {
   >;
   /** The plugin-wide query client every Held Read is realized on. */
   queryClient: QueryClientService;
+  /** The documents whose text stays held, for as long as each is open. */
+  openDocuments: OpenDocuments;
 }
 
 /**
@@ -118,11 +129,15 @@ export class CitationText extends Service<void> {
   readonly #app;
   readonly #db;
   readonly #citationIndex;
+  readonly #citationLookup;
   readonly #noteIndex;
   readonly #profile: ProfileReader;
   readonly #bibliographyRender;
   readonly #queries;
+  readonly #openDocuments;
   readonly #emitter = createNanoEvents<CitationTextEvents>();
+  /** Releases for the pins that keep each open document's text held. */
+  readonly #pins = new Map<string, () => void>();
 
   ready: Promise<void>;
 
@@ -131,10 +146,12 @@ export class CitationText extends Service<void> {
     this.#app = deps.app;
     this.#db = deps.db;
     this.#citationIndex = deps.citationIndex;
+    this.#citationLookup = deps.citationLookup;
     this.#noteIndex = deps.noteIndex;
     this.#profile = deps.profile;
     this.#bibliographyRender = deps.bibliographyRender;
     this.#queries = deps.queryClient;
+    this.#openDocuments = deps.openDocuments;
     this.ready = this.#load();
   }
 
@@ -191,7 +208,7 @@ export class CitationText extends Service<void> {
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
     this.#queries.client.setQueryDefaults([CITATION_TEXT], {
-      gcTime: Infinity,
+      gcTime: TEXT_GC_TIME,
       // An equal re-read keeps the identity the surfaces hold, so nothing
       // repaints for text that reads the same.
       structuralSharing: (held, next) =>
@@ -203,6 +220,12 @@ export class CitationText extends Service<void> {
           ? held
           : next,
     });
+    stack.defer(() => {
+      for (const release of this.#pins.values()) release();
+      this.#pins.clear();
+    });
+    stack.use(this.#openDocuments.subscribe(() => this.#pinOpenDocuments()));
+    this.#pinOpenDocuments();
     stack.defer(
       this.#queries.watch<DocumentCitations>([CITATION_TEXT], {
         changed: (key) => this.#emitter.emit("changed", pathOf(key)),
@@ -242,9 +265,7 @@ export class CitationText extends Service<void> {
     // A citekey resolution snapshot rebuild is the other cross-document input:
     // it decides what a literal `@citekey` reaches, and whether a wikilink's
     // Literature Note carries a native citation key at all.
-    stack.defer(
-      this.#citationIndex.on("resolution-changed", () => this.#invalidate()),
-    );
+    stack.defer(this.#citationLookup.on("changed", () => this.#invalidate()));
     // What the render cache holds is what these surfaces show, so its wholesale
     // drop makes every document's text stale at once.
     stack.defer(
@@ -275,7 +296,38 @@ export class CitationText extends Service<void> {
 
   /** Releases what one vault path holds, which a file no longer there must. */
   #drop(path: string): void {
+    // The pin observes the query the removal discards; an open document pins
+    // its next query on the following workspace change.
+    this.#pins.get(path)?.();
+    this.#pins.delete(path);
     this.#queries.client.removeQueries({ queryKey: documentKey(path) });
+  }
+
+  /**
+   * Keeps each open document's text out of garbage collection and lets a
+   * closed one expire. A pin is a disabled observer: it holds the query
+   * without reading, and every read still starts from a surface's ask.
+   */
+  #pinOpenDocuments(): void {
+    if (this.disposing) return;
+    const open = this.#openDocuments.paths();
+    for (const [path, release] of this.#pins) {
+      if (open.has(path)) continue;
+      release();
+      this.#pins.delete(path);
+    }
+    for (const path of open) {
+      if (this.#pins.has(path)) continue;
+      const observer = new QueryObserver(this.#queries.client, {
+        queryKey: documentKey(path),
+        enabled: false,
+      });
+      const unsubscribe = observer.subscribe(() => undefined);
+      this.#pins.set(path, () => {
+        unsubscribe();
+        observer.destroy();
+      });
+    }
   }
 
   /**
@@ -310,14 +362,10 @@ export class CitationText extends Service<void> {
    * mappings alone rather than for every rescan.
    */
   async #readDocument(file: TFile): Promise<DocumentCitations> {
-    await Promise.all([
-      this.#noteIndex.whenIndexed(),
-      this.#profile.ready,
-      this.#citationIndex.readSnapshot(),
-    ]);
+    await Promise.all([this.#noteIndex.whenIndexed(), this.#profile.ready]);
     const body = await this.#app.vault.cachedRead(file);
     const set = await this.#citationIndex.getDocumentCitationSet(file);
-    const wikilinks = this.#wikilinkCitations(file, body, set.occurrences);
+    const wikilinks = this.#wikilinkCitations(file, body, set);
     const literal = worksByCitekey(set.citations);
     const works = await this.#readCited([
       ...literal.values(),
@@ -424,6 +472,7 @@ export class CitationText extends Service<void> {
         [...works].map(([indexedKey, { summary }]) => [indexedKey, summary]),
       ),
       literalWorks: literal,
+      lookup: set.lookup,
     };
   }
 
@@ -478,25 +527,40 @@ export class CitationText extends Service<void> {
   #wikilinkCitations(
     file: TFile,
     body: string,
-    occurrences: readonly CitationOccurrence[],
+    { occurrences, lookup, citations: grouped }: DocumentCitationSet,
   ): DocumentWikilinks {
     const members = new Set(
       occurrences
         .filter((occurrence) => occurrence.kind === "wikilink")
         .map((occurrence) => occurrence.position.start.offset),
     );
+    const notes = new Map(
+      grouped.flatMap((citation) =>
+        citation.indexedKey === null
+          ? []
+          : citation.occurrences.flatMap((occurrence) => {
+              if (occurrence.kind !== "wikilink") return [];
+              const note = this.#app.metadataCache.getFirstLinkpathDest(
+                occurrence.raw,
+                file.path,
+              );
+              return note
+                ? [
+                    [
+                      occurrence.raw,
+                      {
+                        path: note.path,
+                        indexedKey: citation.indexedKey!,
+                        citationKey: lookup.citekeyOf(citation.indexedKey!),
+                      },
+                    ] as const,
+                  ]
+                : [];
+            }),
+      ),
+    );
     const context = {
-      literatureNote: (linkpath: string) => {
-        const note = resolveLiteratureNote(linkpath, file.path, {
-          app: this.#app,
-        });
-        return (
-          note && {
-            ...note,
-            citationKey: this.#citationIndex.citekeyOf(note.indexedKey),
-          }
-        );
-      },
+      literatureNote: (linkpath: string) => notes.get(linkpath) ?? null,
       enabled: true,
     };
 
@@ -784,6 +848,7 @@ function documentCitationsEqual(
   next: DocumentCitations,
 ): boolean {
   return (
+    prev.lookup.revision === next.lookup.revision &&
     prev.entrySerials === next.entrySerials &&
     profilePresentationFailuresEqual(
       prev.presentationFailure,

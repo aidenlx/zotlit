@@ -9,6 +9,10 @@ import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
 import * as m from "@/lib/i18n/generated/messages";
+import {
+  lookupAnswer,
+  lookupForWorks,
+} from "@/services/citation-index/__fixtures__/lookup";
 import type { CitekeyResolution } from "@/services/citation-index/service";
 import type { DocumentCitations } from "@/services/citation-text/service";
 import type { BibliographyRenderResult } from "@/services/pandoc/render-cache";
@@ -99,6 +103,7 @@ const emptyText = (): DocumentCitations => ({
   formatted: new Map(),
   entrySerials: false,
   summaries: new Map(),
+  lookup: lookupForWorks(new Map([["ghost", null]])),
   literalWorks: new Map(),
 });
 
@@ -106,6 +111,14 @@ function harness(read: () => Promise<DocumentCitations | null>) {
   let file: TFile | null = NOTE;
   const deleted = new Set<(file: TFile) => void>();
   const citationText = { read: vi.fn(read) };
+  const readLookup = vi.fn(
+    async ({ citekeys }: { citekeys: readonly string[] }) =>
+      lookupAnswer(
+        Object.fromEntries(
+          citekeys.map((citekey) => [citekey, { kind: "missing" as const }]),
+        ),
+      ),
+  );
   const service = new CitationPopover({
     app: {
       vault: {
@@ -120,11 +133,23 @@ function harness(read: () => Promise<DocumentCitations | null>) {
       },
     },
     db: reads(),
+    citationLookup: {
+      read: () => {
+        throw new Error("Document fills use their one document answer");
+      },
+      status: "fresh",
+      on: () => () => undefined,
+    },
     citationIndex: {
-      getDocumentCitationSet: () =>
-        Promise.resolve({ occurrences: [], citations: [], errors: [] }),
-      resolveCitekey: () => ({ kind: "missing" }),
-      resolution: "fresh",
+      getDocumentCitationSet: async (
+        _file: unknown,
+        { include }: { include: { citekeys: readonly string[] } },
+      ) => ({
+        occurrences: [],
+        citations: [],
+        errors: [],
+        lookup: await readLookup(include),
+      }),
     },
     libraryScope: { current: [] },
     citationText,
@@ -162,6 +187,7 @@ function harness(read: () => Promise<DocumentCitations | null>) {
     });
   return {
     citationText,
+    readLookup,
     removeSource() {
       file = null;
       for (const cb of deleted) cb(NOTE);
@@ -176,13 +202,14 @@ beforeEach(() => {
 });
 
 describe("Citation Popover citation text", () => {
-  it("settles a hover the citation-text read answered nothing for", async () => {
+  it("fills a newly typed hovered key from the same answer as document membership", async () => {
     await using run = harness(() => Promise.resolve(null));
 
     run.show();
 
     await vi.waitFor(() => expect(popovers[0]!.render).toHaveBeenCalledOnce());
     expect(run.citationText.read).toHaveBeenCalledOnce();
+    expect(run.readLookup).toHaveBeenCalledWith({ citekeys: ["ghost"] });
     const content = popovers[0]!.render.mock
       .calls[0]![0] as ReactElement<CitationPopoverContentProps>;
     expect(content.props.note).toBeUndefined();
@@ -245,7 +272,7 @@ describe("source-less Citation Popover", () => {
     await using service = new CitationPopover({
       app: {},
       db: reads([{ itemID: 1, key: "ABCD2345", title: "Alpha kernels" }]),
-      citationIndex: { resolution: null },
+      citationLookup: { status: "pending", on: () => () => undefined },
       libraryScope: { current: [] },
       profile: profileReader(),
       bibliographyRender: { readBibliography, on: () => () => undefined },
@@ -292,11 +319,18 @@ function workHarness() {
     };
   };
   const db = reads();
-  const citationIndex = {
-    resolution: {} as object | null,
-    resolveCitekey: vi.fn<() => CitekeyResolution | null>(() => ({
+  const citationLookup = {
+    status: "fresh" as "pending" | "fresh" | "failed",
+    resolveCitekey: vi.fn<() => CitekeyResolution>(() => ({
       kind: "missing",
     })),
+    read: vi.fn(async ({ citekeys }: { citekeys: readonly string[] }) =>
+      lookupAnswer(
+        Object.fromEntries(
+          citekeys.map((citekey) => [citekey, citationLookup.resolveCitekey()]),
+        ),
+      ),
+    ),
     on,
   };
   const readBibliography = vi.fn<
@@ -306,7 +340,7 @@ function workHarness() {
   const service = new CitationPopover({
     app: {},
     db,
-    citationIndex,
+    citationLookup,
     libraryScope: { current: [] },
     profile: profileReader(),
     bibliographyRender: { readBibliography, on },
@@ -315,7 +349,7 @@ function workHarness() {
   const root = createRoot(element);
   return {
     db,
-    citationIndex,
+    citationLookup,
     readBibliography,
     open,
     emit(event: string) {
@@ -352,6 +386,47 @@ function workHarness() {
 }
 
 describe("source-less lookup states", () => {
+  it("keeps delivered content and reports failed freshness when a lookup refresh fails", async () => {
+    await using run = workHarness();
+    run.db.holds([{ itemID: 1, key: "ABCD2345", title: "Alpha kernels" }]);
+    run.citationLookup.resolveCitekey.mockReturnValue({
+      kind: "unique",
+      item: {
+        itemID: 1,
+        libraryID: 1,
+        key: "ABCD2345",
+        indexedKey: "ABCD2345",
+      },
+    });
+    run.show({ kind: "citekey", citekey: "doe2024" });
+    expect((await run.shown()).textContent).toContain("Alpha kernels");
+    run.citationLookup.read.mockRejectedValue(new Error("worker unavailable"));
+    run.emit("changed");
+    await vi.waitFor(async () => {
+      const content = await run.shown();
+      expect(content.textContent).toContain("Alpha kernels");
+      expect(
+        content.querySelector('[data-citation-lookup-status="failed"]'),
+      ).not.toBeNull();
+    });
+    expect(popovers.at(-1)!.hide).not.toHaveBeenCalled();
+  });
+
+  it("reports a failed citation read as database unavailable", async () => {
+    await using run = workHarness();
+    run.citationLookup.read.mockRejectedValueOnce(
+      new Error("worker unavailable"),
+    );
+    run.show({ kind: "citekey", citekey: "doe2024" });
+    expect((await run.shown()).textContent).toBe(
+      m.citation_popover_database_unavailable(),
+    );
+    expect(run.citationLookup.read).toHaveBeenCalledWith(
+      { citekeys: ["doe2024"] },
+      { signal: expect.any(AbortSignal) },
+    );
+  });
+
   it("distinguishes an unavailable database from an absent exact Item", async () => {
     await using run = workHarness();
     run.db.state = "degraded";
@@ -374,14 +449,15 @@ describe("source-less lookup states", () => {
 describe("source-less Citation Key refresh", () => {
   it("refreshes pending, missing, unique, and ambiguous results while open", async () => {
     await using run = workHarness();
-    run.citationIndex.resolveCitekey.mockReturnValue(null);
+    run.citationLookup.status = "pending";
     run.show({ kind: "citekey", citekey: "doe2024" });
     expect((await run.shown()).textContent).toBe(
       m.references_citekey_pending({ citekey: "doe2024" }),
     );
 
-    run.citationIndex.resolveCitekey.mockReturnValue({ kind: "missing" });
-    run.emit("resolution-changed");
+    run.citationLookup.status = "fresh";
+    run.citationLookup.resolveCitekey.mockReturnValue({ kind: "missing" });
+    run.emit("changed");
     await vi.waitFor(async () =>
       expect((await run.shown()).textContent).toBe(
         m.references_citekey_unresolved({ citekey: "doe2024" }),
@@ -402,8 +478,8 @@ describe("source-less Citation Key refresh", () => {
       key: "ABCD2345",
       indexedKey: "ABCD2345",
     };
-    run.citationIndex.resolveCitekey.mockReturnValue({ kind: "unique", item });
-    run.emit("resolution-changed");
+    run.citationLookup.resolveCitekey.mockReturnValue({ kind: "unique", item });
+    run.emit("changed");
     await vi.waitFor(async () =>
       expect((await run.shown()).textContent).toContain("Alpha kernels"),
     );
@@ -411,14 +487,14 @@ describe("source-less Citation Key refresh", () => {
       (await run.shown()).querySelector("[data-citation-popover-actions]"),
     ).not.toBeNull();
 
-    run.citationIndex.resolveCitekey.mockReturnValue({
+    run.citationLookup.resolveCitekey.mockReturnValue({
       kind: "ambiguous",
       candidates: [
         item,
         { ...item, key: "EFGH6789", indexedKey: "EFGH6789", itemID: 2 },
       ],
     });
-    run.emit("resolution-changed");
+    run.emit("changed");
     await vi.waitFor(async () =>
       expect((await run.shown()).textContent).toContain(
         m.references_citekey_ambiguous({ citekey: "doe2024" }),
@@ -537,7 +613,7 @@ describe("source-less presentation updates", () => {
     await vi.waitFor(async () =>
       expect((await run.shown()).textContent).toContain("Recovered Item"),
     );
-    expect(run.citationIndex.resolveCitekey).not.toHaveBeenCalled();
+    expect(run.citationLookup.resolveCitekey).not.toHaveBeenCalled();
   });
 });
 

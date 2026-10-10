@@ -14,6 +14,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
+import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
@@ -158,9 +159,8 @@ function openVault({
         getEngine,
       },
       zoteroPref: { ready: Promise.resolve(), dataDir: DATA_DIR },
-      citationIndex: {
-        whenResolved: () => Promise.resolve(),
-        resolveCitekey: () => ({ kind: "missing" }),
+      citationLookup: {
+        read: async () => lookupAnswer(),
       },
       settings: { current: resolvedSettings },
       profile: profileReader(resolvedSettings, {

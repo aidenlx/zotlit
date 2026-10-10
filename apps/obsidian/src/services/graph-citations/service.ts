@@ -1,6 +1,5 @@
-// The Graph Citations service: installs the render facade and the click, right-click and hover wraps on every graph leaf, re-renders on index changes, and restores every swapped member on feature-off and unload.
-
 import { Effect, Exit, Fiber } from "effect";
+// The Graph Citations service: installs the render facade and the click, right-click and hover wraps on every graph leaf, re-renders on index changes, and restores every swapped member on feature-off and unload.
 import { around } from "monkey-around";
 import type {
   App,
@@ -16,8 +15,16 @@ import { disposable, registerEvent } from "@/lib/disposables";
 import { workLabel } from "@/lib/item-summary";
 import type { WorkLabel } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
-import type { CitationSyntax } from "@/services/citation-index/scan";
-import type { CitationIndex } from "@/services/citation-index/service";
+import { heldResolution } from "@/services/citation-index/lookup";
+import type { CitationLookup } from "@/services/citation-index/lookup-service";
+import type {
+  CitationOccurrence,
+  CitationSyntax,
+} from "@/services/citation-index/scan";
+import type {
+  CitationIndex,
+  CitationLookupObservation,
+} from "@/services/citation-index/service";
 import type { CitationPopover } from "@/services/citation-popover/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import type { NavigationPane } from "@/services/citekey-navigation";
@@ -72,7 +79,6 @@ const RENDER_SETTLE_MS = 150;
 const CITATION_INDEX_EVENTS = [
   "changed",
   "backfilled",
-  "resolution-changed",
   "membership-changed",
 ] as const;
 
@@ -80,10 +86,8 @@ export interface GraphCitationsDeps {
   app: App;
   reads: Pick<ZoteroReadsService, "ready" | "on">;
   libraryScope: Pick<LibraryScopeService, "current">;
-  citationIndex: Pick<
-    CitationIndex,
-    "ready" | "citationsByPath" | "resolveCitekey" | "citekeyOf" | "on"
-  >;
+  citationIndex: Pick<CitationIndex, "ready" | "citationsByPath" | "on">;
+  citationLookup: Pick<CitationLookup, "observe">;
   noteIndex: Pick<NoteIndex, "getIndexedItemKeys" | "getNotesByItemKey" | "on">;
   citekeyEditor: Pick<CitekeyEditor, "openCitekey" | "openIndexedKey">;
   /** The entries a hovered Literature Note or Cited Work Node shows. */
@@ -158,6 +162,12 @@ export class GraphCitations extends Service<void> {
     fiber: Fiber.Fiber<ReadonlyMap<string, WorkLabelSource>, unknown>;
   } | null = null;
   readonly #citationIndex;
+  readonly #citationLookup;
+  /** The exact forward answers needed by the current graph facts. */
+  #lookup: CitationLookupObservation | null = null;
+  #installationCount = 0;
+  /** The occurrence set paired with {@link #lookup}'s current request. */
+  #occurrences: ReadonlyMap<string, readonly CitationOccurrence[]> = new Map();
   readonly #noteIndex;
   readonly #citekeyEditor;
   readonly #citationPopover;
@@ -201,6 +211,7 @@ export class GraphCitations extends Service<void> {
     this.#reads = deps.reads;
     this.#libraryScope = deps.libraryScope;
     this.#citationIndex = deps.citationIndex;
+    this.#citationLookup = deps.citationLookup;
     this.#noteIndex = deps.noteIndex;
     this.#citekeyEditor = deps.citekeyEditor;
     this.#citationPopover = deps.citationPopover;
@@ -230,6 +241,11 @@ export class GraphCitations extends Service<void> {
 
     await using stack = new AsyncDisposableStack();
     const { workspace } = this.#app;
+    stack.defer(() => {
+      this.#lookup?.[Symbol.dispose]();
+      this.#lookup = null;
+      this.#occurrences = new Map();
+    });
     stack.use(
       installGraphViewCreation(this.#app, (leaf, view) => {
         if (this.#stopped || !this.#enabled) return;
@@ -423,7 +439,8 @@ export class GraphCitations extends Service<void> {
     );
     const nodeDeps: NodeRightClickDeps = {
       citekeyOf: (id) => installation.additions.citedWorkNodes.get(id),
-      resolveCitekey: (citekey) => this.#citationIndex.resolveCitekey(citekey),
+      resolveCitekey: (citekey) =>
+        heldResolution(this.#lookup?.current?.value ?? null, citekey),
       open: this.#open,
       workspace: this.#app.workspace,
     };
@@ -432,7 +449,11 @@ export class GraphCitations extends Service<void> {
     restores.use(
       wrapNodeHover(members, this.#hoverDeps(), () => installation.additions),
     );
+    this.#lookup ??= this.#citationLookup.observe(() =>
+      this.#invalidateLabels(),
+    );
     this.#installations.set(renderer, installation);
+    this.#installationCount += 1;
     // The view closing is one of the two things that end this installation: a
     // closed leaf is gone from the walk the service tears down through, and
     // nothing native unhovers a node on the way out — so a hold left standing
@@ -450,8 +471,16 @@ export class GraphCitations extends Service<void> {
 
   /** Puts one leaf's swapped members back and lets go of its installation. */
   #uninstall(installation: GraphInstallation): void {
+    if (this.#installations.get(installation.members.renderer) !== installation)
+      return;
     installation.restores.dispose();
     this.#installations.delete(installation.members.renderer);
+    this.#installationCount -= 1;
+    if (this.#installationCount === 0) {
+      this.#lookup?.[Symbol.dispose]();
+      this.#lookup = null;
+      this.#occurrences = new Map();
+    }
     installation.drawn = {};
     installation.labels.clear();
     this.#fillLabels();
@@ -589,7 +618,10 @@ export class GraphCitations extends Service<void> {
           : undefined;
         const citekey = installation.additions.citedWorkNodes.get(id);
         if (citekey !== undefined) {
-          const resolution = this.#citationIndex.resolveCitekey(citekey);
+          const resolution = heldResolution(
+            this.#lookup?.current?.value ?? null,
+            citekey,
+          );
           key =
             resolution?.kind === "unique"
               ? resolution.item.indexedKey
@@ -654,9 +686,22 @@ export class GraphCitations extends Service<void> {
     const syntaxes: CitationSyntax[] = this.#wikilinkCitations
       ? ["citekey", "wikilink"]
       : ["citekey"];
+    this.#occurrences = this.#citationIndex.citationsByPath(syntaxes);
+    this.#lookup?.set({
+      citekeys: [
+        ...new Set(
+          [...this.#occurrences.values()].flatMap((occurrences) =>
+            occurrences.flatMap((occurrence) =>
+              occurrence.kind === "citekey" ? [occurrence.raw] : [],
+            ),
+          ),
+        ),
+      ],
+    });
     return graphCitationAdditions({
-      occurrences: this.#citationIndex.citationsByPath(syntaxes),
-      resolveCitekey: (citekey) => this.#citationIndex.resolveCitekey(citekey),
+      occurrences: this.#occurrences,
+      resolveCitekey: (citekey) =>
+        heldResolution(this.#lookup?.current?.value ?? null, citekey),
       resolveLink: (linkpath, sourcePath) =>
         this.#app.metadataCache.getFirstLinkpathDest(linkpath, sourcePath)
           ?.path ?? null,

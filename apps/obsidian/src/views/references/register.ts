@@ -25,6 +25,7 @@ export interface ReferencesRegistrationDeps {
   app: App;
   db: ZoteroReadsService;
   citationIndex: CitationIndex;
+  citationLookup: ReferencesViewDeps["citationLookup"];
   libraryScope: LibraryScopeService;
   citationText: CitationText;
   citekeyEditor: CitekeyEditor;
@@ -41,6 +42,7 @@ export function registerReferencesView(
     profile: deps.profile,
     db: deps.db,
     citationIndex: deps.citationIndex,
+    citationLookup: deps.citationLookup,
     libraryScope: deps.libraryScope,
     citationText: deps.citationText,
     citekeyEditor: deps.citekeyEditor,

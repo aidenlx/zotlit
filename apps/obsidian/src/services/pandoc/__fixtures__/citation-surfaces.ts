@@ -55,6 +55,7 @@ import {
   resetCitationSurfaceMocks,
 } from "./citation-surface-mocks";
 import type { CitedWork } from "./citation-surface-mocks";
+import { OpenDocumentsStub } from "@/lib/__fixtures__/open-documents";
 
 // Every module this vault stands in for, registered once here so each suite
 // that opens one takes the same doubles. The registrations hoist above the
@@ -348,10 +349,12 @@ export async function openCitationVault({
 
   const citationText = stack.use(
     new CitationText({
+      openDocuments: new OpenDocumentsStub(),
       profile: profileReader(() => settings.current, harness.metadataCache),
       app: harness.app,
       db: harness.db,
       citationIndex: harness.index,
+      citationLookup: harness.lookup,
       noteIndex: harness.noteIndex,
       bibliographyRender: cache,
       queryClient: harness.queryClient,
@@ -366,6 +369,7 @@ export async function openCitationVault({
       profile: profileReader(() => settings.current, harness.metadataCache),
       db: harness.db,
       citationIndex: harness.index,
+      citationLookup: harness.lookup,
       citationText,
       citekeyEditor: { openCitekey: () => Promise.resolve() },
       pandocEngine: {
@@ -397,6 +401,7 @@ export async function openCitationVault({
     } as unknown as App,
     db: harness.db,
     citationIndex: harness.index,
+    citationLookup: harness.lookup,
     citationText,
     bibliographyRender: cache,
     libraryScope: harness.libraryScope,
@@ -596,7 +601,7 @@ function exportAdapter({
       },
     } as unknown as App,
     db: harness.db,
-    citationIndex: harness.index,
+    citationLookup: harness.lookup,
     pandocEngine: {
       getStatus: () => ({ kind: "installed", version: "test", binary: { directory: "pandoc-engine", name: "pandoc.wasm" } }),
       getEngine: () => Promise.resolve(engine),

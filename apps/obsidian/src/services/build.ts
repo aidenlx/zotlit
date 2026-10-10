@@ -1,5 +1,6 @@
 import { WEB_WORKBENCH_ENABLED } from "@/lib/constants";
 import { nodeFetch } from "@/lib/node-fetch";
+import { workspaceOpenDocuments } from "@/lib/open-documents";
 import { revealSetting } from "@/lib/open-settings";
 import { libraryTagNames } from "@/services/database/library-tag-names";
 import {
@@ -19,6 +20,7 @@ import { AnnotationRepository } from "./annotation-repository/service";
 import { AttachmentImportService } from "./attachment-import/service";
 import { AttachmentResolver } from "./attachment-resolver/service";
 import { createChineseSegmenterService } from "./chinese-segmenter/service";
+import { CitationLookup } from "./citation-index/lookup-service";
 import { CitationIndex } from "./citation-index/service";
 import { CitationPopover } from "./citation-popover/service";
 import { CitationText } from "./citation-text/service";
@@ -76,7 +78,10 @@ import { ZoteroLocalApiClient } from "./zotero-local-api/service";
 import { SecretWriteAuthorizationStore } from "./zotero-local-api/write-authorization";
 import { ZoteroPrefService } from "./zotero-pref/service";
 import { ZoteroReadsService } from "./zotero-reads/service";
-import { workerClient } from "./zotero-reads/worker-client";
+import {
+  citationWorkerClient,
+  workerClient,
+} from "./zotero-reads/worker-client";
 
 /**
  * Construct and wire all Obsidian plugin services.
@@ -154,8 +159,8 @@ export function buildServices(
       chineseSegmenter: () => createChineseSegmenterService(plugin.app),
     })
     .use({
-      // The Zotero database lives in a Web Worker, which owns the connection;
-      // the renderer reads it only through ZoteroReads.
+      // Interactive reads use their own worker; Citation Index bulk reads
+      // use a second capability registered below.
       zoteroReads: ({ settings, zoteroPref, chineseSegmenter }) =>
         new ZoteroReadsService({
           client: workerClient({ settings, zoteroPref, chineseSegmenter }),
@@ -505,20 +510,29 @@ export function buildServices(
         }),
     })
     .use({
-      citationIndex: ({
-        noteIndex,
+      citationLookup: ({
         settings,
+        zoteroPref,
         zoteroReads,
         libraryScope,
         queryClient,
       }) =>
+        new CitationLookup({
+          settings,
+          zoteroPref,
+          source: zoteroReads,
+          client: citationWorkerClient,
+          libraryScope,
+          queryClient,
+        }),
+    })
+    .use({
+      citationIndex: ({ noteIndex, settings, citationLookup }) =>
         new CitationIndex({
           app: plugin.app,
           noteIndex,
           settings,
-          reads: zoteroReads,
-          libraryScope,
-          queryClient,
+          lookup: citationLookup,
         }),
     })
     .use({
@@ -547,6 +561,7 @@ export function buildServices(
         profile,
         zoteroReads,
         citationIndex,
+        citationLookup,
         noteIndex,
         bibliographyRender,
         queryClient,
@@ -556,9 +571,11 @@ export function buildServices(
           app: plugin.app,
           db: zoteroReads,
           citationIndex,
+          citationLookup,
           noteIndex,
           bibliographyRender,
           queryClient,
+          openDocuments: workspaceOpenDocuments(plugin.app),
         }),
     })
     .use({
@@ -566,6 +583,7 @@ export function buildServices(
         profile,
         zoteroReads,
         citationIndex,
+        citationLookup,
         citationText,
         bibliographyRender,
         libraryScope,
@@ -575,6 +593,7 @@ export function buildServices(
           app: plugin.app,
           db: zoteroReads,
           citationIndex,
+          citationLookup,
           citationText,
           bibliographyRender,
           libraryScope,
@@ -591,7 +610,7 @@ export function buildServices(
         citationText,
         citationPopover,
         settings,
-        citationIndex,
+        citationLookup,
         libraryScope,
       }) =>
         new CitekeyEditor({
@@ -606,7 +625,7 @@ export function buildServices(
           citationText,
           citationPopover,
           settings,
-          citationIndex,
+          citationLookup,
           libraryScope,
         }),
     })
@@ -617,7 +636,7 @@ export function buildServices(
         citekeyEditor,
         citationPopover,
         settings,
-        citationIndex,
+        citationLookup,
       }) =>
         new WikilinkEditor({
           app: plugin.app,
@@ -627,7 +646,7 @@ export function buildServices(
           citekeyEditor,
           citationPopover,
           settings,
-          citationIndex,
+          citationLookup,
         }),
     })
     .use({
@@ -637,7 +656,6 @@ export function buildServices(
         citekeyEditor,
         citationPopover,
         settings,
-        citationIndex,
       }) =>
         new WikilinkReading({
           app: plugin.app,
@@ -647,13 +665,12 @@ export function buildServices(
           citekeyEditor,
           citationPopover,
           settings,
-          citationIndex,
         }),
     })
     .use({
       citekeyReading: ({
         citationText,
-        citationIndex,
+        citationLookup,
         citationPopover,
         citekeyEditor,
         settings,
@@ -662,7 +679,7 @@ export function buildServices(
           app: plugin.app,
           plugin,
           citationText,
-          citationIndex,
+          citationLookup,
           citationPopover,
           citekeyEditor,
           settings,
@@ -673,6 +690,7 @@ export function buildServices(
         zoteroReads,
         libraryScope,
         citationIndex,
+        citationLookup,
         noteIndex,
         citekeyEditor,
         citationPopover,
@@ -683,6 +701,7 @@ export function buildServices(
           reads: zoteroReads,
           libraryScope,
           citationIndex,
+          citationLookup,
           noteIndex,
           citekeyEditor,
           citationPopover,

@@ -496,10 +496,10 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           ${browserWaits}
           const debugger_=require('@electron/remote').getCurrentWebContents().debugger;
           const editor=${editor},suggest=${suggester},manager=app.workspace.editorSuggest;
-          const originalTrigger=manager.trigger,originalShow=suggest.showSuggestions;
+          const originalTrigger=manager.trigger,originalShow=suggest.showSuggestions,originalClose=suggest.close;
           const updated=Promise.withResolvers();
           using hooks=new DisposableStack();
-          hooks.defer(()=>{manager.trigger=originalTrigger;suggest.showSuggestions=originalShow;});
+          hooks.defer(()=>{manager.trigger=originalTrigger;suggest.showSuggestions=originalShow;suggest.close=originalClose;});
           hooks.adopt(setTimeout(()=>updated.reject(new Error('Native citation suggestion update did not finish')),5000),clearTimeout);
           let triggering=false,shown=false;
           const entered=()=>editor.getValue()==='[@rougier2014, p]'&&editor.getCursor().ch===16;
@@ -508,6 +508,11 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
             if(relevant)triggering=true;
             const result=originalTrigger.apply(this,args);
             if(relevant){triggering=false;if(suggest.context===null||shown)updated.resolve();}
+            return result;
+          };
+          suggest.close=function(...args){
+            const result=originalClose.apply(this,args);
+            if(entered())updated.resolve();
             return result;
           };
           suggest.showSuggestions=function(...args){

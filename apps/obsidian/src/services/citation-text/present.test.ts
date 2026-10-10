@@ -3,6 +3,11 @@ import { describe, expect, it } from "vitest";
 
 import { scanPandocCitations } from "@zotlit/templates/pandoc-citation";
 
+import {
+  lookupAnswer,
+  lookupForWorks,
+} from "@/services/citation-index/__fixtures__/lookup";
+
 import { rendered } from "./__fixtures__";
 import {
   citationContent,
@@ -50,6 +55,11 @@ function citedDocument(
     entrySerials: false,
     summaries: new Map(
       entries.map(([, { indexedKey, summary }]) => [indexedKey, summary]),
+    ),
+    lookup: lookupForWorks(
+      new Map(
+        entries.map(([citekey, { indexedKey }]) => [citekey, indexedKey]),
+      ),
     ),
     literalWorks: new Map(
       entries.map(([citekey, { indexedKey }]) => [citekey, indexedKey]),
@@ -187,31 +197,44 @@ describe("citekeyState", () => {
 });
 
 describe("literalKeyStateOf", () => {
-  const citations = citedDocument({
-    a: { indexedKey: "1/ZETA", summary: "Zeta (2020)" },
-  });
+  const citations = {
+    ...citedDocument({ a: { indexedKey: "1/ZETA", summary: "Zeta (2020)" } }),
+    lookup: lookupAnswer({
+      a: {
+        kind: "unique",
+        item: { itemID: 1, libraryID: 1, key: "ZETA", indexedKey: "1/ZETA" },
+      },
+      b: {
+        kind: "unique",
+        item: {
+          itemID: 2,
+          libraryID: 1,
+          key: "UNREAD",
+          indexedKey: "1/UNREAD",
+        },
+      },
+      twin: { kind: "ambiguous", candidates: [] },
+      ghost: { kind: "missing" },
+    }),
+  };
 
   it("reads a key the document's own read reached as resolved", () => {
-    expect(literalKeyStateOf(citations, () => "missing")("a")).toBe("resolved");
+    expect(literalKeyStateOf(citations)("a")).toBe("resolved");
   });
 
   it("reads a key that reached no work by what the snapshot names", () => {
-    expect(literalKeyStateOf(citations, () => "ambiguous")("twin")).toBe(
-      "ambiguous",
-    );
-    expect(literalKeyStateOf(citations, () => "missing")("ghost")).toBe(
-      "missing",
-    );
+    expect(literalKeyStateOf(citations)("twin")).toBe("ambiguous");
+    expect(literalKeyStateOf(citations)("ghost")).toBe("missing");
   });
 
   // The Item resolves, but the read could not render a summary for it, so no
   // surface has anything to show in the citation's place.
   it("reads a key whose Item the document could not read as missing", () => {
-    expect(literalKeyStateOf(citations, () => "resolved")("b")).toBe("missing");
+    expect(literalKeyStateOf(citations)("b")).toBe("missing");
   });
 
   it("keeps a key neutral before the first snapshot settles", () => {
-    expect(literalKeyStateOf(citations, () => "pending")("b")).toBe("pending");
+    expect(literalKeyStateOf(citations)("unrequested")).toBe("pending");
   });
 });
 
@@ -257,6 +280,7 @@ describe("citationContent", () => {
     ]),
     entrySerials: false,
     summaries: new Map([["ALPHA234", "Zeta (2020)"]]),
+    lookup: lookupForWorks(new Map([["a", "ALPHA234"]])),
     literalWorks: new Map([["a", "ALPHA234"]]),
   };
   const CITATION = citation("[@a]");
@@ -267,6 +291,7 @@ describe("citationContent", () => {
         formatted: new Map(),
         entrySerials: false,
         summaries: new Map([["ALPHA234", "Zeta (2020)"]]),
+        lookup: lookupForWorks(new Map([["a", "ALPHA234"]])),
         literalWorks: new Map([["a", "ALPHA234"]]),
       }),
     ).toBeNull();

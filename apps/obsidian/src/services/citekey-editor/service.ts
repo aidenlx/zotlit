@@ -11,8 +11,11 @@ import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { describeCandidates } from "@/services/citation-index/ambiguity";
 import type { AmbiguousCandidate } from "@/services/citation-index/ambiguity";
+import { heldResolution } from "@/services/citation-index/lookup";
+import type { CitationLookup } from "@/services/citation-index/lookup-service";
 import type {
-  CitationIndex,
+  CitationLookupAnswer,
+  CitationLookupObservation,
   SnapshotItem,
 } from "@/services/citation-index/service";
 import type { CitationPopover } from "@/services/citation-popover/service";
@@ -56,7 +59,9 @@ export interface CitekeyEditorDeps {
   /** What a hovered citation shows. */
   citationPopover: CitationPopover;
   settings: SettingsService;
-  citationIndex: Pick<CitationIndex, "resolveCitekey" | "on" | "whenResolved">;
+  citationLookup: Pick<CitationLookup, "read"> & {
+    observe(changed: () => void): CitationLookupObservation;
+  };
   /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
   libraryScope: Pick<LibraryScopeService, "current">;
 }
@@ -101,7 +106,7 @@ export class CitekeyEditor extends Service<void> {
   readonly #citationText;
   readonly #citationPopover;
   readonly #settings;
-  readonly #citationIndex;
+  readonly #citationLookup;
   readonly #libraryScope;
   readonly #emitter = createNanoEvents<CitekeyEditorEvents>();
   readonly #extension: Extension;
@@ -129,7 +134,7 @@ export class CitekeyEditor extends Service<void> {
     this.#citationText = deps.citationText;
     this.#citationPopover = deps.citationPopover;
     this.#settings = deps.settings;
-    this.#citationIndex = deps.citationIndex;
+    this.#citationLookup = deps.citationLookup;
     this.#libraryScope = deps.libraryScope;
     this.#extension = citekeyEditorExtension({
       workspace: this.#app.workspace,
@@ -138,8 +143,8 @@ export class CitekeyEditor extends Service<void> {
       },
       showPopover: (request) => this.#citationPopover.show(request),
       hoverPreferences: () => this.#hover,
-      hoverNotePath: (citekey) => this.hoverNotePath(citekey),
-      resolveCitekey: (citekey) => this.#citationIndex.resolveCitekey(citekey),
+      hoverNotePath: (citekey, lookup) => this.hoverNotePath(citekey, lookup),
+      observeLookup: (changed) => this.#citationLookup.observe(changed),
       navigationEnabled: () => this.#navigationEnabled,
       showFormatted: () => this.#showFormatted,
       citationText: (path) => this.#citationText.peek(path),
@@ -176,13 +181,6 @@ export class CitekeyEditor extends Service<void> {
         if (settings) this.#applySettings(settings);
       }),
     );
-    // A citekey resolution snapshot rebuild can flip whether a citekey
-    // resolves at all, so every rebuild restyles every open editor.
-    stack.defer(
-      this.#citationIndex.on("resolution-changed", () =>
-        this.#restyleEditors(),
-      ),
-    );
     // A widget's text is read asynchronously and shared with every other
     // surface, so the editors showing that document draw again when it lands
     // or goes stale — until then they keep the raw marked source.
@@ -201,14 +199,12 @@ export class CitekeyEditor extends Service<void> {
    * nothing: it adopts no candidate's identity, so every surface reading this
    * treats it as a key that opens no single Item.
    */
-  #uniqueItem(citekey: string): SnapshotItem | null {
-    const resolved = this.#citationIndex.resolveCitekey(citekey);
+  #uniqueItem(
+    citekey: string,
+    lookup: CitationLookupAnswer,
+  ): SnapshotItem | null {
+    const resolved = heldResolution(lookup, citekey);
     return resolved?.kind === "unique" ? resolved.item : null;
-  }
-
-  #restyleEditors(): void {
-    const editors = this.#decorateAgain();
-    logger.trace("Restyling citekey marks", { editors });
   }
 
   /** @param path the document whose text changed, or nothing for every one. */
@@ -289,8 +285,11 @@ export class CitekeyEditor extends Service<void> {
    * create-then-open flow. An Ambiguous Citation Key names no one Item, so it
    * answers with nothing too.
    */
-  hoverNotePath(citekey: string): string | null {
-    const item = this.#uniqueItem(citekey);
+  hoverNotePath(
+    citekey: string,
+    lookup?: CitationLookupAnswer | null,
+  ): string | null {
+    const item = lookup ? this.#uniqueItem(citekey, lookup) : null;
     if (!item) return null;
     const matches = this.#noteIndex.getNotesByItemKey(item.indexedKey);
     return matches.length === 1 ? matches[0]!.path : null;
@@ -303,13 +302,20 @@ export class CitekeyEditor extends Service<void> {
    * candidates, and the choice opens one of them exactly.
    */
   async openCitekey(citekey: string, pane: NavigationPane): Promise<void> {
-    await Promise.all([
-      this.#noteIndex.whenIndexed(),
-      this.#citationIndex.whenResolved(),
-    ]);
+    let lookup: CitationLookupAnswer;
+    try {
+      [, lookup] = await Promise.all([
+        this.#noteIndex.whenIndexed(),
+        this.#citationLookup.read({ citekeys: [citekey] }),
+      ]);
+    } catch (error) {
+      logger.warn("Cannot resolve citekey for navigation", { citekey, error });
+      this.#emitter.emit("db-unavailable", citekey);
+      return;
+    }
 
-    const resolved = this.#citationIndex.resolveCitekey(citekey);
-    if (resolved?.kind === "ambiguous") {
+    const resolved = lookup.resolve(citekey);
+    if (resolved.kind === "ambiguous") {
       logger.debug("Citekey names several items", {
         citekey,
         candidates: resolved.candidates.length,
@@ -324,8 +330,8 @@ export class CitekeyEditor extends Service<void> {
       });
       return;
     }
-    if (resolved === null || resolved.kind === "missing") {
-      if (resolved === null || this.#db.state !== "ready") {
+    if (resolved.kind === "missing") {
+      if (this.#db.state !== "ready") {
         logger.debug("Citekey open blocked", {
           citekey,
           branch: "db-unavailable",

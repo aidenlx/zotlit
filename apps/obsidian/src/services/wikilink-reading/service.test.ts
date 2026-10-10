@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
+import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import { occurrences, rendered } from "@/services/citation-text/__fixtures__";
 import { citationKey } from "@/services/citation-text/present";
 import type { FormattedOccurrence } from "@/services/citation-text/present";
@@ -80,13 +81,13 @@ async function harness({
 } = {}): Promise<Harness> {
   const settings = new SettingsStub(overrides);
   const noteIndex = new NoteIndexStub();
-  const citationText = new CitationTextStub(
-    formatted ?? {},
-    pending,
+  const citationText = new CitationTextStub(formatted ?? {}, pending, {
     presentationFailure,
-  );
+    citekeys: citekeys ?? { [WANG_KEY]: "wang2020" },
+  });
   const citationIndex = new CitationIndexStub(
     citekeys ?? { [WANG_KEY]: "wang2020" },
+    (keys) => citationText.resolve(keys),
   );
   const requests: CitationHoverRequest[] = [];
   const switchRequests: string[] = [];
@@ -855,9 +856,11 @@ interface HeldText {
   summaries: Map<string, string>;
   presentationFailure?: ProfilePresentationFailure;
   literalWorks: Map<string, string>;
+  lookup: ReturnType<typeof lookupAnswer>;
 }
 
 class CitationTextStub {
+  #citekeys: Record<string, string>;
   #formatted: Record<string, string>;
   #pending: boolean;
   readonly #presentationFailure: ProfilePresentationFailure | undefined;
@@ -871,12 +874,24 @@ class CitationTextStub {
 
   constructor(
     formatted: Record<string, string>,
-    pending = false,
-    presentationFailure?: ProfilePresentationFailure,
+    pending: boolean | undefined,
+    {
+      presentationFailure,
+      citekeys,
+    }: {
+      presentationFailure?: ProfilePresentationFailure;
+      citekeys: Record<string, string>;
+    },
   ) {
+    this.#citekeys = citekeys;
     this.#formatted = formatted;
-    this.#pending = pending;
+    this.#pending = pending ?? false;
     this.#presentationFailure = presentationFailure;
+  }
+
+  resolve(citekeys: Record<string, string>): void {
+    this.#citekeys = citekeys;
+    this.emit();
   }
 
   /** Replaces what the stub holds, the way a settled replacement read does. */
@@ -900,6 +915,10 @@ class CitationTextStub {
       formatted,
       entrySerials: false,
       summaries: new Map(),
+      lookup: lookupAnswer(
+        {},
+        { [WANG_KEY]: this.#citekeys[WANG_KEY] ?? null, ...this.#citekeys },
+      ),
       literalWorks: new Map(),
       ...(this.#presentationFailure
         ? { presentationFailure: this.#presentationFailure }
@@ -921,10 +940,14 @@ class CitationTextStub {
 }
 
 class CitationIndexStub {
+  readonly #changed;
   #citekeys: Record<string, string>;
-  readonly #listeners = new Set<() => void>();
 
-  constructor(citekeys: Record<string, string>) {
+  constructor(
+    citekeys: Record<string, string>,
+    changed: (keys: Record<string, string>) => void,
+  ) {
+    this.#changed = changed;
     this.#citekeys = citekeys;
   }
 
@@ -933,17 +956,8 @@ class CitationIndexStub {
     this.#citekeys = citekeys;
   }
 
-  citekeyOf(indexedKey: string): string | null {
-    return this.#citekeys[indexedKey] ?? null;
-  }
-
-  on(_event: "resolution-changed", cb: () => void): () => void {
-    this.#listeners.add(cb);
-    return () => this.#listeners.delete(cb);
-  }
-
   emit(): void {
-    for (const cb of this.#listeners) cb();
+    this.#changed(this.#citekeys);
   }
 }
 

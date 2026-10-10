@@ -525,40 +525,6 @@ describe("ZoteroReads operations", () => {
     ]);
   });
 
-  it("CitekeySnapshot streams the citation keys of one library, a slice per query", async () => {
-    const { open } = fixtureOpener(
-      () => `
-        insert into itemDataValues (valueID, value) values (40, 'rela2024');
-        insert into itemData (itemID, fieldID, valueID) values (3, 11, 40);
-      `,
-    );
-    const slices = await withReads(
-      open,
-      (reads) => Stream.runCollect(reads.CitekeySnapshot({ libraryID: 1 })),
-      { sliceSize: 1 },
-    );
-    expect(slices).toEqual([
-      [
-        {
-          itemID: 1,
-          libraryID: 1,
-          key: "MAIN2345",
-          indexedKey: "MAIN2345",
-          citekey: "main2024",
-        },
-      ],
-      [
-        {
-          itemID: 3,
-          libraryID: 1,
-          key: "RELA2345",
-          indexedKey: "RELA2345",
-          citekey: "rela2024",
-        },
-      ],
-    ]);
-  });
-
   it("AttachmentsByKeys returns one library's attachments by key and leaves unknown keys out", async () => {
     const { open } = fixtureOpener(
       () => `
@@ -1616,6 +1582,25 @@ describe("ZoteroReads Profile Match operations", () => {
 });
 
 describe("ZoteroReads SearchItems", () => {
+  it("keeps Item search outside the citation worker capability", async () => {
+    const { open } = fixtureOpener();
+    const answer = await withReads(
+      open,
+      (reads) =>
+        Effect.result(
+          reads.SearchItems({ libraryIDs: [], query: "paper", limit: 10 }),
+        ),
+      { citationOnly: true },
+    );
+    expect(answer).toMatchObject({
+      _tag: "Failure",
+      failure: {
+        _tag: "DbUnavailable",
+        message: "Item search belongs to the interactive worker",
+      },
+    });
+  });
+
   /** `effect`'s value and the statements it ran on every connection. */
   const costOf =
     (statements: () => number) =>

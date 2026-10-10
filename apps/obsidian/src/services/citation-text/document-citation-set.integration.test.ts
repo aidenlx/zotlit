@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import type { CachedMetadata, TFile } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { OpenDocumentsStub } from "@/lib/__fixtures__/open-documents";
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
 import { themeHook } from "@/lib/theme-hooks";
 import type {
@@ -441,15 +442,17 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
 
 /** One CitationText over a harness, formatting through the real engine. */
 function openText(
-  { app, index, noteIndex, queryClient }: CitationIndexHarness,
+  { app, index, lookup, noteIndex, queryClient }: CitationIndexHarness,
   engine: CitationEngine,
   styleXml: string,
 ): CitationText {
   return new CitationText({
+    openDocuments: new OpenDocumentsStub(),
     profile: profileReader(),
     app,
     db: items,
     citationIndex: index,
+    citationLookup: lookup,
     noteIndex,
     bibliographyRender: {
       vaultPresentation: { styleId: null, locale: null },

@@ -4,6 +4,13 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { yieldToMain } from "@/lib/yield-to-main";
 
+import {
+  GROUP_KEY,
+  myLibraryRow,
+  sameLibraryTwin,
+  groupTwin,
+  bothLibraries,
+} from "./__fixtures__/ambiguous";
 import type { CitationSyntax } from "./scan";
 import type { CitedBySnapshot, Citation, CitationIndex } from "./service";
 import {
@@ -41,6 +48,47 @@ async function citationsOf(
 }
 
 describe("CitationIndex", () => {
+  it("keeps Cited By backlinks when membership changes after a failed refresh", async () => {
+    const { index, citekeys, db, draft, metadataCache, workspace } =
+      await makeHarness({ "draft.md": "@doe2024" });
+    workspace.layoutReady();
+    const snapshots: CitedBySnapshot[] = [];
+    const stop = index.observeCitedBy(KEY_A, (snapshot) =>
+      snapshots.push(snapshot),
+    );
+    await expect.poll(() => snapshots.at(-1)?.groups.length).toBe(1);
+    citekeys.error = new Error("unavailable");
+    db.changed();
+    await expect.poll(() => snapshots.at(-1)?.resolution).toBe("failed");
+    metadataCache.change(draft, "@doe2024 @newKey");
+    await yieldToMain();
+    expect(snapshots.at(-1)?.groups.map((group) => group.path)).toEqual([
+      "draft.md",
+    ]);
+    stop();
+  });
+
+  it("groups wikilinks with the same local identity used for the reverse batch", async () => {
+    const db = new DatabaseStub({ readyImmediately: false });
+    const { index, draft, metadataCache } = await makeHarness(
+      { "draft.md": "[[Doe 2024]]" },
+      { db, settings: { "citation.wikilink-citations": true } },
+    );
+    metadataCache.fileCache.set(draft.path, {
+      links: [link("Doe 2024", 0)],
+    } as CachedMetadata);
+    const pending = index.getDocumentCitationSet(draft);
+    await yieldToMain();
+    metadataCache.fileCache.set("Doe 2024.md", {
+      frontmatter: { "zotero-key": KEY_B },
+    } as CachedMetadata);
+    db.settle();
+    const set = await pending;
+    expect(set.citations[0]?.indexedKey).toBe(KEY_A);
+    expect(set.lookup.citekeyOf(KEY_A)).toBe("doe2024");
+    expect(() => set.lookup.citekeyOf(KEY_B)).toThrow(KEY_B);
+  });
+
   it("lists the literal citekeys of a document with their Reference Numbers", async () => {
     const { draft, index } = await makeHarness({
       "draft.md": "Cited by @doe2024 and @roe2025, then @doe2024 again.",
@@ -496,7 +544,7 @@ describe("CitationIndex", () => {
   });
 
   it("keeps internal scans active while Pandoc Citations is off", async () => {
-    const { draft, index, metadataCache, settings, vault, workspace } =
+    const { draft, lookup, index, metadataCache, settings, vault, workspace } =
       await makeHarness(
         { "draft.md": "As @doe2024 wrote, see [[Roe 2025]]." },
         {
@@ -513,7 +561,9 @@ describe("CitationIndex", () => {
     expect(await citationsOf(index, draft)).toMatchObject([
       { indexedKey: KEY_B, refNumber: 1 },
     ]);
-    expect(index.resolveCitekey("doe2024")).toMatchObject({
+    expect(
+      (await lookup.read({ citekeys: ["doe2024"] })).resolve("doe2024"),
+    ).toMatchObject({
       kind: "unique",
       item: { indexedKey: KEY_A },
     });
@@ -672,7 +722,7 @@ describe("CitationIndex persistence", () => {
 
 describe("CitationIndex resolution", () => {
   it("resolves a citekey with no Literature Note in the vault", async () => {
-    const { draft, index } = await makeHarness(
+    const { lookup, draft, index } = await makeHarness(
       { "draft.md": "As @doe2024 wrote." },
       { notes: false },
     );
@@ -680,222 +730,26 @@ describe("CitationIndex resolution", () => {
     expect(await citationsOf(index, draft)).toMatchObject([
       { indexedKey: KEY_A, linkpath: null },
     ]);
-    expect(index.citekeyOf(KEY_A)).toBe("doe2024");
+    expect((await lookup.read({ indexedKeys: [KEY_A] })).citekeyOf(KEY_A)).toBe(
+      "doe2024",
+    );
   });
 
-  it("stays unresolved before the snapshot is warm, then resolves once the read settles", async () => {
+  it("waits for a successful lookup when reading a document", async () => {
     const db = new DatabaseStub({ readyImmediately: false });
-    const { index } = await makeHarness({}, { db, notes: false });
-
-    expect(index.resolveCitekey("doe2024")).toBeNull();
-    const waiting = index.whenResolved();
-
-    db.settle();
-    await waiting;
-
-    expect(index.resolveCitekey("doe2024")).toEqual({
-      kind: "unique",
-      item: {
-        itemID: 1,
-        libraryID: MY_LIBRARY_ID,
-        key: "DOE2024",
-        indexedKey: KEY_A,
-      },
-    });
-  });
-
-  it("rebuilds on the database changed event, replacing the old key with the new one", async () => {
-    const { index, citekeys, db } = await makeHarness({}, { notes: false });
-    expect(index.resolveCitekey("doe2024")?.kind).toBe("unique");
-    expect(index.resolveCitekey("doe2024b")?.kind).toBe("missing");
-
-    citekeys.rows = citekeys.rows.map((row) =>
-      row.citekey === "doe2024" ? { ...row, citekey: "doe2024b" } : row,
-    );
-    let notified = 0;
-    index.on("resolution-changed", () => notified++);
-
-    db.changed();
-    await index.whenResolved();
-    await yieldToMain();
-
-    expect(notified).toBeGreaterThan(0);
-    expect(index.resolveCitekey("doe2024")).toEqual({ kind: "missing" });
-    expect(index.resolveCitekey("doe2024b")).toMatchObject({
-      kind: "unique",
-      item: { itemID: 1, indexedKey: KEY_A },
-    });
-  });
-
-  it("refreshes the reverse observers after a database refresh with identical citation keys", async () => {
-    await using harness = await createCitationIndexHarness(
-      {},
-      { notes: false },
-    );
-    const { index, db } = harness;
-    const resolution = index.resolveCitekey("doe2024");
-    let resolutionChanged = 0;
-    let citedByInvalidated = 0;
-    index.on("resolution-changed", () => resolutionChanged++);
-    index.on("cited-by-invalidated", () => citedByInvalidated++);
-
-    // Author and title changes leave the bulk citation-key rows identical.
-    db.changed();
-    await index.whenResolved();
-    await yieldToMain();
-
-    // The rebuild resolves every key the way the last one did, so the reverse
-    // observers refresh and nothing that resolves a citekey redraws.
-    expect(citedByInvalidated).toBe(1);
-    expect(resolutionChanged).toBe(0);
-    expect(index.resolveCitekey("doe2024")).toEqual(resolution);
-  });
-
-  it("reads every local library and rebuilds when Library Scope changes", async () => {
-    const libraryScope = new LibraryScopeStub([
-      personalLibrary(),
-      groupLibrary(),
-    ]);
-    const { index, citekeys } = await makeHarness(
-      {},
-      { notes: false, libraryScope },
-    );
-    expect(citekeys.calls).toEqual([MY_LIBRARY_ID, GROUP_LIBRARY_ID]);
-
-    citekeys.calls.length = 0;
-    libraryScope.select([personalLibrary()]);
-    await index.whenResolved();
-    await yieldToMain();
-
-    expect(citekeys.calls).toEqual([MY_LIBRARY_ID, GROUP_LIBRARY_ID]);
-  });
-
-  it("rebuilds when a Library outside the scope joins the database", async () => {
-    const libraryScope = new LibraryScopeStub([personalLibrary()]);
-    libraryScope.select([personalLibrary()]);
-    const { index, citekeys } = await makeHarness(
-      {},
-      { notes: false, libraryScope },
-    );
-    citekeys.rows = [
-      ...citekeys.rows,
-      {
-        itemID: 9,
-        libraryID: GROUP_LIBRARY_ID,
-        key: "GRP23456",
-        indexedKey: "GRP23456g7",
-        citekey: "grp2026",
-      },
-    ];
-    expect(index.citekeyOf("GRP23456g7")).toBeNull();
-
-    // Library Scope settles its read after the database change, and a Library
-    // outside the saved scope reaches the index through `libraries-changed`.
-    libraryScope.holdLibraries([personalLibrary(), groupLibrary()]);
-    await index.whenResolved();
-    await yieldToMain();
-
-    expect(index.citekeyOf("GRP23456g7")).toBe("grp2026");
-  });
-
-  it("settles whenResolved unresolved when the database is degraded", async () => {
-    const db = new DatabaseStub();
-    db.state = "degraded";
-    const { index } = await makeHarness({}, { db, notes: false });
-
-    await index.whenResolved();
-
-    expect(index.resolveCitekey("doe2024")).toBeNull();
-  });
-
-  it("serves a failed snapshot until another invalidation rearms it", async () => {
-    const { index, citekeys, db } = await makeHarness({}, { notes: false });
-    expect(index.resolution).toBe("fresh");
-
-    citekeys.error = new Error("torn read");
-    db.changed();
-    await yieldToMain();
-
-    expect(index.resolution).toBe("failed");
-    expect(index.resolveCitekey("doe2024")?.kind).toBe("unique");
-    const failedCalls = citekeys.calls.length;
-
-    citekeys.error = null;
-    index.resolveCitekey("doe2024");
-    await yieldToMain();
-    expect(citekeys.calls).toHaveLength(failedCalls);
-
-    // The drop says the database moved, so it ends the cooldown with it.
-    db.changed();
-    await yieldToMain();
-    expect(index.resolution).toBe("fresh");
-  });
-
-  it("retries a failed first snapshot after the cooldown", async () => {
-    const db = new DatabaseStub({ readyImmediately: false });
-    const { index, citekeys, passCooldown } = await makeHarness(
-      {},
-      { db, notes: false },
-    );
-
-    citekeys.error = new Error("torn read");
-    db.settle();
-    await index.whenResolved();
-    const failedCalls = citekeys.calls.length;
-
-    citekeys.error = null;
-    expect(index.resolveCitekey("doe2024")).toBeNull();
-    expect(index.citekeyOf(KEY_A)).toBeNull();
-    expect(index.resolution).toBeNull();
-    await yieldToMain();
-    expect(citekeys.calls).toHaveLength(failedCalls);
-
-    passCooldown();
-    expect(index.resolveCitekey("doe2024")).toBeNull();
-    await yieldToMain();
-
-    // The retry reads each Library in the scope once.
-    expect(citekeys.calls.slice(failedCalls)).toEqual([
-      MY_LIBRARY_ID,
-      GROUP_LIBRARY_ID,
-    ]);
-    expect(index.resolution).toBe("fresh");
-    expect(index.resolveCitekey("doe2024")?.kind).toBe("unique");
-  });
-
-  it("retries a failed first snapshot through a document read", async () => {
-    const db = new DatabaseStub({ readyImmediately: false });
-    const { index, citekeys, draft, passCooldown } = await makeHarness(
+    const { lookup, index, citekeys, draft, passCooldown } = await makeHarness(
       { "draft.md": "As @doe2024 wrote." },
       { db, notes: false },
     );
-
     citekeys.error = new Error("torn read");
     db.settle();
-    await index.whenResolved();
-
+    await lookup.whenResolved();
+    await expect(citationsOf(index, draft)).rejects.toThrow();
     citekeys.error = null;
     passCooldown();
     expect(await citationsOf(index, draft)).toMatchObject([
-      { indexedKey: null },
-    ]);
-    await yieldToMain();
-
-    expect(await citationsOf(index, draft)).toMatchObject([
       { indexedKey: KEY_A },
     ]);
-    expect(index.resolution).toBe("fresh");
-  });
-
-  it("settles whenResolved when disposal interrupts the first rebuild", async () => {
-    const db = new DatabaseStub({ readyImmediately: false });
-    const { index } = await makeHarness({}, { db, notes: false });
-    const waiting = index.whenResolved();
-
-    await index[Symbol.asyncDispose]();
-
-    await expect(waiting).resolves.toBeUndefined();
-    await expect(index.whenResolved()).resolves.toBeUndefined();
   });
 
   it("observes resolved literal citekeys grouped by path and source position", async () => {
@@ -908,27 +762,33 @@ describe("CitationIndex resolution", () => {
     index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
 
     await yieldToMain();
-    expect(snapshots).toMatchObject([
-      { coverage: "indexing", resolution: "fresh", groups: [] },
-    ]);
+    await expect
+      .poll(() => snapshots)
+      .toMatchObject([
+        { coverage: "indexing", resolution: "fresh", groups: [] },
+      ]);
     workspace.layoutReady();
     await index.whenIndexed();
 
-    expect(snapshots).toHaveLength(4);
-    expect(snapshots.at(-1)).toMatchObject({
-      coverage: "complete",
-      resolution: "fresh",
-      groups: [
-        { path: "a-first.md", occurrences: [{ raw: "doe2024" }] },
-        {
-          path: "z-last.md",
-          occurrences: [{ raw: "doe2024" }, { raw: "doe2024" }],
-        },
-      ],
-    });
-    expect(
-      snapshots.at(-1)!.groups[1]!.occurrences[0]!.position.start.offset,
-    ).toBe(0);
+    await expect
+      .poll(() => snapshots.at(-1))
+      .toMatchObject({
+        coverage: "complete",
+        resolution: "fresh",
+        groups: [
+          { path: "a-first.md", occurrences: [{ raw: "doe2024" }] },
+          {
+            path: "z-last.md",
+            occurrences: [{ raw: "doe2024" }, { raw: "doe2024" }],
+          },
+        ],
+      });
+    await expect
+      .poll(
+        () =>
+          snapshots.at(-1)!.groups[1]!.occurrences[0]!.position.start.offset,
+      )
+      .toBe(0);
   });
 
   it("orders occurrences with the same start position deterministically", async () => {
@@ -945,16 +805,18 @@ describe("CitationIndex resolution", () => {
     workspace.layoutReady();
     await index.whenIndexed();
 
-    expect(
-      snapshots
-        .at(-1)
-        ?.groups[0]?.occurrences.map(
-          ({ kind, position }) => [kind, position.end.offset] as const,
-        ),
-    ).toEqual([
-      ["citekey", 8],
-      ["wikilink", 12],
-    ]);
+    await expect
+      .poll(() =>
+        snapshots
+          .at(-1)
+          ?.groups[0]?.occurrences.map(
+            ({ kind, position }) => [kind, position.end.offset] as const,
+          ),
+      )
+      .toEqual([
+        ["citekey", 8],
+        ["wikilink", 12],
+      ]);
   });
 
   it("publishes first only after listener registration is ready", async () => {
@@ -967,15 +829,14 @@ describe("CitationIndex resolution", () => {
     index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
 
     await yieldToMain();
-    expect(snapshots).toEqual([]);
+    await expect.poll(() => snapshots).toEqual([]);
 
     settings.settle();
     await index.ready;
     await yieldToMain();
-    expect(snapshots).toMatchObject([
-      { resolution: null },
-      { resolution: "fresh" },
-    ]);
+    await expect
+      .poll(() => snapshots)
+      .toMatchObject([{ resolution: null }, { resolution: "fresh" }]);
   });
 
   it("stays silent when disposed during listener registration", async () => {
@@ -994,7 +855,7 @@ describe("CitationIndex resolution", () => {
     await index.ready;
     await yieldToMain();
 
-    expect(snapshots).toEqual([]);
+    await expect.poll(() => snapshots).toEqual([]);
   });
 
   it("omits literal occurrences while Pandoc citation membership is off", async () => {
@@ -1008,10 +869,12 @@ describe("CitationIndex resolution", () => {
     workspace.layoutReady();
     await index.whenIndexed();
 
-    expect(snapshots.at(-1)).toMatchObject({
-      groups: [],
-      coverage: "complete",
-    });
+    await expect
+      .poll(() => snapshots.at(-1))
+      .toMatchObject({
+        groups: [],
+        coverage: "complete",
+      });
   });
 
   it("omits wikilink occurrences while Wikilink citation membership is off", async () => {
@@ -1028,10 +891,12 @@ describe("CitationIndex resolution", () => {
     workspace.layoutReady();
     await index.whenIndexed();
 
-    expect(snapshots.at(-1)).toMatchObject({
-      groups: [],
-      coverage: "complete",
-    });
+    await expect
+      .poll(() => snapshots.at(-1))
+      .toMatchObject({
+        groups: [],
+        coverage: "complete",
+      });
   });
 
   it("republishes the reverse observation after a source choice", async () => {
@@ -1044,14 +909,16 @@ describe("CitationIndex resolution", () => {
 
     workspace.layoutReady();
     await index.whenIndexed();
-    expect(snapshots.at(-1)).toMatchObject({ groups: [] });
+    await expect.poll(() => snapshots.at(-1)).toMatchObject({ groups: [] });
 
     settings.update({ "citation.pandoc-citations": true });
     await yieldToMain();
 
-    expect(snapshots.at(-1)).toMatchObject({
-      groups: [{ path: "draft.md" }],
-    });
+    await expect
+      .poll(() => snapshots.at(-1))
+      .toMatchObject({
+        groups: [{ path: "draft.md" }],
+      });
   });
 
   it("omits a restored scan that no longer describes its file", async () => {
@@ -1066,7 +933,9 @@ describe("CitationIndex resolution", () => {
     index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
     await yieldToMain();
 
-    expect(snapshots).toMatchObject([{ coverage: "indexing", groups: [] }]);
+    await expect
+      .poll(() => snapshots)
+      .toMatchObject([{ coverage: "indexing", groups: [] }]);
   });
 
   it("reports degraded coverage while retaining successful scans", async () => {
@@ -1081,10 +950,12 @@ describe("CitationIndex resolution", () => {
     workspace.layoutReady();
     await index.whenIndexed();
 
-    expect(snapshots.at(-1)).toMatchObject({
-      coverage: "degraded",
-      groups: [{ path: "a-good.md" }],
-    });
+    await expect
+      .poll(() => snapshots.at(-1))
+      .toMatchObject({
+        coverage: "degraded",
+        groups: [{ path: "a-good.md" }],
+      });
   });
 
   it("retains resolved results when citation-key resolution degrades", async () => {
@@ -1096,24 +967,30 @@ describe("CitationIndex resolution", () => {
     workspace.layoutReady();
     await index.whenIndexed();
 
+    await expect
+      .poll(() => snapshots.at(-1)?.groups)
+      .toMatchObject([{ path: "draft.md" }]);
     citekeys.error = new Error("database read failed");
     db.changed();
     await yieldToMain();
 
-    expect(snapshots.at(-1)).toMatchObject({
-      resolution: "failed",
-      groups: [{ path: "draft.md" }],
-    });
+    await expect
+      .poll(() => snapshots.at(-1))
+      .toMatchObject({
+        resolution: "failed",
+        groups: [{ path: "draft.md" }],
+      });
   });
 
   it("retains wikilinks while the first resolution read settles without a value", async () => {
     const db = new DatabaseStub({ readyImmediately: false });
     db.state = "degraded";
     const body = "See [[Doe 2024]].";
-    const { draft, index, metadataCache, workspace } = await makeHarness(
-      { "draft.md": body },
-      { db, settings: { "citation.wikilink-citations": true } },
-    );
+    const { draft, lookup, index, metadataCache, workspace } =
+      await makeHarness(
+        { "draft.md": body },
+        { db, settings: { "citation.wikilink-citations": true } },
+      );
     metadataCache.fileCache.set("draft.md", {
       links: [link("Doe 2024", body.indexOf("[["))],
     } as CachedMetadata);
@@ -1122,18 +999,22 @@ describe("CitationIndex resolution", () => {
 
     workspace.layoutReady();
     await index.whenIndexed();
-    expect(snapshots.at(-1)).toMatchObject({
-      resolution: null,
-      groups: [{ path: draft.path, occurrences: [{ kind: "wikilink" }] }],
-    });
+    await expect
+      .poll(() => snapshots.at(-1))
+      .toMatchObject({
+        resolution: null,
+        groups: [{ path: draft.path, occurrences: [{ kind: "wikilink" }] }],
+      });
 
     db.settle();
-    await index.whenResolved();
+    await lookup.whenResolved();
     await yieldToMain();
-    expect(snapshots.at(-1)).toMatchObject({
-      resolution: null,
-      groups: [{ path: draft.path, occurrences: [{ kind: "wikilink" }] }],
-    });
+    await expect
+      .poll(() => snapshots.at(-1))
+      .toMatchObject({
+        resolution: "failed",
+        groups: [{ path: draft.path, occurrences: [{ kind: "wikilink" }] }],
+      });
   });
 
   it("returns to indexing when reset starts a new pass", async () => {
@@ -1148,11 +1029,11 @@ describe("CitationIndex resolution", () => {
 
     await index.reset();
     await yieldToMain();
-    expect(snapshots.at(-1)?.coverage).toBe("indexing");
+    await expect.poll(() => snapshots.at(-1)?.coverage).toBe("indexing");
 
     release();
     await index.whenIndexed();
-    expect(snapshots.at(-1)?.coverage).toBe("complete");
+    await expect.poll(() => snapshots.at(-1)?.coverage).toBe("complete");
   });
 
   it("combines eligible wikilinks and literal citekeys through Item identity", async () => {
@@ -1202,22 +1083,24 @@ describe("CitationIndex resolution", () => {
     workspace.layoutReady();
     await index.whenIndexed();
 
-    expect(snapshots.at(-1)?.groups).toMatchObject([
-      {
-        path: draft.path,
-        occurrences: [
-          { kind: "citekey", raw: "doe2024" },
-          { kind: "wikilink", raw: "Doe 2024" },
-          { kind: "wikilink", raw: "Doe 2024" },
-        ],
-      },
-    ]);
+    await expect
+      .poll(() => snapshots.at(-1)?.groups)
+      .toMatchObject([
+        {
+          path: draft.path,
+          occurrences: [
+            { kind: "citekey", raw: "doe2024" },
+            { kind: "wikilink", raw: "Doe 2024" },
+            { kind: "wikilink", raw: "Doe 2024" },
+          ],
+        },
+      ]);
     settings.update({
       "citation.pandoc-citations": false,
       "citation.wikilink-citations": false,
     });
     await yieldToMain();
-    expect(snapshots.at(-1)?.groups).toEqual([]);
+    await expect.poll(() => snapshots.at(-1)?.groups).toEqual([]);
   });
 
   it("observes a Literature Note that cites its own Item", async () => {
@@ -1234,12 +1117,14 @@ describe("CitationIndex resolution", () => {
     workspace.layoutReady();
     await index.whenIndexed();
 
-    expect(snapshots.at(-1)?.groups).toMatchObject([
-      {
-        path: target.path,
-        occurrences: [{ kind: "citekey", raw: "doe2024" }],
-      },
-    ]);
+    await expect
+      .poll(() => snapshots.at(-1)?.groups)
+      .toMatchObject([
+        {
+          path: target.path,
+          occurrences: [{ kind: "citekey", raw: "doe2024" }],
+        },
+      ]);
   });
 
   it("keeps a cross-library wikilink while literal resolution changes library", async () => {
@@ -1256,7 +1141,7 @@ describe("CitationIndex resolution", () => {
           {
             itemID: 1,
             libraryID: MY_LIBRARY_ID,
-            key: "DOE2024",
+            key: KEY_A,
             indexedKey: KEY_A,
             citekey: "doe2024",
           },
@@ -1280,17 +1165,16 @@ describe("CitationIndex resolution", () => {
     workspace.layoutReady();
     await index.whenIndexed();
 
-    expect(snapshots.at(-1)?.groups[0]?.occurrences).toMatchObject([
-      { kind: "wikilink" },
-    ]);
+    await expect
+      .poll(() => snapshots.at(-1)?.groups[0]?.occurrences)
+      .toMatchObject([{ kind: "wikilink" }]);
 
     libraryScope.select([personalLibrary(), groupLibrary()]);
     await yieldToMain();
 
-    expect(snapshots.at(-1)?.groups[0]?.occurrences).toMatchObject([
-      { kind: "citekey" },
-      { kind: "wikilink" },
-    ]);
+    await expect
+      .poll(() => snapshots.at(-1)?.groups[0]?.occurrences)
+      .toMatchObject([{ kind: "citekey" }, { kind: "wikilink" }]);
   });
 
   it("applies the optional Markdown-note predicate before grouping", async () => {
@@ -1308,9 +1192,9 @@ describe("CitationIndex resolution", () => {
     workspace.layoutReady();
     await index.whenIndexed();
 
-    expect(snapshots.at(-1)?.groups.map(({ path }) => path)).toEqual([
-      "Keep/a.md",
-    ]);
+    await expect
+      .poll(() => snapshots.at(-1)?.groups.map(({ path }) => path))
+      .toEqual(["Keep/a.md"]);
   });
 
   it("coalesces related edits and publishes only the final changed structure", async () => {
@@ -1327,10 +1211,13 @@ describe("CitationIndex resolution", () => {
     metadataCache.change(draft, "moved again @doe2024.");
     await yieldToMain();
 
-    expect(snapshots).toHaveLength(before + 1);
-    expect(
-      snapshots.at(-1)?.groups[0]?.occurrences[0]?.position.start.offset,
-    ).toBe(12);
+    await expect.poll(() => snapshots).toHaveLength(before + 1);
+    await expect
+      .poll(
+        () =>
+          snapshots.at(-1)?.groups[0]?.occurrences[0]?.position.start.offset,
+      )
+      .toBe(12);
   });
 
   it("refreshes wikilink-only metadata and link-resolution changes", async () => {
@@ -1346,9 +1233,11 @@ describe("CitationIndex resolution", () => {
 
     metadataCache.change(draft, body, [link("Doe 2024", 4)]);
     await yieldToMain();
-    expect(snapshots.at(-1)?.groups).toMatchObject([
-      { path: "draft.md", occurrences: [{ kind: "wikilink" }] },
-    ]);
+    await expect
+      .poll(() => snapshots.at(-1)?.groups)
+      .toMatchObject([
+        { path: "draft.md", occurrences: [{ kind: "wikilink" }] },
+      ]);
 
     const target = metadataCache.files.get("Doe 2024.md")!;
     metadataCache.fileCache.set("Doe 2024.md", {
@@ -1356,7 +1245,7 @@ describe("CitationIndex resolution", () => {
     } as CachedMetadata);
     metadataCache.resolve(target);
     await yieldToMain();
-    expect(snapshots.at(-1)?.groups).toEqual([]);
+    await expect.poll(() => snapshots.at(-1)?.groups).toEqual([]);
   });
 
   it("refreshes wikilinks when their target Literature Note moves or is deleted", async () => {
@@ -1373,19 +1262,19 @@ describe("CitationIndex resolution", () => {
     index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
     workspace.layoutReady();
     await index.whenIndexed();
-    expect(snapshots.at(-1)?.groups).toHaveLength(1);
+    await expect.poll(() => snapshots.at(-1)?.groups).toHaveLength(1);
 
     vault.rename(target, "Literature/Moved.md");
     await yieldToMain();
-    expect(snapshots.at(-1)?.groups).toEqual([]);
+    await expect.poll(() => snapshots.at(-1)?.groups).toEqual([]);
 
     vault.rename(target, "Doe 2024.md");
     await yieldToMain();
-    expect(snapshots.at(-1)?.groups).toHaveLength(1);
+    await expect.poll(() => snapshots.at(-1)?.groups).toHaveLength(1);
 
     vault.deleteFile(target);
     await yieldToMain();
-    expect(snapshots.at(-1)?.groups).toEqual([]);
+    await expect.poll(() => snapshots.at(-1)?.groups).toEqual([]);
   });
 
   it("refreshes reverse literal membership after a database change", async () => {
@@ -1396,7 +1285,7 @@ describe("CitationIndex resolution", () => {
     index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
     workspace.layoutReady();
     await index.whenIndexed();
-    expect(snapshots.at(-1)?.groups).toHaveLength(1);
+    await expect.poll(() => snapshots.at(-1)?.groups).toHaveLength(1);
 
     citekeys.rows = [
       {
@@ -1410,7 +1299,7 @@ describe("CitationIndex resolution", () => {
     db.changed();
     await yieldToMain();
 
-    expect(snapshots.at(-1)?.groups).toEqual([]);
+    await expect.poll(() => snapshots.at(-1)?.groups).toEqual([]);
   });
 
   it("keeps a superseded backfill read out of reverse publications", async () => {
@@ -1428,11 +1317,11 @@ describe("CitationIndex resolution", () => {
     expect(vault.reads.at(-1)).toBe(draft.path);
     metadataCache.change(draft, "@roe2025.");
     await yieldToMain();
-    expect(snapshots.at(-1)?.groups).toEqual([]);
+    await expect.poll(() => snapshots.at(-1)?.groups).toEqual([]);
 
     release();
     await index.whenIndexed();
-    expect(snapshots.at(-1)?.groups).toEqual([]);
+    await expect.poll(() => snapshots.at(-1)?.groups).toEqual([]);
   });
 
   it("recomputes reverse facts without body reads or reverse writes", async () => {
@@ -1451,7 +1340,7 @@ describe("CitationIndex resolution", () => {
 
     expect(vault.reads).toEqual([]);
     expect(store.writes).toEqual([]);
-    expect(snapshots.at(-1)?.groups).toHaveLength(1);
+    await expect.poll(() => snapshots.at(-1)?.groups).toHaveLength(1);
   });
 
   it("adds, moves, and removes citing notes as vault facts change", async () => {
@@ -1469,25 +1358,26 @@ describe("CitationIndex resolution", () => {
     created.stat = { ctime: 0, mtime: 0, size: 0 };
     metadataCache.change(created, "@doe2024.");
     await yieldToMain();
-    expect(snapshots.at(-1)?.groups.map(({ path }) => path)).toEqual([
-      "created.md",
-    ]);
+    await expect
+      .poll(() => snapshots.at(-1)?.groups.map(({ path }) => path))
+      .toEqual(["created.md"]);
 
     vault.rename(created, "Folder/moved.md");
     await yieldToMain();
-    expect(snapshots.at(-1)?.groups.map(({ path }) => path)).toEqual([
-      "Folder/moved.md",
-    ]);
+    await expect
+      .poll(() => snapshots.at(-1)?.groups.map(({ path }) => path))
+      .toEqual(["Folder/moved.md"]);
 
     vault.deleteFile(created);
     await yieldToMain();
-    expect(snapshots.at(-1)?.groups).toEqual([]);
+    await expect.poll(() => snapshots.at(-1)?.groups).toEqual([]);
   });
 
   it("suppresses identical snapshots and isolates observer failures", async () => {
-    const { draft, index, metadataCache, workspace } = await makeHarness({
-      "draft.md": "@doe2024.",
-    });
+    const { draft, lookup, index, metadataCache, workspace } =
+      await makeHarness({
+        "draft.md": "@doe2024.",
+      });
     let publications = 0;
     index.observeCitedBy(KEY_A, () => {
       throw new Error("observer failed");
@@ -1495,6 +1385,9 @@ describe("CitationIndex resolution", () => {
     index.observeCitedBy(KEY_A, () => publications++);
     workspace.layoutReady();
     await index.whenIndexed();
+    await expect.poll(() => publications).toBeGreaterThan(0);
+    await lookup.read({ citekeys: ["doe2024"] });
+    await yieldToMain();
     const before = publications;
 
     metadataCache.change(draft, "@doe2024.");
@@ -1511,12 +1404,13 @@ describe("CitationIndex resolution", () => {
     const stop = index.observeCitedBy(KEY_A, () => publications++);
     workspace.layoutReady();
     await index.whenIndexed();
-    expect(publications).toBe(3);
+    await expect.poll(() => publications).toBeGreaterThan(0);
+    const before = publications;
 
     metadataCache.change(draft, "@roe2025.");
     stop();
     await yieldToMain();
-    expect(publications).toBe(3);
+    expect(publications).toBe(before);
   });
 
   it("resolves with a Literature Note's path as linkpath", async () => {
@@ -1623,7 +1517,7 @@ describe("CitationIndex citedByOmittedSyntaxes", () => {
     workspace.layoutReady();
     await index.whenIndexed();
 
-    expect(index.getCitedBy(KEY_A)).toMatchObject({
+    expect(await index.getCitedBy(KEY_A)).toMatchObject({
       groups: [{ path: "draft.md" }],
     });
     expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual([]);
@@ -1643,7 +1537,7 @@ describe("CitationIndex citedByOmittedSyntaxes", () => {
     // The citekey occurrence still joins the group; the wikilink occurrence
     // of the same item does not, since wikilink citations are excluded by
     // default — the case a short answer must still name.
-    expect(index.getCitedBy(KEY_A)).toMatchObject({
+    expect(await index.getCitedBy(KEY_A)).toMatchObject({
       groups: [{ path: "draft.md" }],
     });
     expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual(["wikilink"]);
@@ -1656,7 +1550,7 @@ describe("CitationIndex citedByOmittedSyntaxes", () => {
     workspace.layoutReady();
     await index.whenIndexed();
 
-    expect(index.getCitedBy(KEY_A)).toMatchObject({ groups: [] });
+    expect(await index.getCitedBy(KEY_A)).toMatchObject({ groups: [] });
     expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual([]);
   });
 
@@ -1668,7 +1562,7 @@ describe("CitationIndex citedByOmittedSyntaxes", () => {
     workspace.layoutReady();
     await index.whenIndexed();
 
-    expect(index.getCitedBy(KEY_A)).toMatchObject({ groups: [] });
+    expect(await index.getCitedBy(KEY_A)).toMatchObject({ groups: [] });
     expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual(["citekey"]);
   });
 
@@ -1685,7 +1579,7 @@ describe("CitationIndex citedByOmittedSyntaxes", () => {
 
     // The occurrence is malformed, so it never would have joined a group:
     // unlike a references answer, cited-by counts only eligible occurrences.
-    expect(index.getCitedBy(KEY_A)).toMatchObject({ groups: [] });
+    expect(await index.getCitedBy(KEY_A)).toMatchObject({ groups: [] });
     expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual([]);
   });
 
@@ -1702,14 +1596,41 @@ describe("CitationIndex citedByOmittedSyntaxes", () => {
 
     // Wikilink citations is off, and an excluded wikilink cites KEY_B — but
     // the queried item is KEY_A, which nobody cites at all.
-    expect(index.getCitedBy(KEY_A)).toMatchObject({ groups: [] });
+    expect(await index.getCitedBy(KEY_A)).toMatchObject({ groups: [] });
     expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual([]);
-    expect(index.getCitedBy(KEY_B)).toMatchObject({ groups: [] });
+    expect(await index.getCitedBy(KEY_B)).toMatchObject({ groups: [] });
     expect(await index.citedByOmittedSyntaxes(KEY_B)).toEqual(["wikilink"]);
   });
 });
 
 describe("CitationIndex one-shot reads", () => {
+  it.each([true, false])(
+    "keeps the requested occurrences while a lookup waits (Pandoc enabled: %s)",
+    async (enabled) => {
+      const db = new DatabaseStub({ readyImmediately: false });
+      const { index, workspace, metadataCache, draft } = await makeHarness(
+        { "draft.md": "@doe2024." },
+        { db, settings: { "citation.pandoc-citations": enabled } },
+      );
+      workspace.layoutReady();
+      await index.whenIndexed();
+      const pending = enabled
+        ? index.getCitedBy(KEY_A)
+        : index.citedByOmittedSyntaxes(KEY_A);
+      await yieldToMain();
+      metadataCache.change(draft, "@roe2025.");
+      db.settle();
+
+      if (enabled) {
+        expect(await pending).toMatchObject({
+          groups: [{ path: "draft.md", occurrences: [{ raw: "doe2024" }] }],
+        });
+      } else {
+        expect(await pending).toEqual(["citekey"]);
+      }
+    },
+  );
+
   it("answers the reverse observation as a single read", async () => {
     const { index, workspace } = await makeHarness({
       "review.md": "@doe2024 and @roe2025.",
@@ -1718,7 +1639,7 @@ describe("CitationIndex one-shot reads", () => {
     workspace.layoutReady();
     await index.whenIndexed();
 
-    expect(index.getCitedBy(KEY_A)).toMatchObject({
+    expect(await index.getCitedBy(KEY_A)).toMatchObject({
       coverage: "complete",
       resolution: "fresh",
       groups: [{ path: "review.md", occurrences: [{ raw: "doe2024" }] }],
@@ -1734,7 +1655,7 @@ describe("CitationIndex one-shot reads", () => {
 
     workspace.layoutReady();
     await expect(index.waitUntilSettled(1_000)).resolves.toBe("settled");
-    expect(index.getCitedBy(KEY_A).coverage).toBe("complete");
+    expect((await index.getCitedBy(KEY_A)).coverage).toBe("complete");
   });
 
   it("counts a degraded resolution as settled", async () => {
@@ -1747,144 +1668,11 @@ describe("CitationIndex one-shot reads", () => {
 
     workspace.layoutReady();
     await expect(index.waitUntilSettled(1_000)).resolves.toBe("settled");
-    expect(index.getCitedBy(KEY_A).resolution).toBeNull();
+    await expect(index.getCitedBy(KEY_A)).rejects.toThrow();
   });
 });
 
 describe("CitationIndex ambiguous citation keys", () => {
-  /** An Indexed Key of the group Library the multi-Library fixtures use. */
-  const GROUP_KEY = "GRP12345g7";
-  /** An Indexed Key of My Library, for a second Item there. */
-  const TWIN_KEY = "RVW23456";
-
-  const myLibraryRow = {
-    itemID: 1,
-    libraryID: MY_LIBRARY_ID,
-    key: "DOE2024",
-    indexedKey: KEY_A,
-    citekey: "doe2024",
-  };
-  /** A second Item of My Library answering to the same citekey. */
-  const sameLibraryTwin = {
-    itemID: 2,
-    libraryID: MY_LIBRARY_ID,
-    key: TWIN_KEY,
-    indexedKey: TWIN_KEY,
-    citekey: "doe2024",
-  };
-  /** An Item of the group Library answering to the same citekey. A lower
-   *  `itemID` than its My Library twin, so Library order alone can order them. */
-  const groupTwin = {
-    itemID: 1,
-    libraryID: GROUP_LIBRARY_ID,
-    key: "GRP12345",
-    indexedKey: GROUP_KEY,
-    citekey: "doe2024",
-  };
-
-  function bothLibraries(): LibraryScopeStub {
-    return new LibraryScopeStub([personalLibrary(), groupLibrary()]);
-  }
-
-  it("classifies two Items of one Library under the same key as ambiguous", async () => {
-    const { index } = await makeHarness(
-      {},
-      { notes: false, citekeys: [myLibraryRow, sameLibraryTwin] },
-    );
-
-    expect(index.resolveCitekey("doe2024")).toEqual({
-      kind: "ambiguous",
-      candidates: [
-        {
-          itemID: 1,
-          libraryID: MY_LIBRARY_ID,
-          key: "DOE2024",
-          indexedKey: KEY_A,
-        },
-        {
-          itemID: 2,
-          libraryID: MY_LIBRARY_ID,
-          key: TWIN_KEY,
-          indexedKey: TWIN_KEY,
-        },
-      ],
-    });
-  });
-
-  it("classifies Items of two Libraries as ambiguous, in canonical Library order", async () => {
-    const { index } = await makeHarness(
-      {},
-      {
-        notes: false,
-        citekeys: [groupTwin, myLibraryRow],
-        libraryScope: bothLibraries(),
-      },
-    );
-
-    const resolved = index.resolveCitekey("doe2024");
-    expect(resolved?.kind).toBe("ambiguous");
-    expect(
-      resolved?.kind === "ambiguous"
-        ? resolved.candidates.map((candidate) => candidate.indexedKey)
-        : [],
-    ).toEqual([KEY_A, GROUP_KEY]);
-  });
-
-  it("narrows an ambiguous key to unique when Library Scope drops a candidate", async () => {
-    const libraryScope = bothLibraries();
-    const { index } = await makeHarness(
-      {},
-      { notes: false, citekeys: [myLibraryRow, groupTwin], libraryScope },
-    );
-    expect(index.resolveCitekey("doe2024")?.kind).toBe("ambiguous");
-
-    libraryScope.select([personalLibrary()]);
-    await index.whenResolved();
-    await yieldToMain();
-
-    expect(index.resolveCitekey("doe2024")).toMatchObject({
-      kind: "unique",
-      item: { indexedKey: KEY_A },
-    });
-  });
-
-  it("resolves an exact Indexed Key of a Library outside the scope", async () => {
-    const libraryScope = bothLibraries();
-    libraryScope.select([personalLibrary()]);
-    const { index } = await makeHarness(
-      {},
-      { notes: false, citekeys: [myLibraryRow, groupTwin], libraryScope },
-    );
-
-    expect(index.resolveCitekey("doe2024")).toMatchObject({ kind: "unique" });
-    expect(index.citekeyOf(GROUP_KEY)).toBe("doe2024");
-  });
-
-  it("emits for a refresh that moves the candidates, not for an equal one", async () => {
-    const { index, citekeys, db } = await makeHarness(
-      {},
-      { notes: false, citekeys: [myLibraryRow, sameLibraryTwin] },
-    );
-    let notified = 0;
-    index.on("resolution-changed", () => notified++);
-
-    db.changed();
-    await index.whenResolved();
-    await yieldToMain();
-    expect(notified).toBe(0);
-
-    citekeys.rows = [sameLibraryTwin, myLibraryRow];
-    db.changed();
-    await index.whenResolved();
-    await yieldToMain();
-
-    expect(notified).toBe(1);
-    expect(index.resolveCitekey("doe2024")).toMatchObject({
-      kind: "ambiguous",
-      candidates: [{ indexedKey: TWIN_KEY }, { indexedKey: KEY_A }],
-    });
-  });
-
   it("keeps an ambiguous literal citation under its own Citation Key", async () => {
     const { draft, index } = await makeHarness(
       { "draft.md": "As @doe2024 wrote." },
@@ -1911,7 +1699,7 @@ describe("CitationIndex ambiguous citation keys", () => {
     await index.whenIndexed();
 
     for (const indexedKey of [KEY_A, GROUP_KEY]) {
-      expect(index.getCitedBy(indexedKey).groups).toMatchObject([
+      expect((await index.getCitedBy(indexedKey)).groups).toMatchObject([
         { path: draft.path, occurrences: [{ raw: "doe2024" }] },
       ]);
     }
@@ -1937,20 +1725,20 @@ describe("CitationIndex ambiguous citation keys", () => {
 
   it("stops attributing the occurrence once the scope narrows to one candidate", async () => {
     const libraryScope = bothLibraries();
-    const { index, workspace } = await makeHarness(
+    const { lookup, index, workspace } = await makeHarness(
       { "draft.md": "As @doe2024 wrote." },
       { notes: false, citekeys: [myLibraryRow, groupTwin], libraryScope },
     );
     workspace.layoutReady();
     await index.whenIndexed();
-    expect(index.getCitedBy(GROUP_KEY).groups).toHaveLength(1);
+    expect((await index.getCitedBy(GROUP_KEY)).groups).toHaveLength(1);
 
     libraryScope.select([personalLibrary()]);
-    await index.whenResolved();
+    await lookup.whenResolved();
     await yieldToMain();
 
-    expect(index.getCitedBy(GROUP_KEY).groups).toStrictEqual([]);
-    expect(index.getCitedBy(KEY_A).groups).toHaveLength(1);
+    expect((await index.getCitedBy(GROUP_KEY)).groups).toStrictEqual([]);
+    expect((await index.getCitedBy(KEY_A)).groups).toHaveLength(1);
   });
 });
 

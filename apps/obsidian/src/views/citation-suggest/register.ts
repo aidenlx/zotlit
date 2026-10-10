@@ -2,7 +2,7 @@ import "./style.css";
 import type { App, Plugin } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
-import type { CitationIndex } from "@/services/citation-index/service";
+import type { CitationLookup } from "@/services/citation-index/lookup-service";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import type { NoteFeature } from "@/services/note-feature";
 import type { SettingsService } from "@/services/settings/service";
@@ -17,7 +17,7 @@ export interface CitationSuggestDeps {
   settings: SettingsService;
   /** Says whether the Citation Key of a chosen Item names several Items, and
    *  whether the snapshot that answers that has resolved at all yet. */
-  citationIndex: Pick<CitationIndex, "resolveCitekey" | "resolution">;
+  citationLookup: Pick<CitationLookup, "read" | "status">;
 }
 
 export function registerCitationSuggest(

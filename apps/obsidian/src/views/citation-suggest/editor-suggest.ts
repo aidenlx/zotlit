@@ -32,6 +32,7 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
   #variant: CitationVariant = "main";
   /** The searches of the open dropdown: its first search opens it, and {@link close} ends it. */
   #session: SearchSession | null = null;
+  #lookupController?: AbortController;
 
   constructor(deps: CitationSuggestDeps) {
     super(deps.app);
@@ -64,10 +65,6 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
       this.#deps.settings.current?.["citation.at-trigger"] ?? false;
     const trigger = resolveCitationTrigger(line, cursor.ch, {
       atTrigger,
-      isKnownCitekey: (key) => {
-        const resolved = this.#deps.citationIndex.resolveCitekey(key);
-        return resolved?.kind === "unique" || resolved?.kind === "ambiguous";
-      },
     });
     if (!trigger) return null;
 
@@ -80,14 +77,36 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
     };
   }
 
-  override getSuggestions(
+  override async getSuggestions(
     context: EditorSuggestContext,
-  ): SearchHit[] | Promise<SearchHit[]> {
+  ): Promise<SearchHit[]> {
+    this.#lookupController?.abort();
+    const controller = new AbortController();
+    this.#lookupController = controller;
+    const source = `@${context.query}`;
+    const key = scanPandocCitations(source)[0]?.items[0];
+    if (key?.start === 0 && source.slice(key.end).trimStart().startsWith(",")) {
+      const answer = await this.#deps.citationLookup
+        .read(
+          {
+            citekeys: [key.citationKey],
+          },
+          { signal: controller.signal },
+        )
+        .catch(() => null);
+      if (answer === null || controller.signal.aborted) return [];
+      const found = answer.resolve(key.citationKey);
+      if (found.kind === "unique" || found.kind === "ambiguous") {
+        this.close();
+        return [];
+      }
+    }
     this.#session ??= this.#deps.lookup.openSession();
     return this.#session.search(context.query, { limit: this.limit });
   }
 
   override close(): void {
+    this.#lookupController?.abort();
     this.#session?.close();
     this.#session = null;
     super.close();
@@ -97,10 +116,10 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
     renderSearchHit(this.#deps.settings, hit, el);
   }
 
-  override selectSuggestion(
+  override async selectSuggestion(
     hit: SearchHit,
     evt: MouseEvent | KeyboardEvent,
-  ): void {
+  ): Promise<void> {
     const context = this.context;
     if (!context) return;
 
@@ -108,7 +127,9 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
       this.#variant === "alt" || Keymap.isModifier(evt, "Shift")
         ? "alt"
         : "main";
-    const outcome = resolveCitationInsert(this.#deps, hit, variant);
+    const before = context.editor.getValue();
+    const outcome = await resolveCitationInsert(this.#deps, hit, variant);
+    if (context.editor.getValue() !== before) return;
     if (outcome.kind === "notice") {
       new BaseNotice(outcome.message);
       return;
@@ -177,11 +198,11 @@ export type CitationInsertOutcome =
  * while the answer is pending. Errors other than {@link InertTemplateError}
  * propagate.
  */
-export function resolveCitationInsert(
-  deps: Pick<CitationSuggestDeps, "noteFeature" | "citationIndex">,
+export async function resolveCitationInsert(
+  deps: Pick<CitationSuggestDeps, "noteFeature" | "citationLookup">,
   hit: SearchHit,
   variant: CitationVariant,
-): CitationInsertOutcome {
+): Promise<CitationInsertOutcome> {
   const citationKey =
     "citationKey" in hit.item.fields ? hit.item.fields.citationKey : null;
   if (!citationKey) {
@@ -193,11 +214,17 @@ export function resolveCitationInsert(
 
   // A pending snapshot has no verdict yet and would read an ambiguous key as
   // missing. A held snapshot keeps its verdict while it revalidates or fails.
-  if (deps.citationIndex.resolution === null) {
+  if (deps.citationLookup.status === "pending") {
     return { kind: "notice", message: m.notice_citekey_not_ready() };
   }
 
-  if (deps.citationIndex.resolveCitekey(citationKey)?.kind === "ambiguous") {
+  let lookup;
+  try {
+    lookup = await deps.citationLookup.read({ citekeys: [citationKey] });
+  } catch {
+    return { kind: "notice", message: m.notice_citekey_not_ready() };
+  }
+  if (lookup.resolve(citationKey).kind === "ambiguous") {
     return {
       kind: "notice",
       message: m.notice_citekey_ambiguous_insert({ citekey: citationKey }),
