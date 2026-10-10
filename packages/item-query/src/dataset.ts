@@ -6,6 +6,8 @@ import type { Effect } from "effect";
 
 import type { Attachment } from "@zotlit/db";
 import type {
+  ParentCandidates,
+  ParentCandidateLeaf,
   ItemQueryDatabase,
   ItemQueryReaderError,
   ScanRow,
@@ -21,8 +23,10 @@ import type {
   SortKey,
 } from "./fields";
 import type { FilterNode, FilterPlan, FilterProblem } from "./filter-plan";
+import type { ParentRecord } from "./parent-records";
 import type { PathSegment } from "./projection-path";
 import type { QueryClock } from "./query-clock";
+import type { QuerySources } from "./query-sources";
 import type { ItemQueryPlan, ItemQueryRequest, SortSpec } from "./request";
 
 /** The field part of a dotted name: the text before its first `.` or `[`. */
@@ -53,18 +57,53 @@ export const AttachmentFileResolver =
   );
 
 /** A dataset leaf; Relation List elements page in ascending source ID order. */
-export type CandidateReader = (page: {
+export type CandidatePageReader = (page: {
   libraryID: number;
   limit: number;
   afterItemID?: number;
 }) => Effect.Effect<number[], ItemQueryReaderError, ItemQueryDatabase>;
 
 export interface CandidateRelation {
-  readonly dataset: () => QueryDataset;
+  readonly dataset: () => CandidateDataset;
   readonly readParents: (chunk: {
     libraryID: number;
     itemIDs: readonly number[];
   }) => Effect.Effect<number[], ItemQueryReaderError, ItemQueryDatabase>;
+}
+
+/** A reversed Parent Record relation selects child IDs with the parent leaf. */
+export interface CandidateParentRelation {
+  readonly dataset: () => CandidateDataset;
+  readonly readChildren: (page: {
+    libraryID: number;
+    limit: number;
+    budget: number;
+    leaf: ParentCandidateLeaf;
+  }) => Effect.Effect<
+    ParentCandidates,
+    ItemQueryReaderError,
+    ItemQueryDatabase
+  >;
+}
+
+/** The candidate pass needs only lowering, readers, and the record relations. */
+export interface CandidateDataset<Leaf = any> {
+  readonly id: "items" | "attachments" | "annotations";
+  readonly lowerCandidate: (
+    node: FilterNode<never>,
+    sources: CandidateSources,
+  ) => Leaf | null;
+  readonly readCandidate: (
+    page: Parameters<CandidatePageReader>[0] & { leaf: Leaf },
+  ) => ReturnType<CandidatePageReader>;
+  readonly readRowCount: (
+    libraryID: number,
+  ) => Effect.Effect<number, ItemQueryReaderError, ItemQueryDatabase>;
+  readonly candidateParents: readonly ParentRecord[];
+  readonly candidateRelations: Readonly<
+    Record<string, CandidateRelation | CandidateParentRelation>
+  >;
+  readonly filterField: (name: string) => FilterField<any, any> | undefined;
 }
 
 /**
@@ -73,8 +112,7 @@ export interface CandidateRelation {
  */
 export interface QueryDataset<
   Request extends ItemQueryRequest = ItemQueryRequest,
-> {
-  readonly id: "items" | "attachments" | "annotations";
+> extends CandidateDataset {
   /** The record of one row in prose: `Item` or `Annotation`. */
   readonly noun: string;
   /** The query in prose: `Item Query` or `Annotation Query`. */
@@ -98,11 +136,6 @@ export interface QueryDataset<
   /** The meaning of a bare name in a Filter Expression. */
   readonly filterField: (name: string) => FilterField<any, any> | undefined;
   readonly planFilter: (text: string) => FilterPlan<any, any> | FilterProblem;
-  readonly lowerCandidate: (
-    node: FilterNode<never>,
-    sources: CandidateSources,
-  ) => CandidateReader | null;
-  readonly candidateRelations: Readonly<Record<string, CandidateRelation>>;
   /** The Sortable Field of a name, or nothing for a name that does not sort. */
   readonly sortable: (name: string) => SortableField<any, any> | undefined;
   /** The field that the leading segments of a Projection Path name. */
@@ -138,7 +171,7 @@ export interface QueryDataset<
   open(
     plan: ItemQueryPlan,
     request: Request,
-    clock: QueryClock,
+    context: { readonly clock: QueryClock; readonly sources: QuerySources },
   ): Effect.Effect<
     DatasetRun<any>,
     ItemQueryError | ItemQueryReaderError,

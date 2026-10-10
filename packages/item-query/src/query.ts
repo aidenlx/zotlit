@@ -15,6 +15,7 @@ import type { ItemQueryError } from "./error";
 import { consumeDataset } from "./execution";
 import { indexedKeyWarnings } from "./indexed-key-selection";
 import { readQueryClock } from "./query-clock";
+import { openQuerySources } from "./query-sources";
 import { planRequest } from "./request";
 import type {
   ItemQueryRequest,
@@ -100,17 +101,21 @@ export function consumeQuery<Request extends ItemQueryRequest, A, E, R>(
     const plan = yield* planRequest(dataset, request);
     const { query, sorts } = plan;
     const clock = yield* readQueryClock;
-    const run = yield* dataset.open(plan, request, clock);
+    const sources = yield* openQuerySources;
+    const run = yield* dataset.open(plan, request, { clock, sources });
     return yield* consumeDataset(
       {
         ...run,
+        dataset,
+        sources,
+        filter: plan.filter?.root,
         query,
         warnings: [
           ...plan.warnings,
           ...(yield* collectionWarnings(
             plan.filter?.root,
             request.libraries,
-            run.collectionPaths,
+            sources,
           )),
           ...(plan.filter
             ? indexedKeyWarnings(

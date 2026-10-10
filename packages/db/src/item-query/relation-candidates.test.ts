@@ -7,6 +7,7 @@ import {
   ItemQueryDatabase,
   ItemQueryStatementObserver,
   readRelationCandidateSet,
+  readParentCandidateSet,
   readUniverseRows,
   readAttachmentUniverseRows,
 } from ".";
@@ -63,3 +64,52 @@ it("maps element candidates to live parents in one statement per chunk", () => {
     expect(statements).toEqual([]);
   }
 });
+
+it.each([
+  "attachment-item",
+  "annotation-item",
+  "annotation-attachment",
+] as const)(
+  "bounds the composed Parent Record selection %s within its Target Library",
+  (relation) => {
+    using scenario = openScenarioDatabase({ annotations: true });
+    const run = <A, E>(effect: Effect.Effect<A, E, ItemQueryDatabase>) =>
+      Effect.runSync(
+        Effect.provideService(effect, ItemQueryDatabase, {
+          client: scenario.db,
+        }),
+      );
+    const read = (options: {
+      libraryID: number;
+      limit?: number;
+      budget?: number;
+    }) =>
+      readParentCandidateSet({
+        limit: 500,
+        budget: 3000,
+        ...options,
+        relation,
+        leaf: {
+          kind: "keys",
+          keys: [
+            relation === "annotation-attachment" ? "PDF2LIVE" : "ART2FULL",
+          ],
+        },
+      });
+    const all = run(read({ libraryID: 1 }));
+    expect(all.itemIDs.length).toBeGreaterThan(1);
+    expect(all.exhausted).toBe(false);
+    expect(run(read({ libraryID: 1, limit: 1 })).itemIDs).toEqual(
+      all.itemIDs.slice(0, 1),
+    );
+    expect(run(read({ libraryID: 1, budget: 1 })).exhausted).toBe(true);
+    expect(run(read({ libraryID: -1, budget: 1 }))).toEqual({
+      itemIDs: [],
+      exhausted: false,
+    });
+    expect(run(read({ libraryID: -1 }))).toEqual({
+      itemIDs: [],
+      exhausted: false,
+    });
+  },
+);

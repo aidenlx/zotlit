@@ -39,6 +39,11 @@ export const DATASET_QUERY_SPECS: readonly Pick<
     args: { from: "items", limit: "100" },
   },
   {
+    id: "collection-projection",
+    class: "other",
+    args: { from: "items", fields: "key,collections", limit: "100" },
+  },
+  {
     id: "attachments-default",
     class: "other",
     args: { from: "attachments", limit: "100" },
@@ -54,6 +59,25 @@ export const DATASET_QUERY_SPECS: readonly Pick<
     args: {
       filter:
         'annotations.filter(value.tags.contains("methodology")).length > 0',
+      limit: "100",
+    },
+  },
+  {
+    id: "relation-many-marks",
+    class: "other",
+    args: {
+      from: "items",
+      filter:
+        'annotations.filter(value.tags.contains("stress-many-marks")).length > 0',
+      limit: "100",
+    },
+  },
+  {
+    id: "relation-parent-dominant",
+    class: "other",
+    args: {
+      from: "annotations",
+      filter: 'item.tags.contains("stress-dominant")',
       limit: "100",
     },
   },

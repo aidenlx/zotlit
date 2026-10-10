@@ -1,18 +1,16 @@
 import {
-  deletedItems,
   itemAnnotations,
   itemAttachments,
   items,
   itemTypesCombined,
 } from "@drizzle/schema";
-import { and, eq, inArray, notExists, notInArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { Effect } from "effect";
 
-import { CHILD_ITEM_TYPES } from "@/lib/item-types";
-
 import { defineStatement, idSlots, unindexed } from "./database";
 import type { IdSlot } from "./database";
+import { recordUniverse } from "./record-universe";
 import { SCAN_PAGE_SIZE } from "./scan-page";
 
 export type CandidateRelation =
@@ -58,18 +56,10 @@ const statement = (relation: CandidateRelation) =>
           element.itemID,
           slots.names.map((name) => p(name)),
         ),
-        notInArray(itemTypesCombined.typeName, [...CHILD_ITEM_TYPES]),
-        ...(fromAttachment
-          ? [inArray(itemAttachments.linkMode, [0, 1, 2, 3])]
-          : []),
-        ...[attachment, parent, ...(fromAttachment ? [] : [items])].map(
-          (table) =>
-            notExists(
-              db
-                .select({ itemID: deletedItems.itemID })
-                .from(deletedItems)
-                .where(eq(deletedItems.itemID, table.itemID)),
-            ),
+        ...recordUniverse(
+          db,
+          [attachment, parent, ...(fromAttachment ? [] : [items])],
+          fromAttachment,
         ),
       ),
     );

@@ -356,7 +356,7 @@ it("caps after parent expansion and uses a bounded Annotation candidate when ava
   const candidateReads = overflow.events.filter(
     (event) =>
       event.type === "statement" &&
-      event.statement.reader === "annotation-candidate-set",
+      event.statement.reader === "parent-child-candidate-set",
   );
   expect(candidateReads).toHaveLength(1);
   expect(candidateReads[0]).toMatchObject({
@@ -543,6 +543,7 @@ describe("the statements of each pass", () => {
     // The Tag candidate set is above the cap of the Library: the scan reads it.
     expect(scan).toEqual([
       "annotation-row-count",
+      "annotation-candidate-set",
       "annotation-candidate-set",
       "annotation-scan-page",
       "annotation-tags",
@@ -770,5 +771,57 @@ it.each(["tags", "item.tags[]", "item.tags", "attachment"])(
     });
     if (error._tag === "Some" && error.value instanceof ItemQueryError)
       expect(error.value.diagnostic.report.join("\n")).toContain("scalar");
+  },
+);
+
+it.each([
+  ['attachment.item.collections.within("Thesis")', 12],
+  ['attachment.linkMode == "embedded_image"', 6],
+  ['attachment.key == "PDF2LINK"', 6],
+  ['attachment.indexedKey == "PDF2LINK"', 6],
+  ['attachment.title == "linkedAttachment"', 6],
+  ['attachment.contentType == "application/pdf"', 12],
+  ['attachment.fileType == "pdf"', 12],
+  ["attachment.path == null", 12],
+  ["attachment.exists == false", 12],
+  ['attachment.tags.contains("attachment-method")', 6],
+  ['attachment.library == "personal"', 12],
+  ["attachment.dateAdded == attachment.dateAdded", 12],
+  ["attachment.dateModified == attachment.dateModified", 12],
+  ["attachment.annotations.length > 0", 12],
+])(
+  "keeps Annotation Parent Records outside Attachment Query: %s",
+  async (filter, returnedCount) => {
+    using scenario = openScenarioDatabase({ annotations: true });
+    scenario.sqlite
+      .prepare(
+        "update itemAttachments set linkMode = 4 where itemID in (select itemID from items where key = 'PDF2LINK')",
+      )
+      .run();
+    const query = collectQuery(ANNOTATIONS, {
+      libraries: [SCENARIO_LIBRARIES.personal],
+      filter,
+      fields: [],
+      sort: [],
+    });
+    const scan = await runEffect(query, {
+      client: scenario.db,
+      tuning: { forceScan: true },
+    });
+    expect(scan.exit).toMatchObject({
+      _tag: "Success",
+      value: { returnedCount },
+    });
+    for (const tuning of [
+      {},
+      { capRatio: 1 },
+      { capRatio: 0 },
+      { capRatio: 0.1 },
+      { capRatio: 1, scanPageSize: 3, hydrateChunkSize: 2 },
+      { scanPageSize: 1, hydrateChunkSize: 1, mergeStepSize: 1 },
+    ]) {
+      const actual = await runEffect(query, { client: scenario.db, tuning });
+      expect(actual.exit).toEqual(scan.exit);
+    }
   },
 );

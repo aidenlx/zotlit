@@ -3,7 +3,6 @@ import {
   annotationColorsForName,
   annotationHasCacheImage,
   annotationTypeToName,
-  formatIndexedKey,
 } from "@zotlit/db";
 import type {
   AnnotationScanRow,
@@ -17,12 +16,14 @@ import {
   readAnnotationPosition,
 } from "./annotation-position";
 import type { QueryAttachment } from "./attachment-fields";
+import type { AttachmentNeeds } from "./attachment-hydration";
 import { compareStrings } from "./collation";
 import type { SortableField } from "./dataset";
-import { fieldDefinition, filterField, customFilterValue } from "./fields";
+import { BUILT_IN_NAMES } from "./fields";
 import type {
   FieldDefinition as ItemFieldDefinition,
   QueryItem,
+  FieldNeeds,
   ValueShape,
 } from "./fields";
 import { timestamp } from "./filter-dates";
@@ -30,7 +31,8 @@ import type { FilterRegistry } from "./filter-plan";
 import type { FilterValue } from "./filter-values";
 import { keyField, indexedKeyField } from "./key-fields";
 import { libraryField } from "./library-field";
-import { definitionFilter, mapNavigation, recordField } from "./record-field";
+import { liftParentRecord, parentSortFields } from "./parent-records";
+import { definitionFilter } from "./record-field";
 import { attachmentVocabulary } from "./record-vocabularies";
 import { itemVocabulary } from "./record-vocabularies";
 import type { ProjectionValue } from "./request";
@@ -151,52 +153,58 @@ export const ANNOTATION_FIELDS = new Map<string, FieldDefinition>([
       details ? annotationHasCacheImage(details.type) : null,
     ),
   ],
-  [
-    "attachment",
-    recordField({
-      vocabulary: () => attachmentVocabulary(),
-      list: false,
-      rows: (item) => (item.attachmentRecord ? [item.attachmentRecord] : []),
-      needs: (attachment) => ({ attachment }),
-    }),
-  ],
 ]);
+
+const itemParent = liftParentRecord({
+  name: "item",
+  vocabulary: () => itemVocabulary(),
+  read: (row: QueryAnnotation) => row.parent,
+  identity: (row: QueryAnnotation) => ({
+    scan: row.scan.parent,
+    groupID: row.groupID,
+  }),
+  needs: (item: readonly FieldNeeds[]): AnnotationNeeds => ({ item }),
+  candidates: "all",
+  sortable: ["indexedKey", "key", "title", "date", "dateModified"],
+  listed: () => BUILT_IN_NAMES,
+  syntax: "fields",
+});
+const attachmentParent = liftParentRecord({
+  name: "attachment",
+  vocabulary: () => attachmentVocabulary(),
+  read: (row: QueryAnnotation) => row.attachmentRecord,
+  identity: (row: QueryAnnotation) => ({
+    scan: { key: row.scan.attachmentKey },
+    groupID: row.groupID,
+  }),
+  needs: (attachment: readonly AttachmentNeeds[]): AnnotationNeeds => ({
+    attachment,
+  }),
+  candidates: ["indexedKey", "key"],
+  sortable: ["indexedKey", "key"],
+  listed: [
+    "indexedKey",
+    "title",
+    "contentType",
+    "linkMode",
+    "path",
+    "exists",
+    "key",
+    "fileType",
+  ],
+  syntax: "record",
+});
+export const ANNOTATION_PARENTS = [attachmentParent, itemParent];
 
 export function annotationFieldDefinition(
   name: string,
 ): FieldDefinition | undefined {
-  if (name === "item")
-    return recordField({
-      vocabulary: () => itemVocabulary(),
-      list: false,
-      rows: (item) => [item.parent],
-      needs: (items) => ({ item: items }),
-    });
-  if (!name.startsWith("item.")) return ANNOTATION_FIELDS.get(name);
-  const parent = fieldDefinition(name.slice(5));
-  return parent
-    ? {
-        ...parent,
-        needs: (rest) => ({ item: [parent.needs(rest)] }),
-        filterNeeds: { item: [parent.filterNeeds ?? parent.needs([])] },
-        navigation: mapNavigation(parent.navigation, (needs) => ({
-          item: [needs],
-        })),
-        project: parent.project
-          ? (item, rest) => parent.project!(item.parent, rest)
-          : undefined,
-        read: (item) => parent.read(item.parent),
-        sortKey: parent.sortKey
-          ? (item, clock) => parent.sortKey!(item.parent, clock)
-          : undefined,
-        filter: parent.filter
-          ? {
-              ...parent.filter,
-              read: (item) => parent.filter!.read(item.parent),
-            }
-          : undefined,
-      }
-    : undefined;
+  return (
+    ANNOTATION_FIELDS.get(name) ??
+    ANNOTATION_PARENTS.map((parent) => parent.definition(name)).find(
+      (field) => field !== undefined,
+    )
+  );
 }
 
 for (const name of ["dateAdded", "dateModified"] as const) {
@@ -225,102 +233,49 @@ for (const name of ["type", "color", "pageIndex", "sortIndex"]) {
  * The Sortable Fields of Annotation Query. `attachment.indexedKey` orders by
  * the Attachment's Indexed Key across the Target Libraries.
  */
-export const ANNOTATION_SORT_FIELDS: readonly string[] = [
-  "indexedKey",
-  "key",
-  "item.indexedKey",
-  "item.key",
-  "dateAdded",
-  "dateModified",
-  "type",
-  "color",
-  "pageIndex",
-  "sortIndex",
-  "item.title",
-  "item.date",
-  "item.dateModified",
-  "attachment.indexedKey",
-  "attachment.key",
-];
+export const ANNOTATION_SORT_FIELDS = parentSortFields(
+  [
+    "indexedKey",
+    "key",
+    "dateAdded",
+    "dateModified",
+    "type",
+    "color",
+    "pageIndex",
+    "sortIndex",
+  ],
+  ANNOTATION_PARENTS,
+);
 
 export function annotationSortableField(
   name: string,
 ): SortableField<QueryAnnotation, AnnotationNeeds> | undefined {
-  if (!ANNOTATION_SORT_FIELDS.includes(name)) return undefined;
-  if (name === "attachment.indexedKey" || name === "attachment.key")
-    return {
-      needs: {},
-      key: (item) =>
-        name === "attachment.key"
-          ? item.scan.attachmentKey
-          : formatIndexedKey(item.scan.attachmentKey, item.groupID),
-    };
-  const definition = annotationFieldDefinition(name)!;
-  return { needs: definition.needs([]), key: definition.sortKey! };
+  const parent = ANNOTATION_PARENTS.map((parent) => parent.sortable(name)).find(
+    (field) => field !== undefined,
+  );
+  if (parent) return parent;
+  const definition = ANNOTATION_FIELDS.get(name);
+  return definition?.sortKey
+    ? { needs: definition.needs([]), key: definition.sortKey }
+    : undefined;
 }
 
 export const annotationFilterRegistry: FilterRegistry<
   QueryAnnotation,
   AnnotationNeeds
 > = {
-  prefix: "item",
+  prefix: itemParent.name,
   equalityField: (name, value) =>
     name === "color" && annotationColorsForName(value).length
       ? "colorName"
       : name,
   field(name) {
-    if (name === "item")
-      return definitionFilter(annotationFieldDefinition(name));
-    if (
-      name === "indexedKey" ||
-      name === "key" ||
-      name === "item.indexedKey" ||
-      name === "attachment.indexedKey"
-    ) {
-      return {
-        filterable: true,
-        needs: {},
-        value: {
-          type: "string",
-          read: (item) => {
-            const key =
-              name === "item.indexedKey"
-                ? item.scan.parent.key
-                : name === "attachment.indexedKey"
-                  ? item.scan.attachmentKey
-                  : item.scan.key;
-            return name === "key" ? key : formatIndexedKey(key, item.groupID);
-          },
-        },
-      };
-    }
-    if (name.startsWith("item.")) {
-      const parent = filterField(name.slice(5));
-      return parent?.filterable
-        ? {
-            ...parent,
-            needs: { item: [parent.needs] },
-            navigation: mapNavigation(parent.navigation, (needs) => ({
-              item: [needs],
-            })),
-            value: {
-              ...parent.value,
-              read: (item) => parent.value.read(item.parent),
-            },
-          }
-        : parent;
-    }
-    return definitionFilter(ANNOTATION_FIELDS.get(name));
+    return (
+      definitionFilter(ANNOTATION_FIELDS.get(name)) ??
+      ANNOTATION_PARENTS.map((parent) => parent.filter(name)).find(
+        (field) => field !== undefined,
+      )
+    );
   },
-  custom(name) {
-    const parent = customFilterValue(name);
-    return {
-      ...parent,
-      needs: { item: [parent.needs] },
-      value: {
-        ...parent.value,
-        read: (item) => parent.value.read(item.parent),
-      },
-    };
-  },
+  custom: itemParent.custom,
 };

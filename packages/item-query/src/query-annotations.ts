@@ -4,6 +4,7 @@ import { Effect } from "effect";
 
 import { formatIndexedKey } from "@zotlit/db";
 import {
+  readParentCandidateSet,
   readAnnotationCandidateSet,
   readAnnotationRowCount,
   readAnnotationScanPage,
@@ -13,6 +14,7 @@ import {
 import { lowerAnnotationCandidate } from "./annotation-candidates";
 import {
   ANNOTATION_FIELDS,
+  ANNOTATION_PARENTS,
   ANNOTATION_SORT_FIELDS,
   annotationFieldDefinition,
   annotationFilterRegistry,
@@ -20,28 +22,24 @@ import {
   DEFAULT_ANNOTATION_FIELDS,
 } from "./annotation-fields";
 import type { QueryAnnotation } from "./annotation-fields";
-import { openAnnotationHydration } from "./annotation-hydration";
-import { fieldRoot } from "./dataset";
+import { ANNOTATION_LOADING } from "./annotation-hydration";
 import type { QueryDataset } from "./dataset";
 import type { DatasetRun } from "./execution";
-import { BUILT_IN_NAMES } from "./fields";
 import { matches as isMatch } from "./filter-evaluate";
 import { planFilter } from "./filter-plan";
+import { parentPathResolver, parentRootName } from "./parent-records";
 import { readPath } from "./projection";
-import {
-  planDatasetCandidates,
-  readDatasetCandidates,
-} from "./relation-candidates";
+import { ATTACHMENTS } from "./query-attachments";
+import { ITEMS } from "./query-items";
+import { openRecordLoader } from "./record-loader";
 import type { ItemQueryRequest } from "./request";
-
-const PARENT = "item.";
 
 /** Annotation Query: one Annotation Row for each non-trashed Annotation. */
 export const ANNOTATIONS: QueryDataset<ItemQueryRequest> = {
   id: "annotations",
   noun: "Annotation",
   family: "Annotation Query",
-  customPrefix: PARENT,
+  customPrefix: `${annotationFilterRegistry.prefix}.`,
   defaultFields: DEFAULT_ANNOTATION_FIELDS,
   defaultSort: [
     { field: "item.dateModified", direction: "desc" },
@@ -49,68 +47,54 @@ export const ANNOTATIONS: QueryDataset<ItemQueryRequest> = {
     { field: "sortIndex", direction: "asc" },
   ],
   tieBreakers: [{ field: "sortIndex", direction: "asc" }],
-  names: [
-    ...ANNOTATION_FIELDS.keys(),
-    "attachment.indexedKey",
-    "attachment.key",
-    "attachment.fileType",
-    "item",
-    ...BUILT_IN_NAMES.map((name) => PARENT + name),
-  ],
-  lowerCandidate: (node, sources) => {
-    const leaf = lowerAnnotationCandidate(node, sources);
-    return leaf
-      ? (options) => readAnnotationCandidateSet({ ...options, leaf })
-      : null;
+  get names() {
+    return [
+      ...ANNOTATION_FIELDS.keys(),
+      ...ANNOTATION_PARENTS.flatMap((parent) => parent.names()),
+    ];
   },
-  candidateRelations: {},
+  lowerCandidate: lowerAnnotationCandidate,
+  readCandidate: readAnnotationCandidateSet,
+  readRowCount: readAnnotationRowCount,
+  candidateParents: ANNOTATION_PARENTS,
+  candidateRelations: {
+    item: {
+      dataset: () => ITEMS,
+      readChildren: ({ leaf, ...page }) =>
+        readParentCandidateSet({ ...page, leaf, relation: "annotation-item" }),
+    },
+    attachment: {
+      dataset: () => ATTACHMENTS,
+      readChildren: ({ leaf, ...page }) =>
+        readParentCandidateSet({
+          ...page,
+          leaf,
+          relation: "annotation-attachment",
+        }),
+    },
+  },
   sortableFields: ANNOTATION_SORT_FIELDS,
   definition: annotationFieldDefinition,
   filterField: (name) => annotationFilterRegistry.field(name),
   planFilter: (text) => planFilter(text, annotationFilterRegistry),
   sortable: annotationSortableField,
-  // A parent field is the two leading segments `item` and its name.
-  resolvePath: (segments) => {
-    const [root, next] = segments;
-    const parent =
-      root === "item" && typeof next === "string"
-        ? annotationFieldDefinition(PARENT + next)
-        : undefined;
-    if (parent) return { field: parent, rest: segments.slice(2) };
-    const field =
-      typeof root === "string" ? annotationFieldDefinition(root) : undefined;
-    return field && { field, rest: segments.slice(1) };
-  },
-  rootName: (name) => {
-    const prefix = name.startsWith(PARENT) ? PARENT : "";
-    return prefix + fieldRoot(name.slice(prefix.length));
-  },
+  resolvePath: parentPathResolver(
+    annotationFieldDefinition,
+    ANNOTATION_PARENTS,
+  ),
+  rootName: (name) => parentRootName(name, ANNOTATION_PARENTS),
   readScanPage: readAnnotationScanPage,
   readUniverseRows: readAnnotationUniverseRows,
-  open: (plan, request, clock) =>
+  open: (plan, request, { clock, sources }) =>
     Effect.gen(function* () {
       const { filter, paths } = plan;
-      const hydration = yield* openAnnotationHydration(plan, request.libraries);
+      const hydration = yield* openRecordLoader(ANNOTATION_LOADING, plan, {
+        libraries: request.libraries,
+        sources,
+      });
       const run: DatasetRun<QueryAnnotation> = {
-        collectionPaths: (library) =>
-          hydration.candidateSources(library).collectionPaths,
         scan: hydration.scan,
         projection: hydration.projection,
-        candidates: (library, tuning) =>
-          Effect.gen(function* () {
-            if (tuning.forceScan) return null;
-            const plan =
-              filter &&
-              planDatasetCandidates(
-                filter.root,
-                hydration.candidateSources(library),
-                { dataset: ANNOTATIONS },
-              );
-            if (!plan) return null;
-            const rowCount = yield* readAnnotationRowCount(library.libraryID);
-            const cap = Math.floor(rowCount * tuning.capRatio);
-            return yield* readDatasetCandidates(plan, library.libraryID, cap);
-          }),
         matches: (item) => !filter || isMatch(filter.root, item, clock),
         project: (item, library) => ({
           indexedKey: formatIndexedKey(item.scan.key, library.groupID),

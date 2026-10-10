@@ -203,6 +203,17 @@ function querySpecs(uniqueKey: string): QuerySpec[] {
       "other",
       `collections.within(${quote(collectionPath(collections.common.name))})`,
     ),
+    {
+      id: "collection-annotation-parent",
+      class: "other",
+      args: {
+        from: "annotations",
+        // The Stress Build keeps the Fixture's annotated Items in Shared key;
+        // its synthetic Items in the Stress Build Collections have no marks.
+        filter: `attachment.item.collections.within(${quote("Shared key")})`,
+        limit: "100",
+      },
+    },
     limited(
       "venue-common",
       "other",
@@ -887,10 +898,16 @@ function findings(rawTiers: RawTier[], tiers: TierMeasurement[]): string[] {
   const notes: string[] = [];
   const allRuns = (raw: RawTier): MeasureReport[] =>
     raw.queries.flatMap(({ runs }) => runs);
-  const longest = (raw: RawTier, reader: string): number =>
+  const statements = (run: MeasureReport, suffix: string) =>
+    Object.entries(run.statements).flatMap(([reader, record]) =>
+      reader.endsWith(suffix) ? [record] : [],
+    );
+  const longest = (raw: RawTier, suffix: string): number =>
     Math.max(
       0,
-      ...allRuns(raw).map((run) => run.statements[reader]?.longestSliceMs ?? 0),
+      ...allRuns(raw).flatMap((run) =>
+        statements(run, suffix).map((record) => record.longestSliceMs),
+      ),
     );
   const each = (text: (raw: RawTier) => string): string =>
     rawTiers
@@ -901,7 +918,7 @@ function findings(rawTiers: RawTier[], tiers: TierMeasurement[]): string[] {
   const scanFailures = tiers.flatMap((tier, index) => {
     const scanning = new Set(
       rawTiers[index]!.queries.filter(({ runs }) =>
-        runs.some((run) => run.statements["scan-page"]),
+        runs.some((run) => statements(run, "scan-page").length > 0),
       ).map(({ spec }) => spec.id),
     );
     return failedEngineChecks(tier, scanning);
@@ -910,7 +927,7 @@ function findings(rawTiers: RawTier[], tiers: TierMeasurement[]): string[] {
     `Queries that read scan pages ${scanFailures.length === 0 ? "meet the execution-slice, renderer responsiveness, and total-time budgets" : `miss the budgets in ${scanFailures.length} checks (see the failed thresholds)`}. Longest worker slice with a scan page: ${each((raw) => `${longest(raw, "scan-page").toFixed(1)} ms`)}.`,
   );
   notes.push(
-    `Candidate statements: the largest one returned ${each((raw) => `${Math.max(0, ...allRuns(raw).map((run) => run.statements["candidate-set"]?.maxRows ?? 0)).toLocaleString("en-US")} IDs, longest slice with a candidate statement ${longest(raw, "candidate-set").toFixed(1)} ms`)}. Renderer responsiveness is evaluated separately.`,
+    `Candidate statements: the largest one returned ${each((raw) => `${Math.max(0, ...allRuns(raw).flatMap((run) => statements(run, "candidate-set").map((record) => record.maxRows))).toLocaleString("en-US")} IDs, longest slice with a candidate statement ${longest(raw, "candidate-set").toFixed(1)} ms`)}. Renderer responsiveness is evaluated separately.`,
   );
   notes.push(
     `JSON encoding runs inside query execution, one projection chunk at a time. Its largest cumulative synchronous encoding time: ${each((raw) => `${Math.max(0, ...raw.queries.filter(({ spec }) => spec.class !== "all").flatMap(({ runs }) => runs.map((run) => run.answerMs ?? 0))).toFixed(1)} ms for \`limit 100\`, ${Math.max(0, ...raw.queries.filter(({ spec }) => spec.class === "all").flatMap(({ runs }) => runs.map((run) => run.answerMs ?? 0))).toFixed(1)} ms for \`limit=all\``)}. File I/O and scheduler waits are included in total query time.`,

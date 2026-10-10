@@ -8,10 +8,11 @@ import type { QueryAnnotation } from "./annotation-fields";
 import type { AttachmentNeeds } from "./attachment-hydration";
 import { compareStrings } from "./collation";
 import type { SortableField } from "./dataset";
-import { fieldDefinition, filterField, customFilterValue } from "./fields";
+import { BUILT_IN_NAMES } from "./fields";
 import type {
   FieldDefinition as ItemFieldDefinition,
   QueryItem,
+  FieldNeeds,
   ValueShape,
 } from "./fields";
 import { timestamp } from "./filter-dates";
@@ -19,7 +20,8 @@ import type { FilterRegistry } from "./filter-plan";
 import type { FilterValue } from "./filter-values";
 import { keyField, indexedKeyField } from "./key-fields";
 import { libraryField } from "./library-field";
-import { definitionFilter, mapNavigation, recordField } from "./record-field";
+import { liftParentRecord, parentSortFields } from "./parent-records";
+import { definitionFilter, recordField } from "./record-field";
 import { annotationVocabulary } from "./record-vocabularies";
 import { itemVocabulary } from "./record-vocabularies";
 import type { ProjectionValue } from "./request";
@@ -163,41 +165,31 @@ export const ATTACHMENT_FIELDS = new Map<string, FieldDefinition>([
   ),
 ]);
 
+const itemParent = liftParentRecord({
+  name: "item",
+  vocabulary: () => itemVocabulary(),
+  read: (row: QueryAttachment) => row.parent,
+  identity: (row: QueryAttachment) => ({
+    scan: row.scan.parent,
+    groupID: row.groupID,
+  }),
+  needs: (item: readonly FieldNeeds[]): AttachmentNeeds => ({ item }),
+  candidates: "all",
+  sortable: ["indexedKey", "key", "title", "date", "dateModified"],
+  listed: () => BUILT_IN_NAMES,
+  syntax: "fields",
+});
+export const ATTACHMENT_PARENTS = [itemParent];
+
 export function attachmentFieldDefinition(
   name: string,
 ): FieldDefinition | undefined {
-  if (name === "item")
-    return recordField({
-      vocabulary: () => itemVocabulary(),
-      list: false,
-      rows: (item) => [item.parent],
-      needs: (items) => ({ item: items }),
-    });
-  if (!name.startsWith("item.")) return ATTACHMENT_FIELDS.get(name);
-  const parent = fieldDefinition(name.slice(5));
-  return parent
-    ? {
-        ...parent,
-        needs: (rest) => ({ item: [parent.needs(rest)] }),
-        filterNeeds: { item: [parent.filterNeeds ?? parent.needs([])] },
-        navigation: mapNavigation(parent.navigation, (needs) => ({
-          item: [needs],
-        })),
-        project: parent.project
-          ? (item, rest) => parent.project!(item.parent, rest)
-          : undefined,
-        read: (item) => parent.read(item.parent),
-        sortKey: parent.sortKey
-          ? (item, clock) => parent.sortKey!(item.parent, clock)
-          : undefined,
-        filter: parent.filter
-          ? {
-              ...parent.filter,
-              read: (item) => parent.filter!.read(item.parent),
-            }
-          : undefined,
-      }
-    : undefined;
+  return (
+    ATTACHMENT_FIELDS.get(name) ??
+    ATTACHMENT_PARENTS.map((parent) => parent.definition(name)).find(
+      (field) => field !== undefined,
+    )
+  );
 }
 
 for (const name of ["dateAdded", "dateModified"] as const) {
@@ -225,69 +217,45 @@ for (const name of ["title", "contentType", "fileType", "linkMode"]) {
 /**
  * The Sortable Fields of Attachment Query, including its parent scalar paths.
  */
-export const ATTACHMENT_SORT_FIELDS: readonly string[] = [
-  "indexedKey",
-  "key",
-  "item.indexedKey",
-  "item.key",
-  "dateAdded",
-  "dateModified",
-  "title",
-  "contentType",
-  "fileType",
-  "linkMode",
-  "item.title",
-  "item.date",
-  "item.dateModified",
-];
+export const ATTACHMENT_SORT_FIELDS = parentSortFields(
+  [
+    "indexedKey",
+    "key",
+    "dateAdded",
+    "dateModified",
+    "title",
+    "contentType",
+    "fileType",
+    "linkMode",
+  ],
+  ATTACHMENT_PARENTS,
+);
 
 export function attachmentSortableField(
   name: string,
 ): SortableField<QueryAttachment, AttachmentNeeds> | undefined {
-  if (!ATTACHMENT_SORT_FIELDS.includes(name)) return undefined;
-  const definition = attachmentFieldDefinition(name)!;
-  return { needs: definition.needs([]), key: definition.sortKey! };
+  const parent = ATTACHMENT_PARENTS.map((parent) => parent.sortable(name)).find(
+    (field) => field !== undefined,
+  );
+  if (parent) return parent;
+  const definition = ATTACHMENT_FIELDS.get(name);
+  return definition?.sortKey
+    ? { needs: definition.needs([]), key: definition.sortKey }
+    : undefined;
 }
 
 export const attachmentFilterRegistry: FilterRegistry<
   QueryAttachment,
   AttachmentNeeds
 > = {
-  prefix: "item",
+  prefix: itemParent.name,
   field(name) {
-    if (name === "item")
-      return definitionFilter(attachmentFieldDefinition(name));
-    if (name === "item.indexedKey") {
-      const definition = attachmentFieldDefinition(name)!;
-      return { filterable: true, value: definition.filter!, needs: {} };
-    }
-    if (name.startsWith("item.")) {
-      const parent = filterField(name.slice(5));
-      return parent?.filterable
-        ? {
-            ...parent,
-            needs: { item: [parent.needs] },
-            navigation: mapNavigation(parent.navigation, (needs) => ({
-              item: [needs],
-            })),
-            value: {
-              ...parent.value,
-              read: (item) => parent.value.read(item.parent),
-            },
-          }
-        : parent;
-    }
-    return definitionFilter(ATTACHMENT_FIELDS.get(name));
+    return (
+      definitionFilter(ATTACHMENT_FIELDS.get(name)) ??
+      ATTACHMENT_PARENTS.map((parent) => parent.filter(name)).find(
+        (field) => field !== undefined,
+      )
+    );
   },
-  custom(name) {
-    const parent = customFilterValue(name);
-    return {
-      ...parent,
-      needs: { item: [parent.needs] },
-      value: {
-        ...parent.value,
-        read: (item) => parent.value.read(item.parent),
-      },
-    };
-  },
+  custom: itemParent.custom,
 };

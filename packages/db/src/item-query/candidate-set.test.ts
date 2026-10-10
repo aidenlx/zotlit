@@ -71,13 +71,13 @@ describe("readCandidateSet", () => {
   it("gives the Items of the Target Library that carry a Tag, trashed Items included", () => {
     using scenario = openScenarioDatabase();
     expect(
-      candidates(scenario)(personal, { kind: "tag", name: "to-read" }),
+      candidates(scenario)(personal, { kind: "tag", value: "to-read" }),
     ).toEqual(["ART2FULL", "BK2MNTH2", "TRS2SHED"]);
     expect(
-      candidates(scenario)(group, { kind: "tag", name: "to-read" }),
+      candidates(scenario)(group, { kind: "tag", value: "to-read" }),
     ).toEqual(["ART2FULL"]);
     expect(
-      candidates(scenario)(personal, { kind: "tag", name: "group-only" }),
+      candidates(scenario)(personal, { kind: "tag", value: "group-only" }),
     ).toEqual([]);
   });
 
@@ -88,7 +88,7 @@ describe("readCandidateSet", () => {
         scenario,
         readCandidateSet({
           libraryID: library.libraryID,
-          leaf: { kind: "tag", name: "to-read" },
+          leaf: { kind: "tag", value: "to-read" },
           limit: 100,
         }),
       );
@@ -99,13 +99,13 @@ describe("readCandidateSet", () => {
   it("matches a Tag by its exact name", () => {
     using scenario = openScenarioDatabase();
     expect(
-      candidates(scenario)(personal, { kind: "tag", name: "To-Read" }),
+      candidates(scenario)(personal, { kind: "tag", value: "To-Read" }),
     ).toEqual(["ART2FULL"]);
     expect(
-      candidates(scenario)(personal, { kind: "tag", name: "TO-READ" }),
+      candidates(scenario)(personal, { kind: "tag", value: "TO-READ" }),
     ).toEqual([]);
     expect(
-      candidates(scenario)(personal, { kind: "tag", name: "to-rea_" }),
+      candidates(scenario)(personal, { kind: "tag", value: "to-rea_" }),
     ).toEqual([]);
   });
 
@@ -158,10 +158,10 @@ describe("readCandidateSet", () => {
   it("reads at most `limit` Item IDs", () => {
     using scenario = openScenarioDatabase();
     expect(
-      candidates(scenario)(personal, { kind: "tag", name: "to-read" }, 2),
+      candidates(scenario)(personal, { kind: "tag", value: "to-read" }, 2),
     ).toHaveLength(2);
     expect(
-      candidates(scenario)(personal, { kind: "tag", name: "to-read" }, 3),
+      candidates(scenario)(personal, { kind: "tag", value: "to-read" }, 3),
     ).toEqual(["ART2FULL", "BK2MNTH2", "TRS2SHED"]);
   });
 });

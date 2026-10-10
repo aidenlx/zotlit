@@ -2,8 +2,8 @@ import { Context } from "effect";
 import type { Fiber } from "effect";
 import { MixedScheduler } from "effect/Scheduler";
 
-/** The time one slice of a query may run before the fiber pauses. */
-export const SLICE_BUDGET_MS = 8;
+/** Leave time within the 16 ms slice limit for the next synchronous statement. */
+export const SLICE_BUDGET_MS = 4;
 
 /**
  * Hands control back to the host and calls `resume` in a later task. The

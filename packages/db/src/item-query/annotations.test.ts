@@ -8,6 +8,7 @@ import {
   readAnnotationScanPage,
   readAnnotationRowCount,
   readAnnotationCandidateSet,
+  readParentCandidateSet,
   readAnnotationUniverseRows,
   readAnnotationHydrateChunk,
   ItemQueryStatementObserver,
@@ -133,25 +134,29 @@ it("counts the live Annotation universe and applies a candidate limit after the 
     1,
   );
   const candidates = run(
-    readAnnotationCandidateSet({
+    readParentCandidateSet({
+      relation: "annotation-item",
+      budget: 3000,
       libraryID: 1,
-      leaf: { kind: "parent", leaf: { kind: "key", key: "ART2FULL" } },
+      leaf: { kind: "key", key: "ART2FULL" },
       limit: 4,
     }),
   );
-  expect(candidates).toHaveLength(4);
+  expect(candidates.itemIDs).toHaveLength(4);
   const live = run(
-    readAnnotationUniverseRows({ libraryID: 1, itemIDs: candidates }),
+    readAnnotationUniverseRows({ libraryID: 1, itemIDs: candidates.itemIDs }),
   );
   expect(live.every((row) => row.parent.key === "ART2FULL")).toBe(true);
   expect(
     run(
-      readAnnotationCandidateSet({
+      readParentCandidateSet({
+        relation: "annotation-item",
+        budget: 3000,
         libraryID: SCENARIO_LIBRARIES.group.libraryID,
-        leaf: { kind: "parent", leaf: { kind: "key", key: "ART2FULL" } },
+        leaf: { kind: "key", key: "ART2FULL" },
         limit: 4,
       }),
-    ),
+    ).itemIDs,
   ).toHaveLength(1);
 });
 
@@ -171,33 +176,34 @@ it.each([
           client: scenario.db,
         }),
       );
-    const leaf = { kind: "keys" as const, target, keys };
-    const ids = run(
-      readAnnotationCandidateSet({ libraryID: 1, leaf, limit: 100 }),
-    );
+    const read = (
+      libraryID: number,
+      limit: number,
+      selected: readonly string[] = keys,
+    ) => {
+      const leaf = { kind: "keys" as const, keys: selected };
+      return target === "self"
+        ? readAnnotationCandidateSet({ libraryID, limit, leaf })
+        : Effect.map(
+            readParentCandidateSet({
+              libraryID,
+              limit,
+              budget: 3000,
+              leaf,
+              relation:
+                target === "attachment"
+                  ? "annotation-attachment"
+                  : "annotation-item",
+            }),
+            (page) => page.itemIDs,
+          );
+    };
+    const ids = run(read(1, 100));
     expect(
       run(readAnnotationUniverseRows({ libraryID: 1, itemIDs: ids })),
     ).toHaveLength(count);
-    expect(
-      run(
-        readAnnotationCandidateSet({
-          libraryID: SCENARIO_LIBRARIES.group.libraryID,
-          leaf,
-          limit: 100,
-        }),
-      ),
-    ).toHaveLength(1);
-    expect(
-      run(readAnnotationCandidateSet({ libraryID: 1, leaf, limit: 1 })),
-    ).toHaveLength(1);
-    expect(
-      run(
-        readAnnotationCandidateSet({
-          libraryID: 1,
-          leaf: { ...leaf, keys: [] },
-          limit: 100,
-        }),
-      ),
-    ).toEqual([]);
+    expect(run(read(SCENARIO_LIBRARIES.group.libraryID, 100))).toHaveLength(1);
+    expect(run(read(1, 1))).toHaveLength(1);
+    expect(run(read(1, 100, []))).toEqual([]);
   },
 );

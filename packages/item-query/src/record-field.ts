@@ -1,6 +1,7 @@
 import type { FieldDefinition, FilterField, ValueShape } from "./fields";
 import type { FilterRegistry } from "./filter-plan";
 import type { FilterValue } from "./filter-values";
+import type { ParentRecord } from "./parent-records";
 import { readSegments } from "./projection";
 import type { PathSegment } from "./projection-path";
 import type { ProjectionValue } from "./request";
@@ -9,6 +10,7 @@ import type { ProjectionValue } from "./request";
 export interface RecordVocabulary<Row, Needs> {
   readonly id: "items" | "attachments" | "annotations";
   readonly summary: readonly string[];
+  readonly parents?: readonly ParentRecord<Row, Needs>[];
   /** Representative fields listed below this record in the Query Schema. */
   readonly projectionFields: readonly string[];
   readonly field: (name: string) => FieldDefinition<Row, Needs> | undefined;

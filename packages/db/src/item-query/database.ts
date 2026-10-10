@@ -63,6 +63,8 @@ export type ItemQueryReaderError =
 
 /** The reader a statement belongs to. */
 export type ItemQueryReader =
+  | "parent-leaf-candidate-set"
+  | "parent-child-candidate-set"
   | "relation-candidate-set"
   | "item-attachments"
   | "item-annotations"
