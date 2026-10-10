@@ -72,8 +72,8 @@ vi.mock("obsidian", async (importOriginal) => {
 
 import { Keymap, editorInfoField } from "obsidian";
 
+import { lookupObservation } from "@/services/citation-index/__fixtures__/citation-lookup";
 import { heldCitekeyOf } from "@/services/citation-index/lookup";
-import { LookupObservation } from "@/services/citation-index/observation";
 import { occurrences, rendered } from "@/services/citation-text/__fixtures__";
 import { citationKey } from "@/services/citation-text/present";
 import type { DocumentCitations } from "@/services/citation-text/present";
@@ -176,7 +176,7 @@ function harness(doc: string, overrides: Partial<Settings> = {}) {
               : null;
           },
           observeLookup: (changed) =>
-            new LookupObservation(
+            lookupObservation(
               async ({ indexedKeys = [] }) =>
                 lookupAnswer(
                   {},

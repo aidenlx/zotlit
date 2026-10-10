@@ -30,19 +30,19 @@ function insertDeps(
   renderCitation: unknown,
   resolved: CitekeyResolution = { kind: "unique", item: UNIQUE_ITEM },
   resolution: CitationKeyResolution = "fresh",
-): Pick<CitationSuggestDeps, "noteFeature" | "citationIndex"> {
+): Pick<CitationSuggestDeps, "noteFeature" | "citationLookup"> {
   return {
     noteFeature: {
       renderCitation,
     } as CitationSuggestDeps["noteFeature"],
-    citationIndex: {
-      readLookup: async ({ citekeys }) => {
+    citationLookup: {
+      read: async ({ citekeys }) => {
         if (resolution === "failed") throw new Error("Citation lookup failed");
         return lookupAnswer(
           Object.fromEntries((citekeys ?? []).map((key) => [key, resolved])),
         );
       },
-      resolution,
+      status: resolution ?? "pending",
     },
   };
 }

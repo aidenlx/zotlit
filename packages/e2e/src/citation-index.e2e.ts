@@ -83,7 +83,7 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
     ).toBe(true);
     await obEval(
       vaultId,
-      "(async()=>{const s=app.plugins.plugins.zotlit.services;await s.itemLookup.search('',{limit:1});await s.citationIndex.readLookup({});return true;})()",
+      "(async()=>{const s=app.plugins.plugins.zotlit.services;await s.itemLookup.search('',{limit:1});await s.citationLookup.read({});return true;})()",
       120_000,
     );
   }, 600_000);
@@ -101,14 +101,14 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
           await obEval(
             vaultId,
             `(async()=>{
-              const s=app.plugins.plugins.zotlit.services,index=s.citationIndex;
+              const s=app.plugins.plugins.zotlit.services,lookup=s.citationLookup;
               const gaps=[],readMs=[];
               const key=${JSON.stringify(item.key)},expected=${JSON.stringify(item.citationKey)};
               const request={citekeys:[expected],indexedKeys:[key]};
-              const held=await index.readLookup(request);
+              const held=await lookup.read(request);
               const first=Promise.withResolvers();
               let projection;
-              projection=index.observeLookup(()=>{if(projection?.current)first.resolve();});
+              projection=lookup.observe(()=>{if(projection?.current)first.resolve();});
               using disposeProjection=projection;
               projection.set(request);
               await first.promise;
@@ -122,7 +122,7 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
               const refresh=(async()=>{
                 await s.zoteroReads.refresh();
                 await changed.promise;
-                return await index.readLookup(request);
+                return await lookup.read(request);
               })().finally(()=>{refreshing=false;});
               // Every search crosses the interactive worker and hydrates its hit from SQLite.
               const reads=(async()=>{

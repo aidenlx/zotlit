@@ -676,8 +676,12 @@ The Managed Binary that cuts Chinese text into search words for the Item Index: 
 _Avoid_: jieba plugin, cm-chs-patch (a separate third-party plugin ZotLit no longer reads), tokenizer (the whole word-splitting step, of which the segmenter is one part)
 
 **Citekey Resolution Snapshot**:
-The Citation Index's point-in-time answer for mapping Citation Keys to Items. Citation Key discovery covers the available Libraries in Library Scope; reverse lookup by exact Indexed Key covers every local Library.
+The point-in-time mapping of Citation Keys to Items that Citation Lookup answers from. Citation Key discovery covers the available Libraries in Library Scope; reverse lookup by exact Indexed Key covers every local Library.
 _Avoid_: citekey cache (implies incremental invalidation, not a wholesale rebuild)
+
+**Citation Lookup**:
+Answers for requested Citation Keys and Indexed Keys from one published resolution revision. A document or command takes a one-shot read; a view holds an observation for as long as it is open, keeping its earlier answer while a new answer is read.
+_Avoid_: CitationReads (the retired owner), citation resolver (omits held observations), lookup cache (names retention, not the answers)
 
 **Ambiguous Citation Key**:
 A Citation Key that names more than one Item in Library Scope, whether the candidates are in one Library or several Libraries. Distinct from `duplicate-citation-key`, a document-scoped collision among cited works.

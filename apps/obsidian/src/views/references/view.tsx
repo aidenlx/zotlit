@@ -11,6 +11,7 @@ import { BaseNotice } from "@/lib/notice";
 import { readAmbiguousCandidates } from "@/services/citation-index/ambiguity";
 import type { AmbiguousCandidatesOf } from "@/services/citation-index/ambiguity";
 import { heldResolution } from "@/services/citation-index/lookup";
+import type { CitationLookup } from "@/services/citation-index/lookup-service";
 import {
   citationsEqual,
   documentCitationErrorsEqual,
@@ -71,10 +72,8 @@ const logger = getLogger(["views", "references"]);
 export interface ReferencesViewDeps {
   app: App;
   db: Pick<ZoteroReadsService, "state" | "ready" | "acquireRead" | "on">;
-  citationIndex: Pick<
-    CitationIndex,
-    "getDocumentCitationSet" | "resolution" | "on"
-  >;
+  citationLookup: Pick<CitationLookup, "status" | "on">;
+  citationIndex: Pick<CitationIndex, "getDocumentCitationSet" | "on">;
   /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
   libraryScope: Pick<LibraryScopeService, "current">;
   /** Opens the Literature Note a citekey names, creating it first when it has none. */
@@ -226,16 +225,18 @@ export class ReferencesView extends ItemView {
     // leaves the Citations identical — every key still unresolved — skips the
     // reload, and the pending label must still give way to the verdict.
     this.register(
-      citationIndex.on("resolution-changed", () => {
+      this.#deps.citationLookup.on("changed", () => {
         this.#publishResolution();
         this.#rescan();
       }),
     );
-    // A rebuild that settles with the maps unchanged emits no
-    // resolution-changed — only cited-by-invalidated announces the state
-    // flip — so this is what returns the pending label to a verdict.
+    // An equal-revision recovery must retry a failed scan of the active note.
     this.register(
-      citationIndex.on("cited-by-invalidated", () => this.#publishResolution()),
+      this.#deps.citationLookup.on("status-changed", () => {
+        this.#publishResolution();
+        if (this.#scanFailed && this.#deps.citationLookup.status === "fresh")
+          this.#rescan();
+      }),
     );
     this.register(citationIndex.on("membership-changed", () => this.#rescan()));
     this.registerEvent(app.metadataCache.on("changed", () => this.#rescan()));
@@ -283,6 +284,8 @@ export class ReferencesView extends ItemView {
     this.#actions = null;
   }
 
+  #scanFailed = false;
+
   /**
    * Ask the index what the active document cites, and rebuild the list when the
    * answer differs. The query is answered from the index, so a document the
@@ -298,6 +301,7 @@ export class ReferencesView extends ItemView {
   #rescan(): void {
     if (!this.#deps.profile.loaded) return;
     const scan = ++this.#scan;
+    const startedStatus = this.#deps.citationLookup.status;
     this.#scanController?.abort();
     const controller = new AbortController();
     this.#scanController = controller;
@@ -316,6 +320,8 @@ export class ReferencesView extends ItemView {
     this.#refreshCopy();
     void this.#readCitationSet(controller.signal)
       .then(({ file, citations, errors, lookup }) => {
+        if (scan !== this.#scan) return;
+        this.#scanFailed = false;
         const path = file?.path ?? null;
         // The note's own presentation properties decide what its list is rendered
         // under, so a frontmatter edit that leaves the Citations untouched still
@@ -346,8 +352,16 @@ export class ReferencesView extends ItemView {
         this.#reload({ invalidate: restyled });
       })
       .catch((error: unknown) => {
-        if (!controller.signal.aborted)
+        if (!controller.signal.aborted) {
+          this.#scanFailed = true;
           logger.warn("References citation lookup failed", { error });
+          // A recovery can settle before this rejected scan's continuation.
+          if (
+            startedStatus !== "fresh" &&
+            this.#deps.citationLookup.status === "fresh"
+          )
+            this.#rescan();
+        }
       });
   }
 
@@ -452,7 +466,10 @@ export class ReferencesView extends ItemView {
         formattingFailed: this.#formattingFailed,
         documentPresentationError: this.#documentPresentationError,
         dbReady: this.#deps.db.state === "ready",
-        citekeyResolution: this.#deps.citationIndex.resolution,
+        citekeyResolution:
+          this.#deps.citationLookup.status === "pending"
+            ? null
+            : this.#deps.citationLookup.status,
         copy: this.#trackCopy(entries),
       });
       void this.#render(citations, sources);
@@ -461,7 +478,10 @@ export class ReferencesView extends ItemView {
 
   /** Republish the resolution state alone, for a settle the list survives. */
   #publishResolution(): void {
-    const citekeyResolution = this.#deps.citationIndex.resolution;
+    const citekeyResolution =
+      this.#deps.citationLookup.status === "pending"
+        ? null
+        : this.#deps.citationLookup.status;
     if (this.#store.getState().citekeyResolution !== citekeyResolution) {
       this.#store.setState({ citekeyResolution });
     }

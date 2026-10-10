@@ -40,8 +40,8 @@ export interface WikilinkEditorDeps {
   /** What a hovered citation shows. */
   citationPopover: CitationPopover;
   settings: SettingsService;
-  citationIndex: {
-    observeLookup(changed: () => void): CitationLookupObservation;
+  citationLookup: {
+    observe(changed: () => void): CitationLookupObservation;
   };
 }
 
@@ -69,7 +69,7 @@ export class WikilinkEditor extends Service<void> {
   readonly #citekeyEditor;
   readonly #citationPopover;
   readonly #settings;
-  readonly #citationIndex;
+  readonly #citationLookup;
   readonly #extension: Extension;
 
   /** Registered once; emptied on disposal, which retires the treatment. */
@@ -89,11 +89,11 @@ export class WikilinkEditor extends Service<void> {
     this.#citekeyEditor = deps.citekeyEditor;
     this.#citationPopover = deps.citationPopover;
     this.#settings = deps.settings;
-    this.#citationIndex = deps.citationIndex;
+    this.#citationLookup = deps.citationLookup;
     this.#extension = wikilinkEditorExtension({
       literatureNote: (linkpath, sourcePath, lookup) =>
         this.#literatureNote(linkpath, sourcePath, lookup),
-      observeLookup: (changed) => this.#citationIndex.observeLookup(changed),
+      observeLookup: (changed) => this.#citationLookup.observe(changed),
       enabled: () => this.#display.enabled,
       citationText: (path) => this.#citationText.peek(path),
       open: (citekey, pane) => {

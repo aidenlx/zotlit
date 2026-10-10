@@ -86,8 +86,8 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
     const source = `@${context.query}`;
     const key = scanPandocCitations(source)[0]?.items[0];
     if (key?.start === 0 && source.slice(key.end).trimStart().startsWith(",")) {
-      const answer = await this.#deps.citationIndex
-        .readLookup(
+      const answer = await this.#deps.citationLookup
+        .read(
           {
             citekeys: [key.citationKey],
           },
@@ -199,7 +199,7 @@ export type CitationInsertOutcome =
  * propagate.
  */
 export async function resolveCitationInsert(
-  deps: Pick<CitationSuggestDeps, "noteFeature" | "citationIndex">,
+  deps: Pick<CitationSuggestDeps, "noteFeature" | "citationLookup">,
   hit: SearchHit,
   variant: CitationVariant,
 ): Promise<CitationInsertOutcome> {
@@ -214,13 +214,13 @@ export async function resolveCitationInsert(
 
   // A pending snapshot has no verdict yet and would read an ambiguous key as
   // missing. A held snapshot keeps its verdict while it revalidates or fails.
-  if (deps.citationIndex.resolution === null) {
+  if (deps.citationLookup.status === "pending") {
     return { kind: "notice", message: m.notice_citekey_not_ready() };
   }
 
   let lookup;
   try {
-    lookup = await deps.citationIndex.readLookup({ citekeys: [citationKey] });
+    lookup = await deps.citationLookup.read({ citekeys: [citationKey] });
   } catch {
     return { kind: "notice", message: m.notice_citekey_not_ready() };
   }

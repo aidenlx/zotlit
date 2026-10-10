@@ -101,8 +101,8 @@ export interface CitekeyReadingDeps {
   /** The formatted citations every surface of one document shares. */
   citationText: Pick<CitationText, "on" | "peek">;
   /** What a literal citekey names, which is what tells missing from Ambiguous. */
-  citationIndex: {
-    observeLookup(changed: () => void): CitationLookupObservation;
+  citationLookup: {
+    observe(changed: () => void): CitationLookupObservation;
   };
   /** The open-or-create flow every citekey surface shares, and what hover previews. */
   citekeyEditor: Pick<CitekeyEditor, "openCitekey" | "hoverNotePath">;
@@ -141,7 +141,7 @@ export class CitekeyReading extends Service<void> {
   readonly #app;
   readonly #plugin;
   readonly #citationText;
-  readonly #citationIndex;
+  readonly #citationLookup;
   readonly #citekeyEditor;
   readonly #citationPopover;
   readonly #settings;
@@ -161,7 +161,7 @@ export class CitekeyReading extends Service<void> {
     this.#app = deps.app;
     this.#plugin = deps.plugin;
     this.#citationText = deps.citationText;
-    this.#citationIndex = deps.citationIndex;
+    this.#citationLookup = deps.citationLookup;
     this.#citekeyEditor = deps.citekeyEditor;
     this.#citationPopover = deps.citationPopover;
     this.#settings = deps.settings;
@@ -250,7 +250,7 @@ export class CitekeyReading extends Service<void> {
     if (!file) return;
 
     let show = (): void => undefined;
-    const lookup = this.#citationIndex.observeLookup(() => show());
+    const lookup = this.#citationLookup.observe(() => show());
     const child = new MarkdownRenderChild(el);
     child.onunload = () => lookup[Symbol.dispose]();
     ctx.addChild(child);

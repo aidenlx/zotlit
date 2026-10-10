@@ -2,6 +2,7 @@ import type { Extension } from "@codemirror/state";
 import { MarkdownView } from "obsidian";
 import { describe, expect, it } from "vitest";
 
+import { CitationLookupStub } from "@/services/citation-index/__fixtures__/citation-lookup";
 import { NoteIndexStub } from "@/services/note-index/test-stub";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
@@ -24,7 +25,7 @@ interface Harness extends AsyncDisposable {
   settings: SettingsStub;
   noteIndex: NoteIndexStub;
   citationText: CitationTextStub;
-  citationIndex: CitationIndexStub;
+  citationLookup: LookupStub;
   registered: Extension[];
   reconfigures: () => number;
   dispatched: string[];
@@ -34,7 +35,7 @@ async function harness(overrides: Partial<Settings> = {}): Promise<Harness> {
   const settings = new SettingsStub(overrides);
   const noteIndex = new NoteIndexStub();
   const citationText = new CitationTextStub();
-  const citationIndex = new CitationIndexStub();
+  const citationLookup = new LookupStub();
   const dispatched: string[] = [];
   let registered: Extension[] = [];
   let reconfigures = 0;
@@ -52,7 +53,7 @@ async function harness(overrides: Partial<Settings> = {}): Promise<Harness> {
     },
     noteIndex,
     citationText,
-    citationIndex,
+    citationLookup,
     settings,
   } as never);
   await service.ready;
@@ -61,7 +62,7 @@ async function harness(overrides: Partial<Settings> = {}): Promise<Harness> {
     settings,
     noteIndex,
     citationText,
-    citationIndex,
+    citationLookup,
     registered,
     reconfigures: () => reconfigures,
     dispatched,
@@ -124,9 +125,9 @@ describe("WikilinkEditor redraw", () => {
 
   it("leaves lookup redraws to each open editor view", async () => {
     await using harnessed = await harness();
-    const { citationIndex, dispatched } = harnessed;
+    const { citationLookup, dispatched } = harnessed;
 
-    citationIndex.emit();
+    citationLookup.emit();
     expect(dispatched).toEqual([]);
   });
 
@@ -188,20 +189,12 @@ class CitationTextStub {
   }
 }
 
-class CitationIndexStub {
-  readonly #listeners = new Set<() => void>();
-
-  observeLookup(cb: () => void) {
-    this.#listeners.add(cb);
-    return {
-      current: null,
-      set: () => undefined,
-      [Symbol.dispose]: () => this.#listeners.delete(cb),
-    };
+class LookupStub extends CitationLookupStub {
+  constructor() {
+    super(() => null);
   }
-
   emit(): void {
-    for (const cb of this.#listeners) cb();
+    this.refresh();
   }
 }
 

@@ -305,19 +305,22 @@ beforeEach(async () => {
           return () => undefined;
         },
       },
+      citationLookup: {
+        get status() {
+          return citekeyResolution ?? "pending";
+        },
+        on: (event: string, callback: () => void) => {
+          if (event === "status-changed") onCitedByInvalidated = callback;
+          return () => undefined;
+        },
+      },
       citationIndex: {
         getDocumentCitationSet: () => {
           const deferred = Promise.withResolvers<DocumentCitationSet>();
           scans.push(deferred);
           return deferred.promise;
         },
-        get resolution() {
-          return citekeyResolution;
-        },
-        on: (event: string, callback: () => void) => {
-          if (event === "cited-by-invalidated") onCitedByInvalidated = callback;
-          return () => undefined;
-        },
+        on: () => () => undefined,
       },
       citationText: {
         peek: (): Held<DocumentCitations> | null =>
@@ -534,6 +537,27 @@ describe("ReferencesView citekey resolution", () => {
     ],
     errors: [],
   };
+
+  it("retries the active document after an equal-revision recovery", async () => {
+    await finishRender();
+    await followOtherNote();
+    citekeyResolution = "failed";
+    await act(async () => {
+      scans.at(-1)!.reject(new Error("lookup unavailable"));
+      await Promise.resolve();
+    });
+    const failedScan = scans.at(-1);
+    citekeyResolution = "fresh";
+    await act(() => onCitedByInvalidated!());
+    expect(scans.at(-1)).not.toBe(failedScan);
+    await act(async () => {
+      scans.at(-1)!.resolve({ ...citationSet, citations: [] });
+    });
+    await vi.waitFor(() =>
+      expect(view!.contentEl.textContent).not.toContain("Field notes"),
+    );
+    expect(view!.contentEl.textContent).not.toContain("Field notes");
+  });
 
   it("returns the pending label to a verdict when a rebuild settles unchanged", async () => {
     await act(() => onActiveLeafChange!());

@@ -6,8 +6,6 @@ import { describe, expect, it, vi } from "vitest";
 import * as m from "@/lib/i18n/generated/messages";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
-import { CitationLookupAnswer } from "@/services/citation-index/lookup";
-import type { CitationLookupObservation } from "@/services/citation-index/service";
 import { occurrences, rendered } from "@/services/citation-text/__fixtures__";
 import { citationKey } from "@/services/citation-text/present";
 import type { FormattedOccurrence } from "@/services/citation-text/present";
@@ -842,9 +840,7 @@ describe("WikilinkReading refresh", () => {
       formatted: before,
     });
     const root = await harnessed.renderSection(CITE);
-    expect(harnessed.citationIndex.activeObservations).toBe(1);
     harnessed.unloadSections();
-    expect(harnessed.citationIndex.activeObservations).toBe(0);
 
     harnessed.citationText.hold(after);
     harnessed.citationText.emit("invalidated");
@@ -946,11 +942,6 @@ class CitationTextStub {
 class CitationIndexStub {
   readonly #changed;
   #citekeys: Record<string, string>;
-  readonly #observations = new Set<{
-    changed: () => void;
-    indexedKeys: readonly string[];
-    current: CitationLookupObservation["current"];
-  }>();
 
   constructor(
     citekeys: Record<string, string>,
@@ -960,59 +951,13 @@ class CitationIndexStub {
     this.#citekeys = citekeys;
   }
 
-  get activeObservations(): number {
-    return this.#observations.size;
-  }
-
   /** Replaces the snapshot's answers, the way a rebuild does. */
   resolve(citekeys: Record<string, string>): void {
     this.#citekeys = citekeys;
   }
 
-  observeLookup(changed: () => void) {
-    const state = {
-      changed,
-      indexedKeys: [] as readonly string[],
-      current: null as CitationLookupObservation["current"],
-    };
-    this.#observations.add(state);
-    return {
-      get current() {
-        return state.current;
-      },
-      set: ({ indexedKeys = [] }: { indexedKeys?: readonly string[] }) => {
-        state.indexedKeys = indexedKeys;
-        state.current = this.#held(indexedKeys);
-      },
-      [Symbol.dispose]: () => this.#observations.delete(state),
-    };
-  }
-
   emit(): void {
     this.#changed(this.#citekeys);
-    for (const state of this.#observations) {
-      state.current = this.#held(state.indexedKeys);
-      state.changed();
-    }
-  }
-
-  #held(indexedKeys: readonly string[]) {
-    const requested = new Set(indexedKeys);
-    const answer = new CitationLookupAnswer({
-      revision: JSON.stringify(this.#citekeys),
-      citekeys: new Map(),
-      indexedKeys: new Map(
-        [...requested].map((indexedKey) => [
-          indexedKey,
-          this.#citekeys[indexedKey] ?? null,
-        ]),
-      ),
-    });
-    return {
-      value: answer,
-      status: "fresh" as const,
-      settled: Promise.resolve(answer),
-    };
   }
 }
 

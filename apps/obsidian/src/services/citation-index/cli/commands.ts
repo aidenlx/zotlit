@@ -97,7 +97,11 @@ interface CitationsCliDeps {
     readLookup: (
       request: CitationLookupRequest,
     ) => Promise<CitationLookupAnswer>;
-    getCitedBy: (indexedKey: string) => Promise<CitedBySnapshot>;
+    citationKeys: () => readonly string[];
+    getCitedBy: (
+      indexedKey: string,
+      lookup: CitationLookupAnswer,
+    ) => Promise<CitedBySnapshot>;
     /** How well citation keys resolve now; a references answer reports it, the
      *  cited-by snapshot carries its own. */
     resolution: () => CitationKeyResolution;
@@ -113,6 +117,7 @@ interface CitationsCliDeps {
      *  fact every cited-by answer carries. */
     citedByOmittedSyntaxes: (
       indexedKey: string,
+      lookup: CitationLookupAnswer,
     ) => Promise<readonly CitationSyntax[]>;
   };
   lookupItem: (indexedKey: string) => Promise<ItemLookup>;
@@ -177,55 +182,47 @@ export function createCitationsCliHandlers(
         return invalidRequest(CITED_BY_COMMAND, request);
       }
 
-      for (;;) {
-        const admission = await admit(CITED_BY_COMMAND, params, request.value);
-        if (admission.kind === "rejected") return admission.response;
-        const { echoed } = admission;
+      const admission = await admit(CITED_BY_COMMAND, params, request.value);
+      if (admission.kind === "rejected") return admission.response;
+      const { echoed } = admission;
 
-        try {
-          const syntaxes = deps.index.syntaxes();
-          const lookup = await deps.index.readLookup(
-            "citekey" in request.value
-              ? { citekeys: [request.value.citekey] }
-              : { indexedKeys: [request.value.key] },
-          );
-          const selected = await resolveItem(deps, request.value, lookup);
-          if (selected.kind === "fault") {
-            if ((await deps.index.readLookup({})).revision !== lookup.revision)
-              continue;
-            return envelope(CITED_BY_COMMAND, {
-              ok: false,
-              ...echoed,
-              diagnostic: selected.diagnostic,
-            });
-          }
-
-          const { item } = selected;
-          const snapshot = await deps.index.getCitedBy(item.key);
-          const groups = reportGroups(snapshot.groups);
-          const omittedSyntaxes = await deps.index.citedByOmittedSyntaxes(
-            item.key,
-          );
-          const currentSyntaxes = deps.index.syntaxes();
-          if (
-            (await deps.index.readLookup({})).revision !== lookup.revision ||
-            currentSyntaxes.citekey !== syntaxes.citekey ||
-            currentSyntaxes.wikilink !== syntaxes.wikilink
-          )
-            continue;
+      try {
+        const syntaxes = deps.index.syntaxes();
+        const lookup = await deps.index.readLookup({
+          citekeys: [
+            ...deps.index.citationKeys(),
+            ...("citekey" in request.value ? [request.value.citekey] : []),
+          ],
+          indexedKeys: "key" in request.value ? [request.value.key] : [],
+        });
+        const selected = await resolveItem(deps, request.value, lookup);
+        if (selected.kind === "fault") {
           return envelope(CITED_BY_COMMAND, {
-            ok: true,
+            ok: false,
             ...echoed,
-            item,
-            groups,
-            omittedSyntaxes,
-            coverage: snapshot.coverage,
-            resolution: snapshot.resolution,
-            syntaxes,
+            diagnostic: selected.diagnostic,
           });
-        } catch {
-          return unavailable(CITED_BY_COMMAND, echoed);
         }
+
+        const { item } = selected;
+        const snapshot = await deps.index.getCitedBy(item.key, lookup);
+        const groups = reportGroups(snapshot.groups);
+        const omittedSyntaxes = await deps.index.citedByOmittedSyntaxes(
+          item.key,
+          lookup,
+        );
+        return envelope(CITED_BY_COMMAND, {
+          ok: true,
+          ...echoed,
+          item,
+          groups,
+          omittedSyntaxes,
+          coverage: snapshot.coverage,
+          resolution: snapshot.resolution,
+          syntaxes,
+        });
+      } catch {
+        return unavailable(CITED_BY_COMMAND, echoed);
       }
     },
 

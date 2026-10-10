@@ -3038,7 +3038,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(
         await obEvalUntil(
           vaultId,
-          `app.plugins.plugins.zotlit.services.citationIndex.readLookup({indexedKeys:[${JSON.stringify(targetItem.key)}]}).then(function(answer){return String(answer.citekeyOf(${JSON.stringify(targetItem.key)}));})`,
+          `app.plugins.plugins.zotlit.services.citationLookup.read({indexedKeys:[${JSON.stringify(targetItem.key)}]}).then(function(answer){return String(answer.citekeyOf(${JSON.stringify(targetItem.key)}));})`,
           { expected: targetItem.citationKey! },
         ),
       ).toBe(true);
@@ -3052,8 +3052,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(
         await obEvalUntil(
           vaultId,
-          "String(app.plugins.plugins.zotlit.services.citationReads.state)",
-          { expected: "degraded", tries: 160 },
+          "String(app.plugins.plugins.zotlit.services.citationLookup.status)",
+          { expected: "failed", tries: 160 },
         ),
       ).toBe(true);
       expect(
@@ -3084,14 +3084,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(
         await obEvalUntil(
           vaultId,
-          "String(app.plugins.plugins.zotlit.services.citationReads.state)",
-          { expected: "ready" },
+          "String(app.plugins.plugins.zotlit.services.citationLookup.status)",
+          { expected: "fresh" },
         ),
       ).toBe(true);
       expect(
         await obEvalUntil(
           vaultId,
-          `app.plugins.plugins.zotlit.services.citationIndex.whenResolved().then(function(){return app.plugins.plugins.zotlit.services.citationIndex.readLookup({indexedKeys:[${JSON.stringify(targetItem.key)}]}).then(function(answer){return String(answer.citekeyOf(${JSON.stringify(targetItem.key)}));});})`,
+          `app.plugins.plugins.zotlit.services.citationLookup.whenResolved().then(function(){return app.plugins.plugins.zotlit.services.citationLookup.read({indexedKeys:[${JSON.stringify(targetItem.key)}]}).then(function(answer){return String(answer.citekeyOf(${JSON.stringify(targetItem.key)}));});})`,
           { expected: targetItem.citationKey! },
         ),
       ).toBe(true);

@@ -352,6 +352,7 @@ export async function openCitationVault({
       app: harness.app,
       db: harness.db,
       citationIndex: harness.index,
+      citationLookup: harness.lookup,
       noteIndex: harness.noteIndex,
       bibliographyRender: cache,
       queryClient: harness.queryClient,
@@ -366,6 +367,7 @@ export async function openCitationVault({
       profile: profileReader(() => settings.current, harness.metadataCache),
       db: harness.db,
       citationIndex: harness.index,
+      citationLookup: harness.lookup,
       citationText,
       citekeyEditor: { openCitekey: () => Promise.resolve() },
       pandocEngine: {
@@ -397,6 +399,7 @@ export async function openCitationVault({
     } as unknown as App,
     db: harness.db,
     citationIndex: harness.index,
+    citationLookup: harness.lookup,
     citationText,
     bibliographyRender: cache,
     libraryScope: harness.libraryScope,
@@ -596,7 +599,7 @@ function exportAdapter({
       },
     } as unknown as App,
     db: harness.db,
-    citationIndex: harness.index,
+    citationLookup: harness.lookup,
     pandocEngine: {
       getStatus: () => ({ kind: "installed", version: "test", binary: { directory: "pandoc-engine", name: "pandoc.wasm" } }),
       getEngine: () => Promise.resolve(engine),

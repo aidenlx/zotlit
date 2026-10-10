@@ -197,6 +197,12 @@ async function makeHarness({
     },
   );
   const service = new CitationText({
+    citationLookup: {
+      on: (_event: string, cb: () => void) => {
+        listeners.set("index:resolution-changed", cb);
+        return () => listeners.delete("index:resolution-changed");
+      },
+    },
     app: {
       vault: {
         cachedRead: () => Promise.resolve(body),
@@ -337,7 +343,7 @@ describe("CitationText", () => {
     );
     h.citekeys.error = new Error("snapshot database locked");
     db.settle();
-    await h.index.whenResolved();
+    await h.lookup.whenResolved();
     await expect(h.index.getDocumentCitationSet(h.draft)).rejects.toThrow(
       "snapshot database locked",
     );
@@ -350,6 +356,7 @@ describe("CitationText", () => {
         app: h.app,
         db: items,
         citationIndex: h.index,
+        citationLookup: h.lookup,
         noteIndex: h.noteIndex,
         profile: profileReader(),
         queryClient: h.queryClient,

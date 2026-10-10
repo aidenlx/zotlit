@@ -19,7 +19,7 @@ import { AnnotationRepository } from "./annotation-repository/service";
 import { AttachmentImportService } from "./attachment-import/service";
 import { AttachmentResolver } from "./attachment-resolver/service";
 import { createChineseSegmenterService } from "./chinese-segmenter/service";
-import { CitationReads } from "./citation-index/reads";
+import { CitationLookup } from "./citation-index/lookup-service";
 import { CitationIndex } from "./citation-index/service";
 import { CitationPopover } from "./citation-popover/service";
 import { CitationText } from "./citation-text/service";
@@ -509,29 +509,29 @@ export function buildServices(
         }),
     })
     .use({
-      citationReads: ({ settings, zoteroPref, zoteroReads }) =>
-        new CitationReads({
+      citationLookup: ({
+        settings,
+        zoteroPref,
+        zoteroReads,
+        libraryScope,
+        queryClient,
+      }) =>
+        new CitationLookup({
           settings,
           zoteroPref,
           source: zoteroReads,
           client: citationWorkerClient,
+          libraryScope,
+          queryClient,
         }),
     })
     .use({
-      citationIndex: ({
-        noteIndex,
-        settings,
-        citationReads,
-        libraryScope,
-        queryClient,
-      }) =>
+      citationIndex: ({ noteIndex, settings, citationLookup }) =>
         new CitationIndex({
           app: plugin.app,
           noteIndex,
           settings,
-          reads: citationReads,
-          libraryScope,
-          queryClient,
+          lookup: citationLookup,
         }),
     })
     .use({
@@ -560,6 +560,7 @@ export function buildServices(
         profile,
         zoteroReads,
         citationIndex,
+        citationLookup,
         noteIndex,
         bibliographyRender,
         queryClient,
@@ -569,6 +570,7 @@ export function buildServices(
           app: plugin.app,
           db: zoteroReads,
           citationIndex,
+          citationLookup,
           noteIndex,
           bibliographyRender,
           queryClient,
@@ -579,6 +581,7 @@ export function buildServices(
         profile,
         zoteroReads,
         citationIndex,
+        citationLookup,
         citationText,
         bibliographyRender,
         libraryScope,
@@ -588,6 +591,7 @@ export function buildServices(
           app: plugin.app,
           db: zoteroReads,
           citationIndex,
+          citationLookup,
           citationText,
           bibliographyRender,
           libraryScope,
@@ -604,7 +608,7 @@ export function buildServices(
         citationText,
         citationPopover,
         settings,
-        citationIndex,
+        citationLookup,
         libraryScope,
       }) =>
         new CitekeyEditor({
@@ -619,7 +623,7 @@ export function buildServices(
           citationText,
           citationPopover,
           settings,
-          citationIndex,
+          citationLookup,
           libraryScope,
         }),
     })
@@ -630,7 +634,7 @@ export function buildServices(
         citekeyEditor,
         citationPopover,
         settings,
-        citationIndex,
+        citationLookup,
       }) =>
         new WikilinkEditor({
           app: plugin.app,
@@ -640,7 +644,7 @@ export function buildServices(
           citekeyEditor,
           citationPopover,
           settings,
-          citationIndex,
+          citationLookup,
         }),
     })
     .use({
@@ -650,7 +654,6 @@ export function buildServices(
         citekeyEditor,
         citationPopover,
         settings,
-        citationIndex,
       }) =>
         new WikilinkReading({
           app: plugin.app,
@@ -660,13 +663,12 @@ export function buildServices(
           citekeyEditor,
           citationPopover,
           settings,
-          citationIndex,
         }),
     })
     .use({
       citekeyReading: ({
         citationText,
-        citationIndex,
+        citationLookup,
         citationPopover,
         citekeyEditor,
         settings,
@@ -675,7 +677,7 @@ export function buildServices(
           app: plugin.app,
           plugin,
           citationText,
-          citationIndex,
+          citationLookup,
           citationPopover,
           citekeyEditor,
           settings,
@@ -686,6 +688,7 @@ export function buildServices(
         zoteroReads,
         libraryScope,
         citationIndex,
+        citationLookup,
         noteIndex,
         citekeyEditor,
         citationPopover,
@@ -696,6 +699,7 @@ export function buildServices(
           reads: zoteroReads,
           libraryScope,
           citationIndex,
+          citationLookup,
           noteIndex,
           citekeyEditor,
           citationPopover,

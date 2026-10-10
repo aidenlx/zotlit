@@ -4,7 +4,7 @@
 // to render again when something outside their documents changed which links
 // it touches.
 
-import { MarkdownRenderChild, MarkdownView, setTooltip } from "obsidian";
+import { MarkdownView, setTooltip } from "obsidian";
 import type { App, MarkdownPostProcessorContext, Plugin } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -23,10 +23,7 @@ import {
 } from "@/lib/wikilink-citation";
 import type { RunMember } from "@/lib/wikilink-citation";
 import { heldCitekeyOf } from "@/services/citation-index/lookup";
-import type {
-  CitationLookupAnswer,
-  CitationLookupObservation,
-} from "@/services/citation-index/service";
+import type { CitationLookupAnswer } from "@/services/citation-index/service";
 import type { CitationPopover } from "@/services/citation-popover/service";
 import {
   citationContent,
@@ -68,9 +65,6 @@ export interface WikilinkReadingDeps {
   /** What a hovered citation shows. */
   citationPopover: CitationPopover;
   settings: SettingsService;
-  citationIndex: {
-    observeLookup(changed: () => void): CitationLookupObservation;
-  };
 }
 
 /**
@@ -107,7 +101,6 @@ export class WikilinkReading extends Service<void> {
   readonly #citekeyEditor;
   readonly #citationPopover;
   readonly #settings;
-  readonly #citationIndex;
 
   /** The source and display settings that decide what a link displays. */
   readonly #display = new WikilinkDisplaySettings();
@@ -127,7 +120,6 @@ export class WikilinkReading extends Service<void> {
     this.#citekeyEditor = deps.citekeyEditor;
     this.#citationPopover = deps.citationPopover;
     this.#settings = deps.settings;
-    this.#citationIndex = deps.citationIndex;
     this.ready = this.#load();
   }
 
@@ -178,12 +170,7 @@ export class WikilinkReading extends Service<void> {
     const rendered: SectionRuns = [];
     /** Retires the gesture listeners the previous rewrite attached. */
     let gestures = new AbortController();
-    let show = (): void => undefined;
-    const lookup = this.#citationIndex.observeLookup(() => show());
-    const child = new MarkdownRenderChild(el);
-    child.onunload = () => lookup[Symbol.dispose]();
-    ctx.addChild(child);
-    show = () => {
+    const show = () => {
       if (this.#retired) return;
       gestures.abort();
       gestures = new AbortController();
@@ -193,7 +180,6 @@ export class WikilinkReading extends Service<void> {
       });
     };
     this.#sections.hold(el, ctx, show);
-    lookup.set({ indexedKeys: this.#sectionIndexedKeys(el, ctx) });
     show();
   }
 
@@ -224,25 +210,6 @@ export class WikilinkReading extends Service<void> {
         enabled: this.#display.enabled,
       }),
     );
-  }
-
-  /** The complete reverse-lookup request of the section's native links. */
-  #sectionIndexedKeys(
-    el: HTMLElement,
-    ctx: MarkdownPostProcessorContext,
-  ): readonly string[] {
-    const indexedKeys = new Set<string>();
-    for (const anchor of el.querySelectorAll<HTMLAnchorElement>(
-      "a.internal-link",
-    )) {
-      const linkpath = anchor.dataset["href"]?.split("#", 1)[0];
-      if (!linkpath) continue;
-      const note = resolveLiteratureNote(linkpath, ctx.sourcePath, {
-        app: this.#app,
-      });
-      if (note) indexedKeys.add(note.indexedKey);
-    }
-    return [...indexedKeys];
   }
 
   /**

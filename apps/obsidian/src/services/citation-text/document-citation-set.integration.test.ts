@@ -441,7 +441,7 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
 
 /** One CitationText over a harness, formatting through the real engine. */
 function openText(
-  { app, index, noteIndex, queryClient }: CitationIndexHarness,
+  { app, index, lookup, noteIndex, queryClient }: CitationIndexHarness,
   engine: CitationEngine,
   styleXml: string,
 ): CitationText {
@@ -450,6 +450,7 @@ function openText(
     app,
     db: items,
     citationIndex: index,
+    citationLookup: lookup,
     noteIndex,
     bibliographyRender: {
       vaultPresentation: { styleId: null, locale: null },

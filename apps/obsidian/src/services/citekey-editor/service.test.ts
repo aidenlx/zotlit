@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
+import { CitationLookupStub } from "@/services/citation-index/__fixtures__/citation-lookup";
 import { lookupForWorks } from "@/services/citation-index/__fixtures__/lookup";
 import { CitationLookupAnswer } from "@/services/citation-index/lookup";
 import type { CitekeyResolution } from "@/services/citation-index/service";
@@ -71,7 +72,7 @@ describe("CitekeyEditor Profile creation", () => {
       file: { path: "Books/Paper.md" },
     }));
     const openLinkText = vi.fn(async () => {});
-    const citationIndex = new CitationIndexStub({
+    const citationLookup = new LookupStub({
       paper2024: { kind: "unique", item },
     });
     const service = new CitekeyEditor({
@@ -88,7 +89,7 @@ describe("CitekeyEditor Profile creation", () => {
       },
       settings: new SettingsStub(),
       noteIndex: new NoteIndexStub(),
-      citationIndex,
+      citationLookup,
       citationText: new CitationTextStub(),
       zoteroPref: { dataDir: null },
       db: reads([{ itemID: item.itemID, key: item.key }]),
@@ -116,7 +117,7 @@ describe("CitekeyEditor Profile creation", () => {
         ],
       },
     } as never);
-    return { service, create, openLinkText, citationIndex };
+    return { service, create, openLinkText, citationLookup };
   }
 
   it("waits for the Profile choice before creating and preserves the requested pane", async () => {
@@ -183,7 +184,7 @@ describe("CitekeyEditor Profile creation", () => {
       { ...item, summary: "A study of citations", library: null },
       true,
     );
-    expect(h.citationIndex.citekeysResolved).toEqual([]);
+    expect(h.citationLookup.citekeysResolved).toEqual([]);
     expect(chooseLiteratureNoteProfile).toHaveBeenCalledOnce();
     expect(h.openLinkText).toHaveBeenCalledWith("Books/Paper.md", "", true, {
       active: true,
@@ -214,7 +215,7 @@ describe("CitekeyEditor settings lifecycle", () => {
       },
       noteIndex: new NoteIndexStub(),
       citationText: new CitationTextStub(),
-      citationIndex: new CitationIndexStub(),
+      citationLookup: new LookupStub(),
       settings,
     } as never);
     await service.ready;
@@ -257,7 +258,7 @@ describe("CitekeyEditor settings lifecycle", () => {
       },
       noteIndex: new NoteIndexStub(),
       citationText: new CitationTextStub(),
-      citationIndex: new CitationIndexStub(),
+      citationLookup: new LookupStub(),
       settings,
     } as never);
     await service.ready;
@@ -283,7 +284,7 @@ describe("CitekeyEditor hover source", () => {
       },
       noteIndex: new NoteIndexStub(),
       citationText: new CitationTextStub(),
-      citationIndex: new CitationIndexStub(),
+      citationLookup: new LookupStub(),
       settings: new SettingsStub(),
     } as never);
     await service.ready;
@@ -298,7 +299,7 @@ describe("CitekeyEditor hover source", () => {
 
 describe("CitekeyEditor lookup ownership", () => {
   it("leaves lookup redraws to each open editor view", async () => {
-    const citationIndex = new CitationIndexStub();
+    const citationLookup = new LookupStub();
     let requests = 0;
     await using service = new CitekeyEditor({
       app: {
@@ -316,12 +317,12 @@ describe("CitekeyEditor lookup ownership", () => {
       },
       noteIndex: new NoteIndexStub(),
       citationText: new CitationTextStub(),
-      citationIndex,
+      citationLookup,
       settings: new SettingsStub(),
     } as never);
     await service.ready;
 
-    citationIndex.emit();
+    citationLookup.emit();
     expect(requests).toBe(0);
   });
 });
@@ -353,7 +354,7 @@ describe("CitekeyEditor citation text broadcast", () => {
       },
       noteIndex: new NoteIndexStub(),
       citationText,
-      citationIndex: new CitationIndexStub(),
+      citationLookup: new LookupStub(),
       settings: new SettingsStub(),
     } as never);
     await service.ready;
@@ -421,7 +422,7 @@ describe("CitekeyEditor ambiguous citation keys", () => {
     opened: { path: string; pane: unknown }[] = [],
     works: readonly SeededWork[] = [],
   ) {
-    const citationIndex = new CitationIndexStub({ doe2024: AMBIGUOUS });
+    const citationLookup = new LookupStub({ doe2024: AMBIGUOUS });
     const ambiguities: AmbiguousCitekey[] = [];
     const service = new CitekeyEditor({
       app: {
@@ -440,7 +441,7 @@ describe("CitekeyEditor ambiguous citation keys", () => {
       },
       noteIndex: new NoteIndexStub(notes),
       citationText: new CitationTextStub(),
-      citationIndex,
+      citationLookup,
       libraryScope: {
         current: {
           mode: "all",
@@ -454,7 +455,7 @@ describe("CitekeyEditor ambiguous citation keys", () => {
     } as never);
     await service.ready;
     service.on("citekey-ambiguous", (ambiguous) => ambiguities.push(ambiguous));
-    return { service, citationIndex, ambiguities };
+    return { service, citationLookup, ambiguities };
   }
 
   it("reports every candidate with its summary, Library name, and bare Zotero item key", async () => {
@@ -505,17 +506,17 @@ describe("CitekeyEditor ambiguous citation keys", () => {
 
   it("opens a chosen candidate by its exact Indexed Key without resolving the key again", async () => {
     const opened: { path: string; pane: unknown }[] = [];
-    const { service, citationIndex, ambiguities } = await openEditor(
+    const { service, citationLookup, ambiguities } = await openEditor(
       { REBB3456g7: [{ path: "Roe 2025.md" }] },
       opened,
     );
     await service.openCitekey("doe2024", "tab");
-    citationIndex.citekeysResolved.length = 0;
+    citationLookup.citekeysResolved.length = 0;
 
     await service.openCandidate(ambiguities[0]!.candidates[1]!, "tab");
 
     expect(opened).toEqual([{ path: "Roe 2025.md", pane: "tab" }]);
-    expect(citationIndex.citekeysResolved).toEqual([]);
+    expect(citationLookup.citekeysResolved).toEqual([]);
     await service[Symbol.asyncDispose]();
   });
 });
@@ -548,31 +549,22 @@ class CitationTextStub {
   }
 }
 
-class CitationIndexStub {
+class LookupStub extends CitationLookupStub {
   readonly #resolutions: Record<string, CitekeyResolution>;
-  readonly #listeners = new Set<() => void>();
   readonly citekeysResolved: string[] = [];
 
   constructor(resolutions: Record<string, CitekeyResolution> = {}) {
+    super(({ citekeys = [] }) => this.#answer(citekeys));
     this.#resolutions = resolutions;
   }
 
-  readLookup({ citekeys = [] }: { citekeys?: readonly string[] }) {
+  read({ citekeys = [] }: { citekeys?: readonly string[] }) {
     this.citekeysResolved.push(...citekeys);
     return Promise.resolve(this.#answer(citekeys));
   }
 
-  observeLookup(cb: () => void) {
-    this.#listeners.add(cb);
-    return {
-      current: null,
-      set: () => undefined,
-      [Symbol.dispose]: () => this.#listeners.delete(cb),
-    };
-  }
-
   emit(): void {
-    for (const cb of this.#listeners) cb();
+    this.refresh();
   }
 
   #answer(citekeys: readonly string[]) {

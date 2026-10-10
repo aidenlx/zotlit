@@ -42,7 +42,7 @@ vi.mock("obsidian", async (importOriginal) => {
 import { editorInfoField, Keymap } from "obsidian";
 
 import { yieldToMain } from "@/lib/yield-to-main";
-import { LookupObservation } from "@/services/citation-index/observation";
+import { lookupObservation } from "@/services/citation-index/__fixtures__/citation-lookup";
 import type {
   CitekeyResolution,
   SnapshotItem,
@@ -117,7 +117,7 @@ function lookupHandlers(
   return {
     ...rest,
     observeLookup: (changed) =>
-      new LookupObservation(
+      lookupObservation(
         async ({ citekeys = [] }) =>
           lookupAnswer(
             Object.fromEntries(
@@ -191,7 +191,7 @@ describe("citekeyEditorExtension theme hooks", () => {
           hoverNotePath: () => null,
           workspace: { trigger: () => {} },
           observeLookup: (changed) =>
-            new LookupObservation(
+            lookupObservation(
               async ({ citekeys = [] }) => {
                 requests.push([...citekeys]);
                 return citekeys.includes("first")
