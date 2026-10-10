@@ -111,14 +111,36 @@ const citekeysByLibraryQuery = defineQuery<{ libraryID: number }>()(
     }),
 );
 
+const citekeyLastItemIDQuery = defineQuery<{ libraryID: number }>()(
+  (db, { placeholder }) =>
+    db.query.items.findMany({
+      where: { libraryID: placeholder("libraryID") },
+      columns: { itemID: true },
+      orderBy: { itemID: "desc" },
+      limit: 1,
+    }),
+);
+
+/** Read once per snapshot stream to bound its pages to the Library's last Item. */
+export function getCitekeyLastItemID(
+  db: NodeDatabaseClient,
+  libraryID: number,
+): number {
+  return citekeyLastItemIDQuery.prepared(db).all({ libraryID })[0]?.itemID ?? 0;
+}
+
 const citekeyPageQuery = defineQuery<{
   libraryID: number;
   afterItemID: number;
+  beforeItemID: number;
   limit: number;
 }>()((db, { placeholder }) =>
   db.query.itemData.findMany({
     where: {
-      itemID: { gt: placeholder("afterItemID") },
+      itemID: {
+        gt: placeholder("afterItemID"),
+        lte: placeholder("beforeItemID"),
+      },
       fieldsCombined: { fieldName: CITEKEY_FIELD },
       item: {
         libraryID: placeholder("libraryID"),
@@ -154,12 +176,18 @@ export function getCitekeysByLibrary(
 
 /**
  * One page of {@link getCitekeysByLibrary}, in `itemID` order: at most
- * `limit` rows after `afterItemID`. Pass `next` to read the following page;
+ * `limit` rows after `afterItemID`, through `beforeItemID` inclusive.
+ * Pass `next` to read the following page;
  * `next` is `null` once the library has no more rows.
  */
 export function getCitekeyPage(
   db: NodeDatabaseClient,
-  page: { libraryID: number; afterItemID: number; limit: number },
+  page: {
+    libraryID: number;
+    afterItemID: number;
+    beforeItemID: number;
+    limit: number;
+  },
 ): { citekeys: LibraryCitekey[]; next: number | null } {
   const rows = citekeyPageQuery.prepared(db).all(page);
   return {
