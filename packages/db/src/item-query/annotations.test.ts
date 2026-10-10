@@ -8,6 +8,7 @@ import {
   readAnnotationScanPage,
   readAnnotationRowCount,
   readAnnotationCandidateSet,
+  readAnnotationAttachmentCandidateSet,
   readAnnotationUniverseRows,
   readAnnotationHydrateChunk,
   ItemQueryStatementObserver,
@@ -171,33 +172,26 @@ it.each([
           client: scenario.db,
         }),
       );
-    const leaf = { kind: "keys" as const, target, keys };
-    const ids = run(
-      readAnnotationCandidateSet({ libraryID: 1, leaf, limit: 100 }),
-    );
+    const read = (
+      libraryID: number,
+      limit: number,
+      selected: readonly string[] = keys,
+    ) => {
+      const leaf = { kind: "keys" as const, keys: selected };
+      return target === "attachment"
+        ? readAnnotationAttachmentCandidateSet({ libraryID, limit, leaf })
+        : readAnnotationCandidateSet({
+            libraryID,
+            limit,
+            leaf: target === "item" ? { kind: "parent", leaf } : leaf,
+          });
+    };
+    const ids = run(read(1, 100));
     expect(
       run(readAnnotationUniverseRows({ libraryID: 1, itemIDs: ids })),
     ).toHaveLength(count);
-    expect(
-      run(
-        readAnnotationCandidateSet({
-          libraryID: SCENARIO_LIBRARIES.group.libraryID,
-          leaf,
-          limit: 100,
-        }),
-      ),
-    ).toHaveLength(1);
-    expect(
-      run(readAnnotationCandidateSet({ libraryID: 1, leaf, limit: 1 })),
-    ).toHaveLength(1);
-    expect(
-      run(
-        readAnnotationCandidateSet({
-          libraryID: 1,
-          leaf: { ...leaf, keys: [] },
-          limit: 100,
-        }),
-      ),
-    ).toEqual([]);
+    expect(run(read(SCENARIO_LIBRARIES.group.libraryID, 100))).toHaveLength(1);
+    expect(run(read(1, 1))).toHaveLength(1);
+    expect(run(read(1, 100, []))).toEqual([]);
   },
 );

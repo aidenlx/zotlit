@@ -45,6 +45,7 @@ const parent = liftParentRecord({
   vocabulary: () => vocabulary,
   read: (row: { parent: Row }) => row.parent,
   needs: (item: readonly Needs[]) => ({ item }),
+  candidates: ["title"],
   sortable: ["title"],
   listed: ["title"],
   syntax: "fields",
@@ -102,6 +103,9 @@ it("lowers only leaves prefixed by this Parent Record", () => {
   const own = planFilter('title == "Research"', vocabulary.filter);
   if (!("root" in own)) throw new Error("Expected a Filter Expression");
   expect(parent.candidateLeaf(own.root)).toBeNull();
+  const scanOnly = planFilter('item.secret == "Draft"', registry);
+  if (!("root" in scanOnly)) throw new Error("Expected a Filter Expression");
+  expect(parent.candidateLeaf(scanOnly.root)).toBeNull();
   expect(parent.indexedKeyTarget("item.indexedKey")).toBe("item");
   expect(parent.indexedKeyTarget("indexedKey")).toBeUndefined();
   expect(parent.indexedKeyTarget("item.key")).toBeUndefined();
@@ -133,6 +137,7 @@ it("reaches attachment.item.title through the parent's own declaration", () => {
     needs: (attachment: readonly { item: readonly Needs[] }[]) => ({
       attachment,
     }),
+    candidates: "all",
     sortable: [],
     listed: ["item"],
     syntax: "record",
@@ -212,6 +217,7 @@ it("uses the listed fields for a record while retaining unlisted projection path
     vocabulary: () => vocabulary,
     read: (row: { parent: Row }) => row.parent,
     needs: (item: readonly Needs[]) => ({ item }),
+    candidates: "all",
     sortable: [],
     listed: ["title"],
     syntax: "record",
@@ -235,6 +241,7 @@ it("reads and sorts a Parent Record identity from the scan row", () => {
     read: (row: { key: string; parent?: Row }) => row.parent,
     identity: (row) => ({ scan: { key: row.key }, groupID: 42 }),
     needs: (item: readonly Needs[]) => ({ item }),
+    candidates: "all",
     sortable: ["indexedKey", "key"],
     listed: [],
     syntax: "record",

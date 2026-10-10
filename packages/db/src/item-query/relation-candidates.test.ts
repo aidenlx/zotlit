@@ -7,6 +7,9 @@ import {
   ItemQueryDatabase,
   ItemQueryStatementObserver,
   readRelationCandidateSet,
+  readAnnotationCandidateSet,
+  readAttachmentCandidateSet,
+  readAnnotationAttachmentCandidateSet,
   readUniverseRows,
   readAttachmentUniverseRows,
 } from ".";
@@ -69,7 +72,7 @@ it.each([
   "annotation-item",
   "annotation-attachment",
 ] as const)(
-  "pages the reversed parent relation %s within its Target Library",
+  "caps the composed parent selection %s within its Target Library",
   (relation) => {
     using scenario = openScenarioDatabase({ annotations: true });
     const run = <A, E>(effect: Effect.Effect<A, E, ItemQueryDatabase>) =>
@@ -78,32 +81,36 @@ it.each([
           client: scenario.db,
         }),
       );
-    const itemIDs = (
-      scenario.sqlite
-        .prepare("select itemID from items where key = ? and libraryID = 1")
-        .all(
-          relation === "annotation-attachment" ? "PDF2LIVE" : "ART2FULL",
-        ) as { itemID: number }[]
-    ).map((row) => row.itemID);
-    const all = run(
-      readRelationCandidateSet({ relation, libraryID: 1, itemIDs }),
-    );
+    const read = (page: {
+      libraryID: number;
+      limit?: number;
+      afterItemID?: number;
+    }) => {
+      const options = { limit: 500, ...page };
+      if (relation === "annotation-attachment")
+        return readAnnotationAttachmentCandidateSet({
+          ...options,
+          leaf: { kind: "keys", keys: ["PDF2LIVE"] },
+        });
+      const leaf = {
+        kind: "parent" as const,
+        leaf: { kind: "keys" as const, keys: ["ART2FULL"] },
+      };
+      return relation === "attachment-item"
+        ? readAttachmentCandidateSet({ ...options, leaf })
+        : readAnnotationCandidateSet({ ...options, leaf });
+    };
+    const all = run(read({ libraryID: 1 }));
     expect(all.length).toBeGreaterThan(1);
-    const first = run(
-      readRelationCandidateSet({ relation, libraryID: 1, itemIDs, limit: 1 }),
-    );
+    const first = run(read({ libraryID: 1, limit: 1 }));
     const rest = run(
-      readRelationCandidateSet({
-        relation,
+      read({
         libraryID: 1,
-        itemIDs,
         afterItemID: first[0],
         limit: 500,
       }),
     );
     expect([...first, ...rest]).toEqual(all);
-    expect(
-      run(readRelationCandidateSet({ relation, libraryID: -1, itemIDs })),
-    ).toEqual([]);
+    expect(run(read({ libraryID: -1 }))).toEqual([]);
   },
 );

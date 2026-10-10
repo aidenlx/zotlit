@@ -1,9 +1,5 @@
 import { Effect } from "effect";
 
-import type {
-  ItemQueryDatabase,
-  ItemQueryReaderError,
-} from "@zotlit/db/item-query";
 import { SCAN_PAGE_SIZE } from "@zotlit/db/item-query";
 
 import { planCandidates, readCandidatePlan } from "./candidate-plan";
@@ -62,11 +58,15 @@ function planRelatedCandidates(
       for (const parent of dataset.candidateParents) {
         const expression = parent.candidateLeaf(node);
         const relation = dataset.candidateRelations[parent.name];
-        if (expression && relation) {
-          return planRelatedCandidates(expression, sources, {
-            dataset: relation.dataset(),
-            parents: [relation.readParents, ...parents],
-          });
+        if (expression && relation && "readChildren" in relation) {
+          const leaf = relation.dataset().lowerCandidate(expression, sources);
+          if (leaf === null) return null;
+          const read: CandidateReader = (page) =>
+            relation.readChildren({ ...page, leaf });
+          return {
+            kind: "leaf",
+            leaf: parents.length ? parentCandidates(read, parents) : read,
+          };
         }
       }
       const leaf = dataset.lowerCandidate(node, sources);
@@ -115,35 +115,6 @@ function parentCandidates(
 ): CandidateReader {
   return Effect.fnUntraced(function* ({ libraryID, limit }) {
     const candidates = new Set<number>();
-    const takeParents = Effect.fnUntraced(function* (
-      ids: number[],
-      depth: number,
-    ): Effect.fn.Return<void, ItemQueryReaderError, ItemQueryDatabase> {
-      const readParents = parents[depth];
-      if (!readParents) {
-        for (const id of ids) {
-          candidates.add(id);
-          if (candidates.size >= limit) return;
-        }
-        return;
-      }
-      let afterItemID = 0;
-      while (ids.length) {
-        const size =
-          depth === parents.length - 1
-            ? Math.min(SCAN_PAGE_SIZE, limit - candidates.size)
-            : SCAN_PAGE_SIZE;
-        const page = yield* readParents({
-          libraryID,
-          itemIDs: ids,
-          afterItemID,
-          limit: size,
-        });
-        yield* takeParents(page, depth + 1);
-        if (candidates.size >= limit || page.length < size) return;
-        afterItemID = page.at(-1)!;
-      }
-    });
     let afterItemID = 0;
     while (true) {
       const elements = yield* read({
@@ -151,8 +122,14 @@ function parentCandidates(
         limit: SCAN_PAGE_SIZE,
         afterItemID,
       });
-      yield* takeParents(elements, 0);
-      if (candidates.size >= limit) return [...candidates];
+      let ids = elements;
+      for (const readParents of parents) {
+        ids = yield* readParents({ libraryID, itemIDs: ids });
+      }
+      for (const id of ids) {
+        candidates.add(id);
+        if (candidates.size >= limit) return [...candidates];
+      }
       if (elements.length < SCAN_PAGE_SIZE) return [...candidates];
       afterItemID = elements.at(-1)!;
     }
@@ -185,7 +162,9 @@ function relationSelection(node: Node, dataset: CandidateDataset) {
   )
     return null;
   const relation = dataset.candidateRelations[filtered.subject.name];
-  return relation ? { relation, expression: filtered.expression } : null;
+  return relation && "readParents" in relation
+    ? { relation, expression: filtered.expression }
+    : null;
 }
 
 /** Rebind this lambda's value paths for planning; keep nested bindings local. */

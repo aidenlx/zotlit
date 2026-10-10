@@ -408,11 +408,16 @@ const attachmentCandidates = (
         .from(itemAttachments)
         .innerJoin(items, eq(items.itemID, itemAttachments.itemID))
         .innerJoin(parent, eq(parent.itemID, itemAttachments.parentItemID))
+        .innerJoin(
+          itemTypesCombined,
+          eq(itemTypesCombined.itemTypeID, parent.itemTypeID),
+        )
         .where(
           and(
             eq(unindexed(items.libraryID), p("libraryID")),
             gt(items.itemID, p("afterItemID")),
             condition,
+            ...(kind.startsWith("parent-") ? universe(db) : []),
           ),
         )
         .orderBy(items.itemID)
