@@ -1,10 +1,9 @@
 // The worker owns the full citation maps and publishes requested projections.
-import { Effect, Fiber, Scope } from "effect";
+import { Effect, Fiber, Option, Scope, Stream } from "effect";
 
 import { getCitekeyLastItemID, getCitekeyPage, getLibraries } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
-import { yieldToMain } from "@/lib/yield-to-main";
 import type {
   CitationLookupRequest,
   CitationLookupWireAnswer,
@@ -40,38 +39,46 @@ export const makeCitationLookup = Effect.fnUntraced(function* (
     const database = connection.databaseGeneration(client);
     const previous =
       published?.database === database ? published.snapshot : undefined;
-    const snapshot = yield* Effect.tryPromise({
-      try: async (signal) => {
-        const libraries = getLibraries(client);
-        const all = resolveLibraryScope(libraries, { mode: "all" });
-        const selected = resolveLibraryScope(libraries, scope);
-        async function* rows() {
-          for (const { libraryID } of all.available) {
-            const beforeItemID = getCitekeyLastItemID(client, libraryID);
-            let afterItemID = 0;
-            while (true) {
-              signal.throwIfAborted();
-              const { citekeys, next } = getCitekeyPage(client, {
-                libraryID,
-                beforeItemID,
-                afterItemID,
-                limit: sliceSize,
-              });
-              if (next === null) break;
-              yield* citekeys;
-              afterItemID = next;
-              await yieldToMain();
-            }
-          }
-        }
-        return CitekeySnapshot.from(
-          rows(),
-          new Set(selected.available.map(({ libraryID }) => libraryID)),
-          { previous, signal },
-        );
-      },
+    const libraries = yield* Effect.try({
+      try: () => getLibraries(client),
       catch: toDbUnavailable,
     });
+    const all = resolveLibraryScope(libraries, { mode: "all" });
+    const selected = resolveLibraryScope(libraries, scope);
+    const rows = Stream.fromIterable(all.available).pipe(
+      Stream.flatMap(({ libraryID }) =>
+        Stream.unwrap(
+          Effect.gen(function* () {
+            const beforeItemID = yield* Effect.try({
+              try: () => getCitekeyLastItemID(client, libraryID),
+              catch: toDbUnavailable,
+            });
+            return Stream.paginate(
+              0,
+              Effect.fnUntraced(function* (afterItemID) {
+                yield* Effect.yieldNow;
+                const { citekeys, next } = yield* Effect.try({
+                  try: () =>
+                    getCitekeyPage(client, {
+                      libraryID,
+                      beforeItemID,
+                      afterItemID,
+                      limit: sliceSize,
+                    }),
+                  catch: toDbUnavailable,
+                });
+                return [citekeys, Option.fromNullishOr(next)] as const;
+              }),
+            );
+          }),
+        ),
+      ),
+    );
+    const snapshot = yield* CitekeySnapshot.from(
+      rows,
+      new Set(selected.available.map(({ libraryID }) => libraryID)),
+      { previous },
+    ).pipe(Effect.catchDefect((cause) => Effect.fail(toDbUnavailable(cause))));
     const revision =
       snapshot === previous && published
         ? published.revision

@@ -1,36 +1,27 @@
 // Worker-owned citation maps: a native citekey's Items, and an Item's native citekey.
+import { Effect, Stream } from "effect";
 
 import type { LibraryCitekey } from "@zotlit/db";
 
 import { getLogger } from "@/lib/log";
-import { yieldToMain } from "@/lib/yield-to-main";
 
 const logger = getLogger("citation-index");
 const SNAPSHOT_SLICE_MS = 4;
 
 /** Construction and comparison share one worker work budget. */
 class SnapshotWork {
-  readonly #signal;
   #deadline = performance.now() + SNAPSHOT_SLICE_MS;
   #steps = 0;
 
-  constructor(signal?: AbortSignal) {
-    this.#signal = signal;
-    signal?.throwIfAborted();
-  }
-
-  /** Check in small batches without creating a Promise for every row. */
-  step(): Promise<void> | undefined {
+  /** Check in small batches without creating an Effect for every row. */
+  step(): Effect.Effect<void> | undefined {
     if (++this.#steps % 128 !== 0) return;
-    this.#signal?.throwIfAborted();
-    if (performance.now() >= this.#deadline) return this.#pause();
+    if (performance.now() >= this.#deadline) return this.#pause;
   }
 
-  async #pause(): Promise<void> {
-    await yieldToMain();
-    this.#signal?.throwIfAborted();
+  readonly #pause = Effect.map(Effect.yieldNow, () => {
     this.#deadline = performance.now() + SNAPSHOT_SLICE_MS;
-  }
+  });
 }
 
 /** One Zotero Item a native citation key names. */
@@ -68,26 +59,55 @@ export type CitekeyResolution =
  * covers all of them and is scope-independent.
  */
 export class CitekeySnapshot {
-  #byCitekey = new Map<string, SnapshotItem[]>();
-  #citekeyByIndexedKey = new Map<string, string>();
+  readonly #byCitekey = new Map<string, SnapshotItem[]>();
+  readonly #citekeyByIndexedKey = new Map<string, string>();
 
   /** Builds a complete snapshot, retaining `previous` when its answers match. */
-  static async from(
-    rows: Iterable<LibraryCitekey> | AsyncIterable<LibraryCitekey>,
+  static from = Effect.fnUntraced(function* <E, R>(
+    rows: Stream.Stream<LibraryCitekey, E, R>,
     inScope: ReadonlySet<number>,
-    {
-      previous,
-      signal,
-    }: { previous?: CitekeySnapshot; signal?: AbortSignal } = {},
-  ): Promise<CitekeySnapshot> {
-    const work = new SnapshotWork(signal);
+    { previous }: { previous?: CitekeySnapshot } = {},
+  ): Effect.fn.Return<CitekeySnapshot, E, R> {
+    const work = new SnapshotWork();
     const snapshot = new CitekeySnapshot();
-    await snapshot.#replace(rows, inScope, work);
-    const unchanged = previous && (await snapshot.#sameAs(previous, work));
-    signal?.throwIfAborted();
+    const byCitekey = snapshot.#byCitekey;
+    const citekeyByIndexedKey = snapshot.#citekeyByIndexedKey;
+    yield* Stream.runForEachArray(
+      rows,
+      Effect.fnUntraced(function* (page) {
+        for (const row of page) {
+          const pause = work.step();
+          if (pause) yield* pause;
+          citekeyByIndexedKey.set(row.indexedKey, row.citekey);
+          if (!inScope.has(row.libraryID)) continue;
+          const item: SnapshotItem = {
+            itemID: row.itemID,
+            libraryID: row.libraryID,
+            key: row.key,
+            indexedKey: row.indexedKey,
+          };
+          const candidates = byCitekey.get(row.citekey);
+          if (candidates) candidates.push(item);
+          else byCitekey.set(row.citekey, [item]);
+        }
+      }),
+    );
+    for (const [citekey, candidates] of byCitekey) {
+      const pause = work.step();
+      if (pause) yield* pause;
+      if (candidates.length > 1) {
+        logger.debug("Ambiguous citation key in library scope", {
+          citekey,
+          candidates: candidates.length,
+        });
+      }
+    }
+
+    const unchanged =
+      previous && (yield* CitekeySnapshot.#sameAs(snapshot, previous, work));
     if (unchanged) return previous;
     return snapshot;
-  }
+  });
 
   /** The Items a native citation key names, in the current Library Scope. */
   resolve(citekey: string): CitekeyResolution {
@@ -103,67 +123,33 @@ export class CitekeySnapshot {
     return this.#citekeyByIndexedKey.get(indexedKey) ?? null;
   }
 
-  /** Builds both lookup directions from one fresh bulk read. */
-  async #replace(
-    rows: Iterable<LibraryCitekey> | AsyncIterable<LibraryCitekey>,
-    inScope: ReadonlySet<number>,
-    work: SnapshotWork,
-  ): Promise<void> {
-    const byCitekey = new Map<string, SnapshotItem[]>();
-    const citekeyByIndexedKey = new Map<string, string>();
-    for await (const row of rows) {
-      const pause = work.step();
-      if (pause) await pause;
-      citekeyByIndexedKey.set(row.indexedKey, row.citekey);
-      if (!inScope.has(row.libraryID)) continue;
-      const item: SnapshotItem = {
-        itemID: row.itemID,
-        libraryID: row.libraryID,
-        key: row.key,
-        indexedKey: row.indexedKey,
-      };
-      const candidates = byCitekey.get(row.citekey);
-      if (candidates) candidates.push(item);
-      else byCitekey.set(row.citekey, [item]);
-    }
-    for (const [citekey, candidates] of byCitekey) {
-      const pause = work.step();
-      if (pause) await pause;
-      if (candidates.length > 1) {
-        logger.debug("Ambiguous citation key in library scope", {
-          citekey,
-          candidates: candidates.length,
-        });
-      }
-    }
-
-    this.#byCitekey = byCitekey;
-    this.#citekeyByIndexedKey = citekeyByIndexedKey;
-  }
-
   /** Whether both lookup directions answer identically. */
-  async #sameAs(other: CitekeySnapshot, work: SnapshotWork): Promise<boolean> {
+  static readonly #sameAs = Effect.fnUntraced(function* (
+    snapshot: CitekeySnapshot,
+    other: CitekeySnapshot,
+    work: SnapshotWork,
+  ) {
     if (
-      this.#byCitekey.size !== other.#byCitekey.size ||
-      this.#citekeyByIndexedKey.size !== other.#citekeyByIndexedKey.size
+      snapshot.#byCitekey.size !== other.#byCitekey.size ||
+      snapshot.#citekeyByIndexedKey.size !== other.#citekeyByIndexedKey.size
     )
       return false;
-    for (const [key, candidates] of this.#byCitekey) {
+    for (const [key, candidates] of snapshot.#byCitekey) {
       const previous = other.#byCitekey.get(key);
       if (!previous || candidates.length !== previous.length) return false;
       for (let at = 0; at < candidates.length; at += 1) {
         const pause = work.step();
-        if (pause) await pause;
+        if (pause) yield* pause;
         if (!itemEqual(candidates[at]!, previous[at]!)) return false;
       }
     }
-    for (const [key, citekey] of this.#citekeyByIndexedKey) {
+    for (const [key, citekey] of snapshot.#citekeyByIndexedKey) {
       const pause = work.step();
-      if (pause) await pause;
+      if (pause) yield* pause;
       if (other.#citekeyByIndexedKey.get(key) !== citekey) return false;
     }
     return true;
-  }
+  });
 }
 
 function itemEqual(a: SnapshotItem, b: SnapshotItem): boolean {
