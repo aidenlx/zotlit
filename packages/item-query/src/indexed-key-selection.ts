@@ -3,21 +3,21 @@ import { parseIndexedKey } from "@zotlit/db";
 import type { QueryDataset } from "./dataset";
 import type { Span } from "./fault";
 import type { FilterNode } from "./filter-plan";
+import { RECORD_VOCABULARIES } from "./record-vocabularies";
 import type { TargetLibrary } from "./request";
 
 type KeyTarget = "self" | "item" | "attachment";
-const KEY_PATHS: Record<
-  QueryDataset["id"],
-  Readonly<Record<string, KeyTarget>>
-> = {
-  items: { indexedKey: "self" },
-  attachments: { indexedKey: "self", "item.indexedKey": "item" },
-  annotations: {
-    indexedKey: "self",
-    "item.indexedKey": "item",
-    "attachment.indexedKey": "attachment",
-  },
-};
+function keyTarget(
+  dataset: QueryDataset["id"],
+  path: string,
+): KeyTarget | undefined {
+  if (path === "indexedKey") return "self";
+  for (const parent of RECORD_VOCABULARIES[dataset]().parents ?? []) {
+    const target = parent.indexedKeyTarget(path);
+    if (target) return target as KeyTarget;
+  }
+  return undefined;
+}
 
 interface KeyLiteral {
   readonly text: string;
@@ -47,11 +47,11 @@ function selection<Item>(
   for (const [field, literals] of pairs) {
     const target =
       field.kind === "field"
-        ? KEY_PATHS[dataset][field.name]
+        ? keyTarget(dataset, field.name)
         : recordMembers &&
             field.kind === "property" &&
             field.subject.recordDataset
-          ? KEY_PATHS[field.subject.recordDataset][field.name]
+          ? keyTarget(field.subject.recordDataset, field.name)
           : undefined;
     if (target) return { target, literals };
   }

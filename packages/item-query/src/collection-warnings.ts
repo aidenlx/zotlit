@@ -6,6 +6,8 @@ import type { CollectionPaths } from "@zotlit/db/item-query";
 import type { Span } from "./fault";
 import type { FilterNode } from "./filter-plan";
 import { nearCollectionMatches } from "./near-match";
+import { parentFieldSubject } from "./parent-records";
+import { RECORD_VOCABULARIES } from "./record-vocabularies";
 import type { TargetLibrary } from "./request";
 
 export interface CollectionWarning {
@@ -32,13 +34,11 @@ export const collectionWarnings = Effect.fnUntraced(function* <Item>(
   const visit = (node: FilterNode<Item>) => {
     if (node.kind === "method" && ["contains", "within"].includes(node.name)) {
       const subject = node.subject;
-      const collections =
-        subject.kind === "field"
-          ? subject.name === "collections" ||
-            subject.name.endsWith(".collections")
-          : subject.kind === "property" &&
-            subject.name === "collections" &&
-            subject.subject.recordDataset === "items";
+      const collections = parentFieldSubject(
+        subject,
+        "collections",
+        Object.values(RECORD_VOCABULARIES).map((vocabulary) => vocabulary()),
+      );
       const literal = node.args[0];
       if (
         collections &&
