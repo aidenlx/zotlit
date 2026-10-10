@@ -5,14 +5,17 @@ import type { Scope } from "effect";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { getLogger } from "@/lib/log";
+import type { LibraryScope } from "@/services/library-scope/scope";
 import { Service } from "@/services/service-base";
 import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
-import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import type { ReadsConfig } from "@/services/zotero-reads/rpc";
 import { ZoteroReadsService } from "@/services/zotero-reads/service";
 import type { ZoteroReadsEvents } from "@/services/zotero-reads/service";
+
+import { CitationLookupAnswer } from "./lookup";
+import type { CitationLookupRequest } from "./lookup";
 
 const logger = getLogger("citation-index");
 
@@ -39,6 +42,7 @@ export class CitationReads extends Service {
   #generation = 0;
   #dirty = false;
   #stopped = false;
+  #degraded = false;
   #lane: Promise<void> | null = null;
   #failure: unknown = null;
   #configured: ReadsConfig | null = null;
@@ -64,24 +68,58 @@ export class CitationReads extends Service {
     return this.#events.on(event, cb);
   }
 
-  /** Wait for the latest refresh, then pin its read-only connection. */
-  get snapshot(): ZoteroReadsService["snapshot"] {
-    return Effect.flatMap(
+  /** A requested projection of the latest source and stable Library selectors. */
+  readLookup(
+    request: CitationLookupRequest,
+    scope: LibraryScope | null,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<CitationLookupAnswer> {
+    const signal = options.signal
+      ? AbortSignal.any([options.signal, this.#stop.signal])
+      : this.#stop.signal;
+    return Effect.runPromise(
       Effect.tryPromise({
-        try: async () => {
+        try: async (signal) => {
           await this.ready;
-          while (this.#lane) await this.#lane;
-          if (this.#failure) throw this.#failure;
-          if (this.#stopped) throw new Error("Citation reads stopped");
-          return this.#worker!;
+          while (true) {
+            while (this.#lane) await this.#lane;
+            signal.throwIfAborted();
+            if (this.#failure) throw this.#failure;
+            if (this.#stopped) throw new Error("Citation reads stopped");
+            const generation = this.#generation;
+            const { client } = await this.#worker!.ready;
+            try {
+              const answer = await Effect.runPromise(
+                client.CitationLookup({
+                  scope,
+                  citekeys: request.citekeys ?? [],
+                  indexedKeys: request.indexedKeys ?? [],
+                }),
+                { signal },
+              );
+              signal.throwIfAborted();
+              if (generation !== this.#generation || this.#lane) continue;
+              if (this.#failure) throw this.#failure;
+              return new CitationLookupAnswer(answer);
+            } catch (error) {
+              signal.throwIfAborted();
+              if (generation !== this.#generation || this.#lane) continue;
+              throw error;
+            }
+          }
         },
-        catch: (error) =>
-          new DbUnavailable({
-            message: error instanceof Error ? error.message : String(error),
-          }),
+        catch: (error) => error,
       }),
-      (worker) => worker.snapshot,
+      { signal },
     );
+  }
+
+  /** Ensure the latest worker maps exist without transferring any entries. */
+  async refreshLookup(
+    scope: LibraryScope | null,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<string> {
+    return (await this.readLookup({}, scope, options)).revision;
   }
 
   #config(): ReadsConfig {
@@ -129,9 +167,17 @@ export class CitationReads extends Service {
     stack.defer(
       this.#worker.on("degraded", (error) => {
         this.#failure = error;
+        this.#degraded = true;
         this.#generation += 1;
         this.#events.emit("changed");
         this.#events.emit("degraded", error);
+      }),
+    );
+    stack.defer(
+      this.#worker.on("changed", () => {
+        if (!this.#degraded) return;
+        this.#degraded = false;
+        this.#request();
       }),
     );
     await this.#worker.ready;

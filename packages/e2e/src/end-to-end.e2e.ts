@@ -4673,7 +4673,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(
         await obEvalUntil(
           vaultId,
-          `String(app.plugins.plugins.zotlit.services.citationIndex.citekeyOf(${JSON.stringify(targetItem.key)}))`,
+          `app.plugins.plugins.zotlit.services.citationIndex.readLookup({indexedKeys:[${JSON.stringify(targetItem.key)}]}).then(function(answer){return String(answer.citekeyOf(${JSON.stringify(targetItem.key)}));})`,
           { expected: targetItem.citationKey! },
         ),
       ).toBe(true);
@@ -4717,12 +4717,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(
         await obEvalUntil(
           vaultId,
-          `app.plugins.plugins.zotlit.services.citationIndex.whenResolved().then(function(){return String(app.plugins.plugins.zotlit.services.citationIndex.citekeyOf(${JSON.stringify(targetItem.key)}));})`,
+          `app.plugins.plugins.zotlit.services.citationIndex.whenResolved().then(function(){return app.plugins.plugins.zotlit.services.citationIndex.readLookup({indexedKeys:[${JSON.stringify(targetItem.key)}]}).then(function(answer){return String(answer.citekeyOf(${JSON.stringify(targetItem.key)}));});})`,
           { expected: targetItem.citationKey! },
         ),
       ).toBe(true);
-      // Hold the bulk request after Snapshot acquisition, so unload must
-      // release a pinned citation read and its connection.
+      // Hold the lookup request so unload must cancel the pending worker read.
       await obEval(
         vaultId,
         workers(`(function(){
@@ -4730,8 +4729,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           var post=entry.worker.postMessage;
           record.held={worker:entry.worker,post:post,pending:[]};
           entry.worker.postMessage=function(...args){
-            if(args[0]?.[1]?.tag==='CitekeySnapshot'){
-              record.heldSnapshot=Boolean(args[0][1].payload.snapshot);
+            if(args[0]?.[1]?.tag==='CitationLookup'){
+              record.heldSnapshot=true;
               record.held.pending.push(args);return;
             }
             return post.apply(this,args);

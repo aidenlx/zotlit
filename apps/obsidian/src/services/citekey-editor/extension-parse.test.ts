@@ -3,6 +3,9 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
+import { lookupForWorks } from "@/services/citation-index/__fixtures__/lookup";
+import { CitationLookupAnswer } from "@/services/citation-index/lookup";
+
 const { livePreview, parseState, tokenClassNodeProp, lineClassNodeProp } =
   vi.hoisted(() => ({
     livePreview: vi.fn(() => true),
@@ -90,6 +93,7 @@ it.each([
     ]),
     entrySerials: false,
     summaries: new Map([["DOE22345", "Doe (2024)"]]),
+    lookup: lookupForWorks(new Map([["doe2024", "DOE22345"]])),
     literalWorks: new Map([["doe2024", "DOE22345"]]),
   };
   const held: Held<DocumentCitations> = {
@@ -110,9 +114,22 @@ it.each([
             hoverPreferences: () => hoverPreferences(defaults),
             hoverNotePath: () => null,
             workspace: { trigger: () => {} },
-            resolveCitekey: () => ({
-              kind: "missing" as const,
-            }),
+            observeLookup: () => {
+              const value = new CitationLookupAnswer({
+                revision: "test",
+                citekeys: new Map([["doe2024", { kind: "missing" as const }]]),
+                indexedKeys: new Map(),
+              });
+              return {
+                current: {
+                  value,
+                  status: "fresh",
+                  settled: Promise.resolve(value),
+                },
+                set: () => undefined,
+                [Symbol.dispose]: () => undefined,
+              };
+            },
             navigationEnabled: () => true,
             showFormatted: () => true,
             citationText: () => held,

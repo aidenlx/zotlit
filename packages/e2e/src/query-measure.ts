@@ -538,7 +538,7 @@ async function loadTier(items: number, groupItems?: number): Promise<void> {
   log("Waiting for the Citation Index snapshot of this Fixture to finish...");
   await obEval(
     vaultId,
-    "(async()=>{await app.plugins.plugins.zotlit.services.citationIndex.readSnapshot();return true;})()",
+    "(async()=>{await app.plugins.plugins.zotlit.services.citationIndex.readLookup({});return true;})()",
     600_000,
   );
 }

@@ -29,8 +29,6 @@ import {
   getAttachmentsByParents,
   getChildNotesByParentIDs,
   getAllTagNames,
-  getCitekeyPage,
-  getCitekeyLastItemID,
   getCollectionIDByKey,
   getIndexedItemIDsByCollection,
   getIndexedItemIDsByLibrary,
@@ -60,6 +58,7 @@ import { exportItemSnapshot } from "@zotlit/workbench/snapshot";
 import { makeAttachmentFileResolver } from "@/services/item-query/attachment-files";
 import { runQueryJob } from "@/services/item-query/job";
 
+import { makeCitationLookup } from "./citation-lookup";
 import { Connection, toDbUnavailable } from "./connection";
 import { layerConnectionItemSource } from "./item-source";
 import { itemsByIndexedKeys } from "./items-by-indexed-keys";
@@ -269,6 +268,7 @@ export function handlersLayer(options?: HandlersOptions) {
   const handlers = ZoteroReads.toLayer(
     Effect.gen(function* () {
       const connection = yield* Connection;
+      const citationLookup = yield* makeCitationLookup(connection, sliceSize);
       const itemIndex = options?.citationOnly
         ? null
         : yield* Effect.flatMap(Layer.build(itemIndexLayer), (context) =>
@@ -329,6 +329,7 @@ export function handlersLayer(options?: HandlersOptions) {
       ) => Stream.unwrap(Effect.map(borrow(snapshot), f));
 
       return ZoteroReads.of({
+        CitationLookup: citationLookup,
         CancelItemQuery: ({ id }) => FiberMap.remove(queryJobs, id),
         ItemQuery: ({ job, snapshot }) =>
           Effect.gen(function* () {
@@ -510,32 +511,6 @@ export function handlersLayer(options?: HandlersOptions) {
               ),
             );
           }),
-
-        // Keyset pages in itemID order: one statement per slice.
-        CitekeySnapshot: ({ libraryID, snapshot }) =>
-          withClientStream(snapshot, (client) =>
-            Stream.unwrap(
-              Effect.gen(function* () {
-                const beforeItemID = yield* read(client, (c) =>
-                  getCitekeyLastItemID(c, libraryID),
-                );
-                return Stream.unfold(0, (afterItemID) =>
-                  Effect.map(
-                    read(client, (c) =>
-                      getCitekeyPage(c, {
-                        libraryID,
-                        afterItemID,
-                        beforeItemID,
-                        limit: sliceSize,
-                      }),
-                    ),
-                    ({ citekeys, next }) =>
-                      next === null ? undefined : ([citekeys, next] as const),
-                  ),
-                );
-              }),
-            ),
-          ),
 
         Changes: () => connection.changes,
 

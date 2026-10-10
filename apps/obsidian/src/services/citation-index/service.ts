@@ -1,6 +1,6 @@
 // The vault-wide Citation Index: literal-citekey occurrences per file, wikilinks derived at query time.
 
-import { Effect, Stream } from "effect";
+import { abortable } from "@std/async/abortable";
 import { TFile } from "obsidian";
 import type { App, LinkCache, TAbstractFile } from "obsidian";
 
@@ -9,7 +9,6 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import { registerEvent } from "@/lib/disposables";
 import { getLogger } from "@/lib/log";
 import { yieldToMain } from "@/lib/yield-to-main";
-import { resolveLibraryScope } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import { resolveIndexedKey } from "@/services/note-index/service";
 import type { NoteIndex } from "@/services/note-index/service";
@@ -17,7 +16,13 @@ import type { Held, QueryClientService } from "@/services/query-client/service";
 import { Service } from "@/services/service-base";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+
+import type { CitationLookupAnswer, CitationLookupRequest } from "./lookup";
+import { LookupObservation } from "./observation";
+import type { CitationLookupObservation } from "./observation";
+import type { CitationReads } from "./reads";
+export type { CitationLookupAnswer, CitationLookupRequest } from "./lookup";
+export type { CitationLookupObservation } from "./observation";
 
 import { groupCitations } from "./query";
 import type { Citation, ResolvedNote } from "./query";
@@ -27,8 +32,6 @@ import {
   scanCitekeyOccurrences,
 } from "./scan";
 import type { CitationOccurrence, CitationSyntax } from "./scan";
-import { CitekeySnapshot } from "./snapshot";
-import type { CitekeyResolution, SnapshotItem } from "./snapshot";
 import { openCitekeyStore } from "./store";
 import type { CitekeyRecord, CitekeyStore, FileScan } from "./store";
 
@@ -62,7 +65,7 @@ export interface CitedByGroup {
 }
 
 export type CitationCoverage = "indexing" | "complete" | "degraded";
-export type CitationKeyResolution = Held<CitekeySnapshot>["status"] | null;
+export type CitationKeyResolution = Held<string>["status"] | null;
 
 /** Whether a Citation Syntax's occurrences reach a citation-command answer. */
 export type CitationSyntaxAdmission = "included" | "excluded";
@@ -110,6 +113,8 @@ export interface DocumentCitationSet {
   citations: Citation[];
   /** Invalid explicit citation intent, excluded from CSL membership. */
   errors: DocumentCitationError[];
+  /** Both lookup directions used to compose this document, at one revision. */
+  lookup: CitationLookupAnswer;
 }
 
 /** One citation source error a document-aware surface can help correct. */
@@ -138,9 +143,8 @@ const logger = getLogger("citation-index");
 /** Files the backfill scans between two yields to the host. */
 const BACKFILL_CHUNK = 20;
 /**
- * The one key the citekey resolution snapshot is held under. One vault has one
- * snapshot, and it is retained for the session: every citekey a surface
- * resolves reads it, and rebuilding it costs one bulk read per Library.
+ * The worker publication identity and freshness state. Complete lookup maps
+ * stay in the worker; renderer views retain only their selected answers.
  */
 const SNAPSHOT_KEY: readonly string[] = ["citekey-snapshot"];
 
@@ -168,14 +172,14 @@ export interface CitationIndexOptions {
   app: App;
   noteIndex: Pick<NoteIndex, "getNotesByItemKey">;
   settings: Pick<SettingsService, "ready" | "current" | "subscribe">;
-  reads: Pick<ZoteroReadsService, "state" | "on" | "snapshot"> & {
-    ready: Promise<unknown>;
-    readonly generation?: number;
-  };
+  reads: Pick<
+    CitationReads,
+    "state" | "on" | "readLookup" | "refreshLookup"
+  > & { ready: Promise<unknown> };
   /** Which Libraries a Citation Key resolves against. */
   libraryScope: Pick<
     LibraryScopeService,
-    "ready" | "current" | "libraries" | "on" | "resolveLibraries"
+    "ready" | "current" | "effective" | "on"
   >;
   /**
    * Where scans survive a restart; a store that fails to open costs a full
@@ -227,6 +231,9 @@ export class CitationIndex extends Service<void> {
   #backfilled = false;
   #coverage: CitationCoverage = "indexing";
   #stopped = false;
+  #lookupEpoch = 0;
+  readonly #lookupStop = new AbortController();
+  readonly #lookupObservers = new Set<LookupObservation>();
 
   ready: Promise<void>;
 
@@ -248,30 +255,54 @@ export class CitationIndex extends Service<void> {
    * A document the backfill has not reached is scanned on demand, so the
    * active document is answered without waiting for the vault-wide pass.
    */
-  async getDocumentCitationSet(file: TFile): Promise<DocumentCitationSet> {
-    await this.ready;
-    void this.#rebuildSnapshot();
+  async getDocumentCitationSet(
+    file: TFile,
+    { signal }: { signal?: AbortSignal } = {},
+  ): Promise<DocumentCitationSet> {
+    await abortable(this.ready, signal ?? this.#lookupStop.signal);
     const { citekeys, links } = this.#admitted(
       file,
       await this.#coverFile(file),
     );
     const wikilinks = documentWikilinks(links);
+    const local = new Map(
+      [
+        ...wikilinks.occurrences,
+        ...wikilinks.malformed.map(({ occurrence }) => occurrence),
+      ].map(
+        (occurrence) =>
+          [occurrence, this.#resolve(occurrence, file.path)] as const,
+      ),
+    );
+    const lookup = await this.readLookup(
+      {
+        citekeys: citekeys.map((occurrence) => occurrence.raw),
+        indexedKeys: wikilinks.occurrences.flatMap((occurrence) => {
+          const key = local.get(occurrence)?.indexedKey;
+          return key ? [key] : [];
+        }),
+      },
+      { signal },
+    );
     const citations = groupCitations(
       [...citekeys, ...wikilinks.occurrences].sort(
         (a, b) => a.position.start.offset - b.position.start.offset,
       ),
-      (occurrence) => this.#resolve(occurrence, file.path),
+      (occurrence) =>
+        occurrence.kind === "wikilink"
+          ? (local.get(occurrence) ?? null)
+          : this.#resolve(occurrence, file.path, lookup),
     );
     const occurrences = citations
       .flatMap((citation) => citation.occurrences)
       .sort((a, b) => a.position.start.offset - b.position.start.offset);
     const errors = wikilinks.malformed
-      .filter(({ occurrence }) => this.#resolve(occurrence, file.path) !== null)
+      .filter(({ occurrence }) => local.get(occurrence) != null)
       .map(({ occurrence }) => ({
         kind: "malformed-wikilink" as const,
         occurrence,
       }));
-    return { occurrences, citations, errors };
+    return { occurrences, citations, errors, lookup };
   }
 
   on<K extends keyof CitationIndexEvents>(
@@ -315,10 +346,16 @@ export class CitationIndex extends Service<void> {
     let published = false;
     let queued = false;
     let previous: CitedBySnapshot | null = null;
+    const lookup = listeners.use(this.observeLookup(() => onChange()));
 
     const publish = (): void => {
       if (disposed || this.#stopped || !published) return;
-      const next = this.#citedBy(indexedKey, includeNote);
+      lookup.set({ citekeys: this.#scannedKeys() });
+      const next = this.#citedBy(
+        indexedKey,
+        includeNote,
+        lookup.current?.value ?? null,
+      );
       if (previous && citedBySnapshotsEqual(previous, next)) return;
       previous = next;
       try {
@@ -360,8 +397,9 @@ export class CitationIndex extends Service<void> {
    * whatever the index holds now, so {@link waitUntilSettled} is what a caller
    * that wants a complete answer runs first.
    */
-  getCitedBy(indexedKey: string): CitedBySnapshot {
-    return this.#citedBy(indexedKey, () => true);
+  async getCitedBy(indexedKey: string): Promise<CitedBySnapshot> {
+    const lookup = await this.readLookup({ citekeys: this.#scannedKeys() });
+    return this.#citedBy(indexedKey, () => true, lookup);
   }
 
   /**
@@ -475,51 +513,55 @@ export class CitationIndex extends Service<void> {
     return byPath;
   }
 
-  /**
-   * What a native citation key names in the current Library Scope, read
-   * synchronously: no Item, exactly one, or several candidates.
-   */
-  resolveCitekey(citekey: string): CitekeyResolution | null {
-    const record = this.#heldSnapshot();
-    return record?.value.resolve(citekey) ?? null;
+  /** Caller-sized answers from one complete worker publication. */
+  async readLookup(
+    request: CitationLookupRequest,
+    { signal }: { signal?: AbortSignal } = {},
+  ): Promise<CitationLookupAnswer> {
+    const selected = {
+      citekeys: [...new Set(request.citekeys ?? [])],
+      indexedKeys: [...new Set(request.indexedKeys ?? [])],
+    };
+    const lifetime = signal
+      ? AbortSignal.any([signal, this.#lookupStop.signal])
+      : this.#lookupStop.signal;
+    lifetime.throwIfAborted();
+    await abortable(this.ready, lifetime);
+    for (;;) {
+      lifetime.throwIfAborted();
+      const epoch = this.#lookupEpoch;
+      await this.#queries.readFresh(
+        SNAPSHOT_KEY,
+        ({ signal }) => this.#readSnapshot(signal),
+        lifetime,
+      );
+      const answer = await this.#reads.readLookup(
+        selected,
+        this.#libraryScope.effective,
+        { signal: lifetime },
+      );
+      lifetime.throwIfAborted();
+      if (epoch === this.#lookupEpoch) return answer;
+    }
   }
 
-  /** The native citation key of an Item — the wikilink display text. */
-  citekeyOf(indexedKey: string): string | null {
-    const record = this.#heldSnapshot();
-    return record?.value.citekeyOf(indexedKey) ?? null;
+  /** A view owns just its selected answers and releases them on disposal. */
+  observeLookup(changed: () => void): CitationLookupObservation {
+    const observation = new LookupObservation(
+      (request, signal) => this.readLookup(request, { signal }),
+      changed,
+      () => this.#lookupObservers.delete(observation),
+    );
+    if (this.#stopped) observation[Symbol.dispose]();
+    else this.#lookupObservers.add(observation);
+    return observation;
   }
 
-  /**
-   * Resolves once the snapshot has run its first rebuild — the resolution
-   * counterpart of {@link whenIndexed}. Settles even on a failed read.
-   */
+  /** Wait for a complete worker publication or the first failed attempt. */
   async whenResolved(): Promise<void> {
     await this.ready;
     if (this.#stopped) return;
-    await this.#waitForRead(this.readSnapshot().catch(() => undefined));
-  }
-
-  /**
-   * The citekey resolution snapshot once the rebuild behind it stands, for a
-   * caller that can wait rather than read what the vault holds now.
-   *
-   * @param signal ends the wait; the shared rebuild runs on for every other
-   *   caller that joined it.
-   * @throws a failed rebuild, including during its retry cooldown. Composing
-   *   reads retain that failure; {@link whenResolved} only waits for settlement.
-   */
-  async readSnapshot({
-    signal,
-  }: { signal?: AbortSignal } = {}): Promise<CitekeySnapshot> {
-    await this.ready;
-    if (this.#stopped)
-      throw new DOMException("The citation index stopped", "AbortError");
-    return await this.#queries.readFresh(
-      SNAPSHOT_KEY,
-      ({ signal }) => this.#readSnapshot(signal),
-      signal,
-    );
+    await this.#waitForRead(this.#rebuildSnapshot());
   }
 
   /** Settles a first snapshot read or disposal, whichever comes first. */
@@ -650,15 +692,11 @@ export class CitationIndex extends Service<void> {
     );
     this.#queries.client.setQueryDefaults(SNAPSHOT_KEY, {
       gcTime: Infinity,
-      // An equal rebuild keeps the snapshot every resolved citekey was read
-      // against, so nothing that reads one is told to read it again.
-      structuralSharing: (held, next) =>
-        (held as CitekeySnapshot | undefined)?.sameAs(next as CitekeySnapshot)
-          ? held
-          : next,
+      // The worker retains the revision when both lookup directions are equal.
+      structuralSharing: false,
     });
     stack.defer(
-      this.#queries.watch<CitekeySnapshot>(SNAPSHOT_KEY, {
+      this.#queries.watch<string>(SNAPSHOT_KEY, {
         // A rebuild that resolves every citekey the way the last one did is no
         // change: every work surface would redraw for the same answers.
         changed: () => this.#emitter.emit("resolution-changed"),
@@ -671,6 +709,15 @@ export class CitationIndex extends Service<void> {
               { resolution: null },
             );
             return;
+          }
+          if (snapshot.status === "fresh") {
+            for (const observation of this.#lookupObservers) {
+              if (
+                observation.current === null ||
+                observation.current.status === "failed"
+              )
+                observation.refresh();
+            }
           }
           this.#emitter.emit("cited-by-invalidated");
         },
@@ -709,6 +756,9 @@ export class CitationIndex extends Service<void> {
     // no-ops instead of writing to a closed store or emitting mid-disposal.
     stack.defer(() => {
       this.#stopped = true;
+      this.#lookupStop.abort();
+      for (const observation of this.#lookupObservers)
+        observation[Symbol.dispose]();
       for (const wake of this.#waiters) wake();
     });
     this.commit(stack.move());
@@ -793,80 +843,42 @@ export class CitationIndex extends Service<void> {
    * forward Citation Key lookup answers from.
    */
   #invalidateSnapshot(): void {
+    this.#lookupEpoch += 1;
     this.#queries.invalidate(SNAPSHOT_KEY);
+    for (const observation of this.#lookupObservers) observation.refresh();
     void this.#rebuildSnapshot();
   }
 
-  #heldSnapshot(): Held<CitekeySnapshot> | null {
-    const snapshot = this.#queries.peek<CitekeySnapshot>(SNAPSHOT_KEY);
+  #heldSnapshot(): Held<string> | null {
+    const snapshot = this.#queries.peek<string>(SNAPSHOT_KEY);
     void this.#rebuildSnapshot();
     return snapshot;
   }
 
-  #rebuildSnapshot(): Promise<CitekeySnapshot | null> {
+  #rebuildSnapshot(): Promise<string | null> {
     if (this.#stopped) return Promise.resolve(null);
     return this.#queries.ask(SNAPSHOT_KEY, ({ signal }) =>
       this.#readSnapshot(signal),
     );
   }
 
-  /** @param signal ends the read when a newer rebuild supersedes it. */
-  async #readSnapshot(signal: AbortSignal): Promise<CitekeySnapshot> {
+  /** Only the publication identity crosses this global cache seam. */
+  async #readSnapshot(signal: AbortSignal): Promise<string> {
     try {
       await this.#reads.ready;
       await this.#libraryScope.ready;
-    } catch (error) {
-      logger.warn("Resolution snapshot database unavailable", { error });
-      throw error;
-    }
-    if (this.#stopped) throw new Error("The citation index stopped");
-
-    const scope = this.#libraryScope.current;
-    if (this.#reads.state === "degraded" || scope === null) {
-      logger.debug("Resolution snapshot rebuild skipped, database not ready");
-      throw new Error("The Zotero database cannot be read");
-    }
-    try {
-      const generation = this.#reads.generation;
-      const libraryScope = this.#libraryScope;
-      // The Library list and rows share the dedicated worker's pinned state.
-      const { perLibrary, libraries, inScope } = await Effect.runPromise(
-        Effect.scoped(
-          Effect.flatMap(this.#reads.snapshot, (reads) =>
-            Effect.gen(function* () {
-              const libraryRows = yield* reads.Libraries({});
-              const libraries = resolveLibraryScope(libraryRows, {
-                mode: "all",
-              }).available;
-              const scope = libraryScope.resolveLibraries(libraryRows);
-              const inScope = new Set(
-                scope.available.map((library) => library.libraryID),
-              );
-              const perLibrary = yield* Effect.forEach(libraries, (library) =>
-                Stream.runCollect(
-                  reads.CitekeySnapshot({ libraryID: library.libraryID }),
-                ),
-              );
-              return { perLibrary, libraries, inScope };
-            }),
-          ),
-        ),
-        { signal },
-      );
-      if (signal.aborted || generation !== this.#reads.generation)
-        throw new Error("The citation source changed during the read");
-      const rows = perLibrary.flat(2);
-      logger.debug("Resolution snapshot rebuilt", {
-        libraries: libraries.length,
-        inScope: inScope.size,
-        count: rows.length,
+      if (this.#stopped) throw new Error("The citation index stopped");
+      if (
+        this.#reads.state === "degraded" ||
+        this.#libraryScope.current === null
+      )
+        throw new Error("The Zotero database cannot be read");
+      return await this.#reads.refreshLookup(this.#libraryScope.effective, {
+        signal,
       });
-      return CitekeySnapshot.from(rows, inScope);
     } catch (error) {
-      // A newer rebuild superseded this one: nothing failed.
-      if (signal.aborted)
-        logger.debug("Resolution snapshot rebuild superseded");
-      else logger.warn("Resolution snapshot rebuild failed", { error });
+      if (!signal.aborted && !this.#stopped)
+        logger.warn("Citation lookup rebuild failed", { error });
       throw error;
     }
   }
@@ -971,9 +983,16 @@ export class CitationIndex extends Service<void> {
     };
   }
 
+  #scannedKeys(): string[] {
+    return [...this.#scans.values()].flatMap((scan) =>
+      scan.occurrences.map((occurrence) => occurrence.raw),
+    );
+  }
+
   #citedBy(
     indexedKey: string,
     includeNote: (file: TFile) => boolean,
+    lookup: CitationLookupAnswer | null,
   ): CitedBySnapshot {
     const groups: CitedByGroup[] = [];
     const files = this.#app.vault
@@ -986,7 +1005,7 @@ export class CitationIndex extends Service<void> {
         this.#covered(file) ?? [],
       );
       const literals = citekeys.filter((occurrence) =>
-        this.#citekeyOccurrenceCites(occurrence, indexedKey),
+        this.#citekeyOccurrenceCites(occurrence, indexedKey, lookup),
       );
       const wikilinks = documentWikilinks(links).occurrences.filter(
         (occurrence) =>
@@ -1020,10 +1039,11 @@ export class CitationIndex extends Service<void> {
     await this.ready;
     const files = this.#app.vault.getMarkdownFiles();
     const omitted: CitationSyntax[] = [];
+    const lookup = await this.readLookup({ citekeys: this.#scannedKeys() });
     if (!this.#includePandocCitations) {
       const held = files.some((file) =>
         (this.#covered(file) ?? []).some((occurrence) =>
-          this.#citekeyOccurrenceCites(occurrence, indexedKey),
+          this.#citekeyOccurrenceCites(occurrence, indexedKey, lookup),
         ),
       );
       if (held) omitted.push("citekey");
@@ -1052,8 +1072,9 @@ export class CitationIndex extends Service<void> {
   #citekeyOccurrenceCites(
     occurrence: CitationOccurrence,
     indexedKey: string,
+    lookup: CitationLookupAnswer | null,
   ): boolean {
-    const resolved = this.resolveCitekey(occurrence.raw);
+    const resolved = lookup?.resolve(occurrence.raw) ?? null;
     if (resolved === null) return false;
     switch (resolved.kind) {
       case "missing":
@@ -1065,15 +1086,6 @@ export class CitationIndex extends Service<void> {
           (candidate) => candidate.indexedKey === indexedKey,
         );
     }
-  }
-
-  /**
-   * The one Item a citekey names, or `null` when it names none — and equally
-   * when it names several, which adopts no candidate's Indexed Key.
-   */
-  #uniqueItem(citekey: string): SnapshotItem | null {
-    const resolved = this.resolveCitekey(citekey);
-    return resolved?.kind === "unique" ? resolved.item : null;
   }
 
   /** Whether a wikilink Citation Occurrence resolves to `indexedKey`. */
@@ -1090,6 +1102,7 @@ export class CitationIndex extends Service<void> {
   #resolve(
     occurrence: CitationOccurrence,
     sourcePath: string,
+    lookup?: CitationLookupAnswer,
   ): ResolvedNote | null {
     if (occurrence.kind === "wikilink") {
       const indexedKey = resolveIndexedKey(
@@ -1102,7 +1115,8 @@ export class CitationIndex extends Service<void> {
     // An Ambiguous Citation Key keeps its own identity here: it adopts no
     // candidate's Indexed Key, so it stays a Citation of the key itself and
     // contributes no CSL work.
-    const item = this.#uniqueItem(occurrence.raw);
+    const resolved = lookup?.resolve(occurrence.raw);
+    const item = resolved?.kind === "unique" ? resolved.item : null;
     if (!item) return null;
     const [note] = this.#noteIndex.getNotesByItemKey(item.indexedKey);
     return { indexedKey: item.indexedKey, linkpath: note?.path ?? null };

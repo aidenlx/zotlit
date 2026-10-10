@@ -3,6 +3,8 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { describe, expect, it, vi } from "vitest";
 
+import { lookupForWorks } from "@/services/citation-index/__fixtures__/lookup";
+
 const { livePreview, tokenClassNodeProp } = vi.hoisted(() => ({
   livePreview: vi.fn(() => true),
   tokenClassNodeProp: {},
@@ -70,6 +72,7 @@ vi.mock("obsidian", async (importOriginal) => {
 
 import { Keymap, editorInfoField } from "obsidian";
 
+import { CitationLookupAnswer } from "@/services/citation-index/lookup";
 import { occurrences, rendered } from "@/services/citation-text/__fixtures__";
 import { citationKey } from "@/services/citation-text/present";
 import type { DocumentCitations } from "@/services/citation-text/present";
@@ -137,6 +140,7 @@ function harness(doc: string, overrides: Partial<Settings> = {}) {
         ),
       ]),
       summaries: new Map(),
+      lookup: lookupForWorks(new Map()),
       literalWorks: new Map(),
     };
   }
@@ -148,12 +152,41 @@ function harness(doc: string, overrides: Partial<Settings> = {}) {
       extensions: [
         editorInfoField,
         wikilinkEditorExtension({
-          literatureNote: (linkpath) =>
-            linkpath === "literatures/example"
-              ? LITERATURE_NOTE
-              : linkpath === "literatures/other"
-                ? OTHER_NOTE
-                : null,
+          literatureNote: (linkpath, _sourcePath, lookup) => {
+            const note =
+              linkpath === "literatures/example"
+                ? LITERATURE_NOTE
+                : linkpath === "literatures/other"
+                  ? OTHER_NOTE
+                  : null;
+            return note
+              ? {
+                  ...note,
+                  citationKey: lookup?.citekeyOf(note.indexedKey) ?? null,
+                }
+              : null;
+          },
+          observeLookup: () => {
+            const lookup = new CitationLookupAnswer({
+              revision: "test",
+              citekeys: new Map(),
+              indexedKeys: new Map(
+                [LITERATURE_NOTE, OTHER_NOTE].map((note) => [
+                  note.indexedKey,
+                  note.citationKey,
+                ]),
+              ),
+            });
+            return {
+              current: {
+                value: lookup,
+                status: "fresh",
+                settled: Promise.resolve(lookup),
+              },
+              set: () => undefined,
+              [Symbol.dispose]: () => undefined,
+            };
+          },
           enabled: () => true,
           citationText: () => held,
           open: (citekey, pane) => opened.push([citekey, pane]),
