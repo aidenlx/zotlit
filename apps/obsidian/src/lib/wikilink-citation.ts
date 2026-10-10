@@ -44,7 +44,7 @@ interface CitationLinkTarget {
  *
  * @returns the target, or null when the link is none of the display's business.
  */
-function citationTarget(linktext: string): CitationLinkTarget | null {
+export function citationTarget(linktext: string): CitationLinkTarget | null {
   const hash = linktext.indexOf("#");
   if (hash === -1) {
     return linktext === "" ? null : { linkpath: linktext, fragment: null };

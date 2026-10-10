@@ -212,7 +212,7 @@ async function makeHarness({
         // reports the frontmatter that makes it one.
         getFileCache: metadataCache.getFileCache,
         getFirstLinkpathDest: (linkpath: string) =>
-          Object.hasOwn(notes, linkpath) ? { path: linkpath } : null,
+          Object.hasOwn(notes, linkpath) ? { path: `${linkpath}.md` } : null,
       },
     },
     db: reads,
@@ -685,30 +685,40 @@ describe("CitationText over wikilink Citations", () => {
     };
   }
 
-  it("renders a fragment-carrying wikilink as the citekey cluster it equals", async () => {
-    const body = `Claim [[${LIT}#cite:locator=4]].`;
-    const { service, citationRequests, dispose } = await makeHarness({
-      body,
-      cited: [],
-      links: [link(`${LIT}#cite:locator=4`, body.indexOf("[["))],
-      notes,
-      settings: WIKILINK_CITATIONS,
-    });
+  it.each([
+    { target: LIT, citekey: "alpha", spelling: "alpha" },
+    {
+      target: "literatures/Doe.v.Roe",
+      citekey: undefined,
+      spelling: "Doe.v.Roe",
+    },
+  ])(
+    "renders a fragment-carrying wikilink to $target as the citekey cluster it equals",
+    async ({ target, citekey, spelling }) => {
+      const body = `Claim [[${target}#cite:locator=4]].`;
+      const { service, citationRequests, dispose } = await makeHarness({
+        body,
+        cited: [],
+        links: [link(`${target}#cite:locator=4`, body.indexOf("[["))],
+        notes: { [target]: { citekey } },
+        settings: WIKILINK_CITATIONS,
+      });
 
-    const { formatted } = await readText(service);
+      const { formatted } = await readText(service);
 
-    expect(citationRequests).toEqual([
-      { citations: [`[@${LIT_KEY}, {p. 4}]`] },
-    ]);
-    expect(
-      firstText(
-        formatted.get(
-          citationKey({ source: "[@alpha, {p. 4}]", works: [LIT_KEY] }),
+      expect(citationRequests).toEqual([
+        { citations: [`[@${LIT_KEY}, {p. 4}]`] },
+      ]);
+      expect(
+        firstText(
+          formatted.get(
+            citationKey({ source: `[@${spelling}, {p. 4}]`, works: [LIT_KEY] }),
+          ),
         ),
-      ),
-    ).toBe(`«[@${LIT_KEY}, {p. 4}]»`);
-    await dispose();
-  });
+      ).toBe(`«[@${LIT_KEY}, {p. 4}]»`);
+      await dispose();
+    },
+  );
 
   it("renders a Citation Run as one grouped citation", async () => {
     const body = `Both [[${LIT}#cite:locator=4]]; [[${LIT}]].`;

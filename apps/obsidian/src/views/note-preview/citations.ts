@@ -12,6 +12,7 @@ import type { WikilinkCitation } from "@/lib/wikilink-citation";
 import {
   citationOfRun,
   citationRuns,
+  citationTarget,
   wikilinkCitation,
 } from "@/lib/wikilink-citation";
 import {
@@ -66,10 +67,17 @@ export async function renderDraftCitations(
   const scanned = scanDocumentCitations(input.markdown);
   const links = input.wikilinks ? draftLinks(input.markdown) : [];
   const notes = new Map(
-    links.map((link) => [
-      link.target,
-      resolveLiteratureNote(link.target, input.sourcePath, deps),
-    ]),
+    links.flatMap((link) => {
+      const target = citationTarget(link.target);
+      return target === null
+        ? []
+        : [
+            [
+              target.linkpath,
+              resolveLiteratureNote(target.linkpath, input.sourcePath, deps),
+            ] as const,
+          ];
+    }),
   );
   const lookup = await deps.citationIndex.readLookup({
     citekeys: scanned.flatMap((citation) =>

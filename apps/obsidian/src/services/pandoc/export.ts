@@ -257,11 +257,10 @@ async function readCitations(
   const unknown: string[] = [];
   const ambiguous: string[] = [];
 
-  let lookup: Awaited<ReturnType<ExportPorts["readLookup"]>>;
+  const citekeys = citedIds.filter((id) => !injected.has(id));
+  let lookup: Awaited<ReturnType<ExportPorts["readLookup"]>> | null;
   try {
-    lookup = await ports.readLookup({
-      citekeys: citedIds.filter((id) => !injected.has(id)),
-    });
+    lookup = citekeys.length > 0 ? await ports.readLookup({ citekeys }) : null;
   } catch {
     return {
       error: { kind: "database-unavailable", dataDir: ports.dataDir() },
@@ -273,7 +272,7 @@ async function readCitations(
       cited.add(wikilinkedKey);
       continue;
     }
-    const resolution = lookup.resolve(id);
+    const resolution = lookup?.resolve(id);
     if (!resolution) {
       return {
         error: { kind: "database-unavailable", dataDir: ports.dataDir() },
