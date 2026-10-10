@@ -314,6 +314,7 @@ export class CitationText extends Service<void> {
       body,
       set.occurrences,
       set.lookup,
+      set.citations,
     );
     const literal = worksByCitekey(set.citations);
     const works = await this.#readCited([

@@ -1,5 +1,6 @@
 // The vault-wide Citation Index: literal-citekey occurrences per file, wikilinks derived at query time.
 
+import { abortable } from "@std/async/abortable";
 import { TFile } from "obsidian";
 import type { App, LinkCache, TAbstractFile } from "obsidian";
 
@@ -258,7 +259,7 @@ export class CitationIndex extends Service<void> {
     file: TFile,
     { signal }: { signal?: AbortSignal } = {},
   ): Promise<DocumentCitationSet> {
-    await this.ready;
+    await abortable(this.ready, signal ?? this.#lookupStop.signal);
     const { citekeys, links } = this.#admitted(
       file,
       await this.#coverFile(file),
@@ -525,7 +526,7 @@ export class CitationIndex extends Service<void> {
       ? AbortSignal.any([signal, this.#lookupStop.signal])
       : this.#lookupStop.signal;
     lifetime.throwIfAborted();
-    await this.ready;
+    await abortable(this.ready, lifetime);
     for (;;) {
       lifetime.throwIfAborted();
       const epoch = this.#lookupEpoch;
