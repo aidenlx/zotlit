@@ -383,6 +383,7 @@ const REQUESTS: readonly ScenarioQuery[] = [
     "creators[].fullName",
     "tags[].name",
     "collections[]",
+    "attachments[].fileType",
     "attachments[].tags[]",
   ].flatMap((group) => [
     {

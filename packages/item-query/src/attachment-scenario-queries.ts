@@ -6,6 +6,8 @@ export const ATTACHMENT_SCENARIO_QUERIES: readonly Omit<
 >[] = [
   {},
   { fields: ["indexedKey", "key", "item.key", "fileType"], group: "fileType" },
+  { fields: [], group: "tags[]", limit: 1 },
+  { fields: [], group: "item.collections[]", limit: 2 },
   { fields: [], limit: 2 },
   { fields: ["item.creators[].fullName", "tags[]", "item", "item.indexedKey"] },
   ...[
