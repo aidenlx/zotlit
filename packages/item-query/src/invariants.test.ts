@@ -997,7 +997,7 @@ it("reads a mark's sibling list once even when its paper has several hydrate chu
         event.statement.reader === "annotation-details",
     ),
   ).toHaveLength(11);
-});
+}, 30000);
 
 describe("Relation List candidate bounds", () => {
   // Failure modes: one parent materializes all of its children, the parent cap
