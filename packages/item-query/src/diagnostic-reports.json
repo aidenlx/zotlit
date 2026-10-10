@@ -982,5 +982,18 @@
       "              ^^^^^^^^^^^^^^^^^",
       "Use library=personal,group:4815 to include group:4815."
     ]
+  },
+  {
+    "name": "unknown-collection-path",
+    "request": {
+      "filter": "collections.within(\"thesis\")",
+      "fields": []
+    },
+    "report": [
+      "Collection path \"thesis\" was not found in the selected Libraries. List the Collection paths with zotlit:query-values kind=collections.",
+      "collections.within(\"thesis\")",
+      "                   ^^^^^^^^^^",
+      "Use the exact Collection path, including letter case. Run zotlit:query-values kind=collections with the same library selection before you filter."
+    ]
   }
 ]

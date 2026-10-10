@@ -8,6 +8,7 @@ import type {
   ItemQueryLayoutError,
 } from "@zotlit/db/item-query";
 
+import { collectionWarnings } from "./collection-warnings";
 import type { QueryDataset } from "./dataset";
 import { diagnoseWarning } from "./diagnose";
 import type { ItemQueryError } from "./error";
@@ -106,6 +107,11 @@ export function consumeQuery<Request extends ItemQueryRequest, A, E, R>(
         query,
         warnings: [
           ...plan.warnings,
+          ...(yield* collectionWarnings(
+            plan.filter?.root,
+            request.libraries,
+            run.collectionPaths,
+          )),
           ...(plan.filter
             ? indexedKeyWarnings(
                 plan.filter.root,

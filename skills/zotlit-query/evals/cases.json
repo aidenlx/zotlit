@@ -26,5 +26,6 @@
   "files_of_paper": "In My Library, list all attachments of 深度学习 in clinical attention. Give their titles, file types, local paths, whether the files exist, and any attachment tags.",
   "csv_for_advisor": "In My Library, among the papers in my Query thesis collection, prepare a CSV for my advisor with the titles and publication years. Tell me how many papers it contains and where you saved it. Do not send it.",
   "recent_with_pdf_unread": "In My Library, among the papers in my Query thesis collection, which papers published since 2019 have attachments and are not tagged to-read? Give their titles and publication years.",
-  "chinese_title": "In My Library, among the papers in my Query thesis collection, which papers have 深度学习 in the title? Give their titles."
+  "chinese_title": "In My Library, among the papers in my Query thesis collection, which papers have 深度学习 in the title? Give their titles.",
+  "discover_collection": "In My Library, list all the papers in my thesis collection about queries. I do not remember its exact name. Give each title and publication year, including papers with no year, and the complete count."
 }

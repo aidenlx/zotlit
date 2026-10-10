@@ -3,6 +3,7 @@ import { Effect } from "effect";
 import { formatIndexedKey } from "@zotlit/db";
 import { HYDRATE_CHUNK_SIZE, SCAN_PAGE_SIZE } from "@zotlit/db/item-query";
 import type {
+  CollectionPaths,
   ItemQueryDatabase,
   ItemQueryReaderError,
   ScanRow,
@@ -40,6 +41,9 @@ type Read<A> = Effect.Effect<A, ItemQueryReaderError, ItemQueryDatabase>;
 
 /** What the descriptor of a Query Dataset opens for one run. */
 export interface DatasetRun<I extends { scan: ScanRow }> {
+  readonly collectionPaths: (
+    library: TargetLibrary,
+  ) => CollectionPaths | undefined;
   readonly scan: Loader<object, I["scan"], I>;
   readonly projection: Loader<object, I["scan"], I>;
   readonly candidates: (

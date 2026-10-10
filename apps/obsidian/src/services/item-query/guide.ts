@@ -18,6 +18,7 @@ import {
   INLINE_MAX_BYTES,
   QUERY_GUIDE_COMMAND,
   QUERY_SCHEMA_COMMAND,
+  QUERY_VALUES_COMMAND,
   queryFlags,
   QUERY_ID_FORM,
   queryCancelledText,
@@ -174,6 +175,7 @@ REGULAR EXPRESSIONS
 
 TAGS, COLLECTIONS, AND CREATORS
   tags, collections, and creators are lists of text.
+  List the paths with zotlit:query-values kind=collections before you write a Collection filter.
     ${filter('tags.contains("to-read")')}
     ${filter('tags.containsAny("to-read", "cited")')}
   A Collection is its full path from the top-level Collection of its
@@ -357,6 +359,9 @@ ENVELOPE
   limit; returnedCount is the number of rows returned across all groups.
   warnings is an array of diagnostics, empty when there are no warnings.
   Read warnings before you report an empty result. File receipts include it too.
+  unknown-collection means a literal Collection path was not found in any
+  Target Library. Check its suggestions and list exact paths with
+  zotlit:query-values kind=collections using the same library selection.
   libraries lists each Library the query read, My Library first and then
   the groups by group ID. Each entry is {"type":"personal"} or
   {"type":"group","groupID","name"}. request.library has the same
@@ -513,6 +518,30 @@ const GROUP_SECTION = `GROUP RESULTS
   Files by content type:
     ${example({ from: "attachments", group: "fileType" })}`;
 
+const VALUES_SECTION = `COLLECTION AND TAG VALUES
+
+  obsidian vault=<vault> ${QUERY_VALUES_COMMAND} kind=<collections|tags>
+    [library=<selector|all>] [match=<text>] [limit=<n|all>]
+
+  List names before writing a Collection or Tag filter. kind is required.
+  Collection values are exact, case-sensitive paths joined by /, including
+  empty Collections. Trashed Collections and their subcollections are excluded.
+  Tag values are { name, type }, with type manual, auto, or unknown. A name
+  used with both types has two entries. Tags on non-trashed records are listed.
+
+  Each Library stays separate. library takes personal, group:<groupID>, or
+  all for every Library of the source. Omit it to use Library scope, as for
+  zotlit:query. match keeps names containing the text, ignoring letter case.
+  Values use the query string order. limit defaults to ${DEFAULT_CLI_LIMIT} per
+  Library; limit=all returns every matching value. Each Library reports its
+  selector, name, values, totalCount before limit, returnedCount, and truncated.
+  The envelope also reports identity, libraries, request, returnedCount, and
+  truncated. Check identity and Libraries before using a returned name.
+  If the inline response is too large, narrow match or reduce limit.
+
+  obsidian vault=<vault> ${QUERY_VALUES_COMMAND} kind=collections match=thesis
+  obsidian vault=<vault> ${QUERY_VALUES_COMMAND} kind=tags library=all limit=all`;
+
 /** Canonical topic registry shared by parsing, generated help, and the index. */
 export const GUIDE_TOPICS = {
   datasets: DATASETS_SECTION,
@@ -522,6 +551,7 @@ export const GUIDE_TOPICS = {
   group: GROUP_SECTION,
   results: RESULTS_SECTION,
   schema: SCHEMA_SECTION,
+  values: VALUES_SECTION,
   cancel: `${CANCEL_SECTION}\n\n${ANNOTATION_GUIDE_SECTIONS.cancel}`,
 } as const satisfies Record<string, string>;
 
@@ -545,6 +575,7 @@ WORKFLOW
 
 SYNOPSIS
   obsidian ${QUERY_SCHEMA_COMMAND}
+  obsidian ${QUERY_VALUES_COMMAND} kind=<collections|tags> [library=<selector|all>] [match=<text>] [limit=<n|all>]
   ${querySynopsis()}
   obsidian ${QUERY_CANCEL_COMMAND} id=<id>
   obsidian ${QUERY_GUIDE_COMMAND} [topic=<${GUIDE_TOPIC_NAMES.join("|")}>]

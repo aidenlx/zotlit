@@ -14,6 +14,7 @@ import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import {
   QUERY_COMMAND,
   QUERY_SCHEMA_COMMAND,
+  QUERY_VALUES_COMMAND,
   diagnostic,
   failure,
   queryCancelledText,
@@ -21,7 +22,7 @@ import {
   rejectionDiagnostic,
 } from "./contract";
 import type { QueryCliCommand } from "./contract";
-import { decodeQuery, decodeSchemaArguments } from "./decode";
+import { decodeQuery, decodeSchemaArguments, decodeValues } from "./decode";
 import type { CancellationEvent, QueryObserver } from "./trace";
 import type { QueryAnswer, QueryCommand } from "./worker-protocol";
 
@@ -135,6 +136,18 @@ export class QueryService extends Service {
     );
   }
 
+  /** List Collection paths or Tag names through the same worker connection. */
+  values(params: CliData, signal: AbortSignal): Promise<string> {
+    const command = QUERY_VALUES_COMMAND;
+    const request = decodeValues(params);
+    if (request.kind === "invalid")
+      return Promise.resolve(failure(command, rejectionDiagnostic(request)));
+    return this.#start(
+      this.#job({ schema: false, command, values: request.value }),
+      signal,
+    );
+  }
+
   /** The jobs that have not settled. */
   get runningJobs(): number {
     return Effect.runSync(FiberMap.size(this.#jobs));
@@ -226,7 +239,7 @@ export class QueryService extends Service {
         }),
       ).pipe(Effect.onInterrupt(() => report("requested")));
       const id = randomUUID();
-      const output = command.schema ? undefined : command.query.output;
+      const output = command.schema ? undefined : command.query?.output;
       const stagePath =
         output === undefined ? undefined : yield* stageExport(output, id);
       const call = yield* Effect.forkChild(

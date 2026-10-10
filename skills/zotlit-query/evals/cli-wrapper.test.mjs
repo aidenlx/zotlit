@@ -45,6 +45,7 @@ for (const agent of ["codex", "claude"]) {
         ["zotlit:query", "from=attachments", "fail"],
         ["zotlit:query", "from=annotations"],
         ["zotlit:query-schema"],
+        ["zotlit:query-values", "kind=collections"],
         ["zotlit:query-guide"],
         ["zotlit:annotation-image"],
       ];
@@ -104,7 +105,7 @@ for (const agent of ["codex", "claude"]) {
         .trim()
         .split("\n")
         .map(JSON.parse);
-      assert.equal(calls.length, 6);
+      assert.equal(calls.length, 7);
       for (const [index, call] of calls.entries()) {
         assert.deepEqual(call.argv, [
           "vault=private-vault",
@@ -130,7 +131,7 @@ for (const agent of ["codex", "claude"]) {
           guideAttempts: 1,
           imageAttempts: 1,
           imageExitZero: 1,
-          cliStdoutBytes: 78,
+          cliStdoutBytes: 91,
         },
       );
       await Promise.all(
@@ -146,7 +147,7 @@ for (const agent of ["codex", "claude"]) {
         .trim()
         .split("\n")
         .map(JSON.parse);
-      assert.equal(concurrent.length, 8);
+      assert.equal(concurrent.length, 9);
       const denied = await runProcess(
         "./obsidian",
         ["vault=another", "zotlit:query"],

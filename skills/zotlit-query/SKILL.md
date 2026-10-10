@@ -12,7 +12,7 @@ metadata:
 1. Select the researcher's vault. Read Obsidian CLI help for vault targeting and use that vault for every call.
 2. Read `zotlit:query-guide` and `zotlit:query-schema` before composing the query. Compare the answer's `contractVersion` with this skill's pin. Follow the live guide when they differ, and confirm the vault and Zotero source identities.
 3. Follow `zotlit:query-guide topic=schema` to save and inspect the catalog. Reuse it while its URL is unchanged. Check each needed field and capability in the catalog, including custom fields from the live schema answer.
-4. Choose the Target Libraries and the shape of the answer from the research task. Use the guide topics below to write the request.
+4. Choose the Target Libraries and the shape of the answer from the research task. Use the guide topics below to write the request. Read Collection or Tag names with `zotlit:query-values` before filtering by them.
 5. Require a successful envelope, then read its Query Warnings. Read the Diagnostic Report and its recovery action before correcting a failed call. Retry a transient failure once and report a repeated failure.
 6. Complete when the source identity, Target Libraries, normalized request, and completeness match the task and you have read the returned evidence. Report useful results with their scope and completeness.
 

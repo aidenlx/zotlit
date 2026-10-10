@@ -109,7 +109,10 @@ export type QueryResult = QueryMetadata &
 
 export interface QueryMetadata {
   readonly warnings: readonly Diagnostic<
-    "never-true" | "always-true" | "key-outside-target-libraries"
+    | "never-true"
+    | "always-true"
+    | "key-outside-target-libraries"
+    | "unknown-collection"
   >[];
   /** The normalized request. */
   readonly query: ItemQuery;

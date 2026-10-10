@@ -158,6 +158,7 @@ describe("zotlit:query-guide", () => {
       query: async () => "",
       cancel: () => false,
       schema: async () => "",
+      values: async () => "",
     });
 
     expect(registerCliHandler).toHaveBeenCalledWith(

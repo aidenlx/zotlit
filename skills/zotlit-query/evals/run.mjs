@@ -13,7 +13,11 @@ import { validate } from "./check.mjs";
 import { startCliWrapper } from "./cli-wrapper.mjs";
 import { measureEvents, parseEvents } from "./events.mjs";
 import { indexedKeyLibrary, librarySelector } from "./libraries.mjs";
-import { researchSchema, checkResearchAnswer } from "./research.mjs";
+import {
+  researchSchema,
+  checkResearchAnswer,
+  checkCollectionDiscovery,
+} from "./research.mjs";
 export { measureEvents } from "./events.mjs";
 
 const repo = resolve(fileURLToPath(new URL("../../../", import.meta.url)));
@@ -859,6 +863,9 @@ export async function runCase(
       runRoot: corpus,
       vaultPath: vault,
     });
+    report.errors.push(
+      ...checkCollectionDiscovery(oracle.cases[caseName], cliCalls),
+    );
     report.errors.push(...exportErrors);
     report.errors.push(...imageErrors);
     report.errors.push(

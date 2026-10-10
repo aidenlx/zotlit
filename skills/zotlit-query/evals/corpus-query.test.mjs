@@ -27,6 +27,7 @@ const { ItemQueryDatabase } = await import(
   requireQuery.resolve("@zotlit/db/item-query")
 );
 const {
+  listQueryValues,
   collectQuery,
   ITEMS,
   ATTACHMENTS,
@@ -84,6 +85,18 @@ await test("every case oracle matches a real query over the seeded Fixture", asy
             ? [{ libraryID: 3, groupID: 118 }]
             : []),
         ];
+        let filter = spec.request.filter;
+        if (spec.discovery) {
+          const listing = await Effect.runPromise(
+            listQueryValues(libraries[0], {
+              kind: "collections",
+              match: "thesis",
+              limit: null,
+            }).pipe(Effect.provideService(ItemQueryDatabase, { client })),
+          );
+          assert.ok(listing.values.includes(spec.discovery.path));
+          filter = `collections.within(${JSON.stringify(listing.values.find((path) => path === spec.discovery.path))})`;
+        }
         const result = await Effect.runPromise(
           collectQuery(
             {
@@ -93,7 +106,7 @@ await test("every case oracle matches a real query over the seeded Fixture", asy
             }[spec.request.from],
             {
               libraries,
-              filter: spec.request.filter,
+              filter,
               fields,
               ...(spec.request.sort
                 ? {

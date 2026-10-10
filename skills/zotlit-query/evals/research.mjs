@@ -317,3 +317,30 @@ export function checkResearchAnswer(
     errors.push("answer has wrong CSV export path");
   return errors;
 }
+
+// Receipts are written by the CLI wrapper, outside the agent's writable folder.
+export function checkCollectionDiscovery(spec, calls) {
+  if (!spec.discovery) return [];
+  const { library, path } = spec.discovery;
+  const discovery = calls.findIndex(
+    (call) =>
+      call.exitCode === 0 &&
+      call.argv[1] === "zotlit:query-values" &&
+      call.argv.includes("kind=collections") &&
+      call.discovered?.some(
+        (values) => values.library === library && values.values.includes(path),
+      ),
+  );
+  const query = calls.findIndex(
+    (call, index) =>
+      index > discovery &&
+      call.exitCode === 0 &&
+      call.argv[1] === "zotlit:query" &&
+      call.argv.some((arg) => arg.startsWith("filter=") && arg.includes(path)),
+  );
+  return discovery >= 0 && query > discovery
+    ? []
+    : [
+        "Discover the Collection path with zotlit:query-values before filtering by it",
+      ];
+}

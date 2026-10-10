@@ -220,6 +220,11 @@ describe("zotlit:query-guide", () => {
 
   it("shows only commands and filters that run", async () => {
     using scenario = openScenarioDatabase({ annotations: true });
+    scenario.sqlite
+      .prepare(
+        "insert into collections (collectionName, libraryID, key) values ('Shared key', 1, 'SHAREDCL')",
+      )
+      .run();
     const run = runnerOf(scenario);
     const failures: string[] = [];
 
@@ -264,6 +269,7 @@ describe("registerQueryCli", () => {
       },
       cancel: (id) => id === "export-a",
       schema: async () => "",
+      values: async () => "values",
     });
 
     expect(registerCliHandler).toHaveBeenCalledWith(
@@ -286,6 +292,21 @@ describe("registerQueryCli", () => {
       expect.objectContaining({ id: expect.any(Object) }),
       expect.any(Function),
     );
+    expect(registerCliHandler).toHaveBeenCalledWith(
+      "zotlit:query-values",
+      expect.any(String),
+      expect.objectContaining({
+        kind: expect.any(Object),
+        library: expect.any(Object),
+        match: expect.any(Object),
+        limit: expect.any(Object),
+      }),
+      expect.any(Function),
+    );
+    const values = registerCliHandler.mock.calls.find(
+      ([command]) => command === "zotlit:query-values",
+    )![3] as CliHandler;
+    expect(await values({ kind: "collections" })).toBe("values");
     const cancel = registerCliHandler.mock.calls.find(
       ([command]) => command === QUERY_CANCEL_COMMAND,
     )![3] as CliHandler;
@@ -307,6 +328,7 @@ describe("registerQueryCli", () => {
     expect(registerCliHandler.mock.calls.map(([name]) => name)).toEqual([
       "zotlit:query",
       "zotlit:query-schema",
+      "zotlit:query-values",
       "zotlit:query-guide",
       "zotlit:query-cancel",
     ]);

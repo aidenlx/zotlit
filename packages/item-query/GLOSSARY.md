@@ -73,5 +73,5 @@ The lines an agent reads for one Fault: the statement, an excerpt with the place
 _Avoid_: rendered error, error text, stack trace
 
 **Query Warning**:
-A finding on a successful query that still answered: a comparison between two values whose types can never be equal, so that part of the filter selects nothing or everything, or a key that names a Library outside the Target Libraries. It arrives with the Query Result, not instead of it.
+A finding on a successful query that still answered: a comparison between two values whose types can never be equal, so that part of the filter selects nothing or everything, a key that names a Library outside the Target Libraries, or a literal Collection path absent from every Target Library. It arrives with the Query Result, not instead of it.
 _Avoid_: soft error, lint, notice

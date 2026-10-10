@@ -18,6 +18,7 @@ async function exercise(
     agentTimedOut = false,
     removalFailure = false,
     noQuery = false,
+    skipDiscovery = false,
     sandboxFailure = false,
     observedEvaluatorRead = false,
     wrongDetail = false,
@@ -41,9 +42,28 @@ async function exercise(
       '#!/bin/sh\nexec ./obsidian "$@"\n',
       { mode: 0o700 },
     );
+    const discovery = oracle.cases[caseName].discovery;
+    if (discovery && !skipDiscovery) {
+      const listed = await runProcess(
+        "./obsidian",
+        [
+          "vault=fake-vault-id",
+          "zotlit:query-values",
+          "kind=collections",
+          `library=${discovery.library}`,
+        ],
+        { cwd: options.cwd },
+      );
+      assert.equal(listed.code, 0, listed.stderr);
+    }
     const queried = await runProcess(
       "./nested.sh",
-      ["vault=fake-vault-id", "zotlit:query", `from=${envelope.request.from}`],
+      [
+        "vault=fake-vault-id",
+        "zotlit:query",
+        `from=${envelope.request.from}`,
+        ...(discovery ? [`filter=${envelope.request.filter}`] : []),
+      ],
       { cwd: options.cwd },
     );
     assert.equal(queried.code, 0, queried.stderr);
@@ -85,6 +105,16 @@ async function exercise(
         }),
         stderr: "",
         timedOut: false,
+      };
+    if (args.includes("zotlit:query-values"))
+      return {
+        code: 0,
+        stderr: "",
+        timedOut: false,
+        stdout: JSON.stringify({
+          ok: true,
+          values: [{ library: "personal", values: ["Query thesis"] }],
+        }),
       };
     if (args[0]?.endsWith("obsidian-cli.ts") && args.includes("zotlit:query"))
       return {
@@ -1039,12 +1069,12 @@ await test("batch runs every case sequentially and retains failure kinds and met
         },
       },
     );
-    assert.equal(order.length, 28);
-    assert.equal(new Set(order).size, 28);
+    assert.equal(order.length, 29);
+    assert.equal(new Set(order).size, 29);
     assert.equal(report.state, "failed");
     assert.equal(report.failures.task, 1);
     const saved = JSON.parse(await readFile(report.files.report, "utf8"));
-    assert.equal(saved.cases.length, 28);
+    assert.equal(saved.cases.length, 29);
     assert.match(
       await readFile(
         join(repo, ".scratch", "zotlit-query-evals", runId, "summary.md"),
@@ -1126,4 +1156,13 @@ await test("Library selectors and display names identify the same Library in ans
     },
   });
   assert.equal(shared.state, "passed", shared.errors.join("\n"));
+});
+
+await test("Collection discovery fails when an agent guesses the correct path", async () => {
+  const report = await exercise(null, {
+    caseName: "discover_collection",
+    skipDiscovery: true,
+  });
+  assert.equal(report.failureKind, "task");
+  assert.match(report.errors.join("\n"), /Discover the Collection path/);
 });

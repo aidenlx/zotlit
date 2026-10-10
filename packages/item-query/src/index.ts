@@ -73,3 +73,5 @@ export type {
 } from "./fault";
 
 export { ATTACHMENTS } from "./query-attachments";
+
+export { listQueryValues, type QueryValuesRequest } from "./query-values";
