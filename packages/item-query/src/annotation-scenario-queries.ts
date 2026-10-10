@@ -13,6 +13,8 @@ export const ANNOTATION_SCENARIO_QUERIES: readonly Omit<
     'item.custom["review.status"]',
     "tags",
     "item.creators[].fullName",
+    "tags[]",
+    "item.tags[].name",
   ].flatMap((group) => [
     { group, fields: [], limit: 3 },
     { group, fields: [], limit: null },

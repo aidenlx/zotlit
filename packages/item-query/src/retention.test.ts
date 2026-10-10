@@ -325,3 +325,89 @@ it("releases a paper's file records with each chunk of a limited query", async (
   collectGarbage();
   expect(related.filter((row) => row.deref())).toEqual([]);
 });
+
+it("keeps the limit plus one row per group when papers fan out to many Tag groups", async () => {
+  // Each bulk paper has the Tags "bulk" and "bulk-fifth" of the seed, and two
+  // of 300 Tags: paper i has t<i % 300> and t<(i + 1) % 300>.
+  const TAGS = 300;
+  using source = openScenarioDatabase();
+  seedBulkLibrary(source.sqlite, BULK_ITEMS);
+  const itemIDs = source.sqlite
+    .prepare("select itemID from items where libraryID = ? order by itemID")
+    .all(BULK_LIBRARY.libraryID)
+    .map((row) => Number(row.itemID));
+  expect(itemIDs).toHaveLength(BULK_ITEMS);
+  source.sqlite.exec("begin");
+  const tagIDs = Array.from({ length: TAGS }, (_, index) =>
+    Number(
+      source.sqlite
+        .prepare("insert into tags (name) values (?)")
+        .run(`t${String(index).padStart(3, "0")}`).lastInsertRowid,
+    ),
+  );
+  const tag = source.sqlite.prepare(
+    "insert into itemTags (itemID, tagID, type) values (?, ?, 0)",
+  );
+  for (const [index, itemID] of itemIDs.entries()) {
+    tag.run(itemID, tagIDs[index % TAGS]!);
+    tag.run(itemID, tagIDs[(index + 1) % TAGS]!);
+  }
+  source.sqlite.exec("commit");
+
+  const LIMIT = 1;
+  const GROUPS = TAGS + 2;
+  const scanned: WeakRef<object>[] = [];
+  let retained = 0;
+  const run = await runEffect(
+    consumeQuery(
+      ITEMS,
+      {
+        libraries: [BULK_LIBRARY],
+        group: "tags[].name",
+        fields: [],
+        limit: LIMIT,
+      },
+      // Begin runs once after the scan pass, before the projection pass.
+      (summary) =>
+        Effect.sync(() => {
+          collectGarbage();
+          collectGarbage();
+          retained = scanned.filter((row) => row.deref()).length;
+          return {
+            write: () => Effect.void,
+            end: () => Effect.succeed(summary),
+          };
+        }),
+    ),
+    {
+      client: source.db,
+      keepStatements: false,
+      onEvent: (event) => {
+        if (event.type !== "statement") return;
+        const { reader, rows } = event.statement;
+        if (READS_UNIVERSE.has(reader))
+          for (const row of rows) scanned.push(new WeakRef(row as never));
+      },
+    },
+  );
+  if (!Exit.isSuccess(run.exit)) throw new Error(String(run.exit.cause));
+  const result = run.exit.value;
+  expect(scanned).toHaveLength(BULK_ITEMS);
+  // Papers with index i % 300 == r: 9 for r < 200, 8 otherwise (2,600 papers).
+  const papers = (residue: number) => (residue < 200 ? 9 : 8);
+  expect(result.groups!.map(({ value, count }) => [value, count])).toEqual([
+    ["bulk", BULK_ITEMS],
+    ["bulk-fifth", 520],
+    ...Array.from({ length: TAGS }, (_, index) => [
+      `t${String(index).padStart(3, "0")}`,
+      papers(index) + papers((index + TAGS - 1) % TAGS),
+    ]),
+  ]);
+  expect(result).toMatchObject({
+    totalCount: BULK_ITEMS,
+    returnedCount: GROUPS,
+    truncated: true,
+  });
+  expect(retained).toBeGreaterThan(0);
+  expect(retained).toBeLessThanOrEqual((LIMIT + 1) * GROUPS);
+});

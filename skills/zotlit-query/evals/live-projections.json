@@ -1124,6 +1124,117 @@
       "exportPath": null
     }
   },
+  "papers_per_tag": {
+    "provenance": "Reviewed contract example; verified against the seeded corpus by corpus-query.test.mjs.",
+    "envelope": {
+      "contractVersion": 3,
+      "command": "zotlit:query",
+      "ok": true,
+      "identity": {
+        "vault": {
+          "name": "vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a",
+          "path": "/evaluation-run/vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a"
+        },
+        "source": {
+          "databasePath": "/evaluation-run/corpus/zotero-data/zotero.sqlite",
+          "id": "34ecb303"
+        }
+      },
+      "libraries": [
+        {
+          "type": "personal"
+        }
+      ],
+      "request": {
+        "from": "items",
+        "library": ["personal"],
+        "filter": "collections.within(\"Query thesis\")",
+        "fields": [],
+        "limit": null,
+        "group": "tags[].name"
+      },
+      "returnedCount": 6,
+      "truncated": false,
+      "warnings": [],
+      "groups": [
+        {
+          "value": "query-cross-eval",
+          "count": 5,
+          "rows": [
+            {
+              "indexedKey": "QCMISS22",
+              "values": {}
+            },
+            {
+              "indexedKey": "QCSNG222",
+              "values": {}
+            },
+            {
+              "indexedKey": "QCTWN222",
+              "values": {}
+            },
+            {
+              "indexedKey": "QCWEB222",
+              "values": {}
+            },
+            {
+              "indexedKey": "QCZRPP22",
+              "values": {}
+            }
+          ]
+        },
+        {
+          "value": "to-read",
+          "count": 1,
+          "rows": [
+            {
+              "indexedKey": "QCSNG222",
+              "values": {}
+            }
+          ]
+        }
+      ],
+      "totalCount": 5
+    },
+    "answer": {
+      "answer": "Complete research results.",
+      "count": 5,
+      "rows": [
+        {
+          "indexedKey": "QCMISS22",
+          "values": {}
+        },
+        {
+          "indexedKey": "QCSNG222",
+          "values": {}
+        },
+        {
+          "indexedKey": "QCTWN222",
+          "values": {}
+        },
+        {
+          "indexedKey": "QCWEB222",
+          "values": {}
+        },
+        {
+          "indexedKey": "QCZRPP22",
+          "values": {}
+        }
+      ],
+      "groups": [
+        {
+          "value": "query-cross-eval",
+          "count": 5
+        },
+        {
+          "value": "to-read",
+          "count": 1
+        }
+      ],
+      "limitation": null,
+      "exportPath": null
+    }
+  },
   "unread_in_collection": {
     "provenance": "Reviewed contract example; verified against the seeded corpus by corpus-query.test.mjs.",
     "envelope": {

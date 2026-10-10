@@ -80,7 +80,7 @@ export const queryFlags = {
   group: {
     value: "<path>",
     description:
-      "Group by one scalar Projection Path; limit applies inside each group",
+      "Group by one scalar Projection Path, or by each element value with one [] (tags[].name); limit applies inside each group",
   },
   limit: {
     value: "<n|all>",

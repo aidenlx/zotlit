@@ -74,6 +74,8 @@ export interface QueryRun<I extends { scan: ScanRow }> extends DatasetRun<I> {
     itemIDs: readonly number[];
   }) => Read<readonly I["scan"][]>;
   readonly keys: (item: I) => readonly SortKey[];
+  /** Grouped query: the distinct group values of a matched record. */
+  readonly groupValues: ((item: I) => readonly GroupValue[]) | null;
 }
 
 export function consumeDataset<I extends { scan: ScanRow }, A, E, R>(
@@ -113,23 +115,29 @@ export function consumeDataset<I extends { scan: ScanRow }, A, E, R>(
           for (const item of items) {
             if (!run.matches(item)) continue;
             const keys = run.keys(item);
-            const match = { scan: item.scan, keys, library };
-            if (query.group !== undefined) {
-              const value = keys[0]!;
-              let group = groups.get(value);
-              if (!group) {
-                group = { value, count: 0, matches: retain() };
-                groups.set(value, group);
-              }
-              group.count++;
+            if (run.groupValues) {
+              // A record joins one group for each of its distinct values; the
+              // value is the first key of its entry in that group.
               totalCount++;
-              let chunk = grouped.get(value);
-              if (!chunk) {
-                chunk = [];
-                grouped.set(value, chunk);
+              for (const value of run.groupValues(item)) {
+                let group = groups.get(value);
+                if (!group) {
+                  group = { value, count: 0, matches: retain() };
+                  groups.set(value, group);
+                }
+                group.count++;
+                let chunk = grouped.get(value);
+                if (!chunk) {
+                  chunk = [];
+                  grouped.set(value, chunk);
+                }
+                chunk.push({
+                  scan: item.scan,
+                  keys: [value, ...keys.slice(1)],
+                  library,
+                });
               }
-              chunk.push(match);
-            } else matching.push(match);
+            } else matching.push({ scan: item.scan, keys, library });
           }
           if (query.group === undefined) matches.add(matching);
           else

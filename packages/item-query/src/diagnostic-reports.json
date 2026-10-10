@@ -995,5 +995,30 @@
       "                   ^^^^^^^^^^",
       "Use the exact Collection path, including letter case. Run zotlit:query-values kind=collections with the same library selection before you filter."
     ]
+  },
+  {
+    "name": "group by a bare list",
+    "request": {
+      "group": "tags"
+    },
+    "report": [
+      "The group path \"tags\" is a list; group takes one scalar value, so name its elements with [].",
+      "tags",
+      "^^^^",
+      "tags[] has these fields: name, type.",
+      "Group by one field of each element, as in group='tags[].<field>'."
+    ]
+  },
+  {
+    "name": "group by two []",
+    "request": {
+      "group": "attachments[].tags[]"
+    },
+    "report": [
+      "The group path \"attachments[].tags[]\" has 2 []; group takes a path with one [].",
+      "attachments[].tags[]",
+      "^^^^^^^^^^^^^^^^^^^^",
+      "Keep one [], after the Relation List whose element values form the groups."
+    ]
   }
 ]

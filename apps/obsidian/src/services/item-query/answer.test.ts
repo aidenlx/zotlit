@@ -1115,6 +1115,52 @@ it("encodes an empty grouped answer and the scalar-path Diagnostic Report", asyn
   const invalid = await run({ group: "tags" });
   expect(invalid).toMatchObject({
     ok: false,
-    diagnostic: { code: "invalid-group", location: { argument: "group" } },
+    diagnostic: {
+      code: "invalid-group",
+      location: { argument: "group" },
+      suggestions: ["group='tags[].name'", "group='tags[].type'"],
+    },
   });
+});
+
+it("answers and exports overlapping element groups with records counted once", async () => {
+  using scenario = openScenarioDatabase();
+  let output = "";
+  const { run } = setup(scenario, {
+    openOutput: () =>
+      Effect.succeed({
+        write: (text) =>
+          Effect.sync(() => {
+            output += text;
+          }),
+      }),
+  });
+  const params = {
+    group: "tags[].name",
+    filter: 'tags.contains("methods")',
+    library: "personal",
+    limit: "all",
+    fields: "[]",
+    sort: "key",
+  };
+  const found = await run(params);
+  // ART2FULL has the Tags methods, to-read, and To-Read; ALS2CNFL has methods.
+  expect(found).toMatchObject({
+    request: { group: "tags[].name" },
+    totalCount: 2,
+    returnedCount: 4,
+    truncated: false,
+    groups: [
+      {
+        value: "methods",
+        count: 2,
+        rows: [{ indexedKey: "ALS2CNFL" }, { indexedKey: "ART2FULL" }],
+      },
+      { value: "to-read", count: 1, rows: [{ indexedKey: "ART2FULL" }] },
+      { value: "To-Read", count: 1, rows: [{ indexedKey: "ART2FULL" }] },
+    ],
+  });
+  const receipt = await run({ ...params, output: "/exports/tags.json" });
+  expect(output).toBe(JSON.stringify(found, null, 2));
+  expect(receipt).toMatchObject({ totalCount: 2, returnedCount: 4 });
 });

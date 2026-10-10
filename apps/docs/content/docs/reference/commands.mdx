@@ -474,7 +474,7 @@ The Query CLI reads works, files, and reading marks for agents and scripts. One 
 | `filter`  | A Filter Expression over the selected dataset and its related records.                                                                             |
 | `fields`  | A comma list of Projection Paths or a JSON array. `fields=[]` returns identity-only rows.                                                          |
 | `sort`    | A comma list or a JSON array of `{ "field", "direction" }` objects. Use `-field` for descending order and `field` or `+field` for ascending order. |
-| `group`   | One scalar Projection Path. The result contains one group for each value.                                                                          |
+| `group`   | One scalar Projection Path, or a path with one `[]` such as `tags[].name`. The result contains one group for each value.                           |
 | `limit`   | A positive integer or `all`. The default is 100. In a grouped query, the limit applies inside each group.                                          |
 | `library` | `personal`, `group:<groupID>`, a comma list, a JSON array, or `all`. The default comes from the Library Scope setting.                             |
 | `output`  | A new absolute file path for the complete JSON result.                                                                                             |
@@ -524,7 +524,15 @@ A path such as `attachments[].path` returns one value for each Attachment. It ke
 obsidian zotlit:query from=attachments group=contentType
 ```
 
-Each group contains `value`, `count`, and `rows`. `count` is the number of matches before the per-group limit. `totalCount` counts all matches, and `returnedCount` counts the returned rows.
+Each group contains `value`, `count`, and `rows`. `count` is the number of matches before the per-group limit. `totalCount` counts all matched records, and `returnedCount` counts the row entries returned across all groups.
+
+A path with one `[]` groups by each element of a list. This command counts papers per tag:
+
+```bash
+obsidian zotlit:query group='tags[].name' fields='[]' limit=1
+```
+
+A paper joins one group for each of its tags, and a paper without tags is in the `null` group. Groups can overlap, so their counts can add up to more than `totalCount`. Use `collections[]` for papers per Collection and `attachments[].fileType` for papers per file type.
 
 This command returns the three most recent marks for each paper:
 

@@ -3347,29 +3347,37 @@ it("normalizes date group values to their projected wire strings", async () => {
   });
 });
 
-it.each([
-  "tags",
-  "creators",
-  "creators[].fullName",
-  "title[]",
-  "tags[]",
-  "creators[0]",
-  "date",
-  "custom",
-])("rejects a non-scalar group Projection Path: %s", async (group) => {
+it.each(["tags", "creators", "tags[]", "creators[0]", "date", "custom"])(
+  "rejects a non-scalar group Projection Path: %s",
+  async (group) => {
+    using scenario = openScenarioDatabase();
+    const error = await failure(
+      scenario,
+      { libraries: [personal], group },
+      false,
+    );
+    expect(error).toBeInstanceOf(ItemQueryError);
+    if (!(error instanceof ItemQueryError)) throw error;
+    expect(error.diagnostic).toMatchObject({
+      code: "invalid-group",
+      location: { argument: "group" },
+    });
+    expect(error.diagnostic.report.join("\n")).toContain("scalar");
+  },
+);
+
+it("rejects [] on a scalar group path as an invalid Projection Path", async () => {
   using scenario = openScenarioDatabase();
   const error = await failure(
     scenario,
-    { libraries: [personal], group },
+    { libraries: [personal], group: "title[]" },
     false,
   );
-  expect(error).toBeInstanceOf(ItemQueryError);
-  if (!(error instanceof ItemQueryError)) throw error;
-  expect(error.diagnostic).toMatchObject({
-    code: "invalid-group",
+  expect(error).toMatchObject({
+    code: "unknown-path",
     location: { argument: "group" },
+    diagnostic: { suggestions: ["group='title'"] },
   });
-  expect(error.diagnostic.report.join("\n")).toContain("scalar");
 });
 
 it("reports the group argument for an unknown custom field", async () => {

@@ -354,10 +354,10 @@ it.each(reports)("reports $name", async ({ request, report, ...setup }) => {
     );
   }
   const span = diagnostic.location?.span;
+  const argument =
+    diagnostic.location?.argument === "group" ? query.group : query.filter;
   if (span)
-    expect(diagnostic.excerpt?.at).toBe(
-      query.filter?.slice(span.from, span.to),
-    );
+    expect(diagnostic.excerpt?.at).toBe(argument?.slice(span.from, span.to));
   else if (diagnostic.excerpt && diagnostic.location?.index !== undefined) {
     const index = diagnostic.location.index;
     expect(diagnostic.excerpt.at).toBe(

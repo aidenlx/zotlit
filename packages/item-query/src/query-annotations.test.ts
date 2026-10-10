@@ -756,7 +756,7 @@ it.each([
     expect(exit.value.groups?.at(-1)?.value).toBeNull();
 });
 
-it.each(["tags", "item.creators[].fullName", "item.tags", "attachment"])(
+it.each(["tags", "item.tags[]", "item.tags", "attachment"])(
   "rejects an Annotation group path that is not scalar: %s",
   async (group) => {
     const { exit } = await runEffect(

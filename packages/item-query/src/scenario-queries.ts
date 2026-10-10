@@ -381,6 +381,10 @@ const REQUESTS: readonly ScenarioQuery[] = [
     "creators[0].fullName",
     "tags",
     "creators[].fullName",
+    "tags[].name",
+    "collections[]",
+    "attachments[].fileType",
+    "attachments[].tags[]",
   ].flatMap((group) => [
     {
       name: `group ${group}`,
@@ -388,6 +392,16 @@ const REQUESTS: readonly ScenarioQuery[] = [
       request: { group, fields: [], limit: 2 },
     },
   ]),
+  {
+    name: "element group over a candidate set",
+    libraries: ["personal", "group"],
+    request: {
+      filter: 'tags.contains("to-read")',
+      group: "tags[].name",
+      fields: ["tags[].name"],
+      limit: 1,
+    },
+  },
   {
     name: "Relation List element projection",
     libraries: ["personal", "group"],

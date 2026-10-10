@@ -43,7 +43,7 @@ import {
   LIBRARIES,
   LIBRARY_SCOPE_SETTING_KEY,
 } from "@zotlit/scripts/fixture";
-import type { LibrarySelector } from "@zotlit/scripts/fixture";
+import type { FixtureItem, LibrarySelector } from "@zotlit/scripts/fixture";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
 import { verifyAnnotationDrag } from "./annotation-drag.ts";
@@ -3424,6 +3424,94 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ) as ItemQueryReport;
     expect(split).toMatchObject({ ok: true, totalCount: ITEMS.length });
     expect(split.groups).toHaveLength(LIBRARIES.length);
+  });
+
+  it("groups papers per tag and per Collection through zotlit:query", async () => {
+    const papers = ITEMS.filter((item) => item.libraryID === 1);
+    /** Each group value with the keys of its papers, from the Fixture Spec. */
+    const expectedGroups = (values: (paper: FixtureItem) => string[]) => {
+      const groups = new Map<string | null, string[]>();
+      for (const paper of papers) {
+        const distinct = [...new Set(values(paper))];
+        for (const value of distinct.length ? distinct : [null])
+          groups.set(value, [...(groups.get(value) ?? []), paper.key]);
+      }
+      return groups;
+    };
+    const groupsOf = (report: ItemQueryReport) =>
+      new Map(
+        report.groups!.map(({ value, count, rows }) => [
+          value,
+          { count, keys: rows.map((row) => row.indexedKey).toSorted() },
+        ]),
+      );
+    const query = async (args: Record<string, string>) =>
+      JSON.parse(
+        await cliCommand(vaultId, "zotlit:query", {
+          args: { library: "personal", limit: "all", fields: "[]", ...args },
+        }),
+      ) as ItemQueryReport;
+
+    const byTag = await query({ group: "tags[].name" });
+    const tags = expectedGroups((paper) =>
+      (paper.tags ?? []).map((tag) => tag.name),
+    );
+    expect(tags.size).toBeGreaterThan(2);
+    expect(byTag).toMatchObject({
+      ok: true,
+      request: { group: "tags[].name" },
+      totalCount: papers.length,
+      truncated: false,
+    });
+    expect(groupsOf(byTag)).toEqual(
+      new Map(
+        [...tags].map(([value, keys]) => [
+          value,
+          { count: keys.length, keys: keys.toSorted() },
+        ]),
+      ),
+    );
+    expect(byTag.groups!.at(-1)!.value).toBeNull();
+    // A paper with two Tags is in two groups, so the counts add up to more.
+    expect(byTag.returnedCount).toBe(
+      [...tags.values()].reduce((sum, keys) => sum + keys.length, 0),
+    );
+    expect(byTag.returnedCount).toBeGreaterThan(papers.length);
+
+    const pathOf = (collectionID: number): string => {
+      const collection = COLLECTIONS.find(
+        (entry) => entry.collectionID === collectionID,
+      )!;
+      return collection.parentCollectionID === undefined
+        ? collection.name
+        : `${pathOf(collection.parentCollectionID)}/${collection.name}`;
+    };
+    const parent = COLLECTIONS.find(({ key }) => key === "PERSNAL2")!;
+    const byCollection = await query({
+      group: "collections[]",
+      filter: `collections.within(${JSON.stringify(parent.name)})`,
+    });
+    const filed = papers.filter((paper) =>
+      paper.collectionIDs.some((id) => pathOf(id).startsWith(parent.name)),
+    );
+    const collections = expectedGroups((paper) =>
+      filed.includes(paper) ? paper.collectionIDs.map(pathOf) : [],
+    );
+    collections.delete(null);
+    expect(byCollection).toMatchObject({
+      ok: true,
+      request: { group: "collections[]" },
+      totalCount: filed.length,
+    });
+    expect(groupsOf(byCollection)).toEqual(
+      new Map(
+        [...collections].map(([value, keys]) => [
+          value,
+          { count: keys.length, keys: keys.toSorted() },
+        ]),
+      ),
+    );
+    expect(collections.has(`${parent.name}/Personal child`)).toBe(true);
   });
 
   it("queries an Item's reading record through zotlit:query from=annotations", async () => {

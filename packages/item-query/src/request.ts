@@ -5,11 +5,11 @@ import { Effect } from "effect";
 import type { QueryDataset } from "./dataset";
 import type { Diagnostic } from "./diagnose";
 import { ItemQueryError } from "./error";
+import type { ItemQueryFault } from "./fault";
 import type { FieldNeeds, QueryItem, SortKey } from "./fields";
 import type { FilterPlan } from "./filter-plan";
-import { planPath, readPath } from "./projection";
+import { canGroup, planPath, readPath } from "./projection";
 import type { PlannedPath } from "./projection";
-import { parseProjectionPath } from "./projection-path";
 import type { QueryClock } from "./query-clock";
 
 /**
@@ -44,7 +44,11 @@ export interface ItemQueryRequest {
    * tie.
    */
   readonly sort?: readonly SortSpec[] | undefined;
-  /** One scalar Projection Path; the limit applies inside each group. */
+  /**
+   * One scalar Projection Path, or a Projection Path with one `[]` whose
+   * element is scalar: a record joins one group for each distinct element
+   * value. The limit applies inside each group.
+   */
   readonly group?: string | undefined;
   /** The most rows to return. Omitted or `null`: every match. */
   readonly limit?: number | null | undefined;
@@ -129,11 +133,42 @@ export interface ItemQueryPlan<Item = any, Needs = any> {
   /** `null`: every record matches. */
   readonly filter: FilterPlan<Item, Needs> | null;
   readonly paths: readonly PlannedPath<Item, Needs>[];
-  readonly group: PlannedPath<Item, Needs> | null;
+  readonly group: PlannedGroup<Item, Needs> | null;
   /** The group value when given, then the request's sort and dataset tie-breakers. */
   readonly order: readonly SortSpec[];
   /** One entry for each entry of {@link ItemQueryPlan.order}. */
   readonly sorts: readonly PlannedSort<Item, Needs>[];
+}
+
+/** A validated group path and the groups that one record joins. */
+export interface PlannedGroup<
+  Item = QueryItem,
+  Needs = FieldNeeds,
+> extends PlannedPath<Item, Needs> {
+  /**
+   * Each distinct group value of the record, at least one. A scalar path
+   * gives its value; an element path gives each distinct non-null element
+   * value, or null when the list has none.
+   */
+  readonly values: (item: Item) => readonly GroupValue[];
+}
+
+function groupValues<Item, Needs>(
+  path: PlannedPath<Item, Needs>,
+): PlannedGroup<Item, Needs>["values"] {
+  const wire = (value: ProjectionValue) =>
+    JSON.parse(JSON.stringify(value)) as GroupValue;
+  if (path.each === 0) return (item) => [wire(readPath(path, item))];
+  return (item) => {
+    const elements = readPath(path, item);
+    const values = new Set<GroupValue>();
+    if (Array.isArray(elements))
+      for (const element of elements) {
+        const value = wire(element);
+        if (value !== null) values.add(value);
+      }
+    return values.size === 0 ? [null] : [...values];
+  };
 }
 
 /** A validated ordering key: the group value or a Sortable Field. */
@@ -209,31 +244,31 @@ export function planRequest(
       paths.push(path);
     }
 
-    let group: PlannedPath | null = null;
+    let group: PlannedGroup | null = null;
     if (request.group !== undefined) {
-      const parsed = parseProjectionPath(request.group);
-      const path = planPath(request.group, dataset.resolvePath);
-      const nonScalar =
-        (parsed.ok &&
-          parsed.segments.some((segment) => typeof segment === "object")) ||
-        (!("kind" in path) && !path.scalar);
-      const fault = nonScalar
-        ? {
-            kind: "group-scalar" as const,
-            name: request.group,
-            at: { from: 0, to: request.group.length },
-          }
-        : "kind" in path
-          ? path
-          : null;
-      if (fault)
-        return yield* new ItemQueryError({
+      const text = request.group;
+      const path = planPath(text, dataset.resolvePath);
+      const fail = (fault: ItemQueryFault) =>
+        new ItemQueryError({
           dataset,
           fault,
           location: { argument: "group" },
-          argumentText: request.group,
+          argumentText: text,
         });
-      if (!("kind" in path)) group = path;
+      if ("kind" in path) return yield* fail(path);
+      if (!canGroup(path.shape, path.each))
+        return yield* fail({
+          kind: "group",
+          problem:
+            path.each > 1
+              ? "each"
+              : path.each === 0 && path.shape.kind === "list"
+                ? "list"
+                : "scalar",
+          name: text,
+          at: { from: 0, to: text.length },
+        });
+      group = { ...path, values: groupValues(path) };
     }
 
     const sort = request.sort ?? dataset.defaultSort;
@@ -278,16 +313,11 @@ export function planRequest(
       });
     }
 
-    // Group value leads the internal order. Dataset hydration already loads
-    // every ordering key, so grouping needs no dataset-specific execution.
+    // The group value leads the internal order. Dataset hydration already
+    // loads every ordering key, so grouping needs no dataset-specific
+    // execution. Execution puts each group value of a record in this key.
     if (group) {
-      const path = group;
-      sorts.unshift({
-        direction: "asc",
-        needs: path.needs,
-        key: (item) =>
-          JSON.parse(JSON.stringify(readPath(path, item))) as GroupValue,
-      });
+      sorts.unshift({ direction: "asc", needs: group.needs, key: () => null });
     }
     const normalized = sort.map(({ field, direction }) => ({
       field,

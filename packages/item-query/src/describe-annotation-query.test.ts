@@ -23,7 +23,7 @@ it("publishes executable Annotation and parent Projection Paths with active-sour
     type: "array",
     filter: null,
     projection: true,
-    group: false,
+    group: true,
     sort: false,
   });
   expect(schema.fields).toContainEqual({

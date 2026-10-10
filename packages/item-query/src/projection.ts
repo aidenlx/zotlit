@@ -16,6 +16,10 @@ export interface PlannedPath<Item = QueryItem, Needs = FieldNeeds> {
   readonly text: string;
   /** The wire value is scalar and the path does not traverse `[]`. */
   readonly scalar: boolean;
+  /** The shape at the end of the path; below a `[]`, the shape of one element. */
+  readonly shape: ValueShape;
+  /** The number of `[]` steps in the path. */
+  readonly each: number;
   readonly field: FieldDefinition<Item, Needs>;
   /** The segments after the field name. */
   readonly rest: readonly PathSegment[];
@@ -96,16 +100,27 @@ export function planPath<Item = QueryItem, Needs = FieldNeeds>(
     }
     shape = next;
   }
+  const each = parsed.segments.filter(
+    (segment) => typeof segment === "object",
+  ).length;
   return {
     text,
     field,
     rest,
     needs: field.needs(rest),
     customField,
-    scalar:
-      shape.kind === "scalar" &&
-      !parsed.segments.some((segment) => typeof segment === "object"),
+    scalar: shape.kind === "scalar" && each === 0,
+    shape,
+    each,
   };
+}
+
+/**
+ * A group path gives one scalar for each record, or one scalar for each
+ * element of one Relation List through exactly one `[]`.
+ */
+export function canGroup(shape: ValueShape, each: number): boolean {
+  return shape.kind === "scalar" && each <= 1;
 }
 
 function step(shape: ValueShape, segment: PathSegment): ValueShape | null {

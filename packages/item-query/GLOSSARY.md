@@ -52,6 +52,10 @@ _Avoid_: column expression, property expression
 A scalar field of the Query Dataset, or a scalar field of a parent record such as `item.title`, that can order a Query Result. A value derived from a Relation List, such as its length, is not a Sortable Field. Null values sort last, and Indexed Key is the stable final tie-breaker, also between records of two Target Libraries: Indexed Keys compare as text, so the same Zotero Key in the groups 10 and 9 gives the order `g10`, `g9`.
 _Avoid_: sort expression, sort path
 
+**Query Group**:
+One group of a grouped Query Result: a value of the group path, the number of matched records with that value, and their Query Rows up to the limit. A scalar group path puts each record in one group. A group path with one `[]`, such as `tags[].name` or `collections[]`, puts each record in one group for each distinct element value; a record with no element value is in the `null` group. Groups can overlap, so their counts can add up to more than the number of matched records.
+_Avoid_: bucket, facet
+
 **Query Schema**:
 The source-aware description of the three Query Datasets: their fields, Projection Paths, Relation Lists and the dataset each one reaches, functions, value shapes, defaults, and filter, projection, and sort capabilities. A bare name that matches a built-in field, alias, or reserved name always means the built-in; `custom["name"]` reaches every custom field.
 _Avoid_: field list, query metadata, Item Query Schema

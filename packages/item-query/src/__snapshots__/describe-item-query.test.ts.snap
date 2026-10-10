@@ -99,7 +99,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "position.rects[0][]",
           "projection": true,
           "sort": false,
@@ -115,7 +115,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "position.rects[].length",
           "projection": true,
           "sort": false,
@@ -123,7 +123,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "position.rects[][0]",
           "projection": true,
           "sort": false,
@@ -179,7 +179,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "position.nextPageRects[0][]",
           "projection": true,
           "sort": false,
@@ -195,7 +195,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "position.nextPageRects[].length",
           "projection": true,
           "sort": false,
@@ -203,7 +203,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "position.nextPageRects[][0]",
           "projection": true,
           "sort": false,
@@ -267,7 +267,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "position.paths[0][]",
           "projection": true,
           "sort": false,
@@ -283,7 +283,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "position.paths[].length",
           "projection": true,
           "sort": false,
@@ -291,7 +291,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "position.paths[][0]",
           "projection": true,
           "sort": false,
@@ -467,7 +467,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "tags[]",
           "projection": true,
           "sort": false,
@@ -1997,7 +1997,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.creators[].family",
           "projection": true,
           "sort": false,
@@ -2005,7 +2005,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.creators[].given",
           "projection": true,
           "sort": false,
@@ -2013,7 +2013,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.creators[].literal",
           "projection": true,
           "sort": false,
@@ -2021,7 +2021,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.creators[].role",
           "projection": true,
           "sort": false,
@@ -2029,7 +2029,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.creators[].fullName",
           "projection": true,
           "sort": false,
@@ -2085,7 +2085,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.tags[].name",
           "projection": true,
           "sort": false,
@@ -2093,7 +2093,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.tags[].type",
           "projection": true,
           "sort": false,
@@ -2125,7 +2125,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.collections[]",
           "projection": true,
           "sort": false,
@@ -2244,7 +2244,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.attachments[].indexedKey",
           "projection": true,
           "sort": false,
@@ -2252,7 +2252,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.attachments[].title",
           "projection": true,
           "sort": false,
@@ -2260,7 +2260,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.attachments[].contentType",
           "projection": true,
           "sort": false,
@@ -2268,7 +2268,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.attachments[].linkMode",
           "projection": true,
           "sort": false,
@@ -2282,7 +2282,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.attachments[].path",
           "projection": true,
           "sort": false,
@@ -2290,7 +2290,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.attachments[].exists",
           "projection": true,
           "sort": false,
@@ -2298,7 +2298,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.attachments[].key",
           "projection": true,
           "sort": false,
@@ -2306,7 +2306,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.attachments[].fileType",
           "projection": true,
           "sort": false,
@@ -2411,7 +2411,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.annotations[].indexedKey",
           "projection": true,
           "sort": false,
@@ -2419,7 +2419,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.annotations[].type",
           "projection": true,
           "sort": false,
@@ -2427,7 +2427,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.annotations[].text",
           "projection": true,
           "sort": false,
@@ -2435,7 +2435,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.annotations[].comment",
           "projection": true,
           "sort": false,
@@ -2443,7 +2443,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.annotations[].pageLabel",
           "projection": true,
           "sort": false,
@@ -2451,7 +2451,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.annotations[].pageIndex",
           "projection": true,
           "sort": false,
@@ -2459,7 +2459,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.annotations[].key",
           "projection": true,
           "sort": false,
@@ -2767,7 +2767,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "annotations[].indexedKey",
           "projection": true,
           "sort": false,
@@ -2775,7 +2775,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "annotations[].type",
           "projection": true,
           "sort": false,
@@ -2783,7 +2783,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "annotations[].text",
           "projection": true,
           "sort": false,
@@ -2791,7 +2791,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "annotations[].comment",
           "projection": true,
           "sort": false,
@@ -2799,7 +2799,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "annotations[].pageLabel",
           "projection": true,
           "sort": false,
@@ -2807,7 +2807,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "annotations[].pageIndex",
           "projection": true,
           "sort": false,
@@ -2815,7 +2815,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "annotations[].key",
           "projection": true,
           "sort": false,
@@ -2943,7 +2943,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "tags[]",
           "projection": true,
           "sort": false,
@@ -4372,7 +4372,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.creators[].family",
           "projection": true,
           "sort": false,
@@ -4380,7 +4380,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.creators[].given",
           "projection": true,
           "sort": false,
@@ -4388,7 +4388,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.creators[].literal",
           "projection": true,
           "sort": false,
@@ -4396,7 +4396,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.creators[].role",
           "projection": true,
           "sort": false,
@@ -4404,7 +4404,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.creators[].fullName",
           "projection": true,
           "sort": false,
@@ -4460,7 +4460,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.tags[].name",
           "projection": true,
           "sort": false,
@@ -4468,7 +4468,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.tags[].type",
           "projection": true,
           "sort": false,
@@ -4500,7 +4500,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.collections[]",
           "projection": true,
           "sort": false,
@@ -4619,7 +4619,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.attachments[].indexedKey",
           "projection": true,
           "sort": false,
@@ -4627,7 +4627,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.attachments[].title",
           "projection": true,
           "sort": false,
@@ -4635,7 +4635,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.attachments[].contentType",
           "projection": true,
           "sort": false,
@@ -4643,7 +4643,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.attachments[].linkMode",
           "projection": true,
           "sort": false,
@@ -4657,7 +4657,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.attachments[].path",
           "projection": true,
           "sort": false,
@@ -4665,7 +4665,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.attachments[].exists",
           "projection": true,
           "sort": false,
@@ -4673,7 +4673,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.attachments[].key",
           "projection": true,
           "sort": false,
@@ -4681,7 +4681,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.attachments[].fileType",
           "projection": true,
           "sort": false,
@@ -4786,7 +4786,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.annotations[].indexedKey",
           "projection": true,
           "sort": false,
@@ -4794,7 +4794,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.annotations[].type",
           "projection": true,
           "sort": false,
@@ -4802,7 +4802,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.annotations[].text",
           "projection": true,
           "sort": false,
@@ -4810,7 +4810,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.annotations[].comment",
           "projection": true,
           "sort": false,
@@ -4818,7 +4818,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.annotations[].pageLabel",
           "projection": true,
           "sort": false,
@@ -4826,7 +4826,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.annotations[].pageIndex",
           "projection": true,
           "sort": false,
@@ -4834,7 +4834,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "item.annotations[].key",
           "projection": true,
           "sort": false,
@@ -6268,7 +6268,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "creators[].family",
           "projection": true,
           "sort": false,
@@ -6276,7 +6276,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "creators[].given",
           "projection": true,
           "sort": false,
@@ -6284,7 +6284,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "creators[].literal",
           "projection": true,
           "sort": false,
@@ -6292,7 +6292,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "creators[].role",
           "projection": true,
           "sort": false,
@@ -6300,7 +6300,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "creators[].fullName",
           "projection": true,
           "sort": false,
@@ -6356,7 +6356,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "tags[].name",
           "projection": true,
           "sort": false,
@@ -6364,7 +6364,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "tags[].type",
           "projection": true,
           "sort": false,
@@ -6396,7 +6396,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "collections[]",
           "projection": true,
           "sort": false,
@@ -6515,7 +6515,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "attachments[].indexedKey",
           "projection": true,
           "sort": false,
@@ -6523,7 +6523,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "attachments[].title",
           "projection": true,
           "sort": false,
@@ -6531,7 +6531,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "attachments[].contentType",
           "projection": true,
           "sort": false,
@@ -6539,7 +6539,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "attachments[].linkMode",
           "projection": true,
           "sort": false,
@@ -6553,7 +6553,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "attachments[].path",
           "projection": true,
           "sort": false,
@@ -6561,7 +6561,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "attachments[].exists",
           "projection": true,
           "sort": false,
@@ -6569,7 +6569,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "attachments[].key",
           "projection": true,
           "sort": false,
@@ -6577,7 +6577,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "attachments[].fileType",
           "projection": true,
           "sort": false,
@@ -6682,7 +6682,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "annotations[].indexedKey",
           "projection": true,
           "sort": false,
@@ -6690,7 +6690,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "annotations[].type",
           "projection": true,
           "sort": false,
@@ -6698,7 +6698,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "annotations[].text",
           "projection": true,
           "sort": false,
@@ -6706,7 +6706,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "annotations[].comment",
           "projection": true,
           "sort": false,
@@ -6714,7 +6714,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "annotations[].pageLabel",
           "projection": true,
           "sort": false,
@@ -6722,7 +6722,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "annotations[].pageIndex",
           "projection": true,
           "sort": false,
@@ -6730,7 +6730,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         },
         {
           "filter": null,
-          "group": false,
+          "group": true,
           "path": "annotations[].key",
           "projection": true,
           "sort": false,

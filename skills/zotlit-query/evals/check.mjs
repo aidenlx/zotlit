@@ -93,8 +93,13 @@ function commonChecks(envelope, expected, { runRoot, vaultPath }) {
       0,
     );
     need(envelope.returnedCount === returned, "wrong returnedCount");
+    // Element groups overlap, so truncation is a cut group, not fewer rows
+    // than records.
     need(
-      envelope.truncated === returned < expected.count,
+      envelope.truncated ===
+        (envelope.groups ?? []).some(
+          (group) => (group.rows?.length ?? 0) < group.count,
+        ),
       "wrong grouped truncation",
     );
     const limit = envelope.request?.limit;

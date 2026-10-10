@@ -1069,12 +1069,12 @@ await test("batch runs every case sequentially and retains failure kinds and met
         },
       },
     );
-    assert.equal(order.length, 29);
-    assert.equal(new Set(order).size, 29);
+    assert.equal(order.length, 30);
+    assert.equal(new Set(order).size, 30);
     assert.equal(report.state, "failed");
     assert.equal(report.failures.task, 1);
     const saved = JSON.parse(await readFile(report.files.report, "utf8"));
-    assert.equal(saved.cases.length, 29);
+    assert.equal(saved.cases.length, 30);
     assert.match(
       await readFile(
         join(repo, ".scratch", "zotlit-query-evals", runId, "summary.md"),

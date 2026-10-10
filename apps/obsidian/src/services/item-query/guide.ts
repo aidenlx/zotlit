@@ -356,7 +356,9 @@ ENVELOPE
   also have attachmentIndexedKey and itemIndexedKey.
   A grouped response has totalCount and groups in place of rows. Each group
   has value, count, and rows. count and totalCount are before the per-group
-  limit; returnedCount is the number of rows returned across all groups.
+  limit. totalCount is the number of matched records. returnedCount is the
+  number of row entries returned across all groups; a record in two groups
+  counts twice.
   warnings is an array of diagnostics, empty when there are no warnings.
   Read warnings before you report an empty result. File receipts include it too.
   unknown-collection means a literal Collection path was not found in any
@@ -499,15 +501,24 @@ const DATASETS_SECTION = `QUERY DATASETS
 
 const GROUP_SECTION = `GROUP RESULTS
 
-  group takes exactly one scalar Projection Path. It works on each Query
-  Dataset and on parent scalar paths. Lists, records, and [] paths give a
-  request Fault; use a scalar such as date.year or item.citationKey.
+  group takes one scalar Projection Path, or one Projection Path with
+  exactly one [] whose element is scalar. It works on each Query Dataset and
+  on parent paths. Lists and records give a request Fault; name the elements
+  with [], such as tags[].name. A path with two [] gives a request Fault.
+  With an element path, each record joins one group for each distinct
+  element value: a paper with the Tags methods and review is in both groups,
+  and a paper with two PDF files is in the pdf group once. A record with an
+  empty list, or with only null element values, is in the null group.
   Groups use the sort collation, with null last. Rows inside each group keep
   the request's sort, or the dataset default. The limit applies to each group.
   Each group carries value, count before the limit, and rows. totalCount is
-  the number of all matched rows; returnedCount sums the returned rows.
-  truncated is true when any group was cut. limit=all returns every match.
+  the number of matched records. Element groups can overlap, so their counts
+  can add up to more than totalCount. returnedCount is the number of row
+  entries returned across all groups. truncated is true when any group was
+  cut. limit=all returns every match.
   The answer and output exports carry groups in place of rows.
+  To count many groups, such as every Tag of a Library, use fields=[] for
+  identity-only rows and limit=1: each count is exact before the limit.
 
   Three most recent marks per paper:
     ${example({ from: "annotations", group: "item.citationKey", limit: "3", sort: "-dateModified" })}
@@ -516,7 +527,15 @@ const GROUP_SECTION = `GROUP RESULTS
   Split papers by library:
     ${example({ group: "library", library: "all", limit: "3" })}
   Files by content type:
-    ${example({ from: "attachments", group: "fileType" })}`;
+    ${example({ from: "attachments", group: "fileType" })}
+  Papers per tag:
+    ${example({ group: "tags[].name", fields: "[]", limit: "1" })}
+  Papers per Collection inside one Collection:
+    ${example({ group: "collections[]", filter: 'collections.within("Thesis")', fields: "[]", limit: "1" })}
+  Papers per file type (PDF, EPUB, web page):
+    ${example({ group: "attachments[].fileType", fields: "[]", limit: "1" })}
+  Files per tag:
+    ${example({ from: "attachments", group: "tags[]", fields: "[]", limit: "1" })}`;
 
 const VALUES_SECTION = `COLLECTION AND TAG VALUES
 

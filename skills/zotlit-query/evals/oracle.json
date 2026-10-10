@@ -1926,6 +1926,60 @@
       ],
       "command": "zotlit:query 'from=items' 'library=personal' 'filter=collections.within(\"Query thesis\")' 'fields=[]' 'limit=all' 'group=date.year'"
     },
+    "papers_per_tag": {
+      "kind": "research",
+      "from": "items",
+      "count": 5,
+      "fields": [],
+      "request": {
+        "from": "items",
+        "library": "personal",
+        "filter": "collections.within(\"Query thesis\")",
+        "fields": "[]",
+        "limit": "all",
+        "group": "tags[].name"
+      },
+      "group": "tags[].name",
+      "groups": [
+        {
+          "value": "query-cross-eval",
+          "count": 5,
+          "rows": [
+            {
+              "indexedKey": "QCMISS22",
+              "values": {}
+            },
+            {
+              "indexedKey": "QCSNG222",
+              "values": {}
+            },
+            {
+              "indexedKey": "QCTWN222",
+              "values": {}
+            },
+            {
+              "indexedKey": "QCWEB222",
+              "values": {}
+            },
+            {
+              "indexedKey": "QCZRPP22",
+              "values": {}
+            }
+          ]
+        },
+        {
+          "value": "to-read",
+          "count": 1,
+          "rows": [
+            {
+              "indexedKey": "QCSNG222",
+              "values": {}
+            }
+          ]
+        }
+      ],
+      "command": "zotlit:query 'from=items' 'library=personal' 'filter=collections.within(\"Query thesis\")' 'fields=[]' 'limit=all' 'group=tags[].name'"
+    },
     "unread_in_collection": {
       "kind": "research",
       "from": "items",
