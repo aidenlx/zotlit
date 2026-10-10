@@ -1,8 +1,10 @@
 ---
-status: accepted
+status: superseded in part by ADR-0073
 ---
 
 # The Citation Index reads in a dedicated worker
+
+> **Superseded in part by [ADR 0073](0073-the-citation-index-reads-in-the-zoteroreads-worker.md).** The Citation Index reads in the ZoteroReads worker; the renderer publication decision remains.
 
 Amends [ADR 0068](0068-the-zotero-database-runs-in-a-web-worker-behind-zoteroreads.md) and [ADR 0060](0060-held-reads-are-realized-on-tanstack-query-core.md). [ADR 0069](0069-the-item-search-index-runs-in-the-zoteroreads-worker.md) keeps the Item Index in the interactive ZoteroReads worker.
 
