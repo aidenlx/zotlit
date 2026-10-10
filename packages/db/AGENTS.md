@@ -33,6 +33,22 @@ The `zt` types plus their doc comments are the single source of truth for the te
 - The extractor parses with ts-morph's vendored frozen TypeScript 6, not the repo's TypeScript 7. See [ADR 0015](../../docs/adr/0015-template-contract-artifacts-generate-from-ts-types.md).
 - Three doc tags on a contract member carry emitter data: `@ztFilter <name>` names the Liquid filter of a helper member, `@ztInert` (empty tag) marks a helper the resolver can leave inert, and `@example` holds exactly one fenced code block. Any other content in any tag fails the extractor.
 
+## Item Query readers
+
+`src/item-query/` holds every SQL statement of Item Query, behind the `@zotlit/db/item-query` export. It is the only entry that loads `effect`; keep `effect` imports inside it. Define each statement with `defineStatement` in `src/item-query/database.ts` and name its reader: it is the one place where a driver call becomes an Effect, a thrown value becomes `ItemQueryDatabaseError`, and `ItemQueryStatementObserver` (a reference with a no-op default) gets the reader, the parameters, and the rows of each statement. Test readers on the scenario database (`src/test-scenario/`); `seedBulkLibrary` adds a Library of any size for a test that needs several pages.
+
+Candidate readers select IDs from one Target Library with the caller’s `limit`. `src/item-query/candidate-set.ts` owns Item leaves, `attachments.ts` and `annotations.ts` own element leaves, `relation-candidates.ts` maps elements to parents, and `parent-candidates.ts` bounds Parent Record reads to matching parents and their children. An Item leaf uses one statement; an element Tag page uses a bounded index probe and, when full, an ordered page. Parent Record statements have separate reader names. Candidate statements return IDs: the 500-Item limit of one statement applies to the scan page, the universe chunk, and the hydrate chunk; `readUniverseRows` restricts them to the query universe.
+
+A Zotero database has no `sqlite_stat1`, so SQLite starts a join at `items.libraryID = ?` and reads every `items` row of the Library. In a statement that starts at a leaf or an ID list, write the Library term with `unindexed` (`src/item-query/database.ts`), and check the plan with `EXPLAIN QUERY PLAN` on a Stress Build (`pnpm fixture stress --library-items 100000`). A scan row holds its timestamps as numbers: a `Temporal` object for each Item of a Library makes long garbage-collection pauses in the Obsidian window.
+
+Resolve the Target Libraries from `readLibraries` (`src/item-query/libraries.ts`). It is the one Library reader: the statement of `getLibraries` (`selectLibraries` in `src/queries/libraries.ts`) through the reader seam, with the one `Library` row shape, so it gives the rows that ZoteroReads and Library Scope get. `getLibraryByGroupID` and the group lookup of the other queries (`groupIDForLibrary`, `resolveGroupID`) use the same statement. The other readers take one Library; a query of several Libraries calls them once for each.
+
+Every table and column a reader statement reads belongs in `ITEM_QUERY_LAYOUT` (`src/layout/index.ts`), or in `OPTIONAL_LAYOUT_COLUMNS` for a column that the reader selects only when the copy has it; add them with each new reader. `defineStatement` runs the layout check before the first statement on each copy, and `src/item-query/layout.test.ts` fails when a statement of a reader module that `src/item-query/index.ts` exports reads outside the manifest.
+
+## Layout of a copy
+
+`src/layout/` is the Layout module. `readDatabaseLayout` reads the columns of each table and view and the `userdata` and `compatibility` stamps of a copy once for each client, logs the stamps, and gives the gaps against the manifest. A reader that selects a column some copies lack asks `layout.has(table, column)`; the stamps are for logging and `getSchemaVersions` only. The core is synchronous and loads no `effect`. `src/item-query/database.ts` runs the same two statements through the reader seam (`readLayout`, `checkLayout`), and `src/item-query/layout.ts` gives `ItemQueryLayoutError` and `checkDatabaseLayout`, the synchronous check that ZoteroReads runs when it validates a client. A copy keeps its first layout for the life of its client: a test that changes the layout of a copy reads it again through a new client.
+
 ## Logging
 
 Logging uses `@logtape/logtape`; configuration belongs to the consuming app.

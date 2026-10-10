@@ -2,8 +2,10 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { isAbsolute } from "node:path";
-import type { CliFlags, CliHandler } from "obsidian";
+import type { CliFlag, CliHandler } from "obsidian";
+import * as v from "valibot";
 
+import { isIndexedKey } from "@zotlit/db";
 import type { CitationVariant } from "@zotlit/db";
 import {
   captureRenderReport,
@@ -15,6 +17,17 @@ import type {
   PartialContext,
 } from "@zotlit/workbench/render";
 
+import {
+  cliMaybeEmpty,
+  cliNotApplicable,
+  cliOneOf,
+  cliParams,
+  cliText,
+  cliVariants,
+  decodeCliParams,
+  expectSourceParam,
+} from "@/lib/cli-params";
+import type { CliParamName } from "@/lib/cli-params";
 import { PROFILE_OUTPUTS } from "@/views/note-preview/check-profile";
 import type { ProfileCheck } from "@/views/note-preview/check-profile";
 
@@ -35,6 +48,7 @@ import { createInspectHandler, sourceRevision } from "./inspect";
 import type { InspectDeps, InspectDocument, SourceVersion } from "./inspect";
 import {
   choices,
+  CITATION_EXAMPLE_NAMES,
   CITATION_VARIANT_NAMES,
   PARTIAL_CONTEXT_NAMES,
 } from "./vocabulary";
@@ -106,7 +120,7 @@ export const checkFlags = {
     description:
       "Zotero source identity assertion for a new check; omit for retained attempt lookups",
   },
-} satisfies CliFlags;
+} satisfies Record<CheckParam, CliFlag>;
 export const CHECK_GUIDE = `TEMPLATE CHECK
 
   obsidian ${TEMPLATE_CHECK_COMMAND} [profile=<id-or-label>] [key=<indexed-key>] [output=all]
@@ -265,7 +279,7 @@ export interface CheckOutcome {
  */
 export interface CheckBranch {
   deps: CheckDeps;
-  params: Parameters<CliHandler>[0];
+  params: CheckRequest;
   mode: "create" | "update";
   draft: { source: string; path: string } | undefined;
   /** Reruns the source inspection to detect a superseded source. */
@@ -295,13 +309,168 @@ export interface PlainCheckBranch extends CheckBranch {
   root: string | undefined;
 }
 
+const INVALID_CHECK_REQUEST =
+  "The request names an unknown flag, or a value this command does not accept.";
+const INVALID_CHECK_HINT =
+  "Use help zotlit:template-check for accepted selectors and disclosure flags, then run the check again.";
+
+const selector = v.optional(cliText(INVALID_CHECK_REQUEST));
+
+const OUTPUT_NAMES: readonly string[] = [
+  "all",
+  ...PROFILE_OUTPUTS,
+  "citation",
+  "partial",
+];
+
+const ATTEMPT_LOOKUP_MESSAGE =
+  "An attempt lookup takes only attempt, output, and evidence.";
+
+/** What a check discloses, for a new check and a retained attempt alike. */
+const disclosure = {
+  output: v.optional(
+    v.pipe(
+      v.string(),
+      v.transform((names) => names.split(",")),
+      v.check(
+        (names) => names.every((name) => OUTPUT_NAMES.includes(name)),
+        INVALID_CHECK_REQUEST,
+      ),
+    ),
+  ),
+  evidence: v.optional(v.picklist(["full"], INVALID_CHECK_REQUEST)),
+};
+
+const notInLookup = cliNotApplicable(ATTEMPT_LOOKUP_MESSAGE);
+
+/** The Template a check renders and the data it reads, in either mode. */
+const renderSelection = {
+  root: v.optional(v.picklist(PARTIAL_CONTEXT_NAMES, INVALID_CHECK_REQUEST)),
+  example: v.optional(
+    v.picklist(CITATION_EXAMPLE_NAMES, INVALID_CHECK_REQUEST),
+  ),
+  variant: v.optional(
+    v.picklist(CITATION_VARIANT_NAMES, INVALID_CHECK_REQUEST),
+  ),
+};
+
+/** The Profile, installed document, or draft a check reads its source from. */
+const sourceSelection = {
+  profile: selector,
+  document: selector,
+  draft: selector,
+};
+
+const indexedKey = v.pipe(
+  cliText(INVALID_CHECK_REQUEST),
+  v.check(isIndexedKey, INVALID_CHECK_REQUEST),
+);
+
+/** A check reads a Zotero object by key, or a built-in Citation set, not both. */
+function oneObject<TInput extends { key?: string; example?: string }>() {
+  return cliOneOf<TInput>(["key", "example"], { many: INVALID_CHECK_REQUEST });
+}
+
+const notInCreate = cliNotApplicable(INVALID_CHECK_REQUEST);
+
+/**
+ * A retained attempt reads only its disclosure; a create check renders a new
+ * note; an update check reads its baseline from the item's note, from one
+ * note path, or from supplied text.
+ */
+const checkParams = cliVariants(
+  ({ attempt, mode, note, existing }) =>
+    attempt !== undefined
+      ? "lookup"
+      : mode === "update" || note !== undefined || existing !== undefined
+        ? "update"
+        : "create",
+  {
+    lookup: cliParams({
+      attempt: cliText(INVALID_CHECK_REQUEST),
+      root: notInLookup,
+      example: notInLookup,
+      variant: notInLookup,
+      mode: notInLookup,
+      note: notInLookup,
+      existing: notInLookup,
+      profile: notInLookup,
+      document: notInLookup,
+      draft: notInLookup,
+      key: notInLookup,
+      "expect-source": notInLookup,
+      ...disclosure,
+    }),
+    create: v.pipe(
+      cliParams({
+        mode: v.optional(v.literal("create", INVALID_CHECK_REQUEST), "create"),
+        note: notInCreate,
+        existing: notInCreate,
+        ...renderSelection,
+        ...sourceSelection,
+        key: v.optional(indexedKey),
+        ...disclosure,
+        "expect-source": expectSourceParam,
+      }),
+      oneObject(),
+    ),
+    update: v.pipe(
+      cliParams(
+        {
+          mode: v.literal("update", INVALID_CHECK_REQUEST),
+          note: selector,
+          existing: cliMaybeEmpty(),
+          ...renderSelection,
+          ...sourceSelection,
+          key: indexedKey,
+          ...disclosure,
+          "expect-source": expectSourceParam,
+        },
+        { mode: INVALID_CHECK_REQUEST, key: INVALID_CHECK_REQUEST },
+      ),
+      oneObject(),
+      // An update baseline comes from one note, or from supplied text.
+      v.forward(
+        v.partialCheck(
+          [["note"], ["existing"]],
+          ({ note, existing }) => note === undefined || existing === undefined,
+          INVALID_CHECK_REQUEST,
+        ),
+        ["existing"],
+      ),
+    ),
+  },
+);
+
+/** A decoded `template-check` request. */
+export type CheckRequest = v.InferOutput<typeof checkParams>;
+type CheckParam = CliParamName<typeof checkParams>;
+
 export function createCheckHandler(deps: CheckDeps): CliHandler {
   const attempts = new Map<string, object>();
   let sequence = 0;
-  return async (params) => {
-    const mode = params.mode === "update" ? "update" : "create";
-    const output =
-      typeof params.output === "string" ? params.output.split(",") : [];
+  return async (cliData) => {
+    const request = decodeCliParams(cliData, checkParams, {
+      command: "template-check",
+    });
+    if (request.kind === "invalid")
+      return JSON.stringify({
+        contractVersion: CONTRACT_VERSION,
+        command: TEMPLATE_CHECK_COMMAND,
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          message: request.message,
+          hint:
+            request.hint ??
+            (request.message === ATTEMPT_LOOKUP_MESSAGE
+              ? ATTEMPT_LOOKUP_HELP
+              : INVALID_CHECK_HINT),
+          details: { parameter: request.parameter },
+        },
+      });
+    const params = request.value;
+    const output = params.output ?? [];
     const answer = (result: object) => {
       // Construct a separate disclosure tree so retained attempts keep all outputs.
       const copy = JSON.parse(JSON.stringify(result)) as {
@@ -347,74 +516,8 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
         ok: false,
         diagnostic: { code, message, hint },
       });
-    if (
-      Object.keys(params).some((key) => !(key in checkFlags)) ||
-      (params.output !== undefined &&
-        (typeof params.output !== "string" ||
-          output.some(
-            (name) =>
-              name !== "all" &&
-              ![...PROFILE_OUTPUTS, "citation", "partial"].includes(name),
-          ))) ||
-      (params.evidence !== undefined && params.evidence !== "full") ||
-      (params.example !== undefined &&
-        (typeof params.example !== "string" ||
-          !isCitationExampleId(params.example) ||
-          params.key !== undefined)) ||
-      (params.variant !== undefined &&
-        !(CITATION_VARIANT_NAMES as readonly string[]).includes(
-          params.variant as string,
-        )) ||
-      (params.root !== undefined &&
-        !(PARTIAL_CONTEXT_NAMES as readonly string[]).includes(
-          params.root as string,
-        )) ||
-      (params.mode !== undefined &&
-        params.mode !== "create" &&
-        params.mode !== "update") ||
-      (params.existing !== undefined && typeof params.existing !== "string") ||
-      (params.note !== undefined && params.existing !== undefined) ||
-      ((params.note !== undefined || params.existing !== undefined) &&
-        mode !== "update") ||
-      (mode === "update" && params.key === undefined) ||
-      [
-        params.key,
-        params.profile,
-        params.document,
-        params.draft,
-        params.attempt,
-        params.note,
-      ].some(
-        (value) =>
-          value !== undefined &&
-          (typeof value !== "string" || value.trim() === ""),
-      )
-    )
-      return fail(
-        "INVALID_SELECTOR",
-        "The request names an unknown flag, or a value this command does not accept.",
-        "Use help zotlit:template-check for accepted selectors and disclosure flags, then run the check again.",
-      );
-    if (params.attempt !== undefined) {
-      if (
-        params.profile !== undefined ||
-        params.document !== undefined ||
-        params.draft !== undefined ||
-        params.key !== undefined ||
-        params.mode !== undefined ||
-        params.note !== undefined ||
-        params.existing !== undefined ||
-        params.root !== undefined ||
-        params.variant !== undefined ||
-        params.example !== undefined ||
-        params["expect-source"] !== undefined
-      )
-        return fail(
-          "INVALID_SELECTOR",
-          "An attempt lookup takes only attempt, output, and evidence.",
-          ATTEMPT_LOOKUP_HELP,
-        );
-      const retained = attempts.get(params.attempt as string);
+    if ("attempt" in params) {
+      const retained = attempts.get(params.attempt);
       return retained
         ? answer(retained)
         : fail(
@@ -423,6 +526,7 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
             "Run a new check to obtain a new attempt ID.",
           );
     }
+    const { mode } = params;
     const attempt = randomUUID();
     const attemptSequence = ++sequence;
     const capturedAt = Temporal.Now.instant().toString();

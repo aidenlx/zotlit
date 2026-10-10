@@ -742,6 +742,33 @@ export const ITEMS: readonly FixtureItem[] = [
     dateModified: "2024-11-01 12:00:00",
     collectionIDs: [],
   },
+  // ── Title collation (Item Query string order) ─────────────────────
+  // Titles that differ in case, accent, and digits. Item Query sorts them as
+  // 10, 9, apple, eclair, Éclair, Zebra in the running Obsidian, which proves
+  // that Electron's collator agrees with Node's.
+  ...(
+    [
+      [91, "SRTZEBRA", "Zebra"],
+      [92, "SRTAPPLE", "apple"],
+      [93, "SRTECLR2", "Éclair"],
+      [94, "SRTECLR3", "eclair"],
+      [95, "SRTTEN22", "10"],
+      [96, "SRTNINE2", "9"],
+    ] as const
+  ).map(
+    ([itemID, key, title]): FixtureItem => ({
+      itemID,
+      libraryID: 1,
+      key,
+      itemType: "journalArticle",
+      citationKey: null,
+      title,
+      date: "2010",
+      creators: [author("Lena", "Collator")],
+      dateModified: `2019-01-01 00:00:${String(itemID - 90).padStart(2, "0")}`,
+      collectionIDs: [],
+    }),
+  ),
   // ── Graph showcase: information-science citation web ──────────────
   {
     itemID: 70,
@@ -1332,12 +1359,18 @@ export const EXCERPT_RENDERING_CASES: readonly FixtureExcerptCase[] = [
 ];
 
 interface FixtureAttachmentBase {
+  /** Manual or automatic Zotero Tags on the Attachment. */
+  tags?: readonly { name: string; type: 0 | 1 }[];
   itemID: number;
   libraryID: number;
   /** Bare Zotero key for the Attachment row. */
   key: string;
   parentItemID: number;
-  contentType: "application/pdf" | "image/png" | "text/html";
+  contentType:
+    | "application/epub+zip"
+    | "application/pdf"
+    | "image/png"
+    | "text/html";
   title: string;
   /** Committed source to copy; `null` makes a URL row or deliberate miss. */
   sourceAsset: FixtureAsset | null;
@@ -1414,6 +1447,21 @@ export const DEMO_ATTACHMENTS: readonly FixtureAttachment[] = [
  */
 export const ATTACHMENTS: readonly FixtureAttachment[] = [
   {
+    itemID: 150,
+    libraryID: 1,
+    key: "MISSLNK2",
+    parentItemID: 57,
+    linkMode: "linked_file",
+    fileRoot: "linked-files",
+    contentType: "application/pdf",
+    title: "Missing linked PDF",
+    path: "missing-linked.pdf",
+    url: null,
+    sourceAsset: null,
+    tags: [{ name: "repair-file", type: 0 }],
+    dateModified: "2025-01-03 11:15:00",
+  },
+  {
     itemID: 21,
     libraryID: 1,
     key: "PDFSTR22",
@@ -1438,6 +1486,19 @@ export const ATTACHMENTS: readonly FixtureAttachment[] = [
     url: "https://www.storybookscanada.ca/stories/en/0315/",
     sourceAsset: "sakimas-song/sakimas-song.html",
     dateModified: "2025-02-19 12:00:00",
+  },
+  {
+    itemID: 30,
+    libraryID: 1,
+    key: "EPUBS222",
+    parentItemID: 20,
+    linkMode: "linked_url",
+    contentType: "application/epub+zip",
+    title: "Sakima's Song EPUB",
+    path: null,
+    url: "https://example.invalid/sakimas-song.epub",
+    sourceAsset: null,
+    dateModified: "2025-02-18 18:00:00",
   },
   {
     itemID: 23,
@@ -1625,6 +1686,15 @@ type FixturePdfInkPosition = {
   width: number;
   paths: readonly (readonly number[])[];
 };
+type FixtureEpubCfiPosition = {
+  type: "FragmentSelector";
+  value: string;
+};
+type FixtureSnapshotPosition = {
+  type: "CssSelector";
+  value: string;
+  refinedBy?: { start: number; end: number };
+};
 
 export type FixtureAnnotation = FixtureAnnotationBase &
   (
@@ -1648,6 +1718,11 @@ export type FixtureAnnotation = FixtureAnnotationBase &
     | {
         type: 6;
         position: FixturePdfTextPosition;
+        cacheImageAsset: null;
+      }
+    | {
+        type: 1;
+        position: FixtureEpubCfiPosition | FixtureSnapshotPosition;
         cacheImageAsset: null;
       }
   );
@@ -1938,6 +2013,45 @@ export const DEMO_ANNOTATIONS: readonly FixtureAnnotation[] = [
 
 /** Reviewed anchors for the committed Fixture documents. */
 export const ANNOTATIONS: readonly FixtureAnnotation[] = [
+  {
+    itemID: 31,
+    libraryID: 1,
+    key: "EPUBAN22",
+    parentItemID: 30,
+    type: 1,
+    text: "Sakima lived with his parents and his four year old sister.",
+    comment: null,
+    color: "#ffd400",
+    pageLabel: "Chapter 1",
+    sortIndex: "00000|000001|00000",
+    position: {
+      type: "FragmentSelector",
+      value: "epubcfi(/6/2!/4/2/2,:0,:66)",
+    },
+    cacheImageAsset: null,
+    dateAdded: "2025-02-15 12:00:00",
+    dateModified: "2025-02-15 12:00:00",
+  },
+  {
+    itemID: 32,
+    libraryID: 1,
+    key: "SNAPAN22",
+    parentItemID: 22,
+    type: 1,
+    text: "Sakima lived with his parents and his four year old sister.",
+    comment: null,
+    color: "#ffd400",
+    pageLabel: "Sakima's Song",
+    sortIndex: "00000|000002|00000",
+    position: {
+      type: "CssSelector",
+      value: "main p:nth-of-type(1)",
+      refinedBy: { start: 0, end: 66 },
+    },
+    cacheImageAsset: null,
+    dateAdded: "2025-02-15 12:00:00",
+    dateModified: "2025-02-15 12:00:00",
+  },
   {
     itemID: 26,
     libraryID: 1,
@@ -2395,6 +2509,16 @@ frontmatter:
 
 const STRESS_ITEM_KEY_ALPHABET = "23456789ABCDEFGHIJKLMNPQRSTUVWXYZ";
 const STRESS_BUILD_SEED = 0x5eed_0000;
+/**
+ * Seed of the group Library of a two-Library Stress Build. The Item count of
+ * a Library is at most the distance between the two seeds
+ * ({@link STRESS_LIBRARY_MAX_ITEM_COUNT}), so the two Libraries share no
+ * Zotero Key.
+ */
+const STRESS_GROUP_LIBRARY_SEED = 0x6eed_0000;
+/** The largest Item count of one Library in a Stress Build of whole Libraries. */
+const STRESS_LIBRARY_MAX_ITEM_COUNT =
+  STRESS_GROUP_LIBRARY_SEED - STRESS_BUILD_SEED;
 
 /** Synthetic Item count used by `pnpm fixture stress`. */
 export const DEFAULT_STRESS_ITEM_COUNT = 25_000;
@@ -2453,6 +2577,319 @@ export function createStressItems(count: number): readonly FixtureItem[] {
       collectionIDs: collection ? [collection.collectionID] : [],
     };
   });
+}
+
+/** Fixture Spec Items in My Library, the floor of a one-Library Stress Build. */
+export const STRESS_LIBRARY_MIN_ITEM_COUNT = ITEMS.filter(
+  ({ libraryID }) => libraryID === USER_LIBRARY_ID,
+).length;
+/** The Item counts a Library with `floor` Fixture Spec Items takes. */
+function stressLibraryItemCountConstraint(floor: number): string {
+  return `a safe integer of at least ${floor}, and at most ${STRESS_LIBRARY_MAX_ITEM_COUNT}`;
+}
+export const STRESS_LIBRARY_ITEM_COUNT_CONSTRAINT =
+  stressLibraryItemCountConstraint(STRESS_LIBRARY_MIN_ITEM_COUNT);
+/** My Library sizes the Item Query performance tiers measure. */
+export const STRESS_LIBRARY_TIERS = [10_000, 50_000, 100_000] as const;
+/** The group Library that a two-Library Stress Build fills: Shared Reading. */
+export const STRESS_GROUP_LIBRARY = LIBRARIES.find(
+  ({ groupID }) => groupID === 4200309,
+)!;
+/** Fixture Spec Items in that group Library, the floor of its Item count. */
+export const STRESS_GROUP_LIBRARY_MIN_ITEM_COUNT = ITEMS.filter(
+  ({ libraryID }) => libraryID === STRESS_GROUP_LIBRARY.libraryID,
+).length;
+export const STRESS_GROUP_LIBRARY_ITEM_COUNT_CONSTRAINT =
+  stressLibraryItemCountConstraint(STRESS_GROUP_LIBRARY_MIN_ITEM_COUNT);
+
+/**
+ * Query targets of a one-Library Stress Build. Every synthetic Item draws each
+ * value from its index `i` in the corpus: rare values recur every 1,000 Items,
+ * common values every 10, and dominant values cover more than a quarter of the
+ * Library, so a selective and a non-selective query each have a target.
+ */
+export const STRESS_LIBRARY_VALUES = {
+  /** One paper: 3 tagged marks per 100 Items (300, 1,500, 3,000 at the measured tiers). */
+  annotations: { tag: "stress-many-marks", perHundredItems: 3 },
+  tags: {
+    /** `i % 1000 == 0`: 0.1% of the corpus. */
+    rare: "stress-rare",
+    /** `i % 10 == 5`: 10%. */
+    common: "stress-common",
+    /** `i % 5 < 3`: 60%. */
+    dominant: "stress-dominant",
+  },
+  collections: {
+    /** Top-level; files no Item directly, so its subtree is the other three. */
+    root: { key: "STRESSRT", name: "Stress Build" },
+    /** Under `root`; `i % 10 == 6`: 10%. */
+    common: { key: "STRESSCM", name: "Common" },
+    /** Under `common`; `i % 1000 == 1`: 0.1%. */
+    rare: { key: "STRESSRR", name: "Rare" },
+    /** Under `root`; `i % 5 >= 2`: 60%. */
+    dominant: { key: "STRESSDM", name: "Dominant" },
+  },
+  itemTypes: {
+    /** `i % 1000 == 2`, with Venue "Stress Build University". */
+    rare: "thesis",
+    /** `i % 10 == 7`, with Venue "Stress Build Press". */
+    common: "book",
+    /** Every other Item: about 90%. */
+    dominant: "journalArticle",
+  },
+  /** `publicationTitle` of the journal articles. */
+  venues: {
+    /** `i % 1000 == 3`. */
+    rare: "Stress Rare Journal",
+    /** `i % 10 == 8`. */
+    common: "Stress Common Journal",
+    /** Every other journal article. */
+    dominant: "Stress Dominant Journal",
+  },
+  /** Title of the Item at `i == floor(count / 2)`; every other title is unique too. */
+  uniqueTitle: "Stress Build unique title",
+} as const;
+
+/** Data a Stress Build of whole Libraries adds to the Fixture Spec. */
+export interface StressLibraryCorpus {
+  items: readonly FixtureItem[];
+  collections: readonly FixtureCollection[];
+  attachments: readonly FixtureAttachment[];
+  annotations: readonly FixtureAnnotation[];
+}
+
+const STRESS_LIBRARY_MODIFIED_EPOCH = Temporal.Instant.from(
+  "2020-01-01T00:00:00Z",
+);
+
+/**
+ * Synthetic corpus that fills My Library to exactly `itemCount` Items, with
+ * the distributions of {@link STRESS_LIBRARY_VALUES}. With `groupItemCount`,
+ * it also fills {@link STRESS_GROUP_LIBRARY} to that Item count by the same
+ * rules, with Collections, Zotero Keys, and Citation Keys of its own.
+ */
+export function createStressLibraryCorpus(
+  itemCount: number,
+  groupItemCount?: number,
+): StressLibraryCorpus {
+  const count = syntheticItemCount("Library", {
+    itemCount,
+    floor: STRESS_LIBRARY_MIN_ITEM_COUNT,
+  });
+  const groupCount =
+    groupItemCount === undefined
+      ? undefined
+      : syntheticItemCount("group Library", {
+          itemCount: groupItemCount,
+          floor: STRESS_GROUP_LIBRARY_MIN_ITEM_COUNT,
+        });
+  const firstCollectionID =
+    Math.max(...COLLECTIONS.map(({ collectionID }) => collectionID)) + 1;
+  const firstItemID =
+    Math.max(
+      ...ITEMS.map(({ itemID }) => itemID),
+      ...NOTES.map(({ itemID }) => itemID),
+      ...ATTACHMENTS.map(({ itemID }) => itemID),
+      ...ANNOTATIONS.map(({ itemID }) => itemID),
+    ) + 1;
+  const personal = fillStressLibrary({
+    libraryID: USER_LIBRARY_ID,
+    count,
+    seed: STRESS_BUILD_SEED,
+    citationKeyPrefix: "stress",
+    firstItemID,
+    firstCollectionID,
+  });
+  if (groupCount === undefined)
+    return addStressRelations(personal, itemCount, firstItemID + count);
+  const group = fillStressLibrary({
+    libraryID: STRESS_GROUP_LIBRARY.libraryID,
+    count: groupCount,
+    seed: STRESS_GROUP_LIBRARY_SEED,
+    citationKeyPrefix: "stressg",
+    firstItemID: firstItemID + personal.items.length,
+    firstCollectionID: firstCollectionID + personal.collections.length,
+  });
+  return addStressRelations(
+    {
+      items: [...personal.items, ...group.items],
+      collections: [...personal.collections, ...group.collections],
+      attachments: [],
+      annotations: [],
+    },
+    itemCount,
+    firstItemID + count + groupCount,
+  );
+}
+
+function addStressRelations(
+  corpus: StressLibraryCorpus,
+  itemCount: number,
+  firstChildID: number,
+): StressLibraryCorpus {
+  const paper = corpus.items.find((item) => item.libraryID === USER_LIBRARY_ID);
+  if (!paper) return corpus;
+  const attachment: FixtureAttachment = {
+    itemID: firstChildID,
+    libraryID: USER_LIBRARY_ID,
+    key: "STRSPDF2",
+    parentItemID: paper.itemID,
+    contentType: "application/pdf",
+    title: "Stress Build marked paper",
+    sourceAsset: "rougier-2014/rougier-2014.pdf",
+    dateModified: BUILD_TIMESTAMP,
+    linkMode: "imported_file",
+    path: "storage:stress.pdf",
+    url: null,
+  };
+  const count = Math.max(
+    1,
+    Math.floor(
+      (itemCount * STRESS_LIBRARY_VALUES.annotations.perHundredItems) / 100,
+    ),
+  );
+  const annotations = Array.from(
+    { length: count },
+    (_, i): FixtureAnnotation => ({
+      itemID: firstChildID + 1 + i,
+      libraryID: USER_LIBRARY_ID,
+      key: stressItemKey(i),
+      parentItemID: attachment.itemID,
+      type: 1,
+      text: `Stress Build mark ${i + 1}`,
+      comment: null,
+      color: "#ffd400",
+      tags: [{ name: STRESS_LIBRARY_VALUES.annotations.tag, type: 0 }],
+      pageLabel: "1",
+      sortIndex: String(i).padStart(8, "0"),
+      dateAdded: BUILD_TIMESTAMP,
+      dateModified: BUILD_TIMESTAMP,
+      position: { pageIndex: 0, rects: [[0, 0, 10, 10]] },
+      cacheImageAsset: null,
+    }),
+  );
+  return { ...corpus, attachments: [attachment], annotations };
+}
+
+/**
+ * The synthetic Items that fill a Library with `floor` Fixture Spec Items to
+ * `itemCount` Items.
+ *
+ * @throws {Error} when the Library does not take the Item count.
+ */
+function syntheticItemCount(
+  library: "Library" | "group Library",
+  { itemCount, floor }: { itemCount: number; floor: number },
+): number {
+  if (
+    !Number.isSafeInteger(itemCount) ||
+    itemCount < floor ||
+    itemCount > STRESS_LIBRARY_MAX_ITEM_COUNT
+  ) {
+    throw new Error(
+      `stress ${library} item count must be ${stressLibraryItemCountConstraint(floor)}, got ${itemCount}`,
+    );
+  }
+  return itemCount - floor;
+}
+
+/** The synthetic Items and Collections of one Library of a Stress Build. */
+function fillStressLibrary({
+  libraryID,
+  count,
+  seed,
+  citationKeyPrefix,
+  firstItemID,
+  firstCollectionID,
+}: {
+  libraryID: number;
+  /** Synthetic Items to make. */
+  count: number;
+  /** Start of the Zotero Keys. */
+  seed: number;
+  citationKeyPrefix: string;
+  firstItemID: number;
+  firstCollectionID: number;
+}): StressLibraryCorpus {
+  const { tags, itemTypes, venues } = STRESS_LIBRARY_VALUES;
+
+  const [root, common, rare, dominant] = (
+    ["root", "common", "rare", "dominant"] as const
+  ).map((role, offset) => ({
+    collectionID: firstCollectionID + offset,
+    libraryID,
+    ...STRESS_LIBRARY_VALUES.collections[role],
+  })) as [
+    FixtureCollection,
+    FixtureCollection,
+    FixtureCollection,
+    FixtureCollection,
+  ];
+  const collections: FixtureCollection[] = [
+    root,
+    { ...common, parentCollectionID: root.collectionID },
+    { ...rare, parentCollectionID: common.collectionID },
+    { ...dominant, parentCollectionID: root.collectionID },
+  ];
+
+  const uniqueTitleIndex = Math.floor(count / 2);
+
+  const items = Array.from({ length: count }, (_, i): FixtureItem => {
+    const ordinal = i + 1;
+    const itemType =
+      i % 1000 === 2
+        ? itemTypes.rare
+        : i % 10 === 7
+          ? itemTypes.common
+          : itemTypes.dominant;
+    const venue =
+      itemType === "thesis"
+        ? "Stress Build University"
+        : itemType === "book"
+          ? "Stress Build Press"
+          : i % 1000 === 3
+            ? venues.rare
+            : i % 10 === 8
+              ? venues.common
+              : venues.dominant;
+    const itemTags = [
+      ...(i % 1000 === 0 ? [tags.rare] : []),
+      ...(i % 10 === 5 ? [tags.common] : []),
+      ...(i % 5 < 3 ? [tags.dominant] : []),
+    ].map((name) => ({ name, type: 0 as const }));
+    const collectionIDs = [
+      ...(i % 10 === 6 ? [common.collectionID] : []),
+      ...(i % 1000 === 1 ? [rare.collectionID] : []),
+      ...(i % 5 >= 2 ? [dominant.collectionID] : []),
+    ];
+    // A multiplicative scramble by a prime keeps modification order apart
+    // from key order, one second apart for each Item.
+    const modifiedOffset = (i * 7919) % Math.max(count, 1);
+    const dateModified = STRESS_LIBRARY_MODIFIED_EPOCH.add({
+      seconds: modifiedOffset,
+    })
+      .toString()
+      .replace("T", " ")
+      .slice(0, 19);
+    return {
+      itemID: firstItemID + i,
+      libraryID,
+      key: stressItemKey(seed + i),
+      itemType,
+      citationKey: `${citationKeyPrefix}${String(ordinal).padStart(7, "0")}`,
+      title:
+        i === uniqueTitleIndex
+          ? STRESS_LIBRARY_VALUES.uniqueTitle
+          : `Synthetic stress item ${ordinal}`,
+      venue,
+      date: String(2000 + (i % 25)),
+      creators: [author("Stress", `Author ${ordinal}`)],
+      tags: itemTags,
+      dateModified,
+      collectionIDs,
+    };
+  });
+  return { items, collections, attachments: [], annotations: [] };
 }
 
 /**
@@ -2646,12 +3083,13 @@ export interface FixtureZoteroData {
 export function vaultCaseZoteroData(
   vaultCaseId: string,
   items: readonly FixtureItem[],
+  collections: readonly FixtureCollection[] = COLLECTIONS,
 ): FixtureZoteroData {
   if (findVaultCase(vaultCaseId).id !== "demo") {
     return {
       items,
       libraries: LIBRARIES,
-      collections: COLLECTIONS,
+      collections,
       notes: NOTES,
       attachments: ATTACHMENTS,
       annotations: ANNOTATIONS,

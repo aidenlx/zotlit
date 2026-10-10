@@ -4,7 +4,7 @@ export {
   getLibraryByGroupID,
   type Library,
 } from "./queries/libraries";
-export { type GroupIDMemo } from "./queries/_groups";
+export { type GroupIDMemo } from "./queries/libraries";
 export {
   getItemsByID,
   getItemTypeByKey,
@@ -35,6 +35,13 @@ export {
   type ZoteroDatabaseIdentity,
   type ZoteroUserIdentity,
 } from "./queries/account";
+export {
+  NotZoteroDatabaseError,
+  readDatabaseLayout,
+  type DatabaseLayout,
+  type LayoutGap,
+  type LayoutVersions,
+} from "./layout";
 export {
   getSchemaVersions,
   SUPPORTED_SCHEMA_VERSIONS,
@@ -128,7 +135,11 @@ export {
   type TemplateTag,
   tagTypeToName,
 } from "./lib/zt-tag";
-export { type Attachment } from "./lib/zt-attach";
+export { type Attachment, linkModeToName } from "./lib/zt-attach";
+export {
+  type CreatorFieldMode,
+  creatorFieldModeToName,
+} from "./lib/zt-creator";
 export {
   getCollectionIDByKey,
   getIndexedItemIDsByCollection,
@@ -191,6 +202,7 @@ export {
 export { attachmentToTemplateData } from "./lib/context/zt-template-attach";
 export {
   annotationColorToName,
+  annotationColorsForName,
   type AnnotationColorName,
   highlightColorToName,
   textColorToName,

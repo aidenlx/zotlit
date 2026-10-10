@@ -3,7 +3,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { builtinModules } from "node:module";
 import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { defineConfig } from "vite";
 import type { Plugin } from "vite";
 import { analyzer, unstableRolldownAdapter } from "vite-bundle-analyzer";
@@ -108,7 +108,8 @@ export default defineConfig(({ mode }) => {
       },
       outDir,
       emptyOutDir: true,
-      sourcemap: isProd ? false : "inline",
+      // Obsidian's loader retains inline maps with the evaluated source text.
+      sourcemap: !isProd,
       minify: isProd,
       target: "es2025",
       copyPublicDir: false,
@@ -133,6 +134,11 @@ export default defineConfig(({ mode }) => {
         output: {
           banner: jsBanner,
           codeSplitting: false,
+          // plugin:zotlit is synthetic, so DevTools needs an absolute map URL.
+          // build:dev is uncached because this URL belongs to this checkout.
+          sourcemapBaseUrl: isProd
+            ? undefined
+            : `${pathToFileURL(resolve(import.meta.dirname, outDir)).href}/`,
         },
       },
     },

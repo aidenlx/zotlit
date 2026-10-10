@@ -234,8 +234,9 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
         );
 
       /**
-       * Records the Zotero schema versions once per distinct pair. A failed
-       * check never fails the refresh.
+       * Records the Zotero schema versions once per distinct pair. The stamps
+       * come from the layout that {@link validateClient} read for this client,
+       * so no statement runs here. A failed check never fails the refresh.
        */
       const reportSchemaVersions = (client: NodeDatabaseClient): void => {
         let versions: ZoteroSchemaVersions;
@@ -629,6 +630,7 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
         }),
         configure,
         databaseGeneration: databaseGenerations.databaseGeneration,
+        databaseFile: databaseGenerations.databaseFile,
       });
     }),
   );

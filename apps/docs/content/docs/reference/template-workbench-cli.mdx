@@ -116,10 +116,10 @@ Verify `identity.vault` and `identity.source` on every answer, and pass `expect-
 | --------- | ----------------------------------------------------------------------------------------------------------- |
 | `code`    | The stable code, from the registry below.                                                                   |
 | `message` | What went wrong, naming the offending parameter, path, key, or template.                                    |
-| `hint`    | The recovery action for the code.                                                                           |
+| `hint`    | The recovery action to follow.                                                                              |
 | `details` | Optional context: `parameter`, a source expectation (`target`, `expected`, `actual`), `key`, or `template`. |
 
-Every code in the registry is declared together with its recovery action, and every diagnostic carries that action as `hint`. A `hint` is therefore always present on a registry code, and the caller follows it.
+Every code in the registry is declared together with its default recovery action, and every diagnostic carries a `hint`. A rejected parameter can carry a recovery action of its own instead, such as the `name=value` form of a `--` token. The caller follows the `hint` of the response.
 
 ## Diagnostic codes [#diagnostic-codes]
 

@@ -1,5 +1,25 @@
 import { defineConfig } from "oxlint";
 
+export const parentImportPattern = {
+  group: ["../**"],
+  message: "Use @/ alias instead of parent-directory relative imports.",
+};
+
+export const itemQuerySchemaPaths = [
+  {
+    name: "@zotlit/item-query/schema",
+    allowTypeImports: true,
+    message:
+      "The Item Query Schema is build-only. Import runtime values from @zotlit/item-query.",
+  },
+  {
+    name: "@zotlit/item-query/query.schema.json",
+    allowTypeImports: true,
+    message:
+      "The generated Item Query Schema is build-only and must stay out of runtime bundles.",
+  },
+];
+
 export default defineConfig({
   options: {
     typeAware: true,
@@ -42,13 +62,8 @@ export default defineConfig({
     "no-restricted-imports": [
       "error",
       {
-        patterns: [
-          {
-            group: ["../**"],
-            message:
-              "Use @/ alias instead of parent-directory relative imports.",
-          },
-        ],
+        patterns: [parentImportPattern],
+        paths: itemQuerySchemaPaths,
       },
     ],
     "typescript/consistent-type-imports": [
@@ -57,4 +72,22 @@ export default defineConfig({
     ],
     "import/consistent-type-specifier-style": ["error", "prefer-top-level"],
   },
+  overrides: [
+    {
+      // Tests and build scripts can inspect the generated schema.
+      files: [
+        "**/*.{test,spec}.{ts,tsx,js,jsx}",
+        "**/*.{config,setup}.{ts,js,mjs,cjs}",
+        "**/scripts/**",
+      ],
+      rules: {
+        "no-restricted-imports": [
+          "error",
+          {
+            patterns: [parentImportPattern],
+          },
+        ],
+      },
+    },
+  ],
 });

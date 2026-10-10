@@ -1,6 +1,16 @@
 // The ZoteroReads handler layer: each operation composes @zotlit/db query functions over a borrowed Connection.
 import { chunk } from "@std/collections/chunk";
-import { Effect, Exit, Layer, Scope, Semaphore, Stream } from "effect";
+import {
+  Cause,
+  Effect,
+  Exit,
+  Fiber,
+  FiberMap,
+  Layer,
+  Scope,
+  Semaphore,
+  Stream,
+} from "effect";
 
 import {
   CollectionCache,
@@ -44,6 +54,9 @@ import type { Attachment, GroupIDMemo, Item, TagMemo } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { ItemIndex, layerItemIndex } from "@zotlit/item-lookup";
 import { exportItemSnapshot } from "@zotlit/workbench/snapshot";
+
+import { makeAttachmentFileResolver } from "@/services/item-query/attachment-files";
+import { runQueryJob } from "@/services/item-query/job";
 
 import { makeCitationLookup } from "./citation-lookup";
 import { Connection, toDbUnavailable } from "./connection";
@@ -288,6 +301,10 @@ export function handlersLayer(options?: HandlersOptions) {
         configure,
       );
       const pinned = new Map<SnapshotId, Pinned>();
+      // The running Query Jobs by job id, from the wait for a slot to the
+      // answer. Interruption of a fiber is the cancel of its job.
+      const queryJobs = yield* FiberMap.make<string>();
+      const querySlots = yield* Semaphore.make(2);
 
       const releasePinned = (entry: Pinned) =>
         Effect.suspend(() => {
@@ -336,6 +353,54 @@ export function handlersLayer(options?: HandlersOptions) {
       ) => Stream.unwrap(Effect.map(borrow(snapshot), f));
 
       return ZoteroReads.of({
+        CancelItemQuery: ({ id }) => FiberMap.remove(queryJobs, id),
+        ItemQuery: ({ job, snapshot }) =>
+          Effect.gen(function* () {
+            const fiber = yield* FiberMap.run(
+              queryJobs,
+              job.id,
+              querySlots.withPermits(1)(
+                Effect.scoped(
+                  Effect.gen(function* () {
+                    const client = yield* borrow(snapshot);
+                    // The envelope names the copy the job reads.
+                    const databasePath =
+                      connection.databaseFile(client) ??
+                      job.source.databasePath;
+                    return yield* runQueryJob(job, {
+                      client,
+                      attachmentFiles: makeAttachmentFileResolver(
+                        job.attachmentPaths,
+                      ),
+                      identity: {
+                        vault: job.vault,
+                        source: {
+                          databasePath,
+                          id:
+                            databasePath === job.source.databasePath
+                              ? job.source.id
+                              : null,
+                        },
+                      },
+                    });
+                  }),
+                ),
+              ),
+            );
+            // An interrupted request, such as from a closed client, ends the
+            // job before the request settles.
+            const exit = yield* Fiber.await(fiber).pipe(
+              Effect.onInterrupt(() => Fiber.interrupt(fiber)),
+            );
+            if (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause))
+              return {
+                command: job.command,
+                answer: "",
+                receipt: { kind: "inline" },
+                cancelled: true,
+              } as const;
+            return yield* exit;
+          }),
         CitationLookup: citationLookup.lookup,
         CitationRefresh: citationLookup.refresh,
         Libraries: ({ snapshot }) => withClient(snapshot, getLibraries),

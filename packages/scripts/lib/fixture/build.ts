@@ -37,7 +37,9 @@ import {
   ATTACHMENTS,
   BUILD_TIMESTAMP,
   CITATION_DOCUMENT_EDIT,
+  COLLECTIONS,
   createStressItems,
+  createStressLibraryCorpus,
   DEFAULT_SCOPE_CASE,
   DEFAULT_VAULT_CASE,
   DEMO_ATTACHMENTS,
@@ -87,6 +89,7 @@ export {
   BUILD_TIMESTAMP,
   COLLECTIONS,
   createStressItems,
+  createStressLibraryCorpus,
   DEFAULT_SCOPE_CASE,
   DEFAULT_VAULT_CASE,
   DEMO_ANNOTATIONS,
@@ -123,7 +126,14 @@ export {
 } from "./spec.ts";
 export {
   DEFAULT_STRESS_ITEM_COUNT,
+  STRESS_GROUP_LIBRARY,
+  STRESS_GROUP_LIBRARY_ITEM_COUNT_CONSTRAINT,
+  STRESS_GROUP_LIBRARY_MIN_ITEM_COUNT,
   STRESS_ITEM_COUNT_CONSTRAINT,
+  STRESS_LIBRARY_ITEM_COUNT_CONSTRAINT,
+  STRESS_LIBRARY_MIN_ITEM_COUNT,
+  STRESS_LIBRARY_TIERS,
+  STRESS_LIBRARY_VALUES,
 } from "./spec.ts";
 export type {
   FixtureAnnotation,
@@ -144,6 +154,7 @@ export type {
   FixtureVaultCase,
   LibrarySelector,
   PersistedLibraryScope,
+  StressLibraryCorpus,
 } from "./spec.ts";
 export { getFixtureLayout, getFixtureRoot } from "./layout.ts";
 export type { FixtureLayout } from "./layout.ts";
@@ -166,6 +177,18 @@ export interface BuildOptions {
   vaultCase?: string;
   /** Number of additive synthetic Items in an on-demand Stress Build. */
   stressItemCount?: number;
+  /**
+   * Exact Item count of My Library in a one-Library Stress Build: synthetic
+   * Items fill it past its Fixture Spec Items. Excludes
+   * {@link BuildOptions.stressItemCount}.
+   */
+  stressLibraryItemCount?: number;
+  /**
+   * Exact Item count of the group Library `STRESS_GROUP_LIBRARY` in a
+   * two-Library Stress Build, filled by the rules of My Library. Needs
+   * {@link BuildOptions.stressLibraryItemCount}.
+   */
+  stressGroupLibraryItemCount?: number;
   /**
    * Built plugin bundle to copy into the vault (`apps/obsidian/dist-dev`).
    * Absent, the vault carries the Fixture's data with ZotLit neither installed
@@ -218,16 +241,58 @@ export async function buildFixture(
   layout: FixtureLayout,
   options: BuildOptions = {},
 ): Promise<void> {
+  if (
+    options.stressItemCount !== undefined &&
+    options.stressLibraryItemCount !== undefined
+  ) {
+    throw new Error(
+      "a build takes one Stress Build: an additive Item count or a My Library Item count",
+    );
+  }
+  if (
+    options.stressLibraryItemCount !== undefined &&
+    options.vaultCase === "demo"
+  ) {
+    throw new Error(
+      'the "demo" vault case holds only its own Items: build the Stress Build of My Library with another vault case',
+    );
+  }
+  if (
+    options.stressGroupLibraryItemCount !== undefined &&
+    options.stressLibraryItemCount === undefined
+  ) {
+    throw new Error(
+      "a Stress Build fills the group Library together with My Library: give both Item counts",
+    );
+  }
+  const stressLibrary =
+    options.stressLibraryItemCount === undefined
+      ? undefined
+      : createStressLibraryCorpus(
+          options.stressLibraryItemCount,
+          options.stressGroupLibraryItemCount,
+        );
   const items =
-    options.stressItemCount === undefined
-      ? ITEMS
-      : [...ITEMS, ...createStressItems(options.stressItemCount)];
+    options.stressItemCount !== undefined
+      ? [...ITEMS, ...createStressItems(options.stressItemCount)]
+      : stressLibrary
+        ? [...ITEMS, ...stressLibrary.items]
+        : ITEMS;
 
   assertSeededCitationKeys(items);
-  const data = vaultCaseZoteroData(
+  const baseData = vaultCaseZoteroData(
     options.vaultCase ?? DEFAULT_VAULT_CASE,
     items,
+    stressLibrary ? [...COLLECTIONS, ...stressLibrary.collections] : undefined,
   );
+
+  const data = stressLibrary
+    ? {
+        ...baseData,
+        attachments: [...baseData.attachments, ...stressLibrary.attachments],
+        annotations: [...baseData.annotations, ...stressLibrary.annotations],
+      }
+    : baseData;
 
   await rm(layout.root, { recursive: true, force: true });
   await mkdir(layout.dataDir, { recursive: true });
@@ -766,7 +831,7 @@ function seedDatabase(
   );
 
   const tags = new Map<string, number>();
-  for (const tag of [...items, ...annotations].flatMap(
+  for (const tag of [...items, ...attachments, ...annotations].flatMap(
     (item) => item.tags ?? [],
   )) {
     if (!tags.has(tag.name)) tags.set(tag.name, tags.size + 1);
@@ -777,7 +842,7 @@ function seedDatabase(
   );
   insert(
     "insert into itemTags (itemID, tagID, type) values (?, ?, ?)",
-    [...items, ...annotations].flatMap((item) =>
+    [...items, ...attachments, ...annotations].flatMap((item) =>
       (item.tags ?? []).map((tag) => [
         item.itemID,
         tags.get(tag.name)!,

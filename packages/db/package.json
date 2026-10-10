@@ -16,7 +16,9 @@
     "./client/node": "./dist/client/node.mjs",
     "./client/web": "./dist/client/web.mjs",
     "./contract/ir": "./dist/contract/ir.mjs",
+    "./item-query": "./dist/item-query.mjs",
     "./path": "./dist/path.mjs",
+    "./test-scenario": "./dist/test-scenario.mjs",
     "./test-utils": "./dist/test-utils.mjs",
     "./package.json": "./package.json",
     "./contract/ir.json": "./src/contract/generated/ir.json",
@@ -43,6 +45,7 @@
     "@zotlit/zotero-types": "workspace:*",
     "arkregex": "catalog:",
     "drizzle-orm": "catalog:",
+    "effect": "catalog:",
     "valibot": "catalog:"
   },
   "devDependencies": {

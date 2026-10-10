@@ -22,6 +22,7 @@
  * repairs it. A broken value reaches this module as `null`, which resolves to
  * {@link MY_LIBRARY_SCOPE} with `invalid: true`.
  */
+import { regex } from "arkregex";
 import * as v from "valibot";
 
 import type { Library } from "@zotlit/db";
@@ -68,6 +69,12 @@ export const MY_LIBRARY_SCOPE: LibraryScope = Object.freeze({
   libraries: Object.freeze([Object.freeze({ type: "personal" as const })]),
 });
 
+/** What a scope reads of a Library row; any reader of the rows can give it. */
+export type ScopeLibrary = Pick<
+  Library,
+  "libraryID" | "type" | "groupID" | "name"
+>;
+
 /** One Library of the active database that the saved scope resolved onto. */
 export interface AvailableLibrary {
   selector: LibrarySelector;
@@ -97,6 +104,36 @@ export function selectorKey(selector: LibrarySelector): string {
     : `group:${selector.groupID}`;
 }
 
+const GROUP_SELECTOR_KEY = regex("^group:([1-9]\\d*)$");
+
+/**
+ * A {@link selectorKey} text, decoded to the selector it names.
+ *
+ * @param message the diagnostic for text that names no Library
+ */
+export function selectorKeySchema(message: (text: string) => string) {
+  return v.pipe(
+    v.string(),
+    v.rawTransform<string, LibrarySelector>(({ dataset, addIssue, NEVER }) => {
+      const selector = parseSelectorKey(dataset.value);
+      if (selector) return selector;
+      addIssue({ message: message(dataset.value) });
+      return NEVER;
+    }),
+  );
+}
+
+function parseSelectorKey(text: string): LibrarySelector | null {
+  if (text === "personal") return { type: "personal" };
+  const group = GROUP_SELECTOR_KEY.exec(text);
+  if (!group) return null;
+  const parsed = v.safeParse(librarySelectorSchema, {
+    type: "group",
+    groupID: Number(group[1]),
+  });
+  return parsed.success ? parsed.output : null;
+}
+
 /** Canonical order: My Library first, then groups by ascending group id. */
 export function compareSelectors(
   a: LibrarySelector,
@@ -116,7 +153,7 @@ function isCanonicalOrder(selectors: LibrarySelector[]): boolean {
 }
 
 /** The selector naming `library`, whatever local `libraryID` it currently has. */
-export function selectorOf(library: Library): LibrarySelector | null {
+export function selectorOf(library: ScopeLibrary): LibrarySelector | null {
   if (library.type === "user") return { type: "personal" };
   return library.groupID === null
     ? null
@@ -132,7 +169,7 @@ export function selectorOf(library: Library): LibrarySelector | null {
  * `invalid: true`.
  */
 export function resolveLibraryScope(
-  libraries: readonly Library[],
+  libraries: readonly ScopeLibrary[],
   scope: LibraryScope | null,
 ): ResolvedLibraryScope {
   const invalid = scope === null;
@@ -169,7 +206,10 @@ export function resolveLibraryScope(
   return { mode: "selected", invalid, available, unavailable };
 }
 
-function matchesSelector(library: Library, selector: LibrarySelector): boolean {
+function matchesSelector(
+  library: ScopeLibrary,
+  selector: LibrarySelector,
+): boolean {
   return selector.type === "personal"
     ? library.type === "user"
     : library.type === "group" && library.groupID === selector.groupID;

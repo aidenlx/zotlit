@@ -1,0 +1,1957 @@
+{
+  "reading_plan": {
+    "provenance": "Reviewed contract example; verified against the seeded corpus by corpus-query.test.mjs.",
+    "envelope": {
+      "contractVersion": 3,
+      "command": "zotlit:query",
+      "ok": true,
+      "identity": {
+        "vault": {
+          "name": "vault-c5517c2c-06da-4246-8c5b-ac01d7ac81eb",
+          "path": "/evaluation-run/vault-c5517c2c-06da-4246-8c5b-ac01d7ac81eb"
+        },
+        "source": {
+          "databasePath": "/evaluation-run/corpus/zotero-data/zotero.sqlite",
+          "id": "8a55b063"
+        }
+      },
+      "libraries": [
+        {
+          "type": "personal"
+        },
+        {
+          "type": "group",
+          "groupID": 118,
+          "name": "Lab Archive"
+        }
+      ],
+      "request": {
+        "from": "items",
+        "library": ["personal", "group:118"],
+        "filter": "itemType == \"journalArticle\" && tags.contains(\"query-annotation-eval\")",
+        "fields": ["title", "library", "annotations.length", "annotations"],
+        "limit": null
+      },
+      "returnedCount": 3,
+      "truncated": false,
+      "warnings": [],
+      "rows": [
+        {
+          "indexedKey": "QANPAPER",
+          "values": {
+            "title": "Figure design reading copy",
+            "library": "personal",
+            "annotations.length": 2,
+            "annotations": [
+              {
+                "indexedKey": "QANMARK2",
+                "type": "highlight",
+                "text": "Identify Your Message",
+                "comment": null,
+                "pageLabel": "1",
+                "pageIndex": 0
+              },
+              {
+                "indexedKey": "QANPAGE2",
+                "type": "image",
+                "text": null,
+                "comment": null,
+                "pageLabel": "2",
+                "pageIndex": 1
+              }
+            ]
+          }
+        },
+        {
+          "indexedKey": "QANZR222",
+          "values": {
+            "title": "Figure design reading plan",
+            "library": "personal",
+            "annotations.length": 0,
+            "annotations": []
+          }
+        },
+        {
+          "indexedKey": "QANPAPERg118",
+          "values": {
+            "title": "Figure design reading copy",
+            "library": "group:118",
+            "annotations.length": 2,
+            "annotations": [
+              {
+                "indexedKey": "QANMARK2g118",
+                "type": "highlight",
+                "text": "Identify Your Message",
+                "comment": null,
+                "pageLabel": "1",
+                "pageIndex": 0
+              },
+              {
+                "indexedKey": "QANNT222g118",
+                "type": "note",
+                "text": null,
+                "comment": "Compare the chart with the methods section.",
+                "pageLabel": "1",
+                "pageIndex": 0
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "answer": {
+      "answer": "Complete research results.",
+      "count": 3,
+      "rows": [
+        {
+          "indexedKey": "QANPAPER",
+          "values": {
+            "title": "Figure design reading copy",
+            "library": "personal",
+            "annotations.length": 2,
+            "annotations": [
+              {
+                "indexedKey": "QANMARK2",
+                "type": "highlight",
+                "text": "Identify Your Message",
+                "comment": null,
+                "pageLabel": "1",
+                "pageIndex": 0
+              },
+              {
+                "indexedKey": "QANPAGE2",
+                "type": "image",
+                "text": null,
+                "comment": null,
+                "pageLabel": "2",
+                "pageIndex": 1
+              }
+            ]
+          }
+        },
+        {
+          "indexedKey": "QANZR222",
+          "values": {
+            "title": "Figure design reading plan",
+            "library": "personal",
+            "annotations.length": 0,
+            "annotations": []
+          }
+        },
+        {
+          "indexedKey": "QANPAPERg118",
+          "values": {
+            "title": "Figure design reading copy",
+            "library": "group:118",
+            "annotations.length": 2,
+            "annotations": [
+              {
+                "indexedKey": "QANMARK2g118",
+                "type": "highlight",
+                "text": "Identify Your Message",
+                "comment": null,
+                "pageLabel": "1",
+                "pageIndex": 0
+              },
+              {
+                "indexedKey": "QANNT222g118",
+                "type": "note",
+                "text": null,
+                "comment": "Compare the chart with the methods section.",
+                "pageLabel": "1",
+                "pageIndex": 0
+              }
+            ]
+          }
+        }
+      ],
+      "groups": [],
+      "limitation": null,
+      "exportPath": null
+    }
+  },
+  "attachment": {
+    "envelope": {
+      "contractVersion": 3,
+      "command": "zotlit:query",
+      "ok": true,
+      "identity": {
+        "vault": {
+          "name": "vault-23b92c04-3cd3-41df-92d9-2051f7bfdb3c",
+          "path": "/evaluation-run/vault-23b92c04-3cd3-41df-92d9-2051f7bfdb3c"
+        },
+        "source": {
+          "databasePath": "/evaluation-run/corpus/zotero-data/zotero.sqlite",
+          "id": "8babeee3"
+        }
+      },
+      "libraries": [
+        {
+          "type": "group",
+          "groupID": 118,
+          "name": "Lab Archive"
+        }
+      ],
+      "request": {
+        "from": "annotations",
+        "library": ["group:118"],
+        "filter": "[\"QANPDF22g118\"].contains(attachment.indexedKey)",
+        "fields": [
+          "type",
+          "pageLabel",
+          "text",
+          "comment",
+          "item.title",
+          "attachment.path"
+        ],
+        "sort": [
+          {
+            "field": "sortIndex",
+            "direction": "asc"
+          }
+        ],
+        "limit": null
+      },
+      "returnedCount": 2,
+      "truncated": false,
+      "warnings": [],
+      "rows": [
+        {
+          "indexedKey": "QANMARK2g118",
+          "attachmentIndexedKey": "QANPDF22g118",
+          "itemIndexedKey": "QANPAPERg118",
+          "values": {
+            "type": "highlight",
+            "pageLabel": "1",
+            "text": "Identify Your Message",
+            "comment": null,
+            "item.title": "Figure design reading copy",
+            "attachment.path": "/evaluation-run/corpus/zotero-data/storage/QANPDF22/rougier-2014.pdf"
+          }
+        },
+        {
+          "indexedKey": "QANNT222g118",
+          "attachmentIndexedKey": "QANPDF22g118",
+          "itemIndexedKey": "QANPAPERg118",
+          "values": {
+            "type": "note",
+            "pageLabel": "1",
+            "text": null,
+            "comment": "Compare the chart with the methods section.",
+            "item.title": "Figure design reading copy",
+            "attachment.path": "/evaluation-run/corpus/zotero-data/storage/QANPDF22/rougier-2014.pdf"
+          }
+        }
+      ]
+    },
+    "answer": {
+      "answer": "Found 2 annotations in Lab Archive, in reading order. The saved envelope is at `/evaluation-run/agent/query-result.json`. The result is complete (`truncated: false`).",
+      "count": 2,
+      "annotations": [
+        {
+          "indexedKey": "QANMARK2g118",
+          "itemIndexedKey": "QANPAPERg118",
+          "attachmentIndexedKey": "QANPDF22g118",
+          "type": "highlight",
+          "pageLabel": "1",
+          "text": "Identify Your Message",
+          "comment": null,
+          "attachmentPath": "/evaluation-run/corpus/zotero-data/storage/QANPDF22/rougier-2014.pdf"
+        },
+        {
+          "indexedKey": "QANNT222g118",
+          "itemIndexedKey": "QANPAPERg118",
+          "attachmentIndexedKey": "QANPDF22g118",
+          "type": "note",
+          "pageLabel": "1",
+          "text": null,
+          "comment": "Compare the chart with the methods section.",
+          "attachmentPath": "/evaluation-run/corpus/zotero-data/storage/QANPDF22/rougier-2014.pdf"
+        }
+      ],
+      "imagePath": null,
+      "imageProvenance": null,
+      "imageFormat": null,
+      "validPng": null
+    }
+  },
+  "colors": {
+    "envelope": {
+      "contractVersion": 3,
+      "command": "zotlit:query",
+      "ok": true,
+      "identity": {
+        "vault": {
+          "name": "vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a",
+          "path": "/evaluation-run/vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a"
+        },
+        "source": {
+          "databasePath": "/evaluation-run/corpus/zotero-data/zotero.sqlite",
+          "id": "34ecb303"
+        }
+      },
+      "libraries": [
+        {
+          "type": "personal"
+        }
+      ],
+      "request": {
+        "from": "annotations",
+        "library": ["personal"],
+        "filter": "type == \"highlight\" && colorName == \"blue\" && tags.contains(\"query-annotation-method\") && pageLabel == \"1\" && item.title == \"Figure design reading copy\"",
+        "fields": [
+          "text",
+          "colorName",
+          "tags",
+          "pageIndex",
+          "pageLabel",
+          "item.title"
+        ],
+        "sort": [
+          {
+            "field": "item.dateModified",
+            "direction": "desc"
+          },
+          {
+            "field": "attachment.indexedKey",
+            "direction": "asc"
+          },
+          {
+            "field": "sortIndex",
+            "direction": "asc"
+          }
+        ],
+        "limit": null
+      },
+      "returnedCount": 1,
+      "truncated": false,
+      "warnings": [],
+      "rows": [
+        {
+          "indexedKey": "QANMARK2",
+          "attachmentIndexedKey": "QANPDF22",
+          "itemIndexedKey": "QANPAPER",
+          "values": {
+            "text": "Identify Your Message",
+            "colorName": "blue",
+            "tags": ["query-annotation-method"],
+            "pageIndex": 0,
+            "pageLabel": "1",
+            "item.title": "Figure design reading copy"
+          }
+        }
+      ]
+    },
+    "answer": {
+      "answer": "Found 1 matching annotation. The saved envelope was read back and verified; the query is complete (`truncated: false`).",
+      "count": 1,
+      "annotations": [
+        {
+          "indexedKey": "QANMARK2",
+          "text": "Identify Your Message",
+          "colorName": "blue",
+          "tags": ["query-annotation-method"],
+          "pageIndex": 0
+        }
+      ],
+      "imagePath": null,
+      "imageProvenance": null,
+      "imageFormat": null,
+      "validPng": null
+    }
+  },
+  "missing_source": {
+    "envelope": {
+      "contractVersion": 3,
+      "command": "zotlit:query",
+      "ok": true,
+      "identity": {
+        "vault": {
+          "name": "vault-79535da2-ed2f-4a90-b100-f14c6b6fd8fa",
+          "path": "/evaluation-run/vault-79535da2-ed2f-4a90-b100-f14c6b6fd8fa"
+        },
+        "source": {
+          "databasePath": "/evaluation-run/corpus/zotero-data/zotero.sqlite",
+          "id": "11e35383"
+        }
+      },
+      "libraries": [
+        {
+          "type": "personal"
+        },
+        {
+          "type": "group",
+          "groupID": 118,
+          "name": "Lab Archive"
+        },
+        {
+          "type": "group",
+          "groupID": 990117,
+          "name": "Consortium Reading Room"
+        },
+        {
+          "type": "group",
+          "groupID": 4200309,
+          "name": "Shared Reading"
+        }
+      ],
+      "request": {
+        "from": "annotations",
+        "library": ["personal", "group:118", "group:990117", "group:4200309"],
+        "filter": "comment == \"Check this source when the file arrives.\"",
+        "fields": [
+          "comment",
+          "attachment.indexedKey",
+          "attachment.path",
+          "attachment.exists"
+        ],
+        "sort": [
+          {
+            "field": "item.dateModified",
+            "direction": "desc"
+          },
+          {
+            "field": "attachment.indexedKey",
+            "direction": "asc"
+          },
+          {
+            "field": "sortIndex",
+            "direction": "asc"
+          }
+        ],
+        "limit": null
+      },
+      "returnedCount": 1,
+      "truncated": false,
+      "warnings": [],
+      "rows": [
+        {
+          "indexedKey": "QANMISS2",
+          "attachmentIndexedKey": "MISSNG22",
+          "itemIndexedKey": "SAKIMA22",
+          "values": {
+            "comment": "Check this source when the file arrives.",
+            "attachment.indexedKey": "MISSNG22",
+            "attachment.path": "/evaluation-run/corpus/zotero-data/storage/MISSNG22/deliberately-missing.pdf",
+            "attachment.exists": false
+          }
+        }
+      ]
+    },
+    "answer": {
+      "answer": "Found one matching Annotation. The complete query envelope is saved at [query-result.json](/evaluation-run/agent/query-result.json) and verified.",
+      "count": 1,
+      "annotations": [
+        {
+          "indexedKey": "QANMISS2",
+          "attachmentIndexedKey": "MISSNG22",
+          "comment": "Check this source when the file arrives.",
+          "attachmentPath": "/evaluation-run/corpus/zotero-data/storage/MISSNG22/deliberately-missing.pdf"
+        }
+      ],
+      "imagePath": null,
+      "imageProvenance": null,
+      "imageFormat": null,
+      "validPng": null
+    }
+  },
+  "export_annotations": {
+    "envelope": {
+      "contractVersion": 3,
+      "command": "zotlit:query",
+      "ok": true,
+      "identity": {
+        "vault": {
+          "name": "vault-ff63b5aa-0fc3-417f-a5c5-0f0bbf7f116b",
+          "path": "/evaluation-run/vault-ff63b5aa-0fc3-417f-a5c5-0f0bbf7f116b"
+        },
+        "source": {
+          "databasePath": "/evaluation-run/corpus/zotero-data/zotero.sqlite",
+          "id": "661048c3"
+        }
+      },
+      "libraries": [
+        {
+          "type": "group",
+          "groupID": 118,
+          "name": "Lab Archive"
+        }
+      ],
+      "request": {
+        "from": "annotations",
+        "library": ["group:118"],
+        "filter": "[\"QANPDF22g118\"].contains(attachment.indexedKey)",
+        "fields": ["type", "pageLabel", "text", "comment", "attachment.path"],
+        "sort": [
+          {
+            "field": "item.dateModified",
+            "direction": "desc"
+          },
+          {
+            "field": "attachment.indexedKey",
+            "direction": "asc"
+          },
+          {
+            "field": "sortIndex",
+            "direction": "asc"
+          }
+        ],
+        "limit": null
+      },
+      "returnedCount": 2,
+      "truncated": false,
+      "warnings": [],
+      "rows": [
+        {
+          "indexedKey": "QANMARK2g118",
+          "attachmentIndexedKey": "QANPDF22g118",
+          "itemIndexedKey": "QANPAPERg118",
+          "values": {
+            "type": "highlight",
+            "pageLabel": "1",
+            "text": "Identify Your Message",
+            "comment": null,
+            "attachment.path": "/evaluation-run/corpus/zotero-data/storage/QANPDF22/rougier-2014.pdf"
+          }
+        },
+        {
+          "indexedKey": "QANNT222g118",
+          "attachmentIndexedKey": "QANPDF22g118",
+          "itemIndexedKey": "QANPAPERg118",
+          "values": {
+            "type": "note",
+            "pageLabel": "1",
+            "text": null,
+            "comment": "Compare the chart with the methods section.",
+            "attachment.path": "/evaluation-run/corpus/zotero-data/storage/QANPDF22/rougier-2014.pdf"
+          }
+        }
+      ]
+    },
+    "answer": {
+      "answer": "Complete export: 2 Annotations from Lab Archive attachment QANPDF22g118. Annotation Indexed Keys: QANMARK2g118, QANNT222g118.",
+      "count": 2,
+      "annotations": [
+        {
+          "indexedKey": "QANMARK2g118",
+          "itemIndexedKey": "QANPAPERg118",
+          "attachmentIndexedKey": "QANPDF22g118",
+          "type": "highlight",
+          "pageLabel": "1",
+          "text": "Identify Your Message",
+          "comment": null,
+          "attachmentPath": "/evaluation-run/corpus/zotero-data/storage/QANPDF22/rougier-2014.pdf"
+        },
+        {
+          "indexedKey": "QANNT222g118",
+          "itemIndexedKey": "QANPAPERg118",
+          "attachmentIndexedKey": "QANPDF22g118",
+          "type": "note",
+          "pageLabel": "1",
+          "text": null,
+          "comment": "Compare the chart with the methods section.",
+          "attachmentPath": "/evaluation-run/corpus/zotero-data/storage/QANPDF22/rougier-2014.pdf"
+        }
+      ],
+      "imagePath": null,
+      "exportPath": "/evaluation-run/result.json",
+      "imageProvenance": null,
+      "imageFormat": null,
+      "validPng": null
+    },
+    "receipt": {
+      "contractVersion": 3,
+      "command": "zotlit:query",
+      "ok": true,
+      "identity": {
+        "vault": {
+          "name": "vault-ff63b5aa-0fc3-417f-a5c5-0f0bbf7f116b",
+          "path": "/evaluation-run/vault-ff63b5aa-0fc3-417f-a5c5-0f0bbf7f116b"
+        },
+        "source": {
+          "databasePath": "/evaluation-run/corpus/zotero-data/zotero.sqlite",
+          "id": "661048c3"
+        }
+      },
+      "libraries": [
+        {
+          "type": "group",
+          "groupID": 118,
+          "name": "Lab Archive"
+        }
+      ],
+      "request": {
+        "from": "annotations",
+        "library": ["group:118"],
+        "filter": "[\"QANPDF22g118\"].contains(attachment.indexedKey)",
+        "fields": ["type", "pageLabel", "text", "comment", "attachment.path"],
+        "sort": [
+          {
+            "field": "item.dateModified",
+            "direction": "desc"
+          },
+          {
+            "field": "attachment.indexedKey",
+            "direction": "asc"
+          },
+          {
+            "field": "sortIndex",
+            "direction": "asc"
+          }
+        ],
+        "limit": null
+      },
+      "returnedCount": 2,
+      "truncated": false,
+      "file": {
+        "path": "/evaluation-run/agent/query-result.json",
+        "bytes": 2269,
+        "format": "json"
+      }
+    }
+  },
+  "no_usable_pdf": {
+    "provenance": "Reviewed contract example; verified against the seeded corpus by corpus-query.test.mjs.",
+    "envelope": {
+      "contractVersion": 3,
+      "command": "zotlit:query",
+      "ok": true,
+      "identity": {
+        "vault": {
+          "name": "vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a",
+          "path": "/evaluation-run/vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a"
+        },
+        "source": {
+          "databasePath": "/evaluation-run/corpus/zotero-data/zotero.sqlite",
+          "id": "34ecb303"
+        }
+      },
+      "libraries": [
+        {
+          "type": "personal"
+        }
+      ],
+      "request": {
+        "from": "items",
+        "library": ["personal"],
+        "filter": "collections.within(\"Query thesis\") && attachments.filter(value.contentType == \"application/pdf\" && value.exists).isEmpty()",
+        "fields": ["title", "attachments[].path"],
+        "limit": null
+      },
+      "returnedCount": 3,
+      "truncated": false,
+      "warnings": [],
+      "rows": [
+        {
+          "indexedKey": "QCZRPP22",
+          "values": {
+            "title": "Thesis review without files",
+            "attachments[].path": []
+          }
+        },
+        {
+          "indexedKey": "QCMISS22",
+          "values": {
+            "title": "Clinical attention missing its file",
+            "attachments[].path": ["/nonexistent/zotlit-query-eval/missing.pdf"]
+          }
+        },
+        {
+          "indexedKey": "QCWEB222",
+          "values": {
+            "title": "Thesis background reading",
+            "attachments[].path": [
+              "/evaluation-run/corpus/zotero-data/storage/QCEPUB22/reading.epub",
+              "/evaluation-run/corpus/zotero-data/storage/QCSNAP22/index.html"
+            ]
+          }
+        }
+      ]
+    },
+    "answer": {
+      "answer": "Complete research results.",
+      "count": 3,
+      "rows": [
+        {
+          "indexedKey": "QCZRPP22",
+          "values": {
+            "title": "Thesis review without files",
+            "attachments[].path": []
+          }
+        },
+        {
+          "indexedKey": "QCMISS22",
+          "values": {
+            "title": "Clinical attention missing its file",
+            "attachments[].path": ["/nonexistent/zotlit-query-eval/missing.pdf"]
+          }
+        },
+        {
+          "indexedKey": "QCWEB222",
+          "values": {
+            "title": "Thesis background reading",
+            "attachments[].path": [
+              "/evaluation-run/corpus/zotero-data/storage/QCEPUB22/reading.epub",
+              "/evaluation-run/corpus/zotero-data/storage/QCSNAP22/index.html"
+            ]
+          }
+        }
+      ],
+      "groups": [],
+      "limitation": null,
+      "exportPath": null
+    }
+  },
+  "broken_links": {
+    "provenance": "Reviewed contract example; verified against the seeded corpus by corpus-query.test.mjs.",
+    "envelope": {
+      "contractVersion": 3,
+      "command": "zotlit:query",
+      "ok": true,
+      "identity": {
+        "vault": {
+          "name": "vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a",
+          "path": "/evaluation-run/vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a"
+        },
+        "source": {
+          "databasePath": "/evaluation-run/corpus/zotero-data/zotero.sqlite",
+          "id": "34ecb303"
+        }
+      },
+      "libraries": [
+        {
+          "type": "personal"
+        }
+      ],
+      "request": {
+        "from": "attachments",
+        "library": ["personal"],
+        "filter": "item.collections.within(\"Query thesis\") && linkMode == \"linked_file\" && !exists",
+        "fields": ["title", "path", "item.title"],
+        "limit": null
+      },
+      "returnedCount": 1,
+      "truncated": false,
+      "warnings": [],
+      "rows": [
+        {
+          "indexedKey": "QCBRKN22",
+          "values": {
+            "title": "Missing linked PDF",
+            "path": "/nonexistent/zotlit-query-eval/missing.pdf",
+            "item.title": "Clinical attention missing its file"
+          }
+        }
+      ]
+    },
+    "answer": {
+      "answer": "Complete research results.",
+      "count": 1,
+      "rows": [
+        {
+          "indexedKey": "QCBRKN22",
+          "values": {
+            "title": "Missing linked PDF",
+            "path": "/nonexistent/zotlit-query-eval/missing.pdf",
+            "item.title": "Clinical attention missing its file"
+          }
+        }
+      ],
+      "groups": [],
+      "limitation": null,
+      "exportPath": null
+    }
+  },
+  "duplicate_pdfs": {
+    "provenance": "Reviewed contract example; verified against the seeded corpus by corpus-query.test.mjs.",
+    "envelope": {
+      "contractVersion": 3,
+      "command": "zotlit:query",
+      "ok": true,
+      "identity": {
+        "vault": {
+          "name": "vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a",
+          "path": "/evaluation-run/vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a"
+        },
+        "source": {
+          "databasePath": "/evaluation-run/corpus/zotero-data/zotero.sqlite",
+          "id": "34ecb303"
+        }
+      },
+      "libraries": [
+        {
+          "type": "personal"
+        }
+      ],
+      "request": {
+        "from": "items",
+        "library": ["personal"],
+        "filter": "collections.within(\"Query thesis\") && attachments.filter(value.contentType == \"application/pdf\").length > 1",
+        "fields": ["title", "attachments[].title", "attachments[].tags"],
+        "limit": null
+      },
+      "returnedCount": 1,
+      "truncated": false,
+      "warnings": [],
+      "rows": [
+        {
+          "indexedKey": "QCTWN222",
+          "values": {
+            "title": "Clinical attention with two editions",
+            "attachments[].title": ["First edition", "Second edition"],
+            "attachments[].tags": [["review-file"], []]
+          }
+        }
+      ]
+    },
+    "answer": {
+      "answer": "Complete research results.",
+      "count": 1,
+      "rows": [
+        {
+          "indexedKey": "QCTWN222",
+          "values": {
+            "title": "Clinical attention with two editions",
+            "attachments[].title": ["First edition", "Second edition"],
+            "attachments[].tags": [["review-file"], []]
+          }
+        }
+      ],
+      "groups": [],
+      "limitation": null,
+      "exportPath": null
+    }
+  },
+  "recently_annotated": {
+    "provenance": "Reviewed contract example; verified against the seeded corpus by corpus-query.test.mjs.",
+    "envelope": {
+      "contractVersion": 3,
+      "command": "zotlit:query",
+      "ok": true,
+      "identity": {
+        "vault": {
+          "name": "vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a",
+          "path": "/evaluation-run/vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a"
+        },
+        "source": {
+          "databasePath": "/evaluation-run/corpus/zotero-data/zotero.sqlite",
+          "id": "34ecb303"
+        }
+      },
+      "libraries": [
+        {
+          "type": "personal"
+        }
+      ],
+      "request": {
+        "from": "items",
+        "library": ["personal"],
+        "filter": "collections.within(\"Query thesis\") && annotations.filter(value.dateModified >= date(\"2024-01-01\") && value.dateModified < date(\"2024-05-01\")).length > 0",
+        "fields": ["title", "annotations.length"],
+        "limit": null
+      },
+      "returnedCount": 2,
+      "truncated": false,
+      "warnings": [],
+      "rows": [
+        {
+          "indexedKey": "QCSNG222",
+          "values": {
+            "title": "深度学习 in clinical attention",
+            "annotations.length": 1
+          }
+        },
+        {
+          "indexedKey": "QCTWN222",
+          "values": {
+            "title": "Clinical attention with two editions",
+            "annotations.length": 2
+          }
+        }
+      ]
+    },
+    "answer": {
+      "answer": "Complete research results.",
+      "count": 2,
+      "rows": [
+        {
+          "indexedKey": "QCSNG222",
+          "values": {
+            "title": "深度学习 in clinical attention",
+            "annotations.length": 1
+          }
+        },
+        {
+          "indexedKey": "QCTWN222",
+          "values": {
+            "title": "Clinical attention with two editions",
+            "annotations.length": 2
+          }
+        }
+      ],
+      "groups": [],
+      "limitation": null,
+      "exportPath": null
+    }
+  },
+  "count_per_paper": {
+    "provenance": "Reviewed contract example; verified against the seeded corpus by corpus-query.test.mjs.",
+    "envelope": {
+      "contractVersion": 3,
+      "command": "zotlit:query",
+      "ok": true,
+      "identity": {
+        "vault": {
+          "name": "vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a",
+          "path": "/evaluation-run/vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a"
+        },
+        "source": {
+          "databasePath": "/evaluation-run/corpus/zotero-data/zotero.sqlite",
+          "id": "34ecb303"
+        }
+      },
+      "libraries": [
+        {
+          "type": "personal"
+        }
+      ],
+      "request": {
+        "from": "annotations",
+        "library": ["personal"],
+        "filter": "item.collections.within(\"Query thesis\")",
+        "fields": ["item.title"],
+        "limit": null,
+        "group": "item.indexedKey"
+      },
+      "returnedCount": 3,
+      "truncated": false,
+      "warnings": [],
+      "groups": [
+        {
+          "value": "QCSNG222",
+          "count": 1,
+          "rows": [
+            {
+              "indexedKey": "QCNT2222",
+              "values": {
+                "item.title": "深度学习 in clinical attention"
+              }
+            }
+          ]
+        },
+        {
+          "value": "QCTWN222",
+          "count": 2,
+          "rows": [
+            {
+              "indexedKey": "QCMARKA2",
+              "values": {
+                "item.title": "Clinical attention with two editions"
+              }
+            },
+            {
+              "indexedKey": "QCMARKB2",
+              "values": {
+                "item.title": "Clinical attention with two editions"
+              }
+            }
+          ]
+        }
+      ],
+      "totalCount": 3
+    },
+    "answer": {
+      "answer": "Complete research results.",
+      "count": 3,
+      "rows": [
+        {
+          "indexedKey": "QCNT2222",
+          "values": {
+            "item.title": "深度学习 in clinical attention"
+          }
+        },
+        {
+          "indexedKey": "QCMARKA2",
+          "values": {
+            "item.title": "Clinical attention with two editions"
+          }
+        },
+        {
+          "indexedKey": "QCMARKB2",
+          "values": {
+            "item.title": "Clinical attention with two editions"
+          }
+        }
+      ],
+      "groups": [
+        {
+          "value": "QCSNG222",
+          "count": 1
+        },
+        {
+          "value": "QCTWN222",
+          "count": 2
+        }
+      ],
+      "limitation": null,
+      "exportPath": null
+    }
+  },
+  "count_by_year": {
+    "provenance": "Reviewed contract example; verified against the seeded corpus by corpus-query.test.mjs.",
+    "envelope": {
+      "contractVersion": 3,
+      "command": "zotlit:query",
+      "ok": true,
+      "identity": {
+        "vault": {
+          "name": "vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a",
+          "path": "/evaluation-run/vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a"
+        },
+        "source": {
+          "databasePath": "/evaluation-run/corpus/zotero-data/zotero.sqlite",
+          "id": "34ecb303"
+        }
+      },
+      "libraries": [
+        {
+          "type": "personal"
+        }
+      ],
+      "request": {
+        "from": "items",
+        "library": ["personal"],
+        "filter": "collections.within(\"Query thesis\")",
+        "fields": [],
+        "limit": null,
+        "group": "date.year"
+      },
+      "returnedCount": 5,
+      "truncated": false,
+      "warnings": [],
+      "groups": [
+        {
+          "value": 2018,
+          "count": 1,
+          "rows": [
+            {
+              "indexedKey": "QCWEB222",
+              "values": {}
+            }
+          ]
+        },
+        {
+          "value": 2020,
+          "count": 1,
+          "rows": [
+            {
+              "indexedKey": "QCZRPP22",
+              "values": {}
+            }
+          ]
+        },
+        {
+          "value": 2021,
+          "count": 2,
+          "rows": [
+            {
+              "indexedKey": "QCSNG222",
+              "values": {}
+            },
+            {
+              "indexedKey": "QCTWN222",
+              "values": {}
+            }
+          ]
+        },
+        {
+          "value": null,
+          "count": 1,
+          "rows": [
+            {
+              "indexedKey": "QCMISS22",
+              "values": {}
+            }
+          ]
+        }
+      ],
+      "totalCount": 5
+    },
+    "answer": {
+      "answer": "Complete research results.",
+      "count": 5,
+      "rows": [
+        {
+          "indexedKey": "QCWEB222",
+          "values": {}
+        },
+        {
+          "indexedKey": "QCZRPP22",
+          "values": {}
+        },
+        {
+          "indexedKey": "QCSNG222",
+          "values": {}
+        },
+        {
+          "indexedKey": "QCTWN222",
+          "values": {}
+        },
+        {
+          "indexedKey": "QCMISS22",
+          "values": {}
+        }
+      ],
+      "groups": [
+        {
+          "value": 2018,
+          "count": 1
+        },
+        {
+          "value": 2020,
+          "count": 1
+        },
+        {
+          "value": 2021,
+          "count": 2
+        },
+        {
+          "value": null,
+          "count": 1
+        }
+      ],
+      "limitation": null,
+      "exportPath": null
+    }
+  },
+  "papers_per_tag": {
+    "provenance": "Reviewed contract example; verified against the seeded corpus by corpus-query.test.mjs.",
+    "envelope": {
+      "contractVersion": 3,
+      "command": "zotlit:query",
+      "ok": true,
+      "identity": {
+        "vault": {
+          "name": "vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a",
+          "path": "/evaluation-run/vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a"
+        },
+        "source": {
+          "databasePath": "/evaluation-run/corpus/zotero-data/zotero.sqlite",
+          "id": "34ecb303"
+        }
+      },
+      "libraries": [
+        {
+          "type": "personal"
+        }
+      ],
+      "request": {
+        "from": "items",
+        "library": ["personal"],
+        "filter": "collections.within(\"Query thesis\")",
+        "fields": [],
+        "limit": null,
+        "group": "tags[].name"
+      },
+      "returnedCount": 6,
+      "truncated": false,
+      "warnings": [],
+      "groups": [
+        {
+          "value": "query-cross-eval",
+          "count": 5,
+          "rows": [
+            {
+              "indexedKey": "QCMISS22",
+              "values": {}
+            },
+            {
+              "indexedKey": "QCSNG222",
+              "values": {}
+            },
+            {
+              "indexedKey": "QCTWN222",
+              "values": {}
+            },
+            {
+              "indexedKey": "QCWEB222",
+              "values": {}
+            },
+            {
+              "indexedKey": "QCZRPP22",
+              "values": {}
+            }
+          ]
+        },
+        {
+          "value": "to-read",
+          "count": 1,
+          "rows": [
+            {
+              "indexedKey": "QCSNG222",
+              "values": {}
+            }
+          ]
+        }
+      ],
+      "totalCount": 5
+    },
+    "answer": {
+      "answer": "Complete research results.",
+      "count": 5,
+      "rows": [
+        {
+          "indexedKey": "QCMISS22",
+          "values": {}
+        },
+        {
+          "indexedKey": "QCSNG222",
+          "values": {}
+        },
+        {
+          "indexedKey": "QCTWN222",
+          "values": {}
+        },
+        {
+          "indexedKey": "QCWEB222",
+          "values": {}
+        },
+        {
+          "indexedKey": "QCZRPP22",
+          "values": {}
+        }
+      ],
+      "groups": [
+        {
+          "value": "query-cross-eval",
+          "count": 5
+        },
+        {
+          "value": "to-read",
+          "count": 1
+        }
+      ],
+      "limitation": null,
+      "exportPath": null
+    }
+  },
+  "unread_in_collection": {
+    "provenance": "Reviewed contract example; verified against the seeded corpus by corpus-query.test.mjs.",
+    "envelope": {
+      "contractVersion": 3,
+      "command": "zotlit:query",
+      "ok": true,
+      "identity": {
+        "vault": {
+          "name": "vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a",
+          "path": "/evaluation-run/vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a"
+        },
+        "source": {
+          "databasePath": "/evaluation-run/corpus/zotero-data/zotero.sqlite",
+          "id": "34ecb303"
+        }
+      },
+      "libraries": [
+        {
+          "type": "personal"
+        }
+      ],
+      "request": {
+        "from": "items",
+        "library": ["personal"],
+        "filter": "collections.within(\"Query thesis\") && annotations.filter(value.type == \"highlight\").isEmpty()",
+        "fields": ["title"],
+        "limit": null
+      },
+      "returnedCount": 4,
+      "truncated": false,
+      "warnings": [],
+      "rows": [
+        {
+          "indexedKey": "QCZRPP22",
+          "values": {
+            "title": "Thesis review without files"
+          }
+        },
+        {
+          "indexedKey": "QCSNG222",
+          "values": {
+            "title": "深度学习 in clinical attention"
+          }
+        },
+        {
+          "indexedKey": "QCMISS22",
+          "values": {
+            "title": "Clinical attention missing its file"
+          }
+        },
+        {
+          "indexedKey": "QCWEB222",
+          "values": {
+            "title": "Thesis background reading"
+          }
+        }
+      ]
+    },
+    "answer": {
+      "answer": "Complete research results.",
+      "count": 4,
+      "rows": [
+        {
+          "indexedKey": "QCZRPP22",
+          "values": {
+            "title": "Thesis review without files"
+          }
+        },
+        {
+          "indexedKey": "QCSNG222",
+          "values": {
+            "title": "深度学习 in clinical attention"
+          }
+        },
+        {
+          "indexedKey": "QCMISS22",
+          "values": {
+            "title": "Clinical attention missing its file"
+          }
+        },
+        {
+          "indexedKey": "QCWEB222",
+          "values": {
+            "title": "Thesis background reading"
+          }
+        }
+      ],
+      "groups": [],
+      "limitation": null,
+      "exportPath": null
+    }
+  },
+  "attachment_types": {
+    "provenance": "Reviewed contract example; verified against the seeded corpus by corpus-query.test.mjs.",
+    "envelope": {
+      "contractVersion": 3,
+      "command": "zotlit:query",
+      "ok": true,
+      "identity": {
+        "vault": {
+          "name": "vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a",
+          "path": "/evaluation-run/vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a"
+        },
+        "source": {
+          "databasePath": "/evaluation-run/corpus/zotero-data/zotero.sqlite",
+          "id": "34ecb303"
+        }
+      },
+      "libraries": [
+        {
+          "type": "personal"
+        }
+      ],
+      "request": {
+        "from": "attachments",
+        "library": ["personal"],
+        "filter": "item.collections.within(\"Query thesis\")",
+        "fields": [],
+        "limit": null,
+        "group": "contentType"
+      },
+      "returnedCount": 7,
+      "truncated": false,
+      "warnings": [],
+      "groups": [
+        {
+          "value": "application/epub+zip",
+          "count": 1,
+          "rows": [
+            {
+              "indexedKey": "QCEPUB22",
+              "values": {}
+            }
+          ]
+        },
+        {
+          "value": "application/pdf",
+          "count": 4,
+          "rows": [
+            {
+              "indexedKey": "QCBRKN22",
+              "values": {}
+            },
+            {
+              "indexedKey": "QCPDFS22",
+              "values": {}
+            },
+            {
+              "indexedKey": "QCPDFA22",
+              "values": {}
+            },
+            {
+              "indexedKey": "QCPDFB22",
+              "values": {}
+            }
+          ]
+        },
+        {
+          "value": "text/html",
+          "count": 2,
+          "rows": [
+            {
+              "indexedKey": "QCSNAP22",
+              "values": {}
+            },
+            {
+              "indexedKey": "QCURL222",
+              "values": {}
+            }
+          ]
+        }
+      ],
+      "totalCount": 7
+    },
+    "answer": {
+      "answer": "Complete research results.",
+      "count": 7,
+      "rows": [
+        {
+          "indexedKey": "QCEPUB22",
+          "values": {}
+        },
+        {
+          "indexedKey": "QCBRKN22",
+          "values": {}
+        },
+        {
+          "indexedKey": "QCPDFS22",
+          "values": {}
+        },
+        {
+          "indexedKey": "QCPDFA22",
+          "values": {}
+        },
+        {
+          "indexedKey": "QCPDFB22",
+          "values": {}
+        },
+        {
+          "indexedKey": "QCSNAP22",
+          "values": {}
+        },
+        {
+          "indexedKey": "QCURL222",
+          "values": {}
+        }
+      ],
+      "groups": [
+        {
+          "value": "application/epub+zip",
+          "count": 1
+        },
+        {
+          "value": "application/pdf",
+          "count": 4
+        },
+        {
+          "value": "text/html",
+          "count": 2
+        }
+      ],
+      "limitation": null,
+      "exportPath": null
+    }
+  },
+  "fuzzy_search": {
+    "provenance": "Reviewed contract example; verified against the seeded corpus by corpus-query.test.mjs.",
+    "envelope": {
+      "contractVersion": 3,
+      "command": "zotlit:query",
+      "ok": true,
+      "identity": {
+        "vault": {
+          "name": "vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a",
+          "path": "/evaluation-run/vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a"
+        },
+        "source": {
+          "databasePath": "/evaluation-run/corpus/zotero-data/zotero.sqlite",
+          "id": "34ecb303"
+        }
+      },
+      "libraries": [
+        {
+          "type": "personal"
+        }
+      ],
+      "request": {
+        "from": "items",
+        "library": ["personal"],
+        "filter": "collections.within(\"Query thesis\") && title.lower().contains(\"attention\") && title.lower().contains(\"clinical\") && attachments.filter(value.contentType == \"application/pdf\" && value.exists).length > 0",
+        "fields": ["title"],
+        "limit": null
+      },
+      "returnedCount": 2,
+      "truncated": false,
+      "warnings": [],
+      "rows": [
+        {
+          "indexedKey": "QCSNG222",
+          "values": {
+            "title": "深度学习 in clinical attention"
+          }
+        },
+        {
+          "indexedKey": "QCTWN222",
+          "values": {
+            "title": "Clinical attention with two editions"
+          }
+        }
+      ]
+    },
+    "answer": {
+      "answer": "Complete research results.",
+      "count": 2,
+      "rows": [
+        {
+          "indexedKey": "QCSNG222",
+          "values": {
+            "title": "深度学习 in clinical attention"
+          }
+        },
+        {
+          "indexedKey": "QCTWN222",
+          "values": {
+            "title": "Clinical attention with two editions"
+          }
+        }
+      ],
+      "groups": [],
+      "limitation": "fuzzy-search-unavailable",
+      "exportPath": null
+    }
+  },
+  "files_of_paper": {
+    "provenance": "Reviewed contract example; verified against the seeded corpus by corpus-query.test.mjs.",
+    "envelope": {
+      "contractVersion": 3,
+      "command": "zotlit:query",
+      "ok": true,
+      "identity": {
+        "vault": {
+          "name": "vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a",
+          "path": "/evaluation-run/vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a"
+        },
+        "source": {
+          "databasePath": "/evaluation-run/corpus/zotero-data/zotero.sqlite",
+          "id": "34ecb303"
+        }
+      },
+      "libraries": [
+        {
+          "type": "personal"
+        }
+      ],
+      "request": {
+        "from": "attachments",
+        "library": ["personal"],
+        "filter": "item.title == \"深度学习 in clinical attention\"",
+        "fields": ["title", "contentType", "path", "exists", "tags"],
+        "limit": null
+      },
+      "returnedCount": 2,
+      "truncated": false,
+      "warnings": [],
+      "rows": [
+        {
+          "indexedKey": "QCPDFS22",
+          "values": {
+            "title": "Reading PDF",
+            "contentType": "application/pdf",
+            "path": "/evaluation-run/corpus/zotero-data/storage/QCPDFS22/rougier-2014.pdf",
+            "exists": true,
+            "tags": []
+          }
+        },
+        {
+          "indexedKey": "QCURL222",
+          "values": {
+            "title": "Publisher link",
+            "contentType": "text/html",
+            "path": null,
+            "exists": false,
+            "tags": []
+          }
+        }
+      ]
+    },
+    "answer": {
+      "answer": "Complete research results.",
+      "count": 2,
+      "rows": [
+        {
+          "indexedKey": "QCPDFS22",
+          "values": {
+            "title": "Reading PDF",
+            "contentType": "application/pdf",
+            "path": "/evaluation-run/corpus/zotero-data/storage/QCPDFS22/rougier-2014.pdf",
+            "exists": true,
+            "tags": []
+          }
+        },
+        {
+          "indexedKey": "QCURL222",
+          "values": {
+            "title": "Publisher link",
+            "contentType": "text/html",
+            "path": null,
+            "exists": false,
+            "tags": []
+          }
+        }
+      ],
+      "groups": [],
+      "limitation": null,
+      "exportPath": null
+    }
+  },
+  "csv_for_advisor": {
+    "provenance": "Reviewed contract example; verified against the seeded corpus by corpus-query.test.mjs.",
+    "envelope": {
+      "contractVersion": 3,
+      "command": "zotlit:query",
+      "ok": true,
+      "identity": {
+        "vault": {
+          "name": "vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a",
+          "path": "/evaluation-run/vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a"
+        },
+        "source": {
+          "databasePath": "/evaluation-run/corpus/zotero-data/zotero.sqlite",
+          "id": "34ecb303"
+        }
+      },
+      "libraries": [
+        {
+          "type": "personal"
+        }
+      ],
+      "request": {
+        "from": "items",
+        "library": ["personal"],
+        "filter": "collections.within(\"Query thesis\")",
+        "fields": ["title", "date.year"],
+        "limit": null
+      },
+      "returnedCount": 5,
+      "truncated": false,
+      "warnings": [],
+      "rows": [
+        {
+          "indexedKey": "QCZRPP22",
+          "values": {
+            "title": "Thesis review without files",
+            "date.year": 2020
+          }
+        },
+        {
+          "indexedKey": "QCSNG222",
+          "values": {
+            "title": "深度学习 in clinical attention",
+            "date.year": 2021
+          }
+        },
+        {
+          "indexedKey": "QCTWN222",
+          "values": {
+            "title": "Clinical attention with two editions",
+            "date.year": 2021
+          }
+        },
+        {
+          "indexedKey": "QCMISS22",
+          "values": {
+            "title": "Clinical attention missing its file",
+            "date.year": null
+          }
+        },
+        {
+          "indexedKey": "QCWEB222",
+          "values": {
+            "title": "Thesis background reading",
+            "date.year": 2018
+          }
+        }
+      ]
+    },
+    "answer": {
+      "answer": "Complete research results.",
+      "count": 5,
+      "rows": [
+        {
+          "indexedKey": "QCZRPP22",
+          "values": {
+            "title": "Thesis review without files",
+            "date.year": 2020
+          }
+        },
+        {
+          "indexedKey": "QCSNG222",
+          "values": {
+            "title": "深度学习 in clinical attention",
+            "date.year": 2021
+          }
+        },
+        {
+          "indexedKey": "QCTWN222",
+          "values": {
+            "title": "Clinical attention with two editions",
+            "date.year": 2021
+          }
+        },
+        {
+          "indexedKey": "QCMISS22",
+          "values": {
+            "title": "Clinical attention missing its file",
+            "date.year": null
+          }
+        },
+        {
+          "indexedKey": "QCWEB222",
+          "values": {
+            "title": "Thesis background reading",
+            "date.year": 2018
+          }
+        }
+      ],
+      "groups": [],
+      "limitation": null,
+      "exportPath": "/evaluation-run/advisor.csv"
+    }
+  },
+  "recent_with_pdf_unread": {
+    "provenance": "Reviewed contract example; verified against the seeded corpus by corpus-query.test.mjs.",
+    "envelope": {
+      "contractVersion": 3,
+      "command": "zotlit:query",
+      "ok": true,
+      "identity": {
+        "vault": {
+          "name": "vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a",
+          "path": "/evaluation-run/vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a"
+        },
+        "source": {
+          "databasePath": "/evaluation-run/corpus/zotero-data/zotero.sqlite",
+          "id": "34ecb303"
+        }
+      },
+      "libraries": [
+        {
+          "type": "personal"
+        }
+      ],
+      "request": {
+        "from": "items",
+        "library": ["personal"],
+        "filter": "collections.within(\"Query thesis\") && date.year >= 2019 && !attachments.isEmpty() && !tags.contains(\"to-read\")",
+        "fields": ["title", "date.year"],
+        "limit": null
+      },
+      "returnedCount": 1,
+      "truncated": false,
+      "warnings": [],
+      "rows": [
+        {
+          "indexedKey": "QCTWN222",
+          "values": {
+            "title": "Clinical attention with two editions",
+            "date.year": 2021
+          }
+        }
+      ]
+    },
+    "answer": {
+      "answer": "Complete research results.",
+      "count": 1,
+      "rows": [
+        {
+          "indexedKey": "QCTWN222",
+          "values": {
+            "title": "Clinical attention with two editions",
+            "date.year": 2021
+          }
+        }
+      ],
+      "groups": [],
+      "limitation": null,
+      "exportPath": null
+    }
+  },
+  "chinese_title": {
+    "provenance": "Reviewed contract example; verified against the seeded corpus by corpus-query.test.mjs.",
+    "envelope": {
+      "contractVersion": 3,
+      "command": "zotlit:query",
+      "ok": true,
+      "identity": {
+        "vault": {
+          "name": "vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a",
+          "path": "/evaluation-run/vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a"
+        },
+        "source": {
+          "databasePath": "/evaluation-run/corpus/zotero-data/zotero.sqlite",
+          "id": "34ecb303"
+        }
+      },
+      "libraries": [
+        {
+          "type": "personal"
+        }
+      ],
+      "request": {
+        "from": "items",
+        "library": ["personal"],
+        "filter": "collections.within(\"Query thesis\") && title.contains(\"深度学习\")",
+        "fields": ["title"],
+        "limit": null
+      },
+      "returnedCount": 1,
+      "truncated": false,
+      "warnings": [],
+      "rows": [
+        {
+          "indexedKey": "QCSNG222",
+          "values": {
+            "title": "深度学习 in clinical attention"
+          }
+        }
+      ]
+    },
+    "answer": {
+      "answer": "Complete research results.",
+      "count": 1,
+      "rows": [
+        {
+          "indexedKey": "QCSNG222",
+          "values": {
+            "title": "深度学习 in clinical attention"
+          }
+        }
+      ],
+      "groups": [],
+      "limitation": null,
+      "exportPath": null
+    }
+  },
+  "discover_collection": {
+    "provenance": "Reviewed contract example; verified against the seeded corpus by corpus-query.test.mjs.",
+    "envelope": {
+      "contractVersion": 3,
+      "command": "zotlit:query",
+      "ok": true,
+      "identity": {
+        "vault": {
+          "name": "vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a",
+          "path": "/evaluation-run/vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a"
+        },
+        "source": {
+          "databasePath": "/evaluation-run/corpus/zotero-data/zotero.sqlite",
+          "id": "34ecb303"
+        }
+      },
+      "libraries": [
+        {
+          "type": "personal"
+        }
+      ],
+      "request": {
+        "from": "items",
+        "library": ["personal"],
+        "filter": "collections.within(\"Query thesis\")",
+        "fields": ["title", "date.year"],
+        "limit": null
+      },
+      "returnedCount": 5,
+      "truncated": false,
+      "warnings": [],
+      "rows": [
+        {
+          "indexedKey": "QCZRPP22",
+          "values": {
+            "title": "Thesis review without files",
+            "date.year": 2020
+          }
+        },
+        {
+          "indexedKey": "QCSNG222",
+          "values": {
+            "title": "深度学习 in clinical attention",
+            "date.year": 2021
+          }
+        },
+        {
+          "indexedKey": "QCTWN222",
+          "values": {
+            "title": "Clinical attention with two editions",
+            "date.year": 2021
+          }
+        },
+        {
+          "indexedKey": "QCMISS22",
+          "values": {
+            "title": "Clinical attention missing its file",
+            "date.year": null
+          }
+        },
+        {
+          "indexedKey": "QCWEB222",
+          "values": {
+            "title": "Thesis background reading",
+            "date.year": 2018
+          }
+        }
+      ]
+    },
+    "answer": {
+      "answer": "Complete research results.",
+      "count": 5,
+      "rows": [
+        {
+          "indexedKey": "QCZRPP22",
+          "values": {
+            "title": "Thesis review without files",
+            "date.year": 2020
+          }
+        },
+        {
+          "indexedKey": "QCSNG222",
+          "values": {
+            "title": "深度学习 in clinical attention",
+            "date.year": 2021
+          }
+        },
+        {
+          "indexedKey": "QCTWN222",
+          "values": {
+            "title": "Clinical attention with two editions",
+            "date.year": 2021
+          }
+        },
+        {
+          "indexedKey": "QCMISS22",
+          "values": {
+            "title": "Clinical attention missing its file",
+            "date.year": null
+          }
+        },
+        {
+          "indexedKey": "QCWEB222",
+          "values": {
+            "title": "Thesis background reading",
+            "date.year": 2018
+          }
+        }
+      ],
+      "groups": [],
+      "limitation": null,
+      "exportPath": null
+    }
+  }
+}

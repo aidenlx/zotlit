@@ -1,7 +1,14 @@
-import { Effect } from "effect";
+import { Data, Effect } from "effect";
 
-import { parseIndexedKey } from "@zotlit/db";
+import {
+  annotationTypeToName,
+  parseAnnotationPosition,
+  parseIndexedKey,
+  resolveIndexedKeyLibraryIn,
+} from "@zotlit/db";
 import type {
+  Annotation,
+  AnnotationPosition,
   AnnotationSources,
   Attachment,
   ZoteroDatabaseIdentity,
@@ -153,5 +160,110 @@ export function excerptRequestFrom(options: {
       { key: key.key, type: annotation.type },
       { dataDir: paths.dataDir, groupID: key.groupID },
     ),
+  };
+}
+
+/** The reads {@link excerptRequestForKey} resolves one Indexed Key through. */
+export type ExcerptKeyReads = Pick<
+  ZoteroReadsApi,
+  "AnnotationSources" | "DatabaseIdentity" | "Libraries"
+>;
+
+/** A read of the database failed; `message` is the reader's own. */
+export class ExcerptSourceUnavailable extends Data.TaggedError(
+  "ExcerptSourceUnavailable",
+)<{ readonly message: string }> {}
+
+/**
+ * The excerpt request of the Annotation with Indexed Key `key`, read from the
+ * database, or `null` where the source holds no Library of the key, no
+ * Annotation has the key, or its Attachment is gone. Any Annotation type
+ * yields a request; the caller decides whether it has an Excerpt Image. Pass
+ * Snapshot-bound reads, so every fact comes from one database.
+ *
+ * @throws {ExcerptSourceUnavailable} where a read fails.
+ */
+export function excerptRequestForKey(options: {
+  reads: ExcerptKeyReads;
+  key: string;
+  paths: AttachmentPathContext;
+  signal?: AbortSignal;
+}): Promise<ExcerptRequest | null> {
+  const { reads, key, paths, signal } = options;
+  return Effect.runPromise(
+    Effect.gen(function* () {
+      const [libraries, identity] = yield* Effect.all(
+        [reads.Libraries({}), reads.DatabaseIdentity({})],
+        { concurrency: "unbounded" },
+      );
+      const target = resolveIndexedKeyLibraryIn(libraries, key);
+      if (!target) return null;
+      const sources = yield* reads.AnnotationSources({
+        libraryID: target.libraryID,
+        keys: [target.key],
+      });
+      const annotation = sources.annotations.find(
+        (entry) => entry.indexedKey === key,
+      );
+      if (!annotation) return null;
+      const attachment = sources.attachments.find(
+        (entry) => entry.itemID === annotation.parentItemID,
+      );
+      if (!attachment) return null;
+      return excerptRequestFrom({
+        annotation: annotationRecordOf(annotation, attachment),
+        source: {
+          kind: "zotero-db",
+          database: identity,
+          libraryID: target.libraryID,
+          libraryRevision:
+            libraries.find((entry) => entry.libraryID === target.libraryID)
+              ?.clientVersion ?? null,
+        },
+        identity,
+        attachment,
+        paths,
+      });
+    }).pipe(
+      Effect.mapError(
+        (error) =>
+          new ExcerptSourceUnavailable({
+            message:
+              error instanceof Error && error.message
+                ? error.message
+                : String(error),
+          }),
+      ),
+    ),
+    { signal },
+  );
+}
+
+/**
+ * The Annotation record an excerpt request carries, from the Annotation's row
+ * and its parent `attachment`. `position` defaults to the row's position read
+ * by the attachment's content type.
+ */
+export function annotationRecordOf(
+  annotation: Annotation,
+  attachment: Attachment,
+  position: AnnotationPosition = parseAnnotationPosition(
+    annotation.position,
+    attachment.contentType ?? "",
+  ),
+): AnnotationRecord {
+  return {
+    key: annotation.indexedKey,
+    parentKey: attachment.indexedKey,
+    type: annotationTypeToName(annotation.type),
+    text: annotation.text,
+    comment: annotation.comment,
+    color: annotation.color,
+    pageLabel: annotation.pageLabel,
+    sortIndex: annotation.sortIndex,
+    tags: annotation.tags,
+    position,
+    version: annotation.version,
+    lock: null,
   };
 }

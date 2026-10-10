@@ -29,6 +29,7 @@
       ]
     },
     "build:dev": {
+      "cache": false,
       "env": [
         "ANALYZE",
         "DOCS_SITE_URL",

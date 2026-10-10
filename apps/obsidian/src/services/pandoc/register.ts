@@ -14,7 +14,17 @@ import type {
   Plugin,
   TFile,
 } from "obsidian";
+import * as v from "valibot";
 
+import {
+  cliNotApplicable,
+  cliParams,
+  cliValue,
+  cliVariants,
+  decodeCliParams,
+  rejectionText,
+} from "@/lib/cli-params";
+import type { CliParamName } from "@/lib/cli-params";
 import { getLogger } from "@/lib/log";
 import { resolveIndexedKey } from "@/services/note-index/service";
 import type { ProfileReader } from "@/services/profile/service";
@@ -24,6 +34,7 @@ import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import {
   CSL_COMMAND,
+  CSL_SELECTOR_MESSAGE,
   flagsInvalidResponse,
   resolveCslStyle,
   resolveDocumentCslStyle,
@@ -41,7 +52,7 @@ import {
   PANDOC_GUIDE_COMMAND,
 } from "./integration";
 import { resolveCitations } from "./resolve";
-import type { ResolveDocument, ResolvedItem } from "./resolve";
+import type { ResolveDocument, ResolvedItem, ResolveResponse } from "./resolve";
 import { resolveInstalledStyle } from "./styles";
 
 const logger = getLogger(["pandoc", "resolve"]);
@@ -57,6 +68,11 @@ export interface PandocResolveDeps {
   profile: ProfileReader;
 }
 
+const resolveParams = v.pipe(
+  cliParams({ file: cliValue("file") }),
+  v.transform(({ file }) => file),
+);
+
 function resolveFlags(): CliFlags {
   return {
     file: {
@@ -64,8 +80,19 @@ function resolveFlags(): CliFlags {
       description: "Absolute path to the Markdown file",
       required: true,
     },
-  } satisfies Record<"file", CliFlag>;
+  } satisfies Record<CliParamName<typeof resolveParams>, CliFlag>;
 }
+
+const cslParams = cliVariants(
+  ({ style }) => (style === undefined ? "file" : "style"),
+  {
+    style: cliParams({
+      style: cliValue("style"),
+      file: cliNotApplicable(CSL_SELECTOR_MESSAGE),
+    }),
+    file: cliParams({ file: cliValue("file") }, { file: CSL_SELECTOR_MESSAGE }),
+  },
+);
 
 function cslFlags(): CliFlags {
   return {
@@ -78,7 +105,7 @@ function cslFlags(): CliFlags {
       description:
         "Absolute path to the Markdown file whose style to resolve; pass this or style",
     },
-  } satisfies Record<"style" | "file", CliFlag>;
+  } satisfies Record<CliParamName<typeof cslParams>, CliFlag>;
 }
 
 export function registerPandocResolve(
@@ -103,8 +130,22 @@ export function registerPandocResolve(
     "Resolve the literature note links of one file to citation keys, for the ZotLit Pandoc filter",
     resolveFlags(),
     async (params) => {
+      const request = decodeCliParams(params, resolveParams, {
+        command: RESOLVE_COMMAND,
+      });
+      if (request.kind === "invalid") {
+        return JSON.stringify(
+          {
+            errors: [
+              { code: "flags-invalid", message: rejectionText(request) },
+            ],
+          } satisfies ResolveResponse,
+          null,
+          2,
+        );
+      }
       await deps.zoteroPref.ready;
-      const response = await resolveCitations(params.file ?? "", {
+      const response = await resolveCitations(request.value, {
         readDocument: (absolutePath) => readDocument(deps.app, absolutePath),
         resolveIndexedKey: (linkpath, sourcePath) =>
           resolveIndexedKey(linkpath, sourcePath, deps.app),
@@ -128,6 +169,16 @@ export function registerPandocResolve(
     "Materialize the CSL file of one Zotero-installed style or of one note's style, for the ZotLit Pandoc filter",
     cslFlags(),
     async (params) => {
+      const request = decodeCliParams(params, cslParams, {
+        command: CSL_COMMAND,
+      });
+      if (request.kind === "invalid") {
+        return JSON.stringify(
+          flagsInvalidResponse(rejectionText(request)),
+          null,
+          2,
+        );
+      }
       await deps.zoteroPref.ready;
       await deps.profile.ready;
       const { dataDir } = deps.zoteroPref;
@@ -137,16 +188,15 @@ export function registerPandocResolve(
         resolve: (styleId: string) =>
           resolveInstalledStyle(dataDir, { styleId }),
       };
-      const { style, file } = params;
-      let response: CslResponse;
-      if (style !== undefined && file === undefined)
-        response = await resolveCslStyle(style, ports);
-      else if (file !== undefined && style === undefined)
-        response = await resolveDocumentCslStyle(file, {
-          ...ports,
-          readStyle: (absolutePath) => readDocumentStyle(deps, absolutePath),
-        });
-      else response = flagsInvalidResponse();
+      const selected = request.value;
+      const response: CslResponse =
+        "style" in selected
+          ? await resolveCslStyle(selected.style, ports)
+          : await resolveDocumentCslStyle(selected.file, {
+              ...ports,
+              readStyle: (absolutePath) =>
+                readDocumentStyle(deps, absolutePath),
+            });
       return JSON.stringify(response, null, 2);
     },
   );

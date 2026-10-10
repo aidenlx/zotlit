@@ -201,12 +201,6 @@ export const GUIDE_TOPIC_NAMES = Object.keys(
   GUIDE_TOPICS,
 ) as readonly GuideTopic[];
 
-export function parseGuideTopic(value: string | undefined): GuideTopic | null {
-  return value !== undefined && Object.hasOwn(GUIDE_TOPICS, value)
-    ? (value as GuideTopic)
-    : null;
-}
-
 const QUICKSTART = `ZOTLIT TEMPLATE WORKBENCH
 
 WORKFLOW

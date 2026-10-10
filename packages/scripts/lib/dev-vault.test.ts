@@ -35,5 +35,8 @@ describe("getDevVaultDir", () => {
     expect(getDevVaultDir(workspaceRoot)).toBe(
       join(workspaceRoot, "tests", "fixture-vault-zotlit-v2-57d4"),
     );
+    expect(getDevVaultDir(workspaceRoot, "upgrader")).toBe(
+      join(workspaceRoot, "tests", "fixture-vault-zotlit-v2-57d4-upgrader"),
+    );
   });
 });

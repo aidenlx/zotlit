@@ -1,13 +1,17 @@
 // One Annotation reached through the Local API and the database must reuse pixels.
+import { Effect } from "effect";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { createClient } from "@zotlit/db/client/node";
+import { openScenarioDatabase } from "@zotlit/db/test-scenario";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
 import type {
   AnnotationRecord,
   AnnotationSource,
 } from "@/services/annotation-repository/service";
+import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import type {
   ZoteroReadsApi,
   ZoteroReadsService,
@@ -16,9 +20,15 @@ import {
   inProcessReadsService,
   sharedClientOpener,
 } from "@/services/zotero-reads/test-utils";
+import type { InProcessReadsOptions } from "@/services/zotero-reads/test-utils";
 
+import { answerAnnotationImage } from "./cli-image";
 import { PNG_FORMAT } from "./format";
-import { savedExcerptRequest } from "./request";
+import {
+  ExcerptSourceUnavailable,
+  excerptRequestForKey,
+  savedExcerptRequest,
+} from "./request";
 import { ExcerptImageService, excerptKey, excerptRequest } from "./service";
 import type { ExcerptEntry } from "./service";
 
@@ -311,5 +321,118 @@ describe("Excerpt request verification", () => {
         annotation: { ...annotation, key: "ANNOT001" },
       }),
     ).toBeNull();
+  });
+});
+
+describe("Excerpt request for an Indexed Key", () => {
+  const dataDir = "/zotero";
+  const keyPaths = { dataDir, baseAttachmentPath: "/linked" };
+
+  async function scenarioReads(wrap?: InProcessReadsOptions["wrap"]) {
+    const stack = new AsyncDisposableStack();
+    const scenario = stack.use(openScenarioDatabase({ annotations: true }));
+    const zoteroReads = stack.use(
+      inProcessReadsService(sharedClientOpener(scenario.db), { wrap }),
+    );
+    const lease = stack.use(await zoteroReads.acquireRead());
+    return Object.assign(stack, { reads: lease.reads });
+  }
+
+  it("builds the request of an image Annotation from its row and Attachment", async () => {
+    await using db = await scenarioReads();
+
+    const request = await excerptRequestForKey({
+      reads: db.reads,
+      key: "ANN2IMAG",
+      paths: keyPaths,
+    });
+
+    expect(request).toMatchObject({
+      annotation: {
+        key: "ANN2IMAG",
+        parentKey: "PDF2LIVE",
+        type: "image",
+        color: "#ffd400",
+        pageLabel: "iv",
+        sortIndex: "00000|000003|00000",
+        lock: null,
+      },
+      source: { kind: "zotero-db", libraryID: 1 },
+      sourceScope: dataDir,
+      attachmentKey: "PDF2LIVE",
+      libraryID: 1,
+      pdfPath: join(dataDir, "storage", "PDF2LIVE", "exact.pdf"),
+      zoteroPngPath: join(dataDir, "cache", "library", "ANN2IMAG.png"),
+    });
+  });
+
+  it("builds the request of a non-image Annotation, which the image command rejects", async () => {
+    await using db = await scenarioReads();
+
+    const request = await excerptRequestForKey({
+      reads: db.reads,
+      key: "ANN2HGHT",
+      paths: keyPaths,
+    });
+
+    expect(request).toMatchObject({
+      annotation: { key: "ANN2HGHT", type: "highlight" },
+      zoteroPngPath: null,
+    });
+    const answer = JSON.parse(
+      await answerAnnotationImage(
+        { key: "ANN2HGHT" },
+        {
+          read: (key, signal) =>
+            excerptRequestForKey({
+              reads: db.reads,
+              key,
+              paths: keyPaths,
+              signal,
+            }),
+          resolve: () => {
+            throw new Error("A non-image Annotation is never resolved");
+          },
+          publish: () => {
+            throw new Error("A non-image Annotation is never published");
+          },
+          exists: async () => false,
+        },
+      ),
+    );
+    expect(answer).toMatchObject({
+      ok: false,
+      diagnostic: { code: "not-an-image-annotation" },
+    });
+  });
+
+  it.each([
+    ["no Annotation has the key", "ZZZZZZZZ"],
+    ["the source holds no Library of the key", "ANN2IMAGg9999"],
+  ])("resolves to nothing where %s", async (_, key) => {
+    await using db = await scenarioReads();
+
+    expect(
+      await excerptRequestForKey({ reads: db.reads, key, paths: keyPaths }),
+    ).toBeNull();
+  });
+
+  it("fails with the reader's own message where a read fails", async () => {
+    await using db = await scenarioReads((client) => ({
+      ...client,
+      AnnotationSources: (() =>
+        Effect.fail(
+          new DbUnavailable({ message: "database disk is locked" }),
+        )) as typeof client.AnnotationSources,
+    }));
+
+    const failure = await excerptRequestForKey({
+      reads: db.reads,
+      key: "ANN2IMAG",
+      paths: keyPaths,
+    }).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(ExcerptSourceUnavailable);
+    expect(failure).toMatchObject({ message: "database disk is locked" });
   });
 });

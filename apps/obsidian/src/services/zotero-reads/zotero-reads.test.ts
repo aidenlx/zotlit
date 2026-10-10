@@ -1088,7 +1088,7 @@ describe("ZoteroReads connection lifetime", () => {
     });
     expect(result.events[2]!).toHaveProperty(
       "error.message",
-      "no such table: libraries",
+      expect.stringContaining("This file is not a Zotero database."),
     );
     expect(log).toEqual(["open #1", "open #2", "close #2", "close #1"]);
   });

@@ -3,9 +3,10 @@ import { Context, Duration, Effect, Layer, RcRef } from "effect";
 import type { Stream } from "effect";
 import type { Scope } from "effect";
 
-import { getLibraries, getZoteroDatabaseIdentity } from "@zotlit/db";
+import { getZoteroDatabaseIdentity } from "@zotlit/db";
 import type { ZoteroDatabaseIdentity } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
+import { checkDatabaseLayout } from "@zotlit/db/item-query";
 
 import { makeChangeFeed } from "./change-feed";
 import { DbUnavailable } from "./rpc";
@@ -48,6 +49,12 @@ export class Connection extends Context.Service<
      * connection hands out.
      */
     readonly databaseGeneration: (client: NodeDatabaseClient) => number;
+    /**
+     * The database file a client of this connection opened from, or null
+     * when it opened from no file. Recorded with the generation, so it
+     * answers for every client this connection hands out.
+     */
+    readonly databaseFile: (client: NodeDatabaseClient) => string | null;
   }
 >()("zotlit/zotero-reads/Connection") {}
 
@@ -56,6 +63,7 @@ export function makeDatabaseGenerations() {
   /** The generation of each database seen so far. */
   const generations = new Map<string, number>();
   const clientGenerations = new WeakMap<NodeDatabaseClient, number>();
+  const clientFiles = new WeakMap<NodeDatabaseClient, string | null>();
   return {
     /**
      * Record the database a validated client reads: the file it opened from
@@ -84,6 +92,7 @@ export function makeDatabaseGenerations() {
         generations.set(key, generation);
       }
       clientGenerations.set(client, generation);
+      clientFiles.set(client, file);
     },
     databaseGeneration: (client: NodeDatabaseClient): number => {
       const generation = clientGenerations.get(client);
@@ -91,6 +100,8 @@ export function makeDatabaseGenerations() {
         throw new Error("The client was not opened by this connection");
       return generation;
     },
+    databaseFile: (client: NodeDatabaseClient): string | null =>
+      clientFiles.get(client) ?? null,
   };
 }
 
@@ -117,12 +128,16 @@ export function toDbUnavailable(cause: unknown): DbUnavailable {
 }
 
 /**
- * Prove a client reads as a Zotero database before it serves; a client that
- * fails is closed before the throw.
+ * Prove a client reads as a Zotero database before it serves: its layout has
+ * every table and column the readers need, so a copy that validates is a copy
+ * Item Query reads. The layout read stays with the client, so the readers and
+ * `reportSchemaVersions` run no statement for it again. A client that fails is
+ * closed before the throw; a layout the readers cannot read throws
+ * `ItemQueryLayoutError`.
  */
 export function validateClient(client: NodeDatabaseClient): NodeDatabaseClient {
   try {
-    getLibraries(client);
+    checkDatabaseLayout(client);
   } catch (error) {
     client.$client.close();
     throw error;
@@ -279,6 +294,7 @@ export function layerRcRef(opener: ConnectionOpener): Layer.Layer<Connection> {
             return Effect.ignore(refresh);
           }),
         databaseGeneration: databaseGenerations.databaseGeneration,
+        databaseFile: databaseGenerations.databaseFile,
       });
     }),
   );

@@ -26,7 +26,11 @@ import {
   PERSONAL_SELECTOR,
   SCOPE_CASES,
   selectScopeCase,
+  STRESS_GROUP_LIBRARY,
+  STRESS_GROUP_LIBRARY_ITEM_COUNT_CONSTRAINT,
   STRESS_ITEM_COUNT_CONSTRAINT,
+  STRESS_LIBRARY_ITEM_COUNT_CONSTRAINT,
+  STRESS_LIBRARY_TIERS,
   UNAVAILABLE_GROUP_IDS,
   VAULT_CASES,
   writePairedRunState,
@@ -134,11 +138,15 @@ async function build({
   scopeCase,
   vaultCase = DEFAULT_VAULT_CASE,
   stressItemCount,
+  stressLibraryItemCount,
+  stressGroupLibraryItemCount,
   localApi = false,
 }: {
   scopeCase: string;
   vaultCase?: string;
   stressItemCount?: number;
+  stressLibraryItemCount?: number;
+  stressGroupLibraryItemCount?: number;
   localApi?: boolean;
 }): Promise<void> {
   const pluginBundleDir = await findPluginBundle();
@@ -152,15 +160,23 @@ async function build({
     scopeCase,
     vaultCase,
     stressItemCount,
+    stressLibraryItemCount,
+    stressGroupLibraryItemCount,
     pluginBundleDir,
     zoteroHttpPort,
     localApi,
   });
   await installBetterBibtex(layout.profileDir);
   console.log(
-    stressItemCount === undefined
-      ? `Built the Fixture at ${layout.root}`
-      : `Built a Stress Build with ${stressItemCount.toLocaleString("en-US")} synthetic Items at ${layout.root}`,
+    stressLibraryItemCount !== undefined
+      ? `Built a Stress Build with ${stressLibraryItemCount.toLocaleString("en-US")} Items in My Library${
+          stressGroupLibraryItemCount === undefined
+            ? ""
+            : ` and ${stressGroupLibraryItemCount.toLocaleString("en-US")} Items in ${STRESS_GROUP_LIBRARY.name}`
+        } at ${layout.root}`
+      : stressItemCount === undefined
+        ? `Built the Fixture at ${layout.root}`
+        : `Built a Stress Build with ${stressItemCount.toLocaleString("en-US")} synthetic Items at ${layout.root}`,
   );
   printPaths();
   console.log("Libraries:");
@@ -247,15 +263,28 @@ const cli = yargs(hideBin(process.argv))
     "stress [item-count]",
     "rebuild with an additive synthetic corpus",
     (y) =>
-      y.positional("item-count", {
-        describe: `number of synthetic Items to add; must be ${STRESS_ITEM_COUNT_CONSTRAINT}`,
-        type: "number",
-        default: DEFAULT_STRESS_ITEM_COUNT,
-      }),
+      y
+        .positional("item-count", {
+          describe: `number of synthetic Items to add across all Libraries; must be ${STRESS_ITEM_COUNT_CONSTRAINT} (default: ${DEFAULT_STRESS_ITEM_COUNT})`,
+          type: "number",
+        })
+        .option("library-items", {
+          describe: `fill My Library to exactly this many Items instead, for Item Query performance tiers (${STRESS_LIBRARY_TIERS.join(", ")}); must be ${STRESS_LIBRARY_ITEM_COUNT_CONSTRAINT}`,
+          type: "number",
+        })
+        .option("group-library-items", {
+          describe: `with --library-items, also fill the group Library ${STRESS_GROUP_LIBRARY.name} (${STRESS_GROUP_LIBRARY.groupID}) to exactly this many Items, for Item Query over two large Libraries; must be ${STRESS_GROUP_LIBRARY_ITEM_COUNT_CONSTRAINT}`,
+          type: "number",
+        })
+        .conflicts("item-count", "library-items"),
     async (argv) => {
+      const stressLibraryItemCount = argv["library-items"];
       await build({
         scopeCase: DEFAULT_SCOPE_CASE,
-        stressItemCount: argv["item-count"],
+        ...(stressLibraryItemCount === undefined
+          ? { stressItemCount: argv["item-count"] ?? DEFAULT_STRESS_ITEM_COUNT }
+          : { stressLibraryItemCount }),
+        stressGroupLibraryItemCount: argv["group-library-items"],
       });
     },
   )

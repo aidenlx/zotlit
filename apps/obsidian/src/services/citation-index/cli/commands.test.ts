@@ -25,7 +25,7 @@ import {
 } from "./commands";
 import type { DocumentReferences, ItemLookup } from "./commands";
 import { DIAGNOSTIC_HINTS } from "./envelope";
-import { CITED_BY_PARAMS, REFERENCES_PARAMS } from "./request";
+import type { CitedByParam, ReferencesParam } from "./request";
 
 const IDENTITY = {
   vault: { name: "Test Vault", path: "/vaults/test" },
@@ -1150,7 +1150,13 @@ describe("zotlit:citations-guide", () => {
 
     const output = await guide({});
 
-    for (const parameter of [...CITED_BY_PARAMS, ...REFERENCES_PARAMS]) {
+    const parameters = {
+      key: true,
+      citekey: true,
+      file: true,
+      "expect-source": true,
+    } satisfies Record<CitedByParam | ReferencesParam, true>;
+    for (const parameter of Object.keys(parameters)) {
       expect(output).toContain(parameter);
     }
   });

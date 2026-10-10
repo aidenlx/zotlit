@@ -273,7 +273,22 @@ describe("registered template-inspect", () => {
     });
     expect(
       await f.inspect({ profile: "Books", document: BOOKS }),
-    ).toMatchObject({ ok: false, diagnostic: { code: "INVALID_SELECTOR" } });
+    ).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "INVALID_SELECTOR",
+        details: { parameter: "document" },
+      },
+    });
+    expect(
+      await f.inspect({ note: "Reading/Book.md", profile: "Books" }),
+    ).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "INVALID_SELECTOR",
+        details: { parameter: "profile" },
+      },
+    });
   });
 
   it("waits for an external source and Shared Partial to reach reconciliation", async () => {

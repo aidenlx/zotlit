@@ -1,0 +1,2390 @@
+{
+  "version": 3,
+  "corpus": {
+    "articles": 125,
+    "books": 3
+  },
+  "cases": {
+    "include": {
+      "count": 42,
+      "missingYear": 5,
+      "rows": [
+        {
+          "indexedKey": "QEV22222",
+          "title": "Query evaluation article 000",
+          "year": null,
+          "status": "include",
+          "firstAuthor": "Ada Author000",
+          "firstCreator": "Eve Editor000"
+        },
+        {
+          "indexedKey": "QEV22225",
+          "title": "Query evaluation article 003",
+          "year": 2023,
+          "status": "include",
+          "firstAuthor": "Ada Author003",
+          "firstCreator": "Eve Editor003"
+        },
+        {
+          "indexedKey": "QEV22228",
+          "title": "Query evaluation article 006",
+          "year": 2021,
+          "status": "include",
+          "firstAuthor": "Ada Author006",
+          "firstCreator": "Eve Editor006"
+        },
+        {
+          "indexedKey": "QEV22233",
+          "title": "Query evaluation article 009",
+          "year": 2024,
+          "status": "include",
+          "firstAuthor": "Ada Author009",
+          "firstCreator": "Eve Editor009"
+        },
+        {
+          "indexedKey": "QEV22236",
+          "title": "Query evaluation article 012",
+          "year": 2022,
+          "status": "include",
+          "firstAuthor": "Ada Author012",
+          "firstCreator": "Eve Editor012"
+        },
+        {
+          "indexedKey": "QEV22239",
+          "title": "Query evaluation article 015",
+          "year": 2020,
+          "status": "include",
+          "firstAuthor": "Ada Author015",
+          "firstCreator": "Eve Editor015"
+        },
+        {
+          "indexedKey": "QEV22244",
+          "title": "Query evaluation article 018",
+          "year": 2023,
+          "status": "include",
+          "firstAuthor": "Ada Author018",
+          "firstCreator": "Eve Editor018"
+        },
+        {
+          "indexedKey": "QEV22247",
+          "title": "Query evaluation article 021",
+          "year": 2021,
+          "status": "include",
+          "firstAuthor": "Ada Author021",
+          "firstCreator": "Eve Editor021"
+        },
+        {
+          "indexedKey": "QEV22252",
+          "title": "Query evaluation article 024",
+          "year": 2024,
+          "status": "include",
+          "firstAuthor": "Ada Author024",
+          "firstCreator": "Eve Editor024"
+        },
+        {
+          "indexedKey": "QEV22255",
+          "title": "Query evaluation article 027",
+          "year": 2022,
+          "status": "include",
+          "firstAuthor": "Ada Author027",
+          "firstCreator": "Eve Editor027"
+        },
+        {
+          "indexedKey": "QEV22258",
+          "title": "Query evaluation article 030",
+          "year": null,
+          "status": "include",
+          "firstAuthor": "Ada Author030",
+          "firstCreator": "Eve Editor030"
+        },
+        {
+          "indexedKey": "QEV22263",
+          "title": "Query evaluation article 033",
+          "year": 2023,
+          "status": "include",
+          "firstAuthor": "Ada Author033",
+          "firstCreator": "Eve Editor033"
+        },
+        {
+          "indexedKey": "QEV22266",
+          "title": "Query evaluation article 036",
+          "year": 2021,
+          "status": "include",
+          "firstAuthor": "Ada Author036",
+          "firstCreator": "Eve Editor036"
+        },
+        {
+          "indexedKey": "QEV22269",
+          "title": "Query evaluation article 039",
+          "year": 2024,
+          "status": "include",
+          "firstAuthor": "Ada Author039",
+          "firstCreator": "Eve Editor039"
+        },
+        {
+          "indexedKey": "QEV22274",
+          "title": "Query evaluation article 042",
+          "year": 2022,
+          "status": "include",
+          "firstAuthor": "Ada Author042",
+          "firstCreator": "Eve Editor042"
+        },
+        {
+          "indexedKey": "QEV22277",
+          "title": "Query evaluation article 045",
+          "year": 2020,
+          "status": "include",
+          "firstAuthor": "Ada Author045",
+          "firstCreator": "Eve Editor045"
+        },
+        {
+          "indexedKey": "QEV22282",
+          "title": "Query evaluation article 048",
+          "year": 2023,
+          "status": "include",
+          "firstAuthor": "Ada Author048",
+          "firstCreator": "Eve Editor048"
+        },
+        {
+          "indexedKey": "QEV22285",
+          "title": "Query evaluation article 051",
+          "year": 2021,
+          "status": "include",
+          "firstAuthor": "Ada Author051",
+          "firstCreator": "Eve Editor051"
+        },
+        {
+          "indexedKey": "QEV22288",
+          "title": "Query evaluation article 054",
+          "year": 2024,
+          "status": "include",
+          "firstAuthor": "Ada Author054",
+          "firstCreator": "Eve Editor054"
+        },
+        {
+          "indexedKey": "QEV22293",
+          "title": "Query evaluation article 057",
+          "year": 2022,
+          "status": "include",
+          "firstAuthor": "Ada Author057",
+          "firstCreator": "Eve Editor057"
+        },
+        {
+          "indexedKey": "QEV22296",
+          "title": "Query evaluation article 060",
+          "year": null,
+          "status": "include",
+          "firstAuthor": "Ada Author060",
+          "firstCreator": "Eve Editor060"
+        },
+        {
+          "indexedKey": "QEV22299",
+          "title": "Query evaluation article 063",
+          "year": 2023,
+          "status": "include",
+          "firstAuthor": "Ada Author063",
+          "firstCreator": "Eve Editor063"
+        },
+        {
+          "indexedKey": "QEV22324",
+          "title": "Query evaluation article 066",
+          "year": 2021,
+          "status": "include",
+          "firstAuthor": "Ada Author066",
+          "firstCreator": "Eve Editor066"
+        },
+        {
+          "indexedKey": "QEV22327",
+          "title": "Query evaluation article 069",
+          "year": 2024,
+          "status": "include",
+          "firstAuthor": "Ada Author069",
+          "firstCreator": "Eve Editor069"
+        },
+        {
+          "indexedKey": "QEV22332",
+          "title": "Query evaluation article 072",
+          "year": 2022,
+          "status": "include",
+          "firstAuthor": "Ada Author072",
+          "firstCreator": "Eve Editor072"
+        },
+        {
+          "indexedKey": "QEV22335",
+          "title": "Query evaluation article 075",
+          "year": 2020,
+          "status": "include",
+          "firstAuthor": "Ada Author075",
+          "firstCreator": "Eve Editor075"
+        },
+        {
+          "indexedKey": "QEV22338",
+          "title": "Query evaluation article 078",
+          "year": 2023,
+          "status": "include",
+          "firstAuthor": "Ada Author078",
+          "firstCreator": "Eve Editor078"
+        },
+        {
+          "indexedKey": "QEV22343",
+          "title": "Query evaluation article 081",
+          "year": 2021,
+          "status": "include",
+          "firstAuthor": "Ada Author081",
+          "firstCreator": "Eve Editor081"
+        },
+        {
+          "indexedKey": "QEV22346",
+          "title": "Query evaluation article 084",
+          "year": 2024,
+          "status": "include",
+          "firstAuthor": "Ada Author084",
+          "firstCreator": "Eve Editor084"
+        },
+        {
+          "indexedKey": "QEV22349",
+          "title": "Query evaluation article 087",
+          "year": 2022,
+          "status": "include",
+          "firstAuthor": "Ada Author087",
+          "firstCreator": "Eve Editor087"
+        },
+        {
+          "indexedKey": "QEV22354",
+          "title": "Query evaluation article 090",
+          "year": null,
+          "status": "include",
+          "firstAuthor": "Ada Author090",
+          "firstCreator": "Eve Editor090"
+        },
+        {
+          "indexedKey": "QEV22357",
+          "title": "Query evaluation article 093",
+          "year": 2023,
+          "status": "include",
+          "firstAuthor": "Ada Author093",
+          "firstCreator": "Eve Editor093"
+        },
+        {
+          "indexedKey": "QEV22362",
+          "title": "Query evaluation article 096",
+          "year": 2021,
+          "status": "include",
+          "firstAuthor": "Ada Author096",
+          "firstCreator": "Eve Editor096"
+        },
+        {
+          "indexedKey": "QEV22365",
+          "title": "Query evaluation article 099",
+          "year": 2024,
+          "status": "include",
+          "firstAuthor": "Ada Author099",
+          "firstCreator": "Eve Editor099"
+        },
+        {
+          "indexedKey": "QEV22368g118",
+          "title": "Query evaluation article 102",
+          "year": 2022,
+          "status": "include",
+          "firstAuthor": "Ada Author102",
+          "firstCreator": "Eve Editor102"
+        },
+        {
+          "indexedKey": "QEV22373g118",
+          "title": "Query evaluation article 105",
+          "year": 2020,
+          "status": "include",
+          "firstAuthor": "Ada Author105",
+          "firstCreator": "Eve Editor105"
+        },
+        {
+          "indexedKey": "QEV22376g118",
+          "title": "Query evaluation article 108",
+          "year": 2023,
+          "status": "include",
+          "firstAuthor": "Ada Author108",
+          "firstCreator": "Eve Editor108"
+        },
+        {
+          "indexedKey": "QEV22379g118",
+          "title": "Query evaluation article 111",
+          "year": 2021,
+          "status": "include",
+          "firstAuthor": "Ada Author111",
+          "firstCreator": "Eve Editor111"
+        },
+        {
+          "indexedKey": "QEV22384g118",
+          "title": "Query evaluation article 114",
+          "year": 2024,
+          "status": "include",
+          "firstAuthor": "Ada Author114",
+          "firstCreator": "Eve Editor114"
+        },
+        {
+          "indexedKey": "QEV22387g118",
+          "title": "Query evaluation article 117",
+          "year": 2022,
+          "status": "include",
+          "firstAuthor": "Ada Author117",
+          "firstCreator": "Eve Editor117"
+        },
+        {
+          "indexedKey": "QEV22392g118",
+          "title": "Query evaluation article 120",
+          "year": null,
+          "status": "include",
+          "firstAuthor": "Ada Author120",
+          "firstCreator": "Eve Editor120"
+        },
+        {
+          "indexedKey": "QEV22395g118",
+          "title": "Query evaluation article 123",
+          "year": 2023,
+          "status": "include",
+          "firstAuthor": "Ada Author123",
+          "firstCreator": "Eve Editor123"
+        }
+      ],
+      "request": {
+        "from": "items",
+        "library": "all",
+        "filter": "itemType == \"journalArticle\" && tags.contains(\"query-eval\") && custom[\"review.status\"] == \"include\"",
+        "fields": "title,date.year,creators",
+        "limit": "all"
+      },
+      "command": "zotlit:query 'from=items' 'library=all' 'filter=itemType == \"journalArticle\" && tags.contains(\"query-eval\") && custom[\"review.status\"] == \"include\"' 'fields=title,date.year,creators' 'limit=all'"
+    },
+    "export": {
+      "count": 125,
+      "missingYear": 13,
+      "rows": [
+        {
+          "indexedKey": "QEV22222",
+          "title": "Query evaluation article 000",
+          "year": null,
+          "status": "include",
+          "firstAuthor": "Ada Author000",
+          "firstCreator": "Eve Editor000"
+        },
+        {
+          "indexedKey": "QEV22223",
+          "title": "Query evaluation article 001",
+          "year": 2021,
+          "status": "exclude",
+          "firstAuthor": "Ada Author001",
+          "firstCreator": "Eve Editor001"
+        },
+        {
+          "indexedKey": "QEV22224",
+          "title": "Query evaluation article 002",
+          "year": 2022,
+          "status": "pending",
+          "firstAuthor": "Ada Author002",
+          "firstCreator": "Eve Editor002"
+        },
+        {
+          "indexedKey": "QEV22225",
+          "title": "Query evaluation article 003",
+          "year": 2023,
+          "status": "include",
+          "firstAuthor": "Ada Author003",
+          "firstCreator": "Eve Editor003"
+        },
+        {
+          "indexedKey": "QEV22226",
+          "title": "Query evaluation article 004",
+          "year": 2024,
+          "status": "exclude",
+          "firstAuthor": "Ada Author004",
+          "firstCreator": "Eve Editor004"
+        },
+        {
+          "indexedKey": "QEV22227",
+          "title": "Query evaluation article 005",
+          "year": 2020,
+          "status": "pending",
+          "firstAuthor": "Ada Author005",
+          "firstCreator": "Eve Editor005"
+        },
+        {
+          "indexedKey": "QEV22228",
+          "title": "Query evaluation article 006",
+          "year": 2021,
+          "status": "include",
+          "firstAuthor": "Ada Author006",
+          "firstCreator": "Eve Editor006"
+        },
+        {
+          "indexedKey": "QEV22229",
+          "title": "Query evaluation article 007",
+          "year": 2022,
+          "status": "exclude",
+          "firstAuthor": "Ada Author007",
+          "firstCreator": "Eve Editor007"
+        },
+        {
+          "indexedKey": "QEV22232",
+          "title": "Query evaluation article 008",
+          "year": 2023,
+          "status": "pending",
+          "firstAuthor": "Ada Author008",
+          "firstCreator": "Eve Editor008"
+        },
+        {
+          "indexedKey": "QEV22233",
+          "title": "Query evaluation article 009",
+          "year": 2024,
+          "status": "include",
+          "firstAuthor": "Ada Author009",
+          "firstCreator": "Eve Editor009"
+        },
+        {
+          "indexedKey": "QEV22234",
+          "title": "Query evaluation article 010",
+          "year": null,
+          "status": "exclude",
+          "firstAuthor": "Ada Author010",
+          "firstCreator": "Eve Editor010"
+        },
+        {
+          "indexedKey": "QEV22235",
+          "title": "Query evaluation article 011",
+          "year": 2021,
+          "status": "pending",
+          "firstAuthor": "Ada Author011",
+          "firstCreator": "Eve Editor011"
+        },
+        {
+          "indexedKey": "QEV22236",
+          "title": "Query evaluation article 012",
+          "year": 2022,
+          "status": "include",
+          "firstAuthor": "Ada Author012",
+          "firstCreator": "Eve Editor012"
+        },
+        {
+          "indexedKey": "QEV22237",
+          "title": "Query evaluation article 013",
+          "year": 2023,
+          "status": "exclude",
+          "firstAuthor": "Ada Author013",
+          "firstCreator": "Eve Editor013"
+        },
+        {
+          "indexedKey": "QEV22238",
+          "title": "Query evaluation article 014",
+          "year": 2024,
+          "status": "pending",
+          "firstAuthor": "Ada Author014",
+          "firstCreator": "Eve Editor014"
+        },
+        {
+          "indexedKey": "QEV22239",
+          "title": "Query evaluation article 015",
+          "year": 2020,
+          "status": "include",
+          "firstAuthor": "Ada Author015",
+          "firstCreator": "Eve Editor015"
+        },
+        {
+          "indexedKey": "QEV22242",
+          "title": "Query evaluation article 016",
+          "year": 2021,
+          "status": "exclude",
+          "firstAuthor": "Ada Author016",
+          "firstCreator": "Eve Editor016"
+        },
+        {
+          "indexedKey": "QEV22243",
+          "title": "Query evaluation article 017",
+          "year": 2022,
+          "status": "pending",
+          "firstAuthor": "Ada Author017",
+          "firstCreator": "Eve Editor017"
+        },
+        {
+          "indexedKey": "QEV22244",
+          "title": "Query evaluation article 018",
+          "year": 2023,
+          "status": "include",
+          "firstAuthor": "Ada Author018",
+          "firstCreator": "Eve Editor018"
+        },
+        {
+          "indexedKey": "QEV22245",
+          "title": "Query evaluation article 019",
+          "year": 2024,
+          "status": "exclude",
+          "firstAuthor": "Ada Author019",
+          "firstCreator": "Eve Editor019"
+        },
+        {
+          "indexedKey": "QEV22246",
+          "title": "Query evaluation article 020",
+          "year": null,
+          "status": "pending",
+          "firstAuthor": "Ada Author020",
+          "firstCreator": "Eve Editor020"
+        },
+        {
+          "indexedKey": "QEV22247",
+          "title": "Query evaluation article 021",
+          "year": 2021,
+          "status": "include",
+          "firstAuthor": "Ada Author021",
+          "firstCreator": "Eve Editor021"
+        },
+        {
+          "indexedKey": "QEV22248",
+          "title": "Query evaluation article 022",
+          "year": 2022,
+          "status": "exclude",
+          "firstAuthor": "Ada Author022",
+          "firstCreator": "Eve Editor022"
+        },
+        {
+          "indexedKey": "QEV22249",
+          "title": "Query evaluation article 023",
+          "year": 2023,
+          "status": "pending",
+          "firstAuthor": "Ada Author023",
+          "firstCreator": "Eve Editor023"
+        },
+        {
+          "indexedKey": "QEV22252",
+          "title": "Query evaluation article 024",
+          "year": 2024,
+          "status": "include",
+          "firstAuthor": "Ada Author024",
+          "firstCreator": "Eve Editor024"
+        },
+        {
+          "indexedKey": "QEV22253",
+          "title": "Query evaluation article 025",
+          "year": 2020,
+          "status": "exclude",
+          "firstAuthor": "Ada Author025",
+          "firstCreator": "Eve Editor025"
+        },
+        {
+          "indexedKey": "QEV22254",
+          "title": "Query evaluation article 026",
+          "year": 2021,
+          "status": "pending",
+          "firstAuthor": "Ada Author026",
+          "firstCreator": "Eve Editor026"
+        },
+        {
+          "indexedKey": "QEV22255",
+          "title": "Query evaluation article 027",
+          "year": 2022,
+          "status": "include",
+          "firstAuthor": "Ada Author027",
+          "firstCreator": "Eve Editor027"
+        },
+        {
+          "indexedKey": "QEV22256",
+          "title": "Query evaluation article 028",
+          "year": 2023,
+          "status": "exclude",
+          "firstAuthor": "Ada Author028",
+          "firstCreator": "Eve Editor028"
+        },
+        {
+          "indexedKey": "QEV22257",
+          "title": "Query evaluation article 029",
+          "year": 2024,
+          "status": "pending",
+          "firstAuthor": "Ada Author029",
+          "firstCreator": "Eve Editor029"
+        },
+        {
+          "indexedKey": "QEV22258",
+          "title": "Query evaluation article 030",
+          "year": null,
+          "status": "include",
+          "firstAuthor": "Ada Author030",
+          "firstCreator": "Eve Editor030"
+        },
+        {
+          "indexedKey": "QEV22259",
+          "title": "Query evaluation article 031",
+          "year": 2021,
+          "status": "exclude",
+          "firstAuthor": "Ada Author031",
+          "firstCreator": "Eve Editor031"
+        },
+        {
+          "indexedKey": "QEV22262",
+          "title": "Query evaluation article 032",
+          "year": 2022,
+          "status": "pending",
+          "firstAuthor": "Ada Author032",
+          "firstCreator": "Eve Editor032"
+        },
+        {
+          "indexedKey": "QEV22263",
+          "title": "Query evaluation article 033",
+          "year": 2023,
+          "status": "include",
+          "firstAuthor": "Ada Author033",
+          "firstCreator": "Eve Editor033"
+        },
+        {
+          "indexedKey": "QEV22264",
+          "title": "Query evaluation article 034",
+          "year": 2024,
+          "status": "exclude",
+          "firstAuthor": "Ada Author034",
+          "firstCreator": "Eve Editor034"
+        },
+        {
+          "indexedKey": "QEV22265",
+          "title": "Query evaluation article 035",
+          "year": 2020,
+          "status": "pending",
+          "firstAuthor": "Ada Author035",
+          "firstCreator": "Eve Editor035"
+        },
+        {
+          "indexedKey": "QEV22266",
+          "title": "Query evaluation article 036",
+          "year": 2021,
+          "status": "include",
+          "firstAuthor": "Ada Author036",
+          "firstCreator": "Eve Editor036"
+        },
+        {
+          "indexedKey": "QEV22267",
+          "title": "Query evaluation article 037",
+          "year": 2022,
+          "status": "exclude",
+          "firstAuthor": "Ada Author037",
+          "firstCreator": "Eve Editor037"
+        },
+        {
+          "indexedKey": "QEV22268",
+          "title": "Query evaluation article 038",
+          "year": 2023,
+          "status": "pending",
+          "firstAuthor": "Ada Author038",
+          "firstCreator": "Eve Editor038"
+        },
+        {
+          "indexedKey": "QEV22269",
+          "title": "Query evaluation article 039",
+          "year": 2024,
+          "status": "include",
+          "firstAuthor": "Ada Author039",
+          "firstCreator": "Eve Editor039"
+        },
+        {
+          "indexedKey": "QEV22272",
+          "title": "Query evaluation article 040",
+          "year": null,
+          "status": "exclude",
+          "firstAuthor": "Ada Author040",
+          "firstCreator": "Eve Editor040"
+        },
+        {
+          "indexedKey": "QEV22273",
+          "title": "Query evaluation article 041",
+          "year": 2021,
+          "status": "pending",
+          "firstAuthor": "Ada Author041",
+          "firstCreator": "Eve Editor041"
+        },
+        {
+          "indexedKey": "QEV22274",
+          "title": "Query evaluation article 042",
+          "year": 2022,
+          "status": "include",
+          "firstAuthor": "Ada Author042",
+          "firstCreator": "Eve Editor042"
+        },
+        {
+          "indexedKey": "QEV22275",
+          "title": "Query evaluation article 043",
+          "year": 2023,
+          "status": "exclude",
+          "firstAuthor": "Ada Author043",
+          "firstCreator": "Eve Editor043"
+        },
+        {
+          "indexedKey": "QEV22276",
+          "title": "Query evaluation article 044",
+          "year": 2024,
+          "status": "pending",
+          "firstAuthor": "Ada Author044",
+          "firstCreator": "Eve Editor044"
+        },
+        {
+          "indexedKey": "QEV22277",
+          "title": "Query evaluation article 045",
+          "year": 2020,
+          "status": "include",
+          "firstAuthor": "Ada Author045",
+          "firstCreator": "Eve Editor045"
+        },
+        {
+          "indexedKey": "QEV22278",
+          "title": "Query evaluation article 046",
+          "year": 2021,
+          "status": "exclude",
+          "firstAuthor": "Ada Author046",
+          "firstCreator": "Eve Editor046"
+        },
+        {
+          "indexedKey": "QEV22279",
+          "title": "Query evaluation article 047",
+          "year": 2022,
+          "status": "pending",
+          "firstAuthor": "Ada Author047",
+          "firstCreator": "Eve Editor047"
+        },
+        {
+          "indexedKey": "QEV22282",
+          "title": "Query evaluation article 048",
+          "year": 2023,
+          "status": "include",
+          "firstAuthor": "Ada Author048",
+          "firstCreator": "Eve Editor048"
+        },
+        {
+          "indexedKey": "QEV22283",
+          "title": "Query evaluation article 049",
+          "year": 2024,
+          "status": "exclude",
+          "firstAuthor": "Ada Author049",
+          "firstCreator": "Eve Editor049"
+        },
+        {
+          "indexedKey": "QEV22284",
+          "title": "Query evaluation article 050",
+          "year": null,
+          "status": "pending",
+          "firstAuthor": "Ada Author050",
+          "firstCreator": "Eve Editor050"
+        },
+        {
+          "indexedKey": "QEV22285",
+          "title": "Query evaluation article 051",
+          "year": 2021,
+          "status": "include",
+          "firstAuthor": "Ada Author051",
+          "firstCreator": "Eve Editor051"
+        },
+        {
+          "indexedKey": "QEV22286",
+          "title": "Query evaluation article 052",
+          "year": 2022,
+          "status": "exclude",
+          "firstAuthor": "Ada Author052",
+          "firstCreator": "Eve Editor052"
+        },
+        {
+          "indexedKey": "QEV22287",
+          "title": "Query evaluation article 053",
+          "year": 2023,
+          "status": "pending",
+          "firstAuthor": "Ada Author053",
+          "firstCreator": "Eve Editor053"
+        },
+        {
+          "indexedKey": "QEV22288",
+          "title": "Query evaluation article 054",
+          "year": 2024,
+          "status": "include",
+          "firstAuthor": "Ada Author054",
+          "firstCreator": "Eve Editor054"
+        },
+        {
+          "indexedKey": "QEV22289",
+          "title": "Query evaluation article 055",
+          "year": 2020,
+          "status": "exclude",
+          "firstAuthor": "Ada Author055",
+          "firstCreator": "Eve Editor055"
+        },
+        {
+          "indexedKey": "QEV22292",
+          "title": "Query evaluation article 056",
+          "year": 2021,
+          "status": "pending",
+          "firstAuthor": "Ada Author056",
+          "firstCreator": "Eve Editor056"
+        },
+        {
+          "indexedKey": "QEV22293",
+          "title": "Query evaluation article 057",
+          "year": 2022,
+          "status": "include",
+          "firstAuthor": "Ada Author057",
+          "firstCreator": "Eve Editor057"
+        },
+        {
+          "indexedKey": "QEV22294",
+          "title": "Query evaluation article 058",
+          "year": 2023,
+          "status": "exclude",
+          "firstAuthor": "Ada Author058",
+          "firstCreator": "Eve Editor058"
+        },
+        {
+          "indexedKey": "QEV22295",
+          "title": "Query evaluation article 059",
+          "year": 2024,
+          "status": "pending",
+          "firstAuthor": "Ada Author059",
+          "firstCreator": "Eve Editor059"
+        },
+        {
+          "indexedKey": "QEV22296",
+          "title": "Query evaluation article 060",
+          "year": null,
+          "status": "include",
+          "firstAuthor": "Ada Author060",
+          "firstCreator": "Eve Editor060"
+        },
+        {
+          "indexedKey": "QEV22297",
+          "title": "Query evaluation article 061",
+          "year": 2021,
+          "status": "exclude",
+          "firstAuthor": "Ada Author061",
+          "firstCreator": "Eve Editor061"
+        },
+        {
+          "indexedKey": "QEV22298",
+          "title": "Query evaluation article 062",
+          "year": 2022,
+          "status": "pending",
+          "firstAuthor": "Ada Author062",
+          "firstCreator": "Eve Editor062"
+        },
+        {
+          "indexedKey": "QEV22299",
+          "title": "Query evaluation article 063",
+          "year": 2023,
+          "status": "include",
+          "firstAuthor": "Ada Author063",
+          "firstCreator": "Eve Editor063"
+        },
+        {
+          "indexedKey": "QEV22322",
+          "title": "Query evaluation article 064",
+          "year": 2024,
+          "status": "exclude",
+          "firstAuthor": "Ada Author064",
+          "firstCreator": "Eve Editor064"
+        },
+        {
+          "indexedKey": "QEV22323",
+          "title": "Query evaluation article 065",
+          "year": 2020,
+          "status": "pending",
+          "firstAuthor": "Ada Author065",
+          "firstCreator": "Eve Editor065"
+        },
+        {
+          "indexedKey": "QEV22324",
+          "title": "Query evaluation article 066",
+          "year": 2021,
+          "status": "include",
+          "firstAuthor": "Ada Author066",
+          "firstCreator": "Eve Editor066"
+        },
+        {
+          "indexedKey": "QEV22325",
+          "title": "Query evaluation article 067",
+          "year": 2022,
+          "status": "exclude",
+          "firstAuthor": "Ada Author067",
+          "firstCreator": "Eve Editor067"
+        },
+        {
+          "indexedKey": "QEV22326",
+          "title": "Query evaluation article 068",
+          "year": 2023,
+          "status": "pending",
+          "firstAuthor": "Ada Author068",
+          "firstCreator": "Eve Editor068"
+        },
+        {
+          "indexedKey": "QEV22327",
+          "title": "Query evaluation article 069",
+          "year": 2024,
+          "status": "include",
+          "firstAuthor": "Ada Author069",
+          "firstCreator": "Eve Editor069"
+        },
+        {
+          "indexedKey": "QEV22328",
+          "title": "Query evaluation article 070",
+          "year": null,
+          "status": "exclude",
+          "firstAuthor": "Ada Author070",
+          "firstCreator": "Eve Editor070"
+        },
+        {
+          "indexedKey": "QEV22329",
+          "title": "Query evaluation article 071",
+          "year": 2021,
+          "status": "pending",
+          "firstAuthor": "Ada Author071",
+          "firstCreator": "Eve Editor071"
+        },
+        {
+          "indexedKey": "QEV22332",
+          "title": "Query evaluation article 072",
+          "year": 2022,
+          "status": "include",
+          "firstAuthor": "Ada Author072",
+          "firstCreator": "Eve Editor072"
+        },
+        {
+          "indexedKey": "QEV22333",
+          "title": "Query evaluation article 073",
+          "year": 2023,
+          "status": "exclude",
+          "firstAuthor": "Ada Author073",
+          "firstCreator": "Eve Editor073"
+        },
+        {
+          "indexedKey": "QEV22334",
+          "title": "Query evaluation article 074",
+          "year": 2024,
+          "status": "pending",
+          "firstAuthor": "Ada Author074",
+          "firstCreator": "Eve Editor074"
+        },
+        {
+          "indexedKey": "QEV22335",
+          "title": "Query evaluation article 075",
+          "year": 2020,
+          "status": "include",
+          "firstAuthor": "Ada Author075",
+          "firstCreator": "Eve Editor075"
+        },
+        {
+          "indexedKey": "QEV22336",
+          "title": "Query evaluation article 076",
+          "year": 2021,
+          "status": "exclude",
+          "firstAuthor": "Ada Author076",
+          "firstCreator": "Eve Editor076"
+        },
+        {
+          "indexedKey": "QEV22337",
+          "title": "Query evaluation article 077",
+          "year": 2022,
+          "status": "pending",
+          "firstAuthor": "Ada Author077",
+          "firstCreator": "Eve Editor077"
+        },
+        {
+          "indexedKey": "QEV22338",
+          "title": "Query evaluation article 078",
+          "year": 2023,
+          "status": "include",
+          "firstAuthor": "Ada Author078",
+          "firstCreator": "Eve Editor078"
+        },
+        {
+          "indexedKey": "QEV22339",
+          "title": "Query evaluation article 079",
+          "year": 2024,
+          "status": "exclude",
+          "firstAuthor": "Ada Author079",
+          "firstCreator": "Eve Editor079"
+        },
+        {
+          "indexedKey": "QEV22342",
+          "title": "Query evaluation article 080",
+          "year": null,
+          "status": "pending",
+          "firstAuthor": "Ada Author080",
+          "firstCreator": "Eve Editor080"
+        },
+        {
+          "indexedKey": "QEV22343",
+          "title": "Query evaluation article 081",
+          "year": 2021,
+          "status": "include",
+          "firstAuthor": "Ada Author081",
+          "firstCreator": "Eve Editor081"
+        },
+        {
+          "indexedKey": "QEV22344",
+          "title": "Query evaluation article 082",
+          "year": 2022,
+          "status": "exclude",
+          "firstAuthor": "Ada Author082",
+          "firstCreator": "Eve Editor082"
+        },
+        {
+          "indexedKey": "QEV22345",
+          "title": "Query evaluation article 083",
+          "year": 2023,
+          "status": "pending",
+          "firstAuthor": "Ada Author083",
+          "firstCreator": "Eve Editor083"
+        },
+        {
+          "indexedKey": "QEV22346",
+          "title": "Query evaluation article 084",
+          "year": 2024,
+          "status": "include",
+          "firstAuthor": "Ada Author084",
+          "firstCreator": "Eve Editor084"
+        },
+        {
+          "indexedKey": "QEV22347",
+          "title": "Query evaluation article 085",
+          "year": 2020,
+          "status": "exclude",
+          "firstAuthor": "Ada Author085",
+          "firstCreator": "Eve Editor085"
+        },
+        {
+          "indexedKey": "QEV22348",
+          "title": "Query evaluation article 086",
+          "year": 2021,
+          "status": "pending",
+          "firstAuthor": "Ada Author086",
+          "firstCreator": "Eve Editor086"
+        },
+        {
+          "indexedKey": "QEV22349",
+          "title": "Query evaluation article 087",
+          "year": 2022,
+          "status": "include",
+          "firstAuthor": "Ada Author087",
+          "firstCreator": "Eve Editor087"
+        },
+        {
+          "indexedKey": "QEV22352",
+          "title": "Query evaluation article 088",
+          "year": 2023,
+          "status": "exclude",
+          "firstAuthor": "Ada Author088",
+          "firstCreator": "Eve Editor088"
+        },
+        {
+          "indexedKey": "QEV22353",
+          "title": "Query evaluation article 089",
+          "year": 2024,
+          "status": "pending",
+          "firstAuthor": "Ada Author089",
+          "firstCreator": "Eve Editor089"
+        },
+        {
+          "indexedKey": "QEV22354",
+          "title": "Query evaluation article 090",
+          "year": null,
+          "status": "include",
+          "firstAuthor": "Ada Author090",
+          "firstCreator": "Eve Editor090"
+        },
+        {
+          "indexedKey": "QEV22355",
+          "title": "Query evaluation article 091",
+          "year": 2021,
+          "status": "exclude",
+          "firstAuthor": "Ada Author091",
+          "firstCreator": "Eve Editor091"
+        },
+        {
+          "indexedKey": "QEV22356",
+          "title": "Query evaluation article 092",
+          "year": 2022,
+          "status": "pending",
+          "firstAuthor": "Ada Author092",
+          "firstCreator": "Eve Editor092"
+        },
+        {
+          "indexedKey": "QEV22357",
+          "title": "Query evaluation article 093",
+          "year": 2023,
+          "status": "include",
+          "firstAuthor": "Ada Author093",
+          "firstCreator": "Eve Editor093"
+        },
+        {
+          "indexedKey": "QEV22358",
+          "title": "Query evaluation article 094",
+          "year": 2024,
+          "status": "exclude",
+          "firstAuthor": "Ada Author094",
+          "firstCreator": "Eve Editor094"
+        },
+        {
+          "indexedKey": "QEV22359",
+          "title": "Query evaluation article 095",
+          "year": 2020,
+          "status": "pending",
+          "firstAuthor": "Ada Author095",
+          "firstCreator": "Eve Editor095"
+        },
+        {
+          "indexedKey": "QEV22362",
+          "title": "Query evaluation article 096",
+          "year": 2021,
+          "status": "include",
+          "firstAuthor": "Ada Author096",
+          "firstCreator": "Eve Editor096"
+        },
+        {
+          "indexedKey": "QEV22363",
+          "title": "Query evaluation article 097",
+          "year": 2022,
+          "status": "exclude",
+          "firstAuthor": "Ada Author097",
+          "firstCreator": "Eve Editor097"
+        },
+        {
+          "indexedKey": "QEV22364",
+          "title": "Query evaluation article 098",
+          "year": 2023,
+          "status": "pending",
+          "firstAuthor": "Ada Author098",
+          "firstCreator": "Eve Editor098"
+        },
+        {
+          "indexedKey": "QEV22365",
+          "title": "Query evaluation article 099",
+          "year": 2024,
+          "status": "include",
+          "firstAuthor": "Ada Author099",
+          "firstCreator": "Eve Editor099"
+        },
+        {
+          "indexedKey": "QEV22366g118",
+          "title": "Query evaluation article 100",
+          "year": null,
+          "status": "exclude",
+          "firstAuthor": "Ada Author100",
+          "firstCreator": "Eve Editor100"
+        },
+        {
+          "indexedKey": "QEV22367g118",
+          "title": "Query evaluation article 101",
+          "year": 2021,
+          "status": "pending",
+          "firstAuthor": "Ada Author101",
+          "firstCreator": "Eve Editor101"
+        },
+        {
+          "indexedKey": "QEV22368g118",
+          "title": "Query evaluation article 102",
+          "year": 2022,
+          "status": "include",
+          "firstAuthor": "Ada Author102",
+          "firstCreator": "Eve Editor102"
+        },
+        {
+          "indexedKey": "QEV22369g118",
+          "title": "Query evaluation article 103",
+          "year": 2023,
+          "status": "exclude",
+          "firstAuthor": "Ada Author103",
+          "firstCreator": "Eve Editor103"
+        },
+        {
+          "indexedKey": "QEV22372g118",
+          "title": "Query evaluation article 104",
+          "year": 2024,
+          "status": "pending",
+          "firstAuthor": "Ada Author104",
+          "firstCreator": "Eve Editor104"
+        },
+        {
+          "indexedKey": "QEV22373g118",
+          "title": "Query evaluation article 105",
+          "year": 2020,
+          "status": "include",
+          "firstAuthor": "Ada Author105",
+          "firstCreator": "Eve Editor105"
+        },
+        {
+          "indexedKey": "QEV22374g118",
+          "title": "Query evaluation article 106",
+          "year": 2021,
+          "status": "exclude",
+          "firstAuthor": "Ada Author106",
+          "firstCreator": "Eve Editor106"
+        },
+        {
+          "indexedKey": "QEV22375g118",
+          "title": "Query evaluation article 107",
+          "year": 2022,
+          "status": "pending",
+          "firstAuthor": "Ada Author107",
+          "firstCreator": "Eve Editor107"
+        },
+        {
+          "indexedKey": "QEV22376g118",
+          "title": "Query evaluation article 108",
+          "year": 2023,
+          "status": "include",
+          "firstAuthor": "Ada Author108",
+          "firstCreator": "Eve Editor108"
+        },
+        {
+          "indexedKey": "QEV22377g118",
+          "title": "Query evaluation article 109",
+          "year": 2024,
+          "status": "exclude",
+          "firstAuthor": "Ada Author109",
+          "firstCreator": "Eve Editor109"
+        },
+        {
+          "indexedKey": "QEV22378g118",
+          "title": "Query evaluation article 110",
+          "year": null,
+          "status": "pending",
+          "firstAuthor": "Ada Author110",
+          "firstCreator": "Eve Editor110"
+        },
+        {
+          "indexedKey": "QEV22379g118",
+          "title": "Query evaluation article 111",
+          "year": 2021,
+          "status": "include",
+          "firstAuthor": "Ada Author111",
+          "firstCreator": "Eve Editor111"
+        },
+        {
+          "indexedKey": "QEV22382g118",
+          "title": "Query evaluation article 112",
+          "year": 2022,
+          "status": "exclude",
+          "firstAuthor": "Ada Author112",
+          "firstCreator": "Eve Editor112"
+        },
+        {
+          "indexedKey": "QEV22383g118",
+          "title": "Query evaluation article 113",
+          "year": 2023,
+          "status": "pending",
+          "firstAuthor": "Ada Author113",
+          "firstCreator": "Eve Editor113"
+        },
+        {
+          "indexedKey": "QEV22384g118",
+          "title": "Query evaluation article 114",
+          "year": 2024,
+          "status": "include",
+          "firstAuthor": "Ada Author114",
+          "firstCreator": "Eve Editor114"
+        },
+        {
+          "indexedKey": "QEV22385g118",
+          "title": "Query evaluation article 115",
+          "year": 2020,
+          "status": "exclude",
+          "firstAuthor": "Ada Author115",
+          "firstCreator": "Eve Editor115"
+        },
+        {
+          "indexedKey": "QEV22386g118",
+          "title": "Query evaluation article 116",
+          "year": 2021,
+          "status": "pending",
+          "firstAuthor": "Ada Author116",
+          "firstCreator": "Eve Editor116"
+        },
+        {
+          "indexedKey": "QEV22387g118",
+          "title": "Query evaluation article 117",
+          "year": 2022,
+          "status": "include",
+          "firstAuthor": "Ada Author117",
+          "firstCreator": "Eve Editor117"
+        },
+        {
+          "indexedKey": "QEV22388g118",
+          "title": "Query evaluation article 118",
+          "year": 2023,
+          "status": "exclude",
+          "firstAuthor": "Ada Author118",
+          "firstCreator": "Eve Editor118"
+        },
+        {
+          "indexedKey": "QEV22389g118",
+          "title": "Query evaluation article 119",
+          "year": 2024,
+          "status": "pending",
+          "firstAuthor": "Ada Author119",
+          "firstCreator": "Eve Editor119"
+        },
+        {
+          "indexedKey": "QEV22392g118",
+          "title": "Query evaluation article 120",
+          "year": null,
+          "status": "include",
+          "firstAuthor": "Ada Author120",
+          "firstCreator": "Eve Editor120"
+        },
+        {
+          "indexedKey": "QEV22393g118",
+          "title": "Query evaluation article 121",
+          "year": 2021,
+          "status": "exclude",
+          "firstAuthor": "Ada Author121",
+          "firstCreator": "Eve Editor121"
+        },
+        {
+          "indexedKey": "QEV22394g118",
+          "title": "Query evaluation article 122",
+          "year": 2022,
+          "status": "pending",
+          "firstAuthor": "Ada Author122",
+          "firstCreator": "Eve Editor122"
+        },
+        {
+          "indexedKey": "QEV22395g118",
+          "title": "Query evaluation article 123",
+          "year": 2023,
+          "status": "include",
+          "firstAuthor": "Ada Author123",
+          "firstCreator": "Eve Editor123"
+        },
+        {
+          "indexedKey": "QEV22396g118",
+          "title": "Query evaluation article 124",
+          "year": 2024,
+          "status": "exclude",
+          "firstAuthor": "Ada Author124",
+          "firstCreator": "Eve Editor124"
+        }
+      ],
+      "request": {
+        "from": "items",
+        "library": "all",
+        "filter": "itemType == \"journalArticle\" && tags.contains(\"query-eval\")",
+        "fields": "title,date.year,creators,custom[\"review.status\"],abstractNote",
+        "limit": "all",
+        "output": "/absolute/new-export.json"
+      },
+      "command": "zotlit:query 'from=items' 'library=all' 'filter=itemType == \"journalArticle\" && tags.contains(\"query-eval\")' 'fields=title,date.year,creators,custom[\"review.status\"],abstractNote' 'limit=all' 'output=/absolute/new-export.json'"
+    },
+    "edge": {
+      "count": 3,
+      "missingYear": 1,
+      "rows": [
+        {
+          "indexedKey": "EVALSAME",
+          "title": "Shared key in My Library",
+          "year": 2024,
+          "firstAuthor": "Ada Personal",
+          "firstCreator": "Ada Personal"
+        },
+        {
+          "indexedKey": "EVALSAMEg118",
+          "title": "Shared key in Lab Archive",
+          "year": null,
+          "firstAuthor": "Ada Lab",
+          "firstCreator": "Ada Lab"
+        },
+        {
+          "indexedKey": "EVALED33",
+          "title": "Edited handbook without an author",
+          "year": 2023,
+          "firstAuthor": null,
+          "firstCreator": "Eve Handbook Editor"
+        }
+      ],
+      "request": {
+        "from": "items",
+        "library": "all",
+        "filter": "itemType == \"book\" && tags.contains(\"query-eval-edge\")",
+        "fields": "title,date.year,creators,library",
+        "limit": "all"
+      },
+      "command": "zotlit:query 'from=items' 'library=all' 'filter=itemType == \"book\" && tags.contains(\"query-eval-edge\")' 'fields=title,date.year,creators,library' 'limit=all'"
+    },
+    "annotations": {
+      "count": 8,
+      "keys": [
+        "TYY6Z6ZF",
+        "4PE492KU",
+        "HRK7BG32",
+        "K3JRFLFQ",
+        "Q8ZR4TDH",
+        "PUPR5FG5",
+        "C94NJNYG",
+        "FDRFQ7C2"
+      ],
+      "itemKey": "RUGIER24",
+      "itemTitle": "Ten Simple Rules for Better Figures",
+      "attachmentKey": "RGRPDF24",
+      "details": {
+        "TYY6Z6ZF": {
+          "type": "ink",
+          "pageLabel": "1",
+          "text": null,
+          "comment": null
+        },
+        "4PE492KU": {
+          "type": "ink",
+          "pageLabel": "1",
+          "text": null,
+          "comment": null
+        },
+        "HRK7BG32": {
+          "type": "text",
+          "pageLabel": "1",
+          "text": null,
+          "comment": "Making figures is hard :("
+        },
+        "K3JRFLFQ": {
+          "type": "underline",
+          "pageLabel": "1",
+          "text": "Scientific visualization is classically defined as the process of graphically displaying scientific data.",
+          "comment": null
+        },
+        "Q8ZR4TDH": {
+          "type": "highlight",
+          "pageLabel": "1",
+          "text": "There are so many different ways to represent the same data: scatter plots, linear plots, bar plots, and pie charts, to name just a few.",
+          "comment": null
+        },
+        "PUPR5FG5": {
+          "type": "highlight",
+          "pageLabel": "1",
+          "text": "Identify Your Message",
+          "comment": null
+        },
+        "C94NJNYG": {
+          "type": "note",
+          "pageLabel": "1",
+          "text": null,
+          "comment": "some text comment"
+        },
+        "FDRFQ7C2": {
+          "type": "image",
+          "pageLabel": "2",
+          "text": null,
+          "comment": null
+        }
+      },
+      "request": {
+        "from": "annotations",
+        "library": "personal",
+        "filter": "item.citationKey == \"rougierTenSimpleRules2014\"",
+        "fields": "type,pageLabel,text,comment,attachment.path",
+        "limit": "all",
+        "sort": "attachment.indexedKey,sortIndex"
+      },
+      "command": "zotlit:query 'from=annotations' 'library=personal' 'filter=item.citationKey == \"rougierTenSimpleRules2014\"' 'fields=type,pageLabel,text,comment,attachment.path' 'limit=all' 'sort=attachment.indexedKey,sortIndex'"
+    },
+    "mixed": {
+      "count": 1,
+      "keys": ["FDRFQ7C2"],
+      "itemTitle": "Ten Simple Rules for Better Figures",
+      "type": "image",
+      "tags": ["figure"],
+      "hasExcerptImage": true,
+      "request": {
+        "from": "annotations",
+        "library": "personal",
+        "filter": "type == \"image\" && tags.contains(\"figure\") && item.citationKey == \"rougierTenSimpleRules2014\"",
+        "fields": "item.title,tags,hasExcerptImage",
+        "limit": "all"
+      },
+      "command": "zotlit:query 'from=annotations' 'library=personal' 'filter=type == \"image\" && tags.contains(\"figure\") && item.citationKey == \"rougierTenSimpleRules2014\"' 'fields=item.title,tags,hasExcerptImage' 'limit=all'"
+    },
+    "position": {
+      "count": 1,
+      "keys": ["PUPR5FG5"],
+      "itemTitle": "Ten Simple Rules for Better Figures",
+      "text": "Identify Your Message",
+      "position": {
+        "kind": "pdf-rects",
+        "pageIndex": 0,
+        "rects": [[265.833, 611.202, 374.503, 620.019]]
+      },
+      "request": {
+        "from": "annotations",
+        "library": "personal",
+        "filter": "text.contains(\"Identify Your Message\") && item.citationKey == \"rougierTenSimpleRules2014\"",
+        "fields": "text,position,attachment.path",
+        "limit": "all"
+      },
+      "command": "zotlit:query 'from=annotations' 'library=personal' 'filter=text.contains(\"Identify Your Message\") && item.citationKey == \"rougierTenSimpleRules2014\"' 'fields=text,position,attachment.path' 'limit=all'"
+    },
+    "image": {
+      "count": 1,
+      "keys": ["FDRFQ7C2"],
+      "itemTitle": "Ten Simple Rules for Better Figures",
+      "type": "image",
+      "tags": ["figure"],
+      "hasExcerptImage": true,
+      "format": "png",
+      "provenance": ["zotero", "rendered"],
+      "request": {
+        "from": "annotations",
+        "library": "personal",
+        "filter": "type == \"image\" && tags.contains(\"figure\") && item.citationKey == \"rougierTenSimpleRules2014\"",
+        "fields": "hasExcerptImage",
+        "limit": "all"
+      },
+      "command": "zotlit:query 'from=annotations' 'library=personal' 'filter=type == \"image\" && tags.contains(\"figure\") && item.citationKey == \"rougierTenSimpleRules2014\"' 'fields=hasExcerptImage' 'limit=all'"
+    },
+    "reading_plan": {
+      "kind": "research",
+      "from": "items",
+      "count": 3,
+      "fields": ["title", "library", "annotations.length", "annotations"],
+      "request": {
+        "from": "items",
+        "library": "all",
+        "filter": "itemType == \"journalArticle\" && tags.contains(\"query-annotation-eval\")",
+        "fields": "title,library,annotations.length,annotations",
+        "limit": "all"
+      },
+      "rows": [
+        {
+          "indexedKey": "QANPAPER",
+          "values": {
+            "title": "Figure design reading copy",
+            "library": "personal",
+            "annotations.length": 2,
+            "annotations": [
+              {
+                "indexedKey": "QANMARK2",
+                "type": "highlight",
+                "text": "Identify Your Message",
+                "comment": null,
+                "pageLabel": "1",
+                "pageIndex": 0
+              },
+              {
+                "indexedKey": "QANPAGE2",
+                "type": "image",
+                "text": null,
+                "comment": null,
+                "pageLabel": "2",
+                "pageIndex": 1
+              }
+            ]
+          }
+        },
+        {
+          "indexedKey": "QANZR222",
+          "values": {
+            "title": "Figure design reading plan",
+            "library": "personal",
+            "annotations.length": 0,
+            "annotations": []
+          }
+        },
+        {
+          "indexedKey": "QANPAPERg118",
+          "values": {
+            "title": "Figure design reading copy",
+            "library": "group:118",
+            "annotations.length": 2,
+            "annotations": [
+              {
+                "indexedKey": "QANMARK2g118",
+                "type": "highlight",
+                "text": "Identify Your Message",
+                "comment": null,
+                "pageLabel": "1",
+                "pageIndex": 0
+              },
+              {
+                "indexedKey": "QANNT222g118",
+                "type": "note",
+                "text": null,
+                "comment": "Compare the chart with the methods section.",
+                "pageLabel": "1",
+                "pageIndex": 0
+              }
+            ]
+          }
+        }
+      ],
+      "command": "zotlit:query 'from=items' 'library=all' 'filter=itemType == \"journalArticle\" && tags.contains(\"query-annotation-eval\")' 'fields=title,library,annotations.length,annotations' 'limit=all'"
+    },
+    "shared_marks": {
+      "count": 2,
+      "keys": ["QANMARK2", "QANMARK2g118"],
+      "request": {
+        "from": "annotations",
+        "library": "personal,group:118",
+        "filter": "type == \"highlight\" && text == \"Identify Your Message\" && item.title == \"Figure design reading copy\"",
+        "fields": "text,colorName,library",
+        "limit": "all"
+      },
+      "command": "zotlit:query 'from=annotations' 'library=personal,group:118' 'filter=type == \"highlight\" && text == \"Identify Your Message\" && item.title == \"Figure design reading copy\"' 'fields=text,colorName,library' 'limit=all'"
+    },
+    "attachment": {
+      "count": 2,
+      "keys": ["QANMARK2g118", "QANNT222g118"],
+      "request": {
+        "from": "annotations",
+        "library": "group:118",
+        "filter": "attachment.indexedKey == \"QANPDF22g118\"",
+        "fields": "type,pageLabel,text,comment,attachment.path",
+        "limit": "all",
+        "sort": "attachment.indexedKey,sortIndex"
+      },
+      "command": "zotlit:query 'from=annotations' 'library=group:118' 'filter=attachment.indexedKey == \"QANPDF22g118\"' 'fields=type,pageLabel,text,comment,attachment.path' 'limit=all' 'sort=attachment.indexedKey,sortIndex'"
+    },
+    "colors": {
+      "count": 1,
+      "keys": ["QANMARK2"],
+      "request": {
+        "from": "annotations",
+        "library": "personal",
+        "filter": "item.indexedKey == \"QANPAPER\" && type == \"highlight\" && colorName == \"blue\" && tags.contains(\"query-annotation-method\") && pageLabel == \"1\"",
+        "fields": "text,colorName,tags,pageIndex",
+        "limit": "all"
+      },
+      "command": "zotlit:query 'from=annotations' 'library=personal' 'filter=item.indexedKey == \"QANPAPER\" && type == \"highlight\" && colorName == \"blue\" && tags.contains(\"query-annotation-method\") && pageLabel == \"1\"' 'fields=text,colorName,tags,pageIndex' 'limit=all'"
+    },
+    "reverse_pages": {
+      "count": 2,
+      "keys": ["QANPAGE2", "QANMARK2"],
+      "request": {
+        "from": "annotations",
+        "library": "personal",
+        "filter": "item.indexedKey == \"QANPAPER\"",
+        "fields": "type,pageLabel,pageIndex,text",
+        "limit": "all",
+        "sort": "-pageIndex,-sortIndex"
+      },
+      "command": "zotlit:query 'from=annotations' 'library=personal' 'filter=item.indexedKey == \"QANPAPER\"' 'fields=type,pageLabel,pageIndex,text' 'limit=all' 'sort=-pageIndex,-sortIndex'"
+    },
+    "missing_source": {
+      "count": 1,
+      "keys": ["QANMISS2"],
+      "request": {
+        "from": "annotations",
+        "library": "personal",
+        "filter": "comment == \"Check this source when the file arrives.\"",
+        "fields": "comment,attachment.path,attachment.exists",
+        "limit": "all"
+      },
+      "command": "zotlit:query 'from=annotations' 'library=personal' 'filter=comment == \"Check this source when the file arrives.\"' 'fields=comment,attachment.path,attachment.exists' 'limit=all'"
+    },
+    "repair_filter": {
+      "count": 2,
+      "keys": ["QANMARK2", "QANMARK2g118"],
+      "request": {
+        "from": "annotations",
+        "library": "personal,group:118",
+        "filter": "tags.contains(\"query-annotation-method\")",
+        "fields": "text,colorName",
+        "limit": "all"
+      },
+      "command": "zotlit:query 'from=annotations' 'library=personal,group:118' 'filter=tags.contains(\"query-annotation-method\")' 'fields=text,colorName' 'limit=all'"
+    },
+    "export_annotations": {
+      "count": 2,
+      "keys": ["QANMARK2g118", "QANNT222g118"],
+      "request": {
+        "from": "annotations",
+        "library": "group:118",
+        "filter": "attachment.indexedKey == \"QANPDF22g118\"",
+        "fields": "type,pageLabel,text,comment,attachment.path",
+        "limit": "all",
+        "sort": "attachment.indexedKey,sortIndex",
+        "output": "/absolute/new-export.json"
+      },
+      "command": "zotlit:query 'from=annotations' 'library=group:118' 'filter=attachment.indexedKey == \"QANPDF22g118\"' 'fields=type,pageLabel,text,comment,attachment.path' 'limit=all' 'sort=attachment.indexedKey,sortIndex' 'output=/absolute/new-export.json'"
+    },
+    "no_usable_pdf": {
+      "kind": "research",
+      "from": "items",
+      "count": 3,
+      "fields": ["title", "attachments[].path"],
+      "request": {
+        "from": "items",
+        "library": "personal",
+        "filter": "collections.within(\"Query thesis\") && attachments.filter(value.contentType == \"application/pdf\" && value.exists).isEmpty()",
+        "fields": "title,attachments[].path",
+        "limit": "all"
+      },
+      "rows": [
+        {
+          "indexedKey": "QCZRPP22",
+          "values": {
+            "title": "Thesis review without files",
+            "attachments[].path": []
+          }
+        },
+        {
+          "indexedKey": "QCMISS22",
+          "values": {
+            "title": "Clinical attention missing its file",
+            "attachments[].path": ["/nonexistent/zotlit-query-eval/missing.pdf"]
+          }
+        },
+        {
+          "indexedKey": "QCWEB222",
+          "values": {
+            "title": "Thesis background reading",
+            "attachments[].path": [
+              "$RUN/zotero-data/storage/QCEPUB22/reading.epub",
+              "$RUN/zotero-data/storage/QCSNAP22/index.html"
+            ]
+          }
+        }
+      ],
+      "command": "zotlit:query 'from=items' 'library=personal' 'filter=collections.within(\"Query thesis\") && attachments.filter(value.contentType == \"application/pdf\" && value.exists).isEmpty()' 'fields=title,attachments[].path' 'limit=all'"
+    },
+    "broken_links": {
+      "kind": "research",
+      "from": "attachments",
+      "count": 1,
+      "fields": ["title", "path", "item.title"],
+      "request": {
+        "from": "attachments",
+        "library": "personal",
+        "filter": "item.collections.within(\"Query thesis\") && linkMode == \"linked_file\" && !exists",
+        "fields": "title,path,item.title",
+        "limit": "all"
+      },
+      "rows": [
+        {
+          "indexedKey": "QCBRKN22",
+          "values": {
+            "title": "Missing linked PDF",
+            "path": "/nonexistent/zotlit-query-eval/missing.pdf",
+            "item.title": "Clinical attention missing its file"
+          }
+        }
+      ],
+      "command": "zotlit:query 'from=attachments' 'library=personal' 'filter=item.collections.within(\"Query thesis\") && linkMode == \"linked_file\" && !exists' 'fields=title,path,item.title' 'limit=all'"
+    },
+    "duplicate_pdfs": {
+      "kind": "research",
+      "from": "items",
+      "count": 1,
+      "fields": ["title", "attachments[].title", "attachments[].tags"],
+      "request": {
+        "from": "items",
+        "library": "personal",
+        "filter": "collections.within(\"Query thesis\") && attachments.filter(value.contentType == \"application/pdf\").length > 1",
+        "fields": "title,attachments[].title,attachments[].tags",
+        "limit": "all"
+      },
+      "rows": [
+        {
+          "indexedKey": "QCTWN222",
+          "values": {
+            "title": "Clinical attention with two editions",
+            "attachments[].title": ["First edition", "Second edition"],
+            "attachments[].tags": [["review-file"], []]
+          }
+        }
+      ],
+      "command": "zotlit:query 'from=items' 'library=personal' 'filter=collections.within(\"Query thesis\") && attachments.filter(value.contentType == \"application/pdf\").length > 1' 'fields=title,attachments[].title,attachments[].tags' 'limit=all'"
+    },
+    "recently_annotated": {
+      "kind": "research",
+      "from": "items",
+      "count": 2,
+      "fields": ["title", "annotations.length"],
+      "request": {
+        "from": "items",
+        "library": "personal",
+        "filter": "collections.within(\"Query thesis\") && annotations.filter(value.dateModified >= date(\"2024-01-01\") && value.dateModified < date(\"2024-05-01\")).length > 0",
+        "fields": "title,annotations.length",
+        "limit": "all"
+      },
+      "rows": [
+        {
+          "indexedKey": "QCSNG222",
+          "values": {
+            "title": "深度学习 in clinical attention",
+            "annotations.length": 1
+          }
+        },
+        {
+          "indexedKey": "QCTWN222",
+          "values": {
+            "title": "Clinical attention with two editions",
+            "annotations.length": 2
+          }
+        }
+      ],
+      "command": "zotlit:query 'from=items' 'library=personal' 'filter=collections.within(\"Query thesis\") && annotations.filter(value.dateModified >= date(\"2024-01-01\") && value.dateModified < date(\"2024-05-01\")).length > 0' 'fields=title,annotations.length' 'limit=all'"
+    },
+    "count_per_paper": {
+      "kind": "research",
+      "from": "annotations",
+      "count": 3,
+      "fields": ["item.title"],
+      "request": {
+        "from": "annotations",
+        "library": "personal",
+        "filter": "item.collections.within(\"Query thesis\")",
+        "fields": "item.title",
+        "limit": "all",
+        "group": "item.indexedKey"
+      },
+      "group": "item.indexedKey",
+      "groups": [
+        {
+          "value": "QCSNG222",
+          "count": 1,
+          "rows": [
+            {
+              "indexedKey": "QCNT2222",
+              "values": {
+                "item.title": "深度学习 in clinical attention"
+              }
+            }
+          ]
+        },
+        {
+          "value": "QCTWN222",
+          "count": 2,
+          "rows": [
+            {
+              "indexedKey": "QCMARKA2",
+              "values": {
+                "item.title": "Clinical attention with two editions"
+              }
+            },
+            {
+              "indexedKey": "QCMARKB2",
+              "values": {
+                "item.title": "Clinical attention with two editions"
+              }
+            }
+          ]
+        }
+      ],
+      "command": "zotlit:query 'from=annotations' 'library=personal' 'filter=item.collections.within(\"Query thesis\")' 'fields=item.title' 'limit=all' 'group=item.indexedKey'"
+    },
+    "count_by_year": {
+      "kind": "research",
+      "from": "items",
+      "count": 5,
+      "fields": [],
+      "request": {
+        "from": "items",
+        "library": "personal",
+        "filter": "collections.within(\"Query thesis\")",
+        "fields": "[]",
+        "limit": "all",
+        "group": "date.year"
+      },
+      "group": "date.year",
+      "groups": [
+        {
+          "value": 2018,
+          "count": 1,
+          "rows": [
+            {
+              "indexedKey": "QCWEB222",
+              "values": {}
+            }
+          ]
+        },
+        {
+          "value": 2020,
+          "count": 1,
+          "rows": [
+            {
+              "indexedKey": "QCZRPP22",
+              "values": {}
+            }
+          ]
+        },
+        {
+          "value": 2021,
+          "count": 2,
+          "rows": [
+            {
+              "indexedKey": "QCSNG222",
+              "values": {}
+            },
+            {
+              "indexedKey": "QCTWN222",
+              "values": {}
+            }
+          ]
+        },
+        {
+          "value": null,
+          "count": 1,
+          "rows": [
+            {
+              "indexedKey": "QCMISS22",
+              "values": {}
+            }
+          ]
+        }
+      ],
+      "command": "zotlit:query 'from=items' 'library=personal' 'filter=collections.within(\"Query thesis\")' 'fields=[]' 'limit=all' 'group=date.year'"
+    },
+    "papers_per_tag": {
+      "kind": "research",
+      "from": "items",
+      "count": 5,
+      "fields": [],
+      "request": {
+        "from": "items",
+        "library": "personal",
+        "filter": "collections.within(\"Query thesis\")",
+        "fields": "[]",
+        "limit": "all",
+        "group": "tags[].name"
+      },
+      "group": "tags[].name",
+      "groups": [
+        {
+          "value": "query-cross-eval",
+          "count": 5,
+          "rows": [
+            {
+              "indexedKey": "QCMISS22",
+              "values": {}
+            },
+            {
+              "indexedKey": "QCSNG222",
+              "values": {}
+            },
+            {
+              "indexedKey": "QCTWN222",
+              "values": {}
+            },
+            {
+              "indexedKey": "QCWEB222",
+              "values": {}
+            },
+            {
+              "indexedKey": "QCZRPP22",
+              "values": {}
+            }
+          ]
+        },
+        {
+          "value": "to-read",
+          "count": 1,
+          "rows": [
+            {
+              "indexedKey": "QCSNG222",
+              "values": {}
+            }
+          ]
+        }
+      ],
+      "command": "zotlit:query 'from=items' 'library=personal' 'filter=collections.within(\"Query thesis\")' 'fields=[]' 'limit=all' 'group=tags[].name'"
+    },
+    "unread_in_collection": {
+      "kind": "research",
+      "from": "items",
+      "count": 4,
+      "fields": ["title"],
+      "request": {
+        "from": "items",
+        "library": "personal",
+        "filter": "collections.within(\"Query thesis\") && annotations.filter(value.type == \"highlight\").isEmpty()",
+        "fields": "title",
+        "limit": "all"
+      },
+      "rows": [
+        {
+          "indexedKey": "QCZRPP22",
+          "values": {
+            "title": "Thesis review without files"
+          }
+        },
+        {
+          "indexedKey": "QCSNG222",
+          "values": {
+            "title": "深度学习 in clinical attention"
+          }
+        },
+        {
+          "indexedKey": "QCMISS22",
+          "values": {
+            "title": "Clinical attention missing its file"
+          }
+        },
+        {
+          "indexedKey": "QCWEB222",
+          "values": {
+            "title": "Thesis background reading"
+          }
+        }
+      ],
+      "command": "zotlit:query 'from=items' 'library=personal' 'filter=collections.within(\"Query thesis\") && annotations.filter(value.type == \"highlight\").isEmpty()' 'fields=title' 'limit=all'"
+    },
+    "attachment_types": {
+      "kind": "research",
+      "from": "attachments",
+      "count": 7,
+      "fields": [],
+      "request": {
+        "from": "attachments",
+        "library": "personal",
+        "filter": "item.collections.within(\"Query thesis\")",
+        "fields": "[]",
+        "limit": "all",
+        "group": "contentType"
+      },
+      "group": "contentType",
+      "groupValues": {
+        "fileType": {
+          "application/epub+zip": "epub",
+          "application/pdf": "pdf",
+          "text/html": "web"
+        }
+      },
+      "groups": [
+        {
+          "value": "application/epub+zip",
+          "count": 1,
+          "rows": [
+            {
+              "indexedKey": "QCEPUB22",
+              "values": {}
+            }
+          ]
+        },
+        {
+          "value": "application/pdf",
+          "count": 4,
+          "rows": [
+            {
+              "indexedKey": "QCBRKN22",
+              "values": {}
+            },
+            {
+              "indexedKey": "QCPDFS22",
+              "values": {}
+            },
+            {
+              "indexedKey": "QCPDFA22",
+              "values": {}
+            },
+            {
+              "indexedKey": "QCPDFB22",
+              "values": {}
+            }
+          ]
+        },
+        {
+          "value": "text/html",
+          "count": 2,
+          "rows": [
+            {
+              "indexedKey": "QCSNAP22",
+              "values": {}
+            },
+            {
+              "indexedKey": "QCURL222",
+              "values": {}
+            }
+          ]
+        }
+      ],
+      "command": "zotlit:query 'from=attachments' 'library=personal' 'filter=item.collections.within(\"Query thesis\")' 'fields=[]' 'limit=all' 'group=contentType'"
+    },
+    "fuzzy_search": {
+      "kind": "research",
+      "from": "items",
+      "count": 2,
+      "fields": ["title"],
+      "request": {
+        "from": "items",
+        "library": "personal",
+        "filter": "collections.within(\"Query thesis\") && title.lower().contains(\"attention\") && title.lower().contains(\"clinical\") && attachments.filter(value.contentType == \"application/pdf\" && value.exists).length > 0",
+        "fields": "title",
+        "limit": "all"
+      },
+      "limitation": "fuzzy-search-unavailable",
+      "rows": [
+        {
+          "indexedKey": "QCSNG222",
+          "values": {
+            "title": "深度学习 in clinical attention"
+          }
+        },
+        {
+          "indexedKey": "QCTWN222",
+          "values": {
+            "title": "Clinical attention with two editions"
+          }
+        }
+      ],
+      "command": "zotlit:query 'from=items' 'library=personal' 'filter=collections.within(\"Query thesis\") && title.lower().contains(\"attention\") && title.lower().contains(\"clinical\") && attachments.filter(value.contentType == \"application/pdf\" && value.exists).length > 0' 'fields=title' 'limit=all'"
+    },
+    "files_of_paper": {
+      "kind": "research",
+      "from": "attachments",
+      "count": 2,
+      "fields": ["title", "contentType", "path", "exists", "tags"],
+      "request": {
+        "from": "attachments",
+        "library": "personal",
+        "filter": "item.title == \"深度学习 in clinical attention\"",
+        "fields": "title,contentType,path,exists,tags",
+        "limit": "all"
+      },
+      "rows": [
+        {
+          "indexedKey": "QCPDFS22",
+          "values": {
+            "title": "Reading PDF",
+            "contentType": "application/pdf",
+            "path": "$RUN/zotero-data/storage/QCPDFS22/rougier-2014.pdf",
+            "exists": true,
+            "tags": []
+          }
+        },
+        {
+          "indexedKey": "QCURL222",
+          "values": {
+            "title": "Publisher link",
+            "contentType": "text/html",
+            "path": null,
+            "exists": false,
+            "tags": []
+          }
+        }
+      ],
+      "command": "zotlit:query 'from=attachments' 'library=personal' 'filter=item.title == \"深度学习 in clinical attention\"' 'fields=title,contentType,path,exists,tags' 'limit=all'"
+    },
+    "csv_for_advisor": {
+      "kind": "research",
+      "from": "items",
+      "count": 5,
+      "fields": ["title", "date.year"],
+      "request": {
+        "from": "items",
+        "library": "personal",
+        "filter": "collections.within(\"Query thesis\")",
+        "fields": "title,date.year",
+        "limit": "all"
+      },
+      "rows": [
+        {
+          "indexedKey": "QCZRPP22",
+          "values": {
+            "title": "Thesis review without files",
+            "date.year": 2020
+          }
+        },
+        {
+          "indexedKey": "QCSNG222",
+          "values": {
+            "title": "深度学习 in clinical attention",
+            "date.year": 2021
+          }
+        },
+        {
+          "indexedKey": "QCTWN222",
+          "values": {
+            "title": "Clinical attention with two editions",
+            "date.year": 2021
+          }
+        },
+        {
+          "indexedKey": "QCMISS22",
+          "values": {
+            "title": "Clinical attention missing its file",
+            "date.year": null
+          }
+        },
+        {
+          "indexedKey": "QCWEB222",
+          "values": {
+            "title": "Thesis background reading",
+            "date.year": 2018
+          }
+        }
+      ],
+      "command": "zotlit:query 'from=items' 'library=personal' 'filter=collections.within(\"Query thesis\")' 'fields=title,date.year' 'limit=all'",
+      "csv": true
+    },
+    "recent_with_pdf_unread": {
+      "kind": "research",
+      "from": "items",
+      "count": 1,
+      "fields": ["title", "date.year"],
+      "request": {
+        "from": "items",
+        "library": "personal",
+        "filter": "collections.within(\"Query thesis\") && date.year >= 2019 && !attachments.isEmpty() && !tags.contains(\"to-read\")",
+        "fields": "title,date.year",
+        "limit": "all"
+      },
+      "rows": [
+        {
+          "indexedKey": "QCTWN222",
+          "values": {
+            "title": "Clinical attention with two editions",
+            "date.year": 2021
+          }
+        }
+      ],
+      "command": "zotlit:query 'from=items' 'library=personal' 'filter=collections.within(\"Query thesis\") && date.year >= 2019 && !attachments.isEmpty() && !tags.contains(\"to-read\")' 'fields=title,date.year' 'limit=all'"
+    },
+    "chinese_title": {
+      "kind": "research",
+      "from": "items",
+      "count": 1,
+      "fields": ["title"],
+      "request": {
+        "from": "items",
+        "library": "personal",
+        "filter": "collections.within(\"Query thesis\") && title.contains(\"深度学习\")",
+        "fields": "title",
+        "limit": "all"
+      },
+      "rows": [
+        {
+          "indexedKey": "QCSNG222",
+          "values": {
+            "title": "深度学习 in clinical attention"
+          }
+        }
+      ],
+      "command": "zotlit:query 'from=items' 'library=personal' 'filter=collections.within(\"Query thesis\") && title.contains(\"深度学习\")' 'fields=title' 'limit=all'"
+    },
+    "discover_collection": {
+      "kind": "research",
+      "from": "items",
+      "count": 5,
+      "fields": ["title", "date.year"],
+      "request": {
+        "from": "items",
+        "library": "personal",
+        "filter": "collections.within(\"Query thesis\")",
+        "fields": "title,date.year",
+        "limit": "all"
+      },
+      "rows": [
+        {
+          "indexedKey": "QCZRPP22",
+          "values": {
+            "title": "Thesis review without files",
+            "date.year": 2020
+          }
+        },
+        {
+          "indexedKey": "QCSNG222",
+          "values": {
+            "title": "深度学习 in clinical attention",
+            "date.year": 2021
+          }
+        },
+        {
+          "indexedKey": "QCTWN222",
+          "values": {
+            "title": "Clinical attention with two editions",
+            "date.year": 2021
+          }
+        },
+        {
+          "indexedKey": "QCMISS22",
+          "values": {
+            "title": "Clinical attention missing its file",
+            "date.year": null
+          }
+        },
+        {
+          "indexedKey": "QCWEB222",
+          "values": {
+            "title": "Thesis background reading",
+            "date.year": 2018
+          }
+        }
+      ],
+      "command": "zotlit:query 'from=items' 'library=personal' 'filter=collections.within(\"Query thesis\")' 'fields=title,date.year' 'limit=all'",
+      "discovery": {
+        "kind": "collections",
+        "library": "personal",
+        "path": "Query thesis"
+      }
+    }
+  },
+  "annotationRows": {
+    "QANMARK2": {
+      "key": "QANMARK2",
+      "item": "QANPAPER",
+      "attachment": "QANPDF22",
+      "type": "highlight",
+      "pageLabel": "1",
+      "text": "Identify Your Message",
+      "comment": null,
+      "colorName": "blue",
+      "tags": ["query-annotation-method"],
+      "pageIndex": 0,
+      "sourceSuffix": "storage/QANPDF22/rougier-2014.pdf",
+      "sourceExists": true,
+      "library": "personal"
+    },
+    "QANPAGE2": {
+      "key": "QANPAGE2",
+      "item": "QANPAPER",
+      "attachment": "QANPDF22",
+      "type": "image",
+      "pageLabel": "2",
+      "text": null,
+      "comment": null,
+      "colorName": "yellow",
+      "tags": [],
+      "pageIndex": 1,
+      "sourceSuffix": "storage/QANPDF22/rougier-2014.pdf",
+      "sourceExists": true,
+      "library": "personal"
+    },
+    "QANMARK2g118": {
+      "key": "QANMARK2g118",
+      "item": "QANPAPERg118",
+      "attachment": "QANPDF22g118",
+      "type": "highlight",
+      "pageLabel": "1",
+      "text": "Identify Your Message",
+      "comment": null,
+      "colorName": "blue",
+      "tags": ["query-annotation-method"],
+      "pageIndex": 0,
+      "sourceSuffix": "storage/QANPDF22/rougier-2014.pdf",
+      "sourceExists": true,
+      "library": "group:118"
+    },
+    "QANNT222g118": {
+      "key": "QANNT222g118",
+      "item": "QANPAPERg118",
+      "attachment": "QANPDF22g118",
+      "type": "note",
+      "pageLabel": "1",
+      "text": null,
+      "comment": "Compare the chart with the methods section.",
+      "colorName": "red",
+      "tags": [],
+      "pageIndex": 0,
+      "sourceSuffix": "storage/QANPDF22/rougier-2014.pdf",
+      "sourceExists": true,
+      "library": "group:118"
+    },
+    "QANMISS2": {
+      "key": "QANMISS2",
+      "item": "SAKIMA22",
+      "attachment": "MISSNG22",
+      "type": "note",
+      "pageLabel": "2",
+      "text": null,
+      "comment": "Check this source when the file arrives.",
+      "colorName": "red",
+      "tags": [],
+      "pageIndex": 1,
+      "sourceSuffix": "deliberately-missing.pdf",
+      "sourceExists": false,
+      "library": "personal"
+    }
+  }
+}

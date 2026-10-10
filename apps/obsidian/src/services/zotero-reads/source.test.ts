@@ -376,7 +376,10 @@ describe("ZoteroReads source", () => {
     await vi.waitFor(() =>
       expect(
         source.events.find((e) => e._tag === "refresh-failed"),
-      ).toHaveProperty("error.message", expect.stringMatching(/no such table/)),
+      ).toHaveProperty(
+        "error.message",
+        expect.stringContaining("This file is not a Zotero database."),
+      ),
     );
   });
 

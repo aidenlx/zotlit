@@ -32,7 +32,7 @@ import {
   REFERENCES_COMMAND,
 } from "./commands";
 import type { DocumentReferences, ItemLookup } from "./commands";
-import type { CITED_BY_PARAMS, REFERENCES_PARAMS } from "./request";
+import type { CitedByParam, ReferencesParam } from "./request";
 
 const logger = getLogger(["citation-index", "cli"]);
 
@@ -59,7 +59,7 @@ function citedByFlags(): CliFlags {
       value: "<source-id>",
       description: "Zotero source ID the call must match",
     },
-  } satisfies Record<(typeof CITED_BY_PARAMS)[number], CliFlag>;
+  } satisfies Record<CitedByParam, CliFlag>;
 }
 
 function referencesFlags(): CliFlags {
@@ -73,7 +73,7 @@ function referencesFlags(): CliFlags {
       value: "<source-id>",
       description: "Zotero source ID the call must match",
     },
-  } satisfies Record<(typeof REFERENCES_PARAMS)[number], CliFlag>;
+  } satisfies Record<ReferencesParam, CliFlag>;
 }
 
 export function registerCitationsCli(

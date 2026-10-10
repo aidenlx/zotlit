@@ -15,6 +15,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
   getAnnotationsByKey,
+  getAnnotationsByParent,
   getAttachmentsByParents,
   getCitekeysByLibrary,
   getCollectionIDByKey,
@@ -28,6 +29,7 @@ import {
   getNoteItemIDsByCollection,
   getNoteItemIDsByLibrary,
   getNoteRefsByItemIDs,
+  parseAnnotationPosition,
   getRelatedKeysByItemID,
   getSchemaVersions,
   isItemKey,
@@ -65,6 +67,7 @@ import {
   SEEDED_CITATION_KEYS,
   seededCitationKeyDrift,
   selectScopeCase,
+  STRESS_GROUP_LIBRARY,
   UPGRADER_FRONTMATTER_FIELDS,
   UPGRADER_LEGACY_PARTIAL_NAME,
   UPGRADER_LEGACY_TEMPLATES,
@@ -141,9 +144,10 @@ function indexedItemCount(db: NodeDatabaseClient): number {
   );
 }
 
-async function buildTemporaryStressFixture(
+/** Build a Fixture in a new directory that the suite removes at its end. */
+async function buildTemporaryFixture(
   prefix: string,
-  stressItemCount: number,
+  options: BuildOptions,
 ): Promise<FixtureLayout> {
   const generatedLayout = getFixtureLayout(
     await mkdtemp(join(dirname(layout.root), prefix)),
@@ -151,8 +155,15 @@ async function buildTemporaryStressFixture(
   fixture.defer(() =>
     rm(generatedLayout.root, { recursive: true, force: true }),
   );
-  await buildFixture(generatedLayout, { stressItemCount });
+  await buildFixture(generatedLayout, options);
   return generatedLayout;
+}
+
+function buildTemporaryStressFixture(
+  prefix: string,
+  stressItemCount: number,
+): Promise<FixtureLayout> {
+  return buildTemporaryFixture(prefix, { stressItemCount });
 }
 
 /** Public-query snapshot of every discoverable Item's generated semantics. */
@@ -378,6 +389,13 @@ describe("the generated Zotero database", () => {
         url: null,
       },
       {
+        key: "EPUBS222",
+        path: null,
+        charsetID: null,
+        title: "Sakima's Song EPUB",
+        url: "https://example.invalid/sakimas-song.epub",
+      },
+      {
         key: "RGRPDF24",
         path: join(layout.vaultDir, "attachments", "rougier-2014.pdf"),
         charsetID: null,
@@ -427,6 +445,13 @@ describe("the generated Zotero database", () => {
         url: null,
       },
       {
+        key: "MISSLNK2",
+        path: join(layout.linkedFilesDir, "missing-linked.pdf"),
+        charsetID: null,
+        title: "Missing linked PDF",
+        url: null,
+      },
+      {
         key: "DMRGRPDF",
         path: join(
           layout.vaultDir,
@@ -449,6 +474,20 @@ describe("the generated Zotero database", () => {
         url: null,
       },
     ]);
+  });
+
+  it("seeds a tagged missing linked file for Attachment Query", async () => {
+    using sqlite = new DatabaseSync(layout.databasePath, { readOnly: true });
+    expect(
+      sqlite
+        .prepare(
+          "select t.name from itemTags it join tags t using (tagID) join items i using (itemID) where i.key = 'MISSLNK2'",
+        )
+        .all(),
+    ).toEqual([{ name: "repair-file" }]);
+    await expect(
+      stat(join(layout.linkedFilesDir, "missing-linked.pdf")),
+    ).rejects.toThrow("ENOENT");
   });
 
   it("carries Zotero's own item types and base-field mappings", () => {
@@ -828,6 +867,47 @@ describe("the generated Zotero database", () => {
         expect(minY! <= bottom && bottom < top && top <= maxY!).toBe(true);
       }
     }
+  });
+
+  it("builds EPUB and snapshot Annotations with their document position kinds", () => {
+    using db = openClient();
+    const attachments = new Map(
+      getAttachmentsByParents(db, [20]).map((attachment) => [
+        attachment.key,
+        attachment,
+      ]),
+    );
+    const annotations = getAnnotationsByKey(db, ["EPUBAN22", "SNAPAN22"], 1);
+
+    expect(
+      Object.fromEntries(
+        annotations.map((annotation) => {
+          const attachment = attachments.get(annotation.parentKey)!;
+          return [
+            annotation.key,
+            {
+              attachment: attachment.key,
+              contentType: attachment.contentType,
+              positionKind: parseAnnotationPosition(
+                annotation.position,
+                attachment.contentType ?? "",
+              ).kind,
+            },
+          ];
+        }),
+      ),
+    ).toEqual({
+      EPUBAN22: {
+        attachment: "EPUBS222",
+        contentType: "application/epub+zip",
+        positionKind: "epub-cfi",
+      },
+      SNAPAN22: {
+        attachment: "HTMLSNAP",
+        contentType: "text/html",
+        positionKind: "snapshot-css",
+      },
+    });
   });
 
   it("reproduces every Zotero PDF annotation type from one real session", async () => {
@@ -1483,6 +1563,389 @@ describe("a Stress Build", () => {
   );
 });
 
+/** The synthetic Items a Stress Build put in one Library. */
+function synthetic(db: NodeDatabaseClient, libraryID = 1): IndexedItem[] {
+  return indexedItems(db, libraryID).filter(({ citationKey }) =>
+    citationKey?.startsWith("stress"),
+  );
+}
+
+function countBy(values: readonly (string | null)[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const value of values) {
+    counts[String(value)] = (counts[String(value)] ?? 0) + 1;
+  }
+  return counts;
+}
+
+describe("a one-Library Stress Build", () => {
+  /** The Fixture Spec Items of My Library: the floor of the build. */
+  const SPEC_ITEMS = ITEMS.filter(({ libraryID }) => libraryID === 1).length;
+  /** My Library with the Fixture Spec Items and 2,000 synthetic ones. */
+  const LIBRARY_ITEMS = SPEC_ITEMS + 2_000;
+  let libraryLayout: FixtureLayout;
+
+  beforeAll(async () => {
+    libraryLayout = await buildTemporaryLibraryStressFixture(
+      "fixture-stress-library-",
+      LIBRARY_ITEMS,
+    );
+  });
+
+  function buildTemporaryLibraryStressFixture(
+    prefix: string,
+    stressLibraryItemCount: number,
+  ): Promise<FixtureLayout> {
+    return buildTemporaryFixture(prefix, { stressLibraryItemCount });
+  }
+
+  it("holds exactly the requested Item count in My Library and leaves the group Libraries as specified", () => {
+    using db = openClientAt(libraryLayout.databasePath);
+    expect(getIndexedItemIDsByLibrary(db, 1)).toHaveLength(LIBRARY_ITEMS);
+    for (const libraryID of [2, 3, 4]) {
+      expect(getIndexedItemIDsByLibrary(db, libraryID)).toHaveLength(
+        ITEMS.filter((item) => item.libraryID === libraryID).length,
+      );
+    }
+  });
+
+  // Failure modes: the Stress Build has no many-marks paper, the shared Tag
+  // is absent, or the Parent Record measurement has no matching Annotations.
+  it("supplies rows for the many-marks and dominant Parent Record cases", () => {
+    using db = openClientAt(libraryLayout.databasePath);
+    const paper = synthetic(db).find(
+      (item) => item.citationKey === "stress0000001",
+    )!;
+    const attachments = getAttachmentsByParents(db, [paper.itemID]);
+    expect(attachments).toHaveLength(1);
+    expect(attachments[0]!.contentType).toBe("application/pdf");
+    expect(
+      resolveItemTags(db, paper.itemID, new Map()).map(({ tag }) => tag.name),
+    ).toContain("stress-dominant");
+    const marks = getAnnotationsByParent(db, attachments[0]!.itemID);
+    expect(marks).toHaveLength(61);
+    expect(marks.every((mark) => mark.tags.includes("stress-many-marks"))).toBe(
+      true,
+    );
+  });
+
+  it("gives rare, common, and dominant Tags", () => {
+    using db = openClientAt(libraryLayout.databasePath);
+    const tags = synthetic(db).flatMap(({ itemID }) =>
+      resolveItemTags(db, itemID, new Map()).map(({ tag }) => tag.name),
+    );
+    expect(countBy(tags)).toEqual({
+      "stress-rare": 2,
+      "stress-common": 200,
+      "stress-dominant": 1_200,
+    });
+  });
+
+  it("files Items in nested Collections of rare, common, and dominant size", () => {
+    using db = openClientAt(libraryLayout.databasePath);
+    const nodes = getCollectionNodesByLibrary(db, 1);
+    const byKey = new Map(nodes.map((node) => [node.key, node]));
+    const parentName = (key: string) =>
+      nodes.find(
+        ({ collectionID }) =>
+          collectionID === byKey.get(key)!.parentCollectionID,
+      )?.collectionName ?? null;
+    expect(
+      ["STRESSRT", "STRESSCM", "STRESSRR", "STRESSDM"].map((key) => [
+        byKey.get(key)!.collectionName,
+        parentName(key),
+      ]),
+    ).toEqual([
+      ["Stress Build", null],
+      ["Common", "Stress Build"],
+      ["Rare", "Common"],
+      ["Dominant", "Stress Build"],
+    ]);
+
+    const subtree = (collectionKey: string) =>
+      getIndexedItemIDsByCollection(db, { libraryID: 1, collectionKey }).length;
+    expect({
+      root: subtree("STRESSRT"),
+      common: subtree("STRESSCM"),
+      rare: subtree("STRESSRR"),
+      dominant: subtree("STRESSDM"),
+    }).toEqual({ root: 1_402, common: 202, rare: 2, dominant: 1_200 });
+  });
+
+  it("gives a dominant item type, exact Venue values of every frequency, and one unique title", () => {
+    using db = openClientAt(libraryLayout.databasePath);
+    const items = synthetic(db);
+    expect(items).toHaveLength(2_000);
+    expect(countBy(items.map(({ itemType }) => itemType))).toEqual({
+      journalArticle: 1_798,
+      book: 200,
+      thesis: 2,
+    });
+    expect(
+      countBy(
+        items
+          .filter(({ itemType }) => itemType === "journalArticle")
+          .map(({ publicationTitle }) => publicationTitle),
+      ),
+    ).toEqual({
+      "Stress Rare Journal": 2,
+      "Stress Common Journal": 200,
+      "Stress Dominant Journal": 1_596,
+    });
+    expect(
+      indexedItems(db, 1).filter(
+        ({ title }) => title === "Stress Build unique title",
+      ),
+    ).toHaveLength(1);
+    expect(new Set(items.map(({ title }) => title)).size).toBe(2_000);
+  });
+
+  it("varies modification times so the default newest-first order has few ties", () => {
+    using db = openClientAt(libraryLayout.databasePath);
+    const times = new Set(
+      synthetic(db).map(({ dateModified }) => dateModified.toString()),
+    );
+    expect(times.size).toBe(2_000);
+  });
+
+  it("generates the same content from its fixed seed", async () => {
+    const comparisonLayout = await buildTemporaryLibraryStressFixture(
+      "fixture-stress-library-comparison-",
+      LIBRARY_ITEMS,
+    );
+    expect(readIndexedItemSemantics(comparisonLayout)).toBe(
+      readIndexedItemSemantics(libraryLayout),
+    );
+  });
+
+  it("rejects a count below the Fixture Spec Items of My Library", async () => {
+    await expect(
+      buildTemporaryLibraryStressFixture(
+        "fixture-stress-library-small-",
+        SPEC_ITEMS - 1,
+      ),
+    ).rejects.toThrow(`at least ${SPEC_ITEMS},`);
+  });
+
+  it("rejects a build that also asks for the additive corpus", async () => {
+    await expect(
+      buildFixture(getFixtureLayout(join(dirname(layout.root), "unused")), {
+        stressItemCount: 10,
+        stressLibraryItemCount: 10_000,
+      }),
+    ).rejects.toThrow(/one Stress Build/);
+  });
+
+  it("rejects the demo vault case, which keeps none of the Stress Build Items", async () => {
+    await expect(
+      buildFixture(getFixtureLayout(join(dirname(layout.root), "unused")), {
+        vaultCase: "demo",
+        stressLibraryItemCount: 10_000,
+      }),
+    ).rejects.toThrow(
+      'the "demo" vault case holds only its own Items: build the Stress Build of My Library with another vault case',
+    );
+  });
+
+  it(
+    "builds and opens the 10,000-Item tier",
+    { timeout: 120_000 },
+    async () => {
+      const tierLayout = await buildTemporaryLibraryStressFixture(
+        "fixture-stress-library-tier-",
+        10_000,
+      );
+      using db = openClientAt(tierLayout.databasePath);
+      expect(getIndexedItemIDsByLibrary(db, 1)).toHaveLength(10_000);
+    },
+  );
+});
+
+describe("a two-Library Stress Build", () => {
+  /** The group Library the build fills. */
+  const GROUP_LIBRARY_ID = STRESS_GROUP_LIBRARY.libraryID;
+  const itemsOf = (libraryID: number) =>
+    ITEMS.filter((item) => item.libraryID === libraryID).length;
+  /** My Library with the Fixture Spec Items and 2,000 synthetic ones. */
+  const LIBRARY_ITEMS = itemsOf(1) + 2_000;
+  /** The group Library with its Fixture Spec Items and 1,000 synthetic ones. */
+  const GROUP_LIBRARY_ITEMS = itemsOf(GROUP_LIBRARY_ID) + 1_000;
+  let bothLayout: FixtureLayout;
+  let oneLayout: FixtureLayout;
+
+  beforeAll(async () => {
+    bothLayout = await buildTemporaryFixture("fixture-stress-two-", {
+      stressLibraryItemCount: LIBRARY_ITEMS,
+      stressGroupLibraryItemCount: GROUP_LIBRARY_ITEMS,
+    });
+    oneLayout = await buildTemporaryFixture("fixture-stress-two-one-", {
+      stressLibraryItemCount: LIBRARY_ITEMS,
+    });
+    // Two builds of 2,000 and 3,000 Items: about 1 s on an idle machine.
+  }, 60_000);
+
+  it("holds exactly the requested Item counts in My Library and in the group Library, and leaves the other Libraries as specified", () => {
+    using db = openClientAt(bothLayout.databasePath);
+    expect(getIndexedItemIDsByLibrary(db, 1)).toHaveLength(LIBRARY_ITEMS);
+    expect(getIndexedItemIDsByLibrary(db, GROUP_LIBRARY_ID)).toHaveLength(
+      GROUP_LIBRARY_ITEMS,
+    );
+    const others = LIBRARIES.map(({ libraryID }) => libraryID).filter(
+      (libraryID) => libraryID !== 1 && libraryID !== GROUP_LIBRARY_ID,
+    );
+    expect(others).toHaveLength(2);
+    for (const libraryID of others) {
+      expect(getIndexedItemIDsByLibrary(db, libraryID)).toHaveLength(
+        itemsOf(libraryID),
+      );
+    }
+  });
+
+  it("gives My Library the Items of the one-Library Stress Build", () => {
+    using both = openClientAt(bothLayout.databasePath);
+    using one = openClientAt(oneLayout.databasePath);
+    expect(indexedItems(both, 1)).toEqual(indexedItems(one, 1));
+  });
+
+  it("gives the group Library rare, common, and dominant Tags", () => {
+    using db = openClientAt(bothLayout.databasePath);
+    const tags = synthetic(db, GROUP_LIBRARY_ID).flatMap(({ itemID }) =>
+      resolveItemTags(db, itemID, new Map()).map(({ tag }) => tag.name),
+    );
+    expect(countBy(tags)).toEqual({
+      "stress-rare": 1,
+      "stress-common": 100,
+      "stress-dominant": 600,
+    });
+  });
+
+  it("files the Items of the group Library in its own nested Collections", () => {
+    using db = openClientAt(bothLayout.databasePath);
+    const subtree = (collectionKey: string) =>
+      getIndexedItemIDsByCollection(db, {
+        libraryID: GROUP_LIBRARY_ID,
+        collectionKey,
+      }).length;
+    expect({
+      root: subtree("STRESSRT"),
+      common: subtree("STRESSCM"),
+      rare: subtree("STRESSRR"),
+      dominant: subtree("STRESSDM"),
+    }).toEqual({ root: 701, common: 101, rare: 1, dominant: 600 });
+    // The Collections of My Library keep their own Items.
+    expect(
+      getIndexedItemIDsByCollection(db, {
+        libraryID: 1,
+        collectionKey: "STRESSRT",
+      }),
+    ).toHaveLength(1_402);
+  });
+
+  it("gives the group Library the item types, the Venue values, and one unique title", () => {
+    using db = openClientAt(bothLayout.databasePath);
+    const items = synthetic(db, GROUP_LIBRARY_ID);
+    expect(items).toHaveLength(1_000);
+    expect(countBy(items.map(({ itemType }) => itemType))).toEqual({
+      journalArticle: 899,
+      book: 100,
+      thesis: 1,
+    });
+    expect(
+      countBy(
+        items
+          .filter(({ itemType }) => itemType === "journalArticle")
+          .map(({ publicationTitle }) => publicationTitle),
+      ),
+    ).toEqual({
+      "Stress Rare Journal": 1,
+      "Stress Common Journal": 100,
+      "Stress Dominant Journal": 798,
+    });
+    expect(
+      items.filter(({ title }) => title === "Stress Build unique title"),
+    ).toHaveLength(1);
+    expect(new Set(items.map(({ title }) => title)).size).toBe(1_000);
+    expect(
+      new Set(items.map(({ dateModified }) => dateModified.toString())).size,
+    ).toBe(1_000);
+  });
+
+  it("gives the two Libraries different Zotero Keys and Citation Keys", () => {
+    using db = openClientAt(bothLayout.databasePath);
+    const personal = synthetic(db, 1);
+    const group = synthetic(db, GROUP_LIBRARY_ID);
+    const shared = <T>(a: readonly T[], b: readonly T[]) =>
+      a.filter((value) => new Set(b).has(value));
+    expect(
+      shared(
+        personal.map(({ key }) => key),
+        group.map(({ key }) => key),
+      ),
+    ).toEqual([]);
+    expect(
+      shared(
+        personal.map(({ citationKey }) => citationKey),
+        group.map(({ citationKey }) => citationKey),
+      ),
+    ).toEqual([]);
+  });
+
+  it("generates the group Library from its own fixed seed", () => {
+    using db = openClientAt(bothLayout.databasePath);
+    const items = synthetic(db, GROUP_LIBRARY_ID).toSorted(
+      (a, b) => a.itemID - b.itemID,
+    );
+    expect(
+      [items[0]!, items.at(-1)!].map(({ key, citationKey }) => ({
+        key,
+        citationKey,
+      })),
+    ).toEqual([
+      { key: "S3GKASXZ", citationKey: "stressg0000001" },
+      { key: "S3GKATVA", citationKey: "stressg0001000" },
+    ]);
+  });
+
+  it("rejects a count below the Fixture Spec Items of the group Library", async () => {
+    await expect(
+      buildTemporaryFixture("fixture-stress-two-small-", {
+        stressLibraryItemCount: LIBRARY_ITEMS,
+        stressGroupLibraryItemCount: itemsOf(GROUP_LIBRARY_ID) - 1,
+      }),
+    ).rejects.toThrow(`at least ${itemsOf(GROUP_LIBRARY_ID)},`);
+  });
+
+  it("fills Shared Reading, the group Library with the ID 4200309", () => {
+    expect(STRESS_GROUP_LIBRARY).toMatchObject({
+      groupID: 4200309,
+      name: "Shared Reading",
+    });
+  });
+
+  it("rejects an Item count above the distance of the two seeds, which keeps the Zotero Keys of the Libraries apart", async () => {
+    const unused = getFixtureLayout(join(dirname(layout.root), "unused"));
+    await expect(
+      buildFixture(unused, { stressLibraryItemCount: 0x1000_0001 }),
+    ).rejects.toThrow("at most 268435456, got 268435457");
+    await expect(
+      buildFixture(unused, {
+        stressLibraryItemCount: LIBRARY_ITEMS,
+        stressGroupLibraryItemCount: 0x1000_0001,
+      }),
+    ).rejects.toThrow("at most 268435456, got 268435457");
+  });
+
+  it("rejects a group Library count without a My Library count", async () => {
+    await expect(
+      buildFixture(getFixtureLayout(join(dirname(layout.root), "unused")), {
+        stressGroupLibraryItemCount: 10_000,
+      }),
+    ).rejects.toThrow(
+      "a Stress Build fills the group Library together with My Library: give both Item counts",
+    );
+  });
+});
+
 describe("the generated Obsidian vault", () => {
   it("carries the prose test pages verbatim from committed assets", async () => {
     for (const name of [
@@ -1753,7 +2216,8 @@ describe("the generated Obsidian vault", () => {
         baseAttachmentPath: null,
       });
 
-      if (path === null || attachment.key === "MISSNG22") continue;
+      if (path === null || ["MISSNG22", "MISSLNK2"].includes(attachment.key))
+        continue;
       expect(note).toContain(pathToFileURL(path).href);
     }
   });

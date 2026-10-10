@@ -11,11 +11,13 @@
 // its database and this suite starts from the Fixture Spec every time.
 
 import {
+  copyFile,
   cp,
   mkdir,
   readFile,
   readdir,
   rename,
+  rm,
   writeFile,
 } from "node:fs/promises";
 import { createServer } from "node:net";
@@ -41,7 +43,7 @@ import {
   LIBRARIES,
   LIBRARY_SCOPE_SETTING_KEY,
 } from "@zotlit/scripts/fixture";
-import type { LibrarySelector } from "@zotlit/scripts/fixture";
+import type { FixtureItem, LibrarySelector } from "@zotlit/scripts/fixture";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
 import { verifyAnnotationDrag } from "./annotation-drag.ts";
@@ -96,6 +98,7 @@ const annotationKeys = attachmentAnnotations.map(({ key }) => key);
 /** The Annotation Copy citation copies, and the Item it cites. */
 const copiedAnnotation = ANNOTATIONS.find(({ key }) => key === "FDRFQ7C2")!;
 const annotationItem = ITEMS.find(({ key }) => key === "RUGIER24")!;
+const positionDocumentItem = ITEMS.find(({ key }) => key === "SAKIMA22")!;
 /** The tag vocabulary those Annotations carry, which is what the tag Chooser lists. */
 const attachmentTags = [
   ...new Set(
@@ -106,7 +109,7 @@ const attachmentTags = [
 ].sort();
 const annotationKeysByPage = Map.groupBy(
   attachmentAnnotations,
-  ({ position }) => position.pageIndex,
+  ({ position }) => ("pageIndex" in position ? position.pageIndex : -1),
 );
 
 async function availableLoopbackPort(): Promise<number> {
@@ -2511,6 +2514,1638 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
   });
 
+  it("answers zotlit:annotation-image with Zotero's PNG and a rendered ink PNG without an open reader", async () => {
+    // Other cases rebuild the shared Fixture for disposable vaults. Keep this
+    // database's linked PDF paths tied to the vault this case owns.
+    const imageFixture = getFixtureLayout(
+      join(workspaceRoot, ".scratch", "e2e-annotation-image-fixture"),
+    );
+    const imageVaultPath = e2eVaultDir(workspaceRoot, "annotation-image-vault");
+    const imageVaultScript = vaultScript(workspaceRoot, imageFixture.root);
+    await clearVault(imageVaultScript, imageVaultPath);
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await imageVaultScript(["remove", imageVaultPath, "--purge"]);
+      await discardFixture(imageFixture);
+    });
+    const created = await imageVaultScript(["create", imageVaultPath]);
+    const imageVaultId = created.stdout.trim().split("\n")[0]!.trim();
+    await keepRendering(imageVaultId);
+    await obEval(
+      imageVaultId,
+      "(async()=>{app.workspace.detachLeavesOfType('pdf');app.workspace.detachLeavesOfType('zotero-annotation-view');await app.plugins.plugins.zotlit.services.excerptImage.clear();return true;})()",
+    );
+    const imageKey = "FDRFQ7C2";
+    const inkKey = "TYY6Z6ZF";
+    const cacheDirectory = join(imageFixture.dataDir, "cache", "library");
+    const imagePath = join(cacheDirectory, `${imageKey}.png`);
+    const inkCachePath = join(cacheDirectory, `${inkKey}.png`);
+    const pdfPath = join(imageVaultPath, annotationAttachment.path!);
+    const answer = async (key: string) =>
+      JSON.parse(
+        await cliCommand(imageVaultId, "zotlit:annotation-image", {
+          args: { key },
+          timeoutMs: 60_000,
+        }),
+      ) as {
+        ok: boolean;
+        command: string;
+        key: string;
+        format: string;
+        provenance: string;
+        path: string;
+      };
+    // A local PDF missing on this device exercises the service's Zotero fallback.
+    await rename(pdfPath, `${pdfPath}.image-test`);
+    try {
+      const cached = await answer(imageKey);
+      expect(cached).toMatchObject({
+        ok: true,
+        command: "zotlit:annotation-image",
+        key: imageKey,
+        format: "png",
+        provenance: "zotero",
+        path: imagePath,
+      });
+      expect((await readFile(cached.path)).subarray(0, 8)).toEqual(
+        Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+      );
+    } finally {
+      await rename(`${pdfPath}.image-test`, pdfPath);
+    }
+    await rename(inkCachePath, `${inkCachePath}.image-test`);
+    try {
+      const rendered = await answer(inkKey);
+      expect(rendered, JSON.stringify(rendered)).toMatchObject({
+        ok: true,
+        key: inkKey,
+        format: "png",
+        provenance: "rendered",
+      });
+      expect(rendered.path).toContain("zotlit-excerpts");
+      expect((await readFile(rendered.path)).subarray(0, 8)).toEqual(
+        Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+      );
+      const dimensions = JSON.parse(
+        await obEval(
+          imageVaultId,
+          `(async()=>{const bytes=require('node:fs').readFileSync(${JSON.stringify(rendered.path)});const bitmap=await createImageBitmap(new Blob([bytes],{type:'image/png'}));const result={width:bitmap.width,height:bitmap.height};bitmap.close();return JSON.stringify(result);})()`,
+        ),
+      ) as { width: number; height: number };
+      expect(dimensions.width).toBeGreaterThan(0);
+      expect(dimensions.height).toBeGreaterThan(0);
+      const reused = await answer(inkKey);
+      expect(reused).toMatchObject({
+        ok: true,
+        provenance: "cache",
+        path: rendered.path,
+      });
+    } finally {
+      await rename(`${inkCachePath}.image-test`, inkCachePath);
+    }
+  }, 120_000);
+
+  describe("ZotLit Query attachments", () => {
+    const queryFixture = getFixtureLayout(
+      join(workspaceRoot, ".scratch", "e2e-attachment-query-fixture"),
+    );
+    const queryVaultPath = e2eVaultDir(workspaceRoot, "attachment-query-vault");
+    const queryVaultScript = vaultScript(workspaceRoot, queryFixture.root);
+    let queryVaultId: string;
+    beforeAll(async () => {
+      await clearVault(queryVaultScript, queryVaultPath);
+      const created = await queryVaultScript(["create", queryVaultPath]);
+      queryVaultId = created.stdout.trim().split("\n")[0]!.trim();
+      await keepRendering(queryVaultId);
+    });
+    afterAll(async () => {
+      await queryVaultScript(["remove", queryVaultPath, "--purge"]);
+      await discardFixture(queryFixture);
+    });
+    const query = async (args: Record<string, string>) =>
+      JSON.parse(
+        await cliCommand(queryVaultId, "zotlit:query", {
+          args: { from: "attachments", ...args },
+        }),
+      ) as ItemQueryReport;
+
+    it("projects and sorts keys and groups file types through ZotLit Query", async () => {
+      for (const from of ["items", "attachments", "annotations"]) {
+        const answer = await query({
+          from,
+          library: "all",
+          fields: "indexedKey,key",
+          sort: "indexedKey",
+          limit: "all",
+        });
+        expect(answer).toMatchObject({
+          ok: true,
+          contractVersion: 3,
+          truncated: false,
+        });
+        expect(answer.returnedCount).toBeGreaterThan(0);
+        const keys = answer.rows!.map((row) => row.indexedKey);
+        expect(keys).toEqual([...keys].sort());
+        for (const row of answer.rows!) {
+          expect(row.values.indexedKey).toBe(row.indexedKey);
+          expect(row.values.key).toBe(row.indexedKey.slice(0, 8));
+        }
+      }
+      const files = await query({
+        library: "personal",
+        group: "fileType",
+        fields: "fileType",
+        limit: "all",
+      });
+      expect(files).toMatchObject({ ok: true, truncated: false });
+      expect(files.groups!.map(({ value, count }) => [value, count])).toEqual([
+        ["pdf", 11],
+        ["web", 3],
+      ]);
+      for (const group of files.groups!)
+        for (const row of group.rows)
+          expect(row.values.fileType).toBe(group.value);
+    });
+
+    it("groups files by type with a per-group limit", async () => {
+      const answer = await query({
+        group: "contentType",
+        library: "personal",
+        limit: "1",
+        fields: "contentType",
+      });
+      const files = ATTACHMENTS.filter(
+        (file) =>
+          file.libraryID === 1 &&
+          ITEMS.some((item) => item.itemID === file.parentItemID),
+      );
+      const types = [...new Set(files.map((file) => file.contentType))].sort();
+      expect(answer).toMatchObject({
+        ok: true,
+        totalCount: files.length,
+        returnedCount: types.length,
+        truncated: true,
+      });
+      expect(answer).not.toHaveProperty("rows");
+      expect(
+        answer.groups!.map(({ value, count, rows }) => [
+          value,
+          count,
+          rows.length,
+        ]),
+      ).toEqual(
+        types.map((type) => [
+          type,
+          files.filter((file) => file.contentType === type).length,
+          1,
+        ]),
+      );
+      for (const group of answer.groups!)
+        expect(group.rows[0]!.values.contentType).toBe(group.value);
+    });
+
+    it("finds broken linked files", async () => {
+      // Demo paper files are copied only to the demo Vault Case. Their linked
+      // rows remain in the configured Fixture and are also missing here.
+      const answer = await query({
+        filter: 'linkMode == "linked_file" && !exists',
+        fields: "title,path,exists,tags",
+        library: "all",
+        limit: "all",
+      });
+      expect(answer).toMatchObject({
+        ok: true,
+        returnedCount: 3,
+        truncated: false,
+        rows: [
+          {
+            indexedKey: "MISSLNK2",
+            values: {
+              title: "Missing linked PDF",
+              path: join(queryFixture.linkedFilesDir, "missing-linked.pdf"),
+              exists: false,
+              tags: ["repair-file"],
+            },
+          },
+          { indexedKey: "DMRGRPDF", values: { exists: false } },
+          { indexedKey: "DMIANPDF", values: { exists: false } },
+        ],
+      });
+    });
+    it("lists files of one paper", async () => {
+      const paper = ITEMS.find((item) => item.itemID === 46)!;
+      const answer = await query({
+        filter: `item.citationKey == ${JSON.stringify(paper.citationKey)}`,
+        fields: "title,contentType,path",
+        limit: "all",
+      });
+      expect(answer).toMatchObject({
+        ok: true,
+        returnedCount: 1,
+        truncated: false,
+        rows: [
+          {
+            indexedKey: "RGRPDF24",
+            itemIndexedKey: paper.key,
+            values: {
+              title: "Rougier et al. 2014 PDF",
+              contentType: "application/pdf",
+              path: join(queryVaultPath, "attachments", "rougier-2014.pdf"),
+            },
+          },
+        ],
+      });
+      for (const filter of [
+        'indexedKey == "RGRPDF24"',
+        '["RGRPDF24"].contains(indexedKey)',
+        `item.indexedKey == ${JSON.stringify(paper.key)}`,
+        `[${JSON.stringify(paper.key)}].contains(item.indexedKey)`,
+      ]) {
+        const selected = await query({
+          filter,
+          fields: "title,contentType,path",
+          limit: "all",
+        });
+        expect(selected).toMatchObject({
+          ok: true,
+          rows: answer.rows,
+          warnings: [],
+        });
+      }
+      const outsideKey = `RGRPDF24g${LIBRARIES.find((library) => library.groupID !== null)!.groupID}`;
+      const scoped = await query({
+        library: "personal",
+        filter: `indexedKey == "${outsideKey}" || indexedKey == "RGRPDF24"`,
+        fields: "title,contentType,path",
+      });
+      expect(scoped).toMatchObject({
+        ok: true,
+        libraries: [{ type: "personal" }],
+        rows: answer.rows,
+        warnings: [{ code: "key-outside-target-libraries", found: outsideKey }],
+      });
+      const schema = JSON.parse(
+        await cliCommand(queryVaultId, "zotlit:query-schema", {
+          args: { from: "attachments" },
+        }),
+      );
+      expect(Object.keys(schema.datasets)).toEqual(["attachments"]);
+      expect(schema.defaults.attachments.fields).toEqual([
+        "title",
+        "contentType",
+        "linkMode",
+        "path",
+        "exists",
+        "item.title",
+        "item.citationKey",
+      ]);
+    });
+    it("projects Library selectors and parent citation keys across all Libraries", async () => {
+      const answer = await query({
+        library: "all",
+        fields: "title,library,item.citationKey",
+        limit: "all",
+      });
+      expect(answer).toMatchObject({
+        ok: true,
+        returnedCount: 14,
+        truncated: false,
+      });
+      expect(answer.libraries).toHaveLength(LIBRARIES.length);
+      // The three image Attachments of a Note are outside the Query Dataset.
+      const attachedToItems = ATTACHMENTS.filter((attachment) =>
+        ITEMS.some((item) => item.itemID === attachment.parentItemID),
+      );
+      expect(answer.rows!.map((row) => row.indexedKey).toSorted()).toEqual(
+        attachedToItems.map((attachment) => attachment.key).toSorted(),
+      );
+      for (const attachment of attachedToItems) {
+        const library = LIBRARIES.find(
+          (library) => library.libraryID === attachment.libraryID,
+        )!;
+        const parent = ITEMS.find(
+          (item) => item.itemID === attachment.parentItemID,
+        )!;
+        const key =
+          library.groupID === null
+            ? attachment.key
+            : `${attachment.key}g${library.groupID}`;
+        expect(
+          answer.rows!.find((row) => row.indexedKey === key)?.values,
+        ).toEqual({
+          title: attachment.title,
+          library:
+            library.groupID === null ? "personal" : `group:${library.groupID}`,
+          "item.citationKey": parent.citationKey,
+        });
+      }
+    });
+  });
+
+  describe("ZotLit Query Relation Lists", () => {
+    const queryFixture = getFixtureLayout(
+      join(workspaceRoot, ".scratch", "e2e-relation-query-fixture"),
+    );
+    const queryVaultPath = e2eVaultDir(workspaceRoot, "relation-query-vault");
+    const queryVaultScript = vaultScript(workspaceRoot, queryFixture.root);
+    let queryVaultId: string;
+    beforeAll(async () => {
+      await clearVault(queryVaultScript, queryVaultPath);
+      const created = await queryVaultScript(["create", queryVaultPath]);
+      queryVaultId = created.stdout.trim().split("\n")[0]!.trim();
+      await keepRendering(queryVaultId);
+    });
+    afterAll(async () => {
+      await queryVaultScript(["remove", queryVaultPath, "--purge"]);
+      await discardFixture(queryFixture);
+    });
+    const query = async (args: Record<string, string>) =>
+      JSON.parse(
+        await cliCommand(queryVaultId, "zotlit:query", {
+          args: { library: "personal", limit: "all", sort: "[]", ...args },
+        }),
+      ) as ItemQueryReport;
+    const papers = '["PREPRNT2", "RUGIER24", "SAKIMA22"].contains(key)';
+
+    it("finds relation candidates through each existence form and nested marks", async () => {
+      for (const filter of [
+        'annotations.filter(value.tags.contains("methodology")).length > 0',
+        'annotations.filter(value.tags.contains("methodology")).length >= 1',
+        '!annotations.filter(value.tags.contains("methodology")).isEmpty()',
+        'attachments.filter(value.annotations.filter(value.tags.contains("methodology")).length > 0).length > 0',
+      ]) {
+        const answer = await query({ filter, fields: "title" });
+        expect(answer.ok).toBe(true);
+        expect(answer.rows!.map((row) => row.indexedKey)).toEqual(["RUGIER24"]);
+      }
+      const files = await query({
+        from: "attachments",
+        filter:
+          'annotations.filter(value.tags.contains("methodology")).length > 0',
+        fields: "title",
+      });
+      expect(files.ok).toBe(true);
+      expect(files.rows!.map((row) => row.indexedKey)).toEqual(["RGRPDF24"]);
+    });
+    it("finds papers with no usable PDF on this machine", async () => {
+      const answer = await query({
+        filter: `(${papers} || ["AAAAAAAA", "DMRGRART"].contains(key)) && attachments.filter(value.contentType == "application/pdf" && value.exists).isEmpty()`,
+        fields: "title",
+      });
+      expect(answer.ok).toBe(true);
+      expect(answer.rows!.map((row) => row.indexedKey)).toEqual([
+        "AAAAAAAA",
+        "DMRGRART",
+      ]);
+    });
+    it("finds papers in a Collection with no highlight yet", async () => {
+      const answer = await query({
+        filter: `${papers} && collections.contains("Shared key") && annotations.filter(value.type == "highlight").isEmpty()`,
+        fields: "title",
+      });
+      expect(answer.ok).toBe(true);
+      expect(answer.rows!.map((row) => row.indexedKey)).toEqual(["PREPRNT2"]);
+    });
+    it("finds papers with more than one PDF", async () => {
+      const answer = await query({
+        filter: `${papers} && attachments.filter(value.contentType == "application/pdf").length > 1`,
+        fields: "title",
+      });
+      expect(answer.ok).toBe(true);
+      expect(answer.rows!.map((row) => row.indexedKey)).toEqual([
+        "PREPRNT2",
+        "SAKIMA22",
+      ]);
+    });
+    it("lists each file path with nulls in their source positions", async () => {
+      const answer = await query({
+        filter: 'key == "SAKIMA22"',
+        fields: "attachments[].path",
+      });
+      expect(answer).toMatchObject({
+        ok: true,
+        returnedCount: 1,
+        rows: [
+          {
+            indexedKey: "SAKIMA22",
+            values: {
+              "attachments[].path": [
+                null,
+                join(
+                  queryFixture.dataDir,
+                  "storage",
+                  "HTMLSNAP",
+                  "sakimas-song.html",
+                ),
+                null,
+                join(
+                  queryFixture.dataDir,
+                  "storage",
+                  "MISSNG22",
+                  "deliberately-missing.pdf",
+                ),
+                join(queryFixture.linkedFilesDir, "sakimas-song.pdf"),
+                join(
+                  queryFixture.dataDir,
+                  "storage",
+                  "PDFSTR22",
+                  "sakimas-song.pdf",
+                ),
+              ],
+            },
+          },
+        ],
+      });
+    });
+    it("reports the number of marks for each paper and file", async () => {
+      const answer = await query({
+        filter: papers,
+        fields: "annotations.length",
+      });
+      expect(answer.ok).toBe(true);
+      expect(
+        answer.rows!.map((row) => [
+          row.indexedKey,
+          row.values["annotations.length"],
+        ]),
+      ).toEqual([
+        ["PREPRNT2", 0],
+        ["RUGIER24", attachmentAnnotations.length],
+        ["SAKIMA22", 4],
+      ]);
+      const file = await query({
+        from: "attachments",
+        filter: 'key == "RGRPDF24"',
+        fields: "annotations.length",
+      });
+      expect(file).toMatchObject({
+        ok: true,
+        rows: [
+          {
+            indexedKey: "RGRPDF24",
+            values: { "annotations.length": attachmentAnnotations.length },
+          },
+        ],
+      });
+    });
+  });
+
+  it("projects aligned Relation Lists with [] through zotlit:query", async () => {
+    const query = async (fields: string[]) =>
+      JSON.parse(
+        await cliCommand(vaultId, "zotlit:query", {
+          args: { fields: fields.join(","), limit: "all" },
+        }),
+      ) as ItemQueryReport;
+    const source = await query(["citationKey", "creators", "tags"]);
+    const projected = await query([
+      "citationKey",
+      "creators[].fullName",
+      "tags[].name",
+    ]);
+    expect(source.ok).toBe(true);
+    expect(projected.ok).toBe(true);
+    expect(projected.rows!.length).toBeGreaterThan(0);
+    expect(projected.rows!.map((row) => row.indexedKey)).toEqual(
+      source.rows!.map((row) => row.indexedKey),
+    );
+    expect(
+      source.rows!.some((row) => (row.values.creators as unknown[]).length > 1),
+    ).toBe(true);
+    expect(
+      source.rows!.some((row) => (row.values.tags as unknown[]).length > 0),
+    ).toBe(true);
+    for (const [index, row] of projected.rows!.entries()) {
+      const values = source.rows![index]!.values;
+      expect(row.values).toEqual({
+        citationKey: values.citationKey,
+        "creators[].fullName": (
+          values.creators as { fullName: string | null }[]
+        ).map((creator) => creator.fullName),
+        "tags[].name": (values.tags as { name: string | null }[]).map(
+          (tag) => tag.name,
+        ),
+      });
+    }
+  });
+
+  it("projects library selectors through zotlit:query across the Fixture Libraries", async () => {
+    const answer = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query", {
+        args: { library: "all", fields: "citationKey,library" },
+      }),
+    ) as ItemQueryReport;
+    expect(answer.ok).toBe(true);
+    expect(answer.returnedCount).toBe(ITEMS.length);
+    expect(answer.truncated).toBe(false);
+    expect(new Set(answer.rows!.map((row) => row.values.library))).toEqual(
+      new Set(
+        LIBRARIES.map(({ groupID }) =>
+          groupID === null ? "personal" : `group:${groupID}`,
+        ),
+      ),
+    );
+    for (const library of LIBRARIES) {
+      for (const item of ITEMS.filter(
+        (item) => item.libraryID === library.libraryID,
+      )) {
+        const indexedKey =
+          library.groupID === null
+            ? item.key
+            : `${item.key}g${library.groupID}`;
+        expect(
+          answer.rows!.find((row) => row.indexedKey === indexedKey)?.values,
+        ).toEqual({
+          citationKey: item.citationKey,
+          library:
+            library.groupID === null ? "personal" : `group:${library.groupID}`,
+        });
+      }
+    }
+  });
+
+  it("answers zotlit:query over the Library Scope and over named Libraries with the Fixture's Indexed Keys", async () => {
+    const [myLibrary, sharedReading] = LIBRARIES;
+    const wireOf = (library: (typeof LIBRARIES)[number]) =>
+      library.groupID === null
+        ? { type: "personal" }
+        : { type: "group", groupID: library.groupID, name: library.name };
+    const selectorOf = (library: (typeof LIBRARIES)[number]) =>
+      library.groupID === null ? "personal" : `group:${library.groupID}`;
+    /** The Indexed Keys of the Libraries, most recently modified first. */
+    const byModified = (libraries: readonly (typeof LIBRARIES)[number][]) =>
+      libraries
+        .flatMap((library) =>
+          ITEMS.filter((item) => item.libraryID === library.libraryID).map(
+            (item) => ({
+              dateModified: item.dateModified,
+              indexedKey:
+                library.groupID === null
+                  ? item.key
+                  : `${item.key}g${library.groupID}`,
+            }),
+          ),
+        )
+        .toSorted(
+          (a, b) =>
+            b.dateModified.localeCompare(a.dateModified) ||
+            (a.indexedKey < b.indexedKey
+              ? -1
+              : a.indexedKey > b.indexedKey
+                ? 1
+                : 0),
+        )
+        .map((item) => item.indexedKey);
+
+    // Dispatched as a registered CLI command with arguments, the way an agent
+    // calls it. Without a Library argument, the query reads the available
+    // Libraries of the Library Scope, which `zotlit:library-scope` reports.
+    const scope = JSON.parse(
+      await cliCommand(vaultId, "zotlit:library-scope"),
+    ) as LibraryScopeReport;
+    const inScope = (scope.available ?? []).map(
+      (entry) =>
+        LIBRARIES.find((library) => library.libraryID === entry.libraryID)!,
+    );
+    expect(inScope.length).toBeGreaterThan(1);
+
+    const limited = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query", {
+        args: {
+          fields: "[]",
+          limit: "3",
+        },
+      }),
+    ) as ItemQueryReport;
+
+    expect(limited).toMatchObject({
+      contractVersion: 3,
+      command: "zotlit:query",
+      ok: true,
+      libraries: inScope.map(wireOf),
+      request: {
+        from: "items",
+        library: inScope.map(selectorOf),
+        fields: [],
+        limit: 3,
+      },
+      returnedCount: 3,
+      truncated: true,
+    });
+    expect(limited.rows!.map((row) => row.indexedKey)).toEqual(
+      byModified(inScope).slice(0, 3),
+    );
+
+    // A named range, in another order than the canonical one.
+    const range = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query", {
+        args: {
+          library: [selectorOf(sharedReading!), selectorOf(myLibrary!)].join(
+            ",",
+          ),
+          fields: "[]",
+          limit: "all",
+        },
+      }),
+    ) as ItemQueryReport;
+
+    expect(range).toMatchObject({
+      ok: true,
+      libraries: [wireOf(myLibrary!), wireOf(sharedReading!)],
+      request: {
+        library: [selectorOf(myLibrary!), selectorOf(sharedReading!)],
+        limit: null,
+      },
+      truncated: false,
+    });
+    expect(range.rows!.map((row) => row.indexedKey)).toEqual(
+      byModified([myLibrary!, sharedReading!]),
+    );
+
+    const group = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query", {
+        args: {
+          library: selectorOf(sharedReading!),
+          fields: "[]",
+          limit: "all",
+        },
+      }),
+    ) as ItemQueryReport;
+
+    expect(group).toMatchObject({
+      ok: true,
+      libraries: [wireOf(sharedReading!)],
+      request: { library: [selectorOf(sharedReading!)], limit: null },
+      truncated: false,
+    });
+    expect(group.rows!.map((row) => row.indexedKey)).toEqual(
+      byModified([sharedReading!]),
+    );
+
+    // The Bases helpers through the shipped plugin: a regular expression and
+    // an element expression over the Creators, each against My Library.
+    const personalKeys = (
+      predicate: (item: (typeof ITEMS)[number]) => boolean,
+    ) => {
+      const keys = new Set(
+        ITEMS.filter(
+          (item) => item.libraryID === myLibrary!.libraryID && predicate(item),
+        ).map((item) => item.key),
+      );
+      return byModified([myLibrary!]).filter((key) => keys.has(key));
+    };
+    const fullName = (creator: (typeof ITEMS)[number]["creators"][number]) =>
+      creator.fieldMode === 1
+        ? creator.lastName
+        : `${creator.firstName} ${creator.lastName}`.trim();
+    for (const [filter, predicate] of [
+      [
+        "/duplicate/i.matches(title)",
+        (item: (typeof ITEMS)[number]) => /duplicate/i.test(item.title),
+      ],
+      [
+        'creators.filter(index > 0).map(value.split(" ")[0]).contains("Michael")',
+        (item: (typeof ITEMS)[number]) =>
+          item.creators
+            .slice(1)
+            .some((creator) => fullName(creator).split(" ")[0] === "Michael"),
+      ],
+    ] as const) {
+      const expected = personalKeys(predicate);
+      expect(expected.length).toBeGreaterThan(1);
+      const helpers = JSON.parse(
+        await cliCommand(vaultId, "zotlit:query", {
+          args: {
+            library: selectorOf(myLibrary!),
+            filter,
+            fields: "[]",
+            limit: "all",
+          },
+        }),
+      ) as ItemQueryReport;
+      expect(helpers).toMatchObject({
+        ok: true,
+        returnedCount: expected.length,
+        truncated: false,
+      });
+      expect(helpers.rows!.map((row) => row.indexedKey)).toEqual(expected);
+    }
+
+    // The production command exports the same response and keeps an existing file.
+    const exportPath = join(e2eFixture.root, "query-export.json");
+    await using exportCleanup = new AsyncDisposableStack();
+    exportCleanup.defer(() => rm(exportPath, { force: true }));
+    const exportArgs = {
+      library: selectorOf(sharedReading!),
+      fields: "[]",
+      limit: "all",
+      output: exportPath,
+    };
+    const receipt = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query", { args: exportArgs }),
+    );
+    const exportedText = await readFile(exportPath, "utf8");
+    expect(receipt).toMatchObject({
+      ok: true,
+      returnedCount: group.returnedCount,
+      file: {
+        path: exportPath,
+        bytes: Buffer.byteLength(exportedText),
+        format: "json",
+      },
+    });
+    expect(receipt).not.toHaveProperty("rows");
+    expect(JSON.parse(exportedText)).toEqual(group);
+    const repeated = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query", { args: exportArgs }),
+    );
+    expect(repeated).toMatchObject({
+      ok: false,
+      diagnostic: { code: "output-error" },
+    });
+    expect(await readFile(exportPath, "utf8")).toBe(exportedText);
+
+    // A held Snapshot leaves new queries free to read a changed source. The
+    // new copy carries a numeric field beyond JavaScript's exact integer range.
+    const otherDir = join(e2eFixture.root, "query-other-source");
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(() => rm(otherDir, { recursive: true, force: true }));
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{
+        const state=window.__zotlitQuerySource;
+        if(!state)return true;
+        const services=app.plugins.plugins.zotlit.services;
+        services.zoteroPref.setDataDir(state.previous);
+        await state.lease?.[Symbol.asyncDispose]();
+        delete window.__zotlitQuerySource;
+        await services.zoteroReads.refresh();
+        return true;
+      })()`,
+      );
+    });
+    await mkdir(otherDir, { recursive: true });
+    const otherPath = join(otherDir, "zotero.sqlite");
+    await copyFile(limited.identity!.source.databasePath, otherPath);
+    {
+      using sqlite = new DatabaseSync(otherPath);
+      sqlite.exec(`
+        insert into itemDataValues (value) values (9007199254740993);
+        insert or replace into itemData (itemID, fieldID, valueID)
+          select ${targetItem.itemID}, fieldID, last_insert_rowid()
+          from fieldsCombined where fieldName = 'volume' and custom = 0;
+      `);
+    }
+    await obEval(
+      vaultId,
+      `(async()=>{
+      const services=app.plugins.plugins.zotlit.services;
+      const lease=await services.zoteroReads.acquireRead();
+      window.__zotlitQuerySource={lease,previous:services.zoteroPref.dataDirOverride};
+      services.zoteroPref.setDataDir(${JSON.stringify(otherDir)});
+      await services.zoteroReads.refresh();
+      return true;
+    })()`,
+    );
+    const integerQuery = {
+      library: "personal",
+      filter: 'volume == "9007199254740993"',
+      fields: "volume",
+    };
+    for (const filter of [
+      integerQuery.filter,
+      'volume.lower() == "9007199254740993"',
+    ]) {
+      const changed = JSON.parse(
+        await cliCommand(vaultId, "zotlit:query", {
+          args: { ...integerQuery, filter },
+        }),
+      ) as ItemQueryReport;
+      expect(changed).toMatchObject({
+        ok: true,
+        identity: { source: { databasePath: otherPath } },
+        rows: [
+          {
+            indexedKey: targetItem.key,
+            values: { volume: "9007199254740993" },
+          },
+        ],
+      });
+    }
+  });
+
+  it("groups marks per paper through zotlit:query", async () => {
+    const report = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query", {
+        args: {
+          from: "annotations",
+          group: "item.citationKey",
+          limit: "3",
+          sort: "-dateModified",
+          library: "personal",
+          filter: `item.indexedKey == "${annotationItem.key}"`,
+          fields: "dateModified,item.citationKey",
+        },
+      }),
+    ) as ItemQueryReport;
+    const parents = ATTACHMENTS.filter(
+      (attachment) => attachment.parentItemID === annotationItem.itemID,
+    );
+    const marks = ANNOTATIONS.filter((annotation) =>
+      parents.some((parent) => parent.itemID === annotation.parentItemID),
+    );
+    expect(marks.length).toBeGreaterThan(3);
+    expect(report).toMatchObject({
+      ok: true,
+      request: { group: "item.citationKey" },
+      totalCount: marks.length,
+      returnedCount: 3,
+      truncated: true,
+      groups: [{ value: annotationItem.citationKey, count: marks.length }],
+    });
+    expect(report).not.toHaveProperty("rows");
+    expect(report.groups![0]!.rows.map((row) => row.indexedKey)).toEqual(
+      marks
+        .toSorted(
+          (a, b) =>
+            b.dateModified.localeCompare(a.dateModified) ||
+            a.sortIndex.localeCompare(b.sortIndex) ||
+            a.key.localeCompare(b.key),
+        )
+        .slice(0, 3)
+        .map((mark) => mark.key),
+    );
+  });
+
+  it("groups papers per year through zotlit:query", async () => {
+    const report = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query", {
+        args: {
+          group: "date.year",
+          limit: "1",
+          library: "personal",
+          fields: "title,date.year",
+        },
+      }),
+    ) as ItemQueryReport;
+    const papers = ITEMS.filter((item) => item.libraryID === 1);
+    const years = [
+      ...new Set(papers.map((item) => Number(item.date.slice(0, 4)))),
+    ].sort((a, b) => a - b);
+    expect(report).toMatchObject({
+      ok: true,
+      request: { group: "date.year" },
+      totalCount: papers.length,
+      returnedCount: years.length,
+      truncated: true,
+    });
+    expect(report).not.toHaveProperty("rows");
+    expect(
+      report.groups!.map(({ value, count, rows }) => [
+        value,
+        count,
+        rows.length,
+      ]),
+    ).toEqual(
+      years.map((year) => [
+        year,
+        papers.filter((paper) => Number(paper.date.slice(0, 4)) === year)
+          .length,
+        1,
+      ]),
+    );
+    for (const group of report.groups!)
+      expect(group.rows[0]!.values["date.year"]).toBe(group.value);
+    const split = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query", {
+        args: { group: "library", library: "all", limit: "3" },
+      }),
+    ) as ItemQueryReport;
+    expect(split).toMatchObject({ ok: true, totalCount: ITEMS.length });
+    expect(split.groups).toHaveLength(LIBRARIES.length);
+  });
+
+  it("groups papers per tag and per Collection through zotlit:query", async () => {
+    const papers = ITEMS.filter((item) => item.libraryID === 1);
+    /** Each group value with the keys of its papers, from the Fixture Spec. */
+    const expectedGroups = (values: (paper: FixtureItem) => string[]) => {
+      const groups = new Map<string | null, string[]>();
+      for (const paper of papers) {
+        const distinct = [...new Set(values(paper))];
+        for (const value of distinct.length ? distinct : [null])
+          groups.set(value, [...(groups.get(value) ?? []), paper.key]);
+      }
+      return groups;
+    };
+    const groupsOf = (report: ItemQueryReport) =>
+      new Map(
+        report.groups!.map(({ value, count, rows }) => [
+          value,
+          { count, keys: rows.map((row) => row.indexedKey).toSorted() },
+        ]),
+      );
+    const query = async (args: Record<string, string>) =>
+      JSON.parse(
+        await cliCommand(vaultId, "zotlit:query", {
+          args: { library: "personal", limit: "all", fields: "[]", ...args },
+        }),
+      ) as ItemQueryReport;
+
+    const byTag = await query({ group: "tags[].name" });
+    const tags = expectedGroups((paper) =>
+      (paper.tags ?? []).map((tag) => tag.name),
+    );
+    expect(tags.size).toBeGreaterThan(2);
+    expect(byTag).toMatchObject({
+      ok: true,
+      request: { group: "tags[].name" },
+      totalCount: papers.length,
+      truncated: false,
+    });
+    expect(groupsOf(byTag)).toEqual(
+      new Map(
+        [...tags].map(([value, keys]) => [
+          value,
+          { count: keys.length, keys: keys.toSorted() },
+        ]),
+      ),
+    );
+    expect(byTag.groups!.at(-1)!.value).toBeNull();
+    // A paper with two Tags is in two groups, so the counts add up to more.
+    expect(byTag.returnedCount).toBe(
+      [...tags.values()].reduce((sum, keys) => sum + keys.length, 0),
+    );
+    expect(byTag.returnedCount).toBeGreaterThan(papers.length);
+
+    const pathOf = (collectionID: number): string => {
+      const collection = COLLECTIONS.find(
+        (entry) => entry.collectionID === collectionID,
+      )!;
+      return collection.parentCollectionID === undefined
+        ? collection.name
+        : `${pathOf(collection.parentCollectionID)}/${collection.name}`;
+    };
+    const parent = COLLECTIONS.find(({ key }) => key === "PERSNAL2")!;
+    const byCollection = await query({
+      group: "collections[]",
+      filter: `collections.within(${JSON.stringify(parent.name)})`,
+    });
+    const filed = papers.filter((paper) =>
+      paper.collectionIDs.some((id) => pathOf(id).startsWith(parent.name)),
+    );
+    const collections = expectedGroups((paper) =>
+      filed.includes(paper) ? paper.collectionIDs.map(pathOf) : [],
+    );
+    collections.delete(null);
+    expect(byCollection).toMatchObject({
+      ok: true,
+      request: { group: "collections[]" },
+      totalCount: filed.length,
+    });
+    expect(groupsOf(byCollection)).toEqual(
+      new Map(
+        [...collections].map(([value, keys]) => [
+          value,
+          { count: keys.length, keys: keys.toSorted() },
+        ]),
+      ),
+    );
+    expect(collections.has(`${parent.name}/Personal child`)).toBe(true);
+  });
+
+  it("queries an Item's reading record through zotlit:query from=annotations", async () => {
+    // Own the Fixture and vault so earlier cases cannot leave this query's
+    // linked Attachment paths pointing at a vault they have removed.
+    const queryFixture = getFixtureLayout(
+      join(workspaceRoot, ".scratch", "e2e-annotation-query-fixture"),
+    );
+    const queryVaultPath = e2eVaultDir(workspaceRoot, "annotation-query-vault");
+    const queryVaultScript = vaultScript(workspaceRoot, queryFixture.root);
+    await clearVault(queryVaultScript, queryVaultPath);
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await queryVaultScript(["remove", queryVaultPath, "--purge"]);
+      await discardFixture(queryFixture);
+    });
+    const created = await queryVaultScript(["create", queryVaultPath]);
+    const queryVaultId = created.stdout.trim().split("\n")[0]!.trim();
+    await keepRendering(queryVaultId);
+    const report = JSON.parse(
+      await cliCommand(queryVaultId, "zotlit:query", {
+        args: {
+          from: "annotations",
+          filter: `item.indexedKey == "${annotationItem.key}"`,
+          limit: "all",
+        },
+      }),
+    ) as ItemQueryReport;
+    expect(report).toMatchObject({
+      contractVersion: 3,
+      command: "zotlit:query",
+      request: { from: "annotations" },
+      ok: true,
+      truncated: false,
+    });
+    const parents = ATTACHMENTS.filter(
+      (attachment) => attachment.parentItemID === annotationItem.itemID,
+    );
+    const expected = ANNOTATIONS.filter((annotation) =>
+      parents.some((parent) => parent.itemID === annotation.parentItemID),
+    );
+    expect(report.returnedCount).toBe(expected.length);
+    expect(report.rows!.map((row) => row.indexedKey).toSorted()).toEqual(
+      expected.map((annotation) => annotation.key).toSorted(),
+    );
+    expect(report.rows![0]).toMatchObject({
+      itemIndexedKey: annotationItem.key,
+      attachmentIndexedKey: expect.any(String),
+      values: {
+        type: expect.any(String),
+        colorName: expect.any(String),
+        pageIndex: expect.any(Number),
+        "item.title": annotationItem.title,
+        attachment: { path: expect.any(String), exists: true },
+      },
+    });
+    expect(report.rows![0]!.values).not.toHaveProperty("position");
+    const filtered = JSON.parse(
+      await cliCommand(queryVaultId, "zotlit:query", {
+        args: {
+          from: "annotations",
+          filter: `item.indexedKey == "${annotationItem.key}" && type == "image" && item.title == ${JSON.stringify(annotationItem.title)}`,
+          fields: "type,item.title,item.date",
+          sort: "pageIndex",
+          limit: "all",
+        },
+      }),
+    ) as ItemQueryReport;
+    expect(filtered).toMatchObject({
+      ok: true,
+      command: "zotlit:query",
+    });
+    expect(filtered.rows!.map((row) => row.indexedKey).toSorted()).toEqual(
+      expected
+        .filter((annotation) => annotation.type === 3)
+        .map((annotation) => annotation.key)
+        .toSorted(),
+    );
+    const schema = JSON.parse(
+      await cliCommand(queryVaultId, "zotlit:query-schema", {
+        args: { from: "annotations" },
+      }),
+    ) as ItemQuerySchemaReport;
+    expect(schema).toMatchObject({
+      contractVersion: 3,
+      command: "zotlit:query-schema",
+      ok: true,
+      schema: { url: expect.stringContaining("/query.schema.json") },
+      defaults: {
+        annotations: {
+          fields: expect.arrayContaining(["type", "item.title"]),
+          limit: 100,
+        },
+      },
+    });
+    const catalog = JSON.parse(
+      await readFile(
+        join(workspaceRoot, "packages/item-query/dist/query.schema.json"),
+        "utf8",
+      ),
+    ) as { datasets: { annotations: { fields: object[] } } };
+    expect(catalog.datasets.annotations.fields).toContainEqual({
+      path: "item.title",
+      type: "string",
+      filter: "string",
+      projection: true,
+      group: true,
+      sort: true,
+    });
+    const invalid = JSON.parse(
+      await cliCommand(queryVaultId, "zotlit:query", {
+        args: { from: "annotations", filter: "item.title.startsWith(1)" },
+      }),
+    ) as ItemQueryReport;
+    expect(invalid).toMatchObject({
+      contractVersion: 3,
+      command: "zotlit:query",
+      ok: false,
+      diagnostic: {
+        code: "wrong-argument-type",
+        location: { argument: "filter", span: { from: 22, to: 23 } },
+      },
+    });
+
+    const positions = JSON.parse(
+      await cliCommand(queryVaultId, "zotlit:query", {
+        args: {
+          from: "annotations",
+          filter: `${JSON.stringify([annotationItem.key, positionDocumentItem.key])}.contains(item.indexedKey)`,
+          fields: "position",
+          limit: "all",
+        },
+      }),
+    ) as ItemQueryReport;
+    expect(positions).toMatchObject({ ok: true, truncated: false });
+    const byKey = Object.fromEntries(
+      positions.rows!.map((row) => [row.indexedKey, row.values.position]),
+    );
+    expect(byKey).toMatchObject({
+      HIGHLGHT: { kind: "pdf-rects" },
+      EPUBAN22: { kind: "epub-cfi" },
+      SNAPAN22: { kind: "snapshot-css" },
+    });
+  });
+
+  it("runs every zotlit:query-guide example on the Fixture", async () => {
+    const guide = await cliCommand(vaultId, "zotlit:query-guide");
+    const prefix = "obsidian zotlit:query ";
+    const examples = guide
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(
+        (line) =>
+          line.startsWith(prefix) && !line.slice(prefix.length).startsWith("["),
+      );
+    expect(examples.length).toBeGreaterThan(10);
+    for (const line of examples) {
+      // Guide examples quote whole values with single quotes; the unit test
+      // verifies that their values contain no single quote themselves.
+      const tokens: string[] = [];
+      let token = "";
+      let quoted = false;
+      for (const char of line.slice(prefix.length)) {
+        if (char === "'") quoted = !quoted;
+        else if (char === " " && !quoted) {
+          if (token) tokens.push(token);
+          token = "";
+        } else token += char;
+      }
+      if (token) tokens.push(token);
+      const result = JSON.parse(
+        await cli([`vault=${vaultId}`, "zotlit:query", ...tokens]),
+      ) as ItemQueryReport;
+      expect(result, line).toMatchObject({
+        contractVersion: 3,
+        command: "zotlit:query",
+        ok: true,
+        warnings: [],
+      });
+    }
+    for (const topic of [
+      "datasets",
+      "filter",
+      "fields",
+      "sort",
+      "group",
+      "results",
+      "schema",
+      "cancel",
+    ]) {
+      const text = await cliCommand(vaultId, "zotlit:query-guide", {
+        args: { topic },
+      });
+      expect(guide).toContain(text);
+      expect(text.length).toBeLessThan(guide.length);
+    }
+  });
+
+  it("describes ZotLit Query through zotlit:query-schema", async () => {
+    const version = await obEval(
+      vaultId,
+      "app.plugins.plugins.zotlit.manifest.version",
+    );
+    const answer = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query-schema"),
+    ) as ItemQuerySchemaReport;
+
+    expect(answer).toMatchObject({
+      contractVersion: 3,
+      command: "zotlit:query-schema",
+      ok: true,
+      schema: {
+        url: `https://github.com/aidenlx/zotlit/releases/download/res-${version}/query.schema.json`,
+        fileName: `zotlit-query-${version}.schema.json`,
+      },
+      defaults: {
+        items: {
+          fields: ["itemType", "title", "creators", "date", "dateModified"],
+          sort: [{ field: "dateModified", direction: "desc" }],
+          limit: 100,
+          library: { source: "library-scope" },
+        },
+      },
+    });
+    expect(answer.customFields).toEqual(expect.any(Array));
+    expect(Object.keys(answer.schema!)).toEqual(["url", "fileName"]);
+    // Dev versions have no Resource Release; inspect the same build artifact
+    // that release CI stages and verifies at the reported version-pinned URL.
+    const catalog = JSON.parse(
+      await readFile(
+        join(workspaceRoot, "packages/item-query/dist/query.schema.json"),
+        "utf8",
+      ),
+    ) as {
+      datasets: Record<string, { fields: object[] }>;
+      functions: { name: string }[];
+      types: string[];
+      methods: object[];
+    };
+    expect(catalog.datasets.items!.fields).toContainEqual({
+      path: "title",
+      type: "string",
+      filter: "string",
+      projection: true,
+      group: true,
+      sort: true,
+    });
+    for (const dataset of ["items", "attachments", "annotations"])
+      for (const path of ["indexedKey", "key"])
+        expect(catalog.datasets[dataset]!.fields).toContainEqual(
+          expect.objectContaining({ path, projection: true, sort: true }),
+        );
+    expect(catalog.datasets.attachments!.fields).toContainEqual(
+      expect.objectContaining({
+        path: "fileType",
+        projection: true,
+        filter: "string",
+        sort: true,
+        group: true,
+        valueForms: ["pdf", "epub", "web", "other"],
+      }),
+    );
+    expect(catalog.functions.map(({ name }) => name)).toContain("today");
+    expect(catalog.types).toContain("regexp");
+    expect(catalog.methods).toContainEqual(
+      expect.objectContaining({
+        name: "filter",
+        on: "list",
+        scope: ["value", "index"],
+      }),
+    );
+  });
+
+  it("rejects unavailable datasets and the removed libraries parameter through zotlit:query", async () => {
+    const unsupported = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query", {
+        args: { from: "unknown" },
+      }),
+    );
+    expect(unsupported).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "invalid-argument",
+        expected: ["items", "attachments", "annotations"],
+      },
+    });
+    const removed = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query", { args: { libraries: "all" } }),
+    );
+    expect(removed).toMatchObject({
+      ok: false,
+      diagnostic: { hint: expect.stringContaining("Use library=") },
+    });
+  });
+
+  it("answers an invalid zotlit:query with the code, location, and hint", async () => {
+    for (const [name, value] of [
+      ["filter", 'title == "no such item"'],
+      ["limit", "all"],
+    ] as const) {
+      const malformed = JSON.parse(
+        await cliCommand(vaultId, "zotlit:query", {
+          args: { [`--${name}`]: value },
+        }),
+      ) as ItemQueryReport;
+      expect(malformed).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "invalid-argument",
+          details: { parameter: `--${name}` },
+        },
+      });
+    }
+    const answer = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query", {
+        args: {
+          filter: "title.startsWith(1)",
+        },
+      }),
+    ) as ItemQueryReport;
+
+    expect(answer).toMatchObject({
+      contractVersion: 3,
+      command: "zotlit:query",
+      ok: false,
+      diagnostic: {
+        code: "wrong-argument-type",
+        location: { argument: "filter", span: { from: 17, to: 18 } },
+        found: "a number",
+        expected: ["a string"],
+      },
+    });
+  });
+
+  // Failure modes: CLI serialization must preserve syntax corrections, ranked
+  // names, and successful warnings; report boundaries must match legacy fields.
+  it("reports zotlit:query syntax, unknown names, and never-true warnings", async () => {
+    for (const probe of [
+      {
+        filter: 'itemType == "book" AND date.year > 2010',
+        ok: false,
+        code: "invalid-filter",
+        at: "AND",
+        suggestion: 'itemType == "book" && date.year > 2010',
+      },
+      {
+        filter: "year > 2015",
+        ok: false,
+        code: "unknown-field",
+        at: "year",
+        suggestion: "date.year",
+      },
+      {
+        filter: 'tags == "bulk"',
+        ok: true,
+        code: "never-true",
+        at: 'tags == "bulk"',
+        suggestion: 'tags.contains("bulk")',
+      },
+    ]) {
+      const answer = JSON.parse(
+        await cliCommand(vaultId, "zotlit:query", {
+          args: { filter: probe.filter, fields: "[]", limit: "1" },
+        }),
+      ) as ItemQueryReport;
+      expect(answer).toMatchObject({
+        contractVersion: 3,
+        command: "zotlit:query",
+        ok: probe.ok,
+      });
+      const diagnostic = probe.ok ? answer.warnings?.[0] : answer.diagnostic;
+      expect(diagnostic).toMatchObject({
+        code: probe.code,
+        severity: probe.ok ? "warning" : "error",
+        excerpt: { at: probe.at },
+      });
+      expect(diagnostic!.suggestions[0]).toBe(probe.suggestion);
+      expect(diagnostic!.message).not.toBe("");
+      expect(diagnostic!.hint).not.toBe("");
+      expect(diagnostic!.report[0]).toBe(diagnostic!.message);
+      expect(diagnostic!.report.at(-1)).toBe(diagnostic!.hint);
+      if (probe.ok) {
+        expect(answer.warnings).toHaveLength(1);
+        expect(answer).toMatchObject({
+          returnedCount: 0,
+          rows: [],
+          truncated: false,
+        });
+        expect(Object.keys(answer).indexOf("warnings")).toBeLessThan(
+          Object.keys(answer).indexOf("rows"),
+        );
+      }
+    }
+  });
+
+  it("reports zotlit:query from=annotations syntax, unknown names, and never-true warnings", async () => {
+    for (const probe of [
+      {
+        filter: 'type == "image" AND item.date.year > 2010',
+        ok: false,
+        code: "invalid-filter",
+        at: "AND",
+        suggestion: 'type == "image" && item.date.year > 2010',
+      },
+      {
+        filter: "pageLable == 1",
+        ok: false,
+        code: "unknown-field",
+        at: "pageLable",
+        suggestion: "pageLabel",
+      },
+      {
+        filter: 'tags == "bulk"',
+        ok: true,
+        code: "never-true",
+        at: 'tags == "bulk"',
+        suggestion: 'tags.contains("bulk")',
+      },
+    ]) {
+      const answer = JSON.parse(
+        await cliCommand(vaultId, "zotlit:query", {
+          args: {
+            from: "annotations",
+            filter: probe.filter,
+            fields: "[]",
+            limit: "1",
+          },
+        }),
+      ) as ItemQueryReport;
+      expect(answer).toMatchObject({
+        contractVersion: 3,
+        command: "zotlit:query",
+        ok: probe.ok,
+      });
+      const diagnostic = probe.ok ? answer.warnings?.[0] : answer.diagnostic;
+      expect(diagnostic).toMatchObject({
+        code: probe.code,
+        severity: probe.ok ? "warning" : "error",
+        excerpt: { at: probe.at },
+      });
+      expect(diagnostic!.suggestions[0]).toBe(probe.suggestion);
+      expect(diagnostic!.message).not.toBe("");
+      expect(diagnostic!.hint).not.toBe("");
+      expect(diagnostic!.report[0]).toBe(diagnostic!.message);
+      expect(diagnostic!.report.at(-1)).toBe(diagnostic!.hint);
+      if (probe.ok) {
+        expect(answer.warnings).toHaveLength(1);
+        expect(answer).toMatchObject({
+          returnedCount: 0,
+          rows: [],
+          truncated: false,
+        });
+        expect(Object.keys(answer).indexOf("warnings")).toBeLessThan(
+          Object.keys(answer).indexOf("rows"),
+        );
+      }
+    }
+  });
+
+  it("rejects retired ZotLit Query selectors with filter guidance", async () => {
+    for (const parameter of ["item", "attachment"]) {
+      const result = JSON.parse(
+        await cliCommand(vaultId, "zotlit:query", {
+          args: {
+            from: "annotations",
+            [parameter]: "QANITM22",
+            library: "personal",
+          },
+        }),
+      ) as ItemQueryReport;
+      expect(result).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "invalid-argument",
+          location: { argument: parameter },
+          hint: `Use filter='${parameter}.indexedKey == "<key>"' to select by Indexed Key.`,
+        },
+      });
+      expect(result.diagnostic!.report.at(-1)).toBe(result.diagnostic!.hint);
+    }
+  });
+
+  it("discovers Collection paths with zotlit:query-values and warns about unknown paths", async () => {
+    const listing = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query-values", {
+        args: { kind: "collections", library: "personal", limit: "all" },
+      }),
+    ) as {
+      ok: boolean;
+      contractVersion: number;
+      values: { library: string; values: string[]; truncated: boolean }[];
+    };
+    expect(listing).toMatchObject({
+      ok: true,
+      contractVersion: 3,
+      values: [{ library: "personal", truncated: false }],
+    });
+    const collection = COLLECTIONS.find(({ key }) => key === "PERSCHLD")!;
+    const parent = COLLECTIONS.find(
+      ({ collectionID }) => collectionID === collection.parentCollectionID,
+    )!;
+    const path = listing.values[0]!.values.find(
+      (value) => value === `${parent.name}/${collection.name}`,
+    );
+    expect(path).toBeDefined();
+    const found = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query", {
+        args: {
+          library: "personal",
+          filter: `collections.within(${JSON.stringify(path)})`,
+          fields: "[]",
+          limit: "all",
+        },
+      }),
+    ) as ItemQueryReport;
+    expect(found.ok).toBe(true);
+    expect(found.returnedCount).toBeGreaterThan(0);
+    expect(found.warnings).toEqual([]);
+    const wrong = path!.toUpperCase();
+    expect(wrong).not.toBe(path);
+    const unknown = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query", {
+        args: {
+          library: "personal",
+          filter: `collections.within(${JSON.stringify(wrong)})`,
+          fields: "[]",
+        },
+      }),
+    ) as ItemQueryReport;
+    expect(unknown).toMatchObject({
+      ok: true,
+      rows: [],
+      warnings: [
+        { code: "unknown-collection", severity: "warning", found: wrong },
+      ],
+    });
+    expect(unknown.warnings![0]!.suggestions[0]).toBe(path);
+    expect(unknown.warnings![0]!.hint).toContain(
+      "zotlit:query-values kind=collections",
+    );
+  });
+
+  it("warns for a ZotLit Query Indexed Key outside the Target Libraries", async () => {
+    const groupLibrary = LIBRARIES.find((library) => library.groupID !== null)!;
+    const groupItem = ITEMS.find(
+      (item) => item.libraryID === groupLibrary.libraryID,
+    )!;
+    const indexedKey = `${groupItem.key}g${groupLibrary.groupID}`;
+    const result = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query", {
+        args: {
+          library: "personal",
+          filter: `indexedKey == "${indexedKey}"`,
+          fields: "[]",
+          limit: "all",
+        },
+      }),
+    ) as ItemQueryReport;
+    expect(result).toMatchObject({
+      ok: true,
+      rows: [],
+      returnedCount: 0,
+      truncated: false,
+      libraries: [{ type: "personal" }],
+      request: { library: ["personal"] },
+      warnings: [
+        {
+          code: "key-outside-target-libraries",
+          severity: "warning",
+          found: indexedKey,
+          suggestions: [`library=personal,group:${groupLibrary.groupID}`],
+        },
+      ],
+    });
+  });
+
+  it("answers a -- token on a required or format parameter with the zotlit decoder's diagnostic", async () => {
+    // Obsidian itself checks a required flag and turns a format alias into
+    // format=<value>; each token here must still reach the zotlit decoder.
+    const resolved = JSON.parse(
+      await cliCommand(vaultId, "zotlit:resolve", {
+        args: { "--file": "/tmp/a.md" },
+      }),
+    ) as { errors: { code: string; message: string }[] };
+    expect(resolved.errors).toEqual([
+      {
+        code: "flags-invalid",
+        message: expect.stringContaining("use file=<value>"),
+      },
+    ]);
+
+    const data = JSON.parse(
+      await cli([
+        `vault=${vaultId}`,
+        "zotlit:template-data",
+        "root=note",
+        "key=ABCD2345",
+        "--json",
+      ]),
+    ) as unknown;
+    expect(data).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "INVALID_SELECTOR",
+        details: { parameter: "--json" },
+      },
+    });
+  });
+
+  it("sorts titles in the pinned ZotLit Query string order", async () => {
+    // The order Node gives in the package tests; this run proves that the
+    // collator of Obsidian's Electron gives the same.
+    const answer = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query", {
+        args: {
+          filter:
+            '["Zebra", "apple", "Éclair", "eclair", "10", "9"].contains(title)',
+          fields: "title",
+          sort: "title",
+          limit: "all",
+        },
+      }),
+    ) as ItemQueryReport;
+
+    expect(answer.ok).toBe(true);
+    expect(answer.rows!.map((row) => row.values.title)).toEqual([
+      "10",
+      "9",
+      "apple",
+      "eclair",
+      "Éclair",
+      "Zebra",
+    ]);
+  });
   it("refreshes the database from a Freshness Signal", async () => {
     const services = "app.plugins.plugins.zotlit.services";
     const autoRefresh = await obEval(
@@ -3141,6 +4776,58 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     }
   }, 120_000);
 });
+
+/** The `zotlit:query` reply shape this suite reads (see
+ *  apps/obsidian/src/services/item-query/contract.ts and answer.ts). */
+interface ItemQueryReport {
+  contractVersion: number;
+  command: string;
+  ok: boolean;
+  identity?: { source: { id: string | null; databasePath: string } };
+  libraries?: (
+    | { type: "personal" }
+    | { type: "group"; groupID: number; name: string }
+  )[];
+  request?: {
+    from: "items" | "attachments" | "annotations";
+    library: string[];
+    fields: string[];
+    limit: number | null;
+  };
+  returnedCount?: number;
+  totalCount?: number;
+  groups?: {
+    value: string | number | boolean | null;
+    count: number;
+    rows: { indexedKey: string; values: Record<string, unknown> }[];
+  }[];
+  truncated?: boolean;
+  rows?: { indexedKey: string; values: Record<string, unknown> }[];
+  diagnostic?: ItemQueryDiagnostic;
+  warnings?: ItemQueryDiagnostic[];
+}
+
+interface ItemQueryDiagnostic {
+  code: string;
+  message: string;
+  hint: string;
+  report: string[];
+  suggestions: string[];
+  severity: "error" | "warning";
+  excerpt?: { before: string; at: string; after: string };
+  location?: { argument: string; span?: { from: number; to: number } };
+}
+
+/** The `zotlit:query-schema` reply shape this suite reads (see
+ *  apps/obsidian/src/services/item-query/contract.ts and answer.ts). */
+interface ItemQuerySchemaReport {
+  contractVersion: number;
+  command: string;
+  ok: boolean;
+  schema?: { url: string; fileName: string };
+  customFields?: { name: string; path: string; bareName: boolean }[];
+  defaults?: object;
+}
 
 /** The `zotlit:library-scope` reply shape this suite reads (see
  *  apps/obsidian/src/services/library-scope/cli.ts). */
