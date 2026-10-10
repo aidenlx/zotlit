@@ -1728,5 +1728,119 @@
       "limitation": null,
       "exportPath": null
     }
+  },
+  "discover_collection": {
+    "provenance": "Reviewed contract example; verified against the seeded corpus by corpus-query.test.mjs.",
+    "envelope": {
+      "contractVersion": 3,
+      "command": "zotlit:query",
+      "ok": true,
+      "identity": {
+        "vault": {
+          "name": "vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a",
+          "path": "/evaluation-run/vault-e2c9c19d-18bb-4310-8ac1-d34ef55bfd0a"
+        },
+        "source": {
+          "databasePath": "/evaluation-run/corpus/zotero-data/zotero.sqlite",
+          "id": "34ecb303"
+        }
+      },
+      "libraries": [
+        {
+          "type": "personal"
+        }
+      ],
+      "request": {
+        "from": "items",
+        "library": ["personal"],
+        "filter": "collections.within(\"Query thesis\")",
+        "fields": ["title", "date.year"],
+        "limit": null
+      },
+      "returnedCount": 5,
+      "truncated": false,
+      "warnings": [],
+      "rows": [
+        {
+          "indexedKey": "QCZRPP22",
+          "values": {
+            "title": "Thesis review without files",
+            "date.year": 2020
+          }
+        },
+        {
+          "indexedKey": "QCSNG222",
+          "values": {
+            "title": "深度学习 in clinical attention",
+            "date.year": 2021
+          }
+        },
+        {
+          "indexedKey": "QCTWN222",
+          "values": {
+            "title": "Clinical attention with two editions",
+            "date.year": 2021
+          }
+        },
+        {
+          "indexedKey": "QCMISS22",
+          "values": {
+            "title": "Clinical attention missing its file",
+            "date.year": null
+          }
+        },
+        {
+          "indexedKey": "QCWEB222",
+          "values": {
+            "title": "Thesis background reading",
+            "date.year": 2018
+          }
+        }
+      ]
+    },
+    "answer": {
+      "answer": "Complete research results.",
+      "count": 5,
+      "rows": [
+        {
+          "indexedKey": "QCZRPP22",
+          "values": {
+            "title": "Thesis review without files",
+            "date.year": 2020
+          }
+        },
+        {
+          "indexedKey": "QCSNG222",
+          "values": {
+            "title": "深度学习 in clinical attention",
+            "date.year": 2021
+          }
+        },
+        {
+          "indexedKey": "QCTWN222",
+          "values": {
+            "title": "Clinical attention with two editions",
+            "date.year": 2021
+          }
+        },
+        {
+          "indexedKey": "QCMISS22",
+          "values": {
+            "title": "Clinical attention missing its file",
+            "date.year": null
+          }
+        },
+        {
+          "indexedKey": "QCWEB222",
+          "values": {
+            "title": "Thesis background reading",
+            "date.year": 2018
+          }
+        }
+      ],
+      "groups": [],
+      "limitation": null,
+      "exportPath": null
+    }
   }
 }
