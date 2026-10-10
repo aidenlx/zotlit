@@ -483,21 +483,26 @@ export class CitationText extends Service<void> {
       grouped.flatMap((citation) =>
         citation.indexedKey === null
           ? []
-          : citation.occurrences.flatMap((occurrence) =>
-              occurrence.kind === "wikilink"
+          : citation.occurrences.flatMap((occurrence) => {
+              if (occurrence.kind !== "wikilink") return [];
+              const note = this.#app.metadataCache.getFirstLinkpathDest(
+                occurrence.raw,
+                file.path,
+              );
+              return note
                 ? [
                     [
                       occurrence.raw,
                       {
-                        path: occurrence.raw,
+                        path: note.path,
                         indexedKey: citation.indexedKey!,
                         citationKey:
                           lookup.citekeyOf(citation.indexedKey!) ?? null,
                       },
                     ] as const,
                   ]
-                : [],
-            ),
+                : [];
+            }),
       ),
     );
     const context = {
