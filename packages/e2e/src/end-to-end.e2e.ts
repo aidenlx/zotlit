@@ -3068,9 +3068,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           vaultId,
           `app.plugins.plugins.zotlit.services.itemLookup.search(${JSON.stringify(targetItem.title)},{limit:1}).then(JSON.stringify)`,
         ),
-      ) as { item: { itemID: number; title: string } }[];
+      ) as { item: { itemID: number; fields: { title: string } } }[];
       expect(hits).toMatchObject([
-        { item: { itemID: targetItem.itemID, title: targetItem.title } },
+        {
+          item: {
+            itemID: targetItem.itemID,
+            fields: { title: targetItem.title },
+          },
+        },
       ]);
       await obEval(
         vaultId,
