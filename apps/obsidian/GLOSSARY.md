@@ -756,7 +756,7 @@ _Avoid_: allowed folder, trusted directory (implies a broader grant than one Att
 ### Database access
 
 **ZoteroReads**:
-The plugin's asynchronous interface to the Zotero database: a set of use-case operations that workers answer with plain data. Interactive reads and the Citation Index bulk read have separate read capabilities. Each capability owns its connection and Read Mode; interactive ZoteroReads owns file watching and source change detection. Two operations read one database state only when they share a Snapshot within one capability.
+The plugin's asynchronous interface to the Zotero database: use-case operations that one worker answers with plain data, with one connection and Read Mode for interactive reads and the Citation Index. ZoteroReads owns file watching and source change detection; operations that share a Snapshot read one database state across a refresh.
 _Avoid_: database service, DB client (the renderer holds no client)
 
 **Snapshot** _(ZoteroReads)_:
