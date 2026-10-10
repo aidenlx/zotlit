@@ -164,6 +164,7 @@ export class GraphCitations extends Service<void> {
   readonly #citationIndex;
   /** The exact forward answers needed by the current graph facts. */
   #lookup: CitationLookupObservation | null = null;
+  #installationCount = 0;
   /** The occurrence set paired with {@link #lookup}'s current request. */
   #occurrences: ReadonlyMap<string, readonly CitationOccurrence[]> = new Map();
   readonly #noteIndex;
@@ -238,10 +239,8 @@ export class GraphCitations extends Service<void> {
 
     await using stack = new AsyncDisposableStack();
     const { workspace } = this.#app;
-    this.#lookup = stack.use(
-      this.#citationIndex.observeLookup(() => this.#invalidateLabels()),
-    );
     stack.defer(() => {
+      this.#lookup?.[Symbol.dispose]();
       this.#lookup = null;
       this.#occurrences = new Map();
     });
@@ -448,7 +447,11 @@ export class GraphCitations extends Service<void> {
     restores.use(
       wrapNodeHover(members, this.#hoverDeps(), () => installation.additions),
     );
+    this.#lookup ??= this.#citationIndex.observeLookup(() =>
+      this.#invalidateLabels(),
+    );
     this.#installations.set(renderer, installation);
+    this.#installationCount += 1;
     // The view closing is one of the two things that end this installation: a
     // closed leaf is gone from the walk the service tears down through, and
     // nothing native unhovers a node on the way out — so a hold left standing
@@ -466,8 +469,16 @@ export class GraphCitations extends Service<void> {
 
   /** Puts one leaf's swapped members back and lets go of its installation. */
   #uninstall(installation: GraphInstallation): void {
+    if (this.#installations.get(installation.members.renderer) !== installation)
+      return;
     installation.restores.dispose();
     this.#installations.delete(installation.members.renderer);
+    this.#installationCount -= 1;
+    if (this.#installationCount === 0) {
+      this.#lookup?.[Symbol.dispose]();
+      this.#lookup = null;
+      this.#occurrences = new Map();
+    }
     installation.drawn = {};
     installation.labels.clear();
     this.#fillLabels();

@@ -514,6 +514,10 @@ class CitationIndexStub {
     this.#emitter.emit(event);
   }
 
+  get lookupCount(): number {
+    return this.#observations.size;
+  }
+
   observeLookup(changed: () => void) {
     const state = {
       changed,
@@ -1616,6 +1620,7 @@ describe("GraphCitations hovers", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph", "hovered");
+    const other = fixture.addLeaf("localgraph", "remaining");
     const { containerEl } = engine.renderer;
     fixture.layoutReady();
     engine.renderer.onNodeHover(
@@ -1631,6 +1636,8 @@ describe("GraphCitations hovers", () => {
     // Closing by keyboard leaves the pointer where it was, so nothing
     // unhovers the node on the way out.
     fixture.closeLeaf("hovered");
+    expect(fixture.citationIndex.lookupCount).toBe(1);
+    expect(rowNames(other).length).toBeGreaterThan(0);
 
     popover.onTarget = false;
     vi.advanceTimersByTime(600);
@@ -1638,6 +1645,8 @@ describe("GraphCitations hovers", () => {
     expect(popover.transition).toHaveBeenCalledOnce();
     expect(containerEl.children).toHaveLength(0);
     expect(rowNames(engine)).toEqual([]);
+    fixture.closeLeaf("remaining");
+    expect(fixture.citationIndex.lookupCount).toBe(0);
   });
 
   it("lets go of a hold on the window that armed it, after the graph moved to a pop-out", async () => {
@@ -2139,16 +2148,20 @@ describe("GraphCitations teardown", () => {
     const fixture = makeFixture();
     await using service = fixture.service;
     await service.ready;
+    expect(fixture.citationIndex.lookupCount).toBe(0);
     const engine = fixture.addLeaf("graph");
     const nativeClick = engine.renderer.onNodeClick;
     const nativeRightClick = engine.renderer.onNodeRightClick;
     fixture.layoutReady();
+    expect(fixture.citationIndex.lookupCount).toBe(1);
     fixture.settings.update({ "citation.graph-citations": false });
+    expect(fixture.citationIndex.lookupCount).toBe(0);
     expect(engine.renderer.onNodeClick).toBe(nativeClick);
     expect(engine.renderer.onNodeRightClick).toBe(nativeRightClick);
 
     fixture.settings.update({ "citation.graph-citations": true });
 
+    expect(fixture.citationIndex.lookupCount).toBe(1);
     expect(engine.renders).toHaveLength(3);
     expect(engine.renders[2]!.facaded).toBe(true);
     expect(engine.renderer.onNodeClick).not.toBe(nativeClick);
