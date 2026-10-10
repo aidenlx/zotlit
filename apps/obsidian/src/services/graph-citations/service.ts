@@ -16,8 +16,14 @@ import { disposable, registerEvent } from "@/lib/disposables";
 import { workLabel } from "@/lib/item-summary";
 import type { WorkLabel } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
-import type { CitationSyntax } from "@/services/citation-index/scan";
-import type { CitationIndex } from "@/services/citation-index/service";
+import type {
+  CitationOccurrence,
+  CitationSyntax,
+} from "@/services/citation-index/scan";
+import type {
+  CitationIndex,
+  CitationLookupObservation,
+} from "@/services/citation-index/service";
 import type { CitationPopover } from "@/services/citation-popover/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import type { NavigationPane } from "@/services/citekey-navigation";
@@ -72,7 +78,6 @@ const RENDER_SETTLE_MS = 150;
 const CITATION_INDEX_EVENTS = [
   "changed",
   "backfilled",
-  "resolution-changed",
   "membership-changed",
 ] as const;
 
@@ -80,10 +85,9 @@ export interface GraphCitationsDeps {
   app: App;
   reads: Pick<ZoteroReadsService, "ready" | "on">;
   libraryScope: Pick<LibraryScopeService, "current">;
-  citationIndex: Pick<
-    CitationIndex,
-    "ready" | "citationsByPath" | "resolveCitekey" | "citekeyOf" | "on"
-  >;
+  citationIndex: Pick<CitationIndex, "ready" | "citationsByPath" | "on"> & {
+    observeLookup(changed: () => void): CitationLookupObservation;
+  };
   noteIndex: Pick<NoteIndex, "getIndexedItemKeys" | "getNotesByItemKey" | "on">;
   citekeyEditor: Pick<CitekeyEditor, "openCitekey" | "openIndexedKey">;
   /** The entries a hovered Literature Note or Cited Work Node shows. */
@@ -158,6 +162,10 @@ export class GraphCitations extends Service<void> {
     fiber: Fiber.Fiber<ReadonlyMap<string, WorkLabelSource>, unknown>;
   } | null = null;
   readonly #citationIndex;
+  /** The exact forward answers needed by the current graph facts. */
+  #lookup: CitationLookupObservation | null = null;
+  /** The occurrence set paired with {@link #lookup}'s current request. */
+  #occurrences: ReadonlyMap<string, readonly CitationOccurrence[]> = new Map();
   readonly #noteIndex;
   readonly #citekeyEditor;
   readonly #citationPopover;
@@ -230,6 +238,13 @@ export class GraphCitations extends Service<void> {
 
     await using stack = new AsyncDisposableStack();
     const { workspace } = this.#app;
+    this.#lookup = stack.use(
+      this.#citationIndex.observeLookup(() => this.#invalidateLabels()),
+    );
+    stack.defer(() => {
+      this.#lookup = null;
+      this.#occurrences = new Map();
+    });
     stack.use(
       installGraphViewCreation(this.#app, (leaf, view) => {
         if (this.#stopped || !this.#enabled) return;
@@ -423,7 +438,8 @@ export class GraphCitations extends Service<void> {
     );
     const nodeDeps: NodeRightClickDeps = {
       citekeyOf: (id) => installation.additions.citedWorkNodes.get(id),
-      resolveCitekey: (citekey) => this.#citationIndex.resolveCitekey(citekey),
+      resolveCitekey: (citekey) =>
+        this.#lookup?.current?.value.resolve(citekey) ?? null,
       open: this.#open,
       workspace: this.#app.workspace,
     };
@@ -589,7 +605,7 @@ export class GraphCitations extends Service<void> {
           : undefined;
         const citekey = installation.additions.citedWorkNodes.get(id);
         if (citekey !== undefined) {
-          const resolution = this.#citationIndex.resolveCitekey(citekey);
+          const resolution = this.#lookup?.current?.value.resolve(citekey);
           key =
             resolution?.kind === "unique"
               ? resolution.item.indexedKey
@@ -654,9 +670,22 @@ export class GraphCitations extends Service<void> {
     const syntaxes: CitationSyntax[] = this.#wikilinkCitations
       ? ["citekey", "wikilink"]
       : ["citekey"];
+    this.#occurrences = this.#citationIndex.citationsByPath(syntaxes);
+    this.#lookup?.set({
+      citekeys: [
+        ...new Set(
+          [...this.#occurrences.values()].flatMap((occurrences) =>
+            occurrences.flatMap((occurrence) =>
+              occurrence.kind === "citekey" ? [occurrence.raw] : [],
+            ),
+          ),
+        ),
+      ],
+    });
     return graphCitationAdditions({
-      occurrences: this.#citationIndex.citationsByPath(syntaxes),
-      resolveCitekey: (citekey) => this.#citationIndex.resolveCitekey(citekey),
+      occurrences: this.#occurrences,
+      resolveCitekey: (citekey) =>
+        this.#lookup?.current?.value.resolve(citekey) ?? null,
       resolveLink: (linkpath, sourcePath) =>
         this.#app.metadataCache.getFirstLinkpathDest(linkpath, sourcePath)
           ?.path ?? null,
