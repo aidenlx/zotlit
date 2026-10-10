@@ -325,7 +325,7 @@ it("scans when a Relation List exhausts its element page budget", async () => {
       'attachments.filter(value.tags.contains("selected")).length > 0',
     ),
   ).toBeNull();
-  expect(reads).toEqual([1, 1, 1, 1]);
+  expect(reads).toEqual([1, 1, 1, 1, 1, 1]);
   expect(logs[0]?.properties).toMatchObject({
     plan: "scan",
     candidateCount: null,
@@ -447,5 +447,54 @@ it.each([
       expected === null ? null : new Set(expected),
     );
     expect(logs[0]?.properties).toMatchObject({ reason });
+  },
+);
+
+it.each([false, true])(
+  "logs a Parent Record page budget outcome (exhausted: %s)",
+  async (exhausted) => {
+    const { ATTACHMENTS } = await import("./query-attachments");
+    const parent = fake(40_000, []);
+    const reads: number[] = [];
+    const dataset: CandidateDataset = {
+      ...parent.dataset,
+      id: "attachments",
+      candidateParents: ATTACHMENTS.candidateParents,
+      candidateRelations: {
+        item: {
+          dataset: () => parent.dataset,
+          readChildren: ({ budget }) =>
+            Effect.sync(() => {
+              reads.push(budget);
+              return {
+                itemIDs: [7],
+                exhausted,
+              };
+            }),
+        },
+      },
+    };
+    const filter = ATTACHMENTS.planFilter('item.tags.contains("selected")');
+    if (!("root" in filter)) throw new Error("Invalid test filter");
+    const run = await runEffect(
+      runCandidatePass({
+        dataset,
+        filter: filter.root,
+        library: { libraryID: 1, groupID: null },
+        sources: {
+          candidateContext: (library) => ({
+            library,
+            vocabulary: null,
+            collectionPaths: undefined,
+          }),
+        },
+        tuning: PRODUCTION_TUNING,
+      }),
+    );
+    expect(run.exit).toEqual(Exit.succeed(exhausted ? null : new Set([7])));
+    expect(reads).toEqual([3000]);
+    expect(logs[0]?.properties).toMatchObject({
+      reason: exhausted ? "parent-page-budget-exhausted" : null,
+    });
   },
 );

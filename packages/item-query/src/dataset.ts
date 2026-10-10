@@ -6,6 +6,7 @@ import type { Effect } from "effect";
 
 import type { Attachment } from "@zotlit/db";
 import type {
+  ParentCandidates,
   ItemQueryDatabase,
   ItemQueryReaderError,
   ScanRow,
@@ -72,7 +73,16 @@ export interface CandidateRelation {
 /** A reversed Parent Record relation selects child IDs with the parent leaf. */
 export interface CandidateParentRelation {
   readonly dataset: () => CandidateDataset;
-  readonly readChildren: CandidateDataset["readCandidate"];
+  readonly readChildren: (page: {
+    libraryID: number;
+    limit: number;
+    budget: number;
+    leaf: any;
+  }) => Effect.Effect<
+    ParentCandidates,
+    ItemQueryReaderError,
+    ItemQueryDatabase
+  >;
 }
 
 /** The candidate pass needs only lowering, readers, and the record relations. */

@@ -2609,6 +2609,8 @@ export const STRESS_GROUP_LIBRARY_ITEM_COUNT_CONSTRAINT =
  * Library, so a selective and a non-selective query each have a target.
  */
 export const STRESS_LIBRARY_VALUES = {
+  /** One paper: 3 tagged marks per 100 Items (300, 1,500, 3,000 at the measured tiers). */
+  annotations: { tag: "stress-many-marks", perHundredItems: 3 },
   tags: {
     /** `i % 1000 == 0`: 0.1% of the corpus. */
     rare: "stress-rare",
@@ -2652,6 +2654,8 @@ export const STRESS_LIBRARY_VALUES = {
 export interface StressLibraryCorpus {
   items: readonly FixtureItem[];
   collections: readonly FixtureCollection[];
+  attachments: readonly FixtureAttachment[];
+  annotations: readonly FixtureAnnotation[];
 }
 
 const STRESS_LIBRARY_MODIFIED_EPOCH = Temporal.Instant.from(
@@ -2696,7 +2700,8 @@ export function createStressLibraryCorpus(
     firstItemID,
     firstCollectionID,
   });
-  if (groupCount === undefined) return personal;
+  if (groupCount === undefined)
+    return addStressRelations(personal, itemCount, firstItemID + count);
   const group = fillStressLibrary({
     libraryID: STRESS_GROUP_LIBRARY.libraryID,
     count: groupCount,
@@ -2705,10 +2710,65 @@ export function createStressLibraryCorpus(
     firstItemID: firstItemID + personal.items.length,
     firstCollectionID: firstCollectionID + personal.collections.length,
   });
-  return {
-    items: [...personal.items, ...group.items],
-    collections: [...personal.collections, ...group.collections],
+  return addStressRelations(
+    {
+      items: [...personal.items, ...group.items],
+      collections: [...personal.collections, ...group.collections],
+      attachments: [],
+      annotations: [],
+    },
+    itemCount,
+    firstItemID + count + groupCount,
+  );
+}
+
+function addStressRelations(
+  corpus: StressLibraryCorpus,
+  itemCount: number,
+  firstChildID: number,
+): StressLibraryCorpus {
+  const paper = corpus.items.find((item) => item.libraryID === USER_LIBRARY_ID);
+  if (!paper) return corpus;
+  const attachment: FixtureAttachment = {
+    itemID: firstChildID,
+    libraryID: USER_LIBRARY_ID,
+    key: "STRSPDF2",
+    parentItemID: paper.itemID,
+    contentType: "application/pdf",
+    title: "Stress Build marked paper",
+    sourceAsset: "rougier-2014/rougier-2014.pdf",
+    dateModified: BUILD_TIMESTAMP,
+    linkMode: "imported_file",
+    path: "storage:stress.pdf",
+    url: null,
   };
+  const count = Math.max(
+    1,
+    Math.floor(
+      (itemCount * STRESS_LIBRARY_VALUES.annotations.perHundredItems) / 100,
+    ),
+  );
+  const annotations = Array.from(
+    { length: count },
+    (_, i): FixtureAnnotation => ({
+      itemID: firstChildID + 1 + i,
+      libraryID: USER_LIBRARY_ID,
+      key: stressItemKey(i),
+      parentItemID: attachment.itemID,
+      type: 1,
+      text: `Stress Build mark ${i + 1}`,
+      comment: null,
+      color: "#ffd400",
+      tags: [{ name: STRESS_LIBRARY_VALUES.annotations.tag, type: 0 }],
+      pageLabel: "1",
+      sortIndex: String(i).padStart(8, "0"),
+      dateAdded: BUILD_TIMESTAMP,
+      dateModified: BUILD_TIMESTAMP,
+      position: { pageIndex: 0, rects: [[0, 0, 10, 10]] },
+      cacheImageAsset: null,
+    }),
+  );
+  return { ...corpus, attachments: [attachment], annotations };
 }
 
 /**
@@ -2829,7 +2889,7 @@ function fillStressLibrary({
       collectionIDs,
     };
   });
-  return { items, collections };
+  return { items, collections, attachments: [], annotations: [] };
 }
 
 /**

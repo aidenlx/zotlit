@@ -45,7 +45,6 @@ export {
   readAnnotationScanPage,
   readAnnotationRowCount,
   readAnnotationCandidateSet,
-  readAnnotationAttachmentCandidateSet,
   type AnnotationCandidateLeaf,
   readAnnotationUniverseRows,
   readAnnotationHydrateChunk,
@@ -76,3 +75,8 @@ export {
 } from "./relation-candidates";
 
 export { readTagValues } from "./tag-values";
+
+export {
+  readParentCandidateSet,
+  type ParentCandidates,
+} from "./parent-candidates";

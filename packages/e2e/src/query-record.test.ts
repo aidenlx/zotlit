@@ -581,6 +581,8 @@ it("holds relation filters and dataset defaults to the existing budgets at each 
     "attachments-default",
     "annotations-default",
     "relation-tag",
+    "relation-many-marks",
+    "relation-parent-dominant",
     "relation-scan",
     "all-attachment-paths",
   ]);
@@ -614,6 +616,8 @@ it("holds relation filters and dataset defaults to the existing budgets at each 
       "attachments-default",
       "annotations-default",
       "relation-scan",
+      "relation-many-marks",
+      "relation-parent-dominant",
     ])
       expect(checks).toContain(
         `total ${id}: ${items === 100_000 ? "recorded" : "passed"}`,

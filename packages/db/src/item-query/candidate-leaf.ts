@@ -8,8 +8,3 @@ export interface KeysCandidateLeaf {
   readonly kind: "keys";
   readonly keys: readonly string[];
 }
-
-export interface ParentCandidateLeaf<Leaf> {
-  readonly kind: "parent";
-  readonly leaf: Leaf;
-}

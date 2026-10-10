@@ -140,3 +140,44 @@ it.each([1, 1_001])(
     }
   },
 );
+
+// Failure modes: a dominant Parent Record leaf expands in one long statement,
+// or a partial page result hides later matching children.
+it.each([ATTACHMENTS, ANNOTATIONS])(
+  "$id bounds a dominant Parent Record candidate read",
+  async (dataset) => {
+    using scenario = openScenarioDatabase();
+    seedBulkLibrary(scenario.sqlite, 10_000);
+    seedBulkAttachments(scenario.sqlite, 10_000);
+    seedBulkAnnotations(scenario.sqlite, 10_000);
+    const query = collectQuery(dataset, {
+      libraries: [BULK_LIBRARY],
+      filter: 'item.tags.contains("bulk")',
+      fields: [],
+      sort: [],
+    });
+    const actual = await runEffect(query, {
+      client: scenario.db,
+      tuning: { capRatio: 1 },
+    });
+    const scan = await runEffect(query, {
+      client: scenario.db,
+      tuning: { forceScan: true },
+    });
+    expect(actual.exit).toEqual(scan.exit);
+    expect(actual.exit._tag).toBe("Success");
+    const statements = candidateStatements(actual.events);
+    expect(statements).toHaveLength(1);
+    expect(
+      actual.events.some(
+        (event) =>
+          event.type === "statement" &&
+          event.statement.reader.endsWith("scan-page"),
+      ),
+    ).toBe(true);
+    for (const event of statements) {
+      if (event.type === "statement")
+        expect(event.statement.rows.length).toBeLessThanOrEqual(3001);
+    }
+  },
+);

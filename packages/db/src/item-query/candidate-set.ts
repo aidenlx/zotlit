@@ -89,9 +89,16 @@ const candidateStatements = {
       .from(items)
       .where(
         and(
-          eq(items.libraryID, placeholder("libraryID")),
           gt(items.itemID, placeholder("afterItemID")),
-          sql`${items.key} in (select value from json_each(${placeholder("value")}))`,
+          sql`${items.itemID} in (${db
+            .select({ itemID: items.itemID })
+            .from(items)
+            .where(
+              and(
+                eq(items.libraryID, placeholder("libraryID")),
+                sql`${items.key} in (select value from json_each(${placeholder("value")}))`,
+              ),
+            )})`,
         ),
       )
       .orderBy(items.itemID)
@@ -101,16 +108,22 @@ const candidateStatements = {
     db
       .select({ itemID: itemTags.itemID })
       .from(itemTags)
-      .innerJoin(tags, eq(tags.tagID, itemTags.tagID))
       .innerJoin(items, eq(items.itemID, itemTags.itemID))
       .where(
         and(
-          eq(tags.name, placeholder("value")),
+          // The tagID index orders by rowid; the primary key orders by Item ID.
+          eq(
+            unindexed(itemTags.tagID),
+            db
+              .select({ tagID: tags.tagID })
+              .from(tags)
+              .where(eq(tags.name, placeholder("value"))),
+          ),
           eq(unindexed(items.libraryID), placeholder("libraryID")),
-          gt(items.itemID, placeholder("afterItemID")),
+          gt(itemTags.itemID, placeholder("afterItemID")),
         ),
       )
-      .orderBy(items.itemID)
+      .orderBy(itemTags.itemID)
       .limit(placeholder("limit")),
   ),
   key: defineStatement<ValueParams>("candidate-set")((db, { placeholder }) =>
@@ -129,46 +142,45 @@ const candidateStatements = {
   ),
   field: defineStatement<FieldParams>("candidate-set")((db, { placeholder }) =>
     db
-      .selectDistinct({ itemID: items.itemID })
-      .from(itemDataValues)
-      // `itemData.valueID` has no declared type. The unary `+` keeps the
-      // affinity of the value ID off the comparison, so the join starts at the
-      // value and reads `itemData` through its `valueID` index.
-      .innerJoin(
-        itemData,
-        eq(itemData.valueID, unindexed(itemDataValues.valueID)),
-      )
+      .selectDistinct({ itemID: sql<number>`${itemData.itemID}` })
+      .from(itemData)
       .innerJoin(items, eq(items.itemID, itemData.itemID))
       .where(
         and(
-          or(
-            eq(itemDataValues.value, placeholder("value")),
-            eq(itemDataValues.value, placeholder("number")),
-            eq(itemDataValues.value, placeholder("integer")),
-          ),
-          // The value names the `itemData` rows; the field list checks them.
+          // Walk the (itemID, fieldID) primary key in page order. The value
+          // index supplies the small set of value IDs, without sorting matches.
+          sql`${unindexed(itemData.valueID)} in (${db
+            .select({ valueID: itemDataValues.valueID })
+            .from(itemDataValues)
+            .where(
+              or(
+                eq(itemDataValues.value, placeholder("value")),
+                eq(itemDataValues.value, placeholder("number")),
+                eq(itemDataValues.value, placeholder("integer")),
+              ),
+            )})`,
           sql`${unindexed(itemData.fieldID)} in (select value from json_each(${placeholder("fieldIDs")}))`,
           eq(unindexed(items.libraryID), placeholder("libraryID")),
-          gt(items.itemID, placeholder("afterItemID")),
+          gt(itemData.itemID, placeholder("afterItemID")),
         ),
       )
-      .orderBy(items.itemID)
+      .orderBy(itemData.itemID)
       .limit(placeholder("limit")),
   ),
   collection: defineStatement<CollectionParams>("candidate-set")(
     (db, { placeholder }) =>
       db
-        .selectDistinct({ itemID: items.itemID })
+        .selectDistinct({ itemID: collectionItems.itemID })
         .from(collectionItems)
         .innerJoin(items, eq(items.itemID, collectionItems.itemID))
         .where(
           and(
-            sql`${collectionItems.collectionID} in (select value from json_each(${placeholder("collectionIDs")}))`,
+            sql`${unindexed(collectionItems.collectionID)} in (select value from json_each(${placeholder("collectionIDs")}))`,
             eq(unindexed(items.libraryID), placeholder("libraryID")),
-            gt(items.itemID, placeholder("afterItemID")),
+            gt(collectionItems.itemID, placeholder("afterItemID")),
           ),
         )
-        .orderBy(items.itemID)
+        .orderBy(collectionItems.itemID)
         .limit(placeholder("limit")),
   ),
 } satisfies Record<CandidateLeaf["kind"], unknown>;

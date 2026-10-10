@@ -89,13 +89,38 @@ function planRelatedCandidates(
         if (expression && relation && "readChildren" in relation) {
           const leaf = relation.dataset().lowerCandidate(expression, sources);
           if (leaf === null) return null;
-          const read: CandidateReader = (page) =>
-            relation.readChildren({ ...page, leaf });
           return {
             kind: "leaf",
-            leaf: parents.length
-              ? parentCandidates(read, parents, relationPageBudget)
-              : read,
+            leaf: Effect.fnUntraced(function* ({ libraryID, limit }) {
+              const budget = relationPageBudget * SCAN_PAGE_SIZE;
+              const result = yield* relation.readChildren({
+                libraryID,
+                leaf,
+                budget,
+                limit: parents.length ? budget + 1 : limit,
+              });
+              if (
+                result.exhausted &&
+                (parents.length || result.itemIDs.length < limit)
+              )
+                return "parent-page-budget-exhausted";
+              if (!parents.length) return result.itemIDs;
+              const candidates = new Set<number>();
+              for (
+                let start = 0;
+                start < result.itemIDs.length;
+                start += SCAN_PAGE_SIZE
+              ) {
+                let ids = result.itemIDs.slice(start, start + SCAN_PAGE_SIZE);
+                for (const readParents of parents)
+                  ids = yield* readParents({ libraryID, itemIDs: ids });
+                for (const id of ids) {
+                  candidates.add(id);
+                  if (candidates.size >= limit) return [...candidates];
+                }
+              }
+              return [...candidates];
+            }),
           };
         }
       }
@@ -156,9 +181,8 @@ function parentCandidates(
         afterItemID,
       });
       let ids = elements;
-      for (const readParents of parents) {
+      for (const readParents of parents)
         ids = yield* readParents({ libraryID, itemIDs: ids });
-      }
       for (const id of ids) {
         candidates.add(id);
         if (candidates.size >= limit) return [...candidates];

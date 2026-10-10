@@ -280,11 +280,19 @@ export async function buildFixture(
         : ITEMS;
 
   assertSeededCitationKeys(items);
-  const data = vaultCaseZoteroData(
+  const baseData = vaultCaseZoteroData(
     options.vaultCase ?? DEFAULT_VAULT_CASE,
     items,
     stressLibrary ? [...COLLECTIONS, ...stressLibrary.collections] : undefined,
   );
+
+  const data = stressLibrary
+    ? {
+        ...baseData,
+        attachments: [...baseData.attachments, ...stressLibrary.attachments],
+        annotations: [...baseData.annotations, ...stressLibrary.annotations],
+      }
+    : baseData;
 
   await rm(layout.root, { recursive: true, force: true });
   await mkdir(layout.dataDir, { recursive: true });

@@ -1,8 +1,7 @@
 import {
-  collectionItems,
+  deletedItems,
   itemData,
   itemDataValues,
-  deletedItems,
   fieldsCombined,
   itemAttachments,
   items,
@@ -12,7 +11,6 @@ import {
 } from "@drizzle/schema";
 import {
   and,
-  or,
   count,
   asc,
   eq,
@@ -28,13 +26,7 @@ import { Effect } from "effect";
 import type { NodeDatabaseClient } from "@/client/node";
 import { CHILD_ITEM_TYPES } from "@/lib/item-types";
 
-import type {
-  TagCandidateLeaf,
-  KeysCandidateLeaf,
-  ParentCandidateLeaf,
-} from "./candidate-leaf";
-import { storedNumberOf, storedIntegerOf } from "./candidate-set";
-import type { CandidateLeaf } from "./candidate-set";
+import type { TagCandidateLeaf, KeysCandidateLeaf } from "./candidate-leaf";
 import { defineStatement, idSlots, unindexed } from "./database";
 import type {
   IdSlot,
@@ -316,7 +308,6 @@ export const readAttachmentRowCount = (libraryID: number) =>
 
 export type AttachmentCandidateLeaf =
   | KeysCandidateLeaf
-  | ParentCandidateLeaf<CandidateLeaf>
   | {
       readonly kind: "key" | "contentType" | "linkMode" | "fileType";
       readonly value: string;
@@ -329,39 +320,28 @@ interface AttachmentCandidateParams extends Record<string, unknown> {
   limit: number;
   value: string;
   list: string;
-  number: number | null;
-  integer: bigint | null;
 }
 
 const attachmentCandidates = (
-  kind:
-    | "key"
-    | "keys"
-    | "contentType"
-    | "fileType"
-    | "linkMode"
-    | "tag"
-    | "parent-tag"
-    | "parent-key"
-    | "parent-keys"
-    | "parent-field"
-    | "parent-collection",
+  kind: "key" | "keys" | "contentType" | "fileType" | "linkMode" | "tag",
 ) =>
   defineStatement<AttachmentCandidateParams>("attachment-candidate-set")(
     (db, { placeholder: p }) => {
       const list = sql`select value from json_each(${p("list")})`;
-      const tagged = (id: typeof items.itemID | typeof parent.itemID) =>
-        inArray(
-          id,
-          db
-            .select({ itemID: itemTags.itemID })
-            .from(itemTags)
-            .innerJoin(tags, eq(tags.tagID, itemTags.tagID))
-            .where(eq(tags.name, p("value"))),
-        );
       const condition = {
         key: eq(items.key, p("value")),
-        keys: sql`${items.key} in (${list})`,
+        keys: inArray(
+          itemAttachments.itemID,
+          db
+            .select({ itemID: items.itemID })
+            .from(items)
+            .where(
+              and(
+                eq(items.libraryID, p("libraryID")),
+                sql`${items.key} in (${list})`,
+              ),
+            ),
+        ),
         contentType: eq(itemAttachments.contentType, p("value")),
         fileType: sql`case
           when ${itemAttachments.linkMode} = 3 then 'web'
@@ -371,39 +351,17 @@ const attachmentCandidates = (
           else 'other' end = ${p("value")}`,
 
         linkMode: sql`case ${itemAttachments.linkMode} when 0 then 'imported_file' when 1 then 'imported_url' when 2 then 'linked_file' when 3 then 'linked_url' end = ${p("value")}`,
-        tag: tagged(items.itemID),
-        "parent-tag": tagged(parent.itemID),
-        "parent-key": eq(parent.key, p("value")),
-        "parent-keys": sql`${parent.key} in (${list})`,
-        "parent-field": inArray(
-          parent.itemID,
+        tag: eq(
+          unindexed(itemTags.tagID),
           db
-            .select({ itemID: itemData.itemID })
-            .from(itemDataValues)
-            .innerJoin(
-              itemData,
-              eq(itemData.valueID, unindexed(itemDataValues.valueID)),
-            )
-            .where(
-              and(
-                or(
-                  eq(itemDataValues.value, p("value")),
-                  eq(itemDataValues.value, p("number")),
-                  eq(itemDataValues.value, p("integer")),
-                ),
-                sql`${unindexed(itemData.fieldID)} in (${list})`,
-              ),
-            ),
-        ),
-        "parent-collection": inArray(
-          parent.itemID,
-          db
-            .select({ itemID: collectionItems.itemID })
-            .from(collectionItems)
-            .where(sql`${collectionItems.collectionID} in (${list})`),
+            .select({ tagID: tags.tagID })
+            .from(tags)
+            .where(eq(tags.name, p("value"))),
         ),
       }[kind];
-      return db
+      const orderedID =
+        kind === "tag" ? itemTags.itemID : itemAttachments.itemID;
+      const query = db
         .select({ itemID: items.itemID })
         .from(itemAttachments)
         .innerJoin(items, eq(items.itemID, itemAttachments.itemID))
@@ -415,13 +373,16 @@ const attachmentCandidates = (
         .where(
           and(
             eq(unindexed(items.libraryID), p("libraryID")),
-            gt(items.itemID, p("afterItemID")),
+            gt(orderedID, p("afterItemID")),
             condition,
-            ...(kind.startsWith("parent-") ? universe(db) : []),
           ),
         )
-        .orderBy(items.itemID)
-        .limit(p("limit"));
+        .orderBy(orderedID)
+        .limit(p("limit"))
+        .$dynamic();
+      if (kind === "tag")
+        query.innerJoin(itemTags, eq(itemTags.itemID, items.itemID));
+      return query;
     },
   );
 const attachmentCandidateStatements = {
@@ -431,14 +392,9 @@ const attachmentCandidateStatements = {
   fileType: attachmentCandidates("fileType"),
   linkMode: attachmentCandidates("linkMode"),
   tag: attachmentCandidates("tag"),
-  "parent-tag": attachmentCandidates("parent-tag"),
-  "parent-key": attachmentCandidates("parent-key"),
-  "parent-keys": attachmentCandidates("parent-keys"),
-  "parent-field": attachmentCandidates("parent-field"),
-  "parent-collection": attachmentCandidates("parent-collection"),
 };
 
-/** Parent leaves expand to Attachment IDs before the cap is applied. */
+/** Read one page of Attachment candidates in ascending Item ID order. */
 export function readAttachmentCandidateSet({
   libraryID,
   leaf,
@@ -453,27 +409,7 @@ export function readAttachmentCandidateSet({
   let value = "";
   let list: readonly (number | string)[] = [];
   let kind: keyof typeof attachmentCandidateStatements;
-  if (leaf.kind === "parent") {
-    kind = `parent-${leaf.leaf.kind}`;
-    switch (leaf.leaf.kind) {
-      case "tag":
-        value = leaf.leaf.value;
-        break;
-      case "keys":
-        list = leaf.leaf.keys;
-        break;
-      case "key":
-        value = leaf.leaf.key;
-        break;
-      case "field":
-        value = leaf.leaf.value;
-        list = leaf.leaf.fieldIDs;
-        break;
-      case "collection":
-        list = leaf.leaf.collectionIDs;
-        break;
-    }
-  } else if (leaf.kind === "keys") {
+  if (leaf.kind === "keys") {
     kind = "keys";
     list = leaf.keys;
   } else {
@@ -487,8 +423,6 @@ export function readAttachmentCandidateSet({
       limit,
       value,
       list: JSON.stringify(list),
-      number: storedNumberOf(value),
-      integer: storedIntegerOf(value),
     }),
     (rows) => rows.map((row) => row.itemID),
   );

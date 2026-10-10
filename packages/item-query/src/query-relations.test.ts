@@ -1102,7 +1102,7 @@ it.each([3_000, 10_000])(
           event.type === "statement" &&
           event.statement.reader.endsWith("candidate-set"),
       );
-      expect(statements).toHaveLength(8);
+      expect(statements).toHaveLength(12);
     }
   },
 );

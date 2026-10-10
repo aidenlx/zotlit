@@ -1,8 +1,7 @@
 import {
-  collectionItems,
+  deletedItems,
   itemData,
   itemDataValues,
-  deletedItems,
   fieldsCombined,
   itemAnnotations,
   itemAttachments,
@@ -31,13 +30,7 @@ import { CHILD_ITEM_TYPES } from "@/lib/item-types";
 import { annotationTypeIDs, annotationTypeToName } from "@/lib/zt-annot";
 import { annotationColorsForName } from "@/lib/zt-color";
 
-import type {
-  TagCandidateLeaf,
-  KeysCandidateLeaf,
-  ParentCandidateLeaf,
-} from "./candidate-leaf";
-import { storedNumberOf, storedIntegerOf } from "./candidate-set";
-import type { CandidateLeaf } from "./candidate-set";
+import type { TagCandidateLeaf, KeysCandidateLeaf } from "./candidate-leaf";
 import { defineStatement, idSlots, unindexed } from "./database";
 import type {
   IdSlot,
@@ -399,7 +392,6 @@ export function readAnnotationHydrateChunk(chunk: {
 }
 
 export type AnnotationCandidateLeaf =
-  | ParentCandidateLeaf<CandidateLeaf>
   | { readonly kind: "type"; readonly value: string }
   | { readonly kind: "color"; readonly value: string }
   | TagCandidateLeaf
@@ -425,35 +417,12 @@ interface AnnotationCandidateParams extends Record<string, unknown> {
   limit: number;
   value: string;
   list: string;
-  number: number | null;
-  integer: bigint | null;
 }
 
-const annotationCandidates = (
-  kind:
-    | "type"
-    | "color"
-    | "tag"
-    | "self"
-    | "attachment"
-    | "parent-tag"
-    | "parent-key"
-    | "parent-keys"
-    | "parent-field"
-    | "parent-collection",
-) =>
+const annotationCandidates = (kind: "type" | "color" | "tag" | "self") =>
   defineStatement<AnnotationCandidateParams>("annotation-candidate-set")(
     (db, { placeholder: p }) => {
       const list = sql`select value from json_each(${p("list")})`;
-      const tagged = (id: typeof items.itemID | typeof parent.itemID) =>
-        inArray(
-          id,
-          db
-            .select({ itemID: itemTags.itemID })
-            .from(itemTags)
-            .innerJoin(tags, eq(tags.tagID, itemTags.tagID))
-            .where(eq(tags.name, p("value"))),
-        );
       const condition = {
         type: sql`case ${itemAnnotations.type} ${sql.join(
           annotationTypeIDs().map(
@@ -465,41 +434,29 @@ const annotationCandidates = (
           eq(itemAnnotations.color, p("value")),
           sql`upper(${itemAnnotations.color}) in (${list})`,
         ),
-        tag: tagged(items.itemID),
-        self: sql`${items.key} in (${list})`,
-        attachment: sql`${attachment.key} in (${list})`,
-        "parent-tag": tagged(parent.itemID),
-        "parent-keys": sql`${parent.key} in (${list})`,
-        "parent-key": eq(parent.key, p("value")),
-        "parent-field": inArray(
-          parent.itemID,
+        tag: eq(
+          unindexed(itemTags.tagID),
           db
-            .select({ itemID: itemData.itemID })
-            .from(itemDataValues)
-            .innerJoin(
-              itemData,
-              eq(itemData.valueID, unindexed(itemDataValues.valueID)),
-            )
+            .select({ tagID: tags.tagID })
+            .from(tags)
+            .where(eq(tags.name, p("value"))),
+        ),
+        self: inArray(
+          itemAnnotations.itemID,
+          db
+            .select({ itemID: items.itemID })
+            .from(items)
             .where(
               and(
-                or(
-                  eq(itemDataValues.value, p("value")),
-                  eq(itemDataValues.value, p("number")),
-                  eq(itemDataValues.value, p("integer")),
-                ),
-                sql`${unindexed(itemData.fieldID)} in (${list})`,
+                eq(items.libraryID, p("libraryID")),
+                sql`${items.key} in (${list})`,
               ),
             ),
         ),
-        "parent-collection": inArray(
-          parent.itemID,
-          db
-            .select({ itemID: collectionItems.itemID })
-            .from(collectionItems)
-            .where(sql`${collectionItems.collectionID} in (${list})`),
-        ),
       }[kind];
-      return db
+      const orderedID =
+        kind === "tag" ? itemTags.itemID : itemAnnotations.itemID;
+      const query = db
         .select({ itemID: items.itemID })
         .from(itemAnnotations)
         .innerJoin(items, eq(items.itemID, itemAnnotations.itemID))
@@ -516,15 +473,16 @@ const annotationCandidates = (
         .where(
           and(
             eq(unindexed(items.libraryID), p("libraryID")),
-            gt(items.itemID, p("afterItemID")),
+            gt(orderedID, p("afterItemID")),
             condition,
-            ...(kind.startsWith("parent-") || kind === "attachment"
-              ? universe(db)
-              : []),
           ),
         )
-        .orderBy(items.itemID)
-        .limit(p("limit"));
+        .orderBy(orderedID)
+        .limit(p("limit"))
+        .$dynamic();
+      if (kind === "tag")
+        query.innerJoin(itemTags, eq(itemTags.itemID, items.itemID));
+      return query;
     },
   );
 const annotationCandidateStatements = {
@@ -532,15 +490,9 @@ const annotationCandidateStatements = {
   color: annotationCandidates("color"),
   tag: annotationCandidates("tag"),
   self: annotationCandidates("self"),
-  attachment: annotationCandidates("attachment"),
-  "parent-tag": annotationCandidates("parent-tag"),
-  "parent-keys": annotationCandidates("parent-keys"),
-  "parent-key": annotationCandidates("parent-key"),
-  "parent-field": annotationCandidates("parent-field"),
-  "parent-collection": annotationCandidates("parent-collection"),
 };
 
-/** Parent leaves expand to Annotation IDs before the cap is applied. */
+/** Read one page of Annotation candidates in ascending Item ID order. */
 export function readAnnotationCandidateSet({
   libraryID,
   leaf,
@@ -555,27 +507,7 @@ export function readAnnotationCandidateSet({
   let value = "";
   let list: readonly (number | string)[] = [];
   let kind: keyof typeof annotationCandidateStatements;
-  if (leaf.kind === "parent") {
-    kind = `parent-${leaf.leaf.kind}`;
-    switch (leaf.leaf.kind) {
-      case "tag":
-        value = leaf.leaf.value;
-        break;
-      case "keys":
-        list = leaf.leaf.keys;
-        break;
-      case "key":
-        value = leaf.leaf.key;
-        break;
-      case "field":
-        value = leaf.leaf.value;
-        list = leaf.leaf.fieldIDs;
-        break;
-      case "collection":
-        list = leaf.leaf.collectionIDs;
-        break;
-    }
-  } else if (leaf.kind === "keys") {
+  if (leaf.kind === "keys") {
     kind = "self";
     list = leaf.keys;
   } else {
@@ -590,34 +522,6 @@ export function readAnnotationCandidateSet({
       limit,
       value,
       list: JSON.stringify(list),
-      number: storedNumberOf(value),
-      integer: storedIntegerOf(value),
-    }),
-    (rows) => rows.map((row) => row.itemID),
-  );
-}
-
-/** Select Annotations by Attachment keys, including files outside Attachment Query. */
-export function readAnnotationAttachmentCandidateSet({
-  libraryID,
-  leaf,
-  limit,
-  afterItemID = 0,
-}: {
-  libraryID: number;
-  leaf: KeysCandidateLeaf | { readonly kind: "key"; readonly value: string };
-  limit: number;
-  afterItemID?: number;
-}) {
-  return Effect.map(
-    annotationCandidateStatements.attachment.all({
-      libraryID,
-      afterItemID,
-      limit,
-      value: "",
-      list: JSON.stringify(leaf.kind === "keys" ? leaf.keys : [leaf.value]),
-      number: null,
-      integer: null,
     }),
     (rows) => rows.map((row) => row.itemID),
   );

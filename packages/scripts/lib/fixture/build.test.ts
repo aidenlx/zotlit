@@ -15,6 +15,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
   getAnnotationsByKey,
+  getAnnotationsByParent,
   getAttachmentsByParents,
   getCitekeysByLibrary,
   getCollectionIDByKey,
@@ -1606,6 +1607,26 @@ describe("a one-Library Stress Build", () => {
         ITEMS.filter((item) => item.libraryID === libraryID).length,
       );
     }
+  });
+
+  // Failure modes: the Stress Build has no many-marks paper, the shared Tag
+  // is absent, or the Parent Record measurement has no matching Attachment.
+  it("supplies rows for the many-marks and dominant Parent Record cases", () => {
+    using db = openClientAt(libraryLayout.databasePath);
+    const paper = synthetic(db).find(
+      (item) => item.citationKey === "stress0000001",
+    )!;
+    const attachments = getAttachmentsByParents(db, [paper.itemID]);
+    expect(attachments).toHaveLength(1);
+    expect(attachments[0]!.contentType).toBe("application/pdf");
+    expect(
+      resolveItemTags(db, paper.itemID, new Map()).map(({ tag }) => tag.name),
+    ).toContain("stress-dominant");
+    const marks = getAnnotationsByParent(db, attachments[0]!.itemID);
+    expect(marks).toHaveLength(61);
+    expect(marks.every((mark) => mark.tags.includes("stress-many-marks"))).toBe(
+      true,
+    );
   });
 
   it("gives rare, common, and dominant Tags", () => {

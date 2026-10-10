@@ -63,6 +63,25 @@ export const DATASET_QUERY_SPECS: readonly Pick<
     },
   },
   {
+    id: "relation-many-marks",
+    class: "other",
+    args: {
+      from: "items",
+      filter:
+        'annotations.filter(value.tags.contains("stress-many-marks")).length > 0',
+      limit: "100",
+    },
+  },
+  {
+    id: "relation-parent-dominant",
+    class: "other",
+    args: {
+      from: "attachments",
+      filter: 'item.tags.contains("stress-dominant")',
+      limit: "100",
+    },
+  },
+  {
     id: "relation-scan",
     class: "other",
     args: {

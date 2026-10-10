@@ -8,6 +8,7 @@ import {
   ItemQueryStatementObserver,
   readCollectionPaths,
   readAttachmentCandidateSet,
+  readParentCandidateSet,
   readAttachmentScanPage,
   readAttachmentUniverseRows,
   readAttachmentRowCount,
@@ -122,7 +123,20 @@ it("reads Tags and parent Collection candidates in one statement per requested c
   ]);
   expect(live({ kind: "linkMode", value: "linked_url" })).toEqual(["URL2LIVE"]);
   expect(
-    live({ kind: "parent", leaf: { kind: "collection", collectionIDs } }),
+    run(
+      readAttachmentUniverseRows({
+        libraryID: 1,
+        itemIDs: run(
+          readParentCandidateSet({
+            libraryID: 1,
+            relation: "attachment-item",
+            budget: 3000,
+            limit: 100,
+            leaf: { kind: "collection", collectionIDs },
+          }),
+        ).itemIDs,
+      }),
+    ).map((row) => row.key),
   ).toEqual(["PDF2LINK", "PDF2LIVE", "URL2LIVE", "WEB2LIVE"]);
   const rows = run(readAttachmentScanPage({ libraryID: 1, afterKey: null }));
   readers.length = 0;
@@ -174,17 +188,32 @@ it("reads bounded Attachment and parent key lists inside one Library", () => {
     }),
   ).toEqual(["PDF2GRUP"]);
   expect(
-    live(1, { kind: "parent", leaf: { kind: "keys", keys: ["ART2FULL"] } }),
+    run(
+      readAttachmentUniverseRows({
+        libraryID: 1,
+        itemIDs: run(
+          readParentCandidateSet({
+            libraryID: 1,
+            relation: "attachment-item",
+            budget: 3000,
+            limit: 100,
+            leaf: { kind: "keys", keys: ["ART2FULL"] },
+          }),
+        ).itemIDs,
+      }),
+    ).map((row) => row.key),
   ).toEqual(["PDF2LINK", "PDF2LIVE", "URL2LIVE", "WEB2LIVE"]);
   expect(live(1, { kind: "keys", keys: [] })).toEqual([]);
   expect(
     run(
-      readAttachmentCandidateSet({
+      readParentCandidateSet({
+        relation: "attachment-item",
+        budget: 3000,
         libraryID: 1,
-        leaf: { kind: "parent", leaf: { kind: "keys", keys: ["ART2FULL"] } },
+        leaf: { kind: "keys", keys: ["ART2FULL"] },
         limit: 2,
       }),
-    ),
+    ).itemIDs,
   ).toHaveLength(2);
 });
 

@@ -177,7 +177,8 @@ export const lowerItemCandidate: Lowering = (node, sources) => {
 /** A complete candidate set, or the reason this branch cannot supply one. */
 export type CandidateFallback =
   | "candidate-cap-exceeded"
-  | "relation-page-budget-exhausted";
+  | "relation-page-budget-exhausted"
+  | "parent-page-budget-exhausted";
 
 /**
  * Read a plan under the cap. An incomplete leaf cannot supply a candidate
