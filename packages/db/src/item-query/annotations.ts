@@ -403,7 +403,7 @@ export type AnnotationCandidateLeaf =
   | { readonly kind: "type"; readonly value: string }
   | { readonly kind: "color"; readonly value: string }
   | TagCandidateLeaf
-  | (KeysCandidateLeaf & { readonly target: "self" | "item" | "attachment" });
+  | KeysCandidateLeaf;
 
 const annotationCount = defineStatement<{ libraryID: number }>(
   "annotation-row-count",
@@ -435,7 +435,6 @@ const annotationCandidates = (
     | "color"
     | "tag"
     | "self"
-    | "item"
     | "attachment"
     | "parent-tag"
     | "parent-key"
@@ -468,7 +467,6 @@ const annotationCandidates = (
         ),
         tag: tagged(items.itemID),
         self: sql`${items.key} in (${list})`,
-        item: sql`${parent.key} in (${list})`,
         attachment: sql`${attachment.key} in (${list})`,
         "parent-tag": tagged(parent.itemID),
         "parent-keys": sql`${parent.key} in (${list})`,
@@ -511,11 +509,18 @@ const annotationCandidates = (
         )
         .innerJoin(attachment, eq(attachment.itemID, itemAttachments.itemID))
         .innerJoin(parent, eq(parent.itemID, itemAttachments.parentItemID))
+        .innerJoin(
+          itemTypesCombined,
+          eq(itemTypesCombined.itemTypeID, parent.itemTypeID),
+        )
         .where(
           and(
             eq(unindexed(items.libraryID), p("libraryID")),
             gt(items.itemID, p("afterItemID")),
             condition,
+            ...(kind.startsWith("parent-") || kind === "attachment"
+              ? universe(db)
+              : []),
           ),
         )
         .orderBy(items.itemID)
@@ -527,7 +532,6 @@ const annotationCandidateStatements = {
   color: annotationCandidates("color"),
   tag: annotationCandidates("tag"),
   self: annotationCandidates("self"),
-  item: annotationCandidates("item"),
   attachment: annotationCandidates("attachment"),
   "parent-tag": annotationCandidates("parent-tag"),
   "parent-keys": annotationCandidates("parent-keys"),
@@ -572,7 +576,7 @@ export function readAnnotationCandidateSet({
         break;
     }
   } else if (leaf.kind === "keys") {
-    kind = leaf.target;
+    kind = "self";
     list = leaf.keys;
   } else {
     kind = leaf.kind;
@@ -588,6 +592,32 @@ export function readAnnotationCandidateSet({
       list: JSON.stringify(list),
       number: storedNumberOf(value),
       integer: storedIntegerOf(value),
+    }),
+    (rows) => rows.map((row) => row.itemID),
+  );
+}
+
+/** Select Annotations by Attachment keys, including files outside Attachment Query. */
+export function readAnnotationAttachmentCandidateSet({
+  libraryID,
+  leaf,
+  limit,
+  afterItemID = 0,
+}: {
+  libraryID: number;
+  leaf: KeysCandidateLeaf | { readonly kind: "key"; readonly value: string };
+  limit: number;
+  afterItemID?: number;
+}) {
+  return Effect.map(
+    annotationCandidateStatements.attachment.all({
+      libraryID,
+      afterItemID,
+      limit,
+      value: "",
+      list: JSON.stringify(leaf.kind === "keys" ? leaf.keys : [leaf.value]),
+      number: null,
+      integer: null,
     }),
     (rows) => rows.map((row) => row.itemID),
   );

@@ -127,7 +127,6 @@ const PLAN_PATHS: readonly {
   annotation?: boolean;
   attachment?: boolean;
   relation?: boolean;
-  parentCandidates?: boolean;
   result?: Pick<QueryResult, "returnedCount" | "truncated">;
   /** @default the bulk Library */
   libraries?: ItemQueryRequest["libraries"];
@@ -178,7 +177,6 @@ const PLAN_PATHS: readonly {
     '["BLK22222g2718"].contains(item.indexedKey)',
   ].map((filter) => ({
     name: `Attachment Indexed Key ${filter}`,
-    parentCandidates: !filter.startsWith("indexedKey"),
     attachment: true,
     request: { filter, fields: ["title"], limit: 10 },
     reads: {
@@ -224,7 +222,6 @@ const PLAN_PATHS: readonly {
   },
   {
     name: "Attachment parent Collection candidate",
-    parentCandidates: true,
     attachment: true,
     request: {
       filter: 'item.collections.contains("Bulk collection")',
@@ -284,7 +281,6 @@ const PLAN_PATHS: readonly {
     '["BULKPDF2g2718"].contains(attachment.indexedKey)',
   ].map((filter) => ({
     name: `an Annotation parent selection above the candidate cap: ${filter}`,
-    parentCandidates: true,
     annotation: true,
     request: { filter, fields: ["text"], limit: 10 },
     reads: {
@@ -435,15 +431,7 @@ const PLAN_PATHS: readonly {
 describe("the Items one statement reads", () => {
   it.each(PLAN_PATHS)(
     "reads at most 500 Item rows in $name",
-    async ({
-      request,
-      libraries,
-      reads,
-      annotation,
-      attachment,
-      relation,
-      parentCandidates,
-    }) => {
+    async ({ request, libraries, reads, annotation, attachment, relation }) => {
       const { events, exit } = await run(request, {
         libraries,
         annotation,
@@ -469,29 +457,7 @@ describe("the Items one statement reads", () => {
         "attachment-candidate-set",
         "annotation-candidate-set",
       ]) {
-        if (parentCandidates && reader.endsWith("candidate-set")) continue;
         expect(itemsRead(events, reader), reader).toEqual(reads[reader] ?? []);
-      }
-      if (parentCandidates) {
-        // Parent Record candidates now page through the relation reader. Keep
-        // the same expansion count and check the bounds of every intermediate read.
-        const reader = attachment
-          ? "attachment-candidate-set"
-          : "annotation-candidate-set";
-        expect(
-          itemsRead(events, "relation-candidate-set").reduce(
-            (a, b) => a + b,
-            0,
-          ),
-        ).toBe(reads[reader]!.reduce((a, b) => a + b, 0));
-        for (const reader of [
-          "candidate-set",
-          "attachment-candidate-set",
-          "relation-candidate-set",
-        ])
-          expect(Math.max(0, ...itemsRead(events, reader))).toBeLessThanOrEqual(
-            500,
-          );
       }
       // A candidate statement reads Item IDs only, the cap plus one at most.
       for (const reader of [
@@ -1218,7 +1184,7 @@ describe("Relation List candidate bounds", () => {
   });
 });
 
-it("reads fewer Attachment rows for a selective Parent Record Tag across candidate pages", async () => {
+it("reads fewer Attachment rows for a selective Parent Record Tag in one candidate statement", async () => {
   const request = {
     fields: [],
     filter: `item.tags.contains("${BULK_FIFTH_TAG}")`,
@@ -1230,6 +1196,7 @@ it("reads fewer Attachment rows for a selective Parent Record Tag across candida
   });
   expect(resultOf(actual)).toEqual(resultOf(scan));
   expect(resultOf(actual).returnedCount).toBe(520);
+  expect(itemsRead(actual.events, "attachment-candidate-set")).toEqual([520]);
   expect(itemsRead(actual.events, "attachment-scan-page")).toEqual([]);
   expect(
     itemsRead(actual.events, "attachment-universe-rows").reduce(
@@ -1241,7 +1208,7 @@ it("reads fewer Attachment rows for a selective Parent Record Tag across candida
   );
 });
 
-it("reads fewer Annotation rows through a selective nested Parent Record Collection", async () => {
+it("reads fewer Annotation rows through a selective Parent Record Collection", async () => {
   using source = openScenarioDatabase({ annotations: true });
   seedBulkLibrary(source.sqlite, BULK_ITEMS);
   seedBulkAnnotations(source.sqlite, BULK_ITEMS);
@@ -1252,7 +1219,7 @@ it("reads fewer Annotation rows through a selective nested Parent Record Collect
   const query = collectQuery(ANNOTATIONS, {
     libraries: [SCENARIO_LIBRARIES.personal],
     fields: [],
-    filter: 'attachment.item.collections.within("Thesis")',
+    filter: 'item.collections.within("Thesis")',
   });
   const actual = await runEffect(query, { client: source.db });
   const scan = await runEffect(query, {
@@ -1261,6 +1228,7 @@ it("reads fewer Annotation rows through a selective nested Parent Record Collect
   });
   expect(resultOf(actual)).toEqual(resultOf(scan));
   expect(resultOf(actual).returnedCount).toBe(12);
+  expect(itemsRead(actual.events, "annotation-candidate-set")).toEqual([12]);
   expect(itemsRead(actual.events, "annotation-scan-page")).toEqual([]);
   expect(
     itemsRead(actual.events, "annotation-universe-rows").reduce(
@@ -1272,7 +1240,7 @@ it("reads fewer Annotation rows through a selective nested Parent Record Collect
   );
 });
 
-it("pages reversed Parent Records through the cap before using the Annotation scan", async () => {
+it("scans nested Parent Record keys without candidate reads", async () => {
   const request = { fields: [], filter: 'attachment.item.key == "BLK22222"' };
   const actual = await run(request, { annotation: true });
   const scan = await run(request, {
@@ -1281,9 +1249,13 @@ it("pages reversed Parent Records through the cap before using the Annotation sc
   });
   expect(resultOf(actual)).toEqual(resultOf(scan));
   expect(resultOf(actual).returnedCount).toBe(BULK_ITEMS);
-  expect(itemsRead(actual.events, "relation-candidate-set")).toEqual([
-    1, 500, 151,
-  ]);
+  for (const reader of [
+    "candidate-set",
+    "attachment-candidate-set",
+    "annotation-candidate-set",
+    "relation-candidate-set",
+  ])
+    expect(itemsRead(actual.events, reader)).toEqual([]);
   expect(
     itemsRead(actual.events, "annotation-scan-page").length,
   ).toBeGreaterThan(0);

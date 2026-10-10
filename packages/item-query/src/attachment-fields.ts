@@ -174,6 +174,7 @@ const itemParent = liftParentRecord({
     groupID: row.groupID,
   }),
   needs: (item: readonly FieldNeeds[]): AttachmentNeeds => ({ item }),
+  candidates: "all",
   sortable: ["indexedKey", "key", "title", "date", "dateModified"],
   listed: () => BUILT_IN_NAMES,
   syntax: "fields",

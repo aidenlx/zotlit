@@ -39,22 +39,26 @@ export const runCandidatePass = Effect.fnUntraced(function* ({
   const candidates = plan
     ? yield* readDatasetCandidates(plan, library.libraryID, cap!)
     : null;
-  logger.debug("Item Query uses {plan} for Library {libraryID}", {
-    libraryID: library.libraryID,
-    groupID: library.groupID,
-    plan: candidates === null ? "scan" : "candidates",
-    candidateCount: candidates?.size ?? null,
-    candidateCap: cap,
-    reason:
-      candidates !== null
-        ? null
-        : !filter
-          ? "no-filter"
-          : tuning.forceScan
-            ? "forced-scan"
-            : plan
-              ? "candidate-cap-exceeded"
-              : "unsupported-filter",
-  });
+  logger.debug(
+    "ZotLit Query uses {plan} for {dataset} in Library {libraryID}",
+    {
+      dataset: dataset.id,
+      libraryID: library.libraryID,
+      groupID: library.groupID,
+      plan: candidates === null ? "scan" : "candidates",
+      candidateCount: candidates?.size ?? null,
+      candidateCap: cap,
+      reason:
+        candidates !== null
+          ? null
+          : !filter
+            ? "no-filter"
+            : tuning.forceScan
+              ? "forced-scan"
+              : plan
+                ? "candidate-cap-exceeded"
+                : "unsupported-filter",
+    },
+  );
   return candidates;
 });

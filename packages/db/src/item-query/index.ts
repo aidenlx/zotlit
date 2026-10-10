@@ -45,6 +45,7 @@ export {
   readAnnotationScanPage,
   readAnnotationRowCount,
   readAnnotationCandidateSet,
+  readAnnotationAttachmentCandidateSet,
   type AnnotationCandidateLeaf,
   readAnnotationUniverseRows,
   readAnnotationHydrateChunk,

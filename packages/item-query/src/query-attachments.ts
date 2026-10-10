@@ -56,8 +56,8 @@ export const ATTACHMENTS: QueryDataset<ItemQueryRequest> = {
   candidateRelations: {
     item: {
       dataset: () => ITEMS,
-      readParents: (chunk) =>
-        readRelationCandidateSet({ ...chunk, relation: "attachment-item" }),
+      readChildren: ({ leaf, ...page }) =>
+        readAttachmentCandidateSet({ ...page, leaf: { kind: "parent", leaf } }),
     },
     annotations: {
       dataset: () => ANNOTATIONS,

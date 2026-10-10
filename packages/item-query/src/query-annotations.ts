@@ -5,7 +5,7 @@ import { Effect } from "effect";
 import { formatIndexedKey } from "@zotlit/db";
 import {
   readAnnotationCandidateSet,
-  readRelationCandidateSet,
+  readAnnotationAttachmentCandidateSet,
   readAnnotationRowCount,
   readAnnotationScanPage,
   readAnnotationUniverseRows,
@@ -60,16 +60,12 @@ export const ANNOTATIONS: QueryDataset<ItemQueryRequest> = {
   candidateRelations: {
     item: {
       dataset: () => ITEMS,
-      readParents: (chunk) =>
-        readRelationCandidateSet({ ...chunk, relation: "annotation-item" }),
+      readChildren: ({ leaf, ...page }) =>
+        readAnnotationCandidateSet({ ...page, leaf: { kind: "parent", leaf } }),
     },
     attachment: {
       dataset: () => ATTACHMENTS,
-      readParents: (chunk) =>
-        readRelationCandidateSet({
-          ...chunk,
-          relation: "annotation-attachment",
-        }),
+      readChildren: readAnnotationAttachmentCandidateSet,
     },
   },
   sortableFields: ANNOTATION_SORT_FIELDS,

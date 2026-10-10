@@ -164,6 +164,7 @@ const itemParent = liftParentRecord({
     groupID: row.groupID,
   }),
   needs: (item: readonly FieldNeeds[]): AnnotationNeeds => ({ item }),
+  candidates: "all",
   sortable: ["indexedKey", "key", "title", "date", "dateModified"],
   listed: () => BUILT_IN_NAMES,
   syntax: "fields",
@@ -179,6 +180,7 @@ const attachmentParent = liftParentRecord({
   needs: (attachment: readonly AttachmentNeeds[]): AnnotationNeeds => ({
     attachment,
   }),
+  candidates: ["indexedKey", "key"],
   sortable: ["indexedKey", "key"],
   listed: [
     "indexedKey",

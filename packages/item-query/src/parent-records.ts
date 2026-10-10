@@ -14,6 +14,8 @@ export function liftParentRecord<Item, Needs, Row, ParentNeeds>(options: {
   readonly read: (item: Item) => Row | undefined;
   readonly needs: (needs: readonly ParentNeeds[]) => Needs;
   readonly sortable: readonly string[];
+  /** Parent fields whose lowering is a superset for this child Query Dataset. */
+  readonly candidates: "all" | readonly string[];
   readonly listed: readonly string[] | (() => readonly string[]);
   /** Fields retain their dotted roots in diagnostics; records use member navigation. */
   readonly syntax: "fields" | "record";
@@ -190,7 +192,11 @@ export function liftParentRecord<Item, Needs, Row, ParentNeeds>(options: {
       const member = (child: FilterNode<never>): FilterNode<never> => {
         const path = candidateMemberPath(child);
         const key = path === null ? undefined : strip(path);
-        if (key === undefined) return child;
+        if (
+          key === undefined ||
+          (options.candidates !== "all" && !options.candidates.includes(key))
+        )
+          return child;
         const field = vocabulary().filter.field(key);
         if (!field?.filterable) return child;
         found = true;

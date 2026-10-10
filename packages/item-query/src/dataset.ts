@@ -66,13 +66,18 @@ export interface CandidateRelation {
   readonly readParents: (chunk: {
     libraryID: number;
     itemIDs: readonly number[];
-    afterItemID?: number;
-    limit?: number;
   }) => Effect.Effect<number[], ItemQueryReaderError, ItemQueryDatabase>;
+}
+
+/** A reversed Parent Record relation selects child IDs with the parent leaf. */
+export interface CandidateParentRelation {
+  readonly dataset: () => CandidateDataset;
+  readonly readChildren: CandidateDataset["readCandidate"];
 }
 
 /** The candidate pass needs only lowering, readers, and the record relations. */
 export interface CandidateDataset<Leaf = any> {
+  readonly id: "items" | "attachments" | "annotations";
   readonly lowerCandidate: (
     node: FilterNode<never>,
     sources: CandidateSources,
@@ -84,7 +89,9 @@ export interface CandidateDataset<Leaf = any> {
     libraryID: number,
   ) => Effect.Effect<number, ItemQueryReaderError, ItemQueryDatabase>;
   readonly candidateParents: readonly ParentRecord[];
-  readonly candidateRelations: Readonly<Record<string, CandidateRelation>>;
+  readonly candidateRelations: Readonly<
+    Record<string, CandidateRelation | CandidateParentRelation>
+  >;
   readonly filterField: (name: string) => FilterField<any, any> | undefined;
 }
 
@@ -95,7 +102,6 @@ export interface CandidateDataset<Leaf = any> {
 export interface QueryDataset<
   Request extends ItemQueryRequest = ItemQueryRequest,
 > extends CandidateDataset {
-  readonly id: "items" | "attachments" | "annotations";
   /** The record of one row in prose: `Item` or `Annotation`. */
   readonly noun: string;
   /** The query in prose: `Item Query` or `Annotation Query`. */

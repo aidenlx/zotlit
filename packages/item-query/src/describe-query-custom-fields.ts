@@ -21,22 +21,20 @@ import { openQuerySources } from "./query-sources";
  * The custom fields supplied by the active Zotero source, at the paths the
  * Query Dataset reads them.
  */
-export function describeQueryCustomFields(
+export const describeQueryCustomFields = Effect.fnUntraced(function* (
   dataset: QueryDataset<any>,
-): Effect.Effect<
+): Effect.fn.Return<
   readonly SchemaCustomField[],
   ItemQueryLayoutError | ItemQueryDatabaseError,
   ItemQueryDatabase
 > {
-  return Effect.gen(function* () {
-    const sources = yield* openQuerySources;
-    const { customFieldNames } = yield* sources.vocabulary();
-    return customFieldNames.map((name) => {
-      const field = customSchemaField(name);
-      return { ...field, path: dataset.customPrefix + field.path };
-    });
+  const sources = yield* openQuerySources;
+  const { customFieldNames } = yield* sources.vocabulary();
+  return customFieldNames.map((name) => {
+    const field = customSchemaField(name);
+    return { ...field, path: dataset.customPrefix + field.path };
   });
-}
+});
 
 function customSchemaField(name: string): SchemaCustomField {
   const custom = fieldDefinition("custom")!;
