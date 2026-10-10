@@ -1166,3 +1166,48 @@ await test("Collection discovery fails when an agent guesses the correct path", 
   assert.equal(report.failureKind, "task");
   assert.match(report.errors.join("\n"), /Discover the Collection path/);
 });
+
+for (const caseName of ["shared_marks", "colors"]) {
+  for (const grouped of [false, true]) {
+    await test(`${caseName} checks answer facts against ${grouped ? "grouped" : "flat"} evidence through the runner`, async () => {
+      const shape = (answer, envelope) => {
+        if (!grouped) return;
+        envelope.request.group = "item.indexedKey";
+        envelope.totalCount = envelope.rows.length;
+        envelope.groups = Object.entries(
+          Object.groupBy(envelope.rows, (row) => row.itemIndexedKey),
+        ).map(([value, rows]) => ({ value, count: rows.length, rows }));
+        delete envelope.rows;
+      };
+      const valid = await exercise(null, {
+        caseName,
+        changeAnnotation: shape,
+      });
+      assert.equal(valid.state, "passed", valid.errors.join("\n"));
+      const wrong = await exercise(null, {
+        caseName,
+        changeAnnotation(answer, envelope) {
+          shape(answer, envelope);
+          Object.assign(answer.annotations[0], {
+            text: "Fabricated quotation",
+            colorName: "wrong color",
+            ...(caseName === "shared_marks" && {
+              library: "group:999",
+              itemIndexedKey: "WRNG2222",
+            }),
+          });
+        },
+      });
+      assert.equal(wrong.failureKind, "task");
+      for (const field of [
+        "text",
+        "colorName",
+        ...(caseName === "shared_marks" ? ["library", "itemIndexedKey"] : []),
+      ])
+        assert.ok(
+          wrong.errors.some((error) => error.includes(`wrong ${field} for`)),
+          `${field}: ${wrong.errors.join("\n")}`,
+        );
+    });
+  }
+}

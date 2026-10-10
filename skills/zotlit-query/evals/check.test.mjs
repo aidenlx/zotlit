@@ -445,7 +445,7 @@ for (const caseName of ["include", "edge", "export"]) {
     result.truncated = true;
     assert.match(
       validate(caseName, result, { runRoot: root }).join("\n"),
-      /full result rows are missing/,
+      /result is truncated/,
     );
   });
 }
