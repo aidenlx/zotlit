@@ -363,7 +363,7 @@ function diagnoseGroup(
       {
         code: "invalid-group",
         message: `The group path ${name} has ${count} []; group takes a path with one [].`,
-        hint: "Write one [] after the Relation List whose element values form the groups, such as tags[].name or attachments[].fileType.",
+        hint: "Keep one [], after the Relation List whose element values form the groups.",
         location,
       },
       text,
@@ -393,7 +393,7 @@ function diagnoseGroup(
       ? `Try: ${suggestions[0]}`
       : fields?.length
         ? `Group by one field of each element, as in ${shellArgument("group", `${each!.prefix}.<field>`)}.`
-        : "Use one scalar Projection Path, such as library, date.year, or item.citationKey, or a path with one [] whose element is scalar, such as tags[].name.";
+        : "Use one scalar Projection Path, such as library, date.year, or item.citationKey, or a path with one [] whose element is scalar.";
   const diagnostic = renderDiagnostic(
     {
       code: "invalid-group",
