@@ -121,3 +121,18 @@ it.each([
     ).toHaveLength(libraries.length);
   },
 );
+
+it("accepts a path held only by the second Target Library", async () => {
+  using scenario = openScenarioDatabase();
+  const { exit } = await runEffect(
+    collectQuery(ITEMS, {
+      libraries: [SCENARIO_LIBRARIES.personal, SCENARIO_LIBRARIES.group],
+      filter: 'collections.contains("Methods")',
+      fields: [],
+    }),
+    { client: scenario.db },
+  );
+  if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
+  expect(exit.value.warnings).toEqual([]);
+  expect(exit.value.returnedCount).toBeGreaterThan(0);
+});

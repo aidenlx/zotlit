@@ -19,6 +19,8 @@ import type {
   ItemQueryLayoutError,
 } from "@zotlit/db/item-query";
 import {
+  listQueryValues,
+  renderDiagnostic,
   AttachmentFileResolver,
   consumeQuery,
   describeQueryCustomFields,
@@ -138,6 +140,7 @@ export function answer(
   job: AnswerJob,
   env: AnswerEnv,
 ): Effect.Effect<QueryReply, never, ItemQueryDatabase | Scope.Scope> {
+  if ("values" in job) return answerValues(job, env);
   return job.schema
     ? answerSchema(job, env, job.pluginVersion)
     : answerQuery(job, env, job.query);
@@ -198,27 +201,8 @@ function answerQuery(
 ): Effect.Effect<QueryReply, never, ItemQueryDatabase | Scope.Scope> {
   const { command } = job;
   const named = decoded.libraries;
-  const requireEach = named !== null;
   const operation = Effect.gen(function* () {
-    // The resolution of the Library Scope service, on the rows of the one
-    // Library reader of `getLibraries`, read on the borrowed client.
-    const libraries = resolveLibraryScope(
-      yield* readLibraries(),
-      named ? named.scope : job.scope,
-    );
-    const { available, unavailable } = libraries;
-    const [missing] = unavailable;
-    if (requireEach && missing) {
-      return yield* new TargetLibrariesUnavailable({
-        reason: "named-missing",
-        missing,
-      });
-    }
-    if (available.length === 0) {
-      return yield* new TargetLibrariesUnavailable({
-        reason: requireEach ? "named-none" : "scope-none",
-      });
-    }
+    const available = yield* targetLibraries(named, job.scope);
     const request: ItemQueryRequest = {
       filter: decoded.filter,
       group: decoded.group,
@@ -259,6 +243,85 @@ function answerQuery(
     answerFailure(command, named?.parameter),
   );
 }
+
+/** Resolve the same Target Libraries for queries and value discovery. */
+const targetLibraries = Effect.fnUntraced(function* (
+  named: NamedLibraries | null,
+  scope: LibraryScope,
+) {
+  const requireEach = named !== null;
+  // The resolution of the Library Scope service, on the rows of the one
+  // Library reader of `getLibraries`, read on the borrowed client.
+  const libraries = resolveLibraryScope(
+    yield* readLibraries(),
+    named ? named.scope : scope,
+  );
+  const { available, unavailable } = libraries;
+  const [missing] = unavailable;
+  if (requireEach && missing) {
+    return yield* new TargetLibrariesUnavailable({
+      reason: "named-missing",
+      missing,
+    });
+  }
+  if (available.length === 0) {
+    return yield* new TargetLibrariesUnavailable({
+      reason: requireEach ? "named-none" : "scope-none",
+    });
+  }
+  return available;
+});
+
+const answerValues = (
+  job: Extract<AnswerJob, { values: unknown }>,
+  env: AnswerEnv,
+) =>
+  Effect.gen(function* () {
+    const decoded = job.values;
+    const available = yield* targetLibraries(decoded.libraries, job.scope);
+    const values = [];
+    for (const library of available) {
+      const listing = yield* listQueryValues(library, decoded);
+      values.push({
+        library: selectorKey(library.selector),
+        name: library.name ?? "My Library",
+        ...listing,
+      });
+    }
+    const text = envelope(job.command, {
+      ok: true,
+      identity: env.identity,
+      libraries: available.map(({ selector, name }) =>
+        selector.type === "group"
+          ? { ...selector, name: name ?? "" }
+          : selector,
+      ),
+      request: {
+        kind: decoded.kind,
+        library: available.map(({ selector }) => selectorKey(selector)),
+        ...(decoded.match === undefined ? {} : { match: decoded.match }),
+        limit: decoded.limit,
+      },
+      returnedCount: values.reduce(
+        (count, library) => count + library.returnedCount,
+        0,
+      ),
+      truncated: values.some((library) => library.truncated),
+      values,
+    });
+    if (Buffer.byteLength(text) > INLINE_MAX_BYTES) {
+      return yield* new QueryOutputError({
+        diagnostic: renderDiagnostic({
+          ...diagnostic(
+            "result-too-large",
+            `The JSON response exceeds the inline limit of ${INLINE_MAX_BYTES} bytes.`,
+          ),
+          hint: "Narrow match or reduce limit in zotlit:query-values, then run it again.",
+        }),
+      });
+    }
+    return inline(job.command, text);
+  }).pipe(answerFailure(job.command, job.values.libraries?.parameter));
 
 const inline = (command: QueryCliCommand, text: string): QueryReply => ({
   command,

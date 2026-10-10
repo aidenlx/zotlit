@@ -33,11 +33,13 @@ export const CONTRACT_VERSION = contractVersion.contractVersion;
 
 export const QUERY_COMMAND = "zotlit:query" as const;
 export const QUERY_CANCEL_COMMAND = "zotlit:query-cancel" as const;
+export const QUERY_VALUES_COMMAND = "zotlit:query-values" as const;
 export const QUERY_SCHEMA_COMMAND = "zotlit:query-schema" as const;
 export const QUERY_GUIDE_COMMAND = "zotlit:query-guide" as const;
 
 export type QueryCliCommand =
   | typeof QUERY_COMMAND
+  | typeof QUERY_VALUES_COMMAND
   | typeof QUERY_CANCEL_COMMAND
   | typeof QUERY_SCHEMA_COMMAND
   | typeof QUERY_GUIDE_COMMAND;
@@ -99,6 +101,26 @@ export const queryFlags = {
     description: `Name this query so that ${QUERY_CANCEL_COMMAND} can stop it: ${QUERY_ID_FORM}`,
   },
 } satisfies Record<QueryParam, CliFlag>;
+
+export const queryValuesFlags: CliFlags = {
+  kind: {
+    value: "<collections|tags>",
+    description: "Values to list (required)",
+  },
+  library: {
+    value: "<selector|all>",
+    description:
+      "One Library: personal or group:<groupID>, or all (default: Library scope)",
+  },
+  match: {
+    value: "<text>",
+    description: "Keep values that contain this text, ignoring letter case",
+  },
+  limit: {
+    value: "<n|all>",
+    description: `Most values per Library: a positive integer, or all (default ${DEFAULT_CLI_LIMIT})`,
+  },
+};
 
 export const queryCancelFlags: CliFlags = {
   id: {
@@ -165,7 +187,25 @@ export type LibraryWire =
   | { type: "personal" }
   | { type: "group"; groupID: number; name: string };
 
+export interface LibraryValues {
+  library: string;
+  name: string;
+  totalCount: number;
+  returnedCount: number;
+  truncated: boolean;
+  values: readonly (string | { name: string; type: string })[];
+}
+
 export type EnvelopeTail =
+  | {
+      ok: true;
+      identity: WorkbenchIdentity;
+      libraries: readonly LibraryWire[];
+      request: object;
+      returnedCount: number;
+      truncated: boolean;
+      values: readonly LibraryValues[];
+    }
   | { ok: false; diagnostic: Diagnostic }
   | {
       ok: true;

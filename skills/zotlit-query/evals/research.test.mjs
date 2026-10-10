@@ -4,7 +4,11 @@ import { createRequire } from "node:module";
 import test from "node:test";
 
 import { validate } from "./check.mjs";
-import { researchSchema, resolveExpected } from "./research.mjs";
+import {
+  researchSchema,
+  resolveExpected,
+  checkCollectionDiscovery,
+} from "./research.mjs";
 import { checkAnswer } from "./run.mjs";
 const oracle = JSON.parse(
   await readFile(new URL("./oracle.json", import.meta.url), "utf8"),
@@ -333,4 +337,34 @@ await test("paper count answer schema permits both dataset shapes", async () => 
       true,
       JSON.stringify(accepts.errors),
     );
+});
+
+await test("Collection discovery requires a returned path before a matching query", () => {
+  const spec = oracle.cases.discover_collection;
+  const discovery = {
+    argv: [
+      "vault=v",
+      "zotlit:query-values",
+      "kind=collections",
+      "library=personal",
+    ],
+    exitCode: 0,
+    discovered: [{ library: "personal", values: ["Query thesis"] }],
+  };
+  const query = {
+    argv: [
+      "vault=v",
+      "zotlit:query",
+      'filter=collections.within("Query thesis")',
+    ],
+    exitCode: 0,
+  };
+  assert.deepEqual(checkCollectionDiscovery(spec, [discovery, query]), []);
+  for (const calls of [
+    [query],
+    [query, discovery],
+    [{ ...discovery, exitCode: 1 }, query],
+    [{ ...discovery, discovered: [] }, query],
+  ])
+    assert.ok(checkCollectionDiscovery(spec, calls).length);
 });

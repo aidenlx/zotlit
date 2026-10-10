@@ -5,7 +5,7 @@ import type { LibraryScope } from "@/services/library-scope/scope";
 import type { WorkbenchIdentity } from "@/services/template-workbench/envelope";
 
 import type { QueryCliCommand } from "./contract";
-import type { DecodedQuery } from "./decode";
+import type { DecodedQuery, DecodedValues } from "./decode";
 import type { WorkerMeasurement } from "./trace";
 
 /** The Query Dataset that a job reads: Items or Annotations. */
@@ -19,6 +19,7 @@ export type QueryCommand = {
   command: QueryCliCommand;
 } & (
   | { schema: true; pluginVersion: string; dataset?: QueryDatasetId }
+  | { schema: false; values: DecodedValues; dataset?: never; query?: never }
   | { schema: false; query: DecodedQuery; dataset: QueryDatasetId }
 );
 

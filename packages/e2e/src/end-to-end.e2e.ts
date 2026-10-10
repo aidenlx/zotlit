@@ -3853,6 +3853,66 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     }
   });
 
+  it("discovers Collection paths with zotlit:query-values and warns about unknown paths", async () => {
+    const listing = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query-values", {
+        args: { kind: "collections", library: "personal", limit: "all" },
+      }),
+    ) as {
+      ok: boolean;
+      contractVersion: number;
+      values: { library: string; values: string[]; truncated: boolean }[];
+    };
+    expect(listing).toMatchObject({
+      ok: true,
+      contractVersion: 3,
+      values: [{ library: "personal", truncated: false }],
+    });
+    const collection = COLLECTIONS.find(({ key }) => key === "PERSCHLD")!;
+    const parent = COLLECTIONS.find(
+      ({ collectionID }) => collectionID === collection.parentCollectionID,
+    )!;
+    const path = listing.values[0]!.values.find(
+      (value) => value === `${parent.name}/${collection.name}`,
+    );
+    expect(path).toBeDefined();
+    const found = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query", {
+        args: {
+          library: "personal",
+          filter: `collections.within(${JSON.stringify(path)})`,
+          fields: "[]",
+          limit: "all",
+        },
+      }),
+    ) as ItemQueryReport;
+    expect(found.ok).toBe(true);
+    expect(found.returnedCount).toBeGreaterThan(0);
+    expect(found.warnings).toEqual([]);
+    const wrong = path!.toUpperCase();
+    expect(wrong).not.toBe(path);
+    const unknown = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query", {
+        args: {
+          library: "personal",
+          filter: `collections.within(${JSON.stringify(wrong)})`,
+          fields: "[]",
+        },
+      }),
+    ) as ItemQueryReport;
+    expect(unknown).toMatchObject({
+      ok: true,
+      rows: [],
+      warnings: [
+        { code: "unknown-collection", severity: "warning", found: wrong },
+      ],
+    });
+    expect(unknown.warnings![0]!.suggestions[0]).toBe(path);
+    expect(unknown.warnings![0]!.hint).toContain(
+      "zotlit:query-values kind=collections",
+    );
+  });
+
   it("warns for a ZotLit Query Indexed Key outside the Target Libraries", async () => {
     const groupLibrary = LIBRARIES.find((library) => library.groupID !== null)!;
     const groupItem = ITEMS.find(

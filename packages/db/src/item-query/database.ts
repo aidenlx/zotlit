@@ -88,6 +88,7 @@ export type ItemQueryReader =
   | "universe-rows"
   | "field-vocabulary"
   | "collection-paths"
+  | "tag-values"
   | "hydrate-chunk";
 
 /** One statement that ran to its end. */

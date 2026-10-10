@@ -2191,6 +2191,62 @@
         }
       ],
       "command": "zotlit:query 'from=items' 'library=personal' 'filter=collections.within(\"Query thesis\") && title.contains(\"深度学习\")' 'fields=title' 'limit=all'"
+    },
+    "discover_collection": {
+      "kind": "research",
+      "from": "items",
+      "count": 5,
+      "fields": ["title", "date.year"],
+      "request": {
+        "from": "items",
+        "library": "personal",
+        "filter": "collections.within(\"Query thesis\")",
+        "fields": "title,date.year",
+        "limit": "all"
+      },
+      "rows": [
+        {
+          "indexedKey": "QCZRPP22",
+          "values": {
+            "title": "Thesis review without files",
+            "date.year": 2020
+          }
+        },
+        {
+          "indexedKey": "QCSNG222",
+          "values": {
+            "title": "深度学习 in clinical attention",
+            "date.year": 2021
+          }
+        },
+        {
+          "indexedKey": "QCTWN222",
+          "values": {
+            "title": "Clinical attention with two editions",
+            "date.year": 2021
+          }
+        },
+        {
+          "indexedKey": "QCMISS22",
+          "values": {
+            "title": "Clinical attention missing its file",
+            "date.year": null
+          }
+        },
+        {
+          "indexedKey": "QCWEB222",
+          "values": {
+            "title": "Thesis background reading",
+            "date.year": 2018
+          }
+        }
+      ],
+      "command": "zotlit:query 'from=items' 'library=personal' 'filter=collections.within(\"Query thesis\")' 'fields=title,date.year' 'limit=all'",
+      "discovery": {
+        "kind": "collections",
+        "library": "personal",
+        "path": "Query thesis"
+      }
     }
   },
   "annotationRows": {

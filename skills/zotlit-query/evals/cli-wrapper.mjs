@@ -7,6 +7,7 @@ const commands = new Set([
   "help",
   "zotlit:query",
   "zotlit:query-schema",
+  "zotlit:query-values",
   "zotlit:query-guide",
   "zotlit:query-cancel",
   "zotlit:annotation-image",
@@ -42,7 +43,17 @@ export async function startCliWrapper({ agentRoot, callLog, vaultId, invoke }) {
     } catch (error) {
       result = { code: 1, stdout: "", stderr: `${error.message}\n` };
     }
+    let discovered;
+    if (argv[1] === "zotlit:query-values" && result.code === 0) {
+      try {
+        const listing = JSON.parse(result.stdout);
+        if (listing.ok) discovered = listing.values;
+      } catch {
+        // Only a successful JSON listing proves discovery.
+      }
+    }
     const receipt = {
+      ...(discovered === undefined ? {} : { discovered }),
       argv,
       exitCode: result.code,
       stdoutBytes: result.stdoutBytes ?? Buffer.byteLength(result.stdout),

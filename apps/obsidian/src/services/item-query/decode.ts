@@ -36,6 +36,7 @@ import {
   QUERY_COMMAND,
   QUERY_GUIDE_COMMAND,
   QUERY_SCHEMA_COMMAND,
+  QUERY_VALUES_COMMAND,
   QUERY_ID_FORM,
   QUERY_ID_MAX_LENGTH,
 } from "./contract";
@@ -412,4 +413,43 @@ export function decodeQuery(params: CliData): CliRequest<DecodedQuery> {
     }
   }
   return request;
+}
+
+const valuesParams = v.pipe(
+  cliParams(
+    {
+      kind: v.picklist(
+        ["collections", "tags"],
+        "kind must be collections or tags.",
+      ),
+      library: v.optional(
+        v.pipe(
+          library,
+          v.check(
+            (scope) =>
+              scope.mode === "all" ||
+              (scope.mode === "selected" && scope.libraries.length === 1),
+            "Use one Library selector, or all.",
+          ),
+        ),
+      ),
+      match: v.optional(v.string()),
+      limit: v.optional(limit, String(DEFAULT_CLI_LIMIT)),
+    },
+    { kind: "kind is required: use kind=collections or kind=tags." },
+  ),
+  v.transform(({ library: scope, ...options }) => ({
+    ...options,
+    libraries:
+      scope === undefined ? null : { scope, parameter: "library" as const },
+  })),
+);
+
+export type DecodedValues = v.InferOutput<typeof valuesParams>;
+
+/** Discover exact Collection paths or Tag names before writing a filter. */
+export function decodeValues(params: CliData): CliRequest<DecodedValues> {
+  return decodeCliParams(params, valuesParams, {
+    command: QUERY_VALUES_COMMAND,
+  });
 }

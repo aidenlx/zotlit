@@ -73,3 +73,5 @@ export {
   readRelationCandidateSet,
   type CandidateRelation,
 } from "./relation-candidates";
+
+export { readTagValues } from "./tag-values";

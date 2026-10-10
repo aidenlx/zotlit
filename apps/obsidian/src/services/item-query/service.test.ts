@@ -954,3 +954,24 @@ it("returns Attachment rows and narrows the live schema to Attachments", async (
     "item.citationKey",
   ]);
 });
+
+it("discovers Collection values through the query worker and reports invalid arguments", async () => {
+  using scenario = openScenarioDatabase();
+  await using service = setup(scenario).service;
+  const found = JSON.parse(
+    await service.values({ kind: "collections", match: "thesis" }, signal()),
+  );
+  expect(found).toMatchObject({
+    contractVersion: 3,
+    command: "zotlit:query-values",
+    ok: true,
+    identity: { source: { id: "captured-source" } },
+    values: [{ library: "personal", values: ["Thesis", "Thesis/Methods"] }],
+  });
+  const invalid = JSON.parse(await service.values({}, signal()));
+  expect(invalid).toMatchObject({
+    ok: false,
+    diagnostic: { code: "invalid-argument", details: { parameter: "kind" } },
+  });
+  expect(invalid.diagnostic.report.at(-1)).toBe(invalid.diagnostic.hint);
+});

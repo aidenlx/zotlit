@@ -15,6 +15,8 @@ import {
   failure,
   QUERY_COMMAND,
   QUERY_SCHEMA_COMMAND,
+  QUERY_VALUES_COMMAND,
+  queryValuesFlags,
   QUERY_GUIDE_COMMAND,
   QUERY_CANCEL_COMMAND,
   queryFlags,
@@ -26,6 +28,7 @@ import { GUIDE_TOPIC_NAMES, renderGuide } from "./guide";
 
 export interface QueryRuns {
   query(params: CliData, signal: AbortSignal): Promise<string>;
+  values(params: CliData, signal: AbortSignal): Promise<string>;
   schema(params: CliData, signal: AbortSignal): Promise<string>;
   cancel(id: string): boolean;
 }
@@ -46,8 +49,14 @@ export function registerQueryCli(plugin: Plugin, runs: QueryRuns): void {
     (params) => runs.schema(params, unload.signal),
   );
   plugin.registerCliHandler(
+    QUERY_VALUES_COMMAND,
+    "List exact Collection paths or Tag names per Library before writing a filter",
+    queryValuesFlags,
+    (params) => runs.values(params, unload.signal),
+  );
+  plugin.registerCliHandler(
     QUERY_GUIDE_COMMAND,
-    "Print the ZotLit Query guide",
+    "Print the guide for zotlit:query, zotlit:query-values, zotlit:query-schema, and zotlit:query-cancel",
     {
       topic: {
         value: `<${GUIDE_TOPIC_NAMES.join("|")}>`,
