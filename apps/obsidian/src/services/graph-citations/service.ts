@@ -16,6 +16,7 @@ import { disposable, registerEvent } from "@/lib/disposables";
 import { workLabel } from "@/lib/item-summary";
 import type { WorkLabel } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
+import { heldResolution } from "@/services/citation-index/lookup";
 import type {
   CitationOccurrence,
   CitationSyntax,
@@ -438,7 +439,7 @@ export class GraphCitations extends Service<void> {
     const nodeDeps: NodeRightClickDeps = {
       citekeyOf: (id) => installation.additions.citedWorkNodes.get(id),
       resolveCitekey: (citekey) =>
-        this.#lookup?.current?.value.resolve(citekey) ?? null,
+        heldResolution(this.#lookup?.current?.value ?? null, citekey),
       open: this.#open,
       workspace: this.#app.workspace,
     };
@@ -616,7 +617,10 @@ export class GraphCitations extends Service<void> {
           : undefined;
         const citekey = installation.additions.citedWorkNodes.get(id);
         if (citekey !== undefined) {
-          const resolution = this.#lookup?.current?.value.resolve(citekey);
+          const resolution = heldResolution(
+            this.#lookup?.current?.value ?? null,
+            citekey,
+          );
           key =
             resolution?.kind === "unique"
               ? resolution.item.indexedKey
@@ -696,7 +700,7 @@ export class GraphCitations extends Service<void> {
     return graphCitationAdditions({
       occurrences: this.#occurrences,
       resolveCitekey: (citekey) =>
-        this.#lookup?.current?.value.resolve(citekey) ?? null,
+        heldResolution(this.#lookup?.current?.value ?? null, citekey),
       resolveLink: (linkpath, sourcePath) =>
         this.#app.metadataCache.getFirstLinkpathDest(linkpath, sourcePath)
           ?.path ?? null,

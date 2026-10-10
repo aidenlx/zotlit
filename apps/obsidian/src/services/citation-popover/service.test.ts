@@ -103,7 +103,7 @@ const emptyText = (): DocumentCitations => ({
   formatted: new Map(),
   entrySerials: false,
   summaries: new Map(),
-  lookup: lookupForWorks(new Map()),
+  lookup: lookupForWorks(new Map([["ghost", null]])),
   literalWorks: new Map(),
 });
 
@@ -111,6 +111,14 @@ function harness(read: () => Promise<DocumentCitations | null>) {
   let file: TFile | null = NOTE;
   const deleted = new Set<(file: TFile) => void>();
   const citationText = { read: vi.fn(read) };
+  const readLookup = vi.fn(
+    async ({ citekeys }: { citekeys: readonly string[] }) =>
+      lookupAnswer(
+        Object.fromEntries(
+          citekeys.map((citekey) => [citekey, { kind: "missing" as const }]),
+        ),
+      ),
+  );
   const service = new CitationPopover({
     app: {
       vault: {
@@ -133,7 +141,7 @@ function harness(read: () => Promise<DocumentCitations | null>) {
           errors: [],
           lookup: lookupAnswer(),
         }),
-      readLookup: async () => lookupAnswer(),
+      readLookup,
       resolution: "fresh",
     },
     libraryScope: { current: [] },
@@ -172,6 +180,7 @@ function harness(read: () => Promise<DocumentCitations | null>) {
     });
   return {
     citationText,
+    readLookup,
     removeSource() {
       file = null;
       for (const cb of deleted) cb(NOTE);
@@ -193,6 +202,10 @@ describe("Citation Popover citation text", () => {
 
     await vi.waitFor(() => expect(popovers[0]!.render).toHaveBeenCalledOnce());
     expect(run.citationText.read).toHaveBeenCalledOnce();
+    expect(run.readLookup).toHaveBeenCalledWith(
+      { citekeys: ["ghost"] },
+      { signal: expect.any(AbortSignal) },
+    );
     const content = popovers[0]!.render.mock
       .calls[0]![0] as ReactElement<CitationPopoverContentProps>;
     expect(content.props.note).toBeUndefined();
@@ -304,10 +317,16 @@ function workHarness() {
   const db = reads();
   const citationIndex = {
     resolution: {} as object | null,
-    resolveCitekey: vi.fn<() => CitekeyResolution | null>(() => ({
+    resolveCitekey: vi.fn<() => CitekeyResolution>(() => ({
       kind: "missing",
     })),
-    readLookup: async () => ({ resolve: citationIndex.resolveCitekey }),
+    readLookup: vi.fn(async ({ citekeys }: { citekeys: readonly string[] }) =>
+      lookupAnswer(
+        Object.fromEntries(
+          citekeys.map((citekey) => [citekey, citationIndex.resolveCitekey()]),
+        ),
+      ),
+    ),
     on,
   };
   const readBibliography = vi.fn<
@@ -363,6 +382,21 @@ function workHarness() {
 }
 
 describe("source-less lookup states", () => {
+  it("reports a failed citation read as database unavailable", async () => {
+    await using run = workHarness();
+    run.citationIndex.readLookup.mockRejectedValueOnce(
+      new Error("worker unavailable"),
+    );
+    run.show({ kind: "citekey", citekey: "doe2024" });
+    expect((await run.shown()).textContent).toBe(
+      m.citation_popover_database_unavailable(),
+    );
+    expect(run.citationIndex.readLookup).toHaveBeenCalledWith(
+      { citekeys: ["doe2024"] },
+      { signal: expect.any(AbortSignal) },
+    );
+  });
+
   it("distinguishes an unavailable database from an absent exact Item", async () => {
     await using run = workHarness();
     run.db.state = "degraded";
@@ -385,12 +419,13 @@ describe("source-less lookup states", () => {
 describe("source-less Citation Key refresh", () => {
   it("refreshes pending, missing, unique, and ambiguous results while open", async () => {
     await using run = workHarness();
-    run.citationIndex.resolveCitekey.mockReturnValue(null);
+    run.citationIndex.resolution = null;
     run.show({ kind: "citekey", citekey: "doe2024" });
     expect((await run.shown()).textContent).toBe(
       m.references_citekey_pending({ citekey: "doe2024" }),
     );
 
+    run.citationIndex.resolution = {};
     run.citationIndex.resolveCitekey.mockReturnValue({ kind: "missing" });
     run.emit("resolution-changed");
     await vi.waitFor(async () =>

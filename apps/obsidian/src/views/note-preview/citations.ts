@@ -98,7 +98,7 @@ export async function renderDraftCitations(
     })),
     works: keys.map(({ citekey }) => {
       const found = lookup.resolve(citekey);
-      return found?.kind === "unique" ? found.item.indexedKey : null;
+      return found.kind === "unique" ? found.item.indexedKey : null;
     }),
   }));
   if (input.wikilinks) {
@@ -112,7 +112,7 @@ export async function renderDraftCitations(
             return (
               note && {
                 ...note,
-                citationKey: lookup.citekeyOf(note.indexedKey) ?? null,
+                citationKey: lookup.citekeyOf(note.indexedKey),
               }
             );
           },

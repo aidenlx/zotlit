@@ -14,7 +14,7 @@
 
 import type { CslItemData } from "@zotlit/db";
 
-import type { CitekeyResolution } from "@/services/citation-index/snapshot";
+import type { CitationLookupAnswer } from "@/services/citation-index/lookup";
 
 import type {
   BibliographyFailure,
@@ -58,12 +58,11 @@ export interface ExportPorts {
   /**
    * What a literal `@citation-key` names in the current Library Scope, read
    * through the same resolution snapshot every in-app surface reads, so an
-   * export cites what Live Preview shows. `null` means no snapshot, which only
-   * an unreadable Zotero database leaves behind.
+   * export cites what Live Preview shows. An unavailable read rejects.
    */
   readLookup: (request: {
     citekeys: readonly string[];
-  }) => Promise<{ resolve: (citekey: string) => CitekeyResolution | null }>;
+  }) => Promise<CitationLookupAnswer>;
   /**
    * Zotero library addresses of the cited Indexed Keys, read under one lease.
    * A key the database cannot place is absent; `null` means no read lease.
@@ -272,12 +271,7 @@ async function readCitations(
       cited.add(wikilinkedKey);
       continue;
     }
-    const resolution = lookup?.resolve(id);
-    if (!resolution) {
-      return {
-        error: { kind: "database-unavailable", dataDir: ports.dataDir() },
-      };
-    }
+    const resolution = lookup!.resolve(id);
     switch (resolution.kind) {
       case "missing":
         unknown.push(id);

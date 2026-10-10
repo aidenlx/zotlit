@@ -25,6 +25,7 @@ import { livePreviewOf, overlapsSelection } from "@/lib/editor-decoration";
 import { getLogger } from "@/lib/log";
 import { themeHook } from "@/lib/theme-hooks";
 import { EditorLookup } from "@/services/citation-index/editor-lookup";
+import { heldResolution } from "@/services/citation-index/lookup";
 import type {
   CitationLookupAnswer,
   CitationLookupObservation,
@@ -222,7 +223,7 @@ export function citekeyEditorExtension(
       }
 
       readonly #resolve: ResolveCitekey = (citekey) =>
-        this.#lookup.current?.value.resolve(citekey) ?? null;
+        heldResolution(this.#lookup.current?.value ?? null, citekey);
 
       update(update: ViewUpdate): void {
         if (update.docChanged) this.#editClick = null;

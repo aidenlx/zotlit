@@ -250,10 +250,8 @@ export function createCitationsCliHandlers(
           });
         }
 
-        const entries = referenceEntries(
-          references,
-          (citekey) =>
-            references.lookup.resolve(citekey) ?? { kind: "missing" },
+        const entries = referenceEntries(references, (citekey) =>
+          references.lookup.resolve(citekey),
         );
         return envelope(REFERENCES_COMMAND, {
           ok: true,
@@ -326,8 +324,6 @@ async function resolveItem(
   if ("citekey" in selector) {
     const { citekey } = selector;
     const resolved = lookup.resolve(citekey);
-    if (resolved === null)
-      throw new Error("Citation lookup omitted the requested key");
     if (resolved.kind === "missing") {
       return { kind: "fault", diagnostic: citekeyNotFoundDiagnostic(citekey) };
     }
@@ -359,7 +355,7 @@ async function resolveItem(
     kind: "selected",
     item: {
       key,
-      citekey: lookup.citekeyOf(key) ?? null,
+      citekey: lookup.citekeyOf(key),
       summary,
     },
   };

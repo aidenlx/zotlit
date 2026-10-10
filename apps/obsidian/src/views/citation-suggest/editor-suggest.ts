@@ -96,7 +96,7 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
         .catch(() => null);
       if (answer === null || controller.signal.aborted) return [];
       const found = answer.resolve(key.citationKey);
-      if (found?.kind === "unique" || found?.kind === "ambiguous") {
+      if (found.kind === "unique" || found.kind === "ambiguous") {
         this.close();
         return [];
       }
@@ -224,7 +224,7 @@ export async function resolveCitationInsert(
   } catch {
     return { kind: "notice", message: m.notice_citekey_not_ready() };
   }
-  if (lookup.resolve(citationKey)?.kind === "ambiguous") {
+  if (lookup.resolve(citationKey).kind === "ambiguous") {
     return {
       kind: "notice",
       message: m.notice_citekey_ambiguous_insert({ citekey: citationKey }),

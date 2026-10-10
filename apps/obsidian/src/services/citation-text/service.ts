@@ -496,8 +496,7 @@ export class CitationText extends Service<void> {
                       {
                         path: note.path,
                         indexedKey: citation.indexedKey!,
-                        citationKey:
-                          lookup.citekeyOf(citation.indexedKey!) ?? null,
+                        citationKey: lookup.citekeyOf(citation.indexedKey!),
                       },
                     ] as const,
                   ]

@@ -59,7 +59,7 @@ describe("CitationIndex", () => {
     const set = await pending;
     expect(set.citations[0]?.indexedKey).toBe(KEY_A);
     expect(set.lookup.citekeyOf(KEY_A)).toBe("doe2024");
-    expect(set.lookup.citekeyOf(KEY_B)).toBeUndefined();
+    expect(() => set.lookup.citekeyOf(KEY_B)).toThrow(KEY_B);
   });
 
   it("replaces a view's selection and never publishes after disposal", async () => {
@@ -76,7 +76,7 @@ describe("CitationIndex", () => {
     await expect
       .poll(() => view.current?.value.resolve("roe2025")?.kind)
       .toBe("unique");
-    expect(view.current!.value.resolve("doe2024")).toBeNull();
+    expect(() => view.current!.value.resolve("doe2024")).toThrow("doe2024");
     expect(calls).toBe(1);
     view.set({ citekeys: ["doe2024"] });
     view[Symbol.dispose]();
@@ -111,9 +111,9 @@ describe("CitationIndex", () => {
       item: { indexedKey: KEY_A },
     });
     expect(answer.resolve("absent")).toEqual({ kind: "missing" });
-    expect(answer.resolve("roe2025")).toBeNull();
+    expect(() => answer.resolve("roe2025")).toThrow("roe2025");
     expect(answer.citekeyOf(KEY_B)).toBe("roe2025");
-    expect(answer.citekeyOf(KEY_A)).toBeUndefined();
+    expect(() => answer.citekeyOf(KEY_A)).toThrow(KEY_A);
     expect(answer.revision).toBeTruthy();
   });
 
@@ -1879,6 +1879,33 @@ describe("CitationIndex citedByOmittedSyntaxes", () => {
 });
 
 describe("CitationIndex one-shot reads", () => {
+  it.each([true, false])(
+    "keeps the requested occurrences while a lookup waits (Pandoc enabled: %s)",
+    async (enabled) => {
+      const db = new DatabaseStub({ readyImmediately: false });
+      const { index, workspace, metadataCache, draft } = await makeHarness(
+        { "draft.md": "@doe2024." },
+        { db, settings: { "citation.pandoc-citations": enabled } },
+      );
+      workspace.layoutReady();
+      await index.whenIndexed();
+      const pending = enabled
+        ? index.getCitedBy(KEY_A)
+        : index.citedByOmittedSyntaxes(KEY_A);
+      await yieldToMain();
+      metadataCache.change(draft, "@roe2025.");
+      db.settle();
+
+      if (enabled) {
+        expect(await pending).toMatchObject({
+          groups: [{ path: "draft.md", occurrences: [{ raw: "doe2024" }] }],
+        });
+      } else {
+        expect(await pending).toEqual(["citekey"]);
+      }
+    },
+  );
+
   it("answers the reverse observation as a single read", async () => {
     const { index, workspace } = await makeHarness({
       "review.md": "@doe2024 and @roe2025.",

@@ -3,7 +3,7 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { describe, expect, it, vi } from "vitest";
 
-import { lookupForWorks } from "@/services/citation-index/__fixtures__/lookup";
+import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 
 const { livePreview, tokenClassNodeProp } = vi.hoisted(() => ({
   livePreview: vi.fn(() => false),
@@ -78,7 +78,8 @@ vi.mock("obsidian", async (importOriginal) => {
 
 import { editorInfoField } from "obsidian";
 
-import { CitationLookupAnswer } from "@/services/citation-index/lookup";
+import { heldCitekeyOf } from "@/services/citation-index/lookup";
+import { LookupObservation } from "@/services/citation-index/observation";
 import { occurrences, rendered } from "@/services/citation-text/__fixtures__";
 import { citationKey } from "@/services/citation-text/present";
 import type { DocumentCitations } from "@/services/citation-text/present";
@@ -122,7 +123,12 @@ function viewOf(
       ],
     ]),
     summaries: new Map([[LITERATURE_NOTE.indexedKey, "Example (2020)"]]),
-    lookup: lookupForWorks(new Map()),
+    lookup: lookupAnswer(
+      {},
+      Object.fromEntries(
+        [LITERATURE_NOTE].map((note) => [note.indexedKey, note.citationKey]),
+      ),
+    ),
     literalWorks: new Map(),
   };
   const held: Held<DocumentCitations> = {
@@ -142,27 +148,25 @@ function viewOf(
               ? {
                   ...LITERATURE_NOTE,
                   citationKey:
-                    lookup?.citekeyOf(LITERATURE_NOTE.indexedKey) ?? null,
+                    heldCitekeyOf(lookup, LITERATURE_NOTE.indexedKey) ?? null,
                 }
               : null,
-          observeLookup: () => {
-            const lookup = new CitationLookupAnswer({
-              revision: "test",
-              citekeys: new Map(),
-              indexedKeys: new Map([
-                [LITERATURE_NOTE.indexedKey, LITERATURE_NOTE.citationKey],
-              ]),
-            });
-            return {
-              current: {
-                value: lookup,
-                status: "fresh",
-                settled: Promise.resolve(lookup),
-              },
-              set: () => undefined,
-              [Symbol.dispose]: () => undefined,
-            };
-          },
+          observeLookup: (changed) =>
+            new LookupObservation(
+              async ({ indexedKeys = [] }) =>
+                lookupAnswer(
+                  {},
+                  Object.fromEntries(
+                    indexedKeys.map((key) => [
+                      key,
+                      [LITERATURE_NOTE].find((note) => note.indexedKey === key)
+                        ?.citationKey ?? null,
+                    ]),
+                  ),
+                ),
+              changed,
+              () => undefined,
+            ),
           enabled: () => enabled,
           citationText: () => (formatted ? held : null),
           open: () => undefined,

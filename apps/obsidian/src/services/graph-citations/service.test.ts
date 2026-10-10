@@ -101,12 +101,6 @@ const KAY = {
   key: "KAY23456",
   indexedKey: "KAY23456",
 };
-/** The key each Item is written as, which a Literature Note node is read by. */
-const CITEKEYS: Record<string, string> = {
-  DEE23456: "doe2024",
-  LEE56789: "lee2019",
-  KAY23456: "kay2020",
-};
 const RESOLUTIONS: Record<string, CitekeyResolution> = {
   doe2024: { kind: "unique", item: DOE },
   pine2023: { kind: "unique", item: PINE },
@@ -544,12 +538,12 @@ class CitationIndexStub {
     const value = new CitationLookupAnswer({
       revision: `test-${this.#revision}`,
       citekeys: new Map(
-        [...requested].flatMap((citekey) => {
-          const resolution = RESOLUTIONS[citekey];
-          return resolution ? [[citekey, resolution] as const] : [];
-        }),
+        [...requested].map((citekey) => [
+          citekey,
+          RESOLUTIONS[citekey] ?? { kind: "missing" },
+        ]),
       ),
-      indexedKeys: new Map(Object.entries(CITEKEYS)),
+      indexedKeys: new Map(),
     });
     return {
       value,

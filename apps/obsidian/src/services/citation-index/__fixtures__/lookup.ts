@@ -15,10 +15,12 @@ export function lookupAnswer(
 }
 
 export function lookupForWorks(
-  works: ReadonlyMap<string, string>,
+  works: ReadonlyMap<string, string | null>,
 ): CitationLookupAnswer {
-  return lookupAnswer(Object.fromEntries([...works].map(([citekey, indexedKey]) => [citekey, {
-    kind: "unique" as const,
-    item: {itemID: 1, libraryID: 1, key: indexedKey, indexedKey},
-  }])));
+  return lookupAnswer(Object.fromEntries([...works].map(([citekey, indexedKey]) => [citekey,
+    indexedKey === null ? { kind: "missing" as const } : {
+      kind: "unique" as const,
+      item: {itemID: 1, libraryID: 1, key: indexedKey, indexedKey},
+    },
+  ])));
 }

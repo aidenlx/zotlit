@@ -10,6 +10,7 @@ import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { readAmbiguousCandidates } from "@/services/citation-index/ambiguity";
 import type { AmbiguousCandidatesOf } from "@/services/citation-index/ambiguity";
+import { heldResolution } from "@/services/citation-index/lookup";
 import {
   citationsEqual,
   documentCitationErrorsEqual,
@@ -426,7 +427,7 @@ export class ReferencesView extends ItemView {
       readReferenceSources(this.#deps.db, citations),
       readAmbiguousCandidates(
         this.#deps,
-        (citekey) => lookup?.resolve(citekey) ?? null,
+        (citekey) => heldResolution(lookup, citekey),
         citations.flatMap(({ indexedKey, occurrences }) =>
           indexedKey === null ? [occurrences[0]!.raw] : [],
         ),

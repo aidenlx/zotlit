@@ -15,6 +15,7 @@ import {
   sectionRange,
 } from "@/lib/reading-view";
 import { themeHook } from "@/lib/theme-hooks";
+import { heldResolution } from "@/services/citation-index/lookup";
 import type {
   CitationLookupAnswer,
   CitationLookupObservation,
@@ -296,7 +297,7 @@ export class CitekeyReading extends Service<void> {
       path: text?.value.presentationFailure?.target,
     });
     const snapshotState = (citekey: string) =>
-      citekeyState(answer?.resolve(citekey) ?? null);
+      citekeyState(heldResolution(answer, citekey));
     const stateOf =
       text === null ? snapshotState : literalKeyStateOf(text.value);
     // Which occurrence each citation of the section is, so a position-dependent
