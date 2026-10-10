@@ -483,6 +483,51 @@ describe("ZoteroReads worker adapter", () => {
     expect(result.after).toBe(2);
   });
 
+  it("bounds a hung startup, releases it, and recovers on Refresh", async () => {
+    const workers = fakeWorkers({ hangStart: (n) => n === 1 });
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const starting = yield* Effect.forkChild(
+          makeWorkerReads(workers.connect),
+        );
+        yield* TestClock.adjust("15 seconds");
+        for (let turn = 0; turn < 100 && !starting.pollUnsafe(); turn++)
+          yield* Effect.yieldNow;
+        const exit = starting.pollUnsafe();
+        if (!exit || Exit.isFailure(exit)) return { exit };
+        const reads = exit.value;
+        const seed = yield* Stream.runHead(reads.Changes());
+        const ended = workers.ended(1);
+        yield* reads.Refresh();
+        return { exit, seed, ended, seen: yield* workerSeen(reads) };
+      }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
+    );
+    expect(result.exit).toMatchObject({ _tag: "Success" });
+    expect(result.seed).toMatchObject({
+      value: { state: "degraded", error: { _tag: "DbUnavailable" } },
+    });
+    expect(result.ended).toBe(true);
+    expect(result.seen).toBe(2);
+  });
+
+  it("service unload finishes when the initial worker never connects", async () => {
+    vi.useFakeTimers();
+    try {
+      const workers = fakeWorkers({ hangStart: () => true });
+      const service = new ZoteroReadsService({
+        client: makeWorkerReads(workers.connect),
+      });
+      const disposing = service[Symbol.asyncDispose]();
+      await vi.advanceTimersByTimeAsync(15_000);
+      await disposing;
+      await service[Symbol.asyncDispose]();
+      expect(workers.ended(1)).toBe(true);
+      expect(service.state).toBe("degraded");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("ends a worker whose start was interrupted", async () => {
     const workers = fakeWorkers({ hangStart: (n) => n === 2 });
     const ended = await Effect.runPromise(
@@ -544,6 +589,54 @@ describe("ZoteroReads worker adapter", () => {
     expect(workers.abandoned(1)).toBe(false);
     expect(degraded).toEqual([]);
     expect(service.state).toBe("ready");
+  });
+
+  it("unload interrupts a hung recovery and repeated unload stays safe", async () => {
+    const workers = fakeWorkers({ hangStart: (n) => n === 2 });
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const scope = yield* Scope.make();
+        const reads = yield* Scope.provide(
+          makeWorkerReads(workers.connect),
+          scope,
+        );
+        yield* workerSeen(reads);
+        const changes = yield* Stream.toPull(reads.Changes());
+        yield* workers.kill(1);
+        yield* until(changes, "degraded");
+        const recovery = yield* Effect.forkChild(reads.Refresh());
+        while (workers.spawned() < 2) yield* Effect.yieldNow;
+        yield* Scope.close(scope, Exit.void);
+        yield* Scope.close(scope, Exit.void);
+        for (let turn = 0; turn < 100 && !recovery.pollUnsafe(); turn++)
+          yield* Effect.yieldNow;
+        expect(recovery.pollUnsafe()).toMatchObject({ _tag: "Failure" });
+        expect(workers.ended(2)).toBe(true);
+      }).pipe(Effect.scoped),
+    );
+  });
+
+  it("rejects recovery after disposal without starting another worker", async () => {
+    const workers = fakeWorkers();
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const scope = yield* Scope.make();
+        const reads = yield* Scope.provide(
+          makeWorkerReads(workers.connect),
+          scope,
+        );
+        yield* workerSeen(reads);
+        const changes = yield* Stream.toPull(reads.Changes());
+        yield* workers.kill(1);
+        yield* until(changes, "degraded");
+        yield* Scope.close(scope, Exit.void);
+        const refreshed = yield* Effect.exit(reads.Refresh());
+        yield* Scope.close(scope, Exit.void);
+        return refreshed;
+      }).pipe(Effect.scoped),
+    );
+    expect(result).toMatchObject({ _tag: "Failure" });
+    expect(workers.spawned()).toBe(1);
   });
 
   it("ends the worker when the caller's scope closes", async () => {

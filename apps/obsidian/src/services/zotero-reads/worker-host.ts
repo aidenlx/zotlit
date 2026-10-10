@@ -8,6 +8,7 @@ import {
   Duration,
   Effect,
   Exit,
+  Fiber,
   Layer,
   Scope,
   Semaphore,
@@ -39,6 +40,9 @@ const WORKER_CONCURRENCY = 1024;
 
 /** How long unload waits for a worker to remove its snapshots. */
 const WORKER_CLOSE_TIMEOUT = Duration.seconds(5);
+
+/** Bound the initial handshake and each later recovery attempt. */
+const WORKER_START_TIMEOUT = Duration.seconds(15);
 
 /** How often the renderer asks a live worker to answer. */
 const HEARTBEAT_INTERVAL = Duration.seconds(10);
@@ -311,6 +315,15 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
     // worker it spawned ends with the host at the latest.
     const scope = yield* Scope.fork(hostScope);
     const result = yield* Scope.provide(connect, scope).pipe(
+      Effect.timeoutOrElse({
+        duration: WORKER_START_TIMEOUT,
+        orElse: () =>
+          Effect.fail(
+            new DbUnavailable({
+              message: "The database worker did not start in time",
+            }),
+          ),
+      }),
       Effect.onInterrupt(() => Scope.close(scope, Exit.void)),
       Effect.exit,
     );
@@ -389,11 +402,24 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
   });
 
   /** The live worker's client, connecting a new worker when none serves. */
-  const ensureConnected = connecting.withPermits(1)(
-    Effect.suspend(() =>
-      current ? Effect.succeed(current.client) : connectNew,
-    ),
-  );
+  const ensureConnected = connecting
+    .withPermits(1)(
+      Effect.suspend(() => {
+        if (hostScope.state._tag === "Closed")
+          return Effect.fail(
+            new DbUnavailable({ message: "The database worker stopped" }),
+          );
+        return current ? Effect.succeed(current.client) : connectNew;
+      }),
+    )
+    .pipe(
+      Effect.forkIn(hostScope),
+      Effect.flatMap((fiber) =>
+        Fiber.join(fiber).pipe(
+          Effect.onInterrupt(() => Fiber.interrupt(fiber)),
+        ),
+      ),
+    );
 
   yield* Effect.ignore(ensureConnected);
 
