@@ -160,15 +160,14 @@ export async function measureWorkerHeap<T>(
       );
     }
   })();
-  try {
-    const [value] = await Promise.all([
-      measure().finally(() => stop.abort()),
-      sampling,
-    ]);
-    await sample("after");
-    return { value, workerHeap };
-  } finally {
-    stop.abort();
-    await sampling;
-  }
+  const [measurement, sampler] = await Promise.allSettled([
+    Promise.resolve()
+      .then(measure)
+      .finally(() => stop.abort()),
+    sampling,
+  ]);
+  if (sampler.status === "rejected") throw sampler.reason;
+  if (measurement.status === "rejected") throw measurement.reason;
+  await sample("after");
+  return { value: measurement.value, workerHeap };
 }
