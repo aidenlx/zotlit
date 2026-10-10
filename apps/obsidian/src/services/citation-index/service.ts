@@ -369,7 +369,7 @@ export class CitationIndex extends Service<void> {
       queued = true;
       queueMicrotask(() => {
         queued = false;
-        void publish();
+        publish();
       });
     };
     listeners.defer(this.on("changed", onChange));
@@ -381,7 +381,7 @@ export class CitationIndex extends Service<void> {
     void this.ready.then(() => {
       if (disposed || this.#stopped) return;
       published = true;
-      void publish();
+      publish();
     });
 
     const ownedListeners = listeners.move();
@@ -518,7 +518,7 @@ export class CitationIndex extends Service<void> {
     request: CitationLookupRequest,
     { signal }: { signal?: AbortSignal } = {},
   ): Promise<CitationLookupAnswer> {
-    request = {
+    const selected = {
       citekeys: [...new Set(request.citekeys ?? [])],
       indexedKeys: [...new Set(request.indexedKeys ?? [])],
     };
@@ -536,7 +536,7 @@ export class CitationIndex extends Service<void> {
         lifetime,
       );
       const answer = await this.#reads.readLookup(
-        request,
+        selected,
         this.#libraryScope.effective,
         { signal: lifetime },
       );

@@ -3,6 +3,10 @@ import type { CliData, CliHandler } from "obsidian";
 
 import type { CliRejection } from "@/lib/cli-params";
 import type {
+  CitationLookupAnswer,
+  CitationLookupRequest,
+} from "@/services/citation-index/lookup";
+import type {
   Citation,
   CitationKeyResolution,
   CitationSettleOutcome,
@@ -15,7 +19,6 @@ import type {
   ReferenceSource,
 } from "@/services/citation-index/service";
 
-import type { CitationLookupAnswer, CitationLookupRequest } from "../lookup";
 import {
   ambiguousCitekeyDiagnostic,
   citekeyNotFoundDiagnostic,

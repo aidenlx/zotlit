@@ -295,9 +295,7 @@ export class CitekeyReading extends Service<void> {
     const snapshotState = (citekey: string) =>
       citekeyState(answer?.resolve(citekey) ?? null);
     const stateOf =
-      text === null
-        ? snapshotState
-        : literalKeyStateOf(text.value, snapshotState);
+      text === null ? snapshotState : literalKeyStateOf(text.value);
     // Which occurrence each citation of the section is, so a position-dependent
     // style shows every one of them the text rendered for its own place.
     const coordinates = sectionCoordinates(citations, sectionRange(ctx, el));

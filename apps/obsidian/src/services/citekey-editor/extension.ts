@@ -748,7 +748,6 @@ function buildDecorations(
             start: from,
             edited,
             handlers,
-            resolveCitekey,
             lookup,
             footnote: statesFootnoteTreatment(state, from, to),
           });
@@ -805,7 +804,6 @@ function citationWidget(options: {
   start: number;
   edited: EditedDocument;
   handlers: CitekeyEditorHandlers;
-  resolveCitekey: ResolveCitekey;
   lookup: () => CitationLookupAnswer | null;
   /** Whether the Citation is written inside a footnote. */
   footnote: boolean;
@@ -815,16 +813,13 @@ function citationWidget(options: {
     start,
     edited: { citations, path },
     handlers,
-    resolveCitekey,
     lookup,
     footnote,
   } = options;
   const at: CitationCoordinate = { kind: "offset", start };
   const content = citationContent(citation, citations, at);
   if (content === null) return null;
-  const stateOf = literalKeyStateOf(citations, (citekey) =>
-    citekeyState(resolveCitekey(citekey)),
-  );
+  const stateOf = literalKeyStateOf(citations);
   const themeClasses = citationStateHooks(
     citationState(citationKeyStates(citation, stateOf)),
   );
