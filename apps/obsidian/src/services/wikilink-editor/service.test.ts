@@ -122,12 +122,12 @@ describe("WikilinkEditor redraw", () => {
     expect(dispatched).toEqual([]);
   });
 
-  it("redraws every open editor when the citekey resolution snapshot rebuilds", async () => {
+  it("leaves lookup redraws to each open editor view", async () => {
     await using harnessed = await harness();
     const { citationIndex, dispatched } = harnessed;
 
-    citationIndex.emit("resolution-changed");
-    expect(dispatched).toEqual(["note.md", "other.md"]);
+    citationIndex.emit();
+    expect(dispatched).toEqual([]);
   });
 
   it("leaves the editors alone when an unrelated setting changes", async () => {
@@ -191,16 +191,16 @@ class CitationTextStub {
 class CitationIndexStub {
   readonly #listeners = new Set<() => void>();
 
-  citekeyOf(): string | null {
-    return null;
-  }
-
-  on(event: "resolution-changed", cb: () => void): () => void {
+  observeLookup(cb: () => void) {
     this.#listeners.add(cb);
-    return () => this.#listeners.delete(cb);
+    return {
+      current: null,
+      set: () => undefined,
+      [Symbol.dispose]: () => this.#listeners.delete(cb),
+    };
   }
 
-  emit(_event: "resolution-changed"): void {
+  emit(): void {
     for (const cb of this.#listeners) cb();
   }
 }

@@ -132,19 +132,21 @@ function ports(fixture: Fixture): ExportPorts & {
     engine: { prepareDocument, renderPrepared },
     dataDir: () => "/Zotero",
     resolveIndexedKey: (linkpath) => fixture.notes?.[linkpath] ?? null,
-    resolveCitekey: (citekey): CitekeyResolution | null => {
-      if (fixture.snapshotUnavailable) return null;
-      if (fixture.ambiguous?.includes(citekey)) {
-        return { kind: "ambiguous", candidates: [] };
-      }
-      const indexedKey = fixture.citekeys?.[citekey];
-      return indexedKey === undefined
-        ? { kind: "missing" }
-        : {
-            kind: "unique",
-            item: { itemID: 1, libraryID: 1, key: indexedKey, indexedKey },
-          };
-    },
+    readLookup: async () => ({
+      resolve: (citekey: string): CitekeyResolution | null => {
+        if (fixture.snapshotUnavailable) return null;
+        if (fixture.ambiguous?.includes(citekey)) {
+          return { kind: "ambiguous", candidates: [] };
+        }
+        const indexedKey = fixture.citekeys?.[citekey];
+        return indexedKey === undefined
+          ? { kind: "missing" }
+          : {
+              kind: "unique",
+              item: { itemID: 1, libraryID: 1, key: indexedKey, indexedKey },
+            };
+      },
+    }),
     readItemRefs: (indexedKeys) => {
       if (fixture.databaseUnavailable) return Promise.resolve(null);
       const placed = new Map<string, BibliographyItemRef>();

@@ -3,6 +3,8 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { lookupForWorks } from "@/services/citation-index/__fixtures__/lookup";
+
 const { livePreview, hoverLinks } = vi.hoisted(() => ({
   livePreview: vi.fn(() => false),
   /** Every `hover-link` the editor's own workspace was asked to answer. */
@@ -36,6 +38,7 @@ vi.mock("obsidian", async (importOriginal) => {
 
 import { editorInfoField, Keymap } from "obsidian";
 
+import { CitationLookupAnswer } from "@/services/citation-index/lookup";
 import type {
   CitekeyResolution,
   SnapshotItem,
@@ -61,6 +64,7 @@ import {
   citekeyDecorationsChanged,
   citekeyEditorExtension,
 } from "./extension";
+import type { CitekeyEditorHandlers, ResolveCitekey } from "./extension";
 
 /** The Indexed Key `@doe2024` reaches, which is what a summary is held under. */
 const DOE_KEY = "DOE22345";
@@ -100,6 +104,40 @@ function heldRead(value: DocumentCitations): Held<DocumentCitations> {
   return { value, status: "fresh", settled: Promise.resolve(value) };
 }
 
+function lookupHandlers(
+  handlers: Omit<CitekeyEditorHandlers, "observeLookup"> & {
+    resolveCitekey: ResolveCitekey;
+  },
+): CitekeyEditorHandlers {
+  const { resolveCitekey, ...rest } = handlers;
+  return {
+    ...rest,
+    observeLookup: () => {
+      const value = new CitationLookupAnswer({
+        revision: "test",
+        citekeys: new Map(
+          ["resolved", "unresolved", "pending", "ambiguous", "doe2024"]
+            .map((citekey) => [citekey, resolveCitekey(citekey)] as const)
+            .filter(
+              (entry): entry is readonly [string, CitekeyResolution] =>
+                entry[1] !== null,
+            ),
+        ),
+        indexedKeys: new Map(),
+      });
+      return {
+        current: {
+          value,
+          status: "fresh",
+          settled: Promise.resolve(value),
+        },
+        set: () => undefined,
+        [Symbol.dispose]: () => undefined,
+      };
+    },
+  };
+}
+
 function editorView(options: ConstructorParameters<typeof EditorView>[0]) {
   const view = new EditorView(options);
   return Object.assign(view, { [Symbol.dispose]: () => view.destroy() });
@@ -135,24 +173,62 @@ describe("citekeyAtPos", () => {
 });
 
 describe("citekeyEditorExtension theme hooks", () => {
+  it("replaces its lookup request with the visible citekeys and releases it on close", async () => {
+    const requests: string[][] = [];
+    let disposed = 0;
+    using view = editorView({
+      parent: document.body,
+      state: EditorState.create({
+        doc: "@first",
+        extensions: citekeyEditorExtension({
+          open: () => undefined,
+          showPopover: () => undefined,
+          hoverPreferences: () => hover(),
+          hoverNotePath: () => null,
+          workspace: { trigger: () => {} },
+          observeLookup: () => ({
+            current: null,
+            set: ({ citekeys = [] }) => requests.push([...citekeys]),
+            [Symbol.dispose]: () => {
+              disposed += 1;
+            },
+          }),
+          navigationEnabled: () => true,
+          showFormatted: () => false,
+          citationText: () => null,
+        }),
+      }),
+    });
+    await vi.waitFor(() => expect(requests).toEqual([["first"]]));
+
+    vi.spyOn(view, "viewport", "get").mockReturnValue({ from: 0, to: 0 });
+    view.dispatch({ changes: { from: 1, to: 6, insert: "second" } });
+    await vi.waitFor(() => expect(requests).toEqual([["first"], ["second"]]));
+
+    view.destroy();
+    expect(disposed).toBe(1);
+  });
+
   it("adds literal resolved and unresolved citation-key hooks in Source mode", () => {
     livePreview.mockReturnValue(false);
     using view = editorView({
       parent: document.body,
       state: EditorState.create({
         doc: "@resolved and @unresolved",
-        extensions: citekeyEditorExtension({
-          open: () => undefined,
-          showPopover: () => undefined,
-          hoverPreferences: () => hover(),
-          hoverNotePath: () => NOTE_PATH,
-          workspace: { trigger: () => {} },
-          resolveCitekey: (citekey) =>
-            citekey === "resolved" ? unique(DOE_KEY) : missing,
-          navigationEnabled: () => true,
-          showFormatted: () => true,
-          citationText: () => null,
-        }),
+        extensions: citekeyEditorExtension(
+          lookupHandlers({
+            open: () => undefined,
+            showPopover: () => undefined,
+            hoverPreferences: () => hover(),
+            hoverNotePath: () => NOTE_PATH,
+            workspace: { trigger: () => {} },
+            resolveCitekey: (citekey) =>
+              citekey === "resolved" ? unique(DOE_KEY) : missing,
+            navigationEnabled: () => true,
+            showFormatted: () => true,
+            citationText: () => null,
+          }),
+        ),
       }),
     });
 
@@ -171,17 +247,19 @@ describe("citekeyEditorExtension theme hooks", () => {
       parent: document.body,
       state: EditorState.create({
         doc: "@pending",
-        extensions: citekeyEditorExtension({
-          open: () => undefined,
-          showPopover: () => undefined,
-          hoverPreferences: () => hover(),
-          hoverNotePath: () => null,
-          workspace: { trigger: () => {} },
-          resolveCitekey: () => null,
-          navigationEnabled: () => true,
-          showFormatted: () => true,
-          citationText: () => null,
-        }),
+        extensions: citekeyEditorExtension(
+          lookupHandlers({
+            open: () => undefined,
+            showPopover: () => undefined,
+            hoverPreferences: () => hover(),
+            hoverNotePath: () => null,
+            workspace: { trigger: () => {} },
+            resolveCitekey: () => null,
+            navigationEnabled: () => true,
+            showFormatted: () => true,
+            citationText: () => null,
+          }),
+        ),
       }),
     });
 
@@ -202,18 +280,20 @@ describe("citekeyEditorExtension theme hooks", () => {
         parent: document.body,
         state: EditorState.create({
           doc,
-          extensions: citekeyEditorExtension({
-            open: () => undefined,
-            showPopover: () => undefined,
-            hoverPreferences: () => hover(),
-            hoverNotePath: () => NOTE_PATH,
-            workspace: { trigger: () => {} },
-            resolveCitekey: (citekey) =>
-              citekey === "ambiguous" ? ambiguous : missing,
-            navigationEnabled: () => true,
-            showFormatted: () => true,
-            citationText: () => null,
-          }),
+          extensions: citekeyEditorExtension(
+            lookupHandlers({
+              open: () => undefined,
+              showPopover: () => undefined,
+              hoverPreferences: () => hover(),
+              hoverNotePath: () => NOTE_PATH,
+              workspace: { trigger: () => {} },
+              resolveCitekey: (citekey) =>
+                citekey === "ambiguous" ? ambiguous : missing,
+              navigationEnabled: () => true,
+              showFormatted: () => true,
+              citationText: () => null,
+            }),
+          ),
         }),
       });
 
@@ -237,18 +317,20 @@ describe("citekeyEditorExtension theme hooks", () => {
       parent: document.body,
       state: EditorState.create({
         doc: "@resolved and @unresolved",
-        extensions: citekeyEditorExtension({
-          open: () => undefined,
-          showPopover: () => undefined,
-          hoverPreferences: () => hover(),
-          hoverNotePath: () => NOTE_PATH,
-          workspace: { trigger: () => {} },
-          resolveCitekey: (citekey) =>
-            citekey === "resolved" ? unique(DOE_KEY) : missing,
-          navigationEnabled: () => navigationEnabled,
-          showFormatted: () => false,
-          citationText: () => null,
-        }),
+        extensions: citekeyEditorExtension(
+          lookupHandlers({
+            open: () => undefined,
+            showPopover: () => undefined,
+            hoverPreferences: () => hover(),
+            hoverNotePath: () => NOTE_PATH,
+            workspace: { trigger: () => {} },
+            resolveCitekey: (citekey) =>
+              citekey === "resolved" ? unique(DOE_KEY) : missing,
+            navigationEnabled: () => navigationEnabled,
+            showFormatted: () => false,
+            citationText: () => null,
+          }),
+        ),
       }),
     });
     const marks = (): (string | undefined)[] =>
@@ -281,23 +363,26 @@ describe("citekeyEditorExtension theme hooks", () => {
         doc: "[@doe2024]",
         extensions: [
           editorInfoField,
-          citekeyEditorExtension({
-            open: (citekey) => opened.push(citekey),
-            showPopover: (request) => requests.push(request),
-            hoverPreferences: () => hover(),
-            hoverNotePath: () => NOTE_PATH,
-            workspace: { trigger: () => {} },
-            resolveCitekey: () => unique(DOE_KEY),
-            navigationEnabled: () => navigationEnabled,
-            showFormatted: () => true,
-            citationText: () =>
-              heldRead({
-                formatted: new Map([["[@doe2024]", occurrences(formatted)]]),
-                entrySerials: false,
-                summaries: new Map([[DOE_KEY, "Doe (2024)"]]),
-                literalWorks: new Map([["doe2024", DOE_KEY]]),
-              }),
-          }),
+          citekeyEditorExtension(
+            lookupHandlers({
+              open: (citekey) => opened.push(citekey),
+              showPopover: (request) => requests.push(request),
+              hoverPreferences: () => hover(),
+              hoverNotePath: () => NOTE_PATH,
+              workspace: { trigger: () => {} },
+              resolveCitekey: () => unique(DOE_KEY),
+              navigationEnabled: () => navigationEnabled,
+              showFormatted: () => true,
+              citationText: () =>
+                heldRead({
+                  formatted: new Map([["[@doe2024]", occurrences(formatted)]]),
+                  entrySerials: false,
+                  summaries: new Map([[DOE_KEY, "Doe (2024)"]]),
+                  lookup: lookupForWorks(new Map([["doe2024", DOE_KEY]])),
+                  literalWorks: new Map([["doe2024", DOE_KEY]]),
+                }),
+            }),
+          ),
         ],
       }),
     });
@@ -348,17 +433,19 @@ describe("citekeyEditorExtension delegated hover", () => {
         doc: "See @doe2024 here.",
         extensions: [
           editorInfoField,
-          citekeyEditorExtension({
-            open: () => undefined,
-            showPopover: (request) => requests.push(request),
-            hoverPreferences: () => preferences,
-            hoverNotePath: () => notePath,
-            workspace: { trigger: () => {} },
-            resolveCitekey: () => unique(DOE_KEY),
-            navigationEnabled: () => navigationEnabled,
-            showFormatted: () => false,
-            citationText: () => null,
-          }),
+          citekeyEditorExtension(
+            lookupHandlers({
+              open: () => undefined,
+              showPopover: (request) => requests.push(request),
+              hoverPreferences: () => preferences,
+              hoverNotePath: () => notePath,
+              workspace: { trigger: () => {} },
+              resolveCitekey: () => unique(DOE_KEY),
+              navigationEnabled: () => navigationEnabled,
+              showFormatted: () => false,
+              citationText: () => null,
+            }),
+          ),
         ],
       }),
     });
@@ -503,6 +590,7 @@ describe("citekeyEditorExtension citation widgets", () => {
       formatted,
       entrySerials: false,
       summaries: new Map([[DOE_KEY, "Doe (2024)"]]),
+      lookup: lookupForWorks(new Map([["doe2024", DOE_KEY]])),
       literalWorks: new Map([["doe2024", DOE_KEY]]),
     });
     return viewWithCitationText(doc, () => held);
@@ -519,21 +607,70 @@ describe("citekeyEditorExtension citation widgets", () => {
         doc,
         extensions: [
           editorInfoField,
-          citekeyEditorExtension({
-            open: (citekey, pane) => opened.push([citekey, pane]),
-            showPopover: (request) => requests.push(request),
-            hoverPreferences: () => hover(),
-            hoverNotePath: () => NOTE_PATH,
-            workspace: { trigger: () => {} },
-            resolveCitekey: () => unique(DOE_KEY),
-            navigationEnabled: () => false,
-            showFormatted: () => true,
-            citationText,
-          }),
+          citekeyEditorExtension(
+            lookupHandlers({
+              open: (citekey, pane) => opened.push([citekey, pane]),
+              showPopover: (request) => requests.push(request),
+              hoverPreferences: () => hover(),
+              hoverNotePath: () => NOTE_PATH,
+              workspace: { trigger: () => {} },
+              resolveCitekey: () => unique(DOE_KEY),
+              navigationEnabled: () => false,
+              showFormatted: () => true,
+              citationText,
+            }),
+          ),
         ],
       }),
     });
   }
+
+  it("keeps a failed held citation's native hover on the Item its text describes", () => {
+    livePreview.mockReturnValue(true);
+    const document: DocumentCitations = {
+      formatted: new Map([["[@doe2024]", occurrences(rendered("Doe (2024)"))]]),
+      entrySerials: false,
+      summaries: new Map([[DOE_KEY, "Doe (2024)"]]),
+      lookup: lookupForWorks(new Map([["doe2024", DOE_KEY]])),
+      literalWorks: new Map([["doe2024", DOE_KEY]]),
+    };
+    using view = editorView({
+      parent: globalThis.document.body,
+      state: EditorState.create({
+        doc: "[@doe2024]",
+        extensions: [
+          editorInfoField,
+          citekeyEditorExtension(
+            lookupHandlers({
+              open: () => undefined,
+              showPopover: () => undefined,
+              hoverPreferences: () => hover({ action: "page-preview" }),
+              hoverNotePath: (citekey, answer) => {
+                const resolved = answer?.resolve(citekey);
+                return resolved?.kind === "unique"
+                  ? `lit/${resolved.item.indexedKey}.md`
+                  : null;
+              },
+              workspace: { trigger: () => undefined },
+              resolveCitekey: () => unique("NEXT2345"),
+              navigationEnabled: () => false,
+              showFormatted: () => true,
+              citationText: () => ({ ...heldRead(document), status: "failed" }),
+            }),
+          ),
+        ],
+      }),
+    });
+    const drawn = view.dom.querySelector<HTMLElement>(".zt-citation")!;
+
+    drawn.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+
+    expect(drawn.textContent).toBe("Doe (2024)");
+    expect(hoverLinks.at(-1)).toEqual([
+      "hover-link",
+      expect.objectContaining({ linktext: `lit/${DOE_KEY}.md` }),
+    ]);
+  });
 
   it("shows the formatted citation the shared renderer draws", () => {
     using view = viewOf("[@doe2024]");
@@ -587,6 +724,7 @@ describe("citekeyEditorExtension citation widgets", () => {
       ]),
       entrySerials: false,
       summaries: new Map([[DOE_KEY, "Doe (2024)"]]),
+      lookup: lookupForWorks(new Map([["doe2024", DOE_KEY]])),
       literalWorks: new Map([["doe2024", DOE_KEY]]),
     });
     using view = viewWithCitationText("Hi [@doe2024]", () => held);
@@ -603,6 +741,7 @@ describe("citekeyEditorExtension citation widgets", () => {
       ]),
       entrySerials: false,
       summaries: new Map([[DOE_KEY, "Doe (2024)"]]),
+      lookup: lookupForWorks(new Map([["doe2024", DOE_KEY]])),
       literalWorks: new Map([["doe2024", DOE_KEY]]),
     });
     vi.spyOn(view, "viewport", "get").mockReturnValue({ from: 0, to: 0 });
@@ -618,6 +757,7 @@ describe("citekeyEditorExtension citation widgets", () => {
       ]),
       entrySerials: false,
       summaries: new Map([[DOE_KEY, "Roe (2025)"]]),
+      lookup: lookupForWorks(new Map([["doe2024", DOE_KEY]])),
       literalWorks: new Map([["doe2024", DOE_KEY]]),
     });
     view.dispatch({ effects: citekeyDecorationsChanged.of(undefined) });

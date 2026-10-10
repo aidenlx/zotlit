@@ -3,6 +3,7 @@
 import type { CitationSource } from "@/lib/citation-source";
 import type { SectionRange } from "@/lib/reading-view";
 import { themeHook } from "@/lib/theme-hooks";
+import type { CitationLookupAnswer } from "@/services/citation-index/lookup";
 import type { CitekeyResolution } from "@/services/citation-index/service";
 import type { CitedWork } from "@/services/citekey-navigation";
 import type { ProfilePresentationFailure } from "@/services/pandoc/document-presentation";
@@ -107,6 +108,8 @@ export interface ShownCitation {
 
 /** What one document's surfaces need to put text in their citations' place. */
 export interface DocumentCitations {
+  /** The exact lookup revision used to format these occurrences. */
+  lookup: CitationLookupAnswer;
   /** An unavailable Imported Note Profile, shown by its citation surfaces. */
   presentationFailure?: ProfilePresentationFailure;
   /**
@@ -201,16 +204,13 @@ export function citekeyState(
  *
  * A key reaches its work when the document's own read reached that work, which
  * is what a surface has text and a summary for; the resolution snapshot alone
- * says whether a key that reached none is Ambiguous or missing.
+ * of that same document read says whether an unresolved key is Ambiguous or missing.
  */
-export function literalKeyStateOf(
-  citations: DocumentCitations,
-  stateOf: KeyStateOf,
-): KeyStateOf {
+export function literalKeyStateOf(citations: DocumentCitations): KeyStateOf {
   const summaryOf = literalSummaryOf(citations);
   return (citekey) => {
     if (summaryOf(citekey) !== undefined) return "resolved";
-    const state = stateOf(citekey);
+    const state = citekeyState(citations.lookup.resolve(citekey));
     return state === "pending" || state === "ambiguous" ? state : "missing";
   };
 }

@@ -4,6 +4,7 @@ import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import { wrapNodeHover } from "@/services/graph-citations/hover";
 import type { GraphLeafMembers } from "@/services/graph-citations/install";
 import type {
@@ -80,9 +81,13 @@ function harness() {
     },
     db: reads(),
     citationIndex: {
-      resolveCitekey: () => ({ kind: "missing" }),
+      readLookup: async ({ citekeys = [] }: { citekeys?: readonly string[] }) =>
+        lookupAnswer(
+          Object.fromEntries(citekeys.map((key) => [key, { kind: "missing" }])),
+        ),
       on,
       getDocumentCitationSet: async () => ({
+        lookup: lookupAnswer(),
         occurrences: [],
         citations: [],
         errors: [],

@@ -3,6 +3,8 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { describe, expect, it, vi } from "vitest";
 
+import { lookupForWorks } from "@/services/citation-index/__fixtures__/lookup";
+
 const { livePreview, tokenClassNodeProp } = vi.hoisted(() => ({
   livePreview: vi.fn(() => false),
   tokenClassNodeProp: {},
@@ -76,6 +78,7 @@ vi.mock("obsidian", async (importOriginal) => {
 
 import { editorInfoField } from "obsidian";
 
+import { CitationLookupAnswer } from "@/services/citation-index/lookup";
 import { occurrences, rendered } from "@/services/citation-text/__fixtures__";
 import { citationKey } from "@/services/citation-text/present";
 import type { DocumentCitations } from "@/services/citation-text/present";
@@ -119,6 +122,7 @@ function viewOf(
       ],
     ]),
     summaries: new Map([[LITERATURE_NOTE.indexedKey, "Example (2020)"]]),
+    lookup: lookupForWorks(new Map()),
     literalWorks: new Map(),
   };
   const held: Held<DocumentCitations> = {
@@ -133,8 +137,32 @@ function viewOf(
       extensions: [
         editorInfoField,
         wikilinkEditorExtension({
-          literatureNote: (linkpath) =>
-            linkpath === "literatures/example" ? LITERATURE_NOTE : null,
+          literatureNote: (linkpath, _sourcePath, lookup) =>
+            linkpath === "literatures/example"
+              ? {
+                  ...LITERATURE_NOTE,
+                  citationKey:
+                    lookup?.citekeyOf(LITERATURE_NOTE.indexedKey) ?? null,
+                }
+              : null,
+          observeLookup: () => {
+            const lookup = new CitationLookupAnswer({
+              revision: "test",
+              citekeys: new Map(),
+              indexedKeys: new Map([
+                [LITERATURE_NOTE.indexedKey, LITERATURE_NOTE.citationKey],
+              ]),
+            });
+            return {
+              current: {
+                value: lookup,
+                status: "fresh",
+                settled: Promise.resolve(lookup),
+              },
+              set: () => undefined,
+              [Symbol.dispose]: () => undefined,
+            };
+          },
           enabled: () => enabled,
           citationText: () => (formatted ? held : null),
           open: () => undefined,
@@ -152,6 +180,47 @@ function viewOf(
 }
 
 describe("wikilinkEditorExtension theme hooks", () => {
+  it("requests the visible Literature Note keys and releases them on close", async () => {
+    livePreview.mockReturnValue(true);
+    const requests: string[][] = [];
+    let disposed = 0;
+    const view = new EditorView({
+      parent: document.body,
+      state: EditorState.create({
+        doc: "[[literatures/example]]",
+        extensions: [
+          editorInfoField,
+          wikilinkEditorExtension({
+            literatureNote: (linkpath) =>
+              linkpath === "literatures/example"
+                ? { ...LITERATURE_NOTE, citationKey: null }
+                : null,
+            observeLookup: () => ({
+              current: null,
+              set: ({ indexedKeys = [] }) => requests.push([...indexedKeys]),
+              [Symbol.dispose]: () => {
+                disposed += 1;
+              },
+            }),
+            enabled: () => true,
+            citationText: () => null,
+            open: () => undefined,
+            showPopover: () => undefined,
+            hoverPreferences: () => hoverPreferences(defaults),
+            popoverHover: () => false,
+            clickIntercepted: () => false,
+          }),
+        ],
+      }),
+    });
+    await vi.waitFor(() =>
+      expect(requests).toEqual([[LITERATURE_NOTE.indexedKey]]),
+    );
+
+    view.destroy();
+    expect(disposed).toBe(1);
+  });
+
   it("keeps Source mode Literature Note links outside the hook", () => {
     livePreview.mockReturnValue(false);
     using view = viewOf("[[literatures/example|Example]]");

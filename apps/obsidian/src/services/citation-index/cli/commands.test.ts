@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { CslItemData } from "@zotlit/db";
 
+import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import type {
   Citation,
   CitationKeyResolution,
@@ -183,7 +184,7 @@ const CITATIONS: Citation[] = [
   },
 ];
 
-const DOCUMENT: DocumentReferences = {
+const DOCUMENT: Omit<DocumentReferences, "lookup"> = {
   citations: CITATIONS,
   errors: [{ kind: "malformed-wikilink", occurrence: MALFORMED_OCCURRENCE }],
   sources: new Map([[ITEM_KEY, SOURCE]]),
@@ -196,7 +197,7 @@ interface SetupOptions {
   snapshot?: CitedBySnapshot;
   lookup?: ItemLookup;
   citekeyResolution?: CitekeyResolution;
-  document?: DocumentReferences | null;
+  document?: Omit<DocumentReferences, "lookup"> | null;
   resolution?: CitationKeyResolution;
   syntaxes?: CitationSyntaxes;
   documentOmittedSyntaxes?: readonly CitationSyntax[];
@@ -211,11 +212,37 @@ function setup(options: SetupOptions = {}) {
     options.document === undefined ? DOCUMENT : options.document;
   const getIdentity = vi.fn(() => IDENTITY);
   const waitUntilSettled = vi.fn(() => Promise.resolve(settle));
-  const resolveCitekey = vi.fn(() => citekeyResolution);
-  const citekeyOf = vi.fn(() => ITEM_CITEKEY);
-  const getCitedBy = vi.fn(() => options.snapshot ?? CITED);
+  const readLookup = vi.fn(
+    async (request: {
+      citekeys?: readonly string[];
+      indexedKeys?: readonly string[];
+    }) =>
+      lookupAnswer(
+        Object.fromEntries(
+          (request.citekeys ?? []).map((key) => [key, citekeyResolution]),
+        ),
+        Object.fromEntries(
+          (request.indexedKeys ?? []).map((key) => [key, ITEM_CITEKEY]),
+        ),
+      ),
+  );
+  const getCitedBy = vi.fn(async () => options.snapshot ?? CITED);
   const lookupItem = vi.fn(() => Promise.resolve(lookup));
-  const readDocument = vi.fn(() => Promise.resolve(documentReferences));
+  const readDocument = vi.fn(
+    async () =>
+      documentReferences && {
+        ...documentReferences,
+        lookup: lookupAnswer(
+          Object.fromEntries(
+            documentReferences.citations.flatMap((citation) =>
+              citation.occurrences
+                .filter((occurrence) => occurrence.kind === "citekey")
+                .map((occurrence) => [occurrence.raw, citekeyResolution]),
+            ),
+          ),
+        ),
+      },
+  );
   const resolution = vi.fn(() => options.resolution ?? "fresh");
   const syntaxes = vi.fn(() => options.syntaxes ?? SYNTAXES);
   const documentOmittedSyntaxes = vi.fn(() =>
@@ -229,8 +256,7 @@ function setup(options: SetupOptions = {}) {
     settleTimeoutMs: options.settleTimeoutMs,
     index: {
       waitUntilSettled,
-      resolveCitekey,
-      citekeyOf,
+      readLookup,
       getCitedBy,
       resolution,
       syntaxes,
@@ -252,8 +278,7 @@ function setup(options: SetupOptions = {}) {
     guide,
     getIdentity,
     waitUntilSettled,
-    resolveCitekey,
-    citekeyOf,
+    readLookup,
     getCitedBy,
     lookupItem,
     readDocument,
@@ -387,13 +412,13 @@ describe("zotlit:cited-by", () => {
   });
 
   it("resolves a citation key through the resolution snapshot", async () => {
-    const { citedBy, resolveCitekey, getCitedBy, lookupItem } = setup({
+    const { citedBy, readLookup, getCitedBy, lookupItem } = setup({
       citekeyResolution: { kind: "unique", item: SNAPSHOT_ITEM },
     });
 
     const output = await citedBy({ citekey: ITEM_CITEKEY });
 
-    expect(resolveCitekey).toHaveBeenCalledWith(ITEM_CITEKEY);
+    expect(readLookup).toHaveBeenCalledWith({ citekeys: [ITEM_CITEKEY] });
     expect(lookupItem).toHaveBeenCalledWith(ITEM_KEY);
     expect(getCitedBy).toHaveBeenCalledWith(ITEM_KEY);
     expect(JSON.parse(output)).toMatchObject({
@@ -511,6 +536,49 @@ describe("zotlit:cited-by", () => {
         details: { key: ITEM_KEY },
       },
     });
+  });
+
+  it("retries the complete cited-by answer when the citation assignment changes", async () => {
+    const { citedBy, readLookup, getCitedBy } = setup();
+    const nextItem = {
+      ...SNAPSHOT_ITEM,
+      itemID: 2,
+      key: "NEXT2345",
+      indexedKey: "NEXT2345",
+    };
+    const first = lookupAnswer({
+      [ITEM_CITEKEY]: { kind: "unique", item: SNAPSHOT_ITEM },
+    });
+    const next = lookupAnswer(
+      { [ITEM_CITEKEY]: { kind: "unique", item: nextItem } },
+      {},
+      "fixture:2",
+    );
+    readLookup.mockResolvedValueOnce(first).mockResolvedValue(next);
+    getCitedBy
+      .mockResolvedValueOnce(CITED)
+      .mockResolvedValue({ ...CITED, groups: [] });
+
+    const output = await citedBy({ citekey: ITEM_CITEKEY });
+
+    expect(JSON.parse(output)).toMatchObject({
+      ok: true,
+      item: { key: "NEXT2345" },
+      groups: [],
+    });
+  });
+
+  it("reports an unavailable fresh lookup instead of a missing citation key", async () => {
+    const { citedBy, readLookup, getCitedBy } = setup();
+    readLookup.mockRejectedValue(new Error("Citation worker unavailable"));
+
+    const output = await citedBy({ citekey: ITEM_CITEKEY });
+
+    expect(JSON.parse(output)).toMatchObject({
+      ok: false,
+      diagnostic: { code: "INDEX_NOT_READY" },
+    });
+    expect(getCitedBy).not.toHaveBeenCalled();
   });
 
   it("reports a citation key that resolves to no item", async () => {
@@ -636,9 +704,8 @@ describe("zotlit:cited-by", () => {
           order.push("settle");
           return Promise.resolve("settled");
         },
-        resolveCitekey: () => ({ kind: "missing" }),
-        citekeyOf: () => ITEM_CITEKEY,
-        getCitedBy: () => {
+        readLookup: async () => lookupAnswer({}, { [ITEM_KEY]: ITEM_CITEKEY }),
+        getCitedBy: async () => {
           order.push("cited-by");
           return CITED;
         },
@@ -651,7 +718,7 @@ describe("zotlit:cited-by", () => {
         order.push("lookup");
         return Promise.resolve(PRESENT);
       },
-      readDocument: () => Promise.resolve(DOCUMENT),
+      readDocument: async () => ({ ...DOCUMENT, lookup: lookupAnswer() }),
     });
 
     await handlers[CITED_BY_COMMAND]({ key: ITEM_KEY });
@@ -770,7 +837,7 @@ describe("zotlit:references", () => {
   });
 
   it("reports an ambiguous citation key with the exact key of every candidate", async () => {
-    const { references, resolveCitekey } = setup({
+    const { references } = setup({
       document: {
         citations: [
           {
@@ -800,7 +867,6 @@ describe("zotlit:references", () => {
 
     const output = await references({ file: DOCUMENT_PATH });
 
-    expect(resolveCitekey).toHaveBeenCalledWith("roe2099");
     expect(JSON.parse(output)).toMatchObject({
       ok: true,
       entries: [

@@ -97,9 +97,7 @@ export function registerCitationsCli(
     index: {
       waitUntilSettled: (timeoutMs) =>
         deps.citationIndex.waitUntilSettled(timeoutMs),
-      resolveCitekey: (citekey) =>
-        deps.citationIndex.resolveCitekey(citekey) ?? { kind: "missing" },
-      citekeyOf: (indexedKey) => deps.citationIndex.citekeyOf(indexedKey),
+      readLookup: (request) => deps.citationIndex.readLookup(request),
       getCitedBy: (indexedKey) => deps.citationIndex.getCitedBy(indexedKey),
       resolution: () => deps.citationIndex.resolution,
       syntaxes: () => deps.citationIndex.syntaxes(),
@@ -139,10 +137,10 @@ async function readDocument(
 ): Promise<DocumentReferences | null> {
   const file = deps.app.vault.getFileByPath(path);
   if (!file || file.extension !== "md") return null;
-  const { citations, errors } =
+  const { citations, errors, lookup } =
     await deps.citationIndex.getDocumentCitationSet(file);
   const { sources, database } = await readReferenceSources(deps.db, citations);
-  return { citations, errors, sources, database };
+  return { citations, errors, sources, database, lookup };
 }
 
 /** Any Markdown note answers, as {@link readDocument} does; a path the vault
