@@ -10,6 +10,8 @@ import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { readAmbiguousCandidates } from "@/services/citation-index/ambiguity";
 import type { AmbiguousCandidatesOf } from "@/services/citation-index/ambiguity";
+import { heldResolution } from "@/services/citation-index/lookup";
+import type { CitationLookup } from "@/services/citation-index/lookup-service";
 import {
   citationsEqual,
   documentCitationErrorsEqual,
@@ -70,10 +72,8 @@ const logger = getLogger(["views", "references"]);
 export interface ReferencesViewDeps {
   app: App;
   db: Pick<ZoteroReadsService, "state" | "ready" | "acquireRead" | "on">;
-  citationIndex: Pick<
-    CitationIndex,
-    "getDocumentCitationSet" | "resolveCitekey" | "resolution" | "on"
-  >;
+  citationLookup: Pick<CitationLookup, "status" | "on">;
+  citationIndex: Pick<CitationIndex, "getDocumentCitationSet" | "on">;
   /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
   libraryScope: Pick<LibraryScopeService, "current">;
   /** Opens the Literature Note a citekey names, creating it first when it has none. */
@@ -127,12 +127,16 @@ export class ReferencesView extends ItemView {
   #renderKey: string | null = null;
   /** Bumped per rescan, the same way, since a query may await a file read. */
   #scan = 0;
+  #scanController?: AbortController;
   /** The Markdown note the current list was read from; `null` for none. */
   #file: TFile | null = null;
   /** Path of that note, which is what a document-scoped event names. */
   #path: string | null = null;
   /** Citations of that note, as the current list was built from. */
   #citations: readonly Citation[] = [];
+  #lookup:
+    | import("@/services/citation-index/lookup").CitationLookupAnswer
+    | null = null;
   /** Explicit citation-source errors of that note. */
   #errors: readonly DocumentCitationError[] = [];
   /** Citation Presentation of that note, as the current list was rendered under. */
@@ -221,16 +225,18 @@ export class ReferencesView extends ItemView {
     // leaves the Citations identical — every key still unresolved — skips the
     // reload, and the pending label must still give way to the verdict.
     this.register(
-      citationIndex.on("resolution-changed", () => {
+      this.#deps.citationLookup.on("changed", () => {
         this.#publishResolution();
         this.#rescan();
       }),
     );
-    // A rebuild that settles with the maps unchanged emits no
-    // resolution-changed — only cited-by-invalidated announces the state
-    // flip — so this is what returns the pending label to a verdict.
+    // An equal-revision recovery must retry a failed scan of the active note.
     this.register(
-      citationIndex.on("cited-by-invalidated", () => this.#publishResolution()),
+      this.#deps.citationLookup.on("status-changed", () => {
+        this.#publishResolution();
+        if (this.#scanFailed && this.#deps.citationLookup.status === "fresh")
+          this.#rescan();
+      }),
     );
     this.register(citationIndex.on("membership-changed", () => this.#rescan()));
     this.registerEvent(app.metadataCache.on("changed", () => this.#rescan()));
@@ -268,10 +274,17 @@ export class ReferencesView extends ItemView {
   }
 
   protected override async onClose(): Promise<void> {
+    this.#scan += 1;
+    this.#reloads += 1;
+    this.#copyGeneration += 1;
+    this.#scanController?.abort();
+    this.#lookup = null;
     this.#root?.unmount();
     this.#root = null;
     this.#actions = null;
   }
+
+  #scanFailed = false;
 
   /**
    * Ask the index what the active document cites, and rebuild the list when the
@@ -288,6 +301,10 @@ export class ReferencesView extends ItemView {
   #rescan(): void {
     if (!this.#deps.profile.loaded) return;
     const scan = ++this.#scan;
+    const startedStatus = this.#deps.citationLookup.status;
+    this.#scanController?.abort();
+    const controller = new AbortController();
+    this.#scanController = controller;
     // A presentation change makes the entries on screen stale the moment it is
     // read, and the read that follows lands a turn later at the earliest, so
     // the formatted entries go out of reach here rather than after it: no copy
@@ -301,34 +318,51 @@ export class ReferencesView extends ItemView {
       this.#formatting = "pending";
     }
     this.#refreshCopy();
-    void this.#readCitationSet().then(({ file, citations, errors }) => {
-      const path = file?.path ?? null;
-      // The note's own presentation properties decide what its list is rendered
-      // under, so a frontmatter edit that leaves the Citations untouched still
-      // moves this list — and the entries formatted before it are stale.
-      const presentation = this.#readPresentation(file);
-      const restyled = !samePresentation(this.#presentation, presentation);
-      if (
-        scan !== this.#scan ||
-        (path === this.#path &&
-          !restyled &&
-          citationsEqual(this.#citations, citations) &&
-          documentCitationErrorsEqual(this.#errors, errors))
-      ) {
-        return;
-      }
-      this.#file = file;
-      this.#path = path;
-      this.#citations = citations;
-      this.#errors = errors;
-      this.#presentation = presentation;
-      logger.trace("References citations changed", {
-        path,
-        count: citations.length,
-        restyled,
+    void this.#readCitationSet(controller.signal)
+      .then(({ file, citations, errors, lookup }) => {
+        if (scan !== this.#scan) return;
+        this.#scanFailed = false;
+        const path = file?.path ?? null;
+        // The note's own presentation properties decide what its list is rendered
+        // under, so a frontmatter edit that leaves the Citations untouched still
+        // moves this list — and the entries formatted before it are stale.
+        const presentation = this.#readPresentation(file);
+        const restyled = !samePresentation(this.#presentation, presentation);
+        if (
+          scan !== this.#scan ||
+          (path === this.#path &&
+            !restyled &&
+            lookup?.revision === this.#lookup?.revision &&
+            citationsEqual(this.#citations, citations) &&
+            documentCitationErrorsEqual(this.#errors, errors))
+        ) {
+          return;
+        }
+        this.#file = file;
+        this.#path = path;
+        this.#citations = citations;
+        this.#lookup = lookup;
+        this.#errors = errors;
+        this.#presentation = presentation;
+        logger.trace("References citations changed", {
+          path,
+          count: citations.length,
+          restyled,
+        });
+        this.#reload({ invalidate: restyled });
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          this.#scanFailed = true;
+          logger.warn("References citation lookup failed", { error });
+          // A recovery can settle before this rejected scan's continuation.
+          if (
+            startedStatus !== "fresh" &&
+            this.#deps.citationLookup.status === "fresh"
+          )
+            this.#rescan();
+        }
       });
-      this.#reload({ invalidate: restyled });
-    });
   }
 
   /**
@@ -336,16 +370,27 @@ export class ReferencesView extends ItemView {
    * answer, so the list keeps naming the note it was read from however the
    * active note moves while the read runs.
    */
-  async #readCitationSet(): Promise<
-    DocumentCitationSet & { file: TFile | null }
+  async #readCitationSet(signal: AbortSignal): Promise<
+    Omit<DocumentCitationSet, "lookup"> & {
+      lookup: DocumentCitationSet["lookup"] | null;
+      file: TFile | null;
+    }
   > {
     const file = this.#activeMarkdownFile();
     if (!file) {
-      return { file: null, occurrences: [], citations: [], errors: [] };
+      return {
+        file: null,
+        occurrences: [],
+        citations: [],
+        errors: [],
+        lookup: null,
+      };
     }
     return {
       file,
-      ...(await this.#deps.citationIndex.getDocumentCitationSet(file)),
+      ...(await this.#deps.citationIndex.getDocumentCitationSet(file, {
+        signal,
+      })),
     };
   }
 
@@ -383,6 +428,7 @@ export class ReferencesView extends ItemView {
     this.#copyGeneration += 1;
     const reload = ++this.#reloads;
     const citations = this.#citations;
+    const lookup = this.#lookup;
     // Retained formatted entries answer for the render that is about to be
     // replaced, so the reload alone puts copy out of reach, before its read.
     this.#formatting =
@@ -395,7 +441,7 @@ export class ReferencesView extends ItemView {
       readReferenceSources(this.#deps.db, citations),
       readAmbiguousCandidates(
         this.#deps,
-        (citekey) => this.#deps.citationIndex.resolveCitekey(citekey),
+        (citekey) => heldResolution(lookup, citekey),
         citations.flatMap(({ indexedKey, occurrences }) =>
           indexedKey === null ? [occurrences[0]!.raw] : [],
         ),
@@ -420,7 +466,10 @@ export class ReferencesView extends ItemView {
         formattingFailed: this.#formattingFailed,
         documentPresentationError: this.#documentPresentationError,
         dbReady: this.#deps.db.state === "ready",
-        citekeyResolution: this.#deps.citationIndex.resolution,
+        citekeyResolution:
+          this.#deps.citationLookup.status === "pending"
+            ? null
+            : this.#deps.citationLookup.status,
         copy: this.#trackCopy(entries),
       });
       void this.#render(citations, sources);
@@ -429,7 +478,10 @@ export class ReferencesView extends ItemView {
 
   /** Republish the resolution state alone, for a settle the list survives. */
   #publishResolution(): void {
-    const citekeyResolution = this.#deps.citationIndex.resolution;
+    const citekeyResolution =
+      this.#deps.citationLookup.status === "pending"
+        ? null
+        : this.#deps.citationLookup.status;
     if (this.#store.getState().citekeyResolution !== citekeyResolution) {
       this.#store.setState({ citekeyResolution });
     }

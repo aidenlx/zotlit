@@ -16,7 +16,6 @@ import type {
   ItemBaseFields,
   ItemTag,
   Library,
-  LibraryCitekey,
   Note,
   NoteSource,
   TemplateCollection,
@@ -30,11 +29,17 @@ import type {
 import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
 import type { ItemFields } from "@zotlit/zotero-types";
 
+import type { CitationLookupWireAnswer } from "@/services/citation-index/lookup";
+import type {
+  CitekeyResolution,
+  SnapshotItem,
+} from "@/services/citation-index/snapshot";
 import type { EffectiveReadMode } from "@/services/database/read-source";
 import type {
   QueryAnswer,
   QueryJob,
 } from "@/services/item-query/worker-protocol";
+import type { LibraryScope } from "@/services/library-scope/scope";
 import type { Settings, ZoteroReadMode } from "@/services/settings/schema";
 
 /** Compile-time assert: `T` must be `true`. */
@@ -250,17 +255,6 @@ type _AnnotationSources = Expect<
   Equals<typeof AnnotationSourcesSchema.Type, AnnotationSources>
 >;
 
-export const LibraryCitekeySchema = Schema.Struct({
-  itemID: Schema.Number,
-  libraryID: Schema.Number,
-  key: Schema.String,
-  indexedKey: Schema.String,
-  citekey: Schema.String,
-});
-type _LibraryCitekey = Expect<
-  Equals<typeof LibraryCitekeySchema.Type, LibraryCitekey>
->;
-
 export const ItemDisplayRefSchema = Schema.Struct({
   itemID: Schema.Number,
   libraryID: Schema.Number,
@@ -395,6 +389,13 @@ export const ReadsConfigSchema = Schema.Struct({
 });
 export type ReadsConfig = typeof ReadsConfigSchema.Type;
 
+/** The renderer's source generation and the configuration that produced it. */
+const CitationSourceSchema = Schema.Struct({
+  generation: Schema.Number,
+  config: ReadsConfigSchema,
+});
+export type CitationSource = typeof CitationSourceSchema.Type;
+
 /**
  * What the renderer sends with each worker spawn: the settings to open, the
  * owner tag the worker names its read snapshots with, so the renderer can
@@ -402,6 +403,7 @@ export type ReadsConfig = typeof ReadsConfigSchema.Type;
  * records to.
  */
 export const WorkerInitSchema = Schema.Struct({
+  role: Schema.optionalKey(Schema.Literal("citation")),
   ...ReadsConfigSchema.fields,
   snapshotOwner: Schema.String,
   logs: Transferable.MessagePort,
@@ -451,6 +453,59 @@ export type SnapshotId = typeof SnapshotId.Type;
 /** The optional Snapshot every read accepts. */
 const snapshot = { snapshot: Schema.optionalKey(SnapshotId) };
 
+const CitationItemSchema = Schema.Struct({
+  itemID: Schema.Number,
+  libraryID: Schema.Number,
+  key: Schema.String,
+  indexedKey: Schema.String,
+});
+type _CitationItem = Expect<
+  Equals<typeof CitationItemSchema.Type, SnapshotItem>
+>;
+const CitationResolutionSchema = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("missing") }),
+  Schema.Struct({ kind: Schema.Literal("unique"), item: CitationItemSchema }),
+  Schema.Struct({
+    kind: Schema.Literal("ambiguous"),
+    candidates: Schema.Array(CitationItemSchema),
+  }),
+]);
+type _CitationResolution = Expect<
+  Equals<typeof CitationResolutionSchema.Type, CitekeyResolution>
+>;
+const CitationScopeSchema = Schema.NullOr(
+  Schema.Union([
+    Schema.Struct({ mode: Schema.Literal("all") }),
+    Schema.Struct({
+      mode: Schema.Literal("selected"),
+      libraries: Schema.Array(
+        Schema.Union([
+          Schema.Struct({ type: Schema.Literal("personal") }),
+          Schema.Struct({
+            type: Schema.Literal("group"),
+            groupID: Schema.Number,
+          }),
+        ]),
+      ),
+    }),
+  ]),
+);
+type _CitationScope = Expect<
+  Equals<typeof CitationScopeSchema.Type, LibraryScope | null>
+>;
+const CitationLookupAnswerSchema = Schema.Struct({
+  generation: Schema.Number,
+  revision: Schema.String,
+  citekeys: Schema.ReadonlyMap(Schema.String, CitationResolutionSchema),
+  indexedKeys: Schema.ReadonlyMap(Schema.String, Schema.NullOr(Schema.String)),
+});
+type _CitationLookupAnswer = Expect<
+  Equals<
+    typeof CitationLookupAnswerSchema.Type,
+    CitationLookupWireAnswer & { readonly generation: number }
+  >
+>;
+
 export class ZoteroReads extends RpcGroup.make(
   Rpc.make("CancelItemQuery", {
     payload: { id: Schema.String, ...snapshot },
@@ -460,6 +515,21 @@ export class ZoteroReads extends RpcGroup.make(
     payload: { job: jsonObject<QueryJob>(), ...snapshot },
     success: jsonObject<QueryAnswer>(),
     error: ReadError,
+  }),
+  Rpc.make("CitationRefresh", {
+    payload: CitationSourceSchema,
+    success: Schema.Number,
+    error: DbUnavailable,
+  }),
+  Rpc.make("CitationLookup", {
+    payload: {
+      ...CitationSourceSchema.fields,
+      scope: CitationScopeSchema,
+      citekeys: Schema.Array(Schema.String),
+      indexedKeys: Schema.Array(Schema.String),
+    },
+    success: CitationLookupAnswerSchema,
+    error: DbUnavailable,
   }),
   Rpc.make("Libraries", {
     payload: snapshot,
@@ -558,13 +628,6 @@ export class ZoteroReads extends RpcGroup.make(
   Rpc.make("AttachmentPathIndex", {
     payload: snapshot,
     success: Schema.Array(AttachmentWithParentKeySchema),
-    error: ReadError,
-    stream: true,
-  }),
-  /** The live items of one library that carry a citation key, in slices. */
-  Rpc.make("CitekeySnapshot", {
-    payload: { libraryID: Schema.Number, ...snapshot },
-    success: Schema.Array(LibraryCitekeySchema),
     error: ReadError,
     stream: true,
   }),

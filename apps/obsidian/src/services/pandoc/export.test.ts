@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { CslItemData } from "@zotlit/db";
 
+import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import type { CitekeyResolution } from "@/services/citation-index/snapshot";
 
 import type { BibliographyFailure, BibliographyItemRef } from "./bibliography";
@@ -132,18 +133,26 @@ function ports(fixture: Fixture): ExportPorts & {
     engine: { prepareDocument, renderPrepared },
     dataDir: () => "/Zotero",
     resolveIndexedKey: (linkpath) => fixture.notes?.[linkpath] ?? null,
-    resolveCitekey: (citekey): CitekeyResolution | null => {
-      if (fixture.snapshotUnavailable) return null;
-      if (fixture.ambiguous?.includes(citekey)) {
-        return { kind: "ambiguous", candidates: [] };
-      }
-      const indexedKey = fixture.citekeys?.[citekey];
-      return indexedKey === undefined
-        ? { kind: "missing" }
-        : {
-            kind: "unique",
-            item: { itemID: 1, libraryID: 1, key: indexedKey, indexedKey },
-          };
+    readLookup: async ({ citekeys }) => {
+      if (fixture.snapshotUnavailable)
+        throw new Error("citation worker unavailable");
+      const resolve = (citekey: string): CitekeyResolution => {
+        if (fixture.ambiguous?.includes(citekey)) {
+          return { kind: "ambiguous", candidates: [] };
+        }
+        const indexedKey = fixture.citekeys?.[citekey];
+        return indexedKey === undefined
+          ? { kind: "missing" }
+          : {
+              kind: "unique",
+              item: { itemID: 1, libraryID: 1, key: indexedKey, indexedKey },
+            };
+      };
+      return lookupAnswer(
+        Object.fromEntries(
+          citekeys.map((citekey) => [citekey, resolve(citekey)]),
+        ),
+      );
     },
     readItemRefs: (indexedKeys) => {
       if (fixture.databaseUnavailable) return Promise.resolve(null);
@@ -203,17 +212,20 @@ describe("exportCitedDocument", () => {
     expect(request.luaFilters).toEqual([pandocSandboxFilter]);
   });
 
-  it("cites each Item by the CSL id its source gave it", async () => {
-    const running = run(CITED);
-    await running;
+  it.each([false, true])(
+    "cites each Item by the CSL id its source gave it (snapshot unavailable: %s)",
+    async (snapshotUnavailable) => {
+      const running = run({ ...CITED, snapshotUnavailable });
+      await expect(running).resolves.toHaveProperty("output");
 
-    const [request] = running.ports.renderPrepared.mock.calls[0] as [
-      RenderRequest,
-    ];
-    expect(request.bibliography).toEqual([ZETA, ADAMS]);
-    expect(request.document.citedIds).toEqual([ZETA.id, ADAMS.id]);
-    expect(request.format).toBe("docx");
-  });
+      const [request] = running.ports.renderPrepared.mock.calls[0] as [
+        RenderRequest,
+      ];
+      expect(request.bibliography).toEqual([ZETA, ADAMS]);
+      expect(request.document.citedIds).toEqual([ZETA.id, ADAMS.id]);
+      expect(request.format).toBe("docx");
+    },
+  );
 
   it("cites an Item named only by a literal citation key", async () => {
     const running = run({
@@ -337,18 +349,21 @@ describe("exportCitedDocument", () => {
     ]);
   });
 
-  it("converts a document that cites nothing without asking Zotero", async () => {
-    const running = run({ links: [link("Some Note")] });
-    await expect(running).resolves.toHaveProperty("output");
+  it.each([false, true])(
+    "converts a document that cites nothing without asking Zotero (snapshot unavailable: %s)",
+    async (snapshotUnavailable) => {
+      const running = run({ links: [link("Some Note")], snapshotUnavailable });
+      await expect(running).resolves.toHaveProperty("output");
 
-    expect(running.ports.fetchBibliography).not.toHaveBeenCalled();
-    const [request] = running.ports.prepareDocument.mock.calls[0] as [
-      PrepareRequest,
-    ];
-    expect(
-      JSON.parse(String(request.files?.[PANDOC_RESOLVE_MAP_FILENAME])),
-    ).toEqual({ citations: {} });
-  });
+      expect(running.ports.fetchBibliography).not.toHaveBeenCalled();
+      const [request] = running.ports.prepareDocument.mock.calls[0] as [
+        PrepareRequest,
+      ];
+      expect(
+        JSON.parse(String(request.files?.[PANDOC_RESOLVE_MAP_FILENAME])),
+      ).toEqual({ citations: {} });
+    },
+  );
 
   it("carries the chosen style and Citation Locale through to the engine", async () => {
     const running = run(CITED, {

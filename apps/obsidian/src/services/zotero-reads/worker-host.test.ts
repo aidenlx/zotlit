@@ -3,6 +3,7 @@ import {
   Deferred,
   Effect,
   Exit,
+  Fiber,
   Layer,
   Option,
   Queue,
@@ -241,6 +242,32 @@ describe("ZoteroReads worker adapter", () => {
     expect(result.seen).toBe(2);
   });
 
+  it("Configure after a worker death reconnects before applying the source", async () => {
+    const workers = fakeWorkers();
+    const seen = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const reads = yield* makeWorkerReads(workers.connect);
+          yield* workerSeen(reads);
+          const changes = yield* Stream.toPull(reads.Changes());
+          yield* workers.kill(1);
+          yield* until(changes, "degraded");
+          yield* reads.Configure({
+            databasePath: "/new/zotero.sqlite",
+            readMode: "copy",
+            autoRefresh: false,
+            locale: null,
+            chineseSegmenter: null,
+            logLevel: null,
+          });
+          yield* reads.Refresh();
+          return yield* workerSeen(reads);
+        }),
+      ),
+    );
+    expect(seen).toBe(2);
+  });
+
   it("rejects an old Snapshot after another worker opens a Snapshot", async () => {
     const workers = fakeWorkers();
     await using service = new ZoteroReadsService({
@@ -457,6 +484,49 @@ describe("ZoteroReads worker adapter", () => {
     expect(result.after).toBe(2);
   });
 
+  it("bounds a hung startup, releases it, and recovers on Refresh", async () => {
+    const workers = fakeWorkers({ hangStart: (n) => n === 1 });
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const starting = yield* Effect.forkChild(
+          makeWorkerReads(workers.connect),
+        );
+        yield* TestClock.adjust("15 seconds");
+        const exit = yield* Fiber.await(starting);
+        if (Exit.isFailure(exit)) return { exit };
+        const reads = exit.value;
+        const seed = yield* Stream.runHead(reads.Changes());
+        const ended = workers.ended(1);
+        yield* reads.Refresh();
+        return { exit, seed, ended, seen: yield* workerSeen(reads) };
+      }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
+    );
+    expect(result.exit).toMatchObject({ _tag: "Success" });
+    expect(result.seed).toMatchObject({
+      value: { state: "degraded", error: { _tag: "DbUnavailable" } },
+    });
+    expect(result.ended).toBe(true);
+    expect(result.seen).toBe(2);
+  });
+
+  it("service unload finishes when the initial worker never connects", async () => {
+    vi.useFakeTimers();
+    try {
+      const workers = fakeWorkers({ hangStart: () => true });
+      const service = new ZoteroReadsService({
+        client: makeWorkerReads(workers.connect),
+      });
+      const disposing = service[Symbol.asyncDispose]();
+      await vi.advanceTimersByTimeAsync(15_000);
+      await disposing;
+      await service[Symbol.asyncDispose]();
+      expect(workers.ended(1)).toBe(true);
+      expect(service.state).toBe("degraded");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("ends a worker whose start was interrupted", async () => {
     const workers = fakeWorkers({ hangStart: (n) => n === 2 });
     const ended = await Effect.runPromise(
@@ -518,6 +588,60 @@ describe("ZoteroReads worker adapter", () => {
     expect(workers.abandoned(1)).toBe(false);
     expect(degraded).toEqual([]);
     expect(service.state).toBe("ready");
+  });
+
+  it("unload interrupts a hung recovery and repeated unload stays safe", async () => {
+    const recoveryStarted = Promise.withResolvers<void>();
+    const workers = fakeWorkers({
+      hangStart: (n) => {
+        if (n !== 2) return false;
+        recoveryStarted.resolve();
+        return true;
+      },
+    });
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const scope = yield* Scope.make();
+        const reads = yield* Scope.provide(
+          makeWorkerReads(workers.connect),
+          scope,
+        );
+        yield* workerSeen(reads);
+        const changes = yield* Stream.toPull(reads.Changes());
+        yield* workers.kill(1);
+        yield* until(changes, "degraded");
+        const recovery = yield* Effect.forkChild(reads.Refresh());
+        yield* Effect.promise(() => recoveryStarted.promise);
+        yield* Scope.close(scope, Exit.void);
+        yield* Scope.close(scope, Exit.void);
+        const exit = yield* Fiber.await(recovery);
+        expect(exit).toMatchObject({ _tag: "Failure" });
+        expect(workers.ended(2)).toBe(true);
+      }).pipe(Effect.scoped),
+    );
+  });
+
+  it("rejects recovery after disposal without starting another worker", async () => {
+    const workers = fakeWorkers();
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const scope = yield* Scope.make();
+        const reads = yield* Scope.provide(
+          makeWorkerReads(workers.connect),
+          scope,
+        );
+        yield* workerSeen(reads);
+        const changes = yield* Stream.toPull(reads.Changes());
+        yield* workers.kill(1);
+        yield* until(changes, "degraded");
+        yield* Scope.close(scope, Exit.void);
+        const refreshed = yield* Effect.exit(reads.Refresh());
+        yield* Scope.close(scope, Exit.void);
+        return refreshed;
+      }).pipe(Effect.scoped),
+    );
+    expect(result).toMatchObject({ _tag: "Failure" });
+    expect(workers.spawned()).toBe(1);
   });
 
   it("ends the worker when the caller's scope closes", async () => {
@@ -588,11 +712,11 @@ const readsConfig = (databasePath: string): ReadsConfig => ({
 /** Open one connection in its own scope, once its worker got its spawn message. */
 const openConnection = Effect.fnUntraced(function* (
   config: Effect.Effect<ReadsConfig>,
-  reapClones: Parameters<typeof connectWorker>[2],
+  reapClones: NonNullable<Parameters<typeof connectWorker>[2]>["reapClones"],
 ) {
   const scope = yield* Scope.make();
   const connection = yield* Scope.provide(
-    connectWorker("", config, reapClones),
+    connectWorker("", config, { reapClones }),
     scope,
   );
   const spawned = StandInWorker.spawned.length;

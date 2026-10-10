@@ -9,7 +9,11 @@ import { dispatchToMarkdownEditors } from "@/lib/editor-decoration";
 import { getLogger } from "@/lib/log";
 import { WikilinkDisplaySettings } from "@/lib/wikilink-citation";
 import type { LiteratureNoteTarget } from "@/lib/wikilink-citation";
-import type { CitationIndex } from "@/services/citation-index/service";
+import { heldCitekeyOf } from "@/services/citation-index/lookup";
+import type {
+  CitationLookupAnswer,
+  CitationLookupObservation,
+} from "@/services/citation-index/service";
 import type { CitationPopover } from "@/services/citation-popover/service";
 import type { CitationText } from "@/services/citation-text/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
@@ -36,7 +40,9 @@ export interface WikilinkEditorDeps {
   /** What a hovered citation shows. */
   citationPopover: CitationPopover;
   settings: SettingsService;
-  citationIndex: Pick<CitationIndex, "citekeyOf" | "on">;
+  citationLookup: {
+    observe(changed: () => void): CitationLookupObservation;
+  };
 }
 
 /**
@@ -63,7 +69,7 @@ export class WikilinkEditor extends Service<void> {
   readonly #citekeyEditor;
   readonly #citationPopover;
   readonly #settings;
-  readonly #citationIndex;
+  readonly #citationLookup;
   readonly #extension: Extension;
 
   /** Registered once; emptied on disposal, which retires the treatment. */
@@ -83,10 +89,11 @@ export class WikilinkEditor extends Service<void> {
     this.#citekeyEditor = deps.citekeyEditor;
     this.#citationPopover = deps.citationPopover;
     this.#settings = deps.settings;
-    this.#citationIndex = deps.citationIndex;
+    this.#citationLookup = deps.citationLookup;
     this.#extension = wikilinkEditorExtension({
-      literatureNote: (linkpath, sourcePath) =>
-        this.#literatureNote(linkpath, sourcePath),
+      literatureNote: (linkpath, sourcePath, lookup) =>
+        this.#literatureNote(linkpath, sourcePath, lookup),
+      observeLookup: (changed) => this.#citationLookup.observe(changed),
       enabled: () => this.#display.enabled,
       citationText: (path) => this.#citationText.peek(path),
       open: (citekey, pane) => {
@@ -113,14 +120,11 @@ export class WikilinkEditor extends Service<void> {
     });
 
     stack.defer(this.#display.watch(this.#settings, () => this.#redraw()));
-    // Creating, deleting, or renaming a Literature Note, or a citekey
-    // resolution snapshot rebuild, changes what a link displays without
-    // changing any document; the Note Index's own invalidation is coarse, so
+    // Creating, deleting, or renaming a Literature Note changes what a link
+    // displays without changing any document. The Note Index's own
+    // invalidation is coarse, so
     // every change redraws every open editor.
     stack.defer(this.#noteIndex.on("changed", () => this.#redraw()));
-    stack.defer(
-      this.#citationIndex.on("resolution-changed", () => this.#redraw()),
-    );
     // A citation's formatted text is read asynchronously and shared with every
     // other surface, so the editors showing that document draw again when it
     // lands or goes stale — until then they keep native presentation.
@@ -133,6 +137,7 @@ export class WikilinkEditor extends Service<void> {
   #literatureNote(
     linkpath: string,
     sourcePath: string,
+    lookup: CitationLookupAnswer | null,
   ): LiteratureNoteTarget | null {
     const note = resolveLiteratureNote(linkpath, sourcePath, {
       app: this.#app,
@@ -140,7 +145,7 @@ export class WikilinkEditor extends Service<void> {
     return (
       note && {
         ...note,
-        citationKey: this.#citationIndex.citekeyOf(note.indexedKey),
+        citationKey: heldCitekeyOf(lookup, note.indexedKey) ?? null,
       }
     );
   }
