@@ -2,6 +2,7 @@
 import { isDeepStrictEqual } from "node:util";
 
 import { librarySelector } from "./libraries.mjs";
+import { resultRows } from "./result-rows.mjs";
 export function resolveExpected(value, runRoot) {
   if (typeof value === "string") return value.replaceAll("$RUN", runRoot);
   if (Array.isArray(value))
@@ -137,9 +138,11 @@ export function checkResearch(spec, envelope, runRoot) {
         ),
       );
     }
-  } else errors.push(...checkRows(envelope.rows, expected.rows));
+  } else errors.push(...checkRows(resultRows(envelope), expected.rows));
   if (expected.paperGroups)
-    errors.push(...checkPaperCounts(envelope.rows, expected.paperGroups));
+    errors.push(
+      ...checkPaperCounts(resultRows(envelope), expected.paperGroups),
+    );
   return errors;
 }
 function schemaFor(value) {
@@ -265,9 +268,7 @@ export function checkResearchAnswer(
   const groups =
     want.paperGroups ?? expectedGroups(want, envelope?.request?.group);
   const returned = new Set(
-    envelope?.groups?.flatMap((group) =>
-      group.rows.map((row) => row.indexedKey),
-    ) ?? [],
+    (resultRows(envelope) ?? []).map((row) => row.indexedKey),
   );
   errors.push(
     ...checkRows(

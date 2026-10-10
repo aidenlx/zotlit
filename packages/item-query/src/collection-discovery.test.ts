@@ -136,3 +136,44 @@ it("accepts a path held only by the second Target Library", async () => {
   expect(exit.value.warnings).toEqual([]);
   expect(exit.value.returnedCount).toBeGreaterThan(0);
 });
+
+it.each([
+  [ANNOTATIONS, 'attachment.item.collections.within("Thesis")'],
+  [ANNOTATIONS, 'attachment.item.collections.contains("Thesis")'],
+  [ANNOTATIONS, '!attachment.item.collections.within("Thesis")'],
+  [ANNOTATIONS, 'true || attachment.item.collections.within("Thesis")'],
+  [
+    ITEMS,
+    'annotations.filter(value.attachment.item.collections.within("Thesis")).length > 0',
+  ],
+  [
+    ATTACHMENTS,
+    'annotations.filter(value.attachment.item.collections.contains("Thesis")).length > 0',
+  ],
+  [
+    ITEMS,
+    'attachments.filter(value.annotations.filter(value.attachment.item.collections.within("Thesis")).length > 0).length > 0',
+  ],
+])(
+  "reuses Collection paths reached through Annotation Attachments in %s: %s",
+  async (dataset, filter) => {
+    using scenario = openScenarioDatabase();
+    const { exit, events } = await runEffect(
+      collectQuery(dataset, {
+        libraries: [SCENARIO_LIBRARIES.personal],
+        filter,
+        fields: [],
+      }),
+      { client: scenario.db },
+    );
+    if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
+    expect(exit.value.warnings).toEqual([]);
+    expect(
+      events.filter(
+        (event) =>
+          event.type === "statement" &&
+          event.statement.reader === "collection-paths",
+      ),
+    ).toHaveLength(1);
+  },
+);

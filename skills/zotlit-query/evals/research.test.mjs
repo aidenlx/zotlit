@@ -290,6 +290,32 @@ for (const projection of ["annotations.length", "annotations[]"]) {
       checkAnswer("count_per_paper", wrong, context).join("\n"),
       /wrong.*count/,
     );
+    const grouped = structuredClone(envelope);
+    grouped.request.group = "title";
+    grouped.groups = grouped.rows.map((row) => ({
+      value: row.values.title,
+      count: 1,
+      rows: [row],
+    }));
+    delete grouped.rows;
+    const groupedContext = { ...context, envelope: grouped };
+    assert.deepEqual(validate("count_per_paper", grouped, groupedContext), []);
+    assert.deepEqual(
+      checkAnswer("count_per_paper", answer, groupedContext),
+      [],
+    );
+    // Grouping papers counts papers; those group counts are not mark counts.
+    const paperCounts = {
+      ...answer,
+      groups: [
+        { value: "深度学习 in clinical attention", count: 1 },
+        { value: "Clinical attention with two editions", count: 1 },
+      ],
+    };
+    assert.match(
+      checkAnswer("count_per_paper", paperCounts, groupedContext).join("\n"),
+      /wrong group counts/,
+    );
     // The saved Claude answer used the existing schema's item.title and explicit groups.
     answer.rows = answer.rows.map((row) => ({
       indexedKey: row.indexedKey,

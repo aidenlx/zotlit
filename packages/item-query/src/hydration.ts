@@ -103,6 +103,7 @@ export type HydrationRequest<Needs> = Pick<
     readonly text: string;
     readonly customField: string | null;
   } | null;
+  readonly groupNeeds: readonly Needs[];
   readonly filter: {
     readonly needs: readonly Needs[];
     readonly customFields: FilterPlan["customFields"];
@@ -148,6 +149,7 @@ export function openHydration(
     const scanNeeds = [
       ...(filter?.needs ?? []),
       ...sorts.map((sort) => sort.needs),
+      ...plan.groupNeeds,
     ];
     const allNeeds = [...pathNeeds, ...scanNeeds];
     const vocabulary =

@@ -23,7 +23,7 @@ import type { WorkbenchIdentity } from "@/services/template-workbench/envelope";
 import type { SchemaAsset } from "@/services/template-workbench/schema";
 
 import contractVersion from "./contract-version.json" with { type: "json" };
-import type { QueryParam } from "./decode";
+import type { QueryParam, QueryValuesParam } from "./decode";
 
 /**
  * The wire format of the ZotLit Query commands, versioned on its own (ADR 0065):
@@ -102,10 +102,11 @@ export const queryFlags = {
   },
 } satisfies Record<QueryParam, CliFlag>;
 
-export const queryValuesFlags: CliFlags = {
+export const queryValuesFlags = {
   kind: {
     value: "<collections|tags>",
-    description: "Values to list (required)",
+    description: "Values to list",
+    required: true,
   },
   library: {
     value: "<selector|all>",
@@ -120,7 +121,7 @@ export const queryValuesFlags: CliFlags = {
     value: "<n|all>",
     description: `Most values per Library: a positive integer, or all (default ${DEFAULT_CLI_LIMIT})`,
   },
-};
+} satisfies Record<QueryValuesParam, CliFlag>;
 
 export const queryCancelFlags: CliFlags = {
   id: {

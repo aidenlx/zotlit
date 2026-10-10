@@ -446,6 +446,7 @@ const valuesParams = v.pipe(
 );
 
 export type DecodedValues = v.InferOutput<typeof valuesParams>;
+export type QueryValuesParam = CliParamName<typeof valuesParams>;
 
 /** Discover exact Collection paths or Tag names before writing a filter. */
 export function decodeValues(params: CliData): CliRequest<DecodedValues> {

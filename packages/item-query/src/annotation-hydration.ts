@@ -80,6 +80,7 @@ export function openAnnotationHydration(
         dataset: plan.dataset,
         query: plan.query,
         group: plan.group,
+        groupNeeds: plan.groupNeeds.flatMap(itemNeeds),
         filter: filter && {
           customFields: filter.customFields,
           needs: filter.needs.flatMap(itemNeeds),
@@ -102,6 +103,9 @@ export function openAnnotationHydration(
       libraries.map((library) => [library.libraryID, library.groupID]),
     );
 
+    const relatedSources: Hydration["candidateSources"][] = [
+      parents.candidateSources,
+    ];
     const loader = Effect.fnUntraced(function* (
       needs: readonly AnnotationNeeds[],
       parent: Loader,
@@ -116,6 +120,7 @@ export function openAnnotationHydration(
             readVocabulary,
           )
         : null;
+      if (attachment) relatedSources.push(attachment.candidateSources);
       const loads = {
         details: needs.some((each) => each.details === true),
         tags: needs.some((each) => each.tags === true),
@@ -207,14 +212,27 @@ export function openAnnotationHydration(
 
     return {
       scan: yield* loader(
-        [...(filter?.needs ?? []), ...sorts.map((sort) => sort.needs)],
+        [
+          ...(filter?.needs ?? []),
+          ...sorts.map((sort) => sort.needs),
+          ...plan.groupNeeds,
+        ],
         parents.scan,
       ),
       projection: yield* loader(
         paths.map((path) => path.needs),
         parents.projection,
       ),
-      candidateSources: parents.candidateSources,
+      candidateSources: (library) => {
+        const sources = relatedSources.map((source) => source(library));
+        return {
+          library,
+          vocabulary:
+            sources.find((source) => source.vocabulary)?.vocabulary ?? null,
+          collectionPaths: sources.find((source) => source.collectionPaths)
+            ?.collectionPaths,
+        };
+      },
     };
   });
 }

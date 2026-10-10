@@ -18,6 +18,7 @@ import {
   checkResearchAnswer,
   checkCollectionDiscovery,
 } from "./research.mjs";
+import { resultRows } from "./result-rows.mjs";
 export { measureEvents } from "./events.mjs";
 
 const repo = resolve(fileURLToPath(new URL("../../../", import.meta.url)));
@@ -471,11 +472,15 @@ function checkAnnotationAnswer(
   )
     errors.push("answer has wrong Annotation keys or reading order");
   const rows = new Map(
-    (envelope.rows ?? []).map((row) => [row.indexedKey, row.values ?? {}]),
+    (resultRows(envelope) ?? []).map((row) => [row.indexedKey, row]),
   );
   for (const annotation of answer.annotations ?? []) {
-    const values = rows.get(annotation.indexedKey);
-    if (!values) continue;
+    const row = rows.get(annotation.indexedKey);
+    if (!row) {
+      errors.push(`answer has no evidence for ${annotation.indexedKey}`);
+      continue;
+    }
+    const values = row.values ?? {};
     for (const field of annotationAnswerFields[caseName]) {
       const value =
         field === "attachmentPath"
@@ -485,9 +490,7 @@ function checkAnnotationAnswer(
             : field === "library"
               ? indexedKeyLibrary(annotation.indexedKey)
               : field === "itemIndexedKey" || field === "attachmentIndexedKey"
-                ? envelope.rows.find(
-                    (row) => row.indexedKey === annotation.indexedKey,
-                  )?.[field]
+                ? row[field]
                 : field === "itemTitle"
                   ? values["item.title"]
                   : (values[field] ?? null);

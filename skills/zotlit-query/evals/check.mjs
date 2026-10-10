@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 
 import { checkResearch, researchExpectation } from "./research.mjs";
+import { resultRows } from "./result-rows.mjs";
 
 const oracle = JSON.parse(
   await readFile(new URL("./oracle.json", import.meta.url), "utf8"),
@@ -54,19 +55,6 @@ function projected(fields, field) {
     fields?.includes(field) ||
     (field.startsWith("attachment.") && fields?.includes("attachment"))
   );
-}
-
-// A complete grouped envelope carries every row inside its groups, so a
-// grouped answer to a listing question is as complete as a flat one.
-function resultRows(envelope) {
-  if (Array.isArray(envelope?.rows)) return envelope.rows;
-  if (
-    Array.isArray(envelope?.groups) &&
-    envelope.truncated === false &&
-    envelope.request?.limit === null
-  )
-    return envelope.groups.flatMap((group) => group.rows ?? []);
-  return undefined;
 }
 
 function commonChecks(envelope, expected, { runRoot, vaultPath }) {

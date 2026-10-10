@@ -91,7 +91,7 @@ export function consumeDataset<I extends { scan: ScanRow }, A, E, R>(
       tuning.hydrateChunkSize,
       HYDRATE_CHUNK_SIZE,
     );
-    // The scan pass: every Item is hydrated with the filter and sort fields
+    // The scan pass: every Item is hydrated with filter, sort, and group fields
     // only, and the query keeps the scan row and the sort keys of a match.
     const compare = byKeysThenKey<I["scan"]>(run.sort, libraries);
     const retain = () =>
@@ -116,8 +116,7 @@ export function consumeDataset<I extends { scan: ScanRow }, A, E, R>(
             if (!run.matches(item)) continue;
             const keys = run.keys(item);
             if (run.groupValues) {
-              // A record joins one group for each of its distinct values; the
-              // value is the first key of its entry in that group.
+              // A record joins one group for each of its distinct values.
               totalCount++;
               for (const value of run.groupValues(item)) {
                 let group = groups.get(value);
@@ -133,7 +132,7 @@ export function consumeDataset<I extends { scan: ScanRow }, A, E, R>(
                 }
                 chunk.push({
                   scan: item.scan,
-                  keys: [value, ...keys.slice(1)],
+                  keys,
                   library,
                 });
               }
