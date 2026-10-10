@@ -43,6 +43,12 @@ const claude = (id, command, output) => [
     },
   },
 ];
+const queryCall = (output) => ({
+  argv: ["vault=test", "zotlit:query", "from=attachments"],
+  exitCode: 0,
+  stdoutBytes: Buffer.byteLength(output),
+  timestamp: "2026-10-10T00:00:00.000Z",
+});
 const jsonl = (events) => events.map((e) => JSON.stringify(e)).join("\n");
 
 for (const agent of ["codex", "claude"]) {
@@ -57,7 +63,9 @@ for (const agent of ["codex", "claude"]) {
         const events = entries.flatMap((entry) =>
           agent === "codex" ? [codex(...entry)] : claude(...entry),
         );
-        const metrics = measureEvents(jsonl(events), agent);
+        const metrics = measureEvents(jsonl(events), agent, [
+          queryCall(failure),
+        ]);
         assert.equal(metrics.queryAttempts, 1);
         assert.equal(metrics.misreadings.length, 1);
         assert.equal(metrics.misreadings[0].command, query);
@@ -74,10 +82,12 @@ await test("both event formats measure outputs and recovered Diagnostic Reports"
   const a = measureEvents(
     jsonl([codex("1", command, failure), codex("2", command, success)]),
     "codex",
+    [queryCall(failure), queryCall(success)],
   );
   const b = measureEvents(
     jsonl([...claude("1", command, failure), ...claude("2", command, success)]),
     "claude",
+    [queryCall(failure), queryCall(success)],
   );
   assert.deepEqual(a, b);
   assert.equal(a.attachmentQueryAttempts, 2);
@@ -158,7 +168,10 @@ await test("a redirected response read later retains the command that produced t
     codex("read", "cat response.json", failure),
     codex("fix", command, success),
   ];
-  const metrics = measureEvents(jsonl(events));
+  const metrics = measureEvents(jsonl(events), "codex", [
+    queryCall(failure),
+    queryCall(success),
+  ]);
   assert.equal(metrics.queryAttempts, 2);
   assert.equal(metrics.misreadings[0].command, `${command} > response.json`);
   assert.equal(metrics.misreadings[0].recovered, true);
@@ -197,9 +210,22 @@ await test("owned run folders are readable and shell failures behind a pipe are 
       ),
     ]),
     "claude",
+    [
+      { argv: ["zotlit:query-guide"], exitCode: 0, stdoutBytes: 12 },
+      {
+        argv: ["zotlit:query-guide", "topic=fields"],
+        exitCode: 0,
+        stdoutBytes: 12,
+      },
+      {
+        argv: ["zotlit:query-guide", "topic=results"],
+        exitCode: 0,
+        stdoutBytes: 12,
+      },
+    ],
   );
   assert.deepEqual(metrics.forbiddenReads, []);
-  assert.equal(metrics.guideAttempts, 4);
+  assert.equal(metrics.guideAttempts, 3);
   assert.equal(metrics.misreadings[0].recovered, true);
 });
 await test("a truncated schema response can prove recovery without inventing its missing fields", () => {
@@ -215,4 +241,18 @@ await test("a truncated schema response can prove recovery without inventing its
   );
   const metrics = measureEvents(jsonl([bad, good]));
   assert.equal(metrics.misreadings[0].recovered, true);
+});
+
+await test("CLI call counts come only from receipts, independent of event text", () => {
+  for (const agent of ["codex", "claude"]) {
+    const events =
+      agent === "codex"
+        ? [codex("1", command, success)]
+        : claude("1", command, success);
+    assert.equal(measureEvents(jsonl(events), agent, []).queryAttempts, 0);
+    assert.equal(
+      measureEvents("", agent, [queryCall(success)]).queryExitZero,
+      1,
+    );
+  }
 });

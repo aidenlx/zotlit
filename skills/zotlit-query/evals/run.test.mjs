@@ -32,6 +32,22 @@ async function exercise(
   const vault = join(root, `vault-${runId}`);
   const corpus = join(root, "corpus");
   const commands = [];
+  let queryResponse;
+  const logQuery = async (envelope, options) => {
+    if (noQuery) return;
+    queryResponse = envelope;
+    await writeFile(
+      join(options.cwd, "nested.sh"),
+      '#!/bin/sh\nexec ./obsidian "$@"\n',
+      { mode: 0o700 },
+    );
+    const queried = await runProcess(
+      "./nested.sh",
+      ["vault=fake-vault-id", "zotlit:query", `from=${envelope.request.from}`],
+      { cwd: options.cwd },
+    );
+    assert.equal(queried.code, 0, queried.stderr);
+  };
   const processRunner = async (command, args, options) => {
     commands.push([command, args]);
     if (args.includes("open")) {
@@ -70,6 +86,13 @@ async function exercise(
         stderr: "",
         timedOut: false,
       };
+    if (args[0]?.endsWith("obsidian-cli.ts") && args.includes("zotlit:query"))
+      return {
+        code: 0,
+        stdout: JSON.stringify(queryResponse),
+        stderr: "",
+        timedOut: false,
+      };
     if (command === "codex" || command === "claude") {
       if (command === "claude") {
         assert.ok(args.includes("--restricted"));
@@ -77,7 +100,9 @@ async function exercise(
         assert.ok(args.includes("--effort"));
       }
       assert.match(options.input, /vault=fake-vault-id/);
-      assert.doesNotMatch(options.input, /oracle\.json/);
+      assert.doesNotMatch(options.input, /oracle\.json|obsidian-cli\.ts/);
+      assert.ok(options.input.includes(join(options.cwd, "obsidian")));
+      assert.ok((await stat(join(options.cwd, "obsidian"))).mode & 0o100);
       if (sandboxFailure)
         return {
           code: 0,
@@ -138,6 +163,7 @@ async function exercise(
             ),
         );
         changeAnnotation(answer, envelope);
+        await logQuery(envelope, options);
         await writeFile(
           join(options.cwd, "query-result.json"),
           JSON.stringify(envelope),
@@ -146,6 +172,23 @@ async function exercise(
           join(options.cwd, "answer.json"),
           JSON.stringify(answer),
         );
+        if (caseName === "csv_for_advisor") {
+          assert.ok(
+            options.input.includes(
+              `save advisor.csv at ${join(options.cwd, "advisor.csv")}`,
+            ),
+          );
+          assert.ok(
+            options.input.includes(
+              `The runner copies advisor.csv to ${join(root, "advisor.csv")} after the run.`,
+            ),
+          );
+          assert.ok(
+            options.input.includes(
+              "Report that retained path; do not write there.",
+            ),
+          );
+        }
         if (caseName === "csv_for_advisor")
           await writeFile(
             join(options.cwd, "advisor.csv"),
@@ -364,6 +407,7 @@ async function exercise(
           validPng: null,
         };
         changeAnnotation(answer, envelope);
+        await logQuery(envelope, options);
         await writeFile(
           join(options.cwd, "query-result.json"),
           JSON.stringify(envelope),
@@ -524,6 +568,7 @@ async function exercise(
           validPng: null,
         };
         changeAnnotation(answer, envelope);
+        await logQuery(envelope, options);
         await writeFile(
           join(options.cwd, "query-result.json"),
           JSON.stringify(envelope),
@@ -584,6 +629,7 @@ async function exercise(
         truncated: false,
         rows,
       };
+      await logQuery(envelope, options);
       await writeFile(
         join(options.cwd, "query-result.json"),
         JSON.stringify(envelope),
@@ -741,20 +787,27 @@ await test("metrics count completed commands once and distinguish retries from e
     event("q2", '{"ok":false}'),
     event("q3", '{"ok":true}'),
   ].join("\n");
-  assert.partialDeepStrictEqual(measureEvents(events), {
-    calls: 3,
-    queryAttempts: 3,
-    queryExitZero: 3,
-    itemQueryAttempts: 3,
-    itemQueryExitZero: 3,
-    annotationQueryAttempts: 0,
-    annotationQueryExitZero: 0,
-    imageAttempts: 0,
-    imageExitZero: 0,
-    queryRetries: 1,
-    contextualBytes: Buffer.byteLength('{"ok":true}{"ok":false}{"ok":true}'),
-    forbiddenReads: [],
-  });
+  assert.partialDeepStrictEqual(
+    measureEvents(events, "codex", [
+      { argv: ["zotlit:query"], exitCode: 0, stdoutBytes: 11 },
+      { argv: ["zotlit:query"], exitCode: 0, stdoutBytes: 12 },
+      { argv: ["zotlit:query"], exitCode: 0, stdoutBytes: 11 },
+    ]),
+    {
+      calls: 3,
+      queryAttempts: 3,
+      queryExitZero: 3,
+      itemQueryAttempts: 3,
+      itemQueryExitZero: 3,
+      annotationQueryAttempts: 0,
+      annotationQueryExitZero: 0,
+      imageAttempts: 0,
+      imageExitZero: 0,
+      queryRetries: 1,
+      contextualBytes: Buffer.byteLength('{"ok":true}{"ok":false}{"ok":true}'),
+      forbiddenReads: [],
+    },
+  );
 });
 
 await test("metrics distinguish Item, Annotation, and Excerpt Image commands", () => {
@@ -775,6 +828,16 @@ await test("metrics distinguish Item, Annotation, and Excerpt Image commands", (
       event("annotation", "zotlit:query from=annotations"),
       event("image", "zotlit:annotation-image key=FDRFQ7C2"),
     ].join("\n"),
+    "codex",
+    [
+      { argv: ["zotlit:query"], exitCode: 0, stdoutBytes: 11 },
+      {
+        argv: ["zotlit:query", "from=annotations"],
+        exitCode: 0,
+        stdoutBytes: 11,
+      },
+      { argv: ["zotlit:annotation-image"], exitCode: 0, stdoutBytes: 11 },
+    ],
   );
   assert.equal(metrics.itemQueryExitZero, 1);
   assert.equal(metrics.annotationQueryExitZero, 1);
@@ -1016,4 +1079,51 @@ await test("both agent paths reject observed evaluator reads even with correct a
     assert.equal(report.failureKind, "task");
     assert.ok(report.errors.includes("agent read evaluator sources"));
   }
+});
+
+await test("shared marks can derive Library names from Indexed Keys and reject wrong names", async () => {
+  const omitLibrary = (answer, envelope) => {
+    envelope.request.fields = envelope.request.fields.filter(
+      (field) => field !== "library",
+    );
+    for (const row of envelope.rows) delete row.values.library;
+  };
+  const valid = await exercise(null, {
+    caseName: "shared_marks",
+    changeAnnotation: omitLibrary,
+  });
+  assert.equal(valid.state, "passed", valid.errors.join("\n"));
+  const wrong = await exercise(null, {
+    caseName: "shared_marks",
+    changeAnnotation(answer, envelope) {
+      omitLibrary(answer, envelope);
+      answer.annotations[1].library = "My Library";
+    },
+  });
+  assert.equal(wrong.failureKind, "task");
+  assert.match(wrong.errors.join("\n"), /wrong library/);
+});
+
+await test("Library selectors and display names identify the same Library in answers", async () => {
+  const { checkAnswer } = await import("./run.mjs");
+  const edge = await exercise(3);
+  edge.answer.items.forEach((item) => {
+    item.library = item.library === "My Library" ? "personal" : "group:118";
+  });
+  edge.answer.duplicateKeyGroups[0].libraries = ["personal", "group:118"];
+  assert.deepEqual(checkAnswer("edge", edge.answer, {}), []);
+  edge.answer.items[0].library = "group:999";
+  assert.match(
+    checkAnswer("edge", edge.answer, {}).join("\n"),
+    /wrong Item details/,
+  );
+  const shared = await exercise(null, {
+    caseName: "shared_marks",
+    changeAnnotation(answer) {
+      for (const annotation of answer.annotations)
+        annotation.library =
+          annotation.library === "My Library" ? "personal" : "group:118";
+    },
+  });
+  assert.equal(shared.state, "passed", shared.errors.join("\n"));
 });

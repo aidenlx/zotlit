@@ -20,6 +20,9 @@ const { Effect } = await import(requireQuery.resolve("effect"));
 const { createClient } = await import(
   requireQuery.resolve("@zotlit/db/client/node")
 );
+const { attachmentAbsPath } = await import(
+  requireQuery.resolve("@zotlit/db/path")
+);
 const { ItemQueryDatabase } = await import(
   requireQuery.resolve("@zotlit/db/item-query")
 );
@@ -49,8 +52,27 @@ await test("every case oracle matches a real query over the seeded Fixture", asy
     client = createClient(join(root, "zotero-data", "zotero.sqlite"), {
       connection: { readOnly: true },
     });
-    for (const [name, spec] of Object.entries(oracle.cases))
-      await t.test(name, async () => {
+    const cases = [
+      ...Object.entries(oracle.cases),
+      ...["annotations.length", "annotations[]"].map((field) => [
+        "count_per_paper",
+        {
+          ...oracle.cases.count_per_paper,
+          group: undefined,
+          count: 2,
+          fields: ["title", field],
+          request: {
+            from: "items",
+            library: "personal",
+            filter:
+              'collections.within("Query thesis") && annotations.length > 0',
+          },
+        },
+        `count_per_paper from Items with ${field}`,
+      ]),
+    ];
+    for (const [name, spec, label = name] of cases)
+      await t.test(label, async () => {
         const fields = spec.fields ?? spec.request.fields.split(",");
         const libraries = [
           ...(spec.request.library === "all" ||
@@ -87,15 +109,10 @@ await test("every case oracle matches a real query over the seeded Fixture", asy
             Effect.provideService(ItemQueryDatabase, { client }),
             Effect.provideService(AttachmentFileResolver, (attachment) =>
               Effect.sync(() => {
-                const path = attachment.path?.startsWith("storage:")
-                  ? join(
-                      root,
-                      "zotero-data",
-                      "storage",
-                      attachment.key,
-                      attachment.path.slice(8),
-                    )
-                  : attachment.path;
+                const path = attachmentAbsPath(attachment, {
+                  dataDir: join(root, "zotero-data"),
+                  baseAttachmentPath: null,
+                });
                 return {
                   path: path ?? null,
                   exists: path ? existsSync(path) : false,
