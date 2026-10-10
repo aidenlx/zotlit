@@ -195,3 +195,20 @@ await test("attachment counts require grouped query evidence even when local cou
     /wrong group counts/,
   );
 });
+
+await test("reading plan answers accept Library display names as well as selectors", async () => {
+  const live = JSON.parse(
+    await readFile(new URL("./live-projections.json", import.meta.url), "utf8"),
+  );
+  const { envelope, answer } = structuredClone(live.reading_plan);
+  const context = { runRoot: "/evaluation-run/corpus", envelope };
+  for (const row of answer.rows)
+    row.values.library =
+      row.values.library === "personal" ? "My Library" : "Lab Archive";
+  assert.deepEqual(checkAnswer("reading_plan", answer, context), []);
+  answer.rows[0].values.library = "group:999";
+  assert.match(
+    checkAnswer("reading_plan", answer, context).join("\n"),
+    /wrong library/,
+  );
+});

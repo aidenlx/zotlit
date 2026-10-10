@@ -11,6 +11,7 @@ import { obsidianCliSocketPath } from "@zotlit/scripts/obsidian-cli";
 
 import { validate } from "./check.mjs";
 import { measureEvents, parseEvents } from "./events.mjs";
+import { indexedKeyLibrary, librarySelector } from "./libraries.mjs";
 import { researchSchema, checkResearchAnswer } from "./research.mjs";
 export { measureEvents } from "./events.mjs";
 
@@ -356,9 +357,7 @@ function checkItemAnswer(caseName, answer, resultPath) {
           indexedKey: row.indexedKey,
           title: row.title,
           publicationYear: row.year,
-          library: row.indexedKey.endsWith("g118")
-            ? "Lab Archive"
-            : "My Library",
+          library: indexedKeyLibrary(row.indexedKey),
           firstAuthor: row.firstAuthor,
           editor:
             row.firstCreator !== row.firstAuthor ? row.firstCreator : null,
@@ -382,7 +381,14 @@ function checkItemAnswer(caseName, answer, resultPath) {
           "library",
           "firstAuthor",
         ];
-        if (required.some((key) => found[key] !== item[key])) return true;
+        if (
+          required.some(
+            (key) =>
+              (key === "library" ? librarySelector(found[key]) : found[key]) !==
+              item[key],
+          )
+        )
+          return true;
         return caseName === "edge" && item.firstAuthor === null
           ? found.editor !== item.editor
           : found.editor !== null && found.editor !== item.editor;
@@ -398,10 +404,12 @@ function checkItemAnswer(caseName, answer, resultPath) {
       groups[0]?.key !== "EVALSAME" ||
       !Array.isArray(groups[0].libraries) ||
       JSON.stringify(
-        [...groups[0].libraries].sort((a, b) => a.localeCompare(b)),
+        groups[0].libraries
+          .map(librarySelector)
+          .sort((a, b) => a.localeCompare(b)),
       ) !==
         JSON.stringify(
-          ["My Library", "Lab Archive"].sort((a, b) => a.localeCompare(b)),
+          ["personal", "group:118"].sort((a, b) => a.localeCompare(b)),
         )
     )
       errors.push("answer has wrong shared-key libraries");
@@ -460,9 +468,7 @@ function checkAnnotationAnswer(
           : field === "attachmentExists"
             ? (values.attachment?.exists ?? values["attachment.exists"] ?? null)
             : field === "library"
-              ? annotation.indexedKey.endsWith("g118")
-                ? "Lab Archive"
-                : "My Library"
+              ? indexedKeyLibrary(annotation.indexedKey)
               : field === "itemIndexedKey" || field === "attachmentIndexedKey"
                 ? envelope.rows.find(
                     (row) => row.indexedKey === annotation.indexedKey,
@@ -470,7 +476,14 @@ function checkAnnotationAnswer(
                 : field === "itemTitle"
                   ? values["item.title"]
                   : (values[field] ?? null);
-      if (!isDeepStrictEqual(annotation[field], value))
+      if (
+        !isDeepStrictEqual(
+          field === "library"
+            ? librarySelector(annotation[field])
+            : annotation[field],
+          value,
+        )
+      )
         errors.push(
           `answer has wrong ${field === "attachmentPath" ? "source path" : field} for ${annotation.indexedKey}`,
         );
@@ -520,7 +533,7 @@ function prompt(caseName, vaultId, agentRoot) {
   if (oracle.cases[caseName].kind === "research")
     return `${preamble}Save the complete successful query envelope at ${result} and read it before answering. Use a single complete query when the task can be answered by following relations or grouping. Your final JSON must contain count (the total matched rows), rows (each identity and requested values; flatten grouped rows), groups (value and count, or []), limitation (null unless a requested capability is unavailable), and exportPath (null unless you produced a CSV). For a CSV task, save advisor.csv at ${join(agentRoot, "advisor.csv")} and retain the query JSON as evidence. The runner copies advisor.csv to ${resolve(agentRoot, "..", "advisor.csv")} after the run. Report that retained path; do not write there. Express an unavailable fuzzy-search capability as fuzzy-search-unavailable. Use only this folder for files you create.`;
   if (itemCases.has(caseName))
-    return `${preamble}Save the complete successful zotlit:query JSON envelope at ${result}. If the CLI returns a file receipt, copy the complete file envelope to this evidence path. Read the saved envelope and verify it before answering. The runner will retain this envelope at ${retained} after cleanup. In your final JSON, items must contain every Item detail the user requested (use My Library and Lab Archive as library names); use null for a missing year, author, or editor. For the export case use an empty items array and set exportPath to ${retained}; otherwise use null. Put the libraries that share a bare key in duplicateKeyGroups when the request asks about it; otherwise use an empty array. State the exact count and missing publication-year count (use null when the request does not ask for it).`;
+    return `${preamble}Save the complete successful zotlit:query JSON envelope at ${result}. If the CLI returns a file receipt, copy the complete file envelope to this evidence path. Read the saved envelope and verify it before answering. The runner will retain this envelope at ${retained} after cleanup. In your final JSON, items must contain every Item detail the user requested (use Library display names or selectors); use null for a missing year, author, or editor. For the export case use an empty items array and set exportPath to ${retained}; otherwise use null. Put the libraries that share a bare key in duplicateKeyGroups when the request asks about it; otherwise use an empty array. State the exact count and missing publication-year count (use null when the request does not ask for it).`;
   const imageResult = join(agentRoot, "image-result.json");
   const imageInstruction =
     caseName === "image"

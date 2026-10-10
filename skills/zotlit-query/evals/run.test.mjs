@@ -1057,3 +1057,27 @@ await test("shared marks can derive Library names from Indexed Keys and reject w
   assert.equal(wrong.failureKind, "task");
   assert.match(wrong.errors.join("\n"), /wrong library/);
 });
+
+await test("Library selectors and display names identify the same Library in answers", async () => {
+  const { checkAnswer } = await import("./run.mjs");
+  const edge = await exercise(3);
+  edge.answer.items.forEach((item) => {
+    item.library = item.library === "My Library" ? "personal" : "group:118";
+  });
+  edge.answer.duplicateKeyGroups[0].libraries = ["personal", "group:118"];
+  assert.deepEqual(checkAnswer("edge", edge.answer, {}), []);
+  edge.answer.items[0].library = "group:999";
+  assert.match(
+    checkAnswer("edge", edge.answer, {}).join("\n"),
+    /wrong Item details/,
+  );
+  const shared = await exercise(null, {
+    caseName: "shared_marks",
+    changeAnnotation(answer) {
+      for (const annotation of answer.annotations)
+        annotation.library =
+          annotation.library === "My Library" ? "personal" : "group:118";
+    },
+  });
+  assert.equal(shared.state, "passed", shared.errors.join("\n"));
+});

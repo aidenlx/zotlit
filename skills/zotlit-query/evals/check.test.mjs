@@ -416,3 +416,12 @@ for (const caseName of ["include", "edge", "export"]) {
     });
   }
 }
+
+await test("edge accepts Library evidence from Indexed Keys", () => {
+  const result = envelope("edge");
+  result.request.fields = result.request.fields.filter((f) => f !== "library");
+  for (const row of result.rows) delete row.values.library;
+  assert.deepEqual(validate("edge", result, { runRoot: root }), []);
+  result.rows[0].indexedKey += "g999";
+  assert.ok(validate("edge", result, { runRoot: root }).length > 0);
+});

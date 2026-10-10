@@ -1,5 +1,7 @@
 // Research-case evidence is checked against literals, independently of the agent.
 import { isDeepStrictEqual } from "node:util";
+
+import { librarySelector } from "./libraries.mjs";
 export function resolveExpected(value, runRoot) {
   if (typeof value === "string") return value.replaceAll("$RUN", runRoot);
   if (Array.isArray(value))
@@ -23,7 +25,14 @@ function checkRows(actual, expected) {
       continue;
     }
     for (const [field, value] of Object.entries(row.values))
-      if (!isDeepStrictEqual(found.values?.[field], value))
+      if (
+        !isDeepStrictEqual(
+          field === "library"
+            ? librarySelector(found.values?.[field])
+            : found.values?.[field],
+          value,
+        )
+      )
         errors.push(`wrong ${field} for ${row.indexedKey}`);
   }
   return errors;

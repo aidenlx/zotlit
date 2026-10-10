@@ -13,7 +13,7 @@ const oracle = JSON.parse(
 const itemFields = {
   include: ["title", "date.year"],
   export: ["title", "date.year", 'custom["review.status"]', "abstractNote"],
-  edge: ["title", "date.year", "library"],
+  edge: ["title", "date.year"],
 };
 const expandedAnnotationCases = new Set([
   "shared_marks",
@@ -330,12 +330,6 @@ function validateItems(caseName, envelope, { expected, ...context }) {
       `wrong publication year for ${item.indexedKey}`,
     );
     if (values["date.year"] === null) missingYear++;
-    if (caseName === "edge")
-      need(
-        values.library ===
-          (item.indexedKey.endsWith("g118") ? "group:118" : "personal"),
-        `wrong Library for ${item.indexedKey}`,
-      );
     const creators = projectedCreators(values);
     need(Array.isArray(creators), `missing creators for ${item.indexedKey}`);
     if (Array.isArray(creators)) {
