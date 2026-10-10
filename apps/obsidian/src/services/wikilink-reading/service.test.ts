@@ -5,6 +5,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
+import { CitationLookupAnswer } from "@/services/citation-index/lookup";
+import type { CitationLookupObservation } from "@/services/citation-index/service";
 import { occurrences, rendered } from "@/services/citation-text/__fixtures__";
 import { citationKey } from "@/services/citation-text/present";
 import type { FormattedOccurrence } from "@/services/citation-text/present";
@@ -839,7 +841,9 @@ describe("WikilinkReading refresh", () => {
       formatted: before,
     });
     const root = await harnessed.renderSection(CITE);
+    expect(harnessed.citationIndex.activeObservations).toBe(1);
     harnessed.unloadSections();
+    expect(harnessed.citationIndex.activeObservations).toBe(0);
 
     harnessed.citationText.hold(after);
     harnessed.citationText.emit("invalidated");
@@ -922,10 +926,18 @@ class CitationTextStub {
 
 class CitationIndexStub {
   #citekeys: Record<string, string>;
-  readonly #listeners = new Set<() => void>();
+  readonly #observations = new Set<{
+    changed: () => void;
+    indexedKeys: readonly string[];
+    current: CitationLookupObservation["current"];
+  }>();
 
   constructor(citekeys: Record<string, string>) {
     this.#citekeys = citekeys;
+  }
+
+  get activeObservations(): number {
+    return this.#observations.size;
   }
 
   /** Replaces the snapshot's answers, the way a rebuild does. */
@@ -933,17 +945,49 @@ class CitationIndexStub {
     this.#citekeys = citekeys;
   }
 
-  citekeyOf(indexedKey: string): string | null {
-    return this.#citekeys[indexedKey] ?? null;
-  }
-
-  on(_event: "resolution-changed", cb: () => void): () => void {
-    this.#listeners.add(cb);
-    return () => this.#listeners.delete(cb);
+  observeLookup(changed: () => void) {
+    const state = {
+      changed,
+      indexedKeys: [] as readonly string[],
+      current: null as CitationLookupObservation["current"],
+    };
+    this.#observations.add(state);
+    return {
+      get current() {
+        return state.current;
+      },
+      set: ({ indexedKeys = [] }: { indexedKeys?: readonly string[] }) => {
+        state.indexedKeys = indexedKeys;
+        state.current = this.#held(indexedKeys);
+      },
+      [Symbol.dispose]: () => this.#observations.delete(state),
+    };
   }
 
   emit(): void {
-    for (const cb of this.#listeners) cb();
+    for (const state of this.#observations) {
+      state.current = this.#held(state.indexedKeys);
+      state.changed();
+    }
+  }
+
+  #held(indexedKeys: readonly string[]) {
+    const requested = new Set(indexedKeys);
+    const answer = new CitationLookupAnswer({
+      revision: JSON.stringify(this.#citekeys),
+      citekeys: new Map(),
+      indexedKeys: new Map(
+        [...requested].map((indexedKey) => [
+          indexedKey,
+          this.#citekeys[indexedKey] ?? null,
+        ]),
+      ),
+    });
+    return {
+      value: answer,
+      status: "fresh" as const,
+      settled: Promise.resolve(answer),
+    };
   }
 }
 

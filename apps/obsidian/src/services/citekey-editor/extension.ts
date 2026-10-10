@@ -25,7 +25,11 @@ import type { Workspace } from "obsidian";
 import { livePreviewOf, overlapsSelection } from "@/lib/editor-decoration";
 import { getLogger } from "@/lib/log";
 import { themeHook } from "@/lib/theme-hooks";
-import type { CitekeyResolution } from "@/services/citation-index/service";
+import type {
+  CitationLookupAnswer,
+  CitationLookupObservation,
+  CitekeyResolution,
+} from "@/services/citation-index/service";
 import {
   citationContent,
   citationElement,
@@ -94,8 +98,6 @@ export type ResolveCitekey = (citekey: string) => CitekeyResolution | null;
  * @returns the vault path of the one Literature Note `citekey` names, or null
  *   when zero or several name it.
  */
-export type ResolveHoverNote = (citekey: string) => string | null;
-
 export interface CitekeyEditorHandlers {
   open: OpenCitekey;
   /** Raises the menus a rendered citation opens. */
@@ -104,8 +106,11 @@ export interface CitekeyEditorHandlers {
   showPopover: (request: CitationHoverRequest) => void;
   /** What hover answers with, read once per hover. */
   hoverPreferences: () => HoverPreferences;
-  hoverNotePath: ResolveHoverNote;
-  resolveCitekey: ResolveCitekey;
+  hoverNotePath: (
+    citekey: string,
+    lookup?: CitationLookupAnswer | null,
+  ) => string | null;
+  observeLookup: (changed: () => void) => CitationLookupObservation;
   /** Whether literal Citations expose ZotLit navigation. */
   navigationEnabled: () => boolean;
   /** Whether Live Preview replaces complete Citations with formatted text. */
@@ -179,6 +184,8 @@ interface CitekeyDecorations {
   all: DecorationSet;
   /** The widgets alone, which cursor motion treats as atoms. */
   widgets: DecorationSet;
+  /** The complete visible request this pass read. */
+  citekeys: readonly string[];
 }
 
 /**
@@ -201,10 +208,26 @@ export function citekeyEditorExtension(
       /** The widget ranges, which {@link EditorView.atomicRanges} reads. */
       widgets: DecorationSet = Decoration.none;
       #editClick: { from: number; x: number; y: number } | null = null;
+      readonly #lookup;
+      #lookupGeneration = 0;
+      #destroyed = false;
 
       constructor(view: EditorView) {
+        this.#lookup = handlers.observeLookup(() => {
+          if (this.#destroyed) return;
+          view.dispatch({ effects: citekeyDecorationsChanged.of(undefined) });
+        });
         this.#rebuild(view);
       }
+
+      destroy(): void {
+        this.#destroyed = true;
+        this.#lookupGeneration += 1;
+        this.#lookup[Symbol.dispose]();
+      }
+
+      readonly #resolve: ResolveCitekey = (citekey) =>
+        this.#lookup.current?.value.resolve(citekey) ?? null;
 
       update(update: ViewUpdate): void {
         if (update.docChanged) this.#editClick = null;
@@ -387,7 +410,10 @@ export function citekeyEditorExtension(
         if (intent.kind === "page-preview") {
           // A key naming zero or several notes previews nothing, so no popover
           // path can reach the create-then-open flow.
-          const notePath = handlers.hoverNotePath(intent.citekey);
+          const notePath = handlers.hoverNotePath(
+            intent.citekey,
+            this.#lookup.current?.value ?? null,
+          );
           if (notePath === null) {
             logger.trace("Citekey hover suppressed", {
               citekey,
@@ -418,7 +444,7 @@ export function citekeyEditorExtension(
           targetEl,
           sourcePath: info.file?.path ?? "",
           works: intent.citekeys.map((key) => {
-            const resolution = handlers.resolveCitekey(key);
+            const resolution = this.#resolve(key);
             return {
               citekey: key,
               // An Ambiguous Citation Key adopts no candidate's identity, so
@@ -451,13 +477,18 @@ export function citekeyEditorExtension(
       }
 
       #rebuild(view: EditorView): void {
-        const built = buildDecorations(
-          view,
-          handlers,
-          this.#editedDocument(view),
-        );
+        const built = buildDecorations(view, handlers, {
+          edited: this.#editedDocument(view),
+          resolveCitekey: this.#resolve,
+          lookup: () => this.#lookup.current?.value ?? null,
+        });
         this.decorations = built.all;
         this.widgets = built.widgets;
+        const generation = ++this.#lookupGeneration;
+        queueMicrotask(() => {
+          if (this.#destroyed || generation !== this.#lookupGeneration) return;
+          this.#lookup.set({ citekeys: built.citekeys });
+        });
       }
     },
     {
@@ -672,7 +703,15 @@ interface PlacedDecoration {
 function buildDecorations(
   view: EditorView,
   handlers: CitekeyEditorHandlers,
-  edited: EditedDocument | null,
+  {
+    edited,
+    resolveCitekey,
+    lookup,
+  }: {
+    edited: EditedDocument | null;
+    resolveCitekey: ResolveCitekey;
+    lookup: () => CitationLookupAnswer | null;
+  },
 ): CitekeyDecorations {
   const all = new RangeSetBuilder<Decoration>();
   const widgets = new RangeSetBuilder<Decoration>();
@@ -681,6 +720,7 @@ function buildDecorations(
   // A blurred editor conceals everything, the way Obsidian's own live preview
   // reads its selection.
   const selection = view.hasFocus ? state.selection.ranges : [];
+  const visibleCitekeys = new Set<string>();
   let lastLineFrom = -1;
   for (const range of view.visibleRanges) {
     for (let pos = range.from; pos <= range.to; ) {
@@ -697,6 +737,9 @@ function buildDecorations(
       const placed: PlacedDecoration[] = [];
       if (edited !== null) {
         for (const citation of citationRanges(line.text, isRuledOut)) {
+          for (const { citekey } of citation.keys) {
+            visibleCitekeys.add(citekey);
+          }
           const from = line.from + citation.start;
           const to = line.from + citation.end;
           if (overlapsSelection(selection, from, to)) continue;
@@ -705,6 +748,8 @@ function buildDecorations(
             start: from,
             edited,
             handlers,
+            resolveCitekey,
+            lookup,
             footnote: statesFootnoteTreatment(state, from, to),
           });
           if (widget === null) continue;
@@ -720,7 +765,10 @@ function buildDecorations(
 
       const marks = stateCitekeyMarks(
         marksOutside(citekeyMarks(line.text, isRuledOut), replaced),
-        (citekey) => citekeyState(handlers.resolveCitekey(citekey)),
+        (citekey) => {
+          visibleCitekeys.add(citekey);
+          return citekeyState(resolveCitekey(citekey));
+        },
       );
       for (const mark of marks) {
         placed.push({
@@ -740,7 +788,11 @@ function buildDecorations(
       }
     }
   }
-  return { all: all.finish(), widgets: widgets.finish() };
+  return {
+    all: all.finish(),
+    widgets: widgets.finish(),
+    citekeys: [...visibleCitekeys],
+  };
 }
 
 /**
@@ -753,6 +805,8 @@ function citationWidget(options: {
   start: number;
   edited: EditedDocument;
   handlers: CitekeyEditorHandlers;
+  resolveCitekey: ResolveCitekey;
+  lookup: () => CitationLookupAnswer | null;
   /** Whether the Citation is written inside a footnote. */
   footnote: boolean;
 }): CitationWidget | null {
@@ -761,13 +815,15 @@ function citationWidget(options: {
     start,
     edited: { citations, path },
     handlers,
+    resolveCitekey,
+    lookup,
     footnote,
   } = options;
   const at: CitationCoordinate = { kind: "offset", start };
   const content = citationContent(citation, citations, at);
   if (content === null) return null;
   const stateOf = literalKeyStateOf(citations, (citekey) =>
-    citekeyState(handlers.resolveCitekey(citekey)),
+    citekeyState(resolveCitekey(citekey)),
   );
   const themeClasses = citationStateHooks(
     citationState(citationKeyStates(citation, stateOf)),
@@ -778,7 +834,10 @@ function citationWidget(options: {
     shown: { citation, at },
     works: citedWorks(citation, citations),
     sourcePath: path,
-    handlers,
+    handlers: {
+      ...handlers,
+      hoverNotePath: (citekey) => handlers.hoverNotePath(citekey, lookup()),
+    },
     themeClasses,
     footnote,
     navigable: handlers.navigationEnabled(),

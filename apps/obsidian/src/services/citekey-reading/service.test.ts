@@ -10,8 +10,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { themeHook } from "@/lib/theme-hooks";
-import type { Citation } from "@/services/citation-index/service";
-import { CitekeySnapshot } from "@/services/citation-index/snapshot";
+import { CitationLookupAnswer } from "@/services/citation-index/lookup";
+import type {
+  Citation,
+  CitationLookupObservation,
+} from "@/services/citation-index/service";
 import {
   ALPHA_KEY,
   citation,
@@ -91,6 +94,7 @@ interface Harness extends AsyncDisposable {
   rebuildResolution: (ambiguous: readonly string[]) => void;
   /** Tears every rendered section down, the way Obsidian does on a re-render. */
   unloadSections: () => void;
+  activeLookups: () => number;
   switchRequests: string[];
 }
 
@@ -133,9 +137,27 @@ async function makeHarness({
   let rerenders = 0;
   let render = renderText;
   const metadataListeners = new Map<string, (file: { path: string }) => void>();
-  const indexListeners = new Map<string, () => void>();
   const children: MarkdownRenderChild[] = [];
   let ambiguous = ambiguousKeys;
+  let resolutionReady = !resolutionPending;
+  const observations = new Set<{
+    changed: () => void;
+    citekeys: readonly string[];
+    current: CitationLookupObservation["current"];
+  }>();
+  const answer = (requested: readonly string[]): CitationLookupAnswer =>
+    new CitationLookupAnswer({
+      revision: JSON.stringify(ambiguous),
+      citekeys: new Map(
+        requested.map((citekey) => [
+          citekey,
+          ambiguous.includes(citekey)
+            ? { kind: "ambiguous" as const, candidates: [] }
+            : { kind: "missing" as const },
+        ]),
+      ),
+      indexedKeys: new Map(),
+    });
 
   const reads = stack.use(
     inProcessReadsService(memoryOpener(() => citedWorkSeed([ALPHA_KEY])).open),
@@ -161,14 +183,13 @@ async function makeHarness({
       db: reads,
       citationIndex: {
         getDocumentCitationSet: () =>
-          Promise.resolve({ occurrences, citations: cited }),
-        citekeyOf: () => null,
-        readSnapshot: () =>
-          Promise.resolve(CitekeySnapshot.from([], new Set())),
-        on: (event: string, cb: () => void) => {
-          indexListeners.set(event, cb);
-          return () => undefined;
-        },
+          Promise.resolve({
+            occurrences,
+            citations: cited,
+            errors: [],
+            lookup: answer(occurrences.map((occurrence) => occurrence.raw)),
+          }),
+        on: () => () => undefined,
       },
       noteIndex: {
         on: () => () => undefined,
@@ -217,13 +238,30 @@ async function makeHarness({
       },
       citationText,
       citationIndex: {
-        resolution: resolutionPending ? null : "fresh",
-        resolveCitekey: (citekey: string) =>
-          resolutionPending
-            ? null
-            : ambiguous.includes(citekey)
-              ? { kind: "ambiguous", candidates: [] }
-              : { kind: "missing" },
+        observeLookup: (changed: () => void) => {
+          const state = {
+            changed,
+            citekeys: [] as readonly string[],
+            current: null as CitationLookupObservation["current"],
+          };
+          observations.add(state);
+          return {
+            get current() {
+              return state.current;
+            },
+            set: ({ citekeys = [] }: { citekeys?: readonly string[] }) => {
+              state.citekeys = citekeys;
+              if (!resolutionReady) return;
+              const value = answer(citekeys);
+              state.current = {
+                value,
+                status: "fresh",
+                settled: Promise.resolve(value),
+              };
+            },
+            [Symbol.dispose]: () => observations.delete(state),
+          };
+        },
       },
       citekeyEditor: {
         openCitekey: (citekey: string, pane: unknown) => {
@@ -271,11 +309,21 @@ async function makeHarness({
     changeFile: (path) => metadataListeners.get("changed")?.({ path }),
     rebuildResolution: (keys) => {
       ambiguous = keys;
-      indexListeners.get("resolution-changed")?.();
+      resolutionReady = true;
+      for (const state of observations) {
+        const value = answer(state.citekeys);
+        state.current = {
+          value,
+          status: "fresh",
+          settled: Promise.resolve(value),
+        };
+        state.changed();
+      }
     },
     unloadSections: () => {
       for (const child of children.splice(0)) child.unload();
     },
+    activeLookups: () => observations.size,
     switchRequests,
     [Symbol.asyncDispose]: () => resources.disposeAsync(),
   };
@@ -847,7 +895,9 @@ describe("CitekeyReading refresh", () => {
     await using harnessed = await makeHarness({ body: "Blah [@alpha]." });
     const el = section("<p>Blah [@alpha].</p>");
     await harnessed.process(el, viewedCtx(harnessed, el));
+    expect(harnessed.activeLookups()).toBe(1);
     harnessed.unloadSections();
+    expect(harnessed.activeLookups()).toBe(0);
 
     harnessed.renderAs((source) => `‹${source}›`);
     harnessed.changeFile("note.md");

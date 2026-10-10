@@ -2,7 +2,7 @@
 // citations show formatted in the reading view, navigate like links, and are
 // rewritten in place while Obsidian shows their section.
 
-import { MarkdownView, setTooltip } from "obsidian";
+import { MarkdownRenderChild, MarkdownView, setTooltip } from "obsidian";
 import type { App, MarkdownPostProcessorContext, Plugin } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -15,7 +15,7 @@ import {
   sectionRange,
 } from "@/lib/reading-view";
 import { themeHook } from "@/lib/theme-hooks";
-import type { CitationIndex } from "@/services/citation-index/service";
+import type { CitationLookupObservation } from "@/services/citation-index/service";
 import type { CitationPopover } from "@/services/citation-popover/service";
 import {
   citationContent,
@@ -72,6 +72,7 @@ interface PlacedCitation {
 /** One held section: its citations, and the elements standing in their place. */
 interface HeldSection {
   citations: readonly SectionCitation[];
+  lookup: CitationLookupObservation;
   /**
    * The element standing in each citation's place. Empty until the first show
    * puts elements in place.
@@ -96,7 +97,9 @@ export interface CitekeyReadingDeps {
   /** The formatted citations every surface of one document shares. */
   citationText: Pick<CitationText, "on" | "peek">;
   /** What a literal citekey names, which is what tells missing from Ambiguous. */
-  citationIndex: Pick<CitationIndex, "resolution" | "resolveCitekey">;
+  citationIndex: {
+    observeLookup(changed: () => void): CitationLookupObservation;
+  };
   /** The open-or-create flow every citekey surface shares, and what hover previews. */
   citekeyEditor: Pick<CitekeyEditor, "openCitekey" | "hoverNotePath">;
   /** What a hovered citation shows. */
@@ -242,11 +245,25 @@ export class CitekeyReading extends Service<void> {
     const file = this.#app.vault.getFileByPath(ctx.sourcePath);
     if (!file) return;
 
-    const held: HeldSection = { citations, placed: [] };
-    const show = () => {
+    let show = (): void => undefined;
+    const lookup = this.#citationIndex.observeLookup(() => show());
+    const child = new MarkdownRenderChild(el);
+    child.onunload = () => lookup[Symbol.dispose]();
+    ctx.addChild(child);
+    const held: HeldSection = { citations, lookup, placed: [] };
+    show = () => {
       if (this.#active !== true) return;
       this.#show(el, ctx, held);
     };
+    lookup.set({
+      citekeys: [
+        ...new Set(
+          citations.flatMap((citation) =>
+            citation.keys.map(({ citekey }) => citekey),
+          ),
+        ),
+      ],
+    });
     this.#sections.hold(el, ctx, show);
     show();
   }
@@ -264,10 +281,11 @@ export class CitekeyReading extends Service<void> {
   #show(
     el: HTMLElement,
     ctx: MarkdownPostProcessorContext,
-    { citations, placed }: HeldSection,
+    { citations, lookup, placed }: HeldSection,
   ): void {
     const text = this.#citationText.peek(ctx.sourcePath);
-    const resolutionPending = this.#citationIndex.resolution === null;
+    const answer = lookup.current?.value ?? null;
+    const resolutionPending = answer === null;
     // Source stays until a first answer: native text while the read settles,
     // and what a placed element shows until fresh text replaces it.
     if (text === null && !resolutionPending) return;
@@ -275,7 +293,7 @@ export class CitekeyReading extends Service<void> {
       path: text?.value.presentationFailure?.target,
     });
     const snapshotState = (citekey: string) =>
-      citekeyState(this.#citationIndex.resolveCitekey(citekey));
+      citekeyState(answer?.resolve(citekey) ?? null);
     const stateOf =
       text === null
         ? snapshotState
@@ -315,6 +333,7 @@ export class CitekeyReading extends Service<void> {
         works,
         at,
         failure: text?.value.presentationFailure,
+        lookup,
       });
       placed[index] = { ...built, shown, states };
       return built.element;
@@ -343,6 +362,7 @@ export class CitekeyReading extends Service<void> {
       works,
       at,
       failure,
+      lookup,
     }: {
       content: PresentedCitation | string;
       states: readonly CitationKeyState[];
@@ -351,6 +371,8 @@ export class CitekeyReading extends Service<void> {
       at: CitationNavigation["shown"];
       /** The Profile failure the document's presentation reports, if any. */
       failure: ProfilePresentationFailure | undefined;
+      /** The section-owned lookup used by hover while this element stays live. */
+      lookup: CitationLookupObservation;
     },
   ): { element: HTMLElement; navigation: CitationNavigation } {
     const themeClasses = [
@@ -380,7 +402,11 @@ export class CitekeyReading extends Service<void> {
       },
       showPopover: (request) => this.#citationPopover.show(request),
       hoverPreferences: () => this.#hover,
-      hoverNotePath: (citekey) => this.#citekeyEditor.hoverNotePath(citekey),
+      hoverNotePath: (citekey) =>
+        this.#citekeyEditor.hoverNotePath(
+          citekey,
+          lookup.current?.value ?? null,
+        ),
       workspace: this.#app.workspace,
       hoverTarget: () => {
         const hoverParent = this.#viewOf(element);

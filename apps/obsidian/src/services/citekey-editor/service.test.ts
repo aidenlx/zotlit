@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
+import { CitationLookupAnswer } from "@/services/citation-index/lookup";
 import type { CitekeyResolution } from "@/services/citation-index/service";
 import type { DocumentCitations } from "@/services/citation-text/service";
 import { CITEKEY_HOVER_SOURCE } from "@/services/citekey-navigation";
@@ -294,8 +295,8 @@ describe("CitekeyEditor hover source", () => {
   });
 });
 
-describe("CitekeyEditor index-change broadcast", () => {
-  it("asks every open markdown editor to restyle when the citekey resolution snapshot rebuilds", async () => {
+describe("CitekeyEditor lookup ownership", () => {
+  it("leaves lookup redraws to each open editor view", async () => {
     const citationIndex = new CitationIndexStub();
     let requests = 0;
     await using service = new CitekeyEditor({
@@ -320,7 +321,7 @@ describe("CitekeyEditor index-change broadcast", () => {
     await service.ready;
 
     citationIndex.emit();
-    expect(requests).toBe(1);
+    expect(requests).toBe(0);
   });
 });
 
@@ -554,22 +555,35 @@ class CitationIndexStub {
     this.#resolutions = resolutions;
   }
 
-  resolveCitekey(citekey: string): CitekeyResolution {
-    this.citekeysResolved.push(citekey);
-    return this.#resolutions[citekey] ?? { kind: "missing" };
+  readLookup({ citekeys = [] }: { citekeys?: readonly string[] }) {
+    this.citekeysResolved.push(...citekeys);
+    return Promise.resolve(this.#answer(citekeys));
   }
 
-  whenResolved(): Promise<void> {
-    return Promise.resolve();
-  }
-
-  on(_event: "resolution-changed", cb: () => void): () => void {
+  observeLookup(cb: () => void) {
     this.#listeners.add(cb);
-    return () => this.#listeners.delete(cb);
+    return {
+      current: null,
+      set: () => undefined,
+      [Symbol.dispose]: () => this.#listeners.delete(cb),
+    };
   }
 
   emit(): void {
     for (const cb of this.#listeners) cb();
+  }
+
+  #answer(citekeys: readonly string[]) {
+    return new CitationLookupAnswer({
+      revision: "test",
+      citekeys: new Map(
+        citekeys.map((citekey) => [
+          citekey,
+          this.#resolutions[citekey] ?? { kind: "missing" as const },
+        ]),
+      ),
+      indexedKeys: new Map(),
+    });
   }
 }
 
