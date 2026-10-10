@@ -72,7 +72,7 @@ export interface ReferencesViewDeps {
   db: Pick<ZoteroReadsService, "state" | "ready" | "acquireRead" | "on">;
   citationIndex: Pick<
     CitationIndex,
-    "getDocumentCitationSet" | "resolveCitekey" | "resolution" | "on"
+    "getDocumentCitationSet" | "resolution" | "on"
   >;
   /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
   libraryScope: Pick<LibraryScopeService, "current">;
@@ -133,6 +133,7 @@ export class ReferencesView extends ItemView {
   #path: string | null = null;
   /** Citations of that note, as the current list was built from. */
   #citations: readonly Citation[] = [];
+  #lookup: import("@/services/citation-index/lookup").CitationLookupAnswer | null = null;
   /** Explicit citation-source errors of that note. */
   #errors: readonly DocumentCitationError[] = [];
   /** Citation Presentation of that note, as the current list was rendered under. */
@@ -301,7 +302,7 @@ export class ReferencesView extends ItemView {
       this.#formatting = "pending";
     }
     this.#refreshCopy();
-    void this.#readCitationSet().then(({ file, citations, errors }) => {
+    void this.#readCitationSet().then(({ file, citations, errors, lookup }) => {
       const path = file?.path ?? null;
       // The note's own presentation properties decide what its list is rendered
       // under, so a frontmatter edit that leaves the Citations untouched still
@@ -312,6 +313,7 @@ export class ReferencesView extends ItemView {
         scan !== this.#scan ||
         (path === this.#path &&
           !restyled &&
+          lookup?.revision === this.#lookup?.revision &&
           citationsEqual(this.#citations, citations) &&
           documentCitationErrorsEqual(this.#errors, errors))
       ) {
@@ -320,6 +322,7 @@ export class ReferencesView extends ItemView {
       this.#file = file;
       this.#path = path;
       this.#citations = citations;
+      this.#lookup = lookup;
       this.#errors = errors;
       this.#presentation = presentation;
       logger.trace("References citations changed", {
@@ -337,11 +340,11 @@ export class ReferencesView extends ItemView {
    * active note moves while the read runs.
    */
   async #readCitationSet(): Promise<
-    DocumentCitationSet & { file: TFile | null }
+    Omit<DocumentCitationSet, "lookup"> & { lookup: DocumentCitationSet["lookup"] | null; file: TFile | null }
   > {
     const file = this.#activeMarkdownFile();
     if (!file) {
-      return { file: null, occurrences: [], citations: [], errors: [] };
+      return { file: null, occurrences: [], citations: [], errors: [], lookup: null };
     }
     return {
       file,
@@ -383,6 +386,7 @@ export class ReferencesView extends ItemView {
     this.#copyGeneration += 1;
     const reload = ++this.#reloads;
     const citations = this.#citations;
+    const lookup = this.#lookup;
     // Retained formatted entries answer for the render that is about to be
     // replaced, so the reload alone puts copy out of reach, before its read.
     this.#formatting =
@@ -395,7 +399,7 @@ export class ReferencesView extends ItemView {
       readReferenceSources(this.#deps.db, citations),
       readAmbiguousCandidates(
         this.#deps,
-        (citekey) => this.#deps.citationIndex.resolveCitekey(citekey),
+        (citekey) => lookup?.resolve(citekey) ?? null,
         citations.flatMap(({ indexedKey, occurrences }) =>
           indexedKey === null ? [occurrences[0]!.raw] : [],
         ),

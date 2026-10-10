@@ -1,3 +1,4 @@
+import type { CitationLookupAnswer, CitationLookupRequest } from "../lookup";
 // The citation commands and their response boundaries.
 
 import type { CliData, CliHandler } from "obsidian";
@@ -76,6 +77,7 @@ export interface DocumentReferences {
   /** The Document Citation Set, in first-occurrence order. */
   citations: readonly Citation[];
   errors: readonly DocumentCitationError[];
+  lookup: CitationLookupAnswer;
   /** The source-join by Indexed Key; an Item the database no longer holds is absent. */
   sources: ReadonlyMap<string, ReferenceSource>;
   /** Whether the join read the database at all, which is what says whether an
@@ -91,9 +93,8 @@ interface CitationsCliDeps {
     waitUntilSettled: (timeoutMs: number) => Promise<CitationSettleOutcome>;
     /** What a citation key names through the Citekey Resolution Snapshot: no
      *  Item, exactly one, or the candidates that make it Ambiguous. */
-    resolveCitekey: (citekey: string) => CitekeyResolution;
-    citekeyOf: (indexedKey: string) => string | null;
-    getCitedBy: (indexedKey: string) => CitedBySnapshot;
+    readLookup: (request: CitationLookupRequest) => Promise<CitationLookupAnswer>;
+    getCitedBy: (indexedKey: string) => Promise<CitedBySnapshot>;
     /** How well citation keys resolve now; a references answer reports it, the
      *  cited-by snapshot carries its own. */
     resolution: () => CitationKeyResolution;
@@ -187,7 +188,7 @@ export function createCitationsCliHandlers(
       }
 
       const { item } = selected;
-      const snapshot = deps.index.getCitedBy(item.key);
+      const snapshot = await deps.index.getCitedBy(item.key);
       const groups = reportGroups(snapshot.groups);
       return envelope(CITED_BY_COMMAND, {
         ok: true,
@@ -222,7 +223,7 @@ export function createCitationsCliHandlers(
       }
 
       const entries = referenceEntries(references, (citekey) =>
-        deps.index.resolveCitekey(citekey),
+        references.lookup.resolve(citekey) ?? { kind: "missing" },
       );
       return envelope(REFERENCES_COMMAND, {
         ok: true,
@@ -279,7 +280,8 @@ async function resolveItem(
 ): Promise<SelectedItem> {
   if ("citekey" in selector) {
     const { citekey } = selector;
-    const resolved = deps.index.resolveCitekey(citekey);
+    const resolved = (await deps.index.readLookup({ citekeys: [citekey] })).resolve(citekey);
+    if (resolved === null) throw new Error("Citation lookup omitted the requested key");
     if (resolved.kind === "missing") {
       return { kind: "fault", diagnostic: citekeyNotFoundDiagnostic(citekey) };
     }
@@ -309,7 +311,7 @@ async function resolveItem(
   }
   return {
     kind: "selected",
-    item: { key, citekey: deps.index.citekeyOf(key), summary },
+    item: { key, citekey: (await deps.index.readLookup({ indexedKeys: [key] })).citekeyOf(key) ?? null, summary },
   };
 }
 

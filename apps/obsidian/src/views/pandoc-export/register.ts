@@ -46,7 +46,7 @@ export interface PandocExportDeps {
   app: App;
   db: Pick<ZoteroReadsService, "ready">;
   /** Resolves the literal citation keys of the exported document. */
-  citationIndex: Pick<CitationIndex, "resolveCitekey" | "whenResolved">;
+  citationIndex: Pick<CitationIndex, "readLookup">;
   pandocEngine: Pick<PandocEngineService, "getStatus" | "getEngine">;
   zoteroPref: Pick<ZoteroPrefService, "ready" | "dataDir" | "httpPort" | "get">;
   settings: Pick<SettingsService, "current">;
@@ -124,7 +124,7 @@ export async function runPandocExport(
   await zoteroPref.ready;
   // A literal citation key resolves through the snapshot, so this export waits
   // for its first rebuild the way every in-app surface does.
-  await citationIndex.whenResolved();
+
 
   const choices = await openPandocExportModal(app, {
     dataDir: zoteroPref.dataDir,
@@ -242,7 +242,7 @@ function exportPorts(
     dataDir: () => zoteroPref.dataDir,
     resolveIndexedKey: (linkpath, sourcePath) =>
       resolveIndexedKey(linkpath, sourcePath, app),
-    resolveCitekey: (citekey) => citationIndex.resolveCitekey(citekey),
+    readLookup: (request) => citationIndex.readLookup(request),
     readItemRefs: (indexedKeys) => readItemRefs(db, indexedKeys),
     fetchBibliography: (refs) =>
       fetchBibliography(refs, {
