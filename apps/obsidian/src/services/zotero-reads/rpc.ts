@@ -16,7 +16,6 @@ import type {
   ItemBaseFields,
   ItemTag,
   Library,
-  LibraryCitekey,
   Note,
   NoteSource,
   TemplateCollection,
@@ -248,17 +247,6 @@ export const AnnotationSourcesSchema = Schema.Struct({
 });
 type _AnnotationSources = Expect<
   Equals<typeof AnnotationSourcesSchema.Type, AnnotationSources>
->;
-
-export const LibraryCitekeySchema = Schema.Struct({
-  itemID: Schema.Number,
-  libraryID: Schema.Number,
-  key: Schema.String,
-  indexedKey: Schema.String,
-  citekey: Schema.String,
-});
-type _LibraryCitekey = Expect<
-  Equals<typeof LibraryCitekeySchema.Type, LibraryCitekey>
 >;
 
 export const ItemDisplayRefSchema = Schema.Struct({
@@ -607,13 +595,6 @@ export class ZoteroReads extends RpcGroup.make(
   Rpc.make("AttachmentPathIndex", {
     payload: snapshot,
     success: Schema.Array(AttachmentWithParentKeySchema),
-    error: ReadError,
-    stream: true,
-  }),
-  /** The live items of one library that carry a citation key, in slices. */
-  Rpc.make("CitekeySnapshot", {
-    payload: { libraryID: Schema.Number, ...snapshot },
-    success: Schema.Array(LibraryCitekeySchema),
     error: ReadError,
     stream: true,
   }),

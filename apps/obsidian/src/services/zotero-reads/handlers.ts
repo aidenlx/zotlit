@@ -29,8 +29,6 @@ import {
   getAttachmentsByParents,
   getChildNotesByParentIDs,
   getAllTagNames,
-  getCitekeyPage,
-  getCitekeyLastItemID,
   getCollectionIDByKey,
   getIndexedItemIDsByCollection,
   getIndexedItemIDsByLibrary,
@@ -513,32 +511,6 @@ export function handlersLayer(options?: HandlersOptions) {
               ),
             );
           }),
-
-        // Keyset pages in itemID order: one statement per slice.
-        CitekeySnapshot: ({ libraryID, snapshot }) =>
-          withClientStream(snapshot, (client) =>
-            Stream.unwrap(
-              Effect.gen(function* () {
-                const beforeItemID = yield* read(client, (c) =>
-                  getCitekeyLastItemID(c, libraryID),
-                );
-                return Stream.unfold(0, (afterItemID) =>
-                  Effect.map(
-                    read(client, (c) =>
-                      getCitekeyPage(c, {
-                        libraryID,
-                        afterItemID,
-                        beforeItemID,
-                        limit: sliceSize,
-                      }),
-                    ),
-                    ({ citekeys, next }) =>
-                      next === null ? undefined : ([citekeys, next] as const),
-                  ),
-                );
-              }),
-            ),
-          ),
 
         Changes: () => connection.changes,
 
