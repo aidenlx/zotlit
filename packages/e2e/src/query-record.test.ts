@@ -577,6 +577,7 @@ describe("summary", () => {
 it("holds relation filters and dataset defaults to the existing budgets at each tier", () => {
   expect(DATASET_QUERY_SPECS.map((spec) => spec.id)).toEqual([
     "items-default",
+    "collection-projection",
     "attachments-default",
     "annotations-default",
     "relation-tag",
@@ -609,6 +610,7 @@ it("holds relation filters and dataset defaults to the existing budgets at each 
     expect(checks).toContain("slices all-attachment-paths: passed");
     for (const id of [
       "items-default",
+      "collection-projection",
       "attachments-default",
       "annotations-default",
       "relation-scan",

@@ -39,6 +39,11 @@ export const DATASET_QUERY_SPECS: readonly Pick<
     args: { from: "items", limit: "100" },
   },
   {
+    id: "collection-projection",
+    class: "other",
+    args: { from: "items", fields: "key,collections", limit: "100" },
+  },
+  {
     id: "attachments-default",
     class: "other",
     args: { from: "attachments", limit: "100" },

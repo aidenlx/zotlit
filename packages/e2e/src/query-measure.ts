@@ -142,8 +142,7 @@ interface QuerySpec {
 
 const { tags, collections, itemTypes, venues, uniqueTitle } =
   STRESS_LIBRARY_VALUES;
-const collectionPath = (...names: string[]): string =>
-  [collections.root.name, ...names].join("/");
+const collectionPath = (...names: string[]): string => names.join("/");
 const quote = (value: string): string => JSON.stringify(value);
 
 const SORT_BY_TITLE = "title";
@@ -182,7 +181,7 @@ function querySpecs(uniqueKey: string): QuerySpec[] {
     limited(
       "collection-rare",
       "selective",
-      `collections.contains(${quote(collectionPath(collections.common.name, collections.rare.name))})`,
+      `collections.contains(${quote(collectionPath(collections.root.name, collections.common.name, collections.rare.name))})`,
     ),
     limited(
       "venue-rare",
@@ -196,13 +195,24 @@ function querySpecs(uniqueKey: string): QuerySpec[] {
     limited(
       "collection-common",
       "other",
-      `collections.contains(${quote(collectionPath(collections.common.name))})`,
+      `collections.contains(${quote(collectionPath(collections.root.name, collections.common.name))})`,
     ),
     limited(
       "collection-within-common",
       "other",
-      `collections.within(${quote(collectionPath(collections.common.name))})`,
+      `collections.within(${quote(collectionPath(collections.root.name, collections.common.name))})`,
     ),
+    {
+      id: "collection-annotation-parent",
+      class: "other",
+      args: {
+        from: "annotations",
+        // The Stress Build keeps the Fixture's annotated Items in Shared key;
+        // its synthetic Items in the Stress Build Collections have no marks.
+        filter: `attachment.item.collections.within(${quote(collectionPath("Shared key"))})`,
+        limit: "100",
+      },
+    },
     limited(
       "venue-common",
       "other",
@@ -213,14 +223,14 @@ function querySpecs(uniqueKey: string): QuerySpec[] {
     limited(
       "near-cap-union",
       "other",
-      `${common} || collections.contains(${quote(collectionPath(collections.common.name))})`,
+      `${common} || collections.contains(${quote(collectionPath(collections.root.name, collections.common.name))})`,
     ),
     // One candidate statement returns `cap + 1` IDs, then the scan runs.
     limited("tag-dominant", "other", `tags.contains(${quote(tags.dominant)})`),
     limited(
       "collection-dominant",
       "other",
-      `collections.contains(${quote(collectionPath(collections.dominant.name))})`,
+      `collections.contains(${quote(collectionPath(collections.root.name, collections.dominant.name))})`,
     ),
     limited("scan-no-filter", "other"),
     limited("scan-title-contains", "other", 'title.contains("stress item 1")'),
