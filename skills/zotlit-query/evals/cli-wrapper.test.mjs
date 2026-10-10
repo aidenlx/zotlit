@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import {
+  mkdir,
+  readFile,
+  realpath,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
+import { basename, dirname, join, resolve } from "node:path";
 import test from "node:test";
 
 import { startCliWrapper } from "./cli-wrapper.mjs";
@@ -227,6 +234,31 @@ await test("piping a large CLI response keeps the complete byte receipt", async 
     assert.equal(
       JSON.parse((await readFile(callLog, "utf8")).trim()).stdoutBytes,
       512 * 1024,
+    );
+  } finally {
+    await wrapper?.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+await test("the socket path is fully resolved, so a sandbox allow-list matches it", async () => {
+  const root = resolve(".scratch", `cli-wrapper-${randomUUID()}`);
+  const agentRoot = join(root, "agent");
+  await mkdir(agentRoot, { recursive: true });
+  let wrapper;
+  try {
+    wrapper = await startCliWrapper({
+      agentRoot,
+      callLog: join(root, "cli-calls.jsonl"),
+      vaultId: "private-vault",
+      invoke: async () => ({ code: 0, stdout: "", stderr: "" }),
+    });
+    assert.equal(
+      join(
+        await realpath(dirname(wrapper.socketPath)),
+        basename(wrapper.socketPath),
+      ),
+      wrapper.socketPath,
     );
   } finally {
     await wrapper?.close();

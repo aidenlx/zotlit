@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { appendFile, chmod, rm, writeFile } from "node:fs/promises";
+import { appendFile, chmod, realpath, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { join } from "node:path";
 
@@ -16,7 +16,9 @@ const commands = new Set([
 // socket, but its sandbox needs no write access to the receipt file or run root.
 export async function startCliWrapper({ agentRoot, callLog, vaultId, invoke }) {
   // macOS Unix socket paths must fit in 104 bytes; worktree paths do not fit.
-  const socketPath = `/tmp/zq-${randomUUID()}.sock`;
+  // The agent sandbox matches resolved paths, and macOS resolves /tmp to
+  // /private/tmp, so the allow-listed path must be the resolved one.
+  const socketPath = join(await realpath("/tmp"), `zq-${randomUUID()}.sock`);
   const controller = new AbortController();
   const sockets = new Set(),
     pending = new Set();
