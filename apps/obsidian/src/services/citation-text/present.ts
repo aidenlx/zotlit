@@ -3,6 +3,7 @@
 import type { CitationSource } from "@/lib/citation-source";
 import type { SectionRange } from "@/lib/reading-view";
 import { themeHook } from "@/lib/theme-hooks";
+import { heldResolution } from "@/services/citation-index/lookup";
 import type { CitationLookupAnswer } from "@/services/citation-index/lookup";
 import type { CitekeyResolution } from "@/services/citation-index/service";
 import type { CitedWork } from "@/services/citekey-navigation";
@@ -210,7 +211,7 @@ export function literalKeyStateOf(citations: DocumentCitations): KeyStateOf {
   const summaryOf = literalSummaryOf(citations);
   return (citekey) => {
     if (summaryOf(citekey) !== undefined) return "resolved";
-    const state = citekeyState(citations.lookup.resolve(citekey));
+    const state = citekeyState(heldResolution(citations.lookup, citekey));
     return state === "pending" || state === "ambiguous" ? state : "missing";
   };
 }

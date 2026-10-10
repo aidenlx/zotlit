@@ -11,6 +11,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { describeCandidates } from "@/services/citation-index/ambiguity";
 import type { AmbiguousCandidate } from "@/services/citation-index/ambiguity";
+import { heldResolution } from "@/services/citation-index/lookup";
 import type {
   CitationIndex,
   CitationLookupAnswer,
@@ -202,7 +203,7 @@ export class CitekeyEditor extends Service<void> {
     citekey: string,
     lookup: CitationLookupAnswer,
   ): SnapshotItem | null {
-    const resolved = lookup.resolve(citekey);
+    const resolved = heldResolution(lookup, citekey);
     return resolved?.kind === "unique" ? resolved.item : null;
   }
 
@@ -314,7 +315,7 @@ export class CitekeyEditor extends Service<void> {
     }
 
     const resolved = lookup.resolve(citekey);
-    if (resolved?.kind === "ambiguous") {
+    if (resolved.kind === "ambiguous") {
       logger.debug("Citekey names several items", {
         citekey,
         candidates: resolved.candidates.length,
@@ -329,8 +330,8 @@ export class CitekeyEditor extends Service<void> {
       });
       return;
     }
-    if (resolved === null || resolved.kind === "missing") {
-      if (resolved === null || this.#db.state !== "ready") {
+    if (resolved.kind === "missing") {
+      if (this.#db.state !== "ready") {
         logger.debug("Citekey open blocked", {
           citekey,
           branch: "db-unavailable",

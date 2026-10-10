@@ -18,6 +18,7 @@ import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 
 import type { CitationLookupAnswer, CitationLookupRequest } from "./lookup";
+import { heldResolution } from "./lookup";
 import { LookupObservation } from "./observation";
 import type { CitationLookupObservation } from "./observation";
 import type { CitationReads } from "./reads";
@@ -32,6 +33,7 @@ import {
   scanCitekeyOccurrences,
 } from "./scan";
 import type { CitationOccurrence, CitationSyntax } from "./scan";
+import type { CitekeyResolution } from "./snapshot";
 import { openCitekeyStore } from "./store";
 import type { CitekeyRecord, CitekeyStore, FileScan } from "./store";
 
@@ -353,8 +355,8 @@ export class CitationIndex extends Service<void> {
       lookup.set({ citekeys: this.#scannedKeys() });
       const next = this.#citedBy(
         indexedKey,
-        includeNote,
-        lookup.current?.value ?? null,
+        (citekey) => heldResolution(lookup.current?.value ?? null, citekey),
+        { includeNote, byPath: this.citationsByPath(["citekey", "wikilink"]) },
       );
       if (previous && citedBySnapshotsEqual(previous, next)) return;
       previous = next;
@@ -398,8 +400,18 @@ export class CitationIndex extends Service<void> {
    * that wants a complete answer runs first.
    */
   async getCitedBy(indexedKey: string): Promise<CitedBySnapshot> {
-    const lookup = await this.readLookup({ citekeys: this.#scannedKeys() });
-    return this.#citedBy(indexedKey, () => true, lookup);
+    const occurrences = this.citationsByPath(["citekey", "wikilink"]);
+    const lookup = await this.readLookup({
+      citekeys: [...occurrences.values()].flatMap((citations) =>
+        citations.flatMap((occurrence) =>
+          occurrence.kind === "citekey" ? [occurrence.raw] : [],
+        ),
+      ),
+    });
+    return this.#citedBy(indexedKey, (citekey) => lookup.resolve(citekey), {
+      includeNote: () => true,
+      byPath: occurrences,
+    });
   }
 
   /**
@@ -991,8 +1003,14 @@ export class CitationIndex extends Service<void> {
 
   #citedBy(
     indexedKey: string,
-    includeNote: (file: TFile) => boolean,
-    lookup: CitationLookupAnswer | null,
+    resolve: (citekey: string) => CitekeyResolution | null,
+    {
+      includeNote,
+      byPath,
+    }: {
+      includeNote: (file: TFile) => boolean;
+      byPath: ReadonlyMap<string, readonly CitationOccurrence[]>;
+    },
   ): CitedBySnapshot {
     const groups: CitedByGroup[] = [];
     const files = this.#app.vault
@@ -1000,18 +1018,13 @@ export class CitationIndex extends Service<void> {
       .filter(includeNote)
       .sort((a, b) => comparePaths(a.path, b.path));
     for (const file of files) {
-      const { citekeys, links } = this.#admitted(
-        file,
-        this.#covered(file) ?? [],
-      );
-      const literals = citekeys.filter((occurrence) =>
-        this.#citekeyOccurrenceCites(occurrence, indexedKey, lookup),
-      );
-      const wikilinks = documentWikilinks(links).occurrences.filter(
-        (occurrence) =>
-          this.#wikilinkOccurrenceCites(occurrence, file.path, indexedKey),
-      );
-      const occurrences = [...literals, ...wikilinks].sort(compareOccurrences);
+      const occurrences = (byPath.get(file.path) ?? [])
+        .filter((occurrence) =>
+          occurrence.kind === "citekey"
+            ? this.#citekeyOccurrenceCites(resolve(occurrence.raw), indexedKey)
+            : this.#wikilinkOccurrenceCites(occurrence, file.path, indexedKey),
+        )
+        .sort(compareOccurrences);
       if (occurrences.length > 0) {
         groups.push({ path: file.path, occurrences });
       }
@@ -1039,11 +1052,15 @@ export class CitationIndex extends Service<void> {
     await this.ready;
     const files = this.#app.vault.getMarkdownFiles();
     const omitted: CitationSyntax[] = [];
-    const lookup = await this.readLookup({ citekeys: this.#scannedKeys() });
+    const citekeys = files.flatMap((file) => this.#covered(file) ?? []);
+    const lookup = await this.readLookup({
+      citekeys: citekeys.map((occurrence) => occurrence.raw),
+    });
     if (!this.#includePandocCitations) {
-      const held = files.some((file) =>
-        (this.#covered(file) ?? []).some((occurrence) =>
-          this.#citekeyOccurrenceCites(occurrence, indexedKey, lookup),
+      const held = citekeys.some((occurrence) =>
+        this.#citekeyOccurrenceCites(
+          lookup.resolve(occurrence.raw),
+          indexedKey,
         ),
       );
       if (held) omitted.push("citekey");
@@ -1070,11 +1087,9 @@ export class CitationIndex extends Service<void> {
    * key itself, so no candidate gains a Citation record of its own.
    */
   #citekeyOccurrenceCites(
-    occurrence: CitationOccurrence,
+    resolved: CitekeyResolution | null,
     indexedKey: string,
-    lookup: CitationLookupAnswer | null,
   ): boolean {
-    const resolved = lookup?.resolve(occurrence.raw) ?? null;
     if (resolved === null) return false;
     switch (resolved.kind) {
       case "missing":
@@ -1115,8 +1130,8 @@ export class CitationIndex extends Service<void> {
     // An Ambiguous Citation Key keeps its own identity here: it adopts no
     // candidate's Indexed Key, so it stays a Citation of the key itself and
     // contributes no CSL work.
-    const resolved = lookup?.resolve(occurrence.raw);
-    const item = resolved?.kind === "unique" ? resolved.item : null;
+    const resolved = lookup!.resolve(occurrence.raw);
+    const item = resolved.kind === "unique" ? resolved.item : null;
     if (!item) return null;
     const [note] = this.#noteIndex.getNotesByItemKey(item.indexedKey);
     return { indexedKey: item.indexedKey, linkpath: note?.path ?? null };

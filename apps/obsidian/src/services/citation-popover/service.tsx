@@ -326,9 +326,9 @@ async function readWork(
       blocks: [{ kind: "unresolved", citekey: work.citekey }],
     };
   }
-  let resolution: import("../citation-index/service").CitekeyResolution | null =
-    null;
+  let indexedKey: string;
   if (work.kind === "citekey") {
+    let resolution: import("../citation-index/service").CitekeyResolution;
     try {
       resolution = (
         await deps.citationIndex.readLookup(
@@ -340,29 +340,27 @@ async function readWork(
       if (signal.aborted) throw error;
       return { ...empty, unavailable: "database" };
     }
+    if (resolution.kind !== "unique") {
+      return {
+        ...empty,
+        blocks: [
+          resolution.kind === "ambiguous"
+            ? {
+                kind: "ambiguous",
+                citekey: work.citekey,
+                candidates: await describeCandidates(
+                  deps,
+                  resolution.candidates,
+                ),
+              }
+            : { kind: "unresolved", citekey: work.citekey },
+        ],
+      };
+    }
+    indexedKey = resolution.item.indexedKey;
+  } else {
+    indexedKey = work.indexedKey;
   }
-  const indexedKey =
-    work.kind === "item"
-      ? work.indexedKey
-      : resolution?.kind === "unique"
-        ? resolution.item.indexedKey
-        : undefined;
-  if (work.kind === "citekey" && indexedKey === undefined) {
-    return {
-      ...empty,
-      pending: resolution === null,
-      blocks: [
-        resolution?.kind === "ambiguous"
-          ? {
-              kind: "ambiguous",
-              citekey: work.citekey,
-              candidates: await describeCandidates(deps, resolution.candidates),
-            }
-          : { kind: "unresolved", citekey: work.citekey },
-      ],
-    };
-  }
-  if (indexedKey === undefined) return empty;
   const { sources, database } = await readReferenceSources(deps.db, [
     { indexedKey, linkpath: null },
   ]);
@@ -417,10 +415,9 @@ async function readBlocks(
       pending: false,
     };
   }
-  const { citations, lookup } = await deps.citationIndex.getDocumentCitationSet(
-    file,
-    { signal },
-  );
+  const { citations } = await deps.citationIndex.getDocumentCitationSet(file, {
+    signal,
+  });
   // Read beside the citations it qualifies: this read resolved against the
   // snapshot as it stood here, and the popover redraws on the next hover.
   const pending = deps.citationIndex.resolution === null;
@@ -456,10 +453,12 @@ async function readBlocks(
   // Read as the popover fills, so an Ambiguous Citation Key states the
   // candidates the current Library Scope names — and no candidate is
   // described for the citations that resolve.
+  const citekeys = request.works.map(({ citekey }) => citekey);
+  const lookup = await deps.citationIndex.readLookup({ citekeys }, { signal });
   const ambiguous = await readAmbiguousCandidates(
     deps,
     (citekey) => lookup.resolve(citekey),
-    request.works.map(({ citekey }) => citekey),
+    citekeys,
   );
   // A note-class style writes its citation as a note the surfaces stand serials
   // in place of, so the popover is where that text is read — taken from the

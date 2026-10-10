@@ -22,6 +22,7 @@ import {
   wikilinkCitation,
 } from "@/lib/wikilink-citation";
 import type { RunMember } from "@/lib/wikilink-citation";
+import { heldCitekeyOf } from "@/services/citation-index/lookup";
 import type {
   CitationLookupAnswer,
   CitationLookupObservation,
@@ -213,7 +214,7 @@ export class WikilinkReading extends Service<void> {
       return (
         note && {
           ...note,
-          citationKey: lookup?.citekeyOf(note.indexedKey) ?? null,
+          citationKey: heldCitekeyOf(lookup, note.indexedKey) ?? null,
         }
       );
     };

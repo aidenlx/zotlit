@@ -136,7 +136,13 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
               })();
               const [fresh]=await Promise.all([refresh,reads]);
               sample();
-              return JSON.stringify({gaps,readMs,readsDuringRefresh,readsCorrect,heldThroughout,sameRevision:fresh.revision===held.revision,citekey:fresh.citekeyOf(key),unique:fresh.resolve(expected)?.kind==="unique",unrequested:fresh.resolve("unrequested-probe-key")===null&&fresh.citekeyOf("UNREQUESTED")===undefined});
+              const unrequested=[
+                ['unrequested-probe-key',()=>fresh.resolve('unrequested-probe-key')],
+                ['UNREQUESTED',()=>fresh.citekeyOf('UNREQUESTED')],
+              ].every(([key,read])=>{
+                try{read();return false;}catch(error){return error instanceof Error&&error.message.includes(key);}
+              });
+              return JSON.stringify({gaps,readMs,readsDuringRefresh,readsCorrect,heldThroughout,sameRevision:fresh.revision===held.revision,citekey:fresh.citekeyOf(key),unique:fresh.resolve(expected).kind==="unique",unrequested});
             })()`,
             120_000,
           ),

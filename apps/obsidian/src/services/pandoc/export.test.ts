@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { CslItemData } from "@zotlit/db";
 
+import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import type { CitekeyResolution } from "@/services/citation-index/snapshot";
 
 import type { BibliographyFailure, BibliographyItemRef } from "./bibliography";
@@ -132,23 +133,26 @@ function ports(fixture: Fixture): ExportPorts & {
     engine: { prepareDocument, renderPrepared },
     dataDir: () => "/Zotero",
     resolveIndexedKey: (linkpath) => fixture.notes?.[linkpath] ?? null,
-    readLookup: async () => {
+    readLookup: async ({ citekeys }) => {
       if (fixture.snapshotUnavailable)
         throw new Error("citation worker unavailable");
-      return {
-        resolve: (citekey: string): CitekeyResolution | null => {
-          if (fixture.ambiguous?.includes(citekey)) {
-            return { kind: "ambiguous", candidates: [] };
-          }
-          const indexedKey = fixture.citekeys?.[citekey];
-          return indexedKey === undefined
-            ? { kind: "missing" }
-            : {
-                kind: "unique",
-                item: { itemID: 1, libraryID: 1, key: indexedKey, indexedKey },
-              };
-        },
+      const resolve = (citekey: string): CitekeyResolution => {
+        if (fixture.ambiguous?.includes(citekey)) {
+          return { kind: "ambiguous", candidates: [] };
+        }
+        const indexedKey = fixture.citekeys?.[citekey];
+        return indexedKey === undefined
+          ? { kind: "missing" }
+          : {
+              kind: "unique",
+              item: { itemID: 1, libraryID: 1, key: indexedKey, indexedKey },
+            };
       };
+      return lookupAnswer(
+        Object.fromEntries(
+          citekeys.map((citekey) => [citekey, resolve(citekey)]),
+        ),
+      );
     },
     readItemRefs: (indexedKeys) => {
       if (fixture.databaseUnavailable) return Promise.resolve(null);

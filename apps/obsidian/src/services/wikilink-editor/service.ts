@@ -9,6 +9,7 @@ import { dispatchToMarkdownEditors } from "@/lib/editor-decoration";
 import { getLogger } from "@/lib/log";
 import { WikilinkDisplaySettings } from "@/lib/wikilink-citation";
 import type { LiteratureNoteTarget } from "@/lib/wikilink-citation";
+import { heldCitekeyOf } from "@/services/citation-index/lookup";
 import type {
   CitationLookupAnswer,
   CitationLookupObservation,
@@ -144,7 +145,7 @@ export class WikilinkEditor extends Service<void> {
     return (
       note && {
         ...note,
-        citationKey: lookup?.citekeyOf(note.indexedKey) ?? null,
+        citationKey: heldCitekeyOf(lookup, note.indexedKey) ?? null,
       }
     );
   }

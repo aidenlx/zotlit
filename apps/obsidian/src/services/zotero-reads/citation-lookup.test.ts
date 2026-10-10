@@ -425,10 +425,10 @@ it("answers one requested batch with scope-limited forward and all-library rever
           item: { indexedKey: "PERSONAL" },
         });
         expect(answer.resolve("missing")).toEqual({ kind: "missing" });
-        expect(answer.resolve("unrequested")).toBeNull();
+        expect(() => answer.resolve("unrequested")).toThrow("unrequested");
         expect(answer.citekeyOf("GROUPKEYg7")).toBe("shared");
         expect(answer.citekeyOf("absent")).toBeNull();
-        expect(answer.citekeyOf("unrequested")).toBeUndefined();
+        expect(() => answer.citekeyOf("unrequested")).toThrow("unrequested");
         expect(wire.citekeys.size).toBe(2);
         expect(wire.indexedKeys.size).toBe(2);
         const all = yield* client.CitationLookup({
