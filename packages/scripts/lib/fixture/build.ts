@@ -166,6 +166,8 @@ export interface BuildOptions {
   vaultCase?: string;
   /** Number of additive synthetic Items in an on-demand Stress Build. */
   stressItemCount?: number;
+  /** Group Library with only the first and last ten Stress Items, modeling an import gap. */
+  stressSparseLibraryID?: number;
   /**
    * Built plugin bundle to copy into the vault (`apps/obsidian/dist-dev`).
    * Absent, the vault carries the Fixture's data with ZotLit neither installed
@@ -221,7 +223,12 @@ export async function buildFixture(
   const items =
     options.stressItemCount === undefined
       ? ITEMS
-      : [...ITEMS, ...createStressItems(options.stressItemCount)];
+      : [
+          ...ITEMS,
+          ...createStressItems(options.stressItemCount, {
+            sparseLibraryID: options.stressSparseLibraryID,
+          }),
+        ];
 
   assertSeededCitationKeys(items);
   const data = vaultCaseZoteroData(

@@ -134,11 +134,13 @@ async function build({
   scopeCase,
   vaultCase = DEFAULT_VAULT_CASE,
   stressItemCount,
+  stressSparseLibraryID,
   localApi = false,
 }: {
   scopeCase: string;
   vaultCase?: string;
   stressItemCount?: number;
+  stressSparseLibraryID?: number;
   localApi?: boolean;
 }): Promise<void> {
   const pluginBundleDir = await findPluginBundle();
@@ -152,6 +154,7 @@ async function build({
     scopeCase,
     vaultCase,
     stressItemCount,
+    stressSparseLibraryID,
     pluginBundleDir,
     zoteroHttpPort,
     localApi,
@@ -247,15 +250,22 @@ const cli = yargs(hideBin(process.argv))
     "stress [item-count]",
     "rebuild with an additive synthetic corpus",
     (y) =>
-      y.positional("item-count", {
-        describe: `number of synthetic Items to add; must be ${STRESS_ITEM_COUNT_CONSTRAINT}`,
-        type: "number",
-        default: DEFAULT_STRESS_ITEM_COUNT,
-      }),
+      y
+        .positional("item-count", {
+          describe: `number of synthetic Items to add; must be ${STRESS_ITEM_COUNT_CONSTRAINT}`,
+          type: "number",
+          default: DEFAULT_STRESS_ITEM_COUNT,
+        })
+        .option("sparse-library-id", {
+          describe:
+            "Group Library with only the first and last ten Stress Items",
+          type: "number",
+        }),
     async (argv) => {
       await build({
         scopeCase: DEFAULT_SCOPE_CASE,
         stressItemCount: argv["item-count"],
+        stressSparseLibraryID: argv["sparse-library-id"],
       });
     },
   )

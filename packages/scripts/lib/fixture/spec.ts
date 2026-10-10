@@ -2413,7 +2413,10 @@ function stressItemKey(index: number): string {
 }
 
 /** Additive synthetic corpus for an on-demand Stress Build. */
-export function createStressItems(count: number): readonly FixtureItem[] {
+export function createStressItems(
+  count: number,
+  { sparseLibraryID }: { sparseLibraryID?: number } = {},
+): readonly FixtureItem[] {
   if (!Number.isSafeInteger(count) || count < 0) {
     throw new Error(
       `stress item count must be ${STRESS_ITEM_COUNT_CONSTRAINT}, got ${count}`,
@@ -2428,10 +2431,25 @@ export function createStressItems(count: number): readonly FixtureItem[] {
       ...ANNOTATIONS.map(({ itemID }) => itemID),
     ) + 1;
 
+  const sparseLibrary = LIBRARIES.find(
+    ({ libraryID, type }) => libraryID === sparseLibraryID && type === "group",
+  );
+  if (sparseLibraryID !== undefined && !sparseLibrary) {
+    throw new Error(
+      `sparse Library must be a Fixture Group Library, got ${sparseLibraryID}`,
+    );
+  }
+  const denseLibraries = LIBRARIES.filter(
+    (library) => library !== sparseLibrary,
+  );
+
   return Array.from({ length: count }, (_, index) => {
     const seededIndex = STRESS_BUILD_SEED + index;
     const ordinal = index + 1;
-    const library = LIBRARIES[seededIndex % LIBRARIES.length]!;
+    const library =
+      sparseLibrary && (index < 10 || index >= count - 10)
+        ? sparseLibrary
+        : denseLibraries[seededIndex % denseLibraries.length]!;
     const collection = COLLECTIONS.find(
       ({ libraryID }) => libraryID === library.libraryID,
     );
