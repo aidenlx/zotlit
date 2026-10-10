@@ -255,6 +255,8 @@ export class CitationLookup extends Service {
       this.#events.emit("stopped");
       this.#deps.queryClient.client.removeQueries({ queryKey: LOOKUP_KEY });
     });
+    // Let the constructor assign ready before read() waits for it.
+    await Promise.resolve();
     this.#request();
     this.commit(stack.move());
   }

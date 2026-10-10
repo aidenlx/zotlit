@@ -85,6 +85,26 @@ const request = {
   indexedKeys: ["ITEMKEY1"],
 };
 
+it("builds once at startup with ready dependencies and no events", async () => {
+  await using db = new DatabaseStub();
+  const ready = await db.ready;
+  const lookup = vi.spyOn(ready.client, "CitationLookup");
+  await using queryClient = new QueryClientService();
+  await using reads = new CitationLookup({
+    queryClient,
+    libraryScope: new LibraryScopeStub([personalLibrary()]),
+    reads: {
+      ready: Promise.resolve(ready),
+      state: "ready",
+      on: () => () => undefined,
+    },
+  });
+
+  await reads.whenResolved();
+  expect(lookup).toHaveBeenCalledTimes(1);
+  expect(reads.status).toBe("fresh");
+});
+
 it("keeps a source change during startup and answers from the latest source", async () => {
   const opening = Promise.withResolvers<void>();
   const source = fixture({ opening: opening.promise });
