@@ -9,6 +9,10 @@ import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
 import * as m from "@/lib/i18n/generated/messages";
+import {
+  lookupAnswer,
+  lookupForWorks,
+} from "@/services/citation-index/__fixtures__/lookup";
 import type { CitekeyResolution } from "@/services/citation-index/service";
 import type { DocumentCitations } from "@/services/citation-text/service";
 import type { BibliographyRenderResult } from "@/services/pandoc/render-cache";
@@ -99,6 +103,7 @@ const emptyText = (): DocumentCitations => ({
   formatted: new Map(),
   entrySerials: false,
   summaries: new Map(),
+  lookup: lookupForWorks(new Map()),
   literalWorks: new Map(),
 });
 
@@ -122,8 +127,13 @@ function harness(read: () => Promise<DocumentCitations | null>) {
     db: reads(),
     citationIndex: {
       getDocumentCitationSet: () =>
-        Promise.resolve({ occurrences: [], citations: [], errors: [] }),
-      resolveCitekey: () => ({ kind: "missing" }),
+        Promise.resolve({
+          occurrences: [],
+          citations: [],
+          errors: [],
+          lookup: lookupAnswer(),
+        }),
+      readLookup: async () => lookupAnswer(),
       resolution: "fresh",
     },
     libraryScope: { current: [] },
@@ -297,6 +307,7 @@ function workHarness() {
     resolveCitekey: vi.fn<() => CitekeyResolution | null>(() => ({
       kind: "missing",
     })),
+    readLookup: async () => ({ resolve: citationIndex.resolveCitekey }),
     on,
   };
   const readBibliography = vi.fn<

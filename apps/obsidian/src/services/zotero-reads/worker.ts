@@ -56,12 +56,15 @@ const ProtocolLive = RpcServer.layerProtocolWorkerRunner.pipe(
 const HandlersLive = Layer.unwrap(
   RpcWorker.initialMessage(WorkerInitSchema).pipe(
     Effect.orDie,
-    Effect.map(({ snapshotOwner, logs, ...initial }) => {
+    Effect.map(({ snapshotOwner, logs, role, ...config }) => {
+      const initial =
+        role === "citation" ? { ...config, autoRefresh: false } : config;
       forwardLogs(logs, initial.logLevel);
       return handlersLayer({
+        citationOnly: role === "citation",
         locale: initial.locale,
         chineseSegmenter: initial.chineseSegmenter,
-        readSegmenter: readSegmenterFromOpfs,
+        readSegmenter: role === "citation" ? undefined : readSegmenterFromOpfs,
         applyLogLevel: (level) => forwardLogs(logs, level),
       }).pipe(
         Layer.provide(

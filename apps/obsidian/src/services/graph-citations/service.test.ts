@@ -25,8 +25,12 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { themeProperty } from "@/lib/theme-hooks";
+import { CitationLookupAnswer } from "@/services/citation-index/lookup";
 import type { CitationOccurrence } from "@/services/citation-index/scan";
-import type { CitekeyResolution } from "@/services/citation-index/service";
+import type {
+  CitationLookupObservation,
+  CitekeyResolution,
+} from "@/services/citation-index/service";
 import { SettingsStub } from "@/services/citation-index/test-harness";
 import { CITEKEY_HOVER_SOURCE } from "@/services/citekey-navigation";
 import type { NoteIndex } from "@/services/note-index/service";
@@ -487,17 +491,71 @@ class CitationIndexStub {
   });
   /** Answers every key `null`, as the index does until its snapshot is warm. */
   cold = false;
-  resolveCitekey = (citekey: string): CitekeyResolution | null =>
-    this.cold ? null : (RESOLUTIONS[citekey] ?? null);
-  citekeyOf = (indexedKey: string): string | null =>
-    CITEKEYS[indexedKey] ?? null;
+  readonly lookupRequests: string[][] = [];
+  #revision = 0;
+  readonly #observations = new Set<{
+    changed: () => void;
+    citekeys: readonly string[];
+    current: CitationLookupObservation["current"];
+  }>();
 
   on(event: string, cb: () => void): () => void {
     return this.#emitter.on(event, cb);
   }
 
   emit(event: string): void {
+    if (event === "resolution-changed") {
+      this.#revision += 1;
+      for (const state of this.#observations) {
+        state.current = this.#held(state.citekeys);
+        state.changed();
+      }
+    }
     this.#emitter.emit(event);
+  }
+
+  get lookupCount(): number {
+    return this.#observations.size;
+  }
+
+  observeLookup(changed: () => void) {
+    const state = {
+      changed,
+      citekeys: [] as readonly string[],
+      current: null as CitationLookupObservation["current"],
+    };
+    this.#observations.add(state);
+    return {
+      get current() {
+        return state.current;
+      },
+      set: ({ citekeys = [] }: { citekeys?: readonly string[] }) => {
+        state.citekeys = citekeys;
+        this.lookupRequests.push([...citekeys]);
+        state.current = this.#held(citekeys);
+      },
+      [Symbol.dispose]: () => this.#observations.delete(state),
+    };
+  }
+
+  #held(citekeys: readonly string[]): CitationLookupObservation["current"] {
+    if (this.cold) return null;
+    const requested = new Set(citekeys);
+    const value = new CitationLookupAnswer({
+      revision: `test-${this.#revision}`,
+      citekeys: new Map(
+        [...requested].flatMap((citekey) => {
+          const resolution = RESOLUTIONS[citekey];
+          return resolution ? [[citekey, resolution] as const] : [];
+        }),
+      ),
+      indexedKeys: new Map(Object.entries(CITEKEYS)),
+    });
+    return {
+      value,
+      status: "fresh",
+      settled: Promise.resolve(value),
+    };
   }
 }
 
@@ -1562,6 +1620,7 @@ describe("GraphCitations hovers", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph", "hovered");
+    const other = fixture.addLeaf("localgraph", "remaining");
     const { containerEl } = engine.renderer;
     fixture.layoutReady();
     engine.renderer.onNodeHover(
@@ -1577,6 +1636,8 @@ describe("GraphCitations hovers", () => {
     // Closing by keyboard leaves the pointer where it was, so nothing
     // unhovers the node on the way out.
     fixture.closeLeaf("hovered");
+    expect(fixture.citationIndex.lookupCount).toBe(1);
+    expect(rowNames(other).length).toBeGreaterThan(0);
 
     popover.onTarget = false;
     vi.advanceTimersByTime(600);
@@ -1584,6 +1645,8 @@ describe("GraphCitations hovers", () => {
     expect(popover.transition).toHaveBeenCalledOnce();
     expect(containerEl.children).toHaveLength(0);
     expect(rowNames(engine)).toEqual([]);
+    fixture.closeLeaf("remaining");
+    expect(fixture.citationIndex.lookupCount).toBe(0);
   });
 
   it("lets go of a hold on the window that armed it, after the graph moved to a pop-out", async () => {
@@ -1812,6 +1875,21 @@ function hoverEach(engine: FakeEngine): void {
 }
 
 describe("GraphCitations re-rendering", () => {
+  it("requests only the citekeys in the current graph facts", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    fixture.addLeaf("graph");
+    fixture.layoutReady();
+
+    expect(fixture.citationIndex.lookupRequests.at(-1)).toEqual([
+      "doe2024",
+      "pine2023",
+      "roe2025",
+      "typo2024",
+    ]);
+  });
+
   it("re-renders every installed leaf once per burst of index events", async () => {
     vi.useFakeTimers();
     const fixture = makeFixture();
@@ -2070,16 +2148,20 @@ describe("GraphCitations teardown", () => {
     const fixture = makeFixture();
     await using service = fixture.service;
     await service.ready;
+    expect(fixture.citationIndex.lookupCount).toBe(0);
     const engine = fixture.addLeaf("graph");
     const nativeClick = engine.renderer.onNodeClick;
     const nativeRightClick = engine.renderer.onNodeRightClick;
     fixture.layoutReady();
+    expect(fixture.citationIndex.lookupCount).toBe(1);
     fixture.settings.update({ "citation.graph-citations": false });
+    expect(fixture.citationIndex.lookupCount).toBe(0);
     expect(engine.renderer.onNodeClick).toBe(nativeClick);
     expect(engine.renderer.onNodeRightClick).toBe(nativeRightClick);
 
     fixture.settings.update({ "citation.graph-citations": true });
 
+    expect(fixture.citationIndex.lookupCount).toBe(1);
     expect(engine.renders).toHaveLength(3);
     expect(engine.renders[2]!.facaded).toBe(true);
     expect(engine.renderer.onNodeClick).not.toBe(nativeClick);

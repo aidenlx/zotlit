@@ -1,4 +1,4 @@
-import { Effect, Stream } from "effect";
+import { Effect } from "effect";
 import { basename } from "node:path/posix";
 import { TFile } from "obsidian";
 import type {
@@ -9,10 +9,12 @@ import type {
   LinkCache,
 } from "obsidian";
 
-import type { LibraryCitekey } from "@zotlit/db";
+import type { Library, LibraryCitekey } from "@zotlit/db";
 
 import { FIELD_CITEKEY, FIELD_ZOTERO_KEY } from "@/lib/constants";
+import { resolveLibraryScope } from "@/services/library-scope/scope";
 import type {
+  LibraryScope,
   AvailableLibrary,
   ResolvedLibraryScope,
 } from "@/services/library-scope/scope";
@@ -22,8 +24,6 @@ import { QueryClientService } from "@/services/query-client/service";
 import { testClock } from "@/services/query-client/test-clock";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
-import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
-import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import type {
   ZoteroReadLease,
   ZoteroReadsEvents,
@@ -35,8 +35,14 @@ import {
   memoryOpener,
 } from "@/services/zotero-reads/test-utils";
 
+import { CitationLookupAnswer } from "./lookup";
+import type { CitationLookupRequest } from "./lookup";
 import { CitationIndex } from "./service";
-import type { CitekeyRecord, CitekeyStore } from "./service";
+import type {
+  CitationIndexOptions,
+  CitekeyRecord,
+  CitekeyStore,
+} from "./service";
 
 export const KEY_A = "ABCD2345";
 export const KEY_B = "ZZZ99999g7";
@@ -262,6 +268,7 @@ export class NoteIndexStub {
 export class DatabaseStub implements AsyncDisposable {
   state: "loading" | "ready" | "degraded" = "ready";
   readonly citekeys = new CitekeysStub(defaultCitekeys());
+  libraries = () => [personalLibrary(), groupLibrary()];
   readonly #service: ZoteroReadsService;
   readonly #listeners = new Set<() => void>();
   readonly #ready = Promise.withResolvers<void>();
@@ -271,17 +278,94 @@ export class DatabaseStub implements AsyncDisposable {
     seed,
   }: { readyImmediately?: boolean; seed?: string } = {}) {
     if (readyImmediately) this.#ready.resolve();
-    this.#service = inProcessReadsService(
-      memoryOpener(() => seed ?? "").open,
-      seed === undefined
-        ? {
-            wrap: (client) => ({
-              ...client,
-              CitekeySnapshot: this.citekeys.read,
-            }),
-          }
-        : {},
+    this.#seed = seed;
+    this.#service = inProcessReadsService(memoryOpener(() => this.#sql()).open);
+  }
+
+  readonly #seed?: string;
+  #lastSql: string | null = null;
+  #refresh: Promise<void> | null = null;
+
+  #sql(): string {
+    if (this.#seed !== undefined) return this.#seed;
+    const quote = (text: string) => `'${text.replaceAll("'", "''")}'`;
+    const statements = [
+      "insert into itemTypes (itemTypeID, typeName) values (1, 'journalArticle');",
+      "insert into fieldsCombined (fieldID, fieldName, custom) values (11, 'citationKey', 0);",
+    ];
+    const libraries = this.libraries();
+    for (const library of libraries) {
+      statements.push(
+        `insert into libraries (libraryID, type) values (${library.libraryID}, '${library.selector.type === "personal" ? "user" : "group"}');`,
+      );
+      if (library.selector.type === "group")
+        statements.push(
+          `insert into groups (groupID, libraryID, name) values (${library.selector.groupID}, ${library.libraryID}, ${quote(library.name ?? "")});`,
+        );
+    }
+    const used = new Set<number>();
+    let next = Math.max(0, ...this.citekeys.rows.map((row) => row.itemID));
+    for (const row of this.citekeys.rows) {
+      const library = libraries.find(
+        (entry) => entry.libraryID === row.libraryID,
+      );
+      if (!library) continue;
+      const itemID = used.has(row.itemID) ? ++next : row.itemID;
+      used.add(itemID);
+      const suffix =
+        library.selector.type === "group" ? `g${library.selector.groupID}` : "";
+      const key =
+        suffix && row.indexedKey.endsWith(suffix)
+          ? row.indexedKey.slice(0, -suffix.length)
+          : row.indexedKey;
+      statements.push(
+        `insert into items (itemID, itemTypeID, libraryID, key) values (${itemID}, 1, ${row.libraryID}, ${quote(key)});`,
+      );
+      statements.push(
+        `insert into itemDataValues (valueID, value) values (${itemID}, ${quote(row.citekey)});`,
+      );
+      statements.push(
+        `insert into itemData (itemID, fieldID, valueID) values (${itemID}, 11, ${itemID});`,
+      );
+    }
+    return statements.join("\n");
+  }
+
+  async readLookup(
+    request: CitationLookupRequest,
+    scope: LibraryScope | null,
+    { signal }: { signal?: AbortSignal } = {},
+  ): Promise<CitationLookupAnswer> {
+    await this.ready;
+    if (this.state === "degraded" || this.citekeys.error)
+      throw this.citekeys.error ?? new Error("Database unavailable");
+    const sql = this.#sql();
+    if (sql !== this.#lastSql) {
+      this.#lastSql = sql;
+      this.citekeys.calls.push(
+        ...this.libraries().map((library) => library.libraryID),
+      );
+      this.#refresh = this.#service.refresh();
+    }
+    await this.#refresh;
+    const { client } = await this.#service.ready;
+    return new CitationLookupAnswer(
+      await Effect.runPromise(
+        client.CitationLookup({
+          scope,
+          citekeys: request.citekeys ?? [],
+          indexedKeys: request.indexedKeys ?? [],
+        }),
+        { signal },
+      ),
     );
+  }
+
+  async refreshLookup(
+    scope: LibraryScope | null,
+    options?: { signal?: AbortSignal },
+  ): Promise<string> {
+    return (await this.readLookup({}, scope, options)).revision;
   }
 
   get ready(): Promise<ZoteroReadsReady> {
@@ -331,21 +415,6 @@ export class CitekeysStub {
   constructor(rows: LibraryCitekey[]) {
     this.rows = rows;
   }
-
-  read = (({ libraryID }: { libraryID: number }) =>
-    Stream.suspend(() => {
-      this.calls.push(libraryID);
-      if (this.error)
-        return Stream.fail(
-          new DbUnavailable({
-            message:
-              this.error instanceof Error ? this.error.message : "read failed",
-          }),
-        );
-      return Stream.make(
-        this.rows.filter((row) => row.libraryID === libraryID),
-      );
-    })) as unknown as ZoteroReadsClient["CitekeySnapshot"];
 }
 
 /**
@@ -361,6 +430,35 @@ export class LibraryScopeStub {
   constructor(libraries: AvailableLibrary[] = [personalLibrary()]) {
     this.libraries = libraries;
     this.#current = allOf(libraries);
+  }
+
+  resolveLibraries(libraries: readonly Library[]): ResolvedLibraryScope {
+    const scope = this.#current;
+    return resolveLibraryScope(
+      libraries,
+      scope?.mode === "selected"
+        ? {
+            mode: "selected",
+            libraries: [
+              ...scope.available.map((library) => library.selector),
+              ...scope.unavailable,
+            ],
+          }
+        : { mode: "all" },
+    );
+  }
+
+  get effective(): LibraryScope {
+    const scope = this.#current;
+    return scope?.mode === "selected"
+      ? {
+          mode: "selected",
+          libraries: [
+            ...scope.available.map((library) => library.selector),
+            ...scope.unavailable,
+          ],
+        }
+      : { mode: "all" };
   }
 
   get current(): ResolvedLibraryScope | null {
@@ -564,6 +662,7 @@ export interface CitationIndexHarness extends AsyncDisposable {
 }
 
 export interface CitationIndexHarnessOptions {
+  reads?: CitationIndexOptions["reads"];
   settings?: Partial<Settings>;
   store?: MemoryStore;
   citekeys?: LibraryCitekey[];
@@ -598,6 +697,8 @@ export async function createCitationIndexHarness(
   const libraryScope =
     options.libraryScope ??
     new LibraryScopeStub([personalLibrary(), groupLibrary()]);
+
+  db.libraries = () => [...libraryScope.libraries];
 
   const addFile = (path: string, body: string): TFile => {
     const added = makeFile(path, body);
@@ -636,7 +737,7 @@ export async function createCitationIndexHarness(
       app,
       noteIndex,
       settings,
-      reads: db,
+      reads: options.reads ?? db,
       libraryScope,
       openStore: () => Promise.resolve(store),
       queryClient,

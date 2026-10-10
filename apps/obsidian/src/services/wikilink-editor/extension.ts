@@ -1,3 +1,4 @@
+import { syntaxTree, tokenClassNodeProp } from "@codemirror/language";
 // The CodeMirror side of the Wikilink Editor Treatment: one replace decoration
 // per Literature Note wikilink in the visible ranges, carrying the Citation
 // Display Text and everything Obsidian's own rendering would have supplied, so
@@ -5,8 +6,6 @@
 // running Obsidian's handlers — plus the two delegated listeners that hand the
 // hover of a rendered Citation to the Citation Popover and its plain click to
 // the caret.
-
-import { syntaxTree, tokenClassNodeProp } from "@codemirror/language";
 import { RangeSetBuilder, StateEffect } from "@codemirror/state";
 import type { EditorState, Extension } from "@codemirror/state";
 import { Decoration, ViewPlugin, WidgetType } from "@codemirror/view";
@@ -17,6 +16,11 @@ import { livePreviewOf } from "@/lib/editor-decoration";
 import type { DocRange } from "@/lib/editor-decoration";
 import { themeHook } from "@/lib/theme-hooks";
 import type { LiteratureNoteTarget } from "@/lib/wikilink-citation";
+import { EditorLookup } from "@/services/citation-index/editor-lookup";
+import type {
+  CitationLookupAnswer,
+  CitationLookupObservation,
+} from "@/services/citation-index/service";
 import {
   citationContent,
   presentedCitationEqual,
@@ -66,7 +70,9 @@ export interface WikilinkEditorHandlers {
   literatureNote: (
     linkpath: string,
     sourcePath: string,
+    lookup: CitationLookupAnswer | null,
   ) => LiteratureNoteTarget | null;
+  observeLookup: (changed: () => void) => CitationLookupObservation;
   /** Read once per decoration build to apply the source-membership choice. */
   enabled: () => boolean;
   /**
@@ -148,6 +154,7 @@ export function wikilinkEditorExtension(
       /** The tree the current set was built from, which gates the rebuild. */
       #tree;
       readonly #view;
+      readonly #lookup;
       /**
        * The capture-phase listeners that answer a Citation's hover and its
        * plain click, each installed for as long as its own setting asks for it.
@@ -164,12 +171,16 @@ export function wikilinkEditorExtension(
 
       constructor(view: EditorView) {
         this.#view = view;
+        this.#lookup = new EditorLookup(handlers.observeLookup, () => {
+          view.dispatch({ effects: wikilinkDecorationsChanged.of(undefined) });
+        });
         this.#tree = syntaxTree(view.state);
-        this.decorations = buildDecorations(view, handlers);
+        this.#rebuild(view);
         this.#watchGestures();
       }
 
       destroy(): void {
+        this.#lookup[Symbol.dispose]();
         // Deleting the entry a Map iteration is on leaves the rest in place.
         for (const type of this.#listeners.keys()) {
           this.#remove(type);
@@ -249,8 +260,18 @@ export function wikilinkEditorExtension(
           )
         ) {
           this.#tree = tree;
-          this.decorations = buildDecorations(update.view, handlers);
+          this.#rebuild(update.view);
         }
+      }
+
+      #rebuild(view: EditorView): void {
+        const built = buildDecorations(
+          view,
+          handlers,
+          this.#lookup.current?.value ?? null,
+        );
+        this.decorations = built.decorations;
+        this.#lookup.set({ indexedKeys: built.indexedKeys });
       }
     },
     { decorations: (plugin) => plugin.decorations },
@@ -461,13 +482,23 @@ class CitationDisplayWidget extends WidgetType {
 function buildDecorations(
   view: EditorView,
   handlers: WikilinkEditorHandlers,
-): DecorationSet {
+  lookup: CitationLookupAnswer | null,
+): { decorations: DecorationSet; indexedKeys: readonly string[] } {
   const { state } = view;
   const file = state.field(editorInfoField, false)?.file ?? null;
   const sourcePath = file?.path ?? "";
+  const indexedKeys = new Set<string>();
+  const citations = file === null ? null : handlers.citationText(file.path);
   const context = {
-    literatureNote: (linkpath: string) =>
-      handlers.literatureNote(linkpath, sourcePath),
+    literatureNote: (linkpath: string) => {
+      const note = handlers.literatureNote(
+        linkpath,
+        sourcePath,
+        citations?.value.lookup ?? lookup,
+      );
+      if (note) indexedKeys.add(note.indexedKey);
+      return note;
+    },
     enabled: handlers.enabled(),
     selection: view.hasFocus ? state.selection.ranges : [],
     textBetween: (from: number, to: number) => state.doc.sliceString(from, to),
@@ -482,14 +513,14 @@ function buildDecorations(
   const decorations: WikilinkDecoration[] = livePreviewOf(state)
     ? wikilinkDecorations(spans, context)
     : [];
-  if (decorations.length === 0) return Decoration.none;
+  if (decorations.length === 0) {
+    return { decorations: Decoration.none, indexedKeys: [...indexedKeys] };
+  }
 
   // Asked for only once a Citation is on screen, so a document that writes none
   // is never read. A document whose citations are not held yet keeps native
   // link presentation, and the read announces itself when it settles, which
   // brings the formatted text in without a document change.
-  const citations = file === null ? null : handlers.citationText(file.path);
-
   // A Citation opens as the link it is wherever the plugin leaves its click
   // alone; where it does not, the click reaches the source instead.
   const click: CitationClickAffordance = handlers.clickIntercepted()
@@ -509,7 +540,7 @@ function buildDecorations(
   for (const { from, to, decoration } of replacements) {
     builder.add(from, to, decoration);
   }
-  return builder.finish();
+  return { decorations: builder.finish(), indexedKeys: [...indexedKeys] };
 }
 
 function replacement(

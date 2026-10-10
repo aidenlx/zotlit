@@ -36,10 +36,7 @@ export interface NativeCitationDeps {
     | "vaultPresentation"
     | "on"
   >;
-  citationIndex: Pick<
-    CitationIndex,
-    "resolveCitekey" | "citekeyOf" | "whenResolved"
-  >;
+  citationIndex: Pick<CitationIndex, "readLookup">;
 }
 export interface PreviewCitation extends PresentedCitation {
   source: string;
@@ -66,40 +63,48 @@ export async function renderDraftCitations(
   citations: readonly PreviewCitation[];
   diagnostics: RenderDiagnostic[];
 }> {
-  await deps.citationIndex.whenResolved();
-  const placed: DraftCitation[] = scanDocumentCitations(input.markdown).map(
-    ({ start, end, keys }) => ({
-      start,
-      source: input.markdown.slice(start, end),
-      links: [],
-      keys: keys.map((key) => ({
-        ...key,
-        start: key.start - start,
-        end: key.end - start,
-      })),
-      works: keys.map(({ citekey }) => {
-        const found = deps.citationIndex.resolveCitekey(citekey);
-        return found?.kind === "unique" ? found.item.indexedKey : null;
-      }),
-    }),
+  const scanned = scanDocumentCitations(input.markdown);
+  const links = input.wikilinks ? draftLinks(input.markdown) : [];
+  const notes = new Map(
+    links.map((link) => [
+      link.target,
+      resolveLiteratureNote(link.target, input.sourcePath, deps),
+    ]),
   );
+  const lookup = await deps.citationIndex.readLookup({
+    citekeys: scanned.flatMap((citation) =>
+      citation.keys.map((key) => key.citekey),
+    ),
+    indexedKeys: [...notes.values()].flatMap((note) =>
+      note ? [note.indexedKey] : [],
+    ),
+  });
+  const placed: DraftCitation[] = scanned.map(({ start, end, keys }) => ({
+    start,
+    source: input.markdown.slice(start, end),
+    links: [],
+    keys: keys.map((key) => ({
+      ...key,
+      start: key.start - start,
+      end: key.end - start,
+    })),
+    works: keys.map(({ citekey }) => {
+      const found = lookup.resolve(citekey);
+      return found?.kind === "unique" ? found.item.indexedKey : null;
+    }),
+  }));
   if (input.wikilinks) {
-    const links = draftLinks(input.markdown);
     const runs = citationRuns(
       links,
       (link) =>
         wikilinkCitation(link.target, {
           enabled: true,
           literatureNote: (linkpath) => {
-            const note = resolveLiteratureNote(
-              linkpath,
-              input.sourcePath,
-              deps,
-            );
+            const note = notes.get(linkpath) ?? null;
             return (
               note && {
                 ...note,
-                citationKey: deps.citationIndex.citekeyOf(note.indexedKey),
+                citationKey: lookup.citekeyOf(note.indexedKey) ?? null,
               }
             );
           },

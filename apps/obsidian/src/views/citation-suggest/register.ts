@@ -17,7 +17,7 @@ export interface CitationSuggestDeps {
   settings: SettingsService;
   /** Says whether the Citation Key of a chosen Item names several Items, and
    *  whether the snapshot that answers that has resolved at all yet. */
-  citationIndex: Pick<CitationIndex, "resolveCitekey" | "resolution">;
+  citationIndex: Pick<CitationIndex, "readLookup" | "resolution">;
 }
 
 export function registerCitationSuggest(
