@@ -1,120 +1,272 @@
 ---
 title: "How to query your Zotero library"
-description: "Use ZotLit Query to find works, inspect files, and summarize reading marks from the Obsidian CLI."
+description: "Use ZotLit Query to find papers, check files, count by tag or year, and export reading marks from the Obsidian CLI."
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
 import { Card, Cards } from "fumadocs-ui/components/card";
 
-ZotLit Query reads works, files, and reading marks from your Zotero libraries. Use it when you need a result as JSON.
+ZotLit Query answers questions about the papers, files, and reading marks in your Zotero libraries. Use it for a list, a count, or an export that takes several steps in Zotero's own search.
 
 ## Before you start
 
 You need Obsidian desktop with ZotLit loaded and the [Obsidian CLI](https://obsidian.md/help/cli) activated. Run the commands from a terminal.
 
+Add `vault=<vault-name>` after `obsidian` when more than one vault is open, for example `obsidian vault=Research zotlit:query`.
+
+[How ZotLit Query works](/docs/concepts/how-zotlit-query-works) explains the records, filters, and groups behind these steps.
+
 ## Run a query
 
 <Steps>
   <Step>
-    ### Choose one result row
+    ### Choose the record that you count
 
-    Set `from` to the record that each result row represents:
+    Set `from` to the kind of record that each result row represents:
 
-    - Use `from=items` for papers and books. This is the default.
-    - Use `from=attachments` for files and links.
-    - Use `from=annotations` for highlights, notes, images, and ink.
+    - Use `from=items` for papers, books, and other works. This is the default.
+    - Use `from=attachments` for files and links, such as PDFs and saved web pages.
+    - Use `from=annotations` for reading marks: highlights, notes, images, and ink.
 
-  </Step>
-  <Step>
-    ### Check the available fields
-
-    Run the schema command for your Query Dataset:
-
-    ```bash
-    obsidian zotlit:query-schema from=items
-    ```
-
-    The response gives the schema download, source custom fields, and defaults. Use `from=attachments` or `from=annotations` to inspect another dataset.
+    To find papers that have no PDF, count papers: use `from=items` and look at their files. To find broken files, count files: use `from=attachments`.
 
   </Step>
   <Step>
     ### Run the question
 
-    This command finds papers with no PDF that ZotLit can open on this computer:
+    This command lists papers tagged `to-read` with their year and first creator:
 
     ```bash
-    obsidian zotlit:query filter='attachments.filter(value.contentType == "application/pdf" && value.exists).isEmpty()' fields=title,citationKey
+    obsidian zotlit:query filter='tags.contains("to-read")' fields='title,date.year,creators[0].fullName' limit=20
     ```
 
-    Add `vault=<vault-name>` after `obsidian` when more than one vault is open.
+    Put the `filter` value in single quotes and the text inside it in double quotes. Put `fields` and `group` in single quotes when they contain `[` and `]`.
 
   </Step>
   <Step>
-    ### Read the response
+    ### Read the answer
 
-    A successful response has `ok: true`, the effective request, and `rows` or `groups`. Read `warnings` before you treat an empty result as final.
+    A successful answer has `ok: true` and `rows`, or `groups` for a grouped query. Read `warnings` before you accept an empty result.
 
-    Check `truncated` to see whether more rows matched. Add `limit=all` when you need every match.
+    `truncated: true` means that more records matched than the answer shows. The default limit is 100 rows. Add `limit=all` to return every match.
 
-    A failed response has `ok: false`. Read `diagnostic.report`, follow its final recovery action, and run the corrected query.
+    A failed answer has `ok: false`. Read `diagnostic.report`, follow its last line, and run the corrected command.
 
   </Step>
 </Steps>
 
-## Adapt common research questions
+## Filter by a Collection or Tag [#exact-names]
 
-### Which linked files are missing?
+A filter matches Collection paths and Tag names exactly, including letter case. List the exact names first with `zotlit:query-values`, then use them in the filter.
 
-Start from Attachments so each file has one row:
+For example, you want the papers in your thesis Collection that have no highlight yet.
 
-```bash
-obsidian zotlit:query from=attachments filter='linkMode == "linked_file" && !exists' fields=item.title,path
+<Steps>
+  <Step>
+    ### List the matching Collections
+
+    ```bash
+    obsidian zotlit:query-values kind=collections match=thesis
+    ```
+
+    `match` keeps the names that contain the text, in any letter case. The answer lists the paths for each library (shortened):
+
+    ```json
+    {
+      "ok": true,
+      "values": [
+        {
+          "library": "personal",
+          "name": "My Library",
+          "totalCount": 2,
+          "values": ["Query thesis", "Query thesis/Chapter 1"]
+        }
+      ]
+    }
+    ```
+
+    A path joins each level with `/`, so `Query thesis/Chapter 1` is a subcollection of `Query thesis`.
+
+  </Step>
+  <Step>
+    ### Use the exact path in the query
+
+    ```bash
+    obsidian zotlit:query filter='collections.within("Query thesis") && annotations.filter(value.type == "highlight").isEmpty()' fields=title,citationKey
+    ```
+
+    `collections.within` matches the Collection and every subcollection below it. Use `collections.contains` to match one Collection only.
+
+  </Step>
+</Steps>
+
+A path that no library holds gives no rows and an `unknown-collection` warning. For example, `collections.within("query thesis")` has the wrong letter case. The answer suggests the exact path (shortened):
+
+```json
+{
+  "ok": true,
+  "returnedCount": 0,
+  "rows": [],
+  "warnings": [
+    {
+      "code": "unknown-collection",
+      "message": "Collection path \"query thesis\" was not found in the selected Libraries. List the Collection paths with zotlit:query-values kind=collections.",
+      "suggestions": ["Query thesis"]
+    }
+  ]
+}
 ```
 
-### How many files have each content type?
+When another library holds the path, the suggestions also include a `library` value, such as `library=group:4815`. Add it to the query to read that library.
 
-Group Attachments by `contentType`:
-
-```bash
-obsidian zotlit:query from=attachments group=contentType
-```
-
-Each group has a `value`, an exact `count`, and its returned `rows`.
-
-### Which papers in a collection have no highlights?
-
-Filter the Item's Annotation Relation List:
+Tags work the same way. List them with `kind=tags`, and add `library=all` to list the tags of every library:
 
 ```bash
-obsidian zotlit:query filter='collections.within("Thesis") && annotations.filter(value.type == "highlight").isEmpty()' fields=title,citationKey
+obsidian zotlit:query-values kind=tags match=method
 ```
 
-### What are the three most recent marks on each paper?
+Each Tag value has a `name` and a `type`: `manual` for a tag that you added, or `auto` for a tag that Zotero added automatically. Use the `name` in a filter, such as `tags.contains("methods")`.
 
-Start from Annotations and group by the parent paper:
+## Count papers, files, or marks [#count]
+
+Add `group` to count records by one value. The answer has one group for each value. Each group has its `value`, its `count`, and its first rows up to `limit`. `totalCount` is the number of matching records.
+
+Count papers per year, with one example paper in each group:
+
+```bash
+obsidian zotlit:query group=date.year limit=1 fields=title,date.year
+```
+
+`count` is exact before the limit, so `limit=1` keeps the answer short. To count many groups, such as every tag in a library, also add `fields='[]'`. Each row then holds only the record's key:
+
+```bash
+obsidian zotlit:query group='tags[].name' fields='[]' limit=1
+```
+
+The answer looks like this (shortened, rows left out):
+
+```json
+{
+  "ok": true,
+  "totalCount": 3,
+  "groups": [
+    { "value": "methods", "count": 2 },
+    { "value": "review", "count": 1 },
+    { "value": null, "count": 1 }
+  ]
+}
+```
+
+`[]` groups by each element of a list. A paper with the tags `methods` and `review` counts in both groups, so the group counts can add up to more than `totalCount`. Papers with no tag form the `null` group.
+
+Other lists work the same way:
+
+| Question                                    | Command                                                                                                       |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Papers per Collection inside "Query thesis" | `obsidian zotlit:query group='collections[]' filter='collections.within("Query thesis")' fields='[]' limit=1` |
+| Papers per file type                        | `obsidian zotlit:query group='attachments[].fileType' fields='[]' limit=1`                                    |
+| Files per file type                         | `obsidian zotlit:query from=attachments group=fileType`                                                       |
+| Papers per library                          | `obsidian zotlit:query group=library library=all limit=3`                                                     |
+
+A paper with two PDF files counts once in the `pdf` group.
+
+To count marks, start from Annotations. This command returns the three most recent marks on each paper:
 
 ```bash
 obsidian zotlit:query from=annotations group=item.indexedKey sort=-dateModified limit=3 fields=text,item.title
 ```
 
-`limit` applies inside each group. The group's `count` gives the total matches before that limit.
+`limit` applies inside each group. The group's `count` gives the number of marks on that paper.
 
-### Where are the files for one paper?
+## Check files and their locations [#files]
 
-Select the parent Item by its Indexed Key in the filter:
+`fileType` sorts files into four kinds: `pdf`, `epub`, `web` for snapshots and links to web pages, and `other`.
+
+Start from Attachments to find linked files that are missing on this computer:
 
 ```bash
-obsidian zotlit:query from=attachments filter='item.indexedKey == "ABCD2345"' fields=title,contentType,path
+obsidian zotlit:query from=attachments filter='linkMode == "linked_file" && !exists' fields=item.title,path
 ```
 
-Replace `ABCD2345` with the paper's Indexed Key. A key from a group library ends with `g` and the group ID.
+Find papers with no PDF that ZotLit can open on this computer:
+
+```bash
+obsidian zotlit:query filter='attachments.filter(value.fileType == "pdf" && value.exists).isEmpty()' fields=title,citationKey
+```
+
+List each paper with the kind and location of every file:
+
+```bash
+obsidian zotlit:query filter='tags.contains("to-read")' fields='title,library,attachments[].fileType,attachments[].path'
+```
+
+`attachments[].path` returns one location for each file of the paper, in the same order as `attachments[].fileType`. A link to a web page has no location on this computer, so its `path` is `null`.
+
+These fields identify a record and its library:
+
+| Field        | Value                                                                                                        |
+| ------------ | ------------------------------------------------------------------------------------------------------------ |
+| `key`        | The Zotero key of the record, such as `ABCD2345`. Two libraries can hold the same key.                       |
+| `indexedKey` | The key that names one record across all libraries: `ABCD2345` in My Library, `ABCD2345g4815` in group 4815. |
+| `library`    | `personal` for My Library, or `group:<groupID>` for a group library.                                         |
+
+Use `indexedKey` to select the files of one paper:
+
+```bash
+obsidian zotlit:query from=attachments filter='item.indexedKey == "ABCD2345"' fields=title,fileType,path
+```
+
+Replace `ABCD2345` with the paper's Indexed Key. [Explore template data](/docs/how-to/explore-template-data#indexed-key) shows how to copy it.
+
+## Export a large result [#export]
+
+An answer in the terminal holds at most 1 MB. For a complete export, add `output` with the absolute path of a new file in an existing folder:
+
+```bash
+obsidian zotlit:query limit=all fields='title,citationKey,date.year,creators[0].fullName' output="$HOME/Documents/zotlit-export.json"
+```
+
+ZotLit writes the complete answer to that file. The terminal shows the counts and `file.path` in place of the rows. ZotLit keeps an existing file intact, so choose a new name for each export.
+
+## Cancel a long query [#cancel]
+
+Give a long query a name with `id` when you start it:
+
+```bash
+obsidian zotlit:query id=export-1 limit=all fields='[]' output="$HOME/Documents/zotlit-keys.json"
+```
+
+To stop it, run this command in a second terminal:
+
+```bash
+obsidian zotlit:query-cancel id=export-1
+```
+
+The answer has `cancelRequested: true` when the query was running. The first terminal then shows `Error: The query 'export-1' was cancelled by zotlit:query-cancel.` and ZotLit removes the unfinished export. `cancelRequested: false` means that the query had already finished.
+
+An `id` has 1 to 128 letters, digits, `.`, `_`, or `-`.
+
+## Ask an AI agent [#agent]
+
+The `zotlit-query` agent skill lets an AI agent, such as Claude Code or Codex, run these commands for you. Install it with the other ZotLit skills, as [Install the ZotLit skill](/docs/install-skill) describes. Then ask your question in plain language:
+
+> Use the ZotLit query skill to count the papers in my thesis collection by tag.
+
+The agent reads the live guide and schema from ZotLit, lists the exact Collection names, runs the query, and reports the counts with their scope.
+
+To read the full guide yourself, run `obsidian zotlit:query-guide`. Add a topic, such as `topic=group`, to print one section.
 
 ## See also
 
 <Cards>
   <Card
+    title="How ZotLit Query works"
+    description="The three kinds of records, filters, groups, and exact names."
+    href="/docs/concepts/how-zotlit-query-works"
+  />
+  <Card
     title="Commands"
-    description="Query parameters, datasets, Relation Lists, projections, grouping, and result envelopes."
+    description="Every ZotLit Query command and parameter."
     href="/docs/reference/commands#query-cli"
   />
   <Card
