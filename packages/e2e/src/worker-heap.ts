@@ -3,6 +3,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import {
   DEFAULT_CDP_PORT,
   listObsidianWindows,
+  openCdpSession,
   selectWindow,
 } from "@zotlit/scripts/obsidian-cdp";
 
@@ -33,86 +34,22 @@ export async function measureWorkerHeap<T>(
   }
 
   const page = selectWindow(await listObsidianWindows(), { vault });
-  const socket = new WebSocket(page.webSocketDebuggerUrl);
-  using cleanup = new DisposableStack();
-  cleanup.defer(() => socket.close());
-  const pending = new Map<
-    number,
-    ReturnType<typeof Promise.withResolvers<Record<string, unknown>>>
-  >();
+  using session = await openCdpSession(page.webSocketDebuggerUrl);
   const sessions = new Set<string>();
-  let nextID = 0;
-  socket.addEventListener("message", ({ data }) => {
-    const message = JSON.parse(String(data)) as {
-      id?: number;
-      method?: string;
-      params?: { sessionId: string; targetInfo?: { type: string } };
-      result?: Record<string, unknown>;
-      error?: { message: string };
-    };
+  using _subscription = session.onEvent(({ method, params }) => {
+    const target = params as
+      | { sessionId: string; targetInfo?: { type: string } }
+      | undefined;
     if (
-      message.method === "Target.attachedToTarget" &&
-      message.params?.targetInfo?.type === "worker"
-    ) {
-      sessions.add(message.params.sessionId);
-    }
-    if (message.method === "Target.detachedFromTarget" && message.params) {
-      sessions.delete(message.params.sessionId);
-    }
-    if (message.id === undefined) return;
-    const call = pending.get(message.id);
-    if (message.error) call?.reject(new Error(message.error.message));
-    else call?.resolve(message.result ?? {});
-  });
-  socket.addEventListener("close", () => {
-    for (const call of pending.values())
-      call.reject(new Error("Worker heap CDP connection closed"));
-  });
-  await new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(
-      () => reject(new Error("Worker heap CDP connect timed out")),
-      3_000,
-    );
-    socket.addEventListener(
-      "open",
-      () => {
-        clearTimeout(timeout);
-        resolve();
-      },
-      { once: true },
-    );
-    socket.addEventListener(
-      "error",
-      () => {
-        clearTimeout(timeout);
-        reject(new Error("Worker heap CDP connect failed"));
-      },
-      { once: true },
-    );
+      method === "Target.attachedToTarget" &&
+      target?.targetInfo?.type === "worker"
+    )
+      sessions.add(target.sessionId);
+    if (method === "Target.detachedFromTarget" && target)
+      sessions.delete(target.sessionId);
   });
 
-  async function send(
-    method: string,
-    params = {},
-    sessionId?: string,
-  ): Promise<Record<string, unknown>> {
-    const id = ++nextID;
-    const call = Promise.withResolvers<Record<string, unknown>>();
-    pending.set(id, call);
-    const timeout = setTimeout(
-      () => call.reject(new Error(`Worker heap CDP ${method} timed out`)),
-      3_000,
-    );
-    try {
-      socket.send(JSON.stringify({ id, method, params, sessionId }));
-      return await call.promise;
-    } finally {
-      clearTimeout(timeout);
-      pending.delete(id);
-    }
-  }
-
-  await send("Target.setAutoAttach", {
+  await session.send("Target.setAutoAttach", {
     autoAttach: true,
     waitForDebuggerOnStart: false,
     flatten: true,
@@ -120,10 +57,10 @@ export async function measureWorkerHeap<T>(
   const workers = new Map<string, string>();
   await Promise.all(
     [...sessions].map(async (sessionID) => {
-      const reply = await send(
+      const reply = await session.send(
         "Runtime.evaluate",
         { expression: "self.name", returnByValue: true },
-        sessionID,
+        { sessionId: sessionID, timeoutMs: 3_000 },
       );
       const name = (reply.result as { value?: string }).value;
       if (name === "zotlit-zotero-reads" || name === "zotlit-citation-reads")
@@ -137,7 +74,11 @@ export async function measureWorkerHeap<T>(
   async function sample(phase: "before" | "peak" | "after"): Promise<void> {
     await Promise.all(
       [...workers].map(async ([sessionID, name]) => {
-        const { usedSize } = await send("Runtime.getHeapUsage", {}, sessionID);
+        const { usedSize } = await session.send(
+          "Runtime.getHeapUsage",
+          {},
+          { sessionId: sessionID, timeoutMs: 3_000 },
+        );
         if (typeof usedSize !== "number")
           throw new Error(`No used heap for ${name}`);
         const reading = (workerHeap[name] ??= {
