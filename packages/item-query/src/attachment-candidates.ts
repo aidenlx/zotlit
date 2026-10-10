@@ -20,11 +20,15 @@ export function lowerAttachmentCandidate<Item>(
     return { kind: "parent", leaf: { kind: "keys", keys: selection.keys } };
   const equals = equality(
     node,
-    (name) => name === "key" || name === "contentType" || name === "linkMode",
+    (name) =>
+      name === "key" ||
+      name === "contentType" ||
+      name === "linkMode" ||
+      name === "fileType",
   );
   if (equals)
     return {
-      kind: equals.name as "key" | "contentType" | "linkMode",
+      kind: equals.name as "key" | "contentType" | "linkMode" | "fileType",
       value: equals.value,
     };
   if (

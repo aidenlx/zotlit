@@ -65,6 +65,26 @@ it("publishes executable Annotation and parent Projection Paths with active-sour
   expect(schema.fields).toContainEqual(
     expect.objectContaining({ path: "attachment.indexedKey", sort: true }),
   );
+  for (const path of [
+    "key",
+    "indexedKey",
+    "item.key",
+    "item.indexedKey",
+    "attachment.key",
+    "attachment.indexedKey",
+  ])
+    expect(schema.fields).toContainEqual(
+      expect.objectContaining({ path, projection: true, sort: true }),
+    );
+  expect(schema.fields).toContainEqual(
+    expect.objectContaining({
+      path: "attachment.fileType",
+      projection: true,
+      filter: "string",
+      group: true,
+      valueForms: ["pdf", "epub", "web", "other"],
+    }),
+  );
   expect(schema.defaults.fields).not.toContain("position");
   expect(Object.keys(schema.positionKinds)).toEqual([
     "pdf-rects",

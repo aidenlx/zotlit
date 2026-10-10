@@ -462,3 +462,94 @@ it("groups Attachments by type and parent Citation Key with null last and per-gr
     [null, 1, 1],
   ]);
 });
+
+// Failure modes: MIME-only classification of web links, missing MIME becoming
+// null, unsupported MIME becoming a known type, and filters disagreeing with groups.
+it.each([
+  ["application/pdf", 0, "pdf"],
+  ["application/epub+zip", 0, "epub"],
+  ["text/html", 1, "web"],
+  ["application/xhtml+xml", 1, "web"],
+  ["application/pdf", 3, "web"],
+  [null, 3, "web"],
+  [null, 0, "other"],
+  ["image/png", 0, "other"],
+] as const)(
+  "classifies Attachment file type %s with link mode %s as %s",
+  async (contentType, linkMode, fileType) => {
+    using scenario = openScenarioDatabase({ annotations: true });
+    scenario.sqlite
+      .prepare(
+        "update itemAttachments set contentType = ?, linkMode = ? where itemID = (select itemID from items where key = 'PDF2LIVE')",
+      )
+      .run(contentType, linkMode);
+    for (const forceScan of [false, true]) {
+      const { exit } = await runEffect(
+        collectQuery(ATTACHMENTS, {
+          libraries: [SCENARIO_LIBRARIES.personal],
+          filter: `fileType == "${fileType}" && key == "PDF2LIVE"`,
+          fields: ["fileType"],
+          sort: [{ field: "fileType", direction: "asc" }],
+          group: "fileType",
+        }),
+        { client: scenario.db, tuning: { forceScan, capRatio: 1 } },
+      );
+      if (exit._tag === "Failure") throw new Error(String(exit.cause));
+      expect(exit.value.groups).toEqual([
+        {
+          value: fileType,
+          count: 1,
+          rows: [
+            {
+              indexedKey: "PDF2LIVE",
+              itemIndexedKey: "ART2FULL",
+              values: { fileType },
+            },
+          ],
+        },
+      ]);
+    }
+  },
+);
+
+it("groups and sorts Attachment file types in text order", async () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  scenario.sqlite
+    .prepare(
+      "update itemAttachments set contentType = 'application/epub+zip' where itemID = (select itemID from items where key = 'PDF2LINK')",
+    )
+    .run();
+  scenario.sqlite
+    .prepare(
+      "update itemAttachments set contentType = null where itemID = (select itemID from items where key = 'WEB2LIVE')",
+    )
+    .run();
+  for (const group of [undefined, "fileType"]) {
+    const { exit } = await runEffect(
+      collectQuery(ATTACHMENTS, {
+        libraries: [SCENARIO_LIBRARIES.personal],
+        fields: ["fileType"],
+        sort: [{ field: "fileType", direction: "asc" }],
+        ...(group && { group }),
+      }),
+      { client: scenario.db },
+    );
+    if (exit._tag === "Failure") throw new Error(String(exit.cause));
+    if (group)
+      expect(
+        exit.value.groups!.map(({ value, count }) => [value, count]),
+      ).toEqual([
+        ["epub", 1],
+        ["other", 1],
+        ["pdf", 1],
+        ["web", 1],
+      ]);
+    else
+      expect(exit.value.rows!.map((row) => row.values.fileType)).toEqual([
+        "epub",
+        "other",
+        "pdf",
+        "web",
+      ]);
+  }
+});

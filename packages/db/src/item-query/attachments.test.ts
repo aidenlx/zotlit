@@ -187,3 +187,46 @@ it("reads bounded Attachment and parent key lists inside one Library", () => {
     ),
   ).toHaveLength(2);
 });
+
+// Failure modes: web links retain their MIME kind, missing MIME is omitted,
+// or a candidate read crosses the requested Library.
+it.each([
+  ["application/pdf", 0, "pdf"],
+  ["application/epub+zip", 0, "epub"],
+  ["text/html", 1, "web"],
+  ["application/xhtml+xml", 1, "web"],
+  ["application/pdf", 3, "web"],
+  [null, 0, "other"],
+  ["image/png", 0, "other"],
+] as const)(
+  "finds fileType candidates for %s, link mode %s",
+  (contentType, linkMode, expected) => {
+    using scenario = openScenarioDatabase({ annotations: true });
+    scenario.sqlite
+      .prepare("update itemAttachments set contentType = ?, linkMode = ?")
+      .run(contentType, linkMode);
+    const run = <A, E>(effect: Effect.Effect<A, E, ItemQueryDatabase>) =>
+      Effect.runSync(
+        Effect.provideService(effect, ItemQueryDatabase, {
+          client: scenario.db,
+        }),
+      );
+    for (const value of ["pdf", "epub", "web", "other", "unknown"]) {
+      const candidates = run(
+        readAttachmentCandidateSet({
+          libraryID: 1,
+          leaf: { kind: "fileType", value },
+          limit: 100,
+        }),
+      );
+      const rows = run(
+        readAttachmentUniverseRows({ libraryID: 1, itemIDs: candidates }),
+      );
+      expect(rows.map((row) => row.key)).toEqual(
+        value === expected
+          ? ["PDF2LINK", "PDF2LIVE", "URL2LIVE", "WEB2LIVE"]
+          : [],
+      );
+    }
+  },
+);

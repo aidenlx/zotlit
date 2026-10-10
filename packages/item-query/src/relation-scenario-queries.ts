@@ -10,6 +10,23 @@ export const RELATION_SCENARIO_QUERIES: readonly {
   readonly dataset: QueryDataset;
   readonly request: Omit<ItemQueryRequest, "libraries">;
 }[] = [
+  ...[ITEMS, ATTACHMENTS, ANNOTATIONS].map((dataset) => ({
+    name: `${dataset.id} key projection and sort`,
+    dataset,
+    request: {
+      fields: ["indexedKey", "key"],
+      sort: [{ field: "indexedKey", direction: "desc" as const }],
+    },
+  })),
+  {
+    name: "Attachment file types from Annotations",
+    dataset: ANNOTATIONS,
+    request: {
+      filter: 'attachment.fileType == "pdf"',
+      fields: ["attachment.fileType"],
+      group: "attachment.fileType",
+    },
+  },
   ...(
     [
       [ITEMS, "attachments", 'value.tags.contains("downloaded")'],
@@ -21,6 +38,10 @@ export const RELATION_SCENARIO_QUERIES: readonly {
         '["PDF2LIVE", "PDF2GRUPg314"].contains(value.indexedKey)',
       ],
       [ITEMS, "attachments", 'value.contentType == "application/pdf"'],
+      [ITEMS, "attachments", 'value.fileType == "pdf"'],
+      [ITEMS, "attachments", 'value.fileType == "epub"'],
+      [ITEMS, "attachments", 'value.fileType == "web"'],
+      [ITEMS, "attachments", 'value.fileType == "other"'],
       [ITEMS, "attachments", 'value.linkMode == "linked_file"'],
       [ITEMS, "attachments", 'value.item.collections.within("Thesis")'],
       [

@@ -1980,6 +1980,13 @@
         "group": "contentType"
       },
       "group": "contentType",
+      "groupValues": {
+        "fileType": {
+          "application/epub+zip": "epub",
+          "application/pdf": "pdf",
+          "text/html": "web"
+        }
+      },
       "groups": [
         {
           "value": "application/epub+zip",

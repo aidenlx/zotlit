@@ -838,7 +838,10 @@ describe("zotlit:query cancellation", () => {
   });
 });
 
-function setupSchema(scenario: ScenarioDatabase) {
+function setupSchema(
+  scenario: ScenarioDatabase,
+  dataset: "items" | "attachments" | "annotations" = "items",
+) {
   const text = () =>
     Effect.runPromise(
       onJob(
@@ -846,7 +849,7 @@ function setupSchema(scenario: ScenarioDatabase) {
         answer(
           {
             schema: true,
-            dataset: "items",
+            dataset,
             command: QUERY_SCHEMA_COMMAND,
             pluginVersion: "2.2.0-beta.2",
             scope: MY_LIBRARY_SCOPE,
@@ -862,6 +865,29 @@ function setupSchema(scenario: ScenarioDatabase) {
 }
 
 describe("zotlit:query-schema", () => {
+  it.each(["items", "attachments", "annotations"] as const)(
+    "lists key and file type fields in the live %s schema",
+    async (dataset) => {
+      using scenario = openScenarioDatabase({ annotations: true });
+      const schema = await setupSchema(scenario, dataset).run();
+      const fields = [
+        "key",
+        "indexedKey",
+        ...(dataset === "items" ? [] : ["item.key", "item.indexedKey"]),
+        ...(dataset === "attachments"
+          ? ["fileType"]
+          : dataset === "annotations"
+            ? ["attachment.key", "attachment.indexedKey", "attachment.fileType"]
+            : []),
+      ];
+      expect(schema).toMatchObject({
+        ok: true,
+        contractVersion: 3,
+        datasets: { [dataset]: { fields: expect.arrayContaining(fields) } },
+      });
+    },
+  );
+
   it("answers unsupported-database-layout for a copy that lacks a manifest column", async () => {
     using scenario = openScenarioDatabase();
     scenario.sqlite.exec('alter table "fieldsCombined" drop column "custom"');

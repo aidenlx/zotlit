@@ -1,5 +1,3 @@
-import { formatIndexedKey } from "@zotlit/db";
-
 import {
   annotationFieldDefinition,
   annotationFilterRegistry,
@@ -13,7 +11,7 @@ import {
 import type { QueryAttachment } from "./attachment-fields";
 import type { AttachmentNeeds } from "./attachment-hydration";
 import { fieldDefinition, itemFilterRegistry } from "./fields";
-import type { QueryItem, FieldNeeds, FieldDefinition } from "./fields";
+import type { QueryItem, FieldNeeds } from "./fields";
 import type { RecordVocabulary } from "./record-field";
 
 export const ITEM_SUMMARY = ["indexedKey", "title", "citationKey"] as const;
@@ -34,19 +32,11 @@ export const ANNOTATION_SUMMARY = [
   "pageIndex",
 ] as const;
 
-const identity = <
-  Row extends { scan: { key: string }; groupID: number | null },
-  Needs,
->(): FieldDefinition<Row, Needs> => ({
-  shape: { kind: "scalar", type: "string" },
-  needs: () => ({}) as Needs,
-  read: (row) => formatIndexedKey(row.scan.key, row.groupID),
-});
-
 export const itemVocabulary = (): RecordVocabulary<QueryItem, FieldNeeds> => ({
   id: "items",
   summary: ITEM_SUMMARY,
-  field: (name) => (name === "indexedKey" ? identity() : fieldDefinition(name)),
+  projectionFields: [...ITEM_SUMMARY, "key"],
+  field: fieldDefinition,
   filter: {
     ...itemFilterRegistry,
     field: (name) => {
@@ -90,6 +80,7 @@ export const attachmentVocabulary = (): RecordVocabulary<
 > => ({
   id: "attachments",
   summary: ATTACHMENT_SUMMARY,
+  projectionFields: [...ATTACHMENT_SUMMARY, "key", "fileType"],
   field: attachmentFieldDefinition,
   filter: attachmentFilterRegistry,
 });
@@ -99,7 +90,7 @@ export const annotationVocabulary = (): RecordVocabulary<
 > => ({
   id: "annotations",
   summary: ANNOTATION_SUMMARY,
-  field: (name) =>
-    name === "indexedKey" ? identity() : annotationFieldDefinition(name),
+  projectionFields: [...ANNOTATION_SUMMARY, "key"],
+  field: annotationFieldDefinition,
   filter: annotationFilterRegistry,
 });

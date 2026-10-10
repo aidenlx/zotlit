@@ -334,3 +334,27 @@ await test("paper count answer schema permits both dataset shapes", async () => 
       JSON.stringify(accepts.errors),
     );
 });
+
+await test("attachment counts accept fileType groups and reject wrong counts", async () => {
+  const live = JSON.parse(
+    await readFile(new URL("./live-projections.json", import.meta.url), "utf8"),
+  );
+  const { envelope, answer } = structuredClone(live.attachment_types);
+  const types = {
+    "application/epub+zip": "epub",
+    "application/pdf": "pdf",
+    "text/html": "web",
+  };
+  envelope.request.group = "fileType";
+  for (const group of envelope.groups) group.value = types[group.value];
+  for (const group of answer.groups) group.value = types[group.value];
+  const context = {
+    runRoot: "/evaluation-run/corpus",
+    vaultPath: envelope.identity.vault.path,
+    envelope,
+  };
+  assert.deepEqual(validate("attachment_types", envelope, context), []);
+  assert.deepEqual(checkAnswer("attachment_types", answer, context), []);
+  envelope.groups[1].count = 3;
+  assert.notDeepEqual(validate("attachment_types", envelope, context), []);
+});

@@ -5,6 +5,7 @@ export const ATTACHMENT_SCENARIO_QUERIES: readonly Omit<
   "libraries"
 >[] = [
   {},
+  { fields: ["indexedKey", "key", "item.key", "fileType"], group: "fileType" },
   { fields: [], limit: 2 },
   { fields: ["item.creators[].fullName", "tags[]", "item", "item.indexedKey"] },
   ...[
@@ -25,6 +26,12 @@ export const ATTACHMENT_SCENARIO_QUERIES: readonly Omit<
 
     'tags.contains("attachment-method")',
     'tags.contains("missing")',
+    'fileType == "pdf"',
+    'fileType == "epub"',
+    'fileType == "web"',
+    'fileType == "other"',
+    'fileType != "pdf"',
+    'fileType == "pdf" || fileType == "web"',
     'contentType == "application/pdf"',
     'linkMode == "linked_file" && !exists',
     'linkMode == "linked_url"',
@@ -61,6 +68,11 @@ export const ATTACHMENT_SCENARIO_QUERIES: readonly Omit<
     "dateModified",
     "title",
     "contentType",
+    "fileType",
+    "indexedKey",
+    "key",
+    "item.indexedKey",
+    "item.key",
     "linkMode",
     "item.title",
     "item.date",
