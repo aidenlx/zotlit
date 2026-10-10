@@ -651,3 +651,167 @@ it.each([
     ),
   ).toBe(false);
 });
+
+// Failure modes: rejected identities, bare keys with a suffix, parent identities
+// from the wrong Library, and numeric rather than text ordering of group IDs.
+it.each([
+  [ITEMS, "ART2FULL", "ART2FULL"],
+  [ATTACHMENTS, "PDF2LIVE", "PDF2GRUP"],
+  [ANNOTATIONS, "ANN2HGHT", "ANN2GRUP"],
+] as const)(
+  "projects and sorts keys in %s across Target Libraries",
+  async (dataset, personalKey, groupKey) => {
+    const parentKey = "ART2FULL";
+    using scenario = openScenarioDatabase({ annotations: true });
+    scenario.sqlite
+      .prepare("update items set key = ? where key = ? and libraryID = ?")
+      .run(personalKey, groupKey, SCENARIO_LIBRARIES.group.libraryID);
+    const fields = [
+      "indexedKey",
+      "key",
+      ...(dataset === ITEMS ? [] : ["item.indexedKey", "item.key"]),
+    ];
+    for (const direction of ["asc", "desc"] as const) {
+      for (const field of [
+        "indexedKey",
+        "key",
+        ...(dataset === ITEMS ? [] : ["item.indexedKey", "item.key"]),
+      ]) {
+        const { exit } = await runEffect(
+          collectQuery(dataset, {
+            libraries: [SCENARIO_LIBRARIES.group, SCENARIO_LIBRARIES.personal],
+            filter: `key == "${personalKey}"`,
+            fields,
+            sort: [{ field, direction }],
+          }),
+          { client: scenario.db },
+        );
+        if (exit._tag === "Failure") throw Cause.squash(exit.cause);
+        const expected = [
+          {
+            indexedKey: personalKey,
+            key: personalKey,
+            ...(dataset === ITEMS
+              ? {}
+              : { "item.indexedKey": parentKey, "item.key": parentKey }),
+          },
+          {
+            indexedKey: `${personalKey}g4815`,
+            key: personalKey,
+            ...(dataset === ITEMS
+              ? {}
+              : {
+                  "item.indexedKey": `${parentKey}g4815`,
+                  "item.key": parentKey,
+                }),
+          },
+        ];
+        if (direction === "desc" && field.endsWith("indexedKey"))
+          expected.reverse();
+        expect(exit.value.rows!.map((row) => row.values)).toEqual(expected);
+      }
+    }
+  },
+);
+
+it("projects keys through Relation Lists and parents", async () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  const { exit } = await runEffect(
+    collectQuery(ITEMS, {
+      libraries: [SCENARIO_LIBRARIES.group],
+      filter: 'key == "ART2FULL"',
+      fields: [
+        "attachments[].key",
+        "attachments[].indexedKey",
+        "annotations[].key",
+        "annotations[].indexedKey",
+        "annotations[].attachment.key",
+        "annotations[].attachment.indexedKey",
+        "attachments[].item.key",
+      ],
+    }),
+    { client: scenario.db },
+  );
+  if (exit._tag === "Failure") throw Cause.squash(exit.cause);
+  expect(exit.value.rows![0]!.values).toEqual({
+    "attachments[].key": ["PDF2GRUP"],
+    "attachments[].indexedKey": ["PDF2GRUPg4815"],
+    "annotations[].key": ["ANN2GRUP"],
+    "annotations[].indexedKey": ["ANN2GRUPg4815"],
+    "annotations[].attachment.key": ["PDF2GRUP"],
+    "annotations[].attachment.indexedKey": ["PDF2GRUPg4815"],
+    "attachments[].item.key": ["ART2FULL"],
+  });
+});
+
+it("orders parent Indexed Keys as text including group suffixes", async () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  scenario.sqlite
+    .prepare("update items set key = 'PDF2LIVE' where key = 'PDF2GRUP'")
+    .run();
+  for (const field of ["item.indexedKey", "attachment.indexedKey"]) {
+    const { exit } = await runEffect(
+      collectQuery(ANNOTATIONS, {
+        libraries: [
+          { ...SCENARIO_LIBRARIES.personal, groupID: 9 },
+          { ...SCENARIO_LIBRARIES.group, groupID: 10 },
+        ],
+        filter: '["ANN2HGHT", "ANN2GRUP"].contains(key)',
+        fields: [field, "attachment.key"],
+        sort: [{ field, direction: "asc" }],
+      }),
+      { client: scenario.db },
+    );
+    if (exit._tag === "Failure") throw Cause.squash(exit.cause);
+    expect(exit.value.rows!.map((row) => row.indexedKey)).toEqual([
+      "ANN2GRUPg10",
+      "ANN2HGHTg9",
+    ]);
+    expect(exit.value.rows!.map((row) => row.values[field])).toEqual(
+      field === "item.indexedKey"
+        ? ["ART2FULLg10", "ART2FULLg9"]
+        : ["PDF2LIVEg10", "PDF2LIVEg9"],
+    );
+  }
+});
+
+it("reads file types through Relation Lists and Annotation parents", async () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  const items = await runEffect(
+    collectQuery(ITEMS, {
+      libraries: [SCENARIO_LIBRARIES.personal],
+      filter: 'attachments.filter(value.fileType == "web").length > 0',
+      fields: ["attachments[].fileType", "annotations[].attachment.fileType"],
+    }),
+    { client: scenario.db },
+  );
+  if (items.exit._tag === "Failure") throw Cause.squash(items.exit.cause);
+  expect(items.exit.value.rows).toHaveLength(1);
+  expect(items.exit.value.rows![0]!.values["attachments[].fileType"]).toEqual([
+    "pdf",
+    "pdf",
+    "web",
+    "web",
+  ]);
+  expect(
+    items.exit.value.rows![0]!.values["annotations[].attachment.fileType"],
+  ).toEqual(Array(12).fill("pdf"));
+  const annotations = await runEffect(
+    collectQuery(ANNOTATIONS, {
+      libraries: [SCENARIO_LIBRARIES.group],
+      filter: 'attachment.fileType == "pdf"',
+      fields: ["attachment.fileType"],
+      group: "attachment.fileType",
+    }),
+    { client: scenario.db },
+  );
+  if (annotations.exit._tag === "Failure")
+    throw Cause.squash(annotations.exit.cause);
+  expect(annotations.exit.value.groups).toMatchObject([
+    {
+      value: "pdf",
+      count: 1,
+      rows: [{ values: { "attachment.fileType": "pdf" } }],
+    },
+  ]);
+});

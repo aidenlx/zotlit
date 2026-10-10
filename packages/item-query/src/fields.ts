@@ -2,7 +2,6 @@
 // hydration needs, and its projection, sort, and filter readers.
 import {
   creatorFieldModeToName,
-  formatIndexedKey,
   parseItemDate,
   tagTypeToName,
 } from "@zotlit/db";
@@ -29,6 +28,7 @@ import {
 } from "./filter-dates";
 import type { FilterRegistry } from "./filter-plan";
 import type { FilterValue, FilterValueType } from "./filter-values";
+import { keyField, indexedKeyField } from "./key-fields";
 import { libraryField } from "./library-field";
 import type { PathSegment } from "./projection-path";
 import type { QueryClock } from "./query-clock";
@@ -423,6 +423,8 @@ const FIELDS: ReadonlyMap<string, FieldDefinition> = new Map<
   ["dateAdded", scanTimestamp("dateAdded")],
   ["dateModified", scanTimestamp("dateModified")],
   ["library", libraryField],
+  ["key", keyField],
+  ["indexedKey", indexedKeyField],
   ["custom", customField],
   ["creators", creatorsField],
   ["tags", tagsField],
@@ -452,21 +454,6 @@ export function fieldDefinition(name: string): FieldDefinition | undefined {
   return FIELDS.get(name);
 }
 
-/**
- * The names a Filter Expression reads that are outside the projection
- * vocabulary. `key` is the Zotero Key of the Item inside its Library.
- */
-const FILTER_ONLY_FIELDS: ReadonlyMap<string, FilterValueDefinition> = new Map([
-  ["key", { type: "string", read: (item: QueryItem) => item.scan.key }],
-  [
-    "indexedKey",
-    {
-      type: "string",
-      read: (item: QueryItem) => formatIndexedKey(item.scan.key, item.groupID),
-    },
-  ],
-]);
-
 /** A built-in name as a Filter Expression reads it. */
 export type FilterField<Item = QueryItem, Needs = FieldNeeds> =
   | {
@@ -484,8 +471,6 @@ export type FilterField<Item = QueryItem, Needs = FieldNeeds> =
  * that is not built in.
  */
 export function filterField(name: string): FilterField | undefined {
-  const filterOnly = FILTER_ONLY_FIELDS.get(name);
-  if (filterOnly) return { filterable: true, value: filterOnly, needs: {} };
   const definition = FIELDS.get(name);
   if (!definition) return undefined;
   return definitionFilter(definition);
@@ -510,11 +495,8 @@ export const itemFilterRegistry: FilterRegistry<QueryItem, FieldNeeds> = {
   custom: customFilterValue,
 };
 
-/** Every built-in field name, with the names only a filter reads. */
-export const BUILT_IN_NAMES: readonly string[] = [
-  ...FIELDS.keys(),
-  ...FILTER_ONLY_FIELDS.keys(),
-];
+/** Every built-in field name. */
+export const BUILT_IN_NAMES: readonly string[] = [...FIELDS.keys()];
 
 /**
  * The bare name reads the stored value of one built-in Zotero field as a

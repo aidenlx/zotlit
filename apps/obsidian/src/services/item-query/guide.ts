@@ -252,6 +252,13 @@ SEE ALSO
 const FIELDS_SECTION = `FIELDS AND PROJECTION PATHS
 
 DESCRIPTION
+  Every dataset projects indexedKey and key. key is the bare Zotero Key;
+  indexedKey adds g<groupID> for a group Library. Parent records and Relation
+  List elements expose both paths, such as item.key and attachments[].indexedKey.
+  Attachment fileType is pdf, epub, web, or other. web includes snapshots and
+  links to web pages, whatever their contentType. Missing contentType is other
+  unless the Attachment is a link to a web page. Use attachments[].fileType
+  on Items and attachment.fileType on Annotations.
   The library path is personal for My Library or group:<groupID> for a group.
   fields is a comma list or JSON array of Projection Paths: the values each
   row returns. Examples start from Items unless they include from.
@@ -309,6 +316,11 @@ SORT
   Each Query Dataset has its own default sort. For Items, it is
   ${ITEM_DEFAULT_SORT_TEXT}. topic=datasets lists the Attachment and Annotation
   defaults.
+  indexedKey and key are Sortable Fields in every dataset. Parent keys are
+  sortable as item.indexedKey, item.key, attachment.indexedKey, and attachment.key
+  where that parent exists. Attachment fileType is also sortable.
+  Indexed Keys compare as text: the same key sorts in personal, g10, g9 order.
+    ${example({ fields: "indexedKey,key", sort: "indexedKey" })}
   Rows without a value come last in both directions. The Indexed Key orders
   rows that tie on every entry, also rows from two Libraries.
 
@@ -499,7 +511,7 @@ const GROUP_SECTION = `GROUP RESULTS
   Split papers by library:
     ${example({ group: "library", library: "all", limit: "3" })}
   Files by content type:
-    ${example({ from: "attachments", group: "contentType" })}`;
+    ${example({ from: "attachments", group: "fileType" })}`;
 
 /** Canonical topic registry shared by parsing, generated help, and the index. */
 export const GUIDE_TOPICS = {

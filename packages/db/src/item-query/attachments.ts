@@ -313,7 +313,7 @@ export type AttachmentCandidateLeaf =
   | { readonly kind: "keys"; readonly keys: readonly string[] }
   | { readonly kind: "parent"; readonly leaf: CandidateLeaf }
   | {
-      readonly kind: "key" | "contentType" | "linkMode";
+      readonly kind: "key" | "contentType" | "linkMode" | "fileType";
       readonly value: string;
     }
   | { readonly kind: "tag"; readonly value: string };
@@ -333,6 +333,7 @@ const attachmentCandidates = (
     | "key"
     | "keys"
     | "contentType"
+    | "fileType"
     | "linkMode"
     | "tag"
     | "parent-tag"
@@ -357,6 +358,13 @@ const attachmentCandidates = (
         key: eq(items.key, p("value")),
         keys: sql`${items.key} in (${list})`,
         contentType: eq(itemAttachments.contentType, p("value")),
+        fileType: sql`case
+          when ${itemAttachments.linkMode} = 3 then 'web'
+          when ${itemAttachments.contentType} = 'application/pdf' then 'pdf'
+          when ${itemAttachments.contentType} = 'application/epub+zip' then 'epub'
+          when ${itemAttachments.contentType} in ('text/html', 'application/xhtml+xml') then 'web'
+          else 'other' end = ${p("value")}`,
+
         linkMode: sql`case ${itemAttachments.linkMode} when 0 then 'imported_file' when 1 then 'imported_url' when 2 then 'linked_file' when 3 then 'linked_url' end = ${p("value")}`,
         tag: tagged(items.itemID),
         "parent-tag": tagged(parent.itemID),
@@ -410,6 +418,7 @@ const attachmentCandidateStatements = {
   key: attachmentCandidates("key"),
   keys: attachmentCandidates("keys"),
   contentType: attachmentCandidates("contentType"),
+  fileType: attachmentCandidates("fileType"),
   linkMode: attachmentCandidates("linkMode"),
   tag: attachmentCandidates("tag"),
   "parent-tag": attachmentCandidates("parent-tag"),

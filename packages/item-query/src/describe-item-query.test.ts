@@ -272,9 +272,9 @@ describe("describeItemQuery fields", () => {
       path: "key",
       type: "string",
       filter: "string",
-      projection: false,
-      group: false,
-      sort: false,
+      projection: true,
+      group: true,
+      sort: true,
     });
     expect(entry("custom")).toEqual({
       path: "custom",

@@ -281,9 +281,15 @@ export function pathsBelow(
       return [];
     case "record": {
       const vocabulary = shape.vocabulary();
-      return vocabulary.summary.flatMap((name) =>
-        below(`${path}.${name}`, vocabulary.field(name)!.shape),
-      );
+      return vocabulary.projectionFields.flatMap((name) => {
+        const definition = vocabulary.field(name)!;
+        const child = `${path}.${name}`;
+        return below(child, definition.shape).map((field) =>
+          field.path === child && definition.valueForms
+            ? { ...field, valueForms: definition.valueForms }
+            : field,
+        );
+      });
     }
     case "object":
       return Object.entries(shape.keys).flatMap(([key, child]) =>

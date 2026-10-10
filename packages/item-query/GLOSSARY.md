@@ -20,12 +20,16 @@ _Avoid_: Base Query, Zotero Query, DB Query
 The Query Dataset of Attachments: a query over the non-trashed Attachments of top-level, non-trashed Items in its Target Libraries. An Attachment of no Item (a standalone Attachment) is outside the universe, so every row has a parent Item. An Attachment reaches its parent Item and its Annotations through Relation Lists.
 _Avoid_: file query, PDF query (Attachments can be PDF, EPUB, snapshot, or a link with no file)
 
+**File Type**:
+The kind of an Attachment: `pdf` for a PDF, `epub` for an EPUB, `web` for a web snapshot or a link to a web page, and `other` for every other Attachment, including one with no known content type.
+_Avoid_: file kind, MIME type (the stored content type)
+
 **Annotation Query**:
 The Query Dataset of Annotations: a query over the non-trashed Annotations of the non-trashed Attachments of top-level, non-trashed Items in its Target Libraries. It selects Annotations through one Filter Expression, which reads Annotation fields and, through Relation Lists, the parent Attachment and the parent Item, and returns one Annotation Row per Annotation. A sibling of Item Query and Attachment Query: the three share Target Libraries, the result envelope, and the Query Clock.
 _Avoid_: PDF annotation query (Attachments can be PDF, EPUB, or snapshot), annotation search, highlight query
 
 **Relation List**:
-A list-valued field of a Query Dataset that holds one element for each related source row. The element is a text for `creators`, `tags`, and `collections`, and a record of another Query Dataset for `attachments` and `annotations` on an Item and `annotations` on an Attachment. A Relation List is read in a Filter Expression with the list methods of the language and in a Projection Path by element; it is never vectorized implicitly. The parent of an Attachment (`item`) and the parents of an Annotation (`attachment`, `item`) are single records, read with dotted paths such as `item.title`. Relations run in both directions, so a question can start at any of the three datasets.
+A list-valued field of a Query Dataset that holds one element for each related source row. In projection, a `creators` element is a creator with `family`, `given`, `literal`, `fullName`, and `role`. A `collections` element is text. A `tags` element is text on Attachments and Annotations, and a tag with `name` and `type` on Items. In Filter Expressions, `creators`, `tags`, and `collections` have text elements. The element is a record of another Query Dataset for `attachments` and `annotations` on an Item and `annotations` on an Attachment. A Relation List is read in a Filter Expression with the list methods of the language and in a Projection Path by element; it is never vectorized implicitly. The parent of an Attachment (`item`) and the parents of an Annotation (`attachment`, `item`) are single records, read with dotted paths such as `item.title`. Relations run in both directions, so a question can start at any of the three datasets.
 _Avoid_: join, relation (alone), child list, link
 
 **Annotation Row**:

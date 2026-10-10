@@ -1,4 +1,4 @@
-import { formatIndexedKey, linkModeToName } from "@zotlit/db";
+import { linkModeToName } from "@zotlit/db";
 import type {
   AttachmentScanRow,
   HydratedAttachment,
@@ -17,6 +17,7 @@ import type {
 import { timestamp } from "./filter-dates";
 import type { FilterRegistry } from "./filter-plan";
 import type { FilterValue } from "./filter-values";
+import { keyField, indexedKeyField } from "./key-fields";
 import { libraryField } from "./library-field";
 import { definitionFilter, mapNavigation, recordField } from "./record-field";
 import { annotationVocabulary } from "./record-vocabularies";
@@ -75,11 +76,8 @@ export const ATTACHMENT_FIELDS = new Map<string, FieldDefinition>([
     }),
   ],
   ["library", libraryField],
-  [
-    "indexedKey",
-    field(string, {}, (item) => formatIndexedKey(item.scan.key, item.groupID)),
-  ],
-  ["key", field(string, {}, (item) => item.scan.key)],
+  ["indexedKey", indexedKeyField],
+  ["key", keyField],
   [
     "title",
     field(string, DETAILS, (item) =>
@@ -95,6 +93,27 @@ export const ATTACHMENT_FIELDS = new Map<string, FieldDefinition>([
       DETAILS,
       (item) => item.attachment.details?.contentType ?? null,
     ),
+  ],
+  [
+    "fileType",
+    {
+      ...field(string, DETAILS, (item) => {
+        const details = item.attachment.details;
+        if (details?.linkMode === 3) return "web";
+        switch (details?.contentType) {
+          case "application/pdf":
+            return "pdf";
+          case "application/epub+zip":
+            return "epub";
+          case "text/html":
+          case "application/xhtml+xml":
+            return "web";
+          default:
+            return "other";
+        }
+      }),
+      valueForms: ["pdf", "epub", "web", "other"],
+    },
   ],
   [
     "linkMode",
@@ -147,10 +166,6 @@ export const ATTACHMENT_FIELDS = new Map<string, FieldDefinition>([
 export function attachmentFieldDefinition(
   name: string,
 ): FieldDefinition | undefined {
-  if (name === "item.indexedKey")
-    return field(string, {}, (item) =>
-      formatIndexedKey(item.scan.parent.key, item.groupID),
-    );
   if (name === "item")
     return recordField({
       vocabulary: () => itemVocabulary(),
@@ -199,7 +214,7 @@ for (const name of ["dateAdded", "dateModified"] as const) {
     sortKey: (item) => item.scan[name],
   });
 }
-for (const name of ["title", "contentType", "linkMode"]) {
+for (const name of ["title", "contentType", "fileType", "linkMode"]) {
   const definition = ATTACHMENT_FIELDS.get(name)!;
   ATTACHMENT_FIELDS.set(name, {
     ...definition,
@@ -211,10 +226,15 @@ for (const name of ["title", "contentType", "linkMode"]) {
  * The Sortable Fields of Attachment Query, including its parent scalar paths.
  */
 export const ATTACHMENT_SORT_FIELDS: readonly string[] = [
+  "indexedKey",
+  "key",
+  "item.indexedKey",
+  "item.key",
   "dateAdded",
   "dateModified",
   "title",
   "contentType",
+  "fileType",
   "linkMode",
   "item.title",
   "item.date",

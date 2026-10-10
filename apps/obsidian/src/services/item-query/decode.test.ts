@@ -609,3 +609,16 @@ it("accepts Attachment queries and narrowed Attachment schemas", () => {
     from: "attachments",
   });
 });
+
+it.each(["items", "attachments", "annotations"])(
+  "accepts key Projection Paths and sorting for %s",
+  (from) => {
+    expect(
+      decodeQuery({ from, fields: "indexedKey,key", sort: "indexedKey" }),
+    ).toMatchObject({
+      from,
+      fields: ["indexedKey", "key"],
+      sort: [{ field: "indexedKey", direction: "asc" }],
+    });
+  },
+);

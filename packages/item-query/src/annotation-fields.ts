@@ -28,6 +28,7 @@ import type {
 import { timestamp } from "./filter-dates";
 import type { FilterRegistry } from "./filter-plan";
 import type { FilterValue } from "./filter-values";
+import { keyField, indexedKeyField } from "./key-fields";
 import { libraryField } from "./library-field";
 import { definitionFilter, mapNavigation, recordField } from "./record-field";
 import { attachmentVocabulary } from "./record-vocabularies";
@@ -84,6 +85,8 @@ const field = (
 
 export const ANNOTATION_FIELDS = new Map<string, FieldDefinition>([
   ["library", libraryField],
+  ["indexedKey", indexedKeyField],
+  ["key", keyField],
   [
     "position",
     field(ANNOTATION_POSITION_SHAPE, DETAILS, ({ annotation: { details } }) =>
@@ -162,10 +165,6 @@ export const ANNOTATION_FIELDS = new Map<string, FieldDefinition>([
 export function annotationFieldDefinition(
   name: string,
 ): FieldDefinition | undefined {
-  if (name === "item.indexedKey")
-    return field(string, {}, (item) =>
-      formatIndexedKey(item.scan.parent.key, item.groupID),
-    );
   if (name === "item")
     return recordField({
       vocabulary: () => itemVocabulary(),
@@ -224,9 +223,13 @@ for (const name of ["type", "color", "pageIndex", "sortIndex"]) {
 
 /**
  * The Sortable Fields of Annotation Query. `attachment.indexedKey` orders by
- * the Attachment's Indexed Key within its Library.
+ * the Attachment's Indexed Key across the Target Libraries.
  */
 export const ANNOTATION_SORT_FIELDS: readonly string[] = [
+  "indexedKey",
+  "key",
+  "item.indexedKey",
+  "item.key",
   "dateAdded",
   "dateModified",
   "type",
@@ -237,14 +240,21 @@ export const ANNOTATION_SORT_FIELDS: readonly string[] = [
   "item.date",
   "item.dateModified",
   "attachment.indexedKey",
+  "attachment.key",
 ];
 
 export function annotationSortableField(
   name: string,
 ): SortableField<QueryAnnotation, AnnotationNeeds> | undefined {
   if (!ANNOTATION_SORT_FIELDS.includes(name)) return undefined;
-  if (name === "attachment.indexedKey")
-    return { needs: {}, key: (item) => item.scan.attachmentKey };
+  if (name === "attachment.indexedKey" || name === "attachment.key")
+    return {
+      needs: {},
+      key: (item) =>
+        name === "attachment.key"
+          ? item.scan.attachmentKey
+          : formatIndexedKey(item.scan.attachmentKey, item.groupID),
+    };
   const definition = annotationFieldDefinition(name)!;
   return { needs: definition.needs([]), key: definition.sortKey! };
 }

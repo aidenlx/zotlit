@@ -51,9 +51,9 @@ export const ANNOTATIONS: QueryDataset<ItemQueryRequest> = {
   tieBreakers: [{ field: "sortIndex", direction: "asc" }],
   names: [
     ...ANNOTATION_FIELDS.keys(),
-    "key",
-    "indexedKey",
     "attachment.indexedKey",
+    "attachment.key",
+    "attachment.fileType",
     "item",
     ...BUILT_IN_NAMES.map((name) => PARENT + name),
   ],

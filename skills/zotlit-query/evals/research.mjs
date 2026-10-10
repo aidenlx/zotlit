@@ -38,6 +38,12 @@ function checkRows(actual, expected) {
   return errors;
 }
 function expectedGroups(expected, path) {
+  const values = expected.groupValues?.[path];
+  if (values)
+    return expected.groups.map((group) => ({
+      ...group,
+      value: values[group.value],
+    }));
   if (expected.group === "item.indexedKey" && path === "item.title")
     return expected.groups
       .map((group) => ({ ...group, value: group.rows[0].values["item.title"] }))
@@ -101,6 +107,7 @@ export function checkResearch(spec, envelope, runRoot) {
   if (expected.groups) {
     if (
       envelope.request?.group !== expected.group &&
+      !Object.hasOwn(expected.groupValues ?? {}, envelope.request?.group) &&
       !(
         expected.group === "item.indexedKey" &&
         envelope.request?.group === "item.title"

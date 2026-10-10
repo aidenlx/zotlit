@@ -2629,6 +2629,44 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         }),
       ) as ItemQueryReport;
 
+    it("projects and sorts keys and groups file types through ZotLit Query", async () => {
+      for (const from of ["items", "attachments", "annotations"]) {
+        const answer = await query({
+          from,
+          library: "all",
+          fields: "indexedKey,key",
+          sort: "indexedKey",
+          limit: "all",
+        });
+        expect(answer).toMatchObject({
+          ok: true,
+          contractVersion: 3,
+          truncated: false,
+        });
+        expect(answer.returnedCount).toBeGreaterThan(0);
+        const keys = answer.rows!.map((row) => row.indexedKey);
+        expect(keys).toEqual([...keys].sort());
+        for (const row of answer.rows!) {
+          expect(row.values.indexedKey).toBe(row.indexedKey);
+          expect(row.values.key).toBe(row.indexedKey.slice(0, 8));
+        }
+      }
+      const files = await query({
+        library: "personal",
+        group: "fileType",
+        fields: "fileType",
+        limit: "all",
+      });
+      expect(files).toMatchObject({ ok: true, truncated: false });
+      expect(files.groups!.map(({ value, count }) => [value, count])).toEqual([
+        ["pdf", 11],
+        ["web", 3],
+      ]);
+      for (const group of files.groups!)
+        for (const row of group.rows)
+          expect(row.values.fileType).toBe(group.value);
+    });
+
     it("groups files by type with a per-group limit", async () => {
       const answer = await query({
         group: "contentType",
@@ -3620,12 +3658,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         "utf8",
       ),
     ) as {
-      datasets: { items: { fields: object[] } };
+      datasets: Record<string, { fields: object[] }>;
       functions: { name: string }[];
       types: string[];
       methods: object[];
     };
-    expect(catalog.datasets.items.fields).toContainEqual({
+    expect(catalog.datasets.items!.fields).toContainEqual({
       path: "title",
       type: "string",
       filter: "string",
@@ -3633,6 +3671,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       group: true,
       sort: true,
     });
+    for (const dataset of ["items", "attachments", "annotations"])
+      for (const path of ["indexedKey", "key"])
+        expect(catalog.datasets[dataset]!.fields).toContainEqual(
+          expect.objectContaining({ path, projection: true, sort: true }),
+        );
+    expect(catalog.datasets.attachments!.fields).toContainEqual(
+      expect.objectContaining({
+        path: "fileType",
+        projection: true,
+        filter: "string",
+        sort: true,
+        group: true,
+        valueForms: ["pdf", "epub", "web", "other"],
+      }),
+    );
     expect(catalog.functions.map(({ name }) => name)).toContain("today");
     expect(catalog.types).toContain("regexp");
     expect(catalog.methods).toContainEqual(
