@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { CslItemData } from "@zotlit/db";
 
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
+import { CitationLookupAnswer } from "@/services/citation-index/lookup";
 import type {
   Citation,
   CitationKeyResolution,
@@ -255,6 +256,7 @@ function setup(options: SetupOptions = {}) {
     getIdentity,
     settleTimeoutMs: options.settleTimeoutMs,
     index: {
+      citationKeys: () => [],
       waitUntilSettled,
       readLookup,
       getCitedBy,
@@ -294,7 +296,10 @@ describe("zotlit:cited-by", () => {
 
     const output = await citedBy({ key: ITEM_KEY });
 
-    expect(getCitedBy).toHaveBeenCalledWith(ITEM_KEY);
+    expect(getCitedBy).toHaveBeenCalledWith(
+      ITEM_KEY,
+      expect.any(CitationLookupAnswer),
+    );
     expect(JSON.parse(output)).toEqual({
       contractVersion: 3,
       command: CITED_BY_COMMAND,
@@ -418,9 +423,15 @@ describe("zotlit:cited-by", () => {
 
     const output = await citedBy({ citekey: ITEM_CITEKEY });
 
-    expect(readLookup).toHaveBeenCalledWith({ citekeys: [ITEM_CITEKEY] });
+    expect(readLookup).toHaveBeenCalledWith({
+      citekeys: [ITEM_CITEKEY],
+      indexedKeys: [],
+    });
     expect(lookupItem).toHaveBeenCalledWith(ITEM_KEY);
-    expect(getCitedBy).toHaveBeenCalledWith(ITEM_KEY);
+    expect(getCitedBy).toHaveBeenCalledWith(
+      ITEM_KEY,
+      expect.any(CitationLookupAnswer),
+    );
     expect(JSON.parse(output)).toMatchObject({
       ok: true,
       request: { citekey: ITEM_CITEKEY },
@@ -538,7 +549,7 @@ describe("zotlit:cited-by", () => {
     });
   });
 
-  it("retries the complete cited-by answer when the citation assignment changes", async () => {
+  it("uses one answer for the complete cited-by command when the source changes", async () => {
     const { citedBy, readLookup, getCitedBy } = setup();
     const nextItem = {
       ...SNAPSHOT_ITEM,
@@ -563,9 +574,11 @@ describe("zotlit:cited-by", () => {
 
     expect(JSON.parse(output)).toMatchObject({
       ok: true,
-      item: { key: "NEXT2345" },
-      groups: [],
+      item: { key: ITEM_KEY },
+      groups: CITED.groups.map((group) => ({ path: group.path })),
     });
+    expect(readLookup).toHaveBeenCalledOnce();
+    expect(getCitedBy).toHaveBeenCalledWith(ITEM_KEY, first);
   });
 
   it("reports an unavailable fresh lookup instead of a missing citation key", async () => {
@@ -666,7 +679,10 @@ describe("zotlit:cited-by", () => {
       "expect-source": IDENTITY.source.id,
     });
 
-    expect(getCitedBy).toHaveBeenCalledWith(ITEM_KEY);
+    expect(getCitedBy).toHaveBeenCalledWith(
+      ITEM_KEY,
+      expect.any(CitationLookupAnswer),
+    );
     expect(JSON.parse(output)).toMatchObject({ ok: true });
   });
 
@@ -700,6 +716,7 @@ describe("zotlit:cited-by", () => {
         return IDENTITY;
       },
       index: {
+        citationKeys: () => [],
         waitUntilSettled: () => {
           order.push("settle");
           return Promise.resolve("settled");

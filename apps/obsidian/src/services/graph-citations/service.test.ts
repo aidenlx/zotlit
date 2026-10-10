@@ -25,12 +25,10 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { themeProperty } from "@/lib/theme-hooks";
+import { CitationLookupStub } from "@/services/citation-index/__fixtures__/citation-lookup";
 import { CitationLookupAnswer } from "@/services/citation-index/lookup";
 import type { CitationOccurrence } from "@/services/citation-index/scan";
-import type {
-  CitationLookupObservation,
-  CitekeyResolution,
-} from "@/services/citation-index/service";
+import type { CitekeyResolution } from "@/services/citation-index/service";
 import { SettingsStub } from "@/services/citation-index/test-harness";
 import { CITEKEY_HOVER_SOURCE } from "@/services/citekey-navigation";
 import type { NoteIndex } from "@/services/note-index/service";
@@ -184,6 +182,7 @@ const VAULT_LINKS: LinkMap = { "Draft.md": { "Other.md": 1 } };
 /** Stands in for Obsidian's engine: `render` is inherited, reads `app` once, hands off to the renderer. */
 class FakeEngine {
   readonly renders: RenderRecord[] = [];
+  rendered = Promise.withResolvers<void>();
   /** What each render saw as the vault's file list, for the narrowing rows. */
   readonly cachedFiles: string[][] = [];
   readonly renderer: FakeRenderer;
@@ -237,6 +236,8 @@ class FakeEngine {
   }
 
   render(): number {
+    this.rendered.resolve();
+    this.rendered = Promise.withResolvers<void>();
     const { metadataCache } = this.app;
     this.renders.push({
       facaded: this.app !== this.#realApp,
@@ -487,11 +488,10 @@ class CitationIndexStub {
   cold = false;
   readonly lookupRequests: string[][] = [];
   #revision = 0;
-  readonly #observations = new Set<{
-    changed: () => void;
-    citekeys: readonly string[];
-    current: CitationLookupObservation["current"];
-  }>();
+  readonly lookup = new CitationLookupStub(({ citekeys = [] }) => {
+    this.lookupRequests.push([...citekeys]);
+    return this.#answer(citekeys);
+  });
 
   on(event: string, cb: () => void): () => void {
     return this.#emitter.on(event, cb);
@@ -500,39 +500,16 @@ class CitationIndexStub {
   emit(event: string): void {
     if (event === "resolution-changed") {
       this.#revision += 1;
-      for (const state of this.#observations) {
-        state.current = this.#held(state.citekeys);
-        state.changed();
-      }
+      this.lookup.refresh();
     }
     this.#emitter.emit(event);
   }
 
   get lookupCount(): number {
-    return this.#observations.size;
+    return this.lookup.activeObservations;
   }
 
-  observeLookup(changed: () => void) {
-    const state = {
-      changed,
-      citekeys: [] as readonly string[],
-      current: null as CitationLookupObservation["current"],
-    };
-    this.#observations.add(state);
-    return {
-      get current() {
-        return state.current;
-      },
-      set: ({ citekeys = [] }: { citekeys?: readonly string[] }) => {
-        state.citekeys = citekeys;
-        this.lookupRequests.push([...citekeys]);
-        state.current = this.#held(citekeys);
-      },
-      [Symbol.dispose]: () => this.#observations.delete(state),
-    };
-  }
-
-  #held(citekeys: readonly string[]): CitationLookupObservation["current"] {
+  #answer(citekeys: readonly string[]): CitationLookupAnswer | null {
     if (this.cold) return null;
     const requested = new Set(citekeys);
     const value = new CitationLookupAnswer({
@@ -545,11 +522,7 @@ class CitationIndexStub {
       ),
       indexedKeys: new Map(),
     });
-    return {
-      value,
-      status: "fresh",
-      settled: Promise.resolve(value),
-    };
+    return value;
   }
 }
 
@@ -686,6 +659,7 @@ function makeFixture(options: FixtureOptions = {}) {
       },
     },
     citationIndex,
+    citationLookup: citationIndex.lookup,
     // The stub answers plain `{ path }` records where the index answers files.
     noteIndex: noteIndex as unknown as Pick<
       NoteIndex,
@@ -695,10 +669,29 @@ function makeFixture(options: FixtureOptions = {}) {
     citationPopover,
     settings,
   });
+  const engines: FakeEngine[] = [];
+  const settleLookup = async (): Promise<void> => {
+    if (!citationIndex.lookup.pending) return;
+    const installed = engines.filter((engine) =>
+      Object.hasOwn(engine, "render"),
+    );
+    const rendered = installed.map((engine) => engine.rendered.promise);
+    // General graph tests start from its first answered frame. The lookup
+    // suite tests the pending frame and request-change placeholder directly.
+    for (const engine of installed) {
+      engine.renders.length = 0;
+      engine.cachedFiles.length = 0;
+    }
+    await citationIndex.lookup.settle();
+    if (vi.isFakeTimers()) await vi.runOnlyPendingTimersAsync();
+    await Promise.all(rendered);
+  };
   return {
     app,
     service,
+    settleLookup,
     citationIndex,
+    citationLookup: citationIndex.lookup,
     noteIndex,
     settings,
     reads,
@@ -709,6 +702,7 @@ function makeFixture(options: FixtureOptions = {}) {
     trigger: workspace.trigger,
     addLeaf(viewType: "graph" | "localgraph", id = `leaf-${leaves.length}`) {
       const made = fakeLeaf(viewType, app, app);
+      engines.push(made.engine);
       if (options.presentation)
         Object.assign(made.engine.options, {
           "zotlit-color-citation-links": true,
@@ -742,6 +736,7 @@ function makeFixture(options: FixtureOptions = {}) {
      */
     addDeferredLeaf(viewType: "graph" | "localgraph", saved?: GraphOptions) {
       const made = fakeLeaf(viewType, app, app);
+      engines.push(made.engine);
       if (options.presentation)
         Object.assign(made.engine.options, {
           "zotlit-color-citation-links": true,
@@ -763,7 +758,10 @@ function makeFixture(options: FixtureOptions = {}) {
       const leaf = leaves.find((candidate) => candidate.id === id);
       return leaf!.view.getState();
     },
-    layoutReady: () => layoutReady?.(),
+    layoutReady: async () => {
+      layoutReady?.();
+      await settleLookup();
+    },
     fire: (name: string) => {
       for (const cb of listeners.get(name) ?? []) cb();
     },
@@ -797,7 +795,7 @@ describe("GraphCitations installation", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
     engine.setOptions({ "zotlit-citation-popover": true });
     fixture.settings.update({ "citation.graph-citations": false });
     fixture.settings.update({ "citation.graph-citations": true });
@@ -842,7 +840,7 @@ describe("GraphCitations installation", () => {
     await using service = fixture.service;
     await service.ready;
     const first = fixture.addLeaf("graph", "first");
-    fixture.layoutReady();
+    await fixture.layoutReady();
     first.setOptions({
       "zotlit-color-citation-links": true,
       "zotlit-citation-popover": true,
@@ -890,7 +888,7 @@ describe("GraphCitations installation", () => {
     await using service = fixture.service;
     await service.ready;
     const graph = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
     expect(graph.getOptions()).toMatchObject({
       "zotlit-color-citation-links": false,
       "zotlit-citation-popover": false,
@@ -918,7 +916,7 @@ describe("GraphCitations installation", () => {
     const global = fixture.addLeaf("graph");
     const local = fixture.addLeaf("localgraph");
 
-    fixture.layoutReady();
+    await fixture.layoutReady();
     fixture.fire("layout-change");
     fixture.fire("active-leaf-change");
 
@@ -945,7 +943,7 @@ describe("GraphCitations installation", () => {
     const fixture = makeFixture();
     await using service = fixture.service;
     await service.ready;
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     const engine = fixture.addLeaf("graph");
     expect(engine.renders).toEqual([]);
@@ -960,7 +958,7 @@ describe("GraphCitations installation", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     engine.throwNext = true;
     fixture.citationIndex.emit("backfilled");
@@ -981,7 +979,7 @@ describe("GraphCitations installation", () => {
     await service.ready;
     const engine = fixture.addLeaf("graph");
     delete (engine.renderer as { onNodeClick?: unknown }).onNodeClick;
-    fixture.layoutReady();
+    await fixture.layoutReady();
     fixture.fire("layout-change");
     fixture.fire("active-leaf-change");
 
@@ -998,7 +996,7 @@ describe("GraphCitations installation", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     expect(engine.renders).toEqual([]);
     expect(Object.hasOwn(engine, "render")).toBe(false);
@@ -1009,7 +1007,7 @@ describe("GraphCitations installation", () => {
     await using service = fixture.service;
     await service.ready;
     const { engine, load } = fixture.addDeferredLeaf("localgraph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
     fixture.fire("layout-change");
     fixture.fire("active-leaf-change");
 
@@ -1018,6 +1016,7 @@ describe("GraphCitations installation", () => {
 
     load();
     fixture.fire("layout-change");
+    await fixture.settleLookup();
 
     expect(engine.renders).toEqual([
       {
@@ -1036,7 +1035,7 @@ describe("GraphCitations clicks", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     engine.renderer.onNodeClick(
       new MouseEvent("click"),
@@ -1056,7 +1055,7 @@ describe("GraphCitations clicks", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("localgraph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     engine.renderer.onNodeClick(
       new MouseEvent("click"),
@@ -1080,7 +1079,7 @@ describe("GraphCitations clicks", () => {
       await using service = fixture.service;
       await service.ready;
       const engine = fixture.addLeaf("graph");
-      fixture.layoutReady();
+      await fixture.layoutReady();
       const { renderer } = engine;
       renderer.nodeLookup["@doe2024"] = { x: 2, y: 3 };
       renderer.onNodeHover(
@@ -1151,7 +1150,7 @@ describe("GraphCitations clicks", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     engine.renderer.onNodeClick(
       new MouseEvent("click"),
@@ -1178,7 +1177,7 @@ describe("GraphCitations right-clicks", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     const menu = rightClick(engine, "@pine2023");
 
@@ -1215,7 +1214,7 @@ describe("GraphCitations right-clicks", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("localgraph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     const menu = rightClick(engine, "@roe2025");
 
@@ -1235,7 +1234,7 @@ describe("GraphCitations right-clicks", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     const menu = rightClick(engine, "@typo2024");
 
@@ -1257,7 +1256,7 @@ describe("GraphCitations right-clicks", () => {
     await service.ready;
     fixture.citationIndex.cold = true;
     const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     // The key names one Item once the snapshot warms, and the menu cannot read
     // that yet: create shows, and Open in Zotero waits for a named Item.
@@ -1282,7 +1281,7 @@ describe("GraphCitations right-clicks", () => {
       new Map<string, readonly CitationOccurrence[]>(),
     );
     const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     engine.renderer.onNodeClick(
       new MouseEvent("click"),
@@ -1301,7 +1300,7 @@ describe("GraphCitations right-clicks", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     expect(rightClick(engine, "Literature/Doe 2024.md", "")).toBeNull();
     expect(rightClick(engine, "missing", "unresolved")).toBeNull();
@@ -1321,7 +1320,7 @@ describe("GraphCitations hovers", () => {
     await service.ready;
     const engine = fixture.addLeaf("graph");
     engine.nodes = () => ({ "Literature/Doe 2024.md": graphNode("") });
-    fixture.layoutReady();
+    await fixture.layoutReady();
     engine.renderer.onNodeHover(
       new MouseEvent("mouseover"),
       "Literature/Doe 2024.md",
@@ -1341,7 +1340,7 @@ describe("GraphCitations hovers", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
     vi.spyOn(Keymap, "isModifier").mockImplementation((event) => event.metaKey);
 
     hoverEach(engine);
@@ -1379,7 +1378,7 @@ describe("GraphCitations hovers", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     engine.renderer.onNodeHover(
       new MouseEvent("mouseover"),
@@ -1406,7 +1405,7 @@ describe("GraphCitations hovers", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("localgraph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     engine.renderer.onNodeHover(
       new MouseEvent("mouseover"),
@@ -1435,7 +1434,7 @@ describe("GraphCitations hovers", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     hoverEach(engine);
 
@@ -1456,7 +1455,7 @@ describe("GraphCitations hovers", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     hoverEach(engine);
 
@@ -1497,7 +1496,7 @@ describe("GraphCitations hovers", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     engine.renderer.onNodeHover(
       new MouseEvent("mouseover"),
@@ -1517,7 +1516,7 @@ describe("GraphCitations hovers", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     engine.renderer.onNodeHover(
       new MouseEvent("mouseover"),
@@ -1538,7 +1537,7 @@ describe("GraphCitations hovers", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     engine.renderer.onNodeHover(new MouseEvent("mouseover"), "Other.md", "");
     engine.renderer.onNodeHover(
@@ -1560,7 +1559,7 @@ describe("GraphCitations hovers", () => {
     await service.ready;
     const engine = fixture.addLeaf("graph");
     const { containerEl } = engine.renderer;
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     engine.renderer.onNodeHover(
       new MouseEvent("mouseover"),
@@ -1586,7 +1585,7 @@ describe("GraphCitations hovers", () => {
     await service.ready;
     const engine = fixture.addLeaf("graph");
     const { containerEl } = engine.renderer;
-    fixture.layoutReady();
+    await fixture.layoutReady();
     engine.renderer.onNodeHover(
       new MouseEvent("mouseover"),
       "@typo2024",
@@ -1616,7 +1615,7 @@ describe("GraphCitations hovers", () => {
     const engine = fixture.addLeaf("graph", "hovered");
     const other = fixture.addLeaf("localgraph", "remaining");
     const { containerEl } = engine.renderer;
-    fixture.layoutReady();
+    await fixture.layoutReady();
     engine.renderer.onNodeHover(
       new MouseEvent("mouseover"),
       "@typo2024",
@@ -1650,7 +1649,7 @@ describe("GraphCitations hovers", () => {
     await service.ready;
     const engine = fixture.addLeaf("graph", "hovered");
     const { containerEl } = engine.renderer;
-    fixture.layoutReady();
+    await fixture.layoutReady();
     engine.renderer.onNodeHover(
       new MouseEvent("mouseover"),
       "@typo2024",
@@ -1683,7 +1682,7 @@ describe("GraphCitations hovers", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     engine.renderer.onNodeHover(
       new MouseEvent("mouseover"),
@@ -1713,7 +1712,7 @@ describe("GraphCitations hovers", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     engine.renderer.onNodeHover(
       new MouseEvent("mouseover"),
@@ -1748,7 +1747,7 @@ describe("GraphCitations hovers", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     engine.renderer.onNodeHover(
       new MouseEvent("mouseover"),
@@ -1778,7 +1777,7 @@ describe("GraphCitations hovers", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     engine.renderer.onNodeHover(
       new MouseEvent("mouseover"),
@@ -1802,7 +1801,7 @@ describe("GraphCitations hovers", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
     delete engine.renderer.nodeLookup["Literature/Doe 2024.md"];
 
     engine.renderer.onNodeHover(
@@ -1822,7 +1821,7 @@ describe("GraphCitations hovers", () => {
     const engine = fixture.addLeaf("graph");
     const nativeHover = engine.renderer.onNodeHover;
     const nativeUnhover = engine.renderer.onNodeUnhover;
-    fixture.layoutReady();
+    await fixture.layoutReady();
     engine.renderer.onNodeHover(
       new MouseEvent("mouseover"),
       "@typo2024",
@@ -1874,7 +1873,7 @@ describe("GraphCitations re-rendering", () => {
     await using service = fixture.service;
     await service.ready;
     fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     expect(fixture.citationIndex.lookupRequests.at(-1)).toEqual([
       "doe2024",
@@ -1891,7 +1890,7 @@ describe("GraphCitations re-rendering", () => {
     await service.ready;
     const global = fixture.addLeaf("graph");
     const local = fixture.addLeaf("localgraph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     fixture.citationIndex.emit("changed");
     fixture.citationIndex.emit("changed");
@@ -1940,7 +1939,7 @@ describe("GraphCitations node colours", () => {
     const engine = fixture.addLeaf("graph");
     engine.nodes = nodes;
 
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     expect(colorsOf(engine.handedOff)).toEqual({
       "Literature/Doe 2024.md": undefined,
@@ -1958,7 +1957,7 @@ describe("GraphCitations node colours", () => {
     const engine = fixture.addLeaf("graph");
     engine.nodes = grouped;
 
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     expect(colorsOf(engine.handedOff)).toEqual({
       "Literature/Doe 2024.md": GROUP,
@@ -1975,7 +1974,7 @@ describe("GraphCitations node colours", () => {
     await service.ready;
     const engine = fixture.addLeaf("graph");
     engine.nodes = nodes;
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     rowToggle(engine, m.graph_option_pandoc_citations_name()).toggle(false);
 
@@ -2015,7 +2014,7 @@ describe("GraphCitations node colours", () => {
       "Literature/Roe 2025.md": graphNode(""),
     });
 
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     expect(colorsOf(engine.handedOff)).toEqual({
       "Literature/Doe 2024.md": undefined,
@@ -2034,7 +2033,7 @@ describe("GraphCitations node colours", () => {
     await service.ready;
     const engine = fixture.addLeaf("graph");
     engine.nodes = nodes;
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     document.body.style.setProperty(
       themeProperty.graphLiteratureNote,
@@ -2059,7 +2058,7 @@ describe("GraphCitations node colours", () => {
     await service.ready;
     const engine = fixture.addLeaf("graph");
     engine.nodes = grouped;
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     fixture.settings.update({ "citation.graph-citations": false });
 
@@ -2089,7 +2088,7 @@ describe("GraphCitations teardown", () => {
     const local = fixture.addLeaf("localgraph");
     const nativeClick = global.renderer.onNodeClick;
     const nativeRightClick = global.renderer.onNodeRightClick;
-    fixture.layoutReady();
+    await fixture.layoutReady();
     expect(Object.hasOwn(global, "render")).toBe(true);
     expect(global.renderer.onNodeClick).not.toBe(nativeClick);
     expect(global.renderer.onNodeRightClick).not.toBe(nativeRightClick);
@@ -2118,7 +2117,7 @@ describe("GraphCitations teardown", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
     const otherPlugin = vi.fn();
     using patches = new DisposableStack();
     patches.defer(
@@ -2146,7 +2145,7 @@ describe("GraphCitations teardown", () => {
     const engine = fixture.addLeaf("graph");
     const nativeClick = engine.renderer.onNodeClick;
     const nativeRightClick = engine.renderer.onNodeRightClick;
-    fixture.layoutReady();
+    await fixture.layoutReady();
     expect(fixture.citationIndex.lookupCount).toBe(1);
     fixture.settings.update({ "citation.graph-citations": false });
     expect(fixture.citationIndex.lookupCount).toBe(0);
@@ -2167,7 +2166,7 @@ describe("GraphCitations teardown", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph", "hovered");
-    fixture.layoutReady();
+    await fixture.layoutReady();
     // What the view would run on its own unload, from the installation the
     // feature going off is about to end.
     const [stale] = fixture.viewCallbacks("hovered");
@@ -2190,7 +2189,7 @@ describe("GraphCitations teardown", () => {
     const engine = fixture.addLeaf("graph");
     const nativeClick = engine.renderer.onNodeClick;
     const nativeRightClick = engine.renderer.onNodeRightClick;
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     await service[Symbol.asyncDispose]();
 
@@ -2232,7 +2231,7 @@ describe("GraphCitations Filters rows", () => {
     await service.ready;
     const engine = fixture.addLeaf("graph");
 
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     expect(rowNames(engine)).toEqual([
       m.graph_option_pandoc_citations_name(),
@@ -2252,7 +2251,7 @@ describe("GraphCitations Filters rows", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     fixture.settings.update({ "citation.wikilink-citations": true });
 
@@ -2277,10 +2276,11 @@ describe("GraphCitations Filters rows", () => {
     const { engine, load } = fixture.addDeferredLeaf("localgraph", {
       "zotlit-citation-connected-only": true,
     });
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     load();
     fixture.fire("layout-change");
+    await fixture.settleLookup();
 
     expect(
       rowToggle(
@@ -2316,7 +2316,7 @@ describe("GraphCitations Filters rows", () => {
     await service.ready;
     const engine = fixture.addLeaf("localgraph", "local-1");
 
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     expect(
       rowToggle(engine, m.graph_option_pandoc_citations_name()).getValue(),
@@ -2333,7 +2333,7 @@ describe("GraphCitations Filters rows", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
     rowToggle(engine, m.graph_option_pandoc_citations_name()).toggle(false);
     rowToggle(engine, m.graph_option_citation_connected_only_name()).toggle(
       true,
@@ -2361,7 +2361,7 @@ describe("GraphCitations Filters rows", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     rowToggle(engine, m.graph_option_pandoc_citations_name()).toggle(false);
 
@@ -2380,7 +2380,7 @@ describe("GraphCitations Filters rows", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     rowToggle(engine, m.graph_option_citation_connected_only_name()).toggle(
       true,
@@ -2415,7 +2415,7 @@ describe("GraphCitations Filters rows", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     rowToggle(engine, m.graph_option_wikilink_citations_name()).toggle(false);
 
@@ -2436,7 +2436,7 @@ describe("GraphCitations Filters rows", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("localgraph", "local-1");
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     rowToggle(engine, m.graph_option_citation_connected_only_name()).toggle(
       true,
@@ -2458,7 +2458,7 @@ describe("GraphCitations Filters rows", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
     const drawn = engine.renders.length;
 
     fixture.settings.update({ "citation.wikilink-citations": true });
@@ -2478,7 +2478,7 @@ describe("GraphCitations Filters rows", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     fixture.settings.update({ "citation.graph-citations": false });
 
@@ -2514,7 +2514,7 @@ describe("GraphCitations Groups button", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
     const mine = { query: "tag:#paper", color: { a: 1, rgb: 0x00ff00 } };
     engine.colorGroupOptions.setColorQueries([mine]);
 
@@ -2532,7 +2532,7 @@ describe("GraphCitations Groups button", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     fixture.settings.update({ "citation.graph-citations": false });
 
@@ -2559,7 +2559,7 @@ describe("GraphCitations Display row", () => {
     const section = engine.displayOptions.childrenEl;
     const arrows = section.createDiv("setting-item");
     const animate = section.createDiv("setting-item");
-    fixture.layoutReady();
+    await fixture.layoutReady();
     expect(section.lastElementChild).toBe(animate);
     expect([...section.children].indexOf(arrows)).toBe(3);
     expect(rowNames(engine, engine.displayOptions)).toEqual([
@@ -2577,7 +2577,7 @@ describe("GraphCitations Display row", () => {
     await service.ready;
     const engine = fixture.addLeaf("graph");
 
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     expect(
       rowToggle(
@@ -2593,7 +2593,7 @@ describe("GraphCitations Display row", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     engine.setOptions({ "zotlit-color-citation-links": false });
 
@@ -2612,7 +2612,7 @@ describe("GraphCitations Display row", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
     rowToggle(
       engine,
       m.graph_option_color_citation_links_name(),
@@ -2630,7 +2630,7 @@ describe("GraphCitations Display row", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
     rowToggle(
       engine,
       m.graph_option_color_citation_links_name(),
@@ -2652,7 +2652,7 @@ describe("GraphCitations Display row", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     fixture.settings.update({ "citation.graph-citations": false });
 
@@ -2680,7 +2680,7 @@ describe("GraphCitations citation edge colour", () => {
     await service.ready;
     const engine = fixture.addLeaf("graph");
     engine.renderer.drawEdges(EDGES);
-    fixture.layoutReady();
+    await fixture.layoutReady();
     return { fixture, service, engine };
   }
 
@@ -2708,7 +2708,7 @@ describe("GraphCitations citation edge colour", () => {
       ["Draft.md", "Literature/Doe 2024.md"],
       ["Literature/Doe 2024.md", "Draft.md"],
     ]);
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     expect(paint(engine.renderer)).toEqual({
       "Draft.md -> Literature/Doe 2024.md": CITATION_LINK,
@@ -2726,7 +2726,7 @@ describe("GraphCitations citation edge colour", () => {
     // Doe is no edge of this render, and the link Doe carries back to Draft
     // is the one line there is — an ordinary one.
     engine.renderer.drawEdges([["Literature/Doe 2024.md", "Draft.md"]]);
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     expect(paint(engine.renderer)).toEqual({
       "Literature/Doe 2024.md -> Draft.md": NATIVE_LINE,
@@ -2744,7 +2744,7 @@ describe("GraphCitations citation edge colour", () => {
     await service.ready;
     const engine = fixture.addLeaf("graph");
     engine.renderer.drawEdges([["Draft.md", "Literature/Doe 2024.md"]]);
-    fixture.layoutReady();
+    await fixture.layoutReady();
     // The frame the install asked for, so what follows stands on an idle graph.
     expect(paint(engine.renderer)).toEqual({
       "Draft.md -> Literature/Doe 2024.md": CITATION_LINK,
@@ -2768,7 +2768,7 @@ describe("GraphCitations citation edge colour", () => {
     await service.ready;
     const engine = fixture.addLeaf("graph");
     engine.renderer.drawEdges([["Reading.md", "Literature/Doe 2024.md"]]);
-    fixture.layoutReady();
+    await fixture.layoutReady();
     expect(paint(engine.renderer)).toEqual({
       "Reading.md -> Literature/Doe 2024.md": NATIVE_LINE,
     });
@@ -2816,7 +2816,7 @@ describe("GraphCitations citation edge colour", () => {
     await service.ready;
     const engine = fixture.addLeaf("graph");
     engine.renderer.drawEdges(EDGES, false);
-    fixture.layoutReady();
+    await fixture.layoutReady();
     const cited = engine.renderer.links[1]!;
 
     cited.initGraphics();
@@ -2884,7 +2884,7 @@ describe("GraphCitations citation edge colour", () => {
       ["Alias.md", "Literature/Doe 2024.md"],
     ]);
 
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     expect(paint(engine.renderer)).toEqual({
       "Reading.md -> Literature/Doe 2024.md": CITATION_LINK,
@@ -2927,7 +2927,7 @@ describe("GraphCitations citation edge colour", () => {
       configurable: true,
     });
 
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     const cited = engine.renderer.links[2]!;
     cited.line!.tint = NATIVE_LINE;
@@ -3014,7 +3014,7 @@ describe("GraphCitations Citation Graph preset", () => {
     });
     await using service = fixture.service;
     await service.ready;
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     expect(fixture.engine.getOptions()).toMatchObject({
       "zotlit-pandoc-citations": true,
@@ -3033,7 +3033,7 @@ describe("GraphCitations Citation Graph preset", () => {
     const fixture = presetFixture();
     await using service = fixture.service;
     await service.ready;
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     fixture.apply();
 
@@ -3060,7 +3060,7 @@ describe("GraphCitations Citation Graph preset", () => {
     const off = presetFixture();
     await using offService = off.service;
     await offService.ready;
-    off.layoutReady();
+    await off.layoutReady();
     off.apply();
 
     expect(off.engine.options["zotlit-wikilink-citations"]).toBeUndefined();
@@ -3068,7 +3068,7 @@ describe("GraphCitations Citation Graph preset", () => {
     const on = presetFixture({ wikilinkCitations: true });
     await using onService = on.service;
     await onService.ready;
-    on.layoutReady();
+    await on.layoutReady();
     on.apply();
 
     expect(on.engine.options["zotlit-wikilink-citations"]).toBe(true);
@@ -3081,7 +3081,7 @@ describe("GraphCitations Citation Graph preset", () => {
     const fixture = presetFixture();
     await using service = fixture.service;
     await service.ready;
-    fixture.layoutReady();
+    await fixture.layoutReady();
     fixture.engine.options.centerStrength = 0.42;
     fixture.engine.options.textFadeMultiplier = -0.5;
 
@@ -3095,7 +3095,7 @@ describe("GraphCitations Citation Graph preset", () => {
     const fixture = presetFixture({ viewType: "localgraph" });
     await using service = fixture.service;
     await service.ready;
-    fixture.layoutReady();
+    await fixture.layoutReady();
 
     fixture.apply();
 
@@ -3129,7 +3129,7 @@ describe("GraphCitations Citation Graph preset", () => {
     const fixture = presetFixture();
     await using service = fixture.service;
     await service.ready;
-    fixture.layoutReady();
+    await fixture.layoutReady();
     fixture.apply();
     const firstOptions = structuredClone(fixture.engine.options);
 
@@ -3145,7 +3145,7 @@ describe("GraphCitations Citation Graph preset", () => {
     const fixture = presetFixture();
     await using service = fixture.service;
     await service.ready;
-    fixture.layoutReady();
+    await fixture.layoutReady();
     warn.mockClear();
     Object.defineProperty(fixture.engine, "setOptions", {
       value: undefined,
@@ -3288,7 +3288,7 @@ describe("Graph Work Labels", () => {
       "@typo2024": graphNode("unresolved"),
       "Other.md": graphNode(""),
     });
-    fixture.layoutReady();
+    await fixture.layoutReady();
     expect(rowNames(engine, engine.displayOptions)).toContain(
       m.graph_option_author_title_labels_name(),
     );
@@ -3313,7 +3313,7 @@ describe("Graph Work Labels", () => {
       "@typo2024": graphNode("unresolved"),
       "Other.md": graphNode(""),
     });
-    fixture.layoutReady();
+    await fixture.layoutReady();
     engine.setOptions({ "zotlit-author-title-labels": true });
     expect(labelReads).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(150);
@@ -3409,7 +3409,7 @@ describe("Graph Work Labels", () => {
     await service.ready;
     const engine = fixture.addLeaf("graph");
     engine.nodes = () => ({ "Literature/Doe 2024.md": graphNode("") });
-    fixture.layoutReady();
+    await fixture.layoutReady();
     engine.setOptions({ "zotlit-author-title-labels": true });
     await vi.advanceTimersByTimeAsync(150);
     const doe = engine.renderer.nodes[0]!;
@@ -3456,7 +3456,7 @@ describe("Graph Work Labels", () => {
       "@typo2024": graphNode("unresolved"),
       "Other.md": graphNode(""),
     });
-    fixture.layoutReady();
+    await fixture.layoutReady();
     labelReads.mockReturnValue([]);
     engine.setOptions({ "zotlit-author-title-labels": true });
     await vi.advanceTimersByTimeAsync(150);
@@ -3499,7 +3499,7 @@ describe("Graph Work Labels", () => {
     for (const engine of [first, second]) {
       engine.nodes = () => ({ "Literature/Doe 2024.md": graphNode("") });
     }
-    fixture.layoutReady();
+    await fixture.layoutReady();
     for (const engine of [first, second])
       engine.setOptions({ "zotlit-author-title-labels": true });
     await vi.advanceTimersByTimeAsync(150);
@@ -3518,7 +3518,7 @@ describe("Graph Work Labels", () => {
     const engines = [fixture.addLeaf("graph"), fixture.addLeaf("localgraph")];
     for (const engine of engines)
       engine.nodes = () => ({ "Literature/Doe 2024.md": graphNode("") });
-    fixture.layoutReady();
+    await fixture.layoutReady();
     for (const engine of engines)
       engine.setOptions({ "zotlit-author-title-labels": true });
     await vi.advanceTimersByTimeAsync(150);
@@ -3549,7 +3549,7 @@ describe("Graph Work Labels", () => {
     await service.ready;
     const engine = fixture.addLeaf("graph");
     engine.nodes = () => ({ "Literature/Doe 2024.md": graphNode("") });
-    fixture.layoutReady();
+    await fixture.layoutReady();
     engine.setOptions({ "zotlit-author-title-labels": true });
     await vi.advanceTimersByTimeAsync(150);
     const node = engine.renderer.nodes[0]!;

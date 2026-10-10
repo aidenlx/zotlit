@@ -10,11 +10,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { themeHook } from "@/lib/theme-hooks";
+import { CitationLookupStub } from "@/services/citation-index/__fixtures__/citation-lookup";
 import { CitationLookupAnswer } from "@/services/citation-index/lookup";
-import type {
-  Citation,
-  CitationLookupObservation,
-} from "@/services/citation-index/service";
+import type { Citation } from "@/services/citation-index/service";
 import {
   ALPHA_KEY,
   citation,
@@ -141,11 +139,6 @@ async function makeHarness({
   let ambiguous = ambiguousKeys;
   let resolutionReady = !resolutionPending;
   const resolutionListeners = new Set<() => void>();
-  const observations = new Set<{
-    changed: () => void;
-    citekeys: readonly string[];
-    current: CitationLookupObservation["current"];
-  }>();
   const answer = (requested: readonly string[]): CitationLookupAnswer =>
     new CitationLookupAnswer({
       revision: JSON.stringify(ambiguous),
@@ -160,11 +153,16 @@ async function makeHarness({
       indexedKeys: new Map(),
     });
 
+  const citationLookup = new CitationLookupStub(({ citekeys = [] }) =>
+    resolutionReady ? answer(citekeys) : null,
+  );
+
   const reads = stack.use(
     inProcessReadsService(memoryOpener(() => citedWorkSeed([ALPHA_KEY])).open),
   );
   const citationText = stack.use(
     new CitationText({
+      citationLookup,
       profile: profileReader(defaults, {
         getFileCache: () => ({ frontmatter }),
       }),
@@ -241,32 +239,7 @@ async function makeHarness({
         },
       },
       citationText,
-      citationIndex: {
-        observeLookup: (changed: () => void) => {
-          const state = {
-            changed,
-            citekeys: [] as readonly string[],
-            current: null as CitationLookupObservation["current"],
-          };
-          observations.add(state);
-          return {
-            get current() {
-              return state.current;
-            },
-            set: ({ citekeys = [] }: { citekeys?: readonly string[] }) => {
-              state.citekeys = citekeys;
-              if (!resolutionReady) return;
-              const value = answer(citekeys);
-              state.current = {
-                value,
-                status: "fresh",
-                settled: Promise.resolve(value),
-              };
-            },
-            [Symbol.dispose]: () => observations.delete(state),
-          };
-        },
-      },
+      citationLookup,
       citekeyEditor: {
         openCitekey: (citekey: string, pane: unknown) => {
           opened.push([citekey, pane]);
@@ -314,21 +287,13 @@ async function makeHarness({
     rebuildResolution: (keys) => {
       ambiguous = keys;
       resolutionReady = true;
-      for (const state of observations) {
-        const value = answer(state.citekeys);
-        state.current = {
-          value,
-          status: "fresh",
-          settled: Promise.resolve(value),
-        };
-        state.changed();
-      }
+      citationLookup.refresh();
       for (const callback of resolutionListeners) callback();
     },
     unloadSections: () => {
       for (const child of children.splice(0)) child.unload();
     },
-    activeLookups: () => observations.size,
+    activeLookups: () => citationLookup.activeObservations,
     switchRequests,
     [Symbol.asyncDispose]: () => resources.disposeAsync(),
   };

@@ -159,8 +159,8 @@ function openVault({
         getEngine,
       },
       zoteroPref: { ready: Promise.resolve(), dataDir: DATA_DIR },
-      citationIndex: {
-        readLookup: async () => lookupAnswer(),
+      citationLookup: {
+        read: async () => lookupAnswer(),
       },
       settings: { current: resolvedSettings },
       profile: profileReader(resolvedSettings, {

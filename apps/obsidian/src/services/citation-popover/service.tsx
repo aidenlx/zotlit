@@ -1,14 +1,16 @@
-// The Citation Popover: document citation entries and source-less works under the vault presentation.
-
 import type { App, HoverParent } from "obsidian";
+import type { ReactNode } from "react";
 
 import { registerEvent } from "@/lib/disposables";
+// The Citation Popover: document citation entries and source-less works under the vault presentation.
+import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { requestProfileSwitch } from "@/lib/profile-recovery";
 import {
   describeCandidates,
   readAmbiguousCandidates,
 } from "@/services/citation-index/ambiguity";
+import type { CitationLookup } from "@/services/citation-index/lookup-service";
 import { readReferenceSources } from "@/services/citation-index/service";
 import type { CitationIndex } from "@/services/citation-index/service";
 import { shownCitationContent } from "@/services/citation-text/present";
@@ -41,10 +43,8 @@ const logger = getLogger("citation-popover");
 export interface CitationPopoverDeps {
   app: App;
   db: Pick<ZoteroReadsService, "state" | "ready" | "acquireRead">;
-  citationIndex: Pick<
-    CitationIndex,
-    "getDocumentCitationSet" | "readLookup" | "resolution" | "on"
-  >;
+  citationLookup: Pick<CitationLookup, "read" | "status" | "on">;
+  citationIndex: Pick<CitationIndex, "getDocumentCitationSet">;
   /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
   libraryScope: Pick<LibraryScopeService, "current">;
   /** The formatted citations of the hovered document, read for this popover. */
@@ -79,6 +79,7 @@ interface PopoverVisit {
   window: Window;
   subscriptions: DisposableStack;
   reading: AbortController | null;
+  content: ReactNode;
 }
 
 /**
@@ -148,6 +149,7 @@ export class CitationPopover extends Service {
         window: targetEl.win,
         subscriptions: new DisposableStack(),
         reading: null,
+        content: null,
       };
       this.#visits.set(hoverParent, opened);
       popover.register(() => {
@@ -161,6 +163,7 @@ export class CitationPopover extends Service {
       visit.subscriptions.dispose();
       visit.subscriptions = new DisposableStack();
       // Clear the old work and its actions before moving the card.
+      visit.content = null;
       visit.popover.render(null);
       visit.popover.retarget(targetEl);
     }
@@ -170,16 +173,25 @@ export class CitationPopover extends Service {
       currentVisit.reading?.abort();
       const reading = new AbortController();
       currentVisit.reading = reading;
-      void fill(deps, popover, {
+      void fill(deps, currentVisit, {
         request,
         signal: reading.signal,
       });
     };
     subscriptions.defer(deps.bibliographyRender.on("invalidated", draw));
-    if ("work" in request) {
-      if (request.work.kind === "citekey")
-        subscriptions.defer(deps.citationIndex.on("resolution-changed", draw));
-    } else {
+    if (!("work" in request) || request.work.kind === "citekey") {
+      subscriptions.defer(deps.citationLookup.on("changed", draw));
+      let freshness = deps.citationLookup.status;
+      subscriptions.defer(
+        deps.citationLookup.on("status-changed", () => {
+          const previous = freshness;
+          freshness = deps.citationLookup.status;
+          if (freshness === "failed") showFailure(currentVisit);
+          else if (freshness === "fresh" && previous === "failed") draw();
+        }),
+      );
+    }
+    if (!("work" in request)) {
       subscriptions.use(
         registerEvent(
           deps.app.metadataCache.on("deleted", (file) => {
@@ -221,9 +233,10 @@ interface PopoverRead {
 /** A superseded request draws nothing and hides nothing. */
 async function fill(
   deps: CitationPopoverDeps,
-  popover: CitationHoverPopover,
+  visit: PopoverVisit,
   { request, signal }: { request: PopoverRequest; signal: AbortSignal },
 ): Promise<void> {
+  const { popover } = visit;
   let read: PopoverRead;
   try {
     read = await ("work" in request
@@ -235,10 +248,14 @@ async function fill(
       path: "sourcePath" in request ? request.sourcePath : undefined,
       error,
     });
-    popover.hide();
+    showFailure(visit);
     return;
   }
   if (signal.aborted) return;
+  if (read.unavailable === "database" && visit.content) {
+    showFailure(visit);
+    return;
+  }
   const { blocks, note, profileFailure, pending, unavailable } = read;
   // Every work the hover carries becomes a block, so an empty stack means
   // the document itself could not be read — nothing the popover can say.
@@ -286,7 +303,7 @@ async function fill(
     hide: () => popover.hide(),
     switchProfile: (path) => requestProfileSwitch(deps.app, path),
   });
-  const shown = popover.render(
+  visit.content = (
     <CitationPopoverContent
       blocks={blocks}
       note={note}
@@ -294,8 +311,9 @@ async function fill(
       actions={actions}
       pending={pending}
       unavailable={unavailable}
-    />,
+    />
   );
+  const shown = popover.render(visit.content);
   logger.debug("Citation popover entries read", {
     path: "sourcePath" in request ? request.sourcePath : undefined,
     blocks: blocks.length,
@@ -319,7 +337,7 @@ async function readWork(
   };
   if (deps.db.state === "degraded")
     return { ...empty, unavailable: "database" };
-  if (work.kind === "citekey" && deps.citationIndex.resolution === null) {
+  if (work.kind === "citekey" && deps.citationLookup.status === "pending") {
     return {
       ...empty,
       pending: true,
@@ -331,10 +349,7 @@ async function readWork(
     let resolution: import("../citation-index/service").CitekeyResolution;
     try {
       resolution = (
-        await deps.citationIndex.readLookup(
-          { citekeys: [work.citekey] },
-          { signal },
-        )
+        await deps.citationLookup.read({ citekeys: [work.citekey] }, { signal })
       ).resolve(work.citekey);
     } catch (error) {
       if (signal.aborted) throw error;
@@ -415,12 +430,17 @@ async function readBlocks(
       pending: false,
     };
   }
-  const { citations } = await deps.citationIndex.getDocumentCitationSet(file, {
-    signal,
-  });
+  const citekeys = request.works.map(({ citekey }) => citekey);
+  const { citations, lookup } = await deps.citationIndex.getDocumentCitationSet(
+    file,
+    {
+      signal,
+      include: { citekeys },
+    },
+  );
   // Read beside the citations it qualifies: this read resolved against the
   // snapshot as it stood here, and the popover redraws on the next hover.
-  const pending = deps.citationIndex.resolution === null;
+  const pending = deps.citationLookup.status === "pending";
   const { sources } = await readReferenceSources(deps.db, citations);
   // The hovered note's own Citation Presentation, so the popover shows what the
   // References Sidebar of that note shows — including nothing formatted at all
@@ -453,8 +473,6 @@ async function readBlocks(
   // Read as the popover fills, so an Ambiguous Citation Key states the
   // candidates the current Library Scope names — and no candidate is
   // described for the citations that resolve.
-  const citekeys = request.works.map(({ citekey }) => citekey);
-  const lookup = await deps.citationIndex.readLookup({ citekeys }, { signal });
   const ambiguous = await readAmbiguousCandidates(
     deps,
     (citekey) => lookup.resolve(citekey),
@@ -488,5 +506,17 @@ function renderedEntries(
 ): Map<string, RenderedReference> {
   return new Map(
     entries.map(({ id, marker, content }) => [id, { marker, content }]),
+  );
+}
+
+/** Failed freshness keeps the content delivered for this visit. */
+function showFailure(visit: PopoverVisit): void {
+  visit.popover.render(
+    <>
+      <div role="status" data-citation-lookup-status="failed">
+        {m.citation_popover_database_unavailable()}
+      </div>
+      {visit.content}
+    </>,
   );
 }

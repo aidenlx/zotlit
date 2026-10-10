@@ -1,5 +1,5 @@
 import type { CitationLookupRequest } from "./lookup";
-import type { CitationLookupObservation } from "./observation";
+import type { CitationLookupObservation } from "./lookup-service";
 
 /** Own one editor's observation; change its request after CodeMirror's update. */
 export class EditorLookup implements Disposable {

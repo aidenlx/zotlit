@@ -1,8 +1,8 @@
 import { Effect } from "effect";
 import type { App, TFile } from "obsidian";
-// The formatted text of one document's Citations, held for every surface that shows them.
 
 import { isChildItemFields, itemToCsl } from "@zotlit/db";
+// The formatted text of one document's Citations, held for every surface that shows them.
 import type { CslItemData } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import type { PandocTextSpan as TextSpan } from "@zotlit/templates/pandoc-citation";
@@ -17,6 +17,7 @@ import {
   citationRuns,
   wikilinkCitation,
 } from "@/lib/wikilink-citation";
+import type { CitationLookup } from "@/services/citation-index/lookup-service";
 import { scanDocumentCitations } from "@/services/citation-index/service";
 import type {
   Citation,
@@ -75,6 +76,7 @@ interface CitationTextEvents {
 export interface CitationTextDeps {
   app: App;
   db: Pick<ZoteroReadsService, "state" | "acquireRead">;
+  citationLookup: Pick<CitationLookup, "on">;
   citationIndex: Pick<CitationIndex, "getDocumentCitationSet" | "on">;
   /** What a citekey resolves to, which decides what a Citation can say. */
   noteIndex: Pick<NoteIndex, "on" | "whenIndexed">;
@@ -115,6 +117,7 @@ export class CitationText extends Service<void> {
   readonly #app;
   readonly #db;
   readonly #citationIndex;
+  readonly #citationLookup;
   readonly #noteIndex;
   readonly #profile: ProfileReader;
   readonly #bibliographyRender;
@@ -128,6 +131,7 @@ export class CitationText extends Service<void> {
     this.#app = deps.app;
     this.#db = deps.db;
     this.#citationIndex = deps.citationIndex;
+    this.#citationLookup = deps.citationLookup;
     this.#noteIndex = deps.noteIndex;
     this.#profile = deps.profile;
     this.#bibliographyRender = deps.bibliographyRender;
@@ -239,9 +243,7 @@ export class CitationText extends Service<void> {
     // A citekey resolution snapshot rebuild is the other cross-document input:
     // it decides what a literal `@citekey` reaches, and whether a wikilink's
     // Literature Note carries a native citation key at all.
-    stack.defer(
-      this.#citationIndex.on("resolution-changed", () => this.#invalidate()),
-    );
+    stack.defer(this.#citationLookup.on("changed", () => this.#invalidate()));
     // What the render cache holds is what these surfaces show, so its wholesale
     // drop makes every document's text stale at once.
     stack.defer(

@@ -12,8 +12,8 @@ import { getLogger } from "@/lib/log";
 import { describeCandidates } from "@/services/citation-index/ambiguity";
 import type { AmbiguousCandidate } from "@/services/citation-index/ambiguity";
 import { heldResolution } from "@/services/citation-index/lookup";
+import type { CitationLookup } from "@/services/citation-index/lookup-service";
 import type {
-  CitationIndex,
   CitationLookupAnswer,
   CitationLookupObservation,
   SnapshotItem,
@@ -59,8 +59,8 @@ export interface CitekeyEditorDeps {
   /** What a hovered citation shows. */
   citationPopover: CitationPopover;
   settings: SettingsService;
-  citationIndex: Pick<CitationIndex, "readLookup"> & {
-    observeLookup(changed: () => void): CitationLookupObservation;
+  citationLookup: Pick<CitationLookup, "read"> & {
+    observe(changed: () => void): CitationLookupObservation;
   };
   /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
   libraryScope: Pick<LibraryScopeService, "current">;
@@ -106,7 +106,7 @@ export class CitekeyEditor extends Service<void> {
   readonly #citationText;
   readonly #citationPopover;
   readonly #settings;
-  readonly #citationIndex;
+  readonly #citationLookup;
   readonly #libraryScope;
   readonly #emitter = createNanoEvents<CitekeyEditorEvents>();
   readonly #extension: Extension;
@@ -134,7 +134,7 @@ export class CitekeyEditor extends Service<void> {
     this.#citationText = deps.citationText;
     this.#citationPopover = deps.citationPopover;
     this.#settings = deps.settings;
-    this.#citationIndex = deps.citationIndex;
+    this.#citationLookup = deps.citationLookup;
     this.#libraryScope = deps.libraryScope;
     this.#extension = citekeyEditorExtension({
       workspace: this.#app.workspace,
@@ -144,7 +144,7 @@ export class CitekeyEditor extends Service<void> {
       showPopover: (request) => this.#citationPopover.show(request),
       hoverPreferences: () => this.#hover,
       hoverNotePath: (citekey, lookup) => this.hoverNotePath(citekey, lookup),
-      observeLookup: (changed) => this.#citationIndex.observeLookup(changed),
+      observeLookup: (changed) => this.#citationLookup.observe(changed),
       navigationEnabled: () => this.#navigationEnabled,
       showFormatted: () => this.#showFormatted,
       citationText: (path) => this.#citationText.peek(path),
@@ -306,7 +306,7 @@ export class CitekeyEditor extends Service<void> {
     try {
       [, lookup] = await Promise.all([
         this.#noteIndex.whenIndexed(),
-        this.#citationIndex.readLookup({ citekeys: [citekey] }),
+        this.#citationLookup.read({ citekeys: [citekey] }),
       ]);
     } catch (error) {
       logger.warn("Cannot resolve citekey for navigation", { citekey, error });

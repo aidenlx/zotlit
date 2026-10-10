@@ -3,6 +3,7 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
+import { lookupObservation } from "@/services/citation-index/__fixtures__/citation-lookup";
 import { lookupForWorks } from "@/services/citation-index/__fixtures__/lookup";
 import { CitationLookupAnswer } from "@/services/citation-index/lookup";
 
@@ -114,22 +115,21 @@ it.each([
             hoverPreferences: () => hoverPreferences(defaults),
             hoverNotePath: () => null,
             workspace: { trigger: () => {} },
-            observeLookup: () => {
-              const value = new CitationLookupAnswer({
-                revision: "test",
-                citekeys: new Map([["doe2024", { kind: "missing" as const }]]),
-                indexedKeys: new Map(),
-              });
-              return {
-                current: {
-                  value,
-                  status: "fresh",
-                  settled: Promise.resolve(value),
-                },
-                set: () => undefined,
-                [Symbol.dispose]: () => undefined,
-              };
-            },
+            observeLookup: (changed) =>
+              lookupObservation(
+                ({ citekeys = [] }) =>
+                  new CitationLookupAnswer({
+                    revision: "test",
+                    citekeys: new Map(
+                      citekeys.map((key) => [
+                        key,
+                        { kind: "missing" as const },
+                      ]),
+                    ),
+                    indexedKeys: new Map(),
+                  }),
+                changed,
+              ),
             navigationEnabled: () => true,
             showFormatted: () => true,
             citationText: () => held,

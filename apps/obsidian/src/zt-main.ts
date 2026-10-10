@@ -396,7 +396,7 @@ export default class ZotLitPlugin extends Plugin {
       lookup: services.itemLookup,
       noteFeature: services.noteFeature,
       settings: services.settings,
-      citationIndex: services.citationIndex,
+      citationLookup: services.citationLookup,
     });
     registerQuickSwitch(this, {
       createProfile: services.createProfile,
@@ -483,7 +483,7 @@ export default class ZotLitPlugin extends Plugin {
         templates: services.template,
         profile: services.profile,
         bibliographyRender: services.bibliographyRender,
-        citationIndex: services.citationIndex,
+        citationLookup: services.citationLookup,
       },
     };
     registerTemplateWorkbenchView(this, templateWorkbenchDeps);
@@ -508,7 +508,7 @@ export default class ZotLitPlugin extends Plugin {
       settings: services.settings,
       templates: services.template,
       bibliographyRender: services.bibliographyRender,
-      citationIndex: services.citationIndex,
+      citationLookup: services.citationLookup,
     });
 
     stack.defer(
@@ -525,6 +525,7 @@ export default class ZotLitPlugin extends Plugin {
       app: this.app,
       db: services.zoteroReads,
       citationIndex: services.citationIndex,
+      citationLookup: services.citationLookup,
       libraryScope: services.libraryScope,
       citationText: services.citationText,
       citekeyEditor: services.citekeyEditor,
@@ -540,6 +541,7 @@ export default class ZotLitPlugin extends Plugin {
     registerCitationsCli(this, {
       app: this.app,
       citationIndex: services.citationIndex,
+      citationLookup: services.citationLookup,
       db: services.zoteroReads,
       zoteroPref: services.zoteroPref,
     });
@@ -574,7 +576,7 @@ export default class ZotLitPlugin extends Plugin {
       profile: services.profile,
       app: this.app,
       db: services.zoteroReads,
-      citationIndex: services.citationIndex,
+      citationLookup: services.citationLookup,
       pandocEngine: services.pandocEngine,
       zoteroPref: services.zoteroPref,
       settings: services.settings,

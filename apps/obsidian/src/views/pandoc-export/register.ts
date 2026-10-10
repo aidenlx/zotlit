@@ -14,7 +14,7 @@ import { getLogger } from "@/lib/log";
 import { nodeFetch } from "@/lib/node-fetch";
 import { BaseNotice, LazyNotice } from "@/lib/notice";
 import { requestProfileSwitch } from "@/lib/profile-recovery";
-import type { CitationIndex } from "@/services/citation-index/service";
+import type { CitationLookup } from "@/services/citation-index/lookup-service";
 import { resolveIndexedKey } from "@/services/note-index/service";
 import {
   fetchBibliography,
@@ -46,7 +46,7 @@ export interface PandocExportDeps {
   app: App;
   db: Pick<ZoteroReadsService, "ready">;
   /** Resolves the literal citation keys of the exported document. */
-  citationIndex: Pick<CitationIndex, "readLookup">;
+  citationLookup: Pick<CitationLookup, "read">;
   pandocEngine: Pick<PandocEngineService, "getStatus" | "getEngine">;
   zoteroPref: Pick<ZoteroPrefService, "ready" | "dataDir" | "httpPort" | "get">;
   settings: Pick<SettingsService, "current">;
@@ -235,13 +235,13 @@ function exportPorts(
   deps: PandocExportDeps,
   engine: Awaited<ReturnType<PandocEngineService["getEngine"]>>,
 ): ExportPorts {
-  const { app, citationIndex, db, zoteroPref } = deps;
+  const { app, citationLookup, db, zoteroPref } = deps;
   return {
     engine,
     dataDir: () => zoteroPref.dataDir,
     resolveIndexedKey: (linkpath, sourcePath) =>
       resolveIndexedKey(linkpath, sourcePath, app),
-    readLookup: (request) => citationIndex.readLookup(request),
+    readLookup: (request) => citationLookup.read(request),
     readItemRefs: (indexedKeys) => readItemRefs(db, indexedKeys),
     fetchBibliography: (refs) =>
       fetchBibliography(refs, {

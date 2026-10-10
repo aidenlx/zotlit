@@ -17,8 +17,8 @@ function makeModal(
     lookup: { openSession: vi.fn() },
     noteFeature: { renderCitation: vi.fn() },
     settings: { current: {} },
-    citationIndex: {
-      readLookup: async () => lookupAnswer(),
+    citationLookup: {
+      read: async () => lookupAnswer(),
       resolution: "fresh",
     },
     ...overrides,
@@ -91,8 +91,8 @@ describe("InsertCitationModal ambiguity", () => {
     const modal = makeModal(
       {
         noteFeature: { renderCitation },
-        citationIndex: {
-          readLookup: async () => lookupAnswer({ doe2024: ambiguous }),
+        citationLookup: {
+          read: async () => lookupAnswer({ doe2024: ambiguous }),
           resolution: "fresh",
         },
       } as unknown as Partial<CitationSuggestDeps>,

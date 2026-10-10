@@ -4,6 +4,13 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { yieldToMain } from "@/lib/yield-to-main";
 
+import {
+  GROUP_KEY,
+  myLibraryRow,
+  sameLibraryTwin,
+  groupTwin,
+  bothLibraries,
+} from "./__fixtures__/ambiguous";
 import type { CitationSyntax } from "./scan";
 import type { CitedBySnapshot, Citation, CitationIndex } from "./service";
 import {
@@ -41,6 +48,26 @@ async function citationsOf(
 }
 
 describe("CitationIndex", () => {
+  it("keeps Cited By backlinks when membership changes after a failed refresh", async () => {
+    const { index, citekeys, db, draft, metadataCache, workspace } =
+      await makeHarness({ "draft.md": "@doe2024" });
+    workspace.layoutReady();
+    const snapshots: CitedBySnapshot[] = [];
+    const stop = index.observeCitedBy(KEY_A, (snapshot) =>
+      snapshots.push(snapshot),
+    );
+    await expect.poll(() => snapshots.at(-1)?.groups.length).toBe(1);
+    citekeys.error = new Error("unavailable");
+    db.changed();
+    await expect.poll(() => snapshots.at(-1)?.resolution).toBe("failed");
+    metadataCache.change(draft, "@doe2024 @newKey");
+    await yieldToMain();
+    expect(snapshots.at(-1)?.groups.map((group) => group.path)).toEqual([
+      "draft.md",
+    ]);
+    stop();
+  });
+
   it("groups wikilinks with the same local identity used for the reverse batch", async () => {
     const db = new DatabaseStub({ readyImmediately: false });
     const { index, draft, metadataCache } = await makeHarness(
@@ -60,111 +87,6 @@ describe("CitationIndex", () => {
     expect(set.citations[0]?.indexedKey).toBe(KEY_A);
     expect(set.lookup.citekeyOf(KEY_A)).toBe("doe2024");
     expect(() => set.lookup.citekeyOf(KEY_B)).toThrow(KEY_B);
-  });
-
-  it("replaces a view's selection and never publishes after disposal", async () => {
-    const db = new DatabaseStub({ readyImmediately: false });
-    const { index } = await makeHarness({}, { db });
-    let calls = 0;
-    const view = index.observeLookup(() => {
-      calls += 1;
-    });
-    view.set({ citekeys: ["doe2024"] });
-    view.set({ citekeys: ["roe2025"] });
-    expect(view.current).toBeNull();
-    db.settle();
-    await expect
-      .poll(() => view.current?.value.resolve("roe2025")?.kind)
-      .toBe("unique");
-    expect(() => view.current!.value.resolve("doe2024")).toThrow("doe2024");
-    expect(calls).toBe(1);
-    view.set({ citekeys: ["doe2024"] });
-    view[Symbol.dispose]();
-    await yieldToMain();
-    expect(view.current).toBeNull();
-    expect(calls).toBe(1);
-  });
-
-  it("cancels one waiting caller while another receives its complete batch", async () => {
-    const db = new DatabaseStub({ readyImmediately: false });
-    const { index } = await makeHarness({}, { db });
-    const controller = new AbortController();
-    const canceled = index.readLookup(
-      { citekeys: ["doe2024"] },
-      { signal: controller.signal },
-    );
-    const current = index.readLookup({ indexedKeys: [KEY_B] });
-    controller.abort();
-    await expect(canceled).rejects.toThrow();
-    db.settle();
-    expect((await current).citekeyOf(KEY_B)).toBe("roe2025");
-  });
-
-  it("answers only the requested forward and reverse keys in one resolution revision", async () => {
-    const { index } = await makeHarness({});
-    const answer = await index.readLookup({
-      citekeys: ["doe2024", "absent"],
-      indexedKeys: [KEY_B],
-    });
-    expect(answer.resolve("doe2024")).toMatchObject({
-      kind: "unique",
-      item: { indexedKey: KEY_A },
-    });
-    expect(answer.resolve("absent")).toEqual({ kind: "missing" });
-    expect(() => answer.resolve("roe2025")).toThrow("roe2025");
-    expect(answer.citekeyOf(KEY_B)).toBe("roe2025");
-    expect(() => answer.citekeyOf(KEY_A)).toThrow(KEY_A);
-    expect(answer.revision).toBeTruthy();
-  });
-
-  it("discovers Libraries from the pinned read and applies scope by stable identity", async () => {
-    const libraryScope = new LibraryScopeStub([
-      personalLibrary(),
-      groupLibrary(),
-    ]);
-    libraryScope.select([groupLibrary()]);
-    const { index, db, citekeys } = await makeHarness({}, { libraryScope });
-    db.libraries = () => [
-      personalLibrary(8),
-      groupLibrary({ libraryID: 9 }),
-      groupLibrary({ libraryID: 10, groupID: 12 }),
-    ];
-    citekeys.rows = [
-      {
-        itemID: 1,
-        libraryID: 8,
-        key: "PERSONAL",
-        indexedKey: "PERSONAL",
-        citekey: "shared",
-      },
-      {
-        itemID: 2,
-        libraryID: 9,
-        key: "GROUPKEY",
-        indexedKey: "GROUPKEYg7",
-        citekey: "shared",
-      },
-      {
-        itemID: 3,
-        libraryID: 10,
-        key: "NEWGROUP",
-        indexedKey: "NEWGROUPg12",
-        citekey: "newGroup",
-      },
-    ];
-    db.changed();
-    await index.whenResolved();
-    expect(
-      (await index.readLookup({ citekeys: ["shared"] })).resolve("shared"),
-    ).toMatchObject({
-      kind: "unique",
-      item: { indexedKey: "GROUPKEYg7" },
-    });
-    expect(
-      (await index.readLookup({ indexedKeys: ["NEWGROUPg12"] })).citekeyOf(
-        "NEWGROUPg12",
-      ),
-    ).toBe("newGroup");
   });
 
   it("lists the literal citekeys of a document with their Reference Numbers", async () => {
@@ -622,7 +544,7 @@ describe("CitationIndex", () => {
   });
 
   it("keeps internal scans active while Pandoc Citations is off", async () => {
-    const { draft, index, metadataCache, settings, vault, workspace } =
+    const { draft, lookup, index, metadataCache, settings, vault, workspace } =
       await makeHarness(
         { "draft.md": "As @doe2024 wrote, see [[Roe 2025]]." },
         {
@@ -640,7 +562,7 @@ describe("CitationIndex", () => {
       { indexedKey: KEY_B, refNumber: 1 },
     ]);
     expect(
-      (await index.readLookup({ citekeys: ["doe2024"] })).resolve("doe2024"),
+      (await lookup.read({ citekeys: ["doe2024"] })).resolve("doe2024"),
     ).toMatchObject({
       kind: "unique",
       item: { indexedKey: KEY_A },
@@ -800,7 +722,7 @@ describe("CitationIndex persistence", () => {
 
 describe("CitationIndex resolution", () => {
   it("resolves a citekey with no Literature Note in the vault", async () => {
-    const { draft, index } = await makeHarness(
+    const { lookup, draft, index } = await makeHarness(
       { "draft.md": "As @doe2024 wrote." },
       { notes: false },
     );
@@ -808,225 +730,26 @@ describe("CitationIndex resolution", () => {
     expect(await citationsOf(index, draft)).toMatchObject([
       { indexedKey: KEY_A, linkpath: null },
     ]);
-    expect(
-      (await index.readLookup({ indexedKeys: [KEY_A] })).citekeyOf(KEY_A),
-    ).toBe("doe2024");
-  });
-
-  it("stays unresolved before the snapshot is warm, then resolves once the read settles", async () => {
-    const db = new DatabaseStub({ readyImmediately: false });
-    const { index } = await makeHarness({}, { db, notes: false });
-
-    using observation = index.observeLookup(() => {});
-    observation.set({ citekeys: ["doe2024"] });
-    expect(observation.current).toBeNull();
-    const waiting = index.whenResolved();
-
-    db.settle();
-    await waiting;
-
-    expect(
-      (await index.readLookup({ citekeys: ["doe2024"] })).resolve("doe2024"),
-    ).toEqual({
-      kind: "unique",
-      item: {
-        itemID: 1,
-        libraryID: MY_LIBRARY_ID,
-        key: KEY_A,
-        indexedKey: KEY_A,
-      },
-    });
-  });
-
-  it("rebuilds on the database changed event, replacing the old key with the new one", async () => {
-    const { index, citekeys, db } = await makeHarness({}, { notes: false });
-    expect(
-      (await index.readLookup({ citekeys: ["doe2024"] })).resolve("doe2024")
-        ?.kind,
-    ).toBe("unique");
-    expect(
-      (await index.readLookup({ citekeys: ["doe2024b"] })).resolve("doe2024b")
-        ?.kind,
-    ).toBe("missing");
-
-    citekeys.rows = citekeys.rows.map((row) =>
-      row.citekey === "doe2024" ? { ...row, citekey: "doe2024b" } : row,
+    expect((await lookup.read({ indexedKeys: [KEY_A] })).citekeyOf(KEY_A)).toBe(
+      "doe2024",
     );
-    let notified = 0;
-    index.on("resolution-changed", () => notified++);
-
-    db.changed();
-    await index.whenResolved();
-    await yieldToMain();
-
-    expect(notified).toBeGreaterThan(0);
-    expect(
-      (await index.readLookup({ citekeys: ["doe2024"] })).resolve("doe2024"),
-    ).toEqual({ kind: "missing" });
-    expect(
-      (await index.readLookup({ citekeys: ["doe2024b"] })).resolve("doe2024b"),
-    ).toMatchObject({
-      kind: "unique",
-      item: { itemID: 1, indexedKey: KEY_A },
-    });
-  });
-
-  it("refreshes the reverse observers after a database refresh with identical citation keys", async () => {
-    await using harness = await createCitationIndexHarness(
-      {},
-      { notes: false },
-    );
-    const { index, db } = harness;
-    const resolution = (
-      await index.readLookup({ citekeys: ["doe2024"] })
-    ).resolve("doe2024");
-    let resolutionChanged = 0;
-    let citedByInvalidated = 0;
-    index.on("resolution-changed", () => resolutionChanged++);
-    index.on("cited-by-invalidated", () => citedByInvalidated++);
-
-    // Author and title changes leave the bulk citation-key rows identical.
-    db.changed();
-    await index.whenResolved();
-    await yieldToMain();
-
-    // The rebuild resolves every key the way the last one did, so the reverse
-    // observers refresh and nothing that resolves a citekey redraws.
-    expect(citedByInvalidated).toBe(1);
-    expect(resolutionChanged).toBe(0);
-    expect(
-      (await index.readLookup({ citekeys: ["doe2024"] })).resolve("doe2024"),
-    ).toEqual(resolution);
-  });
-
-  it("changes forward answers with scope and retains all-Library reverse answers", async () => {
-    const libraryScope = new LibraryScopeStub([
-      personalLibrary(),
-      groupLibrary(),
-    ]);
-    const { index } = await makeHarness({}, { notes: false, libraryScope });
-    expect(
-      (await index.readLookup({ citekeys: ["roe2025"] })).resolve("roe2025")
-        ?.kind,
-    ).toBe("unique");
-    libraryScope.select([personalLibrary()]);
-    const narrowed = await index.readLookup({
-      citekeys: ["roe2025"],
-      indexedKeys: [KEY_B],
-    });
-    expect(narrowed.resolve("roe2025")).toEqual({ kind: "missing" });
-    expect(narrowed.citekeyOf(KEY_B)).toBe("roe2025");
-  });
-
-  it("rebuilds when a Library outside the scope joins the database", async () => {
-    const libraryScope = new LibraryScopeStub([personalLibrary()]);
-    libraryScope.select([personalLibrary()]);
-    const { index, citekeys } = await makeHarness(
-      {},
-      { notes: false, libraryScope },
-    );
-    citekeys.rows = [
-      ...citekeys.rows,
-      {
-        itemID: 9,
-        libraryID: GROUP_LIBRARY_ID,
-        key: "GRP23456",
-        indexedKey: "GRP23456g7",
-        citekey: "grp2026",
-      },
-    ];
-    expect(
-      (await index.readLookup({ indexedKeys: ["GRP23456g7"] })).citekeyOf(
-        "GRP23456g7",
-      ),
-    ).toBeNull();
-
-    // Library Scope settles its read after the database change, and a Library
-    // outside the saved scope reaches the index through `libraries-changed`.
-    libraryScope.holdLibraries([personalLibrary(), groupLibrary()]);
-    await index.whenResolved();
-    await yieldToMain();
-
-    expect(
-      (await index.readLookup({ indexedKeys: ["GRP23456g7"] })).citekeyOf(
-        "GRP23456g7",
-      ),
-    ).toBe("grp2026");
-  });
-
-  it("settles readiness and rejects a fresh read when the database is degraded", async () => {
-    const db = new DatabaseStub();
-    db.state = "degraded";
-    const { index } = await makeHarness({}, { db, notes: false });
-    await index.whenResolved();
-    await expect(index.readLookup({ citekeys: ["doe2024"] })).rejects.toThrow();
-    expect(index.resolution).toBeNull();
-  });
-
-  it("retains the selected answer after a refresh failure and rejects fresh reads", async () => {
-    const { index, citekeys, db, passCooldown } = await makeHarness(
-      {},
-      { notes: false },
-    );
-    using view = index.observeLookup(() => {});
-    view.set({ citekeys: ["doe2024"] });
-    await expect.poll(() => view.current?.status).toBe("fresh");
-    const held = view.current!.value;
-    citekeys.error = new Error("torn read");
-    db.changed();
-    await expect.poll(() => view.current?.status).toBe("failed");
-    expect(view.current!.value).toBe(held);
-    await expect(index.readLookup({ citekeys: ["doe2024"] })).rejects.toThrow();
-    citekeys.error = null;
-    passCooldown();
-    await index.readLookup({ citekeys: ["doe2024"] });
-    await expect.poll(() => view.current?.status).toBe("fresh");
-  });
-
-  it("retries a failed first lookup after the cooldown", async () => {
-    const db = new DatabaseStub({ readyImmediately: false });
-    const { index, citekeys, passCooldown } = await makeHarness(
-      {},
-      { db, notes: false },
-    );
-    citekeys.error = new Error("torn read");
-    db.settle();
-    await index.whenResolved();
-    citekeys.error = null;
-    await expect(index.readLookup({ citekeys: ["doe2024"] })).rejects.toThrow();
-    passCooldown();
-    expect(
-      (await index.readLookup({ citekeys: ["doe2024"] })).resolve("doe2024")
-        ?.kind,
-    ).toBe("unique");
   });
 
   it("waits for a successful lookup when reading a document", async () => {
     const db = new DatabaseStub({ readyImmediately: false });
-    const { index, citekeys, draft, passCooldown } = await makeHarness(
+    const { lookup, index, citekeys, draft, passCooldown } = await makeHarness(
       { "draft.md": "As @doe2024 wrote." },
       { db, notes: false },
     );
     citekeys.error = new Error("torn read");
     db.settle();
-    await index.whenResolved();
+    await lookup.whenResolved();
     await expect(citationsOf(index, draft)).rejects.toThrow();
     citekeys.error = null;
     passCooldown();
     expect(await citationsOf(index, draft)).toMatchObject([
       { indexedKey: KEY_A },
     ]);
-  });
-
-  it("settles whenResolved when disposal interrupts the first rebuild", async () => {
-    const db = new DatabaseStub({ readyImmediately: false });
-    const { index } = await makeHarness({}, { db, notes: false });
-    const waiting = index.whenResolved();
-
-    await index[Symbol.asyncDispose]();
-
-    await expect(waiting).resolves.toBeUndefined();
-    await expect(index.whenResolved()).resolves.toBeUndefined();
   });
 
   it("observes resolved literal citekeys grouped by path and source position", async () => {
@@ -1263,10 +986,11 @@ describe("CitationIndex resolution", () => {
     const db = new DatabaseStub({ readyImmediately: false });
     db.state = "degraded";
     const body = "See [[Doe 2024]].";
-    const { draft, index, metadataCache, workspace } = await makeHarness(
-      { "draft.md": body },
-      { db, settings: { "citation.wikilink-citations": true } },
-    );
+    const { draft, lookup, index, metadataCache, workspace } =
+      await makeHarness(
+        { "draft.md": body },
+        { db, settings: { "citation.wikilink-citations": true } },
+      );
     metadataCache.fileCache.set("draft.md", {
       links: [link("Doe 2024", body.indexOf("[["))],
     } as CachedMetadata);
@@ -1283,12 +1007,12 @@ describe("CitationIndex resolution", () => {
       });
 
     db.settle();
-    await index.whenResolved();
+    await lookup.whenResolved();
     await yieldToMain();
     await expect
       .poll(() => snapshots.at(-1))
       .toMatchObject({
-        resolution: null,
+        resolution: "failed",
         groups: [{ path: draft.path, occurrences: [{ kind: "wikilink" }] }],
       });
   });
@@ -1650,9 +1374,10 @@ describe("CitationIndex resolution", () => {
   });
 
   it("suppresses identical snapshots and isolates observer failures", async () => {
-    const { draft, index, metadataCache, workspace } = await makeHarness({
-      "draft.md": "@doe2024.",
-    });
+    const { draft, lookup, index, metadataCache, workspace } =
+      await makeHarness({
+        "draft.md": "@doe2024.",
+      });
     let publications = 0;
     index.observeCitedBy(KEY_A, () => {
       throw new Error("observer failed");
@@ -1661,7 +1386,7 @@ describe("CitationIndex resolution", () => {
     workspace.layoutReady();
     await index.whenIndexed();
     await expect.poll(() => publications).toBeGreaterThan(0);
-    await index.readLookup({ citekeys: ["doe2024"] });
+    await lookup.read({ citekeys: ["doe2024"] });
     await yieldToMain();
     const before = publications;
 
@@ -1948,166 +1673,6 @@ describe("CitationIndex one-shot reads", () => {
 });
 
 describe("CitationIndex ambiguous citation keys", () => {
-  /** An Indexed Key of the group Library the multi-Library fixtures use. */
-  const GROUP_KEY = "GRP12345g7";
-  /** An Indexed Key of My Library, for a second Item there. */
-  const TWIN_KEY = "RVW23456";
-
-  const myLibraryRow = {
-    itemID: 1,
-    libraryID: MY_LIBRARY_ID,
-    key: KEY_A,
-    indexedKey: KEY_A,
-    citekey: "doe2024",
-  };
-  /** A second Item of My Library answering to the same citekey. */
-  const sameLibraryTwin = {
-    itemID: 2,
-    libraryID: MY_LIBRARY_ID,
-    key: TWIN_KEY,
-    indexedKey: TWIN_KEY,
-    citekey: "doe2024",
-  };
-  /** An Item of the group Library answering to the same citekey. A lower
-   *  `itemID` than its My Library twin, so Library order alone can order them. */
-  const groupTwin = {
-    itemID: 1,
-    libraryID: GROUP_LIBRARY_ID,
-    key: "GRP12345",
-    indexedKey: GROUP_KEY,
-    citekey: "doe2024",
-  };
-
-  function bothLibraries(): LibraryScopeStub {
-    return new LibraryScopeStub([personalLibrary(), groupLibrary()]);
-  }
-
-  it("classifies two Items of one Library under the same key as ambiguous", async () => {
-    const { index } = await makeHarness(
-      {},
-      { notes: false, citekeys: [myLibraryRow, sameLibraryTwin] },
-    );
-
-    expect(
-      (await index.readLookup({ citekeys: ["doe2024"] })).resolve("doe2024"),
-    ).toEqual({
-      kind: "ambiguous",
-      candidates: [
-        {
-          itemID: 1,
-          libraryID: MY_LIBRARY_ID,
-          key: KEY_A,
-          indexedKey: KEY_A,
-        },
-        {
-          itemID: 2,
-          libraryID: MY_LIBRARY_ID,
-          key: TWIN_KEY,
-          indexedKey: TWIN_KEY,
-        },
-      ],
-    });
-  });
-
-  it("classifies Items of two Libraries as ambiguous, in canonical Library order", async () => {
-    const { index } = await makeHarness(
-      {},
-      {
-        notes: false,
-        citekeys: [groupTwin, myLibraryRow],
-        libraryScope: bothLibraries(),
-      },
-    );
-
-    const resolved = (
-      await index.readLookup({ citekeys: ["doe2024"] })
-    ).resolve("doe2024");
-    expect(resolved?.kind).toBe("ambiguous");
-    expect(
-      resolved?.kind === "ambiguous"
-        ? resolved.candidates.map((candidate) => candidate.indexedKey)
-        : [],
-    ).toEqual([KEY_A, GROUP_KEY]);
-  });
-
-  it("narrows an ambiguous key to unique when Library Scope drops a candidate", async () => {
-    const libraryScope = bothLibraries();
-    const { index } = await makeHarness(
-      {},
-      { notes: false, citekeys: [myLibraryRow, groupTwin], libraryScope },
-    );
-    expect(
-      (await index.readLookup({ citekeys: ["doe2024"] })).resolve("doe2024")
-        ?.kind,
-    ).toBe("ambiguous");
-
-    libraryScope.select([personalLibrary()]);
-    await index.whenResolved();
-    await yieldToMain();
-
-    expect(
-      (await index.readLookup({ citekeys: ["doe2024"] })).resolve("doe2024"),
-    ).toMatchObject({
-      kind: "unique",
-      item: { indexedKey: KEY_A },
-    });
-  });
-
-  it("resolves an exact Indexed Key of a Library outside the scope", async () => {
-    const libraryScope = bothLibraries();
-    libraryScope.select([personalLibrary()]);
-    const { index } = await makeHarness(
-      {},
-      { notes: false, citekeys: [myLibraryRow, groupTwin], libraryScope },
-    );
-
-    expect(
-      (await index.readLookup({ citekeys: ["doe2024"] })).resolve("doe2024"),
-    ).toMatchObject({ kind: "unique" });
-    expect(
-      (await index.readLookup({ indexedKeys: [GROUP_KEY] })).citekeyOf(
-        GROUP_KEY,
-      ),
-    ).toBe("doe2024");
-  });
-
-  it("emits for a refresh that moves the candidates, not for an equal one", async () => {
-    const { index, citekeys, db } = await makeHarness(
-      {},
-      { notes: false, citekeys: [myLibraryRow, sameLibraryTwin] },
-    );
-    let notified = 0;
-    index.on("resolution-changed", () => notified++);
-    const original = await index.readLookup({ citekeys: ["doe2024"] });
-
-    db.changed();
-    await index.whenResolved();
-    await yieldToMain();
-    expect(notified).toBe(0);
-    expect((await index.readLookup({ citekeys: ["doe2024"] })).revision).toBe(
-      original.revision,
-    );
-
-    citekeys.rows = [
-      { ...sameLibraryTwin, itemID: 1 },
-      { ...myLibraryRow, itemID: 2 },
-    ];
-    db.changed();
-    await index.whenResolved();
-    await yieldToMain();
-
-    expect(notified).toBe(1);
-    expect(
-      (await index.readLookup({ citekeys: ["doe2024"] })).revision,
-    ).not.toBe(original.revision);
-    expect(
-      (await index.readLookup({ citekeys: ["doe2024"] })).resolve("doe2024"),
-    ).toMatchObject({
-      kind: "ambiguous",
-      candidates: [{ indexedKey: TWIN_KEY }, { indexedKey: KEY_A }],
-    });
-  });
-
   it("keeps an ambiguous literal citation under its own Citation Key", async () => {
     const { draft, index } = await makeHarness(
       { "draft.md": "As @doe2024 wrote." },
@@ -2160,7 +1725,7 @@ describe("CitationIndex ambiguous citation keys", () => {
 
   it("stops attributing the occurrence once the scope narrows to one candidate", async () => {
     const libraryScope = bothLibraries();
-    const { index, workspace } = await makeHarness(
+    const { lookup, index, workspace } = await makeHarness(
       { "draft.md": "As @doe2024 wrote." },
       { notes: false, citekeys: [myLibraryRow, groupTwin], libraryScope },
     );
@@ -2169,7 +1734,7 @@ describe("CitationIndex ambiguous citation keys", () => {
     expect((await index.getCitedBy(GROUP_KEY)).groups).toHaveLength(1);
 
     libraryScope.select([personalLibrary()]);
-    await index.whenResolved();
+    await lookup.whenResolved();
     await yieldToMain();
 
     expect((await index.getCitedBy(GROUP_KEY)).groups).toStrictEqual([]);

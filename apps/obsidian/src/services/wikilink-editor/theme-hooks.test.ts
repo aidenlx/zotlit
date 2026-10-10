@@ -78,8 +78,8 @@ vi.mock("obsidian", async (importOriginal) => {
 
 import { editorInfoField } from "obsidian";
 
+import { lookupObservation } from "@/services/citation-index/__fixtures__/citation-lookup";
 import { heldCitekeyOf } from "@/services/citation-index/lookup";
-import { LookupObservation } from "@/services/citation-index/observation";
 import { occurrences, rendered } from "@/services/citation-text/__fixtures__";
 import { citationKey } from "@/services/citation-text/present";
 import type { DocumentCitations } from "@/services/citation-text/present";
@@ -152,7 +152,7 @@ function viewOf(
                 }
               : null,
           observeLookup: (changed) =>
-            new LookupObservation(
+            lookupObservation(
               async ({ indexedKeys = [] }) =>
                 lookupAnswer(
                   {},
@@ -199,13 +199,17 @@ describe("wikilinkEditorExtension theme hooks", () => {
               linkpath === "literatures/example"
                 ? { ...LITERATURE_NOTE, citationKey: null }
                 : null,
-            observeLookup: () => ({
-              current: null,
-              set: ({ indexedKeys = [] }) => requests.push([...indexedKeys]),
-              [Symbol.dispose]: () => {
-                disposed += 1;
-              },
-            }),
+            observeLookup: (changed) =>
+              lookupObservation(
+                ({ indexedKeys = [] }) => {
+                  requests.push([...indexedKeys]);
+                  return null;
+                },
+                changed,
+                () => {
+                  disposed += 1;
+                },
+              ),
             enabled: () => true,
             citationText: () => null,
             open: () => undefined,

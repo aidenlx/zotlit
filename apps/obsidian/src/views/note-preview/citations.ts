@@ -15,11 +15,11 @@ import {
   citationTarget,
   wikilinkCitation,
 } from "@/lib/wikilink-citation";
+import type { CitationLookup } from "@/services/citation-index/lookup-service";
 import {
   maskExclusions,
   scanDocumentCitations,
 } from "@/services/citation-index/scan";
-import type { CitationIndex } from "@/services/citation-index/service";
 import type { PresentedCitation } from "@/services/citation-text/present";
 import { resolveLiteratureNote } from "@/services/note-index/service";
 import { holdsNote } from "@/services/pandoc/inline-content";
@@ -37,7 +37,7 @@ export interface NativeCitationDeps {
     | "vaultPresentation"
     | "on"
   >;
-  citationIndex: Pick<CitationIndex, "readLookup">;
+  citationLookup: Pick<CitationLookup, "read">;
 }
 export interface PreviewCitation extends PresentedCitation {
   source: string;
@@ -79,7 +79,7 @@ export async function renderDraftCitations(
           ];
     }),
   );
-  const lookup = await deps.citationIndex.readLookup({
+  const lookup = await deps.citationLookup.read({
     citekeys: scanned.flatMap((citation) =>
       citation.keys.map((key) => key.citekey),
     ),

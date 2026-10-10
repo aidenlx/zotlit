@@ -1,6 +1,5 @@
-// The Graph Citations service: installs the render facade and the click, right-click and hover wraps on every graph leaf, re-renders on index changes, and restores every swapped member on feature-off and unload.
-
 import { Effect, Exit, Fiber } from "effect";
+// The Graph Citations service: installs the render facade and the click, right-click and hover wraps on every graph leaf, re-renders on index changes, and restores every swapped member on feature-off and unload.
 import { around } from "monkey-around";
 import type {
   App,
@@ -17,6 +16,7 @@ import { workLabel } from "@/lib/item-summary";
 import type { WorkLabel } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import { heldResolution } from "@/services/citation-index/lookup";
+import type { CitationLookup } from "@/services/citation-index/lookup-service";
 import type {
   CitationOccurrence,
   CitationSyntax,
@@ -86,9 +86,8 @@ export interface GraphCitationsDeps {
   app: App;
   reads: Pick<ZoteroReadsService, "ready" | "on">;
   libraryScope: Pick<LibraryScopeService, "current">;
-  citationIndex: Pick<CitationIndex, "ready" | "citationsByPath" | "on"> & {
-    observeLookup(changed: () => void): CitationLookupObservation;
-  };
+  citationIndex: Pick<CitationIndex, "ready" | "citationsByPath" | "on">;
+  citationLookup: Pick<CitationLookup, "observe">;
   noteIndex: Pick<NoteIndex, "getIndexedItemKeys" | "getNotesByItemKey" | "on">;
   citekeyEditor: Pick<CitekeyEditor, "openCitekey" | "openIndexedKey">;
   /** The entries a hovered Literature Note or Cited Work Node shows. */
@@ -163,6 +162,7 @@ export class GraphCitations extends Service<void> {
     fiber: Fiber.Fiber<ReadonlyMap<string, WorkLabelSource>, unknown>;
   } | null = null;
   readonly #citationIndex;
+  readonly #citationLookup;
   /** The exact forward answers needed by the current graph facts. */
   #lookup: CitationLookupObservation | null = null;
   #installationCount = 0;
@@ -211,6 +211,7 @@ export class GraphCitations extends Service<void> {
     this.#reads = deps.reads;
     this.#libraryScope = deps.libraryScope;
     this.#citationIndex = deps.citationIndex;
+    this.#citationLookup = deps.citationLookup;
     this.#noteIndex = deps.noteIndex;
     this.#citekeyEditor = deps.citekeyEditor;
     this.#citationPopover = deps.citationPopover;
@@ -448,7 +449,7 @@ export class GraphCitations extends Service<void> {
     restores.use(
       wrapNodeHover(members, this.#hoverDeps(), () => installation.additions),
     );
-    this.#lookup ??= this.#citationIndex.observeLookup(() =>
+    this.#lookup ??= this.#citationLookup.observe(() =>
       this.#invalidateLabels(),
     );
     this.#installations.set(renderer, installation);

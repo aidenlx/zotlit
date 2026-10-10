@@ -24,6 +24,8 @@ import { QueryClientService } from "@/services/query-client/service";
 import { testClock } from "@/services/query-client/test-clock";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
+import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
+import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import type {
   ZoteroReadLease,
   ZoteroReadsEvents,
@@ -31,19 +33,14 @@ import type {
   ZoteroReadsService,
 } from "@/services/zotero-reads/service";
 import {
-  citationSource,
   inProcessReadsService,
   memoryOpener,
 } from "@/services/zotero-reads/test-utils";
 
-import { CitationLookupAnswer } from "./lookup";
-import type { CitationLookupRequest } from "./lookup";
+import { CitationLookup } from "./lookup-service";
+import type { CitationLookupDeps } from "./lookup-service";
 import { CitationIndex } from "./service";
-import type {
-  CitationIndexOptions,
-  CitekeyRecord,
-  CitekeyStore,
-} from "./service";
+import type { CitekeyRecord, CitekeyStore } from "./service";
 
 export const KEY_A = "ABCD2345";
 export const KEY_B = "ZZZ99999g7";
@@ -332,43 +329,36 @@ export class DatabaseStub implements AsyncDisposable {
     return statements.join("\n");
   }
 
-  async readLookup(
-    request: CitationLookupRequest,
-    scope: LibraryScope | null,
-    { signal }: { signal?: AbortSignal } = {},
-  ): Promise<CitationLookupAnswer> {
-    await this.ready;
-    if (this.state === "degraded" || this.citekeys.error)
-      throw this.citekeys.error ?? new Error("Database unavailable");
-    const sql = this.#sql();
-    if (sql !== this.#lastSql) {
-      this.#lastSql = sql;
-      this.citekeys.calls.push(
-        ...this.libraries().map((library) => library.libraryID),
-      );
-      this.#refresh = this.#service.refresh();
-    }
-    await this.#refresh;
-    const { client } = await this.#service.ready;
-    return new CitationLookupAnswer(
-      await Effect.runPromise(
-        client.CitationLookup({
-          ...citationSource(),
-          scope,
-          citekeys: request.citekeys ?? [],
-          indexedKeys: request.indexedKeys ?? [],
-        }),
-        { signal },
-      ),
+  client: CitationLookupDeps["client"] = () =>
+    Effect.map(
+      Effect.promise(() => this.#service.ready),
+      ({ client }) =>
+        ({
+          ...client,
+          CitationRefresh: (payload) => Effect.succeed(payload.generation),
+          CitationLookup: (payload, options) =>
+            Effect.gen({ self: this }, function* () {
+              yield* Effect.promise(() => this.#ready.promise);
+              if (this.state === "degraded" || this.citekeys.error)
+                return yield* new DbUnavailable({
+                  message:
+                    this.citekeys.error instanceof Error
+                      ? this.citekeys.error.message
+                      : "Database unavailable",
+                });
+              const sql = this.#sql();
+              if (sql !== this.#lastSql) {
+                this.#lastSql = sql;
+                this.citekeys.calls.push(
+                  ...this.libraries().map((library) => library.libraryID),
+                );
+                this.#refresh = this.#service.refresh();
+              }
+              yield* Effect.promise(() => this.#refresh ?? Promise.resolve());
+              return yield* client.CitationLookup(payload, options);
+            }),
+        }) as ZoteroReadsClient,
     );
-  }
-
-  async refreshLookup(
-    scope: LibraryScope | null,
-    options?: { signal?: AbortSignal },
-  ): Promise<string> {
-    return (await this.readLookup({}, scope, options)).revision;
-  }
 
   get ready(): Promise<ZoteroReadsReady> {
     return this.#ready.promise.then(() => this.#service.ready);
@@ -648,6 +638,7 @@ export interface CitationIndexHarness extends AsyncDisposable {
   app: App;
   draft: TFile;
   index: CitationIndex;
+  lookup: CitationLookup;
   metadataCache: MockMetadataCache;
   noteIndex: NoteIndexStub;
   settings: SettingsStub;
@@ -664,7 +655,7 @@ export interface CitationIndexHarness extends AsyncDisposable {
 }
 
 export interface CitationIndexHarnessOptions {
-  reads?: CitationIndexOptions["reads"];
+  client?: CitationLookupDeps["client"];
   settings?: Partial<Settings>;
   store?: MemoryStore;
   citekeys?: LibraryCitekey[];
@@ -734,20 +725,32 @@ export async function createCitationIndexHarness(
     options.settingsService ?? new SettingsStub(options.settings);
   const clock = testClock();
   const queryClient = stack.use(new QueryClientService({ now: clock.now }));
+  const lookup = stack.use(
+    new CitationLookup({
+      settings,
+      source: db,
+      zoteroPref: {
+        ready: Promise.resolve(),
+        databasePath: "fixture",
+        on: () => () => undefined,
+      },
+      libraryScope,
+      queryClient,
+      client: options.client ?? db.client,
+    }),
+  );
   const index = stack.use(
     new CitationIndex({
       app,
       noteIndex,
       settings,
-      reads: options.reads ?? db,
-      libraryScope,
+      lookup,
       openStore: () => Promise.resolve(store),
-      queryClient,
     }),
   );
   const awaitReady = options.awaitReady ?? true;
   if (awaitReady) await index.ready;
-  if (awaitReady && !options.db) await index.whenResolved();
+  if (awaitReady && !options.db) await lookup.whenResolved();
   vault.reads.length = 0;
   store.writes.length = 0;
   const resources = stack.move();
@@ -756,6 +759,7 @@ export async function createCitationIndexHarness(
     app,
     draft: metadataCache.files.get("draft.md")!,
     index,
+    lookup,
     metadataCache,
     noteIndex,
     settings,

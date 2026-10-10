@@ -80,14 +80,24 @@ function harness() {
       },
     },
     db: reads(),
-    citationIndex: {
-      readLookup: async ({ citekeys = [] }: { citekeys?: readonly string[] }) =>
+    citationLookup: {
+      read: async ({ citekeys = [] }: { citekeys?: readonly string[] }) =>
         lookupAnswer(
           Object.fromEntries(citekeys.map((key) => [key, { kind: "missing" }])),
         ),
+      status: "fresh",
       on,
-      getDocumentCitationSet: async () => ({
-        lookup: lookupAnswer(),
+    },
+    citationIndex: {
+      getDocumentCitationSet: async (
+        _file: unknown,
+        { include }: { include?: { citekeys?: readonly string[] } },
+      ) => ({
+        lookup: lookupAnswer(
+          Object.fromEntries(
+            (include?.citekeys ?? []).map((key) => [key, { kind: "missing" }]),
+          ),
+        ),
         occurrences: [],
         citations: [],
         errors: [],
@@ -240,7 +250,7 @@ describe("Citation Popover visits", () => {
     expect(run.parent.hoverPopover).toBeNull();
     expect(document.querySelector(".zt-citation-popover")).toBeNull();
     expect(run.listeners.get("invalidated")?.size).toBe(0);
-    expect(run.listeners.get("resolution-changed")?.size).toBe(0);
+    expect(run.listeners.get("changed")?.size).toBe(0);
   });
 
   it("releases the previous document's subscriptions when showing a graph work", async () => {
@@ -264,7 +274,8 @@ describe("Citation Popover visits", () => {
     expect(run.metadata.get("changed")?.size).toBe(0);
     expect(run.listeners.get("invalidated")?.size).toBe(1);
     await run.show({ kind: "item", indexedKey: "ABCD2345" });
-    expect(run.listeners.get("resolution-changed")?.size).toBe(0);
+    expect(run.listeners.get("changed")?.size).toBe(0);
+    expect(run.listeners.get("status-changed")?.size).toBe(0);
   });
 
   it("keeps the newest work and actions when earlier formatting finishes last", async () => {

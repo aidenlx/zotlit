@@ -81,7 +81,9 @@ describe("Citations CLI registration", () => {
             getFileByPath: (path: string) => files.get(path) ?? null,
           },
         },
+        citationLookup: { read: async () => lookupAnswer(), status: "fresh" },
         citationIndex: {
+          citationKeys: () => [],
           waitUntilSettled: () => Promise.resolve("settled"),
           getDocumentCitationSet,
           readLookup: async () => lookupAnswer(),
