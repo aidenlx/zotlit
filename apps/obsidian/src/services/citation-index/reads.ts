@@ -1,5 +1,5 @@
 // Owns the Citation Index's read capability and follows the interactive source.
-import { Effect } from "effect";
+import { Deferred, Effect } from "effect";
 import type { Scope } from "effect";
 
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
@@ -31,21 +31,17 @@ export interface CitationReadsDeps {
 
 /**
  * A second read capability for citation resolution. The primary source owns
- * change detection; this service follows its signals through one refresh lane.
+ * change detection; this service sends its generation with each lookup.
  * Each signal invalidates the old generation before any asynchronous work.
  */
 export class CitationReads extends Service {
   readonly #deps;
   readonly #events = createNanoEvents<ZoteroReadsEvents>();
-  readonly #stop = new AbortController();
+  readonly #stop = Deferred.makeUnsafe<never>();
   #worker?: ZoteroReadsService;
   #generation = 0;
-  #dirty = false;
-  #stopped = false;
   #degraded = false;
-  #lane: Promise<void> | null = null;
-  #failure: unknown = null;
-  #configured: ReadsConfig | null = null;
+  #observed: ReadsConfig | null = null;
   ready: Promise<void>;
 
   constructor(deps: CitationReadsDeps) {
@@ -74,43 +70,36 @@ export class CitationReads extends Service {
     scope: LibraryScope | null,
     options: { signal?: AbortSignal } = {},
   ): Promise<CitationLookupAnswer> {
-    const signal = options.signal
-      ? AbortSignal.any([options.signal, this.#stop.signal])
-      : this.#stop.signal;
     return Effect.runPromise(
-      Effect.tryPromise({
-        try: async (signal) => {
-          await this.ready;
-          while (true) {
-            while (this.#lane) await this.#lane;
-            signal.throwIfAborted();
-            if (this.#failure) throw this.#failure;
-            if (this.#stopped) throw new Error("Citation reads stopped");
-            const generation = this.#generation;
-            const { client } = await this.#worker!.ready;
-            try {
-              const answer = await Effect.runPromise(
-                client.CitationLookup({
-                  scope,
-                  citekeys: request.citekeys ?? [],
-                  indexedKeys: request.indexedKeys ?? [],
-                }),
-                { signal },
-              );
-              signal.throwIfAborted();
-              if (generation !== this.#generation || this.#lane) continue;
-              if (this.#failure) throw this.#failure;
-              return new CitationLookupAnswer(answer);
-            } catch (error) {
-              signal.throwIfAborted();
-              if (generation !== this.#generation || this.#lane) continue;
-              throw error;
-            }
+      Effect.gen({ self: this }, function* () {
+        yield* Effect.tryPromise(() => this.ready);
+        const { client } = yield* Effect.tryPromise(() => this.#worker!.ready);
+        while (true) {
+          const generation = this.#generation;
+          const result = yield* Effect.result(
+            client.CitationLookup({
+              generation,
+              config: this.#config(),
+              scope,
+              citekeys: request.citekeys ?? [],
+              indexedKeys: request.indexedKeys ?? [],
+            }),
+          );
+          const answeredGeneration =
+            result._tag === "Success" ? result.success.generation : generation;
+          if (answeredGeneration < this.#generation) {
+            logger.debug("Retrying an obsolete citation reply", {
+              generation: answeredGeneration,
+              nextGeneration: this.#generation,
+              outcome: result._tag,
+            });
+            continue;
           }
-        },
-        catch: (error) => error,
-      }),
-      { signal },
+          if (result._tag === "Failure") return yield* result.failure;
+          return new CitationLookupAnswer(result.success);
+        }
+      }).pipe(Effect.raceFirst(Deferred.await(this.#stop))),
+      { signal: options.signal },
     );
   }
 
@@ -151,9 +140,9 @@ export class CitationReads extends Service {
         if (!this.#deps.settings.current) return;
         const config = this.#config();
         if (
-          config.databasePath !== this.#configured?.databasePath ||
-          config.readMode !== this.#configured.readMode ||
-          config.logLevel !== this.#configured.logLevel
+          config.databasePath !== this.#observed?.databasePath ||
+          config.readMode !== this.#observed.readMode ||
+          config.logLevel !== this.#observed.logLevel
         )
           this.#request();
       }),
@@ -166,10 +155,11 @@ export class CitationReads extends Service {
     );
     stack.defer(
       this.#worker.on("degraded", (error) => {
-        this.#failure = error;
+        if (!this.#degraded) {
+          this.#generation += 1;
+          this.#events.emit("changed");
+        }
         this.#degraded = true;
-        this.#generation += 1;
-        this.#events.emit("changed");
         this.#events.emit("degraded", error);
       }),
     );
@@ -182,48 +172,30 @@ export class CitationReads extends Service {
     );
     await this.#worker.ready;
     stack.defer(() => {
-      this.#stopped = true;
-      this.#stop.abort();
+      Effect.runSync(Deferred.interrupt(this.#stop));
     });
     this.#request();
     this.commit(stack.move());
   }
 
   #request(): void {
-    if (this.#stopped) return;
+    if (this.disposing) return;
     this.#generation += 1;
-    this.#dirty = true;
-    // Assignment precedes notification: a consumer awakened by changed waits
-    // for this refresh rather than acquiring the previous connection.
-    if (this.#worker && !this.#lane) {
-      this.#lane = this.#synchronize().finally(() => {
-        this.#lane = null;
-        if (this.#stopped) return;
-        if (this.#dirty) this.#request();
-        else this.#events.emit("changed");
-      });
-    }
+    if (this.#deps.settings.current) this.#observed = this.#config();
     this.#events.emit("changed");
-  }
-
-  async #synchronize(): Promise<void> {
-    const worker = this.#worker!;
-    const { client } = await worker.ready;
-    while (this.#dirty && !this.#stopped) {
-      this.#dirty = false;
-      const config = this.#config();
-      this.#configured = config;
-      try {
-        await Effect.runPromise(
-          Effect.andThen(client.Configure(config), client.Refresh()),
-          { signal: this.#stop.signal },
-        );
-        this.#failure = null;
-      } catch (error) {
-        this.#failure = error;
-        if (!this.#stopped)
-          logger.warn("Citation source refresh failed", { error });
-      }
-    }
+    const worker = this.#worker;
+    if (!worker || !this.#observed) return;
+    const source = { generation: this.#generation, config: this.#observed };
+    // Prefetch also wakes CitationIndex after recovery. Lookup carries the
+    // same source token, so a missed notification cannot make a read stale.
+    void Effect.runPromise(
+      Effect.tryPromise(() => worker.ready).pipe(
+        Effect.flatMap(({ client }) => client.CitationRefresh(source)),
+        Effect.raceFirst(Deferred.await(this.#stop)),
+      ),
+    ).catch((error: unknown) => {
+      if (!this.disposing)
+        logger.warn("Citation source refresh failed", { error });
+    });
   }
 }

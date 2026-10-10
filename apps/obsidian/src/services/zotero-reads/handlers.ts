@@ -255,7 +255,6 @@ export function handlersLayer(options?: HandlersOptions) {
   const handlers = ZoteroReads.toLayer(
     Effect.gen(function* () {
       const connection = yield* Connection;
-      const citationLookup = yield* makeCitationLookup(connection, sliceSize);
       const itemIndex = options?.citationOnly
         ? null
         : yield* Effect.flatMap(Layer.build(itemIndexLayer), (context) =>
@@ -263,6 +262,31 @@ export function handlersLayer(options?: HandlersOptions) {
           );
       // One Configure at a time, in arrival order, so the connection rebinds in the order the settings arrived.
       const configuring = yield* Semaphore.make(1);
+      const configure = (config: ReadsConfig) =>
+        (itemIndex
+          ? itemIndex.configure({
+              locale: config.locale,
+              segmenterBinary: config.chineseSegmenter,
+            })
+          : Effect.void
+        ).pipe(
+          Effect.andThen(
+            connection.configure(
+              options?.citationOnly
+                ? { ...config, autoRefresh: false }
+                : config,
+            ),
+          ),
+          Effect.andThen(
+            Effect.sync(() => options?.applyLogLevel?.(config.logLevel)),
+          ),
+          configuring.withPermits(1),
+        );
+      const citationLookup = yield* makeCitationLookup(
+        connection,
+        sliceSize,
+        configure,
+      );
       const pinned = new Map<SnapshotId, Pinned>();
 
       const releasePinned = (entry: Pinned) =>
@@ -312,7 +336,8 @@ export function handlersLayer(options?: HandlersOptions) {
       ) => Stream.unwrap(Effect.map(borrow(snapshot), f));
 
       return ZoteroReads.of({
-        CitationLookup: citationLookup,
+        CitationLookup: citationLookup.lookup,
+        CitationRefresh: citationLookup.refresh,
         Libraries: ({ snapshot }) => withClient(snapshot, getLibraries),
 
         ConnectionReadout: ({ snapshot }) =>
@@ -487,26 +512,7 @@ export function handlersLayer(options?: HandlersOptions) {
 
         Refresh: () => connection.refresh,
         NotifyExternalChange: () => connection.notifyExternalChange,
-        Configure: (config) =>
-          (itemIndex
-            ? itemIndex.configure({
-                locale: config.locale,
-                segmenterBinary: config.chineseSegmenter,
-              })
-            : Effect.void
-          ).pipe(
-            Effect.andThen(
-              connection.configure(
-                options?.citationOnly
-                  ? { ...config, autoRefresh: false }
-                  : config,
-              ),
-            ),
-            Effect.andThen(
-              Effect.sync(() => options?.applyLogLevel?.(config.logLevel)),
-            ),
-            configuring.withPermits(1),
-          ),
+        Configure: configure,
 
         Ping: () => Effect.void,
 

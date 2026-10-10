@@ -219,8 +219,8 @@ function noWorker(reason: DbUnavailable) {
  * One {@link ZoteroReadsClient} across worker lifetimes. It connects on
  * creation. When the worker dies, the client reports `degraded` on `Changes`
  * with a {@link DbUnavailable}, calls fail with a client error, and the next
- * `Refresh` connects a new worker before it refreshes. The last worker ends
- * with the caller's scope.
+ * `Refresh` or `CitationRefresh` connects a new worker before it refreshes.
+ * The last worker ends with the caller's scope.
  */
 export const makeWorkerReads = Effect.fnUntraced(function* (
   connect: Effect.Effect<WorkerConnection, DbUnavailable, Scope.Scope>,
@@ -476,6 +476,10 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
     // The feed outlives each worker: subscribers keep one stream across a
     // death and a respawn.
     Changes: () => changes,
+    CitationRefresh: (payload, options) =>
+      Effect.flatMap(ensureConnected, (client) =>
+        client.CitationRefresh(payload, options),
+      ),
     Configure: (payload, options) =>
       Effect.flatMap(ensureConnected, (client) =>
         client.Configure(payload, options),
