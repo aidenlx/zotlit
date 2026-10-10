@@ -1,6 +1,7 @@
 import type { App, Editor, Modifier } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
+import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import type { CitekeyResolution } from "@/services/citation-index/service";
 import type { SearchHit } from "@/services/item-lookup/service";
 
@@ -17,7 +18,7 @@ function makeModal(
     noteFeature: { renderCitation: vi.fn() },
     settings: { current: {} },
     citationIndex: {
-      resolveCitekey: () => ({ kind: "missing" }),
+      readLookup: async () => lookupAnswer(),
       resolution: "fresh",
     },
     ...overrides,
@@ -68,7 +69,7 @@ describe("InsertCitationModal keymap", () => {
 });
 
 describe("InsertCitationModal ambiguity", () => {
-  it("writes nothing into the note when the Citation Key names several Items", () => {
+  it("writes nothing into the note when the Citation Key names several Items", async () => {
     const ambiguous: CitekeyResolution = {
       kind: "ambiguous",
       candidates: [
@@ -79,6 +80,7 @@ describe("InsertCitationModal ambiguity", () => {
     const renderCitation = vi.fn();
     const replaceRange = vi.fn();
     const editor = {
+      getValue: () => "",
       getCursor: () => ({ line: 0, ch: 0 }),
       getLine: () => "",
       replaceRange,
@@ -89,7 +91,10 @@ describe("InsertCitationModal ambiguity", () => {
     const modal = makeModal(
       {
         noteFeature: { renderCitation },
-        citationIndex: { resolveCitekey: () => ambiguous, resolution: "fresh" },
+        citationIndex: {
+          readLookup: async () => lookupAnswer({ doe2024: ambiguous }),
+          resolution: "fresh",
+        },
       } as unknown as Partial<CitationSuggestDeps>,
       editor,
     );
@@ -98,7 +103,7 @@ describe("InsertCitationModal ambiguity", () => {
       matches: [],
     } as unknown as SearchHit;
 
-    modal.onChooseSuggestion(hit, {} as MouseEvent);
+    await modal.onChooseSuggestion(hit, {} as MouseEvent);
 
     expect(renderCitation).not.toHaveBeenCalled();
     expect(replaceRange).not.toHaveBeenCalled();

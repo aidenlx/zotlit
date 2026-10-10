@@ -1,5 +1,5 @@
-// The Citation Index keeps a complete answer while a large refresh yields to
-// renderer tasks. The Stress Build is isolated from the Development Vault.
+// The Citation Index keeps requested answers available while the worker
+// rebuilds a large lookup index. The Stress Build is isolated from the Development Vault.
 import { cp, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -35,8 +35,10 @@ const item = ITEMS.find(({ itemID }) => itemID === 1)!;
 interface RefreshEvidence {
   gaps: number[];
   heldThroughout: boolean;
-  sameSnapshot: boolean;
+  sameRevision: boolean;
   citekey: string;
+  unique: boolean;
+  unrequested: boolean;
 }
 
 describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
@@ -78,7 +80,7 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
     ).toBe(true);
     await obEval(
       vaultId,
-      "(async()=>{const s=app.plugins.plugins.zotlit.services;await s.itemLookup.search('',{limit:1});await s.citationIndex.readSnapshot();return true;})()",
+      "(async()=>{const s=app.plugins.plugins.zotlit.services;await s.itemLookup.search('',{limit:1});await s.citationIndex.readLookup({});return true;})()",
       120_000,
     );
   }, 600_000);
@@ -88,7 +90,7 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
     await discardFixture(fixture);
   }, 120_000);
 
-  it("keeps a 100,000-Item snapshot available while refreshing within the renderer budget", async () => {
+  it("keeps requested answers available while refreshing 100,000 Items within the renderer budget", async () => {
     const evidence: RefreshEvidence[] = [];
     for (let round = 0; round < 3; round += 1) {
       evidence.push(
@@ -97,19 +99,27 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
             vaultId,
             `(async()=>{
               const s=app.plugins.plugins.zotlit.services,index=s.citationIndex;
-              const held=await index.readSnapshot(),gaps=[];
+              const gaps=[];
               const key=${JSON.stringify(item.key)},expected=${JSON.stringify(item.citationKey)};
+              const request={citekeys:[expected],indexedKeys:[key]};
+              const held=await index.readLookup(request);
+              const first=Promise.withResolvers();
+              let projection;
+              projection=index.observeLookup(()=>{if(projection?.current)first.resolve();});
+              using disposeProjection=projection;
+              projection.set(request);
+              await first.promise;
               let previous=performance.now(),heldThroughout=true;
               using cleanup=new DisposableStack();
               const changed=Promise.withResolvers();
               cleanup.defer(s.zoteroReads.on('changed',()=>changed.resolve()));
-              const sample=()=>{const now=performance.now();gaps.push(now-previous);previous=now;heldThroughout&&=index.citekeyOf(key)===expected;};
+              const sample=()=>{const now=performance.now();gaps.push(now-previous);previous=now;heldThroughout&&=projection.current?.value.citekeyOf(key)===expected;};
               cleanup.adopt(setInterval(sample,4),clearInterval);
               await s.zoteroReads.refresh();
               await changed.promise;
-              const fresh=await index.readSnapshot();
+              const fresh=await index.readLookup(request);
               sample();
-              return JSON.stringify({gaps,heldThroughout,sameSnapshot:fresh===held,citekey:fresh.citekeyOf(key)});
+              return JSON.stringify({gaps,heldThroughout,sameRevision:fresh.revision===held.revision,citekey:fresh.citekeyOf(key),unique:fresh.resolve(expected)?.kind==="unique",unrequested:fresh.resolve("unrequested-probe-key")===null&&fresh.citekeyOf("UNREQUESTED")===undefined});
             })()`,
             120_000,
           ),
@@ -122,7 +132,10 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
     console.info("Citation Index refresh, 100,000 Items", { p99, maximum });
     expect(gaps.length).toBeGreaterThan(0);
     expect(evidence.every(({ heldThroughout }) => heldThroughout)).toBe(true);
-    expect(evidence.every(({ sameSnapshot }) => sameSnapshot)).toBe(true);
+    expect(evidence.every(({ sameRevision }) => sameRevision)).toBe(true);
+    expect(
+      evidence.every(({ unique, unrequested }) => unique && unrequested),
+    ).toBe(true);
     expect(evidence.map(({ citekey }) => citekey)).toEqual([
       item.citationKey,
       item.citationKey,

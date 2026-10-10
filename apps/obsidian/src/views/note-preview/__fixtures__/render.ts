@@ -1,3 +1,4 @@
+import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 // Live database and TemplateService boundaries for native preview tests.
 import type { DatabaseSync } from "node:sqlite";
 import type { App } from "obsidian";
@@ -118,8 +119,10 @@ export async function createRenderFixture(options: { existing?: string; javascri
     noteIndex: { getNotesByItemKey: (key) => file && key === "MAIN2345" ? [file] : [], getImportedNoteByNoteKey: () => [], whenIndexed: async () => {} },
     zoteroPref: { ready: Promise.resolve(), dataDir: "/Zotero", baseAttachmentPath: null },
     citationIndex: {
-      whenResolved: async () => {}, citekeyOf: () => "figures2014",
-      resolveCitekey: (key) => key === "figures2014" ? { kind: "unique", item: { itemID: 1, libraryID: 1, key: "MAIN2345", indexedKey: "MAIN2345" } } : { kind: "missing" },
+      readLookup: async ({citekeys = [], indexedKeys = []}) => lookupAnswer(
+        Object.fromEntries(citekeys.map((key) => [key, key === "figures2014" ? { kind: "unique", item: { itemID: 1, libraryID: 1, key: "MAIN2345", indexedKey: "MAIN2345" } } : {kind: "missing"}])),
+        Object.fromEntries(indexedKeys.map((key) => [key, key === "MAIN2345" ? "figures2014" : null])),
+      ),
     },
     bibliographyRender: { on: () => () => {}, renderCitations, readCitations, readBibliography: async () => null, vaultPresentation: { styleId: null, locale: null } },
   };

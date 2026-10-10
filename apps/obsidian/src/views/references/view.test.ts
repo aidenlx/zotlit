@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FIELD_CITATION_STYLE } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
+import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import type {
   CitationKeyResolution,
   DocumentCitationSet,
@@ -67,6 +68,7 @@ class TestReferencesView extends ReferencesView {
 }
 
 const citationSet: DocumentCitationSet = {
+  lookup: lookupAnswer(),
   occurrences: [],
   citations: [
     {
@@ -305,7 +307,6 @@ beforeEach(async () => {
           scans.push(deferred);
           return deferred.promise;
         },
-        resolveCitekey: () => ({ kind: "missing" }),
         get resolution() {
           return citekeyResolution;
         },
@@ -508,6 +509,7 @@ describe("ReferencesView Entry Serials", () => {
 describe("ReferencesView citekey resolution", () => {
   /** One citation whose key the resolution snapshot answers nothing for. */
   const unresolvedSet: DocumentCitationSet = {
+    lookup: lookupAnswer(),
     occurrences: [],
     citations: [
       {

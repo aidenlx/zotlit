@@ -7,12 +7,12 @@ import {
   FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_NOTE_KEY,
 } from "@/lib/constants";
+import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import type {
   Citation,
   CitationOccurrence,
   DocumentCitationSet,
 } from "@/services/citation-index/service";
-import { CitekeySnapshot } from "@/services/citation-index/snapshot";
 import {
   createCitationIndexHarness,
   DatabaseStub,
@@ -121,7 +121,7 @@ async function makeHarness({
   /** The document properties read by its Citation Presentation. */
   frontmatter?: Record<string, unknown>;
   settings?: Partial<Settings>;
-  documentCitationSet?: DocumentCitationSet;
+  documentCitationSet?: Omit<DocumentCitationSet, "lookup">;
   bibliographyRender?: CitationTextDeps["bibliographyRender"];
   queryClient?: QueryClientService;
 }): Promise<Harness> {
@@ -203,14 +203,14 @@ async function makeHarness({
     },
     db: reads,
     citationIndex: {
-      getDocumentCitationSet: () => Promise.resolve(set),
-      // Every Literature Note stand-in shares one Indexed Key, so one entry
-      // answers for however many linkpaths the test names.
-      citekeyOf: (indexedKey: string) =>
-        indexedKey === LIT_KEY
-          ? (Object.values(notes)[0]?.citekey ?? null)
-          : null,
-      readSnapshot: () => Promise.resolve(CitekeySnapshot.from([], new Set())),
+      getDocumentCitationSet: () =>
+        Promise.resolve({
+          ...set,
+          lookup: lookupAnswer(
+            {},
+            { [LIT_KEY]: Object.values(notes)[0]?.citekey ?? null },
+          ),
+        }),
       on: listen("index"),
     },
     noteIndex: {
