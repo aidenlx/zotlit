@@ -84,6 +84,8 @@ export const ITEMS: QueryDataset<ItemQueryRequest> = {
       const { filter, paths } = plan;
       const hydration = yield* openHydration(plan, libraries);
       const run: DatasetRun<QueryItem> = {
+        collectionPaths: (library) =>
+          hydration.candidateSources(library).collectionPaths,
         scan: hydration.scan,
         projection: hydration.projection,
         candidates: (library, tuning) =>

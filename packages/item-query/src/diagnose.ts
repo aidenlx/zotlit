@@ -39,6 +39,7 @@ import { COUNT_FIELDS, UNLIMITED_LIMIT } from "./request";
 interface DiagnosisContext extends ItemQueryErrorLocation {
   readonly dataset: QueryDataset<any>;
 }
+import type { CollectionWarning } from "./collection-warnings";
 import type { KeyLibraryWarning } from "./indexed-key-selection";
 
 interface WarningContext {
@@ -963,10 +964,37 @@ function diagnoseSyntax(
 
 /** Warnings describe the marked comparison; they never replace its evaluation. */
 export function diagnoseWarning(
-  fault: Extract<Fault, { kind: "constant" }> | KeyLibraryWarning,
+  fault:
+    | Extract<Fault, { kind: "constant" }>
+    | KeyLibraryWarning
+    | CollectionWarning,
   text: string,
   { clock, dataset }: WarningContext,
-): Diagnostic<"never-true" | "always-true" | "key-outside-target-libraries"> {
+): Diagnostic<
+  | "never-true"
+  | "always-true"
+  | "key-outside-target-libraries"
+  | "unknown-collection"
+> {
+  if (fault.kind === "unknown-collection") {
+    return {
+      ...renderDiagnostic(
+        {
+          code: "unknown-collection",
+          message: `Collection path ${JSON.stringify(fault.path)} was not found in the selected Libraries. List the Collection paths with zotlit:query-values kind=collections.`,
+          hint: "Use the exact Collection path, including letter case. Run zotlit:query-values kind=collections with the same library selection before you filter.",
+          location: { argument: "filter", span: fault.at },
+        },
+        text,
+        {
+          found: fault.path,
+          expected: ["a Collection path in the selected Libraries"],
+        },
+      ),
+      severity: "warning",
+      suggestions: fault.suggestions,
+    };
+  }
   if (fault.kind === "key-library") {
     const suggestion = `library=${fault.include}`;
     return {

@@ -92,6 +92,8 @@ export const ANNOTATIONS: QueryDataset<ItemQueryRequest> = {
       const { filter, paths } = plan;
       const hydration = yield* openAnnotationHydration(plan, request.libraries);
       const run: DatasetRun<QueryAnnotation> = {
+        collectionPaths: (library) =>
+          hydration.candidateSources(library).collectionPaths,
         scan: hydration.scan,
         projection: hydration.projection,
         candidates: (library, tuning) =>

@@ -54,3 +54,33 @@ function editDistance(left: string, right: string): number {
   }
   return previous[right.length]!;
 }
+
+/** Collection paths rank by exact case, then whole-path and leaf distance. */
+export function nearCollectionMatches(
+  name: string,
+  candidates: readonly string[],
+): readonly string[] {
+  const needle = name.toLowerCase();
+  const leaf = (path: string) => path.slice(path.lastIndexOf("/") + 1);
+  return candidates
+    .map((candidate, index) => {
+      const value = candidate.toLowerCase();
+      const whole = editDistance(needle, value);
+      return {
+        candidate,
+        index,
+        caseMatch: value === needle,
+        whole,
+        distance: Math.min(whole, editDistance(leaf(needle), leaf(value))),
+      };
+    })
+    .toSorted(
+      (a, b) =>
+        Number(b.caseMatch) - Number(a.caseMatch) ||
+        a.distance - b.distance ||
+        a.whole - b.whole ||
+        a.index - b.index,
+    )
+    .slice(0, 3)
+    .map(({ candidate }) => candidate);
+}
