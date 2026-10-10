@@ -203,6 +203,17 @@ function querySpecs(uniqueKey: string): QuerySpec[] {
       "other",
       `collections.within(${quote(collectionPath(collections.common.name))})`,
     ),
+    {
+      id: "collection-annotation-parent",
+      class: "other",
+      args: {
+        from: "annotations",
+        // The Stress Build keeps the Fixture's annotated Items in Shared key;
+        // its synthetic Items in the Stress Build Collections have no marks.
+        filter: `attachment.item.collections.within(${quote("Shared key")})`,
+        limit: "100",
+      },
+    },
     limited(
       "venue-common",
       "other",
