@@ -56,6 +56,19 @@ function projected(fields, field) {
   );
 }
 
+// A complete grouped envelope carries every row inside its groups, so a
+// grouped answer to a listing question is as complete as a flat one.
+function resultRows(envelope) {
+  if (Array.isArray(envelope?.rows)) return envelope.rows;
+  if (
+    Array.isArray(envelope?.groups) &&
+    envelope.truncated === false &&
+    envelope.request?.limit === null
+  )
+    return envelope.groups.flatMap((group) => group.rows ?? []);
+  return undefined;
+}
+
 function commonChecks(envelope, expected, { runRoot, vaultPath }) {
   const errors = [];
   const need = (test, message) => {
@@ -109,7 +122,7 @@ function validateExpandedAnnotations(
   const request = envelope?.request ?? {};
   for (const field of expandedFields[caseName])
     need(projected(request.fields, field), `missing projected field ${field}`);
-  const rows = envelope?.rows;
+  const rows = resultRows(envelope);
   need(Array.isArray(rows), "full result rows are missing");
   if (!Array.isArray(rows)) return errors;
   need(rows.length === expected.count, `expected ${expected.count} rows`);
@@ -190,7 +203,7 @@ function validateAnnotations(caseName, envelope, { expected, ...context }) {
     envelope?.libraries?.some((library) => library.type === "personal"),
     "My Library was not queried",
   );
-  const rows = envelope?.rows;
+  const rows = resultRows(envelope);
   need(Array.isArray(rows), "full result rows are missing");
   if (!Array.isArray(rows)) return errors;
   need(rows.length === expected.count, `expected ${expected.count} rows`);
@@ -303,7 +316,7 @@ function validateItems(caseName, envelope, { expected, ...context }) {
     envelope?.libraries?.some((library) => library.groupID === 118),
     "Lab Archive was not queried",
   );
-  const rows = envelope?.rows;
+  const rows = resultRows(envelope);
   need(Array.isArray(rows), "full result rows are missing");
   if (!Array.isArray(rows)) return errors;
   need(rows.length === expected.count, `expected ${expected.count} rows`);

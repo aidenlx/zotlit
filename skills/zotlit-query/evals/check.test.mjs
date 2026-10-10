@@ -425,3 +425,27 @@ await test("edge accepts Library evidence from Indexed Keys", () => {
   result.rows[0].indexedKey += "g999";
   assert.ok(validate("edge", result, { runRoot: root }).length > 0);
 });
+
+for (const caseName of ["include", "edge", "export"]) {
+  await test(`${caseName} accepts a complete grouped envelope and rejects a cut one`, () => {
+    const result = envelope(caseName);
+    const byYear = Map.groupBy(
+      result.rows,
+      (row) => row.values["date.year"] ?? null,
+    );
+    result.request.group = "date.year";
+    result.groups = [...byYear].map(([value, rows]) => ({
+      value,
+      count: rows.length,
+      rows,
+    }));
+    result.totalCount = result.rows.length;
+    delete result.rows;
+    assert.deepEqual(validate(caseName, result, { runRoot: root }), []);
+    result.truncated = true;
+    assert.match(
+      validate(caseName, result, { runRoot: root }).join("\n"),
+      /full result rows are missing/,
+    );
+  });
+}
