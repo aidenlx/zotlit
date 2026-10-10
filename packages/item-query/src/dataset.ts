@@ -6,6 +6,8 @@ import type { Effect } from "effect";
 
 import type { Attachment } from "@zotlit/db";
 import type {
+  ParentCandidates,
+  ParentCandidateLeaf,
   ItemQueryDatabase,
   ItemQueryReaderError,
   ScanRow,
@@ -55,7 +57,7 @@ export const AttachmentFileResolver =
   );
 
 /** A dataset leaf; Relation List elements page in ascending source ID order. */
-export type CandidateReader = (page: {
+export type CandidatePageReader = (page: {
   libraryID: number;
   limit: number;
   afterItemID?: number;
@@ -72,7 +74,16 @@ export interface CandidateRelation {
 /** A reversed Parent Record relation selects child IDs with the parent leaf. */
 export interface CandidateParentRelation {
   readonly dataset: () => CandidateDataset;
-  readonly readChildren: CandidateDataset["readCandidate"];
+  readonly readChildren: (page: {
+    libraryID: number;
+    limit: number;
+    budget: number;
+    leaf: ParentCandidateLeaf;
+  }) => Effect.Effect<
+    ParentCandidates,
+    ItemQueryReaderError,
+    ItemQueryDatabase
+  >;
 }
 
 /** The candidate pass needs only lowering, readers, and the record relations. */
@@ -83,8 +94,8 @@ export interface CandidateDataset<Leaf = any> {
     sources: CandidateSources,
   ) => Leaf | null;
   readonly readCandidate: (
-    page: Parameters<CandidateReader>[0] & { leaf: Leaf },
-  ) => ReturnType<CandidateReader>;
+    page: Parameters<CandidatePageReader>[0] & { leaf: Leaf },
+  ) => ReturnType<CandidatePageReader>;
   readonly readRowCount: (
     libraryID: number,
   ) => Effect.Effect<number, ItemQueryReaderError, ItemQueryDatabase>;

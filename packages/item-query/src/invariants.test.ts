@@ -33,6 +33,7 @@ const BULK_CAP = 650;
 let scenario: ScenarioDatabase;
 let annotations: ScenarioDatabase;
 let attachments: ScenarioDatabase;
+let bounded: ScenarioDatabase;
 
 beforeAll(async () => {
   scenario = openScenarioDatabase();
@@ -40,6 +41,10 @@ beforeAll(async () => {
   // The first statement on a copy runs the layout check. Its two statements
   // are in the events of that run only, so each test starts after it.
   resultOf(await run({ fields: [], limit: 1 }));
+  bounded = openScenarioDatabase();
+  seedBulkLibrary(bounded.sqlite, 4_501);
+  seedBulkAnnotations(bounded.sqlite, 6_001);
+  resultOf(await run({ fields: [], limit: 1 }, { bound: true }));
   attachments = openScenarioDatabase();
   seedBulkLibrary(attachments.sqlite, BULK_ITEMS);
   seedBulkAttachments(attachments.sqlite, BULK_ITEMS);
@@ -54,6 +59,7 @@ afterAll(() => {
   scenario.close();
   annotations.close();
   attachments.close();
+  bounded.close();
 });
 
 type Request = Omit<ItemQueryRequest, "libraries">;
@@ -65,6 +71,7 @@ function run(
     annotation?: boolean;
     attachment?: boolean;
     relation?: boolean;
+    bound?: boolean;
   } = {},
 ) {
   const {
@@ -72,6 +79,7 @@ function run(
     annotation = false,
     attachment = false,
     relation = false,
+    bound = false,
     ...rest
   } = options;
   return runEffect(
@@ -89,11 +97,13 @@ function run(
       },
     ),
     {
-      client: attachment
-        ? attachments.db
-        : annotation
-          ? annotations.db
-          : scenario.db,
+      client: bound
+        ? bounded.db
+        : attachment
+          ? attachments.db
+          : annotation
+            ? annotations.db
+            : scenario.db,
       ...rest,
     },
   );
@@ -127,12 +137,48 @@ const PLAN_PATHS: readonly {
   annotation?: boolean;
   attachment?: boolean;
   relation?: boolean;
+  bound?: boolean;
   result?: Pick<QueryResult, "returnedCount" | "truncated">;
   /** @default the bulk Library */
   libraries?: ItemQueryRequest["libraries"];
   /** The Items that each statement of a reader reads, in order. */
   reads: Record<string, number[]>;
 }[] = [
+  {
+    name: "relation-page-budget-exhausted",
+    bound: true,
+    relation: true,
+    request: {
+      filter: 'annotations.filter(value.type == "highlight").length > 0',
+      fields: [],
+      sort: [],
+      limit: 1,
+    },
+    result: { returnedCount: 1, truncated: false },
+    reads: {
+      "annotation-candidate-set": [501, 501, 501, 501, 501, 501, 501, 501],
+      "scan-page": [500, 500, 500, 500, 500, 500, 500, 500, 500, 1],
+      "annotation-details": [...Array<number>(24).fill(250), 1],
+    },
+  },
+  {
+    name: "parent-page-budget-exhausted",
+    bound: true,
+    attachment: true,
+    request: {
+      filter: 'item.tags.contains("bulk")',
+      fields: ["title"],
+      sort: [],
+      limit: 1,
+    },
+    result: { returnedCount: 1, truncated: false },
+    reads: {
+      "parent-leaf-candidate-set": [4001],
+      "attachment-scan-page": [1],
+      "hydrate-chunk": [1],
+      "attachment-details": [1],
+    },
+  },
   {
     name: "an Item relation candidate through an Attachment key",
     attachment: true,
@@ -180,7 +226,12 @@ const PLAN_PATHS: readonly {
     attachment: true,
     request: { filter, fields: ["title"], limit: 10 },
     reads: {
-      "attachment-candidate-set": [1],
+      ...(filter.startsWith("indexedKey")
+        ? { "attachment-candidate-set": [1] }
+        : {
+            "parent-leaf-candidate-set": [1],
+            "parent-child-candidate-set": [1],
+          }),
       "attachment-universe-rows": [1],
       "attachment-details": [1],
     },
@@ -229,7 +280,8 @@ const PLAN_PATHS: readonly {
       limit: 10,
     },
     reads: {
-      "attachment-candidate-set": [520],
+      "parent-leaf-candidate-set": [520],
+      "parent-child-candidate-set": [500, 20],
       "attachment-universe-rows": [500, 20],
       "hydrate-chunk": [250, 250, 20],
       "attachment-details": [10],
@@ -284,7 +336,8 @@ const PLAN_PATHS: readonly {
     annotation: true,
     request: { filter, fields: ["text"], limit: 10 },
     reads: {
-      "annotation-candidate-set": [BULK_CAP + 1],
+      "parent-leaf-candidate-set": [1],
+      "parent-child-candidate-set": [BULK_CAP + 1],
       "annotation-scan-page": [500, 500, 500, 500, 500, 100],
       "annotation-details": [10],
     },
@@ -431,12 +484,21 @@ const PLAN_PATHS: readonly {
 describe("the Items one statement reads", () => {
   it.each(PLAN_PATHS)(
     "reads at most 500 Item rows in $name",
-    async ({ request, libraries, reads, annotation, attachment, relation }) => {
+    async ({
+      request,
+      libraries,
+      reads,
+      annotation,
+      attachment,
+      relation,
+      bound,
+    }) => {
       const { events, exit } = await run(request, {
         libraries,
         annotation,
         attachment,
         relation,
+        bound,
       });
       expect(Exit.isSuccess(exit)).toBe(true);
 
@@ -445,6 +507,8 @@ describe("the Items one statement reads", () => {
         "universe-rows",
         "hydrate-chunk",
         "candidate-set",
+        "parent-leaf-candidate-set",
+        "parent-child-candidate-set",
         "attachment-scan-page",
         "attachment-universe-rows",
         "attachment-details",
@@ -498,12 +562,13 @@ describe("the Items one statement reads", () => {
 describe("the pauses between two chunks", () => {
   it.each(PLAN_PATHS)(
     "pauses between every two statements of $name",
-    async ({ request, libraries, annotation, attachment, relation }) => {
+    async ({ request, libraries, annotation, attachment, relation, bound }) => {
       const { events } = await run(request, {
         libraries,
         annotation,
         attachment,
         relation,
+        bound,
       });
 
       const statements = events.filter((event) => event.type === "statement");
@@ -859,8 +924,8 @@ describe("Annotation projection and active cancellation", () => {
 describe("Attachment active cancellation", () => {
   describe.each(PLAN_PATHS.filter((path) => path.attachment))(
     "active cancellation in $name",
-    ({ request, relation }) => {
-      const options = { relation, attachment: true };
+    ({ request, relation, bound }) => {
+      const options = { relation, bound, attachment: true };
       let checkpoints: Map<string, number>;
 
       beforeAll(async () => {
@@ -1050,9 +1115,9 @@ describe("Relation List candidate bounds", () => {
       expect(resultOf(actual).returnedCount).toBe(1);
       const pages = itemsRead(actual.events, "annotation-candidate-set");
       expect(pages.length).toBeGreaterThan(0);
-      expect(pages.every((size) => size <= 500)).toBe(true);
+      expect(pages.every((size) => size <= 501)).toBe(true);
       expect(pages.reduce((sum, count) => sum + count, 0)).toBe(
-        capRatio === 0 ? 500 : 2080,
+        capRatio === 0 ? 501 : 2084,
       );
       expect(itemsRead(actual.events, "scan-page").length > 0).toBe(
         capRatio === 0,
@@ -1136,7 +1201,7 @@ describe("Relation List candidate bounds", () => {
       1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
     ]);
     expect(itemsRead(actual.events, "annotation-candidate-set")).toEqual([
-      500, 500, 500, 500, 80,
+      501, 501, 501, 501, 80,
     ]);
   });
 
@@ -1184,7 +1249,7 @@ describe("Relation List candidate bounds", () => {
   });
 });
 
-it("reads fewer Attachment rows for a selective Parent Record Tag in one candidate statement", async () => {
+it("reads fewer Attachment rows for a selective Parent Record Tag", async () => {
   const request = {
     fields: [],
     filter: `item.tags.contains("${BULK_FIFTH_TAG}")`,
@@ -1196,7 +1261,10 @@ it("reads fewer Attachment rows for a selective Parent Record Tag in one candida
   });
   expect(resultOf(actual)).toEqual(resultOf(scan));
   expect(resultOf(actual).returnedCount).toBe(520);
-  expect(itemsRead(actual.events, "attachment-candidate-set")).toEqual([520]);
+  expect(itemsRead(actual.events, "parent-leaf-candidate-set")).toEqual([1040]);
+  expect(itemsRead(actual.events, "parent-child-candidate-set")).toEqual([
+    500, 20, 0,
+  ]);
   expect(itemsRead(actual.events, "attachment-scan-page")).toEqual([]);
   expect(
     itemsRead(actual.events, "attachment-universe-rows").reduce(
@@ -1228,7 +1296,7 @@ it("reads fewer Annotation rows through a selective Parent Record Collection", a
   });
   expect(resultOf(actual)).toEqual(resultOf(scan));
   expect(resultOf(actual).returnedCount).toBe(12);
-  expect(itemsRead(actual.events, "annotation-candidate-set")).toEqual([12]);
+  expect(itemsRead(actual.events, "parent-child-candidate-set")).toEqual([12]);
   expect(itemsRead(actual.events, "annotation-scan-page")).toEqual([]);
   expect(
     itemsRead(actual.events, "annotation-universe-rows").reduce(

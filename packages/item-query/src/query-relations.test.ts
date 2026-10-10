@@ -2,6 +2,10 @@ import { Cause, Effect } from "effect";
 import { expect, it } from "vitest";
 
 import {
+  BULK_LIBRARY,
+  seedBulkLibrary,
+  seedBulkAttachments,
+  seedBulkAnnotations,
   openScenarioDatabase,
   SCENARIO_LIBRARIES,
 } from "@zotlit/db/test-scenario";
@@ -1054,3 +1058,63 @@ it("rejects a group path with two [] and names the one-[] rule", async () => {
     diagnostic: { found: "2 []", expected: ["one []"] },
   });
 });
+
+// Failure modes: many elements on one paper bypass the parent cap, a budget
+// grows with match count, or an incomplete candidate set changes the result.
+it.each([
+  [3_000, 17, false],
+  [4_000, 23, false],
+  [4_001, 23, true],
+  [10_000, 24, true],
+] as const)(
+  "bounds Relation List candidate statements with %i elements on one paper",
+  async (count, statementCount, scans) => {
+    using scenario = openScenarioDatabase();
+    seedBulkLibrary(scenario.sqlite, count);
+    seedBulkAttachments(scenario.sqlite, count);
+    seedBulkAnnotations(scenario.sqlite, count);
+    scenario.sqlite.exec(`
+    update itemAttachments set parentItemID = (select itemID from items where key = 'BLK22222')
+    where itemID in (select itemID from items where libraryID = 3);
+    insert into itemTags (itemID, tagID, type)
+    select itemID, (select tagID from tags where name = 'bulk'), 0
+    from items where libraryID = 3 and key != 'BULKPDF2' and itemTypeID in
+      (select itemTypeID from itemTypesCombined where typeName in ('attachment', 'annotation'));
+  `);
+    for (const [dataset, relation] of [
+      [ITEMS, "annotations"],
+      [ITEMS, "attachments"],
+      [ATTACHMENTS, "annotations"],
+    ] as const) {
+      const query = collectQuery(dataset, {
+        libraries: [BULK_LIBRARY],
+        fields: [],
+        sort: [],
+        filter: `${relation}.filter(value.tags.contains("bulk")).length > 0`,
+      });
+      const actual = await runEffect(query, { client: scenario.db });
+      const scan = await runEffect(query, {
+        client: scenario.db,
+        tuning: { forceScan: true },
+      });
+      expect(actual.exit).toEqual(scan.exit);
+      expect(actual.exit).toMatchObject({
+        _tag: "Success",
+        value: { returnedCount: 1 },
+      });
+      const statements = actual.events.filter(
+        (event) =>
+          event.type === "statement" &&
+          event.statement.reader.endsWith("candidate-set"),
+      );
+      expect(statements).toHaveLength(statementCount);
+      expect(
+        actual.events.some(
+          (event) =>
+            event.type === "statement" &&
+            event.statement.reader.endsWith("scan-page"),
+        ),
+      ).toBe(scans);
+    }
+  },
+);

@@ -29,16 +29,21 @@ export const runCandidatePass = Effect.fnUntraced(function* ({
 }) {
   const plan =
     filter && !tuning.forceScan
-      ? planDatasetCandidates(filter, sources, { dataset, library })
+      ? planDatasetCandidates(filter, sources, {
+          dataset,
+          library,
+          relationPageBudget: tuning.relationPageBudget,
+        })
       : null;
   const cap = plan
     ? Math.floor(
         (yield* dataset.readRowCount(library.libraryID)) * tuning.capRatio,
       )
     : null;
-  const candidates = plan
+  const outcome = plan
     ? yield* readDatasetCandidates(plan, library.libraryID, cap!)
     : null;
+  const candidates = typeof outcome === "string" ? null : outcome;
   logger.debug(
     "ZotLit Query uses {plan} for {dataset} in Library {libraryID}",
     {
@@ -56,7 +61,7 @@ export const runCandidatePass = Effect.fnUntraced(function* ({
             : tuning.forceScan
               ? "forced-scan"
               : plan
-                ? "candidate-cap-exceeded"
+                ? outcome
                 : "unsupported-filter",
     },
   );

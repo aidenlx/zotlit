@@ -7,9 +7,7 @@ import {
   ItemQueryDatabase,
   ItemQueryStatementObserver,
   readRelationCandidateSet,
-  readAnnotationCandidateSet,
-  readAttachmentCandidateSet,
-  readAnnotationAttachmentCandidateSet,
+  readParentCandidateSet,
   readUniverseRows,
   readAttachmentUniverseRows,
 } from ".";
@@ -72,7 +70,7 @@ it.each([
   "annotation-item",
   "annotation-attachment",
 ] as const)(
-  "caps the composed parent selection %s within its Target Library",
+  "bounds the composed Parent Record selection %s within its Target Library",
   (relation) => {
     using scenario = openScenarioDatabase({ annotations: true });
     const run = <A, E>(effect: Effect.Effect<A, E, ItemQueryDatabase>) =>
@@ -81,36 +79,37 @@ it.each([
           client: scenario.db,
         }),
       );
-    const read = (page: {
+    const read = (options: {
       libraryID: number;
       limit?: number;
-      afterItemID?: number;
-    }) => {
-      const options = { limit: 500, ...page };
-      if (relation === "annotation-attachment")
-        return readAnnotationAttachmentCandidateSet({
-          ...options,
-          leaf: { kind: "keys", keys: ["PDF2LIVE"] },
-        });
-      const leaf = {
-        kind: "parent" as const,
-        leaf: { kind: "keys" as const, keys: ["ART2FULL"] },
-      };
-      return relation === "attachment-item"
-        ? readAttachmentCandidateSet({ ...options, leaf })
-        : readAnnotationCandidateSet({ ...options, leaf });
-    };
-    const all = run(read({ libraryID: 1 }));
-    expect(all.length).toBeGreaterThan(1);
-    const first = run(read({ libraryID: 1, limit: 1 }));
-    const rest = run(
-      read({
-        libraryID: 1,
-        afterItemID: first[0],
+      budget?: number;
+    }) =>
+      readParentCandidateSet({
         limit: 500,
-      }),
+        budget: 3000,
+        ...options,
+        relation,
+        leaf: {
+          kind: "keys",
+          keys: [
+            relation === "annotation-attachment" ? "PDF2LIVE" : "ART2FULL",
+          ],
+        },
+      });
+    const all = run(read({ libraryID: 1 }));
+    expect(all.itemIDs.length).toBeGreaterThan(1);
+    expect(all.exhausted).toBe(false);
+    expect(run(read({ libraryID: 1, limit: 1 })).itemIDs).toEqual(
+      all.itemIDs.slice(0, 1),
     );
-    expect([...first, ...rest]).toEqual(all);
-    expect(run(read({ libraryID: -1 }))).toEqual([]);
+    expect(run(read({ libraryID: 1, budget: 1 })).exhausted).toBe(true);
+    expect(run(read({ libraryID: -1, budget: 1 }))).toEqual({
+      itemIDs: [],
+      exhausted: false,
+    });
+    expect(run(read({ libraryID: -1 }))).toEqual({
+      itemIDs: [],
+      exhausted: false,
+    });
   },
 );

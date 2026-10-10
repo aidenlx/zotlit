@@ -6,6 +6,7 @@ import { formatIndexedKey } from "@zotlit/db";
 import {
   readAttachmentCandidateSet,
   readRelationCandidateSet,
+  readParentCandidateSet,
   readAttachmentRowCount,
   readAttachmentScanPage,
   readAttachmentUniverseRows,
@@ -57,7 +58,7 @@ export const ATTACHMENTS: QueryDataset<ItemQueryRequest> = {
     item: {
       dataset: () => ITEMS,
       readChildren: ({ leaf, ...page }) =>
-        readAttachmentCandidateSet({ ...page, leaf: { kind: "parent", leaf } }),
+        readParentCandidateSet({ ...page, leaf, relation: "attachment-item" }),
     },
     annotations: {
       dataset: () => ANNOTATIONS,

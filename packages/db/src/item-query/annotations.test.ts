@@ -8,7 +8,7 @@ import {
   readAnnotationScanPage,
   readAnnotationRowCount,
   readAnnotationCandidateSet,
-  readAnnotationAttachmentCandidateSet,
+  readParentCandidateSet,
   readAnnotationUniverseRows,
   readAnnotationHydrateChunk,
   ItemQueryStatementObserver,
@@ -134,25 +134,29 @@ it("counts the live Annotation universe and applies a candidate limit after the 
     1,
   );
   const candidates = run(
-    readAnnotationCandidateSet({
+    readParentCandidateSet({
+      relation: "annotation-item",
+      budget: 3000,
       libraryID: 1,
-      leaf: { kind: "parent", leaf: { kind: "key", key: "ART2FULL" } },
+      leaf: { kind: "key", key: "ART2FULL" },
       limit: 4,
     }),
   );
-  expect(candidates).toHaveLength(4);
+  expect(candidates.itemIDs).toHaveLength(4);
   const live = run(
-    readAnnotationUniverseRows({ libraryID: 1, itemIDs: candidates }),
+    readAnnotationUniverseRows({ libraryID: 1, itemIDs: candidates.itemIDs }),
   );
   expect(live.every((row) => row.parent.key === "ART2FULL")).toBe(true);
   expect(
     run(
-      readAnnotationCandidateSet({
+      readParentCandidateSet({
+        relation: "annotation-item",
+        budget: 3000,
         libraryID: SCENARIO_LIBRARIES.group.libraryID,
-        leaf: { kind: "parent", leaf: { kind: "key", key: "ART2FULL" } },
+        leaf: { kind: "key", key: "ART2FULL" },
         limit: 4,
       }),
-    ),
+    ).itemIDs,
   ).toHaveLength(1);
 });
 
@@ -178,13 +182,21 @@ it.each([
       selected: readonly string[] = keys,
     ) => {
       const leaf = { kind: "keys" as const, keys: selected };
-      return target === "attachment"
-        ? readAnnotationAttachmentCandidateSet({ libraryID, limit, leaf })
-        : readAnnotationCandidateSet({
-            libraryID,
-            limit,
-            leaf: target === "item" ? { kind: "parent", leaf } : leaf,
-          });
+      return target === "self"
+        ? readAnnotationCandidateSet({ libraryID, limit, leaf })
+        : Effect.map(
+            readParentCandidateSet({
+              libraryID,
+              limit,
+              budget: 3000,
+              leaf,
+              relation:
+                target === "attachment"
+                  ? "annotation-attachment"
+                  : "annotation-item",
+            }),
+            (page) => page.itemIDs,
+          );
     };
     const ids = run(read(1, 100));
     expect(
