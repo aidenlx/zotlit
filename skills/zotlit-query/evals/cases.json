@@ -20,6 +20,7 @@
   "recently_annotated": "In My Library, among the papers in my Query thesis collection, which papers did I mark between 1 January and 30 April 2024? List each paper once with its title and total number of marks.",
   "count_per_paper": "In My Library, among the papers in my Query thesis collection, how many marks are on each paper that has marks? Keep the two editions of a paper together and give the paper title with each count.",
   "count_by_year": "In My Library, among the papers in my Query thesis collection, how many papers were published in each year? Include papers with no publication year.",
+  "papers_per_tag": "In My Library, how many papers in my Query thesis collection carry each tag? Include papers with no tags, and give the total number of papers.",
   "unread_in_collection": "In My Library, among the papers in my Query thesis collection, which papers have no highlights yet? Give their titles so I can plan my reading.",
   "attachment_types": "In My Library, among the papers in my Query thesis collection, how many attachments are PDFs, EPUBs, or web pages? Include publisher links as web pages.",
   "fuzzy_search": "In My Library, among the papers in my Query thesis collection, find papers related to “attention clinical” using fuzzy search, with a PDF available on this computer. If fuzzy search is unavailable, say so and show papers whose titles contain both words instead.",

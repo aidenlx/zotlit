@@ -281,9 +281,15 @@ export function checkResearchAnswer(
           }))
         : answer.rows,
       want.rows ??
-        groups
-          .flatMap((g) => g.rows)
-          .filter((row) => returned.has(row.indexedKey)),
+        // Element groups overlap: a paper in two groups is one answer row.
+        [
+          ...new Map(
+            groups
+              .flatMap((g) => g.rows)
+              .filter((row) => returned.has(row.indexedKey))
+              .map((row) => [row.indexedKey, row]),
+          ).values(),
+        ],
     ).map((e) => `answer: ${e}`),
   );
   const countsInRows = want.paperGroups && answer.groups?.length === 0;

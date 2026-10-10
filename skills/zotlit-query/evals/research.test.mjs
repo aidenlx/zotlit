@@ -32,7 +32,10 @@ for (const [name, spec] of Object.entries(oracle.cases).filter(
         limit: null,
         group: spec.group,
       },
-      returnedCount: spec.count,
+      // A record in two element groups is two row entries.
+      returnedCount:
+        expected.rows?.length ??
+        expected.groups.reduce((sum, group) => sum + group.rows.length, 0),
       totalCount: spec.count,
       truncated: false,
       warnings: [],
@@ -45,7 +48,13 @@ for (const [name, spec] of Object.entries(oracle.cases).filter(
       answer: "Complete results.",
       count: spec.count,
       rows: structuredClone(
-        expected.rows ?? expected.groups.flatMap((g) => g.rows),
+        expected.rows ?? [
+          ...new Map(
+            expected.groups
+              .flatMap((g) => g.rows)
+              .map((row) => [row.indexedKey, row]),
+          ).values(),
+        ],
       ),
       groups: (expected.groups ?? []).map(({ value, count }) => ({
         value,
@@ -128,7 +137,12 @@ await test("group answers can list the same counts in any order", async () => {
   const live = JSON.parse(
     await readFile(new URL("./live-projections.json", import.meta.url), "utf8"),
   );
-  for (const name of ["attachment_types", "count_by_year", "count_per_paper"]) {
+  for (const name of [
+    "attachment_types",
+    "count_by_year",
+    "count_per_paper",
+    "papers_per_tag",
+  ]) {
     const { envelope, answer } = structuredClone(live[name]);
     const context = { runRoot: "/evaluation-run/corpus", envelope };
     answer.groups.reverse();
@@ -391,4 +405,43 @@ await test("Collection discovery requires a returned path before a matching quer
     [{ ...discovery, discovered: [] }, query],
   ])
     assert.ok(checkCollectionDiscovery(spec, calls).length);
+});
+
+await test("tag groups overlap: a paper in two groups is one paper of the count", async () => {
+  const live = JSON.parse(
+    await readFile(new URL("./live-projections.json", import.meta.url), "utf8"),
+  );
+  const { envelope, answer } = structuredClone(live.papers_per_tag);
+  const context = {
+    runRoot: "/evaluation-run/corpus",
+    vaultPath: envelope.identity.vault.path,
+    envelope,
+  };
+  assert.deepEqual(validate("papers_per_tag", envelope, context), []);
+  assert.deepEqual(checkAnswer("papers_per_tag", answer, context), []);
+  // limit=4 cuts the five-paper group: five row entries, truncated.
+  const limited = structuredClone(envelope);
+  limited.request.limit = 4;
+  limited.groups[0].rows = limited.groups[0].rows.slice(0, 4);
+  limited.returnedCount = 5;
+  limited.truncated = true;
+  assert.deepEqual(validate("papers_per_tag", limited, context), []);
+  limited.truncated = false;
+  assert.match(
+    validate("papers_per_tag", limited, context).join("\n"),
+    /wrong grouped truncation/,
+  );
+  // The paper count is the number of papers, not the row entries.
+  assert.match(
+    checkAnswer("papers_per_tag", { ...answer, count: 6 }, context).join("\n"),
+    /answer count is wrong/,
+  );
+  assert.match(
+    checkAnswer(
+      "papers_per_tag",
+      { ...answer, groups: [{ value: "query-cross-eval", count: 5 }] },
+      context,
+    ).join("\n"),
+    /wrong group counts/,
+  );
 });
