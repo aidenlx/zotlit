@@ -140,6 +140,7 @@ async function makeHarness({
   const children: MarkdownRenderChild[] = [];
   let ambiguous = ambiguousKeys;
   let resolutionReady = !resolutionPending;
+  const resolutionListeners = new Set<() => void>();
   const observations = new Set<{
     changed: () => void;
     citekeys: readonly string[];
@@ -189,7 +190,10 @@ async function makeHarness({
             errors: [],
             lookup: answer(occurrences.map((occurrence) => occurrence.raw)),
           }),
-        on: () => () => undefined,
+        on: (event: string, callback: () => void) => {
+          if (event === "resolution-changed") resolutionListeners.add(callback);
+          return () => resolutionListeners.delete(callback);
+        },
       },
       noteIndex: {
         on: () => () => undefined,
@@ -319,6 +323,7 @@ async function makeHarness({
         };
         state.changed();
       }
+      for (const callback of resolutionListeners) callback();
     },
     unloadSections: () => {
       for (const child of children.splice(0)) child.unload();
@@ -836,7 +841,7 @@ describe("CitekeyReading refresh", () => {
     expect(el.textContent).toBe(`Blah «[@${ALPHA_KEY}]».`);
   });
 
-  it("follows the citekey resolution snapshot in place when it rebuilds", async () => {
+  it("keeps key state with the held document until its fresh read arrives", async () => {
     await using harnessed = await makeHarness({
       body: "[@twin]",
       cited: [citation("twin", null)],
@@ -850,8 +855,13 @@ describe("CitekeyReading refresh", () => {
     harnessed.rebuildResolution(["twin"]);
 
     expect(
-      el.querySelector(`.${themeHook.citationKeyAmbiguous}`),
+      el.querySelector(`.${themeHook.citationKeyUnresolved}`),
     ).not.toBeNull();
+    await vi.waitFor(() =>
+      expect(
+        el.querySelector(`.${themeHook.citationKeyAmbiguous}`),
+      ).not.toBeNull(),
+    );
     expect(el.querySelector(`.${themeHook.citationKeyUnresolved}`)).toBeNull();
     expect(harnessed.rerenders()).toBe(0);
   });

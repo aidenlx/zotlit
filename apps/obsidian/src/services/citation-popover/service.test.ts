@@ -9,7 +9,10 @@ import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
 import * as m from "@/lib/i18n/generated/messages";
-import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
+import {
+  lookupAnswer,
+  lookupForWorks,
+} from "@/services/citation-index/__fixtures__/lookup";
 import type { CitekeyResolution } from "@/services/citation-index/service";
 import type { DocumentCitations } from "@/services/citation-text/service";
 import type { BibliographyRenderResult } from "@/services/pandoc/render-cache";
@@ -100,6 +103,7 @@ const emptyText = (): DocumentCitations => ({
   formatted: new Map(),
   entrySerials: false,
   summaries: new Map(),
+  lookup: lookupForWorks(new Map()),
   literalWorks: new Map(),
 });
 

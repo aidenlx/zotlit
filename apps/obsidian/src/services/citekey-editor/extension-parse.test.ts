@@ -3,6 +3,7 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
+import { lookupForWorks } from "@/services/citation-index/__fixtures__/lookup";
 import { CitationLookupAnswer } from "@/services/citation-index/lookup";
 
 const { livePreview, parseState, tokenClassNodeProp, lineClassNodeProp } =
@@ -92,6 +93,7 @@ it.each([
     ]),
     entrySerials: false,
     summaries: new Map([["DOE22345", "Doe (2024)"]]),
+    lookup: lookupForWorks(new Map([["doe2024", "DOE22345"]])),
     literalWorks: new Map([["doe2024", "DOE22345"]]),
   };
   const held: Held<DocumentCitations> = {

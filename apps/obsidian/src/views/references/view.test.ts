@@ -6,7 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FIELD_CITATION_STYLE } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
-import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
+import {
+  lookupAnswer,
+  lookupForWorks,
+} from "@/services/citation-index/__fixtures__/lookup";
 import type {
   CitationKeyResolution,
   DocumentCitationSet,
@@ -160,6 +163,7 @@ function heldText(entrySerials: boolean): DocumentCitations {
     formatted: new Map(),
     entrySerials,
     summaries: new Map(),
+    lookup: lookupForWorks(new Map()),
     literalWorks: new Map(),
   };
 }

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
+import { lookupForWorks } from "@/services/citation-index/__fixtures__/lookup";
 import { CitationLookupAnswer } from "@/services/citation-index/lookup";
 import type { CitekeyResolution } from "@/services/citation-index/service";
 import type { DocumentCitations } from "@/services/citation-text/service";
@@ -531,6 +532,7 @@ class CitationTextStub {
       formatted: new Map(),
       entrySerials: false,
       summaries: new Map(),
+      lookup: lookupForWorks(new Map()),
       literalWorks: new Map(),
     });
   }

@@ -3,6 +3,8 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { lookupForWorks } from "@/services/citation-index/__fixtures__/lookup";
+
 const { livePreview, hoverLinks } = vi.hoisted(() => ({
   livePreview: vi.fn(() => false),
   /** Every `hover-link` the editor's own workspace was asked to answer. */
@@ -376,6 +378,7 @@ describe("citekeyEditorExtension theme hooks", () => {
                   formatted: new Map([["[@doe2024]", occurrences(formatted)]]),
                   entrySerials: false,
                   summaries: new Map([[DOE_KEY, "Doe (2024)"]]),
+                  lookup: lookupForWorks(new Map([["doe2024", DOE_KEY]])),
                   literalWorks: new Map([["doe2024", DOE_KEY]]),
                 }),
             }),
@@ -587,6 +590,7 @@ describe("citekeyEditorExtension citation widgets", () => {
       formatted,
       entrySerials: false,
       summaries: new Map([[DOE_KEY, "Doe (2024)"]]),
+      lookup: lookupForWorks(new Map([["doe2024", DOE_KEY]])),
       literalWorks: new Map([["doe2024", DOE_KEY]]),
     });
     return viewWithCitationText(doc, () => held);
@@ -620,6 +624,53 @@ describe("citekeyEditorExtension citation widgets", () => {
       }),
     });
   }
+
+  it("keeps a failed held citation's native hover on the Item its text describes", () => {
+    livePreview.mockReturnValue(true);
+    const document: DocumentCitations = {
+      formatted: new Map([["[@doe2024]", occurrences(rendered("Doe (2024)"))]]),
+      entrySerials: false,
+      summaries: new Map([[DOE_KEY, "Doe (2024)"]]),
+      lookup: lookupForWorks(new Map([["doe2024", DOE_KEY]])),
+      literalWorks: new Map([["doe2024", DOE_KEY]]),
+    };
+    using view = editorView({
+      parent: globalThis.document.body,
+      state: EditorState.create({
+        doc: "[@doe2024]",
+        extensions: [
+          editorInfoField,
+          citekeyEditorExtension(
+            lookupHandlers({
+              open: () => undefined,
+              showPopover: () => undefined,
+              hoverPreferences: () => hover({ action: "page-preview" }),
+              hoverNotePath: (citekey, answer) => {
+                const resolved = answer?.resolve(citekey);
+                return resolved?.kind === "unique"
+                  ? `lit/${resolved.item.indexedKey}.md`
+                  : null;
+              },
+              workspace: { trigger: () => undefined },
+              resolveCitekey: () => unique("NEXT2345"),
+              navigationEnabled: () => false,
+              showFormatted: () => true,
+              citationText: () => ({ ...heldRead(document), status: "failed" }),
+            }),
+          ),
+        ],
+      }),
+    });
+    const drawn = view.dom.querySelector<HTMLElement>(".zt-citation")!;
+
+    drawn.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+
+    expect(drawn.textContent).toBe("Doe (2024)");
+    expect(hoverLinks.at(-1)).toEqual([
+      "hover-link",
+      expect.objectContaining({ linktext: `lit/${DOE_KEY}.md` }),
+    ]);
+  });
 
   it("shows the formatted citation the shared renderer draws", () => {
     using view = viewOf("[@doe2024]");
@@ -673,6 +724,7 @@ describe("citekeyEditorExtension citation widgets", () => {
       ]),
       entrySerials: false,
       summaries: new Map([[DOE_KEY, "Doe (2024)"]]),
+      lookup: lookupForWorks(new Map([["doe2024", DOE_KEY]])),
       literalWorks: new Map([["doe2024", DOE_KEY]]),
     });
     using view = viewWithCitationText("Hi [@doe2024]", () => held);
@@ -689,6 +741,7 @@ describe("citekeyEditorExtension citation widgets", () => {
       ]),
       entrySerials: false,
       summaries: new Map([[DOE_KEY, "Doe (2024)"]]),
+      lookup: lookupForWorks(new Map([["doe2024", DOE_KEY]])),
       literalWorks: new Map([["doe2024", DOE_KEY]]),
     });
     vi.spyOn(view, "viewport", "get").mockReturnValue({ from: 0, to: 0 });
@@ -704,6 +757,7 @@ describe("citekeyEditorExtension citation widgets", () => {
       ]),
       entrySerials: false,
       summaries: new Map([[DOE_KEY, "Roe (2025)"]]),
+      lookup: lookupForWorks(new Map([["doe2024", DOE_KEY]])),
       literalWorks: new Map([["doe2024", DOE_KEY]]),
     });
     view.dispatch({ effects: citekeyDecorationsChanged.of(undefined) });

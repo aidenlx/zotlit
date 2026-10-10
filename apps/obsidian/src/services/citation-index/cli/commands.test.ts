@@ -538,6 +538,36 @@ describe("zotlit:cited-by", () => {
     });
   });
 
+  it("retries the complete cited-by answer when the citation assignment changes", async () => {
+    const { citedBy, readLookup, getCitedBy } = setup();
+    const nextItem = {
+      ...SNAPSHOT_ITEM,
+      itemID: 2,
+      key: "NEXT2345",
+      indexedKey: "NEXT2345",
+    };
+    const first = lookupAnswer({
+      [ITEM_CITEKEY]: { kind: "unique", item: SNAPSHOT_ITEM },
+    });
+    const next = lookupAnswer(
+      { [ITEM_CITEKEY]: { kind: "unique", item: nextItem } },
+      {},
+      "fixture:2",
+    );
+    readLookup.mockResolvedValueOnce(first).mockResolvedValue(next);
+    getCitedBy
+      .mockResolvedValueOnce(CITED)
+      .mockResolvedValue({ ...CITED, groups: [] });
+
+    const output = await citedBy({ citekey: ITEM_CITEKEY });
+
+    expect(JSON.parse(output)).toMatchObject({
+      ok: true,
+      item: { key: "NEXT2345" },
+      groups: [],
+    });
+  });
+
   it("reports an unavailable fresh lookup instead of a missing citation key", async () => {
     const { citedBy, readLookup, getCitedBy } = setup();
     readLookup.mockRejectedValue(new Error("Citation worker unavailable"));

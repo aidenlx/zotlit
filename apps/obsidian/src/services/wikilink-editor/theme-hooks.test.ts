@@ -3,6 +3,8 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { describe, expect, it, vi } from "vitest";
 
+import { lookupForWorks } from "@/services/citation-index/__fixtures__/lookup";
+
 const { livePreview, tokenClassNodeProp } = vi.hoisted(() => ({
   livePreview: vi.fn(() => false),
   tokenClassNodeProp: {},
@@ -120,6 +122,7 @@ function viewOf(
       ],
     ]),
     summaries: new Map([[LITERATURE_NOTE.indexedKey, "Example (2020)"]]),
+    lookup: lookupForWorks(new Map()),
     literalWorks: new Map(),
   };
   const held: Held<DocumentCitations> = {

@@ -3,6 +3,8 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { describe, expect, it, vi } from "vitest";
 
+import { lookupForWorks } from "@/services/citation-index/__fixtures__/lookup";
+
 const { livePreview, tokenClassNodeProp } = vi.hoisted(() => ({
   livePreview: vi.fn(() => true),
   tokenClassNodeProp: {},
@@ -138,6 +140,7 @@ function harness(doc: string, overrides: Partial<Settings> = {}) {
         ),
       ]),
       summaries: new Map(),
+      lookup: lookupForWorks(new Map()),
       literalWorks: new Map(),
     };
   }

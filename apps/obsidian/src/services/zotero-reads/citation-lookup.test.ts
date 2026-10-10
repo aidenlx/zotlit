@@ -12,15 +12,12 @@ import {
   worksSql,
 } from "./test-utils";
 
-const seed = () =>
-  seedWorksSql([{ itemID: 1, key: "PERSONAL", citationKey: "shared" }]) +
-  `
+const seed =
+  () => `${seedWorksSql([{ itemID: 1, key: "PERSONAL", citationKey: "shared" }])}
 insert into libraries (libraryID, type) values (2, 'group');
 insert into groups (groupID, libraryID, name) values (7, 2, 'Group');
-` +
-  worksSql([
-    { itemID: 2, libraryID: 2, key: "GROUPKEY", citationKey: "shared" },
-  ]);
+${worksSql([{ itemID: 2, libraryID: 2, key: "GROUPKEY", citationKey: "shared" }])}
+`;
 
 it("answers one requested batch with scope-limited forward and all-library reverse lookups", async () => {
   await Effect.runPromise(
