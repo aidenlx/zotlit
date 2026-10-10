@@ -185,6 +185,7 @@ export function createCitationsCliHandlers(
         const { echoed } = admission;
 
         try {
+          const syntaxes = deps.index.syntaxes();
           const lookup = await deps.index.readLookup(
             "citekey" in request.value
               ? { citekeys: [request.value.citekey] }
@@ -207,7 +208,12 @@ export function createCitationsCliHandlers(
           const omittedSyntaxes = await deps.index.citedByOmittedSyntaxes(
             item.key,
           );
-          if ((await deps.index.readLookup({})).revision !== lookup.revision)
+          const currentSyntaxes = deps.index.syntaxes();
+          if (
+            (await deps.index.readLookup({})).revision !== lookup.revision ||
+            currentSyntaxes.citekey !== syntaxes.citekey ||
+            currentSyntaxes.wikilink !== syntaxes.wikilink
+          )
             continue;
           return envelope(CITED_BY_COMMAND, {
             ok: true,
@@ -217,7 +223,7 @@ export function createCitationsCliHandlers(
             omittedSyntaxes,
             coverage: snapshot.coverage,
             resolution: snapshot.resolution,
-            syntaxes: deps.index.syntaxes(),
+            syntaxes,
           });
         } catch {
           return unavailable(CITED_BY_COMMAND, echoed);
