@@ -134,7 +134,9 @@ export interface ItemQueryPlan<Item = any, Needs = any> {
   readonly filter: FilterPlan<Item, Needs> | null;
   readonly paths: readonly PlannedPath<Item, Needs>[];
   readonly group: PlannedGroup<Item, Needs> | null;
-  /** The group value when given, then the request's sort and dataset tie-breakers. */
+  /** What hydration loads before reading each matched record's group values. */
+  readonly groupNeeds: readonly Needs[];
+  /** The request's sort and dataset tie-breakers. */
   readonly order: readonly SortSpec[];
   /** One entry for each entry of {@link ItemQueryPlan.order}. */
   readonly sorts: readonly PlannedSort<Item, Needs>[];
@@ -171,7 +173,7 @@ function groupValues<Item, Needs>(
   };
 }
 
-/** A validated ordering key: the group value or a Sortable Field. */
+/** A validated Sortable Field and its direction. */
 export interface PlannedSort<Item = QueryItem, Needs = FieldNeeds> {
   readonly direction: SortSpec["direction"];
   /** What hydration loads before {@link PlannedSort.key} runs. */
@@ -313,12 +315,6 @@ export function planRequest(
       });
     }
 
-    // The group value leads the internal order. Dataset hydration already
-    // loads every ordering key, so grouping needs no dataset-specific
-    // execution. Execution puts each group value of a record in this key.
-    if (group) {
-      sorts.unshift({ direction: "asc", needs: group.needs, key: () => null });
-    }
     const normalized = sort.map(({ field, direction }) => ({
       field,
       direction,
@@ -336,11 +332,8 @@ export function planRequest(
       warnings: filter?.warnings ?? [],
       paths,
       group,
-      order: [
-        ...(group ? [{ field: group.text, direction: "asc" as const }] : []),
-        ...normalized,
-        ...tieBreakers,
-      ],
+      groupNeeds: group ? [group.needs] : [],
+      order: [...normalized, ...tieBreakers],
       sorts,
     };
   });

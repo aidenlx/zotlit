@@ -92,6 +92,7 @@ export function relationRequest<Needs>(
   return {
     dataset: request.dataset,
     query: request.query,
+    groupNeeds: [],
     filter: { needs, customFields: [] },
     paths: [],
     sorts: [],

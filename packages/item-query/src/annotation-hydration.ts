@@ -80,6 +80,7 @@ export function openAnnotationHydration(
         dataset: plan.dataset,
         query: plan.query,
         group: plan.group,
+        groupNeeds: plan.groupNeeds.flatMap(itemNeeds),
         filter: filter && {
           customFields: filter.customFields,
           needs: filter.needs.flatMap(itemNeeds),
@@ -211,7 +212,11 @@ export function openAnnotationHydration(
 
     return {
       scan: yield* loader(
-        [...(filter?.needs ?? []), ...sorts.map((sort) => sort.needs)],
+        [
+          ...(filter?.needs ?? []),
+          ...sorts.map((sort) => sort.needs),
+          ...plan.groupNeeds,
+        ],
         parents.scan,
       ),
       projection: yield* loader(
