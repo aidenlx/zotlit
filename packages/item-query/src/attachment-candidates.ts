@@ -1,11 +1,9 @@
 import type { AttachmentCandidateLeaf } from "@zotlit/db/item-query";
 
-import { ATTACHMENT_PARENTS } from "./attachment-fields";
-import { equality, lowerItemCandidate } from "./candidate-plan";
+import { equality } from "./candidate-plan";
 import type { CandidateSources } from "./candidate-plan";
 import type { FilterNode } from "./filter-plan";
 import { lowerIndexedKeySelection } from "./indexed-key-selection";
-import { parentCandidateLeaf } from "./parent-records";
 
 export function lowerAttachmentCandidate<Item>(
   node: FilterNode<Item>,
@@ -18,8 +16,6 @@ export function lowerAttachmentCandidate<Item>(
   );
   if (selection?.target === "self")
     return { kind: "keys", keys: selection.keys };
-  if (selection?.target === "item")
-    return { kind: "parent", leaf: { kind: "keys", keys: selection.keys } };
   const equals = equality(
     node,
     (name) =>
@@ -43,8 +39,5 @@ export function lowerAttachmentCandidate<Item>(
   ) {
     return { kind: "tag", value: node.args[0].value };
   }
-  const parent = parentCandidateLeaf(node, ATTACHMENT_PARENTS, "items");
-  if (!parent) return null;
-  const leaf = lowerItemCandidate(parent, sources);
-  return leaf ? { kind: "parent", leaf } : null;
+  return null;
 }

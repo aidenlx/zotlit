@@ -106,6 +106,9 @@ export function consumeQuery<Request extends ItemQueryRequest, A, E, R>(
     return yield* consumeDataset(
       {
         ...run,
+        dataset,
+        sources,
+        filter: plan.filter?.root,
         query,
         warnings: [
           ...plan.warnings,

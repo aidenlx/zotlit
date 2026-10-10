@@ -30,11 +30,8 @@ import { planFilter } from "./filter-plan";
 import { parentPathResolver, parentRootName } from "./parent-records";
 import { readPath } from "./projection";
 import { ANNOTATIONS } from "./query-annotations";
+import { ITEMS } from "./query-items";
 import { openRecordLoader } from "./record-loader";
-import {
-  planDatasetCandidates,
-  readDatasetCandidates,
-} from "./relation-candidates";
 import type { ItemQueryRequest } from "./request";
 
 /** Attachment Query: one Attachment Row for each non-trashed Attachment. */
@@ -52,13 +49,16 @@ export const ATTACHMENTS: QueryDataset<ItemQueryRequest> = {
       ...ATTACHMENT_PARENTS.flatMap((parent) => parent.names()),
     ];
   },
-  lowerCandidate: (node, sources) => {
-    const leaf = lowerAttachmentCandidate(node, sources);
-    return leaf
-      ? (options) => readAttachmentCandidateSet({ ...options, leaf })
-      : null;
-  },
+  lowerCandidate: lowerAttachmentCandidate,
+  readCandidate: readAttachmentCandidateSet,
+  readRowCount: readAttachmentRowCount,
+  candidateParents: ATTACHMENT_PARENTS,
   candidateRelations: {
+    item: {
+      dataset: () => ITEMS,
+      readParents: (chunk) =>
+        readRelationCandidateSet({ ...chunk, relation: "attachment-item" }),
+    },
     annotations: {
       dataset: () => ANNOTATIONS,
       readParents: (chunk) =>
@@ -90,24 +90,6 @@ export const ATTACHMENTS: QueryDataset<ItemQueryRequest> = {
       const run: DatasetRun<QueryAttachment> = {
         scan: hydration.scan,
         projection: hydration.projection,
-        candidates: (library, tuning) =>
-          Effect.gen(function* () {
-            if (tuning.forceScan) return null;
-            const candidatePlan =
-              filter &&
-              planDatasetCandidates(filter.root, sources, {
-                dataset: ATTACHMENTS,
-                library,
-              });
-            if (!candidatePlan) return null;
-            const rowCount = yield* readAttachmentRowCount(library.libraryID);
-            const cap = Math.floor(rowCount * tuning.capRatio);
-            return yield* readDatasetCandidates(
-              candidatePlan,
-              library.libraryID,
-              cap,
-            );
-          }),
         matches: (item) => !filter || isMatch(filter.root, item, clock),
         project: (item, library) => ({
           indexedKey: formatIndexedKey(item.scan.key, library.groupID),

@@ -176,6 +176,13 @@ it("reaches attachment.item.title through the parent's own declaration", () => {
       clock,
     ),
   ).toBe(false);
+  const lowered = attachment.candidateLeaf(filter.root);
+  expect(lowered).toMatchObject({
+    left: { kind: "field", name: "item.title" },
+  });
+  expect(lowered && parent.candidateLeaf(lowered)).toMatchObject({
+    left: { kind: "field", name: "title" },
+  });
   if (filter.root.kind !== "binary") throw new Error("Expected a comparison");
   expect(
     parentFieldSubject(filter.root.left, "title", [

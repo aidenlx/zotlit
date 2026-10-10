@@ -31,6 +31,11 @@ import { CHILD_ITEM_TYPES } from "@/lib/item-types";
 import { annotationTypeIDs, annotationTypeToName } from "@/lib/zt-annot";
 import { annotationColorsForName } from "@/lib/zt-color";
 
+import type {
+  TagCandidateLeaf,
+  KeysCandidateLeaf,
+  ParentCandidateLeaf,
+} from "./candidate-leaf";
 import { storedNumberOf, storedIntegerOf } from "./candidate-set";
 import type { CandidateLeaf } from "./candidate-set";
 import { defineStatement, idSlots, unindexed } from "./database";
@@ -394,15 +399,11 @@ export function readAnnotationHydrateChunk(chunk: {
 }
 
 export type AnnotationCandidateLeaf =
-  | { readonly kind: "parent"; readonly leaf: CandidateLeaf }
+  | ParentCandidateLeaf<CandidateLeaf>
   | { readonly kind: "type"; readonly value: string }
   | { readonly kind: "color"; readonly value: string }
-  | { readonly kind: "tag"; readonly value: string }
-  | {
-      readonly kind: "keys";
-      readonly target: "self" | "item" | "attachment";
-      readonly keys: readonly string[];
-    };
+  | TagCandidateLeaf
+  | (KeysCandidateLeaf & { readonly target: "self" | "item" | "attachment" });
 
 const annotationCount = defineStatement<{ libraryID: number }>(
   "annotation-row-count",
@@ -554,7 +555,7 @@ export function readAnnotationCandidateSet({
     kind = `parent-${leaf.leaf.kind}`;
     switch (leaf.leaf.kind) {
       case "tag":
-        value = leaf.leaf.name;
+        value = leaf.leaf.value;
         break;
       case "keys":
         list = leaf.leaf.keys;

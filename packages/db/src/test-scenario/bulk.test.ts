@@ -42,7 +42,7 @@ describe("seedBulkLibrary", () => {
         scenario,
         readCandidateSet({
           libraryID,
-          leaf: { kind: "tag", name },
+          leaf: { kind: "tag", value: name },
           limit: 100,
         }),
       );

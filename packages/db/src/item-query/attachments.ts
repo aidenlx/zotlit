@@ -28,6 +28,11 @@ import { Effect } from "effect";
 import type { NodeDatabaseClient } from "@/client/node";
 import { CHILD_ITEM_TYPES } from "@/lib/item-types";
 
+import type {
+  TagCandidateLeaf,
+  KeysCandidateLeaf,
+  ParentCandidateLeaf,
+} from "./candidate-leaf";
 import { storedNumberOf, storedIntegerOf } from "./candidate-set";
 import type { CandidateLeaf } from "./candidate-set";
 import { defineStatement, idSlots, unindexed } from "./database";
@@ -310,13 +315,13 @@ export const readAttachmentRowCount = (libraryID: number) =>
   Effect.map(attachmentCount.all({ libraryID }), (rows) => rows[0]?.rows ?? 0);
 
 export type AttachmentCandidateLeaf =
-  | { readonly kind: "keys"; readonly keys: readonly string[] }
-  | { readonly kind: "parent"; readonly leaf: CandidateLeaf }
+  | KeysCandidateLeaf
+  | ParentCandidateLeaf<CandidateLeaf>
   | {
       readonly kind: "key" | "contentType" | "linkMode" | "fileType";
       readonly value: string;
     }
-  | { readonly kind: "tag"; readonly value: string };
+  | TagCandidateLeaf;
 
 interface AttachmentCandidateParams extends Record<string, unknown> {
   libraryID: number;
@@ -447,7 +452,7 @@ export function readAttachmentCandidateSet({
     kind = `parent-${leaf.leaf.kind}`;
     switch (leaf.leaf.kind) {
       case "tag":
-        value = leaf.leaf.name;
+        value = leaf.leaf.value;
         break;
       case "keys":
         list = leaf.leaf.keys;

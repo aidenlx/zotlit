@@ -1,6 +1,5 @@
 // The Items dataset: Item Query over the top-level, non-trashed Items of the
 // Target Libraries.
-import { getLogger } from "@logtape/logtape";
 import { Effect } from "effect";
 
 import { formatIndexedKey } from "@zotlit/db";
@@ -30,13 +29,7 @@ import { readPath, resolveItemPath } from "./projection";
 import { ANNOTATIONS } from "./query-annotations";
 import { ATTACHMENTS } from "./query-attachments";
 import { openRecordLoader } from "./record-loader";
-import {
-  planDatasetCandidates,
-  readDatasetCandidates,
-} from "./relation-candidates";
 import type { ItemQueryRequest } from "./request";
-
-const logger = getLogger(["zotlit", "item-query"]);
 
 const sortable = (name: string) => {
   const definition = fieldDefinition(name);
@@ -55,10 +48,10 @@ export const ITEMS: QueryDataset<ItemQueryRequest> = {
   defaultSort: [{ field: "dateModified", direction: "desc" }],
   tieBreakers: [],
   names: BUILT_IN_NAMES,
-  lowerCandidate: (node, sources) => {
-    const leaf = lowerItemCandidate(node, sources);
-    return leaf ? (options) => readCandidateSet({ ...options, leaf }) : null;
-  },
+  lowerCandidate: lowerItemCandidate,
+  readCandidate: readCandidateSet,
+  readRowCount: readLibraryRowCount,
+  candidateParents: [],
   candidateRelations: {
     attachments: {
       dataset: () => ATTACHMENTS,
@@ -90,47 +83,6 @@ export const ITEMS: QueryDataset<ItemQueryRequest> = {
       const run: DatasetRun<QueryItem> = {
         scan: hydration.scan,
         projection: hydration.projection,
-        candidates: (library, tuning) =>
-          Effect.gen(function* () {
-            const candidatePlan =
-              filter && !tuning.forceScan
-                ? planDatasetCandidates(filter.root, sources, {
-                    dataset: ITEMS,
-                    library,
-                  })
-                : null;
-            const cap = candidatePlan
-              ? Math.floor(
-                  (yield* readLibraryRowCount(library.libraryID)) *
-                    tuning.capRatio,
-                )
-              : null;
-            const candidates = candidatePlan
-              ? yield* readDatasetCandidates(
-                  candidatePlan,
-                  library.libraryID,
-                  cap!,
-                )
-              : null;
-            logger.debug("Item Query uses {plan} for Library {libraryID}", {
-              libraryID: library.libraryID,
-              groupID: library.groupID,
-              plan: candidates === null ? "scan" : "candidates",
-              candidateCount: candidates?.size ?? null,
-              candidateCap: cap,
-              reason:
-                candidates !== null
-                  ? null
-                  : !filter
-                    ? "no-filter"
-                    : tuning.forceScan
-                      ? "forced-scan"
-                      : candidatePlan
-                        ? "candidate-cap-exceeded"
-                        : "unsupported-filter",
-            });
-            return candidates;
-          }),
         matches: (item) => !filter || isMatch(filter.root, item, clock),
         project: (item, library, scan) => ({
           indexedKey: formatIndexedKey(scan.key, library.groupID),

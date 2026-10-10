@@ -185,20 +185,26 @@ export function liftParentRecord<Item, Needs, Row, ParentNeeds>(options: {
     /** A candidate leaf in the parent's vocabulary; evaluation still uses the original tree. */
     candidateLeaf: <Record>(
       node: FilterNode<Record>,
-    ): FilterNode<Record> | null => {
+    ): FilterNode<never> | null => {
       let found = false;
-      const member = (child: FilterNode<Record>): FilterNode<Record> => {
-        if (child.kind !== "field") return child;
-        const key = strip(child.name);
+      const member = (child: FilterNode<never>): FilterNode<never> => {
+        const path = candidateMemberPath(child);
+        const key = path === null ? undefined : strip(path);
         if (key === undefined) return child;
+        const field = vocabulary().filter.field(key);
+        if (!field?.filterable) return child;
         found = true;
-        return { ...child, name: key };
+        return { ...child, kind: "field", name: key, value: field.value };
       };
       const leaf =
         node.kind === "binary"
           ? { ...node, left: member(node.left), right: member(node.right) }
           : node.kind === "method"
-            ? { ...node, subject: member(node.subject) }
+            ? {
+                ...node,
+                subject: member(node.subject),
+                args: node.args.map(member),
+              }
             : node;
       return found ? leaf : null;
     },
@@ -260,17 +266,11 @@ export function parentRootName(
   return fieldRoot(name);
 }
 
-export function parentCandidateLeaf<Item>(
-  node: FilterNode<Item>,
-  parents: readonly ParentRecord[],
-  dataset: RecordVocabulary<never, never>["id"],
-): FilterNode<Item> | null {
-  for (const parent of parents) {
-    if (parent.dataset !== dataset) continue;
-    const leaf = parent.candidateLeaf(node);
-    if (leaf) return leaf;
-  }
-  return null;
+function candidateMemberPath<Item>(node: FilterNode<Item>): string | null {
+  if (node.kind === "field") return node.name;
+  if (node.kind !== "property") return null;
+  const path = candidateMemberPath(node.subject);
+  return path === null ? null : `${path}.${node.name}`;
 }
 
 /** Recognize a field of a Parent Record at any declared depth. */

@@ -292,7 +292,9 @@ it.each([
         events.some(
           (event) =>
             event.type === "statement" &&
-            event.statement.reader === "attachment-candidate-set",
+            ["attachment-candidate-set", "relation-candidate-set"].includes(
+              event.statement.reader,
+            ),
         ),
       ).toBe(!forceScan);
     }
@@ -390,7 +392,7 @@ it("caps parent Indexed Key expansion and falls back to the Attachment scan", as
   const candidate = limited.events.find(
     (event) =>
       event.type === "statement" &&
-      event.statement.reader === "attachment-candidate-set",
+      event.statement.reader === "relation-candidate-set",
   );
   expect(candidate).toMatchObject({ statement: { rows: expect.any(Array) } });
   if (candidate?.type === "statement")

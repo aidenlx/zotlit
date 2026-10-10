@@ -8,11 +8,15 @@ import type {
   ScanRow,
 } from "@zotlit/db/item-query";
 
+import { runCandidatePass } from "./candidate-pass";
 import { compareScalars } from "./collation";
+import type { CandidateDataset } from "./dataset";
 import type { SortKey } from "./fields";
+import type { FilterNode } from "./filter-plan";
 import type { Matches } from "./matches";
 import { allMatches, firstMatches } from "./matches";
 import type { QueryConsumer, QuerySummary } from "./query";
+import type { QuerySources } from "./query-sources";
 import type { Loader } from "./record-loader";
 import type {
   GroupValue,
@@ -22,7 +26,6 @@ import type {
   SortSpec,
 } from "./request";
 import { ItemQueryTuning } from "./tuning";
-import type { Tuning } from "./tuning";
 
 interface GroupMatches<S> {
   readonly value: GroupValue;
@@ -42,10 +45,6 @@ type Read<A> = Effect.Effect<A, ItemQueryReaderError, ItemQueryDatabase>;
 export interface DatasetRun<I extends { scan: ScanRow }> {
   readonly scan: Loader<I["scan"], I>;
   readonly projection: Loader<I["scan"], I>;
-  readonly candidates: (
-    library: TargetLibrary,
-    tuning: Tuning,
-  ) => Read<ReadonlySet<number> | null>;
   readonly matches: (item: I) => boolean;
   readonly project: (
     item: I,
@@ -56,6 +55,9 @@ export interface DatasetRun<I extends { scan: ScanRow }> {
 
 /** Dataset hooks; this engine owns bounded retention, paging and delivery. */
 export interface QueryRun<I extends { scan: ScanRow }> extends DatasetRun<I> {
+  readonly dataset: CandidateDataset;
+  readonly sources: QuerySources;
+  readonly filter: FilterNode<never> | undefined;
   readonly query: ItemQuery;
   readonly warnings: QuerySummary["warnings"];
   readonly sort: readonly SortSpec[];
@@ -168,7 +170,13 @@ export function consumeDataset<I extends { scan: ScanRow }, A, E, R>(
     // result order.
     for (const [index, library] of libraries.entries()) {
       const { libraryID } = library;
-      const candidates = yield* run.candidates(library, tuning);
+      const candidates = yield* runCandidatePass({
+        dataset: run.dataset,
+        filter: run.filter,
+        sources: run.sources,
+        library,
+        tuning,
+      });
       if (candidates) {
         const itemIDs = [...candidates];
         for (let start = 0; start < itemIDs.length; start += scanPageSize) {
