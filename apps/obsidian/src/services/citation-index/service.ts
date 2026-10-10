@@ -9,6 +9,7 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import { registerEvent } from "@/lib/disposables";
 import { getLogger } from "@/lib/log";
 import { yieldToMain } from "@/lib/yield-to-main";
+import { resolveLibraryScope } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import { resolveIndexedKey } from "@/services/note-index/service";
 import type { NoteIndex } from "@/services/note-index/service";
@@ -167,11 +168,14 @@ export interface CitationIndexOptions {
   app: App;
   noteIndex: Pick<NoteIndex, "getNotesByItemKey">;
   settings: Pick<SettingsService, "ready" | "current" | "subscribe">;
-  reads: Pick<ZoteroReadsService, "state" | "ready" | "on" | "snapshot">;
+  reads: Pick<ZoteroReadsService, "state" | "on" | "snapshot"> & {
+    ready: Promise<unknown>;
+    readonly generation?: number;
+  };
   /** Which Libraries a Citation Key resolves against. */
   libraryScope: Pick<
     LibraryScopeService,
-    "ready" | "current" | "libraries" | "on"
+    "ready" | "current" | "libraries" | "on" | "resolveLibraries"
   >;
   /**
    * Where scans survive a restart; a store that fails to open costs a full
@@ -823,23 +827,34 @@ export class CitationIndex extends Service<void> {
       throw new Error("The Zotero database cannot be read");
     }
     try {
-      const inScope = new Set(
-        scope.available.map((library) => library.libraryID),
-      );
-      const { libraries } = this.#libraryScope;
-      // One Snapshot, so every Library's rows come from one database state.
-      const perLibrary = await Effect.runPromise(
+      const generation = this.#reads.generation;
+      const libraryScope = this.#libraryScope;
+      // The Library list and rows share the dedicated worker's pinned state.
+      const { perLibrary, libraries, inScope } = await Effect.runPromise(
         Effect.scoped(
           Effect.flatMap(this.#reads.snapshot, (reads) =>
-            Effect.forEach(libraries, (library) =>
-              Stream.runCollect(
-                reads.CitekeySnapshot({ libraryID: library.libraryID }),
-              ),
-            ),
+            Effect.gen(function* () {
+              const libraryRows = yield* reads.Libraries({});
+              const libraries = resolveLibraryScope(libraryRows, {
+                mode: "all",
+              }).available;
+              const scope = libraryScope.resolveLibraries(libraryRows);
+              const inScope = new Set(
+                scope.available.map((library) => library.libraryID),
+              );
+              const perLibrary = yield* Effect.forEach(libraries, (library) =>
+                Stream.runCollect(
+                  reads.CitekeySnapshot({ libraryID: library.libraryID }),
+                ),
+              );
+              return { perLibrary, libraries, inScope };
+            }),
           ),
         ),
         { signal },
       );
+      if (signal.aborted || generation !== this.#reads.generation)
+        throw new Error("The citation source changed during the read");
       const rows = perLibrary.flat(2);
       logger.debug("Resolution snapshot rebuilt", {
         libraries: libraries.length,

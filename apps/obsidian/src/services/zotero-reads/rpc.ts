@@ -402,6 +402,7 @@ export type ReadsConfig = typeof ReadsConfigSchema.Type;
  * records to.
  */
 export const WorkerInitSchema = Schema.Struct({
+  role: Schema.optionalKey(Schema.Literal("citation")),
   ...ReadsConfigSchema.fields,
   snapshotOwner: Schema.String,
   logs: Transferable.MessagePort,

@@ -79,7 +79,10 @@ export interface WorkerConnection {
 export const connectWorker = Effect.fnUntraced(function* (
   source: string,
   config: Effect.Effect<ReadsConfig>,
-  reapClones: typeof reapWorkerClones = reapWorkerClones,
+  {
+    reapClones = reapWorkerClones,
+    role,
+  }: { reapClones?: typeof reapWorkerClones; role?: "citation" } = {},
 ): Effect.fn.Return<WorkerConnection, DbUnavailable, Scope.Scope> {
   const url = URL.createObjectURL(
     new Blob([source], { type: "text/javascript" }),
@@ -127,7 +130,10 @@ export const connectWorker = Effect.fnUntraced(function* (
     // is still running, so end it here.
     for (const worker of workers.keys()) worker.terminate();
     workers.clear();
-    const worker = new Worker(url, { name: "zotlit-zotero-reads" });
+    const worker = new Worker(url, {
+      name:
+        role === "citation" ? "zotlit-citation-reads" : "zotlit-zotero-reads",
+    });
     const shutDown = Promise.withResolvers<void>();
     worker.addEventListener("message", (event: MessageEvent<unknown>) => {
       if (event.data === WORKER_CLOSED) shutDown.resolve();
@@ -166,7 +172,12 @@ export const connectWorker = Effect.fnUntraced(function* (
             port1.onmessage = ({ data: record }: MessageEvent<LogRecord>) =>
               getLogTapeLogger(record.category).emit(record);
             logs = port1;
-            return { ...current, snapshotOwner, logs: port2 };
+            return {
+              ...current,
+              ...(role && { role }),
+              snapshotOwner,
+              logs: port2,
+            };
           }),
         ),
       ),
@@ -439,6 +450,10 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
     // The feed outlives each worker: subscribers keep one stream across a
     // death and a respawn.
     Changes: () => changes,
+    Configure: (payload, options) =>
+      Effect.flatMap(ensureConnected, (client) =>
+        client.Configure(payload, options),
+      ),
     Refresh: (payload, options) =>
       Effect.flatMap(ensureConnected, (client) =>
         client.Refresh(payload, options),

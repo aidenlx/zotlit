@@ -85,6 +85,8 @@ const SCOPE_QUERIES = {
 export const DEFAULT_SLICE_SIZE = 500;
 
 export interface HandlersOptions {
+  /** The citation capability starts no Item Index or segmenter. */
+  citationOnly?: boolean;
   /**
    * Items per stream slice; one slice is one emission and one cancel point.
    * Tests shrink it to see several slices from a small fixture.
@@ -267,7 +269,11 @@ export function handlersLayer(options?: HandlersOptions) {
   const handlers = ZoteroReads.toLayer(
     Effect.gen(function* () {
       const connection = yield* Connection;
-      const itemIndex = yield* ItemIndex;
+      const itemIndex = options?.citationOnly
+        ? null
+        : yield* Effect.flatMap(Layer.build(itemIndexLayer), (context) =>
+            Effect.provideContext(ItemIndex, context),
+          );
       // One Configure at a time, in arrival order, so the connection rebinds in the order the settings arrived.
       const configuring = yield* Semaphore.make(1);
       const pinned = new Map<SnapshotId, Pinned>();
@@ -572,18 +578,26 @@ export function handlersLayer(options?: HandlersOptions) {
         Refresh: () => connection.refresh,
         NotifyExternalChange: () => connection.notifyExternalChange,
         Configure: (config) =>
-          itemIndex
-            .configure({
-              locale: config.locale,
-              segmenterBinary: config.chineseSegmenter,
-            })
-            .pipe(
-              Effect.andThen(connection.configure(config)),
-              Effect.andThen(
-                Effect.sync(() => options?.applyLogLevel?.(config.logLevel)),
+          (itemIndex
+            ? itemIndex.configure({
+                locale: config.locale,
+                segmenterBinary: config.chineseSegmenter,
+              })
+            : Effect.void
+          ).pipe(
+            Effect.andThen(
+              connection.configure(
+                options?.citationOnly
+                  ? { ...config, autoRefresh: false }
+                  : config,
               ),
-              configuring.withPermits(1),
             ),
+            Effect.andThen(
+              Effect.sync(() => options?.applyLogLevel?.(config.logLevel)),
+            ),
+            configuring.withPermits(1),
+          ),
+
         Ping: () => Effect.void,
 
         AttachmentsByKeys: ({ libraryID, keys, snapshot }) =>
@@ -735,14 +749,20 @@ export function handlersLayer(options?: HandlersOptions) {
 
         SearchItems: ({ libraryIDs, query, limit }) =>
           itemIndex
-            .search(libraryIDs, query, limit)
-            .pipe(
-              Effect.mapError(
-                (error) => new DbUnavailable({ message: error.message }),
+            ? itemIndex
+                .search(libraryIDs, query, limit)
+                .pipe(
+                  Effect.mapError(
+                    (error) => new DbUnavailable({ message: error.message }),
+                  ),
+                )
+            : Effect.fail(
+                new DbUnavailable({
+                  message: "Item search belongs to the interactive worker",
+                }),
               ),
-            ),
       });
     }),
   );
-  return handlers.pipe(Layer.provide(itemIndexLayer));
+  return handlers;
 }

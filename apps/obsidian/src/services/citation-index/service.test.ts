@@ -41,6 +41,50 @@ async function citationsOf(
 }
 
 describe("CitationIndex", () => {
+  it("discovers Libraries from the pinned read and applies scope by stable identity", async () => {
+    const libraryScope = new LibraryScopeStub([
+      personalLibrary(),
+      groupLibrary(),
+    ]);
+    libraryScope.select([groupLibrary()]);
+    const { index, db, citekeys } = await makeHarness({}, { libraryScope });
+    db.libraries = () => [
+      personalLibrary(8),
+      groupLibrary({ libraryID: 9 }),
+      groupLibrary({ libraryID: 10, groupID: 12 }),
+    ];
+    citekeys.rows = [
+      {
+        itemID: 1,
+        libraryID: 8,
+        key: "PERSONAL",
+        indexedKey: "PERSONAL",
+        citekey: "shared",
+      },
+      {
+        itemID: 2,
+        libraryID: 9,
+        key: "GROUPKEY",
+        indexedKey: "GROUPKEYg7",
+        citekey: "shared",
+      },
+      {
+        itemID: 3,
+        libraryID: 10,
+        key: "NEWGROUP",
+        indexedKey: "NEWGROUPg12",
+        citekey: "newGroup",
+      },
+    ];
+    db.changed();
+    await index.whenResolved();
+    expect(index.resolveCitekey("shared")).toMatchObject({
+      kind: "unique",
+      item: { indexedKey: "GROUPKEYg7" },
+    });
+    expect(index.citekeyOf("NEWGROUPg12")).toBe("newGroup");
+  });
+
   it("lists the literal citekeys of a document with their Reference Numbers", async () => {
     const { draft, index } = await makeHarness({
       "draft.md": "Cited by @doe2024 and @roe2025, then @doe2024 again.",

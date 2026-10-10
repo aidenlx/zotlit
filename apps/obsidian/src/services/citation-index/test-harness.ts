@@ -9,9 +9,10 @@ import type {
   LinkCache,
 } from "obsidian";
 
-import type { LibraryCitekey } from "@zotlit/db";
+import type { Library, LibraryCitekey } from "@zotlit/db";
 
 import { FIELD_CITEKEY, FIELD_ZOTERO_KEY } from "@/lib/constants";
+import { resolveLibraryScope } from "@/services/library-scope/scope";
 import type {
   AvailableLibrary,
   ResolvedLibraryScope,
@@ -36,7 +37,11 @@ import {
 } from "@/services/zotero-reads/test-utils";
 
 import { CitationIndex } from "./service";
-import type { CitekeyRecord, CitekeyStore } from "./service";
+import type {
+  CitationIndexOptions,
+  CitekeyRecord,
+  CitekeyStore,
+} from "./service";
 
 export const KEY_A = "ABCD2345";
 export const KEY_B = "ZZZ99999g7";
@@ -262,6 +267,7 @@ export class NoteIndexStub {
 export class DatabaseStub implements AsyncDisposable {
   state: "loading" | "ready" | "degraded" = "ready";
   readonly citekeys = new CitekeysStub(defaultCitekeys());
+  libraries = () => [personalLibrary(), groupLibrary()];
   readonly #service: ZoteroReadsService;
   readonly #listeners = new Set<() => void>();
   readonly #ready = Promise.withResolvers<void>();
@@ -278,6 +284,23 @@ export class DatabaseStub implements AsyncDisposable {
             wrap: (client) => ({
               ...client,
               CitekeySnapshot: this.citekeys.read,
+              Libraries: (() =>
+                Effect.sync(() =>
+                  this.libraries().map((library) => ({
+                    libraryID: library.libraryID,
+                    type:
+                      library.selector.type === "personal"
+                        ? ("user" as const)
+                        : ("group" as const),
+                    groupID:
+                      library.selector.type === "group"
+                        ? library.selector.groupID
+                        : null,
+                    name: library.name,
+                    version: 0,
+                    clientVersion: 0,
+                  })),
+                )) as ZoteroReadsClient["Libraries"],
             }),
           }
         : {},
@@ -361,6 +384,22 @@ export class LibraryScopeStub {
   constructor(libraries: AvailableLibrary[] = [personalLibrary()]) {
     this.libraries = libraries;
     this.#current = allOf(libraries);
+  }
+
+  resolveLibraries(libraries: readonly Library[]): ResolvedLibraryScope {
+    const scope = this.#current;
+    return resolveLibraryScope(
+      libraries,
+      scope?.mode === "selected"
+        ? {
+            mode: "selected",
+            libraries: [
+              ...scope.available.map((library) => library.selector),
+              ...scope.unavailable,
+            ],
+          }
+        : { mode: "all" },
+    );
   }
 
   get current(): ResolvedLibraryScope | null {
@@ -564,6 +603,7 @@ export interface CitationIndexHarness extends AsyncDisposable {
 }
 
 export interface CitationIndexHarnessOptions {
+  reads?: CitationIndexOptions["reads"];
   settings?: Partial<Settings>;
   store?: MemoryStore;
   citekeys?: LibraryCitekey[];
@@ -598,6 +638,8 @@ export async function createCitationIndexHarness(
   const libraryScope =
     options.libraryScope ??
     new LibraryScopeStub([personalLibrary(), groupLibrary()]);
+
+  db.libraries = () => [...libraryScope.libraries];
 
   const addFile = (path: string, body: string): TFile => {
     const added = makeFile(path, body);
@@ -636,7 +678,7 @@ export async function createCitationIndexHarness(
       app,
       noteIndex,
       settings,
-      reads: db,
+      reads: options.reads ?? db,
       libraryScope,
       openStore: () => Promise.resolve(store),
       queryClient,

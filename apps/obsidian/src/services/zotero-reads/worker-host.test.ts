@@ -241,6 +241,32 @@ describe("ZoteroReads worker adapter", () => {
     expect(result.seen).toBe(2);
   });
 
+  it("Configure after a worker death reconnects before applying the source", async () => {
+    const workers = fakeWorkers();
+    const seen = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const reads = yield* makeWorkerReads(workers.connect);
+          yield* workerSeen(reads);
+          const changes = yield* Stream.toPull(reads.Changes());
+          yield* workers.kill(1);
+          yield* until(changes, "degraded");
+          yield* reads.Configure({
+            databasePath: "/new/zotero.sqlite",
+            readMode: "copy",
+            autoRefresh: false,
+            locale: null,
+            chineseSegmenter: null,
+            logLevel: null,
+          });
+          yield* reads.Refresh();
+          return yield* workerSeen(reads);
+        }),
+      ),
+    );
+    expect(seen).toBe(2);
+  });
+
   it("rejects an old Snapshot after another worker opens a Snapshot", async () => {
     const workers = fakeWorkers();
     await using service = new ZoteroReadsService({
@@ -588,11 +614,11 @@ const readsConfig = (databasePath: string): ReadsConfig => ({
 /** Open one connection in its own scope, once its worker got its spawn message. */
 const openConnection = Effect.fnUntraced(function* (
   config: Effect.Effect<ReadsConfig>,
-  reapClones: Parameters<typeof connectWorker>[2],
+  reapClones: NonNullable<Parameters<typeof connectWorker>[2]>["reapClones"],
 ) {
   const scope = yield* Scope.make();
   const connection = yield* Scope.provide(
-    connectWorker("", config, reapClones),
+    connectWorker("", config, { reapClones }),
     scope,
   );
   const spawned = StandInWorker.spawned.length;

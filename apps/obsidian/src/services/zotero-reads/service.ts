@@ -59,6 +59,8 @@ export interface ZoteroReadLease extends AsyncDisposable {
 }
 
 export interface ZoteroReadsEvents {
+  /** A manual refresh or Freshness Signal asks every read capability to retry. */
+  "refresh-requested": () => void;
   /** A new connection serves. Re-query if you cache results. */
   changed: () => void;
   /** No connection can serve. */
@@ -212,12 +214,14 @@ export class ZoteroReadsService extends Service<ZoteroReadsReady> {
    *   previous connection keeps serving.
    */
   async refresh(): Promise<void> {
+    this.#emitter.emit("refresh-requested");
     const { client } = await this.ready;
     await Effect.runPromise(client.Refresh());
   }
 
   /** A change signal from outside the plugin (a Zotero push). */
   notifyExternalChange(): void {
+    this.#emitter.emit("refresh-requested");
     void this.ready
       .then(({ client }) => Effect.runPromise(client.NotifyExternalChange()))
       .catch((error: unknown) => {
