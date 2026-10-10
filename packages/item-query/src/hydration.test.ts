@@ -16,6 +16,7 @@ import { ItemQueryError } from "./error";
 import { openHydration } from "./hydration";
 import type { LoadPlan } from "./hydration";
 import { ITEMS } from "./query-items";
+import { openQuerySources } from "./query-sources";
 import { planRequest } from "./request";
 import type { ItemQueryRequest, TargetLibrary } from "./request";
 import { runEffect } from "./test-helpers";
@@ -44,7 +45,8 @@ async function open(scenario: ScenarioDatabase, request: Request) {
         ...rest,
         libraries,
       });
-      const hydration = yield* openHydration(plan, libraries);
+      const sources = yield* openQuerySources;
+      const hydration = yield* openHydration(plan, libraries, sources);
       const opened = seen;
       const page = yield* readScanPage({
         libraryID: personal.libraryID,
@@ -53,7 +55,7 @@ async function open(scenario: ScenarioDatabase, request: Request) {
       });
       const scanned = yield* hydration.scan.load(page, () => personal);
       const projected = yield* hydration.projection.load(page, () => personal);
-      return { hydration, opened, scanned, projected };
+      return { hydration, sources, opened, scanned, projected };
     }),
     {
       client: scenario.db,
@@ -96,7 +98,7 @@ async function failure(scenario: ScenarioDatabase, request: Request) {
         ...request,
         libraries: [personal],
       });
-      return yield* openHydration(plan, [personal]);
+      return yield* openHydration(plan, [personal], yield* openQuerySources);
     }),
     { client: scenario.db },
   );
@@ -245,17 +247,17 @@ describe("Hydration", () => {
 
   it("gives each lowering the Collection paths of its own Library", async () => {
     using scenario = openScenarioDatabase();
-    const { hydration } = await open(scenario, {
+    const { sources } = await open(scenario, {
       libraries: [personal, group],
       filter: 'collections.contains("Thesis/Methods")',
     });
 
     const pathsOf = (library: TargetLibrary) => [
-      ...(hydration.candidateSources(library).collectionPaths?.values() ?? []),
+      ...(sources.candidateContext(library).collectionPaths?.values() ?? []),
     ];
     expect(pathsOf(personal)).toContainEqual(["Thesis", "Methods"]);
     expect(pathsOf(group)).not.toContainEqual(["Thesis", "Methods"]);
-    expect(hydration.candidateSources(personal).vocabulary).not.toBeNull();
+    expect(sources.candidateContext(personal).vocabulary).not.toBeNull();
   });
 
   it.each([

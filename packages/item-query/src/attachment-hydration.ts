@@ -20,14 +20,14 @@ import type { QueryAttachment } from "./attachment-fields";
 import { AttachmentFileResolver } from "./dataset";
 import type { ItemQueryError } from "./error";
 import type { FieldNeeds } from "./fields";
-import { openHydration, openHydrationVocabulary } from "./hydration";
+import { openHydration } from "./hydration";
 import type {
   Hydration,
   HydrationRequest,
-  HydrationVocabulary,
   LoadPlan,
   Loader,
 } from "./hydration";
+import type { QuerySources } from "./query-sources";
 import {
   relationChunk,
   relatedAttachmentAnnotations,
@@ -74,7 +74,7 @@ const NO_FILE = { path: null, exists: false } as const;
 export function openAttachmentHydration(
   plan: HydrationRequest<AttachmentNeeds>,
   libraries: readonly TargetLibrary[],
-  source?: HydrationVocabulary,
+  sources: QuerySources,
 ): Effect.Effect<
   AttachmentHydration,
   ItemQueryError | ItemQueryReaderError,
@@ -82,7 +82,6 @@ export function openAttachmentHydration(
 > {
   return Effect.gen(function* () {
     const { filter, paths, sorts } = plan;
-    const readVocabulary = source ?? (yield* openHydrationVocabulary);
     const itemNeeds = (needs: AttachmentNeeds): readonly FieldNeeds[] =>
       needs.item ?? [];
     const parents = yield* openHydration(
@@ -107,16 +106,13 @@ export function openAttachmentHydration(
         ),
       },
       libraries,
-      readVocabulary,
+      sources,
     );
     const resolveAttachmentFile = yield* AttachmentFileResolver;
     const groupOf = new Map(
       libraries.map((library) => [library.libraryID, library.groupID]),
     );
 
-    const relatedSources: Hydration["candidateSources"][] = [
-      parents.candidateSources,
-    ];
     const loader = Effect.fnUntraced(function* (
       needs: readonly AttachmentNeeds[],
       parent: Loader,
@@ -128,10 +124,9 @@ export function openAttachmentHydration(
               needs.flatMap((need) => need.annotations ?? []),
             ),
             libraries,
-            readVocabulary,
+            sources,
           )
         : null;
-      if (annotations) relatedSources.push(annotations.candidateSources);
       const file = needs.some((each) => each.file === true);
       const loads = {
         details: file || needs.some((each) => each.details === true),
@@ -228,16 +223,6 @@ export function openAttachmentHydration(
         paths.map((path) => path.needs),
         parents.projection,
       ),
-      candidateSources: (library) => {
-        const sources = relatedSources.map((source) => source(library));
-        return {
-          library,
-          vocabulary:
-            sources.find((source) => source.vocabulary)?.vocabulary ?? null,
-          collectionPaths: sources.find((source) => source.collectionPaths)
-            ?.collectionPaths,
-        };
-      },
     };
   });
 }

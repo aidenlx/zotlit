@@ -10,11 +10,27 @@ import type {
   QueryDataset,
 } from "./dataset";
 import type { FilterNode } from "./filter-plan";
+import type { QuerySources } from "./query-sources";
+import type { TargetLibrary } from "./request";
 
 type Node = FilterNode<never>;
 
-/** Keep the dataset's leaf rules single, including inside a Relation List. */
+/** Plan with the sources shared by every loader of this query. */
 export function planDatasetCandidates(
+  node: Node,
+  sources: QuerySources,
+  {
+    dataset,
+    library,
+  }: { readonly dataset: QueryDataset; readonly library: TargetLibrary },
+) {
+  return planRelatedCandidates(node, sources.candidateContext(library), {
+    dataset,
+  });
+}
+
+/** Keep the dataset's leaf rules single, including inside a Relation List. */
+function planRelatedCandidates(
   node: Node,
   sources: CandidateSources,
   {
@@ -33,7 +49,7 @@ export function planDatasetCandidates(
       if (selection) {
         const { relation, expression } = selection;
         const element = relation.dataset();
-        return planDatasetCandidates(
+        return planRelatedCandidates(
           elementPredicate(expression, element),
           sources,
           { dataset: element, parents: [relation.readParents, ...parents] },

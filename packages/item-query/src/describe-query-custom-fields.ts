@@ -1,6 +1,5 @@
 import { Effect } from "effect";
 
-import { readFieldVocabulary } from "@zotlit/db/item-query";
 import type {
   ItemQueryDatabase,
   ItemQueryDatabaseError,
@@ -16,6 +15,7 @@ import {
 } from "./fields";
 import type { ValueShape } from "./fields";
 import { hasBareForm } from "./filter-plan";
+import { openQuerySources } from "./query-sources";
 
 /**
  * The custom fields supplied by the active Zotero source, at the paths the
@@ -28,12 +28,14 @@ export function describeQueryCustomFields(
   ItemQueryLayoutError | ItemQueryDatabaseError,
   ItemQueryDatabase
 > {
-  return Effect.map(readFieldVocabulary(), ({ customFieldNames }) =>
-    customFieldNames.map((name) => {
+  return Effect.gen(function* () {
+    const sources = yield* openQuerySources;
+    const { customFieldNames } = yield* sources.vocabulary();
+    return customFieldNames.map((name) => {
       const field = customSchemaField(name);
       return { ...field, path: dataset.customPrefix + field.path };
-    }),
-  );
+    });
+  });
 }
 
 function customSchemaField(name: string): SchemaCustomField {

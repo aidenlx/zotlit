@@ -79,24 +79,21 @@ export const ITEMS: QueryDataset<ItemQueryRequest> = {
   rootName: fieldRoot,
   readScanPage,
   readUniverseRows,
-  open: (plan, { libraries }, clock) =>
+  open: (plan, { libraries }, { clock, sources }) =>
     Effect.gen(function* () {
       const { filter, paths } = plan;
-      const hydration = yield* openHydration(plan, libraries);
+      const hydration = yield* openHydration(plan, libraries, sources);
       const run: DatasetRun<QueryItem> = {
-        collectionPaths: (library) =>
-          hydration.candidateSources(library).collectionPaths,
         scan: hydration.scan,
         projection: hydration.projection,
         candidates: (library, tuning) =>
           Effect.gen(function* () {
             const candidatePlan =
               filter && !tuning.forceScan
-                ? planDatasetCandidates(
-                    filter.root,
-                    hydration.candidateSources(library),
-                    { dataset: ITEMS },
-                  )
+                ? planDatasetCandidates(filter.root, sources, {
+                    dataset: ITEMS,
+                    library,
+                  })
                 : null;
             const cap = candidatePlan
               ? Math.floor(

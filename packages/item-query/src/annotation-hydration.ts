@@ -19,14 +19,14 @@ import type {
 } from "./attachment-hydration";
 import type { ItemQueryError } from "./error";
 import type { FieldNeeds } from "./fields";
-import { openHydration, openHydrationVocabulary } from "./hydration";
+import { openHydration } from "./hydration";
 import type {
   Hydration,
   HydrationRequest,
-  HydrationVocabulary,
   LoadPlan,
   Loader,
 } from "./hydration";
+import type { QuerySources } from "./query-sources";
 import { relationChunk, relationRequest } from "./relation-hydration";
 import type { TargetLibrary } from "./request";
 
@@ -64,7 +64,7 @@ const NOTHING_HYDRATED: HydratedAnnotation = {};
 export function openAnnotationHydration(
   plan: HydrationRequest<AnnotationNeeds>,
   libraries: readonly TargetLibrary[],
-  source?: HydrationVocabulary,
+  sources: QuerySources,
 ): Effect.Effect<
   AnnotationHydration,
   ItemQueryError | ItemQueryReaderError,
@@ -72,7 +72,6 @@ export function openAnnotationHydration(
 > {
   return Effect.gen(function* () {
     const { filter, paths, sorts } = plan;
-    const readVocabulary = source ?? (yield* openHydrationVocabulary);
     const itemNeeds = (needs: AnnotationNeeds): readonly FieldNeeds[] =>
       needs.item ?? [];
     const parents = yield* openHydration(
@@ -97,15 +96,12 @@ export function openAnnotationHydration(
         ),
       },
       libraries,
-      readVocabulary,
+      sources,
     );
     const groupOf = new Map(
       libraries.map((library) => [library.libraryID, library.groupID]),
     );
 
-    const relatedSources: Hydration["candidateSources"][] = [
-      parents.candidateSources,
-    ];
     const loader = Effect.fnUntraced(function* (
       needs: readonly AnnotationNeeds[],
       parent: Loader,
@@ -117,10 +113,9 @@ export function openAnnotationHydration(
               needs.flatMap((need) => need.attachment ?? []),
             ),
             libraries,
-            readVocabulary,
+            sources,
           )
         : null;
-      if (attachment) relatedSources.push(attachment.candidateSources);
       const loads = {
         details: needs.some((each) => each.details === true),
         tags: needs.some((each) => each.tags === true),
@@ -223,16 +218,6 @@ export function openAnnotationHydration(
         paths.map((path) => path.needs),
         parents.projection,
       ),
-      candidateSources: (library) => {
-        const sources = relatedSources.map((source) => source(library));
-        return {
-          library,
-          vocabulary:
-            sources.find((source) => source.vocabulary)?.vocabulary ?? null,
-          collectionPaths: sources.find((source) => source.collectionPaths)
-            ?.collectionPaths,
-        };
-      },
     };
   });
 }

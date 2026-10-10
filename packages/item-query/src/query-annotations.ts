@@ -87,13 +87,15 @@ export const ANNOTATIONS: QueryDataset<ItemQueryRequest> = {
   },
   readScanPage: readAnnotationScanPage,
   readUniverseRows: readAnnotationUniverseRows,
-  open: (plan, request, clock) =>
+  open: (plan, request, { clock, sources }) =>
     Effect.gen(function* () {
       const { filter, paths } = plan;
-      const hydration = yield* openAnnotationHydration(plan, request.libraries);
+      const hydration = yield* openAnnotationHydration(
+        plan,
+        request.libraries,
+        sources,
+      );
       const run: DatasetRun<QueryAnnotation> = {
-        collectionPaths: (library) =>
-          hydration.candidateSources(library).collectionPaths,
         scan: hydration.scan,
         projection: hydration.projection,
         candidates: (library, tuning) =>
@@ -101,11 +103,10 @@ export const ANNOTATIONS: QueryDataset<ItemQueryRequest> = {
             if (tuning.forceScan) return null;
             const plan =
               filter &&
-              planDatasetCandidates(
-                filter.root,
-                hydration.candidateSources(library),
-                { dataset: ANNOTATIONS },
-              );
+              planDatasetCandidates(filter.root, sources, {
+                dataset: ANNOTATIONS,
+                library,
+              });
             if (!plan) return null;
             const rowCount = yield* readAnnotationRowCount(library.libraryID);
             const cap = Math.floor(rowCount * tuning.capRatio);

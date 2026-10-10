@@ -91,13 +91,15 @@ export const ATTACHMENTS: QueryDataset<ItemQueryRequest> = {
   },
   readScanPage: readAttachmentScanPage,
   readUniverseRows: readAttachmentUniverseRows,
-  open: (plan, request, clock) =>
+  open: (plan, request, { clock, sources }) =>
     Effect.gen(function* () {
       const { filter, paths } = plan;
-      const hydration = yield* openAttachmentHydration(plan, request.libraries);
+      const hydration = yield* openAttachmentHydration(
+        plan,
+        request.libraries,
+        sources,
+      );
       const run: DatasetRun<QueryAttachment> = {
-        collectionPaths: (library) =>
-          hydration.candidateSources(library).collectionPaths,
         scan: hydration.scan,
         projection: hydration.projection,
         candidates: (library, tuning) =>
@@ -105,11 +107,10 @@ export const ATTACHMENTS: QueryDataset<ItemQueryRequest> = {
             if (tuning.forceScan) return null;
             const candidatePlan =
               filter &&
-              planDatasetCandidates(
-                filter.root,
-                hydration.candidateSources(library),
-                { dataset: ATTACHMENTS },
-              );
+              planDatasetCandidates(filter.root, sources, {
+                dataset: ATTACHMENTS,
+                library,
+              });
             if (!candidatePlan) return null;
             const rowCount = yield* readAttachmentRowCount(library.libraryID);
             const cap = Math.floor(rowCount * tuning.capRatio);
