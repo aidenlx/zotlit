@@ -1582,6 +1582,25 @@ describe("ZoteroReads Profile Match operations", () => {
 });
 
 describe("ZoteroReads SearchItems", () => {
+  it("keeps Item search outside the citation worker capability", async () => {
+    const { open } = fixtureOpener();
+    const answer = await withReads(
+      open,
+      (reads) =>
+        Effect.result(
+          reads.SearchItems({ libraryIDs: [], query: "paper", limit: 10 }),
+        ),
+      { citationOnly: true },
+    );
+    expect(answer).toMatchObject({
+      _tag: "Failure",
+      failure: {
+        _tag: "DbUnavailable",
+        message: "Item search belongs to the interactive worker",
+      },
+    });
+  });
+
   /** `effect`'s value and the statements it ran on every connection. */
   const costOf =
     (statements: () => number) =>
