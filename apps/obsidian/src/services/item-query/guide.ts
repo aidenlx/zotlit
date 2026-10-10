@@ -531,7 +531,7 @@ const GROUP_SECTION = `GROUP RESULTS
   Papers per tag:
     ${example({ group: "tags[].name", fields: "[]", limit: "1" })}
   Papers per Collection inside one Collection:
-    ${example({ group: "collections[]", filter: 'collections.within("Thesis")', fields: "[]", limit: "1" })}
+    ${example({ group: "collections[]", filter: 'collections.within("Shared key")', fields: "[]", limit: "1" })}
   Papers per file type (PDF, EPUB, web page):
     ${example({ group: "attachments[].fileType", fields: "[]", limit: "1" })}
   Files per tag:
