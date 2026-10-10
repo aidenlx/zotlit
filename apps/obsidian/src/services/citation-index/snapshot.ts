@@ -3,9 +3,35 @@
 import type { LibraryCitekey } from "@zotlit/db";
 
 import { getLogger } from "@/lib/log";
-import { mapsEqual } from "@/lib/maps-equal";
+import { yieldToMain } from "@/lib/yield-to-main";
 
 const logger = getLogger("citation-index");
+const SNAPSHOT_SLICE_MS = 4;
+
+/** Construction and comparison share one renderer work budget. */
+class SnapshotWork {
+  readonly #signal;
+  #deadline = performance.now() + SNAPSHOT_SLICE_MS;
+  #steps = 0;
+
+  constructor(signal?: AbortSignal) {
+    this.#signal = signal;
+    signal?.throwIfAborted();
+  }
+
+  /** Check in small batches without creating a Promise for every row. */
+  step(): Promise<void> | undefined {
+    if (++this.#steps % 128 !== 0) return;
+    this.#signal?.throwIfAborted();
+    if (performance.now() >= this.#deadline) return this.#pause();
+  }
+
+  async #pause(): Promise<void> {
+    await yieldToMain();
+    this.#signal?.throwIfAborted();
+    this.#deadline = performance.now() + SNAPSHOT_SLICE_MS;
+  }
+}
 
 /** One Zotero Item a native citation key names. */
 export interface SnapshotItem {
@@ -32,8 +58,8 @@ export type CitekeyResolution =
 /**
  * The Citation Index's resolution snapshot: which Zotero Items a native
  * citekey names, and back again. Rebuilt wholesale from one bulk read, never
- * mutated incrementally — the maps are small enough that replacing them is
- * cheaper than diffing.
+ * mutated after publication. Construction and comparison yield in small
+ * slices while callers keep using the previous complete snapshot.
  *
  * The two directions answer over different Libraries. Forward resolution
  * follows Library Scope, so narrowing the scope can leave one candidate and
@@ -45,13 +71,21 @@ export class CitekeySnapshot {
   #byCitekey = new Map<string, SnapshotItem[]>();
   #citekeyByIndexedKey = new Map<string, string>();
 
-  /** Builds a complete snapshot from one canonical bulk read. */
-  static from(
-    rows: readonly LibraryCitekey[],
+  /** Builds a complete snapshot, retaining `previous` when its answers match. */
+  static async from(
+    rows: Iterable<LibraryCitekey>,
     inScope: ReadonlySet<number>,
-  ): CitekeySnapshot {
+    {
+      previous,
+      signal,
+    }: { previous?: CitekeySnapshot; signal?: AbortSignal } = {},
+  ): Promise<CitekeySnapshot> {
+    const work = new SnapshotWork(signal);
     const snapshot = new CitekeySnapshot();
-    snapshot.#replace(rows, inScope);
+    await snapshot.#replace(rows, inScope, work);
+    const unchanged = previous && (await snapshot.#sameAs(previous, work));
+    signal?.throwIfAborted();
+    if (unchanged) return previous;
     return snapshot;
   }
 
@@ -70,13 +104,16 @@ export class CitekeySnapshot {
   }
 
   /** Builds both lookup directions from one fresh bulk read. */
-  #replace(
-    rows: readonly LibraryCitekey[],
+  async #replace(
+    rows: Iterable<LibraryCitekey>,
     inScope: ReadonlySet<number>,
-  ): void {
+    work: SnapshotWork,
+  ): Promise<void> {
     const byCitekey = new Map<string, SnapshotItem[]>();
     const citekeyByIndexedKey = new Map<string, string>();
     for (const row of rows) {
+      const pause = work.step();
+      if (pause) await pause;
       citekeyByIndexedKey.set(row.indexedKey, row.citekey);
       if (!inScope.has(row.libraryID)) continue;
       const item: SnapshotItem = {
@@ -90,6 +127,8 @@ export class CitekeySnapshot {
       else byCitekey.set(row.citekey, [item]);
     }
     for (const [citekey, candidates] of byCitekey) {
+      const pause = work.step();
+      if (pause) await pause;
       if (candidates.length > 1) {
         logger.debug("Ambiguous citation key in library scope", {
           citekey,
@@ -103,26 +142,28 @@ export class CitekeySnapshot {
   }
 
   /** Whether both lookup directions answer identically. */
-  sameAs(other: CitekeySnapshot): boolean {
-    return (
-      mapsEqual(this.#byCitekey, other.#byCitekey, candidatesEqual) &&
-      mapsEqual(
-        this.#citekeyByIndexedKey,
-        other.#citekeyByIndexedKey,
-        (a, b) => a === b,
-      )
-    );
+  async #sameAs(other: CitekeySnapshot, work: SnapshotWork): Promise<boolean> {
+    if (
+      this.#byCitekey.size !== other.#byCitekey.size ||
+      this.#citekeyByIndexedKey.size !== other.#citekeyByIndexedKey.size
+    )
+      return false;
+    for (const [key, candidates] of this.#byCitekey) {
+      const previous = other.#byCitekey.get(key);
+      if (!previous || candidates.length !== previous.length) return false;
+      for (let at = 0; at < candidates.length; at += 1) {
+        const pause = work.step();
+        if (pause) await pause;
+        if (!itemEqual(candidates[at]!, previous[at]!)) return false;
+      }
+    }
+    for (const [key, citekey] of this.#citekeyByIndexedKey) {
+      const pause = work.step();
+      if (pause) await pause;
+      if (other.#citekeyByIndexedKey.get(key) !== citekey) return false;
+    }
+    return true;
   }
-}
-
-/** Candidate membership and order both count, so either change is a change. */
-function candidatesEqual(
-  a: readonly SnapshotItem[],
-  b: readonly SnapshotItem[],
-): boolean {
-  return (
-    a.length === b.length && a.every((item, at) => itemEqual(item, b[at]!))
-  );
 }
 
 function itemEqual(a: SnapshotItem, b: SnapshotItem): boolean {

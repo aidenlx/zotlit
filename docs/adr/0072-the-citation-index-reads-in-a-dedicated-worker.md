@@ -30,4 +30,12 @@ The 100,000-Item experiment temporarily removed the page upper bound and kept th
 
 The split adds one active read-only connection. The dedicated worker's JavaScript heap cost was about 18 MiB in this run. Renderer working-set samples include both workers, SQLite/native memory, and shared renderer state, so they do not isolate the native connection cost.
 
-The dedicated run kept renderer-gap p99 at 5.4 ms, but three gaps exceeded 32 ms and the maximum was 70.9 ms. The retained worker profiles and phase timings do not identify one cause. This renderer maximum remains a failed, unclassified result. The measurement record, run instructions, and local evidence locations are recorded on [#1432](https://github.com/aidenlx/zotlit/issues/1432).
+The dedicated run kept renderer-gap p99 at 5.4 ms, but three gaps exceeded 32 ms and the maximum was 70.9 ms. That run did not capture a renderer profile. Its measurement record, run instructions, and local evidence locations are recorded on [#1432](https://github.com/aidenlx/zotlit/issues/1432).
+
+## Renderer publication
+
+Follow-up [#1434](https://github.com/aidenlx/zotlit/issues/1434) profiled repeated refreshes with the production page bound. Snapshot map construction took 25.7–27.5 ms, followed by 8.8–11.0 ms of semantic comparison on the renderer, producing a 37.7 ms timer gap. Both operations were synchronous. The same 48 queries without a refresh stayed below the 32 ms limit. This identifies the repeated stall; the individual historical 70.9 ms event has no renderer profile.
+
+The renderer retains the maps so existing citation lookups remain synchronous. Building a whole map in the worker and sending it back would still require renderer deserialization; keeping it only in the worker would change those lookups to asynchronous requests. The focused fix builds and compares privately in short slices, sharing a 4 ms work budget and yielding through the renderer's MessageChannel scheduler. Cancellation interrupts between slices. The previous complete snapshot remains readable, and an equal rebuild returns that same object. Cache publication uses this result directly, with no full-map comparison in its synchronous structural-sharing hook.
+
+At 100,000 Items, the same three-refresh, 48-query profile measured renderer gaps of 5.3 ms p99 and 13.1 ms maximum, with no long tasks. Rebuilds still took 40–47 ms in total; yielding lets the renderer serve other tasks during that work. The desktop regression also checks held answers and equal-snapshot identity while measuring the renderer budget.

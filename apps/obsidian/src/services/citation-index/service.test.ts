@@ -1911,11 +1911,13 @@ describe("CitationIndex ambiguous citation keys", () => {
     );
     let notified = 0;
     index.on("resolution-changed", () => notified++);
+    const original = await index.readSnapshot();
 
     db.changed();
     await index.whenResolved();
     await yieldToMain();
     expect(notified).toBe(0);
+    expect(await index.readSnapshot()).toBe(original);
 
     citekeys.rows = [sameLibraryTwin, myLibraryRow];
     db.changed();
@@ -1923,6 +1925,7 @@ describe("CitationIndex ambiguous citation keys", () => {
     await yieldToMain();
 
     expect(notified).toBe(1);
+    expect(await index.readSnapshot()).not.toBe(original);
     expect(index.resolveCitekey("doe2024")).toMatchObject({
       kind: "ambiguous",
       candidates: [{ indexedKey: TWIN_KEY }, { indexedKey: KEY_A }],

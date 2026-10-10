@@ -650,12 +650,8 @@ export class CitationIndex extends Service<void> {
     );
     this.#queries.client.setQueryDefaults(SNAPSHOT_KEY, {
       gcTime: Infinity,
-      // An equal rebuild keeps the snapshot every resolved citekey was read
-      // against, so nothing that reads one is told to read it again.
-      structuralSharing: (held, next) =>
-        (held as CitekeySnapshot | undefined)?.sameAs(next as CitekeySnapshot)
-          ? held
-          : next,
+      // The asynchronous builder retains an equal snapshot before publication.
+      structuralSharing: false,
     });
     stack.defer(
       this.#queries.watch<CitekeySnapshot>(SNAPSHOT_KEY, {
@@ -855,13 +851,25 @@ export class CitationIndex extends Service<void> {
       );
       if (signal.aborted || generation !== this.#reads.generation)
         throw new Error("The citation source changed during the read");
-      const rows = perLibrary.flat(2);
+      const rows = perLibrary
+        .values()
+        .flatMap((pages) => pages.values().flatMap((page) => page.values()));
+      const snapshot = await CitekeySnapshot.from(rows, inScope, {
+        previous: this.#queries.peek<CitekeySnapshot>(SNAPSHOT_KEY)?.value,
+        signal,
+      });
+      if (signal.aborted || generation !== this.#reads.generation)
+        throw new Error("The citation source changed during the read");
       logger.debug("Resolution snapshot rebuilt", {
         libraries: libraries.length,
         inScope: inScope.size,
-        count: rows.length,
+        count: perLibrary.reduce(
+          (total, pages) =>
+            total + pages.reduce((count, page) => count + page.length, 0),
+          0,
+        ),
       });
-      return CitekeySnapshot.from(rows, inScope);
+      return snapshot;
     } catch (error) {
       // A newer rebuild superseded this one: nothing failed.
       if (signal.aborted)
