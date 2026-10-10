@@ -130,7 +130,7 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
                   const started=performance.now();
                   const hits=await s.itemLookup.search(${JSON.stringify(item.title)},{limit:1});
                   readMs.push(performance.now()-started);
-                  readsCorrect&&=hits.length===1&&hits[0].item.itemID===${item.itemID}&&hits[0].item.title===${JSON.stringify(item.title)};
+                  readsCorrect&&=hits.length===1&&hits[0].item.itemID===${item.itemID}&&hits[0].item.fields.title===${JSON.stringify(item.title)};
                   if(refreshing)readsDuringRefresh++;
                 } while(refreshing);
               })();
