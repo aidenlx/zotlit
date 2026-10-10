@@ -8,6 +8,7 @@ import type {
 } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
+import { OpenDocumentsStub } from "@/lib/__fixtures__/open-documents";
 import * as m from "@/lib/i18n/generated/messages";
 import { themeHook } from "@/lib/theme-hooks";
 import { CitationLookupStub } from "@/services/citation-index/__fixtures__/citation-lookup";
@@ -162,6 +163,7 @@ async function makeHarness({
   );
   const citationText = stack.use(
     new CitationText({
+      openDocuments: new OpenDocumentsStub(),
       citationLookup,
       profile: profileReader(defaults, {
         getFileCache: () => ({ frontmatter }),

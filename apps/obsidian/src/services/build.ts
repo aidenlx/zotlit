@@ -1,5 +1,6 @@
 import { WEB_WORKBENCH_ENABLED } from "@/lib/constants";
 import { nodeFetch } from "@/lib/node-fetch";
+import { workspaceOpenDocuments } from "@/lib/open-documents";
 import { revealSetting } from "@/lib/open-settings";
 import { libraryTagNames } from "@/services/database/library-tag-names";
 import {
@@ -574,6 +575,7 @@ export function buildServices(
           noteIndex,
           bibliographyRender,
           queryClient,
+          openDocuments: workspaceOpenDocuments(plugin.app),
         }),
     })
     .use({
