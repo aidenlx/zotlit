@@ -37,7 +37,16 @@ export interface Callee {
  * callee that is not a name.
  */
 export type Fault =
-  | { readonly kind: "group-scalar"; readonly name: string; readonly at: Span }
+  | {
+      readonly kind: "group";
+      /**
+       * `scalar`: the value is not scalar. `list`: a list path without `[]`.
+       * `each`: the path has more than one `[]`.
+       */
+      readonly problem: "scalar" | "list" | "each";
+      readonly name: string;
+      readonly at: Span;
+    }
   | { readonly kind: "syntax"; readonly fault: SyntaxFault }
   | { readonly kind: "custom-key"; readonly at: Span }
   | {

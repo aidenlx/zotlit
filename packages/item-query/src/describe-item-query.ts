@@ -18,6 +18,8 @@ import {
 } from "./filter-functions";
 import type { FunctionDefinition, FunctionParameter } from "./filter-functions";
 import type { FilterValueType } from "./filter-values";
+import { canGroup } from "./projection";
+import { parseProjectionPath } from "./projection-path";
 import { ITEMS } from "./query-items";
 import type { SortSpec } from "./request";
 
@@ -44,7 +46,10 @@ export interface SchemaCapabilities {
   readonly projection: boolean;
   /** The `sort` argument takes it. */
   readonly sort: boolean;
-  /** The `group` argument takes this scalar Projection Path. */
+  /**
+   * The `group` argument takes this path: a scalar Projection Path, or a
+   * path with one `[]` whose element is scalar.
+   */
   readonly group: boolean;
 }
 
@@ -268,7 +273,7 @@ export function pathsBelow(
       type: jsonType(childShape),
       filter: capability(child),
       projection: true,
-      group: childShape.kind === "scalar" && !child.includes("[]"),
+      group: canGroup(childShape, eachCount(child)),
       sort: false,
     },
     ...pathsBelow(child, childShape, capability),
@@ -302,10 +307,16 @@ export function pathsBelow(
         ...below(`${path}[]`, shape.element).map((field) => ({
           ...field,
           type: "array" as const,
-          group: false,
         })),
       ];
   }
+}
+
+function eachCount(path: string): number {
+  const parsed = parseProjectionPath(path);
+  return parsed.ok
+    ? parsed.segments.filter((segment) => typeof segment === "object").length
+    : 0;
 }
 
 export function jsonType(shape: ValueShape): JsonType {

@@ -18,6 +18,17 @@ export const RELATION_SCENARIO_QUERIES: readonly {
       sort: [{ field: "indexedKey", direction: "desc" as const }],
     },
   })),
+  ...(
+    [
+      [ITEMS, "attachments[].fileType"],
+      [ATTACHMENTS, "tags[]"],
+      [ANNOTATIONS, "item.tags[].name"],
+    ] as const
+  ).map(([dataset, group]) => ({
+    name: `${dataset.id} grouped by the element path ${group}`,
+    dataset,
+    request: { group, fields: [], limit: 2 },
+  })),
   {
     name: "Attachment file types from Annotations",
     dataset: ANNOTATIONS,

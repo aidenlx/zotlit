@@ -129,6 +129,7 @@ export function consumeQuery<Request extends ItemQueryRequest, A, E, R>(
         readScanPage: dataset.readScanPage,
         readUniverseRows: dataset.readUniverseRows,
         keys: (item) => sorts.map((sort) => sort.key(item, clock)),
+        groupValues: plan.group && plan.group.values,
       },
       begin,
     );

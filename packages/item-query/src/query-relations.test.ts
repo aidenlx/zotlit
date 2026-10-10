@@ -815,3 +815,242 @@ it("reads file types through Relation Lists and Annotation parents", async () =>
     },
   ]);
 });
+
+it("groups papers by each tag name across two Libraries, with overlapping counts and a null group", async () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  const { exit } = await runEffect(
+    collectQuery(ITEMS, {
+      libraries: [SCENARIO_LIBRARIES.personal, SCENARIO_LIBRARIES.group],
+      group: "tags[].name",
+      fields: [],
+      sort: [],
+      limit: 2,
+    }),
+    { client: scenario.db },
+  );
+  if (exit._tag === "Failure") throw Cause.squash(exit.cause);
+  expect(
+    exit.value.groups!.map(({ value, count, rows }) => [
+      value,
+      count,
+      rows.map((row) => row.indexedKey),
+    ]),
+  ).toEqual([
+    ["100%_raw\\path", 1, ["UNI2CDE2"]],
+    ["eclair", 1, ["UNI2CDE2"]],
+    ["Éclair", 1, ["UNI2CDE2"]],
+    ["group-only", 1, ["GRP2BK22g4815"]],
+    ["methods", 2, ["ALS2CNFL", "ART2FULL"]],
+    ["tie", 3, ["TIE2AAAA", "TIE2BBBB"]],
+    ["to-read", 3, ["ART2FULL", "ART2FULLg4815"]],
+    ["To-Read", 1, ["ART2FULL"]],
+    [null, 3, ["CHP2YEAR", "CNF2TEXT"]],
+  ]);
+  // Twelve papers match; their group counts add up to sixteen.
+  expect(exit.value).toMatchObject({
+    totalCount: 12,
+    returnedCount: 13,
+    truncated: true,
+  });
+});
+
+it("puts a paper in a file-type group once, however many files of that type it has", async () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  const { exit } = await runEffect(
+    collectQuery(ITEMS, {
+      libraries: [SCENARIO_LIBRARIES.personal, SCENARIO_LIBRARIES.group],
+      group: "attachments[].fileType",
+      fields: ["attachments[].fileType"],
+      sort: [],
+      limit: null,
+    }),
+    { client: scenario.db },
+  );
+  if (exit._tag === "Failure") throw Cause.squash(exit.cause);
+  expect(
+    exit.value.groups!.map(({ value, count, rows }) => [
+      value,
+      count,
+      rows.length,
+    ]),
+  ).toEqual([
+    ["pdf", 2, 2],
+    ["web", 1, 1],
+    [null, 10, 10],
+  ]);
+  expect(exit.value.groups![0]!.rows.map((row) => row.indexedKey)).toEqual([
+    "ART2FULL",
+    "ART2FULLg4815",
+  ]);
+  // The group path names its Relation List, so the list is hydrated.
+  expect(exit.value.groups![1]!.rows[0]!.values).toEqual({
+    "attachments[].fileType": ["pdf", "pdf", "web", "web"],
+  });
+  // ART2FULL has PDF and web files, so it is in two groups.
+  expect(exit.value).toMatchObject({
+    totalCount: 12,
+    returnedCount: 13,
+    truncated: false,
+  });
+});
+
+const DATASETS = {
+  items: ITEMS,
+  attachments: ATTACHMENTS,
+  annotations: ANNOTATIONS,
+};
+
+it.each([
+  {
+    dataset: "items",
+    group: "collections[]",
+    groups: [
+      ["Methods", 1],
+      ["Teaching/Methods", 1],
+      ["Thesis", 1],
+      ["Thesis/Methods", 2],
+      [null, 8],
+    ],
+    totalCount: 12,
+  },
+  {
+    dataset: "attachments",
+    group: "tags[]",
+    groups: [
+      ["attachment-method", 1],
+      [null, 4],
+    ],
+    totalCount: 5,
+  },
+  {
+    dataset: "attachments",
+    group: "item.collections[]",
+    groups: [
+      ["Thesis/Methods", 4],
+      [null, 1],
+    ],
+    totalCount: 5,
+  },
+  {
+    dataset: "annotations",
+    group: "item.tags[].name",
+    groups: [
+      ["methods", 12],
+      ["to-read", 13],
+      ["To-Read", 12],
+    ],
+    totalCount: 13,
+  },
+  {
+    dataset: "annotations",
+    group: "tags[]",
+    groups: [
+      ["method", 8],
+      [null, 5],
+    ],
+    totalCount: 13,
+  },
+] as const)(
+  "groups the records of $dataset by the element path $group",
+  async ({ dataset, group, groups, totalCount }) => {
+    using scenario = openScenarioDatabase({ annotations: true });
+    const { exit } = await runEffect(
+      collectQuery(DATASETS[dataset], {
+        libraries: [SCENARIO_LIBRARIES.personal, SCENARIO_LIBRARIES.group],
+        group,
+        fields: [],
+        limit: 1,
+      }),
+      { client: scenario.db },
+    );
+    if (exit._tag === "Failure") throw Cause.squash(exit.cause);
+    expect(
+      exit.value.groups!.map(({ value, count }) => [value, count]),
+    ).toEqual(groups);
+    expect(exit.value.totalCount).toBe(totalCount);
+    expect(exit.value.returnedCount).toBe(groups.length);
+  },
+);
+
+const TAG_FIELDS = ["group='tags[].name'", "group='tags[].type'"];
+it.each([
+  { dataset: "items", group: "tags", hint: "<field>", suggestions: TAG_FIELDS },
+  {
+    dataset: "attachments",
+    group: "tags",
+    hint: "group='tags[]'",
+    suggestions: ["group='tags[]'"],
+  },
+  {
+    dataset: "items",
+    group: "collections",
+    hint: "group='collections[]'",
+    suggestions: ["group='collections[]'"],
+  },
+  {
+    dataset: "attachments",
+    group: "item.collections",
+    hint: "group='item.collections[]'",
+    suggestions: ["group='item.collections[]'"],
+  },
+  {
+    dataset: "annotations",
+    group: "item.tags",
+    hint: "<field>",
+    suggestions: ["group='item.tags[].name'", "group='item.tags[].type'"],
+  },
+  {
+    dataset: "items",
+    group: "tags[]",
+    hint: "<field>",
+    suggestions: TAG_FIELDS,
+  },
+] as const)(
+  "rejects the $dataset group path $group and names its element path",
+  async ({ dataset, group, hint, suggestions }) => {
+    const { exit } = await runEffect(
+      collectQuery(DATASETS[dataset], { libraries: [], group }),
+    );
+    if (exit._tag !== "Failure") throw new Error("Expected a request Fault");
+    const error = Cause.findErrorOption(exit.cause);
+    if (error._tag === "None") throw Cause.squash(exit.cause);
+    expect(error.value).toMatchObject({
+      code: "invalid-group",
+      location: { argument: "group" },
+      diagnostic: { suggestions },
+    });
+    expect(
+      (error.value as unknown as { diagnostic: { hint: string } }).diagnostic
+        .hint,
+    ).toContain(hint);
+  },
+);
+
+it("names a field of each element for a Relation List of records", async () => {
+  const { exit } = await runEffect(
+    collectQuery(ITEMS, { libraries: [], group: "attachments" }),
+  );
+  if (exit._tag !== "Failure") throw new Error("Expected a request Fault");
+  const error = Cause.findErrorOption(exit.cause);
+  if (error._tag === "None") throw Cause.squash(exit.cause);
+  expect(error.value).toMatchObject({ code: "invalid-group" });
+  const { diagnostic } = error.value as unknown as {
+    diagnostic: { hint: string; suggestions: string[] };
+  };
+  expect(diagnostic.hint).toContain("group='attachments[].<field>'");
+  expect(diagnostic.suggestions).toContain("group='attachments[].fileType'");
+  expect(diagnostic.suggestions).toContain("group='attachments[].contentType'");
+});
+
+it("rejects a group path with two [] and names the one-[] rule", async () => {
+  const { exit } = await runEffect(
+    collectQuery(ITEMS, { libraries: [], group: "attachments[].tags[]" }),
+  );
+  if (exit._tag !== "Failure") throw new Error("Expected a request Fault");
+  const error = Cause.findErrorOption(exit.cause);
+  if (error._tag === "None") throw Cause.squash(exit.cause);
+  expect(error.value).toMatchObject({
+    code: "invalid-group",
+    diagnostic: { found: "2 []", expected: ["one []"] },
+  });
+});

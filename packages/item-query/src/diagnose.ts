@@ -79,20 +79,8 @@ export function diagnose(
   const at = "at" in fault ? fault.at : undefined;
   const faultLocation = { ...location, ...(at ? { span: at } : {}) };
   switch (fault.kind) {
-    case "group-scalar":
-      return renderDiagnostic(
-        {
-          code: "invalid-group",
-          message: `The group path ${JSON.stringify(fault.name)} must resolve to a scalar value.`,
-          hint: "Use one scalar Projection Path, such as library, date.year, or item.citationKey. List and record values and [] paths cannot group.",
-          location: faultLocation,
-        },
-        text,
-        {
-          found: fault.name,
-          expected: ["one scalar Projection Path without []"],
-        },
-      );
+    case "group":
+      return diagnoseGroup(fault, text, { dataset, ...faultLocation });
     case "syntax":
       return diagnoseSyntax(fault.fault, text, location);
     case "arity": {
@@ -214,7 +202,7 @@ export function codeOfFault(
   fault: ItemQueryFault,
   dataset: QueryDataset<any>,
 ): PlainFault["code"] {
-  if (fault.kind === "group-scalar") return "invalid-group";
+  if (fault.kind === "group") return "invalid-group";
   if (fault.kind === "plain") return fault.code;
   if (fault.kind === "syntax" || fault.kind === "custom-key")
     return "invalid-filter";
@@ -356,6 +344,97 @@ function projectionCandidates(dataset: QueryDataset<any>): readonly string[] {
       return definition ? paths(name, definition.shape) : [];
     }),
   );
+}
+
+/**
+ * A group path that gives no scalar per record or per element. A list path
+ * and a path to a list element with fields get their element paths as the
+ * correction.
+ */
+function diagnoseGroup(
+  fault: Extract<Fault, { readonly kind: "group" }>,
+  text: string,
+  { dataset, ...location }: DiagnosisContext,
+): Diagnostic<"invalid-group"> {
+  const name = JSON.stringify(fault.name);
+  if (fault.problem === "each") {
+    const count = fault.name.split("[]").length - 1;
+    return renderDiagnostic(
+      {
+        code: "invalid-group",
+        message: `The group path ${name} has ${count} []; group takes a path with one [].`,
+        hint: "Write one [] after the Relation List whose element values form the groups, such as tags[].name or attachments[].fileType.",
+        location,
+      },
+      text,
+      { found: `${count} []`, expected: ["one []"] },
+    );
+  }
+  const path = planPath(fault.name, dataset.resolvePath);
+  const shape = "kind" in path ? undefined : path.shape;
+  // The path that names one element: a list gets [], an element stays.
+  const each =
+    shape?.kind === "list"
+      ? { prefix: `${fault.name}[]`, element: shape.element }
+      : shape && !("kind" in path) && path.each === 1
+        ? { prefix: fault.name, element: shape }
+        : undefined;
+  const fields = each && scalarFields(each.element);
+  const elementPaths = each
+    ? each.element.kind === "scalar"
+      ? [each.prefix]
+      : (fields ?? []).map((field) => `${each.prefix}.${field}`)
+    : [];
+  const suggestions = elementPaths.map((element) =>
+    shellArgument("group", element),
+  );
+  const hint =
+    each?.element.kind === "scalar"
+      ? `Try: ${suggestions[0]}`
+      : fields?.length
+        ? `Group by one field of each element, as in ${shellArgument("group", `${each!.prefix}.<field>`)}.`
+        : "Use one scalar Projection Path, such as library, date.year, or item.citationKey, or a path with one [] whose element is scalar, such as tags[].name.";
+  const diagnostic = renderDiagnostic(
+    {
+      code: "invalid-group",
+      message:
+        fault.problem === "list"
+          ? `The group path ${name} is a list; group takes one scalar value, so name its elements with [].`
+          : `The group path ${name} must resolve to a scalar value.`,
+      hint,
+      location,
+    },
+    text,
+    {
+      found: fault.name,
+      expected: elementPaths.length
+        ? elementPaths
+        : ["one scalar Projection Path, or one [] path with a scalar element"],
+    },
+  );
+  const notes = fields?.length
+    ? [`${each!.prefix} has these fields: ${fields.join(", ")}.`]
+    : [];
+  return {
+    ...diagnostic,
+    report: [...diagnostic.report.slice(0, -1), ...notes, hint],
+    suggestions,
+  };
+}
+
+/** The scalar fields of a list element with fields, in schema order. */
+function scalarFields(shape: ValueShape): readonly string[] | undefined {
+  if (shape.kind === "object")
+    return Object.entries(shape.keys)
+      .filter(([, child]) => child.kind === "scalar")
+      .map(([key]) => key);
+  if (shape.kind === "record") {
+    const vocabulary = shape.vocabulary();
+    return vocabulary.projectionFields.filter(
+      (field) => vocabulary.field(field)?.shape.kind === "scalar",
+    );
+  }
+  return undefined;
 }
 
 function diagnoseRequestName(

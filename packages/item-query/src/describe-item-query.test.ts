@@ -140,9 +140,16 @@ describe("the static Item Query vocabulary", () => {
       type: "array",
       filter: null,
       projection: true,
-      group: false,
+      group: true,
       sort: false,
     });
+    // A Tag element has fields, so only a field of each element can group.
+    expect(vocabulary.fields).toContainEqual(
+      expect.objectContaining({ path: "tags[]", group: false }),
+    );
+    expect(vocabulary.fields).toContainEqual(
+      expect.objectContaining({ path: "tags[].name", group: true }),
+    );
   });
   it("matches the source-independent part of the complete schema", async () => {
     using scenario = openScenarioDatabase();
