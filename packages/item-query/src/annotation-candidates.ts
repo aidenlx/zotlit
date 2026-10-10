@@ -1,9 +1,11 @@
 import type { AnnotationCandidateLeaf } from "@zotlit/db/item-query";
 
+import { ANNOTATION_PARENTS } from "./annotation-fields";
 import { equality, lowerItemCandidate } from "./candidate-plan";
 import type { CandidateSources } from "./candidate-plan";
 import type { FilterNode } from "./filter-plan";
 import { lowerIndexedKeySelection } from "./indexed-key-selection";
+import { parentCandidateLeaf } from "./parent-records";
 
 export function lowerAnnotationCandidate<Item>(
   node: FilterNode<Item>,
@@ -32,31 +34,8 @@ export function lowerAnnotationCandidate<Item>(
   ) {
     return { kind: "tag", value: node.args[0].value };
   }
-  const parentField = (field: FilterNode<Item>): FilterNode<Item> =>
-    field.kind === "field" && field.name.startsWith("item.")
-      ? { ...field, name: field.name.slice(5) }
-      : field;
-  const parent =
-    node.kind === "binary"
-      ? {
-          ...node,
-          left: parentField(node.left),
-          right: parentField(node.right),
-        }
-      : node.kind === "method"
-        ? { ...node, subject: parentField(node.subject) }
-        : node;
-  // Only prefixed parent fields enter the Item lowering rules.
-  if (
-    parent === node ||
-    (node.kind === "binary" &&
-      ![node.left, node.right].some(
-        (field) => field.kind === "field" && field.name.startsWith("item."),
-      )) ||
-    (node.kind === "method" &&
-      !(node.subject.kind === "field" && node.subject.name.startsWith("item.")))
-  )
-    return null;
+  const parent = parentCandidateLeaf(node, ANNOTATION_PARENTS, "items");
+  if (!parent) return null;
   const leaf = lowerItemCandidate(parent, sources);
   return leaf ? { kind: "parent", leaf } : null;
 }

@@ -1,10 +1,12 @@
 import {
+  ANNOTATION_PARENTS,
   annotationFieldDefinition,
   annotationFilterRegistry,
 } from "./annotation-fields";
 import type { QueryAnnotation } from "./annotation-fields";
 import type { AnnotationNeeds } from "./annotation-hydration";
 import {
+  ATTACHMENT_PARENTS,
   attachmentFieldDefinition,
   attachmentFilterRegistry,
 } from "./attachment-fields";
@@ -79,6 +81,7 @@ export const attachmentVocabulary = (): RecordVocabulary<
   AttachmentNeeds
 > => ({
   id: "attachments",
+  parents: ATTACHMENT_PARENTS,
   summary: ATTACHMENT_SUMMARY,
   projectionFields: [...ATTACHMENT_SUMMARY, "key", "fileType"],
   field: attachmentFieldDefinition,
@@ -89,8 +92,22 @@ export const annotationVocabulary = (): RecordVocabulary<
   AnnotationNeeds
 > => ({
   id: "annotations",
+  parents: ANNOTATION_PARENTS,
   summary: ANNOTATION_SUMMARY,
   projectionFields: [...ANNOTATION_SUMMARY, "key"],
   field: annotationFieldDefinition,
   filter: annotationFilterRegistry,
 });
+
+export function recordVocabulary(
+  id: RecordVocabulary<never, never>["id"],
+): RecordVocabulary<any, any> {
+  switch (id) {
+    case "items":
+      return itemVocabulary();
+    case "attachments":
+      return attachmentVocabulary();
+    case "annotations":
+      return annotationVocabulary();
+  }
+}
