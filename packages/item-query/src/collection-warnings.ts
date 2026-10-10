@@ -1,12 +1,12 @@
 import { Effect } from "effect";
 
-import { readCollectionPaths, readLibraries } from "@zotlit/db/item-query";
-import type { CollectionPaths } from "@zotlit/db/item-query";
+import { readLibraries } from "@zotlit/db/item-query";
 
 import type { Span } from "./fault";
 import type { FilterNode } from "./filter-plan";
 import { nearCollectionMatches } from "./near-match";
 import { parentFieldSubject } from "./parent-records";
+import type { QuerySources } from "./query-sources";
 import { RECORD_VOCABULARIES } from "./record-vocabularies";
 import type { TargetLibrary } from "./request";
 
@@ -21,15 +21,8 @@ export interface CollectionWarning {
 export const collectionWarnings = Effect.fnUntraced(function* <Item>(
   root: FilterNode<Item> | undefined,
   libraries: readonly TargetLibrary[],
-  pathsOf: (library: TargetLibrary) => CollectionPaths | undefined,
+  sources: QuerySources,
 ) {
-  const paths = [
-    ...new Set(
-      libraries.flatMap((library) =>
-        [...(pathsOf(library)?.values() ?? [])].map((path) => path.join("/")),
-      ),
-    ),
-  ];
   const warnings = new Map<string, CollectionWarning>();
   const visit = (node: FilterNode<Item>) => {
     if (node.kind === "method" && ["contains", "within"].includes(node.name)) {
@@ -44,14 +37,13 @@ export const collectionWarnings = Effect.fnUntraced(function* <Item>(
         collections &&
         literal?.kind === "literal" &&
         typeof literal.value === "string" &&
-        !paths.includes(literal.value) &&
         !warnings.has(literal.value)
       ) {
         warnings.set(literal.value, {
           kind: "unknown-collection",
           path: literal.value,
           at: { from: literal.from, to: literal.to },
-          suggestions: nearCollectionMatches(literal.value, paths),
+          suggestions: [],
         });
       }
     }
@@ -94,6 +86,21 @@ export const collectionWarnings = Effect.fnUntraced(function* <Item>(
   };
   if (root) visit(root);
   if (warnings.size > 0) {
+    const paths: string[] = [];
+    for (const library of libraries) {
+      for (const path of (yield* sources.collectionPaths(library)).values())
+        paths.push(path.join("/"));
+    }
+    for (const [path, warning] of warnings) {
+      if (paths.includes(path)) warnings.delete(path);
+      else
+        warnings.set(path, {
+          ...warning,
+          suggestions: nearCollectionMatches(path, [...new Set(paths)]),
+        });
+    }
+  }
+  if (warnings.size > 0) {
     const others = (yield* readLibraries())
       .filter(
         (library) =>
@@ -101,7 +108,7 @@ export const collectionWarnings = Effect.fnUntraced(function* <Item>(
       )
       .toSorted((a, b) => (a.groupID ?? -1) - (b.groupID ?? -1));
     for (const library of others) {
-      const paths = yield* readCollectionPaths(library);
+      const paths = yield* sources.collectionPaths(library);
       const selector =
         library.groupID === null ? "personal" : `group:${library.groupID}`;
       for (const path of new Set(

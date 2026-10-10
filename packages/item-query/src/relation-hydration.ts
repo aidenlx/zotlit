@@ -14,7 +14,7 @@ import type {
   ScanRow,
 } from "@zotlit/db/item-query";
 
-import type { HydrationRequest, Loader } from "./hydration";
+import type { Loader } from "./record-loader";
 import type { TargetLibrary } from "./request";
 
 /** Raw Relation Lists live only for one root hydrate chunk, including its nested loads. */
@@ -84,28 +84,12 @@ export const relatedAttachmentAnnotations = (
     parentID: (row) => row.attachmentID,
   });
 
-/** A finite branch of the statically collected record needs. */
-export function relationRequest<Needs>(
-  request: HydrationRequest<unknown>,
-  needs: readonly Needs[],
-): HydrationRequest<Needs> {
-  return {
-    dataset: request.dataset,
-    query: request.query,
-    groupNeeds: [],
-    filter: { needs, customFields: [] },
-    paths: [],
-    sorts: [],
-  };
-}
-
 /** Child lists can exceed the parent chunk; hydrate them with the existing bounded readers. */
 export const loadRelation = Effect.fnUntraced(function* <
-  Plan extends object,
   Row extends ScanRow & { libraryID: number },
   Value,
 >(
-  loader: Loader<Plan, Row, Value>,
+  loader: Loader<Row, Value>,
   rows: readonly Row[],
   {
     libraries,

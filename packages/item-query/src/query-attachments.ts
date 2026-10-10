@@ -22,7 +22,7 @@ import {
   DEFAULT_ATTACHMENT_FIELDS,
 } from "./attachment-fields";
 import type { QueryAttachment } from "./attachment-fields";
-import { openAttachmentHydration } from "./attachment-hydration";
+import { ATTACHMENT_LOADING } from "./attachment-hydration";
 import type { QueryDataset } from "./dataset";
 import type { DatasetRun } from "./execution";
 import { matches as isMatch } from "./filter-evaluate";
@@ -30,6 +30,7 @@ import { planFilter } from "./filter-plan";
 import { parentPathResolver, parentRootName } from "./parent-records";
 import { readPath } from "./projection";
 import { ANNOTATIONS } from "./query-annotations";
+import { openRecordLoader } from "./record-loader";
 import {
   planDatasetCandidates,
   readDatasetCandidates,
@@ -79,13 +80,14 @@ export const ATTACHMENTS: QueryDataset<ItemQueryRequest> = {
   rootName: (name) => parentRootName(name, ATTACHMENT_PARENTS),
   readScanPage: readAttachmentScanPage,
   readUniverseRows: readAttachmentUniverseRows,
-  open: (plan, request, clock) =>
+  open: (plan, request, { clock, sources }) =>
     Effect.gen(function* () {
       const { filter, paths } = plan;
-      const hydration = yield* openAttachmentHydration(plan, request.libraries);
+      const hydration = yield* openRecordLoader(ATTACHMENT_LOADING, plan, {
+        libraries: request.libraries,
+        sources,
+      });
       const run: DatasetRun<QueryAttachment> = {
-        collectionPaths: (library) =>
-          hydration.candidateSources(library).collectionPaths,
         scan: hydration.scan,
         projection: hydration.projection,
         candidates: (library, tuning) =>
@@ -93,11 +95,10 @@ export const ATTACHMENTS: QueryDataset<ItemQueryRequest> = {
             if (tuning.forceScan) return null;
             const candidatePlan =
               filter &&
-              planDatasetCandidates(
-                filter.root,
-                hydration.candidateSources(library),
-                { dataset: ATTACHMENTS },
-              );
+              planDatasetCandidates(filter.root, sources, {
+                dataset: ATTACHMENTS,
+                library,
+              });
             if (!candidatePlan) return null;
             const rowCount = yield* readAttachmentRowCount(library.libraryID);
             const cap = Math.floor(rowCount * tuning.capRatio);

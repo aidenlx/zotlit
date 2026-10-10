@@ -23,6 +23,7 @@ import type {
 import type { FilterNode, FilterPlan, FilterProblem } from "./filter-plan";
 import type { PathSegment } from "./projection-path";
 import type { QueryClock } from "./query-clock";
+import type { QuerySources } from "./query-sources";
 import type { ItemQueryPlan, ItemQueryRequest, SortSpec } from "./request";
 
 /** The field part of a dotted name: the text before its first `.` or `[`. */
@@ -138,7 +139,7 @@ export interface QueryDataset<
   open(
     plan: ItemQueryPlan,
     request: Request,
-    clock: QueryClock,
+    context: { readonly clock: QueryClock; readonly sources: QuerySources },
   ): Effect.Effect<
     DatasetRun<any>,
     ItemQueryError | ItemQueryReaderError,
