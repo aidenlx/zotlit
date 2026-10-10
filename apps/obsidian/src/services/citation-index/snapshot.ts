@@ -1,4 +1,4 @@
-// The citekey resolution snapshot: a native citekey's Items, and an Item's native citekey, kept in memory.
+// Worker-owned citation maps: a native citekey's Items, and an Item's native citekey.
 
 import type { LibraryCitekey } from "@zotlit/db";
 
@@ -8,7 +8,7 @@ import { yieldToMain } from "@/lib/yield-to-main";
 const logger = getLogger("citation-index");
 const SNAPSHOT_SLICE_MS = 4;
 
-/** Construction and comparison share one renderer work budget. */
+/** Construction and comparison share one worker work budget. */
 class SnapshotWork {
   readonly #signal;
   #deadline = performance.now() + SNAPSHOT_SLICE_MS;
@@ -73,7 +73,7 @@ export class CitekeySnapshot {
 
   /** Builds a complete snapshot, retaining `previous` when its answers match. */
   static async from(
-    rows: Iterable<LibraryCitekey>,
+    rows: Iterable<LibraryCitekey> | AsyncIterable<LibraryCitekey>,
     inScope: ReadonlySet<number>,
     {
       previous,
@@ -105,13 +105,13 @@ export class CitekeySnapshot {
 
   /** Builds both lookup directions from one fresh bulk read. */
   async #replace(
-    rows: Iterable<LibraryCitekey>,
+    rows: Iterable<LibraryCitekey> | AsyncIterable<LibraryCitekey>,
     inScope: ReadonlySet<number>,
     work: SnapshotWork,
   ): Promise<void> {
     const byCitekey = new Map<string, SnapshotItem[]>();
     const citekeyByIndexedKey = new Map<string, string>();
-    for (const row of rows) {
+    for await (const row of rows) {
       const pause = work.step();
       if (pause) await pause;
       citekeyByIndexedKey.set(row.indexedKey, row.citekey);

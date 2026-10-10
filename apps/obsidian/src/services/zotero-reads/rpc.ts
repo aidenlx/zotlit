@@ -452,7 +452,55 @@ export type SnapshotId = typeof SnapshotId.Type;
 /** The optional Snapshot every read accepts. */
 const snapshot = { snapshot: Schema.optionalKey(SnapshotId) };
 
+const CitationItemSchema = Schema.Struct({
+  itemID: Schema.Number,
+  libraryID: Schema.Number,
+  key: Schema.String,
+  indexedKey: Schema.String,
+});
+const CitationResolutionSchema = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("missing") }),
+  Schema.Struct({ kind: Schema.Literal("unique"), item: CitationItemSchema }),
+  Schema.Struct({
+    kind: Schema.Literal("ambiguous"),
+    candidates: Schema.Array(CitationItemSchema),
+  }),
+]);
+const CitationScopeSchema = Schema.NullOr(
+  Schema.Union([
+    Schema.Struct({ mode: Schema.Literal("all") }),
+    Schema.Struct({
+      mode: Schema.Literal("selected"),
+      libraries: Schema.Array(
+        Schema.Union([
+          Schema.Struct({ type: Schema.Literal("personal") }),
+          Schema.Struct({
+            type: Schema.Literal("group"),
+            groupID: Schema.Number,
+          }),
+        ]),
+      ),
+    }),
+  ]),
+);
+
 export class ZoteroReads extends RpcGroup.make(
+  Rpc.make("CitationLookup", {
+    payload: {
+      scope: CitationScopeSchema,
+      citekeys: Schema.Array(Schema.String),
+      indexedKeys: Schema.Array(Schema.String),
+    },
+    success: Schema.Struct({
+      revision: Schema.String,
+      citekeys: Schema.ReadonlyMap(Schema.String, CitationResolutionSchema),
+      indexedKeys: Schema.ReadonlyMap(
+        Schema.String,
+        Schema.NullOr(Schema.String),
+      ),
+    }),
+    error: DbUnavailable,
+  }),
   Rpc.make("CancelItemQuery", {
     payload: { id: Schema.String, ...snapshot },
     success: Schema.Void,
