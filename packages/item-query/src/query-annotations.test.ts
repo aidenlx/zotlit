@@ -356,7 +356,7 @@ it("caps after parent expansion and uses a bounded Annotation candidate when ava
   const candidateReads = overflow.events.filter(
     (event) =>
       event.type === "statement" &&
-      event.statement.reader === "annotation-candidate-set",
+      event.statement.reader === "relation-candidate-set",
   );
   expect(candidateReads).toHaveLength(1);
   expect(candidateReads[0]).toMatchObject({

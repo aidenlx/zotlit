@@ -1,5 +1,9 @@
 import { Effect } from "effect";
 
+import type {
+  ItemQueryDatabase,
+  ItemQueryReaderError,
+} from "@zotlit/db/item-query";
 import { SCAN_PAGE_SIZE } from "@zotlit/db/item-query";
 
 import { planCandidates, readCandidatePlan } from "./candidate-plan";
@@ -7,7 +11,7 @@ import type { CandidatePlan, CandidateSources } from "./candidate-plan";
 import type {
   CandidateReader,
   CandidateRelation,
-  QueryDataset,
+  CandidateDataset,
 } from "./dataset";
 import type { FilterNode } from "./filter-plan";
 
@@ -21,7 +25,7 @@ export function planDatasetCandidates(
     dataset,
     parents = [],
   }: {
-    readonly dataset: QueryDataset;
+    readonly dataset: CandidateDataset;
     readonly parents?: readonly CandidateRelation["readParents"][];
   },
 ): CandidatePlan<CandidateReader> | null {
@@ -39,7 +43,21 @@ export function planDatasetCandidates(
           { dataset: element, parents: [relation.readParents, ...parents] },
         );
       }
-      const read = dataset.lowerCandidate(node, sources);
+      for (const parent of dataset.candidateParents) {
+        const expression = parent.candidateLeaf(node);
+        const relation = dataset.candidateRelations[parent.name];
+        if (expression && relation) {
+          return planDatasetCandidates(expression, sources, {
+            dataset: relation.dataset(),
+            parents: [relation.readParents, ...parents],
+          });
+        }
+      }
+      const leaf = dataset.lowerCandidate(node, sources);
+      const read: CandidateReader | null =
+        leaf === null
+          ? null
+          : (page) => dataset.readCandidate({ ...page, leaf });
       return read
         ? {
             kind: "leaf",
@@ -81,6 +99,35 @@ function parentCandidates(
 ): CandidateReader {
   return Effect.fnUntraced(function* ({ libraryID, limit }) {
     const candidates = new Set<number>();
+    const takeParents = Effect.fnUntraced(function* (
+      ids: number[],
+      depth: number,
+    ): Effect.fn.Return<void, ItemQueryReaderError, ItemQueryDatabase> {
+      const readParents = parents[depth];
+      if (!readParents) {
+        for (const id of ids) {
+          candidates.add(id);
+          if (candidates.size >= limit) return;
+        }
+        return;
+      }
+      let afterItemID = 0;
+      while (ids.length) {
+        const size =
+          depth === parents.length - 1
+            ? Math.min(SCAN_PAGE_SIZE, limit - candidates.size)
+            : SCAN_PAGE_SIZE;
+        const page = yield* readParents({
+          libraryID,
+          itemIDs: ids,
+          afterItemID,
+          limit: size,
+        });
+        yield* takeParents(page, depth + 1);
+        if (candidates.size >= limit || page.length < size) return;
+        afterItemID = page.at(-1)!;
+      }
+    });
     let afterItemID = 0;
     while (true) {
       const elements = yield* read({
@@ -88,21 +135,15 @@ function parentCandidates(
         limit: SCAN_PAGE_SIZE,
         afterItemID,
       });
-      let ids = elements;
-      for (const readParents of parents) {
-        ids = yield* readParents({ libraryID, itemIDs: ids });
-      }
-      for (const id of ids) {
-        candidates.add(id);
-        if (candidates.size >= limit) return [...candidates];
-      }
+      yield* takeParents(elements, 0);
+      if (candidates.size >= limit) return [...candidates];
       if (elements.length < SCAN_PAGE_SIZE) return [...candidates];
       afterItemID = elements.at(-1)!;
     }
   });
 }
 
-function relationSelection(node: Node, dataset: QueryDataset) {
+function relationSelection(node: Node, dataset: CandidateDataset) {
   let filtered: Node | null = null;
   if (
     node.kind === "binary" &&
@@ -132,7 +173,7 @@ function relationSelection(node: Node, dataset: QueryDataset) {
 }
 
 /** Rebind this lambda's value paths for planning; keep nested bindings local. */
-function elementPredicate(node: Node, dataset: QueryDataset): Node {
+function elementPredicate(node: Node, dataset: CandidateDataset): Node {
   const path = valuePath(node);
   const field = path === null ? undefined : dataset.filterField(path);
   if (field?.filterable)

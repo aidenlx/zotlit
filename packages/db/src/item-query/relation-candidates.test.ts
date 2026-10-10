@@ -63,3 +63,47 @@ it("maps element candidates to live parents in one statement per chunk", () => {
     expect(statements).toEqual([]);
   }
 });
+
+it.each([
+  "attachment-item",
+  "annotation-item",
+  "annotation-attachment",
+] as const)(
+  "pages the reversed parent relation %s within its Target Library",
+  (relation) => {
+    using scenario = openScenarioDatabase({ annotations: true });
+    const run = <A, E>(effect: Effect.Effect<A, E, ItemQueryDatabase>) =>
+      Effect.runSync(
+        Effect.provideService(effect, ItemQueryDatabase, {
+          client: scenario.db,
+        }),
+      );
+    const itemIDs = (
+      scenario.sqlite
+        .prepare("select itemID from items where key = ? and libraryID = 1")
+        .all(
+          relation === "annotation-attachment" ? "PDF2LIVE" : "ART2FULL",
+        ) as { itemID: number }[]
+    ).map((row) => row.itemID);
+    const all = run(
+      readRelationCandidateSet({ relation, libraryID: 1, itemIDs }),
+    );
+    expect(all.length).toBeGreaterThan(1);
+    const first = run(
+      readRelationCandidateSet({ relation, libraryID: 1, itemIDs, limit: 1 }),
+    );
+    const rest = run(
+      readRelationCandidateSet({
+        relation,
+        libraryID: 1,
+        itemIDs,
+        afterItemID: first[0],
+        limit: 500,
+      }),
+    );
+    expect([...first, ...rest]).toEqual(all);
+    expect(
+      run(readRelationCandidateSet({ relation, libraryID: -1, itemIDs })),
+    ).toEqual([]);
+  },
+);

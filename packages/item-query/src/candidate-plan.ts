@@ -58,7 +58,7 @@ const lowerTagContains: Lowering = (node) => {
     return null;
   }
   const name = node.args.length === 1 ? stringLiteral(node.args[0]) : null;
-  return name === null ? null : { kind: "tag", name };
+  return name === null ? null : { kind: "tag", value: name };
 };
 
 /** The field and the literal of `field == literal`, in either operand order. */

@@ -21,6 +21,7 @@ import type {
   SortKey,
 } from "./fields";
 import type { FilterNode, FilterPlan, FilterProblem } from "./filter-plan";
+import type { ParentRecord } from "./parent-records";
 import type { PathSegment } from "./projection-path";
 import type { QueryClock } from "./query-clock";
 import type { ItemQueryPlan, ItemQueryRequest, SortSpec } from "./request";
@@ -60,11 +61,30 @@ export type CandidateReader = (page: {
 }) => Effect.Effect<number[], ItemQueryReaderError, ItemQueryDatabase>;
 
 export interface CandidateRelation {
-  readonly dataset: () => QueryDataset;
+  readonly dataset: () => CandidateDataset;
   readonly readParents: (chunk: {
     libraryID: number;
     itemIDs: readonly number[];
+    afterItemID?: number;
+    limit?: number;
   }) => Effect.Effect<number[], ItemQueryReaderError, ItemQueryDatabase>;
+}
+
+/** The candidate pass needs only lowering, readers, and the record relations. */
+export interface CandidateDataset<Leaf = any> {
+  readonly lowerCandidate: (
+    node: FilterNode<never>,
+    sources: CandidateSources,
+  ) => Leaf | null;
+  readonly readCandidate: (
+    page: Parameters<CandidateReader>[0] & { leaf: Leaf },
+  ) => ReturnType<CandidateReader>;
+  readonly readRowCount: (
+    libraryID: number,
+  ) => Effect.Effect<number, ItemQueryReaderError, ItemQueryDatabase>;
+  readonly candidateParents: readonly ParentRecord[];
+  readonly candidateRelations: Readonly<Record<string, CandidateRelation>>;
+  readonly filterField: (name: string) => FilterField<any, any> | undefined;
 }
 
 /**
@@ -73,7 +93,7 @@ export interface CandidateRelation {
  */
 export interface QueryDataset<
   Request extends ItemQueryRequest = ItemQueryRequest,
-> {
+> extends CandidateDataset {
   readonly id: "items" | "attachments" | "annotations";
   /** The record of one row in prose: `Item` or `Annotation`. */
   readonly noun: string;
@@ -98,11 +118,6 @@ export interface QueryDataset<
   /** The meaning of a bare name in a Filter Expression. */
   readonly filterField: (name: string) => FilterField<any, any> | undefined;
   readonly planFilter: (text: string) => FilterPlan<any, any> | FilterProblem;
-  readonly lowerCandidate: (
-    node: FilterNode<never>,
-    sources: CandidateSources,
-  ) => CandidateReader | null;
-  readonly candidateRelations: Readonly<Record<string, CandidateRelation>>;
   /** The Sortable Field of a name, or nothing for a name that does not sort. */
   readonly sortable: (name: string) => SortableField<any, any> | undefined;
   /** The field that the leading segments of a Projection Path name. */

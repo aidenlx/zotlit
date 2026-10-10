@@ -6,9 +6,10 @@ import {
   itemTags,
   tags,
 } from "@drizzle/schema";
-import { and, count, eq, or, sql } from "drizzle-orm";
+import { and, count, eq, gt, or, sql } from "drizzle-orm";
 import { Effect } from "effect";
 
+import type { TagCandidateLeaf, KeysCandidateLeaf } from "./candidate-leaf";
 import { defineStatement, unindexed } from "./database";
 import type { ItemQueryDatabase, ItemQueryReaderError } from "./database";
 
@@ -40,10 +41,10 @@ export function readLibraryRowCount(
  */
 export type CandidateLeaf =
   /** The Items that carry the Tag with this exact name. */
-  | { readonly kind: "tag"; readonly name: string }
+  | TagCandidateLeaf
   /** The Item with this Zotero Key. */
   | { readonly kind: "key"; readonly key: string }
-  | { readonly kind: "keys"; readonly keys: readonly string[] }
+  | KeysCandidateLeaf
   /**
    * The Items that store this exact value in one of these fields. Give every
    * field ID of a built-in field and its aliases (`FieldVocabulary.fieldIDsOf`).
@@ -60,6 +61,7 @@ export type CandidateLeaf =
 interface CandidateParams extends Record<string, unknown> {
   libraryID: number;
   limit: number;
+  afterItemID: number;
 }
 
 interface ValueParams extends CandidateParams {
@@ -88,9 +90,11 @@ const candidateStatements = {
       .where(
         and(
           eq(items.libraryID, placeholder("libraryID")),
+          gt(items.itemID, placeholder("afterItemID")),
           sql`${items.key} in (select value from json_each(${placeholder("value")}))`,
         ),
       )
+      .orderBy(items.itemID)
       .limit(placeholder("limit")),
   ),
   tag: defineStatement<ValueParams>("candidate-set")((db, { placeholder }) =>
@@ -103,8 +107,10 @@ const candidateStatements = {
         and(
           eq(tags.name, placeholder("value")),
           eq(unindexed(items.libraryID), placeholder("libraryID")),
+          gt(items.itemID, placeholder("afterItemID")),
         ),
       )
+      .orderBy(items.itemID)
       .limit(placeholder("limit")),
   ),
   key: defineStatement<ValueParams>("candidate-set")((db, { placeholder }) =>
@@ -114,9 +120,11 @@ const candidateStatements = {
       .where(
         and(
           eq(items.libraryID, placeholder("libraryID")),
+          gt(items.itemID, placeholder("afterItemID")),
           eq(items.key, placeholder("value")),
         ),
       )
+      .orderBy(items.itemID)
       .limit(placeholder("limit")),
   ),
   field: defineStatement<FieldParams>("candidate-set")((db, { placeholder }) =>
@@ -141,8 +149,10 @@ const candidateStatements = {
           // The value names the `itemData` rows; the field list checks them.
           sql`${unindexed(itemData.fieldID)} in (select value from json_each(${placeholder("fieldIDs")}))`,
           eq(unindexed(items.libraryID), placeholder("libraryID")),
+          gt(items.itemID, placeholder("afterItemID")),
         ),
       )
+      .orderBy(items.itemID)
       .limit(placeholder("limit")),
   ),
   collection: defineStatement<CollectionParams>("candidate-set")(
@@ -155,8 +165,10 @@ const candidateStatements = {
           and(
             sql`${collectionItems.collectionID} in (select value from json_each(${placeholder("collectionIDs")}))`,
             eq(unindexed(items.libraryID), placeholder("libraryID")),
+            gt(items.itemID, placeholder("afterItemID")),
           ),
         )
+        .orderBy(items.itemID)
         .limit(placeholder("limit")),
   ),
 } satisfies Record<CandidateLeaf["kind"], unknown>;
@@ -200,7 +212,7 @@ function leafRows(
 > {
   switch (leaf.kind) {
     case "tag":
-      return candidateStatements.tag.all({ ...scope, value: leaf.name });
+      return candidateStatements.tag.all({ ...scope, value: leaf.value });
     case "keys":
       return candidateStatements.keys.all({
         ...scope,
@@ -226,8 +238,7 @@ function leafRows(
 
 /**
  * Read the candidate set of one leaf: the IDs of the `items` rows of one
- * Library that the leaf can match, at most `limit` of them and in no
- * defined order. The set holds every Item of the query universe that matches
+ * Library that the leaf can match, at most `limit` of them in ascending Item ID order. The set holds every Item of the query universe that matches
  * the leaf. It may hold more rows: a trashed Item, a child row. Restrict it
  * with {@link readUniverseRows} and decide each match with the evaluator.
  *
@@ -238,9 +249,10 @@ export function readCandidateSet(candidates: {
   libraryID: number;
   leaf: CandidateLeaf;
   limit: number;
+  afterItemID?: number;
 }): Effect.Effect<number[], ItemQueryReaderError, ItemQueryDatabase> {
-  const { libraryID, leaf, limit } = candidates;
-  return Effect.map(leafRows(leaf, { libraryID, limit }), (rows) =>
+  const { libraryID, leaf, limit, afterItemID = 0 } = candidates;
+  return Effect.map(leafRows(leaf, { libraryID, limit, afterItemID }), (rows) =>
     rows.map((row) => row.itemID),
   );
 }

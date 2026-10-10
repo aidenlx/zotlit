@@ -5,6 +5,7 @@ import { Effect } from "effect";
 import { formatIndexedKey } from "@zotlit/db";
 import {
   readAnnotationCandidateSet,
+  readRelationCandidateSet,
   readAnnotationRowCount,
   readAnnotationScanPage,
   readAnnotationUniverseRows,
@@ -28,10 +29,8 @@ import { matches as isMatch } from "./filter-evaluate";
 import { planFilter } from "./filter-plan";
 import { parentPathResolver, parentRootName } from "./parent-records";
 import { readPath } from "./projection";
-import {
-  planDatasetCandidates,
-  readDatasetCandidates,
-} from "./relation-candidates";
+import { ATTACHMENTS } from "./query-attachments";
+import { ITEMS } from "./query-items";
 import type { ItemQueryRequest } from "./request";
 
 /** Annotation Query: one Annotation Row for each non-trashed Annotation. */
@@ -53,13 +52,25 @@ export const ANNOTATIONS: QueryDataset<ItemQueryRequest> = {
       ...ANNOTATION_PARENTS.flatMap((parent) => parent.names()),
     ];
   },
-  lowerCandidate: (node, sources) => {
-    const leaf = lowerAnnotationCandidate(node, sources);
-    return leaf
-      ? (options) => readAnnotationCandidateSet({ ...options, leaf })
-      : null;
+  lowerCandidate: lowerAnnotationCandidate,
+  readCandidate: readAnnotationCandidateSet,
+  readRowCount: readAnnotationRowCount,
+  candidateParents: ANNOTATION_PARENTS,
+  candidateRelations: {
+    item: {
+      dataset: () => ITEMS,
+      readParents: (chunk) =>
+        readRelationCandidateSet({ ...chunk, relation: "annotation-item" }),
+    },
+    attachment: {
+      dataset: () => ATTACHMENTS,
+      readParents: (chunk) =>
+        readRelationCandidateSet({
+          ...chunk,
+          relation: "annotation-attachment",
+        }),
+    },
   },
-  candidateRelations: {},
   sortableFields: ANNOTATION_SORT_FIELDS,
   definition: annotationFieldDefinition,
   filterField: (name) => annotationFilterRegistry.field(name),
@@ -81,21 +92,7 @@ export const ANNOTATIONS: QueryDataset<ItemQueryRequest> = {
           hydration.candidateSources(library).collectionPaths,
         scan: hydration.scan,
         projection: hydration.projection,
-        candidates: (library, tuning) =>
-          Effect.gen(function* () {
-            if (tuning.forceScan) return null;
-            const plan =
-              filter &&
-              planDatasetCandidates(
-                filter.root,
-                hydration.candidateSources(library),
-                { dataset: ANNOTATIONS },
-              );
-            if (!plan) return null;
-            const rowCount = yield* readAnnotationRowCount(library.libraryID);
-            const cap = Math.floor(rowCount * tuning.capRatio);
-            return yield* readDatasetCandidates(plan, library.libraryID, cap);
-          }),
+        candidateSources: hydration.candidateSources,
         matches: (item) => !filter || isMatch(filter.root, item, clock),
         project: (item, library) => ({
           indexedKey: formatIndexedKey(item.scan.key, library.groupID),
