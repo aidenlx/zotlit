@@ -10,6 +10,7 @@ import type {
 } from "obsidian";
 
 import type { Library, LibraryCitekey } from "@zotlit/db";
+import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { FIELD_CITEKEY, FIELD_ZOTERO_KEY } from "@/lib/constants";
 import { resolveLibraryScope } from "@/services/library-scope/scope";
@@ -38,7 +39,6 @@ import {
 } from "@/services/zotero-reads/test-utils";
 
 import { CitationLookup } from "./lookup-service";
-import type { CitationLookupDeps } from "./lookup-service";
 import { CitationIndex } from "./service";
 import type { CitekeyRecord, CitekeyStore } from "./service";
 
@@ -268,7 +268,7 @@ export class DatabaseStub implements AsyncDisposable {
   readonly citekeys = new CitekeysStub(defaultCitekeys());
   libraries = () => [personalLibrary(), groupLibrary()];
   readonly #service: ZoteroReadsService;
-  readonly #listeners = new Set<() => void>();
+  readonly #events = createNanoEvents<ZoteroReadsEvents>();
   readonly #ready = Promise.withResolvers<void>();
 
   constructor({
@@ -329,13 +329,12 @@ export class DatabaseStub implements AsyncDisposable {
     return statements.join("\n");
   }
 
-  client: CitationLookupDeps["client"] = () =>
+  readonly #client = () =>
     Effect.map(
       Effect.promise(() => this.#service.ready),
       ({ client }) =>
         ({
           ...client,
-          CitationRefresh: (payload) => Effect.succeed(payload.generation),
           CitationLookup: (payload, options) =>
             Effect.gen({ self: this }, function* () {
               yield* Effect.promise(() => this.#ready.promise);
@@ -361,7 +360,10 @@ export class DatabaseStub implements AsyncDisposable {
     );
 
   get ready(): Promise<ZoteroReadsReady> {
-    return this.#ready.promise.then(() => this.#service.ready);
+    return this.#ready.promise.then(async () => ({
+      ...(await this.#service.ready),
+      client: await Effect.runPromise(this.#client()),
+    }));
   }
 
   async acquireRead(): Promise<ZoteroReadLease> {
@@ -384,13 +386,19 @@ export class DatabaseStub implements AsyncDisposable {
     event: K,
     cb: ZoteroReadsEvents[K],
   ): () => void {
-    const listener = cb as () => void;
-    if (event === "changed") this.#listeners.add(listener);
-    return () => this.#listeners.delete(listener);
+    return this.#events.on(event, cb);
   }
 
   changed(): void {
-    for (const listener of this.#listeners) listener();
+    this.#events.emit("changed");
+  }
+
+  degrade(): void {
+    this.state = "degraded";
+    this.#events.emit(
+      "degraded",
+      new DbUnavailable({ message: "Database unavailable" }),
+    );
   }
 
   [Symbol.asyncDispose](): Promise<void> {
@@ -655,7 +663,6 @@ export interface CitationIndexHarness extends AsyncDisposable {
 }
 
 export interface CitationIndexHarnessOptions {
-  client?: CitationLookupDeps["client"];
   settings?: Partial<Settings>;
   store?: MemoryStore;
   citekeys?: LibraryCitekey[];
@@ -727,16 +734,9 @@ export async function createCitationIndexHarness(
   const queryClient = stack.use(new QueryClientService({ now: clock.now }));
   const lookup = stack.use(
     new CitationLookup({
-      settings,
-      source: db,
-      zoteroPref: {
-        ready: Promise.resolve(),
-        databasePath: "fixture",
-        on: () => () => undefined,
-      },
+      reads: db,
       libraryScope,
       queryClient,
-      client: options.client ?? db.client,
     }),
   );
   const index = stack.use(

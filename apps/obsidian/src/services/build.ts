@@ -78,10 +78,7 @@ import { ZoteroLocalApiClient } from "./zotero-local-api/service";
 import { SecretWriteAuthorizationStore } from "./zotero-local-api/write-authorization";
 import { ZoteroPrefService } from "./zotero-pref/service";
 import { ZoteroReadsService } from "./zotero-reads/service";
-import {
-  citationWorkerClient,
-  workerClient,
-} from "./zotero-reads/worker-client";
+import { workerClient } from "./zotero-reads/worker-client";
 
 /**
  * Construct and wire all Obsidian plugin services.
@@ -510,21 +507,8 @@ export function buildServices(
         }),
     })
     .use({
-      citationLookup: ({
-        settings,
-        zoteroPref,
-        zoteroReads,
-        libraryScope,
-        queryClient,
-      }) =>
-        new CitationLookup({
-          settings,
-          zoteroPref,
-          source: zoteroReads,
-          client: citationWorkerClient,
-          libraryScope,
-          queryClient,
-        }),
+      citationLookup: ({ zoteroReads, libraryScope, queryClient }) =>
+        new CitationLookup({ reads: zoteroReads, libraryScope, queryClient }),
     })
     .use({
       citationIndex: ({ noteIndex, settings, citationLookup }) =>

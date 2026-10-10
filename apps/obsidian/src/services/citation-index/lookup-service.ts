@@ -2,7 +2,6 @@
 import { QueryObserver } from "@tanstack/query-core";
 import type { QueryObserverOptions } from "@tanstack/query-core";
 import { Deferred, Effect } from "effect";
-import type { Scope } from "effect";
 
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
@@ -10,11 +9,8 @@ import { getLogger } from "@/lib/log";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { Held, QueryClientService } from "@/services/query-client/service";
 import { Service } from "@/services/service-base";
-import type { SettingsService } from "@/services/settings/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
-import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
-import type { ReadsConfig } from "@/services/zotero-reads/rpc";
-import { ZoteroReadsService } from "@/services/zotero-reads/service";
+import { DbUnavailable } from "@/services/zotero-reads/rpc";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { CitationLookupAnswer } from "./lookup";
 import type { CitationLookupRequest } from "./lookup";
@@ -24,13 +20,7 @@ const logger = getLogger("citation-index");
 export interface CitationLookupDeps {
   queryClient: QueryClientService;
   libraryScope: Pick<LibraryScopeService, "ready" | "effective" | "on">;
-  settings: Pick<SettingsService, "ready" | "current" | "subscribe">;
-  zoteroPref: Pick<ZoteroPrefService, "ready" | "databasePath" | "on">;
-  source: Pick<ZoteroReadsService, "on">;
-  /** Spawned on startup; every recovery obtains the latest configuration. */
-  client: (
-    config: () => ReadsConfig,
-  ) => Effect.Effect<ZoteroReadsClient, never, Scope.Scope>;
+  reads: Pick<ZoteroReadsService, "ready" | "state" | "on">;
 }
 
 export interface CitationLookupObservation extends Disposable {
@@ -54,15 +44,11 @@ interface LookupEvents {
 const LOOKUP_KEY = ["citation-lookup"] as const;
 const GC_TIME = Temporal.Duration.from({ minutes: 5 }).total("milliseconds");
 
-/** Owns signal intake, worker generations, and the answers open views hold. */
+/** Owns signal intake and the answers open views hold. */
 export class CitationLookup extends Service {
   readonly #deps;
   readonly #events = createNanoEvents<LookupEvents>();
   readonly #stop = Deferred.makeUnsafe<never>();
-  #worker?: ZoteroReadsService;
-  #generation = 0;
-  #degraded = false;
-  #observed: ReadsConfig | null = null;
   #status: CitationLookupStatus = "pending";
   #revision: string | null = null;
   #refresh: Promise<unknown> = Promise.resolve();
@@ -96,25 +82,27 @@ export class CitationLookup extends Service {
       Effect.gen({ self: this }, function* () {
         yield* Effect.tryPromise(() => this.ready);
         yield* Effect.tryPromise(() => this.#deps.libraryScope.ready);
-        const { client } = yield* Effect.tryPromise(() => this.#worker!.ready);
+        const { client } = yield* Effect.tryPromise(
+          () => this.#deps.reads.ready,
+        );
         while (true) {
-          const generation = this.#generation;
+          if (this.#deps.reads.state !== "ready") {
+            this.#setStatus("failed");
+            return yield* new DbUnavailable({
+              message: "ZoteroReads is unavailable",
+            });
+          }
           const scope = this.#deps.libraryScope.effective;
           const result = yield* Effect.result(
             client.CitationLookup({
-              generation,
-              config: this.#config(),
               scope,
               citekeys,
               indexedKeys,
             }),
           );
-          const answeredGeneration =
-            result._tag === "Success" ? result.success.generation : generation;
           if (
-            answeredGeneration < this.#generation ||
             JSON.stringify(scope) !==
-              JSON.stringify(this.#deps.libraryScope.effective)
+            JSON.stringify(this.#deps.libraryScope.effective)
           )
             continue;
           if (result._tag === "Failure") {
@@ -246,40 +234,14 @@ export class CitationLookup extends Service {
       });
   }
 
-  #config(): ReadsConfig {
-    const settings = this.#deps.settings.current;
-    if (!settings) throw new Error("Citation read settings are not loaded");
-    return {
-      databasePath: this.#deps.zoteroPref.databasePath,
-      readMode: settings["zotero.read-mode"],
-      autoRefresh: false,
-      locale: null,
-      chineseSegmenter: null,
-      logLevel: settings["log.level"],
-    };
-  }
-
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
-    // Subscribe before waiting on dependencies or spawning: a startup change
-    // marks the next generation even while the worker is still connecting.
-    stack.defer(this.#deps.source.on("changed", () => this.#request()));
+    stack.defer(this.#deps.reads.on("changed", () => this.#request()));
     stack.defer(
-      this.#deps.source.on("refresh-requested", () => this.#request()),
-    );
-    stack.defer(
-      this.#deps.zoteroPref.on("resolved-changed", () => this.#request()),
-    );
-    stack.defer(
-      this.#deps.settings.subscribe(() => {
-        if (!this.#deps.settings.current) return;
-        const config = this.#config();
-        if (
-          config.databasePath !== this.#observed?.databasePath ||
-          config.readMode !== this.#observed.readMode ||
-          config.logLevel !== this.#observed.logLevel
-        )
-          this.#request();
+      this.#deps.reads.on("degraded", (error) => {
+        this.#invalidate();
+        this.#setStatus("failed");
+        logger.warn("ZoteroReads unavailable", { error });
       }),
     );
     // A scope change keeps the source: every read carries the scope, so the
@@ -288,31 +250,6 @@ export class CitationLookup extends Service {
     stack.defer(
       this.#deps.libraryScope.on("libraries-changed", () => this.#rescope()),
     );
-    await Promise.all([this.#deps.settings.ready, this.#deps.zoteroPref.ready]);
-    this.#worker = stack.use(
-      new ZoteroReadsService({
-        client: this.#deps.client(() => this.#config()),
-      }),
-    );
-    stack.defer(
-      this.#worker.on("degraded", (error) => {
-        if (!this.#degraded) {
-          this.#generation += 1;
-          this.#invalidate();
-        }
-        this.#degraded = true;
-        this.#setStatus("failed");
-        logger.warn("Citation worker unavailable", { error });
-      }),
-    );
-    stack.defer(
-      this.#worker.on("changed", () => {
-        if (!this.#degraded) return;
-        this.#degraded = false;
-        this.#request();
-      }),
-    );
-    await this.#worker.ready;
     stack.defer(() => {
       Effect.runSync(Deferred.interrupt(this.#stop));
       this.#events.emit("stopped");
@@ -324,22 +261,7 @@ export class CitationLookup extends Service {
 
   #request(): void {
     if (this.disposing) return;
-    this.#generation += 1;
-    if (this.#deps.settings.current) this.#observed = this.#config();
     this.#invalidate();
-    const worker = this.#worker;
-    if (!worker || !this.#observed) return;
-    const source = { generation: this.#generation, config: this.#observed };
-    // The worker owns the refresh lane. Every read also carries this token.
-    void Effect.runPromise(
-      Effect.tryPromise(() => worker.ready).pipe(
-        Effect.flatMap(({ client }) => client.CitationRefresh(source)),
-        Effect.raceFirst(Deferred.await(this.#stop)),
-      ),
-    ).catch((error: unknown) => {
-      if (!this.disposing)
-        logger.warn("Citation source refresh failed", { error });
-    });
     this.#refresh = this.read({}).catch((error: unknown) => {
       if (!this.disposing)
         logger.warn("Citation lookup refresh failed", { error });

@@ -1,14 +1,11 @@
 import { Effect } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createNanoEvents } from "@zotlit/shared/nanoevents";
-
 import { yieldToMain } from "@/lib/yield-to-main";
 import { QueryClientService } from "@/services/query-client/service";
-import type { ZoteroPrefEvents } from "@/services/zotero-pref/service";
 import { layerRcRef } from "@/services/zotero-reads/connection";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
-import type { ZoteroReadsEvents } from "@/services/zotero-reads/service";
+import { ZoteroReadsService } from "@/services/zotero-reads/service";
 import {
   inProcessClient,
   memoryOpener,
@@ -37,13 +34,9 @@ import type {
   CitationIndexHarness,
   CitationIndexHarnessOptions,
 } from "./test-harness";
-import {
-  SettingsStub,
-  LibraryScopeStub,
-  personalLibrary,
-} from "./test-harness";
+import { LibraryScopeStub, personalLibrary } from "./test-harness";
 
-const queryClients: QueryClientService[] = [];
+const queryClients: AsyncDisposable[] = [];
 afterEach(async () => {
   for (const client of queryClients.splice(0))
     await client[Symbol.asyncDispose]();
@@ -55,60 +48,34 @@ function fixture(
     wrap?: (client: ZoteroReadsClient) => ZoteroReadsClient;
   } = {},
 ) {
-  const changes = createNanoEvents<ZoteroReadsEvents>();
-  const prefs = createNanoEvents<ZoteroPrefEvents>();
-  const settings = new SettingsStub();
-  let databasePath = "fixture";
   let key = "first";
-  let fail = false;
   const opener = memoryOpener(() =>
-    fail
-      ? null
-      : seedWorksSql([{ itemID: 1, key: "ITEMKEY1", citationKey: key }]),
+    seedWorksSql([{ itemID: 1, key: "ITEMKEY1", citationKey: key }]),
   );
+  const shared = new ZoteroReadsService({
+    client: Effect.gen(function* () {
+      yield* Effect.promise(() => options.opening ?? Promise.resolve());
+      const client = yield* inProcessClient(layerRcRef(opener.open));
+      yield* client.Libraries({}).pipe(Effect.orDie);
+      return options.wrap?.(client) ?? client;
+    }),
+  });
+  queryClients.push(shared);
   const queryClient = new QueryClientService();
   queryClients.push(queryClient);
   const libraryScope = new LibraryScopeStub([personalLibrary()]);
   const reads = new CitationLookup({
     queryClient,
     libraryScope,
-    settings,
-    source: { on: changes.on.bind(changes) },
-    zoteroPref: {
-      ready: Promise.resolve(),
-      get databasePath() {
-        return databasePath;
-      },
-      on: prefs.on.bind(prefs),
-    },
-    client: () =>
-      Effect.andThen(
-        Effect.promise(() => options.opening ?? Promise.resolve()),
-        Effect.map(
-          inProcessClient(layerRcRef(opener.open), { citationOnly: true }),
-          options.wrap ?? ((client) => client),
-        ),
-      ),
+    reads: shared,
   });
   return {
     reads,
-    settings,
+    shared,
     libraryScope,
-    path(next: string) {
-      databasePath = next;
-      prefs.emit("resolved-changed");
-    },
-    change(next: string) {
+    async change(next: string) {
       key = next;
-      changes.emit("changed");
-    },
-    fail() {
-      fail = true;
-      changes.emit("refresh-requested");
-    },
-    recover() {
-      fail = false;
-      changes.emit("refresh-requested");
+      await shared.refresh();
     },
   };
 }
@@ -122,147 +89,39 @@ it("keeps a source change during startup and answers from the latest source", as
   const opening = Promise.withResolvers<void>();
   const source = fixture({ opening: opening.promise });
   await using reads = source.reads;
-  source.change("second");
+  const changing = source.change("second");
   opening.resolve();
+  await changing;
   const answer = await reads.read(request);
   expect(answer.resolve("first")).toEqual({ kind: "missing" });
   expect(answer.citekeyOf("ITEMKEY1")).toBe("second");
 });
 
-it("retries an obsolete reply after a source change", async () => {
-  const entered = Promise.withResolvers<void>();
-  const release = Promise.withResolvers<void>();
-  let hold = true;
-  const source = fixture({
-    wrap: (client) => ({
-      ...client,
-      CitationLookup: ((payload, options) =>
-        payload.citekeys.length === 0
-          ? client.CitationLookup(payload, options)
-          : client.CitationLookup(payload, options).pipe(
-              Effect.tap(() => {
-                if (!hold) return Effect.void;
-                hold = false;
-                entered.resolve();
-                return Effect.promise(() => release.promise);
-              }),
-            )) as typeof client.CitationLookup,
-    }),
-  });
-  await using reads = source.reads;
-  const oldRead = reads.read(request);
-  await entered.promise;
-  source.change("second");
-  const fresh = await reads.read(request);
-  expect(fresh.citekeyOf("ITEMKEY1")).toBe("second");
-  release.resolve();
-  const retried = await oldRead;
-  expect(retried.revision).toBe(fresh.revision);
-  expect(retried.citekeyOf("ITEMKEY1")).toBe("second");
+it("refetches an observed answer when shared reads change", async () => {
+  const source = fixture();
+  await using lookup = source.reads;
+  using view = lookup.observe(() => undefined);
+  view.set(request);
+  await expect.poll(() => view.current?.status).toBe("fresh");
+  const previous = view.current!.value;
+  await source.change("second");
+  await expect
+    .poll(() => view.current?.value.citekeyOf("ITEMKEY1"))
+    .toBe("second");
+  expect(previous.citekeyOf("ITEMKEY1")).toBe("first");
 });
 
-it("refreshes on demand when source notifications never reach the worker", async () => {
-  const source = fixture({
-    wrap: (client) => ({
-      ...client,
-      CitationRefresh: (() =>
-        Effect.succeed(-1)) as typeof client.CitationRefresh,
-    }),
-  });
-  await using reads = source.reads;
-  const first = await reads.read(request);
-  source.change("second");
-  expect((await reads.read(request)).citekeyOf("ITEMKEY1")).toBe("second");
-  expect(first.citekeyOf("ITEMKEY1")).toBe("first");
-});
-
-it("rebuilds membership for a Library Scope change without refreshing the source", async () => {
-  let refreshes = 0;
-  const source = fixture({
-    wrap: (client) => ({
-      ...client,
-      CitationRefresh: ((payload, options) => {
-        refreshes += 1;
-        return client.CitationRefresh(payload, options);
-      }) as typeof client.CitationRefresh,
-    }),
-  });
-  await using reads = source.reads;
-  await reads.whenResolved();
-  const before = refreshes;
-  source.libraryScope.select([personalLibrary()]);
-  await reads.whenResolved();
-  expect(
-    (await reads.read({ citekeys: ["first"] })).resolve("first").kind,
-  ).toBe("unique");
-  expect(refreshes).toBe(before);
-});
-
-it("accepts a reply that already covers the latest generation without another lookup", async () => {
-  const entered = Promise.withResolvers<void>();
-  const release = Promise.withResolvers<void>();
-  const notified = Promise.withResolvers<void>();
-  let expectedGeneration = -1;
-  let calls = 0;
-  const source = fixture({
-    wrap: (client) => ({
-      ...client,
-      CitationRefresh: ((payload, options) =>
-        client.CitationRefresh(payload, options).pipe(
-          Effect.tap(() =>
-            Effect.sync(() => {
-              if (payload.generation > expectedGeneration) notified.resolve();
-            }),
-          ),
-        )) as typeof client.CitationRefresh,
-      CitationLookup: ((payload, options) =>
-        payload.citekeys.length === 0
-          ? client.CitationLookup(payload, options)
-          : Effect.gen(function* () {
-              calls += 1;
-              entered.resolve();
-              yield* Effect.promise(() => release.promise);
-              return yield* client.CitationLookup(payload, options);
-            })) as typeof client.CitationLookup,
-    }),
-  });
-  await using reads = source.reads;
-  const waiting = reads.read(request);
-  await entered.promise;
-  expectedGeneration = -1;
-  source.change("second");
-  await notified.promise;
-  release.resolve();
-  expect((await waiting).citekeyOf("ITEMKEY1")).toBe("second");
-  expect(calls).toBe(1);
-});
-
-it("retries an obsolete failure only after a newer source signal", async () => {
-  const entered = Promise.withResolvers<void>();
-  const release = Promise.withResolvers<void>();
-  const source = fixture({
-    wrap: (client) => ({
-      ...client,
-      CitationLookup: ((payload, options) =>
-        payload.citekeys.length === 0
-          ? client.CitationLookup(payload, options)
-          : client.CitationLookup(payload, options).pipe(
-              Effect.tapError(() => {
-                entered.resolve();
-                return Effect.promise(() => release.promise);
-              }),
-            )) as typeof client.CitationLookup,
-    }),
-  });
-  await using reads = source.reads;
-  await reads.read(request);
-  source.fail();
-  const waiting = reads.read(request);
-  await entered.promise;
-  source.recover();
-  source.change("second");
-  release.resolve();
-  expect((await waiting).citekeyOf("ITEMKEY1")).toBe("second");
+it("marks observed answers failed when shared reads degrade", async () => {
+  await using h = await createCitationIndexHarness({});
+  using view = h.lookup.observe(() => undefined);
+  view.set({ citekeys: ["doe2024"] });
+  await expect.poll(() => view.current?.status).toBe("fresh");
+  const previous = view.current!.value;
+  h.db.degrade();
+  expect(h.lookup.status).toBe("failed");
+  await expect.poll(() => view.current?.status).toBe("failed");
+  expect(view.current!.value).toBe(previous);
+  await expect(h.lookup.read({ citekeys: ["doe2024"] })).rejects.toThrow();
 });
 
 it("ends a cancelled call and unloads active calls and signal subscriptions", async () => {
@@ -274,7 +133,7 @@ it("ends a cancelled call and unloads active calls and signal subscriptions", as
     wrap: (client) => ({
       ...client,
       CitationLookup: ((payload, options) =>
-        payload.citekeys.length === 0
+        !payload.citekeys?.length
           ? client.CitationLookup(payload, options)
           : Effect.sync(() => {
               started += 1;
@@ -306,43 +165,8 @@ it("ends a cancelled call and unloads active calls and signal subscriptions", as
   await reads[Symbol.asyncDispose]();
   await stopped;
   expect(ended).toBe(2);
-  source.change("second");
-  source.path("new-source");
-  source.settings.update({ "zotero.read-mode": "copy" });
+  await source.change("second");
   await expect(reads.read(request)).rejects.toBeDefined();
-});
-
-it("advances the source generation for path, Read Mode and log-level changes", async () => {
-  const calls: Parameters<ZoteroReadsClient["CitationLookup"]>[0][] = [];
-  const source = fixture({
-    wrap: (client) => ({
-      ...client,
-      CitationLookup: ((payload, options) => {
-        calls.push(payload);
-        return client.CitationLookup(payload, options);
-      }) as typeof client.CitationLookup,
-    }),
-  });
-  await using reads = source.reads;
-  await reads.ready;
-  await reads.read(request);
-  const generation = calls.at(-1)!.generation;
-  source.path("new-source");
-  source.settings.update({ "zotero.read-mode": "copy" });
-  source.settings.update({ "log.level": "debug" });
-  await reads.read({});
-  expect(calls.at(-1)).toMatchObject({
-    generation: generation + 3,
-    config: {
-      databasePath: "new-source",
-      readMode: "copy",
-      logLevel: "debug",
-      autoRefresh: false,
-    },
-  });
-  source.settings.update({ "log.level": "debug" });
-  await reads.read(request);
-  expect(calls.at(-1)!.generation).toBe(generation + 3);
 });
 
 const harnesses: CitationIndexHarness[] = [];
@@ -732,8 +556,8 @@ describe("Citation Lookup held reads", () => {
       { notes: false, citekeys: [myLibraryRow, sameLibraryTwin] },
     );
     let notified = 0;
-    lookup.on("changed", () => notified++);
     const original = await lookup.read({ citekeys: ["doe2024"] });
+    lookup.on("changed", () => notified++);
 
     db.changed();
     await lookup.whenResolved();
@@ -764,21 +588,6 @@ describe("Citation Lookup held reads", () => {
   });
 });
 
-it("keeps an unanswered view pending through failure and recovers at the same revision", async () => {
-  const source = fixture();
-  await using lookup = source.reads;
-  const first = await lookup.read(request);
-  source.fail();
-  await lookup.whenResolved();
-  using view = lookup.observe(() => undefined);
-  view.set(request);
-  await expect.poll(() => lookup.status).toBe("failed");
-  expect(view.current).toBeNull();
-  source.recover();
-  await expect.poll(() => view.current?.status).toBe("fresh");
-  expect(view.current!.value.revision).toBe(first.revision);
-});
-
 it("replaces a scope observation while holding its earlier complete answer", async () => {
   await using h = await createCitationIndexHarness({});
   using view = h.lookup.observe(() => undefined);
@@ -799,7 +608,7 @@ it("pins an open view and collects its query after disposal and the finite reten
     wrap: (client) => ({
       ...client,
       CitationLookup: ((payload, options) => {
-        if (payload.citekeys.length) requested += 1;
+        if (payload.citekeys?.length) requested += 1;
         return client.CitationLookup(payload, options);
       }) as typeof client.CitationLookup,
     }),
