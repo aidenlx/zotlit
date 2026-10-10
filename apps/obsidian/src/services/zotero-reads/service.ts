@@ -36,6 +36,7 @@ const logger = getLogger(["zotero-reads"]);
 /** The operations that do not read the database. */
 const LIFECYCLE_OPERATIONS = new Set([
   "Changes",
+  "CitationRefresh",
   "Snapshot",
   "Refresh",
   "NotifyExternalChange",

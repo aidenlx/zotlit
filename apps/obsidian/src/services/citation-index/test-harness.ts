@@ -31,6 +31,7 @@ import type {
   ZoteroReadsService,
 } from "@/services/zotero-reads/service";
 import {
+  citationSource,
   inProcessReadsService,
   memoryOpener,
 } from "@/services/zotero-reads/test-utils";
@@ -352,6 +353,7 @@ export class DatabaseStub implements AsyncDisposable {
     return new CitationLookupAnswer(
       await Effect.runPromise(
         client.CitationLookup({
+          ...citationSource(),
           scope,
           citekeys: request.citekeys ?? [],
           indexedKeys: request.indexedKeys ?? [],

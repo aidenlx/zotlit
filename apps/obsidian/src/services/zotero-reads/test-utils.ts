@@ -11,8 +11,27 @@ import type { Connection, ConnectionOpener } from "./connection";
 import type { HandlersOptions } from "./handlers";
 import { makeInProcessClient } from "./in-process";
 import type { ZoteroReadsClient } from "./in-process";
-import type { SnapshotId } from "./rpc";
+import type { CitationSource, ReadsConfig, SnapshotId } from "./rpc";
 import { ZoteroReadsService } from "./service";
+
+/** A lookup's source token; tests override only the source facts they vary. */
+export function citationSource(
+  generation = 0,
+  config: Partial<ReadsConfig> = {},
+): CitationSource {
+  return {
+    generation,
+    config: {
+      databasePath: "fixture",
+      readMode: "auto",
+      autoRefresh: false,
+      locale: null,
+      chineseSegmenter: null,
+      logLevel: null,
+      ...config,
+    },
+  };
+}
 
 /** The handler layer on this runtime over `connection`, for the caller's scope. */
 export const inProcessClient = Effect.fnUntraced(function* (
