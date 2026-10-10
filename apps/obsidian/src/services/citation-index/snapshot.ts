@@ -56,10 +56,10 @@ export type CitekeyResolution =
   | { kind: "ambiguous"; candidates: readonly SnapshotItem[] };
 
 /**
- * The Citation Index's resolution snapshot: which Zotero Items a native
- * citekey names, and back again. Rebuilt wholesale from one bulk read, never
- * mutated after publication. Construction and comparison yield in small
- * slices while callers keep using the previous complete snapshot.
+ * Complete worker-owned maps: which Zotero Items a native citekey names,
+ * and back again. Rebuilt from one pinned connection and never mutated after
+ * publication. Construction and comparison yield in small worker slices.
+ * Callers receive only the requested projections through CitationLookup.
  *
  * The two directions answer over different Libraries. Forward resolution
  * follows Library Scope, so narrowing the scope can leave one candidate and
