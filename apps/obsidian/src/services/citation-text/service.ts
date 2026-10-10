@@ -23,7 +23,6 @@ import type {
   CitationIndex,
   CitationOccurrence,
 } from "@/services/citation-index/service";
-import { resolveLiteratureNote } from "@/services/note-index/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import {
   documentCitationPresentation,
@@ -75,10 +74,7 @@ interface CitationTextEvents {
 export interface CitationTextDeps {
   app: App;
   db: Pick<ZoteroReadsService, "state" | "acquireRead">;
-  citationIndex: Pick<
-    CitationIndex,
-    "getDocumentCitationSet" | "on"
-  >;
+  citationIndex: Pick<CitationIndex, "getDocumentCitationSet" | "on">;
   /** What a citekey resolves to, which decides what a Citation can say. */
   noteIndex: Pick<NoteIndex, "on" | "whenIndexed">;
   profile: ProfileReader;
@@ -310,13 +306,15 @@ export class CitationText extends Service<void> {
    * mappings alone rather than for every rescan.
    */
   async #readDocument(file: TFile): Promise<DocumentCitations> {
-    await Promise.all([
-      this.#noteIndex.whenIndexed(),
-      this.#profile.ready,
-    ]);
+    await Promise.all([this.#noteIndex.whenIndexed(), this.#profile.ready]);
     const body = await this.#app.vault.cachedRead(file);
     const set = await this.#citationIndex.getDocumentCitationSet(file);
-    const wikilinks = this.#wikilinkCitations(file, body, set.occurrences, set.lookup);
+    const wikilinks = this.#wikilinkCitations(
+      file,
+      body,
+      set.occurrences,
+      set.lookup,
+    );
     const literal = worksByCitekey(set.citations);
     const works = await this.#readCited([
       ...literal.values(),
@@ -479,24 +477,36 @@ export class CitationText extends Service<void> {
     body: string,
     occurrences: readonly CitationOccurrence[],
     lookup: import("../citation-index/lookup").CitationLookupAnswer,
+    grouped: readonly Citation[],
   ): DocumentWikilinks {
     const members = new Set(
       occurrences
         .filter((occurrence) => occurrence.kind === "wikilink")
         .map((occurrence) => occurrence.position.start.offset),
     );
+    const notes = new Map(
+      grouped.flatMap((citation) =>
+        citation.indexedKey === null
+          ? []
+          : citation.occurrences.flatMap((occurrence) =>
+              occurrence.kind === "wikilink"
+                ? [
+                    [
+                      occurrence.raw,
+                      {
+                        path: occurrence.raw,
+                        indexedKey: citation.indexedKey!,
+                        citationKey:
+                          lookup.citekeyOf(citation.indexedKey!) ?? null,
+                      },
+                    ] as const,
+                  ]
+                : [],
+            ),
+      ),
+    );
     const context = {
-      literatureNote: (linkpath: string) => {
-        const note = resolveLiteratureNote(linkpath, file.path, {
-          app: this.#app,
-        });
-        return (
-          note && {
-            ...note,
-            citationKey: lookup.citekeyOf(note.indexedKey) ?? null,
-          }
-        );
-      },
+      literatureNote: (linkpath: string) => notes.get(linkpath) ?? null,
       enabled: true,
     };
 

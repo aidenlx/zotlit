@@ -311,16 +311,6 @@ async function readWork(
 ): Promise<PopoverRead> {
   await deps.profile.ready;
   const work = request.work;
-  const resolution =
-    work.kind === "citekey"
-      ? (await deps.citationIndex.readLookup({ citekeys: [work.citekey] }, { signal })).resolve(work.citekey)
-      : null;
-  const indexedKey =
-    work.kind === "item"
-      ? work.indexedKey
-      : resolution?.kind === "unique"
-        ? resolution.item.indexedKey
-        : undefined;
   const empty: PopoverRead = {
     blocks: [],
     note: undefined,
@@ -329,6 +319,34 @@ async function readWork(
   };
   if (deps.db.state === "degraded")
     return { ...empty, unavailable: "database" };
+  if (work.kind === "citekey" && deps.citationIndex.resolution === null) {
+    return {
+      ...empty,
+      pending: true,
+      blocks: [{ kind: "unresolved", citekey: work.citekey }],
+    };
+  }
+  let resolution: import("../citation-index/service").CitekeyResolution | null =
+    null;
+  if (work.kind === "citekey") {
+    try {
+      resolution = (
+        await deps.citationIndex.readLookup(
+          { citekeys: [work.citekey] },
+          { signal },
+        )
+      ).resolve(work.citekey);
+    } catch (error) {
+      if (signal.aborted) throw error;
+      return { ...empty, unavailable: "database" };
+    }
+  }
+  const indexedKey =
+    work.kind === "item"
+      ? work.indexedKey
+      : resolution?.kind === "unique"
+        ? resolution.item.indexedKey
+        : undefined;
   if (work.kind === "citekey" && indexedKey === undefined) {
     return {
       ...empty,
@@ -399,7 +417,10 @@ async function readBlocks(
       pending: false,
     };
   }
-  const { citations, lookup } = await deps.citationIndex.getDocumentCitationSet(file, { signal });
+  const { citations, lookup } = await deps.citationIndex.getDocumentCitationSet(
+    file,
+    { signal },
+  );
   // Read beside the citations it qualifies: this read resolved against the
   // snapshot as it stood here, and the popover redraws on the next hover.
   const pending = deps.citationIndex.resolution === null;

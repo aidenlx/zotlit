@@ -64,7 +64,6 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
       this.#deps.settings.current?.["citation.at-trigger"] ?? false;
     const trigger = resolveCitationTrigger(line, cursor.ch, {
       atTrigger,
-
     });
     if (!trigger) return null;
 
@@ -83,7 +82,9 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
     const source = `@${context.query}`;
     const key = scanPandocCitations(source)[0]?.items[0];
     if (key?.start === 0 && source.slice(key.end).trimStart().startsWith(",")) {
-      const answer = await this.#deps.citationIndex.readLookup({ citekeys: [key.citationKey] });
+      const answer = await this.#deps.citationIndex.readLookup({
+        citekeys: [key.citationKey],
+      });
       const found = answer.resolve(key.citationKey);
       if (found?.kind === "unique" || found?.kind === "ambiguous") return [];
     }
@@ -204,8 +205,11 @@ export async function resolveCitationInsert(
   }
 
   let lookup;
-  try { lookup = await deps.citationIndex.readLookup({ citekeys: [citationKey] }); }
-  catch { return { kind: "notice", message: m.notice_citekey_not_ready() }; }
+  try {
+    lookup = await deps.citationIndex.readLookup({ citekeys: [citationKey] });
+  } catch {
+    return { kind: "notice", message: m.notice_citekey_not_ready() };
+  }
   if (lookup.resolve(citationKey)?.kind === "ambiguous") {
     return {
       kind: "notice",

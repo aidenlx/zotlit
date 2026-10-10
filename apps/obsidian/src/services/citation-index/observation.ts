@@ -1,3 +1,4 @@
+import { getLogger } from "@/lib/log";
 import type { Held } from "@/services/query-client/service";
 
 import type { CitationLookupAnswer, CitationLookupRequest } from "./lookup";
@@ -19,7 +20,10 @@ export class LookupObservation implements CitationLookupObservation {
   #disposed = false;
 
   constructor(
-    read: (request: CitationLookupRequest, signal: AbortSignal) => Promise<CitationLookupAnswer>,
+    read: (
+      request: CitationLookupRequest,
+      signal: AbortSignal,
+    ) => Promise<CitationLookupAnswer>,
     changed: () => void,
     release: () => void,
   ) {
@@ -28,7 +32,9 @@ export class LookupObservation implements CitationLookupObservation {
     this.#release = release;
   }
 
-  get current(): Held<CitationLookupAnswer> | null { return this.#current; }
+  get current(): Held<CitationLookupAnswer> | null {
+    return this.#current;
+  }
 
   set(request: CitationLookupRequest): void {
     if (this.#disposed) return;
@@ -49,22 +55,55 @@ export class LookupObservation implements CitationLookupObservation {
     this.#controller = controller;
     const previous = this.#current;
     const pending = Promise.withResolvers<CitationLookupAnswer | null>();
-    if (previous) this.#current = { value: previous.value, status: "revalidating", settled: pending.promise };
+    if (previous)
+      this.#current = {
+        value: previous.value,
+        status: "revalidating",
+        settled: pending.promise,
+      };
     void this.#read(this.#request, controller.signal).then(
       (answer) => {
-        if (controller.signal.aborted) { pending.resolve(null); return; }
-        const value = previous?.value.revision === answer.revision ? previous.value : answer;
-        this.#current = { value, status: "fresh", settled: Promise.resolve(value) };
+        if (controller.signal.aborted) {
+          pending.resolve(null);
+          return;
+        }
+        const value =
+          previous?.value.revision === answer.revision
+            ? previous.value
+            : answer;
+        this.#current = {
+          value,
+          status: "fresh",
+          settled: Promise.resolve(value),
+        };
         pending.resolve(value);
-        if (value !== previous?.value || previous.status === "failed") this.#changed();
+        if (value !== previous?.value || previous?.status === "failed")
+          this.#notify();
       },
       () => {
-        if (controller.signal.aborted) { pending.resolve(null); return; }
-        this.#current = previous ? { value: previous.value, status: "failed", settled: Promise.resolve(previous.value) } : null;
+        if (controller.signal.aborted) {
+          pending.resolve(null);
+          return;
+        }
+        this.#current = previous
+          ? {
+              value: previous.value,
+              status: "failed",
+              settled: Promise.resolve(previous.value),
+            }
+          : null;
         pending.resolve(previous?.value ?? null);
-        this.#changed();
+        this.#notify();
       },
     );
+  }
+
+  #notify(): void {
+    try {
+      this.#changed();
+    } catch (error) {
+      getLogger("citation-index").warn("Lookup observer failed", { error });
+    }
   }
 
   [Symbol.dispose](): void {

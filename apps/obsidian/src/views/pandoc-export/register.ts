@@ -125,7 +125,6 @@ export async function runPandocExport(
   // A literal citation key resolves through the snapshot, so this export waits
   // for its first rebuild the way every in-app surface does.
 
-
   const choices = await openPandocExportModal(app, {
     dataDir: zoteroPref.dataDir,
     referencesStyleId: effective.styleId,

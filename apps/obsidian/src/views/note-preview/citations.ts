@@ -36,10 +36,7 @@ export interface NativeCitationDeps {
     | "vaultPresentation"
     | "on"
   >;
-  citationIndex: Pick<
-    CitationIndex,
-    "readLookup"
-  >;
+  citationIndex: Pick<CitationIndex, "readLookup">;
 }
 export interface PreviewCitation extends PresentedCitation {
   source: string;
@@ -68,27 +65,34 @@ export async function renderDraftCitations(
 }> {
   const scanned = scanDocumentCitations(input.markdown);
   const links = input.wikilinks ? draftLinks(input.markdown) : [];
-  const notes = new Map(links.map((link) => [link.target, resolveLiteratureNote(link.target, input.sourcePath, deps)]));
-  const lookup = await deps.citationIndex.readLookup({
-    citekeys: scanned.flatMap((citation) => citation.keys.map((key) => key.citekey)),
-    indexedKeys: [...notes.values()].flatMap((note) => note ? [note.indexedKey] : []),
-  });
-  const placed: DraftCitation[] = scanned.map(
-    ({ start, end, keys }) => ({
-      start,
-      source: input.markdown.slice(start, end),
-      links: [],
-      keys: keys.map((key) => ({
-        ...key,
-        start: key.start - start,
-        end: key.end - start,
-      })),
-      works: keys.map(({ citekey }) => {
-        const found = lookup.resolve(citekey);
-        return found?.kind === "unique" ? found.item.indexedKey : null;
-      }),
-    }),
+  const notes = new Map(
+    links.map((link) => [
+      link.target,
+      resolveLiteratureNote(link.target, input.sourcePath, deps),
+    ]),
   );
+  const lookup = await deps.citationIndex.readLookup({
+    citekeys: scanned.flatMap((citation) =>
+      citation.keys.map((key) => key.citekey),
+    ),
+    indexedKeys: [...notes.values()].flatMap((note) =>
+      note ? [note.indexedKey] : [],
+    ),
+  });
+  const placed: DraftCitation[] = scanned.map(({ start, end, keys }) => ({
+    start,
+    source: input.markdown.slice(start, end),
+    links: [],
+    keys: keys.map((key) => ({
+      ...key,
+      start: key.start - start,
+      end: key.end - start,
+    })),
+    works: keys.map(({ citekey }) => {
+      const found = lookup.resolve(citekey);
+      return found?.kind === "unique" ? found.item.indexedKey : null;
+    }),
+  }));
   if (input.wikilinks) {
     const runs = citationRuns(
       links,
@@ -96,7 +100,7 @@ export async function renderDraftCitations(
         wikilinkCitation(link.target, {
           enabled: true,
           literatureNote: (linkpath) => {
-            const note = notes.get(linkpath);
+            const note = notes.get(linkpath) ?? null;
             return (
               note && {
                 ...note,

@@ -127,13 +127,16 @@ export class ReferencesView extends ItemView {
   #renderKey: string | null = null;
   /** Bumped per rescan, the same way, since a query may await a file read. */
   #scan = 0;
+  #scanController?: AbortController;
   /** The Markdown note the current list was read from; `null` for none. */
   #file: TFile | null = null;
   /** Path of that note, which is what a document-scoped event names. */
   #path: string | null = null;
   /** Citations of that note, as the current list was built from. */
   #citations: readonly Citation[] = [];
-  #lookup: import("@/services/citation-index/lookup").CitationLookupAnswer | null = null;
+  #lookup:
+    | import("@/services/citation-index/lookup").CitationLookupAnswer
+    | null = null;
   /** Explicit citation-source errors of that note. */
   #errors: readonly DocumentCitationError[] = [];
   /** Citation Presentation of that note, as the current list was rendered under. */
@@ -269,6 +272,11 @@ export class ReferencesView extends ItemView {
   }
 
   protected override async onClose(): Promise<void> {
+    this.#scan += 1;
+    this.#reloads += 1;
+    this.#copyGeneration += 1;
+    this.#scanController?.abort();
+    this.#lookup = null;
     this.#root?.unmount();
     this.#root = null;
     this.#actions = null;
@@ -289,6 +297,9 @@ export class ReferencesView extends ItemView {
   #rescan(): void {
     if (!this.#deps.profile.loaded) return;
     const scan = ++this.#scan;
+    this.#scanController?.abort();
+    const controller = new AbortController();
+    this.#scanController = controller;
     // A presentation change makes the entries on screen stale the moment it is
     // read, and the read that follows lands a turn later at the earliest, so
     // the formatted entries go out of reach here rather than after it: no copy
@@ -302,36 +313,41 @@ export class ReferencesView extends ItemView {
       this.#formatting = "pending";
     }
     this.#refreshCopy();
-    void this.#readCitationSet().then(({ file, citations, errors, lookup }) => {
-      const path = file?.path ?? null;
-      // The note's own presentation properties decide what its list is rendered
-      // under, so a frontmatter edit that leaves the Citations untouched still
-      // moves this list — and the entries formatted before it are stale.
-      const presentation = this.#readPresentation(file);
-      const restyled = !samePresentation(this.#presentation, presentation);
-      if (
-        scan !== this.#scan ||
-        (path === this.#path &&
-          !restyled &&
-          lookup?.revision === this.#lookup?.revision &&
-          citationsEqual(this.#citations, citations) &&
-          documentCitationErrorsEqual(this.#errors, errors))
-      ) {
-        return;
-      }
-      this.#file = file;
-      this.#path = path;
-      this.#citations = citations;
-      this.#lookup = lookup;
-      this.#errors = errors;
-      this.#presentation = presentation;
-      logger.trace("References citations changed", {
-        path,
-        count: citations.length,
-        restyled,
+    void this.#readCitationSet(controller.signal)
+      .then(({ file, citations, errors, lookup }) => {
+        const path = file?.path ?? null;
+        // The note's own presentation properties decide what its list is rendered
+        // under, so a frontmatter edit that leaves the Citations untouched still
+        // moves this list — and the entries formatted before it are stale.
+        const presentation = this.#readPresentation(file);
+        const restyled = !samePresentation(this.#presentation, presentation);
+        if (
+          scan !== this.#scan ||
+          (path === this.#path &&
+            !restyled &&
+            lookup?.revision === this.#lookup?.revision &&
+            citationsEqual(this.#citations, citations) &&
+            documentCitationErrorsEqual(this.#errors, errors))
+        ) {
+          return;
+        }
+        this.#file = file;
+        this.#path = path;
+        this.#citations = citations;
+        this.#lookup = lookup;
+        this.#errors = errors;
+        this.#presentation = presentation;
+        logger.trace("References citations changed", {
+          path,
+          count: citations.length,
+          restyled,
+        });
+        this.#reload({ invalidate: restyled });
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted)
+          logger.warn("References citation lookup failed", { error });
       });
-      this.#reload({ invalidate: restyled });
-    });
   }
 
   /**
@@ -339,16 +355,29 @@ export class ReferencesView extends ItemView {
    * answer, so the list keeps naming the note it was read from however the
    * active note moves while the read runs.
    */
-  async #readCitationSet(): Promise<
-    Omit<DocumentCitationSet, "lookup"> & { lookup: DocumentCitationSet["lookup"] | null; file: TFile | null }
+  async #readCitationSet(
+    signal: AbortSignal,
+  ): Promise<
+    Omit<DocumentCitationSet, "lookup"> & {
+      lookup: DocumentCitationSet["lookup"] | null;
+      file: TFile | null;
+    }
   > {
     const file = this.#activeMarkdownFile();
     if (!file) {
-      return { file: null, occurrences: [], citations: [], errors: [], lookup: null };
+      return {
+        file: null,
+        occurrences: [],
+        citations: [],
+        errors: [],
+        lookup: null,
+      };
     }
     return {
       file,
-      ...(await this.#deps.citationIndex.getDocumentCitationSet(file)),
+      ...(await this.#deps.citationIndex.getDocumentCitationSet(file, {
+        signal,
+      })),
     };
   }
 

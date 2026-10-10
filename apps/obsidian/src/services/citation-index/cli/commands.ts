@@ -1,7 +1,5 @@
-import type { CitationLookupAnswer, CitationLookupRequest } from "../lookup";
-// The citation commands and their response boundaries.
-
 import type { CliData, CliHandler } from "obsidian";
+// The citation commands and their response boundaries.
 
 import type { CliRejection } from "@/lib/cli-params";
 import type {
@@ -17,9 +15,11 @@ import type {
   ReferenceSource,
 } from "@/services/citation-index/service";
 
+import type { CitationLookupAnswer, CitationLookupRequest } from "../lookup";
 import {
   ambiguousCitekeyDiagnostic,
   citekeyNotFoundDiagnostic,
+  diagnostic,
   envelope,
   fileNotFoundDiagnostic,
   keyNotFoundDiagnostic,
@@ -93,7 +93,9 @@ interface CitationsCliDeps {
     waitUntilSettled: (timeoutMs: number) => Promise<CitationSettleOutcome>;
     /** What a citation key names through the Citekey Resolution Snapshot: no
      *  Item, exactly one, or the candidates that make it Ambiguous. */
-    readLookup: (request: CitationLookupRequest) => Promise<CitationLookupAnswer>;
+    readLookup: (
+      request: CitationLookupRequest,
+    ) => Promise<CitationLookupAnswer>;
     getCitedBy: (indexedKey: string) => Promise<CitedBySnapshot>;
     /** How well citation keys resolve now; a references answer reports it, the
      *  cited-by snapshot carries its own. */
@@ -178,28 +180,32 @@ export function createCitationsCliHandlers(
       if (admission.kind === "rejected") return admission.response;
       const { echoed } = admission;
 
-      const selected = await resolveItem(deps, request.value);
-      if (selected.kind === "fault") {
-        return envelope(CITED_BY_COMMAND, {
-          ok: false,
-          ...echoed,
-          diagnostic: selected.diagnostic,
-        });
-      }
+      try {
+        const selected = await resolveItem(deps, request.value);
+        if (selected.kind === "fault") {
+          return envelope(CITED_BY_COMMAND, {
+            ok: false,
+            ...echoed,
+            diagnostic: selected.diagnostic,
+          });
+        }
 
-      const { item } = selected;
-      const snapshot = await deps.index.getCitedBy(item.key);
-      const groups = reportGroups(snapshot.groups);
-      return envelope(CITED_BY_COMMAND, {
-        ok: true,
-        ...echoed,
-        item,
-        groups,
-        omittedSyntaxes: await deps.index.citedByOmittedSyntaxes(item.key),
-        coverage: snapshot.coverage,
-        resolution: snapshot.resolution,
-        syntaxes: deps.index.syntaxes(),
-      });
+        const { item } = selected;
+        const snapshot = await deps.index.getCitedBy(item.key);
+        const groups = reportGroups(snapshot.groups);
+        return envelope(CITED_BY_COMMAND, {
+          ok: true,
+          ...echoed,
+          item,
+          groups,
+          omittedSyntaxes: await deps.index.citedByOmittedSyntaxes(item.key),
+          coverage: snapshot.coverage,
+          resolution: snapshot.resolution,
+          syntaxes: deps.index.syntaxes(),
+        });
+      } catch {
+        return unavailable(CITED_BY_COMMAND, echoed);
+      }
     },
 
     [REFERENCES_COMMAND]: async (params: CliData): Promise<string> => {
@@ -212,28 +218,34 @@ export function createCitationsCliHandlers(
       if (admission.kind === "rejected") return admission.response;
       const { echoed } = admission;
 
-      const { file } = request.value;
-      const references = await deps.readDocument(file);
-      if (references === null) {
-        return envelope(REFERENCES_COMMAND, {
-          ok: false,
-          ...echoed,
-          diagnostic: fileNotFoundDiagnostic(file),
-        });
-      }
+      try {
+        const { file } = request.value;
+        const references = await deps.readDocument(file);
+        if (references === null) {
+          return envelope(REFERENCES_COMMAND, {
+            ok: false,
+            ...echoed,
+            diagnostic: fileNotFoundDiagnostic(file),
+          });
+        }
 
-      const entries = referenceEntries(references, (citekey) =>
-        references.lookup.resolve(citekey) ?? { kind: "missing" },
-      );
-      return envelope(REFERENCES_COMMAND, {
-        ok: true,
-        ...echoed,
-        entries,
-        omittedSyntaxes: await deps.index.documentOmittedSyntaxes(file),
-        database: references.database,
-        resolution: deps.index.resolution(),
-        syntaxes: deps.index.syntaxes(),
-      });
+        const entries = referenceEntries(
+          references,
+          (citekey) =>
+            references.lookup.resolve(citekey) ?? { kind: "missing" },
+        );
+        return envelope(REFERENCES_COMMAND, {
+          ok: true,
+          ...echoed,
+          entries,
+          omittedSyntaxes: await deps.index.documentOmittedSyntaxes(file),
+          database: references.database,
+          resolution: deps.index.resolution(),
+          syntaxes: deps.index.syntaxes(),
+        });
+      } catch {
+        return unavailable(REFERENCES_COMMAND, echoed);
+      }
     },
 
     /** Literal prose, no envelope: the page is the whole answer. */
@@ -244,6 +256,17 @@ export function createCitationsCliHandlers(
         : renderCitationsGuide();
     },
   };
+}
+
+function unavailable(command: CitationsCommand, echoed: EchoedFacts): string {
+  return envelope(command, {
+    ok: false,
+    ...echoed,
+    diagnostic: diagnostic(
+      "INDEX_NOT_READY",
+      "The Citation Index cannot read the latest citation lookup. Refresh the Zotero source and run the command again.",
+    ),
+  });
 }
 
 function invalidRequest(
@@ -268,11 +291,9 @@ type SelectedItem =
  *
  * @returns the fault the selector earned when it names no one Item: no Item at
  *   all, or the several an Ambiguous Citation Key names, each reported as the
- *   Zotero key that selects it alone. A database that cannot be read answers
- *   the Item as selected instead: the payload's `resolution` state is what
- *   reports the degradation, so an unreadable library never masquerades as a
- *   missing Item. A citekey selector keeps the resolution snapshot's verdict on
- *   which Item it names, and takes the source read for the summary alone.
+ *   Zotero key that selects it alone. An unavailable fresh lookup rejects the
+ *   command with an INDEX_NOT_READY diagnostic. Successful absence remains
+ *   distinct from a source that cannot answer.
  */
 async function resolveItem(
   deps: CitationsCliDeps,
@@ -280,8 +301,11 @@ async function resolveItem(
 ): Promise<SelectedItem> {
   if ("citekey" in selector) {
     const { citekey } = selector;
-    const resolved = (await deps.index.readLookup({ citekeys: [citekey] })).resolve(citekey);
-    if (resolved === null) throw new Error("Citation lookup omitted the requested key");
+    const resolved = (
+      await deps.index.readLookup({ citekeys: [citekey] })
+    ).resolve(citekey);
+    if (resolved === null)
+      throw new Error("Citation lookup omitted the requested key");
     if (resolved.kind === "missing") {
       return { kind: "fault", diagnostic: citekeyNotFoundDiagnostic(citekey) };
     }
@@ -311,7 +335,13 @@ async function resolveItem(
   }
   return {
     kind: "selected",
-    item: { key, citekey: (await deps.index.readLookup({ indexedKeys: [key] })).citekeyOf(key) ?? null, summary },
+    item: {
+      key,
+      citekey:
+        (await deps.index.readLookup({ indexedKeys: [key] })).citekeyOf(key) ??
+        null,
+      summary,
+    },
   };
 }
 

@@ -61,7 +61,9 @@ export interface ExportPorts {
    * export cites what Live Preview shows. `null` means no snapshot, which only
    * an unreadable Zotero database leaves behind.
    */
-  readLookup: (request: { citekeys: readonly string[] }) => Promise<{ resolve: (citekey: string) => CitekeyResolution | null }>;
+  readLookup: (request: {
+    citekeys: readonly string[];
+  }) => Promise<{ resolve: (citekey: string) => CitekeyResolution | null }>;
   /**
    * Zotero library addresses of the cited Indexed Keys, read under one lease.
    * A key the database cannot place is absent; `null` means no read lease.
@@ -256,8 +258,15 @@ async function readCitations(
   const ambiguous: string[] = [];
 
   let lookup: Awaited<ReturnType<ExportPorts["readLookup"]>>;
-  try { lookup = await ports.readLookup({ citekeys: citedIds.filter((id) => !injected.has(id)) }); }
-  catch { return { error: { kind: "database-unavailable", dataDir: ports.dataDir() } }; }
+  try {
+    lookup = await ports.readLookup({
+      citekeys: citedIds.filter((id) => !injected.has(id)),
+    });
+  } catch {
+    return {
+      error: { kind: "database-unavailable", dataDir: ports.dataDir() },
+    };
+  }
   for (const id of citedIds) {
     const wikilinkedKey = injected.get(id);
     if (wikilinkedKey !== undefined) {
