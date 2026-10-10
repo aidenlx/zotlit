@@ -411,7 +411,7 @@ it("answers one requested batch with scope-limited forward and all-library rever
       Effect.gen(function* () {
         const client = yield* inProcessClient(
           layerRcRef(memoryOpener(seed).open),
-          { citationOnly: true, sliceSize: 1 },
+          { citationOnly: true, citationWindowSize: 1 },
         );
         const wire = yield* client.CitationLookup({
           ...citationSource(),
@@ -495,7 +495,7 @@ it("continues a shared worker build after one caller cancels", async () => {
       Effect.gen(function* () {
         const client = yield* inProcessClient(
           layerRcRef(memoryOpener(() => seedWorksSql(works)).open),
-          { citationOnly: true, sliceSize: 1 },
+          { citationOnly: true, citationWindowSize: 1 },
         );
         const request = {
           ...citationSource(),
@@ -574,21 +574,21 @@ it.each(["construction", "comparison"] as const)(
             now += 5;
             return now;
           });
-          const getPage = db.getCitekeyPage;
+          const getWindow = db.getCitekeyWindow;
           using pages = vi
-            .spyOn(db, "getCitekeyPage")
+            .spyOn(db, "getCitekeyWindow")
             .mockImplementation((...args) => {
-              const page = getPage(...args);
+              const rows = getWindow(...args);
               if (phase === "construction") {
-                page.citekeys = page.citekeys.map((row) => ({
+                return rows.map((row) => ({
                   ...row,
-                  get indexedKey() {
+                  get key() {
                     markWork();
-                    return row.indexedKey;
+                    return row.key;
                   },
                 }));
               }
-              return page;
+              return rows;
             });
           const resolution = first.citekeys.get("key0");
           expect(resolution?.kind).toBe("unique");

@@ -1,7 +1,12 @@
 // The worker owns the full citation maps and publishes requested projections.
 import { Effect, Fiber, Option, Scope, Stream } from "effect";
 
-import { getCitekeyLastItemID, getCitekeyPage, getLibraries } from "@zotlit/db";
+import {
+  formatIndexedKey,
+  getLastItemID,
+  getCitekeyWindow,
+  getLibraries,
+} from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import { getLogger } from "@/lib/log";
@@ -18,6 +23,8 @@ import { toDbUnavailable } from "./connection";
 import type { Connection } from "./connection";
 import type { CitationSource, DbUnavailable, ReadsConfig } from "./rpc";
 
+export const CITEKEY_WINDOW = 1000;
+
 const logger = getLogger("citation-index");
 
 interface Published {
@@ -30,7 +37,7 @@ interface Published {
 
 export const makeCitationLookup = Effect.fnUntraced(function* (
   connection: Connection["Service"],
-  sliceSize: number,
+  windowSize: number,
   configure: (
     config: ReadsConfig,
   ) => Effect.Effect<void> = connection.configure,
@@ -54,36 +61,36 @@ export const makeCitationLookup = Effect.fnUntraced(function* (
       try: () => getLibraries(client),
       catch: toDbUnavailable,
     });
-    const all = resolveLibraryScope(libraries, { mode: "all" });
     const selected = resolveLibraryScope(libraries, scope);
-    const rows = Stream.fromIterable(all.available).pipe(
-      Stream.flatMap(({ libraryID }) =>
-        Stream.unwrap(
-          Effect.gen(function* () {
-            const beforeItemID = yield* Effect.try({
-              try: () => getCitekeyLastItemID(client, libraryID),
-              catch: toDbUnavailable,
-            });
-            return Stream.paginate(
-              0,
-              Effect.fnUntraced(function* (afterItemID) {
-                yield* Effect.yieldNow;
-                const { citekeys, next } = yield* Effect.try({
-                  try: () =>
-                    getCitekeyPage(client, {
-                      libraryID,
-                      beforeItemID,
-                      afterItemID,
-                      limit: sliceSize,
-                    }),
-                  catch: toDbUnavailable,
-                });
-                return [citekeys, Option.fromNullishOr(next)] as const;
-              }),
-            );
-          }),
-        ),
-      ),
+    const groupIDs = new Map(
+      libraries.map(({ libraryID, groupID }) => [libraryID, groupID]),
+    );
+    const lastItemID = yield* Effect.try({
+      try: () => getLastItemID(client),
+      catch: toDbUnavailable,
+    });
+    const rows = Stream.paginate(
+      0,
+      Effect.fnUntraced(function* (afterItemID) {
+        yield* Effect.yieldNow;
+        const throughItemID = Math.min(afterItemID + windowSize, lastItemID);
+        const citekeys = yield* Effect.try({
+          try: () => getCitekeyWindow(client, { afterItemID, throughItemID }),
+          catch: toDbUnavailable,
+        });
+        return [
+          citekeys.map((row) => ({
+            ...row,
+            indexedKey: formatIndexedKey(
+              row.key,
+              groupIDs.get(row.libraryID) ?? null,
+            ),
+          })),
+          throughItemID < lastItemID
+            ? Option.some(throughItemID)
+            : Option.none(),
+        ] as const;
+      }),
     );
     const snapshot = yield* CitekeySnapshot.from(
       rows,
