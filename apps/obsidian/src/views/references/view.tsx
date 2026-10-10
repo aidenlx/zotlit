@@ -355,9 +355,7 @@ export class ReferencesView extends ItemView {
    * answer, so the list keeps naming the note it was read from however the
    * active note moves while the read runs.
    */
-  async #readCitationSet(
-    signal: AbortSignal,
-  ): Promise<
+  async #readCitationSet(signal: AbortSignal): Promise<
     Omit<DocumentCitationSet, "lookup"> & {
       lookup: DocumentCitationSet["lookup"] | null;
       file: TFile | null;
