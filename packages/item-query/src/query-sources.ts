@@ -12,7 +12,7 @@ import type { QueryDataset } from "./dataset";
 import { ItemQueryError } from "./error";
 import type { ItemQueryErrorLocation } from "./error";
 import type { ItemQueryFault } from "./fault";
-import type { HydrationRequest } from "./hydration";
+import type { LoadRequest } from "./record-loader";
 import type { TargetLibrary } from "./request";
 
 /** Each query runs sequentially in one fiber. Cache only completed reads. */
@@ -31,7 +31,7 @@ export const openQuerySources = Effect.sync(() => {
     return loaded;
   });
   const checkCustomFields = Effect.fnUntraced(function* (
-    plan: HydrationRequest<unknown>,
+    plan: LoadRequest<unknown>,
   ) {
     const { dataset, filter, paths, group } = plan;
     if (
@@ -41,71 +41,69 @@ export const openQuerySources = Effect.sync(() => {
     )
       return;
     const vocabulary = yield* readVocabulary();
-    {
-      const known = new Set(vocabulary.customFieldNames);
-      // The filter first, then the Projection Paths.
-      const customFields: CustomFieldUse[] = [
-        ...(filter?.customFields ?? []).map(
-          ({ name, bare, from, to, deferred, dotted }): CustomFieldUse =>
-            dotted && !known.has(name) && known.has(dotted.name)
-              ? {
-                  name: dotted.name,
-                  bare,
-                  dotted: true,
-                  location: {
-                    argument: "filter",
-                    span: { from: dotted.from, to: dotted.to },
-                  },
-                  argumentText: plan.query.filter ?? "",
-                }
-              : {
-                  name,
-                  bare,
-                  deferred,
-                  location: { argument: "filter", span: { from, to } },
-                  argumentText: plan.query.filter ?? "",
+    const known = new Set(vocabulary.customFieldNames);
+    // The filter first, then the Projection Paths.
+    const customFields: CustomFieldUse[] = [
+      ...(filter?.customFields ?? []).map(
+        ({ name, bare, from, to, deferred, dotted }): CustomFieldUse =>
+          dotted && !known.has(name) && known.has(dotted.name)
+            ? {
+                name: dotted.name,
+                bare,
+                dotted: true,
+                location: {
+                  argument: "filter",
+                  span: { from: dotted.from, to: dotted.to },
                 },
-        ),
-        ...paths.flatMap(({ customField: name, text }): CustomFieldUse[] =>
-          name === null
-            ? []
-            : [
-                {
-                  name,
-                  bare: false,
-                  location: {
-                    argument: "fields",
-                    index: plan.query.fields.indexOf(text),
-                    path: `fields[${plan.query.fields.indexOf(text)}]`,
-                  },
-                  argumentText: JSON.stringify(plan.query.fields),
-                },
-              ],
-        ),
-        ...(group && group.customField !== null
-          ? [
+                argumentText: plan.query.filter ?? "",
+              }
+            : {
+                name,
+                bare,
+                deferred,
+                location: { argument: "filter", span: { from, to } },
+                argumentText: plan.query.filter ?? "",
+              },
+      ),
+      ...paths.flatMap(({ customField: name, text }): CustomFieldUse[] =>
+        name === null
+          ? []
+          : [
               {
-                name: group.customField,
+                name,
                 bare: false,
                 location: {
-                  argument: "group" as const,
-                  span: { from: 0, to: group.text.length },
+                  argument: "fields",
+                  index: plan.query.fields.indexOf(text),
+                  path: `fields[${plan.query.fields.indexOf(text)}]`,
                 },
-                argumentText: group.text,
+                argumentText: JSON.stringify(plan.query.fields),
               },
-            ]
-          : []),
-      ];
-      const missing = customFields.find(
-        ({ name, deferred, dotted }) => dotted || deferred || !known.has(name),
+            ],
+      ),
+      ...(group && group.customField !== null
+        ? [
+            {
+              name: group.customField,
+              bare: false,
+              location: {
+                argument: "group" as const,
+                span: { from: 0, to: group.text.length },
+              },
+              argumentText: group.text,
+            },
+          ]
+        : []),
+    ];
+    const missing = customFields.find(
+      ({ name, deferred, dotted }) => dotted || deferred || !known.has(name),
+    );
+    if (missing) {
+      return yield* unknownCustomField(
+        dataset,
+        vocabulary.customFieldNames,
+        missing,
       );
-      if (missing) {
-        return yield* unknownCustomField(
-          dataset,
-          vocabulary.customFieldNames,
-          missing,
-        );
-      }
     }
   });
   const sources = {

@@ -1,5 +1,5 @@
 // The load plan of each pass: what a request reads from the source once, and
-// what each pass loads for a chunk of scan rows. Each test opens the Hydration
+// what each pass loads for a chunk of scan rows. Each test opens the Record Loader
 // of a planned request on the scenario database and observes the statements
 // through `Run.events`.
 import { Cause, Effect, Exit } from "effect";
@@ -13,10 +13,10 @@ import {
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
 import { ItemQueryError } from "./error";
-import { openHydration } from "./hydration";
-import type { LoadPlan } from "./hydration";
+import { ITEM_LOADING } from "./hydration";
 import { ITEMS } from "./query-items";
 import { openQuerySources } from "./query-sources";
+import { openRecordLoader } from "./record-loader";
 import { planRequest } from "./request";
 import type { ItemQueryRequest, TargetLibrary } from "./request";
 import { runEffect } from "./test-helpers";
@@ -31,7 +31,7 @@ type Request = Omit<ItemQueryRequest, "libraries"> &
   Partial<Pick<ItemQueryRequest, "libraries">>;
 
 /**
- * Open the Hydration of a request and load the first scan page of the
+ * Open the Record Loader of a request and load the first scan page of the
  * personal Library through both passes.
  */
 async function open(scenario: ScenarioDatabase, request: Request) {
@@ -46,7 +46,10 @@ async function open(scenario: ScenarioDatabase, request: Request) {
         libraries,
       });
       const sources = yield* openQuerySources;
-      const hydration = yield* openHydration(plan, libraries, sources);
+      const hydration = yield* openRecordLoader(ITEM_LOADING, plan, {
+        libraries,
+        sources,
+      });
       const opened = seen;
       const page = yield* readScanPage({
         libraryID: personal.libraryID,
@@ -68,7 +71,7 @@ async function open(scenario: ScenarioDatabase, request: Request) {
   const { opened, ...value } = exit.value;
   return {
     ...value,
-    /** The statements that opening the Hydration ran. */
+    /** The statements that opening the Record Loader ran. */
     opening: readersOf(events.slice(0, opened)),
     /** The hydrate statements of both passes, in order. */
     hydrates: events
@@ -90,7 +93,7 @@ function readersOf(events: readonly RunEvent[]): string[] {
   );
 }
 
-/** The typed failure of opening the Hydration of a request. */
+/** The typed failure of opening the Record Loader of a request. */
 async function failure(scenario: ScenarioDatabase, request: Request) {
   const { exit } = await runEffect(
     Effect.gen(function* () {
@@ -98,39 +101,28 @@ async function failure(scenario: ScenarioDatabase, request: Request) {
         ...request,
         libraries: [personal],
       });
-      return yield* openHydration(plan, [personal], yield* openQuerySources);
+      return yield* openRecordLoader(ITEM_LOADING, plan, {
+        libraries: [personal],
+        sources: yield* openQuerySources,
+      });
     }),
     { client: scenario.db },
   );
-  if (!Exit.isFailure(exit)) throw new Error("the Hydration opened.");
+  if (!Exit.isFailure(exit)) throw new Error("the Record Loader opened.");
   const error = Cause.findErrorOption(exit.cause);
   if (error._tag === "None") throw new Error(String(exit.cause));
   return error.value;
 }
 
-function fieldNames(scenario: ScenarioDatabase, fieldIDs: unknown): string[] {
-  const nameOf = scenario.sqlite.prepare(
-    "select fieldName from fieldsCombined where fieldID = ?",
-  );
-  return (JSON.parse(fieldIDs as string) as number[])
-    .map((id) => (nameOf.get(id) as { fieldName: string }).fieldName)
-    .toSorted();
-}
-
-const loads = (plan: Partial<LoadPlan["fields"]> & Partial<LoadPlan>) => ({
-  fields: { builtIn: plan.builtIn ?? [], custom: plan.custom ?? [] },
-  relations: plan.relations ?? [],
-});
-
-describe("Hydration", () => {
+describe("Record Loader", () => {
   it("reads no source and loads nothing for a filter on the scan row", async () => {
     using scenario = openScenarioDatabase();
     const { hydration, opening, hydrates, scanned } = await open(scenario, {
       filter: 'itemType == "book" && key != "ART2FULL"',
     });
 
-    expect(hydration.scan.plan).toBeNull();
-    expect(hydration.projection.plan).toBeNull();
+    expect(hydration.scan.hydrates).toBe(false);
+    expect(hydration.projection.hydrates).toBe(false);
     expect(opening).toEqual([]);
     expect(hydrates).toEqual([]);
     const report = scanned.find((item) => item.scan.key === "RPT2NDTE")!;
@@ -144,8 +136,8 @@ describe("Hydration", () => {
       filter: 'tags.contains("to-read")',
     });
 
-    expect(hydration.scan.plan).toEqual(loads({ relations: ["tags"] }));
-    expect(hydration.projection.plan).toBeNull();
+    expect(hydration.scan.hydrates).toBe(true);
+    expect(hydration.projection.hydrates).toBe(false);
     // One statement: the Tags of the chunk.
     expect(hydrates).toHaveLength(1);
     const article = scanned.find((item) => item.scan.key === "ART2FULL")!;
@@ -159,19 +151,15 @@ describe("Hydration", () => {
       filter: 'publisher == "Sage" && custom["review.status"] == null',
     });
 
-    expect(hydration.scan.plan).toEqual(
-      loads({ builtIn: ["publisher"], custom: ["review.status"] }),
-    );
+    expect(hydration.scan.hydrates).toBe(true);
     expect(hydrates).toHaveLength(1);
-    const names = fieldNames(scenario, hydrates[0]!.params["fieldIDs"]);
-    expect(names).toContain("publisher");
-    expect(names).toContain("institution");
-    expect(names).toContain("review.status");
-    expect(names).not.toContain("title");
-    expect(names).not.toContain("mood");
     // The report stores `institution`, an alias of `publisher`.
     const report = scanned.find((item) => item.scan.key === "RPT2NDTE")!;
-    expect(report.hydrated.fields.get("publisher")).toBe("Lab Institute");
+    expect([...report.hydrated.fields]).toEqual([
+      ["publisher", "Lab Institute"],
+    ]);
+    const article = scanned.find((item) => item.scan.key === "ART2FULL")!;
+    expect([...article.hydrated.custom]).toEqual([["review.status", "done"]]);
   });
 
   it("loads the fields of a branch that does not run for an Item", async () => {
@@ -180,7 +168,7 @@ describe("Hydration", () => {
       filter: 'itemType == "report" && creators.isEmpty()',
     });
 
-    expect(hydration.scan.plan).toEqual(loads({ relations: ["creators"] }));
+    expect(hydration.scan.hydrates).toBe(true);
     expect(hydrates).toHaveLength(1);
     const report = scanned.find((item) => item.scan.key === "RPT2NDTE")!;
     expect(report.hydrated.creators).toEqual([]);
@@ -188,25 +176,24 @@ describe("Hydration", () => {
 
   it("loads the filter and sort fields in the scan pass and the projection fields in the projection pass", async () => {
     using scenario = openScenarioDatabase();
-    const { hydration, hydrates, projected } = await open(scenario, {
+    const { hydration, hydrates, scanned, projected } = await open(scenario, {
       filter: 'tags.contains("to-read")',
       fields: ["DOI", "custom"],
       sort: [{ field: "title", direction: "asc" }],
     });
 
-    expect(hydration.scan.plan).toEqual(
-      loads({ builtIn: ["title"], relations: ["tags"] }),
-    );
-    // `custom` loads every custom field of the source.
-    expect(hydration.projection.plan).toEqual(
-      loads({ builtIn: ["DOI"], custom: CUSTOM_FIELDS }),
-    );
+    expect(hydration.scan.hydrates).toBe(true);
+    expect(hydration.projection.hydrates).toBe(true);
     // The scan pass: the field values, then the Tags. The projection pass: the
     // field values.
     expect(hydrates).toHaveLength(3);
-    const scanFields = fieldNames(scenario, hydrates[0]!.params["fieldIDs"]);
-    expect(scanFields).toContain("title");
-    expect(scanFields).not.toContain("DOI");
+    const scannedArticle = scanned.find(
+      (item) => item.scan.key === "ART2FULL",
+    )!;
+    expect([...scannedArticle.hydrated.fields.keys()]).toEqual(["title"]);
+    expect(scannedArticle.hydrated.tags?.map((tag) => tag.name)).toContain(
+      "to-read",
+    );
     const article = projected.find((item) => item.scan.key === "ART2FULL")!;
     expect(article.hydrated.custom.get("mood")).toBe("calm");
     expect(article.hydrated.fields.has("title")).toBe(false);
@@ -220,10 +207,8 @@ describe("Hydration", () => {
       fields: ["collections"],
     });
 
-    expect(hydration.scan.plan).toBeNull();
-    expect(hydration.projection.plan).toEqual(
-      loads({ relations: ["collections"] }),
-    );
+    expect(hydration.scan.hydrates).toBe(false);
+    expect(hydration.projection.hydrates).toBe(true);
     // One read of the field vocabulary runs two statements.
     expect(opening).toEqual([
       "field-vocabulary",
@@ -367,13 +352,15 @@ it.each(["review.status.more", "custom.review.status.more"])(
 
 it("keeps valid custom string properties and explicit bracket access", async () => {
   using scenario = openScenarioDatabase();
-  const { hydration } = await open(scenario, {
+  const { scanned } = await open(scenario, {
     filter:
       'mood.length > 0 && custom.mood.lower() == "calm" && custom["review.status"].length > 0',
   });
-  expect(hydration.scan.plan).toEqual(
-    loads({ custom: ["mood", "review.status"] }),
-  );
+  const article = scanned.find((item) => item.scan.key === "ART2FULL")!;
+  expect([...article.hydrated.custom]).toEqual([
+    ["review.status", "done"],
+    ["mood", "calm"],
+  ]);
 });
 
 it("keeps an explicit custom-field property failure at validation", async () => {
@@ -447,3 +434,18 @@ it.each(["review.length", "custom.review.length"])(
     expect(diagnostic.found).toBe("review.length");
   },
 );
+
+// Failure modes: Query Group needs are omitted from the scan pass or leak into projection.
+it("loads Query Group needs in the scan pass", async () => {
+  using scenario = openScenarioDatabase();
+  const { scanned, projected, hydrates } = await open(scenario, {
+    group: "collections[]",
+  });
+  const scannedArticle = scanned.find((item) => item.scan.key === "ART2FULL")!;
+  const projectedArticle = projected.find(
+    (item) => item.scan.key === "ART2FULL",
+  )!;
+  expect(scannedArticle.hydrated.collections).toEqual([["Thesis", "Methods"]]);
+  expect(projectedArticle.hydrated.collections).toBeUndefined();
+  expect(hydrates).toHaveLength(1);
+});

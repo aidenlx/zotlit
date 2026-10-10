@@ -21,7 +21,7 @@ import {
   DEFAULT_ATTACHMENT_FIELDS,
 } from "./attachment-fields";
 import type { QueryAttachment } from "./attachment-fields";
-import { openAttachmentHydration } from "./attachment-hydration";
+import { ATTACHMENT_LOADING } from "./attachment-hydration";
 import { fieldRoot } from "./dataset";
 import type { QueryDataset } from "./dataset";
 import type { DatasetRun } from "./execution";
@@ -30,6 +30,7 @@ import { matches as isMatch } from "./filter-evaluate";
 import { planFilter } from "./filter-plan";
 import { readPath } from "./projection";
 import { ANNOTATIONS } from "./query-annotations";
+import { openRecordLoader } from "./record-loader";
 import {
   planDatasetCandidates,
   readDatasetCandidates,
@@ -94,11 +95,10 @@ export const ATTACHMENTS: QueryDataset<ItemQueryRequest> = {
   open: (plan, request, { clock, sources }) =>
     Effect.gen(function* () {
       const { filter, paths } = plan;
-      const hydration = yield* openAttachmentHydration(
-        plan,
-        request.libraries,
+      const hydration = yield* openRecordLoader(ATTACHMENT_LOADING, plan, {
+        libraries: request.libraries,
         sources,
-      );
+      });
       const run: DatasetRun<QueryAttachment> = {
         scan: hydration.scan,
         projection: hydration.projection,

@@ -25,10 +25,11 @@ import {
 import type { QueryItem } from "./fields";
 import { matches as isMatch } from "./filter-evaluate";
 import { planFilter } from "./filter-plan";
-import { openHydration } from "./hydration";
+import { ITEM_LOADING } from "./hydration";
 import { readPath, resolveItemPath } from "./projection";
 import { ANNOTATIONS } from "./query-annotations";
 import { ATTACHMENTS } from "./query-attachments";
+import { openRecordLoader } from "./record-loader";
 import {
   planDatasetCandidates,
   readDatasetCandidates,
@@ -82,7 +83,10 @@ export const ITEMS: QueryDataset<ItemQueryRequest> = {
   open: (plan, { libraries }, { clock, sources }) =>
     Effect.gen(function* () {
       const { filter, paths } = plan;
-      const hydration = yield* openHydration(plan, libraries, sources);
+      const hydration = yield* openRecordLoader(ITEM_LOADING, plan, {
+        libraries,
+        sources,
+      });
       const run: DatasetRun<QueryItem> = {
         scan: hydration.scan,
         projection: hydration.projection,
