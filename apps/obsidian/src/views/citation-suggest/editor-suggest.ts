@@ -96,7 +96,10 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
         .catch(() => null);
       if (answer === null || controller.signal.aborted) return [];
       const found = answer.resolve(key.citationKey);
-      if (found?.kind === "unique" || found?.kind === "ambiguous") return [];
+      if (found?.kind === "unique" || found?.kind === "ambiguous") {
+        this.close();
+        return [];
+      }
     }
     this.#session ??= this.#deps.lookup.openSession();
     return this.#session.search(context.query, { limit: this.limit });

@@ -179,35 +179,49 @@ export function createCitationsCliHandlers(
         return invalidRequest(CITED_BY_COMMAND, request);
       }
 
-      const admission = await admit(CITED_BY_COMMAND, params, request.value);
-      if (admission.kind === "rejected") return admission.response;
-      const { echoed } = admission;
+      for (;;) {
+        const admission = await admit(CITED_BY_COMMAND, params, request.value);
+        if (admission.kind === "rejected") return admission.response;
+        const { echoed } = admission;
 
-      try {
-        const selected = await resolveItem(deps, request.value);
-        if (selected.kind === "fault") {
+        try {
+          const lookup = await deps.index.readLookup(
+            "citekey" in request.value
+              ? { citekeys: [request.value.citekey] }
+              : { indexedKeys: [request.value.key] },
+          );
+          const selected = await resolveItem(deps, request.value, lookup);
+          if (selected.kind === "fault") {
+            if ((await deps.index.readLookup({})).revision !== lookup.revision)
+              continue;
+            return envelope(CITED_BY_COMMAND, {
+              ok: false,
+              ...echoed,
+              diagnostic: selected.diagnostic,
+            });
+          }
+
+          const { item } = selected;
+          const snapshot = await deps.index.getCitedBy(item.key);
+          const groups = reportGroups(snapshot.groups);
+          const omittedSyntaxes = await deps.index.citedByOmittedSyntaxes(
+            item.key,
+          );
+          if ((await deps.index.readLookup({})).revision !== lookup.revision)
+            continue;
           return envelope(CITED_BY_COMMAND, {
-            ok: false,
+            ok: true,
             ...echoed,
-            diagnostic: selected.diagnostic,
+            item,
+            groups,
+            omittedSyntaxes,
+            coverage: snapshot.coverage,
+            resolution: snapshot.resolution,
+            syntaxes: deps.index.syntaxes(),
           });
+        } catch {
+          return unavailable(CITED_BY_COMMAND, echoed);
         }
-
-        const { item } = selected;
-        const snapshot = await deps.index.getCitedBy(item.key);
-        const groups = reportGroups(snapshot.groups);
-        return envelope(CITED_BY_COMMAND, {
-          ok: true,
-          ...echoed,
-          item,
-          groups,
-          omittedSyntaxes: await deps.index.citedByOmittedSyntaxes(item.key),
-          coverage: snapshot.coverage,
-          resolution: snapshot.resolution,
-          syntaxes: deps.index.syntaxes(),
-        });
-      } catch {
-        return unavailable(CITED_BY_COMMAND, echoed);
       }
     },
 
@@ -301,12 +315,11 @@ type SelectedItem =
 async function resolveItem(
   deps: CitationsCliDeps,
   selector: CitedBySelector,
+  lookup: CitationLookupAnswer,
 ): Promise<SelectedItem> {
   if ("citekey" in selector) {
     const { citekey } = selector;
-    const resolved = (
-      await deps.index.readLookup({ citekeys: [citekey] })
-    ).resolve(citekey);
+    const resolved = lookup.resolve(citekey);
     if (resolved === null)
       throw new Error("Citation lookup omitted the requested key");
     if (resolved.kind === "missing") {
@@ -340,9 +353,7 @@ async function resolveItem(
     kind: "selected",
     item: {
       key,
-      citekey:
-        (await deps.index.readLookup({ indexedKeys: [key] })).citekeyOf(key) ??
-        null,
+      citekey: lookup.citekeyOf(key) ?? null,
       summary,
     },
   };

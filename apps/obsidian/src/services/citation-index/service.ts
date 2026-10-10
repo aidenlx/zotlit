@@ -864,12 +864,23 @@ export class CitationIndex extends Service<void> {
 
   /** Only the publication identity crosses this global cache seam. */
   async #readSnapshot(signal: AbortSignal): Promise<string> {
-    await this.#reads.ready;
-    await this.#libraryScope.ready;
-    if (this.#stopped) throw new Error("The citation index stopped");
-    if (this.#reads.state === "degraded" || this.#libraryScope.current === null)
-      throw new Error("The Zotero database cannot be read");
-    return this.#reads.refreshLookup(this.#libraryScope.effective, { signal });
+    try {
+      await this.#reads.ready;
+      await this.#libraryScope.ready;
+      if (this.#stopped) throw new Error("The citation index stopped");
+      if (
+        this.#reads.state === "degraded" ||
+        this.#libraryScope.current === null
+      )
+        throw new Error("The Zotero database cannot be read");
+      return await this.#reads.refreshLookup(this.#libraryScope.effective, {
+        signal,
+      });
+    } catch (error) {
+      if (!signal.aborted && !this.#stopped)
+        logger.warn("Citation lookup rebuild failed", { error });
+      throw error;
+    }
   }
 
   /** Idempotent: a content-identical touch stores the same list and wakes nobody. */
