@@ -1,3 +1,4 @@
+import { QueryObserver } from "@tanstack/query-core";
 import { Effect } from "effect";
 import type { App, TFile } from "obsidian";
 
@@ -12,6 +13,7 @@ import { registerEvent } from "@/lib/disposables";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import { mapsEqual } from "@/lib/maps-equal";
+import type { OpenDocuments } from "@/lib/open-documents";
 import {
   citationOfRun,
   citationRuns,
@@ -55,11 +57,19 @@ const logger = getLogger("citation-text");
  * The key prefix every document's citation text is held under; the vault path
  * of the document completes it.
  *
- * Text is retained for the session rather than for a time or a count: a
- * document the author keeps open answers from what it holds however long the
- * pause, and the key is dropped when the file it names is deleted.
+ * Text is retained while its document is open in a workspace leaf: a document
+ * the author keeps open answers from what it holds however long the pause.
+ * Any other document's text, an embed's included, expires {@link TEXT_GC_TIME}
+ * after its last read, and the key is dropped at once
+ * when the file it names is deleted. Each document's text carries its captured
+ * Citation Lookup answer, so no answer outlives the documents shown.
  */
 const CITATION_TEXT = "citation-text";
+
+/** How long the text of a document no longer open stays held. */
+const TEXT_GC_TIME = Temporal.Duration.from({ minutes: 5 }).total(
+  "milliseconds",
+);
 
 /** What a citation shows in place of a note where no serial stands for one. */
 const NO_SERIALS: readonly undefined[] = [];
@@ -88,6 +98,8 @@ export interface CitationTextDeps {
   >;
   /** The plugin-wide query client every Held Read is realized on. */
   queryClient: QueryClientService;
+  /** The documents whose text stays held, for as long as each is open. */
+  openDocuments: OpenDocuments;
 }
 
 /**
@@ -122,7 +134,10 @@ export class CitationText extends Service<void> {
   readonly #profile: ProfileReader;
   readonly #bibliographyRender;
   readonly #queries;
+  readonly #openDocuments;
   readonly #emitter = createNanoEvents<CitationTextEvents>();
+  /** Releases for the pins that keep each open document's text held. */
+  readonly #pins = new Map<string, () => void>();
 
   ready: Promise<void>;
 
@@ -136,6 +151,7 @@ export class CitationText extends Service<void> {
     this.#profile = deps.profile;
     this.#bibliographyRender = deps.bibliographyRender;
     this.#queries = deps.queryClient;
+    this.#openDocuments = deps.openDocuments;
     this.ready = this.#load();
   }
 
@@ -192,7 +208,7 @@ export class CitationText extends Service<void> {
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
     this.#queries.client.setQueryDefaults([CITATION_TEXT], {
-      gcTime: Infinity,
+      gcTime: TEXT_GC_TIME,
       // An equal re-read keeps the identity the surfaces hold, so nothing
       // repaints for text that reads the same.
       structuralSharing: (held, next) =>
@@ -204,6 +220,12 @@ export class CitationText extends Service<void> {
           ? held
           : next,
     });
+    stack.defer(() => {
+      for (const release of this.#pins.values()) release();
+      this.#pins.clear();
+    });
+    stack.use(this.#openDocuments.subscribe(() => this.#pinOpenDocuments()));
+    this.#pinOpenDocuments();
     stack.defer(
       this.#queries.watch<DocumentCitations>([CITATION_TEXT], {
         changed: (key) => this.#emitter.emit("changed", pathOf(key)),
@@ -274,7 +296,38 @@ export class CitationText extends Service<void> {
 
   /** Releases what one vault path holds, which a file no longer there must. */
   #drop(path: string): void {
+    // The pin observes the query the removal discards; an open document pins
+    // its next query on the following workspace change.
+    this.#pins.get(path)?.();
+    this.#pins.delete(path);
     this.#queries.client.removeQueries({ queryKey: documentKey(path) });
+  }
+
+  /**
+   * Keeps each open document's text out of garbage collection and lets a
+   * closed one expire. A pin is a disabled observer: it holds the query
+   * without reading, and every read still starts from a surface's ask.
+   */
+  #pinOpenDocuments(): void {
+    if (this.disposing) return;
+    const open = this.#openDocuments.paths();
+    for (const [path, release] of this.#pins) {
+      if (open.has(path)) continue;
+      release();
+      this.#pins.delete(path);
+    }
+    for (const path of open) {
+      if (this.#pins.has(path)) continue;
+      const observer = new QueryObserver(this.#queries.client, {
+        queryKey: documentKey(path),
+        enabled: false,
+      });
+      const unsubscribe = observer.subscribe(() => undefined);
+      this.#pins.set(path, () => {
+        unsubscribe();
+        observer.destroy();
+      });
+    }
   }
 
   /**

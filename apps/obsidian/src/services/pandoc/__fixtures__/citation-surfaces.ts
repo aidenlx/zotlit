@@ -55,6 +55,7 @@ import {
   resetCitationSurfaceMocks,
 } from "./citation-surface-mocks";
 import type { CitedWork } from "./citation-surface-mocks";
+import { OpenDocumentsStub } from "@/lib/__fixtures__/open-documents";
 
 // Every module this vault stands in for, registered once here so each suite
 // that opens one takes the same doubles. The registrations hoist above the
@@ -348,6 +349,7 @@ export async function openCitationVault({
 
   const citationText = stack.use(
     new CitationText({
+      openDocuments: new OpenDocumentsStub(),
       profile: profileReader(() => settings.current, harness.metadataCache),
       app: harness.app,
       db: harness.db,

@@ -3,6 +3,7 @@ import { Effect } from "effect";
 import type { LinkCache, TFile } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
+import { OpenDocumentsStub } from "@/lib/__fixtures__/open-documents";
 import {
   FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_NOTE_KEY,
@@ -99,6 +100,7 @@ async function makeHarness({
   documentCitationSet,
   bibliographyRender,
   queryClient = new QueryClientService(),
+  openDocuments = new OpenDocumentsStub(),
 }: {
   body: string;
   cited?: Citation[];
@@ -124,6 +126,7 @@ async function makeHarness({
   documentCitationSet?: Omit<DocumentCitationSet, "lookup">;
   bibliographyRender?: CitationTextDeps["bibliographyRender"];
   queryClient?: QueryClientService;
+  openDocuments?: OpenDocumentsStub;
 }): Promise<Harness> {
   const citationRequests: { citations: readonly string[] }[] = [];
   const bibliographyRequests: string[][] = [];
@@ -197,6 +200,7 @@ async function makeHarness({
     },
   );
   const service = new CitationText({
+    openDocuments,
     citationLookup: {
       on: (_event: string, cb: () => void) => {
         listeners.set("index:resolution-changed", cb);
@@ -353,6 +357,7 @@ describe("CitationText", () => {
     );
     const service = cleanup.use(
       new CitationText({
+        openDocuments: new OpenDocumentsStub(),
         app: h.app,
         db: items,
         citationIndex: h.index,
@@ -1243,6 +1248,118 @@ describe("CitationText staleness", () => {
     expect(citationRequests).toHaveLength(2);
     expect(service.peek(NOTE.path)).not.toBeNull();
     await dispose();
+  });
+
+  describe("retention", () => {
+    const GC_MS = 5 * 60 * 1000;
+    const held = (h: Harness) =>
+      h.queryClient.client.getQueryState(["citation-text", NOTE.path]);
+
+    /** A harness whose garbage-collection clock the test advances. */
+    async function retained(open: (docs: OpenDocumentsStub) => void) {
+      // The clock is faked before the read, which schedules the collection of
+      // a document nothing pins; it still advances, so the read runs.
+      vi.useFakeTimers({
+        toFake: ["setTimeout", "clearTimeout"],
+        shouldAdvanceTime: true,
+      });
+      const openDocuments = new OpenDocumentsStub();
+      open(openDocuments);
+      const h = await makeHarness({ body: "Blah [@alpha].", openDocuments });
+      await readText(h.service);
+      return {
+        ...h,
+        openDocuments,
+        dispose: async () => {
+          vi.useRealTimers();
+          await h.dispose();
+        },
+      };
+    }
+
+    it("keeps an open document's text past the collection time", async () => {
+      const h = await retained((docs) => docs.open(NOTE.path));
+
+      vi.advanceTimersByTime(GC_MS * 2);
+
+      expect(held(h)).toBeDefined();
+      expect(h.service.peek(NOTE.path)).not.toBeNull();
+      await h.dispose();
+    });
+
+    it("lets the text of a document never opened expire", async () => {
+      const h = await retained(() => undefined);
+
+      vi.advanceTimersByTime(GC_MS);
+
+      expect(held(h)).toBeUndefined();
+      await h.dispose();
+    });
+
+    it("lets the text expire once the last leaf showing it closes", async () => {
+      const h = await retained((docs) => {
+        docs.open(NOTE.path);
+        docs.open(NOTE.path);
+      });
+
+      h.openDocuments.close(NOTE.path);
+      vi.advanceTimersByTime(GC_MS);
+      expect(held(h)).toBeDefined();
+
+      h.openDocuments.close(NOTE.path);
+      vi.advanceTimersByTime(GC_MS - 1);
+      expect(held(h)).toBeDefined();
+      vi.advanceTimersByTime(1);
+      expect(held(h)).toBeUndefined();
+      await h.dispose();
+    });
+
+    it("releases the old path when an open document is renamed", async () => {
+      const h = await retained((docs) => docs.open(NOTE.path));
+
+      h.openDocuments.rename(NOTE.path, "renamed.md");
+      vi.advanceTimersByTime(GC_MS);
+
+      expect(held(h)).toBeUndefined();
+      await h.dispose();
+    });
+
+    it("drops an open document's text at once when the file is deleted", async () => {
+      const h = await retained((docs) => docs.open(NOTE.path));
+
+      h.deleteNote();
+
+      expect(held(h)).toBeUndefined();
+      await h.dispose();
+    });
+
+    it("pins an open document without reading it", async () => {
+      const openDocuments = new OpenDocumentsStub();
+      const h = await makeHarness({ body: "Blah [@alpha].", openDocuments });
+
+      openDocuments.open(NOTE.path);
+      await Promise.resolve();
+
+      expect(h.citationRequests).toHaveLength(0);
+      expect(held(h)?.fetchStatus).toBe("idle");
+      await h.dispose();
+    });
+
+    it("releases every pin on unload", async () => {
+      const openDocuments = new OpenDocumentsStub();
+      openDocuments.open(NOTE.path);
+      const h = await makeHarness({ body: "Blah [@alpha].", openDocuments });
+      await readText(h.service);
+      const query = h.queryClient.client
+        .getQueryCache()
+        .find({ queryKey: ["citation-text", NOTE.path], exact: true });
+      expect(query?.getObserversCount()).toBe(1);
+
+      await h.service[Symbol.asyncDispose]();
+
+      expect(query?.getObserversCount()).toBe(0);
+      await h.dispose();
+    });
   });
 });
 

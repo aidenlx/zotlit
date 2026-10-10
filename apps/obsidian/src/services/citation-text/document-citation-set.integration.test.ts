@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import type { CachedMetadata, TFile } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { OpenDocumentsStub } from "@/lib/__fixtures__/open-documents";
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
 import { themeHook } from "@/lib/theme-hooks";
 import type {
@@ -446,6 +447,7 @@ function openText(
   styleXml: string,
 ): CitationText {
   return new CitationText({
+    openDocuments: new OpenDocumentsStub(),
     profile: profileReader(),
     app,
     db: items,
