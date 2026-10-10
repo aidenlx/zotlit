@@ -75,7 +75,10 @@ const statement = (relation: CandidateRelation) =>
             slots.names.map((name) => p(name)),
           ),
           notInArray(itemTypesCombined.typeName, [...CHILD_ITEM_TYPES]),
-          ...(fromAttachment
+          // A Parent Record can be outside Attachment Query (for example,
+          // an Annotation's file with another link mode). Keep that superset
+          // on the reversed route; the root's universe reader restricts it.
+          ...(relation === "item-attachments"
             ? [inArray(itemAttachments.linkMode, [0, 1, 2, 3])]
             : []),
           ...[attachment, parent, ...(fromAttachment ? [] : [items])].map(
@@ -101,7 +104,7 @@ const statements = {
   "attachment-annotations": statement("attachment-annotations"),
 };
 
-/** Map at most 500 related IDs to a page of distinct records in the relation universe. */
+/** Map at most 500 related IDs to a page of distinct candidate records. */
 export function readRelationCandidateSet(chunk: {
   relation: CandidateRelation;
   libraryID: number;

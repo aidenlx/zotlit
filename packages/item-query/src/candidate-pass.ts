@@ -1,13 +1,14 @@
 import { getLogger } from "@logtape/logtape";
 import { Effect } from "effect";
 
-import type { CandidateSources } from "./candidate-plan";
 import type { CandidateDataset } from "./dataset";
 import type { FilterNode } from "./filter-plan";
+import type { QuerySources } from "./query-sources";
 import {
   planDatasetCandidates,
   readDatasetCandidates,
 } from "./relation-candidates";
+import type { TargetLibrary } from "./request";
 import type { Tuning } from "./tuning";
 
 const logger = getLogger(["zotlit", "item-query"]);
@@ -17,17 +18,18 @@ export const runCandidatePass = Effect.fnUntraced(function* ({
   dataset,
   filter,
   sources,
+  library,
   tuning,
 }: {
   dataset: CandidateDataset;
   filter: FilterNode<never> | undefined;
-  sources: CandidateSources;
+  sources: Pick<QuerySources, "candidateContext">;
+  library: TargetLibrary;
   tuning: Tuning;
 }) {
-  const { library } = sources;
   const plan =
     filter && !tuning.forceScan
-      ? planDatasetCandidates(filter, sources, { dataset })
+      ? planDatasetCandidates(filter, sources, { dataset, library })
       : null;
   const cap = plan
     ? Math.floor(

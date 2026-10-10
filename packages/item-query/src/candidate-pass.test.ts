@@ -1,7 +1,7 @@
 import { configureSync, resetSync } from "@logtape/logtape";
 import type { LogRecord } from "@logtape/logtape";
 import { Effect, Exit } from "effect";
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 
 import { runCandidatePass } from "./candidate-pass";
 import type { CandidateDataset } from "./dataset";
@@ -12,6 +12,8 @@ import { PRODUCTION_TUNING } from "./tuning";
 const logs: LogRecord[] = [];
 beforeEach(() => {
   logs.length = 0;
+});
+beforeAll(() => {
   configureSync({
     sinks: { capture: (record) => logs.push(record) },
     loggers: [
@@ -24,13 +26,20 @@ beforeEach(() => {
     ],
   });
 });
-afterEach(() => resetSync());
+afterAll(() => resetSync());
 
 function fake(count: number, ids: number[]) {
   const reads: number[] = [];
   const dataset: CandidateDataset<string> = {
     lowerCandidate: (node) =>
-      node.kind === "method" && node.name === "contains" ? "tag" : null,
+      node.kind === "method" &&
+      node.name === "contains" &&
+      node.subject.kind === "field" &&
+      node.subject.name === "tags" &&
+      node.args[0]?.kind === "literal" &&
+      typeof node.args[0].value === "string"
+        ? node.args[0].value
+        : null,
     readCandidate: ({ libraryID, limit }) =>
       Effect.sync(() => {
         reads.push(libraryID);
@@ -39,7 +48,14 @@ function fake(count: number, ids: number[]) {
     readRowCount: () => Effect.succeed(count),
     candidateParents: [],
     candidateRelations: {},
-    filterField: () => undefined,
+    filterField: (name) =>
+      name === "tags"
+        ? {
+            filterable: true,
+            needs: {},
+            value: { type: "list", read: () => [] },
+          }
+        : undefined,
   };
   return { dataset, reads };
 }
@@ -52,10 +68,13 @@ it("uses candidates at the cap of one Target Library and logs the decision", asy
     runCandidatePass({
       dataset,
       filter: filter.root,
+      library: { libraryID: 1, groupID: null },
       sources: {
-        library: { libraryID: 1, groupID: null },
-        vocabulary: null,
-        collectionPaths: undefined,
+        candidateContext: (library) => ({
+          library,
+          vocabulary: null,
+          collectionPaths: undefined,
+        }),
       },
       tuning: PRODUCTION_TUNING,
     }),
@@ -83,10 +102,13 @@ async function choose(
     runCandidatePass({
       dataset,
       filter: filter?.root,
+      library: { libraryID, groupID: libraryID === 1 ? null : 9 },
       sources: {
-        library: { libraryID, groupID: libraryID === 1 ? null : 9 },
-        vocabulary: null,
-        collectionPaths: undefined,
+        candidateContext: (library) => ({
+          library,
+          vocabulary: null,
+          collectionPaths: undefined,
+        }),
       },
       tuning: { ...PRODUCTION_TUNING, forceScan },
     }),
@@ -153,6 +175,7 @@ it.each([
   [undefined, false, "no-filter"],
   ['tags.contains("selected")', true, "forced-scan"],
   ['title == "text"', false, "unsupported-filter"],
+  ['tags.contains("selected") || title == "text"', false, "unsupported-filter"],
   ['if(tags.contains("selected"), true, false)', false, "unsupported-filter"],
   [
     'attachments.filter(if(value.tags.contains("selected"), true, false)).length > 0',
@@ -204,6 +227,58 @@ it("uses an empty candidate set without scanning", async () => {
     plan: "candidates",
     candidateCap: 0,
     candidateCount: 0,
+    reason: null,
+  });
+});
+
+it.each([
+  { operator: "||", left: [1, 2], right: [2, 3], expected: [1, 2, 3] },
+  { operator: "||", left: [1, 2], right: [3, 4], expected: null },
+  { operator: "&&", left: [1, 2, 3, 4], right: [2], expected: [2] },
+  { operator: "&&", left: [1, 2], right: [2, 3], expected: [2] },
+] as const)(
+  "caps composed candidate sets for $operator",
+  async ({ operator, left, right, expected }) => {
+    const { dataset } = fake(12, []);
+    const composed: CandidateDataset<string> = {
+      ...dataset,
+      readCandidate: ({ leaf, limit }) =>
+        Effect.succeed([...(leaf === "left" ? left : right)].slice(0, limit)),
+    };
+    expect(
+      await choose(
+        composed,
+        `tags.contains("left") ${operator} tags.contains("right")`,
+      ),
+    ).toEqual(expected === null ? null : new Set(expected));
+    expect(logs[0]?.properties).toMatchObject({
+      plan: expected === null ? "scan" : "candidates",
+      reason: expected === null ? "candidate-cap-exceeded" : null,
+    });
+  },
+);
+
+it("uses a Relation List candidate through the fake descriptor's reader", async () => {
+  const { dataset, reads } = fake(12, [1]);
+  const root: CandidateDataset = {
+    ...dataset,
+    candidateRelations: {
+      attachments: {
+        dataset: () => dataset,
+        readParents: () => Effect.succeed([7]),
+      },
+    },
+  };
+  expect(
+    await choose(
+      root,
+      'attachments.filter(value.tags.contains("selected")).length > 0',
+    ),
+  ).toEqual(new Set([7]));
+  expect(reads).toEqual([1]);
+  expect(logs[0]?.properties).toMatchObject({
+    plan: "candidates",
+    candidateCount: 1,
     reason: null,
   });
 });

@@ -24,10 +24,11 @@ import {
 import type { QueryItem } from "./fields";
 import { matches as isMatch } from "./filter-evaluate";
 import { planFilter } from "./filter-plan";
-import { openHydration } from "./hydration";
+import { ITEM_LOADING } from "./hydration";
 import { readPath, resolveItemPath } from "./projection";
 import { ANNOTATIONS } from "./query-annotations";
 import { ATTACHMENTS } from "./query-attachments";
+import { openRecordLoader } from "./record-loader";
 import type { ItemQueryRequest } from "./request";
 
 const sortable = (name: string) => {
@@ -72,16 +73,16 @@ export const ITEMS: QueryDataset<ItemQueryRequest> = {
   rootName: fieldRoot,
   readScanPage,
   readUniverseRows,
-  open: (plan, { libraries }, clock) =>
+  open: (plan, { libraries }, { clock, sources }) =>
     Effect.gen(function* () {
       const { filter, paths } = plan;
-      const hydration = yield* openHydration(plan, libraries);
+      const hydration = yield* openRecordLoader(ITEM_LOADING, plan, {
+        libraries,
+        sources,
+      });
       const run: DatasetRun<QueryItem> = {
-        collectionPaths: (library) =>
-          hydration.candidateSources(library).collectionPaths,
         scan: hydration.scan,
         projection: hydration.projection,
-        candidateSources: hydration.candidateSources,
         matches: (item) => !filter || isMatch(filter.root, item, clock),
         project: (item, library, scan) => ({
           indexedKey: formatIndexedKey(scan.key, library.groupID),

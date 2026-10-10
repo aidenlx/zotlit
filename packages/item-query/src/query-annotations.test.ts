@@ -772,3 +772,31 @@ it.each(["tags", "item.tags[]", "item.tags", "attachment"])(
       expect(error.value.diagnostic.report.join("\n")).toContain("scalar");
   },
 );
+
+it("keeps Annotation Parent Records when an Attachment is outside Attachment Query", async () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  scenario.sqlite
+    .prepare(
+      "update itemAttachments set linkMode = 4 where itemID in (select itemID from items where key = 'PDF2LINK')",
+    )
+    .run();
+  const query = collectQuery(ANNOTATIONS, {
+    libraries: [SCENARIO_LIBRARIES.personal],
+    filter: 'attachment.item.collections.within("Thesis")',
+    fields: [],
+    sort: [],
+  });
+  const actual = await runEffect(query, {
+    client: scenario.db,
+    tuning: { capRatio: 1 },
+  });
+  const scan = await runEffect(query, {
+    client: scenario.db,
+    tuning: { forceScan: true },
+  });
+  expect(actual.exit).toEqual(scan.exit);
+  expect(actual.exit).toMatchObject({
+    _tag: "Success",
+    value: { returnedCount: 12 },
+  });
+});

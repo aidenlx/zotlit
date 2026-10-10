@@ -22,7 +22,7 @@ import {
   DEFAULT_ANNOTATION_FIELDS,
 } from "./annotation-fields";
 import type { QueryAnnotation } from "./annotation-fields";
-import { openAnnotationHydration } from "./annotation-hydration";
+import { ANNOTATION_LOADING } from "./annotation-hydration";
 import type { QueryDataset } from "./dataset";
 import type { DatasetRun } from "./execution";
 import { matches as isMatch } from "./filter-evaluate";
@@ -31,6 +31,7 @@ import { parentPathResolver, parentRootName } from "./parent-records";
 import { readPath } from "./projection";
 import { ATTACHMENTS } from "./query-attachments";
 import { ITEMS } from "./query-items";
+import { openRecordLoader } from "./record-loader";
 import type { ItemQueryRequest } from "./request";
 
 /** Annotation Query: one Annotation Row for each non-trashed Annotation. */
@@ -83,16 +84,16 @@ export const ANNOTATIONS: QueryDataset<ItemQueryRequest> = {
   rootName: (name) => parentRootName(name, ANNOTATION_PARENTS),
   readScanPage: readAnnotationScanPage,
   readUniverseRows: readAnnotationUniverseRows,
-  open: (plan, request, clock) =>
+  open: (plan, request, { clock, sources }) =>
     Effect.gen(function* () {
       const { filter, paths } = plan;
-      const hydration = yield* openAnnotationHydration(plan, request.libraries);
+      const hydration = yield* openRecordLoader(ANNOTATION_LOADING, plan, {
+        libraries: request.libraries,
+        sources,
+      });
       const run: DatasetRun<QueryAnnotation> = {
-        collectionPaths: (library) =>
-          hydration.candidateSources(library).collectionPaths,
         scan: hydration.scan,
         projection: hydration.projection,
-        candidateSources: hydration.candidateSources,
         matches: (item) => !filter || isMatch(filter.root, item, clock),
         project: (item, library) => ({
           indexedKey: formatIndexedKey(item.scan.key, library.groupID),

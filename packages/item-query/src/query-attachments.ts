@@ -22,7 +22,7 @@ import {
   DEFAULT_ATTACHMENT_FIELDS,
 } from "./attachment-fields";
 import type { QueryAttachment } from "./attachment-fields";
-import { openAttachmentHydration } from "./attachment-hydration";
+import { ATTACHMENT_LOADING } from "./attachment-hydration";
 import type { QueryDataset } from "./dataset";
 import type { DatasetRun } from "./execution";
 import { matches as isMatch } from "./filter-evaluate";
@@ -31,6 +31,7 @@ import { parentPathResolver, parentRootName } from "./parent-records";
 import { readPath } from "./projection";
 import { ANNOTATIONS } from "./query-annotations";
 import { ITEMS } from "./query-items";
+import { openRecordLoader } from "./record-loader";
 import type { ItemQueryRequest } from "./request";
 
 /** Attachment Query: one Attachment Row for each non-trashed Attachment. */
@@ -79,16 +80,16 @@ export const ATTACHMENTS: QueryDataset<ItemQueryRequest> = {
   rootName: (name) => parentRootName(name, ATTACHMENT_PARENTS),
   readScanPage: readAttachmentScanPage,
   readUniverseRows: readAttachmentUniverseRows,
-  open: (plan, request, clock) =>
+  open: (plan, request, { clock, sources }) =>
     Effect.gen(function* () {
       const { filter, paths } = plan;
-      const hydration = yield* openAttachmentHydration(plan, request.libraries);
+      const hydration = yield* openRecordLoader(ATTACHMENT_LOADING, plan, {
+        libraries: request.libraries,
+        sources,
+      });
       const run: DatasetRun<QueryAttachment> = {
-        collectionPaths: (library) =>
-          hydration.candidateSources(library).collectionPaths,
         scan: hydration.scan,
         projection: hydration.projection,
-        candidateSources: hydration.candidateSources,
         matches: (item) => !filter || isMatch(filter.root, item, clock),
         project: (item, library) => ({
           indexedKey: formatIndexedKey(item.scan.key, library.groupID),
