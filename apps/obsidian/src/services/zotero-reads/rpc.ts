@@ -29,7 +29,13 @@ import type {
 import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
 import type { ItemFields } from "@zotlit/zotero-types";
 
+import type { CitationLookupWireAnswer } from "@/services/citation-index/lookup";
+import type {
+  CitekeyResolution,
+  SnapshotItem,
+} from "@/services/citation-index/snapshot";
 import type { EffectiveReadMode } from "@/services/database/read-source";
+import type { LibraryScope } from "@/services/library-scope/scope";
 import type { Settings, ZoteroReadMode } from "@/services/settings/schema";
 
 /** Compile-time assert: `T` must be `true`. */
@@ -442,6 +448,9 @@ const CitationItemSchema = Schema.Struct({
   key: Schema.String,
   indexedKey: Schema.String,
 });
+type _CitationItem = Expect<
+  Equals<typeof CitationItemSchema.Type, SnapshotItem>
+>;
 const CitationResolutionSchema = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("missing") }),
   Schema.Struct({ kind: Schema.Literal("unique"), item: CitationItemSchema }),
@@ -450,6 +459,9 @@ const CitationResolutionSchema = Schema.Union([
     candidates: Schema.Array(CitationItemSchema),
   }),
 ]);
+type _CitationResolution = Expect<
+  Equals<typeof CitationResolutionSchema.Type, CitekeyResolution>
+>;
 const CitationScopeSchema = Schema.NullOr(
   Schema.Union([
     Schema.Struct({ mode: Schema.Literal("all") }),
@@ -467,6 +479,17 @@ const CitationScopeSchema = Schema.NullOr(
     }),
   ]),
 );
+type _CitationScope = Expect<
+  Equals<typeof CitationScopeSchema.Type, LibraryScope | null>
+>;
+const CitationLookupAnswerSchema = Schema.Struct({
+  revision: Schema.String,
+  citekeys: Schema.ReadonlyMap(Schema.String, CitationResolutionSchema),
+  indexedKeys: Schema.ReadonlyMap(Schema.String, Schema.NullOr(Schema.String)),
+});
+type _CitationLookupAnswer = Expect<
+  Equals<typeof CitationLookupAnswerSchema.Type, CitationLookupWireAnswer>
+>;
 
 export class ZoteroReads extends RpcGroup.make(
   Rpc.make("CitationLookup", {
@@ -475,14 +498,7 @@ export class ZoteroReads extends RpcGroup.make(
       citekeys: Schema.Array(Schema.String),
       indexedKeys: Schema.Array(Schema.String),
     },
-    success: Schema.Struct({
-      revision: Schema.String,
-      citekeys: Schema.ReadonlyMap(Schema.String, CitationResolutionSchema),
-      indexedKeys: Schema.ReadonlyMap(
-        Schema.String,
-        Schema.NullOr(Schema.String),
-      ),
-    }),
+    success: CitationLookupAnswerSchema,
     error: DbUnavailable,
   }),
   Rpc.make("Libraries", {
