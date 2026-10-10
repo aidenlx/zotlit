@@ -7,7 +7,7 @@ import type { Span } from "./fault";
 import type { FilterNode } from "./filter-plan";
 import { nearCollectionMatches } from "./near-match";
 import { parentFieldSubject } from "./parent-records";
-import { annotationVocabulary } from "./record-vocabularies";
+import { RECORD_VOCABULARIES } from "./record-vocabularies";
 import type { TargetLibrary } from "./request";
 
 export interface CollectionWarning {
@@ -37,7 +37,7 @@ export const collectionWarnings = Effect.fnUntraced(function* <Item>(
       const collections = parentFieldSubject(
         subject,
         "collections",
-        annotationVocabulary(),
+        Object.values(RECORD_VOCABULARIES).map((vocabulary) => vocabulary()),
       );
       const literal = node.args[0];
       if (

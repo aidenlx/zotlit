@@ -99,15 +99,8 @@ export const annotationVocabulary = (): RecordVocabulary<
   filter: annotationFilterRegistry,
 });
 
-export function recordVocabulary(
-  id: RecordVocabulary<never, never>["id"],
-): RecordVocabulary<any, any> {
-  switch (id) {
-    case "items":
-      return itemVocabulary();
-    case "attachments":
-      return attachmentVocabulary();
-    case "annotations":
-      return annotationVocabulary();
-  }
-}
+export const RECORD_VOCABULARIES = {
+  items: itemVocabulary,
+  attachments: attachmentVocabulary,
+  annotations: annotationVocabulary,
+};

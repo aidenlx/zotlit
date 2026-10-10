@@ -3,7 +3,7 @@ import { parseIndexedKey } from "@zotlit/db";
 import type { QueryDataset } from "./dataset";
 import type { Span } from "./fault";
 import type { FilterNode } from "./filter-plan";
-import { recordVocabulary } from "./record-vocabularies";
+import { RECORD_VOCABULARIES } from "./record-vocabularies";
 import type { TargetLibrary } from "./request";
 
 type KeyTarget = "self" | "item" | "attachment";
@@ -12,7 +12,7 @@ function keyTarget(
   path: string,
 ): KeyTarget | undefined {
   if (path === "indexedKey") return "self";
-  for (const parent of recordVocabulary(dataset).parents ?? []) {
+  for (const parent of RECORD_VOCABULARIES[dataset]().parents ?? []) {
     const target = parent.indexedKeyTarget(path);
     if (target) return target as KeyTarget;
   }

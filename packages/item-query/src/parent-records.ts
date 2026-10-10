@@ -277,14 +277,20 @@ export function parentCandidateLeaf<Item>(
 export function parentFieldSubject<Item>(
   subject: FilterNode<Item>,
   name: string,
-  vocabulary: RecordVocabulary<any, any>,
+  vocabularies: readonly RecordVocabulary<any, any>[],
 ): boolean {
   return subject.kind === "field"
     ? subject.name === name ||
-        (vocabulary.parents ?? []).some((parent) =>
-          parent.owns(subject.name, name),
+        vocabularies.some((vocabulary) =>
+          (vocabulary.parents ?? []).some((parent) =>
+            parent.owns(subject.name, name),
+          ),
         )
     : subject.kind === "property" &&
         subject.name === name &&
-        subject.subject.recordDataset === "items";
+        vocabularies.some(
+          (vocabulary) =>
+            vocabulary.id === subject.subject.recordDataset &&
+            vocabulary.field(name) !== undefined,
+        );
 }

@@ -1,8 +1,9 @@
 import { expect, it } from "vitest";
 
 import type { FieldDefinition } from "./fields";
+import { matches } from "./filter-evaluate";
 import { planFilter } from "./filter-plan";
-import { liftParentRecord } from "./parent-records";
+import { liftParentRecord, parentFieldSubject } from "./parent-records";
 import { planPath, readPath } from "./projection";
 import { definitionFilter } from "./record-field";
 import type { RecordVocabulary } from "./record-field";
@@ -21,6 +22,11 @@ const fields = new Map<string, FieldDefinition<Row, Needs>>(
     },
   ]),
 );
+fields.set("indexedKey", {
+  shape: { kind: "scalar", type: "string" },
+  needs: () => ({}),
+  read: () => "ITEM0001",
+});
 const vocabulary: RecordVocabulary<Row, Needs> = {
   id: "items",
   summary: ["title"],
@@ -110,7 +116,14 @@ it("reaches attachment.item.title through the parent's own declaration", () => {
     summary: ["item"],
     projectionFields: ["item"],
     parents: [parent],
-    field: parent.field,
+    field: (name) =>
+      name === "indexedKey"
+        ? {
+            shape: { kind: "scalar", type: "string" },
+            needs: () => ({ item: [] }),
+            read: () => "FILE0001",
+          }
+        : parent.field(name),
     filter: { field: parent.filter, custom: parent.custom },
   };
   const attachment = liftParentRecord({
@@ -140,6 +153,43 @@ it("reaches attachment.item.title through the parent's own declaration", () => {
   expect(attachment.owns("attachment.item.title", "title")).toBe(true);
   expect(attachment.owns("attachment.missing.title", "title")).toBe(false);
   expect(attachment.sortable("attachment.item.title")).toBeUndefined();
+  const filter = planFilter('attachment.item.title == "Nested"', {
+    field: attachment.filter,
+    custom: attachment.custom,
+  });
+  if (!("root" in filter)) throw new Error("Expected a Filter Expression");
+  const clock = {
+    now: Temporal.Instant.fromEpochMilliseconds(0),
+    timeZone: "UTC",
+  };
+  expect(
+    matches(
+      filter.root,
+      { attachment: { parent: { title: "Nested", secret: "Draft" } } },
+      clock,
+    ),
+  ).toBe(true);
+  expect(
+    matches(
+      filter.root,
+      { attachment: { parent: { title: "Other", secret: "Draft" } } },
+      clock,
+    ),
+  ).toBe(false);
+  if (filter.root.kind !== "binary") throw new Error("Expected a comparison");
+  expect(
+    parentFieldSubject(filter.root.left, "title", [
+      vocabulary,
+      attachmentVocabulary,
+    ]),
+  ).toBe(true);
+  expect(
+    parentFieldSubject(filter.root.left, "secret", [
+      vocabulary,
+      attachmentVocabulary,
+    ]),
+  ).toBe(false);
+
   expect(
     planPath("attachment.item.missing", attachment.resolvePath),
   ).toMatchObject({
