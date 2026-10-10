@@ -4587,7 +4587,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obEval(
         vaultId,
         workers(
-          "(window.Worker=record.Original,record.Original.prototype.terminate=record.terminate,delete window.zotlitE2EWorkers,true)",
+          `(function(){
+            if(record.held){
+              record.held.worker.postMessage=record.held.post;
+              if(!record.ended.has(record.held.worker))
+                for(var args of record.held.pending)record.held.post.apply(record.held.worker,args);
+            }
+            window.Worker=record.Original;
+            record.Original.prototype.terminate=record.terminate;
+            delete window.zotlitE2EWorkers;
+            return true;
+          })()`,
         ),
       );
       await obEval(
@@ -4660,22 +4670,103 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           { expected: "ready" },
         ),
       ).toBe(true);
-      // Unload ends it.
+      expect(
+        await obEvalUntil(
+          vaultId,
+          `String(app.plugins.plugins.zotlit.services.citationIndex.citekeyOf(${JSON.stringify(targetItem.key)}))`,
+          { expected: targetItem.citationKey! },
+        ),
+      ).toBe(true);
+      // Termination emits no browser error event: liveness must detect it.
       await obEval(
         vaultId,
-        "app.plugins.disablePlugin('zotlit').then(function(){return true;})",
+        workers(
+          "(record.spawned.find(function(entry){return entry.name==='zotlit-citation-reads';}).worker.terminate(),true)",
+        ),
       );
       expect(
         await obEvalUntil(
           vaultId,
+          "String(app.plugins.plugins.zotlit.services.citationReads.state)",
+          { expected: "degraded", tries: 160 },
+        ),
+      ).toBe(true);
+      expect(
+        await obEval(
+          vaultId,
+          "String(app.plugins.plugins.zotlit.services.zoteroReads.state)",
+        ),
+      ).toBe("ready");
+      const query = JSON.parse(
+        await cliCommand(vaultId, "zotlit:query", {
+          args: { fields: "[]", limit: "3" },
+        }),
+      ) as ItemQueryReport;
+      expect(query).toMatchObject({ ok: true, returnedCount: 3 });
+      await obEval(
+        vaultId,
+        "app.plugins.plugins.zotlit.services.zoteroReads.refresh().then(function(){return true;})",
+      );
+      expect(
+        await obEvalUntil(
+          vaultId,
+          "String(app.plugins.plugins.zotlit.services.citationReads.state)",
+          { expected: "ready" },
+        ),
+      ).toBe(true);
+      expect(
+        await obEvalUntil(
+          vaultId,
+          `app.plugins.plugins.zotlit.services.citationIndex.whenResolved().then(function(){return String(app.plugins.plugins.zotlit.services.citationIndex.citekeyOf(${JSON.stringify(targetItem.key)}));})`,
+          { expected: targetItem.citationKey! },
+        ),
+      ).toBe(true);
+      // Hold the bulk request after Snapshot acquisition, so unload must
+      // release a pinned citation read and its connection.
+      await obEval(
+        vaultId,
+        workers(`(function(){
+          var entry=record.spawned.findLast(function(entry){return entry.name==='zotlit-citation-reads';});
+          var post=entry.worker.postMessage;
+          record.held={worker:entry.worker,post:post,pending:[]};
+          entry.worker.postMessage=function(...args){
+            if(args[0]?.[1]?.tag==='CitekeySnapshot'){
+              record.heldSnapshot=Boolean(args[0][1].payload.snapshot);
+              record.held.pending.push(args);return;
+            }
+            return post.apply(this,args);
+          };
+          return app.plugins.plugins.zotlit.services.zoteroReads.refresh().then(function(){return true;});
+        })()`),
+      );
+      expect(
+        await obEvalUntil(vaultId, workers("String(record.heldSnapshot)"), {
+          expected: "true",
+        }),
+      ).toBe(true);
+      // Unload ends both the interactive worker and the recovered worker.
+      await obEval(
+        vaultId,
+        "app.plugins.disablePlugin('zotlit').then(function(){return true;})",
+      );
+      const ended = await obEvalUntil(
+        vaultId,
+        workers(
+          "String(record.spawned.filter(function(entry){return entry.name==='zotlit-zotero-reads'||entry.name==='zotlit-citation-reads';}).every(function(entry){return record.ended.has(entry.worker);}))",
+        ),
+        { expected: "true", tries: 120 },
+      );
+      expect(
+        ended,
+        await obEval(
+          vaultId,
           workers(
-            "String(record.ended.has(record.spawned.find(function(entry){return entry.name==='zotlit-zotero-reads';}).worker))",
+            "JSON.stringify(record.spawned.map(function(entry){return {name:entry.name,ended:record.ended.has(entry.worker)};}))",
           ),
-          { expected: "true" },
         ),
       ).toBe(true);
     }
-  });
+  }, 120_000);
 });
 
 /** The `zotlit:query` reply shape this suite reads (see
