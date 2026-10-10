@@ -372,9 +372,9 @@ function diagnoseGroup(
   }
   const path = planPath(fault.name, dataset.resolvePath);
   const shape = "kind" in path ? undefined : path.shape;
-  // The path that names one element: a list gets [], an element stays.
+  // A list gets its first []; a path that already expands a list keeps it.
   const each =
-    shape?.kind === "list"
+    shape?.kind === "list" && !("kind" in path) && path.each === 0
       ? { prefix: `${fault.name}[]`, element: shape.element }
       : shape && !("kind" in path) && path.each === 1
         ? { prefix: fault.name, element: shape }

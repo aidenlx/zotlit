@@ -8,9 +8,56 @@ import reports from "./diagnostic-reports.json";
 import { ItemQueryError } from "./error";
 import { collectQuery } from "./query";
 import { ANNOTATIONS } from "./query-annotations";
+import { ATTACHMENTS } from "./query-attachments";
 import { ITEMS } from "./query-items";
 import type { ItemQueryRequest } from "./request";
+import { describeQueryVocabulary } from "./schema";
 import { runEffect } from "./test-helpers";
+
+it("accepts every suggested correction for group Faults", async () => {
+  using scenario = openScenarioDatabase();
+  const catalog = describeQueryVocabulary();
+  const failures: string[] = [];
+  for (const dataset of [ITEMS, ATTACHMENTS, ANNOTATIONS]) {
+    const paths = catalog.datasets[dataset.id].fields
+      .filter((field) => !field.group)
+      .map((field) => field.path);
+    if (dataset === ITEMS)
+      paths.push(
+        "attachments[].tags",
+        "attachments[].item.collections",
+        "attachments[].tags[]",
+      );
+    for (const group of paths) {
+      const { exit } = await runEffect(
+        collectQuery(dataset, { libraries: [], fields: [], group }),
+        { client: scenario.db },
+      );
+      if (!Exit.isFailure(exit))
+        throw new Error(`Expected a Fault for ${group}`);
+      const error = Cause.findErrorOption(exit.cause);
+      if (error._tag === "None" || !(error.value instanceof ItemQueryError))
+        throw new Error(String(exit.cause));
+      if (error.value.fault.kind !== "group") continue;
+      for (const suggestion of error.value.diagnostic.suggestions) {
+        expect(suggestion.startsWith("group='")).toBe(true);
+        expect(suggestion.endsWith("'")).toBe(true);
+        const corrected = suggestion.slice("group='".length, -1);
+        const { exit: result } = await runEffect(
+          collectQuery(dataset, {
+            libraries: [],
+            fields: [],
+            group: corrected,
+          }),
+          { client: scenario.db },
+        );
+        if (Exit.isFailure(result))
+          failures.push(`${dataset.id}: ${group} → ${suggestion}`);
+      }
+    }
+  }
+  expect(failures).toEqual([]);
+});
 
 it.each([
   [ITEMS, "creators.fullName", "creators[].fullName"],
