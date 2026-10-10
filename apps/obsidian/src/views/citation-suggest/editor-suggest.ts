@@ -32,6 +32,7 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
   #variant: CitationVariant = "main";
   /** The searches of the open dropdown: its first search opens it, and {@link close} ends it. */
   #session: SearchSession | null = null;
+  #lookupController?: AbortController;
 
   constructor(deps: CitationSuggestDeps) {
     super(deps.app);
@@ -79,12 +80,21 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
   override async getSuggestions(
     context: EditorSuggestContext,
   ): Promise<SearchHit[]> {
+    this.#lookupController?.abort();
+    const controller = new AbortController();
+    this.#lookupController = controller;
     const source = `@${context.query}`;
     const key = scanPandocCitations(source)[0]?.items[0];
     if (key?.start === 0 && source.slice(key.end).trimStart().startsWith(",")) {
-      const answer = await this.#deps.citationIndex.readLookup({
-        citekeys: [key.citationKey],
-      });
+      const answer = await this.#deps.citationIndex
+        .readLookup(
+          {
+            citekeys: [key.citationKey],
+          },
+          { signal: controller.signal },
+        )
+        .catch(() => null);
+      if (answer === null || controller.signal.aborted) return [];
       const found = answer.resolve(key.citationKey);
       if (found?.kind === "unique" || found?.kind === "ambiguous") return [];
     }
@@ -93,6 +103,7 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
   }
 
   override close(): void {
+    this.#lookupController?.abort();
     this.#session?.close();
     this.#session = null;
     super.close();

@@ -964,7 +964,10 @@ describe("CitationIndex resolution", () => {
   });
 
   it("retains the selected answer after a refresh failure and rejects fresh reads", async () => {
-    const { index, citekeys, db } = await makeHarness({}, { notes: false });
+    const { index, citekeys, db, passCooldown } = await makeHarness(
+      {},
+      { notes: false },
+    );
     using view = index.observeLookup(() => {});
     view.set({ citekeys: ["doe2024"] });
     await expect.poll(() => view.current?.status).toBe("fresh");
@@ -975,7 +978,8 @@ describe("CitationIndex resolution", () => {
     expect(view.current!.value).toBe(held);
     await expect(index.readLookup({ citekeys: ["doe2024"] })).rejects.toThrow();
     citekeys.error = null;
-    db.changed();
+    passCooldown();
+    await index.readLookup({ citekeys: ["doe2024"] });
     await expect.poll(() => view.current?.status).toBe("fresh");
   });
 

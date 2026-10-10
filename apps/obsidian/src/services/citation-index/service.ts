@@ -710,6 +710,15 @@ export class CitationIndex extends Service<void> {
             );
             return;
           }
+          if (snapshot.status === "fresh") {
+            for (const observation of this.#lookupObservers) {
+              if (
+                observation.current === null ||
+                observation.current.status === "failed"
+              )
+                observation.refresh();
+            }
+          }
           this.#emitter.emit("cited-by-invalidated");
         },
       }),
