@@ -12,6 +12,7 @@ import {
   getCitekeyPage,
   getCitekeysByLibrary,
   getItemIDByCitekey,
+  getCitekeyLastItemID,
 } from "./citekey";
 
 let sqlite: DatabaseSync;
@@ -145,24 +146,85 @@ describe("getCitekeysByLibrary", () => {
 });
 
 describe("getCitekeyPage", () => {
-  it("pages through getCitekeysByLibrary's rows in itemID order", () => {
-    const pages: number[][] = [];
-    let afterItemID = 0;
-    for (;;) {
-      const { citekeys, next } = getCitekeyPage(db, {
-        libraryID: 2,
-        afterItemID,
-        limit: 1,
-      });
-      if (next === null) break;
-      pages.push(citekeys.map((row) => row.itemID));
-      afterItemID = next;
-    }
-    expect(pages).toEqual([[7], [9]]);
-    expect(pages.flat()).toEqual(
-      getCitekeysByLibrary(db, 2).map((row) => row.itemID),
+  it("keeps the pages of a small Library beside a large Library with later Item IDs", () => {
+    sqlite.exec(`
+      with recursive ids(id) as (
+        select 100 union all select id + 1 from ids where id < 10099
+      )
+      insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+        select id, 1, '2024-01-01', '2024-01-01', 1, 'BULK' || id from ids;
+      insert into itemData (itemID, fieldID, valueID)
+        select itemID, 11, 100 from items where itemID >= 100;
+    `);
+
+    expect(getCitekeyLastItemID(db, USER_LIBRARY_ID)).toBe(10099);
+    const beforeItemID = getCitekeyLastItemID(db, 2);
+    expect(beforeItemID).toBe(9);
+    const first = getCitekeyPage(db, {
+      libraryID: 2,
+      afterItemID: 0,
+      beforeItemID,
+      limit: 1,
+    });
+    const second = getCitekeyPage(db, {
+      libraryID: 2,
+      afterItemID: first.next!,
+      beforeItemID,
+      limit: 1,
+    });
+    const last = getCitekeyPage(db, {
+      libraryID: 2,
+      afterItemID: second.next!,
+      beforeItemID,
+      limit: 1,
+    });
+    expect([first.next, second.next, last.next]).toEqual([7, 9, null]);
+    expect([...first.citekeys, ...second.citekeys]).toEqual(
+      getCitekeysByLibrary(db, 2),
     );
+    expect(last.citekeys).toEqual([]);
   });
+
+  it("includes the upper bound and ends the page walk at that Item", () => {
+    const page = { libraryID: 2, afterItemID: 0, beforeItemID: 7, limit: 2 };
+    expect(getCitekeyPage(db, page)).toEqual({
+      citekeys: [getCitekeysByLibrary(db, 2)[0]],
+      next: 7,
+    });
+    expect(getCitekeyPage(db, { ...page, afterItemID: 7 })).toEqual({
+      citekeys: [],
+      next: null,
+    });
+  });
+
+  it.each([
+    { libraryID: USER_LIBRARY_ID, lastItemID: 8, expected: [[1], [6]] },
+    { libraryID: 2, lastItemID: 9, expected: [[7], [9]] },
+    { libraryID: 3, lastItemID: 0, expected: [] },
+  ])(
+    "pages through Library $libraryID in itemID order",
+    ({ libraryID, lastItemID, expected }) => {
+      const pages: number[][] = [];
+      const beforeItemID = getCitekeyLastItemID(db, libraryID);
+      expect(beforeItemID).toBe(lastItemID);
+      let afterItemID = 0;
+      for (;;) {
+        const { citekeys, next } = getCitekeyPage(db, {
+          libraryID,
+          afterItemID,
+          beforeItemID,
+          limit: 1,
+        });
+        if (next === null) break;
+        pages.push(citekeys.map((row) => row.itemID));
+        afterItemID = next;
+      }
+      expect(pages).toEqual(expected);
+      expect(pages.flat()).toEqual(
+        getCitekeysByLibrary(db, libraryID).map((row) => row.itemID),
+      );
+    },
+  );
 });
 
 function seedFixture(sqlite: DatabaseSync): void {

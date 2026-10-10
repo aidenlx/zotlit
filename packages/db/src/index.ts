@@ -102,6 +102,7 @@ export {
 export {
   getCitekeyByItemKey,
   getCitekeyPage,
+  getCitekeyLastItemID,
   getCitekeysByLibrary,
   getItemIDByCitekey,
   type LibraryCitekey,
