@@ -103,6 +103,10 @@ it.each([
       all.itemIDs.slice(0, 1),
     );
     expect(run(read({ libraryID: 1, budget: 1 })).exhausted).toBe(true);
+    expect(run(read({ libraryID: -1, budget: 1 }))).toEqual({
+      itemIDs: [],
+      exhausted: true,
+    });
     expect(run(read({ libraryID: -1 }))).toEqual({
       itemIDs: [],
       exhausted: false,

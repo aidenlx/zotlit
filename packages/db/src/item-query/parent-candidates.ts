@@ -67,16 +67,16 @@ const statement = (
     const child =
       relation === "attachment-item" ? itemAttachments : itemAnnotations;
     // LIMIT precedes the Parent Record predicate. Even a dominant or absent
-    // parent leaf checks at most the child budget in this statement.
-    const page = db.$with("candidatePage").as(
-      db
-        .select({ itemID: child.itemID, parentItemID: child.parentItemID })
-        .from(child)
-        .innerJoin(items, eq(items.itemID, child.itemID))
-        .where(eq(unindexed(items.libraryID), p("libraryID")))
-        .orderBy(child.itemID)
-        .limit(p("windowLimit")),
-    );
+    // parent leaf checks at most the child budget plus one in this statement.
+    const page = db
+      .$with("candidatePage")
+      .as(
+        db
+          .select({ itemID: child.itemID, parentItemID: child.parentItemID })
+          .from(child)
+          .orderBy(child.itemID)
+          .limit(p("windowLimit")),
+      );
     const target = relation === "annotation-attachment" ? attachment : parent;
     const list = sql`select value from json_each(${p("list")})`;
     const condition = {
@@ -132,6 +132,7 @@ const statement = (
       ),
     }[kind];
     const matches = and(
+      eq(unindexed(items.libraryID), p("libraryID")),
       condition,
       notInArray(itemTypesCombined.typeName, [...CHILD_ITEM_TYPES]),
       ...(relation === "attachment-item"
@@ -150,8 +151,8 @@ const statement = (
         ),
       ),
     );
-    // The child window includes standalone and trashed rows. Filter after
-    // bounding the input, so missing or rejected parents cannot extend the work.
+    // The child window includes other Libraries, standalone and trashed rows.
+    // Filter after bounding the input, so rejected rows cannot extend the work.
     const candidates = db
       .select({ itemID: page.itemID })
       .from(page)
