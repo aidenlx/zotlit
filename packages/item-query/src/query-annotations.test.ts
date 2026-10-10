@@ -1,10 +1,11 @@
 import { Cause, Effect } from "effect";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
   openScenarioDatabase,
   SCENARIO_LIBRARIES,
 } from "@zotlit/db/test-scenario";
+import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
 import {
   ANNOTATIONS,
@@ -282,14 +283,23 @@ it("reads parent custom fields, relations, timestamps and identities through the
   ).toBe("2024-06-01T10:00:00Z");
 });
 
-it("matches the forced scan for every Annotation scenario, Library combination, cap, and chunk size", async () => {
-  using scenario = openScenarioDatabase({ annotations: true });
-  for (const libraries of [
-    [SCENARIO_LIBRARIES.personal],
-    [SCENARIO_LIBRARIES.group],
-    [SCENARIO_LIBRARIES.personal, SCENARIO_LIBRARIES.group],
-  ]) {
-    for (const request of ANNOTATION_SCENARIO_QUERIES) {
+describe("Annotation parity with the forced scan", () => {
+  let scenario: ScenarioDatabase;
+
+  beforeAll(() => {
+    scenario = openScenarioDatabase({ annotations: true });
+  });
+  afterAll(() => scenario.close());
+
+  describe.each([
+    { name: "personal", libraries: [SCENARIO_LIBRARIES.personal] },
+    { name: "group", libraries: [SCENARIO_LIBRARIES.group] },
+    {
+      name: "both Libraries",
+      libraries: [SCENARIO_LIBRARIES.personal, SCENARIO_LIBRARIES.group],
+    },
+  ])("$name", ({ libraries }) => {
+    it.each(ANNOTATION_SCENARIO_QUERIES)("request %# %j", async (request) => {
       const run = async (tuning: RunOptions["tuning"]) => {
         const { exit } = await runEffect(
           collectQuery(ANNOTATIONS, { ...request, libraries }),
@@ -323,9 +333,9 @@ it("matches the forced scan for every Annotation scenario, Library combination, 
           outcome: await run(tuning),
         }).toEqual({ request, libraries, tuning, outcome: expected });
       }
-    }
-  }
-}, 30000);
+    });
+  });
+});
 
 it("caps after parent expansion and uses a bounded Annotation candidate when available", async () => {
   using scenario = openScenarioDatabase({ annotations: true });
