@@ -149,7 +149,21 @@ async function makeHarness({
     occurrences: [...literalOccurrences(body), ...wikilinkOccurrences].sort(
       (a, b) => a.position.start.offset - b.position.start.offset,
     ),
-    citations: cited,
+    citations: [
+      ...cited,
+      ...(wikilinkOccurrences.length > 0
+        ? [
+            {
+              indexedKey: LIT_KEY,
+              linkpath: wikilinkOccurrences[0]!.raw,
+              refNumber: cited.length + 1,
+              occurrences: wikilinkOccurrences.filter((occurrence) =>
+                Object.hasOwn(notes, occurrence.raw),
+              ),
+            },
+          ]
+        : []),
+    ],
     errors: [],
   };
   const metadataCache = {
@@ -324,7 +338,9 @@ describe("CitationText", () => {
     h.citekeys.error = new Error("snapshot database locked");
     db.settle();
     await h.index.whenResolved();
-    await h.index.getDocumentCitationSet(h.draft);
+    await expect(h.index.getDocumentCitationSet(h.draft)).rejects.toThrow(
+      "snapshot database locked",
+    );
     // The work the citekey resolves to, read from its own database.
     const items = cleanup.use(
       inProcessReadsService(memoryOpener(() => citedWorkSeed([KEY_A])).open),
@@ -358,6 +374,7 @@ describe("CitationText", () => {
     expect(h.citekeys.calls).toHaveLength(reads);
     now = now.add({ milliseconds: 5001 });
     vi.setSystemTime(now.epochMilliseconds);
+    h.passCooldown();
 
     expect((await service.read(h.draft.path))?.formatted.size).toBe(1);
     expect(service.peek(h.draft.path)?.status).toBe("fresh");
