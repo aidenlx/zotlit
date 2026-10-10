@@ -4,12 +4,14 @@ import { dirname, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Attachment } from "@zotlit/db";
+import { createClient } from "@zotlit/db/client/node";
 import {
   BULK_LIBRARY,
   openScenarioDatabase,
   seedBulkLibrary,
 } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
+import { createFixtureSchema } from "@zotlit/db/test-utils";
 
 import { makeAttachmentFileResolver } from "@/services/item-query/attachment-files";
 import { decodeQuery } from "@/services/item-query/decode";
@@ -321,4 +323,28 @@ describe("ZoteroReads Attachment files", () => {
     ).resolves.toEqual({ path: null, exists: false });
     expect(probe).not.toHaveBeenCalled();
   });
+});
+
+it("keeps Item search outside the citation worker capability", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const client = yield* inProcessClient(
+          layerRcRef(() => {
+            const database = createClient(":memory:");
+            createFixtureSchema(database.$client);
+            return database;
+          }),
+          { citationOnly: true },
+        );
+        const answer = yield* Effect.result(
+          client.SearchItems({ libraryIDs: [], query: "paper", limit: 10 }),
+        );
+        expect(answer).toMatchObject({
+          _tag: "Failure",
+          failure: { _tag: "DbUnavailable" },
+        });
+      }),
+    ),
+  );
 });

@@ -109,3 +109,9 @@ export const workerClient = Effect.fnUntraced(function* ({
   );
   return reads;
 });
+
+/** A dedicated citation worker with the same transport and lifetime controls. */
+export const citationWorkerClient = (config: () => ReadsConfig) =>
+  makeWorkerReads(
+    connectWorker(workerSource, Effect.sync(config), { role: "citation" }),
+  );

@@ -19,6 +19,7 @@ import { AnnotationRepository } from "./annotation-repository/service";
 import { AttachmentImportService } from "./attachment-import/service";
 import { AttachmentResolver } from "./attachment-resolver/service";
 import { createChineseSegmenterService } from "./chinese-segmenter/service";
+import { CitationReads } from "./citation-index/reads";
 import { CitationIndex } from "./citation-index/service";
 import { CitationPopover } from "./citation-popover/service";
 import { CitationText } from "./citation-text/service";
@@ -77,7 +78,10 @@ import { ZoteroLocalApiClient } from "./zotero-local-api/service";
 import { SecretWriteAuthorizationStore } from "./zotero-local-api/write-authorization";
 import { ZoteroPrefService } from "./zotero-pref/service";
 import { ZoteroReadsService } from "./zotero-reads/service";
-import { workerClient } from "./zotero-reads/worker-client";
+import {
+  citationWorkerClient,
+  workerClient,
+} from "./zotero-reads/worker-client";
 
 /**
  * Construct and wire all Obsidian plugin services.
@@ -155,8 +159,8 @@ export function buildServices(
       chineseSegmenter: () => createChineseSegmenterService(plugin.app),
     })
     .use({
-      // The Zotero database lives in a Web Worker, which owns the connection;
-      // the renderer reads it only through ZoteroReads.
+      // Interactive reads use their own worker; Citation Index bulk reads
+      // use a second capability registered below.
       zoteroReads: ({ settings, zoteroPref, chineseSegmenter }) =>
         new ZoteroReadsService({
           client: workerClient({ settings, zoteroPref, chineseSegmenter }),
@@ -516,10 +520,19 @@ export function buildServices(
         }),
     })
     .use({
+      citationReads: ({ settings, zoteroPref, zoteroReads }) =>
+        new CitationReads({
+          settings,
+          zoteroPref,
+          source: zoteroReads,
+          client: citationWorkerClient,
+        }),
+    })
+    .use({
       citationIndex: ({
         noteIndex,
         settings,
-        zoteroReads,
+        citationReads,
         libraryScope,
         queryClient,
       }) =>
@@ -527,7 +540,7 @@ export function buildServices(
           app: plugin.app,
           noteIndex,
           settings,
-          reads: zoteroReads,
+          reads: citationReads,
           libraryScope,
           queryClient,
         }),
