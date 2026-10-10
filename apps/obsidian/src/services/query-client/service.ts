@@ -63,10 +63,9 @@ export interface QueryClientServiceDeps {
  * and invalidates through, which serves the old answer while a fresh read
  * replaces it.
  *
- * Reads are asked for, never observed: no surface holds a query observer, so the
- * client attaches no window-focus or online listener and is never mounted. Every
- * read is therefore explicit, and retention is the garbage-collection time each
- * owner sets for its own key prefix.
+ * Citation Lookup views observe their requested answers. The client attaches
+ * no window-focus or online listener and is never mounted. Owners request
+ * refreshes explicitly and set retention for their own key prefix.
  *
  * Owners namespace their keys, set their retention and their semantic equality
  * through {@link QueryClient.setQueryDefaults}, and drop what they hold through

@@ -6,6 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FIELD_CITATION_STYLE } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
+import {
+  lookupAnswer,
+  lookupForWorks,
+} from "@/services/citation-index/__fixtures__/lookup";
 import type {
   CitationKeyResolution,
   DocumentCitationSet,
@@ -67,6 +71,7 @@ class TestReferencesView extends ReferencesView {
 }
 
 const citationSet: DocumentCitationSet = {
+  lookup: lookupAnswer(),
   occurrences: [],
   citations: [
     {
@@ -158,6 +163,7 @@ function heldText(entrySerials: boolean): DocumentCitations {
     formatted: new Map(),
     entrySerials,
     summaries: new Map(),
+    lookup: lookupForWorks(new Map()),
     literalWorks: new Map(),
   };
 }
@@ -299,20 +305,22 @@ beforeEach(async () => {
           return () => undefined;
         },
       },
+      citationLookup: {
+        get status() {
+          return citekeyResolution ?? "pending";
+        },
+        on: (event: string, callback: () => void) => {
+          if (event === "status-changed") onCitedByInvalidated = callback;
+          return () => undefined;
+        },
+      },
       citationIndex: {
         getDocumentCitationSet: () => {
           const deferred = Promise.withResolvers<DocumentCitationSet>();
           scans.push(deferred);
           return deferred.promise;
         },
-        resolveCitekey: () => ({ kind: "missing" }),
-        get resolution() {
-          return citekeyResolution;
-        },
-        on: (event: string, callback: () => void) => {
-          if (event === "cited-by-invalidated") onCitedByInvalidated = callback;
-          return () => undefined;
-        },
+        on: () => () => undefined,
       },
       citationText: {
         peek: (): Held<DocumentCitations> | null =>
@@ -508,6 +516,7 @@ describe("ReferencesView Entry Serials", () => {
 describe("ReferencesView citekey resolution", () => {
   /** One citation whose key the resolution snapshot answers nothing for. */
   const unresolvedSet: DocumentCitationSet = {
+    lookup: lookupAnswer(),
     occurrences: [],
     citations: [
       {
@@ -528,6 +537,27 @@ describe("ReferencesView citekey resolution", () => {
     ],
     errors: [],
   };
+
+  it("retries the active document after an equal-revision recovery", async () => {
+    await finishRender();
+    await followOtherNote();
+    citekeyResolution = "failed";
+    await act(async () => {
+      scans.at(-1)!.reject(new Error("lookup unavailable"));
+      await Promise.resolve();
+    });
+    const failedScan = scans.at(-1);
+    citekeyResolution = "fresh";
+    await act(() => onCitedByInvalidated!());
+    expect(scans.at(-1)).not.toBe(failedScan);
+    await act(async () => {
+      scans.at(-1)!.resolve({ ...citationSet, citations: [] });
+    });
+    await vi.waitFor(() =>
+      expect(view!.contentEl.textContent).not.toContain("Field notes"),
+    );
+    expect(view!.contentEl.textContent).not.toContain("Field notes");
+  });
 
   it("returns the pending label to a verdict when a rebuild settles unchanged", async () => {
     await act(() => onActiveLeafChange!());

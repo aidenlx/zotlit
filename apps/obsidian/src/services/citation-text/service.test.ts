@@ -3,16 +3,17 @@ import { Effect } from "effect";
 import type { LinkCache, TFile } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
+import { OpenDocumentsStub } from "@/lib/__fixtures__/open-documents";
 import {
   FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_NOTE_KEY,
 } from "@/lib/constants";
+import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import type {
   Citation,
   CitationOccurrence,
   DocumentCitationSet,
 } from "@/services/citation-index/service";
-import { CitekeySnapshot } from "@/services/citation-index/snapshot";
 import {
   createCitationIndexHarness,
   DatabaseStub,
@@ -99,6 +100,7 @@ async function makeHarness({
   documentCitationSet,
   bibliographyRender,
   queryClient = new QueryClientService(),
+  openDocuments = new OpenDocumentsStub(),
 }: {
   body: string;
   cited?: Citation[];
@@ -121,9 +123,10 @@ async function makeHarness({
   /** The document properties read by its Citation Presentation. */
   frontmatter?: Record<string, unknown>;
   settings?: Partial<Settings>;
-  documentCitationSet?: DocumentCitationSet;
+  documentCitationSet?: Omit<DocumentCitationSet, "lookup">;
   bibliographyRender?: CitationTextDeps["bibliographyRender"];
   queryClient?: QueryClientService;
+  openDocuments?: OpenDocumentsStub;
 }): Promise<Harness> {
   const citationRequests: { citations: readonly string[] }[] = [];
   const bibliographyRequests: string[][] = [];
@@ -149,7 +152,21 @@ async function makeHarness({
     occurrences: [...literalOccurrences(body), ...wikilinkOccurrences].sort(
       (a, b) => a.position.start.offset - b.position.start.offset,
     ),
-    citations: cited,
+    citations: [
+      ...cited,
+      ...(wikilinkOccurrences.length > 0
+        ? [
+            {
+              indexedKey: LIT_KEY,
+              linkpath: wikilinkOccurrences[0]!.raw,
+              refNumber: cited.length + 1,
+              occurrences: wikilinkOccurrences.filter((occurrence) =>
+                Object.hasOwn(notes, occurrence.raw),
+              ),
+            },
+          ]
+        : []),
+    ],
     errors: [],
   };
   const metadataCache = {
@@ -183,6 +200,13 @@ async function makeHarness({
     },
   );
   const service = new CitationText({
+    openDocuments,
+    citationLookup: {
+      on: (_event: string, cb: () => void) => {
+        listeners.set("index:resolution-changed", cb);
+        return () => listeners.delete("index:resolution-changed");
+      },
+    },
     app: {
       vault: {
         cachedRead: () => Promise.resolve(body),
@@ -198,19 +222,19 @@ async function makeHarness({
         // reports the frontmatter that makes it one.
         getFileCache: metadataCache.getFileCache,
         getFirstLinkpathDest: (linkpath: string) =>
-          Object.hasOwn(notes, linkpath) ? { path: linkpath } : null,
+          Object.hasOwn(notes, linkpath) ? { path: `${linkpath}.md` } : null,
       },
     },
     db: reads,
     citationIndex: {
-      getDocumentCitationSet: () => Promise.resolve(set),
-      // Every Literature Note stand-in shares one Indexed Key, so one entry
-      // answers for however many linkpaths the test names.
-      citekeyOf: (indexedKey: string) =>
-        indexedKey === LIT_KEY
-          ? (Object.values(notes)[0]?.citekey ?? null)
-          : null,
-      readSnapshot: () => Promise.resolve(CitekeySnapshot.from([], new Set())),
+      getDocumentCitationSet: () =>
+        Promise.resolve({
+          ...set,
+          lookup: lookupAnswer(
+            {},
+            { [LIT_KEY]: Object.values(notes)[0]?.citekey ?? null },
+          ),
+        }),
       on: listen("index"),
     },
     noteIndex: {
@@ -323,17 +347,21 @@ describe("CitationText", () => {
     );
     h.citekeys.error = new Error("snapshot database locked");
     db.settle();
-    await h.index.whenResolved();
-    await h.index.getDocumentCitationSet(h.draft);
+    await h.lookup.whenResolved();
+    await expect(h.index.getDocumentCitationSet(h.draft)).rejects.toThrow(
+      "snapshot database locked",
+    );
     // The work the citekey resolves to, read from its own database.
     const items = cleanup.use(
       inProcessReadsService(memoryOpener(() => citedWorkSeed([KEY_A])).open),
     );
     const service = cleanup.use(
       new CitationText({
+        openDocuments: new OpenDocumentsStub(),
         app: h.app,
         db: items,
         citationIndex: h.index,
+        citationLookup: h.lookup,
         noteIndex: h.noteIndex,
         profile: profileReader(),
         queryClient: h.queryClient,
@@ -358,6 +386,7 @@ describe("CitationText", () => {
     expect(h.citekeys.calls).toHaveLength(reads);
     now = now.add({ milliseconds: 5001 });
     vi.setSystemTime(now.epochMilliseconds);
+    h.passCooldown();
 
     expect((await service.read(h.draft.path))?.formatted.size).toBe(1);
     expect(service.peek(h.draft.path)?.status).toBe("fresh");
@@ -668,30 +697,40 @@ describe("CitationText over wikilink Citations", () => {
     };
   }
 
-  it("renders a fragment-carrying wikilink as the citekey cluster it equals", async () => {
-    const body = `Claim [[${LIT}#cite:locator=4]].`;
-    const { service, citationRequests, dispose } = await makeHarness({
-      body,
-      cited: [],
-      links: [link(`${LIT}#cite:locator=4`, body.indexOf("[["))],
-      notes,
-      settings: WIKILINK_CITATIONS,
-    });
+  it.each([
+    { target: LIT, citekey: "alpha", spelling: "alpha" },
+    {
+      target: "literatures/Doe.v.Roe",
+      citekey: undefined,
+      spelling: "Doe.v.Roe",
+    },
+  ])(
+    "renders a fragment-carrying wikilink to $target as the citekey cluster it equals",
+    async ({ target, citekey, spelling }) => {
+      const body = `Claim [[${target}#cite:locator=4]].`;
+      const { service, citationRequests, dispose } = await makeHarness({
+        body,
+        cited: [],
+        links: [link(`${target}#cite:locator=4`, body.indexOf("[["))],
+        notes: { [target]: { citekey } },
+        settings: WIKILINK_CITATIONS,
+      });
 
-    const { formatted } = await readText(service);
+      const { formatted } = await readText(service);
 
-    expect(citationRequests).toEqual([
-      { citations: [`[@${LIT_KEY}, {p. 4}]`] },
-    ]);
-    expect(
-      firstText(
-        formatted.get(
-          citationKey({ source: "[@alpha, {p. 4}]", works: [LIT_KEY] }),
+      expect(citationRequests).toEqual([
+        { citations: [`[@${LIT_KEY}, {p. 4}]`] },
+      ]);
+      expect(
+        firstText(
+          formatted.get(
+            citationKey({ source: `[@${spelling}, {p. 4}]`, works: [LIT_KEY] }),
+          ),
         ),
-      ),
-    ).toBe(`«[@${LIT_KEY}, {p. 4}]»`);
-    await dispose();
-  });
+      ).toBe(`«[@${LIT_KEY}, {p. 4}]»`);
+      await dispose();
+    },
+  );
 
   it("renders a Citation Run as one grouped citation", async () => {
     const body = `Both [[${LIT}#cite:locator=4]]; [[${LIT}]].`;
@@ -1209,6 +1248,118 @@ describe("CitationText staleness", () => {
     expect(citationRequests).toHaveLength(2);
     expect(service.peek(NOTE.path)).not.toBeNull();
     await dispose();
+  });
+
+  describe("retention", () => {
+    const GC_MS = 5 * 60 * 1000;
+    const held = (h: Harness) =>
+      h.queryClient.client.getQueryState(["citation-text", NOTE.path]);
+
+    /** A harness whose garbage-collection clock the test advances. */
+    async function retained(open: (docs: OpenDocumentsStub) => void) {
+      // The clock is faked before the read, which schedules the collection of
+      // a document nothing pins; it still advances, so the read runs.
+      vi.useFakeTimers({
+        toFake: ["setTimeout", "clearTimeout"],
+        shouldAdvanceTime: true,
+      });
+      const openDocuments = new OpenDocumentsStub();
+      open(openDocuments);
+      const h = await makeHarness({ body: "Blah [@alpha].", openDocuments });
+      await readText(h.service);
+      return {
+        ...h,
+        openDocuments,
+        dispose: async () => {
+          vi.useRealTimers();
+          await h.dispose();
+        },
+      };
+    }
+
+    it("keeps an open document's text past the collection time", async () => {
+      const h = await retained((docs) => docs.open(NOTE.path));
+
+      vi.advanceTimersByTime(GC_MS * 2);
+
+      expect(held(h)).toBeDefined();
+      expect(h.service.peek(NOTE.path)).not.toBeNull();
+      await h.dispose();
+    });
+
+    it("lets the text of a document never opened expire", async () => {
+      const h = await retained(() => undefined);
+
+      vi.advanceTimersByTime(GC_MS);
+
+      expect(held(h)).toBeUndefined();
+      await h.dispose();
+    });
+
+    it("lets the text expire once the last leaf showing it closes", async () => {
+      const h = await retained((docs) => {
+        docs.open(NOTE.path);
+        docs.open(NOTE.path);
+      });
+
+      h.openDocuments.close(NOTE.path);
+      vi.advanceTimersByTime(GC_MS);
+      expect(held(h)).toBeDefined();
+
+      h.openDocuments.close(NOTE.path);
+      vi.advanceTimersByTime(GC_MS - 1);
+      expect(held(h)).toBeDefined();
+      vi.advanceTimersByTime(1);
+      expect(held(h)).toBeUndefined();
+      await h.dispose();
+    });
+
+    it("releases the old path when an open document is renamed", async () => {
+      const h = await retained((docs) => docs.open(NOTE.path));
+
+      h.openDocuments.rename(NOTE.path, "renamed.md");
+      vi.advanceTimersByTime(GC_MS);
+
+      expect(held(h)).toBeUndefined();
+      await h.dispose();
+    });
+
+    it("drops an open document's text at once when the file is deleted", async () => {
+      const h = await retained((docs) => docs.open(NOTE.path));
+
+      h.deleteNote();
+
+      expect(held(h)).toBeUndefined();
+      await h.dispose();
+    });
+
+    it("pins an open document without reading it", async () => {
+      const openDocuments = new OpenDocumentsStub();
+      const h = await makeHarness({ body: "Blah [@alpha].", openDocuments });
+
+      openDocuments.open(NOTE.path);
+      await Promise.resolve();
+
+      expect(h.citationRequests).toHaveLength(0);
+      expect(held(h)?.fetchStatus).toBe("idle");
+      await h.dispose();
+    });
+
+    it("releases every pin on unload", async () => {
+      const openDocuments = new OpenDocumentsStub();
+      openDocuments.open(NOTE.path);
+      const h = await makeHarness({ body: "Blah [@alpha].", openDocuments });
+      await readText(h.service);
+      const query = h.queryClient.client
+        .getQueryCache()
+        .find({ queryKey: ["citation-text", NOTE.path], exact: true });
+      expect(query?.getObserversCount()).toBe(1);
+
+      await h.service[Symbol.asyncDispose]();
+
+      expect(query?.getObserversCount()).toBe(0);
+      await h.dispose();
+    });
   });
 });
 

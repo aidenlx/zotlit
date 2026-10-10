@@ -1,6 +1,7 @@
 import type { CliHandler, Plugin, TFile } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
+import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import type { DocumentCitationSet } from "@/services/citation-index/service";
 
 import { CITATIONS_GUIDE_COMMAND, REFERENCES_COMMAND } from "./commands";
@@ -46,6 +47,7 @@ describe("Citations CLI registration", () => {
     } as const;
 
     const CITATION_SET: DocumentCitationSet = {
+      lookup: lookupAnswer({ roe2099: { kind: "missing" } }),
       occurrences: [OCCURRENCE],
       citations: [
         {
@@ -79,10 +81,12 @@ describe("Citations CLI registration", () => {
             getFileByPath: (path: string) => files.get(path) ?? null,
           },
         },
+        citationLookup: { read: async () => lookupAnswer(), status: "fresh" },
         citationIndex: {
+          citationKeys: () => [],
           waitUntilSettled: () => Promise.resolve("settled"),
           getDocumentCitationSet,
-          resolveCitekey: () => ({ kind: "missing" }),
+          readLookup: async () => lookupAnswer(),
           resolution: "fresh",
           syntaxes: () => ({ citekey: "included", wikilink: "excluded" }),
           documentOmittedSyntaxes: () => Promise.resolve([]),

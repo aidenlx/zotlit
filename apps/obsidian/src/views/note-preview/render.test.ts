@@ -490,25 +490,29 @@ frontmatter: []
     expect(invalid.renderCitations).not.toHaveBeenCalled();
   });
 
-  it("formats native Literature Note links through the same draft presentation and retains their target", async () => {
-    await using fixture = await createRenderFixture({
-      existing: SAVED_NOTE,
-      wikilinks: true,
-    });
-    const result = await renderNativeProfile(fixture.deps, {
-      source: PROFILE_SOURCE.replace("Personal space.", "[[notes/paper.md]]"),
-      snapshot: fixture.snapshot,
-    });
-    expect(result.diagnostics).toEqual([]);
-    const element = document.createElement("div");
-    element.innerHTML =
-      '<a class="internal-link" data-href="notes/paper.md" href="notes/paper.md">notes/paper.md</a>';
-    presentCitations(element, result.citations);
-    expect(element.textContent).toBe("[1]");
-    expect(element.querySelector("a")?.getAttribute("href")).toBe(
-      "notes/paper.md",
-    );
-  });
+  it.each(["", "#cite:locator=3"])(
+    "formats native Literature Note links with '%s' through the same draft presentation and retains their target",
+    async (fragment) => {
+      await using fixture = await createRenderFixture({
+        existing: SAVED_NOTE,
+        wikilinks: true,
+      });
+      const target = `notes/paper.md${fragment}`;
+      const result = await renderNativeProfile(fixture.deps, {
+        source: PROFILE_SOURCE.replace("Personal space.", `[[${target}]]`),
+        snapshot: fixture.snapshot,
+      });
+      expect(result.diagnostics).toEqual([]);
+      const element = document.createElement("div");
+      element.innerHTML = `<a class="internal-link" data-href="${target}" href="${target}">${target}</a>`;
+      presentCitations(element, result.citations);
+      expect(element.textContent).toBe("[1]");
+      expect(element.querySelector("a")?.getAttribute("href")).toBe(target);
+      expect(result.citations[0]?.links[0]?.citation.item.citekey).toBe(
+        "figures2014",
+      );
+    },
+  );
 
   it("shows update mode the body the preparation rendered, without a second render", async () => {
     // A JavaScript template may carry state between renders, so a body rendered

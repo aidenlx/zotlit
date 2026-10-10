@@ -22,7 +22,8 @@ import {
   wikilinkCitation,
 } from "@/lib/wikilink-citation";
 import type { RunMember } from "@/lib/wikilink-citation";
-import type { CitationIndex } from "@/services/citation-index/service";
+import { heldCitekeyOf } from "@/services/citation-index/lookup";
+import type { CitationLookupAnswer } from "@/services/citation-index/service";
 import type { CitationPopover } from "@/services/citation-popover/service";
 import {
   citationContent,
@@ -64,7 +65,6 @@ export interface WikilinkReadingDeps {
   /** What a hovered citation shows. */
   citationPopover: CitationPopover;
   settings: SettingsService;
-  citationIndex: Pick<CitationIndex, "citekeyOf" | "on">;
 }
 
 /**
@@ -101,7 +101,6 @@ export class WikilinkReading extends Service<void> {
   readonly #citekeyEditor;
   readonly #citationPopover;
   readonly #settings;
-  readonly #citationIndex;
 
   /** The source and display settings that decide what a link displays. */
   readonly #display = new WikilinkDisplaySettings();
@@ -121,7 +120,6 @@ export class WikilinkReading extends Service<void> {
     this.#citekeyEditor = deps.citekeyEditor;
     this.#citationPopover = deps.citationPopover;
     this.#settings = deps.settings;
-    this.#citationIndex = deps.citationIndex;
     this.ready = this.#load();
   }
 
@@ -140,13 +138,7 @@ export class WikilinkReading extends Service<void> {
     stack.defer(this.#noteIndex.on("changed", () => this.#rerender()));
     // What a placed Citation says follows its document's Held Read: the live
     // sections of that document rewrite on its change, and every live section
-    // rewrites when all text goes stale or the citekey resolution snapshot
-    // rebuilds.
-    stack.defer(
-      this.#citationIndex.on("resolution-changed", () =>
-        this.#sections.refresh(),
-      ),
-    );
+    // rewrites when all text goes stale.
     stack.defer(
       this.#citationText.on("invalidated", () => this.#sections.refresh()),
     );
@@ -182,7 +174,10 @@ export class WikilinkReading extends Service<void> {
       if (this.#retired) return;
       gestures.abort();
       gestures = new AbortController();
-      this.#show(el, ctx, { rendered, signal: gestures.signal });
+      this.#show(el, ctx, {
+        rendered,
+        signal: gestures.signal,
+      });
     };
     this.#sections.hold(el, ctx, show);
     show();
@@ -196,6 +191,7 @@ export class WikilinkReading extends Service<void> {
   #sectionRuns(
     el: HTMLElement,
     ctx: MarkdownPostProcessorContext,
+    lookup: CitationLookupAnswer | null,
   ): SectionRuns {
     const literatureNote = (linkpath: string) => {
       const note = resolveLiteratureNote(linkpath, ctx.sourcePath, {
@@ -204,7 +200,7 @@ export class WikilinkReading extends Service<void> {
       return (
         note && {
           ...note,
-          citationKey: this.#citationIndex.citekeyOf(note.indexedKey),
+          citationKey: heldCitekeyOf(lookup, note.indexedKey) ?? null,
         }
       );
     };
@@ -230,7 +226,13 @@ export class WikilinkReading extends Service<void> {
   #show(
     el: HTMLElement,
     ctx: MarkdownPostProcessorContext,
-    { rendered, signal }: { rendered: SectionRuns; signal: AbortSignal },
+    {
+      rendered,
+      signal,
+    }: {
+      rendered: SectionRuns;
+      signal: AbortSignal;
+    },
   ): void {
     // Read only once a Citation is on screen, so a section that writes none
     // waits for nothing.
@@ -238,9 +240,10 @@ export class WikilinkReading extends Service<void> {
     const text = file === null ? null : this.#citationText.peek(file.path);
     if (text === null) return;
 
-    const runs = [...rendered, ...this.#sectionRuns(el, ctx)].sort((a, b) =>
-      documentOrder(a[0]!.source, b[0]!.source),
-    );
+    const runs = [
+      ...rendered,
+      ...this.#sectionRuns(el, ctx, text.value.lookup),
+    ].sort((a, b) => documentOrder(a[0]!.source, b[0]!.source));
     // Which occurrence each Citation of the section is, so a position-dependent
     // style shows every one of them the text rendered for its own place.
     const citations = runs.map((run) => citationOfRun(run));

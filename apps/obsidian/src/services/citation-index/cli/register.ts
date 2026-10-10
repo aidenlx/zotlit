@@ -1,10 +1,9 @@
+import { Effect } from "effect";
 // Registers the citation commands with Obsidian's CLI.
 //
 // Command, flag, and diagnostic text is all hardcoded English: an
 // agent-facing contract surface, not localized UI. See
 // apps/obsidian/policies/cli-text.md.
-
-import { Effect } from "effect";
 import type {
   App,
   CliFlag,
@@ -17,6 +16,7 @@ import { isChildItemFields } from "@zotlit/db";
 
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
+import type { CitationLookup } from "@/services/citation-index/lookup-service";
 import { readReferenceSources } from "@/services/citation-index/service";
 import type {
   CitationIndex,
@@ -39,6 +39,7 @@ const logger = getLogger(["citation-index", "cli"]);
 interface CitationsCliRegistrationDeps {
   app: App;
   citationIndex: CitationIndex;
+  citationLookup: Pick<CitationLookup, "read" | "status">;
   db: Pick<ZoteroReadsService, "state" | "ready" | "acquireRead">;
   zoteroPref: Pick<ZoteroPrefService, "ready" | "sourceId" | "databasePath">;
 }
@@ -97,15 +98,18 @@ export function registerCitationsCli(
     index: {
       waitUntilSettled: (timeoutMs) =>
         deps.citationIndex.waitUntilSettled(timeoutMs),
-      resolveCitekey: (citekey) =>
-        deps.citationIndex.resolveCitekey(citekey) ?? { kind: "missing" },
-      citekeyOf: (indexedKey) => deps.citationIndex.citekeyOf(indexedKey),
-      getCitedBy: (indexedKey) => deps.citationIndex.getCitedBy(indexedKey),
-      resolution: () => deps.citationIndex.resolution,
+      readLookup: (request) => deps.citationLookup.read(request),
+      citationKeys: () => deps.citationIndex.citationKeys(),
+      getCitedBy: (indexedKey, lookup) =>
+        deps.citationIndex.getCitedBy(indexedKey, lookup),
+      resolution: () =>
+        deps.citationLookup.status === "pending"
+          ? null
+          : deps.citationLookup.status,
       syntaxes: () => deps.citationIndex.syntaxes(),
       documentOmittedSyntaxes: (path) => documentOmittedSyntaxes(deps, path),
-      citedByOmittedSyntaxes: (indexedKey) =>
-        deps.citationIndex.citedByOmittedSyntaxes(indexedKey),
+      citedByOmittedSyntaxes: (indexedKey, lookup) =>
+        deps.citationIndex.citedByOmittedSyntaxes(indexedKey, lookup),
     },
     lookupItem: (indexedKey) => lookupItem(deps.db, indexedKey),
     readDocument: (path) => readDocument(deps, path),
@@ -139,10 +143,10 @@ async function readDocument(
 ): Promise<DocumentReferences | null> {
   const file = deps.app.vault.getFileByPath(path);
   if (!file || file.extension !== "md") return null;
-  const { citations, errors } =
+  const { citations, errors, lookup } =
     await deps.citationIndex.getDocumentCitationSet(file);
   const { sources, database } = await readReferenceSources(deps.db, citations);
-  return { citations, errors, sources, database };
+  return { citations, errors, sources, database, lookup };
 }
 
 /** Any Markdown note answers, as {@link readDocument} does; a path the vault

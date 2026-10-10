@@ -19,7 +19,6 @@ import {
   getAttachmentsByParents,
   getChildNotesByParentIDs,
   getAllTagNames,
-  getCitekeyPage,
   getCollectionIDByKey,
   getIndexedItemIDsByCollection,
   getIndexedItemIDsByLibrary,
@@ -46,6 +45,7 @@ import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { ItemIndex, layerItemIndex } from "@zotlit/item-lookup";
 import { exportItemSnapshot } from "@zotlit/workbench/snapshot";
 
+import { makeCitationLookup } from "./citation-lookup";
 import { Connection, toDbUnavailable } from "./connection";
 import { layerConnectionItemSource } from "./item-source";
 import { itemsByIndexedKeys } from "./items-by-indexed-keys";
@@ -71,6 +71,8 @@ const SCOPE_QUERIES = {
 export const DEFAULT_SLICE_SIZE = 500;
 
 export interface HandlersOptions {
+  /** The citation capability starts no Item Index or segmenter. */
+  citationOnly?: boolean;
   /**
    * Items per stream slice; one slice is one emission and one cancel point.
    * Tests shrink it to see several slices from a small fixture.
@@ -253,9 +255,38 @@ export function handlersLayer(options?: HandlersOptions) {
   const handlers = ZoteroReads.toLayer(
     Effect.gen(function* () {
       const connection = yield* Connection;
-      const itemIndex = yield* ItemIndex;
+      const itemIndex = options?.citationOnly
+        ? null
+        : yield* Effect.flatMap(Layer.build(itemIndexLayer), (context) =>
+            Effect.provideContext(ItemIndex, context),
+          );
       // One Configure at a time, in arrival order, so the connection rebinds in the order the settings arrived.
       const configuring = yield* Semaphore.make(1);
+      const configure = (config: ReadsConfig) =>
+        (itemIndex
+          ? itemIndex.configure({
+              locale: config.locale,
+              segmenterBinary: config.chineseSegmenter,
+            })
+          : Effect.void
+        ).pipe(
+          Effect.andThen(
+            connection.configure(
+              options?.citationOnly
+                ? { ...config, autoRefresh: false }
+                : config,
+            ),
+          ),
+          Effect.andThen(
+            Effect.sync(() => options?.applyLogLevel?.(config.logLevel)),
+          ),
+          configuring.withPermits(1),
+        );
+      const citationLookup = yield* makeCitationLookup(
+        connection,
+        sliceSize,
+        configure,
+      );
       const pinned = new Map<SnapshotId, Pinned>();
 
       const releasePinned = (entry: Pinned) =>
@@ -305,6 +336,8 @@ export function handlersLayer(options?: HandlersOptions) {
       ) => Stream.unwrap(Effect.map(borrow(snapshot), f));
 
       return ZoteroReads.of({
+        CitationLookup: citationLookup.lookup,
+        CitationRefresh: citationLookup.refresh,
         Libraries: ({ snapshot }) => withClient(snapshot, getLibraries),
 
         ConnectionReadout: ({ snapshot }) =>
@@ -439,24 +472,6 @@ export function handlersLayer(options?: HandlersOptions) {
             );
           }),
 
-        // Keyset pages in itemID order: one statement per slice.
-        CitekeySnapshot: ({ libraryID, snapshot }) =>
-          withClientStream(snapshot, (client) =>
-            Stream.unfold(0, (afterItemID) =>
-              Effect.map(
-                read(client, (c) =>
-                  getCitekeyPage(c, {
-                    libraryID,
-                    afterItemID,
-                    limit: sliceSize,
-                  }),
-                ),
-                ({ citekeys, next }) =>
-                  next === null ? undefined : ([citekeys, next] as const),
-              ),
-            ),
-          ),
-
         Changes: () => connection.changes,
 
         Snapshot: () =>
@@ -497,19 +512,8 @@ export function handlersLayer(options?: HandlersOptions) {
 
         Refresh: () => connection.refresh,
         NotifyExternalChange: () => connection.notifyExternalChange,
-        Configure: (config) =>
-          itemIndex
-            .configure({
-              locale: config.locale,
-              segmenterBinary: config.chineseSegmenter,
-            })
-            .pipe(
-              Effect.andThen(connection.configure(config)),
-              Effect.andThen(
-                Effect.sync(() => options?.applyLogLevel?.(config.logLevel)),
-              ),
-              configuring.withPermits(1),
-            ),
+        Configure: configure,
+
         Ping: () => Effect.void,
 
         AttachmentsByKeys: ({ libraryID, keys, snapshot }) =>
@@ -661,14 +665,20 @@ export function handlersLayer(options?: HandlersOptions) {
 
         SearchItems: ({ libraryIDs, query, limit }) =>
           itemIndex
-            .search(libraryIDs, query, limit)
-            .pipe(
-              Effect.mapError(
-                (error) => new DbUnavailable({ message: error.message }),
+            ? itemIndex
+                .search(libraryIDs, query, limit)
+                .pipe(
+                  Effect.mapError(
+                    (error) => new DbUnavailable({ message: error.message }),
+                  ),
+                )
+            : Effect.fail(
+                new DbUnavailable({
+                  message: "Item search belongs to the interactive worker",
+                }),
               ),
-            ),
       });
     }),
   );
-  return handlers.pipe(Layer.provide(itemIndexLayer));
+  return handlers;
 }

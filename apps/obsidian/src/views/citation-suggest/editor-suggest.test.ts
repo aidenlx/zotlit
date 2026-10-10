@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import type {
   CitationKeyResolution,
   CitekeyResolution,
@@ -29,12 +30,20 @@ function insertDeps(
   renderCitation: unknown,
   resolved: CitekeyResolution = { kind: "unique", item: UNIQUE_ITEM },
   resolution: CitationKeyResolution = "fresh",
-): Pick<CitationSuggestDeps, "noteFeature" | "citationIndex"> {
+): Pick<CitationSuggestDeps, "noteFeature" | "citationLookup"> {
   return {
     noteFeature: {
       renderCitation,
     } as CitationSuggestDeps["noteFeature"],
-    citationIndex: { resolveCitekey: () => resolved, resolution },
+    citationLookup: {
+      read: async ({ citekeys }) => {
+        if (resolution === "failed") throw new Error("Citation lookup failed");
+        return lookupAnswer(
+          Object.fromEntries((citekeys ?? []).map((key) => [key, resolved])),
+        );
+      },
+      status: resolution ?? "pending",
+    },
   };
 }
 
@@ -45,8 +54,8 @@ const UNIQUE_ITEM = {
   indexedKey: "ABC123",
 };
 
-describe("resolveCitationInsert", () => {
-  it("resolves to a not-ready notice when the template isn't loaded yet", () => {
+describe("resolveCitationInsert", async () => {
+  it("resolves to a not-ready notice when the template isn't loaded yet", async () => {
     // Regression for the C3 readiness gap: renderCitation returns null instead
     // of throwing when `template.loaded` is false, so the handler (which can't
     // await) must resolve to a notice rather than inserting an empty string
@@ -54,7 +63,7 @@ describe("resolveCitationInsert", () => {
     const renderCitation = vi.fn().mockReturnValue(null);
     const hit = makeHit("abc2024");
 
-    const outcome = resolveCitationInsert(
+    const outcome = await resolveCitationInsert(
       insertDeps(renderCitation),
       hit,
       "main",
@@ -70,12 +79,12 @@ describe("resolveCitationInsert", () => {
     });
   });
 
-  it("resolves an inert-template error to a notice carrying its own message", () => {
+  it("resolves an inert-template error to a notice carrying its own message", async () => {
     const renderCitation = vi.fn(() => {
       throw new InertTemplateError("The citation text is inert");
     });
 
-    const outcome = resolveCitationInsert(
+    const outcome = await resolveCitationInsert(
       insertDeps(renderCitation),
       makeHit("abc2024"),
       "main",
@@ -87,24 +96,24 @@ describe("resolveCitationInsert", () => {
     });
   });
 
-  it("rethrows render errors that are not inert-template errors", () => {
+  it("rethrows render errors that are not inert-template errors", async () => {
     const renderCitation = vi.fn(() => {
       throw new Error("boom");
     });
 
-    expect(() =>
+    await expect(
       resolveCitationInsert(
         insertDeps(renderCitation),
         makeHit("abc2024"),
         "main",
       ),
-    ).toThrow("boom");
+    ).rejects.toThrow("boom");
   });
 
-  it("resolves to a no-citekey notice without rendering when the item has none", () => {
+  it("resolves to a no-citekey notice without rendering when the item has none", async () => {
     const renderCitation = vi.fn();
 
-    const outcome = resolveCitationInsert(
+    const outcome = await resolveCitationInsert(
       insertDeps(renderCitation),
       makeHit(null),
       "main",
@@ -117,10 +126,10 @@ describe("resolveCitationInsert", () => {
     });
   });
 
-  it("refuses a Citation Key that names several Zotero Items", () => {
+  it("refuses a Citation Key that names several Zotero Items", async () => {
     const renderCitation = vi.fn();
 
-    const outcome = resolveCitationInsert(
+    const outcome = await resolveCitationInsert(
       insertDeps(renderCitation, {
         kind: "ambiguous",
         candidates: [
@@ -141,12 +150,12 @@ describe("resolveCitationInsert", () => {
     });
   });
 
-  it("refuses an insert while the resolution snapshot has no answer yet", () => {
+  it("refuses an insert while the resolution snapshot has no answer yet", async () => {
     const renderCitation = vi.fn();
 
     // A snapshot still resolving answers every key as missing, so an ambiguous
     // key would slip through the refusal above and lose its Item identity.
-    const outcome = resolveCitationInsert(
+    const outcome = await resolveCitationInsert(
       insertDeps(renderCitation, { kind: "missing" }, null),
       makeHit("abc2024"),
       "main",
@@ -159,10 +168,10 @@ describe("resolveCitationInsert", () => {
     });
   });
 
-  it("inserts from a failed held snapshot rather than treating it as pending", () => {
+  it("refuses insertion when a fresh lookup fails despite a held answer", async () => {
     const renderCitation = vi.fn().mockReturnValue("[@abc2024]");
 
-    const outcome = resolveCitationInsert(
+    const outcome = await resolveCitationInsert(
       insertDeps(
         renderCitation,
         { kind: "unique", item: UNIQUE_ITEM },
@@ -172,13 +181,17 @@ describe("resolveCitationInsert", () => {
       "main",
     );
 
-    expect(outcome).toEqual({ kind: "insert", text: "[@abc2024]" });
+    expect(renderCitation).not.toHaveBeenCalled();
+    expect(outcome).toEqual({
+      kind: "notice",
+      message: m.notice_citekey_not_ready(),
+    });
   });
 
-  it("resolves to the rendered citation for insertion", () => {
+  it("resolves to the rendered citation for insertion", async () => {
     const renderCitation = vi.fn().mockReturnValue("[@abc2024]");
 
-    const outcome = resolveCitationInsert(
+    const outcome = await resolveCitationInsert(
       insertDeps(renderCitation),
       makeHit("abc2024"),
       "main",

@@ -37,22 +37,24 @@ export class InsertCitationModal extends ItemSearchModal {
     });
   }
 
-  override onChooseSuggestion(
+  override async onChooseSuggestion(
     hit: SearchHit,
     evt: MouseEvent | KeyboardEvent,
-  ): void {
-    const outcome = resolveCitationInsert(
+  ): Promise<void> {
+    const before = this.#editor.getValue();
+    const from = this.#editor.getCursor("from");
+    const to = this.#editor.getCursor("to");
+    const outcome = await resolveCitationInsert(
       this.#deps,
       hit,
       Keymap.isModifier(evt, "Shift") ? "alt" : "main",
     );
+    if (this.#editor.getValue() !== before) return;
     if (outcome.kind === "notice") {
       new BaseNotice(outcome.message);
       return;
     }
     const editor = this.#editor;
-    const from = editor.getCursor("from");
-    const to = editor.getCursor("to");
     const padded = padCitationInsert(
       outcome.text,
       editor.getLine(to.line).charAt(to.ch),

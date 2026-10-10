@@ -14,7 +14,7 @@ import { getLogger } from "@/lib/log";
 import { nodeFetch } from "@/lib/node-fetch";
 import { BaseNotice, LazyNotice } from "@/lib/notice";
 import { requestProfileSwitch } from "@/lib/profile-recovery";
-import type { CitationIndex } from "@/services/citation-index/service";
+import type { CitationLookup } from "@/services/citation-index/lookup-service";
 import { resolveIndexedKey } from "@/services/note-index/service";
 import {
   fetchBibliography,
@@ -46,7 +46,7 @@ export interface PandocExportDeps {
   app: App;
   db: Pick<ZoteroReadsService, "ready">;
   /** Resolves the literal citation keys of the exported document. */
-  citationIndex: Pick<CitationIndex, "resolveCitekey" | "whenResolved">;
+  citationLookup: Pick<CitationLookup, "read">;
   pandocEngine: Pick<PandocEngineService, "getStatus" | "getEngine">;
   zoteroPref: Pick<ZoteroPrefService, "ready" | "dataDir" | "httpPort" | "get">;
   settings: Pick<SettingsService, "current">;
@@ -82,7 +82,7 @@ export async function runPandocExport(
   deps: PandocExportDeps,
 ): Promise<void> {
   await deps.profile.ready;
-  const { app, citationIndex, pandocEngine, zoteroPref, settings } = deps;
+  const { app, pandocEngine, zoteroPref, settings } = deps;
   if (pandocEngine.getStatus().kind !== "installed") {
     showEngineMissing(deps.openSettings);
     return;
@@ -124,7 +124,6 @@ export async function runPandocExport(
   await zoteroPref.ready;
   // A literal citation key resolves through the snapshot, so this export waits
   // for its first rebuild the way every in-app surface does.
-  await citationIndex.whenResolved();
 
   const choices = await openPandocExportModal(app, {
     dataDir: zoteroPref.dataDir,
@@ -236,13 +235,13 @@ function exportPorts(
   deps: PandocExportDeps,
   engine: Awaited<ReturnType<PandocEngineService["getEngine"]>>,
 ): ExportPorts {
-  const { app, citationIndex, db, zoteroPref } = deps;
+  const { app, citationLookup, db, zoteroPref } = deps;
   return {
     engine,
     dataDir: () => zoteroPref.dataDir,
     resolveIndexedKey: (linkpath, sourcePath) =>
       resolveIndexedKey(linkpath, sourcePath, app),
-    resolveCitekey: (citekey) => citationIndex.resolveCitekey(citekey),
+    readLookup: (request) => citationLookup.read(request),
     readItemRefs: (indexedKeys) => readItemRefs(db, indexedKeys),
     fetchBibliography: (refs) =>
       fetchBibliography(refs, {
