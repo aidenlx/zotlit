@@ -20,6 +20,9 @@ const { Effect } = await import(requireQuery.resolve("effect"));
 const { createClient } = await import(
   requireQuery.resolve("@zotlit/db/client/node")
 );
+const { attachmentAbsPath } = await import(
+  requireQuery.resolve("@zotlit/db/path")
+);
 const { ItemQueryDatabase } = await import(
   requireQuery.resolve("@zotlit/db/item-query")
 );
@@ -87,15 +90,10 @@ await test("every case oracle matches a real query over the seeded Fixture", asy
             Effect.provideService(ItemQueryDatabase, { client }),
             Effect.provideService(AttachmentFileResolver, (attachment) =>
               Effect.sync(() => {
-                const path = attachment.path?.startsWith("storage:")
-                  ? join(
-                      root,
-                      "zotero-data",
-                      "storage",
-                      attachment.key,
-                      attachment.path.slice(8),
-                    )
-                  : attachment.path;
+                const path = attachmentAbsPath(attachment, {
+                  dataDir: join(root, "zotero-data"),
+                  baseAttachmentPath: null,
+                });
                 return {
                   path: path ?? null,
                   exists: path ? existsSync(path) : false,

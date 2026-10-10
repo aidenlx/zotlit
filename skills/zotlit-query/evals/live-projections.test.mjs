@@ -39,7 +39,7 @@ await test("reading plan answer compares paper values, including zero, regardles
   );
 
   const wrongCount = structuredClone(answer);
-  wrongCount.rows.find((paper) => paper.indexedKey === "QANZERO2").values[
+  wrongCount.rows.find((paper) => paper.indexedKey === "QANZR222").values[
     "annotations.length"
   ] = 1;
   assert.match(

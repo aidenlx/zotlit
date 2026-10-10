@@ -61,7 +61,7 @@ Reports separate environment failures, missing or malformed agent output, and wr
 
 Each report has **Misreadings**: the command, Diagnostic Report or Query Warnings, retry status, and observed recovery command. A successful final answer can still have misreadings. Recovery means a later successful response on that command surface; a maintainer must confirm whether it resolves the original mistake. Review these entries, excess calls, and task failures together for wrong datasets, path forms, guessed fields, and recovery loops. Triage each candidate design issue before closing the spec.
 
-`live-projections.json` contains saved live projections and labelled contract examples. `corpus-query.test.mjs` checks all 28 reference queries against the real seeded database, independently of the final-answer checker. Runner tests exercise both agent paths and batch ordering without starting model sessions.
+`live-projections.json` contains saved live projections and labelled contract examples. `corpus-query.test.mjs` checks all 28 reference queries against the real seeded database with the product attachment path resolver, independently of the final-answer checker. `prepare.test.mjs` checks every Item and Collection key with the product’s `isItemKey` validator. Fixture keys use Zotero’s eight-character alphabet `23456789ABCDEFGHIJKLMNPQRSTUVWXYZ`; the single-PDF and missing-file Attachments use `QCPDFS22` and `QCBRKN22`. Runner tests exercise both agent paths and batch ordering without starting model sessions.
 
 ```sh
 taskpolicy -c utility lockf -k /tmp/zotlit-query-gate.lock node --test skills/zotlit-query/evals/*.test.mjs

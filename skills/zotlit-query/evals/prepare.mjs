@@ -102,9 +102,9 @@ function seed(db) {
     "QANPDF22",
     "QANMARK2",
     "QANPAGE2",
-    "QANNOTE2",
+    "QANNT222",
     "QANMISS2",
-    "QANZERO2",
+    "QANZR222",
   ]) {
     if (db.prepare("select 1 from items where key = ?").get(key))
       fail(`source already has ${key}`);
@@ -331,7 +331,7 @@ function seed(db) {
       position: { pageIndex: 1, rects: [[48.75, 395.509, 570, 743.723]] },
     });
     mark(group, {
-      key: "QANNOTE2",
+      key: "QANNT222",
       typeID: 2,
       text: null,
       comment: "Compare the chart with the methods section.",
@@ -341,7 +341,7 @@ function seed(db) {
       position: messagePosition,
     });
     const zeroID = Number(
-      addItem.run(article, stamp, stamp, stamp, 1, "QANZERO2").lastInsertRowid,
+      addItem.run(article, stamp, stamp, stamp, 1, "QANZR222").lastInsertRowid,
     );
     put(zeroID, title, "Figure design reading plan");
     addTag.run(zeroID, annotationTagID);
@@ -392,9 +392,9 @@ function seed(db) {
         .run(stamp).lastInsertRowid,
     );
     const crossPapers = [
-      ["QCZERO22", "Thesis review without files", "2020"],
-      ["QCONE222", "深度学习 in clinical attention", "2021"],
-      ["QCTWO222", "Clinical attention with two editions", "2021"],
+      ["QCZRPP22", "Thesis review without files", "2020"],
+      ["QCSNG222", "深度学习 in clinical attention", "2021"],
+      ["QCTWN222", "Clinical attention with two editions", "2021"],
       ["QCMISS22", "Clinical attention missing its file", null],
       ["QCWEB222", "Thesis background reading", "2018"],
     ];
@@ -411,20 +411,20 @@ function seed(db) {
         "insert into collectionItems (collectionID, itemID, orderIndex) values (?, ?, 0)",
       ).run(collection, id);
     }
-    addTag.run(paperIDs.get("QCONE222"), toRead);
+    addTag.run(paperIDs.get("QCSNG222"), toRead);
     const crossFiles = [
       [
-        "QCPDFONE",
-        "QCONE222",
+        "QCPDFS22",
+        "QCSNG222",
         "Reading PDF",
         "application/pdf",
         0,
         "storage:rougier-2014.pdf",
       ],
-      ["QCURL222", "QCONE222", "Publisher link", "text/html", 3, null],
+      ["QCURL222", "QCSNG222", "Publisher link", "text/html", 3, null],
       [
         "QCPDFA22",
-        "QCTWO222",
+        "QCTWN222",
         "First edition",
         "application/pdf",
         0,
@@ -432,14 +432,14 @@ function seed(db) {
       ],
       [
         "QCPDFB22",
-        "QCTWO222",
+        "QCTWN222",
         "Second edition",
         "application/pdf",
         0,
         "storage:rougier-2014.pdf",
       ],
       [
-        "QCBROKEN",
+        "QCBRKN22",
         "QCMISS22",
         "Missing linked PDF",
         "application/pdf",
@@ -481,7 +481,7 @@ function seed(db) {
     for (const [key, file, typeID, text, comment] of [
       ["QCMARKA2", "QCPDFA22", 1, "Identify Your Message", null],
       ["QCMARKB2", "QCPDFB22", 1, "Identify Your Message", null],
-      ["QCNOTE22", "QCPDFONE", 2, null, "Read the methods next."],
+      ["QCNT2222", "QCPDFS22", 2, null, "Read the methods next."],
     ])
       mark(
         { libraryID: 1, pdfID: fileIDs.get(file) },
@@ -581,7 +581,7 @@ async function main() {
     join(destination, "zt-fixture-vault", "attachments", "rougier-2014.pdf"),
     join(annotationPdfDir, "rougier-2014.pdf"),
   );
-  for (const key of ["QCPDFONE", "QCPDFA22", "QCPDFB22"]) {
+  for (const key of ["QCPDFS22", "QCPDFA22", "QCPDFB22"]) {
     const dir = join(destination, "zotero-data", "storage", key);
     await mkdir(dir, { recursive: true });
     await cp(

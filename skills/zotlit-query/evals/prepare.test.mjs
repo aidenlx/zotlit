@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile, rm, stat } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
@@ -10,6 +11,8 @@ import { setTimeout as delay } from "node:timers/promises";
 import { buildFixture, getFixtureLayout } from "@zotlit/scripts/fixture";
 
 const repo = resolve(import.meta.dirname, "../../..");
+const requireDb = createRequire(join(repo, "packages/db/package.json"));
+const { isItemKey } = await import(requireDb.resolve("@zotlit/db"));
 const prepare = join(import.meta.dirname, "prepare.mjs");
 const oracle = JSON.parse(
   await readFile(new URL("./oracle.json", import.meta.url), "utf8"),
@@ -38,6 +41,14 @@ await test("a generated Fixture stays unchanged and gives byte-identical seeded 
     assert.equal(await digest(database(source)), original);
     assert.equal(await digest(database(first)), await digest(database(second)));
     using db = new DatabaseSync(database(first), { readOnly: true });
+    const keys = db
+      .prepare("select key from items union select key from collections")
+      .all();
+    assert.deepEqual(
+      keys.filter(({ key }) => !isItemKey(key)),
+      [],
+      "all Fixture keys must be valid Zotero keys",
+    );
     assert.equal(
       db.prepare("select count(*) as n from items where key like 'QEV%'").get()
         .n,
@@ -172,7 +183,7 @@ await test("a generated Fixture stays unchanged and gives byte-identical seeded 
     assert.equal(
       db
         .prepare(
-          "select count(*) as n from items i where i.key = 'QANZERO2' and not exists (select 1 from itemAttachments a where a.parentItemID = i.itemID)",
+          "select count(*) as n from items i where i.key = 'QANZR222' and not exists (select 1 from itemAttachments a where a.parentItemID = i.itemID)",
         )
         .get().n,
       1,
