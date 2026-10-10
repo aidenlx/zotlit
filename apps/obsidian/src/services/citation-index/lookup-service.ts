@@ -236,7 +236,7 @@ export class CitationLookup extends Service {
 
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
-    stack.defer(this.#deps.reads.on("changed", () => this.#request()));
+    stack.defer(this.#deps.reads.on("changed", () => this.#revalidate()));
     stack.defer(
       this.#deps.reads.on("degraded", (error) => {
         this.#invalidate();
@@ -246,9 +246,11 @@ export class CitationLookup extends Service {
     );
     // A scope change keeps the source: every read carries the scope, so the
     // worker rebuilds membership through stable selectors without a refresh.
-    stack.defer(this.#deps.libraryScope.on("changed", () => this.#rescope()));
     stack.defer(
-      this.#deps.libraryScope.on("libraries-changed", () => this.#rescope()),
+      this.#deps.libraryScope.on("changed", () => this.#revalidate()),
+    );
+    stack.defer(
+      this.#deps.libraryScope.on("libraries-changed", () => this.#revalidate()),
     );
     stack.defer(() => {
       Effect.runSync(Deferred.interrupt(this.#stop));
@@ -257,20 +259,11 @@ export class CitationLookup extends Service {
     });
     // Let the constructor assign ready before read() waits for it.
     await Promise.resolve();
-    this.#request();
+    this.#revalidate();
     this.commit(stack.move());
   }
 
-  #request(): void {
-    if (this.disposing) return;
-    this.#invalidate();
-    this.#refresh = this.read({}).catch((error: unknown) => {
-      if (!this.disposing)
-        logger.warn("Citation lookup refresh failed", { error });
-    });
-  }
-
-  #rescope(): void {
+  #revalidate(): void {
     if (this.disposing) return;
     this.#invalidate();
     this.#refresh = this.read({}).catch((error: unknown) => {
