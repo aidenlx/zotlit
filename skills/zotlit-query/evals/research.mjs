@@ -45,8 +45,53 @@ function expectedGroups(expected, path) {
   return expected.groups;
 }
 
+// Per-paper counts can start from papers or from grouped reading marks.
+export function researchExpectation(spec, envelope) {
+  if (spec.group !== "item.indexedKey" || envelope.request?.from !== "items")
+    return spec;
+  const { groups, group: _group, ...rest } = spec;
+  return {
+    ...rest,
+    from: "items",
+    count: groups.length,
+    fields: ["title"],
+    rows: groups.map((g) => ({
+      indexedKey: g.value,
+      values: { title: g.rows[0].values["item.title"] },
+    })),
+    paperGroups: groups,
+  };
+}
+
+function checkPaperCounts(rows, groups, required = true) {
+  const errors = [];
+  for (const row of rows ?? []) {
+    const values = row.values ?? {};
+    const counts = [
+      ...(Object.hasOwn(values, "annotations.length")
+        ? [values["annotations.length"]]
+        : []),
+      ...["annotations[]", "annotations"]
+        .filter((field) => Object.hasOwn(values, field))
+        .map((field) =>
+          Array.isArray(values[field]) ? values[field].length : null,
+        ),
+    ];
+    const expected = groups.find((g) => g.value === row.indexedKey)?.count;
+    if (
+      (required && !counts.length) ||
+      counts.some((count) => count !== expected)
+    )
+      errors.push(`wrong mark count for ${row.indexedKey}`);
+  }
+  return errors;
+}
+
 export function checkResearch(spec, envelope, runRoot) {
-  const expected = resolveExpected(spec, runRoot);
+  const expected = resolveExpected(
+    researchExpectation(spec, envelope),
+    runRoot,
+  );
   const errors = [];
   if (envelope.request?.from !== expected.from)
     errors.push(`wrong Query Dataset; expected ${expected.from}`);
@@ -86,6 +131,8 @@ export function checkResearch(spec, envelope, runRoot) {
       );
     }
   } else errors.push(...checkRows(envelope.rows, expected.rows));
+  if (expected.paperGroups)
+    errors.push(...checkPaperCounts(envelope.rows, expected.paperGroups));
   return errors;
 }
 function schemaFor(value) {
@@ -136,6 +183,33 @@ export function researchSchema(expected) {
     },
     required: ["indexedKey", "values"],
   };
+  if (expected.group === "item.indexedKey") {
+    const summary = schemaFor({
+      indexedKey: "",
+      type: "",
+      text: "",
+      comment: "",
+      pageLabel: "",
+      pageIndex: 0,
+    });
+    for (const field of ["text", "comment", "pageLabel", "pageIndex"])
+      summary.properties[field].type = [summary.properties[field].type, "null"];
+    rowSchema.properties.values = {
+      anyOf: [
+        rowSchema.properties.values,
+        schemaFor({ title: "", "annotations.length": 0 }),
+        {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            title: { type: "string" },
+            "annotations[]": { type: "array", items: summary },
+          },
+          required: ["title", "annotations[]"],
+        },
+      ],
+    };
+  }
   const properties = {
     answer: { type: "string" },
     count: { type: "integer" },
@@ -171,16 +245,18 @@ function groupCounts(groups) {
 }
 
 export function checkResearchAnswer(
-  expected,
+  spec,
   answer,
   { runRoot, resultPath, envelope },
 ) {
+  const expected = researchExpectation(spec, envelope);
   const errors = [];
   if (typeof answer.answer !== "string" || !answer.answer.trim())
     errors.push("answer text is empty");
   if (answer.count !== expected.count) errors.push("answer count is wrong");
   const want = resolveExpected(expected, runRoot);
-  const groups = expectedGroups(want, envelope?.request?.group);
+  const groups =
+    want.paperGroups ?? expectedGroups(want, envelope?.request?.group);
   const returned = new Set(
     envelope?.groups?.flatMap((group) =>
       group.rows.map((row) => row.indexedKey),
@@ -188,20 +264,39 @@ export function checkResearchAnswer(
   );
   errors.push(
     ...checkRows(
-      answer.rows,
+      want.paperGroups
+        ? answer.rows?.map((row) => ({
+            ...row,
+            values: {
+              ...row.values,
+              title: row.values?.title ?? row.values?.["item.title"],
+            },
+          }))
+        : answer.rows,
       want.rows ??
         groups
           .flatMap((g) => g.rows)
           .filter((row) => returned.has(row.indexedKey)),
     ).map((e) => `answer: ${e}`),
   );
+  const countsInRows = want.paperGroups && answer.groups?.length === 0;
+  if (want.paperGroups)
+    errors.push(
+      ...checkPaperCounts(answer.rows, want.paperGroups, countsInRows),
+    );
   if (
+    !countsInRows &&
     !isDeepStrictEqual(groupCounts(answer.groups), groupCounts(groups ?? [])) &&
     !(
-      want.group === "item.indexedKey" &&
+      (want.group === "item.indexedKey" || want.paperGroups) &&
       isDeepStrictEqual(
         groupCounts(answer.groups),
-        groupCounts(expectedGroups(want, "item.title")),
+        groupCounts(
+          expectedGroups(
+            { ...want, group: "item.indexedKey", groups },
+            "item.title",
+          ),
+        ),
       )
     )
   )

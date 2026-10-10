@@ -2,7 +2,7 @@
 
 The 28 cases test research answers and contract usability: 15 existing tasks and all 13 extra questions from `prototype/query-cli-redesign:packages/item-query/prototype-query-cli/cases.mjs`. Questions in `cases.json` are the agent's task; `oracle.json` holds expected answers and reference requests. Agents see the skill, one version-matched schema catalog, live CLI output, and their own files. Observed reads of evaluator sources fail the run.
 
-Each run builds a private Fixture vault, copies and seeds its database, checks source identity, runs one agent, checks the saved Query Result and final answer, and removes the private vault and database. If vault removal fails, it retains the database and reports recovery paths. It does not use a personal Zotero database.
+Each run builds a private Fixture vault, copies and seeds its database, checks source identity, runs one agent, checks the saved Query Result and final answer, and removes the private vault and database. Each agent uses one executable, `obsidian`, in its agent folder. It forwards arguments to a runner-owned Unix socket; the runner invokes the fixed Obsidian CLI for that run’s vault and appends receipts to `cli-calls.jsonl` outside the agent folder. The agent needs socket access, not permission to write the log. Short socket paths live under `/tmp` to fit the macOS Unix socket path limit and are removed at cleanup. If vault removal fails, it retains the database and reports recovery paths. It does not use a personal Zotero database.
 
 ## Run
 
@@ -57,7 +57,7 @@ The prototype's `search=` and `format=csv` forms are outside ADR 0071. Those tas
 
 Each case keeps `report.json`, `report.md`, `check.json`, `answer.json`, `result.json`, `agent-events.jsonl`, and `agent-stderr.txt`. Image and export cases retain their receipts; the CSV case retains `advisor.csv`.
 
-Reports separate environment failures, missing or malformed agent output, and wrong task answers. Metrics count observed Query calls by dataset, schema, guide, and Annotation Image calls. `contextualBytes` measures completed tool-output bytes visible to the agent, including Claude Read results. It is a context-use proxy, not a token count.
+Reports separate environment failures, missing or malformed agent output, and wrong task answers. Metrics count Query calls by dataset, schema, guide, and Annotation Image calls from `cli-calls.jsonl`, including calls made through nested shell scripts. Each receipt records argv, exit code, stdout byte length, and time. `cliStdoutBytes` sums those bytes. Event streams still supply misreadings, evaluator-source read detection, and tool-output context bytes. A command mentioned in an event stream does not count as a CLI call without a receipt. `contextualBytes` measures completed tool-output bytes visible to the agent, including Claude Read results. It is a context-use proxy, not a token count.
 
 Each report has **Misreadings**: the command, Diagnostic Report or Query Warnings, retry status, and observed recovery command. A successful final answer can still have misreadings. Recovery means a later successful response on that command surface; a maintainer must confirm whether it resolves the original mistake. Review these entries, excess calls, and task failures together for wrong datasets, path forms, guessed fields, and recovery loops. Triage each candidate design issue before closing the spec.
 
@@ -73,3 +73,5 @@ For manual evidence checks, prepare a new corpus inside `.scratch`, then run the
 node skills/zotlit-query/evals/prepare.mjs "$PWD/.scratch/acceptance-fixture" "$PWD/.scratch/query-manual"
 node skills/zotlit-query/evals/check.mjs no_usable_pdf /absolute/query-result.json "$PWD/.scratch/query-manual"
 ```
+
+The `count_per_paper` checker accepts either an Annotation Query grouped by paper or an Item Query with `annotations.length` or `annotations[]`. Both are checked against the same paper/count facts. Library answers accept display names or selectors; row Indexed Keys establish Library identity for `edge` and `shared_marks`.

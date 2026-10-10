@@ -52,8 +52,27 @@ await test("every case oracle matches a real query over the seeded Fixture", asy
     client = createClient(join(root, "zotero-data", "zotero.sqlite"), {
       connection: { readOnly: true },
     });
-    for (const [name, spec] of Object.entries(oracle.cases))
-      await t.test(name, async () => {
+    const cases = [
+      ...Object.entries(oracle.cases),
+      ...["annotations.length", "annotations[]"].map((field) => [
+        "count_per_paper",
+        {
+          ...oracle.cases.count_per_paper,
+          group: undefined,
+          count: 2,
+          fields: ["title", field],
+          request: {
+            from: "items",
+            library: "personal",
+            filter:
+              'collections.within("Query thesis") && annotations.length > 0',
+          },
+        },
+        `count_per_paper from Items with ${field}`,
+      ]),
+    ];
+    for (const [name, spec, label = name] of cases)
+      await t.test(label, async () => {
         const fields = spec.fields ?? spec.request.fields.split(",");
         const libraries = [
           ...(spec.request.library === "all" ||

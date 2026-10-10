@@ -5,7 +5,7 @@ import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 
-import { checkResearch } from "./research.mjs";
+import { checkResearch, researchExpectation } from "./research.mjs";
 
 const oracle = JSON.parse(
   await readFile(new URL("./oracle.json", import.meta.url), "utf8"),
@@ -370,12 +370,17 @@ export function validate(
   { runRoot, vaultPath = join(runRoot, "zt-fixture-vault") },
 ) {
   const entry = oracle.cases[caseName];
-  const expected = entry && {
-    ...entry,
-    from:
-      entry.from ??
-      (Object.hasOwn(itemFields, caseName) ? "items" : "annotations"),
-  };
+  const expected =
+    entry &&
+    researchExpectation(
+      {
+        ...entry,
+        from:
+          entry.from ??
+          (Object.hasOwn(itemFields, caseName) ? "items" : "annotations"),
+      },
+      envelope,
+    );
   if (!expected) throw new Error(`unknown case: ${caseName}`);
   const context = { expected, runRoot, vaultPath };
   if (expected.kind === "research")

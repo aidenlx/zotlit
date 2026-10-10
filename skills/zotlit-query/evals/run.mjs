@@ -10,6 +10,7 @@ import { isDeepStrictEqual, parseArgs } from "node:util";
 import { obsidianCliSocketPath } from "@zotlit/scripts/obsidian-cli";
 
 import { validate } from "./check.mjs";
+import { startCliWrapper } from "./cli-wrapper.mjs";
 import { measureEvents, parseEvents } from "./events.mjs";
 import { indexedKeyLibrary, librarySelector } from "./libraries.mjs";
 import { researchSchema, checkResearchAnswer } from "./research.mjs";
@@ -275,9 +276,9 @@ export function runProcess(
       stdio: ["pipe", "pipe", "pipe"],
       detached: process.platform !== "win32",
     });
-    let stdout = "",
-      stderr = "",
-      timedOut = false,
+    const stdout = [],
+      stderr = [];
+    let timedOut = false,
       aborted = false,
       settled = false;
     let escalation, forceFinish;
@@ -298,7 +299,17 @@ export function runProcess(
       clearTimeout(forceFinish);
       signal?.removeEventListener("abort", onAbort);
       if (error) reject(error);
-      else resolve({ code, stdout, stderr, timedOut, aborted });
+      else {
+        const bytes = Buffer.concat(stdout);
+        resolve({
+          code,
+          stdout: bytes.toString(),
+          stdoutBytes: bytes.length,
+          stderr: Buffer.concat(stderr).toString(),
+          timedOut,
+          aborted,
+        });
+      }
     };
     const stop = (reason) => {
       if (settled || timedOut || aborted) return;
@@ -317,10 +328,10 @@ export function runProcess(
     const timer = setTimeout(() => stop("timeout"), timeoutMs);
     signal?.addEventListener("abort", onAbort, { once: true });
     child.stdout.on("data", (chunk) => {
-      stdout += chunk.toString();
+      stdout.push(Buffer.from(chunk));
     });
     child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
+      stderr.push(Buffer.from(chunk));
     });
     child.on("error", (error) => settle(null, error));
     child.on("close", (code) => settle(code));
@@ -529,7 +540,7 @@ function prompt(caseName, vaultId, agentRoot) {
   const result = join(agentRoot, "query-result.json");
   const retained = resolve(agentRoot, "..", "result.json");
   const catalog = join(agentRoot, "packages/item-query/dist/query.schema.json");
-  const preamble = `Read ${join(agentRoot, "SKILL.md")} and follow it for this request. Use only the evaluation vault ID ${vaultId}. The Obsidian CLI executable for this session is: node ${cliTool}. Put vault=${vaultId} before every Obsidian command name. The matching development schema catalog is ${catalog}. Read only the copied skill, that catalog, live CLI output, and files you make for this task; do not read evaluator sources.\n\nUser request: ${cases[caseName]}\n\n`;
+  const preamble = `Read ${join(agentRoot, "SKILL.md")} and follow it for this request. Use only the evaluation vault ID ${vaultId}. The Obsidian CLI executable for this session is ${join(agentRoot, "obsidian")}. Use this executable for every Obsidian call, including calls from scripts. Put vault=${vaultId} before every Obsidian command name. The matching development schema catalog is ${catalog}. Read only the copied skill, that catalog, live CLI output, and files you make for this task; do not read evaluator sources.\n\nUser request: ${cases[caseName]}\n\n`;
   if (oracle.cases[caseName].kind === "research")
     return `${preamble}Save the complete successful query envelope at ${result} and read it before answering. Use a single complete query when the task can be answered by following relations or grouping. Your final JSON must contain count (the total matched rows), rows (each identity and requested values; flatten grouped rows), groups (value and count, or []), limitation (null unless a requested capability is unavailable), and exportPath (null unless you produced a CSV). For a CSV task, save advisor.csv at ${join(agentRoot, "advisor.csv")} and retain the query JSON as evidence. The runner copies advisor.csv to ${resolve(agentRoot, "..", "advisor.csv")} after the run. Report that retained path; do not write there. Express an unavailable fuzzy-search capability as fuzzy-search-unavailable. Use only this folder for files you create.`;
   if (itemCases.has(caseName))
@@ -588,8 +599,10 @@ export async function runCase(
       image: join(root, "image.json"),
       answer: join(root, "answer.json"),
       check: join(root, "check.json"),
+      cliCalls: join(root, "cli-calls.jsonl"),
     },
   };
+  let cliWrapper;
   let vaultOpened = false;
   let vaultId = null;
   try {
@@ -675,6 +688,17 @@ export async function runCase(
     const commonDir = await readFile(join(gitDir, "commondir"), "utf8").catch(
       () => ".",
     );
+    cliWrapper = await startCliWrapper({
+      agentRoot: agent,
+      callLog: report.files.cliCalls,
+      vaultId,
+      invoke: (argv, callSignal) =>
+        processRunner(process.execPath, [cliTool, ...argv], {
+          cwd: agent,
+          timeoutMs: agentTimeoutMs,
+          signal: callSignal,
+        }),
+    });
     const args =
       agentKind === "codex"
         ? [
@@ -726,9 +750,18 @@ export async function runCase(
                 allowUnsandboxedCommands: false,
                 filesystem: {
                   allowWrite: [agent],
-                  denyWrite: [gitDir, resolve(gitDir, commonDir.trim())],
+                  denyWrite: [
+                    gitDir,
+                    resolve(gitDir, commonDir.trim()),
+                    report.files.cliCalls,
+                  ],
                 },
-                network: { allowUnixSockets: [obsidianCliSocketPath()] },
+                network: {
+                  allowUnixSockets: [
+                    obsidianCliSocketPath(),
+                    cliWrapper.socketPath,
+                  ],
+                },
               },
             }),
           ];
@@ -740,7 +773,12 @@ export async function runCase(
     });
     await writeFile(join(root, "agent-events.jsonl"), run.stdout);
     await writeFile(join(root, "agent-stderr.txt"), run.stderr);
-    report.metrics = measureEvents(run.stdout, agentKind);
+    await cliWrapper.close();
+    const cliCalls = (await readFile(report.files.cliCalls, "utf8"))
+      .split("\n")
+      .filter(Boolean)
+      .map(JSON.parse);
+    report.metrics = measureEvents(run.stdout, agentKind, cliCalls);
     report.misreadings = report.metrics.misreadings;
     report.metrics.agentExitCode = run.code;
     report.metrics.agentTimedOut = run.timedOut;
@@ -879,6 +917,7 @@ export async function runCase(
       report.failureKind = report.state === "agent" ? "agent" : "environment";
     report.state = "failed";
   } finally {
+    await cliWrapper?.close();
     let removed = true;
     if (vaultOpened) {
       const removal = await processRunner(

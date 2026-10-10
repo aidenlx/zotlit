@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import test from "node:test";
 
 import { validate } from "./check.mjs";
-import { resolveExpected } from "./research.mjs";
+import { researchSchema, resolveExpected } from "./research.mjs";
 import { checkAnswer } from "./run.mjs";
 const oracle = JSON.parse(
   await readFile(new URL("./oracle.json", import.meta.url), "utf8"),
@@ -211,4 +212,125 @@ await test("reading plan answers accept Library display names as well as selecto
     checkAnswer("reading_plan", answer, context).join("\n"),
     /wrong library/,
   );
+});
+
+for (const projection of ["annotations.length", "annotations[]"]) {
+  await test(`paper counts accept Item Query ${projection} and reject wrong counts`, async () => {
+    const live = JSON.parse(
+      await readFile(
+        new URL("./live-projections.json", import.meta.url),
+        "utf8",
+      ),
+    );
+    const { envelope, answer } = structuredClone(live.count_per_paper);
+    envelope.rows = [
+      {
+        indexedKey: "QCSNG222",
+        values: {
+          title: "深度学习 in clinical attention",
+          [projection]:
+            projection === "annotations.length"
+              ? 1
+              : [{ indexedKey: "QCNT2222" }],
+        },
+      },
+      {
+        indexedKey: "QCTWN222",
+        values: {
+          title: "Clinical attention with two editions",
+          [projection]:
+            projection === "annotations.length"
+              ? 2
+              : [{ indexedKey: "QCMARKA2" }, { indexedKey: "QCMARKB2" }],
+        },
+      },
+    ];
+    envelope.request = {
+      from: "items",
+      library: ["personal"],
+      filter: 'collections.within("Query thesis") && annotations.length > 0',
+      fields: ["title", projection],
+      limit: null,
+    };
+    delete envelope.groups;
+    delete envelope.totalCount;
+    envelope.returnedCount = 2;
+    const context = {
+      runRoot: "/evaluation-run/corpus",
+      vaultPath: envelope.identity.vault.path,
+      envelope,
+    };
+    answer.count = 2;
+    answer.rows = structuredClone(envelope.rows);
+    answer.groups = [];
+    assert.deepEqual(validate("count_per_paper", envelope, context), []);
+    assert.deepEqual(checkAnswer("count_per_paper", answer, context), []);
+    const wrong = structuredClone(answer);
+    wrong.rows[1].values[projection] =
+      projection === "annotations.length" ? 1 : [];
+    assert.match(
+      checkAnswer("count_per_paper", wrong, context).join("\n"),
+      /wrong.*count/,
+    );
+    // The saved Claude answer used the existing schema's item.title and explicit groups.
+    answer.rows = answer.rows.map((row) => ({
+      indexedKey: row.indexedKey,
+      values: { "item.title": row.values.title },
+    }));
+    answer.groups = [
+      { value: "深度学习 in clinical attention", count: 1 },
+      { value: "Clinical attention with two editions", count: 2 },
+    ];
+    assert.deepEqual(checkAnswer("count_per_paper", answer, context), []);
+    answer.groups[1].count = 1;
+    assert.match(
+      checkAnswer("count_per_paper", answer, context).join("\n"),
+      /wrong group counts/,
+    );
+    envelope.rows[1].values[projection] =
+      projection === "annotations.length" ? 1 : [];
+    assert.match(
+      validate("count_per_paper", envelope, context).join("\n"),
+      /wrong.*count/,
+    );
+  });
+}
+
+await test("paper count answer schema permits both dataset shapes", async () => {
+  const requireDb = createRequire(
+    new URL("../../../packages/db/package.json", import.meta.url),
+  );
+  const Ajv = requireDb("ajv");
+  const accepts = new Ajv({ strict: false }).compile(
+    researchSchema(oracle.cases.count_per_paper),
+  );
+  const base = {
+    answer: "Counts",
+    count: 2,
+    groups: [],
+    limitation: null,
+    exportPath: null,
+  };
+  for (const values of [
+    { "item.title": "Paper" },
+    { title: "Paper", "annotations.length": 1 },
+    {
+      title: "Paper",
+      "annotations[]": [
+        {
+          indexedKey: "QCNT2222",
+          type: "note",
+          text: null,
+          comment: "Read",
+          pageLabel: "1",
+          pageIndex: 0,
+        },
+      ],
+    },
+  ])
+    assert.equal(
+      accepts({ ...base, rows: [{ indexedKey: "QCSNG222", values }] }),
+      true,
+      JSON.stringify(accepts.errors),
+    );
 });
