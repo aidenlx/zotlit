@@ -22,6 +22,7 @@ import type {
   Citation,
   CitationIndex,
   CitationOccurrence,
+  DocumentCitationSet,
 } from "@/services/citation-index/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import {
@@ -309,13 +310,7 @@ export class CitationText extends Service<void> {
     await Promise.all([this.#noteIndex.whenIndexed(), this.#profile.ready]);
     const body = await this.#app.vault.cachedRead(file);
     const set = await this.#citationIndex.getDocumentCitationSet(file);
-    const wikilinks = this.#wikilinkCitations(
-      file,
-      body,
-      set.occurrences,
-      set.lookup,
-      set.citations,
-    );
+    const wikilinks = this.#wikilinkCitations(file, body, set);
     const literal = worksByCitekey(set.citations);
     const works = await this.#readCited([
       ...literal.values(),
@@ -422,6 +417,7 @@ export class CitationText extends Service<void> {
         [...works].map(([indexedKey, { summary }]) => [indexedKey, summary]),
       ),
       literalWorks: literal,
+      lookup: set.lookup,
     };
   }
 
@@ -476,9 +472,7 @@ export class CitationText extends Service<void> {
   #wikilinkCitations(
     file: TFile,
     body: string,
-    occurrences: readonly CitationOccurrence[],
-    lookup: import("../citation-index/lookup").CitationLookupAnswer,
-    grouped: readonly Citation[],
+    { occurrences, lookup, citations: grouped }: DocumentCitationSet,
   ): DocumentWikilinks {
     const members = new Set(
       occurrences
@@ -795,6 +789,7 @@ function documentCitationsEqual(
   next: DocumentCitations,
 ): boolean {
   return (
+    prev.lookup.revision === next.lookup.revision &&
     prev.entrySerials === next.entrySerials &&
     profilePresentationFailuresEqual(
       prev.presentationFailure,

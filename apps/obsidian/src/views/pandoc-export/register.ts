@@ -82,7 +82,7 @@ export async function runPandocExport(
   deps: PandocExportDeps,
 ): Promise<void> {
   await deps.profile.ready;
-  const { app, citationIndex, pandocEngine, zoteroPref, settings } = deps;
+  const { app, pandocEngine, zoteroPref, settings } = deps;
   if (pandocEngine.getStatus().kind !== "installed") {
     showEngineMissing(deps.openSettings);
     return;
