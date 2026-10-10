@@ -183,12 +183,12 @@ describe("zotlit:query without arguments", () => {
 
 describe("zotlit:query answer", () => {
   /**
-   * A clock that moves 2 ms at each read: the second read of a step is at
-   * the budget of 4 ms, so a step of the answer holds two chunks of rows.
+   * One tick per read leaves room for a resumed effect to make progress
+   * within the production slice budget.
    */
   function fastClock() {
     let now = 0;
-    vi.spyOn(performance, "now").mockImplementation(() => (now += 2));
+    vi.spyOn(performance, "now").mockImplementation(() => (now += 1));
   }
 
   /** The bulk Library: more rows than the first chunk of an answer. */
@@ -814,10 +814,9 @@ describe("zotlit:query cancellation", () => {
     const complete = read.mock.calls.length;
     expect(complete).toBeGreaterThan(3);
 
-    // Every read of the clock is 3 ms later, so the scheduler ends a slice
-    // after each operation.
+    // One tick per clock read exercises cancellation across scheduler pauses.
     let now = 0;
-    vi.spyOn(performance, "now").mockImplementation(() => (now += 3));
+    vi.spyOn(performance, "now").mockImplementation(() => (now += 1));
     // Interrupt inside the third database read of the query.
     const events: string[] = [];
     read.mockImplementation(function (this: StatementSync, ...values) {

@@ -624,3 +624,35 @@ it("holds relation filters and dataset defaults to the existing budgets at each 
       );
   }
 });
+
+// The dominant Parent Record case reads the heavy book's marks and reaches the
+// parent-leaf budget in the 100,000-Item Stress Build.
+it("holds the Annotation Parent Record release case to the slice budget", () => {
+  const spec = DATASET_QUERY_SPECS.find(
+    (spec) => spec.id === "relation-parent-dominant",
+  )!;
+  expect(spec.args).toMatchObject({
+    from: "annotations",
+    filter: 'item.tags.contains("stress-dominant")',
+  });
+  const measured = tier({
+    items: 100_000,
+    queries: [
+      query({
+        ...spec,
+        runs: [
+          {
+            totalMs: 30,
+            slices: [17],
+            answerSteps: [1],
+            uiGaps: [4],
+            worstSliceReaders: ["parent-leaf-candidate-set"],
+          },
+        ],
+      }),
+    ],
+  });
+  expect(statuses(measured)).toContain(
+    "slices relation-parent-dominant: failed",
+  );
+});

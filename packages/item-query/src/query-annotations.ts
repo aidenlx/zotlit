@@ -68,7 +68,7 @@ export const ANNOTATIONS: QueryDataset<ItemQueryRequest> = {
       readChildren: ({ leaf, ...page }) =>
         readParentCandidateSet({
           ...page,
-          leaf: leaf.kind === "key" ? { kind: "key", key: leaf.value } : leaf,
+          leaf,
           relation: "annotation-attachment",
         }),
     },

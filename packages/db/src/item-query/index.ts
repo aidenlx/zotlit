@@ -79,4 +79,5 @@ export { readTagValues } from "./tag-values";
 export {
   readParentCandidateSet,
   type ParentCandidates,
+  type ParentCandidateLeaf,
 } from "./parent-candidates";

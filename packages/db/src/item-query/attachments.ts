@@ -1,5 +1,4 @@
 import {
-  deletedItems,
   itemData,
   itemDataValues,
   fieldsCombined,
@@ -9,24 +8,14 @@ import {
   itemTags,
   tags,
 } from "@drizzle/schema";
-import {
-  and,
-  count,
-  asc,
-  eq,
-  gt,
-  inArray,
-  notExists,
-  notInArray,
-  sql,
-} from "drizzle-orm";
+import { and, count, asc, eq, gt, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { Effect } from "effect";
 
 import type { NodeDatabaseClient } from "@/client/node";
-import { CHILD_ITEM_TYPES } from "@/lib/item-types";
 
 import type { TagCandidateLeaf, KeysCandidateLeaf } from "./candidate-leaf";
+import { candidateTag, candidateKeys } from "./candidate-predicates";
 import { defineStatement, idSlots, unindexed } from "./database";
 import type {
   IdSlot,
@@ -34,6 +23,7 @@ import type {
   ItemQueryReaderError,
 } from "./database";
 import { HYDRATE_CHUNK_SIZE } from "./hydrate-chunk";
+import { recordUniverse } from "./record-universe";
 import { SCAN_PAGE_SIZE } from "./scan-page";
 import type { ScanRow } from "./scan-page";
 
@@ -74,18 +64,7 @@ function selectAttachments(db: NodeDatabaseClient) {
 }
 
 function universe(db: NodeDatabaseClient) {
-  return [
-    notInArray(itemTypesCombined.typeName, [...CHILD_ITEM_TYPES]),
-    inArray(itemAttachments.linkMode, [0, 1, 2, 3]),
-    ...[items, parent].map((table) =>
-      notExists(
-        db
-          .select({ itemID: deletedItems.itemID })
-          .from(deletedItems)
-          .where(eq(deletedItems.itemID, table.itemID)),
-      ),
-    ),
-  ];
+  return recordUniverse(db, [items, parent], true);
 }
 
 const scan = defineStatement<{
@@ -324,23 +303,18 @@ interface AttachmentCandidateParams extends Record<string, unknown> {
 
 const attachmentCandidates = (
   kind: "key" | "keys" | "contentType" | "fileType" | "linkMode" | "tag",
+  probe = false,
 ) =>
   defineStatement<AttachmentCandidateParams>("attachment-candidate-set")(
     (db, { placeholder: p }) => {
-      const list = sql`select value from json_each(${p("list")})`;
       const condition = {
-        key: eq(items.key, p("value")),
+        key: inArray(
+          itemAttachments.itemID,
+          candidateKeys(db, p("libraryID"), p("list")),
+        ),
         keys: inArray(
           itemAttachments.itemID,
-          db
-            .select({ itemID: items.itemID })
-            .from(items)
-            .where(
-              and(
-                eq(items.libraryID, p("libraryID")),
-                sql`${items.key} in (${list})`,
-              ),
-            ),
+          candidateKeys(db, p("libraryID"), p("list")),
         ),
         contentType: eq(itemAttachments.contentType, p("value")),
         fileType: sql`case
@@ -351,13 +325,7 @@ const attachmentCandidates = (
           else 'other' end = ${p("value")}`,
 
         linkMode: sql`case ${itemAttachments.linkMode} when 0 then 'imported_file' when 1 then 'imported_url' when 2 then 'linked_file' when 3 then 'linked_url' end = ${p("value")}`,
-        tag: eq(
-          unindexed(itemTags.tagID),
-          db
-            .select({ tagID: tags.tagID })
-            .from(tags)
-            .where(eq(tags.name, p("value"))),
-        ),
+        tag: candidateTag(db, p("value"), !probe),
       }[kind];
       const orderedID =
         kind === "tag" ? itemTags.itemID : itemAttachments.itemID;
@@ -377,7 +345,7 @@ const attachmentCandidates = (
             condition,
           ),
         )
-        .orderBy(orderedID)
+        .orderBy(...(probe ? [] : [orderedID]))
         .limit(p("limit"))
         .$dynamic();
       if (kind === "tag")
@@ -394,8 +362,10 @@ const attachmentCandidateStatements = {
   tag: attachmentCandidates("tag"),
 };
 
+const tagProbe = attachmentCandidates("tag", true);
+
 /** Read one page of Attachment candidates in ascending Item ID order. */
-export function readAttachmentCandidateSet({
+export const readAttachmentCandidateSet = Effect.fnUntraced(function* ({
   libraryID,
   leaf,
   limit,
@@ -415,15 +385,20 @@ export function readAttachmentCandidateSet({
   } else {
     kind = leaf.kind;
     value = leaf.value;
+    if (kind === "key") list = [value];
   }
-  return Effect.map(
-    attachmentCandidateStatements[kind].all({
-      libraryID,
-      afterItemID,
-      limit,
-      value,
-      list: JSON.stringify(list),
-    }),
-    (rows) => rows.map((row) => row.itemID),
-  );
-}
+  const params = {
+    libraryID,
+    afterItemID,
+    limit,
+    value,
+    list: JSON.stringify(list),
+  };
+  if (kind === "tag") {
+    const rows = yield* tagProbe.all({ ...params, limit: limit + 1 });
+    if (rows.length <= limit)
+      return rows.map((row) => row.itemID).sort((a, b) => a - b);
+  }
+  const rows = yield* attachmentCandidateStatements[kind].all(params);
+  return rows.map((row) => row.itemID);
+});

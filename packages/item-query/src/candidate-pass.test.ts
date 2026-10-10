@@ -308,7 +308,7 @@ it("uses a Relation List candidate through the fake descriptor's reader", async 
 it("scans when a Relation List exhausts its element page budget", async () => {
   const { dataset, reads } = fake(
     12,
-    Array.from({ length: 3_000 }, (_, i) => i + 1),
+    Array.from({ length: 10_000 }, (_, i) => i + 1),
   );
   const root: CandidateDataset = {
     ...dataset,
@@ -325,7 +325,7 @@ it("scans when a Relation List exhausts its element page budget", async () => {
       'attachments.filter(value.tags.contains("selected")).length > 0',
     ),
   ).toBeNull();
-  expect(reads).toEqual([1, 1, 1, 1, 1, 1]);
+  expect(reads).toEqual([1, 1, 1, 1, 1, 1, 1, 1]);
   expect(logs[0]?.properties).toMatchObject({
     plan: "scan",
     candidateCount: null,
@@ -333,12 +333,19 @@ it("scans when a Relation List exhausts its element page budget", async () => {
   });
 });
 
-// A short final page proves completeness; a full last page does not. The cap
+// One look-ahead row proves completeness at an exact page boundary. The cap
 // wins when that same page supplies too many distinct parents.
 it.each([
   { elements: 499, parents: [7], budget: 1, expected: [7], reason: null },
   {
     elements: 500,
+    parents: [7],
+    budget: 1,
+    expected: [7],
+    reason: null,
+  },
+  {
+    elements: 501,
     parents: [7],
     budget: 1,
     expected: null,
@@ -428,7 +435,7 @@ it.each([
   async ({ operator, direct, relationFirst, expected, reason }) => {
     const element = fake(
       12,
-      Array.from({ length: 3_000 }, (_, i) => i + 1),
+      Array.from({ length: 10_000 }, (_, i) => i + 1),
     );
     const root: CandidateDataset = {
       ...fake(12, direct).dataset,
@@ -492,7 +499,7 @@ it.each([false, true])(
       }),
     );
     expect(run.exit).toEqual(Exit.succeed(exhausted ? null : new Set([7])));
-    expect(reads).toEqual([3000]);
+    expect(reads).toEqual([4000]);
     expect(logs[0]?.properties).toMatchObject({
       reason: exhausted ? "parent-page-budget-exhausted" : null,
     });

@@ -26,6 +26,7 @@ describe("ItemQueryScheduler", () => {
     const slices: number[] = [];
     let sliceStart = 0;
     const scheduler = new ItemQueryScheduler({
+      budgetMs: 8,
       now: () => clock.now,
       pause: (resume) => {
         slices.push(clock.now - sliceStart);
@@ -54,7 +55,7 @@ describe("ItemQueryScheduler", () => {
     });
     const scheduler = new ItemQueryScheduler({ now: () => clock.now, pause });
 
-    await Effect.runPromise(work(2, 3, clock), { scheduler });
+    await Effect.runPromise(work(2, 1, clock), { scheduler });
 
     expect(pause).not.toHaveBeenCalled();
   });
@@ -78,6 +79,7 @@ describe("ItemQueryScheduler", () => {
     const clock = { now: 0 };
     const events: [string, number][] = [];
     const scheduler = new ItemQueryScheduler({
+      budgetMs: 8,
       now: () => clock.now,
       pause: (resume) => {
         const timer = setImmediate(() => {

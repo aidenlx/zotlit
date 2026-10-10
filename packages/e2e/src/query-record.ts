@@ -76,7 +76,7 @@ export const DATASET_QUERY_SPECS: readonly Pick<
     id: "relation-parent-dominant",
     class: "other",
     args: {
-      from: "attachments",
+      from: "annotations",
       filter: 'item.tags.contains("stress-dominant")',
       limit: "100",
     },

@@ -34,7 +34,7 @@ export interface Tuning {
 /** The production tuning. The measurement record can change these values. */
 export const PRODUCTION_TUNING: Tuning = {
   capRatio: 0.25,
-  relationPageBudget: 6,
+  relationPageBudget: 8,
   scanPageSize: SCAN_PAGE_SIZE,
   hydrateChunkSize: HYDRATE_CHUNK_SIZE,
   mergeStepSize: 500,

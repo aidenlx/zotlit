@@ -1,206 +1,89 @@
+// Bound Parent Record work to matching parents and their children in one Target Library.
 import {
-  collectionItems,
-  deletedItems,
   itemAnnotations,
   itemAttachments,
-  itemData,
-  itemDataValues,
   items,
-  itemTags,
   itemTypesCombined,
-  tags,
 } from "@drizzle/schema";
-import {
-  and,
-  eq,
-  exists,
-  isNotNull,
-  inArray,
-  notExists,
-  notInArray,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { Effect } from "effect";
 
-import { CHILD_ITEM_TYPES } from "@/lib/item-types";
-
+import { readBoundedCandidateSet } from "./candidate-set";
 import type { CandidateLeaf } from "./candidate-set";
-import { storedIntegerOf, storedNumberOf } from "./candidate-set";
-import { defineStatement, unindexed } from "./database";
+import { defineStatement, idSlots, unindexed } from "./database";
+import type { IdSlot } from "./database";
+import { recordUniverse } from "./record-universe";
+import { SCAN_PAGE_SIZE } from "./scan-page";
 
 export type ParentCandidateRelation =
   | "attachment-item"
   | "annotation-item"
   | "annotation-attachment";
+export type ParentCandidateLeaf =
+  | CandidateLeaf
+  | { readonly kind: "key"; readonly value: string };
 
-/** A bounded Parent Record read reports whether unexamined children remain. */
+/** A bounded Parent Record read reports whether matches remain unchecked. */
 export interface ParentCandidates {
   readonly itemIDs: number[];
   readonly exhausted: boolean;
 }
 
-interface Params extends Record<string, unknown> {
-  libraryID: number;
-  budget: number;
-  windowLimit: number;
-  limit: number;
-  value: string;
-  list: string;
-  number: number | null;
-  integer: bigint | null;
-}
-
 const parent = alias(items, "candidateParent");
 const attachment = alias(items, "candidateAttachment");
-
-const statement = (
-  relation: ParentCandidateRelation,
-  kind: CandidateLeaf["kind"],
-) =>
-  defineStatement<Params>(
-    relation === "attachment-item"
-      ? "attachment-candidate-set"
-      : "annotation-candidate-set",
-  )((db, { placeholder: p }) => {
-    const child =
-      relation === "attachment-item" ? itemAttachments : itemAnnotations;
-    // LIMIT precedes the Parent Record predicate. Even a dominant or absent
-    // parent leaf checks at most the child budget plus one in this statement.
-    const page = db
-      .$with("candidatePage")
-      .as(
-        db
-          .select({ itemID: child.itemID, parentItemID: child.parentItemID })
-          .from(child)
-          .orderBy(child.itemID)
-          .limit(p("windowLimit")),
-      );
-    const target = relation === "annotation-attachment" ? attachment : parent;
-    const list = sql`select value from json_each(${p("list")})`;
-    const condition = {
-      tag: exists(
-        db
-          .select({ itemID: itemTags.itemID })
-          .from(itemTags)
-          .where(
-            and(
-              eq(itemTags.itemID, target.itemID),
-              eq(
-                itemTags.tagID,
-                db
-                  .select({ tagID: tags.tagID })
-                  .from(tags)
-                  .where(eq(tags.name, p("value"))),
-              ),
-            ),
-          ),
-      ),
-      key: eq(target.key, p("value")),
-      keys: sql`${target.key} in (${list})`,
-      field: exists(
-        db
-          .select({ itemID: itemData.itemID })
-          .from(itemData)
-          .innerJoin(
-            itemDataValues,
-            eq(itemDataValues.valueID, itemData.valueID),
-          )
-          .where(
-            and(
-              eq(itemData.itemID, target.itemID),
-              sql`${unindexed(itemData.fieldID)} in (${list})`,
-              or(
-                eq(itemDataValues.value, p("value")),
-                eq(itemDataValues.value, p("number")),
-                eq(itemDataValues.value, p("integer")),
-              ),
-            ),
-          ),
-      ),
-      collection: exists(
-        db
-          .select({ itemID: collectionItems.itemID })
-          .from(collectionItems)
-          .where(
-            and(
-              eq(collectionItems.itemID, target.itemID),
-              sql`${collectionItems.collectionID} in (${list})`,
-            ),
-          ),
-      ),
-    }[kind];
-    const matches = and(
-      eq(unindexed(items.libraryID), p("libraryID")),
-      condition,
-      notInArray(itemTypesCombined.typeName, [...CHILD_ITEM_TYPES]),
-      ...(relation === "attachment-item"
-        ? [inArray(itemAttachments.linkMode, [0, 1, 2, 3])]
-        : []),
-      ...[
-        items,
-        parent,
-        ...(relation === "attachment-item" ? [] : [attachment]),
-      ].map((table) =>
-        notExists(
-          db
-            .select({ itemID: deletedItems.itemID })
-            .from(deletedItems)
-            .where(eq(deletedItems.itemID, table.itemID)),
-        ),
-      ),
-    );
-    // The child window includes other Libraries, standalone and trashed rows.
-    // Filter after bounding the input, so rejected rows cannot extend the work.
-    const candidates = db
-      .select({ itemID: page.itemID })
-      .from(page)
-      .innerJoin(items, eq(items.itemID, page.itemID))
-      .leftJoin(
-        itemAttachments,
-        eq(
-          itemAttachments.itemID,
-          relation === "attachment-item" ? page.itemID : page.parentItemID,
-        ),
-      )
-      .leftJoin(attachment, eq(attachment.itemID, itemAttachments.itemID))
-      .leftJoin(parent, eq(parent.itemID, itemAttachments.parentItemID))
-      .leftJoin(
+const slots = idSlots(SCAN_PAGE_SIZE);
+const statement = (relation: ParentCandidateRelation) =>
+  defineStatement<
+    Record<IdSlot, number | null> & { libraryID: number; limit: number }
+  >("parent-child-candidate-set")((db, { placeholder: p }) => {
+    const fromAttachment = relation === "attachment-item";
+    const query = db
+      .select({ itemID: items.itemID })
+      .from(itemAttachments)
+      .innerJoin(attachment, eq(attachment.itemID, itemAttachments.itemID))
+      .innerJoin(parent, eq(parent.itemID, itemAttachments.parentItemID))
+      .innerJoin(
         itemTypesCombined,
         eq(itemTypesCombined.itemTypeID, parent.itemTypeID),
       )
-      .where(matches)
-      .orderBy(page.itemID)
-      .limit(p("limit"))
-      .as("candidateMatches");
-    const exhausted = sql<number>`(select count(*) from ${page}) > ${p("budget")}`;
-    // Preserve an exhausted outcome even when this window has no matches.
-    return db
-      .with(page)
-      .select({ itemID: candidates.itemID, exhausted })
-      .from(sql`(select 1)`)
-      .leftJoin(candidates, sql`true`)
-      .where(or(isNotNull(candidates.itemID), exhausted))
-      .orderBy(candidates.itemID);
+      .$dynamic();
+    if (fromAttachment)
+      query.innerJoin(items, eq(items.itemID, itemAttachments.itemID));
+    else
+      query
+        .innerJoin(
+          itemAnnotations,
+          eq(itemAnnotations.parentItemID, itemAttachments.itemID),
+        )
+        .innerJoin(items, eq(items.itemID, itemAnnotations.itemID));
+    return query
+      .where(
+        and(
+          eq(unindexed(items.libraryID), p("libraryID")),
+          inArray(
+            relation === "annotation-attachment"
+              ? itemAttachments.itemID
+              : itemAttachments.parentItemID,
+            slots.names.map((name) => p(name)),
+          ),
+          ...recordUniverse(
+            db,
+            [items, parent, ...(fromAttachment ? [] : [attachment])],
+            fromAttachment,
+          ),
+        ),
+      )
+      .limit(p("limit"));
   });
+const statements = {
+  "attachment-item": statement("attachment-item"),
+  "annotation-item": statement("annotation-item"),
+  "annotation-attachment": statement("annotation-attachment"),
+};
 
-const statements = Object.fromEntries(
-  (
-    ["attachment-item", "annotation-item", "annotation-attachment"] as const
-  ).map((relation) => [
-    relation,
-    Object.fromEntries(
-      (["tag", "key", "keys", "field", "collection"] as const).map((kind) => [
-        kind,
-        statement(relation, kind),
-      ]),
-    ),
-  ]),
-);
-
-/** Check a Parent Record leaf against a bounded child window in a Target Library. */
-export function readParentCandidateSet({
+/** Match the leaf before expanding its parents, with a separate bound on each. */
+export const readParentCandidateSet = Effect.fnUntraced(function* ({
   relation,
   libraryID,
   leaf,
@@ -209,41 +92,34 @@ export function readParentCandidateSet({
 }: {
   relation: ParentCandidateRelation;
   libraryID: number;
-  leaf: CandidateLeaf;
+  leaf: ParentCandidateLeaf;
   limit: number;
   budget: number;
 }) {
-  const value =
-    leaf.kind === "key"
-      ? leaf.key
-      : leaf.kind === "tag" || leaf.kind === "field"
-        ? leaf.value
-        : "";
-  const list =
-    leaf.kind === "keys"
-      ? leaf.keys
-      : leaf.kind === "field"
-        ? leaf.fieldIDs
-        : leaf.kind === "collection"
-          ? leaf.collectionIDs
-          : [];
-  return Effect.map(
-    statements[relation]![leaf.kind]!.all({
+  const parents = yield* readBoundedCandidateSet({
+    libraryID,
+    limit: budget + 1,
+    leaf: parentItemLeaf(leaf),
+  });
+  if (parents.length > budget) return { itemIDs: [], exhausted: true };
+  const itemIDs: number[] = [];
+  const childLimit = Math.min(limit, budget + 1);
+  for (let start = 0; start < parents.length; start += SCAN_PAGE_SIZE) {
+    const rows = yield* statements[relation].all({
       libraryID,
-      budget,
-      windowLimit: budget + 1,
-      limit,
-      value,
-      list: JSON.stringify(list),
-      number: storedNumberOf(value),
-      integer: storedIntegerOf(value),
-    }),
-    (rows) =>
-      ({
-        itemIDs: rows.flatMap((row) =>
-          row.itemID === null ? [] : [row.itemID],
-        ),
-        exhausted: rows.some((row) => row.exhausted === 1),
-      }) satisfies ParentCandidates,
-  );
+      limit: childLimit - itemIDs.length,
+      ...slots.bind(parents.slice(start, start + SCAN_PAGE_SIZE)),
+    });
+    itemIDs.push(...rows.map((row) => row.itemID));
+    if (itemIDs.length >= childLimit) break;
+  }
+  return {
+    itemIDs,
+    exhausted: itemIDs.length > budget,
+  } satisfies ParentCandidates;
+});
+
+function parentItemLeaf(leaf: ParentCandidateLeaf): CandidateLeaf {
+  if (leaf.kind !== "key") return leaf;
+  return { kind: "key", key: "key" in leaf ? leaf.key : leaf.value };
 }

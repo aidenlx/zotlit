@@ -105,7 +105,7 @@ it.each([
     expect(run(read({ libraryID: 1, budget: 1 })).exhausted).toBe(true);
     expect(run(read({ libraryID: -1, budget: 1 }))).toEqual({
       itemIDs: [],
-      exhausted: true,
+      exhausted: false,
     });
     expect(run(read({ libraryID: -1 }))).toEqual({
       itemIDs: [],

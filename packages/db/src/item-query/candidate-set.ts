@@ -4,12 +4,12 @@ import {
   itemDataValues,
   items,
   itemTags,
-  tags,
 } from "@drizzle/schema";
 import { and, count, eq, gt, or, sql } from "drizzle-orm";
 import { Effect } from "effect";
 
 import type { TagCandidateLeaf, KeysCandidateLeaf } from "./candidate-leaf";
+import { candidateTag } from "./candidate-predicates";
 import { defineStatement, unindexed } from "./database";
 import type { ItemQueryDatabase, ItemQueryReaderError } from "./database";
 
@@ -82,108 +82,108 @@ interface CollectionParams extends CandidateParams {
   collectionIDs: string;
 }
 
-const candidateStatements = {
-  keys: defineStatement<ValueParams>("candidate-set")((db, { placeholder }) =>
-    db
-      .select({ itemID: items.itemID })
-      .from(items)
-      .where(
-        and(
-          gt(items.itemID, placeholder("afterItemID")),
-          sql`${items.itemID} in (${db
-            .select({ itemID: items.itemID })
-            .from(items)
-            .where(
-              and(
-                eq(items.libraryID, placeholder("libraryID")),
-                sql`${items.key} in (select value from json_each(${placeholder("value")}))`,
-              ),
-            )})`,
-        ),
-      )
-      .orderBy(items.itemID)
-      .limit(placeholder("limit")),
-  ),
-  tag: defineStatement<ValueParams>("candidate-set")((db, { placeholder }) =>
-    db
-      .select({ itemID: itemTags.itemID })
-      .from(itemTags)
-      .innerJoin(items, eq(items.itemID, itemTags.itemID))
-      .where(
-        and(
-          // The tagID index orders by rowid; the primary key orders by Item ID.
-          eq(
-            unindexed(itemTags.tagID),
-            db
-              .select({ tagID: tags.tagID })
-              .from(tags)
-              .where(eq(tags.name, placeholder("value"))),
-          ),
-          eq(unindexed(items.libraryID), placeholder("libraryID")),
-          gt(itemTags.itemID, placeholder("afterItemID")),
-        ),
-      )
-      .orderBy(itemTags.itemID)
-      .limit(placeholder("limit")),
-  ),
-  key: defineStatement<ValueParams>("candidate-set")((db, { placeholder }) =>
-    db
-      .select({ itemID: items.itemID })
-      .from(items)
-      .where(
-        and(
-          eq(items.libraryID, placeholder("libraryID")),
-          gt(items.itemID, placeholder("afterItemID")),
-          eq(items.key, placeholder("value")),
-        ),
-      )
-      .orderBy(items.itemID)
-      .limit(placeholder("limit")),
-  ),
-  field: defineStatement<FieldParams>("candidate-set")((db, { placeholder }) =>
-    db
-      .selectDistinct({ itemID: sql<number>`${itemData.itemID}` })
-      .from(itemData)
-      .innerJoin(items, eq(items.itemID, itemData.itemID))
-      .where(
-        and(
-          // Walk the (itemID, fieldID) primary key in page order. The value
-          // index supplies the small set of value IDs, without sorting matches.
-          sql`${unindexed(itemData.valueID)} in (${db
-            .select({ valueID: itemDataValues.valueID })
-            .from(itemDataValues)
-            .where(
-              or(
-                eq(itemDataValues.value, placeholder("value")),
-                eq(itemDataValues.value, placeholder("number")),
-                eq(itemDataValues.value, placeholder("integer")),
-              ),
-            )})`,
-          sql`${unindexed(itemData.fieldID)} in (select value from json_each(${placeholder("fieldIDs")}))`,
-          eq(unindexed(items.libraryID), placeholder("libraryID")),
-          gt(itemData.itemID, placeholder("afterItemID")),
-        ),
-      )
-      .orderBy(itemData.itemID)
-      .limit(placeholder("limit")),
-  ),
-  collection: defineStatement<CollectionParams>("candidate-set")(
-    (db, { placeholder }) =>
+const statements = (bounded: boolean) =>
+  ({
+    keys: defineStatement<ValueParams>(
+      bounded ? "parent-leaf-candidate-set" : "candidate-set",
+    )((db, { placeholder }) =>
       db
-        .selectDistinct({ itemID: collectionItems.itemID })
+        .select({ itemID: items.itemID })
+        .from(items)
+        .where(
+          and(
+            eq(items.libraryID, placeholder("libraryID")),
+            gt(items.itemID, placeholder("afterItemID")),
+            sql`${items.key} in (select value from json_each(${placeholder("value")}))`,
+          ),
+        )
+        .orderBy(...(bounded ? [] : [items.itemID]))
+        .limit(placeholder("limit")),
+    ),
+    tag: defineStatement<ValueParams>(
+      bounded ? "parent-leaf-candidate-set" : "candidate-set",
+    )((db, { placeholder }) =>
+      db
+        .select({ itemID: itemTags.itemID })
+        .from(itemTags)
+        .innerJoin(items, eq(items.itemID, itemTags.itemID))
+        .where(
+          and(
+            candidateTag(db, placeholder("value")),
+            eq(unindexed(items.libraryID), placeholder("libraryID")),
+            gt(items.itemID, placeholder("afterItemID")),
+          ),
+        )
+        .orderBy(...(bounded ? [] : [items.itemID]))
+        .limit(placeholder("limit")),
+    ),
+    key: defineStatement<ValueParams>(
+      bounded ? "parent-leaf-candidate-set" : "candidate-set",
+    )((db, { placeholder }) =>
+      db
+        .select({ itemID: items.itemID })
+        .from(items)
+        .where(
+          and(
+            eq(items.libraryID, placeholder("libraryID")),
+            gt(items.itemID, placeholder("afterItemID")),
+            eq(items.key, placeholder("value")),
+          ),
+        )
+        .orderBy(...(bounded ? [] : [items.itemID]))
+        .limit(placeholder("limit")),
+    ),
+    field: defineStatement<FieldParams>(
+      bounded ? "parent-leaf-candidate-set" : "candidate-set",
+    )((db, { placeholder }) =>
+      db
+        .selectDistinct({ itemID: items.itemID })
+        .from(itemDataValues)
+        // `itemData.valueID` has no declared type. The unary `+` keeps the
+        // affinity of the value ID off the comparison, so the join starts at the
+        // value and reads `itemData` through its `valueID` index.
+        .innerJoin(
+          itemData,
+          eq(itemData.valueID, unindexed(itemDataValues.valueID)),
+        )
+        .innerJoin(items, eq(items.itemID, itemData.itemID))
+        .where(
+          and(
+            or(
+              eq(itemDataValues.value, placeholder("value")),
+              eq(itemDataValues.value, placeholder("number")),
+              eq(itemDataValues.value, placeholder("integer")),
+            ),
+            // The value names the `itemData` rows; the field list checks them.
+            sql`${unindexed(itemData.fieldID)} in (select value from json_each(${placeholder("fieldIDs")}))`,
+            eq(unindexed(items.libraryID), placeholder("libraryID")),
+            gt(items.itemID, placeholder("afterItemID")),
+          ),
+        )
+        .orderBy(...(bounded ? [] : [items.itemID]))
+        .limit(placeholder("limit")),
+    ),
+    collection: defineStatement<CollectionParams>(
+      bounded ? "parent-leaf-candidate-set" : "candidate-set",
+    )((db, { placeholder }) =>
+      db
+        .selectDistinct({ itemID: items.itemID })
         .from(collectionItems)
         .innerJoin(items, eq(items.itemID, collectionItems.itemID))
         .where(
           and(
-            sql`${unindexed(collectionItems.collectionID)} in (select value from json_each(${placeholder("collectionIDs")}))`,
+            sql`${collectionItems.collectionID} in (select value from json_each(${placeholder("collectionIDs")}))`,
             eq(unindexed(items.libraryID), placeholder("libraryID")),
-            gt(collectionItems.itemID, placeholder("afterItemID")),
+            gt(items.itemID, placeholder("afterItemID")),
           ),
         )
-        .orderBy(collectionItems.itemID)
+        .orderBy(...(bounded ? [] : [items.itemID]))
         .limit(placeholder("limit")),
-  ),
-} satisfies Record<CandidateLeaf["kind"], unknown>;
+    ),
+  }) satisfies Record<CandidateLeaf["kind"], unknown>;
+
+const candidateStatements = statements(false);
+const parentStatements = statements(true);
 
 /**
  * The number that the hydrate reader gives back as `value` when SQLite stores
@@ -217,6 +217,7 @@ export function storedIntegerOf(value: string): bigint | null {
 function leafRows(
   leaf: CandidateLeaf,
   scope: CandidateParams,
+  statements = candidateStatements,
 ): Effect.Effect<
   { itemID: number }[],
   ItemQueryReaderError,
@@ -224,16 +225,16 @@ function leafRows(
 > {
   switch (leaf.kind) {
     case "tag":
-      return candidateStatements.tag.all({ ...scope, value: leaf.value });
+      return statements.tag.all({ ...scope, value: leaf.value });
     case "keys":
-      return candidateStatements.keys.all({
+      return statements.keys.all({
         ...scope,
         value: JSON.stringify(leaf.keys),
       });
     case "key":
-      return candidateStatements.key.all({ ...scope, value: leaf.key });
+      return statements.key.all({ ...scope, value: leaf.key });
     case "field":
-      return candidateStatements.field.all({
+      return statements.field.all({
         ...scope,
         value: leaf.value,
         number: storedNumberOf(leaf.value),
@@ -241,7 +242,7 @@ function leafRows(
         fieldIDs: JSON.stringify(leaf.fieldIDs),
       });
     case "collection":
-      return candidateStatements.collection.all({
+      return statements.collection.all({
         ...scope,
         collectionIDs: JSON.stringify(leaf.collectionIDs),
       });
@@ -266,5 +267,18 @@ export function readCandidateSet(candidates: {
   const { libraryID, leaf, limit, afterItemID = 0 } = candidates;
   return Effect.map(leafRows(leaf, { libraryID, limit, afterItemID }), (rows) =>
     rows.map((row) => row.itemID),
+  );
+}
+
+/** Read the parent leaf's matches up to its work budget in index order. */
+export function readBoundedCandidateSet(candidates: {
+  libraryID: number;
+  leaf: CandidateLeaf;
+  limit: number;
+}) {
+  const { libraryID, leaf, limit } = candidates;
+  return Effect.map(
+    leafRows(leaf, { libraryID, limit, afterItemID: 0 }, parentStatements),
+    (rows) => rows.map((row) => row.itemID),
   );
 }

@@ -1,5 +1,4 @@
 import {
-  deletedItems,
   itemData,
   itemDataValues,
   fieldsCombined,
@@ -10,27 +9,16 @@ import {
   itemTags,
   tags,
 } from "@drizzle/schema";
-import {
-  and,
-  count,
-  or,
-  asc,
-  eq,
-  gt,
-  inArray,
-  notExists,
-  notInArray,
-  sql,
-} from "drizzle-orm";
+import { and, count, or, asc, eq, gt, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { Effect } from "effect";
 
 import type { NodeDatabaseClient } from "@/client/node";
-import { CHILD_ITEM_TYPES } from "@/lib/item-types";
 import { annotationTypeIDs, annotationTypeToName } from "@/lib/zt-annot";
 import { annotationColorsForName } from "@/lib/zt-color";
 
 import type { TagCandidateLeaf, KeysCandidateLeaf } from "./candidate-leaf";
+import { candidateTag, candidateKeys } from "./candidate-predicates";
 import { defineStatement, idSlots, unindexed } from "./database";
 import type {
   IdSlot,
@@ -38,6 +26,7 @@ import type {
   ItemQueryReaderError,
 } from "./database";
 import { HYDRATE_CHUNK_SIZE } from "./hydrate-chunk";
+import { recordUniverse } from "./record-universe";
 import { SCAN_PAGE_SIZE } from "./scan-page";
 import type { ScanRow } from "./scan-page";
 
@@ -98,17 +87,7 @@ function selectAnnotations(db: NodeDatabaseClient) {
 }
 
 function universe(db: NodeDatabaseClient) {
-  return [
-    notInArray(itemTypesCombined.typeName, [...CHILD_ITEM_TYPES]),
-    ...[items, attachment, parent].map((table) =>
-      notExists(
-        db
-          .select({ itemID: deletedItems.itemID })
-          .from(deletedItems)
-          .where(eq(deletedItems.itemID, table.itemID)),
-      ),
-    ),
-  ];
+  return recordUniverse(db, [items, attachment, parent], false);
 }
 
 const scan = defineStatement<{
@@ -419,7 +398,10 @@ interface AnnotationCandidateParams extends Record<string, unknown> {
   list: string;
 }
 
-const annotationCandidates = (kind: "type" | "color" | "tag" | "self") =>
+const annotationCandidates = (
+  kind: "type" | "color" | "tag" | "self",
+  probe = false,
+) =>
   defineStatement<AnnotationCandidateParams>("annotation-candidate-set")(
     (db, { placeholder: p }) => {
       const list = sql`select value from json_each(${p("list")})`;
@@ -434,24 +416,10 @@ const annotationCandidates = (kind: "type" | "color" | "tag" | "self") =>
           eq(itemAnnotations.color, p("value")),
           sql`upper(${itemAnnotations.color}) in (${list})`,
         ),
-        tag: eq(
-          unindexed(itemTags.tagID),
-          db
-            .select({ tagID: tags.tagID })
-            .from(tags)
-            .where(eq(tags.name, p("value"))),
-        ),
+        tag: candidateTag(db, p("value"), !probe),
         self: inArray(
           itemAnnotations.itemID,
-          db
-            .select({ itemID: items.itemID })
-            .from(items)
-            .where(
-              and(
-                eq(items.libraryID, p("libraryID")),
-                sql`${items.key} in (${list})`,
-              ),
-            ),
+          candidateKeys(db, p("libraryID"), p("list")),
         ),
       }[kind];
       const orderedID =
@@ -477,7 +445,7 @@ const annotationCandidates = (kind: "type" | "color" | "tag" | "self") =>
             condition,
           ),
         )
-        .orderBy(orderedID)
+        .orderBy(...(probe ? [] : [orderedID]))
         .limit(p("limit"))
         .$dynamic();
       if (kind === "tag")
@@ -492,8 +460,10 @@ const annotationCandidateStatements = {
   self: annotationCandidates("self"),
 };
 
+const tagProbe = annotationCandidates("tag", true);
+
 /** Read one page of Annotation candidates in ascending Item ID order. */
-export function readAnnotationCandidateSet({
+export const readAnnotationCandidateSet = Effect.fnUntraced(function* ({
   libraryID,
   leaf,
   limit,
@@ -515,14 +485,18 @@ export function readAnnotationCandidateSet({
     value = leaf.value;
     if (kind === "color") list = annotationColorsForName(value);
   }
-  return Effect.map(
-    annotationCandidateStatements[kind].all({
-      libraryID,
-      afterItemID,
-      limit,
-      value,
-      list: JSON.stringify(list),
-    }),
-    (rows) => rows.map((row) => row.itemID),
-  );
-}
+  const params = {
+    libraryID,
+    afterItemID,
+    limit,
+    value,
+    list: JSON.stringify(list),
+  };
+  if (kind === "tag") {
+    const rows = yield* tagProbe.all({ ...params, limit: limit + 1 });
+    if (rows.length <= limit)
+      return rows.map((row) => row.itemID).sort((a, b) => a - b);
+  }
+  const rows = yield* annotationCandidateStatements[kind].all(params);
+  return rows.map((row) => row.itemID);
+});

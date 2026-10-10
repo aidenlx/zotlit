@@ -356,7 +356,7 @@ it("caps after parent expansion and uses a bounded Annotation candidate when ava
   const candidateReads = overflow.events.filter(
     (event) =>
       event.type === "statement" &&
-      event.statement.reader === "annotation-candidate-set",
+      event.statement.reader === "parent-child-candidate-set",
   );
   expect(candidateReads).toHaveLength(1);
   expect(candidateReads[0]).toMatchObject({
@@ -543,6 +543,7 @@ describe("the statements of each pass", () => {
     // The Tag candidate set is above the cap of the Library: the scan reads it.
     expect(scan).toEqual([
       "annotation-row-count",
+      "annotation-candidate-set",
       "annotation-candidate-set",
       "annotation-scan-page",
       "annotation-tags",

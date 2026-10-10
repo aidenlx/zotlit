@@ -1610,7 +1610,7 @@ describe("a one-Library Stress Build", () => {
   });
 
   // Failure modes: the Stress Build has no many-marks paper, the shared Tag
-  // is absent, or the Parent Record measurement has no matching Attachment.
+  // is absent, or the Parent Record measurement has no matching Annotations.
   it("supplies rows for the many-marks and dominant Parent Record cases", () => {
     using db = openClientAt(libraryLayout.databasePath);
     const paper = synthetic(db).find(

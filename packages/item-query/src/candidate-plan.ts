@@ -174,7 +174,7 @@ export const lowerItemCandidate: Lowering = (node, sources) => {
   return null;
 };
 
-/** A complete candidate set, or the reason this branch cannot supply one. */
+/** The reason this branch cannot supply a complete candidate set. */
 export type CandidateFallback =
   | "candidate-cap-exceeded"
   | "relation-page-budget-exhausted"

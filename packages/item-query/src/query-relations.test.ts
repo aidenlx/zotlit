@@ -1061,9 +1061,14 @@ it("rejects a group path with two [] and names the one-[] rule", async () => {
 
 // Failure modes: many elements on one paper bypass the parent cap, a budget
 // grows with match count, or an incomplete candidate set changes the result.
-it.each([3_000, 10_000])(
+it.each([
+  [3_000, 17, false],
+  [4_000, 23, false],
+  [4_001, 23, true],
+  [10_000, 24, true],
+] as const)(
   "bounds Relation List candidate statements with %i elements on one paper",
-  async (count) => {
+  async (count, statementCount, scans) => {
     using scenario = openScenarioDatabase();
     seedBulkLibrary(scenario.sqlite, count);
     seedBulkAttachments(scenario.sqlite, count);
@@ -1073,7 +1078,7 @@ it.each([3_000, 10_000])(
     where itemID in (select itemID from items where libraryID = 3);
     insert into itemTags (itemID, tagID, type)
     select itemID, (select tagID from tags where name = 'bulk'), 0
-    from items where libraryID = 3 and itemTypeID in
+    from items where libraryID = 3 and key != 'BULKPDF2' and itemTypeID in
       (select itemTypeID from itemTypesCombined where typeName in ('attachment', 'annotation'));
   `);
     for (const [dataset, relation] of [
@@ -1102,7 +1107,14 @@ it.each([3_000, 10_000])(
           event.type === "statement" &&
           event.statement.reader.endsWith("candidate-set"),
       );
-      expect(statements).toHaveLength(12);
+      expect(statements).toHaveLength(statementCount);
+      expect(
+        actual.events.some(
+          (event) =>
+            event.type === "statement" &&
+            event.statement.reader.endsWith("scan-page"),
+        ),
+      ).toBe(scans);
     }
   },
 );

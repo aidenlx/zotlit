@@ -61,7 +61,7 @@ describe("Item Query execution slices", () => {
             yield* Effect.sync(() => time.work(3));
           }),
         ),
-        { scheduler: new ItemQueryScheduler() },
+        { scheduler: new ItemQueryScheduler({ budgetMs: 8 }) },
       );
       const report = reportOf(trace);
       expect(report.engineMs).toBe(waitMs + 5);
@@ -75,7 +75,7 @@ describe("Item Query execution slices", () => {
     await Effect.runPromise(
       trace.instrument(Effect.sync(() => time.work(60))),
       {
-        scheduler: new ItemQueryScheduler(),
+        scheduler: new ItemQueryScheduler({ budgetMs: 8 }),
       },
     );
     expect(Math.max(...reportOf(trace).slices)).toBe(60);
@@ -91,7 +91,7 @@ describe("Item Query execution slices", () => {
           time.work(60);
         }),
       ),
-      { scheduler: new ItemQueryScheduler() },
+      { scheduler: new ItemQueryScheduler({ budgetMs: 8 }) },
     );
     const report = reportOf(trace);
     expect(report.engineMs).toBe(660);
@@ -110,7 +110,7 @@ describe("Item Query execution slices", () => {
           }
         }),
       ),
-      { scheduler: new ItemQueryScheduler() },
+      { scheduler: new ItemQueryScheduler({ budgetMs: 8 }) },
     );
     expect(reportOf(trace).slices.filter((ms) => ms > 0)).toEqual([9, 9]);
   });
@@ -128,6 +128,7 @@ describe("Item Query execution slices", () => {
       ),
       {
         scheduler: new ItemQueryScheduler({
+          budgetMs: 8,
           pause: (resume) => {
             queueMicrotask(resume);
             return () => {};
@@ -154,7 +155,10 @@ describe("Item Query execution slices", () => {
           });
         }),
       ),
-      { scheduler: new ItemQueryScheduler(), signal: controller.signal },
+      {
+        scheduler: new ItemQueryScheduler({ budgetMs: 8 }),
+        signal: controller.signal,
+      },
     );
     expect(Exit.hasInterrupts(exit)).toBe(true);
     const report = reportOf(trace);
