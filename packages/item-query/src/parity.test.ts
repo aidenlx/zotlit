@@ -369,14 +369,23 @@ it.each(["review.length", "custom.review.length"])(
   },
 );
 
-it("keeps Attachment results equal to the forced scan for every leaf, cap, chunk, and Library", async () => {
-  using attachments = openScenarioDatabase({ annotations: true });
-  for (const libraries of [
-    [SCENARIO_LIBRARIES.personal],
-    [SCENARIO_LIBRARIES.group],
-    [SCENARIO_LIBRARIES.personal, SCENARIO_LIBRARIES.group],
-  ]) {
-    for (const request of ATTACHMENT_SCENARIO_QUERIES) {
+describe("Attachment parity with the forced scan", () => {
+  let attachments: ScenarioDatabase;
+
+  beforeAll(() => {
+    attachments = openScenarioDatabase({ annotations: true });
+  });
+  afterAll(() => attachments.close());
+
+  describe.each([
+    { name: "personal", libraries: [SCENARIO_LIBRARIES.personal] },
+    { name: "group", libraries: [SCENARIO_LIBRARIES.group] },
+    {
+      name: "both Libraries",
+      libraries: [SCENARIO_LIBRARIES.personal, SCENARIO_LIBRARIES.group],
+    },
+  ])("$name", ({ libraries }) => {
+    it.each(ATTACHMENT_SCENARIO_QUERIES)("request %# %j", async (request) => {
       const run = async (tuning: Tuning) => {
         const { exit } = await runEffect(
           collectQuery(ATTACHMENTS, { ...request, libraries }),
@@ -391,9 +400,9 @@ it("keeps Attachment results equal to the forced scan for every leaf, cap, chunk
           await run(plan.tuning),
           JSON.stringify({ request, libraries, plan }),
         ).toEqual(expected);
-    }
-  }
-}, 30000);
+    });
+  });
+});
 
 it.each(RELATION_SCENARIO_QUERIES)(
   "keeps scan parity for $name",

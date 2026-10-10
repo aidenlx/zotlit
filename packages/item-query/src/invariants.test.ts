@@ -664,13 +664,8 @@ describe("a cancel request", () => {
     },
   ];
 
-  /**
-   * The pause test runs the query once for each of its pauses, about 400 to
-   * 550, and each run takes every pause before its own as a real
-   * `MessageChannel` task: about 75,000 to 150,000 tasks. That is 1 second on
-   * an idle machine and 16 seconds when every core is busy four times over.
-   */
-  const PAUSE_CANCEL_TIMEOUT_MS = 60_000;
+  /** Each pause batch has the standard per-test budget. */
+  const PAUSE_CANCEL_TIMEOUT_MS = 5_000;
 
   /** Run the query and cancel it at the event at `index`. */
   async function cancelAt(
@@ -718,32 +713,42 @@ describe("a cancel request", () => {
     },
   );
 
-  it.each(QUERIES)(
-    "starts no statement after a cancel request that comes in a pause of $name",
-    async (query) => {
+  describe.each(QUERIES)("cancellation in a pause of $name", (query) => {
+    let pauses: number[];
+
+    beforeAll(async () => {
       const { request, libraries = [personal] } = query;
       const complete = await run(request, { libraries, tuning });
-      const pauses = complete.events.flatMap((event, index) =>
+      pauses = complete.events.flatMap((event, index) =>
         event.type === "pause" ? [index] : [],
       );
       expect(pauses.length).toBeGreaterThan(20);
+    });
 
-      for (const index of pauses) {
-        // The microtask runs when the slice has ended and the fiber waits.
-        const { exit, after } = await cancelAt(query, index, (controller) =>
-          queueMicrotask(() => controller.abort()),
-        );
+    // Every pause is tested once. Separate budgets bound the quadratic sweep
+    // of real MessageChannel tasks without changing the cancellation points.
+    it.each([0, 1, 2, 3, 4, 5, 6, 7])(
+      "starts no statement after a cancel request in pause batch %i",
+      async (batch) => {
+        for (const index of pauses.filter((_, i) => i % 8 === batch)) {
+          // The microtask runs when the slice has ended and the fiber waits.
+          const { exit, after } = await cancelAt(query, index, (controller) =>
+            queueMicrotask(() => controller.abort()),
+          );
 
-        expect(
-          Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause),
-        ).toBe(true);
-        // The interrupted fiber can take one more pause before it settles.
-        expect(after.filter((event) => event.type === "statement")).toEqual([]);
-        expect(after.length).toBeLessThanOrEqual(1);
-      }
-    },
-    PAUSE_CANCEL_TIMEOUT_MS,
-  );
+          expect(
+            Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause),
+          ).toBe(true);
+          // The interrupted fiber can take one more pause before it settles.
+          expect(after.filter((event) => event.type === "statement")).toEqual(
+            [],
+          );
+          expect(after.length).toBeLessThanOrEqual(1);
+        }
+      },
+      PAUSE_CANCEL_TIMEOUT_MS,
+    );
+  });
 });
 
 // Annotation projection reads follow the full scan/filter pass. The final
@@ -787,15 +792,14 @@ describe("Annotation projection and active cancellation", () => {
     },
   );
 
-  it.each(paths)(
-    "starts no statement after active cancellation in $name",
-    async ({ request }) => {
-      const options = {
-        annotation: true,
-      };
+  describe.each(paths)("active cancellation in $name", ({ request }) => {
+    const options = { annotation: true };
+    let checkpoints: Map<string, number>;
+
+    beforeAll(async () => {
       const complete = await run(request, options);
       resultOf(complete);
-      const checkpoints = new Map<string, number>();
+      checkpoints = new Map<string, number>();
       for (const [index, event] of complete.events.entries()) {
         if (
           event.type === "statement" &&
@@ -812,92 +816,115 @@ describe("Annotation projection and active cancellation", () => {
         }
       }
       expect(checkpoints.has("annotation-details")).toBe(true);
-      for (const index of checkpoints.values()) {
-        const controller = new AbortController();
-        let seen = 0;
-        const cancelled = await run(request, {
-          ...options,
-          signal: controller.signal,
-          onEvent: (event) => {
-            if (seen++ === index) {
-              if (event.type === "pause")
-                queueMicrotask(() => controller.abort());
-              else controller.abort();
-            }
-          },
-        });
-        expect(
-          Exit.isFailure(cancelled.exit) &&
-            Cause.hasInterruptsOnly(cancelled.exit.cause),
-        ).toBe(true);
-        expect(
-          cancelled.events
-            .slice(index + 1)
-            .filter((event) => event.type === "statement"),
-        ).toEqual([]);
-      }
-    },
-    60_000,
-  );
+    });
+
+    it.each(["first", "last", "pause"])(
+      "starts no statement after cancellation at each reader's %s checkpoint",
+      async (checkpoint) => {
+        for (const [name, index] of checkpoints) {
+          const role = name.endsWith("-first")
+            ? "first"
+            : name.endsWith("-pause")
+              ? "pause"
+              : "last";
+          if (role !== checkpoint) continue;
+          const controller = new AbortController();
+          let seen = 0;
+          const cancelled = await run(request, {
+            ...options,
+            signal: controller.signal,
+            onEvent: (event) => {
+              if (seen++ === index) {
+                if (event.type === "pause")
+                  queueMicrotask(() => controller.abort());
+                else controller.abort();
+              }
+            },
+          });
+          expect(
+            Exit.isFailure(cancelled.exit) &&
+              Cause.hasInterruptsOnly(cancelled.exit.cause),
+          ).toBe(true);
+          expect(
+            cancelled.events
+              .slice(index + 1)
+              .filter((event) => event.type === "statement"),
+          ).toEqual([]);
+        }
+      },
+    );
+  });
 });
 
 describe("Attachment active cancellation", () => {
-  it.each(PLAN_PATHS.filter((path) => path.attachment))(
-    "starts no statement after active cancellation in $name",
-    async ({ request, relation }) => {
-      const options = {
-        relation,
-        attachment: true,
-      };
-      const complete = await run(request, options);
-      resultOf(complete);
-      const checkpoints = new Map<string, number>();
-      for (const [index, event] of complete.events.entries()) {
-        if (
-          event.type === "statement" &&
-          (relation || event.statement.reader.startsWith("attachment-"))
-        ) {
-          const first = `${event.statement.reader}-first`;
-          if (!checkpoints.has(first)) checkpoints.set(first, index);
-          checkpoints.set(event.statement.reader, index);
-          const pause = complete.events.findIndex(
-            (next, nextIndex) => nextIndex > index && next.type === "pause",
-          );
-          if (pause !== -1)
-            checkpoints.set(`${event.statement.reader}-pause`, pause);
+  describe.each(PLAN_PATHS.filter((path) => path.attachment))(
+    "active cancellation in $name",
+    ({ request, relation }) => {
+      const options = { relation, attachment: true };
+      let checkpoints: Map<string, number>;
+
+      beforeAll(async () => {
+        const complete = await run(request, options);
+        resultOf(complete);
+        checkpoints = new Map<string, number>();
+        for (const [index, event] of complete.events.entries()) {
+          if (
+            event.type === "statement" &&
+            (relation || event.statement.reader.startsWith("attachment-"))
+          ) {
+            const first = `${event.statement.reader}-first`;
+            if (!checkpoints.has(first)) checkpoints.set(first, index);
+            checkpoints.set(event.statement.reader, index);
+            const pause = complete.events.findIndex(
+              (next, nextIndex) => nextIndex > index && next.type === "pause",
+            );
+            if (pause !== -1)
+              checkpoints.set(`${event.statement.reader}-pause`, pause);
+          }
         }
-      }
-      expect(
-        checkpoints.has(
-          relation ? "relation-candidate-set" : "attachment-details",
-        ),
-      ).toBe(true);
-      for (const index of checkpoints.values()) {
-        const controller = new AbortController();
-        let seen = 0;
-        const cancelled = await run(request, {
-          ...options,
-          signal: controller.signal,
-          onEvent: (event) => {
-            if (seen++ === index) {
-              if (event.type === "pause")
-                queueMicrotask(() => controller.abort());
-              else controller.abort();
-            }
-          },
-        });
         expect(
-          Exit.isFailure(cancelled.exit) &&
-            Cause.hasInterruptsOnly(cancelled.exit.cause),
+          checkpoints.has(
+            relation ? "relation-candidate-set" : "attachment-details",
+          ),
         ).toBe(true);
-        expect(
-          cancelled.events
-            .slice(index + 1)
-            .filter((event) => event.type === "statement"),
-        ).toEqual([]);
-      }
+      });
+
+      it.each(["first", "last", "pause"])(
+        "starts no statement after cancellation at each reader's %s checkpoint",
+        async (checkpoint) => {
+          for (const [name, index] of checkpoints) {
+            const role = name.endsWith("-first")
+              ? "first"
+              : name.endsWith("-pause")
+                ? "pause"
+                : "last";
+            if (role !== checkpoint) continue;
+            const controller = new AbortController();
+            let seen = 0;
+            const cancelled = await run(request, {
+              ...options,
+              signal: controller.signal,
+              onEvent: (event) => {
+                if (seen++ === index) {
+                  if (event.type === "pause")
+                    queueMicrotask(() => controller.abort());
+                  else controller.abort();
+                }
+              },
+            });
+            expect(
+              Exit.isFailure(cancelled.exit) &&
+                Cause.hasInterruptsOnly(cancelled.exit.cause),
+            ).toBe(true);
+            expect(
+              cancelled.events
+                .slice(index + 1)
+                .filter((event) => event.type === "statement"),
+            ).toEqual([]);
+          }
+        },
+      );
     },
-    60_000,
   );
 });
 
