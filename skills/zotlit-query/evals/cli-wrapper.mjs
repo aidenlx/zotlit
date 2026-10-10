@@ -108,6 +108,8 @@ export async function startCliWrapper({ agentRoot, callLog, vaultId, invoke }) {
       executable,
       `#!/usr/bin/env node
 import { createConnection } from "node:net";
+for (const stream of [process.stdout, process.stderr])
+  stream.on("error", (error) => { if (error.code !== "EPIPE") throw error; });
 const socket = createConnection(${JSON.stringify(socketPath)});
 socket.setEncoding("utf8");
 let response = "";

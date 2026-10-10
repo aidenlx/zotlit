@@ -198,3 +198,38 @@ await test("closing the wrapper cancels an active CLI call and retains its recei
     await rm(root, { recursive: true, force: true });
   }
 });
+
+await test("piping a large CLI response keeps the complete byte receipt", async () => {
+  const root = resolve(".scratch", `cli-wrapper-${randomUUID()}`);
+  const agentRoot = join(root, "agent");
+  await mkdir(agentRoot, { recursive: true });
+  const callLog = join(root, "cli-calls.jsonl");
+  let wrapper;
+  try {
+    wrapper = await startCliWrapper({
+      agentRoot,
+      callLog,
+      vaultId: "private-vault",
+      invoke: async () => ({
+        code: 0,
+        stdout: "x".repeat(512 * 1024),
+        stderr: "",
+      }),
+    });
+    const result = await runProcess(
+      "/bin/sh",
+      ["-c", "./obsidian vault=private-vault zotlit:query-schema | head -c 1"],
+      { cwd: agentRoot },
+    );
+    assert.equal(result.code, 0);
+    assert.equal(result.stdout, "x");
+    assert.equal(result.stderr, "");
+    assert.equal(
+      JSON.parse((await readFile(callLog, "utf8")).trim()).stdoutBytes,
+      512 * 1024,
+    );
+  } finally {
+    await wrapper?.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
