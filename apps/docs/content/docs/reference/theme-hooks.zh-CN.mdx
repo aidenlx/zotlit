@@ -13,8 +13,8 @@ import { m } from "@/paraglide/messages.js";
 | 类名                                   | 语义说明                                                                                                       |
 | -------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | `zt-citation`                          | 由 ZotLit 负责渲染呈现或提供交互导航跳转的引文元素。                                                           |
-| `zt-citation-key`                      | 原始文献引用标识，或由字面量标识语法生成的格式化引文。                                                         |
-| `zt-citation-key-pending`              | 正在等待首次文献引用标识解析快照的引文键。该元素同时包含 `zt-citation-key`。                                   |
+| `zt-citation-key`                      | 原始文献引用标识（citation key），或由字面量标识语法生成的格式化引文。                                         |
+| `zt-citation-key-pending`              | 正在等待首次文献引用标识解析快照的文献引用标识。该元素同时包含 `zt-citation-key`。                             |
 | `zt-citation-key-unresolved`           | 无法在文献库中解析的标识键，或所有标识均无法解析的格式化引文。该元素同时包含 `zt-citation-key`。               |
 | `zt-citation-key-partially-unresolved` | 同时包含已成功解析和无法解析标识键的格式化引文。该元素同时包含 `zt-citation-key`。                             |
 | `zt-citation-key-ambiguous`            | 匹配到多个 Zotero 条目的歧义标识键，或包含歧义键且不含未解析键的格式化引文。该元素同时包含 `zt-citation-key`。 |
@@ -46,13 +46,13 @@ ZotLit 仅在同时满足以下两个条件时才会注入公开类名：
 
 `zt-literature-note-link` 标识处于活跃状态的双链引文来源。<UiLabel name={m.settings_citation_wikilink_citations_name()} /> 决定是否将其纳入引文集。当 <UiLabel name={m.settings_citation_show_formatted_name()} /> 为其提供渲染时，ZotLit 应用此类名。开启 <UiLabel name={m.settings_citation_open_as_links_name()} /> 后，Obsidian 提供双链导航；关闭时，普通点击已渲染的双链引文会在实时预览中将光标置于链接源码中，在阅读视图中则无操作，而 Mod+点击仍会打开笔记。
 
-一个引文键只表示一种解析状态。在首个引文键解析快照就绪前，它带有 `zt-citation-key-pending`。匹配多个 Zotero 条目的键在源码模式、实时预览和阅读视图中均带有 `zt-citation-key-ambiguous`。引文簇中，未解析键的优先级高于歧义键：同时包含两者的引文簇带有 `zt-citation-key-unresolved`；如果还包含已解析键，则带有 `zt-citation-key-partially-unresolved`，且不带歧义类名。
+一个文献引用标识只表示一种解析状态。在首个文献引用标识解析快照就绪前，它带有 `zt-citation-key-pending`。匹配多个 Zotero 条目的键在源码模式、实时预览和阅读视图中均带有 `zt-citation-key-ambiguous`。引文簇中，未解析键的优先级高于歧义键：同时包含两者的引文簇带有 `zt-citation-key-unresolved`；如果还包含已解析键，则带有 `zt-citation-key-partially-unresolved`，且不带歧义类名。
 
 带别名的链接、标题链接、块链接、嵌入、未解析的目标以及格式不正确的引文片段均不属于可渲染的引文集，ZotLit 不为其添加公开引文类名。
 
 如果两项适用功能均未启用，引文来源也不会带有公开的 ZotLit 类名。内部引文索引本身不会激活类名。
 
-`zt-citation` 仅在 ZotLit 渲染引文或为其提供引文键导航时出现。
+`zt-citation` 仅在 ZotLit 渲染引文或为其提供文献引用标识导航时出现。
 
 `zt-entry-serial` 出现在已渲染引文中承载条目序号的元素上。仅当所选引文与参考文献样式将引文写为脚注时，ZotLit 才会添加此类名，因为 Obsidian 的各个视图都无法显示这类脚注。此时，ZotLit 改为显示每篇被引文献在参考文献侧边栏中的位置：每篇文献对应一个数字，以逗号分隔；没有生成参考文献条目的文献显示 `⚠`。作者-年份制或数字制等将引文写入正文的样式不会激活此类名。
 
@@ -60,13 +60,13 @@ ZotLit 仅在同时满足以下两个条件时才会注入公开类名：
 
 ## 默认外观 [#defaults]
 
-已解析的引文键使用 Obsidian 的 `--link-*` 变量。完全未解析的引文键使用对应的 `--link-unresolved-*` 变量。
+已解析的文献引用标识使用 Obsidian 的 `--link-*` 变量。完全未解析的文献引用标识使用对应的 `--link-unresolved-*` 变量。
 
-ZotLit 不为待解析的引文键提供默认样式。在首个解析快照就绪前，它们保持所在视图的中性外观。
+ZotLit 不为待解析的文献引用标识提供默认样式。在首个解析快照就绪前，它们保持所在视图的中性外观。
 
 ZotLit 不为 `zt-citation-key-partially-unresolved` 添加整体样式，因此部分解析的结果保持其中已解析文献的外观。ZotLit 也不为原生文献笔记双链添加样式。
 
-歧义引文键保留已解析链接的颜色，同时使用 `--link-unresolved-decoration-*` 变量，既显示该键可以跳转，又表明它匹配多个条目。<UiLabel name={m.settings_citation_hover_action_popover()} /> 会列出候选条目。
+歧义文献引用标识保留已解析链接的颜色，同时使用 `--link-unresolved-decoration-*` 变量，既显示该键可以跳转，又表明它匹配多个条目。<UiLabel name={m.settings_citation_hover_action_popover()} /> 会列出候选条目。
 
 ZotLit 也不为 `zt-entry-serial` 添加样式。序号在引文中显示为上标文本，在 <UiLabel name={m.settings_citation_hover_action_popover()} /> 中显示为普通标签，其外观由主题决定。
 
@@ -132,7 +132,7 @@ Obsidian PDF 阅读器通过覆盖层显示 Zotero 附件的批注，并提供�
 
 每当 PDF.js 渲染一页，ZotLit 都会重建该页的 `zt-pdf-annotation-overlay`，并为每条批注绘制一个 `zt-pdf-annotation-mark`：高亮使用填充矩形（`zt-pdf-annotation-highlight`），下划线使用线条，便笺使用 lucide 风格的图标（`zt-pdf-annotation-note-icon`，内含 `zt-pdf-annotation-note-fill` 和 `zt-pdf-annotation-note-crease`），图像区域使用描边矩形，墨迹使用路径，自由文本批注使用文本。覆盖层不接收指针输入，因此其下方的原生文本选择、PDF 链接及阅读器工具栏仍可正常使用。
 
-每个标记都带有 `data-zotero-annotation-type`（值为 `highlight`、`underline`、`note`、`image`、`ink` 或 `text`）以及 `data-zotero-annotation-key`，即该批注的 Zotero 键。标记弹窗正在操作的标记还带有 Obsidian 自带的 `is-selected`；覆盖层在其上方绘制 `zt-pdf-annotation-selection-outline`，紧贴标记自身的矩形区域，或紧贴墨迹笔画。
+每个标记都带有 `data-zotero-annotation-type`（值为 `highlight`、`underline`、`note`、`image`、`ink` 或 `text`）以及 `data-zotero-annotation-key`，即该批注的 Zotero 标识符。标记弹窗正在操作的标记还带有 Obsidian 自带的 `is-selected`；覆盖层在其上方绘制 `zt-pdf-annotation-selection-outline`，紧贴标记自身的矩形区域，或紧贴墨迹笔画。
 
 开启编辑后，所选图像区域的轮廓上方还会显示八个 `zt-pdf-annotation-handle` 方形手柄。每个手柄的 `data-zt-grip` 指明它移动的边缘（`tl`、`t`、`tr`、`r`、`br`、`b`、`bl` 或 `l`；其中 `t` 是页面在未旋转的存储状态下的顶部），`data-zt-cursor` 指明显示的光标。图像标记自身带有 `data-zt-grip="body"` 和 `data-zt-cursor="move"`。所选墨迹标记在略大于笔画范围的矩形四角显示手柄（`tl`、`tr`、`br`、`bl`），其自身也带有 `data-zt-grip="body"`。所选高亮或下划线显示两条窄条：首行起始边缘的 `data-zt-grip="start"` 和末行结束边缘的 `data-zt-grip="end"`；若引文跨页，结束手柄位于下一页。高亮或下划线标记自身不带 `data-zt-grip`。手柄以及图像或墨迹主体接收指针输入，按住它们可移动标记或调整大小，而不是选择文本。在高亮或下划线主体上按下仍会选择文本。
 

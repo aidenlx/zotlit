@@ -2,30 +2,36 @@
 
 Base: `next` at `a635872e82a9c753528713c4489b90d9fe7a5c7e`.
 Integration branch: `poc/docs-i18n`; [draft PR #1446](https://github.com/aidenlx/zotlit/pull/1446).
-Current source checkpoint: `2ee71999fc1836af851764149d3f8001d99b3b9c`, 2026-10-11.
-Earlier fixture runtime checkpoint: `ba4b68c7c5e508f86969dd82a724777c399688b3`.
+Current source checkpoint: `eed6e1790dd642c66329e41bc70a7178395acc51`, 2026-10-11.
+Latest clean runtime checkpoint: `2233815fc3dc4093792cfd9eb119c1fdd4779821`.
+Latest missing-file fixture checkpoint: `a1d3d7d1566b349b8122111089df249d505e279a` plus a temporary English-only file.
 
 ## Current result
 
-The source includes real translations from both PR #1447 and PR #1448. The completion audit covers all 88 Chinese MDX files, 7 navigation files, 110 docs message keys, and 51 native Fumadocs keys. The [per-file coverage report](translation-coverage.md) records the exact source revisions, chosen wording, every content pair, and intentional English. Generated descriptions in the 18 template-data contract tables remain English.
+The source includes real translations from both PR #1447 and PR #1448. The inventory covers all 88 Chinese MDX files, 7 navigation files with 7 translated titles, and 157 root docs message keys. Those keys include 47 native messages that supply all 51 Fumadocs registry contexts through the generated facade. The [per-file coverage report](translation-coverage.md) records current blob IDs, source decisions, every content pair, and intentional English. Generated descriptions in the 18 template-data contract tables remain English.
 
 Results are pinned to the source used by each check:
 
 | Check | Observed result | Scope |
 | --- | --- | --- |
-| Docs tests | 342 passed in 42 files | Correction source `2ee71999`; the earlier fixture checkpoint also passed. |
-| TypeScript | App and Node configurations passed | Correction source `2ee71999`. |
-| MDX compilation and source parity | All 176 English/Chinese files compile; parity passes | All 29 changed Chinese files retain code, imports, UI calls, explicit IDs, links, and includes. |
-| Root lint and formatting | Zero lint errors, five existing warnings; formatting passed across 1,989 files | Correction source `2ee71999`; warnings are outside changed files. |
-| Production build | Passed with the normal Cloudflare production configuration | Earlier `ba4b68c7` source plus a temporary English-only documentation fixture. |
-| Real-HTTP matrix | 7,746 checks passed; 0 failed; 1,208 requests | Earlier `ba4b68c7` source plus fixture: 91 English HTML pages and their Chinese routes; all 54 legacy rules. |
-| Cloud-browser interaction | Passed for the cases below | Earlier `ba4b68c7` hydrated production preview with the fixture. |
-| Independent Chinese semantic re-review | Passed; all 39 findings closed, with no new meaning drift | Correction source `2ee71999`; covers all 88 MDX pairs, 110 docs messages, and 7 navigation metadata pairs. |
-| Clean post-correction build, checks, and final review | Pending | Runs against the corrected, fixture-free integration tree. |
+| Docs tests | 349 passed in 42 files | Metadata source `a1d3d7d1`; preceding Standards source `2233815f` passed 347 tests. |
+| TypeScript | App and Node configurations passed | Metadata source `a1d3d7d1`. |
+| MDX compilation and source parity | All 176 English/Chinese files compile | At `2233815f`, the 22 changed Chinese pages preserve fences, explicit anchors, and Markdown/JSX links. UI labels intentionally use new component imports and catalog calls. Metadata-only `a1d3d7d1` changes no MDX file. |
+| Root lint and formatting | Zero lint errors, five existing warnings; formatting passed | Metadata source `a1d3d7d1`; warnings are outside changed files. |
+| Production build | Normal Cloudflare build passed; 533 routes | Clean `2233815f`: includes 90 Chinese HTML assets and 174 Chinese Markdown assets. |
+| Real-HTTP matrix | 7,946 checks passed; 0 failed; 1,198 requests | Clean `2233815f`: 90 English HTML pages and their Chinese routes, all 54 legacy rules, and 264 native Chinese asset checks. |
+| Cloud-browser interaction | Root-backed UI, switching, search, and V1 cases passed | `2233815f`; its root search breadcrumb remained English and prompted the metadata correction. |
+| Independent Chinese semantic re-review | All 39 original findings closed; no new meaning drift | Earlier `2ee71999`: all 88 MDX pairs, the original 110 docs messages, and 7 metadata pairs. Does not cover the later Standards edits. |
+| Standards re-review | Zero open findings or smells | Final independent closure at `eed6e179`; original findings and the test package-root helper issue remain closed. |
+| Spec re-review | Zero implementation findings | Final independent delta review at `eed6e179`. |
+| Language delta review | Zero open findings; 39 prior findings and the generated-anchor finding are closed | Final independent verification at `eed6e179`; covers the 22 changed MDX files, all 47 native messages, the modified message, and root metadata. |
+| Compiled heading preservation | All 896 heading IDs match `2ee71999` across all 88 Chinese files | `eed6e179`; the regression failed before the explicit-ID fix and passed afterward. |
+| Latest missing-file fixture | Normal 536-route build and 8,013 HTTP checks passed; browser fallback and Chinese breadcrumb passed | `a1d3d7d1` plus fixture; 1,208 requests, zero failures, 264 native asset checks. |
+| Final clean runtime reruns | Pending | Fixture has been removed; repeat the normal build, HTTP matrix, and clean browser checks at `eed6e179`. |
 
-The temporary fixture has been removed and its preview stopped. Commit `2ee71999` corrects all 39 semantic findings in 29 Chinese MDX files and one docs message. Independent re-review passed on that exact commit. The fixture build and its results are not the final clean-tree result. These local checks do not establish a remote CI, merge, or deployment result. Publication of this translation update is paused.
+Commit `a1d3d7d1` adds the root title “文档”, a native page-tree regression, and HTTP assertions for Chinese search breadcrumbs. It changes one metadata file and two check files. The missing-file fixture pass verifies that metadata and root-backed fallback UI. The later `6ff764e2` changes only a test package-root helper. `eed6e179` adds one explicit Chinese heading ID and its regression; the final clean runtime results are pending. Local passes do not establish remote CI, publication, merge, or deployment. Publication of this translation update is paused.
 
-An earlier test run overlapped with a build and failed while Paraglide output was being regenerated. The serialized rerun passed. Run generation, build, and tests in order when they share that output.
+Concurrent test/lint/HTTP runs produced resource timeouts during the Standards pass; serialized reruns passed. An earlier test/build overlap also failed during Paraglide regeneration and passed on a serialized rerun. Run shared-output and resource-intensive checks in order.
 
 ## Implemented behavior
 
@@ -33,28 +39,30 @@ An earlier test run overlapped with a build and failed while Paraglide output wa
 - Native Fumadocs loaders cover docs, blog, and changelog. Docs search filters by locale. Explicit locale inputs select the correct MDX source.
 - Actual Chinese file presence selects the Chinese edition and locale metadata. Missing files use English fallback at the requested Chinese URL, with a Chinese notice and one English-page action that preserves query and fragment.
 - Static and listing pages use the locale catalogs. There are no translation approval flags, readiness gates, or recursive include approval checks.
+- Native Chinese HTML and Markdown editions are prerendered with English and can be served from the asset layer. Missing-file Chinese fallback remains Worker-rendered.
 - Existing Chinese editions have Chinese canonicals and reciprocal alternate links. Missing-file fallbacks stay English-canonical and `noindex`. Workbench stays `noindex` in both languages. The sitemap includes existing locale editions except Workbench.
-- Both native UI dictionaries match all 51 installed registry keys: 50 context-qualified keys plus `displayName`. Tests cover exact registry membership and rendered labels. The former 46 raw keys have been replaced.
+- The root catalogs own all UI copy. The [Fumadocs adapter](../src/lib/fumadocs-translations.ts) maps 47 generated messages to all 51 native registry keys: 50 context-qualified keys plus `displayName`. App-local dictionaries have been removed. Tests cover registry membership, displayed/accessibility labels, and URL interpolation.
 - All 1,910 non-docs root-catalog values remain unchanged from the original baseline. The English catalog remains the meaning source. The source integration keeps complementary translations from both PRs and completes the authored prose.
 
 ## HTTP matrix
 
-The verifier ran against the normal production preview on an OS-assigned port. The fixture added one English-only page to the build's discovered page inventory for this run. It is excluded from the tracked translation inventory. It discovered the expected native Chinese files rather than treating an English fallback as a Chinese translation.
+The latest matrix ran against the clean `2233815f` normal production preview on an OS-assigned port. It discovers native Chinese files independently of English fallback and verifies their emitted HTML/Markdown assets. There was no temporary fixture in this run.
 
 | Check group | Passed |
 | --- | ---: |
-| Inventory | 7 |
+| Native Chinese assets | 264 |
+| Inventory | 8 |
 | Legacy redirect responses | 342 |
 | Legacy landing pages | 1,488 |
-| HTML and locale metadata | 2,465 |
-| Trailing slashes | 362 |
-| Markdown editions and content negotiation | 2,816 |
+| HTML and locale metadata | 2,436 |
+| Trailing slashes | 358 |
+| Markdown editions and content negotiation | 2,784 |
 | Search | 14 |
 | Errors and Pre-release Docs fallback | 24 |
 | Machine endpoints | 43 |
 | Concurrent locale isolation | 168 |
 | Noncanonical machine requests | 17 |
-| **Total** | **7,746** |
+| **Total** | **7,946** |
 
 The matrix checks discovered English/Chinese route pairs, exact V1 destinations and queries, locale links and sidebars, canonical/alternate/indexing metadata, English fallback actions, Markdown suffix/content/Accept agreement, search, sitemap, machine aliases, errors, and concurrent locale isolation. It exempts only the verified English-page action from locale-link checks; unrelated English links still fail.
 
@@ -62,36 +70,32 @@ HTTP fixtures also test failure cases: an incorrect English destination, lost qu
 
 ## Cloud-browser checks
 
-The cloud browser used the production preview served by the supported Linux desktop runtime. The inspected source was `ba4b68c7` plus the temporary English-only fixture.
+The cloud browser used the production preview served by the supported Linux desktop runtime. Results below distinguish the current rendering design from the earlier missing-file fixture.
 
-### Native Chinese content and controls
+### Root-backed UI and native pages at `2233815f`
 
-- The Chinese tutorial rendered its Chinese body and navigation. It had Chinese document language, `index, follow`, a Chinese canonical, and reciprocal English/Chinese/x-default alternate links.
-- Hydrated controls displayed Chinese text: `搜索`, `选择语言`, `复制 Markdown`, and `关闭搜索`. Accessible control names were present in Chinese.
-- English/Chinese switching preserved `?qa=bilingual#next-steps`, changed the body locale, and changed native UI after hydration.
+- Hydrated search, language choice, Copy Markdown, and Open menus displayed Chinese. Visible and accessible control labels came from the root-backed adapter.
+- External page-action links contained the actual Chinese page URL, with no literal `{url}`. Those external destinations were not followed.
+- Switching to English preserved query and fragment and displayed English UI/canonical metadata. Back and reload restored Chinese content and UI.
+- Searching for `模板` returned Chinese results. Selection opened the Chinese template-syntax page.
+- A trailing-slash Chinese V1 arrival with conflicting query values kept the Chinese destination, rule-owned queries, and fragment. The destination had Chinese canonical/index metadata and no false fallback notice.
+- The search root breadcrumb still displayed `Docs` at this earlier checkpoint. Source `a1d3d7d1` changes it to `文档`, verified in the newer fixture pass below.
 
-### Search and navigation
+No app-origin console errors were observed. Browser-extension metadata errors were excluded; the external Giscus frame could not connect. Clipboard behavior was not rechecked.
 
-- Searching for `模板` returned Chinese content. Closing and reopening search preserved the query.
-- Selecting `模板语法` opened `/zh-CN/docs/reference/templates/syntax` with Chinese body and document language.
-- Searching for the fixture's unique English keyword returned its English result at the Chinese fallback URL.
-- The Chinese sidebar included the English-only page. Its “Read the tutorial” body link opened the translated Chinese tutorial.
+### Latest missing-file fixture at `a1d3d7d1`
 
-### Missing-file fallback and history
+The temporary `/zh-CN/docs/how-to/qa-english-only` page had no Chinese source file. The normal fixture build emits 536 routes. Its HTTP matrix passed 8,013 checks across 1,208 requests, including 264 native asset checks and the Chinese breadcrumb assertions. The fixture was then removed and is excluded from the tracked translation inventory.
 
-The temporary `/zh-CN/docs/how-to/qa-english-only` page had no Chinese source file.
+- The requested Chinese URL displayed English body with Chinese native controls, notice, and exactly one `阅读英文版` action.
+- Content metadata stayed English: English document language/canonical and `noindex`.
+- The hydrated action preserved `?from=v1&lang=zh-CN&qa=native#qa-english-only-feature`. Its English destination displayed English controls and no false fallback warning.
+- Back and reload restored the Chinese URL and notice.
+- Searching the unique English keyword showed `文档`, `操作指南`, and the fixture's English title. Selecting the result opened the same Chinese fallback URL.
+- No app-origin console errors or warnings were observed; browser-extension metadata errors were excluded.
 
-- The page kept the requested Chinese URL and displayed its English body with Chinese UI and one Chinese notice/action, `阅读英文版`.
-- Content metadata stayed English: English canonical, `noindex, follow`, and English/x-default alternates only.
-- The English-page action preserved `?from=v1&lang=zh-CN&qa=bilingual#qa-english-only-feature`.
-- The English destination displayed English UI and no false fallback warning.
-- Back, reload, and Forward restored the corresponding locale, body, and notice state.
+The tutorial body link was clicked, but its destination was not independently observed before the tab closed. This step is not counted as passed in the latest fixture run. Prior passes verified that link behavior; the final clean browser pass must verify a body-link destination again.
 
-### V1 Chinese arrival
-
-`/zh-CN/getting-started/basic-usage/?qa=bilingual&lang=en#next-steps` landed on the Chinese tutorial. Rule-owned `from`, `src`, and `lang` replaced the arrival query; the fragment survived. The destination had Chinese canonical/index metadata and no false untranslated notice.
-
-No app-origin browser errors or warnings were observed. Browser-extension metadata errors were excluded. The external Giscus frame could not connect in this environment. Clipboard behavior was not rechecked.
 
 ## Redirect contract
 
@@ -106,11 +110,13 @@ Modern Chinese routes remain live. Unknown ordinary pages return 404. A changelo
 
 ## Review status and limits
 
-Independent source review compared all 88 English/Chinese MDX pairs, the 7 navigation pairs, and all 110 docs catalog values. It checked meaning, conditions, warnings, side effects, code, variables, links, and remaining authored English. Its 39 findings include restrictions, authorization duration, import scope, property presence, link context, and omitted workflow details. The native dictionary repair was verified separately. The generated contract-table descriptions are the disclosed English exception.
+Independent language review at `2ee71999` compared all 88 English/Chinese MDX pairs, the 7 navigation pairs, and the original 110 docs messages. It checked meaning, conditions, warnings, side effects, code, variables, links, and remaining authored English. Its 39 findings were corrected and independently closed with no new meaning drift. Generated contract-table descriptions are the disclosed English exception.
 
-Commit `2ee71999` corrects all 39 findings, including `docs_redirect_original_page`, and independent re-review closed each finding with no new meaning drift. The correction pass preserves code, imports, UI calls, explicit IDs, links, and includes. Final Standards and Spec reviews are pending on the completed source. Prior reviews of the earlier implementation do not cover these later translation changes. The original implementation followed only part of the repository's worktree, ticket, and TDD workflow; later checks do not establish that every workflow step was followed.
+The later Standards review found six documented-standard breaches and one duplication issue. Commit `2233815f` addresses native asset prerendering, root-catalog UI ownership, Chinese terminology, message-backed current UI labels, scoped test cleanup, optional-parameter conventions, and shared Markdown route parsing. It updates 22 Chinese MDX files, adds 47 root messages, and corrects the Companion wording in one existing message. Final independent Standards review at `eed6e179` reports zero open documented findings or smells after the additional test-helper and anchor corrections. Final Spec review at the same commit reports zero implementation findings. The language delta review covers the 22 MDX changes, all 47 native messages, the modified introduction, and the root title; it found no new meaning or interpolation error. Its one P3 generated-anchor finding is fixed by `eed6e179`. That fix preserves all 896 compiled heading IDs from the earlier reviewed content. Independent language verification at `eed6e179` closes that final finding and confirms all 39 earlier findings remain closed. The final review gate is passed at this exact source. The fixture-free build, HTTP matrix, and clean browser rerun remain pending.
 
-HTTP cannot establish hydration, interaction, clipboard access, or fragment behavior. The browser cases above provide the stated interaction evidence. External archive destinations, live GitHub facts, arbitrary historical fragments, translated screenshot pixels, and remote CI were not verified by this checkpoint. The preview warned that `GITHUB_TOKEN` was absent; live GitHub facts are therefore not part of the pass claim.
+The original implementation followed only part of the repository's worktree, ticket, and TDD workflow. Later checks do not establish that every workflow step was followed.
+
+HTTP cannot establish hydration, interaction, clipboard access, or fragment behavior. The browser cases above provide the stated evidence. External archive destinations, live GitHub facts, arbitrary historical fragments, translated screenshot pixels, and remote CI are outside this checkpoint's verification. A missing GitHub token and blocked external Giscus frame limit live external content checks.
 
 ## Reproduce after corrections
 

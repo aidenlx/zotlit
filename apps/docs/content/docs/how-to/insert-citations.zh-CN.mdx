@@ -55,7 +55,7 @@ import { m } from "@/paraglide/messages.js";
   </Step>
 </Steps>
 
-若选中的条目未生成文献引用标识，插入操作会被安全取消并弹出提示通知：“所选条目没有文献引用标识（citation key）：`{key}`。”。
+若选中的条目未生成文献引用标识，插入操作会被安全取消并弹出提示通知：<UiLabel name={m.notice_no_citekey({ key: "{key}" })} />
 
 ### 建议菜单设置 [#suggester-settings]
 
@@ -142,7 +142,7 @@ import { m } from "@/paraglide/messages.js";
 
 同一文献引用标识可能属于多个 Zotero 条目，无论这些条目位于同一个文献库，还是作用域内的两个文献库。插入的文本只保存标识本身，因而无法继续唯一指向您选中的条目。
 
-因此，无论从哪个入口插入，ZotLit 都会拒绝此次操作并提示：“文献引用标识（citation key）`@{key}` 对应多个 Zotero 条目。请先在 Zotero 中修改，再插入引用。”请在 Zotero 中为其中一个条目设置不同的标识，或将文献库作用域缩小到目标文献库，然后重新插入。
+因此，无论从哪个入口插入，ZotLit 都会拒绝此次操作并提示：<UiLabel name={m.notice_citekey_ambiguous_insert({ citekey: "{key}" })} />请在 Zotero 中为其中一个条目设置不同的标识，或将文献库作用域缩小到目标文献库，然后重新插入。
 
 已经写入笔记的标识仍可读取。此类标识在编辑器、引文浮窗和参考文献侧边栏中的行为，请参阅[正文引文渲染与导航的工作原理](/docs/concepts/how-citekey-links-work)。
 

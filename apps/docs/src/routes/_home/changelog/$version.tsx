@@ -53,7 +53,8 @@ const getRelease = createServerFn({ method: "GET" })
       description: page.data.description,
       companion: page.data.companion,
       date: page.data.date,
-      latest: getChangelogPages(locale)[0]?.data.version === page.data.version,
+      latest:
+        getChangelogPages({ locale })[0]?.data.version === page.data.version,
     };
   });
 
@@ -75,7 +76,7 @@ export const Route = createFileRoute("/_home/changelog/$version")({
             release.description ??
             m.docs_changelog_release_description({
               version: release.version,
-              date: formatReleaseDate(release.date, getLocale()),
+              date: formatReleaseDate(release.date, { locale: getLocale() }),
             }),
           path: release.url,
           card: {
@@ -121,7 +122,7 @@ function ChangelogVersion() {
             )}
           </h1>
           <p className="mb-1.5 font-mono text-xs font-medium tracking-widest text-fd-muted-foreground uppercase">
-            {formatReleaseDate(release.date, getLocale())}
+            {formatReleaseDate(release.date, { locale: getLocale() })}
           </p>
         </header>
         {release.companion && <CompanionNote version={release.companion} />}
