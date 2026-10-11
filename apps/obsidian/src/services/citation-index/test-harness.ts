@@ -1,4 +1,3 @@
-import { Effect } from "effect";
 import { basename } from "node:path/posix";
 import { TFile } from "obsidian";
 import type {
@@ -13,6 +12,7 @@ import type { Library, LibraryCitekey } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { FIELD_CITEKEY, FIELD_ZOTERO_KEY } from "@/lib/constants";
+import { Effect } from "@/lib/effect";
 import { resolveLibraryScope } from "@/services/library-scope/scope";
 import type {
   LibraryScope,

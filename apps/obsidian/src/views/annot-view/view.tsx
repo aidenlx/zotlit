@@ -1,4 +1,3 @@
-import { Effect } from "effect";
 import { ItemView, Platform, Scope } from "obsidian";
 import type {
   Menu as ObsidianMenu,
@@ -23,6 +22,7 @@ import {
   registerKeymap,
   registerMigratingWindowEvent,
 } from "@/lib/disposables";
+import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
 import type { ItemSummary } from "@/lib/item-summary";

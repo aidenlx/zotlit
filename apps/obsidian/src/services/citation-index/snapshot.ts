@@ -1,8 +1,7 @@
-// Worker-owned citation maps: a native citekey's Items, and an Item's native citekey.
-import { Effect, Stream } from "effect";
-
 import type { LibraryCitekey } from "@zotlit/db";
 
+// Worker-owned citation maps: a native citekey's Items, and an Item's native citekey.
+import { Effect, Stream } from "@/lib/effect";
 import { getLogger } from "@/lib/log";
 
 const logger = getLogger("citation-index");

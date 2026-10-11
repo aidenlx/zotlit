@@ -1,10 +1,9 @@
 // The tag names in use in one Annotation's Library, as the Zotero database
 // answers them.
 
-import { Effect } from "effect";
-
 import { resolveIndexedKeyLibraryIn } from "@zotlit/db";
 
+import { Effect } from "@/lib/effect";
 import { getLogger } from "@/lib/log";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 

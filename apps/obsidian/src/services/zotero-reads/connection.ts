@@ -1,11 +1,11 @@
-// The Connection the ZoteroReads handlers borrow, and its RcRef-backed provider.
-import { Context, Duration, Effect, Layer, RcRef } from "effect";
-import type { Stream } from "effect";
-import type { Scope } from "effect";
-
 import { getLibraries, getZoteroDatabaseIdentity } from "@zotlit/db";
 import type { ZoteroDatabaseIdentity } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
+
+// The Connection the ZoteroReads handlers borrow, and its RcRef-backed provider.
+import { Context, Duration, Effect, Layer, RcRef } from "@/lib/effect";
+import type { Stream } from "@/lib/effect";
+import type { Scope } from "@/lib/effect";
 
 import { makeChangeFeed } from "./change-feed";
 import { DbUnavailable } from "./rpc";

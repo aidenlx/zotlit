@@ -1,6 +1,5 @@
 // The ZoteroReads handler layer: each operation composes @zotlit/db query functions over a borrowed Connection.
 import { chunk } from "@std/collections/chunk";
-import { Effect, Exit, Layer, Scope, Semaphore, Stream } from "effect";
 
 import {
   CollectionCache,
@@ -44,6 +43,8 @@ import type { Attachment, GroupIDMemo, Item, TagMemo } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { ItemIndex, layerItemIndex } from "@zotlit/item-lookup";
 import { exportItemSnapshot } from "@zotlit/workbench/snapshot";
+
+import { Effect, Exit, Layer, Scope, Semaphore, Stream } from "@/lib/effect";
 
 import { CITEKEY_WINDOW, makeCitationLookup } from "./citation-lookup";
 import { Connection, toDbUnavailable } from "./connection";

@@ -1,12 +1,12 @@
 import type { Extension } from "@codemirror/state";
-// The citekey editor treatment service: it follows the settings that switch the
-// CodeMirror extension on and owns the click that opens a citekey's note.
-import { Effect } from "effect";
 import type { App, Plugin } from "obsidian";
 
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { dispatchToMarkdownEditors } from "@/lib/editor-decoration";
+// The citekey editor treatment service: it follows the settings that switch the
+// CodeMirror extension on and owns the click that opens a citekey's note.
+import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { describeCandidates } from "@/services/citation-index/ambiguity";
