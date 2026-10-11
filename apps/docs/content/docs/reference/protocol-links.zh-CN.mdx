@@ -1,6 +1,6 @@
 ---
-title: "Protocol links"
-description: "Every obsidian://zotlit/* action, its parameters, and usage for scripting workflows."
+title: "协议链接"
+description: "obsidian://zotlit/* 全部协议动作及其支持参数，以及自动化脚本工作流使用指南。"
 translationStatus: placeholder
 ---
 
@@ -9,52 +9,52 @@ import { Callout } from "@/components/callout";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-This page documents every `obsidian://zotlit/*` protocol action. These deep links allow ZotLit Companion, the Zotero add-on, and external tools such as scripts and launchers to trigger ZotLit operations in Obsidian.
+本页面详细记录了所有 `obsidian://zotlit/*` 自定义协议链接动作。这些深度链接允许配套插件 ZotLit Companion 以及自动化脚本、系统启动器等外部工具直接在 Obsidian 中触发特定的 ZotLit 操作。
 
-## Common parameters
+## 通用参数
 
-Every protocol link requires a `source-id` parameter: an 8-character hex string identifying the Zotero install that generated the link. ZotLit rejects links whose `source-id` does not match the connected database.
+每个协议链接都必须携带 `source-id` 参数：一个 8 位的十六进制字符串，用于标识生成该链接的 Zotero 安装实例。ZotLit 会严密校验并拒绝任何 `source-id` 与当前连接数据库不匹配的外部链接。
 
-If the Zotero database is not yet loaded, ZotLit shows <UiLabel name={m.notice_protocol_db_unavailable()} />.
+如果 Zotero 数据库尚未完成加载，ZotLit 会提示 <UiLabel name={m.notice_protocol_db_unavailable()} />。
 
-## Where the link opens [#pane-type]
+## 目标打开位置 [#pane-type]
 
-Four actions put something in front of you: `open`, `update`, `explore`, and `open-attachment`. Each takes an optional `paneType`, spelled as [Obsidian's own URI links](https://help.obsidian.md/Extending+Obsidian/Obsidian+URI) spell it.
+有四个动作会在您眼前打开窗口界面：`open`、`update`、`explore` 以及 `open-attachment`。它们均支持可选的 `paneType` 参数，书写形式遵循 [Obsidian 原生 URI 规范](https://help.obsidian.md/Extending+Obsidian/Obsidian+URI)：
 
-| Value    | Result                                |
-| -------- | ------------------------------------- |
-| `tab`    | Opens a new tab.                      |
-| `split`  | Opens a new tab group.                |
-| `window` | Opens a pop-out window. Desktop only. |
+| 参数取值 | 执行结果                                   |
+| -------- | ------------------------------------------ |
+| `tab`    | 在新标签页中打开。                         |
+| `split`  | 在新分栏窗格组中打开。                     |
+| `window` | 在独立的弹出浮动窗口中打开（仅限桌面端）。 |
 
 ```
 obsidian://zotlit/open?item=<id>&source-id=<hash>&paneType=tab
 ```
 
-Omit the parameter to keep each action's usual placement: `open`, `update`, and `open-attachment` replace the last active tab, and `explore` reuses the Template Data Explorer already in the sidebar. A value outside the three shows <UiLabel name={m.notice_protocol_invalid()} /> and stops the action.
+如果省略此参数，则沿用各动作的默认习惯：`open`、`update` 与 `open-attachment` 会直接替换上一个活动标签页，而 `explore` 则复用侧边栏中已有的模板数据浏览器。传入这三者之外的值会提示 <UiLabel name={m.notice_protocol_invalid()} /> 并终止执行。
 
-ZotLit Companion writes the parameter onto the links its own Zotero menus open. Under the <UiLabel name={m["zotero.prefs_open_section"]()} /> section of the <UiLabel name={m["zotero.prefs_pane_label"]()} /> pane in Zotero's settings, <UiLabel name={m["zotero.prefs_pane_type"]()} /> picks the pane. <UiLabel name={m["zotero.prefs_pane_type_active.label"]()} />, the default, leaves the parameter off the link.
+ZotLit Companion 会自动为其在 Zotero 右键菜单中生成的链接注入该参数。在 Zotero 首选项的 <UiLabel name={m["zotero.prefs_pane_label"]()} /> 面板下的 <UiLabel name={m["zotero.prefs_open_section"]()} /> 区域中，<UiLabel name={m["zotero.prefs_pane_type"]()} /> 可配置打开目标。默认的 <UiLabel name={m["zotero.prefs_pane_type_active.label"]()} /> 会在链接中省略该参数。
 
-## Actions
+## 支持的动作
 
 ### open
 
-Opens the existing literature note for a Zotero item, or creates one if none exists.
+打开指定 Zotero 条目现有的文献笔记，若尚不存在则自动创建。
 
 ```
 obsidian://zotlit/open?item=<id>&source-id=<hash>
 ```
 
-| Parameter   | Type       | Required | Description                                                                                |
-| ----------- | ---------- | -------- | ------------------------------------------------------------------------------------------ |
-| `item`      | Integer    | Yes      | Zotero item ID                                                                             |
-| `source-id` | 8-char hex | Yes      | Zotero install identifier                                                                  |
-| `profile`   | 12-char id | No       | The profile that creates or updates the note, named by profile ID.                         |
-| `paneType`  | Pane value | No       | Where the note opens: `tab`, `split`, or `window`. See [Where the link opens](#pane-type). |
+| 参数名      | 数据类型     | 是否必填 | 详细描述                                                                         |
+| ----------- | ------------ | -------- | -------------------------------------------------------------------------------- |
+| `item`      | 整数         | 是       | Zotero 条目 ID                                                                   |
+| `source-id` | 8 位十六进制 | 是       | Zotero 安装实例标识符                                                            |
+| `profile`   | 12 位 ID     | 否       | 指定用于创建或更新该笔记的配置方案 ID。                                          |
+| `paneType`  | 分栏类型取值 | 否       | 笔记打开的目标位置：`tab`、`split` 或 `window`。详见[目标打开位置](#pane-type)。 |
 
-`profile` picks the profile the action resolves the note against. The note is created with that profile when none exists yet. A note that already exists keeps the profile it carries. A link naming a different profile reports the profile the note kept and changes nothing.
+`profile` 参数指定了动作解析笔记时所采用的配置方案。若笔记尚未创建，将使用该配置方案进行创建。若笔记已存在，则保持该笔记已绑定的原有配置方案不变；若传入了不同的配置方案，系统仅会汇报现有配置方案，不作任何改动。
 
-The value is 12 letters or digits, the `id` its [profile document](/docs/reference/templates/profile-document) declares, never a label. Omit the parameter to resolve the profile the usual way. An unknown ID shows a notice and stops the action.
+该取值为 12 位的字母或数字组合，即其[配置方案文档](/docs/reference/templates/profile-document)中声明的 `id`，而非显示标签。若省略此参数，则按常规规则解析配置方案。传入未知的 ID 会弹出提示通知并终止操作。
 
 ---
 

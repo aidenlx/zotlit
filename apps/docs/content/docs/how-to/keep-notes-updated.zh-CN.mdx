@@ -1,6 +1,6 @@
 ---
-title: "Keep notes up to date"
-description: "Update a single literature note or a batch of notes when your Zotero data changes, without losing your own writing."
+title: "保持笔记即时更新"
+description: "在 Zotero 数据发生变动时更新单篇或批量文献笔记，且绝不丢失您自己书写的文字。"
 translationStatus: placeholder
 ---
 
@@ -11,54 +11,54 @@ import { Command } from "@/components/command";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-When your Zotero metadata or annotations change, you can refresh your literature notes to match. ZotLit preserves your own writing by updating only the parts it manages.
+当您的 Zotero 元数据或批注发生改动时，您可以随时刷新文献笔记以保持同步。ZotLit 仅更新由其托管的特定区域，从而完整保护您自己撰写的所有内容。
 
-## Update a single note
+## 更新单篇笔记
 
-These commands are available from the command palette and from the right-click context menu on a literature note file. They only appear when the active file is a literature note (a note with a `zotero-key` frontmatter field).
+这些命令可以通过 Obsidian 命令面板以及文献笔记文件的右键上下文菜单执行。它们仅在当前活动文件为文献笔记（即包含 `zotero-key` frontmatter 属性）时才会出现。
 
-### Update the full note
+### 更新完整笔记
 
 <Steps>
   <Step>
-    ### Open a literature note
+    ### 打开文献笔记
 
-    Open the literature note you want to update.
+    在 Obsidian 中打开您需要更新的文献笔记。
 
   </Step>
   <Step>
-    ### Run the update command
+    ### 运行更新命令
 
-    Open the command palette (`Ctrl+P` on Windows/Linux, `Cmd+P` on macOS) and run:
+    打开命令面板（Windows/Linux 上为 `Ctrl+P`，macOS 上为 `Cmd+P`）并运行：
 
     <Command name={m.command_update_note_name()} />
 
-    ZotLit refreshes the frontmatter and re-renders the managed region (`%%zt-managed%%` ... `%%/zt-managed%%`). Your writing outside the managed region stays untouched.
+    ZotLit 将刷新 frontmatter 属性，并重新渲染受管区域（位于 `%%zt-managed%%` 与 `%%/zt-managed%%` 之间）。您在受管区域之外书写的所有内容均保持完好如初。
 
-    A notice confirms: <UiLabel name={m.notice_updated_note()} />
+    操作完成后弹出通知确认：<UiLabel name={m.notice_updated_note()} />
 
-    Image and ink excerpts are prepared before the note is written. Both PDF readers can stay closed. A changed image gets a new filename; other notes and old image files keep their saved versions.
+    图片和墨迹摘录会在笔记写入前准备完毕，期间无需打开任何 PDF 阅读器。发生变动的图片会生成新的文件名；其他笔记以及旧图片文件均会妥善保留现有版本。
 
-    If refresh fails, ZotLit keeps a verified image already referenced by the note. If none is available, it writes an explanation and source link. See [Import outcomes](/docs/concepts/excerpt-images#import-outcomes) for the summary counts.
+    如果刷新失败，ZotLit 会优先保留笔记中已引用的有效旧图片。若无可用图片，则会写入说明文字和源链接。有关汇总统计的定义，请参阅[导入操作结果反馈](/docs/concepts/excerpt-images#import-outcomes)。
 
   </Step>
 </Steps>
 
-### Update metadata only
+### 仅更新元数据
 
-To refresh frontmatter without touching the note body, run:
+若只需刷新 frontmatter 属性而无需变动笔记正文，请运行：
 
 <Command name={m.command_update_note_metadata_name()} />
 
-A notice confirms: <UiLabel name={m.notice_updated_note_metadata()} /> The note body is not changed.
+随后弹出通知确认：<UiLabel name={m.notice_updated_note_metadata()} />。笔记正文不会受到任何触碰。
 
-### Context menu
+### 右键上下文菜单
 
-You can also right-click a literature note file in the file explorer. The **ZotLit** section of the context menu offers <UiLabel name={m.command_update_note_name()} />, <UiLabel name={m.command_update_note_metadata_name()} />, <UiLabel name={m.command_overwrite_note_name()} />, and <UiLabel name={m.command_copy_item_key_name()} />.
+您也可以在文件资源管理器中右键单击某个文献笔记文件。上下文菜单的 **ZotLit** 分组中提供了 <UiLabel name={m.command_update_note_name()} />、<UiLabel name={m.command_update_note_metadata_name()} />、<UiLabel name={m.command_overwrite_note_name()} /> 以及 <UiLabel name={m.command_copy_item_key_name()} /> 操作。
 
-## Update notes in batch [#batch]
+## 批量更新笔记 [#batch]
 
-ZotLit Companion, the Zotero add-on, starts batch updates from Zotero.
+可以通过 Zotero 端的必备插件 ZotLit Companion 发起批量更新。
 
 <Steps>
   <Step>

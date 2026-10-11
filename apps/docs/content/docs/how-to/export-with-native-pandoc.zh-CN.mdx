@@ -1,6 +1,6 @@
 ---
-title: "How to export with native Pandoc"
-description: "Use ZotLit's integration pair with your installed Pandoc CLI, a Better CSL JSON bibliography, and Literature Note citations."
+title: "通过原生 Pandoc 导出"
+description: "结合本地安装的 Pandoc CLI、Better CSL JSON 参考文献库以及文献笔记引文，使用 ZotLit 集成文件对执行导出。"
 translationStatus: placeholder
 ---
 
@@ -12,52 +12,54 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-Use this guide when you need your own Pandoc installation, bibliography file, CSL options, or command-line workflow.
+当您需要使用本机安装的独立 Pandoc 程序、自有参考文献库文件、自定义 CSL 编译参数或自动化命令行脚本工作流时，请参阅本指南。
 
-To learn both export routes with one worked note, follow [Build a Pandoc citation workflow](/docs/tutorial/pandoc-citation-workflow).
+若希望通过一篇实例文献笔记直观比对内置导出与原生 Pandoc 导出的差异，请参阅[搭建 Pandoc 引文工作流](/docs/tutorial/pandoc-citation-workflow)。
 
-## Requirements [#requirements]
+## 环境要求 [#requirements]
 
-You need:
+您需要：
 
-- Pandoc 3.1.1 or newer.
-- Obsidian 1.14.2 or newer.
-- Obsidian installer 1.13.4 or newer, with **Command line interface** enabled.
-- Zotero 9 or newer.
-- Obsidian running with the input vault open and ZotLit loaded.
-- The `obsidian` launcher available to Pandoc.
+- Pandoc 3.1.1 或更高版本。
+- Obsidian 1.14.2 或更高版本。
+- Obsidian 安装包版本 1.13.4 或更高版本，且开启了**命令行界面（CLI）**功能。
+- Zotero 9 或更高版本。
+- 保持 Obsidian 处于运行状态，且输入笔记所在的仓库已打开并正常加载了 ZotLit。
+- 确保系统环境 PATH 中可调用 `obsidian` 命令行工具。
 
-This workflow uses your installed Pandoc CLI. It is separate from ZotLit's managed Pandoc engine and built-in export command.
+该工作流直接调用您本地安装的 Pandoc CLI，独立于 ZotLit 自带的受管 Pandoc 引擎与内置导出命令。
 
-## Set up the workflow
+## 配置原生工作流
 
 <Steps>
   <Step>
-    ### Save the ZotLit integration pair
+    ### 保存 ZotLit 集成文件对
 
-    Open <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_native_pandoc_heading()} />. In that group, find <UiLabel name={m.settings_citation_pandoc_files_name()} /> and select <UiLabel name={m.settings_citation_pandoc_files_save()} />.
+    打开 <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_native_pandoc_heading()} />。在对应选项组中，找到 <UiLabel name={m.settings_citation_pandoc_files_name()} /> 并点击 <UiLabel name={m.settings_citation_pandoc_files_save()} />。
 
-    Choose a user-owned workflow folder. ZotLit saves `zotlit-cite.lua` and `zotlit.yaml` there.
+    选择一个专门存放工作流文件的本地目录。ZotLit 会在其中保存 `zotlit-cite.lua` 与 `zotlit.yaml`。
 
-    Keep both files together under these names. Save a fresh pair after every ZotLit update. Files saved from a version before ZotLit 2.2.0 do not work with 2.2.0 or later.
-
-  </Step>
-  <Step>
-    ### Create a bibliography
-
-    [Better BibTeX](https://retorque.re/zotero-better-bibtex/installation/) is recommended for citation key management and automatic bibliography updates.
-
-    In Zotero, right-click the library, group library, or collection that contains your cited items. Select **Export** and choose **Better CSL JSON**. Enable **Keep updated**, then save `references.json`.
-
-    The export updates after its source library or collection changes. See the [Better BibTeX automatic export guide](https://retorque.re/zotero-better-bibtex/exporting/auto/) for its update controls.
-
-    Without Better BibTeX, right-click the library or collection, select **Export**, choose **CSL JSON**, and save `references.json`. Export it again after the cited Zotero data changes.
-
-    BibLaTeX and BibTeX are also supported. The command below uses CSL JSON.
+    请将这两个文件妥善放在一起并保持原名。在每次更新 ZotLit 插件后，均需重新保存一对最新文件。低于 ZotLit 2.2.0 版本保存的文件无法与 2.2.0 及更高版本协同工作。
 
   </Step>
   <Step>
-    ### Prepare a Literature Note citation
+    ### 生成参考文献库文件
+
+    推荐使用 [Better BibTeX](https://retorque.re/zotero-better-bibtex/installation/) 来管理文献引用标识并实现参考文献库的自动实时更新。
+
+    在 Zotero 中，右键单击包含被引条目的个人文库、群组文献库或分类。选择**导出文献库…**，格式选择 **Better CSL JSON**。勾选**保持更新**，然后保存为 `references.json`。
+
+    当源文献库或分类发生变动时，导出的文件会自动刷新。详见 [Better BibTeX 自动导出指南](https://retorque.re/zotero-better-bibtex/exporting/auto/)。
+
+    若未安装 Better BibTeX，可直接右键单击文献库或分类，选择**导出文献库…**，格式选择 **CSL JSON** 并保存为 `references.json`。后续若引用数据发生更改需手动重新导出。
+
+    BibLaTeX 与 BibTeX 格式同样受支持。下文的命令以 CSL JSON 为例。
+
+  </Step>
+  <Step>
+    ### 准备文献笔记引文
+  </Step>
+</Steps>
 
     Confirm that the cited Zotero item has a citation key and a ZotLit Literature Note. In your input note, add an unaliased link to that Literature Note with a Citation Fragment:
 

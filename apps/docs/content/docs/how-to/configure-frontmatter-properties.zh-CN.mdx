@@ -1,6 +1,6 @@
 ---
-title: "Configure frontmatter properties"
-description: "Add custom YAML frontmatter fields to literature notes using template expressions and merge strategies."
+title: "配置 frontmatter 属性"
+description: "通过模板表达式与合并策略，在文献笔记中添加自定义 YAML frontmatter 属性字段。"
 translationStatus: placeholder
 ---
 
@@ -12,49 +12,48 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-You can map Zotero data into YAML frontmatter properties that appear at the top of every literature note. ZotLit ships four default fields: `title`, `related`, `collections`, and `citekey`.
+您可以将 Zotero 数据映射为呈现于每篇文献笔记顶部的 YAML frontmatter 属性。ZotLit 预设了四个默认字段：`title`、`related`、`collections` 以及 `citekey`。
 
-<Callout type="info" title="Properties belong to a profile">
-  Each profile stores its property rules in its profile document's manifest. The
-  Template Workbench View changes those rules and saves the document
-  automatically. See [Profile
-  document](/docs/reference/templates/profile-document) for the manifest. See
-  [Frontmatter](/docs/reference/templates/frontmatter) for the field mechanics,
-  the merge strategies, and the reserved keys.
+<Callout type="info" title="属性规则归属于特定配置方案">
+  每个配置方案都会在其配置方案文档的 manifest
+  中保存自己的属性规则。模板工作台视图能够直接修改这些规则并自动保存文档。有关
+  manifest
+  的格式，请参阅[配置方案文档](/docs/reference/templates/profile-document)；有关字段机制、合并策略以及系统保留键，请参阅[Frontmatter
+  属性](/docs/reference/templates/frontmatter)。
 </Callout>
 
-## Add a frontmatter field
+## 添加 frontmatter 字段
 
 <Steps>
   <Step>
-    ### Open the Template Workbench View
+    ### 打开模板工作台视图
 
-    In Obsidian, open <SettingsPath />. On the <UiLabel name={m.settings_profile_document_name()} /> row, select its pencil button, tooltipped <UiLabel name={m.settings_profile_edit()} />.
+    在 Obsidian 中，打开 <SettingsPath />。在 <UiLabel name={m.settings_profile_document_name()} /> 所在行，点击其铅笔图标按钮（提示文本为 <UiLabel name={m.settings_profile_edit()} />）。
 
-    The Template Workbench View opens on the Default profile. Select the <UiLabel name={m.workbench_tab_properties()} /> tab.
-
-  </Step>
-  <Step>
-    ### Add a new field
-
-    Select <UiLabel name={m.workbench_properties_add()} />. Each property has these controls:
-
-    - <UiLabel name={m.workbench_properties_name()} /> is the YAML property name written to frontmatter.
-    - <UiLabel name={m.workbench_properties_format()} /> selects <UiLabel name={m.workbench_properties_format_value()} />, <UiLabel name={m.workbench_properties_format_text()} />, or <UiLabel name={m.workbench_properties_format_rule()} />.
-    - <UiLabel name={m.workbench_properties_expression()} /> is the field value or rule. Use `zt.` paths such as `zt.title` or `zt.DOI` for Zotero data.
-    - <UiLabel name={m.workbench_properties_merge()} /> controls how ZotLit applies the value when it updates a note.
+    模板工作台视图将打开并加载默认配置方案。切换到 <UiLabel name={m.workbench_tab_properties()} /> 标签页。
 
   </Step>
   <Step>
-    ### Choose a merge strategy
+    ### 添加新字段
 
-    Use <UiLabel name={m.workbench_properties_merge_replace()} /> to overwrite the field on every update, <UiLabel name={m.workbench_properties_merge_append()} /> to add new array items and keep the ones already in the note, or <UiLabel name={m.workbench_properties_merge_keep()} /> to write the field only when it is blank. See [Merge strategies](/docs/reference/templates/frontmatter#merge-strategies) for how each one behaves.
+    点击 <UiLabel name={m.workbench_properties_add()} />。每个属性包含以下控制项：
+
+    - <UiLabel name={m.workbench_properties_name()} />：写入 frontmatter 的 YAML 属性键名。
+    - <UiLabel name={m.workbench_properties_format()} />：选择 <UiLabel name={m.workbench_properties_format_value()} />、<UiLabel name={m.workbench_properties_format_text()} /> 或 <UiLabel name={m.workbench_properties_format_rule()} />。
+    - <UiLabel name={m.workbench_properties_expression()} />：字段值或计算规则。使用形如 `zt.title` 或 `zt.DOI` 的 `zt.` 路径读取 Zotero 数据。
+    - <UiLabel name={m.workbench_properties_merge()} />：控制 ZotLit 在更新笔记时如何处理现有值。
 
   </Step>
   <Step>
-    ### Check the result
+    ### 选择合并策略
 
-    The Template Workbench View saves the property automatically. Check the preview to see the value for the selected paper.
+    使用 <UiLabel name={m.workbench_properties_merge_replace()} /> 在每次更新时无条件覆盖该字段；使用 <UiLabel name={m.workbench_properties_merge_append()} /> 追加新的数组元素并保留笔记中已有的项；使用 <UiLabel name={m.workbench_properties_merge_keep()} /> 仅在笔记中该属性为空时才写入。关于各策略的详细行为说明，请参阅[合并策略](/docs/reference/templates/frontmatter#merge-strategies)。
+
+  </Step>
+  <Step>
+    ### 检查预览结果
+
+    模板工作台视图会自动保存新属性。在右侧预览中直接查看当前选定论文所生成的属性取值。
 
   </Step>
 </Steps>

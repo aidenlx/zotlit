@@ -1,6 +1,6 @@
 ---
-title: "Export a note with citations"
-description: "Export an active Markdown note with citations and a bibliography to DOCX or HTML."
+title: "导出包含引文的笔记"
+description: "将当前活动的 Markdown 笔记及其中的引文和文末参考文献列表导出为 DOCX 或 HTML 文档。"
 translationStatus: placeholder
 ---
 
@@ -12,50 +12,50 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-Export the active Markdown note as a Word document or web page with formatted citations and a bibliography.
+将当前处于活动状态的 Markdown 笔记导出为包含格式化引文与文末参考文献列表的 Word 文档或网页。
 
-For a guided comparison with native Pandoc, follow [Build a Pandoc citation workflow](/docs/tutorial/pandoc-citation-workflow).
+如需查看与原生 Pandoc 的分步对照实践，请参阅[搭建 Pandoc 引文工作流](/docs/tutorial/pandoc-citation-workflow)。
 
-## Before you start
+## 准备工作
 
-You need:
+您需要：
 
-- Obsidian Desktop with a Markdown note open.
-- The <UiLabel name={m.settings_citation_engine_name()} /> installed under <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_references_heading()} />.
-- Zotero running so ZotLit can collect bibliography data.
+- 打开了某篇 Markdown 笔记的 Obsidian 桌面端。
+- 在 <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_references_heading()} /> 下安装好 <UiLabel name={m.settings_citation_engine_name()} />。
+- 保持 Zotero 处于运行状态，以便 ZotLit 能够读取参考文献数据。
 
-ZotLit uses Better BibTeX when it is available. Otherwise, it uses the Zotero local API.
+ZotLit 会优先使用 Better BibTeX 接口（若可用）；若未安装，则自动回退至 Zotero 本地 API。
 
-## Export the note
+## 导出笔记步骤
 
 <Steps>
   <Step>
-    ### Open the export modal
+    ### 打开导出对话框
 
-    Open the command palette and run:
+    打开命令面板并运行：
 
     <Command name={m.command_pandoc_export_name()} />
 
   </Step>
   <Step>
-    ### Select the output
+    ### 选择输出格式与选项
 
-    Review these fields:
+    检查以下各项设置：
 
-    - <UiLabel name={m.pandoc_export_format_name()} /> starts with <UiLabel name={m.pandoc_export_format_docx()} />. Select <UiLabel name={m.pandoc_export_format_html()} /> for HTML output.
-    - <UiLabel name={m.pandoc_export_style_name()} /> starts with the style the note uses in Obsidian. The line under the picker names where that style comes from:
-      - <UiLabel name={m.pandoc_export_style_from_note()} /> The note has its own `zotlit-csl` property.
-      - <UiLabel name={m.pandoc_export_style_from_profile({ profile: "Research" })} /> The note is an Imported Note, and its profile selects the style.
-      - <UiLabel name={m.pandoc_export_style_from_vault()} /> The note uses your <UiLabel name={m.settings_citation_references_style_name()} />.
-    - <UiLabel name={m.pandoc_export_destination_name()} /> starts with the source note's path and filename stem.
+    - <UiLabel name={m.pandoc_export_format_name()} />：默认为 <UiLabel name={m.pandoc_export_format_docx()} />。如需导出网页格式，请选择 <UiLabel name={m.pandoc_export_format_html()} />。
+    - <UiLabel name={m.pandoc_export_style_name()} />：默认采用笔记在 Obsidian 中当前使用的引文样式。选择器下方的文字标明了该样式的来源依据：
+      - <UiLabel name={m.pandoc_export_style_from_note()} />：笔记自身声明了 `zotlit-csl` 属性。
+      - <UiLabel name={m.pandoc_export_style_from_profile({ profile: "Research" })} />：该笔记为导入笔记，其所属配置方案绑定了该样式。
+      - <UiLabel name={m.pandoc_export_style_from_vault()} />：笔记沿用仓库全局的 <UiLabel name={m.settings_citation_references_style_name()} />。
+    - <UiLabel name={m.pandoc_export_destination_name()} />：默认以源笔记所在路径和文件名为基准。
 
-    Change the format, style, or destination as needed. When you pick another style, the line reads <UiLabel name={m.pandoc_export_style_changed({ style: "APA Style 7th edition" })} /> The dialog does not change the note.
+    按需调整输出格式、引文样式或保存目标路径。当您在弹窗中选取其他样式时，提示文字会显示 <UiLabel name={m.pandoc_export_style_changed({ style: "APA Style 7th edition" })} />。该对话框中的微调绝不会修改笔记本体。
 
   </Step>
   <Step>
-    ### Run the export
+    ### 执行导出
 
-    Select <UiLabel name={m.pandoc_export_confirm()} />. ZotLit resolves the citations, retrieves bibliography data, and converts the complete note.
+    点击 <UiLabel name={m.pandoc_export_confirm()} />。ZotLit 将自动解析各处引文、拉取参考文献数据并完成整篇笔记的格式化转换。
 
   </Step>
 </Steps>

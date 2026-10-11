@@ -1,6 +1,6 @@
 ---
-title: "Rebuilding ZotLit: the v2 public beta"
-description: "Why ZotLit was rebuilt and what the v2 public beta includes."
+title: "重构 ZotLit：v2 公测版本说明"
+description: "为什么重构 ZotLit，以及 v2 公测版包含哪些亮点。"
 date: 2026-07-25
 translationStatus: placeholder
 ---
@@ -9,54 +9,54 @@ import { Steps, Step } from "fumadocs-ui/components/steps";
 import { ActionLink } from "@/components/action-link";
 import { Callout } from "@/components/callout";
 
-ZotLit v1 had a dependency that broke every time Obsidian updated its runtime. I tried to keep up with patches, but it wasn't sustainable. Replacing that dependency meant rebuilding most of the plugin anyway, so v2 rewrite also simplifies the internals: templates, annotations, how item fields are structured. The public beta is ready to try.
+ZotLit v1 中存在一个每当 Obsidian 更新其运行时就会崩溃的底层依赖。我曾努力通过补丁跟进修复，但这终究不是长久之计。替换掉该依赖意味着需要重构插件的大部分代码，因此 v2 的重构同时全面简化了内部机制：包含模板、批注以及条目字段的组织结构。公测版本现已就绪，欢迎体验。
 
-## What broke
+## 过去的痛点
 
-Reading Zotero's database from inside Obsidian requires a SQLite driver. When v1 shipped, the only option was `better-sqlite3`, a third-party native binding. Node's built-in SQLite module didn't exist yet and wouldn't be usable in Electron for nearly two more years. So v1 shipped with a forked `better-sqlite3` binary that users had to download separately during setup, matched to their Obsidian version.
+在 Obsidian 内部直接读取 Zotero 的 SQLite 数据库需要相应的数据库驱动。在 v1 发布时，唯一的选择是 `better-sqlite3`（一个第三方原生 C++ 绑定模块）。当时 Node 尚未内置 SQLite 模块，在 Electron 中也尚不可用。因此 v1 只能捆绑一个打过补丁的 `better-sqlite3` 二进制文件，用户在初次配置时需要根据自己安装的 Obsidian 版本进行匹配下载。
 
-Native bindings compile against a specific Electron ABI. Every time Obsidian shipped a new Electron installer update, the binary stopped loading. Some users saw an error dialog telling them their Electron version was no longer supported. Others got a black screen on startup and had to delete the plugin files from the filesystem to get Obsidian working again. Every major bump was another round, and each time, the fix was a race to rebuild the binary and ship a patch.
+原生 C++ 绑定是针对特定的 Electron ABI 版本进行编译的。每次 Obsidian 推出新的 Electron 安装包更新，该二进制文件就会直接失效停止加载。部分用户会遇到错误弹窗提示当前的 Electron 版本不再受支持；还有用户在启动时遭遇黑屏，不得不从文件系统中手动删除插件文件才能恢复 Obsidian 的正常使用。每次核心大版本更新都是一场灾难，每次排查都是一场紧急重新编译二进制文件并推送修补版本的赛跑。
 
-On the Zotero side, v1's companion add-on was built during the transition from Zotero 6 to 7. Zotero 7 replaced the extension system, rewrote its APIs, and changed how add-ons interact with the app. During the transition the add-on had to work on both versions at once, which meant maintaining two code paths for the same features. The bridging work kept piling up alongside the Electron binary problem, and at some point I stopped being able to justify the time.
+在 Zotero 这一端，v1 的配套插件恰逢 Zotero 6 向 7 过渡的历史时期。Zotero 7 彻底重构了扩展系统与内部 API，改变了附加组件与宿主应用的交互方式。在过渡期内，配套插件不得不同时兼顾两代版本，这意味着同一项功能需要维护两套不同的代码分支。在 Electron 二进制兼容难题之外，这些桥接负担越积越重，最终使我难以再继续投入无止境的维护精力。
 
-The native binding turned every Obsidian update into a risk, the Zotero transition doubled the maintenance surface, and when I couldn't keep up, users were stuck with a broken plugin.
+原生绑定的存在让 Obsidian 的每次常规更新都变成了一场未知的风险，Zotero 架构的翻新使维护负担翻倍。当维护难以维系时，用户就只能守着一个无法加载的故障插件。
 
-_For the longer personal backstory behind the decision to rebuild, see [Reconnecting the Dots](https://aidenlx.site/blog/reconnecting-dots)._
+_关于做出重构决定背后的更深入的个人背景故事，请参阅 [Reconnecting the Dots](https://aidenlx.site/blog/reconnecting-dots)。_
 
-## What changed
+## 带来的转变
 
-`node:sqlite` now ships with Node itself, and recent Electron versions include it. v2 uses it directly. That means no more binary download and install guide, and the native binding that broke on every Electron update is gone.
+`node:sqlite` 现在已经作为标准模块内置到了 Node.js 中，近期的 Electron 版本也已直接包含。v2 直接采用这一原生支持。这意味着不再需要繁琐的二进制文件下载与安装引导，那个在每次 Electron 更新时都会崩溃的原生绑定被彻底扫进了历史。
 
-On top of the driver swap, v2 uses Drizzle ORM as a structured data layer. In v1, every database query was hand-written SQL, and item fields were essentially untyped. If Zotero changed a field name or added a column, v1 had no way to notice until something rendered wrong in a template. In v2, field types are generated from Zotero's own schema definitions, so each item type (journal article, book, conference paper) gets typed fields. Mismatches show up in the Template Data Explorer rather than in a silently wrong note. This also makes it easier to keep up with Zotero's own changes. v2 tracks Zotero's schema version with an update procedure. By comparison, v1's types were generated once and never refreshed.
+除了底层驱动的更替，v2 引入了 Drizzle ORM 作为结构化的数据访问层。在 v1 中，每个数据库查询都是手写的裸 SQL，条目字段实质上没有任何静态类型保障。一旦 Zotero 更改了字段名或新增了一列，v1 根本无法察觉，直到用户发现模板渲染出来的笔记悄然发生错误。在 v2 中，字段类型直接从 Zotero 自身的 schema 规范中自动生成，因此每种条目类型（期刊文章、图书、会议论文等）都拥有精准完备的类型定义。任何字段不一致都会在模板数据浏览器中清晰呈现，而不会默默生成错误的笔记。这也使得紧跟 Zotero 未来的演化变得游刃有余。v2 建立了一套严谨的流程来持续跟踪 Zotero 的 schema 版本；相比之下，v1 的类型在生成后就再未刷新过。
 
-ZotLit Companion, the Zotero add-on, targets Zotero 9, whose API has settled enough to build against without chasing a moving target.
+负责配合的 Zotero 配套插件 ZotLit Companion 现在针对 Zotero 9 进行开发，其 API 已经相当稳健成熟，不必再为一个变动频繁的目标疲于奔命。
 
-I wrote v1 while teaching myself to program alongside medical school. Working in tech full-time since has changed how I build software, and the rewrite was a chance to apply that: fewer moving parts, less code to break. The plugin does the same things with a simpler internal structure, which means fixes and new features take less time to ship. Coding agents help too. They work better with straightforward code, which is another reason to keep the internals simple.
+我在医学院就读期间自学编程写出了 v1。此后全职投身科技行业的经历深刻重塑了我构建软件的方式，这次重写正是一次绝佳的实践契机：更少的动态变动部件，更少易损坏的代码。新插件在实现相同功能的同时拥有更为精炼清晰的内部结构，这使得修复问题与交付新特性的速度大大提升。AI 编码智能体也从中受益：面对直观、模块化的代码它们能表现得更出色，这也是保持内部精简的另一个重要原因。
 
-That's a foundation I can maintain more reliably. I can't promise that nothing will ever break, but the two biggest sources of trouble are addressed: the native binary that broke on every Electron update, and the untyped schema that drifted silently. With this foundation, routine updates to Obsidian and Zotero should stop being something to dread.
+这是一套我能够更从容、更可靠地长久维护的坚实基石。我无法保证软件永远不会出现任何小问题，但引发过往痛苦的两大根源已被连根拔除：每次 Electron 更新必坏的原生二进制绑定，以及悄无声息发生偏离的无类型 schema。有了这套基石，面对 Obsidian 与 Zotero 的日常版本演进，大家终于无需再提心吊胆。
 
-## What you can try
+## 公测版可体验的核心功能
 
-The ZotLit v2 ships with four main workflow areas:
+ZotLit v2 围绕四大核心工作流构建：
 
-### Annotation workspace
+### 批注工作区
 
-If you read and annotate PDFs in Zotero, the annotation view gives you a workspace for reviewing your highlights, comments, and annotations alongside a Literature Note. You can search across text, comments, tags, and page numbers, and filter by color or tag to narrow down what you're looking at without switching back to Zotero. You can drag annotations into your note individually, pull them all in at once, or work through them selectively. Clicking an annotation opens the source PDF at that location in Zotero, so you can move between the two apps without losing your place.
+如果您在 Zotero 中阅读并批注 PDF，标注视图能够为您提供一个在文献笔记旁同步审阅高亮、评注与批注的独立工作区。您可以跨文本、评注、标签及页码进行搜索，并通过颜色或标签进行精准过滤，完全无需在应用间来回切换。您可以将单条批注拖入笔记中，也可以一键全部拉取，或者按需挑选。点击某条批注即可直接在 Zotero 中打开源 PDF 的对应位置，让您在两个应用之间无缝穿梭而不丢失阅读进度。
 
-![Literature note in Obsidian with the annotation view open, showing search, color and tag filters, and annotation cards for a Zotero item](/img/blog/annotation-view.webp)
+![Obsidian 中打开了标注视图的文献笔记，展示了针对特定 Zotero 条目的搜索、颜色与标签过滤器以及标注卡片](/img/blog/annotation-view.webp)
 
 <ActionLink href="/docs/how-to/use-annotation-view" kind="external">
-  Using the annotation view
+  使用标注视图
 </ActionLink>
 
-### Batch Literature Note workflows
+### 批量文献笔记工作流
 
-Creating Literature Notes one at a time works fine for a handful of items, but falls apart when you're onboarding an existing Zotero library or a batch of new references just landed from a literature search. The batch workflow creates or updates notes for many items at once, handling both new notes and existing ones where annotations or metadata have changed.
+逐一创建文献笔记对于零星的几篇文献尚可胜任，但当您在导入既有文献库，或刚通过文献检索批量下载了一批文献时，逐篇创建就显得力不从心。批量工作流支持一次性为大量条目创建或更新笔记，能够同时优雅处理全新笔记以及批注或元数据发生改动的已有笔记。
 
-![Update literature notes dialog in Obsidian listing Zotero items to update and create in bulk](/img/blog/beta-batch-workflow.webp)
+![Obsidian 中的更新文献笔记对话框，列出了待批量更新与创建的 Zotero 条目](/img/blog/beta-batch-workflow.webp)
 
 <ActionLink href="/docs/how-to/create-and-open-notes#bulk" kind="external">
-  Creating and opening notes: bulk operations
+  创建并打开笔记：批量操作
 </ActionLink>
 
 ### Zotero-note import

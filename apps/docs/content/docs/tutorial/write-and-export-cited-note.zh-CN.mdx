@@ -1,6 +1,6 @@
 ---
-title: "Write and export a cited note"
-description: "Insert a citation, review its reference, and export a Word document with a formatted bibliography."
+title: "撰写并导出包含引文的笔记"
+description: "插入引文、检查参考文献，并导出一份附带格式化参考文献列表的 Word 文档。"
 translationStatus: placeholder
 ---
 
@@ -12,120 +12,120 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-This tutorial takes you from one Zotero item to a cited Word document.
+本教程将引导您从单个 Zotero 条目出发，生成一份带有引文的 Word 文档。
 
-You will insert a literal Pandoc citation such as `[@doe2024]`. ZotLit will format it without changing your Markdown.
+您将插入类似 `[@doe2024]` 这样的字面量 Pandoc 引文。ZotLit 将对其进行格式化，且无需改动您的 Markdown 源码。
 
-## Before you start
+## 准备工作
 
-Complete the [ZotLit installation](/docs/install-zotlit). You also need ZotLit Companion, the Zotero add-on. [Install the Companion](/docs/install-companion), then keep Zotero open during the tutorial.
+请完成 [ZotLit 安装](/docs/install-zotlit)。您还需要安装 Zotero 端的必备插件 ZotLit Companion。[安装 Companion](/docs/install-companion)，并在本教程进行期间保持 Zotero 处于打开状态。
 
-[Better BibTeX](https://retorque.re/zotero-better-bibtex/installation/) is recommended for generating and maintaining stable citation keys. It also supplies bibliography data during export. If you do not use it, open **Zotero Settings > Advanced** and enable **Allow other applications on this computer to communicate with Zotero** so ZotLit can use the Zotero local API instead.
+推荐安装 [Better BibTeX](https://retorque.re/zotero-better-bibtex/installation/) 以生成并维护稳定的文献引用标识（citation key），它还将在导出时提供参考文献列表数据。如果您未使用该插件，请打开 **Zotero 设置 → 高级**并启用**允许本计算机上的其他应用程序与 Zotero 通信**，以便 ZotLit 可以使用 Zotero 本地 API。
 
 <Steps>
   <Step>
-    ### Prepare one Zotero item
+    ### 准备一个 Zotero 条目
 
-    Select an item in Zotero and confirm that its **Citation Key** field has a value.
+    在 Zotero 中选择一个条目，确认其 **Citation Key** 字段已有对应取值。
 
-    If you use Better BibTeX, follow its [citation key guide](https://retorque.re/zotero-better-bibtex/citing/) to generate and inspect the key. Keep the generated key as it appears in Zotero.
-
-  </Step>
-  <Step>
-    ### Install the Pandoc engine
-
-    In Obsidian, open <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_references_heading()} />. Find <UiLabel name={m.settings_citation_engine_name()} />, then select <UiLabel name={m.settings_citation_engine_install()} />.
-
-    Wait until the row says that Pandoc is installed. The engine formats citations, references, and the exported document.
+    如果您使用的是 Better BibTeX，请按照其[文献引用标识指南](https://retorque.re/zotero-better-bibtex/citing/)生成并检查该标识。保持生成的标识与 Zotero 中一致。
 
   </Step>
   <Step>
-    ### Insert the citation
+    ### 安装 Pandoc 引擎
 
-    Open a Markdown note in Live Preview. Type `[@`, then type part of the item's title or citation key. A list of matching Zotero items opens below the cursor.
+    在 Obsidian 中，打开 <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_references_heading()} />。找到 <UiLabel name={m.settings_citation_engine_name()} />，然后选择 <UiLabel name={m.settings_citation_engine_install()} />。
 
-    ![A thesis paragraph in Obsidian ending in "[@ten", with the suggestion list below showing "Ten Simple Rules for Better Figures" by Rougier et al. (2014)](/img/tutorial/write-and-export-insert-citation.webp)
+    等待该行状态提示 Pandoc 已安装完成。该引擎负责格式化引文、参考文献列表以及导出的文档。
 
-    Select the item and press `Enter`. ZotLit inserts a citation such as:
+  </Step>
+  <Step>
+    ### 插入引文
+
+    在实时预览模式下打开一篇 Markdown 笔记。键入 `[@`，然后输入条目标题或文献引用标识的一部分。光标下方将弹出匹配的 Zotero 条目建议列表。
+
+    ![在 Obsidian 论文段落末尾输入“[@ten”，下方建议列表显示 Rougier et al. (2014) 的“Ten Simple Rules for Better Figures”](/img/tutorial/write-and-export-insert-citation.webp)
+
+    选择该条目并按 `Enter`。ZotLit 将插入如下引文：
 
     ```md
     Recent work reaches a similar conclusion [@doe2024].
     ```
 
-    Move the cursor away from the citation. ZotLit replaces the source with a formatted citation in Live Preview.
+    将光标移开引文。在实时预览模式下，ZotLit 会将源码显示替换为格式化后的引文呈现。
 
   </Step>
   <Step>
-    ### Review the reference
+    ### 查看参考文献
 
-    Open the command palette and run:
+    打开命令面板并运行：
 
     <Command name={m.command_open_references_view_name()} />
 
-    The <UiLabel name={m.references_view_name()} /> Sidebar shows the formatted bibliography entry for your citation.
+    <UiLabel name={m.references_view_name()} />侧边栏将显示该引文的格式化参考文献条目。
 
-    ![The paragraph now ends in the formatted citation "(Rougier et al. 2014)", and the References Sidebar on the right lists the full bibliography entry for the paper](/img/tutorial/write-and-export-references-sidebar.webp)
-
-  </Step>
-  <Step>
-    ### Preview the citation
-
-    Hover over the formatted citation in Live Preview. The <UiLabel name={m.settings_citation_hover_action_popover()} /> shows the complete bibliography entry.
-
-    ![A popover below the citation "(Rougier et al. 2014)" showing the complete bibliography entry for Ten Simple Rules for Better Figures](/img/tutorial/write-and-export-citation-popover.webp)
-
-    The default hover settings show this popover without a modifier key in Live Preview.
+    ![该段落末尾现在显示格式化引文“(Rougier et al. 2014)”，右侧的参考文献侧边栏列出了该论文的完整参考文献条目](/img/tutorial/write-and-export-references-sidebar.webp)
 
   </Step>
   <Step>
-    ### Copy the bibliography
+    ### 预览引文
 
-    In the <UiLabel name={m.references_view_name()} /> Sidebar toolbar, select <UiLabel name={m.references_copy_bibliography()} />. Paste it into a text editor or word processor.
+    在实时预览模式下将鼠标悬停在格式化引文上。<UiLabel name={m.settings_citation_hover_action_popover()} />将显示完整的参考文献条目内容。
 
-    ZotLit places rich text and plain text on the clipboard. The destination uses the representation it supports.
+    ![引文“(Rougier et al. 2014)”下方的浮窗显示了 Ten Simple Rules for Better Figures 的完整参考文献条目](/img/tutorial/write-and-export-citation-popover.webp)
+
+    默认的悬停设置允许在实时预览模式下无需按下辅助键即可显示此浮窗。
 
   </Step>
   <Step>
-    ### Export a Word document
+    ### 复制参考文献列表
 
-    Keep the note active. Open the command palette and run:
+    在<UiLabel name={m.references_view_name()} />侧边栏工具栏中，选择 <UiLabel name={m.references_copy_bibliography()} />。将其粘贴至文本编辑器或文字处理软件中。
+
+    ZotLit 会将富文本和纯文本一并写入剪贴板。目标程序将采用其所支持的呈现格式。
+
+  </Step>
+  <Step>
+    ### 导出 Word 文档
+
+    保持当前笔记处于活动状态。打开命令面板并运行：
 
     <Command name={m.command_pandoc_export_name()} />
 
-    Leave <UiLabel name={m.pandoc_export_format_name()} /> set to <UiLabel name={m.pandoc_export_format_docx()} />. The <UiLabel name={m.pandoc_export_style_name()} /> row shows the style ZotLit will use. The line below it says where that style comes from. Leave the style as it is.
+    保持 <UiLabel name={m.pandoc_export_format_name()} /> 设置为 <UiLabel name={m.pandoc_export_format_docx()} />。<UiLabel name={m.pandoc_export_style_name()} />所在行显示了 ZotLit 将使用的样式。下方的说明标明了该样式的来源。保持该样式设置不变。
 
-    <UiLabel name={m.pandoc_export_destination_name()} /> starts next to your note. To save the document somewhere else, select <UiLabel name={m.pandoc_export_destination_browse()} />. Then select <UiLabel name={m.pandoc_export_confirm()} />.
+    <UiLabel name={m.pandoc_export_destination_name()} />默认位于当前笔记所在目录。如需保存到其他位置，请选择 <UiLabel name={m.pandoc_export_destination_browse()} />。随后选择 <UiLabel name={m.pandoc_export_confirm()} />。
 
-    ![The Export with citations dialog set to Word document, with the citation style Default (Chicago author-date) and the line "Your vault settings set this style."](/img/tutorial/write-and-export-export-dialog.webp)
+    ![设置为 Word 文档的“导出附带引文”对话框，引文样式为默认（芝加哥作者-年份格式），提示文本为“您的仓库设置指定了此样式。”](/img/tutorial/write-and-export-export-dialog.webp)
 
-    When the export finishes, a notice names the file and the citation style it used. Open the resulting `.docx` file. It contains your formatted citation and a bibliography.
+    当导出完成时，通知会提示导出的文件名和所使用的引文样式。打开生成的 `.docx` 文件，其中已包含格式化后的正文引文和文末参考文献列表。
 
   </Step>
 </Steps>
 
-You now have one Markdown source that works in Obsidian and produces a cited Word document.
+现在，您拥有了一份既能在 Obsidian 中无缝查看、又能直接导出为规范引用 Word 文档的 Markdown 源码。
 
-<Callout type="info" title="Your Markdown stays portable">
-  ZotLit leaves `[@doe2024]` in the note. Live Preview formats it for reading,
-  and export creates the bibliography in the output file.
+<Callout type="info" title="您的 Markdown 源码保持纯粹与可移植">
+  ZotLit 会将 `[@doe2024]`
+  留在笔记中。实时预览负责将其格式化以便阅读，而导出流程则负责在输出文件中生成参考文献列表。
 </Callout>
 
-## Next steps
+## 后续步骤
 
 <Cards>
   <Card
-    title="Insert citations"
-    description="Use other Pandoc citation forms and insertion shortcuts."
+    title="插入引文"
+    description="使用其他 Pandoc 引文书写形式与插入快捷方式。"
     href="/docs/how-to/insert-citations"
   />
   <Card
-    title="Review, copy, and troubleshoot references"
-    description="Navigate occurrences, change one note's presentation, and fix reference errors."
+    title="查看、复制与排查参考文献"
+    description="在出现处之间导航、更改单个笔记的呈现方式并修正参考文献错误。"
     href="/docs/how-to/review-copy-troubleshoot-references"
   />
   <Card
-    title="Export a note with citations"
-    description="Choose DOCX or HTML and resolve built-in export errors."
+    title="导出包含引文的笔记"
+    description="选择 DOCX 或 HTML 输出格式，并解决内置导出错误。"
     href="/docs/how-to/export-note-with-citations"
   />
 </Cards>

@@ -1,20 +1,20 @@
 ---
 version: "2.0.0-beta.3"
 date: "2026-07-29"
-description: "Chinese language support, attachment backlinks"
+description: "新增简体中文支持、附件增加 backlink 链接字段"
 translationStatus: placeholder
 ---
 
-## What's New
+## 新增功能
 
-### Initial Chinese (Simplified) language support
+### 初步引入简体中文界面语言支持
 
-The plugin now ships with Chinese (Simplified) as a downloadable language pack. Open the **Language Pack** section in settings to install it.
+插件现已提供简体中文作为可下载的语言包（Language Pack）。打开设置中的**语言包**区域即可一键安装。
 
-### `backlink` field on attachments
+### 附件对象新增 `backlink` 字段
 
-Each attachment in `zt.attachments` and `zt.parentAttachment` now exposes a `backlink` field. It contains a `zotero://open/...` deep link that opens the attachment in Zotero's reader. This complements the existing `backlink` on the main item. See [Template data reference](/docs/reference/templates/data).
+`zt.attachments` 以及 `zt.parentAttachment` 中的每个附件现在均暴露了 `backlink` 字段。它包含形如 `zotero://open/...` 的深度链接，可直接在 Zotero 原生阅读器中打开该附件。这与主条目上原有的 `backlink` 形成了完备互补。详见[模板数据参考](/docs/reference/templates/data)。
 
-### Other improvements
+### 其他改进
 
-- Confirmation dialogs now display correctly on Obsidian versions older than 1.13.0, where the built-in confirmation API is not available.
+- 在没有内置原生确认 API 的低于 1.13.0 的老版本 Obsidian 上，二次确认弹窗现在也能正常排版展示。

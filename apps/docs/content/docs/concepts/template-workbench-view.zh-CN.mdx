@@ -1,6 +1,6 @@
 ---
-title: "Template Workbench View"
-description: "How the Template Workbench View edits a profile, the citation text, or a partial, and previews each one in Obsidian."
+title: "模板工作台视图"
+description: "模板工作台视图如何编辑配置方案、引文文本或片段，并在 Obsidian 中进行即时预览。"
 translationStatus: placeholder
 ---
 
@@ -11,52 +11,52 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-The Template Workbench View edits one template document and shows its output against data from your Zotero library.
+模板工作台视图（Template Workbench View）用于编辑单份模板文档，并直接对照来自您 Zotero 文献库的数据呈现渲染效果。
 
-## One view, three kinds of document [#kinds]
+## 一个视图，支持三类文档 [#kinds]
 
-The view opens all three [kinds of template document](/docs/concepts/how-templates-work#kinds). The kind decides the tabs, the tab title, and what the preview renders.
+该视图支持打开全部[三类模板文档](/docs/concepts/how-templates-work#kinds)。文档类型决定了展示的标签页、标签页标题以及预览区域所渲染的内容。
 
-| Document      | Tab title                                                | Tabs                                               | Preview                              |
-| ------------- | -------------------------------------------------------- | -------------------------------------------------- | ------------------------------------ |
-| Profile       | The profile's name, then `Profile`                       | Six                                                | A literature note for one paper      |
-| Citation text | <UiLabel name={m.template_workbench_title_citation()} /> | One, <UiLabel name={m.workbench_tab_citation()} /> | One inserted citation                |
-| Partial       | The partial's name, then `Partial`                       | One, <UiLabel name={m.workbench_tab_partial()} />  | The partial as one template calls it |
+| 文档类型 | 标签页标题                                               | 标签页组成                                                | 预览呈现内容                 |
+| -------- | -------------------------------------------------------- | --------------------------------------------------------- | ---------------------------- |
+| 配置方案 | 配置方案名称，加 `Profile`                               | 六个标签页                                                | 某篇论文的文献笔记整体预览   |
+| 引文文本 | <UiLabel name={m.template_workbench_title_citation()} /> | 单个标签页：<UiLabel name={m.workbench_tab_citation()} /> | 单条插入引文的格式化效果     |
+| 共享片段 | 片段名称，加 `Partial`                                   | 单个标签页：<UiLabel name={m.workbench_tab_partial()} />  | 供某模板调用时的片段渲染效果 |
 
-Everything you type is previewed, including bytes you have not saved yet. Editing uses Obsidian's automatic saving, with its Undo and Redo. A document with an error stays editable and saves with its diagnostics shown in the editor.
+您键入的任何字符都会即时同步到预览中，即使尚未执行文件保存。编辑过程使用 Obsidian 的自动保存机制，并支持完整的撤销（Undo）与重做（Redo）。含有语法错误的文档依然可以正常编辑并保存，编辑器内会直观展示对应的诊断报错。
 
-The native Markdown view keeps working on the same file. Select <UiLabel name={m.template_workbench_open_markdown()} /> to open the document as Markdown, and right-click a template document in the file explorer for <UiLabel name={m.template_workbench_open()} />.
+Obsidian 原生的 Markdown 视图依然可以打开同一个文件。选择 <UiLabel name={m.template_workbench_open_markdown()} /> 可以以纯 Markdown 形式查看文档；在文件列表中右键选择模板文档可直接点击 <UiLabel name={m.template_workbench_open()} />。
 
-## A profile document [#profile]
+## 配置方案文档的编辑 [#profile]
 
-A profile controls the name, folder, properties, and body of a literature note. It can also define how annotations appear and which Zotero items use the profile automatically.
+配置方案负责控制文献笔记的文件名、存放目录、frontmatter 属性以及正文结构。它还定义了单条标注的显示格式，以及哪些 Zotero 条目会自动套用该配置方案。
 
-The view groups these parts into six tabs:
+工作台视图将这些部分组织为六个标签页：
 
-- <UiLabel name={m.workbench_tab_note()} /> edits the literature note body.
-- <UiLabel name={m.workbench_tab_properties()} /> edits the YAML properties that
-  ZotLit manages.
-- <UiLabel name={m.workbench_tab_annotation()} /> edits the format of one
-  annotation.
-- <UiLabel name={m.workbench_tab_name_and_folder()} /> edits the note path,
-  citation style, imported note settings, and template language. Its
-  <UiLabel name={m.workbench_name_path_heading()} /> group joins the literature
-  note folder and the note name template, and previews the full path.
-- <UiLabel name={m.workbench_tab_match()} /> selects the Zotero items that use
-  an added profile automatically.
-- <UiLabel name={m.workbench_tab_profile()} /> edits the profile's own name,
-  description, and version.
+- <UiLabel name={m.workbench_tab_note()} />
+  ：编辑文献笔记的正文结构。
+- <UiLabel name={m.workbench_tab_properties()} />
+  ：编辑由 ZotLit 托管的 YAML frontmatter 属性。
+- <UiLabel name={m.workbench_tab_annotation()} />
+  ：编辑单条标注的渲染格式。
+- <UiLabel name={m.workbench_tab_name_and_folder()} />
+  ：编辑笔记路径、引文格式、导入笔记选项以及模板语言引擎。
+  <UiLabel name={m.workbench_name_path_heading()} />
+  组合了文献笔记文件夹与笔记名称模板，并实时预览生成的完整路径。
+- <UiLabel name={m.workbench_tab_match()} />
+  ：声明让条目自动套用此自定义配置方案的匹配条件。
+- <UiLabel name={m.workbench_tab_profile()} />
+  ：编辑配置方案自身的显示名称、描述与版本信息。
 
-<UiLabel name={m.workbench_advanced()} /> is a toggle in the view header. Select
-it to show the whole profile document as Markdown source in place of the tabs,
-and select it again to return to the tabs. A citation text or a partial shows
-its source in its one tab, so the toggle is offered for a profile document only.
+<UiLabel name={m.workbench_advanced()} />
+是视图标题栏中的切换按钮。点击它可在标签页界面与完整的配置方案 Markdown
+原始源码之间自由切换。引文文本和共享片段因为自身只占一个标签页，因此仅对配置方案文档提供此源码模式切换。
 
-### Preview data [#preview-data]
+### 预览数据来源 [#preview-data]
 
-The preview uses a Zotero item or built-in example. Opening the view from a literature note selects that note's item. The pane menu offers <UiLabel name={m.workbench_choose_item()} /> to change the preview data and <UiLabel name={m.template_workbench_open_layout()} /> to open the editor, fields, and preview together.
+预览可以使用您文献库中的实际条目或内置的示例数据。从文献笔记中打开工作台视图会自动关联该笔记所对应的文献条目。面板菜单中提供了 <UiLabel name={m.workbench_choose_item()} /> 用于切换预览条目，以及 <UiLabel name={m.template_workbench_open_layout()} /> 可将编辑器、可用字段列表与渲染预览并排展开。
 
-The preview changes as you edit. A database or citation-style warning can limit the preview, but you can continue editing the profile.
+预览会随着您的键入即时刷新。虽然数据库连接或引文样式的警告可能会临时限制部分预览渲染，但您仍可继续顺畅地编辑配置方案。
 
 ### Saving changes [#saving]
 

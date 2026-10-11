@@ -1,6 +1,6 @@
 ---
-title: "Frontmatter"
-description: "Field definitions, merge strategies, reserved keys, and update behavior for literature note frontmatter."
+title: "Frontmatter 属性"
+description: "文献笔记 frontmatter 的字段定义、合并策略、系统保留键及更新行为。"
 translationStatus: placeholder
 ---
 
@@ -11,37 +11,37 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-This page documents how ZotLit manages YAML frontmatter on literature notes: the fields ZotLit owns, the managed fields a profile declares, merge strategies, and the behavior during note updates.
+本页介绍了 ZotLit 如何管理文献笔记顶部的 YAML frontmatter 属性：包含 Zotero 拥有的系统字段、配置方案声明的受管字段、属性合并策略以及笔记更新时的具体行为。
 
-For step-by-step configuration, see [Configure frontmatter properties](/docs/how-to/configure-frontmatter-properties).
+分步配置指南请参阅[配置 frontmatter 属性](/docs/how-to/configure-frontmatter-properties)。
 
-## System-managed fields
+## 系统保留字段
 
-ZotLit writes these keys itself. Managed frontmatter cannot target them.
+ZotLit 自身负责写入这些配置键。受管 frontmatter 绝不能以它们为目标进行覆盖。
 
-| Field            | Source                             | Description                                                                                                      |
-| ---------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `zotero-key`     | `zt.indexedKey`                    | Literature note identity: `KEY` for My Library or `KEYgGROUPID` for group libraries                              |
-| `zotlit-profile` | The profile that ran the operation | The profile that produced the note, as its name and 12-character ID. Absent when the Default profile produced it |
-| `zotlit-csl`     | The profile's citation style       | CSL ID the note's citations and references render with. Absent when the profile binds no style                   |
+| 字段             | 数据源                 | 说明                                                                           |
+| ---------------- | ---------------------- | ------------------------------------------------------------------------------ |
+| `zotero-key`     | `zt.indexedKey`        | 文献笔记的唯一身份标识：对于“我的文库”为 `KEY`，对于群组文献库为 `KEYgGROUPID` |
+| `zotlit-profile` | 执行当前操作的配置方案 | 生成该笔记的配置方案名称及 12 位 ID。由默认配置方案生成时留空不显              |
+| `zotlit-csl`     | 配置方案绑定的引文样式 | 该笔记的引文和参考文献渲染所采用的 CSL ID。当配置方案未绑定样式时留空          |
 
-## User-configured fields
+## 用户自定义字段
 
-Managed frontmatter is the ordered list of entries under the `frontmatter` key of a [profile document](/docs/reference/templates/profile-document)'s manifest. Each entry produces one property, or several at once.
+受管 frontmatter 属于[配置方案文档](/docs/reference/templates/profile-document)的 manifest 中 `frontmatter` 键下的有序配置列表。每个配置项可生成单个属性，或一次性展开生成多个属性。
 
-Edit the list in the <UiLabel name={m.workbench_tab_properties()} /> tab of the Template Workbench. On the <UiLabel name={m.settings_profile_document_name()} /> row at <SettingsPath />, select <UiLabel name={m.settings_profile_edit()} />.
+您可以在模板工作台的 <UiLabel name={m.workbench_tab_properties()} /> 标签页中直观编辑该列表。在 <SettingsPath /> 的 <UiLabel name={m.settings_profile_document_name()} /> 所在行，选择 <UiLabel name={m.settings_profile_edit()} /> 即可进入。
 
-Each entry has an optional `key`, an optional `merge` strategy, and exactly one value member. The member name declares the language, so an entry carries no separate language setting:
+每个配置项包含一个可选的 `key`、一个可选的 `merge` 合并策略，以及恰好一个值计算成员。成员名称本身即声明了所使用的计算语言，因此配置项无需额外的语言标识：
 
-| Member  | Required         | Description                                                                                  |
-| ------- | ---------------- | -------------------------------------------------------------------------------------------- |
-| `key`   | No               | The YAML property name written to the note. Omit it for a spread entry                       |
-| `expr`  | One of the three | A Liquid value expression                                                                    |
-| `value` | One of the three | A JSON-e template                                                                            |
-| `js`    | One of the three | A JavaScript expression. Inert while the JavaScript Templates gate is off                    |
-| `merge` | No               | How the entry applies when the note is updated. `replace` (the default), `append`, or `keep` |
+| 成员字段 | 是否必填 | 说明                                                                                          |
+| -------- | -------- | --------------------------------------------------------------------------------------------- |
+| `key`    | 否       | 写入笔记的 YAML 属性名。展开项（spread entry）可省略此字段                                    |
+| `expr`   | 三选一   | Liquid 值计算表达式                                                                           |
+| `value`  | 三选一   | JSON-e 模板                                                                                   |
+| `js`     | 三选一   | JavaScript 表达式。在关闭 JavaScript 模板权限时处于休眠状态                                   |
+| `merge`  | 否       | 笔记更新时该字段的应用策略。支持 `replace`（默认覆盖）、`append`（追加）或 `keep`（保留现有） |
 
-One entry, with `key`, `value`, and `merge` written out:
+一个完整写出 `key`、`value` 和 `merge` 的标准配置项示例：
 
 ```yaml
 frontmatter:
@@ -50,13 +50,13 @@ frontmatter:
     merge: replace
 ```
 
-The <UiLabel name={m.workbench_properties_format()} /> control names the value members in the editor: <UiLabel name={m.workbench_properties_format_value()} /> writes an `expr`, <UiLabel name={m.workbench_properties_format_rule()} /> writes a `value`, and <UiLabel name={m.workbench_properties_format_text()} /> writes a `value` that holds the text as written. A `js` entry is edited in the <UiLabel name={m.workbench_advanced()} /> view.
+编辑器中的 <UiLabel name={m.workbench_properties_format()} /> 控件对应了不同的值成员：<UiLabel name={m.workbench_properties_format_value()} /> 写入 `expr`，<UiLabel name={m.workbench_properties_format_rule()} /> 写入 `value`，而 <UiLabel name={m.workbench_properties_format_text()} /> 则写入按纯文本保存的 `value`。带有 `js` 的配置项可在 <UiLabel name={m.workbench_advanced()} /> 源码视图中直接编辑。
 
-A `value` can be written in any YAML form, such as the block mapping under [Spread entries](#spread-entries). When you edit a `value` in the editor, the Workbench saves it as one line of JSON in the profile document. Other entries keep the form they were written in.
+`value` 可以以任何标准的 YAML 语法编写，例如在[展开项（Spread entries）](#spread-entries)中的块映射形式。当您在可视化编辑器中编辑 `value` 时，工作台会将其作为单行 JSON 保存至配置方案文档中，其他配置项则保持原样。
 
-### Spread entries
+### 展开项（Spread entries）
 
-An entry with no `key` is a spread entry. Its `value` or `js` member evaluates to a mapping, and every produced key lands as a field at that entry's position, under the entry's one merge strategy.
+没有声明 `key` 的配置项称为展开项。其 `value` 或 `js` 成员求值结果为一个对象映射（mapping），其中的每个键都会作为独立属性字段注入到该配置项所在位置，并统一应用该配置项的合并策略。
 
 ```yaml
 frontmatter:

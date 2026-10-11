@@ -1,6 +1,6 @@
 ---
-title: "Migrate v1 Eta templates"
-description: "Rename, update variables, and rewrite custom v1 Eta templates to the v2 format, or convert them to Liquid."
+title: "迁移 v1 Eta 模板"
+description: "重命名文件、更新变量名，将自定义 v1 Eta 模板重写为 v2 规范，或将其转换为 Liquid 模板。"
 translationStatus: placeholder
 ---
 
@@ -12,47 +12,46 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-Custom v1 Eta templates need renamed files and updated variables to run in v2. If you never customized your templates (using only the defaults), no action is needed. V2 ships updated defaults.
+自定义的 v1 Eta 模板需要重命名文件并更新变量名方可在 v2 中顺利运行。如果您从未自定义过模板（即完全使用默认模板），则无需进行任何操作，v2 会自动提供升级后的全新默认模板。
 
-<Callout type="info" title="Coming from ZotLit 2.1?">
-  This page covers v1 Eta templates. If you updated from 2.1, where a note's
-  look was spread across files such as `zotlit-note.liquid.md`, see [Migrate
-  from 2.1 templates](/docs/how-to/migrate-from-2.1-templates) instead.
+<Callout type="info" title="从 ZotLit 2.1 升级？">
+  本篇专注于从 v1 Eta 模板的迁移。如果您是从 2.1 版本升级（其模板分散在形如
+  `zotlit-note.liquid.md` 的独立文件中），请参阅[从 2.1
+  模板迁移](/docs/how-to/migrate-from-2.1-templates)。
 </Callout>
 
-Two paths exist. Keep Eta: rename the files, update the data vocabulary, and enable the [<UiLabel name={m.settings_template_js_enable_name()} /> gate](/docs/how-to/enable-javascript-templates), which the rest of this page covers. Or convert to Liquid: rewrite each template in v2's default Liquid engine, which needs no gate, with [Eta to Liquid translations](#eta-to-liquid-translations) at the end.
+您有两条迁移路径可选：继续沿用 Eta 语法（重命名文件、替换数据变量，并开启 [<UiLabel name={m.settings_template_js_enable_name()} /> 权限开关](/docs/how-to/enable-javascript-templates)，本指南主要围绕此展开）；或者直接转换为 Liquid（使用 v2 默认且无需任何授权的 Liquid 引擎重写模板，文末附有 [Eta 到 Liquid 的转换对照表](#eta-to-liquid-translations)）。
 
-<Callout type="info" title="JavaScript Templates gate required for Eta">
-  Eta templates require the{" "}
-  <UiLabel name={m.settings_template_js_enable_name()} /> gate. See [Enable
-  JavaScript templates](/docs/how-to/enable-javascript-templates) for the opt-in
-  procedure.
+<Callout type="info" title="运行 Eta 模板需要开启 JavaScript 权限开关">
+  Eta 模板依赖 <UiLabel name={m.settings_template_js_enable_name()} />{" "}
+  权限开关。关于授权操作流程，请参阅[启用 JavaScript
+  模板](/docs/how-to/enable-javascript-templates)。
 </Callout>
 
 <Steps>
   <Step>
-    ### Rename template files
+    ### 重命名模板文件
 
-    v2 reads templates from a `zotlit-` prefix, replacing `zt-`, and the template formerly called `annots` is now `content`. Rename your files to these names first. ZotLit loads and renders them under these names, and the [one-pass conversion](#convert) below folds them into v2's template documents.
+    v2 通过 `zotlit-` 前缀（取代了旧的 `zt-`）来读取模板，且原先的 `annots` 模板现已重命名为 `content`。请先将您的旧模板文件按此规则重命名。ZotLit 会以这些新名称加载并渲染它们，随后您可以通过下文所述的[一次性合并转换](#convert)将其整合到 v2 的现代模板文档中。
 
-    | v1 filename        | Rename to                  | Where its content ends up                                   |
+    | v1 原文件名 | 重命名为 | 内容最终归宿 |
     | ------------------ | -------------------------- | ------------------------------------------------------------- |
-    | `zt-note.eta.md`   | `zotlit-note.eta.md`       | The note body of the default profile document               |
-    | `zt-annots.eta.md` | `zotlit-content.eta.md`    | The managed block inside that same note body                |
-    | `zt-annot.eta.md`  | `zotlit-annotation.eta.md` | The annotation section of that same profile document        |
+    | `zt-note.eta.md` | `zotlit-note.eta.md` | 默认配置方案文档中的笔记正文主体部分 |
+    | `zt-annots.eta.md` | `zotlit-content.eta.md` | 位于同一笔记正文内部的受管块（managed block） |
+    | `zt-annot.eta.md` | `zotlit-annotation.eta.md` | 位于该配置方案文档末尾的标注格式区域（annotation section） |
 
-    Your two v1 citation files, `zt-cite*.eta.md`, take the same `zt-` to `zotlit-` rename. Both of them fold into one citation text document, `zotlit-citation.md`, as an `if`/`else` on `zt.variant`.
+    您的两个 v1 引文文件 `zt-cite*.eta.md` 同样将前缀从 `zt-` 改为 `zotlit-`。它们最终会通过基于 `zt.variant` 的 `if`/`else` 分支统一整合到单个引文文本文档 `zotlit-citation.md` 中。
 
-    Delete these files if present (they have no v2 equivalent):
+    如果存在以下旧文件，请直接将其删除（v2 中已无对应概念）：
 
-    - `zt-field.eta.md`: replaced by the settings-based [frontmatter system](/docs/reference/templates/frontmatter).
-    - `zt-colored.eta.md`: color styling is now handled automatically during note import.
+    - `zt-field.eta.md`：现已被基于设置的 [frontmatter 系统](/docs/reference/templates/frontmatter)全面取代。
+    - `zt-colored.eta.md`：高亮颜色样式现已在笔记导入时自动处理。
 
   </Step>
   <Step>
-    ### Replace `it` with `zt`
+    ### 将 `it` 全面替换为 `zt`
 
-    The template data variable changed from `it` to `zt`. A search-and-replace of `it.` to `zt.` within template tags covers most cases:
+    模板的核心数据变量名已由 `it` 改为 `zt`。在模板标签内部，将 `it.` 批量查找替换为 `zt.` 即可解决绝大多数引用：
 
     ```
     it.title       →  zt.title
@@ -61,17 +60,17 @@ Two paths exist. Keep Eta: rename the files, update the data vocabulary, and ena
     it.pageLabel   →  zt.pageLabel
     ```
 
-    The exceptions below (`comment`, `tags`, `collections`, `date`, `notes`) have changed semantics. Handle them in the following steps rather than with a blanket replace.
+    下方有变更语义的字段（`comment`、`tags`、`collections`、`date`、`notes`）除外，请按后续步骤逐个处理，不要进行盲目全局替换。
 
   </Step>
   <Step>
-    ### Update renamed and reshaped fields
+    ### 更新已重命名与重构的字段
 
-    These fields changed name or type:
+    以下字段的名称或数据类型发生了变化：
 
-    | v1 property           | v2 property         | Notes                                                                                                                       |
+    | v1 属性字段 | v2 属性字段 | 说明 |
     | --------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-    | `it.citekey`          | `zt.citationKey`    | `zt.citekey` also works as an alias                                                                                         |
+    | `it.citekey` | `zt.citationKey` | `zt.citekey` 同样作为别名可用 |
     | `it.abstractNote`     | `zt.abstract`       | `zt.abstractNote` also works                                                                                                |
     | `it.publicationTitle` | `zt.containerTitle` | `zt.publicationTitle` also works                                                                                            |
     | `it.color`            | `zt.colorHex`       | Hex string, e.g. `#ffd400`                                                                                                  |

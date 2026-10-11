@@ -2,42 +2,42 @@
 version: "2.0.0"
 companion: "2.0.0"
 date: "2026-08-05"
-description: "Batch operations on collections, Citation Key Links toggle, AGPL license"
+description: "分类级批量操作、文献引用标识链接切换开关、采用 AGPL 开源许可"
 translationStatus: placeholder
 ---
 
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-This is the first public stable release of ZotLit v2. If you participated in the beta, thank you! Your feedback shaped every part of this release.
+这是 ZotLit v2 的首个公开正式版本。如果您参与了先前的测试，非常感谢您的陪伴！大家的宝贵反馈塑造了本次发布的每一个细节。
 
-The changes below cover what landed since beta.4; for the full v2 feature set, see the [release announcement](/blog/v2-release).
+下方列出了自 beta.4 以来引入的具体改动；有关 v2 完整功能特性的详细介绍，请参阅[版本发布公告](/blog/v2-release)。
 
-## Before you update
+## 升级前须知
 
-ZotLit needs Obsidian 1.13.4 or newer, and your **installer version** must also be 1.13.4 or newer. Obsidian's in-app update does not replace the installer. Check yours in **Settings > About**. If the installer is older, ZotLit does not load: Obsidian shows _Failed to load plugin "zotlit"_, and the developer console shows a `SyntaxError`.
+ZotLit 需要 Obsidian 1.13.4 或更高版本，且您的**安装包版本（installer version）**也必须为 1.13.4 或更高版本。Obsidian 的应用内自动更新不会替换安装包。请在**设置 → 关于**中检查您的版本。如果安装包版本过旧，ZotLit 将无法加载：Obsidian 会提示 _Failed to load plugin "zotlit"_，开发者控制台会报错 `SyntaxError`。
 
-To fix this, download Obsidian from the [download page](https://obsidian.md/download) and run the installer over your current installation. Nothing is deleted, and no notes are lost. See [how to update the Obsidian installer](/docs/how-to/update-obsidian-installer) and the [beta.4 requirement note](/changelog/2.0.0-beta.4#obsidian-version-requirement).
+如需更新，请前往 [Obsidian 官网下载页面](https://obsidian.md/download)下载安装程序覆盖安装到当前程序上。这不会删除任何个人数据，您的笔记完全不会丢失。详见[如何更新 Obsidian 安装包](/docs/how-to/update-obsidian-installer)以及 [beta.4 环境要求说明](/changelog/2.0.0-beta.4#obsidian-version-requirement)。
 
-## License
+## 开源许可变更
 
-ZotLit is now licensed under AGPL-3.0-or-later (previously MIT). The change covers code ported from Zotero, which is itself AGPL-licensed. This does not affect how you use the plugin.
+ZotLit 现在基于 AGPL-3.0-or-later 协议开源（此前为 MIT）。此次变更涵盖了从 Zotero 移植的代码部分，Zotero 本身采用 AGPL 许可。这不会影响您作为最终用户对本插件的日常使用。
 
-## Breaking Changes
+## 破坏性变更
 
-### Citation Key Links is now opt-in
+### 文献引用标识链接改为按需启用
 
-Citation Key Links lets you click a `[@citekey]` reference in the editor to jump to its literature note. This feature is now an optional setting, disabled by default. If you used it during the beta or migrated from v1, it will remain enabled.
+文献引用标识链接功能允许您在编辑器中直接点击 `[@citekey]` 跳转打开对应的文献笔记。该功能现在改为可选设置项，默认处于禁用状态。如果您在测试阶段使用过该功能或从 v1 迁移而来，该设置将自动保持开启。
 
-The feature resolves each citation key against Zotero's own native citation key, scoped to the citation library you have configured. If the matching item does not have a literature note yet, clicking the link creates the note and opens it.
+该功能会将每个文献引用标识与 Zotero 原生的文献引用标识进行比对，范围限定在您所配置的引文文献库内。如果匹配到的条目尚未创建文献笔记，点击链接会先自动创建该笔记随后将其打开。
 
-## What's New
+## 新增功能
 
-### Batch operations on libraries and collections
+### 针对文献库与分类的批量操作
 
-You can now create or update literature notes and import Zotero notes across an entire library or a single collection (including subcollections), instead of selecting items one at a time. Right-click a library or collection in Zotero's sidebar to find <UiLabel name={m["zotero.menu_collection_update_all.label"]()} /> and <UiLabel name={m["zotero.menu_collection_import_all_notes.label"]()} /> in the <UiLabel name={m["zotero.menu_submenu.label"]()} /> submenu. The same actions are available as Obsidian commands and protocol links (`update-all`, `import-all-notes`).
+您现在可以针对整个文献库或单个分类（包含所有子分类）一键批量创建或更新文献笔记、导入 Zotero 笔记，无需再逐篇选取条目。在 Zotero 侧边栏中右键点击某个文献库或分类，即可在 <UiLabel name={m["zotero.menu_submenu.label"]()} /> 子菜单中找到 <UiLabel name={m["zotero.menu_collection_update_all.label"]()} /> 与 <UiLabel name={m["zotero.menu_collection_import_all_notes.label"]()} />。Obsidian 命令面板和协议链接（`update-all`、`import-all-notes`）也提供了完全相同的操作入口。
 
-### Other improvements
+### 其他改进
 
-- Settings actions in notices and the Welcome View now open directly to the relevant settings sub-page instead of dropping you at the tab root.
-- The "Receive updates from Zotero" toggle now shows a hint linking to the install guide for ZotLit Companion, the Zotero add-on, when the Companion is not yet set up.
+- 通知提示和欢迎视图中的设置操作链接现在可以直接跳转到对应的设置子页面，而不是停留在顶层设置根目录。
+- 当尚未配置 Zotero 配套插件时，“接收来自 Zotero 的更新”开关旁现在会显示提示链接，直达 ZotLit Companion 的安装指南。

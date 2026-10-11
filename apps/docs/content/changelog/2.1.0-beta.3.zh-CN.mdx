@@ -2,41 +2,62 @@
 version: "2.1.0-beta.3"
 date: "2026-08-18"
 companion: "2.1.0-beta.0"
-description: "Zotero 10 support, library scope, ambiguous citation keys"
+description: "支持 Zotero 10、支持多文献库作用域、妥善处理歧义文献引用标识"
 translationStatus: placeholder
 ---
 
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-## Highlights
+## 版本亮点
 
-### Zotero 10 support
+### 支持 Zotero 10
 
-ZotLit now supports Zotero 10 as well as Zotero 9.
+ZotLit 现已同时支持 Zotero 10 与 Zotero 9。
 
-Zotero 10 changed how it stores recent edits, so changes made while Zotero was open could stay invisible to ZotLit. The Companion now keeps the database current for ZotLit automatically. When you switch from Zotero to Obsidian, your changes are already there, whether or not live updates are enabled. A new <UiLabel name={m["zotero.database_status.tooltiptext"]()} /> panel on the Zotero sidebar confirms that recent changes have reached the database and lets you trigger a manual update if something went wrong. See [Fix Zotero changes that do not appear](/docs/how-to/fix-stale-data) for details.
+Zotero 10 调整了存储未提交变动的方式，导致 Zotero 保持运行时所做的改动对 ZotLit 可能会暂时不可见。配套插件 Companion 现在会自动为 ZotLit 保持数据库的即时同步。当您从 Zotero 切换回 Obsidian 时，无论是否开启即时更新，您的最新更改均已妥善就位。Zotero 侧边栏新增的 <UiLabel name={m["zotero.database_status.tooltiptext"]()} /> 状态面板可以确认最新改动是否已写入数据库，并在异常时支持手动触发更新。详见[解决 Zotero 数据不同步或过期问题](/docs/how-to/fix-stale-data)。
 
-### Library scope
+### 文献库作用域（Library scope）
 
-ZotLit now works across several Zotero libraries at once. **Library scope** in **Settings › ZotLit**, decides which libraries item search, citation key resolution, and the library-wide commands cover. It replaces the old **Default library** setting.
+ZotLit 现在能够同时跨多个 Zotero 文献库协同工作。**设置 › ZotLit** 中的**文献库作用域**决定了条目检索、文献引用标识解析以及全库命令所覆盖的文献库范围。它取代了旧版的**默认文献库**设置项。
 
-Two modes:
+包含两种工作模式：
 
-- **All libraries** follows your Zotero database, so a group library you join later is in scope at once.
-- **Selected libraries** stays exactly as you set it, and a group library you join later stays out until you add it.
+- **所有文献库**：动态跟随您的 Zotero 数据库，后续新加入的群组文献库会自动即时纳入作用域。
+- **选定的文献库**：严格遵循您的静态勾选，后续新加入的群组文献库在您手动勾选前保持排除。
 
-One search now spans every library in scope, in a single relevance order. While more than one library can contribute, each result names the library its item comes from.
+单次检索现在可统一跨越作用域内的所有文献库，并按相关性集中排序呈现。当多个文献库同时提供搜索结果时，每条结果均会清晰标明其来源文献库。
 
-**ZotLit: Create or update all literature notes** and **ZotLit: Import all child and standalone notes** cover the whole scope too, and their confirmation groups rows by library. Menu entries and links from Zotero still target the exact library they came from, whether or not it is in your scope.
+**ZotLit: 创建或更新所有文献笔记**以及 **ZotLit: 导入所有子笔记与独立笔记**同样覆盖全部作用域，其确认窗口会按文献库对条目进行归类展示。来自 Zotero 右键菜单和协议链接的指令依然精准作用于其来源的具体文献库，不受本地作用域设置的限制。
 
-A group you leave keeps its place in **Selected libraries**, marked unavailable, so a temporary absence does not erase your choice. A library-wide run continues over the libraries that are available and states how many it skipped. See [Settings › Library scope](/docs/reference/settings#library-scope).
+您离开的群组会在**选定的文献库**中保留位置并标记为不可用，因此临时的网络脱机或权限变动不会清空您的选择。全库操作会继续在可用文献库上运行，并明确告知跳过了多少个不可用文献库。详见[设置 › 文献库作用域](/docs/reference/settings#library-scope)。
 
-A scope ZotLit cannot read stays on disk as it is. ZotLit searches **My Library** alone, marks the setting with a warning, and clears it as soon as you set the scope again.
+如果 ZotLit 无法读取作用域配置，将保留磁盘原样，仅检索**我的文库**，在设置中展示警告，并在您重新保存作用域时自动恢复。
 
-**What the upgrade sets:** upgrading selects **Selected libraries** with **My Library** alone, whatever library you had selected before, so your search scope stays as narrow as it was. Switch to **All libraries**, or add your group libraries, to search wider. A fresh installation starts at **All libraries**.
+**升级时的默认行为：** 升级后系统会自动选择**选定的文献库**并仅勾选**我的文库**，与您先前的选择保持一致，确保检索范围不会突兀变宽。您可以随时切换为**所有文献库**或勾选群组文献库。全新安装则默认从**所有文献库**开始。
 
-### Citation keys that match several items
+### 匹配多个条目的歧义文献引用标识
+
+同一个文献引用标识可能同时出现在两个 Zotero 条目上。这会在单库重复条目或同时纳入检索的两个文献库之间发生。ZotLit 此前会武断地选取检索到的第一个条目。现在系统会清晰汇报该歧义状态，而不再擅自替您决策：
+
+- 打开此类引文时会弹窗询问您具体指向哪一篇，列出所有候选条目的所属文献库与条目标识，按您选中的独立身份进行打开。
+- 插入此类引文会被明确拒绝，并弹出通知建议您在 Zotero 中修改标识。因为插入的纯文本仅包含键名，后续将无法确定归属。
+- 参考文献侧边栏会汇报一条列出所有候选条目的参考文献错误，并禁用其**打开文献笔记**按钮。引文悬停浮窗同样会指出候选条目，且页面预览会保持空白。
+- 主题可通过新增的 `zt-citation-key-ambiguous` 样式类名对该状态进行专属高亮着色。详见[主题样式类名](/docs/reference/theme-hooks)。
+
+若要消除歧义，请在 Zotero 中为其中一个条目指定不同的文献引用标识，或缩小您的文献库作用域。
+
+## 新增功能
+
+### 按单篇笔记自定义引文样式与语言
+
+单篇笔记现在可以指定其专有的引文样式与语言，脱离全库全局设置的约束。运行 **ZotLit: 设置引文呈现方式**（亦位于笔记的**更多选项**菜单中），即可打开对话框查看笔记当前配置并一键写入这两项设定。
+
+这些设置保存在笔记自身的 YAML frontmatter 属性中：`zotlit-csl` 指定 Zotero 中已安装的 CSL 样式，标准的 Pandoc `lang` 指定文档语言。移除该属性即可让笔记重新恢复沿用仓库全局设置。
+
+正文引文、参考文献侧边栏、引文悬停浮窗、复制的参考文献列表以及内置导出均会严格依循笔记自身的专属呈现方式。
+
+### 引文语言区域（Citation locale）
 
 One citation key can sit on two Zotero items. That happens with twins in a single library, and with the same key in two libraries you now have in scope. ZotLit used to take the first match it found. It now reports the ambiguity instead of choosing for you:
 

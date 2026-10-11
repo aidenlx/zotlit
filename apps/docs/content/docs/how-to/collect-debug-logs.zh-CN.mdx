@@ -1,6 +1,6 @@
 ---
-title: "Collect debug logs"
-description: "Gather a template error report, ZotLit logs, Zotero debug output, and Obsidian debug info to include when reporting a bug."
+title: "收集调试日志"
+description: "收集模板错误报告、ZotLit 运行日志、Zotero 调试输出以及 Obsidian 诊断信息以供提交 Bug 报告。"
 translationStatus: placeholder
 ---
 
@@ -12,51 +12,50 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-Bug reports often need a template error report, ZotLit logs, Obsidian logs, or Zotero debug output from ZotLit Companion, the Zotero add-on. Each section below is self-contained. Follow only the one you were asked for.
+在提交 Bug 反馈时，通常需要附带模板错误报告、ZotLit 插件日志、Obsidian 系统日志，或是来自配套插件 ZotLit Companion 的 Zotero 调试输出。下方的每个章节均独立成篇，您只需按照反馈中所要求的项进行操作即可。
 
-Once you have the logs, file the report in the [Bug reports discussion](https://github.com/aidenlx/zotlit/discussions/categories/bug-reports).
+获取到日志后，请在 GitHub 的 [Bug reports 讨论区](https://github.com/aidenlx/zotlit/discussions/categories/bug-reports)中提交反馈。
 
-<Callout type="warn" title="Cross-component bugs need both sides">
-  If the bug spans ZotLit and the Companion (e.g. syncing, live update,
-  importing, or any action that rely on Zotero running), complete the setup
-  steps in **both** [ZotLit logs](#zotlit-logs) and [Zotero debug
-  output](#zotero-debug-output) before you reproduce the problem. Reproduce
-  once, then save logs from both sides.
+<Callout type="warn" title="跨端组件问题需要双侧日志">
+  如果问题涉及 ZotLit 与 Companion
+  两端（例如数据同步、即时更新、笔记导入或任何依赖 Zotero
+  运行的操作），请在复现问题之前，**同时**完成[ZotLit 日志](#zotlit-logs)与
+  [Zotero
+  调试输出](#zotero-debug-output)中的配置步骤。复现一次后，分别保存两端的日志输出。
 </Callout>
 
-## Template error report [#template-error-report]
+## 模板错误报告 [#template-error-report]
 
-Collect this when a template preview fails in the Template Workbench. The report holds the template engine's own message and the context of the attempt that failed, so another person can investigate the actual failure.
+当在模板工作台中预览失败时收集此报告。报告中记录了模板引擎自身的报错信息以及失败尝试的上下文，以便他人能够准确排查定位具体故障。
 
 <Steps>
   <Step>
-    ### Open the problem
+    ### 打开问题面板
 
-    In the Template Workbench, select <UiLabel name={m.workbench_problem_show()} /> in the preview or on the source marker. The <UiLabel name={m.workbench_problems_heading()} /> area explains the failure.
-
-  </Step>
-  <Step>
-    ### Copy the report
-
-    Select <UiLabel name={m.workbench_problems_copy()} />. Select <UiLabel name={m.workbench_problems_technical()} /> first if you want to read the report before you copy it: the disclosure shows the same text.
-
-    The report holds the engine message, the error name, its causes, any source excerpt, and the location the engine named. Beside those it records the time of the failure, whether an automatic check or <UiLabel name={m.workbench_preview_run()} /> started it, the template document and section, the template language, the preview root and its options, the selected item or example, the source revision, and the ZotLit and Obsidian versions. A value the failed attempt could not supply reads `unavailable`.
+    在模板工作台中，点击预览区域中或源码标记上的 <UiLabel name={m.workbench_problem_show()} />。<UiLabel name={m.workbench_problems_heading()} /> 区域会展示失败原因。
 
   </Step>
   <Step>
-    ### Paste it into the report
+    ### 复制错误报告
 
-    Paste the copied text into your bug report. Nothing leaves your vault until you paste it yourself.
+    点击 <UiLabel name={m.workbench_problems_copy()} />。如果您希望在复制前先阅读报告内容，可先展开 <UiLabel name={m.workbench_problems_technical()} />。
+
+    该报告包含引擎报错消息、错误名称、触发诱因、相关源码摘录以及引擎给出的具体报错位置。此外，它还会记录失败时间戳、是自动检查还是通过 <UiLabel name={m.workbench_preview_run()} /> 触发、对应的模板文档与章节、模板语言、预览数据根节点选项、当前选中的条目或示例、源码版本以及 ZotLit 和 Obsidian 的版本号。失败尝试无法获取的值将显示为 `unavailable`。
+
+  </Step>
+  <Step>
+    ### 粘贴到反馈中
+
+    将复制的文本直接粘贴到您的 Bug 报告中。在您主动粘贴提交之前，任何信息都不会离开您的本地仓库。
 
   </Step>
 </Steps>
 
-<Callout type="info" title="The report survives the repair">
-  Keep working on the template. The copied report describes the attempt that
-  failed, so later edits and a different selected item do not change it. After a
-  successful repair, the open <UiLabel name={m.workbench_problems_heading()} />{" "}
-  area offers <UiLabel name={m.workbench_problems_copy_last()} /> for the
-  failure you were reading.
+<Callout type="info" title="报告不会因后续修复而丢失">
+  您可以继续在模板上修改代码。已复制的报告严格记录了当时发生失败的那次尝试，因此后续的编辑或切换条目不会改变它。在成功修复后，展开的{" "}
+  <UiLabel name={m.workbench_problems_heading()} /> 区域还会提供{" "}
+  <UiLabel name={m.workbench_problems_copy_last()} />
+  ，便于您获取先前阅读的那次故障记录。
 </Callout>
 
 <Callout type="info" title="Ask the community">

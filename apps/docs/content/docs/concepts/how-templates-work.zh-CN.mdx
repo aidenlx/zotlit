@@ -1,6 +1,6 @@
 ---
-title: "How templates work"
-description: "The three kinds of template document, how ZotLit finds them in the template folder, and the Liquid and Eta languages."
+title: "模板工作原理"
+description: "三类模板文档、ZotLit 如何在模板文件夹中发现它们，以及 Liquid 与 Eta 语言。"
 translationStatus: placeholder
 ---
 
@@ -10,54 +10,55 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-Templates are Markdown files with embedded expressions that control what your literature notes and citations look like. ZotLit keeps them in one folder in your vault as **template documents**, and reads the filename to decide what each one does.
+模板是内嵌了动态表达式的 Markdown 文件，控制着您的文献笔记与引文的外观呈现。ZotLit 将它们统一存放在您仓库中的一个文件夹内，称之为**模板文档（template documents）**，并通过文件名来决定各自的用途。
 
-<Callout type="info" title="Agent-assisted templates">
-  The [Template Workbench CLI](/docs/concepts/template-workbench) lets an agent
-  edit and test templates against your Zotero library. You can describe the
-  result without writing Liquid or Eta yourself.
+<Callout type="info" title="智能体辅助编写模板">
+  借助[模板工作台
+  CLI](/docs/concepts/template-workbench)，智能体可以直接针对您的 Zotero
+  文献库编辑并测试模板。您只需用自然语言描述想要的效果，无需亲自手写 Liquid 或
+  Eta 代码。
 </Callout>
 
-## Three kinds of template document [#kinds]
+## 三类模板文档 [#kinds]
 
-Every template document is one of three kinds. The filename prefix says which.
+每份模板文档都属于以下三类之一，由其文件名前缀明确区分：
 
-| Kind                    | Filename                   | What it holds                                                                                                         |
-| ----------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Literature note profile | `zotlit-profile.<slug>.md` | One profile: the note name, folder, properties, body, and annotation format. `zotlit-profile.books.md` is an example. |
-| Citation text           | `zotlit-citation.md`       | The text of every in-text citation ZotLit renders. One per vault, under exactly this name.                            |
-| Partial                 | `zotlit-partial.<name>.md` | A piece of template text that any other template renders by name. `zotlit-partial.authors.md` is an example.          |
+| 类别                | 文件命名格式               | 所包含的内容                                                                                                 |
+| ------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| 文献笔记配置方案    | `zotlit-profile.<slug>.md` | 完整的配置方案：笔记名称、存放目录、frontmatter 属性、正文内容以及标注格式。例如 `zotlit-profile.books.md`。 |
+| 引文文本            | `zotlit-citation.md`       | ZotLit 渲染的每条正文内引文的文本。整个仓库仅有一份，且必须严格以此命名。                                    |
+| 共享片段（Partial） | `zotlit-partial.<name>.md` | 供任何其他模板按名称调用的可复用模板片段。例如 `zotlit-partial.authors.md`。                                 |
 
-A profile document is the single authoring object for a literature note: its name, its properties, its body, and the format of one annotation all live in that one file. See [Literature notes and the managed region](/docs/concepts/literature-notes-and-the-managed-region) for how ZotLit updates a note it has already written.
+配置方案文档是文献笔记的唯一编写实体：笔记的文件名、frontmatter 属性、正文结构以及单条批注的渲染格式全部组织在这一份文件中。有关 ZotLit 如何对已有笔记进行更新的机制，请参阅[文献笔记与受管区域](/docs/concepts/literature-notes-and-the-managed-region)。
 
-The citation text is the one source for every in-text citation: what you insert from the citation suggester or the command palette, the citation an annotation carries, and each citation inside an imported Zotero note. It receives [`zt.variant`](/docs/reference/templates/data#citation-variant), the string `main` or `alt`, naming the gesture that asked for the citation, and the template decides what each one renders. `alt` comes from `Shift+Enter`, or from a trailing `/` in the suggester query; annotations and imported notes are always `main`. See [What each gesture inserts](/docs/how-to/insert-citations#citation-text).
+引文文本模板是所有正文内引文的唯一格式来源：包含从引文建议下拉框或命令面板插入的引文、标注自带的引文以及从 Zotero 导入笔记中的每条引文。它接收 [`zt.variant`](/docs/reference/templates/data#citation-variant) 变量（取值为 `main` 或 `alt` 字符串），用以区分触发引文的交互手势，模板根据该变量决定渲染的内容。`alt` 来源于 `Shift+Enter` 或查询词末尾的 `/`；批注中的引文与导入笔记中的引文则固定为 `main`。详见[各手势插入的内容说明](/docs/how-to/insert-citations#citation-text)。
 
-Partials are how a piece of template text is shared. Several profiles, and the citation text, can render the same partial by name. See [Customize a template](/docs/how-to/customize-a-template#share-a-partial) for the steps.
+共享片段（Partial）用于在不同模板间复用公共文本逻辑。多个配置方案以及引文文本模板均可通过名称直接渲染相同的片段。具体操作步骤请参阅[自定义模板](/docs/how-to/customize-a-template#share-a-partial)。
 
-## How ZotLit finds them [#discovery]
+## ZotLit 如何发现模板 [#discovery]
 
-ZotLit scans the template folder for files whose name starts with `zotlit-`. The scan is flat: it reads the files directly inside the folder and does not descend into subfolders.
+ZotLit 会扫描模板文件夹中所有文件名以 `zotlit-` 开头的文件。该扫描是单层扁平化的：它仅读取该文件夹根目录下的直接子文件，不会递归扫描子文件夹。
 
-A file without the `zotlit-` prefix is ignored, so your own Obsidian templates can sit in the same folder.
+没有 `zotlit-` 前缀的文件会被自动忽略，因此您可以将 Obsidian 自身的其他普通模板安全地保存在同一个文件夹中。
 
-A `zotlit-` file that is neither one of the three kinds nor a [2.1 template file](#convert-legacy) renders nothing. It gets an <UiLabel name={m.settings_template_unrecognized_name()} /> row at <SettingsPath page={m.settings_page_advanced()} setting={m.settings_advanced_template_engine_heading()} />, naming the file and the three valid names. `zotlit-citation.liquid.md` is one such file: the citation text carries no language in its name.
+一个以 `zotlit-` 开头但既不属于上述三类、也不属于 [2.1 旧版模板文件](#convert-legacy)的文件将不会渲染任何内容。系统会在 <SettingsPath page={m.settings_page_advanced()} setting={m.settings_advanced_template_engine_heading()} /> 中生成一条 <UiLabel name={m.settings_template_unrecognized_name()} /> 提示，列出该文件名以及三种合法命名格式。例如 `zotlit-citation.liquid.md` 就是不合规的文件名：引文文本模板的文件名中不应带有语言后缀。
 
-### Template folder [#template-folder]
+### 模板文件夹设置 [#template-folder]
 
-Template documents live under the folder set at <SettingsPath page={m.settings_page_advanced()} setting={m.settings_template_folder_name()} />, `templates` by default. Loading and file watching both use that folder. ZotLit recompiles a changed document immediately, so edits take effect without reloading the plugin.
+模板文档统一保存在 <SettingsPath page={m.settings_page_advanced()} setting={m.settings_template_folder_name()} /> 所指定的文件夹中，默认为 `templates`。模板加载和文件变动监听均以此文件夹为准。ZotLit 会在文件发生更改时即时重新编译，无需重新加载插件即可让修改立即生效。
 
-## The manifest and the language [#manifest]
+## Manifest 元数据区与模板语言 [#manifest]
 
-A citation text or partial document is an optional YAML manifest, then the template source:
+引文文本模板与共享片段模板由一个可选的 YAML frontmatter manifest 以及后续的模板源码组成：
 
 ```text
 ---
 language: eta
 ---
-<template source>
+<模板源码>
 ```
 
-`language` is the only key the manifest accepts, and its only values are `liquid` and `eta`. Any other key is an error.
+`language` 是该 manifest 唯一接受的配置键，其有效取值仅为 `liquid` 或 `eta`。包含任何其他键均会被判定为错误。
 
 A document with no frontmatter is Liquid. A Liquid partial or citation text needs no manifest, and the file ZotLit creates for you when you first open the citation text carries none.
 

@@ -1,6 +1,6 @@
 ---
-title: "Migrate from v1"
-description: "Rename your Eta templates, enable the JavaScript gate, and overwrite v1 notes to complete the v1-to-v2 upgrade."
+title: "从 v1 迁移"
+description: "重命名 Eta 模板、开启 JavaScript 权限开关并覆盖 v1 笔记以完成从 v1 到 v2 的大版本升级。"
 translationStatus: placeholder
 ---
 
@@ -13,51 +13,50 @@ import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 import { zotlitLegacyUrl } from "@/lib/shared";
 
-ZotLit v2 replaces v1 in place. Settings migrate automatically on first load, but if you customized your Eta templates, they are not loaded until you rename them, update the data vocabulary, and enable the <UiLabel name={m.settings_template_js_enable_name()} /> gate. Notes you created with v1 still appear in the index. Overwrite them when you want incremental body updates.
+ZotLit v2 会在原位置直接替换 v1。基础设置会在首次加载时自动迁移；但如果您自定义过 Eta 模板，在您重命名文件、更新数据变量名并开启 <UiLabel name={m.settings_template_js_enable_name()} /> 权限开关之前，它们将不会被加载。您在 v1 中创建的笔记依然会被系统索引正常识别；当您需要增量式正文更新支持时，对其执行覆盖操作即可。
 
-<Callout type="info" title="What needs your attention">
+<Callout type="info" title="需要您留意的关键事项">
 
-- **Required to restore note generation:** Rename template files to the v2 pattern, replace `it.*` with `zt.*`, and [enable the <UiLabel name={m.settings_template_js_enable_name()} /> gate](/docs/how-to/enable-javascript-templates). Without these steps, v2 falls back to built-in defaults that do not reflect your customizations.
-- **Automatic (no action):** Settings, including folder paths and custom frontmatter fields. Migrated on first load.
-- **Optional:** Run <Command inline name={m.command_overwrite_note_name()} /> on v1 notes to add the managed region for incremental body updates.
+- **恢复自定义笔记生成效果的必备操作：** 将模板文件重命名为 v2 规范格式，将代码中的 `it.*` 全面替换为 `zt.*`，并[开启 <UiLabel name={m.settings_template_js_enable_name()} /> 权限开关](/docs/how-to/enable-javascript-templates)。若未完成这些步骤，v2 将回退到内置的默认模板，无法体现您先前的自定义效果。
+- **自动迁移（无需任何手动操作）：** 插件基础设置，包括文件夹路径以及自定义 frontmatter 属性。它们会在首次加载时自动完成转换迁移。
+- **可选操作：** 对旧的 v1 笔记执行 <Command inline name={m.command_overwrite_note_name()} />，以注入受管区域标记，从而享受后续的增量式正文更新。
 
 </Callout>
 
-## Install v2
+## 安装 v2
 
 <Steps>
   <Step>
-    ### Install the v2 plugin
+    ### 安装 v2 插件
 
-    ZotLit v2 uses the same plugin id as v1 (`zotlit`). When you install v2, Obsidian replaces v1 directly. There is no separate plugin entry and no manual uninstall step. The plugin is desktop-only.
+    ZotLit v2 使用与 v1 完全相同的插件 ID（`zotlit`）。当您安装 v2 时，Obsidian 会直接就地覆盖替换 v1。没有独立的次级插件条目，也无需手动预先卸载。该插件仅限桌面端运行。
 
   </Step>
   <Step>
-    ### Confirm in Obsidian
+    ### 在 Obsidian 中确认
 
-    After the upgrade, open **Settings &rarr; ZotLit**. The settings pane loads with your migrated configuration. If you see your literature-note folder path and template folder path, the migration succeeded.
+    升级完成后，打开**设置 → ZotLit**。设置面板将加载显示迁移后的配置。如果您能看到之前的文献笔记文件夹路径以及模板文件夹路径，则说明自动迁移已经成功完成。
 
   </Step>
 </Steps>
 
-After the upgrade, v1 is gone. If you need to consult the original documentation while you transition, the <a href={zotlitLegacyUrl} target="_blank" rel="noreferrer noopener">ZotLit v1 docs</a> remain available.
+升级完成后，v1 的代码即被完全取代。如果您在过渡期间需要查阅原有的老版使用文档，<a href={zotlitLegacyUrl} target="_blank" rel="noreferrer noopener">ZotLit v1 文档</a>依然保持在线可用。
 
-## Settings (automatic)
+## 设置项迁移（全自动）
 
-On first load after upgrading, ZotLit detects your v1 settings and migrates them automatically. No action is required for settings. The migration runs once and persists the result; write failures are logged but never block the plugin from loading.
+在升级后的首次启动期间，ZotLit 会自动侦测到您的 v1 设置并立即执行迁移。针对基础设置项您无需进行任何手动操作。该迁移仅运行一次并将结果持久化落盘；即使发生写入异常也只会记录到日志中，绝不会阻断插件的正常加载。
 
-What carries over:
+具体迁移内容包括：
 
-- Your literature-note folder and template folder paths.
-- Custom frontmatter fields, kept as JavaScript-language fields. Fields you never customized (still using v1 defaults) convert to Liquid.
-- Embedded template sources (such as the filename template body) are not migrated because v2 uses a different data vocabulary (`zt.*` instead of v1's `it.*`). V2 reads templates from vault files instead.
+- 您的文献笔记保存目录以及模板存放文件夹路径。
+- 自定义 frontmatter 属性字段，将保留为 JavaScript 语言字段。您从未自定义过的字段（即沿用 v1 默认值的字段）会自动转换为现代的 Liquid 语法。
+- 内嵌的模板源码（例如笔记文件名模板的正文）不会直接迁移，因为 v2 采用了全新的数据体系规范（由 v1 的 `it.*` 全面升级为 `zt.*`）。v2 改为直接从仓库中的模板文件读取配置。
 
-<Callout type="info" title="JavaScript-language fields need the gate">
-  Custom frontmatter fields migrated as JavaScript require the
-  <UiLabel name={m.settings_template_js_enable_name()} /> gate to evaluate.
-  Until you enable it, those fields are skipped during note updates with a
-  notice listing the skipped fields. See [Enable JavaScript
-  templates](/docs/how-to/enable-javascript-templates) for the opt-in steps.
+<Callout type="info" title="JavaScript 语言字段需要开启权限开关">
+  迁移为 JavaScript 语言的自定义 frontmatter 字段需要开启{" "}
+  <UiLabel name={m.settings_template_js_enable_name()} />{" "}
+  开关才能执行计算。在您开启之前，笔记更新时会暂时跳过这些字段，并弹出通知列出跳过的字段项。有关开启授权的步骤，请参阅[启用
+  JavaScript 模板](/docs/how-to/enable-javascript-templates)。
 </Callout>
 
 ## Migrate templates

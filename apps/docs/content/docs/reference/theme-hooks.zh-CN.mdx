@@ -1,47 +1,47 @@
 ---
-title: "Theme hooks"
-description: "Public CSS classes for active citation sources and rendered citations across Obsidian views."
+title: "主题样式类名"
+description: "跨 Obsidian 各视图用于高亮活跃引文来源与格式化渲染引文的公开 CSS 类名。"
 translationStatus: placeholder
 ---
 
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-This reference lists ZotLit's public CSS classes: the citation classes and their activation rules, the PDF reader classes, and the template editor classes. It also lists the custom properties that color ZotLit's nodes and edges in the graph views.
+本参考手册列出了 ZotLit 提供的公开 CSS 样式类名：引文类名及其激活生效规则、PDF 阅读器类名以及模板编辑器类名。同时还列出了在图谱视图中为 ZotLit 节点和引文连线着色的自定义 CSS 变量属性。
 
-## Hooks [#hooks]
+## 样式类名清单 [#hooks]
 
-| Class                                  | Meaning                                                                                                                                                |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `zt-citation`                          | A Citation that ZotLit renders or makes navigable.                                                                                                     |
-| `zt-citation-key`                      | A raw citation key, or a rendered Citation produced from literal citation key syntax.                                                                  |
-| `zt-citation-key-pending`              | A citation key awaiting the first Citation Key Resolution Snapshot. The element also has `zt-citation-key`.                                            |
-| `zt-citation-key-unresolved`           | A citation key that does not resolve, or a rendered Citation in which no citation key resolves. The element also has `zt-citation-key`.                |
-| `zt-citation-key-partially-unresolved` | A rendered Citation containing both resolved and unresolved citation keys. The element also has `zt-citation-key`.                                     |
-| `zt-citation-key-ambiguous`            | A citation key that matches several Zotero items, or a rendered Citation containing one and no unresolved key. The element also has `zt-citation-key`. |
-| `zt-literature-note-link`              | A rendered Citation produced from a Literature Note link or Citation Run.                                                                              |
-| `zt-entry-serial`                      | The Entry Serials of a rendered Citation, and the serial labeling each cited item's row in the citation popover.                                       |
+| 类名                                   | 语义说明                                                                                                       |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `zt-citation`                          | 由 ZotLit 负责渲染呈现或提供交互导航跳转的引文元素。                                                           |
+| `zt-citation-key`                      | 原始文献引用标识，或由字面量标识语法生成的格式化引文。                                                         |
+| `zt-citation-key-pending`              | 正在等待首次文献引用标识解析快照的引文键。该元素同时包含 `zt-citation-key`。                                   |
+| `zt-citation-key-unresolved`           | 无法在文献库中解析的标识键，或所有标识均无法解析的格式化引文。该元素同时包含 `zt-citation-key`。               |
+| `zt-citation-key-partially-unresolved` | 同时包含已成功解析和无法解析标识键的格式化引文。该元素同时包含 `zt-citation-key`。                             |
+| `zt-citation-key-ambiguous`            | 匹配到多个 Zotero 条目的歧义标识键，或包含歧义键且不含未解析键的格式化引文。该元素同时包含 `zt-citation-key`。 |
+| `zt-literature-note-link`              | 由文献笔记双链链接或引文组合序列（Citation Run）生成的格式化引文。                                             |
+| `zt-entry-serial`                      | 格式化引文内部的条目序号元素，以及在引文悬停浮窗中为每个被引条目所在行标明的序号。                             |
 
-A rendered Citation also has the class for its source. A literal Citation Cluster has `zt-citation` and `zt-citation-key`. A Citation Run made from Literature Note links has `zt-citation` and `zt-literature-note-link`.
+格式化引文同时还会携带其来源类型的专属类名：字面量引文簇包含 `zt-citation` 与 `zt-citation-key`；由文献笔记双链构成的引文组合序列则包含 `zt-citation` 与 `zt-literature-note-link`。
 
-## Supported views [#views]
+## 支持的 Obsidian 视图 [#views]
 
-Hooks can appear in Source mode, Live Preview, and reading view when their activation rules are met.
+当满足激活条件时，这些类名可出现在源码模式、实时预览以及阅读视图中。
 
-| View         | Literal Pandoc source                                                                       | Literature Note wikilink                        |
-| ------------ | ------------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| Source mode  | Marks an active source while Citekey Navigation supplies interaction.                       | Uses Obsidian's native link surface.            |
-| Live Preview | Marks active raw source for navigation and marks Rendered Citations for formatted display.  | Marks Rendered Citations for formatted display. |
-| Reading view | Marks active native or rendered text while ZotLit supplies navigation or formatted display. | Marks Rendered Citations for formatted display. |
+| 视图类型 | Pandoc 字面量引文源码                                    | 文献笔记双链                       |
+| -------- | -------------------------------------------------------- | ---------------------------------- |
+| 源码模式 | 当开启标识导航时，标记处于活跃状态的源码。               | 使用 Obsidian 原生的链接排版表面。 |
+| 实时预览 | 为导航标记活跃的原始源码，并为格式化排版标记格式化引文。 | 为格式化排版标记格式化引文。       |
+| 阅读视图 | 当 ZotLit 提供导航或格式化排版时标记活跃文本。           | 为格式化排版标记格式化引文。       |
 
-CodeMirror can split one source range across multiple elements. ZotLit guarantees the meaning and activation of each class. It does not guarantee the element type, nesting, number of elements, or native Obsidian and CodeMirror classes.
+CodeMirror 底层可能会将一段源码范围拆分为多个连续的 DOM 元素。ZotLit 确保每个公开类名的语义一致性与激活规则稳定，但不保证具体的底层 DOM 标签类型、嵌套深度、元素数量，亦不保证 Obsidian 或 CodeMirror 自带的原生私有类名。
 
-## Activation [#activation]
+## 激活生效条件 [#activation]
 
-ZotLit adds a public class only when both conditions apply:
+ZotLit 仅在同时满足以下两个条件时才会注入公开类名：
 
-1. The source belongs to the active note's Document Citation Set.
-2. ZotLit supplies formatted rendering or navigation for that source.
+1. 该引文来源归属于当前活动笔记的文档引文集（Document Citation Set）。
+2. ZotLit 正在为该引文来源提供格式化渲染或交互导航支持。
 
 `zt-citation-key` and its state classes identify active literal Pandoc sources. <UiLabel name={m.settings_citation_pandoc_citations_name()} /> controls their membership. <UiLabel name={m.settings_citation_show_formatted_name()} /> and <UiLabel name={m.settings_citation_open_as_links_name()} /> control the two features that can activate their hooks.
 

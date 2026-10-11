@@ -1,6 +1,6 @@
 ---
-title: "Profile document"
-description: "The format of a profile document: its manifest keys, note source, managed block, and Annotation Section."
+title: "配置方案文档"
+description: "配置方案文档的文件格式：manifest 属性键、笔记模板源码、受管块以及标注区域。"
 translationStatus: placeholder
 ---
 
@@ -9,32 +9,32 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-This page documents the profile document: the file that holds one profile in full, its manifest keys, and its fixed document structure.
+本页介绍了配置方案（Profile）文档的技术规格：完整承载单个配置方案的单个文件、其 manifest 元数据配置项以及固定的文档内部结构。
 
-## What a profile document is [#what-a-profile-document-is]
+## 什么是配置方案文档 [#what-a-profile-document-is]
 
-One profile is one file. ZotLit finds profiles by scanning the template folder, and every `zotlit-profile.<slug>.md` there is a profile as soon as it exists. Nothing installs, registers, or points at a document.
+一份配置方案对应一个独立文件。ZotLit 通过扫描模板文件夹来检索配置方案，只要存在文件名为 `zotlit-profile.<slug>.md` 的文件，就会立即作为配置方案加载生效。无需额外安装、显式注册或在其他设置中关联文件路径。
 
-| Property     | Value                                    |
-| ------------ | ---------------------------------------- |
-| Filename     | `zotlit-profile.<slug>.md`               |
-| Location     | a direct child of the template folder    |
-| Identity     | the `id` key of the manifest             |
-| Written into | notes stamped with that `id` at creation |
+| 属性特征 | 具体取值                               |
+| -------- | -------------------------------------- |
+| 文件命名 | `zotlit-profile.<slug>.md`             |
+| 文件位置 | 必须是模板文件夹的直接子文件           |
+| 唯一身份 | manifest 元数据区中的 `id` 属性键      |
+| 影响范围 | 创建时标记绑定了该 `id` 的所有文献笔记 |
 
-The template folder is the one set by <SettingsPath page={m.settings_page_advanced()} setting={m.settings_template_folder_name()} />. The scan is flat, so a `zotlit-` file in a subfolder is an ordinary note.
+模板文件夹由 <SettingsPath page={m.settings_page_advanced()} setting={m.settings_template_folder_name()} /> 指定。由于扫描仅限单层，因此存放在子文件夹中的 `zotlit-` 文件仅会被视为普通笔记，不会作为配置方案加载。
 
-The `<slug>` is a readable convenience: ZotLit derives it from the profile label when it creates the file and never reads it back. Renaming the file keeps the profile, its settings, and its notes, because identity lives in the manifest.
+文件名中的 `<slug>` 仅用于人类友好阅读：ZotLit 在生成该文件时从配置方案名称派生该别名，后续解析时绝不依赖文件名。重命名该文件不会丢失配置方案、设置或已有笔记关联，因为真实身份完全取决于 manifest 中的 `id`。
 
-A document whose manifest fails validation, and documents that share an `id`, are excluded from the profile registry. Their Profile Match is inert, and <SettingsPath page={m.settings_page_profiles()} /> lists them under <UiLabel name={m.settings_profile_excluded_heading()} />.
+如果某份文档的 manifest 校验失败，或者有多份文档重复声明了相同的 `id`，它们均会被排除在配置方案注册表之外。其匹配规则将处于休眠失效状态，且在 <SettingsPath page={m.settings_page_profiles()} /> 中的 <UiLabel name={m.settings_profile_excluded_heading()} /> 下进行故障提示。
 
-The Default profile is the one exception. It is a settings record rather than a file until you create its document.
+默认配置方案（Default profile）是唯一的特例。在您为其生成实体文档前，它作为插件设置记录存在。
 
-The <UiLabel name={m.settings_profile_document_name()} /> row on the main settings page carries two actions. <UiLabel name={m.settings_profile_edit()} /> writes `zotlit-profile.default.md` in the template folder and opens it. The file carries `id: default`, and may carry no bindings and no `match`. <UiLabel name={m.settings_profile_document_restore()} /> moves the file to Obsidian's trash and returns the profile to the built-in template.
+主设置页面上的 <UiLabel name={m.settings_profile_document_name()} /> 所在行包含两项操作：<UiLabel name={m.settings_profile_edit()} /> 会在模板文件夹中生成 `zotlit-profile.default.md` 并将其打开，该文件具有固定的 `id: default`，且不需要包含特定的 bindings 或 `match` 规则；<UiLabel name={m.settings_profile_document_restore()} /> 则将该文件移至 Obsidian 废纸篓，使默认配置方案重新恢复为开箱即用的内置模板状态。
 
-## Document structure [#document-structure]
+## 文档内部结构 [#document-structure]
 
-A profile document has four parts, in this order: the manifest, the note source, an optional managed block, and the Annotation Section.
+配置方案文档按严格顺序由四个部分构成：manifest 元数据区、笔记模板源码、可选的受管块，以及标注区域（Annotation Section）。
 
 ```markdown
 ---

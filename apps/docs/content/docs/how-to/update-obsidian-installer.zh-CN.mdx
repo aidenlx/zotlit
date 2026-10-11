@@ -1,6 +1,6 @@
 ---
-title: "How to update the Obsidian installer"
-description: "Update Obsidian's bundled Electron version when ZotLit asks you to run the latest installer, or when ZotLit does not load with a SyntaxError."
+title: "更新 Obsidian 安装包版本"
+description: "当 ZotLit 提示需要运行最新安装包，或加载失败并报 SyntaxError 错误时，更新 Obsidian 内置的 Electron 运行时。"
 translationStatus: placeholder
 ---
 
@@ -9,45 +9,45 @@ import { Callout } from "@/components/callout";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-Use this guide when ZotLit shows the persistent **Update Obsidian to use ZotLit** notice, or when ZotLit does not load at all: Obsidian shows _Failed to load plugin "zotlit"_, and the developer console shows a `SyntaxError`.
+当 ZotLit 弹出常驻通知提示**请更新 Obsidian 安装包以使用 ZotLit**，或者 ZotLit 完全无法加载启动（Obsidian 显示 _Failed to load plugin "zotlit"_，开发者控制台输出 `SyntaxError` 报错）时，请依照本指南进行操作。
 
-Obsidian's automatic updates can update the app version, but they cannot replace the Electron component bundled with the desktop app. ZotLit needs a newer Electron version. An installer update means downloading and running the current Obsidian installer over your existing installation.
+Obsidian 的应用内自动更新可以升级软件本体版本，但无法替换桌面端捆绑的底层 Electron 核心运行时。ZotLit 依赖更新版本的 Electron。更新安装包意味着需要重新下载当前的完整 Obsidian 安装包，并直接覆盖安装到现有程序上。
 
-<Callout type="info" title="Keep your current installation">
-  You do not need to uninstall Obsidian first.
+<Callout type="info" title="保留现有配置与文件">
+  您无需预先卸载已有的 Obsidian。
 </Callout>
 
-## Update the installer
+## 更新安装包
 
 <Steps>
   <Step>
-    ### Download the current installer
+    ### 下载最新的 Obsidian 安装包
 
-    Select <UiLabel name={m.notice_installer_update_download()} /> in the ZotLit notice. You can also open the [Obsidian download page](https://obsidian.md/download). Download the installer for your operating system.
-
-  </Step>
-  <Step>
-    ### Close Obsidian
-
-    Close every Obsidian window and wait for the app to exit.
+    在 ZotLit 的提示通知中点击 <UiLabel name={m.notice_installer_update_download()} />。您也可以直接前往 [Obsidian 官网下载页面](https://obsidian.md/download)，下载适用于您操作系统的最新安装程序。
 
   </Step>
   <Step>
-    ### Run the installer
+    ### 关闭 Obsidian
 
-    Open the downloaded installer and follow the normal installation steps. Install it in the same location as your current Obsidian installation.
+    关闭所有打开的 Obsidian 窗口，等待程序完全退出。
 
   </Step>
   <Step>
-    ### Reopen Obsidian and enable ZotLit
+    ### 运行安装程序
 
-    Open Obsidian. Go to **Settings > Community plugins**, find ZotLit, and select **Enable**.
+    打开下载的安装包，按照常规步骤进行安装。将其安装在与当前 Obsidian 相同的目录位置。
+
+  </Step>
+  <Step>
+    ### 重新打开 Obsidian 并启用 ZotLit
+
+    重新打开 Obsidian。进入**设置 → 社区插件**，找到 ZotLit，点击**启用**。
 
   </Step>
 </Steps>
 
-ZotLit now enables without the installer update notice.
+现在，ZotLit 即可顺利启用，不再会弹出更新安装包的提示通知。
 
-## See also
+## 另请参阅
 
-Read [installer update guide](https://obsidian.md/help/updates#installer-updates) from Obsidian Help.
+查阅 Obsidian 官方帮助文档中的[安装包更新指南](https://obsidian.md/help/updates#installer-updates)。

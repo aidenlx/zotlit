@@ -1,6 +1,6 @@
 ---
-title: "Explore template data"
-description: "Open the Template Data Explorer to browse available fields, copy property paths, and generate template snippets."
+title: "浏览模板数据"
+description: "打开模板数据浏览器以查阅可用字段、复制属性访问路径并生成即用型模板代码片段。"
 translationStatus: placeholder
 ---
 
@@ -11,86 +11,66 @@ import { Command } from "@/components/command";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-The Template Data Explorer shows the fields that templates receive for a Zotero item, an annotation, a note name, or a citation. Use it to look up field paths, read values, and copy ready-to-use snippets into your templates.
+模板数据浏览器（Template Data Explorer）直观展示了模板在面对某篇 Zotero 条目、标注、笔记名称或引文时实际接收到的全部强类型字段。借助它，您可以快速查找字段路径、读取真实取值并将开箱即用的代码片段直接复制到模板中。
 
-## Open the explorer
+## 打开数据浏览器
 
-The explorer can appear in a sidebar or beside the Template Workbench View. You can reach it from several entry points.
+数据浏览器既可以作为侧边栏面板独立呈现，也可与模板工作台视图并排展示。您可以通过多种途径打开它：
 
-### From the command palette
+### 通过命令面板
 
 <Steps>
   <Step>
-    ### Run the command
+    ### 运行命令
 
-    Open the command palette and run:
+    打开命令面板并运行：
 
     <Command name={m.command_open_template_data_explorer_name()} />
 
-    If a literature note is active in the editor, the explorer uses that note's Zotero item. With no selected item, it shows a list of choices.
+    如果编辑器当前正打开着某篇文献笔记，数据浏览器将直接使用该笔记对应的 Zotero 条目。如果未处于文献笔记中，则会展示条目选取列表。
 
   </Step>
 </Steps>
 
-### From a literature note
+### 从文献笔记打开
 
-Right-click (or click the three-dot menu) on a literature note in the file explorer or tab, then select <UiLabel name={m.template_data_explorer_menu_explore()} />. The explorer opens seeded with that note's item.
+在文件列表或标签页中右键单击某篇文献笔记（或点击三点菜单），选择 <UiLabel name={m.template_data_explorer_menu_explore()} />。数据浏览器将以该笔记绑定的条目为数据源直接打开。
 
-### From the annotation view
+### 从标注视图打开
 
-In the annotation sidebar, open the more-options menu on any annotation row and select <UiLabel name={m.template_data_explorer_menu_explore()} />. The explorer opens anchored at that annotation.
+在标注侧边栏中，打开任意标注卡片上的更多操作菜单，选择 <UiLabel name={m.template_data_explorer_menu_explore()} />。数据浏览器将以该条标注为根节点锚点打开。
 
-### From Zotero (item)
+### 从 Zotero 打开（条目）
 
-ZotLit Companion, the Zotero add-on, adds these entry points in Zotero. Right-click a single item, open the <UiLabel name={m["zotero.menu_submenu.label"]()} /> submenu, and select <UiLabel name={m.template_data_explorer_menu_explore()} />. Zotero opens the explorer in Obsidian via a protocol link.
+ZotLit Companion（Zotero 配套插件）在 Zotero 中注入了这些入口。右键单击单个条目，展开 <UiLabel name={m["zotero.menu_submenu.label"]()} /> 子菜单，选择 <UiLabel name={m.template_data_explorer_menu_explore()} />。Zotero 会通过协议链接在 Obsidian 中呼出数据浏览器。
 
-### From Zotero (annotation)
+### 从 Zotero 打开（标注）
 
-In Zotero's PDF reader, right-click an annotation and select <UiLabel name={m["zotero.menu_reader_annot_explore"]()} />, added by the Companion. The explorer opens in Obsidian anchored at that annotation.
+在 Zotero PDF 阅读器中，右键单击某条批注并选择由 Companion 提供的 <UiLabel name={m["zotero.menu_reader_annot_explore"]()} />。数据浏览器将在 Obsidian 中以此标注为锚点直接打开。
 
 <include>./_security-prompt-callout.zh-CN.mdx</include>
 
-## Choose data
+## 选取数据
 
-Choose a built-in journal article, conference paper, book, or thesis example,
-or a library item under <UiLabel name={m.workbench_recently_updated()} />.
-This list contains items recently updated in Zotero. Select
+您可以直接选择内置的期刊文章、会议论文、图书或学位论文等示例数据，或在 <UiLabel name={m.workbench_recently_updated()} /> 下选择最近更新的条目。选择 <UiLabel name={m.workbench_search_zotero()} /> 可在 Zotero 文献库中直接搜索。选中条目后，其所有字段将被完整列出。
 
-<UiLabel name={m.workbench_search_zotero()} /> to search your Zotero library.
-Selecting an item replaces the list with its fields.
+使用 <UiLabel name={m.workbench_choose_item()} /> 可以切换条目。对于标注字段，使用 <UiLabel name={m.workbench_choose_annotation()} />。标注选取器既可从选定条目中挑选标注，也可体验高亮、下划线、笔记、文本、区域图片或手写墨迹等六个内置示例。
 
-Use <UiLabel name={m.workbench_choose_item()} /> to change the item. For
-annotation fields, use <UiLabel name={m.workbench_choose_annotation()} />.
-The annotation chooser searches annotations from the selected item and six
-built-in examples: highlight, underline, note, text, image, and ink.
+数据选择会联动更新其他面板。标注字段与预览采用选定的标注及其自身的父级条目数据；笔记预览则使用选定的条目。
 
-Data choices update the other linked panes. Annotation fields and previews
-use the chosen annotation and its own parent item data; the note keeps its
-selected item. Separate workbenches keep their own selections.
+面板标题开头展示选定的数据名称，末尾为 <UiLabel name={m.workbench_view_fields()} />。标注标题会标明类型、页码和简短摘录。全功能面板在标题栏中提供了选择操作项；侧边栏则在数据附近提供紧凑的选择控件。若要将编辑器、字段列表与预览界面并排展开，可在模板工作台视图的面板菜单中选择 <UiLabel name={m.template_workbench_open_layout()} />。
 
-The pane title starts with the selected data and ends with
+预览使用的数据会自动更新。如需重新加载，可在面板菜单中选择 <UiLabel name={m.workbench_refresh_item()} />。在 <UiLabel name={m.workbench_preview_on_demand()} /> 模式下，点击 <UiLabel name={m.workbench_preview_run()} /> 可手动触发渲染预览。
 
-<UiLabel name={m.workbench_view_fields()} />. Annotation titles show the type,
-page, and a short excerpt. Built-in examples are identified in the title; with
-no selection, the pane uses its generic name.
+## 复制 Zotero 标识符 [#indexed-key]
 
-Full panels have selection actions in the header. Sidebars have a small
-selection control near the data. Right-click the
-pane header to access its menu in either layout. To open the editor, fields, and
-preview together, select <UiLabel name={m.template_workbench_open_layout()} />
-from the Template Workbench View's pane menu.
+Zotero 标识符（Zotero key）唯一指代一个对象：包含条目、附件、标注或笔记。当工具需要您指定操作对象时，可直接复制此标识符。
 
-Data used for the preview updates automatically. To load it again, select <UiLabel name={m.workbench_refresh_item()} /> from the pane menu. In <UiLabel name={m.workbench_preview_on_demand()} /> mode, select <UiLabel name={m.workbench_preview_run()} /> to render the preview.
+在 Obsidian 中：
 
-## Copy a Zotero key [#indexed-key]
-
-A Zotero key identifies one object: an item, an attachment, an annotation, or a note. Copy one when a tool asks you which object to work on.
-
-In Obsidian:
-
-- For the active literature note, run <Command inline name={m.command_copy_item_key_name()} />, or select <UiLabel name={m.command_copy_item_key_name()} /> from the file menu.
-- On an annotation row, open the more-options menu and select <UiLabel name={m.indexed_key_menu_copy_annotation()} />.
-- In the explorer, open the pane menu and select <UiLabel name={m.command_copy_item_key_name()} /> or <UiLabel name={m.indexed_key_menu_copy_annotation()} />. The label follows the root the pane lists.
+- 对于当前活动的文献笔记，运行 <Command inline name={m.command_copy_item_key_name()} />，或从文件菜单中选择 <UiLabel name={m.command_copy_item_key_name()} />。
+- 在标注卡片上，打开更多操作菜单并选择 <UiLabel name={m.indexed_key_menu_copy_annotation()} />。
+- 在数据浏览器中，打开面板菜单并选择 <UiLabel name={m.command_copy_item_key_name()} /> 或 <UiLabel name={m.indexed_key_menu_copy_annotation()} />。标签文本会随当前面板所列的根节点类型自适应调整。
 
 If a literature note is already open, you can also copy its `zotero-key` frontmatter value by hand.
 

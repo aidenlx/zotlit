@@ -1,6 +1,6 @@
 ---
-title: "Commands"
-description: "Every ZotLit command-palette command, its entry points, and when it is available."
+title: "命令"
+description: "ZotLit 命令面板全部指令清单：触发入口、功能说明及可用场景。"
 translationStatus: placeholder
 ---
 
@@ -11,67 +11,66 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-This reference lists every ZotLit command, its entry points, and its availability.
+本参考手册列出了 ZotLit 的所有命令、各自的触发入口以及可用场景。
 
 <Callout type="info">
-  ZotLit is a desktop-only plugin. These commands are not available on Obsidian
-  Mobile.
+  ZotLit 是一款仅限桌面端的插件。这些命令在 Obsidian 移动端不可用。
 </Callout>
 
-## Database
+## 数据库
 
 <Command name={m.command_refresh_db_name()} />
 
-Reloads the Zotero database from disk. Use this after making changes in Zotero when automatic watching is disabled.
+从磁盘重新加载 Zotero 数据库。当禁用了自动监听文件变动时，在 Zotero 中修改数据后可通过此命令手动刷新。
 
-| Entry point     | Details          |
-| --------------- | ---------------- |
-| Command palette | Always available |
+| 触发入口 | 详细信息 |
+| -------- | -------- |
+| 命令面板 | 始终可用 |
 
-## Library-wide update
+## 全库批量更新
 
 <Command name={m.command_update_all_notes_name()} />
 
-Creates or updates a literature note for every item in every library of your [library scope](/docs/reference/settings#library-scope). Opens the same batch confirmation modal as a multi-item update from Zotero.
+为您[文献库作用域](/docs/reference/settings#library-scope)中每个文献库的全部条目批量创建或更新文献笔记。弹出与 Zotero 多条目更新完全相同的批量确认对话框。
 
-| Entry point     | Details                                                                                                                                                       |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Command palette | Always available                                                                                                                                              |
-| Zotero          | Right-click a library or collection > <UiLabel name={m["zotero.menu_submenu.label"]()} /> > <UiLabel name={m["zotero.menu_collection_update_all.label"]()} /> |
+| 触发入口 | 详细信息                                                                                                                                       |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| 命令面板 | 始终可用                                                                                                                                       |
+| Zotero   | 右键点击文献库或分类 > <UiLabel name={m["zotero.menu_submenu.label"]()} /> > <UiLabel name={m["zotero.menu_collection_update_all.label"]()} /> |
 
-The Zotero entry scopes the batch to the row you right-click: a library covers every item in it, a collection covers that collection and its subcollections. That target is exact, so it runs whether or not the row is in your library scope.
+Zotero 入口将批量操作严格限定在您右键点击的所在行：文献库覆盖其内部的所有条目，分类覆盖该分类及其全部子分类。由于目标明确，无论该行是否在您的文献库作用域内均可正常执行。
 
-## Library-wide note import
+## 全库批量导入笔记
 
 <Command name={m.command_import_all_notes_name()} />
 
-Imports all child notes attached to regular items and all standalone notes in every library of your [library scope](/docs/reference/settings#library-scope). Opens the same batch confirmation modal as a multi-note import from Zotero.
+将您[文献库作用域](/docs/reference/settings#library-scope)中每个文献库常规条目下附带的所有子笔记及独立笔记批量导入仓库。弹出与 Zotero 批量导入完全相同的确认窗口。
 
-| Entry point     | Details                                                                                                                                                             |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Command palette | Always available                                                                                                                                                    |
-| Zotero          | Right-click a library or collection > <UiLabel name={m["zotero.menu_submenu.label"]()} /> > <UiLabel name={m["zotero.menu_collection_import_all_notes.label"]()} /> |
+| 触发入口 | 详细信息                                                                                                                                             |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 命令面板 | 始终可用                                                                                                                                             |
+| Zotero   | 右键点击文献库或分类 > <UiLabel name={m["zotero.menu_submenu.label"]()} /> > <UiLabel name={m["zotero.menu_collection_import_all_notes.label"]()} /> |
 
-The Zotero entry scopes the import to the row you right-click, subcollections included. That target is exact, so it runs whether or not the row is in your library scope.
+Zotero 入口将导入范围严格限定在您右键点击的所在行（含子分类）。该目标精确确定，无论该行是否在您的文献库作用域内均会执行。
 
-## Literature note quick switcher [#quick-switcher]
+## 文献笔记快速切换器 [#quick-switcher]
 
 <Command name={m.command_open_lit_note_name()} />
 
-Opens a modal to search every library in your [library scope](/docs/reference/settings#library-scope) and jump to (or create) the corresponding literature note.
+打开搜索弹窗以检索您[文献库作用域](/docs/reference/settings#library-scope)中的所有文献库，并跳转到（或创建）对应的文献笔记。
 
-| Entry point     | Details          |
-| --------------- | ---------------- |
-| Command palette | Always available |
+| 触发入口 | 详细信息 |
+| -------- | -------- |
+| 命令面板 | 始终可用 |
 
-A result takes four chords, listed along the bottom of the modal:
+搜索结果支持四种快捷键组合，列于弹窗底部：
 
-| Chord                                           | Result                                                           |
-| ----------------------------------------------- | ---------------------------------------------------------------- |
-| `Enter`                                         | Opens the literature note, creating it first when none exists.   |
-| `Ctrl+Enter` (`Cmd+Enter` on macOS)             | The same, in a new pane.                                         |
-| `Shift+Enter`                                   | Opens the item's PDF in Obsidian's PDF reader, without the note. |
-| `Ctrl+Shift+Enter` (`Cmd+Shift+Enter` on macOS) | The same, in a new pane.                                         |
+| 快捷键                                                              | 执行结果                                                      |
+| ------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `Enter`                                                             | 打开文献笔记，若不存在则先创建。                              |
+| Windows/Linux 上按 `Ctrl+Enter`，macOS 上按 `Cmd+Enter`             | 在新分栏窗格中执行相同操作。                                  |
+| `Shift+Enter`                                                       | 直接在 Obsidian 的 PDF 阅读器中打开该条目的 PDF，不展开笔记。 |
+| Windows/Linux 上按 `Ctrl+Shift+Enter`，macOS 上按 `Cmd+Shift+Enter` | 在新分栏窗格中打开该 PDF。                                    |
 
 The two PDF chords run <UiLabel name={m.command_open_pdf_name()} /> on the selected result, listed under [Literature note actions](#literature-note-actions).
 

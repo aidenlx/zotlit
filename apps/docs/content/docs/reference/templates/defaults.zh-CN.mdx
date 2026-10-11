@@ -1,6 +1,6 @@
 ---
-title: "Default templates"
-description: "The built-in Liquid template for each type, with annotations explaining what each line produces."
+title: "默认模板"
+description: "各类型的内置 Liquid 模板源码，附逐行解析其生成的具体内容。"
 translationStatus: placeholder
 ---
 
@@ -10,13 +10,13 @@ import { Command } from "@/components/command";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-ZotLit ships a built-in Liquid default for every template. This page shows each default verbatim, explains what it renders, and names the document that holds it once you customize it.
+ZotLit 为每种模板类型均提供了开箱即用的内置 Liquid 默认模板。本页完整展示了各个默认模板的源码，详细说明了其渲染结果，并指明了在您执行“自定义”后承载该模板的具体文档。
 
-A Profile document carries the note, content, filename, and annotation templates together. The citation text is its own document. Until a document exists, ZotLit renders the built-in text shown below. See [Customize a template](/docs/how-to/customize-a-template) for how to create one.
+配置方案（Profile）文档整合承载了笔记模板、受管内容模板、笔记文件名模板以及标注格式模板。引文文本则属于单独的独立文档。在您生成自定义文档之前，ZotLit 均按下方所示的内置文本进行渲染。关于如何生成文档，请参阅[自定义模板](/docs/how-to/customize-a-template)。
 
-## Note template
+## 笔记模板（Note template）
 
-In a Profile document: the note body, above the Annotation Section.
+在配置方案文档中：位于标注区域（Annotation Section）上方的笔记正文部分。
 
 ```liquid
 # {{ zt.title }}
@@ -26,16 +26,16 @@ In a Profile document: the note body, above the Annotation Section.
 {% render "content" with zt as zt %}
 ```
 
-| Line                                                              | What it renders                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `# {{ zt.title }}`                                                | Item title as an H1 heading.                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `[Zotero]({{ zt.backlink }})`                                     | Markdown link to the item in Zotero (deep link).                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `{{ zt.attachments \| map: "fileLink" \| compact \| join: " " }}` | Direct `file://` links to every resolvable attachment. For a Zotero linked file, the link points to its original external location. These links do not copy files into the vault. A link to a PDF in your Zotero library opens in [Obsidian's PDF reader](/docs/how-to/open-pdf-in-obsidian) while <UiLabel name={m.settings_reader_open_file_links_name()} /> is on, which is the default. `map` extracts each link, `compact` drops missing links, and `join` separates them with a space. |
-| `{% render "content" with zt as zt %}`                            | Includes the `content` template, passing the full item context.                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| 代码行                                                            | 渲染生成的内容                                                                                                                                                                                                                                                                                                                                                                                             |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `# {{ zt.title }}`                                                | 条目标题，呈现为 H1 一级标题。                                                                                                                                                                                                                                                                                                                                                                             |
+| `[Zotero]({{ zt.backlink }})`                                     | 指向 Zotero 中对应条目的 Markdown 深度链接（deep link）。                                                                                                                                                                                                                                                                                                                                                  |
+| `{{ zt.attachments \| map: "fileLink" \| compact \| join: " " }}` | 指向每个可解析附件的直接 `file://` 链接。对于 Zotero 外部链接文件，该链接指向其在外部的原始位置。这些链接绝不会将文件复制到仓库中。当开启默认的 <UiLabel name={m.settings_reader_open_file_links_name()} /> 时，指向您 Zotero 库中 PDF 的链接将直接在 [Obsidian 的 PDF 阅读器](/docs/how-to/open-pdf-in-obsidian)中打开。`map` 用于提取链接，`compact` 用于过滤剔除无效项，`join` 则以空格将它们分隔排布。 |
+| `{% render "content" with zt as zt %}`                            | 嵌入调用 `content` 模板，并传入完整的条目上下文数据。                                                                                                                                                                                                                                                                                                                                                      |
 
-## Content template
+## 内容模板（Content template）
 
-In a Profile document: the part of the note body inside the `{% managed %}` / `{% endmanaged %}` block.
+在配置方案文档中：位于 `{% managed %}` 与 `{% endmanaged %}` 受管块之间的正文部分。
 
 ```liquid
 {% if zt.notes.size > 0 %}
@@ -54,12 +54,12 @@ In a Profile document: the part of the note body inside the `{% managed %}` / `{
 {% endif %}
 ```
 
-The `content` template is the one whose rendered output is wrapped in managed-region markers. Running <Command inline name={m.command_update_note_name()} /> re-renders this section while leaving the rest of the note body untouched.
+`content` 模板是其渲染输出会被严格包裹在受管区域（managed-region）标记之内的核心模板。运行 <Command inline name={m.command_update_note_name()} /> 时将专门重新渲染这部分内容，同时使笔记正文的其他部分完好保留。
 
-| Section     | What it renders                                                                                                                   |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Notes       | A bulleted list of linked child notes. Each `note.noteLink` resolves to an Obsidian wiki-link pointing at the imported note file. |
-| Annotations | Each annotation rendered via the `annotation` template (see below).                                                               |
+| 区域        | 渲染生成的内容                                                                                |
+| ----------- | --------------------------------------------------------------------------------------------- |
+| Notes       | 关联子笔记的无序列表。每个 `note.noteLink` 都会解析为指向对应已导入笔记文件的 Obsidian 双链。 |
+| Annotations | Each annotation rendered via the `annotation` template (see below).                           |
 
 Both sections appear only when the corresponding array is non-empty.
 

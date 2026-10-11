@@ -1,7 +1,7 @@
 ---
 version: "2.2.0-beta.2"
 date: "2026-10-02"
-description: "Note path in one place, profiles that keep what you type, Word export fixes"
+description: "笔记路径集中呈现、支持保留手写输入的配置方案、Word 导出问题修复"
 translationStatus: placeholder
 ---
 
@@ -10,55 +10,51 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-This beta shows a literature note's full path while you edit its profile, and fixes many problems found in the Template Workbench, citations, and Word export.
+此测试版本在您编辑配置方案时能够完整显示文献笔记的最终路径，并修复了在模板工作台、引文以及 Word 导出中发现的诸多问题。
 
-## What's New
+## 新增功能
 
-### Note path
+### 笔记路径集中呈现
 
-The <UiLabel name={m.workbench_tab_name_and_folder()} /> tab of the Template Workbench now shows one <UiLabel name={m.workbench_name_path_heading()} /> group. It holds the <UiLabel name={m.workbench_name_binding_folder()} />, the <UiLabel name={m.workbench_name_filename_label()} />, and a <UiLabel name={m.workbench_name_filename_result()} /> of the full vault path the note gets. A slash (`/`) in the note name makes a subfolder. See [Template Workbench View](/docs/concepts/template-workbench-view) and [Customize a template](/docs/how-to/customize-a-template).
+模板工作台的 <UiLabel name={m.workbench_tab_name_and_folder()} /> 标签页现在包含一个统一的 <UiLabel name={m.workbench_name_path_heading()} /> 选项组。它整合了 <UiLabel name={m.workbench_name_binding_folder()} />、<UiLabel name={m.workbench_name_filename_label()} /> 以及笔记最终获得的仓库完整路径 <UiLabel name={m.workbench_name_filename_result()} />。笔记名称中的斜杠（`/`）会自动创建子文件夹。详见[模板工作台视图](/docs/concepts/template-workbench-view)与[自定义模板](/docs/how-to/customize-a-template)。
 
-<UiLabel name={m.settings_profile_add()} /> on
-<SettingsPath page={m.settings_page_profiles()} /> now needs only a valid name
-that no other profile uses. The folder is optional; leave it empty to use the
-Default profile's folder. Before, ZotLit refused a new profile unless its
-folder, citation style, or note look was different. See [Use a different
-template for different notes](/docs/how-to/use-different-templates).
+在 <SettingsPath page={m.settings_page_profiles()} /> 中点击 <UiLabel name={m.settings_profile_add()} />，现在只需输入一个未被其他配置方案占用的有效名称即可。目标文件夹为可选填写；留空将默认沿用默认配置方案的文件夹设置。此前，ZotLit 只有在文件夹、引文样式或笔记外观有所差异时才允许新建配置方案。详见[针对不同笔记使用不同模板](/docs/how-to/use-different-templates)。
 
-When you switch a note to another profile, or delete a profile and its notes move, each note now keeps its subfolders under the new folder. For example, `literatures/2024/Smith2020.md` moves to `books/2024/Smith2020.md`. Before, the note moved to the top of the new folder.
+当您将某篇笔记切换至另一配置方案，或删除配置方案导致笔记发生迁移时，笔记现在会在新目标文件夹下完整保留原有的子目录结构。例如，`literatures/2024/Smith2020.md` 将迁移为 `books/2024/Smith2020.md`。而在此前，笔记会被直接移动到新文件夹的根目录下。
 
-### Other improvements
+### 其他改进
 
-- The search box of <Command inline name={m.command_open_lit_note_name()} /> reads <UiLabel name={m.modal_literature_search_placeholder()} />, so you know what you can search by.
-- The notice that confirms Zotero editing is on now closes after 3 seconds. Before, it covered the top of the annotation view for 10 seconds.
-- The export dialog shows the destination in a readable form. A destination in your vault shows its path in the vault and the vault name; a destination in your home folder shows a short path.
+- <Command inline name={m.command_open_lit_note_name()} />
+  的搜索框现在带有提示文本
+  <UiLabel name={m.modal_literature_search_placeholder()} />
+  ，便于您了解支持搜索的字段。
+- 确认开启 Zotero 标注编辑的提示通知现在会在 3 秒后自动关闭。此前它会在标注视图顶部停留 10 秒。
+- 导出对话框现在以清晰易读的形式显示目标路径。位于仓库内的目标会显示其在仓库内的路径及仓库名；位于用户主目录（home folder）的目标则以简短路径呈现。
 
-## Bug Fixes
+## 问题修复
 
-### Template Workbench
+### 模板工作台
 
-- A property rule such as `zt.creators | map: "fullName"`, or a note name with quotes, `: `, `- `, or a leading `*`, `&`, or `!`, could change meaning when you typed it into a Workbench pane, or break the profile so that it stopped working. Text you type now saves exactly as you typed it.
-- While the profile had an error, <UiLabel name={m.workbench_properties_remove()} /> and <UiLabel name={m.workbench_properties_format_reset()} /> on the <UiLabel name={m.workbench_tab_properties()} /> tab looked like they worked but changed nothing. The tab now tells you to fix the error first and stops list changes until you do. You can still edit the rules to make the repair. <UiLabel name={m.workbench_problem_show()} /> goes to the error, and undo restores the last working version. See [Configure frontmatter properties](/docs/how-to/configure-frontmatter-properties).
-- Folded rows on the <UiLabel name={m.workbench_tab_properties()} /> tab showed broken summaries for a profile saved with Windows line endings. They now show the rule correctly.
-- <Command inline name={m.command_customize_note_template_name()} /> showed the
-  Workbench in the main window for a moment before it moved to its own window.
-  It now opens in its own window directly.
-- A reopened Workbench went back to the <UiLabel name={m.workbench_tab_note()} /> tab. It now returns to the tab you were on, such as <UiLabel name={m.workbench_tab_annotation()} />, <UiLabel name={m.workbench_tab_name_and_folder()} />, or <UiLabel name={m.workbench_advanced()} />.
+- 形如 `zt.creators | map: "fullName"` 的属性规则，或带有引号、`: `、`- ` 或前导 `*`、`&`、`!` 的笔记名称，在输入工作台面板时可能会被意外篡改语义，甚至导致配置方案失效。现在输入的所有文本都会严格按照原样完整保存。
+- 当配置方案存在语法错误时，<UiLabel name={m.workbench_tab_properties()} /> 标签页中的 <UiLabel name={m.workbench_properties_remove()} /> 与 <UiLabel name={m.workbench_properties_format_reset()} /> 表面看似生效但实际未作改动。现在该标签页会明确提示您先修正错误，并在修好前阻止对列表项的变更。您依然可以直接编辑规则来进行修正。<UiLabel name={m.workbench_problem_show()} /> 会精准定位到错误位置，撤销（Undo）操作可快速恢复上一个可用版本。详见[配置 frontmatter 属性](/docs/how-to/configure-frontmatter-properties)。
+- <UiLabel name={m.workbench_tab_properties()} /> 标签页中折叠的行，对于采用
+  Windows
+  换行符（CRLF）保存的配置方案会显示出损坏的摘要。现已能够正确展示规则内容。
+- <Command inline name={m.command_customize_note_template_name()} />
+  此前在主窗口中短暂闪现工作台后才移动至独立窗口。现在已优化为直接在独立窗口中打开。
+- 重新打开工作台此前会强制跳回 <UiLabel name={m.workbench_tab_note()} /> 标签页。现在能够准确恢复到您离开时所在的标签页，例如 <UiLabel name={m.workbench_tab_annotation()} />、<UiLabel name={m.workbench_tab_name_and_folder()} /> 或 <UiLabel name={m.workbench_advanced()} />。
 
-### Citations
+### 引文功能
 
-- With <UiLabel name={m.settings_citation_open_as_links_name()} /> off, a plain click on a formatted citation did not put the cursor in it. The click now shows the citation's source text with the cursor where you clicked. `Ctrl`-click or `Command`-click still opens the cited literature note.
-- `[[@key]]` was read as a citation, both in the editor and in the note's references. It is now an ordinary wikilink.
-- An inserted bracketed citation such as `[@key]` got a space after it, so punctuation could not follow it directly. It now gets no space.
-- Editing the locator after a citation key, as in `[@key, p. 5]`, opened the citation suggester, and choosing a result replaced the locator. The suggester now stays closed while you edit a locator.
+- 当关闭 <UiLabel name={m.settings_citation_open_as_links_name()} /> 时，直接单击格式化引文未能正常将光标定位其中。现在单击会正确展开引文的源码文本并将光标置于点击处。使用 `Ctrl`+点击或 `Command`+点击依然可以正常打开对应的文献笔记。
+- `[[@key]]` 此前在编辑器和笔记参考文献中均会被错误解析为引文。现在已恢复为普通双链链接。
+- 插入形如 `[@key]` 的带括号引文时此前会在末尾附带一个多余空格，导致紧跟的标点符号无法紧密相连。现已去除多余空格。
+- 在文献引用标识后修改定位符（例如 `[@key, p. 5]`）此前会触发引文建议弹窗，选取后会误替换定位符内容。现在编辑定位符时光标处会保持静默，不再弹出建议菜单。
 
-### Notes and annotations
+### 笔记与批注
 
-- Live note updates moved your reading position. The note now stays where you were reading.
-- <Command inline name={m.command_update_note_name()} /> and
-  <Command inline name={m.command_update_note_metadata_name()} /> were not
-  available while the cursor was in the note title or in Properties. They now
-  work from anywhere in the note.
+- 即时更新笔记此前会打乱用户的当前阅读浏览位置。现在更新后能够稳固停留在您先前的阅读位置。
+- 当光标位于笔记标题或 Properties 属性区域中时，<Command inline name={m.command_update_note_name()} /> 与 <Command inline name={m.command_update_note_metadata_name()} /> 此前无法使用。现在已支持在笔记内部任意位置正常触发。
 - A dragged annotation dropped at the end of a sentence joined that line. It now goes in as a block of its own. A drop on the empty last line of a note now inserts the annotation, and a drop with no target note tells you so. See [Use the annotation view](/docs/how-to/use-annotation-view).
 - In Live Preview, the `%%/zt-managed%%` closing marker was hidden inside the last callout of the note. It now stays outside the callout.
 - The <UiLabel name={m.cited_by_view_name()} /> view showed zero counts when no literature note was open. It now shows counts only for a literature note.

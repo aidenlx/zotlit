@@ -2,34 +2,33 @@
 version: "2.0.0-beta.2"
 companion: "2.0.0-beta.2"
 date: "2026-07-25"
-description: "At Trigger for citations, rich annotation cards, citation normalization"
+description: "@ 触发符号、富文本标注卡片、引文换行规范化规整"
 translationStatus: placeholder
 ---
 
-## Breaking Changes
+## 破坏性变更
 
-### Citation output normalization
+### 引文插入文本自动单行规范化规整
 
-Rendered citation text inserted into notes is now trimmed and collapsed to a single inline line. The editor places a trailing space after the insert so the cursor lands ready to keep typing. Templates that intentionally produce multi-line citation output will see it flattened to one line when inserted.
+插入笔记的正文引文文本现在会自动消除多余空白并规整收拢为单行行内文本。编辑器会在插入内容后自动留出一个空格，以便光标就绪直接继续后续打字。有意生成多行引文输出的自定义模板在插入时将被自动扁平化为单行文本。
 
-Shift+Enter now selects the secondary citation format in the inline Citation Suggester, matching the behavior of the command-palette modal.
+在行内引文建议下拉框中按下 Shift+Enter 现在会选择备用引文格式，与命令面板弹窗的交互行为保持一致。
 
-## What's New
+## 新增功能
 
-### At Trigger for citations
+### 单个 @ 触发引文插入
 
-An opt-in setting lets you type a bare `@` to open the Citation Suggester instead of the default `[@` trigger. Since the at-query has no closing bracket, use underscores in place of spaces (e.g. `@cognitive_load`). Enable it in the plugin settings under the citation section. See [Insert citations](/docs/how-to/insert-citations) for the full workflow.
+新增的按需开启设置项允许您直接键入单个 `@` 唤起引文建议下拉框，无需输入默认的 `[@` 触发前缀。由于 `@` 查询没有后括号作为闭合界限，可用下划线代替空格（例如 `@cognitive_load`）。可在引文设置区域中将其开启。详见[插入引文](/docs/how-to/insert-citations)。
 
-### Rich annotation cards
+### 富文本标注卡片
 
-Annotation cards in the annotation view now render excerpts with inline formatting (bold, italic, subscript, superscript) and render Markdown comments through the same pipeline as the literature note. What you see in the card matches what the note template produces. Links in comments resolve against the literature note and open through the workspace.
+标注视图中的标注卡片现在支持渲染带行内样式（加粗、斜体、下标、上标）的正文摘录，并通过与文献笔记相同的 Markdown 渲染流水线展示评注内容。卡片中看到的效果与笔记模板生成的内容完全一致。评注中的双链链接能够正常关联文献笔记并在工作区中顺利打开。
 
-### Other improvements
+### 其他改进
 
-- Context-menu labels in ZotLit Companion, the Zotero add-on, now say "Literature Note" instead of bare "note", and adopt Title Case to match Zotero's own menus.
+- Zotero 配套插件 ZotLit Companion 中的右键菜单标签现在明确使用“文献笔记（Literature Note）”替代原本模糊的“笔记”，并遵循 Zotero 原生菜单的英文大写规范。
 
-## Bug Fixes
+## 问题修复
 
-- `zt.parentItem.authorsShort` and `zt.parentItem.authors` rendered empty in annotation templates, even though `zt.parentItem.title` worked. These fields now resolve correctly. `zt.parentItem.backlink` and `zt.parentItem.weblink` are also filled in.
-
-- Updating only metadata on an item that had no literature note incorrectly created a full note from the template. Metadata-scoped updates now skip items without an existing note, as documented.
+- 修复了在标注模板中，即便 `zt.parentItem.title` 正常，`zt.parentItem.authorsShort` 与 `zt.parentItem.authors` 仍旧渲染为空的问题。现在这些字段均能正确解析，且 `zt.parentItem.backlink` 与 `zt.parentItem.weblink` 也已完整补齐。
+- 修复了对尚无文献笔记的条目执行“仅更新元数据”操作时，意外使用模板创建了完整笔记的错误。现在仅更新元数据的操作会如规范所述，安全跳过尚无现有笔记的条目。

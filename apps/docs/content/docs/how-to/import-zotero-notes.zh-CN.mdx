@@ -1,6 +1,6 @@
 ---
-title: "Import Zotero notes"
-description: "Import Zotero child and standalone notes into the vault as Markdown files, with batch re-import and annotation rendering."
+title: "导入 Zotero 笔记"
+description: "将 Zotero 子笔记和独立笔记作为 Markdown 文件导入仓库，支持批量重新导入和批注模板化映射。"
 translationStatus: placeholder
 ---
 
@@ -12,52 +12,56 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-ZotLit can import Zotero child notes as standalone Markdown files in your vault and link to them from the parent literature note.
+ZotLit 能够将 Zotero 子笔记作为独立的 Markdown 文件导入您的仓库中，并在父级文献笔记中建立指向它们的双链链接。
 
-## How import is triggered
+## 导入是如何触发的
 
-Import is link-driven. When a template or frontmatter expression references the `noteLink` property on a child note, ZotLit imports that note as a Markdown file. If `noteLink` is never referenced, no file is created for that child note.
+笔记导入完全由链接引用驱动。当模板或 frontmatter 表达式引用了子笔记的 `noteLink` 属性时，ZotLit 就会自动将该笔记作为 Markdown 文件导入仓库。如果从未引用过 `noteLink`，则不会为该子笔记创建任何落地文件。
 
-In Liquid templates, a property access triggers import automatically:
+在 Liquid 模板中，访问该属性即可自动触发导入：
 
 ```liquid
 {{ note.noteLink }}
 ```
 
-In frontmatter expressions, mapping over `noteLink` triggers import for each child note:
+在 frontmatter 表达式中，对 `noteLink` 进行映射计算即可为每个子笔记触发导入：
 
 ```liquid
 zt.notes | map: "noteLink"
 ```
 
-Accessing other properties (such as `title`) does not trigger import.
+仅访问其他属性（例如 `title`）不会触发落地文件导入。
 
-## Import a single child note
+## 导入单篇文献下的子笔记
 
-When you create, update, or overwrite a literature note whose template or frontmatter references `noteLink`, ZotLit imports the child notes during that operation. No separate command is needed.
+当您创建、更新或覆盖一篇文献笔记，且其模板或 frontmatter 中引用了 `noteLink` 时，ZotLit 会在该操作期间自动导入所有子笔记，无需额外运行单独的命令。
 
-<Callout type="info" title="Metadata-only update">
-  A metadata-only update (
-  <Command inline name={m.command_update_note_metadata_name()} />) re-evaluates
-  frontmatter but does not re-render the note body. If a frontmatter expression
-  references `noteLink`, child notes are still imported during that update. A
-  `noteLink` reference that exists only in the body template has no effect
-  during a metadata-only update because the body is not re-rendered.
+<Callout type="info" title="仅更新元数据操作">
+  仅更新元数据（
+  <Command inline name={m.command_update_note_metadata_name()} />
+  ）会重新计算 frontmatter，但不会重绘笔记正文。如果 frontmatter 表达式引用了
+  `noteLink`，子笔记依然会在该更新期间正常导入。若 `noteLink`
+  仅存在于正文模板中，则在仅更新元数据时不会生效，因为正文没有重新渲染。
 </Callout>
 
-## Import all child notes at once
+## 一键导入当前条目的所有子笔记
 
 <Steps>
   <Step>
-    ### Open the parent literature note
+    ### 打开父级文献笔记
 
-    Open the literature note whose child notes you want to import.
+    在 Obsidian 中打开您希望导入其下属子笔记的文献笔记。
 
   </Step>
   <Step>
-    ### Run the import command
+    ### 运行导入命令
 
-    Open the command palette and run:
+    打开命令面板并运行：
+
+    <Command name={m.command_import_notes_name()} />
+
+  </Step>
+</Steps>
 
     <Command name={m.command_import_child_notes_name()} />
 

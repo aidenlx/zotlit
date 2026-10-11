@@ -1,6 +1,6 @@
 ---
 title: "ZotLit v2.1"
-description: "A complete citation workflow: write, browse, and export with Zotero-backed references."
+description: "完整的引文工作流：在 Zotero 数据支撑下完成写作、查阅与导出。"
 date: 2026-08-24
 translationStatus: placeholder
 ---
@@ -10,55 +10,55 @@ import { Callout } from "@/components/callout";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-v2.1 delivers the citation workflow. It covers the full path from inserting a citation to exporting a finished document with a formatted bibliography, and it adds multi-library support and Zotero 10 compatibility along the way.
+v2.1 全面交付了完整的引文工作流。它覆盖了从在正文中插入引文到最终导出附带格式化参考文献列表的成文文档的全链路，并在此过程中加入了多文献库支持与 Zotero 10 兼容性适配。
 
-<Callout title="TL;DR">
-v2.1 adds in-text citation rendering, the References Sidebar, the Citation Popover, the Cited By Sidebar, note export with formatted bibliographies, and multi-library scope. Zotero 10 is now supported alongside Zotero 9.
+<Callout title="重点速览">
+v2.1 带来了正文引文格式化渲染、参考文献侧边栏、引文悬停浮窗、被引侧边栏、附带参考文献列表的笔记导出以及多文献库范围检索支持。现在同时支持 Zotero 10 与 Zotero 9。
 
 <ActionLink href="/docs/install-zotlit" kind="external">
-  Install ZotLit
+  安装 ZotLit
 </ActionLink>
 
-Requires Obsidian 1.13.4+ desktop and the ZotLit Companion for Zotero.
+要求 Obsidian 桌面端 1.13.4+ 以及 Zotero 配套插件 ZotLit Companion。
 
 </Callout>
 
-## Write with citations
+## 在写作中畅享引文
 
-Type `@` anywhere in a note to open the citation suggester and insert a Pandoc citation key. For a full citation cluster with locators and prefixes, type `[@` to open the bracket trigger. Shift+Enter picks the alternate format.
+在笔记任意位置输入 `@` 即可唤起引文建议下拉框，快速插入 Pandoc 文献引用标识。如需包含定位符（locator）与前缀的完整引文簇，键入 `[@` 即可触发方括号插入。按 `Shift+Enter` 可快速选择备用格式。
 
-Literal Pandoc citation clusters (e.g. `[see @wang2020, p. 3; @lee2019]`) render as formatted citation text in Live Preview and Reading view, using the CSL style you select from Zotero's installed styles. Literature Note wikilinks can render the same way when you turn on **Wikilink citations** in settings. Both share the same formatted display and numbering. The rendering uses a built-in Pandoc engine, so no external installation is needed.
+字面量 Pandoc 引文簇（例如 `[see @wang2020, p. 3; @lee2019]`）在实时预览和阅读视图中会自动渲染为美观的格式化引文，采用您在 Zotero 已安装样式中选定的 CSL 样式。如果在设置中开启了**双链引文（Wikilink citations）**，文献笔记双链也可以按照完全相同的方式格式化呈现。两者共享统一的格式化显示与连续编号逻辑。该渲染由内置的轻量 Pandoc 引擎驱动，无需在操作系统中额外安装第三方依赖。
 
-Citation keys in the editor are styled as links. An unresolved key (one that names no item in Zotero) is visually distinct from a resolved one. Click a citation key to open its Literature Note. Hover to see a preview.
+编辑器中的文献引用标识被赋予了链接交互样式。未解析的标识（即 Zotero 中找不到对应条目）与已解析的标识在视觉上有明显的区分。点击文献引用标识可直接打开其对应的文献笔记；鼠标悬停即可查看预览。
 
 <ActionLink href="/docs/how-to/insert-citations" kind="external">
-  Insert citations
+  插入引文
 </ActionLink>
 <ActionLink href="/docs/concepts/how-citekey-links-work" kind="external">
-  How Citation Key Links work
+  文献引用标识导航与渲染机制
 </ActionLink>
 
-## See your references
+## 查阅您的参考文献
 
-### References Sidebar
+### 参考文献侧边栏
 
-A sidebar view lists the active note's citations as a formatted bibliography. Each entry shows the reference number and formatted text in the selected CSL style. Action buttons open the Literature Note, open the item in Zotero, or open the attached PDF. Click an entry's text to walk through its occurrences in the document.
+独立的侧边栏视图会将当前活动笔记中包含的引文汇总为排版精美的参考文献列表。每个条目均展示其引文编号以及所选 CSL 样式格式化的文本。操作按钮支持一键打开文献笔记、在 Zotero 中定位该条目或打开其关联的 PDF。点击条目文本即可在正文中依次定位跳转换读各处引用。
 
-![Wikilink citations to Literature Notes rendered as a formatted citation cluster in Live Preview, with the References Sidebar showing the matching bibliography entries](/img/changelog/wikilink-citation-runs.webp)
+![实时预览中将文献笔记双链渲染为格式化引文簇，右侧参考文献侧边栏展示对应的参考文献列表条目](/img/changelog/wikilink-citation-runs.webp)
 
-### Citation Popover
+### 引文悬停浮窗
 
-Hover a citation to see each cited item's full formatted bibliography entry in a popover, stacked in citation order for multi-item citations. Each entry carries action buttons to open the Literature Note, open the item in Zotero, or open its attachment. The popover works on literal Pandoc citations in Live Preview, Reading view, and Source mode, and on Literature Note wikilinks when wikilink citations are enabled.
+将鼠标悬停在引文上，即可在弹出浮窗中查看所引文献的完整格式化参考文献条目；对于多篇引用，会按引用顺序垂直层叠展示。每个条目均提供快捷操作按钮：打开文献笔记、在 Zotero 中定位条目或打开对应附件。浮窗在实时预览、阅读视图和源码模式下的 Pandoc 字面量引文均可触发；在开启双链引文时同样适用于文献笔记双链。
 
-The **Hover action** setting under **Settings > ZotLit > Citations > Hover** controls what citation hover shows: **Citation Popover** (default), **Page preview** (the Literature Note page preview), or **Off**.
+**设置 → ZotLit → 引文 → 悬停操作**配置项决定了悬停时的呈现行为：**引文浮窗**（默认）、**页面预览**（Obsidian 原生文献笔记页面预览）或**关闭**。
 
-![The Citation Popover showing three stacked bibliography entries with formatted text, DOI links, and action buttons for each cited item, beside the References Sidebar](/img/changelog/citation-popover.webp)
+![引文悬停浮窗展示了三个层叠的参考文献条目，包含格式化文本、DOI 链接以及针对各条目的操作按钮，旁边为参考文献侧边栏](/img/changelog/citation-popover.webp)
 
-### Cited By Sidebar
+### 被引侧边栏（Cited By Sidebar）
 
-A reverse-lookup view shows which vault notes cite the active Literature Note. Results are grouped by source file, each with an occurrence count. Every occurrence displays a search-result-style excerpt card. Click any occurrence to jump to its location in the editor.
+反向引用视图能够清晰呈现整个仓库中有哪些笔记引用了当前打开的这篇文献笔记。结果按源文件进行分组聚合，并展示各处的引用计数。每次出现均以类似搜索结果卡片的形式展示上下文摘录。点击任意一处即可精准跳转到编辑器中的对应位置。
 
-The toolbar offers a search filter, a context toggle (compact excerpt or full enclosing block), six sort modes, and collapse-all. The controls match the Backlinks panel.
+工具栏提供了关键词搜索过滤、上下文切换（紧凑摘录或完整包裹段落）、六种排序模式以及全部折叠功能，交互与 Obsidian 原生的反向链接（Backlinks）面板高度一致。
 
 ![The Cited By Sidebar showing which notes in the vault cite the active Literature Note, with search-result-style excerpt cards grouped by source file](/img/changelog/cited-by-sidebar.webp)
 

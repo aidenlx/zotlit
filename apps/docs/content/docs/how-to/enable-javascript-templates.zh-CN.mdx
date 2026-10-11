@@ -1,6 +1,6 @@
 ---
-title: "Enable JavaScript templates"
-description: "Turn on the JavaScript Templates gate so Eta template documents and `js` frontmatter entries run on this device."
+title: "启用 JavaScript 模板"
+description: "开启单设备独立的 JavaScript 模板权限开关，以便在当前设备上编译运行 Eta 模板文档与 `js` frontmatter 配置项。"
 translationStatus: placeholder
 ---
 
@@ -11,52 +11,44 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-<UiLabel name={m.settings_template_js_enable_name()} /> is a per-device gate
-that lets JavaScript run inside your templates. It is disabled by default.
+<UiLabel name={m.settings_template_js_enable_name()} />
+是一项单设备独立的权限开关，允许在您的模板内部执行完整的 JavaScript
+代码。该设置项默认处于禁用状态。
 
-In ZotLit 2.1 the language lived in the file name: `zotlit-note.eta.md` was an
-Eta template and `zotlit-note.liquid.md` was a Liquid one. A 2.2 template
-document declares its language in its own manifest instead, with the key
-`language: eta`.
+在 ZotLit 2.1 中，模板语言直接体现在文件名中：`zotlit-note.eta.md` 代表 Eta 模板，而 `zotlit-note.liquid.md` 则代表 Liquid 模板。在 2.2 中，模板文档改为在其自身的 manifest 元数据区中显式声明语言：`language: eta`。
 
-A managed frontmatter entry declares its language with its value member: `expr`
-(Liquid), `value` (JSON-e), or `js` (JavaScript). See
-[Profile document](/docs/reference/templates/profile-document) for the manifest
-keys and the three entry members.
+受管 frontmatter 配置项则通过其值计算成员声明语言：`expr`（Liquid 表达式）、`value`（JSON-e 模板）或 `js`（JavaScript 表达式）。有关 manifest 配置键与三类成员项的详细说明，请参阅[配置方案文档](/docs/reference/templates/profile-document)。
 
-## What the gate covers
+## 该权限开关管控的范围
 
-- **Eta template documents.** A profile document, a citation text, or a partial whose manifest sets `language: eta`.
-- **`js` frontmatter entries.** A managed frontmatter entry whose value member is `js`.
+- **Eta 模板文档：** 在 manifest 中显式声明了 `language: eta` 的配置方案文档、引文文本文档或共享片段文档。
+- **`js` frontmatter 配置项：** 声明了 `js` 表达式作为值计算方式的受管 frontmatter 配置项。
 
-The `expr` and `value` members stay active whether the gate is on or off. While
-the gate is off, an Eta document is never compiled and a `js` entry never
-evaluates.
+无论该开关处于开启还是关闭状态，`expr` 与 `value` 成员均始终保持正常可用。在开关关闭期间，Eta 文档绝不会被编译，`js` 表达式也绝不会被执行求值。
 
-<Callout type="info" title="Understand the implications first">
-  Eta templates run JavaScript with the same access as ZotLit itself: they can
-  read and modify your vault, connect to the internet, and on desktop, access
-  your system. Read [JavaScript templates](/docs/concepts/javascript-templates)
-  for the full explanation before opting in.
+<Callout type="info" title="请先了解安全影响">
+  Eta 模板运行 JavaScript 时拥有与 ZotLit
+  插件自身完全同等级别的系统权限：它可以直接读取并修改您的仓库、发起网络外发连接，在桌面端甚至能够直接访问操作系统底层。在开启授权之前，请仔细阅读[JavaScript
+  模板核心概念](/docs/concepts/javascript-templates)。
 </Callout>
 
-## Turn on
+## 开启步骤
 
 <Steps>
   <Step>
-    ### Open the template engine settings
+    ### 打开模板引擎设置
 
-    In Obsidian, open <SettingsPath page={m.settings_page_advanced()} />. Locate the <UiLabel name={m.settings_advanced_template_engine_heading()} /> group and its <UiLabel name={m.settings_template_js_enable_name()} /> row.
+    在 Obsidian 中，打开 <SettingsPath page={m.settings_page_advanced()} />。找到 <UiLabel name={m.settings_advanced_template_engine_heading()} /> 选项组及其中的 <UiLabel name={m.settings_template_js_enable_name()} /> 所在行。
 
   </Step>
   <Step>
-    ### Click Turn on
+    ### 点击开启
 
-    Click the <UiLabel name={m.settings_template_js_turn_on()} /> button. A confirmation modal titled <UiLabel name={m.settings_template_js_confirm_title()} /> appears with the following warning:
+    点击 <UiLabel name={m.settings_template_js_turn_on()} /> 按钮。界面将弹出一个标题为 <UiLabel name={m.settings_template_js_confirm_title()} /> 的二次确认窗口，附带如下警示说明：
 
     > <UiLabel name={m.settings_template_js_confirm_body()} />
 
-    Click <UiLabel name={m.settings_template_js_confirm_action()} /> to confirm.
+    点击 <UiLabel name={m.settings_template_js_confirm_action()} /> 进行确认。
 
   </Step>
 </Steps>

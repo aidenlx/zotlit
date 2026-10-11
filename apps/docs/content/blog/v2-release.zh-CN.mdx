@@ -1,6 +1,6 @@
 ---
 title: "ZotLit v2"
-description: "A ground-up rewrite: what's in the stable release and what's next."
+description: "从底层彻底重写：正式版所包含的内容与未来展望。"
 date: 2026-08-05
 translationStatus: placeholder
 ---
@@ -8,57 +8,57 @@ translationStatus: placeholder
 import { ActionLink } from "@/components/action-link";
 import { Callout } from "@/components/callout";
 
-ZotLit is an Obsidian plugin that connects to your local Zotero database. Create literature notes, review PDF annotations, and insert citations without leaving Obsidian. v2 is a ground-up rewrite, and today it's stable.
+ZotLit 是一款直接连接您本地 Zotero 数据库的 Obsidian 插件。无需离开 Obsidian 即可创建文献笔记、查阅 PDF 批注并插入规范引文。v2 是从底层进行的彻底重写，今天正式发布稳定版本。
 
-<Callout title="TL;DR">
-v2 fixes the crashes that hit v1 after Obsidian installer updates. It also ships an annotation workspace, batch operations across entire libraries, Liquid templates, and incremental note updates.
+<Callout title="重点速览">
+v2 彻底解决了以往在 Obsidian 安装包更新后导致 v1 崩溃的顽疾。同时推出了批注工作区、全文献库级批量操作、Liquid 模板引擎以及增量式受管笔记更新。
 
 <ActionLink href="/docs/install-zotlit" kind="external">
-  Install ZotLit
+  安装 ZotLit
 </ActionLink>
 
-Requires Obsidian 1.13.4+ desktop. Upgrading from v1? [Jump to migration](#upgrading-from-v1).
+要求 Obsidian 桌面端 1.13.4 或更高版本。从 v1 升级？[跳转至迁移说明](#upgrading-from-v1)。
 
 </Callout>
 
-## Why a rewrite
+## 为什么进行重写
 
-v1 relied on a native SQLite binding that broke every time Obsidian updated its Electron runtime. Users hit error dialogs and black screens. Replacing that dependency meant rebuilding most of the plugin, so v2 also simplifies the internals.
+v1 深度依赖原生的 SQLite 二进制绑定，每次 Obsidian 更新底层的 Electron 运行时就会发生损坏。用户频繁遭遇错误弹窗或启动黑屏。替换掉该底层依赖意味着需要重建插件的大部分代码，因此 v2 也借机对内部架构进行了大幅简化。
 
-_For the full backstory, see [Rebuilding ZotLit: the v2 public beta](/blog/rebuilding-zotlit-v2-public-beta), and for the longer personal story behind the decision to rebuild, see [Reconnecting the Dots](https://aidenlx.site/blog/reconnecting-dots)._
+_完整的背景故事请参阅[重构 ZotLit：v2 公测版本说明](/blog/rebuilding-zotlit-v2-public-beta)，有关做出重构决定背后的个人心路历程，请参阅 [Reconnecting the Dots](https://aidenlx.site/blog/reconnecting-dots)。_
 
-## Annotation workspace
+## 批注工作区
 
-If you annotate PDFs in Zotero, the annotation view gives you a workspace for reviewing highlights, comments, and annotations alongside a Literature Note. You can search across text, comments, tags, and page numbers, and filter by color or tag to narrow things down without switching back to Zotero. Drag annotations into your note individually or pull them all in at once. Clicking an annotation opens the source PDF at that location in Zotero, so you move between the two apps without losing your place.
+如果您在 Zotero 中批注阅读 PDF，标注视图能够为您提供一个在文献笔记旁同步审阅高亮、评注与批注的独立工作区。您可以跨文本、评注、标签及页码进行搜索，并通过颜色或标签进行精准过滤，完全无需在应用间来回切换。您可以将单条批注拖入笔记中，也可以一键全部拉取。点击某条批注即可直接在 Zotero 中打开源 PDF 的对应位置，让您在两个应用之间无缝穿梭而不丢失阅读进度。
 
-![Literature note in Obsidian with the annotation view open, showing search, color and tag filters, and annotation cards for a Zotero item](/img/blog/annotation-view.webp)
+![Obsidian 中打开了标注视图的文献笔记，展示了针对特定 Zotero 条目的搜索、颜色与标签过滤器以及标注卡片](/img/blog/annotation-view.webp)
 
 <ActionLink href="/docs/how-to/use-annotation-view" kind="external">
-  Using the annotation view
+  使用标注视图
 </ActionLink>
 
-## Batch operations
+## 批量操作
 
-Creating Literature Notes one at a time is fine for a few items. It breaks down when you're onboarding an existing library or a batch of references just landed from a search. v2 handles this with batch operations that create or update notes for many items at once.
+对于零星的几篇文献，逐一创建文献笔记尚可应对；但当您在导入既有文献库，或刚通过文献检索批量下载了一批文献时，逐篇创建就显得力不从心。v2 提供了批量操作支持，能够一次性为海量条目创建或更新笔记。
 
-New in the stable release: you can target an entire Zotero library or a specific collection, including all its subcollections. Right-click a library or collection in Zotero's sidebar to create or update all literature notes, or import all notes underneath it. The same actions are available from Obsidian's command palette and through protocol links.
-
-{/* TODO: replace with a new screenshot showing collection-scope batch operations */}
+正式版全新引入的特性：您可以直接针对整个 Zotero 文献库或特定分类（包含其所有子分类）发起操作。在 Zotero 侧边栏中右键选择某个文献库或分类，即可一键创建或更新所有文献笔记，或者导入其下属的所有子笔记。同样的动作也可以从 Obsidian 命令面板和协议链接中触发。
 
 <ActionLink href="/docs/how-to/create-and-open-notes#bulk" kind="external">
-  Batch operations
+  批量操作
 </ActionLink>
 
-## Templates and the Template Data Explorer
+## 模板与模板数据浏览器
 
-The template system controls how Literature Notes, annotations, and citations are formatted. v2 defaults to Liquid, which is easier to pick up than v1's Eta syntax. JavaScript Templates are still available when you need full control, gated behind a per-device opt-in. The Template Data Explorer shows the exact typed data available for any Zotero item, so you write templates against real values instead of guessing field names.
+模板系统全面统领文献笔记、批注以及引文的格式化输出。v2 默认采用 Liquid 模板语言，比起 v1 的 Eta 语法更易于上手。如果您追求极致的控制力，在通过单设备授权开启后依然可以使用 JavaScript 模板。模板数据浏览器能够直观呈现任何 Zotero 条目可用的强类型真实数据，让您依据真实字段编写模板，告别盲目猜测字段名。
 
-![Template Data Explorer panel in Obsidian showing the typed properties available for a Zotero item](/img/blog/beta-template-data-explorer.webp)
+![Obsidian 中的模板数据浏览器面板，展示了某 Zotero 条目可用的强类型属性](/img/blog/beta-template-data-explorer.webp)
 
 <ActionLink href="/docs/concepts/how-templates-work" kind="external">
-  How templates work
+  模板工作原理
 </ActionLink>
 <ActionLink href="/docs/how-to/explore-template-data" kind="external">
+  浏览模板数据
+</ActionLink>
   Exploring template data
 </ActionLink>
 

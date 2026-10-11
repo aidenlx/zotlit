@@ -1,6 +1,6 @@
 ---
-title: "How to fix Zotero changes that do not appear"
-description: "Update your connection when Zotero changes do not appear in a literature note."
+title: "解决 Zotero 数据不同步或过期问题"
+description: "当文献笔记更新后未出现 Zotero 最新改动时，排查并刷新数据库连接。"
 translationStatus: placeholder
 ---
 
@@ -11,54 +11,55 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-Use this guide when Zotero changes do not appear after you update a literature note in Obsidian.
+当您在 Obsidian 中更新文献笔记后，Zotero 中的最新改动并未如期呈现时，请依照本指南进行排查修复。
 
-## Restore current Zotero data
+## 恢复 Zotero 数据的实时同步
 
 <Steps>
   <Step>
-    ### Install or update ZotLit Companion
+    ### 安装或更新 ZotLit Companion 配套插件
 
-    ZotLit Companion, the Zotero add-on, keeps recent Zotero changes available to ZotLit. [Install the latest Companion](/docs/install-companion), or update your current installation in Zotero.
-
-  </Step>
-  <Step>
-    ### Confirm the Companion setting
-
-    In Zotero, open **Edit → Settings** on Windows or Linux. On macOS, open **Zotero → Settings**. Select the <UiLabel name={m["zotero.prefs_pane_label"]()} /> pane.
-
-    Under <UiLabel name={m["zotero.prefs_database_section"]()} />, enable <UiLabel name={m["zotero.prefs_wal_checkpoint.label"]()} />. New Companion installations enable this setting by default.
+    ZotLit Companion（Zotero 配套插件）负责确保 Zotero 的最新变动能够即时被 ZotLit 读取。[安装最新版 Companion](/docs/install-companion)，或在 Zotero 附加组件中更新已有安装。
 
   </Step>
   <Step>
-    ### Make recent changes available
+    ### 确认 Companion 内部设置
 
-    In Zotero's item pane, select <UiLabel name={m["zotero.database_status.tooltiptext"]()} /> beside **Locate**. If <UiLabel name={m["zotero.database_status_write_now"]()} /> is available, select it.
+    在 Windows 或 Linux 上的 Zotero 中打开**编辑 → 设置**；在 macOS 上打开 **Zotero → 设置**。选择 <UiLabel name={m["zotero.prefs_pane_label"]()} /> 设置面板。
 
-    This makes recent Zotero changes available immediately.
-
-  </Step>
-  <Step>
-    ### Update the literature note
-
-    Return to the literature note in Obsidian. Run <Command inline name={m.command_update_note_name()} />.
-
-    The missing Zotero change should now appear in the note.
+    在 <UiLabel name={m["zotero.prefs_database_section"]()} /> 区域下，确保勾选启用了 <UiLabel name={m["zotero.prefs_wal_checkpoint.label"]()} />。新安装的 Companion 默认会自动开启此项。
 
   </Step>
   <Step>
-    ### Refresh ZotLit
+    ### 立即刷写最新更改
 
-    If the note still shows old data, run <Command inline name={m.command_refresh_db_name()} />. Then update the literature note again.
+    在 Zotero 的条目详情面板中，选择**在文库中定位**旁的 <UiLabel name={m["zotero.database_status.tooltiptext"]()} /> 图标。如果 <UiLabel name={m["zotero.database_status_write_now"]()} /> 可用，请点击它。
+
+    这会让 Zotero 立即将暂存的最新改动刷写到主数据库文件中。
+
+  </Step>
+  <Step>
+    ### 更新文献笔记
+
+    回到 Obsidian 中的文献笔记。运行命令 <Command inline name={m.command_update_note_name()} />。
+
+    缺失的 Zotero 最新改动现在应当会顺利呈现在笔记中。
+
+  </Step>
+  <Step>
+    ### 手动重载 ZotLit 数据库
+
+    如果笔记仍旧显示旧数据，请运行 <Command inline name={m.command_refresh_db_name()} />，然后再次执行更新文献笔记。
 
   </Step>
 </Steps>
 
-## Advanced: Use Full copy as a last resort [#read-mode]
+## 进阶方案：将“完整副本”模式作为最终手段 [#read-mode]
 
-If the problem continues, open <SettingsPath page={m.settings_page_zotero()} setting={m.settings_page_zotero_location()} />. Set <UiLabel name={m.settings_db_read_mode_name()} /> to <UiLabel name={m.settings_db_read_mode_copy()} />, refresh the database, and update the literature note again.
+如果问题仍未解决，请打开 <SettingsPath page={m.settings_page_zotero()} setting={m.settings_page_zotero_location()} />。将 <UiLabel name={m.settings_db_read_mode_name()} /> 调整为 <UiLabel name={m.settings_db_read_mode_copy()} />，刷新数据库，然后再次更新文献笔记。
 
-<UiLabel name={m.settings_db_read_mode_copy()} /> copies the entire database on
+<UiLabel name={m.settings_db_read_mode_copy()} />
+会在每次读取时完整复制整个数据库文件。虽然其速度较慢且会占用额外的磁盘空间，但它能够强行绕过文件系统驱动的限制，确保读取到最新的物理数据。
 every refresh. Large Zotero libraries take longer to refresh and use more disk
 space.
 

@@ -1,6 +1,6 @@
 ---
-title: "Set up live updates"
-description: "Enable optional live updates so Zotero pushes changes to Obsidian automatically."
+title: "配置即时同步更新"
+description: "启用可选的即时同步更新（Live Updates），让 Zotero 自动将变动即时推送到 Obsidian。"
 translationStatus: placeholder
 ---
 
@@ -11,53 +11,56 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-ZotLit Companion, the Zotero add-on, can push changes to Obsidian as you read and annotate in Zotero. The annotation view's reader-following mode and automatic database refreshes both depend on this optional connection.
+当您在 Zotero 中阅读并添加批注时，ZotLit Companion（Zotero 配套插件）能够将这些变动即时推送到 Obsidian。标注视图的“跟随阅读器”模式以及数据库的自动刷新均依赖此项可选的连接机制。
 
-<Callout type="info" title="When you do not need this">
-  Basic Companion actions (opening items and their PDFs, updating notes,
-  importing notes from the Zotero context menu) work through protocol links with
-  no server. You only need live updates for real-time push (reader-following,
-  instant database refresh when Zotero data changes).
+<Callout type="info" title="何时无需配置此项">
+  Companion 的基础操作（通过 Zotero 右键菜单打开条目及
+  PDF、更新笔记、导入笔记）完全通过自定义协议链接运作，无需启动任何后台服务器。只有当您需要实时事件推送时（例如侧边栏跟随阅读器进度、在
+  Zotero 中修改条目后 Obsidian 数据库即刻感知刷新），才需要配置即时同步更新。
 </Callout>
 
-## Enable the ZotLit server
+## 启用 ZotLit 本地服务器
 
 <Steps>
   <Step>
-    ### Open the sync settings
+    ### 打开同步设置
 
-    In Obsidian, open <SettingsPath page={m.settings_page_zotero()} /> and find the <UiLabel name={m.settings_zotero_sync_heading()} /> group. Keep <UiLabel name={m.settings_live_updates_enabled_name()} /> on.
+    在 Obsidian 中，打开 <SettingsPath page={m.settings_page_zotero()} /> 并定位到 <UiLabel name={m.settings_zotero_sync_heading()} /> 分组。保持 <UiLabel name={m.settings_live_updates_enabled_name()} /> 处于开启状态。
 
   </Step>
   <Step>
-    ### Turn on the listener
+    ### 开启本地监听端口
 
-    On the <UiLabel name={m.settings_advanced_local_server_heading()} /> row, select <UiLabel name={m.settings_zotero_local_server_open()} />. This opens the <UiLabel name={m.settings_advanced_local_server_heading()} /> group on <SettingsPath page={m.settings_page_advanced()} />.
+    在 <UiLabel name={m.settings_advanced_local_server_heading()} /> 所在行，选择 <UiLabel name={m.settings_zotero_local_server_open()} />。这将跳转到 <SettingsPath page={m.settings_page_advanced()} /> 下的 <UiLabel name={m.settings_advanced_local_server_heading()} /> 选项组。
 
-    Enable <UiLabel name={m.settings_local_server_enabled_name()} />. Keep the default hostname, `127.0.0.1`, to accept connections from this computer only.
+    启用 <UiLabel name={m.settings_local_server_enabled_name()} />。保持默认的主机名 `127.0.0.1`，仅接受来自本机内部的连接请求。
 
-    The configured port defaults to **9091**. Check <UiLabel name={m.settings_local_server_active_port_name()} /> for the port actually used: ZotLit tries a higher port if the configured one is busy.
+    配置的监听端口默认为 **9091**。检查 <UiLabel name={m.settings_local_server_active_port_name()} /> 确认实际生效的端口：如果默认端口被占用，ZotLit 会自动尝试更高的可用端口。
 
   </Step>
 </Steps>
 
-## Enable the Companion's notify preference
+## 开启 Companion 的通知推送偏好
 
 <Steps>
   <Step>
-    ### Open Zotero preferences
+    ### 打开 Zotero 设置
 
-    In Zotero, open **Edit > Settings** (Windows/Linux) or **Zotero > Settings** (macOS). Select the <UiLabel name={m["zotero.prefs_pane_label"]()} /> pane.
-
-  </Step>
-  <Step>
-    ### Enable notifications
-
-    Under the <UiLabel name={m["zotero.prefs_notify_section"]()} /> section, check <UiLabel name={m["zotero.prefs_notify_enable.label"]()} />.
+    在 Zotero 中，打开**编辑 → 设置**（Windows/Linux）或 **Zotero → 设置**（macOS）。选择 <UiLabel name={m["zotero.prefs_pane_label"]()} /> 设置面板。
 
   </Step>
   <Step>
-    ### Set the Notify URL
+    ### 启用事件通知
+
+    在 <UiLabel name={m["zotero.prefs_notify_section"]()} /> 区域下，勾选启用 <UiLabel name={m["zotero.prefs_notify_enable.label"]()} />。
+
+  </Step>
+  <Step>
+    ### 设置通知推送 URL
+    将通知推送 URL 配置为指向 Obsidian 本地服务器的监听地址（例如 `http://127.0.0.1:9091/notify`）。确保端口号与 Obsidian 中显示的活动端口一致。
+
+  </Step>
+</Steps>
 
     Set the <UiLabel name={m["zotero.prefs_notify_url"]()} /> to point at the ZotLit server. The default value is `http://localhost:9091`, which matches the default port.
 

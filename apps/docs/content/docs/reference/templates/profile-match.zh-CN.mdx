@@ -1,63 +1,63 @@
 ---
-title: "Profile Match"
-description: "The Profile Match expression language: fields, operators, list functions, tree form, and the forms ZotLit rejects."
+title: "配置方案匹配规则"
+description: "配置方案匹配表达式语言：字段、运算符、列表函数、树状结构以及 ZotLit 拒绝的非法语法。"
 translationStatus: placeholder
 ---
 
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-This reference describes the Profile Match language: the expressions and trees a profile document carries in its `match` key.
+本参考手册介绍了配置方案匹配规则（Profile Match）语言：配置方案文档在其 `match` 配置键中所承载的表达式与条件树。
 
-A Match condition tests one Zotero item. ZotLit evaluates the Profile Match when it creates a literature note. The same language is what the <UiLabel name={m.workbench_tab_match()} /> tab of the Template Workbench View writes into a profile document, and what a shared profile carries in its manifest.
+一条匹配条件用于对单篇 Zotero 条目进行断言判断。ZotLit 在创建文献笔记时会执行该匹配逻辑。这套规则语法与模板工作台视图中 <UiLabel name={m.workbench_tab_match()} /> 标签页写入配置方案文档的格式完全一致，也是分享配置方案时在其 manifest 中所包含的内容。
 
-## Where a Profile Match lives [#where]
+## 匹配规则存放在何处 [#where]
 
-A Profile Match is the `match` key of a [profile document](/docs/reference/templates/profile-document) manifest. The `match` key holds one expression or one tree.
+匹配规则位于[配置方案文档](/docs/reference/templates/profile-document) manifest 中的 `match` 键下。`match` 键可以承载单条表达式或一棵复合条件树。
 
-The built-in Default profile carries no `match`, and a profile without a `match` key is never selected automatically. You can still select that profile by hand. For the procedure, see [Use a different template for different notes](/docs/how-to/use-different-templates), which sets a Match on the <UiLabel name={m.workbench_tab_match()} /> tab of the Template Workbench View.
+系统内置的默认配置方案不含 `match`，缺少 `match` 键的配置方案绝不会被自动选中。但您依然可以通过手动方式选择使用该配置方案。具体操作步骤请参阅[针对不同笔记使用不同模板](/docs/how-to/use-different-templates)，其中介绍了如何在模板工作台视图的 <UiLabel name={m.workbench_tab_match()} /> 标签页中配置匹配规则。
 
-## Fields [#fields]
+## 支持的字段 [#fields]
 
-A condition tests one of four fields.
+匹配条件可针对以下四个字段进行判断：
 
-| Field         | Values                          | Test            | Example                                |
-| ------------- | ------------------------------- | --------------- | -------------------------------------- |
-| `library`     | `personal` or `group:<groupID>` | `==` or `!=`    | `library == "group:118"`               |
-| `itemType`    | One item type name              | `==` or `!=`    | `itemType == "journalArticle"`         |
-| `tags`        | A list of Tag names             | A list function | `tags.contains("Read")`                |
-| `collections` | A list of Collection paths      | A list function | `collections.within("Project/Drafts")` |
+| 字段          | 允许的取值                      | 支持的测试方式 | 语法示例                               |
+| ------------- | ------------------------------- | -------------- | -------------------------------------- |
+| `library`     | `personal` 或 `group:<groupID>` | `==` 或 `!=`   | `library == "group:118"`               |
+| `itemType`    | 条目类型规范名称                | `==` 或 `!=`   | `itemType == "journalArticle"`         |
+| `tags`        | 标签名称列表                    | 列表函数       | `tags.contains("Read")`                |
+| `collections` | 分类路径列表                    | 列表函数       | `collections.within("Project/Drafts")` |
 
-### Library values
+### 文献库取值说明
 
-A `library` value is `"personal"` or `"group:<groupID>"`, where `<groupID>` is a positive integer. The value names a group Library by its group ID rather than by a local database ID, so it survives a rebuild of your Zotero database.
+`library` 的取值为 `"personal"` 或 `"group:<groupID>"`，其中 `<groupID>` 为正整数。该取值通过群组唯一数字 ID（而非本地数据库临时自增 ID）来指明群组文献库，因此即使重建 Zotero 本地数据库也不会发生错位失效。
 
-ZotLit rejects a value that is neither `personal` nor `group:` followed by a positive integer. When it knows the connected Libraries, it also rejects a group that is not among them.
+ZotLit 会拒绝任何既非 `personal` 也非以正整数结尾的 `group:` 的取值。在已连接文献库的情况下，如果指定的群组不存在于当前库中，也会被判定为非法。
 
-### Item type values
+### 条目类型取值说明
 
-Item type names come from the closed set ZotLit builds from Zotero's schema: the top-level item types, excluding the child types `attachment`, `note`, and `annotation`. [Fields by item type](/docs/reference/templates/data#common-fields) lists every name in the set. A name outside it is rejected.
+条目类型名称来自于 ZotLit 基于 Zotero 规范生成的闭集：涵盖所有顶级条目类型，自动排除子项类型（`attachment`、`note` 与 `annotation`）。[按条目类型划分的字段](/docs/reference/templates/data#common-fields)列出了集合中的全部名称。使用不在集合中的名称会被拒绝。
 
-### Tag values
+### 标签取值说明
 
-Tag names are free text, and matching is exact and case-sensitive. Tags you add and tags Zotero adds automatically count alike.
+标签名称为任意自由文本，匹配过程严格区分大小写。您手动添加的标签与 Zotero 自动附加的抓取标签具有同等效力。
 
-### Collection paths
+### 分类路径说明
 
-A Collection path starts with the root Collection and continues to the direct parent of the item, with the names joined by `/`. For example, `Project/Drafts/Review` names the `Review` Collection under `Drafts`, under `Project`.
+分类路径（Collection path）从根分类开始，逐级延伸至包含条目的直接父分类，层级名称之间以 `/` 连接。例如，`Project/Drafts/Review` 表示位于 `Project` 下的 `Drafts` 分类之中的 `Review` 分类。
 
-Paths have no escape syntax, so a Collection whose name contains `/` is ambiguous. ZotLit evaluates a path against the item's own Library, and it accepts a path that no Library contains: a positive membership test for an absent path is simply false.
+路径不提供转义语法，因此名称中包含 `/` 的分类可能存在歧义。ZotLit 会对照条目所属的文献库来计算路径，且允许声明当前文献库中尚不存在的路径：对不存在路径的正向归属判断仅会简单返回 false，而不会导致系统报错。
 
-## Equality tests [#equality]
+## 相等性断言 [#equality]
 
-The scalar fields `library` and `itemType` take an equality test.
+标量字段 `library` 与 `itemType` 支持相等性断言。
 
-| Form               | Fields                | Holds when                                | Example                  |
-| ------------------ | --------------------- | ----------------------------------------- | ------------------------ |
-| `field == "value"` | `library`, `itemType` | The item's value is the quoted value.     | `itemType == "book"`     |
-| `field != "value"` | `library`, `itemType` | The item's value is not the quoted value. | `library != "group:118"` |
+| 语法形式           | 适用字段              | 成立条件                                   | 示例                     |
+| ------------------ | --------------------- | ------------------------------------------ | ------------------------ |
+| `field == "value"` | `library`, `itemType` | 条目的对应字段值等于右侧被引用的字符串。   | `itemType == "book"`     |
+| `field != "value"` | `library`, `itemType` | 条目的对应字段值不等于右侧被引用的字符串。 | `library != "group:118"` |
 
-The field name is on the left and a quoted value is on the right. A value may use double or single quotes. ZotLit rejects a test with the two sides reversed, and a quoted value that the field does not accept.
+字段名必须置于左侧，带引号的目标值置于右侧。目标值使用双引号或单引号均可。ZotLit 会拒绝两侧颠倒的书写方式，以及该字段无法接受的目标值。
 
 ## List functions [#list-functions]
 
