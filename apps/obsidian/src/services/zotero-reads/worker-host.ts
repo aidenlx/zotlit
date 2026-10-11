@@ -85,8 +85,7 @@ export const connectWorker = Effect.fnUntraced(function* (
   config: Effect.Effect<ReadsConfig>,
   {
     reapClones = reapWorkerClones,
-    role,
-  }: { reapClones?: typeof reapWorkerClones; role?: "citation" } = {},
+  }: { reapClones?: typeof reapWorkerClones } = {},
 ): Effect.fn.Return<WorkerConnection, DbUnavailable, Scope.Scope> {
   const url = URL.createObjectURL(
     new Blob([source], { type: "text/javascript" }),
@@ -135,8 +134,7 @@ export const connectWorker = Effect.fnUntraced(function* (
     for (const worker of workers.keys()) worker.terminate();
     workers.clear();
     const worker = new Worker(url, {
-      name:
-        role === "citation" ? "zotlit-citation-reads" : "zotlit-zotero-reads",
+      name: "zotlit-zotero-reads",
     });
     const shutDown = Promise.withResolvers<void>();
     worker.addEventListener("message", (event: MessageEvent<unknown>) => {
@@ -178,7 +176,6 @@ export const connectWorker = Effect.fnUntraced(function* (
             logs = port1;
             return {
               ...current,
-              ...(role && { role }),
               snapshotOwner,
               logs: port2,
             };
@@ -219,7 +216,7 @@ function noWorker(reason: DbUnavailable) {
  * One {@link ZoteroReadsClient} across worker lifetimes. It connects on
  * creation. When the worker dies, the client reports `degraded` on `Changes`
  * with a {@link DbUnavailable}, calls fail with a client error, and the next
- * `Refresh` or `CitationRefresh` connects a new worker before it refreshes.
+ * `Refresh` connects a new worker before it refreshes.
  * The last worker ends with the caller's scope.
  */
 export const makeWorkerReads = Effect.fnUntraced(function* (
@@ -476,10 +473,6 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
     // The feed outlives each worker: subscribers keep one stream across a
     // death and a respawn.
     Changes: () => changes,
-    CitationRefresh: (payload, options) =>
-      Effect.flatMap(ensureConnected, (client) =>
-        client.CitationRefresh(payload, options),
-      ),
     Configure: (payload, options) =>
       Effect.flatMap(ensureConnected, (client) =>
         client.Configure(payload, options),

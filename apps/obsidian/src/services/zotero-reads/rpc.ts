@@ -385,13 +385,6 @@ export const ReadsConfigSchema = Schema.Struct({
 });
 export type ReadsConfig = typeof ReadsConfigSchema.Type;
 
-/** The renderer's source generation and the configuration that produced it. */
-const CitationSourceSchema = Schema.Struct({
-  generation: Schema.Number,
-  config: ReadsConfigSchema,
-});
-export type CitationSource = typeof CitationSourceSchema.Type;
-
 /**
  * What the renderer sends with each worker spawn: the settings to open, the
  * owner tag the worker names its read snapshots with, so the renderer can
@@ -399,7 +392,6 @@ export type CitationSource = typeof CitationSourceSchema.Type;
  * records to.
  */
 export const WorkerInitSchema = Schema.Struct({
-  role: Schema.optionalKey(Schema.Literal("citation")),
   ...ReadsConfigSchema.fields,
   snapshotOwner: Schema.String,
   logs: Transferable.MessagePort,
@@ -490,30 +482,20 @@ type _CitationScope = Expect<
   Equals<typeof CitationScopeSchema.Type, LibraryScope | null>
 >;
 const CitationLookupAnswerSchema = Schema.Struct({
-  generation: Schema.Number,
   revision: Schema.String,
   citekeys: Schema.ReadonlyMap(Schema.String, CitationResolutionSchema),
   indexedKeys: Schema.ReadonlyMap(Schema.String, Schema.NullOr(Schema.String)),
 });
 type _CitationLookupAnswer = Expect<
-  Equals<
-    typeof CitationLookupAnswerSchema.Type,
-    CitationLookupWireAnswer & { readonly generation: number }
-  >
+  Equals<typeof CitationLookupAnswerSchema.Type, CitationLookupWireAnswer>
 >;
 
 export class ZoteroReads extends RpcGroup.make(
-  Rpc.make("CitationRefresh", {
-    payload: CitationSourceSchema,
-    success: Schema.Number,
-    error: DbUnavailable,
-  }),
   Rpc.make("CitationLookup", {
     payload: {
-      ...CitationSourceSchema.fields,
       scope: CitationScopeSchema,
-      citekeys: Schema.Array(Schema.String),
-      indexedKeys: Schema.Array(Schema.String),
+      citekeys: Schema.optionalKey(Schema.Array(Schema.String)),
+      indexedKeys: Schema.optionalKey(Schema.Array(Schema.String)),
     },
     success: CitationLookupAnswerSchema,
     error: DbUnavailable,

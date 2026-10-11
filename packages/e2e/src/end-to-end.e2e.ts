@@ -3021,12 +3021,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     {
       // The load spawned one database worker, and it serves.
       expect(
-        await obEval(
-          vaultId,
-          workers(
-            "String(record.spawned.filter(function(entry){return entry.name==='zotlit-zotero-reads';}).length)",
-          ),
-        ),
+        await obEval(vaultId, workers("String(record.spawned.length)")),
       ).toBe("1");
       expect(
         await obEvalUntil(
@@ -3046,7 +3041,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obEval(
         vaultId,
         workers(
-          "(record.spawned.find(function(entry){return entry.name==='zotlit-citation-reads';}).worker.terminate(),true)",
+          "(record.spawned.find(function(entry){return entry.name==='zotlit-zotero-reads';}).worker.terminate(),true)",
         ),
       );
       expect(
@@ -3056,12 +3051,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           { expected: "failed", tries: 160 },
         ),
       ).toBe(true);
+      await obEval(
+        vaultId,
+        "app.plugins.plugins.zotlit.services.zoteroReads.refresh().then(function(){return true;})",
+      );
       expect(
-        await obEval(
+        await obEvalUntil(
           vaultId,
           "String(app.plugins.plugins.zotlit.services.zoteroReads.state)",
+          { expected: "ready" },
         ),
-      ).toBe("ready");
+      ).toBe(true);
       // SearchItems hydrates its hits from SQLite in the interactive worker.
       const hits = JSON.parse(
         await obEval(
@@ -3077,10 +3077,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           },
         },
       ]);
-      await obEval(
-        vaultId,
-        "app.plugins.plugins.zotlit.services.zoteroReads.refresh().then(function(){return true;})",
-      );
       expect(
         await obEvalUntil(
           vaultId,
@@ -3099,7 +3095,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obEval(
         vaultId,
         workers(`(function(){
-          var entry=record.spawned.findLast(function(entry){return entry.name==='zotlit-citation-reads';});
+          var entry=record.spawned.findLast(function(entry){return entry.name==='zotlit-zotero-reads';});
           var post=entry.worker.postMessage;
           record.held={worker:entry.worker,post:post,pending:[]};
           entry.worker.postMessage=function(...args){
@@ -3117,7 +3113,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           expected: "true",
         }),
       ).toBe(true);
-      // Unload ends both the interactive worker and the recovered worker.
+      // Unload ends the recovered worker and its pending citation read.
       await obEval(
         vaultId,
         "app.plugins.disablePlugin('zotlit').then(function(){return true;})",
@@ -3125,7 +3121,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       const ended = await obEvalUntil(
         vaultId,
         workers(
-          "String(record.spawned.filter(function(entry){return entry.name==='zotlit-zotero-reads'||entry.name==='zotlit-citation-reads';}).every(function(entry){return record.ended.has(entry.worker);}))",
+          "String(record.spawned.filter(function(entry){return entry.name==='zotlit-zotero-reads';}).every(function(entry){return record.ended.has(entry.worker);}))",
         ),
         { expected: "true", tries: 120 },
       );

@@ -1,7 +1,12 @@
 // The worker owns the full citation maps and publishes requested projections.
 import { Effect, Fiber, Option, Scope, Stream } from "effect";
 
-import { getCitekeyLastItemID, getCitekeyPage, getLibraries } from "@zotlit/db";
+import {
+  formatIndexedKey,
+  getLastItemID,
+  getCitekeyWindow,
+  getLibraries,
+} from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import { getLogger } from "@/lib/log";
@@ -13,10 +18,11 @@ import { CitekeySnapshot } from "@/services/citation-index/snapshot";
 import { resolveLibraryScope } from "@/services/library-scope/scope";
 import type { LibraryScope } from "@/services/library-scope/scope";
 
-import { makeCitationRefresh } from "./citation-refresh";
 import { toDbUnavailable } from "./connection";
 import type { Connection } from "./connection";
-import type { CitationSource, DbUnavailable, ReadsConfig } from "./rpc";
+import type { DbUnavailable } from "./rpc";
+
+export const CITEKEY_WINDOW = 1000;
 
 const logger = getLogger("citation-index");
 
@@ -28,25 +34,27 @@ interface Published {
   revision: string;
 }
 
+interface Candidate {
+  fiber: Fiber.Fiber<void, DbUnavailable>;
+  client?: NodeDatabaseClient;
+}
+
 export const makeCitationLookup = Effect.fnUntraced(function* (
   connection: Connection["Service"],
-  sliceSize: number,
-  configure: (
-    config: ReadsConfig,
-  ) => Effect.Effect<void> = connection.configure,
+  windowSize: number,
 ) {
   const lifetime = yield* Scope.Scope;
-  const source = yield* makeCitationRefresh(connection, configure);
   const incarnation = crypto.randomUUID();
   let serial = 0;
   let published: Published | undefined;
-  let candidate: Fiber.Fiber<void, DbUnavailable> | undefined;
+  let candidate: Candidate | undefined;
 
   const build = Effect.fnUntraced(function* (
     scope: LibraryScope | null,
-    generation: number,
+    borrowed: Pick<Candidate, "client">,
   ) {
     const client = yield* connection.borrow;
+    borrowed.client = client;
     const database = connection.databaseGeneration(client);
     const previous =
       published?.database === database ? published.snapshot : undefined;
@@ -54,50 +62,42 @@ export const makeCitationLookup = Effect.fnUntraced(function* (
       try: () => getLibraries(client),
       catch: toDbUnavailable,
     });
-    const all = resolveLibraryScope(libraries, { mode: "all" });
     const selected = resolveLibraryScope(libraries, scope);
-    const rows = Stream.fromIterable(all.available).pipe(
-      Stream.flatMap(({ libraryID }) =>
-        Stream.unwrap(
-          Effect.gen(function* () {
-            const beforeItemID = yield* Effect.try({
-              try: () => getCitekeyLastItemID(client, libraryID),
-              catch: toDbUnavailable,
-            });
-            return Stream.paginate(
-              0,
-              Effect.fnUntraced(function* (afterItemID) {
-                yield* Effect.yieldNow;
-                const { citekeys, next } = yield* Effect.try({
-                  try: () =>
-                    getCitekeyPage(client, {
-                      libraryID,
-                      beforeItemID,
-                      afterItemID,
-                      limit: sliceSize,
-                    }),
-                  catch: toDbUnavailable,
-                });
-                return [citekeys, Option.fromNullishOr(next)] as const;
-              }),
-            );
-          }),
-        ),
-      ),
+    const groupIDs = new Map(
+      libraries.map(({ libraryID, groupID }) => [libraryID, groupID]),
+    );
+    const lastItemID = yield* Effect.try({
+      try: () => getLastItemID(client),
+      catch: toDbUnavailable,
+    });
+    const rows = Stream.paginate(
+      0,
+      Effect.fnUntraced(function* (afterItemID) {
+        yield* Effect.yieldNow;
+        const throughItemID = Math.min(afterItemID + windowSize, lastItemID);
+        const citekeys = yield* Effect.try({
+          try: () => getCitekeyWindow(client, { afterItemID, throughItemID }),
+          catch: toDbUnavailable,
+        });
+        return [
+          citekeys.map((row) => ({
+            ...row,
+            indexedKey: formatIndexedKey(
+              row.key,
+              groupIDs.get(row.libraryID) ?? null,
+            ),
+          })),
+          throughItemID < lastItemID
+            ? Option.some(throughItemID)
+            : Option.none(),
+        ] as const;
+      }),
     );
     const snapshot = yield* CitekeySnapshot.from(
       rows,
       new Set(selected.available.map(({ libraryID }) => libraryID)),
       { previous },
     ).pipe(Effect.catchDefect((cause) => Effect.fail(toDbUnavailable(cause))));
-    const requestedGeneration = yield* source.generation;
-    if (requestedGeneration !== generation) {
-      logger.debug("Discarding an obsolete citation build", {
-        generation,
-        requestedGeneration,
-      });
-      return;
-    }
     const retained = snapshot === previous && published !== undefined;
     const revision =
       snapshot === previous && published
@@ -111,7 +111,6 @@ export const makeCitationLookup = Effect.fnUntraced(function* (
       revision,
     };
     logger.debug("Citation lookup published", {
-      generation,
       revision,
       retained,
       database,
@@ -119,31 +118,14 @@ export const makeCitationLookup = Effect.fnUntraced(function* (
   });
 
   const lookup = Effect.fnUntraced(function* (
-    request: CitationLookupRequest &
-      CitationSource & { scope: LibraryScope | null },
-  ): Effect.fn.Return<
-    CitationLookupWireAnswer & { readonly generation: number },
-    DbUnavailable
-  > {
+    request: CitationLookupRequest & { scope: LibraryScope | null },
+  ): Effect.fn.Return<CitationLookupWireAnswer, DbUnavailable> {
     const scope = JSON.stringify(request.scope);
     while (true) {
-      const generation = yield* source.refresh({
-        generation: request.generation,
-        config: request.config,
-      });
       const client = yield* Effect.scoped(connection.borrow);
-      const requestedGeneration = yield* source.generation;
-      if (requestedGeneration !== generation) {
-        logger.debug("Retrying a citation borrow after a source change", {
-          generation,
-          requestedGeneration,
-        });
-        continue;
-      }
       const current = published;
       if (current?.client === client && current.scope === scope) {
         return {
-          generation,
           revision: current.revision,
           citekeys: new Map(
             (request.citekeys ?? []).map((key) => [
@@ -164,9 +146,10 @@ export const makeCitationLookup = Effect.fnUntraced(function* (
       const running = yield* Effect.uninterruptible(
         Effect.suspend(() => {
           if (candidate) return Effect.succeed(candidate);
+          const borrowed: Pick<Candidate, "client"> = {};
           return Effect.map(
             Effect.forkIn(
-              Effect.scoped(build(request.scope, generation)).pipe(
+              Effect.scoped(build(request.scope, borrowed)).pipe(
                 Effect.ensuring(
                   Effect.sync(() => {
                     candidate = undefined;
@@ -176,23 +159,17 @@ export const makeCitationLookup = Effect.fnUntraced(function* (
               lifetime,
               { startImmediately: false },
             ),
-            (fiber) => (candidate = fiber),
+            (fiber) => (candidate = Object.assign(borrowed, { fiber })),
           );
         }),
       );
-      const result = yield* Effect.result(Fiber.join(running));
+      const result = yield* Effect.result(Fiber.join(running.fiber));
       if (result._tag === "Failure") {
-        const requestedGeneration = yield* source.generation;
-        if (requestedGeneration !== generation) {
-          logger.debug("Discarding an obsolete citation build failure", {
-            generation,
-            requestedGeneration,
-          });
-          continue;
-        }
-        return yield* result.failure;
+        const currentClient = yield* Effect.scoped(connection.borrow);
+        if (running.client === undefined || running.client === currentClient)
+          return yield* result.failure;
       }
     }
   });
-  return { lookup, refresh: source.refresh };
+  return { lookup };
 });

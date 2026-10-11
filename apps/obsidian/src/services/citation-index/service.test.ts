@@ -763,10 +763,8 @@ describe("CitationIndex resolution", () => {
 
     await yieldToMain();
     await expect
-      .poll(() => snapshots)
-      .toMatchObject([
-        { coverage: "indexing", resolution: "fresh", groups: [] },
-      ]);
+      .poll(() => snapshots.at(-1))
+      .toMatchObject({ coverage: "indexing", resolution: "fresh", groups: [] });
     workspace.layoutReady();
     await index.whenIndexed();
 
@@ -1205,6 +1203,7 @@ describe("CitationIndex resolution", () => {
     index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
     workspace.layoutReady();
     await index.whenIndexed();
+    await expect.poll(() => snapshots.at(-1)?.resolution).toBe("fresh");
     const before = snapshots.length;
 
     metadataCache.change(draft, "moved @doe2024.");
