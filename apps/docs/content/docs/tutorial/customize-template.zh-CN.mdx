@@ -1,6 +1,6 @@
 ---
-title: "Customize your annotations"
-description: "Change the annotation format in a literature note profile and apply it to an existing note."
+title: "自定义批注样式"
+description: "修改文献笔记配置方案中的标注格式，并将其应用到现有笔记上。"
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
@@ -11,76 +11,76 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-Change the annotation callouts in your first literature note with the Template Workbench View in Obsidian. This tutorial continues from [Create your first literature note](/docs/tutorial/first-note).
+在 Obsidian 中使用模板工作台视图，修改第一篇文献笔记中的标注 callout。本教程紧接[创建第一篇文献笔记](/docs/tutorial/first-note)。
 
-<Callout type="info" title="Before you start">
-  Use the literature note from [the first tutorial](/docs/tutorial/first-note).
-  It needs at least one annotation from a Zotero PDF. If it has none, add a
-  highlight in Zotero and update the literature note before you continue.
+<Callout type="info" title="准备工作">
+  请使用[第一篇教程](/docs/tutorial/first-note)中创建的文献笔记。
+  该笔记需要至少包含一条来自 Zotero PDF 的批注。如果尚无批注，请先在 Zotero
+  中添加一条高亮，并在继续前更新文献笔记。
 </Callout>
 
-## Change the callout type
+## 修改 callout 类型
 
-The built-in annotation format uses `[!note]` as the Obsidian callout type. You will change it to `[!quote]`.
+内置的标注格式使用 `[!note]` 作为 Obsidian callout 类型。您将把它修改为 `[!quote]`。
 
 <Steps>
   <Step>
-    ### Open the Template Workbench View
+    ### 打开模板工作台视图
 
-    Open the literature note in Obsidian. Run <Command name={m.command_customize_note_template_name()} />.
+    在 Obsidian 中打开该文献笔记。运行命令 <Command name={m.command_customize_note_template_name()} />。
 
-    ZotLit opens the template document used by this note in a new window and selects its paper for the preview. When you customize the built-in template, ZotLit saves an editable copy in your template folder. The copy remains if you close the window without changes.
+    ZotLit 会在新窗口中打开此笔记所使用的模板文档，并选择对应的论文用于预览。当您自定义内置模板时，ZotLit 会在您的模板文件夹中保存一份可编辑的副本。即使您未做更改直接关闭窗口，该副本也会保留。
 
-    Read the shared-template guidance above the editor: your edits change every note that uses this template when that note updates. Check that your note's name appears beside <UiLabel name={m.template_workbench_update_this_note()} />.
-
-  </Step>
-  <Step>
-    ### Open the annotation format
-
-    Select the <UiLabel name={m.workbench_tab_annotation()} /> tab. The editor shows the format used for one annotation. The preview shows one annotation from your paper under <UiLabel name={m.workbench_annotation_example()} />. To show a different one, select <UiLabel name={m.workbench_choose_annotation()} /> at the top of the editor.
-
-    For a short explanation of the format, you can open <UiLabel name={m.workbench_help()} /> beside the annotation instructions.
+    阅读编辑器上方的共享模板说明：在此模板更新时，所做的修改会影响使用该模板的每一篇笔记。确认您的笔记名称显示在 <UiLabel name={m.template_workbench_update_this_note()} /> 旁边。
 
   </Step>
   <Step>
-    ### Change the callout type
+    ### 打开标注格式
 
-    Find `[!note]` in the annotation format and change it to `[!quote]`.
+    选择 <UiLabel name={m.workbench_tab_annotation()} /> 标签页。编辑器将显示用于单条标注的格式。预览区域会在 <UiLabel name={m.workbench_annotation_example()} /> 下显示论文中的一条标注。如需显示其他标注，请选择编辑器顶部的 <UiLabel name={m.workbench_choose_annotation()} />。
 
-    ZotLit saves the template document automatically. Check that the same annotation now appears in a quote callout in the preview. Your literature note keeps its previous content until you update it.
-
-    ![The Template Workbench window with the Annotation tab open. The callout line in the editor now uses the quote type, and the preview on the right shows the first highlight in a quote callout titled Page 1](/img/tutorial/customize-template-workbench-quote.webp)
+    如需查看该格式的简要说明，可打开标注操作说明旁边的 <UiLabel name={m.workbench_help()} />。
 
   </Step>
   <Step>
-    ### Update the literature note
+    ### 修改 callout 类型
 
-    In the Workbench, select <UiLabel name={m.template_workbench_update_this_note()} /> beside your note's name. Wait for the notice that names the updated note, then open that note.
+    在标注格式中找到 `[!note]` 并将其改为 `[!quote]`。
 
-    Its annotations now use quote callouts. Your writing outside the managed region stays unchanged.
+    ZotLit 会自动保存模板文档。检查预览中同一条标注现在是否已经显示在 quote 类型的 callout 中。在您主动更新之前，文献笔记仍会保持先前的内容。
 
-    ![The note rougier2014 under its Annotations heading, where each highlight now shows in a quote callout with a quotation-mark icon and the title Page 1](/img/tutorial/customize-template-note-quote.webp)
+    ![打开了标注标签页的模板工作台窗口。编辑器中的 callout 行现在使用 quote 类型，右侧预览在标题为 Page 1 的引用 callout 中显示第一条高亮](/img/tutorial/customize-template-workbench-quote.webp)
+
+  </Step>
+  <Step>
+    ### 更新文献笔记
+
+    在工作台中，选择笔记名称旁边的 <UiLabel name={m.template_workbench_update_this_note()} />。等待提示显示该笔记已更新的通知，然后打开该笔记。
+
+    笔记中的批注现在已改用 quote callout。您在受管区域之外书写的内容完好保留。
+
+    ![位于 Annotations 标题下的笔记 rougier2014，每条高亮现在均显示在带有引号图标、标题为 Page 1 的引用 callout 中](/img/tutorial/customize-template-note-quote.webp)
 
   </Step>
 </Steps>
 
-## Add the highlight color
+## 添加高亮颜色
 
-Template fields insert data from Zotero. You will add the annotation's `colorName` field to the callout title.
+模板字段可插入来自 Zotero 的数据。您将把标注的 `colorName` 字段添加到 callout 标题中。
 
 <Steps>
   <Step>
-    ### Return to the annotation format
+    ### 返回标注格式
 
-    Run <Command name={m.command_customize_note_template_name()} /> from the literature note. Select the <UiLabel name={m.workbench_tab_annotation()} /> tab.
+    在文献笔记中运行 <Command name={m.command_customize_note_template_name()} />。选择 <UiLabel name={m.workbench_tab_annotation()} /> 标签页。
 
   </Step>
   <Step>
-    ### Insert the color field
+    ### 插入颜色字段
 
-    Place the cursor at the end of the callout title line, after `{% endif %}`. Add a comma and a space, then type `{{` to open the template field list. Until you pick a field, the Workbench reports a syntax problem. It clears once the field is in place.
+    将光标移动到 callout 标题行的末尾（`{% endif %}` 之后）。输入一个逗号和一个空格，然后输入 `{{` 打开模板字段补全列表。在您选定字段前，工作台会报告语法问题，选定字段就位后该提示会自动消除。
 
-    Select `colorName`. The line now contains:
+    选择 `colorName`。该行现在包含：
 
     ```liquid
     [!quote] Page {% if zt.pageLabel %}{{ zt | file_link: zt.pageLabel | default: zt.pageLabel }}{% endif %}, {{ zt.colorName }}
@@ -88,43 +88,43 @@ Template fields insert data from Zotero. You will add the annotation's `colorNam
 
   </Step>
   <Step>
-    ### Check the preview
+    ### 检查预览
 
-    The preview title now ends with the annotation's highlight color, such as `Page 1, yellow`. Select <UiLabel name={m.workbench_choose_annotation()} /> and pick another annotation to check its color.
+    预览标题末尾现在会显示标注的高亮颜色，例如 `Page 1, yellow`。选择 <UiLabel name={m.workbench_choose_annotation()} /> 并选取其他标注以检查其对应颜色。
 
   </Step>
   <Step>
-    ### Update the note again
+    ### 再次更新笔记
 
-    Select <UiLabel name={m.template_workbench_update_this_note()} /> beside your note's name. After ZotLit reports the update, open the note. Each annotation callout title now includes its highlight color, such as `Page 1, yellow`.
+    选择笔记名称旁边的 <UiLabel name={m.template_workbench_update_this_note()} />。当 ZotLit 报告更新完成后，打开笔记。每个标注 callout 的标题现在都会包含其高亮颜色，如 `Page 1, yellow`。
 
-    ![The note rougier2014 with its quote callouts titled Page 1, yellow, then Page 1, green, then Page 1, purple](/img/tutorial/customize-template-note-color.webp)
+    ![带有 quote callout 的笔记 rougier2014，标题分别为 Page 1, yellow，随后是 Page 1, green 与 Page 1, purple](/img/tutorial/customize-template-note-color.webp)
 
   </Step>
 </Steps>
 
-## Restore the built-in profile
+## 恢复内置配置方案
 
-To remove these changes from the Default profile, open <SettingsPath />. Select <UiLabel name={m.settings_profile_document_restore()} /> on the <UiLabel name={m.settings_profile_document_name()} /> row, then confirm with <UiLabel name={m.settings_profile_document_restore_action()} />.
+若要从默认配置方案中清除这些修改，请打开 <SettingsPath />。在 <UiLabel name={m.settings_profile_document_name()} /> 所在行选择 <UiLabel name={m.settings_profile_document_restore()} />，然后点击 <UiLabel name={m.settings_profile_document_restore_action()} /> 确认。
 
-ZotLit moves the custom profile document to Obsidian's configured trash. Run <Command name={m.command_update_note_name()} /> from the literature note to render it with the built-in profile.
+ZotLit 会将自定义配置方案文档移动到 Obsidian 配置的废纸篓中。在文献笔记中运行 <Command name={m.command_update_note_name()} />，即可使用内置配置方案对其重新渲染。
 
-## What's next
+## 后续步骤
 
 <Cards>
   <Card
-    title="Template Workbench View"
-    description="Learn what each editor tab controls and how previews work."
+    title="模板工作台视图"
+    description="了解各个编辑器标签页所控制的内容以及预览机制。"
     href="/docs/concepts/template-workbench-view"
   />
   <Card
-    title="Explore template data"
-    description={`Use the ${m.template_data_explorer_view_name()} to inspect every available template field.`}
+    title="浏览模板数据"
+    description={`使用 ${m.template_data_explorer_view_name()} 检查所有可用的模板字段。`}
     href="/docs/how-to/explore-template-data"
   />
   <Card
-    title="Customize a template"
-    description="Edit each part of a profile and apply it to existing notes."
+    title="自定义模板"
+    description="编辑配置方案的各组成部分，并应用到现有笔记。"
     href="/docs/how-to/customize-a-template"
   />
 </Cards>

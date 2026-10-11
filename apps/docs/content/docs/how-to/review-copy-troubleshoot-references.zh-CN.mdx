@@ -1,6 +1,6 @@
 ---
-title: "How to review, copy, and troubleshoot references"
-description: "Use the References Sidebar, change one note's citation presentation, copy entries, and resolve reference errors."
+title: "查看、复制与排查参考文献"
+description: "使用参考文献侧边栏、更改单篇笔记的引文呈现格式、复制文末条目并解决参考文献错误。"
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
@@ -10,49 +10,49 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-Use this guide to inspect an active note's references and correct entries that ZotLit cannot resolve or format.
+本指南将协助您在当前活动笔记中审阅参考文献，并纠正 ZotLit 无法正确解析或格式化的引文条目。
 
-## Review the references
+## 审阅参考文献
 
 <Steps>
   <Step>
-    ### Open the References Sidebar
+    ### 打开参考文献侧边栏
 
-    Open the Markdown note you want to review. Run:
+    打开您希望审阅的 Markdown 笔记。运行命令：
 
     <Command name={m.command_open_references_view_name()} />
 
-    The sidebar follows the active note. A formatted list uses the selected CSL style and bibliography order.
+    侧边栏会自动跟随当前处于活动状态的笔记。排版后的列表严格依循所选 CSL 样式以及参考文献规范排序。
 
   </Step>
   <Step>
-    ### Find each citation occurrence
+    ### 依次定位跳转换读各处引用
 
-    Select the chevron at the right of an entry. ZotLit moves the editor to that entry's next occurrence.
+    点击条目右侧的箭头展开图标。ZotLit 会立即将编辑器光标滚动并定位到该条目的下一个出现位置。
 
-    Select it again to cycle through later occurrences. The action returns to the first occurrence after the last one.
-
-  </Step>
-  <Step>
-    ### Open the related item
-
-    Hover the entry or focus it with the keyboard to reveal its row actions.
-
-    - <UiLabel name={m.references_open_note()} /> opens the note. ZotLit creates it first when the Zotero item has no Literature Note.
-    - <UiLabel name={m.references_open_in_zotero()} /> selects the item in Zotero.
-    - <UiLabel name={m.references_open_attachment()} /> opens its attachment. When several attachments exist, ZotLit opens a selection menu.
-
-    An attachment action appears only when the item has an attachment to open.
+    再次点击可在后续出现位置间循环跳转。在遍历完最后一处引用后，再次点击会重新回到第一处。
 
   </Step>
   <Step>
-    ### Inspect a citation from the editor
+    ### 打开关联项
 
-    Under <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_hover_heading()} />, set <UiLabel name={m.settings_citation_hover_action_name()} /> to <UiLabel name={m.settings_citation_hover_action_popover()} />.
+    将鼠标悬停在条目上，或通过键盘将焦点移动到该条目，即可唤出其行内操作按钮：
 
-    Hover a formatted citation. The popover shows each cited item's complete bibliography entry and the same Literature Note, Zotero, and attachment actions.
+    - <UiLabel name={m.references_open_note()} />：打开对应的文献笔记。若该 Zotero 条目尚未创建文献笔记，ZotLit 会自动先行为其创建。
+    - <UiLabel name={m.references_open_in_zotero()} />：在 Zotero 中高亮选中该条目。
+    - <UiLabel name={m.references_open_attachment()} />：打开其关联附件。当存在多个附件时，ZotLit 会弹出选择菜单。
 
-    Use <UiLabel name={m.settings_citation_hover_mod_page_name()} /> to control hover separately for <UiLabel name={m.settings_citation_hover_mod_source_name()} />, <UiLabel name={m.settings_citation_hover_mod_live_preview_name()} />, and reading view.
+    附件操作按钮仅在该条目确实包含可打开附件时才会显示。
+
+  </Step>
+  <Step>
+    ### 在编辑器中直接预览引文详情
+
+    在 <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_hover_heading()} /> 下，将 <UiLabel name={m.settings_citation_hover_action_name()} /> 设置为 <UiLabel name={m.settings_citation_hover_action_popover()} />。
+
+    将鼠标悬停在格式化引文上。弹出的浮窗将展示所引条目的完整参考文献列表内容，并附带文献笔记、Zotero 定位及附件快捷操作按钮。
+
+    使用 <UiLabel name={m.settings_citation_hover_mod_page_name()} /> 可针对 <UiLabel name={m.settings_citation_hover_mod_source_name()} />、<UiLabel name={m.settings_citation_hover_mod_live_preview_name()} /> 以及阅读视图分别精细控制悬停按键行为。
 
   </Step>
 </Steps>

@@ -1,6 +1,6 @@
 ---
-title: "How to edit PDF annotations in Obsidian"
-description: "Create, change, adjust, and delete Zotero PDF annotations while reading the PDF in Obsidian."
+title: "在 Obsidian 中编辑 PDF 批注"
+description: "在 Obsidian 中阅读 PDF 的同时创建、修改、调整与删除 Zotero PDF 批注。"
 ---
 
 import { Card, Cards } from "fumadocs-ui/components/card";
@@ -10,53 +10,53 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-Create highlights, underlines, note annotations, text annotations (text typed on the page), image annotations, and ink annotations (freehand strokes), change annotation colors, comments, and tags, adjust annotation positions, or delete annotations from Obsidian.
+在 Obsidian 中直接创建高亮、下划线、笔记批注、文本批注（直接键入在页面上的文字）、区域图片截图批注以及手写墨迹批注（手绘笔画），修改批注颜色、评注及标签，微调标注位置，或直接删除批注。
 
-## Before you edit
+## 编辑前准备 [#before-you-edit]
 
-Open the item's PDF in Obsidian. See [Open an item's PDF in Obsidian](/docs/how-to/open-pdf-in-obsidian) for the available entry points.
+首先在 Obsidian 中打开对应条目的 PDF 文件。有关打开 PDF 的途径，请参阅[在 Obsidian 中打开条目的 PDF](/docs/how-to/open-pdf-in-obsidian)。
 
-Reading annotations needs no setup. Editing needs four things:
+仅仅阅读标注无需额外配置。但如需直接在 Obsidian 中编辑批注，需要满足以下四个条件：
 
-1. Zotero 10 or later. With Zotero 9, the PDF opens and shows its annotations, but you cannot change them from Obsidian. ZotLit shows <UiLabel name={m.capability_incompatible_zotero()} /> and asks you to update Zotero.
-2. Zotero is running. ZotLit sends each change to Zotero and cannot edit annotations while Zotero is closed. Keep Zotero open while you edit.
-3. Zotero lets other applications connect to it. In Zotero, open Settings → Advanced and turn on **Allow other applications on this computer to communicate with Zotero**. When this option is off, ZotLit shows <UiLabel name={m.capability_local_api_disabled()} />.
-4. ZotLit has your permission to edit. You give it once, as described below.
+1. Zotero 10 或更高版本。在 Zotero 9 下，PDF 可以正常打开并显示其已有标注，但无法直接在 Obsidian 中进行修改。此时 ZotLit 会显示 <UiLabel name={m.capability_incompatible_zotero()} /> 并提示您更新 Zotero。
+2. Zotero 处于运行状态。ZotLit 会将每项变动实时同步给 Zotero，在 Zotero 关闭期间无法编辑批注。在编辑时请保持 Zotero 开启。
+3. Zotero 允许其他程序与其通信。在 Zotero 中，打开“设置 → 高级”，并开启**允许本计算机上的其他应用程序与 Zotero 通信**。当此选项关闭时，ZotLit 会提示 <UiLabel name={m.capability_local_api_disabled()} />。
+4. ZotLit 已获得您的编辑授权。您只需完成一次授权即可，具体步骤如下。
 
-To give ZotLit permission to change annotations in Zotero, select <UiLabel name={m.capability_enable_editing()} />. It is in two places:
+若要授权 ZotLit 修改 Zotero 中的批注，请选择 <UiLabel name={m.capability_enable_editing()} />。该入口位于两处：
 
-- In the annotation view, select the mode button at the start of the view's toolbar, then select <UiLabel name={m.capability_enable_editing()} />.
-- In <SettingsPath page={m.settings_page_zotero()} />, in the <UiLabel name={m.settings_zotero_editing_heading()} /> group, on the <UiLabel name={m.settings_zotero_editing_name()} /> row, select <UiLabel name={m.settings_zotero_editing_enable()} />.
+- 在标注视图中，选择视图工具栏起点的模式按钮，然后点击 <UiLabel name={m.capability_enable_editing()} />。
+- 前往 <SettingsPath page={m.settings_page_zotero()} />，在 <UiLabel name={m.settings_zotero_editing_heading()} /> 分组下的 <UiLabel name={m.settings_zotero_editing_name()} /> 所在行，选择 <UiLabel name={m.settings_zotero_editing_enable()} />。
 
-Zotero opens its permission dialog at once. In the dialog, choose **Always Allow**. ZotLit edits only with a permission that Zotero remembers, so **Allow** leaves editing off. To decline, choose **Deny**.
+Zotero 会随即弹出权限申请对话框。在对话框中请务必选择 **Always Allow（始终允许）**。ZotLit 仅能在获得 Zotero 记住的持久授权下正常执行编辑，单次生效的 **Allow** 会使编辑功能保持关闭。如需拒绝，请选择 **Deny**。
 
-While Zotero waits for your answer, the PDF reader toolbar shows <UiLabel name={m.capability_authorizing()} />.
+在等待您在 Zotero 中确认期间，PDF 阅读器工具栏会显示 <UiLabel name={m.capability_authorizing()} />。
 
-<Callout type="warn" title="Edit one annotation in one application at a time">
-  Zotero has a [known defect](https://github.com/aidenlx/zotlit/issues/1165) when edits to the same annotation overlap in Zotero and Obsidian. One comment can silently overwrite the other even when both applications report a successful save. A deletion in Obsidian can also remove an annotation that Zotero just updated.
+<Callout type="warn" title="请勿在两个应用中同时编辑同一条批注">
+  当在 Zotero 和 Obsidian 中同时重叠编辑同一条批注时，Zotero 存在一个[已知缺陷](https://github.com/aidenlx/zotlit/issues/1165)。即使两个应用都报告保存成功，其中一处评注也可能被另一处无声覆盖。此外，在 Obsidian 中执行删除还可能意外移除刚刚在 Zotero 中更新过的标注。
 
-You can keep both applications open. Make changes in one application at a time, wait for each change to save, then switch. This reduces the risk but does not guarantee that overlapping edits cannot occur.
+您可以同时保持两个应用程序处于打开状态。但请在同一个应用程序中完成某项修改并等待其保存完毕后，再切换到另一端操作。这能有效降低冲突风险。
 
 </Callout>
 
-## Locked annotations [#locked]
+## 受锁定的批注 [#locked]
 
-Some annotations are read-only in Obsidian, as they are in Zotero's reader. Their card shows a lock icon beside the page number. Point to the icon to see the reason.
+部分批注在 Obsidian 中处于只读状态，这与在 Zotero 自身阅读器中的表现完全一致。对应的标注卡片会在页码旁显示一把小锁图标。将鼠标悬停在图标上即可查看锁定原因：
 
-- Zotero imported the annotation from the PDF file. You cannot change or delete it. Zotero imports it again when the file changes, so an edit would be lost.
-- In a group library, another member made the annotation. You cannot change it, but you can delete it.
+- Zotero 从外部 PDF 文件中直接读取导入了该批注。您无法在 Obsidian 中对其进行修改或删除。当源文件发生变动时 Zotero 会重新导入，任何本地改动均会丢失。
+- 在群组文献库中，该批注由其他成员创建。您无法对其进行修改，但拥有删除权限。
 
-When you select several cards and one of them is locked, a change that the lock refuses applies to none of them.
+当您同时选中多张卡片且其中包含受锁定的批注时，被锁定的操作将拒绝应用到任何一张卡片上。
 
-## Create a highlight or underline
+## 创建高亮或下划线
 
-1. Select text in the PDF.
-2. In the popup, select <UiLabel name={m.pdf_toolbar_highlight()} /> or <UiLabel name={m.pdf_toolbar_underline()} />.
-3. Wait for the new mark to appear before you continue editing it or switch to Zotero.
+1. 在 PDF 中选中文本。
+2. 在弹出菜单中，选择 <UiLabel name={m.pdf_toolbar_highlight()} /> 或 <UiLabel name={m.pdf_toolbar_underline()} />。
+3. 等待新的标注标记呈现后，再继续后续编辑或切换到 Zotero。
 
-The toolbar at the right of the PDF reader provides the same two tools. Select a tool to keep it active, then select text to create marks without using the popup each time. Use the arrow beside a tool to select its color.
+PDF 阅读器右侧的工具栏提供了相同的两个工具。选择某个工具可使其保持激活状态，随后只需选中文本即可连续创建标注，无需每次都通过浮动菜单点击。点击工具旁的箭头可切换颜色。
 
-To create one highlight in another color, select the text and select a color from the popup. When neither tool is active, a color creates a highlight.
+如需以其他特定颜色创建单条高亮，请选中文本并直接从弹出浮窗中点击对应颜色。当没有激活任何工具时，点击颜色会直接创建高亮。
 
 ## Create a note annotation
 

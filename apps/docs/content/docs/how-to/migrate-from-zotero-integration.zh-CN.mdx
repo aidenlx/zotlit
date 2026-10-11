@@ -1,6 +1,6 @@
 ---
-title: "Migrate from Zotero Integration"
-description: "Switch from the mgmeyers Zotero Integration plugin to ZotLit, translate your Nunjucks templates, and understand the key differences."
+title: "从 Zotero Integration 迁移"
+description: "从 mgmeyers 的 Zotero Integration 插件切换至 ZotLit、转换 Nunjucks 模板，并理解两者间的核心机制差异。"
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
@@ -11,55 +11,55 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-Use this guide when you currently use the mgmeyers **Zotero Integration** plugin and want to switch to ZotLit.
+如果您当前正在使用 mgmeyers 开发的 **Zotero Integration** 插件，并希望平滑切换到 ZotLit，请依照本指南进行操作。
 
-<Callout type="info" title="What changes">
+<Callout type="info" title="核心变更速览">
 
-- Your Zotero library and citation keys stay the same.
-- Your existing literature notes remain in the vault as regular Markdown files.
-- Templates need translation: Zotero Integration uses Nunjucks; ZotLit uses [Liquid](/docs/reference/templates/syntax) (or [Eta](/docs/reference/templates/eta-syntax)).
-- Better BibTeX is no longer required. ZotLit reads Zotero's database directly. You are recommended to keep Better BibTeX installed for its citation key format.
-- The `{% persist %}` block model changes to a [managed region](/docs/concepts/literature-notes-and-the-managed-region) model. The two models are inverted: Zotero Integration marks content to keep; ZotLit marks content to replace.
+- 您的 Zotero 文献库以及文献引用标识保持完全不变。
+- 仓库中已有的文献笔记依然作为普通的 Markdown 文件保留。
+- 模板需要转换迁移：Zotero Integration 使用 Nunjucks；ZotLit 默认采用 [Liquid](/docs/reference/templates/syntax)（亦可选 [Eta](/docs/reference/templates/eta-syntax)）。
+- 不再强制依赖 Better BibTeX。ZotLit 直接读取 Zotero 本地数据库。不过依然建议保留 Better BibTeX 以便稳定管理文献引用标识格式。
+- `{% persist %}` 持久块机制转变为[受管区域（managed region）](/docs/concepts/literature-notes-and-the-managed-region)机制。两者的设计逻辑正好相反：Zotero Integration 标记要“保留”的内容；而 ZotLit 则标记要“替换刷新”的内容。
 
 </Callout>
 
-## Install ZotLit [#install]
+## 安装 ZotLit [#install]
 
 <Steps>
   <Step>
-    ### Disable Zotero Integration
+    ### 禁用 Zotero Integration
 
-    In Obsidian, open **Settings &rarr; Community plugins**. Disable (or uninstall) **Zotero Integration**. The two plugins have different plugin IDs and can coexist for testing, but running both at the same time may cause conflicts with Zotero connections.
-
-  </Step>
-  <Step>
-    ### Install ZotLit
-
-    In **Settings &rarr; Community plugins**, search for **ZotLit** and install it. Enable the plugin after installation.
+    在 Obsidian 中，打开**设置 → 社区插件**。禁用（或卸载）**Zotero Integration**。两款插件拥有不同的插件 ID，可以共存用于过渡测试，但同时保持开启可能会在读取 Zotero 数据库时产生连接竞争。
 
   </Step>
   <Step>
-    ### Connect your Zotero library
+    ### 安装 ZotLit
 
-    Open <SettingsPath page={m.settings_page_zotero()} />. ZotLit connects to your local Zotero database. No additional Zotero plugin is needed for the connection.
+    在**设置 → 社区插件**中搜索 **ZotLit** 并完成安装。安装后点击启用插件。
+
+  </Step>
+  <Step>
+    ### 连接您的 Zotero 文献库
+
+    打开 <SettingsPath page={m.settings_page_zotero()} />。ZotLit 会自动直接连接到您的本地 Zotero 数据库，无需在 Zotero 端安装额外的中间服务插件即可完成基础读取。
 
   </Step>
 </Steps>
 
-## Existing notes [#existing-notes]
+## 既有笔记的处理 [#existing-notes]
 
-Zotero Integration notes are regular Markdown files. They stay in your vault and remain readable after the switch.
+由 Zotero Integration 生成的笔记属于标准的 Markdown 文件。在完成切换后，它们依然安全保存在您的仓库中，随时可正常查阅。
 
-ZotLit identifies literature notes by a `zotero-key` frontmatter property. If your Zotero Integration notes already carry a Zotero key in frontmatter (and ZotLit can resolve it), ZotLit recognizes them. If not, treat them as standalone notes and create fresh literature notes through ZotLit.
+ZotLit 通过 frontmatter 中的 `zotero-key` 属性来识别文献笔记。如果您原有的 Zotero Integration 笔记已经在 frontmatter 中包含了该条目的 Zotero 标识（且 ZotLit 能够顺利解析），ZotLit 会直接将其识别为文献笔记。如果未包含，建议将其作为普通参考笔记保留，并通过 ZotLit 为条目重新创建全新的文献笔记。
 
-ZotLit does not read Zotero Integration's `%% begin notes %%` / `%% end notes %%` persist markers. Those markers remain as inert comments in the file.
+ZotLit 不会去识别 Zotero Integration 的 `%% begin notes %%` 与 `%% end notes %%` 标记，这些标记将作为普通无害的 Markdown 注释继续留在文件中。
 
-## Translate templates [#translate-templates]
+## 模板转换迁移 [#translate-templates]
 
-<Callout type="info" title="Using defaults?">
-
-If you never customized a Zotero Integration template, skip this section. ZotLit's built-in defaults produce a comparable literature note.
-
+<Callout type="info" title="一直在使用默认模板？">
+  如果您在 Zotero Integration
+  中使用的是默认模板，则无需执行任何模板迁移操作。ZotLit
+  提供了更加现代化且开箱即用的默认模板体系。
 </Callout>
 
 ### Syntax differences [#syntax]

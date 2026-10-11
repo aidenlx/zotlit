@@ -2,22 +2,22 @@
 version: "2.1.0"
 companion: "2.1.0"
 date: "2026-08-24"
-description: "Citation workflow, References Sidebar, Zotero 10 support"
+description: "引文工作流、参考文献侧边栏、Zotero 10 兼容支持"
 ---
 
-This is the first stable release of the v2.1 citation workflow: the References Sidebar, in-text citation rendering, the Citation Popover, and the Cited By Sidebar, alongside Zotero 10 support and multi-library scope. The changes below cover what landed since beta.3; for the full tour, read the [release post](/blog/v2.1-release).
+这是 v2.1 引文工作流的首个正式发布版本：包含参考文献侧边栏、正文引文格式化渲染、引文悬停浮窗、被引侧边栏，以及 Zotero 10 支持与多文献库范围检索。下方列出了自 beta.3 以来的主要改动；如需查看完整的新特性介绍，请阅读[版本发布博文](/blog/v2.1-release)。
 
-## What's New since beta.3
+## 自 beta.3 以来的新特性
 
-### Pandoc engine performance
+### Pandoc 引擎性能大幅提升
 
-The built-in Pandoc engine now loads about three times faster: a 291 ms median load drops to 97 ms, and the JavaScript memory spike that came with each load is gone. If a cached engine binary is corrupted, ZotLit now detects it, clears it, and shows the install offer again.
+内置的 Pandoc 引擎现在的加载速度提升了约 3 倍：中位数加载时间从 291 毫秒降至 97 毫秒，且消除了每次加载时出现的 JavaScript 内存峰值。如果缓存的引擎二进制文件发生损坏，ZotLit 现在能够自动侦测、清空并重新显示安装指引。
 
-### Colored note-import highlights
+### 笔记导入支持彩色高亮语法
 
-**Use colored highlight syntax**, a new opt-in setting under **Settings › Note import**, converts highlights from Zotero note imports into emoji-based colored highlight syntax. It covers six highlight colors. A highlight with an unsupported color, or text that would break the syntax, stays as HTML instead. Annotation backlinks are preserved either way.
+**使用彩色高亮语法（Use colored highlight syntax）**是**设置 › 笔记导入**下新增的按需开启设置项。它能够将从 Zotero 导入笔记中的高亮转换为基于 Emoji 的彩色高亮语法，覆盖 6 种标准高亮色彩。对于不支持的颜色或可能破坏语法的文本，会安全回退保留为 HTML 标签格式。两种形式下批注反向链接均得到完好保留。
 
-## Bug Fixes since beta.3
+## 自 beta.3 以来的问题修复
 
-- Fixed recurring notices about database read-mode fallbacks. ZotLit now routes you to Companion installation or stale-data troubleshooting instead of repeating the notice.
-- Fixed Pandoc export connecting to the wrong Zotero HTTP port when more than one Zotero instance is running. The port now resolves from the active profile.
+- 修复了关于数据库读取模式回退的反复弹窗提示。ZotLit 现在会指引您前往 Companion 安装或排查数据过期，而不再反复弹出骚扰通知。
+- 修复了在运行多个 Zotero 实例时，Pandoc 导出连接到错误 Zotero HTTP 端口的问题。现在端口号严格从当前活动配置文件中精准解析。

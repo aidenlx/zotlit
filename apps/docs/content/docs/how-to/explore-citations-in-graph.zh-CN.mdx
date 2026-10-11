@@ -1,6 +1,6 @@
 ---
-title: "Explore citations in the graph view"
-description: "Draw citations as edges in Obsidian's graph views, control what they show, and open a Citation Graph from the command palette."
+title: "在关系图谱中探索引文关联"
+description: "在 Obsidian 的图谱视图中将引文作为连线绘制、灵活控制呈现项，并通过命令面板一键打开专属引文图谱。"
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
@@ -11,52 +11,52 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-Use Obsidian's own graph and local graph to see which notes rest on which works.
+利用 Obsidian 原生的全局关系图谱与局部关系图谱，清晰洞察笔记建立在哪些文献基石之上。
 
-ZotLit draws an edge from each note to the works it cites. The edge ends on the Literature Note for that work, or on a **Cited Work Node** when your vault has no Literature Note for it yet.
+ZotLit 会从每篇笔记向其引用的文献作品绘制一条连线。该连线指向对应作品的文献笔记；若仓库中尚未为该作品生成文献笔记，则指向专门的**被引文献节点（Cited Work Node）**。
 
-Everything native keeps working: search, color groups, depth, incoming and outgoing links, arrows, and the local graph following the active note. Depth walks citation edges too, so depth 2 from a Literature Note reaches the notes that share its sources.
+所有的 Obsidian 原生图谱功能均能无缝协同运作：搜索、颜色分组、深度层级、出入链箭头，以及局部图谱跟随当前活动笔记的联动。探索深度层级同样涵盖引文连线，因此从某篇文献笔记出发向外探索 2 层，即可轻松触达与该文献共享同一参考源的其他笔记。
 
-## Before you start
+## 准备工作
 
-- Turn on Obsidian's **Graph view** core plugin under **Settings > Core plugins**.
-- Open <SettingsPath page={m.settings_page_citations()} /> and check that <UiLabel name={m.settings_citation_graph_name()} /> is on. It is on by default.
-- Leave at least one citation source on in the same page: <UiLabel name={m.settings_citation_pandoc_citations_name()} /> for `[@doe2024]` citations, <UiLabel name={m.settings_citation_wikilink_citations_name()} /> for unaliased Literature Note links. A syntax you turn off there draws no citation edge anywhere.
+- 在 **设置 → 核心插件** 中开启 Obsidian 原生的**关系图谱（Graph view）**核心插件。
+- 打开 <SettingsPath page={m.settings_page_citations()} />，确认 <UiLabel name={m.settings_citation_graph_name()} /> 处于开启状态（默认即为开启）。
+- 在同一页面中保持至少开启一种引文来源：对于 `[@doe2024]` 开启 <UiLabel name={m.settings_citation_pandoc_citations_name()} />；对于无别名文献笔记双链开启 <UiLabel name={m.settings_citation_wikilink_citations_name()} />。在此处关闭的语法将不会在图谱中绘制引文连线。
 
-Turning <UiLabel name={m.settings_citation_graph_name()} /> off removes added citation connections, Cited Work Nodes, and ZotLit controls. Your color groups and native graph settings remain.
+关闭 <UiLabel name={m.settings_citation_graph_name()} /> 会完全移除附加的引文连线、被引文献节点以及 ZotLit 控制项，您的颜色分组与原生图谱配置依然保留。
 
-## Control what the graph draws
+## 控制图谱的绘制内容
 
-ZotLit adds six rows to the graph controls panel. Open the panel with the settings icon in the top-right corner of any graph.
+ZotLit 在图谱的控制齿轮面板中增加了六个专属控制项。点击任意图谱右上角的齿轮设置图标即可展开该面板：
 
-| Section | Row                                                              | Default | What it does                                                                                   |
-| ------- | ---------------------------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------- |
-| Filters | <UiLabel name={m.graph_option_pandoc_citations_name()} />        | On      | Draws an edge for each `[@doe2024]` citation.                                                  |
-| Filters | <UiLabel name={m.graph_option_wikilink_citations_name()} />      | On      | Draws an edge for each unaliased link to a Literature Note.                                    |
-| Filters | <UiLabel name={m.graph_option_citation_connected_only_name()} /> | Off     | Hides every node except Literature Notes, Cited Work Nodes, and the notes that cite them.      |
-| Display | <UiLabel name={m.graph_option_author_title_labels_name()} />     | Off     | Shows authors, year, and short title on Literature Notes and Cited Work Nodes.                 |
-| Display | <UiLabel name={m.graph_option_color_citation_links_name()} />    | Off     | Draws citation edges in their own color, including existing wikilinks classified as citations. |
-| Display | <UiLabel name={m.graph_option_citation_popover_name()} />        | Off     | Enables citation hover for Literature Notes and Cited Work Nodes.                              |
+| 分组     | 控制项                                                           | 默认值 | 作用说明                                                             |
+| -------- | ---------------------------------------------------------------- | ------ | -------------------------------------------------------------------- |
+| 过滤器   | <UiLabel name={m.graph_option_pandoc_citations_name()} />        | 开启   | 为每个 `[@doe2024]` 引文绘制连线。                                   |
+| 过滤器   | <UiLabel name={m.graph_option_wikilink_citations_name()} />      | 开启   | 为每个指向文献笔记的无别名双链绘制连线。                             |
+| 过滤器   | <UiLabel name={m.graph_option_citation_connected_only_name()} /> | 关闭   | 隐藏除文献笔记、被引文献节点以及引用了它们的笔记之外的所有普通笔记。 |
+| 显示设置 | <UiLabel name={m.graph_option_author_title_labels_name()} />     | 关闭   | 在文献笔记和被引文献节点上直接显示作者、年份与短标题。               |
+| 显示设置 | <UiLabel name={m.graph_option_color_citation_links_name()} />    | 关闭   | 用专属的颜色高亮绘制引文连线（包括被识别为引文的双链）。             |
+| 显示设置 | <UiLabel name={m.graph_option_citation_popover_name()} />        | 关闭   | 允许在悬停文献笔记与被引文献节点时呼出引文浮窗。                     |
 
-The <UiLabel name={m.graph_option_wikilink_citations_name()} /> row is there only while <UiLabel name={m.settings_citation_wikilink_citations_name()} /> is on under <SettingsPath page={m.settings_page_citations()} />. With that setting off, a `[[wikilink]]` is not a citation and keeps its native meaning.
+只有当 <SettingsPath page={m.settings_page_citations()} /> 中的 <UiLabel name={m.settings_citation_wikilink_citations_name()} /> 处于开启状态时，<UiLabel name={m.graph_option_wikilink_citations_name()} /> 控制项才会出现。关闭该设置时，`[[wikilink]]` 将不作为引文处理，保留其原生的图谱连线含义。
 
-Each global or local graph tab saves its own options. Global graph bookmarks restore the options captured for that view. A separately opened ordinary graph starts with author and title labels, citation link colors, and citation popovers off. **Restore default settings** returns all six rows to the defaults above along with every native option.
+每个全局或局部图谱标签页都会独立保存各自的显示选项。通过全局图谱书签可以快速恢复保存的图谱视图状态。新独立打开的常规图谱默认会关闭作者标题标签、引文连线颜色及悬停浮窗。点击**恢复默认设置**可将上述六项设置与原生选项一并重置为默认值。
 
-With Obsidian's **Bookmarks** core plugin enabled, use **Bookmark** in the global graph's pane menu.
+在启用 Obsidian **书签（Bookmarks）**核心插件后，可通过全局图谱面板菜单中的**添加书签**保存当前视图。
 
-Obsidian's **Existing files only** hides Cited Work Nodes, because a cited work with no Literature Note is not a file in your vault.
+Obsidian 原生的**仅显示现有文件**选项会隐藏被引文献节点，因为尚未创建文献笔记的被引文献并不是您仓库中的物理文件。
 
-### Read authors and titles on nodes
+### 在节点上直观阅读作者与标题
 
-Turn on <UiLabel name={m.graph_option_author_title_labels_name()} /> in **Display** to identify works by author and title. Literature Notes and Cited Work Nodes use the same label format. Node colors show which works have Literature Notes.
+在**显示设置**中开启 <UiLabel name={m.graph_option_author_title_labels_name()} />，即可根据作者与标题清晰识别文献作品。文献笔记与被引文献节点采用相同的标签排版样式，节点颜色用以区分哪些文献已生成文献笔记。
 
-The first line shows the authors and year, such as `Smith et al. 2020`. The dimmer second line shows Zotero's short title, or the full title when no short title exists. Long lines end with an ellipsis.
+第一行显示作者与年份（如 `Smith et al. 2020`）。颜色稍暗的第二行显示 Zotero 中的短标题（若无短标题则显示完整标题）。过长的标题文本末尾以省略号收尾。
 
-Zoom out to read the authors and years; zoom in to bring the titles into view. Titles fade in after the first line, following Obsidian's **Text fade threshold**. Hovering a node shows its second line at any zoom, even with <UiLabel name={m.graph_option_citation_popover_name()} /> off.
+缩小视口可概览作者与年份；放大视口可清晰呈现标题文本。标题行会依循 Obsidian 原生的**文字淡入阈值**在第一行之后淡入呈现。将鼠标悬停在节点上可在任意缩放级别下显示第二行标题，即使关闭了 <UiLabel name={m.graph_option_citation_popover_name()} /> 同样有效。
 
-If a work has no creators, its title moves to the first line and its year appears below. A missing year leaves the authors alone; a missing title leaves one line.
+如果文献条目没有创作者，其标题会移至第一行，年份呈现在下方。缺少发布年份则仅保留作者；缺少标题则仅保留单行。
 
-If ZotLit cannot read the work, a Literature Note keeps its file name. A Cited Work Node with a missing or ambiguous citation key keeps that key.
+如果 ZotLit 暂时无法读取文献数据，文献笔记会保留其文件名；带有缺失或歧义标识键的被引文献节点则会保留该标识键。
 
 The graph's search box matches your files, not these displayed labels. An author name shown on a node only matches if your files already contain it. ZotLit does not add label text to your notes.
 

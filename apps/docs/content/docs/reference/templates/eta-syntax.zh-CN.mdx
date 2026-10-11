@@ -1,6 +1,6 @@
 ---
-title: "Eta template syntax"
-description: "Eta (JavaScript) template reference: delimiters, whitespace control, auto-filter, helpers, and the zt variable."
+title: "Eta 模板语法"
+description: "Eta (JavaScript) 模板参考：定界符、空白控制、自动过滤器、辅助函数以及 zt 变量。"
 ---
 
 import { Card, Cards } from "fumadocs-ui/components/card";
@@ -9,20 +9,20 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-This page documents the Eta template language as configured in ZotLit. Eta templates require the [<UiLabel name={m.settings_template_js_enable_name()} /> gate](/docs/how-to/enable-javascript-templates) to be enabled. For the default Liquid engine, see [Template syntax](/docs/reference/templates/syntax).
+本页介绍了在 ZotLit 中配置的 Eta 模板语言。运行 Eta 模板需要先开启 [<UiLabel name={m.settings_template_js_enable_name()} /> 开关](/docs/how-to/enable-javascript-templates)。有关默认的 Liquid 引擎语法，请参阅[模板语法](/docs/reference/templates/syntax)。
 
-All template data is accessible through a single variable, `zt`. The shape of `zt` depends on the template type: see the [Data reference](/docs/reference/templates/data) for the full property list.
+所有模板数据均可通过全局变量 `zt` 统一访问。`zt` 的具体数据结构取决于模板类型：查阅[数据参考](/docs/reference/templates/data)获取完整的字段属性列表。
 
-## Delimiters
+## 定界符
 
-| Delimiter   | Purpose                              |
-| ----------- | ------------------------------------ |
-| `<% %>`     | Execute JavaScript (no output)       |
-| `<%= %>`    | Output an expression (auto-filtered) |
-| `<%~ %>`    | Output an expression (auto-filtered) |
-| `<%/* */%>` | Comment (stripped from output)       |
+| 定界符      | 用途                               |
+| ----------- | ---------------------------------- |
+| `<% %>`     | 执行 JavaScript 代码逻辑（无输出） |
+| `<%= %>`    | 输出表达式求值结果（自动转义过滤） |
+| `<%~ %>`    | 输出表达式求值结果（自动转义过滤） |
+| `<%/* */%>` | 注释（从最终输出中剥离）           |
 
-`<%= %>` and `<%~ %>` are functionally identical in ZotLit. Both pass their result through the auto-filter. Use either for output; `<%= %>` is conventional.
+在 ZotLit 中，`<%= %>` 与 `<%~ %>` 在功能上完全相同，两者都会通过系统的自动过滤器进行安全处理。两者均可用于输出；常规推荐使用 `<%= %>`。
 
 ```eta
 <%= zt.title %>
@@ -31,28 +31,28 @@ All template data is accessible through a single variable, `zt`. The shape of `z
 <% } %>
 ```
 
-Use `<%/* */%>` for comments that do not appear in the rendered note:
+使用 `<%/* */%>` 编写不会出现在渲染笔记中的内部注释：
 
 ```eta
-<%/* Draft: revisit multi-author rendering */%>
+<%/* 草稿：后续重新审视多作者渲染逻辑 */%>
 ```
 
-<Callout type="warn" title="No hash-prefix comments">
-  Eta does not support `<%# %>`. That syntax causes a compile error. Use `<%/* */%>` for all comments.
+<Callout type="warn" title="不支持井号前缀注释">
+  Eta 不支持 `<%# %>` 语法，该语法会导致模板编译错误。所有注释请统一使用 `<%/* */%>`。
 </Callout>
 
-## Whitespace control [#whitespace-control]
+## 空白控制 [#whitespace-control]
 
-By default, ZotLit sets `autoTrim` to `[false, false]`: whitespace around tags is preserved exactly as written. Newlines after `%>` and indentation before `<%` appear in the rendered note.
+在默认情况下，ZotLit 将 `autoTrim` 设置为 `[false, false]`：标签周围的空白字符会严格按照原样完整保留。`%>` 之后的换行符以及 `<%` 之前的缩进都会忠实呈现在渲染后的笔记中。
 
-Per-tag markers override this default on one side of the tag:
+通过在定界符边缘添加修饰符，可以在单侧覆盖这一默认行为：
 
-| Marker | Position        | Effect                              |
-| ------ | --------------- | ----------------------------------- |
-| `-`    | Opening (`<%-`) | Trims one newline before the tag    |
-| `-`    | Closing (`-%>`) | Trims one newline after the tag     |
-| `_`    | Opening (`<%_`) | Trims all whitespace before the tag |
-| `_`    | Closing (`_%>`) | Trims all whitespace after the tag  |
+| 修饰符 | 位置              | 效果                           |
+| ------ | ----------------- | ------------------------------ |
+| `-`    | 起始标签（`<%-`） | 消除标签前方紧邻的一个换行符   |
+| `-`    | 结束标签（`-%>`） | 消除标签后方紧邻的一个换行符   |
+| `_`    | 起始标签（`<%_`） | 消除标签前方所有的连续空白字符 |
+| `_`    | 结束标签（`_%>`） | 消除标签后方所有的连续空白字符 |
 
 ```eta
 <% for (const annotation of zt.annotations) { -%>

@@ -1,6 +1,6 @@
 ---
-title: "Use ZotLit on multiple devices"
-description: "Set different Zotero profile or data directory paths on each computer when syncing a vault across devices."
+title: "在多台设备上同步使用"
+description: "在跨设备同步仓库时，为每台电脑分别设置各自独立的 Zotero 配置文件或数据目录路径。"
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
@@ -10,53 +10,55 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-When you sync an Obsidian vault between computers, each computer may have Zotero installed in a different location. ZotLit stores the Zotero profile path and data directory path per device, so one machine's path never overwrites another's through vault sync.
+当您在多台计算机之间同步 Obsidian 仓库时，每台电脑上的 Zotero 安装路径可能各不相同。ZotLit 将 Zotero 配置文件路径与数据目录路径保存在本地设备层级，因此一台机器上的路径设置绝不会通过仓库同步去错误覆盖另一台机器。
 
-The permission to edit annotations is also saved per device. On each computer, allow editing once and choose **Always Allow** when Zotero asks. See [Edit PDF annotations in Obsidian](/docs/how-to/edit-pdf-annotations).
+批注编辑授权同样按单台设备分别保存。在每台电脑上只需授权一次，在 Zotero 弹出确认框时选择 **Always Allow（始终允许）**即可。详情参阅[在 Obsidian 中编辑 PDF 批注](/docs/how-to/edit-pdf-annotations)。
 
-## Default installs: nothing to configure
+## 默认安装路径：无需任何额外配置
 
-On a computer where Zotero is installed in its default location, ZotLit auto-detects the profile (from Zotero's `profiles.ini`) and data directory. A freshly synced vault connects to Zotero with no manual setup.
+在 Zotero 安装于官方默认位置的计算机上，ZotLit 会自动侦测其配置文件（读取 Zotero 的 `profiles.ini`）以及数据目录。一个刚同步下来的新仓库无需任何手动设置即可自动连接上 Zotero。
 
-If every computer uses the default Zotero location, you are done. No per-device configuration is needed.
+如果您的每台电脑都采用默认的 Zotero 安装位置，配置到此即已完成，无需进行任何单设备覆盖。
 
-## Point a device at a non-default Zotero location
+## 为特定设备指定自定义 Zotero 路径
 
-If Zotero's profile or data directory is in a custom location on one of your computers, tell ZotLit where to find it on that device.
+如果某台计算机上的 Zotero 配置文件或数据目录位于自定义位置，您只需在该设备上告知 ZotLit 其具体路径即可。
 
 <Steps>
   <Step>
-    ### Open the Zotero settings
+    ### 打开 Zotero 设置
 
-    On the device that needs a custom path, open <SettingsPath page={m.settings_page_zotero()} setting={m.settings_page_zotero_location()} />.
-
-  </Step>
-  <Step>
-    ### Set the Zotero profile
-
-    Use the <UiLabel name={m.settings_db_profile_dir_name()} /> picker to select the correct profile directory for this machine. If you only need to change the data directory, skip this step.
+    在需要配置自定义路径的设备上，打开 <SettingsPath page={m.settings_page_zotero()} setting={m.settings_page_zotero_location()} />。
 
   </Step>
   <Step>
-    ### Set the data directory override (if needed)
+    ### 设置 Zotero 个人配置文件目录
 
-    If the Zotero data directory is also non-default, use the <UiLabel name={m.settings_db_data_dir_name()} /> picker to select the correct path.
+    使用 <UiLabel name={m.settings_db_profile_dir_name()} /> 路径选择器，为当前机器选取正确的 profile 目录。如果您只需要修改数据目录，可跳过此步。
+
+  </Step>
+  <Step>
+    ### 设置数据目录覆盖（如有必要）
+
+    如果 Zotero 数据目录同样处于非默认位置，使用 <UiLabel name={m.settings_db_data_dir_name()} /> 路径选择器选取正确的路径。
 
   </Step>
 </Steps>
 
-The chosen paths apply to this device only. Other devices that sync the same vault keep their own paths (or continue using auto-detection).
+选取的路径仅对当前这台设备生效。同步同一仓库的其他设备将完整保留它们自己的路径（或继续使用自动侦测机制）。
 
-<Callout type="info" title="Clearing a Device Override">
-  To return a device to auto-detection, reset the profile or data directory
-  picker to its default value. ZotLit resumes auto-detecting on that device.
+<Callout type="info" title="清除设备覆盖项">
+  若要让某台设备重新恢复自动侦测，只需将配置文件或数据目录选择器重置为其默认值即可。ZotLit
+  会立即在该设备上恢复自动寻找。
 </Callout>
 
-## When a new device cannot find Zotero
+## 当新设备无法找到 Zotero 时
 
-If you sync a vault to a computer where Zotero is not in the default location and no Device Override is set, ZotLit cannot locate the database. At launch, it shows a notice:
+如果您将仓库同步到了一台 Zotero 位于非默认路径且尚未设置设备覆盖的新电脑上，ZotLit 可能会暂时找不到数据库。启动时它会弹出提示通知：
 
-> Zotero wasn't found on this device
+> 在此设备上未找到 Zotero
+
+打开提示中的链接并按照上述步骤指定正确路径即可。完成后，ZotLit 即可立即正常连接到本地文献库。
 
 The notice includes a <UiLabel name={m.notice_db_not_found_action()} /> action that opens the Welcome View. The first quick-start step displays live connection status and a locate action to pick the correct path. The notice reappears on each launch while the connection is unresolved; it does not appear when auto-detection succeeds or a working Device Override is in place.
 

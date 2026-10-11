@@ -1,10 +1,13 @@
-{/* Hand-written partial inlined into data.mdx. Content outside the Template Contract. */}
+---
+---
 
-Each imported child-note file carries four frontmatter fields:
+{/* 内联到 data.mdx 的手写片段。内容属于模板契约之外。 */}
 
-| Field             | Description                                                                                                                                  |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `date`            | When the note was added to Zotero. Local datetime with offset at second precision (e.g. `2025-03-15T10:30:00-04:00`)                         |
-| `zotero-note-key` | Identity key matching the imported file to the Zotero note. For group libraries, this includes the group library identifier (`KEYgGROUPID`)  |
-| `zotero-lastmod`  | Source note's `dateModified` timestamp (same format as `date`). Used by batch re-import to skip unchanged notes                              |
-| `zotlit-profile`  | The profile that ran the import, as its name and 12-character ID. Written only when a non-default profile ran it, and reserved like the rest |
+每个导入的子笔记文件都包含四个 frontmatter 字段：
+
+| 字段              | 说明                                                                                                        |
+| ----------------- | ----------------------------------------------------------------------------------------------------------- |
+| `date`            | 笔记添加到 Zotero 的时间。带时区偏移量、精确到秒的本地日期时间（例如 `2025-03-15T10:30:00-04:00`）          |
+| `zotero-note-key` | 将导入文件与 Zotero 笔记精准对应的标识键。对于群组文献库，包含群组文献库标识符（`KEYgGROUPID`）             |
+| `zotero-lastmod`  | 源笔记的 `dateModified` 时间戳（格式同 `date`）。批量重新导入时据此跳过未修改的笔记                         |
+| `zotlit-profile`  | 执行导入的配置方案名称与 12 位 ID。仅当由非默认配置方案执行导入时才会写入，并与其他系统字段一样受到系统保留 |

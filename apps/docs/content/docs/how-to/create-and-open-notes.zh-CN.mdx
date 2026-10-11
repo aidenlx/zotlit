@@ -1,6 +1,6 @@
 ---
-title: "Create and open literature notes"
-description: "Open or create a Literature Note with the quick switcher, a Pandoc citation, or the Zotero menu."
+title: "创建并打开文献笔记"
+description: "通过快速切换器、Pandoc 引文或 Zotero 菜单打开或创建文献笔记。"
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
@@ -11,51 +11,51 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-Open an existing Literature Note or create one from its Zotero item.
+打开已有的文献笔记，或直接从对应的 Zotero 条目生成新笔记。
 
-## Use the quick switcher [#quick-switcher]
+## 使用快速切换器 [#quick-switcher]
 
-The quick switcher searches your Zotero library and opens or creates a literature note for the item you pick.
+快速切换器能够检索您的 Zotero 文献库，并为您选取的条目直接打开或创建文献笔记。
 
-It searches every library in your [library scope](/docs/reference/settings#library-scope) at once, in one relevance order. While more than one library can contribute results, each row names the library its item comes from. An empty search lists your most recently modified items first.
+它会统一检索您[文献库作用域](/docs/reference/settings#library-scope)中的所有文献库，并按相关性集中排序呈现。当多个文献库同时命中时，每行结果均会明确标注条目所属的文献库。在空搜索词下，它会优先列出最近在 Zotero 中修改过的条目。
 
 <Steps>
   <Step>
-    ### Open the quick switcher
+    ### 打开快速切换器
 
-    Open the command palette (`Ctrl+P` on Windows/Linux, `Cmd+P` on macOS) and run:
+    打开命令面板（Windows/Linux 上为 `Ctrl+P`，macOS 上为 `Cmd+P`）并运行：
 
     <Command name={m.command_open_lit_note_name()} />
 
   </Step>
   <Step>
-    ### Search and select an item
+    ### 搜索并选择条目
 
-    Type to search your library. Use the arrow keys to navigate the results.
+    键入关键词检索您的文献库，使用上下方向键浏览搜索结果。
 
-    - Press `Enter` to open the literature note.
-    - Press `Ctrl+Enter` (`Cmd+Enter` on macOS) to open it in a new pane.
-    - Press `Shift+Enter` to open the item's PDF instead. See [Open an item's PDF in Obsidian](/docs/how-to/open-pdf-in-obsidian).
-    - Press `Ctrl+Shift+Enter` (`Cmd+Shift+Enter` on macOS) to open that PDF in a new pane.
-    - Press `Esc` to dismiss the switcher.
+    - 按 `Enter` 直接打开文献笔记。
+    - 按 `Ctrl+Enter`（macOS 上为 `Cmd+Enter`）在新分栏窗格中打开。
+    - 按 `Shift+Enter` 直接打开条目的 PDF 文件。参阅[在 Obsidian 中打开条目的 PDF](/docs/how-to/open-pdf-in-obsidian)。
+    - 按 `Ctrl+Shift+Enter`（macOS 上为 `Cmd+Shift+Enter`）在新分栏中打开该 PDF。
+    - 按 `Esc` 关闭退出切换器。
 
-    If the item already has a literature note, ZotLit opens it. Otherwise ZotLit creates the note first, showing a brief <UiLabel name={m.notice_creating_note()} /> notice, followed by <UiLabel name={m.notice_created_note()} />
+    如果该条目已有文献笔记，ZotLit 会直接将其打开。否则，ZotLit 会先行为其创建笔记，依次弹出简短的 <UiLabel name={m.notice_creating_note()} /> 与 <UiLabel name={m.notice_created_note()} /> 通知。
 
   </Step>
 </Steps>
 
-### Choose the profile that creates the note
+### 选择创建笔记所使用的配置方案
 
-A [profile](/docs/concepts/profiles) supplies a note's name, folder, properties, and body. While your vault holds only the Default profile, the Default creates the note and ZotLit asks nothing.
+文献笔记的名称、存放目录、frontmatter 属性及正文均由[配置方案](/docs/concepts/profiles)统领。在仓库中仅有默认配置方案时，ZotLit 会直接使用默认配置方案创建笔记，无需任何多余询问。
 
-Once you add a profile, ZotLit selects one by [Profile Match](/docs/reference/templates/profile-match):
+一旦您添加了自定义配置方案，ZotLit 将依照[配置方案匹配规则](/docs/reference/templates/profile-match)进行自动选取：
 
-- One profile matches the item: ZotLit creates the note from it, and the notice reports the match.
-- Several profiles match, or none does: a picker opens. Select the profile for this note, or dismiss the picker to cancel the creation.
+- 恰好有一个配置方案命中该条目：ZotLit 自动依据该方案创建笔记，并在提示中说明命中的方案。
+- 多个配置方案同时命中，或没有任何方案命中：弹出配置方案选取弹窗。为该笔记选择方案，或关闭弹窗取消创建。
 
-A profile that matches the item carries the <UiLabel name={m.modal_profile_match_candidate()} /> badge in the picker. When nothing matched, the Default is preselected. When several profiles match, ZotLit names them above the results and the search box reads <UiLabel name={m.modal_profile_overlap_placeholder()} />.
+命中了该条目的配置方案会在选取器中携带 <UiLabel name={m.modal_profile_match_candidate()} /> 标识徽章。当没有任何规则命中时，默认配置方案会被预先高亮选中。当多个方案发生冲突重叠时，ZotLit 会在结果上方列出它们，且搜索框提示文字显示为 <UiLabel name={m.modal_profile_overlap_placeholder()} />。
 
-See [Use a different template for different notes](/docs/how-to/use-different-templates) to add a profile and set the conditions that select it.
+有关如何添加配置方案并声明匹配规则，请参阅[针对不同笔记使用不同模板](/docs/how-to/use-different-templates)。
 
 ## Open the item's PDF in Obsidian [#open-pdf]
 
