@@ -4,6 +4,9 @@ description: "从底层彻底重写：正式版所包含的内容与未来展望
 date: 2026-08-05
 ---
 
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
 import { ActionLink } from "@/components/action-link";
 import { Callout } from "@/components/callout";
 
@@ -114,7 +117,7 @@ v2 引入了不兼容的变更。从 v1 升级时，请完成以下步骤：
 
 1. 按照 v2 的命名约定重命名模板文件。
 2. 将 Eta 模板中的 `it.*` 引用替换为 `zt.*`。
-3. 如果您使用 Eta，请在 ZotLit 设置中启用 **JavaScript 模板**。
+3. 如果您使用 Eta，请在 ZotLit 设置中启用 <UiLabel name={m.settings_template_js_enable_name()} />。
 
 <ActionLink href="/docs/how-to/migrate-from-v1" kind="external">
   迁移指南

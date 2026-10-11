@@ -180,7 +180,7 @@ ZotLit 会跳过无法求值的配置方案匹配条件。原因可能包括表�
 选择顺序如下：
 
 1. 您为本次操作手动选择的配置方案。
-2. 命令或 Zotero 插件 ZotLit Companion 链接提供的配置方案。
+2. 命令或 ZotLit Companion（Zotero 配套插件） 链接提供的配置方案。
 3. 唯一匹配的配置方案。
 4. 默认配置方案。
 
@@ -266,7 +266,8 @@ ZotLit 会跳过无法求值的配置方案匹配条件。原因可能包括表�
 | <UiLabel name={m.settings_citation_graph_name()} /> | `citation.graph-citations` | 开关     | 开启   | Obsidian 的关系图谱核心插件 | 全局同步 |
 
 <UiLabel name={m.settings_citation_graph_name()} />
-：在关系图谱中，将每篇笔记连接到它引用的文献。若文献笔记存在，则连接到该笔记；否则连接到以引用键为名称的节点。关闭后，所有已打开的关系图谱会恢复原始状态，引文图谱命令会提示此功能已关闭，而不会打开图谱。
+：在关系图谱中，将每篇笔记连接到它引用的文献。若文献笔记存在，则连接到该笔记；否则连接到以文献引用标识（citation
+key）为名称的节点。关闭后，所有已打开的关系图谱会恢复原始状态，引文图谱命令会提示此功能已关闭，而不会打开图谱。
 
 此设置适用于整个仓库。关系图谱由 Obsidian 的关系图谱核心插件提供；该插件关闭时，所有图谱都不会显示引文，设置行也会说明这一状态。详见[在关系图谱中探索引文](/docs/how-to/explore-citations-in-graph)。
 
@@ -433,7 +434,7 @@ Markdown。ZotLit 无法格式化引文时，会保留原有内容。
 
 #### 文献库范围 [#library-scope]
 
-ZotLit 在条目搜索、引用键解析及面向整个文献库的命令中使用的文献库。已明确指定条目、笔记或文献库的操作仍使用原目标：Zotero 菜单项或链接针对其来源文献库运行，文献笔记也始终关联自己的条目。
+ZotLit 在条目搜索、文献引用标识解析及面向整个文献库的命令中使用的文献库。已明确指定条目、笔记或文献库的操作仍使用原目标：Zotero 菜单项或链接针对其来源文献库运行，文献笔记也始终关联自己的条目。
 
 <UiLabel name={m.settings_library_scope_all()} /> 会随 Zotero
 数据库变化。之后加入的群组文献库会立即纳入范围，包括只读群组；退出的群组则会移出范围。
@@ -452,7 +453,7 @@ ZotLit 以稳定引用存储每个选择：<UiLabel name={m.settings_library_sco
 
 如果您退出了群组，或连接了其他 Zotero 数据目录，已选群组可能不再出现在当前连接的 Zotero 数据库中。它仍保留在列表中，显示为**群组 `{ID}`**，并附有 <UiLabel name={m.settings_library_scope_unavailable()} /> 说明。重新加入群组即可恢复名称，也可删除该行将其移除。
 
-搜索、引用键解析及面向整个文献库的命令会在可用的文献库中运行。面向整个文献库的命令会说明跳过了多少个已选文献库。
+搜索、文献引用标识解析及面向整个文献库的命令会在可用的文献库中运行。面向整个文献库的命令会说明跳过了多少个已选文献库。
 
 #### 数据库不可用时 [#database-unavailable]
 
@@ -662,7 +663,7 @@ JavaScript (Eta) 模板由设备专属开关控制，开启时会显示确认对
 | <UiLabel name={m.settings_excerpt_cache_clear_name()} />  | 无       | <UiLabel name={m.settings_excerpt_cache_clear_action()} /> 操作  | 无     | 无       | 按设备和仓库 |
 
 <UiLabel name={m.settings_citation_index_reset_name()} />
-会清除已存储的引用键扫描结果，并重新读取笔记。ZotLit
+会清除已存储的文献引用标识扫描结果，并重新读取笔记。ZotLit
 为每篇笔记保存扫描结果，因此重启后只需重新读取发生变化的笔记。扫描结果可从仓库内容重建，不会修改仓库中的任何内容。当参考文献侧边栏与笔记中的引文不一致时，可使用此操作。确认后，重建会在后台运行。
 
 <UiLabel name={m.settings_language_pack_reset_name()} />

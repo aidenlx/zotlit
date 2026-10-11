@@ -29,9 +29,11 @@ type Fault =
   | "lost-query"
   | "leaked-link"
   | "same-href-link"
-  | "duplicate-action";
+  | "duplicate-action"
+  | "missing-native-asset"
+  | "english-native-asset";
 
-function createFixture(fault: Fault = "none") {
+function createFixture({ fault = "none" }: { fault?: Fault } = {}) {
   const scratchRoot = join(packageRoot, ".scratch");
   mkdirSync(scratchRoot, { recursive: true });
   using cleanup = new DisposableStack();
@@ -56,6 +58,17 @@ function createFixture(fault: Fault = "none") {
   );
   write("apps/docs/dist/client/docs/native/index.html", "native fixture");
   write("apps/docs/dist/client/docs/missing/index.html", "missing fixture");
+  if (fault !== "missing-native-asset") {
+    write(
+      "apps/docs/dist/client/zh-CN/docs/native/index.html",
+      `<html lang="${fault === "english-native-asset" ? "en" : "zh-CN"}"><head><link rel="canonical" href="https://zotlit.aidenlx.site/zh-CN/docs/native"></head><body>Native fixture</body></html>`,
+    );
+  }
+  write("apps/docs/dist/client/zh-CN/docs/native.md", "# Native fixture");
+  write(
+    "apps/docs/dist/client/zh-CN/llms.mdx/docs/native/content.md",
+    "# Native fixture",
+  );
   write(
     "apps/docs/dist/client/_redirects",
     "/legacy /zh-CN/docs/missing?keep=one&keep=two&src=%2Ffaq%2Fslurp 308\n",
@@ -171,11 +184,29 @@ describe("HTTP verification response matrix", () => {
     for (const result of results) {
       expect(new URL(result.origin).port).not.toBe("0");
       expect(result.groups.html?.failed).toBe(0);
+      expect(result.groups.assets?.failed).toBe(0);
       expect(result.groups["legacy-landing"]?.failed).toBe(0);
       expect(result.groups.startup).toBeUndefined();
       expect(result.groups.shutdown).toBeUndefined();
     }
   }, 30_000);
+
+  it.each(["missing-native-asset", "english-native-asset"] as const)(
+    "detects %s even when SSR returns a valid Chinese page",
+    async (fault) => {
+      using fixture = createFixture({ fault });
+      const result = await run(fixture);
+      expect(result.groups.html?.failed).toBe(0);
+      const assets = result.checks.filter(
+        (check) =>
+          check.group === "assets" &&
+          check.label === "/zh-CN/docs/native native HTML asset",
+      );
+      expect(assets).toHaveLength(1);
+      expect(assets[0]?.passed).toBe(false);
+    },
+    30_000,
+  );
 
   it.each([
     ["wrong-path", false, false],
@@ -186,7 +217,7 @@ describe("HTTP verification response matrix", () => {
   ] as const)(
     "rejects %s without a broad locale-link exemption",
     async (fault, actionPass, localePass) => {
-      using fixture = createFixture(fault);
+      using fixture = createFixture({ fault });
       const result = await run(fixture);
       for (const [suffix, expected] of [
         ["explicit English action preserves path and query", actionPass],

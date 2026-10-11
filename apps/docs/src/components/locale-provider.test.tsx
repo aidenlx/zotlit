@@ -5,7 +5,10 @@ import {
   createRootRoute,
   createRouter,
 } from "@tanstack/react-router";
-import { MarkdownCopyButton } from "fumadocs-ui/layouts/docs/page";
+import {
+  MarkdownCopyButton,
+  ViewOptionsPopover,
+} from "fumadocs-ui/layouts/docs/page";
 import {
   LanguageSelect,
   LanguageSelectText,
@@ -19,6 +22,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { getPageLocaleState } from "@/lib/locale-state";
+import { m } from "@/paraglide/messages.js";
 import { deLocalizeUrl, getLocale, localizeUrl } from "@/paraglide/runtime.js";
 import { paraglideMiddleware } from "@/paraglide/server.js";
 
@@ -33,66 +37,63 @@ async function withPage(
 ) {
   await import("fumadocs-ui/components/dialog/search-default");
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  await using cleanup = new AsyncDisposableStack();
   const previousUrl = window.location.href;
+  cleanup.defer(() => window.history.replaceState(null, "", previousUrl));
   window.history.replaceState(null, "", href);
-  try {
-    await paraglideMiddleware(
-      new Request(new URL(href, "https://zotlit.aidenlx.site")),
-      async () => {
-        using cleanup = new DisposableStack();
-        const history = cleanup.adopt(
-          createMemoryHistory({ initialEntries: [href] }),
-          (history) => history.destroy(),
+  await paraglideMiddleware(
+    new Request(new URL(href, "https://zotlit.aidenlx.site")),
+    async () => {
+      const history = cleanup.adopt(
+        createMemoryHistory({ initialEntries: [href] }),
+        (history) => history.destroy(),
+      );
+      const router = createRouter({
+        history,
+        routeTree: createRootRoute(),
+        rewrite: {
+          input: ({ url }) => deLocalizeUrl(url),
+          output: ({ url }) => localizeUrl(url, { locale: getLocale() }),
+        },
+      });
+      const container = cleanup.adopt(
+        document.createElement("div"),
+        (element) => {
+          element.remove();
+        },
+      );
+      document.body.appendChild(container);
+      const root = cleanup.adopt(createRoot(container), async (root) => {
+        await act(async () => root.unmount());
+      });
+      await act(async () => {
+        root.render(
+          <RouterContextProvider router={router}>
+            <LocaleProvider>
+              <FullSearchTrigger />
+              <SearchTrigger />
+              <LanguageSelect>
+                <LanguageSelectText />
+              </LanguageSelect>
+              <MarkdownCopyButton markdownUrl="/docs/new-feature.md" />
+              <ViewOptionsPopover
+                data-testid="page-actions"
+                markdownUrl="/docs/new-feature.md"
+              />
+              <LocaleFallbackNotice
+                state={getPageLocaleState("/docs/new-feature", getLocale(), {
+                  nativeChinesePages: new Set(),
+                })}
+              />
+              <article lang="en">English-only feature documentation.</article>
+            </LocaleProvider>
+          </RouterContextProvider>,
         );
-        const router = createRouter({
-          history,
-          routeTree: createRootRoute(),
-          rewrite: {
-            input: ({ url }) => deLocalizeUrl(url),
-            output: ({ url }) => localizeUrl(url, { locale: getLocale() }),
-          },
-        });
-        const container = cleanup.adopt(
-          document.createElement("div"),
-          (element) => element.remove(),
-        );
-        document.body.appendChild(container);
-        const root = createRoot(container);
-        try {
-          await act(async () => {
-            root.render(
-              <RouterContextProvider router={router}>
-                <LocaleProvider>
-                  <FullSearchTrigger />
-                  <SearchTrigger />
-                  <LanguageSelect>
-                    <LanguageSelectText />
-                  </LanguageSelect>
-                  <MarkdownCopyButton markdownUrl="/docs/new-feature.md" />
-                  <LocaleFallbackNotice
-                    state={getPageLocaleState(
-                      "/docs/new-feature",
-                      getLocale(),
-                      new Set(),
-                    )}
-                  />
-                  <article lang="en">
-                    English-only feature documentation.
-                  </article>
-                </LocaleProvider>
-              </RouterContextProvider>,
-            );
-          });
-          await check(container);
-        } finally {
-          await act(async () => root.unmount());
-        }
-        return new Response("ok");
-      },
-    );
-  } finally {
-    window.history.replaceState(null, "", previousUrl);
-  }
+      });
+      await check(container);
+      return new Response("ok");
+    },
+  );
 }
 
 // Reader seam: real packaged controls must use the URL locale, including
@@ -119,6 +120,30 @@ describe("native documentation controls", () => {
       ).toBe("zh-CN");
     });
   });
+
+  it.each(["/zh-CN/docs/new-feature", "/docs/new-feature"])(
+    "interpolates the native page action URL in its locale at %s",
+    async (href) => {
+      await withPage(href, async (container) => {
+        const trigger = container.querySelector<HTMLButtonElement>(
+          '[data-testid="page-actions"]',
+        )!;
+        await act(async () => trigger.click());
+        const link = document.querySelector<HTMLAnchorElement>(
+          'a[href^="https://chatgpt.com/"]',
+        );
+        expect(link).not.toBeNull();
+        const prompt = new URL(link!.href).searchParams.get("prompt");
+        expect(prompt).toBe(
+          m.docs_fumadocs_read_url_prompt({
+            url: new URL(href, window.location.origin).href,
+          }),
+        );
+        expect(prompt).not.toContain("{url}");
+        await act(async () => trigger.click());
+      });
+    },
+  );
 
   it.each([
     {

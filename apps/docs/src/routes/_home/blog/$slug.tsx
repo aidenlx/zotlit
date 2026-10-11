@@ -34,7 +34,7 @@ const getPost = createServerFn({ method: "GET" })
       .slice(0, 10);
     // getBlogPages() runs newest-first, so the neighbour after this post in
     // the list is the older one and the neighbour before it is the newer one.
-    const pages = getBlogPages(locale);
+    const pages = getBlogPages({ locale });
     const index = pages.findIndex((entry) => entry.url === page.url);
     const neighbour = (entry: (typeof pages)[number] | undefined) =>
       entry && { name: entry.data.title, url: entry.url };
@@ -134,7 +134,7 @@ function BlogPost() {
           )}
           <p className="mb-1.5 font-mono text-xs font-medium tracking-widest text-fd-muted-foreground uppercase">
             {m.docs_blog_post_byline({
-              date: formatReleaseDate(post.date, getLocale()),
+              date: formatReleaseDate(post.date, { locale: getLocale() }),
               author: post.author,
             })}
           </p>

@@ -4,7 +4,6 @@
   "private": true,
   "type": "module",
   "imports": {
-    "#i18n/*": "./i18n/*",
     "#content-config": "./content.config.ts",
     "#paraglide/messages.js": "./src/paraglide/messages.js"
   },

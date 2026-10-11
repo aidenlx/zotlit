@@ -68,7 +68,8 @@ export function VersionLedger({ app, channel }: VersionLedgerProps) {
         {ledger.publishedAt && (
           <span className="text-fd-muted-foreground">
             {" "}
-            · {formatReleaseInstant(ledger.publishedAt, getLocale())}
+            ·{" "}
+            {formatReleaseInstant(ledger.publishedAt, { locale: getLocale() })}
           </span>
         )}
       </Row>

@@ -22,7 +22,7 @@ ZotLit 使用一个有序的引文集合来对当前活动笔记进行格式化�
 | <UiLabel name={m.settings_citation_pandoc_citations_name()} />   | 开启   | 字面量 Pandoc 语法，例如 `@doe2024` 与 `[@doe2024]` |
 | <UiLabel name={m.settings_citation_wikilink_citations_name()} /> | 关闭   | 指向文献笔记的合格双链（wikilink）                  |
 
-您可以将两种来源均行关闭。此时，参考文献侧边栏、正文格式化引文、数字序号排版以及文献引用标识导航（Citekey Navigation）都将收到一个空集合。
+您可以将两种来源均行关闭。此时，参考文献侧边栏、正文格式化引文、数字序号排版以及文献引用标识（citation key）导航（Citekey Navigation）都将收到一个空集合。
 
 合格的双链是指不带显示别名（unaliased）且直接指向文献笔记的链接。它可以不带链接片段，或者带有形如 `#cite:locator=33` 的有效引文片段。
 
@@ -54,7 +54,7 @@ ZotLit 还会自动排除代码块、行内代码、数学公式、`%%` 注释�
 
 ### 解析机制
 
-ZotLit 会对照您在 <UiLabel name={m.settings_library_scope_name()} /> 中涵盖的所有文献库，基于 Zotero 原生的文献引用标识字段来解析 Pandoc 引文键。它不会使用 frontmatter 中的 `citekey` 字段进行解析。
+ZotLit 会对照您在 <UiLabel name={m.settings_library_scope_name()} /> 中涵盖的所有文献库，基于 Zotero 原生的文献引用标识字段来解析 Pandoc 文献引用标识。它不会使用 frontmatter 中的 `citekey` 字段进行解析。
 
 文献条目可以在创建对应的文献笔记之前就以引文形式出现在正文中。点击打开此类引文会先自动创建对应的文献笔记，随后将其打开。未能成功解析的标识键会保持原始字面量形式，并在侧边栏中显示为参考文献错误。
 

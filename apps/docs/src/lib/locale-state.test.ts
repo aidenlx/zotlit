@@ -14,16 +14,20 @@ describe("getPageLocaleState", () => {
   it.each(["/docs", "/docs/pending", "/docs/missing"])(
     "keeps a missing Chinese page on its English canonical: %s",
     (path) => {
-      expect(getPageLocaleState(path, "zh-CN", nativeChinesePages)).toEqual({
-        contentLocale: "en",
-        isFallback: true,
-        canonicalPath: path,
-        alternates: [
-          { locale: "en", path },
-          { locale: "x-default", path },
-        ],
-      });
-      expect(getPageLocaleState(path, "en", nativeChinesePages)).toMatchObject({
+      expect(getPageLocaleState(path, "zh-CN", { nativeChinesePages })).toEqual(
+        {
+          contentLocale: "en",
+          isFallback: true,
+          canonicalPath: path,
+          alternates: [
+            { locale: "en", path },
+            { locale: "x-default", path },
+          ],
+        },
+      );
+      expect(
+        getPageLocaleState(path, "en", { nativeChinesePages }),
+      ).toMatchObject({
         contentLocale: "en",
         isFallback: false,
         canonicalPath: path,
@@ -32,16 +36,12 @@ describe("getPageLocaleState", () => {
   );
 
   it("publishes reciprocal alternates only for an existing Chinese file", () => {
-    const english = getPageLocaleState(
-      "/docs/native",
-      "en",
+    const english = getPageLocaleState("/docs/native", "en", {
       nativeChinesePages,
-    );
-    const chinese = getPageLocaleState(
-      "/docs/native",
-      "zh-CN",
+    });
+    const chinese = getPageLocaleState("/docs/native", "zh-CN", {
       nativeChinesePages,
-    );
+    });
     expect(english).toEqual({
       contentLocale: "en",
       isFallback: false,
@@ -68,26 +68,24 @@ describe("getPageLocaleState", () => {
     "/zh-CN/llms.mdx/docs/native/content.md/",
     "/docs/native/?query=1#anchor",
   ])("normalizes an HTML or Markdown alias: %s", (path) => {
-    expect(getPageLocaleState(path, "ZH_cn", nativeChinesePages)).toEqual(
-      getPageLocaleState("/docs/native", "zh-CN", nativeChinesePages),
+    expect(getPageLocaleState(path, "ZH_cn", { nativeChinesePages })).toEqual(
+      getPageLocaleState("/docs/native", "zh-CN", { nativeChinesePages }),
     );
   });
 
   it("preserves dots in release slugs", () => {
     expect(
-      getPageLocaleState(
-        "/zh-CN/changelog/2.1.0.md",
-        "zh-CN",
+      getPageLocaleState("/zh-CN/changelog/2.1.0.md", "zh-CN", {
         nativeChinesePages,
-      ).canonicalPath,
+      }).canonicalPath,
     ).toBe("/zh-CN/changelog/2.1.0");
   });
 
   it.each(["/docs.md", "/zh-CN/docs.md/", "/llms.mdx/docs/content.md"])(
     "maps the native index's Markdown alias to its HTML path: %s",
     (path) => {
-      expect(getPageLocaleState(path, "zh-CN", nativeChinesePages)).toEqual(
-        getPageLocaleState("/docs", "zh-CN", nativeChinesePages),
+      expect(getPageLocaleState(path, "zh-CN", { nativeChinesePages })).toEqual(
+        getPageLocaleState("/docs", "zh-CN", { nativeChinesePages }),
       );
     },
   );
@@ -95,7 +93,9 @@ describe("getPageLocaleState", () => {
   it.each(["/", "/community", "/workbench", "/blog", "/changelog"])(
     "uses the Chinese catalog for %s even when content files are missing",
     (path) => {
-      expect(getPageLocaleState(path, "zh-CN", new Set())).toMatchObject({
+      expect(
+        getPageLocaleState(path, "zh-CN", { nativeChinesePages: new Set() }),
+      ).toMatchObject({
         contentLocale: "zh-CN",
         isFallback: false,
         canonicalPath: `/zh-CN${path === "/" ? "" : path}`,
@@ -105,8 +105,8 @@ describe("getPageLocaleState", () => {
 
   it("defaults unknown locales to English", () => {
     expect(
-      getPageLocaleState("/docs/native/", "fr", nativeChinesePages),
-    ).toEqual(getPageLocaleState("/docs/native", "en", nativeChinesePages));
+      getPageLocaleState("/docs/native/", "fr", { nativeChinesePages }),
+    ).toEqual(getPageLocaleState("/docs/native", "en", { nativeChinesePages }));
   });
 
   it("uses English for a path absent from the native inventory", () => {
