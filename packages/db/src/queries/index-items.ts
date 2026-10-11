@@ -7,10 +7,10 @@ import { formatIndexedKey } from "@/lib/zt-key";
 
 import { getBaseFieldTable } from "./_base-fields";
 import type { BaseFieldTable } from "./_base-fields";
-import { groupsQuery, resolveGroupID } from "./_groups";
-import type { GroupIDMemo } from "./_groups";
 import { CHILD_ITEM_TYPES, defineQuery, defineKeyedQuery } from "./_shared";
 import type { FindManyOptions, QueryRow } from "./_shared";
+import { groupIDForLibrary, resolveGroupID } from "./libraries";
+import type { GroupIDMemo } from "./libraries";
 
 export interface IndexedCreator {
   firstName: string | null;
@@ -150,7 +150,7 @@ export function getIndexedItemsByLibrary(
   const rows = indexedItemsQuery
     .prepared(db, { indexedFieldIDs: table.fieldIDs })
     .all({ libraryID });
-  const groupID = groupsQuery.prepared(db).get({ libraryID })?.groupID ?? null;
+  const groupID = groupIDForLibrary(db, libraryID);
   return rows.map((row) => toIndexedItem(row, groupID, table));
 }
 

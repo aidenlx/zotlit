@@ -992,7 +992,6 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         { expected: "true" },
       ),
     ).toBe(true);
-    await keepRendering(vaultId);
     await obEval(
       vaultId,
       `Array.from((${editor}).contentEl.querySelectorAll('[role="tab"]')).find(tab=>tab.textContent==='Annotation').click();true`,

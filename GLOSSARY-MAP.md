@@ -4,7 +4,7 @@
 
 - [Zotero Data Model](./packages/db/GLOSSARY.md) — Zotero's item hierarchy, identification, and query surface as modeled by `@zotlit/db`
 - [Filter Expression](./packages/filter-expression/GLOSSARY.md) — the ZotLit-owned language of filter expressions
-- [Item Query](./packages/item-query/GLOSSARY.md) — field-oriented queries over top-level Zotero Items
+- [Item Query](./packages/item-query/GLOSSARY.md) — field-oriented queries over top-level Zotero Items and their Annotations
 - [Obsidian Plugin](./apps/obsidian/GLOSSARY.md) — literature notes, imported notes, templates, citations, and the services that bridge Zotero data into the vault
 - [Obsidian i18n](./packages/obsidian-i18n/GLOSSARY.md) — Messages, JSON Language Packs, their isolated runtime, and the headless Obsidian lifecycle
 - [ZotLit Protocol](./packages/protocol/GLOSSARY.md) — the wire format between ZotLit Companion, the Zotero add-on, and the Obsidian plugin: permanent `obsidian://` URIs versus ephemeral version-gated HTTP requests

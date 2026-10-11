@@ -546,7 +546,36 @@ Pass a non-negative safe integer to set the synthetic Item count:
 pnpm fixture stress 100000
 ```
 
-Stress Build content uses one fixed seed. An ordinary `pnpm fixture` build returns to the committed Fixture Spec size.
+For Item Query performance work, fill My Library to an exact Item count. The measured tiers are 10,000, 50,000, and 100,000 Items:
+
+```sh
+pnpm fixture stress --library-items 10000
+```
+
+The count includes the Fixture Spec Items of My Library, so it must be at least that number. Synthetic Items fill the rest. `--library-items` and an Item count are alternatives: give one of them.
+
+For Item Query over two large Libraries, add `--group-library-items` to fill one group Library to an exact Item count too. `pnpm fixture --help` names that Library, its group ID, and the Item counts it takes:
+
+```sh
+pnpm fixture stress --library-items 100000 --group-library-items 100000
+```
+
+This count includes the Fixture Spec Items of the group Library. Its synthetic Items follow the rules of My Library, with Collections, Zotero Keys (a second fixed seed), and Citation Keys (`stressg…`) of their own. An Item of the group Library has the title of the My Library Item at the same position, as a copy has. Each group Library without an Item count keeps its Fixture Spec content.
+
+Each query target in the synthetic Items has a rare value (0.1% of the Items), a common value (10%), and a dominant value (60% or more). A query on a rare or common value is selective; a query on a dominant value reads most of the Library:
+
+| Target | Rare | Common | Dominant |
+| --- | --- | --- | --- |
+| Tag | `stress-rare` | `stress-common` | `stress-dominant` |
+| Collection | `Stress Build/Common/Rare` | `Stress Build/Common` | `Stress Build/Dominant` |
+| Item type | `thesis` | `book` | `journalArticle` |
+| `publicationTitle` | `Stress Rare Journal` | `Stress Common Journal` | `Stress Dominant Journal` |
+
+The `Stress Build` Collection holds the other three Collections and no Items of its own. One Item of each filled Library has the title `Stress Build unique title`, and every other title is also unique in its Library. Modification times are spread across the Items. `STRESS_LIBRARY_VALUES` in `packages/scripts/lib/fixture/spec.ts` states the exact rule for each value.
+
+The first synthetic paper of each filled Library has one PDF Attachment. Its Annotations share the `stress-many-marks` Tag. The mark count is three per 100 Items: 300, 1,500, and 3,000 at the measured tiers. This heavy book supplies the concentrated Relation List case. Its parent paper carries `stress-dominant`, which also supplies the dominant Parent Record case.
+
+Stress Build content uses fixed seeds. An ordinary `pnpm fixture` build returns to the committed Fixture Spec size.
 
 ## Inspect, discard, or change the Fixture
 

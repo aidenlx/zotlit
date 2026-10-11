@@ -168,6 +168,7 @@ describe("getAttachmentsByKey", () => {
 describe("getAttachmentPage", () => {
   it("pairs every live attachment with its parent Item's Indexed Key, and a standalone one with null", () => {
     sqlite.exec(`
+      insert into libraries (libraryID, type) values (2, 'group');
       insert into groups (groupID, libraryID, name)
         values (4200309, 2, 'Shared Reading');
 
@@ -198,6 +199,7 @@ describe("getAttachmentPage", () => {
 
   it("reads the live attachments after a cursor in item order, a page at a time", () => {
     sqlite.exec(`
+      insert into libraries (libraryID, type) values (2, 'group');
       insert into groups (groupID, libraryID, name)
         values (4200309, 2, 'Shared Reading');
     `);

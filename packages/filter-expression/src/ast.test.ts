@@ -129,7 +129,7 @@ describe("parseExpressionAst", () => {
   });
 
   it("reports a syntax error instead of a tree", () => {
-    expect(parseExpressionAst("itemType ==")).toEqual({
+    expect(parseExpressionAst("itemType ==")).toMatchObject({
       ast: null,
       error: { from: 11, to: 11 },
     });

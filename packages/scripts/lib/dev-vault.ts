@@ -12,6 +12,19 @@ import { DEFAULT_VAULT_CASE } from "./fixture/spec.ts";
  */
 export const DEV_VAULT_CASE_ENV = "ZT_VAULT_CASE";
 
+/** The folder name Obsidian uses to distinguish one worktree's vaults. */
+export function getWorktreeVaultName(workspaceRoot: string): string {
+  const worktreeName = basename(workspaceRoot);
+  const worktreeParent = dirname(workspaceRoot);
+  const worktreesDir = dirname(worktreeParent);
+  const codexWorktree =
+    basename(worktreesDir) === "worktrees" &&
+    basename(dirname(worktreesDir)) === ".codex";
+  return codexWorktree
+    ? `${worktreeName}-${basename(worktreeParent)}`
+    : worktreeName;
+}
+
 /**
  * The vault this worktree debugs against. Obsidian names a vault after its
  * folder and resolves `vault=<name>` to the first basename match, so the folder
@@ -23,22 +36,12 @@ export function getDevVaultDir(
   workspaceRoot: string,
   vaultCase: string = DEFAULT_VAULT_CASE,
 ): string {
-  const worktreeName = basename(workspaceRoot);
-  const worktreeParent = dirname(workspaceRoot);
-  const worktreesDir = dirname(worktreeParent);
-  const codexWorktree =
-    basename(worktreesDir) === "worktrees" &&
-    basename(dirname(worktreesDir)) === ".codex";
-  const uniqueName = codexWorktree
-    ? `${worktreeName}-${basename(worktreeParent)}`
-    : worktreeName;
-
   const caseSuffix = vaultCase === DEFAULT_VAULT_CASE ? "" : `-${vaultCase}`;
 
   return join(
     workspaceRoot,
     "tests",
-    `fixture-vault-${uniqueName}${caseSuffix}`,
+    `fixture-vault-${getWorktreeVaultName(workspaceRoot)}${caseSuffix}`,
   );
 }
 

@@ -1,29 +1,29 @@
 import { defineConfig } from "oxlint";
 
-import baseConfig from "@zotlit/config/oxlint";
+import baseConfig, {
+  itemQuerySchemaPaths,
+  parentImportPattern,
+} from "@zotlit/config/oxlint";
+
+const obsidianImportPaths = [
+  {
+    name: "semver",
+    allowTypeImports: true,
+    message:
+      "Import from semver/functions/<name> to keep unused semver code out of the plugin bundle.",
+  },
+  {
+    name: "obsidian",
+    importNames: ["HoverPopover"],
+    allowTypeImports: true,
+    message:
+      "Extend PopoutAwareHoverPopover from @/lib/popout-aware-hover-popover; it cancels Obsidian's popover timers on the window that armed them (see policies/hover-popover.md).",
+  },
+];
 
 const commonImports = {
-  patterns: [
-    {
-      group: ["../**"],
-      message: "Use @/ alias instead of parent-directory relative imports.",
-    },
-  ],
-  paths: [
-    {
-      name: "semver",
-      allowTypeImports: true,
-      message:
-        "Import from semver/functions/<name> to keep unused semver code out of the plugin bundle.",
-    },
-    {
-      name: "obsidian",
-      importNames: ["HoverPopover"],
-      allowTypeImports: true,
-      message:
-        "Extend PopoutAwareHoverPopover from @/lib/popout-aware-hover-popover; it cancels Obsidian's popover timers on the window that armed them (see policies/hover-popover.md).",
-    },
-  ],
+  patterns: [parentImportPattern],
+  paths: [...obsidianImportPaths, ...itemQuerySchemaPaths],
 };
 
 export default defineConfig({
@@ -79,12 +79,26 @@ export default defineConfig({
   },
   overrides: [
     {
-      // The adapter owns the upstream imports; Node tests may exercise them.
+      // Tests can inspect the schema; the plugin's other import rules remain.
+      files: [
+        "src/**/*.{test,spec}.{ts,tsx,js,jsx}",
+        "*.{config,setup}.{ts,js,mjs,cjs}",
+      ],
+      rules: {
+        "no-restricted-imports": [
+          "error",
+          {
+            patterns: [parentImportPattern],
+            paths: obsidianImportPaths,
+          },
+        ],
+      },
+    },
+    {
       files: [
         "src/lib/effect.ts",
         "src/lib/effect-runtime.ts",
         "src/lib/browser-scheduler.ts",
-        "**/*.test.ts",
       ],
       rules: { "no-restricted-imports": ["error", commonImports] },
     },
@@ -106,7 +120,12 @@ export default defineConfig({
       // The one module that wraps Obsidian's popover itself.
       files: ["src/lib/popout-aware-hover-popover.ts"],
       rules: {
-        "no-restricted-imports": "off",
+        "no-restricted-imports": [
+          "error",
+          {
+            paths: itemQuerySchemaPaths,
+          },
+        ],
       },
     },
     {

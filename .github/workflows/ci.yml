@@ -89,4 +89,6 @@ jobs:
       # however little the test does, so each package keeps its own pool on the
       # cores it has.
       - name: Test
-        run: pnpm turbo run test --concurrency=1
+        run: |
+          pnpm turbo run test --concurrency=1
+          pnpm test:eval-runtime

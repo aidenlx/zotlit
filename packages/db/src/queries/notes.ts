@@ -3,10 +3,10 @@
 import type { NodeDatabaseClient } from "@/client/node";
 import { formatIndexedKey } from "@/lib/zt-key";
 
-import { groupIDForLibrary, resolveGroupID } from "./_groups";
-import type { GroupIDMemo } from "./_groups";
 import { defineQuery, defineKeyedQuery } from "./_shared";
 import type { FindManyOptions, QueryRow } from "./_shared";
+import { groupIDForLibrary, resolveGroupID } from "./libraries";
+import type { GroupIDMemo } from "./libraries";
 
 /** A note's identity and staleness stamp, without its HTML body. */
 export interface ChildNote {

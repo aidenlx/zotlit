@@ -1,0 +1,41 @@
+{
+  "name": "@zotlit/item-query",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Field-oriented queries over top-level Zotero Items",
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./dist/index.mjs",
+    "./schema": "./dist/schema.mjs",
+    "./package.json": "./package.json",
+    "./query.schema.json": "./dist/query.schema.json"
+  },
+  "scripts": {
+    "build": "tsdown && node scripts/write-schema.mjs",
+    "dev": "tsdown --watch",
+    "typecheck": "tsc --noEmit -p tsconfig.lib.json",
+    "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
+    "lint": "oxlint",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@logtape/logtape": "catalog:",
+    "@zotlit/db": "workspace:*",
+    "@zotlit/filter-expression": "workspace:*",
+    "@zotlit/zotero-types": "workspace:*",
+    "arkregex": "catalog:",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@zotlit/config": "workspace:*",
+    "oxlint": "catalog:",
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

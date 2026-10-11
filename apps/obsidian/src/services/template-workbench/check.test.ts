@@ -81,8 +81,7 @@ async function fixture(
   );
   const noteIndex = {
     whenIndexed: async () => {},
-    getNotesByItemKey: (key: string) =>
-      key === "ABCD2345" || key === "1:ABCD2345" ? noteFiles : [],
+    getNotesByItemKey: (key: string) => (key === "ABCD2345" ? noteFiles : []),
     getImportedNoteByNoteKey: () => [],
   };
   const zoteroPref = {
@@ -133,6 +132,20 @@ async function fixture(
 }
 
 describe("plain document checks", () => {
+  it("rejects a -- token and gives the name=value form", async () => {
+    await using f = await fixture();
+    const refused = await f.check({ "--key": "ABCD2345" });
+    expect(refused).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "INVALID_SELECTOR",
+        message: "Parameter '--key' is not valid: use key=<value>.",
+        hint: "Run the command with key=<value>, without --.",
+        details: { parameter: "--key" },
+      },
+    });
+  });
+
   it("recovers from a source assertion on retained lookup without rerunning the check", async () => {
     await using f = await fixture();
     const checked = await f.check({
@@ -147,9 +160,28 @@ describe("plain document checks", () => {
     });
     expect(refused).toMatchObject({
       ok: false,
-      diagnostic: { code: "INVALID_SELECTOR" },
+      diagnostic: {
+        code: "INVALID_SELECTOR",
+        message: "An attempt lookup takes only attempt, output, and evidence.",
+        details: { parameter: "expect-source" },
+      },
     });
     expect(refused.diagnostic.hint).toContain("omit expect-source");
+    expect(
+      await f.check({
+        attempt: checked.attempt,
+        profile: "Books",
+        output: "bogus",
+      }),
+    ).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "INVALID_SELECTOR",
+        message: "An attempt lookup takes only attempt, output, and evidence.",
+        hint: expect.stringContaining("omit expect-source"),
+        details: { parameter: "profile" },
+      },
+    });
     expect(refused.diagnostic.hint).toContain(
       "attempt=<id> evidence=full output=all",
     );
@@ -256,7 +288,7 @@ describe("plain document checks", () => {
         document: "partial:lazy",
         draft,
         root: "annotation",
-        key: "ANNO2345",
+        key: "ANNQ2345",
         output: "all",
       }),
     ).toMatchObject({ ok: true, outputs: { partial: "Selected annotation" } });
@@ -266,7 +298,7 @@ describe("plain document checks", () => {
       document: "partial:lazy",
       draft,
       root: "annotation",
-      key: "ANNO2345",
+      key: "ANNQ2345",
       profile: "Books",
       evidence: "full",
     });
@@ -350,6 +382,38 @@ describe("plain document checks", () => {
     expect(
       await f.check({ document: "citation", root: "note", key: "ABCD2345" }),
     ).toMatchObject({ ok: false, diagnostic: { code: "INVALID_SELECTOR" } });
+    expect(await f.check({ profile: "Books", key: "not-a-key" })).toMatchObject(
+      {
+        ok: false,
+        diagnostic: { code: "INVALID_SELECTOR", details: { parameter: "key" } },
+      },
+    );
+  });
+
+  it("takes a baseline in update mode only, and update mode needs a key", async () => {
+    await using f = await fixture();
+    expect(
+      await f.check({
+        profile: "Books",
+        key: "ABCD2345",
+        note: "Notes/Paper.md",
+      }),
+    ).toMatchObject({
+      ok: false,
+      diagnostic: { code: "INVALID_SELECTOR", details: { parameter: "mode" } },
+    });
+    expect(await f.check({ profile: "Books", mode: "update" })).toMatchObject({
+      ok: false,
+      diagnostic: { code: "INVALID_SELECTOR", details: { parameter: "key" } },
+    });
+    expect(
+      await f.check({
+        profile: "Books",
+        mode: "update",
+        key: "ABCD2345",
+        existing: "",
+      }),
+    ).toMatchObject({ ok: true, baseline: { kind: "supplied" } });
   });
 
   it.each([
@@ -406,7 +470,7 @@ describe("plain document checks", () => {
       const selection: Record<string, string> =
         root === "citation"
           ? { example: "one-item" }
-          : { key: root === "annotation" ? "ANNO2345" : "ABCD2345" };
+          : { key: root === "annotation" ? "ANNQ2345" : "ABCD2345" };
       const compact = await f.check({
         document: "partial:example",
         root,
@@ -439,18 +503,18 @@ beforeEach(() => {
     kind: "data",
     data:
       root === "filename"
-        ? { title: "Paper", indexedKey: "1:ABCD2345" }
+        ? { title: "Paper", indexedKey: "ABCD2345" }
         : root === "annotation"
           ? {
-              indexedKey: "1:ANNO2345",
+              indexedKey: "ANNQ2345",
               comment: "An observation",
               citation: "(Paper)",
             }
           : {
-              indexedKey: "1:ABCD2345",
+              indexedKey: "ABCD2345",
               title: "Paper",
               annotations: [
-                { indexedKey: "1:ANNO2345", comment: "An observation" },
+                { indexedKey: "ANNQ2345", comment: "An observation" },
               ],
             },
   }));
@@ -468,7 +532,7 @@ describe("registered template-check", () => {
     const result = await f.check({
       profile: "Books",
       draft,
-      key: "1:ABCD2345",
+      key: "ABCD2345",
       output: "all",
     });
     expect(result).toMatchObject({
@@ -498,7 +562,7 @@ describe("registered template-check", () => {
     const mismatch = await f.check({
       profile: "Books",
       draft,
-      key: "1:ABCD2345",
+      key: "ABCD2345",
     });
     expect(mismatch).toMatchObject({
       ok: false,
@@ -507,7 +571,7 @@ describe("registered template-check", () => {
     });
     expect(loadTemplateData).not.toHaveBeenCalled();
     expect(
-      await f.check({ draft, key: "1:ABCD2345", output: "fold" }),
+      await f.check({ draft, key: "ABCD2345", output: "fold" }),
     ).toMatchObject({
       ok: true,
       document: { profile: { id: "Nx4Qn7XvT2Lp", label: "New draft" } },
@@ -524,7 +588,7 @@ describe("registered template-check", () => {
     await using f = await fixture();
     const draft = await f.draft(SOURCE.replace("Bk3Qn7XvT2Lp", "x"));
 
-    expect(await f.check({ draft, key: "1:ABCD2345" })).toMatchObject({
+    expect(await f.check({ draft, key: "ABCD2345" })).toMatchObject({
       ok: false,
       input: { origin: "draft", path: draft },
       checks: { structure: { status: "failed" } },
@@ -541,7 +605,7 @@ describe("registered template-check", () => {
     await using f = await fixture();
     const draft = await f.draft(SOURCE.replace("Bk3Qn7XvT2Lp", "x"));
 
-    expect(await f.check({ draft, key: "1:ABCD2345" })).toMatchObject({
+    expect(await f.check({ draft, key: "ABCD2345" })).toMatchObject({
       diagnostic: {
         code: "INVALID_PROFILE_ID",
         message: expect.stringContaining(
@@ -598,7 +662,7 @@ describe("registered template-check", () => {
       await f.check({
         profile: "Books",
         draft,
-        key: "1:ABCD2345",
+        key: "ABCD2345",
         output: "fold",
       }),
     ).toMatchObject({
@@ -617,7 +681,7 @@ describe("registered template-check", () => {
     const inherited = await f.check({
       profile: "Books",
       draft,
-      key: "1:ABCD2345",
+      key: "ABCD2345",
       output: "fold",
     });
     expect(inherited).toMatchObject({
@@ -700,7 +764,7 @@ describe("registered template-check", () => {
       changed = true;
       return load(...args);
     });
-    const result = await f.check({ draft, key: "1:ABCD2345", output: "all" });
+    const result = await f.check({ draft, key: "ABCD2345", output: "all" });
     expect(result).toMatchObject({
       ok: false,
       input: { origin: "draft" },
@@ -733,7 +797,7 @@ My conclusion.
     const result = await f.check({
       mode: "update",
       draft,
-      key: "1:ABCD2345",
+      key: "ABCD2345",
       existing: existing.replace("Bk3Qn7XvT2Lp", "Unk3Qn7XvT2L"),
       output: "body",
     });
@@ -761,7 +825,7 @@ My conclusion.
     const params = {
       draft,
       mode: "update",
-      key: "1:ABCD2345",
+      key: "ABCD2345",
       note: "Notes/Paper.md",
       "expect-source": "fixture",
     };
@@ -803,7 +867,7 @@ My conclusion.
       const before = new Map(f.vault.contents);
       const result = await f.check({
         mode: "update",
-        key: "1:ABCD2345",
+        key: "ABCD2345",
         ...(kind === "supplied" ? { existing } : {}),
         output: "all",
       });
@@ -846,7 +910,7 @@ My conclusion.
       "Notes/One.md": existing,
       "Notes/Two.md": existing,
     });
-    const duplicate = await f.check({ mode: "update", key: "1:ABCD2345" });
+    const duplicate = await f.check({ mode: "update", key: "ABCD2345" });
     expect(duplicate).toMatchObject({
       ok: false,
       diagnostic: {
@@ -856,7 +920,7 @@ My conclusion.
     });
     const result = await f.check({
       mode: "update",
-      key: "1:ABCD2345",
+      key: "ABCD2345",
       note: "Notes/Two.md",
       profile: "default",
       output: "fold",
@@ -977,13 +1041,13 @@ My conclusion.
     vi.spyOn(f.app.vault, "cachedRead").mockRejectedValue(
       new Error("Permission denied"),
     );
-    const result = await f.check({ mode: "update", key: "1:ABCD2345" });
+    const result = await f.check({ mode: "update", key: "ABCD2345" });
     expect(result).toMatchObject({
       ok: false,
       baseline: {
         kind: "real",
         path: "Notes/Unreadable.md",
-        indexedKey: "1:ABCD2345",
+        indexedKey: "ABCD2345",
         revision: null,
       },
       diagnostic: {
@@ -1003,7 +1067,7 @@ My conclusion.
       );
       const result = await f.check({
         mode: "update",
-        key: "1:ABCD2345",
+        key: "ABCD2345",
         ...(kind === "supplied" ? { existing: malformed } : {}),
       });
       expect(result).toMatchObject({
@@ -1028,7 +1092,7 @@ My conclusion.
     await using f = await fixture();
     const synthetic = await f.check({
       mode: "update",
-      key: "1:ABCD2345",
+      key: "ABCD2345",
       profile: "Books",
       output: "body",
     });
@@ -1041,7 +1105,7 @@ My conclusion.
     });
     const result = await f.check({
       mode: "update",
-      key: "1:ABCD2345",
+      key: "ABCD2345",
       existing: "My static note.\n",
       profile: "Books",
       output: "body",
@@ -1075,7 +1139,7 @@ Annotation`;
     await using f = await fixture(source);
     const result = await f.check({
       mode: "update",
-      key: "1:ABCD2345",
+      key: "ABCD2345",
       profile: "Books",
       existing:
         "---\npersonal: Mine\ntags: conflict\nremove: old\nuntouched: retained\n---\nPersonal body",
@@ -1126,7 +1190,7 @@ Annotation`;
     );
     const result = await f.check({
       mode: "update",
-      key: "1:ABCD2345",
+      key: "ABCD2345",
       existing,
       output: "all",
     });
@@ -1146,7 +1210,7 @@ Annotation`;
     await using f = await fixture();
     const result = await f.check({
       profile: "Books",
-      key: "1:ABCD2345",
+      key: "ABCD2345",
       output: "all",
     });
     expect(result.ok, JSON.stringify(result)).toBe(true);
@@ -1162,12 +1226,12 @@ Annotation`;
     expect(result.outputs.fold).toMatchObject({
       title: "Paper",
       tags: ["first", "second"],
-      "zotero-key": "1:ABCD2345",
+      "zotero-key": "ABCD2345",
     });
     expect(parse(result.outputs.frontmatter)).toEqual(result.outputs.fold);
     expect(result.outputs.annotations).toMatchObject([
       {
-        key: "1:ANNO2345",
+        key: "ANNQ2345",
         check: { status: "passed", output: "An observation" },
       },
     ]);
@@ -1204,7 +1268,7 @@ Annotation`;
     );
     const failed = await f.check({
       profile: "Books",
-      key: "1:ABCD2345",
+      key: "ABCD2345",
       output: "filename",
     });
     expect(failed).toMatchObject({
@@ -1225,7 +1289,7 @@ Annotation`;
       output: "all",
     });
     expect(evidence.checks.annotations.diagnostics[0].evidence).toBeDefined();
-    const rerun = await f.check({ profile: "Books", key: "1:ABCD2345" });
+    const rerun = await f.check({ profile: "Books", key: "ABCD2345" });
     expect(rerun.attempt).not.toBe(failed.attempt);
     expect(
       await f.check({
@@ -1240,9 +1304,7 @@ Annotation`;
     await using f = await fixture(
       SOURCE.replace("# {{ zt.title }}", '{% render "absent" with zt as zt %}'),
     );
-    expect(
-      await f.check({ profile: "Books", key: "1:ABCD2345" }),
-    ).toMatchObject({
+    expect(await f.check({ profile: "Books", key: "ABCD2345" })).toMatchObject({
       ok: false,
       checks: {
         body: { status: "failed" },
@@ -1262,7 +1324,7 @@ Annotation`;
     );
     const result = await f.check({
       profile: "Books",
-      key: "1:ABCD2345",
+      key: "ABCD2345",
       output: "filename",
     });
     expect(result).toMatchObject({
@@ -1285,7 +1347,7 @@ Annotation`;
       ),
     );
     const compile = vi.spyOn(f.template, "prepareLiteratureNoteTemplateSource");
-    const result = await f.check({ profile: "Books", key: "1:ABCD2345" });
+    const result = await f.check({ profile: "Books", key: "ABCD2345" });
     expect(result).toMatchObject({
       ok: false,
       diagnostic: { code: "ETA_OPT_IN_REQUIRED" },
@@ -1330,7 +1392,7 @@ Annotation`;
     expect(
       await f.check({
         profile: "Books",
-        key: "1:ABCD2345",
+        key: "ABCD2345",
         output: "annotations",
       }),
     ).toMatchObject({
@@ -1340,7 +1402,7 @@ Annotation`;
     broken = true;
     const failed = await f.check({
       profile: "Books",
-      key: "1:ABCD2345",
+      key: "ABCD2345",
       evidence: "full",
     });
     expect(failed).toMatchObject({
@@ -1352,7 +1414,7 @@ Annotation`;
             {
               report: {
                 context: {
-                  selection: "1:ANNO2345",
+                  selection: "ANNQ2345",
                   root: "annotation",
                   zotlitVersion: "test",
                   hostVersion: "Obsidian 1.0.0-test",
@@ -1381,8 +1443,7 @@ Annotation`;
           data: withAnnotationCitation(
             {
               indexedKey: key,
-              comment:
-                key === "1:ANNO2345" ? firstComment : "Second annotation",
+              comment: key === "ANNQ2345" ? firstComment : "Second annotation",
             } as never,
             () => {
               throw new TemplateError(`Citation failed for ${key}`, "citation");
@@ -1396,7 +1457,7 @@ Annotation`;
         data: {
           ...loaded.data,
           annotations: [
-            { indexedKey: "1:ANNO2345" },
+            { indexedKey: "ANNQ2345" },
             { indexedKey: "1:ANNO6789" },
           ],
         },
@@ -1404,17 +1465,17 @@ Annotation`;
     });
     const failed = await f.check({
       profile: "Books",
-      key: "1:ABCD2345",
+      key: "ABCD2345",
       evidence: "full",
     });
     const diagnostics = failed.checks.annotations.diagnostics;
     expect(diagnostics).toMatchObject([
       {
-        evidence: { message: "Citation failed for 1:ANNO2345" },
+        evidence: { message: "Citation failed for ANNQ2345" },
         report: {
           section: "annotation",
-          context: { root: "annotation", selection: "1:ANNO2345" },
-          identity: { annotationId: "1:ANNO2345" },
+          context: { root: "annotation", selection: "ANNQ2345" },
+          identity: { annotationId: "ANNQ2345" },
         },
       },
       {
@@ -1434,7 +1495,7 @@ Annotation`;
     firstComment = "Changed annotation data";
     const rerun = await f.check({
       profile: "Books",
-      key: "1:ABCD2345",
+      key: "ABCD2345",
       evidence: "full",
     });
     expect(
@@ -1459,7 +1520,7 @@ Annotation`;
     );
     const result = await f.check({
       profile: "Books",
-      key: "1:ABCD2345",
+      key: "ABCD2345",
       output: "fold",
     });
     expect(result.outputs.fold.title).toEqual({
@@ -1479,7 +1540,7 @@ Annotation`;
     });
     const result = await f.check({
       profile: "Books",
-      key: "1:ABCD2345",
+      key: "ABCD2345",
       output: "all",
       "expect-source": "fixture",
     });
@@ -1502,7 +1563,7 @@ Annotation`;
     );
     const result = await f.check({
       profile: "Books",
-      key: "1:ABCD2345",
+      key: "ABCD2345",
       output: "all",
     });
     expect(result).toMatchObject({

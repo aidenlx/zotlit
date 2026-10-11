@@ -16,6 +16,8 @@ allowBuilds:
   workerd: true
 
 catalog:
+  yargs: ^18.1.0
+  "@types/yargs": ^17.0.35
   "@base-ui/react": ^1.7.0
   "@inlang/plugin-message-format": 4.4.1
   nanoid: ^5.1.16
