@@ -34,6 +34,11 @@ interface Published {
   revision: string;
 }
 
+interface Candidate {
+  fiber: Fiber.Fiber<void, DbUnavailable>;
+  client?: NodeDatabaseClient;
+}
+
 export const makeCitationLookup = Effect.fnUntraced(function* (
   connection: Connection["Service"],
   windowSize: number,
@@ -42,10 +47,14 @@ export const makeCitationLookup = Effect.fnUntraced(function* (
   const incarnation = crypto.randomUUID();
   let serial = 0;
   let published: Published | undefined;
-  let candidate: Fiber.Fiber<void, DbUnavailable> | undefined;
+  let candidate: Candidate | undefined;
 
-  const build = Effect.fnUntraced(function* (scope: LibraryScope | null) {
+  const build = Effect.fnUntraced(function* (
+    scope: LibraryScope | null,
+    borrowed: Pick<Candidate, "client">,
+  ) {
     const client = yield* connection.borrow;
+    borrowed.client = client;
     const database = connection.databaseGeneration(client);
     const previous =
       published?.database === database ? published.snapshot : undefined;
@@ -137,9 +146,10 @@ export const makeCitationLookup = Effect.fnUntraced(function* (
       const running = yield* Effect.uninterruptible(
         Effect.suspend(() => {
           if (candidate) return Effect.succeed(candidate);
+          const borrowed: Pick<Candidate, "client"> = {};
           return Effect.map(
             Effect.forkIn(
-              Effect.scoped(build(request.scope)).pipe(
+              Effect.scoped(build(request.scope, borrowed)).pipe(
                 Effect.ensuring(
                   Effect.sync(() => {
                     candidate = undefined;
@@ -149,11 +159,16 @@ export const makeCitationLookup = Effect.fnUntraced(function* (
               lifetime,
               { startImmediately: false },
             ),
-            (fiber) => (candidate = fiber),
+            (fiber) => (candidate = Object.assign(borrowed, { fiber })),
           );
         }),
       );
-      yield* Fiber.join(running);
+      const result = yield* Effect.result(Fiber.join(running.fiber));
+      if (result._tag === "Failure") {
+        const currentClient = yield* Effect.scoped(connection.borrow);
+        if (running.client === undefined || running.client === currentClient)
+          return yield* result.failure;
+      }
     }
   });
   return { lookup };
