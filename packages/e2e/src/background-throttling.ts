@@ -80,6 +80,10 @@ export async function keepRendering(vaultId: string): Promise<void> {
       followFocus(window);
       app.workspace.iterateAllLeaves((leaf)=>followFocus(leaf.getContainer().win));
       await emulateFocus(window);
+      // Obsidian can request popout focus from a focus handler. Wait for the
+      // last request, including requests queued while the previous one ran.
+      let settled;
+      do{settled=switching;await settled;}while(settled!==switching);
       window.${RESTORE}=()=>{
         for(const ref of refs)app.workspace.offref(ref);
         for(const [win,{focus,shown,osFocus}] of raised){win.focus=focus;if(shown)shown.focus=osFocus;delete win.document.hasFocus;}
@@ -87,7 +91,7 @@ export async function keepRendering(vaultId: string): Promise<void> {
         main.setBackgroundThrottling(previous);
         delete window.${RESTORE};
       };
-      return String(vaultContents().every((contents)=>!contents.getBackgroundThrottling())&&document.hasFocus());
+      return String(vaultContents().every((contents)=>!contents.getBackgroundThrottling())&&focusedWin.document.hasFocus()&&activeWindow===focusedWin);
     })()`,
   );
   if (reply !== "true") {

@@ -2,7 +2,7 @@ import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 // Live database and TemplateService boundaries for native preview tests.
 import type { DatabaseSync } from "node:sqlite";
 import type { App } from "obsidian";
-import { Effect } from "effect";
+import { Effect } from "@/lib/effect";
 import { expect, vi } from "vitest";
 import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";

@@ -249,9 +249,9 @@ export async function setup(
 }
 
 /**
- * Fake the timers and the clock, and leave `setImmediate` real: the ZoteroReads
- * client runs on Effect, whose scheduler yields through it, so a faked one
- * stalls every database read.
+ * Fake wall-clock timers while leaving task dispatch real. Obsidian Effects
+ * use MessageChannel; direct upstream Effects in Node tests can still use
+ * setImmediate. Faking task dispatch stalls database reads.
  */
 export function useFakeTimers(): void {
   vi.useFakeTimers({

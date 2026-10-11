@@ -2,6 +2,30 @@ import { defineConfig } from "oxlint";
 
 import baseConfig from "@zotlit/config/oxlint";
 
+const commonImports = {
+  patterns: [
+    {
+      group: ["../**"],
+      message: "Use @/ alias instead of parent-directory relative imports.",
+    },
+  ],
+  paths: [
+    {
+      name: "semver",
+      allowTypeImports: true,
+      message:
+        "Import from semver/functions/<name> to keep unused semver code out of the plugin bundle.",
+    },
+    {
+      name: "obsidian",
+      importNames: ["HoverPopover"],
+      allowTypeImports: true,
+      message:
+        "Extend PopoutAwareHoverPopover from @/lib/popout-aware-hover-popover; it cancels Obsidian's popover timers on the window that armed them (see policies/hover-popover.md).",
+    },
+  ],
+};
+
 export default defineConfig({
   extends: [baseConfig],
   jsPlugins: [
@@ -16,32 +40,54 @@ export default defineConfig({
     "no-restricted-imports": [
       "error",
       {
-        patterns: [
-          {
-            group: ["../**"],
-            message:
-              "Use @/ alias instead of parent-directory relative imports.",
-          },
-        ],
+        ...commonImports,
         paths: [
           {
-            name: "semver",
+            name: "@/lib/effect",
+            importNames: ["ManagedRuntime", "Scheduler"],
             allowTypeImports: true,
             message:
-              "Import from semver/functions/<name> to keep unused semver code out of the plugin bundle.",
+              "Start Effects through Effect in @/lib/effect; its entry points supply the browser scheduler.",
           },
           {
-            name: "obsidian",
-            importNames: ["HoverPopover"],
+            name: "effect",
             allowTypeImports: true,
             message:
-              "Extend PopoutAwareHoverPopover from @/lib/popout-aware-hover-popover; it cancels Obsidian's popover timers on the window that armed them (see policies/hover-popover.md).",
+              "Use @/lib/effect: Obsidian's renderer and workers default to Chromium MessageChannel scheduling. Node setImmediate can starve browser tasks.",
           },
+          {
+            name: "effect/Effect",
+            allowTypeImports: true,
+            message: "Use Effect from @/lib/effect for Chromium scheduling.",
+          },
+          {
+            name: "effect/ManagedRuntime",
+            allowTypeImports: true,
+            message:
+              "Use the Effect entry points in @/lib/effect for Chromium scheduling.",
+          },
+          {
+            name: "effect/Scheduler",
+            allowTypeImports: true,
+            message:
+              "Obsidian scheduling is owned by @/lib/effect-runtime and @/lib/browser-scheduler.",
+          },
+          ...commonImports.paths,
         ],
       },
     ],
   },
   overrides: [
+    {
+      // The adapter owns the upstream imports; Node tests may exercise them.
+      files: [
+        "src/lib/effect.ts",
+        "src/lib/effect-runtime.ts",
+        "src/lib/browser-scheduler.ts",
+        "**/*.test.ts",
+      ],
+      rules: { "no-restricted-imports": ["error", commonImports] },
+    },
     {
       files: [
         "vite.config.ts",

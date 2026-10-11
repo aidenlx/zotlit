@@ -1,3 +1,6 @@
+import type { Library } from "@zotlit/db";
+import { createNanoEvents } from "@zotlit/shared/nanoevents";
+
 /**
  * `LibraryScopeService` — the live Library Scope, resolved from the saved
  * stable selectors against whatever Libraries the active Zotero database holds.
@@ -28,11 +31,7 @@
  * resolves once through {@link LibraryScopeService.resolveLibraries}, so a
  * refresh mid-read cannot move the Libraries under it.
  */
-import { Effect } from "effect";
-
-import type { Library } from "@zotlit/db";
-import { createNanoEvents } from "@zotlit/shared/nanoevents";
-
+import { Effect } from "@/lib/effect";
 import { getLogger } from "@/lib/log";
 import type { QueryClientService } from "@/services/query-client/service";
 import { Service } from "@/services/service-base";
