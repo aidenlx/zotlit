@@ -1,5 +1,6 @@
 import { createFromSource } from "fumadocs-core/search/server";
 import { loader } from "fumadocs-core/source";
+import { uiTranslations } from "fumadocs-ui/i18n";
 import { describe, expect, it } from "vitest";
 
 import { deLocalizeUrl, localizeUrl } from "@/paraglide/runtime.js";
@@ -98,14 +99,21 @@ describe("translator-facing UI and formatting", () => {
       "2026年10月11日",
     );
   });
-  it("has matching native UI dictionary keys for translators", async () => {
-    const english = await import("#i18n/en.json");
-    const chinese = await import("#i18n/zh-CN.json");
-    expect(Object.keys(chinese.default.fumadocs)).toEqual(
-      Object.keys(english.default.fumadocs),
-    );
-    expect(Object.keys(chinese.default.fumadocs)).toHaveLength(46);
-  });
+  it.each(["en", "zh-CN"])(
+    "covers the installed native UI registry exactly in %s",
+    async (locale) => {
+      const catalog = await import(`#i18n/${locale}.json`);
+      expect(Object.keys(catalog.default.fumadocs).sort()).toEqual(
+        [...uiTranslations().keys].sort(),
+      );
+      expect(
+        Object.values(catalog.default.fumadocs).every(
+          (translation) =>
+            typeof translation === "string" && translation.trim().length > 0,
+        ),
+      ).toBe(true);
+    },
+  );
 });
 
 // Failure modes: a missing locale file must not hide a new English page from

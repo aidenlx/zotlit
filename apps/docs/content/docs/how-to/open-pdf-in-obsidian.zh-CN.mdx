@@ -11,7 +11,7 @@ import { m } from "@/paraglide/messages.js";
 
 直接在 Obsidian 标签页中阅读 Zotero 条目的 PDF，无需切换窗口到 Zotero。
 
-无论 PDF 文件存放于您的仓库内部，还是保存在 Zotero 的存储目录中，ZotLit 均支持在 Obsidian 内置的 PDF 阅读器中直接打开。此特性专用于 PDF 附件；EPUB、网页快照及其他文件类型仍将在外部打开。
+无论 PDF 文件存放于您的仓库内部，还是保存在 Zotero 的存储目录中，ZotLit 均支持在 Obsidian 内置的 PDF 阅读器中直接打开。此特性专用于 PDF 附件；EPUB、网页快照及其他文件类型仍留在 Zotero 中。
 
 此功能需要 Obsidian 1.14.2 或更高版本（ZotLit 2.2 同样要求此版本）。
 
@@ -55,27 +55,27 @@ import { m } from "@/paraglide/messages.js";
 
 如果您希望侧边栏保持静止，可在 <SettingsPath page={m.settings_page_reader()} setting={m.settings_reader_focus_annot_view_name()} /> 中将其关闭。详见[设置](/docs/reference/settings#reader)。
 
-## See also
+## 另请参阅 [#see-also]
 
 <Cards>
   <Card
-    title="How to edit PDF annotations in Obsidian"
-    description="Create or change Zotero annotations while reading in Obsidian."
+    title="在 Obsidian 中编辑 PDF 标注"
+    description="在 Obsidian 中阅读时创建或修改 Zotero 标注。"
     href="/docs/how-to/edit-pdf-annotations"
   />
   <Card
-    title="Use the annotation view"
-    description="Browse an item's highlights beside the PDF and drag them into your notes."
+    title="使用标注视图"
+    description="在 PDF 旁浏览条目的高亮标注，并将它们拖入笔记。"
     href="/docs/how-to/use-annotation-view"
   />
   <Card
-    title="Create and open literature notes"
-    description="Open or create a literature note from the quick switcher, a citation, or Zotero."
+    title="创建和打开文献笔记"
+    description="通过快速切换器、引文或 Zotero 打开或创建文献笔记。"
     href="/docs/how-to/create-and-open-notes"
   />
   <Card
-    title="Commands"
-    description="Every ZotLit command, with the entry points that reach it."
+    title="命令"
+    description="所有 ZotLit 命令及其调用入口。"
     href="/docs/reference/commands#literature-note-actions"
   />
 </Cards>

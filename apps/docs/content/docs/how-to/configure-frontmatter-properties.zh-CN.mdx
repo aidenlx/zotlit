@@ -57,39 +57,38 @@ import { m } from "@/paraglide/messages.js";
   </Step>
 </Steps>
 
-## Add Zotero tags to note frontmatter [#zotero-tags]
+## 将 Zotero 标签添加到笔记 frontmatter [#zotero-tags]
 
-Create a managed `tags` field with the `obsidian_tag` filter. The filter reads
-Zotero tag objects from `zt.tags` and returns an array of Obsidian tag values.
+使用 `obsidian_tag` 过滤器创建受管的 `tags` 字段。该过滤器读取
+`zt.tags` 中的 Zotero 标签对象，返回 Obsidian 标签值组成的数组。
 
 <Steps>
   <Step>
-    ### Add the `tags` field
+    ### 添加 `tags` 字段 [#add-the-tags-field]
 
-    In the <UiLabel name={m.workbench_tab_properties()} /> tab, select <UiLabel name={m.workbench_properties_add()} /> and enter these values:
+    在 <UiLabel name={m.workbench_tab_properties()} /> 标签页中选择 <UiLabel name={m.workbench_properties_add()} />，填入以下值：
 
-    | Input | Value |
+    | 输入项 | 值 |
     | ----- | ----- |
     | <UiLabel name={m.workbench_properties_name()} /> | `tags` |
     | <UiLabel name={m.workbench_properties_format()} /> | <UiLabel name={m.workbench_properties_format_value()} /> |
     | <UiLabel name={m.workbench_properties_expression()} /> | `zt.tags \| obsidian_tag` |
     | <UiLabel name={m.workbench_properties_merge()} /> | <UiLabel name={m.workbench_properties_merge_replace()} /> |
 
-    The <UiLabel name={m.workbench_properties_merge_replace()} /> strategy keeps the note's Zotero tags in sync. Choose
-    <UiLabel name={m.workbench_properties_merge_append()} /> when you want to keep manual Obsidian tags too.
+    <UiLabel name={m.workbench_properties_merge_replace()} /> 策略会让笔记中的 Zotero 标签保持同步。
+    如果还希望保留手动添加的 Obsidian 标签，请选择 <UiLabel name={m.workbench_properties_merge_append()} />。
 
   </Step>
   <Step>
-    ### Update the note
+    ### 更新笔记 [#update-the-note]
 
-    Run <Command inline name={m.command_update_note_metadata_name()} /> on an
-    existing literature note. ZotLit evaluates the field and writes the result
-    to its frontmatter.
+    在已有的文献笔记上运行 <Command inline name={m.command_update_note_metadata_name()} />。
+    ZotLit 会计算字段值，并将结果写入笔记的 frontmatter。
 
   </Step>
 </Steps>
 
-For example, Zotero tags named `Methodology` and `Open Access` become:
+例如，名为 `Methodology` 和 `Open Access` 的 Zotero 标签会转换为：
 
 ```yaml
 tags:
@@ -97,89 +96,90 @@ tags:
   - Open_Access
 ```
 
-The filter normalizes spaces and other characters according to Obsidian's tag
-rules. Frontmatter tag values do not need a leading `#`. See the [`obsidian_tag`
-filter reference](/docs/reference/templates/syntax#obsidian-tag) for all
-normalization rules.
+过滤器会按 Obsidian 的标签规则规范化空格和其他字符。
+Frontmatter 中的标签值不需要以 `#` 开头。完整的规范化规则请参阅
+[`obsidian_tag` 过滤器参考](/docs/reference/templates/syntax#obsidian-tag)。
 
-For agent-assisted setup, install the [ZotLit skill](/docs/install-skill) and
-ask the agent to add a managed `tags` field with the expression
-`zt.tags | obsidian_tag`. The [Template Workbench
-CLI](/docs/concepts/template-workbench) lets the agent configure
-the field and test the rendered result.
+如需智能体协助设置，请安装 [ZotLit 技能](/docs/install-skill)，
+让智能体添加表达式为 `zt.tags | obsidian_tag` 的受管 `tags` 字段。
+智能体可通过[模板工作台 CLI](/docs/concepts/template-workbench)
+配置字段并测试渲染结果。
 
-## Edit or remove a field
+## 编辑或删除字段 [#edit-or-remove-a-field]
 
-Select a property row to edit it. Use <UiLabel name={m.workbench_properties_remove()} /> to remove it.
+选择属性行即可编辑。使用 <UiLabel name={m.workbench_properties_remove()} /> 删除该属性。
 
-## Reorder fields
+## 调整字段顺序 [#reorder-fields]
 
-The order of the properties in the Template Workbench View determines the order of frontmatter keys when ZotLit creates a new literature note.
+创建新的文献笔记时，frontmatter 键的排列顺序取决于模板工作台视图中的属性顺序。
 
-Use <UiLabel name={m.workbench_properties_move_up()} /> or <UiLabel name={m.workbench_properties_move_down()} /> to move a property.
+使用 <UiLabel name={m.workbench_properties_move_up()} /> 或 <UiLabel name={m.workbench_properties_move_down()} /> 移动属性。
 
-### Existing notes
+### 已有笔记 [#existing-notes]
 
-Reordering the fields does not change property order in notes that already exist. When ZotLit updates an existing note, a key already present in that note's YAML keeps its current position.
+调整字段顺序不会改变已有笔记中的属性顺序。ZotLit 更新已有笔记时，已经存在于该笔记 YAML 中的键会保留当前位置。
 
-To reorder properties within a single note, use Obsidian's properties panel: drag the property type icon to the left of a property name to move that row. Obsidian writes the new key order back into the note's YAML. The note must have two or more properties for this to work.
+要调整某篇笔记中的属性顺序，请在 Obsidian 属性面板中拖动属性名称左侧的类型图标。Obsidian 会将新顺序写回笔记的 YAML。笔记至少需要有两个属性才能使用此操作。
 
-## Validation rules
+## 校验规则 [#validation-rules]
 
-The <UiLabel name={m.workbench_tab_properties()} /> tab marks a row it cannot use with <UiLabel name={m.workbench_properties_row_problem()} />, and the <UiLabel name={m.workbench_problems_heading()} /> area names what went wrong and offers <UiLabel name={m.workbench_problems_where_entry()} /> to open the row.
+<UiLabel name={m.workbench_tab_properties()} /> 标签页会用
+<UiLabel name={m.workbench_properties_row_problem()} /> 标记无法使用的行。
+<UiLabel name={m.workbench_problems_heading()} /> 区域会说明问题，并提供
+<UiLabel name={m.workbench_problems_where_entry()} /> 以打开对应行。
 
-See [Validation](/docs/reference/templates/frontmatter#validation) for the rules ZotLit applies, and [Edit a profile as Markdown](/docs/how-to/edit-a-profile-as-markdown#problems) for the area that reports them.
+ZotLit 使用的规则请参阅[校验](/docs/reference/templates/frontmatter#validation)；报告这些问题的区域请参阅[以 Markdown 编辑配置方案](/docs/how-to/edit-a-profile-as-markdown#problems)。
 
-## Apply updated fields to existing notes
+## 将更新后的字段应用到已有笔记 [#apply-updated-fields-to-existing-notes]
 
-After changing frontmatter configuration, run:
+修改 frontmatter 配置后，运行：
 
 <Command name={m.command_update_note_metadata_name()} />
 
-This re-evaluates all field expressions and writes the results to the active note's frontmatter according to each field's merge strategy.
+此命令会重新计算所有字段表达式，并根据每个字段的合并策略，将结果写入当前笔记的 frontmatter。
 
-The shipped fields are ordinary entries, so you can edit or remove `citekey` here. See [Default fields](/docs/reference/templates/frontmatter#default-fields) for what the Default profile declares.
+内置字段也是普通配置项，因此您可以在此编辑或删除 `citekey`。默认配置方案声明的字段请参阅[默认字段](/docs/reference/templates/frontmatter#default-fields)。
 
-## Agent-based configuration
+## 通过智能体配置 [#agent-based-configuration]
 
-An agent with the ZotLit skill can configure managed frontmatter field templates through the [Template Workbench CLI](/docs/concepts/template-workbench).
+安装 ZotLit 技能的智能体可以通过[模板工作台 CLI](/docs/concepts/template-workbench)配置受管 frontmatter 字段模板。
 
-<Callout type="info" title="JavaScript fields and the gate">
-  A property declares its value with one member. `expr` holds one Liquid
-  expression, `value` holds one JSON-e rule (fixed text is a rule that is a
-  plain string), and `js` holds one JavaScript expression. A `js` property is
-  inert while <UiLabel name={m.settings_template_js_enable_name()} /> are off on
-  that device, and ZotLit reports the affected fields:{" "}
-  <UiLabel name={m.notice_frontmatter_js_inert({ fields: "…" })} /> See [Enable
-  JavaScript templates](/docs/how-to/enable-javascript-templates).
+<Callout type="info" title="JavaScript 字段与权限开关">
+  每个属性使用一个成员声明其值：`expr` 存放一个 Liquid 表达式，`value` 存放一个
+  JSON-e 规则 （固定文本就是内容为普通字符串的规则），`js` 存放一个 JavaScript
+  表达式。 如果当前设备关闭了{" "}
+  <UiLabel name={m.settings_template_js_enable_name()} />
+  ，`js` 属性不会求值。 ZotLit 会报告受影响的字段：{" "}
+  <UiLabel name={m.notice_frontmatter_js_inert({ fields: "…" })} />
+  请参阅[启用 JavaScript 模板](/docs/how-to/enable-javascript-templates)。
 </Callout>
 
-## See also
+## 另请参阅 [#see-also]
 
 <Cards>
   <Card
-    title="Install the ZotLit skill"
-    description="Let an agent configure and test managed frontmatter fields."
+    title="安装 ZotLit 技能"
+    description="让智能体配置并测试受管 frontmatter 字段。"
     href="/docs/install-skill"
   />
   <Card
-    title="How templates work"
-    description="Template types, languages, and the data model."
+    title="模板的工作原理"
+    description="模板类型、语言与数据模型。"
     href="/docs/concepts/how-templates-work"
   />
   <Card
-    title="Explore template data"
-    description="Browse available zt.* fields and copy paths."
+    title="探索模板数据"
+    description="浏览可用的 zt.* 字段并复制路径。"
     href="/docs/how-to/explore-template-data"
   />
   <Card
-    title="Enable JavaScript templates"
-    description="Turn on the gate to run js properties in frontmatter."
+    title="启用 JavaScript 模板"
+    description="开启权限开关以运行 frontmatter 中的 js 属性。"
     href="/docs/how-to/enable-javascript-templates"
   />
   <Card
-    title="Template Workbench CLI"
-    description="Configure managed frontmatter field templates through the Obsidian CLI."
+    title="模板工作台 CLI"
+    description="通过 Obsidian CLI 配置受管 frontmatter 字段模板。"
     href="/docs/concepts/template-workbench"
   />
 </Cards>

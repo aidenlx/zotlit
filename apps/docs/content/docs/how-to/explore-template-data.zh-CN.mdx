@@ -26,7 +26,7 @@ import { m } from "@/paraglide/messages.js";
 
     <Command name={m.command_open_template_data_explorer_name()} />
 
-    如果编辑器当前正打开着某篇文献笔记，数据浏览器将直接使用该笔记对应的 Zotero 条目。如果未处于文献笔记中，则会展示条目选取列表。
+    如果编辑器当前正打开着某篇文献笔记，数据浏览器将直接使用该笔记对应的 Zotero 条目。没有选定条目时，会显示选项列表。
 
   </Step>
 </Steps>
@@ -55,9 +55,9 @@ ZotLit Companion（Zotero 配套插件）在 Zotero 中注入了这些入口。�
 
 使用 <UiLabel name={m.workbench_choose_item()} /> 可以切换条目。对于标注字段，使用 <UiLabel name={m.workbench_choose_annotation()} />。标注选取器既可从选定条目中挑选标注，也可体验高亮、下划线、笔记、文本、区域图片或手写墨迹等六个内置示例。
 
-数据选择会联动更新其他面板。标注字段与预览采用选定的标注及其自身的父级条目数据；笔记预览则使用选定的条目。
+数据选择会联动更新其他面板。标注字段与预览采用选定的标注及其自身的父级条目数据；笔记预览则使用选定的条目。独立工作台各自保留其选择。
 
-面板标题开头展示选定的数据名称，末尾为 <UiLabel name={m.workbench_view_fields()} />。标注标题会标明类型、页码和简短摘录。全功能面板在标题栏中提供了选择操作项；侧边栏则在数据附近提供紧凑的选择控件。若要将编辑器、字段列表与预览界面并排展开，可在模板工作台视图的面板菜单中选择 <UiLabel name={m.template_workbench_open_layout()} />。
+面板标题开头展示选定的数据名称，末尾为 <UiLabel name={m.workbench_view_fields()} />。标注标题会标明类型、页码和简短摘录。标题会标明内置示例；未选择数据时，面板使用通用名称。全功能面板在标题栏中提供了选择操作项；侧边栏则在数据附近提供紧凑的选择控件。在任一布局中，都可右键选择面板标题来打开菜单。若要将编辑器、字段列表与预览界面并排展开，可在模板工作台视图的面板菜单中选择 <UiLabel name={m.template_workbench_open_layout()} />。
 
 预览使用的数据会自动更新。如需重新加载，可在面板菜单中选择 <UiLabel name={m.workbench_refresh_item()} />。在 <UiLabel name={m.workbench_preview_on_demand()} /> 模式下，点击 <UiLabel name={m.workbench_preview_run()} /> 可手动触发渲染预览。
 
@@ -71,108 +71,108 @@ Zotero 标识符（Zotero key）唯一指代一个对象：包含条目、附件
 - 在标注卡片上，打开更多操作菜单并选择 <UiLabel name={m.indexed_key_menu_copy_annotation()} />。
 - 在数据浏览器中，打开面板菜单并选择 <UiLabel name={m.command_copy_item_key_name()} /> 或 <UiLabel name={m.indexed_key_menu_copy_annotation()} />。标签文本会随当前面板所列的根节点类型自适应调整。
 
-If a literature note is already open, you can also copy its `zotero-key` frontmatter value by hand.
+如果文献笔记已经打开，您也可以手动复制其 frontmatter 中的 `zotero-key` 值。
 
-In Zotero, the Companion adds two more entry points:
+Companion 在 Zotero 中还提供了两个入口：
 
-- Right-click one or more library rows and open the <UiLabel name={m["zotero.menu_submenu.label"]()} /> submenu. The entry names the kind you selected, such as <UiLabel name={m["zotero.menu_item_copy_key.label"]({ count: 1, kind: "item" })} /> or <UiLabel name={m["zotero.menu_item_copy_key.label"]({ count: 1, kind: "attachment" })} />. Multiple rows copy one key per line.
-- In the PDF reader, right-click an annotation and select <UiLabel name={m["zotero.menu_reader_annot_copy_key"]()} />.
+- 右键选择一行或多行文献库条目，打开 <UiLabel name={m["zotero.menu_submenu.label"]()} /> 子菜单。入口名称会说明所选对象类型，例如 <UiLabel name={m["zotero.menu_item_copy_key.label"]({ count: 1, kind: "item" })} /> 或 <UiLabel name={m["zotero.menu_item_copy_key.label"]({ count: 1, kind: "attachment" })} />。选择多行时，每行复制一个标识键。
+- 在 PDF 阅读器中右键选择标注，再选择 <UiLabel name={m["zotero.menu_reader_annot_copy_key"]()} />。
 
-One key is always enough. The root the pane lists decides which object it names: the note root copies the item key, the annotation root the annotation key.
+一个标识键就足够了。面板当前列出的根节点决定它指代哪个对象：笔记根节点复制条目标识键，标注根节点复制标注标识键。
 
-## Browse the fields
+## 浏览字段 [#browse-the-fields]
 
-The pane lists the fields of one root, grouped under section headings.
+面板列出一个根节点的字段，并按章节分组。
 
-### The root the pane lists
+### 面板当前列出的根节点 [#the-root-the-pane-lists]
 
-The pane header names the root it reads: <UiLabel name={m.workbench_fields_root_note()} />, <UiLabel name={m.workbench_fields_root_annotation()} />, <UiLabel name={m.workbench_fields_root_filename()} />, or <UiLabel name={m.workbench_fields_root_citation()} />.
+面板标题会说明所读取的根节点：<UiLabel name={m.workbench_fields_root_note()} />、<UiLabel name={m.workbench_fields_root_annotation()} />、<UiLabel name={m.workbench_fields_root_filename()} /> 或 <UiLabel name={m.workbench_fields_root_citation()} />。
 
-The root follows the part of the profile you are editing: the note body and its properties list the note root, the Annotation Section lists the annotation root, the manifest's `filename` value lists the note name root, and the Citation text lists the citation root.
+根节点会跟随您正在编辑的配置方案部分：笔记正文及其属性使用笔记根节点，标注格式区域使用标注根节点，manifest 的 `filename` 值使用笔记名称根节点，引文文本使用引文根节点。
 
-The standalone explorer takes its root from the Template Workbench View beside it. When it is anchored at an annotation, a breadcrumb above the list reads <UiLabel name={m.template_data_explorer_note_root()} />, and its back button, tooltipped <UiLabel name={m.template_data_explorer_back_to_note_root()} />, returns the list to the note root.
+独立的数据浏览器会采用旁边模板工作台视图的根节点。切换到标注后，列表上方会显示 <UiLabel name={m.template_data_explorer_note_root()} /> 导航路径；选择提示为 <UiLabel name={m.template_data_explorer_back_to_note_root()} /> 的返回按钮，即可回到笔记根节点。
 
-To read one annotation's own fields from the note root, open the more-options menu on its row under `zt.annotations` and select <UiLabel name={m.workbench_explorer_menu_explore_annotation()} />.
+若要从笔记根节点查看某条标注自身的字段，请在 `zt.annotations` 下打开该标注行的更多选项菜单，选择 <UiLabel name={m.workbench_explorer_menu_explore_annotation()} />。
 
-### Sections
+### 章节 [#sections]
 
-<UiLabel name={m.workbench_explorer_section_common()} /> leads every root and
-holds the fields most templates use. A note root and a note name root group the
-remaining fields under
-<UiLabel name={m.workbench_explorer_section_reference()} />,
-<UiLabel name={m.workbench_explorer_section_identifiers()} />,
-<UiLabel name={m.workbench_explorer_section_content()} />,
-<UiLabel name={m.workbench_explorer_section_organization()} />,
-<UiLabel name={m.workbench_explorer_section_links()} />, and
-<UiLabel name={m.workbench_explorer_section_record()} />. An annotation root
-groups them under <UiLabel name={m.workbench_explorer_section_annotation()} />,
-<UiLabel name={m.workbench_explorer_section_source()} />,
-<UiLabel name={m.workbench_explorer_section_organization()} />,
-<UiLabel name={m.workbench_explorer_section_links()} />, and
-<UiLabel name={m.workbench_explorer_section_record()} />. A citation root has no
-other section yet.
+所有根节点都以 <UiLabel name={m.workbench_explorer_section_common()} /> 开头，收录大多数模板会使用的字段。
+笔记根节点与笔记名称根节点将其余字段分为
 
-Select a section heading to open or close that section. The button beside the pane's selection control opens every section or closes every one, tooltipped <UiLabel name={m.workbench_explorer_expand_all()} /> or <UiLabel name={m.workbench_explorer_collapse_all()} />. The pane menu carries the same action.
+<UiLabel name={m.workbench_explorer_section_reference()} />、
+<UiLabel name={m.workbench_explorer_section_identifiers()} />、
+<UiLabel name={m.workbench_explorer_section_content()} />、
+<UiLabel name={m.workbench_explorer_section_organization()} />、
+<UiLabel name={m.workbench_explorer_section_links()} /> 和
+<UiLabel name={m.workbench_explorer_section_record()} />。
+标注根节点将其余字段分为
+<UiLabel name={m.workbench_explorer_section_annotation()} />、
+<UiLabel name={m.workbench_explorer_section_source()} />、
+<UiLabel name={m.workbench_explorer_section_organization()} />、
+<UiLabel name={m.workbench_explorer_section_links()} /> 和
+<UiLabel name={m.workbench_explorer_section_record()} />。
+引文根节点目前没有其他章节。
 
-Each top-level row shows a name a reader knows, and its raw path stays in the tooltip and in <UiLabel name={m.workbench_explorer_menu_copy_path()} />. Expand a row that holds an object or an array to read its members. A long value collapses to its first line until you select <UiLabel name={m.workbench_explorer_show_more()} />; <UiLabel name={m.workbench_explorer_show_less()} /> folds it back.
+选择章节标题即可展开或折叠该章节。面板选择控件旁的按钮可以全部展开或全部折叠，提示分别为 <UiLabel name={m.workbench_explorer_expand_all()} /> 与 <UiLabel name={m.workbench_explorer_collapse_all()} />。面板菜单中也提供相同操作。
 
-### Filter fields
+每个顶层行显示便于读者理解的名称，原始路径保留在提示文本与 <UiLabel name={m.workbench_explorer_menu_copy_path()} /> 中。展开对象或数组行可查看其成员。较长的值默认只显示第一行；选择 <UiLabel name={m.workbench_explorer_show_more()} /> 可展开，选择 <UiLabel name={m.workbench_explorer_show_less()} /> 可再次收起。
 
-Type in the search box to narrow the list. The box names the root it searches: <UiLabel name={m.workbench_fields_search_note()} />, <UiLabel name={m.workbench_fields_search_annotation()} />, <UiLabel name={m.workbench_fields_search_filename()} />, or <UiLabel name={m.workbench_fields_search_citation()} />.
+### 筛选字段 [#filter-fields]
 
-A query matches field names, keys, and values by case-insensitive substring. Matching rows and their ancestor chains open automatically. When nothing matches, the list reads <UiLabel name={m.workbench_fields_no_matches()} />.
+在搜索框中输入内容以缩小列表范围。搜索框会说明正在搜索的根节点：<UiLabel name={m.workbench_fields_search_note()} />、<UiLabel name={m.workbench_fields_search_annotation()} />、<UiLabel name={m.workbench_fields_search_filename()} /> 或 <UiLabel name={m.workbench_fields_search_citation()} />。
 
-## Copy paths and snippets
+搜索会对字段名称、键和值进行不区分大小写的子串匹配。匹配行及其所有上级节点会自动展开。没有匹配项时，列表显示 <UiLabel name={m.workbench_fields_no_matches()} />。
 
-Every row carries a menu. Open it from the row's action cluster, labelled <UiLabel name={m.workbench_explorer_row_actions()} />, or right-click the row.
+## 复制路径与代码片段 [#copy-paths-and-snippets]
 
-### Copy path
+每行都有菜单。可从该行标记为 <UiLabel name={m.workbench_explorer_row_actions()} /> 的操作按钮组打开，也可右键选择该行。
 
-Select <UiLabel name={m.workbench_explorer_menu_copy_path()} /> to copy the engine-neutral property path, such as `zt.creators[0].lastName`.
+### 复制路径 [#copy-path]
 
-### Copy value
+选择 <UiLabel name={m.workbench_explorer_menu_copy_path()} />，复制与模板引擎无关的属性路径，例如 `zt.creators[0].lastName`。
 
-Select <UiLabel name={m.workbench_explorer_menu_copy_value()} /> to copy the row's current value. Primitives copy verbatim; objects and arrays copy as JSON. The item is unavailable while the row holds no value.
+### 复制值 [#copy-value]
 
-### Copy template snippets
+选择 <UiLabel name={m.workbench_explorer_menu_copy_value()} />，复制该行当前的值。基本类型按原样复制，对象与数组复制为 JSON。该行没有值时，此菜单项不可用。
 
-The same menu offers ready-to-use snippets in the syntax of your template:
+### 复制模板代码片段 [#copy-template-snippets]
 
-- <UiLabel name={m.workbench_explorer_menu_copy_output()} /> renders the value, for example `{{ zt.title }}`.
-- <UiLabel name={m.workbench_explorer_menu_copy_if_present()} /> wraps the value
-  in a conditional block.
-- <UiLabel name={m.workbench_explorer_menu_copy_loop()} /> iterates over an
-  array node.
-- <UiLabel name={m.workbench_explorer_menu_copy_joined()} /> joins an array into
-  a delimiter-separated string.
+同一菜单还提供与当前模板语法匹配、可直接使用的代码片段：
 
-An array node offers <UiLabel name={m.workbench_explorer_menu_copy_loop()} />, and <UiLabel name={m.workbench_explorer_menu_copy_joined()} /> where its elements join into text. Every other node offers <UiLabel name={m.workbench_explorer_menu_copy_output()} /> and <UiLabel name={m.workbench_explorer_menu_copy_if_present()} />.
+- <UiLabel name={m.workbench_explorer_menu_copy_output()} /> 输出该值，例如 `{{ zt.title }}`。
+- <UiLabel name={m.workbench_explorer_menu_copy_if_present()} />
+  将该值放入条件块中。
+- <UiLabel name={m.workbench_explorer_menu_copy_loop()} /> 遍历数组节点。
+- <UiLabel name={m.workbench_explorer_menu_copy_joined()} />
+  将数组连接为以分隔符分隔的字符串。
 
-With <UiLabel name={m.settings_template_js_enable_name()} /> on, the snippet items sit in two submenus, captioned "Liquid" and "Eta", so you can pick the syntax your template uses. With the gate off, the Liquid items appear directly in the menu.
+数组节点提供 <UiLabel name={m.workbench_explorer_menu_copy_loop()} />；如果元素可连接为文本，还会提供 <UiLabel name={m.workbench_explorer_menu_copy_joined()} />。其他节点提供 <UiLabel name={m.workbench_explorer_menu_copy_output()} /> 与 <UiLabel name={m.workbench_explorer_menu_copy_if_present()} />。
 
-A successful copy shows the notice <UiLabel name={m.workbench_field_copy_done()} />. A failed copy shows <UiLabel name={m.workbench_field_copy_failed()} />.
+开启 <UiLabel name={m.settings_template_js_enable_name()} /> 后，代码片段菜单项会分入名为 “Liquid” 和 “Eta” 的两个子菜单，方便选择模板所用语法。关闭开关时，Liquid 菜单项直接显示在主菜单中。
 
-<Callout type="info" title="Reporting a template problem">
-  To send this data with a bug report, follow [Template
-  data](/docs/how-to/collect-debug-logs#template-data) in Collect debug logs.
+复制成功会显示 <UiLabel name={m.workbench_field_copy_done()} />；复制失败则显示 <UiLabel name={m.workbench_field_copy_failed()} />。
+
+<Callout type="info" title="反馈模板问题">
+  如需在问题反馈中附上这些数据，请按“收集调试日志”中的
+  [模板数据](/docs/how-to/collect-debug-logs#template-data)步骤操作。
 </Callout>
 
-## See also
+## 另请参阅 [#see-also]
 
 <Cards>
   <Card
-    title="Customize a template"
-    description="Create an editable template document and apply your changes."
+    title="自定义模板"
+    description="创建可编辑的模板文档并应用修改。"
     href="/docs/how-to/customize-a-template"
   />
   <Card
-    title="How templates work"
-    description="The three kinds of template document, languages, and filename matching."
+    title="模板的工作原理"
+    description="三类模板文档、模板语言与文件名匹配规则。"
     href="/docs/concepts/how-templates-work"
   />
   <Card
-    title="Configure frontmatter properties"
-    description="Add custom YAML properties using template expressions."
+    title="配置 frontmatter 属性"
+    description="使用模板表达式添加自定义 YAML 属性。"
     href="/docs/how-to/configure-frontmatter-properties"
   />
 </Cards>

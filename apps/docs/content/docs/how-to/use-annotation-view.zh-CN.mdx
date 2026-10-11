@@ -68,7 +68,7 @@ import { m } from "@/paraglide/messages.js";
 
 当条目包含多个附件时，工具栏下方的选择器会列出当前显示附件的名称及其标注数量，并按条目记住您的选择。
 
-Zotero PDF 标签页与 Zotero 外部阅读器各自会自行决定所展示的附件，因此当它们处于活跃状态时选择器会自动让位。
+Zotero PDF 标签页和 Zotero 阅读器会自行决定附件，因此当视图跟随其中之一时，选择器会让位。
 
 如需在 Obsidian 中阅读当前显示的附件，请点击模式按钮，然后选择 <UiLabel name={m.command_open_pdf_name()} />。面板菜单中包含完全相同的项。当 Obsidian 的某个 PDF 标签页已在显示该附件时，此选项会自动隐藏。
 
@@ -115,58 +115,57 @@ Zotero PDF 标签页与 Zotero 外部阅读器各自会自行决定所展示的�
 
 若无需拖拽即可插入，请先将光标放置在笔记中的目标插入位置。然后右键单击标注卡片，或打开其 <UiLabel name={m.annot_view_more_tooltip()} /> 菜单，点击 <UiLabel name={m.annot_view_menu_insert()} />。ZotLit 将插入与拖拽完全相同的格式化文本。在未激活任何笔记编辑器时该菜单项不可用。
 
-ZotLit 会依据该条目文献笔记所绑定的[配置方案](/docs/concepts/profiles)进行渲染，若该条目尚无笔记则按默认配置方案处理。在等待插入期间如果输入了新文字，插入位置会随文本自适应后移。按 `Escape` 可取消正在处理的插入请求。插入完成后，执行一次撤销（Undo）即可移除插入的全部内容。
+ZotLit 会依据该条目文献笔记所绑定的[配置方案](/docs/concepts/profiles)进行渲染，若该条目尚无笔记则按默认配置方案处理。等待期间的编辑会让插入位置随文本移动。按 `Escape` 可取消正在处理的插入请求。插入完成后，执行一次撤销（Undo）即可移除插入的全部内容。
 
 当开启 <UiLabel name={m.settings_attachment_import_name()} /> 时，插入的摘录会被保存为仓库中的图片文件。关闭时，新摘录将使用说明图片不可用的占位文本与源链接。在侧边栏中浏览卡片或选定目标笔记不会生成落地图片文件。
 
-You can view and insert [excerpt images](/docs/concepts/excerpt-images) with both PDF readers closed. A failed image request produces fallback text or a preserved image, and the operation reports uncertain or unavailable results in one summary.
+即使两个 PDF 阅读器都已关闭，您仍可查看和插入[摘录图片](/docs/concepts/excerpt-images)。图片请求失败时，会生成替代文本或保留已有图片；操作会在一份汇总中报告结果不确定或不可用的情况。
 
-### Context menu actions
+### 上下文菜单操作 [#context-menu-actions]
 
-Right-click an annotation row, or open its <UiLabel name={m.annot_view_more_tooltip()} /> menu, for additional options:
+右键选择标注行，或打开其 <UiLabel name={m.annot_view_more_tooltip()} /> 菜单，可使用更多选项：
 
-- <UiLabel name={m.annot_view_menu_edit_text()} />: opens an editor for the
-  quoted text of a highlight or underline. See [Edit the quoted
-  text](/docs/how-to/edit-pdf-annotations#edit-the-quoted-text).
-- <UiLabel name={m.annot_view_menu_copy_backlink()} />: copies a link back to
-  the annotation's location in the PDF.
-- <UiLabel name={m.annot_view_menu_copy_text()} />: copies the quoted text, or
-  the comment when the annotation has no quoted text.
-- <UiLabel name={m.annot_view_menu_copy_citation()} />: copies a formatted
-  citation for the annotation's parent item.
-- <UiLabel name={m.indexed_key_menu_copy_annotation()} />: copies the
-  annotation's Zotero key.
-- <UiLabel name={m.annot_view_menu_insert()} />: inserts the annotation at the
-  cursor in the active note, as a drag does.
-- <UiLabel name={m.template_data_explorer_menu_explore()} />: opens the Template
-  Data Explorer with the annotation's data.
-- <UiLabel name={m.annot_view_menu_delete()} />: deletes the annotation from
-  Zotero after you confirm. See [Delete an
-  annotation](/docs/how-to/edit-pdf-annotations#delete-an-annotation).
+- <UiLabel name={m.annot_view_menu_edit_text()} />
+  ：打开编辑器，修改高亮或下划线标注的引用文本。请参阅[编辑引用文本](/docs/how-to/edit-pdf-annotations#edit-the-quoted-text)。
+- <UiLabel name={m.annot_view_menu_copy_backlink()} />
+  ：复制指向标注在 PDF 中所在位置的回链。
+- <UiLabel name={m.annot_view_menu_copy_text()} />
+  ：复制引用文本；如果标注没有引用文本，则复制评注。
+- <UiLabel name={m.annot_view_menu_copy_citation()} />
+  ：复制标注父条目的格式化引文。
+- <UiLabel name={m.indexed_key_menu_copy_annotation()} />
+  ：复制标注的 Zotero 键。
+- <UiLabel name={m.annot_view_menu_insert()} />
+  ：在当前活动笔记的光标处插入标注，效果与拖拽相同。
+- <UiLabel name={m.template_data_explorer_menu_explore()} />
+  ：打开模板数据浏览器，并显示该标注的数据。
+- <UiLabel name={m.annot_view_menu_delete()} />
+  ：在您确认后从 Zotero
+  删除标注。请参阅[删除标注](/docs/how-to/edit-pdf-annotations#delete-an-annotation)。
 
-When several cards are selected, the menu has only the items that act on all of them. See [Select several cards](#select-several).
+选中多张卡片时，菜单只显示能同时应用于所有选中卡片的操作。请参阅[多选卡片](#select-several)。
 
-## See also
+## 另请参阅 [#see-also]
 
 <Cards>
   <Card
-    title="How to edit PDF annotations in Obsidian"
-    description="Create every annotation type, edit colors, comments, tags, and quoted text, or delete annotations."
+    title="在 Obsidian 中编辑 PDF 标注"
+    description="创建各种类型的标注，修改颜色、评注、标签和引用文本，或删除标注。"
     href="/docs/how-to/edit-pdf-annotations"
   />
   <Card
-    title="Import Zotero notes"
-    description="Import child notes from Zotero as standalone Markdown files."
+    title="导入 Zotero 笔记"
+    description="将 Zotero 子笔记导入为独立的 Markdown 文件。"
     href="/docs/how-to/import-zotero-notes"
   />
   <Card
-    title="Set up live updates"
-    description="Enable automatic push from Zotero to Obsidian."
+    title="配置即时同步更新"
+    description="启用从 Zotero 到 Obsidian 的自动推送。"
     href="/docs/how-to/set-up-live-updates"
   />
   <Card
-    title="Keep notes up to date"
-    description="Update literature notes when your Zotero data changes."
+    title="保持笔记更新"
+    description="在 Zotero 数据变化时更新文献笔记。"
     href="/docs/how-to/keep-notes-updated"
   />
 </Cards>

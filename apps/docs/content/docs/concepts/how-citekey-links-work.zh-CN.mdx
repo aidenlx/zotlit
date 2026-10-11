@@ -78,75 +78,75 @@ ZotLit 绝不会擅自猜测选择其中任何一个候选条目。编辑器、�
 
 双链引文完整保留了 Obsidian 原生的链接目标、点击交互以及拖拽行为。在源码模式下，始终显示原始的双链文本。
 
-## Formatted in-text citations
+## 格式化的文内引文 [#formatted-in-text-citations]
 
-<UiLabel name={m.settings_citation_show_formatted_name()} /> is on by default.
-It applies the selected
-<UiLabel name={m.settings_citation_references_style_name()} /> in Live Preview
-and reading view. Source mode always shows Markdown.
+<UiLabel name={m.settings_citation_show_formatted_name()} />
+默认开启。它会在实时预览和阅读视图中应用所选的
+<UiLabel name={m.settings_citation_references_style_name()} />
+。源码模式始终显示 Markdown。
 
-ZotLit asks the Pandoc engine to format the complete Document Citation Set. A complete render keeps numbering and style context consistent across the note. ZotLit swaps the whole document to formatted text only after that render finishes.
+ZotLit 会让 Pandoc 引擎对整篇文档的引文集合进行格式化。完整渲染可确保整篇笔记的编号和样式上下文保持一致。只有渲染完成后，ZotLit 才会将整篇文档中的引文切换为格式化文本。
 
-In Live Preview, the Markdown source returns only for the citation touched by your cursor or selection. Other citations remain formatted.
+在实时预览中，只有光标或选区触及的引文会恢复显示 Markdown 源码。其他引文仍保持格式化显示。
 
-ZotLit leaves the native source visible when it cannot produce one complete formatted result.
+如果无法生成完整的格式化结果，ZotLit 会继续显示原生源码。
 
-A Citation Cluster with any unresolved item stays completely unchanged. Its resolved items still affect later numeric numbering and the References Sidebar.
+只要一个引文簇中有条目未能解析，整个引文簇就会保持原样。其中已解析的条目仍会影响后续的数字编号和参考文献侧边栏。
 
-Turning <UiLabel name={m.settings_citation_show_formatted_name()} /> off leaves every source in Obsidian's native presentation. It does not change set membership, Citekey Navigation, insertion, or export.
+关闭 <UiLabel name={m.settings_citation_show_formatted_name()} /> 后，所有引文源码都会使用 Obsidian 的原生显示方式。此设置不会改变引文集合的成员、文献引用标识导航、插入或导出行为。
 
-## References and errors
+## 参考文献与错误 [#references-and-errors]
 
-The References Sidebar presents one entry for each resolved item in the Document Citation Set. A formatted list follows the selected style's bibliography order and Entry Markers.
+参考文献侧边栏会为文档引文集合中的每个已解析条目显示一条记录。格式化列表遵循所选样式的参考文献排序和条目标记。
 
-Without formatted output, the sidebar uses a minimal list in first-occurrence order. A Reference Error keeps its exact source occurrence and contributes no bibliography entry.
+没有格式化输出时，侧边栏会按首次出现的顺序显示简化列表。参考文献错误会保留其准确的源码位置，且不会产生参考文献条目。
 
-The [references how-to](/docs/how-to/review-copy-troubleshoot-references) covers navigation, item actions, bibliography copy, and error recovery.
+[参考文献操作指南](/docs/how-to/review-copy-troubleshoot-references)介绍了导航、条目操作、参考文献复制和错误修复。
 
-## Citekey Navigation
+## 文献引用标识导航 [#citekey-navigation]
 
-<UiLabel name={m.settings_citation_open_as_links_name()} /> controls navigation
-for both literal Pandoc citations and Literature Note wikilinks shown as
-citations. It works independently of formatted display and hover behavior.
+<UiLabel name={m.settings_citation_open_as_links_name()} /> 同时控制字面形式的
+Pandoc
+引文和显示为引文的文献笔记双链的导航行为。此功能独立于格式化显示和悬停行为。
 
-A single-item citation can open or create its Literature Note. A multi-item citation requires an item choice. An [ambiguous key](#ambiguous-key) requires a candidate choice because the key itself names no unique item.
+单条目引文可以打开或创建对应的文献笔记。多条目引文需要先选择条目。[歧义键](#ambiguous-key)则需要先选择候选条目，因为这个键本身不能唯一确定一个条目。
 
-The Citation Popover presents every cited item's full bibliography entry in citation order. An unresolved or ambiguous key remains visible as its own state instead of adopting an item.
+引文浮窗会按引文顺序显示每个被引条目的完整参考文献记录。未解析或存在歧义的键会保留其自身状态，不会被分配给某个条目。
 
-The [references how-to](/docs/how-to/review-copy-troubleshoot-references) covers citation hover and the available navigation actions. The [commands reference](/docs/reference/commands) lists the open-under-cursor commands.
+[参考文献操作指南](/docs/how-to/review-copy-troubleshoot-references)介绍了引文悬停及可用的导航操作。[命令参考](/docs/reference/commands)列出了打开光标处引文的命令。
 
-## Theme hooks [#theme-hooks]
+## 主题样式接口 [#theme-hooks]
 
-ZotLit adds public CSS classes only to sources in the Document Citation Set where it supplies rendering or navigation. Excluded sources and sources with both applicable features inactive receive no public ZotLit class.
+ZotLit 只会为文档引文集合中由它提供渲染或导航的源码添加公开的 CSS 类。被排除的源码，以及两项适用功能均未启用的源码，都不会获得公开的 ZotLit 类。
 
-See [Theme hooks](/docs/reference/theme-hooks) for class names, state meanings, and activation rules.
+有关类名、状态含义和启用规则，请参阅[主题样式接口](/docs/reference/theme-hooks)。
 
-## See also
+## 另请参阅 [#see-also]
 
 <Cards>
   <Card
-    title="Insert citations"
-    description="Insert Markdown citations independently of citation source settings."
+    title="插入引文"
+    description="独立于引文来源设置插入 Markdown 引文。"
     href="/docs/how-to/insert-citations"
   />
   <Card
-    title="Create and open literature notes"
-    description="Open or create a Literature Note from a citation or the quick switcher."
+    title="创建和打开文献笔记"
+    description="通过引文或快速切换器打开或创建文献笔记。"
     href="/docs/how-to/create-and-open-notes"
   />
   <Card
-    title="Review, copy, and troubleshoot references"
-    description="Navigate occurrences, inspect citation popovers, copy entries, and fix errors."
+    title="查看、复制和排查参考文献"
+    description="跳转到引文位置、查看引文浮窗、复制条目并修复错误。"
     href="/docs/how-to/review-copy-troubleshoot-references"
   />
   <Card
-    title="Export a note with citations"
-    description="Export the active note as a Word document or web page."
+    title="导出含引文的笔记"
+    description="将当前活动笔记导出为 Word 文档或网页。"
     href="/docs/how-to/export-note-with-citations"
   />
   <Card
-    title="Settings"
-    description="Look up citation controls, defaults, storage, and dependencies."
+    title="设置"
+    description="查阅引文控件、默认值、存储方式和依赖关系。"
     href="/docs/reference/settings"
   />
 </Cards>

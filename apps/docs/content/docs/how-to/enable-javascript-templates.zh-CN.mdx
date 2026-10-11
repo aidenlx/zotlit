@@ -52,37 +52,37 @@ import { m } from "@/paraglide/messages.js";
   </Step>
 </Steps>
 
-The gate takes effect immediately. ZotLit recompiles the template folder in place. No plugin reload is needed.
+开关立即生效。ZotLit 会就地重新编译模板文件夹，无需重新加载插件。
 
-## Turn off
+## 关闭 [#turn-off]
 
-In the same <UiLabel name={m.settings_template_js_enable_name()} /> group, click <UiLabel name={m.settings_template_js_turn_off()} />. The gate disables immediately with no confirmation modal. Every template document that declares `language: eta` becomes inert, and every managed frontmatter entry declared with `js` stops evaluating until you turn the gate back on.
+在同一个 <UiLabel name={m.settings_template_js_enable_name()} /> 选项组中，选择 <UiLabel name={m.settings_template_js_turn_off()} />。开关会立即关闭，不再弹出确认窗口。所有声明了 `language: eta` 的模板文档都会停止运行，所有以 `js` 声明的受管 frontmatter 配置项都会停止求值，直到您重新开启此开关。
 
-## Per-device scope
+## 按设备独立设置 [#per-device-scope]
 
-The setting is stored locally on the device, outside the synced plugin data. Enabling it on one device does not enable it on another. Each device where you want Eta documents and `js` entries to run requires its own opt-in.
+此设置保存在当前设备本地，不属于同步的插件数据。在一台设备上启用它，不会同时在其他设备上启用。每台需要运行 Eta 文档与 `js` 配置项的设备都必须单独授权。
 
-## See also
+## 另请参阅 [#see-also]
 
 <Cards>
   <Card
-    title="JavaScript templates"
-    description="What the gate enables, risks, and behavior when disabled."
+    title="JavaScript 模板"
+    description="开关允许的功能、安全风险以及禁用时的行为。"
     href="/docs/concepts/javascript-templates"
   />
   <Card
-    title="Profile document"
-    description="The manifest keys, the note source, and the Annotation Section."
+    title="配置方案文档"
+    description="manifest 配置键、笔记源码与标注格式区域。"
     href="/docs/reference/templates/profile-document"
   />
   <Card
-    title="Customize a template"
-    description="Edit a template document and switch its language to Eta."
+    title="自定义模板"
+    description="编辑模板文档并将其语言切换为 Eta。"
     href="/docs/how-to/customize-a-template"
   />
   <Card
-    title="How templates work"
-    description="The three template document kinds, their filenames, and the two languages."
+    title="模板的工作原理"
+    description="三类模板文档、各自的文件名以及两种模板语言。"
     href="/docs/concepts/how-templates-work"
   />
 </Cards>

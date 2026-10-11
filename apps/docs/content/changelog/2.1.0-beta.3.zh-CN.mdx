@@ -14,7 +14,7 @@ import { m } from "@/paraglide/messages.js";
 
 ZotLit 现已同时支持 Zotero 10 与 Zotero 9。
 
-Zotero 10 调整了存储未提交变动的方式，导致 Zotero 保持运行时所做的改动对 ZotLit 可能会暂时不可见。配套插件 Companion 现在会自动为 ZotLit 保持数据库的即时同步。当您从 Zotero 切换回 Obsidian 时，无论是否开启即时更新，您的最新更改均已妥善就位。Zotero 侧边栏新增的 <UiLabel name={m["zotero.database_status.tooltiptext"]()} /> 状态面板可以确认最新改动是否已写入数据库，并在异常时支持手动触发更新。详见[解决 Zotero 数据不同步或过期问题](/docs/how-to/fix-stale-data)。
+Zotero 10 调整了存储近期编辑内容的方式，导致 Zotero 保持运行时所做的改动对 ZotLit 可能会暂时不可见。配套插件 Companion 现在会自动为 ZotLit 保持数据库的即时同步。当您从 Zotero 切换回 Obsidian 时，无论是否开启即时更新，您的最新更改均已妥善就位。Zotero 侧边栏新增的 <UiLabel name={m["zotero.database_status.tooltiptext"]()} /> 状态面板可以确认最新改动是否已写入数据库，并在异常时支持手动触发更新。详见[解决 Zotero 数据不同步或过期问题](/docs/how-to/fix-stale-data)。
 
 ### 文献库作用域（Library scope）
 
@@ -29,11 +29,11 @@ ZotLit 现在能够同时跨多个 Zotero 文献库协同工作。**设置 › Z
 
 **ZotLit: 创建或更新所有文献笔记**以及 **ZotLit: 导入所有子笔记与独立笔记**同样覆盖全部作用域，其确认窗口会按文献库对条目进行归类展示。来自 Zotero 右键菜单和协议链接的指令依然精准作用于其来源的具体文献库，不受本地作用域设置的限制。
 
-您离开的群组会在**选定的文献库**中保留位置并标记为不可用，因此临时的网络脱机或权限变动不会清空您的选择。全库操作会继续在可用文献库上运行，并明确告知跳过了多少个不可用文献库。详见[设置 › 文献库作用域](/docs/reference/settings#library-scope)。
+您离开的群组会在**选定的文献库**中保留位置并标记为不可用，因此文献库暂时不可用不会清空您的选择。全库操作会继续在可用文献库上运行，并明确告知跳过了多少个不可用文献库。详见[设置 › 文献库作用域](/docs/reference/settings#library-scope)。
 
 如果 ZotLit 无法读取作用域配置，将保留磁盘原样，仅检索**我的文库**，在设置中展示警告，并在您重新保存作用域时自动恢复。
 
-**What the upgrade sets:** upgrading selects **Selected libraries** with **My Library** alone, whatever library you had selected before, so your search scope stays as narrow as it was. 您可以随时切换为**所有文献库**或勾选群组文献库。全新安装则默认从**所有文献库**开始。
+**升级时的默认行为：** 无论此前选择了哪个文献库，升级后都会设为**选定的文献库**并仅勾选**我的文库**，以保持较小的检索范围。您可以随时切换为**所有文献库**或勾选群组文献库。全新安装则默认从**所有文献库**开始。
 
 ### 匹配多个条目的歧义文献引用标识
 
@@ -58,11 +58,11 @@ ZotLit 现在能够同时跨多个 Zotero 文献库协同工作。**设置 › Z
 
 ### 引文语言区域（Citation locale）
 
-A new **Citation locale** setting under **Settings › ZotLit › Citations** sets the language for citation terms, dates, names, and sorting across the vault. It takes a language tag such as `en-US`, `de`, or `zh-CN`.
+**设置 → ZotLit → 引文**下新增的**引文语言区域**设置，统一控制仓库中引文术语、日期、姓名与排序使用的语言。该设置接受 `en-US`、`de` 或 `zh-CN` 等语言标签。
 
-Leaving it empty keeps the language the selected style declares. See [Settings › Citations](/docs/reference/settings#citations).
+留空时沿用所选样式声明的语言。详见[设置 → 引文](/docs/reference/settings#citations)。
 
-## Bug Fixes
+## 问题修复 [#bug-fixes]
 
-- Fixed slow or broken database refreshes when the Zotero data directory sits on a different drive than the system temp folder, such as an external drive on macOS.
-- Fixed dragging an annotation from the annotation view inserting the raw highlight text, or the annotation key for a sticky note, instead of the rendered annotation template. The insert only recovered after pressing **Link to Zotero item** again.
+- 修复了 Zotero 数据目录与系统临时文件夹位于不同磁盘时，数据库刷新缓慢或失败的问题，例如在 macOS 上将 Zotero 数据存放于外置磁盘的情况。
+- 修复了从标注视图拖拽批注时，插入的是原始高亮文本或便笺的批注标识，而不是标注模板渲染结果的问题。此前需要再次点击**链接到 Zotero 条目**才能恢复正常插入。

@@ -59,56 +59,56 @@ CLI 仅读取您的模板文档和 Zotero 文献库，并在内存中进行无�
 
 Liquid 模板默认可用，无需额外授权。Eta 文档以及使用 `js` 编写的受管 frontmatter 表达式则需要本设备显式开启 JavaScript 模板权限。
 
-You enable this gate yourself on each device at <SettingsPath page={m.settings_page_advanced()} setting={m.settings_advanced_template_engine_heading()} />. The CLI never changes it: a command that meets an Eta document while the gate is off fails with a diagnostic instead, and the agent must ask you to enable the setting.
+您需要在每台设备的 <SettingsPath page={m.settings_page_advanced()} setting={m.settings_advanced_template_engine_heading()} /> 中自行开启此权限。CLI 不会更改该设置：开关关闭时，命令若遇到 Eta 文档会失败并返回诊断信息，智能体必须请您开启设置。
 
-## Managed frontmatter
+## 受管 frontmatter [#managed-frontmatter]
 
-Managed frontmatter fields are YAML properties in literature note frontmatter whose values come from template expressions. ZotLit re-evaluates them on every note update.
+受管 frontmatter 字段是文献笔记 frontmatter 中的 YAML 属性，其值由模板表达式生成。每次更新笔记时，ZotLit 都会重新计算这些值。
 
-The list of entries lives in the manifest of the profile document, in the order ZotLit writes them. Each entry names its language in the entry itself: `expr` for a Liquid expression, `value` for a JSON-e template, or `js` for a JavaScript expression behind the gate. The agent edits that list in the document with its file tools, and reads the result back through a check.
+配置项列表位于配置方案文档的 manifest 中，其顺序就是 ZotLit 写入属性的顺序。每个配置项自身声明使用的语言：`expr` 表示 Liquid 表达式，`value` 表示 JSON-e 模板，`js` 表示受权限开关控制的 JavaScript 表达式。智能体通过文件工具编辑文档中的列表，再运行检查读取结果。
 
-For manual configuration in the UI, see [Configure frontmatter properties](/docs/how-to/configure-frontmatter-properties). For the entry members and the merge strategies, see the [Profile document](/docs/reference/templates/profile-document) and the [Frontmatter reference](/docs/reference/templates/frontmatter).
+如需通过界面手动配置，请参阅[配置 frontmatter 属性](/docs/how-to/configure-frontmatter-properties)。有关配置项成员和合并策略，请参阅[配置方案文档](/docs/reference/templates/profile-document)和 [frontmatter 参考](/docs/reference/templates/frontmatter)。
 
-For the frontmatter rules as the shipped guide states them, use:
+要查看随插件提供的指南中的 frontmatter 规则，请运行：
 
 ```bash
 obsidian zotlit:template-guide topic=frontmatter
 ```
 
-## Template Workbench CLI and Template Data Explorer
+## 模板工作台 CLI 与模板数据浏览器 [#template-workbench-cli-and-template-data-explorer]
 
-The Template Workbench CLI gives an agent data and in-memory rendering through the command line. The agent can then edit and check your template documents.
+模板工作台 CLI 通过命令行为智能体提供数据和内存渲染能力，智能体可据此编辑和检查您的模板文档。
 
-The Template Data Explorer is a visual sidebar for you. It lets you browse current template data and copy paths or snippets while editing templates yourself. See [Explore template data](/docs/how-to/explore-template-data) for its panes and copy actions.
+模板数据浏览器是供您使用的可视化侧边栏。您自行编辑模板时，可以在其中浏览当前模板数据，并复制路径或代码片段。有关面板和复制操作，请参阅[浏览模板数据](/docs/how-to/explore-template-data)。
 
-Both use the same data resolution and neither writes: browsing and rendering do not create notes, import attachments, or change settings.
+两者使用相同的数据解析机制，且都不执行写入：浏览和渲染不会创建笔记、导入附件或更改设置。
 
-## See also
+## 另请参阅 [#see-also]
 
 <Cards>
   <Card
-    title="Template Workbench CLI reference"
-    description="The live commands, their flags, and the diagnostic codes."
+    title="模板工作台 CLI 参考"
+    description="当前可用的命令、参数和诊断代码。"
     href="/docs/reference/template-workbench-cli"
   />
   <Card
-    title="Install the ZotLit skill"
-    description="Install the skill for agents used in one vault."
+    title="安装 ZotLit Skill"
+    description="为在单个仓库中工作的智能体安装 Skill。"
     href="/docs/install-skill"
   />
   <Card
-    title="Template Workbench View"
-    description="Edit and preview a template document in Obsidian."
+    title="模板工作台视图"
+    description="在 Obsidian 中编辑和预览模板文档。"
     href="/docs/concepts/template-workbench-view"
   />
   <Card
-    title="Customize a template"
-    description="Edit a profile, preview the result, and update an existing note."
+    title="自定义模板"
+    description="编辑配置方案、预览结果并更新现有笔记。"
     href="/docs/how-to/customize-a-template"
   />
   <Card
-    title="JavaScript templates"
-    description="Understand the consent gate for Eta and JavaScript frontmatter."
+    title="JavaScript 模板"
+    description="了解 Eta 和 JavaScript frontmatter 的授权开关。"
     href="/docs/concepts/javascript-templates"
   />
 </Cards>

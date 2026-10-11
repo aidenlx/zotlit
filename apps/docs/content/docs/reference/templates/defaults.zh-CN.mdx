@@ -58,15 +58,15 @@ ZotLit 为每种模板类型均提供了开箱即用的内置 Liquid 默认模�
 | 区域        | 渲染生成的内容                                                                                |
 | ----------- | --------------------------------------------------------------------------------------------- |
 | Notes       | 关联子笔记的无序列表。每个 `note.noteLink` 都会解析为指向对应已导入笔记文件的 Obsidian 双链。 |
-| Annotations | Each annotation rendered via the `annotation` template (see below).                           |
+| Annotations | 通过 `annotation` 模板渲染的每条标注（见下文）。                                              |
 
-Both sections appear only when the corresponding array is non-empty.
+这两个区域仅在对应数组非空时显示。
 
-The `render_annotation` tag passes each annotation as `zt`. See [Annotation rendering](/docs/reference/templates/syntax#render-annotation) for the equivalent native syntax.
+`render_annotation` 标签将每条标注作为 `zt` 传入。等效的原生语法见[标注渲染](/docs/reference/templates/syntax#render-annotation)。
 
-## Annotation template
+## 标注模板 [#annotation-template]
 
-In a Profile document: the Annotation Section, the final section after the standalone line `--- zotlit:annotation ---`.
+在配置方案文档中：位于独占一行的 `--- zotlit:annotation ---` 之后，即文档末尾的标注区域。
 
 ```liquid
 {% bq %}
@@ -80,7 +80,7 @@ In a Profile document: the Annotation Section, the final section after the stand
 {% endbq %}
 ```
 
-Rendered output for an annotation on page 42 with an image excerpt, highlighted text, and a comment:
+第 42 页上的一条标注包含图片摘录、高亮文本和评论，其渲染结果如下：
 
 ```markdown
 > [!note] Page [42](file:///Users/me/Zotero/storage/ABCD2345/paper.pdf#page=42&zt-annotation=ANNX2345)
@@ -90,19 +90,19 @@ Rendered output for an annotation on page 42 with an image excerpt, highlighted 
 > My thoughts on this
 ```
 
-| Element      | Source                                                                                                                                                                                                                              |
-| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Callout type | `[!note]`: an Obsidian callout. Change `note` to `quote`, `info`, or any supported type to restyle.                                                                                                                                 |
-| Page label   | `{{ zt \| file_link: zt.pageLabel }}` in the callout title: the page label, linked to the attachment file. Click it and the PDF opens on that page with this annotation selected. A label with no resolvable file stays plain text. |
-| Image        | `{{ zt.imgLink \| embed }}`: embeds a prepared image or ink excerpt. A failed refresh keeps a verified previous image, or returns an unavailable-image explanation and source link. Collapses to `""` for other annotation types.   |
-| Text         | `{{ zt.text }}`: the highlighted passage.                                                                                                                                                                                           |
-| Comment      | `{{ zt.comment }}`: the user's marginal note, rendered only when present.                                                                                                                                                           |
+| 元素       | 来源                                                                                                                                                                |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 提示框类型 | `[!note]`：Obsidian 提示框。将 `note` 改为 `quote`、`info` 或其他支持的类型，即可更改样式。                                                                         |
+| 页码标签   | 提示框标题中的 `{{ zt \| file_link: zt.pageLabel }}`：链接到附件文件的页码标签。选择该链接会打开 PDF 的对应页面并选中此标注。若无法解析文件位置，标签保持为纯文本。 |
+| 图片       | `{{ zt.imgLink \| embed }}`：嵌入已准备好的图片或手写摘录。刷新失败时保留经过验证的旧图片，或返回图片不可用的说明及来源链接。其他标注类型输出 `""`。                |
+| 文本       | `{{ zt.text }}`：高亮文本。                                                                                                                                         |
+| 评论       | `{{ zt.comment }}`：您添加的批注，仅在有内容时渲染。                                                                                                                |
 
-The `{% bq %}` / `{% endbq %}` block tag handles the `> ` prefix on every line and collapses consecutive blank lines into a single bare `>`.
+`{% bq %}` / `{% endbq %}` 块标签为每行添加 `> ` 前缀，并将连续空行合并为仅含一个 `>` 的行。
 
-## Citation text [#citation-text]
+## 引文文本 [#citation-text]
 
-In its own document, `zotlit-citation.md` in the template folder. One template answers both citation gestures, and `zt.variant` says which one the reader made:
+位于模板文件夹中的独立文档 `zotlit-citation.md`。同一个模板处理两种引文插入操作，`zt.variant` 表示您使用了哪一种：
 
 ```liquid
 {% if zt.variant == "alt" %}
@@ -112,33 +112,33 @@ In its own document, `zotlit-citation.md` in the template folder. One template a
 {% endif %}
 ```
 
-`zt.variant` is `"main"` or `"alt"`. `"main"` comes from Enter in the citation suggester or the insert modal; `"alt"` comes from Shift+Enter, or from a trailing `/` in the suggester query. It names the gesture the reader made, and this template decides what each gesture renders. See [Citation variant](/docs/reference/templates/data#citation-variant).
+`zt.variant` 的取值为 `"main"` 或 `"alt"`。在引文建议列表或插入对话框中按 Enter 对应 `"main"`；按 Shift+Enter，或在建议列表的查询末尾加 `/`，对应 `"alt"`。它标识您的操作，由此模板决定每种操作的渲染结果。参见[引文变体](/docs/reference/templates/data#citation-variant)。
 
-The `else` branch of the built-in default renders a bracketed Citation Cluster, such as `[@smith2024, {p. 62}; -@doe2021]`. The `"alt"` branch asks Pandoc for the author-in-text form, which falls back to a bracketed cluster whenever the first retained item carries a prefix or suppresses its author.
+内置默认模板的 `else` 分支生成方括号包裹的引文组，例如 `[@smith2024, {p. 62}; -@doe2021]`。`"alt"` 分支请求 Pandoc 使用作者融入正文的形式；若保留的第一个条目带有前缀或隐藏了作者，则回退为方括号引文组。
 
-| Input                        | `"main"`                | `"alt"`                                           |
-| ---------------------------- | ----------------------- | ------------------------------------------------- |
-| One key `smith2024`          | `[@smith2024]`          | `@smith2024`                                      |
-| Two keys                     | `[@a2020; @b2021]`      | First item in text, the rest in trailing brackets |
-| Locator `62`                 | `[@smith2024, {p. 62}]` | `@smith2024 [{p. 62}]`                            |
-| `suppressAuthor`             | `[-@smith2024]`         | `[-@smith2024]`, a cluster                        |
-| Prefix `see `                | `[see @smith2024]`      | `[see @smith2024]`, a cluster                     |
-| An item with no citation key | Dropped from the output | Dropped from the output                           |
+| 输入                   | `"main"`                | `"alt"`                                      |
+| ---------------------- | ----------------------- | -------------------------------------------- |
+| 单个引用键 `smith2024` | `[@smith2024]`          | `@smith2024`                                 |
+| 两个引用键             | `[@a2020; @b2021]`      | 第一个条目融入正文，其余条目置于后续方括号中 |
+| 定位信息 `62`          | `[@smith2024, {p. 62}]` | `@smith2024 [{p. 62}]`                       |
+| `suppressAuthor`       | `[-@smith2024]`         | `[-@smith2024]`, 引文组                      |
+| 前缀 `see `            | `[see @smith2024]`      | `[see @smith2024]`, 引文组                   |
+| 没有引用键的条目       | 从输出中省略            | 从输出中省略                                 |
 
-The `pandoc_cite` filter behaves the same in both branches:
+`pandoc_cite` 过滤器在两个分支中的行为一致：
 
-| Behavior             | Detail                                                                                                                                                                                               |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Prefix and suffix    | Preserves each item's `prefix` and `suffix`.                                                                                                                                                         |
-| Suppress author      | `suppressAuthor` true renders `-@key`.                                                                                                                                                               |
-| Locator              | Renders an explicit locator such as `, {p. 62}` from `labelShort` and `locator`.                                                                                                                     |
-| Complex citation key | Adds braces when Pandoc requires them. For example, `KX67D9YM?` renders as `@{KX67D9YM?}`.                                                                                                           |
-| Missing citation key | Omits items whose `item.citationKey` is null. An empty array or all-null array renders nothing.                                                                                                      |
-| Form                 | `normal` always produces a bracketed Citation Cluster; `prefer-author-in-text` produces an author-in-text citation only when the first retained item has no prefix and does not suppress its author. |
+| 行为       | 说明                                                                                                                        |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------- |
+| 前缀与后缀 | 保留每个条目的 `prefix` 和 `suffix`。                                                                                       |
+| 隐藏作者   | `suppressAuthor` 为 true 时生成 `-@key`。                                                                                   |
+| 定位信息   | 根据 `labelShort` 和 `locator` 生成明确的定位信息，例如 `, {p. 62}`。                                                       |
+| 复杂引用键 | 在 Pandoc 要求时添加花括号。例如，`KX67D9YM?` 渲染为 `@{KX67D9YM?}`。                                                       |
+| 缺少引用键 | 省略 `item.citationKey` 为 null 的条目。数组为空或所有条目的引用键均为 null 时不输出内容。                                  |
+| 形式       | `normal` 始终生成方括号引文组；`prefer-author-in-text` 仅在保留的第一个条目没有前缀且未隐藏作者时，生成作者融入正文的引文。 |
 
-ZotLit normalizes the rendered citation to inline form: leading and trailing whitespace is trimmed, and any whitespace run containing a line break collapses to a single space. This normalization applies everywhere a citation renders: the inline suggester, the command-palette picker, the `zt.citation` annotation field, <UiLabel name={m.annot_view_menu_copy_citation()} />, and citation resolution during note import.
+ZotLit 会将渲染后的引文规范化为行内形式：删除首尾空白，并将包含换行符的连续空白合并为一个空格。此处理适用于所有引文渲染位置：行内建议列表、命令面板选择器、标注字段 `zt.citation`、<UiLabel name={m.annot_view_menu_copy_citation()} />，以及笔记导入时的引文解析。
 
-Only the Liquid edition is built in. The same template in Eta reads:
+系统仅内置 Liquid 版本。同一模板的 Eta 写法如下：
 
 ```eta
 <% if (zt.variant === "alt") { %>
@@ -148,59 +148,59 @@ Only the Liquid edition is built in. The same template in Eta reads:
 <% } %>
 ```
 
-## Filename template
+## 文件名模板 [#filename-template]
 
-In a Profile document: the `filename` key of its YAML manifest. The Template Workbench View labels it <UiLabel name={m.workbench_name_filename_label()} />.
+在配置方案文档中：位于 YAML manifest 的 `filename` 键下。模板工作台视图将其标为 <UiLabel name={m.workbench_name_filename_label()} />。
 
-The rendered output is the name part of a new note's path. ZotLit creates the note in the Profile's [literature note folder](/docs/reference/settings#literature-note-folder), under this name.
+渲染结果用作新笔记路径中的名称部分。ZotLit 以此名称在配置方案的[文献笔记文件夹](/docs/reference/settings#literature-note-folder)中创建笔记。
 
 ```liquid
 {{ zt.citationKey | default: zt.DOI | default: zt.title | default: zt.key }}{% suffix %}
 ```
 
-| Element        | Detail                                                                                                                                 |
-| -------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Fallback chain | `citationKey` > `DOI` > `title` > `key`. The `default` filter skips nil and empty values.                                              |
-| `{% suffix %}` | Appends a short random string only when the rendered filename collides with an existing note. Absent a collision, it resolves to `""`. |
-| Single line    | The rendered output is collapsed to a single trimmed line (all newlines and surrounding whitespace removed).                           |
-| Extension      | The `.md` extension is appended automatically; the template produces only the base name.                                               |
+| 元素           | 说明                                                                         |
+| -------------- | ---------------------------------------------------------------------------- |
+| 回退顺序       | `citationKey` > `DOI` > `title` > `key`。`default` 过滤器会跳过 nil 和空值。 |
+| `{% suffix %}` | 仅在渲染的文件名与已有笔记重名时追加一段短随机字符串。没有冲突时输出 `""`。  |
+| 单行           | 渲染结果合并为一行，并删除所有换行符及首尾空白。                             |
+| 扩展名         | 系统自动追加 `.md` 扩展名；模板只生成文件基本名称。                          |
 
-<Callout type="info" title="Subfolders in the note name">
-  A forward slash (`/`) in the rendered name makes a subfolder under the
-  literature note folder. The folder `literatures` and the name `2024/Smith2020`
-  give `literatures/2024/Smith2020.md`.
+<Callout type="info" title="笔记名称中的子文件夹">
+  渲染名称中的正斜杠（`/`）会在文献笔记文件夹下创建子文件夹。例如，文件夹为
+  `literatures`，名称为 `2024/Smith2020`，则笔记路径为
+  `literatures/2024/Smith2020.md`。
 </Callout>
 
-## Live recompilation
+## 实时重新编译 [#live-recompilation]
 
-Editing a template document in your vault triggers live recompilation through a file watcher. Changes take effect immediately, without reloading the plugin. Moving a document to trash returns its templates to the built-in defaults shown above.
+编辑仓库中的模板文档时，文件监听器会触发实时重新编译。更改立即生效，无需重新加载插件。将文档移至废纸篓后，其中的模板会恢复为上文所示的内置默认值。
 
-## See also
+## 另请参阅 [#see-also]
 
 <Cards>
   <Card
-    title="Template syntax"
-    description="Liquid markup, filters, and ZotLit's custom tags."
+    title="模板语法"
+    description="Liquid 标记、过滤器与 ZotLit 自定义标签。"
     href="/docs/reference/templates/syntax"
   />
   <Card
-    title="Data reference"
-    description="Properties available on zt for each template type."
+    title="数据参考"
+    description="各类模板的 zt 可用属性。"
     href="/docs/reference/templates/data"
   />
   <Card
-    title="How templates work"
-    description="Template documents, languages, and where each template lives."
+    title="模板的工作原理"
+    description="模板文档、模板语言及各类模板的存放位置。"
     href="/docs/concepts/how-templates-work"
   />
   <Card
-    title="Customize a template"
-    description="Open a template document, edit it, and test the result."
+    title="自定义模板"
+    description="打开模板文档、编辑并测试结果。"
     href="/docs/how-to/customize-a-template"
   />
   <Card
-    title="Customize your annotations"
-    description="Tutorial lesson 2: change how annotations render."
+    title="自定义标注"
+    description="教程第 2 课：更改标注的渲染方式。"
     href="/docs/tutorial/customize-template"
   />
 </Cards>

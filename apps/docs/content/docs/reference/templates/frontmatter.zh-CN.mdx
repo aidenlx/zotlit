@@ -10,7 +10,7 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-本页介绍了 ZotLit 如何管理文献笔记顶部的 YAML frontmatter 属性：包含 Zotero 拥有的系统字段、配置方案声明的受管字段、属性合并策略以及笔记更新时的具体行为。
+本页介绍了 ZotLit 如何管理文献笔记顶部的 YAML frontmatter 属性：包含 ZotLit 拥有的系统字段、配置方案声明的受管字段、属性合并策略以及笔记更新时的具体行为。
 
 分步配置指南请参阅[配置 frontmatter 属性](/docs/how-to/configure-frontmatter-properties)。
 
@@ -18,11 +18,11 @@ import { m } from "@/paraglide/messages.js";
 
 ZotLit 自身负责写入这些配置键。受管 frontmatter 绝不能以它们为目标进行覆盖。
 
-| 字段             | 数据源                 | 说明                                                                           |
-| ---------------- | ---------------------- | ------------------------------------------------------------------------------ |
-| `zotero-key`     | `zt.indexedKey`        | 文献笔记的唯一身份标识：对于“我的文库”为 `KEY`，对于群组文献库为 `KEYgGROUPID` |
-| `zotlit-profile` | 执行当前操作的配置方案 | 生成该笔记的配置方案名称及 12 位 ID。由默认配置方案生成时留空不显              |
-| `zotlit-csl`     | 配置方案绑定的引文样式 | 该笔记的引文和参考文献渲染所采用的 CSL ID。当配置方案未绑定样式时留空          |
+| 字段             | 数据源                 | 说明                                                                            |
+| ---------------- | ---------------------- | ------------------------------------------------------------------------------- |
+| `zotero-key`     | `zt.indexedKey`        | 文献笔记的唯一身份标识：对于“我的文库”为 `KEY`，对于群组文献库为 `KEYgGROUPID`  |
+| `zotlit-profile` | 执行当前操作的配置方案 | 生成该笔记的配置方案名称及 12 位 ID。由默认配置方案生成时，不写入此属性         |
+| `zotlit-csl`     | 配置方案绑定的引文样式 | 该笔记的引文和参考文献渲染所采用的 CSL ID。当配置方案未绑定样式时，不写入此属性 |
 
 ## 用户自定义字段
 
@@ -64,15 +64,15 @@ frontmatter:
       "zotero/${zt.itemType}": true
 ```
 
-Inside a spread mapping, a false `$if` omits that key and leaves the note's value alone. `${}` interpolation builds a key name. A top-level `$let` shares one calculation across every produced field. A `$if` that is false at the root of the entry contributes an empty patch, so the entry writes nothing.
+在展开映射内，`$if` 为 false 时会省略对应的键，并保留笔记中的原值。`${}` 插值可用于构建键名。顶层 `$let` 让所有生成字段共享一次计算。若配置项根级的 `$if` 为 false，则生成空补丁，该项不写入任何内容。
 
-`expr` always produces a single value, so a spread entry cannot use it: a keyless `expr` entry fails validation. A spread entry whose result is not a mapping, or that produces a reserved or empty key, refuses the whole operation. Diagnostics name the entry by its 1-based position in the list.
+`expr` 始终生成单个值，因此展开项不能使用它：不含键的 `expr` 配置项无法通过校验。若展开项的结果不是映射，或生成了保留键或空键，则整个操作会被拒绝。诊断信息使用该项在列表中从 1 开始的位置编号来标识它。
 
-In the editor, <UiLabel name={m.workbench_properties_add_spread()} /> adds a spread entry. Its row reads <UiLabel name={m.workbench_properties_spread()} /> and lists the properties it produced.
+在编辑器中，选择 <UiLabel name={m.workbench_properties_add_spread()} /> 可添加展开项。该行标为 <UiLabel name={m.workbench_properties_spread()} />，并列出它生成的属性。
 
-### Default fields
+### 默认字段 [#default-fields]
 
-Out of the box, the Default profile declares four entries. Its document reads:
+默认配置方案预设了四个配置项。文档内容如下：
 
 ```yaml
 frontmatter:
@@ -90,11 +90,11 @@ frontmatter:
     merge: replace
 ```
 
-The `citekey` entry writes `citekey: null` when the Zotero item has no citation key. All four are ordinary managed frontmatter. You can edit or remove them like any other entry.
+当 Zotero 条目没有引用键时，`citekey` 项写入 `citekey: null`。这四项都是普通的受管 frontmatter，您可以像其他配置项一样编辑或删除它们。
 
-### Liquid expressions
+### Liquid 表达式 [#liquid-expressions]
 
-An `expr` member is one value expression, not a template block. It uses the same filter vocabulary as templates (see [Template syntax](/docs/reference/templates/syntax)) and returns typed values (arrays, numbers, strings), not rendered text.
+`expr` 成员是单个值表达式，而非模板块。它使用与模板相同的过滤器（见[模板语法](/docs/reference/templates/syntax)），返回数组、数字或字符串等带类型的值，而非渲染文本。
 
 ```
 zt.title                              -> "My Paper Title"
@@ -105,9 +105,9 @@ zt.collections | collection_paths     -> ["Project/Reading", "Research"]
 zt.date.year                          -> 2023
 ```
 
-### JavaScript expressions
+### JavaScript 表达式 [#javascript-expressions]
 
-A `js` member holds a JavaScript expression. It requires the [JavaScript Templates](/docs/concepts/javascript-templates) gate. Any valid JavaScript expression works, with the full note context available as `zt`:
+`js` 成员包含一个 JavaScript 表达式，需要开启 [JavaScript 模板](/docs/concepts/javascript-templates)开关。任何有效的 JavaScript 表达式均可使用，完整笔记上下文通过 `zt` 提供：
 
 ```
 zt.authors.map(c => c.fullName)   -> ["Jane Smith", "Bob Jones"]
@@ -115,127 +115,131 @@ zt.tags.map(t => t.name)          -> ["methodology", "review"]
 zt.date?.year                     -> 2023
 ```
 
-The return value is serialized to YAML automatically.
+返回值会自动序列化为 YAML。
 
-## Merge strategies
+## 合并策略 [#merge-strategies]
 
-Each entry selects one merge strategy, set with <UiLabel name={m.workbench_properties_merge()} /> in the editor:
+每个配置项选择一种合并策略，可通过编辑器中的 <UiLabel name={m.workbench_properties_merge()} /> 设置：
 
-| Strategy  | Editor option                                             | Behavior                                                                                                                                                                                                                                                                                            |
-| --------- | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `replace` | <UiLabel name={m.workbench_properties_merge_replace()} /> | Writes the generated value unconditionally. The existing value is overwritten                                                                                                                                                                                                                       |
-| `append`  | <UiLabel name={m.workbench_properties_merge_append()} />  | Appends new generated values not already present to the existing array. Manual additions remain. If existing is blank, writes the generated value. Both the existing and generated values must be arrays; when either side is not an array (and existing is not blank), the field is left unchanged |
-| `keep`    | <UiLabel name={m.workbench_properties_merge_keep()} />    | Writes the generated value only when the existing field is blank. Once the field has a value, it is never overwritten                                                                                                                                                                               |
+| 策略      | 编辑器选项                                                | 行为                                                                                                                                                           |
+| --------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `replace` | <UiLabel name={m.workbench_properties_merge_replace()} /> | 无条件写入生成值，覆盖现有值                                                                                                                                   |
+| `append`  | <UiLabel name={m.workbench_properties_merge_append()} />  | 将生成值中尚不存在的项追加至现有数组，保留手动添加的内容。现有值为空时直接写入生成值。现有值和生成值都必须是数组；任一方不是数组且现有值非空时，该字段保持不变 |
+| `keep`    | <UiLabel name={m.workbench_properties_merge_keep()} />    | 仅在现有字段为空时写入生成值。字段一旦有值，便不再覆盖                                                                                                         |
 
-### Absent values
+### 缺省值 [#absent-values]
 
-Only a `value` entry can produce absence. A JSON-e template that renders nothing at its root, such as one whose top-level `$if` is false, contributes no value at all.
+只有 `value` 配置项能产生缺省值。若 JSON-e 模板在根级不渲染任何内容，例如顶层 `$if` 为 false，则该项不提供任何值。
 
-Absence is the one way to delete a managed key. Under <UiLabel name={m.workbench_properties_merge_replace()} /> an absent value deletes the existing key; under <UiLabel name={m.workbench_properties_merge_append()} /> and <UiLabel name={m.workbench_properties_merge_keep()} /> it leaves the key as it stands.
+缺省值是删除受管键的唯一方式。使用 <UiLabel name={m.workbench_properties_merge_replace()} /> 时，缺省值会删除现有键；使用 <UiLabel name={m.workbench_properties_merge_append()} /> 或 <UiLabel name={m.workbench_properties_merge_keep()} /> 时，现有键保持不变。
 
-### What counts as blank
+### 空值的判定 [#what-counts-as-blank]
 
-A value is blank (and treated as absent by <UiLabel name={m.workbench_properties_merge_append()} /> and <UiLabel name={m.workbench_properties_merge_keep()} />) when it is:
+下列值视为空值，<UiLabel name={m.workbench_properties_merge_append()} /> 和 <UiLabel name={m.workbench_properties_merge_keep()} /> 会按缺省处理：
 
-- `null` or undefined
-- An empty string (`""`)
-- An empty array (`[]`)
-- An empty plain object (`{}`)
+- `null` 或 undefined
+- 空字符串（`""`）
+- 空数组（`[]`）
+- 空普通对象（`{}`）
 
-### Undefined expressions
+### 返回 undefined 的表达式 [#undefined-expressions]
 
-When a Liquid or JavaScript expression returns `undefined`, the field is untouched regardless of the merge strategy. Only defined values (including explicit `null`) reach the merge logic.
+当 Liquid 或 JavaScript 表达式返回 `undefined` 时，无论采用何种合并策略，该字段均保持不变。只有已定义的值（包括显式的 `null`）会进入合并逻辑。
 
-### Append arrays detail
+### 数组追加细节 [#append-arrays-detail]
 
-The <UiLabel name={m.workbench_properties_merge_append()} /> strategy preserves existing items verbatim (including any duplicates already present) and appends only generated items not already in the array.
+<UiLabel name={m.workbench_properties_merge_append()} />
+策略原样保留现有项，包括已有的重复项，仅追加数组中尚不存在的生成项。
 
-## Reserved keys
+## 保留键 [#reserved-keys]
 
-ZotLit refuses a static key, or a key a spread entry produces, from this set:
+无论是静态键还是展开项生成的键，ZotLit 均不允许使用以下键：
 
-| Key               | What it protects                                                                                                  |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `zotero-key`      | Literature note identity. The item key, with the group library ID appended for group libraries                    |
-| `zotlit-profile`  | The profile stamp that records which profile produced the note. Absence selects the Default profile               |
-| `zotero-note-key` | Identity of an imported child note. Kept apart from `zotero-key` so the note never registers as a literature note |
-| `zotero-lastmod`  | The source child note's `dateModified`, which batch re-import reads to skip unchanged notes                       |
-| `zotlit-csl`      | The CSL style ID one note's citations and references render with, set from the profile's citation style           |
+| 键                | 保护的内容                                                             |
+| ----------------- | ---------------------------------------------------------------------- |
+| `zotero-key`      | 文献笔记标识。由条目键组成，群组文献库还会追加群组文献库 ID            |
+| `zotlit-profile`  | 记录生成笔记所用配置方案的标记。缺省时选择默认配置方案                 |
+| `zotero-note-key` | 导入子笔记的标识。与 `zotero-key` 分开存储，避免该笔记被注册为文献笔记 |
+| `zotero-lastmod`  | 源子笔记的 `dateModified`，批量重新导入时据此跳过未修改的笔记          |
+| `zotlit-csl`      | 笔记中引文和参考文献渲染所用的 CSL 样式 ID，由配置方案的引文样式指定   |
 
-A profile document that declares a reserved or duplicate static key fails to load, and ZotLit excludes it from the profiles it offers instead of repairing it. See [Profiles](/docs/concepts/profiles).
+声明保留静态键或重复静态键的配置方案文档无法加载。ZotLit 会将其排除在可用配置方案之外，不会自动修复。参见[配置方案](/docs/concepts/profiles)。
 
-## Validation
+## 校验 [#validation]
 
-The <UiLabel name={m.workbench_tab_properties()} /> tab marks the row that failed with <UiLabel name={m.workbench_properties_row_problem()} />, and the row shows what went wrong in place of a value. The full explanation, which names the failing key and the entry's position, is in the <UiLabel name={m.workbench_problems_heading()} /> area of the editor.
+<UiLabel name={m.workbench_tab_properties()} /> 标签页会用
+<UiLabel name={m.workbench_properties_row_problem()} />
+标记出错行，并在值的位置显示问题原因。完整说明位于编辑器的
+<UiLabel name={m.workbench_problems_heading()} />
+区域，包含出错键及配置项的位置。
 
-Validation has three stages:
+校验分为三个阶段：
 
-1. **The document.** A reserved static key, a duplicate static key, or a keyless `expr` entry stops the document from loading.
-2. **The expression.** An `expr` or `js` member that fails to compile, or a `value` that cannot evaluate, is a problem the editor names by key and entry position.
-3. **The write.** A `value` or `js` entry whose result falls outside the frontmatter value domain, a spread entry that produces no mapping, or a produced key that is reserved or empty refuses the whole operation.
+1. **文档。** 保留静态键、重复静态键或不含键的 `expr` 配置项会阻止文档加载。
+2. **表达式。** 若 `expr` 或 `js` 成员无法编译，或 `value` 无法求值，编辑器会按键名及配置项位置报告问题。
+3. **写入。** 若 `value` 或 `js` 的结果不属于 frontmatter 支持的值类型、展开项未生成映射，或生成了保留键或空键，则整个操作会被拒绝。
 
-A refused operation writes nothing. ZotLit never applies a partial patch to a note. A `js` entry that is inert while the gate is off refuses by key, or by entry position when the entry is keyless.
+被拒绝的操作不会写入任何内容，ZotLit 不会只对笔记应用部分补丁。开关关闭时，未执行的 `js` 配置项会按键名报告拒绝原因；没有键时则按配置项位置报告。
 
-## Merge on update
+## 更新时的合并 [#merge-on-update]
 
-When you run <Command inline name={m.command_update_note_name()} /> or <Command inline name={m.command_update_note_metadata_name()} />, ZotLit refreshes frontmatter:
+运行 <Command inline name={m.command_update_note_name()} /> 或 <Command inline name={m.command_update_note_metadata_name()} /> 时，ZotLit 会刷新 frontmatter：
 
-1. **Managed entries** are re-evaluated in the order they appear in the `frontmatter` list of the [profile document](/docs/reference/templates/profile-document) and applied with their merge strategy.
-2. **System identity** (`zotero-key`) is refreshed.
-3. **Unmanaged keys:** any frontmatter key not in the managed set (e.g. `aliases`, `tags`, `cssclasses`) is preserved. ZotLit never touches keys it does not own.
+1. **受管配置项**按其在[配置方案文档](/docs/reference/templates/profile-document)的 `frontmatter` 列表中的顺序重新求值，并按各自的合并策略应用。
+2. **系统标识**（`zotero-key`）会刷新。
+3. **非受管键：** 所有不属于受管集合的 frontmatter 键（例如 `aliases`、`tags`、`cssclasses`）均会保留。ZotLit 不会修改其管理范围之外的键。
 
-<Command inline name={m.command_overwrite_note_name()} /> replaces the note body
-but applies the same frontmatter behavior: managed keys are refreshed and
-unmanaged keys are kept.
+<Command inline name={m.command_overwrite_note_name()} /> 会替换笔记正文，但对
+frontmatter 的处理方式相同：刷新受管键，保留非受管键。
 
-ZotLit writes frontmatter through Obsidian's `processFrontMatter` API, which preserves key ordering and formatting for unmanaged keys. On a newly created note, managed fields are written in the order they appear in the profile document's `frontmatter` list, followed by system fields. An entry later in the list wins the value, because each entry is applied over the value the entries before it produced.
+ZotLit 通过 Obsidian 的 `processFrontMatter` API 写入 frontmatter，并保留非受管键的顺序和格式。创建笔记时，受管字段按配置方案文档的 `frontmatter` 列表顺序写入，随后写入系统字段。列表中靠后的配置项决定最终值，因为每项都会在先前配置项生成的值之上应用。
 
-Removing `citekey` or another entry from the `frontmatter` list does not delete existing values. Those values become unmanaged and remain in the note.
+从 `frontmatter` 列表中移除 `citekey` 或其他配置项，不会删除已有值。这些值会变为非受管属性，并保留在笔记中。
 
-## JavaScript Templates gate
+## JavaScript 模板开关 [#javascript-templates-gate]
 
-The [JavaScript Templates](/docs/concepts/javascript-templates) gate controls whether `js` entries run:
+[JavaScript 模板](/docs/concepts/javascript-templates)开关决定是否运行 `js` 配置项：
 
-- **Gate off:** `js` entries are inert. They are not evaluated. Any operation that depends on an inert entry surfaces an error naming those keys. `expr` and `value` entries are unaffected.
-- **Gate on:** `expr`, `value`, and `js` entries evaluate normally.
+- **开关关闭：** `js` 配置项不执行、不求值。依赖这些配置项的操作会报告错误并列出相关键。`expr` 和 `value` 配置项不受影响。
+- **开关开启：** `expr`、`value` 和 `js` 配置项正常求值。
 
-The gate never reinterprets a member. An `expr` entry always evaluates as Liquid, and a `js` entry always evaluates as JavaScript.
+开关不会改变成员的解释方式。`expr` 始终按 Liquid 求值，`js` 始终按 JavaScript 求值。
 
-A spread entry that uses `js` is refused by its entry position while the gate is off, because its keys cannot be known until it runs.
+开关关闭时，使用 `js` 的展开项会按配置项位置报告拒绝原因，因为只有运行后才能确定它生成的键。
 
-<Callout type="warn" title="Inert entries block note operations">
-  When any frontmatter entry uses the `js` member and the gate is off,
-  literature note creation and update fail with an error listing the inert keys.
-  Either enable the gate or rewrite those entries as `expr` or `value`. See
-  [Enable JavaScript templates](/docs/how-to/enable-javascript-templates).
+<Callout type="warn" title="未执行的配置项会阻止笔记操作">
+  若任一 frontmatter 配置项使用 `js`
+  成员且开关已关闭，文献笔记的创建和更新会失败，并在错误中列出未执行的键。请开启开关，或将这些配置项改写为
+  `expr` 或 `value`。参见[启用 JavaScript
+  模板](/docs/how-to/enable-javascript-templates)。
 </Callout>
 
-## See also
+## 另请参阅 [#see-also]
 
 <Cards>
   <Card
-    title="Profile document"
-    description="The manifest keys, note source, and Annotation Section of a profile document."
+    title="配置方案文档"
+    description="配置方案文档的 manifest 配置键、笔记源码和标注区域。"
     href="/docs/reference/templates/profile-document"
   />
   <Card
-    title="Configure frontmatter properties"
-    description="Add, edit, and reorder frontmatter fields step by step."
+    title="配置 frontmatter 属性"
+    description="逐步添加、编辑和重新排列 frontmatter 字段。"
     href="/docs/how-to/configure-frontmatter-properties"
   />
   <Card
-    title="Profiles"
-    description="How a profile selects a note's template, folder, and citation style."
+    title="配置方案"
+    description="配置方案如何决定笔记的模板、文件夹和引文样式。"
     href="/docs/concepts/profiles"
   />
   <Card
-    title="Data reference"
-    description="Properties available on zt for each template type."
+    title="数据参考"
+    description="各类模板的 zt 可用属性。"
     href="/docs/reference/templates/data"
   />
   <Card
-    title="JavaScript templates"
-    description="What the gate enables, risks, and disabled behavior."
+    title="JavaScript 模板"
+    description="开关启用的功能、相关风险及关闭后的行为。"
     href="/docs/concepts/javascript-templates"
   />
 </Cards>

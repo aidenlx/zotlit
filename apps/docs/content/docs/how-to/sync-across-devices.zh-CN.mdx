@@ -60,21 +60,21 @@ import { m } from "@/paraglide/messages.js";
 
 打开提示中的链接并按照上述步骤指定正确路径即可。完成后，ZotLit 即可立即正常连接到本地文献库。
 
-The notice includes a <UiLabel name={m.notice_db_not_found_action()} /> action that opens the Welcome View. The first quick-start step displays live connection status and a locate action to pick the correct path. The notice reappears on each launch while the connection is unresolved; it does not appear when auto-detection succeeds or a working Device Override is in place.
+该通知提供 <UiLabel name={m.notice_db_not_found_action()} /> 操作，用于打开欢迎视图。快速入门的第一步显示实时连接状态，并提供定位操作，让您选择正确路径。在连接问题解决前，每次启动都会再次显示通知；自动检测成功或已有有效的设备覆盖设置时，则不会出现。
 
-You can also set the path directly from <SettingsPath page={m.settings_page_zotero()} setting={m.settings_page_zotero_location()} />, as described above.
+您也可以按上文说明，直接在 <SettingsPath page={m.settings_page_zotero()} setting={m.settings_page_zotero_location()} /> 中设置路径。
 
-## See also
+## 另请参阅 [#see-also]
 
 <Cards>
   <Card
-    title="How ZotLit connects to Zotero"
-    description="How ZotLit locates and reads the Zotero database, and why paths are per device."
+    title="ZotLit 如何连接 Zotero"
+    description="ZotLit 如何定位和读取 Zotero 数据库，以及路径为何按设备保存。"
     href="/docs/concepts/how-zotlit-connects-to-zotero"
   />
   <Card
-    title="Settings"
-    description={`Full reference for every ZotLit setting, including the ${m.settings_page_zotero()} page.`}
+    title="设置"
+    description={`所有 ZotLit 设置的完整参考，包括${m.settings_page_zotero()}页面。`}
     href="/docs/reference/settings"
   />
 </Cards>
