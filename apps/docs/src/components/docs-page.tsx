@@ -38,7 +38,6 @@ import { appName, docsRoute, docsSourceBranch, gitConfig } from "@/lib/shared";
 import { source } from "@/lib/source";
 import type { Crumb } from "@/lib/structured-data";
 import { breadcrumbListSchema } from "@/lib/structured-data";
-import { getPageLocaleState } from "@/lib/translation-state";
 import * as m from "@/paraglide/messages.js";
 import { getLocale, localizeHref } from "@/paraglide/runtime.js";
 
@@ -129,19 +128,11 @@ type DocsPageData = Awaited<ReturnType<typeof loadDocsPage>>;
 export function docsPageHead(page: DocsPageData | undefined) {
   if (page === undefined) return {};
 
-  // A folder whose index resolves to the docs root (e.g. `(intro)`) yields a
-  // crumb pointing at `docsRoute`, colliding with the hardcoded one below.
-  const seen = new Set<string>();
   const crumbs = [
     { name: appName, url: "/" },
     { name: m.docs_documentation(), url: docsRoute },
     ...page.trail,
-  ]
-    .map((crumb) => ({
-      ...crumb,
-      url: getPageLocaleState(crumb.url, getLocale()).canonicalPath,
-    }))
-    .filter((crumb) => !seen.has(crumb.url) && seen.add(crumb.url));
+  ];
 
   return pageHead({
     title: page.title,

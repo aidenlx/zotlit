@@ -13,12 +13,12 @@ import { paraglideVitePlugin } from "@zotlit/paraglide-vite";
 
 import { paraglideOptions } from "./paraglide.config.js";
 import { agentSkillAssets } from "./src/lib/agent-skills.js";
+import { scanChinesePages } from "./src/lib/content-scan.js";
 import { renderHeadersFile } from "./src/lib/headers.js";
 import { createOgCardRenderer } from "./src/lib/og-card.js";
 import { ogCards } from "./src/lib/og-cards.js";
 import { prerenderPages } from "./src/lib/prerender-pages.js";
 import type { DocsLine } from "./src/lib/shared.js";
-import { buildTranslationManifest } from "./src/lib/translation-scan.js";
 import { renderRedirectsFile } from "./src/lib/v1-redirects.js";
 
 const packageRoot = import.meta.dirname;
@@ -164,9 +164,7 @@ function machineAssets(): Plugin {
 
 export default defineConfig(({ command }) => ({
   define: {
-    __DOCS_TRANSLATION_MANIFEST__: JSON.stringify(
-      buildTranslationManifest(packageRoot),
-    ),
+    __DOCS_CHINESE_PAGES__: JSON.stringify(scanChinesePages(packageRoot)),
   },
   // `@base-ui/react` imports the named `useSyncExternalStoreWithSelector` from
   // a CommonJS shim. The dev server serves that file raw unless the pre-bundler

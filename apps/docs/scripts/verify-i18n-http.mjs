@@ -3,10 +3,11 @@
 //   pnpm --filter @zotlit/docs exec node scripts/verify-i18n-http.mjs
 // A --config path (relative to the repository root) or DOCS_HTTP_VITE_CONFIG
 // can select an environment-specific Vite config. Evidence stays in .scratch.
-// All discovered English pages and their Chinese fallback routes are checked.
+// All discovered English pages and their Chinese locale routes are checked.
 // Add --expected-html <count> to require a specific English page count.
 // This checks HTTP output. It does not run a browser or test hydration.
 import { Temporal } from "@js-temporal/polyfill";
+import { regex } from "arkregex";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
@@ -14,45 +15,133 @@ import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { parseArgs } from "node:util";
+import yargs from "yargs";
+import { hideBin } from "yargs/helpers";
 
-const { values } = parseArgs({
-  options: {
-    config: { type: "string" },
-    output: { type: "string", default: ".scratch/i18n-poc/http-matrix.json" },
-    port: { type: "string", default: "4173" },
-    concurrency: { type: "string", default: "4" },
-    "expected-html": { type: "string" },
-    "expected-redirects": { type: "string", default: "54" },
+import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
+
+import englishMessages from "../../../messages/en.json" with { type: "json" };
+import { scanChinesePages } from "../src/lib/content-scan.ts";
+
+const optionConstraints = {
+  port: {
+    minimum: 0,
+    maximum: 65_535,
+    default: "0",
+    describe: "Preview port; 0 uses an OS-assigned port",
   },
-});
+  concurrency: {
+    minimum: 1,
+    maximum: 8,
+    default: "4",
+    describe: "Concurrent HTTP requests",
+  },
+  "expected-html": {
+    minimum: 1,
+    maximum: 10_000,
+    describe: "Require this many discovered English HTML pages",
+  },
+  "expected-redirects": {
+    minimum: 1,
+    maximum: 2_000,
+    default: "54",
+    describe: "Require this many legacy redirect rules",
+  },
+};
+const limitations = [
+  "Locale editions follow native Chinese file presence; copy quality is not checked.",
+  "No external redirect destinations are fetched; live GitHub facts are not verified.",
+  "Browser hydration, interaction, clipboard, and fragments are not tested.",
+];
+const configEnvironment = "DOCS_HTTP_VITE_CONFIG";
+const values = yargs(hideBin(process.argv))
+  .scriptName("verify-i18n-http")
+  .usage("$0 [options]")
+  .strict()
+  .version(false)
+  .option("config", {
+    type: "string",
+    describe: `Vite config relative to the workspace root (or $${configEnvironment})`,
+  })
+  .option("output", {
+    type: "string",
+    default: ".scratch/i18n-poc/http-matrix.json",
+    describe: "JSON evidence path relative to the workspace root",
+  })
+  .options(
+    Object.fromEntries(
+      Object.entries(optionConstraints).map(([name, constraint]) => [
+        name,
+        {
+          type: "string",
+          describe: constraint.describe,
+          ...(constraint.default === undefined
+            ? {}
+            : { default: constraint.default }),
+        },
+      ]),
+    ),
+  )
+  .check((args) => {
+    for (const [name, { minimum, maximum }] of Object.entries(
+      optionConstraints,
+    )) {
+      const value = args[name];
+      if (value === undefined) continue;
+      const number = Number(value);
+      if (
+        typeof value !== "string" ||
+        !value.trim() ||
+        !Number.isInteger(number) ||
+        number < minimum ||
+        number > maximum
+      ) {
+        throw new Error(
+          `--${name} must be an integer from ${minimum} to ${maximum}.`,
+        );
+      }
+    }
+    return true;
+  })
+  .epilogue(
+    [
+      "Run after a production-line build. Preview and HTTP fetch share one process.",
+      "Numeric option ranges:",
+      ...Object.entries(optionConstraints).map(
+        ([name, { minimum, maximum }]) =>
+          `  --${name}: ${minimum} to ${maximum}`,
+      ),
+      ...limitations,
+    ].join("\n"),
+  )
+  .help()
+  .parseSync();
 
-const docsRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const repoRoot = resolve(docsRoot, "../..");
-const clientRoot = join(docsRoot, "dist/client");
+const packageRoot = resolve(import.meta.dirname, "..");
+const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
+const clientRoot = join(packageRoot, "dist/client");
+const chinesePages = new Set([
+  ...scanChinesePages(packageRoot),
+  "/",
+  "/community",
+  "/workbench",
+  "/blog",
+  "/changelog",
+]);
 const configFile = resolve(
-  repoRoot,
+  workspaceRoot,
   values.config ??
-    process.env.DOCS_HTTP_VITE_CONFIG ??
-    join(docsRoot, "vite.config.ts"),
+    process.env[configEnvironment] ??
+    join(packageRoot, "vite.config.ts"),
 );
-const outputPath = resolve(repoRoot, values.output);
-function integerOption(name, minimum, maximum) {
-  const number = Number(values[name]);
-  if (!Number.isInteger(number) || number < minimum || number > maximum) {
-    throw new Error(
-      `--${name} must be an integer from ${minimum} to ${maximum}.`,
-    );
-  }
-  return number;
-}
-const concurrency = integerOption("concurrency", 1, 8);
-const port = integerOption("port", 1, 65_535);
+const outputPath = resolve(workspaceRoot, values.output);
+const concurrency = Number(values.concurrency);
+const port = Number(values.port);
 const expectedHtml =
   values["expected-html"] === undefined
     ? null
-    : integerOption("expected-html", 1, 10_000);
-const expectedRedirects = integerOption("expected-redirects", 1, 2_000);
+    : Number(values["expected-html"]);
+const expectedRedirects = Number(values["expected-redirects"]);
 const startedAt = Temporal.Now.instant().toString();
 const started = performance.now();
 const publicOrigin = "https://zotlit.aidenlx.site";
@@ -60,21 +149,17 @@ const betaOrigin = "https://zotlit-beta.aidenlx.site";
 const legacyOrigin = "https://zotlit-v1.aidenlx.site";
 const incomingQuery =
   "?probe=http-matrix&from=incoming&src=%2Fdo-not-use&lang=fr";
-const fallbackNoticeText =
-  "Simplified Chinese content is not ready. English content is shown.";
+const fallbackNoticeText = englishMessages.docs_locale_fallback;
+const englishActionText = englishMessages.docs_read_in_english;
 const evidence = {
   schemaVersion: 1,
   startedAt,
   node: process.version,
   method: "Vite preview plus native HTTP fetch in one Node process; no browser",
-  limitations: [
-    "Placeholder-build expectations; translated fixtures need their own assertions.",
-    "No external redirect destinations are fetched; live GitHub facts are not verified.",
-    "Browser hydration, interaction, clipboard, and fragments are not tested.",
-  ],
-  configFile: relative(repoRoot, configFile),
+  limitations,
+  configFile: relative(workspaceRoot, configFile),
   gitHead: execFileSync("git", ["rev-parse", "HEAD"], {
-    cwd: repoRoot,
+    cwd: workspaceRoot,
     encoding: "utf8",
   }).trim(),
   inventory: {},
@@ -82,7 +167,6 @@ const evidence = {
   checks: [],
   requests: [],
 };
-let previewServer;
 let origin;
 let requestId = 0;
 
@@ -146,9 +230,13 @@ async function phase(name, work) {
 function attributes(tag) {
   const result = {};
   for (const match of tag.matchAll(
-    /([^\s=<>/]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/g,
+    regex(
+      "(?<name>[^\\s=<>/]+)\\s*=\\s*(?:\"(?<double>[^\"]*)\"|'(?<single>[^']*)'|(?<bare>[^\\s>]+))",
+      "g",
+    ),
   )) {
-    result[match[1].toLowerCase()] = decode(match[2] ?? match[3] ?? match[4]);
+    const { name, double, single, bare } = match.groups;
+    result[name.toLowerCase()] = decode(double ?? single ?? bare);
   }
   return result;
 }
@@ -162,7 +250,10 @@ function htmlMetadata(body) {
   );
   return {
     lang: attributes(body.match(/<html\b[^>]*>/i)?.[0] ?? "").lang ?? null,
-    title: decode(body.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? ""),
+    title: decode(
+      regex("<title[^>]*>(?<title>[\\s\\S]*?)</title>", "i").exec(body)?.groups
+        .title ?? "",
+    ),
     canonicals: links
       .filter((link) => link.rel === "canonical")
       .map((link) => link.href),
@@ -251,7 +342,11 @@ function verifyHtml(group, result, path) {
   if (!result) return;
   const { record, body } = result;
   const localized = path === "/zh-CN" || path.startsWith("/zh-CN/");
-  const canonicalPath = englishPath(path);
+  const unlocalized = englishPath(path);
+  const hasChinese = chinesePages.has(unlocalized);
+  const fallback = localized && !hasChinese;
+  const contentLocale = localized && hasChinese ? "zh-CN" : "en";
+  const canonicalPath = localized && hasChinese ? path : unlocalized;
   const label = new URL(record.url).pathname;
   check(group, `${label} status`, {
     passed: record.status === 200,
@@ -275,10 +370,10 @@ function verifyHtml(group, result, path) {
     expected: "text/html",
   });
   if (!record.html) return;
-  check(group, `${label} truthful English content language`, {
-    passed: record.html.lang === "en",
+  check(group, `${label} edition content language`, {
+    passed: record.html.lang === contentLocale,
     actual: record.html.lang,
-    expected: "en",
+    expected: contentLocale,
   });
   check(group, `${label} title`, {
     passed: Boolean(record.html.title),
@@ -287,102 +382,123 @@ function verifyHtml(group, result, path) {
   });
   const expectedCanonical = new URL(canonicalPath, publicOrigin).href;
   const canonical = record.html.canonicals;
-  check(group, `${label} one English canonical`, {
+  check(group, `${label} one edition canonical`, {
     passed:
       canonical.length === 1 &&
       new URL(canonical[0], publicOrigin).href === expectedCanonical,
     actual: canonical,
     expected: [expectedCanonical],
   });
-  check(group, `${label} has no Chinese alternate while placeholder`, {
-    passed: record.html.alternates.every((item) => item.locale !== "zh-CN"),
-    actual: record.html.alternates,
-    expected: "en and x-default only",
+  const chineseAlternates = record.html.alternates.filter(
+    (item) => item.locale === "zh-CN",
+  );
+  check(group, `${label} Chinese alternate follows native file presence`, {
+    passed: hasChinese
+      ? chineseAlternates.length === 1 &&
+        new URL(chineseAlternates[0].href, publicOrigin).href ===
+          new URL(chinesePath(unlocalized), publicOrigin).href
+      : chineseAlternates.length === 0,
+    actual: chineseAlternates,
+    expected: hasChinese ? chinesePath(unlocalized) : "no Chinese alternate",
   });
+  const englishCanonical = new URL(unlocalized, publicOrigin).href;
   for (const locale of ["en", "x-default"]) {
     check(group, `${label} ${locale} alternate`, {
       passed: record.html.alternates.some(
         (item) =>
           item.locale === locale &&
-          new URL(item.href, publicOrigin).href === expectedCanonical,
+          new URL(item.href, publicOrigin).href === englishCanonical,
       ),
       actual: record.html.alternates,
-      expected: expectedCanonical,
+      expected: englishCanonical,
     });
   }
   const noindex = record.html.robots.some((value) =>
     /\bnoindex\b/i.test(value),
   );
   check(group, `${label} robots policy`, {
-    passed: noindex === (localized || canonicalPath === "/workbench"),
+    passed: noindex === (fallback || unlocalized === "/workbench"),
     actual: record.html.robots,
     expected:
-      localized || canonicalPath === "/workbench" ? "noindex" : "indexable",
+      fallback || unlocalized === "/workbench" ? "noindex" : "indexable",
   });
   if (localized) {
-    check(group, `${label} placeholder HTTP noindex`, {
-      passed: /\bnoindex\b/i.test(record.headers["x-robots-tag"] ?? ""),
+    check(group, `${label} fallback HTTP noindex`, {
+      passed:
+        /\bnoindex\b/i.test(record.headers["x-robots-tag"] ?? "") === fallback,
       actual: record.headers["x-robots-tag"],
-      expected: "noindex",
+      expected: fallback ? "noindex" : "no fallback noindex",
     });
-    check(group, `${label} English Content-Language header`, {
-      passed: record.headers["content-language"] === "en",
+    check(group, `${label} edition Content-Language header`, {
+      passed: record.headers["content-language"] === contentLocale,
       actual: record.headers["content-language"],
-      expected: "en",
+      expected: contentLocale,
     });
-    check(group, `${label} visible fallback notice`, {
-      passed: body.includes(fallbackNoticeText),
-      actual: undefined,
-      expected: "English fallback notice",
+    check(group, `${label} fallback notice follows missing file`, {
+      passed: body.includes(fallbackNoticeText) === fallback,
+      expected: fallback ? "English fallback notice" : "no fallback notice",
     });
-    check(group, `${label} hides placeholder frontmatter`, {
-      passed: !/translationStatus\s*:\s*placeholder/i.test(visibleText(body)),
-      actual: undefined,
-      expected: "no rendered translationStatus: placeholder",
-    });
-    const notices = [
-      ...body.matchAll(
-        /<div\b[^>]*\brole=(?:"note"|'note')[^>]*>([\s\S]*?)<\/div>/gi,
-      ),
-    ].filter(
-      (match) =>
-        attributes(match[0].match(/^<div\b[^>]*>/i)[0]).lang === "en" &&
-        visibleText(match[1]).includes(fallbackNoticeText),
-    );
-    const actions = notices.flatMap((notice) =>
-      [...notice[1].matchAll(/<a\b[^>]*>([\s\S]*?)<\/a>/gi)].map((anchor) => ({
-        notice: notice[0],
-        markup: anchor[0],
-        attributes: attributes(anchor[0].match(/^<a\b[^>]*>/i)[0]),
-        text: visibleText(anchor[1]).trim(),
-      })),
-    );
-    const expectedEnglishHref = canonicalPath + new URL(record.url).search;
-    const validEnglishAction =
-      notices.length === 1 &&
-      actions.length === 1 &&
-      actions[0].text === "Read in English" &&
-      actions[0].attributes.href === expectedEnglishHref &&
-      actions[0].attributes.target === undefined;
-    record.fallbackEnglishActions = actions.map((action) => ({
-      text: action.text,
-      href: action.attributes.href,
-      target: action.attributes.target ?? null,
-    }));
-    check(group, `${label} explicit English action preserves path and query`, {
-      passed: validEnglishAction,
-      actual: record.fallbackEnglishActions,
-      expected: [
-        { text: "Read in English", href: expectedEnglishHref, target: null },
-      ],
-    });
-    // Exempt only this verified anchor, never every link with the same URL.
-    const localeLinksBody = validEnglishAction
-      ? body.replace(
-          actions[0].notice,
-          actions[0].notice.replace(actions[0].markup, ""),
-        )
-      : body;
+    let localeLinksBody = body;
+    if (fallback) {
+      const notices = [
+        ...body.matchAll(
+          regex(
+            "<div\\b[^>]*\\brole=(?:\"note\"|'note')[^>]*>(?<body>[\\s\\S]*?)</div>",
+            "gi",
+          ),
+        ),
+      ].filter(
+        (match) =>
+          attributes(match[0].match(/^<div\b[^>]*>/i)[0]).lang === "en" &&
+          visibleText(match.groups.body).includes(fallbackNoticeText),
+      );
+      const actions = notices.flatMap((notice) =>
+        [
+          ...notice.groups.body.matchAll(
+            regex("<a\\b[^>]*>(?<body>[\\s\\S]*?)</a>", "gi"),
+          ),
+        ].map((anchor) => ({
+          notice: notice[0],
+          markup: anchor[0],
+          attributes: attributes(anchor[0].match(/^<a\b[^>]*>/i)[0]),
+          text: visibleText(anchor.groups.body).trim(),
+        })),
+      );
+      const expectedEnglishHref = canonicalPath + new URL(record.url).search;
+      const validEnglishAction =
+        notices.length === 1 &&
+        actions.length === 1 &&
+        actions[0].text === englishActionText &&
+        actions[0].attributes.href === expectedEnglishHref &&
+        actions[0].attributes.target === undefined;
+      record.fallbackEnglishActions = actions.map((action) => ({
+        text: action.text,
+        href: action.attributes.href,
+        target: action.attributes.target ?? null,
+      }));
+      check(
+        group,
+        `${label} explicit English action preserves path and query`,
+        {
+          passed: validEnglishAction,
+          actual: record.fallbackEnglishActions,
+          expected: [
+            {
+              text: englishActionText,
+              href: expectedEnglishHref,
+              target: null,
+            },
+          ],
+        },
+      );
+      // Exempt only this verified anchor, never every link with the same URL.
+      localeLinksBody = validEnglishAction
+        ? body.replace(
+            actions[0].notice,
+            actions[0].notice.replace(actions[0].markup, ""),
+          )
+        : body;
+    }
     const internal = contentLinks(localeLinksBody);
     record.internalContentLinks = contentLinks(body);
     check(group, `${label} internal HTML links retain locale`, {
@@ -394,11 +510,12 @@ function verifyHtml(group, result, path) {
       ),
       expected: "Chinese internal content URLs",
     });
-    if (canonicalPath === "/docs" || canonicalPath.startsWith("/docs/")) {
+    if (unlocalized === "/docs" || unlocalized.startsWith("/docs/")) {
       const sidebar =
-        body.match(
-          /<aside\b[^>]*\bid="nd-sidebar"[^>]*>([\s\S]*?)<\/aside>/i,
-        )?.[1] ?? "";
+        regex(
+          '<aside\\b[^>]*\\bid="nd-sidebar"[^>]*>(?<body>[\\s\\S]*?)</aside>',
+          "i",
+        ).exec(body)?.groups.body ?? "";
       const links = contentLinks(sidebar);
       check(group, `${label} localized sidebar links`, {
         passed:
@@ -422,11 +539,13 @@ function verifyHtml(group, result, path) {
       expected: "en",
     });
   }
-  if (canonicalPath === "/docs" || canonicalPath.startsWith("/docs/")) {
-    const expected = `${localized ? "/zh-CN" : ""}/llms.mdx${canonicalPath}/content.md`;
+  if (unlocalized === "/docs" || unlocalized.startsWith("/docs/")) {
+    const expected = `${localized ? "/zh-CN" : ""}/llms.mdx${unlocalized}/content.md`;
     const markdownUrls = [
-      ...body.matchAll(/["']?markdownUrl["']?\s*:\s*["']([^"']+)["']/g),
-    ].map((match) => match[1]);
+      ...body.matchAll(
+        regex("[\"']?markdownUrl[\"']?\\s*:\\s*[\"'](?<url>[^\"']+)[\"']", "g"),
+      ),
+    ].map((match) => match.groups.url);
     record.loaderMarkdownUrls = markdownUrls;
     check(group, `${label} serialized Markdown action URL`, {
       passed:
@@ -449,6 +568,7 @@ async function walk(directory) {
 }
 
 async function main() {
+  await using resources = new AsyncDisposableStack();
   if (!existsSync(configFile))
     throw new Error(`Missing preview config: ${configFile}`);
   const redirectText = await readFile(join(clientRoot, "_redirects"), "utf8");
@@ -489,15 +609,16 @@ async function main() {
     redirectFileSha256: hash(redirectText),
     previewConfigSha256: hash(await readFile(configFile)),
     workerEntrySha256: hash(
-      await readFile(join(docsRoot, "dist/server/index.js")),
+      await readFile(join(packageRoot, "dist/server/index.js")),
     ),
     workerConfigurationSha256: hash(
-      await readFile(join(docsRoot, "dist/server/wrangler.json")),
+      await readFile(join(packageRoot, "dist/server/wrangler.json")),
     ),
     scriptSha256: hash(await readFile(fileURLToPath(import.meta.url))),
     html: builtHtml,
     expectedHtml,
     expectedRedirects,
+    chinesePages: [...chinesePages].sort(),
   };
   check("inventory", "redirect count", {
     passed: rules.length === expectedRedirects,
@@ -541,14 +662,27 @@ async function main() {
 
   process.env.NO_PROXY = `${process.env.NO_PROXY ?? ""},127.0.0.1,localhost`;
   process.env.no_proxy = process.env.NO_PROXY;
-  const require = createRequire(join(docsRoot, "package.json"));
+  const require = createRequire(join(packageRoot, "package.json"));
   const { preview } = await import(pathToFileURL(require.resolve("vite")).href);
-  previewServer = await preview({
-    root: docsRoot,
-    configFile,
-    logLevel: "warn",
-    preview: { host: "127.0.0.1", port, strictPort: true },
-  });
+  const previewServer = resources.adopt(
+    await preview({
+      root: packageRoot,
+      configFile,
+      logLevel: "warn",
+      preview: { host: "127.0.0.1", port, strictPort: true },
+    }),
+    async (server) => {
+      try {
+        await server.close();
+      } catch (error) {
+        check("shutdown", "preview closed", {
+          passed: false,
+          actual: String(error),
+          expected: "clean shutdown",
+        });
+      }
+    },
+  );
   const address = previewServer.httpServer.address();
   if (typeof address !== "object" || address === null)
     throw new Error("Preview has no listening TCP address.");
@@ -694,8 +828,10 @@ async function main() {
           });
           if (["/blog", "/changelog"].includes(unlocalized)) {
             const links = [
-              ...result.body.matchAll(/^- \[[^\]]+\]\((\/[^)]+)\)/gm),
-            ].map((match) => match[1]);
+              ...result.body.matchAll(
+                regex("^- \\[[^\\]]+\\]\\((?<url>/[^)]+)\\)", "gm"),
+              ),
+            ].map((match) => match.groups.url);
             check("markdown", `${url} index links retain requested locale`, {
               passed:
                 links.length > 0 &&
@@ -711,22 +847,21 @@ async function main() {
             });
           }
           if (path.startsWith("/zh-CN/")) {
-            check("markdown", `${url} placeholder noindex`, {
-              passed: /\bnoindex\b/.test(
-                result.record.headers["x-robots-tag"] ?? "",
-              ),
+            const fallback = !chinesePages.has(unlocalized);
+            check("markdown", `${url} fallback noindex`, {
+              passed:
+                /\bnoindex\b/.test(
+                  result.record.headers["x-robots-tag"] ?? "",
+                ) === fallback,
               actual: result.record.headers["x-robots-tag"],
-              expected: "noindex",
+              expected: fallback ? "noindex" : "no fallback noindex",
             });
-            check("markdown", `${url} truthful content language`, {
-              passed: result.record.headers["content-language"] === "en",
+            const contentLocale = fallback ? "en" : "zh-CN";
+            check("markdown", `${url} edition content language`, {
+              passed:
+                result.record.headers["content-language"] === contentLocale,
               actual: result.record.headers["content-language"],
-              expected: "en",
-            });
-            check("markdown", `${url} hides included placeholder frontmatter`, {
-              passed: !/translationStatus\s*:\s*placeholder/i.test(result.body),
-              actual: undefined,
-              expected: "no translationStatus: placeholder in Markdown",
+              expected: contentLocale,
             });
           }
         }
@@ -876,19 +1011,23 @@ async function main() {
         actual: sitemap.record.headers["content-type"],
         expected: "application/xml",
       });
-      const locations = [...sitemap.body.matchAll(/<loc>([^<]+)<\/loc>/g)].map(
-        (match) => decode(match[1]),
-      );
+      const locations = [
+        ...sitemap.body.matchAll(regex("<loc>(?<url>[^<]+)</loc>", "g")),
+      ].map((match) => decode(match.groups.url));
       sitemap.record.sitemapLocations = locations;
       const expected = new Set(
         pages
           .filter((path) => path !== "/workbench")
+          .flatMap((path) => [
+            path,
+            ...(chinesePages.has(path) ? [chinesePath(path)] : []),
+          ])
           .map((path) => new URL(path, publicOrigin).href),
       );
       const actual = new Set(locations.map((url) => new URL(url).href));
       check(
         "machine-endpoints",
-        "sitemap contains each indexable English page once",
+        "sitemap contains each existing indexable edition once",
         {
           passed:
             actual.size === locations.length &&
@@ -900,17 +1039,6 @@ async function main() {
             extra: [...actual].filter((url) => !expected.has(url)),
           },
           expected: expected.size,
-        },
-      );
-      check(
-        "machine-endpoints",
-        "placeholder Chinese pages omitted from sitemap",
-        {
-          passed: locations.every(
-            (url) => !new URL(url).pathname.startsWith("/zh-CN"),
-          ),
-          actual: locations.length,
-          expected: "English URLs only",
         },
       );
     }
@@ -1095,17 +1223,6 @@ try {
     expected: "no exception",
   });
 } finally {
-  if (previewServer) {
-    try {
-      await previewServer.close();
-    } catch (error) {
-      check("shutdown", "preview closed", {
-        passed: false,
-        actual: String(error),
-        expected: "clean shutdown",
-      });
-    }
-  }
   evidence.finishedAt = Temporal.Now.instant().toString();
   evidence.durationMs = Math.round(performance.now() - started);
   evidence.summary = {
@@ -1124,7 +1241,7 @@ try {
       ([name, counts]) =>
         `${name}: ${counts.passed} passed, ${counts.failed} failed`,
     ),
-    `Evidence: ${relative(repoRoot, outputPath)}`,
+    `Evidence: ${relative(workspaceRoot, outputPath)}`,
     "HTTP checks only; browser hydration and interaction were not tested.",
   ];
   await writeFile(

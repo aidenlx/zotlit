@@ -572,6 +572,9 @@ importers:
       wrangler:
         specifier: ^4.125.0
         version: 4.125.0
+      yargs:
+        specifier: 'catalog:'
+        version: 18.1.0
 
   apps/obsidian:
     dependencies:

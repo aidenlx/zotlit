@@ -3,11 +3,14 @@ import { loader } from "fumadocs-core/source";
 import { describe, expect, it } from "vitest";
 
 import { deLocalizeUrl, localizeUrl } from "@/paraglide/runtime.js";
+import { paraglideMiddleware } from "@/paraglide/server.js";
 
 import { blogs, changelogs, docs } from "./collections";
 import { i18n, isLocalizedPath, isSiteLocale, unlocalizedPath } from "./i18n";
+import { getPageLocaleState } from "./locale-state";
+import { pageHead } from "./seo";
 import { blog, changelog, source } from "./source";
-import { getPageLocaleState } from "./translation-state";
+import { breadcrumbListSchema } from "./structured-data";
 
 describe("native locale infrastructure", () => {
   it("uses exactly the V1 language URLs", () => {
@@ -38,17 +41,25 @@ describe("native locale infrastructure", () => {
   ])(
     "prefers native Chinese files and permits English fallback",
     ({ collection, native }) => {
+      const nativePaths = new Set(
+        native.toFumadocsSource().files.map((file) => file.path),
+      );
       for (const english of collection.getPages("en")) {
         const chinese = collection.getPage(english.slugs, "zh-CN");
         const nativePath = english.path.replace(/\.(mdx?)$/, ".zh-CN.$1");
         expect(chinese?.path).toBe(
-          native
-            .toFumadocsSource()
-            .files.some((file) => file.path === nativePath)
-            ? nativePath
-            : english.path,
+          nativePaths.has(nativePath) ? nativePath : english.path,
         );
         expect(chinese?.url).toBe(`/zh-CN${english.url}`);
+        if (nativePaths.has(nativePath)) {
+          expect(getPageLocaleState(english.url, "zh-CN")).toMatchObject({
+            contentLocale: "zh-CN",
+            canonicalPath: `/zh-CN${english.url}`,
+            alternates: expect.arrayContaining([
+              { locale: "zh-CN", path: `/zh-CN${english.url}` },
+            ]),
+          });
+        }
       }
     },
   );
@@ -75,7 +86,7 @@ describe("translator-facing UI and formatting", () => {
 });
 
 // Failure modes: a missing locale file must not hide a new English page from
-// Chinese navigation/search or mistake its fallback body for approved Chinese.
+// Chinese navigation/search or mistake its fallback body for a native Chinese edition.
 describe("English-only documentation", () => {
   const path = "/docs/how-to/new-feature";
   const fallback = loader({
@@ -144,21 +155,89 @@ describe("English-only documentation", () => {
     },
   );
 
-  it("advertises only the English edition until a real translation is approved", () => {
-    const manifest = { pages: {}, ui: "translated" } as const;
-    const chinese = getPageLocaleState(path, "zh-CN", manifest);
+  it("advertises only the English edition when the Chinese file is missing", () => {
+    const nativeChinesePages = new Set<string>();
+    const chinese = getPageLocaleState(path, "zh-CN", nativeChinesePages);
     expect(chinese).toEqual({
       contentLocale: "en",
-      isPlaceholder: true,
+      isFallback: true,
       canonicalPath: path,
       alternates: [
         { locale: "en", path },
         { locale: "x-default", path },
       ],
     });
-    expect(getPageLocaleState(path, "en", manifest)).toEqual({
+    expect(getPageLocaleState(path, "en", nativeChinesePages)).toEqual({
       ...chinese,
-      isPlaceholder: false,
+      isFallback: false,
     });
   });
+});
+
+// SEO consumer seam: native editions and missing-file fallback publish the same
+// canonical policy in head metadata and breadcrumbs under a real locale request.
+describe("locale page metadata", () => {
+  it.each([
+    {
+      path: "/zh-CN/docs/tutorial",
+      canonical: "/zh-CN/docs/tutorial",
+      robots: "index, follow",
+      hasChinese: true,
+    },
+    {
+      path: "/docs/tutorial",
+      canonical: "/docs/tutorial",
+      robots: "index, follow",
+      hasChinese: true,
+    },
+    {
+      path: "/zh-CN/docs/missing",
+      canonical: "/docs/missing",
+      robots: "noindex, follow",
+      hasChinese: false,
+    },
+  ] as const)(
+    "publishes the edition selected by $path",
+    async ({ path, canonical, robots, hasChinese }) => {
+      await paraglideMiddleware(
+        new Request(`https://zotlit.aidenlx.site${path}`),
+        () => {
+          const head = pageHead({
+            path,
+            card: { type: "docs", alt: "Fixture" },
+          });
+          expect(head.links).toContainEqual({
+            rel: "canonical",
+            href: `https://zotlit.aidenlx.site${canonical}`,
+          });
+          expect(head.meta).toContainEqual({ name: "robots", content: robots });
+          expect(
+            head.links.some(
+              (link) => "hrefLang" in link && link.hrefLang === "zh-CN",
+            ),
+          ).toBe(hasChinese);
+          const schema = breadcrumbListSchema([
+            { name: "Documentation", url: "/docs" },
+            { name: "Duplicate root", url: "/zh-CN/docs" },
+            { name: "Page", url: path },
+          ]);
+          expect(schema.itemListElement).toEqual([
+            {
+              "@type": "ListItem",
+              position: 1,
+              name: "Documentation",
+              item: `https://zotlit.aidenlx.site${path.startsWith("/zh-CN/") ? "/zh-CN" : ""}/docs`,
+            },
+            {
+              "@type": "ListItem",
+              position: 2,
+              name: "Page",
+              item: `https://zotlit.aidenlx.site${canonical}`,
+            },
+          ]);
+          return new Response("ok");
+        },
+      );
+    },
+  );
 });
