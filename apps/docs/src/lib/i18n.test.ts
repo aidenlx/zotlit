@@ -166,6 +166,10 @@ describe("prerendered locale editions", () => {
 describe("translated documentation links", () => {
   for (const { page, anchor } of [
     {
+      page: docs.getPage("reference/commands.zh-CN.mdx"),
+      anchor: "#query-cli",
+    },
+    {
       page: docs.getPage("how-to/edit-pdf-annotations.zh-CN.mdx"),
       anchor: "#before-you-edit",
     },
