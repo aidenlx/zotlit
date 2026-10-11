@@ -3,13 +3,13 @@
 // which is what the exporter reports as unavailable. No absolute path is built
 // here, so none can cross the bridge.
 
-import { Effect } from "effect";
 import type { App } from "obsidian";
 
 import { annotationHasCacheImage } from "@zotlit/db";
 import type { Item } from "@zotlit/db";
 import type { SnapshotVaultTargets } from "@zotlit/workbench/snapshot";
 
+import { Effect } from "@/lib/effect";
 import {
   joinFolderPath,
   resolveAttachmentFolderPath,

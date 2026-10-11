@@ -1,4 +1,3 @@
-import { Effect, Stream } from "effect";
 import { join } from "node:path/posix";
 import type { FileManager, Vault, Workspace } from "obsidian";
 
@@ -8,6 +7,7 @@ import {
   LegacyTemplateConversionError,
 } from "@zotlit/templates/facade";
 
+import { Effect, Stream } from "@/lib/effect";
 import { getLogger } from "@/lib/log";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { NoteIndex } from "@/services/note-index/service";

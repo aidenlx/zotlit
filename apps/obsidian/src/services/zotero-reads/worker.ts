@@ -4,9 +4,9 @@
 import * as BrowserWorkerRunner from "@effect/platform-browser/BrowserWorkerRunner";
 import { configureSync, getConsoleSink } from "@logtape/logtape";
 import type { LogLevel } from "@logtape/logtape";
-import { Effect, Layer } from "effect";
 import { RpcServer, RpcWorker } from "effect/rpc";
 
+import { Effect, Layer } from "@/lib/effect";
 import { prepareRead } from "@/services/database/read-source";
 
 import { handlersLayer } from "./handlers";

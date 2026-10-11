@@ -1,4 +1,3 @@
-import { Effect } from "effect";
 // Registers the citation commands with Obsidian's CLI.
 //
 // Command, flag, and diagnostic text is all hardcoded English: an
@@ -14,6 +13,7 @@ import type {
 
 import { isChildItemFields } from "@zotlit/db";
 
+import { Effect } from "@/lib/effect";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import type { CitationLookup } from "@/services/citation-index/lookup-service";

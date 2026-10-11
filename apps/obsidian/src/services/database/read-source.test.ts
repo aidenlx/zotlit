@@ -143,6 +143,26 @@ describe("prepareRead placement", () => {
 });
 
 describe("prepareRead consistency guard", () => {
+  it("rejects a stable snapshot that fails integrity validation and removes it", async () => {
+    const parent = join(dir, "snapshots");
+    plan(parent);
+    {
+      using sqlite = new DatabaseSync(source, { defensive: false });
+      sqlite.exec(`
+        CREATE TABLE checked (value INTEGER);
+        INSERT INTO checked VALUES (NULL);
+        PRAGMA writable_schema = ON;
+        UPDATE sqlite_schema
+          SET sql = 'CREATE TABLE checked (value INTEGER NOT NULL)'
+          WHERE name = 'checked';
+      `);
+    }
+    await expect(prepareRead("copy", source)).rejects.toThrow(
+      "SQLite rejected the database read snapshot",
+    );
+    expect(await readdir(parent)).toEqual([]);
+  });
+
   it("reads a committed exclusive-lock database with an invalidated journal", async () => {
     await rm(source);
     using sqlite = new DatabaseSync(source);

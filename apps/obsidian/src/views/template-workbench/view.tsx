@@ -1,6 +1,5 @@
 // One file-backed authoring session; TextFileView owns vault updates and saves.
 import { EditorView } from "@codemirror/view";
-import { Effect } from "effect";
 import { apiVersion, Scope, TextFileView } from "obsidian";
 import type {
   App,
@@ -98,6 +97,7 @@ import type {
 
 import { Icon } from "@/components/obsidian/icon";
 import { confirm } from "@/lib/confirm";
+import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { itemSummary } from "@/lib/item-summary";

@@ -2,6 +2,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { Effect } from "@/lib/effect";
 import { QueryClientService } from "@/services/query-client/service";
 import {
   inProcessReadsService,
@@ -45,7 +46,9 @@ async function setup(
   const reads = stack.use(inProcessReadsService(open));
   const queries = stack.use(new QueryClientService());
   stack.defer(holdConnectionReadout({ reads, queries }));
-  await reads.ready;
+  const { reads: initial } = await reads.ready;
+  await Effect.runPromise(Effect.ignore(initial.Libraries({})));
+  await expect.poll(() => reads.state).not.toBe("loading");
   return { reads, queries, zoteroPref: { dataDir } };
 }
 
@@ -63,6 +66,7 @@ describe("readConnectionStatus", () => {
     await readConnectionStatus(deps);
 
     await deps.reads.refresh().catch(() => {});
+    await expect.poll(() => deps.reads.error).not.toBeNull();
 
     expect(await readConnectionStatus(deps)).toEqual({ status: "missing" });
   });
@@ -129,7 +133,14 @@ describe("readConnectionSync", () => {
     ]);
     await readConnectionStatus(deps);
 
+    const changed = new Promise<void>((resolve) => {
+      const off = deps.reads.on("changed", () => {
+        off();
+        resolve();
+      });
+    });
     await deps.reads.refresh();
+    await changed;
 
     expect(readConnectionSync(deps)).toMatchObject({ itemCount: 2 });
     expect(await readConnectionStatus(deps)).toMatchObject({ itemCount: 5 });

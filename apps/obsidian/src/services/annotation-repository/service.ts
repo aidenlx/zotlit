@@ -1,6 +1,5 @@
 // The Annotations of one Attachment, read from one Annotation Source at a time.
 import type { Mutation, QueryFunction, QueryKey } from "@tanstack/query-core";
-import { Effect } from "effect";
 
 import {
   annotationTypeToName,
@@ -21,6 +20,7 @@ import type {
 } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
+import { Effect } from "@/lib/effect";
 import { getLogger } from "@/lib/log";
 import { excerptFingerprint } from "@/services/excerpt-image/contract";
 import type { Held, QueryClientService } from "@/services/query-client/service";

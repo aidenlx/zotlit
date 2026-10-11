@@ -16,8 +16,7 @@
  * It answers empty while the scope is unresolved and when the database is
  * unavailable.
  */
-import { Effect, Exit, FiberHandle, FiberSet, Scope } from "effect";
-
+import { Effect, Exit, FiberHandle, FiberSet, Scope } from "@/lib/effect";
 import { openScope } from "@/lib/effect-scope";
 import { getLogger } from "@/lib/log";
 import { selectorKey } from "@/services/library-scope/scope";

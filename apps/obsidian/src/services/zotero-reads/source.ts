@@ -1,6 +1,3 @@
-// The production Connection: owns the Zotero database source — Read Mode, fingerprints, watchers, and the refresh lane.
-import { Deferred, Effect, FiberSet, Layer } from "effect";
-import type { Fiber } from "effect";
 import { existsSync, watch } from "node:fs";
 import type { WatchListener, WatchOptionsWithStringEncoding } from "node:fs";
 import { dirname, join } from "node:path";
@@ -11,6 +8,9 @@ import { createClient } from "@zotlit/db/client/node";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import { ZOTERO_DB_FILENAME, ZOTERO_WAL_FILENAME } from "@/lib/constants";
+// The production Connection: owns the Zotero database source — Read Mode, fingerprints, watchers, and the refresh lane.
+import { Deferred, Effect, FiberSet, Layer } from "@/lib/effect";
+import type { Fiber } from "@/lib/effect";
 import { getLogger } from "@/lib/log";
 import { readParentBeside } from "@/services/database/read-parent";
 import {

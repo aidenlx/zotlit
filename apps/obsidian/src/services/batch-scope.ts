@@ -1,3 +1,6 @@
+import { USER_LIBRARY_ID } from "@zotlit/db";
+import type { Library } from "@zotlit/db";
+
 /**
  * The Library dimension of a batch run: which Libraries a run covers, and how
  * its confirmation groups the rows they contribute.
@@ -8,11 +11,7 @@
  * Library Scope in canonical order. An exact target bypasses Library Scope
  * entirely, so a link keeps working for a Library the user never selected.
  */
-import { Effect } from "effect";
-
-import { USER_LIBRARY_ID } from "@zotlit/db";
-import type { Library } from "@zotlit/db";
-
+import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { libraryLabel } from "@/services/library-scope/label";
