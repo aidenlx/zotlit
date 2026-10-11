@@ -23,7 +23,7 @@ import { m } from "@/paraglide/messages.js";
 - 在 <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_references_heading()} /> 下安装好 <UiLabel name={m.settings_citation_engine_name()} />。
 - 保持 Zotero 处于运行状态，以便 ZotLit 能够读取参考文献数据。
 
-ZotLit 会优先使用 Better BibTeX 接口（若可用）；若未安装，则自动回退至 Zotero 本地 API。
+ZotLit 会优先使用 Better BibTeX 接口（若可用）；若不可用，则自动回退至 Zotero 本地 API。
 
 ## 导出笔记步骤
 
@@ -59,72 +59,72 @@ ZotLit 会优先使用 Better BibTeX 接口（若可用）；若未安装，则�
   </Step>
 </Steps>
 
-The destination contains a `.docx` Word document or an `.html` web page. The output includes formatted citations and a bibliography. The notice names the file and the style, for example <UiLabel name={m.notice_pandoc_export_done({ file: "Draft.docx", style: "APA Style 7th edition" })} />
+目标位置会生成 `.docx` Word 文档或 `.html` 网页，包含格式化引文与参考文献列表。通知会说明文件名和采用的样式，例如 <UiLabel name={m.notice_pandoc_export_done({ file: "Draft.docx", style: "APA Style 7th edition" })} />。
 
-Export leaves the source note unchanged. The bibliography is generated in the exported document; your Markdown keeps the citations it was generated from. To place a bibliography elsewhere, [copy it from the References Sidebar](/docs/how-to/review-copy-troubleshoot-references#copy-references).
+导出不会修改源笔记。参考文献列表生成在导出的文档中，Markdown 源文件保留原有引文。如需将参考文献列表放到其他位置，可[从参考文献侧边栏复制](/docs/how-to/review-copy-troubleshoot-references#copy-references)。
 
-## Which citations are exported
+## 哪些引文会被导出 [#which-citations-are-exported]
 
-Built-in export uses its own citation membership. The following settings do not change export content:
+内置导出使用独立的引文纳入规则。以下设置不会改变导出内容：
 
 - <UiLabel name={m.settings_citation_pandoc_citations_name()} />
 - <UiLabel name={m.settings_citation_wikilink_citations_name()} />
 - <UiLabel name={m.settings_citation_show_formatted_name()} />
 - <UiLabel name={m.settings_citation_open_as_links_name()} />
 
-All wikilinks to Literature Notes are export members. A valid Citation Fragment such as `#cite:locator=33` adds its citation details.
+所有指向文献笔记的双链都会被纳入导出。有效的引文片段（例如 `#cite:locator=33`）会补充对应的引文细节。
 
-Literal Pandoc citations are export members in every form Pandoc reads: `[@doe2024]`, `[@doe2024, p. 12]`, `[-@doe2024]`, and the in-text `@doe2024`. A work cited both by a wikilink and by a literal key takes one bibliography entry.
+所有 Pandoc 可读取的字面量引文形式都会被纳入导出：`[@doe2024]`、`[@doe2024, p. 12]`、`[-@doe2024]`，以及正文中的 `@doe2024`。同一文献即使同时通过双链和字面量标识被引用，也只生成一条参考文献条目。
 
-Each citation key must name one Zotero item in the <UiLabel name={m.settings_library_scope_name()} />. A key that matches no item, or several, stops the export and names the keys. See [Fix an export error](#fix-an-export-error).
+每个文献引用标识必须在 <UiLabel name={m.settings_library_scope_name()} /> 中唯一对应一个 Zotero 条目。若找不到条目或匹配了多个条目，导出会停止，并列出相关标识。请参阅[解决导出错误](#fix-an-export-error)。
 
-A `nocite` property in the note's frontmatter adds its item to the bibliography without citing it in the text.
+笔记 frontmatter 中的 `nocite` 属性可以将对应条目加入参考文献列表，而不在正文中引用它。
 
-Pandoc reads the note, so text it treats as ordinary (a key inside code or behind a `\` escape) is no citation of the export.
+Pandoc 会解析笔记，因此它视为普通文本的内容（例如代码内的标识或经过 `\` 转义的标识）不会成为导出引文。
 
 <Callout type="info">
-  Export is all-or-nothing. ZotLit writes the destination only after citation
-  resolution, bibliography retrieval, and Pandoc conversion all succeed.
+  导出必须全部成功才会写入结果。只有引文解析、参考文献获取和 Pandoc
+  转换均成功后， ZotLit 才会写入目标文件。
 </Callout>
 
-## Fix an export error
+## 解决导出错误 [#fix-an-export-error]
 
-| Symptom                                                                                                       | Recovery                                                                                                                              |
-| ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| ZotLit asks you to install the Pandoc engine                                                                  | Open <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_references_heading()} />, then install the engine. |
-| A `#cite:` fragment is malformed, points to a note that is not a Literature Note, or has an unresolved target | Correct the fragment or link target.                                                                                                  |
-| ZotLit cannot read the Zotero database                                                                        | Check the <UiLabel name={m.settings_page_zotero()} /> settings, then run the export again.                                            |
-| Zotero holds no item for a Literature Note                                                                    | Restore the missing item or update the Literature Note's `zotero-key`.                                                                |
-| Better BibTeX holds no citation key for a Literature Note                                                     | Assign a citation key in Better BibTeX, then run the export again.                                                                    |
-| No Zotero item matches a literal citation key                                                                 | Check the spelling of the key, or widen the <UiLabel name={m.settings_library_scope_name()} />.                                       |
-| A literal citation key matches multiple Zotero items                                                          | Change one of the keys in Zotero, or narrow the <UiLabel name={m.settings_library_scope_name()} />.                                   |
-| ZotLit asks you to start Zotero                                                                               | Start Zotero and keep it running during export.                                                                                       |
-| The Zotero local API is disabled                                                                              | In Zotero, open **Settings > Advanced** and enable **Allow other applications on this computer to communicate with Zotero**.          |
-| Better BibTeX or the Zotero local API refuses the request                                                     | Check the named source in the error, then retry after it responds normally.                                                           |
-| Zotero cannot supply the chosen style                                                                         | Install the style in Zotero, or choose another style in the dialog. ZotLit does not export with a different style.                    |
-| Pandoc stops the conversion                                                                                   | Correct the source or style problem named in the error, then run the export again.                                                    |
-| ZotLit cannot write the exported document                                                                     | Select a writable destination and run the export again.                                                                               |
+| 现象                                                | 解决方法                                                                                                                    |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| ZotLit 提示安装 Pandoc 引擎                         | 打开 <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_references_heading()} />，然后安装引擎。 |
+| `#cite:` 片段格式错误、指向非文献笔记或目标无法解析 | 修正片段或链接目标。                                                                                                        |
+| ZotLit 无法读取 Zotero 数据库                       | 检查 <UiLabel name={m.settings_page_zotero()} /> 设置，然后重新导出。                                                       |
+| Zotero 中没有文献笔记对应的条目                     | 恢复缺失条目，或更新文献笔记的 `zotero-key`。                                                                               |
+| Better BibTeX 中没有文献笔记对应的文献引用标识      | 在 Better BibTeX 中设置文献引用标识，然后重新导出。                                                                         |
+| 字面量文献引用标识未匹配任何 Zotero 条目            | 检查标识拼写，或扩大 <UiLabel name={m.settings_library_scope_name()} />。                                                   |
+| 字面量文献引用标识匹配多个 Zotero 条目              | 在 Zotero 中修改其中一个标识，或缩小 <UiLabel name={m.settings_library_scope_name()} />。                                   |
+| ZotLit 提示启动 Zotero                              | 启动 Zotero，并在导出期间保持运行。                                                                                         |
+| Zotero 本地 API 已禁用                              | 在 Zotero 中打开 **Settings > Advanced**，开启 **Allow other applications on this computer to communicate with Zotero**。   |
+| Better BibTeX 或 Zotero 本地 API 拒绝请求           | 检查错误中指出的数据源，待其恢复正常响应后重试。                                                                            |
+| Zotero 无法提供所选样式                             | 在 Zotero 中安装该样式，或在对话框中选择其他样式。ZotLit 不会擅自改用其他样式导出。                                         |
+| Pandoc 停止转换                                     | 修正错误中指出的源文件或样式问题，然后重新导出。                                                                            |
+| ZotLit 无法写入导出文档                             | 选择可写入的目标位置，然后重新导出。                                                                                        |
 
-Each failure stops the complete export. ZotLit does not write a document with a partial bibliography.
+任何一项失败都会停止整个导出。ZotLit 不会生成仅包含部分参考文献的文档。
 
-For conversion with a user-installed Pandoc CLI, see [Native Pandoc workflow](/docs/reference/settings#native-pandoc). That workflow uses the <UiLabel name={m.settings_citation_pandoc_files_name()} /> instead of this command.
+如需使用自行安装的 Pandoc CLI 转换，请参阅[原生 Pandoc 工作流](/docs/reference/settings#native-pandoc)。该工作流使用 <UiLabel name={m.settings_citation_pandoc_files_name()} />，不使用此命令。
 
-## See also
+## 另请参阅 [#see-also]
 
 <Cards>
   <Card
-    title="How in-text citation rendering and navigation work"
-    description="Understand the separate citation rules used inside Obsidian."
+    title="正文引文渲染与导航的工作原理"
+    description="了解 Obsidian 内部使用的独立引文规则。"
     href="/docs/concepts/how-citekey-links-work"
   />
   <Card
-    title="Settings"
-    description="Install the engine and select a citation and references style."
+    title="设置"
+    description="安装引擎并选择引文与参考文献样式。"
     href="/docs/reference/settings"
   />
   <Card
-    title="Insert citations"
-    description="Insert Markdown citations from your Zotero library."
+    title="插入引文"
+    description="从 Zotero 文献库插入 Markdown 引文。"
     href="/docs/how-to/insert-citations"
   />
 </Cards>

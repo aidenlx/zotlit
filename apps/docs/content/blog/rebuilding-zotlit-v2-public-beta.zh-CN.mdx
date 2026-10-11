@@ -12,7 +12,7 @@ ZotLit v1 中存在一个每当 Obsidian 更新其运行时就会崩溃的底层
 
 ## 过去的痛点
 
-在 Obsidian 内部直接读取 Zotero 的 SQLite 数据库需要相应的数据库驱动。在 v1 发布时，唯一的选择是 `better-sqlite3`（一个第三方原生 C++ 绑定模块）。当时 Node 尚未内置 SQLite 模块，在 Electron 中也尚不可用。因此 v1 只能捆绑一个打过补丁的 `better-sqlite3` 二进制文件，用户在初次配置时需要根据自己安装的 Obsidian 版本进行匹配下载。
+在 Obsidian 内部直接读取 Zotero 的 SQLite 数据库需要相应的数据库驱动。在 v1 发布时，唯一的选择是 `better-sqlite3`（一个第三方原生 C++ 绑定模块）。当时 Node 尚未内置 SQLite 模块，而且还要近两年才能在 Electron 中使用。因此 v1 只能捆绑一个打过补丁的 `better-sqlite3` 二进制文件，用户在初次配置时需要根据自己安装的 Obsidian 版本进行匹配下载。
 
 原生 C++ 绑定是针对特定的 Electron ABI 版本进行编译的。每次 Obsidian 推出新的 Electron 安装包更新，该二进制文件就会直接失效停止加载。部分用户会遇到错误弹窗提示当前的 Electron 版本不再受支持；还有用户在启动时遭遇黑屏，不得不从文件系统中手动删除插件文件才能恢复 Obsidian 的正常使用。每次核心大版本更新都是一场灾难，每次排查都是一场紧急重新编译二进制文件并推送修补版本的赛跑。
 
@@ -58,95 +58,95 @@ ZotLit v2 围绕四大核心工作流构建：
   创建并打开笔记：批量操作
 </ActionLink>
 
-### Zotero-note import
+### 导入 Zotero 笔记 [#zotero-note-import]
 
-Some researchers do most of their writing in Zotero's built-in note editor. v2 can bring those notes into your vault as Imported Notes, each one converted to a Markdown file with its content and structure preserved. If you've been building up notes in Zotero and want to consolidate everything in one place, this is the bridge.
+一些研究者主要在 Zotero 内置的笔记编辑器中写作。v2 可以将这些笔记导入仓库，每篇笔记都会转换为 Markdown 文件，并保留原有内容与结构。如果您已在 Zotero 中积累了大量笔记，希望将它们集中到一处，这项功能可以帮助您完成迁移。
 
-![A Zotero note imported into Obsidian as a Markdown file, with its content and structure preserved](/img/blog/beta-imported-note.webp)
+![Zotero 笔记导入 Obsidian 后成为 Markdown 文件，保留了原有内容与结构](/img/blog/beta-imported-note.webp)
 
 <ActionLink href="/docs/how-to/import-zotero-notes" kind="external">
-  Importing Zotero notes
+  导入 Zotero 笔记
 </ActionLink>
 
-### Templates and the Template Data Explorer
+### 模板与模板数据浏览器 [#templates-and-the-template-data-explorer]
 
-The template system lets you customize how Literature Notes, annotations, and citations are formatted. v2 defaults to a Liquid-based template language that's easier to pick up than v1's Eta syntax, while JavaScript Templates are available when you need full programmatic control. The Template Data Explorer has been redesigned to show the exact typed data available for any Zotero item, so you can write templates against real values rather than guessing at field names.
+模板系统允许您自定义文献笔记、批注与引文的格式。v2 默认采用基于 Liquid 的模板语言，比 v1 的 Eta 语法更容易上手；需要完整编程控制能力时，也可以使用 JavaScript 模板。重新设计的模板数据浏览器会显示任意 Zotero 条目中可用的具体数据及其类型，让您根据真实值编写模板，无需猜测字段名。
 
-![Template Data Explorer panel in Obsidian showing the typed properties available for a Zotero item](/img/blog/beta-template-data-explorer.webp)
+![Obsidian 中的模板数据浏览器面板，展示某个 Zotero 条目可用的属性及其类型](/img/blog/beta-template-data-explorer.webp)
 
 <ActionLink href="/docs/concepts/how-templates-work" kind="external">
-  How templates work
+  模板工作原理
 </ActionLink>
 <ActionLink href="/docs/how-to/explore-template-data" kind="external">
-  Exploring template data
+  浏览模板数据
 </ActionLink>
 
-## Upgrading
+## 升级 [#upgrading]
 
-ZotLit v2 introduces breaking changes, so you'll need to migrate your existing installation.
+ZotLit v2 引入了不兼容的变更，因此您需要迁移现有安装配置。
 
-First, you can install the beta via BRAT.
+首先，可以通过 BRAT 安装测试版。
 
 <ActionLink href="/docs/install-zotlit" kind="external">
-  Install ZotLit v2
+  安装 ZotLit v2
 </ActionLink>
 
-Then, in short, you'll need to:
+随后，您需要完成以下几步：
 
 <Steps>
   <Step>
-    ### Rename template files
+    ### 重命名模板文件 [#rename-template-files]
 
-    Rename your custom Eta template files to match v2's naming convention.
-
-  </Step>
-  <Step>
-    ### Update template references
-
-    Replace `it.*` references with `zt.*` in your templates.
+    按照 v2 的命名约定重命名自定义 Eta 模板文件。
 
   </Step>
   <Step>
-    ### Enable JavaScript Templates
+    ### 更新模板中的引用 [#update-template-references]
 
-    Turn on the JavaScript Templates setting in ZotLit's plugin settings.
+    将模板中的 `it.*` 引用替换为 `zt.*`。
+
+  </Step>
+  <Step>
+    ### 启用 JavaScript 模板 [#enable-javascript-templates]
+
+    在 ZotLit 插件设置中开启 JavaScript 模板。
 
   </Step>
 </Steps>
 
-Follow the migration guide for detailed instructions on each step.
+各步骤的详细说明见迁移指南。
 
 <ActionLink href="/docs/how-to/migrate-from-v1" kind="external">
-  Migrate from v1
+  从 v1 迁移
 </ActionLink>
 
-If you're new to ZotLit, follow the tutorial.
+如果您初次使用 ZotLit，请按照教程操作。
 
 <ActionLink href="/docs/tutorial/first-note" kind="external">
-  Create your first literature note
+  创建第一篇文献笔记
 </ActionLink>
 
-## Feedback
+## 反馈 [#feedback]
 
-Questions, ideas, and bug reports all go through the community page. Discord is the fastest path for a quick question. If you think you've found a bug, open a report in GitHub Discussions instead. It gives us better tracking and context than a chat thread, and we'll confirm it's reproducible before making it an issue.
+问题、建议和缺陷报告均可通过社区页面提交。简短问题可以在 Discord 上咨询，通常能更快得到回复。如果您认为发现了缺陷，请在 GitHub Discussions 中提交报告。相比聊天记录，这更便于追踪问题并保留上下文；确认能够复现后，我们会将其建立为 issue。
 
 <ActionLink href="/community" kind="external">
-  Community
+  社区
 </ActionLink>
 
-## Beta scope
+## 测试版的功能范围 [#beta-scope]
 
-Two features from v1 are not carried forward into v2: annotation merging and topic-based imports. These are retired features, not deferred work. I weighed whether to keep them, but the complexity they added wasn't justified by how often they were actually used. v2 focuses on the workflows described above.
+v1 的两项功能不再延续到 v2：批注合并与按主题导入。这两项功能已停用，而不是延后开发。我曾考虑保留它们，但其实际使用频率不足以抵消它们带来的复杂性。v2 将专注于上文介绍的工作流。
 
-<Callout type="info" title="Compatibility">
-  The beta includes a compatibility layer for Obsidian versions before 1.13. The
-  stable release will target the first public 1.13 installer.
+<Callout type="info" title="兼容性">
+  测试版包含适用于 Obsidian 1.13 之前版本的兼容层。 正式版将以首个公开发布的
+  1.13 安装包为目标版本。
 </Callout>
 
-## Looking ahead
+## 后续计划 [#looking-ahead]
 
-v2 is a more solid starting point than v1 ever was. I can build on it without the recurring worry that the next Obsidian update will break the database layer. Whether that translates into the reliability you need is something only real use will show.
+v2 的基础比 v1 更稳固。我可以继续在它之上开发，不必反复担心下一次 Obsidian 更新会破坏数据库层。它能否达到您所需的可靠性，还需要通过实际使用来检验。
 
-The documentation is still catching up with the plugin. Some pages are incomplete, others may describe things that have already changed between betas. If you hit a gap or something doesn't match what you see, leave a comment on the doc page and I'll get it sorted.
+文档仍在追赶插件的开发进度。一些页面尚不完整，另一些页面描述的内容可能已经在测试版迭代中发生变化。如果您发现文档缺漏或与实际界面不符，请在对应文档页面留言，我会进行修正。
 
-I'd rather the beta surface problems now than ship a stable release with hidden ones. Thank you to the early testers who tried the first builds and told me what broke, and to those who've been testing since then: your feedback is already part of what shipped in recent betas. If you've been waiting for ZotLit to work again, or if you're finding it for the first time, I hope the work earns your trust over time.
+我希望在测试阶段发现问题，而不是让隐患进入正式版。感谢最早试用并反馈问题的测试者，也感谢此后一直参与测试的用户：大家的反馈已经体现在近期发布的测试版中。如果您一直在等待 ZotLit 恢复正常，或是初次接触这个插件，我希望这些努力能逐渐赢得您的信任。

@@ -25,13 +25,13 @@ obsidian vault=MyVault zotlit:template-inspect
 
 目前有五条活跃命令响应。模板工作台另行注册了九条已废弃的历史命令，它们仅会返回废弃拒绝提示。
 
-| 命令名称                  | 语法格式                                                                                                                                                                                                                                                                                | 返回内容说明                                                                                                                                                                                |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `zotlit:template-inspect` | `obsidian zotlit:template-inspect [note=<vault-path>] [profile=<id-or-label>] [document=<path-or-reference>] [source=full] [editor] [expect-source=<source-id>]`                                                                                                                        | 无参数时，按类型列出所有模板文档清单。带参数时，返回对应文档、其依赖项、源码时效性及语法问题；加 `source=full` 还包含完整源码。每次响应均包含仓库及 Zotero 数据源标识以及配置方案诊断信息。 |
-| `zotlit:template-check`   | `obsidian zotlit:template-check [profile=<id-or-label>] [key=<indexed-key>] [output=all]`<br />`obsidian zotlit:template-check draft=/absolute/path/draft.md [profile=<id-or-label>] [key=<indexed-key>]`<br />`obsidian zotlit:template-check attempt=<id> evidence=full [output=all]` | 各项检查组件的运行状态、输入版本与源码时效性、测试尝试标识，以及本次调用披露的具体产出。在拒绝文档标识时返回诊断报错。                                                                      |
-| `zotlit:template-status`  | `obsidian zotlit:template-status`                                                                                                                                                                                                                                                       | 插件版本、仓库与 Zotero 数据源标识、JavaScript 模板权限开关状态、各模板文档状态、迁移未决期间的旧版模板槽位，以及各个配置方案及其绑定设置。                                                 |
-| `zotlit:template-data`    | `obsidian zotlit:template-data root=<note\|annotation\|filename\|citation> (key=<indexed-key> \| note=<vault-path> \| example=<example-id>) [query=<words> \| path=<zt.path> \| full] [format=json] [expect-source=<source-id>]`                                                        | 某个根节点在 `zt` 下的模板数据。`query`、`path` 与 `full` 参数可将响应范围扩大到聚焦发现模式。                                                                                              |
-| `zotlit:template-guide`   | `obsidian zotlit:template-guide [topic=<name>]`                                                                                                                                                                                                                                         | 快速入门指引或特定主题指南的纯文本输出。                                                                                                                                                    |
+| 命令名称                  | 语法格式                                                                                                                                                                                                                                                                                | 返回内容说明                                                                                                                                                                                          |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `zotlit:template-inspect` | `obsidian zotlit:template-inspect [note=<vault-path>] [profile=<id-or-label>] [document=<path-or-reference>] [source=full] [editor] [expect-source=<source-id>]`                                                                                                                        | 未指定选择参数时，按类型列出模板文档清单。指定一个选择参数时，返回对应文档、其依赖项、源码时效性及问题；加 `source=full` 还包含完整源码。每次响应均包含仓库及 Zotero 数据源标识以及配置方案诊断信息。 |
+| `zotlit:template-check`   | `obsidian zotlit:template-check [profile=<id-or-label>] [key=<indexed-key>] [output=all]`<br />`obsidian zotlit:template-check draft=/absolute/path/draft.md [profile=<id-or-label>] [key=<indexed-key>]`<br />`obsidian zotlit:template-check attempt=<id> evidence=full [output=all]` | 各项检查组件的运行状态、输入版本与源码时效性、测试尝试标识，以及本次调用披露的具体产出。在拒绝文档标识时返回诊断报错。                                                                                |
+| `zotlit:template-status`  | `obsidian zotlit:template-status`                                                                                                                                                                                                                                                       | 插件版本、仓库与 Zotero 数据源标识、JavaScript 模板权限开关状态、各模板文档状态、迁移未决期间的旧版模板槽位，以及各个配置方案及其绑定设置。                                                           |
+| `zotlit:template-data`    | `obsidian zotlit:template-data root=<note\|annotation\|filename\|citation> (key=<indexed-key> \| note=<vault-path> \| example=<example-id>) [query=<words> \| path=<zt.path> \| full] [format=json] [expect-source=<source-id>]`                                                        | 某个根节点在 `zt` 下的模板数据。`query`、`path` 与 `full` 参数可将响应范围扩大到聚焦发现模式。                                                                                                        |
+| `zotlit:template-guide`   | `obsidian zotlit:template-guide [topic=<name>]`                                                                                                                                                                                                                                         | 快速入门指引或特定主题指南的纯文本输出。                                                                                                                                                              |
 
 无论 `output` 参数如何设置，测试均会完整执行所有组件。`output` 仅控制响应中披露哪些详细输出，精简的响应并不代表测试提前中断。
 
@@ -59,29 +59,29 @@ Zotero 标识符（Indexed key）为 8 位的 Zotero 条目 key，可附带群�
 
 系统仍保留了九条历史命令的注册，以便在调用它们时返回有价值的引导信息而非直接报未知命令错误。每条命令均返回 `ok: false` 并附带 `COMMAND_RETIRED` 诊断信息，提示描述为：“已废弃：请改用 template-inspect、template-data 与 template-check”。其曾经支持的每个参数现在均变为可选并标注为已废弃参数。
 
-| Retired command                   | Replaced by                                                                |
-| --------------------------------- | -------------------------------------------------------------------------- |
-| `zotlit:template-schema`          | `zotlit:template-inspect` and `zotlit:template-data`                       |
-| `zotlit:template-render`          | `zotlit:template-check`                                                    |
-| `zotlit:template-document-render` | `zotlit:template-check`                                                    |
-| `zotlit:template-source`          | `zotlit:template-inspect source=full`                                      |
-| `zotlit:frontmatter-status`       | `zotlit:template-check output=frontmatter`                                 |
-| `zotlit:frontmatter-eval`         | `zotlit:template-check output=frontmatter`                                 |
-| `zotlit:frontmatter-set`          | Edit the profile document, then `zotlit:template-check output=frontmatter` |
-| `zotlit:frontmatter-remove`       | Edit the profile document, then `zotlit:template-check output=frontmatter` |
-| `zotlit:frontmatter-reorder`      | Edit the profile document, then `zotlit:template-check output=frontmatter` |
+| 已废弃命令                        | 替代方式                                                              |
+| --------------------------------- | --------------------------------------------------------------------- |
+| `zotlit:template-schema`          | `zotlit:template-inspect` 和 `zotlit:template-data`                   |
+| `zotlit:template-render`          | `zotlit:template-check`                                               |
+| `zotlit:template-document-render` | `zotlit:template-check`                                               |
+| `zotlit:template-source`          | `zotlit:template-inspect source=full`                                 |
+| `zotlit:frontmatter-status`       | `zotlit:template-check output=frontmatter`                            |
+| `zotlit:frontmatter-eval`         | `zotlit:template-check output=frontmatter`                            |
+| `zotlit:frontmatter-set`          | 编辑配置方案文档，然后运行 `zotlit:template-check output=frontmatter` |
+| `zotlit:frontmatter-remove`       | 编辑配置方案文档，然后运行 `zotlit:template-check output=frontmatter` |
+| `zotlit:frontmatter-reorder`      | 编辑配置方案文档，然后运行 `zotlit:template-check output=frontmatter` |
 
-The replacement path is the same for all nine. Select the document with `zotlit:template-inspect`, edit the [profile document](/docs/reference/templates/profile-document) with file tools, and verify the result with `zotlit:template-check`. Managed frontmatter is a list in the profile document manifest, not a setting.
+这九条命令的替代流程相同：用 `zotlit:template-inspect` 选定文档，通过文件工具编辑[配置方案文档](/docs/reference/templates/profile-document)，再用 `zotlit:template-check` 验证结果。受管 frontmatter 是配置方案文档清单中的列表，不是设置项。
 
-## Contract version [#contract-version]
+## 契约版本 [#contract-version]
 
-The namespace declares its own contract version, currently 7, once, with the answer envelope that every Template Workbench command answers through. Every answer carries it as `contractVersion`, the first field of the answer. Each ZotLit CLI namespace versions its contract on its own, so this number does not track any other namespace.
+此命名空间在所有模板工作台命令共用的响应封装中统一声明契约版本，目前为 7。每个响应的第一个字段 `contractVersion` 都包含该版本。ZotLit 的各个 CLI 命名空间独立管理其契约版本，因此该数字不随其他命名空间的版本变化。
 
-An installed skill states the version it was written against. Compare that pin with the `contractVersion` of the first answer. When the two differ, the skill is the stale one: read the live guide again, starting with `obsidian zotlit:template-guide`, and follow the live contract rather than the skill.
+已安装的技能会声明其编写时依据的版本。将这个固定版本与首个响应中的 `contractVersion` 比较。如果不同，说明技能已过时：从 `obsidian zotlit:template-guide` 开始重新阅读当前指南，并以当前契约为准。
 
-## Answer envelope [#envelope]
+## 响应封装 [#envelope]
 
-Every answer except a successful `zotlit:template-guide` is a JSON string. The first three fields are always present:
+除成功执行的 `zotlit:template-guide` 外，每个响应都是 JSON 字符串，始终包含以下前三个字段：
 
 ```json
 {
@@ -91,79 +91,79 @@ Every answer except a successful `zotlit:template-guide` is a JSON string. The f
 }
 ```
 
-| Field             | Present                       | Meaning                                                                            |
-| ----------------- | ----------------------------- | ---------------------------------------------------------------------------------- |
-| `contractVersion` | Every answer                  | The contract version of this namespace.                                            |
-| `command`         | Every answer                  | The command that answered.                                                         |
-| `ok`              | Every answer                  | Whether the call succeeded. The rest of the answer is discriminated on this field. |
-| `diagnostic`      | Failures                      | The fault, described below. A success never carries it.                            |
-| `request`         | When a selector was resolved  | The parsed request, echoed back.                                                   |
-| `identity`        | When identity was resolved    | `vault.name`, `vault.path`, `source.id`, and `source.databasePath`.                |
-| `template`        | When the command defines one  | The template the answer concerns.                                                  |
-| `warnings`        | When the command defines them | Non-fatal notes about the answer.                                                  |
+| 字段              | 出现条件           | 含义                                                               |
+| ----------------- | ------------------ | ------------------------------------------------------------------ |
+| `contractVersion` | 每个响应           | 此命名空间的契约版本。                                             |
+| `command`         | 每个响应           | 返回响应的命令。                                                   |
+| `ok`              | 每个响应           | 调用是否成功。响应其余部分的结构由此字段决定。                     |
+| `diagnostic`      | 失败时             | 下文所述的错误信息。成功响应中没有此字段。                         |
+| `request`         | 已解析选择参数时   | 返回已解析的请求内容。                                             |
+| `identity`        | 已确定标识信息时   | `vault.name`、`vault.path`、`source.id` 和 `source.databasePath`。 |
+| `template`        | 命令定义了此字段时 | 响应所涉及的模板。                                                 |
+| `warnings`        | 命令定义了此字段时 | 与响应有关的非致命提示。                                           |
 
-The success and failure tails are separate shapes, so a failure cannot carry a result and a success cannot carry a diagnostic. When a call fails before the command resolves the vault and the Zotero source, the answer carries no `identity`.
+成功与失败响应的后续字段具有不同结构：失败响应不能包含结果，成功响应不能包含诊断信息。若调用在确定仓库和 Zotero 数据源之前就失败，响应中不会包含 `identity`。
 
-Verify `identity.vault` and `identity.source` on every answer, and pass `expect-source=<identity.source.id>` when inspecting, discovering data, or running a new check. A supplied value that differs from the connected source answers `TARGET_MISMATCH`.
+检查每个响应的 `identity.vault` 和 `identity.source`；检查文档、探索数据或运行新的测试时，传入 `expect-source=<identity.source.id>`。若该值与已连接的数据源不同，响应将返回 `TARGET_MISMATCH`。
 
-`zotlit:template-guide` prints plain text on success, not an envelope. Its failures are envelopes.
+`zotlit:template-guide` 成功时输出纯文本，不使用响应封装；失败时则使用响应封装。
 
-`zotlit:template-inspect` and `zotlit:template-check` build their own answers with the same three leading fields, and print a single line of JSON rather than the indented form the other commands use.
+`zotlit:template-inspect` 和 `zotlit:template-check` 自行构建响应，但使用相同的前三个字段。这两条命令输出单行 JSON，而其他命令输出带缩进的 JSON。
 
-### Diagnostic fields
+### 诊断字段 [#diagnostic-fields]
 
-| Field     | Meaning                                                                                                     |
-| --------- | ----------------------------------------------------------------------------------------------------------- |
-| `code`    | The stable code, from the registry below.                                                                   |
-| `message` | What went wrong, naming the offending parameter, path, key, or template.                                    |
-| `hint`    | The recovery action for the code.                                                                           |
-| `details` | Optional context: `parameter`, a source expectation (`target`, `expected`, `actual`), `key`, or `template`. |
+| 字段      | 含义                                                                                           |
+| --------- | ---------------------------------------------------------------------------------------------- |
+| `code`    | 下方注册表中的稳定错误代码。                                                                   |
+| `message` | 错误说明，指出有问题的参数、路径、键或模板。                                                   |
+| `hint`    | 针对此错误代码的恢复操作。                                                                     |
+| `details` | 可选上下文：`parameter`、数据源预期值（`target`、`expected`、`actual`）、`key` 或 `template`。 |
 
-Every code in the registry is declared together with its recovery action, and every diagnostic carries that action as `hint`. A `hint` is therefore always present on a registry code, and the caller follows it.
+注册表中的每个错误代码都与恢复操作一同声明，每条诊断信息都通过 `hint` 携带该操作。因此，注册表中的错误代码始终带有 `hint`，调用方应按其提示处理。
 
-## Diagnostic codes [#diagnostic-codes]
+## 诊断错误码 [#diagnostic-codes]
 
-| Code                            | Meaning                                                                                       |
-| ------------------------------- | --------------------------------------------------------------------------------------------- |
-| `COMMAND_RETIRED`               | The command is retired from template document authoring.                                      |
-| `INVALID_SELECTOR`              | A parameter is missing, unknown, or holds a value the command does not accept.                |
-| `TARGET_MISMATCH`               | The connected Zotero source differs from `expect-source`.                                     |
-| `TEMPLATE_NOT_READY`            | Template compilation had not settled, or failed to start.                                     |
-| `KEY_NOT_FOUND`                 | The indexed key is not in the connected Zotero source.                                        |
-| `NO_PARENT_ITEM`                | The selected object has no parent item.                                                       |
-| `ANNOTATION_REQUIRED`           | The annotation root needs an Annotation key.                                                  |
-| `ANNOTATION_ATTACHMENT_MISSING` | The Annotation's parent Attachment is missing.                                                |
-| `ETA_OPT_IN_REQUIRED`           | The source needs JavaScript Templates, which is off on this device.                           |
-| `TEMPLATE_COMPILE_ERROR`        | The template source does not compile.                                                         |
-| `TEMPLATE_RENDER_ERROR`         | An expression failed while the template rendered.                                             |
-| `EXPRESSION_COMPILE_ERROR`      | A managed frontmatter expression does not compile.                                            |
-| `RESERVED_KEY`                  | The key is managed by ZotLit. The retired frontmatter commands only.                          |
-| `FIELD_NOT_FOUND`               | The key is not a configured managed frontmatter field. The retired frontmatter commands only. |
-| `DOCUMENT_NOT_FOUND`            | A configured template document is missing.                                                    |
-| `UNKNOWN_PROFILE_STAMP`         | The `zotlit-profile` stamp of a note does not resolve.                                        |
-| `DUPLICATE_MANAGED_BLOCK`       | The document carries more than one managed block.                                             |
-| `MISSING_ANNOTATION_SECTION`    | The document has no standalone `--- zotlit:annotation ---` header.                            |
-| `DUPLICATE_ANNOTATION_SECTION`  | The document carries more than one `--- zotlit:annotation ---` header.                        |
-| `UNKNOWN_SECTION_HEADER`        | A section header is not the exact standalone `--- zotlit:annotation ---` line.                |
-| `RESERVED_ANNOTATION_PARTIAL`   | The manifest declares a partial named `annotation`, which the Annotation Section reserves.    |
-| `DOCUMENT_INVALID`              | The document failed validation.                                                               |
-| `RESERVED_PARTIAL_NAME`         | A Shared Partial file uses a reserved name.                                                   |
-| `MISSING_PARTIAL`               | A called Shared Partial has no file.                                                          |
-| `BUNDLED_PARTIAL`               | A partial is still carried in a profile document manifest.                                    |
+| 错误码                          | 含义                                                                     |
+| ------------------------------- | ------------------------------------------------------------------------ |
+| `COMMAND_RETIRED`               | 此命令已退出模板文档编写流程。                                           |
+| `INVALID_SELECTOR`              | 参数缺失、未知，或参数值不被命令接受。                                   |
+| `TARGET_MISMATCH`               | 已连接的 Zotero 数据源与 `expect-source` 不同。                          |
+| `TEMPLATE_NOT_READY`            | 模板编译尚未完成，或未能启动。                                           |
+| `KEY_NOT_FOUND`                 | 已连接的 Zotero 数据源中没有该标识符。                                   |
+| `NO_PARENT_ITEM`                | 所选对象没有父条目。                                                     |
+| `ANNOTATION_REQUIRED`           | 批注根节点需要批注键。                                                   |
+| `ANNOTATION_ATTACHMENT_MISSING` | 批注的父附件缺失。                                                       |
+| `ETA_OPT_IN_REQUIRED`           | 源码需要 JavaScript 模板，但此设备尚未开启该功能。                       |
+| `TEMPLATE_COMPILE_ERROR`        | 模板源码无法编译。                                                       |
+| `TEMPLATE_RENDER_ERROR`         | 模板渲染过程中某个表达式执行失败。                                       |
+| `EXPRESSION_COMPILE_ERROR`      | 受管 frontmatter 表达式无法编译。                                        |
+| `RESERVED_KEY`                  | 此键由 ZotLit 管理。仅用于已废弃的 frontmatter 命令。                    |
+| `FIELD_NOT_FOUND`               | 此键不是已配置的受管 frontmatter 字段。仅用于已废弃的 frontmatter 命令。 |
+| `DOCUMENT_NOT_FOUND`            | 已配置的模板文档缺失。                                                   |
+| `UNKNOWN_PROFILE_STAMP`         | 无法解析笔记的 `zotlit-profile` 标记。                                   |
+| `DUPLICATE_MANAGED_BLOCK`       | 文档包含多个受管区块。                                                   |
+| `MISSING_ANNOTATION_SECTION`    | 文档缺少独占一行的 `--- zotlit:annotation ---` 标题。                    |
+| `DUPLICATE_ANNOTATION_SECTION`  | 文档包含多个独占一行的 `--- zotlit:annotation ---` 标题。                |
+| `UNKNOWN_SECTION_HEADER`        | 分节标题不是独占一行且完全匹配的 `--- zotlit:annotation ---`。           |
+| `RESERVED_ANNOTATION_PARTIAL`   | 文档清单声明了名为 `annotation` 的片段，但该名称由批注分节保留。         |
+| `DOCUMENT_INVALID`              | 文档未通过校验。                                                         |
+| `RESERVED_PARTIAL_NAME`         | 共享片段文件使用了保留名称。                                             |
+| `MISSING_PARTIAL`               | 被调用的共享片段没有对应文件。                                           |
+| `BUNDLED_PARTIAL`               | 配置方案文档清单仍包含内嵌片段。                                         |
 
-`zotlit:template-inspect` and `zotlit:template-check` declare further codes in their own guide topics, among them `AMBIGUOUS_TARGET`, `TARGET_NOT_FOUND`, `NOT_LITERATURE_NOTE`, `SOURCE_NOT_LOADED`, `SOURCE_READ_FAILED`, `SOURCE_SUPERSEDED`, `EDITOR_TARGET_MISMATCH`, `INVALID_PROFILE_ID`, `PROFILE_ID_MISMATCH`, `ATTEMPT_NOT_FOUND`, `DRAFT_READ_FAILED`, `BASELINE_READ_FAILED`, and `BASELINE_SUPERSEDED`. Read `topic=inspect` and `topic=check` for those. One code, `duplicate-literature-notes`, is lower case as it is raised.
+`zotlit:template-inspect` 和 `zotlit:template-check` 还在各自的指南主题中定义了其他错误代码，包括 `AMBIGUOUS_TARGET`、`TARGET_NOT_FOUND`、`NOT_LITERATURE_NOTE`、`SOURCE_NOT_LOADED`、`SOURCE_READ_FAILED`、`SOURCE_SUPERSEDED`、`EDITOR_TARGET_MISMATCH`、`INVALID_PROFILE_ID`、`PROFILE_ID_MISMATCH`、`ATTEMPT_NOT_FOUND`、`DRAFT_READ_FAILED`、`BASELINE_READ_FAILED` 和 `BASELINE_SUPERSEDED`。请阅读 `topic=inspect` 和 `topic=check` 了解详情。其中 `duplicate-literature-notes` 按实际抛出的形式使用小写。
 
-## Refusals [#refusals]
+## 拒绝执行 [#refusals]
 
-`zotlit:template-check` refuses a document whose identity your vault rejects, rather than reporting a check that passed. A refusal is not a failed check, and the answer says which one it is.
+如果仓库不接受某文档的标识，`zotlit:template-check` 会拒绝该文档，而不是报告检查通过。拒绝执行与检查失败不同，响应会明确区分两者。
 
-| Shape                  | Raised when                                    | Carries                                                                                                   |
-| ---------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| Refusal before parsing | The rule reads the filename, so no check runs. | No `checks` field. `RESERVED_PARTIAL_NAME` has this shape.                                                |
-| Refusal from parsing   | The manifest ID fails the profile ID rule.     | The `checks` map, with the failing check. `INVALID_PROFILE_ID` and `PROFILE_ID_MISMATCH` have this shape. |
+| 形式       | 触发条件                               | 携带内容                                                                                       |
+| ---------- | -------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| 解析前拒绝 | 规则检查文件名，因此不运行任何检查。   | 没有 `checks` 字段。`RESERVED_PARTIAL_NAME` 使用此形式。                                       |
+| 解析时拒绝 | 文档清单的 ID 不符合配置方案 ID 规则。 | 包含 `checks` 映射及其中失败的检查。`INVALID_PROFILE_ID` 和 `PROFILE_ID_MISMATCH` 使用此形式。 |
 
-## Data access [#data-access]
+## 数据访问 [#data-access]
 
-The CLI reads Zotero metadata and annotation text, and renders templates in memory. No check writes a note, changes a profile, or imports an attachment, and the preview commands write no template document, note, or setting.
+CLI 读取 Zotero 元数据与批注文本，并在内存中渲染模板。检查不会写入笔记、修改配置方案或导入附件；预览命令也不会写入模板文档、笔记或设置。
 
-Your agent edits vault files through its own file tools, so those edits change the selected vault. See [Template Workbench](/docs/concepts/template-workbench) for the workflow, and [Install the ZotLit skill](/docs/install-skill) for the skill that drives this CLI.
+您的智能体通过自己的文件工具编辑仓库文件，因此这些编辑会改变所选仓库。请参阅[模板工作台](/docs/concepts/template-workbench)了解工作流，以及[安装 ZotLit 技能](/docs/install-skill)了解驱动此 CLI 的技能。

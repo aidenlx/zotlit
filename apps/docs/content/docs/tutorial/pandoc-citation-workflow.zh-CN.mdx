@@ -1,6 +1,6 @@
 ---
 title: "搭建 Pandoc 引文工作流"
-description: "创建一篇带有引文的笔记，分别使用 ZotLit 与原生 Pandoc 进行导出，并比对两份 Word 文档的结果。"
+description: "创建一篇带有引文的笔记，分别使用 ZotLit 内置导出与原生 Pandoc 进行导出，并对比生成的 Word 文档。"
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
@@ -176,7 +176,7 @@ import { m } from "@/paraglide/messages.js";
 
     逐一比对同一文献多次引用的格式、定位符、作者模式、组合引文序列、字面量引文以及普通仓库双链链接。由于两条导出路径始于相同的笔记内容和样式配置，正文中的引文呈现应当完全一致。
 
-    两者仅在参考文献数据来源上有别：内置导出通过 Better BibTeX 接口实时拉取最新数据，而原生 Pandoc 则读取自动保持更新的 `references.json` 文件。
+    两者在参考文献数据来源上有别：内置导出通过 Better BibTeX 接口实时拉取最新数据，而原生 Pandoc 则读取自动保持更新的 `references.json` 文件。
 
   </Step>
 </Steps>
@@ -189,7 +189,7 @@ import { m } from "@/paraglide/messages.js";
 | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
 | `#cite:` 链接导致内置导出中断，且原生 Pandoc 针对同一链接报告 `unresolved-citation-intent` | 请将该链接指向有效的文献笔记。如果您本意是普通仓库双链，请移除其 `#cite:` 片段。 |
 | 内置导出成功，但原生 Pandoc 警告在参考文献库中未找到某引文                                 | 将缺失条目加入 Better BibTeX 导出源，刷新 `references.json`，然后重新运行命令。  |
-| ZotLit 更新后原生输出异常，或 Lua 过滤器提示契约版本不匹配（contract mismatch）            | 重新保存两个集成文件，并同时替换原有的旧文件对。                                 |
+| ZotLit 更新后原生输出异常，或 Lua 过滤器提示契约版本不匹配（contract mismatch）            | 重新保存配套的集成文件，将旧的 `zotlit-cite.lua` 与 `zotlit.yaml` 成对替换。     |
 
 如需查看原生错误码定义，请打开 <SettingsPath page={m.settings_page_citations()} /> 下的 <UiLabel name={m.settings_citation_pandoc_guide_name()} />。[设置参考](/docs/reference/settings#native-pandoc)详细介绍了本地指南与集成控制项。
 

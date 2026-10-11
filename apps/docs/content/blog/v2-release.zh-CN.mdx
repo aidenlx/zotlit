@@ -40,7 +40,7 @@ _完整的背景故事请参阅[重构 ZotLit：v2 公测版本说明](/blog/reb
 
 对于零星的几篇文献，逐一创建文献笔记尚可应对；但当您在导入既有文献库，或刚通过文献检索批量下载了一批文献时，逐篇创建就显得力不从心。v2 提供了批量操作支持，能够一次性为海量条目创建或更新笔记。
 
-正式版全新引入的特性：您可以直接针对整个 Zotero 文献库或特定分类（包含其所有子分类）发起操作。在 Zotero 侧边栏中右键选择某个文献库或分类，即可一键创建或更新所有文献笔记，或者导入其下属的所有子笔记。同样的动作也可以从 Obsidian 命令面板和协议链接中触发。
+正式版全新引入的特性：您可以直接针对整个 Zotero 文献库或特定分类（包含其所有子分类）发起操作。在 Zotero 侧边栏中右键选择某个文献库或分类，即可一键创建或更新所有文献笔记，或者导入其下属的所有笔记。同样的动作也可以从 Obsidian 命令面板和协议链接中触发。
 
 <ActionLink href="/docs/how-to/create-and-open-notes#bulk" kind="external">
   批量操作
@@ -59,9 +59,9 @@ _完整的背景故事请参阅[重构 ZotLit：v2 公测版本说明](/blog/reb
   浏览模板数据
 </ActionLink>
 
-## Managed region
+## 受管区域 [#managed-region]
 
-Literature Notes have a managed region marked by `%%zt-managed%%` and `%%/zt-managed%%`. When you update a note, v2 re-renders the managed region and leaves everything else alone. Your own writing above and below the markers survives every update.
+文献笔记包含一个由 `%%zt-managed%%` 与 `%%/zt-managed%%` 标记的受管区域。更新笔记时，v2 会重新渲染该区域，其他内容保持原样。您在标记上方和下方撰写的内容会在每次更新后保留。
 
 ```markdown
 Personal notes and thoughts go here.
@@ -79,63 +79,63 @@ More notes below, also untouched.
   href="/docs/concepts/literature-notes-and-the-managed-region"
   kind="external"
 >
-  Literature notes and the managed region
+  文献笔记与受管区域
 </ActionLink>
 
-## Zotero-note import
+## 导入 Zotero 笔记 [#zotero-note-import]
 
-Zotero's built-in note editor is where some researchers do most of their writing. v2 can import those notes as Markdown files with content and structure preserved. Highlights become inline marks with backlinks, image excerpts become embeds, and typed comments carry over.
+一些研究者主要在 Zotero 内置的笔记编辑器中写作。v2 可以将这些笔记导入为 Markdown 文件，并保留内容与结构。高亮会转换为带有返回原文链接的行内标记，图像摘录会转换为嵌入图片，输入的评注也会保留。
 
 <ActionLink href="/docs/how-to/import-zotero-notes" kind="external">
-  Importing Zotero notes
+  导入 Zotero 笔记
 </ActionLink>
 
-## Template Workbench
+## 模板工作台 [#template-workbench]
 
-If you use a coding agent like Claude Code or Codex, the Template Workbench exposes commands that let the agent inspect template state, render previews against your Zotero data, and manage frontmatter fields directly.
+如果您使用 Claude Code 或 Codex 等编码智能体，模板工作台提供的命令允许智能体检查模板状态、使用您的 Zotero 数据渲染预览，以及直接管理 frontmatter 字段。
 
 <ActionLink href="/docs/concepts/template-workbench" kind="external">
-  Template Workbench
+  模板工作台
 </ActionLink>
 
-## And more
+## 其他改进 [#and-more]
 
-- **`@` citation trigger.** Type `@` to open the citation suggester. Shift+Enter picks the alternate format.
-- ZotLit Companion, the Zotero add-on, adds a **note-status column** showing which items have a literature note in your vault.
-- **Welcome view.** A setup screen with connection status and quick links. Notices link to the relevant settings page.
-- **Per-device Zotero paths.** Paths are stored per-device, so syncing a vault between machines won't overwrite each other's configuration.
-- `zt.weblink` is the Zotero web library URL; each attachment has a `backlink` that opens it in Zotero's reader.
-- **Managed frontmatter.** Frontmatter fields backed by template expressions re-evaluate on each note update. Drag to reorder.
-- Chinese (Simplified) is the first non-English **language pack**, shipped as a version-pinned release asset.
+- **`@` 引文触发符。** 输入 `@` 即可打开引文建议下拉框。按 Shift+Enter 选择备用格式。
+- Zotero 配套插件 ZotLit Companion 新增**笔记状态列**，显示哪些条目已在您的仓库中拥有文献笔记。
+- **欢迎视图。** 配置界面提供连接状态与快捷链接。通知也会链接到相关设置页面。
+- **单设备独立的 Zotero 路径。** 路径按设备单独保存，在不同计算机间同步仓库时不会覆盖彼此的配置。
+- `zt.weblink` 提供条目在 Zotero Web 文献库中的 URL；每个附件都有 `backlink` 字段，可在 Zotero 阅读器中打开该附件。
+- **受管 frontmatter。** 由模板表达式生成的 frontmatter 字段会在每次笔记更新时重新计算，并支持拖拽排序。
+- 简体中文是首个非英语**语言包**，作为与插件版本匹配的发布附件提供。
 
-## Upgrading from v1 [#upgrading-from-v1]
+## 从 v1 升级 [#upgrading-from-v1]
 
-v2 introduces breaking changes. If you're coming from v1:
+v2 引入了不兼容的变更。从 v1 升级时，请完成以下步骤：
 
-1. Rename your template files to v2's naming convention.
-2. Replace `it.*` references with `zt.*` in your Eta templates.
-3. Enable **JavaScript Templates** in ZotLit's settings if you use Eta.
+1. 按照 v2 的命名约定重命名模板文件。
+2. 将 Eta 模板中的 `it.*` 引用替换为 `zt.*`。
+3. 如果您使用 Eta，请在 ZotLit 设置中启用 **JavaScript 模板**。
 
 <ActionLink href="/docs/how-to/migrate-from-v1" kind="external">
-  Migration guide
+  迁移指南
 </ActionLink>
 
-Two v1 features are retired: annotation merging and topic-based imports. The complexity they added was not justified by how often they were used.
+v1 的两项功能已停用：批注合并与按主题导入。其实际使用频率不足以抵消它们带来的复杂性。
 
-## Notable changes
+## 重要变更 [#notable-changes]
 
-ZotLit is now licensed under **AGPL-3.0-or-later**, matching Zotero's own license for code that ZotLit ports.
+ZotLit 现采用 **AGPL-3.0-or-later** 许可证，与所移植代码来源 Zotero 的许可证保持一致。
 
-**Citation Key Links** is disabled by default. If you used it during the beta or migrated from v1, your setting is preserved.
+**文献引用标识链接**默认关闭。如果您在测试期间使用过该功能或从 v1 迁移而来，现有设置会保留。
 
-## What's next
+## 后续计划 [#whats-next]
 
-I'm working on two things next: search and filter Zotero library from inside Obsidian, and improvements on the citation workflow. No timeline on either, but the design groundwork is in place for both. Stay tuned!
+接下来，我将着手两项工作：在 Obsidian 中搜索和筛选 Zotero 文献库，以及改进引文工作流。两者的设计基础均已准备就绪，但尚无具体时间表。敬请关注！
 
-## Feedback
+## 反馈 [#feedback]
 
-Questions, ideas, and bug reports go through the community page.
+问题、建议和缺陷报告均可通过社区页面提交。
 
 <ActionLink href="/community" kind="external">
-  Community
+  社区
 </ActionLink>

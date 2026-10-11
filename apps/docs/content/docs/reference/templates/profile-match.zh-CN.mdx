@@ -58,32 +58,32 @@ ZotLit 会拒绝任何既非 `personal` 也非以正整数结尾的 `group:` 的
 
 字段名必须置于左侧，带引号的目标值置于右侧。目标值使用双引号或单引号均可。ZotLit 会拒绝两侧颠倒的书写方式，以及该字段无法接受的目标值。
 
-## List functions [#list-functions]
+## 列表函数 [#list-functions]
 
-The list fields `tags` and `collections` take a function call. Every argument is a string literal.
+列表字段 `tags` 和 `collections` 使用函数调用进行判断。所有参数都必须是字符串字面量。
 
-| Function            | Fields                | Arguments   | Holds when                                                                    |
-| ------------------- | --------------------- | ----------- | ----------------------------------------------------------------------------- |
-| `contains(value)`   | `tags`, `collections` | Exactly one | The list holds that value.                                                    |
-| `containsAny(a, b)` | `tags`, `collections` | One or more | The list holds at least one of the values.                                    |
-| `containsAll(a, b)` | `tags`, `collections` | One or more | The list holds every value.                                                   |
-| `isEmpty()`         | `tags`, `collections` | None        | The list holds no values.                                                     |
-| `within(path)`      | `collections`         | Exactly one | The item is filed in that Collection or in one of its descendant Collections. |
+| 函数                | 字段                  | 参数       | 成立条件                         |
+| ------------------- | --------------------- | ---------- | -------------------------------- |
+| `contains(value)`   | `tags`, `collections` | 恰好一个   | 列表包含该值。                   |
+| `containsAny(a, b)` | `tags`, `collections` | 一个或多个 | 列表包含所给值中的至少一个。     |
+| `containsAll(a, b)` | `tags`, `collections` | 一个或多个 | 列表包含所有给定值。             |
+| `isEmpty()`         | `tags`, `collections` | 无         | 列表为空。                       |
+| `within(path)`      | `collections`         | 恰好一个   | 条目属于该分类或其任意下级分类。 |
 
-On `collections`, `contains` tests direct filing: `collections.contains("Project/Drafts")` holds only when the item is filed directly in that exact path. `within` accepts any descendant. On `tags`, the value is one Tag name, not a path.
+对于 `collections`，`contains` 判断直接归属：只有条目直接属于指定路径的分类时，`collections.contains("Project/Drafts")` 才成立。`within` 则包括任意下级分类。对于 `tags`，参数值是标签名称，而非路径。
 
-ZotLit rejects `within` on `tags`, a list function on `library` or `itemType`, a call with the wrong number of arguments, and a non-string argument.
+ZotLit 会拒绝以下写法：对 `tags` 使用 `within`、对 `library` 或 `itemType` 使用列表函数、参数数量错误，或使用非字符串参数。
 
-## Operators [#operators]
+## 运算符 [#operators]
 
-| Operator | Meaning                                         |
-| -------- | ----------------------------------------------- |
-| `!`      | Negates one test or a parenthesized expression. |
-| `&&`     | Holds when both sides hold.                     |
-| `\|\|`   | Holds when at least one side holds.             |
-| `( )`    | Groups tests.                                   |
+| 运算符 | 含义                             |
+| ------ | -------------------------------- |
+| `!`    | 对单个判断或括号内的表达式取反。 |
+| `&&`   | 两侧都成立时为真。               |
+| `\|\|` | 至少一侧成立时为真。             |
+| `( )`  | 对判断进行分组。                 |
 
-`!` binds tightest, then `&&`, then `||`:
+`!` 的优先级最高，其次是 `&&`，最后是 `||`：
 
 ```
 !tags.contains("Read")
@@ -91,11 +91,11 @@ ZotLit rejects `within` on `tags`, a list function on `library` or `itemType`, a
 itemType == "book" && tags.contains("Read")
 ```
 
-`true` matches every item. `false` is rejected as unsupported: it describes no item set that a profile can use.
+`true` 匹配所有条目。`false` 不受支持，会被拒绝，因为它无法指定配置方案可使用的任何条目集合。
 
-## Tree form [#tree]
+## 条件树形式 [#tree]
 
-The `match` key holds either one expression string or one tree node. A tree node is a mapping with a single key, `and` or `or`, whose value is a list of entries. Each entry is an expression string or another tree node.
+`match` 键接受一个表达式字符串或一个树节点。树节点是仅含 `and` 或 `or` 一个键的映射，其值为配置项列表。每个配置项可以是表达式字符串，也可以是另一个树节点。
 
 ```yaml
 match: 'itemType == "book" && tags.contains("Read")'
@@ -110,36 +110,36 @@ match:
         - 'collections.within("Project/Drafts")'
 ```
 
-`and` holds when every entry holds. `or` holds when at least one entry holds.
+所有配置项都成立时，`and` 成立。至少一个配置项成立时，`or` 成立。
 
-An empty list is legal. An empty `and` matches every item. An empty `or` matches no item.
+允许空列表。空的 `and` 匹配所有条目，空的 `or` 不匹配任何条目。
 
-An entry that is an empty expression string is rejected, because a leaf has to test something.
+表达式字符串为空的配置项会被拒绝，因为叶节点必须包含具体判断。
 
-## Rejected forms [#rejected]
+## 不接受的写法 [#rejected]
 
-| Form                                  | Why it is rejected                                                 |
-| ------------------------------------- | ------------------------------------------------------------------ |
-| `hasTag("Read")`                      | Legacy name. Use `tags.contains("Read")`.                          |
-| `inCollection("Project")`             | Legacy name. Use `collections.contains` or `collections.within`.   |
-| `inCollectionDirectly("Project")`     | Legacy name. Use `collections.contains` or `collections.within`.   |
-| `title == "x"`                        | A match tests only the four fields in [Fields](#fields).           |
-| `tags == "Read"`                      | A list field takes a list function, not an equality test.          |
-| `itemType.contains("book")`           | A scalar field takes an equality test, not a list function.        |
-| `false`                               | Describes no item set. Use `true` to match every item.             |
-| `library == "group:0"`                | A group ID is a positive integer, and the group must be connected. |
-| `itemType == "novel"`                 | An item type outside the closed set.                               |
-| An empty expression, or broken syntax | The condition does not name a test.                                |
+| 写法                              | 拒绝原因                                                          |
+| --------------------------------- | ----------------------------------------------------------------- |
+| `hasTag("Read")`                  | 旧版名称。请使用 `tags.contains("Read")`。                        |
+| `inCollection("Project")`         | 旧版名称。请使用 `collections.contains` 或 `collections.within`。 |
+| `inCollectionDirectly("Project")` | 旧版名称。请使用 `collections.contains` 或 `collections.within`。 |
+| `title == "x"`                    | 匹配规则仅支持[支持的字段](#fields)中列出的四个字段。             |
+| `tags == "Read"`                  | 列表字段需使用列表函数，不支持相等性断言。                        |
+| `itemType.contains("book")`       | 标量字段需使用相等性断言，不支持列表函数。                        |
+| `false`                           | 未指定任何条目集合。使用 `true` 可匹配所有条目。                  |
+| `library == "group:0"`            | 群组 ID 必须是正整数，且该群组必须已连接。                        |
+| `itemType == "novel"`             | 条目类型不在允许的集合中。                                        |
+| 空表达式或语法错误                | 条件未指定有效判断。                                              |
 
-The three legacy names also take a Library argument. The current language has no equal, because a Collection path is evaluated against the item's own Library.
+这三个旧版函数名还接受文献库参数。当前语法没有对应参数，因为分类路径始终在条目所属的文献库中计算。
 
-## Selection with a Profile Match [#selection]
+## 根据匹配规则选择配置方案 [#selection]
 
-ZotLit treats a Profile Match it cannot evaluate as a non-match, not as a refusal. It reports the problem as a diagnostic, keeps the profile out of automatic selection, and continues with the other profiles. Causes include invalid syntax, an unsupported construct, an unknown Library, and an unknown item type. A profile's row in [Settings](/docs/reference/settings#profile-match) shows the status of its Profile Match, and the <UiLabel name={m.workbench_tab_match()} /> tab of the Template Workbench View shows the diagnostic.
+对于无法求值的配置方案匹配规则，ZotLit 将其视为不匹配，并继续检查其他配置方案。系统会报告诊断信息，将该配置方案排除在自动选择之外。可能的原因包括语法错误、不支持的结构、未知文献库或未知条目类型。[设置](/docs/reference/settings#profile-match)中的配置方案行会显示匹配规则状态；模板工作台视图的 <UiLabel name={m.workbench_tab_match()} /> 标签页会显示诊断信息。
 
-A profile with no `match` key never takes part in automatic selection. A profile whose `match` holds is used for the new note. When several profiles match, the profile picker opens with the matching candidates. [Settings](/docs/reference/settings#profile-match) describes the statuses, the condition summary, and the picker. A Match is edited in the profile document, on the <UiLabel name={m.workbench_tab_match()} /> tab of the Template Workbench View; [Use a different template for different notes](/docs/how-to/use-different-templates) gives the procedure.
+不含 `match` 键的配置方案不参与自动选择。`match` 条件成立的配置方案会用于新笔记。多个配置方案同时匹配时，系统会打开配置方案选择器并列出候选项。[设置](/docs/reference/settings#profile-match)介绍了各类状态、条件摘要和选择器。您可以在模板工作台视图的 <UiLabel name={m.workbench_tab_match()} /> 标签页中编辑配置方案文档的匹配规则；具体步骤见[针对不同笔记使用不同模板](/docs/how-to/use-different-templates)。
 
-## See also [#see-also]
+## 另请参阅 [#see-also]
 
-- [Profile document](/docs/reference/templates/profile-document) for the manifest keys, the note source, the `{% managed %}` block, and the Annotation Section.
-- [Use a different template for different notes](/docs/how-to/use-different-templates) for creating and sharing a Profile Match.
+- [配置方案文档](/docs/reference/templates/profile-document)：manifest 配置键、笔记源码、`{% managed %}` 块和标注区域。
+- [针对不同笔记使用不同模板](/docs/how-to/use-different-templates)：创建和分享配置方案匹配规则。

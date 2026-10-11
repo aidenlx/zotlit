@@ -42,55 +42,55 @@ ZotLit 仅在同时满足以下两个条件时才会注入公开类名：
 1. 该引文来源归属于当前活动笔记的文档引文集（Document Citation Set）。
 2. ZotLit 正在为该引文来源提供格式化渲染或交互导航支持。
 
-`zt-citation-key` and its state classes identify active literal Pandoc sources. <UiLabel name={m.settings_citation_pandoc_citations_name()} /> controls their membership. <UiLabel name={m.settings_citation_show_formatted_name()} /> and <UiLabel name={m.settings_citation_open_as_links_name()} /> control the two features that can activate their hooks.
+`zt-citation-key` 及其状态类标识处于活跃状态的 Pandoc 字面量引文来源。<UiLabel name={m.settings_citation_pandoc_citations_name()} /> 决定是否将其纳入引文集。<UiLabel name={m.settings_citation_show_formatted_name()} /> 与 <UiLabel name={m.settings_citation_open_as_links_name()} /> 分别控制可激活这些类名的两项功能。
 
-`zt-literature-note-link` identifies active Wikilink Citation sources. <UiLabel name={m.settings_citation_wikilink_citations_name()} /> controls their membership. ZotLit applies the hook when <UiLabel name={m.settings_citation_show_formatted_name()} /> supplies their rendering. Obsidian supplies wikilink navigation while <UiLabel name={m.settings_citation_open_as_links_name()} /> is on; when it is off, a plain click on a rendered wikilink citation puts the cursor in the link's source text in Live Preview and does nothing in reading view, and Mod+click still opens the note.
+`zt-literature-note-link` 标识处于活跃状态的双链引文来源。<UiLabel name={m.settings_citation_wikilink_citations_name()} /> 决定是否将其纳入引文集。当 <UiLabel name={m.settings_citation_show_formatted_name()} /> 为其提供渲染时，ZotLit 应用此类名。开启 <UiLabel name={m.settings_citation_open_as_links_name()} /> 后，Obsidian 提供双链导航；关闭时，普通点击已渲染的双链引文会在实时预览中将光标置于链接源码中，在阅读视图中则无操作，而 Mod+点击仍会打开笔记。
 
-One citation key states one resolution state. Before the first Citation Key Resolution Snapshot settles, it receives `zt-citation-key-pending`. A key that matches several Zotero items receives `zt-citation-key-ambiguous` in Source mode, Live Preview, and reading view. Inside a Citation Cluster, an unresolved key outranks an ambiguous one: a cluster that holds both receives `zt-citation-key-unresolved`, or `zt-citation-key-partially-unresolved` when it also holds a resolved key, and no ambiguous class.
+一个引文键只表示一种解析状态。在首个引文键解析快照就绪前，它带有 `zt-citation-key-pending`。匹配多个 Zotero 条目的键在源码模式、实时预览和阅读视图中均带有 `zt-citation-key-ambiguous`。引文簇中，未解析键的优先级高于歧义键：同时包含两者的引文簇带有 `zt-citation-key-unresolved`；如果还包含已解析键，则带有 `zt-citation-key-partially-unresolved`，且不带歧义类名。
 
-Aliases, heading links, block links, embeds, unresolved targets, and malformed Citation Fragments stay outside renderable membership. ZotLit gives them no public citation class.
+带别名的链接、标题链接、块链接、嵌入、未解析的目标以及格式不正确的引文片段均不属于可渲染的引文集，ZotLit 不为其添加公开引文类名。
 
-A source also receives no public ZotLit class when both applicable features are inactive. The internal Citation Index alone never activates a class.
+如果两项适用功能均未启用，引文来源也不会带有公开的 ZotLit 类名。内部引文索引本身不会激活类名。
 
-`zt-citation` appears only when ZotLit renders a Citation or supplies Citekey Navigation for it.
+`zt-citation` 仅在 ZotLit 渲染引文或为其提供引文键导航时出现。
 
-`zt-entry-serial` appears inside a rendered Citation, on the element that holds its Entry Serials. ZotLit adds it only when the selected Citation and References Style writes the Citation as a footnote, which no Obsidian view can show. ZotLit then shows the position of each cited entry in the References Sidebar instead: one number per cited work, separated by commas, and `⚠` for a work the bibliography rendered no entry for. A style that writes its Citations inline, such as an author-date or a numeric style, activates this class nowhere.
+`zt-entry-serial` 出现在已渲染引文中承载条目序号的元素上。仅当所选引文与参考文献样式将引文写为脚注时，ZotLit 才会添加此类名，因为 Obsidian 的各个视图都无法显示这类脚注。此时，ZotLit 改为显示每篇被引文献在参考文献侧边栏中的位置：每篇文献对应一个数字，以逗号分隔；没有生成参考文献条目的文献显示 `⚠`。作者-年份制或数字制等将引文写入正文的样式不会激活此类名。
 
-The class appears once more in the <UiLabel name={m.settings_citation_hover_action_popover()} /> of such a Citation, on the element that labels each cited item's button row with that item's serial. The same `⚠` stands there for a work the bibliography rendered no entry for.
+此类名还会出现在这类引文的 <UiLabel name={m.settings_citation_hover_action_popover()} /> 中，用于为每个被引条目的按钮行标注序号。如果某篇文献没有生成参考文献条目，此处同样显示 `⚠`。
 
-## Default appearance [#defaults]
+## 默认外观 [#defaults]
 
-Resolved citation keys use Obsidian's `--link-*` variables. Fully unresolved citation keys use the corresponding `--link-unresolved-*` variables.
+已解析的引文键使用 Obsidian 的 `--link-*` 变量。完全未解析的引文键使用对应的 `--link-unresolved-*` 变量。
 
-Pending citation keys have no ZotLit default style. They keep the host view's neutral appearance until the first resolution snapshot settles.
+ZotLit 不为待解析的引文键提供默认样式。在首个解析快照就绪前，它们保持所在视图的中性外观。
 
-ZotLit adds no aggregate style for `zt-citation-key-partially-unresolved`. A partial result therefore keeps the appearance of its resolved works. ZotLit adds no style to a native Literature Note wikilink.
+ZotLit 不为 `zt-citation-key-partially-unresolved` 添加整体样式，因此部分解析的结果保持其中已解析文献的外观。ZotLit 也不为原生文献笔记双链添加样式。
 
-Ambiguous citation keys keep the resolved link color and take the `--link-unresolved-decoration-*` variables, so the key reads as reachable while stating that it matches more than one item. The <UiLabel name={m.settings_citation_hover_action_popover()} /> names its candidates.
+歧义引文键保留已解析链接的颜色，同时使用 `--link-unresolved-decoration-*` 变量，既显示该键可以跳转，又表明它匹配多个条目。<UiLabel name={m.settings_citation_hover_action_popover()} /> 会列出候选条目。
 
-ZotLit adds no style to `zt-entry-serial` either. The serials render as superscript text in a Citation, as a plain label in the <UiLabel name={m.settings_citation_hover_action_popover()} />, and take their appearance from the theme.
+ZotLit 也不为 `zt-entry-serial` 添加样式。序号在引文中显示为上标文本，在 <UiLabel name={m.settings_citation_hover_action_popover()} /> 中显示为普通标签，其外观由主题决定。
 
-## Graph view colors [#graph]
+## 图谱视图颜色 [#graph]
 
-The graph and local graph views draw on a canvas, so ZotLit colors its nodes and edges through custom properties instead of classes. ZotLit reads each property off `body`, so set it on `body`. A property set on the view itself, such as on `.graph-view`, changes nothing.
+图谱与局部图谱视图使用画布绘制，因此 ZotLit 通过自定义属性而非类名设置节点和连线的颜色。ZotLit 从 `body` 读取这些属性，请在 `body` 上设置。在视图自身（例如 `.graph-view`）上设置不会生效。
 
-| Custom property                    | Meaning                                                                  |
-| ---------------------------------- | ------------------------------------------------------------------------ |
-| `--zt-graph-literature-note-color` | The starting color of a new literature notes group.                      |
-| `--zt-graph-cited-work-node-color` | The fill color of a cited work that has no Literature Note in the vault. |
-| `--zt-graph-citation-link-color`   | The line color of an edge that a citation draws.                         |
+| 自定义属性                         | 含义                                             |
+| ---------------------------------- | ------------------------------------------------ |
+| `--zt-graph-literature-note-color` | 新建文献笔记分组的初始颜色。                     |
+| `--zt-graph-cited-work-node-color` | 仓库中没有对应文献笔记的被引文献节点的填充颜色。 |
+| `--zt-graph-citation-link-color`   | 引文连线的颜色。                                 |
 
-ZotLit accepts any color syntax the app itself accepts, `oklch()` and `color-mix()` included.
+ZotLit 接受应用本身支持的所有颜色语法，包括 `oklch()` 和 `color-mix()`。
 
-### Default appearance [#graph-defaults]
+### 默认外观 [#graph-defaults]
 
-Literature Notes use native node colors. A new literature notes group starts with ZotLit orange: `#E8622C` in light mode or `#F0793F` in dark mode. ZotLit reads `--zt-graph-literature-note-color` when it creates the group through the graph button or a Citation Graph command.
+文献笔记使用原生节点颜色。新建文献笔记分组使用 ZotLit 橙色：浅色模式为 `#E8622C`，深色模式为 `#F0793F`。通过图谱按钮或引文图谱命令创建分组时，ZotLit 会读取 `--zt-graph-literature-note-color`。
 
-Existing groups keep their saved color across theme changes. Removing the group returns its nodes to the remaining native groups and native colors.
+切换主题时，已有分组保留已保存的颜色。移除分组后，其中节点重新采用其余原生分组及原生颜色。
 
-A cited work with no Literature Note takes `--text-faint`, unless a native color group matches it. Citation edges use native colors by default. Enabling <UiLabel name={m.graph_option_color_citation_links_name()} /> applies `--zt-graph-citation-link-color`, which defaults to `--color-purple`.
+没有对应文献笔记的被引文献使用 `--text-faint`，除非匹配某个原生颜色分组。引文连线默认使用原生颜色。开启 <UiLabel name={m.graph_option_color_citation_links_name()} /> 后，会应用 `--zt-graph-citation-link-color`，其默认值为 `--color-purple`。
 
-An edge keeps Obsidian's own highlight color while the pointer rests on one of its nodes.
+当指针停在连线任一端的节点上时，连线保留 Obsidian 自带的高亮颜色。
 
 ```css
 body.theme-light {
@@ -107,70 +107,72 @@ body {
 }
 ```
 
-## PDF reader hooks [#pdf-reader]
+## PDF 阅读器样式类名 [#pdf-reader]
 
-Obsidian's PDF reader shows a Zotero attachment's Annotations as an overlay, and offers its own toolbar and popups for creating and editing them. ZotLit draws every one of these surfaces itself, on Obsidian's own toolbar and popover primitives.
+Obsidian PDF 阅读器通过覆盖层显示 Zotero 附件的批注，并提供用于创建和编辑批注的工具栏与弹窗。ZotLit 基于 Obsidian 自带的工具栏和浮窗组件绘制这些界面。
 
-| Class                                 | Marks                                                                                                                                              |
-| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `zt-pdf-annotation-overlay`           | The SVG ZotLit draws Zotero's Annotations into, one per rendered PDF page.                                                                         |
-| `zt-pdf-annotation-mark`              | One Annotation Mark inside that overlay.                                                                                                           |
-| `zt-pdf-annotation-highlight`         | The filled rectangle of a highlight Annotation Mark.                                                                                               |
-| `zt-pdf-annotation-selection-outline` | The outline traced round a selected Annotation Mark's own merged silhouette.                                                                       |
-| `zt-pdf-annotation-handle`            | One Mark Handle on the selected Annotation Mark, drawn while editing is on.                                                                        |
-| `zt-pdf-annotation-note-icon`         | The group a note Annotation Mark draws its icon into.                                                                                              |
-| `zt-pdf-annotation-note-fill`         | The body of a note Annotation Mark's icon.                                                                                                         |
-| `zt-pdf-annotation-note-crease`       | The two segments creasing the folded bottom-right corner of a note Annotation Mark's icon. Stroked, with no fill of its own.                       |
-| `zt-pdf-text-draft`                   | The textarea a free-text Annotation is typed into on its page. It stays there until the saved mark takes its place.                                |
-| `zt-pdf-capability`                   | The editing indicator in the reader's own toolbar, shown only while ZotLit waits for Zotero and during a cooldown.                                 |
-| `zt-pdf-creation-toolbar`             | The Creation Toolbar in the reader's own right toolbar slot, which also holds the editing indicator.                                               |
-| `zt-pdf-tool`                         | One tool of that toolbar: its toggle and the chevron opening its colors, joined as one split button. Carries `is-active` while that tool is armed. |
-| `zt-pdf-mark-popup`                   | The Mark Popup, on Obsidian's own hover popover, in both of its modes.                                                                             |
-| `zt-pdf-comment-sheet`                | The comment sheet the Mark Popup opens under its row, in either mode.                                                                              |
+| 类名                                  | 标记对象                                                                                       |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `zt-pdf-annotation-overlay`           | ZotLit 用于绘制 Zotero 批注的 SVG，每个已渲染的 PDF 页面各有一个。                             |
+| `zt-pdf-annotation-mark`              | 覆盖层中的一个批注标记。                                                                       |
+| `zt-pdf-annotation-highlight`         | 高亮批注标记的填充矩形。                                                                       |
+| `zt-pdf-annotation-selection-outline` | 围绕所选批注标记合并后的轮廓绘制的边线。                                                       |
+| `zt-pdf-annotation-handle`            | 开启编辑时，在所选批注标记上绘制的一个调整手柄。                                               |
+| `zt-pdf-annotation-note-icon`         | 便笺批注标记中用于绘制图标的分组。                                                             |
+| `zt-pdf-annotation-note-fill`         | 便笺批注标记图标的主体。                                                                       |
+| `zt-pdf-annotation-note-crease`       | 便笺批注图标右下角折角的两条折线。仅描边，没有自身填充。                                       |
+| `zt-pdf-text-draft`                   | 在页面上输入自由文本批注的文本框，直到保存后的标记替代它。                                     |
+| `zt-pdf-capability`                   | 阅读器工具栏中的编辑状态指示，仅在 ZotLit 等待 Zotero 或处于冷却期时显示。                     |
+| `zt-pdf-creation-toolbar`             | 阅读器右侧工具栏槽位中的创建工具栏，也容纳编辑状态指示。                                       |
+| `zt-pdf-tool`                         | 工具栏中的一个工具：启用开关与打开颜色菜单的箭头组成一个分体按钮。工具待用时带有 `is-active`。 |
+| `zt-pdf-mark-popup`                   | 基于 Obsidian 自带悬停浮窗的标记弹窗，两种模式均使用此类名。                                   |
+| `zt-pdf-comment-sheet`                | 标记弹窗在操作行下方打开的评论面板，两种模式均使用此类名。                                     |
 
-### Annotation Marks [#pdf-annotation-marks]
+### 批注标记 [#pdf-annotation-marks]
 
-ZotLit rebuilds `zt-pdf-annotation-overlay` for every page PDF.js renders, and draws one `zt-pdf-annotation-mark` per Annotation on that page: a filled rectangle for a highlight (`zt-pdf-annotation-highlight`), a line for an underline, a note glyph in lucide's idiom for a note (`zt-pdf-annotation-note-icon`, holding `zt-pdf-annotation-note-fill` and `zt-pdf-annotation-note-crease`), a stroked rectangle for an image region, a path for an ink stroke, and a text run for a free-text Annotation. The overlay takes no pointer input, so native text selection, PDF links, and the reader's toolbar keep working underneath it.
+每当 PDF.js 渲染一页，ZotLit 都会重建该页的 `zt-pdf-annotation-overlay`，并为每条批注绘制一个 `zt-pdf-annotation-mark`：高亮使用填充矩形（`zt-pdf-annotation-highlight`），下划线使用线条，便笺使用 lucide 风格的图标（`zt-pdf-annotation-note-icon`，内含 `zt-pdf-annotation-note-fill` 和 `zt-pdf-annotation-note-crease`），图像区域使用描边矩形，墨迹使用路径，自由文本批注使用文本。覆盖层不接收指针输入，因此其下方的原生文本选择、PDF 链接及阅读器工具栏仍可正常使用。
 
-Each mark carries `data-zotero-annotation-type` (one of `highlight`, `underline`, `note`, `image`, `ink`, or `text`) and `data-zotero-annotation-key`, the Annotation's Zotero key. The mark a Mark Popup is acting on also carries Obsidian's own `is-selected`, and the overlay draws a `zt-pdf-annotation-selection-outline` above it, hugging its own rects — or, for an ink stroke, the stroke itself.
+每个标记都带有 `data-zotero-annotation-type`（值为 `highlight`、`underline`、`note`、`image`、`ink` 或 `text`）以及 `data-zotero-annotation-key`，即该批注的 Zotero 键。标记弹窗正在操作的标记还带有 Obsidian 自带的 `is-selected`；覆盖层在其上方绘制 `zt-pdf-annotation-selection-outline`，紧贴标记自身的矩形区域，或紧贴墨迹笔画。
 
-While editing is on, a selected image region also carries eight `zt-pdf-annotation-handle` squares above its outline. Each handle carries `data-zt-grip`, naming the edges it moves (`tl`, `t`, `tr`, `r`, `br`, `b`, `bl`, or `l`, where `t` is the top of the page as it is stored, before any rotation), and `data-zt-cursor`, naming the cursor it shows. The image's own mark carries `data-zt-grip="body"` and `data-zt-cursor="move"`. A selected ink mark carries four corner handles (`tl`, `tr`, `br`, `bl`) on a box a little wider than its strokes, and its own mark carries `data-zt-grip="body"` in the same way. A selected highlight or underline carries two narrow strips: `data-zt-grip="start"` along the leading edge of its first line, and `data-zt-grip="end"` along the trailing edge of its last line, on the next page when the quote runs onto it. Its own mark carries no `data-zt-grip`. The handles and the image or ink body take pointer input, so a press there moves or resizes the mark instead of selecting text. A press on the body of a highlight or underline still selects text.
+开启编辑后，所选图像区域的轮廓上方还会显示八个 `zt-pdf-annotation-handle` 方形手柄。每个手柄的 `data-zt-grip` 指明它移动的边缘（`tl`、`t`、`tr`、`r`、`br`、`b`、`bl` 或 `l`；其中 `t` 是页面在未旋转的存储状态下的顶部），`data-zt-cursor` 指明显示的光标。图像标记自身带有 `data-zt-grip="body"` 和 `data-zt-cursor="move"`。所选墨迹标记在略大于笔画范围的矩形四角显示手柄（`tl`、`tr`、`br`、`bl`），其自身也带有 `data-zt-grip="body"`。所选高亮或下划线显示两条窄条：首行起始边缘的 `data-zt-grip="start"` 和末行结束边缘的 `data-zt-grip="end"`；若引文跨页，结束手柄位于下一页。高亮或下划线标记自身不带 `data-zt-grip`。手柄以及图像或墨迹主体接收指针输入，按住它们可移动标记或调整大小，而不是选择文本。在高亮或下划线主体上按下仍会选择文本。
 
-### Editing indicator [#pdf-capability]
+### 编辑状态指示 [#pdf-capability]
 
-`zt-pdf-capability` sits inside the Creation Toolbar and shows in two states only: <UiLabel name={m.capability_authorizing()} />, while Zotero's permission dialog is open, and <UiLabel name={m.capability_cooldown()} />, while Zotero refuses new permission requests for a short time. In every other state the toolbar holds no indicator.
+`zt-pdf-capability` 位于创建工具栏内，仅在两种状态下显示：Zotero 权限对话框打开时显示 <UiLabel name={m.capability_authorizing()} />；Zotero 暂时拒绝新的权限请求时显示 <UiLabel name={m.capability_cooldown()} />。其他状态下工具栏不显示此指示。
 
-The indicator is a status line with an icon and the state's label. It is not a button, and a click on it does nothing. During a cooldown it also shows the seconds left. It carries `data-zt-capability-tone="busy"` in both states, and `aria-busy="true"` while it waits for Zotero.
+状态指示是一行图标和状态标签，不是按钮，点击无操作。冷却期间还会显示剩余秒数。两种状态均带有 `data-zt-capability-tone="busy"`，等待 Zotero 时还带有 `aria-busy="true"`。
 
-To give ZotLit permission to edit, see [How to edit PDF annotations in Obsidian](/docs/how-to/edit-pdf-annotations#before-you-edit).
+如需授权 ZotLit 编辑，请参阅[在 Obsidian 中编辑 PDF 批注](/docs/how-to/edit-pdf-annotations#before-you-edit)。
 
-### Creation Toolbar [#pdf-creation-toolbar]
+### 创建工具栏 [#pdf-creation-toolbar]
 
-`zt-pdf-creation-toolbar` holds the controls that create and manage Annotation Marks. A <UiLabel name={m.pdf_toolbar_tools()} /> group comes first, holding one tool per annotation type ZotLit can write — today <UiLabel name={m.pdf_toolbar_highlight()} />, <UiLabel name={m.pdf_toolbar_underline()} />, <UiLabel name={m.pdf_toolbar_note()} />, <UiLabel name={m.pdf_toolbar_text()} />, <UiLabel name={m.pdf_toolbar_image()} /> and <UiLabel name={m.pdf_toolbar_ink()} />. Each tool is a split button of two `clickable-icon` halves sharing one seat: the toggle that arms it, under `data-zt-tool` `highlight`, `underline`, `note`, `text`, `image` or `ink`, and a chevron that opens that tool's colors, under the same value with `-color` added, such as `note-color`. The halves hover separately. One tool is armed at a time, and selecting the armed tool stands it down; a tool's colors are reachable from its chevron whether or not it is armed. Outside the group sits a toggle that shows or hides Annotation Marks (<UiLabel name={m.pdf_toolbar_show_marks()} /> or <UiLabel name={m.pdf_toolbar_hide_marks()} />, `data-zt-tool="visibility"`).
+`zt-pdf-creation-toolbar` 容纳创建和管理批注标记的控件。最前方的 <UiLabel name={m.pdf_toolbar_tools()} /> 分组为 ZotLit 支持写入的每种批注提供一个工具，目前包括 <UiLabel name={m.pdf_toolbar_highlight()} />、<UiLabel name={m.pdf_toolbar_underline()} />、<UiLabel name={m.pdf_toolbar_note()} />、<UiLabel name={m.pdf_toolbar_text()} />、<UiLabel name={m.pdf_toolbar_image()} /> 和 <UiLabel name={m.pdf_toolbar_ink()} />。每个工具由两个共用容器的 `clickable-icon` 组成分体按钮：一半是将工具设为待用状态的开关，`data-zt-tool` 为 `highlight`、`underline`、`note`、`text`、`image` 或 `ink`；另一半是打开颜色菜单的箭头，使用相同值加上 `-color`，例如 `note-color`。两半各有独立的悬停效果。一次只能有一个工具处于待用状态；再次选择该工具会取消待用状态。无论工具是否待用，都可通过箭头打开颜色菜单。分组外还有显示或隐藏批注标记的开关（<UiLabel name={m.pdf_toolbar_show_marks()} /> 或 <UiLabel name={m.pdf_toolbar_hide_marks()} />，`data-zt-tool="visibility"`）。
 
-Each tool remembers its own color across PDFs and sessions.
+每个工具的颜色选择都会跨 PDF 和会话保留。
 
-A control that cannot write right now keeps its seat: it carries `aria-disabled` and states why in its tooltip, rather than leaving the toolbar.
+暂时无法写入的控件仍留在工具栏中，带有 `aria-disabled`，并在提示文本中说明原因。
 
-While <UiLabel name={m.pdf_toolbar_ink()} /> is armed, the PDF view's container carries `data-zt-inking`, with an empty value. ZotLit's own rule under it turns off touch panning on the pages, so a finger draws.
+<UiLabel name={m.pdf_toolbar_ink()} /> 处于待用状态时，PDF 视图容器带有空值的
+`data-zt-inking`。ZotLit
+在此属性下的样式规则禁用页面触摸平移，使手指动作改为绘画。
 
-### Mark Popup and comment sheet [#pdf-mark-popup]
+### 标记弹窗与评论面板 [#pdf-mark-popup]
 
-`zt-pdf-mark-popup` is the popup that hangs over a selected Annotation Mark or a fresh text selection. Each control inside it carries `data-zt-verb`.
+`zt-pdf-mark-popup` 是显示在所选批注标记或新选文本上方的弹窗，其中每个控件都带有 `data-zt-verb`。
 
-Over a selected mark, the verbs are <UiLabel name={m.annot_view_card_color()} />, <UiLabel name={m.annot_view_card_add_tags()} /> or <UiLabel name={m.annot_view_card_edit_tags()} />, <UiLabel name={m.annot_view_menu_copy_text()} />, <UiLabel name={m.annot_view_menu_delete()} />, and <UiLabel name={m.pdf_mark_popup_reveal()} />, carrying `data-zt-verb` values `color`, `tags`, `copy`, `delete`, and `reveal`. A stack of overlapping marks adds a stepper, `data-zt-verb="stack"`. Under the row, the comment is a field, `zt-annot-comment-field`. A mark with no comment shows <UiLabel name={m.annot_view_card_comment_placeholder()} /> there. Selecting the comment opens `zt-pdf-comment-sheet` in its place.
+对于所选标记，弹窗提供 <UiLabel name={m.annot_view_card_color()} />、<UiLabel name={m.annot_view_card_add_tags()} /> 或 <UiLabel name={m.annot_view_card_edit_tags()} />、<UiLabel name={m.annot_view_menu_copy_text()} />、<UiLabel name={m.annot_view_menu_delete()} />，以及 <UiLabel name={m.pdf_mark_popup_reveal()} />，对应的 `data-zt-verb` 值为 `color`、`tags`、`copy`、`delete` 和 `reveal`。多个标记重叠时，还会增加逐个切换控件 `data-zt-verb="stack"`。操作行下方的评论字段为 `zt-annot-comment-field`；没有评论时显示 <UiLabel name={m.annot_view_card_comment_placeholder()} />。选择评论会在原位置打开 `zt-pdf-comment-sheet`。
 
-Over a fresh text selection, the row instead offers <UiLabel name={m.pdf_toolbar_highlight()} /> and <UiLabel name={m.pdf_toolbar_underline()} /> (`data-zt-verb` `highlight` or `underline`), the four colors used most recently, by any tool, filled out from Zotero's palette in its own order (`data-zt-verb` `color-1` through `color-8`, by the color's place in that palette; each is a solid dot), <UiLabel name={m.annot_view_card_add_comment()} /> (`data-zt-verb="comment"`), and <UiLabel name={m.pdf_create_popup_copy()} /> (`data-zt-verb="copy"`). Selecting <UiLabel name={m.annot_view_card_add_comment()} /> opens `zt-pdf-comment-sheet` under the row.
+对于新选文本，操作行提供 <UiLabel name={m.pdf_toolbar_highlight()} /> 和 <UiLabel name={m.pdf_toolbar_underline()} />（`data-zt-verb` 为 `highlight` 或 `underline`）；任意工具最近使用的四种颜色，不足时按 Zotero 调色板顺序补齐（`data-zt-verb` 为 `color-1` 至 `color-8`，按颜色在调色板中的位置编号，每项为一个实心圆点）；<UiLabel name={m.annot_view_card_add_comment()} />（`data-zt-verb="comment"`）；以及 <UiLabel name={m.pdf_create_popup_copy()} />（`data-zt-verb="copy"`）。选择 <UiLabel name={m.annot_view_card_add_comment()} /> 会在操作行下方打开 `zt-pdf-comment-sheet`。
 
-A control that cannot write right now keeps its seat, disabled, with the reason in its tooltip. Copying and revealing never write, so neither ever stands down.
+暂时无法写入的控件会保留位置并呈禁用状态，在提示文本中说明原因。复制和定位操作不写入数据，因此始终可用。
 
-### Default appearance [#pdf-defaults]
+### 默认外观 [#pdf-defaults]
 
-A highlight mark blends with the page: 40% opacity with `multiply` blending in light themes, 30% opacity with `plus-lighter` blending in dark themes. A note's icon strokes in the Annotation's own color at a 1.4px hairline, with its body filled at 22% of that same color. A selected mark keeps its own color; a hairline outline, in `--text-accent`, traces round its own merged silhouette.
+高亮标记与页面混合显示：浅色主题采用 40% 不透明度及 `multiply` 混合，深色主题采用 30% 不透明度及 `plus-lighter` 混合。便笺图标以批注自身颜色绘制 1.4px 细线，主体使用相同颜色、22% 不透明度填充。所选标记保留自身颜色，并用 `--text-accent` 细线沿合并后的轮廓描边。
 
-The Creation Toolbar lays its controls out in a flex row with Obsidian's own toolbar spacing; an armed tool keeps its Annotation color instead of Obsidian's accent-colored `is-active` fill. A tool's toggle wears that tool's color, so the toolbar shows what each tool draws in; the chevron beside it is left uncolored and drawn one icon step smaller, since it names a menu rather than a color. `zt-pdf-tool` is the seat, and it is what reads as the button: it carries the rounded corners and clips its two halves to them, and the padding where the halves meet is halved, so the pair is one compact control. Each half keeps Obsidian's own hover, so the two light separately. An armed tool takes `is-active` on the seat and fills with `--background-modifier-active-hover` across both halves at once; as with every active `clickable-icon` in Obsidian, that fill holds under the pointer instead of lighting further. Only the toggle reports the state through `aria-pressed`. The editing indicator draws its icon and label in muted text, and leaves color otherwise to Obsidian and the theme.
+创建工具栏以 flex 横排布局控件，沿用 Obsidian 的工具栏间距。待用工具保留批注颜色，而不采用 Obsidian 强调色的 `is-active` 填充。工具开关使用该工具的颜色，让工具栏直接显示各工具的绘制颜色；旁边的箭头不着色，图标尺寸小一级，因为它代表菜单而非颜色。`zt-pdf-tool` 是整个按钮容器，负责圆角并将两个半区裁剪在圆角内；两半相接处的内边距减半，使其形成一个紧凑控件。两半均保留 Obsidian 原生悬停效果，各自高亮。待用工具的容器带有 `is-active`，两个半区同时使用 `--background-modifier-active-hover` 填充；与 Obsidian 中其他已激活的 `clickable-icon` 一样，指针移入时保持该填充，不进一步变亮。仅开关通过 `aria-pressed` 报告状态。编辑状态指示的图标与标签使用弱化文本色，其他颜色由 Obsidian 和主题决定。
 
-The Mark Popup sizes itself to the width its row of verbs needs, overriding Obsidian's default hover-popover sizing. The comment sheet takes the width of the row above it, and is at least 12em wide.
+标记弹窗按操作行所需宽度调整大小，覆盖 Obsidian 默认的悬停浮窗尺寸。评论面板与上方操作行同宽，且最小宽度为 12em。
 
 ```css
 .zt-pdf-annotation-mark[data-zotero-annotation-type="highlight"] {
@@ -186,67 +188,67 @@ The Mark Popup sizes itself to the width its row of verbs needs, overriding Obsi
 }
 ```
 
-These class names, data attribute values, and default styles are ZotLit's public theme contract for the PDF reader. DOM structure remains private.
+这些类名、数据属性值与默认样式构成 ZotLit PDF 阅读器公开的主题接口约定，DOM 结构仍属于内部实现。
 
-## Annotation View hooks [#annot-view]
+## 批注视图样式类名 [#annot-view]
 
-The Annotation View lists a Zotero attachment's Annotations beside the reader, with its own toolbar. Its menus are Obsidian's own, which a theme reaches through `menu`. Its tag filter and its color filter are Choosers, which a theme reaches through `zt-chooser` and `zt-chooser-trigger`.
+批注视图在阅读器旁列出 Zotero 附件的批注，并带有自己的工具栏。菜单使用 Obsidian 原生菜单，主题可通过 `menu` 设置样式。标签筛选器和颜色筛选器使用选择弹窗，主题可通过 `zt-chooser` 和 `zt-chooser-trigger` 设置样式。
 
-| Class                    | Marks                                                                                                               |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------- |
-| `zt-annot-conflict`      | The panel an Annotation Card shows while a Write Conflict stands on it.                                             |
-| `zt-annot-draft`         | The panel an Annotation Card or the Mark Popup shows over a comment, Quoted Text or tags that Zotero has not saved. |
-| `zt-annot-comment-field` | The comment as a field you can select to edit, on a card selected alone and in the Mark Popup.                      |
-| `zt-annot-lock`          | The lock icon in the header of a card whose annotation is locked.                                                   |
-| `zt-chooser`             | The Chooser popup the tag filter or the color filter opens.                                                         |
-| `zt-chooser-trigger`     | The control that Chooser popup hangs under.                                                                         |
+| 类名                     | 标记对象                                                               |
+| ------------------------ | ---------------------------------------------------------------------- |
+| `zt-annot-conflict`      | 批注卡片存在写入冲突时显示的面板。                                     |
+| `zt-annot-draft`         | 批注卡片或标记弹窗在 Zotero 尚未保存评论、引用文本或标签时显示的面板。 |
+| `zt-annot-comment-field` | 可选择后编辑的评论字段，显示于单独选中的卡片和标记弹窗中。             |
+| `zt-annot-lock`          | 已锁定批注的卡片标题区中的锁图标。                                     |
+| `zt-chooser`             | 标签或颜色筛选器打开的选择弹窗。                                       |
+| `zt-chooser-trigger`     | 选择弹窗所依附的控件。                                                 |
 
-`zt-annot-conflict` appears on a card whose last edit met a newer value in Zotero, or whose create Zotero never answered for. It names what happened, shows the two values, and offers the verbs that settle it.
+若卡片的最后一次编辑遇到 Zotero 中更新的值，或 Zotero 始终未回应其创建请求，卡片会显示 `zt-annot-conflict`。它说明发生的情况、显示两个值，并提供解决冲突的操作。
 
-`zt-annot-draft` appears where an edit waits for **Save comment**, **Save text** or **Save tags**, such as after a failed save or after editing stopped while the edit was open. It shows the unsaved comment, Quoted Text or tags, says why they wait, and offers the verbs that save or discard them.
+当编辑内容等待**保存评论**、**保存文本**或**保存标签**时，会显示 `zt-annot-draft`，例如保存失败后，或编辑尚未结束时编辑功能被停止。它显示未保存的评论、引用文本或标签，说明等待原因，并提供保存或放弃操作。
 
-`zt-annot-comment-field` marks the comment of the card you select alone, and nowhere on other cards. Selecting it opens the comment editor in its place. On a card with no comment, it shows <UiLabel name={m.annot_view_card_comment_placeholder()} />. It carries `data-blocked` while ZotLit cannot edit the Annotation. The Mark Popup uses the same class, see [Mark Popup and comment sheet](#pdf-mark-popup).
+`zt-annot-comment-field` 仅标记单独选中的卡片上的评论，不出现在其他卡片上。选择它会在原位置打开评论编辑器。没有评论时显示 <UiLabel name={m.annot_view_card_comment_placeholder()} />。ZotLit 无法编辑该批注时，它带有 `data-blocked`。标记弹窗也使用同一类名，详见[标记弹窗与评论面板](#pdf-mark-popup)。
 
-`zt-annot-lock` appears in the card header of an annotation that Zotero's reader does not let you change, such as one that Zotero imported from the PDF file. Its tooltip and its accessible name give the reason. The card's controls for the changes that the lock refuses are dimmed.
+对于 Zotero 阅读器不允许修改的批注（例如从 PDF 文件导入的批注），卡片标题区会显示 `zt-annot-lock`。提示文本和无障碍名称均说明原因。被锁定状态禁止的修改控件呈灰色。
 
-`zt-chooser` marks the anchored popover a filtering multi-select opens. It is a native popover rather than an Obsidian menu, so `:popover-open` matches it while it stands and `menu` never reaches it. It takes its chrome from `--menu-background`, `--menu-border-color`, `--menu-border-width`, `--menu-corner-shape`, `--menu-padding`, `--menu-radius`, and `--menu-shadow`, so a theme that retints menus reaches it through those.
+`zt-chooser` 标记可筛选多选控件打开的定位浮窗。它使用原生浮窗，而非 Obsidian 菜单，因此打开时可由 `:popover-open` 匹配，`menu` 则不会匹配。外观来自 `--menu-background`、`--menu-border-color`、`--menu-border-width`、`--menu-corner-shape`、`--menu-padding`、`--menu-radius` 和 `--menu-shadow`，因此修改菜单配色的主题也可通过这些变量影响它。
 
-`zt-chooser-trigger` marks the control the popup hangs under, which is a `<button>` because that is what the popover invoker attribute takes. It carries `aria-expanded` and `data-open` while its popup stands, and its Obsidian button styling is reverted, so a theme styles it from this class rather than from `button`.
+`zt-chooser-trigger` 标记弹窗所依附的控件。该控件是 `<button>`，因为浮窗调用属性要求使用按钮。弹窗打开时，控件带有 `aria-expanded` 和 `data-open`；其 Obsidian 按钮样式已撤销，因此主题应通过此类名而非 `button` 设置样式。
 
-These class names and data attribute values are ZotLit's public theme contract for the Annotation View. DOM structure remains private.
+这些类名与数据属性值构成 ZotLit 批注视图公开的主题接口约定，DOM 结构仍属于内部实现。
 
-## Template editor hooks [#template-editor]
+## 模板编辑器样式类名 [#template-editor]
 
-The Template Workbench View styles frontmatter and colors template source and Markdown markers through one set of classes, in every pane that holds template code: the note body, the annotation format, a property expression, the note name, and the whole file in Source. The Template Workbench on this site emits the same classes.
+模板工作台视图通过同一组类名，为所有包含模板代码的窗格设置 frontmatter 样式，以及模板源码和 Markdown 标记的颜色：包括笔记正文、批注格式、属性表达式、笔记名称，以及源码模式中的整个文件。本网站的模板工作台也输出相同类名。
 
-Liquid tokens keep their own colors inside YAML values and Markdown code spans and fences. Eta highlighting covers tag delimiters. Markdown hints mark headings, lists, and quotes in the note and annotation bodies, with normal text size and weight.
+Liquid 语法单元在 YAML 值、Markdown 行内代码和代码块中保留自身颜色。Eta 高亮覆盖标签分隔符。Markdown 提示会标记笔记与批注正文中的标题、列表和引用，保持正常文本字号与字重。
 
-| Class                              | Meaning                                                                  |
-| ---------------------------------- | ------------------------------------------------------------------------ |
-| `zt-template-editor`               | The element that holds one template editor pane.                         |
-| `zt-template-delimiter`            | A delimiter that opens or closes a tag or an output: `{{`, `{%-`, `<%=`. |
-| `zt-template-keyword`              | A tag name or keyword: `if`, `for`, `endbq`, `in`.                       |
-| `zt-template-variable`             | A variable or root name: `zt`, `it`.                                     |
-| `zt-template-property`             | A property name after a dot, or a JSON key.                              |
-| `zt-template-filter`               | A Liquid filter or a function call: `map`, `note_links`.                 |
-| `zt-template-string`               | A string literal.                                                        |
-| `zt-template-value`                | A number, boolean, or null.                                              |
-| `zt-template-operator`             | An operator: `.`, `>`, `\|`.                                             |
-| `zt-template-punctuation`          | Other punctuation: `,`, `:`, brackets.                                   |
-| `zt-template-comment`              | Template comment text.                                                   |
-| `zt-template-invalid`              | Source the parser refuses.                                               |
-| `zt-template-frontmatter`          | A frontmatter line, including its opening and closing boundaries.        |
-| `zt-template-markdown-marker`      | A Markdown heading, list, or quote marker in a body.                     |
-| `zt-template-markdown-list-marker` | An additional class on a Markdown list marker.                           |
-| `zt-template-hover`                | The popover that explains the token under the pointer, in Obsidian only. |
+| 类名                               | 含义                                                   |
+| ---------------------------------- | ------------------------------------------------------ |
+| `zt-template-editor`               | 容纳一个模板编辑器窗格的元素。                         |
+| `zt-template-delimiter`            | 用于开始或结束标签或输出的分隔符：`{{`、`{%-`、`<%=`。 |
+| `zt-template-keyword`              | 标签名或关键字：`if`、`for`、`endbq`、`in`。           |
+| `zt-template-variable`             | 变量或根节点名称：`zt`、`it`。                         |
+| `zt-template-property`             | 点号后的属性名，或 JSON 键。                           |
+| `zt-template-filter`               | Liquid 过滤器或函数调用：`map`、`note_links`。         |
+| `zt-template-string`               | 字符串字面量。                                         |
+| `zt-template-value`                | 数字、布尔值或 null。                                  |
+| `zt-template-operator`             | 运算符：`.`、`>`、`\|`。                               |
+| `zt-template-punctuation`          | 其他标点：`,`、`:`、括号。                             |
+| `zt-template-comment`              | 模板注释文本。                                         |
+| `zt-template-invalid`              | 解析器不接受的源码。                                   |
+| `zt-template-frontmatter`          | frontmatter 行，包括起止边界。                         |
+| `zt-template-markdown-marker`      | 正文中的 Markdown 标题、列表或引用标记。               |
+| `zt-template-markdown-list-marker` | Markdown 列表标记上的附加类名。                        |
+| `zt-template-hover`                | 解释指针下方语法单元的浮窗，仅在 Obsidian 中使用。     |
 
-### Default appearance [#template-defaults]
+### 默认外观 [#template-defaults]
 
-The colors are custom properties on `zt-template-editor`, one per token class, named `--zt-template-<token>`. Delimiters, keywords, and operators take `--text-accent`. A filter takes `--color-blue`. Variables and properties take `--text-normal`. Strings, values, and punctuation take `--text-muted`. Comments take `--text-faint` in italics. Invalid source takes `--text-error`. The hover popover is Obsidian's own `hover-popover`, sized to its text.
+颜色通过 `zt-template-editor` 上的自定义属性设置，每类语法单元对应一个 `--zt-template-<token>` 属性。分隔符、关键字和运算符使用 `--text-accent`；过滤器使用 `--color-blue`；变量与属性使用 `--text-normal`；字符串、值及标点使用 `--text-muted`；注释使用 `--text-faint` 并呈斜体；无效源码使用 `--text-error`。悬停浮窗使用 Obsidian 自带的 `hover-popover`，按文本内容调整大小。
 
-Frontmatter takes `--text-muted`. Template tokens keep their colors inside frontmatter. Heading and quote markers take `--text-faint`; list markers take `--list-marker-color`. These roles change color only. All Template Workbench View panes keep their existing monospace font, code size, spacing, and background.
+Frontmatter 使用 `--text-muted`，其中的模板语法单元保留自身颜色。标题与引用标记使用 `--text-faint`，列表标记使用 `--list-marker-color`。这些样式仅改变颜色。模板工作台视图的所有窗格均保留现有的等宽字体、代码字号、间距和背景。
 
-Set a custom property on the editor hook to recolor one kind of token in every pane, or style a token class directly:
+在编辑器类名上设置自定义属性，可同时改变所有窗格中同类语法单元的颜色；也可直接为语法单元类名设置样式：
 
 ```css
 .zt-template-editor {
@@ -259,9 +261,9 @@ Set a custom property on the editor hook to recolor one kind of token in every p
 }
 ```
 
-## CSS examples [#examples]
+## CSS 示例 [#examples]
 
-Use a direct class selector to override ZotLit's low-specificity defaults. `!important` is not required.
+使用直接的类选择器即可覆盖 ZotLit 低优先级的默认样式，无需 `!important`。
 
 ```css
 .zt-citation-key {
@@ -282,7 +284,7 @@ Use a direct class selector to override ZotLit's low-specificity defaults. `!imp
 }
 ```
 
-Use combined selectors to distinguish rendered output from raw source:
+使用组合选择器区分渲染结果和原始源码：
 
 ```css
 .zt-citation.zt-citation-key {
@@ -294,4 +296,4 @@ Use combined selectors to distinguish rendered output from raw source:
 }
 ```
 
-These class names, meanings, and activation rules are ZotLit's public theme contract. DOM structure remains private.
+这些类名、含义和激活规则构成 ZotLit 公开的主题接口约定，DOM 结构仍属于内部实现。

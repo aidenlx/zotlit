@@ -57,77 +57,77 @@ Obsidian 原生的 Markdown 视图依然可以打开同一个文件。选择 <Ui
 
 预览会随着您的键入即时刷新。虽然数据库连接或引文样式的警告可能会临时限制部分预览渲染，但您仍可继续顺畅地编辑配置方案。
 
-### Saving changes [#saving]
+### 保存更改 [#saving]
 
-The built-in Default profile is read-only. You can read and select its values without creating a document. <UiLabel name={m.template_workbench_customize()} /> creates its document in the configured template folder before editing becomes available, or opens the existing custom document.
+内置默认配置方案为只读。无需创建文档，您就可以查看和选择其中的值。选择 <UiLabel name={m.template_workbench_customize()} /> 会先在配置的模板文件夹中创建文档，再开放编辑；如果已有自定义文档，则直接打开它。
 
-If creation fails, the built-in values remain readable and an inline error offers a retry. Closing an untouched customization keeps the created document.
+如果创建失败，您仍可查看内置值，界面中的错误提示会提供重试操作。即使关闭前未作任何修改，已经创建的自定义文档也会保留。
 
-Existing literature notes keep their current content. Run <Command name={m.command_update_note_name()} /> to apply the edited profile to the active note.
+现有文献笔记会保留当前内容。运行 <Command name={m.command_update_note_name()} />，即可将修改后的配置方案应用到当前活动笔记。
 
-<Callout type="info" title="Edit the Markdown document">
-  Select <UiLabel name={m.template_workbench_open_markdown()} /> to open an
-  existing profile document as Markdown. Customizing the built-in Default
-  creates its document before editing becomes available.
+<Callout type="info" title="编辑 Markdown 文档">
+  选择 <UiLabel name={m.template_workbench_open_markdown()} />
+  ，可以将现有配置方案文档作为 Markdown
+  打开。自定义内置默认配置方案时，会先创建文档，再开放编辑。
 </Callout>
 
-## The citation text [#citation]
+## 引文文本 [#citation]
 
-The citation text opens on one <UiLabel name={m.workbench_tab_citation()} /> tab. Its tab title is the fixed <UiLabel name={m.template_workbench_title_citation()} />.
+引文文本在单个 <UiLabel name={m.workbench_tab_citation()} /> 标签页中打开，其标签页标题固定为 <UiLabel name={m.template_workbench_title_citation()} />。
 
-The preview, headed <UiLabel name={m.workbench_citation_result_heading()} />, renders one citation. Its caption names the variant being previewed, <UiLabel name={m.workbench_citation_variant_main()} /> or <UiLabel name={m.workbench_citation_variant_alt()} />. The preview pane menu picks that variant, and offers <UiLabel name={m.template_workbench_use_example()} /> for a set of built-in citation shapes or <UiLabel name={m.workbench_choose_item()} /> for one of your own Zotero items.
+以 <UiLabel name={m.workbench_citation_result_heading()} /> 为标题的预览区域会渲染一条引文。说明文字标明当前预览的变体：<UiLabel name={m.workbench_citation_variant_main()} /> 或 <UiLabel name={m.workbench_citation_variant_alt()} />。可在预览面板菜单中选择变体，并通过 <UiLabel name={m.template_workbench_use_example()} /> 选用内置引文示例，或通过 <UiLabel name={m.workbench_choose_item()} /> 选择您自己的 Zotero 条目。
 
-Each pane keeps its own variant and example, and Obsidian remembers them with the pane. See [Customize the citation text](/docs/how-to/customize-a-template#citation-text) for the steps.
+每个面板分别保存其变体和示例，Obsidian 会随面板记住这些选择。操作步骤请参阅[自定义引文文本](/docs/how-to/customize-a-template#citation-text)。
 
-## A partial [#partial]
+## 共享片段 [#partial]
 
-A partial opens on one <UiLabel name={m.workbench_tab_partial()} /> tab. Its tab title is the partial's name, then `Partial`.
+共享片段在单个 <UiLabel name={m.workbench_tab_partial()} /> 标签页中打开。标签页标题由共享片段名称及其后的 `Partial` 组成。
 
-A partial has no data of its own: it renders with the data of whichever template calls it. So its preview, headed <UiLabel name={m.workbench_partial_result_heading()} />, asks you which caller to render as. The pane menu offers <UiLabel name={m.template_workbench_preview_as_note()} />, <UiLabel name={m.template_workbench_preview_as_annotation()} />, and <UiLabel name={m.template_workbench_preview_as_citation()} />. It opens on Note, and remembers your choice per file. ZotLit never guesses the caller from the templates that call the partial.
+共享片段本身没有数据，而是使用调用它的模板的数据进行渲染。因此，以 <UiLabel name={m.workbench_partial_result_heading()} /> 为标题的预览区域会让您选择按哪种调用方进行渲染。面板菜单提供 <UiLabel name={m.template_workbench_preview_as_note()} />、<UiLabel name={m.template_workbench_preview_as_annotation()} /> 和 <UiLabel name={m.template_workbench_preview_as_citation()} />。默认按笔记预览，并为每个文件记住您的选择。ZotLit 不会根据调用共享片段的模板猜测调用方。
 
-While your vault holds a profile besides Default, the pane menu also offers <UiLabel name={m.template_workbench_use_profile()} /> to preview against that profile's data. Saving a partial re-renders every open preview that uses it.
+当仓库中存在默认配置方案以外的配置方案时，面板菜单还会提供 <UiLabel name={m.template_workbench_use_profile()} />，以便用该方案的数据预览。保存共享片段后，所有使用它的已打开预览都会重新渲染。
 
-## The document's language [#language]
+## 文档语言 [#language]
 
-Above the editor of a citation text or a partial, a caption names the document's language, <UiLabel name={m.workbench_name_language_liquid()} /> or <UiLabel name={m.workbench_name_language_eta()} />. The caption reports; it does not switch.
+引文文本或共享片段的编辑器上方会显示文档的语言：<UiLabel name={m.workbench_name_language_liquid()} /> 或 <UiLabel name={m.workbench_name_language_eta()} />。这段文字仅用于说明，不能切换语言。
 
-The pane menu carries <UiLabel name={m.template_workbench_change_language()} />, the switch between the two languages. ZotLit rewrites the manifest key alone and translates no source. See [How templates work](/docs/concepts/how-templates-work#manifest).
+面板菜单中的 <UiLabel name={m.template_workbench_change_language()} /> 可以在两种语言间切换。ZotLit 只改写 manifest 中的配置键，不会转换源码。请参阅[模板工作原理](/docs/concepts/how-templates-work#manifest)。
 
-A profile document sets its language on the <UiLabel name={m.workbench_tab_name_and_folder()} /> tab instead, under <UiLabel name={m.workbench_name_language_heading()} />.
+配置方案文档则在 <UiLabel name={m.workbench_tab_name_and_folder()} /> 标签页的 <UiLabel name={m.workbench_name_language_heading()} /> 下设置语言。
 
-## Open the view [#open]
+## 打开视图 [#open]
 
-A view edits one template document, and each kind opens from the place that holds it:
+每个视图编辑一份模板文档。不同类型的文档从各自所在的位置打开：
 
-- A profile, from its row at <SettingsPath page={m.settings_page_profiles()} />, or from the <UiLabel name={m.settings_profile_document_name()} /> row at <SettingsPath />.
-- The citation text, from the <UiLabel name={m.settings_citation_text_name()} /> row at <SettingsPath page={m.settings_page_citations()} />.
-- A partial, from its row under <UiLabel name={m.settings_partials_heading()} /> at <SettingsPath page={m.settings_page_profiles()} />.
+- 配置方案：从 <SettingsPath page={m.settings_page_profiles()} /> 中对应的行，或 <SettingsPath /> 中的 <UiLabel name={m.settings_profile_document_name()} /> 行打开。
+- 引文文本：从 <SettingsPath page={m.settings_page_citations()} /> 中的 <UiLabel name={m.settings_citation_text_name()} /> 行打开。
+- 共享片段：从 <SettingsPath page={m.settings_page_profiles()} /> 中 <UiLabel name={m.settings_partials_heading()} /> 下对应的行打开。
 
-The profile a literature note already uses opens from that note.
+文献笔记当前使用的配置方案可以从该笔记中打开。
 
-Each of those rows carries its own control, and [Customize a template](/docs/how-to/customize-a-template) names it and walks the steps.
+每一行都提供相应的控件。[自定义模板](/docs/how-to/customize-a-template)列出了控件名称和操作步骤。
 
-## See also
+## 另请参阅 [#see-also]
 
 <Cards>
   <Card
-    title="Customize a template"
-    description="Edit a profile, the citation text, or a partial, and preview the result."
+    title="自定义模板"
+    description="编辑配置方案、引文文本或共享片段，并预览结果。"
     href="/docs/how-to/customize-a-template"
   />
   <Card
-    title="How templates work"
-    description="The three kinds of template document and the two template languages."
+    title="模板工作原理"
+    description="三种模板文档与两种模板语言。"
     href="/docs/concepts/how-templates-work"
   />
   <Card
-    title="Configure frontmatter properties"
-    description="Add and edit YAML properties managed by a profile."
+    title="配置 frontmatter 属性"
+    description="添加和编辑由配置方案管理的 YAML 属性。"
     href="/docs/how-to/configure-frontmatter-properties"
   />
   <Card
-    title="Template Workbench CLI"
-    description="Let an agent inspect and test templates through the Obsidian CLI."
+    title="模板工作台 CLI"
+    description="让智能体通过 Obsidian CLI 检查和测试模板。"
     href="/docs/concepts/template-workbench"
   />
 </Cards>

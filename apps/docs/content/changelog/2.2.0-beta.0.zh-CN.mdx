@@ -34,162 +34,147 @@ ZotLit 2.2 为文献笔记模板引入了专有的单一配置文件机制，新
 
 开启 <UiLabel name={m.graph_option_author_title_labels_name()} /> 会在每个文献作品节点上方绘制作者与年份，下方以稍暗的字体标注短标题。放大视口可清晰呈现标题文本，鼠标悬停可在任何缩放级别下显示标题。图谱搜索框依然匹配您的物理文件名，而非屏幕上的渲染标签。
 
-悬停预览需要开启该图谱局部的 <UiLabel name={m.graph_option_citation_popover_name()} /> 控制项（默认关闭）。开启后，悬停文献笔记或被引文献节点将依循您的悬停操作设置，且 <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_hover_mod_page_name()} /> 新增了 <UiLabel name={m.settings_citation_hover_mod_graph_name()} /> 项，以便在图谱中必须按下辅助键才触发悬停。对于未创建文献笔记的作品或未被任何笔记引用的孤立文献，悬停浮窗会展示格式化的参考文献条目而非空白预览。
+悬停预览需要开启该图谱局部的 <UiLabel name={m.graph_option_citation_popover_name()} /> 控制项（默认关闭）。开启后，悬停文献笔记或被引文献节点将依循您的悬停操作设置，且 <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_hover_mod_page_name()} /> 新增了 <UiLabel name={m.settings_citation_hover_mod_graph_name()} /> 项，以便在图谱中必须按下辅助键才触发悬停。对于未创建文献笔记的作品或未被任何笔记引用的孤立文献，悬停浮窗会展示格式化的参考文献条目而非 Obsidian 的页面预览。
 
 点击被引文献节点可直接根据配置方案为其创建文献笔记并将其打开；仅匹配单篇条目的节点会随即转变为标准的文献笔记节点并继承所有连线。右键点击节点可选择 <UiLabel name={m.graph_citations_menu_create_note()} />, <UiLabel name={m.references_open_in_zotero()} />, 以及 <UiLabel name={m.graph_citations_menu_copy_citekey()} />。匹配到多篇文献的歧义节点会继续保持暗淡状态。
 
 <Command inline name={m.command_open_citation_graph_name()} /> 与
-<Command inline name={m.command_open_local_citation_graph_name()} /> open the
-graph arranged for reading as a research map: citation edges in, every node
-except your literature notes, cited works, and the notes that cite them hidden,
-arrows on, labels and the popover on, and the literature notes group added. A
-global graph keeps one set of options for the whole vault, so the first command
-saves that arrangement as your graph settings. The local command needs an open
-note.
+<Command inline name={m.command_open_local_citation_graph_name()} />
+会打开适合梳理研究关系的图谱：显示引文连线，仅保留文献笔记、被引文献及引用它们的笔记，开启箭头、标签与悬停浮窗，并添加文献笔记颜色分组。全局图谱在整个仓库中共用一套选项，因此第一条命令会将这一布局保存为您的图谱设置。局部图谱命令需要先打开一篇笔记。
 
-If a command opens nothing, ZotLit says why: the Graph core plugin is off, the citations switch is off, or the citation graph is unavailable. [Explore citations in the graph view](/docs/how-to/explore-citations-in-graph) is the full guide.
+如果命令未能打开图谱，ZotLit 会说明原因：核心插件 Graph 未启用、引文开关已关闭，或引文图谱不可用。完整指南见[在图谱视图中探索引文](/docs/how-to/explore-citations-in-graph)。
 
-### Literature note profiles
+### 文献笔记配置方案 [#literature-note-profiles]
 
-![A profile document open in the editor beside the Literature note profiles settings page, listing the Default profile, a Books profile, and the book-details partial](/img/changelog/literature-note-profiles.webp)
+![编辑器中打开的配置方案文档，旁边是文献笔记配置方案设置页面，列出了默认配置方案、Books 配置方案与 book-details 局部模板](/img/changelog/literature-note-profiles.webp)
 
-2.1 built a literature note from separate files: a note file, a managed-region file, a filename file, an annotation file, and a frontmatter field list that lived in settings. 2.2 puts the whole note into one Markdown document per profile. Each `zotlit-profile.<slug>.md` in your template folder holds the note name, the note folder, the properties, the note body, and the annotation format together.
+2.1 通过多个独立文件构建文献笔记：笔记文件、受管区域文件、文件名文件、标注文件，以及保存在设置中的 frontmatter 字段列表。2.2 将这些内容整合为每个配置方案的一份 Markdown 文档。模板文件夹中的每个 `zotlit-profile.<slug>.md` 都集中保存笔记名称、笔记文件夹、属性、正文与批注格式。
 
-Two companions complete the set. `zotlit-citation.md` holds the text of every inserted citation, once for the whole vault, and each `zotlit-partial.<name>.md` holds template text that several profiles share. [Profile document](/docs/reference/templates/profile-document) gives the format of all three.
+此外还有两类文档：`zotlit-citation.md` 保存整个仓库共用的引文插入文本；每个 `zotlit-partial.<name>.md` 保存供多个配置方案共享的模板片段。[配置方案文档](/docs/reference/templates/profile-document)介绍了这三类文档的格式。
 
-<SettingsPath page={m.settings_page_profiles()} /> is the new home of all of
-this. The <UiLabel name={m.settings_profile_default_name()} /> row is your
-default layout; <UiLabel name={m.settings_profile_add()} /> creates another
-profile, and <UiLabel name={m.command_import_profile_name()} /> reads one in
-from a file or the clipboard. A profile's own row offers
-<UiLabel name={m.settings_profile_edit()} /> and a
-<UiLabel name={m.workbench_more_actions()} /> menu with
-<UiLabel name={m.settings_profile_duplicate()} />,
-<UiLabel name={m.settings_profile_share()} />, and
-<UiLabel name={m.settings_profile_delete()} />. A profile's match is edited on
-the workbench's <UiLabel name={m.workbench_tab_match()} /> tab.
+以上内容现在统一在 <SettingsPath page={m.settings_page_profiles()} /> 中管理。<UiLabel name={m.settings_profile_default_name()} /> 行对应默认布局；<UiLabel name={m.settings_profile_add()} /> 创建其他配置方案，<UiLabel name={m.command_import_profile_name()} /> 则从文件或剪贴板导入配置方案。每个配置方案所在行提供 <UiLabel name={m.settings_profile_edit()} />，以及包含 <UiLabel name={m.settings_profile_duplicate()} />、<UiLabel name={m.settings_profile_share()} /> 与 <UiLabel name={m.settings_profile_delete()} /> 的 <UiLabel name={m.workbench_more_actions()} /> 菜单。配置方案的匹配条件在工作台的 <UiLabel name={m.workbench_tab_match()} /> 标签页中编辑。
 
-Below the profiles sits the <UiLabel name={m.settings_partials_heading()} /> list, with <UiLabel name={m.settings_partial_add()} /> and <UiLabel name={m.settings_partial_open()} />. A document ZotLit cannot read, or one whose ID collides with another profile's, is listed under <UiLabel name={m.settings_profile_excluded_heading()} /> instead of being used.
+配置方案下方是 <UiLabel name={m.settings_partials_heading()} /> 列表，提供 <UiLabel name={m.settings_partial_add()} /> 与 <UiLabel name={m.settings_partial_open()} /> 操作。无法读取的文档，或 ID 与其他配置方案重复的文档，会列在 <UiLabel name={m.settings_profile_excluded_heading()} /> 下，不会被使用。
 
-<UiLabel name={m.settings_citation_text_name()} /> under
-<SettingsPath page={m.settings_page_citations()} /> opens the citation document,
-and its <UiLabel name={m.settings_template_reset()} /> button returns it to the
-built-in text once you have changed it.
+<SettingsPath page={m.settings_page_citations()} /> 中的
+<UiLabel name={m.settings_citation_text_name()} />
+可打开引文文档。修改后，可使用 <UiLabel name={m.settings_template_reset()} />
+按钮恢复内置文本。
 
-A profile can also select itself. A Profile Match tests an item's library, item type, tags, or collections, and every new note that fits uses that profile. A profile without a Match stays manual. See [Profile Match](/docs/reference/templates/profile-match), and [Use a different template for different notes](/docs/how-to/use-different-templates) for the steps from an empty profile to a matched one.
+配置方案也可以自动匹配条目。匹配条件会检查条目所属文献库、条目类型、标签或分类；每篇符合条件的新笔记都会使用该配置方案。未设置匹配条件的配置方案仍需手动选择。详见[配置方案匹配条件](/docs/reference/templates/profile-match)；[针对不同笔记使用不同模板](/docs/how-to/use-different-templates)介绍了从创建空配置方案到设置自动匹配的操作步骤。
 
-Every note records the profile that made it, so a later update uses the same template. <Command inline name={m.command_switch_literature_note_profile_name()} /> moves a note, and the imported notes that follow it, onto another profile.
+每篇笔记都会记录创建它的配置方案，因此后续更新会沿用同一模板。<Command inline name={m.command_switch_literature_note_profile_name()} /> 可将笔记及跟随它的导入笔记一并切换到其他配置方案。
 
-[Profiles](/docs/concepts/profiles) explains how ZotLit picks one and how a note keeps it, [How templates work](/docs/concepts/how-templates-work) covers the three kinds of document, and [converting 2.1 template files](/docs/how-to/migrate-from-2.1-templates) the upgrade.
+[配置方案](/docs/concepts/profiles)解释了 ZotLit 如何选择配置方案，以及笔记如何保留该选择；[模板工作原理](/docs/concepts/how-templates-work)介绍了三类文档；[转换 2.1 模板文件](/docs/how-to/migrate-from-2.1-templates)说明了升级方法。
 
-### The Template Workbench
+### 模板工作台 [#the-template-workbench]
 
-![The Template Workbench layout with the Fields pane, the profile editor showing a Liquid template with a field hover card, and the Note preview pane](/img/changelog/template-workbench-layout.webp)
+![模板工作台布局，左侧是字段面板，中间的配置方案编辑器显示 Liquid 模板与字段悬停卡片，右侧是笔记预览面板](/img/changelog/template-workbench-layout.webp)
 
-Your templates have a view of their own now, with the fields beside the editor and the resulting note on the other side. <Command inline name={m.template_workbench_open()} /> opens the document in your active note, and <Command inline name={m.template_workbench_open_layout()} /> opens all three panes together, in a window of their own when the editor would otherwise share one. From a literature note, <Command inline name={m.command_customize_note_template_name()} /> opens the profile that made it with that paper already selected.
+模板现在拥有专属视图，编辑器一侧是字段，另一侧是生成的笔记。<Command inline name={m.template_workbench_open()} /> 可打开活动笔记中的模板文档；<Command inline name={m.template_workbench_open_layout()} /> 则同时打开三个面板，如果编辑器原本会与其他内容共用窗口，就会改为在独立窗口中打开。在文献笔记中运行 <Command inline name={m.command_customize_note_template_name()} />，即可打开创建该笔记的配置方案，并自动选中对应文献。
 
-The layout has three columns. The <UiLabel name={m.workbench_fields_heading()} /> pane lists the Zotero data a template can read, the middle column edits the document, and the <UiLabel name={m.workbench_result_heading()} /> pane shows the note that comes out. The panes are linked through Obsidian's own linked tabs, so choosing a paper or an annotation in one follows in the others.
+布局分为三列：<UiLabel name={m.workbench_fields_heading()} /> 面板列出模板可读取的 Zotero 数据，中间列用于编辑文档，<UiLabel name={m.workbench_result_heading()} /> 面板显示生成的笔记。各面板通过 Obsidian 自身的关联标签页机制联动，在其中一个面板选择文献或批注，其他面板也会随之切换。
 
-The preview refreshes as you type. Its pane menu switches between <UiLabel name={m.workbench_preview_as_new_note()} />, <UiLabel name={m.workbench_preview_as_updated_note()} />, and <UiLabel name={m.workbench_preview_updated_section()} />, with <UiLabel name={m.workbench_show_markdown()} /> to read the raw output. When you arrive from a literature note, the top bar names that note and offers <UiLabel name={m.template_workbench_update_this_note()} /> to apply the change there at once.
+预览会在输入时刷新。通过面板菜单，可以切换 <UiLabel name={m.workbench_preview_as_new_note()} />、<UiLabel name={m.workbench_preview_as_updated_note()} /> 与 <UiLabel name={m.workbench_preview_updated_section()} />，也可以使用 <UiLabel name={m.workbench_show_markdown()} /> 查看原始输出。从文献笔记进入时，顶部栏会显示该笔记名称，并提供 <UiLabel name={m.template_workbench_update_this_note()} />，以便立即将改动应用到该笔记。
 
-Repeated text becomes a partial in one step. Select it, then choose <UiLabel name={m.template_workbench_extract_partial()} />. <UiLabel name={m.workbench_partial_new()} /> starts one from scratch, the <UiLabel name={m.template_workbench_partials()} /> menu lists every partial in the vault, and <UiLabel name={m.template_workbench_open_markdown()} /> opens the same document in Obsidian's own editor.
+重复使用的文本可以一步提取为局部模板：选中文本，再选择 <UiLabel name={m.template_workbench_extract_partial()} />。<UiLabel name={m.workbench_partial_new()} /> 可从零创建局部模板，<UiLabel name={m.template_workbench_partials()} /> 菜单列出仓库中的全部局部模板，<UiLabel name={m.template_workbench_open_markdown()} /> 则在 Obsidian 自带编辑器中打开同一文档。
 
-[Template Workbench View](/docs/concepts/template-workbench-view) describes every way in, [Customize a template](/docs/how-to/customize-a-template) walks through the profile, the citation text, and partials, and [Edit a profile as Markdown](/docs/how-to/edit-a-profile-as-markdown) is the route for anyone who would rather type the document.
+[模板工作台视图](/docs/concepts/template-workbench-view)介绍了全部入口；[自定义模板](/docs/how-to/customize-a-template)依次介绍配置方案、引文文本与局部模板；如果您更习惯直接编写文档，可参阅[以 Markdown 编辑配置方案](/docs/how-to/edit-a-profile-as-markdown)。
 
-### Inside the Template Workbench View
+### 模板工作台视图详解 [#inside-the-template-workbench-view]
 
-The editor is tabbed by part of the note: <UiLabel name={m.workbench_tab_note()} />, <UiLabel name={m.workbench_tab_properties()} />, <UiLabel name={m.workbench_tab_annotation()} />, <UiLabel name={m.workbench_tab_name_and_folder()} />, <UiLabel name={m.workbench_tab_match()} />, and <UiLabel name={m.workbench_tab_profile()} />. <UiLabel name={m.workbench_advanced()} /> shows the whole document as source when you want it that way. Every edit saves as you go.
+编辑器按笔记组成部分设置标签页：<UiLabel name={m.workbench_tab_note()} />、<UiLabel name={m.workbench_tab_properties()} />、<UiLabel name={m.workbench_tab_annotation()} />、<UiLabel name={m.workbench_tab_name_and_folder()} />、<UiLabel name={m.workbench_tab_match()} /> 与 <UiLabel name={m.workbench_tab_profile()} />。需要直接查看整份文档源码时，可使用 <UiLabel name={m.workbench_advanced()} />。所有编辑都会随时自动保存。
 
-The editor knows the document's language. Liquid templates get their tags, variables, and filters highlighted, with the YAML manifest and the Markdown markers styled apart from the body. Eta templates pair tags as you type and gain the same suggestions and hover; the <UiLabel name={m.settings_template_js_enable_name()} /> gate governs rendering, not editing. Typing a field or a partial name offers what is available and what it holds.
+编辑器可以识别文档语言。Liquid 模板的标签、变量与过滤器会高亮显示，YAML 配置清单与 Markdown 标记也会采用不同于正文的样式。Eta 模板在输入时会自动配对标签，并提供相同的建议与悬停提示；<UiLabel name={m.settings_template_js_enable_name()} /> 设置控制的是渲染权限，不影响编辑。输入字段或局部模板名称时，会提示可用选项及其内容。
 
-When something fails, <UiLabel name={m.workbench_problems_heading()} /> sits under the editor with what went wrong, which part of the document it came from, and the actions to reach it, including <UiLabel name={m.workbench_problems_copy()} /> when you want to ask for help. [Collect debug logs](/docs/how-to/collect-debug-logs#template-error-report) says what that report carries.
+出现错误时，编辑器下方的 <UiLabel name={m.workbench_problems_heading()} /> 会说明问题、所在文档部分与跳转操作。需要求助时，还可使用 <UiLabel name={m.workbench_problems_copy()} />。[收集调试日志](/docs/how-to/collect-debug-logs#template-error-report)说明了该报告包含的内容。
 
-[Properties](/docs/how-to/configure-frontmatter-properties) covers the properties tab, and [Template Workbench View](/docs/concepts/template-workbench-view) the tabs, the languages, and the panes. The workbench view is part of the desktop app.
+[配置属性](/docs/how-to/configure-frontmatter-properties)介绍属性标签页，[模板工作台视图](/docs/concepts/template-workbench-view)则介绍各个标签页、语言与面板。工作台视图属于桌面端功能。
 
-## Breaking Changes
+## 破坏性变更 [#breaking-changes]
 
-Four changes alter what you already have. Read them before you upgrade.
+以下四项变更会影响现有配置，请在升级前阅读。
 
-### 2.1 template files give way to documents
+### 将 2.1 模板文件转换为文档 [#21-template-files-give-way-to-documents]
 
-Nothing converts on its own. Your `zotlit-note.liquid.md`, `zotlit-content.liquid.md`, `zotlit-filename.liquid.md`, `zotlit-annotation.liquid.md`, the two citation files, and any file that served as a partial keep loading and rendering until you convert them. The Welcome view offers <UiLabel name={m.welcome_template_conversion_title()} /> once after the update, and settings repeat it with <UiLabel name={m.settings_template_conversion_reminder_action()} />. One press folds the note, managed-region, filename, and annotation files into `zotlit-profile.default.md`, the two citation files into `zotlit-citation.md`, and every remaining file into its own partial. ZotLit verifies byte-identical output before it writes anything, then moves the old files to Obsidian's configured trash. The pass needs one item from your Zotero library to verify against, and an annotation as well if you customized the annotation file.
+转换不会自动进行。在您主动转换之前，`zotlit-note.liquid.md`、`zotlit-content.liquid.md`、`zotlit-filename.liquid.md`、`zotlit-annotation.liquid.md`、两个引文文件及用作局部模板的文件都会继续加载和渲染。更新后，欢迎视图会显示一次 <UiLabel name={m.welcome_template_conversion_title()} />，设置中也会保留 <UiLabel name={m.settings_template_conversion_reminder_action()} /> 入口。选择后，笔记、受管区域、文件名与标注文件会合并为 `zotlit-profile.default.md`，两个引文文件会合并为 `zotlit-citation.md`，其余每个文件各自转换为局部模板。写入前，ZotLit 会验证新旧输出逐字节一致，再将旧文件移入 Obsidian 配置的回收站。验证需要从 Zotero 文献库中选取一个条目；如果您自定义过标注文件，还需要一条批注。
 
-Two things follow if you stay on the old files. Their settings rows are gone, so the frontmatter field list has no editor in the app, and a note cannot use a profile of your own until the conversion has run: ZotLit declines the note and asks you to convert the legacy templates first. The Profiles page shows no Add and no Import until the conversion has run, and every profile file action stays disabled; the quick-switch picker can still make a profile if you need one. Your default literature notes keep working exactly as they did.
+继续使用旧文件时有两项限制。原有设置行已移除，因此无法在应用内编辑 frontmatter 字段列表；完成转换前，笔记也无法使用您自定义的配置方案，ZotLit 会拒绝该操作并要求先转换旧模板。转换前，配置方案页面不会显示添加或导入入口，所有配置方案文件操作也会保持禁用；如有需要，仍可通过快速切换选择器创建配置方案。默认文献笔记会继续按原有方式工作。
 
-If your two citation files use different languages, the fold is Liquid, the Eta file stays where it is, and ZotLit names the files that no longer affect citations.
+如果两个引文文件使用不同的模板语言，合并后的文档会采用 Liquid，Eta 文件会保留在原处，ZotLit 会列出不再影响引文的文件。
 
-[Converting 2.1 template files](/docs/how-to/migrate-from-2.1-templates) has the steps and what each file becomes.
+[转换 2.1 模板文件](/docs/how-to/migrate-from-2.1-templates)提供具体步骤，并说明每个文件的转换结果。
 
-### Export with citations stops on an unknown or ambiguous key
+### 引文标识未知或存在歧义时停止导出 [#export-with-citations-stops-on-an-unknown-or-ambiguous-key]
 
-<Command inline name={m.command_pandoc_export_name()} /> now reads your note the
-way Pandoc does, so literal `@citation-key` text reaches the bibliography. A
-work you cite both by wikilink and by key gets one entry, `nocite` works, and a
-key inside code or behind an escape stays plain text.
+<Command inline name={m.command_pandoc_export_name()} /> 现在按照 Pandoc
+的方式读取笔记，因此直接输入的 `@citation-key`
+文本也会纳入参考文献列表。同一文献同时通过双链与文献引用标识引用时，只生成一个参考文献条目；`nocite`
+也可使用；代码内或经过转义的标识仍作为普通文本处理。
 
-The cost is that a key which matches no item in your library scope, or matches several, stops the whole export and names the keys. In 2.1 such a note exported with Pandoc's undefined-citation output and no reference list, which looked like success. Check the spelling in Zotero, or widen the library scope under <SettingsPath page={m.settings_page_zotero()} />. [Export a note with citations](/docs/how-to/export-note-with-citations) covers the workflow.
+相应地，如果标识在文献库范围内找不到匹配条目，或匹配多个条目，整个导出会停止，并列出问题标识。在 2.1 中，此类笔记会带着 Pandoc 的未定义引文输出导出，且没有参考文献列表，看起来却像导出成功。请检查 Zotero 中标识的拼写，或在 <SettingsPath page={m.settings_page_zotero()} /> 中扩大文献库范围。操作流程见[导出包含引文的笔记](/docs/how-to/export-note-with-citations)。
 
-### The agent template commands are retired
+### 停用旧版智能体模板命令 [#the-agent-template-commands-are-retired]
 
-Nine commands in ZotLit's `obsidian` CLI namespace now refuse every call and report the command as retired:
+ZotLit 的 `obsidian` CLI 命名空间中有九条命令现已拒绝所有调用，并提示命令已停用：
 
-`zotlit:template-schema`, `zotlit:template-render`, `zotlit:template-document-render`, `zotlit:template-source`, `zotlit:frontmatter-status`, `zotlit:frontmatter-eval`, `zotlit:frontmatter-set`, `zotlit:frontmatter-remove`, `zotlit:frontmatter-reorder`.
+`zotlit:template-schema`、`zotlit:template-render`、`zotlit:template-document-render`、`zotlit:template-source`、`zotlit:frontmatter-status`、`zotlit:frontmatter-eval`、`zotlit:frontmatter-set`、`zotlit:frontmatter-remove`、`zotlit:frontmatter-reorder`。
 
-An agent that wrote templates through them must move to `zotlit:template-inspect`, which reads a saved document and how current it is; `zotlit:template-data`, which lists fields with real values from an item; and `zotlit:template-check`, which renders every part and reports what fails. Frontmatter is edited in the profile document and checked with `output=frontmatter`. These are command line commands, not command palette entries. [The Template Workbench CLI](/docs/concepts/template-workbench) explains the loop, and the [Template Workbench CLI reference](/docs/reference/template-workbench-cli#retired) lists every live command beside the retired one it replaces.
+原先通过这些命令编写模板的智能体需要改用以下命令：`zotlit:template-inspect` 读取已保存的文档及其最新状态；`zotlit:template-data` 列出字段及条目中的真实值；`zotlit:template-check` 渲染各个部分并报告错误。frontmatter 直接在配置方案文档中编辑，并通过 `output=frontmatter` 检查。这些命令只能从命令行调用，不属于命令面板条目。[模板工作台 CLI](/docs/concepts/template-workbench)介绍了操作流程，[模板工作台 CLI 参考](/docs/reference/template-workbench-cli#retired)列出了每条可用命令及其替代的旧命令。
 
-### The settings tab is reorganized
+### 调整设置页面结构 [#the-settings-tab-is-reorganized]
 
-- Maintenance is now <SettingsPath page={m.settings_page_advanced()} />.
-- The Database and Library pages merged into <SettingsPath page={m.settings_page_zotero()} />.
-- The Live updates page became the <UiLabel name={m.settings_advanced_local_server_heading()} /> group on <SettingsPath page={m.settings_page_advanced()} />, where <UiLabel name={m.settings_local_server_enabled_name()} /> sits above <UiLabel name={m.settings_live_updates_enabled_name()} />.
-- Note import is now <SettingsPath page={m.settings_page_note_import()} />.
-- The Templates page is gone. <UiLabel name={m.settings_template_folder_name()} /> and the <UiLabel name={m.settings_advanced_template_engine_heading()} /> rows moved to <SettingsPath page={m.settings_page_advanced()} />, and <UiLabel name={m.settings_citation_text_name()} /> to <SettingsPath page={m.settings_page_citations()} />.
-- <UiLabel name={m.settings_citation_references_style_name()} /> moved to the
-  main page, which now holds the default profile's rows.
-- Auto-pair Eta tags has no toggle any more; the editor pairs tags as you type.
+- 原来的维护页面现为 <SettingsPath page={m.settings_page_advanced()} />。
+- 数据库与文献库页面合并为 <SettingsPath page={m.settings_page_zotero()} />。
+- 即时更新页面改为 <SettingsPath page={m.settings_page_advanced()} /> 中的 <UiLabel name={m.settings_advanced_local_server_heading()} /> 分组，<UiLabel name={m.settings_local_server_enabled_name()} /> 位于 <UiLabel name={m.settings_live_updates_enabled_name()} /> 上方。
+- 笔记导入现位于 <SettingsPath page={m.settings_page_note_import()} />。
+- 模板页面已移除。<UiLabel name={m.settings_template_folder_name()} /> 与 <UiLabel name={m.settings_advanced_template_engine_heading()} /> 相关设置行移至 <SettingsPath page={m.settings_page_advanced()} />，<UiLabel name={m.settings_citation_text_name()} /> 移至 <SettingsPath page={m.settings_page_citations()} />。
+- <UiLabel name={m.settings_citation_references_style_name()} />
+  移至主页面，该页面现在包含默认配置方案的设置行。
+- 自动配对 Eta 标签不再设有开关；编辑器会在输入时自动配对。
 
-Row names are unchanged, so Obsidian's own settings search still finds a setting by the name you know. [Where settings moved](/docs/reference/settings#moved) has the full table.
+设置行名称保持不变，因此仍可通过 Obsidian 自带的设置搜索，用熟悉的名称找到设置。完整对照表见[设置位置变更](/docs/reference/settings#moved)。
 
-## What's New
+## 新增功能 [#whats-new]
 
-### Imported notes
+### 导入笔记 [#imported-notes]
 
 <SettingsPath
   page={m.settings_page_note_import()}
   setting={m.settings_note_import_highlight_mappings_name()}
 />
-maps each Zotero highlight color on its own, to an emoji or to an
-<UiLabel name={m.settings_note_import_highlight_mark()} />, or to a
-<UiLabel name={m.settings_note_import_highlight_custom()} /> emoji you choose.
-See [Import Zotero notes](/docs/how-to/import-zotero-notes).
+可分别将每种 Zotero 高亮颜色映射为 emoji、
+<UiLabel name={m.settings_note_import_highlight_mark()} />
+，或您选择的 <UiLabel name={m.settings_note_import_highlight_custom()} />
+emoji。详见[导入 Zotero 笔记](/docs/how-to/import-zotero-notes)。
 
-The emoji stay compatible with [Obsidian 1.14's color highlights](https://obsidian.md/changelog/2026-09-02-desktop-v1.14.0/). With a custom mapping you can use more colors than native Obsidian offers, including [Colorful Highlights](https://community.obsidian.md/plugins/colorful-highlights).
+这些 emoji 与 [Obsidian 1.14 的彩色高亮](https://obsidian.md/changelog/2026-09-02-desktop-v1.14.0/)兼容。自定义映射可使用比 Obsidian 原生功能更多的颜色，包括 [Colorful Highlights](https://community.obsidian.md/plugins/colorful-highlights) 支持的颜色。
 
-### Template data explorer
+### 模板数据浏览器 [#template-data-explorer]
 
-The explorer is rebuilt on the workbench's own field browser. Fields are grouped into sections you can <UiLabel name={m.workbench_explorer_expand_all()} /> or <UiLabel name={m.workbench_explorer_collapse_all()} />, each row inserts itself with <UiLabel name={m.workbench_fields_put_in_note()} /> or copies it with <UiLabel name={m.workbench_explorer_menu_copy_value()} />, <UiLabel name={m.workbench_explorer_menu_copy_path()} />, <UiLabel name={m.workbench_explorer_menu_copy_output()} />, <UiLabel name={m.workbench_explorer_menu_copy_if_present()} />, <UiLabel name={m.workbench_explorer_menu_copy_loop()} />, and <UiLabel name={m.workbench_explorer_menu_copy_joined()} />. The pane's menu saves the data as JSON: <UiLabel name={m.template_data_explorer_export_selected_paper()} /> at a note root, <UiLabel name={m.template_data_explorer_menu_export_json()} /> elsewhere. <UiLabel name={m.workbench_choose_item()} /> and <UiLabel name={m.workbench_choose_annotation()} /> switch which item or annotation the pane reads. See [Explore template data](/docs/how-to/explore-template-data).
+浏览器现已基于工作台的字段浏览器重建。字段按区域分组，可通过 <UiLabel name={m.workbench_explorer_expand_all()} /> 或 <UiLabel name={m.workbench_explorer_collapse_all()} /> 统一展开或折叠。每行可通过 <UiLabel name={m.workbench_fields_put_in_note()} /> 插入笔记，或使用 <UiLabel name={m.workbench_explorer_menu_copy_value()} />、<UiLabel name={m.workbench_explorer_menu_copy_path()} />、<UiLabel name={m.workbench_explorer_menu_copy_output()} />、<UiLabel name={m.workbench_explorer_menu_copy_if_present()} />、<UiLabel name={m.workbench_explorer_menu_copy_loop()} /> 与 <UiLabel name={m.workbench_explorer_menu_copy_joined()} /> 复制所需内容。面板菜单支持将数据保存为 JSON：在笔记根节点使用 <UiLabel name={m.template_data_explorer_export_selected_paper()} />，其他位置使用 <UiLabel name={m.template_data_explorer_menu_export_json()} />。<UiLabel name={m.workbench_choose_item()} /> 与 <UiLabel name={m.workbench_choose_annotation()} /> 可切换面板读取的条目或批注。详见[浏览模板数据](/docs/how-to/explore-template-data)。
 
-### Citations, references, and the suggester
+### 引文、参考文献与建议下拉框 [#citations-references-and-the-suggester]
 
-- Hovering citations in a note retargets one popover instead of opening a card per citation, and the card follows the pointer from one citation to the next.
-- Search results in the citation suggester read as one line: the venue in italics, and the volume and pages in their own form such as `3(2)`. A result from a group library is marked as such.
-- When an imported note's profile or its citation style is unavailable, the References Sidebar says so and offers <UiLabel name={m.profile_switch_recovery()} /> instead of dropping to a plain list.
-- The suggester's footer now reads <UiLabel name={m.instruction_insert_alternate_citation()} /> for the alternate form.
-- A citation with a locator writes Pandoc's braced form, `[@key, {p. 62}]`, in the raw source. The formatted text is unchanged.
+- 在笔记中悬停不同引文时，现在会更新同一个浮窗的内容，浮窗随指针从一条引文移动到下一条，无需为每条引文另开卡片。
+- 引文建议下拉框的搜索结果现在以一行呈现：发表出处使用斜体，卷页信息保留 `3(2)` 等自身格式。来自群组文献库的结果会明确标注。
+- 导入笔记的配置方案或引文样式不可用时，参考文献侧边栏会说明原因并提供 <UiLabel name={m.profile_switch_recovery()} />，而不会退回普通列表。
+- 建议下拉框底部现在用 <UiLabel name={m.instruction_insert_alternate_citation()} /> 提示备用引文格式。
+- 带定位符的引文现在会在源码中使用 Pandoc 的花括号形式 `[@key, {p. 62}]`。格式化显示的文本保持不变。
 
-See [Insert citations](/docs/how-to/insert-citations) and [Review, copy, and troubleshoot references](/docs/how-to/review-copy-troubleshoot-references).
+详见[插入引文](/docs/how-to/insert-citations)与[查阅、复制参考文献并排查问题](/docs/how-to/review-copy-troubleshoot-references)。
 
-### LaTeX citations in a template
+### 模板中的 LaTeX 引文 [#latex-citations-in-a-template]
 
-`tex_cite` in Liquid, and `texCite` in Eta, write `zt.citations` as one LaTeX citation command, so a citation template reaches `\cite{doe2024}` or `\autocite{doe2024}` without a key loop of your own. The first item's prefix becomes the prenote, and its locator and suffix the postnote. See [`tex_cite`](/docs/reference/templates/syntax#tex-cite) and [`texCite`](/docs/reference/templates/eta-syntax#tex-cite).
+Liquid 的 `tex_cite` 与 Eta 的 `texCite` 可将 `zt.citations` 输出为一条 LaTeX 引文命令，因此无需自行循环遍历标识，即可在引文模板中生成 `\cite{doe2024}` 或 `\autocite{doe2024}`。第一个条目的前缀会作为引文前注（prenote），定位符与后缀则作为后注（postnote）。详见 [`tex_cite`](/docs/reference/templates/syntax#tex-cite) 与 [`texCite`](/docs/reference/templates/eta-syntax#tex-cite)。
 
-One filter covers both formats Zotero Integration gave a command of its own, `latex` and `biblatex`. [Migrate from Zotero Integration](/docs/how-to/migrate-from-zotero-integration) maps that plugin's Nunjucks templates, its persist blocks, and its citation formats onto profiles.
+同一个过滤器即可覆盖 Zotero Integration 分别通过独立命令提供的 `latex` 与 `biblatex` 两种格式。[从 Zotero Integration 迁移](/docs/how-to/migrate-from-zotero-integration)介绍了如何将该插件的 Nunjucks 模板、persist 块与引文格式转换到配置方案中。
 
-### Batch update and import
+### 批量更新与导入 [#batch-update-and-import]
 
-The confirmation for a vault-wide run now groups its rows by profile and says which items match no profile or several, which profiles are unavailable, and what happens to the notes you keep as they are. The import dialog names the notes that will arrive without a parent literature note before you confirm. See [Keep notes up to date](/docs/how-to/keep-notes-updated#batch) for a batch run, and [Create and open literature notes](/docs/how-to/create-and-open-notes#bulk-profiles) for the profile a bulk run gives new notes.
+全仓库操作的确认窗口现在按配置方案分组显示，并说明哪些条目没有匹配的配置方案或匹配了多个方案、哪些方案不可用，以及保持原样的笔记会如何处理。导入对话框会在您确认前列出导入后没有父级文献笔记的笔记。批量操作见[保持笔记更新](/docs/how-to/keep-notes-updated#batch)；批量创建时如何为新笔记选择配置方案，见[创建并打开文献笔记](/docs/how-to/create-and-open-notes#bulk-profiles)。
 
-### Other improvements
+### 其他改进 [#other-improvements]
 
-- Links and menu commands from Zotero now name the profile they mean, so a note opens with the template you chose rather than the default. A profile ZotLit cannot find opens a prompt to pick one. See [Protocol links](/docs/reference/protocol-links).
-- The Welcome view's settings link opens <SettingsPath page={m.settings_page_zotero()} />, and its folder picker explains how to navigate and choose.
+- 来自 Zotero 的链接与菜单命令现在会指定所用配置方案，因此笔记会使用您选择的模板，而非默认模板。找不到指定配置方案时，ZotLit 会提示您选择一个。详见[协议链接](/docs/reference/protocol-links)。
+- 欢迎视图中的设置链接现在打开 <SettingsPath page={m.settings_page_zotero()} />；文件夹选择器也会说明如何浏览和选择文件夹。

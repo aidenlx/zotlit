@@ -180,7 +180,7 @@ Zotero 条目的每个字段均作为顶层扁平属性挂载在 `zt` 上。规�
 
 对 Zotero `extra` 字段的最佳结构化解析。纯数据对象，可在 Liquid、Eta 和 JS 中直接索引。
 
-`toString` is non-enumerable, so a spread, `JSON.stringify`, or `Object.keys` sees the three data properties alone.
+`toString` 不可枚举，因此展开操作、`JSON.stringify` 或 `Object.keys` 只能获取这三个数据属性。
 
 `zt.extra` 是 Zotero 自由文本 Extra 字段的解析视图，如果字段为空则为 `null`。`{{ zt.extra }}` 会渲染字段的原始文本。
 
