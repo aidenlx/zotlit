@@ -1,14 +1,28 @@
 # Bilingual documentation verification
 
 Base: `next` at `a635872e82a9c753528713c4489b90d9fe7a5c7e`.
-Integration branch: `poc/docs-i18n`; [draft PR #1446](https://github.com/aidenlx/zotlit/pull/1446).
-Current source checkpoint: `eed6e1790dd642c66329e41bc70a7178395acc51`, 2026-10-11.
+Integration branch: `poc/docs-i18n`; [PR #1446](https://github.com/aidenlx/zotlit/pull/1446).
+Combined-content source checkpoint: `eed6e1790dd642c66329e41bc70a7178395acc51`, 2026-10-11.
 Clean runtime checkpoint: `eed6e1790dd642c66329e41bc70a7178395acc51`; runtime-equivalent published revision: `db3f5b6237dd26c660e283923db149b86c2b0cb0`.
 Latest missing-file fixture checkpoint: `a1d3d7d1566b349b8122111089df249d505e279a` plus a temporary English-only file.
 
-## Current result
+## Review split and validation scope
 
-The source includes real translations from both PR #1447 and PR #1448. The inventory covers all 88 Chinese MDX files, 7 navigation files with 7 translated titles, and 157 root docs message keys. Those keys include 47 native messages that supply all 51 Fumadocs registry contexts through the generated facade. The [per-file coverage report](translation-coverage.md) records current blob IDs, source decisions, every content pair, and intentional English. Generated descriptions in the 18 template-data contract tables remain English.
+PR #1446 is ready for review and contains infrastructure in its Files changed view. It adds no Chinese content or metadata files. It preserves all 1,913 baseline Chinese catalog values, including the three existing docs values, and adds 154 new docs keys. These use English-copy placeholders, except `docs_fumadocs_language_name`, which is “Simplified Chinese” so the locale options stay distinct. English fallback at Chinese content URLs is therefore the expected behavior in this checkout.
+
+The stacked translation change restores all 88 Chinese MDX files, seven Chinese metadata files, and the complete reviewed Chinese catalog from `f051bf9c`. Its 150 changed catalog values include 149 new-message translations and one correction to an existing docs value. The five new values that intentionally match English need no further change. The translation coverage report travels with that change. Both source PRs retain the provenance recorded below and in the editing guide.
+
+Tests support either checkout. Real Chinese fragment checks run when the corresponding files exist. Synthetic native and missing-file tests run in both checkouts. Native controls are compared with the checked-out root catalog. The HTTP verifier reads the available root metadata and still rejects incorrect search breadcrumbs; a missing Chinese metadata file uses the English root title.
+
+Focused infrastructure-only checks on 2026-10-11 pass: `pnpm exec turbo run test --filter=@zotlit/docs` reports 350 passed and four conditional content tests skipped across 42 passing files; `pnpm --filter @zotlit/docs typecheck` passes both app and Node configurations. The later inventory-assertion rerun passes 21 tests with the same four content skips. Targeted formatting and lint pass. The HTTP fixture suite passes 11 tests; its missing-root-metadata test failed before the verifier correction. These checks cover this split before the separate local-development fix.
+
+The existing combined-content results below remain pinned to their stated source commits. They are historical evidence for that edition. They do not establish a new infrastructure-only build, browser pass, or remote CI result after the split. The final integrated source needs fresh checks after the separate local-development locale fix is added.
+
+The GitHub CI workflow accepts pull requests into `main` and `next`. A stacked translation PR into `poc/docs-i18n` does not match that filter. Record local CI-equivalent checks separately until the infrastructure change is merged and the translation PR can target an eligible branch. Plugin Review runs for `release/*` or manual dispatch; draft status does not control that workflow. The split changes no CI, release, or deployment workflow.
+
+## Combined-content result before the split
+
+The source includes real translations from both PR #1447 and PR #1448. The inventory covers all 88 Chinese MDX files, 7 navigation files with 7 translated titles, and 157 root docs message keys. Those keys include 47 native messages that supply all 51 Fumadocs registry contexts through the generated facade. The [combined-source per-file coverage report](https://github.com/aidenlx/zotlit/blob/c1685c6997a20e1f3941169e0baa0ba5b0ee9bf6/apps/docs/docs/translation-coverage.md) records current blob IDs, source decisions, every content pair, and intentional English. Generated descriptions in the 18 template-data contract tables remain English.
 
 Results are pinned to the source used by each check:
 
@@ -137,4 +151,4 @@ pnpm --filter @zotlit/docs exec node scripts/verify-i18n-http.mjs
 
 The default preview port is assigned by the OS. `--port` selects a specific port. `--expected-html` is optional; without it, the verifier requires a non-empty discovered inventory. The tool writes JSON evidence and a text summary to its configured output directory.
 
-For later changes, record new clean build/check results, browser evidence, and review outcomes here with their exact source commit. Use a disposable English-only fixture to exercise missing-file behavior, then remove it and repeat the final normal build and HTTP matrix. See [the editing guide](i18n.md) for content locations and [the coverage report](translation-coverage.md) for the maintained translation inventory.
+For later changes, record new clean build/check results, browser evidence, and review outcomes here with their exact source commit. Use a disposable English-only fixture to exercise missing-file behavior, then remove it and repeat the final normal build and HTTP matrix. See [the editing guide](i18n.md) for content locations and [the combined-source coverage report](https://github.com/aidenlx/zotlit/blob/c1685c6997a20e1f3941169e0baa0ba5b0ee9bf6/apps/docs/docs/translation-coverage.md) for the maintained translation inventory.

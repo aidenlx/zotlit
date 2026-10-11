@@ -21,6 +21,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { SiteLocale } from "@/lib/i18n";
 import { getPageLocaleState } from "@/lib/locale-state";
 import { m } from "@/paraglide/messages.js";
 import { deLocalizeUrl, getLocale, localizeUrl } from "@/paraglide/runtime.js";
@@ -28,6 +29,24 @@ import { paraglideMiddleware } from "@/paraglide/server.js";
 
 import { LocaleFallbackNotice } from "./locale-fallback-notice";
 import { LocaleProvider } from "./locale-provider";
+
+// Compare packaged controls with the root facade in an explicit locale.
+function expectedMessages(locale: SiteLocale) {
+  return {
+    docs_fumadocs_search: m.docs_fumadocs_search({}, { locale }),
+    docs_fumadocs_choose_a_language: m.docs_fumadocs_choose_a_language(
+      {},
+      { locale },
+    ),
+    docs_fumadocs_language_name: m.docs_fumadocs_language_name({}, { locale }),
+    docs_fumadocs_copy_markdown: m.docs_fumadocs_copy_markdown({}, { locale }),
+    docs_fumadocs_open_search: m.docs_fumadocs_open_search({}, { locale }),
+    docs_fumadocs_close_search: m.docs_fumadocs_close_search({}, { locale }),
+  };
+}
+
+const englishMessages = expectedMessages("en");
+const chineseMessages = expectedMessages("zh-CN");
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -99,17 +118,26 @@ async function withPage(
 // Reader seam: real packaged controls must use the URL locale, including
 // when the documentation body falls back to English.
 describe("native documentation controls", () => {
-  it("renders Chinese controls around an English fallback body", async () => {
+  it("gives English and Chinese distinct language choices", () => {
+    expect(chineseMessages.docs_fumadocs_language_name).not.toBe(
+      englishMessages.docs_fumadocs_language_name,
+    );
+  });
+
+  it("renders the requested catalog around an English fallback body", async () => {
     await withPage("/zh-CN/docs/new-feature?keep=1#install", (container) => {
       expect(
         container.querySelector("[data-search-full]")?.textContent,
-      ).toContain("搜索");
+      ).toContain(chineseMessages.docs_fumadocs_search);
       expect(
-        container.querySelector('[aria-label="选择语言"]')?.textContent,
-      ).toBe("简体中文");
+        container.querySelector(
+          `[aria-label="${chineseMessages.docs_fumadocs_choose_a_language}"]`,
+        )?.textContent,
+      ).toBe(chineseMessages.docs_fumadocs_language_name);
       expect(
         [...container.querySelectorAll("button")].some(
-          (button) => button.textContent === "复制 Markdown",
+          (button) =>
+            button.textContent === chineseMessages.docs_fumadocs_copy_markdown,
         ),
       ).toBe(true);
       expect(container.querySelector("article")?.textContent).toBe(
@@ -148,25 +176,22 @@ describe("native documentation controls", () => {
   it.each([
     {
       href: "/zh-CN/docs/new-feature?keep=1#install",
-      search: "搜索",
-      open: "打开搜索",
-      close: "关闭搜索",
-      language: "选择语言",
-      copy: "复制 Markdown",
+      messages: chineseMessages,
       hasFallback: true,
     },
     {
       href: "/docs/new-feature?lang=zh-CN&keep=1#install",
-      search: "Search",
-      open: "Open Search",
-      close: "Close Search",
-      language: "Choose a language",
-      copy: "Copy Markdown",
+      messages: englishMessages,
       hasFallback: false,
     },
   ])(
     "keeps native search and language controls in the URL locale at $href",
-    async ({ href, search, open, close, language, copy, hasFallback }) => {
+    async ({ href, messages, hasFallback }) => {
+      const search = messages.docs_fumadocs_search;
+      const open = messages.docs_fumadocs_open_search;
+      const close = messages.docs_fumadocs_close_search;
+      const language = messages.docs_fumadocs_choose_a_language;
+      const copy = messages.docs_fumadocs_copy_markdown;
       await withPage(href, async (container) => {
         const trigger = container.querySelector<HTMLButtonElement>(
           `[aria-label="${open}"]`,
@@ -187,10 +212,10 @@ describe("native documentation controls", () => {
         ).toContain(language);
         expect(
           document.querySelector('[role="dialog"]')?.textContent,
-        ).toContain("English");
+        ).toContain(englishMessages.docs_fumadocs_language_name);
         expect(
           document.querySelector('[role="dialog"]')?.textContent,
-        ).toContain("简体中文");
+        ).toContain(chineseMessages.docs_fumadocs_language_name);
         await act(async () => languageSelect.click());
 
         for (let attempt = 0; attempt < 2; attempt++) {

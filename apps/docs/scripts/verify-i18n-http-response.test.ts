@@ -31,9 +31,13 @@ type Fault =
   | "same-href-link"
   | "duplicate-action"
   | "missing-native-asset"
-  | "english-native-asset";
+  | "english-native-asset"
+  | "wrong-search-root";
 
-function createFixture({ fault = "none" }: { fault?: Fault } = {}) {
+function createFixture({
+  fault = "none",
+  nativeRootMetadata = true,
+}: { fault?: Fault; nativeRootMetadata?: boolean } = {}) {
   const scratchRoot = join(packageRoot, ".scratch");
   mkdirSync(scratchRoot, { recursive: true });
   using cleanup = new DisposableStack();
@@ -52,6 +56,13 @@ function createFixture({ fault = "none" }: { fault?: Fault } = {}) {
   write("apps/docs/package.json", '{"type":"module"}');
   write("messages/en.json", JSON.stringify(englishMessages));
   write("messages/zh-CN.json", JSON.stringify(translatedMessages));
+  write("apps/docs/content/docs/meta.json", '{"pages":["..."]}');
+  if (nativeRootMetadata) {
+    write(
+      "apps/docs/content/docs/meta.zh-CN.json",
+      '{"title":"文档","pages":["..."]}',
+    );
+  }
   write(
     "apps/docs/content/docs/native.zh-CN.mdx",
     "---\ntitle: Native\n---\nEnglish copy.\n",
@@ -96,6 +107,7 @@ function createFixture({ fault = "none" }: { fault?: Fault } = {}) {
     "apps/docs/vite.config.mjs",
     `
     const fault = ${JSON.stringify(fault)};
+    const nativeRootMetadata = ${JSON.stringify(nativeRootMetadata)};
     const notice = ${JSON.stringify(translatedMessages.docs_locale_fallback)};
     const label = ${JSON.stringify(translatedMessages.docs_read_in_english)};
     const publicOrigin = "https://zotlit.aidenlx.site";
@@ -103,6 +115,13 @@ function createFixture({ fault = "none" }: { fault?: Fault } = {}) {
       plugins: [{ name: "http-response-fixture", configurePreviewServer(server) {
         server.middlewares.use((request, response) => {
           const url = new URL(request.url, "http://127.0.0.1");
+          if (url.pathname === "/api/search") {
+            const locale = url.searchParams.get("locale");
+            const unsupported = locale === "fr";
+            const rootName = fault === "wrong-search-root" ? "Wrong root" : locale === "zh-CN" && nativeRootMetadata ? "文档" : "Docs";
+            response.writeHead(unsupported ? 400 : 200, { "content-type": "application/json" });
+            return response.end(JSON.stringify(unsupported ? { error: "Unsupported locale" } : [{ type: "page", breadcrumbs: [rootName], url: (locale === "zh-CN" ? "/zh-CN" : "") + "/docs/native" }]));
+          }
           if (url.pathname === "/legacy") {
             response.writeHead(308, { location: "/zh-CN/docs/missing?keep=one&keep=two&src=%2Ffaq%2Fslurp" });
             return response.end();
@@ -190,6 +209,26 @@ describe("HTTP verification response matrix", () => {
       expect(result.groups.shutdown).toBeUndefined();
     }
   }, 30_000);
+
+  it.each([true, false])(
+    "checks search root metadata with a native locale file: %s",
+    async (nativeRootMetadata) => {
+      using fixture = createFixture({ nativeRootMetadata });
+      const result = await run(fixture);
+      expect(result.groups.search?.failed).toBe(0);
+    },
+    30_000,
+  );
+
+  it("rejects a search root that differs from the source metadata", async () => {
+    using fixture = createFixture({ fault: "wrong-search-root" });
+    const result = await run(fixture);
+    const roots = result.checks.filter((check) =>
+      check.label.endsWith("root breadcrumb locale"),
+    );
+    expect(roots).toHaveLength(3);
+    expect(roots.every((check) => !check.passed)).toBe(true);
+  });
 
   it.each(["missing-native-asset", "english-native-asset"] as const)(
     "detects %s even when SSR returns a valid Chinese page",

@@ -957,7 +957,16 @@ async function main() {
       const pageResults = Array.isArray(data)
         ? data.filter((item) => item.type === "page")
         : [];
-      const rootName = locale === "zh-CN" ? "文档" : "Docs";
+      const nativeMeta = join(
+        packageRoot,
+        "content/docs",
+        `meta.${locale}.json`,
+      );
+      const rootMeta = existsSync(nativeMeta)
+        ? nativeMeta
+        : join(packageRoot, "content/docs/meta.json");
+      const rootName =
+        JSON.parse(await readFile(rootMeta, "utf8")).title ?? "Docs";
       check("search", `${locale ?? "default"} root breadcrumb locale`, {
         passed:
           pageResults.length > 0 &&
