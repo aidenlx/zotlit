@@ -18,7 +18,6 @@ import {
 } from "@/lib/shared";
 import { getChangelogPages } from "@/lib/source";
 import { breadcrumbListSchema } from "@/lib/structured-data";
-import { getPageLocaleState } from "@/lib/translation-state";
 import { m } from "@/paraglide/messages.js";
 import { getLocale } from "@/paraglide/runtime.js";
 
@@ -37,14 +36,10 @@ const listReleases = createServerFn({ method: "GET" })
     })),
   );
 
-const crumbs = () =>
-  [
-    { name: appName, url: "/" },
-    { name: m.docs_nav_changelog(), url: changelogRoute },
-  ].map((crumb) => ({
-    ...crumb,
-    url: getPageLocaleState(crumb.url, getLocale()).canonicalPath,
-  }));
+const crumbs = () => [
+  { name: appName, url: "/" },
+  { name: m.docs_nav_changelog(), url: changelogRoute },
+];
 
 export const Route = createFileRoute("/_home/changelog/")({
   component: ChangelogIndex,

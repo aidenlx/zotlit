@@ -12,6 +12,9 @@ import type {
   WithContext,
 } from "schema-dts";
 
+import { getLocale } from "@/paraglide/runtime.js";
+
+import { getPageLocaleState } from "./locale-state";
 import { appName, baseURL, gitConfig, repoUrl } from "./shared";
 
 const logoUrl = `${baseURL}/logo/zotlit-logo-512.png`;
@@ -121,10 +124,18 @@ export interface Crumb {
 export function breadcrumbListSchema(
   items: Crumb[],
 ): WithContext<BreadcrumbList> {
+  const locale = getLocale();
+  const seen = new Set<string>();
+  const canonicalItems = items
+    .map((crumb) => ({
+      ...crumb,
+      url: getPageLocaleState(crumb.url, locale).canonicalPath,
+    }))
+    .filter((crumb) => !seen.has(crumb.url) && seen.add(crumb.url));
   return {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
-    itemListElement: items.map((crumb, index) => ({
+    itemListElement: canonicalItems.map((crumb, index) => ({
       "@type": "ListItem",
       position: index + 1,
       name: crumb.name,

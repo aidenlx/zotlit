@@ -1,4 +1,3 @@
 {
-  "pages": ["(intro)", "tutorial", "how-to", "concepts", "reference"],
-  "translationStatus": "placeholder"
+  "pages": ["(intro)", "tutorial", "how-to", "concepts", "reference"]
 }

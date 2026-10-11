@@ -11,22 +11,15 @@ import { renderToString } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import type { SiteLocale } from "@/lib/i18n";
+import { getPageLocaleState } from "@/lib/locale-state";
 import { zotlitLegacyUrl } from "@/lib/shared";
-import type { TranslationManifest } from "@/lib/translation-state";
-import { getPageLocaleState } from "@/lib/translation-state";
 import * as m from "@/paraglide/messages.js";
 import { deLocalizeUrl, localizeUrl } from "@/paraglide/runtime.js";
 
 import { LocaleFallbackNotice } from "./locale-fallback-notice";
 import { RedirectNotice } from "./redirect-notice";
 
-const manifest: TranslationManifest = {
-  pages: {
-    "/docs/pending": "placeholder",
-    "/docs/approved": "translated",
-  },
-  ui: "placeholder",
-};
+const nativeChinesePages = new Set(["/docs/native"]);
 
 function mount(href: string, locale: SiteLocale = "zh-CN") {
   using cleanup = new DisposableStack();
@@ -77,7 +70,7 @@ function mount(href: string, locale: SiteLocale = "zh-CN") {
         state={getPageLocaleState(
           router.state.location.pathname,
           locale,
-          manifest,
+          nativeChinesePages,
         )}
       />
       <RedirectNotice />
@@ -118,7 +111,9 @@ describe("LocaleFallbackNotice", () => {
         m.docs_locale_fallback({}, { locale: "en" }),
       );
       const link = note.querySelector("a")!;
-      expect(link.textContent).toBe("Read in English");
+      expect(link.textContent).toBe(
+        m.docs_read_in_english({}, { locale: "en" }),
+      );
       expect(link.getAttribute("href")).toBe(`/docs/${slug}`);
       expect(link.hasAttribute("target")).toBe(false);
       // Rendering the choice does not navigate the reader.
@@ -213,8 +208,8 @@ describe("LocaleFallbackNotice", () => {
     ).toBe(`${zotlitLegacyUrl}/zh-CN/faq/slurp`);
   });
 
-  it("shows no fallback on approved Chinese pages, even with an old locale hint", () => {
-    using view = mount("/zh-CN/docs/approved?lang=zh-CN");
+  it("shows no fallback on native Chinese pages, even with an old locale hint", () => {
+    using view = mount("/zh-CN/docs/native?lang=zh-CN");
     expect(view.container.textContent).toBe("");
     expect(view.container.querySelector("a")).toBeNull();
   });

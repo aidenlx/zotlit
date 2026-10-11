@@ -72,6 +72,7 @@ catalog:
   valibot: ^1.0.0
   vite: ^8.1.5
   vitest: ^4.0.13
+  yargs: ^18.1.0
   zustand: ^5.0.14
   zx: ^8.8.5
 

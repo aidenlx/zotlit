@@ -53,7 +53,7 @@
     "typescript": "catalog:",
     "valibot": "catalog:",
     "vitest": "catalog:",
-    "yargs": "^18.1.0",
+    "yargs": "catalog:",
     "zx": "catalog:"
   }
 }

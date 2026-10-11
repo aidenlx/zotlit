@@ -10,6 +10,7 @@ import { cn } from "@/lib/cn";
 import { changelogs } from "@/lib/collections";
 import { isSiteLocale } from "@/lib/i18n";
 import type { SiteLocale } from "@/lib/i18n";
+import { getPageLocaleState } from "@/lib/locale-state";
 import { changelogProseRoles } from "@/lib/prose";
 import { pageHead } from "@/lib/seo";
 import {
@@ -24,7 +25,6 @@ import {
   breadcrumbListSchema,
   changelogArticleSchema,
 } from "@/lib/structured-data";
-import { getPageLocaleState } from "@/lib/translation-state";
 import { m } from "@/paraglide/messages.js";
 import { getLocale, localizeHref } from "@/paraglide/runtime.js";
 
@@ -92,16 +92,11 @@ export const Route = createFileRoute("/_home/changelog/$version")({
               date: release.date,
               url: getPageLocaleState(release.url, getLocale()).canonicalPath,
             }),
-            breadcrumbListSchema(
-              [
-                { name: appName, url: "/" },
-                { name: m.docs_nav_changelog(), url: changelogRoute },
-                { name: `v${release.version}`, url: release.url },
-              ].map((crumb) => ({
-                ...crumb,
-                url: getPageLocaleState(crumb.url, getLocale()).canonicalPath,
-              })),
-            ),
+            breadcrumbListSchema([
+              { name: appName, url: "/" },
+              { name: m.docs_nav_changelog(), url: changelogRoute },
+              { name: `v${release.version}`, url: release.url },
+            ]),
           ],
         }),
 });

@@ -1,7 +1,7 @@
 // Callout for visitors who arrived through a redirect. Driven entirely by the
 // query contract documented in lib/v1-redirects.ts: `from=v1` + `src` identify
 // the exact v1 page, and `lang=zh-CN` selects its Chinese version. Translation
-// fallback has its own readiness-driven notice; a locale hint alone adds none.
+// fallback has its own missing-file notice; a locale hint alone adds none.
 
 import { ArrowUpRight, X } from "lucide-react";
 import { useEffect, useState } from "react";

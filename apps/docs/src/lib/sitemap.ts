@@ -9,9 +9,9 @@
 
 import type { FileRouteTypes } from "@/routeTree.gen";
 
+import { getPageLocaleState } from "./locale-state";
 import { baseURL } from "./shared";
 import { blog, changelog, source } from "./source";
-import { getPageLocaleState } from "./translation-state";
 
 /** Routes that answer machines rather than readers, so no crawler indexes them. */
 const machineRoutes = [

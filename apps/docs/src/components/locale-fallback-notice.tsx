@@ -1,10 +1,10 @@
-// The explicit English-page action for unapproved or missing Chinese content.
+// The explicit English-page action for missing Chinese content.
 
 import { useRouterState } from "@tanstack/react-router";
 import { ArrowRight } from "lucide-react";
 import { useSyncExternalStore } from "react";
 
-import type { PageLocaleState } from "@/lib/translation-state";
+import type { PageLocaleState } from "@/lib/locale-state";
 import * as m from "@/paraglide/messages.js";
 
 function subscribeToHash(onChange: () => void) {
@@ -30,12 +30,12 @@ export function LocaleFallbackNotice({ state }: { state: PageLocaleState }) {
     }),
   });
   const hash = useSyncExternalStore(subscribeToHash, browserHash, serverHash);
-  if (!state.isPlaceholder) return null;
+  if (!state.isFallback) return null;
 
   const url = new URL(location.publicHref, "https://zotlit.invalid");
   url.hash = hash;
   // Preserve the arrival query: a V1 Chinese archive link stays Chinese even
-  // when the reader chooses the English V2 page. Readiness owns this notice.
+  // when the reader chooses the English V2 page. The missing locale file owns this notice.
   const englishHref = `${state.canonicalPath}${url.search}${url.hash}`;
 
   return (
