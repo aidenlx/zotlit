@@ -13,7 +13,7 @@ import { paraglideVitePlugin } from "@zotlit/paraglide-vite";
 
 import { paraglideOptions } from "./paraglide.config.js";
 import { agentSkillAssets } from "./src/lib/agent-skills.js";
-import { scanChinesePages } from "./src/lib/content-scan.js";
+import { chinesePagesPlugin } from "./src/lib/chinese-pages-plugin.js";
 import { renderHeadersFile } from "./src/lib/headers.js";
 import { createOgCardRenderer } from "./src/lib/og-card.js";
 import { ogCards } from "./src/lib/og-cards.js";
@@ -163,9 +163,6 @@ function machineAssets(): Plugin {
 }
 
 export default defineConfig(({ command }) => ({
-  define: {
-    __DOCS_CHINESE_PAGES__: JSON.stringify(scanChinesePages(packageRoot)),
-  },
   // `@base-ui/react` imports the named `useSyncExternalStoreWithSelector` from
   // a CommonJS shim. The dev server serves that file raw unless the pre-bundler
   // is told to convert it, and the missing named export stops hydration before
@@ -200,6 +197,7 @@ export default defineConfig(({ command }) => ({
     },
   },
   plugins: [
+    chinesePagesPlugin(packageRoot),
     fumadocsServerOnWorker(),
     paraglideVitePlugin({
       ...paraglideOptions,
