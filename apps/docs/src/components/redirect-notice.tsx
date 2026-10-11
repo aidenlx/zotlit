@@ -1,7 +1,7 @@
 // Callout for visitors who arrived through a redirect. Driven entirely by the
-// query contract documented in lib/v1-redirects.ts: `lang=zh-CN` picks the
-// Chinese wording, and `from=v1` + `src` add a link to the exact v1 page. The
-// route map stays server-side; this component reads the query and nothing else.
+// query contract documented in lib/v1-redirects.ts: `from=v1` + `src` identify
+// the exact v1 page, and `lang=zh-CN` selects its Chinese version. Translation
+// fallback has its own readiness-driven notice; a locale hint alone adds none.
 
 import { ArrowUpRight, X } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -14,7 +14,7 @@ import * as m from "@/paraglide/messages.js";
 interface Arrival {
   isZh: boolean;
   /** The v1 path the reader followed, when the redirect named one. */
-  v1Src: string | null;
+  v1Src: string;
 }
 
 function readArrival(search: string): Arrival | null {
@@ -28,7 +28,7 @@ function readArrival(search: string): Arrival | null {
       ? src
       : null;
 
-  return isZh || v1Src ? { isZh, v1Src } : null;
+  return v1Src ? { isZh, v1Src } : null;
 }
 
 /**
@@ -54,33 +54,23 @@ export function RedirectNotice({ className }: { className?: string }) {
         className,
       )}
     >
-      {v1Src ? (
-        <p className="text-fd-muted-foreground">
-          {m.docs_redirect_v1_notice()}
-        </p>
-      ) : isZh ? (
-        <p className="text-fd-muted-foreground" lang="zh-CN">
-          {m.docs_redirect_translation_pending({}, { locale: "zh-CN" })}
-        </p>
-      ) : null}
-      {v1Src && (
-        <a
-          href={`${zotlitLegacyUrl}${isZh ? "/zh-CN" : ""}${v1Src}`}
-          target="_blank"
-          rel="noreferrer noopener"
-          lang={isZh ? "zh-CN" : undefined}
-          className={cn(
-            "inline-flex w-fit items-center gap-1 font-medium text-fd-primary",
-            "underline decoration-fd-primary/40 underline-offset-[3px]",
-            "transition-[text-decoration-color] hover:decoration-fd-primary",
-          )}
-        >
-          {isZh
-            ? m.docs_redirect_original_page({}, { locale: "zh-CN" })
-            : m.docs_redirect_original_page()}
-          <ArrowUpRight aria-hidden className="size-[1.05em]" />
-        </a>
-      )}
+      <p className="text-fd-muted-foreground">{m.docs_redirect_v1_notice()}</p>
+      <a
+        href={`${zotlitLegacyUrl}${isZh ? "/zh-CN" : ""}${v1Src}`}
+        target="_blank"
+        rel="noreferrer noopener"
+        lang={isZh ? "zh-CN" : undefined}
+        className={cn(
+          "inline-flex w-fit items-center gap-1 font-medium text-fd-primary",
+          "underline decoration-fd-primary/40 underline-offset-[3px]",
+          "transition-[text-decoration-color] hover:decoration-fd-primary",
+        )}
+      >
+        {isZh
+          ? m.docs_redirect_original_page({}, { locale: "zh-CN" })
+          : m.docs_redirect_original_page()}
+        <ArrowUpRight aria-hidden className="size-[1.05em]" />
+      </a>
       <button
         type="button"
         aria-label={m.docs_dismiss_notice(

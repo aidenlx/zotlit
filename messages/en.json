@@ -2910,5 +2910,6 @@
   "query_view_filter_this_view": "This view",
   "query_view_filter_other_dataset": "The filters for all views apply only to views that show the same kind of rows as the first view.",
   "query_view_filter_error": "The filter has an error. The view shows the last results.",
-  "docs_locale_fallback": "Simplified Chinese content is not ready. English content is shown."
+  "docs_locale_fallback": "Simplified Chinese content is not ready. English content is shown.",
+  "docs_read_in_english": "Read in English"
 }
