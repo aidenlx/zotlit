@@ -122,7 +122,7 @@ ${items}
  */
 export async function getMarkdownEdition(
   { section, slugs }: MarkdownPage,
-  locale: SiteLocale = "en",
+  { locale = "en" }: { locale?: SiteLocale } = {},
 ): Promise<string | undefined> {
   switch (section) {
     case "docs": {
@@ -134,7 +134,7 @@ export async function getMarkdownEdition(
       if (slugs.length === 0) {
         return renderIndex(
           m.docs_nav_changelog({}, { locale }),
-          getChangelogPages(locale),
+          getChangelogPages({ locale }),
           (page) => `v${page.data.version}`,
         );
       }
@@ -153,7 +153,7 @@ export async function getMarkdownEdition(
       if (slugs.length === 0) {
         return renderIndex(
           m.docs_nav_blog({}, { locale }),
-          getBlogPages(locale),
+          getBlogPages({ locale }),
           (page) => page.data.title,
         );
       }

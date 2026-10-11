@@ -3,12 +3,17 @@ import { loader } from "fumadocs-core/source";
 import { uiTranslations } from "fumadocs-ui/i18n";
 import { describe, expect, it } from "vitest";
 
+import { getPackageRoot } from "@zotlit/scripts/package-roots";
+
 import { deLocalizeUrl, localizeUrl } from "@/paraglide/runtime.js";
 import { paraglideMiddleware } from "@/paraglide/server.js";
 
 import { blogs, changelogs, docs } from "./collections";
+import { fumadocsTranslations } from "./fumadocs-translations";
 import { i18n, isSiteLocale, unlocalizedPath } from "./i18n";
 import { getPageLocaleState } from "./locale-state";
+import { contentRouteUrl, suffixEditionUrl } from "./markdown-routes";
+import { prerenderPages } from "./prerender-pages";
 import { pageHead } from "./seo";
 import { blog, changelog, source } from "./source";
 import { breadcrumbListSchema } from "./structured-data";
@@ -64,6 +69,62 @@ describe("native locale infrastructure", () => {
   );
 });
 
+// Fumadocs uses the page-tree root name as the first search breadcrumb.
+describe("localized search breadcrumb roots", () => {
+  it.each([
+    { locale: "zh-CN", name: "文档" },
+    { locale: "en", name: "Docs" },
+  ])("uses the native root metadata in $locale", ({ locale, name }) => {
+    expect(source.getPageTree(locale).name).toBe(name);
+  });
+});
+
+// Published-route seam: each locale edition needs its own outage-safe asset.
+describe("prerendered locale editions", () => {
+  it("prerenders native editions and leaves missing-file fallback to the Worker", () => {
+    const packageRoot = getPackageRoot(import.meta.filename);
+    const paths = new Set(prerenderPages(packageRoot).map((page) => page.path));
+    for (const locale of i18n.languages) {
+      const prefix = locale === "en" ? "" : "/zh-CN";
+      for (const [section, collection] of [
+        ["docs", source],
+        ["blog", blog],
+        ["changelog", changelog],
+      ] as const) {
+        for (const page of collection.getPages(locale)) {
+          const native = locale === "en" || page.path.includes(".zh-CN.");
+          expect(paths.has(page.url), `HTML: ${page.url}`).toBe(native);
+          expect(
+            paths.has(
+              prefix + suffixEditionUrl({ section, slugs: page.slugs }),
+            ),
+          ).toBe(native);
+          expect(
+            paths.has(prefix + contentRouteUrl({ section, slugs: page.slugs })),
+          ).toBe(native);
+        }
+      }
+      for (const path of [
+        "",
+        "/community",
+        "/workbench",
+        "/blog",
+        "/changelog",
+      ]) {
+        expect(paths.has(prefix + path || "/")).toBe(true);
+      }
+    }
+    for (const path of [
+      "/api/search",
+      "/api/release-snapshot",
+      "/zh-CN/sitemap.xml",
+      "/zh-CN/llms.txt",
+    ]) {
+      expect(paths.has(path)).toBe(false);
+    }
+  });
+});
+
 // Translation can change an automatic heading slug while incoming links keep
 // their original fragment. The compiled table of contents is the reader seam.
 describe("translated documentation links", () => {
@@ -80,6 +141,12 @@ describe("translated documentation links", () => {
       page: changelogs.get("2.0.0-beta.4.zh-CN.mdx")!,
       anchor: "#obsidian-version-requirement",
     },
+    {
+      page: docs.getPage(
+        "how-to/migrate-from-pandoc-reference-list.zh-CN.mdx",
+      )!,
+      anchor: "#在-zotero-中确认文献引用标识",
+    },
   ])("retains the authored fragment $anchor", async ({ page, anchor }) => {
     await page.preload();
     const content = await page.load();
@@ -94,20 +161,22 @@ describe("translator-facing UI and formatting", () => {
     const { formatReleaseDate, formatReleaseInstant } =
       await import("./shared");
     expect(formatReleaseDate("2026-10-11")).toBe("October 11, 2026");
-    expect(formatReleaseDate("2026-10-11", "zh-CN")).toBe("2026年10月11日");
-    expect(formatReleaseInstant("2026-10-11T23:00:00Z", "zh-CN")).toBe(
+    expect(formatReleaseDate("2026-10-11", { locale: "zh-CN" })).toBe(
       "2026年10月11日",
     );
+    expect(
+      formatReleaseInstant("2026-10-11T23:00:00Z", { locale: "zh-CN" }),
+    ).toBe("2026年10月11日");
   });
-  it.each(["en", "zh-CN"])(
+  it.each(["en", "zh-CN"] as const)(
     "covers the installed native UI registry exactly in %s",
-    async (locale) => {
-      const catalog = await import(`#i18n/${locale}.json`);
-      expect(Object.keys(catalog.default.fumadocs).sort()).toEqual(
+    (locale) => {
+      const catalog = fumadocsTranslations(locale);
+      expect(Object.keys(catalog).sort()).toEqual(
         [...uiTranslations().keys].sort(),
       );
       expect(
-        Object.values(catalog.default.fumadocs).every(
+        Object.values(catalog).every(
           (translation) =>
             typeof translation === "string" && translation.trim().length > 0,
         ),
@@ -188,7 +257,7 @@ describe("English-only documentation", () => {
 
   it("advertises only the English edition when the Chinese file is missing", () => {
     const nativeChinesePages = new Set<string>();
-    const chinese = getPageLocaleState(path, "zh-CN", nativeChinesePages);
+    const chinese = getPageLocaleState(path, "zh-CN", { nativeChinesePages });
     expect(chinese).toEqual({
       contentLocale: "en",
       isFallback: true,
@@ -198,7 +267,7 @@ describe("English-only documentation", () => {
         { locale: "x-default", path },
       ],
     });
-    expect(getPageLocaleState(path, "en", nativeChinesePages)).toEqual({
+    expect(getPageLocaleState(path, "en", { nativeChinesePages })).toEqual({
       ...chinese,
       isFallback: false,
     });

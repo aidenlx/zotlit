@@ -3,13 +3,15 @@
 // The routes are listed here deliberately rather than discovered, so the build
 // stays explicit about what the asset layer answers without a Worker
 // invocation. `src/lib/content-scan.ts` supplies the content side of the list;
-// `src/http.test.ts` asserts the built site carries a prerendered file for
-// every page the loaders publish.
+// `i18n.test.ts` compares this list with the public loaders; the HTTP verifier
+// also checks the emitted native locale assets.
 //
-// English HTML pages are on the list; /zh-CN uses the locale-aware Worker.
+// Native HTML and Markdown editions in both locales are on the list.
+// A missing Chinese file retains its request-time English fallback notice.
 // The pages with GitHub data bake the facts
-// their build saw and refresh them client-side — so the Worker renders only
-// the search and release-fact endpoints and the Pre-release Docs fallback.
+// their build saw and refresh them client-side. The Worker renders search and
+// release-fact endpoints, missing-file locale fallbacks, and the Pre-release
+// Docs fallback.
 // @see docs/adr/0051-the-docs-site-prerenders-asset-first-and-falls-through-to-an-ssr-worker.md
 
 import { scanContent } from "./content-scan.js";
@@ -43,11 +45,7 @@ const seoPages: PrerenderPage[] = [
 function machineRoutePages(
   content: Record<MarkdownSection, { slugs: string[] }[]>,
 ): PrerenderPage[] {
-  const pages: PrerenderPage[] = [
-    ...seoPages,
-    { path: "/llms.txt" },
-    { path: "/llms-full.txt" },
-  ];
+  const pages: PrerenderPage[] = [];
 
   for (const section of markdownSections) {
     const slugSets = content[section].map((entry) => entry.slugs);
@@ -99,5 +97,17 @@ function htmlPages(
 export function prerenderPages(packageRoot: string): PrerenderPage[] {
   const content = scanContent(packageRoot);
 
-  return [...machineRoutePages(content), ...htmlPages(content)];
+  const chinese = scanContent(packageRoot, { locale: "zh-CN" });
+  return [
+    ...seoPages,
+    { path: "/llms.txt" },
+    { path: "/llms-full.txt" },
+    ...machineRoutePages(content),
+    ...htmlPages(content),
+    ...[...machineRoutePages(chinese), ...htmlPages(chinese)].map(
+      ({ path }) => ({
+        path: `/zh-CN${path === "/" ? "" : path}`,
+      }),
+    ),
+  ];
 }

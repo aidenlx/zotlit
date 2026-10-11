@@ -34,7 +34,9 @@ function byNewestDay(a: { date: string }, b: { date: string }) {
 }
 
 /** Changelog entries newest-first: day desc, semver desc as the tiebreak. */
-export function getChangelogPages(locale: SiteLocale = "en") {
+export function getChangelogPages({
+  locale = "en",
+}: { locale?: SiteLocale } = {}) {
   return changelog.getPages(locale).toSorted((a, b) => {
     const dayCompare = byNewestDay(a.data, b.data);
     if (dayCompare !== 0) return dayCompare;
@@ -49,7 +51,7 @@ export const blog = loader({
 });
 
 /** Blog posts newest-first: day desc, title asc as the tiebreak. */
-export function getBlogPages(locale: SiteLocale = "en") {
+export function getBlogPages({ locale = "en" }: { locale?: SiteLocale } = {}) {
   return blog.getPages(locale).toSorted((a, b) => {
     const dayCompare = byNewestDay(a.data, b.data);
     if (dayCompare !== 0) return dayCompare;

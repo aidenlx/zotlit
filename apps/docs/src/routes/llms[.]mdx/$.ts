@@ -18,7 +18,7 @@ export const Route = createFileRoute("/llms.mdx/$")({
       GET: async ({ params }) => {
         const locale = getLocale();
         const page = parseContentRoute(params._splat ?? "");
-        const edition = page && (await getMarkdownEdition(page, locale));
+        const edition = page && (await getMarkdownEdition(page, { locale }));
         if (edition === undefined) {
           // A changelog version this build never published still has an
           // edition on Pre-release Docs.

@@ -21,7 +21,10 @@ import { RedirectNotice } from "./redirect-notice";
 
 const nativeChinesePages = new Set(["/docs/native"]);
 
-function mount(href: string, locale: SiteLocale = "zh-CN") {
+function mount(
+  href: string,
+  { locale = "zh-CN" }: { locale?: SiteLocale } = {},
+) {
   using cleanup = new DisposableStack();
   const previousUrl = window.location.href;
   cleanup.defer(() => window.history.replaceState(null, "", previousUrl));
@@ -67,11 +70,9 @@ function mount(href: string, locale: SiteLocale = "zh-CN") {
   const tree = (
     <RouterContextProvider router={router}>
       <LocaleFallbackNotice
-        state={getPageLocaleState(
-          router.state.location.pathname,
-          locale,
+        state={getPageLocaleState(router.state.location.pathname, locale, {
           nativeChinesePages,
-        )}
+        })}
       />
       <RedirectNotice />
     </RouterContextProvider>
@@ -221,7 +222,7 @@ describe("LocaleFallbackNotice", () => {
   it.each(["/docs/pending", "/docs/pending?lang=zh-CN"])(
     "shows no fallback on English pages: %s",
     (href) => {
-      using view = mount(href, "en");
+      using view = mount(href, { locale: "en" });
       expect(view.container.textContent).toBe("");
     },
   );
@@ -236,7 +237,7 @@ describe("LocaleFallbackNotice", () => {
         .querySelector('[role="note"] a')!
         .getAttribute("href")!;
     }
-    using english = mount(englishHref, "en");
+    using english = mount(englishHref, { locale: "en" });
     expect(english.container.querySelector('[role="note"]')).toBeNull();
     expect(
       [...english.container.querySelectorAll("p")].map(

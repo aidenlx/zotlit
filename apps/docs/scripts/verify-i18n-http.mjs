@@ -607,6 +607,45 @@ async function main() {
       sha256: hash(await readFile(join(clientRoot, file))),
     })),
   );
+  // SSR can conceal a missing locale asset. Inspect the build independently so
+  // a native Chinese edition survives Worker quota exhaustion or an outage.
+  const nativeAssets = [];
+  for (const page of pages.filter((path) => chinesePages.has(path))) {
+    const localized = chinesePath(page);
+    const htmlFile = join(clientRoot, localized.slice(1), "index.html");
+    const html = existsSync(htmlFile) ? await readFile(htmlFile, "utf8") : null;
+    const metadata = html === null ? null : htmlMetadata(html);
+    check("assets", `${localized} native HTML asset`, {
+      passed:
+        metadata?.lang === "zh-CN" &&
+        metadata.canonicals.length === 1 &&
+        metadata.canonicals[0] === new URL(localized, publicOrigin).href,
+      actual: metadata,
+      expected: {
+        lang: "zh-CN",
+        canonical: new URL(localized, publicOrigin).href,
+      },
+    });
+    nativeAssets.push({
+      path: localized,
+      sha256: html === null ? null : hash(html),
+    });
+    if (!/^\/(?:docs|blog|changelog)(?:\/|$)/.test(page)) continue;
+    for (const path of [
+      `${localized}.md`,
+      `/zh-CN/llms.mdx${page}/content.md`,
+    ]) {
+      const file = join(clientRoot, path.slice(1));
+      const body = existsSync(file) ? await readFile(file, "utf8") : null;
+      check("assets", `${path} native Markdown asset`, {
+        passed:
+          body !== null && body.trim().length > 0 && !/<html\b/i.test(body),
+        actual: body === null ? "missing" : `${body.length} characters`,
+        expected: "authored Markdown asset",
+      });
+      nativeAssets.push({ path, sha256: body === null ? null : hash(body) });
+    }
+  }
   evidence.inventory = {
     redirects: rules,
     redirectFileSha256: hash(redirectText),
@@ -619,6 +658,7 @@ async function main() {
     ),
     scriptSha256: hash(await readFile(fileURLToPath(import.meta.url))),
     html: builtHtml,
+    nativeAssets,
     expectedHtml,
     expectedRedirects,
     chinesePages: [...chinesePages].sort(),
@@ -913,6 +953,17 @@ async function main() {
         passed: Array.isArray(data) && data.length > 0,
         actual: Array.isArray(data) ? data.length : data,
         expected: "non-empty array",
+      });
+      const pageResults = Array.isArray(data)
+        ? data.filter((item) => item.type === "page")
+        : [];
+      const rootName = locale === "zh-CN" ? "文档" : "Docs";
+      check("search", `${locale ?? "default"} root breadcrumb locale`, {
+        passed:
+          pageResults.length > 0 &&
+          pageResults.every((page) => page.breadcrumbs?.[0] === rootName),
+        actual: pageResults.map((page) => page.breadcrumbs?.[0]),
+        expected: rootName,
       });
       const urls = Array.isArray(data)
         ? data.map((item) => item.url).filter((url) => typeof url === "string")

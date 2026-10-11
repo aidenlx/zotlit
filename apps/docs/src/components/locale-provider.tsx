@@ -7,12 +7,12 @@ import {
 import { FrameworkProvider } from "fumadocs-core/framework";
 import type { Framework } from "fumadocs-core/framework";
 import { i18nProvider, uiTranslations } from "fumadocs-ui/i18n";
-import type { Translations } from "fumadocs-ui/i18n";
 import { RootProvider } from "fumadocs-ui/provider/base";
 import { useMemo, useRef } from "react";
 import type { ReactNode } from "react";
 
 import { DocsImage } from "@/components/docs-image";
+import { fumadocsTranslations } from "@/lib/fumadocs-translations";
 import { i18n } from "@/lib/i18n";
 import {
   deLocalizeHref,
@@ -20,17 +20,6 @@ import {
   isLocale,
   setLocale,
 } from "@/paraglide/runtime.js";
-
-import englishUI from "#i18n/en.json";
-import chineseUI from "#i18n/zh-CN.json";
-
-const translations = i18n
-  .translations()
-  .extend(uiTranslations())
-  .add({
-    en: englishUI.fumadocs satisfies Translations,
-    "zh-CN": chineseUI.fumadocs satisfies Translations,
-  });
 
 /**
  * Fumadocs' TanStack adapter with the public pathname. Router rewrites keep
@@ -88,6 +77,13 @@ const framework: Framework = {
 
 /** Native language controls and search, with Paraglide owning locale changes. */
 export function LocaleProvider({ children }: { children: ReactNode }) {
+  const translations = i18n
+    .translations()
+    .extend(uiTranslations())
+    .add({
+      en: fumadocsTranslations("en"),
+      "zh-CN": fumadocsTranslations("zh-CN"),
+    });
   return (
     <FrameworkProvider {...framework}>
       <RootProvider

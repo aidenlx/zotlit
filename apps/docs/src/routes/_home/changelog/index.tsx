@@ -23,7 +23,7 @@ import { getLocale } from "@/paraglide/runtime.js";
 const listReleases = createServerFn({ method: "GET" })
   .validator(validateSiteLocale)
   .handler(({ data: locale }) =>
-    getChangelogPages(locale).map((page) => ({
+    getChangelogPages({ locale }).map((page) => ({
       path: page.path,
       version: page.data.version,
       description: page.data.description,
@@ -87,7 +87,7 @@ function ChangelogIndex() {
             >
               <div className="text-left md:text-right">
                 <time className="mb-2 block font-mono text-xs font-medium tracking-widest text-fd-muted-foreground uppercase">
-                  {formatReleaseDate(release.date, getLocale())}
+                  {formatReleaseDate(release.date, { locale: getLocale() })}
                 </time>
                 <span
                   className={cn(

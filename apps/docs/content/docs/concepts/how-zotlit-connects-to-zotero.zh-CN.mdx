@@ -29,7 +29,7 @@ Linux 文件系统上的首选方案。
 在不支持文件克隆时的默认回退模式。由于该模式仅读取主数据库文件，尚未写入主文件的最新变动会暂留在
 Zotero 独立的预写式日志（WAL）中，直到 Zotero 触发检查点写入。
 
-Companion 插件通过自动将最新更改写入主文件，确保 ZotLit 随时能够读取到最新数据。其自带的 <UiLabel name={m["zotero.prefs_wal_checkpoint.label"]()} /> 设置项默认处于开启状态。这一数据库检查点功能无需开启[即时同步更新](/docs/how-to/set-up-live-updates)即可独立稳定运行。
+Companion通过自动将最新更改写入主文件，确保 ZotLit 随时能够读取到最新数据。其自带的 <UiLabel name={m["zotero.prefs_wal_checkpoint.label"]()} /> 设置项默认处于开启状态。这一数据库检查点功能无需开启[即时同步更新](/docs/how-to/set-up-live-updates)即可独立稳定运行。
 
 <UiLabel name={m.settings_db_read_mode_copy()} />
 可以在任何文件系统上正常运作，并且同样能读取到最新变动。但由于其每次都需要完整复制整个数据库文件，因此速度较慢且会消耗额外的磁盘空间，尤其是在大型
@@ -47,7 +47,7 @@ Zotero 的个人配置文件目录（profile directory）和数据目录（data 
 
 ## ZotLit Companion 配套插件
 
-Companion 插件在 Zotero 内部扩展了右键菜单操作。这些动作包括：打开、更新或导入笔记，以及在 Obsidian 中直接打开条目的 PDF。Companion 还可以向 Obsidian 主动推送即时变动事件。
+Companion在 Zotero 内部扩展了右键菜单操作。这些动作包括：打开、更新或导入笔记，以及在 Obsidian 中直接打开条目的 PDF。Companion 还可以向 Obsidian 主动推送即时变动事件。
 
 Companion 确保 Zotero 的主数据库文件随时处于最新状态。Zotero 会使用预写式日志（WAL）来暂存最新变动，随后再批量刷写至主文件。Companion 会在 Zotero 更新文献库后主动要求 Zotero 将更改立即刷写至主库文件。此行为默认开启，且无需运行任何后台服务器。
 
@@ -118,7 +118,7 @@ Zotero 关闭时，ZotLit 仍能读取数据库。在 Zotero 中安装 Companion
   />
   <Card
     title="安装 ZotLit Companion"
-    description="下载并安装必备的 Zotero 插件。"
+    description="下载并安装必备的 ZotLit Companion（Zotero 配套插件）。"
     href="/docs/install-companion"
   />
   <Card

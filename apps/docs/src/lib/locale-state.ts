@@ -1,3 +1,5 @@
+import { htmlPagePath } from "./markdown-routes";
+
 export interface PageLocaleState {
   contentLocale: "en" | "zh-CN";
   isFallback: boolean;
@@ -29,21 +31,7 @@ function htmlPath(path: string): string {
   const segments = pathname.split("/").filter(Boolean);
   if (segments[0] === "en" || isChinese(segments[0] ?? "")) segments.shift();
 
-  if (segments[0] === "llms.mdx" && segments.at(-1) === "content.md") {
-    segments.shift();
-    segments.pop();
-  } else if (
-    ["docs", "blog", "changelog"].includes(
-      segments.length === 1
-        ? segments[0]!.replace(/\.md$/, "")
-        : (segments[0] ?? ""),
-    ) &&
-    segments.at(-1)?.endsWith(".md")
-  ) {
-    segments[segments.length - 1] = segments.at(-1)!.slice(0, -3);
-  }
-
-  return `/${segments.filter(Boolean).join("/")}`;
+  return htmlPagePath(`/${segments.filter(Boolean).join("/")}`);
 }
 
 /**
@@ -53,7 +41,9 @@ function htmlPath(path: string): string {
 export function getPageLocaleState(
   path: string,
   locale: string,
-  nativeChinesePages: ReadonlySet<string> = chinesePages,
+  {
+    nativeChinesePages = chinesePages,
+  }: { nativeChinesePages?: ReadonlySet<string> } = {},
 ): PageLocaleState {
   const englishPath = htmlPath(path);
   const hasChinese =

@@ -39,7 +39,7 @@ const sections: Record<MarkdownSection, { dir: string; files: string }> = {
  */
 export function scanContent(
   packageRoot: string,
-  locale: "en" | "zh-CN" = "en",
+  { locale = "en" }: { locale?: "en" | "zh-CN" } = {},
 ): Record<MarkdownSection, ContentEntry[]> {
   return Object.fromEntries(
     Object.entries(sections).map(([section, { dir, files }]) => {
@@ -60,7 +60,7 @@ export function scanContent(
 
 /** Native Chinese pages only; an English fallback file is never a Chinese edition. */
 export function scanChinesePages(packageRoot: string): string[] {
-  return Object.entries(scanContent(packageRoot, "zh-CN")).flatMap(
+  return Object.entries(scanContent(packageRoot, { locale: "zh-CN" })).flatMap(
     ([section, pages]) =>
       pages.map(({ slugs }) => `/${[section, ...slugs].join("/")}`),
   );

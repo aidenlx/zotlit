@@ -10,6 +10,10 @@ export interface HeaderRule {
 
 export function buildHeaderRules(): HeaderRule[] {
   return [
+    // Native Chinese assets keep their language when served without the Worker.
+    // Missing-file fallbacks have no asset and receive English headers from SSR.
+    { source: "/zh-CN", headers: { "Content-Language": "zh-CN" } },
+    { source: "/zh-CN/*", headers: { "Content-Language": "zh-CN" } },
     /**
      * giscus loads the custom comment themes (public/giscus/*.css) into its
      * cross-origin iframe via `<link crossorigin="anonymous">`, so they must

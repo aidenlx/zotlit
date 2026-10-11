@@ -4,6 +4,9 @@ date: "2026-08-10"
 description: "参考文献侧边栏、正文引文格式化渲染、包含引文的文档导出"
 ---
 
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
 ## 版本亮点
 
 ![实时预览中将文献笔记双链渲染为格式化引文簇，右侧参考文献侧边栏展示对应的参考文献列表条目](/img/changelog/wikilink-citation-runs.webp)
@@ -46,7 +49,7 @@ description: "参考文献侧边栏、正文引文格式化渲染、包含引文
 
 ### 原生 Pandoc CLI 工作流
 
-支持在 Obsidian 外部通过独立安装的原生 Pandoc 转换笔记，同时将文献笔记双链正确转换为学术引文。引文设置页面中的**保存集成文件**操作会生成与当前插件版本匹配的 Lua 过滤器（`zotlit-cite.lua`）与 Pandoc 默认配置文件（`zotlit.yaml`）。Lua 过滤器通过新增的 `zotlit:resolve` 命令，将每个双链解析为对应的文献引用标识；支持 Obsidian 命令行接口的 CLI 工具（例如 `obsidian-cli`）可以调用该命令。
+支持在 Obsidian 外部通过独立安装的原生 Pandoc 转换笔记，同时将文献笔记双链正确转换为学术引文。引文设置页面中的<UiLabel name={m.settings_citation_pandoc_files_save()} />操作会生成与当前插件版本匹配的 Lua 过滤器（`zotlit-cite.lua`）与 Pandoc 默认配置文件（`zotlit.yaml`）。Lua 过滤器通过新增的 `zotlit:resolve` 命令，将每个双链解析为对应的文献引用标识；支持 Obsidian 命令行接口的 CLI 工具（例如 `obsidian-cli`）可以调用该命令。
 
 另有两条配套命令支持此工作流：`zotlit:pandoc-files` 以 JSON 形式返回集成文件对，`zotlit:pandoc-guide` 打印配置与排错指南。新增的 `zotlit-pandoc` skill 能够引导 AI 智能体完成同一工作流：配置、刷新、运行原生导出，以及诊断失败的运行。
 

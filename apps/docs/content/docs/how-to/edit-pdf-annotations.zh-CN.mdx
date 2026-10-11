@@ -226,7 +226,7 @@ ZotLit 会记住您选择的颜色和宽度，并在其他 PDF 中沿用。每�
 3. 选择 <UiLabel name={m.annot_view_menu_delete()} />。
 4. 在确认对话框中，选择 <UiLabel name={m.annot_view_delete_confirm_action()} />。
 
-批注会从 Zotero 中删除。只要 PDF 仍在 Obsidian 中打开，您就可以撤销删除，但恢复的批注会获得新的 Zotero 键。参见[撤销与重做修改](#undo-and-redo-a-change)。
+批注会从 Zotero 中删除。只要 PDF 仍在 Obsidian 中打开，您就可以撤销删除，但恢复的批注会获得新的 Zotero 标识符。参见[撤销与重做修改](#undo-and-redo-a-change)。
 
 若要同时删除多条批注，请在标注视图中选中它们的卡片。然后按 `Delete` 或 `Backspace`，或打开其中一张已选卡片的 <UiLabel name={m.annot_view_more_tooltip()} /> 菜单并选择删除项，例如 <UiLabel name={m.annot_view_menu_delete_group({ count: 3 })} />。确认后，一次撤销即可恢复整组批注。多选卡片的方法参见[使用标注视图](/docs/how-to/use-annotation-view#select-several)。
 
@@ -269,7 +269,7 @@ ZotLit 会记住您选择的颜色和宽度，并在其他 PDF 中沿用。每�
 
 ### 恢复的批注会获得新键 [#a-restored-annotation-gets-a-new-key]
 
-Zotero 无法用原来的键恢复已删除的批注。撤销删除，或重做曾被撤销的创建操作时，Zotero 会重新创建批注，保留其颜色、评注、文字和位置，但分配一个新的 Zotero 键。
+Zotero 无法用原来的键恢复已删除的批注。撤销删除，或重做曾被撤销的创建操作时，Zotero 会重新创建批注，保留其颜色、评注、文字和位置，但分配一个新的 Zotero 标识符。
 
 笔记中指向旧键的链接、摘录图片和 `obsidian://` URI 将无法继续解析。ZotLit 不会为此显示通知。请将恢复的批注重新拉取到笔记中，或手动更新键。
 

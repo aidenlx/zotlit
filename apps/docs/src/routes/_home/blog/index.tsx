@@ -13,7 +13,7 @@ import { getLocale } from "@/paraglide/runtime.js";
 const listPosts = createServerFn({ method: "GET" })
   .validator(validateSiteLocale)
   .handler(({ data: locale }) =>
-    getBlogPages(locale).map((page) => ({
+    getBlogPages({ locale }).map((page) => ({
       slug: page.slugs[0] ?? "",
       title: page.data.title,
       description: page.data.description,
@@ -60,7 +60,7 @@ function BlogIndex() {
           >
             <div className="text-left md:text-right">
               <time className="block font-mono text-xs font-medium tracking-widest text-fd-muted-foreground uppercase">
-                {formatReleaseDate(post.date, getLocale())}
+                {formatReleaseDate(post.date, { locale: getLocale() })}
               </time>
               <p className="text-[14.5px] text-fd-muted-foreground italic">
                 {m.docs_blog_author({ author: post.author })}
