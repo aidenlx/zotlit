@@ -30,6 +30,8 @@ import { Route as HomeBlogIndexRouteImport } from './routes/_home/blog/index'
 import { Route as HomeBlogSlugRouteImport } from './routes/_home/blog/$slug'
 import { Route as HomeChangelogIndexRouteImport } from './routes/_home/changelog/index'
 import { Route as HomeChangelogVersionRouteImport } from './routes/_home/changelog/$version'
+import { Route as HomeTemplatesIndexRouteImport } from './routes/_home/templates/index'
+import { Route as HomeTemplatesKindSlugRouteImport } from './routes/_home/templates/$kind.$slug'
 
 const HomeRouteRoute = HomeRouteRouteImport.update({
   id: '/_home',
@@ -135,6 +137,16 @@ const HomeChangelogVersionRoute = HomeChangelogVersionRouteImport.update({
   path: '/changelog/$version',
   getParentRoute: () => HomeRouteRoute,
 } as any)
+const HomeTemplatesIndexRoute = HomeTemplatesIndexRouteImport.update({
+  id: '/templates/',
+  path: '/templates/',
+  getParentRoute: () => HomeRouteRoute,
+} as any)
+const HomeTemplatesKindSlugRoute = HomeTemplatesKindSlugRouteImport.update({
+  id: '/templates/$kind/$slug',
+  path: '/templates/$kind/$slug',
+  getParentRoute: () => HomeRouteRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof HomeIndexRoute
@@ -157,6 +169,8 @@ export interface FileRoutesByFullPath {
   '/changelog/$version': typeof HomeChangelogVersionRoute
   '/blog/': typeof HomeBlogIndexRoute
   '/changelog/': typeof HomeChangelogIndexRoute
+  '/templates/': typeof HomeTemplatesIndexRoute
+  '/templates/$kind/$slug': typeof HomeTemplatesKindSlugRoute
 }
 export interface FileRoutesByTo {
   '/llms-full.txt': typeof LlmsFullDottxtRoute
@@ -178,6 +192,8 @@ export interface FileRoutesByTo {
   '/changelog/$version': typeof HomeChangelogVersionRoute
   '/blog': typeof HomeBlogIndexRoute
   '/changelog': typeof HomeChangelogIndexRoute
+  '/templates': typeof HomeTemplatesIndexRoute
+  '/templates/$kind/$slug': typeof HomeTemplatesKindSlugRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -202,6 +218,8 @@ export interface FileRoutesById {
   '/_home/changelog/$version': typeof HomeChangelogVersionRoute
   '/_home/blog/': typeof HomeBlogIndexRoute
   '/_home/changelog/': typeof HomeChangelogIndexRoute
+  '/_home/templates/': typeof HomeTemplatesIndexRoute
+  '/_home/templates/$kind/$slug': typeof HomeTemplatesKindSlugRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -226,6 +244,8 @@ export interface FileRouteTypes {
     | '/changelog/$version'
     | '/blog/'
     | '/changelog/'
+    | '/templates/'
+    | '/templates/$kind/$slug'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/llms-full.txt'
@@ -247,6 +267,8 @@ export interface FileRouteTypes {
     | '/changelog/$version'
     | '/blog'
     | '/changelog'
+    | '/templates'
+    | '/templates/$kind/$slug'
   id:
     | '__root__'
     | '/_home'
@@ -270,6 +292,8 @@ export interface FileRouteTypes {
     | '/_home/changelog/$version'
     | '/_home/blog/'
     | '/_home/changelog/'
+    | '/_home/templates/'
+    | '/_home/templates/$kind/$slug'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -437,6 +461,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HomeChangelogVersionRouteImport
       parentRoute: typeof HomeRouteRoute
     }
+    '/_home/templates/': {
+      id: '/_home/templates/'
+      path: '/templates'
+      fullPath: '/templates/'
+      preLoaderRoute: typeof HomeTemplatesIndexRouteImport
+      parentRoute: typeof HomeRouteRoute
+    }
+    '/_home/templates/$kind/$slug': {
+      id: '/_home/templates/$kind/$slug'
+      path: '/templates/$kind/$slug'
+      fullPath: '/templates/$kind/$slug'
+      preLoaderRoute: typeof HomeTemplatesKindSlugRouteImport
+      parentRoute: typeof HomeRouteRoute
+    }
   }
 }
 
@@ -447,6 +485,8 @@ interface HomeRouteRouteChildren {
   HomeChangelogVersionRoute: typeof HomeChangelogVersionRoute
   HomeBlogIndexRoute: typeof HomeBlogIndexRoute
   HomeChangelogIndexRoute: typeof HomeChangelogIndexRoute
+  HomeTemplatesIndexRoute: typeof HomeTemplatesIndexRoute
+  HomeTemplatesKindSlugRoute: typeof HomeTemplatesKindSlugRoute
 }
 
 const HomeRouteRouteChildren: HomeRouteRouteChildren = {
@@ -456,6 +496,8 @@ const HomeRouteRouteChildren: HomeRouteRouteChildren = {
   HomeChangelogVersionRoute: HomeChangelogVersionRoute,
   HomeBlogIndexRoute: HomeBlogIndexRoute,
   HomeChangelogIndexRoute: HomeChangelogIndexRoute,
+  HomeTemplatesIndexRoute: HomeTemplatesIndexRoute,
+  HomeTemplatesKindSlugRoute: HomeTemplatesKindSlugRoute,
 }
 
 const HomeRouteRouteWithChildren = HomeRouteRoute._addFileChildren(

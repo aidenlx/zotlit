@@ -1,3 +1,4 @@
+import { asMarkdown } from "fumadocs-core/server";
 import { Fragment } from "react";
 import type { ReactNode } from "react";
 
@@ -9,6 +10,8 @@ export function Message({
   text: string;
   slots: Record<string, ReactNode>;
 }) {
+  // A Markdown edition renders the same text and slots, each slot in its own Markdown form.
+  asMarkdown();
   let parts: ReactNode[] = [text];
   for (const [name, node] of Object.entries(slots)) {
     let occurrence = 0;

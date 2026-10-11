@@ -1,0 +1,166 @@
+// The Directory Entry format: entry kinds, facet vocabularies, and the schema of an entry's `entry.md` metadata.
+
+import * as v from "valibot";
+
+import ir from "@zotlit/db/contract/ir.json" with { type: "json" };
+
+/**
+ * Every kind of Directory Entry, with the folder its entries live in and the
+ * file name of the artifact a reader imports or copies.
+ */
+export const ENTRY_KINDS = {
+  profile: {
+    folder: "profiles",
+    artifact: (slug: string) => `zotlit-profile.${slug}.md`,
+  },
+  partial: {
+    folder: "partials",
+    artifact: (slug: string) => `zotlit-partial.${slug}.md`,
+  },
+  citation: {
+    folder: "citations",
+    artifact: () => "zotlit-citation.md",
+  },
+  "note-name": {
+    folder: "note-names",
+    artifact: () => "note-name.liquid",
+  },
+  property: {
+    folder: "properties",
+    artifact: () => "property.yaml",
+  },
+} as const satisfies Record<
+  string,
+  { folder: string; artifact: (slug: string) => string }
+>;
+
+export type EntryKind = keyof typeof ENTRY_KINDS;
+
+/**
+ * Profile entries are ready-made setups; every other kind is a recipe for a
+ * reader who customizes.
+ */
+export type EntryLevel = "ready-to-use" | "customize";
+
+/**
+ * The research tasks a reader searches by, in the order the index lists them.
+ * The site's messages name each one.
+ */
+export const RESEARCH_TASKS = [
+  "general-reading",
+  "literature-review",
+  "close-reading",
+  "reading-books",
+  "archival-research",
+  "teaching",
+  "writing",
+] as const;
+
+export type ResearchTask = (typeof RESEARCH_TASKS)[number];
+
+/**
+ * What a note or recipe offers, as a reader filters for it, in the order the
+ * index lists them. The site's messages name each one.
+ */
+export const ENTRY_FEATURES = [
+  "source-links",
+  "abstract",
+  "page-links",
+  "comments",
+  "images",
+  "color-highlights",
+  "grouped-by-color",
+  "own-notes",
+  "prompts",
+  "properties",
+  "child-notes",
+  "related-items",
+  "block-references",
+  "tasks",
+  "citations",
+] as const;
+
+export type EntryFeature = (typeof ENTRY_FEATURES)[number];
+
+/** The Root a Shared Partial renders with, which decides where it can be called. */
+export const PARTIAL_CONTEXTS = ["note", "annotation", "citation"] as const;
+
+export type PartialContext = (typeof PARTIAL_CONTEXTS)[number];
+
+/** Every Zotero item type the current template contract knows. */
+export const ITEM_TYPES: readonly string[] = Object.keys(ir.itemTypes);
+
+/** The most words an entry's one-line summary holds. */
+export const SUMMARY_WORD_LIMIT = 30;
+
+/** The most words an entry's Details, the body of `entry.md`, hold. */
+export const DETAILS_WORD_LIMIT = 120;
+
+/**
+ * The words of a Markdown text, as a reader counts them: a table pipe, a list
+ * marker, or a rule made of symbols only is not a word.
+ */
+export function wordCount(markdown: string): number {
+  return markdown.split(/\s+/).filter((token) => /[\p{L}\p{N}]/u.test(token))
+    .length;
+}
+
+const text = v.pipe(v.string(), v.trim(), v.nonEmpty());
+
+const facets = {
+  tasks: v.pipe(v.array(v.picklist(RESEARCH_TASKS)), v.nonEmpty()),
+  /** Item types the entry is made for; an empty list means any item type. */
+  itemTypes: v.optional(v.array(v.picklist(ITEM_TYPES)), []),
+  features: v.optional(v.array(v.picklist(ENTRY_FEATURES)), []),
+  /** The problems the entry solves, in the reader's own words. */
+  problems: v.pipe(v.array(text), v.nonEmpty()),
+  /** Search words, including ZotLit v1 and Zotero Integration vocabulary. */
+  keywords: v.optional(v.array(text), []),
+  recommended: v.optional(v.boolean(), false),
+  /** Who the entry is for. */
+  audience: text,
+  /** What the entry asks of the reader before it works. */
+  effort: text,
+};
+
+/** What a recipe states for itself; a Profile states it in its manifest. */
+const recipe = {
+  title: text,
+  summary: text,
+  minAppVersion: text,
+};
+
+/**
+ * One property entry's result for a Directory Sample: the properties it
+ * writes, by name. A property the mapping leaves out is one the entry makes
+ * absent for that sample.
+ */
+const expectedProperties = v.record(
+  v.string(),
+  v.record(v.string(), v.unknown()),
+);
+
+export const ENTRY_METADATA_SCHEMAS = {
+  profile: v.strictObject(facets),
+  partial: v.strictObject({
+    ...facets,
+    ...recipe,
+    context: v.picklist(PARTIAL_CONTEXTS),
+    /**
+     * The Liquid a Profile writes to call the partial, when that is more than
+     * `{% render "<slug>" with zt as zt -%}`.
+     */
+    call: v.optional(text),
+  }),
+  citation: v.strictObject({ ...facets, ...recipe }),
+  "note-name": v.strictObject({ ...facets, ...recipe }),
+  property: v.strictObject({
+    ...facets,
+    ...recipe,
+    expected: v.optional(expectedProperties, {}),
+  }),
+} as const satisfies Record<EntryKind, v.GenericSchema>;
+
+export type EntryMetadata<K extends EntryKind = EntryKind> = v.InferOutput<
+  (typeof ENTRY_METADATA_SCHEMAS)[K]
+>;

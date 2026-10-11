@@ -1,0 +1,21 @@
+key: first-author
+merge: replace
+value:
+  {
+    "$if": "len(zt.authors) > 0",
+    "then":
+      {
+        "$let": { "author": { "$eval": "zt.authors[0]" } },
+        "in":
+          {
+            "$if": "author.literal",
+            "then": { "$eval": "author.literal" },
+            "else":
+              {
+                "$if": "author.given",
+                "then": "${author.family}, ${author.given}",
+                "else": { "$eval": "author.family" },
+              },
+          },
+      },
+  }

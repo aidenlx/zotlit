@@ -178,6 +178,65 @@ The changelog's sibling in the `_home` route group:
   mono-uppercase meta line, hairline, then `ztProse` body.
 - **Post tail**: `FooterCards` prev/next, then comments (Giscus).
 
+### Template Directory (`/templates`)
+
+The blog's sibling in the `_home` route group, built around finding a note
+that fits a research task:
+
+- **Index**: a two-column hero like the landing's: orange mono-uppercase
+  eyebrow, serif headline, and italic lede on the left, the recommended entries
+  on the right: each recommended profile as a landing-style paper card (hard
+  offset shadow, accent bookmark tab), and the other recommended entries as
+  square serif title links under a mono-uppercase kind label, beside the card
+  from `sm` to `lg`. A square search box leads a two-column body: a facet rail of
+  mono-uppercase facet headings over sans checkbox rows with mono counts, and
+  the results grouped by level under serif group headings, each row a mono kind
+  label, serif title and summary, and a muted facet line. Under `lg` the rail
+  folds behind a disclosure button, lays its facets out in two columns, and
+  closes with an ink "Show N entries" button. Closes on `SiteFooter`.
+- **Profile entry page**: a two-column page from `lg`. The text column holds
+  the mono-uppercase "Ready-made note · for …" eyebrow, the serif title, the
+  italic summary, square chips (which sources use it, and the version it
+  needs), one square ink **Add to ZotLit** button, three numbered steps, a muted
+  fallback line with an underlined **Copy it** link, a **Color key** for a
+  Profile that gives colors meanings (a mono-uppercase heading over a
+  two-column grid of square swatches from `sm`, each with a border in the text
+  color so pale and dark colors show in both themes, and an underlined link to
+  the page that changes the meanings), and a folded mono-uppercase
+  **Details** section that holds the description. The result column holds the
+  example switcher (a mono-uppercase "See it with" label over the kit's
+  segmented track: it wraps from `sm`, and scrolls sideways on a phone) over
+  the paper sheet of the example note. Its properties come first: the ones the
+  Profile sets sit on the accent tint with a 3px primary bar and a semibold
+  key, the two ZotLit adds to every note (`zotero-key`, `zotlit-profile`) sit
+  on the muted tint in muted text, and a small key under them names each mark.
+  Under `lg`
+  the example follows the steps, then **Details**, and the folded mono-uppercase
+  **Source · for advanced users** section comes last. Its tabs (a segmented
+  track that scrolls sideways on a phone) are the Profile file, one for each
+  partial it packs, and the raw Markdown of the example shown. The file tab
+  opens on the note part in a scrolling code box, with a segmented control for
+  the whole file and outline **Copy profile** and **Download file** buttons; a
+  partial tab holds its summary and a link to its page.
+- **Part entry page** (partials, property rules, note names, and citation
+  text): `← Template directory` crumb, a mono-uppercase eyebrow that names the
+  kind and what it changes ("Part of a note · changes a look you have"), serif
+  title, italic summary held to 60ch, and a mono-uppercase version line. One
+  column of 56rem holds, in order: **What it makes** (the result for each
+  example item), **How to use it** (the "This changes a look that you already
+  have" line, one square ink Copy button, then the steps in `ztProse` held to
+  72ch), the partials it needs, and two folds, **Details** (the description) and
+  **Source · for advanced users**. The Source fold shows the entry's own file in
+  a scrolling code box under an outline **Download file** button; a partial adds
+  the call a look writes, under a mono-uppercase "Call it from a look" label.
+  Both folds share one component (`fold.tsx`) with the Profile page.
+  The samples take the full column: paper sheets in the Workbench reading view
+  with callouts in Obsidian's built-in callout colors; a property recipe shows a
+  table of sample items when it writes up to three properties, and one sheet per
+  sample item when it writes more. The sample-item tabs and the Preview/Markdown
+  toggle of a partial share the kit's square segmented track (`ui/tabs.tsx`): 32 px segments
+  on a muted track, the active one in ink.
+
 ### Docs content column
 
 - Title: serif, medium weight, balanced.

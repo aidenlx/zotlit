@@ -12,7 +12,6 @@
 import { customAlphabet } from "nanoid";
 import * as v from "valibot";
 
-import { buildImportProfileProtocolUrl } from "@zotlit/protocol";
 import {
   expectedProfileRevisionSchema,
   itemSnapshotSchema,
@@ -171,14 +170,6 @@ function clearRecord(storage: () => Storage, key: string): void {
   } catch {
     // Nothing was kept, so nothing is left to remove.
   }
-}
-
-/** Copies the exact document before handing control to the native import sheet. */
-export async function openProfileInObsidian(source: string): Promise<void> {
-  await navigator.clipboard.writeText(source);
-  const link = document.createElement("a");
-  link.href = buildImportProfileProtocolUrl();
-  link.click();
 }
 
 /** One transferable Default copy per editor, so a later handoff can replace it. */

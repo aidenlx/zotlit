@@ -124,13 +124,14 @@ export function registerProtocolHandlers(
     },
   );
 
-  if (deps.webWorkbenchEnabled)
-    plugin.registerObsidianProtocolHandler(
-      importProfileProtocolActionId,
-      (data) => {
-        void handleProfileImportProtocol(data, deps);
-      },
-    );
+  // Every build takes the clipboard handoff, since the Template Directory's
+  // one-click import uses it; the build gate decides only what opens after.
+  plugin.registerObsidianProtocolHandler(
+    importProfileProtocolActionId,
+    (data) => {
+      void handleProfileImportProtocol(data, deps);
+    },
+  );
 
   // A batch update pushed over HTTP (companion couldn't fit the ids in a URL)
   // runs the same interactive flow as the `update-many` protocol link.
@@ -470,7 +471,12 @@ async function resolveProtocolItem(
   return { itemID, libraryID, key, groupID, indexedKey };
 }
 
-/** Reuses the importer's clipboard reader and consent before opening the written file. */
+/**
+ * Reuses the importer's clipboard reader and consent. A build with the web
+ * Workbench then opens the written file in the Template Workbench, which
+ * completes the web Workbench's "Open in Obsidian" round-trip; any other build
+ * ends where **Import profile…** ends.
+ */
 async function handleProfileImportProtocol(
   data: ObsidianProtocolData,
   deps: ProtocolDeps,
@@ -488,6 +494,10 @@ async function handleProfileImportProtocol(
     const profile = await deps.importProfile({ source: "clipboard" });
     if (!profile) {
       logger.debug("Clipboard Profile import ended without a document");
+      return;
+    }
+    if (!deps.webWorkbenchEnabled) {
+      logger.debug("Imported clipboard Profile", { path: profile.path });
       return;
     }
     const file = deps.app.vault.getFileByPath(profile.path);

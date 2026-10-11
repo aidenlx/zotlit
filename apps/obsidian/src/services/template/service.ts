@@ -29,6 +29,7 @@ import type {
   LiteratureNoteTemplateErrorCode,
   LiteratureNoteTemplateManifest,
   RootVariableUse,
+  TemplateFacadeOptions,
   TemplateLanguage,
 } from "@zotlit/templates/facade";
 import { evalFrontmatterFields } from "@zotlit/templates/frontmatter";
@@ -88,6 +89,14 @@ const FLUSH_DEBOUNCE_MS = 500;
 const SETTLE_TIMEOUT_MS = 5_000;
 const LEGACY_LITERATURE_NOTE_TEMPLATE_NAMES: ReadonlySet<TemplateName> =
   new Set(["filename", "note", "annotation", MANAGED_CONTENT_TEMPLATE]);
+
+/**
+ * What every facade of the service shares: the Managed Content template's
+ * output renders inside the Managed Region markers.
+ */
+const FACADE_OPTIONS = {
+  transformRender: managedRegionTransform(MANAGED_CONTENT_TEMPLATE),
+} satisfies TemplateFacadeOptions;
 
 /** localStorage key for the per-device JavaScript Templates consent flag. */
 const JS_TEMPLATES_STORAGE_KEY = "zotlit-javascript-templates";
@@ -438,9 +447,7 @@ export type SettleOutcome = "settled" | "timeout" | "init-failed";
 export class TemplateService extends Service<void> {
   readonly #app;
   readonly #settings;
-  readonly #facade = new TemplateFacade({
-    transformRender: managedRegionTransform(MANAGED_CONTENT_TEMPLATE),
-  });
+  readonly #facade = new TemplateFacade(FACADE_OPTIONS);
   readonly #emitter = createNanoEvents<TemplateServiceEvents>();
   readonly #compileErrors = new Map<string, CompileError>();
   /** Exact bytes observed by reconciliation, including sources that fail parsing. */
@@ -672,12 +679,8 @@ export class TemplateService extends Service<void> {
       throw new InertTemplateError(m.settings_template_inert_eta({ path }));
     }
     const facade = document.manifest.partials
-      ? new TemplateFacade({
-          transformRender: managedRegionTransform(MANAGED_CONTENT_TEMPLATE),
-        })
+      ? this.#documentFacade(document.manifest.partials)
       : this.#facade;
-    for (const partial of document.manifest.partials ?? [])
-      facade.define(partial.name, partial.source, partial.language);
     const frontmatter = document.manifest.frontmatter
       ? facade.compileManagedFrontmatterEntries(document.manifest.frontmatter, {
           javascript: this.#javascriptTemplatesEnabled,
@@ -712,6 +715,41 @@ export class TemplateService extends Service<void> {
           ),
         ),
     };
+  }
+
+  /**
+   * A facade for one document that carries partials of its own: every Shared
+   * Partial and the Citation Template the installed facade renders, with the
+   * document's partials on top, so a same-named one of its own answers for
+   * this document alone.
+   *
+   * One flat namespace, compiled anew from source: an installed partial that
+   * calls a name only the document carries resolves it here. A name the
+   * installed facade holds no compiled template for — a failed compile, or an
+   * Eta partial the JavaScript Templates gate left inert — stays out, so a call
+   * to it fails the way it fails there.
+   */
+  #documentFacade(
+    partials: readonly LiteratureNoteTemplatePartial[],
+  ): TemplateFacade {
+    const facade = new TemplateFacade({
+      ...FACADE_OPTIONS,
+      autoTrim: this.#lastAutoTrim,
+    });
+    const own = new Set(partials.map(({ name }) => name));
+    const installed: [
+      string,
+      { language: TemplateLanguage; source: string },
+    ][] = [...this.#partials];
+    if (this.#citation)
+      installed.push([CITATION_TEMPLATE_NAME, this.#citation]);
+    for (const [name, { language, source }] of installed) {
+      if (own.has(name) || this.#compileErrors.has(name)) continue;
+      facade.define(name, source, language);
+    }
+    for (const partial of partials)
+      facade.define(partial.name, partial.source, partial.language);
+    return facade;
   }
 
   /**

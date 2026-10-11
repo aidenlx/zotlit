@@ -440,10 +440,38 @@ describe("library-wide protocol links", () => {
 });
 
 describe("clipboard Profile protocol handoff", () => {
-  it("omits the web clipboard handoff when the build gate is off", () => {
-    using _handlers = register({ webWorkbenchEnabled: false });
+  it("imports from the clipboard when the build gate is off, and ends there as Import profile… does", async () => {
+    vi.mocked(openTemplateWorkbench).mockClear();
+    const file = { path: "templates/shared.md" };
+    const app = {
+      vault: { getFileByPath: vi.fn(() => file) },
+    } as unknown as ProtocolDeps["app"];
+    const imported =
+      Promise.withResolvers<
+        Awaited<ReturnType<ProtocolDeps["importProfile"]>>
+      >();
+    const importProfile = vi.fn(() => imported.promise);
+    using _handlers = register({
+      webWorkbenchEnabled: false,
+      app,
+      importProfile,
+    } as unknown as Partial<ProtocolDeps>);
 
-    expect(handlers.has("zotlit/import-profile")).toBe(false);
+    handlers.get("zotlit/import-profile")?.({
+      action: "zotlit/import-profile",
+      clipboard: "true",
+    });
+    imported.resolve({ path: file.path } as Awaited<
+      ReturnType<ProtocolDeps["importProfile"]>
+    >);
+    // The handler awaited the import first, so it has ended by the time this
+    // await on the same promise resumes the test.
+    await imported.promise;
+
+    expect(importProfile).toHaveBeenCalledExactlyOnceWith({
+      source: "clipboard",
+    });
+    expect(openTemplateWorkbench).not.toHaveBeenCalled();
   });
 
   it("waits for import consent and then opens the returned document", async () => {

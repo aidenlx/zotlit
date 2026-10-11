@@ -515,6 +515,15 @@ importers:
       '@zotlit/scripts':
         specifier: workspace:*
         version: link:../../packages/scripts
+      '@zotlit/templates':
+        specifier: workspace:*
+        version: link:../../packages/templates
+      '@zotlit/zotero-types':
+        specifier: workspace:*
+        version: link:../../packages/zotero-types
+      ajv:
+        specifier: 'catalog:'
+        version: 8.20.0
       cross-env:
         specifier: 'catalog:'
         version: 10.1.0
@@ -551,6 +560,9 @@ importers:
       wrangler:
         specifier: ^4.125.0
         version: 4.125.0
+      yaml:
+        specifier: 'catalog:'
+        version: 2.9.0
 
   apps/obsidian:
     dependencies:
@@ -944,6 +956,9 @@ importers:
       vitest:
         specifier: 'catalog:'
         version: 4.1.6(@types/node@26.1.2)(happy-dom@20.9.0)(vite@8.1.5(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
+      yaml:
+        specifier: 'catalog:'
+        version: 2.9.0
       zx:
         specifier: 'catalog:'
         version: 8.8.5
