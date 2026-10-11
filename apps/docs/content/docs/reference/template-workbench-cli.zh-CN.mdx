@@ -1,63 +1,63 @@
 ---
-title: "Template Workbench CLI"
-description: "Every live command in the ZotLit CLI namespace, with its synopsis, the guide topics, the answer envelope, and the diagnostic codes."
+title: "模板工作台 CLI"
+description: "ZotLit CLI 命名空间中全部活跃命令说明：命令语法、指南主题、响应结构以及诊断错误码。"
 ---
 
-This reference lists the commands the Template Workbench registers in the Obsidian CLI, the answers they return, and the diagnostic codes they answer with.
+本参考手册列出了模板工作台在 Obsidian CLI 中注册的命令、返回值结构以及返回的诊断错误代码。
 
-## Reaching the CLI [#reaching]
+## 调用 CLI [#reaching]
 
-The Template Workbench registers its commands with Obsidian's own CLI. The namespace is `zotlit`, the plugin ID. These commands are desktop-only, like ZotLit itself, which requires Obsidian 1.14.2 or later.
+模板工作台通过 Obsidian 原生的 CLI 注册命令。命名空间为插件 ID `zotlit`。这些命令仅限桌面端使用，需要 Obsidian 1.14.2 或更高版本。
 
-Place the vault selector before the command name:
+仓库选择参数必须置于命令名称之前：
 
 ```bash
 obsidian vault=MyVault zotlit:template-inspect
 ```
 
-`vault=` is accepted only in that position. A `vault=` after the command name is refused, because Obsidian ignores it there and routes the call by the working directory or the focused window instead.
+仅在这一位置接受 `vault=` 参数。如果在命令名称之后传递 `vault=` 将被拒绝，因为 Obsidian 会忽略该位置的参数，转而按照当前终端工作目录或激活的窗口进行路由。
 
-These commands are not command-palette commands. [Commands](/docs/reference/commands) lists the commands that appear in the palette.
+这些命令不属于图形界面的命令面板命令。[命令列表](/docs/reference/commands)列出了在面板中展示的指令。
 
-Use `obsidian help zotlit` for the namespace overview, and `obsidian help zotlit:template-check` for the flags of one command.
+使用 `obsidian help zotlit` 可查看命名空间概览，使用 `obsidian help zotlit:template-check` 可查看某条命令的具体参数。
 
-## Live commands [#commands]
+## 活跃命令清单 [#commands]
 
-Five commands answer. The Template Workbench registers nine further commands that are retired, and those answer only with a refusal.
+目前有五条活跃命令响应。模板工作台另行注册了九条已废弃的历史命令，它们仅会返回废弃拒绝提示。
 
-| Command                   | Synopsis                                                                                                                                                                                                                                                                                | Returns                                                                                                                                                                                                                                                                                      |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `zotlit:template-inspect` | `obsidian zotlit:template-inspect [note=<vault-path>] [profile=<id-or-label>] [document=<path-or-reference>] [source=full] [editor] [expect-source=<source-id>]`                                                                                                                        | Without a selector, the inventory of template documents by kind. With one selector, the document, its dependencies, source freshness, and problems, plus the complete source with `source=full`. Every answer also carries the vault and Zotero source identity and the profile diagnostics. |
-| `zotlit:template-check`   | `obsidian zotlit:template-check [profile=<id-or-label>] [key=<indexed-key>] [output=all]`<br />`obsidian zotlit:template-check draft=/absolute/path/draft.md [profile=<id-or-label>] [key=<indexed-key>]`<br />`obsidian zotlit:template-check attempt=<id> evidence=full [output=all]` | The status of every checked component, the input revisions and source freshness, the attempt identity, and the outputs the call disclosed. It answers with a diagnostic when it refuses the document identity.                                                                               |
-| `zotlit:template-status`  | `obsidian zotlit:template-status`                                                                                                                                                                                                                                                       | The plugin version, the vault and Zotero source identity, the JavaScript Templates gate, the status of each template document, the legacy template slots while a conversion is pending, and every profile with its bindings.                                                                 |
-| `zotlit:template-data`    | `obsidian zotlit:template-data root=<note\|annotation\|filename\|citation> (key=<indexed-key> \| note=<vault-path> \| example=<example-id>) [query=<words> \| path=<zt.path> \| full] [format=json] [expect-source=<source-id>]`                                                        | The template data of one root, under `zt`. `query`, `path`, and `full` widen the answer to focused discovery.                                                                                                                                                                                |
-| `zotlit:template-guide`   | `obsidian zotlit:template-guide [topic=<name>]`                                                                                                                                                                                                                                         | The quickstart, or one guide topic, as plain text.                                                                                                                                                                                                                                           |
+| 命令名称                  | 语法格式                                                                                                                                                                                                                                                                                | 返回内容说明                                                                                                                                                                                |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `zotlit:template-inspect` | `obsidian zotlit:template-inspect [note=<vault-path>] [profile=<id-or-label>] [document=<path-or-reference>] [source=full] [editor] [expect-source=<source-id>]`                                                                                                                        | 无参数时，按类型列出所有模板文档清单。带参数时，返回对应文档、其依赖项、源码时效性及语法问题；加 `source=full` 还包含完整源码。每次响应均包含仓库及 Zotero 数据源标识以及配置方案诊断信息。 |
+| `zotlit:template-check`   | `obsidian zotlit:template-check [profile=<id-or-label>] [key=<indexed-key>] [output=all]`<br />`obsidian zotlit:template-check draft=/absolute/path/draft.md [profile=<id-or-label>] [key=<indexed-key>]`<br />`obsidian zotlit:template-check attempt=<id> evidence=full [output=all]` | 各项检查组件的运行状态、输入版本与源码时效性、测试尝试标识，以及本次调用披露的具体产出。在拒绝文档标识时返回诊断报错。                                                                      |
+| `zotlit:template-status`  | `obsidian zotlit:template-status`                                                                                                                                                                                                                                                       | 插件版本、仓库与 Zotero 数据源标识、JavaScript 模板权限开关状态、各模板文档状态、迁移未决期间的旧版模板槽位，以及各个配置方案及其绑定设置。                                                 |
+| `zotlit:template-data`    | `obsidian zotlit:template-data root=<note\|annotation\|filename\|citation> (key=<indexed-key> \| note=<vault-path> \| example=<example-id>) [query=<words> \| path=<zt.path> \| full] [format=json] [expect-source=<source-id>]`                                                        | 某个根节点在 `zt` 下的模板数据。`query`、`path` 与 `full` 参数可将响应范围扩大到聚焦发现模式。                                                                                              |
+| `zotlit:template-guide`   | `obsidian zotlit:template-guide [topic=<name>]`                                                                                                                                                                                                                                         | 快速入门指引或特定主题指南的纯文本输出。                                                                                                                                                    |
 
-A check runs every component regardless of `output`. `output` decides only which outputs the answer discloses, so a compact answer is not a check that stopped early.
+无论 `output` 参数如何设置，测试均会完整执行所有组件。`output` 仅控制响应中披露哪些详细输出，精简的响应并不代表测试提前中断。
 
-An indexed key is a Zotero item key of eight characters, with an optional group suffix, as in `ABCD1234g118`. [Copy a Zotero key](/docs/how-to/explore-template-data#indexed-key) describes the form.
+Zotero 标识符（Indexed key）为 8 位的 Zotero 条目 key，可附带群组后缀，例如 `ABCD1234g118`。[复制 Zotero 标识符](/docs/how-to/explore-template-data#indexed-key)介绍了具体格式。
 
-## Guide topics [#topics]
+## 指南主题 [#topics]
 
-`obsidian zotlit:template-guide` without a topic prints the quickstart. With `topic=<name>` it prints one reference section. A topic name outside this list is refused.
+不带主题参数的 `obsidian zotlit:template-guide` 会打印快速入门指引。附带 `topic=<name>` 时会输出对应的参考小节。传入列表之外的主题名称将被拒绝。
 
-| Topic             | Covers                                                                                            |
-| ----------------- | ------------------------------------------------------------------------------------------------- |
-| No topic          | The workflow, the synopsis, the identity and output rules, and the topic index.                   |
-| `inspect`         | Target selection, source revisions and freshness, the inspect flags, and the inspect diagnostics. |
-| `check`           | Create and update checks, baselines, drafts, output disclosure, and retained attempts.            |
-| `data`            | The `template-data` synopsis, each root, focused discovery, and the serialization markers.        |
-| `frontmatter`     | Managed frontmatter entries, JSON-e and spread entries, merge strategies, and reserved keys.      |
-| `profiles`        | The profile documents, their create and update semantics, and drafts.                             |
-| `citations`       | Citation Variants and the built-in example sets.                                                  |
-| `partials`        | Shared Partials, their caller roots, and their reserved names.                                    |
-| `troubleshooting` | YAML repair, source freshness, reading a failed check, and legacy conversion.                     |
-| `liquid`          | The supported Liquid tags and filters.                                                            |
-| `eta`             | Eta templates and the JavaScript Templates gate.                                                  |
+| 主题名称          | 涵盖内容                                                                 |
+| ----------------- | ------------------------------------------------------------------------ |
+| 无主题参数        | 工作流概览、命令语法、标识与输出规则，以及主题索引。                     |
+| `inspect`         | 目标选择、源码版本与时效性验证、inspect 各种参数标志及检查诊断。         |
+| `check`           | 创建与更新测试、基准快照、草稿测试、输出披露机制以及保留的历史测试尝试。 |
+| `data`            | `template-data` 语法、各个根节点类型、聚焦发现模式以及序列化标记。       |
+| `frontmatter`     | 受管 frontmatter 配置项、JSON-e 与展开项、合并策略及系统保留键。         |
+| `profiles`        | 配置方案文档、其创建与更新语义以及草稿机制。                             |
+| `citations`       | 引文变体（Citation Variants）与内置示例集合。                            |
+| `partials`        | 共享片段（Shared Partials）、其调用根节点以及保留名称限制。              |
+| `troubleshooting` | YAML 修复、源码时效性恢复、解读失败的测试报告以及旧版迁移。              |
+| `liquid`          | 支持的 Liquid 标签与过滤器清单。                                         |
+| `eta`             | Eta 模板语法以及 JavaScript 模板权限门禁。                               |
 
-## Retired commands [#retired]
+## 已废弃的历史命令 [#retired]
 
-Nine commands remain registered so that a call to them answers usefully instead of failing as an unknown command. Each one answers `ok: false` with the `COMMAND_RETIRED` diagnostic, and carries the description "Retired: use template-inspect, template-data, and template-check". Every flag they once carried is now optional and described as a retired parameter.
+系统仍保留了九条历史命令的注册，以便在调用它们时返回有价值的引导信息而非直接报未知命令错误。每条命令均返回 `ok: false` 并附带 `COMMAND_RETIRED` 诊断信息，提示描述为：“已废弃：请改用 template-inspect、template-data 与 template-check”。其曾经支持的每个参数现在均变为可选并标注为已废弃参数。
 
 | Retired command                   | Replaced by                                                                |
 | --------------------------------- | -------------------------------------------------------------------------- |

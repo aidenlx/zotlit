@@ -1,55 +1,55 @@
 ---
 version: "2.1.0-beta.0"
 date: "2026-08-10"
-description: "References Sidebar, in-text citation rendering, cited document export"
+description: "参考文献侧边栏、正文引文格式化渲染、包含引文的文档导出"
 ---
 
-## Highlights
+## 版本亮点
 
-![Wikilink citations to Literature Notes rendered as a formatted citation cluster in Live Preview, with the References Sidebar showing the matching bibliography entries](/img/changelog/wikilink-citation-runs.webp)
+![实时预览中将文献笔记双链渲染为格式化引文簇，右侧参考文献侧边栏展示对应的参考文献列表条目](/img/changelog/wikilink-citation-runs.webp)
 
-### References Sidebar
+### 参考文献侧边栏（References Sidebar）
 
-A new sidebar view lists the citations in the active note as a formatted bibliography. Each entry shows the reference number and formatted text in the selected CSL style, with actions to open the Literature Note, open the item in Zotero, or open the attached PDF. Clicking the entry text walks through the citation's occurrences in the editor.
+新增的侧边栏视图会将当前活动笔记中包含的引文汇总为排版精美的参考文献列表。每个条目均展示其引文编号以及所选 CSL 样式格式化的文本，并提供一键打开文献笔记、在 Zotero 中定位该条目或打开对应 PDF 附件的操作按钮。点击条目文本即可在编辑器中依次循环跳转换读正文中的各处引用。
 
-### In-text citation rendering
+### 正文引文格式化渲染
 
-Literal citation clusters (e.g. `[see @wang2020, p. 3; @lee2019]`) now display as formatted text in both Live Preview and Reading view.
+字面量引文簇（例如 `[see @wang2020, p. 3; @lee2019]`）现在在实时预览与阅读视图中均能够自动呈现为格式化文本。
 
-Literature Note wikilinks can also render as citations, sharing the same formatted display and numbering as literal citations. Turn this on with **Wikilink citations** in **Settings > ZotLit > Citations** — it is off by default.
+指向文献笔记的双链链接同样可以作为引文进行渲染，并与字面量引文共享相同的格式化排版和连续编号机制。在**设置 > ZotLit > 引文**中开启**双链引文（Wikilink citations）**即可启用该特性（默认处于关闭状态）。
 
-The citation rendering also supports formatting in a CSL style you pick from Zotero's installed styles using Pandoc (setup in **Settings > ZotLit > Citations**).
+引文渲染同样支持通过 Pandoc 将其格式化为您从 Zotero 已安装样式中选定的 CSL 样式（在**设置 > ZotLit > 引文**中配置）。
 
-### Export a note with citations
+### 导出包含引文的笔记
 
-A new command, **ZotLit: Export note with citations**, converts the active Markdown note to DOCX or HTML with a formatted bibliography. Choose the output format, CSL style, and destination in the export dialog. Citations resolve from the note's own links; no external Pandoc installation is required. See [How to export a note with citations](/docs/how-to/export-note-with-citations).
+新增命令 **ZotLit: 导出包含引文的笔记**，支持将当前活动的 Markdown 笔记转换为附带格式化参考文献列表的 DOCX 或 HTML 文档。在导出对话框中可自由选择输出格式、CSL 引文样式以及目标保存路径。引文直接从笔记自身的链接中解析，无需在外部安装独立的 Pandoc。详情参阅[如何导出包含引文的笔记](/docs/how-to/export-note-with-citations)。
 
 This feature is not finalized yet, but the command is available to test.
 
-## What's New
+## 新增功能
 
-### Citation key navigation and styling
+### 文献引用标识导航与样式支持
 
-Recognized citation keys in the editor are styled as links. An unresolved citation key (one that names no item in Zotero) is visually distinct from a resolved one. Click a citation key to open its Literature Note, or hover to see a page preview.
+编辑器中识别出的文献引用标识被赋予了链接交互样式。未解析的标识（即 Zotero 中找不到对应条目）与已解析的标识在视觉上有明显的区分。点击文献引用标识可直接打开其对应的文献笔记，鼠标悬停即可查看页面预览。
 
-Rendered citations in Reading view are also navigable: a single-key citation opens the Literature Note on click, and a multi-key citation opens a menu listing each cited work. See [How in-text citation rendering and navigation work](/docs/concepts/how-citekey-links-work).
+在阅读视图中渲染的引文同样具备交互导航能力：点击单篇文献引文可直接打开文献笔记；点击多篇引文则会弹出一个包含所引全部文献的菜单供您选择。详见[正文引文渲染与导航机制](/docs/concepts/how-citekey-links-work)。
 
-Turn this off with **Open Pandoc citations as links** in **Settings > ZotLit > Citations**.
+该功能可通过**设置 > ZotLit > 引文**中的**将 Pandoc 引文作为链接打开**进行开关。
 
-### Citation key resolution from Zotero
+### 直接从 Zotero 解析文献引用标识
 
-Citation keys now resolve against Zotero's native citation keys instead of a frontmatter property. The **Citation Key Property** setting is retired and migrated automatically.
+文献引用标识现在严格对照 Zotero 原生的文献引用标识字段进行解析，不再依赖笔记自身的 frontmatter 属性。旧版的**文献引用标识属性**配置项现已废弃并完成自动迁移。
 
-### CSL style selection
+### CSL 引文样式选择
 
-The References Sidebar and in-text citation rendering use a CSL style you select from the styles Zotero has installed. The style picker appears in **Settings > ZotLit > Citations**. Leaving it unset or selecting a removed style falls back to a default.
+参考文献侧边栏与正文引文渲染会统一采用您从 Zotero 已安装样式中选定的 CSL 样式。样式选择器位于**设置 > ZotLit > 引文**。留空或选用了已删除的样式会自动安全回退至系统默认样式。
 
-### Native Pandoc CLI workflow
+### 原生 Pandoc CLI 工作流
 
-Convert a note with a standalone Pandoc installation, outside Obsidian, with Literature Note wikilinks converting to citations. A **Save integration files** action in the Citations settings page writes a Lua filter (`zotlit-cite.lua`) and a Pandoc defaults file (`zotlit.yaml`) matched to the installed plugin version; the Lua filter resolves each wikilink to its citation key through a new `zotlit:resolve` command, reachable from a CLI tool that supports Obsidian's command line interface (such as `obsidian-cli`).
+支持在 Obsidian 外部通过独立安装的原生 Pandoc 转换笔记，同时将文献笔记双链正确转换为学术引文。A **Save integration files** action in the Citations settings page writes a Lua filter (`zotlit-cite.lua`) and a Pandoc defaults file (`zotlit.yaml`) matched to the installed plugin version; the Lua filter resolves each wikilink to its citation key through a new `zotlit:resolve` command, reachable from a CLI tool that supports Obsidian's command line interface (such as `obsidian-cli`).
 
-Two more commands support this workflow: `zotlit:pandoc-files` returns the integration pair as JSON, and `zotlit:pandoc-guide` prints the setup and troubleshooting guide. A new `zotlit-pandoc` skill walks an AI agent through the same workflow: setup, refresh, running a native export, and diagnosing a failed run.
+另有两条配套命令支持此工作流：`zotlit:pandoc-files` 以 JSON 形式返回集成文件对，`zotlit:pandoc-guide` 打印配置与排错指南。新增的 `zotlit-pandoc` skill 能够引导 AI 智能体完成该完整工作流。
 
-### Theme support
+### 主题开发支持
 
-- CSS classes are available on citation elements across editor and Reading view surfaces, documented in the [theme hooks reference](/docs/reference/theme-hooks). Theme authors can style resolved, unresolved, pending, and rendered citation states.
+- 编辑器与阅读视图中的各引文 DOM 元素均开放了公开的 CSS 类名接口，详细记录在[主题样式类名参考](/docs/reference/theme-hooks)中。主题作者可针对已解析、未解析、待解析及渲染态引文进行专属定制美化。

@@ -1,6 +1,6 @@
 ---
-title: "How in-text citation rendering and navigation work"
-description: "How ZotLit selects, formats, lists, and opens citations in the active note."
+title: "正文引文渲染与导航机制"
+description: "ZotLit 如何在当前活动笔记中选择、格式化、列出并打开引文。"
 ---
 
 import { Card, Cards } from "fumadocs-ui/components/card";
@@ -8,74 +8,75 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-ZotLit uses one ordered set of citations to format the active note, number its references, and support citation navigation.
+ZotLit 使用一个有序的引文集合来对当前活动笔记进行格式化、为其参考文献编号，并提供引文交互导航支持。
 
-## The Document Citation Set
+## 文档引文集（Document Citation Set）
 
-The Document Citation Set contains the Citation Occurrences from the active note. Each occurrence keeps its source position and citation details.
+文档引文集包含来自当前活动笔记的所有引文出现项（Citation Occurrences）。每个出现项都会保留其在源码中的位置和引文详细信息。
 
-Two settings under <SettingsPath page={m.settings_page_citations()} /> decide which sources join the set:
+<SettingsPath page={m.settings_page_citations()} />
+下的两项设置决定了哪些引文来源可以加入该集合：
 
-| Setting                                                          | Default | Included source                                           |
-| ---------------------------------------------------------------- | ------- | --------------------------------------------------------- |
-| <UiLabel name={m.settings_citation_pandoc_citations_name()} />   | On      | Literal Pandoc syntax such as `@doe2024` and `[@doe2024]` |
-| <UiLabel name={m.settings_citation_wikilink_citations_name()} /> | Off     | Eligible wikilinks to Literature Notes                    |
+| 设置项                                                           | 默认值 | 包含的引文来源                                      |
+| ---------------------------------------------------------------- | ------ | --------------------------------------------------- |
+| <UiLabel name={m.settings_citation_pandoc_citations_name()} />   | 开启   | 字面量 Pandoc 语法，例如 `@doe2024` 与 `[@doe2024]` |
+| <UiLabel name={m.settings_citation_wikilink_citations_name()} /> | 关闭   | 指向文献笔记的合格双链（wikilink）                  |
 
-You can turn off both sources. The References Sidebar, formatted in-text citations, numeric numbering, and Citekey Navigation then receive an empty set.
+您可以将两种来源均行关闭。此时，参考文献侧边栏、正文格式化引文、数字序号排版以及文献引用标识导航（Citekey Navigation）都将收到一个空集合。
 
-An eligible wikilink is unaliased and points to a Literature Note. It has either no fragment or a valid Citation Fragment such as `#cite:locator=33`.
+合格的双链是指不带显示别名（unaliased）且直接指向文献笔记的链接。它可以不带链接片段，或者带有形如 `#cite:locator=33` 的有效引文片段。
 
-Aliases, embeds, unresolved targets, heading fragments, and block fragments stay outside the set. Malformed Citation Fragments also stay outside it. The References Sidebar reports a malformed fragment as a Reference Error while <UiLabel name={m.settings_citation_wikilink_citations_name()} /> is on.
+带有别名的链接、嵌入块、无法解析的目标、标题片段以及块链接均不会纳入该集合。格式错误的引文片段同样会被排除。在 <UiLabel name={m.settings_citation_wikilink_citations_name()} /> 开启期间，参考文献侧边栏会将格式错误的片段报告为参考文献错误（Reference Error）。
 
-The set keeps source order. This order matters because numeric styles assign numbers from the complete note, not from one visible section.
+该集合严格保持其在源码中的出现顺序。该顺序至关重要，因为数字编号样式需要根据整篇笔记的内容统一计算序号，而非依据当前可见的部分。
 
-### The Citation Index
+### 引文索引（Citation Index）
 
-The Citation Index is ZotLit's internal, vault-wide record of Citation Occurrences. It stays active and tracks both source types, independent of the two source settings.
+引文索引是 ZotLit 内部在整个仓库范围内维护的引文出现项记录。无论上述两项来源设置如何配置，该索引均会保持活跃并独立追踪这两类引文来源。
 
-The Document Citation Set applies your source settings when a citation feature asks about the active note. Changing either setting recomputes the set without rescanning the vault.
+当某项引文功能查询当前活动笔记时，文档引文集会动态应用您的来源设置。更改任一设置都会立即重新计算文档引文集，无需重新扫描整个仓库。
 
-Citation insertion and built-in export use their own membership rules. Turning a source off does not disable insertion or remove that source from export.
+引文插入与内置导出拥有各自独立的来源准入规则。关闭某种来源并不会禁用引文插入功能，也不会从导出中移除该来源。
 
-## Pandoc citations
+## Pandoc 引文
 
-Pandoc citations can cite one work or a group of works:
+Pandoc 引文可以引用单篇文献或多篇文献组合：
 
-- `@key` is a bare author-in-text citation.
-- `-@key` suppresses the author.
-- `[@key]` and `[@key, p. 3]` are Citation Clusters.
-- `[see @a, p. 3; @b]` cites multiple works in one cluster.
-- `@{https://example.com/paper}` is a braced key for characters that a bare key cannot contain.
+- `@key` 为作者置入正文形式（author-in-text）的单篇引文。
+- `-@key` 会在输出中省略作者姓名。
+- `[@key]` 与 `[@key, p. 3]` 为带括号的引文簇（Citation Cluster）。
+- `[see @a, p. 3; @b]` 在一个引文簇中组合引用多篇文献。
+- `@{https://example.com/paper}` 为带花括号的标识键，用于包含普通键所不支持的字符。
 
-Trailing punctuation is outside a citation key. Email addresses and URLs containing `@` remain ordinary text.
+紧跟在后的尾部标点符号不属于文献引用标识的一部分。包含 `@` 的电子邮件地址和 URL 会被视为普通文本。
 
-ZotLit also excludes citation-like text in code, math, `%%` comments, frontmatter, and URLs.
+ZotLit 还会自动排除代码块、行内代码、数学公式、`%%` 注释、frontmatter 属性区以及 URL 中类似引文的文本。
 
-### Resolution
+### 解析机制
 
-ZotLit resolves Pandoc citation keys against Zotero's native citation key field, across every library in your <UiLabel name={m.settings_library_scope_name()} />. It does not use the `citekey` frontmatter field for resolution.
+ZotLit 会对照您在 <UiLabel name={m.settings_library_scope_name()} /> 中涵盖的所有文献库，基于 Zotero 原生的文献引用标识字段来解析 Pandoc 引文键。它不会使用 frontmatter 中的 `citekey` 字段进行解析。
 
-An item can appear as a citation before it has a Literature Note. Opening that citation creates the Literature Note, then opens it. An unresolved key stays in its native source and appears as a Reference Error in the sidebar.
+文献条目可以在创建对应的文献笔记之前就以引文形式出现在正文中。点击打开此类引文会先自动创建对应的文献笔记，随后将其打开。未能成功解析的标识键会保持原始字面量形式，并在侧边栏中显示为参考文献错误。
 
-The resolution data refreshes when the Zotero database changes. A re-keyed item updates after the next refresh.
+当 Zotero 数据库发生变动时，解析数据会及时刷新。重新更改标识键的条目会在下一次刷新后生效。
 
-### A key that matches several items [#ambiguous-key]
+### 匹配多个条目的标识键（歧义键）[#ambiguous-key]
 
-A citation key resolves to one Zotero item, to none, or to several. Several is an ambiguous key. It happens when two items in one library carry the same citation key, and when two libraries you both have in scope carry it once each.
+一个文献引用标识可能解析为单个 Zotero 条目、未找到任何条目，或者匹配到多个条目。匹配到多个条目即为歧义键（ambiguous key）。当同一个文献库中有两个条目拥有相同的文献引用标识，或者同时纳入作用域的两个不同文献库中各存在一个同名标识时，就会发生歧义。
 
-ZotLit never picks one of the matches. The editor, reading view, citation popover, and References Sidebar all report the same ambiguous state, and the key keeps its own identity: it adopts no candidate's item, and contributes no bibliography entry.
+ZotLit 绝不会擅自猜测选择其中任何一个候选条目。编辑器、阅读视图、引文悬停浮窗以及参考文献侧边栏均会一致报告歧义状态，并且该标识键保持独立：它不会关联任何候选条目，也不会向文末参考文献列表中添加任何条目。
 
-In a Citation Cluster that holds both an ambiguous key and one that matches nothing, the unresolved key is what the cluster reports. It is the stronger failure, so it stays visible.
+如果一个引文簇中既包含歧义键又包含完全未找到的键，则引文簇会优先报告未找到的键。这是因为缺失属于更严重的故障状态，应当保持醒目可见。
 
-Two things resolve an ambiguity. Give one of the items a different citation key in Zotero. Or narrow your [library scope](/docs/reference/settings#library-scope) until one candidate is left, which makes the key unique again.
+有两种方式可以消除歧义：在 Zotero 中为其中一个条目修改分配不同的文献引用标识；或者缩小您的[文献库作用域](/docs/reference/settings#library-scope)，直到仅剩一个候选条目，从而使该标识键重新恢复唯一性。
 
-## Wikilink citations
+## 双链引文
 
-An eligible Literature Note wikilink represents the Zotero item associated with that note. A valid Citation Fragment can add Pandoc details such as a prefix, locator, suffix, or author-suppression mode.
+指向文献笔记的合格双链代表了与该笔记关联的 Zotero 条目。有效的引文片段（Citation Fragment）可以为其补充 Pandoc 的具体细节，例如前缀、定位符、后缀或作者省略模式。
 
-For example, `[[Doe 2020#cite:locator=33]]` represents the Pandoc source `[@doe2020, p. 33]` when the item's citation key is `doe2020`.
+例如，当条目的文献引用标识为 `doe2020` 时，`[[Doe 2020#cite:locator=33]]` 即代表了 Pandoc 源码 `[@doe2020, p. 33]` 的效果。
 
-Wikilinks keep Obsidian's native link target, click behavior, and drag behavior. Source mode always shows the raw wikilink.
+双链引文完整保留了 Obsidian 原生的链接目标、点击交互以及拖拽行为。在源码模式下，始终显示原始的双链文本。
 
 ## Formatted in-text citations
 

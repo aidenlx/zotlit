@@ -1,6 +1,6 @@
 ---
-title: "How to migrate from Pandoc Reference List"
-description: "Move a Pandoc Reference List workflow to ZotLit while preserving citation syntax, metadata, and native Pandoc export."
+title: "从 Pandoc Reference List 迁移"
+description: "将 Pandoc Reference List 工作流平滑迁移至 ZotLit，同时完整保留引文语法、元数据以及原生 Pandoc 导出支持。"
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
@@ -11,53 +11,53 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-Use this guide to move your citation workflow to ZotLit without assuming feature parity.
+本篇指南将协助您将引文工作流迁移至 ZotLit。
 
-After migration, [Build a Pandoc citation workflow](/docs/tutorial/pandoc-citation-workflow) to compare built-in and native export with one note.
+完成迁移后，可参阅[搭建 Pandoc 引文工作流](/docs/tutorial/pandoc-citation-workflow)，通过单篇笔记实操比对内置导出与原生 Pandoc 导出。
 
-The [Pandoc Reference List repository](https://github.com/community-archive/obsidian-pandoc-reference-list) is hosted by the [Obsidian Community Archive](https://github.com/community-archive/.github).
+[Pandoc Reference List 代码仓库](https://github.com/community-archive/obsidian-pandoc-reference-list)由 [Obsidian Community Archive](https://github.com/community-archive/.github) 组织归档维护。
 
-## Decide where each part moves
+## 梳理各项功能的迁移归宿
 
-| Classification              | Existing behavior                                                                                                           | ZotLit destination                                                                               |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| Works unchanged             | Literal citations such as `@doe2024`, `[@doe2024]`, and `[@doe2024, p. 33]`                                                 | Keep the Markdown source. Enable <UiLabel name={m.settings_citation_pandoc_citations_name()} />. |
-| Change settings or syntax   | Zotero library selection, live rendering, suggestions, tooltips, CSL selection, citation language, and `[[@citekey]]` links | Configure ZotLit and audit the affected metadata and links.                                      |
-| Continue with native Pandoc | `bibliography`, bibliography files, multiple bibliography inputs, and standard `csl` or `citation-style` paths and URLs     | Keep these inputs in a [native Pandoc workflow](/docs/how-to/export-with-native-pandoc).         |
-| No ZotLit equivalent        | In-app bibliography-file source, tooltip delay, hidden links in references, and click-one-entry-to-copy                     | Use ZotLit's Zotero-backed controls described below.                                             |
+| 分类判定                 | 原有功能行为                                                                                            | ZotLit 中的对应处理方式                                                                                |
+| ------------------------ | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| 保持原样直接可用         | 字面量引文语法，如 `@doe2024`、`[@doe2024]` 及 `[@doe2024, p. 33]`                                      | 完整保留 Markdown 源码不变。开启 <UiLabel name={m.settings_citation_pandoc_citations_name()} /> 即可。 |
+| 需调整设置或语法         | Zotero 文献库选择、实时格式化渲染、建议弹窗、提示工具条、CSL 样式选择、引文语言以及 `[[@citekey]]` 链接 | 配置 ZotLit 对应项，并对受影响的属性字段及链接进行核对。                                               |
+| 继续通过原生 Pandoc 使用 | `bibliography`、参考文献库文件、多源文献库输入以及标准的 `csl` 或 `citation-style` 路径/URL             | 在[原生 Pandoc 工作流](/docs/how-to/export-with-native-pandoc)中继续保留这些参数输入。                 |
+| ZotLit 中无直接等价物    | 应用内直接基于独立参考文献文件驱动、浮窗延迟控制、参考文献中的隐藏链接以及点击单条复制                  | 改用下文介绍的由 Zotero 数据库原生支撑的 ZotLit 控制方案。                                             |
 
-ZotLit reads Zotero Items for its in-app citation features. A bibliography file remains useful for native Pandoc, but it does not supply the <UiLabel name={m.references_view_name()} /> Sidebar.
+ZotLit 的应用内引文功能直接读取 Zotero 文献条目。导出的参考文献库文件在原生 Pandoc 中依然十分重要，但它不再作为应用内<UiLabel name={m.references_view_name()} />侧边栏的数据源。
 
-## Migrate the workflow
+## 工作流迁移步骤
 
 <Steps>
   <Step>
-    ### Record the current setup
+    ### 记录当前的配置
 
-    Record the current bibliography source, selected libraries, CSL style, language, and rendering settings.
+    记录现有的参考文献文件来源、选定的文献库、CSL 引文样式、语言以及渲染设置。
 
-    Search the vault for these note properties and citation forms:
+    在整个仓库中检索以下笔记属性与引文书写形式：
 
     - `bibliography`
-    - `csl` or `citation-style`
-    - `lang` or `citation-language`
+    - `csl` 或 `citation-style`
+    - `lang` 或 `citation-language`
     - `[[@`
 
-    Keep the original notes until you finish the verification steps.
+    在完成全部验证步骤之前，请妥善保留原始笔记。
 
   </Step>
   <Step>
-    ### Confirm citation keys in Zotero
+    ### 在 Zotero 中确认文献引用标识
 
-    Confirm that every cited Zotero item has a citation key. ZotLit resolves literal keys against Zotero's native **Citation Key** field.
+    确认每篇被引用的 Zotero 条目均已设置文献引用标识。ZotLit 会依据 Zotero 原生的 **Citation Key** 字段解析字面量引文键。
 
-    [Better BibTeX](https://retorque.re/zotero-better-bibtex/installation/) is recommended for generating and maintaining stable keys. ZotLit does not require Better BibTeX when the native field already contains suitable keys.
+    推荐安装 [Better BibTeX](https://retorque.re/zotero-better-bibtex/installation/) 来生成并维护稳定的文献引用标识。如果原生字段中已具备合规的标识键，ZotLit 并不强制依赖 Better BibTeX。
 
-    Choose your key format before you migrate many notes. Avoid changing existing keys after the migration.
+    在批量迁移笔记之前，请先确定您理想的标识命名格式，避免在迁移完成后频繁改动现有标识。
 
   </Step>
   <Step>
-    ### Connect the Zotero database
+    ### 连接 Zotero 数据库
 
     Open <SettingsPath page={m.settings_page_zotero()} />. Confirm that <UiLabel name={m.settings_db_file_name()} /> points to the profile that contains your cited items.
 

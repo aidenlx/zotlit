@@ -1,42 +1,42 @@
 ---
-title: "Excerpt images"
-description: "How ZotLit generates image and ink excerpts, checks cached images, and preserves the images saved in your notes."
+title: "摘录图片"
+description: "ZotLit 如何生成图片与手写墨迹摘录、检查缓存图片有效性，并保护保存在笔记中的图片文件。"
 ---
 
-An excerpt image shows a selected PDF region or ink strokes over the PDF content.
+摘录图片展示了 PDF 的特定选中区域或叠加在 PDF 内容上的手写墨迹线条。
 
-ZotLit generates these images when you view or import annotations. Both PDF readers can stay closed, and generation continues while Obsidian is minimized. Zotero can also stay closed when its saved annotation data and PDF are available locally.
+当您在标注视图中浏览或导入批注时，ZotLit 会自动生成这些图片。此时无需保持 PDF 阅读器处于打开状态，即使 Obsidian 处于最小化窗口，图片生成流程也会继续在后台运行。只要本地已具备保存的标注元数据和对应 PDF 文件，甚至无需打开 Zotero 软件。
 
-## Images in the annotation view
+## 标注视图中的图片
 
-ZotLit first looks for a matching image in its own cache. If there is none, it generates the excerpt from the PDF. If generation fails, it tries Zotero's cached PNG.
+ZotLit 首先会在自身的图片缓存中查找匹配的图片。如果未命中缓存，它会直接从本地 PDF 生成摘录图片；如果生成失败，它会尝试回退使用 Zotero 自身缓存的 PNG 图片。
 
-The annotation view displays any available image without a cache-source label. Viewing a card creates no saved image file in your vault. If every source fails, the card shows that the image is unavailable.
+标注视图会直接展示任何可用的图片，而不会显示多余的缓存来源标签。在标注卡片中浏览图片并不会在您的仓库中生成落地图片文件。如果所有数据源均检索失败，卡片上会清晰标明该图片当前不可用。
 
-## Saved note snapshots [#saved-snapshots]
+## 保存到笔记中的图片快照 [#saved-snapshots]
 
-An image saved in a note is a snapshot. Each new image version has a distinct filename. Updating one note can select a new version while other notes keep their existing images.
+保存在笔记中的图片属于快照（snapshot）。每个新的图片版本都会拥有一个独立的文件名。更新其中一篇笔记可能会采用新版本的图片，而其他笔记则会继续保留原有的现有图片。
 
-ZotLit prepares these files during note creation, update, overwrite, re-import, or annotation insertion. It keeps old image files and legacy links until you change the notes that use them. It does not delete unused image versions automatically.
+ZotLit 在创建笔记、更新、覆盖、重新导入或插入批注期间准备这些文件。它会妥善保留旧的图片文件和历史链接，直到您主动修改引用它们的笔记。系统绝不会擅自自动删除未被引用的旧版本图片。
 
-Ordinary images embedded in Zotero Child Notes remain stored snapshots. Only eligible Annotation Paragraphs in annotation-template mode use live excerpts. Re-importing such a paragraph can change its image; other embedded images keep the bytes stored with the Child Note.
+嵌入在 Zotero 子笔记中的普通图片同样作为已保存的快照进行维护。只有处于标注模板模式下的合格标注段落（Annotation Paragraphs）才会采用动态生成的摘录。重新导入此类段落可能会刷新其图片；而其他普通嵌入图片则始终保留与子笔记一同存储的原始数据。
 
-## Cache and freshness [#freshness]
+## 缓存与时效性验证 [#freshness]
 
-The excerpt cache belongs to one vault on one device and survives an Obsidian restart. Its size limit is 256 MiB. ZotLit removes the least recently used entries when it needs space. Clearing or removing cache entries leaves saved note images unchanged.
+摘录图片缓存归属于单台设备上的单个仓库，在 Obsidian 重启后依然得以持久化保留。其默认缓存空间上限为 256 MiB。当空间不足时，ZotLit 会根据最近最少使用（LRU）原则自动淘汰旧缓存条目。手动清理或移除缓存记录绝不会影响已保存在笔记中的真实图片文件。
 
-ZotLit checks the annotation's rendering inputs and the PDF's file size and modification time before it reuses a cached image. Changes to crop geometry or ink color require a new match. Replacing a PDF while keeping both its size and modification time can reuse the old image.
+在复用某张缓存图片之前，ZotLit 会严密校验该标注的渲染输入参数，以及对应 PDF 文件的体积与最后修改时间。对裁切几何区域或墨迹颜色的任何变动都需要重新匹配生成。如果在替换 PDF 文件的同时其体积与最后修改时间完全未变，则可能会继续复用旧的图片。
 
-When the PDF is unavailable, a cached image can still be used if its annotation inputs match. ZotLit reports that the PDF's freshness was not checked. It checks again on the next relevant view or import operation when the PDF becomes available.
+当 PDF 文件暂时不可用时，如果标注参数完全吻合，仍然可以复用已有的缓存图片。此时 ZotLit 会明确提示该 PDF 的时效性尚未经过校验。一旦后续 PDF 文件重新就位，系统将在下一次相关浏览或导入操作时重新核验。
 
-## Import outcomes [#import-outcomes]
+## 导入操作的结果反馈 [#import-outcomes]
 
-A note operation prepares images before it runs the final template. Each template executes once. The operation counts only image helpers that the template requests.
+笔记操作会在执行最终模板之前预先就绪所需的图片。每个模板仅执行一次。操作统计只会计算模板中实际调用的图片辅助函数。
 
-If a refresh fails, ZotLit keeps a verified image already referenced by that note and reports it as not refreshed. Otherwise, it writes an unavailable-image explanation and a source link. Other annotations and notes can still finish.
+如果某张图片刷新失败，ZotLit 会保留该笔记中已成功引用的已验证旧图片，并将其汇报为“未刷新”。否则，它会写入说明图片不可用的解释文本以及对应的源链接。其余标注和笔记内容仍可顺利完成处理。
 
-One summary per operation or batch counts images taken from Zotero with uncertain freshness, images with unchecked PDF freshness, unavailable images, and images kept without refresh. Successful generation and valid cache reuse need no summary.
+每次操作或批量运行均会提供一份汇总统计，分别列出：来自 Zotero 且时效性不确定的图片、未检查 PDF 时效性的图片、不可用的图片以及保留未刷新的图片。成功的全新生成和合规的有效缓存复用不会占用异常汇总。
 
-With attachment import disabled, ZotLit creates no generated image files for notes. A verified existing image can remain; otherwise the note receives an unavailable-image explanation and source link. Images in the annotation view and the device cache remain available.
+在关闭附件导入的情况下，ZotLit 不会为笔记生成任何落地图片文件。此时已存在的已验证图片可予保留；否则笔记中会插入不可用提示与源链接。而在标注视图和本地设备缓存中的图片则不受影响，依然可用。
 
-See [Use the annotation view](/docs/how-to/use-annotation-view), [Keep notes up to date](/docs/how-to/keep-notes-updated), and [Import Zotero notes](/docs/how-to/import-zotero-notes) for note operations. The [cache setting](/docs/reference/settings#excerpt-image-cache) describes manual clearing.
+有关笔记操作的更多说明，请参阅[使用标注视图](/docs/how-to/use-annotation-view)、[保持笔记即时更新](/docs/how-to/keep-notes-updated)以及[导入 Zotero 笔记](/docs/how-to/import-zotero-notes)。[缓存设置](/docs/reference/settings#excerpt-image-cache)介绍了手动清除缓存的操作。

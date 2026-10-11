@@ -1,6 +1,6 @@
 ---
-title: "Use the annotation view"
-description: "Open the annotation sidebar, choose what it follows, and pull highlights into your notes."
+title: "使用标注视图"
+description: "打开标注侧边栏，指定其跟随模式，并将高亮标注拖入您的笔记中。"
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
@@ -10,116 +10,114 @@ import { Command } from "@/components/command";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-The annotation view is a sidebar panel that lists a Zotero item's annotations. You can browse highlights, drag them into your notes, and choose whether the view follows your active tab, the Zotero reader, or one item you pin.
+标注视图（Annotation View）是一个侧边栏面板，用于集中列出某篇 Zotero 条目的所有批注。您可以在其中浏览高亮标注、将它们拖拽至笔记中，并自由选择视图是跟随当前活动标签页、跟随 Zotero 阅读器，还是固定停留在指定的文献条目上。
 
-## Open the annotation view
+## 打开标注视图
 
-Open the command palette and run:
+打开命令面板并运行：
 
 <Command name={m.command_open_annot_view_name()} />
 
-The <UiLabel name={m.annot_view_name()} /> panel opens in the right sidebar. A ribbon icon (highlighter) also opens the view.
+<UiLabel name={m.annot_view_name()} />
+面板将在右侧侧边栏中打开。左侧功能区（ribbon）中的荧光笔图标同样可以一键唤起该视图。
 
-By default, the view follows your active tab. When that tab is neither a literature note nor a Zotero PDF, it shows <UiLabel name={m.annot_view_empty_active_tab()} />
+在默认情况下，标注视图会自动跟随您的当前活动标签页。如果当前标签页既不是文献笔记也不是 Zotero PDF，则会显示 <UiLabel name={m.annot_view_empty_active_tab()} />。
 
-To open a Zotero PDF in an Obsidian tab, see [Open an item's PDF in Obsidian](/docs/how-to/open-pdf-in-obsidian).
+若要在 Obsidian 标签页中直接打开 Zotero PDF，请参阅[在 Obsidian 中打开条目的 PDF](/docs/how-to/open-pdf-in-obsidian)。
 
-## Choose what the view follows
+## 选择视图跟随的目标
 
-The annotation view has three follow modes:
+标注视图提供了三种跟随模式：
 
-| Mode                                                        | Behavior                                                                                   |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| <UiLabel name={m.annot_view_mode_active_tab()} /> (default) | Follows your active tab: the item of a literature note, or the attachment of a Zotero PDF. |
-| <UiLabel name={m.annot_view_mode_zotero_reader()} />        | Follows the attachment open in Zotero's reader. Needs live updates.                        |
-| <UiLabel name={m.annot_view_mode_pinned()} />               | Stays on one item you chose, with its attachment remembered.                               |
+| 模式                                                      | 交互行为                                                               |
+| --------------------------------------------------------- | ---------------------------------------------------------------------- |
+| <UiLabel name={m.annot_view_mode_active_tab()} />（默认） | 跟随您当前激活的标签页：文献笔记对应的条目，或 Zotero PDF 对应的附件。 |
+| <UiLabel name={m.annot_view_mode_zotero_reader()} />      | 跟随 Zotero 外部阅读器中当前打开的附件。需要启用即时同步更新。         |
+| <UiLabel name={m.annot_view_mode_pinned()} />             | 固定停留在您选定的单个条目上，并记忆其具体的附件。                     |
 
-Select the mode button at the start of the view's toolbar to switch. The same
-three switches are in the view's pane menu, and each has a command of its own.
+点击视图工具栏开头的模式按钮即可快速切换。面板菜单中同样提供了这三个切换项，且每个模式均配有独立的命令。
 
-The view keeps the mode you chose until you choose another one. When its source
-cannot answer, the view says so in place instead of switching for you.
+视图会始终保持您选定的模式，直到您主动进行切换。当对应数据源暂时无法响应时，视图会在原地提示原因，而绝不会擅自替您更改模式。
 
 <Steps>
   <Step>
-    ### Follow the Zotero reader
+    ### 跟随 Zotero 阅读器
 
-    Select <UiLabel name={m.annot_view_mode_zotero_reader()} /> from the mode button. When you open or switch items in the Zotero reader, the view updates to show that attachment's annotations.
+    在模式按钮中选择 <UiLabel name={m.annot_view_mode_zotero_reader()} />。当您在 Zotero 阅读器中打开或切换文献条目时，视图会自动刷新并显示该附件下的所有标注。
 
-    This mode needs live updates, which carry the reader's position from Zotero to Obsidian. While live updates is off, the view offers <UiLabel name={m.annot_view_enable_live_updates()} /> in place of the list. See [Set up live updates](/docs/how-to/set-up-live-updates).
+    该模式依赖即时同步更新功能，它负责将阅读器的当前位置从 Zotero 实时传递至 Obsidian。在关闭即时同步更新期间，视图会显示 <UiLabel name={m.annot_view_enable_live_updates()} /> 引导按钮。详情参阅[配置即时同步更新](/docs/how-to/set-up-live-updates)。
 
-    Closing the reader in Zotero leaves the last attachment on screen under <UiLabel name={m.annot_view_reader_closed()} />
+    如果在 Zotero 中关闭了阅读器，视图仍会在 <UiLabel name={m.annot_view_reader_closed()} /> 提示下保留上一个附件的标注内容。
 
   </Step>
   <Step>
-    ### Pin one item
+    ### 固定单篇条目
 
-    Select <UiLabel name={m.annot_view_mode_pin_current_item()} /> to pin the item the view already shows, or <UiLabel name={m.annot_view_pin_choose_item()} /> to search Zotero for another one.
+    选择 <UiLabel name={m.annot_view_mode_pin_current_item()} /> 可以固定视图当前展示的条目，或者选择 <UiLabel name={m.annot_view_pin_choose_item()} /> 在 Zotero 中搜索并绑定另一篇条目。
 
-    Pinning from a Zotero PDF tab releases that tab's hold on the attachment, so you can switch between the item's attachments while the pin stands.
+    从 Zotero PDF 标签页中执行固定操作会释放该标签页对附件的独占锁定，从而允许您在保持固定的同时切换浏览该条目下的其他关联附件。
 
-    Select <UiLabel name={m.annot_view_mode_unpin()} /> to return to the mode you were in before the pin.
+    选择 <UiLabel name={m.annot_view_mode_unpin()} /> 可恢复到固定先前的跟随模式。
 
-    A PDF that Zotero stores with no parent item cannot be pinned, and the control says so.
+    对于 Zotero 中没有父级条目的独立 PDF，无法进行固定，控件会相应提示。
 
   </Step>
 </Steps>
 
-## Choose an attachment
+## 选择附件
 
-When the item has more than one attachment, a picker under the toolbar names the one on screen with its annotation count, and remembers your choice per item.
+当条目包含多个附件时，工具栏下方的选择器会列出当前显示附件的名称及其标注数量，并按条目记住您的选择。
 
-A Zotero PDF tab and the Zotero reader each choose the attachment themselves, so the picker stands down while one of them does.
+Zotero PDF 标签页与 Zotero 外部阅读器各自会自行决定所展示的附件，因此当它们处于活跃状态时选择器会自动让位。
 
-To read the attachment on screen in Obsidian, select the mode button, then select <UiLabel name={m.command_open_pdf_name()} />. The same item is in the view's pane menu. It is not shown when an Obsidian PDF tab already shows that attachment.
+如需在 Obsidian 中阅读当前显示的附件，请点击模式按钮，然后选择 <UiLabel name={m.command_open_pdf_name()} />。面板菜单中包含完全相同的项。当 Obsidian 的某个 PDF 标签页已在显示该附件时，此选项会自动隐藏。
 
-## Filter the list [#filter]
+## 筛选列表 [#filter]
 
-The toolbar has two filters. Each opens as a small popover under its button.
+工具栏提供了两个过滤器。点击对应按钮均会在下方弹出一个小型浮窗。
 
-- <UiLabel name={m.annot_view_filter_tag_trigger()} />: lists the tags on the
-  annotations. Type in the search field to find a tag, then select one or more
-  tags.
-- <UiLabel name={m.annot_view_filter_color_trigger()} />: lists the colors of
-  the annotations. Select one or more colors.
+- <UiLabel name={m.annot_view_filter_tag_trigger()} />
+  ：列出标注所带有的标签。在搜索框中键入可快速查找标签，随后可多选一个或多个标签。
+- <UiLabel name={m.annot_view_filter_color_trigger()} />
+  ：列出标注的高亮颜色。可勾选一个或多个颜色。
 
-The list shows the annotations that have any of the selected tags and any of the selected colors. After you select a tag or a color, the button shows your choice. To clear it, open the popover and select <UiLabel name={m.annot_view_filter_tag_clear()} /> or <UiLabel name={m.annot_view_filter_color_clear()} />.
+列表仅展示同时满足所选标签之一和所选颜色之一的标注。选定标签或颜色后，按钮会直观显示您的选择。如需重置清空，打开浮窗选择 <UiLabel name={m.annot_view_filter_tag_clear()} /> 或 <UiLabel name={m.annot_view_filter_color_clear()} />。
 
-## Select several cards [#select-several]
+## 多选卡片 [#select-several]
 
-Select a card to select it alone. To select more than one card:
+点击单张卡片将仅选中该卡片。若需同时选中多张卡片：
 
-| Action                                                      | Result                                                         |
-| ----------------------------------------------------------- | -------------------------------------------------------------- |
-| `Ctrl`-click (Windows and Linux) or `Command`-click (macOS) | Adds a card to the selection, or removes it.                   |
-| `Shift`-click                                               | Selects all cards from the last card you selected to this one. |
-| `Ctrl+A` (Windows and Linux) or `Command+A` (macOS)         | Selects all cards that the list shows.                         |
+| 操作快捷键                                                | 执行结果                                           |
+| --------------------------------------------------------- | -------------------------------------------------- |
+| Windows/Linux 上按 `Ctrl`+点击，macOS 上按 `Command`+点击 | 将卡片加入选中状态，或将其从多选中移除。           |
+| `Shift`+点击                                              | 连续选中从上一个选定卡片到当前卡片之间的所有卡片。 |
+| Windows/Linux 上按 `Ctrl+A`，macOS 上按 `Command+A`       | 选中当前列表中展示的全部卡片。                     |
 
-You can also press `Shift+Up` or `Shift+Down` to extend the selection one card at a time. Press `Escape` to clear the selection.
+您还可以按 `Shift+Up` 或 `Shift+Down` 逐个扩展选中区域。按 `Escape` 可清空选择。
 
-With the cards selected, you can:
+在选中多张卡片后，您可以：
 
-- Delete them: press `Delete` or `Backspace`, then confirm. You can also right-click a selected card and select the delete item, which shows the number of cards.
-- Change their color: press a key from `1` to `8`. The keys follow the order of Zotero's color palette. You can also right-click a selected card and select <UiLabel name={m.annot_view_card_color()} />.
-- Copy their text: press `Ctrl+C` (Windows and Linux) or `Command+C` (macOS), or right-click a selected card and select <UiLabel name={m.annot_view_menu_copy_text()} />. ZotLit copies the quoted text of each card, or its comment when it has no quoted text, with a blank line between cards.
+- 删除标注：按 `Delete` 或 `Backspace` 并确认。也可以右键点击选中的卡片，点击带有卡片数量的删除项。
+- 更改标注颜色：按下数字键 `1` 到 `8`。各数字对应 Zotero 调色板的标准顺序。也可以右键点击选中卡片并选择 <UiLabel name={m.annot_view_card_color()} />。
+- 复制标注文本：按 `Ctrl+C`（macOS 为 `Command+C`），或右键点击选中的卡片选择 <UiLabel name={m.annot_view_menu_copy_text()} />。ZotLit 会复制每张卡片的引用文本（若无引用文本则复制评注），并在卡片之间留一空行。
 
-Deleting and changing colors are edits, so editing must be enabled. One undo reverses the change on all the cards. See [How to edit PDF annotations in Obsidian](/docs/how-to/edit-pdf-annotations) for undo and for the other edits.
+删除与改色属于写入操作，因此必须先开启编辑授权。按一次撤销（Undo）即可同时撤销对所有卡片的改动。有关撤销与其他编辑操作，请参阅[在 Obsidian 中编辑 PDF 批注](/docs/how-to/edit-pdf-annotations)。
 
-## Locked annotations [#locked]
+## 受锁定的批注 [#locked]
 
-A lock icon beside a card's page number marks an annotation that ZotLit cannot change. Point to the icon to see the reason. For example, Zotero imported the annotation from the PDF file, or another member of a group library created it. See [How to edit PDF annotations in Obsidian](/docs/how-to/edit-pdf-annotations) for what you can still do with a locked annotation.
+卡片页码旁的小锁图标标明了 ZotLit 无法修改的受锁定批注。将鼠标悬停在图标上即可查看锁定原因。例如：Zotero 直接从 PDF 文件中导入了该标注，或者该标注由群组文献库的其他成员所创建。关于受锁定标注的可用权限，请参阅[在 Obsidian 中编辑 PDF 批注](/docs/how-to/edit-pdf-annotations)。
 
-## Pull annotations into a note
+## 将批注拉取到笔记中
 
-1. Open the note where you want to insert the annotation.
-2. Drag an annotation row from the sidebar to the required editor position.
-3. Wait for the insertion to complete. Image and ink excerpts are prepared before their links are inserted.
+1. 打开您希望插入批注的笔记。
+2. 将侧边栏中的某条标注卡片直接拖拽到编辑器中的目标位置。
+3. 等待插入完成。图片和手写墨迹摘录会在链接插入之前预先准备完毕。
 
-To insert without dragging, put the cursor in the note where you want the annotation. Then right-click the annotation card, or open its <UiLabel name={m.annot_view_more_tooltip()} /> menu, and select <UiLabel name={m.annot_view_menu_insert()} />. ZotLit inserts the same text that a drag inserts. The item is not available when no note editor is active.
+若无需拖拽即可插入，请先将光标放置在笔记中的目标插入位置。然后右键单击标注卡片，或打开其 <UiLabel name={m.annot_view_more_tooltip()} /> 菜单，点击 <UiLabel name={m.annot_view_menu_insert()} />。ZotLit 将插入与拖拽完全相同的格式化文本。在未激活任何笔记编辑器时该菜单项不可用。
 
-ZotLit uses the [profile](/docs/concepts/profiles) of the annotation item's literature note, or the Default profile when that item has no note. Edits made while you wait move the insertion position with the text. Press Escape to cancel a pending insertion. After insertion, one Undo removes the inserted content.
+ZotLit 会依据该条目文献笔记所绑定的[配置方案](/docs/concepts/profiles)进行渲染，若该条目尚无笔记则按默认配置方案处理。在等待插入期间如果输入了新文字，插入位置会随文本自适应后移。按 `Escape` 可取消正在处理的插入请求。插入完成后，执行一次撤销（Undo）即可移除插入的全部内容。
 
-With <UiLabel name={m.settings_attachment_import_name()} /> enabled, inserted excerpts are saved as image files in the vault. With it disabled, new excerpts use an unavailable-image explanation and source link. Viewing cards or selecting a target note creates no saved image files.
+当开启 <UiLabel name={m.settings_attachment_import_name()} /> 时，插入的摘录会被保存为仓库中的图片文件。关闭时，新摘录将使用说明图片不可用的占位文本与源链接。在侧边栏中浏览卡片或选定目标笔记不会生成落地图片文件。
 
 You can view and insert [excerpt images](/docs/concepts/excerpt-images) with both PDF readers closed. A failed image request produces fallback text or a preserved image, and the operation reports uncertain or unavailable results in one summary.
 

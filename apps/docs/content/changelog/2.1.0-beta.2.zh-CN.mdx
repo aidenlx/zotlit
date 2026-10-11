@@ -1,54 +1,54 @@
 ---
 version: "2.1.0-beta.2"
 date: "2026-08-17"
-description: "Citation Popover, copy bibliography, note-class Entry Serials"
+description: "引文悬停浮窗、复制参考文献列表、脚注类引文序号展示"
 ---
 
-## Highlights
+## 版本亮点
 
-### Citation Popover
+### 引文悬停浮窗
 
-![The Citation Popover showing three stacked bibliography entries with formatted text, DOI links, and action buttons for each cited item, beside the References Sidebar](/img/changelog/citation-popover.webp)
+![引文悬停浮窗展示了三个层叠的参考文献条目，包含格式化文本、DOI 链接以及针对各条目的操作按钮，旁边为参考文献侧边栏](/img/changelog/citation-popover.webp)
 
-Hovering a citation now shows a popover with each cited item's full formatted bibliography entry, stacked in citation order for multi-item citations. Each entry carries action buttons to open the Literature Note, open the item in Zotero, or open its attachment. The popover works on literal Pandoc citations in Live Preview, Reading view, and Source mode, and on Literature Note wikilinks when wikilink citations are enabled.
+将鼠标悬停在引文上，现在会弹出一个浮窗展示所引文献的完整格式化参考文献条目；对于多篇引用，会按引用顺序垂直层叠展示。每个条目均提供快捷操作按钮：打开文献笔记、在 Zotero 中定位条目或打开对应附件。浮窗在实时预览、阅读视图和源码模式下的 Pandoc 字面量引文均可触发；在开启双链引文时同样适用于文献笔记双链。
 
-A new **Hover action** setting under **Settings › ZotLit › Citations › Hover** controls what citation hover shows:
+**设置 › ZotLit › 引文 › 悬停**下新增的**悬停操作**配置项决定了悬停时的呈现行为：
 
-- **Citation Popover** (default): the popover described above.
-- **Page preview**: the previous behavior, showing the Literature Note page preview under Obsidian's own Page Preview settings.
-- **Off**: no ZotLit hover at all; native wikilink hover stays untouched.
+- **引文浮窗**（默认）：如上所述的完整参考文献浮窗。
+- **页面预览**：先前的历史行为，依循 Obsidian 原生的页面预览设置展示文献笔记的页面预览。
+- **关闭**：完全不触发 ZotLit 悬停；Obsidian 原生的双链悬停保持不受干扰。
 
-Each mode has its own **Require modifier key** toggles per editing mode (Source mode requires Mod by default; Live Preview and Reading view do not). The toggles live on a sub-page under the Hover action setting.
+每种模式均可针对不同编辑模式单独配置**需要按下辅助键**选项（源码模式默认需要按下 Mod 键；实时预览与阅读视图默认无需辅助键）。这些开关位于悬停操作设置项下的子页面中。
 
-### Citation data commands for agents
+### 供智能体调用的引文数据 CLI 指令
 
-Three new CLI commands, `zotlit:cited-by`, `zotlit:references`, and `zotlit:citations-guide`, let an AI agent query which notes cite a given item and what a document cites. Install the [`zotlit-citations` skill](/docs/install-skill) for your agent to use this workflow.
+新增三条 CLI 命令行指令：`zotlit:cited-by`、`zotlit:references` 以及 `zotlit:citations-guide`，允许 AI 智能体直接查询哪些笔记引用了特定条目，以及某篇文档具体引用了哪些文献。为您的智能体安装 [`zotlit-citations` skill](/docs/install-skill) 即可解锁此工作流。
 
-## What's New
+## 新增功能
 
-### Copy bibliography
+### 复制参考文献列表
 
-The References Sidebar toolbar now offers a **Copy bibliography** action. One click copies the full reference list as both rich text and plain text. Emphasis, superscript, small caps, and DOI links survive a paste into Word or Google Docs. A destination that takes only plain text falls back to the text version, and the notice tells you which format was copied.
+参考文献侧边栏工具栏现在提供了**复制参考文献列表**操作。一键即可将整份参考文献列表同时以富文本和纯文本形式写入剪贴板。斜体加粗强调、上标、小型大写字母（small caps）以及 DOI 超链接在粘贴至 Word 或 Google Docs 时均能完好保留。仅支持纯文本的目标程序会自动回退使用纯文本版本，通知会清晰告知具体复制的格式。
 
-### Note-class citation styles
+### 脚注类引文样式支持
 
-Styles that use footnotes (such as Chicago full-note) now show numbered Entry Serials beside each citation inline and in the References Sidebar gutter, so you can see at a glance which reference number a citation carries.
+使用文下注的引文样式（例如 Chicago full-note 完整注脚格式）现在会在正文引文旁以及参考文献侧边栏左侧边缘显示带有连续编号的条目序号，让您一眼即可看清某条引文对应的参考文献编号。
 
-### Open citations as links
+### 将引文作为链接打开
 
-The **Open Pandoc citations as links** setting is now **Open citations as links** and covers both Pandoc citations and Literature Note wikilinks. It is off by default. While off, clicking a rendered citation in Live Preview places the cursor in its Markdown source (the widget collapses like clicked bold text). Mod+click still opens the Literature Note regardless of this setting.
+原先的**将 Pandoc 引文作为链接打开**设置项现已更名为**将引文作为链接打开**，同时统领 Pandoc 字面量引文与文献笔记双链。该选项默认处于关闭状态。在关闭期间，在实时预览中直接点击格式化引文会将光标置于其 Markdown 源码中（微件会像点击加粗文字一样折叠展开）。无论该设置如何配置，按住 Mod 键点击依然可以直接打开文献笔记。
 
-### Other improvements
+### 其他改进
 
-- The References Sidebar toolbar now includes a **Change citation and references style** shortcut that opens the style picker in settings.
-- Two-creator summaries (e.g. "Wang and Lee") now follow your locale's list formatting conventions.
+- 参考文献侧边栏工具栏现在包含一个**更换引文与参考文献样式**快捷入口，可直达设置中的样式选择器。
+- 两位作者的合称（例如“Wang and Lee”）现在会严格遵循您本地语言区域（locale）的列表排版习惯。
 
-## Bug Fixes
+## 问题修复
 
-- Fixed the Zotero database refreshing every few seconds even when nothing changed. A filesystem echo from the database clone triggered a self-feeding loop on APFS volumes.
-- Fixed Mod+Enter in the note quick switcher not opening the note in a new pane. The keyboard shortcut was advertised but never registered. The modifier label now also shows the correct key per platform.
-- Fixed Shift+Enter in the citation insert modal not inserting the secondary citation form. The keyboard shortcut was advertised but never registered.
-- Fixed citations inside inline footnotes (`^[...]`) rendering at body text size instead of matching the footnote's superscript size.
-- Fixed `^[...]` being read as a citation cluster instead of an inline footnote. The bracket after a caret now starts an inline note as Pandoc expects.
-- Fixed the References Sidebar engine banners overlapping with the reference list when the list was long enough to scroll.
-- Fixed two items with the same filename colliding in the citation rendering. Each item now keeps its own bibliography entry and reference number, even when both are cited in the same document.
+- 修复了即使没有任何变动，Zotero 数据库每隔数秒仍会反复自动刷新的问题。这是因为在 APFS 卷上，数据库克隆触发的文件系统回声导致了自激死循环。
+- 修复了在文献笔记快速切换器中按下 Mod+Enter 未能在新分栏窗格中打开笔记的问题。该快捷键此前仅在界面提示但未实际注册。同时快捷键提示现在能够按操作系统平台正确显示修饰键名称。
+- 修复了在引文插入弹窗中按下 Shift+Enter 未能插入备选引文格式的问题。
+- 修复了行内注脚（`^[...]`）内部的引文以正文字号渲染，未能匹配注脚上标字号的问题。
+- 修复了 `^[...]` 被误识别为引文簇而非行内注脚的问题。现在脱字符（`^`）后面的方括号能够如 Pandoc 所预期的那样正常解析为行内注脚。
+- 修复了当参考文献列表足够长产生滚动条时，侧边栏引擎横幅与参考文献列表相互重叠遮挡的问题。
+- 修复了文件名相同的两个条目在引文渲染中发生碰撞覆盖的问题。现在即便两篇文献在同一篇文档中被引用，它们也能各自保留独立的参考文献条目与引用编号。

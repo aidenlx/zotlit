@@ -1,6 +1,6 @@
 ---
-title: "Open an item's PDF in Obsidian"
-description: "Open a Zotero PDF attachment in Obsidian's own PDF reader, from a literature note, the quick switcher, or Zotero."
+title: "在 Obsidian 中打开条目的 PDF"
+description: "从文献笔记、快速切换器或 Zotero 直接在 Obsidian 原生 PDF 阅读器中打开 Zotero 的 PDF 附件。"
 ---
 
 import { Card, Cards } from "fumadocs-ui/components/card";
@@ -9,51 +9,51 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-Read a Zotero item's PDF in an Obsidian tab instead of switching to Zotero.
+直接在 Obsidian 标签页中阅读 Zotero 条目的 PDF，无需切换窗口到 Zotero。
 
-ZotLit opens the PDF in Obsidian's own PDF reader, whether the file sits inside your vault or in Zotero's storage folder. Only PDF attachments open this way; EPUBs, web snapshots, and other file types stay in Zotero.
+无论 PDF 文件存放于您的仓库内部，还是保存在 Zotero 的存储目录中，ZotLit 均支持在 Obsidian 内置的 PDF 阅读器中直接打开。此特性专用于 PDF 附件；EPUB、网页快照及其他文件类型仍将在外部打开。
 
-You need Obsidian 1.14.2 or later, which ZotLit 2.2 also requires.
+此功能需要 Obsidian 1.14.2 或更高版本（ZotLit 2.2 同样要求此版本）。
 
-## From a literature note
+## 从文献笔记中打开
 
-With the literature note open in Obsidian:
+在 Obsidian 中打开文献笔记后：
 
-- Open the command palette and run <Command inline name={m.command_open_pdf_name()} />.
-- Or right-click the note's tab and choose <UiLabel name={m.command_open_pdf_name()} /> from the **zotlit** section of the file menu.
+- 打开命令面板并运行 <Command inline name={m.command_open_pdf_name()} />。
+- 或者右键选择笔记标签页，在文件菜单的 **zotlit** 分组中选择 <UiLabel name={m.command_open_pdf_name()} />。
 
-## From the annotation view
+## 从标注视图中打开
 
-Open the view's pane menu and choose <UiLabel name={m.command_open_pdf_name()} />. This opens the attachment the view shows. The menu leaves the entry out while the view follows that PDF's tab in Obsidian.
+打开标注视图的面板菜单并选择 <UiLabel name={m.command_open_pdf_name()} />。这将打开该视图当前展示的附件。当视图已经处于跟随 Obsidian 中该 PDF 标签页的状态时，菜单中会自动隐藏该选项。
 
-## From the quick switcher
+## 从快速切换器中打开
 
-Run <Command inline name={m.command_open_lit_note_name()} />, search for the item, and press `Shift+Enter` on the result. The PDF opens without the literature note. See [Use the quick switcher](/docs/how-to/create-and-open-notes#quick-switcher) for every chord a result takes.
+运行 <Command inline name={m.command_open_lit_note_name()} />，搜索条目，然后在结果上按下 `Shift+Enter`。PDF 将直接打开，而不会展开文献笔记。关于各交互快捷键的详细说明，请参阅[使用快速切换器](/docs/how-to/create-and-open-notes#quick-switcher)。
 
-## From Zotero
+## 从 Zotero 中打开
 
-These entry points need ZotLit Companion, the Zotero add-on, at the version released with ZotLit 2.2. [Install ZotLit Companion](/docs/install-companion) has the current version.
+这些入口需要安装与 ZotLit 2.2 配套发布的 ZotLit Companion 插件。[安装 ZotLit Companion](/docs/install-companion) 提供了当前版本的安装说明。
 
-- In the library, select one PDF attachment, or one item that has a PDF, and choose <UiLabel name={m["zotero.menu_item_open_pdf.label"]()} /> from the top-level context menu.
-- While reading a PDF in Zotero, right-click inside the page and choose <UiLabel name={m["zotero.menu_reader_page_open_pdf"]()} />. This opens the PDF you are reading.
+- 在文献库中，选中一个 PDF 附件或附带有 PDF 的条目，从顶层右键菜单中选择 <UiLabel name={m["zotero.menu_item_open_pdf.label"]()} />。
+- 在 Zotero 中阅读 PDF 时，在页面中右键单击并选择 <UiLabel name={m["zotero.menu_reader_page_open_pdf"]()} />。这将直接在 Obsidian 中打开您当前正在阅读的 PDF。
 
-## From a file link in a note
+## 从笔记中的文件链接打开
 
-A literature note's `fileLink` writes a link straight to the attachment file, and an annotation's `fileLink` adds the page it came from and the annotation itself. Click one and the PDF opens in Obsidian, on that page, with that annotation selected and scrolled into view. An annotation Zotero no longer has still opens the PDF on its page.
+文献笔记的 `fileLink` 会生成直达附件文件的链接，而单条批注的 `fileLink` 还会额外追加来源页码及标注标识。点击该链接即可在 Obsidian 中打开 PDF 并直接跳转至对应页码，同时选中对应标注并将其滚动至视野居中位置。即使 Zotero 中已删除了该标注，链接仍可正常定位至对应的 PDF 页码。
 
-This applies to any link in your vault that points at a PDF in your Zotero library, however the link got there. A link to any other file — an EPUB, a web snapshot, a PDF Zotero does not know about — opens in your system app as before.
+这适用于仓库中任何指向您 Zotero 库中 PDF 的链接。指向任何其他类型文件（EPUB、网页快照、Zotero 之外的普通 PDF）的链接依然会按照原有方式调用系统默认程序打开。
 
-To open one link in your system app anyway, right-click it and choose **Open in default browser**. To turn the whole behavior off, clear <UiLabel name={m.settings_reader_open_file_links_name()} /> in **Settings → ZotLit → Reader**.
+如果无论如何都希望通过系统默认应用打开该链接，请右键单击该链接并选择**在默认浏览器中打开**。若要全局关闭该拦截跳转行为，请在**设置 → ZotLit → 阅读器**中关闭 <UiLabel name={m.settings_reader_open_file_links_name()} />。
 
-## What you get
+## 打开效果说明
 
-When the item has one PDF, it opens straight away. When it has several, ZotLit asks which one to open; the picker lists them by file name and its search box reads <UiLabel name={m.modal_select_pdf_placeholder()} />.
+当条目仅有一个 PDF 时，它会直接打开。当包含多个 PDF 时，ZotLit 会弹出选择器让您挑选；选择列表按文件名排列，搜索框提示为 <UiLabel name={m.modal_select_pdf_placeholder()} />。
 
-When the item has no PDF, ZotLit shows <UiLabel name={m.notice_no_pdf_attachment()} /> When the file is no longer on disk, it shows <UiLabel name={m.notice_pdf_file_missing()} /> In neither case does ZotLit open the file in Zotero instead.
+当条目没有任何 PDF 时，ZotLit 会提示 <UiLabel name={m.notice_no_pdf_attachment()} />；当文件已在磁盘中丢失时，会提示 <UiLabel name={m.notice_pdf_file_missing()} />。在这两种情况下，ZotLit 均不会退回到 Zotero 中尝试打开。
 
-The annotation view comes forward in the sidebar with the PDF, so the item's highlights appear beside it. While the view is in <UiLabel name={m.annot_view_mode_active_tab()} /> mode, it follows the PDF tab.
+标注视图会在侧边栏中随 PDF 一同唤起，以便条目的高亮标注直接呈现于文档旁边。当标注视图处于 <UiLabel name={m.annot_view_mode_active_tab()} /> 模式时，它会自动跟随激活的 PDF 标签页。
 
-To keep your sidebar as it is, turn off <SettingsPath page={m.settings_page_reader()} setting={m.settings_reader_focus_annot_view_name()} />. See [Settings](/docs/reference/settings#reader).
+如果您希望侧边栏保持静止，可在 <SettingsPath page={m.settings_page_reader()} setting={m.settings_reader_focus_annot_view_name()} /> 中将其关闭。详见[设置](/docs/reference/settings#reader)。
 
 ## See also
 

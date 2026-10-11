@@ -1,6 +1,6 @@
 ---
-title: "Insert citations"
-description: "Insert Markdown citations while typing or from the command palette, as the main citation or the alternate citation."
+title: "插入引文"
+description: "在打字输入时或通过命令面板快速插入 Markdown 引文，支持常规主引文与备选引文格式。"
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
@@ -11,51 +11,51 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-Use the Citation Suggester or command palette to insert a Markdown citation from your Zotero library.
+利用引文建议下拉框（Citation Suggester）或命令面板，从您的 Zotero 文献库中快速插入 Markdown 格式的学术引文。
 
-Both entry points search every library in your [library scope](/docs/reference/settings#library-scope) at once, in one relevance order. While more than one library can contribute results, each suggestion names the library its item comes from. With one library in scope, that label is left off.
+两个入口均会统一检索您在[文献库作用域](/docs/reference/settings#library-scope)中指定的全部文献库，并按相关性排序输出。当有多个文献库参与检索时，每项建议结果都会清晰标明其来源文献库；如果仅有一个文献库在作用域内，该标签会自动省略。
 
-Citation insertion works independently of the Document Citation Set and In-text Citation Rendering. You can insert citations with both source settings off and with <UiLabel name={m.settings_citation_show_formatted_name()} /> off.
+引文插入机制完全独立于文档引文集（Document Citation Set）以及正文引文格式化渲染。即使同时关闭了这两类来源设置并禁用了 <UiLabel name={m.settings_citation_show_formatted_name()} />，引文插入功能依然能够正常使用。
 
-## Insert while typing
+## 打字输入时即时插入
 
-The citation suggester opens when you type `[@` (or `【@`) in the editor. A dropdown appears with items from your Zotero library.
+在编辑器中键入 `[@`（或全角中文符号 `【@`）即可激活引文建议下拉框。光标下方将弹出一个包含您 Zotero 条目的下拉列表。
 
-With the opt-in <UiLabel name={m.settings_citation_at_trigger_name()} /> enabled, a bare `@` at a word boundary (start of line, after a space, or after an opening bracket or quote) also opens the suggester.
+若按需启用了 <UiLabel name={m.settings_citation_at_trigger_name()} /> 设置项，在词边界处（行首、空格后，或前括号与前引号后）直接键入单个 `@` 符号同样能唤起建议菜单。
 
 <Steps>
   <Step>
-    ### Start a citation
+    ### 唤起引文菜单
 
-    Type `[@` in the editor. A suggestion list appears.
+    在编辑器中键入 `[@`。建议列表随即在光标下方展开。
 
-    With <UiLabel name={m.settings_citation_at_trigger_name()} /> enabled, typing `@` at a word boundary does the same thing. A mid-word `@` (e.g. in an email address) is ignored.
-
-  </Step>
-  <Step>
-    ### Search and select
-
-    Continue typing to filter the list. Select an item and press `Enter` to insert the citation. The citation is inserted with a trailing space so you can keep typing immediately.
-
-    `Enter` asks for the **main citation**, which the built-in citation text renders as `[@citationKey]`.
-
-    An `@` query ends at the first space. Type `_` where the search needs a space: `@machine_learning` finds "machine learning". Bracket trigger queries (`[@`) accept real spaces.
+    若开启了 <UiLabel name={m.settings_citation_at_trigger_name()} />，在词边界处键入单个 `@` 同样会触发建议。而在单词中间出现的 `@`（例如电子邮箱地址）则会被自动忽略。
 
   </Step>
   <Step>
-    ### Insert the alternate citation (optional)
+    ### 搜索并选择条目
 
-    To ask for the **alternate citation** instead, which the built-in citation text renders as `@citationKey`, do one of:
+    继续输入关键词以过滤筛选列表。选中所需条目后按 `Enter` 即可完成插入。引文插入后会自动附带一个空格，方便您流畅继续后续书写。
 
-    - End your query with `/` before pressing `Enter`.
-    - Press `Shift+Enter` on the selected item.
+    按 `Enter` 默认插入**主引文（main citation）**，内置的引文文本模板会将其渲染为 `[@citationKey]`。
 
-    The instruction row in the suggester shows these shortcuts as a reminder.
+    单个 `@` 查询会在遇到第一个空格时结束。如需包含空格，可用下划线 `_` 代替：例如输入 `@machine_learning` 即可搜索“machine learning”。而方括号触发词（`[@`）则原生支持直接输入常规空格。
+
+  </Step>
+  <Step>
+    ### 插入备选引文格式（可选）
+
+    若希望插入**备选引文（alternate citation）**（内置引文文本模板会将其渲染为作者置入正文的 `@citationKey` 形式），可通过以下任一方式实现：
+
+    - 在按 `Enter` 之前，在查询词末尾追加一个斜杠 `/`。
+    - 在选中的条目上直接按下 `Shift+Enter`。
+
+    建议菜单底部的操作说明栏清晰提示了这些快捷键组合。
 
   </Step>
 </Steps>
 
-If the selected item has no citation key, nothing is inserted and a notice appears: "Selected item has no citation key: `{key}`."
+若选中的条目未生成文献引用标识，插入操作会被安全取消并弹出提示通知：“所选条目没有文献引用标识：`{key}`”。
 
 ### Suggester settings
 

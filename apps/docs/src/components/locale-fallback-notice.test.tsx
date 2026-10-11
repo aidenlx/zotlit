@@ -106,13 +106,13 @@ describe("LocaleFallbackNotice", () => {
       const href = `/zh-CN/docs/${slug}`;
       using view = mount(href);
       const note = view.container.querySelector('[role="note"]')!;
-      expect(note.getAttribute("lang")).toBe("en");
+      expect(note.getAttribute("lang")).toBe("zh-CN");
       expect(note.textContent).toContain(
-        m.docs_locale_fallback({}, { locale: "en" }),
+        m.docs_locale_fallback({}, { locale: "zh-CN" }),
       );
       const link = note.querySelector("a")!;
       expect(link.textContent).toBe(
-        m.docs_read_in_english({}, { locale: "en" }),
+        m.docs_read_in_english({}, { locale: "zh-CN" }),
       );
       expect(link.getAttribute("href")).toBe(`/docs/${slug}`);
       expect(link.hasAttribute("target")).toBe(false);
@@ -138,6 +138,10 @@ describe("LocaleFallbackNotice", () => {
   it("restores the browser fragment after hydrating a fragment-free server location", () => {
     using view = mount(
       "/zh-CN/docs/how-to/qa-english-only?keep=1&lang=zh-CN#qa-english-only-feature",
+    );
+    expect(view.serverMarkup).toContain('lang="zh-CN"');
+    expect(view.serverMarkup).toContain(
+      m.docs_locale_fallback({}, { locale: "zh-CN" }),
     );
     expect(view.router.state.location.hash).toBe("");
     expect(view.router.state.location.publicHref).not.toContain("#");
@@ -200,7 +204,7 @@ describe("LocaleFallbackNotice", () => {
       (node) => node.textContent,
     );
     expect(paragraphs).toEqual([
-      m.docs_locale_fallback({}, { locale: "en" }),
+      m.docs_locale_fallback({}, { locale: "zh-CN" }),
       m.docs_redirect_v1_notice(),
     ]);
     expect(

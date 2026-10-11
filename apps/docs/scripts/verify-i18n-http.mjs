@@ -21,6 +21,7 @@ import { hideBin } from "yargs/helpers";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
 import englishMessages from "../../../messages/en.json" with { type: "json" };
+import chineseMessages from "../../../messages/zh-CN.json" with { type: "json" };
 import { scanChinesePages } from "../src/lib/content-scan.ts";
 
 const optionConstraints = {
@@ -149,8 +150,6 @@ const betaOrigin = "https://zotlit-beta.aidenlx.site";
 const legacyOrigin = "https://zotlit-v1.aidenlx.site";
 const incomingQuery =
   "?probe=http-matrix&from=incoming&src=%2Fdo-not-use&lang=fr";
-const fallbackNoticeText = englishMessages.docs_locale_fallback;
-const englishActionText = englishMessages.docs_read_in_english;
 const evidence = {
   schemaVersion: 1,
   startedAt,
@@ -345,6 +344,10 @@ function verifyHtml(group, result, path) {
   const unlocalized = englishPath(path);
   const hasChinese = chinesePages.has(unlocalized);
   const fallback = localized && !hasChinese;
+  const uiLocale = localized ? "zh-CN" : "en";
+  const messages = localized ? chineseMessages : englishMessages;
+  const fallbackNoticeText = messages.docs_locale_fallback;
+  const englishActionText = messages.docs_read_in_english;
   const contentLocale = localized && hasChinese ? "zh-CN" : "en";
   const canonicalPath = localized && hasChinese ? path : unlocalized;
   const label = new URL(record.url).pathname;
@@ -436,7 +439,7 @@ function verifyHtml(group, result, path) {
     });
     check(group, `${label} fallback notice follows missing file`, {
       passed: body.includes(fallbackNoticeText) === fallback,
-      expected: fallback ? "English fallback notice" : "no fallback notice",
+      expected: fallback ? "localized fallback notice" : "no fallback notice",
     });
     let localeLinksBody = body;
     if (fallback) {
@@ -449,7 +452,7 @@ function verifyHtml(group, result, path) {
         ),
       ].filter(
         (match) =>
-          attributes(match[0].match(/^<div\b[^>]*>/i)[0]).lang === "en" &&
+          attributes(match[0].match(/^<div\b[^>]*>/i)[0]).lang === uiLocale &&
           visibleText(match.groups.body).includes(fallbackNoticeText),
       );
       const actions = notices.flatMap((notice) =>
