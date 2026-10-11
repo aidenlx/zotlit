@@ -87,8 +87,8 @@ export function currentYear() {
  * and formats in UTC. `Date` stands in for `Temporal`
  * (policies/temporal-dates.md) because workerd carries no Temporal API.
  */
-export function formatReleaseDate(isoDay: string) {
-  return new Intl.DateTimeFormat("en-US", {
+export function formatReleaseDate(isoDay: string, locale: string = "en") {
+  return new Intl.DateTimeFormat(locale === "zh-CN" ? "zh-CN" : "en-US", {
     timeZone: "UTC",
     year: "numeric",
     month: "long",
@@ -102,8 +102,8 @@ export function formatReleaseDate(isoDay: string) {
  * stands in for `Temporal` (policies/temporal-dates.md) because workerd carries
  * no Temporal API.
  */
-export function formatReleaseInstant(iso: string) {
-  return new Intl.DateTimeFormat("en-US", {
+export function formatReleaseInstant(iso: string, locale: string = "en") {
+  return new Intl.DateTimeFormat(locale === "zh-CN" ? "zh-CN" : "en-US", {
     timeZone: "UTC",
     month: "short",
     day: "numeric",

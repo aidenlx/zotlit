@@ -2561,5 +2561,6 @@
   "pdf_create_popup_copy": "Copy selected text",
   "pdf_create_failed": "The annotation was not created. {reason}",
   "pdf_create_reason_no_document": "The PDF is no longer open.",
-  "pdf_adjust_failed": "The annotation was not adjusted. {reason}"
+  "pdf_adjust_failed": "The annotation was not adjusted. {reason}",
+  "docs_locale_fallback": "Simplified Chinese content is not ready. English content is shown."
 }

@@ -22,6 +22,7 @@ const contractIR = JSON.parse(
 const model = buildPageModel(contractIR);
 
 export const metaSchema = v.object({
+  translationStatus: v.optional(v.literal("placeholder")),
   title: v.optional(v.string()),
   pages: v.optional(v.array(v.string())),
   pagesIndex: v.optional(v.string()),
@@ -33,6 +34,7 @@ export const metaSchema = v.object({
 });
 
 const pageSchema = v.object({
+  translationStatus: v.optional(v.literal("placeholder")),
   title: v.string(),
   description: v.optional(v.string()),
   icon: v.optional(v.string()),
@@ -92,6 +94,7 @@ export const docsSchema = v.object({
 });
 
 export const changelogSchema = v.object({
+  translationStatus: v.optional(v.literal("placeholder")),
   title: v.optional(v.string()),
   description: v.optional(v.string()),
   version: semverSchema,
@@ -101,6 +104,7 @@ export const changelogSchema = v.object({
 });
 
 export const blogSchema = v.object({
+  translationStatus: v.optional(v.literal("placeholder")),
   title: v.string(),
   /** Standfirst shown under the title and in the index deck. */
   description: v.optional(v.string()),

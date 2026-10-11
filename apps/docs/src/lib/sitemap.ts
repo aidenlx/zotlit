@@ -11,6 +11,7 @@ import type { FileRouteTypes } from "@/routeTree.gen";
 
 import { baseURL } from "./shared";
 import { blog, changelog, source } from "./source";
+import { getPageLocaleState } from "./translation-state";
 
 /** Routes that answer machines rather than readers, so no crawler indexes them. */
 const machineRoutes = [
@@ -57,7 +58,7 @@ async function lastCommitDay(page: {
 }
 
 async function docsEntries(): Promise<Entry[]> {
-  const pages = source.getPages().filter((page) => page.slugs.length > 0);
+  const pages = source.getPages("en").filter((page) => page.slugs.length > 0);
   return Promise.all(
     pages.map(async (page) => ({
       pathname: page.url,
@@ -69,7 +70,7 @@ async function docsEntries(): Promise<Entry[]> {
 /** A post's last commit day, or its publication day when git knows no later one. */
 async function blogEntries(): Promise<Entry[]> {
   return Promise.all(
-    blog.getPages().map(async (page) => ({
+    blog.getPages("en").map(async (page) => ({
       pathname: page.url,
       lastModified: (await lastCommitDay(page)) ?? page.data.date,
     })),
@@ -86,7 +87,7 @@ export async function renderSitemap(): Promise<string> {
     "/docs": [{}],
     "/workbench": [],
     "/blog/$slug": await blogEntries(),
-    "/changelog/$version": changelog.getPages().map((page) => ({
+    "/changelog/$version": changelog.getPages("en").map((page) => ({
       pathname: page.url,
       lastModified: page.data.date,
     })),
@@ -96,9 +97,18 @@ export async function renderSitemap(): Promise<string> {
   };
 
   const urls = Object.entries(routes).flatMap(([route, entries]) =>
-    entries.map(({ pathname, lastModified }) =>
-      renderUrl(`${baseURL}${pathname ?? route}`, lastModified),
-    ),
+    entries.flatMap(({ pathname, lastModified }) => {
+      const path = pathname || route;
+      const state = getPageLocaleState(path, "en");
+      return state.alternates
+        .filter((item) => item.locale !== "x-default")
+        .map((item) =>
+          renderUrl(
+            `${baseURL}${item.path === "/" ? "" : item.path}`,
+            item.locale === "en" ? lastModified : undefined,
+          ),
+        );
+    }),
   );
 
   return `<?xml version="1.0" encoding="UTF-8"?>

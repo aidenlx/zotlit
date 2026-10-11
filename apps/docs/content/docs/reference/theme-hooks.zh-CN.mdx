@@ -1,0 +1,298 @@
+---
+title: "Theme hooks"
+description: "Public CSS classes for active citation sources and rendered citations across Obsidian views."
+translationStatus: placeholder
+---
+
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+This reference lists ZotLit's public CSS classes: the citation classes and their activation rules, the PDF reader classes, and the template editor classes. It also lists the custom properties that color ZotLit's nodes and edges in the graph views.
+
+## Hooks [#hooks]
+
+| Class                                  | Meaning                                                                                                                                                |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `zt-citation`                          | A Citation that ZotLit renders or makes navigable.                                                                                                     |
+| `zt-citation-key`                      | A raw citation key, or a rendered Citation produced from literal citation key syntax.                                                                  |
+| `zt-citation-key-pending`              | A citation key awaiting the first Citation Key Resolution Snapshot. The element also has `zt-citation-key`.                                            |
+| `zt-citation-key-unresolved`           | A citation key that does not resolve, or a rendered Citation in which no citation key resolves. The element also has `zt-citation-key`.                |
+| `zt-citation-key-partially-unresolved` | A rendered Citation containing both resolved and unresolved citation keys. The element also has `zt-citation-key`.                                     |
+| `zt-citation-key-ambiguous`            | A citation key that matches several Zotero items, or a rendered Citation containing one and no unresolved key. The element also has `zt-citation-key`. |
+| `zt-literature-note-link`              | A rendered Citation produced from a Literature Note link or Citation Run.                                                                              |
+| `zt-entry-serial`                      | The Entry Serials of a rendered Citation, and the serial labeling each cited item's row in the citation popover.                                       |
+
+A rendered Citation also has the class for its source. A literal Citation Cluster has `zt-citation` and `zt-citation-key`. A Citation Run made from Literature Note links has `zt-citation` and `zt-literature-note-link`.
+
+## Supported views [#views]
+
+Hooks can appear in Source mode, Live Preview, and reading view when their activation rules are met.
+
+| View         | Literal Pandoc source                                                                       | Literature Note wikilink                        |
+| ------------ | ------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| Source mode  | Marks an active source while Citekey Navigation supplies interaction.                       | Uses Obsidian's native link surface.            |
+| Live Preview | Marks active raw source for navigation and marks Rendered Citations for formatted display.  | Marks Rendered Citations for formatted display. |
+| Reading view | Marks active native or rendered text while ZotLit supplies navigation or formatted display. | Marks Rendered Citations for formatted display. |
+
+CodeMirror can split one source range across multiple elements. ZotLit guarantees the meaning and activation of each class. It does not guarantee the element type, nesting, number of elements, or native Obsidian and CodeMirror classes.
+
+## Activation [#activation]
+
+ZotLit adds a public class only when both conditions apply:
+
+1. The source belongs to the active note's Document Citation Set.
+2. ZotLit supplies formatted rendering or navigation for that source.
+
+`zt-citation-key` and its state classes identify active literal Pandoc sources. <UiLabel name={m.settings_citation_pandoc_citations_name()} /> controls their membership. <UiLabel name={m.settings_citation_show_formatted_name()} /> and <UiLabel name={m.settings_citation_open_as_links_name()} /> control the two features that can activate their hooks.
+
+`zt-literature-note-link` identifies active Wikilink Citation sources. <UiLabel name={m.settings_citation_wikilink_citations_name()} /> controls their membership. ZotLit applies the hook when <UiLabel name={m.settings_citation_show_formatted_name()} /> supplies their rendering. Obsidian supplies wikilink navigation while <UiLabel name={m.settings_citation_open_as_links_name()} /> is on; when it is off, a plain click on a rendered wikilink citation puts the cursor in the link's source text in Live Preview and does nothing in reading view, and Mod+click still opens the note.
+
+One citation key states one resolution state. Before the first Citation Key Resolution Snapshot settles, it receives `zt-citation-key-pending`. A key that matches several Zotero items receives `zt-citation-key-ambiguous` in Source mode, Live Preview, and reading view. Inside a Citation Cluster, an unresolved key outranks an ambiguous one: a cluster that holds both receives `zt-citation-key-unresolved`, or `zt-citation-key-partially-unresolved` when it also holds a resolved key, and no ambiguous class.
+
+Aliases, heading links, block links, embeds, unresolved targets, and malformed Citation Fragments stay outside renderable membership. ZotLit gives them no public citation class.
+
+A source also receives no public ZotLit class when both applicable features are inactive. The internal Citation Index alone never activates a class.
+
+`zt-citation` appears only when ZotLit renders a Citation or supplies Citekey Navigation for it.
+
+`zt-entry-serial` appears inside a rendered Citation, on the element that holds its Entry Serials. ZotLit adds it only when the selected Citation and References Style writes the Citation as a footnote, which no Obsidian view can show. ZotLit then shows the position of each cited entry in the References Sidebar instead: one number per cited work, separated by commas, and `⚠` for a work the bibliography rendered no entry for. A style that writes its Citations inline, such as an author-date or a numeric style, activates this class nowhere.
+
+The class appears once more in the <UiLabel name={m.settings_citation_hover_action_popover()} /> of such a Citation, on the element that labels each cited item's button row with that item's serial. The same `⚠` stands there for a work the bibliography rendered no entry for.
+
+## Default appearance [#defaults]
+
+Resolved citation keys use Obsidian's `--link-*` variables. Fully unresolved citation keys use the corresponding `--link-unresolved-*` variables.
+
+Pending citation keys have no ZotLit default style. They keep the host view's neutral appearance until the first resolution snapshot settles.
+
+ZotLit adds no aggregate style for `zt-citation-key-partially-unresolved`. A partial result therefore keeps the appearance of its resolved works. ZotLit adds no style to a native Literature Note wikilink.
+
+Ambiguous citation keys keep the resolved link color and take the `--link-unresolved-decoration-*` variables, so the key reads as reachable while stating that it matches more than one item. The <UiLabel name={m.settings_citation_hover_action_popover()} /> names its candidates.
+
+ZotLit adds no style to `zt-entry-serial` either. The serials render as superscript text in a Citation, as a plain label in the <UiLabel name={m.settings_citation_hover_action_popover()} />, and take their appearance from the theme.
+
+## Graph view colors [#graph]
+
+The graph and local graph views draw on a canvas, so ZotLit colors its nodes and edges through custom properties instead of classes. ZotLit reads each property off `body`, so set it on `body`. A property set on the view itself, such as on `.graph-view`, changes nothing.
+
+| Custom property                    | Meaning                                                                  |
+| ---------------------------------- | ------------------------------------------------------------------------ |
+| `--zt-graph-literature-note-color` | The starting color of a new literature notes group.                      |
+| `--zt-graph-cited-work-node-color` | The fill color of a cited work that has no Literature Note in the vault. |
+| `--zt-graph-citation-link-color`   | The line color of an edge that a citation draws.                         |
+
+ZotLit accepts any color syntax the app itself accepts, `oklch()` and `color-mix()` included.
+
+### Default appearance [#graph-defaults]
+
+Literature Notes use native node colors. A new literature notes group starts with ZotLit orange: `#E8622C` in light mode or `#F0793F` in dark mode. ZotLit reads `--zt-graph-literature-note-color` when it creates the group through the graph button or a Citation Graph command.
+
+Existing groups keep their saved color across theme changes. Removing the group returns its nodes to the remaining native groups and native colors.
+
+A cited work with no Literature Note takes `--text-faint`, unless a native color group matches it. Citation edges use native colors by default. Enabling <UiLabel name={m.graph_option_color_citation_links_name()} /> applies `--zt-graph-citation-link-color`, which defaults to `--color-purple`.
+
+An edge keeps Obsidian's own highlight color while the pointer rests on one of its nodes.
+
+```css
+body.theme-light {
+  --zt-graph-literature-note-color: #e8622c;
+}
+
+body.theme-dark {
+  --zt-graph-literature-note-color: #f0793f;
+}
+
+body {
+  --zt-graph-cited-work-node-color: oklch(0.6 0.02 250);
+  --zt-graph-citation-link-color: var(--color-cyan);
+}
+```
+
+## PDF reader hooks [#pdf-reader]
+
+Obsidian's PDF reader shows a Zotero attachment's Annotations as an overlay, and offers its own toolbar and popups for creating and editing them. ZotLit draws every one of these surfaces itself, on Obsidian's own toolbar and popover primitives.
+
+| Class                                 | Marks                                                                                                                                              |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `zt-pdf-annotation-overlay`           | The SVG ZotLit draws Zotero's Annotations into, one per rendered PDF page.                                                                         |
+| `zt-pdf-annotation-mark`              | One Annotation Mark inside that overlay.                                                                                                           |
+| `zt-pdf-annotation-highlight`         | The filled rectangle of a highlight Annotation Mark.                                                                                               |
+| `zt-pdf-annotation-selection-outline` | The outline traced round a selected Annotation Mark's own merged silhouette.                                                                       |
+| `zt-pdf-annotation-handle`            | One Mark Handle on the selected Annotation Mark, drawn while editing is on.                                                                        |
+| `zt-pdf-annotation-note-icon`         | The group a note Annotation Mark draws its icon into.                                                                                              |
+| `zt-pdf-annotation-note-fill`         | The body of a note Annotation Mark's icon.                                                                                                         |
+| `zt-pdf-annotation-note-crease`       | The two segments creasing the folded bottom-right corner of a note Annotation Mark's icon. Stroked, with no fill of its own.                       |
+| `zt-pdf-text-draft`                   | The textarea a free-text Annotation is typed into on its page. It stays there until the saved mark takes its place.                                |
+| `zt-pdf-capability`                   | The editing indicator in the reader's own toolbar, shown only while ZotLit waits for Zotero and during a cooldown.                                 |
+| `zt-pdf-creation-toolbar`             | The Creation Toolbar in the reader's own right toolbar slot, which also holds the editing indicator.                                               |
+| `zt-pdf-tool`                         | One tool of that toolbar: its toggle and the chevron opening its colors, joined as one split button. Carries `is-active` while that tool is armed. |
+| `zt-pdf-mark-popup`                   | The Mark Popup, on Obsidian's own hover popover, in both of its modes.                                                                             |
+| `zt-pdf-comment-sheet`                | The comment sheet the Mark Popup opens under its row, in either mode.                                                                              |
+
+### Annotation Marks [#pdf-annotation-marks]
+
+ZotLit rebuilds `zt-pdf-annotation-overlay` for every page PDF.js renders, and draws one `zt-pdf-annotation-mark` per Annotation on that page: a filled rectangle for a highlight (`zt-pdf-annotation-highlight`), a line for an underline, a note glyph in lucide's idiom for a note (`zt-pdf-annotation-note-icon`, holding `zt-pdf-annotation-note-fill` and `zt-pdf-annotation-note-crease`), a stroked rectangle for an image region, a path for an ink stroke, and a text run for a free-text Annotation. The overlay takes no pointer input, so native text selection, PDF links, and the reader's toolbar keep working underneath it.
+
+Each mark carries `data-zotero-annotation-type` (one of `highlight`, `underline`, `note`, `image`, `ink`, or `text`) and `data-zotero-annotation-key`, the Annotation's Zotero key. The mark a Mark Popup is acting on also carries Obsidian's own `is-selected`, and the overlay draws a `zt-pdf-annotation-selection-outline` above it, hugging its own rects — or, for an ink stroke, the stroke itself.
+
+While editing is on, a selected image region also carries eight `zt-pdf-annotation-handle` squares above its outline. Each handle carries `data-zt-grip`, naming the edges it moves (`tl`, `t`, `tr`, `r`, `br`, `b`, `bl`, or `l`, where `t` is the top of the page as it is stored, before any rotation), and `data-zt-cursor`, naming the cursor it shows. The image's own mark carries `data-zt-grip="body"` and `data-zt-cursor="move"`. A selected ink mark carries four corner handles (`tl`, `tr`, `br`, `bl`) on a box a little wider than its strokes, and its own mark carries `data-zt-grip="body"` in the same way. A selected highlight or underline carries two narrow strips: `data-zt-grip="start"` along the leading edge of its first line, and `data-zt-grip="end"` along the trailing edge of its last line, on the next page when the quote runs onto it. Its own mark carries no `data-zt-grip`. The handles and the image or ink body take pointer input, so a press there moves or resizes the mark instead of selecting text. A press on the body of a highlight or underline still selects text.
+
+### Editing indicator [#pdf-capability]
+
+`zt-pdf-capability` sits inside the Creation Toolbar and shows in two states only: <UiLabel name={m.capability_authorizing()} />, while Zotero's permission dialog is open, and <UiLabel name={m.capability_cooldown()} />, while Zotero refuses new permission requests for a short time. In every other state the toolbar holds no indicator.
+
+The indicator is a status line with an icon and the state's label. It is not a button, and a click on it does nothing. During a cooldown it also shows the seconds left. It carries `data-zt-capability-tone="busy"` in both states, and `aria-busy="true"` while it waits for Zotero.
+
+To give ZotLit permission to edit, see [How to edit PDF annotations in Obsidian](/docs/how-to/edit-pdf-annotations#before-you-edit).
+
+### Creation Toolbar [#pdf-creation-toolbar]
+
+`zt-pdf-creation-toolbar` holds the controls that create and manage Annotation Marks. A <UiLabel name={m.pdf_toolbar_tools()} /> group comes first, holding one tool per annotation type ZotLit can write — today <UiLabel name={m.pdf_toolbar_highlight()} />, <UiLabel name={m.pdf_toolbar_underline()} />, <UiLabel name={m.pdf_toolbar_note()} />, <UiLabel name={m.pdf_toolbar_text()} />, <UiLabel name={m.pdf_toolbar_image()} /> and <UiLabel name={m.pdf_toolbar_ink()} />. Each tool is a split button of two `clickable-icon` halves sharing one seat: the toggle that arms it, under `data-zt-tool` `highlight`, `underline`, `note`, `text`, `image` or `ink`, and a chevron that opens that tool's colors, under the same value with `-color` added, such as `note-color`. The halves hover separately. One tool is armed at a time, and selecting the armed tool stands it down; a tool's colors are reachable from its chevron whether or not it is armed. Outside the group sits a toggle that shows or hides Annotation Marks (<UiLabel name={m.pdf_toolbar_show_marks()} /> or <UiLabel name={m.pdf_toolbar_hide_marks()} />, `data-zt-tool="visibility"`).
+
+Each tool remembers its own color across PDFs and sessions.
+
+A control that cannot write right now keeps its seat: it carries `aria-disabled` and states why in its tooltip, rather than leaving the toolbar.
+
+While <UiLabel name={m.pdf_toolbar_ink()} /> is armed, the PDF view's container carries `data-zt-inking`, with an empty value. ZotLit's own rule under it turns off touch panning on the pages, so a finger draws.
+
+### Mark Popup and comment sheet [#pdf-mark-popup]
+
+`zt-pdf-mark-popup` is the popup that hangs over a selected Annotation Mark or a fresh text selection. Each control inside it carries `data-zt-verb`.
+
+Over a selected mark, the verbs are <UiLabel name={m.annot_view_card_color()} />, <UiLabel name={m.annot_view_card_add_tags()} /> or <UiLabel name={m.annot_view_card_edit_tags()} />, <UiLabel name={m.annot_view_menu_copy_text()} />, <UiLabel name={m.annot_view_menu_delete()} />, and <UiLabel name={m.pdf_mark_popup_reveal()} />, carrying `data-zt-verb` values `color`, `tags`, `copy`, `delete`, and `reveal`. A stack of overlapping marks adds a stepper, `data-zt-verb="stack"`. Under the row, the comment is a field, `zt-annot-comment-field`. A mark with no comment shows <UiLabel name={m.annot_view_card_comment_placeholder()} /> there. Selecting the comment opens `zt-pdf-comment-sheet` in its place.
+
+Over a fresh text selection, the row instead offers <UiLabel name={m.pdf_toolbar_highlight()} /> and <UiLabel name={m.pdf_toolbar_underline()} /> (`data-zt-verb` `highlight` or `underline`), the four colors used most recently, by any tool, filled out from Zotero's palette in its own order (`data-zt-verb` `color-1` through `color-8`, by the color's place in that palette; each is a solid dot), <UiLabel name={m.annot_view_card_add_comment()} /> (`data-zt-verb="comment"`), and <UiLabel name={m.pdf_create_popup_copy()} /> (`data-zt-verb="copy"`). Selecting <UiLabel name={m.annot_view_card_add_comment()} /> opens `zt-pdf-comment-sheet` under the row.
+
+A control that cannot write right now keeps its seat, disabled, with the reason in its tooltip. Copying and revealing never write, so neither ever stands down.
+
+### Default appearance [#pdf-defaults]
+
+A highlight mark blends with the page: 40% opacity with `multiply` blending in light themes, 30% opacity with `plus-lighter` blending in dark themes. A note's icon strokes in the Annotation's own color at a 1.4px hairline, with its body filled at 22% of that same color. A selected mark keeps its own color; a hairline outline, in `--text-accent`, traces round its own merged silhouette.
+
+The Creation Toolbar lays its controls out in a flex row with Obsidian's own toolbar spacing; an armed tool keeps its Annotation color instead of Obsidian's accent-colored `is-active` fill. A tool's toggle wears that tool's color, so the toolbar shows what each tool draws in; the chevron beside it is left uncolored and drawn one icon step smaller, since it names a menu rather than a color. `zt-pdf-tool` is the seat, and it is what reads as the button: it carries the rounded corners and clips its two halves to them, and the padding where the halves meet is halved, so the pair is one compact control. Each half keeps Obsidian's own hover, so the two light separately. An armed tool takes `is-active` on the seat and fills with `--background-modifier-active-hover` across both halves at once; as with every active `clickable-icon` in Obsidian, that fill holds under the pointer instead of lighting further. Only the toggle reports the state through `aria-pressed`. The editing indicator draws its icon and label in muted text, and leaves color otherwise to Obsidian and the theme.
+
+The Mark Popup sizes itself to the width its row of verbs needs, overriding Obsidian's default hover-popover sizing. The comment sheet takes the width of the row above it, and is at least 12em wide.
+
+```css
+.zt-pdf-annotation-mark[data-zotero-annotation-type="highlight"] {
+  mix-blend-mode: normal;
+}
+
+.zt-pdf-capability[data-zt-capability-tone="busy"] {
+  color: var(--text-accent);
+}
+
+.zt-pdf-mark-popup [data-zt-verb="delete"] {
+  color: var(--text-error);
+}
+```
+
+These class names, data attribute values, and default styles are ZotLit's public theme contract for the PDF reader. DOM structure remains private.
+
+## Annotation View hooks [#annot-view]
+
+The Annotation View lists a Zotero attachment's Annotations beside the reader, with its own toolbar. Its menus are Obsidian's own, which a theme reaches through `menu`. Its tag filter and its color filter are Choosers, which a theme reaches through `zt-chooser` and `zt-chooser-trigger`.
+
+| Class                    | Marks                                                                                                               |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| `zt-annot-conflict`      | The panel an Annotation Card shows while a Write Conflict stands on it.                                             |
+| `zt-annot-draft`         | The panel an Annotation Card or the Mark Popup shows over a comment, Quoted Text or tags that Zotero has not saved. |
+| `zt-annot-comment-field` | The comment as a field you can select to edit, on a card selected alone and in the Mark Popup.                      |
+| `zt-annot-lock`          | The lock icon in the header of a card whose annotation is locked.                                                   |
+| `zt-chooser`             | The Chooser popup the tag filter or the color filter opens.                                                         |
+| `zt-chooser-trigger`     | The control that Chooser popup hangs under.                                                                         |
+
+`zt-annot-conflict` appears on a card whose last edit met a newer value in Zotero, or whose create Zotero never answered for. It names what happened, shows the two values, and offers the verbs that settle it.
+
+`zt-annot-draft` appears where an edit waits for **Save comment**, **Save text** or **Save tags**, such as after a failed save or after editing stopped while the edit was open. It shows the unsaved comment, Quoted Text or tags, says why they wait, and offers the verbs that save or discard them.
+
+`zt-annot-comment-field` marks the comment of the card you select alone, and nowhere on other cards. Selecting it opens the comment editor in its place. On a card with no comment, it shows <UiLabel name={m.annot_view_card_comment_placeholder()} />. It carries `data-blocked` while ZotLit cannot edit the Annotation. The Mark Popup uses the same class, see [Mark Popup and comment sheet](#pdf-mark-popup).
+
+`zt-annot-lock` appears in the card header of an annotation that Zotero's reader does not let you change, such as one that Zotero imported from the PDF file. Its tooltip and its accessible name give the reason. The card's controls for the changes that the lock refuses are dimmed.
+
+`zt-chooser` marks the anchored popover a filtering multi-select opens. It is a native popover rather than an Obsidian menu, so `:popover-open` matches it while it stands and `menu` never reaches it. It takes its chrome from `--menu-background`, `--menu-border-color`, `--menu-border-width`, `--menu-corner-shape`, `--menu-padding`, `--menu-radius`, and `--menu-shadow`, so a theme that retints menus reaches it through those.
+
+`zt-chooser-trigger` marks the control the popup hangs under, which is a `<button>` because that is what the popover invoker attribute takes. It carries `aria-expanded` and `data-open` while its popup stands, and its Obsidian button styling is reverted, so a theme styles it from this class rather than from `button`.
+
+These class names and data attribute values are ZotLit's public theme contract for the Annotation View. DOM structure remains private.
+
+## Template editor hooks [#template-editor]
+
+The Template Workbench View styles frontmatter and colors template source and Markdown markers through one set of classes, in every pane that holds template code: the note body, the annotation format, a property expression, the note name, and the whole file in Source. The Template Workbench on this site emits the same classes.
+
+Liquid tokens keep their own colors inside YAML values and Markdown code spans and fences. Eta highlighting covers tag delimiters. Markdown hints mark headings, lists, and quotes in the note and annotation bodies, with normal text size and weight.
+
+| Class                              | Meaning                                                                  |
+| ---------------------------------- | ------------------------------------------------------------------------ |
+| `zt-template-editor`               | The element that holds one template editor pane.                         |
+| `zt-template-delimiter`            | A delimiter that opens or closes a tag or an output: `{{`, `{%-`, `<%=`. |
+| `zt-template-keyword`              | A tag name or keyword: `if`, `for`, `endbq`, `in`.                       |
+| `zt-template-variable`             | A variable or root name: `zt`, `it`.                                     |
+| `zt-template-property`             | A property name after a dot, or a JSON key.                              |
+| `zt-template-filter`               | A Liquid filter or a function call: `map`, `note_links`.                 |
+| `zt-template-string`               | A string literal.                                                        |
+| `zt-template-value`                | A number, boolean, or null.                                              |
+| `zt-template-operator`             | An operator: `.`, `>`, `\|`.                                             |
+| `zt-template-punctuation`          | Other punctuation: `,`, `:`, brackets.                                   |
+| `zt-template-comment`              | Template comment text.                                                   |
+| `zt-template-invalid`              | Source the parser refuses.                                               |
+| `zt-template-frontmatter`          | A frontmatter line, including its opening and closing boundaries.        |
+| `zt-template-markdown-marker`      | A Markdown heading, list, or quote marker in a body.                     |
+| `zt-template-markdown-list-marker` | An additional class on a Markdown list marker.                           |
+| `zt-template-hover`                | The popover that explains the token under the pointer, in Obsidian only. |
+
+### Default appearance [#template-defaults]
+
+The colors are custom properties on `zt-template-editor`, one per token class, named `--zt-template-<token>`. Delimiters, keywords, and operators take `--text-accent`. A filter takes `--color-blue`. Variables and properties take `--text-normal`. Strings, values, and punctuation take `--text-muted`. Comments take `--text-faint` in italics. Invalid source takes `--text-error`. The hover popover is Obsidian's own `hover-popover`, sized to its text.
+
+Frontmatter takes `--text-muted`. Template tokens keep their colors inside frontmatter. Heading and quote markers take `--text-faint`; list markers take `--list-marker-color`. These roles change color only. All Template Workbench View panes keep their existing monospace font, code size, spacing, and background.
+
+Set a custom property on the editor hook to recolor one kind of token in every pane, or style a token class directly:
+
+```css
+.zt-template-editor {
+  --zt-template-keyword: var(--color-purple);
+  --zt-template-filter: var(--color-cyan);
+}
+
+.zt-template-comment {
+  font-style: normal;
+}
+```
+
+## CSS examples [#examples]
+
+Use a direct class selector to override ZotLit's low-specificity defaults. `!important` is not required.
+
+```css
+.zt-citation-key {
+  color: var(--link-color);
+}
+
+.zt-citation-key.zt-citation-key-unresolved {
+  color: var(--link-unresolved-color);
+  opacity: var(--link-unresolved-opacity);
+}
+
+.zt-literature-note-link {
+  text-decoration-line: underline;
+}
+
+.zt-entry-serial {
+  color: var(--text-muted);
+}
+```
+
+Use combined selectors to distinguish rendered output from raw source:
+
+```css
+.zt-citation.zt-citation-key {
+  font-style: italic;
+}
+
+.zt-citation.zt-literature-note-link {
+  font-style: normal;
+}
+```
+
+These class names, meanings, and activation rules are ZotLit's public theme contract. DOM structure remains private.

@@ -1,10 +1,10 @@
+import { Button } from "@/components/ui/button";
 // The one screen an Eta or JavaScript Profile gets. The web host renders
 // Liquid and JSON-e only, so such a document is neither edited nor rendered
 // here: it is explained, offered back unchanged, and pointed at Obsidian.
 // @see docs/adr/0033-web-workbench-is-public-and-standalone.md
-
-import { Button } from "@/components/ui/button";
 import { m } from "@/paraglide/messages.js";
+import { localizeHref } from "@/paraglide/runtime.js";
 
 import type { UnsupportedReason } from "./unsupported";
 
@@ -60,7 +60,7 @@ export function ProfileHandoff({
             </Button>
           )}
           <a
-            href="/docs/concepts/javascript-templates"
+            href={localizeHref("/docs/concepts/javascript-templates")}
             className="ms-auto text-fd-primary underline underline-offset-2"
           >
             {m.workbench_unsupported_docs()}

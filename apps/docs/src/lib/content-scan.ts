@@ -43,12 +43,15 @@ export function scanContent(
   return Object.fromEntries(
     Object.entries(sections).map(([section, { dir, files }]) => {
       const cwd = resolve(packageRoot, dir);
-      const entries = globSync(files, { cwd }).map(
-        (file): ContentEntry => ({
-          slugs: getSlugs(file),
-          frontmatter: frontmatter(readFileSync(join(cwd, file), "utf8")).data,
-        }),
-      );
+      const entries = globSync(files, { cwd })
+        .filter((file) => !/\.zh-CN\.mdx?$/.test(file))
+        .map(
+          (file): ContentEntry => ({
+            slugs: getSlugs(file),
+            frontmatter: frontmatter(readFileSync(join(cwd, file), "utf8"))
+              .data,
+          }),
+        );
       return [section, entries];
     }),
   ) as Record<MarkdownSection, ContentEntry[]>;

@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "imports": {
+    "#i18n/*": "./i18n/*",
     "#content-config": "./content.config.ts",
     "#paraglide/messages.js": "./src/paraglide/messages.js"
   },
@@ -15,6 +16,7 @@
     "deploy:beta": "cross-env CLOUDFLARE_ENV=beta vite build && wrangler deploy --env beta",
     "cf-typegen": "wrangler types",
     "cf-typegen:check": "wrangler types --check",
+    "check:translations": "node scripts/check-translations.ts",
     "generate:messages": "node scripts/generate-messages.ts",
     "generate:template-data": "node scripts/generate-template-data.ts",
     "typecheck": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json",

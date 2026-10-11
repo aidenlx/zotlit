@@ -1,0 +1,390 @@
+---
+title: "Eta template syntax"
+description: "Eta (JavaScript) template reference: delimiters, whitespace control, auto-filter, helpers, and the zt variable."
+translationStatus: placeholder
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+This page documents the Eta template language as configured in ZotLit. Eta templates require the [<UiLabel name={m.settings_template_js_enable_name()} /> gate](/docs/how-to/enable-javascript-templates) to be enabled. For the default Liquid engine, see [Template syntax](/docs/reference/templates/syntax).
+
+All template data is accessible through a single variable, `zt`. The shape of `zt` depends on the template type: see the [Data reference](/docs/reference/templates/data) for the full property list.
+
+## Delimiters
+
+| Delimiter   | Purpose                              |
+| ----------- | ------------------------------------ |
+| `<% %>`     | Execute JavaScript (no output)       |
+| `<%= %>`    | Output an expression (auto-filtered) |
+| `<%~ %>`    | Output an expression (auto-filtered) |
+| `<%/* */%>` | Comment (stripped from output)       |
+
+`<%= %>` and `<%~ %>` are functionally identical in ZotLit. Both pass their result through the auto-filter. Use either for output; `<%= %>` is conventional.
+
+```eta
+<%= zt.title %>
+<% if (zt.abstract) { %>
+<%= zt.abstract %>
+<% } %>
+```
+
+Use `<%/* */%>` for comments that do not appear in the rendered note:
+
+```eta
+<%/* Draft: revisit multi-author rendering */%>
+```
+
+<Callout type="warn" title="No hash-prefix comments">
+  Eta does not support `<%# %>`. That syntax causes a compile error. Use `<%/* */%>` for all comments.
+</Callout>
+
+## Whitespace control [#whitespace-control]
+
+By default, ZotLit sets `autoTrim` to `[false, false]`: whitespace around tags is preserved exactly as written. Newlines after `%>` and indentation before `<%` appear in the rendered note.
+
+Per-tag markers override this default on one side of the tag:
+
+| Marker | Position        | Effect                              |
+| ------ | --------------- | ----------------------------------- |
+| `-`    | Opening (`<%-`) | Trims one newline before the tag    |
+| `-`    | Closing (`-%>`) | Trims one newline after the tag     |
+| `_`    | Opening (`<%_`) | Trims all whitespace before the tag |
+| `_`    | Closing (`_%>`) | Trims all whitespace after the tag  |
+
+```eta
+<% for (const annotation of zt.annotations) { -%>
+- <%= annotation.text %>
+<% } %>
+```
+
+The trailing `-%>` consumes the newline immediately after the opening tag, so each iteration begins on the `- ` line.
+
+### Global autoTrim setting
+
+Two settings control default trim behavior when the <UiLabel name={m.settings_template_js_enable_name()} /> gate is on:
+
+- <UiLabel name={m.settings_template_trim_leading_name()} />: applies to the
+  opening side of every tag.
+- <UiLabel name={m.settings_template_trim_trailing_name()} />: applies to the
+  closing side of every tag.
+
+Each accepts three values: <UiLabel name={m.settings_template_trim_disable()} /> (no trim), <UiLabel name={m.settings_template_trim_nl()} />, or <UiLabel name={m.settings_template_trim_slurp()} />. Per-tag markers always override the global setting for that tag.
+
+<Callout type="info" title="Markdown is whitespace-sensitive">
+  The default (keep all whitespace) avoids silently breaking Markdown
+  formatting. Use per-tag markers for precise control.
+</Callout>
+
+## Auto-filter (output coercion)
+
+Every `<%= %>` and `<%~ %>` expression passes through a filter function before rendering. The filter coerces values to Markdown-safe text:
+
+| Value                | Rendered as                         |
+| -------------------- | ----------------------------------- |
+| `null` / `undefined` | `""` (empty string)                 |
+| `Date`               | ISO 8601 string (`toISOString()`)   |
+| `Temporal.Instant`   | Local plain date, e.g. `2026-06-21` |
+| Everything else      | `String(value)`                     |
+
+This means `<%= zt.someFieldThatIsNull %>` outputs nothing rather than the literal text "null". Creator objects and dates render through their `toString()` method: creators produce their full name, dates produce ISO strings.
+
+## The `zt` variable
+
+All template data lives under the `zt` variable. The variable name applies across all template types:
+
+```eta
+<%= zt.title %>
+<%= zt.creators[0].family %>
+<%= zt.citationKey %>
+```
+
+The editor autocomplete inserts `= zt. ` when you select the interpolation hint inside `<%= %>` tags.
+
+`zt` replaces v1's `it` variable. See [Migrate v1 Eta templates](/docs/how-to/migrate-v1-eta-templates) for the full property mapping.
+
+## `renderAnnotation()`: annotation rendering [#render-annotation]
+
+Renders one annotation, available as `zt` inside the annotation template.
+
+```eta
+<%~ renderAnnotation(annotation) %>
+```
+
+The annotation argument is required. A missing or null value raises an error.
+
+For an annotation value, the equivalent native Eta syntax is:
+
+```eta
+<%~ include("annotation", annotation) %>
+```
+
+In a Literature Note profile, the shortcut and native calls to `annotation` use the profile's Annotation Section. This required final section starts after the exact standalone line `--- zotlit:annotation ---` and continues to the end of the document. It uses the profile's language and can be empty.
+
+Calls from shared partials use the calling profile's section, with isolated annotation data. Direct annotation insertion and Imported Notes use the same section for their applicable profile. Outside profile rendering, the shortcut keeps the existing named-template lookup.
+
+## `include()`: composing templates
+
+`include()` renders another template inline. Pass the template name and an optional data argument:
+
+```eta
+<%~ include("annotation", annotation) %>
+<%~ include("content", zt) %>
+```
+
+The data argument becomes the child template's `zt` variable, direct passthrough not merged with the parent's data. When omitted, the child inherits the parent's `zt`.
+
+The name resolves to a registered template, not to a file path. During profile rendering, `"annotation"` selects the profile's Annotation Section.
+
+### Calling a partial [#calling-a-partial]
+
+A partial is called by its name, with the data it needs as the second argument:
+
+```eta
+<%~ include("authors", zt) %>
+```
+
+The argument becomes the partial's `zt`. Omit it and the partial inherits the caller's `zt`. Completion inside `include("` lists every partial in the vault, and accepting a name writes the whole call, `zt` argument included. A call you have already given arguments keeps them, and only the name is replaced.
+
+### The `content` include
+
+When `include("content", zt)` is called from the note template, ZotLit automatically wraps the output with managed-region markers (`%%zt-managed%%` / `%%/zt-managed%%`). These markers never appear in a template document. They are injected at render time.
+
+## `bq()`: blockquote helper [#bq-blockquote-helper]
+
+Wraps its content in a Markdown blockquote. Every line is prefixed with `> `. The content is trimmed. Consecutive blank lines inside the block collapse into a single bare `>`.
+
+```eta
+<% bq(() => { %>
+[!note] Page <%= zt.pageLabel %>
+
+<%= embed(zt.imgLink) %><%= zt.text %>
+<% if (zt.comment) { %>
+
+<%= zt.comment %>
+<% } %>
+<% }) %>
+```
+
+Rendered output:
+
+```markdown
+> [!note] Page 42
+>
+> ![[excerpt.png]]The highlighted passage
+>
+> My thoughts on this
+```
+
+`bq()` must appear in a `<% %>` execute tag. It captures all output produced inside the callback, trims the result, prefixes each line with `> ` (empty lines become bare `>`), collapses consecutive bare `>` lines into one, and writes the result to the output.
+
+When the captured content is empty, `bq()` renders a lone `>`.
+
+## `embed()`: embed helper
+
+Turns a link helper into a Markdown embed by prefixing `!`. Returns `""` when the link is `null`, `undefined`, or renders empty.
+
+```eta
+<%= embed(zt.imgLink) %>
+<%= embed(zt.imgLink, "alt text") %>
+```
+
+Signature: `embed(link, alias?, subpath?)`
+
+| Input                                    | Output               |
+| ---------------------------------------- | -------------------- |
+| `zt.imgLink` renders `"[[excerpt.png]]"` | `"![[excerpt.png]]"` |
+| `zt.imgLink` is `null`                   | `""`                 |
+
+For image and ink annotations, `embed(zt.imgLink)` uses the prepared note image or returns an unavailable-image explanation and source link. It preserves that fallback text without adding `!`. Image preparation runs before the template, so the template executes once per render. Preview rendering creates no vault image files.
+
+## `pandocCite()`: Pandoc Citation source [#pandoc-cite]
+
+Formats a Citation Item array as Pandoc Citation source. Pass `zt.citations` directly to the helper.
+
+```eta
+<%= pandocCite(zt.citations) %>
+<%= pandocCite(zt.citations, "prefer-author-in-text") %>
+```
+
+Signature: `pandocCite(citations, form?)`
+
+The optional form is `"normal"` by default.
+
+| Form                      | Output for one item | Description                                                                                                                                            |
+| ------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `"normal"`                | `[@smith2024]`      | Produces a bracketed Citation Cluster.                                                                                                                 |
+| `"prefer-author-in-text"` | `@smith2024`        | Produces an Author-in-text Citation when the first retained item has no prefix and does not suppress the author. Otherwise, produces a normal cluster. |
+
+The helper handles all Citation Item properties used in Pandoc source:
+
+| Input                                             | Output                     |
+| ------------------------------------------------- | -------------------------- |
+| Locator `"3"` with `labelShort` `"p."`            | `[@smith2024, {p. 3}]`     |
+| Prefix `"see "` and suffix `", note 4"`           | `[see @smith2024, note 4]` |
+| `suppressAuthor` set to `true`                    | `[-@smith2024]`            |
+| Citation key `"KX67D9YM?"`                        | `[@{KX67D9YM?}]`           |
+| `"prefer-author-in-text"` with locator `"3"`      | `@smith2024 [{p. 3}]`      |
+| `"prefer-author-in-text"` with prefix `"see "`    | `[see @smith2024]`         |
+| Empty array or items with null citation keys only | `""`                       |
+
+Items with a null citation key are omitted. The helper preserves the order of the remaining items and adds braces around complex citation keys when Pandoc requires them.
+
+Input that cannot be represented without changing its citation structure raises a render error.
+
+## `texCite()`: LaTeX citation command [#tex-cite]
+
+Formats a Citation Item array as one LaTeX citation command. Pass `zt.citations` directly to the helper.
+
+```eta
+<%= texCite(zt.citations) %>
+<%= texCite(zt.citations, "autocite") %>
+```
+
+Signature: `texCite(citations, command?)`
+
+The optional command is `"cite"` by default. Write it without the backslash. A starred command such as `"autocite*"` is accepted.
+
+| Command      | Output for one item    | Bibliography package    |
+| ------------ | ---------------------- | ----------------------- |
+| `"cite"`     | `\cite{smith2024}`     | LaTeX, natbib, BibLaTeX |
+| `"autocite"` | `\autocite{smith2024}` | BibLaTeX                |
+
+Every retained item joins one key list. The command carries one prenote and one postnote, and both come from the first retained item:
+
+| Input                                             | Output                           |
+| ------------------------------------------------- | -------------------------------- |
+| Two items                                         | `\cite{smith2024,doe2023}`       |
+| Locator `"3"` with `labelShort` `"p."`            | `\cite[p. 3]{smith2024}`         |
+| Prefix `"see "`                                   | `\cite[see][]{smith2024}`        |
+| Prefix `"see "` with locator `"3"`                | `\cite[see][p. 3]{smith2024}`    |
+| Locator `"3"` with suffix `", note 4"`            | `\cite[p. 3, note 4]{smith2024}` |
+| Empty array or items with null citation keys only | `""`                             |
+
+Items with a null citation key are omitted, and the remaining items keep their order.
+
+<Callout type="warn" title="The prenote form needs natbib or BibLaTeX">
+  The LaTeX kernel's own `\cite` takes one optional argument. The two-argument
+  `\cite[see][p. 3]{smith2024}` form above compiles under natbib or BibLaTeX,
+  which redefine `\cite` to take both. A citation that carries no prefix emits
+  at most one optional argument and works in a plain LaTeX document.
+</Callout>
+
+An affix reaches LaTeX as source, so a prefix of `\emph{see}` renders as emphasis. These inputs raise a render error instead:
+
+- `suppressAuthor` set to `true`, which LaTeX has no general form for.
+- A prefix, suffix, or locator on any item after the first, which has no slot.
+- An empty citation key, or one that holds whitespace, a comma, or a TeX special character.
+- A prefix, suffix, or locator whose braces do not balance, or which holds an unescaped `%`.
+
+## `suffix()`: filename collision guard [#suffix-filename-collision-guard]
+
+For the `filename` template only. Appends a random string when the generated filename collides with an existing note. When the name is free, it renders nothing.
+
+```eta
+<%= zt.citationKey ?? zt.DOI ?? zt.title ?? zt.key %><%= suffix() %>
+```
+
+- First note named `Smith2020` produces `Smith2020.md`.
+- A second note that would also render `Smith2020` produces `Smith2020_a1b2c3.md`.
+
+### Signature
+
+```
+suffix(length?, prepend?, append?)
+```
+
+| Parameter | Default | Constraints                 |
+| --------- | ------- | --------------------------- |
+| `length`  | `6`     | Integer, 1–64               |
+| `prepend` | `"_"`   | Must not contain `:` or `%` |
+| `append`  | `""`    | Must not contain `:` or `%` |
+
+The affixes appear only on collision. On a free name, the entire expression (affixes included) renders nothing.
+
+```eta
+<%= zt.title %><%= suffix(10) %>
+<%= zt.title %><%= suffix(6, "(", ")") %>
+<%= zt.citationKey %><%= suffix(4, "-") %>
+```
+
+The random string uses an alphanumeric alphabet. On collision, ZotLit retries up to 5 times with fresh random strings.
+
+## Link helpers [#link-helpers]
+
+Links on the `zt` context are functions, not precomputed strings. Call them to render. Each accepts optional overrides:
+
+```
+linkHelper(alias?, subpath?)
+```
+
+- `alias`: display text for the link. Omit to use the default (filename or note title).
+- `subpath`: a `#`-fragment appended to the target, e.g. `"#heading"` or `"#page=3"`.
+
+| Helper            | Available on                  | Default subpath               | Returns                                                                        |
+| ----------------- | ----------------------------- | ----------------------------- | ------------------------------------------------------------------------------ |
+| `zt.noteLink()`   | item context                  | none                          | Markdown link to the item's literature note, or `null`                         |
+| `note.noteLink()` | each `zt.notes[]` entry       | none                          | Link to the child note                                                         |
+| `a.fileLink()`    | each `zt.attachments[]` entry | none                          | Attachment file link                                                           |
+| `zt.fileLink()`   | annotation context            | `#page=N&zt-annotation=<key>` | Attachment link anchored to the annotation's page and to the annotation itself |
+| `zt.imgLink()`    | annotation context            | none                          | Excerpt-image link, unavailable-image explanation and source link, or `null`   |
+
+```eta
+<%= zt.attachments[0].fileLink() %>
+<%= zt.attachments[0].fileLink("Open the PDF") %>
+<%= zt.noteLink("See notes", "#Summary") %>
+```
+
+`zt.noteLink()` returns `null` when the literature note path is unresolvable (collision, recursive resolution, or template error). `zt.imgLink` is `null` for annotation types other than `image` and `ink`. An unavailable image uses the [excerpt fallback](/docs/concepts/excerpt-images#import-outcomes).
+
+While <SettingsPath page={m.settings_page_reader()} setting={m.settings_reader_open_file_links_name()} /> is on, which is the default, a file link to a PDF in your Zotero library [opens in Obsidian](/docs/how-to/open-pdf-in-obsidian). A `zt.fileLink()` link opens on the annotation's page, with the annotation selected.
+
+## Template document naming [#template-document-naming]
+
+A template document sits directly inside the folder set by <SettingsPath page={m.settings_page_advanced()} setting={m.settings_template_folder_name()} />. The scan is flat, and the filename prefix alone says what a document is: `zotlit-profile.<slug>.md` for a profile, `zotlit-citation.md` for the citation text, and `zotlit-partial.<name>.md` for one partial. See [Template document naming](/docs/reference/templates/syntax#template-document-naming) for the full rule and the reserved partial names.
+
+An Eta document declares its language in a YAML manifest at the top of the file, before the source:
+
+```md
+---
+language: eta
+---
+
+<%= zt.title %>
+```
+
+`language` is the manifest's only legal key, and its values are `liquid` and `eta`. A document with no manifest is Liquid, so every Eta citation document and Eta partial needs this block. Switch a document between the two from the Template Workbench View's pane menu, with <UiLabel name={m.template_workbench_change_language()} />; it rewrites the manifest key and leaves the source as written.
+
+A profile document declares its language with the `language` key of its own manifest.
+
+## No async
+
+ZotLit renders templates synchronously. `async`/`await` is not available inside Eta templates.
+
+## See also
+
+<Cards>
+  <Card
+    title="Template syntax (Liquid)"
+    description="The default Liquid engine's syntax reference."
+    href="/docs/reference/templates/syntax"
+  />
+  <Card
+    title="Data reference"
+    description="Properties available on zt for each template type."
+    href="/docs/reference/templates/data"
+  />
+  <Card
+    title="Default templates"
+    description="The built-in templates for each type, annotated."
+    href="/docs/reference/templates/defaults"
+  />
+  <Card
+    title="Enable JavaScript templates"
+    description="Opt in to Eta templates and configure the gate."
+    href="/docs/how-to/enable-javascript-templates"
+  />
+</Cards>
