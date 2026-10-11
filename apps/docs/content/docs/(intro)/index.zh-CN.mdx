@@ -1,6 +1,6 @@
 ---
-title: "Introduction"
-description: "Documentation for ZotLit, the Obsidian plugin that integrates Zotero into your knowledge base."
+title: "介绍"
+description: "ZotLit 文档：将 Zotero 融入 Obsidian 知识库的效率插件。"
 translationStatus: placeholder
 ---
 
@@ -8,71 +8,71 @@ import { Card, Cards } from "fumadocs-ui/components/card";
 import { Step, Steps } from "fumadocs-ui/components/steps";
 import { Callout } from "@/components/callout";
 
-ZotLit brings your Zotero library into Obsidian. ZotLit Companion, the Zotero add-on, keeps recent Zotero changes available to ZotLit.
+ZotLit 将你的 Zotero 文献库融入 Obsidian。ZotLit Companion（Zotero 侧扩展组件）确保 Zotero 的最新更改能够实时供 ZotLit 读取。
 
-<Callout type="warn" title="Coming from v1?">
-  v2 is a major upgrade with breaking changes. Your existing literature notes
-  and custom templates do not carry over unchanged: notes lose incremental
-  updates until re-created, and custom Eta templates need rework. Read [Migrate
-  from v1](/docs/how-to/migrate-from-v1) before upgrading.
+<Callout type="warn" title="从 v1 版本升级？">
+  v2
+  是一次包含重大不兼容变更的主要版本升级。你现有的文献笔记和自定义模板无法直接无缝沿用：旧笔记在重新创建前无法接收增量更新，自定义
+  Eta 模板也需要重新适配。升级前请务必阅读[从 v1
+  迁移](/docs/how-to/migrate-from-v1)。
 </Callout>
 
-<Callout type="info" title="Upgrading from 2.1?">
-  Your 2.1 literature note templates keep working. ZotLit offers a one-pass
-  conversion that folds them into profile documents. Until you convert, only the
-  Default profile creates and updates notes. Read [Migrate from 2.1
-  templates](/docs/how-to/migrate-from-2.1-templates) before you add a profile.
+<Callout type="info" title="从 2.1 升级？">
+  你的 2.1 版本文献笔记模板仍然有效。ZotLit
+  提供了单次批量转换功能，可将它们合并收纳为配置方案文档（Profile
+  documents）。在完成转换前，只有默认配置方案可以创建和更新笔记。在添加新配置方案前，请阅读[从
+  2.1 模板迁移](/docs/how-to/migrate-from-2.1-templates)。
 </Callout>
 
-## Start here
+## 从这里开始
 
-Follow these steps in order. Better BibTeX is optional and recommended for citation workflows.
+请按顺序完成以下步骤。Better BibTeX 为可选安装，但对于引文工作流极力推荐。
 
 <Steps>
   <Step>
-    ### Install ZotLit
+    ### 安装 ZotLit
 
-    [Install and enable ZotLit in Obsidian.](/docs/install-zotlit)
-
-  </Step>
-  <Step>
-    ### Install ZotLit Companion
-
-    [Install the required add-on in Zotero.](/docs/install-companion)
+    [在 Obsidian 中安装并启用 ZotLit。](/docs/install-zotlit)
 
   </Step>
   <Step>
-    ### Install Better BibTeX (recommended)
+    ### 安装 ZotLit Companion
 
-    [Install Better BibTeX](https://retorque.re/zotero-better-bibtex/installation/) for stable [citation keys](https://retorque.re/zotero-better-bibtex/citing/) and [automatic bibliography updates](https://retorque.re/zotero-better-bibtex/exporting/auto/).
-
-    ZotLit also supports Zotero-native citation keys and manual bibliography exports.
+    [在 Zotero 中安装必需的配套组件。](/docs/install-companion)
 
   </Step>
   <Step>
-    ### Create your first literature note
+    ### 安装 Better BibTeX（推荐）
 
-    [Create a note from an item in your Zotero library.](/docs/tutorial/first-note)
+    [安装 Better BibTeX](https://retorque.re/zotero-better-bibtex/installation/) 以获得稳定的[文献引用标识（citation keys）](https://retorque.re/zotero-better-bibtex/citing/)和[自动参考文献库更新](https://retorque.re/zotero-better-bibtex/exporting/auto/)。
+
+    ZotLit 同时也支持 Zotero 原生引用标识与手动导出参考文献库。
+
+  </Step>
+  <Step>
+    ### 创建你的第一篇文献笔记
+
+    [从 Zotero 文献库的条目创建一篇笔记。](/docs/tutorial/first-note)
 
   </Step>
 </Steps>
 
-## Browse the docs
+## 浏览文档
 
 <Cards>
   <Card
-    title="How-to guides"
-    description="Step-by-step solutions for specific tasks."
+    title="操作指南"
+    description="针对特定任务的分步骤解决方案。"
     href="/docs/how-to"
   />
   <Card
-    title="Concepts"
-    description="How ZotLit works and why it works that way."
+    title="核心概念"
+    description="深入理解 ZotLit 的工作机制与设计考量。"
     href="/docs/concepts"
   />
   <Card
-    title="Reference"
-    description="Settings, template syntax, and configuration details."
+    title="参考"
+    description="配置项、模板语法及详细配置参数。"
     href="/docs/reference"
   />
 </Cards>

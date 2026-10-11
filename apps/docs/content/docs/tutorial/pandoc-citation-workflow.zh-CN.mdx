@@ -1,6 +1,6 @@
 ---
-title: "Build a Pandoc citation workflow"
-description: "Create one cited note, export it with ZotLit and native Pandoc, and compare the two Word documents."
+title: "构建 Pandoc 引文工作流"
+description: "创建一篇带有引文的笔记，分别使用 ZotLit 内置导出与原生 Pandoc 进行导出，并对比生成的 Word 文档。"
 translationStatus: placeholder
 ---
 
@@ -11,57 +11,57 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-This tutorial takes one note through ZotLit's built-in export and a native Pandoc export.
+本教程将带领你对同一篇笔记分别进行 ZotLit 内置导出与原生 Pandoc 导出。
 
-You will use the same citations and style for both Word documents. At the end, you can see which parts the two workflows share.
+两份 Word 文档将采用完全相同的引文和格式样式。在教程结尾，你将清晰了解这两种工作流共享的核心环节。
 
-## Before you start
+## 开始之前
 
-You need:
+你需要准备：
 
-- Obsidian Desktop 1.14.2 or newer with ZotLit installed.
-- Zotero 9 or newer with ZotLit Companion, the Zotero add-on.
-- [Better BibTeX](https://retorque.re/zotero-better-bibtex/installation/) installed in Zotero.
-- Pandoc 3.1.1 or newer installed on your computer.
+- 已安装 ZotLit 的 Obsidian 桌面端 1.14.2 或更高版本。
+- 已安装 ZotLit Companion（Zotero 扩展组件）的 Zotero 9 或更高版本。
+- 在 Zotero 中安装 [Better BibTeX](https://retorque.re/zotero-better-bibtex/installation/)。
+- 在你的计算机上安装 Pandoc 3.1.1 或更高版本。
 
-Enable Obsidian's **Command line interface**, which needs Obsidian installer 1.13.4 or newer. Keep Obsidian open during the native run. The [native Pandoc guide](/docs/how-to/export-with-native-pandoc#requirements) lists the complete compatibility requirements.
+在 Obsidian 中启用**命令行界面（Command line interface）**（需要 Obsidian 安装包版本 1.13.4 或更高）。在运行原生 Pandoc 期间保持 Obsidian 处于运行状态。[原生 Pandoc 指南](/docs/how-to/export-with-native-pandoc#requirements)列出了完整的兼容性要求。
 
 <Steps>
   <Step>
-    ### Prepare the sample items
+    ### 准备示例条目
 
-    In Zotero, select **My Library**, then select **Add Item(s) by Identifier**. Add these two DOIs:
+    在 Zotero 中选择**我的文库**（My Library），然后点击**按标识符添加条目**（Add Item(s) by Identifier）。添加以下两个 DOI：
 
-    | DOI                            | Item title                                     | Citation key                  |
+    | DOI                            | 条目标题                                       | 引用标识（Citation key）      |
     | ------------------------------ | ---------------------------------------------- | ----------------------------- |
     | `10.1371/journal.pmed.0020124` | Why Most Published Research Findings Are False | `zotlitTutorialIoannidis2005` |
     | `10.1126/science.aab2374`      | Promoting an open research culture             | `zotlitTutorialNosek2015`     |
 
-    Open each item and replace its **Citation Key** with the value in the table.
+    打开每个条目，将其 **Citation Key** 替换为上表中的对应值。
 
-    In Obsidian, run <Command inline name={m.command_open_lit_note_name()} />. Select each sample item to create its Literature Note.
+    在 Obsidian 中，运行 <Command inline name={m.command_open_lit_note_name()} />。依次选中这两个示例条目以创建其文献笔记。
 
-    Confirm that ZotLit creates `zotlitTutorialIoannidis2005.md` and `zotlitTutorialNosek2015.md`. Create one ordinary Obsidian note named `Reading plan`.
+    确认 ZotLit 分别创建了 `zotlitTutorialIoannidis2005.md` 和 `zotlitTutorialNosek2015.md`。另外新建一篇普通的 Obsidian 笔记，命名为 `Reading plan`。
 
-    Create a folder named `ZotLit Pandoc tutorial` inside your Documents directory.
-
-  </Step>
-  <Step>
-    ### Configure both citation sources
-
-    Open <SettingsPath page={m.settings_page_citations()} />. Turn on <UiLabel name={m.settings_citation_pandoc_citations_name()} /> and <UiLabel name={m.settings_citation_wikilink_citations_name()} />.
-
-    ![The Citations settings page with Pandoc citations and Wikilink citations both turned on under Citation sources](/img/tutorial/pandoc-workflow-citation-sources.webp)
-
-    Under <UiLabel name={m.settings_citation_references_heading()} />, install the <UiLabel name={m.settings_citation_engine_name()} />. This managed engine formats the <UiLabel name={m.references_view_name()} /> Sidebar and powers built-in export.
-
-    Open <SettingsPath /> and select **APA Style 7th edition** as the <UiLabel name={m.settings_citation_references_style_name()} />. Its author-date output makes locators and author modes easy to compare.
+    在你的 Documents（文档）目录下新建一个名为 `ZotLit Pandoc tutorial` 的文件夹。
 
   </Step>
   <Step>
-    ### Create the worked note
+    ### 配置两种引文来源
 
-    Create a Markdown note named `Citation workflow check`, and paste this body into it:
+    打开 <SettingsPath page={m.settings_page_citations()} />。开启 <UiLabel name={m.settings_citation_pandoc_citations_name()} /> 和 <UiLabel name={m.settings_citation_wikilink_citations_name()} />。
+
+    ![引文设置页面，“引文来源”下同时开启了 Pandoc 引文和双向链接引文](/img/tutorial/pandoc-workflow-citation-sources.webp)
+
+    在 <UiLabel name={m.settings_citation_references_heading()} /> 下，安装 <UiLabel name={m.settings_citation_engine_name()} />。该托管引擎用于渲染 <UiLabel name={m.references_view_name()} /> 侧边栏并支持内置导出。
+
+    打开 <SettingsPath /> 并将 <UiLabel name={m.settings_citation_references_style_name()} /> 设置为 **APA Style 7th edition**。其作者-年份格式非常便于对比定位符与作者显示模式。
+
+  </Step>
+  <Step>
+    ### 创建实操笔记
+
+    创建一篇名为 `Citation workflow check` 的 Markdown 笔记，并将以下内容粘贴进去：
 
     ```md
     # Citation workflow check
@@ -81,135 +81,135 @@ Enable Obsidian's **Command line interface**, which needs Obsidian installer 1.1
     The wider reading list remains an ordinary vault link [[Reading plan]].
     ```
 
-    Keep the semicolon and both Literature Note links on one line. Together they form one Citation Run.
+    请保持分号与两条文献笔记链接处于同一行。它们将组合为一个引文组合序列（Citation Run）。
 
-    The note has no citation style of its own, so it uses the APA style you selected in settings. Both exports use that same style.
+    由于该笔记没有单独指定引文样式，因此它会遵循你在设置中选取的 APA 样式。两次导出都将采用完全相同的样式。
 
   </Step>
   <Step>
-    ### Review the note in Obsidian
+    ### 在 Obsidian 中预览笔记
 
-    Switch to Live Preview, then run:
+    切换到实时预览（Live Preview）模式，然后运行：
 
     <Command name={m.command_open_references_view_name()} />
 
-    The <UiLabel name={m.references_view_name()} /> Sidebar shows two entries. Each source appears once, even though the note cites it several times.
+    <UiLabel name={m.references_view_name()} /> 侧边栏将显示两个条目。尽管笔记中多次引用了这篇文献，但每个来源仅出现一次。
 
-    Check the rendered note and sidebar:
+    检查渲染后的笔记和侧边栏：
 
-    - The plain link renders as `(Ioannidis, 2005)`.
-    - The locator link renders as `(Ioannidis, 2005, p. e124)`.
-    - The author-in-text link renders as `Ioannidis (2005, p. e124)`.
-    - The suppress-author sentence ends with `Nosek et al. propose guidelines for open research (2015, p. 1423).`
-    - The Citation Run renders as `(Ioannidis, 2005; Nosek et al., 2015, p. 1423)`.
-    - The literal citation renders as `(Nosek et al., 2015)`.
-    - `Reading plan` remains an ordinary vault link.
+    - 普通链接渲染为 `(Ioannidis, 2005)`。
+    - 带有定位符的链接渲染为 `(Ioannidis, 2005, p. e124)`。
+    - 作者置于正文中的链接渲染为 `Ioannidis (2005, p. e124)`。
+    - 隐藏作者的句子末尾渲染为 `Nosek et al. propose guidelines for open research (2015, p. 1423).`
+    - 引文组合序列渲染为 `(Ioannidis, 2005; Nosek et al., 2015, p. 1423)`。
+    - 字面量 Pandoc 引文渲染为 `(Nosek et al., 2015)`。
+    - `Reading plan` 依然保留为普通的仓库内部链接。
 
-    ![The note Citation workflow check in Live Preview with its APA citations formatted, and the References Sidebar on the right listing the Ioannidis and Nosek et al. entries](/img/tutorial/pandoc-workflow-references-sidebar.webp)
+    ![实时预览下的 Citation workflow check 笔记，APA 引文格式化渲染，右侧参考文献侧边栏列出 Ioannidis 和 Nosek et al. 条目](/img/tutorial/pandoc-workflow-references-sidebar.webp)
 
   </Step>
   <Step>
-    ### Export with ZotLit
+    ### 使用 ZotLit 导出
 
-    Keep Zotero open.
+    保持 Zotero 处于开启状态。
 
-    Run:
+    运行：
 
     <Command name={m.command_pandoc_export_name()} />
 
-    Keep <UiLabel name={m.pandoc_export_format_name()} /> set to <UiLabel name={m.pandoc_export_format_docx()} />. <UiLabel name={m.pandoc_export_style_name()} /> shows **APA Style 7th edition**, and the line under it reads <UiLabel name={m.pandoc_export_style_from_vault()} /> This confirms that the export uses the style from your settings.
+    保持 <UiLabel name={m.pandoc_export_format_name()} /> 为 <UiLabel name={m.pandoc_export_format_docx()} />。<UiLabel name={m.pandoc_export_style_name()} /> 显示 **APA Style 7th edition**，其下方一行提示 <UiLabel name={m.pandoc_export_style_from_vault()} />，这确认了导出将直接应用设置中的样式。
 
-    Under <UiLabel name={m.pandoc_export_destination_name()} />, select <UiLabel name={m.pandoc_export_destination_browse()} /> and save the file in your `ZotLit Pandoc tutorial` folder.
+    在 <UiLabel name={m.pandoc_export_destination_name()} /> 下，点击 <UiLabel name={m.pandoc_export_destination_browse()} /> 并将文件保存至你的 `ZotLit Pandoc tutorial` 文件夹中。
 
-    ![The Export with citations dialog set to Word document, with the citation style APA Style 7th edition, the line "Your vault settings set this style.", and a destination in the ZotLit Pandoc tutorial folder](/img/tutorial/pandoc-workflow-export-dialog.webp)
+    ![“导出带引文的文档”对话框，格式设为 Word 文档，引文样式为 APA Style 7th edition，显示“仓库设置决定了此样式。”，目标保存在 ZotLit Pandoc tutorial 文件夹](/img/tutorial/pandoc-workflow-export-dialog.webp)
 
-    Select <UiLabel name={m.pandoc_export_confirm()} />. The notice that follows names the style it used, for example <UiLabel name={m.notice_pandoc_export_done({ file: "Citation workflow check.docx", style: "APA Style 7th edition" })} />
+    点击 <UiLabel name={m.pandoc_export_confirm()} />。随后的通知将说明所使用的样式，例如 <UiLabel name={m.notice_pandoc_export_done({ file: "Citation workflow check.docx", style: "APA Style 7th edition" })} />。
 
-    Open the resulting `.docx` file and repeat the checks from the <UiLabel name={m.references_view_name()} /> Sidebar.
+    打开生成的 `.docx` 文件，核对其中的条目是否与 <UiLabel name={m.references_view_name()} /> 侧边栏一致。
 
-    Built-in export uses Better BibTeX to fetch current bibliography data from Zotero.
-
-  </Step>
-  <Step>
-    ### Save the version-matched integration pair
-
-    Open <SettingsPath page={m.settings_page_citations()} />. Under <UiLabel name={m.settings_citation_native_pandoc_heading()} />, find <UiLabel name={m.settings_citation_pandoc_files_name()} /> and select <UiLabel name={m.settings_citation_pandoc_files_save()} />.
-
-    Choose your `ZotLit Pandoc tutorial` folder. ZotLit saves `zotlit-cite.lua` and `zotlit.yaml` there. The pair matches your installed ZotLit version. Save a fresh pair after every ZotLit update. Files saved from a version before ZotLit 2.2.0 do not work with 2.2.0 or later.
+    内置导出功能通过 Better BibTeX 直接从 Zotero 获取最新的参考文献数据。
 
   </Step>
   <Step>
-    ### Create the native bibliography file
+    ### 保存版本匹配的集成文件
 
-    Save `references.json` in your `ZotLit Pandoc tutorial` folder. Include both Zotero items used in the worked note.
+    打开 <SettingsPath page={m.settings_page_citations()} />。在 <UiLabel name={m.settings_citation_native_pandoc_heading()} /> 下，找到 <UiLabel name={m.settings_citation_pandoc_files_name()} /> 并点击 <UiLabel name={m.settings_citation_pandoc_files_save()} />。
 
-    In Zotero, right-click **My Library**. Select **Export**, choose **Better CSL JSON**, and enable **Keep updated**. Save the file as `references.json`.
-
-    Better BibTeX updates the file after the source library or collection changes.
-
-    The citation keys in `references.json` must match the keys used in the worked note.
+    选择你的 `ZotLit Pandoc tutorial` 文件夹。ZotLit 会在该目录下保存 `zotlit-cite.lua` 和 `zotlit.yaml`。这对文件与你当前安装的 ZotLit 版本精确匹配。每次更新 ZotLit 后，请重新保存最新文件。在 ZotLit 2.2.0 之前保存的文件无法与 2.2.0 或更高版本配合使用。
 
   </Step>
   <Step>
-    ### Run native Pandoc
+    ### 生成原生参考文献库文件
 
-    Keep Obsidian open with this vault active and ZotLit loaded. Replace each path in this command with an absolute path, then run it in a terminal:
+    在你的 `ZotLit Pandoc tutorial` 文件夹中保存 `references.json`。确保其中包含实操笔记中引用的两个 Zotero 条目。
+
+    在 Zotero 中，右键点击**我的文库**（My Library）。选择**导出文库...**（Export Library...），格式选择 **Better CSL JSON**，并勾选**保持更新**（Keep updated）。将文件保存为 `references.json`。
+
+    当源文库或分类内容发生改变时，Better BibTeX 会自动更新该文件。
+
+    `references.json` 中的文献引用标识必须与实操笔记中使用的引用标识完全一致。
+
+  </Step>
+  <Step>
+    ### 运行原生 Pandoc
+
+    保持已加载 ZotLit 的 Obsidian 处于开启状态并激活当前仓库。将以下命令中的路径替换为绝对路径，然后在终端中运行：
 
     ```sh
     pandoc "/absolute/path/to/input.md" --defaults "/absolute/path/to/workflow/zotlit.yaml" --bibliography "/absolute/path/to/references.json" --fail-if-warnings --output "/absolute/path/to/output.docx"
     ```
 
-    Keep `--fail-if-warnings`. It stops the run when Pandoc cannot find a cited item in `references.json`.
+    保留 `--fail-if-warnings` 参数。如果 Pandoc 在 `references.json` 中找不到引用的条目，该参数将立即终止执行。
 
-    Pandoc prints one ZotLit line that names the style and where it comes from:
+    Pandoc 会输出一行来自 ZotLit 的信息，说明所使用的样式及其来源：
 
     ```text
     ZotLit: citations use APA Style 7th edition (from your vault settings).
     ```
 
-    This line is not a warning, so the run continues and writes the `.docx` file.
+    此行并非警告信息，因此构建会正常继续并生成 `.docx` 文件。
 
   </Step>
   <Step>
-    ### Compare the Word documents
+    ### 对比两份 Word 文档
 
-    Open the native `.docx` beside the built-in export. Both documents should contain the same two formatted bibliography entries.
+    将原生导出的 `.docx` 与内置导出的文档并排打开。两份文档应当包含完全相同的两篇已格式化的参考文献条目。
 
-    Compare the repeated-source formatting, locators, author modes, grouped Citation Run, literal citation, and ordinary vault link. The citation content should agree because both routes start from the same note and style.
+    对比重复引用的格式化效果、定位符、作者显示模式、成组引文序列、字面量 Pandoc 引文以及普通仓库内部链接。由于两条导出路线基于相同的笔记源码和样式规范，其引文内容应当高度一致。
 
-    The bibliography source differs. Built-in export asks Better BibTeX for current data, while native Pandoc reads the auto-updated `references.json` file.
+    两者的参考文献数据源有所不同：内置导出通过 Better BibTeX 动态请求最新数据，而原生 Pandoc 则直接读取自动更新的 `references.json` 文件。
 
   </Step>
 </Steps>
 
-You now have one Markdown note that you can review in Obsidian and export through either Pandoc route.
+现在，你拥有了一篇既可在 Obsidian 中即时查阅，又可通过任一 Pandoc 路线无缝导出的 Markdown 笔记。
 
-## Troubleshooting
+## 故障排除
 
-| Symptom                                                                                                         | What to do                                                                                                    |
-| --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| A `#cite:` link stops built-in export, and native Pandoc reports `unresolved-citation-intent` for the same link | Point the link to a valid Literature Note. If you meant an ordinary vault link, remove its `#cite:` fragment. |
-| Built-in export succeeds, but native Pandoc warns that a citation is not found in the bibliography              | Add the missing item to the Better BibTeX export source, update `references.json`, and run the command again. |
-| Native output changes after a ZotLit update or the filter reports a contract mismatch                           | Save both integration files again and replace the old pair together.                                          |
+| 现象                                                                                     | 解决方法                                                                               |
+| ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `#cite:` 链接导致内置导出中断，且原生 Pandoc 对同一链接报告 `unresolved-citation-intent` | 将链接指向有效的文献笔记。如果原本意图是指向普通仓库内部链接，请移除其 `#cite:` 片段。 |
+| 内置导出成功，但原生 Pandoc 发出警告称在参考文献库中未找到引文                           | 将缺失的条目添加至 Better BibTeX 导出源，刷新 `references.json` 后重新运行命令。       |
+| ZotLit 更新后原生导出格式发生变化，或过滤器报告协议规范不匹配（contract mismatch）       | 重新保存配套的集成文件，将旧的 `zotlit-cite.lua` 与 `zotlit.yaml` 成对替换。           |
 
-For native error-code definitions, open <UiLabel name={m.settings_citation_pandoc_guide_name()} /> under <SettingsPath page={m.settings_page_citations()} />. The [Settings reference](/docs/reference/settings#native-pandoc) identifies the local guide and integration controls.
+关于原生错误代码的定义，请在 <SettingsPath page={m.settings_page_citations()} /> 下打开 <UiLabel name={m.settings_citation_pandoc_guide_name()} />。[设置参考](/docs/reference/settings#native-pandoc)详细介绍了本地指南和集成选项。
 
-## Next steps
+## 下一步
 
 <Cards>
   <Card
-    title="Export a note with citations"
-    description="Choose built-in DOCX or HTML output and resolve export errors."
+    title="导出包含引文的笔记"
+    description="选择内置 DOCX 或 HTML 输出，并解决内置导出报错。"
     href="/docs/how-to/export-note-with-citations"
   />
   <Card
-    title="Export with native Pandoc"
-    description="Adapt the native workflow for your own bibliography files and Pandoc options."
+    title="使用原生 Pandoc 导出"
+    description="针对你自己的参考文献库文件和 Pandoc 参数定制原生工作流。"
     href="/docs/how-to/export-with-native-pandoc"
   />
   <Card
-    title="Review, copy, and troubleshoot references"
-    description="Inspect citation occurrences and correct Reference Errors."
+    title="查看、复制与排查参考文献"
+    description="检查引文出现位置并排查参考文献报错。"
     href="/docs/how-to/review-copy-troubleshoot-references"
   />
 </Cards>

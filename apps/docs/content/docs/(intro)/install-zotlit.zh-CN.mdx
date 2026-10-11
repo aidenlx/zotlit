@@ -1,6 +1,6 @@
 ---
-title: "Install ZotLit"
-description: "Install the ZotLit plugin in Obsidian."
+title: "安装 ZotLit"
+description: "在 Obsidian 中安装 ZotLit 插件。"
 translationStatus: placeholder
 ---
 
@@ -10,32 +10,37 @@ import { VersionLedger } from "@/components/version-ledger";
 import { ActionLink } from "@/components/action-link";
 import { Steps, Step } from "fumadocs-ui/components/steps";
 
-ZotLit is a desktop-only Obsidian plugin. It runs on Windows, macOS, and Linux; mobile is not supported.
+ZotLit 是一款仅支持桌面端的 Obsidian 插件。它支持 Windows、macOS 和 Linux；暂不支持移动端。
 
-<Callout type="warn" title="Update the Obsidian installer first">
-  ZotLit needs Obsidian 1.14.2 or newer, and your **installer version** must be 1.13.4 or newer. Obsidian's in-app update does not replace the installer. Check yours in **Settings > About**, then read [how to update the Obsidian installer](/docs/how-to/update-obsidian-installer). If the installer is older, ZotLit does not load.
+<Callout type="warn" title="请先更新 Obsidian 安装包">
+  ZotLit 需要 Obsidian 1.14.2 或更高版本，且你的**安装包版本（installer
+  version）**必须为 1.13.4 或更高版本。Obsidian
+  的软件内在线更新不会自动更新底层安装包。请在**设置 →
+  关于**中查看你的安装包版本，并参阅[如何更新 Obsidian
+  安装包](/docs/how-to/update-obsidian-installer)。如果安装包版本过旧，ZotLit
+  将无法加载。
 </Callout>
 
-## Install the plugin
+## 安装插件
 
 <Tabs items={["Stable", "Pre-release"]} updateAnchor>
   <Tab id="stable" value="Stable">
     <VersionLedger app="obsidian" channel="stable" />
 
-    You can find ZotLit in the Obsidian community plugin directory: [View ZotLit](https://community.obsidian.md/plugins/zotlit).
+    你可以在 Obsidian 社区插件市场中找到 ZotLit：[查看 ZotLit](https://community.obsidian.md/plugins/zotlit)。
 
     <Steps>
       <Step>
-        ### Open the plugin listing
+        ### 打开插件页面
 
-        Click the link above, or open **Settings > Community plugins** in Obsidian, select **Browse**, and search for "ZotLit". You can also use this deep link:
+        点击上方链接，或者在 Obsidian 中打开**设置 → 社区插件**，选择**浏览**并搜索“ZotLit”。你也可以使用下方深层链接：
 
-        <ActionLink href="obsidian://show-plugin?id=zotlit" kind="obsidian">Show ZotLit in Obsidian</ActionLink>
+        <ActionLink href="obsidian://show-plugin?id=zotlit" kind="obsidian">在 Obsidian 中打开 ZotLit</ActionLink>
       </Step>
       <Step>
-        ### Install and enable
+        ### 安装并启用
 
-        Click **Install**, then **Enable**.
+        点击**安装**，随后点击**启用**。
       </Step>
     </Steps>
 
@@ -43,39 +48,39 @@ ZotLit is a desktop-only Obsidian plugin. It runs on Windows, macOS, and Linux; 
   <Tab id="pre-release" value="Pre-release">
     <VersionLedger app="obsidian" channel="pre-release" />
 
-    BRAT (Beta Reviewers Auto-update Tester) is an Obsidian plugin that installs and auto-updates pre-releases from GitHub. Use BRAT if you want to test upcoming changes before they reach the community directory.
+    BRAT（Beta Reviewers Auto-update Tester）是一款能够从 GitHub 直接安装并自动更新测试版插件的 Obsidian 工具。如果你希望在更新正式发布到社区市场前测试新特性，请使用 BRAT。
 
     <Steps>
       <Step>
-        ### Install BRAT
+        ### 安装 BRAT
 
-        Open BRAT in the Obsidian plugin directory:
+        在 Obsidian 插件市场中打开 BRAT：
 
-        <ActionLink href="obsidian://show-plugin?id=obsidian42-brat" kind="obsidian">Install BRAT</ActionLink>
+        <ActionLink href="obsidian://show-plugin?id=obsidian42-brat" kind="obsidian">安装 BRAT</ActionLink>
 
-        Enable it after installation. If you already have BRAT installed, skip to the next step.
+        安装完成后将其启用。如果你已安装 BRAT，请跳至下一步。
       </Step>
       <Step>
-        ### Add ZotLit as a beta plugin
+        ### 将 ZotLit 添加为测试版插件
 
-        Click the link below to add ZotLit to BRAT automatically:
+        点击下方链接将 ZotLit 自动添加至 BRAT：
 
-        <ActionLink href="obsidian://brat?plugin=aidenlx/zotlit" kind="obsidian">Add ZotLit to BRAT</ActionLink>
+        <ActionLink href="obsidian://brat?plugin=aidenlx/zotlit" kind="obsidian">将 ZotLit 添加到 BRAT</ActionLink>
 
-        Alternatively, open the command palette, run **BRAT: Add a beta plugin**, and enter `aidenlx/zotlit`.
+        或者，打开命令面板，运行 **BRAT: Add a beta plugin** 并输入 `aidenlx/zotlit`。
       </Step>
       <Step>
-        ### Enable ZotLit
+        ### 启用 ZotLit
 
-        Go to **Settings > Community plugins** and enable **ZotLit**. You may need to refresh the plugin list first.
+        前往**设置 → 社区插件**并启用 **ZotLit**。你可能需要先刷新插件列表。
 
-        BRAT keeps ZotLit up to date as new pre-releases ship. You do not need to reinstall manually.
+        当发布新的测试版本时，BRAT 会自动保持 ZotLit 最新，无需手动重新安装。
       </Step>
     </Steps>
 
   </Tab>
 </Tabs>
 
-## Next steps
+## 下一步
 
-ZotLit Companion, the Zotero add-on, is required to keep recent Zotero changes available in Obsidian. [Install ZotLit Companion](/docs/install-companion) next.
+必须安装配套的 ZotLit Companion（Zotero 侧扩展组件），以确保 Zotero 的最新更改能够实时同步至 Obsidian。接下来请[安装 ZotLit Companion](/docs/install-companion)。

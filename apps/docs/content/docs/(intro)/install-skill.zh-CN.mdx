@@ -1,6 +1,6 @@
 ---
-title: "Install the ZotLit skill"
-description: "Install the ZotLit skill in one vault for Claude Code, Codex, or pi."
+title: "安装 ZotLit Skill"
+description: "在单个仓库中为 Claude Code、Codex 或 pi 安装 ZotLit Skill。"
 translationStatus: placeholder
 ---
 
@@ -8,36 +8,35 @@ import { Steps, Step } from "fumadocs-ui/components/steps";
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Callout } from "@/components/callout";
 
-The ZotLit skill helps an agent edit and test templates and configure managed frontmatter field templates in one vault.
+ZotLit Skill 能够帮助 Agent 在单个仓库内编辑并测试模板，以及配置托管 frontmatter 属性模板。
 
-## Before you start
+## 开始之前
 
-You need:
+你需要准备：
 
-- Node.js 18 or later.
-- Obsidian desktop 1.14.2 or later.
-- An open vault with ZotLit loaded.
-- The Obsidian CLI activated by following the [Obsidian CLI guide](https://obsidian.md/help/cli).
+- Node.js 18 或更高版本。
+- Obsidian 桌面端 1.14.2 或更高版本。
+- 已加载 ZotLit 的已打开仓库。
+- 按照 [Obsidian 命令行指南](https://obsidian.md/help/cli)启用 Obsidian CLI。
 
-<Callout type="warn" title="Agent data access">
-  The agent you select can receive Zotero metadata and annotation text returned
-  by the Template Workbench CLI. The agent's own data-handling policies apply.
+<Callout type="warn" title="Agent 数据访问说明">
+  你所选择的 Agent 能够接收由 Template Workbench CLI 返回的 Zotero
+  元数据与批注全文。Agent 本身的数据处理政策均适用。
 </Callout>
 
-## Install the skill
+## 安装 Skill
 
 <Steps>
   <Step>
-    ### Open the vault folder
+    ### 打开仓库文件夹
 
-    Open a terminal in the root of the vault. This is the folder that contains
-    the `.obsidian` folder.
+    在仓库根目录下打开终端（包含 `.obsidian` 文件夹的目录）。
 
   </Step>
   <Step>
-    ### Start the installer
+    ### 启动安装程序
 
-    Run:
+    运行：
 
     ```bash
     npx skills@latest add https://zotlit.aidenlx.site/
@@ -45,50 +44,48 @@ You need:
 
   </Step>
   <Step>
-    ### Select the vault and agents
+    ### 选择仓库与 Agent
 
-    Select **Project** scope to install the skill in the current vault. Select
-    each agent that you use there: Claude Code, Codex, or pi.
+    选择 **Project** 范围以将 Skill 安装到当前仓库。勾选你在该仓库中使用的每个 Agent：Claude Code、Codex 或 pi。
 
-    Choose the recommended symlink installation method.
+    选择推荐的符号链接（symlink）安装方式。
 
   </Step>
   <Step>
-    ### Decline the extra skill
+    ### 跳过额外 Skill
 
-    If the installer recommends `find-skills`, select **No**. This skill is
-    unrelated to ZotLit.
+    如果安装程序推荐安装 `find-skills`，请选择 **No**。该 Skill 与 ZotLit 无关。
 
   </Step>
 </Steps>
 
-## Verify the installation
+## 验证安装
 
-Start one of the selected agents from the vault folder. Send this request:
+从仓库文件夹启动选定的 Agent 之一。发送以下请求：
 
 > Use the ZotLit skill to check my current template setup. Do not change any files.
 
-The agent should use the Template Workbench CLI and report the active vault and template setup. Your template files remain unchanged.
+Agent 应当会调用 Template Workbench CLI，并报告当前活跃仓库及模板配置情况。你的模板文件将保持不变。
 
-## Make your first template request
+## 发起你的第一个模板调整请求
 
-Describe the result you want in plain language. For example:
+用自然语言描述你期望的效果。例如：
 
 > Use the ZotLit skill to add Zotero tags below the title in my literature notes. Show me the rendered result before you finish.
 
-The agent inspects the current template and relevant Zotero data. It then edits the vault template and tests the rendered Markdown in memory.
+Agent 会检查当前模板与相关 Zotero 数据，随后在内存中编辑仓库模板并测试渲染出的 Markdown 效果。
 
-## See also
+## 延伸阅读
 
 <Cards>
   <Card
     title="Template Workbench CLI"
-    description="How the skill, CLI, and safety boundaries fit together."
+    description="Skill、命令行接口与安全边界的协同机制。"
     href="/docs/concepts/template-workbench"
   />
   <Card
-    title="Customize a template"
-    description="Edit a ZotLit template yourself in Obsidian."
+    title="自定义模板"
+    description="在 Obsidian 中亲自编辑 ZotLit 模板。"
     href="/docs/how-to/customize-a-template"
   />
 </Cards>

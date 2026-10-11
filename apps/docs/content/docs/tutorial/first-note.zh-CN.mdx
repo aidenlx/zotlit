@@ -1,6 +1,6 @@
 ---
-title: "Create your first literature note"
-description: "A hands-on walkthrough: pick an item from your Zotero library and create a literature note in Obsidian with metadata and annotations."
+title: "创建你的第一篇文献笔记"
+description: "上手实战指导：从 Zotero 文献库中选择一个条目，在 Obsidian 中生成包含元数据与批注的文献笔记。"
 translationStatus: placeholder
 ---
 
@@ -11,118 +11,118 @@ import { Command } from "@/components/command";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-This tutorial walks you through creating your first literature note in Obsidian from a Zotero library item. By the end, you will have a Markdown note with the item's title, a link back to Zotero, and any annotations you have already made on the PDF. You will also open the paper itself beside the note, with your Zotero highlights on the page.
+本教程将引导你在 Obsidian 中从 Zotero 文献库条目创建第一篇文献笔记。完成后，你将获得一篇包含条目标题、回溯 Zotero 链接以及你在 PDF 中所做全部批注的 Markdown 笔记。你还可以将论文原文并排打开在笔记旁，在页面中实时查看来自 Zotero 的高亮。
 
-<Callout type="info" title="Before you start">
-  Complete both installation steps:
+<Callout type="info" title="开始之前">
+  请先完成两个安装步骤：
 
-- [Install ZotLit](/docs/install-zotlit)
-- [Install ZotLit Companion, the Zotero add-on](/docs/install-companion).
+- [安装 ZotLit](/docs/install-zotlit)
+- [安装 ZotLit Companion（Zotero 侧扩展组件）](/docs/install-companion)。
 
-ZotLit finds your Zotero database automatically from your Zotero profile.
+ZotLit 会自动根据你的 Zotero 用户配置文件定位 Zotero 数据库。
 
 </Callout>
 
-## Create the note
+## 创建笔记
 
 <Steps>
   <Step>
-    ### Open the quick switcher
+    ### 打开快速切换器
 
-    Open the Obsidian command palette (`Ctrl+P` on Windows/Linux, `Cmd+P` on macOS) and run:
+    打开 Obsidian 命令面板（Windows/Linux 上按 `Ctrl+P`，macOS 上按 `Cmd+P`）并运行：
 
     <Command name={m.command_open_lit_note_name()} />
 
-    A search modal appears, connected to your Zotero library.
+    随后将出现连接至你的 Zotero 文献库的搜索窗口。
 
   </Step>
   <Step>
-    ### Pick a library item
+    ### 选择文献库条目
 
-    Type to search for an item in your library. For this tutorial, choose an item that already has PDF annotations (highlights or notes you made in the Zotero PDF reader). That way you can see annotations appear in the finished note.
+    输入文字以搜索文献库中的条目。在本次教程中，建议选择一个已有 PDF 批注（即在 Zotero PDF 阅读器中做过高亮或笔记）的条目。这样你可以直观看到批注如何呈现在生成的笔记中。
 
-    ![The quick switcher with "ten simple rules" typed and one result: Ten Simple Rules for Better Figures, Rougier et al. (2014), PLOS Computational Biology](/img/tutorial/first-note-quick-switcher.webp)
+    ![在快速切换器中输入“ten simple rules”并显示一个结果：Ten Simple Rules for Better Figures, Rougier et al. (2014), PLOS Computational Biology](/img/tutorial/first-note-quick-switcher.webp)
 
-    Select the item and press `Enter`.
+    选中该条目并按 `Enter`。
 
   </Step>
   <Step>
-    ### See the result
+    ### 查看生成效果
 
-    ZotLit creates the note and opens it. You will see a brief notice: <UiLabel name={m.notice_created_note()} />
+    ZotLit 将创建该笔记并将其打开。你将看到一条简短提示：<UiLabel name={m.notice_created_note()} />
 
-    The note appears in a `literatures` folder in your vault (the default location). It contains:
+    该笔记会出现在仓库的 `literatures` 文件夹中（默认位置）。笔记内容包含：
 
-    - A heading with the item's title
-    - A link back to the item in Zotero
-    - Links to any attached files
-    - An **Annotations** section with your PDF highlights and notes (if the item had annotations)
+    - 带有条目标题的标题行
+    - 返回 Zotero 对应条目的链接
+    - 指向关联附件文件的链接
+    - 包含你的 PDF 高亮与笔记的 **Annotations**（批注）区域（如果该条目包含批注）
 
-    ![The new note rougier2014 in the literatures folder, with the paper's title as a heading, Zotero and PDF links, and an Annotations section; the notice "Literature note created." shows in the corner](/img/tutorial/first-note-literature-note.webp)
+    ![literatures 文件夹中新建的 rougier2014 笔记，包含论文标题、Zotero 及 PDF 链接，以及 Annotations 区域；角落显示“已创建文献笔记。”提示](/img/tutorial/first-note-literature-note.webp)
 
-    The note's filename is the item's citation key by default.
+    默认情况下，笔记的文件名使用该条目的文献引用标识（citation key）。
 
-    ZotLit built this note from the Default profile, the built-in one that decides a note's name, folder, properties, and body. Read about [profiles](/docs/concepts/profiles) to see what you can change.
+    ZotLit 是基于默认配置方案（Default profile）构建此笔记的。该内置配置方案决定了笔记的名称、目标文件夹、属性与正文结构。阅读[配置方案（Profiles）](/docs/concepts/profiles)可了解可定制的详细内容。
 
   </Step>
 </Steps>
 
-## What you are looking at
+## 笔记结构剖析
 
-The note contains a marked section called the **managed region** (between `%%zt-managed%%` and `%%/zt-managed%%` markers). ZotLit owns this region; your own writing goes above or below it. When you update the note later, ZotLit refreshes the managed region while leaving your writing intact.
+笔记中包含一个用标记包裹的特定区域，称为**托管区域（managed region）**（位于 `%%zt-managed%%` 和 `%%/zt-managed%%` 标记之间）。ZotLit 拥有此区域的维护权；你自己的笔记和评论应写在标记上方或下方。之后每次更新笔记时，ZotLit 都会刷新托管区域，同时完整保留你在外部撰写的文字。
 
-For more on how this works, see [Literature notes and the managed region](/docs/concepts/literature-notes-and-the-managed-region).
+关于此工作机制的更多说明，请参阅[文献笔记与托管区域](/docs/concepts/literature-notes-and-the-managed-region)。
 
-## Opening an existing note
+## 打开已有笔记
 
-If you run the quick switcher again and select the same item, ZotLit opens the existing note instead of creating a duplicate.
+如果再次运行快速切换器并选择同一个条目，ZotLit 会直接打开已有笔记，而不会生成重复副本。
 
-## Read the paper beside your note
+## 在笔记旁对照阅读文献
 
-Now open the paper next to the note, so you can read it while you write. This needs Obsidian 1.14.2 or later, which ZotLit 2.2 already requires.
+现在在笔记旁边并排打开论文原文，以便在撰写笔记时随时查阅。此功能需要 Obsidian 1.14.2 或更高版本（ZotLit 2.2 已默认要求）。
 
 <Steps>
   <Step>
-    ### Make room for the paper
+    ### 为论文分屏预留空间
 
-    Right-click the note's tab and choose **Split right**. The note now shows twice, side by side.
+    右键点击笔记的标签页并选择**向右拆分**。笔记此时会左右并排显示两份。
 
   </Step>
   <Step>
-    ### Open the PDF
+    ### 打开 PDF
 
-    Click in the right-hand copy of the note. Then open the command palette and run:
+    点击右侧拆分出的笔记视图。然后打开命令面板并运行：
 
     <Command name={m.command_open_pdf_name()} />
 
-    The paper's PDF replaces the right-hand copy, so the note stays on the left and the paper sits on the right. ZotLit does not copy the file into your vault.
+    论文的 PDF 将替换右侧的笔记视图，从而实现左侧看笔记、右侧查阅文献。ZotLit 不会将 PDF 文件拷贝到你的仓库中。
 
   </Step>
   <Step>
-    ### See your highlights
+    ### 查看你的高亮
 
-    The highlights and notes you made in Zotero are already on the page, in the same colors. The <UiLabel name={m.annot_view_name()} /> view also opens in the right sidebar and lists each annotation as a card.
+    你在 Zotero 中标注的高亮和笔记已完整显示在页面上，且颜色一致。<UiLabel name={m.annot_view_name()} /> 视图也会在右侧侧边栏自动打开，以卡片形式罗列每条批注。
 
-    ![The literature note on the left, the paper's PDF on the right with colored Zotero highlights on the first page, and the annotation cards in the right sidebar](/img/tutorial/first-note-note-beside-pdf.webp)
+    ![左侧为文献笔记，右侧为第一页带有彩色 Zotero 高亮的论文 PDF，右侧边栏罗列着批注卡片](/img/tutorial/first-note-note-beside-pdf.webp)
 
   </Step>
 </Steps>
 
-To learn every other way to open a PDF, see [Open an item's PDF in Obsidian](/docs/how-to/open-pdf-in-obsidian).
+如需了解打开 PDF 的所有其他途径，请参阅[在 Obsidian 中打开条目的 PDF](/docs/how-to/open-pdf-in-obsidian)。
 
-## What's next
+## 下一步
 
-Now that you have a literature note with annotations, the next lesson shows you how to change how those annotations look.
+现在你已经拥有了一篇带有批注的文献笔记，下一课将向你展示如何调整这些批注的呈现样式。
 
 <Cards>
   <Card
-    title="Customize your annotations"
-    description="Edit a template to change how callouts render, then update the note in place."
+    title="自定义批注样式"
+    description="编辑模板以调整标注框（Callout）的呈现方式，并在原地更新笔记。"
     href="/docs/tutorial/customize-template"
   />
   <Card
-    title="Open an item's PDF in Obsidian"
-    description="Every way to open a paper's PDF in Obsidian, and what you see when it opens."
+    title="在 Obsidian 中打开条目的 PDF"
+    description="在 Obsidian 中打开论文 PDF 的所有方式，以及打开后的界面概览。"
     href="/docs/how-to/open-pdf-in-obsidian"
   />
 </Cards>
