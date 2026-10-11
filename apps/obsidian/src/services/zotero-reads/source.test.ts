@@ -337,8 +337,9 @@ describe("ZoteroReads source", () => {
       "refreshing",
     ]);
 
-    await source.run(source.reads.Refresh());
-    await expect(source.version()).resolves.toBe(1);
+    await source.run(source.reads.NotifyExternalChange());
+    await source.elapse();
+    await vi.waitFor(async () => expect(await source.version()).toBe(1));
   });
 
   it("keeps the active client when a refresh fails, and Refresh reports the failure", async () => {
@@ -611,17 +612,153 @@ describe("ZoteroReads source", () => {
       expect(ports.prepareRead).toHaveBeenCalledOnce();
     });
 
-    it("refreshes on an external push even when the source is unchanged", async () => {
+    it("retains the snapshot on an unchanged push, while manual refresh still reopens it", async () => {
       const { ports } = testPorts();
       await using source = await startSource(config(), ports);
-      await source.version();
+      await source.idle();
+      const before = source.events.length;
 
       await source.run(source.reads.NotifyExternalChange());
       await source.elapse();
+      await source.sawTags(["refreshing", "refreshing"], before);
 
-      await vi.waitFor(() =>
-        expect(ports.prepareRead).toHaveBeenCalledTimes(2),
+      expect(ports.prepareRead).toHaveBeenCalledOnce();
+      expect(ports.snapshotSource).toHaveBeenCalledTimes(2);
+      await expect(source.version()).resolves.toBe(1);
+
+      await source.run(source.reads.Refresh());
+      expect(ports.prepareRead).toHaveBeenCalledTimes(2);
+    });
+
+    it("refreshes a changed push using one pre-read source fingerprint", async () => {
+      const { ports } = testPorts();
+      await using source = await startSource(config(), ports);
+      await source.idle();
+      writeLibrary(dbPath, 2);
+      const before = source.events.length;
+
+      await source.run(source.reads.NotifyExternalChange());
+      await source.elapse();
+      await source.sawTags(["refreshing", "changed", "refreshing"], before);
+
+      await expect(source.version()).resolves.toBe(2);
+      expect(ports.snapshotSource).toHaveBeenCalledTimes(2);
+      expect(ports.prepareRead).toHaveBeenCalledTimes(2);
+    });
+
+    it("retries an unchanged push after a failed refresh with held reads", async () => {
+      const { ports } = testPorts();
+      await using source = await startSource(config(), ports);
+      await source.idle();
+      ports.prepareRead.mockRejectedValueOnce(new Error("busy"));
+      await source.run(Effect.flip(source.reads.Refresh()));
+      await source.idle();
+      const before = source.events.length;
+
+      await source.run(source.reads.NotifyExternalChange());
+      await source.elapse();
+      await source.sawTags(["refreshing", "changed", "refreshing"], before);
+
+      expect(ports.prepareRead).toHaveBeenCalledTimes(3);
+      await expect(source.version()).resolves.toBe(1);
+    });
+
+    it.each(["unreadable", "unstable"] as const)(
+      "refreshes a push when its fingerprint is %s",
+      async (observation) => {
+        const { ports } = testPorts();
+        await using source = await startSource(config(), ports);
+        await source.idle();
+        const before = source.events.length;
+        if (observation === "unreadable") {
+          ports.snapshotSource.mockRejectedValueOnce(new Error("EIO"));
+        } else {
+          ports.snapshotSource.mockImplementationOnce(async (path) => ({
+            ...(await snapshotSource(path)),
+            wal: { state: "unstable" },
+          }));
+        }
+
+        await source.run(source.reads.NotifyExternalChange());
+        await source.elapse();
+        await source.sawTags(["refreshing", "changed", "refreshing"], before);
+
+        expect(ports.prepareRead).toHaveBeenCalledTimes(2);
+        await expect(source.version()).resolves.toBe(1);
+      },
+    );
+
+    it("keeps an unchanged trusted signal in Immutable Source mode", async () => {
+      const { ports } = testPorts();
+      await using source = await startSource(
+        config({ readMode: "immutable" }),
+        ports,
       );
+      await source.idle();
+      const before = source.events.length;
+
+      await source.run(source.reads.NotifyExternalChange());
+      await source.elapse();
+      await source.sawTags(["refreshing", "changed", "refreshing"], before);
+
+      expect(ports.prepareRead).toHaveBeenCalledTimes(2);
+    });
+
+    it("preserves manual force queued during a trusted fingerprint read", async () => {
+      const { ports } = testPorts();
+      await using source = await startSource(config(), ports);
+      await source.idle();
+      const fingerprint = await snapshotSource(dbPath);
+      const gate = Promise.withResolvers<SourceFingerprint>();
+      using cleanup = new DisposableStack();
+      cleanup.defer(() => gate.resolve(fingerprint));
+      ports.snapshotSource.mockImplementationOnce(() => gate.promise);
+      const before = source.events.length;
+
+      await source.run(source.reads.NotifyExternalChange());
+      await source.elapse();
+      await vi.waitFor(() =>
+        expect(ports.snapshotSource).toHaveBeenCalledTimes(2),
+      );
+      const forced = source.run(source.reads.Refresh());
+      // The request must join the active lane before its fingerprint settles.
+      await source.version();
+      gate.resolve(fingerprint);
+      await forced;
+
+      await source.sawTags(
+        ["refreshing", "changed", "changed", "refreshing"],
+        before,
+      );
+      expect(ports.prepareRead).toHaveBeenCalledTimes(3);
+    });
+
+    it("refreshes the new configuration when it changes during a trusted fingerprint read", async () => {
+      const { ports } = testPorts();
+      await using source = await startSource(config(), ports);
+      await source.idle();
+      const next = join(dir, "next.sqlite");
+      writeLibrary(next, 3);
+      const fingerprint = await snapshotSource(dbPath);
+      const gate = Promise.withResolvers<SourceFingerprint>();
+      using cleanup = new DisposableStack();
+      cleanup.defer(() => gate.resolve(fingerprint));
+      ports.snapshotSource.mockImplementationOnce(() => gate.promise);
+      const before = source.events.length;
+
+      await source.run(source.reads.NotifyExternalChange());
+      await source.elapse();
+      await vi.waitFor(() =>
+        expect(ports.snapshotSource).toHaveBeenCalledTimes(2),
+      );
+      await source.run(source.reads.Configure(config({ databasePath: next })));
+      gate.resolve(fingerprint);
+
+      await source.sawTags(
+        ["refreshing", "changed", "changed", "refreshing"],
+        before,
+      );
+      await expect(source.version()).resolves.toBe(3);
     });
 
     it("refreshes when the source fingerprint cannot be read", async () => {
@@ -667,8 +804,8 @@ describe("ZoteroReads source", () => {
       await using source = await startSource(config(), ports);
       await source.idle();
 
-      // The push spends its authority on its own burst; a leaked flag would
-      // wave every later echo through.
+      // The push applies to its own burst; later watcher echoes are gated.
+      writeLibrary(dbPath, 2);
       const before = source.events.length;
       await source.run(source.reads.NotifyExternalChange());
       await source.elapse();
@@ -690,6 +827,7 @@ describe("ZoteroReads source", () => {
       await source.version();
 
       // A push is its own change source, so the flag must not silence it.
+      writeLibrary(dbPath, 2);
       await source.run(source.reads.NotifyExternalChange());
       await source.run(source.reads.Configure(config({ autoRefresh: false })));
       await source.elapse();
