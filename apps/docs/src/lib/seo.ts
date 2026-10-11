@@ -9,10 +9,12 @@
 import type { Thing, WithContext } from "schema-dts";
 
 import * as m from "@/paraglide/messages.js";
+import { getLocale } from "@/paraglide/runtime.js";
 
 import { appName, baseURL, ogImageUrl } from "./shared";
 import type { OgType } from "./shared";
 import { absoluteUrl, serializeJsonLd } from "./structured-data";
+import { getPageLocaleState } from "./translation-state";
 
 const OG_IMAGE_DIMENSIONS = { width: "1200", height: "630" } as const;
 
@@ -57,10 +59,21 @@ export function ogImageMeta(type: OgType, alt: string, slugs?: string[]) {
 /** The `head` fragment for one page: title, description, canonical, OG, Twitter. */
 export function pageHead(seo: PageSeo) {
   const ogTitle = seo.ogTitle ?? seo.title ?? appName;
-  const canonical = absoluteUrl(seo.path);
+  const localeState = getPageLocaleState(seo.path, getLocale());
+  const canonical = absoluteUrl(localeState.canonicalPath);
 
   return {
     meta: [
+      {
+        name: "robots",
+        content: localeState.isPlaceholder
+          ? "noindex, follow"
+          : "index, follow",
+      },
+      {
+        property: "og:locale",
+        content: localeState.contentLocale === "zh-CN" ? "zh_CN" : "en_US",
+      },
       { title: seo.title ? `${seo.title} | ${appName}` : appName },
       ...(seo.description === undefined
         ? []
@@ -97,6 +110,11 @@ export function pageHead(seo: PageSeo) {
     ],
     links: [
       { rel: "canonical", href: canonical },
+      ...localeState.alternates.map(({ locale, path }) => ({
+        rel: "alternate",
+        hrefLang: locale,
+        href: absoluteUrl(path),
+      })),
       ...Object.entries(seo.feeds ?? {}).map(([type, path]) => ({
         rel: "alternate",
         type,

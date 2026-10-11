@@ -1,0 +1,207 @@
+---
+title: "Default templates"
+description: "The built-in Liquid template for each type, with annotations explaining what each line produces."
+translationStatus: placeholder
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { Command } from "@/components/command";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+ZotLit ships a built-in Liquid default for every template. This page shows each default verbatim, explains what it renders, and names the document that holds it once you customize it.
+
+A Profile document carries the note, content, filename, and annotation templates together. The citation text is its own document. Until a document exists, ZotLit renders the built-in text shown below. See [Customize a template](/docs/how-to/customize-a-template) for how to create one.
+
+## Note template
+
+In a Profile document: the note body, above the Annotation Section.
+
+```liquid
+# {{ zt.title }}
+
+[Zotero]({{ zt.backlink }}) {{ zt.attachments | map: "fileLink" | compact | join: " " }}
+
+{% render "content" with zt as zt %}
+```
+
+| Line                                                              | What it renders                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `# {{ zt.title }}`                                                | Item title as an H1 heading.                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `[Zotero]({{ zt.backlink }})`                                     | Markdown link to the item in Zotero (deep link).                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `{{ zt.attachments \| map: "fileLink" \| compact \| join: " " }}` | Direct `file://` links to every resolvable attachment. For a Zotero linked file, the link points to its original external location. These links do not copy files into the vault. A link to a PDF in your Zotero library opens in [Obsidian's PDF reader](/docs/how-to/open-pdf-in-obsidian) while <UiLabel name={m.settings_reader_open_file_links_name()} /> is on, which is the default. `map` extracts each link, `compact` drops missing links, and `join` separates them with a space. |
+| `{% render "content" with zt as zt %}`                            | Includes the `content` template, passing the full item context.                                                                                                                                                                                                                                                                                                                                                                                                                              |
+
+## Content template
+
+In a Profile document: the part of the note body inside the `{% managed %}` / `{% endmanaged %}` block.
+
+```liquid
+{% if zt.notes.size > 0 %}
+## Notes
+
+{% for note in zt.notes -%}
+- {{ note.noteLink }}
+{% endfor %}
+{% endif %}
+{% if zt.annotations.size > 0 %}
+## Annotations
+
+{% for annotation in zt.annotations %}
+{% render_annotation annotation %}
+{% endfor %}
+{% endif %}
+```
+
+The `content` template is the one whose rendered output is wrapped in managed-region markers. Running <Command inline name={m.command_update_note_name()} /> re-renders this section while leaving the rest of the note body untouched.
+
+| Section     | What it renders                                                                                                                   |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Notes       | A bulleted list of linked child notes. Each `note.noteLink` resolves to an Obsidian wiki-link pointing at the imported note file. |
+| Annotations | Each annotation rendered via the `annotation` template (see below).                                                               |
+
+Both sections appear only when the corresponding array is non-empty.
+
+The `render_annotation` tag passes each annotation as `zt`. See [Annotation rendering](/docs/reference/templates/syntax#render-annotation) for the equivalent native syntax.
+
+## Annotation template
+
+In a Profile document: the Annotation Section, the final section after the standalone line `--- zotlit:annotation ---`.
+
+```liquid
+{% bq %}
+[!note] Page {% if zt.pageLabel %}{{ zt | file_link: zt.pageLabel | default: zt.pageLabel }}{% endif %}
+
+{{ zt.imgLink | embed }}{{ zt.text }}
+{% if zt.comment %}
+
+{{ zt.comment }}
+{% endif %}
+{% endbq %}
+```
+
+Rendered output for an annotation on page 42 with an image excerpt, highlighted text, and a comment:
+
+```markdown
+> [!note] Page [42](file:///Users/me/Zotero/storage/ABCD2345/paper.pdf#page=42&zt-annotation=ANNX2345)
+>
+> ![[excerpt.png]]The highlighted passage
+>
+> My thoughts on this
+```
+
+| Element      | Source                                                                                                                                                                                                                              |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Callout type | `[!note]`: an Obsidian callout. Change `note` to `quote`, `info`, or any supported type to restyle.                                                                                                                                 |
+| Page label   | `{{ zt \| file_link: zt.pageLabel }}` in the callout title: the page label, linked to the attachment file. Click it and the PDF opens on that page with this annotation selected. A label with no resolvable file stays plain text. |
+| Image        | `{{ zt.imgLink \| embed }}`: embeds a prepared image or ink excerpt. A failed refresh keeps a verified previous image, or returns an unavailable-image explanation and source link. Collapses to `""` for other annotation types.   |
+| Text         | `{{ zt.text }}`: the highlighted passage.                                                                                                                                                                                           |
+| Comment      | `{{ zt.comment }}`: the user's marginal note, rendered only when present.                                                                                                                                                           |
+
+The `{% bq %}` / `{% endbq %}` block tag handles the `> ` prefix on every line and collapses consecutive blank lines into a single bare `>`.
+
+## Citation text [#citation-text]
+
+In its own document, `zotlit-citation.md` in the template folder. One template answers both citation gestures, and `zt.variant` says which one the reader made:
+
+```liquid
+{% if zt.variant == "alt" %}
+  {{ zt.citations | pandoc_cite: "prefer-author-in-text" }}
+{% else %}
+  {{ zt.citations | pandoc_cite }}
+{% endif %}
+```
+
+`zt.variant` is `"main"` or `"alt"`. `"main"` comes from Enter in the citation suggester or the insert modal; `"alt"` comes from Shift+Enter, or from a trailing `/` in the suggester query. It names the gesture the reader made, and this template decides what each gesture renders. See [Citation variant](/docs/reference/templates/data#citation-variant).
+
+The `else` branch of the built-in default renders a bracketed Citation Cluster, such as `[@smith2024, {p. 62}; -@doe2021]`. The `"alt"` branch asks Pandoc for the author-in-text form, which falls back to a bracketed cluster whenever the first retained item carries a prefix or suppresses its author.
+
+| Input                        | `"main"`                | `"alt"`                                           |
+| ---------------------------- | ----------------------- | ------------------------------------------------- |
+| One key `smith2024`          | `[@smith2024]`          | `@smith2024`                                      |
+| Two keys                     | `[@a2020; @b2021]`      | First item in text, the rest in trailing brackets |
+| Locator `62`                 | `[@smith2024, {p. 62}]` | `@smith2024 [{p. 62}]`                            |
+| `suppressAuthor`             | `[-@smith2024]`         | `[-@smith2024]`, a cluster                        |
+| Prefix `see `                | `[see @smith2024]`      | `[see @smith2024]`, a cluster                     |
+| An item with no citation key | Dropped from the output | Dropped from the output                           |
+
+The `pandoc_cite` filter behaves the same in both branches:
+
+| Behavior             | Detail                                                                                                                                                                                               |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Prefix and suffix    | Preserves each item's `prefix` and `suffix`.                                                                                                                                                         |
+| Suppress author      | `suppressAuthor` true renders `-@key`.                                                                                                                                                               |
+| Locator              | Renders an explicit locator such as `, {p. 62}` from `labelShort` and `locator`.                                                                                                                     |
+| Complex citation key | Adds braces when Pandoc requires them. For example, `KX67D9YM?` renders as `@{KX67D9YM?}`.                                                                                                           |
+| Missing citation key | Omits items whose `item.citationKey` is null. An empty array or all-null array renders nothing.                                                                                                      |
+| Form                 | `normal` always produces a bracketed Citation Cluster; `prefer-author-in-text` produces an author-in-text citation only when the first retained item has no prefix and does not suppress its author. |
+
+ZotLit normalizes the rendered citation to inline form: leading and trailing whitespace is trimmed, and any whitespace run containing a line break collapses to a single space. This normalization applies everywhere a citation renders: the inline suggester, the command-palette picker, the `zt.citation` annotation field, <UiLabel name={m.annot_view_menu_copy_citation()} />, and citation resolution during note import.
+
+Only the Liquid edition is built in. The same template in Eta reads:
+
+```eta
+<% if (zt.variant === "alt") { %>
+  <%= pandocCite(zt.citations, "prefer-author-in-text") %>
+<% } else { %>
+  <%= pandocCite(zt.citations) %>
+<% } %>
+```
+
+## Filename template
+
+In a Profile document: the `filename` key of its YAML manifest. The Template Workbench View labels it <UiLabel name={m.workbench_name_filename_label()} />.
+
+The rendered output is the name part of a new note's path. ZotLit creates the note in the Profile's [literature note folder](/docs/reference/settings#literature-note-folder), under this name.
+
+```liquid
+{{ zt.citationKey | default: zt.DOI | default: zt.title | default: zt.key }}{% suffix %}
+```
+
+| Element        | Detail                                                                                                                                 |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Fallback chain | `citationKey` > `DOI` > `title` > `key`. The `default` filter skips nil and empty values.                                              |
+| `{% suffix %}` | Appends a short random string only when the rendered filename collides with an existing note. Absent a collision, it resolves to `""`. |
+| Single line    | The rendered output is collapsed to a single trimmed line (all newlines and surrounding whitespace removed).                           |
+| Extension      | The `.md` extension is appended automatically; the template produces only the base name.                                               |
+
+<Callout type="info" title="Subfolders in the note name">
+  A forward slash (`/`) in the rendered name makes a subfolder under the
+  literature note folder. The folder `literatures` and the name `2024/Smith2020`
+  give `literatures/2024/Smith2020.md`.
+</Callout>
+
+## Live recompilation
+
+Editing a template document in your vault triggers live recompilation through a file watcher. Changes take effect immediately, without reloading the plugin. Moving a document to trash returns its templates to the built-in defaults shown above.
+
+## See also
+
+<Cards>
+  <Card
+    title="Template syntax"
+    description="Liquid markup, filters, and ZotLit's custom tags."
+    href="/docs/reference/templates/syntax"
+  />
+  <Card
+    title="Data reference"
+    description="Properties available on zt for each template type."
+    href="/docs/reference/templates/data"
+  />
+  <Card
+    title="How templates work"
+    description="Template documents, languages, and where each template lives."
+    href="/docs/concepts/how-templates-work"
+  />
+  <Card
+    title="Customize a template"
+    description="Open a template document, edit it, and test the result."
+    href="/docs/how-to/customize-a-template"
+  />
+  <Card
+    title="Customize your annotations"
+    description="Tutorial lesson 2: change how annotations render."
+    href="/docs/tutorial/customize-template"
+  />
+</Cards>

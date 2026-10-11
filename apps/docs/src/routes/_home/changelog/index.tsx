@@ -6,6 +6,8 @@ import { getMDXComponents } from "@/components/mdx";
 import { SiteFooter } from "@/components/site-footer";
 import { cn } from "@/lib/cn";
 import { changelogs } from "@/lib/collections";
+import { isSiteLocale } from "@/lib/i18n";
+import type { SiteLocale } from "@/lib/i18n";
 import { changelogProseRoles } from "@/lib/prose";
 import { pageHead } from "@/lib/seo";
 import {
@@ -16,22 +18,33 @@ import {
 } from "@/lib/shared";
 import { getChangelogPages } from "@/lib/source";
 import { breadcrumbListSchema } from "@/lib/structured-data";
+import { getPageLocaleState } from "@/lib/translation-state";
 import { m } from "@/paraglide/messages.js";
+import { getLocale } from "@/paraglide/runtime.js";
 
-const listReleases = createServerFn({ method: "GET" }).handler(() =>
-  getChangelogPages().map((page) => ({
-    path: page.path,
-    version: page.data.version,
-    description: page.data.description,
-    companion: page.data.companion,
-    date: page.data.date,
-  })),
-);
+const listReleases = createServerFn({ method: "GET" })
+  .validator((locale: SiteLocale) => {
+    if (!isSiteLocale(locale)) throw new Error("Unsupported locale");
+    return locale;
+  })
+  .handler(({ data: locale }) =>
+    getChangelogPages(locale).map((page) => ({
+      path: page.path,
+      version: page.data.version,
+      description: page.data.description,
+      companion: page.data.companion,
+      date: page.data.date,
+    })),
+  );
 
-const crumbs = () => [
-  { name: appName, url: "/" },
-  { name: m.docs_nav_changelog(), url: changelogRoute },
-];
+const crumbs = () =>
+  [
+    { name: appName, url: "/" },
+    { name: m.docs_nav_changelog(), url: changelogRoute },
+  ].map((crumb) => ({
+    ...crumb,
+    url: getPageLocaleState(crumb.url, getLocale()).canonicalPath,
+  }));
 
 export const Route = createFileRoute("/_home/changelog/")({
   component: ChangelogIndex,
@@ -45,7 +58,7 @@ export const Route = createFileRoute("/_home/changelog/")({
       schemas: [breadcrumbListSchema(crumbs())],
     }),
   loader: async () => {
-    const releases = await listReleases();
+    const releases = await listReleases({ data: getLocale() });
     await Promise.all(
       releases.map((release) => {
         const page = changelogs.get(release.path);
@@ -83,7 +96,7 @@ function ChangelogIndex() {
             >
               <div className="text-left md:text-right">
                 <time className="mb-2 block font-mono text-xs font-medium tracking-widest text-fd-muted-foreground uppercase">
-                  {formatReleaseDate(release.date)}
+                  {formatReleaseDate(release.date, getLocale())}
                 </time>
                 <span
                   className={cn(
