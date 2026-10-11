@@ -1,9 +1,13 @@
+import { createFromSource } from "fumadocs-core/search/server";
+import { loader } from "fumadocs-core/source";
 import { describe, expect, it } from "vitest";
 
 import { deLocalizeUrl, localizeUrl } from "@/paraglide/runtime.js";
 
+import { blogs, changelogs, docs } from "./collections";
 import { i18n, isLocalizedPath, isSiteLocale, unlocalizedPath } from "./i18n";
 import { blog, changelog, source } from "./source";
+import { getPageLocaleState } from "./translation-state";
 
 describe("native locale infrastructure", () => {
   it("uses exactly the V1 language URLs", () => {
@@ -27,18 +31,24 @@ describe("native locale infrastructure", () => {
     expect(chinese.hash).toBe("#install");
     expect(deLocalizeUrl(chinese).href).toBe(english.href);
   });
-  it.each([source, blog, changelog])(
-    "loads native Chinese copies rather than fallback source paths",
-    (collection) => {
-      const english = collection.getPages("en");
-      const chinese = collection.getPages("zh-CN");
-      expect(chinese.length).toBe(english.length);
-      for (const page of chinese) {
-        expect(page.path).toContain(".zh-CN.mdx");
-        expect(page.url).toMatch(/^\/zh-CN\//);
-        expect([undefined, "placeholder"]).toContain(
-          page.data.translationStatus,
+  it.each([
+    { collection: source, native: docs },
+    { collection: blog, native: blogs },
+    { collection: changelog, native: changelogs },
+  ])(
+    "prefers native Chinese files and permits English fallback",
+    ({ collection, native }) => {
+      for (const english of collection.getPages("en")) {
+        const chinese = collection.getPage(english.slugs, "zh-CN");
+        const nativePath = english.path.replace(/\.(mdx?)$/, ".zh-CN.$1");
+        expect(chinese?.path).toBe(
+          native
+            .toFumadocsSource()
+            .files.some((file) => file.path === nativePath)
+            ? nativePath
+            : english.path,
         );
+        expect(chinese?.url).toBe(`/zh-CN${english.url}`);
       }
     },
   );
@@ -61,5 +71,94 @@ describe("translator-facing UI and formatting", () => {
       Object.keys(english.default.fumadocs),
     );
     expect(Object.keys(chinese.default.fumadocs)).toHaveLength(46);
+  });
+});
+
+// Failure modes: a missing locale file must not hide a new English page from
+// Chinese navigation/search or mistake its fallback body for approved Chinese.
+describe("English-only documentation", () => {
+  const path = "/docs/how-to/new-feature";
+  const fallback = loader({
+    i18n,
+    baseUrl: "/docs",
+    source: {
+      files: [
+        {
+          type: "page",
+          path: "how-to/new-feature.mdx",
+          data: {
+            title: "New feature",
+            description: "English-only feature documentation.",
+            structuredData: {
+              headings: [],
+              contents: [
+                { heading: undefined, content: "uniquefeaturekeyword" },
+              ],
+            },
+          },
+        },
+        {
+          type: "meta",
+          path: "how-to/meta.zh-CN.json",
+          data: { title: "How-to guides", pages: ["..."] },
+        },
+      ],
+    },
+  });
+
+  it("keeps the Chinese URL while loading the English source and sidebar title", () => {
+    const english = fallback.getPage(["how-to", "new-feature"], "en")!;
+    const chinese = fallback.getPage(english.slugs, "zh-CN")!;
+    expect(chinese.path).toBe(english.path);
+    expect(chinese.data).toEqual(english.data);
+    expect(chinese.url).toBe(`/zh-CN${path}`);
+    expect(JSON.stringify(fallback.getPageTree("zh-CN"))).toContain(
+      `"url":"/zh-CN${path}"`,
+    );
+    expect(JSON.stringify(fallback.getPageTree("zh-CN"))).toContain(
+      '"name":"New feature"',
+    );
+  });
+
+  it.each(["en", "zh-CN"])(
+    "indexes English fallback text in %s search",
+    async (locale) => {
+      const response = await createFromSource(fallback).GET(
+        new Request(
+          `https://example.test/api/search?locale=${locale}&query=uniquefeaturekeyword`,
+        ),
+      );
+      expect(response.status).toBe(200);
+      const results = (await response.json()) as { url: string }[];
+      expect(results.length).toBeGreaterThan(0);
+      for (const result of results) {
+        expect(result.url).toBe(`${locale === "en" ? "" : "/zh-CN"}${path}`);
+      }
+      expect(results).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            url: `${locale === "en" ? "" : "/zh-CN"}${path}`,
+          }),
+        ]),
+      );
+    },
+  );
+
+  it("advertises only the English edition until a real translation is approved", () => {
+    const manifest = { pages: {}, ui: "translated" } as const;
+    const chinese = getPageLocaleState(path, "zh-CN", manifest);
+    expect(chinese).toEqual({
+      contentLocale: "en",
+      isPlaceholder: true,
+      canonicalPath: path,
+      alternates: [
+        { locale: "en", path },
+        { locale: "x-default", path },
+      ],
+    });
+    expect(getPageLocaleState(path, "en", manifest)).toEqual({
+      ...chinese,
+      isPlaceholder: false,
+    });
   });
 });
