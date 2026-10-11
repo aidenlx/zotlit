@@ -33,7 +33,7 @@ All 54 explicit asset rules were checked. Rule-owned notice queries override con
 - App and Node TypeScript checks; Cloudflare generated-type freshness.
 - Root lint: zero errors, five existing warnings outside the changed docs code.
 - Repository-wide formatting and `git diff --check`.
-- Client/SSR production compilation and **269 prerendered routes**, using the temporary environment workaround below.
+- Unmodified production Vite configuration: client/SSR compilation and **269 prerendered routes**, exit 0 in the cloud desktop runtime. The earlier sandbox-only inspector workaround is no longer a verification blocker.
 - Real Vite/Cloudflare workerd HTTP: **8,087 assertions, 1,198 requests, zero failures**. Includes all V1 rules and notice-query precedence; English/Chinese HTML route pairs; sidebar/internal links and Markdown action URLs; locale search; suffix/content/Accept Markdown; slash/case aliases; unknown pages; release fallback; robots, sitemap, feeds and llms; concurrent locale isolation; no leaked placeholder frontmatter.
 - Fifteen Worker-boundary regression tests cover global machine aliases, including the unprefixed slash path needed during RSS prerender. Five cases failed before the guard correction and pass after it.
 - Temporary future-translation fixture: removed one Chinese tutorial marker and changed only its test title. Real HTTP verified Chinese content language, Chinese canonical, reciprocal en/zh-CN/x-default alternates, sitemap inclusion, no placeholder noindex/banner, and the native Chinese Markdown source. Original placeholder restored afterward; final build and matrix ran with every placeholder intact.
@@ -55,13 +55,46 @@ pnpm --filter @zotlit/docs check:translations
 
 The final command intentionally fails: 96 placeholder files and zero missing counterparts. It is a production readiness gate to run explicitly, not part of the passing POC test suite.
 
-### Cloud environment workaround and limitations
+### Cloud runtime and interactive browser verification
 
-The unchanged production Vite configuration fails in this sandbox when Cloudflare's inspector calls `os.networkInterfaces` (`uv_interface_addresses`, EPERM). For build and HTTP validation, a temporary copy named `.i18n-validation.vite.config.ts` added only `inspectorPort: false` to `cloudflare(...)`. This supported test-only option is absent from the submitted config. Build it with `vite build --config .i18n-validation.vite.config.ts`; pass `--config .i18n-validation.vite.config.ts` to the HTTP script. Remove the temporary file before repository-wide lint/format. The HTTP script starts preview and requests in one process, because this executor isolates loopback between tool calls.
+The earlier browser limitation was resolved. The command executor isolates loopback
+and `/tmp` from the cloud desktop, while `/workspace` is shared. Starting the
+preview through the supported cloud desktop Terminal, using a script in the shared
+workspace, put it in the same network namespace as cloud Chromium. It served only
+`127.0.0.1:4173`; no public tunnel, deployment, or user computer was used.
 
-Browser hydration, actual language-selector clicks, and interactive search were **not verified**. Cloud browser launch/socket restrictions, browser namespace reachability, and unavailable official browser downloads prevented a trustworthy browser run. Unit tests and HTTP SSR checks do not replace that gap.
+The unmodified production build also passed in that desktop runtime. The earlier
+`uv_interface_addresses` EPERM was specific to the restricted command executor.
+The temporary `inspectorPort: false` copy was used for the earlier isolated build and HTTP passes;
+it is absent from the submitted configuration. The reusable HTTP script starts
+preview and fetch in one process and accepts `--port` for a separate local port.
+The full 8,087-check / 1,198-request matrix was repeated against this unmodified
+production build using the normal Vite config, with zero failures.
 
-Workerd's optional Request.cf lookup timed out and used its documented placeholder. External GitHub requests encountered DNS failures; existing release-data fail-soft pages still passed. Live release facts and third-party Giscus behavior were not validated.
+Real cloud Chromium interaction now verifies:
+
+- Hydrated language selector opens and switches English ↔ Simplified Chinese.
+- Switching preserves the current page, query string, and fragment.
+- Chinese sidebar navigation, back/forward history, and direct reload retain locale.
+- English and Chinese search dialogs return results; result activation keeps the
+  appropriate locale and anchor. Ctrl+K, Escape, and the native empty-results
+  message work.
+- Blog listing/detail navigation and language switching; changelog listing/detail
+  navigation and localized dates.
+- Copy Markdown returns the Chinese edition with localized document links.
+- A Chinese V1 slash alias lands on the corresponding Chinese V2 page, retains the
+  browser fragment, shows the V1 notice, and links to its exact Chinese archive page.
+- Hydrated DOM metadata for placeholders stays `lang=en`, English-canonical,
+  `noindex, follow`, and en/x-default only. English pages have no fallback banner.
+- No application console errors or hydration warnings were observed in these
+  flows. The browser extension emitted unrelated metadata errors; the third-party
+  Giscus iframe refused its embedded connection. Live release facts and Giscus
+  behavior were not validated.
+
+Browser checks wait for hydrated controls, rather than treating initial SSR markup
+as an interactive page. This is targeted desktop Chromium coverage, not a claim of
+exhaustive browser, mobile, assistive-technology, or Obsidian integration testing.
+Obsidian is not needed to test this documentation website.
 
 Parsed Markdown document links are localized without rewriting code or images. Raw HTML/JSX links, unusual escaped leading slashes, and reference definitions shared with images remain authored. HTML internal links were checked. Generated ContractTable prose and shared assets are not newly translated; their review is required before approving the affected Chinese pages. See the workflow for exact scope.
 
