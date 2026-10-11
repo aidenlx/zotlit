@@ -191,6 +191,7 @@ async function changeNativeAnnotationCallout(
 
 describe.skipIf(!reachable)("End-to-end Run", () => {
   let vaultId = "";
+  const offlineZotero = createServer((socket) => socket.destroy());
   let booksNotePath = "";
   let m: typeof import("@obsidian-messages");
   const articlesProfile = {
@@ -425,7 +426,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // Rebuilds the Fixture (default Scope Case "all"), copies the Fixture
     // Vault to e2eVaultPath, registers + opens it, links its Device Overrides
     // to the Fixture profile and database, and confirms the plugin loaded.
-    const created = await runVaultScript(["create", e2eVaultPath]);
+    // Hold a private endpoint that cannot serve Zotero's API. The developer's
+    // Zotero may be running on its normal port while this offline case runs.
+    await new Promise<void>((resolve, reject) => {
+      offlineZotero.once("error", reject);
+      offlineZotero.listen(0, "127.0.0.1", resolve);
+    });
+    const address = offlineZotero.address();
+    if (address === null || typeof address === "string")
+      throw new Error("Offline Zotero endpoint did not receive a TCP port");
+    const created = await runVaultScript([
+      "open",
+      e2eVaultPath,
+      `--zotero-http-port=${address.port}`,
+    ]);
     vaultId = created.stdout.trim().split("\n")[0]!.trim();
     // A menu is an OS menu, with no DOM to measure, while Obsidian's "Native
     // menus" setting stands. This vault is the suite's own and is purged in
@@ -461,6 +475,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   }, 180000);
 
   afterAll(async () => {
+    await using _offlineZotero = offlineZotero;
     // Never let teardown itself throw and mask a test failure, but log a
     // warning on a nonzero exit rather than silently swallowing it.
     try {
