@@ -1,0 +1,15 @@
+---
+version: "2.1.4"
+companion: "2.1.4"
+date: "2026-09-12"
+description: "修复导入笔记正文为空、补全快速切换器副标题细节、修复 Zotero 10.0.2 上的菜单指令失效"
+---
+
+import { Command } from "@/components/command";
+import { m } from "@/paraglide/messages.js";
+
+## 问题修复
+
+- 修复了导入的笔记仅有 frontmatter 属性而无正文内容的问题（[讨论 #944](https://github.com/aidenlx/zotlit/discussions/944)）。由其他 Zotero 插件或自动化脚本生成（而非在 Zotero 原生笔记编辑器中输入）的 Zotero 子笔记在导入时会无声无息地丢失整个正文。ZotLit 此前仅转换带有 Zotero 笔记编辑器专属格式标记的笔记。现在这类笔记的正文内容均能完整导入，标题、段落、加粗文本和列表均会正确转为 Markdown。在 Zotero 原生编辑器中书写的笔记则保持与以往一致。
+- 修复了<Command inline name={m.command_open_lit_note_name()} />命令对多数条目类型仅显示标题的问题（[讨论 #939](https://github.com/aidenlx/zotlit/discussions/939)）。每个结果下方的第二行（包含作者、年份及发表出处）此前仅对“期刊文章”生效。预印本、书籍章节、学位论文、报告、会议论文或网页条目此前均仅显示单个标题，导致条目难以分辨，即便 Zotero 中包含作者且 ZotLit 也能传递给模板。现在所有条目类型均会展示该第二行，且“发表出处”会根据条目类型自适应展示：例如预印本显示如 arXiv 等预印本库，图书显示出版社。自定义条目类型与自定义字段同样支持解析；缺少相关字段的条目则仅显示作者与年份。
+- 修复了在 Zotero 10.0.2 上，Zotero 条目右键菜单中的笔记命令毫无响应的问题（[讨论 #1064](https://github.com/aidenlx/zotlit/discussions/1064)）。右键点击条目并选择“在 Obsidian 中打开文献笔记”或“创建或更新文献笔记”时此前没有任何反馈。Obsidian 保持关闭且未弹出报错对话框，原因在于 Zotero 10.0.2 收紧了附加组件向操作系统分发链接的权限限制。期间标注同步与从 Obsidian 端发起的操作始终正常。只要将 Zotero 中的 ZotLit Companion 配套插件更新至 2.1.4，这两条命令即可恢复正常调度。仅更新 Obsidian 插件无法解决此问题。

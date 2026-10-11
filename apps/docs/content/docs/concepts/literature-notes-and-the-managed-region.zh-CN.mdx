@@ -1,0 +1,107 @@
+---
+title: "文献笔记与受管区域"
+description: "ZotLit 如何识别文献笔记，并通过受管区域将自动生成的内容与您自己的撰写内容隔开。"
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { Command } from "@/components/command";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+文献笔记是与 Zotero 条目建立一对一关联的 Obsidian Markdown 文件。ZotLit 在笔记中使用一个标记区域来保持源自 Zotero 的内容即时更新，同时不会覆盖您自己书写的任何文字。
+
+## 如何定义一篇文献笔记
+
+ZotLit 通过一个特定的 frontmatter 属性字段来识别文献笔记：`zotero-key`。您仓库中任何包含此字段的 Markdown 文件都会被视为文献笔记，不论其文件名为何或存放于哪个文件夹。
+
+```yaml
+---
+zotero-key: ABC123XY
+---
+```
+
+只有当当前活动文件包含可解析的 `zotero-key` 时，更新与覆盖命令才会出现在命令面板和右键上下文菜单中。
+
+## 受管区域
+
+每篇文献笔记均由一个[配置方案](/docs/concepts/profiles)统一管控。配置方案提供笔记模板源码（即 ZotLit 渲染到笔记中的原始文本），且笔记模板源码使用由 `{% managed %}` 与 `{% endmanaged %}` 包裹的受管块来标记来自 Zotero 的内容部分。关于包含模板源码的文件说明，请参阅[配置方案文档](/docs/reference/templates/profile-document)；关于 ZotLit 如何发现模板，请参阅[模板工作原理](/docs/concepts/how-templates-work)。
+
+当 ZotLit 创建或覆盖文献笔记时，它会渲染该笔记模板源码。在源码中包含受管块的位置，其输出内容将被放入由注释标记包裹的笔记正文中：
+
+```markdown
+%%zt-managed%%
+...生成的受管内容...
+%%/zt-managed%%
+```
+
+ZotLit 拥有这两个标记之间全部内容的控制权。您自己撰写的内容应放置在该受管区域的上方或下方。
+
+### 受管区域包含的内容
+
+受管区域容纳统领该笔记的配置方案中受管块所输出的内容。在默认配置方案中，该受管块会生成一个链接该条目 Zotero 子笔记的 **Notes** 区域，以及一个将 PDF 高亮显示为 callout 的 **Annotations** 区域。
+
+每个 callout 均源自该配置方案的标注区域（Annotation Section，即配置方案文档的末尾部分），它决定了单条标注的具体呈现样式。编辑该部分即可统一更改该配置方案渲染的所有标注格式。
+
+笔记模板源码的其余部分位于受管块之外。在默认配置方案中，这会在创建笔记时将标题、Zotero 对应链接以及附件文件链接放置在受管区域上方。附件链接指向本地原始文件，不会将其重复复制到仓库中。对于 Zotero 链接文件，原文件也可以存放在外部文件夹中，详情参阅 [Zotero 链接文件指南](https://www.zotero.org/support/attaching_files#adding_linked_files)。除非关闭了 <UiLabel name={m.settings_reader_open_file_links_name()} />，否则点击指向您 Zotero 库中 PDF 的链接将直接[在 Obsidian 中打开](/docs/how-to/open-pdf-in-obsidian)。这些处于标记外部的行在后续更新时不会被触碰。
+
+### 笔记更新如何利用受管区域
+
+<Command inline name={m.command_update_note_name()} /> 命令会使用 Zotero
+最新的元数据刷新
+frontmatter，并重新渲染统领该笔记的配置方案中的受管块，从而用最新的输出替换受管区域。标记之外的所有内容均会原封不动地完整保留。正因如此，ZotLit
+可以在拉取新标注或更新元数据时，完全不干扰您自己的笔记内容、双链或标签。
+
+如果某个配置方案的笔记模板源码没有受管块，则该命令只会刷新 frontmatter，因为笔记正文中没有需要替换的受管区域。
+
+<Command inline name={m.command_update_note_metadata_name()} />
+是一项更轻量的操作：它仅刷新 frontmatter，绝不会触碰笔记正文。
+
+## 不含受管区域的笔记
+
+<Callout type="info" title="使用 ZotLit v1 创建的笔记">
+  使用 ZotLit v1 创建的文献笔记虽然包含 `zotero-key` 并能被识别为文献笔记，但它们不包含受管区域标记。对 v1 笔记运行 <Command inline name={m.command_update_note_name()} /> 只会刷新其 frontmatter，正文保持不变。ZotLit 会提示 <UiLabel name={m.notice_updated_note_no_region()} />。
+
+若要让 v1 笔记重新获得完整的更新流程支持，请参阅[保持笔记即时更新](/docs/how-to/keep-notes-updated)。
+
+</Callout>
+
+## 覆盖（Overwrite）与更新（Update）的区别
+
+<Command inline name={m.command_overwrite_note_name()} />
+是一项独立的破坏性命令。它会根据统领该笔记的配置方案的完整模板源码重新生成整个笔记正文，丢弃
+frontmatter 块下方的全部现有内容。由 ZotLit 管理的 frontmatter
+键将被刷新，而您自行添加的其他 frontmatter
+键则会被保留。该操作执行前会弹出确认对话框进行保护。
+
+[保持笔记即时更新](/docs/how-to/keep-notes-updated)详细介绍了这两种操作，以及从 Zotero 发起的由 ZotLit Companion 触发的批量更新流程。
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="模板工作原理"
+    description="三种模板文档与两种模板语言。"
+    href="/docs/concepts/how-templates-work"
+  />
+  <Card
+    title="配置方案"
+    description="配置方案如何决定笔记的名称、文件夹、属性和正文。"
+    href="/docs/concepts/profiles"
+  />
+  <Card
+    title="保持笔记更新"
+    description="更新单篇或批量笔记的分步操作。"
+    href="/docs/how-to/keep-notes-updated"
+  />
+  <Card
+    title="创建和打开文献笔记"
+    description="通过快速切换器或文献引用标识打开或创建笔记。"
+    href="/docs/how-to/create-and-open-notes"
+  />
+  <Card
+    title="ZotLit 如何连接 Zotero"
+    description="数据库连接、协议链接和即时同步更新。"
+    href="/docs/concepts/how-zotlit-connects-to-zotero"
+  />
+</Cards>

@@ -1,0 +1,578 @@
+---
+title: "模板语法"
+description: "Liquid 模板语法参考：输出表达式、标签、过滤器、空白控制以及 ZotLit 专属函数接口。"
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+本页面详细记录了在 ZotLit 中配置的 Liquid 模板语言：输出表达式、逻辑标签、过滤器、空白控制、ZotLit 专属函数接口、类型自动转换、代码包含引入以及模板文档命名规范。
+
+所有模板数据均可通过全局变量 `zt` 统一访问。`zt` 的具体数据结构取决于模板类型：查阅[数据参考](/docs/reference/templates/data)获取完整的字段属性列表。
+
+## 输出与标签 [#outputs-and-tags]
+
+Liquid 使用两类定界符：
+
+| 语法定界符     | 用途                             |
+| -------------- | -------------------------------- |
+| `{{ 表达式 }}` | 将计算结果渲染输出到笔记正文中   |
+| `{% 标签 %}`   | 执行控制逻辑，不直接产生正文输出 |
+
+```liquid
+{{ zt.title }}
+{% if zt.comment %}
+{{ zt.comment }}
+{% endif %}
+```
+
+使用 `{% comment %}...{% endcomment %}` 可以整段注释忽略内容：
+
+```liquid
+{% comment %}
+草稿：后续重新审视多作者渲染逻辑
+{% endcomment %}
+```
+
+## 真值判断（Truthiness）
+
+在 Liquid 中，只有 `nil`（null 或缺失）与 `false` 被判定为假（falsy）。数字 `0`、空字符串 `""` 以及空数组均被判定为真（truthy）。
+
+ZotLit 在执行模板渲染前，会自动将空字符串字段规整归一化为 `null`。这意味着 `{% if zt.comment %}` 在没有评注时准确为假，在存在评注时为真，您无需冗余书写 `!= ""` 进行判断。
+
+## 空白字符控制 [#whitespace-control]
+
+Liquid 会忠实保留源码中书写的全部空白字符，默认绝不进行自动裁切。
+
+在定界符边缘添加减号 `-` 可在该侧剔除空白：
+
+| 修饰符号      | 消除效果                                                               |
+| ------------- | ---------------------------------------------------------------------- |
+| `{%-` / `{{-` | 剔除标签前方同一行内的缩进空格。绝不吞噬独立的裸换行符。               |
+| `-%}` / `-}}` | 剔除行内尾随空格以及紧随其后的恰好一个换行符。后续的独立空行得以保留。 |
+
+```liquid
+{% for note in zt.notes -%}
+- {{ note.noteLink }}
+{% endfor %}
+```
+
+`for` 标签末尾的 `-%}` 会移除其后紧邻的换行符，使每次循环从 `- ` 开始。`-%}` 标记后额外插入的空行仍会保留，因为此标记只移除一个换行符。
+
+Liquid 没有仓库级空白设置。空白裁剪需在每个标签中明确声明，使模板可在不同仓库间通用。
+
+<Callout type="info" title="Eta 有独立的 autoTrim 设置">
+  Eta 引擎有独立的前置和后置空白裁剪设置，不适用于 Liquid 模板。参见 [Eta
+  模板语法](/docs/reference/templates/eta-syntax)。
+</Callout>
+
+## `{% liquid %}` 语句块 [#the--liquid--statement-block]
+
+需要编写多行逻辑且避免意外输出空白时，可使用 `{% liquid %}`，每行写一条语句，无需定界符。只有通过 `echo` 明确输出的内容才会出现在结果中：
+
+```liquid
+{% liquid
+  assign names = "" | split: ","
+  for creator in zt.creators
+    assign names = names | push: creator.lastName
+  endfor
+  echo names | join: ", "
+%}
+```
+
+块内缩进会被忽略。
+
+<Callout type="warn" title="echo 不经过输出类型转换">
+  `{% liquid %}` 块内的 `{% echo %}` 不经过 `{{ }}` 所使用的输出类型转换。需要将 null 转为空字符串或规范化日期时，请使用 `{{ }}` 输出。
+</Callout>
+
+## 控制流程 [#control-flow]
+
+### if / elsif / else / endif [#if-elsif-else-endif]
+
+```liquid
+{% if zt.abstract %}
+> {{ zt.abstract }}
+{% elsif zt.comment %}
+> {{ zt.comment }}
+{% else %}
+> (no abstract)
+{% endif %}
+```
+
+### unless / endunless [#unless--endunless]
+
+```liquid
+{% unless zt.notes.size > 0 %}
+No child notes.
+{% endunless %}
+```
+
+### for / endfor [#for-endfor]
+
+```liquid
+{% for c in zt.creators limit: 3 offset: 1 reversed %}
+- {{ c.fullName }}
+{% endfor %}
+```
+
+`for` 接受 `limit:`、`offset:` 和 `reversed` 修饰符。
+
+### case / when / endcase [#case--when--endcase]
+
+```liquid
+{% case zt.itemType %}
+{% when "journalArticle" %}
+Journal article
+{% when "book", "bookSection" %}
+Book
+{% else %}
+Other
+{% endcase %}
+```
+
+### assign 与 capture [#assign-and-capture]
+
+```liquid
+{% assign year = zt.dateAdded | date: "%Y" %}
+{% capture heading %}Notes from {{ year }}{% endcapture %}
+## {{ heading }}
+```
+
+## 标准过滤器 [#standard-filters]
+
+过滤器通过 `|` 转换值，并在 `:` 后接受参数。
+
+### 数组过滤器 [#array-filters]
+
+`map`, `where`, `compact`, `join`, `sort`, `first`, `last`, `size`, `push`, `uniq`, `group_by`
+
+```liquid
+{{ zt.attachments | map: "fileLink" | compact | join: " " }}
+{{ zt.creators | map: "lastName" | join: ", " }}
+```
+
+### 字符串过滤器 [#string-filters]
+
+`append`, `prepend`, `split`, `strip`, `upcase`, `downcase`, `replace`, `truncate`, `default`
+
+```liquid
+{{ zt.citationKey | default: zt.DOI | default: zt.title | default: zt.key }}
+{{ zt.title | truncate: 60 }}
+```
+
+输入为 nil、false 或空字符串时，`default` 返回传入的参数值。
+
+## ZotLit 专用标签与过滤器 [#zotlit-vocabulary]
+
+ZotLit 为文献笔记操作提供了一组专用标签和过滤器。
+
+### `{% render_annotation %}`：标注渲染 [#render-annotation]
+
+渲染一条标注，在标注模板内通过 `zt` 访问它。
+
+```liquid
+{% render_annotation annotation %}
+```
+
+标注参数为必填项。缺失或为 null 时会报错。
+
+对于标注值，等效的原生 Liquid 语法为：
+
+```liquid
+{% render "annotation" with annotation as zt %}
+```
+
+命名参数形式 `{% render "annotation", zt: annotation %}` 也与之等效。
+
+在文献笔记配置方案中，此快捷标签和对 `annotation` 的原生调用均使用该配置方案的标注区域。此必需的末尾区域从独占一行的 `--- zotlit:annotation ---` 之后开始，一直延伸至文档末尾。它使用配置方案的语言，内容可以为空。
+
+从共享模板片段发起的调用使用调用方配置方案的标注区域，并隔离标注数据。直接插入标注和导入笔记也使用适用配置方案中的同一区域。在配置方案渲染之外，此快捷函数仍使用原有的命名模板查找方式。
+
+### `{% bq %}`：引用块 [#bq-blockquote-block]
+
+将内容包裹为 Markdown 引用块，每行添加 `> ` 前缀。先裁剪内容首尾空白，再将块内连续空行合并为仅含一个 `>` 的行。
+
+```liquid
+{% bq %}
+[!note] Page {{ zt.pageLabel }}
+
+{{ zt.imgLink | embed }}{{ zt.text }}
+{% if zt.comment %}
+
+{{ zt.comment }}
+{% endif %}
+{% endbq %}
+```
+
+渲染结果：
+
+```markdown
+> [!note] Page 42
+>
+> ![[excerpt.png]]The highlighted passage
+>
+> My thoughts on this
+```
+
+### `embed`：嵌入过滤器 [#embed-embed-filter]
+
+为非空字符串添加 `!` 前缀，生成 Obsidian 嵌入语法。null、undefined、空字符串或非字符串值均输出 `""`。
+
+```liquid
+{{ zt.imgLink | embed }}
+```
+
+| 输入                | 输出                 |
+| ------------------- | -------------------- |
+| `"[[excerpt.png]]"` | `"![[excerpt.png]]"` |
+| `null`              | `""`                 |
+| `""`                | `""`                 |
+
+对于 `zt.imgLink`，此过滤器使用已准备好的摘录图片。没有可用图片时，返回说明及来源链接，不添加 `!`。关于已保存快照和导入结果，参见[摘录图片](/docs/concepts/excerpt-images)。
+
+### 链接过滤器 [#link-filters]
+
+以下三个过滤器生成 Obsidian 双链，可选参数用于覆盖别名和子路径：
+
+| 过滤器      | 生成内容     |
+| ----------- | ------------ |
+| `file_link` | 附件文件链接 |
+| `note_link` | 笔记链接     |
+| `img_link`  | 摘录图片链接 |
+
+每个过滤器均接受两个可选的位置参数：`alias` 和 `subpath`。
+
+```liquid
+{{ zt.attachments[0] | file_link: "Open the PDF" }}
+{{ zt | note_link: "See notes", "#Summary" }}
+{{ zt | img_link: "alt text" }}
+```
+
+文件或笔记链接无法解析时，过滤器返回 `null`（`compact` 会从数组中删除它，输出类型转换则将其渲染为 `""`）。对于图片和手写标注，图片不可用时 `img_link` 返回摘录回退内容；对于其他标注类型，返回 `null`。
+
+### `note_links`：批量生成笔记链接 [#note_links-batch-note-links]
+
+将条目数组映射为对应的笔记链接。无法解析链接的条目会渲染为包含对象键的 `zt-error:` 标记，不会被静默省略。
+
+```liquid
+{{ zt.relatedItems | note_links | join: ", " }}
+```
+
+### `pandoc_cite`：Pandoc 引文源码 [#pandoc-cite]
+
+将引文条目数组格式化为 Pandoc 引文源码。将 `zt.citations` 直接传入此过滤器即可。
+
+```liquid
+{{ zt.citations | pandoc_cite }}
+{{ zt.citations | pandoc_cite: "prefer-author-in-text" }}
+```
+
+可选的形式参数默认为 `"normal"`。
+
+| 形式                      | 单个条目的输出 | 说明                                                                               |
+| ------------------------- | -------------- | ---------------------------------------------------------------------------------- |
+| `"normal"`                | `[@smith2024]` | 生成方括号包裹的引文组。                                                           |
+| `"prefer-author-in-text"` | `@smith2024`   | 保留的第一个条目无前缀且未隐藏作者时，生成作者融入正文的引文；否则生成普通引文组。 |
+
+此过滤器处理 Pandoc 源码使用的所有引文条目属性：
+
+| 输入                                        | 输出                       |
+| ------------------------------------------- | -------------------------- |
+| 定位信息 `"3"`，`labelShort` 为 `"p."`      | `[@smith2024, {p. 3}]`     |
+| 前缀 `"see "` 与后缀 `", note 4"`           | `[see @smith2024, note 4]` |
+| `suppressAuthor` 设为 `true`                | `[-@smith2024]`            |
+| 文献引用标识（citation key） `"KX67D9YM?"`  | `[@{KX67D9YM?}]`           |
+| `"prefer-author-in-text"`，定位信息为 `"3"` | `@smith2024 [{p. 3}]`      |
+| `"prefer-author-in-text"`，前缀为 `"see "`  | `[see @smith2024]`         |
+| 数组为空或所有条目的文献引用标识均为 null   | `""`                       |
+
+文献引用标识为 null 的条目会被省略。此过滤器保留其余条目的顺序，并在 Pandoc 要求时为复杂文献引用标识添加花括号。
+
+若输入只能通过改变引文结构才能表示，则会报告渲染错误。
+
+### `tex_cite`：LaTeX 引文命令 [#tex-cite]
+
+将引文条目数组格式化为一条 LaTeX 引文命令。将 `zt.citations` 直接传入此过滤器即可。
+
+```liquid
+{{ zt.citations | tex_cite }}
+{{ zt.citations | tex_cite: "autocite" }}
+```
+
+可选的命令参数默认为 `"cite"`。填写时省略反斜杠。支持 `"autocite*"` 等带星号的命令。
+
+| 命令         | 单个条目的输出         | 参考文献宏包            |
+| ------------ | ---------------------- | ----------------------- |
+| `"cite"`     | `\cite{smith2024}`     | LaTeX, natbib, BibLaTeX |
+| `"autocite"` | `\autocite{smith2024}` | BibLaTeX                |
+
+所有保留条目的文献引用标识组成一个列表。命令包含一个前注和一个后注，两者均来自保留的第一个条目：
+
+| 输入                                      | 输出                             |
+| ----------------------------------------- | -------------------------------- |
+| 两个条目                                  | `\cite{smith2024,doe2023}`       |
+| 定位信息 `"3"`，`labelShort` 为 `"p."`    | `\cite[p. 3]{smith2024}`         |
+| 前缀 `"see "`                             | `\cite[see][]{smith2024}`        |
+| 前缀 `"see "`，定位信息为 `"3"`           | `\cite[see][p. 3]{smith2024}`    |
+| 定位信息 `"3"`，后缀为 `", note 4"`       | `\cite[p. 3, note 4]{smith2024}` |
+| 数组为空或所有条目的文献引用标识均为 null | `""`                             |
+
+文献引用标识为 null 的条目会被省略，其余条目保持原有顺序。
+
+<Callout type="warn" title="前注形式需要 natbib 或 BibLaTeX">
+  LaTeX 内核自带的 `\cite` 只接受一个可选参数。
+
+上述形式 `\cite[see][p. 3]{smith2024}` 含两个可选参数，需要使用 natbib 或 BibLaTeX 编译。这些宏包会重新定义 `\cite`，使其接受两个参数。不含前缀的引文至多生成一个可选参数，可用于普通 LaTeX 文档。
+
+</Callout>
+
+前后缀会作为源码传入 LaTeX，因此前缀 `\emph{see}` 会渲染为强调文本。以下输入会导致渲染错误：
+
+- `suppressAuthor` 设为 `true`，因为 LaTeX 没有通用的对应形式。
+- 第一个条目之后的任意条目带有前缀、后缀或定位信息，因为命令中没有对应位置。
+- 文献引用标识为空，或包含空白、逗号或 TeX 特殊字符。
+- 前缀、后缀或定位信息中的花括号不匹配，或包含未转义的 `%`。
+
+### `collection_paths`：分类路径字符串 [#collection-paths]
+
+将分类数组映射为各分类的完整路径字符串，默认分隔符为 `/`。
+
+```liquid
+{{ zt.collections | collection_paths }}
+{{ zt.collections | collection_paths: " > " }}
+```
+
+### `arr_prefix`：为每个元素添加前缀 [#arr-prefix]
+
+在数组每个元素之前添加字符串。输入不是数组时会报告渲染错误。
+
+```liquid
+{{ zt.creators | map: "lastName" | arr_prefix: "@" }}
+```
+
+省略前缀参数时，默认使用空字符串。
+
+### `arr_suffix`：为每个元素添加后缀 [#arr-suffix]
+
+在数组每个元素之后添加字符串。输入不是数组时会报告渲染错误。
+
+```liquid
+{{ zt.creators | map: "lastName" | arr_suffix: "!" }}
+```
+
+省略后缀参数时，默认使用空字符串。
+
+### `arr_replace`：在每个元素中替换文本 [#arr-replace]
+
+在数组的每个元素中，替换所有与指定字面子字符串匹配的文本。
+
+```liquid
+{{ zt.collections | collection_paths | arr_replace: "/", " > " }}
+```
+
+| 参数          | 是否必需 | 默认值 | 说明                               |
+| ------------- | -------- | ------ | ---------------------------------- |
+| `search`      | 是       | —      | 要查找的字面子字符串，不得为空     |
+| `replacement` | 否       | `""`   | 替换文本。省略时删除匹配到的字符串 |
+
+输入不是数组时会报告渲染错误。搜索字符串为空或缺失也会报错，因为空搜索会在每两个字符之间插入替换文本。
+
+### `obsidian_tag`：转换为 Obsidian 标签 [#obsidian-tag]
+
+将任意文本转换为有效的 [Obsidian 标签](https://obsidian.md/help/tags#Tag+format)，可添加前缀。
+
+```liquid
+{{ zt.tags | obsidian_tag: "#" }}
+{{ zt.tags | obsidian_tag: "zotero/" }}
+```
+
+接受数组（逐元素转换）或单个值（返回单个值）。它会读取 Zotero 标签对象的 `name` 属性，因此可直接传入 `zt.tags`，无需先使用 `map: "name"`。
+
+**规范化规则：**
+
+- 将每段连续的 Obsidian 不支持字符替换为一个下划线。
+- 将连续的 `/` 合并为一个 `/`，并删除首尾的 `_` 和 `/`。
+- 纯数字名称前添加下划线（`1984` 变为 `_1984`），因为 Obsidian 不接受纯数字标签。
+- 规范化后为空的值会从数组中删除；输入为单个值时则返回空字符串。
+- 可选前缀在规范化之后原样添加。笔记正文中的标签使用 `"#"`，嵌套标签可使用 `"zotero/"`。由于输入开头的 `#` 会在规范化时删除，`obsidian_tag: "#"` 可安全地重复应用。
+- 保留大小写。Obsidian 匹配标签时不区分大小写，但会按标签首次创建时的大小写显示。
+
+**字符处理：** Obsidian 通过不允许使用的字符列表定义有效标签字符。其余字符均原样保留，包括中日韩文字及标点、全角字符、`©` 等符号和表情符号。包含零宽连接符的表情符号（如 `👩‍💻`）会变为 `👩_💻`，因为 Obsidian 不允许此连接符。
+
+| 输入（名称）          | 输出               | 说明                       |
+| --------------------- | ------------------ | -------------------------- |
+| `Machine Learning`    | `Machine_Learning` | 替换空格                   |
+| `(draft) papers`      | `draft_papers`     | 合并括号和空格             |
+| `R & D`               | `R_D`              | 合并连续标点               |
+| `文献、综述`          | `文献、综述`       | 保留中日韩文字及标点       |
+| `/Reading/`           | `Reading`          | 删除首尾斜杠               |
+| `a//b`                | `a/b`              | 合并连续斜杠               |
+| `1984`                | `_1984`            | 为纯数字名称添加前缀       |
+| `a/1984`              | `a/1984`           | 含有非数字字符，无需前缀   |
+| `#todo`（前缀为 `#`） | `#todo`            | 删除开头的 `#`，再添加前缀 |
+| `!!!`                 | _（已省略）_       | 规范化后无剩余内容         |
+
+`obsidian_tag` 按 Obsidian 标签规则进行规范化。无需标签专用规范化的自由文本数组转换，请使用 `arr_replace`。
+关于受管 `tags` frontmatter 字段，参见[将 Zotero 标签添加到笔记 frontmatter](/docs/how-to/configure-frontmatter-properties#zotero-tags)。
+
+### `{% suffix %}`：避免文件名冲突 [#suffix-filename-collision-guard]
+
+仅适用于 `filename` 模板。生成的文件名唯一时不输出内容；与已有笔记冲突时追加随机字符串。
+
+```liquid
+{{ zt.citationKey | default: zt.DOI | default: zt.title | default: zt.key }}{% suffix %}
+```
+
+- 第一篇名为 `Smith2020` 的笔记生成 `Smith2020.md`（不加后缀）。
+- 第二篇同样渲染为 `Smith2020` 的笔记生成 `Smith2020_a1b2c3.md`。
+
+参数按位置传入：`length`、`prepend`、`append`（均为可选）。
+
+| 参数      | 默认值 | 约束                |
+| --------- | ------ | ------------------- |
+| `length`  | `6`    | 1–64 的整数         |
+| `prepend` | `"_"`  | 不得包含 `:` 或 `%` |
+| `append`  | `""`   | 不得包含 `:` 或 `%` |
+
+```liquid
+{% suffix 10 %}
+{% suffix 6, "(", ")" %}
+```
+
+此后缀是创建笔记时才解析的占位标记。发生冲突时解析为 `prepend + <random> + append`；文件名可用时解析为 `""`。
+
+### `date`：日期格式化过滤器 [#date-formatting-filter]
+
+接受 strftime 风格的格式字符串，可规范化 ZotLit 提供的所有日期形式：
+
+| 输入类型                                                         | 行为                             |
+| ---------------------------------------------------------------- | -------------------------------- |
+| `Temporal.Instant`                                               | 格式化前转换为本地时区的日期     |
+| `Temporal.PlainDate` / `PlainYearMonth`                          | 格式化前转换为本地时区的日期     |
+| Zotero `ItemDate`（kind 为 `"date"` / `"yearMonth"` / `"year"`） | 格式化前转换为本地时区的日期     |
+| Zotero `ItemDate`（kind 为 `"text"`）                            | 原样输出原始文本，忽略格式字符串 |
+
+```liquid
+{{ zt.dateAdded | date: "%Y-%m-%d" }}
+{{ zt.date | date: "%B %Y" }}
+```
+
+kind 为 `"text"` 的 `ItemDate` 表示 Zotero 无法解析的日期（例如 `"submitted"`）。`date` 过滤器将其原样返回。
+
+## 输出类型转换 [#output-coercion]
+
+通过 `{{ }}` 渲染的值会转换为文本：
+
+| 值                   | 渲染结果                                 |
+| -------------------- | ---------------------------------------- |
+| `null` / `undefined` | `""`（空字符串，不会输出字面文本“null”） |
+| `Date`               | ISO 8601 字符串（`toISOString()`）       |
+| `Temporal.Instant`   | 本地日期，例如 `2026-06-21`              |
+| 其他值               | `String()`（值自身的 `toString()`）      |
+
+此转换仅适用于 `{{ }}` 输出。`{% liquid %}` 块内的 `{% echo %}` 不经过此转换。
+
+## 使用 `{% render %}` 引入模板 [#includes-with-render]
+
+`{% render %}` 按名称组合模板，每个模板使用独立作用域：
+
+```liquid
+{% render "content" with zt as zt %}
+{% render "annotation" with annotation as zt %}
+```
+
+`with <value> as zt` 将值绑定为子模板内的 `zt`。子模板只能访问显式传入的数据，不继承父模板变量。
+
+名称用于查找已注册的模板，而非文件路径。渲染配置方案时，`"annotation"` 指向该配置方案的标注区域。
+
+### 调用模板片段 [#calling-a-partial]
+
+通过名称调用模板片段，并随调用传入所需数据：
+
+```liquid
+{% render "authors" with zt as zt %}
+```
+
+`{% render %}` 创建独立作用域，因此只有通过名称显式传入 `zt`，片段才能访问它。<UiLabel name={m.workbench_tag_render()} />
+
+不带参数的调用不会传入 `zt`，因此片段中的所有 `zt` 输出均为空，只保留字面文本：
+
+```liquid
+{% render "authors" %}
+```
+
+`{% include %}` 渲染同一片段时可访问调用方的变量，因此无需 `with` 子句。<UiLabel name={m.workbench_tag_include()} />
+
+```liquid
+{% include "authors" %}
+```
+
+在 `{% render "` 和 `{% include "` 内使用自动补全，会列出仓库中的所有模板片段。选择名称后会插入完整调用：`render` 带有 `with zt as zt` 子句，`include` 无需该子句。若调用已有参数，则保留参数，仅替换名称。
+
+## 模板文档命名 [#template-document-naming]
+
+模板文档直接放在 <SettingsPath page={m.settings_page_advanced()} setting={m.settings_template_folder_name()} /> 指定的文件夹中。扫描仅限一层，不读取子文件夹中的文件，也会忽略不以 `zotlit-` 开头的文件。
+
+文档类型完全由文件名前缀决定：
+
+| 文件名                     | 文档                                                 |
+| -------------------------- | ---------------------------------------------------- |
+| `zotlit-profile.<slug>.md` | 文献笔记配置方案：笔记名称、文件夹、属性、正文和标注 |
+| `zotlit-citation.md`       | 引文文本，每个仓库一份，必须使用此文件名             |
+| `zotlit-partial.<name>.md` | 一个模板片段，以 `<name>` 注册                       |
+
+不符合上述模式的 `zotlit-` 文件不会注册任何模板，并会在 <SettingsPath page={m.settings_page_advanced()} /> 的 <UiLabel name={m.settings_advanced_template_engine_heading()} /> 分组中显示提示。参见[无法识别的 ZotLit 文件](/docs/reference/settings#unrecognized-files)。
+
+### 语言 [#document-language]
+
+引文文档或模板片段默认使用 Liquid，除非 manifest 另有声明。Manifest 是位于文件顶部的可选 YAML 块，唯一允许的键是 `language`：
+
+```md
+---
+language: eta
+---
+
+<%= zt.title %>
+```
+
+允许的值为 `liquid` 和 `eta`。不含 manifest 的文档按 Liquid 处理。在模板工作台视图的窗格菜单中选择 <UiLabel name={m.template_workbench_change_language()} />，可在两种语言之间切换；此操作重写 manifest 键，保留源码原文。
+
+### 模板片段名称 [#partial-names]
+
+模板片段名称由一个或多个字母、数字或连字符组成。<UiLabel name={m.settings_partial_add()} /> 提示框会删除输入首尾空白，将每段连续空格转换为一个连字符，并转为小写，因此 `Journal line` 变为 `journal-line`。名称比较不区分大小写，两个文件不能通过不同大小写使用同一个名称。
+
+以下五个名称由其他 ZotLit 模板占用，因此属于保留名称：`filename`、`note`、`annotation`、`content` 和 `citation`。使用这些名称的模板片段文件不会注册，并会在 <SettingsPath page={m.settings_page_profiles()} setting={m.settings_partials_heading()} /> 中显示提示。参见[模板片段](/docs/reference/settings#partials)。
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="将 Zotero 标签添加到 frontmatter"
+    description="使用 Liquid 将 Zotero 标签映射为 Obsidian 的 tags 属性。"
+    href="/docs/how-to/configure-frontmatter-properties#zotero-tags"
+  />
+  <Card
+    title="数据参考"
+    description="各类模板的 zt 可用属性。"
+    href="/docs/reference/templates/data"
+  />
+  <Card
+    title="默认模板"
+    description="各类内置 Liquid 模板及其说明。"
+    href="/docs/reference/templates/defaults"
+  />
+  <Card
+    title="模板的工作原理"
+    description="模板文档、模板语言及各类模板的存放位置。"
+    href="/docs/concepts/how-templates-work"
+  />
+  <Card
+    title="自定义模板"
+    description="打开模板文档、编辑并测试结果。"
+    href="/docs/how-to/customize-a-template"
+  />
+</Cards>

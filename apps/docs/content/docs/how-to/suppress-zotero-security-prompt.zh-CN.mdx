@@ -1,0 +1,85 @@
+---
+title: "消除 Zotero 安全提示"
+description: "停止 Zotero 在每次打开 obsidian:// 自定义协议链接时弹出确认对话框。"
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+
+在每次打开 `obsidian://` URI 协议链接时（例如在 Zotero 中点击指向 Obsidian 笔记的反向链接），Zotero 默认会弹出一个安全确认对话框。您可以通过在 Zotero 高级配置编辑器中添加一项配置项来彻底消除该弹窗。
+
+该提示与标注编辑权限弹窗不同。对于标注编辑弹窗，请如[在 Obsidian 中编辑 PDF 批注](/docs/how-to/edit-pdf-annotations)所述，选择 **Always Allow（始终允许）**。
+
+![Zotero 安全确认对话框询问是否打开 obsidian 链接](/img/how-to/protocol-choose-app.webp)
+
+## 添加协议处理器配置项
+
+<Steps>
+  <Step>
+    ### 打开 Zotero 设置
+
+    在 Zotero 中，打开**编辑 → 设置**（Windows/Linux）或 **Zotero → 设置**（macOS）。
+
+  </Step>
+  <Step>
+    ### 打开高级配置编辑器（Config Editor）
+
+    切换到**高级**面板，点击**高级设置：配置编辑器**。点击**接受风险并继续**。配置编辑器将在独立窗口中打开。
+
+  </Step>
+  <Step>
+    ### 搜索目标配置项
+
+    在**搜索首选项名称**中，键入：
+
+    ```
+    network.protocol-handler.external.obsidian
+    ```
+
+    该首选项默认不存在，因此不会匹配到任何现有项。Zotero 会为您键入的名称展示一行新建行，附带三种类型选项：**布尔（Boolean）**、**整数（Number）**与**字符串（String）**。
+
+  </Step>
+  <Step>
+    ### 创建该配置项
+
+    保持勾选 **Boolean**，然后点击该行末尾的 **+**（添加）按钮。Zotero 就会以 `true` 作为默认值创建该首选项。
+
+    ![Zotero 高级配置编辑器中展示了新建的 network.protocol-handler.external.obsidian 布尔类型首选项](/img/how-to/config-editor.webp)
+
+  </Step>
+</Steps>
+
+现在，Zotero 将在打开 `obsidian://` 链接时直接调度，不再弹出阻断性确认对话框。
+
+<Callout type="info" title="从 Zotero 外部触发的链接">
+  如果从其他外部应用程序（而非 Zotero
+  内部自身）打开链接时仍旧出现弹窗，请以相同方式创建名为
+  `network.protocol-handler.prompt-from-external` 的首选项：搜索该名称，选择
+  **Boolean**，点击 **+**（添加）。新创建的项默认为
+  `true`，请双击或点击该行末尾的切换按钮将其值更改为 `false`。
+</Callout>
+<Callout type="info" title="致谢">
+  操作步骤改编自
+  [zotero-markdb-connect](https://github.com/daeh/zotero-markdb-connect).
+</Callout>
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="保持笔记更新"
+    description="通过 Zotero 的右键菜单批量更新笔记。"
+    href="/docs/how-to/keep-notes-updated"
+  />
+  <Card
+    title="导入 Zotero 笔记"
+    description="通过 Zotero 的右键菜单批量重新导入笔记。"
+    href="/docs/how-to/import-zotero-notes"
+  />
+  <Card
+    title="浏览模板数据"
+    description="通过 Zotero 的右键菜单打开数据浏览器。"
+    href="/docs/how-to/explore-template-data"
+  />
+</Cards>

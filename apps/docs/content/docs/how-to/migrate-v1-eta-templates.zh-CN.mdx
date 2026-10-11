@@ -1,0 +1,387 @@
+---
+title: "迁移 v1 Eta 模板"
+description: "重命名文件、更新变量名，将自定义 v1 Eta 模板重写为 v2 规范，或将其转换为 Liquid 模板。"
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+自定义的 v1 Eta 模板需要重命名文件并更新变量名方可在 v2 中顺利运行。如果您从未自定义过模板（即完全使用默认模板），则无需进行任何操作，v2 会自动提供升级后的全新默认模板。
+
+<Callout type="info" title="从 ZotLit 2.1 升级？">
+  本篇专注于从 v1 Eta 模板的迁移。如果您是从 2.1 版本升级（其模板分散在形如
+  `zotlit-note.liquid.md` 的独立文件中），请参阅[从 2.1
+  模板迁移](/docs/how-to/migrate-from-2.1-templates)。
+</Callout>
+
+您有两条迁移路径可选：继续沿用 Eta 语法（重命名文件、替换数据变量，并开启 [<UiLabel name={m.settings_template_js_enable_name()} /> 权限开关](/docs/how-to/enable-javascript-templates)，本指南主要围绕此展开）；或者直接转换为 Liquid（使用 v2 默认且无需任何授权的 Liquid 引擎重写模板，文末附有 [Eta 到 Liquid 的转换对照表](#eta-to-liquid-translations)）。
+
+<Callout type="info" title="运行 Eta 模板需要开启 JavaScript 权限开关">
+  Eta 模板依赖 <UiLabel name={m.settings_template_js_enable_name()} />{" "}
+  权限开关。关于授权操作流程，请参阅[启用 JavaScript
+  模板](/docs/how-to/enable-javascript-templates)。
+</Callout>
+
+<Steps>
+  <Step>
+    ### 重命名模板文件
+
+    v2 通过 `zotlit-` 前缀（取代了旧的 `zt-`）来读取模板，且原先的 `annots` 模板现已重命名为 `content`。请先将您的旧模板文件按此规则重命名。ZotLit 会以这些新名称加载并渲染它们，随后您可以通过下文所述的[一次性合并转换](#convert)将其整合到 v2 的现代模板文档中。
+
+    | v1 原文件名 | 重命名为 | 内容最终归宿 |
+    | ------------------ | -------------------------- | ------------------------------------------------------------- |
+    | `zt-note.eta.md` | `zotlit-note.eta.md` | 默认配置方案文档中的笔记正文主体部分 |
+    | `zt-annots.eta.md` | `zotlit-content.eta.md` | 位于同一笔记正文内部的受管块（managed block） |
+    | `zt-annot.eta.md` | `zotlit-annotation.eta.md` | 位于该配置方案文档末尾的标注格式区域（annotation section） |
+
+    您的两个 v1 引文文件 `zt-cite*.eta.md` 同样将前缀从 `zt-` 改为 `zotlit-`。它们最终会通过基于 `zt.variant` 的 `if`/`else` 分支统一整合到单个引文文本文档 `zotlit-citation.md` 中。
+
+    如果存在以下旧文件，请直接将其删除（v2 中已无对应概念）：
+
+    - `zt-field.eta.md`：现已被基于设置的 [frontmatter 系统](/docs/reference/templates/frontmatter)全面取代。
+    - `zt-colored.eta.md`：高亮颜色样式现已在笔记导入时自动处理。
+
+  </Step>
+  <Step>
+    ### 将 `it` 全面替换为 `zt`
+
+    模板的核心数据变量名已由 `it` 改为 `zt`。在模板标签内部，将 `it.` 批量查找替换为 `zt.` 即可解决绝大多数引用：
+
+    ```
+    it.title       →  zt.title
+    it.creators    →  zt.creators
+    it.backlink    →  zt.backlink
+    it.pageLabel   →  zt.pageLabel
+    ```
+
+    下方有变更语义的字段（`comment`、`tags`、`collections`、`date`、`notes`）除外，请按后续步骤逐个处理，不要进行盲目全局替换。
+
+  </Step>
+  <Step>
+    ### 更新已重命名与重构的字段
+
+    以下字段的名称或数据类型发生了变化：
+
+    | v1 属性字段 | v2 属性字段 | 说明 |
+    | --------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+    | `it.citekey` | `zt.citationKey` | `zt.citekey` 同样作为别名可用 |
+    | `it.abstractNote`     | `zt.abstract`       | `zt.abstractNote` 同样可用                                                                                                |
+    | `it.publicationTitle` | `zt.containerTitle` | `zt.publicationTitle` 同样可用                                                                                            |
+    | `it.color`            | `zt.colorHex`       | 十六进制颜色字符串，例如 `#ffd400`                                                                                                  |
+    | —                     | `zt.colorName`      | 新增：调色板颜色名称（`"yellow"`、`"red"` 等）                                                                               |
+    | `it.imgExcerpt`       | `embed(zt.imgLink)` | `zt.imgLink` 是[链接辅助函数](/docs/reference/templates/eta-syntax#link-helpers)或 `null`；`embed()` 添加 `!` 前缀 |
+    | `it.imgPath`          | _（已移除）_         | 改用 `zt.imgLink()`                                                                                                  |
+    | `it.imgUrl`           | _（已移除）_         | 改用 `zt.imgLink()`                                                                                                  |
+    | `it.textExcerpt`      | `zt.text`           | 已重命名                                                                                                                     |
+    | `it.commentMd`        | `zt.comment`        | 现在默认使用 Markdown 评注                                                                                         |
+    | `it.comment`          | `zt.commentHtml`    | 原始 HTML（仅含 `<i>/<b>/<sub>/<sup>`）                                                                                       |
+
+    直接来自 Zotero 的纯字符串字段（`title`、`DOI`、`url`、`volume`、`issue`、`pages`、`publisher` 等）只需将 `it` 重命名为 `zt`，其余保持不变。
+
+  </Step>
+  <Step>
+    ### 更新标签的访问方式 [#update-tag-access]
+
+    v1 将标签表示为格式化字符串。v2 将标签表示为包含 `name` 和 `type` 属性的对象。在字符串上下文中，标签会转换为其 `name`，因此仍可使用 `join`：
+
+    ```eta
+    <%/* Tags coerce to their name */%>
+    <%= zt.tags.join(", ") %>
+
+    <%/* Explicit property access */%>
+    <%= zt.tags.map(t => t.name).join(", ") %>
+
+    <%/* Filter to manual tags only */%>
+    <%= zt.tags.filter(t => t.type === "manual").join(", ") %>
+    ```
+
+  </Step>
+  <Step>
+    ### 更新分类的访问方式 [#update-collection-access]
+
+    v2 调整了分类对象的结构，主要区别如下：
+
+    | 项目           | v1                          | v2                                         |
+    | ---------------- | --------------------------- | ------------------------------------------ |
+    | `path` 顺序     | 叶节点 → 根节点                 | 根节点 → 叶节点                                |
+    | `path` 渲染 | 自动渲染为 `"A > B > C"` | 普通 `string[]`；使用 `c.path.join(" > ")` |
+    | 单数形式别名   | `it.collection`             | 已移除；使用 `zt.collections` 数组    |
+
+    ```eta
+    <%/* Collections coerce to their name in string contexts */%>
+    <%= zt.collections.join(", ") %>
+
+    <%/* Render each collection's full hierarchy */%>
+    <%= zt.collections.map(c => c.path.join(" > ")).join("; ") %>
+    ```
+
+  </Step>
+  <Step>
+    ### 更新日期字段 [#update-date-fields]
+
+    | v1 属性                        | v2 属性                        | 类型变化                                                                                                                        |
+    | ---------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+    | `it.date`                          | `zt.date`                          | 原为仅含年份的字符串，现为解析后的 `ItemDate` 对象。`<%= zt.date %>` 输出 ISO 格式；`zt.date?.year` 获取数值年份。       |
+    | `it.dateAdded` / `it.dateModified` | `zt.dateAdded` / `zt.dateModified` | 原为 SQL 原始字符串（`"YYYY-MM-DD HH:MM:SS"`），现为 `Temporal.Instant`。在 `<%= %>` 标签中会渲染为本地日期（例如 `2026-06-21`）。 |
+
+    如果 v1 模板将 `it.date` 用作年份字符串，请将其替换为 `zt.date?.year`：
+
+    ```eta
+    <%/* v1 */%>
+    year: "<%= it.date %>"
+
+    <%/* v2 */%>
+    year: "<%= zt.date?.year %>"
+    ```
+
+  </Step>
+  <Step>
+    ### 更新子笔记的访问方式 [#update-child-note-access]
+
+    v1 在 `it.notes` 中以内联 Markdown 提供子笔记内容。v2 将每篇子笔记写入独立文件，仅提供链接条目：
+
+    | v1                                      | v2                                                   |
+    | --------------------------------------- | ---------------------------------------------------- |
+    | `it.notes`：由 `{title, content}` 组成的数组 | `zt.notes`：由 `{key, title, noteLink()}` 组成的数组      |
+    | 笔记内容内联                    | 内容位于独立文件；`noteLink()` 链接到该文件 |
+
+    默认内容模板将子笔记渲染为链接的无序列表：
+
+    ```eta
+    <% if (zt.notes.length) { %>
+    ## Notes
+
+    <% for (const note of zt.notes) { -%>
+    - <%~ note.noteLink() %>
+    <% } %>
+    <% } %>
+    ```
+
+  </Step>
+  <Step>
+    ### 使用 `bq()` 重写标注模板 [#rewrite-the-annotation-template-with-bq]
+
+    v1 依赖模板外部的引用块处理。v2 在标注模板内部使用 [`bq()` 辅助函数](/docs/reference/templates/eta-syntax#bq-blockquote-helper)：
+
+    ```eta
+    <% bq(() => { %>
+    [!note] Page <%= zt.pageLabel %>
+
+    <%= embed(zt.imgLink) %><%= zt.text %>
+    <% if (zt.comment) { %>
+
+    <%= zt.comment %>
+    <% } %>
+    <% }) %>
+    ```
+
+    `bq()` 将全部内容放入 Markdown 引用块（每行添加 `> `），去除结果首尾的空白，并合并连续的空引用行。它必须位于 `<% %>` 执行标签内。
+
+  </Step>
+  <Step>
+    ### 更新内容模板 [#update-the-content-template]
+
+    此模板从 `annots` 重命名为 `content`，现在接收完整的上下文对象，而非原始标注数组：
+
+    ```eta
+    <%/* v1: received a raw array as `it` */%>
+    <% for (const annotation of it) { %>
+
+    <%/* v2: receives full context, access annotations via zt.annotations */%>
+    <% for (const annotation of zt.annotations) { %>
+    ```
+
+    更新笔记模板中的 `include` 调用：
+
+    ```eta
+    <%/* v1 */%>
+    <%~ include("annots", it.annotations) %>
+
+    <%/* v2 */%>
+    <%~ include("content", zt) %>
+    ```
+
+    内容模板现在可以访问所有 `zt.*` 属性（附件、标签、笔记等），不再仅限于标注。
+
+  </Step>
+  <Step>
+    ### 更新引文源码 [#update-the-citation-source]
+
+    v1 通过 `it` 传入原始数组。v2 将条目包装在一个对象中：
+
+    ```eta
+    <%/* v1 */%>
+    [<%= it.filter(lit => !!lit.citekey).map(lit => `@${lit.citekey}`).join("; ") %>]
+
+    <%/* v2 */%>
+    [<%= zt.citations.filter(c => c.item.citationKey).map(c =>
+      `${c.suppressAuthor ? "-" : ""}@${c.item.citationKey}`
+    ).join("; ") %>]
+    ```
+
+    主要变化：
+
+    - `it`（数组）变为 `zt.citations`（对象中的数组）。`zt.items` 提供相同的条目，但不包含引文元数据。
+    - `lit.citekey` 变为 `c.item.citationKey`（或 `c.item.citekey`）。
+    - 两个 v1 引文文件现在由一份 v2 文档统一渲染。下文的转换流程会将它们写成基于 `zt.variant` 的 `if`/`else` 两个分支；该值为 `"main"` 或 `"alt"`。请参阅[引文模板](/docs/reference/templates/data#citation-templates)。
+
+  </Step>
+  <Step>
+    ### 更新附件的访问方式 [#update-attachment-access]
+
+    v1 选择一个附件，并通过 `it.fileLink`（字符串）提供它。v2 以数组提供所有附件，`fileLink` 是需要调用的[链接辅助函数](/docs/reference/templates/eta-syntax#link-helpers)：
+
+    ```eta
+    <%= zt.attachments.map(a => a.fileLink()).filter(Boolean).join(" ") %>
+    ```
+
+    每个附件对象都包含： `key`, `filename`, `contentType`, `linkMode`, `filePath`, `fileLink`.
+
+  </Step>
+  <Step>
+    ### 更新创建者的访问方式 [#update-creator-access]
+
+    v2 使用具有明确属性的扁平数组。在字符串上下文中，创建者会转换为完整姓名：
+
+    ```eta
+    <%/* All authors (coerces to fullName) */%>
+    <%= zt.authors.join(", ") %>
+
+    <%/* Explicit property access */%>
+    <%= zt.authors.map(c => c.fullName).join(", ") %>
+
+    <%/* Filter by role */%>
+    <%= zt.creators.filter(c => c.role === "editor").join(", ") %>
+    ```
+
+    创建者属性包括：`family`、`given`、`literal`（机构名称）、`role` 和 `fullName`。
+
+    条目上下文还提供便捷属性：`zt.authors`（按主要创建者、编辑、导演、贡献者的顺序，取第一个有成员的角色）和 `zt.authorsShort`（格式化的简短字符串，例如 "Smith et al."）。
+
+  </Step>
+  <Step>
+    ### 更新文件名模板 [#update-the-filename-template]
+
+    文件名模板现在是模板文件（`zotlit-filename.eta.md`），而非设置中的字符串。后续的[一次性转换](#convert)会将它合并到配置方案文档 manifest 的 `filename` 键中。v2 默认模板添加了 `suffix()` 以避免重名：
+
+    ```eta
+    <%= zt.citationKey ?? zt.DOI ?? zt.title ?? zt.key %><%= suffix() %>
+    ```
+
+    - `it.citekey` 变为 `zt.citationKey`（规范名称；`zt.citekey` 同样可用）。
+    - 模板不再包含 `.md` 扩展名，ZotLit 会自动追加。
+    - [`suffix()`](/docs/reference/templates/eta-syntax#suffix-filename-collision-guard) 仅在名称与现有笔记冲突时追加随机字符串。
+
+  </Step>
+  <Step>
+    ### 迁移 frontmatter 字段 [#migrate-frontmatter-fields]
+
+    如果您自定义过 `zt-field.eta.md`，请删除该文件，并在配置方案文档中将其字段重建为受管 frontmatter 配置项。在 <SettingsPath /> 的 <UiLabel name={m.settings_profile_document_name()} /> 行选择 <UiLabel name={m.settings_profile_edit()} /> 打开文档，然后选择 <UiLabel name={m.workbench_tab_properties()} /> 标签页。
+
+    对每个字段，选择 <UiLabel name={m.workbench_properties_add()} /> 并填写：
+
+    - <UiLabel name={m.workbench_properties_name()} />：YAML 属性名称。
+    - <UiLabel name={m.workbench_properties_format()} />：Zotero 字段选择 <UiLabel name={m.workbench_properties_format_value()} />，固定文本选择 <UiLabel name={m.workbench_properties_format_text()} />，JSON-e 规则选择 <UiLabel name={m.workbench_properties_format_rule()} />。
+    - <UiLabel name={m.workbench_properties_expression()} />：属性值。Zotero 字段使用 `zt.` 路径，例如 `zt.title`。
+    - <UiLabel name={m.workbench_properties_merge()} />：选择 <UiLabel name={m.workbench_properties_merge_replace()} />、<UiLabel name={m.workbench_properties_merge_append()} /> 或 <UiLabel name={m.workbench_properties_merge_keep()} />。
+
+    | v1 模板行           | <UiLabel name={m.workbench_properties_name()} /> | <UiLabel name={m.workbench_properties_expression()} /> | <UiLabel name={m.workbench_properties_merge()} />              |
+    | -------------------------- | ------------------------------------------------ | ------------------------------------------------------ | --------------------------------------------------------------- |
+    | `title: "<%= it.title %>"` | `title`                                          | `zt.title`                                             | <UiLabel name={m.workbench_properties_merge_replace()} />       |
+    | `authors: ...`             | `authors`                                        | `zt.authors \| map: "fullName" \| join: ", "`           | <UiLabel name={m.workbench_properties_merge_replace()} />       |
+    | `year: "<%= it.date %>"`   | `year`                                           | `zt.date \| date: "%Y"`                                | <UiLabel name={m.workbench_properties_merge_replace()} />       |
+    | `tags: ...`                | `tags`                                           | `zt.tags \| map: "name" \| join: ", "`                 | <UiLabel name={m.workbench_properties_merge_append()} />        |
+
+    YAML 转义会自动处理。
+
+    属性标签页将每个属性写为配置方案文档 manifest 中 `frontmatter` 列表的一项。每项包含一个 `key` 和一个值成员，成员名称声明其语言：`expr` 保存 Liquid 值，由 <UiLabel name={m.workbench_properties_format_value()} /> 写入；`value` 保存固定文本或 JSON-e 规则，由 <UiLabel name={m.workbench_properties_format_text()} /> 和 <UiLabel name={m.workbench_properties_format_rule()} /> 写入；`js` 保存 JavaScript 值，需要在 <UiLabel name={m.workbench_advanced()} /> 中编写。
+
+    ZotLit 管理的保留 frontmatter 键不能作为用户字段的目标，例如 `zotero-key`、`zotlit-profile`、`zotero-note-key` 和 `zotero-lastmod`。默认的 `citekey` 配置项是普通的受管 frontmatter 字段。详情请参阅 [frontmatter 参考](/docs/reference/templates/frontmatter)。
+
+    <Callout type="info" title="JavaScript 值">
+      `js` 配置项仅在 <UiLabel name={m.settings_template_js_enable_name()} /> 开启时运行。请参阅[启用 JavaScript 模板](/docs/how-to/enable-javascript-templates)。
+    </Callout>
+
+  </Step>
+  <Step>
+    ### 覆盖 v1 笔记以添加受管区域 [#overwrite-v1-notes-to-add-the-managed-region]
+
+    v1 笔记缺少 v2 用于隔离生成内容的 `%%zt-managed%%` / `%%/zt-managed%%` 标记，因此无法对其正文进行增量更新。对 v1 笔记运行 <Command inline name={m.command_update_note_name()} /> 只会刷新 frontmatter。
+
+    要添加受管区域，请对每篇需要刷新的笔记运行覆盖命令：
+
+    <Command name={m.command_overwrite_note_name()} />
+
+    界面会显示确认对话框。选择 <UiLabel name={m.modal_overwrite_note_confirm()} /> 继续。ZotLit 会根据当前模板重新生成整个笔记正文，并插入受管区域标记。
+
+    覆盖后，笔记即可通过 <Command inline name={m.command_update_note_name()} /> 进行增量更新。无需一次覆盖所有笔记，您可以在准备好之前保留原样。
+
+    完整步骤请参阅[刷新 v1 笔记](/docs/how-to/migrate-from-v1#refresh-v1-notes)。
+
+  </Step>
+</Steps>
+
+<Callout type="info" title="与 v1 相比的空白字符变化">
+  v1 的 `autoTrim` 默认值为 `[false, "nl"]`（去除标签后的一个换行符）。v2 默认值为 `[false, false]`（保留全部空白字符）。在原先 `%>` 会去除尾部换行符的位置，迁移后的模板可能产生额外空行。对于需要保留旧裁剪行为的标签，请使用 `-%>` 结尾。请参阅[空白字符控制](/docs/reference/templates/eta-syntax#whitespace-control)。
+</Callout>
+
+## 预期结果 [#expected-result]
+
+完成上述步骤后，您的自定义 Eta 模板将使用 v2 字段名和辅助函数进行渲染。已覆盖的笔记包含 `%%zt-managed%%` 标记，支持增量更新。未覆盖的笔记仍可进行仅更新 frontmatter 的刷新。
+
+## 转换为模板文档 [#convert]
+
+重命名后的文件可以直接加载和渲染，因此您可以到此为止。ZotLit 也允许您从欢迎视图或设置顶部的提醒行启动一次性转换，将它们合并为 v2 的模板文档。转换会在写入任何内容前验证输出。
+
+[从 2.1 模板迁移](/docs/how-to/migrate-from-2.1-templates)介绍了此转换，包括各文件的目标形式、校验内容和拒绝转换的情况。
+
+## 将 Eta 转换为 Liquid [#eta-to-liquid-translations]
+
+v2 的默认引擎为 Liquid。将模板转换为 Liquid 后，就无需开启 <UiLabel name={m.settings_template_js_enable_name()} />。下表列出了各结构对应的 Liquid 写法，并链接到相应的语法参考章节。
+
+| Eta 结构                                              | Liquid 对应写法                                   | 参考                                                                            |
+| ----------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `<%= zt.title %>`                                     | `{{ zt.title }}`                                  | [输出与标签](/docs/reference/templates/syntax#outputs-and-tags)                 |
+| `<% if (zt.abstract) { %> ... <% } %>`                | `{% if zt.abstract %} ... {% endif %}`            | [控制流程](/docs/reference/templates/syntax#if-elsif-else-endif)                |
+| `<% for (const a of zt.annotations) { %> ... <% } %>` | `{% for a in zt.annotations %} ... {% endfor %}`  | [for / endfor](/docs/reference/templates/syntax#for-endfor)                     |
+| `<%~ include("content", zt) %>`                       | `{% render "content" with zt as zt %}`            | [使用 render 引用模板](/docs/reference/templates/syntax#includes-with-render)   |
+| `<% bq(() => { %> ... <% }) %>`                       | `{% bq %} ... {% endbq %}`                        | [bq：引用块](/docs/reference/templates/syntax#bq-blockquote-block)              |
+| `embed(zt.imgLink)`                                   | `{{ zt.imgLink \| embed }}`                       | [embed 过滤器](/docs/reference/templates/syntax#embed-embed-filter)             |
+| `<%= suffix() %>`                                     | `{% suffix %}`                                    | [suffix 标签](/docs/reference/templates/syntax#suffix-filename-collision-guard) |
+| `zt.attachments[0].fileLink()`                        | `{{ zt.attachments[0] \| file_link }}`            | [链接过滤器](/docs/reference/templates/syntax#link-filters)                     |
+| `zt.collections.map(c => c.path.join(" > "))`         | `{{ zt.collections \| collection_paths: " > " }}` | [collection_paths](/docs/reference/templates/syntax#collection-paths)           |
+| `zt.tags.map(t => t.name).join(", ")`                 | `{{ zt.tags \| map: "name" \| join: ", " }}`      | [数组过滤器](/docs/reference/templates/syntax#array-filters)                    |
+| `zt.dateAdded` （Temporal.Instant 格式化）            | `{{ zt.dateAdded \| date: "%Y-%m-%d" }}`          | [date 过滤器](/docs/reference/templates/syntax#date-formatting-filter)          |
+| `-%>` （去除标签后的一个换行符）                      | `-%}` / `-}}`                                     | [空白字符控制](/docs/reference/templates/syntax#whitespace-control)             |
+
+重命名后的 2.1 Liquid 文件使用 `.liquid.md` 扩展名（例如 `zotlit-note.liquid.md`）；转换后的模板文档名称中不再包含语言。数据变量仍为 `zt`，属性名称与上文介绍的 Eta 对应字段相同。
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="Eta 语法参考"
+    description="完整的 Eta 分隔符、辅助函数和链接参考。"
+    href="/docs/reference/templates/eta-syntax"
+  />
+  <Card
+    title="模板语法（Liquid）"
+    description="默认 Liquid 引擎的语法和数据字段。"
+    href="/docs/reference/templates/syntax"
+  />
+  <Card
+    title="数据参考"
+    description="每种模板类型中 zt 的可用属性。"
+    href="/docs/reference/templates/data"
+  />
+  <Card
+    title="自定义模板"
+    description="在仓库中创建和编辑模板文档。"
+    href="/docs/how-to/customize-a-template"
+  />
+</Cards>

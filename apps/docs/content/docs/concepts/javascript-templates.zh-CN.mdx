@@ -1,0 +1,108 @@
+---
+title: "JavaScript 模板"
+description: "JavaScript 模板权限开关的作用、存在原因、开启风险以及禁用时的具体行为。"
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+<UiLabel name={m.settings_template_js_enable_name()} />
+是一项单设备独立的权限开关，用于控制是否允许编译并执行 Eta
+模板。该设置默认处于禁用状态。
+
+## 该开关控制的能力
+
+模板文档在其正文自身中声明使用的语言，而非通过文件扩展名。引文文本或共享片段在其 manifest 中包含单条配置键 `language: eta`；配置方案文档则在 <UiLabel name={m.workbench_tab_name_and_folder()} /> 标签页中指定其模板语言。关于 manifest 和 frontmatter 配置项的详细说明，请参阅[配置方案文档](/docs/reference/templates/profile-document)。
+
+当开启 <UiLabel name={m.settings_template_js_enable_name()} /> 时：
+
+- Eta 模板文档将通过 Eta 引擎被编译并执行（具备完整的 JavaScript 执行能力）。
+- 带有 `js` 成员的受管 frontmatter 配置项将允许对其表达式进行执行求值。
+
+当禁用时（默认状态）：
+
+- Eta 模板文档处于休眠状态：绝不编译，绝不执行。
+- 仅有 Liquid 模板文档以及包含 `expr` 或 `value` 的 frontmatter 配置项保持活跃。其中 `expr` 配置项运行 Liquid 表达式，而 `value` 配置项运行 JSON-e 模板。
+
+关于禁用时的具体报错模式，请参阅[禁用时的行为表现](#behavior-when-disabled)。
+
+## 设立该开关的原因
+
+Liquid 模板专注于纯文本安全渲染。Liquid 模板没有任何机制去主动打开未经传入的文件、发起网络请求或执行系统底层命令。它只能将其接收到的纯数据组合转换为最终文本输出。
+
+而 Eta 模板则是完整的 JavaScript 环境。在 Eta 文档中运行的代码拥有与 ZotLit 插件自身完全同等级别的系统权限：它可以读取并修改您的 Obsidian 仓库、发起互联网连接，在桌面端甚至能够直接访问您的操作系统底层环境。从论坛帖子、共享仓库或另一台设备复制的模板文档，一旦运行就具有上述全部访问权限。
+
+该权限开关使这一边界清晰可见。Liquid 默认采用受限的执行方式；运行 JavaScript 则需要您主动授权。
+
+## 开启该权限的潜在风险
+
+<Callout type="warn" title="安全风险须知">
+  请仅在您完全信任仓库中包含的每一个 Eta 模板文档时才开启此项。ZotLit 不会对 Eta
+  模板进行安全审计或沙箱隔离。
+</Callout>
+
+一旦开启：
+
+- 模板文件夹中的所有 Eta 模板文档都将直接执行，不再会有进一步的弹窗提示。
+- 来自不可信来源的模板可能读取文件、发送网络请求或修改您的仓库。
+- 该授权在单台设备上为一次性全局生效，覆盖当前以及未来加入的所有 Eta 模板。
+
+## 单设备独立生效范围
+
+该授权仅保存在本地设备自身上，独立于跨设备同步的插件配置。在一台设备上开启绝不会自动在另一台设备上开启。您希望运行 Eta 模板的每台设备都必须单独主动完成授权。
+
+即使您通过云服务同步了仓库，也只有设备所有者明确启用了该选项的设备才会执行 JavaScript 模板。
+
+<Callout type="info" title="无需重新加载插件">
+  切换该权限开关会立即生效。ZotLit 会立即重新处理模板文件夹，无需重新加载插件。
+</Callout>
+
+## 禁用时的行为 [#behavior-when-disabled]
+
+权限开关关闭时，若某项操作需要渲染 Eta 模板文档，ZotLit 会将该文档视为**停用状态**：
+
+- 需要此模板的操作（创建笔记、更新笔记或插入引文）会失败，并通过错误信息说明原因。不会悄然回退到内置默认模板。
+- <SettingsPath /> 会显示警告：
+  <UiLabel name={m.settings_template_inert_eta({ path: "…" })} />
+- 文档保留在仓库中，不会被修改或编译。
+
+使用 `js` 成员声明的受管 frontmatter 配置项也遵循同样的规则。使用此类配置项的笔记写入会失败，错误信息会指出未启用的字段。ZotLit 不会只写入部分字段，因此现有笔记保持不变。
+
+## 与 Liquid 共存 [#coexistence-with-liquid]
+
+每份模板文档只声明一种语言，因此 Liquid 文档和 Eta 文档不会争用同一个名称。
+
+ZotLit 2.1 的同一个模板名称可以同时对应 `.liquid.md` 和 `.eta.md` 文件。两者并存时，Liquid 文件始终优先，Eta 文件被忽略，无论权限开关是否开启。请参阅[两个 2.1 文件同名时](/docs/concepts/how-templates-work#liquid-wins-shadowing)。
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="启用 JavaScript 模板"
+    description="开启权限开关的分步操作。"
+    href="/docs/how-to/enable-javascript-templates"
+  />
+  <Card
+    title="模板工作原理"
+    description="三种模板文档、文件命名规则和两种模板语言。"
+    href="/docs/concepts/how-templates-work"
+  />
+  <Card
+    title="设置参考"
+    description={
+      <>
+        完整的选项列表，包括
+        <UiLabel name={m.settings_template_js_enable_name()} /> 设置。
+      </>
+    }
+    href="/docs/reference/settings"
+  />
+  <Card
+    title="配置方案文档"
+    description="manifest 配置键、笔记源码和标注部分。"
+    href="/docs/reference/templates/profile-document"
+  />
+</Cards>

@@ -1,0 +1,242 @@
+---
+title: "收集调试日志"
+description: "收集模板错误报告、ZotLit 运行日志、Zotero 调试输出以及 Obsidian 诊断信息以供提交 Bug 报告。"
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+在提交 Bug 反馈时，通常需要附带模板错误报告、ZotLit 插件日志、Obsidian 系统日志，或是来自配套插件 ZotLit Companion 的 Zotero 调试输出。下方的每个章节均独立成篇，您只需按照反馈中所要求的项进行操作即可。
+
+获取到日志后，请在 GitHub 的 [Bug reports 讨论区](https://github.com/aidenlx/zotlit/discussions/categories/bug-reports)中提交反馈。
+
+<Callout type="warn" title="跨端组件问题需要双侧日志">
+  如果问题涉及 ZotLit 与 Companion
+  两端（例如数据同步、即时更新、笔记导入或任何依赖 Zotero
+  运行的操作），请在复现问题之前，**同时**完成[ZotLit 日志](#zotlit-logs)与
+  [Zotero
+  调试输出](#zotero-debug-output)中的配置步骤。复现一次后，分别保存两端的日志输出。
+</Callout>
+
+## 模板错误报告 [#template-error-report]
+
+当在模板工作台中预览失败时收集此报告。报告中记录了模板引擎自身的报错信息以及失败尝试的上下文，以便他人能够准确排查定位具体故障。
+
+<Steps>
+  <Step>
+    ### 打开问题面板
+
+    在模板工作台中，点击预览区域中或源码标记上的 <UiLabel name={m.workbench_problem_show()} />。<UiLabel name={m.workbench_problems_heading()} /> 区域会展示失败原因。
+
+  </Step>
+  <Step>
+    ### 复制错误报告
+
+    点击 <UiLabel name={m.workbench_problems_copy()} />。如果您希望在复制前先阅读报告内容，可先展开 <UiLabel name={m.workbench_problems_technical()} />。展开处显示的文本与复制内容相同。
+
+    该报告包含引擎报错消息、错误名称、触发诱因、相关源码摘录以及引擎给出的具体报错位置。此外，它还会记录失败时间戳、是自动检查还是通过 <UiLabel name={m.workbench_preview_run()} /> 触发、对应的模板文档与章节、模板语言、预览数据根节点选项、当前选中的条目或示例、源码版本以及 ZotLit 和 Obsidian 的版本号。失败尝试无法获取的值将显示为 `unavailable`。
+
+  </Step>
+  <Step>
+    ### 粘贴到反馈中
+
+    将复制的文本直接粘贴到您的 Bug 报告中。在您主动粘贴提交之前，任何信息都不会离开您的本地仓库。
+
+  </Step>
+</Steps>
+
+<Callout type="info" title="报告不会因后续修复而丢失">
+  您可以继续在模板上修改代码。已复制的报告严格记录了当时发生失败的那次尝试，因此后续的编辑或切换条目不会改变它。在成功修复后，展开的{" "}
+  <UiLabel name={m.workbench_problems_heading()} /> 区域还会提供{" "}
+  <UiLabel name={m.workbench_problems_copy_last()} />
+  ，便于您获取先前阅读的那次故障记录。
+</Callout>
+
+<Callout type="info" title="向社区求助">
+  复制按钮旁的 <UiLabel name={m.workbench_problems_community()} />
+  会打开[社区页面](/community)。此操作只打开页面，不会发送任何信息。
+</Callout>
+
+### 何时需要补充材料 [#when-to-add-more-evidence]
+
+复制的报告只记录一次失败的模板运行。如果符合以下情形，请同时收集相应材料：
+
+- **[ZotLit 日志](#zotlit-logs)**：失败时没有引擎错误消息，或问题发生在创建、更新笔记时，而非预览中。
+- **[模板数据](#template-data)**：模板成功渲染，但生成的内容不正确。
+- **[Obsidian 调试信息](#obsidian-debug-info)**：问题可能与其他插件、主题或特定 Obsidian 版本有关。
+
+每项材料都需要单独收集。复制的报告不会包含日志归档或导出的模板数据。
+
+## Obsidian 调试信息 [#obsidian-debug-info]
+
+<Steps>
+  <Step>
+    ### 运行调试信息命令 [#run-the-debug-info-command]
+
+    打开命令面板，运行 <Command inline>Show debug info</Command>。
+
+  </Step>
+  <Step>
+    ### 复制输出 [#copy-the-output]
+
+    复制输出内容并粘贴到问题反馈中。
+
+  </Step>
+</Steps>
+
+## ZotLit 日志 [#zotlit-logs]
+
+<Steps>
+  <Step>
+    ### 打开高级设置 [#open-the-advanced-settings]
+
+    在 Obsidian 中打开 <SettingsPath page={m.settings_page_advanced()} />，找到 <UiLabel name={m.settings_advanced_logging_heading()} /> 选项组。
+
+  </Step>
+  <Step>
+    ### 开启调试日志 [#turn-on-debug-logging]
+
+    将 <UiLabel name={m.settings_log_level_name()} /> 设为 **debug**，再开启 <UiLabel name={m.settings_log_to_file_name()} />。日志会持续追加到插件文件夹内的 `zotlit.log.jsonl`。
+
+  </Step>
+  <Step>
+    ### 复现问题 [#reproduce-the-problem]
+
+    执行会触发问题的操作。
+
+  </Step>
+  <Step>
+    ### 保存日志归档 [#save-the-log-archive]
+
+    返回 <SettingsPath page={m.settings_page_advanced()} />，选择 <UiLabel name={m.settings_log_export_name()} />，导出用于分享的日志文件。
+
+  </Step>
+  <Step>
+    ### 上传归档 [#upload-the-archive]
+
+    将保存的归档作为附件添加到问题反馈中。
+
+  </Step>
+</Steps>
+
+<Callout type="info" title="收集完成后关闭日志">
+  不再需要持续记录时，将 <UiLabel name={m.settings_log_level_name()} />
+  改回 **info**，并关闭 <UiLabel name={m.settings_log_to_file_name()} />。
+</Callout>
+
+## 模板数据 [#template-data]
+
+当模板生成了错误内容时，请收集模板数据。保存的文件包含该条目实际传给模板的完整数据。
+
+<Steps>
+  <Step>
+    ### 在目标条目上打开浏览器 [#open-the-explorer-on-the-item]
+
+    对能够复现问题的条目[打开模板数据浏览器](/docs/how-to/explore-template-data)。
+
+  </Step>
+  <Step>
+    ### 将数据根节点切换到标注 [#anchor-at-the-annotation]
+
+    如果问题出在标注模板中，请打开树形视图中对应标注节点的更多选项菜单，选择 <UiLabel name={m.workbench_explorer_menu_explore_annotation()} />。其他模板可跳过此步骤，继续使用笔记根节点。
+
+  </Step>
+  <Step>
+    ### 保存模板数据 [#save-the-template-data]
+
+    打开浏览器标签页的更多选项菜单，选择 <UiLabel name={m.template_data_explorer_menu_export_json()} />。这会下载名称类似 `zotlit-template-data-ABCD2345-20260512-143000.json` 的文件。
+
+    文件始终包含当前根节点的完整数据：位于笔记根节点时是完整的笔记模板数据，切换到标注后则是该标注的数据。浏览器中的筛选条件不会缩小导出范围。
+
+  </Step>
+  <Step>
+    ### 上传文件 [#upload-the-file]
+
+    将保存的文件作为附件添加到问题反馈中。
+
+  </Step>
+</Steps>
+
+<Callout type="warn" title="分享前检查文件内容">
+  文件包含该条目的 Zotero 文献库元数据、Zotero 数据文件夹中附件的绝对路径，
+  以及您的 Zotero 账户用户名。将文件附加到公开的问题反馈前，请先检查其中的内容。
+</Callout>
+
+<Callout type="info" title="出现占位标记是正常现象">
+  浏览器不会向仓库写入文件，因此通常会创建文件的辅助函数（例如标注摘录图片和导入的子笔记）
+  会返回占位标记，而非真实链接。它们在文件中显示为 `$inert` 条目，
+  辅助函数则显示为 `$helper` 条目。这两类标记都属于正常的导出数据。
+</Callout>
+
+## Zotero 调试输出 [#zotero-debug-output]
+
+<Steps>
+  <Step>
+    ### 设置 Companion 的日志级别 [#set-the-companions-log-level]
+
+    在 Zotero 中打开 **Edit > Settings**（Windows/Linux）或 **Zotero > Settings**（macOS），然后选择 <UiLabel name={m["zotero.prefs_pane_label"]()} /> 面板。将 <UiLabel name={m["zotero.prefs_logging_level"]()} /> 设为 <UiLabel name={m["zotero.prefs_log_level_debug.label"]()} />。
+
+  </Step>
+  <Step>
+    ### 重启 Zotero 并启用日志记录 [#restart-zotero-with-logging-enabled]
+
+    打开 **Help > Debug Output Logging**，选择 **Restart with Logging Enabled…**。
+
+    <Callout type="warn" title="不要使用故障排除模式">
+      随后会出现确认对话框。不要选择 **Restart in Troubleshooting Mode**：该模式会禁用所有附加组件，包括 Companion，因此无法收集所需的调试输出。
+    </Callout>
+
+  </Step>
+  <Step>
+    ### 复现问题 [#reproduce-the-problem-1]
+
+    Zotero 重启后，立即复现问题。
+
+  </Step>
+  <Step>
+    ### 打开调试输出查看器 [#open-the-debug-output-viewer]
+
+    打开 **Help > Debug Output Logging > View Output**。
+
+  </Step>
+  <Step>
+    ### 保存输出 [#save-the-output]
+
+    在查看器中选择 **File > Save…**，将格式设为 **Text Files**，保存输出。
+
+    不要使用 **Submit Output** 或 **Copy to Clipboard**，反馈需要完整的日志文件。
+
+  </Step>
+  <Step>
+    ### 上传文件 [#upload-the-file-1]
+
+    将保存的文本文件作为附件添加到问题反馈中。
+
+  </Step>
+</Steps>
+
+<Callout type="info" title="恢复日志级别">
+  收集完成后，将 Companion 的{" "}
+  <UiLabel name={m["zotero.prefs_logging_level"]()} />
+  恢复为之前的值。
+</Callout>
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="设置"
+    description={`ZotLit 全部设置的参考说明，包括${m.settings_page_advanced()}。`}
+    href="/docs/reference/settings"
+  />
+  <Card
+    title="社区"
+    description="提交问题反馈或提问的地方。"
+    href="/community"
+  />
+</Cards>
