@@ -24,33 +24,35 @@ export async function verifySnapshot(path: string): Promise<void> {
     using sqlite = new DatabaseSync(path, { readOnly: true, timeout: 1_000 });
     result = sqlite.prepare("PRAGMA integrity_check").get()?.integrity_check;
   } else {
-    const url = URL.createObjectURL(
-      new Blob([workerSource], { type: "text/javascript" }),
+    using cleanup = new DisposableStack();
+    const url = cleanup.adopt(
+      URL.createObjectURL(
+        new Blob([workerSource], { type: "text/javascript" }),
+      ),
+      (url) => URL.revokeObjectURL(url),
     );
-    let worker: Worker | undefined;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      worker = new Worker(url, { name: "zotlit-snapshot-integrity" });
-      const reply = Promise.withResolvers<unknown>();
-      worker.onmessage = (event) => reply.resolve(event.data);
-      worker.onerror = (event) => {
-        event.preventDefault();
-        reply.reject(new Error(event.message));
-      };
-      worker.onmessageerror = () =>
-        reply.reject(new Error("Invalid database snapshot verification reply"));
-      timer = setTimeout(
+    const worker = cleanup.adopt(
+      new Worker(url, { name: "zotlit-snapshot-integrity" }),
+      (worker) => worker.terminate(),
+    );
+    const reply = Promise.withResolvers<unknown>();
+    worker.onmessage = (event) => reply.resolve(event.data);
+    worker.onerror = (event) => {
+      event.preventDefault();
+      reply.reject(new Error(event.message));
+    };
+    worker.onmessageerror = () =>
+      reply.reject(new Error("Invalid database snapshot verification reply"));
+    cleanup.adopt(
+      setTimeout(
         () =>
           reply.reject(new Error("Database snapshot verification timed out")),
         60_000,
-      );
-      worker.postMessage(path);
-      result = await reply.promise;
-    } finally {
-      if (timer !== undefined) clearTimeout(timer);
-      worker?.terminate();
-      URL.revokeObjectURL(url);
-    }
+      ),
+      clearTimeout,
+    );
+    worker.postMessage(path);
+    result = await reply.promise;
   }
   if (result !== "ok")
     throw new Error("SQLite rejected the database read snapshot");

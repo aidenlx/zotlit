@@ -1,8 +1,8 @@
 // The Citation Index keeps requested answers available while the worker
 // rebuilds a large lookup index. The Stress Build is isolated from the Development Vault.
-import { cp, mkdir } from "node:fs/promises";
+import { cp, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { backup, DatabaseSync } from "node:sqlite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -51,6 +51,36 @@ interface RefreshEvidence {
   citekey: string;
   unique: boolean;
   unrequested: boolean;
+}
+
+/** Each mutation owns a backup and restores both source data and held reads. */
+async function preserveFixture(vaultId: string): Promise<AsyncDisposableStack> {
+  await using cleanup = new AsyncDisposableStack();
+  const path = `${fixture.databasePath}.before-test`;
+  cleanup.defer(() => rm(path, { force: true }));
+  {
+    using source = new DatabaseSync(fixture.databasePath, { readOnly: true });
+    await backup(source, path);
+  }
+  cleanup.defer(async () => {
+    await cp(path, fixture.databasePath);
+    await obEval(
+      vaultId,
+      `app.plugins.plugins.zotlit.services.zoteroReads.refresh().then(()=>true)`,
+      120_000,
+    );
+    expect(
+      await waitFor(
+        async () =>
+          (await obEval(
+            vaultId,
+            `app.plugins.plugins.zotlit.services.itemLookup.search(${JSON.stringify(item.key)},{limit:1}).then(hits=>String(hits[0]?.item.fields.title===${JSON.stringify(item.title)}))`,
+          )) === "true",
+        240,
+      ),
+    ).toBe(true);
+  });
+  return cleanup.move();
 }
 
 describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
@@ -222,6 +252,7 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
   }, 120_000);
 
   it("serves searches and worker tasks while changed Items rebuild the 100,000-Item index", async () => {
+    await using _source = await preserveFixture(vaultId);
     const { value: rounds, gaps } = await measureWorkerResponsiveness(
       vaultId,
       async () => {
@@ -295,6 +326,7 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
   }, 240_000);
 
   it("keeps the held search index when snapshot integrity validation fails", async () => {
+    await using _source = await preserveFixture(vaultId);
     {
       using sqlite = new DatabaseSync(fixture.databasePath, {
         defensive: false,
