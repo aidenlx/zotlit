@@ -1,5 +1,3 @@
-// The ZoteroReads contract: one RpcGroup and the Schema codecs both sides share.
-import { Predicate, Schema, SchemaGetter } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
 import { Transferable } from "effect/workers";
 
@@ -29,12 +27,18 @@ import type {
 import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
 import type { ItemFields } from "@zotlit/zotero-types";
 
+// The ZoteroReads contract: one RpcGroup and the Schema codecs both sides share.
+import { Predicate, Schema, SchemaGetter } from "@/lib/effect";
 import type { CitationLookupWireAnswer } from "@/services/citation-index/lookup";
 import type {
   CitekeyResolution,
   SnapshotItem,
 } from "@/services/citation-index/snapshot";
 import type { EffectiveReadMode } from "@/services/database/read-source";
+import type {
+  QueryAnswer,
+  QueryJob,
+} from "@/services/item-query/worker-protocol";
 import type { LibraryScope } from "@/services/library-scope/scope";
 import type { Settings, ZoteroReadMode } from "@/services/settings/schema";
 
@@ -491,6 +495,15 @@ type _CitationLookupAnswer = Expect<
 >;
 
 export class ZoteroReads extends RpcGroup.make(
+  Rpc.make("CancelItemQuery", {
+    payload: { id: Schema.String, ...snapshot },
+    success: Schema.Void,
+  }),
+  Rpc.make("ItemQuery", {
+    payload: { job: jsonObject<QueryJob>(), ...snapshot },
+    success: jsonObject<QueryAnswer>(),
+    error: ReadError,
+  }),
   Rpc.make("CitationLookup", {
     payload: {
       scope: CitationScopeSchema,

@@ -1,7 +1,7 @@
-// One item's display ref, read through the `DisplayRefs` stream.
-import { Effect, Stream } from "effect";
-
 import type { getItemDisplayRefByID } from "@zotlit/db";
+
+// One item's display ref, read through the `DisplayRefs` stream.
+import { Effect, Stream } from "@/lib/effect";
 
 import type { ZoteroReadsApi } from "./service";
 

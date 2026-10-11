@@ -100,9 +100,9 @@ describe("getAnnotationsByParent creator", () => {
       insert into groupItems (itemID, createdByUserID)
         values (9060, 7), (9061, 9), (9063, null);
     `);
-    const creators = () =>
+    const creators = (client: NodeDatabaseClient) =>
       Object.fromEntries(
-        getAnnotationsByParent(db, 9058).map(({ key, createdByUserID }) => [
+        getAnnotationsByParent(client, 9058).map(({ key, createdByUserID }) => [
           key,
           createdByUserID,
         ]),
@@ -116,14 +116,16 @@ describe("getAnnotationsByParent creator", () => {
       DZJSSBPX: null,
       DBKE89L9: null,
     };
-    expect(creators()).toEqual(expected);
+    expect(creators(db)).toEqual(expected);
 
-    // A database without local client revisions reads the same creators.
+    // A database without local client revisions reads the same creators. A
+    // client reads the layout of its copy once, so the changed copy gets a
+    // new client.
     sqlite.exec(`
       update version set version = 125 where schema = 'userdata';
       alter table items drop column clientVersion;
     `);
-    expect(creators()).toEqual(expected);
+    expect(creators(drizzle({ client: sqlite, relations }))).toEqual(expected);
   });
 });
 

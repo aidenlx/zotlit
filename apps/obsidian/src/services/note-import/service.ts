@@ -1,4 +1,3 @@
-import { Effect } from "effect";
 // Materializes a literature note's child Zotero notes into flat Markdown mirrors.
 import { normalizePath, stringifyYaml } from "obsidian";
 import type {
@@ -31,6 +30,7 @@ import {
   FIELD_ZOTERO_NOTE_KEY,
   stringifyInstant,
 } from "@/lib/constants";
+import { Effect } from "@/lib/effect";
 import {
   ensureFolder,
   joinFolderPath,

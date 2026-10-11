@@ -94,6 +94,8 @@ const FIXTURE_DDL = `
     templateItemTypeID integer,
     display integer
   );
+  create view itemTypesCombined as
+    select itemTypeID, typeName, display, 0 as custom from itemTypes;
   create table items (
     itemID integer primary key,
     itemTypeID integer not null default 0,

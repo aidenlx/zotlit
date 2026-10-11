@@ -5,15 +5,19 @@
   "type": "module",
   "scripts": {
     "e2e": "vitest run",
+    "measure:query": "node src/query-measure.ts",
+    "test": "vitest run --config vitest.unit.config.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "@types/yargs": "catalog:",
     "@zotlit/config": "workspace:*",
     "@zotlit/protocol": "workspace:*",
     "@zotlit/scripts": "workspace:*",
     "typescript": "catalog:",
     "vitest": "catalog:",
+    "yargs": "catalog:",
     "zx": "catalog:"
   }
 }

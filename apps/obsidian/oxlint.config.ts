@@ -1,6 +1,30 @@
 import { defineConfig } from "oxlint";
 
-import baseConfig from "@zotlit/config/oxlint";
+import baseConfig, {
+  itemQuerySchemaPaths,
+  parentImportPattern,
+} from "@zotlit/config/oxlint";
+
+const obsidianImportPaths = [
+  {
+    name: "semver",
+    allowTypeImports: true,
+    message:
+      "Import from semver/functions/<name> to keep unused semver code out of the plugin bundle.",
+  },
+  {
+    name: "obsidian",
+    importNames: ["HoverPopover"],
+    allowTypeImports: true,
+    message:
+      "Extend PopoutAwareHoverPopover from @/lib/popout-aware-hover-popover; it cancels Obsidian's popover timers on the window that armed them (see policies/hover-popover.md).",
+  },
+];
+
+const commonImports = {
+  patterns: [parentImportPattern],
+  paths: [...obsidianImportPaths, ...itemQuerySchemaPaths],
+};
 
 export default defineConfig({
   extends: [baseConfig],
@@ -16,32 +40,68 @@ export default defineConfig({
     "no-restricted-imports": [
       "error",
       {
-        patterns: [
-          {
-            group: ["../**"],
-            message:
-              "Use @/ alias instead of parent-directory relative imports.",
-          },
-        ],
+        ...commonImports,
         paths: [
           {
-            name: "semver",
+            name: "@/lib/effect",
+            importNames: ["ManagedRuntime", "Scheduler"],
             allowTypeImports: true,
             message:
-              "Import from semver/functions/<name> to keep unused semver code out of the plugin bundle.",
+              "Start Effects through Effect in @/lib/effect; its entry points supply the browser scheduler.",
           },
           {
-            name: "obsidian",
-            importNames: ["HoverPopover"],
+            name: "effect",
             allowTypeImports: true,
             message:
-              "Extend PopoutAwareHoverPopover from @/lib/popout-aware-hover-popover; it cancels Obsidian's popover timers on the window that armed them (see policies/hover-popover.md).",
+              "Use @/lib/effect: Obsidian's renderer and workers default to Chromium MessageChannel scheduling. Node setImmediate can starve browser tasks.",
           },
+          {
+            name: "effect/Effect",
+            allowTypeImports: true,
+            message: "Use Effect from @/lib/effect for Chromium scheduling.",
+          },
+          {
+            name: "effect/ManagedRuntime",
+            allowTypeImports: true,
+            message:
+              "Use the Effect entry points in @/lib/effect for Chromium scheduling.",
+          },
+          {
+            name: "effect/Scheduler",
+            allowTypeImports: true,
+            message:
+              "Obsidian scheduling is owned by @/lib/effect-runtime and @/lib/browser-scheduler.",
+          },
+          ...commonImports.paths,
         ],
       },
     ],
   },
   overrides: [
+    {
+      // Tests can inspect the schema; the plugin's other import rules remain.
+      files: [
+        "src/**/*.{test,spec}.{ts,tsx,js,jsx}",
+        "*.{config,setup}.{ts,js,mjs,cjs}",
+      ],
+      rules: {
+        "no-restricted-imports": [
+          "error",
+          {
+            patterns: [parentImportPattern],
+            paths: obsidianImportPaths,
+          },
+        ],
+      },
+    },
+    {
+      files: [
+        "src/lib/effect.ts",
+        "src/lib/effect-runtime.ts",
+        "src/lib/browser-scheduler.ts",
+      ],
+      rules: { "no-restricted-imports": ["error", commonImports] },
+    },
     {
       files: [
         "vite.config.ts",
@@ -60,7 +120,12 @@ export default defineConfig({
       // The one module that wraps Obsidian's popover itself.
       files: ["src/lib/popout-aware-hover-popover.ts"],
       rules: {
-        "no-restricted-imports": "off",
+        "no-restricted-imports": [
+          "error",
+          {
+            paths: itemQuerySchemaPaths,
+          },
+        ],
       },
     },
     {

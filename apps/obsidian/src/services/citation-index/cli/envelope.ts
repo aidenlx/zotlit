@@ -8,6 +8,7 @@
 
 import type { Loc } from "obsidian";
 
+import { createCliDiagnostics } from "@/lib/cli-diagnostic";
 import type {
   CitationCoverage,
   CitationKeyResolution,
@@ -60,7 +61,8 @@ export type DiagnosticCode = keyof typeof DIAGNOSTIC_HINTS;
 export interface Diagnostic {
   code: DiagnosticCode;
   message: string;
-  /** The recovery action for `code`, taken from `DIAGNOSTIC_HINTS`. */
+  /** The recovery action to follow: by default `DIAGNOSTIC_HINTS[code]`; a
+   *  rejected parameter can carry its own, such as its `name=value` form. */
   hint: string;
   details?:
     | { parameter: string }
@@ -96,16 +98,12 @@ export function reportCandidates(
 }
 
 /**
- * Report a fault with the recovery action its code defines. Every diagnostic is
- * built here, so `hint` can never disagree with `code`.
+ * Report a fault with the recovery action registered for its code.
  */
-export function diagnostic(
-  code: DiagnosticCode,
-  message: string,
-  details?: Diagnostic["details"],
-): Diagnostic {
-  return { code, message, hint: DIAGNOSTIC_HINTS[code], details };
-}
+export const { diagnostic, rejectionDiagnostic } = createCliDiagnostics<
+  typeof DIAGNOSTIC_HINTS,
+  Diagnostic["details"]
+>(DIAGNOSTIC_HINTS, "INVALID_SELECTOR");
 
 export type CitationsCommand =
   | "zotlit:cited-by"

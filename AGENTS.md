@@ -42,7 +42,7 @@ oxlint and oxfmt own linting and formatting; `oxlint.config.ts` / `oxfmt.config.
 ### Testing
 
 - **E2E-first:** A test in `packages/e2e` is the primary proof that a feature works. During development, iterate on typecheck and single test files, and walk the change through the running app (`/obsidian-debug`). When the walkthrough passes, encode it as an e2e test — the repeatable artifact of that proof.
-- **Final gate:** Run the full End-to-end Run once, when the work is complete. A pass takes about 5 minutes on this machine with system sleep prevented.
+- **Final gate:** Run the affected End-to-end Run cases when the work is complete. Use the full suite for releases, changes to shared startup or lifecycle behavior across features, or an explicit full-run request. ZotLit Query CLI changes use `pnpm e2e:query`; other focused selections are described in `packages/e2e/AGENTS.md`. Prevent system sleep during desktop tests.
 - **Failure-mode-first:** When an isolated test is justified, list every failure mode before writing the code; the test list drives the implementation.
 - **Earned regression tests:** A bug fix earns a regression test only for a real gap in the behavior tests. When an E2E path already reaches the failure, extend that path.
 

@@ -32,6 +32,11 @@ const FORBIDDEN_REQUIRE = regex(
  * own as one CommonJS file, so the plugin ships no extra file and spawns the
  * worker from a blob URL. Every module in the worker bundle is watched, so a
  * watch build rebuilds the worker when any of them changes.
+ *
+ * A worker runs its source as a classic script, where a top-level declaration
+ * becomes a property of the worker's global object. The bundle runs inside a
+ * function, so its declarations stay local: Effect's own `setImmediate`, for
+ * one, would replace the global it calls.
  */
 export function embeddedWorker(options: EmbeddedWorkerOptions): Plugin {
   const resolvedId = `\0${options.id}`;
@@ -81,7 +86,9 @@ export function embeddedWorker(options: EmbeddedWorkerOptions): Plugin {
       for (const moduleId of chunk.moduleIds) {
         if (!moduleId.startsWith("\0")) this.addWatchFile(moduleId);
       }
-      return `export default ${JSON.stringify(chunk.code)};`;
+      // The opening shares the first line, so the source map lines still match.
+      const scoped = `(() => {${chunk.code}\n})();\n`;
+      return `export default ${JSON.stringify(scoped)};`;
     },
   };
 }

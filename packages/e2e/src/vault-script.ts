@@ -3,8 +3,10 @@
 
 import { execFile } from "node:child_process";
 import { rm } from "node:fs/promises";
-import { basename, join, sep } from "node:path";
+import { join, sep } from "node:path";
 import { promisify } from "node:util";
+
+import { getWorktreeVaultName } from "@zotlit/scripts/dev-vault";
 
 import { cli } from "./obsidian-cli.ts";
 
@@ -97,7 +99,7 @@ export function e2eVaultDir(workspaceRoot: string, name: string): string {
   return join(
     workspaceRoot,
     ".scratch",
-    `e2e-${name}-${basename(workspaceRoot)}`,
+    `e2e-${name}-${getWorktreeVaultName(workspaceRoot)}`,
   );
 }
 

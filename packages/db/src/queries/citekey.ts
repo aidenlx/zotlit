@@ -10,9 +10,9 @@ import { eq, sql } from "drizzle-orm";
 import type { NodeDatabaseClient } from "@/client/node";
 import { formatIndexedKey } from "@/lib/zt-key";
 
-import { groupIDForLibrary } from "./_groups";
 import { defineQuery } from "./_shared";
 import type { QueryRow } from "./_shared";
+import { groupIDForLibrary } from "./libraries";
 
 /** Zotero's native citation-key field name in Zotero's `fieldsCombined`. */
 const CITEKEY_FIELD = "citationKey";

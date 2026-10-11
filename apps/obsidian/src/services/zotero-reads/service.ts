@@ -1,3 +1,8 @@
+import { RpcSchema } from "effect/rpc";
+import type { RpcClientError } from "effect/rpc";
+
+import { createNanoEvents } from "@zotlit/shared/nanoevents";
+
 /**
  * `ZoteroReadsService` — the renderer's one handle on the Zotero database.
  *
@@ -16,12 +21,7 @@
  * handler layer in a Web Worker (`workerClient`); tests run it on this
  * runtime (`inProcessClient` in `test-utils.ts`).
  */
-import { Cause, Effect, Exit, Pull, Scope, Stream } from "effect";
-import { RpcSchema } from "effect/rpc";
-import type { RpcClientError } from "effect/rpc";
-
-import { createNanoEvents } from "@zotlit/shared/nanoevents";
-
+import { Cause, Effect, Exit, Pull, Scope, Stream } from "@/lib/effect";
 import { openScope } from "@/lib/effect-scope";
 import { getLogger } from "@/lib/log";
 import type { EffectiveReadMode } from "@/services/database/read-source";

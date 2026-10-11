@@ -1,6 +1,5 @@
 // Resolves a Literature Note to its Item's PDF Attachments, and the `open-pdf` command that opens them.
 
-import { Effect } from "effect";
 import { TFile } from "obsidian";
 import type { App, FileSystemAdapter, Plugin } from "obsidian";
 
@@ -11,6 +10,7 @@ import {
   openAttachments,
 } from "@/lib/attachment-open";
 import type { AttachmentReader } from "@/lib/attachment-open";
+import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";

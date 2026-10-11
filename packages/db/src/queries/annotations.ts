@@ -1,12 +1,12 @@
 import type { NodeDatabaseClient } from "@/client/node";
+import { readDatabaseLayout } from "@/layout";
 import type { Annotation } from "@/lib/zt-annot";
 import { formatIndexedKey } from "@/lib/zt-key";
 
-import { groupIDForLibrary, resolveGroupID } from "./_groups";
-import type { GroupIDMemo } from "./_groups";
 import { defineQuery, defineKeyedQuery } from "./_shared";
 import type { FindManyOptions, QueryRow } from "./_shared";
-import { hasClientRevisions } from "./schema-version";
+import { groupIDForLibrary, resolveGroupID } from "./libraries";
+import type { GroupIDMemo } from "./libraries";
 
 const annotationFindOptions = {
   with: {
@@ -116,7 +116,7 @@ export function getAnnotationsByParent(
   opts?: { memo?: GroupIDMemo },
 ): Annotation[] {
   const memo = opts?.memo ?? new Map();
-  const rows = hasClientRevisions(db)
+  const rows = readDatabaseLayout(db).has("items", "clientVersion")
     ? annotationsByParentQuery.prepared(db).all({ parentItemID })
     : legacyAnnotationsByParentQuery.prepared(db).all({ parentItemID });
   return rows.map((r) =>
@@ -137,7 +137,7 @@ export function getAnnotationsByKey(
   if (keys.length === 0) return [];
 
   const groupId = groupIDForLibrary(db, libraryID);
-  const byKeys = hasClientRevisions(db)
+  const byKeys = readDatabaseLayout(db).has("items", "clientVersion")
     ? annotationsByKeysQuery
     : legacyAnnotationsByKeysQuery;
   return byKeys(db, keys, { params: { libraryID } }).flatMap((row) =>

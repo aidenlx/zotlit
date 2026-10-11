@@ -72,7 +72,7 @@ describe("Pandoc integration CLI", () => {
 
   it.each(PARAMETER_FREE_COMMANDS)("%s rejects parameters", (command) => {
     expect(() => handlers[command]({ unexpected: "true" })).toThrow(
-      `${command} accepts no parameters`,
+      `Unknown parameter 'unexpected': ${command} takes no parameters.`,
     );
   });
 });
