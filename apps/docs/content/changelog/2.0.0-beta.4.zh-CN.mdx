@@ -2,41 +2,41 @@
 version: "2.0.0-beta.4"
 companion: "2.0.0-beta.3"
 date: "2026-08-01"
-description: "Template Workbench, managed frontmatter, safer attachment imports"
+description: "模板工作台、受管 frontmatter 排序、更安全的附件导入"
 ---
 
-## Breaking Changes
+## 破坏性变更
 
-### Obsidian version requirement
+### Obsidian 版本环境要求 [#obsidian-version-requirement]
 
-ZotLit now requires Obsidian 1.13.4 or newer. This release also requires the newer Electron version bundled with the Obsidian installer. Updating Obsidian from inside the app is not enough: download and run the latest installer over your existing installation, then reopen Obsidian before you install or update ZotLit. See [How to update the Obsidian installer](/docs/how-to/update-obsidian-installer) and the [Obsidian 1.13.4 release notes](https://obsidian.md/changelog/2026-07-30-desktop-v1.13.4/).
+ZotLit 现在要求 Obsidian 1.13.4 或更高版本。本次发布同时要求使用由 Obsidian 安装包捆绑的最新 Electron 运行时。仅通过应用内检查更新是不够的：请前往官网下载最新安装程序覆盖安装，并重启 Obsidian 后再安装或更新 ZotLit。详见[如何更新 Obsidian 安装包](/docs/how-to/update-obsidian-installer)以及 [Obsidian 1.13.4 发布说明](https://obsidian.md/changelog/2026-07-30-desktop-v1.13.4/)。
 
-### Citation template `item.extra`
+### 引文模板中的 `item.extra` 结构调整
 
-`item.extra` in citation templates now uses the same parsed `ItemExtra` shape as note templates. If a template reads the raw text, use `item.extra.raw`. See the [template data reference](/docs/reference/templates/data#extra-field).
+引文模板中的 `item.extra` 现在与笔记模板完全一致，采用结构化解析后的 `ItemExtra` 格式。如果模板需要读取未解析的原始文本，请改用 `item.extra.raw`。详见[模板数据参考](/docs/reference/templates/data#extra-field)。
 
-## What's New
+## 新增功能
 
-### Template Workbench
+### 模板工作台
 
-The [Template Workbench CLI](/docs/concepts/template-workbench) adds Obsidian CLI commands for agents. An agent can inspect template state, render a template against Zotero data without changing your vault, and manage configured frontmatter fields.
+[模板工作台 CLI](/docs/concepts/template-workbench) 在 Obsidian CLI 中为智能体提供了专用指令。智能体能够安全检查模板状态、针对 Zotero 数据在内存中模拟渲染模板（不触碰仓库物理文件），并直接管理受管 frontmatter 字段。
 
-Install the [`zotlit-template` skill](/docs/install-skill) for your agent to use this workflow.
+为您的智能体安装 [`zotlit-template` skill](/docs/install-skill) 即可开始使用该工作流。
 
-### Managed frontmatter
+### 受管 frontmatter 属性排序
 
-You can [drag frontmatter fields into a new order](/docs/how-to/configure-frontmatter-properties#reorder-fields). ZotLit uses that order when it creates a new literature note. Existing notes keep their current property order.
+您现在可以[拖拽调整 frontmatter 字段的顺序](/docs/how-to/configure-frontmatter-properties#reorder-fields)。ZotLit 会在新创建文献笔记时应用该顺序；已有笔记则完整保留原有的属性顺序。
 
-### New template filters
+### 新增模板过滤器
 
-The Liquid syntax now includes `arr_prefix`, `arr_suffix`, and `arr_replace` for changing every value in an array. The `obsidian_tag` filter converts text or Zotero tags into valid Obsidian tags. See the [template syntax reference](/docs/reference/templates/syntax#arr-prefix).
+Liquid 语法新增了用于批量处理数组各元素的 `arr_prefix`、`arr_suffix` 以及 `arr_replace` 过滤器。`obsidian_tag` 过滤器则可将普通文本或 Zotero 标签转换为合规的 Obsidian 标签。详见[模板语法参考](/docs/reference/templates/syntax#arr-prefix)。
 
-### Copy Zotero keys
+### 复制 Zotero 标识符
 
-Zotero context menus can copy the keys of selected items, attachments, notes, and annotations. Reader annotation menus also provide a copy action. In Obsidian, use **ZotLit: Copy item key** from a literature note's command or file menu.
+Zotero 右键上下文菜单支持复制选定条目、附件、笔记以及批注的唯一标识符。阅读器内的标注菜单同样提供了复制操作。在 Obsidian 中，可通过文献笔记的命令面板或文件菜单调用 **ZotLit: 复制条目标识**。
 
-## Bug Fixes
+## 问题修复
 
-- Fixed inconsistent item summaries between the Annotation View, Template Data Explorer, and Citation Suggester. These views now use the same title, creator, and date formatting.
-- Attachments now copy from approved folders. Only Zotero storage, the annotation cache, and linked-attachment folders are approved by default. Add other folders under **Settings > ZotLit > Attachments > Approved folders**.
-- Language packs now match the installed ZotLit version.
+- 修复了标注视图、模板数据浏览器与引文建议下拉框之间条目摘要排版不一致的问题。现在这些视图均统一采用一致的标题、创作者与日期格式。
+- 附件现在仅允许从已批准的文件夹中复制。默认仅白名单放行 Zotero storage 目录、批注缓存以及已配置的关联附件目录。可在**设置 > ZotLit > 附件 > 已批准文件夹**中添加其他目录。
+- 语言包下载现在严格匹配已安装的 ZotLit 版本。

@@ -1,6 +1,6 @@
 ---
-title: "Use a different template for different notes"
-description: "Add a profile, give it a look of its own, set the conditions that select it, and check that ZotLit picks it for an item."
+title: "针对不同笔记使用不同模板"
+description: "添加配置方案、定制专属样式、配置自动匹配条件，并验证 ZotLit 是否精准为条目套用该配置方案。"
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
@@ -10,53 +10,53 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-A profile decides a literature note's name, folder, properties, and body. Add one when books, papers, or a single collection need a look of their own.
+配置方案决定了文献笔记的名称、存放目录、frontmatter 属性以及正文结构。当图书、论文或某个单独的文献分类需要使用专属的笔记格式时，即可为其添加配置方案。
 
-## Add a profile
+## 添加配置方案
 
 <Steps>
   <Step>
-    ### Open the Profiles page
+    ### 打开配置方案设置页面
 
-    In Obsidian, open <SettingsPath page={m.settings_page_profiles()} />. In the header of the <UiLabel name={m.settings_profile_other_heading()} /> list, select <UiLabel name={m.settings_profile_add()} />.
-
-  </Step>
-  <Step>
-    ### Name it and choose its folder
-
-    Enter the <UiLabel name={m.settings_profile_name_name()} />. A name is enough to create the profile. To keep its notes in a folder of their own, also enter the <UiLabel name={m.settings_profile_folder_name()} />. Leave the folder empty to use the Default profile's folder. The dialog reads <UiLabel name={m.settings_profile_destination_desc()} /> Select <UiLabel name={m.settings_profile_add()} /> to create the profile.
-
-    ZotLit writes `zotlit-profile.<slug>.md` into the folder named by <UiLabel name={m.settings_template_folder_name()} /> and opens the document in the Template Workbench View. The name you typed is the label you see in lists. The profile's actual identity is a separate ID inside the document, so renaming the file changes nothing. See [Profiles](/docs/concepts/profiles) for what the document carries.
+    在 Obsidian 中，打开 <SettingsPath page={m.settings_page_profiles()} />。在 <UiLabel name={m.settings_profile_other_heading()} /> 列表标题中，选择 <UiLabel name={m.settings_profile_add()} />。
 
   </Step>
   <Step>
-    ### Edit the note source and its properties
+    ### 命名并指定存放目录
 
-    Select <UiLabel name={m.workbench_tab_note()} /> and edit the note source: the text every note from this profile begins with. Select <UiLabel name={m.workbench_tab_properties()} /> and set the YAML properties ZotLit writes at the top of each note.
+    输入 <UiLabel name={m.settings_profile_name_name()} />。只需输入名称即可创建配置方案。若希望将其生成的笔记存放在独立目录中，还可输入 <UiLabel name={m.settings_profile_folder_name()} />；留空则默认使用默认配置方案的目录。对话框提示为 <UiLabel name={m.settings_profile_destination_desc()} />。点击 <UiLabel name={m.settings_profile_add()} /> 创建配置方案。
 
-    The preview beside the editor renders your edits against a Zotero item. Choose another item at any time to check a different case.
-
-  </Step>
-  <Step>
-    ### Set the conditions that select it
-
-    Select <UiLabel name={m.workbench_tab_match()} />. The tab reads <UiLabel name={m.workbench_match_conditions_desc()} />
-
-    Select <UiLabel name={m.workbench_match_add_condition()} /> for the first condition, then pick what it tests: <UiLabel name={m.workbench_match_condition_item_type()} />, <UiLabel name={m.workbench_match_condition_collection()} />, <UiLabel name={m.workbench_match_condition_tag()} />, or <UiLabel name={m.workbench_match_condition_library()} />. A profile matches when <UiLabel name={m.workbench_match_match_all()} /> holds, or when <UiLabel name={m.workbench_match_match_any()} /> does. Switch between the two above the conditions.
-
-    The complete condition language, including the expression form, is in [Profile Match](/docs/reference/templates/profile-match).
+    ZotLit 会在 <UiLabel name={m.settings_template_folder_name()} /> 所指定的文件夹中生成 `zotlit-profile.<slug>.md` 文件，并在模板工作台视图中将其打开。您输入的名称是列表中展示的标签；配置方案的实际身份由文件内部的独立 ID 标识，因此重命名文件不会产生破坏。关于文档承载的内容，请参阅[配置方案](/docs/concepts/profiles)。
 
   </Step>
   <Step>
-    ### Check the conditions against an item
+    ### 编辑笔记模板源码与属性
 
-    Select <UiLabel name={m.workbench_choose_match_item()} /> and choose an item. The tab reports <UiLabel name={m.workbench_match_result_yes()} /> or <UiLabel name={m.workbench_match_result_no()} /> for that item.
+    选择 <UiLabel name={m.workbench_tab_note()} /> 并编辑笔记模板源码：即由该配置方案生成的每篇笔记的开头文本。选择 <UiLabel name={m.workbench_tab_properties()} /> 并设置 ZotLit 写入每篇笔记顶部的 YAML 属性。
 
-    The profile's row on the settings page then carries <UiLabel name={m.settings_profile_match_status({ state: "evaluable" })} /> while ZotLit can evaluate the conditions.
+    编辑器旁的预览区域会实时将您的修改渲染并对照 Zotero 条目进行呈现。随时可切换其他条目以验证不同的数据情况。
 
   </Step>
   <Step>
-    ### Create a note from the profile
+    ### 设置自动匹配条件
+
+    选择 <UiLabel name={m.workbench_tab_match()} /> 标签页。该页面说明为 <UiLabel name={m.workbench_match_conditions_desc()} />。
+
+    点击 <UiLabel name={m.workbench_match_add_condition()} /> 添加第一条条件，然后选取判断类型：<UiLabel name={m.workbench_match_condition_item_type()} />、<UiLabel name={m.workbench_match_condition_collection()} />、<UiLabel name={m.workbench_match_condition_tag()} /> 或 <UiLabel name={m.workbench_match_condition_library()} />。当满足 <UiLabel name={m.workbench_match_match_all()} /> 或满足 <UiLabel name={m.workbench_match_match_any()} /> 时即可命中配置方案。可在条件上方切换这两者。
+
+    有关完整的匹配语言说明（包含表达式书写形式），请参阅[配置方案匹配规则](/docs/reference/templates/profile-match)。
+
+  </Step>
+  <Step>
+    ### 对照条目核验匹配条件
+
+    点击 <UiLabel name={m.workbench_choose_match_item()} /> 并选择一个条目。标签页会即时报告针对该条目的匹配结果：<UiLabel name={m.workbench_match_result_yes()} /> 或 <UiLabel name={m.workbench_match_result_no()} />。
+
+    在 ZotLit 能够正常计算该条件期间，设置页面中的该配置方案所在行会展示状态标签 <UiLabel name={m.settings_profile_match_status({ state: "evaluable" })} />。
+
+  </Step>
+  <Step>
+    ### 使用该配置方案创建笔记
 
     Run <Command name={m.command_open_lit_note_name()} /> and select an item the profile matches. ZotLit creates the note from the profile and reports the match. The note records the profile in its `zotlit-profile` property.
 

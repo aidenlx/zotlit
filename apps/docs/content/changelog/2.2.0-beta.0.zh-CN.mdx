@@ -2,7 +2,7 @@
 version: "2.2.0-beta.0"
 date: "2026-09-15"
 companion: "2.2.0-beta.0"
-description: "Literature note profiles, the Template Workbench, citations in the graph view"
+description: "文献笔记配置方案、模板工作台、图谱视图中的引文关系"
 ---
 
 import { Command } from "@/components/command";
@@ -10,39 +10,35 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-ZotLit 2.2 gives a literature note template one document of its own, adds a workbench to edit it inside Obsidian, and draws your citations in the graph view.
+ZotLit 2.2 为文献笔记模板引入了专有的单一配置文件机制，新增了在 Obsidian 内部直接编辑与调试模板的专属工作台，并在关系图谱视图中绘制引文关联。
 
-## Highlights
+## 版本亮点
 
-### Citations in the graph view
+### 图谱视图中的引文关系
 
-![The global graph view showing citation edges linking literature notes and a dimmed Cited Work Node, beside a note's local graph and the References Sidebar](/img/changelog/graph-view-citations.webp)
+![全局关系图谱展示连接文献笔记与暗色被引文献节点的引文连线，旁边附带单篇笔记的局部图谱与参考文献侧边栏](/img/changelog/graph-view-citations.webp)
 
-Your citations now appear in Obsidian's graph. A note gains an edge to every work it cites, so literature notes stop floating unconnected and two notes that cite the same paper meet at its node. Where no literature note exists yet, the work appears as a dimmed Cited Work Node.
+您的引文现在能够直接呈现在 Obsidian 的关系图谱中。每篇笔记均会向其引用的文献作品引出一条连线，文献笔记不再孤零零地漂浮在图谱边缘，引用了同一篇论文的两篇笔记也将在该文献节点处相汇交织。对于仓库中尚未建立文献笔记的作品，会显示为暗色的被引文献节点（Cited Work Node）。
 
-This is on as soon as you update. Every ordinary graph starts drawing citation edges and Cited Work Nodes, so your graph is busier than it was. <UiLabel name={m.settings_citation_graph_name()} /> under <SettingsPath page={m.settings_page_citations()} /> turns it off again.
+该功能在升级后默认开启。所有常规图谱均会自动开始绘制引文连线与被引文献节点，使图谱呈现更加丰富。<SettingsPath page={m.settings_page_citations()} /> 下的 <UiLabel name={m.settings_citation_graph_name()} /> 可以随时将其关闭。
 
-Six rows in the graph's own controls decide what each graph draws, built into the native Filters and Display sections and saved per graph like the native rows:
+图谱齿轮面板中新增了六个专属控制项，内嵌于原生的“过滤器”与“显示设置”分组中，且像原生选项一样按单个图谱独立保存：
 
-- Under Filters: <UiLabel name={m.graph_option_pandoc_citations_name()} /> and <UiLabel name={m.graph_option_wikilink_citations_name()} />, both on, and <UiLabel name={m.graph_option_citation_connected_only_name()} />, off.
-- Under Display: <UiLabel name={m.graph_option_author_title_labels_name()} />, <UiLabel name={m.graph_option_color_citation_links_name()} />, and <UiLabel name={m.graph_option_citation_popover_name()} />, all off.
+- 过滤器分组下：<UiLabel name={m.graph_option_pandoc_citations_name()} /> 与 <UiLabel name={m.graph_option_wikilink_citations_name()} />（两者默认开启），以及 <UiLabel name={m.graph_option_citation_connected_only_name()} />（默认关闭）。
+- 显示设置分组下：<UiLabel name={m.graph_option_author_title_labels_name()} />、<UiLabel name={m.graph_option_color_citation_links_name()} /> 与 <UiLabel name={m.graph_option_citation_popover_name()} />（三者默认关闭）。
 
-<UiLabel name={m.graph_option_wikilink_citations_name()} /> appears only while
-the vault-wide wikilink citation setting is on. **Restore default settings** in
-the graph returns all six to their defaults along with the native options.
+<UiLabel name={m.graph_option_wikilink_citations_name()} />
+仅在开启了全库双链引文设置时才会显示。在图谱中点击**恢复默认设置**会将这六项设置同原生选项一并重置为默认值。
 
-Literature notes keep the node colors Obsidian gives them. A Cited Work Node takes a dimmed color of its own, and citation edges take theirs only while <UiLabel name={m.graph_option_color_citation_links_name()} /> is on. Your own color groups still win, and one press of <UiLabel name={m.graph_citations_add_literature_notes_group()} /> in the Groups section colors every literature note without a search query. All three colors have theme hooks; see [Theme hooks](/docs/reference/theme-hooks).
+文献笔记保持 Obsidian 赋予的原生节点颜色。被引文献节点呈现出其专属的暗淡颜色，引文连线则仅在开启 <UiLabel name={m.graph_option_color_citation_links_name()} /> 时应用专属色彩。您自己设置的颜色分组依然保持优先；在分组中点击一次 <UiLabel name={m.graph_citations_add_literature_notes_group()} /> 即可无需查询语句一键为所有文献笔记着色。这三种颜色均提供了对应的主题样式类名接口，详见[主题样式类名](/docs/reference/theme-hooks)。
 
-<UiLabel name={m.graph_option_author_title_labels_name()} /> writes the authors
-and the year above each work, with the short title dimmer underneath. Zooming in
-brings the titles out, and hovering shows one at any zoom. The graph's search
-box still matches your files, not the labels on screen.
+开启 <UiLabel name={m.graph_option_author_title_labels_name()} /> 会在每个文献作品节点上方绘制作者与年份，下方以稍暗的字体标注短标题。放大视口可清晰呈现标题文本，鼠标悬停可在任何缩放级别下显示标题。图谱搜索框依然匹配您的物理文件名，而非屏幕上的渲染标签。
 
-Hover needs the per-graph <UiLabel name={m.graph_option_citation_popover_name()} /> row, which starts off. With it on, hovering a literature note or a cited work follows your Hover Action setting, and <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_hover_mod_page_name()} /> adds a <UiLabel name={m.settings_citation_hover_mod_graph_name()} /> row so the graph alone requires a held modifier key. A work with no literature note, and a note nothing cites, now show the formatted entry in the popover instead of Obsidian's page preview.
+悬停预览需要开启该图谱局部的 <UiLabel name={m.graph_option_citation_popover_name()} /> 控制项（默认关闭）。开启后，悬停文献笔记或被引文献节点将依循您的悬停操作设置，且 <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_hover_mod_page_name()} /> 新增了 <UiLabel name={m.settings_citation_hover_mod_graph_name()} /> 项，以便在图谱中必须按下辅助键才触发悬停。对于未创建文献笔记的作品或未被任何笔记引用的孤立文献，悬停浮窗会展示格式化的参考文献条目而非空白预览。
 
-Select a Cited Work Node to create its literature note from the profile and open it; the key that matches one item becomes the note node, with the same edges. Right-click one for <UiLabel name={m.graph_citations_menu_create_note()} />, <UiLabel name={m.references_open_in_zotero()} />, and <UiLabel name={m.graph_citations_menu_copy_citekey()} />. A key that matches several items keeps its dimmed node.
+点击被引文献节点可直接根据配置方案为其创建文献笔记并将其打开；仅匹配单篇条目的节点会随即转变为标准的文献笔记节点并继承所有连线。右键点击节点可选择 <UiLabel name={m.graph_citations_menu_create_note()} />, <UiLabel name={m.references_open_in_zotero()} />, 以及 <UiLabel name={m.graph_citations_menu_copy_citekey()} />。匹配到多篇文献的歧义节点会继续保持暗淡状态。
 
-<Command inline name={m.command_open_citation_graph_name()} /> and
+<Command inline name={m.command_open_citation_graph_name()} /> 与
 <Command inline name={m.command_open_local_citation_graph_name()} /> open the
 graph arranged for reading as a research map: citation edges in, every node
 except your literature notes, cited works, and the notes that cite them hidden,

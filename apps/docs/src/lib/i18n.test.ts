@@ -63,6 +63,31 @@ describe("native locale infrastructure", () => {
   );
 });
 
+// Translation can change an automatic heading slug while incoming links keep
+// their original fragment. The compiled table of contents is the reader seam.
+describe("translated documentation links", () => {
+  it.each([
+    {
+      page: docs.getPage("how-to/edit-pdf-annotations.zh-CN.mdx")!,
+      anchor: "#before-you-edit",
+    },
+    {
+      page: docs.getPage("reference/templates/frontmatter.zh-CN.mdx")!,
+      anchor: "#spread-entries",
+    },
+    {
+      page: changelogs.get("2.0.0-beta.4.zh-CN.mdx")!,
+      anchor: "#obsidian-version-requirement",
+    },
+  ])("retains the authored fragment $anchor", async ({ page, anchor }) => {
+    await page.preload();
+    const content = await page.load();
+    expect(content.toc).toContainEqual(
+      expect.objectContaining({ url: anchor }),
+    );
+  });
+});
+
 describe("translator-facing UI and formatting", () => {
   it("formats dates in the requested locale while English is the default", async () => {
     const { formatReleaseDate, formatReleaseInstant } =

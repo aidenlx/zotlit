@@ -1,6 +1,6 @@
 ---
-title: "Template syntax"
-description: "Liquid markup reference: outputs, tags, filters, whitespace control, and ZotLit's custom vocabulary."
+title: "模板语法"
+description: "Liquid 模板语法参考：输出表达式、标签、过滤器、空白控制以及 ZotLit 专属函数接口。"
 ---
 
 import { Card, Cards } from "fumadocs-ui/components/card";
@@ -9,18 +9,18 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-This page documents the Liquid template language as configured in ZotLit: output expressions, tags, filters, whitespace control, the ZotLit-specific vocabulary, output coercion, includes, and template document naming.
+本页面详细记录了在 ZotLit 中配置的 Liquid 模板语言：输出表达式、逻辑标签、过滤器、空白控制、ZotLit 专属函数接口、类型自动转换、代码包含引入以及模板文档命名规范。
 
-All template data is accessible through a single variable, `zt`. The shape of `zt` depends on the template type: see the [Data reference](/docs/reference/templates/data) for the full property list.
+所有模板数据均可通过全局变量 `zt` 统一访问。`zt` 的具体数据结构取决于模板类型：查阅[数据参考](/docs/reference/templates/data)获取完整的字段属性列表。
 
-## Outputs and tags [#outputs-and-tags]
+## 输出与标签 [#outputs-and-tags]
 
-Liquid uses two delimiters:
+Liquid 使用两类定界符：
 
-| Syntax             | Purpose                                |
-| ------------------ | -------------------------------------- |
-| `{{ expression }}` | Render a value into the note           |
-| `{% tag %}`        | Execute logic without producing output |
+| 语法定界符     | 用途                             |
+| -------------- | -------------------------------- |
+| `{{ 表达式 }}` | 将计算结果渲染输出到笔记正文中   |
+| `{% 标签 %}`   | 执行控制逻辑，不直接产生正文输出 |
 
 ```liquid
 {{ zt.title }}
@@ -29,30 +29,30 @@ Liquid uses two delimiters:
 {% endif %}
 ```
 
-Use `{% comment %}...{% endcomment %}` to suppress a section entirely:
+使用 `{% comment %}...{% endcomment %}` 可以整段注释忽略内容：
 
 ```liquid
 {% comment %}
-Draft: revisit multi-author rendering
+草稿：后续重新审视多作者渲染逻辑
 {% endcomment %}
 ```
 
-## Truthiness
+## 真值判断（Truthiness）
 
-Only `nil` (null/missing) and `false` are falsy in Liquid. `0`, `""`, and empty arrays are truthy.
+在 Liquid 中，只有 `nil`（null 或缺失）与 `false` 被判定为假（falsy）。数字 `0`、空字符串 `""` 以及空数组均被判定为真（truthy）。
 
-ZotLit normalizes empty-string field values to `null` before rendering. This means `{% if zt.comment %}` is false when there is no comment and true when there is one. No `!= ""` check is needed.
+ZotLit 在执行模板渲染前，会自动将空字符串字段规整归一化为 `null`。这意味着 `{% if zt.comment %}` 在没有评注时准确为假，在存在评注时为真，您无需冗余书写 `!= ""` 进行判断。
 
-## Whitespace control [#whitespace-control]
+## 空白字符控制 [#whitespace-control]
 
-Liquid renders whitespace exactly as written. Nothing is trimmed automatically.
+Liquid 会忠实保留源码中书写的全部空白字符，默认绝不进行自动裁切。
 
-Add a `-` inside a delimiter to trim on that side:
+在定界符边缘添加减号 `-` 可在该侧剔除空白：
 
-| Marker        | Effect                                                                                 |
-| ------------- | -------------------------------------------------------------------------------------- |
-| `{%-` / `{{-` | Eats same-line indentation before the tag. Never consumes a bare newline.              |
-| `-%}` / `-}}` | Eats inline blanks plus exactly one following newline. A blank line after it survives. |
+| 修饰符号      | 消除效果                                                               |
+| ------------- | ---------------------------------------------------------------------- |
+| `{%-` / `{{-` | 剔除标签前方同一行内的缩进空格。绝不吞噬独立的裸换行符。               |
+| `-%}` / `-}}` | 剔除行内尾随空格以及紧随其后的恰好一个换行符。后续的独立空行得以保留。 |
 
 ```liquid
 {% for note in zt.notes -%}

@@ -1,6 +1,6 @@
 ---
-title: "How to customize a template"
-description: "Edit a literature note profile, the citation text, or a shared partial in the Template Workbench View, and preview the result."
+title: "自定义模板"
+description: "在模板工作台视图中编辑文献笔记配置方案、引文文本或共享片段，并实时预览渲染效果。"
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
@@ -10,53 +10,53 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-Use the Template Workbench View to change a literature note's name, folder, properties, body, or annotation format, to change the text a citation inserts, or to share a piece of template text between profiles.
+使用模板工作台视图修改文献笔记的名称、存放目录、frontmatter 属性、正文结构或标注格式，调整引文插入的文本，或在配置方案之间共享可复用的模板片段。
 
-A profile is the document that authors one literature note. See [Profiles](/docs/concepts/profiles) for what a profile holds and how ZotLit chooses one. If your vault still holds 2.1 template files, [Migrate from 2.1 templates](/docs/how-to/migrate-from-2.1-templates) folds them into profile documents first.
+配置方案是统领文献笔记的唯一文档。关于配置方案包含的内容及其选择规则，请参阅[配置方案](/docs/concepts/profiles)。若仓库中仍保留有 2.1 模板文件，请先参阅[从 2.1 模板迁移](/docs/how-to/migrate-from-2.1-templates)将其合并转换为配置方案文档。
 
-## Edit a literature note profile
+## 编辑文献笔记配置方案
 
 <Steps>
   <Step>
-    ### Open the profile
+    ### 打开配置方案
 
-    In Obsidian, open <SettingsPath />. On the <UiLabel name={m.settings_profile_document_name()} /> row, select its pencil button, tooltipped <UiLabel name={m.settings_profile_edit()} />.
+    在 Obsidian 中，打开 <SettingsPath />。在 <UiLabel name={m.settings_profile_document_name()} /> 所在行，点击其铅笔图标按钮（提示文本为 <UiLabel name={m.settings_profile_edit()} />）。
 
-    Customizing the built-in Default creates its document in the configured template folder before editing becomes available. If a custom document already exists, ZotLit opens it. If creation fails, use the retry action beside the error.
+    自定义内置的默认配置方案会在编辑就绪前自动于模板文件夹中创建对应的文档实体。若自定义文档已存在，ZotLit 会直接打开它。若创建失败，可点击错误旁的重试按钮。
 
-    To edit the profile used by an existing literature note, open that note and run <Command name={m.command_customize_note_template_name()} />. The same action is in the note's file menu. ZotLit opens the Template Workbench View with that note's item selected.
+    如需编辑现有某篇文献笔记所采用的配置方案，请打开该笔记并运行 <Command name={m.command_customize_note_template_name()} />。该操作同样位于笔记的文件菜单中。ZotLit 将打开模板工作台视图，并自动选定该笔记对应的文献条目进行预览。
 
-    From a compact Template Workbench View, open its pane menu and select <UiLabel name={m.template_workbench_open_layout()} />. This opens the editor, Data Explorer, and preview together in a separate Obsidian window.
-
-  </Step>
-  <Step>
-    ### Choose preview data
-
-    If no item is selected, choose one in Data Explorer or select <UiLabel name={m.workbench_choose_item()} />. You can try a built-in journal article, conference paper, book, or thesis example.
-
-    Choose a library item under <UiLabel name={m.workbench_recently_updated()} />, or select <UiLabel name={m.workbench_search_zotero()} /> to search your Zotero library. Selecting an item replaces the Explorer's list with its fields.
-
-    For annotation formatting, select <UiLabel name={m.workbench_choose_annotation()} />. Search annotations from the selected item or try a highlight, underline, note, text, image, or ink example. Annotation examples keep their own parent item data; the note preview keeps its selected item.
-
-    Choosing data in any linked pane updates the other linked panes. Separate workbenches keep their own selections. Full panels have selection actions in the header; sidebars have a small selection control. Right-click the pane header to access its menu in either layout.
-
-    Data used for the preview updates automatically. To load it again, select <UiLabel name={m.workbench_refresh_item()} /> from the pane menu. In <UiLabel name={m.workbench_preview_on_demand()} /> mode, select <UiLabel name={m.workbench_preview_run()} /> to render the preview.
+    在紧凑形态的模板工作台视图中，打开其面板菜单并选择 <UiLabel name={m.template_workbench_open_layout()} />，即可在独立的 Obsidian 窗口中将编辑器、数据浏览器与预览界面并排展开。
 
   </Step>
   <Step>
-    ### Edit and preview
+    ### 选取预览数据
 
-    Use the <UiLabel name={m.workbench_tab_note()} />, <UiLabel name={m.workbench_tab_properties()} />, <UiLabel name={m.workbench_tab_annotation()} />, <UiLabel name={m.workbench_tab_match()} />, and <UiLabel name={m.workbench_tab_name_and_folder()} /> tabs to edit the profile. The Default profile does not use <UiLabel name={m.workbench_tab_match()} /> conditions.
+    如果尚未选定条目，可在数据浏览器中选择，或点击 <UiLabel name={m.workbench_choose_item()} />。您可以直接体验内置的期刊文章、会议论文、图书或学位论文等示例数据。
 
-    Check the <UiLabel name={m.profile_preview_name()} /> as you edit. <UiLabel name={m.workbench_advanced()} /> is a toggle: select it to edit the complete profile document as Markdown, and select it again to return to the tabs.
+    在 <UiLabel name={m.workbench_recently_updated()} /> 下选择文献库条目，或点击 <UiLabel name={m.workbench_search_zotero()} /> 搜索您的 Zotero 文献库。选中条目后，数据浏览器会即时列出其全部字段。
 
-    On the <UiLabel name={m.workbench_tab_name_and_folder()} /> tab, the <UiLabel name={m.workbench_name_path_heading()} /> group holds the <UiLabel name={m.workbench_name_binding_folder()} />, the <UiLabel name={m.workbench_name_filename_label()} />, and a <UiLabel name={m.workbench_name_filename_result()} /> of the full path the note gets, with `.md`. A slash (`/`) in the note name makes a subfolder in the folder. For the Default profile, change the folder in <SettingsPath />. The <UiLabel name={m.workbench_tab_match()} /> tab reports <UiLabel name={m.workbench_match_result_yes()} /> or <UiLabel name={m.workbench_match_result_no()} /> for the selected item.
+    对于标注格式调试，点击 <UiLabel name={m.workbench_choose_annotation()} />。既可从选定条目中挑选标注，也可体验高亮、下划线、笔记、文本、区域图片或手写墨迹等内置示例。标注示例保留其自身的父级条目数据；笔记预览则使用选定的条目数据。
 
-    If the preview fails, retry or choose another item. You can continue editing the profile.
+    在任何联动面板中切换数据均会同步更新其他联动面板。独立的多个工作台各自维持其独立的选择状态。全功能面板在标题栏中提供了选择操作项；侧边栏则提供紧凑的选择控件。在任意布局下右键点击面板标题均可打开其菜单。
+
+    用于预览的数据会自动保持更新。如需重新加载，可在面板菜单中选择 <UiLabel name={m.workbench_refresh_item()} />。在 <UiLabel name={m.workbench_preview_on_demand()} /> 模式下，点击 <UiLabel name={m.workbench_preview_run()} /> 可手动触发渲染预览。
 
   </Step>
   <Step>
-    ### Apply the changes
+    ### 编辑并预览
+
+    通过 <UiLabel name={m.workbench_tab_note()} />、<UiLabel name={m.workbench_tab_properties()} />、<UiLabel name={m.workbench_tab_annotation()} />、<UiLabel name={m.workbench_tab_match()} /> 以及 <UiLabel name={m.workbench_tab_name_and_folder()} /> 标签页编辑配置方案。默认配置方案不使用 <UiLabel name={m.workbench_tab_match()} /> 匹配条件。
+
+    在编辑的同时直接在 <UiLabel name={m.profile_preview_name()} /> 中确认效果。<UiLabel name={m.workbench_advanced()} /> 为双向切换开关：点击它可将配置方案作为完整 Markdown 源码直接手写，再次点击可切回标签页界面。
+
+    在 <UiLabel name={m.workbench_tab_name_and_folder()} /> 标签页中，<UiLabel name={m.workbench_name_path_heading()} /> 选项组整合了 <UiLabel name={m.workbench_name_binding_folder()} />、<UiLabel name={m.workbench_name_filename_label()} /> 以及笔记最终获得的带有 `.md` 的完整路径 <UiLabel name={m.workbench_name_filename_result()} />。笔记名称中的斜杠（`/`）会在该文件夹下自动派生子目录。对于默认配置方案，可在 <SettingsPath /> 中修改文件夹。<UiLabel name={m.workbench_tab_match()} /> 标签页会即时展示对选定条目的匹配结果：<UiLabel name={m.workbench_match_result_yes()} /> 或 <UiLabel name={m.workbench_match_result_no()} />。
+
+    如果预览报错，可点击重试或切换其他条目。在报错期间您依然可以继续编辑配置方案。
+
+  </Step>
+  <Step>
+    ### 应用更改
 
     The Template Workbench View uses Obsidian's automatic saving for edits, Undo, and Redo. A profile with an error remains editable and saves with its diagnostics shown in the editor.
 

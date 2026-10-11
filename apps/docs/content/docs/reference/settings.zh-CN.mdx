@@ -1,6 +1,6 @@
 ---
-title: "Settings"
-description: "Every ZotLit setting: key, label, default value, and location in the settings tab."
+title: "设置"
+description: "ZotLit 设置选项完全清单：键名、标签、默认值及设置面板位置。"
 ---
 
 import { Card, Cards } from "fumadocs-ui/components/card";
@@ -10,52 +10,52 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-This reference lists every ZotLit setting, its default, dependencies, and storage scope.
+本参考手册列出了 ZotLit 的所有设置选项、默认值、依赖条件以及数据存储生效范围。
 
-Open settings from <SettingsPath />. The sections below follow the order of the settings tab: the main page first, then each sub-page.
+通过 <SettingsPath /> 打开设置。以下各章节严格遵循设置面板的排列顺序：首先是主设置页，随后是各个子设置页面。
 
-Settings moved in ZotLit 2.2.0. [Where settings moved](#moved) maps each old location to its new one.
+设置项在 ZotLit 2.2.0 中进行了重构归纳。[设置迁移对照](#moved)列出了各个旧位置到新位置的映射关系。
 
-## Main page [#main]
+## 主设置页 [#main]
 
-The main page opens when you select ZotLit in Obsidian's settings. It holds the default Profile's settings. New literature notes use this Profile when no other Profile is selected.
+当您在 Obsidian 设置中选中 ZotLit 时打开的主页面。它承载了默认配置方案（Default Profile）的各项设置。在未选定其他特定配置方案时，新建的文献笔记均使用此配置方案。
 
-The top of the page links to the release notes, the documentation, the community, and the bug report form. Reminders appear in the same place.
+页面顶部提供了版本发布说明、官方文档、社区讨论区以及问题反馈表单的快捷链接。相关操作提醒也会在此处浮现。
 
-| Label                                                          | Key                         | Control                                                                                                   | Default                                                           | Dependency             | Storage |
-| -------------------------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- | ---------------------- | ------- |
-| <UiLabel name={m.settings_profile_folder_name()} />            | `note.literature-folder`    | Folder picker                                                                                             | `literatures`                                                     | None                   | Synced  |
-| <UiLabel name={m.settings_note_import_folder_name()} />        | `note.import-folder`        | Folder picker                                                                                             | `zotero_notes`                                                    | None                   | Synced  |
-| <UiLabel name={m.settings_citation_references_style_name()} /> | `citation.references-style` | Dropdown (lists installed styles)                                                                         | <UiLabel name={m.settings_citation_references_style_default()} /> | Zotero style directory | Synced  |
-| <UiLabel name={m.settings_profile_document_name()} />          | (the Profile document)      | <UiLabel name={m.settings_profile_edit()} /> and <UiLabel name={m.settings_profile_document_restore()} /> | <UiLabel name={m.settings_profile_document_builtin()} />          | None                   | Synced  |
+| 选项标签                                                       | 内部键名                    | 控件类型                                                                                                 | 默认值                                                            | 依赖条件        | 生效范围 |
+| -------------------------------------------------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- | --------------- | -------- |
+| <UiLabel name={m.settings_profile_folder_name()} />            | `note.literature-folder`    | 文件夹选择器                                                                                             | `literatures`                                                     | 无              | 全局同步 |
+| <UiLabel name={m.settings_note_import_folder_name()} />        | `note.import-folder`        | 文件夹选择器                                                                                             | `zotero_notes`                                                    | 无              | 全局同步 |
+| <UiLabel name={m.settings_citation_references_style_name()} /> | `citation.references-style` | 下拉菜单（列出已安装样式）                                                                               | <UiLabel name={m.settings_citation_references_style_default()} /> | Zotero 样式目录 | 全局同步 |
+| <UiLabel name={m.settings_profile_document_name()} />          | （配置方案文档自身）        | <UiLabel name={m.settings_profile_edit()} /> 与 <UiLabel name={m.settings_profile_document_restore()} /> | <UiLabel name={m.settings_profile_document_builtin()} />          | 无              | 全局同步 |
 
-Three of these rows are bindings: the two note folders and the citation and references style. The Imported notes page holds the other two bindings. ZotLit stores all five in `note.default-profile.bindings` in `data.json`, and every other Profile inherits a binding it does not set itself. The fourth row opens the Profile's document. See <SettingsPath page={m.settings_page_profiles()} />.
+其中前三行为绑定配置项：两处笔记文件夹以及引文与参考文献样式。“导入笔记”设置页面承载了另外两项绑定。ZotLit 将这五项统一保存在 `data.json` 的 `note.default-profile.bindings` 记录中，其他任何配置方案均会自动继承未显式声明的绑定项。第四行用于直接打开配置方案文档。详见 <SettingsPath page={m.settings_page_profiles()} />。
 
-### Template conversion reminder [#template-conversion-reminder]
+### 模板转换提醒 [#template-conversion-reminder]
 
-A vault whose 2.1 template files still wait for conversion keeps one reminder at the top of the page. The row is <UiLabel name={m.welcome_template_conversion_title()} /> and its one button is <UiLabel name={m.settings_template_conversion_reminder_action()} />, which opens the conversion in the Welcome view. Its description reads:
+对于尚有 2.1 模板文件等待迁移的仓库，页面顶部会常驻显示一条提醒横幅。该行标题为 <UiLabel name={m.welcome_template_conversion_title()} />，其按钮为 <UiLabel name={m.settings_template_conversion_reminder_action()} />，点击可唤起欢迎视图执行转换。其说明文本如下：
 
 > <UiLabel name={m.settings_template_conversion_reminder_desc()} />
 
-See [Migrate from 2.1 templates](/docs/how-to/migrate-from-2.1-templates).
+详见[从 2.1 模板迁移](/docs/how-to/migrate-from-2.1-templates)。
 
-### Literature note folder [#literature-note-folder]
+### 文献笔记文件夹 [#literature-note-folder]
 
-The folder part of a new literature note's path. ZotLit creates the note in this folder, under the name that the Profile's [note name template](/docs/reference/templates/defaults#filename-template) gives, and adds `.md`. A slash (`/`) in that name makes a subfolder in this folder. For example, the folder `literatures` and the name `2024/Smith2020` give `literatures/2024/Smith2020.md`.
+新建文献笔记所在路径的文件夹部分。ZotLit 会在该文件夹下创建笔记，文件名遵循配置方案的[笔记名称模板](/docs/reference/templates/defaults#filename-template)，并追加 `.md` 后缀。文件名中包含的斜杠（`/`）会自动在此目录下派生子目录。例如，文件夹 `literatures` 与笔记名 `2024/Smith2020` 将组合生成 `literatures/2024/Smith2020.md`。
 
-A Profile can set its own folder, and a note stays in the folder of the Profile it was created with. A Profile switch or a Profile deletion can move the note. The move keeps the subfolders the note has under its Profile's folder.
+每个配置方案均可声明专属的目标文件夹，笔记会稳固存放在创建它的配置方案所指定的文件夹中。切换配置方案或删除配置方案可能会引发笔记的移动。移动时会完整保留其在旧配置方案文件夹下的相对子目录层级。
 
-### Imported note folder [#imported-note-folder]
+### 导入笔记文件夹 [#imported-note-folder]
 
-Where ZotLit saves notes imported from Zotero. A Profile can set its own folder. ZotLit creates the folder when it is absent, and gives each filename a short random suffix so every imported note keeps its own file.
+ZotLit 保存从 Zotero 导入笔记的目标位置。每个配置方案均可单独配置该文件夹。当文件夹不存在时 ZotLit 会自动创建，并为每个文件名追加简短随机后缀以确保文件名互不冲突。
 
-See [Import Zotero notes](/docs/how-to/import-zotero-notes) for the import workflow.
+导入工作流详见[导入 Zotero 笔记](/docs/how-to/import-zotero-notes)。
 
-### Citation and references style [#citation-style]
+### 引文与参考文献样式 [#citation-style]
 
-CSL style used to format in-text citations and the references sidebar. Install and manage styles in Zotero.
+用于格式化正文引文和参考文献侧边栏的 CSL 样式。请在 Zotero 中统一安装与管理 CSL 样式。
 
-The dropdown stores the CSL style ID. Default uses ZotLit's embedded style. ZotLit uses the embedded style only while Default is selected. In a native Pandoc run, Default uses the Pandoc default style, Chicago author-date.
+下拉框保存 CSL 样式的唯一 ID。“默认”选项会使用 ZotLit 嵌入的内置样式。在原生 Pandoc 导出运行中，“默认”将采用 Pandoc 的默认样式（芝加哥作者-年份格式）。
 
 An unavailable style remains selected. In-text citations stay native, and the References Sidebar shows its minimal list. The row then reads <UiLabel name={m.settings_citation_references_style_warning()} />.
 

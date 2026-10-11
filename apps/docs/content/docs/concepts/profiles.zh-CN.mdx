@@ -1,58 +1,58 @@
 ---
-title: "Profiles"
-description: "What a literature note profile is, how ZotLit chooses one for an item, and how a note keeps the one that made it."
+title: "配置方案"
+description: "什么是文献笔记配置方案，ZotLit 如何为条目选择配置方案，以及笔记如何记录创建它的配置方案。"
 ---
 
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-A profile is the document that decides everything about the literature notes ZotLit writes from it: their name, folder, properties, body, and annotation format.
+配置方案（Profile）是决定由其生成的文献笔记所有细节的核心文档：包含笔记名称、存放文件夹、frontmatter 属性、正文内容以及标注格式。
 
-## What a profile is [#document]
+## 什么是配置方案文档 [#document]
 
-A profile is one Markdown file, named `zotlit-profile.<slug>.md` and kept in the folder named by <UiLabel name={m.settings_template_folder_name()} />. ZotLit reads every direct child of that folder whose name starts with `zotlit-profile.`, and each one becomes a profile. Nothing registers, installs, or points at a profile, so dropping the file into the folder is enough to add one.
+配置方案是一个单独的 Markdown 文件，命名规则为 `zotlit-profile.<slug>.md`，存放在由 <UiLabel name={m.settings_template_folder_name()} /> 所指定的文件夹中。ZotLit 会读取该文件夹下文件名以 `zotlit-profile.` 开头的所有直接子文件，其中的每一个文件都会作为一个独立的配置方案被加载。无需显式注册、安装或在设置中额外指定路径，只需将该文件放入模板文件夹中即可完成添加。
 
-The filename is not the profile's identity, and renaming the file changes nothing. Each document carries an `id` in its manifest, and that ID is what a note remembers. The look, the properties, and the annotation format all live inside that one file. What it holds is in the [Profile document](/docs/reference/templates/profile-document) reference, and how it relates to the other two kinds of template document is in [How templates work](/docs/concepts/how-templates-work#kinds).
+文件名本身并不是配置方案的唯一标识符，重命名该文件不会对功能产生任何影响。每个配置方案文档在其 manifest 元数据区中都包含一个 `id`，这才是文献笔记所记录的身份标识。视觉外观、属性字段和标注格式全部组织在这个单一文件内部。其所包含的详细格式请参阅[配置方案文档](/docs/reference/templates/profile-document)参考；它与其他两类模板文档的关系请参阅[模板工作原理](/docs/concepts/how-templates-work#kinds)。
 
-## The Default profile [#default]
+## 默认配置方案 [#default]
 
-Every vault has a Default profile, and it needs no document. Until you customize it, ZotLit uses its built-in template and holds the vault-wide defaults as settings. Customizing writes `zotlit-profile.default.md` into the template folder, after which the Default is a document like any other.
+每个仓库都内建一个默认配置方案（Default profile），它一开始无需任何文件实体。在您对其进行自定义之前，ZotLit 使用内置模板并将全库层面的默认值存储在插件设置中。点击“自定义”会在模板文件夹中生成 `zotlit-profile.default.md` 文件，在此之后，默认配置方案便成为与其他配置方案毫无二致的独立文档。
 
-The Default is also the fallback. A note that carries no profile of its own belongs to the Default, and an added profile that leaves something unset inherits that value from the Default. A profile therefore states only what makes it different: a folder for books, a citation style for one journal, a different annotation callout, and nothing else.
+默认配置方案同时也是所有配置方案的回退基准。未显式绑定特定配置方案的笔记均归属于默认配置方案；新添加的配置方案如果留空了某项设置，也会自动从默认配置方案继承该值。因此，一个自定义配置方案只需声明其特殊差异之处即可：例如专门存放图书的文件夹、针对特定期刊的引文格式、独特的标注 callout 样式等，无需重复声明其余通用项。
 
-## How ZotLit chooses a profile [#selection]
+## ZotLit 如何选择配置方案 [#selection]
 
-A note is written by exactly one profile. ZotLit resolves which one as it writes, in this order:
+每篇笔记都严格由唯一一个配置方案负责写入。ZotLit 在写入时按照以下优先级顺序确定采用哪一个配置方案：
 
-1. The profile you chose for that operation.
-2. The profile a command or a Companion link named.
-3. The profile whose Match conditions accept the item.
-4. The Default profile.
+1. 您针对本次操作主动选定的配置方案。
+2. 命令面板或 Zotero Companion 配套插件链接中指明的配置方案。
+3. 其匹配条件（Match conditions）符合当前条目的配置方案。
+4. 默认配置方案。
 
-Steps 1 and 2 come from a choice you made, and each one covers a single operation. Step 3 is the automatic one: Match conditions are part of the profile document, and a profile without them is never selected on its own. When exactly one profile matches, ZotLit uses it without asking. When several match, ZotLit stops and asks which one you meant. Step 4 is the fallback for a note that nothing above it names.
+步骤 1 和步骤 2 源于您在单次操作中的主动选择。步骤 3 为自动匹配：匹配条件是配置方案文档的一部分，未声明匹配条件的配置方案绝不会被自动选中。当恰好有一个配置方案符合条件时，ZotLit 会直接使用该方案而无需弹窗询问；当有多个配置方案同时匹配时，ZotLit 会中断流程并提示您进行选择。步骤 4 则是上述规则均未命中时的最终兜底方案。
 
-The condition language is in [Profile Match](/docs/reference/templates/profile-match), and [Use a different template for different notes](/docs/how-to/use-different-templates) adds a profile and checks which items it takes.
+关于匹配条件的语言语法，请参阅[配置方案匹配规则](/docs/reference/templates/profile-match)；在[针对不同笔记使用不同模板](/docs/how-to/use-different-templates)中，您可以看到如何添加配置方案并检查条目的匹配情况。
 
-## One note, one profile [#stamp]
+## 一篇笔记，绑定一个配置方案 [#stamp]
 
-A literature note records the profile that made it in its `zotlit-profile` property. The value names the profile and carries its ID, as in `Books (V1StGXR8Z5jd)`. The ID is the only part ZotLit compares. The name beside it is a hint for you, refreshed the next time ZotLit writes the note, so renaming a profile's label or its file breaks nothing.
+每篇文献笔记都会在其 `zotlit-profile` 属性字段中记录创建它的配置方案。该属性值包含配置方案的提示名称及其唯一 ID，形如 `Books (V1StGXR8Z5jd)`。在比较方案归属时，ZotLit 仅比对括号中的 ID。名称部分只是便于人类阅读的提示信息，在 ZotLit 下次写入该笔记时会自动刷新，因此无论修改配置方案的显示标签还是重命名其文件，都不会破坏笔记关联。
 
-A note written by the Default carries no such property. Absence means the Default, and it never means "ask some other note". Imported notes carry a stamp too, taken from the operation or the literature note that created them.
+由默认配置方案写入的笔记不包含此属性字段。该属性的缺失即代表默认配置方案，绝不会被解释为“去查询其他笔记”。导入的笔记同样包含此标识印记，继承自发起导入的操作或生成它的文献笔记。
 
-Because identity lives in the ID, two profile documents that claim the same ID are both left out of the registry rather than repaired. Such a profile stops being offered anywhere until one of the two documents gets a unique ID.
+因为配置方案的身份严格以 ID 为准，如果有两份配置方案文档声明了完全相同的 ID，它们都将无法注册到系统中。在其中一份文档修改为唯一 ID 之前，该冲突配置方案将无法在任何地方使用。
 
-## When a note changes profile [#update]
+## 笔记何时会更换配置方案 [#update]
 
-An update does not re-run the conditions. ZotLit reads the note's stamp, renders the note with the profile that stamp names, and leaves every other note alone. Editing a profile's conditions or adding a profile therefore changes what future notes look like, not what existing ones look like. A command that names a profile the note does not carry is refused rather than obeyed: <UiLabel name={m.notice_literature_note_profile_conflict()} />.
+对现有笔记执行更新操作不会重新触发自动匹配条件计算。ZotLit 会直接读取笔记上的印记，使用该印记所指明的配置方案渲染该笔记，绝不影响其他笔记。因此，修改现有配置方案的匹配条件或添加新的配置方案，只会影响未来新创建的笔记样式，绝不会篡改已存在的笔记。如果执行命令时传入的配置方案与笔记现有印记不符，操作将被拒绝并报错：<UiLabel name={m.notice_literature_note_profile_conflict()} />。
 
-Moving one note to a different profile is a deliberate action of its own, never a side effect of editing the conditions. It asks for confirmation first, and it leaves the text outside the managed region as it was; the next update renders the note from the profile it now names. [Use a different template for different notes](/docs/how-to/use-different-templates) gives that action.
+将一篇已有笔记迁移至不同的配置方案是一项需单独执行的主动操作，绝非编辑匹配条件所带来的隐式副作用。该操作在执行前会要求您确认，且会完整保留受管区域之外的原有手写文本；下一次更新时，笔记将按照新指定的配置方案进行重绘。[针对不同笔记使用不同模板](/docs/how-to/use-different-templates)提供了该迁移操作的具体步骤。
 
-## A note has no template of its own [#customize]
+## 笔记本身不保存独立模板 [#customize]
 
-Every note a profile writes renders from that profile's document. There is no per-note copy, so editing the document changes all of them, and each note shows the change the next time it is updated. A note that belongs to the Default follows the Default's document, which exists only once the Default has been customized; until then the note renders from the built-in template.
+由某个配置方案写入的所有笔记均依据该配置方案文档统一进行渲染。不存在针对单篇笔记的独立模板副本，因此编辑配置方案文档会同时影响使用它的所有笔记，每篇笔记在下一次更新时均会呈现出最新的改动。属于默认配置方案的笔记则依循默认配置方案文档进行渲染；在未对其进行自定义之前，均按内置模板呈现。
 
-Editing a note's template therefore means editing the profile that the note names. [Customize a template](/docs/how-to/customize-a-template) covers that edit, together with the citation text and the partials.
+因此，编辑某篇笔记的模板实质上就是编辑该笔记所绑定的配置方案。[自定义模板](/docs/how-to/customize-a-template)详细介绍了此类编辑，以及引文文本和共享片段的修改。
 
 ## See also
 

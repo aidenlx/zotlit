@@ -6,6 +6,7 @@ import { useSyncExternalStore } from "react";
 
 import type { PageLocaleState } from "@/lib/locale-state";
 import * as m from "@/paraglide/messages.js";
+import { getLocale } from "@/paraglide/runtime.js";
 
 function subscribeToHash(onChange: () => void) {
   window.addEventListener("hashchange", onChange);
@@ -41,19 +42,17 @@ export function LocaleFallbackNotice({ state }: { state: PageLocaleState }) {
   return (
     <div
       role="note"
-      lang="en"
+      lang={getLocale()}
       className="not-prose flex flex-col gap-2 border-b border-fd-border bg-fd-card px-6 py-3 text-[0.9rem] leading-snug text-fd-foreground"
     >
-      <p className="text-fd-muted-foreground">
-        {m.docs_locale_fallback({}, { locale: "en" })}
-      </p>
+      <p className="text-fd-muted-foreground">{m.docs_locale_fallback()}</p>
       {/* A native anchor leaves the Chinese locale instead of passing through
           the router's outgoing locale rewrite. */}
       <a
         href={englishHref}
         className="inline-flex w-fit items-center gap-1 font-medium text-fd-primary underline decoration-fd-primary/40 underline-offset-[3px] transition-[text-decoration-color] hover:decoration-fd-primary"
       >
-        {m.docs_read_in_english({}, { locale: "en" })}
+        {m.docs_read_in_english()}
         <ArrowRight aria-hidden className="size-[1.05em]" />
       </a>
     </div>

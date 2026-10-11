@@ -12,6 +12,13 @@ import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 
 import englishMessages from "../../../messages/en.json" with { type: "json" };
+import chineseMessages from "../../../messages/zh-CN.json" with { type: "json" };
+
+const translatedMessages = {
+  ...chineseMessages,
+  // Reuse supplied Chinese text to prove this action reads its locale catalog.
+  docs_read_in_english: chineseMessages.docs_redirect_original_page,
+};
 
 const packageRoot = resolve(import.meta.dirname, "..");
 const execute = promisify(execFile);
@@ -42,6 +49,7 @@ function createFixture(fault: Fault = "none") {
   write("package.json", '{"private":true,"type":"module"}');
   write("apps/docs/package.json", '{"type":"module"}');
   write("messages/en.json", JSON.stringify(englishMessages));
+  write("messages/zh-CN.json", JSON.stringify(translatedMessages));
   write(
     "apps/docs/content/docs/native.zh-CN.mdx",
     "---\ntitle: Native\n---\nEnglish copy.\n",
@@ -75,8 +83,8 @@ function createFixture(fault: Fault = "none") {
     "apps/docs/vite.config.mjs",
     `
     const fault = ${JSON.stringify(fault)};
-    const notice = ${JSON.stringify(englishMessages.docs_locale_fallback)};
-    const label = ${JSON.stringify(englishMessages.docs_read_in_english)};
+    const notice = ${JSON.stringify(translatedMessages.docs_locale_fallback)};
+    const label = ${JSON.stringify(translatedMessages.docs_read_in_english)};
     const publicOrigin = "https://zotlit.aidenlx.site";
     export default {
       plugins: [{ name: "http-response-fixture", configurePreviewServer(server) {
@@ -97,7 +105,7 @@ function createFixture(fault: Fault = "none") {
           const canonical = chinese && native ? "/zh-CN" + path : path;
           const href = (fault === "wrong-path" ? "/docs/other" : path) + (fault === "lost-query" ? "" : url.search);
           const anchor = '<a href="' + href.replaceAll("&", "&amp;") + '">' + label + '</a>';
-          const note = fallback ? '<div role="note" lang="en"><p>' + notice + '</p>' + anchor + (fault === "duplicate-action" ? anchor : "") + '</div>' : "";
+          const note = fallback ? '<div role="note" lang="zh-CN"><p>' + notice + '</p>' + anchor + (fault === "duplicate-action" ? anchor : "") + '</div>' : "";
           const leak = fallback && fault === "leaked-link" ? '<a href="/docs/other">Other</a>' : fallback && fault === "same-href-link" ? anchor : "";
           response.writeHead(200, {
             "content-type": "text/html", "content-language": locale,
@@ -155,7 +163,7 @@ async function run(fixture: ReturnType<typeof createFixture>) {
 // HTTP response seam: a native edition needs no fallback; missing editions keep
 // their exact English action; no other English link gets that exemption.
 describe("HTTP verification response matrix", () => {
-  it("checks native and missing editions in concurrent OS-assigned previews", async () => {
+  it("checks translated notices and actions in concurrent OS-assigned previews", async () => {
     using first = createFixture();
     using second = createFixture();
     const results = await Promise.all([run(first), run(second)]);

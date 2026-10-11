@@ -1,6 +1,6 @@
 ---
-title: "JavaScript templates"
-description: "What the JavaScript Templates gate enables, why it exists, the risks of opting in, and behavior when disabled."
+title: "JavaScript 模板"
+description: "JavaScript 模板权限开关的作用、存在原因、开启风险以及禁用时的具体行为。"
 ---
 
 import { Card, Cards } from "fumadocs-ui/components/card";
@@ -9,56 +9,55 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-<UiLabel name={m.settings_template_js_enable_name()} /> is a per-device gate
-that controls whether Eta templates compile and execute. It is disabled by
-default.
+<UiLabel name={m.settings_template_js_enable_name()} />
+是一项单设备独立的权限开关，用于控制是否允许编译并执行 Eta
+模板。该设置默认处于禁用状态。
 
-## What the gate enables
+## 该开关控制的能力
 
-A template document declares its language in its own text, not in its filename. A citation text or partial carries a manifest with the single key `language: eta`; a profile document sets its language on the <UiLabel name={m.workbench_tab_name_and_folder()} /> tab. See [Profile document](/docs/reference/templates/profile-document) for the manifest and the frontmatter entry members.
+模板文档在其正文自身中声明使用的语言，而非通过文件扩展名。引文文本或共享片段在其 manifest 中包含单条配置键 `language: eta`；配置方案文档则在 <UiLabel name={m.workbench_tab_name_and_folder()} /> 标签页中指定其模板语言。关于 manifest 和 frontmatter 配置项的详细说明，请参阅[配置方案文档](/docs/reference/templates/profile-document)。
 
-When <UiLabel name={m.settings_template_js_enable_name()} /> is on:
+当开启 <UiLabel name={m.settings_template_js_enable_name()} /> 时：
 
-- Eta template documents compile and execute using the Eta engine (full JavaScript).
-- Managed frontmatter entries written with the `js` member evaluate their expressions.
+- Eta 模板文档将通过 Eta 引擎被编译并执行（具备完整的 JavaScript 执行能力）。
+- 带有 `js` 成员的受管 frontmatter 配置项将允许对其表达式进行执行求值。
 
-When disabled (the default):
+当禁用时（默认状态）：
 
-- Eta documents are inert: never compiled, never executed.
-- Only Liquid documents and `expr` or `value` frontmatter entries are active. An `expr` entry holds a Liquid expression and a `value` entry holds a JSON-e template.
+- Eta 模板文档处于休眠状态：绝不编译，绝不执行。
+- 仅有 Liquid 模板文档以及包含 `expr` 或 `value` 的 frontmatter 配置项保持活跃。其中 `expr` 配置项运行 Liquid 表达式，而 `value` 配置项运行 JSON-e 模板。
 
-See [Behavior when disabled](#behavior-when-disabled) for the exact failure mode.
+关于禁用时的具体报错模式，请参阅[禁用时的行为表现](#behavior-when-disabled)。
 
-## Why it exists
+## 设立该开关的原因
 
-Liquid templates render text. A Liquid template has no way to open a file it was not given, make a network call, or run a system command. It can only combine the data it receives into output.
+Liquid 模板专注于纯文本安全渲染。Liquid 模板没有任何机制去主动打开未经传入的文件、发起网络请求或执行系统底层命令。它只能将其接收到的纯数据组合转换为最终文本输出。
 
-Eta templates are full JavaScript. Code in an Eta document runs with the same access as ZotLit itself: it can read and modify your vault, connect to the internet, and on desktop, access your system. A template document copied from a forum post, a shared vault, or another device executes with that full access the moment it runs.
+而 Eta 模板则是完整的 JavaScript 环境。在 Eta 文档中运行的代码拥有与 ZotLit 插件自身完全同等级别的系统权限：它可以读取并修改您的 Obsidian 仓库、发起互联网连接，在桌面端甚至能够直接访问您的操作系统底层环境。如果直接拷贝来自论坛讨论、他人分享的仓库或其他不可信来源的模板文档，一旦执行，它就会立即以此等高权限运行。
 
-The gate keeps this boundary explicit. Liquid stays safe by default; JavaScript execution requires a deliberate opt-in.
+该权限门禁使这一安全边界保持透明与显式。Liquid 默认保持绝对安全；而 JavaScript 的执行则必须经过用户明确的主动授权。
 
-## Risks of opting in
+## 开启该权限的潜在风险
 
-<Callout type="warn" title="Security implications">
-  Only enable this if you trust every Eta template document in your vault. Eta
-  templates are not audited or sandboxed by ZotLit.
+<Callout type="warn" title="安全风险须知">
+  请仅在您完全信任仓库中包含的每一个 Eta 模板文档时才开启此项。ZotLit 不会对 Eta
+  模板进行安全审计或沙箱隔离。
 </Callout>
 
-Once enabled:
+一旦开启：
 
-- Every Eta template document in your template folder executes without further prompts.
-- A template from an untrusted source could read files, make network requests, or modify your vault.
-- The consent is one-time per device. It covers all current and future Eta templates.
+- 模板文件夹中的所有 Eta 模板文档都将直接执行，不再会有进一步的弹窗提示。
+- 来自不可信来源的恶意模板可能借机窃取读取文件、发起网络外发请求或肆意篡改损坏您的仓库。
+- 该授权在单台设备上为一次性全局生效，覆盖当前以及未来加入的所有 Eta 模板。
 
-## Per-device scope
+## 单设备独立生效范围
 
-The consent is stored on the device itself, outside the synced plugin settings. Enabling it on one device does not enable it on another. Each device where you want Eta templates to run requires its own opt-in.
+该授权仅保存在本地设备自身上，独立于跨设备同步的插件配置。在一台设备上开启绝不会自动在另一台设备上开启。您希望运行 Eta 模板的每台设备都必须单独主动完成授权。
 
-If you sync your vault across devices, only devices where the owner has explicitly enabled the setting will run JavaScript templates.
+即使您通过云服务同步了仓库，也只有设备所有者明确启用了该选项的设备才会执行 JavaScript 模板。
 
-<Callout type="info" title="No plugin reload required">
-  Toggling the gate takes effect immediately. ZotLit rebuilds the template
-  folder in place, no reload needed.
+<Callout type="info" title="无需重新加载插件">
+  切换该权限开关会立即生效。ZotLit 会即刻重建模板缓存。
 </Callout>
 
 ## Behavior when disabled
