@@ -17,6 +17,7 @@ import {
   RESOLVE_COMMAND,
 } from "./register";
 import type { PandocResolveDeps } from "./register";
+import type { ResolveResponse } from "./resolve";
 
 describe("Pandoc CLI registration", () => {
   it("connects every Pandoc handler to the CLI surface", () => {
@@ -110,14 +111,17 @@ async function cslVault({
       profile: profileReader(settings, metadataCache),
     } as unknown as PandocResolveDeps,
   );
-  const handler = registerCliHandler.mock.calls.find(
-    ([command]) => command === CSL_COMMAND,
-  )![3] as (params: Record<string, string>) => Promise<string>;
+  const handlerOf = (name: string) =>
+    registerCliHandler.mock.calls.find(([command]) => command === name)![3] as (
+      params: Record<string, string>,
+    ) => Promise<string>;
 
   const held = stack.move();
   return {
     csl: async (params: Record<string, string>) =>
-      JSON.parse(await handler(params)) as CslResponse,
+      JSON.parse(await handlerOf(CSL_COMMAND)(params)) as CslResponse,
+    resolve: async (params: Record<string, string>) =>
+      JSON.parse(await handlerOf(RESOLVE_COMMAND)(params)) as ResolveResponse,
     [Symbol.asyncDispose]: () => held[Symbol.asyncDispose](),
   };
 }
@@ -189,6 +193,53 @@ describe("zotlit:csl for one note", () => {
 
     expect(await vault.csl({ style: APA, file: NOTE_PATH })).toMatchObject({
       errors: [{ code: "flags-invalid" }],
+    });
+  });
+
+  it.each<[Record<string, string>, string]>([
+    [{ file: NOTE_PATH, colour: "red" }, "Unknown parameter 'colour'"],
+    [{ "--file": NOTE_PATH }, "Run the command with file=<value>, without --."],
+    [{ file: "true" }, "file requires a value."],
+  ])("refuses the parameters %j", async (params, message) => {
+    await using vault = await cslVault({ note: {}, vaultStyle: APA });
+
+    expect(await vault.csl(params)).toMatchObject({
+      errors: [
+        { code: "flags-invalid", message: expect.stringContaining(message) },
+      ],
+    });
+  });
+});
+
+describe("zotlit:resolve parameters", () => {
+  it("refuses a bare file and gives the recovery for a -- token", async () => {
+    await using vault = await cslVault({ note: {}, vaultStyle: APA });
+
+    expect(await vault.resolve({ file: "true" })).toMatchObject({
+      errors: [{ code: "flags-invalid", message: "file requires a value." }],
+    });
+    expect(await vault.resolve({ "--verbose": "true" })).toMatchObject({
+      errors: [
+        {
+          code: "flags-invalid",
+          message: expect.stringContaining(
+            "Use a supported parameter as name=value, without --",
+          ),
+        },
+      ],
+    });
+  });
+
+  it("refuses a parameter it does not take", async () => {
+    await using vault = await cslVault({ note: {}, vaultStyle: APA });
+
+    expect(await vault.resolve({ file: NOTE_PATH, style: APA })).toMatchObject({
+      errors: [
+        {
+          code: "flags-invalid",
+          message: expect.stringContaining("Unknown parameter 'style'"),
+        },
+      ],
     });
   });
 });

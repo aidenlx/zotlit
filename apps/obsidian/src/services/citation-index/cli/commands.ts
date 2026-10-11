@@ -1,6 +1,7 @@
-import type { CliData, CliHandler } from "obsidian";
 // The citation commands and their response boundaries.
+import type { CliData, CliHandler } from "obsidian";
 
+import type { CliRejection } from "@/lib/cli-params";
 import type {
   CitationLookupAnswer,
   CitationLookupRequest,
@@ -26,6 +27,7 @@ import {
   fileNotFoundDiagnostic,
   keyNotFoundDiagnostic,
   notSettledDiagnostic,
+  rejectionDiagnostic,
   reportCandidates,
   reportGroups,
   reportOccurrences,
@@ -44,7 +46,7 @@ import {
   parseReferencesRequest,
   targetMismatch,
 } from "./request";
-import type { CitedBySelector, ParsedRequest } from "./request";
+import type { CitedBySelector } from "./request";
 
 export type { CitationsIdentity } from "./envelope";
 
@@ -287,13 +289,11 @@ function unavailable(command: CitationsCommand, echoed: EchoedFacts): string {
 
 function invalidRequest(
   command: CitationsCommand,
-  request: Extract<ParsedRequest<never>, { kind: "invalid" }>,
+  request: CliRejection,
 ): string {
   return envelope(command, {
     ok: false,
-    diagnostic: diagnostic("INVALID_SELECTOR", request.message, {
-      parameter: request.parameter,
-    }),
+    diagnostic: rejectionDiagnostic(request),
   });
 }
 

@@ -20,6 +20,7 @@ import {
   ITEMS,
   NOTES,
 } from "@zotlit/scripts/fixture";
+import type { FixtureAnnotation } from "@zotlit/scripts/fixture";
 
 import { obEval, obEvalUntil } from "./obsidian-cli.ts";
 
@@ -44,9 +45,10 @@ const embedded = annotations.filter(({ type }) => type === 3 || type === 4);
  * other Fixture Annotation on this Attachment carries its colour.
  */
 const target = annotations.find(
-  ({ type, color }) =>
-    type === 4 &&
-    annotations.filter((other) => other.color === color).length === 1,
+  (annotation): annotation is Extract<FixtureAnnotation, { type: 4 }> =>
+    annotation.type === 4 &&
+    annotations.filter((other) => other.color === annotation.color).length ===
+      1,
 )!;
 /**
  * The Fixture Note whose pasted images are the target Attachment's own

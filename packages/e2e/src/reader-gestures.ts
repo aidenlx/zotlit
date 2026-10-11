@@ -86,7 +86,7 @@ export async function armToolOnFirstPage(
     expect(
       await obEvalUntil(
         vaultId,
-        `(function(){${clientOf}const at=clientOf(${x},${y});return String(Math.abs(at.y-innerHeight/2)<innerHeight/4&&!!document.elementFromPoint(at.x,at.y));})()`,
+        `(function(){${clientOf}const at=clientOf(${x},${y});const page=${pdfView}.viewer.child.getPage(1).div;return String(Math.abs(at.y-innerHeight/2)<innerHeight/4&&page.contains(document.elementFromPoint(at.x,at.y)));})()`,
         { expected: "true" },
       ),
     ).toBe(true);

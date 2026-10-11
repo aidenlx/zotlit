@@ -1,0 +1,4 @@
+interface:
+  display_name: "ZotLit Query"
+  short_description: "Query Zotero Items and Annotations"
+  default_prompt: "Use $zotlit-query to find Zotero Items or Annotations and return the evidence I need."

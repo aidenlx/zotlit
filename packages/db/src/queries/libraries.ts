@@ -1,18 +1,24 @@
+import { groups, libraries } from "@drizzle/schema";
 import type { LibraryType } from "@drizzle/schema";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 
 import type { NodeDatabaseClient } from "@/client/node";
 import type { SQLocalDatabaseClient } from "@/client/web";
+import { readDatabaseLayout } from "@/layout";
 
 import { defineQuery } from "./_shared";
-import type { FindManyOptions, QueryRow } from "./_shared";
-import { hasClientRevisions, hasClientRevisionsAsync } from "./schema-version";
+import { hasClientRevisionsAsync } from "./schema-version";
 
 export interface Library {
   libraryID: number;
   type: LibraryType;
   /** Last committed Zotero server revision recorded for this Library. */
   version: number;
-  /** Last committed local client revision recorded for this Library. */
+  /**
+   * Last committed local client revision recorded for this Library; `null`
+   * when the copy has no `libraries.clientVersion` column.
+   */
   clientVersion: number | null;
   /** `groups.groupID` when {@link type} is `"group"`, `null` for the user library. */
   groupID: number | null;
@@ -20,74 +26,74 @@ export interface Library {
   name: string | null;
 }
 
-const libraryColumns = {
-  columns: { libraryID: true, type: true, version: true, clientVersion: true },
-  with: {
-    groups: {
-      columns: { groupID: true, name: true },
-    },
-  },
-} satisfies FindManyOptions<"libraries">;
+/** The columns of a Library row that a copy may lack. */
+export type LibraryColumns = { clientVersion: boolean };
 
-const librariesQuery = defineQuery<void>()((db) =>
-  db.query.libraries.findMany({
-    ...libraryColumns,
-    orderBy: { libraryID: "asc" },
-  }),
-);
+/**
+ * The Library reader: each personal and group Library of the copy with its
+ * group join, as one {@link Library} row, in `libraryID` order. It selects
+ * `clientVersion` only when `columns` says the copy has it. The synchronous
+ * queries here and the Item Query reader `readLibraries` build their
+ * statements with it.
+ */
+export function selectLibraries(
+  db: NodeDatabaseClient,
+  columns: LibraryColumns,
+  where?: SQL,
+) {
+  return db
+    .select({
+      libraryID: libraries.libraryID,
+      type: libraries.type,
+      version: libraries.version,
+      clientVersion: columns.clientVersion
+        ? sql<number | null>`${libraries.clientVersion}`
+        : sql<number | null>`null`,
+      groupID: groups.groupID,
+      name: groups.name,
+    })
+    .from(libraries)
+    .leftJoin(groups, eq(groups.libraryID, libraries.libraryID))
+    .where(and(inArray(libraries.type, ["user", "group"]), where))
+    .orderBy(asc(libraries.libraryID));
+}
 
-const legacyLibrariesQuery = defineQuery<void>()((db) =>
-  db.query.libraries.findMany({
-    columns: { libraryID: true, type: true, version: true },
-    with: libraryColumns.with,
-    orderBy: { libraryID: "asc" },
-  }),
-);
-
-const libraryByGroupIDQuery = defineQuery<{ groupID: number }>()(
-  (db, { placeholder }) =>
-    db.query.libraries.findMany({
-      ...libraryColumns,
-      where: { groups: { groupID: placeholder("groupID") } },
-      limit: 1,
-    }),
-);
-
-const legacyLibraryByGroupIDQuery = defineQuery<{ groupID: number }>()(
-  (db, { placeholder }) =>
-    db.query.libraries.findMany({
-      columns: { libraryID: true, type: true, version: true },
-      with: libraryColumns.with,
-      where: { groups: { groupID: placeholder("groupID") } },
-      limit: 1,
-    }),
-);
-
-type LibraryRow =
-  | QueryRow<typeof librariesQuery>
-  | QueryRow<typeof legacyLibrariesQuery>;
-
-function toLibrary(row: LibraryRow): Library {
+/** The Library columns of the copy behind `db`, from its layout. */
+function libraryColumns(db: NodeDatabaseClient): LibraryColumns {
   return {
-    libraryID: row.libraryID,
-    type: row.type,
-    version: row.version,
-    clientVersion: "clientVersion" in row ? row.clientVersion : null,
-    groupID: row.groups?.groupID ?? null,
-    name: row.groups?.name ?? null,
+    clientVersion: readDatabaseLayout(db).has("libraries", "clientVersion"),
   };
 }
 
+const librariesQuery = defineQuery<void>()(
+  (db, _operators, columns: LibraryColumns) => selectLibraries(db, columns),
+);
+
+const libraryByGroupIDQuery = defineQuery<{ groupID: number }>()(
+  (db, { placeholder }, columns: LibraryColumns) =>
+    selectLibraries(
+      db,
+      columns,
+      eq(groups.groupID, placeholder("groupID")),
+    ).limit(1),
+);
+
+const libraryByIDQuery = defineQuery<{ libraryID: number }>()(
+  (db, { placeholder }, columns: LibraryColumns) =>
+    selectLibraries(
+      db,
+      columns,
+      eq(libraries.libraryID, placeholder("libraryID")),
+    ).limit(1),
+);
+
 /**
- * Enumerate Zotero libraries with their group join. Mirrors v1's
- * `LibrariesFull` SQL but returns the raw `type` and group fields so the UI
- * can localize labels itself.
+ * Enumerate the personal and group Libraries with their group join. Mirrors
+ * v1's `LibrariesFull` SQL but returns the raw `type` and group fields so the
+ * UI can localize labels itself.
  */
 export function getLibraries(db: NodeDatabaseClient): Library[] {
-  const rows = hasClientRevisions(db)
-    ? librariesQuery.prepared(db).all()
-    : legacyLibrariesQuery.prepared(db).all();
-  return rows.map(toLibrary);
+  return librariesQuery.prepared(db, libraryColumns(db)).all();
 }
 
 /**
@@ -98,17 +104,55 @@ export function getLibraryByGroupID(
   db: NodeDatabaseClient,
   groupID: number,
 ): Library | null {
-  const row = hasClientRevisions(db)
-    ? libraryByGroupIDQuery.prepared(db).all({ groupID })[0]
-    : legacyLibraryByGroupIDQuery.prepared(db).all({ groupID })[0];
-  return row ? toLibrary(row) : null;
+  return (
+    libraryByGroupIDQuery
+      .prepared(db, libraryColumns(db))
+      .all({ groupID })[0] ?? null
+  );
 }
 
 export async function getLibrariesAsync(
   db: SQLocalDatabaseClient,
 ): Promise<Library[]> {
-  const rows = (await hasClientRevisionsAsync(db))
-    ? await librariesQuery.prepared(db).all()
-    : await legacyLibrariesQuery.prepared(db).all();
-  return rows.map(toLibrary);
+  return librariesQuery
+    .prepared(db, { clientVersion: await hasClientRevisionsAsync(db) })
+    .all();
+}
+
+/** Resolve a library's `groupID` (null for the user library). */
+export function groupIDForLibrary(
+  db: NodeDatabaseClient,
+  libraryID: number,
+): number | null {
+  return (
+    libraryByIDQuery.prepared(db, libraryColumns(db)).all({ libraryID })[0]
+      ?.groupID ?? null
+  );
+}
+
+/** Async-client form of {@link groupIDForLibrary}. */
+export async function groupIDForLibraryAsync(
+  db: SQLocalDatabaseClient,
+  libraryID: number,
+): Promise<number | null> {
+  const [row] = await libraryByIDQuery
+    .prepared(db, { clientVersion: false })
+    .all({ libraryID });
+  return row?.groupID ?? null;
+}
+
+/** Per-call `libraryID → groupID` cache; a batch resolves each library once. */
+export type GroupIDMemo = Map<number, number | null>;
+
+/** Resolve a library's `groupID` (null for the user library), caching per call. */
+export function resolveGroupID(
+  db: NodeDatabaseClient,
+  libraryID: number,
+  memo: GroupIDMemo,
+): number | null {
+  const cached = memo.get(libraryID);
+  if (cached !== undefined) return cached;
+  const groupID = groupIDForLibrary(db, libraryID);
+  memo.set(libraryID, groupID);
+  return groupID;
 }

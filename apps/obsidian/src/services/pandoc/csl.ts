@@ -40,7 +40,7 @@ export type CslErrorCode =
   | "style-invalid"
   /** The Resolved CSL Style could not be written to the materialization store. */
   | "csl-write-failed"
-  /** The command was given neither `style` nor `file`, or both. */
+  /** The command was given a parameter it does not take, or neither `style` nor `file`, or both. */
   | "flags-invalid"
   /** No vault note stands at the `file` path. */
   | "file-not-found"
@@ -182,14 +182,11 @@ function errorResponse(errors: CslError[]): CslResponse {
 }
 
 /** The answer to a request that names neither flag, or both. */
-export function flagsInvalidResponse(): CslResponse {
-  return errorResponse([
-    {
-      code: "flags-invalid",
-      message:
-        'Pass exactly one of style="<csl-id>" or file="<absolute-path>".',
-    },
-  ]);
+export const CSL_SELECTOR_MESSAGE =
+  'Pass exactly one of style="<csl-id>" or file="<absolute-path>".';
+
+export function flagsInvalidResponse(message: string): CslResponse {
+  return errorResponse([{ code: "flags-invalid", message }]);
 }
 
 /**

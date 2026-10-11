@@ -179,6 +179,26 @@ describe("Template Workbench Profile documents", () => {
     expect(output.profileDiagnostics).toEqual(diagnostics);
   });
 
+  it("refuses a second document selector before it reads the key", async () => {
+    const { handlers, getDocument } = makeHandlers();
+
+    const output = await handlers[TEMPLATE_DOCUMENT_RENDER_COMMAND]({
+      key: "not-a-key",
+      profile: "default",
+      document: "default.md",
+    });
+
+    expect(JSON.parse(output)).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "INVALID_SELECTOR",
+        message: "Provide exactly one of profile, document, or source.",
+        details: { parameter: "document" },
+      },
+    });
+    expect(getDocument).not.toHaveBeenCalled();
+  });
+
   it("renders an uninstalled source override against real item data without writes", async () => {
     const { handlers, getDocument, renderSource } = makeHandlers();
     const source = "---\nid: draft\n---\n# {{ zt.title }}";

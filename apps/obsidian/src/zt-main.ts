@@ -2,7 +2,7 @@ import { getLanguage, Plugin, requestUrl, View } from "obsidian";
 import type { FileSystemAdapter } from "obsidian";
 import semverGte from "semver/functions/gte";
 
-import { printableCliHandler } from "@/lib/cli-rejection";
+import { handlerCheckedFlags, printableCliHandler } from "@/lib/cli-rejection";
 import { DOCS_SITE_URL, WEB_WORKBENCH_ENABLED } from "@/lib/constants";
 import { DisposableAbortController } from "@/lib/disposables";
 import * as m from "@/lib/i18n/generated/messages";
@@ -34,11 +34,15 @@ import { registerCitekeyEditorNotices } from "./services/citekey-editor/notices"
 import { addDatabaseActions } from "./services/database/actions";
 import { libraryTagNames } from "./services/database/library-tag-names";
 import { reapReadClones } from "./services/database/reap-temps";
+import { reapExcerptTemps } from "./services/excerpt-image/reap-temps";
+import { registerAnnotationImageCli } from "./services/excerpt-image/register-cli";
 import { savedExcerptRequest } from "./services/excerpt-image/request";
 import { registerFileMenu } from "./services/file-menu";
 import { addGraphCitationsActions } from "./services/graph-citations/actions";
 import { addIndexedKeyActions } from "./services/indexed-key/actions";
 import { indexedKeyFileMenu } from "./services/indexed-key/menu";
+import { registerQueryCli } from "./services/item-query/cli";
+import { registerQueryMeasureCli } from "./services/item-query/measure";
 import { registerLibraryScopeCli } from "./services/library-scope/cli";
 import { registerLibraryScopeNotices } from "./services/library-scope/notices";
 import {
@@ -210,6 +214,7 @@ export default class ZotLitPlugin extends Plugin {
   /**
    * Every zotlit:* command registers here, so each handler rejects with the
    * text of its error: Obsidian prints any other rejection as [object Object].
+   * Its decoder, not Obsidian, reports a missing parameter.
    */
   override registerCliHandler(
     ...[command, description, flags, handler]: Parameters<
@@ -219,7 +224,7 @@ export default class ZotLitPlugin extends Plugin {
     super.registerCliHandler(
       command,
       description,
-      flags,
+      handlerCheckedFlags(flags),
       printableCliHandler(handler),
     );
   }
@@ -260,6 +265,7 @@ export default class ZotLitPlugin extends Plugin {
     const reapAbort = stack.use(new DisposableAbortController());
     void reapReadClones({ signal: reapAbort.signal });
     void reapCslStore({ signal: reapAbort.signal });
+    void reapExcerptTemps({ signal: reapAbort.signal });
 
     const { services } = buildServices(this, stack);
 
@@ -563,6 +569,16 @@ export default class ZotLitPlugin extends Plugin {
       templates: services.template,
       zoteroPref: services.zoteroPref,
     });
+
+    registerQueryCli(this, services.query);
+    registerAnnotationImageCli(this, services);
+
+    // Measurement-only: lets packages/e2e/src/query-measure.ts read the
+    // slices, statements, heap, and cancel times of a run. A dev-build port,
+    // never registered in a production build.
+    if (__DEV__) {
+      registerQueryMeasureCli(this, services.query);
+    }
 
     registerPandocResolve(this, {
       app: this.app,

@@ -116,7 +116,7 @@ function writeCache<TName extends string>(
   return table;
 }
 
-function buildTable<TName extends string>(
+export function buildTable<TName extends string>(
   canonicalRows: readonly CanonicalFieldRow[],
   aliasRows: readonly AliasFieldRow[],
   names: readonly TName[],

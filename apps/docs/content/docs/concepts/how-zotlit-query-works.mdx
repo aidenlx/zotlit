@@ -1,0 +1,120 @@
+---
+title: "How ZotLit Query works"
+description: "How ZotLit Query reads papers, files, and marks, and how filters, groups, and exact names shape the answer."
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+ZotLit Query answers questions about your Zotero libraries from the Obsidian CLI. You, or an agent that works for you, run one command, `zotlit:query`, and receive the answer as JSON.
+
+## Three kinds of records [#datasets]
+
+Your Zotero library holds three kinds of records that matter for research questions. ZotLit Query calls each kind a **Query Dataset**, and `from` selects one:
+
+| `from`        | One record is                     | Examples                                |
+| ------------- | --------------------------------- | --------------------------------------- |
+| `items`       | A paper, book, or other work      | A journal article, a thesis, a web page |
+| `attachments` | A file or link that belongs to it | A PDF, an EPUB, a saved snapshot        |
+| `annotations` | A mark that you made in that file | A highlight, a note, an image, ink      |
+
+`from=items` is the default. Standalone files and records in the trash are outside all three datasets.
+
+Each dataset connects to the others in both directions:
+
+```text
+          attachments ──►              annotations ──►
+  Paper ─────────────────────  File ─────────────────────  Mark
+ (items)    ◄── item         (attachments)  ◄── attachment  (annotations)
+
+  Paper ── annotations ──► every mark on all of its files
+  Mark  ── item ─────────► the paper that the mark belongs to
+```
+
+A paper lists its files in `attachments` and all its marks in `annotations`. A file names its paper in `item` and lists its marks in `annotations`. A mark names its file in `attachment` and its paper in `item`. The lists, such as a paper's `attachments`, are called **Relation Lists**.
+
+Because the connections run both ways, choose the dataset by the record that you count:
+
+- "Which papers have no PDF?" counts papers: start from `items` and look at each paper's files.
+- "Which linked files are missing?" counts files: start from `attachments`.
+- "Show my highlights on one paper" lists marks: start from `annotations` and select by their paper.
+
+## What a query does [#steps]
+
+Every query passes the same stages, in this order:
+
+```text
+ Target Libraries ──► filter ──► sort ──► limit ──► fields ──► rows
+ (where to look)    (which      (order)  (how     (which
+                     records)            many)     values)
+```
+
+1. `library` names the Target Libraries that the query reads: `personal` for My Library, `group:<groupID>` for a group library, a list of them, or `all`. Without `library`, it reads the libraries in the <UiLabel name={m.settings_library_scope_name()} /> setting.
+2. `filter` is a condition such as `tags.contains("to-read")`. A record joins the result when the condition is true for it. A condition can look through the Relation Lists, for example at the files of each paper.
+3. `sort` puts the records in order, such as `-date` for the newest first.
+4. `limit` sets the most records to return. The default is 100, and `limit=all` returns every match. `truncated: true` in the answer tells you that more records matched.
+5. `fields` names the values that each row returns, such as `title,date.year`. A path with `[]` reads one value from each element of a list: `attachments[].path` gives the location of every file of a paper.
+
+## How grouping counts records [#grouping]
+
+`group` puts the matching records into groups by one value and counts each group. A query that counts papers by year gives one group per year. Each group has its `value`, its `count`, and its first rows up to the `limit`. `totalCount` is the number of matching records.
+
+A paper has one year, but it can have several tags. With `[]`, as in `group='tags[].name'`, a paper joins one group for each of its tags:
+
+```text
+ Paper A  tags: methods, review  ──►  group "methods"  ◄──  Paper B  tags: methods
+                                 ──►  group "review"
+ Paper C  no tags                ──►  group null
+
+ groups: methods 2, review 1, null 1      totalCount: 3
+```
+
+Paper A counts in two groups, so the group counts add up to more than `totalCount`. A paper with no tag joins the `null` group. The same rule applies to Collections (`collections[]`) and to file types (`attachments[].fileType`).
+
+## Exact names come first [#exact-names]
+
+Collection paths and Tag names in a filter must match Zotero exactly, including letter case. A Collection path starts at the top-level Collection and joins each level with `/`, such as `Query thesis/Chapter 1`.
+
+`zotlit:query-values` lists the exact names, so a question runs in two steps:
+
+```text
+ "my thesis collection"
+          │
+          ▼
+ zotlit:query-values kind=collections match=thesis
+          │   returns: "Query thesis", "Query thesis/Chapter 1"
+          ▼
+ zotlit:query filter='collections.within("Query thesis")'
+```
+
+When a filter names a Collection path that no Target Library holds, the query still runs, and no record matches that path. The answer carries an `unknown-collection` warning with the closest existing paths. When another library holds the path, the warning also suggests the `library` value that includes it.
+
+## Agents, the guide, and the schema [#agents]
+
+The `zotlit-query` agent skill teaches an AI agent how to turn a research question into these commands. The skill holds the research workflow. Before it builds a query, the agent reads the details from two live sources in ZotLit:
+
+- `zotlit:query-guide` prints the guide for the ZotLit version that you run. It explains filters, fields, sorting, grouping, results, and cancelling, with tested examples.
+- `zotlit:query-schema` names every field of each dataset, the custom fields of your library, and the default values.
+
+Because the agent reads both sources at each start, its queries follow the ZotLit version installed in your vault.
+
+## See also
+
+<Cards>
+  <Card
+    title="Query your Zotero library"
+    description="Steps for common research questions, with commands to copy."
+    href="/docs/how-to/query-zotero-library"
+  />
+  <Card
+    title="Commands"
+    description="Every ZotLit Query command and parameter."
+    href="/docs/reference/commands#query-cli"
+  />
+  <Card
+    title="Install the ZotLit skill"
+    description="Add the ZotLit agent skills, including zotlit-query, to a vault."
+    href="/docs/install-skill"
+  />
+</Cards>

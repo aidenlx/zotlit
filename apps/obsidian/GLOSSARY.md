@@ -270,6 +270,14 @@ _Avoid_: token (the session credential the exchange returns), pairing code, logi
 The wire format of one `zotlit:*` command namespace — its envelope, payload fields, and diagnostic codes. Each namespace versions its own, so a bump in one says nothing about another. Distinct from the Template Contract, which is a promise about `zt` data rather than about an answer's shape.
 _Avoid_: contract version (names the number, not the thing); protocol (that is the wire format for ZotLit Companion, the Zotero add-on)
 
+**Diagnostic**:
+The failure answer of a CLI Contract: a stable code, a statement of the fault, the recovery action to follow, and the parameter or place it points at. Item Query's Diagnostic also carries a Diagnostic Report.
+_Avoid_: error object, failure payload, exception
+
+**CLI Dataset** _(Obsidian)_:
+The Obsidian adapter of one Query Dataset: its commands, flags, decoder, schema asset and guide. Two exist, Items and Annotations.
+_Avoid_: dataset config, query mode
+
 **Check Attempt**:
 One run of a Template Workbench check, identified apart from its source and its selection, so that the evidence it produced stays readable after either changes. A later rerun is a separate attempt, and a retained successful result never stands in for the current one.
 _Avoid_: attempt (bare), run, preview retention (the editor's, not the CLI's)

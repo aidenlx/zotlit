@@ -17,6 +17,7 @@ import {
   serializeTemplateData,
 } from "@zotlit/workbench/explorer";
 
+import type { CliRequest } from "@/lib/cli-params";
 import { FIELD_ZOTERO_KEY, RESERVED_KEYS } from "@/lib/constants";
 import { getLogger } from "@/lib/log";
 import { DEFAULT_PROFILE, parseProfileSelector } from "@/lib/profile-stamp";
@@ -47,6 +48,7 @@ import {
   envelope,
   initFailedDiagnostic,
   notSettledDiagnostic,
+  rejectionDiagnostic,
   templateFaultDiagnostic,
 } from "./envelope";
 import type {
@@ -76,7 +78,7 @@ import {
   parseStatusRequest,
   targetMismatch,
 } from "./request";
-import type { ParsedRequest, RenderRequest } from "./request";
+import type { RenderRequest } from "./request";
 import { schemaAssets } from "./schema";
 import {
   CITATION_TEMPLATE,
@@ -263,7 +265,7 @@ export function createTemplateWorkbenchHandlers(
   const gated =
     <T extends object>(
       command: WorkbenchCommand,
-      parse: (params: CliData) => ParsedRequest<T>,
+      parse: (params: CliData) => CliRequest<T>,
       run: (request: T, identity: WorkbenchIdentity) => Promise<string>,
     ): CliHandler =>
     async (params: CliData): Promise<string> => {
@@ -271,9 +273,7 @@ export function createTemplateWorkbenchHandlers(
       if (request.kind === "invalid") {
         return envelope(command, {
           ok: false,
-          diagnostic: diagnostic("INVALID_SELECTOR", request.message, {
-            parameter: request.parameter,
-          }),
+          diagnostic: rejectionDiagnostic(request),
         });
       }
 
@@ -450,9 +450,7 @@ export function createTemplateWorkbenchHandlers(
       if (request.kind === "invalid") {
         return envelope(TEMPLATE_STATUS_COMMAND, {
           ok: false,
-          diagnostic: diagnostic("INVALID_SELECTOR", request.message, {
-            parameter: request.parameter,
-          }),
+          diagnostic: rejectionDiagnostic(request),
         });
       }
 
@@ -714,9 +712,7 @@ export function createTemplateWorkbenchHandlers(
       if (request.kind === "invalid") {
         return envelope(TEMPLATE_GUIDE_COMMAND, {
           ok: false,
-          diagnostic: diagnostic("INVALID_SELECTOR", request.message, {
-            parameter: request.parameter,
-          }),
+          diagnostic: rejectionDiagnostic(request),
         });
       }
       return renderGuide(request.value);
@@ -727,9 +723,7 @@ export function createTemplateWorkbenchHandlers(
       if (request.kind === "invalid") {
         return envelope(TEMPLATE_SCHEMA_COMMAND, {
           ok: false,
-          diagnostic: diagnostic("INVALID_SELECTOR", request.message, {
-            parameter: request.parameter,
-          }),
+          diagnostic: rejectionDiagnostic(request),
         });
       }
       return envelope(TEMPLATE_SCHEMA_COMMAND, {
@@ -744,9 +738,7 @@ export function createTemplateWorkbenchHandlers(
       if (request.kind === "invalid") {
         return envelope(TEMPLATE_SOURCE_COMMAND, {
           ok: false,
-          diagnostic: diagnostic("INVALID_SELECTOR", request.message, {
-            parameter: request.parameter,
-          }),
+          diagnostic: rejectionDiagnostic(request),
         });
       }
 
@@ -784,9 +776,7 @@ export function createTemplateWorkbenchHandlers(
       if (request.kind === "invalid") {
         return envelope(FRONTMATTER_STATUS_COMMAND, {
           ok: false,
-          diagnostic: diagnostic("INVALID_SELECTOR", request.message, {
-            parameter: request.parameter,
-          }),
+          diagnostic: rejectionDiagnostic(request),
         });
       }
 
@@ -884,9 +874,7 @@ export function createTemplateWorkbenchHandlers(
       if (request.kind === "invalid") {
         return envelope(FRONTMATTER_SET_COMMAND, {
           ok: false,
-          diagnostic: diagnostic("INVALID_SELECTOR", request.message, {
-            parameter: request.parameter,
-          }),
+          diagnostic: rejectionDiagnostic(request),
         });
       }
       const { field } = request.value;
@@ -962,9 +950,7 @@ export function createTemplateWorkbenchHandlers(
       if (request.kind === "invalid") {
         return envelope(FRONTMATTER_REMOVE_COMMAND, {
           ok: false,
-          diagnostic: diagnostic("INVALID_SELECTOR", request.message, {
-            parameter: request.parameter,
-          }),
+          diagnostic: rejectionDiagnostic(request),
         });
       }
       const { field } = request.value;
@@ -1001,9 +987,7 @@ export function createTemplateWorkbenchHandlers(
       if (request.kind === "invalid") {
         return envelope(FRONTMATTER_REORDER_COMMAND, {
           ok: false,
-          diagnostic: diagnostic("INVALID_SELECTOR", request.message, {
-            parameter: request.parameter,
-          }),
+          diagnostic: rejectionDiagnostic(request),
         });
       }
       const { order } = request.value;

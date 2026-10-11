@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { printableCliHandler } from "./cli-rejection";
+import { handlerCheckedFlags, printableCliHandler } from "./cli-rejection";
 
 describe("printableCliHandler", () => {
   it("passes the answer through unchanged", async () => {
@@ -43,5 +43,24 @@ describe("printableCliHandler", () => {
     await expect(handler({})).rejects.toBe(
       "cancelAfterMs 'x' is not a time in milliseconds.",
     );
+  });
+});
+
+describe("handlerCheckedFlags", () => {
+  it("registers a required flag as optional, with the mark in its description", () => {
+    const flags = {
+      file: { value: "<path>", description: "Note path", required: true },
+      format: { value: "<json>", description: "Output format" },
+    };
+
+    expect(handlerCheckedFlags(flags)).toEqual({
+      file: { value: "<path>", description: "Note path (required)" },
+      format: { value: "<json>", description: "Output format" },
+    });
+    expect(flags.file.required).toBe(true);
+  });
+
+  it("keeps a command without flags", () => {
+    expect(handlerCheckedFlags(null)).toBeNull();
   });
 });

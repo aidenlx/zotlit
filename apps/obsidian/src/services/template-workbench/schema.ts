@@ -8,15 +8,6 @@ import { resourceReleaseUrl } from "@/lib/constants";
 /** The accepted `root` values, in the order the contract declares them. */
 export const CONTRACT_ROOT_NAMES: readonly ContractRoot[] = CONTRACT_ROOTS;
 
-export function parseContractRoot(
-  value: string | undefined,
-): ContractRoot | null {
-  return value !== undefined &&
-    (CONTRACT_ROOTS as readonly string[]).includes(value)
-    ? (value as ContractRoot)
-    : null;
-}
-
 /** Where a single root's schema is published, and what to save it as. */
 export interface SchemaAsset {
   url: string;

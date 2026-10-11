@@ -41,7 +41,7 @@ import {
 } from "./cli";
 import { loadCitationData, loadTemplateData, withSelectedNote } from "./data";
 import { diagnostic, envelope } from "./envelope";
-import type { WorkbenchCommand } from "./envelope";
+import type { WorkbenchCommand, WorkbenchIdentity } from "./envelope";
 import { GUIDE_TOPIC_NAMES } from "./guide";
 import {
   createInspectHandler,
@@ -59,15 +59,15 @@ import {
   TEMPLATE_SLOT_NAMES,
 } from "./request";
 import type {
-  DATA_PARAMS,
-  DOCUMENT_RENDER_PARAMS,
-  FRONTMATTER_EVAL_PARAMS,
-  FRONTMATTER_REMOVE_PARAMS,
-  FRONTMATTER_REORDER_PARAMS,
-  FRONTMATTER_SET_PARAMS,
-  GUIDE_PARAMS,
-  RENDER_PARAMS,
-  SOURCE_PARAMS,
+  DataParam,
+  DocumentRenderParam,
+  FrontmatterEvalParam,
+  FrontmatterRemoveParam,
+  FrontmatterReorderParam,
+  FrontmatterSetParam,
+  GuideParam,
+  RenderParam,
+  SourceParam,
 } from "./request";
 import { CONTRACT_ROOT_NAMES } from "./schema";
 import { choices } from "./vocabulary";
@@ -93,9 +93,8 @@ function keyFlag(): CliFlag {
 
 /**
  * The Indexed Key selector on a command an `example=` set can select instead.
- * Obsidian answers "Missing required parameter" before it calls the handler,
- * so an either/or selector is declared optional here and the parser reports
- * which of the two a call must name.
+ * Neither of the two is required alone: the parser reports which of the two
+ * a call must name.
  */
 function selectorKeyFlag(): CliFlag {
   return {
@@ -131,12 +130,12 @@ function rootFlag(): CliFlag {
   };
 }
 
-/** `format`'s `value` is a bare `|`-separated list, not `choices()`'s
- *  bracketed form: Obsidian's `--json`/`--markdown` alias sugar only fires
- *  when the declared flag value looks like that bare list. */
+/** `format`'s `value` keeps `choices()`'s bracketed form: Obsidian turns a
+ *  `json` or `--json` token into `format=json` before the handler when the
+ *  value is a bare `|`-separated list, so `--json` would pass the decoder. */
 function formatFlag(values: readonly string[]): CliFlag {
   return {
-    value: values.join("|"),
+    value: choices(values),
     description: "Output format, default json",
   };
 }
@@ -163,7 +162,7 @@ function dataFlags(): CliFlags {
     example: exampleFlag(),
     format: formatFlag(["json"]),
     ...expectationFlags(),
-  } satisfies Record<(typeof DATA_PARAMS)[number], CliFlag>;
+  } satisfies Record<DataParam, CliFlag>;
 }
 
 function guideFlags(): CliFlags {
@@ -172,7 +171,7 @@ function guideFlags(): CliFlags {
       value: choices(GUIDE_TOPIC_NAMES),
       description: "Guide topic",
     },
-  } satisfies Record<(typeof GUIDE_PARAMS)[number], CliFlag>;
+  } satisfies Record<GuideParam, CliFlag>;
 }
 
 function renderFlags(): CliFlags {
@@ -195,7 +194,7 @@ function renderFlags(): CliFlags {
     example: exampleFlag(),
     format: formatFlag(["markdown", "json"]),
     ...expectationFlags(),
-  } satisfies Record<(typeof RENDER_PARAMS)[number], CliFlag>;
+  } satisfies Record<RenderParam, CliFlag>;
 }
 
 function documentRenderFlags(): CliFlags {
@@ -214,7 +213,7 @@ function documentRenderFlags(): CliFlags {
       description: "Uninstalled document source to render in memory",
     },
     ...expectationFlags(),
-  } satisfies Record<(typeof DOCUMENT_RENDER_PARAMS)[number], CliFlag>;
+  } satisfies Record<DocumentRenderParam, CliFlag>;
 }
 
 function sourceFlags(): CliFlags {
@@ -224,7 +223,7 @@ function sourceFlags(): CliFlags {
       description: "Template to render",
       required: true,
     },
-  } satisfies Record<(typeof SOURCE_PARAMS)[number], CliFlag>;
+  } satisfies Record<SourceParam, CliFlag>;
 }
 
 function frontmatterEvalFlags(): CliFlags {
@@ -241,7 +240,7 @@ function frontmatterEvalFlags(): CliFlags {
     },
     format: formatFlag(["json"]),
     ...expectationFlags(),
-  } satisfies Record<(typeof FRONTMATTER_EVAL_PARAMS)[number], CliFlag>;
+  } satisfies Record<FrontmatterEvalParam, CliFlag>;
 }
 
 function frontmatterSetFlags(): CliFlags {
@@ -266,7 +265,7 @@ function frontmatterSetFlags(): CliFlags {
       description:
         "Merge strategy; defaults to replace on a new field, keeps the current strategy when omitted on an existing field",
     },
-  } satisfies Record<(typeof FRONTMATTER_SET_PARAMS)[number], CliFlag>;
+  } satisfies Record<FrontmatterSetParam, CliFlag>;
 }
 
 function frontmatterRemoveFlags(): CliFlags {
@@ -276,7 +275,7 @@ function frontmatterRemoveFlags(): CliFlags {
       description: "Managed Frontmatter field key to delete",
       required: true,
     },
-  } satisfies Record<(typeof FRONTMATTER_REMOVE_PARAMS)[number], CliFlag>;
+  } satisfies Record<FrontmatterRemoveParam, CliFlag>;
 }
 
 function frontmatterReorderFlags(): CliFlags {
@@ -287,7 +286,28 @@ function frontmatterReorderFlags(): CliFlags {
         "Complete, comma-separated permutation of the configured field keys, in write order",
       required: true,
     },
-  } satisfies Record<(typeof FRONTMATTER_REORDER_PARAMS)[number], CliFlag>;
+  } satisfies Record<FrontmatterReorderParam, CliFlag>;
+}
+
+/**
+ * The identity of the vault and the connected Zotero source that an envelope
+ * carries, read once the source is known.
+ */
+export async function readWorkbenchIdentity(deps: {
+  app: App;
+  zoteroPref: ZoteroPrefService;
+}): Promise<WorkbenchIdentity> {
+  await deps.zoteroPref.ready;
+  return {
+    vault: {
+      name: deps.app.vault.getName(),
+      path: (deps.app.vault.adapter as FileSystemAdapter).getBasePath(),
+    },
+    source: {
+      id: deps.zoteroPref.sourceId,
+      databasePath: deps.zoteroPref.databasePath,
+    },
+  };
 }
 
 export function registerTemplateWorkbench(
@@ -295,17 +315,8 @@ export function registerTemplateWorkbench(
   deps: TemplateWorkbenchRegistrationDeps,
 ): void {
   const getIdentity = async () => {
-    await Promise.all([deps.zoteroPref.ready, deps.profile.ready]);
-    return {
-      vault: {
-        name: deps.app.vault.getName(),
-        path: (deps.app.vault.adapter as FileSystemAdapter).getBasePath(),
-      },
-      source: {
-        id: deps.zoteroPref.sourceId,
-        databasePath: deps.zoteroPref.databasePath,
-      },
-    };
+    await deps.profile.ready;
+    return readWorkbenchIdentity(deps);
   };
   plugin.registerCliHandler(
     TEMPLATE_INSPECT_COMMAND,

@@ -2,6 +2,8 @@
 
 import type { CliData } from "obsidian";
 
+import { decodeCliParams, noCliParams, rejectionText } from "@/lib/cli-params";
+
 import { CONTRACT_VERSION } from "./contract";
 import {
   pandocCliFilter,
@@ -60,9 +62,8 @@ export function createPandocIntegrationHandlers(
 }
 
 function assertNoParameters(command: string, params: CliData): void {
-  if (Object.keys(params).length > 0) {
-    throw new TypeError(`${command} accepts no parameters`);
-  }
+  const request = decodeCliParams(params, noCliParams, { command });
+  if (request.kind === "invalid") throw new TypeError(rejectionText(request));
 }
 
 /** Man-style reference for ZotLit's part of the Native Pandoc Workflow. */
@@ -169,7 +170,10 @@ ERRORS
     style-unreadable             A CSL file of that style refuses to be read.
     style-invalid                That style is no standalone CSL style.
     csl-write-failed             The resolved CSL style could not be written.
-    flags-invalid                zotlit:csl was given neither style nor file, or both.
+    flags-invalid                A parameter that is missing, has no value, is
+                                 written as --name, or the command does not
+                                 take; or for zotlit:csl neither style nor
+                                 file, or both.
     style-property-invalid       The document's zotlit-csl holds no CSL style ID.
     language-property-invalid    The document's lang holds no language tag.
     profile-unavailable          The Imported Note's profile is unavailable.
