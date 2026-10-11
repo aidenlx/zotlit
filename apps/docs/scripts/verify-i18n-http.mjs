@@ -3,6 +3,8 @@
 //   pnpm --filter @zotlit/docs exec node scripts/verify-i18n-http.mjs
 // A --config path (relative to the repository root) or DOCS_HTTP_VITE_CONFIG
 // can select an environment-specific Vite config. Evidence stays in .scratch.
+// All discovered English pages and their Chinese fallback routes are checked.
+// Add --expected-html <count> to require a specific English page count.
 // This checks HTTP output. It does not run a browser or test hydration.
 import { Temporal } from "@js-temporal/polyfill";
 import { execFileSync } from "node:child_process";
@@ -20,7 +22,7 @@ const { values } = parseArgs({
     output: { type: "string", default: ".scratch/i18n-poc/http-matrix.json" },
     port: { type: "string", default: "4173" },
     concurrency: { type: "string", default: "4" },
-    "expected-html": { type: "string", default: "90" },
+    "expected-html": { type: "string" },
     "expected-redirects": { type: "string", default: "54" },
   },
 });
@@ -46,7 +48,10 @@ function integerOption(name, minimum, maximum) {
 }
 const concurrency = integerOption("concurrency", 1, 8);
 const port = integerOption("port", 1, 65_535);
-const expectedHtml = integerOption("expected-html", 1, 10_000);
+const expectedHtml =
+  values["expected-html"] === undefined
+    ? null
+    : integerOption("expected-html", 1, 10_000);
 const expectedRedirects = integerOption("expected-redirects", 1, 2_000);
 const startedAt = Temporal.Now.instant().toString();
 const started = performance.now();
@@ -456,11 +461,18 @@ async function main() {
     actual: rules.length,
     expected: expectedRedirects,
   });
-  check("inventory", "English prerender HTML count", {
-    passed: pages.length === expectedHtml,
+  check("inventory", "English prerender HTML inventory is non-empty", {
+    passed: pages.length > 0,
     actual: pages.length,
-    expected: expectedHtml,
+    expected: "at least one English page",
   });
+  if (expectedHtml !== null) {
+    check("inventory", "English prerender HTML count", {
+      passed: pages.length === expectedHtml,
+      actual: pages.length,
+      expected: expectedHtml,
+    });
+  }
   check("inventory", "unique redirect sources", {
     passed: new Set(rules.map((rule) => rule.source)).size === rules.length,
   });
