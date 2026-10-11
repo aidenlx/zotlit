@@ -4,17 +4,15 @@
 // invocation. The `_headers` file is lib/headers.ts.
 //
 // Query contract carried to every landing page (read by the redirect notice):
-//   lang=zh-CN — the request came from a /zh-CN path; v2 has no Chinese pages yet
+//   lang=zh-CN — the request came from a Chinese v1 path
 //   from=v1    — the request came from a frozen v1 permalink (notice trigger)
 //   src        — that v1 path, locale-neutral (e.g. /faq/slurp)
 // `from=v1` + `src` together let the notice rebuild the exact v1 URL as:
 //   zotlitLegacyUrl + (lang === "zh-CN" ? "/zh-CN" : "") + src
 //
-// ── zh-CN i18n follow-up ────────────────────────────────────────────────
-// v2 has no /zh-CN/... routes yet, so every Chinese path lands on its English
-// equivalent with a `lang=zh-CN` hint. Once zh-CN v2 pages render, replace the
-// two Chinese branches below with per-page 308s to /zh-CN/<equiv>, derived from
-// PAGE_MAP (no separate zh map to maintain).
+// Modern /zh-CN routes render through the locale router. Known Chinese v1
+// permalinks move permanently to the matching Chinese v2 pages, derived from
+// PAGE_MAP. Their translations must be complete before production deployment.
 
 import { zotlitLegacyUrl } from "./shared.js";
 import { PAGE_MAP, V1_ONLY } from "./v1-routes.js";
@@ -36,10 +34,7 @@ const external = (path: string): RedirectRule => ({
   status: 308,
 });
 
-/**
- * Every v1 permalink, in match order — the asset layer takes the first rule
- * whose source matches, so the specific Chinese routes precede the catch-all.
- */
+/** Exact v1 permalinks; modern locale routes remain with the router. */
 export function buildV1Redirects(): RedirectRule[] {
   const redirects: RedirectRule[] = [];
 
@@ -52,38 +47,25 @@ export function buildV1Redirects(): RedirectRule[] {
     });
   }
 
-  // Changelog → exact v1 page (external). zh entries stay specific and must
-  // precede the locale-stripping catch-all below so it doesn't swallow them.
+  // Changelog → exact v1 page (external).
   redirects.push(...V1_ONLY.en.map(external), ...V1_ONLY.zh.map(external));
 
-  // Known Chinese v1 permalinks → closest English v2 page (temporary until
-  // zh-CN v2 pages exist), tagged so the notice can offer the exact v1 page.
+  // Known Chinese v1 permalinks → closest Chinese v2 page, tagged so the
+  // notice can offer the exact v1 page.
   for (const [from, to] of Object.entries(PAGE_MAP)) {
     redirects.push({
       source: `/zh-CN${from}`,
-      destination: `${to}${q(from, "zh-CN")}`,
-      status: 307,
+      destination: `/zh-CN${to}${q(from, "zh-CN")}`,
+      status: 308,
     });
   }
 
-  // `/zh-CN` itself → the English home. Spelled out because the catch-all
-  // below also matches the bare prefix but rebuilds it as `/zh-CN`, looping.
-  // Carries no `from=v1`/`src`: v1's root is not a page worth linking back to.
-  redirects.push({
-    source: "/zh-CN",
-    destination: "/?lang=zh-CN",
-    status: 307,
-  });
-
-  // Every other Chinese route → the same path in English. A path with no
-  // English page falls through to the normal 404.
-  redirects.push({
-    source: "/zh-CN/*",
-    destination: "/:splat?lang=zh-CN",
-    status: 307,
-  });
-
-  return redirects;
+  // v1 accepts trailing slashes. These old paths have no HTML assets on v2,
+  // so asset HTML normalization cannot redirect their slash variants for us.
+  return redirects.flatMap((rule) => [
+    rule,
+    { ...rule, source: `${rule.source}/` },
+  ]);
 }
 
 /** @see https://developers.cloudflare.com/workers/static-assets/redirects/ */
