@@ -132,6 +132,30 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
   }, 120_000);
 
   it("keeps requested answers and interactive reads responsive while refreshing 100,000 Items", async () => {
+    // A delivered push over unchanged bytes must leave downstream indexes alone.
+    const unchanged = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{
+          const s=app.plugins.plugins.zotlit.services;
+          const settled=Promise.withResolvers();
+          let active=false,publications=0;
+          using cleanup=new DisposableStack();
+          cleanup.defer(s.zoteroReads.on('changed',()=>publications++));
+          cleanup.defer(s.zoteroReads.on('refreshing',value=>{
+            if(value)active=true;else if(active)settled.resolve();
+          }));
+          cleanup.adopt(setTimeout(()=>settled.reject(Error('Push did not settle')),10000),clearTimeout);
+          s.zoteroReads.notifyExternalChange();
+          await settled.promise;
+          const hits=await s.itemLookup.search(${JSON.stringify(item.key)},{limit:1});
+          return JSON.stringify({publications,itemID:hits[0]?.item.itemID});
+        })()`,
+        30_000,
+      ),
+    );
+    expect(unchanged).toEqual({ publications: 0, itemID: item.itemID });
+
     const { value: evidence, workerHeap } = await measureWorkerHeap(
       vaultId,
       async () => {
@@ -286,9 +310,13 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
                 vaultId,
                 `(async()=>{
             const s=app.plugins.plugins.zotlit.services;
-            const refresh=s.zoteroReads.refresh();
+            using cleanup=new DisposableStack();
+            const changed=Promise.withResolvers();
+            cleanup.defer(s.zoteroReads.on('changed',()=>changed.resolve()));
+            cleanup.adopt(setTimeout(()=>changed.reject(Error('Changed push did not publish')),60000),clearTimeout);
             let refreshed=false,maximum=0,samples=0,correct=true,fresh=false;
-            const settled=refresh.then(()=>{refreshed=true;});
+            const settled=changed.promise.then(()=>{refreshed=true;});
+            s.zoteroReads.notifyExternalChange();
             const deadline=performance.now()+60000;
             do{
               const start=performance.now();
