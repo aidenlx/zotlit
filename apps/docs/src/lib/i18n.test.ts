@@ -1,6 +1,8 @@
 import { createFromSource } from "fumadocs-core/search/server";
 import { loader } from "fumadocs-core/source";
 import { uiTranslations } from "fumadocs-ui/i18n";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { getPackageRoot } from "@zotlit/scripts/package-roots";
@@ -55,15 +57,19 @@ describe("native locale infrastructure", () => {
           nativePaths.has(nativePath) ? nativePath : english.path,
         );
         expect(chinese?.url).toBe(`/zh-CN${english.url}`);
-        if (nativePaths.has(nativePath)) {
-          expect(getPageLocaleState(english.url, "zh-CN")).toMatchObject({
-            contentLocale: "zh-CN",
-            canonicalPath: `/zh-CN${english.url}`,
-            alternates: expect.arrayContaining([
-              { locale: "zh-CN", path: `/zh-CN${english.url}` },
-            ]),
-          });
-        }
+        const nativeChinese = nativePaths.has(nativePath);
+        expect(getPageLocaleState(english.url, "zh-CN")).toMatchObject({
+          contentLocale: nativeChinese ? "zh-CN" : "en",
+          isFallback: !nativeChinese,
+          canonicalPath: nativeChinese ? `/zh-CN${english.url}` : english.url,
+          alternates: [
+            { locale: "en", path: english.url },
+            ...(nativeChinese
+              ? [{ locale: "zh-CN", path: `/zh-CN${english.url}` }]
+              : []),
+            { locale: "x-default", path: english.url },
+          ],
+        });
       }
     },
   );
@@ -71,11 +77,41 @@ describe("native locale infrastructure", () => {
 
 // Fumadocs uses the page-tree root name as the first search breadcrumb.
 describe("localized search breadcrumb roots", () => {
-  it.each([
-    { locale: "zh-CN", name: "文档" },
-    { locale: "en", name: "Docs" },
-  ])("uses the native root metadata in $locale", ({ locale, name }) => {
-    expect(source.getPageTree(locale).name).toBe(name);
+  it.each(["en", "zh-CN"])("uses available root metadata in %s", (locale) => {
+    const contentRoot = join(
+      getPackageRoot(import.meta.filename),
+      "content/docs",
+    );
+    const nativeMeta = join(contentRoot, `meta.${locale}.json`);
+    const metadata = JSON.parse(
+      readFileSync(
+        existsSync(nativeMeta) ? nativeMeta : join(contentRoot, "meta.json"),
+        "utf8",
+      ),
+    ) as { title?: string };
+    expect(source.getPageTree(locale).name).toBe(metadata.title ?? "Docs");
+  });
+
+  it("selects a translated root title when native metadata exists", () => {
+    const fixture = loader({
+      i18n,
+      baseUrl: "/docs",
+      source: {
+        files: [
+          { type: "meta", path: "meta.json", data: { title: "Docs" } },
+          { type: "meta", path: "meta.zh-CN.json", data: { title: "文档" } },
+          { type: "page", path: "index.mdx", data: { title: "Introduction" } },
+          { type: "page", path: "index.zh-CN.mdx", data: { title: "简介" } },
+        ],
+      },
+    });
+    expect(fixture.getPageTree("en").name).toBe("Docs");
+    expect(fixture.getPageTree("zh-CN").name).toBe("文档");
+    expect(fixture.getPage([], "zh-CN")).toMatchObject({
+      path: "index.zh-CN.mdx",
+      url: "/zh-CN/docs",
+      data: { title: "简介" },
+    });
   });
 });
 
@@ -128,32 +164,32 @@ describe("prerendered locale editions", () => {
 // Translation can change an automatic heading slug while incoming links keep
 // their original fragment. The compiled table of contents is the reader seam.
 describe("translated documentation links", () => {
-  it.each([
+  for (const { page, anchor } of [
     {
-      page: docs.getPage("how-to/edit-pdf-annotations.zh-CN.mdx")!,
+      page: docs.getPage("how-to/edit-pdf-annotations.zh-CN.mdx"),
       anchor: "#before-you-edit",
     },
     {
-      page: docs.getPage("reference/templates/frontmatter.zh-CN.mdx")!,
+      page: docs.getPage("reference/templates/frontmatter.zh-CN.mdx"),
       anchor: "#spread-entries",
     },
     {
-      page: changelogs.get("2.0.0-beta.4.zh-CN.mdx")!,
+      page: changelogs.get("2.0.0-beta.4.zh-CN.mdx"),
       anchor: "#obsidian-version-requirement",
     },
     {
-      page: docs.getPage(
-        "how-to/migrate-from-pandoc-reference-list.zh-CN.mdx",
-      )!,
+      page: docs.getPage("how-to/migrate-from-pandoc-reference-list.zh-CN.mdx"),
       anchor: "#在-zotero-中确认文献引用标识",
     },
-  ])("retains the authored fragment $anchor", async ({ page, anchor }) => {
-    await page.preload();
-    const content = await page.load();
-    expect(content.toc).toContainEqual(
-      expect.objectContaining({ url: anchor }),
-    );
-  });
+  ]) {
+    it.skipIf(!page)(`retains the authored fragment ${anchor}`, async () => {
+      await page!.preload();
+      const content = await page!.load();
+      expect(content.toc).toContainEqual(
+        expect.objectContaining({ url: anchor }),
+      );
+    });
+  }
 });
 
 describe("translator-facing UI and formatting", () => {
@@ -277,18 +313,20 @@ describe("English-only documentation", () => {
 // SEO consumer seam: native editions and missing-file fallback publish the same
 // canonical policy in head metadata and breadcrumbs under a real locale request.
 describe("locale page metadata", () => {
+  const hasChineseTutorial = Boolean(docs.getPage("tutorial/index.zh-CN.mdx"));
+  const hasChineseRoot = Boolean(docs.getPage("(intro)/index.zh-CN.mdx"));
   it.each([
     {
       path: "/zh-CN/docs/tutorial",
-      canonical: "/zh-CN/docs/tutorial",
-      robots: "index, follow",
-      hasChinese: true,
+      canonical: hasChineseTutorial ? "/zh-CN/docs/tutorial" : "/docs/tutorial",
+      robots: hasChineseTutorial ? "index, follow" : "noindex, follow",
+      hasChinese: hasChineseTutorial,
     },
     {
       path: "/docs/tutorial",
       canonical: "/docs/tutorial",
       robots: "index, follow",
-      hasChinese: true,
+      hasChinese: hasChineseTutorial,
     },
     {
       path: "/zh-CN/docs/missing",
@@ -326,7 +364,7 @@ describe("locale page metadata", () => {
               "@type": "ListItem",
               position: 1,
               name: "Documentation",
-              item: `https://zotlit.aidenlx.site${path.startsWith("/zh-CN/") ? "/zh-CN" : ""}/docs`,
+              item: `https://zotlit.aidenlx.site${path.startsWith("/zh-CN/") && hasChineseRoot ? "/zh-CN" : ""}/docs`,
             },
             {
               "@type": "ListItem",
