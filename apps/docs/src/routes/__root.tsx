@@ -11,6 +11,7 @@ import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { HomeLayout } from "fumadocs-ui/layouts/home";
 
 import { LegacyBanner } from "@/components/legacy-banner";
+import { LocaleFallbackNotice } from "@/components/locale-fallback-notice";
 import { LocaleProvider } from "@/components/locale-provider";
 import { Message } from "@/components/message";
 import { Toaster } from "@/components/ui/toast";
@@ -94,14 +95,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         {/* The search dialog fetches `/api/search`, the fumadocs default. */}
         <LocaleProvider>
           <LegacyBanner />
-          {localeState.isPlaceholder && (
-            <p
-              lang="en"
-              className="border-b px-6 py-3 text-sm text-fd-muted-foreground"
-            >
-              {m.docs_locale_fallback({}, { locale: "en" })}
-            </p>
-          )}
+          <LocaleFallbackNotice state={localeState} />
           {children}
           <Toaster />
         </LocaleProvider>

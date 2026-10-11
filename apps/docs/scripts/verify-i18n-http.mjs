@@ -60,6 +60,8 @@ const betaOrigin = "https://zotlit-beta.aidenlx.site";
 const legacyOrigin = "https://zotlit-v1.aidenlx.site";
 const incomingQuery =
   "?probe=http-matrix&from=incoming&src=%2Fdo-not-use&lang=fr";
+const fallbackNoticeText =
+  "Simplified Chinese content is not ready. English content is shown.";
 const evidence = {
   schemaVersion: 1,
   startedAt,
@@ -329,9 +331,7 @@ function verifyHtml(group, result, path) {
       expected: "en",
     });
     check(group, `${label} visible fallback notice`, {
-      passed: body.includes(
-        "Simplified Chinese content is not ready. English content is shown.",
-      ),
+      passed: body.includes(fallbackNoticeText),
       actual: undefined,
       expected: "English fallback notice",
     });
@@ -340,8 +340,51 @@ function verifyHtml(group, result, path) {
       actual: undefined,
       expected: "no rendered translationStatus: placeholder",
     });
-    const internal = contentLinks(body);
-    record.internalContentLinks = internal;
+    const notices = [
+      ...body.matchAll(
+        /<div\b[^>]*\brole=(?:"note"|'note')[^>]*>([\s\S]*?)<\/div>/gi,
+      ),
+    ].filter(
+      (match) =>
+        attributes(match[0].match(/^<div\b[^>]*>/i)[0]).lang === "en" &&
+        visibleText(match[1]).includes(fallbackNoticeText),
+    );
+    const actions = notices.flatMap((notice) =>
+      [...notice[1].matchAll(/<a\b[^>]*>([\s\S]*?)<\/a>/gi)].map((anchor) => ({
+        notice: notice[0],
+        markup: anchor[0],
+        attributes: attributes(anchor[0].match(/^<a\b[^>]*>/i)[0]),
+        text: visibleText(anchor[1]).trim(),
+      })),
+    );
+    const expectedEnglishHref = canonicalPath + new URL(record.url).search;
+    const validEnglishAction =
+      notices.length === 1 &&
+      actions.length === 1 &&
+      actions[0].text === "Read in English" &&
+      actions[0].attributes.href === expectedEnglishHref &&
+      actions[0].attributes.target === undefined;
+    record.fallbackEnglishActions = actions.map((action) => ({
+      text: action.text,
+      href: action.attributes.href,
+      target: action.attributes.target ?? null,
+    }));
+    check(group, `${label} explicit English action preserves path and query`, {
+      passed: validEnglishAction,
+      actual: record.fallbackEnglishActions,
+      expected: [
+        { text: "Read in English", href: expectedEnglishHref, target: null },
+      ],
+    });
+    // Exempt only this verified anchor, never every link with the same URL.
+    const localeLinksBody = validEnglishAction
+      ? body.replace(
+          actions[0].notice,
+          actions[0].notice.replace(actions[0].markup, ""),
+        )
+      : body;
+    const internal = contentLinks(localeLinksBody);
+    record.internalContentLinks = contentLinks(body);
     check(group, `${label} internal HTML links retain locale`, {
       passed: internal.every((href) =>
         new URL(href, origin).pathname.startsWith("/zh-CN"),

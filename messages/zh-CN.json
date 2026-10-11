@@ -2509,5 +2509,6 @@
   "docs_repo_downloads": "{count} downloads",
   "docs_zotero_minimum_version": "Zotero {version} or newer",
   "docs_release_desktop_only": "desktop only",
-  "docs_locale_fallback": "Simplified Chinese content is not ready. English content is shown."
+  "docs_locale_fallback": "Simplified Chinese content is not ready. English content is shown.",
+  "docs_read_in_english": "Read in English"
 }
