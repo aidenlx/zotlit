@@ -453,6 +453,128 @@ Zotero 入口将导入范围严格限定在您右键点击的所在行（含子�
 
 表中两行 <UiLabel name={m.template_workbench_open_layout()} /> 是不同的命令。第一条打开正在编辑的配置方案文档，第二条从工作台视图内部将工作台切到前台。
 
+## Query CLI [#query-cli]
+
+Query CLI 供智能体和脚本读取文献、文件和阅读标记。同一条 `zotlit:query` 命令通过 `from` 选择查询数据集。[ZotLit Query 的工作原理](/docs/concepts/how-zotlit-query-works)介绍了数据集、筛选条件和分组。
+
+| 命令                      | 参数                                                                            | 结果                                               |
+| ------------------------- | ------------------------------------------------------------------------------- | -------------------------------------------------- |
+| `zotlit:query`            | `from`, `filter`, `fields`, `sort`, `group`, `limit`, `library`, `output`, `id` | 每个匹配的条目、附件或批注对应一行查询结果         |
+| `zotlit:query-schema`     | `from`                                                                          | 模式定义 URL、数据源自定义字段、数据集字段和默认值 |
+| `zotlit:query-values`     | `kind`, `library`, `match`, `limit`                                             | 每个文献库中的完整分类路径或准确标签名称           |
+| `zotlit:query-guide`      | `topic`                                                                         | 指定主题的说明；省略 `topic` 时返回完整指南        |
+| `zotlit:annotation-image` | `key`                                                                           | 图像或墨迹批注的本地 PNG 路径、格式和来源信息      |
+| `zotlit:query-cancel`     | `id`                                                                            | ZotLit 是否找到了指定查询并请求取消它              |
+
+`zotlit:query` 使用以下参数：
+
+| 参数      | 值                                                                                                                                       |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `from`    | `items`、`attachments` 或 `annotations`。默认为 `items`。                                                                                |
+| `filter`  | 针对所选数据集及其关联记录的筛选表达式。                                                                                                 |
+| `fields`  | 以逗号分隔的投影路径列表，或 JSON 数组。`fields=[]` 仅返回身份标识字段。                                                                 |
+| `sort`    | 以逗号分隔的列表，或由 `{ "field", "direction" }` 对象组成的 JSON 数组。`-field` 表示降序，`field` 或 `+field` 表示升序。                |
+| `group`   | 一个标量投影路径，或包含一个 `[]` 的路径，例如 `tags[].name`。结果中每个值对应一个分组。                                                 |
+| `limit`   | 正整数或 `all`。默认为 100。分组查询中，此限制分别应用于每个分组。                                                                       |
+| `library` | `personal`、`group:<groupID>`、以逗号分隔的列表、JSON 数组或 `all`。默认值来自 <UiLabel name={m.settings_library_scope_name()} /> 设置。 |
+| `output`  | 用于保存完整 JSON 结果的新文件绝对路径。                                                                                                 |
+| `id`      | 供 `zotlit:query-cancel` 使用的查询 ID。                                                                                                 |
+
+ZotLit 在引号和括号之外的逗号处分隔 `fields` 和 `sort`。
+
+### 查询数据集 [#query-datasets]
+
+根据每行结果所代表的对象选择数据集：
+
+| `from` 值     | 一行代表的对象 | 数据集内容                                       | 关联记录                     |
+| ------------- | -------------- | ------------------------------------------------ | ---------------------------- |
+| `items`       | 一篇文献       | 不在回收站中的顶级条目                           | `attachments`, `annotations` |
+| `attachments` | 一个文件或 URL | 不在回收站中的顶级条目下，同样不在回收站中的附件 | `item`, `annotations`        |
+| `annotations` | 一个阅读标记   | 顶级条目、其附件及其中的批注均不在回收站中       | `item`, `attachment`         |
+
+独立附件不属于这些数据集。关联列表中的记录也来自同样的数据集范围。在筛选条件中使用列表方法，在投影路径中显式写出 `[]`。
+
+例如，以下查询查找没有可由 ZotLit 在此计算机上打开的 PDF 的论文：
+
+```bash
+obsidian zotlit:query filter='attachments.filter(value.contentType == "application/pdf" && value.exists).isEmpty()' fields=title,citationKey
+```
+
+若需要每个文件单独占一行，请从附件数据集开始查询。以下查询查找已丢失的链接文件：
+
+```bash
+obsidian zotlit:query from=attachments filter='linkMode == "linked_file" && !exists' fields=item.title,path
+```
+
+在筛选条件中使用 Zotero 标识符选择记录。`indexedKey` 表示当前行的标识符，`item.indexedKey` 表示其父条目的标识符，`attachment.indexedKey` 表示批注父附件的标识符。标识符不属于目标文献库时，查询会返回警告，目标文献库范围保持不变。
+
+### 投影与分组 [#projection-and-grouping]
+
+`attachments[].path` 这样的路径会为每个附件返回一个值，保持源顺序，并保留原位置上的 `null`。完整的关联记录使用固定的摘要字段：
+
+| 记录 | 摘要字段                                                           |
+| ---- | ------------------------------------------------------------------ |
+| 条目 | `indexedKey`, `title`, `citationKey`                               |
+| 附件 | `indexedKey`, `title`, `contentType`, `linkMode`, `path`, `exists` |
+| 批注 | `indexedKey`, `type`, `text`, `comment`, `pageLabel`, `pageIndex`  |
+
+`group` 接受一个标量路径。以下命令按 `fileType` 统计附件数量，其值为 `pdf`、`epub`、`web` 或 `other`：
+
+```bash
+obsidian zotlit:query from=attachments group=fileType
+```
+
+每个分组包含 `value`、`count` 和 `rows`。`count` 是应用分组限制前的匹配数量。`totalCount` 统计所有匹配记录，`returnedCount` 统计所有分组实际返回的行数之和。
+
+包含一个 `[]` 的路径按列表中的每个元素分组。以下命令统计每个标签下的论文数量：
+
+```bash
+obsidian zotlit:query group='tags[].name' fields='[]' limit=1
+```
+
+一篇论文会加入其每个标签对应的分组，没有标签的论文归入 `null` 分组。分组可以重叠，因此各组数量之和可能大于 `totalCount`。使用 `collections[]` 可按分类统计论文，使用 `attachments[].fileType` 可按文件类型统计论文。
+
+以下命令返回每篇论文中最近修改的三条阅读标记：
+
+```bash
+obsidian zotlit:query from=annotations group=item.indexedKey sort=-dateModified limit=3 fields=text,item.title
+```
+
+### 分类与标签值 [#query-values]
+
+`zotlit:query-values` 列出筛选条件需要精确匹配的名称。按分类或标签筛选前，请先运行此命令。
+
+| 参数      | 值                                                                                                           |
+| --------- | ------------------------------------------------------------------------------------------------------------ |
+| `kind`    | `collections` 或 `tags`。必填。                                                                              |
+| `library` | `personal`、`group:<groupID>` 或 `all`。默认值来自 <UiLabel name={m.settings_library_scope_name()} /> 设置。 |
+| `match`   | 保留包含此文本的名称，不区分大小写。                                                                         |
+| `limit`   | 正整数或 `all`，分别应用于每个文献库。默认为 100。                                                           |
+
+分类值是用 `/` 连接的完整路径，也包含空分类。标签值为 `{ name, type }`，其中 `type` 为 `manual`、`auto` 或 `unknown`。每个文献库会报告其 `library` 选择器、`name`、`values`、`totalCount`、`returnedCount` 和 `truncated`。
+
+```bash
+obsidian zotlit:query-values kind=collections match=thesis
+```
+
+如果 `collections.contains` 或 `collections.within` 中的分类路径不属于任何目标文献库，查询会返回 `unknown-collection` 警告。其 `suggestions` 列出最接近的路径；如果该路径位于其他文献库，还会提供 `library` 值。
+
+### 模式定义、指南与结果 [#schema-guide-and-results]
+
+统一的 `query.schema.json` 目录包含 `datasets.items`、`datasets.attachments` 和 `datasets.annotations`，以及共享的函数、方法、属性和类型。`zotlit:query-schema` 返回目录 URL、数据源自定义字段和各数据集的默认值。添加 `from=items`、`from=attachments` 或 `from=annotations` 可缩小实时响应的范围。
+
+`zotlit:query-guide` 接受 `datasets`、`filter`、`fields`、`sort`、`group`、`results`、`schema`、`values` 或 `cancel` 作为主题。省略 `topic` 可输出完整指南。
+
+查询结果使用第 3 版 CLI 接口约定。JSON 响应封装包含 `command: "zotlit:query"`；`request.from` 指明数据集，`request.library` 指明其文献库。顶层 `libraries` 字段描述 ZotLit 实际读取的文献库。
+
+报告空结果前，请先阅读 `warnings`。查询失败时，请阅读 `diagnostic.report`，并按其最后给出的恢复操作处理。
+
+每行附件结果包含该附件及其父条目的 Zotero 标识符。每行批注结果还包含其父附件的 Zotero 标识符。批注的默认值包括 `pageLabel`、`pageIndex`、`hasExcerptImage`、附件详细信息、条目标题和文献引用标识（citation key）。需要源位置的几何信息时，请在 `fields` 中请求 `position`。当 `attachment.exists` 为 true 时，可读取 `attachment.path` 来打开源文档。
+
+当 `hasExcerptImage` 为 true 时，将批注的 Zotero 标识符作为 `key` 传给 `zotlit:annotation-image`。该命令返回文件路径，而非图像字节。
+
+`zotlit-query` 智能体技能在构造查询前会读取 `zotlit:query-guide` 和 `zotlit:query-schema`。请参阅[让 AI 智能体执行查询](/docs/how-to/query-zotero-library#agent)。
+
 ## 模板工作台 CLI [#template-workbench-cli]
 
 模板工作台在 Obsidian CLI 中注册了供智能体和脚本使用的命令，不属于命令面板。目前有五条可用命令：

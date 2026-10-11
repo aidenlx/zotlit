@@ -2,15 +2,16 @@
 
 Combined-content snapshot: 2026-10-11, source commit `eed6e179`, retained in `f051bf9c` before the review split.
 
-This report belongs to the stacked Chinese translation change. [PR #1446](https://github.com/aidenlx/zotlit/pull/1446) carries the infrastructure. The initial split restoration copied all 88 Chinese MDX files, seven metadata files, and the full Chinese catalog byte-for-byte from the [reviewed combined source](https://github.com/aidenlx/zotlit/tree/c1685c6997a20e1f3941169e0baa0ba5b0ee9bf6). Its catalog diff against the infrastructure changes 150 values: 149 new-message translations and the reviewed correction to `docs_redirect_original_page`. Both source PRs retain their contributions. The later split review corrected wording in 11 Chinese MDX files, as listed below. Their rows record the updated blob IDs. All other source choices and Chinese content blob IDs remain unchanged.
+This report belongs to the stacked Chinese translation change. [PR #1446](https://github.com/aidenlx/zotlit/pull/1446) carries the infrastructure. The initial split restoration copied all 88 Chinese MDX files, seven metadata files, and the full Chinese catalog byte-for-byte from the [reviewed combined source](https://github.com/aidenlx/zotlit/tree/c1685c6997a20e1f3941169e0baa0ba5b0ee9bf6). Its catalog diff against the infrastructure changes 150 values: 149 new-message translations and the reviewed correction to `docs_redirect_original_page`. Both source PRs retain their contributions. The split review corrected wording in 11 Chinese MDX files. A later upstream synchronization updates two reference files for Query CLI and diagnostic guidance. The sections and blob rows below record these changes. All other source choices and Chinese content blob IDs remain unchanged.
 
-Except for the marked post-split checks, the validation results below describe the pinned combined-content source. They do not establish final split-head CI, build, or browser checks. The shared verification report distinguishes infrastructure-only checks from combined checks and records the stacked-PR CI branch-filter limit.
+Except for the marked post-split and upstream-sync checks, the validation results below describe the pinned combined-content source. They do not establish final split-head CI, build, or browser checks. The shared verification report distinguishes infrastructure-only checks from combined checks and records the stacked-PR CI branch-filter limit.
 
 This report records the English and Simplified Chinese source pairs, translation choices, and known limits. It covers tracked source files. Temporary browser fixtures are excluded. [The editing guide](i18n.md) explains the file layout. [The verification report](i18n-verification.md) owns the final build, HTTP, browser, and review results.
 
 ## Result and scope
 
-- All **88 English MDX sources have 88 Chinese siblings**: 85 pages and 3 included partials. The completion audit covers frontmatter, headings, authored prose, tables, callouts, and component labels in each pair.
+- At the pinned pre-sync source, **88 English MDX sources have 88 Chinese siblings**: 85 pages and 3 included partials. The completion audit covers frontmatter, headings, authored prose, tables, callouts, and component labels in each pair.
+- After upstream synchronization, the tree has **90 English MDX sources and 88 Chinese siblings**. `docs/concepts/how-zotlit-query-works.mdx` and `docs/how-to/query-zotero-library.mdx` remain English-only and use locale fallback.
 - **65 Chinese files were completed or revised**, and **23 already-translated files were reviewed and retained** during the completion pass. That pass reports no remaining untranslated authored prose. These are source-review results, not a count of Chinese characters or a claim that every translation is correct.
 - All **7 navigation metadata pairs** are covered: 7 translated titles, including the root search breadcrumb.
 - Each root catalog has **157 `docs_*` keys**: 110 prior site messages plus 47 native UI messages. Five values retain intentional product or example text. All **1,910 non-docs top-level values**, including nested values, match the original `a635872e` baseline in each locale.
@@ -41,7 +42,16 @@ The split review made these changes after the exact restoration of the reviewed 
 - `docs/reference/templates/defaults.zh-CN.mdx`: Describe template customization as an action, without quoting an unverified control name.
 - `docs/reference/theme-hooks.zh-CN.mdx`: Render the three save actions from `annot_view_comment_save`, `annot_view_text_save`, and `annot_view_tags_save`.
 
-These files compile as MDX with the installed Fumadocs heading plugin. All 148 heading IDs, fenced code blocks, links, and include paths match the restored versions. The existing UI Label, Settings Path, and content suites pass all 10 tests. MDX formatting and the diff whitespace check pass. These focused checks do not replace the final split-head build and browser checks.
+Before upstream synchronization, these files compiled as MDX with the installed Fumadocs heading plugin. All 148 heading IDs, fenced code blocks, links, and include paths matched the restored versions. The existing UI Label, Settings Path, and content suites passed all 10 tests. MDX formatting and the diff whitespace check passed. These focused checks do not replace the final split-head build and browser checks.
+
+## Upstream synchronization corrections
+
+The English source for this update is `145c92d07668b94ca6e83519d6a9aa1f0bebec14`, which adds Query CLI and updates diagnostic recovery guidance.
+
+- `docs/reference/commands.zh-CN.mdx`: Add only the Query CLI section from the English reference. Preserve its five heading IDs, six command examples, 168 inline-code values, and two links. Keep the earlier Chinese content byte-for-byte. Library scope labels use the existing product message.
+- `docs/reference/template-workbench-cli.zh-CN.mdx`: Update only the diagnostic paragraph. The registry declares a default recovery action; a rejected parameter can carry a more specific action. The caller follows the response's `hint`.
+
+The existing translated-link test first failed because the Chinese commands table of contents lacked `#query-cli`. It passes after the section is added. The i18n and content suites pass all 28 tests with one worker. Both changed MDX files compile. All 29 prior heading IDs, code blocks, links, and includes remain intact; the Query section adds the five matching English heading IDs. The two newer Query guide pages remain English-only. These focused checks do not establish final-head CI, a build, or browser results.
 
 ## Source reconciliation
 
@@ -62,7 +72,7 @@ The per-file source column records the chosen wording, not exclusive authorship 
 
 ## Per-file MDX audit
 
-Paths below are relative to `apps/docs/content/`. Each row names the Chinese file and its 12-character Git blob ID at `eed6e179`, except the 11 marked post-split corrections; remove `.zh-CN` for its English source at the same commit. A filename beginning with `_` is an included partial, not a standalone page.
+Paths below are relative to `apps/docs/content/`. Each row names the Chinese file and its current 12-character Git blob ID after the documented corrections; remove `.zh-CN` for its English source. The correction sections identify the relevant source revisions. A filename beginning with `_` is an included partial, not a standalone page.
 
 - **Completed**: the completion pass translated remaining authored text or revised existing copy against English.
 - **Retained**: that pass reviewed already-translated authored copy and kept it.
@@ -143,11 +153,11 @@ Paths below are relative to `apps/docs/content/`. Each row names the Chinese fil
 
 | Chinese file | Chinese blob | Chosen source | Completion and correction | Decision or exception |
 | --- | --- | --- | --- | --- |
-| `docs/reference/commands.zh-CN.mdx` | `f1aff30f3466` | 1448 | Completed; standards update; post-split standards correction | The @ trigger option uses its product message. |
+| `docs/reference/commands.zh-CN.mdx` | `29e7c0bf1106` | 1448 | Completed; standards update; post-split standards correction; upstream sync | The @ trigger option uses its product message. The new Query CLI section matches the upstream command examples, technical values, links, and heading IDs. |
 | `docs/reference/index.zh-CN.mdx` | `3498ce275691` | 1448 | Retained | Shared technical-English rules apply. |
 | `docs/reference/protocol-links.zh-CN.mdx` | `8e2a1d1cb513` | 1448 | Completed | Action-name headings remain exact protocol identifiers. |
 | `docs/reference/settings.zh-CN.mdx` | `80cdfdad61fe` | 1448 | Completed; standards update; post-split standards correction | The imported-notes page name and default-style option use message-backed UI labels. |
-| `docs/reference/template-workbench-cli.zh-CN.mdx` | `59718a49cb48` | 1448 | Completed | Shared technical-English rules apply. |
+| `docs/reference/template-workbench-cli.zh-CN.mdx` | `cbfc93a8b65e` | 1448 | Completed; upstream sync | Diagnostic guidance distinguishes the registry default from a parameter-specific recovery action and follows the response hint. |
 | `docs/reference/templates/_field-aliases.zh-CN.mdx` | `018f580bd9d3` | 1447 | Retained | 1447 supplies the translated field-alias partial. |
 | `docs/reference/templates/_imported-note-frontmatter.zh-CN.mdx` | `0e8029e260e0` | 1447 | Retained | 1447 supplies the translated imported-note partial. |
 | `docs/reference/templates/data.zh-CN.mdx` | `9274ebeb8a16` | 1448 + 1447 | Completed | 1447 supplies missing authored sections; 18 generated tables retain English descriptions. |
@@ -451,7 +461,7 @@ Other scope limits:
 - Shared plugin, Companion, and Workbench catalog content outside `docs_*` retains its existing translation state.
 - Screenshots and other embedded images are reused. Their pixels have not been localized in this pass.
 - Shared OG artwork, third-party embeds, remote release data, and upstream product interfaces can contain English. Authored image labels and page metadata are part of the source-copy audit; translation of external or generated pixels is not.
-- Missing future locale files still use the normal English fallback. Existing Chinese files select the Chinese edition immediately. Coverage states in this report are documentation only; they do not control routing, indexing, or content availability.
+- The newer Query concept and how-to guide remain English-only after upstream synchronization. Missing locale files use the normal English fallback. Existing Chinese files select the Chinese edition immediately. Coverage states in this report are documentation only; they do not control routing, indexing, or content availability.
 
 ## Maintain and verify the report
 

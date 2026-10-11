@@ -119,7 +119,7 @@ Zotero 标识符（Indexed key）为 8 位的 Zotero 条目 key，可附带群�
 | `hint`    | 针对此错误代码的恢复操作。                                                                     |
 | `details` | 可选上下文：`parameter`、数据源预期值（`target`、`expected`、`actual`）、`key` 或 `template`。 |
 
-注册表中的每个错误代码都与恢复操作一同声明，每条诊断信息都通过 `hint` 携带该操作。因此，注册表中的错误代码始终带有 `hint`，调用方应按其提示处理。
+注册表中的每个错误代码都与默认恢复操作一同声明，每条诊断信息都带有 `hint`。被拒绝的参数可以改为携带自身对应的恢复操作，例如将以 `--` 开头的参数改写为 `name=value` 形式。调用方应遵循响应中的 `hint`。
 
 ## 诊断错误码 [#diagnostic-codes]
 
