@@ -59,54 +59,54 @@ ZotLit 不会去识别 Zotero Integration 的 `%% begin notes %%` 与 `%% end no
 <Callout type="info" title="一直在使用默认模板？">
   如果您在 Zotero Integration
   中使用的是默认模板，则无需执行任何模板迁移操作。ZotLit
-  提供了更加现代化且开箱即用的默认模板体系。
+  的内置默认模板能生成类似的文献笔记。
 </Callout>
 
-### Syntax differences [#syntax]
+### 语法差异 [#syntax]
 
-Zotero Integration uses Nunjucks. ZotLit uses Liquid by default. The table below maps common Nunjucks constructs to their Liquid equivalents.
+Zotero Integration 使用 Nunjucks。ZotLit 默认使用 Liquid。下表列出了常见 Nunjucks 结构对应的 Liquid 写法。
 
-| Nunjucks (Zotero Integration)                        | Liquid (ZotLit)                                                          |
-| ---------------------------------------------------- | ------------------------------------------------------------------------ |
-| `{{ title }}`                                        | `{{ zt.title }}`                                                         |
-| `{% set x = value %}`                                | `{% assign x = value %}`                                                 |
-| `{% for item in array %}`                            | `{% for item in array %}`                                                |
-| `{% include "[[file]]" %}`                           | `{% render "partial-name" with zt as zt %}`                              |
-| `loop.index`                                         | `forloop.index`                                                          |
-| `loop.first` / `loop.last`                           | `forloop.first` / `forloop.last`                                         |
-| `{{ date \| format("YYYY-MM-DD") }}`                 | `{{ zt.date \| date: "%Y-%m-%d" }}`                                      |
-| `{{ array \| filterby("prop", "startswith", "x") }}` | Template logic or [Eta JavaScript](/docs/reference/templates/eta-syntax) |
-| `{{ obj \| setAttribute("key", "val") }}`            | `{% assign key = val %}`                                                 |
+| Nunjucks（Zotero Integration）                       | Liquid（ZotLit）                                                  |
+| ---------------------------------------------------- | ----------------------------------------------------------------- |
+| `{{ title }}`                                        | `{{ zt.title }}`                                                  |
+| `{% set x = value %}`                                | `{% assign x = value %}`                                          |
+| `{% for item in array %}`                            | `{% for item in array %}`                                         |
+| `{% include "[[file]]" %}`                           | `{% render "partial-name" with zt as zt %}`                       |
+| `loop.index`                                         | `forloop.index`                                                   |
+| `loop.first` / `loop.last`                           | `forloop.first` / `forloop.last`                                  |
+| `{{ date \| format("YYYY-MM-DD") }}`                 | `{{ zt.date \| date: "%Y-%m-%d" }}`                               |
+| `{{ array \| filterby("prop", "startswith", "x") }}` | 模板逻辑或 [Eta JavaScript](/docs/reference/templates/eta-syntax) |
+| `{{ obj \| setAttribute("key", "val") }}`            | `{% assign key = val %}`                                          |
 
-### Data path changes [#data-paths]
+### 数据路径变化 [#data-paths]
 
-All template data in ZotLit lives under the `zt` variable. The table below maps Zotero Integration variables to their ZotLit equivalents.
+ZotLit 的所有模板数据都位于 `zt` 变量下。下表列出了 Zotero Integration 变量对应的 ZotLit 字段。
 
-| Zotero Integration                 | ZotLit                                   | Notes                                                                               |
-| ---------------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------- |
-| `title`                            | `zt.title`                               | All item fields move under `zt.`                                                    |
-| `citekey`                          | `zt.citationKey`                         |                                                                                     |
-| `desktopURI`                       | `zt.backlink`                            | A `zotero://select` URI                                                             |
-| `authors` (comma-separated string) | `zt.creators` (array of creator objects) | Use `{% for c in zt.creators %}` to iterate; each has `family`, `given`, `fullName` |
-| `annotation.annotatedText`         | `zt.text`                                | Inside the Annotation Section of a profile                                          |
-| `annotation.colorCategory`         | `zt.colorName`                           | Resolved palette name (`"yellow"`, `"red"`, etc.)                                   |
-| `annotation.imageRelativePath`     | `zt.imgLink`                             | A link helper; call `{{ zt.imgLink }}` for the Markdown link                        |
-| `annotation.comment`               | `zt.comment`                             | Plain-text comment                                                                  |
+| Zotero Integration             | ZotLit                          | 说明                                                                                 |
+| ------------------------------ | ------------------------------- | ------------------------------------------------------------------------------------ |
+| `title`                        | `zt.title`                      | 所有条目字段移到 `zt.` 下                                                            |
+| `citekey`                      | `zt.citationKey`                |                                                                                      |
+| `desktopURI`                   | `zt.backlink`                   | `zotero://select` URI                                                                |
+| `authors`（逗号分隔的字符串）  | `zt.creators`（创建者对象数组） | 使用 `{% for c in zt.creators %}` 遍历；每个对象都有 `family`、`given` 和 `fullName` |
+| `annotation.annotatedText`     | `zt.text`                       | 用于配置方案的标注部分                                                               |
+| `annotation.colorCategory`     | `zt.colorName`                  | 解析后的调色板颜色名称（`"yellow"`、`"red"` 等）                                     |
+| `annotation.imageRelativePath` | `zt.imgLink`                    | 链接辅助函数；调用 `{{ zt.imgLink }}` 获取 Markdown 链接                             |
+| `annotation.comment`           | `zt.comment`                    | 纯文本评注                                                                           |
 
-The [Template Data Explorer](/docs/how-to/explore-template-data) shows every available field for a live Zotero item. Use it to discover the ZotLit equivalent of any Zotero Integration variable.
+[模板数据浏览器](/docs/how-to/explore-template-data)会显示当前 Zotero 条目的所有可用字段。您可以用它查找任意 Zotero Integration 变量在 ZotLit 中的对应字段。
 
-### The persist-to-managed-region shift [#persist-vs-managed]
+### 从保留区块转向受管区域 [#persist-vs-managed]
 
-This is the most important conceptual difference between the two plugins.
+这是两个插件在概念上最重要的区别。
 
-- In Zotero Integration, `{% persist "id" %}` marks content to **keep** across re-imports. Everything outside persist blocks is re-rendered.
-- In ZotLit, `{% managed %}...{% endmanaged %}` marks content to **re-render** on update. Everything outside the managed region is kept.
+- 在 Zotero Integration 中，`{% persist "id" %}` 标记在重新导入时需要**保留**的内容。保留区块之外的所有内容都会重新渲染。
+- 在 ZotLit 中，`{% managed %}...{% endmanaged %}` 标记在更新时需要**重新渲染**的内容。受管区域之外的所有内容都会保留。
 
-The model is inverted. Zotero Integration marks what to keep. ZotLit marks what to replace.
+两者的模型相反：Zotero Integration 标记要保留的内容，ZotLit 标记要替换的内容。
 
-In Zotero Integration, you might have several persist blocks. In ZotLit, there is one managed region per note.
+Zotero Integration 可以有多个保留区块，而 ZotLit 的每篇笔记只有一个受管区域。
 
-**Zotero Integration template:**
+**Zotero Integration 模板：**
 
 ```text
 # {{ title }}
@@ -126,9 +126,9 @@ Authors: {{ authors }}
 {% endpersist %}
 ```
 
-**ZotLit equivalent (profile note source):**
+**对应的 ZotLit 写法（配置方案的笔记源码）：**
 
-The note body contains one managed region for generated content. Personal notes go outside the region.
+笔记正文包含一个用于生成内容的受管区域。个人笔记放在该区域之外。
 
 ```liquid
 # {{ zt.title }}
@@ -143,83 +143,83 @@ Authors: {% for c in zt.creators %}{{ c.fullName }}{% unless forloop.last %}, {%
 - [ ] Read this paper
 ```
 
-The Annotation Section is a separate part of the profile document (after the `--- zotlit:annotation ---` header). It controls the format of one annotation:
+标注部分是配置方案文档中独立的一部分（位于 `--- zotlit:annotation ---` 标题之后），用于控制单条标注的格式：
 
 ```liquid
 > {{ zt.text }}
 ```
 
-Key points:
+要点：
 
-- Personal notes that were inside `{% persist "notes" %}` move **outside** the managed region.
-- The annotation loop moves into the profile's [Annotation Section](/docs/reference/templates/profile-document). ZotLit iterates over annotations automatically.
-- `isFirstImport` and `lastImportDate` have no equivalent. The managed region re-renders all content on every update.
-- All annotations render every time. Stale annotations are removed automatically.
+- 将原来位于 `{% persist "notes" %}` 内的个人笔记移到受管区域**之外**。
+- 将标注循环移到配置方案的[标注部分](/docs/reference/templates/profile-document)。ZotLit 会自动遍历标注。
+- `isFirstImport` 和 `lastImportDate` 没有对应项。每次更新都会重新渲染受管区域的全部内容。
+- 每次都会渲染全部标注，过时标注会自动移除。
 
-### Template includes [#includes]
+### 引用其他模板 [#includes]
 
-Zotero Integration's `{% include "[[file]]" %}` becomes ZotLit's shared partials. Create a `zotlit-partial.<name>.md` file in the [template folder](/docs/concepts/how-templates-work#template-folder), then reference it with `{% render "<name>" with zt as zt %}`.
+Zotero Integration 的 `{% include "[[file]]" %}` 对应 ZotLit 的共享片段。在[模板文件夹](/docs/concepts/how-templates-work#template-folder)中创建 `zotlit-partial.<name>.md` 文件，再通过 `{% render "<name>" with zt as zt %}` 引用。
 
-See [Customize a template](/docs/how-to/customize-a-template) for the steps.
+操作步骤请参阅[自定义模板](/docs/how-to/customize-a-template)。
 
-### Citation formats [#citation-formats]
+### 引文格式 [#citation-formats]
 
-Zotero Integration registered one command per citation format. ZotLit renders every citation through the citation template, so the format is a filter choice inside that one document:
+Zotero Integration 为每种引文格式注册一个命令。ZotLit 则通过引文模板渲染所有引文，因此格式由同一份文档中的过滤器决定：
 
-| Zotero Integration format | Citation template                            |
-| ------------------------- | -------------------------------------------- |
-| `pandoc`                  | `{{ zt.citations \| pandoc_cite }}`          |
-| `latex`                   | `{{ zt.citations \| tex_cite }}`             |
-| `biblatex`                | `{{ zt.citations \| tex_cite: "autocite" }}` |
-| `template`                | The citation template itself                 |
+| Zotero Integration 格式 | 引文模板                                     |
+| ----------------------- | -------------------------------------------- |
+| `pandoc`                | `{{ zt.citations \| pandoc_cite }}`          |
+| `latex`                 | `{{ zt.citations \| tex_cite }}`             |
+| `biblatex`              | `{{ zt.citations \| tex_cite: "autocite" }}` |
+| `template`              | 引文模板本身                                 |
 
-See [`tex_cite`](/docs/reference/templates/syntax#tex-cite) for the prenote and postnote rules, and for the inputs LaTeX has no slot for.
+有关前注、后注的规则，以及 LaTeX 无对应位置可容纳的输入，请参阅 [`tex_cite`](/docs/reference/templates/syntax#tex-cite)。
 
-The citation template reads `zt.variant` to render two forms: the suggester inserts `main` on Enter and `alt` on Shift+Enter. One template therefore offers two of these formats at a time, where Zotero Integration gave each its own command.
+引文模板读取 `zt.variant` 来渲染两种形式：在建议列表中按 Enter 插入 `main`，按 Shift+Enter 插入 `alt`。因此，一个模板一次可以提供上述格式中的两种，而 Zotero Integration 会为每种格式分别提供一个命令。
 
-`formatted-citation` and `formatted-bibliography` render through a CSL style rather than the template. ZotLit produces that output when it [exports a note with citations](/docs/how-to/export-note-with-citations).
+`formatted-citation` 和 `formatted-bibliography` 通过 CSL 样式而非模板进行渲染。ZotLit 在[导出含引文的笔记](/docs/how-to/export-note-with-citations)时生成此类输出。
 
-## Features with no direct equivalent [#no-equivalent]
+## 没有直接对应项的功能 [#no-equivalent]
 
-| Zotero Integration feature                       | Workaround in ZotLit                                                                                          |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| `{% persist %}` (multiple blocks)                | Place personal content outside the single managed region                                                      |
-| `isFirstImport` / `lastImportDate`               | Managed region re-renders all content each time                                                               |
-| Annotation concatenation (`+` prefix)            | Merge text in Zotero's annotation editor                                                                      |
-| `pdfannots2json` (external annotation extractor) | Use Zotero's built-in PDF reader                                                                              |
-| Image DPI / format / quality / OCR settings      | ZotLit generates [excerpt images](/docs/concepts/excerpt-images) on demand; these settings have no equivalent |
-| `runImport()` public API                         | Use [ZotLit protocol links](/docs/reference/protocol-links)                                                   |
+| Zotero Integration 功能            | ZotLit 中的替代方式                                                          |
+| ---------------------------------- | ---------------------------------------------------------------------------- |
+| `{% persist %}`（多个区块）        | 将个人内容放在唯一的受管区域之外                                             |
+| `isFirstImport` / `lastImportDate` | 受管区域每次都重新渲染全部内容                                               |
+| 标注拼接（`+` 前缀）               | 在 Zotero 的标注编辑器中合并文本                                             |
+| `pdfannots2json`（外部标注提取器） | 使用 Zotero 内置的 PDF 阅读器                                                |
+| 图片 DPI、格式、质量和 OCR 设置    | ZotLit 按需生成[摘录图片](/docs/concepts/excerpt-images)；这些设置没有对应项 |
+| `runImport()` 公共 API             | 使用 [ZotLit 协议链接](/docs/reference/protocol-links)                       |
 
-## Features you gain [#features-you-gain]
+## 新增的可用功能 [#features-you-gain]
 
-- **No Better BibTeX dependency.** ZotLit reads Zotero's database directly in a more performant way.
-- **Template Workbench.** Live preview while editing templates, with the Data Explorer beside the editor.
-- **Profile match.** Auto-select templates by item type, tags, or collections.
-- **Graph citations.** Citation edges appear in Obsidian's graph view.
-- **Managed region.** Your edits outside the region survive every update, with no special syntax.
-- **Profile switching.** Change a note's template after creation.
+- **无需依赖 Better BibTeX。** ZotLit 直接读取 Zotero 数据库，效率更高。
+- **模板工作台。** 编辑模板时实时预览，并在编辑器旁使用数据浏览器。
+- **配置方案匹配。** 根据条目类型、标签或分类自动选择模板。
+- **图谱引文。** 引文关系会显示在 Obsidian 关系图谱中。
+- **受管区域。** 区域之外的修改在每次更新后都会保留，无需特殊语法。
+- **切换配置方案。** 创建笔记后仍可更换其模板。
 
-## See also
+## 另请参阅 [#see-also]
 
 <Cards>
   <Card
-    title="How to customize a template"
-    description="Edit a profile, the citation text, or a shared partial in the Template Workbench View."
+    title="自定义模板"
+    description="在模板工作台视图中编辑配置方案、引文文本或共享片段。"
     href="/docs/how-to/customize-a-template"
   />
   <Card
-    title="Literature notes and the managed region"
-    description="How ZotLit separates your writing from generated content."
+    title="文献笔记与受管区域"
+    description="ZotLit 如何区分您撰写的文字与生成的内容。"
     href="/docs/concepts/literature-notes-and-the-managed-region"
   />
   <Card
-    title="How templates work"
-    description="The three kinds of template document and how ZotLit finds them."
+    title="模板工作原理"
+    description="三种模板文档及 ZotLit 查找它们的方式。"
     href="/docs/concepts/how-templates-work"
   />
   <Card
-    title="Explore template data"
-    description="Browse available fields and copy paths in the Template Data Explorer."
+    title="浏览模板数据"
+    description="在模板数据浏览器中浏览可用字段并复制路径。"
     href="/docs/how-to/explore-template-data"
   />
 </Cards>

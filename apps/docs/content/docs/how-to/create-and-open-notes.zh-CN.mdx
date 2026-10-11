@@ -57,175 +57,174 @@ import { m } from "@/paraglide/messages.js";
 
 有关如何添加配置方案并声明匹配规则，请参阅[针对不同笔记使用不同模板](/docs/how-to/use-different-templates)。
 
-## Open the item's PDF in Obsidian [#open-pdf]
+## 在 Obsidian 中打开条目的 PDF [#open-pdf]
 
-A literature note's PDF attachment opens in Obsidian's own PDF reader, from the note, the quick switcher, or Zotero. See [Open an item's PDF in Obsidian](/docs/how-to/open-pdf-in-obsidian).
+您可以从文献笔记、快速切换器或 Zotero 中，在 Obsidian 自带的 PDF 阅读器里打开文献笔记对应的 PDF 附件。请参阅[在 Obsidian 中打开条目的 PDF](/docs/how-to/open-pdf-in-obsidian)。
 
-## Open a note from a Pandoc citation
+## 从 Pandoc 引文打开笔记 [#open-a-note-from-a-pandoc-citation]
 
-Turn on <UiLabel name={m.settings_citation_pandoc_citations_name()} /> and <UiLabel name={m.settings_citation_open_as_links_name()} /> under <SettingsPath page={m.settings_page_citations()} />. <UiLabel name={m.settings_citation_pandoc_citations_name()} /> is on by default, and <UiLabel name={m.settings_citation_open_as_links_name()} /> is off by default.
+在 <SettingsPath page={m.settings_page_citations()} /> 中开启 <UiLabel name={m.settings_citation_pandoc_citations_name()} /> 与 <UiLabel name={m.settings_citation_open_as_links_name()} />。其中 <UiLabel name={m.settings_citation_pandoc_citations_name()} /> 默认开启，<UiLabel name={m.settings_citation_open_as_links_name()} /> 默认关闭。
 
-Type or paste a Pandoc citation such as `@key` or `[@key]` in an editor.
+在编辑器中输入或粘贴 Pandoc 引文，例如 `@key` 或 `[@key]`。
 
-- In Live Preview, click the citation to open or create its Literature Note.
-- In Source mode, Ctrl-click the citation key. Use Cmd-click on macOS. A plain click places the caret.
-- In reading view, click the citation. A single-item citation opens its Literature Note. A multi-item citation opens a menu.
+- 在实时预览中，选择引文即可打开或创建对应的文献笔记。
+- 在源码模式中，按住 Ctrl 选择文献引用标识；macOS 上使用 Command。直接选择只会放置光标。
+- 在阅读视图中，选择引文。单条目引文会打开对应的文献笔记，多条目引文会打开菜单。
 
-You can also place the cursor on a recognized citation and run <Command inline name={m.command_open_citekey_name()} />. This command uses the same two settings.
+您也可以将光标放在已识别的引文上，运行 <Command inline name={m.command_open_citekey_name()} />。此命令同样受上述两个设置控制。
 
-ZotLit recognizes bare keys and citation clusters alike: `@key`, `-@key`, `[@key]`, `[@key, p. 3]`, and multi-cite `[@a; @b]`.
+ZotLit 同时识别独立标识和引文簇：`@key`、`-@key`、`[@key]`、`[@key, p. 3]`，以及多文献引文 `[@a; @b]`。
 
-A click resolves the citation key against Zotero's native citation key field, across every library in your <UiLabel name={m.settings_library_scope_name()} /> (set at the top of <SettingsPath />). When a Zotero item carries that key and already has a literature note, ZotLit opens the note. When the item exists but has no literature note yet, ZotLit creates one and opens it.
+选择引文时，ZotLit 会在 <UiLabel name={m.settings_library_scope_name()} /> 内的所有文献库中，按 Zotero 原生文献引用标识字段解析目标；作用域可在 <SettingsPath /> 顶部设置。如果匹配条目已有文献笔记，ZotLit 会打开它；如果条目存在但还没有文献笔记，则会先创建再打开。
 
-If the item is not found in your Zotero library, a notice appears: <UiLabel name={m.notice_citekey_not_found({ citekey: "…" })} /> If the database is unavailable, ZotLit shows <UiLabel name={m.notice_citekey_db_unavailable({ citekey: "…" })} />
+如果 Zotero 文献库中找不到对应条目，会显示 <UiLabel name={m.notice_citekey_not_found({ citekey: "…" })} />；如果数据库不可用，则显示 <UiLabel name={m.notice_citekey_db_unavailable({ citekey: "…" })} />。
 
-If several Zotero items carry that key, ZotLit asks which one you mean. A picker lists each item with its library and item key, and opens the one you choose. See [A key that matches several items](/docs/concepts/how-citekey-links-work#ambiguous-key).
+如果多个 Zotero 条目使用了相同标识，ZotLit 会询问您要打开哪一个。选取器会列出各条目及其文献库和条目标识键，然后打开您选择的条目。请参阅[同一标识匹配多个条目](/docs/concepts/how-citekey-links-work#ambiguous-key)。
 
-The four open-under-cursor commands use <UiLabel name={m.settings_citation_open_as_links_name()} />; what hovering shows follows <UiLabel name={m.settings_citation_hover_action_name()} /> instead. <UiLabel name={m.settings_citation_show_formatted_name()} /> does not control navigation.
+四个打开光标处目标的命令受 <UiLabel name={m.settings_citation_open_as_links_name()} /> 控制；悬停显示什么则由 <UiLabel name={m.settings_citation_hover_action_name()} /> 决定。<UiLabel name={m.settings_citation_show_formatted_name()} /> 不控制导航。
 
-<UiLabel name={m.settings_citation_open_as_links_name()} /> covers Literature
-Note wikilinks shown as citations as well. For recognized syntax and the
-complete interaction model, see [How in-text citation rendering and navigation
-work](/docs/concepts/how-citekey-links-work).
+<UiLabel name={m.settings_citation_open_as_links_name()} />
+同样适用于显示为引文的文献笔记双链。
+有关可识别语法与完整交互方式，请参阅[正文引文渲染与导航的工作原理](/docs/concepts/how-citekey-links-work)。
 
-## Find notes that cite a Literature Note
+## 查找引用某篇文献笔记的笔记 [#find-notes-that-cite-a-literature-note]
 
-Open the Literature Note whose incoming citations you want to inspect. Run:
+打开需要查看被引情况的文献笔记，运行：
 
 <Command name={m.command_show_cited_by_name()} />
 
-The <UiLabel name={m.cited_by_view_name()} /> Sidebar follows the active Literature Note. It groups citation occurrences by source note and shows the citation in its surrounding text.
+<UiLabel name={m.cited_by_view_name()} />
+侧边栏会跟随当前文献笔记，将引用位置按来源笔记分组，并展示引文及其上下文。
 
-Use the sidebar toolbar to narrow and arrange the results:
+使用侧边栏工具栏筛选和排列结果：
 
-- <UiLabel name={m.cited_by_show_search_filter()} /> filters by source-note path
-  or the shown citation context.
-- <UiLabel name={m.cited_by_show_more_context()} /> expands every result from a
-  compact excerpt to its enclosing Markdown block.
-- <UiLabel name={m.cited_by_change_sort_order()} /> sorts source notes by file
-  name, modified time, or created time, in either direction.
-- <UiLabel name={m.cited_by_collapse_results()} /> collapses or expands the
-  visible source-note groups.
+- <UiLabel name={m.cited_by_show_search_filter()} />
+  按来源笔记路径或显示的引文上下文筛选。
+- <UiLabel name={m.cited_by_show_more_context()} />
+  将每条结果从简短摘录展开为所在的完整 Markdown 块。
+- <UiLabel name={m.cited_by_change_sort_order()} />
+  按文件名、修改时间或创建时间对来源笔记排序，支持升序与降序。
+- <UiLabel name={m.cited_by_collapse_results()} />
+  折叠或展开可见的来源笔记分组。
 
-Select a citation excerpt to open its source note at that occurrence. Select <UiLabel name={m.cited_by_open_source()} /> on a group to open the note without targeting one occurrence. Hold Ctrl on Windows or Linux, or Command on macOS, to open either action in another pane.
+选择引文摘录会打开来源笔记并定位到该处引用。选择分组上的 <UiLabel name={m.cited_by_open_source()} /> 会打开笔记，但不定位到特定引用。执行任一操作时，在 Windows 或 Linux 上按住 Ctrl，在 macOS 上按住 Command，即可在另一窗格打开。
 
-## Create or update notes in bulk [#bulk]
+## 批量创建或更新笔记 [#bulk]
 
-You can create or update literature notes for many Zotero items at once from the Zotero right-click menu. This action requires the Companion.
+您可以通过 Zotero 右键菜单，一次为多个条目创建或更新文献笔记。此操作需要 Companion。
 
-### Choose the profile for new notes [#bulk-profiles]
+### 为新笔记选择配置方案 [#bulk-profiles]
 
-Every new note is created from a [profile](/docs/concepts/profiles), which decides its name, folder, properties, and body. When your vault holds added profiles, the confirmation carries a profile control for the new notes, above the item groups. Each control governs the rows it names:
+每篇新笔记都由[配置方案](/docs/concepts/profiles)创建，方案决定其名称、文件夹、属性和正文。当仓库中有自定义配置方案时，确认窗口会在条目分组上方提供用于新笔记的方案选择控件。每个控件只影响其标签指明的行：
 
-- <UiLabel name={m.batch_profile_unresolved_label({ count: "…" })} /> covers
-  items that no profile matched, or that several profiles matched. Its help
-  reads <UiLabel name={m.batch_profile_unresolved_help()} />.
-- <UiLabel name={m.batch_profile_affected_label({ count: "…" })} /> covers items
-  whose matched profile is unavailable. Its help reads
-  <UiLabel name={m.batch_profile_recovery_help()} />.
-- <UiLabel name={m.batch_profile_override_all_label()} /> overrides matching for
-  every new note in the batch.
+- <UiLabel name={m.batch_profile_unresolved_label({ count: "…" })} />
+  适用于未匹配任何方案或同时匹配多个方案的条目，帮助文本为
+  <UiLabel name={m.batch_profile_unresolved_help()} />。
+- <UiLabel name={m.batch_profile_affected_label({ count: "…" })} />
+  适用于匹配方案不可用的条目，帮助文本为
+  <UiLabel name={m.batch_profile_recovery_help()} />。
+- <UiLabel name={m.batch_profile_override_all_label()} />
+  会覆盖本批次所有新笔记的匹配结果。
 
-A control names its profile once every row it governs agrees on one. The line under it reads <UiLabel name={m.batch_profile_source_match()} /> when Profile Match selected that profile. To change the profile for those rows, select the control and choose another; its tooltip names the rows it governs. See [Use a different template for different notes](/docs/how-to/use-different-templates) for how matching picks a profile.
+当控件所影响的所有行使用同一方案时，它会显示该方案的名称。如果方案来自自动匹配，下方会显示 <UiLabel name={m.batch_profile_source_match()} />。选择控件可为这些行改用其他方案；其提示文本会说明影响范围。关于匹配机制，请参阅[针对不同笔记使用不同模板](/docs/how-to/use-different-templates)。
 
-### Update the entire library at once [#library-wide]
+### 一次更新整个文献库 [#library-wide]
 
-Use this command to create or update literature notes for every item in your library at once.
+此命令可一次为文献库中的每个条目创建或更新文献笔记。
 
-Open the command palette and run:
+打开命令面板并运行：
 
 <Command name={m.command_update_all_notes_name()} />
 
-Obsidian opens a confirmation modal that lists what will be created and what will be updated, and, when your vault holds added profiles, which profile creates the new notes. Review the list, then confirm to start the batch.
+Obsidian 会打开确认窗口，列出将创建和更新的笔记；如果仓库中有自定义方案，还会显示用于新笔记的方案。检查列表后确认，即可开始批量操作。
 
-In Zotero, right-click **My Library** or a group library in the sidebar. Choose <UiLabel name={m["zotero.menu_submenu.label"]()} /> > <UiLabel name={m["zotero.menu_collection_update_all.label"]()} />.
+在 Zotero 中，右键选择侧边栏的 **My Library** 或群组文献库，然后选择 <UiLabel name={m["zotero.menu_submenu.label"]()} /> > <UiLabel name={m["zotero.menu_collection_update_all.label"]()} />。
 
-The Obsidian command covers every library in your <UiLabel name={m.settings_library_scope_name()} /> (set in <SettingsPath />). The Zotero entry covers the library you right-clicked, whatever your library scope is.
+Obsidian 命令覆盖 <UiLabel name={m.settings_library_scope_name()} /> 中的全部文献库，作用域可在 <SettingsPath /> 中设置。Zotero 入口只覆盖您右键选择的文献库，不受此作用域限制。
 
-### Update one collection at once [#collection-wide]
+### 一次更新一个分类 [#collection-wide]
 
-In Zotero, right-click a collection in the sidebar and choose <UiLabel name={m["zotero.menu_submenu.label"]()} /> > <UiLabel name={m["zotero.menu_collection_update_all.label"]()} />. Obsidian opens the same confirmation modal, scoped to that collection.
+在 Zotero 侧边栏中右键选择分类，再选择 <UiLabel name={m["zotero.menu_submenu.label"]()} /> > <UiLabel name={m["zotero.menu_collection_update_all.label"]()} />。Obsidian 会打开相同的确认窗口，但操作范围限定为该分类。
 
-Items in nested subcollections are included, so you do not need to repeat the action on each child collection.
+操作包含嵌套子分类中的条目，无需逐个对子分类重复执行。
 
-If the collection no longer exists in your Zotero database, Obsidian reports <UiLabel name={m.notice_collection_not_found()} />
+如果 Zotero 数据库中已不存在该分类，Obsidian 会显示 <UiLabel name={m.notice_collection_not_found()} />。
 
-### Open or update a single item from Zotero
+### 从 Zotero 打开或更新单个条目 [#open-or-update-a-single-item-from-zotero]
 
-When exactly one regular item is selected in the Zotero library, the top-level context menu shows <UiLabel name={m["zotero.menu_item_open.label"]()} />. This creates the note if none exists, or opens the existing one. The behavior matches the quick switcher.
+在 Zotero 文献库中仅选择一个普通条目时，右键菜单顶层会显示 <UiLabel name={m["zotero.menu_item_open.label"]()} />。若文献笔记不存在，此操作会创建笔记；若已存在，则直接打开。其行为与快速切换器相同。
 
-To choose where the note appears in Obsidian, open the <UiLabel name={m["zotero.prefs_pane_label"]()} /> pane in Zotero's settings. Under <UiLabel name={m["zotero.prefs_open_section"]()} />, set <UiLabel name={m["zotero.prefs_pane_type"]()} /> to <UiLabel name={m["zotero.prefs_pane_type_active.label"]()} /> (the default), <UiLabel name={m["zotero.prefs_pane_type_tab.label"]()} />, <UiLabel name={m["zotero.prefs_pane_type_split.label"]()} />, or <UiLabel name={m["zotero.prefs_pane_type_window.label"]()} />. See [Where the link opens](/docs/reference/protocol-links#pane-type).
+若要选择笔记在 Obsidian 中打开的位置，请进入 Zotero 设置的 <UiLabel name={m["zotero.prefs_pane_label"]()} /> 面板。在 <UiLabel name={m["zotero.prefs_open_section"]()} /> 下，将 <UiLabel name={m["zotero.prefs_pane_type"]()} /> 设为 <UiLabel name={m["zotero.prefs_pane_type_active.label"]()} />（默认）、<UiLabel name={m["zotero.prefs_pane_type_tab.label"]()} />、<UiLabel name={m["zotero.prefs_pane_type_split.label"]()} /> 或 <UiLabel name={m["zotero.prefs_pane_type_window.label"]()} />。请参阅[链接的打开位置](/docs/reference/protocol-links#pane-type)。
 
-### Update multiple items at once
+### 一次更新多个条目 [#update-multiple-items-at-once]
 
 <Steps>
   <Step>
-    ### Select items in Zotero
+    ### 在 Zotero 中选择条目 [#select-items-in-zotero]
 
-    Select the items you want to update in your Zotero library.
-
-  </Step>
-  <Step>
-    ### Open the ZotLit submenu
-
-    Right-click the selection, then open the <UiLabel name={m["zotero.menu_submenu.label"]()} /> submenu.
+    在 Zotero 文献库中选择需要更新的条目。
 
   </Step>
   <Step>
-    ### Choose an update action
+    ### 打开 ZotLit 子菜单 [#open-the-zotlit-submenu]
 
-    - <UiLabel name={m["zotero.menu_item_update.label"]({ count: 2 })} /> creates a note for each item that does not have one yet, and refreshes existing notes with current Zotero data.
-    - <UiLabel name={m["zotero.menu_item_update_metadata.label"]()} /> refreshes only the frontmatter of existing notes, leaving the note body unchanged. Items without an existing literature note are skipped.
+    右键选择这些条目，再打开 <UiLabel name={m["zotero.menu_submenu.label"]()} /> 子菜单。
 
   </Step>
   <Step>
-    ### Confirm in Obsidian
+    ### 选择更新操作 [#choose-an-update-action]
 
-    Obsidian opens a confirmation modal that lists what will be created and what will be updated, and, when your vault holds added profiles, which profile creates the new notes. Review the list, then confirm to start the batch.
+    - <UiLabel name={m["zotero.menu_item_update.label"]({ count: 2 })} /> 会为尚无笔记的条目创建笔记，并用最新 Zotero 数据刷新已有笔记。
+    - <UiLabel name={m["zotero.menu_item_update_metadata.label"]()} /> 只刷新已有笔记的 frontmatter，不修改正文。尚无文献笔记的条目会被跳过。
+
+  </Step>
+  <Step>
+    ### 在 Obsidian 中确认 [#confirm-in-obsidian]
+
+    Obsidian 会打开确认窗口，列出将创建和更新的笔记；如果仓库中有自定义方案，还会显示用于新笔记的方案。检查列表后确认，即可开始批量操作。
 
   </Step>
 </Steps>
 
 <Callout type="warn">
-  A large selection may exceed the length limit for an `obsidian://` link. When
-  that happens, ZotLit sends the item list over HTTP to the ZotLit server
-  running inside Obsidian. If the server is not enabled, Zotero shows an alert
-  asking you to enable it or select fewer items. You can enable the ZotLit
-  server under <SettingsPath page={m.settings_page_advanced()} /> in the{" "}
-  <UiLabel name={m.settings_advanced_local_server_heading()} /> group. See [Set
-  up live updates](/docs/how-to/set-up-live-updates).
+  所选条目过多时，可能超过 `obsidian://` 链接的长度限制。此时 ZotLit 会通过
+  HTTP， 将条目列表发送给 Obsidian 内运行的 ZotLit
+  服务器。如果服务器尚未启用，Zotero 会提示您启用服务器或减少所选条目。您可在{" "}
+  <SettingsPath page={m.settings_page_advanced()} />
+  的 <UiLabel name={m.settings_advanced_local_server_heading()} />{" "}
+  选项组中启用它。 请参阅[设置实时更新](/docs/how-to/set-up-live-updates)。
 </Callout>
 
-## How ZotLit identifies literature notes
+## ZotLit 如何识别文献笔记 [#how-zotlit-identifies-literature-notes]
 
-ZotLit identifies literature notes by their `zotero-key` frontmatter field. For details on note identity and the managed region, see [Literature notes and the managed region](/docs/concepts/literature-notes-and-the-managed-region).
+ZotLit 通过 frontmatter 中的 `zotero-key` 字段识别文献笔记。有关笔记身份与受管区域，请参阅[文献笔记与受管区域](/docs/concepts/literature-notes-and-the-managed-region)。
 
-## See also
+## 另请参阅 [#see-also]
 
 <Cards>
   <Card
-    title="Create your first literature note"
-    description="A step-by-step tutorial for new users."
+    title="创建第一篇文献笔记"
+    description="面向新用户的分步教程。"
     href="/docs/tutorial/first-note"
   />
   <Card
-    title="Insert citations"
-    description="Insert citation markers while typing or from the command palette."
+    title="插入引文"
+    description="在输入时或通过命令面板插入引文标记。"
     href="/docs/how-to/insert-citations"
   />
   <Card
-    title="Keep notes up to date"
-    description="Update literature notes when your Zotero data changes."
+    title="保持笔记更新"
+    description="Zotero 数据变化后更新文献笔记。"
     href="/docs/how-to/keep-notes-updated"
   />
   <Card
-    title="Import Zotero notes"
-    description="Import Zotero's own note items into Obsidian."
+    title="导入 Zotero 笔记"
+    description="将 Zotero 自身的笔记条目导入 Obsidian。"
     href="/docs/how-to/import-zotero-notes"
   />
   <Card
-    title="Literature notes and the managed region"
-    description="How ZotLit separates your writing from generated content."
+    title="文献笔记与受管区域"
+    description="了解 ZotLit 如何区分您的写作内容与生成内容。"
     href="/docs/concepts/literature-notes-and-the-managed-region"
   />
 </Cards>

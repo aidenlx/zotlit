@@ -57,672 +57,665 @@ ZotLit 保存从 Zotero 导入笔记的目标位置。每个配置方案均可�
 
 下拉框保存 CSL 样式的唯一 ID。“默认”选项会使用 ZotLit 嵌入的内置样式。在原生 Pandoc 导出运行中，“默认”将采用 Pandoc 的默认样式（芝加哥作者-年份格式）。
 
-An unavailable style remains selected. In-text citations stay native, and the References Sidebar shows its minimal list. The row then reads <UiLabel name={m.settings_citation_references_style_warning()} />.
+不可用的样式仍会保持选中状态。正文引文保留原始形式，参考文献侧边栏显示精简列表。此时该行显示 <UiLabel name={m.settings_citation_references_style_warning()} />。
 
-The first formatting attempt shows <UiLabel name={m.notice_citation_style_missing()} /> once per plugin lifecycle. Its <UiLabel name={m.notice_citation_style_missing_action()} /> action opens ZotLit settings.
+首次尝试格式化时会显示 <UiLabel name={m.notice_citation_style_missing()} />，每次插件运行期间仅提示一次。其中的 <UiLabel name={m.notice_citation_style_missing_action()} /> 操作会打开 ZotLit 设置。
 
-Built-in export with an unavailable style stops and shows <UiLabel name={m.pandoc_export_error_style({ style: "…" })} /> A native Pandoc run of a note that uses the unavailable style stops with `style-missing`. Neither export uses another style.
+内置导出遇到不可用样式时会停止，并显示 <UiLabel name={m.pandoc_export_error_style({ style: "…" })} />。使用原生 Pandoc 导出采用该样式的笔记时，会以 `style-missing` 错误停止。两种导出方式都不会改用其他样式。
 
-A note can select its own style with the `zotlit-csl` property. The property takes the CSL style ID of a style installed in Zotero. Every other note keeps the vault selection. A native Pandoc run cites each note with the style the note uses in Obsidian, unless the note sets `csl` or `citation-style`, or you pass `--csl`.
+笔记可通过 `zotlit-csl` 属性选择自己的样式。该属性接受 Zotero 中已安装样式的 CSL 样式 ID。其他笔记仍使用仓库所选的样式。原生 Pandoc 导出会为每篇笔记使用其在 Obsidian 中采用的引文样式，除非笔记设置了 `csl` 或 `citation-style`，或您传入了 `--csl`。
 
-That note uses its own style for in-text citations, the <UiLabel name={m.references_view_name()} /> Sidebar, the <UiLabel name={m.settings_citation_hover_action_popover()} />, and the copied bibliography. The built-in export dialog opens on the same style. The dialog holds a style you pick there for that run alone, and never writes it to the note.
+该笔记的正文引文、<UiLabel name={m.references_view_name()} />侧边栏、<UiLabel name={m.settings_citation_hover_action_popover()} />及复制的参考文献表均使用自己的样式。内置导出对话框打开时也选中同一样式。在对话框中另选的样式仅用于本次导出，不会写入笔记。
 
-A note whose `zotlit-csl` names an unavailable style stops instead of using the vault selection. Its citations stay native. The <UiLabel name={m.references_view_name()} /> Sidebar shows its minimal list under the banner <UiLabel name={m.references_document_style_failed_title()} />, and the copy action stays unavailable.
+若笔记的 `zotlit-csl` 指定了不可用的样式，格式化会停止，不会改用仓库所选的样式。引文保留原始形式。<UiLabel name={m.references_view_name()} />侧边栏会在 <UiLabel name={m.references_document_style_failed_title()} /> 横幅下显示精简列表，复制操作仍不可用。
 
-Built-in export of that note opens on the same unavailable style and stops with a notice, unless you pick an available style in the dialog.
+内置导出对话框打开时也会选中该笔记所用的不可用样式，并以提示消息中止导出，除非您在对话框中选择可用的样式。
 
-An empty `zotlit-csl` property stops the note the same way, and its built-in export stops before the dialog opens. Remove the property to use the vault selection again.
+`zotlit-csl` 属性为空时，笔记的格式化同样会停止，内置导出则会在对话框打开前停止。移除此属性即可恢复使用仓库所选的样式。
 
-### Template document [#template-document]
+### 模板文档 [#template-document]
 
-The document that renders a literature note: its filename, its properties, and its body.
+用于渲染文献笔记的文档，定义其文件名、属性和正文。
 
-The main page exposes it through one row, <UiLabel name={m.settings_profile_document_name()} />, whose description reads <UiLabel name={m.settings_profile_document_desc()} />. <UiLabel name={m.settings_profile_edit()} /> opens the Profile in the Template Workbench View and creates the document from the built-in Literature Note Template while it does not exist yet.
+主设置页通过 <UiLabel name={m.settings_profile_document_name()} /> 这一行提供入口，说明为 <UiLabel name={m.settings_profile_document_desc()} />。<UiLabel name={m.settings_profile_edit()} /> 会在模板工作台视图中打开配置方案；若文档尚不存在，则先根据内置文献笔记模板创建文档。
 
-Once the document exists, the row also offers <UiLabel name={m.settings_profile_document_restore()} />, which moves it to Obsidian's configured trash and returns the Profile to the built-in template.
+文档创建后，该行还会提供 <UiLabel name={m.settings_profile_document_restore()} /> 操作，将文档移至 Obsidian 设置的回收站，并让配置方案恢复使用内置模板。
 
-### Properties [#properties]
+### 属性 [#properties]
 
-The properties ZotLit writes into every literature note it creates and updates.
+ZotLit 在每次创建或更新文献笔记时写入的属性。
 
-The properties live in the Profile's template document, edited through the same <UiLabel name={m.settings_profile_document_name()} /> row on the main page. While the Profile uses the built-in template, ZotLit writes its built-in field list. Creating the document starts from the fields the Profile already writes, so no field is lost.
+属性保存在配置方案的模板文档中，同样通过主设置页的 <UiLabel name={m.settings_profile_document_name()} /> 行编辑。配置方案使用内置模板时，ZotLit 会写入内置字段列表。创建模板文档时会沿用配置方案当前写入的字段，因此不会丢失任何字段。
 
-See [Configure frontmatter properties](/docs/how-to/configure-frontmatter-properties) for what each field does.
+各字段的作用详见[配置 frontmatter 属性](/docs/how-to/configure-frontmatter-properties)。
 
-## Literature note profiles [#profiles]
+## 文献笔记配置方案 [#profiles]
 
-Open this page from <SettingsPath page={m.settings_page_profiles()} />. A Profile's template document defines its note folder, citation style, and appearance. It can also carry a Profile Match: conditions that select the Profile automatically for new literature notes. See [Profiles](/docs/concepts/profiles) for how ZotLit selects one.
+从 <SettingsPath page={m.settings_page_profiles()} /> 打开此页。配置方案的模板文档定义笔记文件夹、引文样式和外观，还可包含配置方案匹配条件，用于自动为新文献笔记选择配置方案。ZotLit 的选择方式详见[配置方案](/docs/concepts/profiles)。
 
-The first row is <UiLabel name={m.settings_profile_default_name()} />, the default Profile: <UiLabel name={m.settings_profile_default_desc()} /> Its buttons are <UiLabel name={m.settings_profile_edit()} /> and <UiLabel name={m.workbench_more_actions()} />, whose menu holds <UiLabel name={m.settings_profile_share()} />.
+第一行是默认配置方案 <UiLabel name={m.settings_profile_default_name()} />，其说明为 <UiLabel name={m.settings_profile_default_desc()} />。该行提供 <UiLabel name={m.settings_profile_edit()} /> 和 <UiLabel name={m.workbench_more_actions()} /> 按钮，后者的菜单中包含 <UiLabel name={m.settings_profile_share()} />。
 
-The <UiLabel name={m.settings_profile_other_heading()} /> list holds every other Profile. Its header carries two buttons. <UiLabel name={m.settings_profile_add()} /> opens a dialog that reads <UiLabel name={m.settings_profile_destination_desc()} /> Its fields are <UiLabel name={m.settings_profile_name_name()} /> and <UiLabel name={m.settings_profile_folder_name()} />, and the new document then opens in the Template Workbench View. A valid name is enough to create the Profile. The folder is optional: while it is empty, its placeholder shows the folder the Profile inherits, for example <UiLabel name={m.settings_profile_same_as_default({ value: "literatures" })} />. <UiLabel name={m.command_import_profile_name()} /> reads a Profile in from your clipboard or a file. Until you add one, the list reads <UiLabel name={m.settings_profile_empty_desc()} />.
+<UiLabel name={m.settings_profile_other_heading()} />
+列表包含其他所有配置方案。列表标题旁有两个按钮。
+<UiLabel name={m.settings_profile_add()} /> 会打开对话框，显示说明
+<UiLabel name={m.settings_profile_destination_desc()} />
+，并提供 <UiLabel name={m.settings_profile_name_name()} /> 和
+<UiLabel name={m.settings_profile_folder_name()} />
+字段。创建的新文档随后会在模板工作台视图中打开。填写有效名称即可创建配置方案。文件夹为可选项；留空时，占位文本会显示该配置方案继承的文件夹，例如
+<UiLabel name={m.settings_profile_same_as_default({ value: "literatures" })} />
+。<UiLabel name={m.command_import_profile_name()} />
+可从剪贴板或文件导入配置方案。在添加配置方案之前，列表显示
+<UiLabel name={m.settings_profile_empty_desc()} />。
 
-Each added Profile has one row showing its label and a short Profile Match status:
+每个新增配置方案占一行，显示其名称和简短的匹配状态：
 
-| Status                                                                       | Meaning                                                                                                 |
-| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| <UiLabel name={m.settings_profile_match_status({ state: "absent" })} />      | The Profile has no Profile Match. You can select it manually.                                           |
-| <UiLabel name={m.settings_profile_match_status({ state: "evaluable" })} />   | The Profile has Match conditions that ZotLit can evaluate.                                              |
-| <UiLabel name={m.settings_profile_match_status({ state: "all" })} />         | The Profile Match accepts every item.                                                                   |
-| <UiLabel name={m.settings_profile_match_status({ state: "unevaluable" })} /> | ZotLit cannot evaluate the Profile Match. Open the Match tab of the Template Workbench View to see why. |
+| 状态                                                                         | 含义                                                                          |
+| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| <UiLabel name={m.settings_profile_match_status({ state: "absent" })} />      | 配置方案没有匹配条件，可手动选择。                                            |
+| <UiLabel name={m.settings_profile_match_status({ state: "evaluable" })} />   | 配置方案包含 ZotLit 可求值的匹配条件。                                        |
+| <UiLabel name={m.settings_profile_match_status({ state: "all" })} />         | 配置方案匹配条件接受所有条目。                                                |
+| <UiLabel name={m.settings_profile_match_status({ state: "unevaluable" })} /> | ZotLit 无法对配置方案匹配条件求值。请打开模板工作台视图的匹配标签页查看原因。 |
 
-A row carries one button for the Profile and one menu for everything else:
+每行提供一个配置方案编辑按钮和一个包含其他操作的菜单：
 
-| Control                                                                                           | Effect                                                                        |
-| ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| <UiLabel name={m.settings_profile_edit()} />                                                      | Opens the Profile in the Template Workbench View.                             |
-| <UiLabel name={m.workbench_more_actions()} /> > <UiLabel name={m.settings_profile_duplicate()} /> | Creates a copy of the Profile and opens it in the Template Workbench View.    |
-| <UiLabel name={m.workbench_more_actions()} /> > <UiLabel name={m.settings_profile_share()} />     | Copies the Profile, or saves it as a file, so someone else can read it in.    |
-| <UiLabel name={m.workbench_more_actions()} /> > <UiLabel name={m.settings_profile_delete()} />    | Moves the Profile document to Obsidian's configured trash after notes switch. |
+| 控件类型                                                                                          | 效果                                                             |
+| ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| <UiLabel name={m.settings_profile_edit()} />                                                      | 在模板工作台视图中打开配置方案。                                 |
+| <UiLabel name={m.workbench_more_actions()} /> > <UiLabel name={m.settings_profile_duplicate()} /> | 创建配置方案副本，并在模板工作台视图中打开。                     |
+| <UiLabel name={m.workbench_more_actions()} /> > <UiLabel name={m.settings_profile_share()} />     | 复制配置方案，或将其保存为文件，供他人导入。                     |
+| <UiLabel name={m.workbench_more_actions()} /> > <UiLabel name={m.settings_profile_delete()} />    | 笔记切换配置方案后，将原配置方案文档移至 Obsidian 设置的回收站。 |
 
-A new Profile starts with the default Profile's template. Its own document can set a folder, citation style, appearance, or Profile Match.
+新配置方案以默认配置方案的模板为起点。它自己的文档可设置文件夹、引文样式、外观或匹配条件。
 
-Each Profile is edited in its own document. Deleting a Profile that notes still use asks where those notes go first. The dialog can also move the notes into the folders of the Profile they go to. Its checkbox names those folders, for example <UiLabel name={m.settings_profile_delete_move_files({ folder: "books/" })} />. The move keeps the subfolders a note has under the deleted Profile's folder. A note outside that folder moves by its file name alone.
+每个配置方案都在自己的文档中编辑。删除仍有笔记使用的配置方案时，系统会先询问将这些笔记切换到哪个配置方案。对话框也可将笔记移入目标配置方案的文件夹。复选框会标出这些文件夹，例如 <UiLabel name={m.settings_profile_delete_move_files({ folder: "books/" })} />。移动时，会保留笔记在被删除配置方案文件夹下的子文件夹层级。原本不在该文件夹下的笔记则仅按文件名移动。
 
-### Partials [#partials]
+### 模板片段 [#partials]
 
-The <UiLabel name={m.settings_partials_heading()} /> list at <SettingsPath page={m.settings_page_profiles()} setting={m.settings_partials_heading()} /> holds every partial in the vault. A partial is a piece of template text that any template renders by name, so several Profiles can share it. The list sits below the Profile list, and it covers the whole vault rather than one Profile.
+<SettingsPath
+  page={m.settings_page_profiles()}
+  setting={m.settings_partials_heading()}
+/>
+中的 <UiLabel name={m.settings_partials_heading()} />
+列表包含仓库中的所有模板片段。模板片段是一段可由任意模板按名称调用并渲染的模板文本，因此可由多个配置方案共用。该列表位于配置方案列表下方，适用于整个仓库，而非某一个配置方案。
 
-Until you add one, the list reads <UiLabel name={m.settings_partials_empty_desc()} /> Its header carries one action, <UiLabel name={m.settings_partial_add()} />, which asks for a name and creates the file.
+在添加模板片段之前，列表显示 <UiLabel name={m.settings_partials_empty_desc()} />。标题旁提供 <UiLabel name={m.settings_partial_add()} /> 操作，输入名称后即可创建文件。
 
-Each partial has one row with its name and its vault path:
+每个模板片段占一行，显示其名称和仓库内路径：
 
-| Action                                                                                         | Effect                                                                     |
-| ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| <UiLabel name={m.settings_partial_open()} />                                                   | Opens the partial in the Template Workbench View.                          |
-| <UiLabel name={m.workbench_more_actions()} /> > <UiLabel name={m.settings_partial_delete()} /> | Moves the partial's file to Obsidian's configured trash after you confirm. |
+| 操作                                                                                           | 效果                                               |
+| ---------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| <UiLabel name={m.settings_partial_open()} />                                                   | 在模板工作台视图中打开模板片段。                   |
+| <UiLabel name={m.workbench_more_actions()} /> > <UiLabel name={m.settings_partial_delete()} /> | 确认后，将模板片段文件移至 Obsidian 设置的回收站。 |
 
-The delete confirmation reads <UiLabel name={m.settings_partial_delete_confirm_title()} /> with the body <UiLabel name={m.settings_partial_delete_confirm_body({ path: "…" })} /> It rewrites no caller, so every template that calls the deleted partial reports a missing partial afterwards.
+删除确认对话框的标题为 <UiLabel name={m.settings_partial_delete_confirm_title()} />，正文为 <UiLabel name={m.settings_partial_delete_confirm_body({ path: "…" })} />。删除操作不会修改调用该片段的模板，因此这些模板之后都会报告模板片段缺失。
 
-Renaming a partial is an ordinary Obsidian file rename. ZotLit has no rename action and rewrites no call, so each caller reports a missing partial until you change the name in the call yourself.
+重命名模板片段与在 Obsidian 中重命名普通文件相同。ZotLit 不提供重命名操作，也不会修改任何调用，因此在您手动更新调用中的名称之前，各调用方都会报告模板片段缺失。
 
-A partial file whose name belongs to another ZotLit template registers nothing and gets its own row instead:
+若模板片段文件使用了其他 ZotLit 模板的名称，它将不会注册为模板片段，而是单独显示一行：
 
-| Row                                                   | Text                                                                          |
+| 设置行                                                | 文本                                                                          |
 | ----------------------------------------------------- | ----------------------------------------------------------------------------- |
 | <UiLabel name={m.settings_partial_reserved_name()} /> | <UiLabel name={m.settings_partial_reserved_desc({ path: "…", name: "…" })} /> |
 
-See [template document naming](/docs/reference/templates/syntax#template-document-naming) for the reserved names and the filename rule.
+保留名称和文件名规则详见[模板文档命名](/docs/reference/templates/syntax#template-document-naming)。
 
-### Profile Match [#profile-match]
+### 配置方案匹配 [#profile-match]
 
-A Profile Match is the set of conditions that select a Profile automatically for new literature notes. Each condition tests a Zotero item's Library, item type, Tags, or Collections, and the Match lives in the Profile's template document. The default Profile is the fallback: it has no Profile Match.
+配置方案匹配是一组用于自动为新文献笔记选择配置方案的条件。每项条件检查 Zotero 条目的文献库、条目类型、标签或分类，匹配条件保存在配置方案的模板文档中。默认配置方案用于兜底，没有匹配条件。
 
-Nothing on this page edits a Match. A Profile row reports the status word from the table above, and the row's own controls act on the Profile rather than its conditions. Change the conditions in the Profile's document, on the <UiLabel name={m.workbench_tab_match()} /> tab of the Template Workbench View. See [Use different templates](/docs/how-to/use-different-templates) for that procedure, and [Profile Match](/docs/reference/templates/profile-match) for the condition language, its operators, and the Collection path rules.
+此页不提供匹配条件的编辑功能。配置方案行显示上表中的状态，其控件操作的是配置方案本身。要修改条件，请在模板工作台视图中打开配置方案文档，切换到 <UiLabel name={m.workbench_tab_match()} /> 标签页。操作步骤详见[使用不同模板](/docs/how-to/use-different-templates)；条件语言、运算符和分类路径规则详见[配置方案匹配](/docs/reference/templates/profile-match)。
 
-ZotLit also spells conditions out in words where it presents a Match: the import consent dialog describes an incoming Match as <UiLabel name={m.settings_profile_match_item_type_is({ type: "…" })} />, <UiLabel name={m.settings_profile_match_library_is_not({ library: "…" })} />, <UiLabel name={m.settings_profile_match_tags_contain({ tags: "…" })} />, or <UiLabel name={m.settings_profile_match_collections_inside({ collections: "…" })} />, joined by `and` or `or` as the Match requires, with a nested group written <UiLabel name={m.settings_profile_match_summary_group({ conditions: "…" })} />.
+ZotLit 展示匹配条件时也会提供文字说明。例如，导入确认对话框会将待导入的条件描述为 <UiLabel name={m.settings_profile_match_item_type_is({ type: "…" })} />、<UiLabel name={m.settings_profile_match_library_is_not({ library: "…" })} />、<UiLabel name={m.settings_profile_match_tags_contain({ tags: "…" })} /> 或 <UiLabel name={m.settings_profile_match_collections_inside({ collections: "…" })} />，按条件要求用 `and` 或 `or` 连接；嵌套条件组则写为 <UiLabel name={m.settings_profile_match_summary_group({ conditions: "…" })} />。
 
-ZotLit skips a Profile Match that it cannot evaluate. Causes include invalid expression syntax, unsupported fields or functions, incorrect arguments, an unknown Library, or an unknown item type. The Profile row then shows <UiLabel name={m.settings_profile_match_status({ state: "unevaluable" })} />, and the Match tab reports the problem in place of a result. Other Profiles continue to take part in automatic selection. A template document that ZotLit cannot load appears in <UiLabel name={m.settings_profile_excluded_heading()} /> and takes no part in selection.
+ZotLit 会跳过无法求值的配置方案匹配条件。原因可能包括表达式语法无效、字段或函数不受支持、参数错误、文献库未知或条目类型未知。此时配置方案行会显示 <UiLabel name={m.settings_profile_match_status({ state: "unevaluable" })} />，匹配标签页会显示问题说明，而非匹配结果。其他配置方案仍参与自动选择。ZotLit 无法加载的模板文档会显示在 <UiLabel name={m.settings_profile_excluded_heading()} /> 中，不参与选择。
 
-#### Selection for new notes
+#### 为新笔记选择配置方案 [#selection-for-new-notes]
 
-When exactly one Profile Match fits an item, ZotLit uses that Profile and creates the literature note directly. The creation notice reports the Profile, the match reason, and the note path.
+若只有一个配置方案的匹配条件符合条目，ZotLit 会使用该方案直接创建文献笔记。创建提示会显示配置方案、匹配原因和笔记路径。
 
-When two or more Profiles match, the Profile picker opens with the matching candidates identified. Select a Profile for the current operation. Exclusions in the Match conditions can prevent future overlaps.
+若有两个或更多配置方案匹配，配置方案选择器会打开，并标出匹配的候选方案。请选择本次操作使用的配置方案。您可在匹配条件中加入排除条件，以避免今后出现重叠。
 
-When none matches, the picker preselects <UiLabel name={m.settings_profile_default_name()} />. ZotLit uses it directly when no other Profile exists.
+若没有配置方案匹配，选择器会预先选中 <UiLabel name={m.settings_profile_default_name()} />。没有其他配置方案时，ZotLit 会直接使用默认方案。
 
-Selection follows this order:
+选择顺序如下：
 
-1. Your manual choice for the current operation.
-2. A Profile supplied by a command or a link from ZotLit Companion, the Zotero add-on.
-3. The one matching Profile.
-4. The default Profile.
+1. 您为本次操作手动选择的配置方案。
+2. 命令或 Zotero 插件 ZotLit Companion 链接提供的配置方案。
+3. 唯一匹配的配置方案。
+4. 默认配置方案。
 
-Once a creation preview is ready, its Profile and destination stay fixed for that operation. Changes to Match conditions apply to the next operation.
+创建预览准备就绪后，本次操作的配置方案和目标位置即已确定。对匹配条件的更改会在下一次操作中生效。
 
-In a batch, ZotLit selects a Profile separately for each item. A shared fallback choice covers unmatched or overlapping items; items with one matching Profile keep that selection. <UiLabel name={m.batch_profile_override_all()} /> applies your choice to every new note in the batch.
+批量操作中，ZotLit 会为每个条目单独选择配置方案。未匹配或匹配重叠的条目使用共同的兜底选项；只有一个匹配方案的条目则保留该选择。<UiLabel name={m.batch_profile_override_all()} /> 会将您选择的方案应用于本批次的所有新笔记。
 
-Existing notes keep their recorded Profile when Match conditions change. The changes apply to new notes.
+匹配条件更改后，现有笔记仍保留已记录的配置方案。更改仅影响新笔记。
 
-### Share and import [#profile-share-import]
+### 分享与导入 [#profile-share-import]
 
-The <UiLabel name={m.settings_profile_share()} /> dialog and import consent dialog control whether a Profile carries its Match conditions:
+<UiLabel name={m.settings_profile_share()} />
+对话框和导入确认对话框可控制配置方案是否携带匹配条件：
 
-| Control                                             | Default | Effect                                                                                                                    |
-| --------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------- |
-| <UiLabel name={m.profile_share_include_match()} />  | On      | Includes the Profile Match in the shared copy or file. Turning it off omits the Profile Match from that output.           |
-| <UiLabel name={m.profile_import_include_match()} /> | On      | Saves the incoming Profile Match with the imported Profile. Turning it off imports the Profile for manual selection only. |
+| 控件类型                                            | 默认值 | 效果                                                                     |
+| --------------------------------------------------- | ------ | ------------------------------------------------------------------------ |
+| <UiLabel name={m.profile_share_include_match()} />  | 开启   | 在分享的副本或文件中包含配置方案匹配条件。关闭后，输出中不包含匹配条件。 |
+| <UiLabel name={m.profile_import_include_match()} /> | 开启   | 导入配置方案时一并保存其匹配条件。关闭后，导入的配置方案仅供手动选择。   |
 
-The import consent dialog describes the incoming Match conditions in words. When the incoming Profile has no Profile Match, the dialog shows <UiLabel name={m.profile_match_absent()} /> and hides <UiLabel name={m.profile_import_include_match()} />.
+导入确认对话框会用文字描述待导入的匹配条件。若待导入的配置方案没有匹配条件，对话框会显示 <UiLabel name={m.profile_match_absent()} />，并隐藏 <UiLabel name={m.profile_import_include_match()} />。
 
-Library references, Collection paths, and Tag names stay as written during sharing and import. Review the imported conditions against your own Libraries, Collections, and Tags on the <UiLabel name={m.workbench_tab_match()} /> tab of the Template Workbench View.
+分享和导入时，文献库引用、分类路径和标签名称均保持原样。请在模板工作台视图的 <UiLabel name={m.workbench_tab_match()} /> 标签页中，对照自己的文献库、分类和标签检查导入的条件。
 
-## Imported notes [#imported-notes]
+## 导入笔记 [#imported-notes]
 
-Open this page from <SettingsPath page={m.settings_page_note_import()} />. It holds how notes imported from Zotero render. Their folder is on the [main page](#imported-note-folder).
+从 <SettingsPath page={m.settings_page_note_import()} /> 打开此页。此页设置从 Zotero 导入的笔记如何渲染，其文件夹则在[主设置页](#imported-note-folder)中设置。
 
-| Label                                                                 | Key                                   | Control  | Default      | Dependency | Storage |
-| --------------------------------------------------------------------- | ------------------------------------- | -------- | ------------ | ---------- | ------- |
-| <UiLabel name={m.settings_note_import_colored_highlights_name()} />   | `note.import-colored-highlights`      | Toggle   | Off          | None       | Synced  |
-| <UiLabel name={m.settings_note_import_highlight_mappings_name()} />   | `note.import-highlight-mappings`      | Sub-page | Built-in map | None       | Synced  |
-| <UiLabel name={m.settings_note_import_annotations_template_name()} /> | `note.import-annotations-as-template` | Toggle   | Off          | None       | Synced  |
+| 选项标签                                                              | 内部键名                              | 控件类型 | 默认值   | 依赖条件 | 生效范围 |
+| --------------------------------------------------------------------- | ------------------------------------- | -------- | -------- | -------- | -------- |
+| <UiLabel name={m.settings_note_import_colored_highlights_name()} />   | `note.import-colored-highlights`      | 开关     | 关闭     | 无       | 全局同步 |
+| <UiLabel name={m.settings_note_import_highlight_mappings_name()} />   | `note.import-highlight-mappings`      | 子页面   | 内置映射 | 无       | 全局同步 |
+| <UiLabel name={m.settings_note_import_annotations_template_name()} /> | `note.import-annotations-as-template` | 开关     | 关闭     | 无       | 全局同步 |
 
-The first and third rows are bindings of the default Profile; ZotLit stores them with the main page's bindings in `note.default-profile.bindings`.
+第一行和第三行是默认配置方案的绑定项；ZotLit 将它们与主设置页的绑定项一起存储在 `note.default-profile.bindings` 中。
 
-<UiLabel name={m.settings_note_import_highlight_mappings_name()} /> is a
-sub-page with one row per Zotero highlight color. Each row takes
+<UiLabel name={m.settings_note_import_highlight_mappings_name()} />
+是一个子页面，为每种 Zotero 高亮颜色提供一行设置。每行可选择
 <UiLabel name={m.settings_note_import_highlight_mark()} />
-, a circle emoji, or
+、圆形表情符号，或选择
 <UiLabel name={m.settings_note_import_highlight_custom()} />
-with an emoji of your own. The mappings apply to all Profiles.
+并填写自己的表情符号。这些映射适用于所有配置方案。
 
-See [Import Zotero notes](/docs/how-to/import-zotero-notes) for how the mappings render.
+映射的渲染效果详见[导入 Zotero 笔记](/docs/how-to/import-zotero-notes)。
 
-## Citations
+## 引文 [#citations]
 
-Open this page from <SettingsPath page={m.settings_page_citations()} />.
+从 <SettingsPath page={m.settings_page_citations()} /> 打开此页。
 
-### Citation suggestions
+### 引文建议 [#citation-suggestions]
 
-| Label                                                      | Key                                  | Control | Default | Dependency                                                    | Storage |
-| ---------------------------------------------------------- | ------------------------------------ | ------- | ------- | ------------------------------------------------------------- | ------- |
-| <UiLabel name={m.settings_citation_suggester_name()} />    | `citation.editor-suggester`          | Toggle  | On      | None                                                          | Synced  |
-| <UiLabel name={m.settings_citation_at_trigger_name()} />   | `citation.at-trigger`                | Toggle  | Off     | <UiLabel name={m.settings_citation_suggester_name()} /> is on | Synced  |
-| <UiLabel name={m.settings_citation_show_citekey_name()} /> | `citation.show-citekey-in-suggester` | Toggle  | Off     | None                                                          | Synced  |
+| 选项标签                                                   | 内部键名                             | 控件类型 | 默认值 | 依赖条件                                                       | 生效范围 |
+| ---------------------------------------------------------- | ------------------------------------ | -------- | ------ | -------------------------------------------------------------- | -------- |
+| <UiLabel name={m.settings_citation_suggester_name()} />    | `citation.editor-suggester`          | 开关     | 开启   | 无                                                             | 全局同步 |
+| <UiLabel name={m.settings_citation_at_trigger_name()} />   | `citation.at-trigger`                | 开关     | 关闭   | <UiLabel name={m.settings_citation_suggester_name()} /> 已开启 | 全局同步 |
+| <UiLabel name={m.settings_citation_show_citekey_name()} /> | `citation.show-citekey-in-suggester` | 开关     | 关闭   | 无                                                             | 全局同步 |
 
 <Callout type="info">
-  <UiLabel name={m.settings_citation_at_trigger_name()} /> is visible only when
-  <UiLabel name={m.settings_citation_suggester_name()} /> is on.
+  <UiLabel name={m.settings_citation_at_trigger_name()} /> 仅在
+  <UiLabel name={m.settings_citation_suggester_name()} /> 开启时显示。
 </Callout>
 
-### Citation sources
+### 引文来源 [#citation-sources]
 
-| Label                                                            | Key                           | Control | Default | Dependency | Storage |
-| ---------------------------------------------------------------- | ----------------------------- | ------- | ------- | ---------- | ------- |
-| <UiLabel name={m.settings_citation_pandoc_citations_name()} />   | `citation.pandoc-citations`   | Toggle  | On      | None       | Synced  |
-| <UiLabel name={m.settings_citation_wikilink_citations_name()} /> | `citation.wikilink-citations` | Toggle  | Off     | None       | Synced  |
+| 选项标签                                                         | 内部键名                      | 控件类型 | 默认值 | 依赖条件 | 生效范围 |
+| ---------------------------------------------------------------- | ----------------------------- | -------- | ------ | -------- | -------- |
+| <UiLabel name={m.settings_citation_pandoc_citations_name()} />   | `citation.pandoc-citations`   | 开关     | 开启   | 无       | 全局同步 |
+| <UiLabel name={m.settings_citation_wikilink_citations_name()} /> | `citation.wikilink-citations` | 开关     | 关闭   | 无       | 全局同步 |
 
-<UiLabel name={m.settings_citation_pandoc_citations_name()} />: Include Pandoc
-citations such as `@doe2024` in the references sidebar and ZotLit's in-text
-features. This setting does not change citation insertion or export.
+<UiLabel name={m.settings_citation_pandoc_citations_name()} />
+：将 `@doe2024` 等 Pandoc 引文纳入参考文献侧边栏和 ZotLit
+的正文引文功能。此设置不影响引文插入或导出。
 
-<UiLabel name={m.settings_citation_wikilink_citations_name()} />: Include
-unaliased links to literature notes in the references sidebar and ZotLit's
-in-text features. Heading links, block links, and invalid citation fragments
-stay as links. This setting does not change export.
+<UiLabel name={m.settings_citation_wikilink_citations_name()} />
+：将未设置别名的文献笔记链接纳入参考文献侧边栏和 ZotLit
+的正文引文功能。标题链接、块链接和无效的引文片段仍作为普通链接。此设置不影响导出。
 
-Both settings can be off. ZotLit's internal Citation Index remains active, and <UiLabel name={m.settings_citation_index_reset_name()} /> remains available under <SettingsPath page={m.settings_page_advanced()} />.
+这两项设置可以同时关闭。ZotLit 的内部引文索引仍会运行，<SettingsPath page={m.settings_page_advanced()} /> 下的 <UiLabel name={m.settings_citation_index_reset_name()} /> 也仍可使用。
 
-### Graph view
+### 关系图谱 [#graph-view]
 
-| Label                                               | Key                        | Control | Default | Dependency                        | Storage |
-| --------------------------------------------------- | -------------------------- | ------- | ------- | --------------------------------- | ------- |
-| <UiLabel name={m.settings_citation_graph_name()} /> | `citation.graph-citations` | Toggle  | On      | Obsidian's Graph view core plugin | Synced  |
+| 选项标签                                            | 内部键名                   | 控件类型 | 默认值 | 依赖条件                    | 生效范围 |
+| --------------------------------------------------- | -------------------------- | -------- | ------ | --------------------------- | -------- |
+| <UiLabel name={m.settings_citation_graph_name()} /> | `citation.graph-citations` | 开关     | 开启   | Obsidian 的关系图谱核心插件 | 全局同步 |
 
-<UiLabel name={m.settings_citation_graph_name()} />: Connect each note to works
-it cites in the graph view: to the Literature Note, or to a node labeled with
-the citation key when no Literature Note exists. Turning it off returns every
-open graph to its native state, and the Citation Graph commands report that it
-is off instead of opening.
+<UiLabel name={m.settings_citation_graph_name()} />
+：在关系图谱中，将每篇笔记连接到它引用的文献。若文献笔记存在，则连接到该笔记；否则连接到以引用键为名称的节点。关闭后，所有已打开的关系图谱会恢复原始状态，引文图谱命令会提示此功能已关闭，而不会打开图谱。
 
-The setting is vault-wide. The Graph view core plugin supplies the graph views
-themselves: while that plugin is disabled, no graph shows citations and the
-row reports it. See [Explore citations in the graph
-view](/docs/how-to/explore-citations-in-graph).
+此设置适用于整个仓库。关系图谱由 Obsidian 的关系图谱核心插件提供；该插件关闭时，所有图谱都不会显示引文，设置行也会说明这一状态。详见[在关系图谱中探索引文](/docs/how-to/explore-citations-in-graph)。
 
-### In-text citations
+### 正文引文 [#in-text-citations]
 
-| Label                                                        | Key                       | Control | Default | Dependency                                                                  | Storage |
-| ------------------------------------------------------------ | ------------------------- | ------- | ------- | --------------------------------------------------------------------------- | ------- |
-| <UiLabel name={m.settings_citation_show_formatted_name()} /> | `citation.show-formatted` | Toggle  | On      | Active citation source; Pandoc engine and selected style for formatted text | Synced  |
-| <UiLabel name={m.settings_citation_open_as_links_name()} />  | `citation.open-as-links`  | Toggle  | Off     | Active citation source                                                      | Synced  |
+| 选项标签                                                     | 内部键名                  | 控件类型 | 默认值 | 依赖条件                                               | 生效范围 |
+| ------------------------------------------------------------ | ------------------------- | -------- | ------ | ------------------------------------------------------ | -------- |
+| <UiLabel name={m.settings_citation_show_formatted_name()} /> | `citation.show-formatted` | 开关     | 开启   | 已启用的引文来源；格式化文本还需 Pandoc 引擎及所选样式 | 全局同步 |
+| <UiLabel name={m.settings_citation_open_as_links_name()} />  | `citation.open-as-links`  | 开关     | 关闭   | 已启用的引文来源                                       | 全局同步 |
 
-<UiLabel name={m.settings_citation_show_formatted_name()} />: Show citations in
-Live Preview and reading view with the selected citation and references style.
-Source mode always shows Markdown. Citations stay unchanged when ZotLit cannot
-format them.
+<UiLabel name={m.settings_citation_show_formatted_name()} />
+：在实时预览和阅读视图中，按所选引文与参考文献样式显示引文。源码模式始终显示
+Markdown。ZotLit 无法格式化引文时，会保留原有内容。
 
-<UiLabel name={m.settings_citation_open_as_links_name()} />: Open literature
-notes when you select a Pandoc citation or a literature note wikilink shown as a
-citation. When off, selecting a citation places the cursor in the citation text
-so you can edit it.
+<UiLabel name={m.settings_citation_open_as_links_name()} />
+：选择 Pandoc
+引文或显示为引文的文献笔记双链时，打开相应文献笔记。关闭时，选择引文会将光标放入引文文本，供您编辑。
 
-The navigation setting also controls the four open-under-cursor commands. <UiLabel name={m.settings_citation_hover_action_name()} /> owns hover on its own. While this setting is off, Ctrl-click (Windows and Linux) or Cmd-click (macOS) still opens the Literature Note.
+这一导航设置也控制四个“打开光标处内容”的命令。悬停行为由 <UiLabel name={m.settings_citation_hover_action_name()} /> 单独控制。即使此设置关闭，按住 Ctrl 单击（Windows 和 Linux）或按住 Cmd 单击（macOS）仍可打开文献笔记。
 
-### Hover
+### 悬停 [#hover]
 
-| Label                                                        | Key                     | Control                                                                                                                                                                                                 | Default                                                       | Dependency                                                                                                                 | Storage |
-| ------------------------------------------------------------ | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------- |
-| <UiLabel name={m.settings_citation_hover_action_name()} />   | `citation.hover-action` | Dropdown (<UiLabel name={m.settings_citation_hover_action_off()} />, <UiLabel name={m.settings_citation_hover_action_popover()} />, <UiLabel name={m.settings_citation_hover_action_page_preview()} />) | <UiLabel name={m.settings_citation_hover_action_popover()} /> | Active citation source                                                                                                     | Synced  |
-| <UiLabel name={m.settings_citation_hover_mod_page_name()} /> | (sub-page)              | Sub-page listing toggles for editing modes and the graph view                                                                                                                                           | —                                                             | <UiLabel name={m.settings_citation_hover_action_name()} /> = <UiLabel name={m.settings_citation_hover_action_popover()} /> | Synced  |
+| 选项标签                                                     | 内部键名                | 控件类型                                                                                                                                                                                                 | 默认值                                                        | 依赖条件                                                                                                                   | 生效范围 |
+| ------------------------------------------------------------ | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | -------- |
+| <UiLabel name={m.settings_citation_hover_action_name()} />   | `citation.hover-action` | 下拉菜单（<UiLabel name={m.settings_citation_hover_action_off()} />、<UiLabel name={m.settings_citation_hover_action_popover()} />、<UiLabel name={m.settings_citation_hover_action_page_preview()} />） | <UiLabel name={m.settings_citation_hover_action_popover()} /> | 已启用的引文来源                                                                                                           | 全局同步 |
+| <UiLabel name={m.settings_citation_hover_mod_page_name()} /> | （子页面）              | 列出各编辑模式和关系图谱开关的子页面                                                                                                                                                                     | —                                                             | <UiLabel name={m.settings_citation_hover_action_name()} /> = <UiLabel name={m.settings_citation_hover_action_popover()} /> | 全局同步 |
 
-<UiLabel name={m.settings_citation_hover_action_name()} />: What hovering a
-citation or literature note link shows. Page preview follows the Page preview
-plugin settings.
+<UiLabel name={m.settings_citation_hover_action_name()} />
+：设置悬停在引文或文献笔记链接上时显示的内容。页面预览遵循页面预览插件的设置。
 
-One hover shows one result. <UiLabel name={m.settings_citation_hover_action_popover()} /> shows the bibliography entry of every cited item. <UiLabel name={m.settings_citation_hover_action_page_preview()} /> shows the Literature Note of a single-item citation under the built-in Page preview plugin's own settings, and shows nothing for a multi-item citation. <UiLabel name={m.settings_citation_hover_action_off()} /> adds no ZotLit hover result.
+一次悬停只显示一种结果。<UiLabel name={m.settings_citation_hover_action_popover()} /> 会显示每个被引条目的参考文献条目。<UiLabel name={m.settings_citation_hover_action_page_preview()} /> 按内置页面预览插件的设置，显示单条目引文对应的文献笔记；对于多条目引文，则不显示内容。<UiLabel name={m.settings_citation_hover_action_off()} /> 不会添加 ZotLit 的悬停内容。
 
-#### Require modifier key
+#### 需要按住修饰键 [#require-modifier-key]
 
-Show the popover only while holding Ctrl (Windows) or Command (macOS). The sub-page appears only while <UiLabel name={m.settings_citation_hover_action_name()} /> is <UiLabel name={m.settings_citation_hover_action_popover()} />, and lists toggles for editing modes and the graph view.
+仅在按住 Ctrl（Windows）或 Command（macOS）时显示弹窗。此子页面仅在 <UiLabel name={m.settings_citation_hover_action_name()} /> 设为 <UiLabel name={m.settings_citation_hover_action_popover()} /> 时显示，为各种编辑模式和关系图谱分别提供开关。
 
-| Label                                                                | Key                                       | Control | Default |
-| -------------------------------------------------------------------- | ----------------------------------------- | ------- | ------- |
-| <UiLabel name={m.settings_citation_hover_mod_source_name()} />       | `citation.hover-require-mod-source`       | Toggle  | On      |
-| <UiLabel name={m.settings_citation_hover_mod_live_preview_name()} /> | `citation.hover-require-mod-live-preview` | Toggle  | Off     |
-| <UiLabel name={m.settings_citation_hover_mod_reading_name()} />      | `citation.hover-require-mod-reading`      | Toggle  | Off     |
-| <UiLabel name={m.settings_citation_hover_mod_graph_name()} />        | `citation.hover-require-mod-graph`        | Toggle  | Off     |
+| 选项标签                                                             | 内部键名                                  | 控件类型 | 默认值 |
+| -------------------------------------------------------------------- | ----------------------------------------- | -------- | ------ |
+| <UiLabel name={m.settings_citation_hover_mod_source_name()} />       | `citation.hover-require-mod-source`       | 开关     | 开启   |
+| <UiLabel name={m.settings_citation_hover_mod_live_preview_name()} /> | `citation.hover-require-mod-live-preview` | 开关     | 关闭   |
+| <UiLabel name={m.settings_citation_hover_mod_reading_name()} />      | `citation.hover-require-mod-reading`      | 开关     | 关闭   |
+| <UiLabel name={m.settings_citation_hover_mod_graph_name()} />        | `citation.hover-require-mod-graph`        | 开关     | 关闭   |
 
-Each toggle applies to its editing mode or the graph view. ZotLit checks the modifier when the pointer arrives.
+每个开关适用于对应的编辑模式或关系图谱。ZotLit 会在鼠标指针移到目标上时检查是否按住修饰键。
 
-### Formatting
+### 格式化 [#formatting]
 
-| Label                                                | Key               | Control                                                                                                                     | Default                                                 | Dependency          | Storage    |
-| ---------------------------------------------------- | ----------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | ------------------- | ---------- |
-| <UiLabel name={m.settings_citation_locale_name()} /> | `citation.locale` | Text                                                                                                                        | <UiLabel name={m.settings_citation_locale_default()} /> | None                | Synced     |
-| <UiLabel name={m.settings_citation_engine_name()} /> | None              | <UiLabel name={m.settings_citation_engine_install()} /> or <UiLabel name={m.settings_citation_engine_uninstall()} /> action | Not installed                                           | Network for install | Per device |
+| 选项标签                                             | 内部键名          | 控件类型                                                                                                                  | 默认值                                                  | 依赖条件       | 生效范围 |
+| ---------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | -------------- | -------- |
+| <UiLabel name={m.settings_citation_locale_name()} /> | `citation.locale` | 文本                                                                                                                      | <UiLabel name={m.settings_citation_locale_default()} /> | 无             | 全局同步 |
+| <UiLabel name={m.settings_citation_engine_name()} /> | 无                | <UiLabel name={m.settings_citation_engine_install()} /> 或 <UiLabel name={m.settings_citation_engine_uninstall()} /> 操作 | 未安装                                                  | 安装时需要网络 | 按设备   |
 
-<UiLabel name={m.settings_citation_references_style_name()} /> is on the main
-page. See [Citation and references style](#citation-style).
+<UiLabel name={m.settings_citation_references_style_name()} />
+位于主设置页。详见[引文与参考文献样式](#citation-style)。
 
-<UiLabel name={m.settings_citation_locale_name()} />: Sets the language for
-citation terms, dates, names, and sorting. Leave empty to use the language the
-selected style declares.
+<UiLabel name={m.settings_citation_locale_name()} />
+：设置引文术语、日期、姓名和排序所用的语言。留空时使用所选样式声明的语言。
 
-The field takes a language tag such as `en-US`, `de`, or `zh-CN`. ZotLit rejects any other form with <UiLabel name={m.settings_citation_locale_invalid()} />.
+此字段接受 `en-US`、`de` 或 `zh-CN` 等语言标签。其他格式会被 ZotLit 拒绝，并显示 <UiLabel name={m.settings_citation_locale_invalid()} />。
 
-The locale applies to in-text citations, the <UiLabel name={m.references_view_name()} /> Sidebar, the <UiLabel name={m.settings_citation_hover_action_popover()} />, the copied bibliography, and built-in export. Built-in export applies it to citation processing only: a note that declares Pandoc `lang` keeps that language, and a note that declares none stays without one.
+该语言设置适用于正文引文、<UiLabel name={m.references_view_name()} />侧边栏、<UiLabel name={m.settings_citation_hover_action_popover()} />、复制的参考文献表和内置导出。内置导出仅将其用于引文处理：笔记若声明了 Pandoc `lang`，会保留该语言；未声明的笔记也不会因此新增语言属性。
 
-A note can set its own locale with the standard Pandoc `lang` property. The property takes the same language tags this field takes. It overrides this setting for that note across in-text citations, the <UiLabel name={m.references_view_name()} /> Sidebar, the <UiLabel name={m.settings_citation_hover_action_popover()} />, the copied bibliography, and built-in export. Built-in export also passes it to Pandoc as the exported document's own language.
+笔记可通过标准 Pandoc `lang` 属性设置自己的语言，接受的语言标签与此字段相同。对于该笔记，此属性会覆盖这里的设置，适用于正文引文、<UiLabel name={m.references_view_name()} />侧边栏、<UiLabel name={m.settings_citation_hover_action_popover()} />、复制的参考文献表和内置导出。内置导出还会将其传给 Pandoc，作为导出文档本身的语言。
 
-A note whose `lang` is not a language tag stops instead of using this setting. Its citations stay native. The <UiLabel name={m.references_view_name()} /> Sidebar shows its minimal list under the banner <UiLabel name={m.references_document_language_failed_title()} />, the copy action stays unavailable, and built-in export stops before the dialog opens.
+若笔记的 `lang` 不是有效的语言标签，格式化会停止，不会改用此处设置。引文保留原始形式。<UiLabel name={m.references_view_name()} />侧边栏会在 <UiLabel name={m.references_document_language_failed_title()} /> 横幅下显示精简列表，复制操作仍不可用，内置导出会在对话框打开前停止。
 
-Both note properties are set from the <Command inline name={m.command_set_citation_presentation_name()} /> command, which is also in the note's **More options** menu. See [Commands](/docs/reference/commands).
+这两个笔记属性都可通过 <Command inline name={m.command_set_citation_presentation_name()} /> 命令设置，该命令也位于笔记的**更多选项**菜单中。详见[命令](/docs/reference/commands)。
 
-<UiLabel name={m.settings_citation_engine_name()} />: Formats in-text citations,
-references, and exports. Installation applies to every vault on this device.
+<UiLabel name={m.settings_citation_engine_name()} />
+：负责正文引文、参考文献和导出内容的格式化。安装后适用于此设备上的所有仓库。
 
-Before installation, its status reads <UiLabel name={m.settings_citation_engine_status_absent()} />. This supported state does not show a lifecycle notice.
+安装前，状态显示为 <UiLabel name={m.settings_citation_engine_status_absent()} />。这是受支持的正常状态，不会触发引擎运行状态提示。
 
-### Citation text [#citation-templates]
+### 引文文本 [#citation-templates]
 
-One row, after the <UiLabel name={m.settings_citation_references_heading()} /> group. <UiLabel name={m.settings_citation_text_name()} />: <UiLabel name={m.settings_citation_text_desc()} /> It covers both citation gestures; the template itself decides what the main and the alternate gesture render.
+此设置位于 <UiLabel name={m.settings_citation_references_heading()} /> 分组之后，单独占一行。<UiLabel name={m.settings_citation_text_name()} />：<UiLabel name={m.settings_citation_text_desc()} />。它涵盖两种引文操作；主操作和备选操作各自渲染的内容由模板决定。
 
-A second line under the description names the document. While the vault holds no citation document, that line reads <UiLabel name={m.settings_template_using_default()} />; once the document exists, it is the document's vault path. The document is `zotlit-citation.md` in the folder set by <SettingsPath page={m.settings_page_advanced()} setting={m.settings_template_folder_name()} />.
+说明下方的第二行标明所用文档。仓库中尚无引文文档时，该行显示 <UiLabel name={m.settings_template_using_default()} />；文档创建后，显示其仓库内路径。此文档名为 `zotlit-citation.md`，位于 <SettingsPath page={m.settings_page_advanced()} setting={m.settings_template_folder_name()} /> 指定的文件夹中。
 
-The row carries two icon-only buttons, whose names below are their tooltips:
+该行提供两个仅显示图标的按钮，下表中的名称为其工具提示：
 
-| Button                                             | Effect                                                                                                                                                   |
-| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <UiLabel name={m.settings_citation_text_open()} /> | Opens the document in the Template Workbench View. With no document in the vault, it first creates `zotlit-citation.md` from the built-in citation text. |
-| <UiLabel name={m.settings_template_reset()} />     | Moves the document to Obsidian's configured trash. Destructive, and present only once the document exists.                                               |
+| 按钮                                               | 效果                                                                                            |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| <UiLabel name={m.settings_citation_text_open()} /> | 在模板工作台视图中打开文档。若仓库中尚无此文档，会先根据内置引文文本创建 `zotlit-citation.md`。 |
+| <UiLabel name={m.settings_template_reset()} />     | 将文档移至 Obsidian 设置的回收站。这是删除操作，仅在文档已存在时显示。                          |
 
-The reset confirmation reads <UiLabel name={m.settings_citation_text_reset_confirm_title()} /> with the body <UiLabel name={m.settings_citation_text_reset_confirm_body({ path: "…" })} /> Reset trashes the file rather than rewriting its contents, so you can recover it from the trash. A notice follows: <UiLabel name={m.notice_citation_text_reset()} />
+重置确认对话框的标题为 <UiLabel name={m.settings_citation_text_reset_confirm_title()} />，正文为 <UiLabel name={m.settings_citation_text_reset_confirm_body({ path: "…" })} />。重置会将文件移入回收站，而非改写内容，因此您可以从回收站恢复。随后会显示提示：<UiLabel name={m.notice_citation_text_reset()} />。
 
-The row adds a warning line in two cases:
+以下两种情况下，该行会增加一条警告：
 
-| Case                                                                                                        | Line                                                                                |
-| ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| The document declares `language: eta` while <UiLabel name={m.settings_template_js_enable_name()} /> are off | <UiLabel name={m.settings_template_inert_eta({ path: "…" })} />                     |
-| The template fails to compile                                                                               | <UiLabel name={m.settings_template_compile_error()} /> and the engine's own message |
+| 情况                                                                                                | 提示内容                                                                    |
+| --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| 文档声明了 `language: eta`，但 <UiLabel name={m.settings_template_js_enable_name()} /> 处于关闭状态 | <UiLabel name={m.settings_template_inert_eta({ path: "…" })} />             |
+| 模板编译失败                                                                                        | <UiLabel name={m.settings_template_compile_error()} /> 及引擎自身的错误消息 |
 
-In both cases the citation text is inert. Inserting a citation shows the same message as a notice, and ZotLit does not fall back to the built-in text. See [Citation templates](/docs/reference/templates/data#citation-templates) for the data a citation template receives, and [Citation text](/docs/reference/templates/defaults#citation-text) for the built-in default.
+这两种情况下，引文文本模板均不会运行。插入引文时会显示同样的提示，ZotLit 不会回退到内置文本。引文模板接收的数据详见[引文模板](/docs/reference/templates/data#citation-templates)；内置默认内容详见[引文文本](/docs/reference/templates/defaults#citation-text)。
 
-### Native Pandoc workflow [#native-pandoc]
+### 原生 Pandoc 工作流 [#native-pandoc]
 
-These rows support conversion with a user-installed Pandoc CLI. They are separate from ZotLit's built-in export command.
+这些设置支持通过您自行安装的 Pandoc CLI 进行转换，与 ZotLit 的内置导出命令相互独立。
 
-| Label                                                         | Key  | Control                                                              | Default | Dependency               | Storage                    |
-| ------------------------------------------------------------- | ---- | -------------------------------------------------------------------- | ------- | ------------------------ | -------------------------- |
-| <UiLabel name={m.settings_citation_pandoc_tutorial_name()} /> | None | <UiLabel name={m.settings_citation_pandoc_tutorial_open()} /> action | None    | Network to open          | None                       |
-| <UiLabel name={m.settings_citation_pandoc_files_name()} />    | None | <UiLabel name={m.settings_citation_pandoc_files_save()} /> action    | None    | A selected output folder | Writes the selected folder |
-| <UiLabel name={m.settings_citation_pandoc_guide_name()} />    | None | Read-only guide action                                               | None    | None                     | Per plugin installation    |
+| 选项标签                                                      | 内部键名 | 控件类型                                                           | 默认值 | 依赖条件         | 生效范围       |
+| ------------------------------------------------------------- | -------- | ------------------------------------------------------------------ | ------ | ---------------- | -------------- |
+| <UiLabel name={m.settings_citation_pandoc_tutorial_name()} /> | 无       | <UiLabel name={m.settings_citation_pandoc_tutorial_open()} /> 操作 | 无     | 打开时需要网络   | 无             |
+| <UiLabel name={m.settings_citation_pandoc_files_name()} />    | 无       | <UiLabel name={m.settings_citation_pandoc_files_save()} /> 操作    | 无     | 已选择输出文件夹 | 写入所选文件夹 |
+| <UiLabel name={m.settings_citation_pandoc_guide_name()} />    | 无       | 打开只读指南的操作                                                 | 无     | 无               | 按插件安装实例 |
 
-<UiLabel name={m.settings_citation_pandoc_tutorial_name()} />: Opens [Build a
-Pandoc citation workflow](/docs/tutorial/pandoc-citation-workflow) at its stable
-URL.
+<UiLabel name={m.settings_citation_pandoc_tutorial_name()} />
+：通过稳定 URL 打开[构建 Pandoc
+引文工作流](/docs/tutorial/pandoc-citation-workflow)。
 
-<UiLabel name={m.settings_citation_pandoc_files_name()} />: Save the
-version-matched filter and defaults file to one folder. Keep both files
-together.
+<UiLabel name={m.settings_citation_pandoc_files_name()} />
+：将版本匹配的过滤器和默认配置文件保存到同一个文件夹。请将这两个文件放在一起。
 
-<UiLabel name={m.settings_citation_pandoc_guide_name()} />: ZotLit reference for
-the native Pandoc workflow.
+<UiLabel name={m.settings_citation_pandoc_guide_name()} />
+：提供原生 Pandoc 工作流的 ZotLit 参考指南。
 
-<UiLabel name={m.settings_citation_pandoc_files_save()} /> writes the pair to
-the folder you select. See [Export a note with
-citations](/docs/how-to/export-note-with-citations) for ZotLit's built-in
-workflow.
+<UiLabel name={m.settings_citation_pandoc_files_save()} />
+会将这两个文件写入您选择的文件夹。ZotLit
+的内置工作流详见[导出含引文的笔记](/docs/how-to/export-note-with-citations)。
 
 ## Zotero [#zotero]
 
-Open this page from <SettingsPath page={m.settings_page_zotero()} />. It holds the connection to Zotero, the libraries ZotLit reads, and how ZotLit stays current with Zotero.
+从 <SettingsPath page={m.settings_page_zotero()} /> 打开此页。此页管理 Zotero 连接、ZotLit 读取的文献库，以及 ZotLit 如何与 Zotero 保持数据同步。
 
-| Label                                                | Key         | Control                                                                      | Default | Storage |
-| ---------------------------------------------------- | ----------- | ---------------------------------------------------------------------------- | ------- | ------- |
-| <UiLabel name={m.settings_db_file_name()} />         | (read-only) | Displays the status and resolved `zotero.sqlite` path, with a refresh action | None    | None    |
-| <UiLabel name={m.settings_page_zotero_location()} /> | None        | Sub-page with the [Zotero location](#zotero-location) rows                   | None    | None    |
+| 选项标签                                             | 内部键名 | 控件类型                                                  | 默认值 | 生效范围 |
+| ---------------------------------------------------- | -------- | --------------------------------------------------------- | ------ | -------- |
+| <UiLabel name={m.settings_db_file_name()} />         | （只读） | 显示状态及解析得到的 `zotero.sqlite` 路径，并提供刷新操作 | 无     | 无       |
+| <UiLabel name={m.settings_page_zotero_location()} /> | 无       | 包含 [Zotero 位置](#zotero-location)设置的子页面          | 无     | 无       |
 
-### Zotero location [#zotero-location]
+### Zotero 位置 [#zotero-location]
 
-Open this sub-page from <SettingsPath page={m.settings_page_zotero()} setting={m.settings_page_zotero_location()} />. These rows set where and how ZotLit reads Zotero. Change them when ZotLit cannot find your Zotero library or shows outdated data.
+从 <SettingsPath page={m.settings_page_zotero()} setting={m.settings_page_zotero_location()} /> 打开此子页面。这些设置决定 ZotLit 从何处、以何种方式读取 Zotero。若 ZotLit 找不到您的 Zotero 文献库，或显示的数据已过时，请调整这些设置。
 
-<Callout type="info" title="Device Overrides">
-  <UiLabel name={m.settings_db_profile_dir_name()} /> and{" "}
+<Callout type="info" title="设备专属设置">
+  <UiLabel name={m.settings_db_profile_dir_name()} /> 和{" "}
   <UiLabel name={m.settings_db_data_dir_name()} />
-  are stored per device and never sync through the vault. Setting either value
-  on one computer does not affect other computers that share the same vault.
-  When unset, ZotLit auto-detects the default Zotero location. See [Use ZotLit
-  on multiple devices](/docs/how-to/sync-across-devices) for details.
+  按设备存储，不会通过仓库同步。在一台电脑上设置其中任何一项，都不会影响共用此仓库的其他电脑。
+  未设置时，ZotLit 会自动检测 Zotero 的默认位置。详见[在多台设备上使用
+  ZotLit](/docs/how-to/sync-across-devices)。
 </Callout>
 
-| Label                                               | Key                | Control                                                                  | Default                                           | Storage    |
-| --------------------------------------------------- | ------------------ | ------------------------------------------------------------------------ | ------------------------------------------------- | ---------- |
-| <UiLabel name={m.settings_db_profile_dir_name()} /> | (device-local)     | Profile picker                                                           | <UiLabel name={m.settings_db_profile_auto()} />   | Per device |
-| <UiLabel name={m.settings_db_data_dir_name()} />    | (device-local)     | Folder picker                                                            | <UiLabel name={m.settings_db_data_dir_auto()} />  | Per device |
-| <UiLabel name={m.settings_db_read_mode_name()} />   | `zotero.read-mode` | Dropdown                                                                 | <UiLabel name={m.settings_db_read_mode_auto()} /> | Synced     |
-| <UiLabel name={m.settings_db_source_id_name()} />   | (read-only)        | Displays the 8-character hex identifier for the connected Zotero install | None                                              | None       |
+| 选项标签                                            | 内部键名           | 控件类型                                          | 默认值                                            | 生效范围 |
+| --------------------------------------------------- | ------------------ | ------------------------------------------------- | ------------------------------------------------- | -------- |
+| <UiLabel name={m.settings_db_profile_dir_name()} /> | （设备本地）       | Zotero 配置选择器                                 | <UiLabel name={m.settings_db_profile_auto()} />   | 按设备   |
+| <UiLabel name={m.settings_db_data_dir_name()} />    | （设备本地）       | 文件夹选择器                                      | <UiLabel name={m.settings_db_data_dir_auto()} />  | 按设备   |
+| <UiLabel name={m.settings_db_read_mode_name()} />   | `zotero.read-mode` | 下拉菜单                                          | <UiLabel name={m.settings_db_read_mode_auto()} /> | 全局同步 |
+| <UiLabel name={m.settings_db_source_id_name()} />   | （只读）           | 显示已连接的 Zotero 安装实例的 8 位十六进制标识符 | 无                                                | 无       |
 
-<UiLabel name={m.settings_db_read_mode_name()} /> options:
+<UiLabel name={m.settings_db_read_mode_name()} /> 的选项：
 
-| Option                                                 | Behavior                                                                                                                                                                               |
-| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <UiLabel name={m.settings_db_read_mode_auto()} />      | Picks the best available mode for your platform. See [How ZotLit connects to Zotero](/docs/concepts/how-zotlit-connects-to-zotero) for details.                                        |
-| <UiLabel name={m.settings_db_read_mode_reflink()} />   | Fast, lightweight snapshot. What <UiLabel name={m.settings_db_read_mode_auto()} /> uses on macOS and Linux filesystems that support cloning.                                           |
-| <UiLabel name={m.settings_db_read_mode_copy()} />      | Byte-for-byte copy of the database file. Works on any filesystem but slower and uses more disk space. <UiLabel name={m.settings_db_read_mode_auto()} /> does not select this mode.     |
-| <UiLabel name={m.settings_db_read_mode_immutable()} /> | Reads the database file directly. What <UiLabel name={m.settings_db_read_mode_auto()} /> falls back to when cloning is unavailable. Recent edits in Zotero may not appear immediately. |
+| 选项                                                   | 行为                                                                                                                                       |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| <UiLabel name={m.settings_db_read_mode_auto()} />      | 为您的平台选择最佳可用模式。详见 [ZotLit 如何连接 Zotero](/docs/concepts/how-zotlit-connects-to-zotero)。                                  |
+| <UiLabel name={m.settings_db_read_mode_reflink()} />   | 快速、轻量的快照。<UiLabel name={m.settings_db_read_mode_auto()} /> 在支持克隆的 macOS 和 Linux 文件系统上采用此模式。                     |
+| <UiLabel name={m.settings_db_read_mode_copy()} />      | 逐字节复制数据库文件。适用于任何文件系统，但速度较慢且占用更多磁盘空间。<UiLabel name={m.settings_db_read_mode_auto()} /> 不会选择此模式。 |
+| <UiLabel name={m.settings_db_read_mode_immutable()} /> | 直接读取数据库文件。无法克隆时，<UiLabel name={m.settings_db_read_mode_auto()} /> 会回退到此模式。Zotero 中最近的编辑可能不会立即显示。    |
 
-### Libraries [#libraries]
+### 文献库 [#libraries]
 
-| Label                                              | Key                    | Control                                                                         | Default                                           | Dependency          | Storage |
-| -------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------- | ------------------- | ------- |
-| <UiLabel name={m.settings_library_scope_name()} /> | `zotero.library-scope` | <UiLabel name={m.settings_library_scope_all()} />, or an editable selected list | <UiLabel name={m.settings_library_scope_all()} /> | A readable database | Synced  |
+| 选项标签                                           | 内部键名               | 控件类型                                                                    | 默认值                                            | 依赖条件       | 生效范围 |
+| -------------------------------------------------- | ---------------------- | --------------------------------------------------------------------------- | ------------------------------------------------- | -------------- | -------- |
+| <UiLabel name={m.settings_library_scope_name()} /> | `zotero.library-scope` | <UiLabel name={m.settings_library_scope_all()} />，或可编辑的已选文献库列表 | <UiLabel name={m.settings_library_scope_all()} /> | 可读取的数据库 | 全局同步 |
 
-#### Library scope [#library-scope]
+#### 文献库范围 [#library-scope]
 
-The libraries ZotLit uses for item search, citation key resolution, and library-wide commands. Everything that already names one item, note, or library keeps that exact target: a menu entry or link from Zotero runs against the library it came from, and a literature note stays tied to its own item.
+ZotLit 在条目搜索、引用键解析及面向整个文献库的命令中使用的文献库。已明确指定条目、笔记或文献库的操作仍使用原目标：Zotero 菜单项或链接针对其来源文献库运行，文献笔记也始终关联自己的条目。
 
-<UiLabel name={m.settings_library_scope_all()} /> follows your Zotero database.
-A group library you join later is in scope at once, read-only groups included,
-and a group you leave drops out.
+<UiLabel name={m.settings_library_scope_all()} /> 会随 Zotero
+数据库变化。之后加入的群组文献库会立即纳入范围，包括只读群组；退出的群组则会移出范围。
 
-<UiLabel name={m.settings_library_scope_selected()} /> stays exactly as you set
-it. A group library you join later stays out of scope until you add it.
+<UiLabel name={m.settings_library_scope_selected()} />
+完全遵循您指定的列表。之后加入的群组文献库需由您手动添加，才会纳入范围。
 
-<UiLabel name={m.settings_library_scope_add()} /> offers the libraries you have
-not selected yet, and each row's delete action removes one. The last remaining
-row has no delete action, so the list is never empty.
+<UiLabel name={m.settings_library_scope_add()} />
+会列出尚未选择的文献库，每行的删除操作可移除相应文献库。最后剩下的一行不提供删除操作，因此列表始终非空。
 
-Switching to <UiLabel name={m.settings_library_scope_selected()} /> starts at <UiLabel name={m.settings_library_scope_personal()} />. Switching to <UiLabel name={m.settings_library_scope_all()} /> discards the list you had.
+切换为 <UiLabel name={m.settings_library_scope_selected()} /> 时，初始选择为 <UiLabel name={m.settings_library_scope_personal()} />。切换为 <UiLabel name={m.settings_library_scope_all()} /> 则会丢弃原来的列表。
 
-ZotLit stores each selection as a stable reference: <UiLabel name={m.settings_library_scope_personal()} /> as itself, a group library by its Zotero group ID. Group names and Zotero's internal library numbers are never stored, so a renamed group keeps its place in the list and shows its current name.
+ZotLit 以稳定引用存储每个选择：<UiLabel name={m.settings_library_scope_personal()} /> 使用其固定标识，群组文献库使用 Zotero 群组 ID。群组名称和 Zotero 内部文献库编号不会存储，因此群组重命名后仍会保留在列表中，并显示当前名称。
 
-#### An unavailable library [#unavailable-library]
+#### 不可用的文献库 [#unavailable-library]
 
-A selected group can be missing from the connected Zotero database, because you left the group or because you connected a different Zotero data directory. It keeps its place in the list and shows as **Group `{ID}`** with the note <UiLabel name={m.settings_library_scope_unavailable()} /> Rejoin the group to restore its name, or delete the row to drop it.
+如果您退出了群组，或连接了其他 Zotero 数据目录，已选群组可能不再出现在当前连接的 Zotero 数据库中。它仍保留在列表中，显示为**群组 `{ID}`**，并附有 <UiLabel name={m.settings_library_scope_unavailable()} /> 说明。重新加入群组即可恢复名称，也可删除该行将其移除。
 
-Search, citation key resolution, and library-wide commands run over the libraries that are available. A library-wide command states how many selected libraries it had to skip.
+搜索、引用键解析及面向整个文献库的命令会在可用的文献库中运行。面向整个文献库的命令会说明跳过了多少个已选文献库。
 
-#### While the database is unavailable [#database-unavailable]
+#### 数据库不可用时 [#database-unavailable]
 
-ZotLit lists your libraries from the connected Zotero database. While that database is unreadable, the library scope controls are disabled and read <UiLabel name={m.settings_library_scope_db_unavailable()} />.
+ZotLit 从当前连接的 Zotero 数据库中列出文献库。数据库无法读取时，文献库范围控件会禁用，并显示 <UiLabel name={m.settings_library_scope_db_unavailable()} />。
 
-Your saved scope is untouched. See [Fix Zotero changes that do not appear](/docs/how-to/fix-stale-data) for the connection itself.
+已保存的范围保持不变。连接问题的处理方法详见[修复未显示的 Zotero 更改](/docs/how-to/fix-stale-data)。
 
-#### Recovery from an invalid scope [#invalid-scope]
+#### 修复无效范围 [#invalid-scope]
 
-ZotLit can fail to read a saved scope, after an edited `data.json` or a vault synced from a newer ZotLit. It keeps the broken value on disk rather than overwriting it, and an unrelated settings change leaves that value in place.
+手动编辑 `data.json` 或从较新版本 ZotLit 同步仓库后，ZotLit 可能无法读取已保存的范围。它会保留磁盘上的无效值，不会覆盖；更改其他无关设置也不会改动此值。
 
-ZotLit shows <UiLabel name={m.notice_library_scope_invalid()} /> as a notice once, marks the setting with a standing warning, and searches <UiLabel name={m.settings_library_scope_personal()} /> alone until you repair the setting. The first change you make here writes over the broken value and clears both warnings.
+ZotLit 会显示一次 <UiLabel name={m.notice_library_scope_invalid()} /> 提示，在此设置旁保留警告，并在您修复设置之前仅搜索 <UiLabel name={m.settings_library_scope_personal()} />。您在此处首次修改设置时，会覆盖无效值并清除两处警告。
 
-<Callout type="info" title="What an upgrade sets">
-  An upgrade from an earlier ZotLit version starts at
-  <UiLabel name={m.settings_library_scope_selected()} /> with
-  <UiLabel name={m.settings_library_scope_personal()} />, whatever library you
-  had selected before. Widen the scope here to search your group libraries. A
-  fresh installation starts at <UiLabel name={m.settings_library_scope_all()} />
-  .
+<Callout type="info" title="升级后的初始设置">
+  从较早版本 ZotLit 升级后，无论此前选用哪个文献库，初始范围均为
+  <UiLabel name={m.settings_library_scope_selected()} />
+  ，列表中仅包含
+  <UiLabel name={m.settings_library_scope_personal()} />
+  。要搜索群组文献库，请在此处扩大范围。 全新安装的初始范围为{" "}
+  <UiLabel name={m.settings_library_scope_all()} />。
 </Callout>
 
-### Sync with Zotero [#sync]
+### 与 Zotero 同步 [#sync]
 
-| Label                                                         | Key                   | Control                                                                                                               | Default       | Storage |
-| ------------------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------- | ------------- | ------- |
-| <UiLabel name={m.settings_db_companion_name()} />             | None                  | <UiLabel name={m.settings_db_companion_install()} /> action                                                           | Not installed | None    |
-| <UiLabel name={m.settings_live_updates_enabled_name()} />     | `server.live-update`  | Toggle                                                                                                                | On            | Synced  |
-| <UiLabel name={m.settings_advanced_local_server_heading()} /> | None                  | Shows whether the local server is listening, with the <UiLabel name={m.settings_zotero_local_server_open()} /> action | None          | None    |
-| <UiLabel name={m.settings_db_auto_refresh_name()} />          | `zotero.auto-refresh` | Toggle                                                                                                                | On            | Synced  |
-| <UiLabel name={m.settings_db_stale_help_name()} />            | None                  | <UiLabel name={m.settings_db_stale_help_action()} /> action                                                           | None          | None    |
+| 选项标签                                                      | 内部键名              | 控件类型                                                                                         | 默认值 | 生效范围 |
+| ------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------ | ------ | -------- |
+| <UiLabel name={m.settings_db_companion_name()} />             | 无                    | <UiLabel name={m.settings_db_companion_install()} /> 操作                                        | 未安装 | 无       |
+| <UiLabel name={m.settings_live_updates_enabled_name()} />     | `server.live-update`  | 开关                                                                                             | 开启   | 全局同步 |
+| <UiLabel name={m.settings_advanced_local_server_heading()} /> | 无                    | 显示本地服务器是否正在监听，并提供 <UiLabel name={m.settings_zotero_local_server_open()} /> 操作 | 无     | 无       |
+| <UiLabel name={m.settings_db_auto_refresh_name()} />          | `zotero.auto-refresh` | 开关                                                                                             | 开启   | 全局同步 |
+| <UiLabel name={m.settings_db_stale_help_name()} />            | 无                    | <UiLabel name={m.settings_db_stale_help_action()} /> 操作                                        | 无     | 无       |
 
-<UiLabel name={m.settings_live_updates_enabled_name()} /> lets ZotLit answer
-ZotLit Companion's notifications. The notifications arrive through the local
-server, which is off by default. Turn on
-<UiLabel name={m.settings_local_server_enabled_name()} /> in the [Local server
-group](#local-server) for updates to arrive.
-<UiLabel name={m.settings_zotero_local_server_open()} /> opens that group. See
-[Set up live updates](/docs/how-to/set-up-live-updates) for the Companion
-connection.
+<UiLabel name={m.settings_live_updates_enabled_name()} /> 允许 ZotLit 响应
+ZotLit Companion
+的通知。通知通过本地服务器传入，而本地服务器默认关闭。要接收更新，请在[本地服务器分组](#local-server)中开启
+<UiLabel name={m.settings_local_server_enabled_name()} />。
+<UiLabel name={m.settings_zotero_local_server_open()} /> 可打开该分组。Companion
+的连接方式详见[设置实时更新](/docs/how-to/set-up-live-updates)。
 
-### Editing [#editing]
+### 编辑 [#editing]
 
-| Label                                               | Key  | Control                                                                                                                                                                        | Default     | Storage    |
-| --------------------------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------- | ---------- |
-| <UiLabel name={m.settings_zotero_editing_name()} /> | None | <UiLabel name={m.settings_zotero_editing_enable()} />, <UiLabel name={m.settings_zotero_editing_check()} />, and <UiLabel name={m.settings_zotero_editing_forget()} /> actions | Not allowed | Per device |
+| 选项标签                                            | 内部键名 | 控件类型                                                                                                                                                                  | 默认值 | 生效范围 |
+| --------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | -------- |
+| <UiLabel name={m.settings_zotero_editing_name()} /> | 无       | <UiLabel name={m.settings_zotero_editing_enable()} />、<UiLabel name={m.settings_zotero_editing_check()} /> 和 <UiLabel name={m.settings_zotero_editing_forget()} /> 操作 | 未授权 | 按设备   |
 
-#### Zotero editing [#zotero-editing]
+#### Zotero 编辑权限 [#zotero-editing]
 
-<UiLabel name={m.settings_zotero_editing_name()} /> shows whether ZotLit can
-change annotations in Zotero. Reading annotations needs no permission. Editing
-needs four things:
+<UiLabel name={m.settings_zotero_editing_name()} /> 显示 ZotLit 是否可以修改
+Zotero 中的批注。读取批注无需授权。编辑需满足以下四个条件：
 
-- Zotero 10 or later.
-- Zotero running on the same computer.
-- In Zotero, **Allow other applications on this computer to communicate with Zotero** turned on, under Settings → Advanced.
-- Your permission. Select <UiLabel name={m.settings_zotero_editing_enable()} />, and when Zotero asks, choose **Always Allow**. **Allow** alone leaves editing off.
+- 使用 Zotero 10 或更高版本。
+- Zotero 正在同一台电脑上运行。
+- 在 Zotero 的设置 → 高级中，开启**允许此计算机上的其他应用程序与 Zotero 通信**。
+- 获得您的授权。选择 <UiLabel name={m.settings_zotero_editing_enable()} />，并在 Zotero 询问时选择**始终允许**。仅选择**允许**不会开启编辑功能。
 
-The row shows only the actions that apply at the moment:
+该行仅显示当前可用的操作：
 
-| Action                                                | Shown                                                      | Effect                                                                  |
-| ----------------------------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------- |
-| <UiLabel name={m.settings_zotero_editing_enable()} /> | While ZotLit needs your permission                         | Asks Zotero for permission to edit.                                     |
-| <UiLabel name={m.settings_zotero_editing_check()} />  | While ZotLit cannot reach Zotero or cannot edit through it | Checks the connection to Zotero again and shows the result in a notice. |
-| <UiLabel name={m.settings_zotero_editing_forget()} /> | While this device has a saved permission                   | Removes the saved permission. Editing stops until you allow it again.   |
+| 操作                                                  | 显示条件                                  | 效果                                               |
+| ----------------------------------------------------- | ----------------------------------------- | -------------------------------------------------- |
+| <UiLabel name={m.settings_zotero_editing_enable()} /> | ZotLit 需要您的授权时                     | 向 Zotero 请求编辑权限。                           |
+| <UiLabel name={m.settings_zotero_editing_check()} />  | ZotLit 无法连接 Zotero 或无法通过其编辑时 | 重新检查与 Zotero 的连接，并通过提示显示结果。     |
+| <UiLabel name={m.settings_zotero_editing_forget()} /> | 此设备已保存授权时                        | 移除已保存的授权。编辑功能会停止，直到您重新授权。 |
 
-ZotLit saves the permission for this vault on this device only, in Obsidian's Keychain. Another computer that shares the vault asks for its own permission. See [Edit PDF annotations in Obsidian](/docs/how-to/edit-pdf-annotations).
+ZotLit 将授权保存在 Obsidian 的 Keychain 中，仅适用于此设备上的此仓库。共用该仓库的另一台电脑需单独请求授权。详见[在 Obsidian 中编辑 PDF 批注](/docs/how-to/edit-pdf-annotations)。
 
-## Attachments
+## 附件 [#attachments]
 
-Open this page from <SettingsPath page={m.settings_page_attachments()} />.
+从 <SettingsPath page={m.settings_page_attachments()} /> 打开此页。
 
-| Label                                                    | Key                      | Control                                                       | Default            |
-| -------------------------------------------------------- | ------------------------ | ------------------------------------------------------------- | ------------------ |
-| <UiLabel name={m.settings_attachment_import_name()} />   | `attachment.import`      | Toggle                                                        | On                 |
-| <UiLabel name={m.settings_attachment_folder_name()} />   | `attachment.folder-path` | Folder picker                                                 | (Obsidian default) |
-| <UiLabel name={m.settings_attachment_approved_name()} /> | (device-local)           | Sub-page listing the folders attachments may be imported from | Empty              |
+| 选项标签                                                 | 内部键名                 | 控件类型                           | 默认值              |
+| -------------------------------------------------------- | ------------------------ | ---------------------------------- | ------------------- |
+| <UiLabel name={m.settings_attachment_import_name()} />   | `attachment.import`      | 开关                               | 开启                |
+| <UiLabel name={m.settings_attachment_folder_name()} />   | `attachment.folder-path` | 文件夹选择器                       | （Obsidian 默认值） |
+| <UiLabel name={m.settings_attachment_approved_name()} /> | （设备本地）             | 列出可导入附件的来源文件夹的子页面 | 空                  |
 
 <Callout type="info">
-  <UiLabel name={m.settings_attachment_folder_name()} /> is visible only when
-  <UiLabel name={m.settings_attachment_import_name()} /> is on.
+  <UiLabel name={m.settings_attachment_folder_name()} /> 仅在
+  <UiLabel name={m.settings_attachment_import_name()} /> 开启时显示。
 </Callout>
 
-Generated [excerpt images](/docs/concepts/excerpt-images) require <UiLabel name={m.settings_attachment_import_name()} />. When it is off, ZotLit creates no new excerpt files for notes. It keeps a verified existing image when possible; otherwise it writes an unavailable-image explanation and source link. The annotation view and its device cache work independently of this setting.
+生成[摘录图片](/docs/concepts/excerpt-images)需要开启 <UiLabel name={m.settings_attachment_import_name()} />。关闭后，ZotLit 不会为笔记创建新的摘录文件。它会尽可能保留已验证可用的现有图片，否则会写入图片不可用的说明和来源链接。批注视图及其设备缓存独立于此设置运行。
 
-### Approved folders
+### 已授权文件夹 [#approved-folders]
 
-The folders ZotLit may copy attachments from, beyond Zotero's own storage folder, its annotation cache, and the linked-attachment base folder you set in Zotero. This setting protects imports of Zotero linked files. A linked file stays in an external folder instead of being copied into Zotero storage. See [Zotero's guide to linked files](https://www.zotero.org/support/attaching_files#adding_linked_files).
+除 Zotero 自身的存储文件夹、批注缓存和您在 Zotero 中设置的链接附件根目录之外，此处指定 ZotLit 可从哪些文件夹复制附件。这一设置用于保护 Zotero 链接文件的导入。链接文件保留在外部文件夹中，不会复制到 Zotero 的存储空间。详见 [Zotero 链接文件指南](https://www.zotero.org/support/attaching_files#adding_linked_files)。
 
-This approval applies to copied content such as images embedded in Child Notes. The ordinary attachment links in a Literature Note point to the original files and do not copy them.
+此授权适用于需要复制的内容，例如子笔记中嵌入的图片。文献笔记中的普通附件链接指向原始文件，不会复制文件。
 
-When imported content is outside all approved locations, ZotLit uses a `file://` URI. A notice reports how many files it skipped, lists the unapproved source folders, and links to ZotLit settings.
+若待导入内容不在任何已授权位置内，ZotLit 会使用 `file://` URI。提示会说明跳过的文件数，列出未授权的来源文件夹，并提供 ZotLit 设置链接。
 
-Actions: <UiLabel name={m.settings_attachment_approved_add()} /> (opens a folder picker), and delete on each row.
+可用操作包括 <UiLabel name={m.settings_attachment_approved_add()} />（打开文件夹选择器），以及每行的删除操作。
 
-The sub-page's first row is <UiLabel name={m.settings_attachment_approved_policy_name()} />: <UiLabel name={m.settings_attachment_approved_policy_desc()} />
+子页面的第一行为 <UiLabel name={m.settings_attachment_approved_policy_name()} />，说明为 <UiLabel name={m.settings_attachment_approved_policy_desc()} />。
 
-<Callout type="info" title="Device Overrides">
-  <UiLabel name={m.settings_attachment_approved_name()} /> are stored per device
-  and never sync through the vault. Approving a folder on one computer grants
-  nothing on another computer, and nothing in another vault.
+<Callout type="info" title="设备专属设置">
+  <UiLabel name={m.settings_attachment_approved_name()} />{" "}
+  按设备存储，不会通过仓库同步。
+  在一台电脑上授权某个文件夹，不会为其他电脑或其他仓库授予任何权限。
 </Callout>
 
-## Reader [#reader]
+## 阅读器 [#reader]
 
-Open this page from <SettingsPath page={m.settings_page_reader()} />. It controls what ZotLit does when it opens a PDF in Obsidian's reader.
+从 <SettingsPath page={m.settings_page_reader()} /> 打开此页。此页控制 ZotLit 在 Obsidian 阅读器中打开 PDF 时的行为。
 
-| Label                                                        | Key                       | Control | Default | Dependency | Storage |
-| ------------------------------------------------------------ | ------------------------- | ------- | ------- | ---------- | ------- |
-| <UiLabel name={m.settings_reader_focus_annot_view_name()} /> | `reader.focus-annot-view` | Toggle  | On      | None       | Synced  |
-| <UiLabel name={m.settings_reader_open_file_links_name()} />  | `reader.open-file-links`  | Toggle  | On      | None       | Synced  |
+| 选项标签                                                     | 内部键名                  | 控件类型 | 默认值 | 依赖条件 | 生效范围 |
+| ------------------------------------------------------------ | ------------------------- | -------- | ------ | -------- | -------- |
+| <UiLabel name={m.settings_reader_focus_annot_view_name()} /> | `reader.focus-annot-view` | 开关     | 开启   | 无       | 全局同步 |
+| <UiLabel name={m.settings_reader_open_file_links_name()} />  | `reader.open-file-links`  | 开关     | 开启   | 无       | 全局同步 |
 
-<UiLabel name={m.settings_reader_focus_annot_view_name()} /> opens the
-annotation view in the sidebar each time ZotLit opens a PDF. Turn it off to keep
-the sidebar as it is.
+<UiLabel name={m.settings_reader_focus_annot_view_name()} /> 会在 ZotLit
+每次打开 PDF 时，在侧边栏中打开批注视图。关闭后，侧边栏保持原样。
 
-<UiLabel name={m.settings_reader_open_file_links_name()} /> opens a file link in
-a note in Obsidian's PDF viewer when the link points to a PDF in your Zotero
-library. Every other file link opens in your system app. A link you right-click
-and send to your system app also opens there. Turn it off to open all file links
-in your system app.
+<UiLabel name={m.settings_reader_open_file_links_name()} />
+会在笔记中的文件链接指向 Zotero 文献库内的 PDF 时，使用 Obsidian 的 PDF
+查看器打开。其他文件链接均使用系统应用打开。通过右键菜单选择使用系统应用打开的链接也会遵循您的选择。关闭此设置后，所有文件链接均使用系统应用打开。
 
-See [Open an item's PDF in Obsidian](/docs/how-to/open-pdf-in-obsidian).
+详见[在 Obsidian 中打开条目的 PDF](/docs/how-to/open-pdf-in-obsidian)。
 
-## Advanced [#advanced]
+## 高级 [#advanced]
 
-Open this page from <SettingsPath page={m.settings_page_advanced()} />.
+从 <SettingsPath page={m.settings_page_advanced()} /> 打开此页。
 
-| Label                                               | Key                       | Control | Default | Dependency | Storage |
-| --------------------------------------------------- | ------------------------- | ------- | ------- | ---------- | ------- |
-| <UiLabel name={m.settings_update_notices_name()} /> | `release.notices-enabled` | Toggle  | On      | None       | Synced  |
+| 选项标签                                            | 内部键名                  | 控件类型 | 默认值 | 依赖条件 | 生效范围 |
+| --------------------------------------------------- | ------------------------- | -------- | ------ | -------- | -------- |
+| <UiLabel name={m.settings_update_notices_name()} /> | `release.notices-enabled` | 开关     | 开启   | 无       | 全局同步 |
 
-<UiLabel name={m.settings_update_notices_name()} /> shows a notice linking to
-the release notes after ZotLit updates.
+<UiLabel name={m.settings_update_notices_name()} /> 会在 ZotLit
+更新后显示提示，提供发布说明链接。
 
-### Template engine [#template-engine]
+### 模板引擎 [#template-engine]
 
-| Label                                                       | Key                           | Control                                                                                                           | Default                                               | Dependency                                                    | Storage    |
-| ----------------------------------------------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------- | ---------- |
-| <UiLabel name={m.settings_template_folder_name()} />        | `template.folder`             | Folder picker                                                                                                     | `templates`                                           | None                                                          | Synced     |
-| <UiLabel name={m.settings_template_js_enable_name()} />     | (per-device gate)             | <UiLabel name={m.settings_template_js_turn_on()} /> / <UiLabel name={m.settings_template_js_turn_off()} /> button | Off                                                   | None                                                          | Per device |
-| <UiLabel name={m.settings_template_trim_leading_name()} />  | `template.auto-trim-leading`  | Dropdown                                                                                                          | <UiLabel name={m.settings_template_trim_disable()} /> | <UiLabel name={m.settings_template_js_enable_name()} /> is on | Synced     |
-| <UiLabel name={m.settings_template_trim_trailing_name()} /> | `template.auto-trim-trailing` | Dropdown                                                                                                          | <UiLabel name={m.settings_template_trim_disable()} /> | <UiLabel name={m.settings_template_js_enable_name()} /> is on | Synced     |
+| 选项标签                                                    | 内部键名                      | 控件类型                                                                                                        | 默认值                                                | 依赖条件                                                       | 生效范围 |
+| ----------------------------------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- | -------------------------------------------------------------- | -------- |
+| <UiLabel name={m.settings_template_folder_name()} />        | `template.folder`             | 文件夹选择器                                                                                                    | `templates`                                           | 无                                                             | 全局同步 |
+| <UiLabel name={m.settings_template_js_enable_name()} />     | （设备专属开关）              | <UiLabel name={m.settings_template_js_turn_on()} /> / <UiLabel name={m.settings_template_js_turn_off()} /> 按钮 | 关闭                                                  | 无                                                             | 按设备   |
+| <UiLabel name={m.settings_template_trim_leading_name()} />  | `template.auto-trim-leading`  | 下拉菜单                                                                                                        | <UiLabel name={m.settings_template_trim_disable()} /> | <UiLabel name={m.settings_template_js_enable_name()} /> 已开启 | 全局同步 |
+| <UiLabel name={m.settings_template_trim_trailing_name()} /> | `template.auto-trim-trailing` | 下拉菜单                                                                                                        | <UiLabel name={m.settings_template_trim_disable()} /> | <UiLabel name={m.settings_template_js_enable_name()} /> 已开启 | 全局同步 |
 
-<UiLabel name={m.settings_template_folder_name()} /> is where editable template
-files, including Profile documents, are created and loaded from.
+<UiLabel name={m.settings_template_folder_name()} />
+指定可编辑模板文件的创建和加载位置，其中也包括配置方案文档。
 
-JavaScript (Eta) templates are gated behind a per-device toggle. Enabling shows a confirmation modal.
+JavaScript (Eta) 模板由设备专属开关控制，开启时会显示确认对话框。
 
 <Callout type="info">
-  The two settings below the gate are visible only when{" "}
-  <UiLabel name={m.settings_template_js_enable_name()} />
-  are enabled. <UiLabel name={m.settings_template_folder_name()} /> sits above
-  the gate and is always visible.
+  开关下方的两项设置仅在 <UiLabel name={m.settings_template_js_enable_name()} />
+  开启时显示。
+  <UiLabel name={m.settings_template_folder_name()} /> 位于开关上方，始终显示。
 </Callout>
 
-Options for <UiLabel name={m.settings_template_trim_leading_name()} /> and <UiLabel name={m.settings_template_trim_trailing_name()} />: <UiLabel name={m.settings_template_trim_disable()} />, <UiLabel name={m.settings_template_trim_nl()} />, <UiLabel name={m.settings_template_trim_slurp()} />.
+<UiLabel name={m.settings_template_trim_leading_name()} /> 和
+<UiLabel name={m.settings_template_trim_trailing_name()} /> 的选项为：
+<UiLabel name={m.settings_template_trim_disable()} />、
+<UiLabel name={m.settings_template_trim_nl()} />、
+<UiLabel name={m.settings_template_trim_slurp()} />。
 
-#### Unrecognized ZotLit files [#unrecognized-files]
+#### 未识别的 ZotLit 文件 [#unrecognized-files]
 
-A `zotlit-` file in the template folder that is neither a template document nor a 2.1 template file gets one diagnostic row in this group:
+模板文件夹中，以 `zotlit-` 开头的文件若既不是模板文档，也不是 2.1 模板文件，会在此分组中显示一行诊断信息：
 
-| Row                                                        | Text                                                                    |
+| 设置行                                                     | 文本                                                                    |
 | ---------------------------------------------------------- | ----------------------------------------------------------------------- |
 | <UiLabel name={m.settings_template_unrecognized_name()} /> | <UiLabel name={m.settings_template_unrecognized_desc({ path: "…" })} /> |
 
-A file without the `zotlit-` prefix is ignored and gets no row. See [template document naming](/docs/reference/templates/syntax#template-document-naming).
+不带 `zotlit-` 前缀的文件会被忽略，也不会显示诊断行。详见[模板文档命名](/docs/reference/templates/syntax#template-document-naming)。
 
-### Local Server [#local-server]
+### 本地服务器 [#local-server]
 
-| Label                                                         | Key               | Control                   | Default     | Visibility | Storage |
-| ------------------------------------------------------------- | ----------------- | ------------------------- | ----------- | ---------- | ------- |
-| <UiLabel name={m.settings_local_server_enabled_name()} />     | `server.enabled`  | Toggle                    | Off         | Always     | Synced  |
-| <UiLabel name={m.settings_live_updates_port_name()} />        | `server.port`     | Number from 1024 to 65535 | `9091`      | Server on  | Synced  |
-| <UiLabel name={m.settings_local_server_active_port_name()} /> | (read-only)       | Active port or status     | No listener | Server on  | None    |
-| <UiLabel name={m.settings_live_updates_hostname_name()} />    | `server.hostname` | Text                      | `127.0.0.1` | Server on  | Synced  |
+| 选项标签                                                      | 内部键名          | 控件类型                 | 默认值      | 显示条件     | 生效范围 |
+| ------------------------------------------------------------- | ----------------- | ------------------------ | ----------- | ------------ | -------- |
+| <UiLabel name={m.settings_local_server_enabled_name()} />     | `server.enabled`  | 开关                     | 关闭        | 始终显示     | 全局同步 |
+| <UiLabel name={m.settings_live_updates_port_name()} />        | `server.port`     | 1024 至 65535 之间的数字 | `9091`      | 服务器已开启 | 全局同步 |
+| <UiLabel name={m.settings_local_server_active_port_name()} /> | （只读）          | 当前端口或状态           | 未监听      | 服务器已开启 | 无       |
+| <UiLabel name={m.settings_live_updates_hostname_name()} />    | `server.hostname` | 文本                     | `127.0.0.1` | 服务器已开启 | 全局同步 |
 
-The server binds to the configured hostname, which defaults to this computer's loopback address. It tries the configured port, then up to 9 higher ports, stopping at 65535. <UiLabel name={m.settings_local_server_active_port_name()} /> reports the port actually used. ZotLit Companion's notification URL must use that port.
+服务器绑定到设置的主机名，默认使用本机的回环地址。它会先尝试设置的端口，再依次尝试最多 9 个更高的端口，最大不超过 65535。<UiLabel name={m.settings_local_server_active_port_name()} /> 显示实际使用的端口。ZotLit Companion 的通知 URL 必须使用该端口。
 
-Turning off <UiLabel name={m.settings_local_server_enabled_name()} /> stops Live Update connections. <UiLabel name={m.settings_live_updates_enabled_name()} /> keeps its value and is in the [Sync with Zotero](#sync) group on <SettingsPath page={m.settings_page_zotero()} />.
+关闭 <UiLabel name={m.settings_local_server_enabled_name()} /> 会停止实时更新连接。<UiLabel name={m.settings_live_updates_enabled_name()} /> 的值保持不变；该设置位于 <SettingsPath page={m.settings_page_zotero()} /> 的[与 Zotero 同步](#sync)分组中。
 
-### Logging [#logging]
+### 日志 [#logging]
 
-| Label                                              | Key           | Control  | Default | Dependency                                             | Storage |
-| -------------------------------------------------- | ------------- | -------- | ------- | ------------------------------------------------------ | ------- |
-| <UiLabel name={m.settings_log_level_name()} />     | `log.level`   | Dropdown | info    | None                                                   | Synced  |
-| <UiLabel name={m.settings_log_to_file_name()} />   | `log.to-file` | Toggle   | Off     | None                                                   | Synced  |
-| <UiLabel name={m.settings_log_open_file_name()} /> | None          | Action   | None    | <UiLabel name={m.settings_log_to_file_name()} /> is on | None    |
-| <UiLabel name={m.settings_log_export_name()} />    | None          | Action   | None    | <UiLabel name={m.settings_log_to_file_name()} /> is on | None    |
+| 选项标签                                           | 内部键名      | 控件类型 | 默认值 | 依赖条件                                                | 生效范围 |
+| -------------------------------------------------- | ------------- | -------- | ------ | ------------------------------------------------------- | -------- |
+| <UiLabel name={m.settings_log_level_name()} />     | `log.level`   | 下拉菜单 | info   | 无                                                      | 全局同步 |
+| <UiLabel name={m.settings_log_to_file_name()} />   | `log.to-file` | 开关     | 关闭   | 无                                                      | 全局同步 |
+| <UiLabel name={m.settings_log_open_file_name()} /> | 无            | 操作     | 无     | <UiLabel name={m.settings_log_to_file_name()} /> 已开启 | 无       |
+| <UiLabel name={m.settings_log_export_name()} />    | 无            | 操作     | 无     | <UiLabel name={m.settings_log_to_file_name()} /> 已开启 | 无       |
 
-<UiLabel name={m.settings_log_level_name()} /> options:
-<UiLabel name={m.settings_log_level_off()} />, trace, debug, info, warning,
-error, fatal.
+<UiLabel name={m.settings_log_level_name()} /> 的选项：
+<UiLabel name={m.settings_log_level_off()} />
+、trace、debug、info、warning、error、fatal。
 
-When <UiLabel name={m.settings_log_to_file_name()} /> is on, logs append to `zotlit.log.jsonl` inside the plugin folder. Two additional action rows appear:
+开启 <UiLabel name={m.settings_log_to_file_name()} /> 后，日志会追加写入插件文件夹内的 `zotlit.log.jsonl`，并显示另外两行操作：
 
-- <UiLabel name={m.settings_log_open_file_name()} />: opens the JSONL log in the
-  system editor.
-- <UiLabel name={m.settings_log_export_name()} />: exports the log file for
-  sharing.
+- <UiLabel name={m.settings_log_open_file_name()} />
+  ：使用系统编辑器打开 JSONL 日志。
+- <UiLabel name={m.settings_log_export_name()} />
+  ：导出日志文件以便分享。
 
-Both actions are disabled while <UiLabel name={m.settings_log_to_file_name()} /> is off.
+关闭 <UiLabel name={m.settings_log_to_file_name()} /> 时，这两个操作均不可用。
 
-### Recovery [#recovery]
+### 恢复 [#recovery]
 
-| Label                                                     | Key  | Control                                                            | Default | Dependency | Storage              |
-| --------------------------------------------------------- | ---- | ------------------------------------------------------------------ | ------- | ---------- | -------------------- |
-| <UiLabel name={m.settings_citation_index_reset_name()} /> | None | <UiLabel name={m.settings_citation_index_reset_action()} /> action | None    | None       | None                 |
-| <UiLabel name={m.settings_language_pack_reset_name()} />  | None | <UiLabel name={m.settings_language_pack_reset_action()} /> action  | None    | None       | None                 |
-| <UiLabel name={m.settings_excerpt_cache_clear_name()} />  | None | <UiLabel name={m.settings_excerpt_cache_clear_action()} /> action  | None    | None       | Per device and vault |
+| 选项标签                                                  | 内部键名 | 控件类型                                                         | 默认值 | 依赖条件 | 生效范围     |
+| --------------------------------------------------------- | -------- | ---------------------------------------------------------------- | ------ | -------- | ------------ |
+| <UiLabel name={m.settings_citation_index_reset_name()} /> | 无       | <UiLabel name={m.settings_citation_index_reset_action()} /> 操作 | 无     | 无       | 无           |
+| <UiLabel name={m.settings_language_pack_reset_name()} />  | 无       | <UiLabel name={m.settings_language_pack_reset_action()} /> 操作  | 无     | 无       | 无           |
+| <UiLabel name={m.settings_excerpt_cache_clear_name()} />  | 无       | <UiLabel name={m.settings_excerpt_cache_clear_action()} /> 操作  | 无     | 无       | 按设备和仓库 |
 
-<UiLabel name={m.settings_citation_index_reset_name()} /> clears the stored
-citation key scans and reads your notes again. ZotLit keeps a scan per note so
-that a restart only re-reads the notes that changed, and the scans are rebuilt
-from your vault, so nothing in your vault changes. Use it when the references
-sidebar disagrees with what a note cites. The rebuild runs in the background
-after you confirm.
+<UiLabel name={m.settings_citation_index_reset_name()} />
+会清除已存储的引用键扫描结果，并重新读取笔记。ZotLit
+为每篇笔记保存扫描结果，因此重启后只需重新读取发生变化的笔记。扫描结果可从仓库内容重建，不会修改仓库中的任何内容。当参考文献侧边栏与笔记中的引文不一致时，可使用此操作。确认后，重建会在后台运行。
 
-<UiLabel name={m.settings_language_pack_reset_name()} /> removes the downloaded
-language packs stored on this device and forgets whether ZotLit already offered
-them. The pack loaded at startup stays in place until you restart Obsidian,
-after which ZotLit offers to install it again. Use it when translated text looks
-wrong or outdated.
+<UiLabel name={m.settings_language_pack_reset_name()} />
+会移除此设备上已下载的语言包，并清除 ZotLit
+是否已提示安装这些语言包的记录。启动时加载的语言包会继续使用，直到您重启
+Obsidian；重启后，ZotLit 会再次提示安装。当译文有误或过时时，可使用此操作。
 
-#### Excerpt image cache [#excerpt-image-cache]
+#### 摘录图片缓存 [#excerpt-image-cache]
 
-<UiLabel name={m.settings_excerpt_cache_clear_name()} /> removes ZotLit's cached
-excerpt images for this vault on this device. Select
-<UiLabel name={m.settings_excerpt_cache_clear_action()} /> in the confirmation
-to clear it. Saved note images and Zotero's image cache remain unchanged.
+<UiLabel name={m.settings_excerpt_cache_clear_name()} /> 会移除 ZotLit
+为此设备上的此仓库缓存的摘录图片。在确认对话框中选择
+<UiLabel name={m.settings_excerpt_cache_clear_action()} />
+即可清除。已保存的笔记图片和 Zotero 的图片缓存保持不变。
 
-The cache survives restarts and has a 256 MiB limit. ZotLit removes the least recently used entries when it needs space. Cleared images are generated again when requested. See [Cache and freshness](/docs/concepts/excerpt-images#freshness) for the PDF file checks and their limits.
+缓存会在重启后保留，上限为 256 MiB。需要腾出空间时，ZotLit 会移除最久未使用的缓存项。已清除的图片会在再次请求时重新生成。PDF 文件检查及其限制详见[缓存与更新](/docs/concepts/excerpt-images#freshness)。
 
-## Where settings moved [#moved]
+## 设置迁移对照 [#moved]
 
-ZotLit 2.2.0 reorganized the settings tab around the literature note. Every row keeps its name, so Obsidian's own settings search still finds a setting by the name you know. Settings new in 2.2.0, such as <UiLabel name={m.settings_note_import_highlight_mappings_name()} />, are not listed here; they appear only in their own section above.
+ZotLit 2.2.0 围绕文献笔记重新组织了设置页。每项设置的名称保持不变，因此仍可使用熟悉的名称，通过 Obsidian 自带的设置搜索找到它。2.2.0 新增的设置（例如 <UiLabel name={m.settings_note_import_highlight_mappings_name()} />）未列入下表，请参阅上文相应章节。
 
-| Old location                                                                                                                                                        | New location                                                                                                                                                                                                                |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Literature note folder**, on the top-level page                                                                                                                   | The <UiLabel name={m.settings_profile_folder_name()} /> row on the main page                                                                                                                                                |
-| **Note import** page                                                                                                                                                | <SettingsPath page={m.settings_page_note_import()} />, except <UiLabel name={m.settings_note_import_folder_name()} />, which is on the main page                                                                            |
-| **Frontmatter** field list, under the Templates page                                                                                                                | The template document, opened with <UiLabel name={m.settings_profile_edit()} /> from the <UiLabel name={m.settings_profile_document_name()} /> row on the main page                                                         |
-| **Template folder**, on the Templates page                                                                                                                          | <SettingsPath page={m.settings_page_advanced()} setting={m.settings_template_folder_name()} />                                                                                                                              |
-| **JavaScript templates** and trim, on the Templates page                                                                                                            | The <UiLabel name={m.settings_advanced_template_engine_heading()} /> group on <SettingsPath page={m.settings_page_advanced()} />                                                                                            |
-| **Citation** and **Alternate citation**, on the Templates page                                                                                                      | One <UiLabel name={m.settings_citation_text_name()} /> row on <SettingsPath page={m.settings_page_citations()} />. Both gestures now come from one template.                                                                |
-| **Zotero database** page                                                                                                                                            | <SettingsPath page={m.settings_page_zotero()} />. <UiLabel name={m.settings_db_file_name()} /> leads the page. The Companion and change-watching rows are in the <UiLabel name={m.settings_zotero_sync_heading()} /> group. |
-| <UiLabel name={m.settings_db_profile_dir_name()} />, <UiLabel name={m.settings_db_read_mode_name()} />, and the **Advanced** group, on the **Zotero database** page | <SettingsPath page={m.settings_page_zotero()} setting={m.settings_page_zotero_location()} />                                                                                                                                |
-| **Library** page                                                                                                                                                    | The <UiLabel name={m.settings_zotero_libraries_heading()} /> group on <SettingsPath page={m.settings_page_zotero()} />                                                                                                      |
-| **Live updates** page                                                                                                                                               | The <UiLabel name={m.settings_advanced_local_server_heading()} /> group on <SettingsPath page={m.settings_page_advanced()} />                                                                                               |
-| <UiLabel name={m.settings_live_updates_enabled_name()} />, on the **Live updates** page                                                                             | The <UiLabel name={m.settings_zotero_sync_heading()} /> group on <SettingsPath page={m.settings_page_zotero()} />                                                                                                           |
-| **Maintenance** page                                                                                                                                                | <SettingsPath page={m.settings_page_advanced()} />                                                                                                                                                                          |
+| 原位置                                                                                                                                        | 新位置                                                                                                                                                                                                   |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 顶层页面中的**文献笔记文件夹**                                                                                                                | 主设置页中的 <UiLabel name={m.settings_profile_folder_name()} /> 行                                                                                                                                      |
+| **笔记导入**页                                                                                                                                | <SettingsPath page={m.settings_page_note_import()} />，其中 <UiLabel name={m.settings_note_import_folder_name()} /> 移至主设置页                                                                         |
+| 模板页中的 **frontmatter** 字段列表                                                                                                           | 模板文档：在主设置页的 <UiLabel name={m.settings_profile_document_name()} /> 行中选择 <UiLabel name={m.settings_profile_edit()} /> 打开                                                                  |
+| 模板页中的**模板文件夹**                                                                                                                      | <SettingsPath page={m.settings_page_advanced()} setting={m.settings_template_folder_name()} />                                                                                                           |
+| 模板页中的 **JavaScript 模板**及空白修剪设置                                                                                                  | <SettingsPath page={m.settings_page_advanced()} /> 中的 <UiLabel name={m.settings_advanced_template_engine_heading()} /> 分组                                                                            |
+| 模板页中的**引文**和**备选引文**                                                                                                              | <SettingsPath page={m.settings_page_citations()} /> 中的 <UiLabel name={m.settings_citation_text_name()} /> 行。两种操作现在使用同一个模板。                                                             |
+| **Zotero 数据库**页                                                                                                                           | <SettingsPath page={m.settings_page_zotero()} />。<UiLabel name={m.settings_db_file_name()} /> 位于页面顶部。Companion 和更改监测设置行位于 <UiLabel name={m.settings_zotero_sync_heading()} /> 分组中。 |
+| **Zotero 数据库**页中的 <UiLabel name={m.settings_db_profile_dir_name()} />、<UiLabel name={m.settings_db_read_mode_name()} /> 及**高级**分组 | <SettingsPath page={m.settings_page_zotero()} setting={m.settings_page_zotero_location()} />                                                                                                             |
+| **文献库**页                                                                                                                                  | <SettingsPath page={m.settings_page_zotero()} /> 中的 <UiLabel name={m.settings_zotero_libraries_heading()} /> 分组                                                                                      |
+| **实时更新**页                                                                                                                                | <SettingsPath page={m.settings_page_advanced()} /> 中的 <UiLabel name={m.settings_advanced_local_server_heading()} /> 分组                                                                               |
+| **实时更新**页中的 <UiLabel name={m.settings_live_updates_enabled_name()} />                                                                  | <SettingsPath page={m.settings_page_zotero()} /> 中的 <UiLabel name={m.settings_zotero_sync_heading()} /> 分组                                                                                           |
+| **维护**页                                                                                                                                    | <SettingsPath page={m.settings_page_advanced()} />                                                                                                                                                       |
 
-The legacy template rows for the literature note, the managed region, the annotation, and the note filename are no longer in settings. A literature note's body, filename, and properties come from its Profile's template document.
+原有的文献笔记、托管区域、批注和笔记文件名模板设置行已从设置页移除。文献笔记的正文、文件名和属性均来自其配置方案的模板文档。
 
-## See also
+## 另请参阅 [#see-also]
 
 <Cards>
   <Card
-    title="Commands"
-    description="Every command-palette command and its entry points."
+    title="命令"
+    description="命令面板中的所有命令及其入口。"
     href="/docs/reference/commands"
   />
   <Card
-    title="Protocol links"
-    description="obsidian://zotlit/* actions for scripting workflows."
+    title="协议链接"
+    description="用于脚本工作流的 obsidian://zotlit/* 操作。"
     href="/docs/reference/protocol-links"
   />
   <Card
-    title="Template syntax"
-    description="Liquid markup reference for ZotLit templates."
+    title="模板语法"
+    description="ZotLit 模板的 Liquid 标记语法参考。"
     href="/docs/reference/templates/syntax"
   />
 </Cards>

@@ -50,40 +50,40 @@ import { m } from "@/paraglide/messages.js";
 
 违反上述规则的文档绝不会被强制拒绝或丢弃。您可以在当前编辑处就地修正：ZotLit 会保持文档可编辑，并在工作台底部的 <UiLabel name={m.workbench_problems_heading()} /> 区域列出每一处故障以及推荐的修复建议。随着您的编辑修改，问题面板会自动动态重算，一旦文档恢复合规，对应的错误项就会自动消除。
 
-| 违反的规则                                    | 问题面板报告的提示                                                    |
-| --------------------------------------------- | --------------------------------------------------------------------- |
-| 文件开头缺少 manifest 元数据区                | <UiLabel name={m.workbench_problem_invalid_document()} />             |
-| manifest 不是有效的 YAML，或某属性键校验失败  | <UiLabel name={m.workbench_problem_invalid_manifest()} />             |
-| manifest 中的片段被命名为了 `annotation`      | <UiLabel name={m.workbench_problem_reserved_annotation_partial()} />  |
-| 笔记源码中包含了多个受管块                    | <UiLabel name={m.workbench_problem_duplicate_managed_block()} />      |
-| 受管块没有正确闭合                            | <UiLabel name={m.workbench_problem_invalid_managed_block()} />        |
-| 出现了除标注行之外的其他未知分隔标题          | <UiLabel name={m.workbench_problem_unknown_section_header()} />       |
-| The Annotation Section is absent              | <UiLabel name={m.workbench_problem_missing_annotation_section()} />   |
-| The Annotation Section appears more than once | <UiLabel name={m.workbench_problem_duplicate_annotation_section()} /> |
+| 违反的规则                                   | 问题面板报告的提示                                                    |
+| -------------------------------------------- | --------------------------------------------------------------------- |
+| 文件开头缺少 manifest 元数据区               | <UiLabel name={m.workbench_problem_invalid_document()} />             |
+| manifest 不是有效的 YAML，或某属性键校验失败 | <UiLabel name={m.workbench_problem_invalid_manifest()} />             |
+| manifest 中的片段被命名为了 `annotation`     | <UiLabel name={m.workbench_problem_reserved_annotation_partial()} />  |
+| 笔记源码中包含了多个受管块                   | <UiLabel name={m.workbench_problem_duplicate_managed_block()} />      |
+| 受管块未正确开始或闭合                       | <UiLabel name={m.workbench_problem_invalid_managed_block()} />        |
+| 出现了除标注行之外的其他未知分隔标题         | <UiLabel name={m.workbench_problem_unknown_section_header()} />       |
+| 缺少标注格式区域                             | <UiLabel name={m.workbench_problem_missing_annotation_section()} />   |
+| 标注格式区域出现多次                         | <UiLabel name={m.workbench_problem_duplicate_annotation_section()} /> |
 
-The Problems area also offers <UiLabel name={m.workbench_problems_copy()} />, so you can paste the whole report into a bug report. See [Collect debug logs](/docs/how-to/collect-debug-logs) for the rest of that report.
+问题面板还提供 <UiLabel name={m.workbench_problems_copy()} />，可将完整报告粘贴到问题反馈中。有关报告的其他内容，请参阅[收集调试日志](/docs/how-to/collect-debug-logs)。
 
-## See also
+## 另请参阅 [#see-also]
 
 <Cards>
   <Card
-    title="Profile document"
-    description="The manifest, the note source, the managed block, and the Annotation Section."
+    title="配置方案文档"
+    description="manifest、笔记源码、受管块与标注格式区域。"
     href="/docs/reference/templates/profile-document"
   />
   <Card
-    title="Frontmatter"
-    description="The properties a profile writes into a note, and how it merges them."
+    title="Frontmatter 属性"
+    description="配置方案写入笔记的属性及其合并方式。"
     href="/docs/reference/templates/frontmatter"
   />
   <Card
-    title="Template Workbench View"
-    description="The tabs, the preview, and the modes that edit a profile."
+    title="模板工作台视图"
+    description="用于编辑配置方案的标签页、预览与编辑模式。"
     href="/docs/concepts/template-workbench-view"
   />
   <Card
-    title="Profiles"
-    description="What a profile is, and how a note keeps the one that made it."
+    title="配置方案"
+    description="了解配置方案，以及笔记如何保留创建它的方案。"
     href="/docs/concepts/profiles"
   />
 </Cards>

@@ -14,7 +14,7 @@ ZotLit 支持 Zotero 9 及更高版本，且必须安装配套插件 Companion�
 
 ## 读取 Zotero 数据库
 
-Zotero 在运行期间可能会将最新的写入暂存在单独的数据库缓存文件中。ZotLit 采用专门的读取模式（read mode）直接访问您的文献库，且绝不会与 Zotero 产生读写冲突或导致数据库锁定。
+Zotero 在运行期间可能会将最新更改保存在独立的数据库文件中。ZotLit 使用读取模式访问文献库，以免干扰 Zotero 的运行。
 
 默认的 <UiLabel name={m.settings_db_read_mode_auto()} /> 设置会自动选取当前环境下最优的读取模式。在 macOS 和 Linux 上，它会优先尝试使用 <UiLabel name={m.settings_db_read_mode_reflink()} />。在 APFS、Btrfs 以及开启了写时复制（reflink）的 XFS 文件系统上，<UiLabel name={m.settings_db_read_mode_auto()} /> 会使用轻量快照副本。在 Windows 和其他常见文件系统（例如 ext4）上，<UiLabel name={m.settings_db_read_mode_auto()} /> 会回退到 <UiLabel name={m.settings_db_read_mode_immutable()} />。您随时可以在设置中手动指定。
 
@@ -59,76 +59,71 @@ ZotLit 在 Zotero 与 Obsidian 之间提供了两种不同的通信机制，它�
 
 ### 协议链接（无需启用服务器）
 
-Zotero 的右键菜单使用标准的 `obsidian://` 协议链接。无论 Obsidian 是否在后台保持运行，操作系统都会正确响应并将指令送达 Obsidian。
+当您在 Zotero 中右键选择条目并执行 ZotLit 操作（打开笔记、更新笔记、导入或打开 PDF）时，Companion 会生成并打开一个 `obsidian://zotlit/...` URL。Obsidian 接收 URL 后，由 ZotLit 执行相应操作。
 
-When you right-click an item in Zotero and choose a ZotLit action (open note, update note, import, open PDF), the Companion builds an `obsidian://zotlit/...` URL and opens it. Obsidian receives the URL and ZotLit handles the action.
+安装 ZotLit 和 Companion 后即可使用协议链接。链接包含来源标识符，以便 ZotLit 只处理来自预期 Zotero 安装实例的链接。
 
-Protocol links work out of the box after you install ZotLit and the Companion. They carry a source identifier so ZotLit only processes links originating from the expected Zotero install.
-
-<Callout type="info" title="Batch actions and the URL length limit">
-  Batch operations (selecting many items in Zotero) may exceed the URL length
-  limit. When this happens, the Companion falls back to an HTTP request to the
-  ZotLit server. If the server is not enabled, Zotero shows a notice asking you
-  to enable it or select fewer items.
+<Callout type="info" title="批量操作与 URL 长度限制">
+  批量操作（在 Zotero 中选中多个条目）可能超出 URL 长度限制。此时，Companion
+  会改为向 ZotLit 服务器发送 HTTP 请求。如果未启用服务器，Zotero
+  会提示您启用服务器或减少所选条目。
 </Callout>
 
 ### 即时同步更新（需要本地服务器）
 
-即时同步更新通过 Obsidian 内部运行的轻量 HTTP 监听服务器接收来自 Companion 的实时事件推送。它适用于希望在 Zotero 中添加高亮或修改条目后无需任何手动点击即可让 Obsidian 自动同步的深度工作流。
+即时同步更新是一条推送通道。当您在 Zotero PDF 阅读器中阅读和添加标注时，Companion 会向 Obsidian 发送 HTTP 通知，支持标注视图跟随阅读器。Companion 完成对主数据库文件的处理后，还会发送一个不含数据负载的信号，通知 ZotLit 刷新，以便更改立即显示。
 
-Live updates are a push channel. The Companion sends HTTP notifications to Obsidian as you read and annotate in the Zotero PDF reader, powering the annotation view's reader-following mode. After the Companion finishes its work on the main database file, it also sends a payload-free signal telling ZotLit to refresh, so changes appear right away.
+将更改写入主文件的数据库检查点操作独立于即时同步更新。即时同步更新只额外提供通知 ZotLit 何时刷新的信号。
 
-The database checkpoint that writes those changes into the main file works independently of live updates. Live updates only add the signal that tells ZotLit when to refresh.
+即时同步更新需要同时启用两项设置：
 
-Live updates require two things enabled:
+- **在 Obsidian 中：**启用 ZotLit 服务器（默认在端口 9091 上运行的本地 HTTP 监听器），并开启 <UiLabel name={m.settings_live_updates_enabled_name()} />。
+- **在 Zotero 中：**启用 Companion 的通知设置，并指向同一个地址。
 
-- **In Obsidian:** the ZotLit server (a local HTTP listener on port 9091 by default), with <UiLabel name={m.settings_live_updates_enabled_name()} /> on.
-- **In Zotero:** the Companion's notify preference, pointed at the same address.
+两端均携带来源标识符和协议版本。服务器会丢弃来自未识别的 Zotero 安装实例的请求（来源不匹配），并拒绝协议版本不兼容的请求。
 
-Both sides carry a source identifier and a protocol version. The server discards requests from unrecognized Zotero installs (source mismatch) and rejects requests with an incompatible protocol version.
-
-<Callout type="info" title="Off by default">
-  Both the Obsidian server and the Companion's notify preference are disabled by
-  default. Protocol links handle all context-menu actions without them. Enable
-  live updates only when you want real-time push from Zotero.
+<Callout type="info" title="默认关闭">
+  Obsidian 服务器和 Companion
+  的通知设置默认都处于关闭状态。协议链接无需这两项功能即可处理所有右键菜单操作。仅在需要
+  Zotero 实时推送时开启即时同步更新。
 </Callout>
 
-## Saving annotation changes to Zotero
+## 将标注更改保存到 Zotero [#saving-annotation-changes-to-zotero]
 
-The database connection only reads. When you edit an annotation in Obsidian, ZotLit sends the change to Zotero while Zotero is running. Zotero saves it like an annotation you made in its own reader, so the change syncs with your Zotero library.
+数据库连接只负责读取。当您在 Obsidian 中编辑标注时，ZotLit 会将更改发送给正在运行的 Zotero。Zotero 会像保存其自身阅读器中创建的标注一样保存更改，因此这些更改也会随 Zotero 文献库同步。
 
-ZotLit sends these changes through Zotero's local API, a connection that Zotero provides for other applications on the same computer. Two things must be in place:
+ZotLit 通过 Zotero 的本地 API 发送这些更改。这是 Zotero 为同一台计算机上的其他应用提供的连接，需要满足两个条件：
 
-- **In Zotero:** **Allow other applications on this computer to communicate with Zotero** is on, under Settings → Advanced.
-- **Your permission:** the first time you allow editing, Zotero shows a permission dialog. You choose **Always Allow** once. ZotLit saves this permission for the current vault on the current device only, so you give it once for each vault on each computer.
+- **在 Zotero 中：**在 Settings → Advanced 下开启 **Allow other applications on this computer to communicate with Zotero**（允许此计算机上的其他应用与 Zotero 通信）。
+- **您的授权：**首次允许编辑时，Zotero 会显示权限对话框。选择一次 **Always Allow**（始终允许）即可。ZotLit 仅为当前设备上的当前仓库保存此权限，因此每台计算机上的每个仓库都需要分别授权一次。
 
-This connection does not use protocol links or the ZotLit server. For the steps, see [Edit PDF annotations in Obsidian](/docs/how-to/edit-pdf-annotations).
+此连接不使用协议链接或 ZotLit 服务器。操作步骤请参阅[在 Obsidian 中编辑 PDF 标注](/docs/how-to/edit-pdf-annotations)。
 
-## How the pieces fit together
+## 各部分如何协同工作 [#how-the-pieces-fit-together]
 
-ZotLit can read the database while Zotero is closed. Install the Companion in Zotero to keep data current after changes. Protocol links and live updates also depend on the Companion.
+Zotero 关闭时，ZotLit 仍能读取数据库。在 Zotero 中安装 Companion，可以确保更改后的数据保持最新。协议链接和即时同步更新也依赖 Companion。
 
-## See also
+## 另请参阅 [#see-also]
 
 <Cards>
   <Card
-    title="Fix Zotero changes that do not appear"
-    description="What to do when changes in Zotero don't appear in ZotLit."
+    title="排查 Zotero 更改未显示的问题"
+    description="Zotero 中的更改未出现在 ZotLit 中时的处理方法。"
     href="/docs/how-to/fix-stale-data"
   />
   <Card
-    title="Set up live updates"
-    description="Enable the server and Companion notification setting step by step."
+    title="配置即时同步更新"
+    description="逐步启用服务器和 Companion 通知设置。"
     href="/docs/how-to/set-up-live-updates"
   />
   <Card
-    title="Install ZotLit Companion"
-    description="Download and install the required Zotero add-on."
+    title="安装 ZotLit Companion"
+    description="下载并安装必备的 Zotero 插件。"
     href="/docs/install-companion"
   />
   <Card
-    title="Literature notes and the managed region"
-    description="How ZotLit separates your writing from generated content."
+    title="文献笔记与受管区域"
+    description="ZotLit 如何区分您撰写的文字与生成的内容。"
     href="/docs/concepts/literature-notes-and-the-managed-region"
   />
 </Cards>

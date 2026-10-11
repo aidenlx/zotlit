@@ -58,88 +58,88 @@ import { m } from "@/paraglide/messages.js";
   <Step>
     ### 使用该配置方案创建笔记
 
-    Run <Command name={m.command_open_lit_note_name()} /> and select an item the profile matches. ZotLit creates the note from the profile and reports the match. The note records the profile in its `zotlit-profile` property.
+运行 <Command name={m.command_open_lit_note_name()} />，并选择符合该配置方案条件的条目。ZotLit 会使用该配置方案创建笔记，并报告匹配结果。笔记会在 `zotlit-profile` 属性中记录配置方案。
 
   </Step>
 </Steps>
 
-Existing notes keep the profile that made them. To move one note to this profile, run <Command inline name={m.command_switch_literature_note_profile_name()} /> from the note.
+现有笔记会继续使用创建它的配置方案。要将某篇笔记转到此配置方案，请在该笔记中运行 <Command inline name={m.command_switch_literature_note_profile_name()} />。
 
-## When two profiles match [#overlap]
+## 两个配置方案同时匹配时 [#overlap]
 
-Two profiles can match the same item, and ZotLit does not choose for you when they do. The picker opens and reports <UiLabel name={m.modal_profile_problem_overlap({ profiles: "…" })} />. Its search box reads <UiLabel name={m.modal_profile_overlap_placeholder()} />, and every candidate that matches the item carries <UiLabel name={m.modal_profile_match_candidate()} />.
+两个配置方案可能同时匹配同一个条目，此时 ZotLit 不会替您选择。选择器会打开并显示 <UiLabel name={m.modal_profile_problem_overlap({ profiles: "…" })} />。其搜索框提示为 <UiLabel name={m.modal_profile_overlap_placeholder()} />，每个匹配该条目的候选方案都会带有 <UiLabel name={m.modal_profile_match_candidate()} /> 标记。
 
-Pick the profile you meant to use, or dismiss the picker to cancel the note. Narrowing the conditions on the <UiLabel name={m.workbench_tab_match()} /> tab is the durable fix.
+选择您要使用的配置方案，或关闭选择器以取消创建笔记。若要从根本上消除重叠，请在 <UiLabel name={m.workbench_tab_match()} /> 标签页中收窄匹配条件。
 
-## When you pick a profile by hand [#manual]
+## 手动选择配置方案时 [#manual]
 
-A profile you choose for the current operation wins over Profile Match, whatever the conditions say. [Profiles](/docs/concepts/profiles) holds the order ZotLit tries when it selects one.
+为当前操作手动选择的配置方案优先于自动匹配，无论匹配条件如何设置。ZotLit 选择配置方案时的优先顺序见[配置方案](/docs/concepts/profiles)。
 
-Your choice covers that one operation. The note records the profile that made it, and later updates read that record instead of the conditions.
+您的选择仅适用于这一次操作。笔记会记录创建它的配置方案，后续更新读取该记录，而不会重新检查匹配条件。
 
-## Share the profile as one file [#share]
+## 以单个文件分享配置方案 [#share]
 
-A profile is a single document, so you can move it to another vault as one file, with the partials it calls travelling inside it. The [Profile document](/docs/reference/templates/profile-document) reference describes the document that travels and every key inside it.
+配置方案是一份独立文档，您可以通过一个文件将其移至另一个仓库，它调用的共享片段会一并包含在文件内。[配置方案文档](/docs/reference/templates/profile-document)参考介绍了用于分享的文档及其中的每个配置键。
 
 <Steps>
   <Step>
-    ### Share the profile
+    ### 分享配置方案 [#share-the-profile]
 
-    On the profile's row, open <UiLabel name={m.workbench_more_actions()} /> and select <UiLabel name={m.settings_profile_share()} />. The share dialog collects the document and the partials it appears to call.
-
-  </Step>
-  <Step>
-    ### Choose what the file carries
-
-    Under <UiLabel name={m.profile_share_partials()} />, clear any partial you do not want to send; the ones the profile appears to call are already selected. <UiLabel name={m.profile_share_include_match()} /> carries the Profile Match to the receiving vault, and <UiLabel name={m.profile_share_folders()} /> adds your note folders to the file.
+    在配置方案所在行打开 <UiLabel name={m.workbench_more_actions()} />，然后选择 <UiLabel name={m.settings_profile_share()} />。分享对话框会收集该文档及检测到它可能调用的共享片段。
 
   </Step>
   <Step>
-    ### Copy it or save it
+    ### 选择文件包含的内容 [#choose-what-the-file-carries]
 
-    Select <UiLabel name={m.profile_share_copy()} /> to put the file on the clipboard, or <UiLabel name={m.profile_share_save()} /> to write it into a folder you choose. Both produce the same single document.
-
-  </Step>
-  <Step>
-    ### Import it in the receiving vault
-
-    Run <Command inline name={m.command_import_profile_name()} />, or select the import button in the header of the <UiLabel name={m.settings_profile_other_heading()} /> list. ZotLit then asks where the file is: <UiLabel name={m.profile_import_clipboard()} /> or <UiLabel name={m.profile_import_file()} />.
+    在 <UiLabel name={m.profile_share_partials()} /> 下，取消选中您不想分享的共享片段；检测到配置方案可能调用的片段已默认选中。<UiLabel name={m.profile_share_include_match()} /> 会将配置方案匹配规则带到接收方仓库，<UiLabel name={m.profile_share_folders()} /> 则将您的笔记文件夹设置加入文件。
 
   </Step>
   <Step>
-    ### Read what the import dialog reports
+    ### 复制或保存文件 [#copy-it-or-save-it]
 
-    The dialog previews the partials it will unpack into the template folder, the citation style, and the incoming Profile Match written out in words. <UiLabel name={m.profile_import_include_match()} /> imports the Match with the profile, so it selects notes in this vault too; turn it off to keep the profile for manual selection only. When the shared profile carries no Match, the dialog reads <UiLabel name={m.profile_match_absent()} /> and hides the toggle. Select <UiLabel name={m.profile_import_confirm()} /> to write the profile.
+    选择 <UiLabel name={m.profile_share_copy()} /> 将文件内容放入剪贴板，或选择 <UiLabel name={m.profile_share_save()} /> 将其写入您指定的文件夹。两种方式生成相同的单一文档。
+
+  </Step>
+  <Step>
+    ### 在接收方仓库中导入 [#import-it-in-the-receiving-vault]
+
+    运行 <Command inline name={m.command_import_profile_name()} />，或选择 <UiLabel name={m.settings_profile_other_heading()} /> 列表标题栏中的导入按钮。ZotLit 随后会询问文件来源：<UiLabel name={m.profile_import_clipboard()} /> 或 <UiLabel name={m.profile_import_file()} />。
+
+  </Step>
+  <Step>
+    ### 查看导入对话框的说明 [#read-what-the-import-dialog-reports]
+
+    对话框会预览将解包到模板文件夹的共享片段、引文样式，以及用文字描述的传入配置方案匹配规则。<UiLabel name={m.profile_import_include_match()} /> 会随配置方案导入匹配规则，使它也能在此仓库中自动选择笔记；关闭此项可将该方案仅用于手动选择。如果分享的配置方案不包含匹配规则，对话框会显示 <UiLabel name={m.profile_match_absent()} /> 并隐藏开关。选择 <UiLabel name={m.profile_import_confirm()} /> 写入配置方案。
 
   </Step>
 </Steps>
 
-## See also
+## 另请参阅 [#see-also]
 
 <Cards>
   <Card
-    title="Profiles"
-    description="What a profile is, how one is chosen, and how a note keeps it."
+    title="配置方案"
+    description="配置方案的含义、选择方式以及笔记如何记录其归属。"
     href="/docs/concepts/profiles"
   />
   <Card
-    title="Profile Match"
-    description="The condition language that selects a profile automatically."
+    title="配置方案匹配规则"
+    description="用于自动选择配置方案的条件语言。"
     href="/docs/reference/templates/profile-match"
   />
   <Card
-    title="Profile document"
-    description="The manifest keys, the note source, and the Annotation Section."
+    title="配置方案文档"
+    description="manifest 配置键、笔记源码和标注部分。"
     href="/docs/reference/templates/profile-document"
   />
   <Card
-    title="Edit a profile as Markdown"
-    description="Edit the document directly, in the shape ZotLit enforces."
+    title="以 Markdown 编辑配置方案"
+    description="按 ZotLit 要求的结构直接编辑文档。"
     href="/docs/how-to/edit-a-profile-as-markdown"
   />
   <Card
-    title="Literature note profiles"
-    description="The Default profile, the profile list, and the Partials group."
+    title="文献笔记配置方案"
+    description="默认配置方案、配置方案列表和共享片段分组。"
     href="/docs/reference/settings#profiles"
   />
 </Cards>

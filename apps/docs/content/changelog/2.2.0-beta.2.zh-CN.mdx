@@ -1,7 +1,7 @@
 ---
 version: "2.2.0-beta.2"
 date: "2026-10-02"
-description: "笔记路径集中呈现、支持保留手写输入的配置方案、Word 导出问题修复"
+description: "笔记路径集中呈现、原样保留输入文本的配置方案、Word 导出问题修复"
 ---
 
 import { Command } from "@/components/command";
@@ -54,21 +54,20 @@ import { m } from "@/paraglide/messages.js";
 
 - 即时更新笔记此前会打乱用户的当前阅读浏览位置。现在更新后能够稳固停留在您先前的阅读位置。
 - 当光标位于笔记标题或 Properties 属性区域中时，<Command inline name={m.command_update_note_name()} /> 与 <Command inline name={m.command_update_note_metadata_name()} /> 此前无法使用。现在已支持在笔记内部任意位置正常触发。
-- A dragged annotation dropped at the end of a sentence joined that line. It now goes in as a block of its own. A drop on the empty last line of a note now inserts the annotation, and a drop with no target note tells you so. See [Use the annotation view](/docs/how-to/use-annotation-view).
-- In Live Preview, the `%%/zt-managed%%` closing marker was hidden inside the last callout of the note. It now stays outside the callout.
-- The <UiLabel name={m.cited_by_view_name()} /> view showed zero counts when no literature note was open. It now shows counts only for a literature note.
+- 将批注拖到句末时，此前会与该行文本连在一起。现在批注会作为独立文本块插入。拖到笔记末尾的空行也能正常插入；没有目标笔记时会显示提示。详见[使用标注视图](/docs/how-to/use-annotation-view)。
+- 在 Live Preview 中，结束标记 `%%/zt-managed%%` 此前会隐藏在笔记最后一个 callout 内部。现在该标记会保留在 callout 外部。
+- 没有打开文献笔记时，<UiLabel name={m.cited_by_view_name()} /> 视图此前会显示计数为零。现在仅在打开文献笔记时显示计数。
 
-### Export
+### 导出 [#export]
 
-- Exporting to Word now handles three things correctly. See [Export a note with citations](/docs/how-to/export-note-with-citations).
-  - A callout showed its raw `[!type]` text. It now becomes a quote with a bold title.
-  - A quote directly under a line of text became plain text. It now stays a quote.
-  - The reference list had no heading. It now has one in the language of the citation style. The note's `reference-section-title` property sets a different heading.
+- 导出为 Word 时，以下三类内容现在均能正确处理。详见[导出包含引文的笔记](/docs/how-to/export-note-with-citations)。
+  - callout 此前会显示原始的 `[!type]` 文本。现在会转换为带有粗体标题的引用块。
+  - 紧接在一行正文下方的引用块此前会变成普通文本。现在会保留为引用块。
+  - 参考文献列表此前没有标题。现在会根据引文样式的语言添加标题，也可以通过笔记的 `reference-section-title` 属性设置其他标题。
 
-### Welcome view
+### 欢迎视图 [#welcome-view]
 
-- The folder, ZotLit Companion, and first-note steps stayed to-do after you completed them. They now show as done, and the Companion step stops offering the install once the Companion is installed.
-- <Command inline name={m.command_open_welcome_name()} /> opened in place of the
-  active note, so going back skipped that note. It now opens in a new tab beside
-  it.
-- Choosing a result in the literature note search from the Welcome view opened a second copy of a note that was already open. It now switches to the open note. Modifier keys still open the note in a new pane.
+- 文件夹、ZotLit Companion 与首篇笔记步骤在完成后此前仍显示为待办。现在会显示为已完成，且安装 Companion 后不会继续提供安装操作。
+- <Command inline name={m.command_open_welcome_name()} />
+  此前会替换活动笔记打开，导致返回时跳过该笔记。现在会在旁边的新标签页中打开。
+- 在欢迎视图的文献笔记搜索中选择已打开的笔记，此前会再打开一个副本。现在会切换到已打开的笔记。使用辅助键仍可在新窗格中打开。

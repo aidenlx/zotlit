@@ -12,7 +12,7 @@ import { m } from "@/paraglide/messages.js";
 
 当您在 Obsidian 中更新文献笔记后，Zotero 中的最新改动并未如期呈现时，请依照本指南进行排查修复。
 
-## 恢复 Zotero 数据的实时同步
+## 恢复读取 Zotero 最新数据
 
 <Steps>
   <Step>
@@ -58,23 +58,24 @@ import { m } from "@/paraglide/messages.js";
 如果问题仍未解决，请打开 <SettingsPath page={m.settings_page_zotero()} setting={m.settings_page_zotero_location()} />。将 <UiLabel name={m.settings_db_read_mode_name()} /> 调整为 <UiLabel name={m.settings_db_read_mode_copy()} />，刷新数据库，然后再次更新文献笔记。
 
 <UiLabel name={m.settings_db_read_mode_copy()} />
-会在每次读取时完整复制整个数据库文件。虽然其速度较慢且会占用额外的磁盘空间，但它能够强行绕过文件系统驱动的限制，确保读取到最新的物理数据。
+会在每次刷新时复制整个数据库。较大的 Zotero
+文献库需要更长的刷新时间，也会占用更多磁盘空间。
 
-## Report a remaining problem
+## 反馈仍未解决的问题 [#report-a-remaining-problem]
 
-If <UiLabel name={m.settings_db_read_mode_copy()} /> also fails, [collect debug logs](/docs/how-to/collect-debug-logs). Then [file a bug report](https://github.com/aidenlx/zotlit/discussions/new?category=bug-reports) with your ZotLit version, operating system, and reproduction steps.
+如果 <UiLabel name={m.settings_db_read_mode_copy()} /> 也无效，请先[收集调试日志](/docs/how-to/collect-debug-logs)，再[提交问题反馈](https://github.com/aidenlx/zotlit/discussions/new?category=bug-reports)，附上 ZotLit 版本、操作系统和复现步骤。
 
-## See also
+## 另请参阅 [#see-also]
 
 <Cards>
   <Card
-    title="Install ZotLit Companion"
-    description="Install or update the required Zotero add-on."
+    title="安装 ZotLit Companion"
+    description="安装或更新必需的 Zotero 附加组件。"
     href="/docs/install-companion"
   />
   <Card
-    title="How ZotLit connects to Zotero"
-    description="Learn how the Companion and ZotLit read modes work together."
+    title="ZotLit 如何连接 Zotero"
+    description="了解 Companion 如何与 ZotLit 的读取模式配合。"
     href="/docs/concepts/how-zotlit-connects-to-zotero"
   />
 </Cards>

@@ -35,7 +35,7 @@ Zotero 会随即弹出权限申请对话框。在对话框中请务必选择 **A
 <Callout type="warn" title="请勿在两个应用中同时编辑同一条批注">
   当在 Zotero 和 Obsidian 中同时重叠编辑同一条批注时，Zotero 存在一个[已知缺陷](https://github.com/aidenlx/zotlit/issues/1165)。即使两个应用都报告保存成功，其中一处评注也可能被另一处无声覆盖。此外，在 Obsidian 中执行删除还可能意外移除刚刚在 Zotero 中更新过的标注。
 
-您可以同时保持两个应用程序处于打开状态。但请在同一个应用程序中完成某项修改并等待其保存完毕后，再切换到另一端操作。这能有效降低冲突风险。
+您可以同时保持两个应用程序处于打开状态。但请在同一个应用程序中完成某项修改并等待其保存完毕后，再切换到另一端操作。这能降低风险，但不能保证不会发生重叠编辑。
 
 </Callout>
 
@@ -58,232 +58,232 @@ PDF 阅读器右侧的工具栏提供了相同的两个工具。选择某个工�
 
 如需以其他特定颜色创建单条高亮，请选中文本并直接从弹出浮窗中点击对应颜色。当没有激活任何工具时，点击颜色会直接创建高亮。
 
-## Create a note annotation
+## 创建笔记批注 [#create-a-note-annotation]
 
-Use the note tool to pin a comment to a spot on the page.
+使用笔记工具，将评注固定在页面上的某个位置。
 
-1. In the toolbar at the right of the PDF reader, select <UiLabel name={m.pdf_toolbar_note()} />.
-2. Click the page where the note belongs. The note appears centered on the click, and its popup opens with the comment editor ready.
-3. Type the comment. It saves as any comment does; see [Add or edit a comment](#add-or-edit-a-comment).
+1. 在 PDF 阅读器右侧的工具栏中，选择 <UiLabel name={m.pdf_toolbar_note()} />。
+2. 点击笔记所在的位置。笔记以点击位置为中心出现，弹出浮窗随即打开，您可以直接输入评注。
+3. 输入评注。保存方式与其他评注相同，参见[添加或编辑评注](#add-or-edit-a-comment)。
 
-The tool turns off after each note, as in Zotero. A click on an annotation mark selects that mark instead of creating a note, and a drag creates nothing.
+与 Zotero 一样，每创建一条笔记后，工具都会关闭。点击已有的批注标记会选中该标记，而不会创建笔记；拖动也不会创建笔记。
 
-## Create a text annotation
+## 创建文本批注 [#create-a-text-annotation]
 
-Use the text tool to type text onto the page itself.
+使用文本工具，直接在页面上键入文字。
 
-1. In the toolbar at the right of the PDF reader, select <UiLabel name={m.pdf_toolbar_text()} />. The tool turns off when the text box opens.
-2. Click the page where the text starts. A text box opens at the click.
-3. Type the text. Press `Enter` to start a new line. The box grows to one line of up to 300 pt, then wraps, as in Zotero.
-4. Press `Escape` or click outside the box. The text becomes a text annotation in Zotero, and stays on the page while it saves.
+1. 在 PDF 阅读器右侧的工具栏中，选择 <UiLabel name={m.pdf_toolbar_text()} />。文本框打开后，工具会关闭。
+2. 点击文字的起始位置。文本框会在点击处打开。
+3. 输入文字。按 `Enter` 换行。与 Zotero 一样，文本框会先以单行形式随文字增长，宽度达到 300 pt 后自动换行。
+4. 按 `Escape` 或点击文本框外部。文字会成为 Zotero 中的文本批注，并在保存期间保留在页面上。
 
-A box that you leave empty creates nothing. A click on an annotation mark selects that mark instead of opening a box. Zotero shows the annotation only when you finish typing, because ZotLit creates it once with its text.
+离开空文本框不会创建任何批注。点击已有的批注标记会选中该标记，而不会打开文本框。由于 ZotLit 会在输入完成后一次性创建带有文字的批注，因此 Zotero 只会在您完成输入后显示它。
 
-### Choose the text color and font size
+### 选择文字颜色与字号 [#choose-the-text-color-and-font-size]
 
-Select the arrow beside <UiLabel name={m.pdf_toolbar_text()} />. The menu lists the colors, then the sizes under <UiLabel name={m.pdf_toolbar_text_font_size()} />: 10, 12, 14, 18, 24, and 36 pt. A check mark shows the current color and size. The default size is 14 pt.
+选择 <UiLabel name={m.pdf_toolbar_text()} /> 旁的箭头。菜单先列出颜色，再在 <UiLabel name={m.pdf_toolbar_text_font_size()} /> 下列出字号：10、12、14、18、24 和 36 pt。勾选标记表示当前颜色和字号。默认字号为 14 pt。
 
-ZotLit remembers your color and font size for other PDFs.
+ZotLit 会记住您选择的颜色和字号，并在其他 PDF 中沿用。
 
-## Create an image annotation
+## 创建图片批注 [#create-an-image-annotation]
 
-Use the image tool to capture a figure, a table, or another area without text.
+使用图片工具，截取插图、表格或其他非文字区域。
 
-1. In the toolbar at the right of the PDF reader, select <UiLabel name={m.pdf_toolbar_image()} />.
-2. Drag a rectangle around the area. The rectangle stays faint until it is large enough to save.
-3. Release the pointer. The new mark appears, and its card shows the captured area.
+1. 在 PDF 阅读器右侧的工具栏中，选择 <UiLabel name={m.pdf_toolbar_image()} />。
+2. 拖出一个矩形，框住目标区域。在矩形达到可保存的最小尺寸之前，其颜色会保持较浅。
+3. 松开指针。新的批注标记随即出现，其卡片会显示截取的区域。
 
-The tool turns off after each capture. To cancel a drag, press `Escape`. Press `Escape` again to turn off the tool. A press on an annotation mark selects that mark instead of starting a rectangle.
+每次截取后，工具都会关闭。按 `Escape` 可取消当前拖动，再按一次 `Escape` 可关闭工具。在已有批注标记上按下指针会选中该标记，而不会开始绘制矩形。
 
-## Create an ink annotation
+## 创建墨迹批注 [#create-an-ink-annotation]
 
-Use the ink tool to draw on the page by hand.
+使用墨迹工具，在页面上手绘笔画。
 
-1. In the toolbar at the right of the PDF reader, select <UiLabel name={m.pdf_toolbar_ink()} />. The tool starts on blue, Zotero's default ink color.
-2. Press on the page and drag. The stroke follows the pointer.
-3. Release the pointer. The stroke becomes an ink annotation in Zotero, and stays on the page while it saves.
+1. 在 PDF 阅读器右侧的工具栏中，选择 <UiLabel name={m.pdf_toolbar_ink()} />。工具最初使用 Zotero 默认的蓝色墨迹。
+2. 在页面上按下指针并拖动。笔画会跟随指针移动。
+3. 松开指针。笔画会成为 Zotero 中的墨迹批注，并在保存期间保留在页面上。
 
-Each stroke is its own annotation. The tool stays active after each stroke, so you can start the next stroke at once. A tap without movement saves a dot. To combine several strokes into one annotation, merge them in Zotero.
+每个笔画都是独立的批注。完成一个笔画后，工具会保持激活，您可以立即开始下一个笔画。轻点而不移动会保存一个点。若要将多个笔画合成一条批注，请在 Zotero 中合并它们。
 
-The ink tool works with a mouse, a pen tablet, a trackpad, or a finger on a touchscreen. While the tool is active, a touch drag draws instead of scrolling the page. A stroke draws over text and over other annotation marks, so a press on a mark starts a stroke instead of selecting the mark.
+墨迹工具支持鼠标、数位板、触控板和触摸屏手指操作。工具激活时，触摸拖动会绘制笔画，而不会滚动页面。笔画可以覆盖文字和其他批注标记，因此在已有标记上按下指针会开始绘制，而不会选中该标记。
 
-A stroke stays on the page where it started, even if the pointer leaves the page. Zotero limits the size of one annotation. When a long stroke reaches that limit, ZotLit saves the part drawn so far and continues the stroke as a new annotation. You do not need to lift the pointer.
+即使指针离开页面，笔画也会留在开始绘制的页面上。Zotero 对单条批注的大小有限制。长笔画达到该限制时，ZotLit 会保存已绘制的部分，并以新批注继续记录笔画；您无需抬起指针。
 
-To cancel a stroke, press `Escape` before you release the pointer. The tool stays active. Press `Escape` again to turn off the tool. A second finger on the screen during a stroke, as at the start of a pinch zoom, also cancels the stroke.
+如需取消笔画，请在松开指针前按 `Escape`。工具会保持激活，再按一次 `Escape` 才会关闭。在绘制过程中用第二根手指触碰屏幕，例如开始双指缩放时，也会取消当前笔画。
 
-### Choose the ink color and width
+### 选择墨迹颜色与宽度 [#choose-the-ink-color-and-width]
 
-Select the arrow beside <UiLabel name={m.pdf_toolbar_ink()} />. The menu lists the colors, then the widths under <UiLabel name={m.pdf_toolbar_ink_width()} />: 0.4, 1, 2, 3, 5, 8, and 12 pt. A check mark shows the current color and width. The default width is 2 pt.
+选择 <UiLabel name={m.pdf_toolbar_ink()} /> 旁的箭头。菜单先列出颜色，再在 <UiLabel name={m.pdf_toolbar_ink_width()} /> 下列出宽度：0.4、1、2、3、5、8 和 12 pt。勾选标记表示当前颜色和宽度。默认宽度为 2 pt。
 
-ZotLit remembers your color and width for other PDFs. A stroke keeps the color and width it started with.
+ZotLit 会记住您选择的颜色和宽度，并在其他 PDF 中沿用。每个笔画会保留开始绘制时的颜色和宽度。
 
-## Add or edit a comment
+## 添加或编辑评注 [#add-or-edit-a-comment]
 
-1. Select the annotation mark in the PDF. The popup shows the comment under its row of buttons.
-2. Select the comment. If the annotation has no comment, select <UiLabel name={m.annot_view_card_comment_placeholder()} />. The cursor goes where you select.
-3. Enter the comment. ZotLit saves it as you type.
-4. Press `Escape` or select outside the popup to close the editor.
-5. Wait for the comment to save before you edit the annotation in Zotero.
+1. 在 PDF 中选中批注标记。弹出浮窗会在按钮行下方显示评注。
+2. 点击评注。如果批注尚无评注，请点击 <UiLabel name={m.annot_view_card_comment_placeholder()} />。光标会移动到点击处。
+3. 输入评注。ZotLit 会在您输入时自动保存。
+4. 按 `Escape` 或点击浮窗外部，关闭编辑器。
+5. 等待评注保存完成后，再在 Zotero 中编辑该批注。
 
-Comments request an automatic save after one second without typing. During continuous typing, ZotLit requests a save after ten seconds from the first unsaved change. Press `Enter` to add a line break. Press `Ctrl+Enter` (Windows) or `Command+Enter` (macOS) to request a save and keep the editor open.
+停止输入一秒后，评注会请求自动保存。连续输入时，ZotLit 会在首次未保存的修改出现十秒后请求保存。按 `Enter` 换行。按 `Ctrl+Enter`（Windows）或 `Command+Enter`（macOS）可请求保存，并保持编辑器打开。
 
-You can also edit the comment on an annotation card. Select the card, and no other card, then select its comment or <UiLabel name={m.annot_view_card_comment_placeholder()} />. Press `Escape` or select elsewhere in the annotation view to close the editor. When more than one card is selected, a click on a comment only selects the card. The popup and card editors share one draft, so text entered in either editor appears in the other.
+您也可以直接编辑批注卡片上的评注。仅选中该卡片，再点击其评注或 <UiLabel name={m.annot_view_card_comment_placeholder()} />。按 `Escape` 或点击标注视图中的其他位置，可关闭编辑器。选中多张卡片时，点击评注只会选中对应卡片。浮窗编辑器和卡片编辑器共享同一份草稿，因此在任一处输入的文字都会出现在另一处。
 
-If ZotLit detects that the comment changed in Zotero, it shows <UiLabel name={m.annot_view_conflict_title()} /> with both versions. Select <UiLabel name={m.annot_view_conflict_use_comment()} /> to save your draft over the Zotero comment, or <UiLabel name={m.annot_view_conflict_keep_zotero_comment()} /> to discard your draft.
+如果 ZotLit 检测到评注已在 Zotero 中发生变化，会显示 <UiLabel name={m.annot_view_conflict_title()} />，并列出两个版本。选择 <UiLabel name={m.annot_view_conflict_use_comment()} />，以草稿覆盖 Zotero 中的评注；或选择 <UiLabel name={m.annot_view_conflict_keep_zotero_comment()} />，放弃草稿。
 
-## Edit the quoted text
+## 编辑摘录文本 [#edit-the-quoted-text]
 
-The quoted text of a highlight or underline is the text of the PDF that it marks. Edit it when PDF text extraction got the text wrong, for example with ligatures, split hyphenated words, or wrong symbols. Editing must be enabled; see [Before you edit](#before-you-edit). You edit the quoted text in the annotation view only. The popup in the PDF has no control for it.
+高亮或下划线的摘录文本，就是它所标记的 PDF 文字。当 PDF 文本提取有误时，例如连字、被连字符拆开的词或错误符号，您可以修正这些文字。此操作需要启用编辑功能，参见[编辑前准备](#before-you-edit)。摘录文本只能在标注视图中编辑，PDF 内的弹出浮窗不提供此操作。
 
-1. In the annotation view, select the highlight or underline card, and no other card.
-2. Point to the quoted text, and select the pencil button that shows at the end of its first line. The button's tooltip is <UiLabel name={m.annot_view_menu_edit_text()} />. You can also open the card's <UiLabel name={m.annot_view_more_tooltip()} /> menu, or right-click the card, and select <UiLabel name={m.annot_view_menu_edit_text()} />. The editor opens in the place of the quoted text, with the cursor at the end. A click on the quoted text itself does not open the editor, so you can still select and copy the text.
-3. Correct the text. Press `Enter` to add a line break. Bold, italic, subscript, and superscript use the same keyboard shortcuts as in the comment editor.
-4. Press `Escape` or select elsewhere in the annotation view to save and close the editor.
+1. 在标注视图中，仅选中需要编辑的高亮或下划线卡片。
+2. 将指针移到摘录文本上，点击第一行末尾出现的铅笔按钮。按钮提示为 <UiLabel name={m.annot_view_menu_edit_text()} />。也可以打开卡片的 <UiLabel name={m.annot_view_more_tooltip()} /> 菜单，或右键点击卡片，然后选择 <UiLabel name={m.annot_view_menu_edit_text()} />。编辑器会替换原来的摘录文本，光标位于末尾。直接点击摘录文本不会打开编辑器，因此您仍可选中并复制文字。
+3. 修正文本。按 `Enter` 换行。粗体、斜体、下标和上标使用与评注编辑器相同的快捷键。
+4. 按 `Escape` 或点击标注视图中的其他位置，保存并关闭编辑器。
 
-The quoted text saves as a comment does: after one second without typing, or after ten seconds of continuous typing. `Ctrl+Enter` (Windows) or `Command+Enter` (macOS) saves and keeps the editor open. A click outside the annotation view, for example in the PDF, also saves and keeps the editor open. You can save an empty quoted text. The card then shows <UiLabel name={m.annot_view_card_no_text()} />.
+摘录文本的保存方式与评注相同：停止输入一秒后保存，或在连续输入十秒后保存。按 `Ctrl+Enter`（Windows）或 `Command+Enter`（macOS）可保存并保持编辑器打开。点击标注视图外部，例如点击 PDF，也会保存并保持编辑器打开。您可以保存空的摘录文本，此时卡片会显示 <UiLabel name={m.annot_view_card_no_text()} />。
 
-The change replaces only the text. The annotation keeps its position and its place in the annotation list order, and Zotero shows the new text. One editing session is one undo step; see [Undo and redo a change](#undo-and-redo-a-change).
+修改只会替换文字。批注的位置及其在批注列表中的顺序均保持不变，Zotero 会显示新文字。一次编辑过程计为一个撤销步骤，参见[撤销与重做修改](#undo-and-redo-a-change)。
 
-If the quoted text changed in Zotero while you edited it, the card shows <UiLabel name={m.annot_view_conflict_title()} /> with both versions. Select <UiLabel name={m.annot_view_conflict_use_text()} /> to save your text over the Zotero text, or <UiLabel name={m.annot_view_conflict_keep_zotero_text()} /> to discard your text. If a save fails, the card keeps your text. Select <UiLabel name={m.annot_view_text_save()} /> to try again.
+如果编辑期间摘录文本在 Zotero 中发生了变化，卡片会显示 <UiLabel name={m.annot_view_conflict_title()} />，并列出两个版本。选择 <UiLabel name={m.annot_view_conflict_use_text()} />，以您编辑的文字覆盖 Zotero 版本；或选择 <UiLabel name={m.annot_view_conflict_keep_zotero_text()} />，放弃您的修改。保存失败时，卡片会保留您编辑的文字。选择 <UiLabel name={m.annot_view_text_save()} /> 可重试。
 
-## Change a color
+## 更改颜色 [#change-a-color]
 
-1. Select the annotation mark in the PDF.
-2. Select <UiLabel name={m.annot_view_card_color()} /> in the popup.
-3. Select one of Zotero's annotation colors.
+1. 在 PDF 中选中批注标记。
+2. 在弹出浮窗中选择 <UiLabel name={m.annot_view_card_color()} />。
+3. 选择一种 Zotero 批注颜色。
 
-The palette button on an annotation card provides the same colors.
+批注卡片上的调色板按钮提供相同的颜色。
 
-To recolor several annotations at once, select their cards in the annotation view, then press a key from `1` to `8`. The keys follow the order of the colors in the palette. One undo reverses the whole group. See [Use the annotation view](/docs/how-to/use-annotation-view#select-several) for how to select several cards.
+若要同时为多条批注更改颜色，请在标注视图中选中它们的卡片，然后按 `1` 到 `8` 中的一个数字键。按键顺序与调色板中的颜色顺序一致。一次撤销会恢复整组批注的颜色。多选卡片的方法参见[使用标注视图](/docs/how-to/use-annotation-view#select-several)。
 
-## Add or edit tags
+## 添加或编辑标签 [#add-or-edit-tags]
 
-1. Select the annotation mark in the PDF.
-2. In the popup, select <UiLabel name={m.annot_view_card_add_tags()} />. If the annotation already has tags, the button is <UiLabel name={m.annot_view_card_edit_tags()} />.
-3. Type a tag name and press `Enter`. ZotLit suggests tag names from the item's library. To remove a tag, select the cross on it.
-4. Press `Escape` or select outside the popup. ZotLit saves the tags to Zotero.
+1. 在 PDF 中选中批注标记。
+2. 在弹出浮窗中选择 <UiLabel name={m.annot_view_card_add_tags()} />。如果批注已有标签，按钮会显示为 <UiLabel name={m.annot_view_card_edit_tags()} />。
+3. 输入标签名称并按 `Enter`。ZotLit 会建议条目所属文献库中的标签名称。若要移除标签，请点击其上的叉号。
+4. 按 `Escape` 或点击浮窗外部。ZotLit 会将标签保存到 Zotero。
 
-An annotation card has the same tag button. On a card, the tags save when you select elsewhere, and the editor stays open for more changes. To close it, press `Escape` or select the tag button again.
+批注卡片提供相同的标签按钮。在卡片上点击其他位置会保存标签，但编辑器会保持打开，方便继续修改。按 `Escape` 或再次点击标签按钮可关闭编辑器。
 
-`Escape` does not add a name that you typed but did not add with `Enter`. A comma is part of the tag name, because Zotero tag names can contain commas. You can also remove automatic tags, as in Zotero.
+按 `Escape` 不会添加已输入但尚未通过 `Enter` 确认的名称。逗号会作为标签名称的一部分，因为 Zotero 标签名称允许包含逗号。与 Zotero 一样，您也可以移除自动标签。
 
-If Zotero does not save the tags, or editing stops while you edit them, the card and the popup keep your tags under <UiLabel name={m.annot_view_tags_draft()} />. Select <UiLabel name={m.annot_view_tags_save()} /> to try again.
+如果 Zotero 未能保存标签，或编辑标签期间编辑功能停止可用，卡片和浮窗会在 <UiLabel name={m.annot_view_tags_draft()} /> 下保留您的标签。选择 <UiLabel name={m.annot_view_tags_save()} /> 可重试。
 
-## Adjust an annotation's position
+## 调整批注位置 [#adjust-an-annotations-position]
 
-You can move or resize image, ink, and text annotations, move note annotations, and move either end of a highlight or underline. Editing must be enabled. When it is not, a selected mark shows no handles and the keys below do nothing.
+您可以移动或缩放图片、墨迹和文本批注，移动笔记批注，以及调整高亮或下划线的任一端点。此操作需要启用编辑功能。未启用时，选中的标记不会显示调整手柄，下述按键也不会执行任何操作。
 
-1. Select the annotation mark in the PDF. Handles appear on the mark.
-2. Drag a handle, or drag the mark itself. The mark follows the pointer.
-3. Release the pointer. ZotLit sends the new position to Zotero.
+1. 在 PDF 中选中批注标记。标记上会出现调整手柄。
+2. 拖动手柄或标记本身。标记会跟随指针移动。
+3. 松开指针。ZotLit 会将新位置发送给 Zotero。
 
-Press `Escape` during a drag to put the mark back without saving. A drag that ends where it started saves nothing. The popup hides during the drag and returns after it.
+拖动期间按 `Escape` 可将标记恢复原位，不保存修改。拖动终点与起点相同时，不会保存任何修改。浮窗会在拖动期间隐藏，并在拖动结束后重新出现。
 
-### Handles for each annotation type
+### 各类批注的调整手柄 [#handles-for-each-annotation-type]
 
-| Annotation type        | Handles                                                                            | Drag                                                                                                                                         |
-| ---------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| Image                  | Eight squares, on the four corners and the four edge midpoints.                    | A corner moves two edges. An edge handle moves one edge. The inside of the image moves the whole rectangle.                                  |
-| Ink                    | Four corners, on a box slightly larger than the strokes.                           | A corner scales the drawing. Its proportions stay the same, and the pen width scales with it. The inside of the box moves the drawing.       |
-| Highlight or underline | Two narrow strips, at the start of the first line and at the end of the last line. | A strip moves that end of the range one character at a time. The quoted text follows the new range.                                          |
-| Text                   | Six squares, on the four corners and the middle of the left and right sides.       | A side handle changes the width and keeps the font size. A corner scales the box and the font size together. The inside of the box moves it. |
-| Note                   | None.                                                                              | The note icon moves the note.                                                                                                                |
+| 批注类型     | 手柄                                         | 拖动效果                                                                                     |
+| ------------ | -------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| 图片         | 四个角和四条边的中点上，共八个方形手柄。     | 拖动角点会移动两条边，拖动边上的手柄会移动一条边，拖动图片内部会移动整个矩形。               |
+| 墨迹         | 略大于笔画范围的方框上，有四个角点手柄。     | 拖动角点会等比例缩放绘图，笔宽随之缩放。拖动方框内部会移动绘图。                             |
+| 高亮或下划线 | 第一行起点和最后一行终点处，各有一条窄手柄。 | 拖动手柄会逐字符移动对应端点，摘录文本随新范围更新。                                         |
+| 文本         | 四个角和左右两边的中点上，共六个方形手柄。   | 拖动侧边手柄会改变宽度，字号不变；拖动角点会同时缩放文本框和字号；拖动框内区域会移动文本框。 |
+| 笔记         | 无。                                         | 拖动笔记图标会移动笔记。                                                                     |
 
-An image rectangle stays on its page and keeps at least 10 points on each side. A text box keeps at least 10 points of width, and its height follows its text after a side handle moves. When you release a side handle on a box of one line, the box fits the width of its text. On a rotated text box, the handles rotate with the box. A highlight or underline range keeps at least one character. Its start stays on the annotation's page, and its end can move onto the next page but no further. A drag on the body of a highlight selects text as usual.
+图片矩形会留在所在页面内，宽和高均不得小于 10 点。文本框宽度不得小于 10 点，拖动侧边手柄后，高度会随文字内容调整。对于单行文本框，松开侧边手柄时，文本框宽度会贴合文字。旋转文本框的手柄也会随框一起旋转。高亮或下划线范围至少保留一个字符，起点必须留在批注所在页面，终点可以移到下一页，但不能更远。在高亮主体上拖动仍会像平常一样选中文字。
 
-### Adjust from the keyboard
+### 使用键盘调整 [#adjust-from-the-keyboard]
 
-Select the annotation mark first. Each key press is one step.
+先选中批注标记。每次按键会调整一步。
 
-| Annotation type           | Keys                                            | Result                                                                                    |
-| ------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Highlight or underline    | `Shift+Left arrow`, `Shift+Right arrow`         | Moves the end back or forward by one character.                                           |
-| Highlight or underline    | `Shift+Up arrow`, `Shift+Down arrow`            | Moves the end to the nearest character on the line above or below.                        |
-| Image                     | `Shift+Right arrow`, `Shift+Left arrow`         | Moves the right edge 5 points out or in.                                                  |
-| Image                     | `Shift+Down arrow`, `Shift+Up arrow`            | Moves the bottom edge 5 points down or up.                                                |
-| Ink                       | `Shift+Right arrow`, `Shift+Down arrow`         | Enlarges the drawing by 5 points. The proportions and the top-left corner stay.           |
-| Ink                       | `Shift+Left arrow`, `Shift+Up arrow`            | Shrinks the drawing by 5 points. The proportions and the top-left corner stay.            |
-| Text                      | `Shift+Right arrow`, `Shift+Left arrow`         | Moves the right edge 5 points out or in. The height follows the text.                     |
-| Text                      | `Shift+Down arrow`, `Shift+Up arrow`            | Enlarges or shrinks the box and its font by 5 points of width. The top-left corner stays. |
-| Image, ink, note, or text | `Alt+arrow` (Windows) or `Option+arrow` (macOS) | Moves the mark 5 points in the arrow's direction.                                         |
+| 批注类型               | 按键                                             | 效果                                                          |
+| ---------------------- | ------------------------------------------------ | ------------------------------------------------------------- |
+| 高亮或下划线           | `Shift+Left arrow`、`Shift+Right arrow`          | 将终点向前或向后移动一个字符。                                |
+| 高亮或下划线           | `Shift+Up arrow`、`Shift+Down arrow`             | 将终点移到上一行或下一行最接近的字符处。                      |
+| 图片                   | `Shift+Right arrow`、`Shift+Left arrow`          | 将右边缘向外或向内移动 5 点。                                 |
+| 图片                   | `Shift+Down arrow`、`Shift+Up arrow`             | 将下边缘向下或向上移动 5 点。                                 |
+| 墨迹                   | `Shift+Right arrow`、`Shift+Down arrow`          | 将绘图放大 5 点，保持比例和左上角位置不变。                   |
+| 墨迹                   | `Shift+Left arrow`、`Shift+Up arrow`             | 将绘图缩小 5 点，保持比例和左上角位置不变。                   |
+| 文本                   | `Shift+Right arrow`、`Shift+Left arrow`          | 将右边缘向外或向内移动 5 点，高度随文字调整。                 |
+| 文本                   | `Shift+Down arrow`、`Shift+Up arrow`             | 将文本框宽度增大或减小 5 点，并同步缩放字号，左上角位置不变。 |
+| 图片、墨迹、笔记或文本 | `Alt+arrow`（Windows）或 `Option+arrow`（macOS） | 沿箭头方向移动标记 5 点。                                     |
 
-For a highlight or underline, add `Ctrl` (Windows) or `Command` (macOS) to the `Shift` keys to move the start instead of the end. A key that would leave the range with no characters does nothing. The `Shift` keys for images and text work as in Zotero's reader, with one difference: `Shift+Up arrow` does not make a text box narrower than 10 points. To move a mark, Zotero's reader uses an arrow key without a modifier. ZotLit uses `Alt+arrow` or `Option+arrow`.
+对于高亮或下划线，在 `Shift` 组合键中再按住 `Ctrl`（Windows）或 `Command`（macOS），即可调整起点而非终点。若按键会导致范围内没有任何字符，则不会执行操作。图片和文本的 `Shift` 组合键与 Zotero 阅读器相同，只有一个例外：`Shift+Up arrow` 不会将文本框缩窄到 10 点以下。移动标记时，Zotero 阅读器使用不带修饰键的方向键，而 ZotLit 使用 `Alt+arrow` 或 `Option+arrow`。
 
-`Alt+arrow` or `Option+arrow` does not move a mark that is within 10 points of the page edge on that side. `Up arrow` and `Down arrow` without a modifier still select the previous or next annotation in reading order.
+当标记与该方向的页面边缘距离不足 10 点时，`Alt+arrow` 或 `Option+arrow` 不会移动它。不带修饰键的 `Up arrow` 和 `Down arrow` 仍用于按阅读顺序选中上一条或下一条批注。
 
-### How the change saves
+### 修改如何保存 [#how-the-change-saves]
 
-Each drag release and each key press is one change. ZotLit sends it to Zotero at once. ZotLit also updates the annotation's place in the annotation list order, and for a highlight or underline, its quoted text. Zotero's reader and sidebar show the new position, and the image in the annotation view refreshes. To put the mark back where it was, see [Undo and redo a change](#undo-and-redo-a-change).
+每次松开拖动或按下按键都算一次修改，ZotLit 会立即将其发送给 Zotero。同时，ZotLit 会更新批注在列表中的顺序；若是高亮或下划线，还会更新摘录文本。Zotero 阅读器和侧栏会显示新位置，标注视图中的图片也会刷新。若要恢复原位，参见[撤销与重做修改](#undo-and-redo-a-change)。
 
-If the annotation changed in Zotero while you adjusted it, the annotation card shows <UiLabel name={m.annot_view_conflict_title()} /> and says that the position changed in Zotero. For a highlight or underline, the card also shows the Zotero quote beside yours. Select <UiLabel name={m.annot_view_conflict_apply_again()} /> to save your position over the Zotero one, or <UiLabel name={m.annot_view_conflict_discard()} /> to keep the Zotero position. Until you select one, the mark shows the Zotero position.
+如果您调整位置期间，批注在 Zotero 中发生了变化，批注卡片会显示 <UiLabel name={m.annot_view_conflict_title()} />，并说明位置已在 Zotero 中更改。对于高亮或下划线，卡片还会并列显示 Zotero 的摘录文本和您的版本。选择 <UiLabel name={m.annot_view_conflict_apply_again()} />，以您的位置覆盖 Zotero 版本；或选择 <UiLabel name={m.annot_view_conflict_discard()} />，保留 Zotero 中的位置。在您作出选择之前，标记会显示在 Zotero 的位置上。
 
-If Zotero refuses the change, the mark returns to its saved position, and a notice says that the annotation was not adjusted and why.
+如果 Zotero 拒绝修改，标记会回到已保存的位置，并显示一条通知，说明批注未能调整及其原因。
 
-## Delete an annotation
+## 删除批注 [#delete-an-annotation]
 
-1. Reveal the annotation in the annotation view.
-2. Open its <UiLabel name={m.annot_view_more_tooltip()} /> menu.
-3. Select <UiLabel name={m.annot_view_menu_delete()} />.
-4. In the confirmation dialog, select <UiLabel name={m.annot_view_delete_confirm_action()} />.
+1. 在标注视图中定位该批注。
+2. 打开其 <UiLabel name={m.annot_view_more_tooltip()} /> 菜单。
+3. 选择 <UiLabel name={m.annot_view_menu_delete()} />。
+4. 在确认对话框中，选择 <UiLabel name={m.annot_view_delete_confirm_action()} />。
 
-The annotation is deleted from Zotero. You can undo the deletion while the PDF is still open in Obsidian, but the restored annotation comes back under a new Zotero key. See [Undo and redo a change](#undo-and-redo-a-change).
+批注会从 Zotero 中删除。只要 PDF 仍在 Obsidian 中打开，您就可以撤销删除，但恢复的批注会获得新的 Zotero 键。参见[撤销与重做修改](#undo-and-redo-a-change)。
 
-To delete several annotations at once, select their cards in the annotation view. Then press `Delete` or `Backspace`, or open the <UiLabel name={m.annot_view_more_tooltip()} /> menu of one of the selected cards and select the delete entry, for example <UiLabel name={m.annot_view_menu_delete_group({ count: 3 })} />. After you confirm, one undo restores the whole group. See [Use the annotation view](/docs/how-to/use-annotation-view#select-several) for how to select several cards.
+若要同时删除多条批注，请在标注视图中选中它们的卡片。然后按 `Delete` 或 `Backspace`，或打开其中一张已选卡片的 <UiLabel name={m.annot_view_more_tooltip()} /> 菜单并选择删除项，例如 <UiLabel name={m.annot_view_menu_delete_group({ count: 3 })} />。确认后，一次撤销即可恢复整组批注。多选卡片的方法参见[使用标注视图](/docs/how-to/use-annotation-view#select-several)。
 
-## Undo and redo a change
+## 撤销与重做修改 [#undo-and-redo-a-change]
 
-While a PDF is open in Obsidian, ZotLit remembers the annotation changes it saved to Zotero for that PDF: creations, deletions, colors, comments, tags, quoted text, and positions. Undo asks Zotero for the previous value, and redo asks for the change again. Both are ordinary edits, so Zotero must be running and editing must be enabled.
+当 PDF 在 Obsidian 中打开时，ZotLit 会记录为该 PDF 保存到 Zotero 的批注修改，包括创建、删除、颜色、评注、标签、摘录文本和位置。撤销会请求 Zotero 恢复先前的值，重做则重新应用修改。两者都属于普通编辑操作，因此 Zotero 必须运行，且编辑功能必须启用。
 
-| Platform          | Undo        | Redo                       |
-| ----------------- | ----------- | -------------------------- |
-| macOS             | `Command+Z` | `Command+Shift+Z`          |
-| Windows and Linux | `Ctrl+Z`    | `Ctrl+Y` or `Ctrl+Shift+Z` |
+| 平台             | 撤销        | 重做                       |
+| ---------------- | ----------- | -------------------------- |
+| macOS            | `Command+Z` | `Command+Shift+Z`          |
+| Windows 和 Linux | `Ctrl+Z`    | `Ctrl+Y` 或 `Ctrl+Shift+Z` |
 
-The keys work anywhere in the PDF view, and in the annotation view on a card you selected, as long as the PDF is open. Inside a comment editor or a text box you are typing in, the same keys undo your typing instead. A held key steps once.
+只要 PDF 仍然打开，这些按键在 PDF 视图的任意位置，以及标注视图中已选中的卡片上都可使用。在正在输入的评注编辑器或文本框内，相同按键会撤销输入内容。长按按键只会执行一步。
 
-The command palette carries <Command inline name={m.command_undo_annotation_change_name()} /> and <Command inline name={m.command_redo_annotation_change_name()} />. Neither has a shortcut of its own, so you can assign one. The PDF view's More options menu carries the same two entries, shown dimmed when there is nothing to step that way.
+命令面板提供 <Command inline name={m.command_undo_annotation_change_name()} /> 和 <Command inline name={m.command_redo_annotation_change_name()} />。它们均未默认绑定独立快捷键，您可以自行分配。PDF 视图的“更多选项”菜单也提供这两个操作；没有可执行的步骤时，对应操作会变灰。
 
-### What counts as one step
+### 哪些修改算作一步 [#what-counts-as-one-step]
 
-Each creation, deletion, color change, and drag is one step. A deletion or color change on several selected cards is also one step. One ink stroke is one step, even where ZotLit saved a long stroke as more than one annotation.
+每次创建、删除、改色或拖动都算一步。对多张已选卡片执行删除或改色，也只算一步。一个墨迹笔画算一步，即使 ZotLit 将长笔画保存成了多条批注。
 
-Each save of tags is one step. Undo removes the tags that the save added and restores the tags that it removed. Tags that changed in Zotero since then stay as they are. One quoted-text editing session is also one step.
+每次保存标签算一步。撤销会移除该次保存新增的标签，并恢复其移除的标签。此后在 Zotero 中修改过的标签会保持现状。一次摘录文本编辑过程也算一步。
 
-The comment text you save on one annotation is also one step, however many times it saved while you typed, and undo takes it back to the comment you started from. A change to anything else ends that step, and so does a change to that comment in Zotero, so the next comment you type on the same annotation starts a new one. A comment you leave as you found it records no step.
+在同一条批注上保存的整段评注编辑过程也算一步，无论输入期间自动保存了多少次；撤销会恢复到开始编辑时的评注。修改其他内容，或在 Zotero 中修改该评注，都会结束这一步。因此，下次在同一批注上输入评注时，会开始新的一步。如果评注内容最终未变，则不会记录步骤。
 
-A run of keyboard nudges on one mark is one step while the presses are less than half a second apart. A pause longer than that, or a change of any other kind, starts a new step.
+连续用键盘微调同一标记时，只要按键间隔小于半秒，就会合并为一步。间隔超过半秒，或执行其他类型的修改，都会开始新的一步。
 
-### What the history covers
+### 历史记录的范围 [#what-the-history-covers]
 
-The history belongs to the PDF, not to the window. Two views of the same PDF, and the annotation view beside them, share one history in the order you made the changes. A change to another PDF is never in it.
+历史记录属于 PDF，而非窗口。同一 PDF 的两个视图及旁边的标注视图共享一份历史记录，顺序与修改发生的顺序一致。对其他 PDF 的修改不会包含在内。
 
-ZotLit records a change only while a view of that PDF is open, and the history ends when you close the last one. Reopening the PDF starts an empty history, so an earlier session can never revert today's work. Refreshing the data, reloading the annotations, and changes made in Zotero all leave the history standing. A new change after an undo discards the steps you could have redone. The history holds the last 100 steps and is never written to disk.
+只有在该 PDF 的某个视图打开期间，ZotLit 才会记录修改；关闭最后一个视图后，历史记录就会结束。重新打开 PDF 时会从空历史记录开始，因此先前会话不会撤销今天的工作。刷新数据、重新加载批注以及在 Zotero 中修改内容都不会清空历史记录。撤销后执行新的修改，会丢弃原本可重做的步骤。历史记录仅保留最近 100 步，且从不写入磁盘。
 
-After each step, the PDF view selects the annotation that changed and scrolls to it. When the step removed an annotation, the view clears the selection and returns to the page the annotation was on.
+每执行一步，PDF 视图都会选中发生变化的批注，并滚动到它的位置。如果这一步移除了批注，视图会清除选中状态，并返回该批注原先所在的页面。
 
-### When undo stops
+### 撤销何时会停止 [#when-undo-stops]
 
-Before it writes, ZotLit checks that Zotero still holds what your change left there. If that annotation changed in Zotero since — by hand, by sync, or from another device — ZotLit writes nothing, drops that step, and shows <UiLabel name={m.annot_history_changed_in_zotero()} />. Press undo again to try the step before it. A Zotero change to a different field of the same annotation does not stop the undo, and neither does a Zotero value that already equals the one the undo would write.
+写入之前，ZotLit 会检查 Zotero 当前保存的内容是否仍与上次修改后的值一致。如果该批注此后在 Zotero 中被手动修改、通过同步更新或从其他设备更改，ZotLit 不会写入任何内容，而会丢弃该步骤并显示 <UiLabel name={m.annot_history_changed_in_zotero()} />。再次按撤销可尝试前一步。对同一批注其他字段的修改不会阻止撤销；如果 Zotero 当前的值已经等于撤销操作准备写入的值，也不会阻止撤销。
 
-Undo and redo do nothing while a change is still saving, or while you have unsaved comment text on an annotation the step would change. When editing is not enabled, they show the same notice as any other blocked edit.
+如果修改仍在保存，或目标批注存在尚未保存的评注文字，撤销和重做不会执行任何操作。未启用编辑功能时，它们会显示与其他被阻止的编辑操作相同的通知。
 
-### A restored annotation gets a new key
+### 恢复的批注会获得新键 [#a-restored-annotation-gets-a-new-key]
 
-Zotero cannot bring a deleted annotation back under its old key. When you undo a deletion, or redo a creation you undid, Zotero creates the annotation again with its color, comment, text, and position, but under a new Zotero key.
+Zotero 无法用原来的键恢复已删除的批注。撤销删除，或重做曾被撤销的创建操作时，Zotero 会重新创建批注，保留其颜色、评注、文字和位置，但分配一个新的 Zotero 键。
 
-Links in your notes, excerpt images, and `obsidian://` URIs that name the old key no longer resolve. ZotLit shows no notice for this. Pull the restored annotation into the note again, or update the key by hand.
+笔记中指向旧键的链接、摘录图片和 `obsidian://` URI 将无法继续解析。ZotLit 不会为此显示通知。请将恢复的批注重新拉取到笔记中，或手动更新键。
 
-## See also
+## 另请参阅 [#see-also]
 
 <Cards>
   <Card
-    title="Open an item's PDF in Obsidian"
-    description="Open a Zotero PDF attachment in Obsidian's PDF reader."
+    title="在 Obsidian 中打开条目的 PDF"
+    description="在 Obsidian 的 PDF 阅读器中打开 Zotero PDF 附件。"
     href="/docs/how-to/open-pdf-in-obsidian"
   />
   <Card
-    title="Use the annotation view"
-    description="Browse an item's annotations and pull them into your notes."
+    title="使用标注视图"
+    description="浏览条目的批注，并将其拉取到笔记中。"
     href="/docs/how-to/use-annotation-view"
   />
 </Cards>

@@ -24,7 +24,7 @@ description: "参考文献侧边栏、正文引文格式化渲染、包含引文
 
 新增命令 **ZotLit: 导出包含引文的笔记**，支持将当前活动的 Markdown 笔记转换为附带格式化参考文献列表的 DOCX 或 HTML 文档。在导出对话框中可自由选择输出格式、CSL 引文样式以及目标保存路径。引文直接从笔记自身的链接中解析，无需在外部安装独立的 Pandoc。详情参阅[如何导出包含引文的笔记](/docs/how-to/export-note-with-citations)。
 
-This feature is not finalized yet, but the command is available to test.
+这项功能尚未最终定型，但您已可以通过该命令进行试用。
 
 ## 新增功能
 
@@ -46,9 +46,9 @@ This feature is not finalized yet, but the command is available to test.
 
 ### 原生 Pandoc CLI 工作流
 
-支持在 Obsidian 外部通过独立安装的原生 Pandoc 转换笔记，同时将文献笔记双链正确转换为学术引文。A **Save integration files** action in the Citations settings page writes a Lua filter (`zotlit-cite.lua`) and a Pandoc defaults file (`zotlit.yaml`) matched to the installed plugin version; the Lua filter resolves each wikilink to its citation key through a new `zotlit:resolve` command, reachable from a CLI tool that supports Obsidian's command line interface (such as `obsidian-cli`).
+支持在 Obsidian 外部通过独立安装的原生 Pandoc 转换笔记，同时将文献笔记双链正确转换为学术引文。引文设置页面中的**保存集成文件**操作会生成与当前插件版本匹配的 Lua 过滤器（`zotlit-cite.lua`）与 Pandoc 默认配置文件（`zotlit.yaml`）。Lua 过滤器通过新增的 `zotlit:resolve` 命令，将每个双链解析为对应的文献引用标识；支持 Obsidian 命令行接口的 CLI 工具（例如 `obsidian-cli`）可以调用该命令。
 
-另有两条配套命令支持此工作流：`zotlit:pandoc-files` 以 JSON 形式返回集成文件对，`zotlit:pandoc-guide` 打印配置与排错指南。新增的 `zotlit-pandoc` skill 能够引导 AI 智能体完成该完整工作流。
+另有两条配套命令支持此工作流：`zotlit:pandoc-files` 以 JSON 形式返回集成文件对，`zotlit:pandoc-guide` 打印配置与排错指南。新增的 `zotlit-pandoc` skill 能够引导 AI 智能体完成同一工作流：配置、刷新、运行原生导出，以及诊断失败的运行。
 
 ### 主题开发支持
 

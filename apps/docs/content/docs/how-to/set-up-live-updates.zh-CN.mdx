@@ -56,34 +56,33 @@ import { m } from "@/paraglide/messages.js";
   </Step>
   <Step>
     ### 设置通知推送 URL
-    将通知推送 URL 配置为指向 Obsidian 本地服务器的监听地址（例如 `http://127.0.0.1:9091/notify`）。确保端口号与 Obsidian 中显示的活动端口一致。
 
-    Set the <UiLabel name={m["zotero.prefs_notify_url"]()} /> to point at the ZotLit server. The default value is `http://localhost:9091`, which matches the default port.
+将 <UiLabel name={m["zotero.prefs_notify_url"]()} /> 设置为 ZotLit 服务器的地址。默认值为 `http://localhost:9091`，与默认端口一致。
 
-    Use the port shown by <UiLabel name={m.settings_local_server_active_port_name()} /> in Obsidian (for example, `http://localhost:9092`). Each vault can use a different port.
+    请使用 Obsidian 中 <UiLabel name={m.settings_local_server_active_port_name()} /> 显示的端口（例如 `http://localhost:9092`）。每个仓库可以使用不同端口。
 
   </Step>
 </Steps>
 
-## Verify the connection
+## 验证连接 [#verify-the-connection]
 
-After enabling both sides, open the annotation view in Obsidian and switch it to <UiLabel name={m.annot_view_mode_zotero_reader()} /> mode. The view starts in <UiLabel name={m.annot_view_mode_active_tab()} /> mode and keeps the mode you last chose. Then open an item in the Zotero PDF reader. The annotation view updates to show that item's annotations. If it does not update, check that both the port and hostname match between the ZotLit server settings and the Companion's Notify URL.
+两端启用后，在 Obsidian 中打开标注视图并切换到 <UiLabel name={m.annot_view_mode_zotero_reader()} /> 模式。视图初始使用 <UiLabel name={m.annot_view_mode_active_tab()} /> 模式，并会记住您上次选择的模式。随后在 Zotero PDF 阅读器中打开一个条目，标注视图应刷新并显示该条目的标注。如果没有刷新，请检查 ZotLit 服务器设置与 Companion 通知 URL 中的端口和主机名是否一致。
 
-## Source ID filtering
+## 来源 ID 筛选 [#source-id-filtering]
 
-The ZotLit server accepts requests only from the Zotero install whose profile and data directory match the connected source. Requests from other Zotero installs are silently ignored. The source identifier is displayed read-only as <UiLabel name={m.settings_db_source_id_name()} /> under <SettingsPath page={m.settings_page_zotero()} setting={m.settings_page_zotero_location()} />.
+ZotLit 服务器只接受配置文件和数据目录与已连接来源相匹配的 Zotero 安装实例所发送的请求。来自其他 Zotero 安装实例的请求会被静默忽略。来源标识符在 <SettingsPath page={m.settings_page_zotero()} setting={m.settings_page_zotero_location()} /> 下以只读的 <UiLabel name={m.settings_db_source_id_name()} /> 显示。
 
-## See also
+## 另请参阅 [#see-also]
 
 <Cards>
   <Card
-    title="Install ZotLit Companion"
-    description="Install the required Zotero add-on."
+    title="安装 ZotLit Companion"
+    description="安装必备的 Zotero 插件。"
     href="/docs/install-companion"
   />
   <Card
-    title="Use the annotation view"
-    description="Browse and drag annotations from the sidebar into your notes."
+    title="使用标注视图"
+    description="在侧边栏中浏览标注，并将它们拖入笔记。"
     href="/docs/how-to/use-annotation-view"
   />
 </Cards>
