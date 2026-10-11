@@ -1,8 +1,8 @@
-// Snapshot-pinned batch write runner over the concurrent classify/execute primitives.
-import { Effect, Stream } from "effect";
 import PQueue from "p-queue";
 
 import { AbortError } from "@/lib/abort-error";
+// Snapshot-pinned batch write runner over the concurrent classify/execute primitives.
+import { Effect, Stream } from "@/lib/effect";
 import { formatErrorMessage } from "@/lib/toast";
 import type {
   ZoteroReadsApi,

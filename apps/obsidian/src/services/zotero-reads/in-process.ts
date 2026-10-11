@@ -1,6 +1,3 @@
-// In-process adapter: the ZoteroReads handler layer on the calling runtime, over an in-memory protocol pair.
-import { Effect, Option, Queue, Schema } from "effect";
-import type { Scope } from "effect";
 import { RpcClient, RpcServer } from "effect/rpc";
 import type {
   RpcClientError,
@@ -8,6 +5,10 @@ import type {
   RpcMessage,
   RpcSerialization,
 } from "effect/rpc";
+
+// In-process adapter: the ZoteroReads handler layer on the calling runtime, over an in-memory protocol pair.
+import { Effect, Option, Queue, Schema } from "@/lib/effect";
+import type { Scope } from "@/lib/effect";
 
 import type { Connection } from "./connection";
 import { handlersLayer } from "./handlers";

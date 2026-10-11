@@ -1,5 +1,4 @@
 import { QueryObserver } from "@tanstack/query-core";
-import { Effect } from "effect";
 import type { App, TFile } from "obsidian";
 
 import { isChildItemFields, itemToCsl } from "@zotlit/db";
@@ -10,6 +9,7 @@ import type { PandocTextSpan as TextSpan } from "@zotlit/templates/pandoc-citati
 
 import type { CitationKey } from "@/lib/citation-source";
 import { registerEvent } from "@/lib/disposables";
+import { Effect } from "@/lib/effect";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import { mapsEqual } from "@/lib/maps-equal";

@@ -48,6 +48,8 @@ Run `/i18n-ui-text` for wording style; `/inlang-i18n` for JSON format and runtim
 
 ## Debugging
 
+Use `@/lib/effect` for Effect in Obsidian: its runtime entry points default to Chromium scheduling in the renderer and workers. `no-restricted-imports` enforces the boundary; `pnpm e2e:worker` checks real worker responsiveness.
+
 Run `/obsidian-debug` to build, reload, and screenshot the running Obsidian instance.
 
 ## Testing

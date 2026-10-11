@@ -1,4 +1,3 @@
-import { Effect } from "effect";
 import type { ObsidianProtocolData, PaneType, Plugin } from "obsidian";
 
 import type { ItemRef } from "@zotlit/db";
@@ -28,6 +27,7 @@ import type { ProtocolAction } from "@zotlit/protocol";
 
 import { openAttachments, withFixedPane } from "@/lib/attachment-open";
 import type { AttachmentReader } from "@/lib/attachment-open";
+import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";

@@ -1,10 +1,10 @@
-// Companion navigation decides whether to open, update, or ask before creation.
-import { Effect } from "effect";
 import type { App, PaneType } from "obsidian";
 
 import type { Item, ItemRef } from "@zotlit/db";
 import type { ProtocolAction } from "@zotlit/protocol";
 
+// Companion navigation decides whether to open, update, or ask before creation.
+import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import type { ProfileSelector } from "@/lib/profile-stamp";

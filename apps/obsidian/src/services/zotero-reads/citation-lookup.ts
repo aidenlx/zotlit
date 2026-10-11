@@ -1,6 +1,3 @@
-// The worker owns the full citation maps and publishes requested projections.
-import { Effect, Fiber, Option, Scope, Stream } from "effect";
-
 import {
   formatIndexedKey,
   getLastItemID,
@@ -9,6 +6,8 @@ import {
 } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
+// The worker owns the full citation maps and publishes requested projections.
+import { Effect, Fiber, Option, Scope, Stream } from "@/lib/effect";
 import { getLogger } from "@/lib/log";
 import type {
   CitationLookupRequest,

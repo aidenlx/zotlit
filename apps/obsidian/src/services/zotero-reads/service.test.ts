@@ -25,7 +25,7 @@ describe("ZoteroReadsService", () => {
     );
 
     expect(libraries).toMatchObject([{ libraryID: 1, type: "user" }]);
-    expect(service.state).toBe("ready");
+    await expect.poll(() => service.state).toBe("ready");
     expect(service.error).toBeNull();
   });
 

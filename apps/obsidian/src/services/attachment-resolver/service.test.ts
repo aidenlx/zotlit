@@ -472,6 +472,13 @@ async function setup(stack: AsyncDisposableStack, options: SetupOptions = {}) {
       }),
     }),
   );
+  // Settle the lazy adapter's first source event before testing index events.
+  // A missing source is left unopened for the failure scenario below.
+  if (seeds[0] !== null) {
+    const { reads: initial } = await reads.ready;
+    await Effect.runPromise(initial.Libraries({}));
+    await expect.poll(() => reads.state).toBe("ready");
+  }
   let now = Temporal.Now.instant();
   const queries = stack.use(new QueryClientService({ now: () => now }));
 

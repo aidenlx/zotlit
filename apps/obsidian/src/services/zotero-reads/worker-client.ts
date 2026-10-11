@@ -1,12 +1,12 @@
 // The Web Worker adapter as a ZoteroReadsService client: spawn with the current settings, push every change.
 
-import { Effect, FiberSet } from "effect";
-import type { Scope } from "effect";
 import { getLanguage } from "obsidian";
 import workerSource from "virtual:zotero-reads-worker";
 
 import { sameSegmenterBinary } from "@zotlit/item-lookup";
 
+import { Effect, FiberSet } from "@/lib/effect";
+import type { Scope } from "@/lib/effect";
 import type { ChineseSegmenterService } from "@/services/chinese-segmenter/service";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";

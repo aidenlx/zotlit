@@ -1,8 +1,8 @@
-import { Effect } from "effect";
 import type { TFile } from "obsidian";
 
 import type { Item, ItemRef } from "@zotlit/db";
 
+import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import type { ProfileSelector } from "@/lib/profile-stamp";

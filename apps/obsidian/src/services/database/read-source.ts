@@ -33,7 +33,6 @@ import { copyFile, mkdir, mkdtemp, open, rm, stat } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
 
 import { ZOTERO_DB_READ_TEMP_PREFIX } from "@/lib/constants";
@@ -44,6 +43,7 @@ import type { ZoteroReadMode } from "@/services/settings/schema";
 
 import { planReadParents } from "./read-parent";
 import type { ReadParentPlan } from "./read-parent";
+import { verifySnapshot } from "./snapshot-integrity";
 
 const logger = getLogger(["database", "read-source"]);
 const CLONE_ATTEMPTS = 3;
@@ -355,7 +355,7 @@ async function cloneInto(
         afterWalSize: walGenerationSize(after?.wal),
       });
       if (matches) {
-        verifySnapshot(path);
+        await verifySnapshot(path);
         return {
           path,
           uriOptions: immutable
@@ -716,14 +716,6 @@ async function fileDigest(file: FileHandle): Promise<string> {
     position += bytesRead;
   }
   return hash.digest("hex");
-}
-
-/** Structural check only; source equality and SQLite's WAL commit markers prove state. */
-function verifySnapshot(path: string): void {
-  using sqlite = new DatabaseSync(path, { readOnly: true, timeout: 1_000 });
-  const result = sqlite.prepare("PRAGMA integrity_check").get();
-  if (result?.integrity_check !== "ok")
-    throw new Error("SQLite rejected the database read snapshot");
 }
 
 export function walGenerationSize(
