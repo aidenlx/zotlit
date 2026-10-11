@@ -58,20 +58,32 @@ The citation maps share the worker heap with the Item Index. Citation answers an
 
 ## Measurements
 
-The [#1441 baseline](https://github.com/aidenlx/zotlit/issues/1441) used two workers at `231056a4f`. The one-worker desktop runs used `21ddc8ef1`. Each run combined three refresh rounds over 100,000 Items. Shared Reading (Library 2) held its three base Items and only the first ten and last ten Stress Items. Values below are p99 / maximum milliseconds.
+The [#1441 baseline](https://github.com/aidenlx/zotlit/issues/1441) used two workers at `231056a4f`. The one-worker integration runs used `cd9f326d2` (merge of `codex/1439-review-fixes`). Each design had three desktop runs. Each run covered three refresh rounds over 100,000 Items. Shared Reading (Library 2) held its three base Items and only the first ten and last ten Stress Items. Values below are p99 / maximum milliseconds.
 
 | Design | Run | Renderer gap | Item search | Search samples | Citation lookup | Lookup samples |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Two workers | 1 | 4.80 / 6.10 | 1.80 / 573.10 | 15,744 | 0.30 / 1,559.30 | 49,082 |
-| Two workers | 2 | 4.80 / 9.40 | 1.90 / 587.90 | 16,395 | 0.40 / 1,715.50 | 44,072 |
-| Two workers | 3 | 4.60 / 5.70 | 1.00 / 490.40 | 16,581 | 0.20 / 1,385.30 | 37,003 |
-| One worker | 1 | 5.10 / 7.20 | 0.90 / 651.60 | 11,190 | 0.90 / 649.70 | 11,185 |
-| One worker | 2 | 5.10 / 5.30 | 0.90 / 630.50 | 11,333 | 0.90 / 628.50 | 11,326 |
-| One worker | 3 | 5.10 / 7.70 | 0.90 / 623.90 | 11,242 | 0.90 / 623.40 | 11,238 |
+| Two workers | 1 | 4.50 / 5.20 | 0.80 / 489.90 | 16,766 | 0.20 / 1226.80 | 31,744 |
+| Two workers | 2 | 4.60 / 6.10 | 0.80 / 488.30 | 18,918 | 0.20 / 1232.50 | 33,903 |
+| Two workers | 3 | 4.50 / 5.30 | 0.80 / 494.20 | 18,425 | 0.20 / 1242.50 | 37,164 |
+| One worker | 1 | 4.60 / 5.10 | 0.90 / 469.00 | 11,182 | 0.90 / 632.00 | 11,179 |
+| One worker | 2 | 4.60 / 8.50 | 0.80 / 594.50 | 11,270 | 0.80 / 593.20 | 11,264 |
+| One worker | 3 | 4.60 / 6.20 | 0.80 / 647.10 | 11,227 | 0.80 / 660.60 | 11,225 |
 
-All three completed Citation Index measurements passed the renderer limits of p99 ≤ 16 ms and maximum ≤ 32 ms. Item search still has a refresh spike; resolving it remains separate work. CDP was unavailable, so worker heap before, peak, and after was not measured in either design. These runs do not measure native SQLite memory or disk-copy throughput.
+All six Citation Index measurements passed the renderer limits of p99 ≤ 16 ms and maximum ≤ 32 ms. Item search still has a refresh spike; resolving it remains separate work.
 
-The third scheduled run and its first retry timed out during vault creation, before measurement. A further run passed after the temporary desktop helper applied `keepRendering` before setup and after reloads. The walkthrough passed all 20 cases. The end-to-end file had 30 passes, one failure, and five skips; its one-worker recovery path passed. The Annotation capability failure expected `zotero-unavailable` and received `local-api-disabled`. The same case failed on `origin/next` at `4be834035`. Focused ticket-branch retries stopped at the same vault-creation timeout.
+CDP sampled used JavaScript heap every 25 ms. Values below are the median of three runs, in MiB (1 MiB = 1,048,576 bytes). Sum is the median of each run’s worker sum; peak sums add worker peaks that can occur at different times.
+
+| Design | Worker | Before MiB | Peak MiB | After MiB |
+| --- | --- | ---: | ---: | ---: |
+| Two workers | zotlit-zotero-reads | 205.53 | 256.67 | 246.65 |
+| Two workers | zotlit-citation-reads | 54.12 | 124.37 | 101.15 |
+| Two workers | **Sum** | 259.65 | 381.04 | 347.80 |
+| One worker | zotlit-zotero-reads | 230.45 | 304.55 | 294.40 |
+| One worker | **Sum** | 230.45 | 304.55 | 294.40 |
+
+The one-worker design reduced the median sum of sampled worker peaks; before and after values vary with garbage collection. These runs do not measure native SQLite memory or disk-copy throughput.
+
+During earlier validation at `21ddc8ef1`, the third scheduled run and its first retry timed out during vault creation, before measurement. A further run passed after the temporary desktop helper applied `keepRendering` before setup and after reloads. The walkthrough passed all 20 cases. The end-to-end file had 30 passes, one failure, and five skips; its one-worker recovery path passed. The Annotation capability failure expected `zotero-unavailable` and received `local-api-disabled`. The same case failed on `origin/next` at `4be834035`. Focused ticket-branch retries stopped at the same vault-creation timeout.
 
 The full final `pnpm e2e` run first stopped before collection when Paired Zotero exited with `SIGABRT` under the sandbox. Outside the sandbox, it recorded 51 passes, the same Annotation capability failure, and 128 skips. The Fresh destination flow teardown also failed with `vault-remove refused`, then the Paired Run failed with `connect ECONNREFUSED` on the Obsidian CLI socket. The 123 Paired Run cases did not execute. The final full-suite gate remains incomplete; these later teardown and connection failures were not checked on `origin/next`.
 
