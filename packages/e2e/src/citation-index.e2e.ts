@@ -20,6 +20,7 @@ import {
   isObsidianReachable,
   vaultScript,
 } from "./vault-script.ts";
+import { measureWorkerHeap } from "./worker-heap.ts";
 
 const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
 const fixture = getFixtureLayout(
@@ -37,6 +38,7 @@ const RENDERER_BUDGET = { p99Ms: 16, maxMs: 32 };
 interface RefreshEvidence {
   gaps: number[];
   readMs: number[];
+  citationReadMs: number[];
   readsDuringRefresh: number;
   readsCorrect: boolean;
   heldThroughout: boolean;
@@ -66,8 +68,9 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
     await keepRendering(vaultId);
     await cli([`vault=${vaultId}`, "plugin:disable", "id=zotlit"]);
     await buildFixture(fixture, {
-      // next's additive corpus fills all Fixture Libraries to 100,000 total Items.
+      // Shared Reading keeps Stress Items at both ends of the 100,000-Item corpus.
       stressItemCount: 100_000 - ITEMS.length,
+      stressSparseLibraryID: 2,
       pluginBundleDir,
       linkedAttachmentVaultDir: vaultPath,
     });
@@ -94,15 +97,18 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
   }, 120_000);
 
   it("keeps requested answers and interactive reads responsive while refreshing 100,000 Items", async () => {
-    const evidence: RefreshEvidence[] = [];
-    for (let round = 0; round < 3; round += 1) {
-      evidence.push(
-        JSON.parse(
-          await obEval(
-            vaultId,
-            `(async()=>{
+    const { value: evidence, workerHeap } = await measureWorkerHeap(
+      vaultId,
+      async () => {
+        const evidence: RefreshEvidence[] = [];
+        for (let round = 0; round < 3; round += 1) {
+          evidence.push(
+            JSON.parse(
+              await obEval(
+                vaultId,
+                `(async()=>{
               const s=app.plugins.plugins.zotlit.services,lookup=s.citationLookup;
-              const gaps=[],readMs=[];
+              const gaps=[],readMs=[],citationReadMs=[];
               const key=${JSON.stringify(item.key)},expected=${JSON.stringify(item.citationKey)};
               const request={citekeys:[expected],indexedKeys:[key]};
               const held=await lookup.read(request);
@@ -134,7 +140,16 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
                   if(refreshing)readsDuringRefresh++;
                 } while(refreshing);
               })();
-              const [fresh]=await Promise.all([refresh,reads]);
+              const citationReads=(async()=>{
+                do {
+                  const started=performance.now();
+                  await lookup.read(request);
+                  citationReadMs.push(performance.now()-started);
+                  // A held answer can resolve immediately; yield so refresh and search can progress.
+                  await new Promise(resolve=>setTimeout(resolve,0));
+                } while(refreshing);
+              })();
+              const [fresh]=await Promise.all([refresh,reads,citationReads]);
               sample();
               const unrequested=[
                 ['unrequested-probe-key',()=>fresh.resolve('unrequested-probe-key')],
@@ -142,13 +157,16 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
               ].every(([key,read])=>{
                 try{read();return false;}catch(error){return error instanceof Error&&error.message.includes(key);}
               });
-              return JSON.stringify({gaps,readMs,readsDuringRefresh,readsCorrect,heldThroughout,sameRevision:fresh.revision===held.revision,citekey:fresh.citekeyOf(key),unique:fresh.resolve(expected).kind==="unique",unrequested});
+              return JSON.stringify({gaps,readMs,citationReadMs,readsDuringRefresh,readsCorrect,heldThroughout,sameRevision:fresh.revision===held.revision,citekey:fresh.citekeyOf(key),unique:fresh.resolve(expected).kind==="unique",unrequested});
             })()`,
-            120_000,
-          ),
-        ) as RefreshEvidence,
-      );
-    }
+                120_000,
+              ),
+            ) as RefreshEvidence,
+          );
+        }
+        return evidence;
+      },
+    );
     const gaps = evidence.flatMap(({ gaps }) => gaps).toSorted((a, b) => a - b);
     const p99 = gaps[Math.ceil(gaps.length * 0.99) - 1]!;
     const maximum = gaps.at(-1)!;
@@ -157,6 +175,9 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
       .toSorted((a, b) => a - b);
     const readP99 = readMs[Math.ceil(readMs.length * 0.99) - 1]!;
     const readMaximum = readMs.at(-1)!;
+    const citationReadMs = evidence
+      .flatMap(({ citationReadMs }) => citationReadMs)
+      .toSorted((a, b) => a - b);
     console.info("Citation Index refresh, 100,000 Items", {
       renderer: { p99, maximum },
       interactive: {
@@ -164,6 +185,12 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
         maximum: readMaximum,
         samples: readMs.length,
       },
+      citationLookup: {
+        p99: citationReadMs[Math.ceil(citationReadMs.length * 0.99) - 1]!,
+        maximum: citationReadMs.at(-1)!,
+        samples: citationReadMs.length,
+      },
+      workerHeap,
       readsDuringRefresh: evidence.map(
         ({ readsDuringRefresh }) => readsDuringRefresh,
       ),

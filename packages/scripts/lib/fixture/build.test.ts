@@ -144,6 +144,7 @@ function indexedItemCount(db: NodeDatabaseClient): number {
 async function buildTemporaryStressFixture(
   prefix: string,
   stressItemCount: number,
+  options: BuildOptions = {},
 ): Promise<FixtureLayout> {
   const generatedLayout = getFixtureLayout(
     await mkdtemp(join(dirname(layout.root), prefix)),
@@ -151,7 +152,7 @@ async function buildTemporaryStressFixture(
   fixture.defer(() =>
     rm(generatedLayout.root, { recursive: true, force: true }),
   );
-  await buildFixture(generatedLayout, { stressItemCount });
+  await buildFixture(generatedLayout, { stressItemCount, ...options });
   return generatedLayout;
 }
 
@@ -1376,6 +1377,33 @@ describe("a Stress Build", () => {
 
     using db = openClientAt(stressLayout.databasePath);
     expect(indexedItemCount(db)).toBe(ITEMS.length + 32);
+  });
+
+  it("keeps a sparse Group Library at both ends of the Stress Item range", async () => {
+    const stressLayout = await buildTemporaryStressFixture(
+      "fixture-stress-sparse-",
+      200,
+      { stressSparseLibraryID: 2 },
+    );
+    using db = openClientAt(stressLayout.databasePath);
+    const baseIDs = new Set(ITEMS.map(({ itemID }) => itemID));
+    const sparseIDs = getIndexedItemIDsByLibrary(db, 2);
+    const sparseStressIDs = sparseIDs
+      .filter((id) => !baseIDs.has(id))
+      .toSorted((a, b) => a - b);
+    const allStressIDs = getLibraries(db)
+      .flatMap(({ libraryID }) => getIndexedItemIDsByLibrary(db, libraryID))
+      .filter((id) => !baseIDs.has(id))
+      .toSorted((a, b) => a - b);
+
+    expect(indexedItemCount(db)).toBe(ITEMS.length + 200);
+    expect(sparseIDs).toHaveLength(
+      ITEMS.filter(({ libraryID }) => libraryID === 2).length + 20,
+    );
+    expect(sparseStressIDs).toEqual([
+      ...allStressIDs.slice(0, 10),
+      ...allStressIDs.slice(-10),
+    ]);
   });
 
   it("preserves Fixture invariants and generates deterministic rich content", async () => {
