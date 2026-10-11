@@ -1,10 +1,9 @@
-// Match vocabulary spans every Library in the pinned live database.
-import { Effect } from "effect";
-
 import type { MatchItemFacts } from "@zotlit/workbench/match";
 import { snapshotMatchFacts } from "@zotlit/workbench/match";
 import type { WorkbenchHost, WorkbenchLibrary } from "@zotlit/workbench/ui";
 
+// Match vocabulary spans every Library in the pinned live database.
+import { Effect } from "@/lib/effect";
 import {
   resolveLibraryScope,
   selectorKey,

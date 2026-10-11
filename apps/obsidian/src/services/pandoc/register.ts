@@ -3,7 +3,6 @@
 // Command, flag, and response text is all hardcoded English: an agent-facing
 // contract surface, not localized UI. See apps/obsidian/policies/cli-text.md.
 
-import { Effect } from "effect";
 import { isAbsolute, relative } from "node:path";
 import { normalizePath } from "obsidian";
 import type {
@@ -15,6 +14,7 @@ import type {
   TFile,
 } from "obsidian";
 
+import { Effect } from "@/lib/effect";
 import { getLogger } from "@/lib/log";
 import { resolveIndexedKey } from "@/services/note-index/service";
 import type { ProfileReader } from "@/services/profile/service";

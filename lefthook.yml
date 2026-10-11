@@ -13,3 +13,18 @@ pre-commit:
       glob: "*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}"
       run: mise exec -- turbo run //#lint:repo -- --fix {staged_files} --no-error-on-unmatched-pattern
       stage_fixed: true
+    worker-responsiveness:
+      priority: 100
+      glob:
+        - "apps/obsidian/src/lib/effect*.ts"
+        - "apps/obsidian/src/lib/browser-scheduler*.ts"
+        - "apps/obsidian/oxlint.config.ts"
+        - "apps/obsidian/src/services/zotero-reads/**"
+        - "apps/obsidian/src/services/database/**"
+        - "apps/obsidian/src/services/citation-index/**"
+        - "packages/item-lookup/**"
+        - "packages/db/**"
+        - "packages/e2e/**"
+        - "pnpm-lock.yaml"
+        - "lefthook.yml"
+      run: mise exec -- pnpm e2e:worker

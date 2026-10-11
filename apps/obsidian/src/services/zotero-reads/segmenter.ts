@@ -1,11 +1,10 @@
-// The Chinese Segmenter in the worker: the reader the Item Index loads an installed binary through.
-import { Effect, Layer } from "effect";
-
 import {
   SegmenterBinaryReader,
   SegmenterUnavailable,
 } from "@zotlit/item-lookup";
 
+// The Chinese Segmenter in the worker: the reader the Item Index loads an installed binary through.
+import { Effect, Layer } from "@/lib/effect";
 import { createOpfsBinaryStore } from "@/services/managed-binary/store";
 
 import type { SegmenterBinary } from "./rpc";

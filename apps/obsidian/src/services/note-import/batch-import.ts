@@ -1,5 +1,4 @@
 import { distinct } from "@std/collections";
-import { Effect, Stream } from "effect";
 // Batch import runner for Zotero notes into standalone Markdown mirrors.
 import type { MetadataCache, TFile } from "obsidian";
 
@@ -7,6 +6,7 @@ import { parseIndexedKey, USER_LIBRARY_ID } from "@zotlit/db";
 import type { ChildNote, Note } from "@zotlit/db";
 import type { ImportMode } from "@zotlit/protocol";
 
+import { Effect, Stream } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import type { ProfileSelector } from "@/lib/profile-stamp";

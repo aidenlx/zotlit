@@ -1,8 +1,8 @@
 // Zotero connection readout for Welcome View step 1; the view re-runs it on database lifecycle events for a live status.
 
-import { Effect } from "effect";
 import { homedir } from "node:os";
 
+import { Effect } from "@/lib/effect";
 import type { QueryClientService } from "@/services/query-client/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";

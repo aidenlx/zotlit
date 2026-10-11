@@ -2,6 +2,7 @@
 // rebuilds a large lookup index. The Stress Build is isolated from the Development Vault.
 import { cp, mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -21,6 +22,7 @@ import {
   vaultScript,
 } from "./vault-script.ts";
 import { measureWorkerHeap } from "./worker-heap.ts";
+import { measureWorkerResponsiveness } from "./worker-responsiveness.ts";
 
 const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
 const fixture = getFixtureLayout(
@@ -34,6 +36,9 @@ const item = ITEMS.find(({ itemID }) => itemID === 1)!;
 // Renderer limits from origin/feat/zotlit-query:packages/e2e/src/query-record.ts
 // (spec #1314, THRESHOLDS.slice).
 const RENDERER_BUDGET = { p99Ms: 16, maxMs: 32 };
+// Native edits measured 39–57 ms searches and 113–128 ms worker timer gaps.
+const INTERACTIVE_MAX_MS = 100;
+const WORKER_TIMER_MAX_MS = 250;
 
 interface RefreshEvidence {
   gaps: number[];
@@ -197,6 +202,7 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
     });
     expect(gaps.length).toBeGreaterThan(0);
     expect(readMs.length).toBeGreaterThan(0);
+    expect(readMaximum).toBeLessThanOrEqual(INTERACTIVE_MAX_MS);
     expect(evidence.every(({ readsCorrect }) => readsCorrect)).toBe(true);
     expect(
       evidence.every(({ readsDuringRefresh }) => readsDuringRefresh > 0),
@@ -213,5 +219,107 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
     ]);
     expect(p99).toBeLessThanOrEqual(RENDERER_BUDGET.p99Ms);
     expect(maximum).toBeLessThanOrEqual(RENDERER_BUDGET.maxMs);
+  }, 120_000);
+
+  it("serves searches and worker tasks while changed Items rebuild the 100,000-Item index", async () => {
+    const { value: rounds, gaps } = await measureWorkerResponsiveness(
+      vaultId,
+      async () => {
+        const rounds: {
+          maximum: number;
+          samples: number;
+          correct: boolean;
+          fresh: boolean;
+        }[] = [];
+        for (let round = 1; round <= 3; round++) {
+          const title = `Updated Item search regression ${round}`;
+          // A real source change moves the signature and forces an Item Index rebuild.
+          // This Fixture has no running Zotero; only the test writes its source.
+          {
+            using sqlite = new DatabaseSync(fixture.databasePath);
+            sqlite.exec("BEGIN IMMEDIATE");
+            sqlite
+              .prepare(`UPDATE itemDataValues SET value = ? WHERE valueID = (
+              SELECT itemData.valueID FROM itemData JOIN fields USING (fieldID)
+              WHERE itemID = ? AND fieldName = 'title'
+            )`)
+              .run(title, item.itemID);
+            sqlite
+              .prepare("UPDATE items SET dateModified = ? WHERE itemID = ?")
+              .run(`2030-01-01 00:00:0${round}`, item.itemID);
+            sqlite.exec("COMMIT");
+          }
+          rounds.push(
+            JSON.parse(
+              await obEval(
+                vaultId,
+                `(async()=>{
+            const s=app.plugins.plugins.zotlit.services;
+            const refresh=s.zoteroReads.refresh();
+            let refreshed=false,maximum=0,samples=0,correct=true,fresh=false;
+            const settled=refresh.then(()=>{refreshed=true;});
+            const deadline=performance.now()+60000;
+            do{
+              const start=performance.now();
+              const hits=await s.itemLookup.search(${JSON.stringify(item.key)},{limit:1});
+              maximum=Math.max(maximum,performance.now()-start);samples++;
+              correct&&=hits.length===1&&hits[0].item.itemID===${item.itemID};
+              fresh=hits[0]?.item.fields.title===${JSON.stringify(title)};
+              await new Promise(resolve=>setTimeout(resolve,50));
+            }while((!refreshed||!fresh)&&performance.now()<deadline);
+            await settled;
+            return JSON.stringify({maximum,samples,correct,fresh});
+          })()`,
+                120_000,
+              ),
+            ),
+          );
+        }
+        return rounds;
+      },
+    );
+    console.info("Changed Item Index, 100,000 Items", {
+      rounds,
+      workerTimerMaximum: Math.max(...gaps),
+    });
+    expect(
+      rounds.every(
+        ({ correct, fresh, samples }) => correct && fresh && samples > 1,
+      ),
+    ).toBe(true);
+    expect(
+      Math.max(...rounds.map(({ maximum }) => maximum)),
+    ).toBeLessThanOrEqual(INTERACTIVE_MAX_MS);
+    expect(gaps.length).toBeGreaterThan(0);
+    expect(Math.max(...gaps)).toBeLessThanOrEqual(WORKER_TIMER_MAX_MS);
+  }, 240_000);
+
+  it("keeps the held search index when snapshot integrity validation fails", async () => {
+    {
+      using sqlite = new DatabaseSync(fixture.databasePath, {
+        defensive: false,
+      });
+      sqlite.exec(`
+        CREATE TABLE integrity_probe (value INTEGER);
+        INSERT INTO integrity_probe VALUES (NULL);
+        PRAGMA writable_schema = ON;
+        UPDATE sqlite_schema SET sql = 'CREATE TABLE integrity_probe (value INTEGER NOT NULL)'
+          WHERE name = 'integrity_probe';
+      `);
+    }
+    const answer = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{
+      const s=app.plugins.plugins.zotlit.services;
+      let rejected=false;
+      try{await s.zoteroReads.refresh();}catch{rejected=true;}
+      const hits=await s.itemLookup.search(${JSON.stringify(item.key)},{limit:1});
+      return JSON.stringify({rejected,itemID:hits[0]?.item.itemID});
+    })()`,
+        120_000,
+      ),
+    );
+    expect(answer).toEqual({ rejected: true, itemID: item.itemID });
   }, 120_000);
 });

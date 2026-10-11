@@ -1,11 +1,10 @@
 // The source-join of a document's Citations: each cited Item read from the Zotero database, in the identities and summary a reference list reports.
 
-import { Effect } from "effect";
-
 import { isChildItemFields, itemToCsl } from "@zotlit/db";
 import type { Attachment, CslItemData, Item } from "@zotlit/db";
 import { parseAttachmentPath } from "@zotlit/db/path";
 
+import { Effect } from "@/lib/effect";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
