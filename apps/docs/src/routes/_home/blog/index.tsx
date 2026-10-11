@@ -2,8 +2,7 @@ import { Link, createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 
 import { SiteFooter } from "@/components/site-footer";
-import { isSiteLocale } from "@/lib/i18n";
-import type { SiteLocale } from "@/lib/i18n";
+import { validateSiteLocale } from "@/lib/i18n";
 import { pageHead } from "@/lib/seo";
 import { appName, blogRoute, formatReleaseDate } from "@/lib/shared";
 import { getBlogPages } from "@/lib/source";
@@ -12,10 +11,7 @@ import { m } from "@/paraglide/messages.js";
 import { getLocale } from "@/paraglide/runtime.js";
 
 const listPosts = createServerFn({ method: "GET" })
-  .validator((locale: SiteLocale) => {
-    if (!isSiteLocale(locale)) throw new Error("Unsupported locale");
-    return locale;
-  })
+  .validator(validateSiteLocale)
   .handler(({ data: locale }) =>
     getBlogPages(locale).map((page) => ({
       slug: page.slugs[0] ?? "",
