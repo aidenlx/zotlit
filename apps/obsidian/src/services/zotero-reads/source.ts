@@ -1,6 +1,3 @@
-// The production Connection: owns the Zotero database source — Read Mode, fingerprints, watchers, and the refresh lane.
-import { Deferred, Effect, FiberSet, Layer } from "effect";
-import type { Fiber } from "effect";
 import { existsSync, watch } from "node:fs";
 import type { WatchListener, WatchOptionsWithStringEncoding } from "node:fs";
 import { dirname, join } from "node:path";
@@ -11,6 +8,9 @@ import { createClient } from "@zotlit/db/client/node";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import { ZOTERO_DB_FILENAME, ZOTERO_WAL_FILENAME } from "@/lib/constants";
+// The production Connection: owns the Zotero database source — Read Mode, fingerprints, watchers, and the refresh lane.
+import { Deferred, Effect, FiberSet, Layer } from "@/lib/effect";
+import type { Fiber } from "@/lib/effect";
 import { getLogger } from "@/lib/log";
 import { readParentBeside } from "@/services/database/read-parent";
 import {
@@ -92,8 +92,8 @@ export interface SourceOptions {
 /** A change signal travelling from a watcher or a push to the refresh gate. */
 interface WatchSignal {
   /**
-   * Skip the fingerprint gate; the signal carries its own authority (a Zotero
-   * push). Filesystem ticks are never trusted.
+   * A Zotero push can refresh even with automatic file watching disabled.
+   * Its source fingerprint is checked inside the refresh lane.
    */
   trusted: boolean;
 }
@@ -323,83 +323,117 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
           return publish({ _tag: "db-file-missing" });
         });
 
-      const refreshOnce = Effect.gen(function* () {
-        const current = config;
-        if (!current) return;
-        const { databasePath, readMode: configuredMode } = current;
-        reapReadParent(databasePath);
-        // Fingerprinted before the read, never after: a Zotero write that
-        // lands while we clone then still differs from what we record, so the
-        // next watcher tick refreshes instead of being gated away as our echo.
-        const nextFingerprint = yield* trySnapshotSource(databasePath);
-        const result = yield* Effect.result(
-          Effect.uninterruptibleMask((restore) =>
-            Effect.gen(function* () {
-              const prepared = yield* restore(
-                prepareDetached(() =>
-                  ports.prepareRead(configuredMode, databasePath),
-                ),
-              );
-              const open = yield* openClient(prepared, databasePath);
-              logReadFallback(prepared);
-              reportSchemaVersions(open.client);
-              yield* clients.swap(open);
-              hasClient = true;
-              laneFailure = null;
-              sourcePath = databasePath;
-              readMode = prepared.effectiveMode;
-              fingerprint = nextFingerprint;
-              state = "ready";
-              lastError = null;
-            }),
-          ),
-        );
-        // Teardown waited for the uninterruptible open above; whatever it
-        // took, it has taken, so bind and report nothing more.
-        if (torndown) return;
-        if (result._tag === "Failure") {
-          const error = result.failure;
-          yield* publish({ _tag: "refresh-failed", error });
-          logger.warn("Failed to refresh Zotero database", { error });
-          yield* maybeSignalMissingDatabase(databasePath);
-          laneFailure = error;
-          // Keep serving the previous client on a failed refresh; only go
-          // degraded when there was never a working client to fall back to.
-          lastError = error;
-          if (!hasClient) {
-            state = "degraded";
-            disposeWatchers();
-            yield* publish({ _tag: "degraded", error });
+      const refreshOnce = Effect.fnUntraced(
+        function* (skipUnchanged: boolean) {
+          const current = config;
+          if (!current) return;
+          const { databasePath, readMode: configuredMode } = current;
+          reapReadParent(databasePath);
+          // Fingerprinted before the read, never after: a Zotero write that
+          // lands while we clone then still differs from what we record, so the
+          // next watcher tick refreshes instead of being gated away as our echo.
+          const nextFingerprint = yield* trySnapshotSource(databasePath);
+          // Reuse the refresh's pre-read fingerprint. Only a healthy clone can
+          // stay in place; failures, configuration changes and queued requests
+          // retain the full refresh path.
+          if (
+            skipUnchanged &&
+            !refreshAgain &&
+            config === current &&
+            state === "ready" &&
+            lastError === null &&
+            readMode !== "immutable" &&
+            sourcePath === databasePath &&
+            fingerprint &&
+            nextFingerprint &&
+            sourceFingerprintsEqual(fingerprint, nextFingerprint)
+          ) {
+            logger.debug(
+              "External change ignored, database unchanged since last read",
+            );
+            return;
           }
-          return;
-        }
-        rebindWatchers();
-        yield* publish({
-          _tag: "changed",
-          ...(readMode && { readMode }),
-        });
-        logger.info("Opened Zotero database", {
-          sourcePath: databasePath,
-          readMode,
-        });
-      }).pipe(Effect.ensuring(Deferred.succeed(firstSettled, undefined)));
+          const result = yield* Effect.result(
+            Effect.uninterruptibleMask((restore) =>
+              Effect.gen(function* () {
+                const prepared = yield* restore(
+                  prepareDetached(() =>
+                    ports.prepareRead(configuredMode, databasePath),
+                  ),
+                );
+                const open = yield* openClient(prepared, databasePath);
+                logReadFallback(prepared);
+                reportSchemaVersions(open.client);
+                yield* clients.swap(open);
+                hasClient = true;
+                laneFailure = null;
+                sourcePath = databasePath;
+                readMode = prepared.effectiveMode;
+                fingerprint = nextFingerprint;
+                state = "ready";
+                lastError = null;
+              }),
+            ),
+          );
+          // Teardown waited for the uninterruptible open above; whatever it
+          // took, it has taken, so bind and report nothing more.
+          if (torndown) return;
+          if (result._tag === "Failure") {
+            const error = result.failure;
+            yield* publish({ _tag: "refresh-failed", error });
+            logger.warn("Failed to refresh Zotero database", { error });
+            yield* maybeSignalMissingDatabase(databasePath);
+            laneFailure = error;
+            // Keep serving the previous client on a failed refresh; only go
+            // degraded when there was never a working client to fall back to.
+            lastError = error;
+            if (!hasClient) {
+              state = "degraded";
+              disposeWatchers();
+              yield* publish({ _tag: "degraded", error });
+            }
+            return;
+          }
+          rebindWatchers();
+          yield* publish({
+            _tag: "changed",
+            ...(readMode && { readMode }),
+          });
+          logger.info("Opened Zotero database", {
+            sourcePath: databasePath,
+            readMode,
+          });
+        },
+        Effect.ensuring(Deferred.succeed(firstSettled, undefined)),
+      );
 
-      const refreshLane = Effect.gen(function* () {
-        yield* publish({ _tag: "refreshing", active: true });
-        do {
-          refreshAgain = false;
-          yield* refreshOnce;
-          if (refreshAgain)
-            logger.debug("Trailing request queued, rerunning refresh");
-        } while (refreshAgain);
-      }).pipe(Effect.ensuring(publish({ _tag: "refreshing", active: false })));
+      const refreshLane = Effect.fnUntraced(
+        function* (skipUnchanged: boolean) {
+          yield* publish({ _tag: "refreshing", active: true });
+          let canSkipUnchanged = skipUnchanged;
+          do {
+            refreshAgain = false;
+            yield* refreshOnce(canSkipUnchanged);
+            // A request during an active refresh always gets its trailing read.
+            canSkipUnchanged = false;
+            if (refreshAgain)
+              logger.debug("Trailing request queued, rerunning refresh");
+          } while (refreshAgain);
+        },
+        Effect.ensuring(publish({ _tag: "refreshing", active: false })),
+      );
 
       /**
        * Single-flight refresh lane with trailing-rerun coalescing: every
        * trigger shares one in-flight run, and a trigger mid-run sets one
        * trailing rerun. Returns the run's completion.
        */
-      const enqueueRefresh = (): Deferred.Deferred<void, DbUnavailable> => {
+      const enqueueRefresh = ({
+        skipUnchanged = false,
+      }: { skipUnchanged?: boolean } = {}): Deferred.Deferred<
+        void,
+        DbUnavailable
+      > => {
         if (laneDone) {
           logger.debug("Refresh in flight, coalescing trailing rerun");
           refreshAgain = true;
@@ -408,7 +442,7 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
         const done = Deferred.makeUnsafe<void, DbUnavailable>();
         laneDone = done;
         run(
-          refreshLane.pipe(
+          refreshLane(skipUnchanged).pipe(
             Effect.ensuring(
               Effect.suspend(() => {
                 laneDone = null;
@@ -490,7 +524,7 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
           logger.debug("Watcher tick ignored, auto-refresh switched off");
           return;
         }
-        enqueueRefresh();
+        enqueueRefresh({ skipUnchanged: trusted });
       });
 
       /**
@@ -498,7 +532,7 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
        * moved. Reading the database clones it, and on APFS a clone raises a
        * `change` event against the source, so a tick proves nothing on its
        * own; the gate holds it against the last read. One trusted signal in a
-       * burst carries the whole burst past the gate.
+       * burst sends the whole burst through the refresh lane's comparison.
        */
       const scheduleWatchedRefresh = ({ trusted }: WatchSignal): void => {
         watchTimer?.interruptUnsafe();

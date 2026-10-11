@@ -56,6 +56,8 @@ When adding or changing a CLI schema or downloadable resource, inspect `src/serv
 
 ## Debugging
 
+Use `@/lib/effect` for Effect in Obsidian: its runtime entry points default to Chromium scheduling in the renderer and workers. `no-restricted-imports` enforces the boundary; `pnpm e2e:worker` checks real worker responsiveness.
+
 Run `/obsidian-debug` to build, reload, and screenshot the running Obsidian instance.
 
 ## Testing

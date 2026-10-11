@@ -1,8 +1,7 @@
-// Worker-owned citation maps: a native citekey's Items, and an Item's native citekey.
-import { Effect, Stream } from "effect";
-
 import type { LibraryCitekey } from "@zotlit/db";
 
+// Worker-owned citation maps: a native citekey's Items, and an Item's native citekey.
+import { Effect, Stream } from "@/lib/effect";
 import { getLogger } from "@/lib/log";
 
 const logger = getLogger("citation-index");
@@ -65,9 +64,11 @@ export class CitekeySnapshot {
   /** Builds a complete snapshot, retaining `previous` when its answers match. */
   static from = Effect.fnUntraced(function* <E, R>(
     rows: Stream.Stream<LibraryCitekey, E, R>,
+    // Iteration order is the canonical Library order.
     inScope: ReadonlySet<number>,
     { previous }: { previous?: CitekeySnapshot } = {},
   ): Effect.fn.Return<CitekeySnapshot, E, R> {
+    const libraryOrder = new Map([...inScope].map((id, index) => [id, index]));
     const work = new SnapshotWork();
     const snapshot = new CitekeySnapshot();
     const byCitekey = snapshot.#byCitekey;
@@ -96,6 +97,11 @@ export class CitekeySnapshot {
       const pause = work.step();
       if (pause) yield* pause;
       if (candidates.length > 1) {
+        candidates.sort(
+          (a, b) =>
+            libraryOrder.get(a.libraryID)! - libraryOrder.get(b.libraryID)! ||
+            a.itemID - b.itemID,
+        );
         logger.debug("Ambiguous citation key in library scope", {
           citekey,
           candidates: candidates.length,

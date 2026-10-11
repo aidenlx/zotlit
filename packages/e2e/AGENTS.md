@@ -8,13 +8,12 @@ The End-to-end Run suite — the plugin running in a real desktop Obsidian windo
 - `pnpm e2e:query` (root) — builds dependencies and runs only the ZotLit Query CLI cases, including cancellation.
 - For another focused desktop run, pass a file and test name: `pnpm e2e --project=desktop src/end-to-end.e2e.ts -t '<test name>'`. Add the paired project only when the changed behavior needs Zotero. After the build is current, `pnpm --filter @zotlit/e2e exec vitest run` accepts the same selection for an inner loop.
 - `pnpm --filter @zotlit/e2e typecheck` — type-checks the suite.
+- Worker responsiveness: `pnpm e2e:worker` requires desktop Obsidian and passes only when the unchanged refresh, changed-Item rebuild, and rejected-snapshot cases all execute. The commit hook runs it for the paths listed in `lefthook.yml`. Its worker timer detects stalls that sequential search p99 can hide.
 
 - `pnpm --filter @zotlit/e2e measure:query` — the release-time measurement of ZotLit Query (see below).
 - `pnpm --filter @zotlit/e2e test` — unit tests of the measurement record (`src/**/*.test.ts`, `vitest.unit.config.ts`). They touch no Obsidian.
 
 The End-to-end Run and the measurement drive a real Electron app and stay out of `pnpm test` / CI: the `test` script runs the unit tests alone.
-
-The default reporter prints suite progress and the final counts. Read `.scratch/e2e-results/results.json` for individual results and `.scratch/e2e-results/console.log` for console evidence. A Paired Run setup failure writes `paired-startup.log` in that directory with the launch error chain. These files describe the latest run; copy evidence you need to retain before another run.
 
 The default reporter prints suite progress and the final counts. Read `.scratch/e2e-results/results.json` for individual results and `.scratch/e2e-results/console.log` for console evidence. A Paired Run setup failure writes `paired-startup.log` in that directory with the launch error chain. These files describe the latest run; copy evidence you need to retain before another run.
 

@@ -22,6 +22,7 @@
     "./fixture/spec": "./lib/fixture/spec.ts",
     "./fixture/local-bridge": "./lib/fixture/local-bridge.ts",
     "./obsidian-cli": "./lib/obsidian-cli.ts",
+    "./obsidian-cdp": "./lib/obsidian-cdp.ts",
     "./obsidian-manifest": "./lib/obsidian-manifest.ts",
     "./package-roots": "./lib/package-roots.ts",
     "./zotero-rdp": "./lib/zotero-rdp.ts",

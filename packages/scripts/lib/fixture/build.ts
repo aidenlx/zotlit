@@ -177,6 +177,8 @@ export interface BuildOptions {
   vaultCase?: string;
   /** Number of additive synthetic Items in an on-demand Stress Build. */
   stressItemCount?: number;
+  /** Group Library with only the first and last ten Stress Items, modeling an import gap. */
+  stressSparseLibraryID?: number;
   /**
    * Exact Item count of My Library in a one-Library Stress Build: synthetic
    * Items fill it past its Fixture Spec Items. Excludes
@@ -274,7 +276,12 @@ export async function buildFixture(
         );
   const items =
     options.stressItemCount !== undefined
-      ? [...ITEMS, ...createStressItems(options.stressItemCount)]
+      ? [
+          ...ITEMS,
+          ...createStressItems(options.stressItemCount, {
+            sparseLibraryID: options.stressSparseLibraryID,
+          }),
+        ]
       : stressLibrary
         ? [...ITEMS, ...stressLibrary.items]
         : ITEMS;

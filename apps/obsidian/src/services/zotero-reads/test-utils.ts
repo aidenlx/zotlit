@@ -1,37 +1,18 @@
-// Test support: ZoteroReads over `:memory:` fixture databases, for the service and its consumers.
-import { Effect, Layer, Stream } from "effect";
-import type { Scope } from "effect";
-
 import { createClient } from "@zotlit/db/client/node";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
+
+// Test support: ZoteroReads over `:memory:` fixture databases, for the service and its consumers.
+import { Effect, Layer, Stream } from "@/lib/effect";
+import type { Scope } from "@/lib/effect";
 
 import { layerRcRef } from "./connection";
 import type { Connection, ConnectionOpener } from "./connection";
 import type { HandlersOptions } from "./handlers";
 import { makeInProcessClient } from "./in-process";
 import type { ZoteroReadsClient } from "./in-process";
-import type { CitationSource, ReadsConfig, SnapshotId } from "./rpc";
+import type { SnapshotId } from "./rpc";
 import { ZoteroReadsService } from "./service";
-
-/** A lookup's source token; tests override only the source facts they vary. */
-export function citationSource(
-  generation = 0,
-  config: Partial<ReadsConfig> = {},
-): CitationSource {
-  return {
-    generation,
-    config: {
-      databasePath: "fixture",
-      readMode: "auto",
-      autoRefresh: false,
-      locale: null,
-      chineseSegmenter: null,
-      logLevel: null,
-      ...config,
-    },
-  };
-}
 
 /** The handler layer on this runtime over `connection`, for the caller's scope. */
 export const inProcessClient = Effect.fnUntraced(function* (

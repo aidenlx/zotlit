@@ -5,7 +5,7 @@ import { SettingsService } from "@/services/settings/service";
 import { TemplateService } from "@/services/template/service";
 import { createObsidianHost, PluginStub } from "@/lib/__fixtures__/obsidian-host";
 
-import { Effect } from "effect";
+import { Effect } from "@/lib/effect";
 
 import { LibraryScopeService } from "@/services/library-scope/service";
 import { QueryClientService } from "@/services/query-client/service";

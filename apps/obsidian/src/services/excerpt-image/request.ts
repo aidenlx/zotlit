@@ -1,5 +1,3 @@
-import { Data, Effect } from "effect";
-
 import {
   annotationTypeToName,
   parseAnnotationPosition,
@@ -16,6 +14,7 @@ import type {
 import { attachmentAbsPath, resolveAnnotCachePath } from "@zotlit/db/path";
 import type { AttachmentPathContext } from "@zotlit/db/path";
 
+import { Data, Effect } from "@/lib/effect";
 import { getLogger } from "@/lib/log";
 import type {
   AnnotationRecord,

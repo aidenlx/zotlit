@@ -1,7 +1,8 @@
 // The Citation Index keeps requested answers available while the worker
 // rebuilds a large lookup index. The Stress Build is isolated from the Development Vault.
-import { cp, mkdir } from "node:fs/promises";
+import { cp, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { backup, DatabaseSync } from "node:sqlite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -20,6 +21,8 @@ import {
   isObsidianReachable,
   vaultScript,
 } from "./vault-script.ts";
+import { measureWorkerHeap } from "./worker-heap.ts";
+import { measureWorkerResponsiveness } from "./worker-responsiveness.ts";
 
 const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
 const fixture = getFixtureLayout(
@@ -33,10 +36,14 @@ const item = ITEMS.find(({ itemID }) => itemID === 1)!;
 // Renderer limits from origin/feat/zotlit-query:packages/e2e/src/query-record.ts
 // (spec #1314, THRESHOLDS.slice).
 const RENDERER_BUDGET = { p99Ms: 16, maxMs: 32 };
+// Native edits measured 39–57 ms searches and 113–128 ms worker timer gaps.
+const INTERACTIVE_MAX_MS = 100;
+const WORKER_TIMER_MAX_MS = 250;
 
 interface RefreshEvidence {
   gaps: number[];
   readMs: number[];
+  citationReadMs: number[];
   readsDuringRefresh: number;
   readsCorrect: boolean;
   heldThroughout: boolean;
@@ -44,6 +51,36 @@ interface RefreshEvidence {
   citekey: string;
   unique: boolean;
   unrequested: boolean;
+}
+
+/** Each mutation owns a backup and restores both source data and held reads. */
+async function preserveFixture(vaultId: string): Promise<AsyncDisposableStack> {
+  await using cleanup = new AsyncDisposableStack();
+  const path = `${fixture.databasePath}.before-test`;
+  cleanup.defer(() => rm(path, { force: true }));
+  {
+    using source = new DatabaseSync(fixture.databasePath, { readOnly: true });
+    await backup(source, path);
+  }
+  cleanup.defer(async () => {
+    await cp(path, fixture.databasePath);
+    await obEval(
+      vaultId,
+      `app.plugins.plugins.zotlit.services.zoteroReads.refresh().then(()=>true)`,
+      120_000,
+    );
+    expect(
+      await waitFor(
+        async () =>
+          (await obEval(
+            vaultId,
+            `app.plugins.plugins.zotlit.services.itemLookup.search(${JSON.stringify(item.key)},{limit:1}).then(hits=>String(hits[0]?.item.fields.title===${JSON.stringify(item.title)}))`,
+          )) === "true",
+        240,
+      ),
+    ).toBe(true);
+  });
+  return cleanup.move();
 }
 
 describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
@@ -66,8 +103,9 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
     await keepRendering(vaultId);
     await cli([`vault=${vaultId}`, "plugin:disable", "id=zotlit"]);
     await buildFixture(fixture, {
-      // next's additive corpus fills all Fixture Libraries to 100,000 total Items.
+      // Shared Reading keeps Stress Items at both ends of the 100,000-Item corpus.
       stressItemCount: 100_000 - ITEMS.length,
+      stressSparseLibraryID: 2,
       pluginBundleDir,
       linkedAttachmentVaultDir: vaultPath,
     });
@@ -94,15 +132,42 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
   }, 120_000);
 
   it("keeps requested answers and interactive reads responsive while refreshing 100,000 Items", async () => {
-    const evidence: RefreshEvidence[] = [];
-    for (let round = 0; round < 3; round += 1) {
-      evidence.push(
-        JSON.parse(
-          await obEval(
-            vaultId,
-            `(async()=>{
+    // A delivered push over unchanged bytes must leave downstream indexes alone.
+    const unchanged = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{
+          const s=app.plugins.plugins.zotlit.services;
+          const settled=Promise.withResolvers();
+          let active=false,publications=0;
+          using cleanup=new DisposableStack();
+          cleanup.defer(s.zoteroReads.on('changed',()=>publications++));
+          cleanup.defer(s.zoteroReads.on('refreshing',value=>{
+            if(value)active=true;else if(active)settled.resolve();
+          }));
+          cleanup.adopt(setTimeout(()=>settled.reject(Error('Push did not settle')),10000),clearTimeout);
+          s.zoteroReads.notifyExternalChange();
+          await settled.promise;
+          const hits=await s.itemLookup.search(${JSON.stringify(item.key)},{limit:1});
+          return JSON.stringify({publications,itemID:hits[0]?.item.itemID});
+        })()`,
+        30_000,
+      ),
+    );
+    expect(unchanged).toEqual({ publications: 0, itemID: item.itemID });
+
+    const { value: evidence, workerHeap } = await measureWorkerHeap(
+      vaultId,
+      async () => {
+        const evidence: RefreshEvidence[] = [];
+        for (let round = 0; round < 3; round += 1) {
+          evidence.push(
+            JSON.parse(
+              await obEval(
+                vaultId,
+                `(async()=>{
               const s=app.plugins.plugins.zotlit.services,lookup=s.citationLookup;
-              const gaps=[],readMs=[];
+              const gaps=[],readMs=[],citationReadMs=[];
               const key=${JSON.stringify(item.key)},expected=${JSON.stringify(item.citationKey)};
               const request={citekeys:[expected],indexedKeys:[key]};
               const held=await lookup.read(request);
@@ -134,7 +199,16 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
                   if(refreshing)readsDuringRefresh++;
                 } while(refreshing);
               })();
-              const [fresh]=await Promise.all([refresh,reads]);
+              const citationReads=(async()=>{
+                do {
+                  const started=performance.now();
+                  await lookup.read(request);
+                  citationReadMs.push(performance.now()-started);
+                  // A held answer can resolve immediately; yield so refresh and search can progress.
+                  await new Promise(resolve=>setTimeout(resolve,0));
+                } while(refreshing);
+              })();
+              const [fresh]=await Promise.all([refresh,reads,citationReads]);
               sample();
               const unrequested=[
                 ['unrequested-probe-key',()=>fresh.resolve('unrequested-probe-key')],
@@ -142,13 +216,16 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
               ].every(([key,read])=>{
                 try{read();return false;}catch(error){return error instanceof Error&&error.message.includes(key);}
               });
-              return JSON.stringify({gaps,readMs,readsDuringRefresh,readsCorrect,heldThroughout,sameRevision:fresh.revision===held.revision,citekey:fresh.citekeyOf(key),unique:fresh.resolve(expected).kind==="unique",unrequested});
+              return JSON.stringify({gaps,readMs,citationReadMs,readsDuringRefresh,readsCorrect,heldThroughout,sameRevision:fresh.revision===held.revision,citekey:fresh.citekeyOf(key),unique:fresh.resolve(expected).kind==="unique",unrequested});
             })()`,
-            120_000,
-          ),
-        ) as RefreshEvidence,
-      );
-    }
+                120_000,
+              ),
+            ) as RefreshEvidence,
+          );
+        }
+        return evidence;
+      },
+    );
     const gaps = evidence.flatMap(({ gaps }) => gaps).toSorted((a, b) => a - b);
     const p99 = gaps[Math.ceil(gaps.length * 0.99) - 1]!;
     const maximum = gaps.at(-1)!;
@@ -157,6 +234,9 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
       .toSorted((a, b) => a - b);
     const readP99 = readMs[Math.ceil(readMs.length * 0.99) - 1]!;
     const readMaximum = readMs.at(-1)!;
+    const citationReadMs = evidence
+      .flatMap(({ citationReadMs }) => citationReadMs)
+      .toSorted((a, b) => a - b);
     console.info("Citation Index refresh, 100,000 Items", {
       renderer: { p99, maximum },
       interactive: {
@@ -164,12 +244,19 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
         maximum: readMaximum,
         samples: readMs.length,
       },
+      citationLookup: {
+        p99: citationReadMs[Math.ceil(citationReadMs.length * 0.99) - 1]!,
+        maximum: citationReadMs.at(-1)!,
+        samples: citationReadMs.length,
+      },
+      workerHeap,
       readsDuringRefresh: evidence.map(
         ({ readsDuringRefresh }) => readsDuringRefresh,
       ),
     });
     expect(gaps.length).toBeGreaterThan(0);
     expect(readMs.length).toBeGreaterThan(0);
+    expect(readMaximum).toBeLessThanOrEqual(INTERACTIVE_MAX_MS);
     expect(evidence.every(({ readsCorrect }) => readsCorrect)).toBe(true);
     expect(
       evidence.every(({ readsDuringRefresh }) => readsDuringRefresh > 0),
@@ -186,5 +273,113 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
     ]);
     expect(p99).toBeLessThanOrEqual(RENDERER_BUDGET.p99Ms);
     expect(maximum).toBeLessThanOrEqual(RENDERER_BUDGET.maxMs);
+  }, 120_000);
+
+  it("serves searches and worker tasks while changed Items rebuild the 100,000-Item index", async () => {
+    await using _source = await preserveFixture(vaultId);
+    const { value: rounds, gaps } = await measureWorkerResponsiveness(
+      vaultId,
+      async () => {
+        const rounds: {
+          maximum: number;
+          samples: number;
+          correct: boolean;
+          fresh: boolean;
+        }[] = [];
+        for (let round = 1; round <= 3; round++) {
+          const title = `Updated Item search regression ${round}`;
+          // A real source change moves the signature and forces an Item Index rebuild.
+          // This Fixture has no running Zotero; only the test writes its source.
+          {
+            using sqlite = new DatabaseSync(fixture.databasePath);
+            sqlite.exec("BEGIN IMMEDIATE");
+            sqlite
+              .prepare(`UPDATE itemDataValues SET value = ? WHERE valueID = (
+              SELECT itemData.valueID FROM itemData JOIN fields USING (fieldID)
+              WHERE itemID = ? AND fieldName = 'title'
+            )`)
+              .run(title, item.itemID);
+            sqlite
+              .prepare("UPDATE items SET dateModified = ? WHERE itemID = ?")
+              .run(`2030-01-01 00:00:0${round}`, item.itemID);
+            sqlite.exec("COMMIT");
+          }
+          rounds.push(
+            JSON.parse(
+              await obEval(
+                vaultId,
+                `(async()=>{
+            const s=app.plugins.plugins.zotlit.services;
+            using cleanup=new DisposableStack();
+            const changed=Promise.withResolvers();
+            cleanup.defer(s.zoteroReads.on('changed',()=>changed.resolve()));
+            cleanup.adopt(setTimeout(()=>changed.reject(Error('Changed push did not publish')),60000),clearTimeout);
+            let refreshed=false,maximum=0,samples=0,correct=true,fresh=false;
+            const settled=changed.promise.then(()=>{refreshed=true;});
+            s.zoteroReads.notifyExternalChange();
+            const deadline=performance.now()+60000;
+            do{
+              const start=performance.now();
+              const hits=await s.itemLookup.search(${JSON.stringify(item.key)},{limit:1});
+              maximum=Math.max(maximum,performance.now()-start);samples++;
+              correct&&=hits.length===1&&hits[0].item.itemID===${item.itemID};
+              fresh=hits[0]?.item.fields.title===${JSON.stringify(title)};
+              await new Promise(resolve=>setTimeout(resolve,50));
+            }while((!refreshed||!fresh)&&performance.now()<deadline);
+            await settled;
+            return JSON.stringify({maximum,samples,correct,fresh});
+          })()`,
+                120_000,
+              ),
+            ),
+          );
+        }
+        return rounds;
+      },
+    );
+    console.info("Changed Item Index, 100,000 Items", {
+      rounds,
+      workerTimerMaximum: Math.max(...gaps),
+    });
+    expect(
+      rounds.every(
+        ({ correct, fresh, samples }) => correct && fresh && samples > 1,
+      ),
+    ).toBe(true);
+    expect(
+      Math.max(...rounds.map(({ maximum }) => maximum)),
+    ).toBeLessThanOrEqual(INTERACTIVE_MAX_MS);
+    expect(gaps.length).toBeGreaterThan(0);
+    expect(Math.max(...gaps)).toBeLessThanOrEqual(WORKER_TIMER_MAX_MS);
+  }, 240_000);
+
+  it("keeps the held search index when snapshot integrity validation fails", async () => {
+    await using _source = await preserveFixture(vaultId);
+    {
+      using sqlite = new DatabaseSync(fixture.databasePath, {
+        defensive: false,
+      });
+      sqlite.exec(`
+        CREATE TABLE integrity_probe (value INTEGER);
+        INSERT INTO integrity_probe VALUES (NULL);
+        PRAGMA writable_schema = ON;
+        UPDATE sqlite_schema SET sql = 'CREATE TABLE integrity_probe (value INTEGER NOT NULL)'
+          WHERE name = 'integrity_probe';
+      `);
+    }
+    const answer = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{
+      const s=app.plugins.plugins.zotlit.services;
+      let rejected=false;
+      try{await s.zoteroReads.refresh();}catch{rejected=true;}
+      const hits=await s.itemLookup.search(${JSON.stringify(item.key)},{limit:1});
+      return JSON.stringify({rejected,itemID:hits[0]?.item.itemID});
+    })()`,
+        120_000,
+      ),
+    );
+    expect(answer).toEqual({ rejected: true, itemID: item.itemID });
   }, 120_000);
 });

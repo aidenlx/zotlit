@@ -1,9 +1,9 @@
-import { Cause, Effect, Exit, Fiber, FiberMap, Scope } from "effect";
 import { randomUUID } from "node:crypto";
 import { link, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { CliData, FileSystemAdapter, Vault } from "obsidian";
 
+import { Cause, Effect, Exit, Fiber, FiberMap, Scope } from "@/lib/effect";
 import { openScope } from "@/lib/effect-scope";
 import { getLogger } from "@/lib/log";
 import type { LibraryScopeService } from "@/services/library-scope/service";

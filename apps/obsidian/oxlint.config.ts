@@ -21,6 +21,11 @@ const obsidianImportPaths = [
   },
 ];
 
+const commonImports = {
+  patterns: [parentImportPattern],
+  paths: [...obsidianImportPaths, ...itemQuerySchemaPaths],
+};
+
 export default defineConfig({
   extends: [baseConfig],
   jsPlugins: [
@@ -35,8 +40,40 @@ export default defineConfig({
     "no-restricted-imports": [
       "error",
       {
-        patterns: [parentImportPattern],
-        paths: [...obsidianImportPaths, ...itemQuerySchemaPaths],
+        ...commonImports,
+        paths: [
+          {
+            name: "@/lib/effect",
+            importNames: ["ManagedRuntime", "Scheduler"],
+            allowTypeImports: true,
+            message:
+              "Start Effects through Effect in @/lib/effect; its entry points supply the browser scheduler.",
+          },
+          {
+            name: "effect",
+            allowTypeImports: true,
+            message:
+              "Use @/lib/effect: Obsidian's renderer and workers default to Chromium MessageChannel scheduling. Node setImmediate can starve browser tasks.",
+          },
+          {
+            name: "effect/Effect",
+            allowTypeImports: true,
+            message: "Use Effect from @/lib/effect for Chromium scheduling.",
+          },
+          {
+            name: "effect/ManagedRuntime",
+            allowTypeImports: true,
+            message:
+              "Use the Effect entry points in @/lib/effect for Chromium scheduling.",
+          },
+          {
+            name: "effect/Scheduler",
+            allowTypeImports: true,
+            message:
+              "Obsidian scheduling is owned by @/lib/effect-runtime and @/lib/browser-scheduler.",
+          },
+          ...commonImports.paths,
+        ],
       },
     ],
   },
@@ -56,6 +93,14 @@ export default defineConfig({
           },
         ],
       },
+    },
+    {
+      files: [
+        "src/lib/effect.ts",
+        "src/lib/effect-runtime.ts",
+        "src/lib/browser-scheduler.ts",
+      ],
+      rules: { "no-restricted-imports": ["error", commonImports] },
     },
     {
       files: [

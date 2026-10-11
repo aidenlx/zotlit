@@ -1,10 +1,9 @@
 // One Ambiguous Citation Key's candidates, described the same way on every surface that shows them.
 
-import { Effect } from "effect";
-
 import { isChildItemFields } from "@zotlit/db";
 import type { Item } from "@zotlit/db";
 
+import { Effect } from "@/lib/effect";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import { libraryLabel } from "@/services/library-scope/label";

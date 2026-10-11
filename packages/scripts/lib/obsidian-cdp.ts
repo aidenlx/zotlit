@@ -63,10 +63,18 @@ export interface ObsidianWindow {
 
 interface SendOptions {
   timeoutMs?: number;
+  sessionId?: string;
+}
+
+interface CdpEvent {
+  method: string;
+  params?: Record<string, unknown>;
+  sessionId?: string;
 }
 
 /** One CDP connection to a target. Disposing it closes the socket. */
 export interface CdpSession extends Disposable {
+  onEvent(listener: (event: CdpEvent) => void): Disposable;
   send(
     method: string,
     params?: Record<string, unknown>,
@@ -104,6 +112,7 @@ export async function openCdpSession(wsUrl: string): Promise<CdpSession> {
     number,
     { resolve(result: Record<string, unknown>): void; reject(e: Error): void }
   >();
+  const listeners = new Set<(event: CdpEvent) => void>();
   let nextId = 0;
   const failAll = (reason: string): void => {
     for (const call of pending.values()) call.reject(new Error(reason));
@@ -112,9 +121,17 @@ export async function openCdpSession(wsUrl: string): Promise<CdpSession> {
   socket.addEventListener("message", (event) => {
     const message = JSON.parse(String(event.data)) as {
       id?: number;
+      method?: string;
+      params?: Record<string, unknown>;
+      sessionId?: string;
       result?: Record<string, unknown>;
       error?: { message: string };
     };
+    if (message.id === undefined && message.method) {
+      for (const listener of listeners)
+        listener({ ...message, method: message.method });
+      return;
+    }
     const call = message.id === undefined ? undefined : pending.get(message.id);
     if (!call) return;
     pending.delete(message.id!);
@@ -142,7 +159,19 @@ export async function openCdpSession(wsUrl: string): Promise<CdpSession> {
   });
 
   return {
-    send(method, params = {}, { timeoutMs = OBSIDIAN_CALL_TIMEOUT_MS } = {}) {
+    onEvent(listener) {
+      listeners.add(listener);
+      return {
+        [Symbol.dispose]: () => {
+          listeners.delete(listener);
+        },
+      };
+    },
+    send(
+      method,
+      params = {},
+      { timeoutMs = OBSIDIAN_CALL_TIMEOUT_MS, sessionId } = {},
+    ) {
       // A closed socket drops what is sent to it, so the call would only
       // wait out its deadline.
       if (socket.readyState !== WebSocket.OPEN) {
@@ -162,10 +191,11 @@ export async function openCdpSession(wsUrl: string): Promise<CdpSession> {
         resolve: reply.resolve,
         reject: reply.reject,
       });
-      socket.send(JSON.stringify({ id, method, params }));
+      socket.send(JSON.stringify({ id, method, params, sessionId }));
       return reply.promise.finally(() => clearTimeout(timer));
     },
     [Symbol.dispose]() {
+      listeners.clear();
       socket.close();
     },
   };

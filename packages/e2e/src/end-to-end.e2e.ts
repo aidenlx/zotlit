@@ -194,6 +194,7 @@ async function changeNativeAnnotationCallout(
 
 describe.skipIf(!reachable)("End-to-end Run", () => {
   let vaultId = "";
+  const offlineZotero = createServer((socket) => socket.destroy());
   let booksNotePath = "";
   let m: typeof import("@obsidian-messages");
   const articlesProfile = {
@@ -428,7 +429,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // Rebuilds the Fixture (default Scope Case "all"), copies the Fixture
     // Vault to e2eVaultPath, registers + opens it, links its Device Overrides
     // to the Fixture profile and database, and confirms the plugin loaded.
-    const created = await runVaultScript(["create", e2eVaultPath]);
+    // Hold a private endpoint that cannot serve Zotero's API. The developer's
+    // Zotero may be running on its normal port while this offline case runs.
+    await new Promise<void>((resolve, reject) => {
+      offlineZotero.once("error", reject);
+      offlineZotero.listen(0, "127.0.0.1", resolve);
+    });
+    const address = offlineZotero.address();
+    if (address === null || typeof address === "string")
+      throw new Error("Offline Zotero endpoint did not receive a TCP port");
+    const created = await runVaultScript([
+      "open",
+      e2eVaultPath,
+      `--zotero-http-port=${address.port}`,
+    ]);
     vaultId = created.stdout.trim().split("\n")[0]!.trim();
     // A menu is an OS menu, with no DOM to measure, while Obsidian's "Native
     // menus" setting stands. This vault is the suite's own and is purged in
@@ -464,6 +478,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   }, 180000);
 
   afterAll(async () => {
+    await using _offlineZotero = offlineZotero;
     // Never let teardown itself throw and mask a test failure, but log a
     // warning on a nonzero exit rather than silently swallowing it.
     try {
@@ -1692,7 +1707,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const server = JSON.parse(
       await obEval(
         vaultId,
-        "(function(){var services=app.plugins.plugins.zotlit.services;var settings=services.settings.current;return JSON.stringify({hostname:settings['server.hostname'],port:settings['server.port'],sourceId:services.zoteroPref.sourceId});})()",
+        "(function(){var services=app.plugins.plugins.zotlit.services;var settings=services.settings.current;return JSON.stringify({hostname:settings['server.hostname'],port:services.localServer.effectivePort,sourceId:services.zoteroPref.sourceId});})()",
       ),
     ) as { hostname: string; port: number; sourceId: string };
     const pushed = await fetch(
@@ -4656,12 +4671,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     {
       // The load spawned one database worker, and it serves.
       expect(
-        await obEval(
-          vaultId,
-          workers(
-            "String(record.spawned.filter(function(entry){return entry.name==='zotlit-zotero-reads';}).length)",
-          ),
-        ),
+        await obEval(vaultId, workers("String(record.spawned.length)")),
       ).toBe("1");
       expect(
         await obEvalUntil(
@@ -4681,7 +4691,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obEval(
         vaultId,
         workers(
-          "(record.spawned.find(function(entry){return entry.name==='zotlit-citation-reads';}).worker.terminate(),true)",
+          "(record.spawned.find(function(entry){return entry.name==='zotlit-zotero-reads';}).worker.terminate(),true)",
         ),
       );
       expect(
@@ -4691,12 +4701,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           { expected: "failed", tries: 160 },
         ),
       ).toBe(true);
+      await obEval(
+        vaultId,
+        "app.plugins.plugins.zotlit.services.zoteroReads.refresh().then(function(){return true;})",
+      );
       expect(
-        await obEval(
+        await obEvalUntil(
           vaultId,
           "String(app.plugins.plugins.zotlit.services.zoteroReads.state)",
+          { expected: "ready" },
         ),
-      ).toBe("ready");
+      ).toBe(true);
       // SearchItems hydrates its hits from SQLite in the interactive worker.
       const hits = JSON.parse(
         await obEval(
@@ -4712,10 +4727,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           },
         },
       ]);
-      await obEval(
-        vaultId,
-        "app.plugins.plugins.zotlit.services.zoteroReads.refresh().then(function(){return true;})",
-      );
       expect(
         await obEvalUntil(
           vaultId,
@@ -4734,7 +4745,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obEval(
         vaultId,
         workers(`(function(){
-          var entry=record.spawned.findLast(function(entry){return entry.name==='zotlit-citation-reads';});
+          var entry=record.spawned.findLast(function(entry){return entry.name==='zotlit-zotero-reads';});
           var post=entry.worker.postMessage;
           record.held={worker:entry.worker,post:post,pending:[]};
           entry.worker.postMessage=function(...args){
@@ -4752,7 +4763,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           expected: "true",
         }),
       ).toBe(true);
-      // Unload ends both the interactive worker and the recovered worker.
+      // Unload ends the recovered worker and its pending citation read.
       await obEval(
         vaultId,
         "app.plugins.disablePlugin('zotlit').then(function(){return true;})",
@@ -4760,7 +4771,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       const ended = await obEvalUntil(
         vaultId,
         workers(
-          "String(record.spawned.filter(function(entry){return entry.name==='zotlit-zotero-reads'||entry.name==='zotlit-citation-reads';}).every(function(entry){return record.ended.has(entry.worker);}))",
+          "String(record.spawned.filter(function(entry){return entry.name==='zotlit-zotero-reads';}).every(function(entry){return record.ended.has(entry.worker);}))",
         ),
         { expected: "true", tries: 120 },
       );
@@ -5418,7 +5429,7 @@ async function signalDatabaseUpdated(vaultId: string): Promise<void> {
   const server = JSON.parse(
     await obEval(
       vaultId,
-      "(function(){var services=app.plugins.plugins.zotlit.services;var settings=services.settings.current;return JSON.stringify({hostname:settings['server.hostname'],port:settings['server.port'],sourceId:services.zoteroPref.sourceId});})()",
+      "(function(){var services=app.plugins.plugins.zotlit.services;var settings=services.settings.current;return JSON.stringify({hostname:settings['server.hostname'],port:services.localServer.effectivePort,sourceId:services.zoteroPref.sourceId});})()",
     ),
   ) as { hostname: string; port: number; sourceId: string };
   const response = await fetch(
