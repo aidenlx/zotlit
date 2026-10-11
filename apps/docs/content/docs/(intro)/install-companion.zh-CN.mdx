@@ -1,6 +1,6 @@
 ---
-title: "Install ZotLit Companion"
-description: "Install the required ZotLit Companion add-on in Zotero."
+title: "安装 ZotLit Companion"
+description: "在 Zotero 中安装必备的 ZotLit Companion 配套插件。"
 translationStatus: placeholder
 ---
 
@@ -11,74 +11,74 @@ import { Steps, Step } from "fumadocs-ui/components/steps";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-ZotLit Companion, the Zotero add-on, keeps recent Zotero changes available to ZotLit. The Companion is part of every supported ZotLit setup.
+ZotLit Companion（Zotero 端的必备插件）保持 Zotero 中的最新更改能即时供 ZotLit 读取。在每一个受支持的 ZotLit 环境中，Companion 都是不可或缺的一部分。
 
-## Install the add-on
+## 安装插件
 
-<Tabs items={["Stable", "Pre-release"]} updateAnchor>
-  <Tab id="stable" value="Stable">
+<Tabs items={["正式版本", "预发布版本"]} updateAnchor>
+  <Tab id="stable" value="正式版本">
     <VersionLedger app="zotero" channel="stable" />
 
     <Steps>
       <Step>
-        ### Download the `.xpi` file
+        ### 下载 `.xpi` 文件
 
-        Download the latest Companion file directly:
+        直接下载最新的 Companion 安装包：
 
         <XpiDownload channel="stable" />
 
-        If you are using Firefox, you should right click the link and choose `Save Link As...`
+        如果您使用的是 Firefox 浏览器，请右键选择链接并点击“链接另存为…”。
 
-        To select a file manually, find the latest Companion release on the [ZotLit releases page](https://github.com/aidenlx/zotlit/releases). Its filename starts with `zt-`.
-
-      </Step>
-      <Step>
-        ### Install in Zotero
-
-        In Zotero, open **Tools > Add-ons**. Click the gear menu and select **Install Add-on From File...**. Choose the `.xpi` file you downloaded, then confirm when prompted.
+        如需手动选择文件，请在 [ZotLit 发布页面](https://github.com/aidenlx/zotlit/releases)查找最新的 Companion 发布版本。其文件名以 `zt-` 开头。
 
       </Step>
       <Step>
-        ### Confirm the installation
+        ### 在 Zotero 中安装
 
-        After installing, a <UiLabel name={m["zotero.prefs_pane_label"]()} /> pane should appear in Zotero's settings.
+        在 Zotero 中，打开**工具 → 附加组件**。选择齿轮图标菜单，并选择 **Install Add-on From File...**。选择刚才下载的 `.xpi` 文件，并在弹窗提示时确认安装。
 
-        You do not need to configure anything here right now. The next section explains when this matters.
+      </Step>
+      <Step>
+        ### 确认安装完成
+
+        安装完成后，Zotero 设置中应当会出现 <UiLabel name={m["zotero.prefs_pane_label"]()} /> 设置面板。
+
+        此时您无需在此处进行任何额外配置。下一节将解释这些设置的作用。
 
       </Step>
     </Steps>
 
   </Tab>
-  <Tab id="pre-release" value="Pre-release">
+  <Tab id="pre-release" value="预发布版本">
     <VersionLedger app="zotero" channel="pre-release" />
 
-    Pre-release installs auto-update through Zotero as new releases ship on either channel. Use this if you want to test upcoming changes before they reach stable.
+    预发布版本会在任一频道发布新版本时通过 Zotero 自动更新。如果您希望在功能进入正式版本前进行测试，请使用此版本。
 
     <Steps>
       <Step>
-        ### Download the `.xpi` file
+        ### 下载 `.xpi` 文件
 
-        Download the latest Companion file on this channel:
+        下载此频道的最新 Companion 安装包：
 
         <XpiDownload channel="pre-release" />
 
-        If you are using Firefox, you should right click the link and choose `Save Link As...`
+        如果您使用的是 Firefox 浏览器，请右键选择链接并点击“链接另存为…”。
 
-        To select a file manually, find the latest Companion release on the [ZotLit releases page](https://github.com/aidenlx/zotlit/releases). Its filename starts with `zt-`.
-
-      </Step>
-      <Step>
-        ### Install in Zotero
-
-        In Zotero, open **Tools > Add-ons**. Click the gear menu and select **Install Add-on From File...**. Choose the `.xpi` file you downloaded, then confirm when prompted.
+        如需手动选择文件，请在 [ZotLit 发布页面](https://github.com/aidenlx/zotlit/releases)查找最新的 Companion 发布版本。其文件名以 `zt-` 开头。
 
       </Step>
       <Step>
-        ### Confirm the installation
+        ### 在 Zotero 中安装
 
-        After installing, a <UiLabel name={m["zotero.prefs_pane_label"]()} /> pane should appear in Zotero's settings.
+        在 Zotero 中，打开**工具 → 附加组件**。选择齿轮图标菜单，并选择 **Install Add-on From File...**。选择刚才下载的 `.xpi` 文件，并在弹窗提示时确认安装。
 
-        You do not need to configure anything here right now. The next section explains when this matters.
+      </Step>
+      <Step>
+        ### 确认安装完成
+
+        安装完成后，Zotero 设置中应当会出现 <UiLabel name={m["zotero.prefs_pane_label"]()} /> 设置面板。
+
+        此时您无需在此处进行任何额外配置。下一节将解释这些设置的作用。
 
       </Step>
     </Steps>
@@ -86,20 +86,20 @@ ZotLit Companion, the Zotero add-on, keeps recent Zotero changes available to Zo
   </Tab>
 </Tabs>
 
-## Keep the database file current
+## 保持数据库文件即时更新
 
-The Companion enables <UiLabel name={m["zotero.prefs_wal_checkpoint.label"]()} /> by default. This setting lets ZotLit read recent Zotero changes when you update a literature note. Keep it enabled under the <UiLabel name={m["zotero.prefs_database_section"]()} /> section of the <UiLabel name={m["zotero.prefs_pane_label"]()} /> pane.
+Companion 默认启用 <UiLabel name={m["zotero.prefs_wal_checkpoint.label"]()} />。此设置使 ZotLit 在您更新文献笔记时能即时读取 Zotero 的最新更改。请在 <UiLabel name={m["zotero.prefs_pane_label"]()} /> 面板的 <UiLabel name={m["zotero.prefs_database_section"]()} /> 区域下保持此项启用。
 
-This database setting works without live updates. Basic context-menu actions also work through protocol links with no extra setup.
+该数据库设置在未开启即时同步更新（live updates）的情况下也可正常工作。右键菜单的基础操作亦可通过协议链接运作，无需额外配置。
 
-## About live updates
+## 关于即时同步更新
 
-Live updates push changes from your Zotero library to Obsidian. They require the Companion's notification setting and the ZotLit server in Obsidian.
+即时同步更新会将更改从 Zotero 文献库推送到 Obsidian。这需要开启 Companion 的通知设置以及 Obsidian 中的 ZotLit 本地服务器。
 
-Live updates are optional. The Companion keeps the database file current even when live updates are disabled.
+即时同步更新是可选的。即使关闭即时同步更新，Companion 也会保持数据库文件的时效性。
 
-The setup for live updates is covered in [Set up live updates](/docs/how-to/set-up-live-updates).
+有关即时同步更新的设置，请参阅[配置即时同步更新](/docs/how-to/set-up-live-updates)。
 
-## Next steps
+## 下一步
 
-Follow the tutorial to [create your first literature note](/docs/tutorial/first-note).
+按照教程[创建第一篇文献笔记](/docs/tutorial/first-note)。
