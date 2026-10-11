@@ -1,19 +1,6 @@
-/** Author approval for an actual Chinese source file, never language detection. */
-export type TranslationStatus = "placeholder" | "translated";
-
-/** The build-time scan's small, browser-safe result, keyed by HTML paths. */
-export interface TranslationManifest {
-  pages: Record<string, TranslationStatus>;
-  ui: TranslationStatus;
-}
-
-// The scanner also imports this type from Node's config graph, which does not
-// load the app's ambient declarations. Both graphs use the same Vite constant.
-declare const __DOCS_TRANSLATION_MANIFEST__: TranslationManifest;
-
 export interface PageLocaleState {
   contentLocale: "en" | "zh-CN";
-  isPlaceholder: boolean;
+  isFallback: boolean;
   canonicalPath: string;
   alternates: {
     locale: "en" | "zh-CN" | "x-default";
@@ -21,13 +8,17 @@ export interface PageLocaleState {
   }[];
 }
 
-const emptyManifest: TranslationManifest = { pages: {}, ui: "placeholder" };
-
-function buildManifest(): TranslationManifest {
-  return typeof __DOCS_TRANSLATION_MANIFEST__ === "undefined"
-    ? emptyManifest
-    : __DOCS_TRANSLATION_MANIFEST__;
-}
+// Static and listing pages use the locale catalogs rather than an MDX body.
+const catalogPages = new Set([
+  "/",
+  "/community",
+  "/workbench",
+  "/blog",
+  "/changelog",
+]);
+const chinesePages = new Set(
+  typeof __DOCS_CHINESE_PAGES__ === "undefined" ? [] : __DOCS_CHINESE_PAGES__,
+);
 
 /** Normalize the two published locales while keeping unsupported input English. */
 function isChinese(locale: string): boolean {
@@ -58,31 +49,29 @@ function htmlPath(path: string): string {
 }
 
 /**
- * Truthful content language, canonical and reciprocal alternate links for a
- * requested locale. Missing Chinese files and marked copies both remain English.
+ * Native-file-based locale metadata and reciprocal alternate links for a
+ * requested locale. Missing Chinese files use the English edition at the requested URL.
  */
 export function getPageLocaleState(
   path: string,
   locale: string,
-  manifest: TranslationManifest = buildManifest(),
+  nativeChinesePages: ReadonlySet<string> = chinesePages,
 ): PageLocaleState {
   const englishPath = htmlPath(path);
-  const status = ["/", "/community", "/workbench"].includes(englishPath)
-    ? manifest.ui
-    : manifest.pages[englishPath];
-  const ready = status === "translated";
+  const hasChinese =
+    catalogPages.has(englishPath) || nativeChinesePages.has(englishPath);
   const chinese = isChinese(locale);
   const chinesePath = `/zh-CN${englishPath === "/" ? "" : englishPath}`;
   const alternates: PageLocaleState["alternates"] = [
     { locale: "en", path: englishPath },
   ];
-  if (ready) alternates.push({ locale: "zh-CN", path: chinesePath });
+  if (hasChinese) alternates.push({ locale: "zh-CN", path: chinesePath });
   alternates.push({ locale: "x-default", path: englishPath });
 
   return {
-    contentLocale: chinese && ready ? "zh-CN" : "en",
-    isPlaceholder: chinese && !ready,
-    canonicalPath: chinese && ready ? chinesePath : englishPath,
+    contentLocale: chinese && hasChinese ? "zh-CN" : "en",
+    isFallback: chinese && !hasChinese,
+    canonicalPath: chinese && hasChinese ? chinesePath : englishPath,
     alternates,
   };
 }

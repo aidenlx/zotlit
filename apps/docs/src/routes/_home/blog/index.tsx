@@ -8,7 +8,6 @@ import { pageHead } from "@/lib/seo";
 import { appName, blogRoute, formatReleaseDate } from "@/lib/shared";
 import { getBlogPages } from "@/lib/source";
 import { breadcrumbListSchema } from "@/lib/structured-data";
-import { getPageLocaleState } from "@/lib/translation-state";
 import { m } from "@/paraglide/messages.js";
 import { getLocale } from "@/paraglide/runtime.js";
 
@@ -27,14 +26,10 @@ const listPosts = createServerFn({ method: "GET" })
     })),
   );
 
-const crumbs = () =>
-  [
-    { name: appName, url: "/" },
-    { name: m.docs_nav_blog(), url: blogRoute },
-  ].map((crumb) => ({
-    ...crumb,
-    url: getPageLocaleState(crumb.url, getLocale()).canonicalPath,
-  }));
+const crumbs = () => [
+  { name: appName, url: "/" },
+  { name: m.docs_nav_blog(), url: blogRoute },
+];
 
 export const Route = createFileRoute("/_home/blog/")({
   component: BlogIndex,

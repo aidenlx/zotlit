@@ -11,10 +11,10 @@ import type { Thing, WithContext } from "schema-dts";
 import * as m from "@/paraglide/messages.js";
 import { getLocale } from "@/paraglide/runtime.js";
 
+import { getPageLocaleState } from "./locale-state";
 import { appName, baseURL, ogImageUrl } from "./shared";
 import type { OgType } from "./shared";
 import { absoluteUrl, serializeJsonLd } from "./structured-data";
-import { getPageLocaleState } from "./translation-state";
 
 const OG_IMAGE_DIMENSIONS = { width: "1200", height: "630" } as const;
 
@@ -66,9 +66,7 @@ export function pageHead(seo: PageSeo) {
     meta: [
       {
         name: "robots",
-        content: localeState.isPlaceholder
-          ? "noindex, follow"
-          : "index, follow",
+        content: localeState.isFallback ? "noindex, follow" : "index, follow",
       },
       {
         property: "og:locale",

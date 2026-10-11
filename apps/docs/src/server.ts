@@ -12,8 +12,8 @@ import handler, { createServerEntry } from "@tanstack/react-start/server-entry";
 import { env } from "cloudflare:workers";
 import { isMarkdownPreferred } from "fumadocs-core/negotiation";
 
+import { getPageLocaleState } from "./lib/locale-state";
 import { negotiatedContentRoute } from "./lib/markdown-routes";
-import { getPageLocaleState } from "./lib/translation-state";
 import { buildV1Redirects } from "./lib/v1-redirects";
 import { deLocalizeUrl } from "./paraglide/runtime.js";
 import { paraglideMiddleware } from "./paraglide/server";
@@ -65,7 +65,7 @@ export default createServerEntry({
     const unprefixedPath = deLocalizeUrl(url).pathname;
     const machinePath = unprefixedPath.replace(/\/+$/, "");
     // Global inventories publish one English edition; do not render them under
-    // a Chinese request context after UI translations are approved.
+    // a Chinese request context.
     // Unprefixed slash variants still render while prerender creates the assets.
     if (
       pathname.replace(/\/+$/, "") !== machinePath &&
@@ -91,7 +91,7 @@ export default createServerEntry({
       const state = getPageLocaleState(pathname, locale);
       const headers = new Headers(response.headers);
       headers.set("content-language", state.contentLocale);
-      if (state.isPlaceholder) headers.set("x-robots-tag", "noindex, follow");
+      if (state.isFallback) headers.set("x-robots-tag", "noindex, follow");
       return new Response(response.body, {
         status: response.status,
         statusText: response.statusText,

@@ -11,12 +11,12 @@ import { cn } from "@/lib/cn";
 import { blogs } from "@/lib/collections";
 import { isSiteLocale, unlocalizedPath } from "@/lib/i18n";
 import type { SiteLocale } from "@/lib/i18n";
+import { getPageLocaleState } from "@/lib/locale-state";
 import { ztProse } from "@/lib/prose";
 import { pageHead } from "@/lib/seo";
 import { appName, blogRoute, formatReleaseDate } from "@/lib/shared";
 import { blog, getBlogPages } from "@/lib/source";
 import { blogPostingSchema, breadcrumbListSchema } from "@/lib/structured-data";
-import { getPageLocaleState } from "@/lib/translation-state";
 import { m } from "@/paraglide/messages.js";
 import { getLocale } from "@/paraglide/runtime.js";
 
@@ -107,16 +107,11 @@ export const Route = createFileRoute("/_home/blog/$slug")({
               modified: post.modified,
               url: getPageLocaleState(post.url, getLocale()).canonicalPath,
             }),
-            breadcrumbListSchema(
-              [
-                { name: appName, url: "/" },
-                { name: m.docs_nav_blog(), url: blogRoute },
-                { name: post.title, url: post.url },
-              ].map((crumb) => ({
-                ...crumb,
-                url: getPageLocaleState(crumb.url, getLocale()).canonicalPath,
-              })),
-            ),
+            breadcrumbListSchema([
+              { name: appName, url: "/" },
+              { name: m.docs_nav_blog(), url: blogRoute },
+              { name: post.title, url: post.url },
+            ]),
           ],
         }),
 });

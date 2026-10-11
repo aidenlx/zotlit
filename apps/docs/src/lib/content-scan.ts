@@ -39,15 +39,16 @@ const sections: Record<MarkdownSection, { dir: string; files: string }> = {
  */
 export function scanContent(
   packageRoot: string,
+  locale: "en" | "zh-CN" = "en",
 ): Record<MarkdownSection, ContentEntry[]> {
   return Object.fromEntries(
     Object.entries(sections).map(([section, { dir, files }]) => {
       const cwd = resolve(packageRoot, dir);
       const entries = globSync(files, { cwd })
-        .filter((file) => !/\.zh-CN\.mdx?$/.test(file))
+        .filter((file) => /\.zh-CN\.mdx?$/.test(file) === (locale === "zh-CN"))
         .map(
           (file): ContentEntry => ({
-            slugs: getSlugs(file),
+            slugs: getSlugs(file.replace(/\.zh-CN(?=\.mdx?$)/, "")),
             frontmatter: frontmatter(readFileSync(join(cwd, file), "utf8"))
               .data,
           }),
@@ -55,4 +56,12 @@ export function scanContent(
       return [section, entries];
     }),
   ) as Record<MarkdownSection, ContentEntry[]>;
+}
+
+/** Native Chinese pages only; an English fallback file is never a Chinese edition. */
+export function scanChinesePages(packageRoot: string): string[] {
+  return Object.entries(scanContent(packageRoot, "zh-CN")).flatMap(
+    ([section, pages]) =>
+      pages.map(({ slugs }) => `/${[section, ...slugs].join("/")}`),
+  );
 }

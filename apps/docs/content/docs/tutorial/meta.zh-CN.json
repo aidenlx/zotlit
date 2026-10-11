@@ -5,6 +5,5 @@
     "write-and-export-cited-note",
     "pandoc-citation-workflow",
     "customize-template"
-  ],
-  "translationStatus": "placeholder"
+  ]
 }
