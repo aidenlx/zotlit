@@ -2,30 +2,43 @@ import { Link, createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 
 import { SiteFooter } from "@/components/site-footer";
+import { isSiteLocale } from "@/lib/i18n";
+import type { SiteLocale } from "@/lib/i18n";
 import { pageHead } from "@/lib/seo";
 import { appName, blogRoute, formatReleaseDate } from "@/lib/shared";
 import { getBlogPages } from "@/lib/source";
 import { breadcrumbListSchema } from "@/lib/structured-data";
+import { getPageLocaleState } from "@/lib/translation-state";
 import { m } from "@/paraglide/messages.js";
+import { getLocale } from "@/paraglide/runtime.js";
 
-const listPosts = createServerFn({ method: "GET" }).handler(() =>
-  getBlogPages().map((page) => ({
-    slug: page.slugs[0] ?? "",
-    title: page.data.title,
-    description: page.data.description,
-    author: page.data.author,
-    date: page.data.date,
-  })),
-);
+const listPosts = createServerFn({ method: "GET" })
+  .validator((locale: SiteLocale) => {
+    if (!isSiteLocale(locale)) throw new Error("Unsupported locale");
+    return locale;
+  })
+  .handler(({ data: locale }) =>
+    getBlogPages(locale).map((page) => ({
+      slug: page.slugs[0] ?? "",
+      title: page.data.title,
+      description: page.data.description,
+      author: page.data.author,
+      date: page.data.date,
+    })),
+  );
 
-const crumbs = () => [
-  { name: appName, url: "/" },
-  { name: m.docs_nav_blog(), url: blogRoute },
-];
+const crumbs = () =>
+  [
+    { name: appName, url: "/" },
+    { name: m.docs_nav_blog(), url: blogRoute },
+  ].map((crumb) => ({
+    ...crumb,
+    url: getPageLocaleState(crumb.url, getLocale()).canonicalPath,
+  }));
 
 export const Route = createFileRoute("/_home/blog/")({
   component: BlogIndex,
-  loader: () => listPosts(),
+  loader: () => listPosts({ data: getLocale() }),
   head: () =>
     pageHead({
       title: m.docs_nav_blog(),
@@ -56,7 +69,7 @@ function BlogIndex() {
           >
             <div className="text-left md:text-right">
               <time className="block font-mono text-xs font-medium tracking-widest text-fd-muted-foreground uppercase">
-                {formatReleaseDate(post.date)}
+                {formatReleaseDate(post.date, getLocale())}
               </time>
               <p className="text-[14.5px] text-fd-muted-foreground italic">
                 {m.docs_blog_author({ author: post.author })}

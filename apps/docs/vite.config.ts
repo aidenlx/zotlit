@@ -19,6 +19,7 @@ import { ogCards } from "./src/lib/og-cards.js";
 import { prerenderPages } from "./src/lib/prerender-pages.js";
 import { renderSiteRedirectsFile } from "./src/lib/redirects.js";
 import type { DocsLine } from "./src/lib/shared.js";
+import { buildTranslationManifest } from "./src/lib/translation-scan.js";
 
 const packageRoot = import.meta.dirname;
 // Keep Miniflare's local Worker registry with the package's other ignored
@@ -163,6 +164,11 @@ function machineAssets(): Plugin {
 }
 
 export default defineConfig(({ command }) => ({
+  define: {
+    __DOCS_TRANSLATION_MANIFEST__: JSON.stringify(
+      buildTranslationManifest(packageRoot),
+    ),
+  },
   // `@base-ui/react` imports the named `useSyncExternalStoreWithSelector` from
   // a CommonJS shim. The dev server serves that file raw unless the pre-bundler
   // is told to convert it, and the missing named export stops hydration before

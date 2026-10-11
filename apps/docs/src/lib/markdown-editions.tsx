@@ -21,6 +21,8 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import * as m from "@/paraglide/messages.js";
 
+import type { SiteLocale } from "./i18n";
+import { localizeMarkdownLinks } from "./markdown-locale-links";
 import type { MarkdownPage } from "./markdown-routes";
 import {
   blog,
@@ -62,26 +64,36 @@ interface EditionPage {
 }
 
 /** The page's body as Markdown, rendered through its `_markdown` component. */
-async function renderBody(page: EditionPage) {
+async function renderBody(page: EditionPage, locale: SiteLocale) {
   const { _exports } = await page.data.load();
   const Body = _exports._markdown as MarkdownBody | undefined;
   if (!Body) {
     throw new Error(`${page.url} carries no Markdown edition`);
   }
 
-  return renderToMarkdown(<Body components={mdxComponents} />);
+  return localizeMarkdownLinks(
+    await renderToMarkdown(<Body components={mdxComponents} />),
+    locale,
+  );
 }
 
 /** Title line, page URL, then the rendered Markdown body. */
-async function renderPage(heading: string, page: EditionPage) {
+async function renderPage(
+  heading: string,
+  page: EditionPage,
+  locale: SiteLocale,
+) {
   return `# ${heading} (${page.url})
 
-${await renderBody(page)}`;
+${await renderBody(page, locale)}`;
 }
 
 /** A docs page's edition. */
-function renderDocsPage(page: (typeof source)["$inferPage"]) {
-  return renderPage(page.data.title, page);
+function renderDocsPage(
+  page: (typeof source)["$inferPage"],
+  locale: SiteLocale,
+) {
+  return renderPage(page.data.title, page, locale);
 }
 
 /** Markdown listing under `heading`, each page linked to its `.md` edition. */
@@ -108,53 +120,59 @@ ${items}
  * Empty `slugs` addresses the section's landing edition: the docs index page
  * for `docs`, a generated listing of entries for `changelog` and `blog`.
  */
-export async function getMarkdownEdition({
-  section,
-  slugs,
-}: MarkdownPage): Promise<string | undefined> {
+export async function getMarkdownEdition(
+  { section, slugs }: MarkdownPage,
+  locale: SiteLocale = "en",
+): Promise<string | undefined> {
   switch (section) {
     case "docs": {
       // The docs index is a page of its own, so it needs no generated listing.
-      const page = source.getPage(slugs);
-      return page && renderDocsPage(page);
+      const page = source.getPage(slugs, locale);
+      return page && renderDocsPage(page, locale);
     }
     case "changelog": {
       if (slugs.length === 0) {
         return renderIndex(
-          m.docs_nav_changelog(),
-          getChangelogPages(),
+          m.docs_nav_changelog({}, { locale }),
+          getChangelogPages(locale),
           (page) => `v${page.data.version}`,
         );
       }
-      const page = changelog.getPage(slugs);
+      const page = changelog.getPage(slugs, locale);
       // Changelog entries rarely set a `title`, so the version is the fallback.
       return (
         page &&
-        renderPage(page.data.title ?? `ZotLit v${page.data.version}`, page)
+        renderPage(
+          page.data.title ?? `ZotLit v${page.data.version}`,
+          page,
+          locale,
+        )
       );
     }
     case "blog": {
       if (slugs.length === 0) {
         return renderIndex(
-          m.docs_nav_blog(),
-          getBlogPages(),
+          m.docs_nav_blog({}, { locale }),
+          getBlogPages(locale),
           (page) => page.data.title,
         );
       }
-      const page = blog.getPage(slugs);
-      return page && renderPage(page.data.title, page);
+      const page = blog.getPage(slugs, locale);
+      return page && renderPage(page.data.title, page, locale);
     }
   }
 }
 
 /** `llms.txt`: the docs page tree as a Markdown index. */
 export function getLlmsIndex() {
-  return llms(source).index();
+  return llms(source).index("en");
 }
 
 /** `llms-full.txt`: every docs page's edition, concatenated. */
 export async function getLlmsFullText() {
-  const editions = await Promise.all(source.getPages().map(renderDocsPage));
+  const editions = await Promise.all(
+    source.getPages("en").map((page) => renderDocsPage(page, "en")),
+  );
 
   return editions.join("\n\n");
 }

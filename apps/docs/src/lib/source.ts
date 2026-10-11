@@ -8,15 +8,19 @@ import { lucideIconsPlugin } from "fumadocs-core/source/lucide-icons";
 import { rcompare } from "semver";
 
 import { blogs, changelogs, docs } from "./collections";
+import { i18n } from "./i18n";
+import type { SiteLocale } from "./i18n";
 
 /** @see https://github.com/fuma-nama/fumadocs/blob/fumadocs-mdx%4015.2.1/apps/docs/content/docs/headless/source-api/index.mdx */
 export const source = loader({
+  i18n,
   baseUrl: "/docs",
   source: docs.toFumadocsSource(),
   plugins: [lucideIconsPlugin()],
 });
 
 export const changelog = loader({
+  i18n,
   baseUrl: "/changelog",
   source: changelogs.toFumadocsSource(),
 });
@@ -30,8 +34,8 @@ function byNewestDay(a: { date: string }, b: { date: string }) {
 }
 
 /** Changelog entries newest-first: day desc, semver desc as the tiebreak. */
-export function getChangelogPages() {
-  return changelog.getPages().toSorted((a, b) => {
+export function getChangelogPages(locale: SiteLocale = "en") {
+  return changelog.getPages(locale).toSorted((a, b) => {
     const dayCompare = byNewestDay(a.data, b.data);
     if (dayCompare !== 0) return dayCompare;
     return rcompare(a.data.version, b.data.version);
@@ -39,13 +43,14 @@ export function getChangelogPages() {
 }
 
 export const blog = loader({
+  i18n,
   baseUrl: "/blog",
   source: blogs.toFumadocsSource(),
 });
 
 /** Blog posts newest-first: day desc, title asc as the tiebreak. */
-export function getBlogPages() {
-  return blog.getPages().toSorted((a, b) => {
+export function getBlogPages(locale: SiteLocale = "en") {
+  return blog.getPages(locale).toSorted((a, b) => {
     const dayCompare = byNewestDay(a.data, b.data);
     if (dayCompare !== 0) return dayCompare;
     return a.data.title.localeCompare(b.data.title);

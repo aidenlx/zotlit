@@ -1,0 +1,579 @@
+---
+title: "Template syntax"
+description: "Liquid markup reference: outputs, tags, filters, whitespace control, and ZotLit's custom vocabulary."
+translationStatus: placeholder
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+This page documents the Liquid template language as configured in ZotLit: output expressions, tags, filters, whitespace control, the ZotLit-specific vocabulary, output coercion, includes, and template document naming.
+
+All template data is accessible through a single variable, `zt`. The shape of `zt` depends on the template type: see the [Data reference](/docs/reference/templates/data) for the full property list.
+
+## Outputs and tags [#outputs-and-tags]
+
+Liquid uses two delimiters:
+
+| Syntax             | Purpose                                |
+| ------------------ | -------------------------------------- |
+| `{{ expression }}` | Render a value into the note           |
+| `{% tag %}`        | Execute logic without producing output |
+
+```liquid
+{{ zt.title }}
+{% if zt.comment %}
+{{ zt.comment }}
+{% endif %}
+```
+
+Use `{% comment %}...{% endcomment %}` to suppress a section entirely:
+
+```liquid
+{% comment %}
+Draft: revisit multi-author rendering
+{% endcomment %}
+```
+
+## Truthiness
+
+Only `nil` (null/missing) and `false` are falsy in Liquid. `0`, `""`, and empty arrays are truthy.
+
+ZotLit normalizes empty-string field values to `null` before rendering. This means `{% if zt.comment %}` is false when there is no comment and true when there is one. No `!= ""` check is needed.
+
+## Whitespace control [#whitespace-control]
+
+Liquid renders whitespace exactly as written. Nothing is trimmed automatically.
+
+Add a `-` inside a delimiter to trim on that side:
+
+| Marker        | Effect                                                                                 |
+| ------------- | -------------------------------------------------------------------------------------- |
+| `{%-` / `{{-` | Eats same-line indentation before the tag. Never consumes a bare newline.              |
+| `-%}` / `-}}` | Eats inline blanks plus exactly one following newline. A blank line after it survives. |
+
+```liquid
+{% for note in zt.notes -%}
+- {{ note.noteLink }}
+{% endfor %}
+```
+
+The trailing `-%}` on the `for` tag consumes the newline immediately after it, so each iteration starts on `- `. A blank line placed after a `-%}` marker still survives. The marker only ever removes one newline.
+
+There is no vault-level whitespace setting for Liquid. Trimming is explicit per tag, which keeps templates portable across vaults.
+
+<Callout type="info" title="Eta has a separate autoTrim setting">
+  The Eta engine has its own trim-before/trim-after settings. Those do not apply
+  to Liquid templates. See [Eta syntax](/docs/reference/templates/eta-syntax).
+</Callout>
+
+## The `{% liquid %}` statement block
+
+For multi-line logic without whitespace leakage, `{% liquid %}` accepts one statement per line with no delimiters. Nothing is emitted except what you explicitly `echo`:
+
+```liquid
+{% liquid
+  assign names = "" | split: ","
+  for creator in zt.creators
+    assign names = names | push: creator.lastName
+  endfor
+  echo names | join: ", "
+%}
+```
+
+Indentation inside the block is ignored.
+
+<Callout type="warn" title="echo bypasses output coercion">
+  `{% echo %}` inside a `{% liquid %}` block does not pass through the output coercion that `{{ }}` applies. Use `{{ }}` outputs when you need null-to-empty and date normalization.
+</Callout>
+
+## Control flow
+
+### if / elsif / else / endif [#if-elsif-else-endif]
+
+```liquid
+{% if zt.abstract %}
+> {{ zt.abstract }}
+{% elsif zt.comment %}
+> {{ zt.comment }}
+{% else %}
+> (no abstract)
+{% endif %}
+```
+
+### unless / endunless
+
+```liquid
+{% unless zt.notes.size > 0 %}
+No child notes.
+{% endunless %}
+```
+
+### for / endfor [#for-endfor]
+
+```liquid
+{% for c in zt.creators limit: 3 offset: 1 reversed %}
+- {{ c.fullName }}
+{% endfor %}
+```
+
+`for` accepts `limit:`, `offset:`, and `reversed` modifiers.
+
+### case / when / endcase
+
+```liquid
+{% case zt.itemType %}
+{% when "journalArticle" %}
+Journal article
+{% when "book", "bookSection" %}
+Book
+{% else %}
+Other
+{% endcase %}
+```
+
+### assign and capture
+
+```liquid
+{% assign year = zt.dateAdded | date: "%Y" %}
+{% capture heading %}Notes from {{ year }}{% endcapture %}
+## {{ heading }}
+```
+
+## Standard filters
+
+Filters transform a value with `|` and accept arguments after `:`.
+
+### Array filters [#array-filters]
+
+`map`, `where`, `compact`, `join`, `sort`, `first`, `last`, `size`, `push`, `uniq`, `group_by`
+
+```liquid
+{{ zt.attachments | map: "fileLink" | compact | join: " " }}
+{{ zt.creators | map: "lastName" | join: ", " }}
+```
+
+### String filters
+
+`append`, `prepend`, `split`, `strip`, `upcase`, `downcase`, `replace`, `truncate`, `default`
+
+```liquid
+{{ zt.citationKey | default: zt.DOI | default: zt.title | default: zt.key }}
+{{ zt.title | truncate: 60 }}
+```
+
+`default` returns the argument when the input is nil, false, or empty string.
+
+## ZotLit vocabulary
+
+ZotLit registers a small set of tags and filters for literature-note tasks.
+
+### `{% render_annotation %}`: annotation rendering [#render-annotation]
+
+Renders one annotation, available as `zt` inside the annotation template.
+
+```liquid
+{% render_annotation annotation %}
+```
+
+The annotation argument is required. A missing or null value raises an error.
+
+For an annotation value, the equivalent native Liquid syntax is:
+
+```liquid
+{% render "annotation" with annotation as zt %}
+```
+
+The named-parameter form, `{% render "annotation", zt: annotation %}`, is also equivalent.
+
+In a literature note profile, the shortcut and native calls to `annotation` use the profile's Annotation Section. This required final section starts after the exact standalone line `--- zotlit:annotation ---` and continues to the end of the document. It uses the profile's language and can be empty.
+
+Calls from shared partials use the calling profile's section, with isolated annotation data. Direct annotation insertion and Imported Notes use the same section for their applicable profile. Outside profile rendering, the shortcut keeps the existing named-template lookup.
+
+### `{% bq %}`: blockquote block [#bq-blockquote-block]
+
+Wraps its content in a Markdown blockquote. Every line is prefixed with `> `. The content is trimmed first. Consecutive blank lines inside the block collapse into a single bare `>`.
+
+```liquid
+{% bq %}
+[!note] Page {{ zt.pageLabel }}
+
+{{ zt.imgLink | embed }}{{ zt.text }}
+{% if zt.comment %}
+
+{{ zt.comment }}
+{% endif %}
+{% endbq %}
+```
+
+Rendered output:
+
+```markdown
+> [!note] Page 42
+>
+> ![[excerpt.png]]The highlighted passage
+>
+> My thoughts on this
+```
+
+### `embed`: embed filter [#embed-embed-filter]
+
+Prefixes a non-empty string with `!` to produce the Obsidian embed syntax. Null, undefined, empty string, or non-string values collapse to `""`.
+
+```liquid
+{{ zt.imgLink | embed }}
+```
+
+| Input               | Output               |
+| ------------------- | -------------------- |
+| `"[[excerpt.png]]"` | `"![[excerpt.png]]"` |
+| `null`              | `""`                 |
+| `""`                | `""`                 |
+
+For `zt.imgLink`, the filter uses the prepared excerpt image. If no image is available, it returns an explanation and source link without adding `!`. See [Excerpt images](/docs/concepts/excerpt-images) for saved snapshots and import outcomes.
+
+### Link filters [#link-filters]
+
+Three filters produce Obsidian wiki-links with optional alias and subpath overrides:
+
+| Filter      | Produces             |
+| ----------- | -------------------- |
+| `file_link` | Attachment file link |
+| `note_link` | Note link            |
+| `img_link`  | Excerpt-image link   |
+
+Each accepts two optional positional arguments: `alias` and `subpath`.
+
+```liquid
+{{ zt.attachments[0] | file_link: "Open the PDF" }}
+{{ zt | note_link: "See notes", "#Summary" }}
+{{ zt | img_link: "alt text" }}
+```
+
+When a file or note link cannot be resolved, the filter returns `null` (which `compact` drops from an array, and output coercion renders as `""`). For image and ink annotations, `img_link` returns the excerpt fallback when an image is unavailable. For other annotation types, it returns `null`.
+
+### `note_links`: batch note links
+
+Maps an array of items to their note links. Items whose link cannot be resolved render as a `zt-error:` marker containing the object's key instead of being dropped silently.
+
+```liquid
+{{ zt.relatedItems | note_links | join: ", " }}
+```
+
+### `pandoc_cite`: Pandoc Citation source [#pandoc-cite]
+
+Formats a Citation Item array as Pandoc Citation source. Pass `zt.citations` directly to the filter.
+
+```liquid
+{{ zt.citations | pandoc_cite }}
+{{ zt.citations | pandoc_cite: "prefer-author-in-text" }}
+```
+
+The optional form is `"normal"` by default.
+
+| Form                      | Output for one item | Description                                                                                                                                            |
+| ------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `"normal"`                | `[@smith2024]`      | Produces a bracketed Citation Cluster.                                                                                                                 |
+| `"prefer-author-in-text"` | `@smith2024`        | Produces an Author-in-text Citation when the first retained item has no prefix and does not suppress the author. Otherwise, produces a normal cluster. |
+
+The filter handles all Citation Item properties used in Pandoc source:
+
+| Input                                             | Output                     |
+| ------------------------------------------------- | -------------------------- |
+| Locator `"3"` with `labelShort` `"p."`            | `[@smith2024, {p. 3}]`     |
+| Prefix `"see "` and suffix `", note 4"`           | `[see @smith2024, note 4]` |
+| `suppressAuthor` set to `true`                    | `[-@smith2024]`            |
+| Citation key `"KX67D9YM?"`                        | `[@{KX67D9YM?}]`           |
+| `"prefer-author-in-text"` with locator `"3"`      | `@smith2024 [{p. 3}]`      |
+| `"prefer-author-in-text"` with prefix `"see "`    | `[see @smith2024]`         |
+| Empty array or items with null citation keys only | `""`                       |
+
+Items with a null citation key are omitted. The filter preserves the order of the remaining items and adds braces around complex citation keys when Pandoc requires them.
+
+Input that cannot be represented without changing its citation structure raises a render error.
+
+### `tex_cite`: LaTeX citation command [#tex-cite]
+
+Formats a Citation Item array as one LaTeX citation command. Pass `zt.citations` directly to the filter.
+
+```liquid
+{{ zt.citations | tex_cite }}
+{{ zt.citations | tex_cite: "autocite" }}
+```
+
+The optional command is `"cite"` by default. Write it without the backslash. A starred command such as `"autocite*"` is accepted.
+
+| Command      | Output for one item    | Bibliography package    |
+| ------------ | ---------------------- | ----------------------- |
+| `"cite"`     | `\cite{smith2024}`     | LaTeX, natbib, BibLaTeX |
+| `"autocite"` | `\autocite{smith2024}` | BibLaTeX                |
+
+Every retained item joins one key list. The command carries one prenote and one postnote, and both come from the first retained item:
+
+| Input                                             | Output                           |
+| ------------------------------------------------- | -------------------------------- |
+| Two items                                         | `\cite{smith2024,doe2023}`       |
+| Locator `"3"` with `labelShort` `"p."`            | `\cite[p. 3]{smith2024}`         |
+| Prefix `"see "`                                   | `\cite[see][]{smith2024}`        |
+| Prefix `"see "` with locator `"3"`                | `\cite[see][p. 3]{smith2024}`    |
+| Locator `"3"` with suffix `", note 4"`            | `\cite[p. 3, note 4]{smith2024}` |
+| Empty array or items with null citation keys only | `""`                             |
+
+Items with a null citation key are omitted, and the remaining items keep their order.
+
+<Callout type="warn" title="The prenote form needs natbib or BibLaTeX">
+  The LaTeX kernel's own `\cite` takes one optional argument. The two-argument
+  `\cite[see][p. 3]{smith2024}` form above compiles under natbib or BibLaTeX,
+  which redefine `\cite` to take both. A citation that carries no prefix emits
+  at most one optional argument and works in a plain LaTeX document.
+</Callout>
+
+An affix reaches LaTeX as source, so a prefix of `\emph{see}` renders as emphasis. These inputs raise a render error instead:
+
+- `suppressAuthor` set to `true`, which LaTeX has no general form for.
+- A prefix, suffix, or locator on any item after the first, which has no slot.
+- An empty citation key, or one that holds whitespace, a comma, or a TeX special character.
+- A prefix, suffix, or locator whose braces do not balance, or which holds an unescaped `%`.
+
+### `collection_paths`: collection path strings [#collection-paths]
+
+Maps an array of collections to their joined path strings. The default separator is `/`.
+
+```liquid
+{{ zt.collections | collection_paths }}
+{{ zt.collections | collection_paths: " > " }}
+```
+
+### `arr_prefix`: prepend to every element [#arr-prefix]
+
+Prepends a string to every element of an array. Non-array input raises a render error.
+
+```liquid
+{{ zt.creators | map: "lastName" | arr_prefix: "@" }}
+```
+
+The prefix argument defaults to an empty string when omitted.
+
+### `arr_suffix`: append to every element [#arr-suffix]
+
+Appends a string to every element of an array. Non-array input raises a render error.
+
+```liquid
+{{ zt.creators | map: "lastName" | arr_suffix: "!" }}
+```
+
+The suffix argument defaults to an empty string when omitted.
+
+### `arr_replace`: replace in every element [#arr-replace]
+
+Replaces every occurrence of a literal substring in every element of an array.
+
+```liquid
+{{ zt.collections | collection_paths | arr_replace: "/", " > " }}
+```
+
+| Argument      | Required | Default | Description                                        |
+| ------------- | -------- | ------- | -------------------------------------------------- |
+| `search`      | Yes      | —       | Literal substring to find. Must not be empty       |
+| `replacement` | No       | `""`    | Replacement text. Omit to delete the search string |
+
+Non-array input raises a render error. An empty or missing search string raises a render error (an empty search would insert the replacement between every character).
+
+### `obsidian_tag`: convert to Obsidian tag [#obsidian-tag]
+
+Converts arbitrary text into a valid [Obsidian tag](https://obsidian.md/help/tags#Tag+format), with an optional prefix.
+
+```liquid
+{{ zt.tags | obsidian_tag: "#" }}
+{{ zt.tags | obsidian_tag: "zotero/" }}
+```
+
+Accepts an array (maps element-wise) or a single value (returns a single value). Reads the `name` property of a Zotero tag object, so `zt.tags` can be piped in without `map: "name"` first.
+
+**Normalization rules:**
+
+- Each run of characters Obsidian rejects is replaced with one underscore.
+- Repeated `/` collapses to a single `/`. Leading and trailing `_` and `/` are trimmed.
+- A name that is entirely digits gets a leading underscore (`1984` becomes `_1984`), because Obsidian rejects an all-digit tag.
+- A value that keeps nothing after normalization is dropped from an array, or returns an empty string for a single value.
+- The optional prefix is added after normalization and stays verbatim. Use `"#"` for a tag in the note body, or `"zotero/"` for a nested tag. Because a leading `#` in the input is stripped during normalization, `obsidian_tag: "#"` is safe to apply more than once.
+- Case is preserved. Obsidian matches tags case-insensitively but displays the casing a tag was first created with.
+
+**Character handling:** Obsidian defines valid tag characters as a reject-list, not an allow-list. Characters outside the rejected set are left as-is. This includes CJK text and CJK punctuation, fullwidth forms, symbols such as `©`, and emoji. A zero-width-joiner emoji such as `👩‍💻` becomes `👩_💻`, because the joiner is one of the characters Obsidian rejects.
+
+| Input (name)         | Output             | Notes                                      |
+| -------------------- | ------------------ | ------------------------------------------ |
+| `Machine Learning`   | `Machine_Learning` | Space replaced                             |
+| `(draft) papers`     | `draft_papers`     | Parentheses and space collapsed            |
+| `R & D`              | `R_D`              | Punctuation run collapsed                  |
+| `文献、综述`         | `文献、综述`       | CJK text and punctuation kept              |
+| `/Reading/`          | `Reading`          | Edge slashes trimmed                       |
+| `a//b`               | `a/b`              | Repeated slash collapsed                   |
+| `1984`               | `_1984`            | All-digit name prefixed                    |
+| `a/1984`             | `a/1984`           | Non-digit present, no prefix needed        |
+| `#todo` (prefix `#`) | `#todo`            | Leading `#` stripped, then prefix re-added |
+| `!!!`                | _(dropped)_        | Nothing survives normalization             |
+
+`obsidian_tag` normalizes for Obsidian's tag rules. For free-text array transformations that do not need tag-specific normalization, use `arr_replace`.
+For a managed `tags` frontmatter field, see [Add Zotero tags to note frontmatter](/docs/how-to/configure-frontmatter-properties#zotero-tags).
+
+### `{% suffix %}`: filename collision guard [#suffix-filename-collision-guard]
+
+Meaningful only in the `filename` template. Emits nothing when the generated filename is unique. When it would collide with an existing note, it appends a random string.
+
+```liquid
+{{ zt.citationKey | default: zt.DOI | default: zt.title | default: zt.key }}{% suffix %}
+```
+
+- First note named `Smith2020` produces `Smith2020.md` (no suffix).
+- A second note that would also render `Smith2020` produces `Smith2020_a1b2c3.md`.
+
+Arguments are positional: `length`, `prepend`, `append` (all optional).
+
+| Argument  | Default | Constraints                |
+| --------- | ------- | -------------------------- |
+| `length`  | `6`     | Integer, 1–64              |
+| `prepend` | `"_"`   | May not contain `:` or `%` |
+| `append`  | `""`    | May not contain `:` or `%` |
+
+```liquid
+{% suffix 10 %}
+{% suffix 6, "(", ")" %}
+```
+
+The suffix is a sentinel resolved at note-creation time. It resolves to `prepend + <random> + append` on collision, or `""` when the filename is free.
+
+### `date`: date formatting filter [#date-formatting-filter]
+
+Accepts a strftime-style format string. Normalizes all date shapes ZotLit provides:
+
+| Input type                                                   | Behavior                                                       |
+| ------------------------------------------------------------ | -------------------------------------------------------------- |
+| `Temporal.Instant`                                           | Converted to local-time date before formatting                 |
+| `Temporal.PlainDate` / `PlainYearMonth`                      | Converted to local-time date before formatting                 |
+| Zotero `ItemDate` (kind `"date"` / `"yearMonth"` / `"year"`) | Converted to local-time date before formatting                 |
+| Zotero `ItemDate` (kind `"text"`)                            | Rendered as its raw text unchanged, ignoring the format string |
+
+```liquid
+{{ zt.dateAdded | date: "%Y-%m-%d" }}
+{{ zt.date | date: "%B %Y" }}
+```
+
+An `ItemDate` with kind `"text"` represents a date Zotero could not parse (e.g. `"submitted"`). The `date` filter returns it as-is.
+
+## Output coercion
+
+Values rendered through `{{ }}` are coerced to text:
+
+| Value                | Rendered as                                        |
+| -------------------- | -------------------------------------------------- |
+| `null` / `undefined` | `""` (empty string, never the literal text "null") |
+| `Date`               | ISO 8601 string (`toISOString()`)                  |
+| `Temporal.Instant`   | Local plain date, e.g. `2026-06-21`                |
+| Everything else      | `String()` (the value's own `toString()`)          |
+
+This coercion applies only to `{{ }}` outputs. `{% echo %}` inside a `{% liquid %}` block bypasses it.
+
+## Includes with `{% render %}` [#includes-with-render]
+
+`{% render %}` composes templates by name with an isolated scope:
+
+```liquid
+{% render "content" with zt as zt %}
+{% render "annotation" with annotation as zt %}
+```
+
+`with <value> as zt` binds the value to `zt` inside the child template. The child sees only what you pass. Parent variables are not inherited.
+
+The name resolves to a registered template, not to a file path. During Profile rendering, `"annotation"` selects the Profile's Annotation Section.
+
+### Calling a partial [#calling-a-partial]
+
+A partial is called by its name, and the data it needs travels with the call:
+
+```liquid
+{% render "authors" with zt as zt %}
+```
+
+`{% render %}` opens an isolated scope, so `zt` reaches the partial only because the call passes it by name. <UiLabel name={m.workbench_tag_render()} />
+
+A bare call reaches the partial with no `zt`, so every `zt` output in it comes out empty and only its literal text survives:
+
+```liquid
+{% render "authors" %}
+```
+
+`{% include %}` renders the same partial with the caller's variables in scope, so it needs no `with` clause. <UiLabel name={m.workbench_tag_include()} />
+
+```liquid
+{% include "authors" %}
+```
+
+Completion inside `{% render "` and `{% include "` lists every partial in the vault. Accepting a name writes the whole call: `render` gets the `with zt as zt` clause, `include` needs none. A call you have already given arguments keeps them, and only the name is replaced.
+
+## Template document naming [#template-document-naming]
+
+A template document sits directly inside the folder set by <SettingsPath page={m.settings_page_advanced()} setting={m.settings_template_folder_name()} />. The scan is flat. Files in subfolders are never read, and a file without the `zotlit-` prefix is ignored.
+
+The filename prefix alone says what a document is:
+
+| Filename                   | Document                                                                        |
+| -------------------------- | ------------------------------------------------------------------------------- |
+| `zotlit-profile.<slug>.md` | A literature note profile: note name, folder, properties, body, and annotations |
+| `zotlit-citation.md`       | The citation text, one per vault, under exactly this name                       |
+| `zotlit-partial.<name>.md` | One partial, registered under `<name>`                                          |
+
+A `zotlit-` file that fits none of these patterns registers nothing and is reported in the <UiLabel name={m.settings_advanced_template_engine_heading()} /> group on <SettingsPath page={m.settings_page_advanced()} />. See [Unrecognized ZotLit files](/docs/reference/settings#unrecognized-files).
+
+### Language [#document-language]
+
+A citation document or a partial is Liquid unless its manifest says otherwise. The manifest is an optional YAML block at the top of the file, and `language` is its only legal key:
+
+```md
+---
+language: eta
+---
+
+<%= zt.title %>
+```
+
+The legal values are `liquid` and `eta`. A document with no manifest is Liquid. Switch a document between the two from the Template Workbench View's pane menu, with <UiLabel name={m.template_workbench_change_language()} />; it rewrites the manifest key and leaves the source as written.
+
+### Partial names [#partial-names]
+
+A partial name is one or more letters, digits, and hyphens. The <UiLabel name={m.settings_partial_add()} /> prompt trims what you type, turns each run of spaces into a hyphen, and lowercases the result, so `Journal line` becomes `journal-line`. Names are compared without case, so two files cannot claim one name in different casings.
+
+Five names are reserved, because another ZotLit template already answers to each: `filename`, `note`, `annotation`, `content`, and `citation`. A partial file that takes one registers nothing and is reported at <SettingsPath page={m.settings_page_profiles()} setting={m.settings_partials_heading()} />. See [Partials](/docs/reference/settings#partials).
+
+## See also
+
+<Cards>
+  <Card
+    title="Add Zotero tags to frontmatter"
+    description="Map Zotero tags to an Obsidian tags property with Liquid."
+    href="/docs/how-to/configure-frontmatter-properties#zotero-tags"
+  />
+  <Card
+    title="Data reference"
+    description="Properties available on zt for each template type."
+    href="/docs/reference/templates/data"
+  />
+  <Card
+    title="Default templates"
+    description="The built-in Liquid template for each type, annotated."
+    href="/docs/reference/templates/defaults"
+  />
+  <Card
+    title="How templates work"
+    description="Template documents, languages, and where each template lives."
+    href="/docs/concepts/how-templates-work"
+  />
+  <Card
+    title="Customize a template"
+    description="Open a template document, edit it, and test the result."
+    href="/docs/how-to/customize-a-template"
+  />
+</Cards>

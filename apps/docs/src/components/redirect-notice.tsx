@@ -54,15 +54,15 @@ export function RedirectNotice({ className }: { className?: string }) {
         className,
       )}
     >
-      {isZh ? (
-        <p className="text-fd-muted-foreground" lang="zh-CN">
-          {m.docs_redirect_translation_pending({}, { locale: "zh-CN" })}
-        </p>
-      ) : (
+      {v1Src ? (
         <p className="text-fd-muted-foreground">
           {m.docs_redirect_v1_notice()}
         </p>
-      )}
+      ) : isZh ? (
+        <p className="text-fd-muted-foreground" lang="zh-CN">
+          {m.docs_redirect_translation_pending({}, { locale: "zh-CN" })}
+        </p>
+      ) : null}
       {v1Src && (
         <a
           href={`${zotlitLegacyUrl}${isZh ? "/zh-CN" : ""}${v1Src}`}
