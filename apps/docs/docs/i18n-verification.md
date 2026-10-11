@@ -8,7 +8,7 @@ Verified on the cloud Linux workspace, 2026-10-11. No merge or deployment.
 
 - Paraglide URL strategy with request-isolated middleware and TanStack canonical-route rewrites. Exactly English and Simplified Chinese; English URLs stay unprefixed, Chinese uses `/zh-CN`, matching V1.
 - Native Fumadocs locale loaders, sidebar trees, language controls, and locale-filtered search for docs, blog, and changelog. Explicit locale server-function inputs select the actual locale MDX files.
-- 88 English-copy Chinese MDX files (85 pages, 3 partials), 7 sidebar metadata copies, 106 English-copy `docs_*` additions to the Chinese catalog (105 existing English messages plus the new fallback notice), and 46 native Fumadocs UI dictionary values. All 1,913 preexisting Chinese catalog entries are preserved unchanged. No new translations.
+- 88 English-copy Chinese MDX files (85 pages, 3 partials), 7 sidebar metadata copies, 107 English-copy `docs_*` additions to the Chinese catalog (105 existing English messages plus the fallback notice and English-page action), and 46 native Fumadocs UI dictionary values. All 1,913 preexisting Chinese catalog entries are preserved unchanged. No new translations.
 - Placeholder markers drive per-page content language, robots, canonical, reciprocal hreflang, `x-default`, and sitemap membership. A real approved Chinese page becomes Chinese-indexable after marker removal; missing/marked content stays English-canonical and noindex. Workbench remains deliberately noindex. See [translation workflow](i18n.md).
 - English pages and machine editions retain the existing 269 prerenders. Chinese pages render through the locale-aware Worker. Global llms/feed/sitemap/robots aliases redirect to the unprefixed inventory; individual Chinese Markdown editions keep their locale.
 
@@ -29,12 +29,12 @@ All 54 explicit asset rules were checked. Rule-owned notice queries override con
 
 ## Passed checks
 
-- Full docs suite: **307 tests, 39 files**.
+- Full docs suite: **324 tests, 40 files**.
 - App and Node TypeScript checks; Cloudflare generated-type freshness.
 - Root lint: zero errors, five existing warnings outside the changed docs code.
 - Repository-wide formatting and `git diff --check`.
 - Unmodified production Vite configuration: client/SSR compilation and **269 prerendered routes**, exit 0 in the cloud desktop runtime. The earlier sandbox-only inspector workaround is no longer a verification blocker.
-- Real Vite/Cloudflare workerd HTTP: **8,087 assertions, 1,198 requests, zero failures**. Includes all V1 rules and notice-query precedence; English/Chinese HTML route pairs; sidebar/internal links and Markdown action URLs; locale search; suffix/content/Accept Markdown; slash/case aliases; unknown pages; release fallback; robots, sitemap, feeds and llms; concurrent locale isolation; no leaked placeholder frontmatter.
+- Real Vite/Cloudflare workerd HTTP: **8,231 assertions, 1,198 requests, zero failures**. Includes all V1 rules and notice-query precedence; English/Chinese HTML route pairs; sidebar/internal links and Markdown action URLs; locale search; suffix/content/Accept Markdown; slash/case aliases; unknown pages; release fallback; robots, sitemap, feeds and llms; concurrent locale isolation; no leaked placeholder frontmatter.
 - Fifteen Worker-boundary regression tests cover global machine aliases, including the unprefixed slash path needed during RSS prerender. Five cases failed before the guard correction and pass after it.
 - Temporary future-translation fixture: removed one Chinese tutorial marker and changed only its test title. Real HTTP verified Chinese content language, Chinese canonical, reciprocal en/zh-CN/x-default alternates, sitemap inclusion, no placeholder noindex/banner, and the native Chinese Markdown source. Original placeholder restored afterward; final build and matrix ran with every placeholder intact.
 - Independent behavior/SEO review and standards review found no remaining blocking source issues. The fixture-resource cleanup finding was fixed with per-test disposables.
@@ -68,7 +68,7 @@ The unmodified production build also passed in that desktop runtime. The earlier
 The temporary `inspectorPort: false` copy was used for the earlier isolated build and HTTP passes;
 it is absent from the submitted configuration. The reusable HTTP script starts
 preview and fetch in one process and accepts `--port` for a separate local port.
-The full 8,087-check / 1,198-request matrix was repeated against this unmodified
+The full 8,231-check / 1,198-request matrix was repeated against this unmodified
 production build using the normal Vite config, with zero failures.
 
 Real cloud Chromium interaction now verifies:
@@ -97,6 +97,40 @@ exhaustive browser, mobile, assistive-technology, or Obsidian integration testin
 Obsidian is not needed to test this documentation website.
 
 Parsed Markdown document links are localized without rewriting code or images. Raw HTML/JSX links, unusual escaped leading slashes, and reference definitions shared with images remain authored. HTML internal links were checked. Generated ContractTable prose and shared assets are not newly translated; their review is required before approving the affected Chinese pages. See the workflow for exact scope.
+
+## English-only additions and fallback action
+
+An actual temporary English-only MDX page (no Chinese file) passed the ordinary
+docs tests and normal production build. Its Chinese URL returned 200 with the
+English source, appeared in the Chinese sidebar and search, and linked its
+Markdown edition within the Chinese locale. HTTP checks verified English-only
+sitemap membership and English-canonical/noindex Chinese metadata. The explicit
+readiness command separately reported 96 placeholders and one missing file.
+The temporary source was removed; readiness returned to 96 placeholders and zero
+missing files before the final checks.
+
+The former test requiring every Chinese loader entry to use a Chinese source
+file was corrected. Native Chinese files still take precedence when present;
+missing counterparts use English. The reusable HTTP verifier discovers new pages
+automatically; an exact inventory count is optional via `--expected-html`.
+
+The fallback callout now offers **Read in English**. Real cloud Chromium verified
+missing and placeholder pages, cold-load query/fragment preservation, click,
+back/reload, language switching, and suppression for an approved temporary page.
+A browser-discovered fragment bug earned an SSR-hydration regression: the browser
+fragment is read after hydration rather than relying on server router state.
+All query values are preserved, so a Chinese V1 arrival retains its exact Chinese
+archive link after the reader chooses English. English canonical metadata ignores
+those tracking parameters. A stale language hint alone does not create a V1 or
+translation warning. No automatic redirect was added for untranslated content.
+
+The final fixture-free build passed 269 prerenders. The full HTTP matrix passed
+8,231 checks across 1,198 requests, including exact English-action path/query
+validation and continued rejection of unrelated locale-leaking links.
+
+An initial concurrent full-suite/preview run suffered preview exit 137 and test
+timeouts. Sequential reruns passed; browser asset versions were checked using
+fresh tabs to avoid restoring an older build from back-forward cache.
 
 ## Primary references
 
