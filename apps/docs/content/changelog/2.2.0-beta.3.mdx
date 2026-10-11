@@ -1,0 +1,63 @@
+---
+version: "2.2.0-beta.3"
+date: "2026-10-11"
+description: "Query your Zotero library, background library reads, Chinese word search"
+---
+
+import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+This beta adds an experimental command-line interface to query your Zotero library, moves database reads into the background so Obsidian stays responsive, and introduces Chinese word search for titles.
+
+## What's New
+
+### Query your Zotero library from the command line
+
+This beta introduces an experimental command-line interface to query your Zotero library.
+
+Run queries over your Zotero library from the Obsidian CLI with `zotlit:query`. Search, filter, group, and project fields from your items, file attachments, and annotations in one command.
+
+Four companion commands complete the toolkit. `zotlit:query-values` discovers exact collection and tag names. `zotlit:query-schema` returns the schema of every queryable field. `zotlit:query-guide` prints the built-in usage guide. `zotlit:query-cancel` cancels a running export.
+
+Useful for checking reading status, finding missing PDF files, counting papers by year or tag, and exporting clean JSON for research scripts or AI agents. Because the feature is experimental, its parameters and output formats may change before the stable release. See [How ZotLit Query works](/docs/concepts/how-zotlit-query-works) and [Query your Zotero library](/docs/how-to/query-zotero-library) for full guidance and examples.
+
+### Smooth background library reads
+
+Zotero database reads, search indexing, and citation lookups now run in the background. Obsidian stays completely responsive during large library refreshes.
+
+Typing in the citation suggester and search pickers never freezes or hitches your editor, even in libraries with tens of thousands of items.
+
+### Chinese word search
+
+A new <UiLabel name={m.settings_chinese_segmenter_name()} /> option is available under <SettingsPath page={m.settings_page_zotero()} />. One-click install splits Chinese titles into words, so searching for a word finds the paper even when the term sits in the middle of a Chinese title.
+
+### Reorganized Zotero settings
+
+The Zotero settings page now follows research tasks: Zotero database, <UiLabel name={m.settings_zotero_libraries_heading()} />, <UiLabel name={m.settings_zotero_sync_heading()} />, <UiLabel name={m.settings_zotero_editing_heading()} />, and <UiLabel name={m.settings_zotero_search_heading()} />. Advanced connection and database override options moved to a dedicated <UiLabel name={m.settings_page_zotero_location()} /> sub-page.
+
+The page shows clear live status for the local server and links directly to its configuration.
+
+### Other improvements
+
+- ZotLit entries in file menus and tab "More options" menus now sit in dedicated groups beside Obsidian's own entries, rather than clustering at the bottom below "Delete".
+- Item search modals and Quick Switcher open with their rows ready or show a clean loading message (<UiLabel name={m.modal_item_search_loading()} />), so the layout never pops in empty.
+
+## Bug Fixes
+
+### Annotation view and PDF editing
+
+- The annotation card list now scrolls completely clear of the bottom status bar, so the last card is never hidden behind it.
+- When scrolling down, the top of the annotation list fades smoothly under the filter bar instead of cutting off abruptly.
+- Confirmed annotation edits, color changes, and deletions remain protected and are not interrupted or overwritten by background database refreshes.
+
+### Citations
+
+- Wikilink citations with fragments, such as `[[@key#fragment]]`, in note previews and keyless items now resolve to their correct literature note paths.
+- In-memory citation text for closed notes is released five minutes after closing, preventing memory buildup during long writing sessions.
+- Pandoc export no longer requires citation key resolution when an exported note contains no literal citation keys.
+
+### Batch windows
+
+- Batch confirmation windows for updating or importing notes across a library mount list rows on demand when you expand a group. Obsidian stays responsive even with libraries of tens of thousands of items.
