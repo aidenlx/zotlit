@@ -16,9 +16,7 @@ const catalogPages = new Set([
   "/blog",
   "/changelog",
 ]);
-const chinesePages = new Set(
-  typeof __DOCS_CHINESE_PAGES__ === "undefined" ? [] : __DOCS_CHINESE_PAGES__,
-);
+const chinesePages = new Set(__DOCS_CHINESE_PAGES__);
 
 /** Normalize the two published locales while keeping unsupported input English. */
 function isChinese(locale: string): boolean {

@@ -14,10 +14,11 @@ export function isSiteLocale(value: string): value is SiteLocale {
   return i18n.languages.some((locale) => locale === value);
 }
 
-export function unlocalizedPath(path: string): string {
-  return path.replace(/^\/zh-CN(?=\/|$)/, "") || "/";
+export function validateSiteLocale(locale: SiteLocale): SiteLocale {
+  if (!isSiteLocale(locale)) throw new Error("Unsupported locale");
+  return locale;
 }
 
-export function isLocalizedPath(path: string): boolean {
-  return path === "/zh-CN" || path.startsWith("/zh-CN/");
+export function unlocalizedPath(path: string): string {
+  return path.replace(/^\/zh-CN(?=\/|$)/, "") || "/";
 }

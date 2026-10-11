@@ -6,8 +6,7 @@ import { getMDXComponents } from "@/components/mdx";
 import { SiteFooter } from "@/components/site-footer";
 import { cn } from "@/lib/cn";
 import { changelogs } from "@/lib/collections";
-import { isSiteLocale } from "@/lib/i18n";
-import type { SiteLocale } from "@/lib/i18n";
+import { validateSiteLocale } from "@/lib/i18n";
 import { changelogProseRoles } from "@/lib/prose";
 import { pageHead } from "@/lib/seo";
 import {
@@ -22,10 +21,7 @@ import { m } from "@/paraglide/messages.js";
 import { getLocale } from "@/paraglide/runtime.js";
 
 const listReleases = createServerFn({ method: "GET" })
-  .validator((locale: SiteLocale) => {
-    if (!isSiteLocale(locale)) throw new Error("Unsupported locale");
-    return locale;
-  })
+  .validator(validateSiteLocale)
   .handler(({ data: locale }) =>
     getChangelogPages(locale).map((page) => ({
       path: page.path,

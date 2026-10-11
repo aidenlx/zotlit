@@ -6,7 +6,7 @@ import { deLocalizeUrl, localizeUrl } from "@/paraglide/runtime.js";
 import { paraglideMiddleware } from "@/paraglide/server.js";
 
 import { blogs, changelogs, docs } from "./collections";
-import { i18n, isLocalizedPath, isSiteLocale, unlocalizedPath } from "./i18n";
+import { i18n, isSiteLocale, unlocalizedPath } from "./i18n";
 import { getPageLocaleState } from "./locale-state";
 import { pageHead } from "./seo";
 import { blog, changelog, source } from "./source";
@@ -18,8 +18,6 @@ describe("native locale infrastructure", () => {
     expect(isSiteLocale("zh")).toBe(false);
     expect(isSiteLocale("fr")).toBe(false);
     expect(isSiteLocale("zh-CN")).toBe(true);
-    expect(isLocalizedPath("/zh-CN/docs")).toBe(true);
-    expect(isLocalizedPath("/zh-CN-other")).toBe(false);
     expect(unlocalizedPath("/zh-CN/docs")).toBe("/docs");
   });
   it.each([
