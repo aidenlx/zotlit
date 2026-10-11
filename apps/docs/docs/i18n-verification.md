@@ -2,7 +2,7 @@
 
 Base: `next` at `a635872e82a9c753528713c4489b90d9fe7a5c7e`.
 Review branch: `poc/docs-i18n`; [draft PR #1446](https://github.com/aidenlx/zotlit/pull/1446).
-Local review fixes and simplification: 2026-10-11. No merge or deployment.
+Verified source: `1aec53043329326a69597b38cdefe633aec91327`, 2026-10-11. No merge or deployment.
 
 ## Current behavior
 
@@ -48,10 +48,20 @@ pnpm --filter @zotlit/docs exec node scripts/verify-i18n-http.mjs
 
 The default preview port is assigned by the OS. `--port` can select a specific port. `--expected-html` is optional; without it, the verifier requires a non-empty discovered inventory. JSON evidence and a text summary default to `.scratch/i18n-poc/`.
 
-Earlier evidence for the approval-marker implementation does not verify this simplified behavior. A fresh production-line Cloudflare build, HTTP matrix, and browser check are required after integration. Run them in the supported cloud desktop runtime; the command-executor environment has a known inspector `EPERM` limitation. No alternate production config is part of this change.
+## Integrated build and browser evidence
+
+- The normal production-line Cloudflare build passed after the final source cleanup and prerendered 269 pages. No alternate production config or inspector workaround was used. The supported cloud desktop runtime was used because the command executor has an inspector `EPERM` limitation.
+- The final full HTTP matrix passed 7,681 checks across 1,198 requests, with zero failures. It used an OS-assigned preview port and covered 90 English HTML pages plus their Chinese routes and all 54 legacy rules.
+- Real cloud-browser checks passed on the simplified implementation: a temporary English-only page stayed at its Chinese URL, rendered English with one fallback action, and had English canonical/noindex metadata. The action preserved query and fragment; the English destination had no false notice. Switching, back/forward, reload, sidebar inclusion, locale search, and internal links passed.
+- Native Chinese files rendered without a fallback notice and had Chinese canonical/index metadata and reciprocal alternates. Chinese V1 arrival preserved the locale and fragment, with the exact Chinese archive link. Rule-owned redirect queries replaced the arrival query as specified above.
+- The temporary file was removed. After the final source cleanup, a clean build and browser pass repeated locale switching with URL context, search selection, body-link navigation, back/forward, reload, metadata, and absence of fixture links. No app console errors or warnings were observed. The external Giscus iframe could not connect in this environment.
+
+## Code review
+
+The final full-PR Standards and Spec reviews ran independently against the same pinned tree. Both report zero implementation findings after one fixer resolved the findings. The review tree is identical to the published source above. Inherited English wording in the requested copies was recorded separately and left unchanged. The formal review gate is complete; this does not claim that the initial implementation followed every worktree, ticket, and TDD step of the repository workflow.
 
 ## Limits
 
-HTTP cannot test hydration, interaction, clipboard access, or fragments. The DOM tests cover hydration and URL context, while the final browser pass must check the built site. External redirect destinations are not fetched by the matrix. Live GitHub facts and old fragment targets are not verified. The Chinese text is still unfinished.
+HTTP cannot test hydration, interaction, clipboard access, or fragments; browser checks provide the interaction evidence listed above. Clipboard behavior was not rechecked in this pass. External redirect destinations are not fetched by the matrix. Live GitHub facts and old fragment targets are not verified. The Chinese text is still unfinished.
 
 Plugin documentation links are a separate task and are outside this docs checkpoint. See [the editing guide](i18n.md) for locale file locations and production considerations.
