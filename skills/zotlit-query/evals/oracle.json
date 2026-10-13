@@ -1407,7 +1407,8 @@
           "indexedKey": "EVALED33",
           "title": "Edited handbook without an author",
           "year": 2023,
-          "firstAuthor": null,
+          "firstAuthor": "Eve Handbook Editor",
+          "firstAuthorRole": "editor",
           "firstCreator": "Eve Handbook Editor"
         }
       ],

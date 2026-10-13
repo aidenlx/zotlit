@@ -635,7 +635,7 @@ async function exercise(
           creators: [
             {
               fullName: row.firstCreator,
-              role: row.firstAuthor ? "author" : "editor",
+              role: row.firstAuthorRole ?? "author",
             },
           ],
         },
@@ -680,7 +680,7 @@ async function exercise(
               ? "Lab Archive"
               : "My Library",
             firstAuthor: row.firstAuthor,
-            editor: row.firstAuthor === null ? row.firstCreator : null,
+            editor: row.firstAuthorRole === "editor" ? row.firstCreator : null,
           })),
           duplicateKeyGroups: [
             { key: "EVALSAME", libraries: ["My Library", "Lab Archive"] },

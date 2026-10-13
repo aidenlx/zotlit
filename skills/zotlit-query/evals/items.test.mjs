@@ -47,7 +47,10 @@ function envelope(caseName) {
         creators: [
           {
             fullName: row.firstCreator,
-            role: row.firstCreator === row.firstAuthor ? "author" : "editor",
+            role:
+              row.firstCreator === row.firstAuthor
+                ? (row.firstAuthorRole ?? "author")
+                : "editor",
           },
           ...(row.firstCreator === row.firstAuthor
             ? []
@@ -87,6 +90,51 @@ await test("rejects missing rows, truncated responses, and the wrong first autho
   assert.match(
     validate("edge", wrongAuthor, { runRoot: root }).join("\n"),
     /wrong first author/,
+  );
+});
+
+await test("accepts the first author projected as firstAuthor without creators", () => {
+  for (const caseName of ["include", "edge"]) {
+    for (const member of [false, true]) {
+      const result = envelope(caseName);
+      const item = (key) =>
+        oracle.cases[caseName].rows.find((row) => row.indexedKey === key);
+      result.request.fields = result.request.fields.flatMap((field) =>
+        field !== "creators"
+          ? [field]
+          : member
+            ? ["firstAuthor.fullName", "firstAuthor.role"]
+            : ["firstAuthor"],
+      );
+      for (const row of result.rows) {
+        delete row.values.creators;
+        const { firstAuthor, firstAuthorRole } = item(row.indexedKey);
+        const role = firstAuthorRole ?? "author";
+        if (member) {
+          row.values["firstAuthor.fullName"] = firstAuthor;
+          row.values["firstAuthor.role"] = firstAuthor === null ? null : role;
+        } else
+          row.values.firstAuthor =
+            firstAuthor === null ? null : { fullName: firstAuthor, role };
+      }
+      assert.deepEqual(validate(caseName, result, { runRoot: root }), []);
+      if (member) result.rows[0].values["firstAuthor.fullName"] = "Eve Editor";
+      else result.rows[0].values.firstAuthor.fullName = "Eve Editor";
+      assert.match(
+        validate(caseName, result, { runRoot: root }).join("\n"),
+        /wrong first author/,
+      );
+    }
+  }
+});
+
+await test("takes the editor as the first author of an editors-only handbook", () => {
+  const result = envelope("edge");
+  const handbook = result.rows.find((row) => row.indexedKey === "EVALED33");
+  handbook.values.creators[0].role = "translator";
+  assert.match(
+    validate("edge", result, { runRoot: root }).join("\n"),
+    /wrong first author for EVALED33/,
   );
 });
 

@@ -90,7 +90,10 @@ await test("a generated Fixture stays unchanged and gives byte-identical seeded 
       const group = edge.indexedKey.endsWith("g118");
       const key = group ? edge.indexedKey.slice(0, -4) : edge.indexedKey;
       const people = creators.all(key, group ? 3 : 1);
-      const firstAuthor = people.find((person) => person.role === "author");
+      // The first Primary Creator: an author, else an editor (ADR 0074).
+      const firstAuthor =
+        people.find((person) => person.role === "author") ??
+        people.find((person) => person.role === "editor");
       assert.equal(
         firstAuthor
           ? `${String(firstAuthor.firstName)} ${String(firstAuthor.lastName)}`
