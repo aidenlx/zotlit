@@ -39,6 +39,7 @@ export const ITEM_QUERY_LAYOUT = {
   creators: ["creatorID", "firstName", "lastName", "fieldMode"],
   creatorTypes: ["creatorTypeID", "creatorType"],
   itemCreators: ["itemID", "creatorID", "creatorTypeID", "orderIndex"],
+  itemTypeCreatorTypes: ["itemTypeID", "creatorTypeID", "primaryField"],
   tags: ["tagID", "name"],
   itemTags: ["itemID", "tagID", "type"],
   collections: [

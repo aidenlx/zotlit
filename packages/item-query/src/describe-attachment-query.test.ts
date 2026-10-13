@@ -48,6 +48,7 @@ it("publishes executable Attachment fields, parent paths, defaults and Sortable 
     "indexedKey",
     "item.date",
     "item.dateModified",
+    "item.firstAuthor",
     "item.indexedKey",
     "item.key",
     "item.title",

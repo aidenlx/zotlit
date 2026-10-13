@@ -82,18 +82,21 @@ const ARTICLE = item({
       lastName: "Lovelace",
       fieldMode: 0,
       creatorType: "author",
+      primary: true,
     },
     {
       firstName: "",
       lastName: "World Health Organization",
       fieldMode: 1,
       creatorType: "author",
+      primary: true,
     },
     {
       firstName: "Ada",
       lastName: "Lovelace",
       fieldMode: 0,
       creatorType: "editor",
+      primary: false,
     },
   ],
   tags: ["to-read", "To-Read", "methods"],
@@ -952,6 +955,94 @@ describe("relation lists", () => {
 
 // The vectors assert primitive values: a date is read through its text, its
 // parts, or a comparison.
+describe("first author", () => {
+  const creator = (
+    lastName: string,
+    creatorType: string,
+    options: { firstName?: string; primary?: boolean; fieldMode?: 0 | 1 } = {},
+  ) => ({
+    firstName: options.firstName ?? "",
+    lastName,
+    fieldMode: options.fieldMode ?? 0,
+    creatorType,
+    primary: options.primary ?? false,
+  });
+
+  // An edited handbook: a chapter author in Zotero's order after its editors.
+  const HANDBOOK = item({
+    itemType: "book",
+    creators: [
+      creator("Hopper", "editor", { firstName: "Grace" }),
+      creator("Lovelace", "author", { firstName: "Ada", primary: true }),
+    ],
+  });
+  const EDITED = item({
+    itemType: "book",
+    creators: [
+      creator("Translator", "translator"),
+      creator("Hopper", "editor", { firstName: "Grace" }),
+    ],
+  });
+  const FILM = item({
+    itemType: "film",
+    creators: [
+      creator("Writer", "scriptwriter"),
+      creator("Kubrick", "director", { firstName: "Stanley", primary: true }),
+    ],
+  });
+
+  it("takes the first creator of the primary creator type", () => {
+    expect(valueOf("firstAuthor.family", HANDBOOK)).toBe("Lovelace");
+    expect(valueOf("firstAuthor.role", HANDBOOK)).toBe("author");
+    expect(valueOf("firstAuthor.family", FILM)).toBe("Kubrick");
+    expect(valueOf("firstAuthor.fullName", ARTICLE)).toBe("Ada Lovelace");
+  });
+
+  it("falls back to an editor when no creator has the primary type", () => {
+    expect(valueOf("firstAuthor.family", EDITED)).toBe("Hopper");
+    expect(valueOf("firstAuthor.role", EDITED)).toBe("editor");
+  });
+
+  it("is null for an Item without a Primary Creator", () => {
+    const translated = item({
+      creators: [creator("Translator", "translator")],
+    });
+
+    expect(valueOf("firstAuthor", translated)).toBeNull();
+    expect(valueOf("firstAuthor.family", translated)).toBeNull();
+    expect(valueOf("firstAuthor.family", item())).toBeNull();
+  });
+
+  it("reads a one-field name as literal", () => {
+    const report = item({
+      creators: [
+        creator("World Health Organization", "author", {
+          primary: true,
+          fieldMode: 1,
+        }),
+      ],
+    });
+
+    expect(valueOf("firstAuthor.literal", report)).toBe(
+      "World Health Organization",
+    );
+    expect(valueOf("firstAuthor.family", report)).toBe("");
+  });
+
+  it("filters by a member", () => {
+    expect(
+      matches(plan('firstAuthor.family == "Lovelace"').root, HANDBOOK, CLOCK),
+    ).toBe(true);
+    expect(
+      matches(plan('firstAuthor.family == "Hopper"').root, HANDBOOK, CLOCK),
+    ).toBe(false);
+  });
+
+  it("rejects an unknown member", () => {
+    expect(codeOfFault(problem("firstAuthor.surname"), ITEMS)).toBeDefined();
+  });
+});
+
 describe("now() and today()", () => {
   vectors([
     ["now().toString()", "2024-07-15T12:00:00Z"],
