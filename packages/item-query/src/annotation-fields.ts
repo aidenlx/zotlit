@@ -181,7 +181,17 @@ const attachmentParent = liftParentRecord({
     attachment,
   }),
   candidates: ["indexedKey", "key"],
-  sortable: ["indexedKey", "key"],
+  sortable: [
+    "indexedKey",
+    "key",
+    "dateAdded",
+    "dateModified",
+    "title",
+    "contentType",
+    "fileType",
+    "linkMode",
+  ],
+  // `item`, `library`, and `annotations` repeat paths of the Annotation itself.
   listed: [
     "indexedKey",
     "title",
@@ -191,6 +201,10 @@ const attachmentParent = liftParentRecord({
     "exists",
     "key",
     "fileType",
+    "url",
+    "tags",
+    "dateAdded",
+    "dateModified",
   ],
   syntax: "record",
 });
