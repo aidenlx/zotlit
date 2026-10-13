@@ -27,6 +27,18 @@ Codex runs `exec --json --ephemeral --sandbox workspace-write --output-schema`. 
 
 The tiny `claude-sample.jsonl` records a real Claude Code 2.1.296 Bash exchange and structured final output. Session IDs, billing, and unrelated metadata were removed. Parser tests also cover warnings, failures, retries, duplicate events, and evaluator reads.
 
+## Case families
+
+Each case in `oracle.json` has a `kind`: `items`, `annotations`, or `research`. The family module with that name (`items.mjs`, `annotations.mjs`, `research.mjs`) owns the envelope check, the answer check, the prompt, the answer schema, and the evidence that the runner retains for the case. The family also owns its accepted equivalences. `check.mjs` and `run.mjs` select the family from `kind`. Per-case differences are data in the oracle entry, for example `requiredFields`, `ordered`, `export`, `excerptImage`, `csv`, and `discovery`. `result-rows.mjs` holds the shared row and envelope checks.
+
+A live run copies its evidence into the run folder and grades that folder with `gradeRun`. `regrade.mjs` grades a saved run folder through the same `gradeRun` path and compares the result with the saved `check.json` verdict:
+
+```sh
+node skills/zotlit-query/evals/regrade.mjs .scratch/zotlit-query-evals/<run-id>...
+```
+
+The command exits with code 1 when a regraded verdict differs from the saved verdict. Runs saved before the Excerpt Image copy was retained read the image from the receipt path; if that file is gone, the regrade reports an error for that run.
+
 ## Corpus and coverage
 
 The base Fixture provides real source documents, an Excerpt Image, multiple Libraries, and a deliberately missing linked file. The eval seed adds:
@@ -55,7 +67,7 @@ The prototype's `search=` and `format=csv` forms are outside ADR 0071. Those tas
 
 ## Evidence and design issues
 
-Each case keeps `report.json`, `report.md`, `check.json`, `answer.json`, `result.json`, `agent-events.jsonl`, and `agent-stderr.txt`. Image and export cases retain their receipts; the CSV case retains `advisor.csv`.
+Each case keeps `report.json`, `report.md`, `check.json`, `answer.json`, `result.json`, `agent-events.jsonl`, and `agent-stderr.txt`. Image and export cases retain their receipts, and the image case also retains `excerpt-image.png`; the CSV case retains `advisor.csv`.
 
 Reports separate environment failures, missing or malformed agent output, and wrong task answers. Metrics count Query calls by dataset, schema, guide, and Annotation Image calls from `cli-calls.jsonl`, including calls made through nested shell scripts. Each receipt records argv, exit code, stdout byte length, and time. A successful value-listing receipt also records the returned values; the Collection discovery case requires its exact path before the result query. `cliStdoutBytes` sums those bytes. Event streams still supply misreadings, evaluator-source read detection, and tool-output context bytes. A command mentioned in an event stream does not count as a CLI call without a receipt. `contextualBytes` measures completed tool-output bytes visible to the agent, including Claude Read results. It is a context-use proxy, not a token count.
 

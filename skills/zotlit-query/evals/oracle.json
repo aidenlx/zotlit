@@ -6,6 +6,9 @@
   },
   "cases": {
     "include": {
+      "kind": "items",
+      "from": "items",
+      "requiredFields": ["title", "date.year"],
       "count": 42,
       "missingYear": 5,
       "rows": [
@@ -356,6 +359,14 @@
       "command": "zotlit:query 'from=items' 'library=all' 'filter=itemType == \"journalArticle\" && tags.contains(\"query-eval\") && custom[\"review.status\"] == \"include\"' 'fields=title,date.year,creators' 'limit=all'"
     },
     "export": {
+      "kind": "items",
+      "from": "items",
+      "requiredFields": [
+        "title",
+        "date.year",
+        "custom[\"review.status\"]",
+        "abstractNote"
+      ],
       "count": 125,
       "missingYear": 13,
       "rows": [
@@ -1368,9 +1379,13 @@
         "limit": "all",
         "output": "/absolute/new-export.json"
       },
-      "command": "zotlit:query 'from=items' 'library=all' 'filter=itemType == \"journalArticle\" && tags.contains(\"query-eval\")' 'fields=title,date.year,creators,custom[\"review.status\"],abstractNote' 'limit=all' 'output=/absolute/new-export.json'"
+      "command": "zotlit:query 'from=items' 'library=all' 'filter=itemType == \"journalArticle\" && tags.contains(\"query-eval\")' 'fields=title,date.year,creators,custom[\"review.status\"],abstractNote' 'limit=all' 'output=/absolute/new-export.json'",
+      "export": true
     },
     "edge": {
+      "kind": "items",
+      "from": "items",
+      "requiredFields": ["title", "date.year"],
       "count": 3,
       "missingYear": 1,
       "rows": [
@@ -1403,9 +1418,19 @@
         "fields": "title,date.year,creators,library",
         "limit": "all"
       },
-      "command": "zotlit:query 'from=items' 'library=all' 'filter=itemType == \"book\" && tags.contains(\"query-eval-edge\")' 'fields=title,date.year,creators,library' 'limit=all'"
+      "command": "zotlit:query 'from=items' 'library=all' 'filter=itemType == \"book\" && tags.contains(\"query-eval-edge\")' 'fields=title,date.year,creators,library' 'limit=all'",
+      "duplicateKeyGroups": [
+        {
+          "key": "EVALSAME",
+          "libraries": ["personal", "group:118"]
+        }
+      ]
     },
     "annotations": {
+      "kind": "annotations",
+      "from": "annotations",
+      "ordered": true,
+      "sourceSuffix": "attachments/rougier-2014.pdf",
       "count": 8,
       "keys": [
         "TYY6Z6ZF",
@@ -1478,9 +1503,12 @@
         "limit": "all",
         "sort": "attachment.indexedKey,sortIndex"
       },
-      "command": "zotlit:query 'from=annotations' 'library=personal' 'filter=item.citationKey == \"rougierTenSimpleRules2014\"' 'fields=type,pageLabel,text,comment,attachment.path' 'limit=all' 'sort=attachment.indexedKey,sortIndex'"
+      "command": "zotlit:query 'from=annotations' 'library=personal' 'filter=item.citationKey == \"rougierTenSimpleRules2014\"' 'fields=type,pageLabel,text,comment,attachment.path' 'limit=all' 'sort=attachment.indexedKey,sortIndex'",
+      "answerFields": ["type", "pageLabel", "text", "comment", "attachmentPath"]
     },
     "mixed": {
+      "kind": "annotations",
+      "from": "annotations",
       "count": 1,
       "keys": ["FDRFQ7C2"],
       "itemTitle": "Ten Simple Rules for Better Figures",
@@ -1494,9 +1522,18 @@
         "fields": "item.title,tags,hasExcerptImage",
         "limit": "all"
       },
-      "command": "zotlit:query 'from=annotations' 'library=personal' 'filter=type == \"image\" && tags.contains(\"figure\") && item.citationKey == \"rougierTenSimpleRules2014\"' 'fields=item.title,tags,hasExcerptImage' 'limit=all'"
+      "command": "zotlit:query 'from=annotations' 'library=personal' 'filter=type == \"image\" && tags.contains(\"figure\") && item.citationKey == \"rougierTenSimpleRules2014\"' 'fields=item.title,tags,hasExcerptImage' 'limit=all'",
+      "itemKey": "RUGIER24",
+      "attachmentKey": "RGRPDF24",
+      "evidence": ["tags", "hasExcerptImage", "itemTitle"],
+      "filterIncludes": ["type", "tags", "item.citationKey"],
+      "answerFields": ["itemTitle", "tags", "hasExcerptImage"]
     },
     "position": {
+      "kind": "annotations",
+      "from": "annotations",
+      "requiredFields": ["position"],
+      "sourceSuffix": "attachments/rougier-2014.pdf",
       "count": 1,
       "keys": ["PUPR5FG5"],
       "itemTitle": "Ten Simple Rules for Better Figures",
@@ -1513,9 +1550,15 @@
         "fields": "text,position,attachment.path",
         "limit": "all"
       },
-      "command": "zotlit:query 'from=annotations' 'library=personal' 'filter=text.contains(\"Identify Your Message\") && item.citationKey == \"rougierTenSimpleRules2014\"' 'fields=text,position,attachment.path' 'limit=all'"
+      "command": "zotlit:query 'from=annotations' 'library=personal' 'filter=text.contains(\"Identify Your Message\") && item.citationKey == \"rougierTenSimpleRules2014\"' 'fields=text,position,attachment.path' 'limit=all'",
+      "itemKey": "RUGIER24",
+      "attachmentKey": "RGRPDF24",
+      "evidence": ["text", "position"],
+      "answerFields": ["position", "attachmentPath"]
     },
     "image": {
+      "kind": "annotations",
+      "from": "annotations",
       "count": 1,
       "keys": ["FDRFQ7C2"],
       "itemTitle": "Ten Simple Rules for Better Figures",
@@ -1531,7 +1574,12 @@
         "fields": "hasExcerptImage",
         "limit": "all"
       },
-      "command": "zotlit:query 'from=annotations' 'library=personal' 'filter=type == \"image\" && tags.contains(\"figure\") && item.citationKey == \"rougierTenSimpleRules2014\"' 'fields=hasExcerptImage' 'limit=all'"
+      "command": "zotlit:query 'from=annotations' 'library=personal' 'filter=type == \"image\" && tags.contains(\"figure\") && item.citationKey == \"rougierTenSimpleRules2014\"' 'fields=hasExcerptImage' 'limit=all'",
+      "itemKey": "RUGIER24",
+      "attachmentKey": "RGRPDF24",
+      "evidence": ["hasExcerptImage"],
+      "excerptImage": true,
+      "answerFields": []
     },
     "reading_plan": {
       "kind": "research",
@@ -1611,6 +1659,9 @@
       "command": "zotlit:query 'from=items' 'library=all' 'filter=itemType == \"journalArticle\" && tags.contains(\"query-annotation-eval\")' 'fields=title,library,annotations.length,annotations' 'limit=all'"
     },
     "shared_marks": {
+      "kind": "annotations",
+      "from": "annotations",
+      "requiredFields": ["text", "colorName"],
       "count": 2,
       "keys": ["QANMARK2", "QANMARK2g118"],
       "request": {
@@ -1620,9 +1671,20 @@
         "fields": "text,colorName,library",
         "limit": "all"
       },
-      "command": "zotlit:query 'from=annotations' 'library=personal,group:118' 'filter=type == \"highlight\" && text == \"Identify Your Message\" && item.title == \"Figure design reading copy\"' 'fields=text,colorName,library' 'limit=all'"
+      "command": "zotlit:query 'from=annotations' 'library=personal,group:118' 'filter=type == \"highlight\" && text == \"Identify Your Message\" && item.title == \"Figure design reading copy\"' 'fields=text,colorName,library' 'limit=all'",
+      "answerFields": ["itemIndexedKey", "library", "text", "colorName"]
     },
     "attachment": {
+      "kind": "annotations",
+      "from": "annotations",
+      "ordered": true,
+      "requiredFields": [
+        "type",
+        "pageLabel",
+        "text",
+        "comment",
+        "attachment.path"
+      ],
       "count": 2,
       "keys": ["QANMARK2g118", "QANNT222g118"],
       "request": {
@@ -1633,9 +1695,21 @@
         "limit": "all",
         "sort": "attachment.indexedKey,sortIndex"
       },
-      "command": "zotlit:query 'from=annotations' 'library=group:118' 'filter=attachment.indexedKey == \"QANPDF22g118\"' 'fields=type,pageLabel,text,comment,attachment.path' 'limit=all' 'sort=attachment.indexedKey,sortIndex'"
+      "command": "zotlit:query 'from=annotations' 'library=group:118' 'filter=attachment.indexedKey == \"QANPDF22g118\"' 'fields=type,pageLabel,text,comment,attachment.path' 'limit=all' 'sort=attachment.indexedKey,sortIndex'",
+      "answerFields": [
+        "itemIndexedKey",
+        "attachmentIndexedKey",
+        "type",
+        "pageLabel",
+        "text",
+        "comment",
+        "attachmentPath"
+      ]
     },
     "colors": {
+      "kind": "annotations",
+      "from": "annotations",
+      "requiredFields": ["text", "colorName", "tags", "pageIndex"],
       "count": 1,
       "keys": ["QANMARK2"],
       "request": {
@@ -1645,9 +1719,14 @@
         "fields": "text,colorName,tags,pageIndex",
         "limit": "all"
       },
-      "command": "zotlit:query 'from=annotations' 'library=personal' 'filter=item.indexedKey == \"QANPAPER\" && type == \"highlight\" && colorName == \"blue\" && tags.contains(\"query-annotation-method\") && pageLabel == \"1\"' 'fields=text,colorName,tags,pageIndex' 'limit=all'"
+      "command": "zotlit:query 'from=annotations' 'library=personal' 'filter=item.indexedKey == \"QANPAPER\" && type == \"highlight\" && colorName == \"blue\" && tags.contains(\"query-annotation-method\") && pageLabel == \"1\"' 'fields=text,colorName,tags,pageIndex' 'limit=all'",
+      "answerFields": ["text", "colorName", "tags", "pageIndex"]
     },
     "reverse_pages": {
+      "kind": "annotations",
+      "from": "annotations",
+      "ordered": true,
+      "requiredFields": ["type", "pageLabel", "pageIndex", "text"],
       "count": 2,
       "keys": ["QANPAGE2", "QANMARK2"],
       "request": {
@@ -1658,9 +1737,13 @@
         "limit": "all",
         "sort": "-pageIndex,-sortIndex"
       },
-      "command": "zotlit:query 'from=annotations' 'library=personal' 'filter=item.indexedKey == \"QANPAPER\"' 'fields=type,pageLabel,pageIndex,text' 'limit=all' 'sort=-pageIndex,-sortIndex'"
+      "command": "zotlit:query 'from=annotations' 'library=personal' 'filter=item.indexedKey == \"QANPAPER\"' 'fields=type,pageLabel,pageIndex,text' 'limit=all' 'sort=-pageIndex,-sortIndex'",
+      "answerFields": ["type", "pageLabel", "pageIndex", "text"]
     },
     "missing_source": {
+      "kind": "annotations",
+      "from": "annotations",
+      "requiredFields": ["comment", "attachment.path", "attachment.exists"],
       "count": 1,
       "keys": ["QANMISS2"],
       "request": {
@@ -1670,9 +1753,18 @@
         "fields": "comment,attachment.path,attachment.exists",
         "limit": "all"
       },
-      "command": "zotlit:query 'from=annotations' 'library=personal' 'filter=comment == \"Check this source when the file arrives.\"' 'fields=comment,attachment.path,attachment.exists' 'limit=all'"
+      "command": "zotlit:query 'from=annotations' 'library=personal' 'filter=comment == \"Check this source when the file arrives.\"' 'fields=comment,attachment.path,attachment.exists' 'limit=all'",
+      "answerFields": [
+        "attachmentIndexedKey",
+        "comment",
+        "attachmentPath",
+        "attachmentExists"
+      ]
     },
     "repair_filter": {
+      "kind": "annotations",
+      "from": "annotations",
+      "requiredFields": ["text", "colorName"],
       "count": 2,
       "keys": ["QANMARK2", "QANMARK2g118"],
       "request": {
@@ -1682,9 +1774,20 @@
         "fields": "text,colorName",
         "limit": "all"
       },
-      "command": "zotlit:query 'from=annotations' 'library=personal,group:118' 'filter=tags.contains(\"query-annotation-method\")' 'fields=text,colorName' 'limit=all'"
+      "command": "zotlit:query 'from=annotations' 'library=personal,group:118' 'filter=tags.contains(\"query-annotation-method\")' 'fields=text,colorName' 'limit=all'",
+      "answerFields": ["itemIndexedKey", "text", "colorName"]
     },
     "export_annotations": {
+      "kind": "annotations",
+      "from": "annotations",
+      "ordered": true,
+      "requiredFields": [
+        "type",
+        "pageLabel",
+        "text",
+        "comment",
+        "attachment.path"
+      ],
       "count": 2,
       "keys": ["QANMARK2g118", "QANNT222g118"],
       "request": {
@@ -1696,7 +1799,17 @@
         "sort": "attachment.indexedKey,sortIndex",
         "output": "/absolute/new-export.json"
       },
-      "command": "zotlit:query 'from=annotations' 'library=group:118' 'filter=attachment.indexedKey == \"QANPDF22g118\"' 'fields=type,pageLabel,text,comment,attachment.path' 'limit=all' 'sort=attachment.indexedKey,sortIndex' 'output=/absolute/new-export.json'"
+      "command": "zotlit:query 'from=annotations' 'library=group:118' 'filter=attachment.indexedKey == \"QANPDF22g118\"' 'fields=type,pageLabel,text,comment,attachment.path' 'limit=all' 'sort=attachment.indexedKey,sortIndex' 'output=/absolute/new-export.json'",
+      "export": true,
+      "answerFields": [
+        "itemIndexedKey",
+        "attachmentIndexedKey",
+        "type",
+        "pageLabel",
+        "text",
+        "comment",
+        "attachmentPath"
+      ]
     },
     "no_usable_pdf": {
       "kind": "research",

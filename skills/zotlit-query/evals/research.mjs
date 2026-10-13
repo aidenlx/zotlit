@@ -1,8 +1,10 @@
-// Research-case evidence is checked against literals, independently of the agent.
+// The `research` case family: evidence is checked against literals, independently of the agent.
+import { cp, readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
-import { librarySelector } from "./libraries.mjs";
-import { resultRows } from "./result-rows.mjs";
+import { checkRows, commonChecks, resultRows } from "./result-rows.mjs";
+
 export function resolveExpected(value, runRoot) {
   if (typeof value === "string") return value.replaceAll("$RUN", runRoot);
   if (Array.isArray(value))
@@ -12,31 +14,6 @@ export function resolveExpected(value, runRoot) {
       Object.entries(value).map(([k, v]) => [k, resolveExpected(v, runRoot)]),
     );
   return value;
-}
-function checkRows(actual, expected) {
-  const errors = [];
-  if (!Array.isArray(actual)) return ["rows are missing"];
-  const rows = new Map(actual.map((r) => [r.indexedKey, r]));
-  if (rows.size !== actual.length || actual.length !== expected.length)
-    errors.push("wrong rows or duplicate identities");
-  for (const row of expected) {
-    const found = rows.get(row.indexedKey);
-    if (!found) {
-      errors.push(`missing ${row.indexedKey}`);
-      continue;
-    }
-    for (const [field, value] of Object.entries(row.values))
-      if (
-        !isDeepStrictEqual(
-          field === "library"
-            ? librarySelector(found.values?.[field])
-            : found.values?.[field],
-          value,
-        )
-      )
-        errors.push(`wrong ${field} for ${row.indexedKey}`);
-  }
-  return errors;
 }
 function expectedGroups(expected, path) {
   const values = expected.groupValues?.[path];
@@ -350,4 +327,84 @@ export function checkCollectionDiscovery(spec, calls) {
     : [
         "Discover the Collection path with zotlit:query-values before filtering by it",
       ];
+}
+
+export function checkEnvelope(spec, envelope, context) {
+  const expected = researchExpectation(spec, envelope);
+  return [
+    ...commonChecks(envelope, expected, context).errors,
+    ...checkResearch(expected, envelope, context.runRoot),
+  ];
+}
+
+export const checkAnswer = checkResearchAnswer;
+export const answerSchema = researchSchema;
+
+export function prompt(_spec, { preamble, agentRoot, result }) {
+  return `${preamble}Save the complete successful query envelope at ${result} and read it before answering. Use a single complete query when the task can be answered by following relations or grouping. Your final JSON must contain count (the total matched rows), rows (each identity and requested values; flatten grouped rows), groups (value and count, or []), limitation (null unless a requested capability is unavailable), and exportPath (null unless you produced a CSV). For a CSV task, save advisor.csv at ${join(agentRoot, "advisor.csv")} and retain the query JSON as evidence. The runner copies advisor.csv to ${join(agentRoot, "..", "advisor.csv")} after the run. Report that retained path; do not write there. Express an unavailable fuzzy-search capability as fuzzy-search-unavailable. Use only this folder for files you create.`;
+}
+
+export async function retainEvidence(spec, { agentRoot, root }) {
+  if (spec.csv)
+    await cp(join(agentRoot, "advisor.csv"), join(root, "advisor.csv"));
+}
+
+export async function loadEvidence(spec, root) {
+  return spec.csv
+    ? { csv: await readFile(join(root, "advisor.csv"), "utf8") }
+    : {};
+}
+
+export function parseCsv(text) {
+  const rows = [];
+  let row = [],
+    value = "",
+    quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (char === '"') {
+      if (quoted && text[i + 1] === '"') {
+        value += '"';
+        i++;
+      } else quoted = !quoted;
+    } else if (char === "," && !quoted) {
+      row.push(value);
+      value = "";
+    } else if (char === "\n" && !quoted) {
+      row.push(value.replace(/\r$/, ""));
+      rows.push(row);
+      row = [];
+      value = "";
+    } else value += char;
+  }
+  if (quoted) throw new Error("CSV has an unclosed quoted value");
+  if (value || row.length) {
+    row.push(value);
+    rows.push(row);
+  }
+  return rows;
+}
+
+function checkCsv(spec, csv) {
+  const parsed = parseCsv(csv);
+  const expected = spec.rows.map((row) => [
+    row.values.title,
+    String(row.values["date.year"] ?? ""),
+  ]);
+  return parsed.length !== expected.length + 1 ||
+    expected.some(
+      (row) => !parsed.slice(1).some((found) => isDeepStrictEqual(found, row)),
+    )
+    ? ["CSV has wrong titles, years, or row count"]
+    : [];
+}
+
+export function checkRun(spec, { cliCalls, metrics, csv }) {
+  return [
+    ...checkCollectionDiscovery(spec, cliCalls),
+    ...(metrics.queryExitZero < 1
+      ? ["agent made no completed Query call"]
+      : []),
+    ...(spec.csv ? checkCsv(spec, csv) : []),
+  ];
 }

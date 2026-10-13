@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
+import { join } from "node:path";
 import test from "node:test";
 
 import { validate } from "./check.mjs";
@@ -469,5 +470,45 @@ await test("tag groups overlap: a paper in two groups is one paper of the count"
       context,
     ).join("\n"),
     /wrong group counts/,
+  );
+});
+
+const root = "/evaluation-run";
+
+function readingPlanItems() {
+  const spec = oracle.cases.reading_plan;
+  return {
+    ok: true,
+    contractVersion: 3,
+    command: "zotlit:query",
+    warnings: [],
+    identity: {
+      source: { databasePath: join(root, "zotero-data", "zotero.sqlite") },
+      vault: { path: join(root, "zt-fixture-vault") },
+    },
+    request: { from: "items", fields: spec.fields, limit: null },
+    truncated: false,
+    returnedCount: 3,
+    rows: structuredClone(spec.rows),
+  };
+}
+
+await test("reading plan accepts complete Item rows and rejects missing rows", () => {
+  assert.deepEqual(
+    validate("reading_plan", readingPlanItems(), { runRoot: root }),
+    [],
+  );
+
+  const wrongItem = readingPlanItems();
+  wrongItem.rows.pop();
+  assert.match(
+    validate("reading_plan", wrongItem, { runRoot: root }).join("\n"),
+    /missing/,
+  );
+  const noItems = readingPlanItems();
+  delete noItems.rows;
+  assert.match(
+    validate("reading_plan", noItems, { runRoot: root }).join("\n"),
+    /rows are missing/,
   );
 });
