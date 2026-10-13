@@ -9,6 +9,7 @@ import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
 import {
   ANNOTATIONS,
+  ATTACHMENTS,
   AttachmentFileResolver,
   collectQuery,
   consumeQuery,
@@ -250,6 +251,50 @@ it("combines Annotation fields with parent dates, Tags, and projections", async 
   expect(exit.value.rows!.map((row) => row.indexedKey)).toEqual(["ANN2UNDR"]);
   expect(exit.value.rows![0]?.values["item.date.year"]).toBe(2020);
 });
+
+it.each(["title", "fileType", "dateAdded"])(
+  "orders Annotations by the parent Attachment %s as Attachment Query orders their Attachments",
+  async (name) => {
+    using scenario = openScenarioDatabase({ annotations: true });
+    const libraries = Object.values(SCENARIO_LIBRARIES);
+    for (const direction of ["asc", "desc"] as const) {
+      const annotations = await runEffect(
+        collectQuery(ANNOTATIONS, {
+          libraries,
+          fields: ["attachment.indexedKey"],
+          sort: [
+            { field: `attachment.${name}`, direction },
+            { field: "attachment.indexedKey", direction: "asc" },
+          ],
+        }),
+        { client: scenario.db },
+      );
+      const attachments = await runEffect(
+        collectQuery(ATTACHMENTS, {
+          libraries,
+          filter: "annotations.length > 0",
+          fields: [],
+          sort: [
+            { field: name, direction },
+            { field: "indexedKey", direction: "asc" },
+          ],
+        }),
+        { client: scenario.db },
+      );
+      if (annotations.exit._tag === "Failure")
+        throw new Error(String(annotations.exit.cause));
+      if (attachments.exit._tag === "Failure")
+        throw new Error(String(attachments.exit.cause));
+      const parents = annotations.exit.value.rows!.map(
+        (row) => row.values["attachment.indexedKey"],
+      );
+      expect(new Set(parents).size).toBeGreaterThan(1);
+      expect(
+        parents.filter((key, index) => key !== parents[index - 1]),
+      ).toEqual(attachments.exit.value.rows!.map((row) => row.indexedKey));
+    }
+  },
+);
 
 it("reads parent custom fields, relations, timestamps and identities through their Item semantics", async () => {
   using scenario = openScenarioDatabase({ annotations: true });
