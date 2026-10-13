@@ -271,7 +271,7 @@ The wire format of one `zotlit:*` command namespace — its envelope, payload fi
 _Avoid_: contract version (names the number, not the thing); protocol (that is the wire format for ZotLit Companion, the Zotero add-on)
 
 **Diagnostic**:
-The failure answer of a CLI Contract: a stable code, a statement of the fault, the recovery action to follow, and the parameter or place it points at. Item Query's Diagnostic also carries a Diagnostic Report.
+The failure answer of a CLI Contract: a stable code, a statement of the fault, the recovery action to follow, and the parameter or place it points at. The Item Query and Template Workbench Diagnostics also carry a Diagnostic Report, rendered by one shared renderer.
 _Avoid_: error object, failure payload, exception
 
 **CLI Dataset** _(Obsidian)_:

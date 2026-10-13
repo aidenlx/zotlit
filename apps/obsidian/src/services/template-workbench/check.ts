@@ -7,6 +7,7 @@ import * as v from "valibot";
 
 import { isIndexedKey } from "@zotlit/db";
 import type { CitationVariant } from "@zotlit/db";
+import { renderDiagnostic } from "@zotlit/item-query";
 import {
   captureRenderReport,
   renderIdentity,
@@ -43,7 +44,7 @@ import {
 } from "./check-profile-document";
 import { loadTemplateData } from "./data";
 import type { TemplateDataDeps } from "./data";
-import { CONTRACT_VERSION } from "./envelope";
+import { CONTRACT_VERSION, rejectionDiagnostic } from "./envelope";
 import { createInspectHandler, sourceRevision } from "./inspect";
 import type { InspectDeps, InspectDocument, SourceVersion } from "./inspect";
 import {
@@ -442,6 +443,24 @@ const checkParams = cliVariants(
   },
 );
 
+/**
+ * A refusal with the Diagnostic Report the other Workbench commands carry. A
+ * promoted render diagnostic keeps its render report under `report` and the
+ * editor's own vocabulary, so it stays as it is.
+ */
+function reported(diagnostic: FaultDiagnostic): FaultDiagnostic {
+  if ("report" in diagnostic || typeof diagnostic.message !== "string")
+    return diagnostic;
+  return {
+    ...diagnostic,
+    ...renderDiagnostic({
+      code: diagnostic.code,
+      message: diagnostic.message,
+      hint: diagnostic.hint,
+    }),
+  };
+}
+
 /** A decoded `template-check` request. */
 export type CheckRequest = v.InferOutput<typeof checkParams>;
 type CheckParam = CliParamName<typeof checkParams>;
@@ -458,16 +477,14 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
         contractVersion: CONTRACT_VERSION,
         command: TEMPLATE_CHECK_COMMAND,
         ok: false,
-        diagnostic: {
-          code: "INVALID_SELECTOR",
-          message: request.message,
+        diagnostic: rejectionDiagnostic({
+          ...request,
           hint:
             request.hint ??
             (request.message === ATTEMPT_LOOKUP_MESSAGE
               ? ATTEMPT_LOOKUP_HELP
               : INVALID_CHECK_HINT),
-          details: { parameter: request.parameter },
-        },
+        }),
       });
     const params = request.value;
     const output = params.output ?? [];
@@ -495,7 +512,9 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
         }
         if (copy.diagnostic) {
           delete copy.diagnostic.evidence;
-          delete copy.diagnostic.report;
+          // An array is the Diagnostic Report, which every disclosure keeps.
+          if (!Array.isArray(copy.diagnostic.report))
+            delete copy.diagnostic.report;
         }
       }
       const outputs = Object.fromEntries(
@@ -514,7 +533,7 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
         contractVersion: CONTRACT_VERSION,
         command: TEMPLATE_CHECK_COMMAND,
         ok: false,
-        diagnostic: { code, message, hint },
+        diagnostic: renderDiagnostic({ code, message, hint }),
       });
     if ("attempt" in params) {
       const retained = attempts.get(params.attempt);
@@ -604,7 +623,13 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
       }),
     });
     const finish = (context: CheckContext, result: CheckAnswerBody) => {
-      const merged: object = { ...context.answer, ...result };
+      const merged: object = {
+        ...context.answer,
+        ...result,
+        ...(result.diagnostic
+          ? { diagnostic: reported(result.diagnostic) }
+          : {}),
+      };
       const { checks } = merged as { checks?: Record<string, ProfileCheck> };
       // The checks map a branch returns stays the branch's own record, so the
       // attempt reports go into a copy rather than into that record.

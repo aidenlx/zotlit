@@ -329,13 +329,22 @@ describe("Template Workbench Profile documents", () => {
       key: "ITEM2345",
       source: "invalid source",
     });
+    const registered = DIAGNOSTIC_HINTS[code as keyof typeof DIAGNOSTIC_HINTS];
+    // A document fault carries the parser's own recovery as its hint.
+    const recovery =
+      error instanceof LiteratureNoteTemplateError ? error.recovery : undefined;
 
     expect(JSON.parse(output)).toMatchObject({
       ok: false,
       diagnostic: {
         code,
         message: error.message,
-        hint: DIAGNOSTIC_HINTS[code as keyof typeof DIAGNOSTIC_HINTS],
+        hint: recovery ?? registered,
+        severity: "error",
+        report:
+          recovery === undefined
+            ? [error.message, registered]
+            : [error.message, recovery, registered],
       },
     });
   });
@@ -359,7 +368,12 @@ describe("Template Workbench Profile documents", () => {
       ok: false,
       diagnostic: {
         code: "DUPLICATE_MANAGED_BLOCK",
-        hint: DIAGNOSTIC_HINTS.DUPLICATE_MANAGED_BLOCK,
+        hint: "Keep one Managed Block.",
+        report: [
+          "Document has two Managed Blocks",
+          "Keep one Managed Block.",
+          DIAGNOSTIC_HINTS.DUPLICATE_MANAGED_BLOCK,
+        ],
       },
     });
   });

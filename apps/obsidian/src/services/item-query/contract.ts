@@ -7,7 +7,6 @@
 
 import type { CliFlag, CliFlags } from "obsidian";
 
-import { diagnoseDecode, renderDiagnostic } from "@zotlit/item-query";
 import type {
   Diagnostic as QueryDiagnostic,
   ItemQueryError,
@@ -17,7 +16,7 @@ import type {
   SortSpec,
 } from "@zotlit/item-query";
 
-import { createCliDiagnostics } from "@/lib/cli-diagnostic";
+import { createRenderedCliDiagnostics } from "@/lib/cli-diagnostic";
 import type { CliRejection } from "@/lib/cli-params";
 import type { WorkbenchIdentity } from "@/services/template-workbench/envelope";
 import type { SchemaAsset } from "@/services/template-workbench/schema";
@@ -164,7 +163,7 @@ export interface Diagnostic extends QueryDiagnostic<
   details?: { parameter: string };
 }
 
-const base = createCliDiagnostics<
+const base = createRenderedCliDiagnostics<
   typeof DIAGNOSTIC_HINTS,
   Diagnostic["details"]
 >(DIAGNOSTIC_HINTS, "invalid-argument");
@@ -174,13 +173,11 @@ export function diagnostic(
   message: string,
   details?: Diagnostic["details"],
 ): Diagnostic {
-  const value = base.diagnostic(code, message, details);
-  return { ...value, ...renderDiagnostic(value) };
+  return base.diagnostic(code, message, details);
 }
 
 export function rejectionDiagnostic(rejection: CliRejection): Diagnostic {
-  const value = base.rejectionDiagnostic(rejection);
-  return { ...value, ...diagnoseDecode(rejection, value.hint) };
+  return base.rejectionDiagnostic(rejection);
 }
 
 /** A Target Library on the wire: local `libraryID` values stay inside. */
