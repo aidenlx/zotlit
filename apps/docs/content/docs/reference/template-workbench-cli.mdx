@@ -75,7 +75,7 @@ The replacement path is the same for all nine. Select the document with `zotlit:
 
 ## Contract version [#contract-version]
 
-The namespace declares its own contract version, currently 7, once, with the answer envelope that every Template Workbench command answers through. Every answer carries it as `contractVersion`, the first field of the answer. Each ZotLit CLI namespace versions its contract on its own, so this number does not track any other namespace.
+The namespace declares its own contract version, currently 8, once, with the answer envelope that every Template Workbench command answers through. Every answer carries it as `contractVersion`, the first field of the answer. Each ZotLit CLI namespace versions its contract on its own, so this number does not track any other namespace.
 
 An installed skill states the version it was written against. Compare that pin with the `contractVersion` of the first answer. When the two differ, the skill is the stale one: read the live guide again, starting with `obsidian zotlit:template-guide`, and follow the live contract rather than the skill.
 
@@ -85,7 +85,7 @@ Every answer except a successful `zotlit:template-guide` is a JSON string. The f
 
 ```json
 {
-  "contractVersion": 7,
+  "contractVersion": 8,
   "command": "zotlit:template-check",
   "ok": true
 }
@@ -112,14 +112,34 @@ Verify `identity.vault` and `identity.source` on every answer, and pass `expect-
 
 ### Diagnostic fields
 
-| Field     | Meaning                                                                                                     |
-| --------- | ----------------------------------------------------------------------------------------------------------- |
-| `code`    | The stable code, from the registry below.                                                                   |
-| `message` | What went wrong, naming the offending parameter, path, key, or template.                                    |
-| `hint`    | The recovery action to follow.                                                                              |
-| `details` | Optional context: `parameter`, a source expectation (`target`, `expected`, `actual`), `key`, or `template`. |
+| Field         | Meaning                                                                                                                                                                      |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `code`        | The stable code, from the registry below.                                                                                                                                    |
+| `message`     | What went wrong, naming the offending parameter, path, key, or template.                                                                                                     |
+| `hint`        | The most specific recovery action to follow.                                                                                                                                 |
+| `severity`    | Always `error`.                                                                                                                                                              |
+| `report`      | The diagnostic as an array of lines: the message, the place and the marked source line when the fault has one, and the recovery actions. Read it first.                      |
+| `location`    | Optional place: `span` gives UTF-16 offsets `from` (inclusive) and `to` (exclusive) in the named source, `path` names a manifest field or parameter, `argument` a parameter. |
+| `excerpt`     | Optional `before`, `at`, and `after` text on the source line; `at` is the marked text.                                                                                       |
+| `found`       | The marked text or the received value, or an empty string.                                                                                                                   |
+| `expected`    | The allowed values, or an empty array.                                                                                                                                       |
+| `suggestions` | Candidate corrections, or an empty array.                                                                                                                                    |
+| `details`     | Optional context: `parameter`, a source expectation (`target`, `expected`, `actual`), `key`, or `template` with its 1-based `line` and `column`.                             |
 
-Every code in the registry is declared together with its default recovery action, and every diagnostic carries a `hint`. A rejected parameter can carry a recovery action of its own instead, such as the `name=value` form of a `--` token. The caller follows the `hint` of the response.
+These are the fields of a `zotlit:query` diagnostic too, so one reader serves both namespaces.
+
+A report for a fault in a template, a document, or a frontmatter expression names the place and marks it:
+
+```text
+undefined filter: bogus, line:2, col:1
+--> note:2:1
+{{ zt.creators | bogus: 1 }}
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Correct "{{ zt.creators | bogus: 1 }}" at note:2:1, or the selected object, then run the command again.
+Read the message to find the failed expression, correct the Template or the selected object, then run the command again.
+```
+
+Every code in the registry is declared together with its default recovery action, and every diagnostic carries a `hint`. When the fault gives a more specific action, such as the place to correct, the file name of a missing partial, or the nearest configured frontmatter key, `hint` is that action and the default action is the last line of `report`. A rejected parameter can carry a recovery action of its own, such as the `name=value` form of a `--` token. The caller follows the `hint` of the response.
 
 ## Diagnostic codes [#diagnostic-codes]
 

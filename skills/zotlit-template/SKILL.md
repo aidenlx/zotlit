@@ -10,10 +10,10 @@ description: "Create, edit, diagnose, and verify ZotLit Template Documents in an
 1. Read `obsidian help zotlit` and `obsidian zotlit:template-guide`. Keep one explicit `vault=<name>` prefix on calls. Use `template-inspect` to identify the selected document and confirm the vault and Zotero source. Use the returned source identity on later calls as the live help describes.
 2. Read the selected source and its diagnostics. Preserve unrelated source and Profile identity. If the edit needs an unfamiliar data field, use focused `template-data` discovery; otherwise continue with the source already available.
 3. Edit the Template Document directly with file tools. For a trial or an uninstalled document, write a complete scratch file and check that draft. Keep scratch files outside the installed template folder.
-4. Run `template-check` against an Item the source's own `match` rule selects, or against an existing Literature Note. Select and read the outputs affected by the request. Compare actual output with the requested result and, for an update, with the existing note's user text. Follow failed responses through their diagnostic hints, then edit and check again.
+4. Run `template-check` against an Item the source's own `match` rule selects, or against an existing Literature Note. Select and read the outputs affected by the request. Compare actual output with the requested result and, for an update, with the existing note's user text. On a failed response, read `diagnostic.report` first: it names the place and marks the source line. Follow its hint, then edit and check again.
 5. Complete only when the checked source revision is current, all required checks pass, and the inspected output matches the request. After saving a previously checked draft to its installed path, check the saved document again. A draft-only request completes with the scratch file still uninstalled. Prove preservation with bytes: hash an unrelated file before and after, or compare it against the revision the check reports. Report the changed file and the output you verified; state any unverified requirement.
 
-This skill is written against Template Workbench CLI Contract version 7. Compare the first answer's `contractVersion`; if it differs, read the live guide again and follow that contract.
+This skill is written against Template Workbench CLI Contract version 8. Compare the first answer's `contractVersion`; if it differs, read the live guide again and follow that contract.
 
 ## Read the relevant guide topic
 

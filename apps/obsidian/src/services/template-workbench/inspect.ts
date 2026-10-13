@@ -5,6 +5,7 @@ import { MarkdownView } from "obsidian";
 import type { App, CliHandler } from "obsidian";
 import * as v from "valibot";
 
+import { renderDiagnostic } from "@zotlit/item-query";
 import { formatPlainTemplateDocument } from "@zotlit/templates/facade";
 
 import {
@@ -34,7 +35,7 @@ import type {
   TemplateService,
 } from "@/services/template/service";
 
-import { CONTRACT_VERSION } from "./envelope";
+import { CONTRACT_VERSION, rejectionDiagnostic } from "./envelope";
 import type { WorkbenchIdentity } from "./envelope";
 import type { InspectDiagnosticCode } from "./inspect-contract";
 import {
@@ -423,7 +424,7 @@ export function createInspectHandler(
     const fail = (code: keyof typeof INSPECT_DIAGNOSTICS, context?: object) =>
       answer({
         ok: false,
-        diagnostic: { code, ...INSPECT_DIAGNOSTICS[code] },
+        diagnostic: renderDiagnostic({ code, ...INSPECT_DIAGNOSTICS[code] }),
         ...context,
       });
     const request = decodeCliParams(params, inspectParams, {
@@ -432,12 +433,10 @@ export function createInspectHandler(
     if (request.kind === "invalid")
       return answer({
         ok: false,
-        diagnostic: {
-          code: "INVALID_SELECTOR",
-          message: request.message,
+        diagnostic: rejectionDiagnostic({
+          ...request,
           hint: request.hint ?? INSPECT_DIAGNOSTICS.INVALID_SELECTOR.hint,
-          details: { parameter: request.parameter },
-        },
+        }),
       });
     const query = request.value;
     if (
