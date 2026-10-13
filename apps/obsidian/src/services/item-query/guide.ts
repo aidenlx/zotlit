@@ -320,7 +320,9 @@ SORT
   defaults.
   indexedKey and key are Sortable Fields in every dataset. Parent keys are
   sortable as item.indexedKey, item.key, attachment.indexedKey, and attachment.key
-  where that parent exists. Attachment fileType is also sortable.
+  where that parent exists. Attachment fileType is also sortable. Annotations
+  sort by each Sortable Field of Attachment Query through attachment, such as
+  attachment.title or attachment.dateAdded.
   Indexed Keys compare as text: the same key sorts in personal, g10, g9 order.
     ${example({ fields: "indexedKey,key", sort: "indexedKey" })}
   Rows without a value come last in both directions. The Indexed Key orders
