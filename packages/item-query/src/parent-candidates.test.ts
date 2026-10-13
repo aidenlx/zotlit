@@ -250,6 +250,8 @@ it.each([ATTACHMENTS, ANNOTATIONS])(
         expect(event.statement.rows.length).toBeLessThanOrEqual(4001);
     }
   },
+  // Seeds and reads 10,000 records; the default 5000 ms limit fails on CI runners.
+  20_000,
 );
 
 // Failure mode: children of another Library make a complete candidate set fall back.

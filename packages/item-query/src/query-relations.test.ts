@@ -1117,4 +1117,6 @@ it.each([
       ).toBe(scans);
     }
   },
+  // Seeds and reads up to 10,000 records; the default 5000 ms limit fails on CI runners.
+  20_000,
 );
