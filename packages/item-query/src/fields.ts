@@ -2,6 +2,7 @@
 // hydration needs, and its projection, sort, and filter readers.
 import {
   creatorFieldModeToName,
+  creatorTypePriority,
   parseItemDate,
   tagTypeToName,
 } from "@zotlit/db";
@@ -27,6 +28,7 @@ import {
   timestamp,
 } from "./filter-dates";
 import type { FilterRegistry } from "./filter-plan";
+import { isQueryRecord } from "./filter-values";
 import type { FilterValue, FilterValueType } from "./filter-values";
 import { keyField, indexedKeyField } from "./key-fields";
 import { libraryField } from "./library-field";
@@ -358,6 +360,67 @@ function templateCreator(creator: HydratedCreator): ProjectionValue {
   };
 }
 
+/**
+ * The first author of an Item: the first of its Primary Creators, the creators
+ * of the first role in the priority chain that the Item has. The chain starts
+ * at the primary creator type of the item type, then `editor`, `director`, and
+ * `contributor`, as the template `authors` (ADR 0074).
+ */
+function firstAuthor(item: QueryItem): HydratedCreator | undefined {
+  const creators = item.hydrated.creators ?? [];
+  const primaryType =
+    creators.find((creator) => creator.primary)?.creatorType ?? null;
+  for (const role of creatorTypePriority(primaryType)) {
+    const creator = creators.find((creator) => creator.creatorType === role);
+    if (creator) return creator;
+  }
+  return undefined;
+}
+
+const CREATOR_NEEDS = (): FieldNeeds => ({ relations: ["creators"] });
+
+const firstAuthorField: FieldDefinition = {
+  shape: CREATOR_SHAPE,
+  needs: CREATOR_NEEDS,
+  read: (item) => {
+    const creator = firstAuthor(item);
+    return creator ? templateCreator(creator) : null;
+  },
+  // The family name then the given name; a one-field name sorts as a family.
+  sortKey: (item) => {
+    const creator = firstAuthor(item);
+    if (!creator) return null;
+    if (isOneFieldName(creator) || !creator.firstName) return creator.lastName;
+    return `${creator.lastName}, ${creator.firstName}`;
+  },
+  filter: {
+    type: "record",
+    read: (item) => {
+      const creator = firstAuthor(item);
+      if (!creator) return null;
+      const value = templateCreator(creator) as Record<string, string | null>;
+      return {
+        type: "record",
+        identity: creator,
+        read: (name) => value[name] ?? null,
+      };
+    },
+  },
+  navigation: {
+    member: (name) =>
+      name in (CREATOR_SHAPE as { keys: object }).keys
+        ? {
+            filterable: true,
+            needs: CREATOR_NEEDS(),
+            value: {
+              type: "string",
+              read: (value) => (isQueryRecord(value) ? value.read(name) : null),
+            },
+          }
+        : undefined,
+  },
+};
+
 /** One Tag in the template vocabulary. */
 const TAG_SHAPE: ValueShape = {
   kind: "object",
@@ -427,6 +490,7 @@ const FIELDS: ReadonlyMap<string, FieldDefinition> = new Map<
   ["indexedKey", indexedKeyField],
   ["custom", customField],
   ["creators", creatorsField],
+  ["firstAuthor", firstAuthorField],
   ["tags", tagsField],
   ["collections", collectionsField],
   ["attachments", attachmentsField],
