@@ -13,13 +13,17 @@ import { MissingTemplateError, TemplateError } from "@zotlit/templates/facade";
 import type { TemplateLanguage } from "@zotlit/templates/facade";
 import type { FrontmatterField } from "@zotlit/templates/frontmatter";
 
-import { createCliDiagnostics } from "@/lib/cli-diagnostic";
+import { createRenderedCliDiagnostics, lineColumn } from "@/lib/cli-diagnostic";
+import type { FaultFacts, RenderedDiagnostic } from "@/lib/cli-diagnostic";
 import { UNKNOWN_PROFILE_HINT } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import type { ProfileDiagnostic } from "@/services/profile/service";
-import { InertTemplateError } from "@/services/template/errors";
-import { errorContext } from "@/services/template/service";
+import {
+  engineFaultSpan,
+  InertTemplateError,
+} from "@/services/template/errors";
+import type { EngineFaultSpan } from "@/services/template/errors";
 import type {
   CompileError,
   TemplateFileStatus,
@@ -38,9 +42,12 @@ import type { RenderTemplate } from "./vocabulary";
  * Version 7 retires legacy authoring commands in favor of document checks, and
  * carries the refused document identities and the two refusal answer shapes
  * that ADR 0058 added to it while it was still unreleased. A refusal added to a
- * published contract moves the version instead.
+ * published contract moves the version instead. Version 8 gives every
+ * diagnostic the Diagnostic Report of the Item Query CLI (ADR 0070):
+ * `severity`, `report`, `location`, `excerpt`, `found`, `expected`, and
+ * `suggestions`, with `hint` the most specific recovery action.
  */
-export const CONTRACT_VERSION = 7;
+export const CONTRACT_VERSION = 8;
 
 /** Identity of the vault and Zotero source a command answered from. */
 export interface WorkbenchIdentity {
@@ -114,28 +121,50 @@ export const DIAGNOSTIC_HINTS = {
 
 export type DiagnosticCode = keyof typeof DIAGNOSTIC_HINTS;
 
-export interface Diagnostic {
-  code: DiagnosticCode;
-  message: string;
-  /** The recovery action to follow: by default `DIAGNOSTIC_HINTS[code]`; a
-   *  rejected parameter can carry its own, such as its `name=value` form. */
-  hint: string;
+/**
+ * A failure, as the Diagnostic Report every rendered `zotlit:*` namespace
+ * shares. `hint` is the recovery action to follow: the most specific one the
+ * fault gives, else `DIAGNOSTIC_HINTS[code]`, which then stays the last line
+ * of `report`.
+ */
+export interface Diagnostic extends RenderedDiagnostic<DiagnosticCode> {
   details?:
     | { parameter: string }
     | { target: "source"; expected: string; actual: string | null }
     | { key: string }
-    /** `context` is the liquidjs caret-annotated source excerpt, present when
-     *  the underlying error carried one. */
-    | { template: string; context?: string };
+    /** `line` and `column` are 1-based in the source the report names on
+     *  its `-->` line. `context` repeats the excerpt and caret lines of
+     *  `report` for version-7 readers. */
+    | { template: string; line?: number; column?: number; context?: string };
 }
 
-/**
- * Report a fault with the recovery action registered for its code.
- */
-export const { diagnostic, rejectionDiagnostic } = createCliDiagnostics<
+const rendered = createRenderedCliDiagnostics<
   typeof DIAGNOSTIC_HINTS,
   Diagnostic["details"]
 >(DIAGNOSTIC_HINTS, "INVALID_SELECTOR");
+
+/** Report a fault with the recovery action registered for its code. */
+export function diagnostic(
+  code: DiagnosticCode,
+  message: string,
+  details?: Diagnostic["details"],
+): Diagnostic {
+  return rendered.diagnostic(code, message, details);
+}
+
+/**
+ * Report a fault with the facts a more specific report reads: a span in a
+ * source, a path, or a more specific recovery action.
+ */
+export function faultDiagnostic(
+  code: DiagnosticCode,
+  message: string,
+  facts: FaultFacts & { details?: Diagnostic["details"] },
+): Diagnostic {
+  return rendered.faultDiagnostic(code, message, facts);
+}
+
+export const { rejectionDiagnostic } = rendered;
 
 /** The commands the Workbench answers. */
 export type WorkbenchCommand =
@@ -324,27 +353,79 @@ export function templateFaultDiagnostic(
   // The engine reached a name nothing is registered under, which for a
   // template is a Shared Partial the vault holds no document for.
   if (error instanceof MissingTemplateError) {
-    return diagnostic("MISSING_PARTIAL", message, {
-      template: error.templateName,
-    });
+    return missingPartialDiagnostic(error.templateName, message);
   }
 
   const compileError =
     named === null ? undefined : options.compileErrors.get(named);
   if (compileError !== undefined) {
+    return sourceFaultDiagnostic("TEMPLATE_COMPILE_ERROR", {
+      message: compileError.message,
+      template: named,
+      at: compileError.at,
+      action: (where) => `Correct the syntax at ${where}, then render again.`,
+    });
+  }
+  return sourceFaultDiagnostic("TEMPLATE_RENDER_ERROR", {
+    message,
+    template: named,
+    at: engineFaultSpan(error),
+    action: (where, found) =>
+      `Correct ${JSON.stringify(found)} at ${where}, or the selected object, then run the command again.`,
+  });
+}
+
+/**
+ * A Template fault at the span the engine reported: the report excerpts the
+ * span's line, `details` names the Template, line, and column, and `hint`
+ * names the place to correct.
+ */
+function sourceFaultDiagnostic(
+  code: "TEMPLATE_COMPILE_ERROR" | "TEMPLATE_RENDER_ERROR",
+  fault: {
+    message: string;
+    template: string | null;
+    at: EngineFaultSpan | undefined;
+    action: (where: string, found: string) => string;
+  },
+): Diagnostic {
+  const { template, at } = fault;
+  if (at === undefined) {
     return diagnostic(
-      "TEMPLATE_COMPILE_ERROR",
-      compileError.message,
-      named === null
-        ? undefined
-        : { template: named, context: compileError.context },
+      code,
+      fault.message,
+      template === null ? undefined : { template },
     );
   }
-  return diagnostic(
-    "TEMPLATE_RENDER_ERROR",
-    message,
-    named === null
-      ? undefined
-      : { template: named, context: errorContext(error) },
-  );
+  // A fault inside a called template is in that template's source, which the
+  // engine names; the report names the source its excerpt and line come from.
+  const name = at.template ?? template ?? "template";
+  const { line, column } = lineColumn(at.source, at.from);
+  const found = at.source.slice(at.from, at.to);
+  // The engine's own excerpt follows its first line; the report draws it.
+  const message = fault.message.split("\n")[0]!.replace(/:$/, ".");
+  const value = faultDiagnostic(code, message, {
+    hint: fault.action(`${name}:${line}:${column}`, found),
+    at: { source: at.source, span: { from: at.from, to: at.to }, name },
+  });
+  return {
+    ...value,
+    details: {
+      template: template ?? name,
+      line,
+      column,
+      context: value.report.slice(2, 4).join("\n"),
+    },
+  };
+}
+
+/** A call to a Shared Partial the vault holds no document for. */
+export function missingPartialDiagnostic(
+  name: string,
+  message: string,
+): Diagnostic {
+  return faultDiagnostic("MISSING_PARTIAL", message, {
+    details: { template: name },
+    hint: `Create zotlit-partial.${name}.md in the template folder, or correct the name '${name}' that the template calls.`,
+  });
 }

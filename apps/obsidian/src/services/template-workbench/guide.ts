@@ -179,6 +179,19 @@ const TROUBLESHOOTING_SECTION = `TROUBLESHOOTING
   Compare requested output before reporting success, including preserved user
   text during update. A successful compact check alone does not show that output.
 
+DIAGNOSTICS
+  On failure, read diagnostic.report first. Each array entry is one line:
+  the message first; when the fault has a place, then --> <name>:<line>:<column>,
+  the source line, and a caret under the fault; the recovery actions last.
+  hint is the most specific recovery action. When it is more specific than
+  the action registered for the code, the registered action is the last line.
+  severity is error. excerpt contains before, at, and after on the source line.
+  found is the marked text or received value; expected lists allowed values.
+  location.span gives UTF-16 offsets from (inclusive) to to (exclusive) in the
+  named Template, document, or expr. location.path names a manifest field or
+  parameter. details.line and details.column are 1-based in that source.
+  The same fields describe zotlit:query diagnostics.
+
 LEGACY CONVERSION
   ${DIAGNOSTIC_HINTS.COMMAND_RETIRED}`;
 
@@ -222,7 +235,8 @@ IDENTITY AND OUTPUT
   Supply expect-source=<identity.source.id> when inspecting, discovering data,
   or running a new check. Omit expect-source for retained attempt lookups;
   read topic=check for their accepted flags and recovery example. JSON includes
-  contractVersion, command, and ok. On failure, follow diagnostic.hint.
+  contractVersion, command, and ok. On failure, read diagnostic.report first,
+  then follow diagnostic.hint. Read topic=troubleshooting for its fields.
   template-inspect reports source and dependency revisions. template-check runs
   all checks independently of output selection; compact is the default.
   Preview commands write no Template Document, note, or setting.

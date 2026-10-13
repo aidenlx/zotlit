@@ -208,14 +208,15 @@ describe("Template Workbench CLI", () => {
     const output = await handlers["zotlit:template-status"]({});
 
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 7,
+      contractVersion: 8,
       command: "zotlit:template-status",
       ok: false,
-      diagnostic: {
+      diagnostic: expect.objectContaining({
         code: "TEMPLATE_NOT_READY",
         message: "Template compilation did not settle within 25 ms.",
         hint: DIAGNOSTIC_HINTS.TEMPLATE_NOT_READY,
-      },
+        severity: "error",
+      }),
     });
     expect(getIdentity).not.toHaveBeenCalled();
     expect(getTemplateFileStatuses).not.toHaveBeenCalled();
@@ -260,7 +261,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 7,
+      contractVersion: 8,
       command: TEMPLATE_DATA_COMMAND,
       ok: false,
       request: {
@@ -269,11 +270,12 @@ describe("Template Workbench CLI", () => {
         format: "json",
       },
       identity: IDENTITY,
-      diagnostic: {
+      diagnostic: expect.objectContaining({
         code: "TEMPLATE_NOT_READY",
         message: "Template compilation did not settle within 25 ms.",
         hint: DIAGNOSTIC_HINTS.TEMPLATE_NOT_READY,
-      },
+        severity: "error",
+      }),
     });
     expect(waitUntilSettled).toHaveBeenCalledWith(25);
     expect(getIdentity).toHaveBeenCalledOnce();
@@ -332,7 +334,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 7,
+      contractVersion: 8,
       command: TEMPLATE_DATA_COMMAND,
       ok: true,
       selection: { key: "ITEM2345", root: "note" },
@@ -541,14 +543,15 @@ describe("Template Workbench CLI", () => {
     const output = await handlers[TEMPLATE_STATUS_COMMAND]({});
 
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 7,
+      contractVersion: 8,
       command: TEMPLATE_STATUS_COMMAND,
       ok: false,
-      diagnostic: {
+      diagnostic: expect.objectContaining({
         code: "TEMPLATE_NOT_READY",
         message: "Template compilation failed to start; check the plugin log.",
         hint: DIAGNOSTIC_HINTS.TEMPLATE_NOT_READY,
-      },
+        severity: "error",
+      }),
     });
   });
 
@@ -721,7 +724,7 @@ describe("Template Workbench CLI", () => {
     const output = await handlers[TEMPLATE_GUIDE_COMMAND]({ topic: "bogus" });
 
     expect(JSON.parse(output)).toMatchObject({
-      contractVersion: 7,
+      contractVersion: 8,
       command: TEMPLATE_GUIDE_COMMAND,
       ok: false,
       diagnostic: {
@@ -796,7 +799,7 @@ describe("Template Workbench CLI", () => {
     const output = await handlers[TEMPLATE_DATA_COMMAND](params);
 
     expect(JSON.parse(output)).toMatchObject({
-      contractVersion: 7,
+      contractVersion: 8,
       command: TEMPLATE_DATA_COMMAND,
       ok: false,
       diagnostic: {
@@ -1074,7 +1077,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toMatchObject({
-      contractVersion: 7,
+      contractVersion: 8,
       command: TEMPLATE_DATA_COMMAND,
       ok: false,
       request: { key: "ITEM2345", root: "note", format: "json" },
@@ -1133,7 +1136,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 7,
+        contractVersion: 8,
         command: TEMPLATE_DATA_COMMAND,
         ok: false,
         identity: IDENTITY,
@@ -1181,7 +1184,7 @@ describe("Template Workbench CLI", () => {
     const output = await handlers[TEMPLATE_SCHEMA_COMMAND]({});
 
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 7,
+      contractVersion: 8,
       command: TEMPLATE_SCHEMA_COMMAND,
       ok: true,
       pluginVersion: PLUGIN_VERSION,
@@ -1235,16 +1238,21 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toEqual({
-        contractVersion: 7,
+        contractVersion: 8,
         command: TEMPLATE_SCHEMA_COMMAND,
         ok: false,
-        diagnostic: {
+        diagnostic: expect.objectContaining({
           code: "INVALID_SELECTOR",
           message:
             "template-schema takes no parameters; it answers with the schema of every data root, keyed by root under 'schemas'.",
           hint: DIAGNOSTIC_HINTS.INVALID_SELECTOR,
           details: { parameter },
-        },
+          location: { argument: parameter },
+          report: [
+            "template-schema takes no parameters; it answers with the schema of every data root, keyed by root under 'schemas'.",
+            DIAGNOSTIC_HINTS.INVALID_SELECTOR,
+          ],
+        }),
       });
     },
   );
@@ -1282,15 +1290,15 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 7,
+      contractVersion: 8,
       command: TEMPLATE_SCHEMA_COMMAND,
       ok: false,
-      diagnostic: {
+      diagnostic: expect.objectContaining({
         code: "INVALID_SELECTOR",
         message: "template-schema does not accept an item selector.",
         hint: DIAGNOSTIC_HINTS.INVALID_SELECTOR,
         details: { parameter: "key" },
-      },
+      }),
     });
   });
 
@@ -1525,7 +1533,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 7,
+      contractVersion: 8,
       command: TEMPLATE_RENDER_COMMAND,
       ok: true,
       request: {
@@ -1629,7 +1637,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toMatchObject({
-      contractVersion: 7,
+      contractVersion: 8,
       command: TEMPLATE_RENDER_COMMAND,
       ok: false,
       request: {
@@ -1638,11 +1646,12 @@ describe("Template Workbench CLI", () => {
         format: "markdown",
       },
       identity: IDENTITY,
-      diagnostic: {
+      diagnostic: expect.objectContaining({
         code: "TEMPLATE_NOT_READY",
         message: "Template compilation did not settle within 25 ms.",
         hint: DIAGNOSTIC_HINTS.TEMPLATE_NOT_READY,
-      },
+        severity: "error",
+      }),
     });
     expect(loadData).not.toHaveBeenCalled();
     expect(render).not.toHaveBeenCalled();
@@ -1740,13 +1749,16 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 7,
+        contractVersion: 8,
         command: TEMPLATE_RENDER_COMMAND,
         ok: false,
         diagnostic: {
           code,
           message,
-          hint: DIAGNOSTIC_HINTS[code],
+          hint:
+            code === "MISSING_PARTIAL"
+              ? "Create zotlit-partial.venue-line.md in the template folder, or correct the name 'venue-line' that the template calls."
+              : DIAGNOSTIC_HINTS[code],
           details: { template },
         },
       });
@@ -1793,7 +1805,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toMatchObject({
-      contractVersion: 7,
+      contractVersion: 8,
       command: TEMPLATE_RENDER_COMMAND,
       ok: false,
       diagnostic: {
@@ -1842,7 +1854,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toMatchObject({
-      contractVersion: 7,
+      contractVersion: 8,
       command: TEMPLATE_RENDER_COMMAND,
       ok: false,
       diagnostic: {
@@ -1915,7 +1927,7 @@ describe("Template Workbench CLI", () => {
       const output = await handlers[TEMPLATE_RENDER_COMMAND](params);
 
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 7,
+        contractVersion: 8,
         command: TEMPLATE_RENDER_COMMAND,
         ok: false,
         diagnostic: {
@@ -2172,7 +2184,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toEqual({
-        contractVersion: 7,
+        contractVersion: 8,
         command: TEMPLATE_SOURCE_COMMAND,
         ok: true,
         identity: IDENTITY,
@@ -2256,7 +2268,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 7,
+        contractVersion: 8,
         command: TEMPLATE_SOURCE_COMMAND,
         ok: false,
         diagnostic: {
@@ -2340,7 +2352,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 7,
+        contractVersion: 8,
         command: TEMPLATE_STATUS_COMMAND,
         ok: false,
         diagnostic: {
@@ -2425,7 +2437,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 7,
+        contractVersion: 8,
         command: TEMPLATE_GUIDE_COMMAND,
         ok: false,
         diagnostic: {
@@ -2436,12 +2448,13 @@ describe("Template Workbench CLI", () => {
     });
   });
 
-  describe("template fault .context excerpts", () => {
-    it("surfaces a render error's caret excerpt in details.context", async () => {
-      const error = new Error("Unknown filter: bogus") as Error & {
-        context: string;
-      };
-      error.context = "1| {{ zt.title | bogus }}\n         ^^^^^";
+  describe("template fault excerpts", () => {
+    it("draws a render error's excerpt from the engine token's line", async () => {
+      const source = "# Heading\n{{ zt.title | bogus }}";
+      const begin = source.indexOf("{{");
+      const error = Object.assign(new Error("Unknown filter: bogus"), {
+        token: { input: source, begin, end: source.length, file: "note" },
+      });
       const handlers = createTemplateWorkbenchHandlers({
         selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
@@ -2481,13 +2494,30 @@ describe("Template Workbench CLI", () => {
         ok: false,
         diagnostic: {
           code: "TEMPLATE_RENDER_ERROR",
-          details: { template: "note", context: error.context },
+          message: "Unknown filter: bogus",
+          hint: 'Correct "{{ zt.title | bogus }}" at note:2:1, or the selected object, then run the command again.',
+          details: {
+            template: "note",
+            line: 2,
+            column: 1,
+            context: "{{ zt.title | bogus }}\n^^^^^^^^^^^^^^^^^^^^^^",
+          },
+          location: { span: { from: begin, to: source.length } },
+          report: [
+            "Unknown filter: bogus",
+            "--> note:2:1",
+            "{{ zt.title | bogus }}",
+            "^^^^^^^^^^^^^^^^^^^^^^",
+            'Correct "{{ zt.title | bogus }}" at note:2:1, or the selected object, then run the command again.',
+            DIAGNOSTIC_HINTS.TEMPLATE_RENDER_ERROR,
+          ],
         },
       });
     });
 
-    it("surfaces a recorded compile error's caret excerpt in details.context", async () => {
-      const context = "1| {{ zt.title\n         ^";
+    it("draws a recorded compile error's excerpt from its span", async () => {
+      const source = "# Heading\n{{ zt.title";
+      const from = source.indexOf("{{");
       const handlers = createTemplateWorkbenchHandlers({
         selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
@@ -2499,7 +2529,13 @@ describe("Template Workbench CLI", () => {
           renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: new Map([
-            ["note", { message: "Unexpected token", context }],
+            [
+              "note",
+              {
+                message: "Unexpected token",
+                at: { source, from, to: source.length },
+              },
+            ],
           ]),
           getTemplateFileStatuses: () => TEMPLATE_FILES,
           getPartialDocument: () => null,
@@ -2530,7 +2566,21 @@ describe("Template Workbench CLI", () => {
         diagnostic: {
           code: "TEMPLATE_COMPILE_ERROR",
           message: "Unexpected token",
-          details: { template: "note", context },
+          hint: "Correct the syntax at note:2:1, then render again.",
+          details: {
+            template: "note",
+            line: 2,
+            column: 1,
+            context: "{{ zt.title\n^^^^^^^^^^^",
+          },
+          report: [
+            "Unexpected token",
+            "--> note:2:1",
+            "{{ zt.title",
+            "^^^^^^^^^^^",
+            "Correct the syntax at note:2:1, then render again.",
+            DIAGNOSTIC_HINTS.TEMPLATE_COMPILE_ERROR,
+          ],
         },
       });
     });
@@ -2587,7 +2637,7 @@ describe("Template Workbench CLI", () => {
       const output = await handlers[FRONTMATTER_STATUS_COMMAND]({});
 
       expect(JSON.parse(output)).toEqual({
-        contractVersion: 7,
+        contractVersion: 8,
         command: FRONTMATTER_STATUS_COMMAND,
         ok: true,
         identity: IDENTITY,
@@ -2694,7 +2744,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 7,
+        contractVersion: 8,
         command: FRONTMATTER_STATUS_COMMAND,
         ok: false,
         diagnostic: {
@@ -2836,7 +2886,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toEqual({
-        contractVersion: 7,
+        contractVersion: 8,
         command: FRONTMATTER_EVAL_COMMAND,
         ok: true,
         request: { key: "ITEM2345", format: "json", adhoc: null },
@@ -3003,7 +3053,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toEqual({
-        contractVersion: 7,
+        contractVersion: 8,
         command: FRONTMATTER_EVAL_COMMAND,
         ok: true,
         request: {
@@ -3269,7 +3319,7 @@ describe("Template Workbench CLI", () => {
         },
       ]);
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 7,
+        contractVersion: 8,
         command: FRONTMATTER_SET_COMMAND,
         ok: true,
         identity: IDENTITY,
@@ -3688,7 +3738,7 @@ describe("Template Workbench CLI", () => {
 
       expect(write).toHaveBeenCalledWith([FIELD_B]);
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 7,
+        contractVersion: 8,
         command: FRONTMATTER_REMOVE_COMMAND,
         ok: true,
         identity: IDENTITY,
@@ -3882,7 +3932,7 @@ describe("Template Workbench CLI", () => {
 
       expect(write).toHaveBeenCalledWith([FIELD_C, FIELD_A, FIELD_B]);
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 7,
+        contractVersion: 8,
         command: FRONTMATTER_REORDER_COMMAND,
         ok: true,
         identity: IDENTITY,
@@ -4469,8 +4519,13 @@ describe("zotlit:template-render for a Shared Partial", () => {
       diagnostic: {
         code: "MISSING_PARTIAL",
         message: "No Shared Partial named 'venue-line'.",
-        hint: "Create zotlit-partial.<name>.md in the template folder for the partial named in details.template, or correct the name the template calls.",
+        hint: "Create zotlit-partial.venue-line.md in the template folder, or correct the name 'venue-line' that the template calls.",
         details: { template: "venue-line" },
+        report: [
+          "No Shared Partial named 'venue-line'.",
+          "Create zotlit-partial.venue-line.md in the template folder, or correct the name 'venue-line' that the template calls.",
+          DIAGNOSTIC_HINTS.MISSING_PARTIAL,
+        ],
       },
     });
   });
