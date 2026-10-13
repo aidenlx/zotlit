@@ -61,6 +61,7 @@ export {
   type Diagnostic,
   type DiagnosticLocation,
 } from "./diagnose";
+export { nearMatches } from "./near-match";
 export type {
   Fault,
   ItemQueryFault,

@@ -1,8 +1,15 @@
 // Typed errors the template service raises: an inert JavaScript-Templates
 // artifact an operation requires, a refused Shared Partial name, and a call to
-// a Shared Partial the vault holds no document for.
+// a Shared Partial the vault holds no document for. Also where an engine says
+// a Template failed, as offsets into the source it read.
+
+import { regex } from "arkregex";
 
 import { MissingTemplateError } from "@zotlit/templates/facade";
+import {
+  renderFailureCause,
+  renderFailureSpan,
+} from "@zotlit/workbench/render";
 
 import type { PartialNameRefusal } from "./defaults";
 
@@ -65,4 +72,64 @@ export class MissingPartialError extends MissingTemplateError {
     super(templateName, { cause });
     this.documentPath = documentPath;
   }
+}
+
+/** Where in a Template's source an engine stopped; `to` is exclusive. */
+export interface EngineFaultSpan {
+  readonly source: string;
+  /** The registered Template name the engine named, when it named one. */
+  readonly template?: string;
+  readonly from: number;
+  readonly to: number;
+}
+
+/** Eta writes `at line L col C`; liquidjs writes `line:L, col:C`. */
+const ENGINE_POSITION = regex(
+  "(?:at line (?<etaLine>\\d+) col (?<etaColumn>\\d+)|line:(?<liquidLine>\\d+), col:(?<liquidColumn>\\d+))",
+);
+
+/**
+ * The span an engine reported for `error`. liquidjs carries the token it
+ * stopped on, with the source it tokenized; Eta writes the line and column
+ * into its message alone, so that position addresses `source`, the text the
+ * caller compiled. Undefined where the engine named no position, such as a
+ * JavaScript syntax error inside an Eta tag.
+ */
+export function engineFaultSpan(
+  error: unknown,
+  source?: string,
+): EngineFaultSpan | undefined {
+  const site = renderFailureSpan(error);
+  if (site?.kind === "span") {
+    const template = renderFailureCause(error)?.at?.template;
+    return {
+      source: site.source,
+      ...(template === undefined ? {} : { template }),
+      from: site.from,
+      to: site.to,
+    };
+  }
+  if (source === undefined || !(error instanceof Error)) return undefined;
+  return reportedFaultSpan(error.message, source);
+}
+
+/**
+ * The position an engine wrote into `message`, as a one-character span in
+ * `source`, the text it compiled. Undefined where the message names none.
+ */
+export function reportedFaultSpan(
+  message: string,
+  source: string,
+): EngineFaultSpan | undefined {
+  const groups = ENGINE_POSITION.exec(message)?.groups;
+  if (!groups) return undefined;
+  const line = Number(groups.etaLine ?? groups.liquidLine);
+  const column = Number(groups.etaColumn ?? groups.liquidColumn);
+  const lines = source.split("\n");
+  if (line < 1 || line > lines.length) return undefined;
+  const lineStart = lines
+    .slice(0, line - 1)
+    .reduce((offset, text) => offset + text.length + 1, 0);
+  const from = lineStart + Math.min(column - 1, lines[line - 1]!.length);
+  return { source, from, to: Math.min(from + 1, source.length) };
 }

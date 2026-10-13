@@ -76,10 +76,12 @@ import {
 } from "./defaults";
 import type { TemplateName } from "./defaults";
 import {
+  engineFaultSpan,
   InertTemplateError,
   MissingPartialError,
   PartialNameError,
 } from "./errors";
+import type { EngineFaultSpan } from "./errors";
 import { normalizeVaultPath } from "./path";
 
 const logger = getLogger("template");
@@ -187,6 +189,10 @@ export interface LiteratureNoteTemplateStatus {
           readonly code: LiteratureNoteTemplateErrorCode | "unknown";
           readonly message: string;
           readonly recovery: string;
+          /** UTF-16 offset of the responsible text in the document. */
+          readonly offset?: number;
+          /** Path of the responsible manifest node. */
+          readonly manifestPath?: readonly (string | number)[];
           readonly cause?: unknown;
         };
       };
@@ -402,11 +408,13 @@ function foldCitationLanguage(
   return files.every((file) => file.language === "eta") ? "eta" : "liquid";
 }
 
-/** A recorded compile error: its message, and the liquidjs caret-annotated
- *  source excerpt when the underlying error carried one. */
+/** A recorded compile error: its message, the liquidjs caret-annotated
+ *  source excerpt when the underlying error carried one, and the span the
+ *  engine reported in the compiled source. */
 export interface CompileError {
   message: string;
   context?: string;
+  at?: EngineFaultSpan;
 }
 
 /** Managed-frontmatter field configuration and inert-key state, as
@@ -807,6 +815,12 @@ export class TemplateService extends Service<void> {
                   code: error.code,
                   message: error.message,
                   recovery: error.recovery,
+                  ...(error.offset === undefined
+                    ? {}
+                    : { offset: error.offset }),
+                  ...(error.manifestPath === undefined
+                    ? {}
+                    : { manifestPath: error.manifestPath }),
                   cause: error.cause,
                 }
               : {
@@ -2357,9 +2371,11 @@ export class TemplateService extends Service<void> {
       this.#facade.define(name, content, language);
       this.#compileErrors.delete(name);
     } catch (error) {
+      const at = engineFaultSpan(error, content);
       this.#compileErrors.set(name, {
         message: errorMessage(error),
         context: errorContext(error),
+        ...(at === undefined ? {} : { at }),
       });
       logger.warn("Failed to compile vault template", { error, name });
       this.#facade.remove(name, language);
@@ -2379,9 +2395,11 @@ export class TemplateService extends Service<void> {
       this.#facade.define(name, DEFAULT_TEMPLATES[name], "liquid");
       this.#compileErrors.delete(name);
     } catch (error) {
+      const at = engineFaultSpan(error, DEFAULT_TEMPLATES[name]);
       this.#compileErrors.set(name, {
         message: errorMessage(error),
         context: errorContext(error),
+        ...(at === undefined ? {} : { at }),
       });
       logger.error("Built-in default template failed to compile", {
         error,

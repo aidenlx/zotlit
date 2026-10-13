@@ -3079,6 +3079,28 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     }
   });
 
+  it("reads the Diagnostic Report of a failed zotlit:template-check", async () => {
+    const answer = JSON.parse(
+      await cliCommand(vaultId, "zotlit:template-check", {
+        args: { mode: "sideways" },
+      }),
+    ) as {
+      contractVersion: number;
+      ok: boolean;
+      diagnostic: {
+        code: string;
+        message: string;
+        hint: string;
+        report: string[];
+      };
+    };
+    expect(answer.contractVersion).toBe(8);
+    expect(answer.ok).toBe(false);
+    expect(answer.diagnostic.code).toBe("INVALID_SELECTOR");
+    expect(answer.diagnostic.report[0]).toBe(answer.diagnostic.message);
+    expect(answer.diagnostic.report.at(-1)).toBe(answer.diagnostic.hint);
+  });
+
   it("answers zotlit:query over the Library Scope and over named Libraries with the Fixture's Indexed Keys", async () => {
     const [myLibrary, sharedReading] = LIBRARIES;
     const wireOf = (library: (typeof LIBRARIES)[number]) =>

@@ -95,7 +95,7 @@ describe("Template Workbench CLI registration", () => {
     );
     expect(result).toMatchObject({
       ok: false,
-      contractVersion: 7,
+      contractVersion: 8,
       diagnostic: { code: "COMMAND_RETIRED" },
     });
     expect(result.diagnostic.hint).toContain(

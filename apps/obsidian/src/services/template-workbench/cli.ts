@@ -8,6 +8,7 @@ import type {
   ContractRoot,
   TemplateSlot,
 } from "@zotlit/db";
+import { nearMatches } from "@zotlit/item-query";
 import type { FrontmatterLanguage } from "@zotlit/templates/constants";
 import { LiteratureNoteTemplateError } from "@zotlit/templates/facade";
 import type { RootVariableUse } from "@zotlit/templates/facade";
@@ -17,6 +18,7 @@ import {
   serializeTemplateData,
 } from "@zotlit/workbench/explorer";
 
+import { lineColumn } from "@/lib/cli-diagnostic";
 import type { CliRequest } from "@/lib/cli-params";
 import { FIELD_ZOTERO_KEY, RESERVED_KEYS } from "@/lib/constants";
 import { getLogger } from "@/lib/log";
@@ -25,7 +27,10 @@ import type { ProfileId } from "@/lib/profile-stamp";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import type { ProfileDiagnostic } from "@/services/profile/service";
 import { RESERVED_PARTIAL_NAMES } from "@/services/template/defaults";
-import { InertTemplateError } from "@/services/template/errors";
+import {
+  InertTemplateError,
+  reportedFaultSpan,
+} from "@/services/template/errors";
 import type {
   CitationTemplateStatus,
   CompileError,
@@ -46,13 +51,16 @@ import {
   dataLoadDiagnostic,
   diagnostic,
   envelope,
+  faultDiagnostic,
   initFailedDiagnostic,
+  missingPartialDiagnostic,
   notSettledDiagnostic,
   rejectionDiagnostic,
   templateFaultDiagnostic,
 } from "./envelope";
 import type {
   Diagnostic,
+  DiagnosticCode,
   FrontmatterEvalRow,
   FrontmatterFieldRow,
   LiteratureNoteDocumentRow,
@@ -414,7 +422,10 @@ export function createTemplateWorkbenchHandlers(
           identity,
           diagnostic:
             carrier === null
-              ? missingPartialDiagnostic(name)
+              ? missingPartialDiagnostic(
+                  name,
+                  `No Shared Partial named '${name}'.`,
+                )
               : bundledPartialDiagnostic(name, carrier),
         }),
       );
@@ -646,7 +657,9 @@ export function createTemplateWorkbenchHandlers(
           create: string;
           update: string | null;
         };
+        let document: { name: string; source?: string };
         if ("source" in request) {
+          document = { name: "source", source: request.source };
           render = (data) => literatureNotes.renderSource(request.source, data);
         } else {
           const reference =
@@ -660,17 +673,18 @@ export function createTemplateWorkbenchHandlers(
               diagnostic: reference,
             });
           }
-          let document;
+          document = { name: reference };
+          let resolved;
           try {
-            document = literatureNotes.getDocument(reference);
+            resolved = literatureNotes.getDocument(reference);
           } catch (error) {
             return envelope(TEMPLATE_DOCUMENT_RENDER_COMMAND, {
               ok: false,
               ...echoed,
-              diagnostic: literatureNoteDocumentDiagnostic(error),
+              diagnostic: literatureNoteDocumentDiagnostic(error, document),
             });
           }
-          if (!document) {
+          if (!resolved) {
             return envelope(TEMPLATE_DOCUMENT_RENDER_COMMAND, {
               ok: false,
               ...echoed,
@@ -678,8 +692,8 @@ export function createTemplateWorkbenchHandlers(
             });
           }
           render = (data) => ({
-            create: document.renderForCreate(data),
-            update: document.renderForUpdate(data),
+            create: resolved.renderForCreate(data),
+            update: resolved.renderForUpdate(data),
           });
         }
 
@@ -701,7 +715,7 @@ export function createTemplateWorkbenchHandlers(
           return envelope(TEMPLATE_DOCUMENT_RENDER_COMMAND, {
             ok: false,
             ...echoed,
-            diagnostic: literatureNoteDocumentDiagnostic(error),
+            diagnostic: literatureNoteDocumentDiagnostic(error, document),
           });
         }
       },
@@ -964,7 +978,7 @@ export function createTemplateWorkbenchHandlers(
         return envelope(FRONTMATTER_REMOVE_COMMAND, {
           ok: false,
           ...echoed,
-          diagnostic: fieldNotFoundDiagnostic(field),
+          diagnostic: fieldNotFoundDiagnostic(field, fields),
         });
       }
 
@@ -1004,7 +1018,7 @@ export function createTemplateWorkbenchHandlers(
         return envelope(FRONTMATTER_REORDER_COMMAND, {
           ok: false,
           ...echoed,
-          diagnostic: fieldNotFoundDiagnostic(unknownKey),
+          diagnostic: fieldNotFoundDiagnostic(unknownKey, fields),
         });
       }
 
@@ -1074,8 +1088,8 @@ function literatureNoteAuthoringState(
             validation: {
               state: "invalid",
               diagnostic: literatureNoteDocumentDiagnosticCode(
-                status.validation.error.code,
-                status.validation.error.message,
+                status.validation.error,
+                { name: status.path },
               ),
             },
           },
@@ -1137,12 +1151,20 @@ function documentNotFoundDiagnostic(reference: string): Diagnostic {
   );
 }
 
-function literatureNoteDocumentDiagnostic(error: unknown): Diagnostic {
+/**
+ * A Template Document fault. `document` names the document and, when the
+ * caller holds it, its source, so the report excerpts the place the parser
+ * found the fault.
+ */
+function literatureNoteDocumentDiagnostic(
+  error: unknown,
+  document?: { name: string; source?: string },
+): Diagnostic {
   if (error instanceof InertTemplateError) {
     return diagnostic("ETA_OPT_IN_REQUIRED", error.message);
   }
   if (error instanceof LiteratureNoteTemplateError) {
-    return literatureNoteDocumentDiagnosticCode(error.code, error.message);
+    return literatureNoteDocumentDiagnosticCode(error, document);
   }
   return diagnostic(
     "DOCUMENT_INVALID",
@@ -1150,26 +1172,52 @@ function literatureNoteDocumentDiagnostic(error: unknown): Diagnostic {
   );
 }
 
+const DOCUMENT_FAULT_CODES = {
+  "duplicate-managed-block": "DUPLICATE_MANAGED_BLOCK",
+  "missing-annotation-section": "MISSING_ANNOTATION_SECTION",
+  "duplicate-annotation-section": "DUPLICATE_ANNOTATION_SECTION",
+  "unknown-section-header": "UNKNOWN_SECTION_HEADER",
+  "reserved-annotation-partial": "RESERVED_ANNOTATION_PARTIAL",
+} as const satisfies Partial<Record<string, DiagnosticCode>>;
+
 function literatureNoteDocumentDiagnosticCode(
-  code: string,
-  message: string,
+  fault: {
+    code: string;
+    message: string;
+    recovery?: string;
+    offset?: number;
+    manifestPath?: readonly (string | number)[];
+  },
+  document?: { name: string; source?: string },
 ): Diagnostic {
-  if (code === "duplicate-managed-block") {
-    return diagnostic("DUPLICATE_MANAGED_BLOCK", message);
-  }
-  if (code === "missing-annotation-section") {
-    return diagnostic("MISSING_ANNOTATION_SECTION", message);
-  }
-  if (code === "duplicate-annotation-section") {
-    return diagnostic("DUPLICATE_ANNOTATION_SECTION", message);
-  }
-  if (code === "unknown-section-header") {
-    return diagnostic("UNKNOWN_SECTION_HEADER", message);
-  }
-  if (code === "reserved-annotation-partial") {
-    return diagnostic("RESERVED_ANNOTATION_PARTIAL", message);
-  }
-  return diagnostic("DOCUMENT_INVALID", message);
+  const code =
+    DOCUMENT_FAULT_CODES[fault.code as keyof typeof DOCUMENT_FAULT_CODES] ??
+    "DOCUMENT_INVALID";
+  const { offset } = fault;
+  const span = offset === undefined ? undefined : { from: offset, to: offset };
+  const source = document?.source;
+  const value = faultDiagnostic(code, fault.message, {
+    ...(fault.recovery === undefined ? {} : { hint: fault.recovery }),
+    ...(fault.manifestPath?.length
+      ? { path: manifestPathText(fault.manifestPath) }
+      : {}),
+    ...(span !== undefined && source !== undefined
+      ? { at: { source, span, name: document!.name } }
+      : {}),
+  });
+  // Without the source there is no excerpt, but the offset still locates it.
+  return span === undefined || source !== undefined
+    ? value
+    : { ...value, location: { ...value.location, span } };
+}
+
+/** A manifest node path in accessor form, such as `frontmatter[2].key`. */
+function manifestPathText(path: readonly (string | number)[]): string {
+  return path
+    .map((key, index) =>
+      typeof key === "number" ? `[${key}]` : index === 0 ? key : `.${key}`,
+    )
+    .join("");
 }
 
 /**
@@ -1188,18 +1236,40 @@ function validateGateAndCompile(
     return diagnostic("ETA_OPT_IN_REQUIRED", gateMessage);
   }
   const compileError = deps.frontmatter.validateExpr(expr, language);
-  return compileError === null
-    ? null
-    : diagnostic("EXPRESSION_COMPILE_ERROR", compileError);
+  if (compileError === null) return null;
+  const at = reportedFaultSpan(compileError, expr);
+  if (at === undefined)
+    return diagnostic("EXPRESSION_COMPILE_ERROR", compileError);
+  const { line, column } = lineColumn(expr, at.from);
+  return faultDiagnostic(
+    "EXPRESSION_COMPILE_ERROR",
+    compileError.split("\n")[0]!.replace(/:$/, "."),
+    {
+      hint: `Correct the expression at expr:${line}:${column}, then evaluate it again.`,
+      at: { source: expr, span: { from: at.from, to: at.to }, name: "expr" },
+    },
+  );
 }
 
 /** `frontmatter-remove` and `frontmatter-reorder` both report this when a key
  *  they were given is not in the configured field set. */
-function fieldNotFoundDiagnostic(key: string): Diagnostic {
-  return diagnostic(
+function fieldNotFoundDiagnostic(
+  key: string,
+  fields: readonly FrontmatterField[],
+): Diagnostic {
+  const nearest = nearMatches(
+    key,
+    fields.map((field) => field.key),
+  )[0];
+  return faultDiagnostic(
     "FIELD_NOT_FOUND",
     `'${key}' is not a configured Managed Frontmatter field.`,
-    { key },
+    {
+      details: { key },
+      ...(nearest === undefined
+        ? {}
+        : { hint: `Use the configured key '${nearest}'.` }),
+    },
   );
 }
 
@@ -1381,16 +1451,6 @@ function selectedObject(
   request: { key: string } | { example: string },
 ): string {
   return "key" in request ? request.key : request.example;
-}
-
-/**
- * A partial the vault registers no document for, which the Workbench and a
- * refused Literature Note render report under the same code.
- */
-function missingPartialDiagnostic(name: string): Diagnostic {
-  return diagnostic("MISSING_PARTIAL", `No Shared Partial named '${name}'.`, {
-    template: name,
-  });
 }
 
 /**
