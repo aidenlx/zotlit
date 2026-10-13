@@ -5,215 +5,24 @@ import { randomUUID } from "node:crypto";
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { isDeepStrictEqual, parseArgs } from "node:util";
+import { parseArgs } from "node:util";
 
 import { obsidianCliSocketPath } from "@zotlit/scripts/obsidian-cli";
 
-import { validate } from "./check.mjs";
+import { caseFamily, validate } from "./check.mjs";
 import { startCliWrapper } from "./cli-wrapper.mjs";
 import { measureEvents, parseEvents } from "./events.mjs";
-import { indexedKeyLibrary, librarySelector } from "./libraries.mjs";
-import {
-  researchSchema,
-  checkResearchAnswer,
-  checkCollectionDiscovery,
-} from "./research.mjs";
-import { resultRows } from "./result-rows.mjs";
 export { measureEvents } from "./events.mjs";
 
 const repo = resolve(fileURLToPath(new URL("../../../", import.meta.url)));
 const cases = JSON.parse(
   await readFile(new URL("./cases.json", import.meta.url), "utf8"),
 );
-const oracle = JSON.parse(
-  await readFile(new URL("./oracle.json", import.meta.url), "utf8"),
-);
 const fixtureTool = join(repo, "packages/scripts/scripts/obsidian-vault.ts");
 const cliTool = join(repo, "packages/scripts/scripts/obsidian-cli.ts");
 const prepareTool = fileURLToPath(new URL("./prepare.mjs", import.meta.url));
 const skillFile = join(repo, "skills/zotlit-query/SKILL.md");
 const catalogFile = join(repo, "packages/item-query/dist/query.schema.json");
-const itemCases = new Set(["include", "export", "edge"]);
-const answerItem = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    indexedKey: { type: "string" },
-    title: { type: "string" },
-    publicationYear: { type: ["integer", "null"] },
-    library: { type: "string" },
-    firstAuthor: { type: ["string", "null"] },
-    editor: { type: ["string", "null"] },
-  },
-  required: [
-    "indexedKey",
-    "title",
-    "publicationYear",
-    "library",
-    "firstAuthor",
-    "editor",
-  ],
-};
-const itemOutputSchema = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    answer: { type: "string" },
-    count: { type: "integer" },
-    missingPublicationYears: { type: ["integer", "null"] },
-    items: { type: "array", items: answerItem },
-    duplicateKeyGroups: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          key: { type: "string" },
-          libraries: { type: "array", items: { type: "string" } },
-        },
-        required: ["key", "libraries"],
-      },
-    },
-    exportPath: { type: ["string", "null"] },
-  },
-  required: [
-    "answer",
-    "count",
-    "missingPublicationYears",
-    "items",
-    "duplicateKeyGroups",
-    "exportPath",
-  ],
-};
-const annotationOutputSchema = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    answer: { type: "string" },
-    count: { type: "integer" },
-    annotations: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          indexedKey: { type: "string" },
-          itemIndexedKey: { type: "string" },
-          attachmentIndexedKey: { type: "string" },
-          attachmentExists: { type: "boolean" },
-          library: { type: "string" },
-          type: { type: "string" },
-          colorName: { type: ["string", "null"] },
-          pageIndex: { type: ["integer", "null"] },
-          pageLabel: { type: ["string", "null"] },
-          text: { type: ["string", "null"] },
-          comment: { type: ["string", "null"] },
-          tags: { type: "array", items: { type: "string" } },
-          itemTitle: { type: "string" },
-          attachmentPath: { type: ["string", "null"] },
-          hasExcerptImage: { type: "boolean" },
-          position: {
-            anyOf: [
-              {
-                type: "object",
-                additionalProperties: false,
-                properties: {
-                  kind: { type: "string" },
-                  pageIndex: { type: ["integer", "null"] },
-                  rects: {
-                    type: "array",
-                    items: {
-                      type: "array",
-                      items: { type: "number" },
-                    },
-                  },
-                },
-                required: ["kind", "pageIndex", "rects"],
-              },
-              { type: "null" },
-            ],
-          },
-        },
-      },
-    },
-    imagePath: { type: ["string", "null"] },
-    exportPath: { type: "string" },
-    imageProvenance: { type: ["string", "null"] },
-    imageFormat: { type: ["string", "null"] },
-    validPng: { type: ["boolean", "null"] },
-  },
-  required: [
-    "answer",
-    "count",
-    "annotations",
-    "imagePath",
-    "imageProvenance",
-    "imageFormat",
-    "validPng",
-  ],
-};
-
-const annotationAnswerFields = {
-  annotations: ["type", "pageLabel", "text", "comment", "attachmentPath"],
-  mixed: ["itemTitle", "tags", "hasExcerptImage"],
-  position: ["position", "attachmentPath"],
-  image: [],
-  shared_marks: ["itemIndexedKey", "library", "text", "colorName"],
-  attachment: [
-    "itemIndexedKey",
-    "attachmentIndexedKey",
-    "type",
-    "pageLabel",
-    "text",
-    "comment",
-    "attachmentPath",
-  ],
-  colors: ["text", "colorName", "tags", "pageIndex"],
-  reverse_pages: ["type", "pageLabel", "pageIndex", "text"],
-  missing_source: [
-    "attachmentIndexedKey",
-    "comment",
-    "attachmentPath",
-    "attachmentExists",
-  ],
-  repair_filter: ["itemIndexedKey", "text", "colorName"],
-  export_annotations: [
-    "itemIndexedKey",
-    "attachmentIndexedKey",
-    "type",
-    "pageLabel",
-    "text",
-    "comment",
-    "attachmentPath",
-  ],
-};
-
-function annotationSchema(caseName) {
-  const fields = ["indexedKey", ...annotationAnswerFields[caseName]];
-  const annotations = annotationOutputSchema.properties.annotations;
-  const properties = { ...annotationOutputSchema.properties };
-  if (caseName !== "export_annotations") delete properties.exportPath;
-  return {
-    ...annotationOutputSchema,
-    properties: {
-      ...properties,
-      annotations: {
-        ...annotations,
-        items: {
-          ...annotations.items,
-          properties: Object.fromEntries(
-            fields.map((field) => [field, annotations.items.properties[field]]),
-          ),
-          required: fields,
-        },
-      },
-    },
-    required: [
-      ...annotationOutputSchema.required,
-      ...(caseName === "export_annotations" ? ["exportPath"] : []),
-    ],
-  };
-}
 
 function fail(message) {
   throw new Error(message);
@@ -355,192 +164,10 @@ function required(result, stage) {
   return result.stdout;
 }
 
-function checkItemAnswer(caseName, answer, resultPath) {
-  const errors = [];
-  const expected = oracle.cases[caseName];
-  if (typeof answer.answer !== "string" || !answer.answer.trim())
-    errors.push("answer text is empty");
-  if (answer.count !== expected.count)
-    errors.push(`answer count should be ${expected.count}`);
-  if (answer.missingPublicationYears !== (expected.missingYear ?? null))
-    errors.push("answer has wrong missing publication-year count");
-  if (answer.exportPath !== (caseName === "export" ? resultPath : null))
-    errors.push("answer has wrong retained export path");
-  const expectedItems =
-    caseName === "export"
-      ? []
-      : expected.rows.map((row) => ({
-          indexedKey: row.indexedKey,
-          title: row.title,
-          publicationYear: row.year,
-          library: indexedKeyLibrary(row.indexedKey),
-          firstAuthor: row.firstAuthor,
-          editor:
-            row.firstCreator !== row.firstAuthor ? row.firstCreator : null,
-        }));
-  if (
-    !Array.isArray(answer.items) ||
-    answer.items.length !== expectedItems.length
-  )
-    errors.push("answer has wrong Item details");
-  else {
-    const actual = new Map(answer.items.map((item) => [item.indexedKey, item]));
-    if (
-      actual.size !== expectedItems.length ||
-      expectedItems.some((item) => {
-        const found = actual.get(item.indexedKey);
-        if (!found) return true;
-        const required = [
-          "indexedKey",
-          "title",
-          "publicationYear",
-          "library",
-          "firstAuthor",
-        ];
-        if (
-          required.some(
-            (key) =>
-              (key === "library" ? librarySelector(found[key]) : found[key]) !==
-              item[key],
-          )
-        )
-          return true;
-        return caseName === "edge" && item.firstAuthor === null
-          ? found.editor !== item.editor
-          : found.editor !== null && found.editor !== item.editor;
-      })
-    )
-      errors.push("answer has wrong Item details");
-  }
-  const groups = answer.duplicateKeyGroups;
-  if (caseName === "edge") {
-    if (
-      !Array.isArray(groups) ||
-      groups.length !== 1 ||
-      groups[0]?.key !== "EVALSAME" ||
-      !Array.isArray(groups[0].libraries) ||
-      JSON.stringify(
-        groups[0].libraries
-          .map(librarySelector)
-          .sort((a, b) => a.localeCompare(b)),
-      ) !==
-        JSON.stringify(
-          ["personal", "group:118"].sort((a, b) => a.localeCompare(b)),
-        )
-    )
-      errors.push("answer has wrong shared-key libraries");
-  } else if (!Array.isArray(groups) || groups.length !== 0)
-    errors.push("answer has unexpected shared-key groups");
-  return errors;
-}
-
-function checkAnnotationAnswer(
-  caseName,
-  answer,
-  { envelope, imageReceipt, resultPath },
-) {
-  const errors = [];
-  const expected = oracle.cases[caseName];
-  if (typeof answer.answer !== "string" || !answer.answer.trim())
-    errors.push("answer text is empty");
-  if (answer.count !== expected.count)
-    errors.push(`answer count should be ${expected.count}`);
-  if (
-    !Array.isArray(answer.annotations) ||
-    JSON.stringify(
-      [
-        "annotations",
-        "reverse_pages",
-        "attachment",
-        "export_annotations",
-      ].includes(caseName)
-        ? answer.annotations.map(({ indexedKey }) => indexedKey)
-        : answer.annotations
-            .map(({ indexedKey }) => indexedKey)
-            .sort((a, b) => a.localeCompare(b)),
-    ) !==
-      JSON.stringify(
-        [
-          "annotations",
-          "reverse_pages",
-          "attachment",
-          "export_annotations",
-        ].includes(caseName)
-          ? expected.keys
-          : [...expected.keys].sort((a, b) => a.localeCompare(b)),
-      )
-  )
-    errors.push("answer has wrong Annotation keys or reading order");
-  const rows = new Map(
-    (resultRows(envelope) ?? []).map((row) => [row.indexedKey, row]),
-  );
-  for (const annotation of answer.annotations ?? []) {
-    const row = rows.get(annotation.indexedKey);
-    if (!row) {
-      errors.push(`answer has no evidence for ${annotation.indexedKey}`);
-      continue;
-    }
-    const values = row.values ?? {};
-    for (const field of annotationAnswerFields[caseName]) {
-      const value =
-        field === "attachmentPath"
-          ? (values.attachment?.path ?? values["attachment.path"] ?? null)
-          : field === "attachmentExists"
-            ? (values.attachment?.exists ?? values["attachment.exists"] ?? null)
-            : field === "library"
-              ? indexedKeyLibrary(annotation.indexedKey)
-              : field === "itemIndexedKey" || field === "attachmentIndexedKey"
-                ? row[field]
-                : field === "itemTitle"
-                  ? values["item.title"]
-                  : (values[field] ?? null);
-      if (
-        !isDeepStrictEqual(
-          field === "library"
-            ? librarySelector(annotation[field])
-            : annotation[field],
-          value,
-        )
-      )
-        errors.push(
-          `answer has wrong ${field === "attachmentPath" ? "source path" : field} for ${annotation.indexedKey}`,
-        );
-    }
-  }
-  if (caseName === "export_annotations" && answer.exportPath !== resultPath)
-    errors.push("answer has wrong retained export path");
-  if (caseName === "position") {
-    const annotation = answer.annotations?.[0];
-    if (!isDeepStrictEqual(annotation?.position, expected.position))
-      errors.push("answer has wrong requested position");
-  }
-  if (caseName === "image") {
-    if (
-      answer.imagePath !== imageReceipt?.path ||
-      answer.imageProvenance !== imageReceipt?.provenance ||
-      !expected.provenance.includes(answer.imageProvenance) ||
-      answer.imageFormat !== expected.format ||
-      answer.validPng !== true
-    )
-      errors.push("answer has wrong Excerpt Image result");
-  } else if (
-    answer.imagePath !== null ||
-    answer.imageProvenance !== null ||
-    answer.imageFormat !== null ||
-    answer.validPng !== null
-  ) {
-    errors.push("answer has an unexpected Excerpt Image result");
-  }
-  return errors;
-}
-
 /** Pure final-answer check for the runner and saved-response regrades. */
 export function checkAnswer(caseName, answer, context) {
-  if (oracle.cases[caseName].kind === "research")
-    return checkResearchAnswer(oracle.cases[caseName], answer, context);
-  return itemCases.has(caseName)
-    ? checkItemAnswer(caseName, answer, context.resultPath)
-    : checkAnnotationAnswer(caseName, answer, context);
+  const { spec, family } = caseFamily(caseName);
+  return family.checkAnswer(spec, answer, context);
 }
 
 function prompt(caseName, vaultId, agentRoot) {
@@ -548,20 +175,44 @@ function prompt(caseName, vaultId, agentRoot) {
   const retained = resolve(agentRoot, "..", "result.json");
   const catalog = join(agentRoot, "packages/item-query/dist/query.schema.json");
   const preamble = `Read ${join(agentRoot, "SKILL.md")} and follow it for this request. Use only the evaluation vault ID ${vaultId}. The Obsidian CLI executable for this session is ${join(agentRoot, "obsidian")}. Use this executable for every Obsidian call, including calls from scripts. Put vault=${vaultId} before every Obsidian command name. The matching development schema catalog is ${catalog}. Read only the copied skill, that catalog, live CLI output, and files you make for this task; do not read evaluator sources.\n\nUser request: ${cases[caseName]}\n\n`;
-  if (oracle.cases[caseName].kind === "research")
-    return `${preamble}Save the complete successful query envelope at ${result} and read it before answering. Use a single complete query when the task can be answered by following relations or grouping. Your final JSON must contain count (the total matched rows), rows (each identity and requested values; flatten grouped rows), groups (value and count, or []), limitation (null unless a requested capability is unavailable), and exportPath (null unless you produced a CSV). For a CSV task, save advisor.csv at ${join(agentRoot, "advisor.csv")} and retain the query JSON as evidence. The runner copies advisor.csv to ${resolve(agentRoot, "..", "advisor.csv")} after the run. Report that retained path; do not write there. Express an unavailable fuzzy-search capability as fuzzy-search-unavailable. Use only this folder for files you create.`;
-  if (itemCases.has(caseName))
-    return `${preamble}Save the complete successful zotlit:query JSON envelope at ${result}. If the CLI returns a file receipt, copy the complete file envelope to this evidence path. Read the saved envelope and verify it before answering. The runner will retain this envelope at ${retained} after cleanup. In your final JSON, items must contain every Item detail the user requested (use Library display names or selectors); use null for a missing year, author, or editor. For the export case use an empty items array and set exportPath to ${retained}; otherwise use null. Put the libraries that share a bare key in duplicateKeyGroups when the request asks about it; otherwise use an empty array. State the exact count and missing publication-year count (use null when the request does not ask for it).`;
-  const imageResult = join(agentRoot, "image-result.json");
-  const imageInstruction =
-    caseName === "image"
-      ? ` Save the successful zotlit:annotation-image JSON response at ${imageResult}, read the returned file, and verify its PNG signature. Set the four image result fields from that response and check.`
-      : " Set imagePath, imageProvenance, imageFormat, and validPng to null.";
-  const queryInstruction =
-    caseName === "export_annotations"
-      ? ` Use zotlit:query from=annotations output=${result} to create the complete JSON export with limit=all. Save the command's JSON file receipt at ${join(agentRoot, "export-receipt.json")}. Read and verify the exported envelope. The runner will retain the file at ${retained}; report that retained path as exportPath.`
-      : ` Save the complete successful zotlit:query from=annotations JSON envelope at ${result}; use limit=all and keep rows inline. Read and verify the saved envelope before answering.`;
-  return `${preamble}${queryInstruction} In your final JSON, annotations must contain every requested detail from those rows, with null for an unavailable value.${imageInstruction}`;
+  const { spec, family } = caseFamily(caseName);
+  return family.prompt(spec, { preamble, agentRoot, result, retained });
+}
+
+/**
+ * Grades the evidence retained in a run folder. A live run and a regrade of a
+ * saved run both call this after the evidence is in `root`.
+ */
+export async function gradeRun(
+  caseName,
+  root,
+  { runRoot, vaultPath, metrics, cliCalls },
+) {
+  const { spec, family } = caseFamily(caseName);
+  const resultPath = join(root, "result.json");
+  const resultText = await readFile(resultPath);
+  const envelope = JSON.parse(resultText);
+  const answer = JSON.parse(await readFile(join(root, "answer.json"), "utf8"));
+  const evidence = await family.loadEvidence(spec, root);
+  const errors = [
+    ...validate(caseName, envelope, { runRoot, vaultPath }),
+    ...family.checkRun(spec, {
+      ...evidence,
+      metrics,
+      cliCalls,
+      agentRoot: join(root, "agent"),
+      resultBytes: Buffer.byteLength(resultText),
+    }),
+    ...checkAnswer(caseName, answer, {
+      ...evidence,
+      resultPath,
+      runRoot,
+      envelope,
+    }),
+  ];
+  if (metrics.forbiddenReads.length)
+    errors.push("agent read evaluator sources");
+  return { answer, errors };
 }
 
 /** The lifecycle seam accepts a fake process runner in tests; production uses spawn. */
@@ -576,6 +227,7 @@ export async function runCase(
   { processRunner = runProcess, runId = randomUUID(), signal } = {},
 ) {
   if (!cases[caseName]) fail(`unknown case: ${caseName}`);
+  const { spec, family } = caseFamily(caseName);
   if (!/^[a-f0-9-]{36}$/i.test(runId)) fail("run ID must be a UUID");
   const parent = join(repo, ".scratch", "zotlit-query-evals");
   await mkdir(parent, { recursive: true });
@@ -672,15 +324,7 @@ export async function runCase(
     await cp(catalogFile, copiedCatalog);
     await writeFile(
       join(agent, "answer.schema.json"),
-      JSON.stringify(
-        oracle.cases[caseName].kind === "research"
-          ? researchSchema(oracle.cases[caseName])
-          : itemCases.has(caseName)
-            ? itemOutputSchema
-            : annotationSchema(caseName),
-        null,
-        2,
-      ),
+      JSON.stringify(family.answerSchema(spec), null, 2),
     );
     const answerPath = join(agent, "answer.json");
     const schema = JSON.parse(
@@ -817,108 +461,17 @@ export async function runCase(
         );
       await writeFile(answerPath, JSON.stringify(final.structured_output));
     }
-    const answer = JSON.parse(await readFile(answerPath, "utf8"));
-    report.answer = answer;
+    report.answer = JSON.parse(await readFile(answerPath, "utf8"));
     await cp(answerPath, report.files.answer);
     await cp(join(agent, "query-result.json"), report.files.result);
-    const envelope = JSON.parse(await readFile(report.files.result, "utf8"));
-    const exportErrors = [];
-    if (caseName === "export_annotations") {
-      await cp(join(agent, "export-receipt.json"), report.files.exportReceipt);
-      const receipt = JSON.parse(
-        await readFile(report.files.exportReceipt, "utf8"),
-      );
-      const bytes = Buffer.byteLength(await readFile(report.files.result));
-      if (
-        receipt.ok !== true ||
-        receipt.file?.path !== join(agent, "query-result.json") ||
-        receipt.file?.format !== "json" ||
-        receipt.file?.bytes !== bytes
-      )
-        exportErrors.push("wrong Annotation Query export receipt");
-    }
-    let imageReceipt = null;
-    const imageErrors = [];
-    if (caseName === "image") {
-      await cp(join(agent, "image-result.json"), report.files.image);
-      imageReceipt = JSON.parse(await readFile(report.files.image, "utf8"));
-      const expected = oracle.cases.image;
-      if (
-        imageReceipt.ok !== true ||
-        imageReceipt.key !== expected.keys[0] ||
-        imageReceipt.format !== expected.format ||
-        !expected.provenance.includes(imageReceipt.provenance)
-      )
-        imageErrors.push("wrong Excerpt Image receipt");
-      if (typeof imageReceipt.path !== "string")
-        imageErrors.push("Excerpt Image receipt has no path");
-      else {
-        const bytes = await readFile(imageReceipt.path);
-        if (
-          !bytes
-            .subarray(0, 8)
-            .equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
-        )
-          imageErrors.push("Excerpt Image is not a PNG");
-      }
-    }
-    report.errors = validate(caseName, envelope, {
+    await family.retainEvidence(spec, { agentRoot: agent, root });
+    const graded = await gradeRun(caseName, root, {
       runRoot: corpus,
       vaultPath: vault,
+      metrics: report.metrics,
+      cliCalls,
     });
-    report.errors.push(
-      ...checkCollectionDiscovery(oracle.cases[caseName], cliCalls),
-    );
-    report.errors.push(...exportErrors);
-    report.errors.push(...imageErrors);
-    report.errors.push(
-      ...checkAnswer(caseName, answer, {
-        resultPath: report.files.result,
-        runRoot: corpus,
-        envelope,
-        imageReceipt,
-      }),
-    );
-    if (itemCases.has(caseName) && report.metrics.itemQueryExitZero < 1)
-      report.errors.push(
-        "agent made no completed Item Query call with exit code zero",
-      );
-    if (
-      !itemCases.has(caseName) &&
-      oracle.cases[caseName].kind !== "research" &&
-      report.metrics.annotationQueryExitZero < 1
-    )
-      report.errors.push(
-        "agent made no completed Annotation Query call with exit code zero",
-      );
-    if (caseName === "image" && report.metrics.imageExitZero < 1)
-      report.errors.push(
-        "agent made no completed Annotation Image call with exit code zero",
-      );
-    if (
-      oracle.cases[caseName].kind === "research" &&
-      report.metrics.queryExitZero < 1
-    )
-      report.errors.push("agent made no completed Query call");
-    if (caseName === "csv_for_advisor") {
-      const csv = await readFile(join(agent, "advisor.csv"), "utf8");
-      await writeFile(join(root, "advisor.csv"), csv);
-      const parsed = parseCsv(csv);
-      const expected = oracle.cases[caseName].rows.map((row) => [
-        row.values.title,
-        String(row.values["date.year"] ?? ""),
-      ]);
-      if (
-        parsed.length !== expected.length + 1 ||
-        expected.some(
-          (row) =>
-            !parsed.slice(1).some((found) => isDeepStrictEqual(found, row)),
-        )
-      )
-        report.errors.push("CSV has wrong titles, years, or row count");
-    }
-    if (report.metrics.forbiddenReads.length)
-      report.errors.push("agent read evaluator sources");
+    report.errors = graded.errors;
     report.state = report.errors.length ? "failed" : "passed";
     if (report.errors.length) report.failureKind = "task";
   } catch (error) {
@@ -966,36 +519,6 @@ export async function runCase(
     );
   }
   return report;
-}
-
-export function parseCsv(text) {
-  const rows = [];
-  let row = [],
-    value = "",
-    quoted = false;
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i];
-    if (char === '"') {
-      if (quoted && text[i + 1] === '"') {
-        value += '"';
-        i++;
-      } else quoted = !quoted;
-    } else if (char === "," && !quoted) {
-      row.push(value);
-      value = "";
-    } else if (char === "\n" && !quoted) {
-      row.push(value.replace(/\r$/, ""));
-      rows.push(row);
-      row = [];
-      value = "";
-    } else value += char;
-  }
-  if (quoted) throw new Error("CSV has an unclosed quoted value");
-  if (value || row.length) {
-    row.push(value);
-    rows.push(row);
-  }
-  return rows;
 }
 
 export function renderReport(report) {
