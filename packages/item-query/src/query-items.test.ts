@@ -732,6 +732,74 @@ describe("collectQuery(ITEMS) relation lists", () => {
   });
 });
 
+describe("collectQuery(ITEMS) first author", () => {
+  /** Put the editor of the book chapter before its author. */
+  function editorFirst(database: ScenarioDatabase): void {
+    const itemID = itemIDsOf(database, ["CHP2YEAR"])[0]!;
+    const reorder = database.sqlite.prepare(
+      "update itemCreators set orderIndex = ? where itemID = ? and orderIndex = ?",
+    );
+    reorder.run(10, itemID, 0);
+    reorder.run(0, itemID, 1);
+    reorder.run(1, itemID, 10);
+  }
+
+  it("projects the first Primary Creator, not the first creator", async () => {
+    using scenario = openScenarioDatabase();
+    editorFirst(scenario);
+    const found = await result(scenario, {
+      libraries: [personal],
+      fields: [
+        "creators[0].fullName",
+        "firstAuthor.fullName",
+        "firstAuthor.role",
+      ],
+    });
+    const values = valuesByKey(found);
+
+    expect(values["CHP2YEAR"]).toEqual({
+      "creators[0].fullName": "Grace Hopper",
+      "firstAuthor.fullName": "Alan Turing",
+      "firstAuthor.role": "author",
+    });
+    expect(values["RPT2NDTE"]).toEqual({
+      "creators[0].fullName": null,
+      "firstAuthor.fullName": null,
+      "firstAuthor.role": null,
+    });
+  });
+
+  it("filters and sorts by the first author", async () => {
+    using scenario = openScenarioDatabase();
+    editorFirst(scenario);
+    const filtered = await result(scenario, {
+      libraries: [personal],
+      filter: 'firstAuthor.family == "Turing"',
+      fields: [],
+    });
+    const sorted = await result(scenario, {
+      libraries: [personal],
+      fields: ["firstAuthor.family"],
+      sort: [{ field: "firstAuthor", direction: "asc" }],
+    });
+
+    expect(keys(filtered)).toEqual(["CHP2YEAR"]);
+    // Rows without a first author come last; the Indexed Key breaks ties.
+    expect(keys(sorted)).toEqual([
+      "BK2MNTH2",
+      "ART2FULL",
+      "CNF2TEXT",
+      "TIE2AAAA",
+      "TIE2BBBB",
+      "CHP2YEAR",
+      "UNI2CDE2",
+      "ALS2CNFL",
+      "RPT2NDTE",
+      "TIE2CCCC",
+    ]);
+  });
+});
+
 describe("collectQuery(ITEMS) failures", () => {
   it("fails a custom field that the source does not define", async () => {
     using scenario = openScenarioDatabase();

@@ -165,7 +165,14 @@ const itemParent = liftParentRecord({
   }),
   needs: (item: readonly FieldNeeds[]): AnnotationNeeds => ({ item }),
   candidates: "all",
-  sortable: ["indexedKey", "key", "title", "date", "dateModified"],
+  sortable: [
+    "indexedKey",
+    "key",
+    "title",
+    "date",
+    "dateModified",
+    "firstAuthor",
+  ],
   listed: () => BUILT_IN_NAMES,
   syntax: "fields",
 });

@@ -234,12 +234,14 @@ describe("readHydrateChunk", () => {
         lastName: "Hopper",
         fieldMode: 0,
         creatorType: "author",
+        primary: true,
       },
       {
         firstName: "Grace",
         lastName: "Hopper",
         fieldMode: 0,
         creatorType: "editor",
+        primary: false,
       },
     ]);
     expect(items.get("fullDateArticle")?.creators).toEqual([
@@ -248,12 +250,14 @@ describe("readHydrateChunk", () => {
         lastName: "Lovelace",
         fieldMode: 0,
         creatorType: "author",
+        primary: true,
       },
       {
         firstName: "",
         lastName: "World Health Organization",
         fieldMode: 1,
         creatorType: "author",
+        primary: true,
       },
     ]);
     expect(items.get("missingDateReport")?.creators).toEqual([]);

@@ -16,6 +16,37 @@ function projectedCreators(values) {
   return names.map((fullName, index) => ({ fullName, role: roles[index] }));
 }
 
+// The first author is the first Primary Creator (ADR 0074): the first creator
+// of the item type's primary creator type, then editor, director, and
+// contributor. Every item type of the corpus has `author` as its primary type.
+const PRIMARY_CREATOR_CHAIN = ["author", "editor", "director", "contributor"];
+
+function firstPrimaryCreator(creators) {
+  for (const role of PRIMARY_CREATOR_CHAIN) {
+    const creator = creators.find((creator) => creator.role === role);
+    if (creator) return creator;
+  }
+  return null;
+}
+
+/** The projected first author: `firstAuthor`, or one of its members. */
+function projectedFirstAuthor(values) {
+  if ("firstAuthor" in values)
+    return { found: true, value: values.firstAuthor };
+  if ("firstAuthor.fullName" in values)
+    return {
+      found: true,
+      value:
+        values["firstAuthor.fullName"] === null
+          ? null
+          : {
+              fullName: values["firstAuthor.fullName"],
+              role: values["firstAuthor.role"],
+            },
+    };
+  return { found: false };
+}
+
 export function checkEnvelope(expected, envelope, context) {
   const { errors, need } = commonChecks(envelope, expected, context);
   for (const field of expected.requiredFields)
@@ -62,19 +93,29 @@ export function checkEnvelope(expected, envelope, context) {
     );
     if (values["date.year"] === null) missingYear++;
     const creators = projectedCreators(values);
-    need(Array.isArray(creators), `missing creators for ${item.indexedKey}`);
-    if (Array.isArray(creators)) {
+    const projected = projectedFirstAuthor(values);
+    need(
+      Array.isArray(creators) || projected.found,
+      `missing creators for ${item.indexedKey}`,
+    );
+    if (Array.isArray(creators))
       need(
         creators[0]?.fullName === item.firstCreator,
         `wrong first creator for ${item.indexedKey}`,
       );
-      const firstAuthor =
-        creators.find((creator) => creator.role === "author")?.fullName ?? null;
+    const firstAuthor = projected.found
+      ? projected.value
+      : Array.isArray(creators)
+        ? firstPrimaryCreator(creators)
+        : undefined;
+    if (firstAuthor !== undefined)
       need(
-        firstAuthor === item.firstAuthor,
+        (firstAuthor?.fullName ?? null) === item.firstAuthor &&
+          (firstAuthor === null ||
+            firstAuthor.role === undefined ||
+            firstAuthor.role === (item.firstAuthorRole ?? "author")),
         `wrong first author for ${item.indexedKey}`,
       );
-    }
     if (checksStatus)
       need(
         values['custom["review.status"]'] === item.status,
@@ -101,10 +142,10 @@ function sortedLibraries(libraries) {
   );
 }
 
-// An editor answer is required only where no author exists; otherwise null is
-// accepted, since the request asks for the first author.
+// An editor answer is required only where the first author is an editor;
+// otherwise null is accepted, since the request asks for the first author.
 function wrongEditor(found, item) {
-  return item.firstAuthor === null
+  return item.editorRequired
     ? found.editor !== item.editor
     : found.editor !== null && found.editor !== item.editor;
 }
@@ -127,7 +168,13 @@ export function checkAnswer(expected, answer, { resultPath }) {
         publicationYear: row.year,
         library: indexedKeyLibrary(row.indexedKey),
         firstAuthor: row.firstAuthor,
-        editor: row.firstCreator !== row.firstAuthor ? row.firstCreator : null,
+        editor:
+          row.firstAuthorRole === "editor"
+            ? row.firstAuthor
+            : row.firstCreator !== row.firstAuthor
+              ? row.firstCreator
+              : null,
+        editorRequired: row.firstAuthorRole === "editor",
       }));
   if (
     !Array.isArray(answer.items) ||

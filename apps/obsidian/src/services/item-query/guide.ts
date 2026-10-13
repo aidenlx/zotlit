@@ -186,6 +186,17 @@ TAGS, COLLECTIONS, AND CREATORS
   A Creator is the full name, given name first:
     ${filter('creators.contains("Ada Lovelace")')}
 
+FIRST AUTHOR
+  firstAuthor is the first author of an Item, as a ZotLit template shows it:
+  the first creator of the item type's primary role (author for an article,
+  director for a film), else the first editor, director, or contributor.
+  creators[0] is the first creator of any role, such as an editor. Read the
+  members family, given, literal, fullName, and role. firstAuthor is null
+  for an Item without such a creator. On Attachments and Annotations, use
+  item.firstAuthor.
+    ${filter('firstAuthor.family == "Lovelace"')}
+    ${filter('firstAuthor.role == "editor"')}
+
 LIST HELPERS
   sort() orders a list: numbers by value, text in the order a sort on a
   text field uses, dates by their start, and null last; unique() keeps
@@ -312,7 +323,9 @@ SORT
   sort takes a comma list: -field is descending, +field or field is ascending.
   A JSON array of {"field","direction"} objects is also accepted. The first
   entry orders first. A Sortable Field has sort true in the selected dataset's
-  catalog fields. Relation Lists and values derived from them are not sortable.
+  catalog fields. Relation Lists and values derived from them are not sortable,
+  except firstAuthor, which sorts by family name, then given name.
+    ${example({ fields: "title,firstAuthor.fullName", sort: "firstAuthor" })}
   This Item example sorts by date descending, then title ascending:
     ${example({ sort: "-date,title" })}
   Each Query Dataset has its own default sort. For Items, it is

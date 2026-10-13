@@ -9,6 +9,7 @@ import {
   itemDataValues,
   items,
   itemTags,
+  itemTypeCreatorTypes,
   tags,
 } from "@drizzle/schema";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
@@ -77,6 +78,11 @@ export interface HydratedCreator {
   readonly fieldMode: CreatorFieldMode;
   /** Zotero creator type: `"author"`, `"editor"`, … */
   readonly creatorType: string;
+  /**
+   * The creator type is the primary creator type of the item type: `author`
+   * for a journal article, `director` for a film, `programmer` for software.
+   */
+  readonly primary: boolean;
 }
 
 /** One `itemTags` row of an Item. */
@@ -236,12 +242,21 @@ const creatorsStatement = defineStatement<Record<IdSlot, number | null>>(
       lastName: creators.lastName,
       fieldMode: creators.fieldMode,
       creatorType: creatorTypes.creatorType,
+      primary: sql<number>`coalesce(${itemTypeCreatorTypes.primaryField}, 0)`,
     })
     .from(itemCreators)
     .innerJoin(creators, eq(creators.creatorID, itemCreators.creatorID))
     .innerJoin(
       creatorTypes,
       eq(creatorTypes.creatorTypeID, itemCreators.creatorTypeID),
+    )
+    .innerJoin(items, eq(items.itemID, itemCreators.itemID))
+    .leftJoin(
+      itemTypeCreatorTypes,
+      and(
+        eq(itemTypeCreatorTypes.itemTypeID, items.itemTypeID),
+        eq(itemTypeCreatorTypes.creatorTypeID, itemCreators.creatorTypeID),
+      ),
     )
     .where(
       inArray(
@@ -372,6 +387,7 @@ export function readHydrateChunk(chunk: {
             lastName: creator.lastName ?? "",
             fieldMode: creator.fieldMode ?? 0,
             creatorType: creator.creatorType ?? "",
+            primary: creator.primary === 1,
           });
         }
       });
