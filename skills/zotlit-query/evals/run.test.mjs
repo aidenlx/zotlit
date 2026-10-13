@@ -4,6 +4,7 @@ import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import test from "node:test";
 
+import { regrade } from "./regrade.mjs";
 import { measureEvents, runCase, runProcess } from "./run.mjs";
 
 const repo = resolve(import.meta.dirname, "../../..");
@@ -26,6 +27,7 @@ async function exercise(
     caseName = "edge",
     agent = "codex",
     changeAnnotation = () => {},
+    afterRun = async () => {},
   } = {},
 ) {
   const runId = randomUUID();
@@ -745,6 +747,7 @@ async function exercise(
         await assert.rejects(stat(path));
     }
     await assert.rejects(stat(join(root, "agent")));
+    await afterRun(root, report);
     return report;
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -1210,4 +1213,27 @@ for (const caseName of ["shared_marks", "colors"]) {
         );
     });
   }
+}
+
+for (const { caseName, answerCount = null, options = {} } of [
+  { caseName: "edge", answerCount: 3 },
+  { caseName: "edge", answerCount: 2 },
+  { caseName: "edge", answerCount: 3, options: { noQuery: true } },
+  { caseName: "export_annotations" },
+  { caseName: "export_annotations", options: { wrongExportReceipt: true } },
+  { caseName: "csv_for_advisor" },
+  { caseName: "discover_collection", options: { skipDiscovery: true } },
+]) {
+  await test(`regrading a saved ${caseName} run repeats the live verdict ${JSON.stringify(options)}`, async () => {
+    await exercise(answerCount, {
+      caseName,
+      ...options,
+      async afterRun(root, report) {
+        const verdict = await regrade(root);
+        assert.equal(verdict.graded, true);
+        assert.equal(verdict.same, true);
+        assert.deepEqual(verdict.errors, report.errors);
+      },
+    });
+  });
 }
