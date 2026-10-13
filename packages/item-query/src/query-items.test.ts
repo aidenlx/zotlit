@@ -2896,7 +2896,7 @@ const DATASETS: readonly DatasetCase[] = [
       ["Type", "unknown-field"],
       ["", "unknown-field"],
       ["text", "unsortable-field"],
-      ["attachment.title", "unsortable-field"],
+      ["attachment.path", "unsortable-field"],
       ["item.date.year", "unsortable-field"],
       ["item.creators[].fullName", "unsortable-field"],
     ],
