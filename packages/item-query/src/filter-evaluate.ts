@@ -2,7 +2,7 @@
 // match. Missing data gives null; a value that the Item cannot compute gives
 // an Error Value, which passes through every node that does not read a truth.
 import { addDuration } from "./filter-dates";
-import { errorValue, isError } from "./filter-error";
+import { errorValue, firstError, isError } from "./filter-error";
 import { finite, invoke, methodOf, propertyOf } from "./filter-functions";
 import type { FilterNode } from "./filter-plan";
 import {
@@ -184,7 +184,8 @@ function wrongSubject(subject: FilterValue, callee: string): FilterValue {
  * An element expression: the expression runs once for each element of the
  * list with `value` and `index` bound, and `acc` in `reduce`. A null subject
  * gives null, another subject that is not a list an Error Value; `initial` is
- * evaluated once, outside the binding. `filter` drops an element whose
+ * evaluated once, outside the binding, and an Error Value among them is the
+ * result. `filter` drops an element whose
  * expression gives an Error Value.
  */
 function element<Item>(
@@ -193,7 +194,10 @@ function element<Item>(
 ): FilterValue {
   const subject = valueOf(node.subject, context);
   if (!isList(subject)) return wrongSubject(subject, `${node.name}()`);
+  // As in every other call, an Error Value among the arguments is the result.
   const args = node.args.map((arg) => valueOf(arg, context));
+  const failed = firstError(args);
+  if (failed !== undefined) return failed;
   const at = (index: number, acc?: FilterValue): FilterValue =>
     valueOf(node.expression, {
       ...context,

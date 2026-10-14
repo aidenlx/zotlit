@@ -97,6 +97,16 @@ export function isError(value: FilterValue | undefined): value is ErrorValue {
   );
 }
 
+/**
+ * The first Error Value among the evaluated arguments of a call, which is the
+ * result of the call; `undefined` when none is one.
+ */
+export function firstError(
+  args: readonly FilterValue[],
+): ErrorValue | undefined {
+  return args.find((value) => isError(value));
+}
+
 /** A value type with its article: "a number", "an error". */
 export function typeNoun(type: string): string {
   return `${/^[aeiou]/.test(type) ? "an" : "a"} ${type}`;
