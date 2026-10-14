@@ -14,6 +14,7 @@ import type {
   SyntaxFault,
 } from "./fault";
 import type { ValueShape } from "./fields";
+import { isError, typeNoun } from "./filter-error";
 import {
   GLOBAL_FUNCTION_NAMES,
   GLOBAL_FUNCTIONS,
@@ -31,6 +32,7 @@ import {
 import type { FunctionDefinition } from "./filter-functions";
 import { hasBareForm } from "./filter-plan";
 import type { StaticType } from "./filter-plan";
+import type { FilterValue } from "./filter-values";
 import { nearMatches } from "./near-match";
 import { planPath } from "./projection";
 import type { QueryClock } from "./query-clock";
@@ -86,7 +88,8 @@ export function diagnose(
     context.argument !== "formulas" ||
     context.path === undefined ||
     fault.kind === "formula-name" ||
-    fault.kind === "formula-result"
+    fault.kind === "formula-result" ||
+    fault.kind === "formula-cycle"
   )
     return diagnostic;
   const message = `In formula.${context.path}: ${diagnostic.message}`;
@@ -132,6 +135,19 @@ function diagnoseFault(
         },
         text,
         { found: fault.found, expected: [fault.expected] },
+      );
+    }
+    case "operand-type": {
+      const found = fault.operands.map((operand) => typeNoun(operand.type));
+      return renderDiagnostic(
+        {
+          code: "wrong-operand-type",
+          message: `The operator ${fault.operator} cannot use ${found.join(" and ")}.`,
+          hint: `${fault.operator} takes ${OPERAND_TYPES[fault.operands.length === 1 ? "unary -" : fault.operator]}. Convert a text first with number(), such as number(volume), or with date().`,
+          location: faultLocation,
+        },
+        text,
+        { found: found.join(" and ") },
       );
     }
     case "unreadable": {
@@ -200,6 +216,22 @@ function diagnoseFault(
         "",
         { found: fault.name, expected: ["an identifier"] },
       );
+    case "formula-cycle": {
+      const chain = fault.chain.map((name) => `formula.${name}`).join(" → ");
+      return renderDiagnostic(
+        {
+          code: "formula-cycle",
+          message: `The Formulas read each other in a cycle: ${chain}.`,
+          hint: "Make one Formula in the cycle read fields only, not another Formula of the cycle.",
+          location: faultLocation,
+        },
+        text,
+        {
+          found: chain,
+          expected: ["a Formula that reads no Formula of the cycle"],
+        },
+      );
+    }
     case "formula-result":
       return renderDiagnostic(
         {
@@ -264,9 +296,11 @@ export function codeOfFault(
     return "invalid-filter";
   if (fault.kind === "arity") return "wrong-argument-count";
   if (fault.kind === "argument-type") return "wrong-argument-type";
+  if (fault.kind === "operand-type") return "wrong-operand-type";
   if (fault.kind === "unreadable") return "unfilterable-field";
   if (fault.kind === "formula-name") return "invalid-formula-name";
   if (fault.kind === "formula-result") return "invalid-formula-result";
+  if (fault.kind === "formula-cycle") return "formula-cycle";
   switch (fault.role) {
     case "formula":
       return "unknown-formula";
@@ -394,7 +428,7 @@ function diagnoseUnknown(
   };
 }
 
-/** `formula.<name>` in `fields` names no Formula of the request. */
+/** `formula.<name>` names no Formula of the request. */
 function diagnoseUnknownFormula(
   fault: Extract<Fault, { readonly kind: "unknown" }>,
   text: string,
@@ -402,6 +436,32 @@ function diagnoseUnknownFormula(
 ): Diagnostic<"unknown-formula"> {
   const defined = fault.formulas ?? [];
   const nearby = nearMatches(fault.name, defined);
+  if (location.argument === "filter" || location.argument === "formulas") {
+    const suggestions = nearby.map((name) => `formula.${name}`);
+    return {
+      ...renderDiagnostic(
+        {
+          code: "unknown-formula",
+          message:
+            fault.name === ""
+              ? "formula alone names no Formula; a filter reads a Formula as formula.<name>."
+              : `formula.${fault.name} reads the Formula ${JSON.stringify(fault.name)}, which the request does not define.`,
+          hint:
+            nearby.length === 1
+              ? `Try: ${text.slice(0, fault.at.from)}${suggestions[0]!}${text.slice(fault.at.to)}`
+              : defined.length > 0
+                ? `Read a Formula of the request: ${defined.map((name) => `formula.${name}`).join(", ")}.`
+                : fault.name === ""
+                  ? `Define a Formula in formulas, such as formulas='{"year":"date.year"}', and read it as formula.year.`
+                  : `Define the Formula in formulas, such as formulas='${JSON.stringify({ [fault.name]: "date.year" })}'.`,
+          location: { ...location, span: fault.at },
+        },
+        text,
+        { found: fault.name, expected: defined },
+      ),
+      suggestions,
+    };
+  }
   const replaced =
     nearby.length === 1 && location.index !== undefined
       ? replaceJsonValue(text, [location.index], `formula.${nearby[0]!}`)
@@ -1081,6 +1141,16 @@ function signature(
 }
 
 /** Shared rendering for engine faults and adapter rejections or operational failures. */
+/** The operand types that each arithmetic operator takes. */
+const OPERAND_TYPES: Readonly<Record<string, string>> = {
+  "+": "two numbers, two lists, a string and any value, or a date and a duration",
+  "-": "two numbers, or a date and a duration",
+  "*": "two numbers",
+  "/": "two numbers",
+  "%": "two numbers",
+  "unary -": "a number",
+};
+
 export function renderDiagnostic<Code extends string>(
   base: {
     readonly code: Code;
@@ -1271,6 +1341,11 @@ export function diagnoseWarning(
   };
 }
 
+/** Whether a conversion gave a value: neither null nor an Error Value. */
+function converts(value: FilterValue): boolean {
+  return value !== null && !isError(value);
+}
+
 function constantCorrection(
   fault: Extract<Fault, { kind: "constant" }>,
   text: string,
@@ -1332,7 +1407,7 @@ function constantCorrection(
           definition.diagnosticCorrection === "conversion" &&
           definition.returns === fault.left.type &&
           eligible(definition) &&
-          definition.call(null, [rightAst.value], clock) !== null,
+          converts(definition.call(null, [rightAst.value], clock)),
       );
       if (conversions.length === 1)
         replacement = `${left} ${fault.operator} ${conversions[0]![0]}(${right})`;

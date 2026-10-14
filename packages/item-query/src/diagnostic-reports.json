@@ -332,7 +332,7 @@
       "filter": "title.isType(\"strng\")"
     },
     "report": [
-      "Argument 1 of isType is \"strng\"; isType takes one of \"any\", \"null\", \"boolean\", \"record\", \"number\", \"string\", \"list\", \"date\", \"duration\", \"regexp\" there.",
+      "Argument 1 of isType is \"strng\"; isType takes one of \"any\", \"null\", \"boolean\", \"record\", \"number\", \"string\", \"list\", \"date\", \"duration\", \"regexp\", \"error\" there.",
       "title.isType(\"strng\")",
       "             ^^^^^^^^^",
       "Call value.isType(type)."
@@ -1032,6 +1032,30 @@
       "item == this.item",
       "        ^^^^^^^^^",
       "Bind this.item to an Item when you run the query, such as this-item=<Indexed Key> in zotlit:query, or name the Item by its Indexed Key."
+    ]
+  },
+  {
+    "name": "arithmetic on a text",
+    "request": {
+      "filter": "title * 2 > 10"
+    },
+    "report": [
+      "The operator * cannot use a string and a number.",
+      "title * 2 > 10",
+      "^^^^^^^^^",
+      "* takes two numbers. Convert a text first with number(), such as number(volume), or with date()."
+    ]
+  },
+  {
+    "name": "unary minus on a text",
+    "request": {
+      "filter": "-title < 0"
+    },
+    "report": [
+      "The operator - cannot use a string.",
+      "-title < 0",
+      "^^^^^^",
+      "- takes a number. Convert a text first with number(), such as number(volume), or with date()."
     ]
   }
 ]

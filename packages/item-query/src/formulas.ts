@@ -6,7 +6,12 @@ import { regex } from "arkregex";
 import type { ItemQueryErrorCode } from "./error";
 import { dateText } from "./filter-dates";
 import type { DateValue } from "./filter-dates";
-import { evaluate } from "./filter-evaluate";
+import {
+  EVALUATION_ERROR_CODES,
+  isError,
+  renderEvaluationFault,
+} from "./filter-error";
+import { evaluateFormula } from "./filter-evaluate";
 import type { FilterPlan } from "./filter-plan";
 import { isDate, isList } from "./filter-values";
 import type { FilterValue } from "./filter-values";
@@ -34,9 +39,19 @@ export const FORMULA_SCHEMA = {
     "invalid-formula-name",
     "invalid-formula-result",
     "unknown-formula",
+    "formula-cycle",
   ] satisfies ItemQueryErrorCode[],
   /** The codes of a Query Warning about a Formula. */
   warnings: ["unused-formula"],
+  /**
+   * A value that one record cannot compute: the Error Value, in a Query Row
+   * as `{ kind: "error", code, message }`, also as a list element.
+   */
+  error: {
+    type: "error",
+    row: { kind: "error", code: "<code>", message: "<message>" },
+    codes: EVALUATION_ERROR_CODES,
+  },
 };
 
 /** A Formula that the request reads, planned against its Query Dataset. */
@@ -64,7 +79,7 @@ export function projectColumns<Item>(
       values[column.path.text] = readPath(column.path, item);
     else
       values[`${FORMULA_SEGMENT}.${column.formula.name}`] = formulaValue(
-        evaluate(column.formula.plan.root, item, clock),
+        evaluateFormula(column.formula.plan.root, item, clock),
       );
   }
   return values;
@@ -72,13 +87,21 @@ export function projectColumns<Item>(
 
 /**
  * A Formula value in the Query Row shape: a scalar as it is, a list element
- * by element, a calendar date in the date object shape of `date`, and a
- * timestamp as an instant. A record, a duration, or a regexp is null.
+ * by element, a calendar date in the date object shape of `date`, a
+ * timestamp as an instant, and an Error Value as its code and rendered
+ * message. A record, a duration, or a regexp is null.
  */
 export function formulaValue(value: FilterValue): ProjectionValue {
   if (value === null || typeof value !== "object") return value;
   if (isList(value)) return value.map(formulaValue);
   if (isDate(value)) return dateObject(value);
+  if (isError(value)) {
+    return {
+      kind: "error",
+      code: value.fault.code,
+      message: renderEvaluationFault(value.fault),
+    };
+  }
   return null;
 }
 

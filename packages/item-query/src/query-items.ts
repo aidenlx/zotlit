@@ -68,7 +68,8 @@ export const ITEMS: QueryDataset<ItemQueryRequest> = {
   sortableFields: BUILT_IN_NAMES.filter((name) => sortable(name)),
   definition: fieldDefinition,
   filterField,
-  planFilter: (text, context) => planFilter(text, { context }),
+  planFilter: (text, context, formula) =>
+    planFilter(text, { context, formula }),
   sortable,
   resolvePath: resolveItemPath,
   rootName: fieldRoot,
