@@ -633,6 +633,26 @@ views:
     ).toBe("views:\n  - type: list\n    name: Items\n    from: items\n");
   });
 
+  it("leaves the file as it is when it removes a Display Name the property does not have", () => {
+    const text = `properties:
+  - title
+views:
+  - type: list
+    name: Items
+    from: items
+`;
+    expect(
+      serializeQueryFile(
+        withDisplayName(parseQueryFile(text), "formula.year", undefined),
+      ),
+    ).toBe(text);
+    expect(
+      serializeQueryFile(
+        withDisplayName(parseQueryFile(NAMED), "date", undefined),
+      ),
+    ).toBe(NAMED);
+  });
+
   it("removes the properties entry of a removed Formula", () => {
     const file = removeFormula(parseQueryFile(NAMED), "year");
     expect(displayName(file, "formula.year")).toBeUndefined();
