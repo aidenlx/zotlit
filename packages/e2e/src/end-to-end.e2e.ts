@@ -1122,7 +1122,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       (block) => JSON.stringify(block.cards) === JSON.stringify(other),
     );
 
-    // A section embed reads the block and says a change is not saved.
+    // A section embed shows the block, and a sort change there saves to the
+    // note that holds it.
     const embedPath = "Query block embed.md";
     scratchFiles.push(embedPath);
     await obEval(
@@ -1133,7 +1134,31 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const embedded = await blockWhen(
       (block) => JSON.stringify(block.cards) === JSON.stringify(sorted),
     );
-    expect(embedded.readOnly).toBe(m.query_view_read_only());
+    expect(embedded.readOnly).toBeNull();
+    await inBlock("el.querySelector('[data-query-toolbar=\"sort\"]').click()");
+    await inBlock(
+      `const select=el.querySelector('[data-query-popover="sort"] [data-sort-direction]');select.value='ASC';select.dispatchEvent(new Event('change',{bubbles:true}))`,
+    );
+    const fromEmbed = written.replace(
+      "        direction: DESC\n```",
+      "        direction: ASC\n```",
+    );
+    expect(fromEmbed).not.toBe(written);
+    expect(
+      await waitFor(
+        async () =>
+          (await obEval(
+            vaultId,
+            `app.vault.read(app.vault.getFileByPath(${JSON.stringify(notePath)}))`,
+          )) === fromEmbed,
+      ),
+    ).toBe(true);
+    expect(
+      await obEval(
+        vaultId,
+        `app.vault.read(app.vault.getFileByPath(${JSON.stringify(embedPath)})).then(JSON.stringify)`,
+      ),
+    ).toBe(JSON.stringify("![[SAKIMA22#Sakima’s song]]\n"));
 
     // In a note without a `zotero-key`, the view names `this`.
     const plainPath = "Query block without key.md";
