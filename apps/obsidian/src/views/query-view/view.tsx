@@ -19,10 +19,7 @@ import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import type { HistorySurface } from "@/services/annotation-repository/actions";
-import type {
-  AnnotationRepository,
-  HistoryDirection,
-} from "@/services/annotation-repository/service";
+import type { HistoryDirection } from "@/services/annotation-repository/service";
 import type { Diagnostic } from "@/services/item-query/contract";
 import type {
   QueryViewOutcome,
@@ -93,8 +90,6 @@ const logger = getLogger(["views", "query-view"]);
 
 /** The services a Query View reads through. */
 export interface QueryViewDeps extends AnnotationsLayoutDeps {
-  annotations: AnnotationsLayoutDeps["annotations"] &
-    Pick<AnnotationRepository, "hold">;
   query: Pick<QueryService, "run">;
   reads: AnnotationsLayoutDeps["reads"] &
     Pick<ZoteroReadsService, "on" | "acquireRead">;
@@ -253,15 +248,6 @@ function usedGroupBy(view: QueryFileView): QueryFileSort | undefined {
  */
 export const RERUN_DELAY_MS = 300;
 
-/** The keys of the Annotations the repository holds for an Attachment now. */
-function annotationKeys(
-  annotations: Pick<AnnotationRepository, "peek">,
-  attachmentKey: string,
-): ReadonlySet<string> | null {
-  const held = annotations.peek(attachmentKey);
-  return held ? new Set(held.value.annotations.map(({ key }) => key)) : null;
-}
-
 /** One run of a view: its request key, and the file and view it ran for. */
 interface ViewRun {
   key: string;
@@ -279,8 +265,6 @@ export class QueryView extends Component implements HistorySurface {
   #run: AbortController | null = null;
   /** Whether the rows on screen are drawn as Annotation Cards. */
   #cardsShown = false;
-  /** The lists the cards on screen come from, held while they show. */
-  #hold: Disposable | null = null;
   /**
    * The request whose rows are on screen, which a failed refresh keeps. An
    * edit that leaves the request as it is, such as a new view name or a card
@@ -303,16 +287,7 @@ export class QueryView extends Component implements HistorySurface {
   #drawnCards: AnnotState["annotations"] | undefined = undefined;
   /** What waits for the list to draw the cards the store holds now. */
   #drawWaiters: (() => void)[] = [];
-  /** The Annotations of each Attachment the cards show, as the last run found them. */
-  readonly #listKeys = new Map<string, ReadonlySet<string>>();
   #rerunTimer: ReturnType<typeof setTimeout> | null = null;
-  /**
-   * The Annotations a list change added that no run's rows have named yet,
-   * each with its Attachment's Indexed Key.
-   */
-  readonly #listAdded = new Map<string, string>();
-  /** Whether the next run is the one a list change asked for. */
-  #listRerun = false;
 
   constructor(deps: QueryViewDeps, host: QueryViewHost) {
     super();
@@ -322,6 +297,7 @@ export class QueryView extends Component implements HistorySurface {
       ...host.layout,
       scope: host.scope,
       sourcePath: host.sourcePath,
+      onListChanged: () => this.#listChanged(),
     });
   }
 
@@ -405,33 +381,15 @@ export class QueryView extends Component implements HistorySurface {
     subscriptions.defer(reads.on("degraded", rerun));
     subscriptions.defer(reads.on("db-file-missing", rerun));
     subscriptions.defer(libraryScope.on("libraries-changed", rerun));
-    subscriptions.defer(
-      this.#deps.annotations.on("annotations-changed", (attachmentKey) =>
-        this.#listChanged(attachmentKey),
-      ),
-    );
     subscriptions.defer(() => this.#cancelRerun());
   }
 
   /** Run again, after a short wait, once a shown Attachment gains or loses an Annotation. */
-  #listChanged(attachmentKey: string): void {
-    const before = this.#listKeys.get(attachmentKey);
-    if (!before) return;
-    const now = annotationKeys(this.#deps.annotations, attachmentKey);
-    if (
-      now === null ||
-      (now.size === before.size && [...now].every((key) => before.has(key)))
-    )
-      return;
-    this.#listKeys.set(attachmentKey, now);
-    for (const key of now) {
-      if (!before.has(key)) this.#listAdded.set(key, attachmentKey);
-    }
+  #listChanged(): void {
     this.#cancelRerun();
     this.#rerunTimer = setTimeout(() => {
       this.#rerunTimer = null;
-      this.#listRerun = true;
-      this.refresh();
+      this.#refresh(true);
     }, RERUN_DELAY_MS);
   }
 
@@ -445,8 +403,6 @@ export class QueryView extends Component implements HistorySurface {
     this.#subscriptions = null;
     this.#run?.abort();
     this.#run = null;
-    this.#hold?.[Symbol.dispose]();
-    this.#hold = null;
     this.#shownRequest = null;
     this.#runRequest = null;
     this.#rendered = false;
@@ -768,10 +724,13 @@ export class QueryView extends Component implements HistorySurface {
 
   /** Run the view's query again, and show its rows. */
   refresh(): void {
+    this.#refresh(false);
+  }
+
+  /** @param fromList whether a list change asked for the run. */
+  #refresh(fromList: boolean): void {
     this.#run?.abort();
     this.#run = null;
-    const fromList = this.#listRerun;
-    this.#listRerun = false;
     const { file, view, problems } = this.state.getState();
     if (!file || !view || problems.length > 0) {
       this.#runRequest = null;
@@ -834,8 +793,8 @@ export class QueryView extends Component implements HistorySurface {
         // The query reads Zotero's database, which can take a new Annotation
         // after the repository's list does. Such a run keeps the cards on
         // screen, and the database change that follows runs the view again.
-        const waiting = this.#lacksListAdded(result.rows ?? []);
-        if (fromList && waiting) return;
+        const named = (result.rows ?? []).map((row) => row.indexedKey);
+        if (this.#layout.keepsBack(named, fromList)) return;
         const shown = layoutRows(
           result.rows ?? [],
           usedGroupBy(view),
@@ -881,23 +840,6 @@ export class QueryView extends Component implements HistorySurface {
   }
 
   /**
-   * Whether these rows lack an Annotation a list change added that the
-   * repository still holds. An added Annotation the rows name, or that the
-   * repository no longer holds, is no longer waited for.
-   */
-  #lacksListAdded(rows: readonly QueryViewRow[]): boolean {
-    const named = new Set(rows.map((row) => row.indexedKey));
-    for (const [key, attachmentKey] of this.#listAdded) {
-      if (
-        named.has(key) ||
-        !annotationKeys(this.#deps.annotations, attachmentKey)?.has(key)
-      )
-        this.#listAdded.delete(key);
-    }
-    return this.#listAdded.size > 0;
-  }
-
-  /**
    * A run that gives no rows says why. A refresh of the rows on screen, or a
    * new filter of the view they belong to, keeps them under the message;
    * another view shows none. A fault in one condition of the filters is
@@ -933,7 +875,7 @@ export class QueryView extends Component implements HistorySurface {
   }
 
   /**
-   * Put these rows on screen, holding their lists before the old ones go.
+   * Put these rows on screen, from the lists the layout holds for them.
    * `null` rows stand for a Layout that draws no Annotation Cards: it shows
    * the rows from the state, and holds no list.
    */
@@ -941,7 +883,6 @@ export class QueryView extends Component implements HistorySurface {
     key: string | null,
     rows: Parameters<AnnotationsLayout["showRows"]>[0] | null = [],
   ): Promise<void> {
-    const previous = this.#hold;
     this.#shownRequest = key;
     if (key === null) {
       this.#shownViewName = null;
@@ -949,25 +890,11 @@ export class QueryView extends Component implements HistorySurface {
       this.state.setState({ records: [] });
     }
     this.#cardsShown = key !== null && rows !== null;
-    this.#listKeys.clear();
     if (key === null || rows === null) {
-      this.#hold = null;
       this.#layout.clear();
-      previous?.[Symbol.dispose]();
       return;
     }
-    const also = this.#host.attachments?.() ?? [];
-    const attachmentKeys = [
-      ...new Set([...rows.map((row) => row.attachmentKey), ...also]),
-    ];
-    this.#hold = this.#deps.annotations.hold(attachmentKeys);
-    await this.#layout.showRows(rows, also);
-    previous?.[Symbol.dispose]();
-    if (this.#shownRequest !== key) return;
-    for (const attachmentKey of attachmentKeys) {
-      const keys = annotationKeys(this.#deps.annotations, attachmentKey);
-      if (keys) this.#listKeys.set(attachmentKey, keys);
-    }
+    await this.#layout.showRows(rows, this.#host.attachments?.() ?? []);
   }
 }
 
