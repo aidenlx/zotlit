@@ -604,9 +604,9 @@ describe('formulaFaults: "leave-out"', () => {
       { "formula.ok": 2019 },
     ]);
     const faults = result.formulaFaults!;
-    // The text of a stops at its first read of a wrong Formula, so the query
-    // plans no read of bad.
-    expect(Object.keys(faults).sort()).toEqual(["a", "b", "worse"]);
+    // a reads worse first; the query still plans bad, which a reads after it.
+    expect(Object.keys(faults).sort()).toEqual(["a", "b", "bad", "worse"]);
+    expect(faults.bad).toMatchObject({ code: "wrong-operand-type" });
     expect(faults.a).toMatchObject({
       code: "reads-faulted-formula",
       message: "formula.a reads formula.worse, which has a mistake.",
@@ -642,7 +642,7 @@ describe('formulaFaults: "leave-out"', () => {
         formulas: { a: "formula.b + 1", b: "formula.a * 2", ok: "date.year" },
         fields: ["formula.a", "formula.ok"],
       },
-      { a: "reads-faulted-formula", b: "formula-cycle" },
+      { a: "formula-cycle", b: "formula-cycle" },
     ],
     [
       "a read of an undefined Formula",
@@ -695,6 +695,85 @@ describe('formulaFaults: "leave-out"', () => {
         ]),
       ),
     ).toEqual(codes);
+  });
+
+  it("marks each Formula on a cycle with the cycle from it, and a Formula that reads into the cycle as a reader", async () => {
+    using scenario = openScenarioDatabase();
+    const result = await run(scenario, {
+      filter: 'indexedKey == "BK2MNTH2"',
+      formulas: {
+        out: "formula.a",
+        a: "formula.b + 1",
+        b: "formula.c * 2",
+        c: "date.year + formula.a",
+      },
+      fields: ["formula.out"],
+      formulaFaults: "leave-out",
+    });
+    const faults = result.formulaFaults!;
+    expect(Object.keys(faults).sort()).toEqual(["a", "b", "c", "out"]);
+    expect(faults.out).toMatchObject({
+      code: "reads-faulted-formula",
+      message: "formula.out reads formula.a, which has a mistake.",
+    });
+    expect(faults.a).toMatchObject({
+      code: "formula-cycle",
+      message:
+        "The Formulas read each other in a cycle: formula.a → formula.b → formula.c → formula.a.",
+      location: { argument: "formulas", path: "a", span: { from: 0, to: 9 } },
+    });
+    expect(faults.b).toMatchObject({
+      code: "formula-cycle",
+      message:
+        "The Formulas read each other in a cycle: formula.b → formula.c → formula.a → formula.b.",
+      location: { argument: "formulas", path: "b", span: { from: 0, to: 9 } },
+    });
+    expect(faults.c).toMatchObject({
+      code: "formula-cycle",
+      message:
+        "The Formulas read each other in a cycle: formula.c → formula.a → formula.b → formula.c.",
+      location: {
+        argument: "formulas",
+        path: "c",
+        span: { from: 12, to: 21 },
+      },
+    });
+  });
+
+  it("plans every Formula that the request reads, also after a reader's first read of a wrong Formula", async () => {
+    using scenario = openScenarioDatabase();
+    const error = await failure(scenario, {
+      filter: "formula.bad > 0 && formula.reader > 0",
+      formulas: {
+        bad: "title * 2",
+        reader: "formula.bad + formula.deep",
+        deep: "formula.worse",
+        worse: "title.nope()",
+        unread: "title * 3",
+      },
+      fields: ["title"],
+      formulaFaults: "leave-out",
+    });
+    expect(error.diagnostic).toMatchObject({
+      code: "reads-faulted-formula",
+      message: "The filter reads formula.bad, which has a mistake.",
+    });
+    expect(
+      Object.fromEntries(
+        Object.entries(error.formulaFaults!).map(([name, fault]) => [
+          name,
+          fault.code,
+        ]),
+      ),
+    ).toEqual({
+      bad: "wrong-operand-type",
+      reader: "reads-faulted-formula",
+      deep: "reads-faulted-formula",
+      worse: "unknown-function",
+    });
+    expect(error.formulaFaults!.reader!.message).toBe(
+      "formula.reader reads formula.bad, which has a mistake.",
+    );
   });
 
   it("gives no Diagnostic and no Formula fault for an answer without a mistake", async () => {
