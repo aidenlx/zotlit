@@ -850,7 +850,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
     });
     const tab = "app.workspace.getMostRecentLeaf().view";
-    const open = `(async()=>{for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))leaf.detach();const leaf=app.workspace.getLeaf('tab');await leaf.openFile(app.vault.getFileByPath(${JSON.stringify(path)}));app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`;
+    const open = `(async()=>{const old=app.workspace.getLeavesOfType('zotlit-query-file');const leaf=app.workspace.getLeaf('tab');await leaf.openFile(app.vault.getFileByPath(${JSON.stringify(path)}));app.workspace.setActiveLeaf(leaf,{focus:true});for(const other of old)other.detach();return true;})()`;
     /** The view on screen, its cards, and the page labels the cards show. */
     const shown = (view: string) =>
       obEvalUntil(
@@ -916,7 +916,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(JSON.parse(await obEval(vaultId, pages))).not.toEqual([]);
     await obEval(
       vaultId,
-      `(()=>{activeDocument.querySelector('.modal [data-query-view-option="showPage"]').click();activeDocument.querySelector('.modal .modal-close-button').click();return true;})()`,
+      `(()=>{const modal=activeDocument.querySelector('.modal.zt-configure-view');modal.querySelector('[data-query-view-option="showPage"]').click();(modal.querySelector('.modal-close-button')??modal.querySelector('.modal-header-button:has(.lucide-x)')).click();return true;})()`,
     );
     expect(await obEvalUntil(vaultId, pages, { expected: "[]" })).toBe(true);
 
