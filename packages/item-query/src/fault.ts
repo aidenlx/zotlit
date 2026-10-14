@@ -6,6 +6,7 @@ import type {
 import type { ItemQueryErrorCode } from "./error";
 import type { ValueShape } from "./fields";
 import type { StaticType } from "./filter-plan";
+import type { FormulaError } from "./formulas";
 
 /** UTF-16 offsets into the caller's argument; `to` is exclusive. */
 export interface Span {
@@ -99,6 +100,17 @@ export type Fault =
       readonly kind: "formula-cycle";
       readonly chain: readonly string[];
       readonly at: Span;
+    }
+  /**
+   * A `formula.<name>` at `at` that reads a Formula with a mistake. `root` is
+   * the Fault in the definition of the first Formula, along the reads, that
+   * has one of its own.
+   */
+  | {
+      readonly kind: "reads-faulted-formula";
+      readonly name: string;
+      readonly at: Span;
+      readonly root: FormulaError;
     }
   /** A Formula name that is not an identifier. */
   | { readonly kind: "formula-name"; readonly name: string }
