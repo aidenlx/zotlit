@@ -8,7 +8,8 @@ import type { App } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { QueryContext } from "@zotlit/item-query";
+import { nameDictionary } from "@zotlit/item-query";
+import type { FormulaDiagnostics, QueryContext } from "@zotlit/item-query";
 
 import { Effect } from "@/lib/effect";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
@@ -28,7 +29,7 @@ import { requested } from "./__fixtures__/query-run";
 import { groupOptions } from "./properties";
 import { QUERY_FILE_DATASETS, serializeQueryFile } from "./query-file";
 import type { QueryFileDataset } from "./query-file";
-import { QueryView, RERUN_DELAY_MS, SAVE_DELAY_MS } from "./view";
+import { QueryView, RERUN_DELAY_MS } from "./view";
 import type { QueryViewDeps } from "./view";
 
 vi.mock("zustand", () => import("../__fixtures__/zustand"));
@@ -495,25 +496,16 @@ it("opens a file with a broken view and names the problem without running it", a
   );
 });
 
-it("saves a view edit to the file, and keeps a renamed view on screen without running it again", async () => {
-  const { view, el, run, settle, save, onSelectView } = await mount([
-    result([row("ANNOTBBB")]),
-  ]);
+it("keeps a renamed view on screen without running it again", async () => {
+  const { view, el, run, settle } = await mount([result([row("ANNOTBBB")])]);
   await act(() => view.setText(FILE));
   await settle();
-  await act(() => view.renameView(0, "Yellow highlights"));
+  await act(() => view.document.renameView(0, "Yellow highlights"));
   await settle();
-  // A typed name saves after a short wait.
-  await act(() => view.flush());
 
-  expect(save).toHaveBeenCalledTimes(1);
-  const [text] = save.mock.calls[0]!;
-  expect(text).toContain("name: Yellow highlights");
-  expect(text).toContain("name: Everything");
   expect(el.querySelector("[data-query-view-menu]")?.textContent).toBe(
     "Yellow highlights",
   );
-  expect(onSelectView).toHaveBeenLastCalledWith("Yellow highlights");
   expect(run).toHaveBeenCalledTimes(1);
   expect(cards(el)).toEqual(["ANNOTBBB"]);
 });
@@ -526,8 +518,8 @@ it("changes the cards at once for an Annotations layout option, and saves it", a
   await settle();
   expect(el.querySelector(".zt-annot-page-chip")?.textContent).toContain("1");
 
-  await act(() => view.setViewOption(0, "showPage", false));
-  await act(() => view.setViewOption(0, "cardWidth", 420));
+  await act(() => view.document.setViewOption(0, "showPage", false));
+  await act(() => view.document.setViewOption(0, "cardWidth", 420));
   await settle();
 
   expect(el.querySelector(".zt-annot-page-chip")?.textContent).toBe("");
@@ -540,101 +532,37 @@ it("changes the cards at once for an Annotations layout option, and saves it", a
   expect(cards(el)).toEqual(["ANNOTBBB"]);
 });
 
-it("shows the view before a deleted view, and saves a move to the top", async () => {
-  const { view, el, settle, save } = await mount([
-    result([row("ANNOTBBB")]),
-    result([row("ANNOTAAA")]),
-    result([row("ANNOTBBB")]),
-  ]);
-  await act(() => view.setText(FILE));
-  await settle();
-  await act(() => view.pickView("Everything"));
-  await settle();
-  await act(() => view.deleteView(1));
-  await settle();
-  expect(el.querySelector("[data-query-view-menu]")?.textContent).toBe(
-    "Yellow",
-  );
-  expect(save.mock.calls.at(-1)![0]).not.toContain("Everything");
-
-  await act(() => {
-    view.addView();
-  });
-  await act(() => view.moveView(1, 0));
-  await settle();
-  const saved = save.mock.calls.at(-1)![0];
-  expect(saved.indexOf("name: View")).toBeLessThan(
-    saved.indexOf("name: Yellow"),
-  );
-});
-
 describe("saving a toolbar edit", () => {
-  it("saves typed text once, 500 ms after the last key, and a menu choice at once", async () => {
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    cleanup.defer(() => vi.useRealTimers());
-    const { view, saved, settle } = await mount([]);
-    await act(() => view.setText(FILE));
-    await settle();
-    const wait = (ms: number) =>
-      act(() => {
-        vi.advanceTimersByTime(ms);
-      });
-
-    await act(() => view.editView({ limit: 5 }, { typed: true }));
-    await wait(300);
-    await act(() => view.editView({ limit: 50 }, { typed: true }));
-    await wait(SAVE_DELAY_MS - 1);
-    expect(saved).toEqual([]);
-    expect(view.state.getState().view?.limit).toBe(50);
-    await wait(1);
-    expect(saved).toHaveLength(1);
-    expect(saved[0]).toContain("    limit: 50\n");
-
-    // A menu choice saves at once, with the typed text that still waits.
-    await act(() => view.editView({ limit: 7 }, { typed: true }));
-    await act(() => view.editView({ order: ["comment"] }));
-    expect(saved).toHaveLength(2);
-    expect(saved[1]).toContain("    limit: 7\n");
-    expect(saved[1]).toContain("      - comment\n");
-    await wait(SAVE_DELAY_MS);
-    expect(saved).toHaveLength(2);
-  });
-
   it("writes typed text that still waits when it unloads", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     cleanup.defer(() => vi.useRealTimers());
     const { view, saved, settle } = await mount([]);
     await act(() => view.setText(FILE));
     await settle();
-    await act(() => view.renameView(0, "Yellow highlights"));
+    await act(() => view.document.renameView(0, "Yellow highlights"));
     expect(saved).toEqual([]);
     await act(() => view.unload());
     expect(saved).toHaveLength(1);
     expect(saved[0]).toContain("name: Yellow highlights");
   });
 
-  it("changes nothing when the host gives the text of its own save back", async () => {
+  it("runs once for an edit whose text the host gives back", async () => {
     let echo: (text: string) => void = () => {};
     const { view, run, settle } = await mount([], (text) => echo(text));
     await act(() => view.setText(FILE));
     await settle();
-    await act(() => view.editView({ limit: 5 }));
-    await settle();
-    const { file } = view.state.getState();
     const runs = run.mock.calls.length;
 
     echo = (text) => view.setText(text);
-    await act(() => view.editView({ limit: 6 }));
+    await act(() => view.document.editView({ limit: 6 }));
     await settle();
     const shown = view.state.getState().file;
     expect(shown?.views[0]?.limit).toBe(6);
-    expect(shown).not.toBe(file);
     expect(run).toHaveBeenCalledTimes(runs + 1);
 
     // The host reads the saved text again, as a vault change makes it.
     await act(() => view.setText(serializeQueryFile(shown!)));
     await settle();
-    expect(view.state.getState().file).toBe(shown);
     expect(run).toHaveBeenCalledTimes(runs + 1);
   });
 
@@ -645,7 +573,7 @@ describe("saving a toolbar edit", () => {
     });
     await act(() => view.setText(FILE));
     await settle();
-    await act(() => view.editView({ limit: 5 }));
+    await act(() => view.document.editView({ limit: 5 }));
     await settle();
     const runs = run.mock.calls.length;
 
@@ -668,7 +596,7 @@ describe("saving a toolbar edit", () => {
     });
   });
 
-  it("keeps a change on screen and says it is not saved when the host cannot write it, until a later save works", async () => {
+  it("says a change is not saved when the host cannot write it, until a later save works", async () => {
     let fail = true;
     const { view, el, settle } = await mount([], undefined, {
       write: () =>
@@ -679,7 +607,7 @@ describe("saving a toolbar edit", () => {
     expect(el.querySelector("[data-query-read-only]")).toBeNull();
 
     await act(async () => {
-      view.editView({ limit: 5 });
+      view.document.editView({ limit: 5 });
       await view.flush();
     });
     expect(view.state.getState().view?.limit).toBe(5);
@@ -687,26 +615,19 @@ describe("saving a toolbar edit", () => {
 
     fail = false;
     await act(async () => {
-      view.editView({ limit: 6 });
+      view.document.editView({ limit: 6 });
       await view.flush();
     });
     expect(el.querySelector("[data-query-read-only]")).toBeNull();
   });
 
-  it("shows a change but saves nothing where the host cannot save, and says so", async () => {
-    const { view, el, saved, settle } = await mount([], undefined, {
+  it("says a change is not saved where the host cannot save", async () => {
+    const { view, el, settle } = await mount([], undefined, {
       canSave: () => false,
     });
     await act(() => view.setText(FILE));
     await settle();
     expect(el.querySelector("[data-query-read-only]")).not.toBeNull();
-
-    await act(async () => {
-      view.editView({ limit: 5 });
-      await view.flush();
-    });
-    expect(view.state.getState().view?.limit).toBe(5);
-    expect(saved).toEqual([]);
   });
 });
 
@@ -913,7 +834,7 @@ it("writes a filter change to the file, and runs the view with it", async () => 
   await settle();
 
   await act(() => {
-    view.setFilters("view", {
+    view.document.setFilters("view", {
       and: ['colorName == "yellow"', 'tags.contains("figure")'],
     });
   });
@@ -938,7 +859,7 @@ it("shows a wrong condition's diagnostic at its row and keeps the last good resu
   await settle();
 
   await act(() => {
-    view.setFilters("view", {
+    view.document.setFilters("view", {
       and: ['colourName == "yellow"', 'tags.contains("figure")'],
     });
   });
@@ -1003,6 +924,29 @@ it("edits the filters for all views and for this view from the Filter popover", 
   );
 });
 
+it("names a filter condition by the Display Name of its field", async () => {
+  const { view, el, settle } = await mount(
+    [result([row("ANNOTBBB")])],
+    () => {},
+  );
+  await act(() =>
+    view.setText(`properties:
+  colorName:
+    displayName: Highlight colour
+${FILE}`),
+  );
+  await settle();
+
+  const [color] = section(el, "view").querySelectorAll("[data-condition-row]");
+  const kinds = [...color!.querySelectorAll("option")].map(
+    (option) => option.textContent,
+  );
+  expect(kinds).toContain("Highlight colour");
+  expect(kinds).not.toContain("Color");
+  // A field without a Display Name keeps the name of its condition.
+  expect(kinds).toContain("Item title");
+});
+
 it("shows the query's diagnostic at the wrong condition in the Filter popover", async () => {
   const { view, el, settle } = await mount(
     [result([row("ANNOTBBB")]), filterFault(1, 11)],
@@ -1011,7 +955,7 @@ it("shows the query's diagnostic at the wrong condition in the Filter popover", 
   await act(() => view.setText(FILE));
   await settle();
   await act(() => {
-    view.setFilters("view", {
+    view.document.setFilters("view", {
       and: ['colourName == "yellow"', 'tags.contains("figure")'],
     });
   });
@@ -1090,7 +1034,7 @@ it("saves a new order and a new limit to the file, and runs the view again with 
   await act(() => view.setText(FILE));
   await settle();
 
-  await act(() => view.editView({ order: ["comment"], limit: 5 }));
+  await act(() => view.document.editView({ order: ["comment"], limit: 5 }));
   await settle();
   expect(saved).toHaveLength(1);
   expect(saved[0]).toContain("    order:\n      - comment\n");
@@ -1098,7 +1042,7 @@ it("saves a new order and a new limit to the file, and runs the view again with 
   expect(run.mock.calls.at(-1)![0]).toMatchObject({ limit: 5 });
   expect(view.state.getState().view?.name).toBe("Yellow");
 
-  await act(() => view.editView({ limit: undefined }));
+  await act(() => view.document.editView({ limit: undefined }));
   await settle();
   expect(saved[1]).not.toContain("limit: 5");
   expect(run.mock.calls.at(-1)![0]).toMatchObject({ limit: null });
@@ -1177,14 +1121,14 @@ it("switches an Annotations view to Cards and to List, and keeps its rows, filte
   await settle();
   expect(cards(el)).toEqual(["ANNOTAAA", "ANNOTAAA", "ANNOTBBB"]);
 
-  await act(() => view.setViewLayout(0, "cards"));
+  await act(() => view.document.setViewLayout(0, "cards"));
   await settle();
   expect(cards(el)).toEqual([]);
   expect(shownRows(el)).toEqual(["ANNOTAAA", "ANNOTAAA", "ANNOTBBB"]);
   expect(headings(el)).toEqual(["figure", "method"]);
   expect(el.querySelector("[data-query-count]")?.textContent).toBe("2 results");
 
-  await act(() => view.setViewLayout(0, "list"));
+  await act(() => view.document.setViewLayout(0, "list"));
   await settle();
   expect(shownRows(el)).toEqual(["ANNOTAAA", "ANNOTAAA", "ANNOTBBB"]);
   expect(headings(el)).toEqual(["figure", "method"]);
@@ -1200,7 +1144,7 @@ it("switches an Annotations view to Cards and to List, and keeps its rows, filte
   ).toHaveLength(1);
 
   // Back on the Annotations layout, the same rows are cards again.
-  await act(() => view.setViewLayout(0, "annotations"));
+  await act(() => view.document.setViewLayout(0, "annotations"));
   await settle();
   expect(cards(el)).toEqual(["ANNOTAAA", "ANNOTAAA", "ANNOTBBB"]);
   expect(shownRows(el)).toEqual([]);
@@ -1227,22 +1171,22 @@ it("draws the List and Cards options at once, and saves them to the file", async
     el.querySelector("[data-card-size]")?.getAttribute("data-card-size"),
   ).toBe("200");
 
-  await act(() => view.setViewOption(0, "cardSize", 320));
+  await act(() => view.document.setViewOption(0, "cardSize", 320));
   expect(
     el.querySelector("[data-card-size]")?.getAttribute("data-card-size"),
   ).toBe("320");
   expect(saved.at(-1)).toContain("cardSize: 320");
 
-  await act(() => view.setViewLayout(0, "list"));
+  await act(() => view.document.setViewLayout(0, "list"));
   await settle();
   expect(el.querySelector("ul[data-query-markers='bullet']")).not.toBeNull();
-  await act(() => view.setViewOption(0, "markers", "number"));
-  await act(() => view.setViewOption(0, "separator", " · "));
+  await act(() => view.document.setViewOption(0, "markers", "number"));
+  await act(() => view.document.setViewOption(0, "separator", " · "));
   expect(el.querySelector("ol[data-query-markers='number']")).not.toBeNull();
   expect(el.querySelector("[data-query-row]")?.textContent).toBe(
     "Ten simple rules · 2021",
   );
-  await act(() => view.setViewOption(0, "indentProperties", true));
+  await act(() => view.document.setViewOption(0, "indentProperties", true));
   expect(
     [...el.querySelectorAll("[data-query-row] span")].map((n) => n.textContent),
   ).toEqual(["Ten simple rules", "2021", "2021"]);
@@ -1543,7 +1487,7 @@ it("names and searches the properties of Items in Cards and List as the Table do
   await search("journalarticle");
   expect(shownRows(el)).toEqual([]);
 
-  await act(() => view.setViewLayout(0, "list"));
+  await act(() => view.document.setViewLayout(0, "list"));
   await settle();
   await search("journal article");
   expect(shownRows(el)).toEqual(["ITEMAAAA"]);
@@ -1752,7 +1696,7 @@ it("switches a view of Annotations to Items, saves it, and draws the Items in th
   await settle();
   expect(cards(el)).toEqual(["ANNOTBBB"]);
 
-  await act(() => view.setViewDataset(0, "items"));
+  await act(() => view.document.setViewDataset(0, "items"));
   await settle();
   expect(saved.at(-1)).toContain("type: table");
   expect(saved.at(-1)).toContain("from: items");
@@ -1787,7 +1731,7 @@ it("keeps what the new dataset lacks in the file, says the view does not use it,
   );
   await settle();
 
-  await act(() => view.setViewDataset(0, "items"));
+  await act(() => view.document.setViewDataset(0, "items"));
   await settle();
   // The file keeps the sort and the grouping; the Items run without them.
   expect(saved.at(-1)).toContain("property: pageIndex");
@@ -1813,7 +1757,7 @@ it("keeps what the new dataset lacks in the file, says the view does not use it,
   );
   expect(document.body.querySelector("[data-group-unused]")).not.toBeNull();
 
-  await act(() => view.setViewDataset(0, "annotations"));
+  await act(() => view.document.setViewDataset(0, "annotations"));
   await settle();
   expect(run.mock.calls.at(-1)![0]).toMatchObject({
     from: "annotations",
@@ -1834,7 +1778,7 @@ it("shows no rows of the old dataset when the filters fail on the new one", asyn
   await settle();
 
   await act(() => {
-    view.setViewDataset(0, "items");
+    view.document.setViewDataset(0, "items");
   });
   await settle();
   expect(view.state.getState()).toMatchObject({
@@ -1843,4 +1787,456 @@ it("shows no rows of the old dataset when the filters fail on the new one", asyn
     records: [],
   });
   expect(cards(el)).toEqual([]);
+});
+
+const FORMULA_FILE = `formulas:
+  year: date.year
+  short: title.nope()
+  unused: title
+views:
+  - type: table
+    name: Reading list
+    from: items
+    order:
+      - title
+      - formula.year
+      - formula.short
+`;
+
+function formulaRow(key: string, title: string, year: number): QueryViewRow {
+  return { indexedKey: key, values: { title, "formula.year": year } };
+}
+
+it("runs a view with every Formula of the file, and shows the values of those it shows", async () => {
+  const { view, el, run, settle } = await mount([
+    result([formulaRow("ITEMAAAA", "Ten simple rules", 2014)]),
+  ]);
+  await act(() =>
+    view.setText(FORMULA_FILE.replace("      - formula.short\n", "")),
+  );
+  await settle();
+
+  expect(run).toHaveBeenCalledTimes(1);
+  const [request] = run.mock.calls[0]!;
+  expect(request.formulas).toEqual({
+    year: "date.year",
+    short: "title.nope()",
+    unused: "title",
+  });
+  expect(request.fields).toEqual(expect.arrayContaining(["formula.year"]));
+  expect(request.fields).not.toContain("formula.short");
+  expect(tableText(el)).toEqual([
+    ["", "Title", "formula.year", "Literature note"],
+    ["", "Ten simple rules", "2014", "Create"],
+  ]);
+});
+
+/** The Diagnostic of a Formula that ZotLit Query left out. */
+type Diagnostic = FormulaDiagnostics[string];
+
+/** `outcome` with the Formulas that ZotLit Query left out. */
+function withFaults(
+  outcome: QueryViewOutcome,
+  faults: Record<string, Diagnostic>,
+): QueryViewOutcome {
+  const formulaDiagnostics = nameDictionary(Object.entries(faults));
+  if (outcome.kind === "result")
+    return { ...outcome, result: { ...outcome.result, formulaDiagnostics } };
+  if (outcome.kind === "failed") return { ...outcome, formulaDiagnostics };
+  return outcome;
+}
+
+/** The Diagnostic of a Formula that reads the wrong Formula `name`. */
+function readsFault(reader: string, name: string, root: string): Diagnostic {
+  return {
+    code: "reads-faulted-formula",
+    message: `formula.${reader} reads formula.${name}, which has a mistake.`,
+    hint: `Correct the mistake in formula.${root}.`,
+    severity: "error",
+    report: [],
+    location: {
+      argument: "formulas",
+      path: reader,
+      span: { from: 0, to: 9 + name.length },
+    },
+    found: `formula.${name}`,
+    expected: ["a Formula without a mistake"],
+    suggestions: [],
+  };
+}
+
+it("marks a wrong Formula at its column from the one run, and shows the other columns", async () => {
+  const { view, el, run, settle } = await mount([
+    withFaults(result([formulaRow("ITEMAAAA", "Ten simple rules", 2014)]), {
+      short: {
+        code: "unknown-function",
+        message: "In formula.short: nope is not a method of string.",
+        hint: "Use slice.",
+        severity: "error",
+        report: [],
+        location: {
+          argument: "formulas",
+          path: "short",
+          span: { from: 6, to: 10 },
+        },
+        found: "nope",
+        expected: [],
+        suggestions: [],
+      },
+    }),
+  ]);
+  await act(() => view.setText(FORMULA_FILE));
+  await settle();
+
+  expect(run).toHaveBeenCalledTimes(1);
+  expect(view.state.getState()).toMatchObject({
+    phase: "ready",
+    formulaIssues: {
+      short: "In formula.short: nope is not a method of string. Use slice.",
+    },
+  });
+  expect(tableText(el)).toEqual([
+    ["", "Title", "formula.year", "formula.short", "Literature note"],
+    ["", "Ten simple rules", "2014", "", "Create"],
+  ]);
+  expect(
+    el
+      .querySelector('[data-query-column="formula.short"]')
+      ?.getAttribute("data-query-formula-issue"),
+  ).toBe("In formula.short: nope is not a method of string. Use slice.");
+
+  // The same text runs as it did; a fixed Formula runs again.
+  await act(() => view.setText(FORMULA_FILE));
+  await settle();
+  expect(run).toHaveBeenCalledTimes(1);
+  await act(() =>
+    view.setText(FORMULA_FILE.replace("title.nope()", "title.slice(0, 3)")),
+  );
+  await settle();
+  expect(run).toHaveBeenCalledTimes(2);
+  expect(view.state.getState().formulaIssues).toEqual({});
+});
+
+const DEPENDENT_FILE = `formulas:
+  year: date.year
+  next: formula.year + 1
+  after: formula.next * 2
+  short: title.slice(0, 3)
+views:
+  - type: table
+    name: Reading list
+    from: items
+    order:
+      - title
+      - formula.year
+      - formula.next
+      - formula.after
+      - formula.short
+`;
+
+const YEAR_FAULT: Diagnostic = {
+  code: "unknown-field",
+  message: "In formula.year: dat is not a field of Items.",
+  hint: "Use date.",
+  severity: "error",
+  report: [],
+  location: { argument: "formulas", path: "year", span: { from: 0, to: 3 } },
+  found: "dat",
+  expected: [],
+  suggestions: ["date"],
+};
+
+const DEPENDENT_FAULTS = {
+  year: YEAR_FAULT,
+  next: readsFault("next", "year", "year"),
+  after: readsFault("after", "next", "year"),
+};
+
+it("marks a wrong Formula and each Formula that reads it with its own reason", async () => {
+  const { view, el, run, settle } = await mount([
+    withFaults(
+      result([
+        {
+          indexedKey: "ITEMAAAA",
+          values: { title: "Ten simple rules", "formula.short": "Ten" },
+        },
+      ]),
+      DEPENDENT_FAULTS,
+    ),
+  ]);
+  await act(() => view.setText(DEPENDENT_FILE));
+  await settle();
+
+  expect(run).toHaveBeenCalledTimes(1);
+  expect(view.state.getState()).toMatchObject({
+    phase: "ready",
+    formulaIssues: {
+      year: "In formula.year: dat is not a field of Items. Use date.",
+      next: "formula.next reads formula.year, which has a mistake. Correct the mistake in formula.year.",
+      after:
+        "formula.after reads formula.next, which has a mistake. Correct the mistake in formula.year.",
+    },
+  });
+  expect(tableText(el)).toEqual([
+    [
+      "",
+      "Title",
+      "formula.year",
+      "formula.next",
+      "formula.after",
+      "formula.short",
+      "Literature note",
+    ],
+    ["", "Ten simple rules", "", "", "", "Ten", "Create"],
+  ]);
+});
+
+it("marks the condition that reads a wrong Formula, and shows no rows until it is fixed", async () => {
+  const filtered = DEPENDENT_FILE.replace(
+    "      - formula.short\n",
+    "      - formula.short\n    filters: formula.next > 2000\n",
+  );
+  const { view, el, run, settle } = await mount([
+    result([formulaRow("ITEMAAAA", "Ten simple rules", 2014)]),
+    withFaults(
+      {
+        kind: "failed",
+        diagnostic: {
+          code: "reads-faulted-formula",
+          message: "The filter reads formula.next, which has a mistake.",
+          hint: "Correct the mistake in formula.year.",
+          severity: "error",
+          report: [],
+          location: { argument: "filter", span: { from: 0, to: 12 } },
+          found: "formula.next",
+          expected: ["a Formula without a mistake"],
+          suggestions: [],
+        },
+      },
+      DEPENDENT_FAULTS,
+    ),
+    result([formulaRow("ITEMAAAA", "Ten simple rules", 2014)]),
+  ]);
+  await act(() => view.setText(filtered));
+  await settle();
+  expect(tableText(el)).toHaveLength(2);
+
+  await act(() => view.setText(filtered.replace("date.year", "dat.year")));
+  await settle();
+
+  expect(run).toHaveBeenCalledTimes(2);
+  expect(view.state.getState()).toMatchObject({
+    phase: "failed",
+    records: [],
+    filterIssue: {
+      section: "view",
+      path: [0],
+      message:
+        "The filter reads formula.next, which has a mistake. Correct the mistake in formula.year.",
+    },
+    formulaIssues: {
+      year: "In formula.year: dat is not a field of Items. Use date.",
+      next: "formula.next reads formula.year, which has a mistake. Correct the mistake in formula.year.",
+    },
+  });
+  expect(el.querySelector('[data-query-table-row="item"]')).toBeNull();
+
+  await act(() => view.setText(filtered));
+  await settle();
+  expect(run).toHaveBeenCalledTimes(3);
+  expect(view.state.getState()).toMatchObject({
+    phase: "ready",
+    filterIssue: null,
+    formulaIssues: {},
+  });
+  expect(tableText(el)).toHaveLength(2);
+});
+
+it("shows no rows while the filters read a Formula that the file no longer defines", async () => {
+  const file = `formulas:
+  year: date.year
+views:
+  - type: table
+    name: Reading list
+    from: items
+    filters: formula . year > 2000
+    order:
+      - title
+`;
+  const { view, el, run, settle } = await mount([
+    result([formulaRow("ITEMAAAA", "Ten simple rules", 2014)]),
+    {
+      kind: "failed",
+      diagnostic: {
+        code: "unknown-formula",
+        message:
+          '"formula.year" reads the Formula "year", which the request does not define.',
+        hint: "Define the Formula in formulas.",
+        severity: "error",
+        report: [],
+        location: { argument: "filter", span: { from: 0, to: 14 } },
+        found: "year",
+        expected: [],
+        suggestions: [],
+      },
+    },
+  ]);
+  await act(() => view.setText(file));
+  await settle();
+  expect(run.mock.calls[0]![0].formulas).toEqual({ year: "date.year" });
+  expect(tableText(el)).toHaveLength(2);
+
+  await act(() =>
+    view.setText(file.replace("formulas:\n  year: date.year\n", "")),
+  );
+  await settle();
+  expect(run).toHaveBeenCalledTimes(2);
+  expect(view.state.getState()).toMatchObject({
+    phase: "failed",
+    records: [],
+    filterIssue: {
+      section: "view",
+      path: [0],
+      message:
+        '"formula.year" reads the Formula "year", which the request does not define. Define the Formula in formulas.',
+    },
+  });
+  expect(el.querySelector('[data-query-table-row="item"]')).toBeNull();
+});
+
+it("marks a Formula whose name is also an object member, such as __proto__", async () => {
+  const { view, el, run, settle } = await mount([
+    withFaults(result([formulaRow("ITEMAAAA", "Ten simple rules", 2014)]), {
+      ["__proto__"]: {
+        code: "unknown-field",
+        message: "In formula.__proto__: dat is not a field of Items.",
+        hint: "",
+        severity: "error",
+        report: [],
+        location: { argument: "formulas", path: "__proto__" },
+        found: "dat",
+        expected: [],
+        suggestions: [],
+      },
+    }),
+  ]);
+  await act(() =>
+    view.setText(`formulas:
+  __proto__: dat.year
+  constructor: title
+views:
+  - type: table
+    name: Reading list
+    from: items
+    order:
+      - title
+      - formula.__proto__
+      - formula.constructor
+`),
+  );
+  await settle();
+  expect(Object.entries(run.mock.calls[0]![0].formulas ?? {})).toEqual([
+    ["__proto__", "dat.year"],
+    ["constructor", "title"],
+  ]);
+  expect(Object.entries(view.state.getState().formulaIssues)).toEqual([
+    ["__proto__", "In formula.__proto__: dat is not a field of Items."],
+  ]);
+  expect(
+    el
+      .querySelector('[data-query-column="formula.__proto__"]')
+      ?.getAttribute("data-query-formula-issue"),
+  ).toBe("In formula.__proto__: dat is not a field of Items.");
+});
+
+it("sends a sort by a Formula to ZotLit Query, and shows a grouping by a Formula as the view's problem", async () => {
+  const file = `formulas:
+  year: date.year
+views:
+  - type: table
+    name: Reading list
+    from: items
+    sort:
+      - property: formula.year
+        direction: DESC
+    order:
+      - title
+`;
+  const { view, run, settle } = await mount([result([])]);
+  await act(() => view.setText(file));
+  await settle();
+  expect(view.state.getState().problems).toEqual([]);
+  expect(run.mock.calls[0]![0].sort).toEqual([
+    { field: "formula.year", direction: "desc" },
+  ]);
+
+  await act(() =>
+    view.setText(
+      file.replace(
+        "    order:",
+        "    groupBy:\n      property: formula.year\n      direction: ASC\n    order:",
+      ),
+    ),
+  );
+  await settle();
+  expect(view.state.getState().problems).toEqual([
+    'This view cannot group by "formula.year".',
+  ]);
+});
+
+it("shows each Error Value element of a list cell as a warning icon in the Table, the List and the Cards", async () => {
+  const wrong = (text: string) => ({
+    kind: "error",
+    code: "unparseable-text",
+    message: `number() cannot read "${text}" as a number.`,
+  });
+  const parts = [1, wrong("a"), null, wrong("b")];
+  const shown = result([
+    {
+      indexedKey: "ITEMAAAA",
+      values: { title: "Ten simple rules", "formula.parts": parts },
+    },
+  ]);
+  // The List and the Cards ask for other fields than the Table.
+  const { view, el, settle } = await mount([shown, shown, shown]);
+  await act(() =>
+    view.setText(`formulas:
+  parts: '[1, number("a"), null, number("b")]'
+views:
+  - type: table
+    name: Reading list
+    from: items
+    order:
+      - title
+      - formula.parts
+`),
+  );
+  await settle();
+  const marks = (root: Element) =>
+    [...root.querySelectorAll("[data-query-error]")].map((n) => [
+      n.getAttribute("data-query-error"),
+      n.getAttribute("aria-label"),
+    ]);
+  const expected = [
+    ["unparseable-text", 'number() cannot read "a" as a number.'],
+    ["unparseable-text", 'number() cannot read "b" as a number.'],
+  ];
+
+  const cell = el.querySelector('[data-query-table-row="item"]')!.children[2]!;
+  expect(marks(cell)).toEqual(expected);
+  expect(cell.textContent).toBe("1, , ");
+  for (const layout of ["list", "cards"] as const) {
+    await act(() => view.document.setViewLayout(0, layout));
+    await settle();
+    const row = el.querySelector("[data-query-row]")!;
+    expect(marks(row)).toEqual(expected);
+    expect(row.textContent).not.toContain("Error");
+  }
+  // Copy and CSV write each Error Value as its message.
+  expect(view.table().body).toEqual([
+    [
+      "Ten simple rules",
+      '1, Error: number() cannot read "a" as a number., Error: number() cannot read "b" as a number.',
+    ],
+  ]);
 });

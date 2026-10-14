@@ -7,9 +7,18 @@ import { parseIndexedKey } from "@zotlit/db";
 import type { QueryDataset } from "./dataset";
 import type { Diagnostic } from "./diagnose";
 import { ItemQueryError } from "./error";
+import type { ItemQueryErrorCode } from "./error";
 import type { ItemQueryFault } from "./fault";
 import type { FieldNeeds, QueryItem, SortKey } from "./fields";
 import type { FilterPlan } from "./filter-plan";
+import { formulaOrderFault, planFormulas } from "./formulas";
+import type {
+  FormulaFaultPolicy,
+  FormulaSourceCheck,
+  PlannedColumn,
+  PlannedFormula,
+} from "./formulas";
+import type { NameDictionary } from "./name-dictionary";
 import { canGroup, planPath, readPath } from "./projection";
 import type { PlannedPath } from "./projection";
 import type { QueryClock } from "./query-clock";
@@ -60,7 +69,27 @@ export interface ItemQueryRequest {
    * has no value, and a filter that reads it is invalid.
    */
   readonly context?: QueryContext | undefined;
+  /**
+   * The Formulas of the request: each name with its Filter Expression text.
+   * A name is an identifier. The query plans and evaluates a Formula only when
+   * `fields` reads it as `formula.<name>`.
+   */
+  readonly formulas?: Readonly<Record<string, string>> | undefined;
+  /**
+   * What a Formula with a mistake does to the query. `"fail"`, the default:
+   * the query fails with the first such mistake. `"leave-out"`: the Query
+   * Rows leave out each such Formula and each Formula that reads one,
+   * `formulaDiagnostics` of the answer gives their Diagnostics, and a Formula
+   * that nothing reads gives no warning.
+   */
+  readonly onFormulaFault?: FormulaFaultPolicy | undefined;
 }
+
+/**
+ * The Formulas of a request that have a mistake, each by name with its
+ * Diagnostic.
+ */
+export type FormulaDiagnostics = NameDictionary<Diagnostic<ItemQueryErrorCode>>;
 
 /** The records `this` binds, each by its Indexed Key. */
 export interface QueryContext {
@@ -83,6 +112,8 @@ export interface ItemQuery {
   readonly group?: string;
   /** The Query Context of the request, when it binds a record. */
   readonly context?: QueryContext;
+  /** The Formulas of the request, when it names any. */
+  readonly formulas?: Readonly<Record<string, string>>;
 }
 
 /** A value of one Projection Path in a Query Row. */
@@ -133,7 +164,13 @@ export interface QueryMetadata {
     | "always-true"
     | "key-outside-target-libraries"
     | "unknown-collection"
+    | "unused-formula"
   >[];
+  /**
+   * The Formulas that the query left out, each with its Diagnostic: only
+   * when the request leaves out Formulas with a mistake.
+   */
+  readonly formulaDiagnostics?: FormulaDiagnostics;
   /** The normalized request. */
   readonly query: ItemQuery;
   readonly returnedCount: number;
@@ -144,11 +181,24 @@ export interface QueryMetadata {
 /** The validated form of a request that the engine executes. */
 export interface ItemQueryPlan<Item = any, Needs = any> {
   readonly dataset: QueryDataset<any>;
-  readonly warnings: FilterPlan["warnings"];
   readonly query: ItemQuery;
   /** `null`: every record matches. */
   readonly filter: FilterPlan<Item, Needs> | null;
   readonly paths: readonly PlannedPath<Item, Needs>[];
+  /**
+   * The Formulas that `fields`, the filter, or another Formula reads, each
+   * once.
+   */
+  readonly formulas: readonly PlannedFormula<Item, Needs>[];
+  /** The Formulas that the request names and never reads. */
+  readonly unusedFormulas: readonly string[];
+  /**
+   * The Formulas with a mistake that the query leaves out, or null when the
+   * request fails on such a Formula.
+   */
+  readonly formulaDiagnostics: FormulaDiagnostics | null;
+  /** The values of each Query Row, in the order of `fields`. */
+  readonly columns: readonly PlannedColumn<Item, Needs>[];
   readonly group: PlannedGroup<Item, Needs> | null;
   /** What hydration loads before reading each matched record's group values. */
   readonly groupNeeds: readonly Needs[];
@@ -208,6 +258,11 @@ export const UNLIMITED_LIMIT = "all";
 export function planRequest(
   dataset: QueryDataset<any>,
   request: ItemQueryRequest,
+  /**
+   * The check of the source on each planned Formula, when the request leaves
+   * out a Formula with a mistake.
+   */
+  sourceCheck?: FormulaSourceCheck,
 ): Effect.Effect<ItemQueryPlan, ItemQueryError> {
   return Effect.gen(function* () {
     const libraryIDs = request.libraries.map((library) => library.libraryID);
@@ -248,10 +303,27 @@ export function planRequest(
       context = { ...context, [member]: key };
     }
 
+    const fields = request.fields ?? dataset.defaultFields;
+    const formulas = planFormulas(dataset, {
+      formulas: request.formulas,
+      filter: request.filter,
+      fields,
+      context,
+      policy: request.onFormulaFault ?? "fail",
+      sourceCheck,
+    });
+    if (formulas instanceof ItemQueryError) return yield* formulas;
+
     let filter: FilterPlan | null = null;
     if (request.filter !== undefined) {
-      const planned = dataset.planFilter(request.filter, context);
+      const planned = dataset.planFilter(
+        request.filter,
+        context,
+        formulas.resolve,
+      );
       if ("kind" in planned) {
+        if (planned.kind === "reads-faulted-formula")
+          return yield* formulas.filterFailure(planned);
         return yield* new ItemQueryError({
           dataset,
           context,
@@ -269,9 +341,16 @@ export function planRequest(
       filter = planned;
     }
 
-    const fields = request.fields ?? dataset.defaultFields;
     const paths: PlannedPath[] = [];
+    const columns: PlannedColumn[] = [];
     for (const [index, text] of fields.entries()) {
+      const formula = formulas.column(index);
+      if (formula instanceof ItemQueryError) return yield* formula;
+      if (formula === "left-out") continue;
+      if (formula !== null) {
+        columns.push(formula);
+        continue;
+      }
       const path = planPath(text, dataset.resolvePath);
       if ("kind" in path) {
         return yield* new ItemQueryError({
@@ -282,12 +361,12 @@ export function planRequest(
         });
       }
       paths.push(path);
+      columns.push({ kind: "path", path });
     }
 
     let group: PlannedGroup | null = null;
     if (request.group !== undefined) {
       const text = request.group;
-      const path = planPath(text, dataset.resolvePath);
       const fail = (fault: ItemQueryFault) =>
         new ItemQueryError({
           dataset,
@@ -295,6 +374,9 @@ export function planRequest(
           location: { argument: "group" },
           argumentText: text,
         });
+      const byFormula = formulaOrderFault("invalid-group", text);
+      if (byFormula) return yield* fail(byFormula);
+      const path = planPath(text, dataset.resolvePath);
       if ("kind" in path) return yield* fail(path);
       if (!canGroup(path.shape, path.each))
         return yield* fail({
@@ -314,6 +396,15 @@ export function planRequest(
     const sort = request.sort ?? dataset.defaultSort;
     const sorts: PlannedSort<any, any>[] = [];
     for (const [index, { field, direction }] of sort.entries()) {
+      const byFormula = formulaOrderFault("unsortable-field", field);
+      if (byFormula) {
+        return yield* new ItemQueryError({
+          dataset,
+          location: { argument: "sort", index, path: `sort[${index}].field` },
+          argumentText: JSON.stringify(sort),
+          fault: byFormula,
+        });
+      }
       const sortable = dataset.sortable(field);
       if (!sortable) {
         return yield* new ItemQueryError({
@@ -353,6 +444,7 @@ export function planRequest(
       });
     }
 
+    const planned = formulas.finish();
     const normalized = sort.map(({ field, direction }) => ({
       field,
       direction,
@@ -366,10 +458,16 @@ export function planRequest(
         limit,
         ...(request.group === undefined ? {} : { group: request.group }),
         ...(context === undefined ? {} : { context }),
+        ...(request.formulas === undefined
+          ? {}
+          : { formulas: { ...request.formulas } }),
       },
       filter,
-      warnings: filter?.warnings ?? [],
       paths,
+      formulas: planned.planned,
+      unusedFormulas: planned.unused,
+      formulaDiagnostics: planned.diagnostics,
+      columns,
       group,
       groupNeeds: group ? [group.needs] : [],
       order: [...normalized, ...tieBreakers],

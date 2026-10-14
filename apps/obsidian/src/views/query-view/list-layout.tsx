@@ -3,6 +3,7 @@
 // Its options are those of Bases 1.14.4: `markers`, `indentProperties` and
 // `separator`.
 import { Setting } from "obsidian";
+import { Fragment } from "react";
 import { useStore } from "zustand";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -10,7 +11,11 @@ import { cn } from "@/lib/utils";
 
 import type { QueryLayout } from "./layouts";
 import type { QueryFileView } from "./query-file";
-import { RecordGroupHeading, useRecordGroups } from "./record-rows";
+import {
+  CellContent,
+  RecordGroupHeading,
+  useRecordGroups,
+} from "./record-rows";
 import type { QueryView } from "./view";
 
 export const LIST_LAYOUT: QueryLayout = {
@@ -118,7 +123,7 @@ export function addListOptions(
 
 /** The rows of the shown view, one line each, under their group headings. */
 export function ListLayout({ view }: { view: QueryView }) {
-  const { groups } = useRecordGroups(view);
+  const { properties, groups } = useRecordGroups(view);
   const options = listLayoutOptions(useStore(view.state, (s) => s.view));
   // Numbers count the rows of a list; bullets and none mark no order.
   const List = options.markers === "number" ? "ol" : "ul";
@@ -141,7 +146,17 @@ export function ListLayout({ view }: { view: QueryView }) {
               data-query-markers={options.markers}
             >
               {group.rows.map(({ row, cells }, index) => {
-                const filled = cells.filter((text) => text !== "");
+                const filled = cells.flatMap((text, at) =>
+                  text === ""
+                    ? []
+                    : [
+                        <CellContent
+                          key={properties[at]!.path}
+                          value={row.values[properties[at]!.path]}
+                          text={text}
+                        />,
+                      ],
+                );
                 const [first = "", ...rest] = filled;
                 return (
                   <li
@@ -153,16 +168,21 @@ export function ListLayout({ view }: { view: QueryView }) {
                         <span>{first}</span>
                         {rest.length > 0 && (
                           <span className="zt:block zt:pl-4 zt:text-(--text-muted)">
-                            {rest.map((text, at) => (
+                            {rest.map((content, at) => (
                               <span key={at} className="zt:block">
-                                {text}
+                                {content}
                               </span>
                             ))}
                           </span>
                         )}
                       </>
                     ) : (
-                      filled.join(options.separator)
+                      filled.map((content, at) => (
+                        <Fragment key={at}>
+                          {at > 0 && options.separator}
+                          {content}
+                        </Fragment>
+                      ))
                     )}
                   </li>
                 );

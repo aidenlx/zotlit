@@ -225,6 +225,76 @@ obsidian zotlit:query from=attachments filter='item.indexedKey == "ABCD2345"' fi
 
 Replace `ABCD2345` with the paper's Indexed Key. [Explore template data](/docs/how-to/explore-template-data#indexed-key) shows how to copy it.
 
+## Compute a value with a formula [#formulas]
+
+A formula computes one value for each record, in the same language as `filter`. Pass formulas as a JSON object in `formulas`: each key is a name, and each value is an expression. Read a formula as `formula.<name>` in `fields`, in `filter`, or in another formula.
+
+This command lists the papers from 2020 on, with the year and the number of creators of each:
+
+```bash
+obsidian zotlit:query formulas='{"year":"date.year","authors":"creators.length"}' filter='formula.year >= 2020' fields='title,formula.year,formula.authors' limit=3
+```
+
+Each row holds the formula values under their paths (shortened):
+
+```json
+{
+  "ok": true,
+  "returnedCount": 3,
+  "truncated": true,
+  "warnings": [],
+  "rows": [
+    {
+      "indexedKey": "AAAAAAAA",
+      "values": {
+        "title": "Alpha of the personal library",
+        "formula.year": 2024,
+        "formula.authors": 3
+      }
+    },
+    {
+      "indexedKey": "BBBB2222",
+      "values": {
+        "title": "Within-library duplicate, first item",
+        "formula.year": 2020,
+        "formula.authors": 1
+      }
+    },
+    {
+      "indexedKey": "CCCC3333",
+      "values": {
+        "title": "Within-library duplicate, second item",
+        "formula.year": 2020,
+        "formula.authors": 1
+      }
+    }
+  ]
+}
+```
+
+A formula name has letters, digits, and `_`, and starts with a letter or `_`. Letter case counts.
+
+A formula that no field, filter, or other formula uses does not run. The answer then has an `unused-formula` warning that names it.
+
+A mistake in a formula fails the query. `diagnostic.location.path` names the formula, and `diagnostic.report` marks the mistake. For example, `formula.yaer + 1` names a formula that the request does not define (shortened):
+
+```json
+{
+  "ok": false,
+  "diagnostic": {
+    "code": "unknown-formula",
+    "report": [
+      "In formula.next: formula.yaer reads the Formula \"yaer\", which the request does not define.",
+      "formula.yaer + 1",
+      "^^^^^^^^^^^^",
+      "Read a Formula of the request: formula.year, formula.next."
+    ]
+  }
+}
+```
+
+A formula that works for most records can fail on one record, such as `number(volume)` on a volume that is text. That value is an error object with a `code` and a `message`. [Error Values](/docs/concepts/how-zotlit-query-works#error-values) describes it.
+
 ## Export a large result [#export]
 
 An answer in the terminal holds at most 1 MB. For a complete export, add `output` with the absolute path of a new file in an existing folder:

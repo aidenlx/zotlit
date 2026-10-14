@@ -60,6 +60,7 @@ export interface QueryRun<I extends { scan: ScanRow }> extends DatasetRun<I> {
   readonly filter: FilterNode<never> | undefined;
   readonly query: ItemQuery;
   readonly warnings: QuerySummary["warnings"];
+  readonly formulaDiagnostics: QuerySummary["formulaDiagnostics"];
   readonly sort: readonly SortSpec[];
   readonly libraries: readonly TargetLibrary[];
   readonly readScanPage: (page: {
@@ -230,6 +231,9 @@ export function consumeDataset<I extends { scan: ScanRow }, A, E, R>(
     const consumer = yield* begin({
       query,
       warnings: run.warnings,
+      ...(run.formulaDiagnostics && {
+        formulaDiagnostics: run.formulaDiagnostics,
+      }),
       matchedCount: totalCount,
       returnedCount:
         query.group === undefined

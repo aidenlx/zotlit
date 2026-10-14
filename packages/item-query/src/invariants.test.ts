@@ -351,6 +351,36 @@ const PLAN_PATHS: readonly {
     },
   },
   {
+    name: "a limited scan that leaves out a Formula with a mistake",
+    request: {
+      fields: ["title", "formula.bad", "formula.next"],
+      formulas: { bad: "title * 2", next: "date.year + 1" },
+      onFormulaFault: "leave-out",
+      limit: 10,
+    },
+    reads: {
+      "scan-page": [500, 500, 500, 500, 500, 100],
+      "hydrate-chunk": [10],
+    },
+  },
+  {
+    name: "a limited scan that leaves out a Formula with a custom field the source lacks, and a Formula that reads it",
+    request: {
+      fields: ["title", "formula.missing", "formula.reader", "formula.next"],
+      formulas: {
+        missing: 'custom["absent"]',
+        reader: "formula.missing + 1",
+        next: "date.year + 1",
+      },
+      onFormulaFault: "leave-out",
+      limit: 10,
+    },
+    reads: {
+      "scan-page": [500, 500, 500, 500, 500, 100],
+      "hydrate-chunk": [10],
+    },
+  },
+  {
     name: "a limited scan that hydrates every Item for the filter and the sort",
     request: {
       filter: 'title.contains("Bulk")',

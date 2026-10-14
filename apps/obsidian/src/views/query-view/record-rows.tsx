@@ -2,19 +2,24 @@
 // records of any Query Dataset, under their group headings, each shown by
 // the text of its visible properties. The toolbar search and a collapsed
 // heading act on them as they do on the Annotations layout's cards.
-import { useMemo } from "react";
+import { Fragment, useMemo } from "react";
 import { useStore } from "zustand";
 
 import { Icon } from "@/components/obsidian/icon";
-import type { QueryViewRow } from "@/services/item-query/query-view";
+import { tooltipAttrs } from "@/lib/utils";
+import type {
+  QueryViewRow,
+  QueryViewValue,
+} from "@/services/item-query/query-view";
 import {
   useAnnotStore,
   useToggleGroupCollapsed,
 } from "@/views/annot-view/store";
 
-import { cellText } from "./value-text";
+import { cell, cellText, errorCell } from "./value-text";
 import type { QueryView } from "./view";
-import { visibleProperties } from "./visible-properties";
+import { useViewProperties } from "./view-properties";
+import type { PropertyEntry } from "./view-properties";
 
 /** One row on screen, and the group it stands in. */
 export interface ShownRecord {
@@ -38,19 +43,17 @@ export interface RecordGroup {
  * find stays off screen.
  */
 export function useRecordGroups(view: QueryView): {
-  properties: readonly string[];
+  properties: readonly PropertyEntry[];
   groups: readonly RecordGroup[];
 } {
-  const shown = useStore(view.state, (s) => s.view);
+  const columns = useViewProperties(view)?.visibleProperties;
   const records = useStore(view.state, (s) => s.records);
   const query = useAnnotStore((s) => s.filterQuery)
     .trim()
     .toLowerCase();
   const collapsed = useAnnotStore((s) => s.collapsedGroups);
   return useMemo(() => {
-    const properties = shown
-      ? visibleProperties(shown, { fallback: true })
-      : [];
+    const properties = columns ?? [];
     const groups: {
       key: string | null;
       label: string | null;
@@ -58,8 +61,8 @@ export function useRecordGroups(view: QueryView): {
       rows: { row: QueryViewRow; cells: string[] }[];
     }[] = [];
     for (const { row, group } of records) {
-      const cells = properties.map((property) =>
-        cellText(property, row.values[property]),
+      const cells = properties.map(({ path }) =>
+        cellText(path, row.values[path]),
       );
       if (
         query !== "" &&
@@ -80,7 +83,7 @@ export function useRecordGroups(view: QueryView): {
       last.rows.push({ row, cells });
     }
     return { properties, groups };
-  }, [shown, records, query, collapsed]);
+  }, [columns, records, query, collapsed]);
 }
 
 /**
@@ -110,5 +113,51 @@ export function RecordGroupHeading({ group }: { group: RecordGroup }) {
         <span className="zt:truncate">{group.label}</span>
       </button>
     </div>
+  );
+}
+
+/** Whether `value` is an Error Value, or a list that holds one at any depth. */
+function holdsError(value: QueryViewValue | undefined): boolean {
+  return (
+    errorCell(value) !== null ||
+    (Array.isArray(value) && value.some((entry) => holdsError(entry)))
+  );
+}
+
+/**
+ * One cell on screen: its text, or, for an Error Value, a warning icon with
+ * the error's message as its tooltip. A list that holds an Error Value shows
+ * its elements as `cell` writes them, each Error Value as its icon.
+ */
+export function CellContent({
+  value,
+  text,
+}: {
+  value: QueryViewValue | undefined;
+  text: string;
+}) {
+  const error = errorCell(value);
+  if (error !== null)
+    return (
+      <span
+        role="img"
+        className="zt:inline-flex zt:items-center zt:align-middle zt:text-(--text-error)"
+        data-query-error={error.code}
+        {...tooltipAttrs(error.message)}
+      >
+        <Icon name="alert-triangle" size={14} />
+      </span>
+    );
+  if (!Array.isArray(value) || !holdsError(value)) return text;
+  const shown = value.filter((entry: QueryViewValue) => cell(entry) !== "");
+  return (
+    <>
+      {shown.map((entry: QueryViewValue, at) => (
+        <Fragment key={at}>
+          {at > 0 && ", "}
+          <CellContent value={entry} text={cell(entry)} />
+        </Fragment>
+      ))}
+    </>
   );
 }

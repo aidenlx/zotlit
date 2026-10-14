@@ -216,6 +216,7 @@ function answerQuery(
       filter: decoded.filter,
       group: decoded.group,
       fields: decoded.fields,
+      formulas: decoded.formulas,
       sort: decoded.sort,
       limit: decoded.limit,
       context: decoded.context,
@@ -281,6 +282,9 @@ export function answerView(
       filter: view.filter,
       group: view.group,
       fields: view.fields,
+      formulas: view.formulas,
+      // A Formula with a mistake leaves out only itself and its readers.
+      onFormulaFault: "leave-out",
       sort: view.sort,
       limit: view.limit ?? null,
       context: view.context,
@@ -309,6 +313,10 @@ export function answerView(
         viewReply(command, {
           kind: "failed",
           diagnostic: failureDiagnostic(failed, named?.parameter),
+          ...(failed._tag === "ItemQueryError" &&
+            failed.formulaDiagnostics && {
+              formulaDiagnostics: failed.formulaDiagnostics,
+            }),
         }),
       ),
     ),

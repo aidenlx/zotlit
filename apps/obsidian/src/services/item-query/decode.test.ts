@@ -279,6 +279,45 @@ describe("decodeQuery fields, filter, and sort", () => {
   });
 });
 
+describe("decodeQuery formulas", () => {
+  it("decodes a JSON object of Formula names and expressions", () => {
+    expect(
+      decodeQuery({
+        formulas: '{"year":"date.year","short":"title.slice(0, 20)"}',
+        fields: "title,formula.year",
+      }),
+    ).toMatchObject({
+      formulas: { year: "date.year", short: "title.slice(0, 20)" },
+      fields: ["title", "formula.year"],
+    });
+  });
+
+  it("keeps a Formula whose name is also an object member, such as __proto__", () => {
+    const decoded = decodeQuery({
+      formulas: '{"__proto__":"date.year","constructor":"title"}',
+    });
+    expect(decoded).toHaveProperty("formulas");
+    const { formulas } = decoded as { formulas: object };
+    expect(Object.entries(formulas)).toEqual([
+      ["__proto__", "date.year"],
+      ["constructor", "title"],
+    ]);
+  });
+
+  it("omits formulas when the argument is absent", () => {
+    expect(decodeQuery({})).not.toHaveProperty("formulas");
+  });
+
+  it.each([
+    ["a comma list", "year=date.year"],
+    ["malformed JSON", '{"year":'],
+    ["a JSON array", '["date.year"]'],
+    ["an expression that is not text", '{"year":2020}'],
+  ])("rejects %s", (_, formulas) => {
+    expect(decodeQuery({ formulas })).toMatchObject(rejected("formulas"));
+  });
+});
+
 describe("decodeQuery Query Context", () => {
   it("binds this.item and this.attachment by Indexed Key", () => {
     expect(

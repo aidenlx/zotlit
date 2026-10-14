@@ -11,8 +11,8 @@ import { useLayoutEffect, useMemo } from "react";
 import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
-import type { QueryContext } from "@zotlit/item-query";
-import type { MatchTree } from "@zotlit/templates/facade";
+import { nameDictionary } from "@zotlit/item-query";
+import type { NameDictionary, QueryContext } from "@zotlit/item-query";
 
 import { Icon } from "@/components/obsidian/icon";
 import { Effect } from "@/lib/effect";
@@ -52,24 +52,16 @@ import { annotationsLayoutOptions, layoutOf } from "./layouts";
 import { ListLayout } from "./list-layout";
 import { groupOptions, sortOptions } from "./properties";
 import { PropertiesMenu } from "./properties-menu";
-import {
-  editView,
-  locateFilterFault,
-  parseQueryFile,
-  serializeQueryFile,
-  viewFilter,
-  withFilters,
-} from "./query-file";
+import { locateFilterFault, viewFilter } from "./query-file";
 import type {
-  FilterLocation,
-  FilterSection,
+  ConditionIssue,
   QueryFile,
   QueryFileDataset,
   QueryFileProblem,
   QueryFileSort,
   QueryFileView,
-  QueryFileViewEdit,
 } from "./query-file";
+import { QueryFileDocument } from "./query-file-document";
 import type { ShownRecord } from "./record-rows";
 import { ResultsMenu } from "./results-menu";
 import { layoutRows } from "./rows";
@@ -81,11 +73,12 @@ import type { ResultTable } from "./table";
 import { TABLE_FIELDS, TableLayout } from "./table-layout";
 import type { LiteratureNotes } from "./table-notes";
 import { ToolbarPopover } from "./toolbar-popover";
-import { columnLabel } from "./value-text";
-import * as edits from "./view-edits";
-import { unusedSettings } from "./view-edits";
 import { ViewMenu } from "./view-menu";
-import { visibleProperties } from "./visible-properties";
+import {
+  unusedSettings,
+  useViewProperties,
+  viewProperties,
+} from "./view-properties";
 
 const logger = getLogger(["views", "query-view"]);
 
@@ -156,7 +149,12 @@ export interface QueryViewState {
     | (Pick<Diagnostic, "message" | "hint" | "report"> & { code: string })
     | null;
   /** The condition of the filters that the last run's diagnostic marks. */
-  filterIssue: (FilterLocation & { message: string }) | null;
+  filterIssue: ConditionIssue | null;
+  /**
+   * The Formulas the last run left out, since ZotLit Query names a mistake in
+   * them: each name with the message. Their columns show no values.
+   */
+  formulaIssues: NameDictionary<string>;
   /** Whether a failed run left the last good rows on screen. */
   keptResults: boolean;
   /** The rows shown, each once however many groups it stands in. */
@@ -188,6 +186,7 @@ const INITIAL_STATE: QueryViewState = {
   phase: "idle",
   diagnostic: null,
   filterIssue: null,
+  formulaIssues: nameDictionary(),
   keptResults: false,
   count: 0,
   records: [],
@@ -231,6 +230,11 @@ function problemText(problem: QueryFileProblem): string {
 /** What keeps the view's Layout from showing it, beside the parser's own problems. */
 function layoutProblems(view: QueryFileView): string[] {
   const problems: string[] = [];
+  // The Layout gathers the rows into groups itself, by the groupings of the
+  // view's dataset; a grouping of no dataset, such as a Formula, it cannot do.
+  const group = usedGroupBy(view)?.property;
+  if (group !== undefined && grouping(view.from, group) === undefined)
+    problems.push(m.query_view_problem_group({ property: group }));
   const layout = layoutOf(view);
   if (!layout) problems.push(m.query_view_problem_layout({ type: view.type }));
   else if (!layout.datasets.includes(view.from ?? "annotations"))
@@ -256,24 +260,6 @@ function usedGroupBy(view: QueryFileView): QueryFileSort | undefined {
  */
 export const RERUN_DELAY_MS = 300;
 
-/** How long typed text, such as a limit or a view name, waits after the last key before it is saved. */
-export const SAVE_DELAY_MS = 500;
-
-/** How a toolbar change saves: typed text waits for {@link SAVE_DELAY_MS}. */
-export interface EditTiming {
-  typed?: boolean;
-}
-
-/** The view of `file` that `wanted` names; the first view for `null`. */
-function viewNamed(
-  file: QueryFile,
-  wanted: string | null,
-): QueryFileView | undefined {
-  return wanted === null
-    ? file.views[0]
-    : file.views.find((candidate) => candidate.name === wanted);
-}
-
 /** One run of a view: its request key, and the file and view it ran for. */
 interface ViewRun {
   key: string;
@@ -281,13 +267,43 @@ interface ViewRun {
   view: QueryFileView;
 }
 
+/** The faults of a filter that reads a Formula it cannot have. */
+const FORMULA_READ_FAULTS: ReadonlySet<string> = new Set([
+  "reads-faulted-formula",
+  "unknown-formula",
+]);
+
+/** The reason of each Formula that the run left out, by name. */
+function formulaIssues(outcome: QueryViewOutcome): NameDictionary<string> {
+  const faults =
+    outcome.kind === "result"
+      ? outcome.result.formulaDiagnostics
+      : outcome.kind === "failed"
+        ? outcome.formulaDiagnostics
+        : undefined;
+  return nameDictionary(
+    Object.entries(faults ?? {}).map(([name, diagnostic]) => [
+      name,
+      diagnosticText(diagnostic),
+    ]),
+  );
+}
+
+/** A diagnostic's message, with its hint after it where it has one. */
+function diagnosticText({
+  message,
+  hint,
+}: Pick<Diagnostic, "message" | "hint">): string {
+  return [message, hint].filter(Boolean).join(" ");
+}
+
 export class QueryView extends Component implements HistorySurface {
   readonly state = createStore<QueryViewState>()(() => INITIAL_STATE);
   readonly #deps: QueryViewDeps;
   readonly #host: QueryViewHost;
   readonly #layout: AnnotationsLayout;
-  /** The view the host asked for by name; the first view where `null`. */
-  #wanted: string | null = null;
+  /** The file's text, the view on screen, the edits and their saves. */
+  readonly #document: QueryFileDocument;
   #run: AbortController | null = null;
   /** Whether the rows on screen are drawn as Annotation Cards. */
   #cardsShown = false;
@@ -314,29 +330,28 @@ export class QueryView extends Component implements HistorySurface {
   /** What waits for the list to draw the cards the store holds now. */
   #drawWaiters: (() => void)[] = [];
   #rerunTimer: ReturnType<typeof setTimeout> | null = null;
-  /**
-   * The text the file on screen was read from. The host gives the text of
-   * the view's own save back, which then changes nothing.
-   */
-  #text: string | null = null;
-  /** The text of a typed change that waits for its delay before it is saved. */
-  #typedSave: { text: string; timer: ReturnType<typeof setTimeout> } | null =
-    null;
-  /** The host's last write, which settles once it is done. Never rejects. */
-  #writing: Promise<void> = Promise.resolve();
-  /** How many saves the view started, so that only the last one's result shows. */
-  #saves = 0;
-
   constructor(deps: QueryViewDeps, host: QueryViewHost) {
     super();
     this.#deps = deps;
     this.#host = host;
+    this.#document = new QueryFileDocument(host, {
+      show: () => this.#choose(),
+      saveFailed: (saveFailed) => this.state.setState({ saveFailed }),
+    });
     this.#layout = new AnnotationsLayout(deps, {
       ...host.layout,
       scope: host.scope,
       sourcePath: host.sourcePath,
       onListChanged: () => this.#listChanged(),
     });
+  }
+
+  /**
+   * The Query File on screen: its text, the view on screen, and every edit,
+   * which saves through the host.
+   */
+  get document(): QueryFileDocument {
+    return this.#document;
   }
 
   /** The cards, their store and their actions. */
@@ -464,10 +479,7 @@ export class QueryView extends Component implements HistorySurface {
    * {@link contextChanged}.
    */
   setText(text: string): void {
-    if (text === this.#text) return;
-    this.#text = text;
-    this.state.setState({ file: parseQueryFile(text) });
-    this.#choose();
+    this.#document.setText(text);
   }
 
   /**
@@ -485,7 +497,7 @@ export class QueryView extends Component implements HistorySurface {
    * no Query Context to run the file with.
    */
   clear(): void {
-    this.#text = null;
+    this.#document.clear();
     this.state.setState({ file: null });
     this.#runRequest = null;
     this.refresh();
@@ -493,79 +505,12 @@ export class QueryView extends Component implements HistorySurface {
 
   /** Whether a change in the view can stay. */
   get canSave(): boolean {
-    return this.#host.canSave?.() ?? true;
-  }
-
-  /**
-   * The one path of a toolbar change: show `next` at once with the view named
-   * `show` on screen, and hand its text to the host to save, at once or, for
-   * typed text, after {@link SAVE_DELAY_MS}.
-   */
-  #commit(
-    next: QueryFile,
-    show: string | null,
-    { typed }: EditTiming = {},
-  ): void {
-    const text = serializeQueryFile(next);
-    const shown = this.state.getState().view?.name ?? null;
-    const file = parseQueryFile(text);
-    this.#text = text;
-    this.state.setState({ file });
-    // The view the host asked for stays asked for while it names the view to show.
-    if (viewNamed(file, this.#wanted)?.name !== show) this.#wanted = show;
-    if (show !== null && show !== shown) this.#host.onSelectView?.(show);
-    this.#choose();
-    this.#cancelTypedSave();
-    if (typed) {
-      const timer = setTimeout(() => {
-        this.#typedSave = null;
-        this.#save(text);
-      }, SAVE_DELAY_MS);
-      this.#typedSave = { text, timer };
-    } else this.#save(text);
+    return this.#document.canSave;
   }
 
   /** Save typed text that waits for its delay now. Settles once the host wrote it. Never rejects. */
   flush(): Promise<void> {
-    const typed = this.#typedSave;
-    this.#cancelTypedSave();
-    if (typed) this.#save(typed.text);
-    return this.#writing;
-  }
-
-  #cancelTypedSave(): void {
-    if (this.#typedSave) clearTimeout(this.#typedSave.timer);
-    this.#typedSave = null;
-  }
-
-  /** Hand `text` to the host to write; a failed write keeps the change on screen and says so. */
-  #save(text: string): void {
-    if (!this.canSave) return;
-    const save = ++this.#saves;
-    const previous = this.#writing;
-    this.#writing = (async () => {
-      let failed = false;
-      try {
-        await this.#host.save(text);
-      } catch (error) {
-        failed = true;
-        logger.warn("A Query View could not save its file", { error });
-      }
-      await previous;
-      if (save === this.#saves) this.state.setState({ saveFailed: failed });
-    })();
-  }
-
-  /**
-   * Save new filters: for all views, or for the view shown. `undefined`
-   * removes them. Answers whether the view took the change.
-   */
-  setFilters(section: FilterSection, filters: MatchTree | undefined): boolean {
-    const { file, view } = this.state.getState();
-    if (!file || !view) return false;
-    const index = section === "all" ? null : this.#shownIndex();
-    this.#commit(withFilters(file, index, filters), view.name);
-    return true;
+    return this.#document.flush();
   }
 
   /** The values a filter condition offers, from the Libraries the view reads. */
@@ -600,45 +545,30 @@ export class QueryView extends Component implements HistorySurface {
 
   /** Show the view named `name`, or the file's first view for `null`. */
   selectView(name: string | null): void {
-    if (name === this.#wanted && this.state.getState().view?.name === name)
-      return;
-    this.#wanted = name;
-    this.#choose();
+    this.#document.selectView(name);
   }
 
   /** The name of the view shown, as the host remembers it. */
   get viewName(): string | null {
-    return this.state.getState().view?.name ?? this.#wanted;
+    return this.#document.viewName;
   }
 
   /** The user picked a view from the view menu. */
   pickView(name: string): void {
-    this.selectView(name);
-    this.#host.onSelectView?.(name);
+    this.#document.pickView(name);
   }
 
-  /**
-   * Change the view shown, as a toolbar control asks, and save the file's new
-   * text through the host.
-   */
-  editView(edit: QueryFileViewEdit, timing: EditTiming = {}): void {
-    const { file, view } = this.state.getState();
-    if (!file || !view) return;
-    this.#commit(editView(file, view, edit), view.name, timing);
-  }
-
+  /** The document shows another file or view: say what keeps it from running, and run it. */
   #choose(): void {
-    const { file } = this.state.getState();
+    const { file, view, wanted } = this.#document;
     if (!file) return;
-    const wanted = this.#wanted;
-    const view = viewNamed(file, wanted) ?? null;
     const problems = file.problems.map(problemText);
     if (view) {
       problems.push(...view.problems.map(problemText), ...layoutProblems(view));
     } else if (wanted !== null && file.views.length > 0) {
       problems.push(m.query_view_problem_no_view({ name: wanted }));
     }
-    this.state.setState({ view, problems });
+    this.state.setState({ file, view, problems });
     if (
       view &&
       problems.length === 0 &&
@@ -668,10 +598,10 @@ export class QueryView extends Component implements HistorySurface {
    * the view's order: what "Copy to clipboard" and "Export CSV…" write.
    */
   table(): ResultTable {
-    const { view } = this.state.getState();
+    const { file, view } = this.state.getState();
     return resultTable(
       this.#rows,
-      view ? visibleProperties(view, { fallback: true }) : [],
+      view ? viewProperties(file, view).visibleProperties : [],
     );
   }
 
@@ -684,13 +614,24 @@ export class QueryView extends Component implements HistorySurface {
     ]);
   }
 
-  /** What ZotLit Query runs for one view of the file. */
+  /**
+   * What ZotLit Query runs for one view of the file. It sends every Formula
+   * of the file: ZotLit Query plans only those that the view reads.
+   */
   #request(file: QueryFile, view: QueryFileView): QueryViewRequest {
     const filter = viewFilter(file, view);
     const context = this.#host.context();
     const unused = new Set(unusedSettings(view).sort);
     const sort = view.sort?.filter(({ property }) => !unused.has(property));
     const grouped = view.groupBy && grouping(view.from, view.groupBy.property);
+    const fields = [
+      ...new Set([
+        ...(grouped?.fields ?? []),
+        ...(layoutOf(view)?.type === "table" ? TABLE_FIELDS : []),
+        ...viewProperties(file, view).visibleProperties.map(({ path }) => path),
+      ]),
+    ];
+    const formulas = file.formulas ?? {};
     return {
       from: view.from ?? "annotations",
       ...(filter === undefined ? {} : { filter }),
@@ -701,112 +642,11 @@ export class QueryView extends Component implements HistorySurface {
             direction: direction === "DESC" ? "desc" : "asc",
           })),
         }),
-      fields: [
-        ...new Set([
-          ...(grouped?.fields ?? []),
-          ...(layoutOf(view)?.type === "table" ? TABLE_FIELDS : []),
-          ...visibleProperties(view, { fallback: true }),
-        ]),
-      ],
+      fields,
+      ...(Object.keys(formulas).length > 0 && { formulas }),
       limit: view.limit ?? null,
       ...(context && { context }),
     };
-  }
-
-  /** The place of the view on screen in the file's list. */
-  #shownIndex(): number {
-    const { file, view } = this.state.getState();
-    return file && view ? file.views.indexOf(view) : -1;
-  }
-
-  /** The name of the view at `index` in `file`, or `null` where it has none. */
-  #nameAt(file: QueryFile, index: number): string | null {
-    return file.views[index]?.name ?? null;
-  }
-
-  /** Add a view at the end of the list, and show it. Returns its name. */
-  addView(base: string = m.query_view_new_view_name()): string {
-    const { file } = this.state.getState();
-    if (!file) return base;
-    // A new view reads what the view on screen reads.
-    const edit = edits.addView(
-      file,
-      base,
-      this.state.getState().view?.from ?? "annotations",
-    );
-    this.#commit(edit.file, edit.name);
-    return edit.name;
-  }
-
-  /** Rename a view as the researcher types its name; it saves after a short wait. */
-  renameView(index: number, name: string): void {
-    const { file } = this.state.getState();
-    if (!file) return;
-    const shown = this.#shownIndex();
-    const next = edits.renameView(file, index, name);
-    this.#commit(next, this.#nameAt(next, shown), { typed: true });
-  }
-
-  /** Copy a view after itself, and show the copy. */
-  duplicateView(index: number): void {
-    const { file } = this.state.getState();
-    if (!file) return;
-    const edit = edits.duplicateView(file, index);
-    this.#commit(edit.file, edit.name);
-  }
-
-  /** Delete a view; where it was on screen, the view before it shows. */
-  deleteView(index: number): void {
-    const { file } = this.state.getState();
-    if (!file || file.views.length <= 1) return;
-    const shown = this.#shownIndex();
-    const edit = edits.deleteView(file, index);
-    this.#commit(
-      edit.file,
-      shown === index
-        ? edit.name
-        : this.#nameAt(file, shown === -1 ? 0 : shown),
-    );
-  }
-
-  /** Move a view to `to`; a move to `0` makes it the default view. */
-  moveView(from: number, to: number): void {
-    const { file } = this.state.getState();
-    if (!file || from === to) return;
-    const shown = this.#shownIndex();
-    this.#commit(
-      edits.moveView(file, from, to),
-      this.#nameAt(file, shown === -1 ? 0 : shown),
-    );
-  }
-
-  /** Set a layout option of a view, or remove it for `undefined`. */
-  setViewOption(index: number, key: string, value: unknown): void {
-    const { file } = this.state.getState();
-    if (!file) return;
-    this.#commit(
-      edits.setViewOption(file, index, { key, value }),
-      this.#nameAt(file, this.#shownIndex()),
-    );
-  }
-
-  setViewLayout(index: number, type: string): void {
-    const { file } = this.state.getState();
-    if (!file) return;
-    this.#commit(
-      edits.setViewLayout(file, index, type),
-      this.#nameAt(file, this.#shownIndex()),
-    );
-  }
-
-  /** Set the dataset a view reads; what the dataset lacks stays in the file, unused. */
-  setViewDataset(index: number, dataset: QueryFileDataset): void {
-    const { file } = this.state.getState();
-    if (!file) return;
-    this.#commit(
-      edits.setViewDataset(file, index, dataset),
-      this.#nameAt(file, this.#shownIndex()),
-    );
   }
 
   /** Run the view's query again, and show its rows. */
@@ -826,6 +666,7 @@ export class QueryView extends Component implements HistorySurface {
         phase: "idle",
         diagnostic: null,
         filterIssue: null,
+        formulaIssues: nameDictionary(),
         count: 0,
         matched: 0,
         groups: [],
@@ -836,31 +677,36 @@ export class QueryView extends Component implements HistorySurface {
     }
     const controller = new AbortController();
     this.#run = controller;
-    const request = this.#request(file, view);
     const key = this.#runKey(file, view);
     this.#runRequest = key;
     if (this.#shownRequest !== key) this.state.setState({ phase: "loading" });
-    this.#settled = this.#deps.query.run(request, controller.signal).then(
-      (outcome) => {
-        if (this.#run !== controller) return;
-        this.#run = null;
-        return this.#land({ key, file, view }, outcome, fromList);
-      },
-      (error: unknown) => {
-        if (this.#run !== controller) return;
-        this.#run = null;
-        logger.warn("A Query View could not run its query", { error });
-        this.#fail(
-          { key, file, view },
-          {
-            code: "query-failed",
-            message: error instanceof Error ? error.message : String(error),
-            hint: "",
-            report: [],
-          },
-        );
-      },
-    );
+    // A Formula with a mistake, and each Formula that reads it, is left out
+    // of the rows; the outcome gives the reason for each.
+    this.#settled = this.#deps.query
+      .run(this.#request(file, view), controller.signal)
+      .then(
+        (outcome) => {
+          if (this.#run !== controller) return;
+          this.#run = null;
+          this.state.setState({ formulaIssues: formulaIssues(outcome) });
+          return this.#land({ key, file, view }, outcome, fromList);
+        },
+        (error: unknown) => {
+          if (this.#run !== controller) return;
+          this.#run = null;
+          logger.warn("A Query View could not run its query", { error });
+          this.state.setState({ formulaIssues: nameDictionary() });
+          this.#fail(
+            { key, file, view },
+            {
+              code: "query-failed",
+              message: error instanceof Error ? error.message : String(error),
+              hint: "",
+              report: [],
+            },
+          );
+        },
+      );
   }
 
   async #land(
@@ -931,17 +777,20 @@ export class QueryView extends Component implements HistorySurface {
    * A run that gives no rows says why. A refresh of the rows on screen, or a
    * new filter of the view they belong to, keeps them under the message;
    * another view shows none. A fault in one condition of the filters is
-   * marked at that condition.
+   * marked at that condition. The filters cannot hold without a Formula they
+   * read: a condition that reads a Formula with a mistake, or one that the
+   * file does not define, shows no rows.
    */
   #fail(
     { key, file, view }: ViewRun,
     diagnostic: Diagnostic | NonNullable<QueryViewState["diagnostic"]>,
   ): void {
     const kept =
-      this.#shownRequest === key ||
-      (this.#shownRequest !== null &&
-        this.#shownViewName === view.name &&
-        this.#shownDataset === (view.from ?? "annotations"));
+      !FORMULA_READ_FAULTS.has(diagnostic.code) &&
+      (this.#shownRequest === key ||
+        (this.#shownRequest !== null &&
+          this.#shownViewName === view.name &&
+          this.#shownDataset === (view.from ?? "annotations")));
     if (!kept) void this.#show(null);
     const span =
       "location" in diagnostic && diagnostic.location?.argument === "filter"
@@ -953,12 +802,7 @@ export class QueryView extends Component implements HistorySurface {
       diagnostic,
       warnings: [],
       keptResults: kept,
-      filterIssue: at && {
-        ...at,
-        message: [diagnostic.message, diagnostic.hint]
-          .filter(Boolean)
-          .join(" "),
-      },
+      filterIssue: at && { ...at, message: diagnosticText(diagnostic) },
     });
   }
 
@@ -1076,8 +920,9 @@ const PARENTS: Partial<Record<string, () => string>> = {
  */
 function UnusedNote({ view }: { view: QueryView }) {
   const current = useQueryViewState(view, (s) => s.view);
-  if (!current) return null;
-  const unused = unusedSettings(current);
+  const entries = useViewProperties(view);
+  if (!current || !entries) return null;
+  const { unused } = entries;
   const { engine, name } = datasetSpec(current.from);
   const known = (property: string) => engine.definition(property) !== undefined;
   // A property the dataset has that no cell shows, such as the tags of
@@ -1093,7 +938,7 @@ function UnusedNote({ view }: { view: QueryView }) {
   ];
   const labels = (list: readonly string[]) =>
     list
-      .map((property) => (PARENTS[property] ?? columnLabel)(property))
+      .map((property) => PARENTS[property]?.() ?? entries.entry(property).label)
       .join(", ");
   const text = [
     properties.length > 0
@@ -1227,7 +1072,8 @@ function OpenFileButton({ view }: { view: QueryView }) {
 
 function SortButton({ view }: { view: QueryView }) {
   const current = useQueryViewState(view, (s) => s.view);
-  if (!current) return null;
+  const properties = useViewProperties(view);
+  if (!current || !properties) return null;
   const sort = current.sort ?? [];
   return (
     <ToolbarPopover
@@ -1238,10 +1084,13 @@ function SortButton({ view }: { view: QueryView }) {
     >
       <SortEditor
         value={sort}
-        options={sortOptions(current.from)}
-        unused={unusedSettings(current).sort}
+        options={sortOptions(
+          current.from,
+          (path) => properties.entry(path).label,
+        )}
+        unused={properties.unused.sort}
         onChange={(next) =>
-          view.editView({ sort: next.length > 0 ? next : undefined })
+          view.document.editView({ sort: next.length > 0 ? next : undefined })
         }
       />
     </ToolbarPopover>
@@ -1251,7 +1100,8 @@ function SortButton({ view }: { view: QueryView }) {
 function GroupButton({ view }: { view: QueryView }) {
   const current = useQueryViewState(view, (s) => s.view);
   const groups = useQueryViewState(view, (s) => s.groups);
-  if (!current) return null;
+  const properties = useViewProperties(view);
+  if (!current || !properties) return null;
   return (
     <ToolbarPopover
       icon="layout-list"
@@ -1261,11 +1111,14 @@ function GroupButton({ view }: { view: QueryView }) {
     >
       <GroupEditor
         value={{ groupBy: current.groupBy, groupOrder: current.groupOrder }}
-        options={groupOptions(current.from)}
-        unused={unusedSettings(current).groupBy !== null}
+        options={groupOptions(
+          current.from,
+          (path) => properties.entry(path).label,
+        )}
+        unused={properties.unused.groupBy !== null}
         groups={groups}
         onChange={(next) =>
-          view.editView({
+          view.document.editView({
             groupBy: next.groupBy,
             groupOrder: next.groupOrder,
           })
