@@ -944,6 +944,29 @@ it("edits the filters for all views and for this view from the Filter popover", 
   );
 });
 
+it("names a filter condition by the Display Name of its field", async () => {
+  const { view, el, settle } = await mount(
+    [result([row("ANNOTBBB")])],
+    () => {},
+  );
+  await act(() =>
+    view.setText(`properties:
+  colorName:
+    displayName: Highlight colour
+${FILE}`),
+  );
+  await settle();
+
+  const [color] = section(el, "view").querySelectorAll("[data-condition-row]");
+  const kinds = [...color!.querySelectorAll("option")].map(
+    (option) => option.textContent,
+  );
+  expect(kinds).toContain("Highlight colour");
+  expect(kinds).not.toContain("Color");
+  // A field without a Display Name keeps the name of its condition.
+  expect(kinds).toContain("Item title");
+});
+
 it("shows the query's diagnostic at the wrong condition in the Filter popover", async () => {
   const { view, el, settle } = await mount(
     [result([row("ANNOTBBB")]), filterFault(1, 11)],
