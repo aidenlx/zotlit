@@ -301,7 +301,7 @@ One live Annotation presented as a card in the annotation-view sidebar — type 
 _Avoid_: annotation item, annotation row
 
 **Card Selection**:
-The Annotation Cards an Annotation View has selected — none, one, or several; each view holds its own, whatever its Follow Mode. It is kept in step with the Obsidian PDF view the Follow Mode follows, and each Zotero Reader selection replaces it. It holds only cards the Annotation Filter shows.
+The Annotation Cards an Annotation View has selected — none, one, or several; each view holds its own, whatever its Follow Mode. It is kept in step with the Obsidian PDF view the Follow Mode follows, and each Zotero Reader selection replaces it. It holds only cards the list draws: a card the Annotation Filter hides, or one in a collapsed group, leaves it. ↑ and ↓ step through the cards in the order they are drawn, so a card shown under two group headings is reached at each.
 _Avoid_: selected annotations (the reader's are selected Annotation Marks), multi-selection (as a separate thing), primary card
 
 **Selected Card**:

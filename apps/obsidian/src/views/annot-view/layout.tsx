@@ -42,7 +42,12 @@ import { blocksNow } from "./Annotation";
 import { AnnotList } from "./AnnotView";
 import { cardControls } from "./card-controls";
 import type { CardControls } from "./card-controls";
-import { NO_SELECTION, nextCardSelection, sameKeys } from "./card-selection";
+import {
+  NO_SELECTION,
+  nextCardSelection,
+  placedKey,
+  sameKeys,
+} from "./card-selection";
 import type {
   CardClick,
   CardSelection,
@@ -349,8 +354,8 @@ export class AnnotationsLayout extends Component {
       refresh: () => this.refresh(),
       noteFeature: deps.noteFeature,
       onAllowEditing: () => deps.allowEditing(),
-      onSelectAnnotation: (annot, gesture) =>
-        this.#clickFromView({ kind: gesture, key: annot.key }),
+      onSelectAnnotation: (_annot, gesture, place) =>
+        this.#clickFromView({ kind: gesture, key: place }),
       onClearSelection: () => void this.#clearFromView(),
       selectAlone: (annot) => this.#selectAloneFromView(annot.key),
       closeEditors: () => void this.#closeEditors(),
@@ -971,7 +976,8 @@ export class AnnotationsLayout extends Component {
    */
   get historyAttachment(): string | null {
     const { annotations, cardSelection } = this.store.getState();
-    const key = cardSelection.focus ?? cardSelection.selected[0];
+    const { focus } = cardSelection;
+    const key = focus !== null ? placedKey(focus) : cardSelection.selected[0];
     const card = key && annotations?.find((record) => record.key === key);
     if (card) return card.parentKey;
     return this.#shown.length === 1 ? this.#shown[0]! : null;
@@ -1188,11 +1194,12 @@ export class AnnotationsLayout extends Component {
    * or a Cmd/Ctrl-click adds; a card that leaves, and a range, only repaint.
    */
   #clickFromView(change: Extract<SelectionChange, { kind: CardClick }>): void {
+    const key = placedKey(change.key);
     const adds =
       change.kind === "click" ||
       (change.kind === "toggle" &&
-        !this.store.getState().cardSelection.selected.includes(change.key));
-    this.#changeFromView(change, adds ? change.key : undefined);
+        !this.store.getState().cardSelection.selected.includes(key));
+    this.#changeFromView(change, adds ? key : undefined);
   }
 
   /**
@@ -1212,9 +1219,9 @@ export class AnnotationsLayout extends Component {
    * @returns whether the selection moved; at either end of the list it stays.
    */
   #moveFromView(step: 1 | -1): boolean {
-    const key = this.#stepFromView({ kind: "move", step });
-    if (key === null) return false;
-    this.#boundPdfSession()?.navigateToAnnotation(key);
+    const place = this.#stepFromView({ kind: "move", step });
+    if (place === null) return false;
+    this.#boundPdfSession()?.navigateToAnnotation(placedKey(place));
     return true;
   }
 
@@ -1229,22 +1236,23 @@ export class AnnotationsLayout extends Component {
   }
 
   /**
-   * One keyboard step of the Card Selection. The card it ends on takes the
-   * focus and comes into view.
+   * One keyboard step of the Card Selection, in the order the grid draws the
+   * cards. The card at the place it ends on takes the focus and comes into
+   * view.
    *
-   * @returns the card it ends on, or `null` where the selection stayed.
+   * @returns the place it ends on, or `null` where the selection stayed.
    */
   #stepFromView(
     change: Extract<SelectionChange, { kind: "move" | "extend" }>,
   ): string | null {
     const current = this.store.getState().cardSelection;
     const next = this.#changeFromView(change);
-    const key = next.focus;
-    if (next === current || key === null) return null;
-    const card = this.#cardElement(key);
+    const place = next.focus;
+    if (next === current || place === null) return null;
+    const card = this.#placedCardElement(place);
     card?.focus({ preventScroll: true });
     card?.scrollIntoView({ block: "nearest" });
-    return key;
+    return place;
   }
 
   /**
@@ -1325,6 +1333,21 @@ export class AnnotationsLayout extends Component {
       `${CARD_SELECTOR}[data-zotero-annotation-key="${key}"]`,
     );
     return el?.instanceOf(HTMLElement) ? el : null;
+  }
+
+  /**
+   * The card at one place in the list, while the list shows it. A group key
+   * can hold any character, so the place is compared, not put in a selector.
+   */
+  #placedCardElement(place: string): HTMLElement | null {
+    const cards = this.#el?.querySelectorAll<HTMLElement>(
+      `${CARD_SELECTOR}[data-zotero-annotation-key="${placedKey(place)}"]`,
+    );
+    return (
+      [...(cards ?? [])].find(
+        (card) => card.getAttribute("data-card-place") === place,
+      ) ?? null
+    );
   }
 
   /**
