@@ -11,6 +11,7 @@ import { isAbsolute } from "node:path";
 import type { CliData } from "obsidian";
 import * as v from "valibot";
 
+import { parseIndexedKey } from "@zotlit/db";
 import { UNLIMITED_LIMIT } from "@zotlit/item-query";
 
 import {
@@ -215,6 +216,16 @@ const limit = v.lazy((input) =>
       ),
 );
 
+/** The Indexed Key of a record that `this` binds. */
+const contextKey = (parameter: string, noun: string) =>
+  v.pipe(
+    v.string(),
+    v.check((text) => {
+      const parsed = parseIndexedKey(text);
+      return parsed !== null && (parsed.groupID === null || parsed.groupID > 0);
+    }, `${parameter} must be the Indexed Key of an ${noun}, such as ABCD2345 or ABCD2345g4815.`),
+  );
+
 /** The arguments every query takes, whichever Libraries it reads. */
 const queryOptions = {
   from: v.optional(from, "items"),
@@ -276,6 +287,8 @@ const queryOptions = {
     ),
   ),
   id: v.optional(queryId),
+  "this-item": v.optional(contextKey("this-item", "Item")),
+  "this-attachment": v.optional(contextKey("this-attachment", "Attachment")),
 };
 
 /**
@@ -289,6 +302,8 @@ function decodedQuery(
   libraries: NamedLibraries | null,
 ) {
   const { from, filter, fields, sort, limit, output, id, group } = options;
+  const item = options["this-item"];
+  const attachment = options["this-attachment"];
   return {
     from,
     libraries,
@@ -300,6 +315,15 @@ function decodedQuery(
     ...(output === undefined ? {} : { output }),
     // The id that `zotlit:query-cancel` names the query by.
     ...(id === undefined ? {} : { id }),
+    // The Query Context: the records a filter reads as this.item and this.attachment.
+    ...(item === undefined && attachment === undefined
+      ? {}
+      : {
+          context: {
+            ...(item === undefined ? {} : { item }),
+            ...(attachment === undefined ? {} : { attachment }),
+          },
+        }),
   };
 }
 
