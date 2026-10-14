@@ -1,3 +1,4 @@
+// The Projection Paths of a Query Dataset that a Query View can show as cells.
 import type { QueryDataset } from "./dataset";
 import type { ValueShape } from "./fields";
 
