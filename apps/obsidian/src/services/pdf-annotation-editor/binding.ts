@@ -146,6 +146,7 @@ export type AnnotationReads = Pick<
   | "discardTagDraft"
   | "editTextField"
   | "editTags"
+  | "hold"
   | "on"
   | "openHistory"
   | "patchColor"
@@ -589,6 +590,9 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
       return;
     }
     const { attachmentKey } = this.#attachment;
+    // The view holds its list while it is open. The hold is released after
+    // the history closes, so the list goes as the view closes.
+    this.#surfaces.use(this.#annotations.hold([attachmentKey]));
     // Two views of one Attachment share one history, and the last of them to
     // close ends it, so the open is matched on the surfaces stack.
     this.#annotations.openHistory(attachmentKey);
