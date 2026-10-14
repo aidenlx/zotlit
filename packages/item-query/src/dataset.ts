@@ -16,6 +16,7 @@ import type {
 import type { CandidateSources } from "./candidate-plan";
 import type { ItemQueryError } from "./error";
 import type { DatasetRun } from "./execution";
+import type { FaultedFormulaRead } from "./fault";
 import type {
   FieldDefinition,
   FieldNeeds,
@@ -25,7 +26,6 @@ import type {
 import type {
   FilterNode,
   FilterPlan,
-  FaultedFormulaRead,
   FilterProblem,
   FormulaResolver,
 } from "./filter-plan";

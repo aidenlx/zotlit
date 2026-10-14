@@ -1,6 +1,7 @@
 // Formulas: named Filter Expressions of a request. The Formula planner plans
-// the Formulas that the request reads and gives each one as a value, planned
-// or faulted; the projection pass evaluates each one for a record and
+// the Formulas that the request reads, gives each one as a value, planned or
+// faulted, and applies the policy of the request to a faulted one; the
+// projection pass evaluates each one for a record and
 // converts its value into the Query Row shape.
 import { regex } from "arkregex";
 
@@ -8,8 +9,9 @@ import { parseExpressionAst } from "@zotlit/filter-expression";
 import type { ExpressionNode } from "@zotlit/filter-expression";
 
 import type { QueryDataset } from "./dataset";
+import { ItemQueryError } from "./error";
 import type { ItemQueryErrorCode, ItemQueryErrorLocation } from "./error";
-import type { ItemQueryFault, Span } from "./fault";
+import type { FaultedFormulaRead, ItemQueryFault, Span } from "./fault";
 import { dateText } from "./filter-dates";
 import type { DateValue } from "./filter-dates";
 import {
@@ -18,11 +20,7 @@ import {
   renderEvaluationFault,
 } from "./filter-error";
 import { evaluateFormula } from "./filter-evaluate";
-import type {
-  FaultedFormulaRead,
-  FilterPlan,
-  FormulaResolver,
-} from "./filter-plan";
+import type { FilterPlan, FormulaResolver } from "./filter-plan";
 import { isDate, isList } from "./filter-values";
 import type { FilterValue } from "./filter-values";
 import { nameDictionary } from "./name-dictionary";
@@ -30,8 +28,11 @@ import type { PathProblem, PlannedPath } from "./projection";
 import { readPath } from "./projection";
 import { parseProjectionPath } from "./projection-path";
 import type { QueryClock } from "./query-clock";
-import { missingCustomField } from "./query-sources";
-import type { ProjectionValue, QueryContext } from "./request";
+import type {
+  FormulaDiagnostics,
+  ProjectionValue,
+  QueryContext,
+} from "./request";
 
 /** The first segment of the Projection Path of every Formula. */
 export const FORMULA_SEGMENT = "formula";
@@ -120,6 +121,14 @@ export const FORMULA_SCHEMA = {
   },
 };
 
+/**
+ * What a Formula with a mistake does to the query. `"fail"`: the query fails
+ * with the Fault at the root of the first such Formula, in request order.
+ * `"leave-out"`: the Query Rows leave out each such Formula and each Formula
+ * that reads one, and each gets its Diagnostic.
+ */
+export type FormulaFaultPolicy = "fail" | "leave-out";
+
 /** A Formula that the request reads, planned against its Query Dataset. */
 export interface PlannedFormula<Item = any, Needs = any> {
   readonly name: string;
@@ -129,20 +138,18 @@ export interface PlannedFormula<Item = any, Needs = any> {
 }
 
 /** A Formula that the request defines and that has a mistake. */
-export interface FaultedFormula {
+interface FaultedFormula {
   readonly name: string;
   /** The Filter Expression text of the Formula. */
   readonly text: string;
-  readonly fault: FormulaFault;
+  /**
+   * A Fault in its own definition, or the read of the first Formula with a
+   * mistake that its text reads.
+   */
+  readonly fault:
+    | { readonly kind: "own"; readonly error: FormulaError }
+    | FaultedFormulaRead;
 }
-
-/**
- * The mistake of a {@link FaultedFormula}: a Fault in its own definition, or
- * the first Formula with a mistake that its text reads.
- */
-export type FormulaFault =
-  | { readonly kind: "own"; readonly error: FormulaError }
-  | FaultedFormulaRead;
 
 /**
  * The parts of the `ItemQueryError` of a Fault in a Formula definition, all
@@ -155,80 +162,89 @@ export interface FormulaError {
   readonly context?: QueryContext | undefined;
 }
 
-/**
- * A Formula that `fields` reads as `formula.<name>`, or the Fault of the
- * Projection Path: another form of a path in the `formula` segment, or a name
- * that no Formula has.
- */
-export type FormulaColumn<Item = any, Needs = any> =
-  | PlannedFormula<Item, Needs>
-  | FaultedFormula
-  | { readonly problem: PathProblem | ItemQueryFault };
+/** A Fault that the source finds in the text of a planned Formula. */
+export interface FormulaSourceFault {
+  readonly fault: ItemQueryFault;
+  readonly at: Span;
+}
 
-/**
- * The Formulas of one request, planned against its Query Dataset. A Formula
- * is planned once, when a Filter Expression or `fields` first reads it, and
- * gives the same answer to each later read.
- */
-export interface FormulaPlanner<Item = any, Needs = any> {
+/** The parts of a request that the Formula planner reads. */
+export interface FormulaRequest {
+  /** The Formulas that the request defines, each name with its text. */
+  readonly formulas: Readonly<Record<string, string>> | undefined;
+  readonly filter: string | undefined;
+  /** The Projection Paths of each Query Row, after the defaults. */
+  readonly fields: readonly string[];
+  readonly context: QueryContext | undefined;
+  readonly policy: FormulaFaultPolicy;
   /**
-   * The Formulas whose name is not an identifier, in request order. Each one
-   * is faulted before any Formula is planned.
+   * The Faults that the source finds in planned Formulas, by name: a custom
+   * field that the source lacks. Each one is a mistake in its Formula.
    */
-  readonly invalidNames: readonly FaultedFormula[];
-  /** The meaning of `formula.<name>` in a Filter Expression of the request. */
-  readonly resolve: FormulaResolver<Item, Needs>;
-  /**
-   * The Formula that the Projection Path `text` of `fields` reads, or null for
-   * a path outside the reserved `formula` segment.
-   */
-  readonly column: (text: string) => FormulaColumn<Item, Needs> | null;
-  /**
-   * The Fault at the root of a faulted Formula, or of a read of one: the
-   * Fault in the definition of the first Formula, along the reads, that has
-   * one of its own.
-   */
-  readonly rootError: (
-    faulted: FaultedFormula | FaultedFormulaRead,
-  ) => FormulaError;
-  /**
-   * The Fault of a faulted Formula itself: the Fault in its own definition,
-   * or the read of the first Formula with a mistake that its text reads.
-   */
-  readonly error: (faulted: FaultedFormula) => FormulaError;
-  /**
-   * Plan each Formula that `texts` or a planned Formula reads, also after a
-   * reader's first read of a Formula with a mistake, so that each Formula the
-   * request reads is planned or faulted.
-   */
-  readonly planReads: (texts: readonly string[]) => void;
-  /** The planned Formulas, each once, a Formula after the Formulas it reads. */
-  readonly planned: () => readonly PlannedFormula<Item, Needs>[];
-  /** The faulted Formulas, each once, with the invalid names first. */
-  readonly faulted: () => readonly FaultedFormula[];
-  /** The Formulas that the request defines and no read has planned. */
-  readonly unread: () => readonly string[];
+  readonly sourceFaults?: ReadonlyMap<string, FormulaSourceFault> | undefined;
 }
 
 /**
- * Plan the Formulas `definitions` of a request against `dataset`. With the
- * custom fields `customFieldNames` of the source, a custom field that a
- * Formula names and the source lacks is a mistake in that Formula.
+ * The Formulas of one request, planned against its Query Dataset under the
+ * policy of the request. A Formula is planned once, when a Filter Expression
+ * or `fields` first reads it, and gives the same answer to each later read.
+ */
+export interface FormulaPlanner<Item = any, Needs = any> {
+  /** The meaning of `formula.<name>` in the filter of the request. */
+  readonly resolve: FormulaResolver<Item, Needs>;
+  /**
+   * The failure of a request whose filter reads, at `read`, a Formula with a
+   * mistake. `"fail"`: the Fault at the root of that Formula. `"leave-out"`:
+   * the read at the filter, with the Diagnostic of each Formula with a
+   * mistake that the request reads.
+   */
+  readonly filterFailure: (read: FaultedFormulaRead) => ItemQueryError;
+  /**
+   * The value of the Projection Path `fields[index]` when it is in the
+   * reserved `formula` segment: the planned Formula, `"left-out"` for a
+   * Formula with a mistake that the policy leaves out, or the failure of the
+   * request. Null for every other path.
+   */
+  readonly column: (
+    index: number,
+  ) =>
+    | Extract<PlannedColumn<Item, Needs>, { kind: "formula" }>
+    | "left-out"
+    | ItemQueryError
+    | null;
+  /** The Formulas of the request, once the rest of it is planned. */
+  readonly finish: () => PlannedFormulas<Item, Needs>;
+}
+
+/** The Formulas of a planned request. */
+export interface PlannedFormulas<Item = any, Needs = any> {
+  /** The planned Formulas, each once, a Formula after the Formulas it reads. */
+  readonly planned: readonly PlannedFormula<Item, Needs>[];
+  /**
+   * The Formulas that the request defines and nothing reads. `"leave-out"`
+   * gives none: its caller sends Formulas that its other requests read.
+   */
+  readonly unused: readonly string[];
+  /**
+   * `"leave-out"`: each Formula with a mistake that the request reads, with
+   * its Diagnostic. `"fail"`: null.
+   */
+  readonly diagnostics: FormulaDiagnostics | null;
+}
+
+/**
+ * Plan the Formulas of `request` against `dataset`. `"fail"` with a Formula
+ * name that is not an identifier gives the failure of the request.
  */
 export function planFormulas(
   dataset: QueryDataset<any>,
-  definitions: Readonly<Record<string, string>> | undefined,
-  {
-    context,
-    customFieldNames,
-  }: {
-    context: QueryContext | undefined;
-    customFieldNames?: readonly string[] | undefined;
-  },
-): FormulaPlanner {
+  request: FormulaRequest,
+): FormulaPlanner | ItemQueryError {
+  const { context, fields, sourceFaults } = request;
+  const leaveOut = request.policy === "leave-out";
   // The names come from the caller's text: a name such as __proto__ is a
   // Formula like any other.
-  const defined = nameDictionary(Object.entries(definitions ?? {}));
+  const defined = nameDictionary(Object.entries(request.formulas ?? {}));
   const names = Object.keys(defined);
   const invalidNames: FaultedFormula[] = names
     .filter((name) => !FORMULA_NAME.test(name))
@@ -244,22 +260,23 @@ export function planFormulas(
         },
       },
     }));
+  const rootError = ({ fault }: FaultedFormula): FormulaError =>
+    fault.kind === "own" ? fault.error : fault.root;
+  /** The failure of a request that fails on the Formula `faulted`. */
+  const failure = (faulted: FaultedFormula) =>
+    new ItemQueryError({ dataset, ...rootError(faulted) });
+  const [invalidName] = invalidNames;
+  if (invalidName && !leaveOut) return failure(invalidName);
+
   const planned = new Map<string, PlannedFormula>();
   const faulted = new Map<string, FaultedFormula>(
     invalidNames.map((formula) => [formula.name, formula]),
   );
+  // A `formula.<name>` of fields that names no Formula, by name.
+  const undefinedColumns = new Map<string, ItemQueryError>();
   // A Formula in `planning` is a reader of the one in planning after it, so a
   // name already there closes a cycle.
   const planning: string[] = [];
-
-  const rootError = (
-    formula: FaultedFormula | FaultedFormulaRead,
-  ): FormulaError => {
-    let fault = "fault" in formula ? formula.fault : formula;
-    while (fault.kind === "reads-faulted-formula")
-      fault = faulted.get(fault.name)!.fault;
-    return fault.error;
-  };
 
   const unknown = (name: string, at: Span) =>
     ({ kind: "unknown", role: "formula", name, at, formulas: names }) as const;
@@ -300,15 +317,14 @@ export function planFormulas(
       );
     } else {
       const found = result.root.valueType;
+      const fromSource = sourceFaults?.get(name);
       if (found === "duration" || found === "regexp" || found === "record") {
         const at = { from: result.root.from, to: result.root.to };
         formula = own({ kind: "formula-result", name, found, at }, at);
+      } else if (fromSource) {
+        formula = own(fromSource.fault, fromSource.at);
       } else {
-        const missing =
-          customFieldNames && missingCustomField(result, customFieldNames);
-        formula = missing
-          ? own(missing.fault, missing.at)
-          : { name, text, plan: result };
+        formula = { name, text, plan: result };
       }
     }
     if ("fault" in formula) faulted.set(name, formula);
@@ -327,75 +343,152 @@ export function planFormulas(
       };
     }
     const formula = plan(name);
-    if ("fault" in formula) return { kind: "reads-faulted-formula", name, at };
+    if ("fault" in formula) {
+      return {
+        kind: "reads-faulted-formula",
+        name,
+        at,
+        root: rootError(formula),
+      };
+    }
     return { root: formula.plan.root, needs: formula.plan.needs };
   };
 
-  return {
-    invalidNames,
-    resolve,
-    column: (text) => {
-      const name = formulaPath(text);
-      if (name === null) return null;
-      if (typeof name === "object") return { problem: name };
-      if (!Object.hasOwn(defined, name))
-        return { problem: unknown(name, { from: 0, to: text.length }) };
-      return plan(name);
-    },
-    rootError,
-    error: ({ name, text, fault }) => {
-      // A Formula on a cycle gives the cycle from itself, at its read of the
-      // next Formula of the cycle.
-      const root = fault.kind === "own" ? fault.error : rootError(fault);
-      if (root.fault.kind === "formula-cycle") {
-        const chain = root.fault.chain.slice(0, -1);
-        const at = chain.indexOf(name);
-        if (at !== -1) {
-          const from = [...chain.slice(at), ...chain.slice(0, at)];
-          const span = fault.kind === "own" ? root.fault.at : fault.at;
-          return {
-            ...root,
-            fault: { ...root.fault, chain: [...from, name], at: span },
-            location: { ...root.location, path: name, span },
-            argumentText: text,
-          };
-        }
+  /**
+   * The Fault of a faulted Formula itself: the Fault in its own definition,
+   * or the read of the first Formula with a mistake that its text reads.
+   */
+  const ownError = ({ name, text, fault }: FaultedFormula): FormulaError => {
+    // A Formula on a cycle gives the cycle from itself, at its read of the
+    // next Formula of the cycle.
+    const root = fault.kind === "own" ? fault.error : fault.root;
+    if (root.fault.kind === "formula-cycle") {
+      const chain = root.fault.chain.slice(0, -1);
+      const at = chain.indexOf(name);
+      if (at !== -1) {
+        const from = [...chain.slice(at), ...chain.slice(0, at)];
+        const span = fault.kind === "own" ? root.fault.at : fault.at;
+        return {
+          ...root,
+          fault: { ...root.fault, chain: [...from, name], at: span },
+          location: { ...root.location, path: name, span },
+          argumentText: text,
+        };
       }
-      if (fault.kind === "own") return fault.error;
-      return {
-        context,
-        fault: { ...fault, root: rootError(fault) },
-        location: { argument: "formulas", path: name, span: fault.at },
-        argumentText: text,
-      };
-    },
-    planReads: (texts) => {
-      const invalid = new Set(invalidNames.map((formula) => formula.name));
-      const queued = new Set<string>();
-      const queue = [...texts];
-      const enqueuePlanned = () => {
-        for (const formula of [...planned.values(), ...faulted.values()]) {
-          if (invalid.has(formula.name) || queued.has(formula.name)) continue;
-          queued.add(formula.name);
-          queue.push(formula.text);
-        }
-      };
+    }
+    if (fault.kind === "own") return fault.error;
+    return {
+      context,
+      fault,
+      location: { argument: "formulas", path: name, span: fault.at },
+      argumentText: text,
+    };
+  };
+
+  /**
+   * Plan each Formula that `texts` or a planned Formula reads, also after a
+   * reader's first read of a Formula with a mistake, so that each Formula the
+   * request reads is planned or faulted.
+   */
+  const planReads = (texts: readonly string[]) => {
+    const invalid = new Set(invalidNames.map((formula) => formula.name));
+    const queued = new Set<string>();
+    const queue = [...texts];
+    const enqueuePlanned = () => {
+      for (const formula of [...planned.values(), ...faulted.values()]) {
+        if (invalid.has(formula.name) || queued.has(formula.name)) continue;
+        queued.add(formula.name);
+        queue.push(formula.text);
+      }
+    };
+    enqueuePlanned();
+    for (let text = queue.pop(); text !== undefined; text = queue.pop()) {
+      for (const { name } of formulaReferences(text))
+        if (
+          Object.hasOwn(defined, name) &&
+          !planned.has(name) &&
+          !faulted.has(name)
+        )
+          plan(name);
       enqueuePlanned();
-      for (let text = queue.pop(); text !== undefined; text = queue.pop()) {
-        for (const { name } of formulaReferences(text))
-          if (
-            Object.hasOwn(defined, name) &&
-            !planned.has(name) &&
-            !faulted.has(name)
-          )
-            plan(name);
-        enqueuePlanned();
-      }
+    }
+  };
+
+  /** The Diagnostic of each Formula with a mistake, by name. */
+  const diagnostics = (): FormulaDiagnostics =>
+    nameDictionary(
+      [
+        ...[...faulted.values()].map(
+          (formula) =>
+            [
+              formula.name,
+              new ItemQueryError({ dataset, ...ownError(formula) }),
+            ] as const,
+        ),
+        ...undefinedColumns,
+      ].map(([name, error]) => [name, error.diagnostic] as const),
+    );
+
+  const column: FormulaPlanner["column"] = (index) => {
+    const text = fields[index]!;
+    const name = formulaPath(text);
+    if (name === null) return null;
+    const fieldFailure = (fault: ItemQueryFault) =>
+      new ItemQueryError({
+        dataset,
+        fault,
+        location: { argument: "fields", index, path: `fields[${index}]` },
+        argumentText: JSON.stringify(fields),
+      });
+    if (typeof name === "object") return fieldFailure(name);
+    if (!Object.hasOwn(defined, name)) {
+      const error = fieldFailure(unknown(name, { from: 0, to: text.length }));
+      if (!leaveOut) return error;
+      if (!undefinedColumns.has(name)) undefinedColumns.set(name, error);
+      return "left-out";
+    }
+    const formula = plan(name);
+    if ("fault" in formula) return leaveOut ? "left-out" : failure(formula);
+    return { kind: "formula", formula };
+  };
+
+  return {
+    resolve,
+    column,
+    filterFailure: (read) => {
+      if (!leaveOut) return new ItemQueryError({ dataset, ...read.root });
+      // Plan the Formulas of fields too, so the failure gives each Formula
+      // with a mistake.
+      for (const index of fields.keys()) column(index);
+      const filter = request.filter ?? "";
+      planReads([filter]);
+      return new ItemQueryError({
+        dataset,
+        context,
+        fault: read,
+        location: { argument: "filter", span: read.at },
+        argumentText: filter,
+        formulaDiagnostics: diagnostics(),
+      });
     },
-    planned: () => [...planned.values()],
-    faulted: () => [...faulted.values()],
-    unread: () =>
-      names.filter((name) => !planned.has(name) && !faulted.has(name)),
+    finish: () => {
+      if (!leaveOut) {
+        return {
+          planned: [...planned.values()],
+          unused: names.filter(
+            (name) => !planned.has(name) && !faulted.has(name),
+          ),
+          diagnostics: null,
+        };
+      }
+      // Each Formula that the request reads gets its own mark.
+      planReads([]);
+      return {
+        planned: [...planned.values()],
+        unused: [],
+        diagnostics: diagnostics(),
+      };
+    },
   };
 }
 

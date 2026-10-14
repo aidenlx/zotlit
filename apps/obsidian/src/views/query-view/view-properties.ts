@@ -72,13 +72,13 @@ export interface ViewProperties {
 }
 
 /**
- * The Properties of `view` in `file`. `formulaFaults` gives, by Formula
+ * The Properties of `view` in `file`. `formulaIssues` gives, by Formula
  * name, the message of each Formula the last run left out.
  */
 export function viewProperties(
   file: QueryFile | null,
   view: Pick<QueryFileView, "from" | "order" | "sort" | "groupBy">,
-  formulaFaults: Readonly<Record<string, string>> = {},
+  formulaIssues: Readonly<Record<string, string>> = {},
 ): ViewProperties {
   const dataset = view.from ?? "annotations";
   const order = view.order ?? [];
@@ -93,8 +93,8 @@ export function viewProperties(
         label: (file && displayName(file, path)) ?? fieldLabel(path),
         formula,
         issue:
-          formula !== null && Object.hasOwn(formulaFaults, formula)
-            ? formulaFaults[formula]!
+          formula !== null && Object.hasOwn(formulaIssues, formula)
+            ? formulaIssues[formula]!
             : null,
         fits: fitsDataset(path, dataset),
         place: place === -1 ? null : place,
