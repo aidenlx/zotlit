@@ -68,7 +68,7 @@ Every view has a toolbar. A change in the toolbar, such as a new sort, saves at 
 - In a query block, the change rewrites the block text in the note. This also works when the block shows through a section embed or a hover popover: the change saves to the note that holds the block.
 - In the sidebar, the change stays with the sidebar.
 
-Where a view has no place to save, such as in an exported PDF or a note preview, the view still shows its rows. Its toolbar then shows <UiLabel name={m.query_view_read_only()} />
+A note that you export to PDF or print shows the rows as they are at that time, without the toolbar. Where a view has no place to save, such as in a note preview, the view still shows its rows. Under the toolbar it shows <UiLabel name={m.query_view_read_only()} />
 
 ## `this`: the paper of the note [#this]
 
