@@ -11,6 +11,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import type { QueryLayout } from "./layouts";
 import type { QueryFileView } from "./query-file";
 import { RecordGroupHeading, useRecordGroups } from "./record-rows";
+import { columnLabel } from "./value-text";
 import type { QueryView } from "./view";
 
 export const CARDS_LAYOUT: QueryLayout = {
@@ -93,7 +94,7 @@ export function CardsLayout({ view }: { view: QueryView }) {
                     {rest.map((text, at) => (
                       <div key={properties[at + 1]} className="zt:min-w-0">
                         <div className="zt:truncate zt:text-xs zt:text-(--text-faint)">
-                          {properties[at + 1]}
+                          {columnLabel(properties[at + 1]!)}
                         </div>
                         <div className="zt:truncate">{text}</div>
                       </div>

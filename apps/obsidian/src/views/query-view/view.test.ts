@@ -1332,6 +1332,65 @@ it("sorts, groups and searches the Table by Item fields", async () => {
   ]);
 });
 
+it("names and searches the properties of Items in Cards and List as the Table does", async () => {
+  const { view, el, settle } = await mount([
+    result([
+      itemRow("ITEMAAAA", "Ten simple rules"),
+      {
+        ...itemRow("ITEMBBBB", "Deep learning"),
+        values: {
+          ...itemRow("ITEMBBBB", "Deep learning").values,
+          itemType: "book",
+        },
+      },
+    ]),
+  ]);
+  await act(() =>
+    view.setText(`views:
+  - type: cards
+    name: Reading list
+    from: items
+    order:
+      - title
+      - itemType
+`),
+  );
+  await settle();
+
+  // A card names each property by its label and shows its value as text.
+  const card = el.querySelector("[data-query-row]")!;
+  expect(
+    [...card.children].slice(1).map((part) => ({
+      label: part.children[0]?.textContent,
+      value: part.children[1]?.textContent,
+    })),
+  ).toEqual([{ label: "Item Type", value: "Journal Article" }]);
+
+  const search = async (text: string) => {
+    if (!el.querySelector("[data-query-search]"))
+      await act(() =>
+        el.querySelector<HTMLElement>('[data-query-toolbar="search"]')!.click(),
+      );
+    const input = el.querySelector<HTMLInputElement>("[data-query-search]")!;
+    await act(() => {
+      input.value = text;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  };
+  // The search finds the text on screen, not the stored value.
+  await search("journal article");
+  expect(shownRows(el)).toEqual(["ITEMAAAA"]);
+  await search("journalarticle");
+  expect(shownRows(el)).toEqual([]);
+
+  await act(() => view.setViewLayout(0, "list"));
+  await settle();
+  await search("journal article");
+  expect(shownRows(el)).toEqual(["ITEMAAAA"]);
+  await search("journalarticle");
+  expect(shownRows(el)).toEqual([]);
+});
+
 it("offers Item fields to sort and group a view of Items by", async () => {
   const { view, el, settle } = await mount([result([])]);
   await act(() => view.setText(TABLE_FILE));
