@@ -31,10 +31,11 @@ export interface Callee {
   readonly receiver?: Receiver;
 }
 /**
- * A fact about one invalid Item Query. `plain` is reserved for the five facts
+ * A fact about one invalid Item Query. `plain` is reserved for the facts
  * that have no generic source: a duplicate Target Library, an invalid limit,
- * invalid Projection Path grammar, the regular-expression engine's reason, and a
- * callee that is not a name.
+ * invalid Projection Path grammar, the regular-expression engine's reason, a
+ * callee that is not a name, and a Query Context that the request does not
+ * bind or binds to a value that is not an Indexed Key.
  */
 export type Fault =
   | {

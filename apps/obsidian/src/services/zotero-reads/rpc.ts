@@ -570,6 +570,23 @@ export class ZoteroReads extends RpcGroup.make(
     }),
     error: ReadError,
   }),
+  /**
+   * The annotations of many attachments, read against one snapshot: one entry
+   * per requested key, in request order, as {@link AnnotationsOfAttachment}
+   * answers each.
+   */
+  Rpc.make("AnnotationsOfAttachments", {
+    payload: { attachmentKeys: Schema.Array(Schema.String), ...snapshot },
+    success: Schema.Array(
+      Schema.Struct({
+        attachmentKey: Schema.String,
+        attachment: Schema.NullOr(AttachmentSchema),
+        annotations: Schema.Array(AnnotationSchema),
+        accountUserID: Schema.NullOr(Schema.Number),
+      }),
+    ),
+    error: ReadError,
+  }),
   /** The attachments of the given parent items, in display order. */
   Rpc.make("AttachmentsOf", {
     payload: { itemIDs: Schema.Array(Schema.Number), ...snapshot },

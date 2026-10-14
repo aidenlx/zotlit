@@ -4,6 +4,7 @@ import type { QueryDataset } from "./dataset";
 import { diagnose } from "./diagnose";
 import type { Diagnostic } from "./diagnose";
 import type { ItemQueryFault, Span } from "./fault";
+import type { QueryContext } from "./request";
 
 /** Stable codes of an invalid Item Query request. */
 export type ItemQueryErrorCode =
@@ -19,7 +20,9 @@ export type ItemQueryErrorCode =
   | "unknown-function"
   | "unknown-property"
   | "wrong-argument-count"
-  | "wrong-argument-type";
+  | "wrong-argument-type"
+  | "invalid-context"
+  | "unbound-context";
 
 /** The part of the request an {@link ItemQueryError} points at. */
 export interface ItemQueryErrorLocation {
@@ -29,7 +32,8 @@ export interface ItemQueryErrorLocation {
     | "fields"
     | "sort"
     | "limit"
-    | "group";
+    | "group"
+    | "context";
   /** The position of the entry in a list argument. */
   readonly index?: number;
   readonly path?: string;
@@ -48,6 +52,8 @@ export class ItemQueryError extends Data.TaggedError("ItemQueryError")<{
   /** The text of the argument that the location points into. */
   readonly argumentText?: string;
   readonly location: ItemQueryErrorLocation;
+  /** The Query Context of the request, for the corrections of the diagnostic. */
+  readonly context?: QueryContext | undefined;
 }> {
   #diagnostic: Diagnostic<ItemQueryErrorCode> | undefined;
 
@@ -66,6 +72,7 @@ export class ItemQueryError extends Data.TaggedError("ItemQueryError")<{
     this.#diagnostic ??= diagnose(this.fault, this.argumentText ?? "", {
       ...this.location,
       dataset: this.dataset,
+      context: this.context,
     });
     return this.#diagnostic;
   }

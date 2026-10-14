@@ -66,17 +66,41 @@ export interface EditingTarget {
   caretAt?: CaretPoint;
 }
 
+/** One Attachment's Annotation Source, and the data directory it was read under. */
+export interface HeldSource {
+  source: AnnotationSource;
+  scope: string | null;
+}
+
 export interface AnnotState {
   attachments: AnnotViewAttachment[] | null;
   /** Indexed Key of the Attachment on screen. */
   selectedAttachmentKey: string | null;
   /** Why the Attachment cannot be chosen here; `null` while the picker is live. */
   attachmentLock: AttachmentLock;
+  /**
+   * The Annotations the cards show: the list of each Attachment the
+   * Annotations Layout shows, one after another in the order its host gave.
+   */
   annotations: readonly AnnotationRecord[] | null;
-  /** Which Annotation Source answered for {@link annotations}. */
-  annotationSource: AnnotationSource | null;
-  annotationSourceScope: string | null;
-  /** What the cards may do to the Attachment on screen. */
+  /**
+   * Which Annotation Source answered for each Attachment the cards show, by
+   * the Attachment's Indexed Key. The source is atomic per Attachment, so a
+   * card reads the one of its own Attachment.
+   *
+   * @see apps/obsidian/docs/adr/0034-the-annotation-source-is-atomic-per-attachment.md
+   */
+  sources: ReadonlyMap<string, HeldSource>;
+  /**
+   * What the cards may do to each Attachment they show, by the Attachment's
+   * Indexed Key.
+   */
+  capabilities: ReadonlyMap<string, EditingCapability>;
+  /**
+   * The Editing Capability the host reports in its own chrome — the sidebar
+   * reports the one of the Attachment on screen — and the one a card answers
+   * to while {@link capabilities} holds none for its Attachment.
+   */
   capability: EditingCapability;
   /**
    * What the last write left on each Annotation, by Indexed Key. A key with no
@@ -159,8 +183,8 @@ export function createAnnotStore() {
         selectedAttachmentKey: null,
         attachmentLock: null,
         annotations: null,
-        annotationSource: null,
-        annotationSourceScope: null,
+        sources: new Map(),
+        capabilities: new Map(),
         // Nothing has probed Zotero yet, which is exactly what "probing" says.
         capability: { kind: "read-only", reason: "probing" },
         mutations: new Map(),
@@ -181,6 +205,14 @@ export function createAnnotStore() {
       }),
     ),
   );
+}
+
+/** The Editing Capability one card answers to: the one of its own Attachment. */
+export function capabilityOf(
+  state: Pick<AnnotState, "capabilities" | "capability">,
+  attachmentKey: string,
+): EditingCapability {
+  return state.capabilities.get(attachmentKey) ?? state.capability;
 }
 
 /** Selected attachment, falling back to the first when none is chosen. */

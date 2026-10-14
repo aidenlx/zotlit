@@ -676,8 +676,15 @@ describe("an image card's Excerpt Image demand", () => {
     };
     const store = createAnnotStore();
     store.setState({
-      annotationSource: { kind: "zotero-local-api", serverID: "SERVER000001" },
-      annotationSourceScope: "/zotero",
+      sources: new Map([
+        [
+          image.parentKey,
+          {
+            source: { kind: "zotero-local-api", serverID: "SERVER000001" },
+            scope: "/zotero",
+          },
+        ],
+      ]),
     });
     const reading = { image: null, current: false, status: "reading" } as const;
     const resolutions: PromiseWithResolvers<ExcerptRequest | null>[] = [];
@@ -719,10 +726,15 @@ describe("an image card's Excerpt Image demand", () => {
     );
     await act(() =>
       store.setState({
-        annotationSource: {
-          kind: "zotero-local-api",
-          serverID: "OTHER0000001",
-        },
+        sources: new Map([
+          [
+            image.parentKey,
+            {
+              source: { kind: "zotero-local-api", serverID: "OTHER0000001" },
+              scope: "/zotero",
+            },
+          ],
+        ]),
       }),
     );
     expect(resolutions).toHaveLength(2);

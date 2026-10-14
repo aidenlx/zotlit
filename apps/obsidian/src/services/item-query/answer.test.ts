@@ -616,6 +616,46 @@ describe("zotlit:query fields", () => {
   });
 });
 
+describe("zotlit:query Query Context", () => {
+  it("binds this.item and this.attachment, and echoes the Query Context", async () => {
+    using scenario = openScenarioDatabase({ annotations: true });
+    const { run } = setup(scenario);
+
+    const answer = await run({
+      from: "annotations",
+      filter:
+        'item == this.item && attachment == this.attachment && type == "underline"',
+      fields: "[]",
+      "this-item": "ART2FULL",
+      "this-attachment": "PDF2LIVE",
+    });
+
+    expect(answer).toMatchObject({
+      ok: true,
+      request: { context: { item: "ART2FULL", attachment: "PDF2LIVE" } },
+    });
+    expect(keys(answer)).toEqual(["ANN2UNDR"]);
+  });
+
+  it("answers a filter that reads this without a binding with unbound-context", async () => {
+    using scenario = openScenarioDatabase({ annotations: true });
+    const { run } = setup(scenario);
+
+    const answer = await run({
+      from: "annotations",
+      filter: "item == this.item",
+    });
+
+    expect(answer).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "unbound-context",
+        location: { argument: "filter", span: { from: 8, to: 17 } },
+      },
+    });
+  });
+});
+
 describe("zotlit:query filter and sort", () => {
   it("passes a well-formed filter through to the engine and echoes it", async () => {
     using scenario = openScenarioDatabase();

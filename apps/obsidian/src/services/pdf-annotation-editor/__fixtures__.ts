@@ -381,6 +381,11 @@ export function annotationReads(
       return current;
     },
     probe: vi.fn(() => Promise.resolve()),
+    hold: vi.fn(
+      (_attachmentKeys: Iterable<string>): Disposable => ({
+        [Symbol.dispose]: () => {},
+      }),
+    ),
     openHistory: vi.fn((attachmentKey: string) => {
       histories.set(attachmentKey, (histories.get(attachmentKey) ?? 0) + 1);
     }),
