@@ -216,6 +216,7 @@ function answerQuery(
       filter: decoded.filter,
       group: decoded.group,
       fields: decoded.fields,
+      formulas: decoded.formulas,
       sort: decoded.sort,
       limit: decoded.limit,
       context: decoded.context,

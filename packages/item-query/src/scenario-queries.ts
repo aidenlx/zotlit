@@ -422,6 +422,25 @@ const REQUESTS: readonly ScenarioQuery[] = [
       ],
     },
   },
+  {
+    name: "Formulas over a candidate set, with a custom field and a date",
+    libraries: ["personal", "group"],
+    request: {
+      filter: 'tags.contains("to-read")',
+      formulas: {
+        status: 'custom["review.status"]',
+        published: "date",
+        authors: "creators.length",
+        unused: "title",
+      },
+      fields: [
+        "title",
+        "formula.authors",
+        "formula.status",
+        "formula.published",
+      ],
+    },
+  },
   { name: "no filter, defaults", libraries: ["personal"], request: {} },
   { name: "no filter, defaults, group", libraries: ["group"], request: {} },
   {

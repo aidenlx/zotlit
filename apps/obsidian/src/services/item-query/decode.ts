@@ -244,6 +244,19 @@ const queryOptions = {
       v.array(v.string()),
     ),
   ),
+  formulas: v.optional(
+    jsonParameter(
+      "formulas",
+      'a JSON object of Formula names and Filter Expressions, such as {"year":"date.year"}',
+      v.pipe(
+        v.custom<unknown>(
+          (input) => !Array.isArray(input),
+          'formulas is a JSON array: use a JSON object, such as {"year":"date.year"}.',
+        ),
+        v.record(v.string(), v.string()),
+      ),
+    ),
+  ),
   sort: v.optional(
     v.pipe(
       v.lazy((input) =>
@@ -301,7 +314,8 @@ function decodedQuery(
   options: v.InferOutput<v.StrictObjectSchema<typeof queryOptions, undefined>>,
   libraries: NamedLibraries | null,
 ) {
-  const { from, filter, fields, sort, limit, output, id, group } = options;
+  const { from, filter, fields, formulas, sort, limit, output, id, group } =
+    options;
   const item = options["this-item"];
   const attachment = options["this-attachment"];
   return {
@@ -311,6 +325,7 @@ function decodedQuery(
     ...(group === undefined ? {} : { group }),
     ...(filter === undefined ? {} : { filter }),
     ...(fields === undefined ? {} : { fields }),
+    ...(formulas === undefined ? {} : { formulas }),
     ...(sort === undefined ? {} : { sort }),
     ...(output === undefined ? {} : { output }),
     // The id that `zotlit:query-cancel` names the query by.

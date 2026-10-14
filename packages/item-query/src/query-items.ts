@@ -24,8 +24,9 @@ import {
 import type { QueryItem } from "./fields";
 import { matches as isMatch } from "./filter-evaluate";
 import { planFilter } from "./filter-plan";
+import { projectColumns } from "./formulas";
 import { ITEM_LOADING } from "./hydration";
-import { readPath, resolveItemPath } from "./projection";
+import { resolveItemPath } from "./projection";
 import { ANNOTATIONS } from "./query-annotations";
 import { ATTACHMENTS } from "./query-attachments";
 import { openRecordLoader } from "./record-loader";
@@ -75,7 +76,7 @@ export const ITEMS: QueryDataset<ItemQueryRequest> = {
   readUniverseRows,
   open: (plan, { libraries }, { clock, sources }) =>
     Effect.gen(function* () {
-      const { filter, paths } = plan;
+      const { filter, columns } = plan;
       const hydration = yield* openRecordLoader(ITEM_LOADING, plan, {
         libraries,
         sources,
@@ -86,9 +87,7 @@ export const ITEMS: QueryDataset<ItemQueryRequest> = {
         matches: (item) => !filter || isMatch(filter.root, item, clock),
         project: (item, library, scan) => ({
           indexedKey: formatIndexedKey(scan.key, library.groupID),
-          values: Object.fromEntries(
-            paths.map((path) => [path.text, readPath(path, item)]),
-          ),
+          values: projectColumns(columns, item, clock),
         }),
       };
       return run;

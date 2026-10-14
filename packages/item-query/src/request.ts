@@ -10,8 +10,11 @@ import { ItemQueryError } from "./error";
 import type { ItemQueryFault } from "./fault";
 import type { FieldNeeds, QueryItem, SortKey } from "./fields";
 import type { FilterPlan } from "./filter-plan";
+import { FORMULA_NAME, FORMULA_SEGMENT } from "./formulas";
+import type { PlannedColumn, PlannedFormula } from "./formulas";
 import { canGroup, planPath, readPath } from "./projection";
 import type { PlannedPath } from "./projection";
+import { parseProjectionPath } from "./projection-path";
 import type { QueryClock } from "./query-clock";
 
 /**
@@ -60,6 +63,12 @@ export interface ItemQueryRequest {
    * has no value, and a filter that reads it is invalid.
    */
   readonly context?: QueryContext | undefined;
+  /**
+   * The Formulas of the request: each name with its Filter Expression text.
+   * A name is an identifier. The query plans and evaluates a Formula only when
+   * `fields` reads it as `formula.<name>`.
+   */
+  readonly formulas?: Readonly<Record<string, string>> | undefined;
 }
 
 /** The records `this` binds, each by its Indexed Key. */
@@ -83,6 +92,8 @@ export interface ItemQuery {
   readonly group?: string;
   /** The Query Context of the request, when it binds a record. */
   readonly context?: QueryContext;
+  /** The Formulas of the request, when it names any. */
+  readonly formulas?: Readonly<Record<string, string>>;
 }
 
 /** A value of one Projection Path in a Query Row. */
@@ -133,6 +144,7 @@ export interface QueryMetadata {
     | "always-true"
     | "key-outside-target-libraries"
     | "unknown-collection"
+    | "unused-formula"
   >[];
   /** The normalized request. */
   readonly query: ItemQuery;
@@ -149,6 +161,12 @@ export interface ItemQueryPlan<Item = any, Needs = any> {
   /** `null`: every record matches. */
   readonly filter: FilterPlan<Item, Needs> | null;
   readonly paths: readonly PlannedPath<Item, Needs>[];
+  /** The Formulas that `fields` reads, each once. */
+  readonly formulas: readonly PlannedFormula<Item, Needs>[];
+  /** The Formulas that the request names and never reads. */
+  readonly unusedFormulas: readonly string[];
+  /** The values of each Query Row, in the order of `fields`. */
+  readonly columns: readonly PlannedColumn<Item, Needs>[];
   readonly group: PlannedGroup<Item, Needs> | null;
   /** What hydration loads before reading each matched record's group values. */
   readonly groupNeeds: readonly Needs[];
@@ -269,9 +287,81 @@ export function planRequest(
       filter = planned;
     }
 
+    const definedFormulas = request.formulas ?? {};
+    for (const name of Object.keys(definedFormulas)) {
+      if (!FORMULA_NAME.test(name)) {
+        return yield* new ItemQueryError({
+          dataset,
+          location: { argument: "formulas", path: name },
+          fault: { kind: "formula-name", name },
+          argumentText: name,
+        });
+      }
+    }
+    const formulas = new Map<string, PlannedFormula>();
+    const planFormula = (name: string) =>
+      Effect.gen(function* () {
+        const text = definedFormulas[name]!;
+        const fail = (
+          fault: ItemQueryFault,
+          span?: { from: number; to: number },
+        ) =>
+          new ItemQueryError({
+            dataset,
+            context,
+            fault,
+            location: {
+              argument: "formulas",
+              path: name,
+              ...(span && { span }),
+            },
+            argumentText: text,
+          });
+        const planned = dataset.planFilter(text, context);
+        if ("kind" in planned) {
+          return yield* fail(
+            planned,
+            planned.kind === "syntax"
+              ? { from: planned.fault.from, to: planned.fault.to }
+              : planned.at,
+          );
+        }
+        const found = planned.root.valueType;
+        if (found === "duration" || found === "regexp" || found === "record") {
+          const at = { from: planned.root.from, to: planned.root.to };
+          return yield* fail({ kind: "formula-result", name, found, at }, at);
+        }
+        return { name, text, plan: planned };
+      });
+
     const fields = request.fields ?? dataset.defaultFields;
     const paths: PlannedPath[] = [];
+    const columns: PlannedColumn[] = [];
     for (const [index, text] of fields.entries()) {
+      const formulaName = formulaPath(text);
+      if (formulaName !== null) {
+        if (!Object.hasOwn(definedFormulas, formulaName)) {
+          return yield* new ItemQueryError({
+            dataset,
+            fault: {
+              kind: "unknown",
+              role: "formula",
+              name: formulaName,
+              at: { from: 0, to: text.length },
+              formulas: Object.keys(definedFormulas),
+            },
+            location: { argument: "fields", index, path: `fields[${index}]` },
+            argumentText: JSON.stringify(fields),
+          });
+        }
+        let formula = formulas.get(formulaName);
+        if (!formula) {
+          formula = yield* planFormula(formulaName);
+          formulas.set(formulaName, formula);
+        }
+        columns.push({ kind: "formula", formula });
+        continue;
+      }
       const path = planPath(text, dataset.resolvePath);
       if ("kind" in path) {
         return yield* new ItemQueryError({
@@ -282,6 +372,7 @@ export function planRequest(
         });
       }
       paths.push(path);
+      columns.push({ kind: "path", path });
     }
 
     let group: PlannedGroup | null = null;
@@ -366,14 +457,33 @@ export function planRequest(
         limit,
         ...(request.group === undefined ? {} : { group: request.group }),
         ...(context === undefined ? {} : { context }),
+        ...(request.formulas === undefined
+          ? {}
+          : { formulas: { ...request.formulas } }),
       },
       filter,
       warnings: filter?.warnings ?? [],
       paths,
+      formulas: [...formulas.values()],
+      unusedFormulas: Object.keys(definedFormulas).filter(
+        (name) => !formulas.has(name),
+      ),
+      columns,
       group,
       groupNeeds: group ? [group.needs] : [],
       order: [...normalized, ...tieBreakers],
       sorts,
     };
   });
+}
+
+/**
+ * The Formula name of a `formula.<name>` Projection Path, or null for a path
+ * outside the reserved `formula` segment.
+ */
+function formulaPath(text: string): string | null {
+  const parsed = parseProjectionPath(text);
+  if (!parsed.ok || parsed.segments[0] !== FORMULA_SEGMENT) return null;
+  const [, name, ...rest] = parsed.segments;
+  return typeof name === "string" && rest.length === 0 ? name : null;
 }

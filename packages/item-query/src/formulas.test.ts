@@ -1,0 +1,229 @@
+// Formulas: named Filter Expressions that a query evaluates for each record
+// and returns with the Query Row as `formula.<name>`.
+import { Cause } from "effect";
+import { expect, it } from "vitest";
+
+import {
+  openScenarioDatabase,
+  SCENARIO_LIBRARIES,
+} from "@zotlit/db/test-scenario";
+import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
+
+import { ANNOTATIONS, ATTACHMENTS, collectQuery, ITEMS } from ".";
+import type { ItemQueryRequest, QueryDataset, QueryResult } from ".";
+import { ItemQueryError } from "./error";
+import { runEffect } from "./test-helpers";
+
+const { personal } = SCENARIO_LIBRARIES;
+
+async function run(
+  scenario: ScenarioDatabase,
+  request: Omit<ItemQueryRequest, "libraries">,
+  dataset: QueryDataset = ITEMS,
+): Promise<QueryResult> {
+  const { exit } = await runEffect(
+    collectQuery(dataset, { libraries: [personal], ...request }),
+    { client: scenario.db },
+  );
+  if (exit._tag === "Failure") throw new Error(Cause.pretty(exit.cause));
+  return exit.value;
+}
+
+it("returns a Formula's value as formula.<name> in each Item Row", async () => {
+  using scenario = openScenarioDatabase();
+  const result = await run(scenario, {
+    filter: 'indexedKey == "BK2MNTH2"',
+    formulas: { next: "date.year + 1" },
+    fields: ["title", "formula.next"],
+  });
+  expect(result.rows!.map((row) => row.values["formula.next"])).toEqual([2020]);
+  expect(result.query.formulas).toEqual({ next: "date.year + 1" });
+});
+
+it("returns formula.<name> on Attachment Rows and Annotation Rows", async () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  const files = await run(
+    scenario,
+    {
+      filter: 'indexedKey == "PDF2LIVE"',
+      formulas: { parent: 'item.indexedKey + "/" + contentType' },
+      fields: ["formula.parent"],
+    },
+    ATTACHMENTS,
+  );
+  expect(files.rows!.map((row) => row.values)).toEqual([
+    { "formula.parent": "ART2FULL/application/pdf" },
+  ]);
+  const marks = await run(
+    scenario,
+    {
+      filter: 'indexedKey == "ANN2UNDR"',
+      formulas: { parent: "attachment.indexedKey.lower()" },
+      fields: ["type", "formula.parent"],
+    },
+    ANNOTATIONS,
+  );
+  expect(marks.rows!.map((row) => row.values)).toEqual([
+    { type: "underline", "formula.parent": "pdf2live" },
+  ]);
+});
+
+it("returns a date in the date object shape and a list element by element", async () => {
+  using scenario = openScenarioDatabase();
+  const result = await run(scenario, {
+    filter: '["BK2MNTH2", "CHP2YEAR"].contains(indexedKey)',
+    formulas: { published: "date", pair: "[date.year, title.length > 0]" },
+    fields: ["formula.published", "formula.pair"],
+    sort: [{ field: "indexedKey", direction: "asc" }],
+  });
+  expect(result.rows!.map((row) => row.values)).toEqual([
+    {
+      "formula.published": {
+        kind: "yearMonth",
+        value: Temporal.PlainYearMonth.from("2019-11"),
+        year: 2019,
+        month: 11,
+        day: null,
+        text: null,
+        raw: "2019-11",
+      },
+      "formula.pair": [2019, true],
+    },
+    {
+      "formula.published": {
+        kind: "year",
+        value: null,
+        year: 2018,
+        month: null,
+        day: null,
+        text: null,
+        raw: "2018",
+      },
+      "formula.pair": [2018, true],
+    },
+  ]);
+});
+
+async function failure(
+  scenario: ScenarioDatabase,
+  request: Omit<ItemQueryRequest, "libraries">,
+): Promise<ItemQueryError> {
+  const { exit } = await runEffect(
+    collectQuery(ITEMS, { libraries: [personal], ...request }),
+    { client: scenario.db },
+  );
+  if (exit._tag === "Success") throw new Error("The query succeeded.");
+  const error = Cause.squash(exit.cause);
+  if (!(error instanceof ItemQueryError)) throw error;
+  return error;
+}
+
+it.each([
+  [
+    "a name that is not an identifier",
+    { formulas: { "2nd": "title" }, fields: ["title"] },
+    {
+      code: "invalid-formula-name",
+      location: { argument: "formulas", path: "2nd" },
+    },
+  ],
+  [
+    "a value that a Query Row cannot hold",
+    { formulas: { wait: 'duration("7 days")' }, fields: ["formula.wait"] },
+    {
+      code: "invalid-formula-result",
+      location: {
+        argument: "formulas",
+        path: "wait",
+        span: { from: 0, to: 18 },
+      },
+      found: "duration",
+    },
+  ],
+  [
+    "a name in fields that no Formula has",
+    { formulas: { year: "date.year" }, fields: ["title", "formula.yeer"] },
+    {
+      code: "unknown-formula",
+      location: { argument: "fields", index: 1, path: "fields[1]" },
+      found: "yeer",
+      suggestions: ['fields=\'["title","formula.year"]\''],
+    },
+  ],
+  [
+    "formula.<name> in fields without formulas",
+    { fields: ["formula.year"] },
+    {
+      code: "unknown-formula",
+      location: { argument: "fields", index: 0, path: "fields[0]" },
+    },
+  ],
+  [
+    "an unknown method in the Formula text",
+    { formulas: { short: "title.nope()" }, fields: ["formula.short"] },
+    {
+      code: "unknown-function",
+      location: {
+        argument: "formulas",
+        path: "short",
+        span: { from: 6, to: 10 },
+      },
+    },
+  ],
+  [
+    "a syntax mistake in the Formula text",
+    { formulas: { short: "title +" }, fields: ["formula.short"] },
+    {
+      code: "invalid-filter",
+      location: { argument: "formulas", path: "short" },
+    },
+  ],
+] satisfies [string, Omit<ItemQueryRequest, "libraries">, object][])(
+  "fails a request with %s, and the report names the Formula",
+  async (_, request, expected) => {
+    using scenario = openScenarioDatabase();
+    const error = await failure(scenario, request);
+    expect(error.diagnostic).toMatchObject(expected);
+    const name =
+      expected.code === "invalid-formula-name"
+        ? JSON.stringify(expected.location.path)
+        : expected.location.path.startsWith("fields")
+          ? request.fields!.at(-1)!
+          : `formula.${expected.location.path}`;
+    expect(error.diagnostic.report.join("\n")).toContain(name);
+  },
+);
+
+it("checks a custom field of a Formula against the source", async () => {
+  using scenario = openScenarioDatabase();
+  const error = await failure(scenario, {
+    formulas: { status: 'custom["no such field"]' },
+    fields: ["formula.status"],
+  });
+  expect(error.diagnostic).toMatchObject({
+    code: "unknown-field",
+    location: { argument: "formulas", path: "status" },
+  });
+  expect(error.diagnostic.report.join("\n")).toContain("formula.status");
+});
+
+it("warns about a Formula that the request names and never reads", async () => {
+  using scenario = openScenarioDatabase();
+  const result = await run(scenario, {
+    filter: 'indexedKey == "BK2MNTH2"',
+    formulas: { year: "date.year", unused: "title.nope()" },
+    fields: ["formula.year"],
+  });
+  expect(result.rows!.map((row) => row.values)).toEqual([
+    { "formula.year": 2019 },
+  ]);
+  expect(result.warnings).toMatchObject([
+    {
+      code: "unused-formula",
+      severity: "warning",
+      location: { argument: "formulas", path: "unused" },
+      found: "unused",
+    },
+  ]);
+  expect(result.warnings[0]!.report.join("\n")).toContain("formula.unused");
+});

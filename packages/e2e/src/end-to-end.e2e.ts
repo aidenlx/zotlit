@@ -5403,6 +5403,75 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(split.groups).toHaveLength(LIBRARIES.length);
   });
 
+  it("computes Formulas on a Fixture Item through ZotLit Query", async () => {
+    const query = async (args: Record<string, string>) =>
+      JSON.parse(
+        await cliCommand(vaultId, "zotlit:query", {
+          args: { library: "personal", ...args },
+        }),
+      ) as ItemQueryReport;
+
+    const computed = await query({
+      filter: `indexedKey == "${annotationItem.key}"`,
+      formulas: JSON.stringify({
+        next: "date.year + 1",
+        lower: "title.lower()",
+        unused: "title",
+      }),
+      fields: "title,formula.next,formula.lower",
+    });
+    expect(computed).toMatchObject({
+      ok: true,
+      request: {
+        formulas: {
+          next: "date.year + 1",
+          lower: "title.lower()",
+          unused: "title",
+        },
+        fields: ["title", "formula.next", "formula.lower"],
+      },
+      warnings: [
+        {
+          code: "unused-formula",
+          severity: "warning",
+          location: { argument: "formulas", path: "unused" },
+        },
+      ],
+      rows: [
+        {
+          indexedKey: annotationItem.key,
+          values: {
+            title: annotationItem.title,
+            "formula.next": Number(annotationItem.date.slice(0, 4)) + 1,
+            "formula.lower": annotationItem.title.toLowerCase(),
+          },
+        },
+      ],
+    });
+
+    const wrong = await query({
+      formulas: JSON.stringify({ short: "title.nope()" }),
+      fields: "formula.short",
+    });
+    expect(wrong).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "unknown-function",
+        location: { argument: "formulas", path: "short" },
+      },
+    });
+    expect(wrong.diagnostic!.report.join("\n")).toContain("formula.short");
+
+    const undefinedFormula = await query({ fields: "formula.year" });
+    expect(undefinedFormula).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "unknown-formula",
+        location: { argument: "fields", index: 0 },
+      },
+    });
+  });
+
   it("groups papers per tag and per Collection through zotlit:query", async () => {
     const papers = ITEMS.filter((item) => item.libraryID === 1);
     /** Each group value with the keys of its papers, from the Fixture Spec. */

@@ -43,6 +43,15 @@ export type LoadRequest<Needs> = Pick<ItemQueryPlan, "dataset" | "query"> & {
     readonly customField: string | null;
   }[];
   readonly sorts: readonly { readonly needs: Needs }[];
+  /** The Formulas of the projection, each planned once. */
+  readonly formulas?: readonly {
+    readonly name: string;
+    readonly text: string;
+    readonly plan: {
+      readonly needs: readonly Needs[];
+      readonly customFields: FilterPlan["customFields"];
+    };
+  }[];
 };
 
 export interface LoadContext {
@@ -123,7 +132,10 @@ export const openRecordLoader = Effect.fnUntraced(function* <
     ),
     projection: yield* openPass(
       descriptor,
-      request.paths.map((path) => path.needs),
+      [
+        ...request.paths.map((path) => path.needs),
+        ...(request.formulas ?? []).flatMap((formula) => formula.plan.needs),
+      ],
       context,
     ),
   };
