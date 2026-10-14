@@ -74,6 +74,8 @@ export type QueryViewResult = {
   /** The normalized query that the engine ran. */
   readonly query: ItemQuery;
   readonly returnedCount: number;
+  /** The matching records, each once, before the limit. */
+  readonly matchedCount: number;
   readonly truncated: boolean;
   readonly warnings: QuerySummary["warnings"];
 } & (
