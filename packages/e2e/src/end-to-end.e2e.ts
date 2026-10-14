@@ -830,6 +830,148 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(folderMenu).toContain(m.query_file_new());
   }, 180000);
 
+  it("filters a Query File tab from its Filter popover, and the file text and the cards follow", async () => {
+    const layout = await obEval(
+      vaultId,
+      "JSON.stringify(app.workspace.getLayout())",
+    );
+    const path = "query-files/Filtered.zotquery";
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));const file=app.vault.getFileByPath(${JSON.stringify(path)});if(file)await app.vault.delete(file);return true;})()`,
+      );
+    });
+    /** The rows ZotLit Query gives for a filter, through the CLI. */
+    const queryKeys = async (filter: string) => {
+      const report = JSON.parse(
+        await cliCommand(vaultId, "zotlit:query", {
+          args: { from: "annotations", fields: "[]", limit: "100", filter },
+        }),
+      ) as ItemQueryReport;
+      expect(report.ok).toBe(true);
+      return report.rows!.map((row) => row.indexedKey);
+    };
+    interface Tab {
+      text: string;
+      cards: string[];
+      filterError: boolean;
+      /** The text of each row's diagnostic in the "This view" section. */
+      rowIssues: (string | null)[];
+    }
+    const readTab = `(async()=>{const view=app.workspace.getMostRecentLeaf().view;if(view.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(path)})return 'null';await view.query.settled;const el=view.contentEl;return JSON.stringify({text:await app.vault.read(view.file),cards:[...el.querySelectorAll('.zt-annot-card')].map(n=>n.getAttribute('data-zotero-annotation-key')),filterError:el.querySelector('[data-query-filter-error]')!==null,rowIssues:[...el.querySelectorAll('[data-filter-section="view"] [data-condition-row]')].map(n=>n.querySelector('[role="alert"]')?.textContent??null)});})()`;
+    const tabWhen = async (ready: (tab: Tab) => boolean): Promise<Tab> => {
+      let tab: Tab | null = null;
+      const settled = await waitFor(async () => {
+        tab = JSON.parse(await obEval(vaultId, readTab)) as Tab | null;
+        return tab !== null && ready(tab);
+      }, 120);
+      if (!settled) throw new Error(`Filtered tab: ${JSON.stringify(tab)}`);
+      return tab!;
+    };
+    /** Run `body` against the open Filter popover of the active tab. */
+    const inPopover = (body: string) =>
+      obEval(
+        vaultId,
+        `(async()=>{const el=app.workspace.getMostRecentLeaf().view.contentEl;const popover=el.querySelector('[data-query-filter-popover]');if(!popover.matches(':popover-open'))el.querySelector('[data-query-filter]').click();const section=name=>popover.querySelector('[data-filter-section="'+name+'"]');const set=(control,value)=>{control.value=value;control.dispatchEvent(new Event('input',{bubbles:true}));};${body}})()`,
+      );
+
+    await obEval(
+      vaultId,
+      `(async()=>{const file=await app.vault.create(${JSON.stringify(path)},${JSON.stringify(
+        [
+          "views:",
+          "  - type: annotations",
+          "    name: Figures",
+          "    from: annotations",
+          '    filters: tags.contains("figure")',
+          "    limit: 100",
+          "",
+        ].join("\n"),
+      )});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
+    );
+    const figures = await queryKeys('tags.contains("figure")');
+    expect(figures.length).toBeGreaterThan(0);
+    await tabWhen(
+      (tab) => JSON.stringify(tab.cards) === JSON.stringify(figures),
+    );
+
+    // The popover opens with the two sections; the view's tag condition
+    // shows as a visual row.
+    const sections = JSON.parse(
+      await inPopover(
+        `return JSON.stringify({open:popover.matches(':popover-open'),all:section('all').querySelector('h4').textContent,view:section('view').querySelector('h4').textContent,tag:section('view').querySelector('[data-condition-row] input[aria-label="${m.workbench_match_value()}"]').value});`,
+      ),
+    ) as Record<string, unknown>;
+    expect(sections).toEqual({
+      open: true,
+      all: m.query_view_filter_all_views(),
+      view: m.query_view_filter_this_view(),
+      tag: "figure",
+    });
+
+    // A new tag value saves the view's filters and runs them.
+    await inPopover(
+      `set(section('view').querySelector('[data-condition-row] input[aria-label="${m.workbench_match_value()}"]'),'methodology');return true;`,
+    );
+    const methodology = await queryKeys('tags.contains("methodology")');
+    expect(methodology).not.toEqual(figures);
+    const viewOnly = await tabWhen(
+      (tab) => JSON.stringify(tab.cards) === JSON.stringify(methodology),
+    );
+    expect(viewOnly.text).toContain(
+      '    filters:\n      and:\n        - tags.contains("methodology")\n',
+    );
+
+    // A colour condition for all views saves the file's top-level filters,
+    // and both sections hold.
+    await inPopover(
+      `set(section('all').querySelector('[data-condition-row] select[aria-label="${m.workbench_match_value()}"]'),'yellow');return true;`,
+    );
+    const yellow = await queryKeys(
+      '(colorName == "yellow") && (tags.contains("methodology"))',
+    );
+    const both = await tabWhen(
+      (tab) =>
+        tab.text.startsWith("filters:") &&
+        JSON.stringify(tab.cards) === JSON.stringify(yellow),
+    );
+    expect(both.text).toMatch(
+      /^filters:\n {2}and:\n {4}- colorName == "yellow"\nviews:/,
+    );
+
+    // A wrong expression marks its row with the query's diagnostic; the
+    // cards stay, and the view says the filter has an error.
+    await inPopover(
+      `section('view').querySelector('[data-condition-row] button[aria-label="${m.workbench_match_edit_as_expression()}"]').click();await new Promise(r=>setTimeout(r,50));set(section('view').querySelector('[data-condition-row] textarea'),'nosuchfield == 1');return true;`,
+    );
+    const broken = await tabWhen(
+      (tab) => tab.filterError && tab.rowIssues[0] !== null,
+    );
+    expect(broken.text).toContain("        - nosuchfield == 1\n");
+    expect(broken.cards).toEqual(yellow);
+    expect(broken.rowIssues[0]).toContain("nosuchfield");
+
+    // "Edit visually" goes back once the expression fits a row.
+    await inPopover(
+      `const row=section('view').querySelector('[data-condition-row]');set(row.querySelector('textarea'),'tags.contains("figure")');await new Promise(r=>setTimeout(r,50));row.querySelector('button[aria-label="${m.workbench_match_edit_visually()}"]').click();return true;`,
+    );
+    const back = await queryKeys(
+      '(colorName == "yellow") && (tags.contains("figure"))',
+    );
+    const fixed = await tabWhen(
+      (tab) =>
+        !tab.filterError && JSON.stringify(tab.cards) === JSON.stringify(back),
+    );
+    expect(fixed.text).toContain('        - tags.contains("figure")\n');
+    expect(
+      await inPopover(
+        `return section('view').querySelector('[data-condition-row] input[aria-label="${m.workbench_match_value()}"]')?.value??null;`,
+      ),
+    ).toBe("figure");
+  }, 180000);
+
   it("renders the deterministic PDF matrix and reuses its cache", async () => {
     await verifyExcerptRendering(vaultId);
   }, 120000);
