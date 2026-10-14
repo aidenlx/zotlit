@@ -1,12 +1,9 @@
 // The edits the view menu and "Configure view" make to a Query File's views,
 // as plain functions from one file to the next. Each one leaves every key it
 // does not touch where it was, so a save writes them back.
-import { DATASETS } from "./datasets";
 import { layoutsFor } from "./layouts";
-import { NEW_QUERY_FILE_LIMIT, QUERY_FILE_DATASETS } from "./query-file";
+import { NEW_QUERY_FILE_LIMIT } from "./query-file";
 import type { QueryFile, QueryFileDataset, QueryFileView } from "./query-file";
-import { groupPaths } from "./rows";
-import { fitsDataset } from "./visible-properties";
 
 /** A file after an edit, and the view to show in it. */
 export interface ViewEdit {
@@ -142,62 +139,12 @@ export function setViewLayout(
   return replaced(file, index, { ...file.views[index]!, type });
 }
 
-/** The settings of a view that its dataset lacks, which the view does not use. */
-export interface UnusedSettings {
-  /** The sort properties. */
-  readonly sort: readonly string[];
-  /** The group property, or `null`. */
-  readonly groupBy: string | null;
-  /** The visible properties. */
-  readonly order: readonly string[];
-}
-
-/**
- * What a view keeps in the file but does not use, since its dataset lacks
- * it: a sort, a grouping or a visible property of another dataset. A switch
- * back to a dataset that has them uses them again.
- */
-export function unusedSettings(
-  view: Pick<QueryFileView, "from" | "sort" | "groupBy" | "order">,
-): UnusedSettings {
-  const dataset = view.from ?? "annotations";
-  // A setting of no dataset, such as formula.<name>, is the view's own: the
-  // view uses it, and ZotLit Query or the view says what is wrong with it.
-  const ofAnotherDataset = (has: (other: QueryFileDataset) => boolean) =>
-    !has(dataset) && QUERY_FILE_DATASETS.some((other) => has(other));
-  return {
-    // A property of the dataset that ZotLit Query cannot sort by, such as
-    // the tags of Items, is unused as well.
-    sort: (view.sort ?? [])
-      .map(({ property }) => property)
-      .filter(
-        (property) =>
-          !DATASETS[dataset].engine.sortableFields.includes(property) &&
-          QUERY_FILE_DATASETS.some(
-            (other) =>
-              DATASETS[other].engine.definition(property) !== undefined ||
-              DATASETS[other].engine.sortableFields.includes(property),
-          ),
-      ),
-    groupBy:
-      view.groupBy &&
-      ofAnotherDataset((other) =>
-        groupPaths(other).includes(view.groupBy!.property),
-      )
-        ? view.groupBy.property
-        : null,
-    order: (view.order ?? []).filter(
-      (property) => !fitsDataset(property, dataset),
-    ),
-  };
-}
-
 /**
  * The view set to read `dataset`. A layout that cannot show the dataset
  * gives way to the dataset's first layout. The filters, the sort, the
  * grouping and the visible properties stay as they are: a condition the new
  * dataset cannot read shows the filter's diagnostic, and what else the
- * dataset lacks the view does not use (see {@link unusedSettings}).
+ * dataset lacks the view does not use (see `unusedSettings` in view-properties).
  */
 export function setViewDataset(
   file: QueryFile,

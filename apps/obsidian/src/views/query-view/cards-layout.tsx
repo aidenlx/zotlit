@@ -15,7 +15,6 @@ import {
   RecordGroupHeading,
   useRecordGroups,
 } from "./record-rows";
-import { propertyLabel } from "./value-text";
 import type { QueryView } from "./view";
 
 export const CARDS_LAYOUT: QueryLayout = {
@@ -66,7 +65,6 @@ export function addCardsOptions(
 export function CardsLayout({ view }: { view: QueryView }) {
   const { properties, groups } = useRecordGroups(view);
   const options = cardsLayoutOptions(useStore(view.state, (s) => s.view));
-  const file = useStore(view.state, (s) => s.file);
   return (
     <div
       className="zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:pt-1 zt:pb-11"
@@ -97,18 +95,21 @@ export function CardsLayout({ view }: { view: QueryView }) {
                   >
                     <div className="zt:truncate zt:font-semibold">
                       <CellContent
-                        value={row.values[properties[0]!]}
+                        value={row.values[properties[0]!.path]}
                         text={title}
                       />
                     </div>
                     {rest.map((text, at) => (
-                      <div key={properties[at + 1]} className="zt:min-w-0">
+                      <div
+                        key={properties[at + 1]!.path}
+                        className="zt:min-w-0"
+                      >
                         <div className="zt:truncate zt:text-xs zt:text-(--text-faint)">
-                          {propertyLabel(file, properties[at + 1]!)}
+                          {properties[at + 1]!.label}
                         </div>
                         <div className="zt:truncate">
                           <CellContent
-                            value={row.values[properties[at + 1]!]}
+                            value={row.values[properties[at + 1]!.path]}
                             text={text}
                           />
                         </div>
