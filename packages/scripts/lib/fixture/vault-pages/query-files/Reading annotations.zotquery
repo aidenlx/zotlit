@@ -1,0 +1,16 @@
+views:
+  - type: annotations
+    name: All annotations
+    from: annotations
+    groupBy:
+      property: item.indexedKey
+      direction: ASC
+    limit: 100
+  - type: annotations
+    name: Figures
+    from: annotations
+    filters: tags.contains("figure")
+    groupBy:
+      property: item.indexedKey
+      direction: ASC
+    limit: 100

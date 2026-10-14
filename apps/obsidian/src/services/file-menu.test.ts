@@ -88,4 +88,34 @@ describe("registerFileMenu", () => {
 
     expect(segment).not.toHaveBeenCalled();
   });
+
+  it("runs the folder segments, in order, for a folder alone", () => {
+    const folder = new TFolder();
+    const seen: unknown[] = [];
+    const folderSegment = (title: string) => (menu: Menu, ctx: unknown) => {
+      seen.push(ctx);
+      menu.addItem((item) => item.setTitle(title));
+    };
+    const handler = fileMenuHandler([recording("file row").segment], {}, [
+      folderSegment("first"),
+      folderSegment("second"),
+    ] as never);
+    const menu = new Menu();
+    handler(menu as never, folder as never, "file-explorer-context-menu");
+
+    expect(menu.items.map((item) => item.title)).toStrictEqual([
+      "first",
+      "second",
+    ]);
+    expect(seen[0]).toStrictEqual({
+      folder,
+      source: "file-explorer-context-menu",
+    });
+
+    const fileMenu = new Menu();
+    handler(fileMenu as never, fileOf("md") as never, "more-options");
+    expect(fileMenu.items.map((item) => item.title)).toStrictEqual([
+      "file row",
+    ]);
+  });
 });

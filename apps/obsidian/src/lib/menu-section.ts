@@ -17,6 +17,11 @@ export const MENU_SECTION = {
   pane: "pane",
   /** Opening the file or its source somewhere else. */
   open: "open",
+  /**
+   * Creating a new file, beside Obsidian's own "New note" and "New base" in
+   * the file explorer's menu.
+   */
+  create: "action-primary",
   /** Doing something to the file or with the view's subject. */
   action: "action",
   /** Reading out or copying what identifies the file. */

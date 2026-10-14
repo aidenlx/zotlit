@@ -157,6 +157,22 @@ export interface AnnotState {
   selectedColors: string[];
   /** Selected tags, by name. */
   selectedTags: string[];
+  /**
+   * The group heading of each card, by Indexed Key, while a Query View shows
+   * the rows of a grouped query; `null` while the cards stand in one list.
+   */
+  groups: ReadonlyMap<string, CardGroup> | null;
+  /**
+   * The rows a Query View gave that no Attachment's list holds, by Indexed
+   * Key, in the query's order.
+   */
+  unresolved: readonly string[];
+}
+
+/** The group a card stands in, and the heading that names it. */
+export interface CardGroup {
+  key: string;
+  label: string;
 }
 
 /**
@@ -202,6 +218,8 @@ export function createAnnotStore() {
         liveUpdatesOn: false,
         zoteroReaderClosed: false,
         ...INITIAL_FILTER_STATE,
+        groups: null,
+        unresolved: [],
       }),
     ),
   );
