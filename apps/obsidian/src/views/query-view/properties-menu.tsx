@@ -16,9 +16,10 @@ import { cn, tooltipAttrs } from "@/lib/utils";
 
 import { DisplayNameModal } from "./display-name-dialog";
 import { FormulaModal } from "./formula-dialog";
-import { displayName, formulaIssue, formulaProperty } from "./query-file";
+import { formulaIssue, formulaProperty } from "./query-file";
 import type { QueryFile, QueryFileDataset } from "./query-file";
 import { NotUsed } from "./sort-control";
+import { propertyLabel } from "./table-layout";
 import { TOOLBAR_LABEL } from "./toolbar-popover";
 import type { QueryView } from "./view";
 import {
@@ -275,7 +276,10 @@ function FormulaRowParts({
   );
 }
 
-/** A row's property: its Display Name before its path, else its path alone. */
+/**
+ * A row's property: the name the Table header shows (its Display Name, else
+ * its field label) before its path, else its path alone.
+ */
 function PropertyName({
   file,
   property,
@@ -283,8 +287,8 @@ function PropertyName({
   file: QueryFile | null;
   property: string;
 }) {
-  const name = file ? displayName(file, property) : undefined;
-  if (name === undefined) return <>{property}</>;
+  const name = propertyLabel(file, property);
+  if (name === property) return <>{property}</>;
   return (
     <>
       <span data-query-property-name="">{name}</span>
