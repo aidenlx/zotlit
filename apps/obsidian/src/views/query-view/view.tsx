@@ -41,10 +41,12 @@ import type { AnnotationsLayoutDeps } from "@/views/annot-view/layout";
 import { useAnnotStore } from "@/views/annot-view/store";
 
 import type { QueryCardFocus } from "./card-focus";
+import { CardsLayout } from "./cards-layout";
 import { FilterButton } from "./filter-popover";
 import type { FilterValues } from "./filter-popover";
 import { GroupEditor } from "./group-control";
-import { annotationsLayoutOptions } from "./layouts";
+import { annotationsLayoutOptions, layoutOf } from "./layouts";
+import { ListLayout } from "./list-layout";
 import { groupOptions, sortOptions } from "./properties";
 import { PropertiesMenu } from "./properties-menu";
 import {
@@ -63,8 +65,9 @@ import type {
   QueryFileView,
   QueryFileViewEdit,
 } from "./query-file";
+import type { ShownRecord } from "./record-rows";
 import { ResultsMenu } from "./results-menu";
-import { LAYOUT_FIELDS, LAYOUT_GROUP_PATHS, layoutRows } from "./rows";
+import { LAYOUT_GROUP_PATHS, layoutFields, layoutRows } from "./rows";
 import type { LayoutGroup } from "./rows";
 import { SearchControl } from "./search-control";
 import { SortEditor } from "./sort-control";
@@ -134,6 +137,8 @@ export interface QueryViewState {
   keptResults: boolean;
   /** The rows shown, each once however many groups it stands in. */
   count: number;
+  /** The rows in the order they show, a row once in each group it stands in. */
+  records: readonly ShownRecord[];
   /** The records that match the view, before its limit. */
   matched: number;
   /** Every group the rows hold, the shown ones first; empty when ungrouped. */
@@ -151,6 +156,7 @@ const INITIAL_STATE: QueryViewState = {
   filterIssue: null,
   keptResults: false,
   count: 0,
+  records: [],
   matched: 0,
   groups: [],
   truncated: false,
@@ -177,12 +183,12 @@ function problemText(problem: QueryFileProblem): string {
   }
 }
 
-/** What keeps the Annotations Layout from showing a view, beside the parser's own problems. */
+/** What keeps the view's Layout from showing it, beside the parser's own problems. */
 function layoutProblems(view: QueryFileView): string[] {
   const problems: string[] = [];
-  if (view.type !== "" && view.type !== "annotations")
-    problems.push(m.query_view_problem_layout({ type: view.type }));
-  else if (view.from !== undefined && view.from !== "annotations")
+  const layout = layoutOf(view);
+  if (!layout) problems.push(m.query_view_problem_layout({ type: view.type }));
+  else if (!layout.datasets.includes(view.from ?? "annotations"))
     problems.push(m.query_view_problem_dataset());
   if (
     view.groupBy &&
@@ -209,6 +215,8 @@ export class QueryView extends Component implements HistorySurface {
   /** The view the host asked for by name; the first view where `null`. */
   #wanted: string | null = null;
   #run: AbortController | null = null;
+  /** Whether the rows on screen are drawn as Annotation Cards. */
+  #cardsDrawn = false;
   /** The lists the cards on screen come from, held while they show. */
   #hold: Disposable | null = null;
   /**
@@ -411,9 +419,24 @@ export class QueryView extends Component implements HistorySurface {
       view &&
       problems.length === 0 &&
       this.#runKey(file, view) === this.#runRequest
-    )
+    ) {
+      // Another Layout of the same query draws the rows on screen as they are.
+      if (this.#shownRequest === this.#runRequest) this.#redraw(view);
       return;
+    }
     this.refresh();
+  }
+
+  /** Draw the rows on screen as Annotation Cards, or let the cards go, as the view's Layout asks. */
+  #redraw(view: QueryFileView): void {
+    const cards = drawsCards(view);
+    if (cards === this.#cardsDrawn) return;
+    const rows = this.state.getState().records.map(({ row, group }) => ({
+      annotationKey: row.indexedKey,
+      attachmentKey: row.attachmentIndexedKey ?? row.indexedKey,
+      ...(group && { group }),
+    }));
+    this.#settled = this.#show(this.#shownRequest, cards ? rows : null);
   }
 
   /**
@@ -452,7 +475,7 @@ export class QueryView extends Component implements HistorySurface {
       }),
       fields: [
         ...new Set([
-          ...LAYOUT_FIELDS,
+          ...layoutFields(view.from ?? "annotations"),
           ...visibleProperties(view, { fallback: true }),
         ]),
       ],
@@ -628,11 +651,17 @@ export class QueryView extends Component implements HistorySurface {
           diagnostic: null,
           filterIssue: null,
           count: shown.count,
+          records: shown.rows.map(({ annotationKey, group }) => ({
+            row: byKey.get(annotationKey)!,
+            ...(group && { group }),
+          })),
           matched: result.matchedCount,
           groups: shown.groups,
           truncated: result.truncated,
         });
-        await this.#show(key, shown.rows);
+        // The Layout may have changed while the query ran.
+        const current = this.state.getState().view ?? view;
+        await this.#show(key, drawsCards(current) ? shown.rows : null);
         this.#shownViewName = view.name;
         return;
       }
@@ -673,16 +702,24 @@ export class QueryView extends Component implements HistorySurface {
     });
   }
 
-  /** Put these rows on screen, holding their lists before the old ones go. */
+  /**
+   * Put these rows on screen, holding their lists before the old ones go.
+   * `null` rows stand for a Layout that draws no Annotation Cards: it shows
+   * the rows from the state, and holds no list.
+   */
   async #show(
     key: string | null,
-    rows: Parameters<AnnotationsLayout["showRows"]>[0] = [],
+    rows: Parameters<AnnotationsLayout["showRows"]>[0] | null = [],
   ): Promise<void> {
     const previous = this.#hold;
     this.#shownRequest = key;
     if (key === null) {
       this.#shownViewName = null;
       this.#rows = [];
+      this.state.setState({ records: [] });
+    }
+    this.#cardsDrawn = key !== null && rows !== null;
+    if (key === null || rows === null) {
       this.#hold = null;
       this.#layout.clear();
       previous?.[Symbol.dispose]();
@@ -796,6 +833,26 @@ function ReadOnlyNote({ view }: { view: QueryView }) {
   );
 }
 
+/** Whether the view's Layout draws live Annotation Cards. */
+function drawsCards(view: QueryFileView): boolean {
+  return layoutOf(view)?.type === "annotations";
+}
+
+/** The rows, drawn by the shown view's Layout. */
+function LayoutBody({ view }: { view: QueryView }) {
+  const type = useQueryViewState(view, (s) =>
+    s.view ? layoutOf(s.view)?.type : undefined,
+  );
+  switch (type) {
+    case "list":
+      return <ListLayout view={view} />;
+    case "cards":
+      return <CardsLayout view={view} />;
+    default:
+      return <AnnotationsCards view={view} />;
+  }
+}
+
 /** The cards, drawn with the shown view's Annotations layout options. */
 function AnnotationsCards({ view }: { view: QueryView }) {
   const shown = useQueryViewState(view, (s) => s.view);
@@ -899,7 +956,7 @@ function QueryViewBody({ view }: { view: QueryView }) {
       <ReadOnlyNote view={view} />
       <Problems view={view} />
       <NoResults view={view} />
-      <AnnotationsCards view={view} />
+      <LayoutBody view={view} />
     </div>
   );
 }
