@@ -126,6 +126,12 @@ FIELDS
   Library selector, and the library value that includes it. The query reads
   only the Target Libraries, even when another filter branch matches.
   Check warnings before you report an empty result.
+  this.item is the Item that this-item=<Indexed Key> binds, the Query
+  Context of the query; this.item.indexedKey is its Indexed Key. On
+  Attachments and Annotations, item == this.item selects its records:
+    ${example({ filter: "indexedKey == this.item.indexedKey", "this-item": "ART2FULL" })}
+  this.attachment works the same with this-attachment=<Indexed Key>. A filter
+  that reads this when nothing is bound fails with unbound-context.
   attachments is a Relation List of Attachment records. An empty list is
   falsy, so !attachments and attachments.isEmpty() find papers with no file:
     ${filter("!attachments")}

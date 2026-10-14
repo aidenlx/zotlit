@@ -99,6 +99,16 @@ export const queryFlags = {
     value: "<id>",
     description: `Name this query so that ${QUERY_CANCEL_COMMAND} can stop it: ${QUERY_ID_FORM}`,
   },
+  "this-item": {
+    value: "<indexed-key>",
+    description:
+      "Bind this.item to the Item with this Indexed Key; a filter reads it, as in item == this.item",
+  },
+  "this-attachment": {
+    value: "<indexed-key>",
+    description:
+      "Bind this.attachment to the Attachment with this Indexed Key, as in attachment == this.attachment",
+  },
 } satisfies Record<QueryParam, CliFlag>;
 
 export const queryValuesFlags = {

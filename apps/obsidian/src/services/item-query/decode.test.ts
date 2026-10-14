@@ -279,6 +279,32 @@ describe("decodeQuery fields, filter, and sort", () => {
   });
 });
 
+describe("decodeQuery Query Context", () => {
+  it("binds this.item and this.attachment by Indexed Key", () => {
+    expect(
+      decodeQuery({
+        "this-item": "ART2FULLg4815",
+        "this-attachment": "PDF2LIVE",
+      }),
+    ).toMatchObject({
+      context: { item: "ART2FULLg4815", attachment: "PDF2LIVE" },
+    });
+  });
+
+  it("omits the Query Context when no binding is given", () => {
+    expect(decodeQuery({})).not.toHaveProperty("context");
+  });
+
+  it.each(["this-item", "this-attachment"])(
+    "rejects a %s that is not an Indexed Key",
+    (parameter) => {
+      expect(decodeQuery({ [parameter]: "not a key" })).toMatchObject(
+        rejected(parameter),
+      );
+    },
+  );
+});
+
 describe("decodeQuery output", () => {
   it("decodes an absolute path", () => {
     expect(decodeQuery({ output: "/exports/items.json" })).toMatchObject({

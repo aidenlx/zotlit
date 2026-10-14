@@ -128,6 +128,20 @@ describe("describeItemQuery custom fields", () => {
 });
 
 describe("the static Item Query vocabulary", () => {
+  it("describes the Query Context that a filter reads as this", () => {
+    expect(describeItemQueryVocabulary().context).toEqual([
+      expect.objectContaining({
+        name: "this.item",
+        dataset: "items",
+        members: ["indexedKey", "key"],
+      }),
+      expect.objectContaining({
+        name: "this.attachment",
+        dataset: "attachments",
+        members: ["indexedKey", "key"],
+      }),
+    ]);
+  });
   it("describes explicit list element projection in the Query Schema", () => {
     const vocabulary = describeItemQueryVocabulary();
     expect(vocabulary).toHaveProperty("projectionPathGrammar.each", {
@@ -160,9 +174,11 @@ describe("the static Item Query vocabulary", () => {
       properties,
       types,
       projectionPathGrammar,
+      context,
     } = await schema(scenario);
 
     expect(describeItemQueryVocabulary()).toEqual({
+      context,
       fields,
       functions,
       methods,

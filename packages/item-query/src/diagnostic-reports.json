@@ -1020,5 +1020,18 @@
       "^^^^^^^^^^^^^^^^^^^^",
       "Keep one [], after the Relation List whose element values form the groups."
     ]
+  },
+  {
+    "name": "unbound Query Context",
+    "dataset": "annotations",
+    "request": {
+      "filter": "item == this.item"
+    },
+    "report": [
+      "The filter reads this.item, but the query binds no Item to this.",
+      "item == this.item",
+      "        ^^^^^^^^^",
+      "Bind this.item to an Item when you run the query, such as this-item=<Indexed Key> in zotlit:query, or name the Item by its Indexed Key."
+    ]
   }
 ]
