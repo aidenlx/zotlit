@@ -33,6 +33,7 @@ import type {
   FilterValueType,
   RecordValue,
 } from "./filter-values";
+import { FORMULA_SEGMENT } from "./formulas";
 import type { FilterNavigation } from "./record-field";
 import type { QueryContext } from "./request";
 
@@ -273,7 +274,7 @@ export function hasBareForm(customFieldName: string): boolean {
  */
 const RESERVED_NAMES: ReadonlySet<string> = new Set([
   "this",
-  "formula",
+  FORMULA_SEGMENT,
   ...BUILT_IN_NAMES,
   ...GLOBAL_FUNCTION_NAMES,
 ]);
@@ -684,7 +685,7 @@ class Validator<Item, Needs> {
         if (isThis(object)) return this.#contextRecord(ast.property, span);
         if (
           object.type === "identifier" &&
-          object.name === "formula" &&
+          object.name === FORMULA_SEGMENT &&
           !this.#scopes.some((scope) => scope.includes(object.name))
         ) {
           return this.#formula(ast.property, span);
@@ -863,7 +864,7 @@ class Validator<Item, Needs> {
     }
     // `formula` is the reserved first segment of a Formula path; alone, it
     // names no Formula.
-    if (name === "formula") return this.#formula("", span);
+    if (name === FORMULA_SEGMENT) return this.#formula("", span);
     if (name === "custom") {
       return fail(unreadable(name, span));
     }

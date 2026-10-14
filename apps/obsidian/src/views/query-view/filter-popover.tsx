@@ -52,7 +52,7 @@ import type {
 } from "./filter-fields";
 import { allViewsDataset } from "./query-file";
 import type {
-  FilterLocation,
+  ConditionIssue,
   FilterSection,
   QueryFileDataset,
 } from "./query-file";
@@ -73,7 +73,7 @@ export interface FilterValues {
 const NO_VALUES: FilterValues = { tags: [], collections: [], libraries: [] };
 
 /** The issue of one condition, as the Query View last found it. */
-export type FilterIssue = (FilterLocation & { message: string }) | null;
+export type FilterIssue = ConditionIssue | null;
 
 const KIND_LABELS: Record<FilterFieldKind, () => string> = {
   color: m.query_view_property_color,

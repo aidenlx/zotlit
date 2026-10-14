@@ -5,7 +5,6 @@
 //
 // @see apps/obsidian/docs/adr/0068-query-files-are-a-zotlit-file-type-embedded-through-the-private-embed-registry.md
 // @see apps/obsidian/docs/adr/0069-the-annotation-view-is-the-annotations-layout-of-the-query-view.md
-import { regex } from "arkregex";
 import { Component } from "obsidian";
 import type { Scope } from "obsidian";
 import { useLayoutEffect, useMemo } from "react";
@@ -51,6 +50,12 @@ import { CardsLayout } from "./cards-layout";
 import { datasetSpec } from "./datasets";
 import { FilterButton } from "./filter-popover";
 import type { FilterValues } from "./filter-popover";
+import {
+  faultedFormula,
+  formulaCondition,
+  readersOf,
+  readFormulas,
+} from "./formula-graph";
 import { GroupEditor } from "./group-control";
 import { annotationsLayoutOptions, layoutOf } from "./layouts";
 import { ListLayout } from "./list-layout";
@@ -58,6 +63,7 @@ import { groupOptions, sortOptions } from "./properties";
 import { PropertiesMenu } from "./properties-menu";
 import {
   editView,
+  formulaName,
   formulaProperty,
   locateFilterFault,
   parseQueryFile,
@@ -69,7 +75,7 @@ import {
   withFormula,
 } from "./query-file";
 import type {
-  FilterLocation,
+  ConditionIssue,
   FilterSection,
   QueryFile,
   QueryFileDataset,
@@ -163,7 +169,7 @@ export interface QueryViewState {
     | (Pick<Diagnostic, "message" | "hint" | "report"> & { code: string })
     | null;
   /** The condition of the filters that the last run's diagnostic marks. */
-  filterIssue: (FilterLocation & { message: string }) | null;
+  filterIssue: ConditionIssue | null;
   /**
    * The Formulas the last run left out, since ZotLit Query names a mistake in
    * them: each name with the message. Their columns show no values.
@@ -280,106 +286,12 @@ interface ViewRun {
   view: QueryFileView;
 }
 
-/** `formula.<name>` in a Projection Path or a Filter Expression. */
-const FORMULA_REFERENCE = regex("\\bformula\\.([A-Za-z_][A-Za-z0-9_]*)", "g");
-
-/**
- * The Formulas of the file that `fields` and `filter` read, with those the
- * Formulas read in turn, each with its text.
- */
-function readFormulas(
-  file: QueryFile,
-  fields: readonly string[],
-  filter: string | undefined,
-): Record<string, string> {
-  const defined = file.formulas ?? {};
-  const read: Record<string, string> = {};
-  const visit = (text: string) => {
-    for (const [, name] of text.matchAll(FORMULA_REFERENCE)) {
-      if (
-        name === undefined ||
-        Object.hasOwn(read, name) ||
-        !Object.hasOwn(defined, name)
-      )
-        continue;
-      read[name] = defined[name]!;
-      visit(read[name]);
-    }
-  };
-  for (const field of fields) visit(field);
-  if (filter !== undefined) visit(filter);
-  return read;
-}
-
-/**
- * The Formula that a failed run names as wrong: one with a mistake in its
- * text, or one that `fields` reads and the file does not define.
- */
-function faultedFormula(
-  diagnostic: Diagnostic,
-  request: QueryViewRequest,
-): string | null {
-  const { location } = diagnostic;
-  if (location?.argument === "formulas")
-    return location.path !== undefined &&
-      Object.hasOwn(request.formulas ?? {}, location.path)
-      ? location.path
-      : null;
-  if (
-    diagnostic.code === "unknown-formula" &&
-    location?.argument === "fields" &&
-    location.index !== undefined
-  ) {
-    const field = request.fields?.[location.index];
-    return field?.startsWith("formula.")
-      ? field.slice("formula.".length)
-      : null;
-  }
-  return null;
-}
-
-/**
- * The Formulas of `formulas` that read the Formula `name`, directly or through
- * another Formula.
- */
-function readersOf(
-  formulas: Readonly<Record<string, string>>,
-  name: string,
-): string[] {
-  const readers = new Set<string>();
-  const pending = [name];
-  for (let target = pending.pop(); target !== undefined; target = pending.pop())
-    for (const [reader, text] of Object.entries(formulas)) {
-      if (reader === name || readers.has(reader)) continue;
-      if ([...text.matchAll(FORMULA_REFERENCE)].some(([, n]) => n === target)) {
-        readers.add(reader);
-        pending.push(reader);
-      }
-    }
-  return [...readers];
-}
-
-/**
- * The first condition of the view's filters that reads one of the Formulas in
- * `left`, with the message of that Formula; `null` when none reads one.
- */
-function formulaCondition(
-  file: QueryFile,
-  view: QueryFileView,
-  left: Readonly<Record<string, string>>,
-): (FilterLocation & { message: string }) | null {
-  const filter = viewFilter(file, view);
-  if (filter === undefined) return null;
-  for (const match of filter.matchAll(FORMULA_REFERENCE)) {
-    const [text, name] = match;
-    if (name === undefined || !Object.hasOwn(left, name)) continue;
-    const at = locateFilterFault(file, view, {
-      from: match.index,
-      to: match.index + text.length,
-    });
-    if (at) return { ...at, message: left[name]! };
-  }
-  return null;
+/** A diagnostic's message, with its hint after it where it has one. */
+function diagnosticText({
+  message,
+  hint,
+}: Pick<Diagnostic, "message" | "hint">): string {
+  return [message, hint].filter(Boolean).join(" ");
 }
 
 export class QueryView extends Component implements HistorySurface {
@@ -796,12 +708,12 @@ export class QueryView extends Component implements HistorySurface {
 
   /**
    * What ZotLit Query runs for one view of the file, without the Formulas
-   * named in `left`.
+   * named in `formulasLeftOut`.
    */
   #request(
     file: QueryFile,
     view: QueryFileView,
-    left: Readonly<Record<string, string>> = {},
+    formulasLeftOut: Readonly<Record<string, string>> = {},
   ): QueryViewRequest {
     const filter = viewFilter(file, view);
     const context = this.#host.context();
@@ -813,13 +725,12 @@ export class QueryView extends Component implements HistorySurface {
         ...(layoutOf(view)?.type === "table" ? TABLE_FIELDS : []),
         ...visibleProperties(view, { fallback: true }),
       ]),
-    ].filter(
-      (field) =>
-        !field.startsWith("formula.") ||
-        !Object.hasOwn(left, field.slice("formula.".length)),
-    );
+    ].filter((field) => {
+      const name = formulaName(field);
+      return name === null || !Object.hasOwn(formulasLeftOut, name);
+    });
     const formulas = readFormulas(file, fields, filter);
-    for (const name of Object.keys(left)) delete formulas[name];
+    for (const name of Object.keys(formulasLeftOut)) delete formulas[name];
     return {
       from: view.from ?? "annotations",
       ...(filter === undefined ? {} : { filter }),
@@ -976,27 +887,29 @@ export class QueryView extends Component implements HistorySurface {
     // A mistake in a Formula leaves that Formula and the Formulas that read
     // it out, and the view runs again, so the other columns still show. The
     // filters cannot hold without a Formula they read: the view shows no rows.
-    const runWithout = async (left: Record<string, string>) => {
+    const runWithout = async (formulasLeftOut: Record<string, string>) => {
       for (;;) {
-        const request = this.#request(file, view, left);
+        const request = this.#request(file, view, formulasLeftOut);
         const outcome = await this.#deps.query.run(request, controller.signal);
         if (outcome.kind !== "failed") return { outcome };
         const name = faultedFormula(outcome.diagnostic, request);
-        if (name === null || Object.hasOwn(left, name)) return { outcome };
-        const { message, hint } = outcome.diagnostic;
-        left[name] = [message, hint].filter(Boolean).join(" ");
+        if (name === null || Object.hasOwn(formulasLeftOut, name))
+          return { outcome };
+        formulasLeftOut[name] = diagnosticText(outcome.diagnostic);
         for (const reader of readersOf(request.formulas ?? {}, name))
-          left[reader] ??= m.query_view_formula_reads_wrong({ name });
-        const condition = formulaCondition(file, view, left);
+          formulasLeftOut[reader] ??= m.query_view_formula_reads_wrong({
+            name,
+          });
+        const condition = formulaCondition(file, view, formulasLeftOut);
         if (condition) return { outcome, condition };
       }
     };
-    const left: Record<string, string> = {};
-    this.#settled = runWithout(left).then(
+    const formulasLeftOut: Record<string, string> = {};
+    this.#settled = runWithout(formulasLeftOut).then(
       ({ outcome, condition }) => {
         if (this.#run !== controller) return;
         this.#run = null;
-        this.state.setState({ formulaIssues: left });
+        this.state.setState({ formulaIssues: formulasLeftOut });
         if (condition && outcome.kind === "failed") {
           this.#fail({ key, file, view }, outcome.diagnostic, condition);
           return;
@@ -1007,7 +920,7 @@ export class QueryView extends Component implements HistorySurface {
         if (this.#run !== controller) return;
         this.#run = null;
         logger.warn("A Query View could not run its query", { error });
-        this.state.setState({ formulaIssues: left });
+        this.state.setState({ formulaIssues: formulasLeftOut });
         this.#fail(
           { key, file, view },
           {
@@ -1112,7 +1025,7 @@ export class QueryView extends Component implements HistorySurface {
   #fail(
     { key, file, view }: ViewRun,
     diagnostic: Diagnostic | NonNullable<QueryViewState["diagnostic"]>,
-    formulaCondition?: FilterLocation & { message: string },
+    formulaCondition?: ConditionIssue,
   ): void {
     const kept =
       formulaCondition === undefined &&
@@ -1133,12 +1046,7 @@ export class QueryView extends Component implements HistorySurface {
       keptResults: kept,
       filterIssue:
         formulaCondition ??
-        (at && {
-          ...at,
-          message: [diagnostic.message, diagnostic.hint]
-            .filter(Boolean)
-            .join(" "),
-        }),
+        (at && { ...at, message: diagnosticText(diagnostic) }),
     });
   }
 
