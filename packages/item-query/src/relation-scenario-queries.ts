@@ -94,6 +94,11 @@ export const RELATION_SCENARIO_QUERIES: readonly {
     'annotations.filter(value.tags.contains("method")).length >= 2',
     'attachments.filter(value.annotations.filter(value.tags.contains("method")).isEmpty()).length > 0',
     'attachments.filter(value.contentType == "application/pdf" && value.annotations.filter(value.tags.contains("method")).isEmpty()).length > 0',
+    'notes.filter(value.title == "Child note").length > 0',
+    'notes.filter(value.indexedKey == "NTE2GRUPg4815").length > 0',
+    "notes.filter(value.item.title == title).length > 0",
+    "!notes.isEmpty()",
+    "notes.isEmpty()",
   ].map((filter) => ({
     name: `relation residual: ${filter}`,
     dataset: ITEMS,
@@ -167,6 +172,14 @@ export const RELATION_SCENARIO_QUERIES: readonly {
         "annotations",
         "annotations[].attachment.tags",
       ],
+    },
+  },
+  {
+    name: "reading notes of each paper",
+    dataset: ITEMS,
+    request: {
+      filter: "notes.length > 0",
+      fields: ["notes", "notes[].title", "notes[0].item.title", "notes.length"],
     },
   },
   {

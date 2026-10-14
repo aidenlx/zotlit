@@ -14,11 +14,14 @@ import { ANNOTATION_LOADING } from "./annotation-hydration";
 import type { QueryAttachment } from "./attachment-fields";
 import { ATTACHMENT_LOADING } from "./attachment-hydration";
 import type { FieldNeeds, QueryItem } from "./fields";
+import type { QueryNote } from "./note-fields";
+import { NOTE_LOADING } from "./note-hydration";
 import { relationList } from "./record-loader";
 import type { LoadingDescriptor } from "./record-loader";
 import {
   relatedAttachments,
   relatedItemAnnotations,
+  relatedItemNotes,
 } from "./relation-hydration";
 
 interface ItemOwn {
@@ -28,6 +31,7 @@ interface ItemOwn {
 interface ItemLinks {
   readonly attachments: readonly QueryAttachment[];
   readonly annotations: readonly QueryAnnotation[];
+  readonly notes: readonly QueryNote[];
 }
 
 export const ITEM_LOADING: LoadingDescriptor<
@@ -97,6 +101,12 @@ export const ITEM_LOADING: LoadingDescriptor<
       needs: (need: FieldNeeds) => need.annotations,
       descriptor: () => ANNOTATION_LOADING,
       read: relatedItemAnnotations,
+      parentID: (row) => row.parent.itemID,
+    }),
+    notes: relationList({
+      needs: (need: FieldNeeds) => need.notes,
+      descriptor: () => NOTE_LOADING,
+      read: relatedItemNotes,
       parentID: (row) => row.parent.itemID,
     }),
   },
