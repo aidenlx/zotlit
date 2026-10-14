@@ -41,6 +41,8 @@ Each dataset connects to the others in both directions:
 
 A paper lists its files in `attachments` and all its marks in `annotations`. A file names its paper in `item` and lists its marks in `annotations`. A mark names its file in `attachment` and its paper in `item`. The lists, such as a paper's `attachments`, are called **Relation Lists**.
 
+A paper also lists its Zotero child notes in `notes`, with the title and dates of each note. Notes are not a dataset of their own: you reach them from a paper. For example, `!notes.isEmpty()` finds the papers that have a child note.
+
 Because the connections run both ways, choose the dataset by the record that you count:
 
 - "Which papers have no PDF?" counts papers: start from `items` and look at each paper's files.
@@ -62,6 +64,21 @@ Every query passes the same stages, in this order:
 3. `sort` puts the records in order, such as `-date` for the newest first.
 4. `limit` sets the most records to return. The default is 100, and `limit=all` returns every match. `truncated: true` in the answer tells you that more records matched.
 5. `fields` names the values that each row returns, such as `title,date.year`. A path with `[]` reads one value from each element of a list: `attachments[].path` gives the location of every file of a paper.
+
+## `this`: a query relative to one paper [#this]
+
+A filter can name one paper or one file as `this.item` or `this.attachment`. The paper or file is the **Query Context**: the query does not name it, the caller supplies it.
+
+```text
+ zotlit:query from=annotations filter='item == this.item' this-item=ABCD2345
+                                       └──────┬──────┘    └───────┬───────┘
+                                    the same filter       the paper that
+                                    for every paper       this.item means
+```
+
+On the command line, `this-item` and `this-attachment` supply the context. In Obsidian, a [query file or query block](/docs/concepts/query-files-and-query-blocks#this) takes it from the note that shows it, so one filter shows the marks of each Literature Note's own paper.
+
+A filter that reads `this` without a context cannot run. The answer is a failure that names the missing value.
 
 ## How grouping counts records [#grouping]
 
@@ -118,6 +135,11 @@ Because the agent reads both sources at each start, its queries follow the ZotLi
     title="Commands"
     description="Every ZotLit Query command and parameter."
     href="/docs/reference/commands#query-cli"
+  />
+  <Card
+    title="Query files and query blocks"
+    description="The same queries as live views in tabs, embeds, and notes."
+    href="/docs/concepts/query-files-and-query-blocks"
   />
   <Card
     title="Install the ZotLit skill"
