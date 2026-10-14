@@ -27,6 +27,7 @@ import type { Diagnostic } from "@/services/item-query/contract";
 import type {
   QueryViewOutcome,
   QueryViewRequest,
+  QueryViewResult,
   QueryViewRow,
 } from "@/services/item-query/query-view";
 import type { QueryService } from "@/services/item-query/service";
@@ -170,6 +171,14 @@ export interface QueryViewState {
   groups: readonly LayoutGroup[];
   /** Whether the view's limit cut the rows short. */
   truncated: boolean;
+  /** What the last run that gave rows says about its query, each once. */
+  warnings: readonly QueryViewWarning[];
+}
+
+/** A warning of ZotLit Query about the view's query. */
+export interface QueryViewWarning {
+  code: QueryViewResult["warnings"][number]["code"];
+  message: string;
 }
 
 const INITIAL_STATE: QueryViewState = {
@@ -185,7 +194,15 @@ const INITIAL_STATE: QueryViewState = {
   matched: 0,
   groups: [],
   truncated: false,
+  warnings: [],
 };
+
+/** The text of a warning: the researcher's words where ZotLit has them. */
+function warningText(warning: QueryViewWarning): string {
+  return warning.code === "key-outside-target-libraries"
+    ? m.query_view_warning_outside_library_scope()
+    : warning.message;
+}
 
 function problemText(problem: QueryFileProblem): string {
   switch (problem.code) {
@@ -706,6 +723,7 @@ export class QueryView extends Component implements HistorySurface {
         matched: 0,
         groups: [],
         truncated: false,
+        warnings: [],
       });
       return;
     }
@@ -771,6 +789,14 @@ export class QueryView extends Component implements HistorySurface {
           matched: result.matchedCount,
           groups: shown.groups,
           truncated: result.truncated,
+          warnings: [
+            ...new Map(
+              result.warnings.map(({ code, message }) => [
+                code === "key-outside-target-libraries" ? code : message,
+                { code, message },
+              ]),
+            ).values(),
+          ],
         });
         // The Layout may have changed while the query ran.
         const current = this.state.getState().view ?? view;
@@ -808,6 +834,7 @@ export class QueryView extends Component implements HistorySurface {
     this.state.setState({
       phase: "failed",
       diagnostic,
+      warnings: [],
       keptResults: kept,
       filterIssue: at && {
         ...at,
@@ -948,6 +975,25 @@ function UnusedNote({ view }: { view: QueryView }) {
         properties: properties.join(", "),
       })}
     </p>
+  );
+}
+
+function Warnings({ view }: { view: QueryView }) {
+  const phase = useQueryViewState(view, (s) => s.phase);
+  const warnings = useQueryViewState(view, (s) => s.warnings);
+  if (phase !== "ready" || warnings.length === 0) return null;
+  return (
+    <>
+      {warnings.map((warning) => (
+        <p
+          key={warning.message}
+          className="zt:mx-3 zt:mt-2 zt:mb-0 zt:text-sm zt:text-(--text-warning)"
+          data-query-warning={warning.code}
+        >
+          {warningText(warning)}
+        </p>
+      ))}
+    </>
   );
 }
 
@@ -1108,6 +1154,7 @@ function QueryViewBody({ view }: { view: QueryView }) {
       <ReadOnlyNote view={view} />
       <UnusedNote view={view} />
       <Problems view={view} />
+      <Warnings view={view} />
       <NoResults view={view} />
       <LayoutBody view={view} />
     </div>
