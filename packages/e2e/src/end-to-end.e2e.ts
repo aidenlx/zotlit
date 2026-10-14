@@ -2198,6 +2198,46 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(rows.every((row) => row.values.colorName)).toBe(true);
   }, 180000);
 
+  /** The open popover of the Query View toolbar that `selector` names. */
+  const toolbarPopup = (selector: string) =>
+    `activeDocument.querySelector(${JSON.stringify(`${selector}:popover-open`)})`;
+  /**
+   * Opens a toolbar popover of the view that `tab` names, and waits until it
+   * shows the element that `ready` names.
+   */
+  async function openToolbarPopup(
+    tab: string,
+    { button, popup, ready }: { button: string; popup: string; ready: string },
+  ): Promise<void> {
+    await obEval(
+      vaultId,
+      `(()=>{if(!${toolbarPopup(popup)})${tab}.contentEl.querySelector(${JSON.stringify(button)}).click();return true;})()`,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(!!${toolbarPopup(popup)}?.querySelector(${JSON.stringify(ready)}))`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+  }
+  /** The open Properties popover. */
+  const propertiesPopup = toolbarPopup("[data-query-properties-popup]");
+  /** Opens the Properties popover and waits for its property rows. */
+  const openProperties = (tab: string) =>
+    openToolbarPopup(tab, {
+      button: "[data-query-properties]",
+      popup: "[data-query-properties-popup]",
+      ready: "[data-query-property]",
+    });
+  /** Opens the results popover and waits for its "Export CSV…" action. */
+  const openResults = (tab: string) =>
+    openToolbarPopup(tab, {
+      button: "[data-query-results]",
+      popup: "[data-query-results-popup]",
+      ready: "[data-query-export]",
+    });
+
   it("adds a Formula Property from the Properties popover, edits it, marks a wrong one at its row, and removes it, and an embed and a Query Block show its column", async () => {
     const path = "query-files/Formula items.zotquery";
     const notePath = "query-files/Formula note.md";
@@ -2269,17 +2309,31 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // "Add formula" in the Properties popover opens the Formula dialog.
     const formulaModal =
       "[...activeDocument.querySelectorAll('.modal.zt-query-formula-modal')].at(-1)";
-    const openPopover = `${tab}.contentEl.querySelector('[data-query-properties]').click();await new Promise(r=>setTimeout(r,100));const popup=activeDocument.querySelector('[data-query-properties-popup]');`;
+    await openProperties(tab);
     await obEval(
       vaultId,
-      `(async()=>{${openPopover}[...popup.querySelectorAll('[role="option"]')].find(n=>n.textContent===${JSON.stringify(m.query_view_formula_add())}).click();return true;})()`,
+      `(()=>{[...${propertiesPopup}.querySelectorAll('[role="option"]')].find(n=>n.textContent===${JSON.stringify(m.query_view_formula_add())}).click();return true;})()`,
     );
-    /** Types into the dialog, and reads what it says about the text. */
-    const typeFormula = (fields: { name?: string; expression: string }) =>
-      obEval(
+    /**
+     * Types into the dialog, and reads what it says about the text. The
+     * dialog draws the text in a microtask after the input event, so the read
+     * in the next call sees it.
+     */
+    const typeFormula = async (fields: {
+      name?: string;
+      expression: string;
+    }) => {
+      await obEval(
         vaultId,
-        `(async()=>{const modal=${formulaModal};const set=(el,value)=>{el.value=value;el.dispatchEvent(new InputEvent('input',{bubbles:true}));};${fields.name === undefined ? "" : `set(modal.querySelector('[data-query-formula-name]'),${JSON.stringify(fields.name)});`}set(modal.querySelector('[data-query-formula-expression]'),${JSON.stringify(fields.expression)});await new Promise(r=>setTimeout(r,100));return JSON.stringify({syntax:modal.querySelector('[data-query-formula-syntax]')?.getAttribute('data-query-formula-syntax')??null,save:!modal.querySelector('[data-query-formula-save]').disabled});})()`,
-      ).then((text) => JSON.parse(text) as { syntax: string; save: boolean });
+        `(()=>{const modal=${formulaModal};const set=(el,value)=>{el.value=value;el.dispatchEvent(new InputEvent('input',{bubbles:true}));};${fields.name === undefined ? "" : `set(modal.querySelector('[data-query-formula-name]'),${JSON.stringify(fields.name)});`}set(modal.querySelector('[data-query-formula-expression]'),${JSON.stringify(fields.expression)});return true;})()`,
+      );
+      return JSON.parse(
+        await obEval(
+          vaultId,
+          `(()=>{const modal=${formulaModal};return JSON.stringify({syntax:modal.querySelector('[data-query-formula-syntax]')?.getAttribute('data-query-formula-syntax')??null,save:!modal.querySelector('[data-query-formula-save]').disabled});})()`,
+        ),
+      ) as { syntax: string; save: boolean };
+    };
     const saveFormula = () =>
       obEval(
         vaultId,
@@ -2349,9 +2403,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // The edit button of the Formula's row opens it for editing.
     const editFormula = async () => {
+      await openProperties(tab);
       await obEval(
         vaultId,
-        `(async()=>{${openPopover}popup.querySelector('[data-query-formula-edit="year"]').click();return true;})()`,
+        `(()=>{${propertiesPopup}.querySelector('[data-query-formula-edit="year"]').click();return true;})()`,
       );
       expect(
         await obEvalUntil(
@@ -2385,9 +2440,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       true,
     );
     expect(column(wrong, "title")).toEqual(column(added, "title"));
+    await openProperties(tab);
     const rowIssue = await obEval(
       vaultId,
-      `(async()=>{${openPopover}const issue=popup.querySelector('[data-query-property="formula.year"] [data-query-formula-issue]')?.getAttribute('data-query-formula-issue')??null;popup.hidePopover();return String(issue);})()`,
+      `(()=>{const popup=${propertiesPopup};const issue=popup.querySelector('[data-query-property="formula.year"] [data-query-formula-issue]')?.getAttribute('data-query-formula-issue')??null;popup.hidePopover();return String(issue);})()`,
     );
     expect(rowIssue).toBe(wrong.headerIssue);
 
@@ -2476,21 +2532,29 @@ views:
       return shown.rows.map((row) => [row[0], row[at + 1]]);
     };
     /** The issue at each Formula's row in the Properties popover. */
-    const rowIssues = async () =>
-      JSON.parse(
+    const rowIssues = async () => {
+      await openProperties(tab);
+      return JSON.parse(
         await obEval(
           vaultId,
-          `(async()=>{${tab}.contentEl.querySelector('[data-query-properties]').click();await new Promise(r=>setTimeout(r,100));const popup=activeDocument.querySelector('[data-query-properties-popup]');const issues=Object.fromEntries(['year','next','recent'].map(name=>[name,popup.querySelector('[data-query-property="formula.'+name+'"] [data-query-formula-issue]')?.getAttribute('data-query-formula-issue')??null]));popup.hidePopover();return JSON.stringify(issues);})()`,
+          `(()=>{const popup=${propertiesPopup};const issues=Object.fromEntries(['year','next','recent'].map(name=>[name,popup.querySelector('[data-query-property="formula.'+name+'"] [data-query-formula-issue]')?.getAttribute('data-query-formula-issue')??null]));popup.hidePopover();return JSON.stringify(issues);})()`,
         ),
       ) as Record<string, string | null>;
+    };
     /** The issue at each condition of the view's filters, in the Filter popover. */
-    const conditionIssues = async () =>
-      JSON.parse(
+    const conditionIssues = async () => {
+      await openToolbarPopup(tab, {
+        button: '[data-query-toolbar="filter"]',
+        popup: '[data-query-popover="filter"]',
+        ready: '[data-filter-section="view"] [data-condition-row]',
+      });
+      return JSON.parse(
         await obEval(
           vaultId,
-          `(async()=>{const el=${tab}.contentEl;const popover=el.querySelector('[data-query-popover="filter"]');if(!popover.matches(':popover-open'))el.querySelector('[data-query-toolbar="filter"]').click();await new Promise(r=>setTimeout(r,100));const issues=[...popover.querySelectorAll('[data-filter-section="view"] [data-condition-row]')].map(n=>n.querySelector('[role="alert"]')?.textContent??null);popover.hidePopover();return JSON.stringify(issues);})()`,
+          `(()=>{const popover=${toolbarPopup('[data-query-popover="filter"]')};const issues=[...popover.querySelectorAll('[data-filter-section="view"] [data-condition-row]')].map(n=>n.querySelector('[role="alert"]')?.textContent??null);popover.hidePopover();return JSON.stringify(issues);})()`,
         ),
       ) as (string | null)[];
+    };
 
     // The view shows the rows ZotLit Query gives for the same filter, and a
     // Formula that reads another shows its value.
@@ -2698,12 +2762,23 @@ views:
           ),
         ),
       ].join("\n");
-    const written = JSON.parse(
+    const resultsTab = "app.workspace.getMostRecentLeaf().view";
+    const resultsPopup = toolbarPopup("[data-query-results-popup]");
+    await openResults(resultsTab);
+    // The clipboard write has no time the test can name: poll for it, and
+    // fail when it does not come.
+    const copied = await obEval(
+      vaultId,
+      `(async()=>{let copied=null;navigator.clipboard.write=async items=>{copied=await (await items[0].getType('text/plain')).text();};try{${resultsPopup}.querySelector('[data-query-copy]').click();for(let i=0;i<50&&copied===null;i++)await new Promise(r=>setTimeout(r,100));}finally{delete navigator.clipboard.write;}if(copied===null)throw new Error('"Copy to clipboard" wrote nothing');return copied;})()`,
+    );
+    await openResults(resultsTab);
+    const exportedCsv = JSON.parse(
       await obEval(
         vaultId,
-        `(async()=>{const el=app.workspace.getMostRecentLeaf().view.contentEl;el.querySelector('[data-query-results]').click();await new Promise(r=>setTimeout(r,100));const popup=activeDocument.querySelector('[data-query-results-popup]');let copied=null;navigator.clipboard.write=async items=>{copied=await (await items[0].getType('text/plain')).text();};const create=URL.createObjectURL;const click=HTMLAnchorElement.prototype.click;let blob=null,name=null;URL.createObjectURL=b=>{blob=b;return create.call(URL,b);};HTMLAnchorElement.prototype.click=function(){name=this.download;};try{popup.querySelector('[data-query-copy]').click();for(let i=0;i<50&&copied===null;i++)await new Promise(r=>setTimeout(r,100));el.querySelector('[data-query-results]').click();await new Promise(r=>setTimeout(r,100));activeDocument.querySelector('[data-query-results-popup] [data-query-export]').click();}finally{delete navigator.clipboard.write;URL.createObjectURL=create;HTMLAnchorElement.prototype.click=click;}return JSON.stringify({copied,name,type:blob?.type??null,text:blob?await blob.text():null});})()`,
+        `(async()=>{const create=URL.createObjectURL;const click=HTMLAnchorElement.prototype.click;let blob=null,name=null;URL.createObjectURL=b=>{blob=b;return create.call(URL,b);};HTMLAnchorElement.prototype.click=function(){name=this.download;};try{${resultsPopup}.querySelector('[data-query-export]').click();}finally{URL.createObjectURL=create;HTMLAnchorElement.prototype.click=click;}return JSON.stringify({name,type:blob?.type??null,text:blob?await blob.text():null});})()`,
       ),
-    ) as {
+    ) as { name: string | null; type: string | null; text: string | null };
+    const written = { copied, ...exportedCsv } as {
       copied: string | null;
       name: string | null;
       type: string | null;
@@ -2737,9 +2812,8 @@ views:
       `(async()=>{const file=await app.vault.create(${JSON.stringify(path)},${JSON.stringify(source)});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
     );
     const tab = "app.workspace.getMostRecentLeaf().view";
-    const openPopover = `${tab}.contentEl.querySelector('[data-query-properties]').click();await new Promise(r=>setTimeout(r,100));const popup=activeDocument.querySelector('[data-query-properties-popup]');`;
     /** The Table header, each popover row's Display Name, and the file's saved text. */
-    const readTab = `(async()=>{const view=${tab};if(view.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(path)})return 'null';await view.query.settled;await view.save();const el=view.contentEl;const header=[...el.querySelectorAll('[data-query-table] thead th[data-query-column]')].map(n=>[n.getAttribute('data-query-column'),n.textContent]);if(!el.querySelector('[data-query-properties]'))return 'null';${openPopover}const names=['title','formula.year'].map(property=>popup.querySelector('[data-query-property="'+property+'"]')).filter(n=>n?.querySelector('[data-query-property-name]')).map(n=>[n.dataset.queryProperty,n.querySelector('[data-query-property-name]').textContent]);popup.hidePopover();return JSON.stringify({header,names,rows:el.querySelectorAll('[data-query-table-row="item"]').length,text:await app.vault.read(view.file)});})()`;
+    const readTab = `(async()=>{const view=${tab};if(view.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(path)})return 'null';await view.query.settled;await view.save();const el=view.contentEl;const header=[...el.querySelectorAll('[data-query-table] thead th[data-query-column]')].map(n=>[n.getAttribute('data-query-column'),n.textContent]);const popup=${propertiesPopup};if(!popup)return 'null';const names=['title','formula.year'].map(property=>popup.querySelector('[data-query-property="'+property+'"]')).filter(n=>n?.querySelector('[data-query-property-name]')).map(n=>[n.dataset.queryProperty,n.querySelector('[data-query-property-name]').textContent]);popup.hidePopover();return JSON.stringify({header,names,rows:el.querySelectorAll('[data-query-table-row="item"]').length,text:await app.vault.read(view.file)});})()`;
     interface Tab {
       header: [string, string][];
       names: [string, string][];
@@ -2749,6 +2823,7 @@ views:
     const tabWhen = async (ready: (tab: Tab) => boolean): Promise<Tab> => {
       let tab: Tab | null = null;
       const settled = await waitFor(async () => {
+        await openProperties("app.workspace.getMostRecentLeaf().view");
         tab = JSON.parse(await obEval(vaultId, readTab)) as Tab | null;
         return tab !== null && ready(tab);
       }, 120);
@@ -2767,9 +2842,10 @@ views:
     // The rename button of the title row opens "Rename property".
     const renameModal =
       "[...activeDocument.querySelectorAll('.modal.zt-query-display-name-modal')].at(-1)";
+    await openProperties(tab);
     await obEval(
       vaultId,
-      `(async()=>{${openPopover}popup.querySelector('[data-query-property-rename="title"]').click();return true;})()`,
+      `(()=>{${propertiesPopup}.querySelector('[data-query-property-rename="title"]').click();return true;})()`,
     );
     expect(
       await obEvalUntil(
@@ -2778,9 +2854,15 @@ views:
         { expected: "title" },
       ),
     ).toBe(true);
+    // The dialog takes the name in a microtask after the input event, so the
+    // save in the next call sees it.
     await obEval(
       vaultId,
-      `(async()=>{const modal=${renameModal};const input=modal.querySelector('[data-query-display-name]');input.value='Work';input.dispatchEvent(new InputEvent('input',{bubbles:true}));await new Promise(r=>setTimeout(r,100));modal.querySelector('[data-query-display-name-save]').click();return true;})()`,
+      `(()=>{const input=${renameModal}.querySelector('[data-query-display-name]');input.value='Work';input.dispatchEvent(new InputEvent('input',{bubbles:true}));return true;})()`,
+    );
+    await obEval(
+      vaultId,
+      `(()=>{${renameModal}.querySelector('[data-query-display-name-save]').click();return true;})()`,
     );
     const field = await tabWhen((tab) => tab.text.includes("displayName"));
     expect(field.text).toBe(
@@ -2793,18 +2875,29 @@ views:
     // The Formula dialog holds the Formula's Display Name.
     const formulaModal =
       "[...activeDocument.querySelectorAll('.modal.zt-query-formula-modal')].at(-1)";
+    /** Opens the Formula dialog of `formula.year`. */
+    const editYear = async () => {
+      await openProperties(tab);
+      await obEval(
+        vaultId,
+        `(()=>{${propertiesPopup}.querySelector('[data-query-formula-edit="year"]').click();return true;})()`,
+      );
+      expect(
+        await obEvalUntil(
+          vaultId,
+          `String(${formulaModal}?.querySelector('[data-query-formula-dialog]')?.getAttribute('data-query-formula-dialog'))`,
+          { expected: "year" },
+        ),
+      ).toBe(true);
+    };
+    await editYear();
     await obEval(
       vaultId,
-      `(async()=>{${openPopover}popup.querySelector('[data-query-formula-edit="year"]').click();return true;})()`,
+      `(()=>{const input=${formulaModal}.querySelector('[data-query-display-name]');input.value='Year of source';input.dispatchEvent(new InputEvent('input',{bubbles:true}));return true;})()`,
     );
-    expect(
-      await obEvalUntil(vaultId, `String(!!${formulaModal})`, {
-        expected: "true",
-      }),
-    ).toBe(true);
     await obEval(
       vaultId,
-      `(async()=>{const modal=${formulaModal};const input=modal.querySelector('[data-query-display-name]');input.value='Year of source';input.dispatchEvent(new InputEvent('input',{bubbles:true}));await new Promise(r=>setTimeout(r,100));modal.querySelector('[data-query-formula-save]').click();return true;})()`,
+      `(()=>{${formulaModal}.querySelector('[data-query-formula-save]').click();return true;})()`,
     );
     const named = await tabWhen((tab) => tab.text.includes("Year of source"));
     expect(named.text).toBe(
@@ -2823,18 +2916,20 @@ views:
     ]);
 
     // "Export CSV…" names the columns by their Display Names.
+    await openResults(tab);
     const exported = JSON.parse(
       await obEval(
         vaultId,
-        `(async()=>{${tab}.contentEl.querySelector('[data-query-results]').click();await new Promise(r=>setTimeout(r,100));const create=URL.createObjectURL;const click=HTMLAnchorElement.prototype.click;let blob=null;URL.createObjectURL=b=>{blob=b;return create.call(URL,b);};HTMLAnchorElement.prototype.click=function(){};try{activeDocument.querySelector('[data-query-results-popup] [data-query-export]').click();}finally{URL.createObjectURL=create;HTMLAnchorElement.prototype.click=click;}return JSON.stringify({text:blob?await blob.text():null});})()`,
+        `(async()=>{const create=URL.createObjectURL;const click=HTMLAnchorElement.prototype.click;let blob=null;URL.createObjectURL=b=>{blob=b;return create.call(URL,b);};HTMLAnchorElement.prototype.click=function(){};try{${toolbarPopup("[data-query-results-popup]")}.querySelector('[data-query-export]').click();}finally{URL.createObjectURL=create;HTMLAnchorElement.prototype.click=click;}return JSON.stringify({text:blob?await blob.text():null});})()`,
       ),
     ) as { text: string | null };
     expect(exported.text?.split("\n")[0]).toBe("Work,Year of source");
 
     // Removing the Formula also removes its Display Name; the field keeps its own.
+    await editYear();
     await obEval(
       vaultId,
-      `(async()=>{${openPopover}popup.querySelector('[data-query-formula-edit="year"]').click();await new Promise(r=>setTimeout(r,300));${formulaModal}.querySelector('[data-query-formula-remove]').click();return true;})()`,
+      `(()=>{${formulaModal}.querySelector('[data-query-formula-remove]').click();return true;})()`,
     );
     const removed = await tabWhen((tab) => !tab.text.includes("formula"));
     expect(removed.text).toBe(
