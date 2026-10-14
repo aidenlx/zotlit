@@ -827,6 +827,154 @@ it("saves a new order and a new limit to the file, and runs the view again with 
   expect(run.mock.calls.at(-1)![0]).toMatchObject({ limit: null });
 });
 
+/** The rows a List or Cards layout shows, as their Indexed Keys. */
+function shownRows(el: HTMLElement): (string | null)[] {
+  return [...el.querySelectorAll("[data-query-row]")].map((node) =>
+    node.getAttribute("data-query-row"),
+  );
+}
+
+function item(key: string, title: string, year: string): QueryViewRow {
+  return {
+    indexedKey: key,
+    values: { title, "date.year": year, tags: ["thesis"] },
+  };
+}
+
+it("lists the Items of an items view, with the visible properties in their order", async () => {
+  const { view, el, run, settle } = await mount([
+    result([
+      item("ITEMAAAA", "Ten simple rules", "2021"),
+      item("ITEMBBBB", "Reading at scale", "2019"),
+    ]),
+  ]);
+  await act(() =>
+    view.setText(`views:
+  - type: list
+    name: Sources
+    from: items
+    order:
+      - date.year
+      - title
+`),
+  );
+  await settle();
+
+  expect(view.state.getState().problems).toEqual([]);
+  const [request] = run.mock.calls[0]!;
+  expect(request.from).toBe("items");
+  expect(request.fields).toEqual(
+    expect.arrayContaining(["date.year", "title"]),
+  );
+  expect(request.fields).not.toContain("color");
+  expect(shownRows(el)).toEqual(["ITEMAAAA", "ITEMBBBB"]);
+  expect(
+    [...el.querySelectorAll("[data-query-row]")].map((n) => n.textContent),
+  ).toEqual(["2021, Ten simple rules", "2019, Reading at scale"]);
+  expect(cards(el)).toEqual([]);
+});
+
+it("switches an Annotations view to Cards and to List, and keeps its rows, filters, sort and grouping", async () => {
+  const { view, el, run, settle, saved } = await mount([
+    result([
+      tagged("ANNOTAAA", ["figure", "method"]),
+      tagged("ANNOTBBB", ["method"]),
+    ]),
+  ]);
+  await act(() =>
+    view.setText(`views:
+  - type: annotations
+    name: Tags
+    from: annotations
+    filters: colorName == "yellow"
+    sort:
+      - property: dateAdded
+        direction: DESC
+    groupBy:
+      property: tags[]
+      direction: ASC
+    order:
+      - tags
+`),
+  );
+  await settle();
+  expect(cards(el)).toEqual(["ANNOTAAA", "ANNOTAAA", "ANNOTBBB"]);
+
+  await act(() => view.setViewLayout(0, "cards"));
+  await settle();
+  expect(cards(el)).toEqual([]);
+  expect(shownRows(el)).toEqual(["ANNOTAAA", "ANNOTAAA", "ANNOTBBB"]);
+  expect(headings(el)).toEqual(["figure", "method"]);
+  expect(el.querySelector("[data-query-count]")?.textContent).toBe("2 results");
+
+  await act(() => view.setViewLayout(0, "list"));
+  await settle();
+  expect(shownRows(el)).toEqual(["ANNOTAAA", "ANNOTAAA", "ANNOTBBB"]);
+  expect(headings(el)).toEqual(["figure", "method"]);
+
+  // Each switch saves the layout alone; the query stays as it was.
+  const text = saved.at(-1)!;
+  expect(text).toContain("type: list");
+  expect(text).toContain('filters: colorName == "yellow"');
+  expect(text).toContain("property: dateAdded");
+  expect(text).toContain("property: tags[]");
+  expect(
+    new Set(run.mock.calls.map(([request]) => JSON.stringify(request))),
+  ).toHaveLength(1);
+
+  // Back on the Annotations layout, the same rows are cards again.
+  await act(() => view.setViewLayout(0, "annotations"));
+  await settle();
+  expect(cards(el)).toEqual(["ANNOTAAA", "ANNOTAAA", "ANNOTBBB"]);
+  expect(shownRows(el)).toEqual([]);
+});
+
+it("draws the List and Cards options at once, and saves them to the file", async () => {
+  const { view, el, run, settle, saved } = await mount([
+    result([item("ITEMAAAA", "Ten simple rules", "2021")]),
+  ]);
+  await act(() =>
+    view.setText(`views:
+  - type: cards
+    name: Sources
+    from: items
+    order:
+      - title
+      - date.year
+`),
+  );
+  await settle();
+  const card = el.querySelector("[data-query-row]")!;
+  expect(card.textContent).toBe("Ten simple rulesdate.year2021");
+  expect(
+    el.querySelector("[data-card-size]")?.getAttribute("data-card-size"),
+  ).toBe("200");
+
+  await act(() => view.setViewOption(0, "cardSize", 320));
+  expect(
+    el.querySelector("[data-card-size]")?.getAttribute("data-card-size"),
+  ).toBe("320");
+  expect(saved.at(-1)).toContain("cardSize: 320");
+
+  await act(() => view.setViewLayout(0, "list"));
+  await settle();
+  expect(el.querySelector("ul[data-query-markers='bullet']")).not.toBeNull();
+  await act(() => view.setViewOption(0, "markers", "number"));
+  await act(() => view.setViewOption(0, "separator", " · "));
+  expect(el.querySelector("ol[data-query-markers='number']")).not.toBeNull();
+  expect(el.querySelector("[data-query-row]")?.textContent).toBe(
+    "Ten simple rules · 2021",
+  );
+  await act(() => view.setViewOption(0, "indentProperties", true));
+  expect(
+    [...el.querySelectorAll("[data-query-row] span")].map((n) => n.textContent),
+  ).toEqual(["Ten simple rules", "2021", "2021"]);
+  const text = saved.at(-1)!;
+  expect(text).toContain("markers: number");
+  expect(text).toContain("indentProperties: true");
+  expect(run).toHaveBeenCalledTimes(1);
+});
+
 const TABLE_FILE = `views:
   - type: table
     name: Reading list

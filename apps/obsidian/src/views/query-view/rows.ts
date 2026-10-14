@@ -13,6 +13,7 @@ import type {
   QueryFileGroupValue,
   QueryFileSort,
 } from "./query-file";
+import { datasetProperties } from "./visible-properties";
 
 /** The group paths the Annotations Layout can gather rows by. */
 export const LAYOUT_GROUP_PATHS = [
@@ -48,6 +49,16 @@ export const LAYOUT_FIELDS = [
   "tags",
   "item.collections",
 ] as const;
+
+/**
+ * The {@link LAYOUT_FIELDS} a view of `dataset` can read: a dataset of
+ * Attachments or Items has no colour, and names its own title plainly.
+ */
+export function layoutFields(dataset: QueryFileDataset): readonly string[] {
+  if (dataset === "annotations") return LAYOUT_FIELDS;
+  const properties = new Set(datasetProperties(dataset));
+  return LAYOUT_FIELDS.filter((field) => properties.has(field));
+}
 
 /** One group of the rows, as the Manual group order lists it. */
 export interface LayoutGroup {
