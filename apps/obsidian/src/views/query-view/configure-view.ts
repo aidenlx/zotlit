@@ -5,8 +5,10 @@ import type { App, TextComponent } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 
+import { addCardsOptions, cardsLayoutOptions } from "./cards-layout";
 import { annotationsLayoutOptions, CARD_WIDTH, layoutsFor } from "./layouts";
 import type { AnnotationsLayoutOptions } from "./layouts";
+import { addListOptions, listLayoutOptions } from "./list-layout";
 import type { QueryView } from "./view";
 import { VIEW_NAME_RESERVED, viewNameIssue } from "./view-edits";
 import type { ViewNameIssue } from "./view-edits";
@@ -192,7 +194,16 @@ export class ConfigureViewModal extends Modal {
         });
       });
 
+    const set = (key: string, value: unknown) =>
+      this.#view.setViewOption(this.#index(), key, value);
     if (view.type === "annotations") this.#annotationsOptions(contentEl);
+    else if (view.type === "list")
+      addListOptions(contentEl, listLayoutOptions(view), {
+        set,
+        redraw: () => this.#display(),
+      });
+    else if (view.type === "cards")
+      addCardsOptions(contentEl, cardsLayoutOptions(view), set);
     if (focusName) (name as TextComponent | null)?.inputEl.select();
   }
 

@@ -28,9 +28,17 @@ import type { QueryService } from "@/services/item-query/service";
 import { itemTypeLabel } from "@/services/profile-selection/describe";
 import { useAnnotStore } from "@/views/annot-view/store";
 
+import type { QueryLayout } from "./layouts";
 import type { LiteratureNotes } from "./table-notes";
 import type { QueryView } from "./view";
 import { visibleProperties } from "./visible-properties";
+
+export const TABLE_LAYOUT: QueryLayout = {
+  type: "table",
+  datasets: ["items"],
+  name: () => m.query_view_layout_table(),
+  icon: "table",
+};
 
 /** The kinds of row the Table shows: an Item, and the records under it. */
 export type TableRowKind = "item" | "attachment" | "annotation";
@@ -53,8 +61,15 @@ export interface TableChildSource {
    * rows; a parent with an empty list has no rows of this kind.
    */
   readonly marker: string;
-  /** The query of the rows under one parent. */
-  request(parentKey: string): QueryViewRequest;
+  /**
+   * Read the rows under one parent: through a query of a Query Dataset, or
+   * from a list the parent row carries.
+   */
+  load(
+    parent: TableRecord,
+    query: Pick<QueryService, "run">,
+    signal: AbortSignal,
+  ): Promise<readonly TableRecord[]>;
   /** The text of one row. */
   render(record: TableRecord): ReactNode;
 }
@@ -63,18 +78,37 @@ function text(value: QueryViewValue | undefined): string {
   return typeof value === "string" ? value : "";
 }
 
+/** A `load` that runs one query for the rows of `kind` under a parent. */
+function queried(
+  kind: TableRowKind,
+  request: (parentKey: string) => QueryViewRequest,
+): TableChildSource["load"] {
+  return async (parent, query, signal) => {
+    const outcome = await query.run(request(parent.key), signal);
+    if (outcome.kind !== "result") throw new Error(outcome.kind);
+    const rows =
+      outcome.result.rows ??
+      outcome.result.groups.flatMap((group) => group.rows);
+    return rows.map((row) => ({
+      kind,
+      key: row.indexedKey,
+      values: row.values,
+    }));
+  };
+}
+
 export const TABLE_CHILD_SOURCES: readonly TableChildSource[] = [
   {
     parent: "item",
     kind: "attachment",
     icon: "paperclip",
     marker: "attachments[].indexedKey",
-    request: (itemKey) => ({
+    load: queried("attachment", (itemKey) => ({
       from: "attachments",
       filter: `item.indexedKey == ${JSON.stringify(itemKey)}`,
       fields: ["title", ...markers("attachment")],
       limit: null,
-    }),
+    })),
     render: ({ key, values }) => text(values.title) || key,
   },
   {
@@ -82,7 +116,7 @@ export const TABLE_CHILD_SOURCES: readonly TableChildSource[] = [
     kind: "annotation",
     icon: "highlighter",
     marker: "annotations[].indexedKey",
-    request: (attachmentKey) => ({
+    load: queried("annotation", (attachmentKey) => ({
       from: "annotations",
       filter: `attachment.indexedKey == ${JSON.stringify(attachmentKey)}`,
       fields: [
@@ -94,7 +128,7 @@ export const TABLE_CHILD_SOURCES: readonly TableChildSource[] = [
       ],
       sort: [{ field: "sortIndex", direction: "asc" }],
       limit: null,
-    }),
+    })),
     render: ({ values }) => (
       <>
         <span
@@ -235,23 +269,7 @@ function useChildren(query: Pick<QueryService, "run">) {
       (source) => source.parent === record.kind,
     );
     void Promise.all(
-      sources.map(async (source) => {
-        const outcome = await query.run(
-          source.request(record.key),
-          controller.signal,
-        );
-        if (outcome.kind !== "result") throw new Error(outcome.kind);
-        const rows =
-          outcome.result.rows ??
-          outcome.result.groups.flatMap((group) => group.rows);
-        return rows.map(
-          (row): TableRecord => ({
-            kind: source.kind,
-            key: row.indexedKey,
-            values: row.values,
-          }),
-        );
-      }),
+      sources.map((source) => source.load(record, query, controller.signal)),
     ).then(
       (lists) => {
         if (controller.signal.aborted) return;
@@ -444,7 +462,7 @@ function ChildRow({
 /** The view's rows as a table of Items. */
 export function TableLayout({ view }: { view: QueryView }) {
   const shown = useStore(view.state, (s) => s.view);
-  const rows = useStore(view.state, (s) => s.rows);
+  const rows = useStore(view.state, (s) => s.records);
   const search = useAnnotStore((s) => s.filterQuery)
     .trim()
     .toLowerCase();
