@@ -342,6 +342,10 @@ describe("Error Values", () => {
       'number("abc").toString()',
       'Error: number() cannot read "abc" as a number.',
     ],
+    [
+      "title.isType(title).toString()",
+      'Error: Argument 1 of isType is "Ecology of Éclairs", outside the values that isType takes.',
+    ],
     ['(1).isType("error")', false],
     ['publisher.isType("error")', false],
     // False where a truth is read.
@@ -760,6 +764,9 @@ describe("number methods", () => {
     // The text of this Item is not a number: the Error Value passes through.
     ["number(pages).round()", error("unparseable-text")],
     ["(2.5).round(null)", null],
+    // A digit count whose power of ten is zero or not finite is out of range.
+    ["(1).round(400)", error("argument-out-of-range")],
+    ["(1).round(-400)", error("argument-out-of-range")],
     // toFixed gives a text with that many decimals; a precision outside 0 to
     // 100 is out of range.
     ["(1.005).toFixed(2)", "1.00"],
