@@ -510,12 +510,12 @@ export function locateFilterFault(
 }
 
 /**
- * The file with new filters: for all views when `viewName` is `null`, else
- * for the view of that name. `undefined` removes the filters.
+ * The file with new filters: for all views when `index` is `null`, else for
+ * the view at that place. `undefined` removes the filters.
  */
 export function withFilters(
   file: QueryFile,
-  viewName: string | null,
+  index: number | null,
   filters: MatchTree | undefined,
 ): QueryFile {
   const set = <T extends { readonly source: Readonly<Entries> }>(
@@ -528,11 +528,9 @@ export function withFilters(
       source: filters === undefined ? source : target.source,
     };
   };
-  if (viewName === null) return set(file);
+  if (index === null) return set(file);
   return {
     ...file,
-    views: file.views.map((view) =>
-      view.name === viewName ? set(view) : view,
-    ),
+    views: file.views.map((view, at) => (at === index ? set(view) : view)),
   };
 }
