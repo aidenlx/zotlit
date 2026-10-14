@@ -224,12 +224,13 @@ describe("the view on screen of a file whose views have no name", () => {
 });
 
 describe("two Query Views of one file", () => {
-  it("each keep their own view on screen as the other's edits arrive", () => {
+  it("each keep their own view on screen as the other's edits arrive", async () => {
     const tab = open(FILE, {}, "Everything");
     const embed = open(FILE, {}, "Blue");
     tab.document.deleteView(0);
     tab.document.moveView(1, 0);
     tab.document.editView({ limit: 5 });
+    await tab.document.flush();
     for (const text of tab.saved) embed.document.setText(text);
     expect(tab.shown()).toBe("Everything");
     expect(embed.names()).toEqual(["Blue", "Everything"]);
@@ -237,14 +238,16 @@ describe("two Query Views of one file", () => {
     expect(embed.selected).toEqual([]);
   });
 
-  it("keeps the view an embed names after its own edits and after a peer's", () => {
+  it("keeps the view an embed names after its own edits and after a peer's", async () => {
     const embed = open(FILE, {}, "Blue");
     embed.document.moveView(2, 0);
     embed.document.setFilters("view", 'colorName == "blue"');
     expect(embed.document.wanted).toBe("Blue");
+    await embed.document.flush();
     const tab = open(embed.saved.at(-1)!, {}, "Yellow");
     tab.document.addView("View");
     tab.document.moveView(3, 0);
+    await tab.document.flush();
     embed.document.setText(tab.saved.at(-1)!);
     expect(embed.shown()).toBe("Blue");
     expect(embed.document.view?.filters).toBe('colorName == "blue"');
@@ -252,7 +255,7 @@ describe("two Query Views of one file", () => {
 });
 
 describe("saving an edit", () => {
-  it("saves typed text once, after the delay from the last key, and a menu choice at once", () => {
+  it("saves typed text once, after the delay from the last key, and a menu choice at once", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const { document, saved } = open(FILE);
     document.editView({ limit: 5 }, { typed: true });
@@ -264,6 +267,7 @@ describe("saving an edit", () => {
     vi.advanceTimersByTime(1);
     expect(saved).toHaveLength(1);
     expect(saved[0]).toContain("    limit: 50\n");
+    await document.flush();
 
     // A menu choice saves at once, with the typed text that still waits.
     document.editView({ limit: 7 }, { typed: true });
@@ -346,7 +350,7 @@ describe("saving an edit", () => {
     },
   );
 
-  it("shows the result of the last save, though an earlier one settles later", async () => {
+  it("writes one save at a time, in the order of the edits, and shows the result of the last", async () => {
     const writes: { text: string; settle: (ok: boolean) => void }[] = [];
     const { document, failed } = open(FILE, {
       save: (text) =>
@@ -357,15 +361,16 @@ describe("saving an edit", () => {
           }),
         ),
     });
+    const limits = () =>
+      writes.map(({ text }) => text.match(/limit: (\d+)/)?.[1]);
     document.editView({ limit: 5 });
     document.editView({ limit: 6 });
-    expect(writes.map(({ text }) => text.match(/limit: (\d+)/)?.[1])).toEqual([
-      "5",
-      "6",
-    ]);
+    // The second save waits until the host wrote the first.
+    expect(limits()).toEqual(["5"]);
     const flushed = document.flush();
-    writes[1]!.settle(true);
     writes[0]!.settle(false);
+    await vi.waitFor(() => expect(limits()).toEqual(["5", "6"]));
+    writes[1]!.settle(true);
     await flushed;
     expect(failed).toEqual([false]);
   });
