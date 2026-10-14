@@ -3,10 +3,11 @@ import { useState } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { WorkbenchHostProvider } from "./host";
-import { MatchEditor } from "./match";
+import { MatchEditor, MatchExpressionInput } from "./match";
 import type { MatchConditionKind, MatchFilter, MatchVocabulary } from "./match";
 import { fakeHost, renderWithMessages as render } from "./test-host";
 import { m } from "./test-messages";
+import { WorkbenchThemeProvider } from "./theme";
 
 afterEach(cleanup);
 
@@ -186,4 +187,17 @@ it("opens a None of the following group as one expression condition", () => {
     target: { value: "5" },
   });
   expect(onChange).toHaveBeenLastCalledWith({ and: ["pages > 5", negated] });
+});
+
+it("draws the expression input with the match theme of the provider it renders in", () => {
+  render(
+    <WorkbenchThemeProvider
+      theme={{ classes: { match: { expression: "match-expression" } } }}
+    >
+      <MatchExpressionInput aria-label="Formula" defaultValue="date.year" />
+    </WorkbenchThemeProvider>,
+  );
+  const input = screen.getByRole("textbox", { name: "Formula" });
+  expect(input.classList.contains("match-expression")).toBe(true);
+  expect(input.getAttribute("data-part")).toBe("expression");
 });

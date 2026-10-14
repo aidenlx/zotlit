@@ -4,6 +4,7 @@
 // and result are plain JSON: they cross the ZoteroReads worker seam as they are.
 
 import type {
+  FormulaDiagnostics,
   GroupValue,
   ItemQuery,
   QueryContext,
@@ -24,6 +25,12 @@ export interface QueryViewRequest {
   readonly filter?: string;
   /** The Projection Paths of each row. Omitted: the dataset default. */
   readonly fields?: readonly string[];
+  /**
+   * The Formulas the query reads: each name with its Filter Expression text.
+   * A row holds a Formula's value under `formula.<name>` when `fields` names
+   * it. Omitted: the request has none.
+   */
+  readonly formulas?: Readonly<Record<string, string>>;
   /** The Sortable Fields, the first one first. Omitted: the dataset default. */
   readonly sort?: readonly SortSpec[];
   /** One group path. Omitted: the result is one list of rows. */
@@ -78,6 +85,11 @@ export type QueryViewResult = {
   readonly matchedCount: number;
   readonly truncated: boolean;
   readonly warnings: QuerySummary["warnings"];
+  /**
+   * The Formulas that the query left out, each with its Diagnostic: a
+   * Formula with a mistake, or one that reads such a Formula.
+   */
+  readonly formulaDiagnostics?: FormulaDiagnostics;
 } & (
   | {
       readonly rows: readonly QueryViewRow[];
@@ -101,5 +113,10 @@ export type QueryViewResult = {
  */
 export type QueryViewOutcome =
   | { readonly kind: "result"; readonly result: QueryViewResult }
-  | { readonly kind: "failed"; readonly diagnostic: Diagnostic }
+  | {
+      readonly kind: "failed";
+      readonly diagnostic: Diagnostic;
+      /** As in the result, where the filter reads a Formula with a mistake. */
+      readonly formulaDiagnostics?: FormulaDiagnostics;
+    }
   | { readonly kind: "cancelled" };

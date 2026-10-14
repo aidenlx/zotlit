@@ -10,8 +10,11 @@ import * as m from "@/lib/i18n/generated/messages";
 
 import type { QueryLayout } from "./layouts";
 import type { QueryFileView } from "./query-file";
-import { RecordGroupHeading, useRecordGroups } from "./record-rows";
-import { columnLabel } from "./value-text";
+import {
+  CellContent,
+  RecordGroupHeading,
+  useRecordGroups,
+} from "./record-rows";
 import type { QueryView } from "./view";
 
 export const CARDS_LAYOUT: QueryLayout = {
@@ -90,13 +93,26 @@ export function CardsLayout({ view }: { view: QueryView }) {
                     className="zt:flex zt:min-w-0 zt:flex-col zt:gap-1 zt:rounded-(--radius-m) zt:bg-(--background-primary) zt:p-2 zt:text-sm zt:shadow-[0_0_0_1px_var(--background-modifier-border)]"
                     data-query-row={row.indexedKey}
                   >
-                    <div className="zt:truncate zt:font-semibold">{title}</div>
+                    <div className="zt:truncate zt:font-semibold">
+                      <CellContent
+                        value={row.values[properties[0]!.path]}
+                        text={title}
+                      />
+                    </div>
                     {rest.map((text, at) => (
-                      <div key={properties[at + 1]} className="zt:min-w-0">
+                      <div
+                        key={properties[at + 1]!.path}
+                        className="zt:min-w-0"
+                      >
                         <div className="zt:truncate zt:text-xs zt:text-(--text-faint)">
-                          {columnLabel(properties[at + 1]!)}
+                          {properties[at + 1]!.label}
                         </div>
-                        <div className="zt:truncate">{text}</div>
+                        <div className="zt:truncate">
+                          <CellContent
+                            value={row.values[properties[at + 1]!.path]}
+                            text={text}
+                          />
+                        </div>
                       </div>
                     ))}
                   </div>

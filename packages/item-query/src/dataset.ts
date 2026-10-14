@@ -16,13 +16,19 @@ import type {
 import type { CandidateSources } from "./candidate-plan";
 import type { ItemQueryError } from "./error";
 import type { DatasetRun } from "./execution";
+import type { FaultedFormulaRead } from "./fault";
 import type {
   FieldDefinition,
   FieldNeeds,
   FilterField,
   SortKey,
 } from "./fields";
-import type { FilterNode, FilterPlan, FilterProblem } from "./filter-plan";
+import type {
+  FilterNode,
+  FilterPlan,
+  FilterProblem,
+  FormulaResolver,
+} from "./filter-plan";
 import type { ParentRecord } from "./parent-records";
 import type { PathSegment } from "./projection-path";
 import type { QueryClock } from "./query-clock";
@@ -143,7 +149,8 @@ export interface QueryDataset<
   readonly planFilter: (
     text: string,
     context?: QueryContext,
-  ) => FilterPlan<any, any> | FilterProblem;
+    formula?: FormulaResolver<any, any>,
+  ) => FilterPlan<any, any> | FilterProblem | FaultedFormulaRead;
   /** The Sortable Field of a name, or nothing for a name that does not sort. */
   readonly sortable: (name: string) => SortableField<any, any> | undefined;
   /** The field that the leading segments of a Projection Path name. */

@@ -390,7 +390,7 @@ describe("a Query Block that leaves the page", () => {
 
   it("in Reading view, saves a limit typed just before it left", async () => {
     const { host, held, leave } = await leaving({});
-    await act(() => held.view.editView({ limit: 3 }, { typed: true }));
+    await act(() => held.view.document.editView({ limit: 3 }, { typed: true }));
     await leave();
     expect(host.text(PATH)).toBe(BLOCK_NOTE.replace("limit: 100", "limit: 3"));
   });
@@ -398,7 +398,7 @@ describe("a Query Block that leaves the page", () => {
   it("in Live Preview, saves a limit typed just before it left into its note, not into the editor it left", async () => {
     const replaceCode = vi.fn();
     const { host, held, leave } = await leaving({ replaceCode });
-    await act(() => held.view.editView({ limit: 3 }, { typed: true }));
+    await act(() => held.view.document.editView({ limit: 3 }, { typed: true }));
     await leave();
     expect(replaceCode).not.toHaveBeenCalled();
     expect(host.text(PATH)).toBe(BLOCK_NOTE.replace("limit: 100", "limit: 3"));
@@ -406,7 +406,7 @@ describe("a Query Block that leaves the page", () => {
 
   it("saves nothing where the note's text at its line changed meanwhile", async () => {
     const { host, held, leave } = await leaving({});
-    await act(() => held.view.editView({ limit: 3 }, { typed: true }));
+    await act(() => held.view.document.editView({ limit: 3 }, { typed: true }));
     const moved = `Inserted above.\n${BLOCK_NOTE}`;
     host.vault.modifyFile(PATH, moved);
     await leave();

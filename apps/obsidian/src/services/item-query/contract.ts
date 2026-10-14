@@ -71,6 +71,11 @@ export const queryFlags = {
     description:
       "Comma list or JSON array of Projection Paths, such as title,date.year; [] returns only row identities",
   },
+  formulas: {
+    value: "<json>",
+    description:
+      'JSON object of Formulas: each name with a Filter Expression, such as {"year":"date.year"}; read one as formula.<name> in fields',
+  },
   sort: {
     value: "<list|json>",
     description:

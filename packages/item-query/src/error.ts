@@ -4,7 +4,7 @@ import type { QueryDataset } from "./dataset";
 import { diagnose } from "./diagnose";
 import type { Diagnostic } from "./diagnose";
 import type { ItemQueryFault, Span } from "./fault";
-import type { QueryContext } from "./request";
+import type { FormulaDiagnostics, QueryContext } from "./request";
 
 /** Stable codes of an invalid Item Query request. */
 export type ItemQueryErrorCode =
@@ -21,8 +21,14 @@ export type ItemQueryErrorCode =
   | "unknown-property"
   | "wrong-argument-count"
   | "wrong-argument-type"
+  | "wrong-operand-type"
   | "invalid-context"
-  | "unbound-context";
+  | "unbound-context"
+  | "invalid-formula-name"
+  | "invalid-formula-result"
+  | "unknown-formula"
+  | "formula-cycle"
+  | "reads-faulted-formula";
 
 /** The part of the request an {@link ItemQueryError} points at. */
 export interface ItemQueryErrorLocation {
@@ -33,7 +39,8 @@ export interface ItemQueryErrorLocation {
     | "sort"
     | "limit"
     | "group"
-    | "context";
+    | "context"
+    | "formulas";
   /** The position of the entry in a list argument. */
   readonly index?: number;
   readonly path?: string;
@@ -54,6 +61,11 @@ export class ItemQueryError extends Data.TaggedError("ItemQueryError")<{
   readonly location: ItemQueryErrorLocation;
   /** The Query Context of the request, for the corrections of the diagnostic. */
   readonly context?: QueryContext | undefined;
+  /**
+   * The Formulas that the request reads and that have a mistake, each with
+   * its Diagnostic, when the request leaves out such Formulas.
+   */
+  readonly formulaDiagnostics?: FormulaDiagnostics | undefined;
 }> {
   #diagnostic: Diagnostic<ItemQueryErrorCode> | undefined;
 

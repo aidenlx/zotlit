@@ -1,6 +1,8 @@
 import { compareStrings } from "./collation";
 import { compareDates, dateText, durationsEqual } from "./filter-dates";
 import type { DateComparison, DateValue, DurationValue } from "./filter-dates";
+import { errorValue, isError, renderEvaluationFault } from "./filter-error";
+import type { ErrorValue } from "./filter-error";
 import type { QueryClock } from "./query-clock";
 
 /**
@@ -16,7 +18,8 @@ export type FilterValue =
   | DateValue
   | DurationValue
   | RegexpValue
-  | RecordValue;
+  | RecordValue
+  | ErrorValue;
 
 export interface RecordValue {
   readonly type: "record";
@@ -43,7 +46,8 @@ export type FilterValueType =
   | "date"
   | "duration"
   | "regexp"
-  | "record";
+  | "record"
+  | "error";
 
 export function typeOf(value: FilterValue): FilterValueType {
   if (value === null) return "null";
@@ -73,11 +77,12 @@ export function isRegexp(value: FilterValue): value is RegexpValue {
 }
 
 /**
- * Whether a value selects the Item: null, `false`, zero, the empty string, the
- * empty list, and a zero duration are falsy. A date is truthy.
+ * Whether a value selects the Item: null, an Error Value, `false`, zero, the
+ * empty string, the empty list, and a zero duration are falsy. A date is
+ * truthy.
  */
 export function truthy(value: FilterValue): boolean {
-  if (value === null) return false;
+  if (value === null || isError(value)) return false;
   if (isList(value)) return value.length > 0;
   if (isDuration(value)) return !value.duration.blank;
   return Boolean(value);
@@ -89,13 +94,14 @@ export function truthy(value: FilterValue): boolean {
  * no Unicode normalization. Lists compare position by position. Two dates are
  * equal when they share a calendar day (see {@link compareDates}); two
  * durations when every unit holds the same count; two regexps when their
- * source and flags are equal.
+ * source and flags are equal. An Error Value equals no value, itself included.
  */
 export function equals(
   a: FilterValue,
   b: FilterValue,
   clock: QueryClock,
 ): boolean {
+  if (isError(a) || isError(b)) return false;
   if (isQueryRecord(a)) return isQueryRecord(b) && a.identity === b.identity;
   if (isList(a)) {
     return (
@@ -117,18 +123,25 @@ export function equals(
 }
 
 /**
- * The result of `<`, `<=`, `>`, and `>=`. Null when either value is null,
- * when the types differ, or when the type has no order. Strings use the Item
- * Query string order; dates compare as {@link compareDates} says.
+ * The result of `<`, `<=`, `>`, and `>=`. Null when either value is null; an
+ * Error Value when the types differ or the type has no order. Strings use the
+ * Item Query string order; dates compare as {@link compareDates} says.
  */
 export function compare(
   operator: Exclude<DateComparison, "==" | "!=">,
   [a, b]: readonly [FilterValue, FilterValue],
   clock: QueryClock,
-): boolean | null {
+): boolean | null | ErrorValue {
   if (isDate(a) && isDate(b)) return compareDates(operator, [a, b], clock);
+  if (a === null || b === null) return null;
   const ordered = order(a, b);
-  if (ordered === null) return null;
+  if (ordered === null) {
+    return errorValue({
+      code: "wrong-operand-type",
+      operator,
+      found: [typeOf(a), typeOf(b)],
+    });
+  }
   if (operator === "<") return ordered < 0;
   if (operator === "<=") return ordered <= 0;
   return operator === ">" ? ordered > 0 : ordered >= 0;
@@ -142,9 +155,15 @@ function order(a: FilterValue, b: FilterValue): number | null {
   return null;
 }
 
+/** The text of an Error Value whose message is `message`. */
+export function errorValueText(message: string): string {
+  return `Error: ${message}`;
+}
+
 /** The text of a value for `toString()` and for `+` with a string. */
 export function toText(value: FilterValue): string {
   if (value === null) return "null";
+  if (isError(value)) return errorValueText(renderEvaluationFault(value.fault));
   if (isList(value)) return value.map(toText).join(", ");
   if (isDate(value)) return dateText(value);
   if (isDuration(value)) return value.duration.toString();

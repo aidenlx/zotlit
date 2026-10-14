@@ -44,8 +44,16 @@ The complete ordered set of projected rows that a query returns from its Query D
 _Avoid_: Base Entries, view result
 
 **Query Row**:
-One record in a Query Result. It contains the record's Indexed Key, the Indexed Keys of its parents when the Query Dataset has them, and a flat map from each requested Projection Path to its value. An Annotation Row and an Attachment Row are Query Rows of their datasets.
+One record in a Query Result. It contains the record's Indexed Key, the Indexed Keys of its parents when the Query Dataset has them, and a flat map from each requested Projection Path or Formula to its value. An Annotation Row and an Attachment Row are Query Rows of their datasets.
 _Avoid_: Base Entry, database row, Item object
+
+**Formula**:
+A named Filter Expression that a query evaluates for each record of its Query Dataset and returns with the Query Row as the value `formula.<name>`. A Formula is planned against the Query Dataset of the query that names it, with the same Faults as a filter, and only when the query reads it in a projection or a filter. A Formula yields a scalar, a list of scalars, a date, or an Error Value; a Formula can read another Formula, and a cycle between Formulas is a Fault. Its name is an identifier; `formula` is a reserved first segment of every Query Dataset, so a custom field of that name is read as `custom["formula"]`.
+_Avoid_: computed field, derived column, calculated property
+
+**Error Value**:
+The value of a Filter Expression that cannot be computed on one record: a wrong type met at run time, a number that is not finite, a text that is not a date, a number, or a duration, or an argument outside its range. It names the operation and what was found. An Error Value is false where a truth is read, equals no value, and passes through every other operator, method, and function unchanged. Missing data is null, not an Error Value.
+_Avoid_: NaN, null (for a failure), exception, runtime error
 
 **Projection Path**:
 A documented template-style accessor that selects data from a Query Row, such as `date.year`, `creators[0].fullName`, or `custom["review.status"]`. Selecting a parent path returns its complete structured value; array access does not vectorize implicitly.

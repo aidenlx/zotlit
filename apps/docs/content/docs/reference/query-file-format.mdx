@@ -4,6 +4,8 @@ description: "Every key of a .zotquery query file and a zotquery query block, wi
 ---
 
 import { Card, Cards } from "fumadocs-ui/components/card";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
 
 This reference lists the keys of a query file (`.zotquery`) and a query block (` ```zotquery `). Both hold the same YAML text, in the shape of an Obsidian `.base` file.
 
@@ -37,10 +39,12 @@ views:
 
 ## Top-level keys [#top-level]
 
-| Key       | Value                                                                                                                   |
-| --------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `filters` | The filters for all views. They apply to each view that has the same `from` as the first view. See [Filters](#filters). |
-| `views`   | A list of views. Required. The first view is the default view, which an embed without `#View name` shows.               |
+| Key          | Value                                                                                                                   |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `filters`    | The filters for all views. They apply to each view that has the same `from` as the first view. See [Filters](#filters). |
+| `formulas`   | The formulas of the file, by name. See [Formulas](#formulas).                                                           |
+| `properties` | The display name of each property, by property path. See [Display names](#properties).                                  |
+| `views`      | A list of views. Required. The first view is the default view, which an embed without `#View name` shows.               |
 
 ZotLit keeps every other key in the file when it saves.
 
@@ -59,6 +63,8 @@ ZotLit keeps every other key in the file when it saves.
 | `order`      | A list of property paths that each row shows, in order. Copy and CSV export use them as columns. Without `order`, the layout shows the default properties of the records. |
 
 `property` values are property paths of the view's records, as [ZotLit Query](/docs/reference/commands#query-cli) names them. For example, `title` is the paper title in an items view, and `item.title` is the paper title in an annotations view.
+
+`order` also takes `formula.<name>` for a [formula](#formulas). `sort` and `groupBy` do not take a formula yet: a view that sorts or groups by one shows an error in place of its rows.
 
 ### Layouts and records [#layouts]
 
@@ -108,6 +114,50 @@ A filter can name the Query Context as `this.item` and `this.attachment`:
 | `items`       | `indexedKey == this.item.indexedKey`       |                                            |
 
 In an embed or a query block, `this.item` is the item that the note's `zotero-key` property names. In a query file's own tab, `this` has no value. See [`this`: the paper of the note](/docs/concepts/query-files-and-query-blocks#this).
+
+## Formulas [#formulas]
+
+`formulas` maps each formula name to a [Filter Expression](/docs/concepts/how-zotlit-query-works#steps). A view shows the result as the property `formula.<name>`:
+
+```yaml
+formulas:
+  year: date.year
+  authors: creators.length
+views:
+  - type: table
+    name: Reading list
+    from: items
+    filters: formula.year >= 2020
+    order:
+      - title
+      - formula.year
+      - formula.authors
+```
+
+| Rule       | Value                                                                                                                                 |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Name       | Letters, digits, and `_`, starting with a letter or `_`. Letter case counts.                                                          |
+| Expression | The same language as a filter. It reads the properties of the view's records, `this.item`, `this.attachment`, and the other formulas. |
+| Result     | `true` or `false`, a number, a text, a date, or a list.                                                                               |
+| Used in    | `order` and `filters` of any view, and other formulas.                                                                                |
+
+A view computes only the formulas that its `order` and `filters` use. A formula that uses itself through other formulas is a mistake.
+
+A formula that cannot run on the records of a view marks its property in that view only. For example, a formula `colour` with the expression `colorName` runs in an annotations view. An items view of the same file that shows `formula.colour` marks it, and its other properties stay on screen. A record on which a formula cannot compute its result shows an [Error Value](/docs/concepts/how-zotlit-query-works#error-values) in that cell.
+
+## Display names [#properties]
+
+`properties` gives a property its display name. Each key is the same text as an `order` entry: a property path, or `formula.<name>` for a formula.
+
+```yaml
+properties:
+  title:
+    displayName: Work
+  formula.year:
+    displayName: Year of source
+```
+
+The display name shows in every view of the file: the Table header, the Cards labels, the <UiLabel name={m.query_view_properties()} /> menu, and the header row of copy and CSV export. ZotLit keeps the other keys under each property. A key with the Obsidian Bases prefix `note.`, such as `note.date`, names no property.
 
 ## A new query file [#new-file]
 

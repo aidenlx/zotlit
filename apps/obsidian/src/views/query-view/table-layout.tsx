@@ -15,7 +15,7 @@ import { useStore } from "zustand";
 
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
-import { cn } from "@/lib/utils";
+import { cn, tooltipAttrs } from "@/lib/utils";
 import type {
   QueryViewRequest,
   QueryViewRow,
@@ -25,10 +25,12 @@ import type { QueryService } from "@/services/item-query/service";
 import { useAnnotStore } from "@/views/annot-view/store";
 
 import type { QueryLayout } from "./layouts";
+import { CellContent } from "./record-rows";
 import type { LiteratureNotes } from "./table-notes";
-import { cellText, columnLabel } from "./value-text";
+import { cellText } from "./value-text";
 import type { QueryView } from "./view";
-import { visibleProperties } from "./visible-properties";
+import { useViewProperties } from "./view-properties";
+import type { PropertyEntry } from "./view-properties";
 
 export const TABLE_LAYOUT: QueryLayout = {
   type: "table",
@@ -421,26 +423,24 @@ function ChildRow({
 
 /** The view's rows as a table of Items. */
 export function TableLayout({ view }: { view: QueryView }) {
-  const shown = useStore(view.state, (s) => s.view);
   const rows = useStore(view.state, (s) => s.records);
   const search = useAnnotStore((s) => s.filterQuery)
     .trim()
     .toLowerCase();
   const { query, literatureNotes } = view.tableDeps;
   const { children: expanded, toggle } = useChildren(query);
+  const properties = useViewProperties(view);
   const columns = useMemo(
-    () => (shown ? visibleProperties(shown, { fallback: true }) : []),
-    [shown],
+    () => properties?.visibleProperties ?? [],
+    [properties],
   );
   const visible = useMemo(
     () =>
       search === ""
         ? rows
         : rows.filter(({ row }) =>
-            columns.some((property) =>
-              cellText(property, row.values[property])
-                .toLowerCase()
-                .includes(search),
+            columns.some(({ path }) =>
+              cellText(path, row.values[path]).toLowerCase().includes(search),
             ),
           ),
     [rows, columns, search],
@@ -456,13 +456,24 @@ export function TableLayout({ view }: { view: QueryView }) {
         <thead>
           <tr className="zt:border-b zt:border-(--background-modifier-border) zt:text-left">
             <th className="zt:w-6" />
-            {columns.map((property) => (
+            {columns.map(({ path, label, issue }) => (
               <th
-                key={property}
+                key={path}
                 className="zt:px-2 zt:py-1 zt:font-medium"
-                data-query-column={property}
+                data-query-column={path}
+                data-query-formula-issue={issue ?? undefined}
               >
-                {columnLabel(property)}
+                {issue === null ? (
+                  label
+                ) : (
+                  <span
+                    className="zt:inline-flex zt:items-center zt:gap-1 zt:text-(--text-error)"
+                    {...tooltipAttrs(issue)}
+                  >
+                    <Icon name="alert-triangle" size={14} />
+                    {label}
+                  </span>
+                )}
               </th>
             ))}
             <th className="zt:px-2 zt:py-1 zt:font-medium">
@@ -517,7 +528,7 @@ function ItemRow({
 }: {
   heading: ReactNode;
   record: TableRecord;
-  columns: readonly string[];
+  columns: readonly PropertyEntry[];
   notes: LiteratureNotes;
   expanded: ReadonlyMap<string, ChildState>;
   toggle: (record: TableRecord) => void;
@@ -539,9 +550,12 @@ function ItemRow({
             onToggle={() => toggle(record)}
           />
         </td>
-        {columns.map((property) => (
-          <td key={property} className="zt:px-2 zt:py-1">
-            {cellText(property, record.values[property])}
+        {columns.map(({ path }) => (
+          <td key={path} className="zt:px-2 zt:py-1">
+            <CellContent
+              value={record.values[path]}
+              text={cellText(path, record.values[path])}
+            />
           </td>
         ))}
         <td className="zt:px-2 zt:py-1">

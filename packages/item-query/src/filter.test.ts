@@ -133,6 +133,13 @@ const valueOf = (
   clock: QueryClock = CLOCK,
 ): FilterValue => evaluate(plan(expression).root, of, clock);
 
+/** The Error Value of an evaluation that fails with `code`. */
+const error = (code: string) =>
+  expect.objectContaining({
+    type: "error",
+    fault: expect.objectContaining({ code }),
+  });
+
 /** Run each `[expression, value]` vector against the article. */
 function vectors(
   cases: readonly (readonly [string, FilterValue])[],
@@ -241,11 +248,11 @@ describe("ordered comparison", () => {
     ['"eclair" < "Éclair"', true],
     ['"Éclair" < "Zebra"', true],
     ['"a" >= "a"', true],
-    // Different types have no order.
-    ['1 < "2"', null],
-    ["volume > 3", null],
-    ["true > false", null],
-    ["[1] < [2]", null],
+    // Different types have no order: an Error Value.
+    ['1 < "2"', error("wrong-operand-type")],
+    ["volume > 3", error("wrong-operand-type")],
+    ["true > false", error("wrong-operand-type")],
+    ["[1] < [2]", error("wrong-operand-type")],
     // Null on either side.
     ["null < 1", null],
     ['publisher >= "a"', null],
@@ -305,24 +312,103 @@ describe("arithmetic", () => {
     ['"a" + null', "a"],
     ['title + " (" + volume + ")"', "Ecology of Éclairs (12)"],
     ["[1] + [2, 3]", [1, 2, 3]],
-    // Null and a value of another type give null.
+    // Null is missing data: arithmetic with null gives null.
     ["1 + null", null],
     ["null - 1", null],
     ["null * null", null],
-    ["true + 1", null],
-    ["[1] + 1", null],
-    ['"a" - 1', null],
-    ['"a" * "b"', null],
-    ["volume * 2", null],
     ["publisher + 1", null],
     ["-null", null],
-    ['-"a"', null],
-    ["-title", null],
-    // A result outside the finite numbers is null.
-    ["1 / 0", null],
-    ["0 / 0", null],
-    ["1 % 0", null],
+    // A type that depends on the Item and that the operator does not take
+    // gives an Error Value.
+    ["[true][0] + 1", error("wrong-operand-type")],
+    ['[1][0] - "a"', error("wrong-operand-type")],
+    ['-["a"][0]', error("wrong-operand-type")],
+    // A result outside the finite numbers is an Error Value.
+    ["1 / 0", error("not-finite")],
+    ["0 / 0", error("not-finite")],
+    ["1 % 0", error("not-finite")],
   ]);
+});
+
+describe("Error Values", () => {
+  vectors([
+    ['number("abc")', error("unparseable-text")],
+    // isType(), isTruthy(), and toString() answer on an Error Value.
+    ['number("abc").isType("error")', true],
+    ['number("abc").isType("number")', false],
+    ['number("abc").isType("any")', true],
+    ['number("abc").isTruthy()', false],
+    [
+      'number("abc").toString()',
+      'Error: number() cannot read "abc" as a number.',
+    ],
+    [
+      "title.isType(title).toString()",
+      'Error: Argument 1 of isType is "Ecology of Éclairs", outside the values that isType takes.',
+    ],
+    ['(1).isType("error")', false],
+    ['publisher.isType("error")', false],
+    // False where a truth is read.
+    ['number("abc") && true', false],
+    ['number("abc") || false', false],
+    ['true && number("abc")', false],
+    ['!number("abc")', true],
+    ['if(number("abc"), "yes", "no")', "no"],
+    ['["1", "x", "2"].filter(number(value) > 0)', ["1", "2"]],
+    // Equal to no value, itself included.
+    ['number("abc") == number("abc")', false],
+    ['number("abc") != number("abc")', true],
+    ['number("abc") == null', false],
+    ['number("abc") != null', true],
+    ['[number("abc")].map(value == value)', [false]],
+    ['[number("abc"), number("abc")].unique().length', 2],
+    // Passes through every other operator, method, function, and property.
+    ['number("abc") + 1', error("unparseable-text")],
+    ['1 - number("abc")', error("unparseable-text")],
+    ['"a" + number("abc")', error("unparseable-text")],
+    ['number("abc") + "a"', error("unparseable-text")],
+    ['-number("abc")', error("unparseable-text")],
+    ['number("abc") < 1', error("unparseable-text")],
+    ['date("x") >= today()', error("unparseable-text")],
+    ['number("abc").round()', error("unparseable-text")],
+    ['date("x").year', error("unparseable-text")],
+    ['date("x").format("YYYY")', error("unparseable-text")],
+    ['title.contains(if(true, date("x"), "a"))', error("unparseable-text")],
+    ['title.slice(number("abc"))', error("unparseable-text")],
+    ['tags[number("abc")]', error("unparseable-text")],
+    ['number("abc").isEmpty()', error("unparseable-text")],
+    ['if(true, number("abc"), 1)', error("unparseable-text")],
+    ['min(1, number("abc"))', error("unparseable-text")],
+    ['max(number("abc"), 2)', error("unparseable-text")],
+    ['list(number("abc"))', error("unparseable-text")],
+    ['number(number("abc"))', error("unparseable-text")],
+    ['["1", "x"].map(number(value))', [1, error("unparseable-text")]],
+    ['["1", "x"].reduce(acc + number(value), 0)', error("unparseable-text")],
+    // An Error Value among the arguments of an element method is its result,
+    // whether the expression reads the argument or not.
+    ['[1].reduce(value, number("bad"))', error("unparseable-text")],
+    ['[].reduce(acc, number("bad"))', error("unparseable-text")],
+    ['if(true, date("x"), tags).filter(value)', error("unparseable-text")],
+    ['[number("abc")].length', 1],
+    ['[number("abc")].isTruthy()', true],
+    // Missing data stays null: a method or argument on null, null
+    // arithmetic, a date part the precision lacks, an index past the end.
+    ["publisher.lower()", null],
+    ["title.contains(publisher)", null],
+    ["tags[9] * 2", null],
+    ['date("2020").month', null],
+    ["tags[9]", null],
+    // Error Values sort after every other value and before null.
+    ['[null, number("abc"), 1].sort()', [1, error("unparseable-text"), null]],
+  ]);
+
+  it("excludes the Item when the filter gives an Error Value", () => {
+    expect(matches(plan('number("abc")').root, ARTICLE, CLOCK)).toBe(false);
+    expect(matches(plan('date > "2019"').root, ARTICLE, CLOCK)).toBe(false);
+    expect(matches(plan("number(pages) != null").root, ARTICLE, CLOCK)).toBe(
+      true,
+    );
+  });
 });
 
 describe("if", () => {
@@ -348,25 +434,32 @@ describe("global functions", () => {
     ["number(volume) > 3", true],
     ["number(true)", 1],
     ["number(false)", 0],
-    // An unparseable value is null for the Item.
-    ['number("abc")', null],
-    ["number(pages)", null],
-    ["number(pages) > 3", null],
+    // A text that is not a number, or a value of another type, is an Error
+    // Value; null stays null.
+    ['number("abc")', error("unparseable-text")],
+    ["number(pages)", error("unparseable-text")],
+    ["number(pages) > 3", error("unparseable-text")],
     ["number(null)", null],
     ["number(publisher)", null],
-    ["number([1])", null],
+    ["number([1])", error("wrong-argument-type")],
+    // Empty text is missing data, as null is.
     ['number("")', null],
+    ['number("  ")', null],
+    ['date("")', null],
+    ['date(" ")', null],
+    ['duration("")', null],
+    ['duration("  ")', null],
     ["min(3, 1, 2)", 1],
     ["max(3, 1, 2)", 3],
     ["min(5)", 5],
     ["max(number(volume), 20)", 20],
     // min and max take the numbers among their arguments.
     ["min(1, null)", 1],
-    ["max(number(pages), 1)", 1],
+    ["max(number(pages), 1)", error("unparseable-text")],
     ["min(null, 4, 2)", 2],
     ["min()", null],
     ["max(null)", null],
-    ["max(number(pages))", null],
+    ["max(number(pages))", error("unparseable-text")],
     // A date as its Unix time in milliseconds.
     ['number(date("2020-01-15T10:30:00Z"))', 1_579_084_200_000],
     ['number(date("2020-01-15"))', 1_579_046_400_000],
@@ -412,7 +505,7 @@ describe("methods of every value", () => {
     ['publisher.isType("any")', true],
     ["title.isType(publisher)", null],
     // A type name that comes from the Item's data and names no type.
-    ["title.isType(title)", null],
+    ["title.isType(title)", error("argument-out-of-range")],
     // isTruthy() is the truthiness of a filter: null, false, zero, the empty
     // text, the empty list, and a zero duration are false.
     ["title.isTruthy()", true],
@@ -513,17 +606,17 @@ describe("text helpers", () => {
     ['"-".repeat(3)', "---"],
     ['"ab".repeat(0)', ""],
     ['"ab".repeat(1)', "ab"],
-    // A count that is negative, not an integer, or above 10 000 gives null;
-    // so does a result above 1 000 000 code units.
-    ['"ab".repeat(-1)', null],
-    ['"ab".repeat(1.5)', null],
+    // A count that is negative, not an integer, or above 10 000 is out of
+    // range; so is a count that gives a result above 1 000 000 code units.
+    ['"ab".repeat(-1)', error("argument-out-of-range")],
+    ['"ab".repeat(1.5)', error("argument-out-of-range")],
     ['"ab".repeat(10000).length', 20_000],
-    ['"ab".repeat(10001)', null],
+    ['"ab".repeat(10001)', error("argument-out-of-range")],
     ['"a".repeat(10000).repeat(100).length', 1_000_000],
-    ['"a".repeat(10000).repeat(101)', null],
+    ['"a".repeat(10000).repeat(101)', error("argument-out-of-range")],
     ['"ab".repeat(null)', null],
     // A count that comes from the Item and is not a number.
-    ['"ab".repeat(tags[0])', null],
+    ['"ab".repeat(tags[0])', error("wrong-argument-type")],
     ["publisher.repeat(2)", null],
     // reverse() works by code point, so an emoji survives.
     ['"abc".reverse()', "cba"],
@@ -541,7 +634,7 @@ describe("text helpers", () => {
     ['"a🧪b".slice(1, 3)', "🧪"],
     ["title.slice(null)", null],
     ["title.slice(0, null)", null],
-    ["title.slice(tags[0])", null],
+    ["title.slice(tags[0])", error("wrong-argument-type")],
     ["publisher.slice(0, 1)", null],
     // replace() with a text pattern replaces every occurrence, with the
     // replacement as literal text.
@@ -554,7 +647,7 @@ describe("text helpers", () => {
     ['title.replace("of", "and")', "Ecology and Éclairs"],
     ['title.replace(null, "a")', null],
     ['title.replace("a", null)', null],
-    ['title.replace([1][0], "a")', null],
+    ['title.replace([1][0], "a")', error("wrong-argument-type")],
     ['publisher.replace("a", "b")', null],
     // split() gives the parts as a list of texts; n keeps the first n parts.
     ['"a:b:c".split(":")', ["a", "b", "c"]],
@@ -567,11 +660,11 @@ describe("text helpers", () => {
     ['"abc".split("")', ["a", "b", "c"]],
     ['"".split(":")', [""]],
     ['"a::b".split("::")', ["a", "b"]],
-    ['"a:b:c".split(":", -1)', null],
-    ['"a:b:c".split(":", 1.5)', null],
+    ['"a:b:c".split(":", -1)', error("argument-out-of-range")],
+    ['"a:b:c".split(":", 1.5)', error("argument-out-of-range")],
     ['"a:b".split(":", null)', null],
     ['"a:b".split(null)', null],
-    ['"a:b".split([1][0])', null],
+    ['"a:b".split([1][0])', error("wrong-argument-type")],
     ['title.split(" ").length', 3],
     ['title.split(" ")[1] == "of"', true],
     ['publisher.split(":")', null],
@@ -600,10 +693,10 @@ describe("regular expressions", () => {
     ['["a", "a"].map(/a/g.matches(value))', [true, true]],
     ['["a", "a"].map(/a/y.matches(value))', [true, true]],
     ['["a", "a"].map(value.replace(/a/y, "b"))', ["b", "b"]],
-    // A null or wrongly typed argument gives null.
+    // A null argument gives null; a wrongly typed argument an Error Value.
     ["/a/.matches(publisher)", null],
     ["/a/.matches(null)", null],
-    ["/a/.matches([1][0])", null],
+    ["/a/.matches([1][0])", error("wrong-argument-type")],
     // An argument whose type depends on the Item.
     ["/e/.matches(tags[0])", true],
     // replace() with a regexp follows JavaScript: g decides whether the
@@ -627,7 +720,7 @@ describe("regular expressions", () => {
     // A group that does not take part in the match is null.
     ['"a-b".split(/(-)|(,)/)', ["a", "-", null, "b"]],
     ['"a-b".split(/(-)|(,)/).join("|")', "a|-||b"],
-    ["title.split(/ /, -1)", null],
+    ["title.split(/ /, -1)", error("argument-out-of-range")],
     ["publisher.split(/ /)", null],
     // Equality by source and flags; toString() gives /source/flags.
     ["/a/ == /a/", true],
@@ -645,8 +738,8 @@ describe("regular expressions", () => {
     // A regexp is truthy, has no order, and names its type.
     ["/a/.isTruthy()", true],
     ["!/a/", false],
-    ["/a/ < /b/", null],
-    ["/a/ >= /a/", null],
+    ["/a/ < /b/", error("wrong-operand-type")],
+    ["/a/ >= /a/", error("wrong-operand-type")],
     ['/a/.isType("regexp")', true],
     ['/a/.isType("string")', false],
     ['/a/.isType("any")', true],
@@ -678,24 +771,27 @@ describe("number methods", () => {
     ["(-3).abs()", 3],
     ["(0).isEmpty()", false],
     ["number(volume).round()", 12],
-    // The value is a string on this Item, so a number method is null.
-    ["number(pages).round()", null],
+    // The text of this Item is not a number: the Error Value passes through.
+    ["number(pages).round()", error("unparseable-text")],
     ["(2.5).round(null)", null],
+    // A digit count whose power of ten is zero or not finite is out of range.
+    ["(1).round(400)", error("argument-out-of-range")],
+    ["(1).round(-400)", error("argument-out-of-range")],
     // toFixed gives a text with that many decimals; a precision outside 0 to
-    // 100 gives null.
+    // 100 is out of range.
     ["(1.005).toFixed(2)", "1.00"],
     ["(2).toFixed(1)", "2.0"],
     ["(2.567).toFixed(0)", "3"],
     ["(-1.5).toFixed(1)", "-1.5"],
     ["(1).toFixed(100).length", 102],
-    ["(1).toFixed(101)", null],
-    ["(1).toFixed(-1)", null],
+    ["(1).toFixed(101)", error("argument-out-of-range")],
+    ["(1).toFixed(-1)", error("argument-out-of-range")],
     ["(2.567).toFixed(1.5)", "2.6"],
     ["(1).toFixed(null)", null],
-    ['(1).toFixed(["a"][0])', null],
+    ['(1).toFixed(["a"][0])', error("wrong-argument-type")],
     ["number(volume).toFixed(1)", "12.0"],
     ['number(volume).toFixed(1) == "12.0"', true],
-    ["number(pages).toFixed(1)", null],
+    ["number(pages).toFixed(1)", error("unparseable-text")],
   ]);
 });
 
@@ -722,13 +818,14 @@ describe("list methods", () => {
     ["tags[-1]", "To-Read"],
     ["tags[3]", null],
     ["tags[-4]", null],
-    ["tags[0.5]", null],
-    ['tags["0"]', null],
+    ["tags[0.5]", error("invalid-index")],
+    ['tags["0"]', error("invalid-index")],
     ["tags[null]", null],
     ['tags[0].startsWith("meth")', true],
-    // The type of an element depends on the Item: another type gives null.
-    ["[1][0].lower()", null],
-    ['[1][0].contains("a")', null],
+    // The type of an element depends on the Item: another type gives an
+    // Error Value.
+    ["[1][0].lower()", error("wrong-subject-type")],
+    ['[1][0].contains("a")', error("wrong-subject-type")],
   ]);
 });
 
@@ -876,13 +973,13 @@ describe("element expressions", () => {
     ["[].filter(value)", []],
     ["[].map(value)", []],
     ["[].reduce(acc + value, 0)", 0],
-    // A null or non-list subject gives null.
+    // A null subject gives null; a subject that is not a list an Error Value.
     ["tags[9].filter(value)", null],
     ["if(false, tags).map(value)", null],
     ["tags[9].reduce(acc, 0)", null],
-    ["tags[0].filter(value)", null],
-    ["tags[0].map(value)", null],
-    ["tags[0].reduce(acc, 0)", null],
+    ["tags[0].filter(value)", error("wrong-subject-type")],
+    ["tags[0].map(value)", error("wrong-subject-type")],
+    ["tags[0].reduce(acc, 0)", error("wrong-subject-type")],
     // A nested element expression binds the innermost names; the outer
     // names stay bound.
     ["[[1, 2], [3]].map(value.map(value * 10))", [[10, 20], [30]]],
@@ -1077,11 +1174,11 @@ describe("date()", () => {
     ['date("20200115") == date("2020-01-15")', true],
     ['date("202001151030").hour', 10],
     ['date("2024-02-29").day', 29],
-    // Unparseable text and impossible dates are null.
-    ['date("banana")', null],
-    ['date("2020-13-01")', null],
-    ['date("2021-02-29")', null],
-    ['date("2020-01-15 25:00")', null],
+    // Unparseable text and impossible dates are Error Values.
+    ['date("banana")', error("unparseable-text")],
+    ['date("2020-13-01")', error("unparseable-text")],
+    ['date("2021-02-29")', error("unparseable-text")],
+    ['date("2020-01-15 25:00")', error("unparseable-text")],
     ["date(publisher)", null],
     ["date(null)", null],
   ]);
@@ -1098,7 +1195,7 @@ describe("duration()", () => {
     // `M` is months, `m` minutes.
     ['duration("1M") == duration("1 month")', true],
     ['duration("1M") == duration("1m")', false],
-    ['duration("nonsense")', null],
+    ['duration("nonsense")', error("unparseable-text")],
     ["duration(publisher)", null],
     // A zero duration is falsy.
     ['duration("1 day") && true', true],
@@ -1151,9 +1248,9 @@ describe("date comparison", () => {
     ['date("2020-01-15T23:30:00-05:00") == date("2020-01-16")', true],
     // No coercion between types.
     ['date("2020") == "2020"', false],
-    ['date("2020") > "2019"', null],
-    ['date("2020") > 5', null],
-    ['duration("1d") > duration("2d")', null],
+    ['date("2020") > "2019"', error("wrong-operand-type")],
+    ['date("2020") > 5', error("wrong-operand-type")],
+    ['duration("1d") > duration("2d")', error("wrong-operand-type")],
     ['duration("1d") == "P1D"', false],
     ["publisher < today()", null],
     ['[date("2020")].contains(date("2020-06-15"))', true],
@@ -1186,12 +1283,11 @@ describe("date arithmetic", () => {
     ],
     ['(now() - duration("1d")).toString()', "2024-07-14T12:00:00Z"],
     ['now() - duration("7 days") < now()', true],
-    // Other combinations give null.
-    ['date("2020-01-15") - date("2020-01-14")', null],
-    ["now() + 1", null],
-    ['duration("1d") + duration("1d")', null],
-    ['duration("1d") - now()', null],
+    // A missing date gives null.
     ['publisher + duration("1d")', null],
+    // A result outside the range of dates is an Error Value.
+    ['date("2020") + duration("P300000Y")', error("date-out-of-range")],
+    ['[now()][0] - duration("P300000Y")', error("date-out-of-range")],
   ]);
 });
 
@@ -1431,6 +1527,58 @@ describe("validation", () => {
       expect(problem(expression)).toMatchObject(expected);
     },
   );
+
+  it.each([
+    ["true + 1", "+", ["boolean", "number"]],
+    ["[1] + 1", "+", ["list", "number"]],
+    ['"a" - 1', "-", ["string", "number"]],
+    ['"a" * "b"', "*", ["string", "string"]],
+    ["volume * 2", "*", ["string", "number"]],
+    ["title * 2", "*", ["string", "number"]],
+    ["tags / 2", "/", ["list", "number"]],
+    ["1 % true", "%", ["number", "boolean"]],
+    ['date("2020-01-15") - date("2020-01-14")', "-", ["date", "date"]],
+    ["now() + 1", "+", ["date", "number"]],
+    ['duration("1d") + duration("1d")', "+", ["duration", "duration"]],
+    ['duration("1d") - now()', "-", ["duration", "date"]],
+    ['-"a"', "-", ["string"]],
+    ["-title", "-", ["string"]],
+    ["-today()", "-", ["date"]],
+  ] as const)(
+    "states the operand-type fault for %s",
+    (expression, operator, types) => {
+      expect(problem(expression)).toMatchObject({
+        kind: "operand-type",
+        operator,
+        operands: types.map((type) => ({ type })),
+        at: { from: 0, to: expression.length },
+      });
+      expect(codeOfFault(problem(expression), ITEMS)).toBe(
+        "wrong-operand-type",
+      );
+    },
+  );
+
+  it.each([
+    // Null, a type that depends on the Item, and the operand types each
+    // operator takes plan without a fault.
+    "null + 1",
+    "-null",
+    "tags[0] * 2",
+    "-tags[0]",
+    "title + 1",
+    'publisher + duration("1d")',
+    "[1] + [2]",
+    'today() - duration("1d")',
+  ])("plans the arithmetic %s", (expression) => {
+    expect(plan(expression).root).toBeDefined();
+  });
+
+  it("plans a cross-type ordering with a warning", () => {
+    expect(plan('date > "2019"').warnings).toMatchObject([
+      { kind: "constant", operator: ">" },
+    ]);
+  });
 
   it("states that the custom field collection is unreadable", () => {
     expect(problem("custom")).toEqual({
@@ -1861,15 +2009,17 @@ describe("hydration needs", () => {
 });
 
 // Failure modes: nullable cross-type values can both be null; an unknown
-// value can match; ordering stays null; a warning never changes evaluation.
+// value can match; ordering gives an Error Value; a warning never changes
+// evaluation.
 it.each([
   ['tags == "bulk"', false, false],
   ['tags != "bulk"', true, true],
   ['date.year == "2019"', false, false],
-  ['dateAdded > "2020-01-01"', null, false],
-  ['number("bad") == date("bad")', true, undefined],
-  ['number("bad") != date("bad")', false, undefined],
-  ['number("bad") > date("bad")', null, false],
+  ['dateAdded > "2020-01-01"', error("wrong-operand-type"), false],
+  // An Error Value equals no value, itself included.
+  ['number("bad") == date("bad")', false, undefined],
+  ['number("bad") != date("bad")', true, undefined],
+  ['number("bad") > date("bad")', error("unparseable-text"), false],
   ['tags[0] == "bulk"', false, undefined],
   ["date.year == null", true, undefined],
   ['"a" == "b"', false, undefined],
@@ -1892,9 +2042,9 @@ it.each([
   },
 );
 
-it("keeps the null value of a warned ordering inside a larger expression", () => {
+it("keeps the Error Value of a warned ordering inside a larger expression", () => {
   const planned = plan('(number("bad") > date("bad")) == null');
-  expect(evaluate(planned.root, ARTICLE, CLOCK)).toBe(true);
+  expect(evaluate(planned.root, ARTICLE, CLOCK)).toBe(false);
   expect(planned.warnings).toHaveLength(1);
 });
 

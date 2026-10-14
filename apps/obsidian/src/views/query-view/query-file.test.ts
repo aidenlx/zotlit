@@ -4,9 +4,13 @@ import {
   editView,
   NEW_QUERY_FILE_LIMIT,
   allViewsDataset,
+  displayName,
   locateFilterFault,
   newQueryFileText,
+  removeFormula,
+  withDisplayName,
   withFilters,
+  withFormula,
   parseQueryFile,
   serializeQueryFile,
   viewFilter,
@@ -436,5 +440,270 @@ describe("editView", () => {
       property: "colorName",
       direction: "DESC",
     });
+  });
+});
+
+describe("formulas", () => {
+  const FORMULAS = `formulas:
+  year: date.year
+  short: title.slice(0, 10)
+views:
+  - type: table
+    name: Items
+    from: items
+    order:
+      - title
+      - formula.year
+      - formula.short
+  - type: list
+    name: Years
+    from: items
+    order:
+      - formula.year
+custom: kept
+`;
+
+  it("reads each Formula name with its expression text", () => {
+    const file = parseQueryFile(FORMULAS);
+    expect(file.problems).toEqual([]);
+    expect(file.formulas).toEqual({
+      year: "date.year",
+      short: "title.slice(0, 10)",
+    });
+    expect(file.views[0]!.order).toEqual([
+      "title",
+      "formula.year",
+      "formula.short",
+    ]);
+  });
+
+  it("names a formulas key that is not a map of texts as a problem", () => {
+    const file = parseQueryFile(`formulas:
+  year: 2020
+views:
+  - type: list
+    name: Items
+    from: items
+`);
+    expect(file.formulas).toBeUndefined();
+    expect(file.problems).toEqual([
+      { code: "invalid-value", key: "formulas", value: { year: 2020 } },
+    ]);
+  });
+
+  it("writes an edited Formula in place, and keeps the other keys", () => {
+    const file = withFormula(parseQueryFile(FORMULAS), "year", "date.year + 1");
+    expect(serializeQueryFile(file)).toBe(
+      FORMULAS.replace("year: date.year", "year: date.year + 1"),
+    );
+  });
+
+  it("adds a new Formula after the others, and a formulas key before the views of a file that had none", () => {
+    expect(
+      serializeQueryFile(
+        withFormula(parseQueryFile(FORMULAS), "authors", "creators.length"),
+      ),
+    ).toBe(
+      FORMULAS.replace(
+        "  short: title.slice(0, 10)\n",
+        "  short: title.slice(0, 10)\n  authors: creators.length\n",
+      ),
+    );
+    expect(
+      serializeQueryFile(
+        withFormula(
+          parseQueryFile(
+            "views:\n  - type: list\n    name: Items\n    from: items\n",
+          ),
+          "year",
+          "date.year",
+        ),
+      ),
+    ).toBe(
+      "formulas:\n  year: date.year\nviews:\n  - type: list\n    name: Items\n    from: items\n",
+    );
+  });
+
+  it("removes a Formula from formulas and from the order of every view", () => {
+    const file = removeFormula(parseQueryFile(FORMULAS), "year");
+    expect(file.formulas).toEqual({ short: "title.slice(0, 10)" });
+    expect(serializeQueryFile(file)).toBe(`formulas:
+  short: title.slice(0, 10)
+views:
+  - type: table
+    name: Items
+    from: items
+    order:
+      - title
+      - formula.short
+  - type: list
+    name: Years
+    from: items
+    order: []
+custom: kept
+`);
+  });
+
+  it("drops the formulas key when the last Formula goes", () => {
+    const file = removeFormula(
+      removeFormula(parseQueryFile(FORMULAS), "year"),
+      "short",
+    );
+    expect(file.formulas).toBeUndefined();
+    const text = serializeQueryFile(file);
+    expect(text).not.toContain("formulas");
+    expect(parseQueryFile(text).views[0]!.order).toEqual(["title"]);
+  });
+});
+
+describe("display names", () => {
+  const NAMED = `formulas:
+  year: date.year
+properties:
+  title:
+    displayName: Work
+    width: 200
+  formula.year:
+    displayName: Year of source
+  note.date:
+    displayName: Note date
+views:
+  - type: table
+    name: Items
+    from: items
+    order:
+      - title
+      - formula.year
+custom: kept
+`;
+
+  it("reads the Display Name of each property by its order entry, and a note. prefix names nothing", () => {
+    const file = parseQueryFile(NAMED);
+    expect(file.problems).toEqual([]);
+    expect(displayName(file, "title")).toBe("Work");
+    expect(displayName(file, "formula.year")).toBe("Year of source");
+    // A Bases-style note. prefix is not a Projection Path: it names no field.
+    expect(displayName(file, "date")).toBeUndefined();
+    expect(displayName(file, "item.title")).toBeUndefined();
+  });
+
+  it("names a properties key that is not a map as a problem", () => {
+    const file = parseQueryFile(`properties: [title]
+views:
+  - type: list
+    name: Items
+    from: items
+`);
+    expect(displayName(file, "title")).toBeUndefined();
+    expect(file.problems).toEqual([
+      { code: "invalid-value", key: "properties", value: ["title"] },
+    ]);
+  });
+
+  it("writes a changed Display Name in place, and keeps the keys it does not know", () => {
+    const file = withDisplayName(parseQueryFile(NAMED), "title", "Source");
+    expect(displayName(file, "title")).toBe("Source");
+    expect(serializeQueryFile(file)).toBe(
+      NAMED.replace("displayName: Work", "displayName: Source"),
+    );
+  });
+
+  it("adds a Display Name after the others, and a properties key before the views of a file that had none", () => {
+    expect(
+      serializeQueryFile(
+        withDisplayName(parseQueryFile(NAMED), "date", "Published"),
+      ),
+    ).toBe(
+      NAMED.replace("views:", "  date:\n    displayName: Published\nviews:"),
+    );
+    expect(
+      serializeQueryFile(
+        withDisplayName(
+          parseQueryFile(
+            "views:\n  - type: list\n    name: Items\n    from: items\n",
+          ),
+          "title",
+          "Work",
+        ),
+      ),
+    ).toBe(
+      "properties:\n  title:\n    displayName: Work\nviews:\n  - type: list\n    name: Items\n    from: items\n",
+    );
+  });
+
+  it("removes a Display Name, its property entry when nothing else is left, and the properties key with the last one", () => {
+    const cleared = withDisplayName(parseQueryFile(NAMED), "title", undefined);
+    expect(displayName(cleared, "title")).toBeUndefined();
+    expect(serializeQueryFile(cleared)).toBe(
+      NAMED.replace("    displayName: Work\n", ""),
+    );
+    const single =
+      "properties:\n  title:\n    displayName: Work\nviews:\n  - type: list\n    name: Items\n    from: items\n";
+    expect(
+      serializeQueryFile(
+        withDisplayName(parseQueryFile(single), "title", undefined),
+      ),
+    ).toBe("views:\n  - type: list\n    name: Items\n    from: items\n");
+  });
+
+  it("leaves the file as it is when it removes a Display Name the property does not have", () => {
+    const text = `properties:
+  - title
+views:
+  - type: list
+    name: Items
+    from: items
+`;
+    expect(
+      serializeQueryFile(
+        withDisplayName(parseQueryFile(text), "formula.year", undefined),
+      ),
+    ).toBe(text);
+    expect(
+      serializeQueryFile(
+        withDisplayName(parseQueryFile(NAMED), "date", undefined),
+      ),
+    ).toBe(NAMED);
+  });
+
+  it("removes the properties entry of a removed Formula", () => {
+    const file = removeFormula(parseQueryFile(NAMED), "year");
+    expect(displayName(file, "formula.year")).toBeUndefined();
+    expect(serializeQueryFile(file)).toBe(
+      NAMED.replace("formulas:\n  year: date.year\n", "")
+        .replace("  formula.year:\n    displayName: Year of source\n", "")
+        .replace("      - formula.year\n", ""),
+    );
+  });
+});
+
+describe("Formula names that are also object members", () => {
+  it("adds, renames and removes a Formula named __proto__ like any other", () => {
+    const file = parseQueryFile(`formulas:
+  __proto__: date.year
+views:
+  - type: table
+    name: Items
+    from: items
+    order:
+      - formula.__proto__
+`);
+    expect(Object.entries(file.formulas ?? {})).toEqual([
+      ["__proto__", "date.year"],
+    ]);
+    const added = withDisplayName(
+      withFormula(file, "constructor", "title"),
+      "formula.__proto__",
+      "Year",
+    );
+    expect(displayName(added, "formula.__proto__")).toBe("Year");
+    expect(serializeQueryFile(added)).toContain(
+      "formulas:\n  __proto__: date.year\n  constructor: title\nproperties:\n  formula.__proto__:\n    displayName: Year\n",
+    );
+    const removed = removeFormula(added, "__proto__");
+    expect(Object.entries(removed.formulas ?? {})).toEqual([
+      ["constructor", "title"],
+    ]);
+    expect(removed.properties).toBeUndefined();
   });
 });

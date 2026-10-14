@@ -54,14 +54,14 @@ export function addViewActions(
         .setTitle(m.query_view_default_view())
         .setIcon("layers-2")
         .setChecked(index === 0)
-        .onClick(() => view.moveView(index, 0)),
+        .onClick(() => view.document.moveView(index, 0)),
     )
     .addItem((item) =>
       item
         .setTitle(m.query_view_duplicate_view())
         .setIcon("files")
         .onClick(() => {
-          view.duplicateView(index);
+          view.document.duplicateView(index);
           const name = view.viewName;
           if (name !== null) after?.duplicated?.(name);
         }),
@@ -74,7 +74,7 @@ export function addViewActions(
         .setWarning(true)
         .setDisabled(file.views.length <= 1)
         .onClick(() => {
-          view.deleteView(index);
+          view.document.deleteView(index);
           after?.deleted?.();
         }),
     );
@@ -148,7 +148,7 @@ export class ConfigureViewModal extends Modal {
         const commit = () => {
           const next = text.getValue().trim();
           if (next === this.#name || check() !== null) return;
-          this.#view.renameView(this.#index(), next);
+          this.#view.document.renameView(this.#index(), next);
           this.#name = next;
         };
         text.inputEl.addEventListener("blur", commit);
@@ -193,7 +193,10 @@ export class ConfigureViewModal extends Modal {
           dropdown.addOption(dataset, DATASETS[dataset].name());
         dropdown.selectEl.dataset.queryViewDataset = "";
         dropdown.setValue(view.from ?? "annotations").onChange((value) => {
-          this.#view.setViewDataset(this.#index(), value as QueryFileDataset);
+          this.#view.document.setViewDataset(
+            this.#index(),
+            value as QueryFileDataset,
+          );
           this.#display();
         });
       });
@@ -206,13 +209,13 @@ export class ConfigureViewModal extends Modal {
           dropdown.addOption(layout.type, layout.name());
         dropdown.selectEl.dataset.queryViewLayout = "";
         dropdown.setValue(view.type).onChange((type) => {
-          this.#view.setViewLayout(this.#index(), type);
+          this.#view.document.setViewLayout(this.#index(), type);
           this.#display();
         });
       });
 
     const set = (key: string, value: unknown) =>
-      this.#view.setViewOption(this.#index(), key, value);
+      this.#view.document.setViewOption(this.#index(), key, value);
     if (view.type === "annotations") this.#annotationsOptions(contentEl);
     else if (view.type === "list")
       addListOptions(contentEl, listLayoutOptions(view), {
@@ -226,7 +229,7 @@ export class ConfigureViewModal extends Modal {
 
   #annotationsOptions(el: HTMLElement): void {
     const set = (key: keyof AnnotationsLayoutOptions, value: unknown) =>
-      this.#view.setViewOption(this.#index(), key, value);
+      this.#view.document.setViewOption(this.#index(), key, value);
     const options = annotationsLayoutOptions(
       this.#view.state.getState().file?.views[this.#index()] ?? null,
     );

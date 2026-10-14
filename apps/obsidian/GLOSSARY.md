@@ -472,6 +472,22 @@ _Avoid_: group by (the file key), section, category
 The Item, and the Attachment when there is one, that a Query View is relative to, read as `this.item` and `this.attachment` in its filters: the Item of the note that embeds the file or holds the block, or the Item and Attachment the sidebar Annotation View follows. In a Query File's own tab `this` has no value.
 _Avoid_: current note, scope
 
+**Property**:
+One value that a Query View can show, sort, group, filter and name for each record: a field of its Query Dataset, read by its path, or a Formula Property.
+_Avoid_: column, field (on the view side), attribute
+
+**Visible Properties**:
+The properties a Query View shows, in its order: the columns of the Table, the lines of the List and Cards, and the columns of copy and CSV export. Saved as the view's `order`.
+_Avoid_: columns (alone), fields, shown properties
+
+**Formula Property**:
+A property of a Query File that a Formula under its top-level `formulas` key yields, named `formula.<name>`, added, edited and removed from the Properties popover. It is shown and exported like any other property; a record on which its Formula gives an Error Value shows that error in its cell. On a view whose Query Dataset cannot read its Formula, it is a problem of that view's property; a filter that reads such a Formula is a problem of that condition too.
+_Avoid_: computed property, calculated property, formula column
+
+**Display Name**:
+The text a Query View shows for one property in its headers, its labels, its Properties popover, and the header row of copy and CSV export, saved under the Query File's top-level `properties` key. A property without a Display Name shows its field label or its path.
+_Avoid_: alias, column title, rename (the action, not the text)
+
 ### Note content
 
 **Annotation Excerpt**:

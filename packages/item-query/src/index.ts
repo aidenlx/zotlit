@@ -38,7 +38,17 @@ export {
   type QuerySummary,
 } from "./query";
 export { COUNT_FIELDS, UNLIMITED_LIMIT } from "./request";
+export { errorValueText } from "./filter-values";
+export { nameDictionary, type NameDictionary } from "./name-dictionary";
+export {
+  FORMULA_NAME,
+  FORMULA_SEGMENT,
+  formulaReferences,
+  type FormulaFaultPolicy,
+  type FormulaReference,
+} from "./formulas";
 export type {
+  FormulaDiagnostics,
   ItemQuery,
   ItemQueryRequest,
   ProjectionValue,

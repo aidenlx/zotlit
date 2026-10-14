@@ -2,6 +2,7 @@
 import { describeAnnotationQueryVocabulary } from "./describe-annotation-query";
 import { describeAttachmentQueryVocabulary } from "./describe-attachment-query";
 import { describeItemQueryVocabulary } from "./describe-item-query";
+import { FORMULA_SCHEMA } from "./formulas";
 import {
   ITEM_SUMMARY,
   ATTACHMENT_SUMMARY,
@@ -45,6 +46,7 @@ export function describeQueryVocabulary() {
       annotations: { ...annotations, summary: ANNOTATION_SUMMARY },
     },
     context,
+    formulas: FORMULA_SCHEMA,
     functions,
     methods,
     properties,
