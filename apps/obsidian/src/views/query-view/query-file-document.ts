@@ -186,10 +186,10 @@ export class QueryFileDocument {
       !(view.order ?? []).includes(property)
     ) {
       // A view that shows no property chosen shows the defaults; they stay.
-      const { columns } = viewProperties(file, view);
-      const shown = columns.some((entry) => entry.place !== null)
+      const { visibleProperties } = viewProperties(file, view);
+      const shown = visibleProperties.some((entry) => entry.place !== null)
         ? (view.order ?? [])
-        : columns.map((entry) => entry.path);
+        : visibleProperties.map((entry) => entry.path);
       next = editView(next, view, { order: [...shown, property] });
     }
     this.#commit(next, this.#shown);

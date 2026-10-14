@@ -148,7 +148,7 @@ views:
       - itemType
 `);
     const properties = viewProperties(file, file.views[0]!);
-    const table = resultTable([], properties.columns);
+    const table = resultTable([], properties.visibleProperties);
     expect(table.header).toEqual(["Work", "Item Type"]);
     expect(toCSV(table)).toBe("Work,Item Type");
   });
