@@ -1,0 +1,13 @@
+views:
+  - type: annotations
+    name: All annotations
+    from: annotations
+    groupBy:
+      property: item.indexedKey
+      direction: ASC
+    limit: 100
+  - type: annotations
+    name: This item
+    from: annotations
+    filters: item == this.item
+    limit: 100

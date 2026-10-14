@@ -47,15 +47,15 @@ export function exportResults(view: QueryView): void {
 function CountText({ view }: { view: QueryView }) {
   const phase = useStore(view.state, (s) => s.phase);
   const count = useStore(view.state, (s) => s.count);
-  const shown = useStore(view.state, (s) => s.shown);
+  const matched = useStore(view.state, (s) => s.matched);
   const truncated = useStore(view.state, (s) => s.truncated);
   if (phase === "loading")
     return <span data-query-count="">{m.query_view_loading()}</span>;
   if (phase !== "ready") return null;
   return (
-    <span data-query-count={count}>
+    <span data-query-count={count} data-query-matched={matched}>
       {truncated
-        ? m.query_view_results_limited({ count, shown })
+        ? m.query_view_results_limited({ count: matched, shown: count })
         : m.query_view_results({ count })}
     </span>
   );
@@ -107,13 +107,13 @@ function LimitField({ view, close }: { view: QueryView; close: () => void }) {
           setText(next);
           if (next === "") {
             setInvalid(false);
-            view.changeView({ limit: null });
+            view.editView({ limit: undefined });
             return;
           }
           const value = Number(next);
           const valid = Number.isInteger(value) && value > 0;
           setInvalid(!valid);
-          if (valid) view.changeView({ limit: value });
+          if (valid) view.editView({ limit: value });
         }}
         onKeyDown={(event) => {
           if (event.nativeEvent.isComposing || event.key !== "Enter") return;
@@ -128,7 +128,7 @@ function LimitField({ view, close }: { view: QueryView; close: () => void }) {
 export function ResultsMenu({ view }: { view: QueryView }) {
   const current = useStore(view.state, (s) => s.view);
   const phase = useStore(view.state, (s) => s.phase);
-  const count = useStore(view.state, (s) => s.count);
+  const matched = useStore(view.state, (s) => s.matched);
   const [open, setOpen] = useState(false);
   const popup = useRef<HTMLDivElement>(null);
   const id = useId();
@@ -152,7 +152,7 @@ export function ResultsMenu({ view }: { view: QueryView }) {
         aria-label={m.query_view_results_menu()}
         data-query-results=""
         className={cn(
-          "clickable-icon zt:text-sm zt:text-muted-foreground zt:[anchor-name:var(--zt-results-anchor)]",
+          "clickable-icon zt:shrink-0 zt:text-sm zt:whitespace-nowrap zt:text-(--text-muted) zt:[anchor-name:var(--zt-results-anchor)]",
           (current.limit !== undefined || open) && "is-active",
         )}
         style={{ "--zt-results-anchor": anchor } as CSSProperties}
@@ -182,11 +182,11 @@ export function ResultsMenu({ view }: { view: QueryView }) {
                 icon="rotate-ccw"
                 data-query-show-all=""
                 onClick={() => {
-                  view.changeView({ limit: null });
+                  view.editView({ limit: undefined });
                   close();
                 }}
               >
-                {m.query_view_show_all({ count })}
+                {m.query_view_show_all({ count: matched })}
               </MenuRow>
             )}
             <div
