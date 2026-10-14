@@ -141,7 +141,8 @@ function outOfRange(
     code: "argument-out-of-range",
     callee,
     index,
-    found: toText(found ?? null),
+    found:
+      typeof found === "string" ? JSON.stringify(found) : toText(found ?? null),
   });
 }
 
