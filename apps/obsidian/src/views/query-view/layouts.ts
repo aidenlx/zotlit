@@ -2,6 +2,8 @@
 // the options of the Annotations layout as a view's keys hold them.
 import * as m from "@/lib/i18n/generated/messages";
 
+import { CARDS_LAYOUT } from "./cards-layout";
+import { LIST_LAYOUT } from "./list-layout";
 import type { QueryFileDataset, QueryFileView } from "./query-file";
 
 export interface QueryLayout {
@@ -21,7 +23,15 @@ export const QUERY_LAYOUTS: readonly QueryLayout[] = [
     name: () => m.query_view_layout_annotations(),
     icon: "highlighter",
   },
+  LIST_LAYOUT,
+  CARDS_LAYOUT,
 ];
+
+/** The Layout that draws a view; a view with no `type` takes the Annotations layout. */
+export function layoutOf(view: QueryFileView): QueryLayout | undefined {
+  const type = view.type || "annotations";
+  return QUERY_LAYOUTS.find((layout) => layout.type === type);
+}
 
 /** The Layouts that can show the view's dataset, as the Layout picker offers them. */
 export function layoutsFor(view: QueryFileView): QueryLayout[] {
