@@ -5,8 +5,10 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { Icon } from "@/components/obsidian/icon";
 import { SearchInput } from "@/components/obsidian/search-input";
 import * as m from "@/lib/i18n/generated/messages";
-import { cn } from "@/lib/utils";
+import { cn, tooltipAttrs } from "@/lib/utils";
 import { useAnnotStore, useSetFilterQuery } from "@/views/annot-view/store";
+
+import { TOOLBAR_LABEL } from "./toolbar-popover";
 
 export function SearchControl() {
   const query = useAnnotStore((s) => s.filterQuery);
@@ -29,6 +31,7 @@ export function SearchControl() {
         ref={buttonRef}
         type="button"
         aria-expanded={open}
+        {...tooltipAttrs(m.query_view_search())}
         data-query-toolbar="search"
         className={cn(
           "clickable-icon zt:flex zt:items-center zt:gap-1",
@@ -37,7 +40,9 @@ export function SearchControl() {
         onClick={() => (open ? close() : setOpen(true))}
       >
         <Icon name="search" size={14} />
-        {!open && <span>{m.query_view_search()}</span>}
+        {!open && (
+          <span className={TOOLBAR_LABEL}>{m.query_view_search()}</span>
+        )}
       </button>
       {open && (
         <SearchInput

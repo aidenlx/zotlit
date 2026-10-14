@@ -7,7 +7,7 @@
 // @see apps/obsidian/docs/adr/0069-the-annotation-view-is-the-annotations-layout-of-the-query-view.md
 import { Component } from "obsidian";
 import type { Scope } from "obsidian";
-import { useMemo } from "react";
+import { useLayoutEffect, useMemo } from "react";
 import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
@@ -39,6 +39,7 @@ import type { CardDisplay } from "@/views/annot-view/card-display";
 import { AnnotationsLayout } from "@/views/annot-view/layout";
 import type { AnnotationsLayoutDeps } from "@/views/annot-view/layout";
 import { useAnnotStore } from "@/views/annot-view/store";
+import type { AnnotState } from "@/views/annot-view/store";
 
 import type { QueryCardFocus } from "./card-focus";
 import { FilterButton } from "./filter-popover";
@@ -225,6 +226,12 @@ export class QueryView extends Component implements HistorySurface {
   /** The rows on screen, each once, in the order they show. */
   #rows: readonly QueryViewRow[] = [];
   #subscriptions: DisposableStack | null = null;
+  /** Whether the view draws into an element; until then no card waits to show. */
+  #rendered = false;
+  /** The cards the list last drew, as the layout's store held them. */
+  #drawnCards: AnnotState["annotations"] | undefined = undefined;
+  /** What waits for the list to draw the cards the store holds now. */
+  #drawWaiters: (() => void)[] = [];
 
   constructor(deps: QueryViewDeps, host: QueryViewHost) {
     super();
@@ -261,6 +268,38 @@ export class QueryView extends Component implements HistorySurface {
     return this.#settled.then(() => this.#layout.read);
   }
 
+  /**
+   * Settles once the cards of the last run are drawn on the page in `el`, as
+   * Export to PDF needs before it prints: a print renders under `.print`.
+   * Elsewhere it settles as {@link settled}. Never rejects.
+   */
+  async shownIn(el: HTMLElement): Promise<void> {
+    await this.settled;
+    if (el.closest(".print") !== null) await this.#cardsDrawn();
+  }
+
+  /**
+   * The list drew these cards. Preact subscribes a list to its store only
+   * after a paint, so a hidden print window can draw a store change later
+   * than the read that made it.
+   */
+  drewCards(cards: AnnotState["annotations"]): void {
+    this.#drawnCards = cards;
+    if (cards !== this.#layout.store.getState().annotations) return;
+    const waiters = this.#drawWaiters;
+    this.#drawWaiters = [];
+    for (const resolve of waiters) resolve();
+  }
+
+  #cardsDrawn(): Promise<void> {
+    if (
+      !this.#rendered ||
+      this.#drawnCards === this.#layout.store.getState().annotations
+    )
+      return Promise.resolve();
+    return new Promise((resolve) => this.#drawWaiters.push(resolve));
+  }
+
   override onload(): void {
     this.addChild(this.#layout);
     const rerun = () => this.refresh();
@@ -286,11 +325,16 @@ export class QueryView extends Component implements HistorySurface {
     this.#hold = null;
     this.#shownRequest = null;
     this.#runRequest = null;
+    this.#rendered = false;
+    const waiters = this.#drawWaiters;
+    this.#drawWaiters = [];
+    for (const resolve of waiters) resolve();
   }
 
   /** Draw the toolbar and the cards into `el`. Call it once the view has loaded. */
   render(el: HTMLElement): void {
     el.addClass("zt-query-view");
+    this.#rendered = true;
     this.#layout.render(el, <QueryViewBody view={this} />);
   }
 
@@ -788,7 +832,7 @@ function ReadOnlyNote({ view }: { view: QueryView }) {
   if (view.canSave) return null;
   return (
     <p
-      className="zt:mx-3 zt:mt-1 zt:mb-0 zt:text-xs zt:text-(--text-faint)"
+      className="zt:mx-3 zt:mt-1 zt:mb-0 zt:text-xs zt:text-(--text-faint) zt:in-[.print]:hidden"
       data-query-read-only=""
     >
       {m.query_view_read_only()}
@@ -799,6 +843,8 @@ function ReadOnlyNote({ view }: { view: QueryView }) {
 /** The cards, drawn with the shown view's Annotations layout options. */
 function AnnotationsCards({ view }: { view: QueryView }) {
   const shown = useQueryViewState(view, (s) => s.view);
+  const cards = useAnnotStore((s) => s.annotations);
+  useLayoutEffect(() => view.drewCards(cards), [view, cards]);
   const options = annotationsLayoutOptions(shown);
   const display = useMemo<CardDisplay>(
     () => ({
@@ -881,9 +927,11 @@ function GroupButton({ view }: { view: QueryView }) {
 
 function QueryViewBody({ view }: { view: QueryView }) {
   return (
-    <div className="zt:flex zt:h-full zt:flex-col">
+    <div className="zt:flex zt:h-full zt:flex-col zt:in-[.print]:h-auto">
+      {/* The toolbar is a size container: on a narrow pane its buttons show
+          icons only. Export to PDF prints the rows without it. */}
       <div
-        className="zt:flex zt:items-center zt:gap-2 zt:border-b zt:border-(--background-modifier-border) zt:px-3 zt:py-1 zt:text-sm"
+        className="zt:@container zt:flex zt:flex-wrap zt:items-center zt:gap-x-2 zt:gap-y-1 zt:border-b zt:border-(--background-modifier-border) zt:px-3 zt:py-1 zt:text-sm zt:in-[.print]:hidden"
         role="toolbar"
       >
         <ViewMenu view={view} />

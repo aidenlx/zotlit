@@ -123,12 +123,17 @@ export class QueryFileEmbed extends Component implements EmbedComponent {
     void this.flush();
   }
 
-  /** Read the file and show it; Obsidian calls it once the embed is added. */
+  /**
+   * Read the file and show it; Obsidian calls it once the embed is added.
+   * It settles once the rows show, as Export to PDF waits for it to print
+   * them.
+   */
   async loadFile(): Promise<void> {
     const text = await readLiveText(this.#app, this.#file);
     if (text === this.#text) return;
     this.#text = text;
     this.query.setText(text);
+    await this.query.shownIn(this.#context.containerEl);
   }
 
   /** Write a toolbar change that waits for its delay now. */

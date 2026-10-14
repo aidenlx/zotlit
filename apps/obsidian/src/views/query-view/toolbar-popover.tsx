@@ -10,13 +10,19 @@ import { useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 
 import { Icon } from "@/components/obsidian/icon";
-import { cn } from "@/lib/utils";
+import { cn, tooltipAttrs } from "@/lib/utils";
 
 let popoverSequence = 0;
 
+/**
+ * The name beside a toolbar button's icon. On a narrow pane the toolbar
+ * shows icons only, and the name shows as the button's tooltip.
+ */
+export const TOOLBAR_LABEL = "zt:hidden zt:@2xl:inline";
+
 export interface ToolbarPopoverProps {
   icon: IconName;
-  /** The button's name, shown beside its icon. */
+  /** The button's name, shown beside its icon and as its tooltip. */
   label: string;
   /** Whether the control holds a setting, which draws the button active. */
   active?: boolean;
@@ -47,6 +53,7 @@ export function ToolbarPopover({
         type="button"
         popoverTarget={id}
         aria-expanded={open}
+        {...tooltipAttrs(label)}
         data-query-toolbar={hook}
         className={cn(
           "clickable-icon zt:flex zt:items-center zt:gap-1 zt:[anchor-name:var(--zt-query-popover-anchor)]",
@@ -55,7 +62,7 @@ export function ToolbarPopover({
         style={anchor}
       >
         <Icon name={icon} size={14} />
-        <span>{label}</span>
+        <span className={TOOLBAR_LABEL}>{label}</span>
       </button>
       <div
         id={id}
