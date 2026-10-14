@@ -1,6 +1,6 @@
 import type { WorkbenchDocumentController } from "#/document/controller";
 import type { MatchItemFacts } from "#/match/condition";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 
 import type { MatchTree } from "@zotlit/templates/facade";
 
@@ -12,28 +12,44 @@ import {
   appendAt,
   asExpression,
   asLabelled,
-  conditionIssue,
-  freshCondition,
   freshGroup,
+  freshRow,
   fromFilter,
+  isExpression,
+  isGroup,
   removeAt,
   replaceAt,
+  storesFilter,
   toFilter,
   updateGroup,
 } from "./match.draft";
 import type {
   ConditionGroup,
-  ConditionKind,
   ConditionPath,
+  LabelledRow,
   MatchEditorDeps,
+  MatchFilter,
+  MatchVocabulary,
   RowCondition,
 } from "./match.draft";
-import { ConditionOperator, ConditionValue, MatchSelect } from "./match.rows";
+import { profileVocabulary } from "./match.profile";
+import { MatchSelect } from "./match.rows";
 // One Match tree over the document controller; rows write through the master history.
 import { useWorkbenchMessages } from "./messages";
 import { useParts, useIcon } from "./theme";
 
 import { compileFilter, matchCondition } from "#/match/condition";
+
+export type {
+  ConditionControlProps,
+  ConditionPath,
+  ExpressionCondition,
+  LabelledRow,
+  MatchConditionKind,
+  MatchFilter,
+  MatchVocabulary,
+  RowCondition,
+} from "./match.draft";
 
 export function MatchPane({
   controller,
@@ -60,19 +76,13 @@ export function MatchPane({
   const [match, setMatch] = useState<MatchTree | undefined>(
     controller.document?.manifest.match,
   );
-  const ownEdit = useRef(false);
-  const [showStarter, setShowStarter] = useState(true);
-  const [root, setRoot] = useState<ConditionGroup>(() =>
-    match === undefined
-      ? { kind: "group", match: "all", conditions: [] }
-      : fromFilter(match),
-  );
   const [readable, setReadable] = useState(controller.document !== null);
   const [deps, setDeps] = useState<MatchEditorDeps>({
     tags: [],
     collections: [],
     libraries: [],
   });
+  const vocabulary = useMemo(() => profileVocabulary(m, deps), [m, deps]);
   const [writeProblem, setWriteProblem] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -80,18 +90,7 @@ export function MatchPane({
   useEffect(() => {
     const read = () => {
       setReadable(controller.document !== null);
-      if (controller.document) {
-        const next = controller.document.manifest.match;
-        setMatch(next);
-        if (!ownEdit.current) {
-          setShowStarter(true);
-          setRoot(
-            next === undefined
-              ? { kind: "group", match: "all", conditions: [] }
-              : fromFilter(next),
-          );
-        }
-      }
+      if (controller.document) setMatch(controller.document.manifest.match);
     };
     read();
     return controller.subscribe(read);
@@ -133,21 +132,8 @@ export function MatchPane({
     };
   }, [host.matchData, vocabularyRevision, m, retry]);
   function write(next: MatchTree | undefined) {
-    ownEdit.current = true;
     const saved = controller.setMatch(next);
-    ownEdit.current = false;
-    if (!saved) {
-      setRoot(
-        match === undefined
-          ? { kind: "group", match: "all", conditions: [] }
-          : fromFilter(match),
-      );
-      setWriteProblem(m.workbench_match_source_only());
-    } else {
-      setWriteProblem(null);
-      if (next === undefined)
-        setRoot({ kind: "group", match: "all", conditions: [] });
-    }
+    setWriteProblem(saved ? null : m.workbench_match_source_only());
     return saved;
   }
   const compiled =
@@ -203,34 +189,16 @@ export function MatchPane({
       }}
     >
       <p>{m.workbench_match_conditions_desc()}</p>
-      <fieldset
+      <MatchEditor
+        value={match}
+        vocabulary={vocabulary}
+        onChange={write}
         disabled={
           controller.readOnly ||
           !readable ||
           controller.document?.manifest.id === "default"
         }
-        {...part("fieldset")}
-      >
-        <Group
-          root={root}
-          group={root}
-          path={[]}
-          deps={deps}
-          showStarter={showStarter}
-          onRemoveMatch={
-            match === undefined && !showStarter
-              ? undefined
-              : () => {
-                  if (write(undefined)) setShowStarter(false);
-                }
-          }
-          onChange={(next) => {
-            setShowStarter(true);
-            setRoot(next);
-            write(toFilter(next));
-          }}
-        />
-      </fieldset>
+      />
       <div {...part("actions")}>
         <p role="status" {...part("result", resultState)}>
           {resultMessage}
@@ -249,20 +217,98 @@ export function MatchPane({
   );
 }
 
-function Group({
+const emptyGroup = <Row extends LabelledRow>(): ConditionGroup<Row> => ({
+  kind: "group",
+  match: "all",
+  conditions: [],
+});
+
+/**
+ * A Match tree as "All of the following" / "Any of the following" groups of
+ * condition rows. The caller owns the stored filter and the conditions it
+ * offers; `onChange` answers whether the caller kept the new filter.
+ */
+export function MatchEditor<Row extends LabelledRow>({
+  value,
+  onChange,
+  vocabulary,
+  disabled = false,
+}: {
+  value: MatchFilter | undefined;
+  /** `undefined` when the author clears every condition. */
+  onChange: (next: MatchTree | undefined) => boolean;
+  vocabulary: MatchVocabulary<Row>;
+  disabled?: boolean;
+}) {
+  const part = useParts("match");
+  const [showStarter, setShowStarter] = useState(true);
+  const [root, setRootState] = useState<ConditionGroup<Row>>(() =>
+    value === undefined ? emptyGroup() : fromFilter(value, vocabulary),
+  );
+  // The tree as last shown: a value it already stores is the editor's own
+  // edit coming back, so an expression row the author is typing stays one.
+  const shown = useRef(root);
+  function setRoot(next: ConditionGroup<Row>) {
+    shown.current = next;
+    setRootState(next);
+  }
+  const latest = useRef(vocabulary);
+  latest.current = vocabulary;
+  useEffect(() => {
+    if (storesFilter(shown.current, value, latest.current)) return;
+    setShowStarter(true);
+    setRoot(
+      value === undefined ? emptyGroup() : fromFilter(value, latest.current),
+    );
+  }, [value]);
+  function write(next: MatchTree | undefined) {
+    const saved = onChange(next);
+    if (!saved)
+      setRoot(
+        value === undefined ? emptyGroup() : fromFilter(value, vocabulary),
+      );
+    else if (next === undefined) setRoot(emptyGroup());
+    return saved;
+  }
+  return (
+    <fieldset disabled={disabled} {...part("fieldset")}>
+      <Group
+        root={root}
+        group={root}
+        path={[]}
+        vocabulary={vocabulary}
+        showStarter={showStarter}
+        onRemoveMatch={
+          value === undefined && !showStarter
+            ? undefined
+            : () => {
+                if (write(undefined)) setShowStarter(false);
+              }
+        }
+        onChange={(next) => {
+          setShowStarter(true);
+          setRoot(next);
+          write(toFilter(next, vocabulary));
+        }}
+      />
+    </fieldset>
+  );
+}
+
+function Group<Row extends LabelledRow>({
   root,
   group,
   path,
-  deps,
+  vocabulary,
   onChange,
   onRemoveMatch,
   showStarter = false,
 }: {
-  root: ConditionGroup;
-  group: ConditionGroup;
+  root: ConditionGroup<Row>;
+  group: ConditionGroup<Row>;
   path: ConditionPath;
-  deps: MatchEditorDeps;
-  onChange: (root: ConditionGroup) => void;
+  vocabulary: MatchVocabulary<Row>;
+  onChange: (root: ConditionGroup<Row>) => void;
   onRemoveMatch?: () => void;
   showStarter?: boolean;
 }) {
@@ -272,7 +318,7 @@ function Group({
   const host = useWorkbenchHost();
   const starter = showStarter && group.conditions.length === 0;
   const conditions = starter
-    ? [freshCondition("collections", false)]
+    ? [freshRow(vocabulary, vocabulary.starterKind)]
     : group.conditions;
   return (
     <div {...part("group", path.length ? "nested" : "root")}>
@@ -317,9 +363,9 @@ function Group({
         {conditions.map((node, index) => (
           <li
             key={index}
-            {...part("row", node.kind === "group" ? "group" : "condition")}
+            {...part("row", isGroup(node) ? "group" : "condition")}
           >
-            {node.kind !== "group" && (
+            {!isGroup(node) && (
               <span {...part("conjunction")}>
                 {index === 0
                   ? m.workbench_match_conjunction_where()
@@ -328,19 +374,20 @@ function Group({
                     : m.workbench_match_conjunction_or()}
               </span>
             )}
-            {node.kind === "group" ? (
+            {isGroup(node) ? (
               <Group
                 root={root}
                 group={node}
                 path={[...path, index]}
-                deps={deps}
+                vocabulary={vocabulary}
                 onChange={onChange}
               />
             ) : (
               <Row
                 condition={node}
+                path={[...path, index]}
                 starter={starter}
-                deps={deps}
+                vocabulary={vocabulary}
                 onChange={(next) =>
                   onChange(
                     starter
@@ -361,7 +408,9 @@ function Group({
           {...part("button")}
           type="button"
           onClick={() =>
-            onChange(appendAt(root, path, freshCondition("item-type", false)))
+            onChange(
+              appendAt(root, path, freshRow(vocabulary, vocabulary.newKind)),
+            )
           }
         >
           {icon("add")}
@@ -371,7 +420,7 @@ function Group({
           {...part("button")}
           type="button"
           onClick={() =>
-            onChange(appendAt(root, path, freshGroup(group.match)))
+            onChange(appendAt(root, path, freshGroup(group.match, vocabulary)))
           }
         >
           {icon("add")}
@@ -382,57 +431,56 @@ function Group({
   );
 }
 
-function Row({
+function Row<Row extends LabelledRow>({
   condition,
+  path,
   starter = false,
-  deps,
+  vocabulary,
   onChange,
   onRemove,
 }: {
-  condition: RowCondition;
+  condition: RowCondition<Row>;
+  path: ConditionPath;
   starter?: boolean;
-  deps: MatchEditorDeps;
-  onChange: (condition: RowCondition) => void;
+  vocabulary: MatchVocabulary<Row>;
+  onChange: (condition: RowCondition<Row>) => void;
   onRemove: () => void;
 }) {
   const m = useWorkbenchMessages();
   const part = useParts("match");
   const icon = useIcon();
   const host = useWorkbenchHost();
-  const issue = starter ? null : conditionIssue(m, condition, deps);
-  const labelled =
-    condition.kind === "expression" ? asLabelled(condition) : null;
+  const issue = starter ? null : (vocabulary.issue?.(condition, path) ?? null);
+  const labelled = isExpression(condition)
+    ? asLabelled(condition, vocabulary)
+    : null;
+  const kind = isExpression(condition)
+    ? undefined
+    : vocabulary.kinds.find((entry) => entry.kind === condition.kind);
   return (
     <div {...part("condition")} data-condition-row="">
       <div {...part("statement")}>
         <div {...part("fields")}>
-          {condition.kind !== "expression" && (
+          {!isExpression(condition) && (
             <div {...part("predicate")}>
               <MatchSelect
                 aria-label={m.workbench_match_condition_kind()}
                 value={condition.kind}
-                onChange={(kind) =>
-                  onChange(freshCondition(kind as ConditionKind, false))
+                onChange={(next) =>
+                  onChange(freshRow(vocabulary, next as Row["kind"]))
                 }
               >
-                <option value="library">
-                  {m.workbench_match_condition_library()}
-                </option>
-                <option value="item-type">
-                  {m.workbench_match_condition_item_type()}
-                </option>
-                <option value="collections">
-                  {m.workbench_match_condition_collection()}
-                </option>
-                <option value="tags">
-                  {m.workbench_match_condition_tag()}
-                </option>
+                {vocabulary.kinds.map((entry) => (
+                  <option key={entry.kind} value={entry.kind}>
+                    {entry.label}
+                  </option>
+                ))}
               </MatchSelect>
-              <ConditionOperator condition={condition} onChange={onChange} />
+              {kind?.renderOperator?.({ condition, onChange })}
             </div>
           )}
           <div {...part("value")}>
-            {condition.kind === "expression" ? (
+            {isExpression(condition) ? (
               <textarea
                 rows={1}
                 {...part("expression")}
@@ -447,16 +495,12 @@ function Row({
                 }
               />
             ) : (
-              <ConditionValue
-                condition={condition}
-                onChange={onChange}
-                deps={deps}
-              />
+              kind?.renderValue({ condition, onChange })
             )}
           </div>
         </div>
         <div {...part("actions")}>
-          {condition.kind === "expression" ? (
+          {isExpression(condition) ? (
             <button
               {...part("icon-button")}
               type="button"
@@ -475,7 +519,7 @@ function Row({
               type="button"
               aria-label={m.workbench_match_edit_as_expression()}
               {...host.tooltip(m.workbench_match_edit_as_expression())}
-              onClick={() => onChange(asExpression(condition))}
+              onClick={() => onChange(asExpression(condition, vocabulary))}
             >
               {icon("advanced")}
             </button>
