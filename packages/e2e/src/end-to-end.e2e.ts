@@ -1589,6 +1589,65 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
   }, 180000);
 
+  it("saves a limit typed into a Query Block when its note closes or shows another file before the save delay ends", async () => {
+    const notePath = "literatures/SAKIMA22.md";
+    const layout = await obEval(
+      vaultId,
+      "JSON.stringify(app.workspace.getLayout())",
+    );
+    const original = await obEval(
+      vaultId,
+      `app.vault.read(app.vault.getFileByPath(${JSON.stringify(notePath)}))`,
+    );
+    expect(original).toContain("    limit: 100\n```");
+    const restore = `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(notePath)}),${JSON.stringify(original)});return true;})()`;
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(vaultId, restore);
+    });
+    const read = () =>
+      obEval(
+        vaultId,
+        `app.vault.read(app.vault.getFileByPath(${JSON.stringify(notePath)}))`,
+      );
+
+    const cases = [
+      ["live", "close"],
+      ["live", "switch"],
+      ["reading", "close"],
+    ] as const;
+    const outcomes: { mode: string; leave: string; saved: boolean }[] = [];
+    for (const [index, [mode, leave]] of cases.entries()) {
+      const limit = String(3 + index);
+      await obEval(vaultId, restore);
+      await obEval(
+        vaultId,
+        `(async()=>{const leaf=app.workspace.getLeaf('tab');await leaf.openFile(app.vault.getFileByPath(${JSON.stringify(notePath)}),{state:${mode === "live" ? "{mode:'source',source:false}" : "{mode:'preview'}"}});app.workspace.setActiveLeaf(leaf,{focus:true});window.zotlitE2EBlockLeaf=leaf;return true;})()`,
+      );
+      expect(
+        await obEvalUntil(
+          vaultId,
+          `(async()=>{const el=window.zotlitE2EBlockLeaf.view.containerEl.querySelector('.block-language-zotquery');if(!el?.zotlitQueryView)return 'no';await el.zotlitQueryView.settled;return el.querySelector('[data-query-count]')?'ready':'no';})()`,
+          { expected: "ready", tries: 120 },
+        ),
+      ).toBe(true);
+      // The limit, then the note goes at once, well inside the save delay.
+      await obEval(
+        vaultId,
+        `(async()=>{const leaf=window.zotlitE2EBlockLeaf;const el=leaf.view.containerEl.querySelector('.block-language-zotquery');el.querySelector('[data-query-results]').click();for(let i=0;i<50&&!el.querySelector('[data-query-results-popup] [data-query-limit]');i++)await new Promise(r=>requestAnimationFrame(r));const input=el.querySelector('[data-query-results-popup] [data-query-limit]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(limit)});input.dispatchEvent(new Event('input',{bubbles:true}));${leave === "close" ? "leaf.detach();" : `await leaf.openFile(app.vault.getMarkdownFiles().find(f=>f.path!==${JSON.stringify(notePath)}));`}delete window.zotlitE2EBlockLeaf;return true;})()`,
+      );
+      const expected = original.replace(
+        "    limit: 100\n```",
+        `    limit: ${limit}\n\`\`\``,
+      );
+      await waitFor(async () => (await read()) === expected);
+      outcomes.push({ mode, leave, saved: (await read()) === expected });
+    }
+    expect(outcomes).toEqual(
+      cases.map(([mode, leave]) => ({ mode, leave, saved: true })),
+    );
+  }, 180000);
+
   it("adds, renames and sets a default view of a Query File from the view menu, and the file keeps them", async () => {
     const path = "query-files/Reading annotations.zotquery";
     const layout = await obEval(

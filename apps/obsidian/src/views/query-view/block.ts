@@ -16,7 +16,7 @@ import type { MarkdownPostProcessorContext, Plugin } from "obsidian";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 
-import { canWriteBlock, writeBlockCode } from "./block-write";
+import { writeBlockAt, writeBlockCode } from "./block-write";
 import { NoteQueryHost } from "./note-host";
 import { QUERY_FILE_EXTENSION } from "./query-file";
 import type { QueryViewDeps } from "./view";
@@ -49,6 +49,13 @@ class QueryBlock extends MarkdownRenderChild {
   /** The block text as the note holds it, as this block last read or wrote it. */
   #source: string;
   #host: NoteQueryHost | null = null;
+  /**
+   * The line the block's opening fence stood at, as the block last found it
+   * on the page; `null` while it has had no place in a note.
+   */
+  #lineStart: number | null = null;
+  /** Whether the block is leaving the page, as its note closes or shows another file. */
+  #leaving = false;
 
   constructor(
     el: HTMLElement,
@@ -80,17 +87,33 @@ class QueryBlock extends MarkdownRenderChild {
     this.#host = host;
   }
 
+  /**
+   * The block leaves the page. Its view saves a typed change that waits for
+   * its delay as it unloads, which writes at the line the block last stood
+   * at: the editor it stood in may already show another note.
+   */
+  override unload(): void {
+    this.#leaving = true;
+    super.unload();
+  }
+
   /** Settles once the block shows its first rows, or its text only. Never rejects. */
   get shown(): Promise<void> {
     return this.#host?.shown() ?? Promise.resolve();
   }
 
-  /** Whether a change saves: the block stands in its own note. */
+  /**
+   * Whether a change saves: the block stands in its own note, or stood there
+   * as it leaves the page. A section embed, a popover, a print and a
+   * Markdown render outside a note give it no place.
+   */
   #canSave(): boolean {
+    if (this.#leaving) return this.#lineStart !== null;
     const el = this.containerEl;
-    return (
-      el.closest(IN_PREVIEW) === null && canWriteBlock({ ctx: this.#ctx, el })
-    );
+    if (el.closest(IN_PREVIEW) !== null) return false;
+    const info = this.#ctx.getSectionInfo(el);
+    if (info !== null) this.#lineStart = info.lineStart;
+    return info !== null;
   }
 
   async #save(file: string): Promise<void> {
@@ -100,11 +123,19 @@ class QueryBlock extends MarkdownRenderChild {
     if (text === previous) return;
     this.#source = text;
     try {
-      await writeBlockCode(
-        this.#deps.app,
-        { ctx: this.#ctx, el: this.containerEl },
-        { previous, next: text },
-      );
+      const edit = { previous, next: text };
+      if (this.#leaving && this.#lineStart !== null)
+        await writeBlockAt(
+          this.#deps.app,
+          { sourcePath: this.#ctx.sourcePath, lineStart: this.#lineStart },
+          edit,
+        );
+      else
+        await writeBlockCode(
+          this.#deps.app,
+          { ctx: this.#ctx, el: this.containerEl },
+          edit,
+        );
     } catch (error) {
       this.#source = previous;
       new BaseNotice(m.query_block_save_failed());
