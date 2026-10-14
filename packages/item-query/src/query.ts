@@ -142,14 +142,13 @@ export function consumeQuery<Request extends ItemQueryRequest, A, E, R>(
 > {
   return Effect.gen(function* () {
     const sources = yield* openQuerySources;
-    const planned = yield* planRequest(dataset, request);
-    // Query Sources finds each planned Formula that the request leaves out
-    // for a custom field the source lacks; the plan then leaves it out.
-    const sourceFaults = yield* sources.formulaSourceFaults(planned);
-    const plan =
-      sourceFaults.size === 0
-        ? planned
-        : yield* planRequest(dataset, request, sourceFaults);
+    // Query Sources checks each planned Formula for a custom field that the
+    // source lacks, so the plan leaves such a Formula out.
+    const plan = yield* planRequest(
+      dataset,
+      request,
+      yield* sources.formulaSourceCheck(request),
+    );
     const { query, sorts } = plan;
     const clock = yield* readQueryClock;
     const run = yield* dataset.open(plan, request, { clock, sources });

@@ -637,6 +637,14 @@ describe('onFormulaFault: "leave-out"', () => {
       { "2nd": "invalid-formula-name" },
     ],
     [
+      "an invalid Formula name that fields reads",
+      {
+        formulas: { "2nd": "date.year", ok: "date.year" },
+        fields: ["formula.2nd", "formula.ok"],
+      },
+      { "2nd": "invalid-formula-name" },
+    ],
+    [
       "a cycle",
       {
         formulas: { a: "formula.b + 1", b: "formula.a * 2", ok: "date.year" },
@@ -754,6 +762,61 @@ describe('onFormulaFault: "leave-out"', () => {
         span: { from: 12, to: 21 },
       },
     });
+  });
+
+  it("marks each Formula on any cycle with a cycle from it, also where two cycles share a Formula", async () => {
+    using scenario = openScenarioDatabase();
+    const result = await run(scenario, {
+      filter: 'indexedKey == "BK2MNTH2"',
+      formulas: {
+        a: "formula.b + formula.c",
+        b: "formula.a",
+        c: "formula.a",
+        ok: "date.year",
+      },
+      fields: ["formula.a", "formula.ok"],
+      onFormulaFault: "leave-out",
+    });
+    const faults = result.formulaDiagnostics!;
+    expect(Object.keys(faults).sort()).toEqual(["a", "b", "c"]);
+    expect(faults.a).toMatchObject({
+      code: "formula-cycle",
+      message:
+        "The Formulas read each other in a cycle: formula.a → formula.b → formula.a.",
+    });
+    expect(faults.b).toMatchObject({
+      code: "formula-cycle",
+      message:
+        "The Formulas read each other in a cycle: formula.b → formula.a → formula.b.",
+    });
+    expect(faults.c).toMatchObject({
+      code: "formula-cycle",
+      message:
+        "The Formulas read each other in a cycle: formula.c → formula.a → formula.c.",
+      location: { argument: "formulas", path: "c", span: { from: 0, to: 9 } },
+    });
+  });
+
+  it("fails a filter that reads a wrong Formula with the Diagnostic of a Formula of fields that names a custom field the source lacks", async () => {
+    using scenario = openScenarioDatabase();
+    const error = await failure(scenario, {
+      filter: "formula.bad > 0",
+      formulas: { bad: "title * 2", missing: 'custom["absent"]' },
+      fields: ["title", "formula.missing"],
+      onFormulaFault: "leave-out",
+    });
+    expect(error.diagnostic).toMatchObject({
+      code: "reads-faulted-formula",
+      location: { argument: "filter" },
+    });
+    expect(
+      Object.fromEntries(
+        Object.entries(error.formulaDiagnostics!).map(([name, fault]) => [
+          name,
+          fault.code,
+        ]),
+      ),
+    ).toEqual({ bad: "wrong-operand-type", missing: "unknown-field" });
   });
 
   it("plans every Formula that the request reads, also after a reader's first read of a wrong Formula", async () => {
