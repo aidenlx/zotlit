@@ -130,7 +130,15 @@ export interface QueryViewHost {
    * What the host gives the Annotations Layout beside the Scope and the
    * source path: the sidebar's own gestures and its list frame.
    */
-  layout?: Pick<AnnotationsLayoutHost, "gestures" | "onList" | "onEscape">;
+  layout?: Pick<
+    AnnotationsLayoutHost,
+    "gestures" | "onList" | "onEscape" | "showNewRecords"
+  >;
+  /**
+   * The Attachments whose live lists the cards read beside those the rows
+   * name: the sidebar's own, so its first new Annotation shows at once.
+   */
+  attachments?: () => readonly string[];
 }
 
 /** What the view shows now, as the toolbar and the host read it. */
@@ -831,10 +839,12 @@ export class QueryView extends Component implements HistorySurface {
       previous?.[Symbol.dispose]();
       return;
     }
-    this.#hold = this.#deps.annotations.hold(
-      rows.map((row) => row.attachmentKey),
-    );
-    await this.#layout.showRows(rows);
+    const also = this.#host.attachments?.() ?? [];
+    this.#hold = this.#deps.annotations.hold([
+      ...rows.map((row) => row.attachmentKey),
+      ...also,
+    ]);
+    await this.#layout.showRows(rows, also);
     previous?.[Symbol.dispose]();
   }
 }

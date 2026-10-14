@@ -18,6 +18,11 @@ import type {
   QueryViewRequest,
   QueryViewRow,
 } from "@/services/item-query/query-view";
+import {
+  parseQueryFile,
+  serializeQueryFile,
+  viewFilter,
+} from "@/views/query-view/query-file";
 
 import { editorApp } from "./__fixtures__/editor-app";
 import { AnnotationView } from "./view";
@@ -175,8 +180,13 @@ class OpenView extends AnnotationView {
 async function openSidebar(
   attachments: AnnotViewAttachment[],
   answer: (request: QueryViewRequest) => QueryViewOutcome = () => rows(ROWS),
+  {
+    readsState = "ready",
+    query,
+  }: { readsState?: "ready" | "degraded"; query?: string } = {},
 ) {
   setMockPlatform({ isMacOS: true });
+  let list = LIST;
   const run = vi.fn((request: QueryViewRequest, _signal: AbortSignal) =>
     Promise.resolve(answer(request)),
   );
@@ -198,7 +208,7 @@ async function openSidebar(
   const deps = {
     app,
     reads: {
-      state: "ready",
+      state: readsState,
       on: reads.on,
       ready: Promise.resolve({
         reads: {
@@ -219,8 +229,8 @@ async function openSidebar(
     cardFocus: { hold: () => ({ [Symbol.dispose]: () => {} }) },
     annotations: {
       capability: { kind: "writable" },
-      read: () => Promise.resolve(LIST),
-      peek: () => ({ value: LIST }),
+      read: () => Promise.resolve(list),
+      peek: () => ({ value: list }),
       refresh: () => Promise.resolve(),
       capabilityFor: (): EditingCapability => ({ kind: "writable" }),
       textDraftFor: () => null,
@@ -248,7 +258,11 @@ async function openSidebar(
   await act(() => view.open());
   await act(() =>
     view.setState(
-      { followMode: "pinned", pinnedItemKey: "ITEMAAAA" },
+      {
+        followMode: "pinned",
+        pinnedItemKey: "ITEMAAAA",
+        ...(query !== undefined && { query }),
+      },
       { history: false },
     ),
   );
@@ -257,7 +271,17 @@ async function openSidebar(
       await view.read;
     });
   await settle();
-  return { view, run, reads, settle };
+  return {
+    view,
+    run,
+    reads,
+    settle,
+    repository,
+    /** What the repository holds for the Attachment from now on. */
+    setList: (next: AnnotationList) => {
+      list = next;
+    },
+  };
 }
 
 function cards(el: HTMLElement): (string | null)[] {
@@ -420,4 +444,128 @@ it("restores the Query File its state keeps", async () => {
   expect(run.mock.calls.at(-1)![0].context).toMatchObject({
     attachment: "PDFAAAAA",
   });
+});
+
+it("shows a new Annotation's card as its write starts, before the query runs again", async () => {
+  const { view, run, repository, setList } = await openSidebar([PDF]);
+  await using cleanup = new AsyncDisposableStack();
+  cleanup.defer(() => act(() => view.close()));
+  const runs = run.mock.calls.length;
+
+  // A create's Pending Proposal stands in the repository's list at once; the
+  // database, which the query reads, has it only later.
+  const created = {
+    ...record("ANNOTNEW", "#5fb236"),
+    sortIndex: "00000|000000|00001",
+  };
+  setList({
+    ...LIST,
+    annotations: [LIST.annotations[0]!, created, LIST.annotations[1]!],
+  });
+  await act(() => repository.emit("annotations-changed", "PDFAAAAA"));
+
+  expect(cards(view.contentEl)).toEqual(["ANNOTAAA", "ANNOTNEW", "ANNOTBBB"]);
+  expect(run.mock.calls.length).toBe(runs);
+});
+
+it("keeps a card the query left out by its filter off the list", async () => {
+  const { view, repository } = await openSidebar([PDF], () =>
+    rows([row("ANNOTBBB", "red", "#ff6666")]),
+  );
+  await using cleanup = new AsyncDisposableStack();
+  cleanup.defer(() => act(() => view.close()));
+
+  // A write to an Annotation the query did not give changes nothing on screen.
+  await act(() => repository.emit("annotations-changed", "PDFAAAAA"));
+
+  expect(cards(view.contentEl)).toEqual(["ANNOTBBB"]);
+});
+
+const FAILED: QueryViewOutcome = {
+  kind: "failed",
+  diagnostic: {
+    code: "source-unavailable",
+    message: "The Zotero database is busy.",
+    hint: "Try again.",
+    severity: "error",
+    report: [],
+  } as never,
+};
+
+it("says why the cards cannot show when the query fails", async () => {
+  const { view } = await openSidebar([PDF], () => FAILED);
+  await using cleanup = new AsyncDisposableStack();
+  cleanup.defer(() => act(() => view.close()));
+
+  const text = view.contentEl.textContent ?? "";
+  expect(text).toContain("The sidebar cannot show annotations.");
+  expect(text).toContain("The Zotero database is busy.");
+  expect(text).not.toContain("Loading");
+});
+
+it("says that Zotero's data cannot be read", async () => {
+  const { view, run } = await openSidebar([PDF], undefined, {
+    readsState: "degraded",
+  });
+  await using cleanup = new AsyncDisposableStack();
+  cleanup.defer(() => act(() => view.close()));
+
+  expect(run).not.toHaveBeenCalled();
+  expect(
+    view.contentEl.querySelector("[data-annot-view-problem]")?.textContent,
+  ).toBe("ZotLit cannot read the Zotero database.");
+});
+
+it("keeps the last cards under a note when a filter condition has an error", async () => {
+  const query = serializeQueryFile({
+    filters: "attachment == this.attachment",
+    views: [
+      {
+        type: "annotations",
+        name: "Annotations",
+        from: "annotations",
+        filters: 'colorName == "yellow"',
+        problems: [],
+        source: {},
+      },
+    ],
+    problems: [],
+    source: {},
+  });
+  const file = parseQueryFile(query);
+  const composed = viewFilter(file, file.views[0]!)!;
+  const from = composed.indexOf("colorName");
+  const { view, settle } = await openSidebar(
+    [PDF],
+    (request) =>
+      request.sort
+        ? {
+            kind: "failed",
+            diagnostic: {
+              code: "unknown-field",
+              message: "colourName is not a field of Annotations.",
+              hint: "",
+              severity: "error",
+              report: [],
+              location: {
+                argument: "filter",
+                span: { from, to: from + "colorName".length },
+              },
+            } as never,
+          }
+        : rows(ROWS),
+    { query },
+  );
+  await using cleanup = new AsyncDisposableStack();
+  cleanup.defer(() => act(() => view.close()));
+
+  await act(() =>
+    menuItem(menuItem(paneMenu(view), "Sort").submenu!, "Date added").click(),
+  );
+  await settle();
+
+  expect(cards(view.contentEl)).toEqual(["ANNOTAAA", "ANNOTBBB"]);
+  expect(
+    view.contentEl.querySelector("[data-annot-view-filter-error]")?.textContent,
+  ).toBe("The filter has an error. The sidebar shows the last results.");
 });

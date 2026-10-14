@@ -114,6 +114,8 @@ export class AnnotationView extends ItemView implements HistorySurface {
    * through `attachment == this.attachment`.
    */
   readonly #query: QueryView;
+  /** Whether Zotero's data cannot be read, which the sidebar says in place of cards. */
+  #unreadable = false;
   /** The Query File the sidebar runs, once a change made it differ from the default. */
   #queryText: string | null = null;
   /** The cards, their store, their actions, the Card Selection and the card keys. */
@@ -167,7 +169,13 @@ export class AnnotationView extends ItemView implements HistorySurface {
         this.#queryText = text;
         void this.#deps.app.workspace.requestSaveLayout();
       },
-      layout: this.#layoutHost(),
+      layout: { ...this.#layoutHost(), showNewRecords: true },
+      // The followed Attachment's own list, so its first new Annotation shows
+      // as the write starts, before the database has it.
+      attachments: () => {
+        const key = this.#store.getState().selectedAttachmentKey;
+        return key === null ? [] : [key];
+      },
     });
     this.#layout = this.#query.layout;
     this.#store = this.#layout.store;
@@ -355,6 +363,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
     this.register(() => this.#zoteroReader?.[Symbol.dispose]());
 
     this.#query.load();
+    this.register(this.#query.state.subscribe(() => this.#syncQueryProblem()));
 
     this.#store.setState({
       liveUpdatesOn: this.#deps.liveUpdate.available,
@@ -595,9 +604,38 @@ export class AnnotationView extends ItemView implements HistorySurface {
     this.#layout.bindReader(this.#followedSession());
     if (this.#deps.reads.state !== "ready") {
       this.#clearState();
+      // A database still opening says nothing yet; one that failed says so.
+      this.#unreadable = this.#deps.reads.state === "degraded";
+      this.#syncQueryProblem();
       return;
     }
+    this.#unreadable = false;
     this.#loadTarget(this.#resolveTarget());
+  }
+
+  /**
+   * What stands in the way of the cards, from the Query View's own state:
+   * Zotero's data that cannot be read, a failed query, or a filter condition
+   * with an error under the last cards.
+   */
+  #syncQueryProblem(): void {
+    const { phase, diagnostic, keptResults, filterIssue } =
+      this.#query.state.getState();
+    const failed = phase === "failed" && diagnostic !== null;
+    this.#store.setState({
+      queryProblem: this.#unreadable
+        ? { message: m.annot_view_zotero_unreadable(), detail: "" }
+        : failed && !keptResults
+          ? {
+              message: m.annot_view_query_failed(),
+              detail: [diagnostic.message, diagnostic.hint]
+                .filter(Boolean)
+                .join(" "),
+            }
+          : null,
+      filterError:
+        !this.#unreadable && failed && keptResults && filterIssue !== null,
+    });
   }
 
   #resolveTarget(): LoadTarget | null {

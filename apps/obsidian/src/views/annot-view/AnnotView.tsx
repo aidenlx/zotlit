@@ -96,6 +96,7 @@ function useBody(): AnnotViewBody {
   const followMode = useAnnotStore((s) => s.followMode);
   const liveUpdatesOn = useAnnotStore((s) => s.liveUpdatesOn);
   const pinnedItemKey = useAnnotStore((s) => s.pinnedItemKey);
+  const queryProblem = useAnnotStore((s) => s.queryProblem);
   return useMemo(
     () =>
       annotViewBody({
@@ -104,8 +105,16 @@ function useBody(): AnnotViewBody {
         followMode,
         liveUpdatesOn,
         pinnedItemKey,
+        queryProblem,
       }),
-    [attachments, annotations, followMode, liveUpdatesOn, pinnedItemKey],
+    [
+      attachments,
+      annotations,
+      followMode,
+      liveUpdatesOn,
+      pinnedItemKey,
+      queryProblem,
+    ],
   );
 }
 
@@ -123,6 +132,7 @@ export function AnnotView() {
   const searchButtonRef = useRef<HTMLDivElement>(null);
 
   const hasItem = body.kind === "list" || body.kind === "loading";
+  const filterError = useAnnotStore((s) => s.filterError);
   const actions = useContext(AnnotActionsContext);
   const editingText = useAnnotStore(
     (s) => s.editing !== null && s.editing.field !== "tags",
@@ -165,8 +175,26 @@ export function AnnotView() {
       {hasItem && searchOpen && (
         <SearchRow id={searchBarId} searchButtonRef={searchButtonRef} />
       )}
+      {body.kind === "list" && filterError && (
+        <p
+          className="zt:mx-2 zt:my-1 zt:text-sm zt:text-(--text-error)"
+          role="alert"
+          data-annot-view-filter-error=""
+        >
+          {m.annot_view_filter_error()}
+        </p>
+      )}
       {body.kind === "list" ? (
         <AnnotList collapsed={collapsed} />
+      ) : body.kind === "problem" ? (
+        <div
+          className="pane-empty zt:p-2"
+          role="alert"
+          data-annot-view-problem=""
+        >
+          <p className="zt:m-0">{body.message}</p>
+          {body.detail && <p className="zt:m-0 zt:mt-1">{body.detail}</p>}
+        </div>
       ) : body.kind === "loading" ? (
         <div className="pane-empty zt:p-2">{m.annot_view_loading()}</div>
       ) : body.kind === "no-attachments" ? (
