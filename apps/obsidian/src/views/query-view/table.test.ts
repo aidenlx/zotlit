@@ -91,6 +91,17 @@ describe("resultTable", () => {
       ],
     ]);
   });
+
+  it("names an Item's columns and writes its Item Type as the Table shows them", () => {
+    const item: QueryViewRow = {
+      indexedKey: "RUGIER24",
+      values: { title: "Ten simple rules", itemType: "journalArticle" },
+    };
+    expect(resultTable([item], ["title", "itemType"])).toEqual({
+      header: ["Title", "Item Type"],
+      body: [["Ten simple rules", "Journal Article"]],
+    });
+  });
 });
 
 describe("toCSV", () => {
