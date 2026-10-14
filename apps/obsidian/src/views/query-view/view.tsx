@@ -219,6 +219,8 @@ function problemText(problem: QueryFileProblem): string {
         key: problem.key,
         value: JSON.stringify(problem.value) ?? String(problem.value),
       });
+    case "duplicate-view-name":
+      return m.query_view_problem_duplicate_view({ name: problem.name });
     default:
       problem satisfies never;
       return "";

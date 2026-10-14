@@ -46,7 +46,9 @@ export type QueryFileProblem =
       readonly code: "invalid-value";
       readonly key: string;
       readonly value: unknown;
-    };
+    }
+  /** Two views have one name, which a link to a view or a view choice cannot tell apart. */
+  | { readonly code: "duplicate-view-name"; readonly name: string };
 
 export interface QueryFileView {
   /** The Layout. */
@@ -271,6 +273,12 @@ export function parseQueryFile(text: string): QueryFile {
   file.views = Array.isArray(value.views) ? value.views.map(readView) : [];
   if (file.views.length === 0 && problems.length === 0)
     problems.push({ code: "no-views" });
+  const names = new Set<string>();
+  const duplicates = new Set<string>();
+  for (const { name } of file.views)
+    if (name) (names.has(name) ? duplicates : names).add(name);
+  for (const name of duplicates)
+    problems.push({ code: "duplicate-view-name", name });
   return file;
 }
 

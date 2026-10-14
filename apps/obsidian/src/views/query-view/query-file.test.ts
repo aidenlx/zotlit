@@ -118,6 +118,21 @@ describe("parseQueryFile", () => {
     ]);
   });
 
+  it("names two views of one name as a problem of the file", () => {
+    const file = parseQueryFile(`views:
+  - type: annotations
+    name: Figures
+  - type: list
+    name: Figures
+  - type: annotations
+    name: Methods
+`);
+    expect(file.views).toHaveLength(3);
+    expect(file.problems).toEqual([
+      { code: "duplicate-view-name", name: "Figures" },
+    ]);
+  });
+
   it("opens an empty file with a problem that it has no views", () => {
     expect(parseQueryFile("").problems).toEqual([{ code: "no-views" }]);
   });
