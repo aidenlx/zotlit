@@ -62,12 +62,20 @@ function state(overrides: Partial<AnnotState> = {}): AnnotState {
     attachments: ATTACHMENTS,
     selectedAttachmentKey: "ATCH0001",
     annotations: [],
-    annotationSource: {
-      kind: "zotero-db",
-      database: { userID: null, localUserKey: null, serverID: null },
-      libraryID: 1,
-      libraryRevision: null,
-    },
+    sources: new Map([
+      [
+        "ATCH0001",
+        {
+          source: {
+            kind: "zotero-db",
+            database: { userID: null, localUserKey: null, serverID: null },
+            libraryID: 1,
+            libraryRevision: null,
+          },
+          scope: null,
+        },
+      ],
+    ]),
     liveUpdatesOn: true,
     ...overrides,
   });
