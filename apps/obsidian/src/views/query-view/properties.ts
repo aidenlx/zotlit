@@ -32,7 +32,7 @@ export function sortOptions(
 export function groupOptions(
   dataset: QueryFileDataset | undefined,
 ): PropertyOption[] {
-  return datasetSpec(dataset).group.map(([path, label]) => ({
+  return datasetSpec(dataset).group.map(({ path, label }) => ({
     path,
     label: label(),
     kind: "text",
