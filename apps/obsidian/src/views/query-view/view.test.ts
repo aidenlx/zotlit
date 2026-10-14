@@ -122,7 +122,13 @@ afterEach(() => {
 async function mount(
   answers: QueryViewOutcome[],
   onWrite?: (text: string) => void,
-  { notes = {} }: { notes?: Record<string, string> } = {},
+  {
+    notes = {},
+    layout,
+  }: {
+    notes?: Record<string, string>;
+    layout?: ConstructorParameters<typeof QueryView>[1]["layout"];
+  } = {},
 ) {
   setMockPlatform({ isMacOS: true });
   cleanup.defer(resetMockPlatform);
@@ -224,6 +230,7 @@ async function mount(
       onWrite?.(text);
     },
     onSelectView,
+    ...(layout && { layout }),
   });
   const saved: string[] = [];
   const el = document.createElement("div");
@@ -351,6 +358,47 @@ it("runs again once an Attachment it shows gains an Annotation, so a grouped vie
   repository.emit("annotations-changed", "PDFOTHER");
   await wait(RERUN_DELAY_MS);
   expect(run).toHaveBeenCalledTimes(2);
+});
+
+it("keeps a new Annotation on screen when a run from its list change has not read it yet", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  cleanup.defer(() => vi.useRealTimers());
+  const { view, el, run, reads, repository, setList, settle } = await mount(
+    [
+      result([row("ANNOTBBB")]),
+      result([row("ANNOTAAA"), row("ANNOTBBB")]),
+      // Zotero's database does not hold the new Annotation yet.
+      result([row("ANNOTAAA"), row("ANNOTBBB")]),
+      result([row("ANNOTAAA"), row("ANNOTBBB"), row("ANNOTCCC")]),
+    ],
+    undefined,
+    { layout: { showNewRecords: true } },
+  );
+  await act(() => view.setText(FILE));
+  await settle();
+  await act(() => view.pickView("Everything"));
+  await settle();
+
+  setList({
+    ...LIST,
+    annotations: [...LIST.annotations, record("ANNOTCCC", "PDFAAAAA")],
+  });
+  repository.emit("annotations-changed", "PDFAAAAA");
+  await settle();
+  expect(cards(el)).toEqual(["ANNOTAAA", "ANNOTBBB", "ANNOTCCC"]);
+
+  await act(() => {
+    vi.advanceTimersByTime(RERUN_DELAY_MS);
+  });
+  await settle();
+  expect(run).toHaveBeenCalledTimes(3);
+  expect(cards(el)).toEqual(["ANNOTAAA", "ANNOTBBB", "ANNOTCCC"]);
+
+  // The database change that brings it runs the view, and its rows hold it.
+  reads.emit("changed");
+  await settle();
+  expect(run).toHaveBeenCalledTimes(4);
+  expect(cards(el)).toEqual(["ANNOTAAA", "ANNOTBBB", "ANNOTCCC"]);
 });
 
 it("holds the lists it shows, and lets the old ones go only after the new ones", async () => {
