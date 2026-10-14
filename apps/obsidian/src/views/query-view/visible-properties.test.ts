@@ -4,7 +4,7 @@ import {
   datasetProperties,
   propertyChoices,
   visibleProperties,
-} from "./properties";
+} from "./visible-properties";
 
 describe("visibleProperties", () => {
   it("gives the view's order", () => {

@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  editView,
   NEW_QUERY_FILE_LIMIT,
   newQueryFileText,
   parseQueryFile,
   serializeQueryFile,
-  updateView,
   viewFilter,
 } from "./query-file";
 
@@ -120,7 +120,7 @@ describe("parseQueryFile", () => {
   });
 });
 
-describe("updateView", () => {
+describe("editView: order and limit", () => {
   const ORDERED = `views:
   - type: annotations
     name: Shared
@@ -142,7 +142,7 @@ describe("updateView", () => {
   it("writes new visible properties and a new limit in place, and keeps the other keys", () => {
     const file = parseQueryFile(ORDERED);
     const text = serializeQueryFile(
-      updateView(file, file.views[0]!, {
+      editView(file, file.views[0]!, {
         order: ["comment", "pageLabel"],
         limit: 5,
       }),
@@ -161,9 +161,9 @@ describe("updateView", () => {
 
   it("removes the limit to show every result, and keeps an empty order", () => {
     const file = parseQueryFile(ORDERED);
-    const updated = updateView(file, file.views[0]!, {
+    const updated = editView(file, file.views[0]!, {
       order: [],
-      limit: null,
+      limit: undefined,
     });
     expect(updated.views[0]).toMatchObject({ order: [] });
     expect(updated.views[0]!.limit).toBeUndefined();
@@ -178,7 +178,7 @@ describe("updateView", () => {
 
   it("adds visible properties to a view that had none, after its other keys", () => {
     const file = parseQueryFile(newQueryFileText("Annotations"));
-    const updated = updateView(file, file.views[0]!, { order: ["comment"] });
+    const updated = editView(file, file.views[0]!, { order: ["comment"] });
     expect(parseQueryFile(serializeQueryFile(updated)).views[0]).toMatchObject({
       order: ["comment"],
       limit: NEW_QUERY_FILE_LIMIT,
@@ -230,5 +230,114 @@ describe("newQueryFileText", () => {
       }),
     ]);
     expect(file.views[0]!.filters).toBeUndefined();
+  });
+});
+
+const GROUPED = `views:
+  - type: annotations
+    name: Colours
+    from: annotations
+    groupBy:
+      property: colorName
+      direction: ASC
+    groupOrder:
+      - red
+      - yellow
+      - null
+    cardWidth: 300
+  - type: annotations
+    name: Figures
+    from: annotations
+`;
+
+describe("groupOrder", () => {
+  it("reads a Manual group order, with the group of no value as null", () => {
+    const file = parseQueryFile(GROUPED);
+    expect(file.views[0]!.problems).toEqual([]);
+    expect(file.views[0]!.groupOrder).toEqual(["red", "yellow", null]);
+    expect(serializeQueryFile(file)).toBe(GROUPED);
+  });
+
+  it("names a groupOrder that is not a list as a problem", () => {
+    const file = parseQueryFile(`views:
+  - type: annotations
+    name: Colours
+    from: annotations
+    groupOrder: red
+`);
+    expect(file.views[0]!.problems).toEqual([
+      { code: "invalid-value", key: "groupOrder", value: "red" },
+    ]);
+  });
+});
+
+describe("editView", () => {
+  it("writes a new sort in the view, and keeps every other key in its place", () => {
+    const file = parseQueryFile(GROUPED);
+    const next = editView(file, file.views[0]!, {
+      sort: [
+        { property: "dateAdded", direction: "DESC" },
+        { property: "pageIndex", direction: "ASC" },
+      ],
+    });
+    expect(serializeQueryFile(next)).toBe(`views:
+  - type: annotations
+    name: Colours
+    from: annotations
+    groupBy:
+      property: colorName
+      direction: ASC
+    groupOrder:
+      - red
+      - yellow
+      - null
+    cardWidth: 300
+    sort:
+      - property: dateAdded
+        direction: DESC
+      - property: pageIndex
+        direction: ASC
+  - type: annotations
+    name: Figures
+    from: annotations
+`);
+  });
+
+  it("drops the sort, the grouping and the group order it is told to clear", () => {
+    const file = parseQueryFile(GROUPED);
+    const next = editView(file, file.views[0]!, {
+      groupBy: undefined,
+      groupOrder: undefined,
+    });
+    expect(serializeQueryFile(next)).toBe(`views:
+  - type: annotations
+    name: Colours
+    from: annotations
+    cardWidth: 300
+  - type: annotations
+    name: Figures
+    from: annotations
+`);
+  });
+
+  it("drops the Manual group order when the grouping takes another property", () => {
+    const file = parseQueryFile(GROUPED);
+    const next = editView(file, file.views[0]!, {
+      groupBy: { property: "tags[]", direction: "ASC" },
+    });
+    expect(next.views[0]!.groupOrder).toBeUndefined();
+    expect(serializeQueryFile(next)).not.toContain("groupOrder");
+  });
+
+  it("keeps the Manual group order when only the direction changes", () => {
+    const file = parseQueryFile(GROUPED);
+    const next = editView(file, file.views[0]!, {
+      groupBy: { property: "colorName", direction: "DESC" },
+    });
+    expect(next.views[0]!.groupOrder).toEqual(["red", "yellow", null]);
+    expect(next.views[0]!.groupBy).toEqual({
+      property: "colorName",
+      direction: "DESC",
+    });
   });
 });

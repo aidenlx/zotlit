@@ -1,74 +1,86 @@
-// The properties a Query View can show: the Projection Paths of its Query
-// Dataset that give one cell each, read from the same descriptor ZotLit Query
-// plans with.
-import {
-  ANNOTATIONS,
-  ATTACHMENTS,
-  cellProperties,
-  ITEMS,
-} from "@zotlit/item-query";
-import type { QueryDataset } from "@zotlit/item-query";
+// The properties a Query View's Sort and Group controls offer, by the names a
+// researcher knows them by. Sort offers only Sortable Fields of ZotLit Query;
+// Group offers the group paths the Annotations Layout can gather rows by.
+import { ANNOTATIONS } from "@zotlit/item-query";
 
-import type { QueryFileDataset, QueryFileView } from "./query-file";
+import * as m from "@/lib/i18n/generated/messages";
 
-const DATASETS: Record<QueryFileDataset, QueryDataset> = {
-  annotations: ANNOTATIONS,
-  attachments: ATTACHMENTS,
-  items: ITEMS,
-};
+import type { QueryFileDataset, QueryFileDirection } from "./query-file";
+import type { LayoutGroupPath } from "./rows";
 
-const cache = new Map<QueryFileDataset, readonly string[]>();
+/** How a property's values order, which names its two directions. */
+export type PropertyKind = "text" | "date" | "number";
 
-/**
- * The properties of a dataset, in the order ZotLit Query lists them: the
- * paths that give one cell each. An Annotation's position is left out; its
- * numbers mean nothing in a table.
- */
-export function datasetProperties(
-  dataset: QueryFileDataset,
-): readonly string[] {
-  let properties = cache.get(dataset);
-  if (!properties) {
-    properties = cellProperties(DATASETS[dataset]).filter(
-      (path) => path !== "position" && !path.startsWith("position."),
-    );
-    cache.set(dataset, properties);
+export interface PropertyOption {
+  /** The Projection Path, as the file names it. */
+  readonly path: string;
+  readonly label: string;
+  readonly kind: PropertyKind;
+}
+
+const ANNOTATION_SORT_CANDIDATES: readonly [
+  string,
+  () => string,
+  PropertyKind,
+][] = [
+  ["sortIndex", m.query_view_property_position, "number"],
+  ["pageIndex", m.query_view_property_page, "number"],
+  ["dateAdded", m.query_view_property_date_added, "date"],
+  ["dateModified", m.query_view_property_date_modified, "date"],
+  ["color", m.query_view_property_color, "text"],
+  ["type", m.query_view_property_type, "text"],
+  ["item.title", m.query_view_property_item_title, "text"],
+  ["item.firstAuthor", m.query_view_property_first_author, "text"],
+  ["item.date", m.query_view_property_item_date, "date"],
+  ["item.dateModified", m.query_view_property_item_date_modified, "date"],
+  ["attachment.title", m.query_view_property_attachment_title, "text"],
+  ["attachment.dateAdded", m.query_view_property_attachment_date_added, "date"],
+];
+
+/** The properties a view of `dataset` can sort by, in the order Sort lists them. */
+export function sortOptions(
+  dataset: QueryFileDataset | undefined,
+): PropertyOption[] {
+  if (dataset !== undefined && dataset !== "annotations") return [];
+  const sortable = new Set(ANNOTATIONS.sortableFields);
+  return ANNOTATION_SORT_CANDIDATES.filter(([path]) => sortable.has(path)).map(
+    ([path, label, kind]) => ({ path, label: label(), kind }),
+  );
+}
+
+/** The properties the Annotations Layout can group by, in the order Group lists them. */
+export function groupOptions(): PropertyOption[] {
+  const options: [LayoutGroupPath, () => string][] = [
+    ["item.indexedKey", m.query_view_property_item],
+    ["attachment.indexedKey", m.query_view_property_attachment],
+    ["colorName", m.query_view_property_color],
+    ["tags[]", m.query_view_property_tag],
+    ["item.collections[]", m.query_view_property_collection],
+  ];
+  return options.map(([path, label]) => ({
+    path,
+    label: label(),
+    kind: "text",
+  }));
+}
+
+/** The name of one direction of a property, as Bases names it. */
+export function directionLabel(
+  kind: PropertyKind,
+  direction: QueryFileDirection,
+): string {
+  const ascending = direction === "ASC";
+  switch (kind) {
+    case "date":
+      return ascending
+        ? m.query_view_sort_old_new()
+        : m.query_view_sort_new_old();
+    case "number":
+      return ascending ? m.query_view_sort_01() : m.query_view_sort_10();
+    case "text":
+      return ascending ? m.query_view_sort_az() : m.query_view_sort_za();
+    default:
+      kind satisfies never;
+      return direction;
   }
-  return properties;
-}
-
-/**
- * The rows of the Properties popover: the visible properties first, in their
- * order, then the other properties of the record itself. While the user
- * searches, the properties of the parent records come too.
- */
-export function propertyChoices(
-  properties: readonly string[],
-  order: readonly string[],
-  query: string,
-): string[] {
-  const shown = new Set(order);
-  const rest = properties.filter(
-    (property) =>
-      !shown.has(property) && (query !== "" || !property.includes(".")),
-  );
-  return [...order, ...rest];
-}
-
-/**
- * The visible properties of a view, in its order. Where `fallback` asks for
- * them, a view that names none gives the properties ZotLit Query projects by
- * default, so a copy or an export still has columns.
- */
-export function visibleProperties(
-  view: Pick<QueryFileView, "order" | "from">,
-  { fallback = false }: { fallback?: boolean } = {},
-): readonly string[] {
-  if (view.order && view.order.length > 0) return view.order;
-  if (!fallback) return [];
-  const dataset = view.from ?? "annotations";
-  const properties = datasetProperties(dataset);
-  return DATASETS[dataset].defaultFields.filter((field) =>
-    properties.includes(field),
-  );
 }

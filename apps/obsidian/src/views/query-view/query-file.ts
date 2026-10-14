@@ -25,6 +25,9 @@ export type QueryFileDataset = (typeof QUERY_FILE_DATASETS)[number];
 
 export type QueryFileDirection = "ASC" | "DESC";
 
+/** The value of one group in a Manual group order. */
+export type QueryFileGroupValue = string | null;
+
 export interface QueryFileSort {
   readonly property: string;
   readonly direction: QueryFileDirection;
@@ -58,6 +61,13 @@ export interface QueryFileView {
    * reverses them.
    */
   readonly groupBy?: QueryFileSort;
+  /**
+   * The Manual group order: the values of the groups shown, in the order they
+   * show; a group whose value is not listed is hidden. `null` is the group of
+   * the rows that have no value. `undefined` while the groups follow
+   * `groupBy.direction`.
+   */
+  readonly groupOrder?: readonly QueryFileGroupValue[];
   readonly limit?: number;
   /**
    * The visible properties, as Projection Paths, in the order the view shows
@@ -192,6 +202,15 @@ function readView(value: unknown): QueryFileView {
     if (groupBy === null) invalid("groupBy");
     else view.groupBy = groupBy;
   }
+  if (source.groupOrder !== undefined) {
+    const order = source.groupOrder;
+    if (
+      Array.isArray(order) &&
+      order.every((value) => value === null || typeof value === "string")
+    )
+      view.groupOrder = order as QueryFileGroupValue[];
+    else invalid("groupOrder");
+  }
   if (source.limit !== undefined) {
     const { limit } = source;
     if (typeof limit === "number" && Number.isInteger(limit) && limit > 0)
@@ -277,12 +296,6 @@ function writeFilter(tree: MatchTree | undefined): unknown {
     : { or: tree.or.map(writeFilter) };
 }
 
-function invalidKey(view: QueryFileView, key: string): boolean {
-  return view.problems.some(
-    (problem) => problem.code === "invalid-value" && problem.key === key,
-  );
-}
-
 function writeView(view: QueryFileView): Entries {
   return merged(view.source, {
     type: view.type || undefined,
@@ -291,39 +304,45 @@ function writeView(view: QueryFileView): Entries {
     filters: writeFilter(view.filters) ?? view.source.filters,
     sort: view.sort?.map((sort) => ({ ...sort })) ?? view.source.sort,
     groupBy: view.groupBy ? { ...view.groupBy } : view.source.groupBy,
-    // A view without a limit shows every result, so its key goes; a limit the
-    // parser could not read stays as the file holds it.
-    limit:
-      view.limit ?? (invalidKey(view, "limit") ? view.source.limit : undefined),
+    groupOrder: view.groupOrder ? [...view.groupOrder] : view.source.groupOrder,
+    limit: view.limit ?? view.source.limit,
     order: view.order ? [...view.order] : view.source.order,
   });
 }
 
-/** What a toolbar change sets on one view. */
-export interface QueryFileViewChange {
-  readonly order?: readonly string[];
-  /** `null`: no limit, so the view shows every result. */
-  readonly limit?: number | null;
-}
+/** What a toolbar control changes in one view. A key set to `undefined` is removed. */
+export type QueryFileViewEdit = Partial<
+  Pick<QueryFileView, "sort" | "groupBy" | "groupOrder" | "order" | "limit">
+>;
 
-/** The file with one of its views changed; the other views stay as they are. */
-export function updateView(
+/**
+ * The file with one view changed. A grouping that takes another property
+ * drops the Manual group order, since its values name the old groups. A key
+ * the edit sets is no longer a problem of the view.
+ */
+export function editView(
   file: QueryFile,
   view: QueryFileView,
-  change: QueryFileViewChange,
+  edit: QueryFileViewEdit,
 ): QueryFile {
-  const next: { -readonly [K in keyof QueryFileView]: QueryFileView[K] } = {
-    ...view,
-  };
-  if (change.order !== undefined) next.order = [...change.order];
-  if (change.limit !== undefined) {
-    if (change.limit === null) delete next.limit;
-    else next.limit = change.limit;
-    next.problems = view.problems.filter(
-      (problem) =>
-        !(problem.code === "invalid-value" && problem.key === "limit"),
-    );
-  }
+  const changes: {
+    -readonly [K in keyof QueryFileViewEdit]: QueryFileViewEdit[K];
+  } = { ...edit };
+  if (
+    Object.hasOwn(edit, "groupBy") &&
+    edit.groupBy?.property !== view.groupBy?.property
+  )
+    changes.groupOrder = undefined;
+  const source: Entries = { ...view.source };
+  for (const [key, value] of Object.entries(changes))
+    if (value === undefined) delete source[key];
+  const problems = view.problems.filter(
+    (problem) =>
+      !(
+        problem.code === "invalid-value" && Object.hasOwn(changes, problem.key)
+      ),
+  );
+  const next: QueryFileView = { ...view, ...changes, source, problems };
   return {
     ...file,
     views: file.views.map((candidate) =>

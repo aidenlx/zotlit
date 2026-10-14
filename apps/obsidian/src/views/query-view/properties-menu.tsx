@@ -10,9 +10,9 @@ import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
 
-import { datasetProperties, propertyChoices } from "./properties";
 import type { QueryFileDataset } from "./query-file";
 import type { QueryView } from "./view";
+import { datasetProperties, propertyChoices } from "./visible-properties";
 
 const trigger =
   "clickable-icon zt:inline-flex zt:min-w-0 zt:items-center zt:gap-1 zt:rounded-(--clickable-icon-radius) zt:px-1.5 zt:py-1 zt:text-muted-foreground zt:hover:bg-muted zt:hover:text-foreground zt:focus-visible:ring-2 zt:focus-visible:ring-border-focus zt:focus-visible:outline-none zt:data-open:bg-muted zt:data-open:text-foreground";
@@ -36,8 +36,7 @@ export function PropertiesMenu({ view }: { view: QueryView }) {
   const current = useStore(view.state, (s) => s.view);
   if (!current) return null;
   const order = current.order ?? [];
-  const setOrder = (next: readonly string[]) =>
-    view.changeView({ order: next });
+  const setOrder = (next: readonly string[]) => view.editView({ order: next });
   return (
     <Chooser value={order} onValueChange={setOrder}>
       <Chooser.Trigger

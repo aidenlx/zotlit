@@ -31,29 +31,30 @@ import { AnnotationsLayout } from "@/views/annot-view/layout";
 import type { AnnotationsLayoutDeps } from "@/views/annot-view/layout";
 import { useAnnotStore } from "@/views/annot-view/store";
 
-import { visibleProperties } from "./properties";
+import { GroupEditor } from "./group-control";
+import { groupOptions, sortOptions } from "./properties";
 import { PropertiesMenu } from "./properties-menu";
 import {
+  editView,
   parseQueryFile,
   serializeQueryFile,
-  updateView,
   viewFilter,
 } from "./query-file";
 import type {
   QueryFile,
   QueryFileProblem,
   QueryFileView,
-  QueryFileViewChange,
+  QueryFileViewEdit,
 } from "./query-file";
 import { ResultsMenu } from "./results-menu";
-import {
-  LAYOUT_FIELDS,
-  LAYOUT_GROUP_PATHS,
-  layoutRows,
-  shownRows,
-} from "./rows";
+import { LAYOUT_FIELDS, LAYOUT_GROUP_PATHS, layoutRows } from "./rows";
+import type { LayoutGroup } from "./rows";
+import { SearchControl } from "./search-control";
+import { SortEditor } from "./sort-control";
 import { resultTable } from "./table";
 import type { ResultTable } from "./table";
+import { ToolbarPopover } from "./toolbar-popover";
+import { visibleProperties } from "./visible-properties";
 
 const logger = getLogger(["views", "query-view"]);
 
@@ -80,10 +81,12 @@ export interface QueryViewHost {
   /** The user chose another view of the file; the host may remember it. */
   onSelectView?: (name: string) => void;
   /**
-   * Keep the file's text after a toolbar change. Without it, a change holds
-   * only while the view stays open.
+   * Write the file's new text after a toolbar change. Absent where the host
+   * cannot save; the change then shows until the file is read again.
    */
   save?: (text: string) => void;
+  /** Open the Query File; the toolbar shows a link button when the host gives it. */
+  openFile?: (event: MouseEvent) => void;
 }
 
 /** What the view shows now, as the toolbar and the host read it. */
@@ -98,10 +101,12 @@ export interface QueryViewState {
   diagnostic:
     | (Pick<Diagnostic, "message" | "hint" | "report"> & { code: string })
     | null;
-  /** The records that match the view, before its limit. */
+  /** The rows shown, each once however many groups it stands in. */
   count: number;
-  /** The rows on screen, after the view's limit. */
-  shown: number;
+  /** The records that match the view, before its limit. */
+  matched: number;
+  /** Every group the rows hold, the shown ones first; empty when ungrouped. */
+  groups: readonly LayoutGroup[];
   /** Whether the view's limit cut the rows short. */
   truncated: boolean;
 }
@@ -113,7 +118,8 @@ const INITIAL_STATE: QueryViewState = {
   phase: "idle",
   diagnostic: null,
   count: 0,
-  shown: 0,
+  matched: 0,
+  groups: [],
   truncated: false,
 };
 
@@ -168,7 +174,7 @@ export class QueryView extends Component {
   /** The view whose rows are on screen, which a failed refresh keeps. */
   #shownView: QueryFileView | null = null;
   #settled: Promise<void> = Promise.resolve();
-  /** The rows on screen, in the order they show. */
+  /** The rows on screen, each once, in the order they show. */
   #rows: readonly QueryViewRow[] = [];
   #subscriptions: DisposableStack | null = null;
 
@@ -231,27 +237,18 @@ export class QueryView extends Component {
   }
 
   /**
-   * Apply a toolbar change to the view shown, run it again, and hand the
-   * file's new text to the host to keep.
+   * A toolbar change: show `file` at once, and hand its text to the host to
+   * save.
    */
-  changeView(change: QueryFileViewChange): void {
-    const { file, view } = this.state.getState();
-    if (!file || !view) return;
-    const text = serializeQueryFile(updateView(file, view, change));
+  commit(file: QueryFile): void {
+    const text = serializeQueryFile(file);
     this.setText(text);
     this.#host.save?.(text);
   }
 
-  /**
-   * The rows on screen as a table, one column for each visible property in
-   * the view's order: what "Copy to clipboard" and "Export CSV..." write.
-   */
-  table(): ResultTable {
-    const { view } = this.state.getState();
-    return resultTable(
-      this.#rows,
-      view ? visibleProperties(view, { fallback: true }) : [],
-    );
+  /** The host's link to the Query File, for the toolbar. */
+  get openFile(): QueryViewHost["openFile"] {
+    return this.#host.openFile;
   }
 
   /** Show the view named `name`, or the file's first view for `null`. */
@@ -271,6 +268,28 @@ export class QueryView extends Component {
   pickView(name: string): void {
     this.selectView(name);
     this.#host.onSelectView?.(name);
+  }
+
+  /**
+   * Change the view shown, as a toolbar control asks, and save the file's new
+   * text through the host.
+   */
+  editView(edit: QueryFileViewEdit): void {
+    const { file, view } = this.state.getState();
+    if (!file || !view) return;
+    this.commit(editView(file, view, edit));
+  }
+
+  /**
+   * The rows on screen as a table, one column for each visible property in
+   * the view's order: what "Copy to clipboard" and "Export CSV..." write.
+   */
+  table(): ResultTable {
+    const { view } = this.state.getState();
+    return resultTable(
+      this.#rows,
+      view ? visibleProperties(view, { fallback: true }) : [],
+    );
   }
 
   #choose(): void {
@@ -302,7 +321,8 @@ export class QueryView extends Component {
         phase: "idle",
         diagnostic: null,
         count: 0,
-        shown: 0,
+        matched: 0,
+        groups: [],
         truncated: false,
       });
       return;
@@ -359,16 +379,26 @@ export class QueryView extends Component {
         return;
       case "result": {
         const { result } = outcome;
-        const rows = layoutRows(result.rows ?? [], view.groupBy);
-        this.#rows = shownRows(result.rows ?? [], view.groupBy);
+        const shown = layoutRows(
+          result.rows ?? [],
+          view.groupBy,
+          view.groupOrder,
+        );
+        const byKey = new Map(
+          (result.rows ?? []).map((row) => [row.indexedKey, row]),
+        );
+        this.#rows = [
+          ...new Set(shown.rows.map((row) => row.annotationKey)),
+        ].map((key) => byKey.get(key)!);
         this.state.setState({
           phase: "ready",
           diagnostic: null,
-          count: result.matchedCount,
-          shown: result.returnedCount,
+          count: shown.count,
+          matched: result.matchedCount,
+          groups: shown.groups,
           truncated: result.truncated,
         });
-        await this.#show(view, rows);
+        await this.#show(view, shown.rows);
         return;
       }
       default:
@@ -506,6 +536,70 @@ function NoResults({ view }: { view: QueryView }) {
   );
 }
 
+function OpenFileButton({ view }: { view: QueryView }) {
+  const { openFile } = view;
+  if (!openFile) return null;
+  return (
+    <button
+      type="button"
+      className="clickable-icon"
+      aria-label={m.query_view_open_file()}
+      data-query-open-file=""
+      onClick={(event) => openFile(event.nativeEvent)}
+    >
+      <Icon name="external-link" size={14} />
+    </button>
+  );
+}
+
+function SortButton({ view }: { view: QueryView }) {
+  const current = useQueryViewState(view, (s) => s.view);
+  if (!current) return null;
+  const sort = current.sort ?? [];
+  return (
+    <ToolbarPopover
+      icon="arrow-up-down"
+      label={m.query_view_sort()}
+      active={sort.length > 0}
+      hook="sort"
+    >
+      <SortEditor
+        value={sort}
+        options={sortOptions(current.from)}
+        onChange={(next) =>
+          view.editView({ sort: next.length > 0 ? next : undefined })
+        }
+      />
+    </ToolbarPopover>
+  );
+}
+
+function GroupButton({ view }: { view: QueryView }) {
+  const current = useQueryViewState(view, (s) => s.view);
+  const groups = useQueryViewState(view, (s) => s.groups);
+  if (!current) return null;
+  return (
+    <ToolbarPopover
+      icon="layout-list"
+      label={m.query_view_group()}
+      active={current.groupBy !== undefined}
+      hook="group"
+    >
+      <GroupEditor
+        value={{ groupBy: current.groupBy, groupOrder: current.groupOrder }}
+        options={groupOptions()}
+        groups={groups}
+        onChange={(next) =>
+          view.editView({
+            groupBy: next.groupBy,
+            groupOrder: next.groupOrder,
+          })
+        }
+      />
+    </ToolbarPopover>
+  );
+}
+
 function QueryViewBody({ view }: { view: QueryView }) {
   return (
     <div className="zt:flex zt:h-full zt:flex-col">
@@ -515,8 +609,12 @@ function QueryViewBody({ view }: { view: QueryView }) {
       >
         <ViewMenuButton view={view} />
         <ResultsMenu view={view} />
-        <div className="zt:flex-1" />
+        <SortButton view={view} />
+        <GroupButton view={view} />
         <PropertiesMenu view={view} />
+        <span className="zt:flex-1" />
+        <SearchControl />
+        <OpenFileButton view={view} />
       </div>
       <Problems view={view} />
       <NoResults view={view} />
