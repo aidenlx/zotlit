@@ -76,21 +76,21 @@ const NO_VALUES: FilterValues = { tags: [], collections: [], libraries: [] };
 export type FilterIssue = (FilterLocation & { message: string }) | null;
 
 const KIND_LABELS: Record<FilterFieldKind, () => string> = {
-  color: m.query_view_filter_color,
+  color: m.query_view_property_color,
   tags: m.workbench_match_condition_tag,
-  comment: m.query_view_filter_comment,
+  comment: m.annot_view_card_comment_label,
   text: m.query_view_filter_text,
-  page: m.query_view_filter_page,
-  "date-added": m.query_view_filter_date_added,
-  "date-modified": m.query_view_filter_date_modified,
-  "item-title": m.query_view_filter_item_title,
+  page: m.query_view_property_page,
+  "date-added": m.query_view_property_date_added,
+  "date-modified": m.query_view_property_date_modified,
+  "item-title": m.query_view_property_item_title,
   creators: m.query_view_filter_creator,
-  "first-author": m.query_view_filter_first_author,
+  "first-author": m.query_view_property_first_author,
   year: m.query_view_filter_year,
   "item-type": m.workbench_match_condition_item_type,
   collection: m.workbench_match_condition_collection,
   library: m.workbench_match_condition_library,
-  "attachment-title": m.query_view_filter_attachment_title,
+  "attachment-title": m.query_view_property_attachment_title,
   "file-type": m.query_view_filter_file_type,
 };
 

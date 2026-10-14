@@ -5,8 +5,9 @@
 //
 // @see apps/obsidian/docs/adr/0068-query-files-are-a-zotlit-file-type-embedded-through-the-private-embed-registry.md
 // @see apps/obsidian/docs/adr/0069-the-annotation-view-is-the-annotations-layout-of-the-query-view.md
-import { Component, Menu } from "obsidian";
+import { Component } from "obsidian";
 import type { Scope } from "obsidian";
+import { useMemo } from "react";
 import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
@@ -17,7 +18,6 @@ import { Icon } from "@/components/obsidian/icon";
 import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import { showMenuAtButton } from "@/lib/menu";
 import type { AnnotationRepository } from "@/services/annotation-repository/service";
 import type { Diagnostic } from "@/services/item-query/contract";
 import type {
@@ -29,6 +29,8 @@ import { selectorKey } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import { AnnotList } from "@/views/annot-view/AnnotView";
+import { CardDisplayContext } from "@/views/annot-view/card-display";
+import type { CardDisplay } from "@/views/annot-view/card-display";
 import { AnnotationsLayout } from "@/views/annot-view/layout";
 import type { AnnotationsLayoutDeps } from "@/views/annot-view/layout";
 import { useAnnotStore } from "@/views/annot-view/store";
@@ -36,6 +38,7 @@ import { useAnnotStore } from "@/views/annot-view/store";
 import { FilterButton } from "./filter-popover";
 import type { FilterValues } from "./filter-popover";
 import { GroupEditor } from "./group-control";
+import { annotationsLayoutOptions } from "./layouts";
 import { groupOptions, sortOptions } from "./properties";
 import {
   editView,
@@ -58,6 +61,8 @@ import type { LayoutGroup } from "./rows";
 import { SearchControl } from "./search-control";
 import { SortEditor } from "./sort-control";
 import { ToolbarPopover } from "./toolbar-popover";
+import * as edits from "./view-edits";
+import { ViewMenu } from "./view-menu";
 
 const logger = getLogger(["views", "query-view"]);
 
@@ -89,6 +94,11 @@ export interface QueryViewHost {
    * cannot save; the change then shows until the file is read again.
    */
   save?: (text: string) => void;
+  /**
+   * Whether a change in the view stays. Where it is `false`, the toolbar says
+   * that a change is not saved.
+   */
+  canSave?: () => boolean;
   /** Open the Query File; the toolbar shows a link button when the host gives it. */
   openFile?: (event: MouseEvent) => void;
 }
@@ -168,6 +178,13 @@ function layoutProblems(view: QueryFileView): string[] {
   return problems;
 }
 
+/** One run of a view: its request key, and the file and view it ran for. */
+interface ViewRun {
+  key: string;
+  file: QueryFile;
+  view: QueryFileView;
+}
+
 export class QueryView extends Component {
   readonly state = createStore<QueryViewState>()(() => INITIAL_STATE);
   readonly #deps: QueryViewDeps;
@@ -178,8 +195,16 @@ export class QueryView extends Component {
   #run: AbortController | null = null;
   /** The lists the cards on screen come from, held while they show. */
   #hold: Disposable | null = null;
-  /** The view whose rows are on screen, which a failed refresh keeps. */
-  #shownView: QueryFileView | null = null;
+  /**
+   * The request whose rows are on screen, which a failed refresh keeps. An
+   * edit that leaves the request as it is, such as a new view name or a card
+   * option, keeps the rows and runs nothing.
+   */
+  #shownRequest: string | null = null;
+  /** The request of the last run the view started. */
+  #runRequest: string | null = null;
+  /** The name of the view whose rows are on screen. */
+  #shownViewName: string | null = null;
   #settled: Promise<void> = Promise.resolve();
   #subscriptions: DisposableStack | null = null;
 
@@ -226,7 +251,8 @@ export class QueryView extends Component {
     this.#run = null;
     this.#hold?.[Symbol.dispose]();
     this.#hold = null;
-    this.#shownView = null;
+    this.#shownRequest = null;
+    this.#runRequest = null;
   }
 
   /** Draw the toolbar and the cards into `el`. Call it once the view has loaded. */
@@ -239,6 +265,11 @@ export class QueryView extends Component {
   setText(text: string): void {
     this.state.setState({ file: parseQueryFile(text) });
     this.#choose();
+  }
+
+  /** Whether a change in the view stays. */
+  get canSave(): boolean {
+    return this.#host.canSave?.() ?? true;
   }
 
   /**
@@ -343,7 +374,134 @@ export class QueryView extends Component {
       problems.push(m.query_view_problem_no_view({ name: wanted }));
     }
     this.state.setState({ view, problems });
+    if (
+      view &&
+      problems.length === 0 &&
+      this.#runKey(file, view) === this.#runRequest
+    )
+      return;
     this.refresh();
+  }
+
+  /** What tells one run from another: the request, and the grouping the rows are gathered by. */
+  #runKey(file: QueryFile, view: QueryFileView): string {
+    return JSON.stringify([
+      this.#request(file, view),
+      view.groupBy ?? null,
+      view.groupOrder ?? null,
+    ]);
+  }
+
+  /** What ZotLit Query runs for one view of the file. */
+  #request(file: QueryFile, view: QueryFileView): QueryViewRequest {
+    const filter = viewFilter(file, view);
+    const context = this.#host.context();
+    return {
+      from: view.from ?? "annotations",
+      ...(filter === undefined ? {} : { filter }),
+      ...(view.sort && {
+        sort: view.sort.map(({ property, direction }) => ({
+          field: property,
+          direction: direction === "DESC" ? "desc" : "asc",
+        })),
+      }),
+      fields: [...LAYOUT_FIELDS],
+      limit: view.limit ?? null,
+      ...(context && { context }),
+    };
+  }
+
+  /**
+   * Write an edited file: the host saves its text, and the view named `show`
+   * stays on screen.
+   */
+  #apply(next: QueryFile, show: string | null): void {
+    const text = serializeQueryFile(next);
+    this.#host.save?.(text);
+    this.state.setState({ file: parseQueryFile(text) });
+    this.#wanted = show;
+    if (show !== null) this.#host.onSelectView?.(show);
+    this.#choose();
+  }
+
+  /** The place of the view on screen in the file's list. */
+  #shownIndex(): number {
+    const { file, view } = this.state.getState();
+    return file && view ? file.views.indexOf(view) : -1;
+  }
+
+  /** The name of the view at `index` in `file`, or `null` where it has none. */
+  #nameAt(file: QueryFile, index: number): string | null {
+    return file.views[index]?.name ?? null;
+  }
+
+  /** Add a view at the end of the list, and show it. Returns its name. */
+  addView(base: string = m.query_view_new_view_name()): string {
+    const { file } = this.state.getState();
+    if (!file) return base;
+    const edit = edits.addView(file, base);
+    this.#apply(edit.file, edit.name);
+    return edit.name;
+  }
+
+  renameView(index: number, name: string): void {
+    const { file } = this.state.getState();
+    if (!file) return;
+    const shown = this.#shownIndex();
+    const next = edits.renameView(file, index, name);
+    this.#apply(next, this.#nameAt(next, shown));
+  }
+
+  /** Copy a view after itself, and show the copy. */
+  duplicateView(index: number): void {
+    const { file } = this.state.getState();
+    if (!file) return;
+    const edit = edits.duplicateView(file, index);
+    this.#apply(edit.file, edit.name);
+  }
+
+  /** Delete a view; where it was on screen, the view before it shows. */
+  deleteView(index: number): void {
+    const { file } = this.state.getState();
+    if (!file || file.views.length <= 1) return;
+    const shown = this.#shownIndex();
+    const edit = edits.deleteView(file, index);
+    this.#apply(
+      edit.file,
+      shown === index
+        ? edit.name
+        : this.#nameAt(file, shown === -1 ? 0 : shown),
+    );
+  }
+
+  /** Move a view to `to`; a move to `0` makes it the default view. */
+  moveView(from: number, to: number): void {
+    const { file } = this.state.getState();
+    if (!file || from === to) return;
+    const shown = this.#shownIndex();
+    this.#apply(
+      edits.moveView(file, from, to),
+      this.#nameAt(file, shown === -1 ? 0 : shown),
+    );
+  }
+
+  /** Set a layout option of a view, or remove it for `undefined`. */
+  setViewOption(index: number, key: string, value: unknown): void {
+    const { file } = this.state.getState();
+    if (!file) return;
+    this.#apply(
+      edits.setViewOption(file, index, { key, value }),
+      this.#nameAt(file, this.#shownIndex()),
+    );
+  }
+
+  setViewLayout(index: number, type: string): void {
+    const { file } = this.state.getState();
+    if (!file) return;
+    this.#apply(
+      edits.setViewLayout(file, index, type),
+      this.#nameAt(file, this.#shownIndex()),
+    );
   }
 
   /** Run the view's query again, and show its rows. */
@@ -352,6 +510,7 @@ export class QueryView extends Component {
     this.#run = null;
     const { file, view, problems } = this.state.getState();
     if (!file || !view || problems.length > 0) {
+      this.#runRequest = null;
       void this.#show(null);
       this.state.setState({
         phase: "idle",
@@ -365,52 +524,40 @@ export class QueryView extends Component {
     }
     const controller = new AbortController();
     this.#run = controller;
-    if (!this.#shows(view)) this.state.setState({ phase: "loading" });
-    const request: QueryViewRequest = {
-      from: view.from ?? "annotations",
-      ...(viewFilter(file, view) === undefined
-        ? {}
-        : { filter: viewFilter(file, view) }),
-      ...(view.sort && {
-        sort: view.sort.map(({ property, direction }) => ({
-          field: property,
-          direction: direction === "DESC" ? "desc" : "asc",
-        })),
-      }),
-      fields: [...LAYOUT_FIELDS],
-      limit: view.limit ?? null,
-      ...(this.#host.context() && { context: this.#host.context() }),
-    };
+    const request = this.#request(file, view);
+    const key = this.#runKey(file, view);
+    this.#runRequest = key;
+    if (this.#shownRequest !== key) this.state.setState({ phase: "loading" });
     this.#settled = this.#deps.query.run(request, controller.signal).then(
       (outcome) => {
         if (this.#run !== controller) return;
         this.#run = null;
-        return this.#land(file, view, outcome);
+        return this.#land({ key, file, view }, outcome);
       },
       (error: unknown) => {
         if (this.#run !== controller) return;
         this.#run = null;
         logger.warn("A Query View could not run its query", { error });
-        this.#fail(file, view, {
-          code: "query-failed",
-          message: error instanceof Error ? error.message : String(error),
-          hint: "",
-          report: [],
-        });
+        this.#fail(
+          { key, file, view },
+          {
+            code: "query-failed",
+            message: error instanceof Error ? error.message : String(error),
+            hint: "",
+            report: [],
+          },
+        );
       },
     );
   }
 
-  async #land(
-    file: QueryFile,
-    view: QueryFileView,
-    outcome: QueryViewOutcome,
-  ): Promise<void> {
+  async #land(run: ViewRun, outcome: QueryViewOutcome): Promise<void> {
+    const { key, view } = run;
     switch (outcome.kind) {
       case "cancelled":
         return;
       case "failed":
-        this.#fail(file, view, outcome.diagnostic);
+        this.#fail(run, outcome.diagnostic);
         return;
       case "result": {
         const { result } = outcome;
@@ -427,7 +574,8 @@ export class QueryView extends Component {
           groups: shown.groups,
           truncated: result.truncated,
         });
-        await this.#show(view, shown.rows);
+        await this.#show(key, shown.rows);
+        this.#shownViewName = view.name;
         return;
       }
       default:
@@ -436,24 +584,18 @@ export class QueryView extends Component {
   }
 
   /**
-   * Whether the rows on screen are this view's. Each parse of the file gives
-   * new view objects, so the name tells which view a run is for.
-   */
-  #shows(view: QueryFileView): boolean {
-    return this.#shownView !== null && this.#shownView.name === view.name;
-  }
-
-  /**
-   * A run that gives no rows says why. A refresh of the view on screen keeps
-   * its last rows under the message; another view shows none. A fault in one
-   * condition of the filters is marked at that condition.
+   * A run that gives no rows says why. A refresh of the rows on screen, or a
+   * new filter of the view they belong to, keeps them under the message;
+   * another view shows none. A fault in one condition of the filters is
+   * marked at that condition.
    */
   #fail(
-    file: QueryFile,
-    view: QueryFileView,
+    { key, file, view }: ViewRun,
     diagnostic: Diagnostic | NonNullable<QueryViewState["diagnostic"]>,
   ): void {
-    const kept = this.#shows(view);
+    const kept =
+      this.#shownRequest === key ||
+      (this.#shownRequest !== null && this.#shownViewName === view.name);
     if (!kept) void this.#show(null);
     const span =
       "location" in diagnostic && diagnostic.location?.argument === "filter"
@@ -475,12 +617,13 @@ export class QueryView extends Component {
 
   /** Put these rows on screen, holding their lists before the old ones go. */
   async #show(
-    view: QueryFileView | null,
+    key: string | null,
     rows: Parameters<AnnotationsLayout["showRows"]>[0] = [],
   ): Promise<void> {
     const previous = this.#hold;
-    this.#shownView = view;
-    if (view === null) {
+    this.#shownRequest = key;
+    if (key === null) {
+      this.#shownViewName = null;
       this.#hold = null;
       this.#layout.clear();
       previous?.[Symbol.dispose]();
@@ -499,34 +642,6 @@ function useQueryViewState<T>(
   selector: (state: QueryViewState) => T,
 ): T {
   return useStore(view.state, selector);
-}
-
-function ViewMenuButton({ view }: { view: QueryView }) {
-  const file = useQueryViewState(view, (s) => s.file);
-  const current = useQueryViewState(view, (s) => s.view);
-  if (!file || file.views.length === 0) return null;
-  return (
-    <button
-      type="button"
-      className="clickable-icon zt:flex zt:items-center zt:gap-1 zt:font-semibold"
-      aria-label={m.query_view_views()}
-      data-query-view-menu=""
-      onClick={(event) => {
-        const menu = new Menu();
-        for (const candidate of file.views)
-          menu.addItem((item) =>
-            item
-              .setTitle(candidate.name)
-              .setChecked(candidate === current)
-              .onClick(() => view.pickView(candidate.name)),
-          );
-        showMenuAtButton(menu, event.currentTarget);
-      }}
-    >
-      <span>{current?.name ?? file.views[0]!.name}</span>
-      <Icon name="chevrons-up-down" size={14} />
-    </button>
-  );
 }
 
 function ResultCount({ view }: { view: QueryView }) {
@@ -623,6 +738,40 @@ function NoResults({ view }: { view: QueryView }) {
   );
 }
 
+function ReadOnlyNote({ view }: { view: QueryView }) {
+  // A host can tell where it stands only once it is on the page, which is
+  // before a run lands; each run asks again.
+  useQueryViewState(view, (s) => s.phase);
+  if (view.canSave) return null;
+  return (
+    <p
+      className="zt:mx-3 zt:mt-1 zt:mb-0 zt:text-xs zt:text-(--text-faint)"
+      data-query-read-only=""
+    >
+      {m.query_view_read_only()}
+    </p>
+  );
+}
+
+/** The cards, drawn with the shown view's Annotations layout options. */
+function AnnotationsCards({ view }: { view: QueryView }) {
+  const shown = useQueryViewState(view, (s) => s.view);
+  const options = annotationsLayoutOptions(shown);
+  const display = useMemo<CardDisplay>(
+    () => ({
+      comment: options.showComment,
+      tags: options.showTags,
+      page: options.showPage,
+    }),
+    [options.showComment, options.showTags, options.showPage],
+  );
+  return (
+    <CardDisplayContext value={display}>
+      <AnnotList collapsed cardWidth={options.cardWidth} />
+    </CardDisplayContext>
+  );
+}
+
 function OpenFileButton({ view }: { view: QueryView }) {
   const { openFile } = view;
   if (!openFile) return null;
@@ -694,7 +843,7 @@ function QueryViewBody({ view }: { view: QueryView }) {
         className="zt:flex zt:items-center zt:gap-2 zt:border-b zt:border-(--background-modifier-border) zt:px-3 zt:py-1 zt:text-sm"
         role="toolbar"
       >
-        <ViewMenuButton view={view} />
+        <ViewMenu view={view} />
         <span className="zt:shrink-0 zt:whitespace-nowrap zt:text-(--text-muted)">
           <ResultCount view={view} />
         </span>
@@ -705,9 +854,10 @@ function QueryViewBody({ view }: { view: QueryView }) {
         <SearchControl />
         <OpenFileButton view={view} />
       </div>
+      <ReadOnlyNote view={view} />
       <Problems view={view} />
       <NoResults view={view} />
-      <AnnotList collapsed />
+      <AnnotationsCards view={view} />
     </div>
   );
 }
