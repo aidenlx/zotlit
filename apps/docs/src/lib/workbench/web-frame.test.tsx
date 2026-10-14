@@ -36,7 +36,7 @@ describe("the narrow layout", () => {
     const view = sourceView(page.host);
     const broken = view.state.doc
       .toString()
-      .replace("{% render", "{% render_missing");
+      .replace("{{ zt.title }}", "{% render_missing %}");
     act(() => {
       view.dispatch({
         changes: { from: 0, to: view.state.doc.length, insert: broken },
