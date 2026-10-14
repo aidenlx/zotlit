@@ -15,11 +15,10 @@ import { Icon } from "@/components/obsidian/icon";
 import { SearchInput } from "@/components/obsidian/search-input";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
-import type { AnnotationRecord } from "@/services/annotation-repository/service";
 
 import { AnnotActionsContext } from "./actions";
 import { Annotation, FIELD_SHEET_SELECTOR } from "./Annotation";
-import { moveOrigin } from "./card-selection";
+import { cardPlace, moveOrigin } from "./card-selection";
 import { filterAnnotations, isFilterActive } from "./filter";
 import { FilterBar } from "./FilterBar";
 import { annotViewBody, headerShape } from "./presentation";
@@ -29,14 +28,15 @@ import type {
   HeaderShape,
 } from "./presentation";
 import {
+  groupedCards,
   useAnnotFilter,
   useAnnotStore,
   useClearFilters,
   useSetFilterQuery,
   useToggleGroupCollapsed,
   useToggleSearchOpen,
+  visibleOrder,
 } from "./store";
-import type { CardPlacement } from "./store";
 import { confineTabOrder } from "./tab-order";
 
 /**
@@ -430,11 +430,11 @@ export function AnnotList({
     () => (annotations ? filterAnnotations(annotations, filter) : []),
     [annotations, filter],
   );
-  const visible = useMemo(() => filtered.map(({ key }) => key), [filtered]);
-  /** The list's one tab stop: the card a move steps from, else the first. */
-  const tabStop = useAnnotStore(
-    (s) => moveOrigin(s.cardSelection, visible) ?? visible[0] ?? null,
-  );
+  /** The list's one tab stop: the place a move steps from, else the first. */
+  const tabStop = useAnnotStore((s) => {
+    const visible = visibleOrder(s);
+    return moveOrigin(s.cardSelection, visible) ?? visible[0] ?? null;
+  });
   const tabOrder = useRef<Disposable | null>(null);
   /** Only the tab stop's controls stay in the Tab order. */
   const mountGrid = useCallback((grid: HTMLDivElement | null) => {
@@ -526,8 +526,9 @@ export function AnnotList({
               <Annotation
                 key={annot.key}
                 annot={annot}
+                place={cardPlace(annot.key, null)}
                 collapsed={collapsed}
-                tabStop={annot.key === tabStop}
+                tabStop={cardPlace(annot.key, null) === tabStop}
               />
             ))
           : groupedCards(groups, filtered).map(({ annot, group, opens }) => {
@@ -538,8 +539,9 @@ export function AnnotList({
               // so a card that starts or stops a group is not mounted again
               // and an open editor on it stays.
               const folded = collapsedGroups.has(group.key);
+              const place = cardPlace(annot.key, group.key);
               return (
-                <Fragment key={`${group.key}\n${annot.key}`}>
+                <Fragment key={place}>
                   {opens && (
                     <GroupHeading
                       key="group-heading"
@@ -553,8 +555,9 @@ export function AnnotList({
                     <Annotation
                       key={annot.key}
                       annot={annot}
+                      place={place}
                       collapsed={collapsed}
-                      tabStop={annot.key === tabStop}
+                      tabStop={place === tabStop}
                     />
                   )}
                 </Fragment>
@@ -563,28 +566,6 @@ export function AnnotList({
       </div>
     </div>
   );
-}
-
-interface GroupedCard {
-  annot: AnnotationRecord;
-  group: CardPlacement["group"];
-  /** Whether a heading opens the group before this card. */
-  opens: boolean;
-}
-
-/** The shown cards under their groups, in the order of the placements. */
-function groupedCards(
-  groups: readonly CardPlacement[],
-  shown: readonly AnnotationRecord[],
-): GroupedCard[] {
-  const byKey = new Map(shown.map((annot) => [annot.key, annot]));
-  const cards: GroupedCard[] = [];
-  for (const { annotationKey, group } of groups) {
-    const annot = byKey.get(annotationKey);
-    if (!annot) continue;
-    cards.push({ annot, group, opens: cards.at(-1)?.group.key !== group.key });
-  }
-  return cards;
 }
 
 /**
