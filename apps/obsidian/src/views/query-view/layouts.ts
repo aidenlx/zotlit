@@ -21,6 +21,12 @@ export const QUERY_LAYOUTS: readonly QueryLayout[] = [
     name: () => m.query_view_layout_annotations(),
     icon: "highlighter",
   },
+  {
+    type: "table",
+    datasets: ["items"],
+    name: () => m.query_view_layout_table(),
+    icon: "table",
+  },
 ];
 
 /** The Layouts that can show the view's dataset, as the Layout picker offers them. */
