@@ -11,7 +11,10 @@ import { useStore } from "zustand";
 
 import { parseExpression } from "@zotlit/filter-expression";
 import { FORMULA_NAME } from "@zotlit/item-query";
-import { useParts, WorkbenchThemeProvider } from "@zotlit/workbench/ui";
+import {
+  MatchExpressionInput,
+  WorkbenchThemeProvider,
+} from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
@@ -57,7 +60,6 @@ function FormulaForm({
   const file = useStore(view.state, (s) => s.file);
   const formulas = file?.formulas ?? {};
   const issues = useStore(view.state, (s) => s.formulaIssues);
-  const part = useParts("match");
   const saved = editing === null ? undefined : formulas[editing];
   const [name, setName] = useState(editing ?? "");
   const [text, setText] = useState(saved ?? "");
@@ -131,9 +133,8 @@ function FormulaForm({
               </span>
             )}
           </span>
-          <textarea
+          <MatchExpressionInput
             rows={2}
-            {...part("expression")}
             spellCheck={false}
             aria-invalid={text !== "" && fieldIssue !== null}
             value={text}
