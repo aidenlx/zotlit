@@ -47,6 +47,10 @@ gh issue list --search "parent-issue:aidenlx/zotlit#<parent> state:open no:assig
 - Label a spec (PRD) issue `spec`. Label each tracer-bullet implementation issue carved from it `ticket`.
 - A ticket is a sub-issue of its spec and declares blocking edges to the tickets that gate it, using the relationship commands above.
 
+## Ticket updates
+
+A ticket gets one progress comment when its branch merges into the integration branch — what changed, the merge SHA, the tests run, open points — and is closed right after. Comments and assignees otherwise wait for that merge.
+
 ## Pull requests as a triage surface
 
 External pull requests are not a request or triage surface. Triage GitHub issues only.

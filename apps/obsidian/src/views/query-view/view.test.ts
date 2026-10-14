@@ -25,6 +25,7 @@ import type {
 } from "@/services/item-query/query-view";
 import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
 
+import { requested } from "./__fixtures__/query-run";
 import { groupOptions } from "./properties";
 import { QUERY_FILE_DATASETS, serializeQueryFile } from "./query-file";
 import type { QueryFileDataset } from "./query-file";
@@ -97,27 +98,6 @@ function result(
       truncated: matchedCount > rows.length,
       warnings: [],
       rows,
-    },
-  };
-}
-
-/** `outcome` with each row's values cut to the fields `request` names. */
-function requested(
-  outcome: QueryViewOutcome,
-  request: QueryViewRequest,
-): QueryViewOutcome {
-  if (outcome.kind !== "result" || !outcome.result.rows) return outcome;
-  const fields = new Set(request.fields);
-  return {
-    ...outcome,
-    result: {
-      ...outcome.result,
-      rows: outcome.result.rows.map((row) => ({
-        ...row,
-        values: Object.fromEntries(
-          Object.entries(row.values).filter(([path]) => fields.has(path)),
-        ),
-      })),
     },
   };
 }
