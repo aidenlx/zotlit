@@ -8,26 +8,76 @@ import { runtime } from "@/lib/i18n/generated/runtime";
 import type { QueryViewValue } from "@/services/item-query/query-view";
 import { itemTypeLabel } from "@/services/profile-selection/describe";
 
+import { DATASETS } from "./datasets";
 import { displayName } from "./query-file";
 import type { QueryFile } from "./query-file";
 
-/** The header of a column: Zotero's label for an Item field, else the path. */
+/**
+ * The name of a property, as a column header and a notice show it: Zotero's
+ * label for an Item field, else the label the Query Datasets give it in Sort
+ * and Group, else, for a field of the Item or of the Attachment, that
+ * field's name under its parent's. A path with none of these shows as it is.
+ */
 export function columnLabel(property: string): string {
+  return labelOf(property) ?? property;
+}
+
+function labelOf(property: string): string | undefined {
   const locale = runtime.getLocale() === "zh-CN" ? "zh-CN" : "en-US";
-  const label = FIELD_LABELS[locale][property];
+  const label = FIELD_LABELS[locale][property] ?? datasetLabel(property);
   if (label) return label;
-  switch (property) {
-    case "itemType":
-      return m.query_view_property_item_type();
-    case "dateAdded":
-      return m.query_view_property_date_added();
-    case "dateModified":
-      return m.query_view_property_date_modified();
-    case "firstAuthor":
-      return m.query_view_property_first_author();
-    default:
-      return property;
+  for (const [prefix, parent, of] of PARENTS) {
+    if (!property.startsWith(prefix)) continue;
+    const field = labelOf(property.slice(prefix.length));
+    if (field === undefined) return undefined;
+    // "Item Type" names the field under its parent's name already.
+    const rest = field.startsWith(parent())
+      ? field.slice(parent().length)
+      : null;
+    return of({
+      property: inSentence(
+        rest !== null && !/^[a-z]/i.test(rest) ? rest.trim() : field,
+      ),
+    });
   }
+  return undefined;
+}
+
+/** The parents a dataset reads fields of, by the prefix of their paths. */
+const PARENTS = [
+  ["item.", m.query_view_property_item, m.query_view_property_of_item],
+  [
+    "attachment.",
+    m.query_view_property_attachment,
+    m.query_view_property_of_attachment,
+  ],
+] as const;
+
+/** The label the Query Datasets give a path in Sort and Group, by path. */
+let datasetLabels: ReadonlyMap<string, () => string> | null = null;
+
+function datasetLabel(property: string): string | undefined {
+  datasetLabels ??= new Map(
+    Object.values(DATASETS).flatMap((spec) => [
+      ...spec.sort.map(([path, label]) => [path, label] as const),
+      // A grouping by a list path names one value of the list.
+      ...spec.group.map(
+        ({ path, label }) => [path.replace(/\[\]$/, ""), label] as const,
+      ),
+    ]),
+  );
+  return datasetLabels.get(property)?.();
+}
+
+/**
+ * A label inside a sentence: each word in lower case but an acronym, so
+ * "Date Added" reads "date added" and "Archive ID" reads "archive ID".
+ */
+function inSentence(label: string): string {
+  return label
+    .split(" ")
+    .map((word) => (/^[A-Z0-9]{2,}$/.test(word) ? word : word.toLowerCase()))
+    .join(" ");
 }
 
 /**

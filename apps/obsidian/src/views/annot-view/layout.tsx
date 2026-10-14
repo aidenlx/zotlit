@@ -50,6 +50,7 @@ import {
 } from "./card-selection";
 import type {
   CardClick,
+  CardPlace,
   CardSelection,
   SelectionChange,
 } from "./card-selection";
@@ -230,6 +231,17 @@ function annotationKeys(
   return held ? new Set(held.value.annotations.map(({ key }) => key)) : null;
 }
 
+/**
+ * What started a run of the query whose rows the layout shows: a list
+ * change, another run of the request on screen, or a new request.
+ */
+export type RunCause = "list-change" | "rerun" | "new-request";
+
+/** One record of the held lists, by its Attachment's key and its own Indexed Key. */
+function recordId(attachmentKey: string, annotationKey: string): string {
+  return `${attachmentKey}\n${annotationKey}`;
+}
+
 /** One row of a query a Query View shows: an Annotation and the Attachment that holds it. */
 export interface LayoutRow {
   annotationKey: string;
@@ -354,8 +366,8 @@ export class AnnotationsLayout extends Component {
       refresh: () => this.refresh(),
       noteFeature: deps.noteFeature,
       onAllowEditing: () => deps.allowEditing(),
-      onSelectAnnotation: (_annot, gesture, place) =>
-        this.#clickFromView({ kind: gesture, key: place }),
+      onSelectAnnotation: (annot, gesture, place) =>
+        this.#clickFromView({ kind: gesture, key: annot.key, place }),
       onClearSelection: () => void this.#clearFromView(),
       selectAlone: (annot) => this.#selectAloneFromView(annot.key),
       closeEditors: () => void this.#closeEditors(),
@@ -484,15 +496,21 @@ export class AnnotationsLayout extends Component {
    * does: the run a list change asked for keeps the cards on screen while its
    * rows lack an Annotation that change added and the repository still
    * holds, and the database change that follows runs the query again. The
-   * rows of any other run show. Every run's rows answer it: an added
-   * Annotation they name, or that the repository no longer holds, is no
-   * longer waited for.
+   * rows of any other run show. A new request, such as a filter edit, ends
+   * the wait: an Annotation its rows leave out is not waited for. A rerun of
+   * the request on screen keeps it. An added Annotation that a run's rows
+   * name, or that the repository no longer holds, is no longer waited for.
    *
    * @param rowKeys the Annotations the run's rows name.
-   * @param fromListChange whether the run is the one that
-   *   {@link AnnotationsLayoutHost.onListChanged} asked for.
+   * @param cause what started the run: the list change that
+   *   {@link AnnotationsLayoutHost.onListChanged} reported, another run of
+   *   the request on screen, or a new request.
    */
-  keepsBack(rowKeys: Iterable<string>, fromListChange: boolean): boolean {
+  keepsBack(rowKeys: Iterable<string>, cause: RunCause): boolean {
+    if (cause === "new-request") {
+      this.#listAdded.clear();
+      return false;
+    }
     const named = new Set(rowKeys);
     for (const [key, attachmentKey] of this.#listAdded) {
       if (
@@ -501,7 +519,7 @@ export class AnnotationsLayout extends Component {
       )
         this.#listAdded.delete(key);
     }
-    return fromListChange && this.#listAdded.size > 0;
+    return cause === "list-change" && this.#listAdded.size > 0;
   }
 
   /** Show no Attachment, and drop every list, draft and editor with them. */
@@ -612,7 +630,8 @@ export class AnnotationsLayout extends Component {
       landed.flatMap(
         (held) =>
           held?.list.annotations.map(
-            (record) => [`${record.parentKey}\n${record.key}`, record] as const,
+            (record) =>
+              [recordId(record.parentKey, record.key), record] as const,
           ) ?? [],
       ),
     );
@@ -621,7 +640,7 @@ export class AnnotationsLayout extends Component {
     // A row stands once for each group it is in; its card is one record.
     const seen = new Set<string>();
     for (const row of this.#rows) {
-      const id = `${row.attachmentKey}\n${row.annotationKey}` as const;
+      const id = recordId(row.attachmentKey, row.annotationKey);
       if (seen.has(id)) continue;
       seen.add(id);
       const record = records.get(id);
@@ -648,7 +667,7 @@ export class AnnotationsLayout extends Component {
       if (!held) continue;
       let at = -1;
       for (const record of held.list.annotations) {
-        const id = `${record.parentKey}\n${record.key}`;
+        const id = recordId(record.parentKey, record.key);
         const shown = annotations.indexOf(record);
         if (shown !== -1) {
           at = shown;
@@ -1194,7 +1213,7 @@ export class AnnotationsLayout extends Component {
    * or a Cmd/Ctrl-click adds; a card that leaves, and a range, only repaint.
    */
   #clickFromView(change: Extract<SelectionChange, { kind: CardClick }>): void {
-    const key = placedKey(change.key);
+    const { key } = change;
     const adds =
       change.kind === "click" ||
       (change.kind === "toggle" &&
@@ -1244,7 +1263,7 @@ export class AnnotationsLayout extends Component {
    */
   #stepFromView(
     change: Extract<SelectionChange, { kind: "move" | "extend" }>,
-  ): string | null {
+  ): CardPlace | null {
     const current = this.store.getState().cardSelection;
     const next = this.#changeFromView(change);
     const place = next.focus;
@@ -1339,7 +1358,7 @@ export class AnnotationsLayout extends Component {
    * The card at one place in the list, while the list shows it. A group key
    * can hold any character, so the place is compared, not put in a selector.
    */
-  #placedCardElement(place: string): HTMLElement | null {
+  #placedCardElement(place: CardPlace): HTMLElement | null {
     const cards = this.#el?.querySelectorAll<HTMLElement>(
       `${CARD_SELECTOR}[data-zotero-annotation-key="${placedKey(place)}"]`,
     );

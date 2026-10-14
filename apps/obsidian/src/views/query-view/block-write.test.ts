@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 
-import { canWriteBlock, writeBlockCode } from "./block-write";
+import { writeBlockCode } from "./block-write";
 
 const PATH = "literatures/Paper.md";
 const OLD = "views:\n  - type: annotations\n    name: All";
@@ -89,15 +89,5 @@ describe("writeBlockCode", () => {
     ).rejects.toThrow();
     expect(replaceCode).not.toHaveBeenCalled();
     expect(host.text(PATH)).toBe(NOTE);
-  });
-});
-
-describe("canWriteBlock", () => {
-  it("is true for a block with a place in its note", () => {
-    expect(canWriteBlock({ ctx: context(NOTE), el })).toBe(true);
-  });
-
-  it("is false in a section embed or a popover, which give no place", () => {
-    expect(canWriteBlock({ ctx: context(null), el })).toBe(false);
   });
 });

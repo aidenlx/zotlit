@@ -29,7 +29,7 @@ describe("resultTable", () => {
   it("has one column for each visible property, in the view's order", () => {
     const table = resultTable(ROWS, ["item.title", "comment"]);
     expect(table).toEqual({
-      header: ["item.title", "comment"],
+      header: ["Item title", "comment"],
       body: [
         ["Ten simple rules", 'Key figure, "panel B"'],
         ["Deep learning\nA review", ""],
@@ -125,7 +125,7 @@ describe("resultTable", () => {
 describe("toCSV", () => {
   it("quotes a cell that holds a comma, a quote or a line break", () => {
     expect(toCSV(resultTable(ROWS, ["item.title", "comment"]))).toBe(
-      'item.title,comment\nTen simple rules,"Key figure, ""panel B"""\n"Deep learning\nA review",',
+      'Item title,comment\nTen simple rules,"Key figure, ""panel B"""\n"Deep learning\nA review",',
     );
   });
 });
@@ -133,7 +133,7 @@ describe("toCSV", () => {
 describe("toTSV", () => {
   it("separates cells with tabs and quotes only what needs it", () => {
     expect(toTSV(resultTable(ROWS, ["item.title", "comment"]))).toBe(
-      'item.title\tcomment\nTen simple rules\t"Key figure, ""panel B"""\n"Deep learning\nA review"\t',
+      'Item title\tcomment\nTen simple rules\t"Key figure, ""panel B"""\n"Deep learning\nA review"\t',
     );
   });
 });

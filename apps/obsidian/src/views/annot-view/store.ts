@@ -19,6 +19,7 @@ import type {
 import { byTextField, IDLE } from "@/services/annotation-repository/write";
 
 import { cardPlace, NO_SELECTION } from "./card-selection";
+import type { CardPlace } from "./card-selection";
 import type { CardSelection } from "./card-selection";
 import type { CaretPoint } from "./editor-sheet";
 import { filterAnnotations } from "./filter";
@@ -467,7 +468,7 @@ type OrderSlices = FilterSlices &
  */
 const orders = new WeakMap<
   readonly AnnotationRecord[],
-  { slices: OrderSlices; order: readonly string[] }
+  { slices: OrderSlices; order: readonly CardPlace[] }
 >();
 
 /**
@@ -481,7 +482,7 @@ const orders = new WeakMap<
  */
 export function visibleOrder(
   s: OrderSlices & Pick<AnnotState, "annotations">,
-): readonly string[] {
+): readonly CardPlace[] {
   if (s.annotations === null) return [];
   const held = orders.get(s.annotations);
   if (
