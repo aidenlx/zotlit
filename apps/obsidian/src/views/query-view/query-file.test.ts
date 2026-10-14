@@ -5,6 +5,7 @@ import {
   newQueryFileText,
   parseQueryFile,
   serializeQueryFile,
+  updateView,
   viewFilter,
 } from "./query-file";
 
@@ -116,6 +117,84 @@ describe("parseQueryFile", () => {
 
   it("opens an empty file with a problem that it has no views", () => {
     expect(parseQueryFile("").problems).toEqual([{ code: "no-views" }]);
+  });
+});
+
+describe("updateView", () => {
+  const ORDERED = `views:
+  - type: annotations
+    name: Shared
+    from: annotations
+    order:
+      - item.title
+      - comment
+    limit: 20
+    cardWidth: 300
+`;
+
+  it("reads the visible properties in their order", () => {
+    expect(parseQueryFile(ORDERED).views[0]!.order).toEqual([
+      "item.title",
+      "comment",
+    ]);
+  });
+
+  it("writes new visible properties and a new limit in place, and keeps the other keys", () => {
+    const file = parseQueryFile(ORDERED);
+    const text = serializeQueryFile(
+      updateView(file, file.views[0]!, {
+        order: ["comment", "pageLabel"],
+        limit: 5,
+      }),
+    );
+    expect(text).toBe(`views:
+  - type: annotations
+    name: Shared
+    from: annotations
+    order:
+      - comment
+      - pageLabel
+    limit: 5
+    cardWidth: 300
+`);
+  });
+
+  it("removes the limit to show every result, and keeps an empty order", () => {
+    const file = parseQueryFile(ORDERED);
+    const updated = updateView(file, file.views[0]!, {
+      order: [],
+      limit: null,
+    });
+    expect(updated.views[0]).toMatchObject({ order: [] });
+    expect(updated.views[0]!.limit).toBeUndefined();
+    expect(serializeQueryFile(updated)).toBe(`views:
+  - type: annotations
+    name: Shared
+    from: annotations
+    order: []
+    cardWidth: 300
+`);
+  });
+
+  it("adds visible properties to a view that had none, after its other keys", () => {
+    const file = parseQueryFile(newQueryFileText("Annotations"));
+    const updated = updateView(file, file.views[0]!, { order: ["comment"] });
+    expect(parseQueryFile(serializeQueryFile(updated)).views[0]).toMatchObject({
+      order: ["comment"],
+      limit: NEW_QUERY_FILE_LIMIT,
+    });
+  });
+
+  it("names an order that is not a list of property names as a problem", () => {
+    const file = parseQueryFile(`views:
+  - type: annotations
+    name: Bad
+    from: annotations
+    order: comment
+`);
+    expect(file.views[0]!.problems).toEqual([
+      { code: "invalid-value", key: "order", value: "comment" },
+    ]);
   });
 });
 
