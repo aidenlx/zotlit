@@ -44,10 +44,11 @@ export {
   FORMULA_NAME,
   FORMULA_SEGMENT,
   formulaReferences,
+  type FormulaFaultPolicy,
   type FormulaReference,
 } from "./formulas";
 export type {
-  FormulaFaults,
+  FormulaDiagnostics,
   ItemQuery,
   ItemQueryRequest,
   ProjectionValue,

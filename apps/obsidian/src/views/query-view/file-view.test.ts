@@ -106,7 +106,7 @@ const notSaved = (tab: QueryFileView) => tab.query.state.getState().saveFailed;
 it("writes a toolbar change to the file at once", async () => {
   const { tab, written, requestSave } = await openTab();
   await act(async () => {
-    tab.query.addView("Yellow");
+    tab.query.document.addView("Yellow");
     await tab.query.flush();
   });
   expect(written).toHaveLength(1);
@@ -118,14 +118,14 @@ it("says a change is not saved when the write fails, until a later write succeed
   const { tab, write } = await openTab();
   write.mockRejectedValueOnce(new Error("disk full"));
   await act(async () => {
-    tab.query.addView("Yellow");
+    tab.query.document.addView("Yellow");
     await tab.query.flush();
   });
   expect(notSaved(tab)).toBe(true);
   expect(tab.query.state.getState().view?.name).toBe("Yellow");
 
   await act(async () => {
-    tab.query.addView("Blue");
+    tab.query.document.addView("Blue");
     await tab.query.flush();
   });
   expect(notSaved(tab)).toBe(false);
@@ -139,8 +139,8 @@ it("writes a second change that comes while the first is writing", async () => {
     await first.promise;
   });
   await act(async () => {
-    tab.query.addView("Yellow");
-    tab.query.addView("Blue");
+    tab.query.document.addView("Yellow");
+    tab.query.document.addView("Blue");
     first.resolve();
     await tab.query.flush();
   });
@@ -154,8 +154,8 @@ it("says a change is not saved when the write of a change that came during anoth
     .mockImplementationOnce(() => first.promise)
     .mockRejectedValueOnce(new Error("disk full"));
   await act(async () => {
-    tab.query.addView("Yellow");
-    tab.query.addView("Blue");
+    tab.query.document.addView("Yellow");
+    tab.query.document.addView("Blue");
     first.resolve();
     await tab.query.flush();
   });

@@ -505,7 +505,7 @@ const REQUESTS: readonly ScenarioQuery[] = [
         reader: "formula.bad + 1",
       },
       fields: ["title", "formula.authors", "formula.reader", "formula.zz"],
-      formulaFaults: "leave-out",
+      onFormulaFault: "leave-out",
     },
   },
   { name: "no filter, defaults", libraries: ["personal"], request: {} },

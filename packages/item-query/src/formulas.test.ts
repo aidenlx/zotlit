@@ -554,14 +554,14 @@ it("reports the first mistake in request order: names, then the filter, then fie
   });
 });
 
-describe('formulaFaults: "leave-out"', () => {
+describe('onFormulaFault: "leave-out"', () => {
   it("answers the rows without a wrong Formula, and its Diagnostic beside the warnings", async () => {
     using scenario = openScenarioDatabase();
     const result = await run(scenario, {
       filter: 'indexedKey == "BK2MNTH2"',
       formulas: { year: "date.year", bad: "title * 2" },
       fields: ["title", "formula.bad", "formula.year"],
-      formulaFaults: "leave-out",
+      onFormulaFault: "leave-out",
     });
     expect(result.rows!.map((row) => row.values)).toEqual([
       { title: expect.any(String), "formula.year": 2019 },
@@ -572,7 +572,7 @@ describe('formulaFaults: "leave-out"', () => {
       "formula.year",
     ]);
     expect(result.warnings).toEqual([]);
-    expect(result.formulaFaults).toEqual({
+    expect(result.formulaDiagnostics).toEqual({
       bad: expect.objectContaining({
         code: "wrong-operand-type",
         severity: "error",
@@ -598,12 +598,12 @@ describe('formulaFaults: "leave-out"', () => {
         ok: "date.year",
       },
       fields: ["formula.b", "formula.ok"],
-      formulaFaults: "leave-out",
+      onFormulaFault: "leave-out",
     });
     expect(result.rows!.map((row) => row.values)).toEqual([
       { "formula.ok": 2019 },
     ]);
-    const faults = result.formulaFaults!;
+    const faults = result.formulaDiagnostics!;
     // a reads worse first; the query still plans bad, which a reads after it.
     expect(Object.keys(faults).sort()).toEqual(["a", "b", "bad", "worse"]);
     expect(faults.bad).toMatchObject({ code: "wrong-operand-type" });
@@ -698,14 +698,14 @@ describe('formulaFaults: "leave-out"', () => {
     const result = await run(scenario, {
       filter: 'indexedKey == "BK2MNTH2"',
       ...request,
-      formulaFaults: "leave-out",
+      onFormulaFault: "leave-out",
     });
     expect(result.rows!.map((row) => row.values)).toEqual([
       { "formula.ok": 2019 },
     ]);
     expect(
       Object.fromEntries(
-        Object.entries(result.formulaFaults!).map(([name, fault]) => [
+        Object.entries(result.formulaDiagnostics!).map(([name, fault]) => [
           name,
           fault.code,
         ]),
@@ -724,9 +724,9 @@ describe('formulaFaults: "leave-out"', () => {
         c: "date.year + formula.a",
       },
       fields: ["formula.out"],
-      formulaFaults: "leave-out",
+      onFormulaFault: "leave-out",
     });
-    const faults = result.formulaFaults!;
+    const faults = result.formulaDiagnostics!;
     expect(Object.keys(faults).sort()).toEqual(["a", "b", "c", "out"]);
     expect(faults.out).toMatchObject({
       code: "reads-faulted-formula",
@@ -768,7 +768,7 @@ describe('formulaFaults: "leave-out"', () => {
         unread: "title * 3",
       },
       fields: ["title"],
-      formulaFaults: "leave-out",
+      onFormulaFault: "leave-out",
     });
     expect(error.diagnostic).toMatchObject({
       code: "reads-faulted-formula",
@@ -776,7 +776,7 @@ describe('formulaFaults: "leave-out"', () => {
     });
     expect(
       Object.fromEntries(
-        Object.entries(error.formulaFaults!).map(([name, fault]) => [
+        Object.entries(error.formulaDiagnostics!).map(([name, fault]) => [
           name,
           fault.code,
         ]),
@@ -787,7 +787,7 @@ describe('formulaFaults: "leave-out"', () => {
       deep: "reads-faulted-formula",
       worse: "unknown-function",
     });
-    expect(error.formulaFaults!.reader!.message).toBe(
+    expect(error.formulaDiagnostics!.reader!.message).toBe(
       "formula.reader reads formula.bad, which has a mistake.",
     );
   });
@@ -798,12 +798,34 @@ describe('formulaFaults: "leave-out"', () => {
       filter: 'indexedKey == "BK2MNTH2"',
       formulas: { ok: "date.year", unused: "title" },
       fields: ["formula.ok"],
-      formulaFaults: "leave-out",
+      onFormulaFault: "leave-out",
     });
-    expect({ ...result.formulaFaults }).toEqual({});
-    expect(result.warnings.map((warning) => warning.code)).toEqual([
-      "unused-formula",
-    ]);
+    expect({ ...result.formulaDiagnostics }).toEqual({});
+    // A Formula that no part of the request reads gives no warning: the
+    // caller sends Formulas that other requests read.
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("gives the Formula fault of an undefined column of fields when the filter reads a wrong Formula", async () => {
+    using scenario = openScenarioDatabase();
+    const error = await failure(scenario, {
+      filter: "formula.bad > 0",
+      formulas: { bad: "title * 2" },
+      fields: ["title", "formula.zz"],
+      onFormulaFault: "leave-out",
+    });
+    expect(error.diagnostic).toMatchObject({
+      code: "reads-faulted-formula",
+      location: { argument: "filter" },
+    });
+    expect(
+      Object.fromEntries(
+        Object.entries(error.formulaDiagnostics!).map(([name, fault]) => [
+          name,
+          fault.code,
+        ]),
+      ),
+    ).toEqual({ bad: "wrong-operand-type", zz: "unknown-formula" });
   });
 
   it("fails a filter that reads a wrong Formula at the filter, with the root mistake as a note and every Formula fault", async () => {
@@ -816,7 +838,7 @@ describe('formulaFaults: "leave-out"', () => {
         shown: "title.nope()",
       },
       fields: ["title", "formula.shown"],
-      formulaFaults: "leave-out",
+      onFormulaFault: "leave-out",
     });
     expect(error.diagnostic).toMatchObject({
       code: "reads-faulted-formula",
@@ -832,7 +854,7 @@ describe('formulaFaults: "leave-out"', () => {
     });
     expect(
       Object.fromEntries(
-        Object.entries(error.formulaFaults!).map(([name, fault]) => [
+        Object.entries(error.formulaDiagnostics!).map(([name, fault]) => [
           name,
           fault.code,
         ]),
@@ -842,6 +864,29 @@ describe('formulaFaults: "leave-out"', () => {
       bad: "wrong-operand-type",
       shown: "unknown-function",
     });
+  });
+
+  it("fails a filter that reads a Formula with a custom field that the source lacks at the filter", async () => {
+    using scenario = openScenarioDatabase();
+    const error = await failure(scenario, {
+      filter: "formula.a > 0",
+      formulas: { a: "dat", ok: "date.year" },
+      fields: ["title", "formula.ok"],
+      onFormulaFault: "leave-out",
+    });
+    expect(error.diagnostic).toMatchObject({
+      code: "reads-faulted-formula",
+      message: "The filter reads formula.a, which has a mistake.",
+      location: { argument: "filter", span: { from: 0, to: 9 } },
+    });
+    expect(
+      Object.fromEntries(
+        Object.entries(error.formulaDiagnostics!).map(([name, fault]) => [
+          name,
+          fault.code,
+        ]),
+      ),
+    ).toEqual({ a: "unknown-field" });
   });
 
   it("fails a filter that reads a wrong Formula with the root mistake when the request fails on it", async () => {
@@ -855,12 +900,12 @@ describe('formulaFaults: "leave-out"', () => {
       code: "wrong-operand-type",
       location: { argument: "formulas", path: "bad" },
     });
-    expect(error.formulaFaults).toBeUndefined();
+    expect(error.formulaDiagnostics).toBeUndefined();
   });
 });
 
 describe.each(["fail", "leave-out"] as const)(
-  'formulaFaults: "%s" fails the whole run',
+  'onFormulaFault: "%s" fails the whole run',
   (policy) => {
     it.each([
       [
@@ -906,7 +951,7 @@ describe.each(["fail", "leave-out"] as const)(
         using scenario = openScenarioDatabase();
         const error = await failure(scenario, {
           ...request,
-          formulaFaults: policy,
+          onFormulaFault: policy,
         });
         expect(error.diagnostic.code).toBe(code);
       },

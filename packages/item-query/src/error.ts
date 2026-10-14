@@ -4,7 +4,7 @@ import type { QueryDataset } from "./dataset";
 import { diagnose } from "./diagnose";
 import type { Diagnostic } from "./diagnose";
 import type { ItemQueryFault, Span } from "./fault";
-import type { FormulaFaults, QueryContext } from "./request";
+import type { FormulaDiagnostics, QueryContext } from "./request";
 
 /** Stable codes of an invalid Item Query request. */
 export type ItemQueryErrorCode =
@@ -65,7 +65,7 @@ export class ItemQueryError extends Data.TaggedError("ItemQueryError")<{
    * The Formulas that the request reads and that have a mistake, each with
    * its Diagnostic, when the request leaves out such Formulas.
    */
-  readonly formulaFaults?: FormulaFaults | undefined;
+  readonly formulaDiagnostics?: FormulaDiagnostics | undefined;
 }> {
   #diagnostic: Diagnostic<ItemQueryErrorCode> | undefined;
 

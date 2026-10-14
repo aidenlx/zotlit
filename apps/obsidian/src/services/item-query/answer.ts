@@ -284,7 +284,7 @@ export function answerView(
       fields: view.fields,
       formulas: view.formulas,
       // A Formula with a mistake leaves out only itself and its readers.
-      formulaFaults: "leave-out",
+      onFormulaFault: "leave-out",
       sort: view.sort,
       limit: view.limit ?? null,
       context: view.context,
@@ -314,7 +314,9 @@ export function answerView(
           kind: "failed",
           diagnostic: failureDiagnostic(failed, named?.parameter),
           ...(failed._tag === "ItemQueryError" &&
-            failed.formulaFaults && { formulaFaults: failed.formulaFaults }),
+            failed.formulaDiagnostics && {
+              formulaDiagnostics: failed.formulaDiagnostics,
+            }),
         }),
       ),
     ),
@@ -338,13 +340,7 @@ const viewReply = (
  * seam.
  */
 function collectView(summary: QuerySummary, libraries: readonly LibraryWire[]) {
-  const { groups: summaries, totalCount, warnings, ...rest } = summary;
-  // A Query File shares its Formulas between its views, so a Formula that
-  // this view does not read is no warning.
-  const metadata = {
-    ...rest,
-    warnings: warnings.filter(({ code }) => code !== "unused-formula"),
-  };
+  const { groups: summaries, totalCount, ...metadata } = summary;
   // `metadata` carries `matchedCount`: the count of every match before the
   // limit, grouped or not.
   const rows: QueryViewRow[] = [];

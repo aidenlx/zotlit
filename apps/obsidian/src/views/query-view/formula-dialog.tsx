@@ -80,7 +80,7 @@ function FormulaForm({
   const fieldIssue = syntaxIssue ?? runIssue;
   const save = () => {
     if (nameIssue !== null || syntaxIssue !== null) return;
-    if (view.saveFormula(name, text, label)) close();
+    if (view.document.saveFormula(name, text, label)) close();
   };
   return (
     <form
@@ -167,7 +167,7 @@ function FormulaForm({
             className="mod-warning"
             data-query-formula-remove=""
             onClick={() => {
-              if (view.removeFormula(editing)) close();
+              if (view.document.removeFormula(editing)) close();
             }}
           >
             {m.query_view_formula_remove()}
