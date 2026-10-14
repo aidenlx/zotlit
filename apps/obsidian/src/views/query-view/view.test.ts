@@ -194,8 +194,12 @@ async function mount(
     scope: new Scope(),
     sourcePath: () => "query-files/Reading.zotquery",
     context: () => undefined,
-    ...(onWrite && { onWrite }),
+    save: (text) => {
+      saved.push(text);
+      onWrite?.(text);
+    },
   });
+  const saved: string[] = [];
   const el = document.createElement("div");
   document.body.append(el);
   view.load();
@@ -205,7 +209,7 @@ async function mount(
     act(async () => {
       await view.settled;
     });
-  return { view, el, run, reads, libraryScope, held, released, settle };
+  return { view, el, run, reads, libraryScope, held, released, settle, saved };
 }
 
 function cards(el: HTMLElement): (string | null)[] {
@@ -318,6 +322,182 @@ it("opens a file with a broken view and names the problem without running it", a
   );
 });
 
+const TAGGED = `views:
+  - type: annotations
+    name: Tags
+    from: annotations
+    groupBy:
+      property: tags[]
+      direction: ASC
+`;
+
+function tagged(key: string, tags: string[]): QueryViewRow {
+  return { ...row(key), values: { ...row(key).values, tags } };
+}
+
+function headings(el: HTMLElement): (string | null)[] {
+  return [...el.querySelectorAll("[data-query-group]")].map(
+    (node) => node.textContent,
+  );
+}
+
+it("shows a card with two tags under both tag headings, and counts it once", async () => {
+  const { view, el, run, settle } = await mount([
+    result([
+      tagged("ANNOTAAA", ["figure", "method"]),
+      tagged("ANNOTBBB", ["method"]),
+    ]),
+  ]);
+  await act(() => view.setText(TAGGED));
+  await settle();
+
+  expect(run.mock.calls[0]![0].fields).toContain("tags");
+  expect(headings(el)).toEqual(["figure", "method"]);
+  expect(cards(el)).toEqual(["ANNOTAAA", "ANNOTAAA", "ANNOTBBB"]);
+  expect(el.querySelector("[data-query-count]")?.textContent).toBe("2 results");
+});
+
+it("collapses a group heading and expands it again", async () => {
+  const { view, el, settle } = await mount([
+    result([tagged("ANNOTAAA", ["figure"]), tagged("ANNOTBBB", ["method"])]),
+  ]);
+  await act(() => view.setText(TAGGED));
+  await settle();
+
+  const toggle = () =>
+    el.querySelector<HTMLElement>('[data-query-group="figure"] button')!;
+  await act(() => toggle().click());
+  expect(toggle().getAttribute("aria-expanded")).toBe("false");
+  expect(cards(el)).toEqual(["ANNOTBBB"]);
+  await act(() => toggle().click());
+  expect(cards(el)).toEqual(["ANNOTAAA", "ANNOTBBB"]);
+});
+
+function choose(select: HTMLSelectElement, value: string) {
+  select.value = value;
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+it("adds sorts from the toolbar, runs them in order, and saves them to the file", async () => {
+  const { view, el, run, settle, saved } = await mount([]);
+  await act(() => view.setText(TAGGED));
+  await settle();
+
+  const editor = () =>
+    el.querySelector<HTMLElement>('[data-query-popover="sort"]')!;
+  // The sort list offers only properties ZotLit Query can sort.
+  const offered = [
+    ...editor().querySelectorAll<HTMLButtonElement>("[data-sort-add]"),
+  ];
+  expect(offered).toHaveLength(1);
+  await act(() => offered[0]!.click());
+  await act(() =>
+    editor().querySelector<HTMLButtonElement>("[data-sort-add]")!.click(),
+  );
+  const properties = () => [
+    ...editor().querySelectorAll<HTMLSelectElement>("[data-sort-property]"),
+  ];
+  const options = [...properties()[0]!.options].map((o) => o.value);
+  expect(options).not.toContain("text");
+  expect(options).not.toContain("pageLabel");
+  await act(() => choose(properties()[1]!, "dateAdded"));
+  await act(() =>
+    choose(
+      editor().querySelectorAll<HTMLSelectElement>("[data-sort-direction]")[1]!,
+      "DESC",
+    ),
+  );
+  await settle();
+
+  expect(run.mock.calls.at(-1)![0].sort).toEqual([
+    { field: "sortIndex", direction: "asc" },
+    { field: "dateAdded", direction: "desc" },
+  ]);
+  expect(saved.at(-1)).toContain(`    sort:
+      - property: sortIndex
+        direction: ASC
+      - property: dateAdded
+        direction: DESC
+`);
+
+  // Alt+ArrowDown on the first row's handle gives it the second place.
+  await act(() => {
+    editor()
+      .querySelector<HTMLElement>("[data-reorder-handle]")!
+      .dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "ArrowDown",
+          altKey: true,
+          bubbles: true,
+        }),
+      );
+  });
+  expect(properties().map((select) => select.value)).toEqual([
+    "dateAdded",
+    "sortIndex",
+  ]);
+});
+
+it("sets a Manual group order where a tick hides a group, and saves it to the file", async () => {
+  const { view, el, settle, saved } = await mount([
+    result([tagged("ANNOTAAA", ["figure"]), tagged("ANNOTBBB", ["method"])]),
+    result([tagged("ANNOTAAA", ["figure"]), tagged("ANNOTBBB", ["method"])]),
+    result([tagged("ANNOTAAA", ["figure"]), tagged("ANNOTBBB", ["method"])]),
+  ]);
+  await act(() => view.setText(TAGGED));
+  await settle();
+
+  const editor = () =>
+    el.querySelector<HTMLElement>('[data-query-popover="group"]')!;
+  await act(() =>
+    choose(
+      editor().querySelector<HTMLSelectElement>("[data-group-direction]")!,
+      "MANUAL",
+    ),
+  );
+  await settle();
+  const rows = () => [
+    ...editor().querySelectorAll<HTMLElement>("[data-group-row]"),
+  ];
+  expect(
+    rows().map((row) => [
+      row.textContent,
+      row.querySelector<HTMLInputElement>("input")!.checked,
+    ]),
+  ).toEqual([
+    ["figure1", true],
+    ["method1", true],
+  ]);
+
+  await act(() => rows()[0]!.querySelector<HTMLInputElement>("input")!.click());
+  await settle();
+
+  expect(headings(el)).toEqual(["method"]);
+  expect(cards(el)).toEqual(["ANNOTBBB"]);
+  expect(saved.at(-1)).toContain(`    groupOrder:
+      - method
+`);
+  expect(view.state.getState().view?.groupOrder).toEqual(["method"]);
+});
+
+it("finds text in the shown cards from the toolbar search", async () => {
+  const { view, el, settle } = await mount([
+    result([row("ANNOTAAA"), row("ANNOTBBB")]),
+  ]);
+  await act(() => view.setText(FILE));
+  await settle();
+
+  await act(() =>
+    el.querySelector<HTMLElement>('[data-query-toolbar="search"]')!.click(),
+  );
+  const input = el.querySelector<HTMLInputElement>("[data-query-search]")!;
+  await act(() => {
+    input.value = "of ANNOTBBB";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(cards(el)).toEqual(["ANNOTBBB"]);
+});
+
 function filterFault(from: number, to: number): QueryViewOutcome {
   return {
     kind: "failed",
@@ -391,7 +571,7 @@ function section(el: HTMLElement, name: "all" | "view"): HTMLElement {
   return el.querySelector<HTMLElement>(`[data-filter-section="${name}"]`)!;
 }
 
-function choose(select: HTMLSelectElement, value: string) {
+function chooseValue(select: HTMLSelectElement, value: string) {
   select.value = value;
   select.dispatchEvent(new Event("input", { bubbles: true }));
 }
@@ -405,15 +585,15 @@ it("edits the filters for all views and for this view from the Filter popover", 
   await act(() => view.setText(FILE));
   await settle();
 
-  expect(el.querySelector("[data-query-filter]")?.textContent).toContain(
-    "Filter",
-  );
+  expect(
+    el.querySelector('[data-query-toolbar="filter"]')?.textContent,
+  ).toContain("Filter");
   expect(section(el, "all").textContent).toContain("All views");
   expect(section(el, "view").textContent).toContain("This view");
 
   const [color] = section(el, "view").querySelectorAll("[data-condition-row]");
   await act(() =>
-    choose(color!.querySelector('select[aria-label="Value"]')!, "red"),
+    chooseValue(color!.querySelector('select[aria-label="Value"]')!, "red"),
   );
   await settle();
   expect(written.at(-1)).toContain(
@@ -424,7 +604,7 @@ it("edits the filters for all views and for this view from the Filter popover", 
   // The starter row of the empty "All views" section is a colour condition.
   const [starter] = section(el, "all").querySelectorAll("[data-condition-row]");
   await act(() =>
-    choose(starter!.querySelector('select[aria-label="Value"]')!, "blue"),
+    chooseValue(starter!.querySelector('select[aria-label="Value"]')!, "blue"),
   );
   await settle();
   expect(written.at(-1)).toMatch(
