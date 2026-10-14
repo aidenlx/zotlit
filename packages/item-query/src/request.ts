@@ -13,7 +13,7 @@ import type { FilterPlan, FormulaResolver } from "./filter-plan";
 import { FORMULA_NAME, FORMULA_SEGMENT } from "./formulas";
 import type { PlannedColumn, PlannedFormula } from "./formulas";
 import { canGroup, planPath, readPath } from "./projection";
-import type { PlannedPath } from "./projection";
+import type { PathProblem, PlannedPath } from "./projection";
 import { parseProjectionPath } from "./projection-path";
 import type { QueryClock } from "./query-clock";
 
@@ -377,6 +377,14 @@ export function planRequest(
     const columns: PlannedColumn[] = [];
     for (const [index, text] of fields.entries()) {
       const formulaName = formulaPath(text);
+      if (typeof formulaName === "object" && formulaName !== null) {
+        return yield* new ItemQueryError({
+          dataset,
+          fault: formulaName,
+          location: { argument: "fields", index, path: `fields[${index}]` },
+          argumentText: JSON.stringify(fields),
+        });
+      }
       if (formulaName !== null) {
         if (!Object.hasOwn(definedFormulas, formulaName)) {
           return yield* new ItemQueryError({
@@ -513,13 +521,30 @@ export function planRequest(
 
 /**
  * The Formula name of a `formula.<name>` Projection Path, or null for a path
- * outside the reserved `formula` segment.
+ * outside the reserved `formula` segment. A Query Row holds a Formula under
+ * `formula.<name>` alone, so another form of a path in that segment, such as
+ * `formula["name"]`, is a Fault.
  */
-function formulaPath(text: string): string | null {
+function formulaPath(text: string): string | null | PathProblem {
   const parsed = parseProjectionPath(text);
   if (!parsed.ok || parsed.segments[0] !== FORMULA_SEGMENT) return null;
   const [, name, ...rest] = parsed.segments;
-  return typeof name === "string" && rest.length === 0 ? name : null;
+  if (
+    typeof name === "string" &&
+    rest.length === 0 &&
+    text === `${FORMULA_SEGMENT}.${name}`
+  )
+    return name;
+  return {
+    kind: "plain",
+    code: "invalid-path",
+    action:
+      typeof name === "string" && FORMULA_NAME.test(name)
+        ? `Read the Formula as ${FORMULA_SEGMENT}.${name}.`
+        : `Read a Formula as ${FORMULA_SEGMENT}.<name>.`,
+    at: { from: 0, to: text.length },
+    message: `"${text}" is not a Formula path: fields reads a Formula as ${FORMULA_SEGMENT}.<name>, and a Query Row holds its value under that key.`,
+  };
 }
 
 /** The failure of a Formula that another Filter Expression reads. */
