@@ -62,7 +62,7 @@ describe("layoutRows", () => {
     expect(shown.count).toBe(4);
   });
 
-  it("groups by Item in the order each Item first shows, named by its title", () => {
+  it("groups by Item in the order of the Items' titles, named by its title", () => {
     const shown = layoutRows(ROWS, {
       property: "item.indexedKey",
       direction: "ASC",
@@ -70,25 +70,39 @@ describe("layoutRows", () => {
     expect(
       shown.rows.map((r) => [r.annotationKey, r.attachmentKey, r.group?.label]),
     ).toEqual([
-      ["ANNOT001", "ATTACHMT", "Ten simple rules"],
-      ["ANNOT003", "ATTACHMT", "Ten simple rules"],
       ["ANNOT002", "ATTACHMT", "Deep learning"],
       // A standalone Attachment has no Item: it stands under its own title.
       ["ANNOT004", "STANDALN", "Full text PDF"],
+      ["ANNOT001", "ATTACHMT", "Ten simple rules"],
+      ["ANNOT003", "ATTACHMT", "Ten simple rules"],
     ]);
   });
 
-  it("reverses the groups for a descending grouping", () => {
+  it("orders the groups from Z to A for a descending grouping, and keeps the rows' order in a group", () => {
     const shown = layoutRows(ROWS, {
       property: "item.indexedKey",
       direction: "DESC",
     });
     expect(shown.rows.map((r) => r.annotationKey)).toEqual([
-      "ANNOT004",
-      "ANNOT002",
       "ANNOT001",
       "ANNOT003",
+      "ANNOT004",
+      "ANNOT002",
     ]);
+  });
+
+  it("puts the group of no value last in both directions", () => {
+    const rows = [
+      row("ANNOT001", "ITEMAAAA", { itemTitle: "A" }),
+      row("ANNOT002", "ITEMAAAA", { itemTitle: "A", tags: ["method"] }),
+      row("ANNOT003", "ITEMAAAA", { itemTitle: "A", tags: ["figure"] }),
+    ];
+    const order = (direction: "ASC" | "DESC") =>
+      layoutRows(rows, { property: "tags[]", direction }).groups.map(
+        (g) => g.value,
+      );
+    expect(order("ASC")).toEqual(["figure", "method", null]);
+    expect(order("DESC")).toEqual(["method", "figure", null]);
   });
 
   it("groups by Attachment, named by its title", () => {
@@ -120,15 +134,15 @@ describe("layoutRows", () => {
       { property: "colorName", direction: "ASC" },
     );
     expect(placed(shown)).toEqual([
-      ["ANNOT001", "Yellow"],
-      ["ANNOT002", "Red"],
       // A colour outside Zotero's palette is its own group, named by its hex.
       ["ANNOT003", "#123456"],
+      ["ANNOT002", "Red"],
+      ["ANNOT001", "Yellow"],
     ]);
     expect(shown.groups.map((g) => g.value)).toEqual([
-      "yellow",
-      "red",
       "#123456",
+      "red",
+      "yellow",
     ]);
   });
 
@@ -169,8 +183,8 @@ describe("layoutRows", () => {
       { property: "item.collections[]", direction: "ASC" },
     );
     expect(placed(shown)).toEqual([
-      ["ANNOT001", "Thesis/Chapter 1"],
       ["ANNOT001", "Reading"],
+      ["ANNOT001", "Thesis/Chapter 1"],
     ]);
   });
 

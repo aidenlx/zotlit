@@ -364,8 +364,8 @@ it("groups the cards by colour from More options, and keeps the grouping in its 
     [...view.contentEl.querySelectorAll("[data-query-group]")].map((node) =>
       node.getAttribute("data-query-group"),
     ),
-  ).toEqual(["yellow", "red"]);
-  expect(cards(view.contentEl)).toEqual(["ANNOTAAA", "ANNOTBBB"]);
+  ).toEqual(["red", "yellow"]);
+  expect(cards(view.contentEl)).toEqual(["ANNOTBBB", "ANNOTAAA"]);
   // The grouping is part of the sidebar's Query File, which its state keeps.
   expect(view.getState().query).toContain("property: colorName");
   expect(menuItem(paneMenu(view), "Group by").submenu!.items[1]!.checked).toBe(
