@@ -14,7 +14,7 @@ import { Scheduler } from "@/lib/effect";
 import type { Scope } from "@/lib/effect";
 import type { WorkbenchIdentity } from "@/services/template-workbench/envelope";
 
-import { answer, QueryOutputError } from "./answer";
+import { answer, answerView, QueryOutputError } from "./answer";
 import type { QueryWriter } from "./answer";
 import { diagnostic, failure } from "./contract";
 import { createTrace, finishTrace } from "./trace";
@@ -45,15 +45,18 @@ export function runQueryJob(
     const trace = job.measure ? createTrace(job.heap ?? false) : undefined;
     const answerSteps: number[] = [];
     const heapBefore = job.heap ? process.memoryUsage().heapUsed : undefined;
-    const reply = yield* answer(job, {
-      identity: env.identity,
-      attachmentFiles: env.attachmentFiles,
-      instrument: trace?.instrument,
-      onAnswerStep: job.measure
-        ? (ms: number) => answerSteps.push(ms)
-        : undefined,
-      openOutput: () => openStage(job.stagePath, stage),
-    });
+    const reply =
+      "view" in job
+        ? yield* answerView(job, { attachmentFiles: env.attachmentFiles })
+        : yield* answer(job, {
+            identity: env.identity,
+            attachmentFiles: env.attachmentFiles,
+            instrument: trace?.instrument,
+            onAnswerStep: job.measure
+              ? (ms: number) => answerSteps.push(ms)
+              : undefined,
+            openOutput: () => openStage(job.stagePath, stage),
+          });
     if (!trace) return reply;
     return {
       ...reply,
