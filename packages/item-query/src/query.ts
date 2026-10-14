@@ -141,10 +141,17 @@ export function consumeQuery<Request extends ItemQueryRequest, A, E, R>(
   ItemQueryDatabase | R
 > {
   return Effect.gen(function* () {
-    const plan = yield* planRequest(dataset, request);
+    const sources = yield* openQuerySources;
+    // A Formula that names a custom field the source lacks leaves out only
+    // that Formula, so the planner reads the source's custom fields first.
+    const customFieldNames =
+      request.formulaFaults === "leave-out" &&
+      Object.keys(request.formulas ?? {}).length > 0
+        ? (yield* sources.vocabulary()).customFieldNames
+        : undefined;
+    const plan = yield* planRequest(dataset, request, customFieldNames);
     const { query, sorts } = plan;
     const clock = yield* readQueryClock;
-    const sources = yield* openQuerySources;
     const run = yield* dataset.open(plan, request, { clock, sources });
     return yield* consumeDataset(
       {
