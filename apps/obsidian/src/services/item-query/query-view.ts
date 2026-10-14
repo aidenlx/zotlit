@@ -24,6 +24,12 @@ export interface QueryViewRequest {
   readonly filter?: string;
   /** The Projection Paths of each row. Omitted: the dataset default. */
   readonly fields?: readonly string[];
+  /**
+   * The Formulas the query reads: each name with its Filter Expression text.
+   * A row holds a Formula's value under `formula.<name>` when `fields` names
+   * it. Omitted: the request has none.
+   */
+  readonly formulas?: Readonly<Record<string, string>>;
   /** The Sortable Fields, the first one first. Omitted: the dataset default. */
   readonly sort?: readonly SortSpec[];
   /** One group path. Omitted: the result is one list of rows. */

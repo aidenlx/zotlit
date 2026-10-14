@@ -282,6 +282,7 @@ export function answerView(
       filter: view.filter,
       group: view.group,
       fields: view.fields,
+      formulas: view.formulas,
       sort: view.sort,
       limit: view.limit ?? null,
       context: view.context,
