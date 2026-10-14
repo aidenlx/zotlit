@@ -1144,6 +1144,57 @@ describe("typed Query View call", () => {
     });
   });
 
+  it("leaves out each wrong Formula with its Diagnostic, and gives no warning for an unread Formula", async () => {
+    using scenario = openScenarioDatabase({ storage: "temp-directory" });
+    seedBulkLibrary(scenario.sqlite, 3);
+    const { service } = setup(scenario);
+    await using _owned = service;
+    const request = {
+      from: "items",
+      libraries: bulkLibraries,
+      fields: ["title", "formula.year", "formula.next", "formula.short"],
+      formulas: {
+        year: "dat.year",
+        next: "formula.year + 1",
+        short: "title.slice(0, 4)",
+        unused: "title",
+      },
+    } as const;
+
+    const outcome = await service.run(request, signal());
+
+    if (outcome.kind !== "result") throw new Error(outcome.kind);
+    expect(outcome.result.returnedCount).toBe(3);
+    expect(outcome.result.rows![0]!.values).toMatchObject({
+      "formula.short": "Bulk",
+    });
+    expect(outcome.result.warnings).toEqual([]);
+    expect(
+      Object.fromEntries(
+        Object.entries(outcome.result.formulaFaults ?? {}).map(
+          ([name, { code }]) => [name, code],
+        ),
+      ),
+    ).toEqual({ year: "unknown-property", next: "reads-faulted-formula" });
+
+    const filtered = await service.run(
+      { ...request, filter: "formula.next > 2000" },
+      signal(),
+    );
+    expect(filtered).toMatchObject({
+      kind: "failed",
+      diagnostic: {
+        code: "reads-faulted-formula",
+        message: "The filter reads formula.next, which has a mistake.",
+        location: { argument: "filter" },
+      },
+      formulaFaults: {
+        year: { code: "unknown-property" },
+        next: { code: "reads-faulted-formula" },
+      },
+    });
+  });
+
   it("stops a cancelled call with a cancelled outcome and keeps other queries running", async () => {
     using scenario = openScenarioDatabase({ storage: "temp-directory" });
     seedBulkLibrary(scenario.sqlite, 20000);

@@ -669,6 +669,22 @@ describe('formulaFaults: "leave-out"', () => {
       { a: "invalid-filter" },
     ],
     [
+      "a name that is no field and no custom field of the source",
+      {
+        formulas: { a: "dat", b: "formula.a + 1", ok: "date.year" },
+        fields: ["formula.b", "formula.ok"],
+      },
+      { a: "unknown-field", b: "reads-faulted-formula" },
+    ],
+    [
+      "a property of a name that is no custom field of the source",
+      {
+        formulas: { a: "dat.year", ok: "date.year" },
+        fields: ["formula.a", "formula.ok"],
+      },
+      { a: "unknown-property" },
+    ],
+    [
       "a Formula that fields reads and the request does not define",
       { formulas: { ok: "date.year" }, fields: ["formula.zz", "formula.ok"] },
       { zz: "unknown-formula" },

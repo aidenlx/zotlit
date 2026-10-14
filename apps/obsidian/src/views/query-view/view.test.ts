@@ -8,7 +8,8 @@ import type { App } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { QueryContext } from "@zotlit/item-query";
+import { nameDictionary } from "@zotlit/item-query";
+import type { FormulaFaults, QueryContext } from "@zotlit/item-query";
 
 import { Effect } from "@/lib/effect";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
@@ -1912,7 +1913,7 @@ function formulaRow(key: string, title: string, year: number): QueryViewRow {
   return { indexedKey: key, values: { title, "formula.year": year } };
 }
 
-it("runs a view with the Formulas its visible properties read, and shows their values", async () => {
+it("runs a view with every Formula of the file, and shows the values of those it shows", async () => {
   const { view, el, run, settle } = await mount([
     result([formulaRow("ITEMAAAA", "Ten simple rules", 2014)]),
   ]);
@@ -1921,20 +1922,59 @@ it("runs a view with the Formulas its visible properties read, and shows their v
   );
   await settle();
 
+  expect(run).toHaveBeenCalledTimes(1);
   const [request] = run.mock.calls[0]!;
-  expect(request.formulas).toEqual({ year: "date.year" });
+  expect(request.formulas).toEqual({
+    year: "date.year",
+    short: "title.nope()",
+    unused: "title",
+  });
   expect(request.fields).toEqual(expect.arrayContaining(["formula.year"]));
+  expect(request.fields).not.toContain("formula.short");
   expect(tableText(el)).toEqual([
     ["", "Title", "formula.year", "Literature note"],
     ["", "Ten simple rules", "2014", "Create"],
   ]);
 });
 
-it("marks a wrong Formula at its column, and runs the view again without it", async () => {
+/** The Diagnostic of a Formula that ZotLit Query left out. */
+type Diagnostic = FormulaFaults[string];
+
+/** `outcome` with the Formulas that ZotLit Query left out. */
+function withFaults(
+  outcome: QueryViewOutcome,
+  faults: Record<string, Diagnostic>,
+): QueryViewOutcome {
+  const formulaFaults = nameDictionary(Object.entries(faults));
+  if (outcome.kind === "result")
+    return { ...outcome, result: { ...outcome.result, formulaFaults } };
+  if (outcome.kind === "failed") return { ...outcome, formulaFaults };
+  return outcome;
+}
+
+/** The Diagnostic of a Formula that reads the wrong Formula `name`. */
+function readsFault(reader: string, name: string, root: string): Diagnostic {
+  return {
+    code: "reads-faulted-formula",
+    message: `formula.${reader} reads formula.${name}, which has a mistake.`,
+    hint: `Correct the mistake in formula.${root}.`,
+    severity: "error",
+    report: [],
+    location: {
+      argument: "formulas",
+      path: reader,
+      span: { from: 0, to: 9 + name.length },
+    },
+    found: `formula.${name}`,
+    expected: ["a Formula without a mistake"],
+    suggestions: [],
+  };
+}
+
+it("marks a wrong Formula at its column from the one run, and shows the other columns", async () => {
   const { view, el, run, settle } = await mount([
-    {
-      kind: "failed",
-      diagnostic: {
+    withFaults(result([formulaRow("ITEMAAAA", "Ten simple rules", 2014)]), {
+      short: {
         code: "unknown-function",
         message: "In formula.short: nope is not a method of string.",
         hint: "Use slice.",
@@ -1949,20 +1989,12 @@ it("marks a wrong Formula at its column, and runs the view again without it", as
         expected: [],
         suggestions: [],
       },
-    },
-    result([formulaRow("ITEMAAAA", "Ten simple rules", 2014)]),
+    }),
   ]);
   await act(() => view.setText(FORMULA_FILE));
   await settle();
 
-  expect(run).toHaveBeenCalledTimes(2);
-  expect(run.mock.calls[0]![0].formulas).toEqual({
-    year: "date.year",
-    short: "title.nope()",
-  });
-  const [retry] = run.mock.calls[1]!;
-  expect(retry.formulas).toEqual({ year: "date.year" });
-  expect(retry.fields).not.toContain("formula.short");
+  expect(run).toHaveBeenCalledTimes(1);
   expect(view.state.getState()).toMatchObject({
     phase: "ready",
     formulaIssues: {
@@ -1982,16 +2014,12 @@ it("marks a wrong Formula at its column, and runs the view again without it", as
   // The same text runs as it did; a fixed Formula runs again.
   await act(() => view.setText(FORMULA_FILE));
   await settle();
-  expect(run).toHaveBeenCalledTimes(2);
+  expect(run).toHaveBeenCalledTimes(1);
   await act(() =>
     view.setText(FORMULA_FILE.replace("title.nope()", "title.slice(0, 3)")),
   );
   await settle();
-  expect(run).toHaveBeenCalledTimes(3);
-  expect(run.mock.calls[2]![0].formulas).toEqual({
-    year: "date.year",
-    short: "title.slice(0, 3)",
-  });
+  expect(run).toHaveBeenCalledTimes(2);
   expect(view.state.getState().formulaIssues).toEqual({});
 });
 
@@ -2012,54 +2040,47 @@ views:
       - formula.short
 `;
 
-function formulaFault(name: string): QueryViewOutcome {
-  return {
-    kind: "failed",
-    diagnostic: {
-      code: "unknown-field",
-      message: `In formula.${name}: dat is not a field of Items.`,
-      hint: "Use date.",
-      severity: "error",
-      report: [],
-      location: { argument: "formulas", path: name, span: { from: 0, to: 3 } },
-      found: "dat",
-      expected: [],
-      suggestions: ["date"],
-    },
-  };
-}
+const YEAR_FAULT: Diagnostic = {
+  code: "unknown-field",
+  message: "In formula.year: dat is not a field of Items.",
+  hint: "Use date.",
+  severity: "error",
+  report: [],
+  location: { argument: "formulas", path: "year", span: { from: 0, to: 3 } },
+  found: "dat",
+  expected: [],
+  suggestions: ["date"],
+};
 
-it("marks a wrong Formula and every Formula that reads it, and runs the view once more without them", async () => {
+const DEPENDENT_FAULTS = {
+  year: YEAR_FAULT,
+  next: readsFault("next", "year", "year"),
+  after: readsFault("after", "next", "year"),
+};
+
+it("marks a wrong Formula and each Formula that reads it with its own reason", async () => {
   const { view, el, run, settle } = await mount([
-    formulaFault("year"),
-    result([
-      {
-        indexedKey: "ITEMAAAA",
-        values: { title: "Ten simple rules", "formula.short": "Ten" },
-      },
-    ]),
+    withFaults(
+      result([
+        {
+          indexedKey: "ITEMAAAA",
+          values: { title: "Ten simple rules", "formula.short": "Ten" },
+        },
+      ]),
+      DEPENDENT_FAULTS,
+    ),
   ]);
   await act(() => view.setText(DEPENDENT_FILE));
   await settle();
 
-  expect(run).toHaveBeenCalledTimes(2);
-  expect(run.mock.calls[0]![0].formulas).toEqual({
-    year: "date.year",
-    next: "formula.year + 1",
-    after: "formula.next * 2",
-    short: "title.slice(0, 3)",
-  });
-  const [retry] = run.mock.calls[1]!;
-  expect(retry.formulas).toEqual({ short: "title.slice(0, 3)" });
-  expect(retry.fields).not.toContain("formula.year");
-  expect(retry.fields).not.toContain("formula.next");
-  expect(retry.fields).not.toContain("formula.after");
+  expect(run).toHaveBeenCalledTimes(1);
   expect(view.state.getState()).toMatchObject({
     phase: "ready",
     formulaIssues: {
       year: "In formula.year: dat is not a field of Items. Use date.",
-      next: "Reads formula.year, which has a mistake.",
-      after: "Reads formula.year, which has a mistake.",
+      next: "formula.next reads formula.year, which has a mistake. Correct the mistake in formula.year.",
+      after:
+        "formula.after reads formula.next, which has a mistake. Correct the mistake in formula.year.",
     },
   });
   expect(tableText(el)).toEqual([
@@ -2076,14 +2097,30 @@ it("marks a wrong Formula and every Formula that reads it, and runs the view onc
   ]);
 });
 
-it("shows a wrong Formula that the filters read at their condition, and no rows until it is fixed", async () => {
+it("marks the condition that reads a wrong Formula, and shows no rows until it is fixed", async () => {
   const filtered = DEPENDENT_FILE.replace(
     "      - formula.short\n",
     "      - formula.short\n    filters: formula.next > 2000\n",
   );
   const { view, el, run, settle } = await mount([
     result([formulaRow("ITEMAAAA", "Ten simple rules", 2014)]),
-    formulaFault("year"),
+    withFaults(
+      {
+        kind: "failed",
+        diagnostic: {
+          code: "reads-faulted-formula",
+          message: "The filter reads formula.next, which has a mistake.",
+          hint: "Correct the mistake in formula.year.",
+          severity: "error",
+          report: [],
+          location: { argument: "filter", span: { from: 0, to: 12 } },
+          found: "formula.next",
+          expected: ["a Formula without a mistake"],
+          suggestions: [],
+        },
+      },
+      DEPENDENT_FAULTS,
+    ),
     result([formulaRow("ITEMAAAA", "Ten simple rules", 2014)]),
   ]);
   await act(() => view.setText(filtered));
@@ -2100,12 +2137,12 @@ it("shows a wrong Formula that the filters read at their condition, and no rows 
     filterIssue: {
       section: "view",
       path: [0],
-      message: "Reads formula.year, which has a mistake.",
+      message:
+        "The filter reads formula.next, which has a mistake. Correct the mistake in formula.year.",
     },
     formulaIssues: {
       year: "In formula.year: dat is not a field of Items. Use date.",
-      next: "Reads formula.year, which has a mistake.",
-      after: "Reads formula.year, which has a mistake.",
+      next: "formula.next reads formula.year, which has a mistake. Correct the mistake in formula.year.",
     },
   });
   expect(el.querySelector('[data-query-table-row="item"]')).toBeNull();
@@ -2160,7 +2197,6 @@ views:
   );
   await settle();
   expect(run).toHaveBeenCalledTimes(2);
-  expect(run.mock.calls[1]![0]).not.toHaveProperty("formulas");
   expect(view.state.getState()).toMatchObject({
     phase: "failed",
     records: [],
@@ -2174,11 +2210,10 @@ views:
   expect(el.querySelector('[data-query-table-row="item"]')).toBeNull();
 });
 
-it("runs a Formula whose name is also an object member, such as __proto__", async () => {
+it("marks a Formula whose name is also an object member, such as __proto__", async () => {
   const { view, el, run, settle } = await mount([
-    {
-      kind: "failed",
-      diagnostic: {
+    withFaults(result([formulaRow("ITEMAAAA", "Ten simple rules", 2014)]), {
+      ["__proto__"]: {
         code: "unknown-field",
         message: "In formula.__proto__: dat is not a field of Items.",
         hint: "",
@@ -2189,8 +2224,7 @@ it("runs a Formula whose name is also an object member, such as __proto__", asyn
         expected: [],
         suggestions: [],
       },
-    },
-    result([formulaRow("ITEMAAAA", "Ten simple rules", 2014)]),
+    }),
   ]);
   await act(() =>
     view.setText(`formulas:
@@ -2209,9 +2243,6 @@ views:
   await settle();
   expect(Object.entries(run.mock.calls[0]![0].formulas ?? {})).toEqual([
     ["__proto__", "dat.year"],
-    ["constructor", "title"],
-  ]);
-  expect(Object.entries(run.mock.calls[1]![0].formulas ?? {})).toEqual([
     ["constructor", "title"],
   ]);
   expect(Object.entries(view.state.getState().formulaIssues)).toEqual([
