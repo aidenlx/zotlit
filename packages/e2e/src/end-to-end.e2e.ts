@@ -1469,7 +1469,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     cleanup.defer(async () => {
       await obEval(
         vaultId,
-        `(async()=>{activeDocument.querySelector('.modal.zt-configure-view .modal-close-button')?.click();for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))leaf.detach();await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(path)}),${JSON.stringify(original)});await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+        `(async()=>{for(const modal of activeDocument.querySelectorAll('.modal.zt-configure-view'))(modal.querySelector('.modal-close-button')??modal.querySelector('.modal-header-button:has(.lucide-x)'))?.click();for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))leaf.detach();await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(path)}),${JSON.stringify(original)});await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
       );
     });
     await obEval(
@@ -1916,18 +1916,24 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(rows.every((row) => row.values.colorName)).toBe(true);
   }, 180000);
 
-  it("shows a Fixture Query File as a Table, expands an Item into its Attachments, Annotations and Child Notes, and creates a Literature Note from its column", async () => {
-    const path = "query-files/Reading list.zotquery";
+  it("switches a Fixture Query File view to Items and the Table, expands an Item into its Attachments, Annotations and Child Notes, and creates a Literature Note from its column", async () => {
+    const path = "query-files/Reading annotations.zotquery";
     const layout = await obEval(
       vaultId,
       "JSON.stringify(app.workspace.getLayout())",
     );
+    const original = await obEval(
+      vaultId,
+      `app.vault.read(app.vault.getFileByPath(${JSON.stringify(path)}))`,
+    );
     const created: string[] = [];
     await using cleanup = new AsyncDisposableStack();
+    // The tab closes before the text goes back, so no pending save of the
+    // tab writes over it.
     cleanup.defer(async () => {
       await obEval(
         vaultId,
-        `(async()=>{for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))leaf.detach();for(const path of ${JSON.stringify(created)}){const file=app.vault.getFileByPath(path);if(file)await app.vault.delete(file);}await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+        `(async()=>{for(const modal of activeDocument.querySelectorAll('.modal.zt-configure-view'))(modal.querySelector('.modal-close-button')??modal.querySelector('.modal-header-button:has(.lucide-x)'))?.click();for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))leaf.detach();await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(path)}),${JSON.stringify(original)});for(const path of ${JSON.stringify(created)}){const file=app.vault.getFileByPath(path);if(file)await app.vault.delete(file);}await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
       );
     });
     const tab = "app.workspace.getMostRecentLeaf().view";
@@ -1935,6 +1941,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       vaultId,
       `(async()=>{const leaf=app.workspace.getLeaf('tab');await leaf.openFile(app.vault.getFileByPath(${JSON.stringify(path)}));app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
     );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `(async()=>{const view=${tab};if(view.getViewType()!=='zotlit-query-file')return 'none';await view.query.settled;return String(view.contentEl.querySelectorAll('.zt-annot-card').length>0);})()`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
     /** What the Table shows once its query settled. */
     const readTable = `(async()=>{const view=${tab};if(view.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(path)})return 'null';await view.query.settled;const el=view.contentEl;const keys=kind=>[...el.querySelectorAll('[data-query-table-row="'+kind+'"]')].map(n=>n.getAttribute('data-query-key'));return JSON.stringify({header:[...el.querySelectorAll('[data-query-table] thead th')].map(n=>n.textContent),items:keys('item'),attachments:keys('attachment'),annotations:keys('annotation'),childNotes:[...el.querySelectorAll('[data-query-table-row="note"]')].map(n=>[n.getAttribute('data-query-key'),n.textContent]),notes:Object.fromEntries([...el.querySelectorAll('[data-query-note]')].map(n=>[n.closest('tr').getAttribute('data-query-key'),n.getAttribute('data-query-note')])),create:[...el.querySelectorAll('[data-query-create-note]')].map(n=>n.getAttribute('data-query-create-note'))});})()`;
     interface Table {
@@ -1964,25 +1977,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       return report.rows!;
     };
 
-    // The rows are the Items ZotLit Query gives for the view, in its order,
-    // and the columns follow the view's visible properties.
-    const items = await query({
-      from: "items",
-      fields: "title",
-      sort: "title",
-      limit: "100",
-    });
-    const shown = await tableWhen((table) => table.items.length > 0);
-    expect(shown.items).toEqual(items.map((row) => row.indexedKey));
-    expect(shown.header).toEqual([
-      "",
-      "Title",
-      m.query_view_property_first_author(),
-      "Date",
-      m.query_view_table_literature_note(),
-    ]);
-
-    // Configure view offers the Table for this view of Items.
+    // Configure view switches the view's records to Items. The Layout
+    // picker then offers the layouts of Items, with the Table chosen, and
+    // the grouping by Item, which Items lack, comes off with a notice.
     await obEval(
       vaultId,
       `(()=>{${tab}.contentEl.querySelector('[data-query-view-menu]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true}));return true;})()`,
@@ -1993,26 +1990,60 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEvalUntil(
         vaultId,
-        `String(${configureModal}?.querySelector('[data-query-view-name]')?.value===${JSON.stringify("Reading list")})`,
+        `String(${configureModal}?.querySelector('[data-query-view-name]')?.value===${JSON.stringify("All annotations")})`,
         { expected: "true" },
       ),
     ).toBe(true);
+    await obEval(
+      vaultId,
+      `(()=>{const select=${configureModal}.querySelector('[data-query-view-dataset]');select.value='items';select.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
+    );
     expect(
-      JSON.parse(
-        await obEval(
-          vaultId,
-          `JSON.stringify([...${configureModal}.querySelectorAll('[data-query-view-layout] option')].map(n=>[n.textContent,n.selected]))`,
-        ),
+      await obEvalUntil(
+        vaultId,
+        `JSON.stringify([...${configureModal}.querySelectorAll('[data-query-view-layout] option')].map(n=>[n.textContent,n.selected]))`,
+        {
+          expected: JSON.stringify([
+            [m.query_view_layout_table(), true],
+            [m.query_view_layout_list(), false],
+            [m.query_view_layout_cards(), false],
+          ]),
+        },
       ),
-    ).toEqual([
-      [m.query_view_layout_table(), true],
-      [m.query_view_layout_list(), false],
-      [m.query_view_layout_cards(), false],
-    ]);
+    ).toBe(true);
+    expect(
+      await obEval(
+        vaultId,
+        `String([...activeDocument.querySelectorAll('.notice')].some(n=>n.textContent.includes(${JSON.stringify(
+          m.query_view_dataset_removed({
+            dataset: m.query_view_dataset_items(),
+            properties: "item.indexedKey",
+          }),
+        )})))`,
+      ),
+    ).toBe("true");
     await obEval(
       vaultId,
       `(()=>{const modal=${configureModal};(modal.querySelector('.modal-close-button')??modal.querySelector('.modal-header-button:has(.lucide-x)')).click();return true;})()`,
     );
+    // The view saves as a Table of Items, without its grouping.
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `(async()=>{const text=await app.vault.read(app.vault.getFileByPath(${JSON.stringify(path)}));const first=text.split('name: Figures')[0];return String(first.includes(${JSON.stringify("  - type: table\n    name: All annotations\n    from: items\n")})&&!first.includes('groupBy'));})()`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+
+    // The rows are the Items ZotLit Query gives for the view, in its order.
+    const items = await query({
+      from: "items",
+      fields: "title",
+      limit: "100",
+    });
+    const shown = await tableWhen((table) => table.items.length > 0);
+    expect(shown.items).toEqual(items.map((row) => row.indexedKey));
+    expect(shown.header.at(-1)).toBe(m.query_view_table_literature_note());
 
     // The Item expands into its Attachments, and an Attachment with
     // Annotations into those Annotations, as ZotLit Query lists them.
