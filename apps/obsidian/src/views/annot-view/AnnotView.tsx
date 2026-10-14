@@ -369,7 +369,8 @@ function SearchRow({
   );
 }
 
-function AnnotList({ collapsed }: { collapsed: boolean }) {
+/** The Annotation Cards, in the grid the Annotations Layout draws them in. */
+export function AnnotList({ collapsed }: { collapsed: boolean }) {
   const actions = useContext(AnnotActionsContext);
   const annotations = useAnnotStore((s) => s.annotations);
   const clearFilters = useClearFilters();
