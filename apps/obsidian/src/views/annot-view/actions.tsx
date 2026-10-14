@@ -107,9 +107,15 @@ export interface AnnotActions {
    * Obsidian PDF view lands quietly on the Annotation Mark of a card the click
    * adds.
    *
+   * @param place where the clicked card stands in the list: a card under two
+   *   group headings stands at two places.
    * @see apps/obsidian/docs/adr/0061-the-annotation-view-owns-its-card-selection.md
    */
-  onSelectAnnotation(annot: AnnotationRecord, gesture: CardClick): void;
+  onSelectAnnotation(
+    annot: AnnotationRecord,
+    gesture: CardClick,
+    place: string,
+  ): void;
   /**
    * A click on the empty list: an open card editor closes, or, with none
    * open, the Card Selection clears.
