@@ -1914,13 +1914,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const pickLayout = (type: string) =>
       obEval(
         vaultId,
-        `(async()=>{const el=app.workspace.getMostRecentLeaf().view.contentEl;el.querySelector('[data-query-view-menu]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:200,clientY:200}));await new Promise(r=>setTimeout(r,100));const modal=activeDocument.querySelector('.modal.zt-configure-view');const select=modal.querySelector('[data-query-view-layout]');select.value=${JSON.stringify(type)};select.dispatchEvent(new Event('change',{bubbles:true}));(modal.querySelector('.modal-close-button')??modal.querySelector('.modal-header-button:has(.lucide-x)')).click();return true;})()`,
+        `(async()=>{const el=app.workspace.getMostRecentLeaf().view.contentEl;el.querySelector('[data-query-view-menu]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:200,clientY:200}));const open=()=>activeDocument.querySelector('.modal.zt-configure-view [data-query-view-layout]');for(let i=0;i<100&&!open();i++)await new Promise(r=>setTimeout(r,20));const modal=activeDocument.querySelector('.modal.zt-configure-view');const select=modal.querySelector('[data-query-view-layout]');select.value=${JSON.stringify(type)};select.dispatchEvent(new Event('change',{bubbles:true}));(modal.querySelector('.modal-close-button')??modal.querySelector('.modal-header-button:has(.lucide-x)')).click();return true;})()`,
       );
     /** Type into the toolbar search, which opens on its first use. */
     const search = (text: string) =>
       obEval(
         vaultId,
-        `(async()=>{const el=app.workspace.getMostRecentLeaf().view.contentEl;if(!el.querySelector('[data-query-search]')){el.querySelector('[data-query-toolbar="search"]').click();await new Promise(r=>setTimeout(r,100));}const input=el.querySelector('[data-query-search]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(text)});input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+        `(async()=>{const el=app.workspace.getMostRecentLeaf().view.contentEl;if(!el.querySelector('[data-query-search]')){el.querySelector('[data-query-toolbar="search"]').click();for(let i=0;i<100&&!el.querySelector('[data-query-search]');i++)await new Promise(r=>setTimeout(r,20));}const input=el.querySelector('[data-query-search]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(text)});input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
       );
 
     const table = await tabWhen(
