@@ -1,4 +1,7 @@
 export { MatchEditor, MatchPane } from "./match";
+export { ChipInput } from "./match.chips";
+export { MatchInput } from "./match.input";
+export { MatchSelect } from "./match.rows";
 export type {
   ConditionControlProps,
   ConditionPath,

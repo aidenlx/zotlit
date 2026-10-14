@@ -11,8 +11,10 @@ import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
 import type { QueryContext } from "@zotlit/item-query";
+import type { MatchTree } from "@zotlit/templates/facade";
 
 import { Icon } from "@/components/obsidian/icon";
+import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { showMenuAtButton } from "@/lib/menu";
@@ -23,6 +25,7 @@ import type {
   QueryViewRequest,
 } from "@/services/item-query/query-view";
 import type { QueryService } from "@/services/item-query/service";
+import { selectorKey } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import { AnnotList } from "@/views/annot-view/AnnotView";
@@ -30,8 +33,22 @@ import { AnnotationsLayout } from "@/views/annot-view/layout";
 import type { AnnotationsLayoutDeps } from "@/views/annot-view/layout";
 import { useAnnotStore } from "@/views/annot-view/store";
 
-import { parseQueryFile, viewFilter } from "./query-file";
-import type { QueryFile, QueryFileProblem, QueryFileView } from "./query-file";
+import { FilterButton } from "./filter-popover";
+import type { FilterValues } from "./filter-popover";
+import {
+  locateFilterFault,
+  parseQueryFile,
+  serializeQueryFile,
+  viewFilter,
+  withFilters,
+} from "./query-file";
+import type {
+  FilterLocation,
+  FilterSection,
+  QueryFile,
+  QueryFileProblem,
+  QueryFileView,
+} from "./query-file";
 import { LAYOUT_FIELDS, LAYOUT_GROUP_PATHS, layoutRows } from "./rows";
 
 const logger = getLogger(["views", "query-view"]);
@@ -41,8 +58,9 @@ export interface QueryViewDeps extends AnnotationsLayoutDeps {
   annotations: AnnotationsLayoutDeps["annotations"] &
     Pick<AnnotationRepository, "hold">;
   query: Pick<QueryService, "run">;
-  reads: AnnotationsLayoutDeps["reads"] & Pick<ZoteroReadsService, "on">;
-  libraryScope: Pick<LibraryScopeService, "on">;
+  reads: AnnotationsLayoutDeps["reads"] &
+    Pick<ZoteroReadsService, "on" | "acquireRead">;
+  libraryScope: Pick<LibraryScopeService, "on" | "current">;
 }
 
 /** What the host gives the Query View, beside the services. */
@@ -58,6 +76,8 @@ export interface QueryViewHost {
   context: () => QueryContext | undefined;
   /** The user chose another view of the file; the host may remember it. */
   onSelectView?: (name: string) => void;
+  /** The view changed the file; the host saves `text`. Without it, the view saves nothing. */
+  onWrite?: (text: string) => void;
 }
 
 /** What the view shows now, as the toolbar and the host read it. */
@@ -72,6 +92,8 @@ export interface QueryViewState {
   diagnostic:
     | (Pick<Diagnostic, "message" | "hint" | "report"> & { code: string })
     | null;
+  /** The condition of the filters that the last run's diagnostic marks. */
+  filterIssue: (FilterLocation & { message: string }) | null;
   /** The rows the query gave. */
   count: number;
   /** Whether the view's limit cut the rows short. */
@@ -84,6 +106,7 @@ const INITIAL_STATE: QueryViewState = {
   problems: [],
   phase: "idle",
   diagnostic: null,
+  filterIssue: null,
   count: 0,
   truncated: false,
 };
@@ -199,6 +222,52 @@ export class QueryView extends Component {
     this.#choose();
   }
 
+  /** Whether the host saves the view's changes to the file. */
+  get writable(): boolean {
+    return this.#host.onWrite !== undefined;
+  }
+
+  /**
+   * Save new filters: for all views, or for the view shown. `undefined`
+   * removes them. Answers whether the host took the change.
+   */
+  setFilters(section: FilterSection, filters: MatchTree | undefined): boolean {
+    const { file, view } = this.state.getState();
+    const write = this.#host.onWrite;
+    if (!file || !view || !write) return false;
+    const text = serializeQueryFile(
+      withFilters(file, section === "all" ? null : view.name, filters),
+    );
+    this.setText(text);
+    write(text);
+    return true;
+  }
+
+  /** The values a filter condition offers, from the Libraries the view reads. */
+  async filterValues(): Promise<FilterValues> {
+    const libraries = this.#deps.libraryScope.current?.available ?? [];
+    await using lease = await this.#deps.reads.acquireRead();
+    const tags = new Set<string>();
+    for (const { libraryID } of libraries)
+      for (const tag of await Effect.runPromise(
+        lease.reads.TagNames({ libraryID }),
+      ))
+        tags.add(tag);
+    const collections = await Effect.runPromise(
+      lease.reads.CollectionPaths({
+        libraryIDs: libraries.map(({ libraryID }) => libraryID),
+      }),
+    );
+    return {
+      tags: [...tags].sort(),
+      collections: collections.map((path) => path.join("/")),
+      libraries: libraries.map(({ selector, name }) => ({
+        id: selectorKey(selector),
+        name,
+      })),
+    };
+  }
+
   /** Show the view named `name`, or the file's first view for `null`. */
   selectView(name: string | null): void {
     if (name === this.#wanted && this.state.getState().view?.name === name)
@@ -246,6 +315,7 @@ export class QueryView extends Component {
       this.state.setState({
         phase: "idle",
         diagnostic: null,
+        filterIssue: null,
         count: 0,
         truncated: false,
       });
@@ -253,7 +323,7 @@ export class QueryView extends Component {
     }
     const controller = new AbortController();
     this.#run = controller;
-    if (this.#shownView !== view) this.state.setState({ phase: "loading" });
+    if (!this.#shows(view)) this.state.setState({ phase: "loading" });
     const request: QueryViewRequest = {
       from: view.from ?? "annotations",
       ...(viewFilter(file, view) === undefined
@@ -273,13 +343,13 @@ export class QueryView extends Component {
       (outcome) => {
         if (this.#run !== controller) return;
         this.#run = null;
-        return this.#land(view, outcome);
+        return this.#land(file, view, outcome);
       },
       (error: unknown) => {
         if (this.#run !== controller) return;
         this.#run = null;
         logger.warn("A Query View could not run its query", { error });
-        this.#fail(view, {
+        this.#fail(file, view, {
           code: "query-failed",
           message: error instanceof Error ? error.message : String(error),
           hint: "",
@@ -289,12 +359,16 @@ export class QueryView extends Component {
     );
   }
 
-  async #land(view: QueryFileView, outcome: QueryViewOutcome): Promise<void> {
+  async #land(
+    file: QueryFile,
+    view: QueryFileView,
+    outcome: QueryViewOutcome,
+  ): Promise<void> {
     switch (outcome.kind) {
       case "cancelled":
         return;
       case "failed":
-        this.#fail(view, outcome.diagnostic);
+        this.#fail(file, view, outcome.diagnostic);
         return;
       case "result": {
         const { result } = outcome;
@@ -302,6 +376,7 @@ export class QueryView extends Component {
         this.state.setState({
           phase: "ready",
           diagnostic: null,
+          filterIssue: null,
           count: result.returnedCount,
           truncated: result.truncated,
         });
@@ -314,12 +389,39 @@ export class QueryView extends Component {
   }
 
   /**
-   * A run that gives no rows says why. A refresh of the view on screen keeps
-   * its last rows under the message; another view shows none.
+   * Whether the rows on screen are this view's. Each parse of the file gives
+   * new view objects, so the name tells which view a run is for.
    */
-  #fail(view: QueryFileView, diagnostic: QueryViewState["diagnostic"]): void {
-    if (this.#shownView !== view) void this.#show(null);
-    this.state.setState({ phase: "failed", diagnostic });
+  #shows(view: QueryFileView): boolean {
+    return this.#shownView !== null && this.#shownView.name === view.name;
+  }
+
+  /**
+   * A run that gives no rows says why. A refresh of the view on screen keeps
+   * its last rows under the message; another view shows none. A fault in one
+   * condition of the filters is marked at that condition.
+   */
+  #fail(
+    file: QueryFile,
+    view: QueryFileView,
+    diagnostic: Diagnostic | NonNullable<QueryViewState["diagnostic"]>,
+  ): void {
+    if (!this.#shows(view)) void this.#show(null);
+    const span =
+      "location" in diagnostic && diagnostic.location?.argument === "filter"
+        ? diagnostic.location.span
+        : undefined;
+    const at = span ? locateFilterFault(file, view, span) : null;
+    this.state.setState({
+      phase: "failed",
+      diagnostic,
+      filterIssue: at && {
+        ...at,
+        message: [diagnostic.message, diagnostic.hint]
+          .filter(Boolean)
+          .join(" "),
+      },
+    });
   }
 
   /** Put these rows on screen, holding their lists before the old ones go. */
@@ -398,6 +500,7 @@ function Problems({ view }: { view: QueryView }) {
   const problems = useQueryViewState(view, (s) => s.problems);
   const phase = useQueryViewState(view, (s) => s.phase);
   const diagnostic = useQueryViewState(view, (s) => s.diagnostic);
+  const filterIssue = useQueryViewState(view, (s) => s.filterIssue);
   const unresolved = useAnnotStore((s) => s.unresolved);
   return (
     <>
@@ -414,7 +517,16 @@ function Problems({ view }: { view: QueryView }) {
           ))}
         </div>
       )}
-      {phase === "failed" && diagnostic && (
+      {phase === "failed" && filterIssue && (
+        <p
+          className="zt:mx-3 zt:mt-2 zt:mb-0 zt:text-sm zt:text-(--text-error)"
+          role="alert"
+          data-query-filter-error=""
+        >
+          {m.query_view_filter_error()}
+        </p>
+      )}
+      {phase === "failed" && !filterIssue && diagnostic && (
         <div
           className="zt:rounded zt:mx-3 zt:mt-2 zt:border zt:border-(--background-modifier-error) zt:p-2 zt:text-sm"
           role="alert"
@@ -466,6 +578,7 @@ function QueryViewBody({ view }: { view: QueryView }) {
         role="toolbar"
       >
         <ViewMenuButton view={view} />
+        <FilterButton view={view} />
         <span className="zt:text-(--text-muted)">
           <ResultCount view={view} />
         </span>

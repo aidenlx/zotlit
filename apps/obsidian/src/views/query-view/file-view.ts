@@ -22,6 +22,10 @@ export class QueryFileView extends TextFileView {
       sourcePath: () => this.file?.path ?? "",
       context: () => undefined,
       onSelectView: () => this.app.workspace.requestSaveLayout(),
+      onWrite: (text) => {
+        this.data = text;
+        this.requestSave();
+      },
     });
   }
 
@@ -43,9 +47,11 @@ export class QueryFileView extends TextFileView {
     return this.data;
   }
 
-  override setViewData(data: string, _clear: boolean): void {
+  override setViewData(data: string, clear: boolean): void {
+    // The view's own save comes back as the text it already shows.
+    const shown = !clear && data === this.data;
     this.data = data;
-    this.query.setText(data);
+    if (!shown) this.query.setText(data);
   }
 
   override clear(): void {}

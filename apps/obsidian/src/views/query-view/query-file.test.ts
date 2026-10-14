@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   NEW_QUERY_FILE_LIMIT,
+  allViewsDataset,
+  locateFilterFault,
   newQueryFileText,
+  withFilters,
   parseQueryFile,
   serializeQueryFile,
   viewFilter,
@@ -130,9 +133,90 @@ describe("viewFilter", () => {
     );
   });
 
+  it("applies the filters for all views only to views of the first view's dataset", () => {
+    const file = parseQueryFile(`filters: item.title.contains("Rules")
+views:
+  - type: annotations
+    name: Annotations
+    from: annotations
+  - type: table
+    name: Items
+    from: items
+    filters: title != null
+`);
+    expect(allViewsDataset(file)).toBe("annotations");
+    expect(viewFilter(file, file.views[0]!)).toBe(
+      'item.title.contains("Rules")',
+    );
+    expect(viewFilter(file, file.views[1]!)).toBe("title != null");
+  });
+
   it("gives no filter when the file and the view have none", () => {
     const file = parseQueryFile(newQueryFileText("Annotations"));
     expect(viewFilter(file, file.views[0]!)).toBeUndefined();
+  });
+});
+
+describe("locateFilterFault", () => {
+  const file = parseQueryFile(TWO_VIEWS);
+  const view = file.views[0]!;
+  const text = viewFilter(file, view)!;
+  const at = (needle: string) => {
+    const from = text.indexOf(needle);
+    return { from, to: from + needle.length };
+  };
+
+  it("finds the condition of the filters for all views that a fault marks", () => {
+    expect(locateFilterFault(file, view, at("journalArticle"))).toEqual({
+      section: "all",
+      path: [0],
+    });
+  });
+
+  it("finds a nested condition of the view's own filters", () => {
+    expect(locateFilterFault(file, view, at("comment"))).toEqual({
+      section: "view",
+      path: [1, 1],
+    });
+    expect(locateFilterFault(file, view, at("colorName"))).toEqual({
+      section: "view",
+      path: [0],
+    });
+  });
+
+  it("finds no condition for a fault between conditions", () => {
+    expect(locateFilterFault(file, view, at(") && ("))).toBeNull();
+  });
+});
+
+describe("withFilters", () => {
+  it("writes the filters for all views and a view's filters to the file text, keeping the rest", () => {
+    const file = parseQueryFile(TWO_VIEWS);
+    const next = withFilters(
+      withFilters(file, null, { and: ['tags.contains("x")'] }),
+      "Figures",
+      { or: ['colorName == "red"', 'colorName == "blue"'] },
+    );
+    const text = serializeQueryFile(next);
+    expect(text).toContain(
+      'filters:\n  and:\n    - tags.contains("x")\nformulas:',
+    );
+    expect(text).toContain(`    name: Figures
+    from: annotations
+    filters:
+      or:
+        - colorName == "red"
+        - colorName == "blue"`);
+    expect(text).toContain("custom: kept");
+  });
+
+  it("drops the filters key when the researcher clears every condition", () => {
+    const file = parseQueryFile(TWO_VIEWS);
+    const text = serializeQueryFile(
+      withFilters(file, "All annotations", undefined),
+    );
+    expect(parseQueryFile(text).views[0]!.filters).toBeUndefined();
+    expect(text).toContain("cardWidth: 300");
   });
 });
 
