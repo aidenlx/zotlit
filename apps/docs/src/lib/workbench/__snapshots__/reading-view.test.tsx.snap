@@ -627,6 +627,11 @@ exports[`parseNote over the default Profile > renders the note for book 1`] = `
     name: Annotations
     from: annotations
     filters: item == this.item
+    sort:
+      - property: attachment.dateAdded
+        direction: ASC
+      - property: sortIndex
+        direction: ASC
 ",
             },
           ],
@@ -723,6 +728,11 @@ exports[`parseNote over the default Profile > renders the note for conferencePap
     name: Annotations
     from: annotations
     filters: item == this.item
+    sort:
+      - property: attachment.dateAdded
+        direction: ASC
+      - property: sortIndex
+        direction: ASC
 ",
             },
           ],
@@ -819,6 +829,11 @@ exports[`parseNote over the default Profile > renders the note for journalArticl
     name: Annotations
     from: annotations
     filters: item == this.item
+    sort:
+      - property: attachment.dateAdded
+        direction: ASC
+      - property: sortIndex
+        direction: ASC
 ",
             },
           ],
@@ -915,6 +930,11 @@ exports[`parseNote over the default Profile > renders the note for thesis 1`] = 
     name: Annotations
     from: annotations
     filters: item == this.item
+    sort:
+      - property: attachment.dateAdded
+        direction: ASC
+      - property: sortIndex
+        direction: ASC
 ",
             },
           ],

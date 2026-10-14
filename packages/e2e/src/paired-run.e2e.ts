@@ -7279,6 +7279,11 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           "    name: Annotations",
           "    from: annotations",
           "    filters: item == this.item",
+          "    sort:",
+          "      - property: attachment.dateAdded",
+          "        direction: ASC",
+          "      - property: sortIndex",
+          "        direction: ASC",
           "```",
         ].join("\n");
         const managed = (text: string) =>
@@ -7295,6 +7300,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               from: "annotations",
               filter: "item == this.item",
               "this-item": itemKey,
+              sort: "attachment.dateAdded,sortIndex",
               limit: "100",
             },
           }),
@@ -7358,6 +7364,14 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         await inBlock(
           "el.querySelector('[data-query-popover=\"sort\"] [data-sort-add]').click()",
         );
+        // The new sort goes after the two of the default block.
+        expect(
+          await obEvalUntil(
+            vaultId!,
+            `String(${blockEl}?.querySelectorAll('[data-query-popover="sort"] [data-sort-row]').length)`,
+            { expected: "3" },
+          ),
+        ).toBe(true);
         for (const [control, value] of [
           ["data-sort-property", "type"],
           ["data-sort-direction", "DESC"],
@@ -7365,17 +7379,17 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(
             await obEvalUntil(
               vaultId!,
-              `String(!!${blockEl}?.querySelector('[data-query-popover="sort"] [${control}]'))`,
+              `String(!!${blockEl}?.querySelector('[data-query-popover="sort"] [data-sort-row]:last-of-type [${control}]'))`,
               { expected: "true" },
             ),
           ).toBe(true);
           await inBlock(
-            `const select=el.querySelector('[data-query-popover="sort"] [${control}]');select.value=${JSON.stringify(value)};select.dispatchEvent(new Event('change',{bubbles:true}))`,
+            `const select=el.querySelector('[data-query-popover="sort"] [data-sort-row]:last-of-type [${control}]');select.value=${JSON.stringify(value)};select.dispatchEvent(new Event('change',{bubbles:true}))`,
           );
         }
         const sorted = block.replace(
-          "    filters: item == this.item\n```",
-          "    filters: item == this.item\n    sort:\n      - property: type\n        direction: DESC\n```",
+          "        direction: ASC\n```",
+          "        direction: ASC\n      - property: type\n        direction: DESC\n```",
         );
         expect(
           await waitFor(async () => managed(await read()).includes(sorted)),
