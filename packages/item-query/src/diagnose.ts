@@ -35,9 +35,12 @@ import { nearMatches } from "./near-match";
 import { planPath } from "./projection";
 import type { QueryClock } from "./query-clock";
 import { COUNT_FIELDS, UNLIMITED_LIMIT } from "./request";
+import type { QueryContext } from "./request";
 
 interface DiagnosisContext extends ItemQueryErrorLocation {
   readonly dataset: QueryDataset<any>;
+  /** The Query Context of the request: a correction is planned with it. */
+  readonly context?: QueryContext | undefined;
 }
 import type { CollectionWarning } from "./collection-warnings";
 import type { KeyLibraryWarning } from "./indexed-key-selection";
@@ -45,6 +48,7 @@ import type { KeyLibraryWarning } from "./indexed-key-selection";
 interface WarningContext {
   readonly clock: QueryClock;
   readonly dataset: QueryDataset<any>;
+  readonly context?: QueryContext | undefined;
 }
 
 export interface DiagnosticLocation {
@@ -74,7 +78,7 @@ export interface Diagnostic<Code extends string = string> {
 export function diagnose(
   fault: ItemQueryFault,
   text: string,
-  { dataset, ...location }: DiagnosisContext,
+  { dataset, context, ...location }: DiagnosisContext,
 ): Diagnostic<ItemQueryErrorCode> {
   const at = "at" in fault ? fault.at : undefined;
   const faultLocation = { ...location, ...(at ? { span: at } : {}) };
@@ -162,7 +166,7 @@ export function diagnose(
         : diagnostic;
     }
     case "unknown":
-      return diagnoseUnknown(fault, text, { ...location, dataset });
+      return diagnoseUnknown(fault, text, { ...location, dataset, context });
   }
 }
 
@@ -232,7 +236,7 @@ export function codeOfFault(
 function diagnoseUnknown(
   sourceFault: Extract<Fault, { readonly kind: "unknown" }>,
   text: string,
-  { dataset, ...location }: DiagnosisContext,
+  { dataset, context, ...location }: DiagnosisContext,
 ): Diagnostic<PlainFault["code"]> {
   const prefix = dataset.customPrefix;
   const fault =
@@ -253,7 +257,10 @@ function diagnoseUnknown(
   const nearby = fault.dotted
     ? [`${prefix}custom[${JSON.stringify(fault.name)}]`]
     : nearMatches(fault.name, candidates);
-  const receiverSwap = receiverSwapCorrection(fault, text, dataset);
+  const receiverSwap = receiverSwapCorrection(fault, text, {
+    dataset,
+    context,
+  });
   const guidance = crossRoleGuidance(fault);
   const caseCorrection = nearby[0]?.toLowerCase() === fault.name.toLowerCase();
   const hint = receiverSwap
@@ -572,7 +579,7 @@ function projectionEntry(text: string, index?: number): string | undefined {
 function receiverSwapCorrection(
   fault: Extract<Fault, { readonly kind: "unknown" }>,
   text: string,
-  dataset: QueryDataset<any>,
+  { dataset, context }: Pick<DiagnosisContext, "dataset" | "context">,
 ): string | undefined {
   if (fault.role !== "method" || !fault.receiver) return undefined;
   const receiver = fault.receiver;
@@ -584,7 +591,7 @@ function receiverSwapCorrection(
   if (!call || call.args.length !== 1) return undefined;
   const argument = call.args[0]!;
   const argumentText = text.slice(argument.from, argument.to);
-  const argumentPlan = dataset.planFilter(argumentText);
+  const argumentPlan = dataset.planFilter(argumentText, context);
   if ("kind" in argumentPlan || argumentPlan.root.valueType === "unknown")
     return undefined;
   const methods = methodsNamed(fault.name).filter(([owner, definition]) => {
@@ -603,7 +610,9 @@ function receiverSwapCorrection(
   const replacement = `${argumentText}.${fault.name}(${receiverText})`;
   const corrected =
     text.slice(0, call.from) + replacement + text.slice(call.to);
-  return "kind" in dataset.planFilter(corrected) ? undefined : corrected;
+  return "kind" in dataset.planFilter(corrected, context)
+    ? undefined
+    : corrected;
 }
 
 function findMethodCall(
@@ -1048,7 +1057,7 @@ export function diagnoseWarning(
     | KeyLibraryWarning
     | CollectionWarning,
   text: string,
-  { clock, dataset }: WarningContext,
+  { clock, dataset, context }: WarningContext,
 ): Diagnostic<
   | "never-true"
   | "always-true"
@@ -1093,7 +1102,11 @@ export function diagnoseWarning(
   }
   const left = text.slice(fault.left.at.from, fault.left.at.to);
   const right = text.slice(fault.right.at.from, fault.right.at.to);
-  const suggestion = constantCorrection(fault, text, { clock, dataset });
+  const suggestion = constantCorrection(fault, text, {
+    clock,
+    dataset,
+    context,
+  });
   const whole = parseExpressionAst(text).ast;
   const ungroup = (node: ExpressionNode): ExpressionNode =>
     node.type === "group" ? ungroup(node.expression) : node;
@@ -1135,7 +1148,7 @@ export function diagnoseWarning(
 function constantCorrection(
   fault: Extract<Fault, { kind: "constant" }>,
   text: string,
-  { clock, dataset }: WarningContext,
+  { clock, dataset, context }: WarningContext,
 ): string | undefined {
   const left = text.slice(fault.left.at.from, fault.left.at.to);
   const right = text.slice(fault.right.at.from, fault.right.at.to);
@@ -1202,7 +1215,9 @@ function constantCorrection(
   if (!replacement) return undefined;
   const corrected =
     text.slice(0, fault.at.from) + replacement + text.slice(fault.at.to);
-  return "kind" in dataset.planFilter(corrected) ? undefined : corrected;
+  return "kind" in dataset.planFilter(corrected, context)
+    ? undefined
+    : corrected;
 }
 
 /** Decoder facts are independent of the Obsidian adapter and validation library. */

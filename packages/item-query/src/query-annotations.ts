@@ -76,7 +76,8 @@ export const ANNOTATIONS: QueryDataset<ItemQueryRequest> = {
   sortableFields: ANNOTATION_SORT_FIELDS,
   definition: annotationFieldDefinition,
   filterField: (name) => annotationFilterRegistry.field(name),
-  planFilter: (text) => planFilter(text, annotationFilterRegistry),
+  planFilter: (text, context) =>
+    planFilter(text, annotationFilterRegistry, context),
   sortable: annotationSortableField,
   resolvePath: parentPathResolver(
     annotationFieldDefinition,
