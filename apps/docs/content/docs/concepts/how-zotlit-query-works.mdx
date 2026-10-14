@@ -79,11 +79,11 @@ A filter or a [formula](/docs/how-to/query-zotero-library#formulas) can meet two
                            "message": "number() cannot read \"Spring\" as a number." }
 ```
 
-**null** means that the record has no data there. A missing field gives null, and so does a calculation on null, such as `date.year + 1` on a paper with no date. An index past the end of a list also gives null.
+**null** means that the record has no data there. A missing field gives null, and so does a calculation on null, such as `date.year + 1` on a paper with no date. An empty text given to `number()`, `date()`, or `duration()` also gives null, and so does an index past the end of a list.
 
 An **Error Value** means that the expression cannot compute a result for this record, although the data is there. These give an Error Value:
 
-- A text that `number()`, `date()`, or `duration()` cannot read
+- A text that is not empty and that `number()`, `date()`, or `duration()` cannot read
 - A comparison such as `<` between two different types, such as a number and a text
 - A value of the wrong type in an operation, for example in a list that mixes texts and numbers
 - A result that is not a finite number, such as a division by zero
