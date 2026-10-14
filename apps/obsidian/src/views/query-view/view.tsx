@@ -47,7 +47,7 @@ import type { AnnotState } from "@/views/annot-view/store";
 
 import type { QueryCardFocus } from "./card-focus";
 import { CardsLayout } from "./cards-layout";
-import { datasetSpec } from "./datasets";
+import { datasetSpec, grouping } from "./datasets";
 import { FilterButton } from "./filter-popover";
 import type { FilterValues } from "./filter-popover";
 import { GroupEditor } from "./group-control";
@@ -75,7 +75,7 @@ import type {
 } from "./query-file";
 import type { ShownRecord } from "./record-rows";
 import { ResultsMenu } from "./results-menu";
-import { layoutFields, layoutRows } from "./rows";
+import { layoutRows } from "./rows";
 import type { LayoutGroup } from "./rows";
 import { SearchControl } from "./search-control";
 import { SortEditor } from "./sort-control";
@@ -636,6 +636,7 @@ export class QueryView extends Component implements HistorySurface {
     const context = this.#host.context();
     const unused = new Set(unusedSettings(view).sort);
     const sort = view.sort?.filter(({ property }) => !unused.has(property));
+    const grouped = view.groupBy && grouping(view.from, view.groupBy.property);
     return {
       from: view.from ?? "annotations",
       ...(filter === undefined ? {} : { filter }),
@@ -648,7 +649,7 @@ export class QueryView extends Component implements HistorySurface {
         }),
       fields: [
         ...new Set([
-          ...layoutFields(view.from ?? "annotations"),
+          ...(grouped?.fields ?? []),
           ...(layoutOf(view)?.type === "table" ? TABLE_FIELDS : []),
           ...visibleProperties(view, { fallback: true }),
         ]),
@@ -836,11 +837,7 @@ export class QueryView extends Component implements HistorySurface {
         // screen, and the database change that follows runs the view again.
         const waiting = this.#lacksListAdded(result.rows ?? []);
         if (fromList && waiting) return;
-        const shown = layoutRows(
-          result.rows ?? [],
-          usedGroupBy(view),
-          view.groupOrder,
-        );
+        const shown = layoutRows(result.rows ?? [], view);
         const byKey = new Map(
           (result.rows ?? []).map((row) => [row.indexedKey, row]),
         );
@@ -1045,28 +1042,50 @@ function Problems({ view }: { view: QueryView }) {
   );
 }
 
-/** What the view keeps in its file but does not use, since its dataset lacks it. */
+/**
+ * What the view keeps in its file but does not use: what its dataset lacks,
+ * and the properties of the dataset that no cell shows.
+ */
 function UnusedNote({ view }: { view: QueryView }) {
   const current = useQueryViewState(view, (s) => s.view);
   if (!current) return null;
   const unused = unusedSettings(current);
+  const { engine, name } = datasetSpec(current.from);
+  // A visible property the dataset has but no cell shows, such as the tags
+  // of Items.
+  const unshown = unused.order.filter(
+    (property) => engine.definition(property) !== undefined,
+  );
   const properties = [
     ...new Set([
       ...unused.sort,
       ...(unused.groupBy === null ? [] : [unused.groupBy]),
-      ...unused.order,
+      ...unused.order.filter((property) => !unshown.includes(property)),
     ]),
   ];
-  if (properties.length === 0) return null;
+  const text = [
+    properties.length > 0
+      ? m.query_view_unused({
+          dataset: name(),
+          properties: properties.join(", "),
+        })
+      : "",
+    unshown.length > 0
+      ? m.query_view_unshown({
+          dataset: name(),
+          properties: unshown.join(", "),
+        })
+      : "",
+  ]
+    .filter((sentence) => sentence !== "")
+    .join(" ");
+  if (text === "") return null;
   return (
     <p
       className="zt:mx-3 zt:mt-1 zt:mb-0 zt:text-xs zt:text-(--text-muted) zt:in-[.print]:hidden"
       data-query-unused=""
     >
-      {m.query_view_unused({
-        dataset: datasetSpec(current.from).name(),
-        properties: properties.join(", "),
-      })}
+      {text}
     </p>
   );
 }

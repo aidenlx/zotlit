@@ -175,14 +175,11 @@ export function markers(kind: TableRowKind): string[] {
   );
 }
 
-/** The Projection Paths each Item row carries beside the visible properties. */
-export const TABLE_FIELDS: readonly string[] = [
-  "title",
-  "itemType",
-  "tags",
-  "collections",
-  ...markers("item"),
-];
+/**
+ * The Projection Paths each Item row carries beside the visible properties:
+ * the lists that tell what the row expands into.
+ */
+export const TABLE_FIELDS: readonly string[] = markers("item");
 
 function expandable(record: TableRecord): boolean {
   return TABLE_CHILD_SOURCES.some((source) => {

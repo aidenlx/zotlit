@@ -22,6 +22,9 @@ import type {
 } from "@/services/item-query/query-view";
 import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
 
+import { groupOptions } from "./properties";
+import { QUERY_FILE_DATASETS } from "./query-file";
+import type { QueryFileDataset } from "./query-file";
 import { QueryView, RERUN_DELAY_MS } from "./view";
 import type { QueryViewDeps } from "./view";
 
@@ -95,6 +98,27 @@ function result(
   };
 }
 
+/** `outcome` with each row's values cut to the fields `request` names. */
+function requested(
+  outcome: QueryViewOutcome,
+  request: QueryViewRequest,
+): QueryViewOutcome {
+  if (outcome.kind !== "result" || !outcome.result.rows) return outcome;
+  const fields = new Set(request.fields);
+  return {
+    ...outcome,
+    result: {
+      ...outcome.result,
+      rows: outcome.result.rows.map((row) => ({
+        ...row,
+        values: Object.fromEntries(
+          Object.entries(row.values).filter(([path]) => fields.has(path)),
+        ),
+      })),
+    },
+  };
+}
+
 type Listener = (...args: unknown[]) => void;
 
 function emitter() {
@@ -138,8 +162,9 @@ async function mount(
   let list = LIST;
   const held: string[][] = [];
   const released: string[][] = [];
-  const run = vi.fn((_request: QueryViewRequest, _signal: AbortSignal) =>
-    Promise.resolve(answers.shift() ?? result([])),
+  // As ZotLit Query does, each row carries only the fields the request names.
+  const run = vi.fn((request: QueryViewRequest, _signal: AbortSignal) =>
+    Promise.resolve(requested(answers.shift() ?? result([]), request)),
   );
   const notesChanged = emitter();
   const literatureNotes = {
@@ -1352,6 +1377,165 @@ it("offers Item fields to sort and group a view of Items by", async () => {
   );
   expect(document.body.textContent).toContain("Item type");
   expect(document.body.textContent).not.toContain("Attachment");
+});
+
+/**
+ * Each grouping Group offers, with a row's values and the heading the row
+ * stands under. A List that shows none of the grouping's fields still
+ * gathers its rows by them.
+ */
+const GROUPINGS: {
+  dataset: QueryFileDataset;
+  path: string;
+  values: QueryViewRow["values"];
+  heading: string;
+}[] = [
+  {
+    dataset: "annotations",
+    path: "item.indexedKey",
+    values: { "item.title": "Ten simple rules" },
+    heading: "Ten simple rules",
+  },
+  {
+    dataset: "annotations",
+    path: "attachment.indexedKey",
+    values: { "attachment.title": "Full text PDF" },
+    heading: "Full text PDF",
+  },
+  {
+    dataset: "annotations",
+    path: "colorName",
+    values: { color: "#ffd400", colorName: "yellow" },
+    heading: "Yellow",
+  },
+  {
+    dataset: "annotations",
+    path: "tags[]",
+    values: { tags: ["figure"] },
+    heading: "figure",
+  },
+  {
+    dataset: "annotations",
+    path: "item.collections[]",
+    values: { "item.collections": ["Thesis/Methods"] },
+    heading: "Thesis/Methods",
+  },
+  {
+    dataset: "attachments",
+    path: "item.indexedKey",
+    values: { "item.title": "Ten simple rules" },
+    heading: "Ten simple rules",
+  },
+  {
+    dataset: "attachments",
+    path: "tags[]",
+    values: { tags: ["figure"] },
+    heading: "figure",
+  },
+  {
+    dataset: "attachments",
+    path: "item.collections[]",
+    values: { "item.collections": ["Thesis/Methods"] },
+    heading: "Thesis/Methods",
+  },
+  {
+    dataset: "items",
+    path: "itemType",
+    values: { itemType: "journalArticle" },
+    heading: "Journal Article",
+  },
+  {
+    dataset: "items",
+    path: "tags[]",
+    // An Item's tags come as `{ name, type }`.
+    values: { tags: [{ name: "read-later", type: "manual" }] },
+    heading: "read-later",
+  },
+  {
+    dataset: "items",
+    path: "collections[]",
+    values: { collections: ["Thesis/Methods"] },
+    heading: "Thesis/Methods",
+  },
+];
+
+it("lists a case for each grouping of each dataset", () => {
+  for (const dataset of QUERY_FILE_DATASETS)
+    expect(
+      GROUPINGS.filter((entry) => entry.dataset === dataset).map(
+        ({ path }) => path,
+      ),
+    ).toEqual(groupOptions(dataset).map(({ path }) => path));
+});
+
+it.each(GROUPINGS)(
+  "gathers a List of $dataset by $path, though it shows none of its fields",
+  async ({ dataset, path, values, heading }) => {
+    const { view, el, run, settle } = await mount([
+      result([
+        {
+          indexedKey: "RECORDAA",
+          ...(dataset !== "items" && { itemIndexedKey: "ITEMAAAA" }),
+          ...(dataset === "annotations" && {
+            attachmentIndexedKey: "PDFAAAAA",
+          }),
+          values: { ...values, dateAdded: "2024-05-01" },
+        },
+      ]),
+    ]);
+    await act(() =>
+      view.setText(`views:
+  - type: list
+    name: Grouped
+    from: ${dataset}
+    groupBy:
+      property: ${path}
+      direction: ASC
+    order:
+      - dateAdded
+`),
+    );
+    await settle();
+
+    expect(view.state.getState().problems).toEqual([]);
+    expect(run.mock.calls[0]![0].fields).toEqual(
+      expect.arrayContaining(Object.keys(values)),
+    );
+    expect(headings(el)).toEqual([heading]);
+  },
+);
+
+it("says a view of Items cannot show their tags, and still groups the Items by them", async () => {
+  const { view, el, settle } = await mount([
+    result([
+      {
+        indexedKey: "ITEMAAAA",
+        values: {
+          title: "Ten simple rules",
+          tags: [{ name: "read-later", type: "manual" }],
+        },
+      },
+    ]),
+  ]);
+  await act(() =>
+    view.setText(`views:
+  - type: list
+    name: Tagged
+    from: items
+    groupBy:
+      property: tags[]
+      direction: ASC
+    order:
+      - title
+      - tags
+`),
+  );
+  await settle();
+
+  expect(el.querySelector("[data-query-unused]")?.textContent).toBe(
+    "Views of Items cannot show tags.",
+  );
+  expect(headings(el)).toEqual(["read-later"]);
 });
 
 it("switches a view of Annotations to Items, saves it, and draws the Items in the Table", async () => {
