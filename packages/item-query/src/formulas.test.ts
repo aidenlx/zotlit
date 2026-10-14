@@ -356,3 +356,19 @@ it("fails a filter that reads a Formula the request does not define", async () =
   expect(error.fault).toMatchObject({ kind: "unknown", role: "formula" });
   expect(error.diagnostic.report.join("\n")).toContain("formula.yeer");
 });
+
+it("plans a Formula that reads another one many times once for each Formula", async () => {
+  using scenario = openScenarioDatabase();
+  // Each Formula reads the one before it twice: 2^18 reads of a0 in all.
+  const formulas: Record<string, string> = { a0: "date.year" };
+  for (let index = 1; index <= 18; index++)
+    formulas[`a${index}`] = `formula.a${index - 1} + formula.a${index - 1}`;
+  const result = await run(scenario, {
+    filter: 'indexedKey == "BK2MNTH2"',
+    formulas,
+    fields: ["formula.a18"],
+  });
+  expect(result.rows!.map((row) => row.values["formula.a18"])).toEqual([
+    2019 * 2 ** 18,
+  ]);
+});
