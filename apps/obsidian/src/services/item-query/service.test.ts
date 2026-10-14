@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   BULK_LIBRARY,
+  bulkItemKey,
   openScenarioDatabase,
   seedBulkLibrary,
 } from "@zotlit/db/test-scenario";
@@ -974,4 +975,182 @@ it("discovers Collection values through the query worker and reports invalid arg
     diagnostic: { code: "invalid-argument", details: { parameter: "kind" } },
   });
   expect(invalid.diagnostic.report.at(-1)).toBe(invalid.diagnostic.hint);
+});
+
+describe("typed Query View call", () => {
+  const bulkLibraries = {
+    mode: "selected",
+    libraries: [{ type: "group", groupID: BULK_LIBRARY.groupID }],
+  } as const;
+
+  it("returns every matching row with no default limit and no size cap", async () => {
+    using scenario = openScenarioDatabase({ storage: "temp-directory" });
+    seedBulkLibrary(scenario.sqlite, 6000);
+    const { service, leases } = setup(scenario);
+    await using _owned = service;
+
+    const outcome = await service.run(
+      {
+        from: "items",
+        libraries: bulkLibraries,
+        fields: ["title", "tags", "dateModified"],
+      },
+      signal(),
+    );
+
+    if (outcome.kind !== "result") throw new Error(outcome.kind);
+    const { result } = outcome;
+    expect(result).toMatchObject({ returnedCount: 6000, truncated: false });
+    expect(result.groups).toBeUndefined();
+    expect(result.rows).toHaveLength(6000);
+    // The Items default sort: the last modified first.
+    expect(result.rows?.[0]).toEqual({
+      indexedKey: `${bulkItemKey(5999)}g${BULK_LIBRARY.groupID}`,
+      values: {
+        title: "Bulk item 05999",
+        tags: [{ name: "bulk", type: "manual" }],
+        dateModified: "2021-01-01T01:39:59Z",
+      },
+    });
+    expect(leases()).toBe(0);
+  });
+
+  it("returns the groups with their value, their count and the total count", async () => {
+    using scenario = openScenarioDatabase({ storage: "temp-directory" });
+    seedBulkLibrary(scenario.sqlite, 300);
+    const { service } = setup(scenario);
+    await using _owned = service;
+
+    const outcome = await service.run(
+      {
+        from: "items",
+        libraries: bulkLibraries,
+        fields: ["title"],
+        sort: [{ field: "title", direction: "asc" }],
+        group: "tags[].name",
+        limit: 2,
+      },
+      signal(),
+    );
+
+    if (outcome.kind !== "result") throw new Error(outcome.kind);
+    const { result } = outcome;
+    expect(result.rows).toBeUndefined();
+    expect(result).toMatchObject({ totalCount: 300, truncated: true });
+    expect(
+      result.groups?.map(({ value, count, rows }) => ({
+        value,
+        count,
+        titles: rows.map((row) => row.values.title),
+      })),
+    ).toEqual([
+      {
+        value: "bulk",
+        count: 300,
+        titles: ["Bulk item 00000", "Bulk item 00001"],
+      },
+      {
+        value: "bulk-fifth",
+        count: 60,
+        titles: ["Bulk item 00000", "Bulk item 00005"],
+      },
+    ]);
+  });
+
+  it("gives the diagnostic of zotlit:query as data", async () => {
+    using scenario = openScenarioDatabase({ storage: "temp-directory" });
+    const { service, leases } = setup(scenario);
+    await using _owned = service;
+    const filter = 'titel == "Exact"';
+
+    const outcome = await service.run({ from: "items", filter }, signal());
+    const cli = JSON.parse(
+      await service.query({ from: "items", filter }, signal()),
+    );
+
+    expect(cli.diagnostic).toMatchObject({
+      code: "unknown-field",
+      location: { argument: "filter" },
+    });
+    expect(outcome).toEqual({ kind: "failed", diagnostic: cli.diagnostic });
+    expect(leases()).toBe(0);
+
+    const unavailable = setup(scenario, () => {
+      throw new Error("source closed");
+    });
+    await using _unavailable = unavailable.service;
+    expect(
+      await unavailable.service.run({ from: "items" }, signal()),
+    ).toMatchObject({
+      kind: "failed",
+      diagnostic: { code: "source-unavailable" },
+    });
+  });
+
+  it("binds this to the Query Context of the request", async () => {
+    using scenario = openScenarioDatabase({ storage: "temp-directory" });
+    seedBulkLibrary(scenario.sqlite, 30);
+    const { service } = setup(scenario);
+    await using _owned = service;
+    const item = `${bulkItemKey(7)}g${BULK_LIBRARY.groupID}`;
+    const request = {
+      from: "items",
+      libraries: bulkLibraries,
+      fields: ["title"],
+      filter: "indexedKey == this.item.indexedKey",
+    } as const;
+
+    const bound = await service.run(
+      { ...request, context: { item } },
+      signal(),
+    );
+    const unbound = await service.run(request, signal());
+
+    expect(bound).toMatchObject({
+      kind: "result",
+      result: {
+        returnedCount: 1,
+        rows: [{ indexedKey: item, values: { title: "Bulk item 00007" } }],
+      },
+    });
+    expect(unbound).toMatchObject({
+      kind: "failed",
+      diagnostic: { code: "unbound-context" },
+    });
+  });
+
+  it("stops a cancelled call with a cancelled outcome and keeps other queries running", async () => {
+    using scenario = openScenarioDatabase({ storage: "temp-directory" });
+    seedBulkLibrary(scenario.sqlite, 20000);
+    const { service, leases, jobs } = setup(scenario);
+    await using _owned = service;
+    await service.ready;
+    const request = {
+      from: "items",
+      libraries: bulkLibraries,
+      fields: ["title", "tags", "dateModified"],
+    } as const;
+    const cancel = new AbortController();
+    const queued = new AbortController();
+
+    const running = service.run(request, cancel.signal);
+    const other = service.run({ ...request, limit: 100 }, signal());
+    // Two worker slots: the third call waits for one.
+    const waiting = service.run({ ...request, limit: 1 }, queued.signal);
+    await vi.waitFor(() => expect(jobs).toHaveLength(3), { interval: 1 });
+    queued.abort();
+    cancel.abort();
+
+    expect(await running).toEqual({ kind: "cancelled" });
+    expect(await waiting).toEqual({ kind: "cancelled" });
+    expect(await other).toMatchObject({
+      kind: "result",
+      result: { returnedCount: 100 },
+    });
+    expect(leases()).toBe(0);
+    expect(service.runningJobs).toBe(0);
+    expect(await service.run({ ...request, limit: 1 }, signal())).toMatchObject(
+      { kind: "result", result: { returnedCount: 1 } },
+    );
+  });
 });
