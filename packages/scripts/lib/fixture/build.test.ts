@@ -1181,7 +1181,7 @@ describe("the generated Zotero database", () => {
   it("gives a note import work in every Library", () => {
     using db = openClient();
 
-    expect(getNoteItemIDsByLibrary(db, 1)).toEqual([13, 14, 15]);
+    expect(getNoteItemIDsByLibrary(db, 1)).toEqual([13, 14, 15, 34]);
     expect(getNoteItemIDsByLibrary(db, 2)).toEqual([16]);
     expect(getNoteItemIDsByLibrary(db, 3)).toEqual([17]);
     expect(getNoteItemIDsByLibrary(db, 4)).toEqual([18]);
@@ -1195,7 +1195,7 @@ describe("the generated Zotero database", () => {
         libraryID: 1,
         collectionKey: "SHAREDCL",
       }),
-    ).toEqual([13]);
+    ).toEqual([13, 34]);
     expect(
       getNoteItemIDsByCollection(db, {
         libraryID: 1,
@@ -1564,7 +1564,7 @@ describe("a Stress Build", () => {
       [1, 2, 3, 4].map(
         (libraryID) => getNoteItemIDsByLibrary(db, libraryID).length,
       ),
-    ).toEqual([3, 1, 1, 1]);
+    ).toEqual([4, 1, 1, 1]);
     expect(
       [1, 2, 3].map((libraryID) =>
         getCollectionIDByKey(db, {

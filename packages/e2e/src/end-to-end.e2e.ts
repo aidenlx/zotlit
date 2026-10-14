@@ -2238,9 +2238,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     ).toBe(true);
     /** What the Table shows once its query settled. */
-    const readTable = `(async()=>{const view=${tab};if(view.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(path)})return 'null';await view.query.settled;const el=view.contentEl;const keys=kind=>[...el.querySelectorAll('[data-query-table-row="'+kind+'"]')].map(n=>n.getAttribute('data-query-key'));return JSON.stringify({header:[...el.querySelectorAll('[data-query-table] thead th')].map(n=>n.textContent),items:keys('item'),attachments:keys('attachment'),annotations:keys('annotation'),childNotes:[...el.querySelectorAll('[data-query-table-row="note"]')].map(n=>[n.getAttribute('data-query-key'),n.textContent]),notes:Object.fromEntries([...el.querySelectorAll('[data-query-note]')].map(n=>[n.closest('tr').getAttribute('data-query-key'),n.getAttribute('data-query-note')])),create:[...el.querySelectorAll('[data-query-create-note]')].map(n=>n.getAttribute('data-query-create-note'))});})()`;
+    const readTable = `(async()=>{const view=${tab};if(view.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(path)})return 'null';await view.query.settled;const el=view.contentEl;const keys=kind=>[...el.querySelectorAll('[data-query-table-row="'+kind+'"]')].map(n=>n.getAttribute('data-query-key'));return JSON.stringify({header:[...el.querySelectorAll('[data-query-table] thead th')].map(n=>n.textContent),rows:[...el.querySelectorAll('[data-query-table-row]')].map(n=>[n.getAttribute('data-query-table-row'),n.getAttribute('data-query-key')]),items:keys('item'),attachments:keys('attachment'),annotations:keys('annotation'),childNotes:[...el.querySelectorAll('[data-query-table-row="note"]')].map(n=>[n.getAttribute('data-query-key'),n.textContent]),notes:Object.fromEntries([...el.querySelectorAll('[data-query-note]')].map(n=>[n.closest('tr').getAttribute('data-query-key'),n.getAttribute('data-query-note')])),create:[...el.querySelectorAll('[data-query-create-note]')].map(n=>n.getAttribute('data-query-create-note'))});})()`;
     interface Table {
       header: string[];
+      /** Every row of the Table in screen order, as its kind and key. */
+      rows: [string, string][];
       items: string[];
       attachments: string[];
       annotations: string[];
@@ -2390,6 +2392,42 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(withNotes.childNotes).toEqual(
       live.map((note) => [note.key, note.title]),
     );
+
+    // An Item with both Attachments and a Child Note lists its notes after
+    // its Attachments.
+    const both = ITEMS.find(({ itemID }) => itemID === 57)!;
+    const bothNotes = NOTES.filter(
+      (note) => note.parentItemID === both.itemID && !note.trashed,
+    );
+    const bothAttachments = await query({
+      from: "attachments",
+      filter: `item.indexedKey == "${both.key}"`,
+      fields: "title",
+      limit: "all",
+    });
+    expect(bothNotes.length, "the Fixture Item has a Child Note").toBe(1);
+    expect(
+      bothAttachments.length,
+      "the Fixture Item has Attachments",
+    ).toBeGreaterThan(0);
+    await click(`[data-query-expand="item:${both.key}"]`);
+    const childRows = (table: Table) => {
+      const start = table.rows.findIndex(
+        ([kind, key]) => kind === "item" && key === both.key,
+      );
+      const end = table.rows.findIndex(
+        ([kind], index) => index > start && kind === "item",
+      );
+      return table.rows.slice(start + 1, end === -1 ? undefined : end);
+    };
+    const withBoth = await tableWhen(
+      (table) =>
+        childRows(table).length === bothAttachments.length + bothNotes.length,
+    );
+    expect(childRows(withBoth)).toEqual([
+      ...bothAttachments.map((row) => ["attachment", row.indexedKey]),
+      ...bothNotes.map((note) => ["note", note.key]),
+    ]);
 
     // "Create" asks for a Profile where more than one fits; the new
     // Literature Note, made with the Profile chosen, then shows as a link in
@@ -4708,6 +4746,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ["EEEE5555", ["Reading notes on the unkeyed personal item"]],
         ["HHHH8888g118", ["Reading notes on the lab archive alpha"]],
         ["IIII9999g990117", ["Reading notes on the consortium alpha"]],
+        ["PREPRNT2", ["Reading notes on the preprint"]],
       ]);
       const paper = await query({
         filter: 'key == "AAAAAAAA"',
