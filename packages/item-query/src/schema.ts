@@ -20,9 +20,10 @@ export {
 
 /** One static catalog per plugin version, with shared language definitions. */
 export function describeQueryVocabulary() {
-  const { functions, methods, properties, types, ...items } =
+  const { context, functions, methods, properties, types, ...items } =
     describeItemQueryVocabulary();
   const {
+    context: _context,
     functions: _functions,
     methods: _methods,
     properties: _properties,
@@ -30,6 +31,7 @@ export function describeQueryVocabulary() {
     ...annotations
   } = describeAnnotationQueryVocabulary();
   const {
+    context: _ac,
     functions: _af,
     methods: _am,
     properties: _ap,
@@ -42,6 +44,7 @@ export function describeQueryVocabulary() {
       attachments: { ...attachments, summary: ATTACHMENT_SUMMARY },
       annotations: { ...annotations, summary: ANNOTATION_SUMMARY },
     },
+    context,
     functions,
     methods,
     properties,
