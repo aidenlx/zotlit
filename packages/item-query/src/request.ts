@@ -9,7 +9,7 @@ import type { Diagnostic } from "./diagnose";
 import { ItemQueryError } from "./error";
 import type { ItemQueryFault } from "./fault";
 import type { FieldNeeds, QueryItem, SortKey } from "./fields";
-import type { FilterPlan } from "./filter-plan";
+import type { FilterPlan, FormulaResolver } from "./filter-plan";
 import { FORMULA_NAME, FORMULA_SEGMENT } from "./formulas";
 import type { PlannedColumn, PlannedFormula } from "./formulas";
 import { canGroup, planPath, readPath } from "./projection";
@@ -161,7 +161,10 @@ export interface ItemQueryPlan<Item = any, Needs = any> {
   /** `null`: every record matches. */
   readonly filter: FilterPlan<Item, Needs> | null;
   readonly paths: readonly PlannedPath<Item, Needs>[];
-  /** The Formulas that `fields` reads, each once. */
+  /**
+   * The Formulas that `fields`, the filter, or another Formula reads, each
+   * once.
+   */
   readonly formulas: readonly PlannedFormula<Item, Needs>[];
   /** The Formulas that the request names and never reads. */
   readonly unusedFormulas: readonly string[];
@@ -266,9 +269,92 @@ export function planRequest(
       context = { ...context, [member]: key };
     }
 
+    const definedFormulas = request.formulas ?? {};
+    for (const name of Object.keys(definedFormulas)) {
+      if (!FORMULA_NAME.test(name)) {
+        return yield* new ItemQueryError({
+          dataset,
+          location: { argument: "formulas", path: name },
+          fault: { kind: "formula-name", name },
+          argumentText: name,
+        });
+      }
+    }
+    // Every Formula that fields, the filter, or another Formula reads, each
+    // planned once. A Formula in `planning` is a reader of the one in planning
+    // after it, so a name already there closes a cycle.
+    const formulas = new Map<string, PlannedFormula>();
+    const planning: string[] = [];
+    const resolveFormula: FormulaResolver<any, any> = (name, at) => {
+      if (!Object.hasOwn(definedFormulas, name)) {
+        return {
+          kind: "unknown",
+          role: "formula",
+          name,
+          at,
+          formulas: Object.keys(definedFormulas),
+        };
+      }
+      const open = planning.indexOf(name);
+      if (open !== -1) {
+        return {
+          kind: "formula-cycle",
+          chain: [...planning.slice(open), name],
+          at,
+        };
+      }
+      const { plan } = planFormula(name);
+      return { root: plan.root, needs: plan.needs };
+    };
+    /** Plan a Formula; a Fault in its text throws {@link FormulaFailure}. */
+    const planFormula = (name: string): PlannedFormula => {
+      const known = formulas.get(name);
+      if (known) return known;
+      const text = definedFormulas[name]!;
+      const fail = (
+        fault: ItemQueryFault,
+        span: { from: number; to: number },
+      ) =>
+        new FormulaFailure(
+          new ItemQueryError({
+            dataset,
+            context,
+            fault,
+            location: { argument: "formulas", path: name, span },
+            argumentText: text,
+          }),
+        );
+      planning.push(name);
+      let planned: ReturnType<typeof dataset.planFilter>;
+      try {
+        planned = dataset.planFilter(text, context, resolveFormula);
+      } finally {
+        planning.pop();
+      }
+      if ("kind" in planned) {
+        throw fail(
+          planned,
+          planned.kind === "syntax"
+            ? { from: planned.fault.from, to: planned.fault.to }
+            : planned.at,
+        );
+      }
+      const found = planned.root.valueType;
+      if (found === "duration" || found === "regexp" || found === "record") {
+        const at = { from: planned.root.from, to: planned.root.to };
+        throw fail({ kind: "formula-result", name, found, at }, at);
+      }
+      const formula = { name, text, plan: planned };
+      formulas.set(name, formula);
+      return formula;
+    };
+
     let filter: FilterPlan | null = null;
     if (request.filter !== undefined) {
-      const planned = dataset.planFilter(request.filter, context);
+      const planned = catchFormulaFailure(() =>
+        dataset.planFilter(request.filter!, context, resolveFormula),
+      );
+      if (planned instanceof ItemQueryError) return yield* planned;
       if ("kind" in planned) {
         return yield* new ItemQueryError({
           dataset,
@@ -286,53 +372,6 @@ export function planRequest(
       }
       filter = planned;
     }
-
-    const definedFormulas = request.formulas ?? {};
-    for (const name of Object.keys(definedFormulas)) {
-      if (!FORMULA_NAME.test(name)) {
-        return yield* new ItemQueryError({
-          dataset,
-          location: { argument: "formulas", path: name },
-          fault: { kind: "formula-name", name },
-          argumentText: name,
-        });
-      }
-    }
-    const formulas = new Map<string, PlannedFormula>();
-    const planFormula = (name: string) =>
-      Effect.gen(function* () {
-        const text = definedFormulas[name]!;
-        const fail = (
-          fault: ItemQueryFault,
-          span?: { from: number; to: number },
-        ) =>
-          new ItemQueryError({
-            dataset,
-            context,
-            fault,
-            location: {
-              argument: "formulas",
-              path: name,
-              ...(span && { span }),
-            },
-            argumentText: text,
-          });
-        const planned = dataset.planFilter(text, context);
-        if ("kind" in planned) {
-          return yield* fail(
-            planned,
-            planned.kind === "syntax"
-              ? { from: planned.fault.from, to: planned.fault.to }
-              : planned.at,
-          );
-        }
-        const found = planned.root.valueType;
-        if (found === "duration" || found === "regexp" || found === "record") {
-          const at = { from: planned.root.from, to: planned.root.to };
-          return yield* fail({ kind: "formula-result", name, found, at }, at);
-        }
-        return { name, text, plan: planned };
-      });
 
     const fields = request.fields ?? dataset.defaultFields;
     const paths: PlannedPath[] = [];
@@ -354,11 +393,8 @@ export function planRequest(
             argumentText: JSON.stringify(fields),
           });
         }
-        let formula = formulas.get(formulaName);
-        if (!formula) {
-          formula = yield* planFormula(formulaName);
-          formulas.set(formulaName, formula);
-        }
+        const formula = catchFormulaFailure(() => planFormula(formulaName));
+        if (formula instanceof ItemQueryError) return yield* formula;
         columns.push({ kind: "formula", formula });
         continue;
       }
@@ -486,4 +522,19 @@ function formulaPath(text: string): string | null {
   if (!parsed.ok || parsed.segments[0] !== FORMULA_SEGMENT) return null;
   const [, name, ...rest] = parsed.segments;
   return typeof name === "string" && rest.length === 0 ? name : null;
+}
+
+/** The failure of a Formula that another Filter Expression reads. */
+class FormulaFailure {
+  constructor(readonly error: ItemQueryError) {}
+}
+
+/** The result of `plan`, or the failure of a Formula that it reads. */
+function catchFormulaFailure<A>(plan: () => A): A | ItemQueryError {
+  try {
+    return plan();
+  } catch (thrown) {
+    if (thrown instanceof FormulaFailure) return thrown.error;
+    throw thrown;
+  }
 }

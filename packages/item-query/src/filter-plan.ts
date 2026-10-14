@@ -125,6 +125,15 @@ export type FilterNode<Item = QueryItem> = NodeBase &
         readonly subject: FilterNode<Item>;
         readonly index: FilterNode<Item>;
       }
+    | {
+        /**
+         * `formula.<name>`: the value of a Formula for the same record. `root`
+         * is the planned Formula; its spans are offsets into the Formula text.
+         */
+        readonly kind: "formula";
+        readonly name: string;
+        readonly root: FilterNode<Item>;
+      }
   );
 
 /** A validated Filter Expression. */
@@ -148,7 +157,7 @@ interface FilterCustomFieldUse extends Span {
   readonly dotted?: Span & { readonly name: string };
 }
 
-type FilterFailure = Extract<
+export type FilterFailure = Extract<
   Fault,
   {
     readonly kind:
@@ -157,9 +166,26 @@ type FilterFailure = Extract<
       | "unknown"
       | "arity"
       | "argument-type"
-      | "unreadable";
+      | "unreadable"
+      | "formula-cycle";
   }
 > & { readonly at: Span };
+
+/** A Formula that a Filter Expression reads as `formula.<name>`, planned. */
+export interface FormulaRead<Item, Needs> {
+  readonly root: FilterNode<Item>;
+  /** What hydration loads before the Formula runs, with the Formulas it reads. */
+  readonly needs: readonly Needs[];
+}
+
+/**
+ * The meaning of `formula.<name>` at `at`: the planned Formula, or the Fault of
+ * the reference. Without a resolver, every Formula name is unknown.
+ */
+export type FormulaResolver<Item, Needs> = (
+  name: string,
+  at: Span,
+) => FormulaRead<Item, Needs> | FilterFailure;
 export type FilterProblem =
   | FilterFailure
   | Extract<Fault, { readonly kind: "syntax" }>;
@@ -199,10 +225,13 @@ export function planFilter<Item = QueryItem, Needs = FieldNeeds>(
     // `FieldNeeds`.
     registry = itemFilterRegistry as FilterRegistry<any, any>,
     context,
+    formula,
   }: {
     registry?: FilterRegistry<Item, Needs>;
     /** The Query Context that `this` reads. */
     context?: QueryContext;
+    /** The Formulas that `formula.<name>` reads. */
+    formula?: FormulaResolver<Item, Needs>;
   } = {},
 ): FilterPlan<Item, Needs> | FilterProblem {
   const { ast, error } = parseExpressionAst(text);
@@ -213,11 +242,10 @@ export function planFilter<Item = QueryItem, Needs = FieldNeeds>(
   const customFields: FilterCustomFieldUse[] = [];
   try {
     const warnings: Extract<Fault, { kind: "constant" }>[] = [];
-    const root = new Validator(
-      { needs, customFields, warnings },
-      registry,
+    const root = new Validator({ needs, customFields, warnings }, registry, {
       context,
-    ).node(ast);
+      formula,
+    }).node(ast);
     warnings.sort((a, b) => a.at.from - b.at.from);
     return { root, needs, customFields, warnings };
   } catch (thrown) {
@@ -379,6 +407,8 @@ function mismatch<Item>(
 }
 
 class Validator<Item, Needs> {
+  readonly context: QueryContext | undefined;
+  readonly formula: FormulaResolver<Item, Needs> | undefined;
   readonly #needs: Needs[];
   readonly #customFields: FilterCustomFieldUse[];
   readonly #warnings: Extract<Fault, { kind: "constant" }>[];
@@ -440,8 +470,16 @@ class Validator<Item, Needs> {
       warnings: Extract<Fault, { kind: "constant" }>[];
     },
     readonly registry: FilterRegistry<Item, Needs>,
-    readonly context: QueryContext | undefined,
+    {
+      context,
+      formula,
+    }: {
+      context: QueryContext | undefined;
+      formula: FormulaResolver<Item, Needs> | undefined;
+    },
   ) {
+    this.context = context;
+    this.formula = formula;
     this.#needs = needs;
     this.#customFields = customFields;
     this.#warnings = warnings;
@@ -585,6 +623,13 @@ class Validator<Item, Needs> {
       case "object-access": {
         const object = ast.object;
         if (isThis(object)) return this.#contextRecord(ast.property, span);
+        if (
+          object.type === "identifier" &&
+          object.name === "formula" &&
+          !this.#scopes.some((scope) => scope.includes(object.name))
+        ) {
+          return this.#formula(ast.property, span);
+        }
         if (object.type === "object-access" && isThis(object.object)) {
           const record = this.#contextRecord(object.property, object);
           return this.#contextMember(record, ast.property, span);
@@ -757,8 +802,10 @@ class Validator<Item, Needs> {
         field.navigation,
       );
     }
-    // `formula` is the reserved first segment of a Formula path.
-    if (name === "custom" || name === "formula") {
+    // `formula` is the reserved first segment of a Formula path; alone, it
+    // names no Formula.
+    if (name === "formula") return this.#formula("", span);
+    if (name === "custom") {
       return fail(unreadable(name, span));
     }
     if (field) {
@@ -776,6 +823,28 @@ class Validator<Item, Needs> {
       span,
       true,
     );
+  }
+
+  /**
+   * `formula.<name>`: the planned Formula, with its hydration needs. The name
+   * of a bare `formula` is empty, which no Formula has.
+   */
+  #formula(name: string, span: Span): FilterNode<Item> {
+    const read = this.formula?.(name, span) ?? {
+      kind: "unknown",
+      role: "formula",
+      name,
+      at: span,
+    };
+    if ("kind" in read) return fail(read);
+    this.#needs.push(...read.needs);
+    return {
+      ...span,
+      kind: "formula",
+      name,
+      root: read.root,
+      valueType: read.root.valueType,
+    };
   }
 
   /** `this.item` or `this.attachment`: the bound record, as a literal. */
