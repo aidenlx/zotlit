@@ -9,6 +9,7 @@
 // Obsidian's typing suggestions draw in the page under it, so the value fields
 // take the browser's own suggestion list instead.
 import { useEffect, useMemo, useState } from "react";
+import { useStore } from "zustand";
 
 import type { MatchTree } from "@zotlit/templates/facade";
 import {
@@ -392,10 +393,10 @@ export function FilterEditor({
 
 /** The toolbar's Filter control: a button and the popover it opens. */
 export function FilterButton({ view }: { view: QueryView }) {
-  const [state, setState] = useState(() => view.state.getState());
-  useEffect(() => view.state.subscribe(setState), [view]);
+  const file = useStore(view.state, (s) => s.file);
+  const shown = useStore(view.state, (s) => s.view);
+  const filterIssue = useStore(view.state, (s) => s.filterIssue);
   const [values, setValues] = useState<FilterValues>(NO_VALUES);
-  const { file, view: shown, filterIssue } = state;
   if (!file || !shown) return null;
   return (
     <ToolbarPopover

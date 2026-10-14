@@ -107,6 +107,8 @@ export interface QueryViewState {
     | null;
   /** The condition of the filters that the last run's diagnostic marks. */
   filterIssue: (FilterLocation & { message: string }) | null;
+  /** Whether a failed run left the last good rows on screen. */
+  keptResults: boolean;
   /** The rows shown, each once however many groups it stands in. */
   count: number;
   /** Every group the rows hold, the shown ones first; empty when ungrouped. */
@@ -122,6 +124,7 @@ const INITIAL_STATE: QueryViewState = {
   phase: "idle",
   diagnostic: null,
   filterIssue: null,
+  keptResults: false,
   count: 0,
   groups: [],
   truncated: false,
@@ -450,7 +453,8 @@ export class QueryView extends Component {
     view: QueryFileView,
     diagnostic: Diagnostic | NonNullable<QueryViewState["diagnostic"]>,
   ): void {
-    if (!this.#shows(view)) void this.#show(null);
+    const kept = this.#shows(view);
+    if (!kept) void this.#show(null);
     const span =
       "location" in diagnostic && diagnostic.location?.argument === "filter"
         ? diagnostic.location.span
@@ -459,6 +463,7 @@ export class QueryView extends Component {
     this.state.setState({
       phase: "failed",
       diagnostic,
+      keptResults: kept,
       filterIssue: at && {
         ...at,
         message: [diagnostic.message, diagnostic.hint]
@@ -545,6 +550,10 @@ function Problems({ view }: { view: QueryView }) {
   const phase = useQueryViewState(view, (s) => s.phase);
   const diagnostic = useQueryViewState(view, (s) => s.diagnostic);
   const filterIssue = useQueryViewState(view, (s) => s.filterIssue);
+  const keptResults = useQueryViewState(view, (s) => s.keptResults);
+  // A fault in one condition, under the last good rows, is marked at its row
+  // in the Filter popover; the view says only that the filter has an error.
+  const marked = filterIssue !== null && keptResults;
   const unresolved = useAnnotStore((s) => s.unresolved);
   return (
     <>
@@ -561,7 +570,7 @@ function Problems({ view }: { view: QueryView }) {
           ))}
         </div>
       )}
-      {phase === "failed" && filterIssue && (
+      {phase === "failed" && marked && (
         <p
           className="zt:mx-3 zt:mt-2 zt:mb-0 zt:text-sm zt:text-(--text-error)"
           role="alert"
@@ -570,7 +579,7 @@ function Problems({ view }: { view: QueryView }) {
           {m.query_view_filter_error()}
         </p>
       )}
-      {phase === "failed" && !filterIssue && diagnostic && (
+      {phase === "failed" && !marked && diagnostic && (
         <div
           className="zt:rounded zt:mx-3 zt:mt-2 zt:border zt:border-(--background-modifier-error) zt:p-2 zt:text-sm"
           role="alert"
