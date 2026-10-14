@@ -166,12 +166,18 @@ export function unusedSettings(
   const ofAnotherDataset = (has: (other: QueryFileDataset) => boolean) =>
     !has(dataset) && QUERY_FILE_DATASETS.some((other) => has(other));
   return {
+    // A property of the dataset that ZotLit Query cannot sort by, such as
+    // the tags of Items, is unused as well.
     sort: (view.sort ?? [])
       .map(({ property }) => property)
-      .filter((property) =>
-        ofAnotherDataset((other) =>
-          DATASETS[other].engine.sortableFields.includes(property),
-        ),
+      .filter(
+        (property) =>
+          !DATASETS[dataset].engine.sortableFields.includes(property) &&
+          QUERY_FILE_DATASETS.some(
+            (other) =>
+              DATASETS[other].engine.definition(property) !== undefined ||
+              DATASETS[other].engine.sortableFields.includes(property),
+          ),
       ),
     groupBy:
       view.groupBy &&

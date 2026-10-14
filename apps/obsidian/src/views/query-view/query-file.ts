@@ -14,6 +14,17 @@ import type { MatchTree } from "@zotlit/templates/facade";
 /** The file extension of a Query File, and the language of a Query Block. */
 export const QUERY_FILE_EXTENSION = "zotquery";
 
+/** The first `base`, `base 1`, `base 2`, … name that `taken` does not hold. */
+export function untitledName(
+  base: string,
+  taken: (name: string) => boolean,
+): string {
+  for (let index = 0; ; index++) {
+    const name = index === 0 ? base : `${base} ${index}`;
+    if (!taken(name)) return name;
+  }
+}
+
 /** The most rows a new Query File's view shows. */
 export const NEW_QUERY_FILE_LIMIT = 100;
 

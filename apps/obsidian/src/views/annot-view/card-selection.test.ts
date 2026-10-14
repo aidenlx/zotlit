@@ -1,15 +1,19 @@
 import { describe, expect, it } from "vitest";
 
 import { NO_SELECTION, cardPlace, nextCardSelection } from "./card-selection";
-import type { CardSelection } from "./card-selection";
+import type { CardPlace, CardSelection } from "./card-selection";
+
+/** The place of a card in a list with no groups. */
+const p = (key: string) => cardPlace(key, null);
 
 /** Five cards, in the order the list shows them. */
-const LIST = ["AAAA1111", "BBBB2222", "CCCC3333", "DDDD4444", "EEEE5555"];
+const KEYS = ["AAAA1111", "BBBB2222", "CCCC3333", "DDDD4444", "EEEE5555"];
+const LIST = KEYS.map(p);
 
 const group: CardSelection = {
   selected: ["BBBB2222", "DDDD4444"],
-  anchor: "DDDD4444",
-  focus: "DDDD4444",
+  anchor: p("DDDD4444"),
+  focus: p("DDDD4444"),
 };
 
 describe("click", () => {
@@ -18,8 +22,8 @@ describe("click", () => {
       nextCardSelection(NO_SELECTION, LIST, { kind: "click", key: "CCCC3333" }),
     ).toEqual({
       selected: ["CCCC3333"],
-      anchor: "CCCC3333",
-      focus: "CCCC3333",
+      anchor: p("CCCC3333"),
+      focus: p("CCCC3333"),
     });
   });
 
@@ -28,14 +32,14 @@ describe("click", () => {
       nextCardSelection(group, LIST, { kind: "click", key: "BBBB2222" }),
     ).toEqual({
       selected: ["BBBB2222"],
-      anchor: "BBBB2222",
-      focus: "BBBB2222",
+      anchor: p("BBBB2222"),
+      focus: p("BBBB2222"),
     });
   });
 
   it("leaves the selection where the list does not show the card", () => {
     expect(
-      nextCardSelection(group, ["AAAA1111", "BBBB2222", "DDDD4444"], {
+      nextCardSelection(group, ["AAAA1111", "BBBB2222", "DDDD4444"].map(p), {
         kind: "click",
         key: "CCCC3333",
       }),
@@ -45,8 +49,8 @@ describe("click", () => {
   it("answers the selection itself for a click on the card already selected alone", () => {
     const alone: CardSelection = {
       selected: ["CCCC3333"],
-      anchor: "CCCC3333",
-      focus: "CCCC3333",
+      anchor: p("CCCC3333"),
+      focus: p("CCCC3333"),
     };
     expect(
       nextCardSelection(alone, LIST, { kind: "click", key: "CCCC3333" }),
@@ -72,24 +76,28 @@ describe("clear", () => {
 
 describe("prune", () => {
   it("drops the cards a filter hides and keeps the anchor where it was", () => {
-    const filtered = ["AAAA1111", "DDDD4444", "EEEE5555"];
+    const filtered = ["AAAA1111", "DDDD4444", "EEEE5555"].map(p);
     expect(nextCardSelection(group, filtered, { kind: "prune" })).toEqual({
       selected: ["DDDD4444"],
-      anchor: "DDDD4444",
-      focus: "DDDD4444",
+      anchor: p("DDDD4444"),
+      focus: p("DDDD4444"),
     });
     expect(
-      nextCardSelection(group, ["AAAA1111", "BBBB2222"], { kind: "prune" }),
+      nextCardSelection(group, ["AAAA1111", "BBBB2222"].map(p), {
+        kind: "prune",
+      }),
     ).toEqual({
       selected: ["BBBB2222"],
-      anchor: "DDDD4444",
-      focus: "DDDD4444",
+      anchor: p("DDDD4444"),
+      focus: p("DDDD4444"),
     });
   });
 
   it("answers the selection itself when the list still shows every card", () => {
     expect(
-      nextCardSelection(group, ["BBBB2222", "DDDD4444"], { kind: "prune" }),
+      nextCardSelection(group, ["BBBB2222", "DDDD4444"].map(p), {
+        kind: "prune",
+      }),
     ).toBe(group);
   });
 });
@@ -103,21 +111,21 @@ describe("replace", () => {
       }),
     ).toEqual({
       selected: ["AAAA1111", "EEEE5555"],
-      anchor: "AAAA1111",
-      focus: "AAAA1111",
+      anchor: p("AAAA1111"),
+      focus: p("AAAA1111"),
     });
   });
 
   it("leaves out a pushed card the list does not show", () => {
     expect(
-      nextCardSelection(NO_SELECTION, ["AAAA1111", "CCCC3333"], {
+      nextCardSelection(NO_SELECTION, ["AAAA1111", "CCCC3333"].map(p), {
         kind: "replace",
         keys: ["CCCC3333", "ZZZZ9999", "BBBB2222"],
       }),
     ).toEqual({
       selected: ["CCCC3333"],
-      anchor: "CCCC3333",
-      focus: "CCCC3333",
+      anchor: p("CCCC3333"),
+      focus: p("CCCC3333"),
     });
   });
 
@@ -130,8 +138,8 @@ describe("replace", () => {
   it("answers the selection itself for a push that echoes it", () => {
     const alone: CardSelection = {
       selected: ["CCCC3333"],
-      anchor: "CCCC3333",
-      focus: "CCCC3333",
+      anchor: p("CCCC3333"),
+      focus: p("CCCC3333"),
     };
     expect(
       nextCardSelection(alone, LIST, { kind: "replace", keys: ["CCCC3333"] }),
@@ -149,8 +157,8 @@ describe("replace, of the cards already selected", () => {
       }),
     ).toEqual({
       selected: ["BBBB2222", "DDDD4444"],
-      anchor: "BBBB2222",
-      focus: "BBBB2222",
+      anchor: p("BBBB2222"),
+      focus: p("BBBB2222"),
     });
   });
 });
@@ -160,8 +168,8 @@ describe("move", () => {
   const up = { kind: "move", step: -1 } as const;
   const alone = (key: string): CardSelection => ({
     selected: [key],
-    anchor: key,
-    focus: key,
+    anchor: p(key),
+    focus: p(key),
   });
 
   it("takes the next or the previous card in list order alone", () => {
@@ -183,8 +191,8 @@ describe("move", () => {
   it("reduces a group to the card at the end it cannot pass", () => {
     const toEnd: CardSelection = {
       selected: ["BBBB2222", "EEEE5555"],
-      anchor: "EEEE5555",
-      focus: "EEEE5555",
+      anchor: p("EEEE5555"),
+      focus: p("EEEE5555"),
     };
     expect(nextCardSelection(toEnd, LIST, down)).toEqual(alone("EEEE5555"));
   });
@@ -208,7 +216,7 @@ describe("move", () => {
   });
 
   it("passes over the cards a filter hides", () => {
-    const filtered = ["AAAA1111", "BBBB2222", "EEEE5555"];
+    const filtered = ["AAAA1111", "BBBB2222", "EEEE5555"].map(p);
     expect(nextCardSelection(alone("BBBB2222"), filtered, down)).toEqual(
       alone("EEEE5555"),
     );
@@ -221,10 +229,10 @@ describe("move", () => {
     // A prune keeps the anchor on a card the list no longer shows.
     const pruned: CardSelection = {
       selected: ["DDDD4444"],
-      anchor: "BBBB2222",
-      focus: "BBBB2222",
+      anchor: p("BBBB2222"),
+      focus: p("BBBB2222"),
     };
-    const filtered = ["AAAA1111", "CCCC3333", "DDDD4444", "EEEE5555"];
+    const filtered = ["AAAA1111", "CCCC3333", "DDDD4444", "EEEE5555"].map(p);
     expect(nextCardSelection(pruned, filtered, down)).toEqual(
       alone("EEEE5555"),
     );
@@ -234,10 +242,10 @@ describe("move", () => {
   it("enters the list afresh where a filter hides the anchor and every Selected Card", () => {
     const hidden: CardSelection = {
       selected: [],
-      anchor: "BBBB2222",
-      focus: "BBBB2222",
+      anchor: p("BBBB2222"),
+      focus: p("BBBB2222"),
     };
-    const filtered = ["AAAA1111", "CCCC3333"];
+    const filtered = ["AAAA1111", "CCCC3333"].map(p);
     expect(nextCardSelection(hidden, filtered, down)).toEqual(
       alone("AAAA1111"),
     );
@@ -251,8 +259,8 @@ describe("toggle", () => {
       nextCardSelection(group, LIST, { kind: "toggle", key: "AAAA1111" }),
     ).toEqual({
       selected: ["AAAA1111", "BBBB2222", "DDDD4444"],
-      anchor: "AAAA1111",
-      focus: "AAAA1111",
+      anchor: p("AAAA1111"),
+      focus: p("AAAA1111"),
     });
   });
 
@@ -261,14 +269,14 @@ describe("toggle", () => {
       nextCardSelection(group, LIST, { kind: "toggle", key: "BBBB2222" }),
     ).toEqual({
       selected: ["DDDD4444"],
-      anchor: "BBBB2222",
-      focus: "BBBB2222",
+      anchor: p("BBBB2222"),
+      focus: p("BBBB2222"),
     });
   });
 
   it("leaves the selection where the list does not show the card", () => {
     expect(
-      nextCardSelection(group, ["BBBB2222", "DDDD4444"], {
+      nextCardSelection(group, ["BBBB2222", "DDDD4444"].map(p), {
         kind: "toggle",
         key: "CCCC3333",
       }),
@@ -280,15 +288,15 @@ describe("range", () => {
   it("takes every card from the anchor to the card, in list order, and keeps the anchor", () => {
     const alone: CardSelection = {
       selected: ["DDDD4444"],
-      anchor: "DDDD4444",
-      focus: "DDDD4444",
+      anchor: p("DDDD4444"),
+      focus: p("DDDD4444"),
     };
     expect(
       nextCardSelection(alone, LIST, { kind: "range", key: "BBBB2222" }),
     ).toEqual({
       selected: ["BBBB2222", "CCCC3333", "DDDD4444"],
-      anchor: "DDDD4444",
-      focus: "BBBB2222",
+      anchor: p("DDDD4444"),
+      focus: p("BBBB2222"),
     });
   });
 
@@ -305,8 +313,8 @@ describe("range", () => {
       nextCardSelection(toggled, LIST, { kind: "range", key: "EEEE5555" }),
     ).toEqual({
       selected: ["CCCC3333", "DDDD4444", "EEEE5555"],
-      anchor: "CCCC3333",
-      focus: "EEEE5555",
+      anchor: p("CCCC3333"),
+      focus: p("EEEE5555"),
     });
   });
 
@@ -314,22 +322,22 @@ describe("range", () => {
     const pruned = nextCardSelection(
       {
         selected: ["BBBB2222", "DDDD4444"],
-        anchor: "BBBB2222",
-        focus: "BBBB2222",
+        anchor: p("BBBB2222"),
+        focus: p("BBBB2222"),
       },
-      ["AAAA1111", "CCCC3333", "DDDD4444", "EEEE5555"],
+      ["AAAA1111", "CCCC3333", "DDDD4444", "EEEE5555"].map(p),
       { kind: "prune" },
     );
     expect(pruned).toEqual({
       selected: ["DDDD4444"],
-      anchor: "BBBB2222",
-      focus: "BBBB2222",
+      anchor: p("BBBB2222"),
+      focus: p("BBBB2222"),
     });
     // The range reaches no card between the hidden anchor and the click.
     expect(
       nextCardSelection(
         pruned,
-        ["AAAA1111", "CCCC3333", "DDDD4444", "EEEE5555"],
+        ["AAAA1111", "CCCC3333", "DDDD4444", "EEEE5555"].map(p),
         {
           kind: "range",
           key: "AAAA1111",
@@ -337,26 +345,26 @@ describe("range", () => {
       ),
     ).toEqual({
       selected: ["AAAA1111", "CCCC3333", "DDDD4444"],
-      anchor: "DDDD4444",
-      focus: "AAAA1111",
+      anchor: p("DDDD4444"),
+      focus: p("AAAA1111"),
     });
   });
 
   it("selects the card alone where a filter hid the anchor and every Selected Card", () => {
     const hidden: CardSelection = {
       selected: [],
-      anchor: "BBBB2222",
-      focus: "BBBB2222",
+      anchor: p("BBBB2222"),
+      focus: p("BBBB2222"),
     };
     expect(
-      nextCardSelection(hidden, ["AAAA1111", "CCCC3333"], {
+      nextCardSelection(hidden, ["AAAA1111", "CCCC3333"].map(p), {
         kind: "range",
         key: "CCCC3333",
       }),
     ).toEqual({
       selected: ["CCCC3333"],
-      anchor: "CCCC3333",
-      focus: "CCCC3333",
+      anchor: p("CCCC3333"),
+      focus: p("CCCC3333"),
     });
   });
 });
@@ -364,16 +372,18 @@ describe("range", () => {
 describe("all", () => {
   it("takes every card the list shows and keeps the anchor", () => {
     expect(
-      nextCardSelection(group, ["AAAA1111", "DDDD4444"], { kind: "all" }),
+      nextCardSelection(group, ["AAAA1111", "DDDD4444"].map(p), {
+        kind: "all",
+      }),
     ).toEqual({
       selected: ["AAAA1111", "DDDD4444"],
-      anchor: "DDDD4444",
-      focus: "DDDD4444",
+      anchor: p("DDDD4444"),
+      focus: p("DDDD4444"),
     });
   });
 
   it("answers the selection itself where every card is selected", () => {
-    const everything: CardSelection = { ...group, selected: LIST };
+    const everything: CardSelection = { ...group, selected: KEYS };
     expect(nextCardSelection(everything, LIST, { kind: "all" })).toBe(
       everything,
     );
@@ -385,21 +395,21 @@ describe("extend", () => {
   const up = { kind: "extend", step: -1 } as const;
   const alone: CardSelection = {
     selected: ["CCCC3333"],
-    anchor: "CCCC3333",
-    focus: "CCCC3333",
+    anchor: p("CCCC3333"),
+    focus: p("CCCC3333"),
   };
 
   it("grows the range from the anchor one card at a time", () => {
     const once = nextCardSelection(alone, LIST, down);
     expect(once).toEqual({
       selected: ["CCCC3333", "DDDD4444"],
-      anchor: "CCCC3333",
-      focus: "DDDD4444",
+      anchor: p("CCCC3333"),
+      focus: p("DDDD4444"),
     });
     expect(nextCardSelection(once, LIST, down)).toEqual({
       selected: ["CCCC3333", "DDDD4444", "EEEE5555"],
-      anchor: "CCCC3333",
-      focus: "EEEE5555",
+      anchor: p("CCCC3333"),
+      focus: p("EEEE5555"),
     });
   });
 
@@ -409,8 +419,8 @@ describe("extend", () => {
     expect(back).toEqual(alone);
     expect(nextCardSelection(back, LIST, up)).toEqual({
       selected: ["BBBB2222", "CCCC3333"],
-      anchor: "CCCC3333",
-      focus: "BBBB2222",
+      anchor: p("CCCC3333"),
+      focus: p("BBBB2222"),
     });
   });
 
@@ -422,16 +432,16 @@ describe("extend", () => {
     );
     expect(nextCardSelection(grown, LIST, { kind: "move", step: -1 })).toEqual({
       selected: ["DDDD4444"],
-      anchor: "DDDD4444",
-      focus: "DDDD4444",
+      anchor: p("DDDD4444"),
+      focus: p("DDDD4444"),
     });
   });
 
   it("stays where the moving end cannot pass the end of the list", () => {
     const last: CardSelection = {
       selected: ["DDDD4444", "EEEE5555"],
-      anchor: "DDDD4444",
-      focus: "EEEE5555",
+      anchor: p("DDDD4444"),
+      focus: p("EEEE5555"),
     };
     expect(nextCardSelection(last, LIST, down)).toBe(last);
   });
@@ -439,8 +449,8 @@ describe("extend", () => {
   it("enters the list as a move does while nothing is selected", () => {
     expect(nextCardSelection(NO_SELECTION, LIST, down)).toEqual({
       selected: ["AAAA1111"],
-      anchor: "AAAA1111",
-      focus: "AAAA1111",
+      anchor: p("AAAA1111"),
+      focus: p("AAAA1111"),
     });
   });
 });
@@ -454,7 +464,7 @@ describe("a card shown under two group headings", () => {
   const PLACES = [A1, B, A2, C];
   const down = { kind: "move", step: 1 } as const;
   const up = { kind: "move", step: -1 } as const;
-  const at = (place: string, key: string): CardSelection => ({
+  const at = (place: CardPlace, key: string): CardSelection => ({
     selected: [key],
     anchor: place,
     focus: place,
@@ -486,7 +496,11 @@ describe("a card shown under two group headings", () => {
 
   it("selects the card at the place clicked", () => {
     expect(
-      nextCardSelection(NO_SELECTION, PLACES, { kind: "click", key: A2 }),
+      nextCardSelection(NO_SELECTION, PLACES, {
+        kind: "click",
+        key: "AAAA1111",
+        place: A2,
+      }),
     ).toEqual(at(A2, "AAAA1111"));
   });
 
@@ -510,7 +524,8 @@ describe("a card shown under two group headings", () => {
     expect(
       nextCardSelection(at(A1, "AAAA1111"), PLACES, {
         kind: "range",
-        key: A2,
+        key: "AAAA1111",
+        place: A2,
       }),
     ).toEqual({
       selected: ["AAAA1111", "BBBB2222"],
@@ -537,7 +552,8 @@ describe("a card shown under two group headings", () => {
     expect(
       nextCardSelection(at(A1, "AAAA1111"), PLACES, {
         kind: "toggle",
-        key: A2,
+        key: "AAAA1111",
+        place: A2,
       }),
     ).toEqual({ selected: [], anchor: A2, focus: A2 });
   });
