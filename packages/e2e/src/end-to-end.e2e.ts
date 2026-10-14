@@ -2405,6 +2405,180 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(removed.headerIssue).toBeNull();
   }, 240000);
 
+  it("filters a Query View by a Formula, shows a Formula that reads another, and marks a wrong Formula with the Formulas and the condition that read it", async () => {
+    const path = "query-files/Dependent formulas.zotquery";
+    const layout = await obEval(
+      vaultId,
+      "JSON.stringify(app.workspace.getLayout())",
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));const file=app.vault.getFileByPath(${JSON.stringify(path)});if(file)await app.vault.delete(file);return true;})()`,
+      );
+    });
+    const formulas = {
+      year: "date.year",
+      next: "formula.year + 1",
+      recent: "date.year >= 2020",
+    };
+    const source = (
+      edits: { year?: string; filter?: string } = {},
+    ) => `formulas:
+  year: ${edits.year ?? formulas.year}
+  next: ${formulas.next}
+  recent: ${formulas.recent}
+views:
+  - type: table
+    name: Recent
+    from: items
+    order:
+      - title
+      - formula.year
+      - formula.next
+    filters: ${edits.filter ?? "formula.recent"}
+    limit: 100
+`;
+    await obEval(
+      vaultId,
+      `(async()=>{const file=await app.vault.create(${JSON.stringify(path)},${JSON.stringify(source())});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
+    );
+    const tab = "app.workspace.getMostRecentLeaf().view";
+    const readTab = `(async()=>{const view=${tab};if(view.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(path)})return 'null';await view.query.settled;const el=view.contentEl;return JSON.stringify({text:await app.vault.read(view.file),columns:[...el.querySelectorAll('[data-query-table] thead th')].map(n=>n.getAttribute('data-query-column')),headerIssues:Object.fromEntries([...el.querySelectorAll('[data-query-table] thead [data-query-column]')].map(n=>[n.getAttribute('data-query-column'),n.getAttribute('data-query-formula-issue')])),rows:[...el.querySelectorAll('[data-query-table-row="item"]')].map(tr=>[tr.getAttribute('data-query-key'),...[...tr.children].map(td=>td.textContent)]),diagnostic:el.querySelector('[data-query-diagnostic]')?.getAttribute('data-query-diagnostic')??null});})()`;
+    interface Tab {
+      text: string;
+      columns: (string | null)[];
+      headerIssues: Record<string, string | null>;
+      /** Each Item row: its key, then the text of each cell. */
+      rows: string[][];
+      diagnostic: string | null;
+    }
+    const tabWhen = async (ready: (tab: Tab) => boolean): Promise<Tab> => {
+      let shown: Tab | null = null;
+      const settled = await waitFor(async () => {
+        shown = JSON.parse(await obEval(vaultId, readTab)) as Tab | null;
+        return shown !== null && ready(shown);
+      }, 120);
+      if (!settled) throw new Error(`Query File tab: ${JSON.stringify(shown)}`);
+      return shown!;
+    };
+    /** Edits the file as text in its tab. */
+    const write = (text: string) =>
+      obEval(
+        vaultId,
+        `(async()=>{const view=${tab};view.setViewData(${JSON.stringify(text)},false);await view.save();return true;})()`,
+      );
+    /** The key and the cell of one column of each Table row. */
+    const column = (shown: Tab, property: string) => {
+      // The first cell is the expander.
+      const at = shown.columns.indexOf(property);
+      return shown.rows.map((row) => [row[0], row[at + 1]]);
+    };
+    /** The issue at each Formula's row in the Properties popover. */
+    const rowIssues = async () =>
+      JSON.parse(
+        await obEval(
+          vaultId,
+          `(async()=>{${tab}.contentEl.querySelector('[data-query-properties]').click();await new Promise(r=>setTimeout(r,100));const popup=activeDocument.querySelector('[data-query-properties-popup]');const issues=Object.fromEntries(['year','next','recent'].map(name=>[name,popup.querySelector('[data-query-property="formula.'+name+'"] [data-query-formula-issue]')?.getAttribute('data-query-formula-issue')??null]));popup.hidePopover();return JSON.stringify(issues);})()`,
+        ),
+      ) as Record<string, string | null>;
+    /** The issue at each condition of the view's filters, in the Filter popover. */
+    const conditionIssues = async () =>
+      JSON.parse(
+        await obEval(
+          vaultId,
+          `(async()=>{const el=${tab}.contentEl;const popover=el.querySelector('[data-query-popover="filter"]');if(!popover.matches(':popover-open'))el.querySelector('[data-query-toolbar="filter"]').click();await new Promise(r=>setTimeout(r,100));const issues=[...popover.querySelectorAll('[data-filter-section="view"] [data-condition-row]')].map(n=>n.querySelector('[role="alert"]')?.textContent??null);popover.hidePopover();return JSON.stringify(issues);})()`,
+        ),
+      ) as (string | null)[];
+
+    // The view shows the rows ZotLit Query gives for the same filter, and a
+    // Formula that reads another shows its value.
+    const report = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query", {
+        args: {
+          from: "items",
+          formulas: JSON.stringify(formulas),
+          filter: "formula.recent",
+          fields: "title,formula.year,formula.next",
+          limit: "100",
+        },
+      }),
+    ) as ItemQueryReport;
+    expect(report.ok).toBe(true);
+    expect(report.rows!.length).toBeGreaterThan(1);
+    const expected = report.rows!.map((row) => [
+      row.indexedKey,
+      String(row.values["formula.next"]),
+    ]);
+    for (const row of report.rows!)
+      expect(row.values["formula.next"]).toBe(
+        Number(row.values["formula.year"]) + 1,
+      );
+    const shown = await tabWhen((t) => t.rows.length > 0);
+    expect(shown.columns).toEqual([
+      null,
+      "title",
+      "formula.year",
+      "formula.next",
+      null,
+    ]);
+    expect(column(shown, "formula.next")).toEqual(expected);
+
+    // A wrong Formula marks itself and the Formula that reads it; the view
+    // still shows its rows and its other columns.
+    const reads = m.query_view_formula_reads_wrong({ name: "year" });
+    await write(source({ year: "dat.year" }));
+    const wrong = await tabWhen(
+      (t) => t.headerIssues["formula.next"] === reads && t.rows.length > 0,
+    );
+    expect(wrong.headerIssues["formula.year"]).toContain("formula.year");
+    expect(wrong.diagnostic).toBeNull();
+    expect(column(wrong, "title")).toEqual(column(shown, "title"));
+    for (const property of ["formula.year", "formula.next"])
+      expect(column(wrong, property).every(([, cell]) => cell === "")).toBe(
+        true,
+      );
+    expect(await rowIssues()).toEqual({
+      year: wrong.headerIssues["formula.year"],
+      next: reads,
+      recent: null,
+    });
+
+    // A condition that reads the wrong Formula shows the message, and the
+    // view shows no rows until the Formula is fixed.
+    await write(source({ year: "dat.year", filter: "formula.next > 2020" }));
+    await tabWhen((t) => t.rows.length === 0 && t.diagnostic !== null);
+    expect(await rowIssues()).toMatchObject({ next: reads });
+    expect(await conditionIssues()).toEqual([reads]);
+    await write(source({ filter: "formula.next > 2020" }));
+    const fixed = await tabWhen((t) => t.rows.length > 0);
+    expect(fixed.diagnostic).toBeNull();
+    expect(fixed.headerIssues["formula.next"]).toBeNull();
+    expect(
+      column(fixed, "formula.next").every(([, cell]) => Number(cell) > 2020),
+    ).toBe(true);
+    expect(await conditionIssues()).toEqual([null]);
+
+    // Removing a Formula that the filters still name leaves the condition,
+    // and ZotLit Query's message shows at it.
+    await obEval(
+      vaultId,
+      `(async()=>{${tab}.query.removeFormula('next');return true;})()`,
+    );
+    const removed = await tabWhen((t) => !t.text.includes("formula.next\n"));
+    expect(removed.text).toContain("filters: formula.next > 2020\n");
+    let issues: (string | null)[] = [];
+    expect(
+      await waitFor(async () => {
+        issues = await conditionIssues();
+        return issues[0] !== null;
+      }, 60),
+    ).toBe(true);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toContain("next");
+  }, 240000);
+
   it("switches a Fixture Query File view to Items and the Table, expands an Item into its Attachments, Annotations and Child Notes, and creates a Literature Note from its column", async () => {
     const path = "query-files/Reading annotations.zotquery";
     const layout = await obEval(
