@@ -186,6 +186,8 @@ export type EmptyStateAction = "enable-live-updates" | "choose-item";
 export type AnnotViewBody =
   | { kind: "list" }
   | { kind: "loading" }
+  /** The query failed, or Zotero's data cannot be read. */
+  | { kind: "problem"; message: string; detail: string }
   /** An Item with no Attachments at all. */
   | { kind: "no-attachments"; message: string }
   /**
@@ -206,9 +208,12 @@ export type AnnotViewBodyState = Pick<
   | "followMode"
   | "liveUpdatesOn"
   | "pinnedItemKey"
+  | "queryProblem"
 >;
 
 export function annotViewBody(state: AnnotViewBodyState): AnnotViewBody {
+  if (state.queryProblem !== null && state.annotations === null)
+    return { kind: "problem", ...state.queryProblem };
   if (state.attachments === null) return emptyState(state);
   if (state.attachments.length === 0) {
     return { kind: "no-attachments", message: m.annot_view_no_attachments() };
