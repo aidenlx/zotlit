@@ -239,6 +239,13 @@ it("reserves formula: a filter reads a Formula as formula.<name>", async () => {
     location: { argument: "filter", span: { from: 0, to: 7 } },
   });
   expect(error.diagnostic.hint).toContain("formula.year");
+  const alone = await failure(scenario, { filter: 'formula == "x"' });
+  expect(alone.diagnostic).toMatchObject({
+    code: "unknown-formula",
+    location: { argument: "filter", span: { from: 0, to: 7 } },
+  });
+  expect(alone.diagnostic.hint).not.toContain('{"":');
+  expect(alone.diagnostic.hint).toContain("formula.year");
 });
 
 it("selects the records whose Formula value the filter accepts", async () => {

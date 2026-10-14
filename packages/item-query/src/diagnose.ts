@@ -435,7 +435,9 @@ function diagnoseUnknownFormula(
               ? `Try: ${text.slice(0, fault.at.from)}${suggestions[0]!}${text.slice(fault.at.to)}`
               : defined.length > 0
                 ? `Read a Formula of the request: ${defined.map((name) => `formula.${name}`).join(", ")}.`
-                : `Define the Formula in formulas, such as formulas='${JSON.stringify({ [fault.name]: "date.year" })}'.`,
+                : fault.name === ""
+                  ? `Define a Formula in formulas, such as formulas='{"year":"date.year"}', and read it as formula.year.`
+                  : `Define the Formula in formulas, such as formulas='${JSON.stringify({ [fault.name]: "date.year" })}'.`,
           location: { ...location, span: fault.at },
         },
         text,
