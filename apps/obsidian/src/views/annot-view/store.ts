@@ -158,10 +158,13 @@ export interface AnnotState {
   /** Selected tags, by name. */
   selectedTags: string[];
   /**
-   * The group heading of each card, by Indexed Key, while a Query View shows
-   * the rows of a grouped query; `null` while the cards stand in one list.
+   * Where each card stands, in order, while a Query View shows the rows of a
+   * grouped query: one entry for each group a card stands in, so a card with
+   * two tags stands under both. `null` while the cards stand in one list.
    */
-  groups: ReadonlyMap<string, CardGroup> | null;
+  groups: readonly CardPlacement[] | null;
+  /** The groups whose headings are collapsed, by group key. */
+  collapsedGroups: ReadonlySet<string>;
   /**
    * The rows a Query View gave that no Attachment's list holds, by Indexed
    * Key, in the query's order.
@@ -173,6 +176,12 @@ export interface AnnotState {
 export interface CardGroup {
   key: string;
   label: string;
+}
+
+/** One card under one group heading. */
+export interface CardPlacement {
+  annotationKey: string;
+  group: CardGroup;
 }
 
 /**
@@ -219,6 +228,7 @@ export function createAnnotStore() {
         zoteroReaderClosed: false,
         ...INITIAL_FILTER_STATE,
         groups: null,
+        collapsedGroups: new Set(),
         unresolved: [],
       }),
     ),
@@ -346,6 +356,16 @@ export function useToggleSearchOpen(): () => void {
         ? { searchOpen: false, filterQuery: "" }
         : { searchOpen: true },
     );
+  };
+}
+
+/** Collapse a group heading, or expand it again. */
+export function useToggleGroupCollapsed(): (groupKey: string) => void {
+  const store = useAnnotStoreApi();
+  return (groupKey) => {
+    const collapsed = new Set(store.getState().collapsedGroups);
+    if (!collapsed.delete(groupKey)) collapsed.add(groupKey);
+    store.setState({ collapsedGroups: collapsed });
   };
 }
 

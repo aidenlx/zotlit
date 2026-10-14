@@ -909,21 +909,40 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       readOnly: null,
     });
 
-    // A sort change rewrites the block text, and nothing else in the note.
-    await obEval(
-      vaultId,
-      `(()=>{const el=app.workspace.getMostRecentLeaf().view.containerEl.querySelector('.block-language-zotquery');el.dataset.e2eMark='kept';el.zotlitQueryView.edit(file=>({...file,views:file.views.map(view=>({...view,sort:[{property:'indexedKey',direction:'DESC'}]}))}));return true;})()`,
+    // A sort change in the toolbar rewrites the block text, and nothing else
+    // in the note. Each step of the Sort control saves.
+    const inBlock = (script: string) =>
+      obEval(
+        vaultId,
+        `(()=>{const el=app.workspace.getMostRecentLeaf().view.containerEl.querySelector('.block-language-zotquery');${script};return true;})()`,
+      );
+    await inBlock(
+      "el.dataset.e2eMark='kept';el.querySelector('[data-query-toolbar=\"sort\"]').click()",
     );
-    const sorted = await itemAnnotations("SAKIMA22", "-indexedKey");
-    expect(sorted).not.toEqual(own);
-    const resorted = await blockWhen(
-      (block) => JSON.stringify(block.cards) === JSON.stringify(sorted),
+    await inBlock(
+      "el.querySelector('[data-query-popover=\"sort\"] [data-sort-add]').click()",
     );
-    // The Live Preview widget that showed the view is the one that shows it now.
-    expect(resorted.mark).toBe("kept");
+    for (const [control, value] of [
+      ["data-sort-property", "type"],
+      ["data-sort-direction", "DESC"],
+    ] as const) {
+      expect(
+        await waitFor(async () =>
+          JSON.parse(
+            await obEval(
+              vaultId,
+              `JSON.stringify(!!app.workspace.getMostRecentLeaf().view.containerEl.querySelector('.block-language-zotquery [data-query-popover="sort"] [${control}]'))`,
+            ),
+          ),
+        ),
+      ).toBe(true);
+      await inBlock(
+        `const select=el.querySelector('[data-query-popover="sort"] [${control}]');select.value=${JSON.stringify(value)};select.dispatchEvent(new Event('change',{bubbles:true}))`,
+      );
+    }
     const written = original.replace(
       "    limit: 100\n```",
-      "    limit: 100\n    sort:\n      - property: indexedKey\n        direction: DESC\n```",
+      "    limit: 100\n    sort:\n      - property: type\n        direction: DESC\n```",
     );
     expect(written).not.toBe(original);
     expect(
@@ -935,6 +954,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           )) === written,
       ),
     ).toBe(true);
+    const sorted = await itemAnnotations("SAKIMA22", "-type");
+    const resorted = await blockWhen(
+      (block) => JSON.stringify(block.cards) === JSON.stringify(sorted),
+    );
+    // The Live Preview widget that showed the view is the one that shows it now.
+    expect(resorted.mark).toBe("kept");
 
     // Reading view shows the saved sort, and `this` follows the note's
     // `zotero-key` when the frontmatter changes.
@@ -942,7 +967,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await blockWhen(
       (block) => JSON.stringify(block.cards) === JSON.stringify(sorted),
     );
-    const other = await itemAnnotations("RUGIER24", "-indexedKey");
+    const other = await itemAnnotations("RUGIER24", "-type");
     expect(other.length).toBeGreaterThan(0);
     await obEval(
       vaultId,
@@ -978,6 +1003,105 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       diagnostic: "unbound-context",
       cards: [],
     });
+  }, 180000);
+
+  it("groups a Query File by colour in a Manual order, hides a colour, and keeps it on reopen", async () => {
+    const layout = await obEval(
+      vaultId,
+      "JSON.stringify(app.workspace.getLayout())",
+    );
+    const path = "query-files/By colour.zotquery";
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));const file=app.vault.getFileByPath(${JSON.stringify(path)});if(file)await app.vault.delete(file);return true;})()`,
+      );
+    });
+    const open = `(async()=>{const file=app.vault.getFileByPath(${JSON.stringify(path)});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`;
+    await obEval(
+      vaultId,
+      `(async()=>{await app.vault.create(${JSON.stringify(path)},${JSON.stringify("views:\n  - type: annotations\n    name: Colours\n    from: annotations\n    limit: 100\n")});return true;})()`,
+    );
+    await obEval(vaultId, open);
+
+    /** The group headings and the Manual order rows of the active tab, once settled. */
+    const readTab = `(async()=>{const view=app.workspace.getMostRecentLeaf().view;if(view.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(path)})return 'null';await view.query.settled;const el=view.contentEl;return JSON.stringify({count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,headings:[...el.querySelectorAll('[data-query-group]')].map(n=>n.textContent),order:[...el.querySelectorAll('[data-group-row]')].map(n=>[n.getAttribute('data-group-row'),n.querySelector('input').checked])});})()`;
+    interface Tab {
+      count: string | null;
+      headings: string[];
+      order: [string, boolean][];
+    }
+    const tabWhen = async (ready: (tab: Tab) => boolean): Promise<Tab> => {
+      let tab: Tab | null = null;
+      const settled = await waitFor(async () => {
+        tab = JSON.parse(await obEval(vaultId, readTab)) as Tab | null;
+        return tab !== null && ready(tab);
+      }, 120);
+      if (!settled) throw new Error(`Query File tab: ${JSON.stringify(tab)}`);
+      return tab!;
+    };
+    /** Choose an option of a select in the Group popover. */
+    const choose = (selector: string, value: string) =>
+      obEval(
+        vaultId,
+        `(()=>{const el=app.workspace.getMostRecentLeaf().view.contentEl;const select=el.querySelector('[data-query-popover="group"] ${selector}');select.value=${JSON.stringify(value)};select.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
+      );
+
+    await tabWhen((tab) => tab.count !== null);
+    // The colours of the rows, in the order each first shows.
+    const report = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query", {
+        args: { from: "annotations", fields: "colorName", limit: "100" },
+      }),
+    ) as ItemQueryReport;
+    expect(report.ok).toBe(true);
+    const colours = [
+      ...new Set(report.rows!.map((row) => String(row.values.colorName))),
+    ];
+    expect(colours.length).toBeGreaterThan(1);
+
+    await choose("[data-group-property]", "colorName");
+    await tabWhen((tab) => tab.headings.length === colours.length);
+    await choose("[data-group-direction]", "MANUAL");
+    const manual = await tabWhen((tab) => tab.order.length > 0);
+    expect(manual.order).toEqual(colours.map((colour) => [colour, true]));
+
+    // A tick hides the first colour.
+    const [hidden, ...shown] = colours;
+    await obEval(
+      vaultId,
+      `(()=>{const el=app.workspace.getMostRecentLeaf().view.contentEl;el.querySelector('[data-query-popover="group"] [data-group-row=${JSON.stringify(hidden)}] input').click();return true;})()`,
+    );
+    const after = await tabWhen((tab) => tab.headings.length === shown.length);
+    const expectedCount = report.rows!.filter(
+      (row) => row.values.colorName !== hidden,
+    ).length;
+    expect(after.count).toBe(String(expectedCount));
+
+    // The file holds the grouping; a reopened tab shows the same groups.
+    await obEval(
+      vaultId,
+      "(async()=>{app.workspace.getMostRecentLeaf().detach();return true;})()",
+    );
+    let text = "";
+    await waitFor(async () => {
+      text = await obEval(
+        vaultId,
+        `app.vault.read(app.vault.getFileByPath(${JSON.stringify(path)}))`,
+      );
+      return text.includes("groupOrder");
+    }, 30);
+    expect(text).toContain(
+      "    groupBy:\n      property: colorName\n      direction: ASC\n",
+    );
+    expect(text).toContain(
+      `    groupOrder:\n${shown.map((colour) => `      - ${colour}`).join("\n")}`,
+    );
+    await obEval(vaultId, open);
+    const reopened = await tabWhen((tab) => tab.count !== null);
+    expect(reopened.headings).toEqual(after.headings);
+    expect(reopened.count).toBe(after.count);
   }, 180000);
 
   it("renders the deterministic PDF matrix and reuses its cache", async () => {
