@@ -7,11 +7,14 @@ import { parseIndexedKey } from "@zotlit/db";
 import type { QueryDataset } from "./dataset";
 import type { Diagnostic } from "./diagnose";
 import { ItemQueryError } from "./error";
+import type { ItemQueryErrorCode } from "./error";
 import type { ItemQueryFault } from "./fault";
 import type { FieldNeeds, QueryItem, SortKey } from "./fields";
 import type { FaultedFormulaRead, FilterPlan } from "./filter-plan";
 import { formulaOrderFault, planFormulas } from "./formulas";
 import type { FaultedFormula, PlannedColumn, PlannedFormula } from "./formulas";
+import { nameDictionary } from "./name-dictionary";
+import type { NameDictionary } from "./name-dictionary";
 import { canGroup, planPath, readPath } from "./projection";
 import type { PlannedPath } from "./projection";
 import type { QueryClock } from "./query-clock";
@@ -68,7 +71,20 @@ export interface ItemQueryRequest {
    * `fields` reads it as `formula.<name>`.
    */
   readonly formulas?: Readonly<Record<string, string>> | undefined;
+  /**
+   * What a Formula with a mistake does to the query. `"fail"`, the default:
+   * the query fails with the first such mistake. `"leave-out"`: the Query
+   * Rows leave out each such Formula and each Formula that reads one, and
+   * `formulaFaults` of the answer gives their Diagnostics.
+   */
+  readonly formulaFaults?: "fail" | "leave-out" | undefined;
 }
+
+/**
+ * The Formulas of a request that have a mistake, each by name with its
+ * Diagnostic.
+ */
+export type FormulaFaults = NameDictionary<Diagnostic<ItemQueryErrorCode>>;
 
 /** The records `this` binds, each by its Indexed Key. */
 export interface QueryContext {
@@ -145,6 +161,11 @@ export interface QueryMetadata {
     | "unknown-collection"
     | "unused-formula"
   >[];
+  /**
+   * The Formulas that the query left out, each with its Diagnostic: only
+   * when the request leaves out Formulas with a mistake.
+   */
+  readonly formulaFaults?: FormulaFaults;
   /** The normalized request. */
   readonly query: ItemQuery;
   readonly returnedCount: number;
@@ -166,6 +187,11 @@ export interface ItemQueryPlan<Item = any, Needs = any> {
   readonly formulas: readonly PlannedFormula<Item, Needs>[];
   /** The Formulas that the request names and never reads. */
   readonly unusedFormulas: readonly string[];
+  /**
+   * The Formulas with a mistake that the query leaves out, or null when the
+   * request fails on such a Formula.
+   */
+  readonly formulaFaults: FormulaFaults | null;
   /** The values of each Query Row, in the order of `fields`. */
   readonly columns: readonly PlannedColumn<Item, Needs>[];
   readonly group: PlannedGroup<Item, Needs> | null;
@@ -267,15 +293,35 @@ export function planRequest(
       context = { ...context, [member]: key };
     }
 
-    // The policy for a Formula with a mistake: the request fails with the
-    // Fault at its root, the first in request order.
+    // The policy for a Formula with a mistake. "fail": the request fails
+    // with the Fault at its root, the first in request order. "leave-out":
+    // the Query Rows leave out the Formula, and each Formula with a mistake
+    // gets its Diagnostic.
+    const leaveOut = request.formulaFaults === "leave-out";
     const formulas = planFormulas(dataset, request.formulas, context);
     const formulaFailure = (
       faulted: FaultedFormula | FaultedFormulaRead,
     ): ItemQueryError =>
       new ItemQueryError({ dataset, ...formulas.rootError(faulted) });
+    // A `formula.<name>` of fields that names no Formula, by name.
+    const undefinedColumns: [string, ItemQueryError][] = [];
+    const formulaFaults = (): FormulaFaults =>
+      nameDictionary(
+        [
+          ...formulas
+            .faulted()
+            .map(
+              (formula) =>
+                [
+                  formula.name,
+                  new ItemQueryError({ dataset, ...formulas.error(formula) }),
+                ] as const,
+            ),
+          ...undefinedColumns,
+        ].map(([name, error]) => [name, error.diagnostic] as const),
+      );
     const [invalidName] = formulas.invalidNames;
-    if (invalidName) return yield* formulaFailure(invalidName);
+    if (invalidName && !leaveOut) return yield* formulaFailure(invalidName);
 
     let filter: FilterPlan | null = null;
     if (request.filter !== undefined) {
@@ -285,8 +331,22 @@ export function planRequest(
         formulas.resolve,
       );
       if ("kind" in planned) {
-        if (planned.kind === "reads-faulted-formula")
-          return yield* formulaFailure(planned);
+        if (planned.kind === "reads-faulted-formula") {
+          if (!leaveOut) return yield* formulaFailure(planned);
+          // Plan the Formulas of fields too, so the failure gives each
+          // Formula with a mistake.
+          for (const text of request.fields ?? dataset.defaultFields)
+            formulas.column(text);
+          formulas.planReads([request.filter]);
+          return yield* new ItemQueryError({
+            dataset,
+            context,
+            fault: { ...planned, root: formulas.rootError(planned) },
+            location: { argument: "filter", span: planned.at },
+            argumentText: request.filter,
+            formulaFaults: formulaFaults(),
+          });
+        }
         return yield* new ItemQueryError({
           dataset,
           context,
@@ -311,14 +371,27 @@ export function planRequest(
       const formula = formulas.column(text);
       if (formula !== null) {
         if ("problem" in formula) {
-          return yield* new ItemQueryError({
+          const error = new ItemQueryError({
             dataset,
             fault: formula.problem,
             location: { argument: "fields", index, path: `fields[${index}]` },
             argumentText: JSON.stringify(fields),
           });
+          const { problem } = formula;
+          if (
+            leaveOut &&
+            problem.kind === "unknown" &&
+            problem.role === "formula"
+          ) {
+            undefinedColumns.push([problem.name, error]);
+            continue;
+          }
+          return yield* error;
         }
-        if ("fault" in formula) return yield* formulaFailure(formula);
+        if ("fault" in formula) {
+          if (leaveOut) continue;
+          return yield* formulaFailure(formula);
+        }
         columns.push({ kind: "formula", formula });
         continue;
       }
@@ -415,6 +488,9 @@ export function planRequest(
       });
     }
 
+    // Each Formula that the request reads gets its own mark.
+    if (leaveOut) formulas.planReads([]);
+
     const normalized = sort.map(({ field, direction }) => ({
       field,
       direction,
@@ -436,6 +512,7 @@ export function planRequest(
       paths,
       formulas: formulas.planned(),
       unusedFormulas: formulas.unread(),
+      formulaFaults: leaveOut ? formulaFaults() : null,
       columns,
       group,
       groupNeeds: group ? [group.needs] : [],

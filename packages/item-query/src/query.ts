@@ -176,6 +176,7 @@ export function consumeQuery<Request extends ItemQueryRequest, A, E, R>(
           )).flat(),
           ...plan.unusedFormulas.map(diagnoseUnusedFormula),
         ],
+        formulaFaults: plan.formulaFaults ?? undefined,
         libraries: request.libraries,
         sort: plan.order,
         readScanPage: dataset.readScanPage,

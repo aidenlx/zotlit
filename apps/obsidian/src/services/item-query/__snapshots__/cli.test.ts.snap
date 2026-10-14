@@ -1,0 +1,223 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`zotlit:query formula answer text > keeps the answer text for a Formula that fields reads 1`] = `
+"{
+  "contractVersion": 3,
+  "command": "zotlit:query",
+  "ok": true,
+  "identity": {
+    "vault": {
+      "name": "Research",
+      "path": "/vaults/research"
+    },
+    "source": {
+      "id": "source-1",
+      "databasePath": "/zotero/zotero.sqlite"
+    }
+  },
+  "libraries": [
+    {
+      "type": "personal"
+    }
+  ],
+  "request": {
+    "from": "items",
+    "library": [
+      "personal"
+    ],
+    "filter": "indexedKey == \\"BK2MNTH2\\"",
+    "fields": [
+      "title",
+      "formula.year"
+    ],
+    "sort": [
+      {
+        "field": "dateModified",
+        "direction": "desc"
+      }
+    ],
+    "limit": 100,
+    "formulas": {
+      "year": "date.year",
+      "unused": "title"
+    }
+  },
+  "returnedCount": 1,
+  "truncated": false,
+  "warnings": [
+    {
+      "code": "unused-formula",
+      "message": "The request defines formula.unused and reads it nowhere, so the query does not compute it.",
+      "hint": "Add formula.unused to fields to get its value, or remove it from formulas.",
+      "location": {
+        "argument": "formulas",
+        "path": "unused"
+      },
+      "severity": "warning",
+      "report": [
+        "The request defines formula.unused and reads it nowhere, so the query does not compute it.",
+        "Add formula.unused to fields to get its value, or remove it from formulas."
+      ],
+      "found": "unused",
+      "expected": [
+        "formula.<name> in fields"
+      ],
+      "suggestions": []
+    }
+  ],
+  "rows": [
+    {
+      "indexedKey": "BK2MNTH2",
+      "values": {
+        "title": "Methods for Everyone",
+        "formula.year": 2019
+      }
+    }
+  ]
+}"
+`;
+
+exports[`zotlit:query formula answer text > keeps the answer text for a Formula that fields reads and no request defines 1`] = `
+"{
+  "contractVersion": 3,
+  "command": "zotlit:query",
+  "ok": false,
+  "diagnostic": {
+    "code": "unknown-formula",
+    "message": "\\"formula.yeer\\" reads the Formula \\"yeer\\", which the request does not define.",
+    "hint": "Try: fields='[\\"title\\",\\"formula.year\\"]'",
+    "location": {
+      "argument": "fields",
+      "index": 1,
+      "path": "fields[1]"
+    },
+    "severity": "error",
+    "report": [
+      "\\"formula.yeer\\" reads the Formula \\"yeer\\", which the request does not define.",
+      "formula.yeer",
+      "^^^^^^^^^^^^",
+      "Try: fields='[\\"title\\",\\"formula.year\\"]'"
+    ],
+    "excerpt": {
+      "before": "",
+      "at": "formula.yeer",
+      "after": ""
+    },
+    "found": "yeer",
+    "expected": [
+      "year"
+    ],
+    "suggestions": [
+      "fields='[\\"title\\",\\"formula.year\\"]'"
+    ]
+  }
+}"
+`;
+
+exports[`zotlit:query formula answer text > keeps the answer text for a wrong Formula that another Formula reads 1`] = `
+"{
+  "contractVersion": 3,
+  "command": "zotlit:query",
+  "ok": false,
+  "diagnostic": {
+    "code": "wrong-operand-type",
+    "message": "In formula.bad: The operator * cannot use a string and a number.",
+    "hint": "* takes two numbers. Convert a text first with number(), such as number(volume), or with date().",
+    "location": {
+      "argument": "formulas",
+      "path": "bad",
+      "span": {
+        "from": 0,
+        "to": 9
+      }
+    },
+    "severity": "error",
+    "report": [
+      "In formula.bad: The operator * cannot use a string and a number.",
+      "title * 2",
+      "^^^^^^^^^",
+      "* takes two numbers. Convert a text first with number(), such as number(volume), or with date()."
+    ],
+    "excerpt": {
+      "before": "",
+      "at": "title * 2",
+      "after": ""
+    },
+    "found": "a string and a number",
+    "expected": [],
+    "suggestions": []
+  }
+}"
+`;
+
+exports[`zotlit:query formula answer text > keeps the answer text for a wrong Formula that fields reads 1`] = `
+"{
+  "contractVersion": 3,
+  "command": "zotlit:query",
+  "ok": false,
+  "diagnostic": {
+    "code": "wrong-operand-type",
+    "message": "In formula.bad: The operator * cannot use a string and a number.",
+    "hint": "* takes two numbers. Convert a text first with number(), such as number(volume), or with date().",
+    "location": {
+      "argument": "formulas",
+      "path": "bad",
+      "span": {
+        "from": 0,
+        "to": 9
+      }
+    },
+    "severity": "error",
+    "report": [
+      "In formula.bad: The operator * cannot use a string and a number.",
+      "title * 2",
+      "^^^^^^^^^",
+      "* takes two numbers. Convert a text first with number(), such as number(volume), or with date()."
+    ],
+    "excerpt": {
+      "before": "",
+      "at": "title * 2",
+      "after": ""
+    },
+    "found": "a string and a number",
+    "expected": [],
+    "suggestions": []
+  }
+}"
+`;
+
+exports[`zotlit:query formula answer text > keeps the answer text for a wrong Formula that the filter reads 1`] = `
+"{
+  "contractVersion": 3,
+  "command": "zotlit:query",
+  "ok": false,
+  "diagnostic": {
+    "code": "wrong-operand-type",
+    "message": "In formula.bad: The operator * cannot use a string and a number.",
+    "hint": "* takes two numbers. Convert a text first with number(), such as number(volume), or with date().",
+    "location": {
+      "argument": "formulas",
+      "path": "bad",
+      "span": {
+        "from": 0,
+        "to": 9
+      }
+    },
+    "severity": "error",
+    "report": [
+      "In formula.bad: The operator * cannot use a string and a number.",
+      "title * 2",
+      "^^^^^^^^^",
+      "* takes two numbers. Convert a text first with number(), such as number(volume), or with date()."
+    ],
+    "excerpt": {
+      "before": "",
+      "at": "title * 2",
+      "after": ""
+    },
+    "found": "a string and a number",
+    "expected": [],
+    "suggestions": []
+  }
+}"
+`;

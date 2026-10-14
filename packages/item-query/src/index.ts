@@ -46,6 +46,7 @@ export {
   type FormulaReference,
 } from "./formulas";
 export type {
+  FormulaFaults,
   ItemQuery,
   ItemQueryRequest,
   ProjectionValue,

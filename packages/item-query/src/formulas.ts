@@ -190,6 +190,17 @@ export interface FormulaPlanner<Item = any, Needs = any> {
   readonly rootError: (
     faulted: FaultedFormula | FaultedFormulaRead,
   ) => FormulaError;
+  /**
+   * The Fault of a faulted Formula itself: the Fault in its own definition,
+   * or the read of the first Formula with a mistake that its text reads.
+   */
+  readonly error: (faulted: FaultedFormula) => FormulaError;
+  /**
+   * Plan each Formula that `texts` or a planned Formula reads, also after a
+   * reader's first read of a Formula with a mistake, so that each Formula the
+   * request reads is planned or faulted.
+   */
+  readonly planReads: (texts: readonly string[]) => void;
   /** The planned Formulas, each once, a Formula after the Formulas it reads. */
   readonly planned: () => readonly PlannedFormula<Item, Needs>[];
   /** The faulted Formulas, each once, with the invalid names first. */
@@ -229,6 +240,15 @@ export function planFormulas(
   // A Formula in `planning` is a reader of the one in planning after it, so a
   // name already there closes a cycle.
   const planning: string[] = [];
+
+  const rootError = (
+    formula: FaultedFormula | FaultedFormulaRead,
+  ): FormulaError => {
+    let fault = "fault" in formula ? formula.fault : formula;
+    while (fault.kind === "reads-faulted-formula")
+      fault = faulted.get(fault.name)!.fault;
+    return fault.error;
+  };
 
   const unknown = (name: string, at: Span) =>
     ({ kind: "unknown", role: "formula", name, at, formulas: names }) as const;
@@ -307,11 +327,55 @@ export function planFormulas(
         return { problem: unknown(name, { from: 0, to: text.length }) };
       return plan(name);
     },
-    rootError: (formula) => {
-      let fault = "fault" in formula ? formula.fault : formula;
-      while (fault.kind === "reads-faulted-formula")
-        fault = faulted.get(fault.name)!.fault;
-      return fault.error;
+    rootError,
+    error: ({ name, text, fault }) => {
+      // A Formula on a cycle gives the cycle from itself, at its read of the
+      // next Formula of the cycle.
+      const root = fault.kind === "own" ? fault.error : rootError(fault);
+      if (root.fault.kind === "formula-cycle") {
+        const chain = root.fault.chain.slice(0, -1);
+        const at = chain.indexOf(name);
+        if (at !== -1) {
+          const from = [...chain.slice(at), ...chain.slice(0, at)];
+          const span = fault.kind === "own" ? root.fault.at : fault.at;
+          return {
+            ...root,
+            fault: { ...root.fault, chain: [...from, name], at: span },
+            location: { ...root.location, path: name, span },
+            argumentText: text,
+          };
+        }
+      }
+      if (fault.kind === "own") return fault.error;
+      return {
+        context,
+        fault: { ...fault, root: rootError(fault) },
+        location: { argument: "formulas", path: name, span: fault.at },
+        argumentText: text,
+      };
+    },
+    planReads: (texts) => {
+      const invalid = new Set(invalidNames.map((formula) => formula.name));
+      const queued = new Set<string>();
+      const queue = [...texts];
+      const enqueuePlanned = () => {
+        for (const formula of [...planned.values(), ...faulted.values()]) {
+          if (invalid.has(formula.name) || queued.has(formula.name)) continue;
+          queued.add(formula.name);
+          queue.push(formula.text);
+        }
+      };
+      enqueuePlanned();
+      for (let text = queue.pop(); text !== undefined; text = queue.pop()) {
+        for (const { name } of formulaReferences(text))
+          if (
+            Object.hasOwn(defined, name) &&
+            !planned.has(name) &&
+            !faulted.has(name)
+          )
+            plan(name);
+        enqueuePlanned();
+      }
     },
     planned: () => [...planned.values()],
     faulted: () => [...faulted.values()],
