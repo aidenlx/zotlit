@@ -285,7 +285,7 @@ _Avoid_: attempt (bare), run, preview retention (the editor's, not the CLI's)
 ### Annotation view
 
 **Annotation View** _(Obsidian)_:
-The sidebar pane that shows one Attachment's live Annotations as Annotation Cards, chosen by its Follow Mode and narrowed by its Annotation Filter. It reads whether or not Zotero is running; the Editing Capability decides only whether a card's verbs can act.
+The sidebar pane that shows one Attachment's live Annotations as Annotation Cards, chosen by its Follow Mode and narrowed by its Annotation Filter. It reads whether or not Zotero is running; the Editing Capability decides only whether a card's verbs can act. Under [#1459](https://github.com/aidenlx/zotlit/issues/1459) it becomes the sidebar Query View: the Annotations Layout with the followed Item as its Query Context, showing only the controls that have a meaning for one Item.
 _Avoid_: annotation sidebar, annotation panel, annotation list (that is the cards alone)
 
 **Annotation Filter**:
@@ -441,6 +441,28 @@ _Avoid_: char array, text layer (that is Obsidian's DOM), page text
 **Page Label**:
 The printed page number Zotero shows for a page, predicted from the document's characters and catalog, then aligned to the user's earlier Annotations on the Attachment.
 _Avoid_: page number (the 1-based index), page index
+
+### Query views
+
+**Query File** _(Obsidian)_:
+A `.zotquery` vault file that holds one or more Query Views over the Zotero library, with shared filters, formulas and property settings in the shape of an Obsidian `.base` file. It opens in a tab and embeds with `![[file.zotquery]]` or `![[file.zotquery#View]]`.
+_Avoid_: base, query note, view file
+
+**Query Block**:
+A ` ```zotquery ` code block in a note that holds the same text as a Query File. The default Literature Note Template renders one in place of the annotation listing in the Managed Region.
+_Avoid_: annotation block, embed block
+
+**Query View**:
+One named view of a Query File or Query Block: a Layout with its own filters, sort, grouping and visible properties, edited through its toolbar. The sidebar Annotation View is a Query View with a fixed Query Context.
+_Avoid_: tab, page, saved search
+
+**Layout**:
+How a Query View draws its rows: Annotations (Annotation Cards), Table (Item rows that expand into Attachments, Annotations and notes, as in Zotero's item list), List, or Cards.
+_Avoid_: view type, mode
+
+**Query Context**:
+The record a Query View is relative to, read as `this` in its filters: the Query File in its own tab, the note that embeds the file or holds the block, or the Item the sidebar Annotation View follows.
+_Avoid_: current note, scope
 
 ### Note content
 
