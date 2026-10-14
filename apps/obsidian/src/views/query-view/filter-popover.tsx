@@ -58,6 +58,8 @@ import type {
 } from "./query-file";
 import { ToolbarPopover } from "./toolbar-popover";
 import type { QueryView } from "./view";
+import { useViewProperties } from "./view-properties";
+import type { ViewProperties } from "./view-properties";
 
 const logger = getLogger(["views", "query-view", "filter"]);
 
@@ -274,20 +276,32 @@ function RowValue({
   );
 }
 
-/** The conditions of one dataset, as the Match editor offers them. */
+/**
+ * The conditions of one dataset, as the Match editor offers them. A
+ * condition shows the Display Name of its field in `properties`, else the
+ * name of its kind.
+ */
 export function filterVocabulary(
   dataset: QueryFileDataset,
-  values: FilterValues,
-  issue: (
-    condition: RowCondition<FilterRow>,
-    path: readonly number[],
-  ) => string | null,
+  {
+    values,
+    issue,
+    properties,
+  }: {
+    values: FilterValues;
+    issue: (
+      condition: RowCondition<FilterRow>,
+      path: readonly number[],
+    ) => string | null;
+    properties: Pick<ViewProperties, "entry"> | null;
+  },
 ): MatchVocabulary<FilterRow> {
   const fields = filterFields(dataset);
   const kinds = fields.map(
     (field): MatchConditionKind<FilterRow> => ({
       kind: field.kind,
-      label: KIND_LABELS[field.kind](),
+      label:
+        properties?.entry(field.path).displayName ?? KIND_LABELS[field.kind](),
       fresh: () => freshFilterRow(field),
       parse: (text) => {
         const row = parseFilterRow(text, fields);
@@ -320,6 +334,8 @@ export interface FilterEditorProps {
   thisView: MatchFilter | undefined;
   values: FilterValues;
   issue: FilterIssue;
+  /** The Properties of the view, whose Display Names name the conditions. */
+  properties: ViewProperties | null;
   /** The sections that show; both by default. */
   sections?: readonly FilterSection[];
   /** Save one section's filters; answers whether they were kept. */
@@ -334,6 +350,7 @@ export function FilterEditor({
   thisView,
   values,
   issue,
+  properties,
   sections: shown = ["all", "view"],
   onChange,
 }: FilterEditorProps) {
@@ -354,11 +371,14 @@ export function FilterEditor({
   }, [app]);
   useEffect(() => () => host[Symbol.dispose](), [host]);
   const vocabulary = (section: FilterSection) =>
-    filterVocabulary(section === "all" ? shared : dataset, values, (_, path) =>
-      issue && issue.section === section && samePath(issue.path, path)
-        ? issue.message
-        : null,
-    );
+    filterVocabulary(section === "all" ? shared : dataset, {
+      values,
+      issue: (_, path) =>
+        issue && issue.section === section && samePath(issue.path, path)
+          ? issue.message
+          : null,
+      properties,
+    });
   const sections = (
     [
       ["all", m.query_view_filter_all_views(), allViews],
@@ -400,6 +420,7 @@ export function FilterButton({ view }: { view: QueryView }) {
   const file = useStore(view.state, (s) => s.file);
   const shown = useStore(view.state, (s) => s.view);
   const filterIssue = useStore(view.state, (s) => s.filterIssue);
+  const properties = useViewProperties(view);
   const [values, setValues] = useState<FilterValues>(NO_VALUES);
   if (!file || !shown) return null;
   return (
@@ -422,7 +443,8 @@ export function FilterButton({ view }: { view: QueryView }) {
         thisView={shown.filters}
         values={values}
         issue={filterIssue}
-        onChange={(section, next) => view.setFilters(section, next)}
+        properties={properties}
+        onChange={(section, next) => view.document.setFilters(section, next)}
       />
     </ToolbarPopover>
   );

@@ -15,6 +15,7 @@ import { FilterEditor } from "@/views/query-view/filter-popover";
 import type { FilterValues } from "@/views/query-view/filter-popover";
 import { allViewsDataset } from "@/views/query-view/query-file";
 import type { QueryView } from "@/views/query-view/view";
+import { useViewProperties } from "@/views/query-view/view-properties";
 
 const logger = getLogger(["views", "annot-view", "filter"]);
 
@@ -24,6 +25,7 @@ function SidebarFilter({ query }: { query: QueryView }) {
   const file = useStore(query.state, (s) => s.file);
   const shown = useStore(query.state, (s) => s.view);
   const filterIssue = useStore(query.state, (s) => s.filterIssue);
+  const properties = useViewProperties(query);
   const [values, setValues] = useState<FilterValues>(NO_VALUES);
   useEffect(() => {
     query.filterValues().then(setValues, (error: unknown) => {
@@ -40,8 +42,9 @@ function SidebarFilter({ query }: { query: QueryView }) {
       thisView={shown.filters}
       values={values}
       issue={filterIssue}
+      properties={properties}
       sections={["view"]}
-      onChange={(section, next) => query.setFilters(section, next)}
+      onChange={(section, next) => query.document.setFilters(section, next)}
     />
   );
 }

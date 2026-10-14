@@ -9,7 +9,7 @@ import { act } from "preact/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { nameDictionary } from "@zotlit/item-query";
-import type { FormulaFaults, QueryContext } from "@zotlit/item-query";
+import type { FormulaDiagnostics, QueryContext } from "@zotlit/item-query";
 
 import { Effect } from "@/lib/effect";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
@@ -520,7 +520,7 @@ it("keeps a renamed view on screen without running it again", async () => {
   const { view, el, run, settle } = await mount([result([row("ANNOTBBB")])]);
   await act(() => view.setText(FILE));
   await settle();
-  await act(() => view.renameView(0, "Yellow highlights"));
+  await act(() => view.document.renameView(0, "Yellow highlights"));
   await settle();
 
   expect(el.querySelector("[data-query-view-menu]")?.textContent).toBe(
@@ -538,8 +538,8 @@ it("changes the cards at once for an Annotations layout option, and saves it", a
   await settle();
   expect(el.querySelector(".zt-annot-page-chip")?.textContent).toContain("1");
 
-  await act(() => view.setViewOption(0, "showPage", false));
-  await act(() => view.setViewOption(0, "cardWidth", 420));
+  await act(() => view.document.setViewOption(0, "showPage", false));
+  await act(() => view.document.setViewOption(0, "cardWidth", 420));
   await settle();
 
   expect(el.querySelector(".zt-annot-page-chip")?.textContent).toBe("");
@@ -559,7 +559,7 @@ describe("saving a toolbar edit", () => {
     const { view, saved, settle } = await mount([]);
     await act(() => view.setText(FILE));
     await settle();
-    await act(() => view.renameView(0, "Yellow highlights"));
+    await act(() => view.document.renameView(0, "Yellow highlights"));
     expect(saved).toEqual([]);
     await act(() => view.unload());
     expect(saved).toHaveLength(1);
@@ -574,7 +574,7 @@ describe("saving a toolbar edit", () => {
     const runs = run.mock.calls.length;
 
     echo = (text) => view.setText(text);
-    await act(() => view.editView({ limit: 6 }));
+    await act(() => view.document.editView({ limit: 6 }));
     await settle();
     const shown = view.state.getState().file;
     expect(shown?.views[0]?.limit).toBe(6);
@@ -593,7 +593,7 @@ describe("saving a toolbar edit", () => {
     });
     await act(() => view.setText(FILE));
     await settle();
-    await act(() => view.editView({ limit: 5 }));
+    await act(() => view.document.editView({ limit: 5 }));
     await settle();
     const runs = run.mock.calls.length;
 
@@ -627,7 +627,7 @@ describe("saving a toolbar edit", () => {
     expect(el.querySelector("[data-query-read-only]")).toBeNull();
 
     await act(async () => {
-      view.editView({ limit: 5 });
+      view.document.editView({ limit: 5 });
       await view.flush();
     });
     expect(view.state.getState().view?.limit).toBe(5);
@@ -635,7 +635,7 @@ describe("saving a toolbar edit", () => {
 
     fail = false;
     await act(async () => {
-      view.editView({ limit: 6 });
+      view.document.editView({ limit: 6 });
       await view.flush();
     });
     expect(el.querySelector("[data-query-read-only]")).toBeNull();
@@ -854,7 +854,7 @@ it("writes a filter change to the file, and runs the view with it", async () => 
   await settle();
 
   await act(() => {
-    view.setFilters("view", {
+    view.document.setFilters("view", {
       and: ['colorName == "yellow"', 'tags.contains("figure")'],
     });
   });
@@ -879,7 +879,7 @@ it("shows a wrong condition's diagnostic at its row and keeps the last good resu
   await settle();
 
   await act(() => {
-    view.setFilters("view", {
+    view.document.setFilters("view", {
       and: ['colourName == "yellow"', 'tags.contains("figure")'],
     });
   });
@@ -944,6 +944,29 @@ it("edits the filters for all views and for this view from the Filter popover", 
   );
 });
 
+it("names a filter condition by the Display Name of its field", async () => {
+  const { view, el, settle } = await mount(
+    [result([row("ANNOTBBB")])],
+    () => {},
+  );
+  await act(() =>
+    view.setText(`properties:
+  colorName:
+    displayName: Highlight colour
+${FILE}`),
+  );
+  await settle();
+
+  const [color] = section(el, "view").querySelectorAll("[data-condition-row]");
+  const kinds = [...color!.querySelectorAll("option")].map(
+    (option) => option.textContent,
+  );
+  expect(kinds).toContain("Highlight colour");
+  expect(kinds).not.toContain("Color");
+  // A field without a Display Name keeps the name of its condition.
+  expect(kinds).toContain("Item title");
+});
+
 it("shows the query's diagnostic at the wrong condition in the Filter popover", async () => {
   const { view, el, settle } = await mount(
     [result([row("ANNOTBBB")]), filterFault(1, 11)],
@@ -952,7 +975,7 @@ it("shows the query's diagnostic at the wrong condition in the Filter popover", 
   await act(() => view.setText(FILE));
   await settle();
   await act(() => {
-    view.setFilters("view", {
+    view.document.setFilters("view", {
       and: ['colourName == "yellow"', 'tags.contains("figure")'],
     });
   });
@@ -1031,7 +1054,7 @@ it("saves a new order and a new limit to the file, and runs the view again with 
   await act(() => view.setText(FILE));
   await settle();
 
-  await act(() => view.editView({ order: ["comment"], limit: 5 }));
+  await act(() => view.document.editView({ order: ["comment"], limit: 5 }));
   await settle();
   expect(saved).toHaveLength(1);
   expect(saved[0]).toContain("    order:\n      - comment\n");
@@ -1039,7 +1062,7 @@ it("saves a new order and a new limit to the file, and runs the view again with 
   expect(run.mock.calls.at(-1)![0]).toMatchObject({ limit: 5 });
   expect(view.state.getState().view?.name).toBe("Yellow");
 
-  await act(() => view.editView({ limit: undefined }));
+  await act(() => view.document.editView({ limit: undefined }));
   await settle();
   expect(saved[1]).not.toContain("limit: 5");
   expect(run.mock.calls.at(-1)![0]).toMatchObject({ limit: null });
@@ -1118,14 +1141,14 @@ it("switches an Annotations view to Cards and to List, and keeps its rows, filte
   await settle();
   expect(cards(el)).toEqual(["ANNOTAAA", "ANNOTAAA", "ANNOTBBB"]);
 
-  await act(() => view.setViewLayout(0, "cards"));
+  await act(() => view.document.setViewLayout(0, "cards"));
   await settle();
   expect(cards(el)).toEqual([]);
   expect(shownRows(el)).toEqual(["ANNOTAAA", "ANNOTAAA", "ANNOTBBB"]);
   expect(headings(el)).toEqual(["figure", "method"]);
   expect(el.querySelector("[data-query-count]")?.textContent).toBe("2 results");
 
-  await act(() => view.setViewLayout(0, "list"));
+  await act(() => view.document.setViewLayout(0, "list"));
   await settle();
   expect(shownRows(el)).toEqual(["ANNOTAAA", "ANNOTAAA", "ANNOTBBB"]);
   expect(headings(el)).toEqual(["figure", "method"]);
@@ -1141,7 +1164,7 @@ it("switches an Annotations view to Cards and to List, and keeps its rows, filte
   ).toHaveLength(1);
 
   // Back on the Annotations layout, the same rows are cards again.
-  await act(() => view.setViewLayout(0, "annotations"));
+  await act(() => view.document.setViewLayout(0, "annotations"));
   await settle();
   expect(cards(el)).toEqual(["ANNOTAAA", "ANNOTAAA", "ANNOTBBB"]);
   expect(shownRows(el)).toEqual([]);
@@ -1168,22 +1191,22 @@ it("draws the List and Cards options at once, and saves them to the file", async
     el.querySelector("[data-card-size]")?.getAttribute("data-card-size"),
   ).toBe("200");
 
-  await act(() => view.setViewOption(0, "cardSize", 320));
+  await act(() => view.document.setViewOption(0, "cardSize", 320));
   expect(
     el.querySelector("[data-card-size]")?.getAttribute("data-card-size"),
   ).toBe("320");
   expect(saved.at(-1)).toContain("cardSize: 320");
 
-  await act(() => view.setViewLayout(0, "list"));
+  await act(() => view.document.setViewLayout(0, "list"));
   await settle();
   expect(el.querySelector("ul[data-query-markers='bullet']")).not.toBeNull();
-  await act(() => view.setViewOption(0, "markers", "number"));
-  await act(() => view.setViewOption(0, "separator", " · "));
+  await act(() => view.document.setViewOption(0, "markers", "number"));
+  await act(() => view.document.setViewOption(0, "separator", " · "));
   expect(el.querySelector("ol[data-query-markers='number']")).not.toBeNull();
   expect(el.querySelector("[data-query-row]")?.textContent).toBe(
     "Ten simple rules · 2021",
   );
-  await act(() => view.setViewOption(0, "indentProperties", true));
+  await act(() => view.document.setViewOption(0, "indentProperties", true));
   expect(
     [...el.querySelectorAll("[data-query-row] span")].map((n) => n.textContent),
   ).toEqual(["Ten simple rules", "2021", "2021"]);
@@ -1484,7 +1507,7 @@ it("names and searches the properties of Items in Cards and List as the Table do
   await search("journalarticle");
   expect(shownRows(el)).toEqual([]);
 
-  await act(() => view.setViewLayout(0, "list"));
+  await act(() => view.document.setViewLayout(0, "list"));
   await settle();
   await search("journal article");
   expect(shownRows(el)).toEqual(["ITEMAAAA"]);
@@ -1693,7 +1716,7 @@ it("switches a view of Annotations to Items, saves it, and draws the Items in th
   await settle();
   expect(cards(el)).toEqual(["ANNOTBBB"]);
 
-  await act(() => view.setViewDataset(0, "items"));
+  await act(() => view.document.setViewDataset(0, "items"));
   await settle();
   expect(saved.at(-1)).toContain("type: table");
   expect(saved.at(-1)).toContain("from: items");
@@ -1728,7 +1751,7 @@ it("keeps what the new dataset lacks in the file, says the view does not use it,
   );
   await settle();
 
-  await act(() => view.setViewDataset(0, "items"));
+  await act(() => view.document.setViewDataset(0, "items"));
   await settle();
   // The file keeps the sort and the grouping; the Items run without them.
   expect(saved.at(-1)).toContain("property: pageIndex");
@@ -1754,7 +1777,7 @@ it("keeps what the new dataset lacks in the file, says the view does not use it,
   );
   expect(document.body.querySelector("[data-group-unused]")).not.toBeNull();
 
-  await act(() => view.setViewDataset(0, "annotations"));
+  await act(() => view.document.setViewDataset(0, "annotations"));
   await settle();
   expect(run.mock.calls.at(-1)![0]).toMatchObject({
     from: "annotations",
@@ -1775,7 +1798,7 @@ it("shows no rows of the old dataset when the filters fail on the new one", asyn
   await settle();
 
   await act(() => {
-    view.setViewDataset(0, "items");
+    view.document.setViewDataset(0, "items");
   });
   await settle();
   expect(view.state.getState()).toMatchObject({
@@ -1829,17 +1852,17 @@ it("runs a view with every Formula of the file, and shows the values of those it
 });
 
 /** The Diagnostic of a Formula that ZotLit Query left out. */
-type Diagnostic = FormulaFaults[string];
+type Diagnostic = FormulaDiagnostics[string];
 
 /** `outcome` with the Formulas that ZotLit Query left out. */
 function withFaults(
   outcome: QueryViewOutcome,
   faults: Record<string, Diagnostic>,
 ): QueryViewOutcome {
-  const formulaFaults = nameDictionary(Object.entries(faults));
+  const formulaDiagnostics = nameDictionary(Object.entries(faults));
   if (outcome.kind === "result")
-    return { ...outcome, result: { ...outcome.result, formulaFaults } };
-  if (outcome.kind === "failed") return { ...outcome, formulaFaults };
+    return { ...outcome, result: { ...outcome.result, formulaDiagnostics } };
+  if (outcome.kind === "failed") return { ...outcome, formulaDiagnostics };
   return outcome;
 }
 
@@ -2223,7 +2246,7 @@ views:
   expect(marks(cell)).toEqual(expected);
   expect(cell.textContent).toBe("1, , ");
   for (const layout of ["list", "cards"] as const) {
-    await act(() => view.setViewLayout(0, layout));
+    await act(() => view.document.setViewLayout(0, layout));
     await settle();
     const row = el.querySelector("[data-query-row]")!;
     expect(marks(row)).toEqual(expected);

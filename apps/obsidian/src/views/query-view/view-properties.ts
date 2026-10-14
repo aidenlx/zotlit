@@ -1,9 +1,9 @@
 // The Properties a Query View knows, one entry each: its label, whether it
 // is a Formula Property and what ZotLit Query says is wrong with it, whether
 // the view's Query Dataset can read it, and its place in the Visible
-// Properties. The Layouts, copy and CSV, the Properties popover and the Sort
-// and Group controls all read these entries, so a Property shows the same
-// label and the same marks in each.
+// Properties. The Layouts, copy and CSV, the Properties popover, the Sort
+// and Group controls and the Filter conditions all read these entries, so a
+// Property shows the same label and the same marks in each.
 import { useMemo } from "react";
 import { useStore } from "zustand";
 
@@ -30,6 +30,8 @@ export interface PropertyEntry {
   readonly path: string;
   /** Its Display Name, else its field label, else its path. */
   readonly label: string;
+  /** The Display Name the file gives it; else `null`. */
+  readonly displayName: string | null;
   /** The name of the Formula it shows, for `formula.<name>`; else `null`. */
   readonly formula: string | null;
   /** What ZotLit Query names as wrong in its Formula; else `null`. */
@@ -72,13 +74,13 @@ export interface ViewProperties {
 }
 
 /**
- * The Properties of `view` in `file`. `formulaFaults` gives, by Formula
+ * The Properties of `view` in `file`. `formulaIssues` gives, by Formula
  * name, the message of each Formula the last run left out.
  */
 export function viewProperties(
   file: QueryFile | null,
   view: Pick<QueryFileView, "from" | "order" | "sort" | "groupBy">,
-  formulaFaults: Readonly<Record<string, string>> = {},
+  formulaIssues: Readonly<Record<string, string>> = {},
 ): ViewProperties {
   const dataset = view.from ?? "annotations";
   const order = view.order ?? [];
@@ -88,13 +90,15 @@ export function viewProperties(
     if (!found) {
       const formula = formulaName(path);
       const place = order.indexOf(path);
+      const named = (file && displayName(file, path)) ?? null;
       found = {
         path,
-        label: (file && displayName(file, path)) ?? fieldLabel(path),
+        label: named ?? fieldLabel(path),
+        displayName: named,
         formula,
         issue:
-          formula !== null && Object.hasOwn(formulaFaults, formula)
-            ? formulaFaults[formula]!
+          formula !== null && Object.hasOwn(formulaIssues, formula)
+            ? formulaIssues[formula]!
             : null,
         fits: fitsDataset(path, dataset),
         place: place === -1 ? null : place,

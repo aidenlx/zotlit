@@ -13,8 +13,9 @@ import { ItemQueryError } from "./error";
 import type { ItemQueryErrorLocation } from "./error";
 import type { ItemQueryFault, Span } from "./fault";
 import type { FilterPlan } from "./filter-plan";
+import type { FormulaSourceFault } from "./formulas";
 import type { LoadRequest } from "./record-loader";
-import type { TargetLibrary } from "./request";
+import type { ItemQueryPlan, TargetLibrary } from "./request";
 
 /** Each query runs sequentially in one fiber. Cache only completed reads. */
 export const openQuerySources = Effect.sync(() => {
@@ -107,10 +108,33 @@ export const openQuerySources = Effect.sync(() => {
       );
     }
   });
+  /**
+   * The planned Formulas of a request that leaves out a Formula with a
+   * mistake, each with the first custom field that its text names and the
+   * source lacks. Under `"fail"` none: the custom-field check fails the
+   * request. It reads the field vocabulary only for a Formula that names a
+   * custom field.
+   */
+  const formulaSourceFaults = Effect.fnUntraced(function* (
+    plan: Pick<ItemQueryPlan, "formulas" | "formulaDiagnostics">,
+  ) {
+    const found = new Map<string, FormulaSourceFault>();
+    const reading = plan.formulas.filter(
+      (formula) => formula.plan.customFields.length > 0,
+    );
+    if (plan.formulaDiagnostics === null || reading.length === 0) return found;
+    const { customFieldNames } = yield* readVocabulary();
+    for (const formula of reading) {
+      const missing = missingCustomField(formula.plan, customFieldNames);
+      if (missing) found.set(formula.name, missing);
+    }
+    return found;
+  });
   const sources = {
     vocabulary: readVocabulary,
     collectionPaths,
     checkCustomFields,
+    formulaSourceFaults,
     /** The sources already demanded by the request, for synchronous leaf lowering. */
     candidateContext: (library: TargetLibrary): CandidateSources => ({
       library,
@@ -199,10 +223,10 @@ function missingFault(
  * source, with the custom fields `names`, lacks, as a Fault at its text; null
  * when the source has each.
  */
-export function missingCustomField(
+function missingCustomField(
   plan: Pick<FilterPlan, "customFields">,
   names: readonly string[],
-): { readonly fault: ItemQueryFault; readonly at: Span } | null {
+): FormulaSourceFault | null {
   const known = new Set(names);
   for (const use of plan.customFields) {
     const read = expressionUse(use, known);

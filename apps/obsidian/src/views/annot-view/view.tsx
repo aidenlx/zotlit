@@ -325,7 +325,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
       query: (target) =>
         addSidebarQueryMenu(target, {
           view: file ? view : null,
-          edit: (edit) => this.#query.editView(edit),
+          edit: (edit) => this.#query.document.editView(edit),
           openFilter: () =>
             new SidebarFilterModal(this.#deps.app, this.#query).open(),
           ...(file &&

@@ -142,14 +142,14 @@ export function consumeQuery<Request extends ItemQueryRequest, A, E, R>(
 > {
   return Effect.gen(function* () {
     const sources = yield* openQuerySources;
-    // A Formula that names a custom field the source lacks leaves out only
-    // that Formula, so the planner reads the source's custom fields first.
-    const customFieldNames =
-      request.formulaFaults === "leave-out" &&
-      Object.keys(request.formulas ?? {}).length > 0
-        ? (yield* sources.vocabulary()).customFieldNames
-        : undefined;
-    const plan = yield* planRequest(dataset, request, customFieldNames);
+    const planned = yield* planRequest(dataset, request);
+    // Query Sources finds each planned Formula that the request leaves out
+    // for a custom field the source lacks; the plan then leaves it out.
+    const sourceFaults = yield* sources.formulaSourceFaults(planned);
+    const plan =
+      sourceFaults.size === 0
+        ? planned
+        : yield* planRequest(dataset, request, sourceFaults);
     const { query, sorts } = plan;
     const clock = yield* readQueryClock;
     const run = yield* dataset.open(plan, request, { clock, sources });
@@ -183,7 +183,7 @@ export function consumeQuery<Request extends ItemQueryRequest, A, E, R>(
           )).flat(),
           ...plan.unusedFormulas.map(diagnoseUnusedFormula),
         ],
-        formulaFaults: plan.formulaFaults ?? undefined,
+        formulaDiagnostics: plan.formulaDiagnostics ?? undefined,
         libraries: request.libraries,
         sort: plan.order,
         readScanPage: dataset.readScanPage,
