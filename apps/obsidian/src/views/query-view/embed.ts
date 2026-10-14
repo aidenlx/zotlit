@@ -39,6 +39,9 @@ export class QueryFileEmbed extends Component implements EmbedComponent {
   readonly #save: Debouncer<[string], Promise<void>>;
   #pending: Promise<void> = Promise.resolve();
   readonly #events: [{ offref(ref: EventRef): void }, EventRef][] = [];
+  readonly #deps: QueryViewDeps;
+  readonly #scope: Scope;
+  #keys: Disposable | null = null;
 
   constructor(
     deps: QueryViewDeps,
@@ -55,6 +58,8 @@ export class QueryFileEmbed extends Component implements EmbedComponent {
   ) {
     super();
     this.#app = deps.app;
+    this.#deps = deps;
+    this.#scope = new Scope(deps.app.scope);
     this.#context = context;
     this.#file = file;
     this.#item = this.#readItem();
@@ -65,7 +70,7 @@ export class QueryFileEmbed extends Component implements EmbedComponent {
     );
     context.containerEl.addClass("zt-root", "interactive-child");
     this.query = new QueryView(deps, {
-      scope: new Scope(deps.app.scope),
+      scope: this.#scope,
       sourcePath: () => context.sourcePath,
       context: (): QueryContext | undefined =>
         this.#item === null ? undefined : { item: this.#item },
@@ -85,6 +90,12 @@ export class QueryFileEmbed extends Component implements EmbedComponent {
   override onload(): void {
     this.addChild(this.query);
     this.query.render(this.#context.containerEl);
+    // A card in the embed takes the card keys while it has focus.
+    this.#keys = this.#deps.cardFocus.hold(
+      this.#context.containerEl,
+      this.#scope,
+      this.query,
+    );
     const { vault, metadataCache } = this.#app;
     this.#events.push([
       vault,
@@ -107,6 +118,8 @@ export class QueryFileEmbed extends Component implements EmbedComponent {
   override onunload(): void {
     for (const [source, ref] of this.#events) source.offref(ref);
     this.#events.length = 0;
+    this.#keys?.[Symbol.dispose]();
+    this.#keys = null;
     void this.flush();
   }
 
