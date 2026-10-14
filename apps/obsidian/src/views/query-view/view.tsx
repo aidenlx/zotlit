@@ -30,9 +30,25 @@ import { AnnotationsLayout } from "@/views/annot-view/layout";
 import type { AnnotationsLayoutDeps } from "@/views/annot-view/layout";
 import { useAnnotStore } from "@/views/annot-view/store";
 
-import { parseQueryFile, viewFilter } from "./query-file";
-import type { QueryFile, QueryFileProblem, QueryFileView } from "./query-file";
+import { GroupEditor } from "./group-control";
+import { groupOptions, sortOptions } from "./properties";
+import {
+  editView,
+  parseQueryFile,
+  serializeQueryFile,
+  viewFilter,
+} from "./query-file";
+import type {
+  QueryFile,
+  QueryFileProblem,
+  QueryFileView,
+  QueryFileViewEdit,
+} from "./query-file";
 import { LAYOUT_FIELDS, LAYOUT_GROUP_PATHS, layoutRows } from "./rows";
+import type { LayoutGroup } from "./rows";
+import { SearchControl } from "./search-control";
+import { SortEditor } from "./sort-control";
+import { ToolbarPopover } from "./toolbar-popover";
 
 const logger = getLogger(["views", "query-view"]);
 
@@ -58,6 +74,11 @@ export interface QueryViewHost {
   context: () => QueryContext | undefined;
   /** The user chose another view of the file; the host may remember it. */
   onSelectView?: (name: string) => void;
+  /**
+   * Write the file's new text after a toolbar change. Absent where the host
+   * cannot save; the change then shows until the file is read again.
+   */
+  save?: (text: string) => void;
 }
 
 /** What the view shows now, as the toolbar and the host read it. */
@@ -72,8 +93,10 @@ export interface QueryViewState {
   diagnostic:
     | (Pick<Diagnostic, "message" | "hint" | "report"> & { code: string })
     | null;
-  /** The rows the query gave. */
+  /** The rows shown, each once however many groups it stands in. */
   count: number;
+  /** Every group the rows hold, the shown ones first; empty when ungrouped. */
+  groups: readonly LayoutGroup[];
   /** Whether the view's limit cut the rows short. */
   truncated: boolean;
 }
@@ -85,6 +108,7 @@ const INITIAL_STATE: QueryViewState = {
   phase: "idle",
   diagnostic: null,
   count: 0,
+  groups: [],
   truncated: false,
 };
 
@@ -218,6 +242,18 @@ export class QueryView extends Component {
     this.#host.onSelectView?.(name);
   }
 
+  /**
+   * Change the view shown, as a toolbar control asks, and save the file's new
+   * text through the host.
+   */
+  editView(edit: QueryFileViewEdit): void {
+    const { file, view } = this.state.getState();
+    if (!file || !view) return;
+    const text = serializeQueryFile(editView(file, view, edit));
+    this.setText(text);
+    this.#host.save?.(text);
+  }
+
   #choose(): void {
     const { file } = this.state.getState();
     if (!file) return;
@@ -247,6 +283,7 @@ export class QueryView extends Component {
         phase: "idle",
         diagnostic: null,
         count: 0,
+        groups: [],
         truncated: false,
       });
       return;
@@ -298,14 +335,19 @@ export class QueryView extends Component {
         return;
       case "result": {
         const { result } = outcome;
-        const rows = layoutRows(result.rows ?? [], view.groupBy);
+        const shown = layoutRows(
+          result.rows ?? [],
+          view.groupBy,
+          view.groupOrder,
+        );
         this.state.setState({
           phase: "ready",
           diagnostic: null,
-          count: result.returnedCount,
+          count: shown.count,
+          groups: shown.groups,
           truncated: result.truncated,
         });
-        await this.#show(view, rows);
+        await this.#show(view, shown.rows);
         return;
       }
       default:
@@ -458,6 +500,54 @@ function NoResults({ view }: { view: QueryView }) {
   );
 }
 
+function SortButton({ view }: { view: QueryView }) {
+  const current = useQueryViewState(view, (s) => s.view);
+  if (!current) return null;
+  const sort = current.sort ?? [];
+  return (
+    <ToolbarPopover
+      icon="arrow-up-down"
+      label={m.query_view_sort()}
+      active={sort.length > 0}
+      hook="sort"
+    >
+      <SortEditor
+        value={sort}
+        options={sortOptions(current.from)}
+        onChange={(next) =>
+          view.editView({ sort: next.length > 0 ? next : undefined })
+        }
+      />
+    </ToolbarPopover>
+  );
+}
+
+function GroupButton({ view }: { view: QueryView }) {
+  const current = useQueryViewState(view, (s) => s.view);
+  const groups = useQueryViewState(view, (s) => s.groups);
+  if (!current) return null;
+  return (
+    <ToolbarPopover
+      icon="layout-list"
+      label={m.query_view_group()}
+      active={current.groupBy !== undefined}
+      hook="group"
+    >
+      <GroupEditor
+        value={{ groupBy: current.groupBy, groupOrder: current.groupOrder }}
+        options={groupOptions()}
+        groups={groups}
+        onChange={(next) =>
+          view.editView({
+            groupBy: next.groupBy,
+            groupOrder: next.groupOrder,
+          })
+        }
+      />
+    </ToolbarPopover>
+  );
+}
+
 function QueryViewBody({ view }: { view: QueryView }) {
   return (
     <div className="zt:flex zt:h-full zt:flex-col">
@@ -466,9 +556,13 @@ function QueryViewBody({ view }: { view: QueryView }) {
         role="toolbar"
       >
         <ViewMenuButton view={view} />
-        <span className="zt:text-(--text-muted)">
+        <span className="zt:shrink-0 zt:whitespace-nowrap zt:text-(--text-muted)">
           <ResultCount view={view} />
         </span>
+        <SortButton view={view} />
+        <GroupButton view={view} />
+        <span className="zt:flex-1" />
+        <SearchControl />
       </div>
       <Problems view={view} />
       <NoResults view={view} />
