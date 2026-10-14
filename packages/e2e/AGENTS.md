@@ -25,6 +25,15 @@ The suite talks to Obsidian's CLI socket directly, so the `obsidian` command nee
 
 The e2e vault's plugin bundle comes from `@zotlit/obsidian`'s dev build (`build:dev`), never the production build: the Scope Case assertion reads `zotlit:library-scope`, a CLI command registered only under `__DEV__` and absent from production plugin bundles.
 
+## Desktop lock
+
+One process at a time drives the desktop Obsidian and its Paired Zotero, across all worktrees and sessions. `pnpm e2e` (each Vitest project's first global setup), `pnpm e2e:worker` (and so the commit hook), and `measure:query` take the desktop lock themselves and wait while another process holds it. The waiter prints the holder's pid, command, and worktree.
+
+- The lock is `zotlit-desktop.lock` in the git common dir (`git rev-parse --git-common-dir`), shared by every worktree of the clone. A lock whose holder process is gone is taken over.
+- The holder exports `ZOTLIT_DESKTOP_LOCK`; a ZotLit tool started under it reuses the lock.
+- For a manual session on the desktop app (an `/obsidian-debug` walk, a series of `git commit` runs), hold the lock with `pnpm desktop-lock -- <command>`. The exit code is the command's.
+- Code: `packages/scripts/lib/desktop-lock.ts`.
+
 ## Isolation
 
 Each suite builds its own Fixture and new purged vaults under `.scratch/e2e-*`. The paired project's setup (`src/paired-setup.ts`) starts its Paired Zotero before test collection and owns its teardown at the end of the run; startup failure stops the run before tests begin. Desktop-only selections do not start Paired Zotero. The next run clears what a crashed run left. The developer's Fixture, Development Vault, and Paired Run stay open and untouched.
