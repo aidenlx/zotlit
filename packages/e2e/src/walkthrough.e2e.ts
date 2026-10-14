@@ -798,40 +798,41 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     })()`,
     );
     const editor =
-      "app.workspace.getLeavesOfType('zotlit-template-workbench')[0]?.view";
+      "app.workspace.getLeavesOfType('zotlit-template-workbench').find(leaf=>leaf.view.file?.path===app.plugins.plugins.zotlit.services.profile.defaultDocumentPath)?.view";
+    // Opening the layout can move and reload the editor. Use the button only
+    // after its companion panes arrive in the same popout document.
     expect(
       await obEvalUntil(
         vaultId,
-        `String(!!(${editor})?.contentEl.querySelector('.zt-selection-trigger'))`,
+        `(()=>{
+          const view=${editor};
+          const doc=view?.contentEl?.ownerDocument;
+          const ready=doc&&doc!==document
+            &&['zotlit-template-data-explorer','zotlit-note-preview'].every(type=>app.workspace.getLeavesOfType(type).some(leaf=>leaf.view.contentEl?.ownerDocument===doc));
+          const trigger=ready&&view.contentEl.querySelector('.zt-selection-trigger');
+          if(!trigger)return 'false';
+          trigger.click();return 'true';
+        })()`,
         { expected: "true" },
       ),
     ).toBe(true);
-    await obEval(
-      vaultId,
-      `(${editor}).contentEl.querySelector('.zt-selection-trigger').click();true`,
-    );
-    const prompt = "activeDocument.querySelector('.prompt')";
+    const prompt = `(${editor})?.contentEl?.ownerDocument.querySelector('.prompt')`;
     expect(
       await obEvalUntil(
         vaultId,
-        `String(!!(${prompt})?.querySelector('input'))`,
+        `(()=>{const input=(${prompt})?.querySelector('input');if(!input)return 'false';input.value='rougier';input.dispatchEvent(new input.ownerDocument.defaultView.Event('input',{bubbles:true}));return 'true';})()`,
         { expected: "true" },
       ),
     ).toBe(true);
-    await obEval(
-      vaultId,
-      `(()=>{const input=(${prompt}).querySelector('input');input.value='rougier';input.dispatchEvent(new input.ownerDocument.defaultView.Event('input',{bubbles:true}));return true;})()`,
-    );
     const result = `Array.from((${prompt})?.querySelectorAll('.suggestion-item')??[]).find(row=>row.textContent.includes('Ten Simple Rules for Better Figures'))`;
     expect(
-      await obEvalUntil(vaultId, `String(!!(${result}))`, { expected: "true" }),
+      await obEvalUntil(
+        vaultId,
+        `(()=>{const row=${result};if(!row)return 'false';row.dispatchEvent(new row.ownerDocument.defaultView.MouseEvent('mousemove',{bubbles:true}));row.click();return 'true';})()`,
+        { expected: "true" },
+      ),
     ).toBe(true);
-    await obEval(
-      vaultId,
-      `(()=>{const row=${result};row.dispatchEvent(new row.ownerDocument.defaultView.MouseEvent('mousemove',{bubbles:true}));row.click();return true;})()`,
-    );
-    const preview =
-      "app.workspace.getLeavesOfType('zotlit-note-preview')[0]?.view.contentEl";
+    const preview = `app.workspace.getLeavesOfType('zotlit-note-preview').find(leaf=>leaf.view.contentEl?.ownerDocument===(${editor})?.contentEl?.ownerDocument)?.view.contentEl`;
     expect(
       await obEvalUntil(
         vaultId,
