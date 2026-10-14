@@ -1235,16 +1235,8 @@ it("switches a view of Annotations to Items, saves it, and draws the Items in th
   await settle();
   expect(cards(el)).toEqual(["ANNOTBBB"]);
 
-  let removed: ReturnType<QueryView["setViewDataset"]> = null;
-  await act(() => {
-    removed = view.setViewDataset(0, "items");
-  });
+  await act(() => view.setViewDataset(0, "items"));
   await settle();
-  expect(removed).toEqual({
-    sort: [],
-    groupBy: "item.indexedKey",
-    order: [],
-  });
   expect(saved.at(-1)).toContain("type: table");
   expect(saved.at(-1)).toContain("from: items");
   expect(run.mock.calls.at(-1)![0]).toMatchObject({ from: "items" });
@@ -1255,6 +1247,65 @@ it("switches a view of Annotations to Items, saves it, and draws the Items in th
   expect(first).toContain("Journal Article");
   expect(first).toContain("Ten simple rules");
   expect(first!.at(-1)).toBe("Create");
+});
+
+it("keeps what the new dataset lacks in the file, says the view does not use it, and uses it again on the old dataset", async () => {
+  const { view, el, run, saved, settle } = await mount([
+    result([row("ANNOTBBB")]),
+    result([itemRow("ITEMAAAA", "Ten simple rules")]),
+    result([row("ANNOTBBB")]),
+  ]);
+  await act(() =>
+    view.setText(`views:
+  - type: annotations
+    name: Yellow
+    from: annotations
+    sort:
+      - property: pageIndex
+        direction: ASC
+    groupBy:
+      property: item.indexedKey
+      direction: ASC
+`),
+  );
+  await settle();
+
+  await act(() => view.setViewDataset(0, "items"));
+  await settle();
+  // The file keeps the sort and the grouping; the Items run without them.
+  expect(saved.at(-1)).toContain("property: pageIndex");
+  expect(saved.at(-1)).toContain("property: item.indexedKey");
+  const items = run.mock.calls.at(-1)![0];
+  expect(items).toMatchObject({ from: "items" });
+  expect(items).not.toHaveProperty("sort");
+  expect(view.state.getState().problems).toEqual([]);
+  expect(tableText(el)[1]).toContain("Ten simple rules");
+  expect(el.querySelector("[data-query-unused]")?.textContent).toBe(
+    "Items have no pageIndex, item.indexedKey, so this view does not use them.",
+  );
+  await act(() =>
+    el.querySelector<HTMLElement>('[data-query-toolbar="sort"]')!.click(),
+  );
+  expect(
+    document.body
+      .querySelector('[data-sort-row="pageIndex"]')
+      ?.hasAttribute("data-sort-unused"),
+  ).toBe(true);
+  await act(() =>
+    el.querySelector<HTMLElement>('[data-query-toolbar="group"]')!.click(),
+  );
+  expect(document.body.querySelector("[data-group-unused]")).not.toBeNull();
+
+  await act(() => view.setViewDataset(0, "annotations"));
+  await settle();
+  expect(run.mock.calls.at(-1)![0]).toMatchObject({
+    from: "annotations",
+    sort: [{ field: "pageIndex", direction: "asc" }],
+  });
+  expect(el.querySelector("[data-query-unused]")).toBeNull();
+  expect(view.state.getState().groups.map((group) => group.label)).toEqual([
+    "Ten simple rules",
+  ]);
 });
 
 it("shows no rows of the old dataset when the filters fail on the new one", async () => {

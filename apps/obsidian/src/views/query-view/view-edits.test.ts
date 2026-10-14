@@ -11,6 +11,7 @@ import {
   setViewDataset,
   setViewLayout,
   setViewOption,
+  unusedSettings,
   viewNameIssue,
 } from "./view-edits";
 
@@ -125,8 +126,8 @@ describe("view edits", () => {
     expect(file.views[2]!.type).toBe("table");
   });
 
-  it("switches a view to Items: the Table draws it, its filters stay, and what Items lack comes off and is named", () => {
-    const edit = setViewDataset(
+  it("switches a view to Items: the Table draws it, and its filters, sort, grouping and properties stay in the file", () => {
+    const file = setViewDataset(
       parseQueryFile(`views:
   - type: annotations
     name: Figures
@@ -150,37 +151,56 @@ describe("view edits", () => {
       0,
       "items",
     );
-    const view = saved(edit.file).views[0]!;
+    const view = saved(file).views[0]!;
     expect(view).toMatchObject({
       type: "table",
       from: "items",
       filters: 'tags.contains("figure")',
-      sort: [{ property: "dateAdded", direction: "DESC" }],
-      order: ["dateAdded"],
+      sort: [
+        { property: "pageIndex", direction: "ASC" },
+        { property: "dateAdded", direction: "DESC" },
+      ],
+      groupBy: { property: "item.indexedKey", direction: "ASC" },
+      groupOrder: ["RUGIER24"],
+      order: ["comment", "dateAdded"],
       limit: 100,
     });
-    expect(view.groupBy).toBeUndefined();
-    expect(view.groupOrder).toBeUndefined();
-    expect(edit.removed).toEqual({
+    // Items have no page, no grouping by Item and no comment: the view does
+    // not use them while it shows Items.
+    expect(unusedSettings(view)).toEqual({
       sort: ["pageIndex"],
       groupBy: "item.indexedKey",
       order: ["comment"],
     });
+    // Back on Annotations, the view uses each of them again.
+    const back = saved(setViewDataset(file, 0, "annotations")).views[0]!;
+    expect(back.type).toBe("annotations");
+    expect(unusedSettings(back)).toEqual({
+      sort: [],
+      groupBy: null,
+      order: [],
+    });
   });
 
   it("keeps the layout of a view that can show the new dataset", () => {
-    const edit = setViewDataset(
+    const file = setViewDataset(
       parseQueryFile(
         "views:\n  - type: list\n    name: Sources\n    from: items\n",
       ),
       0,
       "attachments",
     );
-    expect(saved(edit.file).views[0]).toMatchObject({
+    expect(saved(file).views[0]).toMatchObject({
       type: "list",
       from: "attachments",
     });
-    expect(edit.removed).toEqual({ sort: [], groupBy: null, order: [] });
+  });
+
+  it("uses a property that no dataset lists, such as one the researcher typed", () => {
+    const [view] = parseQueryFile(
+      'views:\n  - type: table\n    name: Sources\n    from: items\n    order:\n      - custom["Reading status"]\n',
+    ).views;
+    expect(unusedSettings(view!).order).toEqual([]);
   });
 
   it("adds a view of the dataset it is given, drawn by the first layout of that dataset", () => {

@@ -11,9 +11,14 @@ import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
 
 import type { QueryFileDataset } from "./query-file";
+import { NotUsed } from "./sort-control";
 import { TOOLBAR_LABEL } from "./toolbar-popover";
 import type { QueryView } from "./view";
-import { datasetProperties, propertyChoices } from "./visible-properties";
+import {
+  datasetProperties,
+  fitsDataset,
+  propertyChoices,
+} from "./visible-properties";
 
 const trigger =
   "clickable-icon zt:inline-flex zt:min-w-0 zt:items-center zt:gap-1 zt:rounded-(--clickable-icon-radius) zt:px-1.5 zt:py-1 zt:text-muted-foreground zt:hover:bg-muted zt:hover:text-foreground zt:focus-visible:ring-2 zt:focus-visible:ring-border-focus zt:focus-visible:outline-none zt:data-open:bg-muted zt:data-open:text-foreground";
@@ -137,6 +142,12 @@ function PropertyList({
             onDragEnd={() => setDragging(null)}
           >
             {row.label}
+            {order.includes(row.value) && !fitsDataset(row.value, dataset) && (
+              <span data-query-property-unused="">
+                {" "}
+                <NotUsed />
+              </span>
+            )}
           </Chooser.Item>
         )
       }

@@ -3,15 +3,10 @@
 // does not touch where it was, so a save writes them back.
 import { DATASETS } from "./datasets";
 import { layoutsFor } from "./layouts";
-import { editView, NEW_QUERY_FILE_LIMIT } from "./query-file";
-import type {
-  QueryFile,
-  QueryFileDataset,
-  QueryFileView,
-  QueryFileViewEdit,
-} from "./query-file";
+import { NEW_QUERY_FILE_LIMIT } from "./query-file";
+import type { QueryFile, QueryFileDataset, QueryFileView } from "./query-file";
 import { groupPaths } from "./rows";
-import { datasetProperties } from "./visible-properties";
+import { fitsDataset } from "./visible-properties";
 
 /** A file after an edit, and the view to show in it. */
 export interface ViewEdit {
@@ -147,76 +142,64 @@ export function setViewLayout(
   return replaced(file, index, { ...file.views[index]!, type });
 }
 
-/** What a change of dataset took off a view, since the new dataset lacks it. */
-export interface DatasetRemovals {
-  /** The sort properties taken off. */
+/** The settings of a view that its dataset lacks, which the view does not use. */
+export interface UnusedSettings {
+  /** The sort properties. */
   readonly sort: readonly string[];
-  /** The group property taken off, or `null`. */
+  /** The group property, or `null`. */
   readonly groupBy: string | null;
-  /** The visible properties taken off. */
+  /** The visible properties. */
   readonly order: readonly string[];
 }
 
-/** A file after a change of dataset, and what the change took off the view. */
-export interface DatasetEdit {
-  readonly file: QueryFile;
-  readonly removed: DatasetRemovals;
+/**
+ * What a view keeps in the file but does not use, since its dataset lacks
+ * it: a sort, a grouping or a visible property of another dataset. A switch
+ * back to a dataset that has them uses them again.
+ */
+export function unusedSettings(
+  view: Pick<QueryFileView, "from" | "sort" | "groupBy" | "order">,
+): UnusedSettings {
+  const dataset = view.from ?? "annotations";
+  const sortable = new Set(DATASETS[dataset].engine.sortableFields);
+  return {
+    sort: (view.sort ?? [])
+      .map(({ property }) => property)
+      .filter((property) => !sortable.has(property)),
+    groupBy:
+      view.groupBy && !groupPaths(dataset).includes(view.groupBy.property)
+        ? view.groupBy.property
+        : null,
+    order: (view.order ?? []).filter(
+      (property) => !fitsDataset(property, dataset),
+    ),
+  };
 }
 
 /**
  * The view set to read `dataset`. A layout that cannot show the dataset
- * gives way to the dataset's first layout. The filters stay as they are: a
- * condition the new dataset cannot read shows the filter's diagnostic. The
- * sort keys, the grouping and the visible properties the dataset lacks come
- * off, and the edit names them, so the view runs and the researcher sees
- * what changed.
+ * gives way to the dataset's first layout. The filters, the sort, the
+ * grouping and the visible properties stay as they are: a condition the new
+ * dataset cannot read shows the filter's diagnostic, and what else the
+ * dataset lacks the view does not use (see {@link unusedSettings}).
  */
 export function setViewDataset(
   file: QueryFile,
   index: number,
   dataset: QueryFileDataset,
-): DatasetEdit {
+): QueryFile {
   const view = file.views[index]!;
   const layouts = layoutsFor({ from: dataset });
   const type = layouts.some((layout) => layout.type === view.type)
     ? view.type
     : (layouts[0]?.type ?? view.type);
-  const sortable = new Set(DATASETS[dataset].engine.sortableFields);
-  const properties = new Set(datasetProperties(dataset));
-  const sort = view.sort ?? [];
-  const order = view.order ?? [];
-  const keepsGroup =
-    !view.groupBy || groupPaths(dataset).includes(view.groupBy.property);
-  const removed: DatasetRemovals = {
-    sort: sort
-      .filter(({ property }) => !sortable.has(property))
-      .map(({ property }) => property),
-    groupBy: keepsGroup ? null : view.groupBy!.property,
-    order: order.filter((property) => !properties.has(property)),
-  };
-  const edit: {
-    -readonly [K in keyof QueryFileViewEdit]: QueryFileViewEdit[K];
-  } = {};
-  if (removed.sort.length > 0) {
-    const kept = sort.filter(({ property }) => sortable.has(property));
-    edit.sort = kept.length > 0 ? kept : undefined;
-  }
-  if (!keepsGroup) edit.groupBy = undefined;
-  if (removed.order.length > 0) {
-    const kept = order.filter((property) => properties.has(property));
-    edit.order = kept.length > 0 ? kept : undefined;
-  }
-  const edited = editView(file, view, edit).views[index]!;
-  return {
-    file: replaced(file, index, {
-      ...edited,
-      type,
-      from: dataset,
-      problems: edited.problems.filter(
-        (problem) =>
-          !(problem.code === "invalid-value" && problem.key === "from"),
-      ),
-    }),
-    removed,
-  };
+  return replaced(file, index, {
+    ...view,
+    type,
+    from: dataset,
+    problems: view.problems.filter(
+      (problem) =>
+        !(problem.code === "invalid-value" && problem.key === "from"),
+    ),
+  });
 }

@@ -4,6 +4,7 @@
 import { cellProperties } from "@zotlit/item-query";
 
 import { DATASETS } from "./datasets";
+import { QUERY_FILE_DATASETS } from "./query-file";
 import type { QueryFileDataset, QueryFileView } from "./query-file";
 
 const cache = new Map<QueryFileDataset, readonly string[]>();
@@ -27,6 +28,23 @@ export function datasetProperties(
 }
 
 /**
+ * Whether a view of `dataset` can show `property`: the dataset lists it, or
+ * no dataset does, as for a path the researcher typed, which ZotLit Query
+ * then reads or names as wrong.
+ */
+export function fitsDataset(
+  property: string,
+  dataset: QueryFileDataset,
+): boolean {
+  return (
+    datasetProperties(dataset).includes(property) ||
+    !QUERY_FILE_DATASETS.some((other) =>
+      datasetProperties(other).includes(property),
+    )
+  );
+}
+
+/**
  * The rows of the Properties popover: the visible properties first, in their
  * order, then the other properties of the record itself. While the user
  * searches, the properties of the parent records come too.
@@ -45,17 +63,21 @@ export function propertyChoices(
 }
 
 /**
- * The visible properties of a view, in its order. Where `fallback` asks for
- * them, a view that names none gives the properties ZotLit Query projects by
- * default, so a copy or an export still has columns.
+ * The visible properties of a view, in its order, without those its dataset
+ * lacks. Where `fallback` asks for them, a view that shows none gives the
+ * properties ZotLit Query projects by default, so a copy or an export still
+ * has columns.
  */
 export function visibleProperties(
   view: Pick<QueryFileView, "order" | "from">,
   { fallback = false }: { fallback?: boolean } = {},
 ): readonly string[] {
-  if (view.order && view.order.length > 0) return view.order;
-  if (!fallback) return [];
   const dataset = view.from ?? "annotations";
+  const shown = (view.order ?? []).filter((property) =>
+    fitsDataset(property, dataset),
+  );
+  if (shown.length > 0) return shown;
+  if (!fallback) return [];
   const properties = datasetProperties(dataset);
   return DATASETS[dataset].engine.defaultFields.filter((field) =>
     properties.includes(field),

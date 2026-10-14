@@ -46,6 +46,7 @@ import type { AnnotState } from "@/views/annot-view/store";
 
 import type { QueryCardFocus } from "./card-focus";
 import { CardsLayout } from "./cards-layout";
+import { datasetSpec } from "./datasets";
 import { FilterButton } from "./filter-popover";
 import type { FilterValues } from "./filter-popover";
 import { GroupEditor } from "./group-control";
@@ -67,12 +68,13 @@ import type {
   QueryFile,
   QueryFileDataset,
   QueryFileProblem,
+  QueryFileSort,
   QueryFileView,
   QueryFileViewEdit,
 } from "./query-file";
 import type { ShownRecord } from "./record-rows";
 import { ResultsMenu } from "./results-menu";
-import { groupPaths, layoutFields, layoutRows } from "./rows";
+import { layoutFields, layoutRows } from "./rows";
 import type { LayoutGroup } from "./rows";
 import { SearchControl } from "./search-control";
 import { SortEditor } from "./sort-control";
@@ -82,6 +84,7 @@ import { TABLE_FIELDS, TableLayout } from "./table-layout";
 import type { LiteratureNotes } from "./table-notes";
 import { ToolbarPopover } from "./toolbar-popover";
 import * as edits from "./view-edits";
+import { unusedSettings } from "./view-edits";
 import { ViewMenu } from "./view-menu";
 import { visibleProperties } from "./visible-properties";
 
@@ -219,11 +222,12 @@ function layoutProblems(view: QueryFileView): string[] {
             datasets: layout.datasets.join(", "),
           }),
     );
-  if (view.groupBy && !groupPaths(view.from).includes(view.groupBy.property))
-    problems.push(
-      m.query_view_problem_group({ property: view.groupBy.property }),
-    );
   return problems;
+}
+
+/** The view's grouping, where its dataset has the group path. */
+function usedGroupBy(view: QueryFileView): QueryFileSort | undefined {
+  return unusedSettings(view).groupBy === null ? view.groupBy : undefined;
 }
 
 /** One run of a view: its request key, and the file and view it ran for. */
@@ -545,7 +549,7 @@ export class QueryView extends Component implements HistorySurface {
   #runKey(file: QueryFile, view: QueryFileView): string {
     return JSON.stringify([
       this.#request(file, view),
-      view.groupBy ?? null,
+      usedGroupBy(view) ?? null,
       view.groupOrder ?? null,
     ]);
   }
@@ -554,15 +558,18 @@ export class QueryView extends Component implements HistorySurface {
   #request(file: QueryFile, view: QueryFileView): QueryViewRequest {
     const filter = viewFilter(file, view);
     const context = this.#host.context();
+    const unused = new Set(unusedSettings(view).sort);
+    const sort = view.sort?.filter(({ property }) => !unused.has(property));
     return {
       from: view.from ?? "annotations",
       ...(filter === undefined ? {} : { filter }),
-      ...(view.sort && {
-        sort: view.sort.map(({ property, direction }) => ({
-          field: property,
-          direction: direction === "DESC" ? "desc" : "asc",
-        })),
-      }),
+      ...(sort &&
+        sort.length > 0 && {
+          sort: sort.map(({ property, direction }) => ({
+            field: property,
+            direction: direction === "DESC" ? "desc" : "asc",
+          })),
+        }),
       fields: [
         ...new Set([
           ...layoutFields(view.from ?? "annotations"),
@@ -673,19 +680,14 @@ export class QueryView extends Component implements HistorySurface {
     );
   }
 
-  /**
-   * Set the dataset a view reads. Returns what the change took off the view
-   * because the dataset lacks it, or `null` where there is no file.
-   */
-  setViewDataset(
-    index: number,
-    dataset: QueryFileDataset,
-  ): edits.DatasetRemovals | null {
+  /** Set the dataset a view reads; what the dataset lacks stays in the file, unused. */
+  setViewDataset(index: number, dataset: QueryFileDataset): void {
     const { file } = this.state.getState();
-    if (!file) return null;
-    const edit = edits.setViewDataset(file, index, dataset);
-    this.#apply(edit.file, this.#nameAt(file, this.#shownIndex()));
-    return edit.removed;
+    if (!file) return;
+    this.#apply(
+      edits.setViewDataset(file, index, dataset),
+      this.#nameAt(file, this.#shownIndex()),
+    );
   }
 
   /** Run the view's query again, and show its rows. */
@@ -748,7 +750,7 @@ export class QueryView extends Component implements HistorySurface {
         const { result } = outcome;
         const shown = layoutRows(
           result.rows ?? [],
-          view.groupBy,
+          usedGroupBy(view),
           view.groupOrder,
         );
         const byKey = new Map(
@@ -923,6 +925,32 @@ function Problems({ view }: { view: QueryView }) {
   );
 }
 
+/** What the view keeps in its file but does not use, since its dataset lacks it. */
+function UnusedNote({ view }: { view: QueryView }) {
+  const current = useQueryViewState(view, (s) => s.view);
+  if (!current) return null;
+  const unused = unusedSettings(current);
+  const properties = [
+    ...new Set([
+      ...unused.sort,
+      ...(unused.groupBy === null ? [] : [unused.groupBy]),
+      ...unused.order,
+    ]),
+  ];
+  if (properties.length === 0) return null;
+  return (
+    <p
+      className="zt:mx-3 zt:mt-1 zt:mb-0 zt:text-xs zt:text-(--text-muted) zt:in-[.print]:hidden"
+      data-query-unused=""
+    >
+      {m.query_view_unused({
+        dataset: datasetSpec(current.from).name(),
+        properties: properties.join(", "),
+      })}
+    </p>
+  );
+}
+
 function NoResults({ view }: { view: QueryView }) {
   const phase = useQueryViewState(view, (s) => s.phase);
   const count = useQueryViewState(view, (s) => s.count);
@@ -1022,6 +1050,7 @@ function SortButton({ view }: { view: QueryView }) {
       <SortEditor
         value={sort}
         options={sortOptions(current.from)}
+        unused={unusedSettings(current).sort}
         onChange={(next) =>
           view.editView({ sort: next.length > 0 ? next : undefined })
         }
@@ -1044,6 +1073,7 @@ function GroupButton({ view }: { view: QueryView }) {
       <GroupEditor
         value={{ groupBy: current.groupBy, groupOrder: current.groupOrder }}
         options={groupOptions(current.from)}
+        unused={unusedSettings(current).groupBy !== null}
         groups={groups}
         onChange={(next) =>
           view.editView({
@@ -1076,6 +1106,7 @@ function QueryViewBody({ view }: { view: QueryView }) {
         <OpenFileButton view={view} />
       </div>
       <ReadOnlyNote view={view} />
+      <UnusedNote view={view} />
       <Problems view={view} />
       <NoResults view={view} />
       <LayoutBody view={view} />
