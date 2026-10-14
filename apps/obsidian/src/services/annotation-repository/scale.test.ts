@@ -65,6 +65,20 @@ it("tells a reader with no hold that the list it showed was let go, so it reads 
   expect(repository.peek("RGRPDF24")?.value.annotations).toHaveLength(7);
 });
 
+it("tells the readers of a first read still running when its last hold ends", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository } = await setup(stack);
+  const reader = repository.hold(["RGRPDF24"]);
+  const first = repository.read("RGRPDF24");
+
+  const announced = nextChange(repository);
+  reader[Symbol.dispose]();
+  expect(await announced).toEqual(["RGRPDF24"]);
+  await first;
+  const again = await repository.read("RGRPDF24");
+  expect(again?.annotations).toHaveLength(7);
+});
+
 /** Zotero's key alphabet, which an Indexed Key is spelled in. */
 const ALPHABET = "23456789ABCDEFGHIJKLMNPQRSTUVWXYZ";
 

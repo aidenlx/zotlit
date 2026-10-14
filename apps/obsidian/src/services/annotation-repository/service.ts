@@ -1014,12 +1014,17 @@ export class AnnotationRepository extends Service<void> {
    * work in progress still stands on — an Annotation Draft, a write, an open
    * Annotation History — stays until that work ends.
    *
-   * @returns whether a published list was let go.
+   * @returns whether a list was let go that a reader may show or wait for.
    */
   #letGo(attachmentKey: string): boolean {
     if (this.#holds.has(attachmentKey) || this.#inUse(attachmentKey))
       return false;
     this.#lastAsked.delete(attachmentKey);
+    // A read still running publishes nothing once its query goes, so its
+    // readers are told too.
+    const reading = this.#attachmentsHeld([ANNOTATIONS]).includes(
+      attachmentKey,
+    );
     this.#queries.client.removeQueries({
       queryKey: [ANNOTATIONS],
       predicate: ({ queryKey }) => queryKey.at(-1) === attachmentKey,
@@ -1037,7 +1042,7 @@ export class AnnotationRepository extends Service<void> {
     logger.debug("Annotation list no surface holds was dropped", {
       attachmentKey,
     });
-    return published;
+    return published || reading;
   }
 
   /**
