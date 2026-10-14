@@ -14,6 +14,7 @@ import type {
   SyntaxFault,
 } from "./fault";
 import type { ValueShape } from "./fields";
+import { isError, typeNoun } from "./filter-error";
 import {
   GLOBAL_FUNCTION_NAMES,
   GLOBAL_FUNCTIONS,
@@ -31,6 +32,7 @@ import {
 import type { FunctionDefinition } from "./filter-functions";
 import { hasBareForm } from "./filter-plan";
 import type { StaticType } from "./filter-plan";
+import type { FilterValue } from "./filter-values";
 import { nearMatches } from "./near-match";
 import { planPath } from "./projection";
 import type { QueryClock } from "./query-clock";
@@ -133,6 +135,19 @@ function diagnoseFault(
         },
         text,
         { found: fault.found, expected: [fault.expected] },
+      );
+    }
+    case "operand-type": {
+      const found = fault.operands.map((operand) => typeNoun(operand.type));
+      return renderDiagnostic(
+        {
+          code: "wrong-operand-type",
+          message: `The operator ${fault.operator} cannot use ${found.join(" and ")}.`,
+          hint: `${fault.operator} takes ${OPERAND_TYPES[fault.operands.length === 1 ? "unary -" : fault.operator]}. Convert a text first with number(), such as number(volume), or with date().`,
+          location: faultLocation,
+        },
+        text,
+        { found: found.join(" and ") },
       );
     }
     case "unreadable": {
@@ -281,6 +296,7 @@ export function codeOfFault(
     return "invalid-filter";
   if (fault.kind === "arity") return "wrong-argument-count";
   if (fault.kind === "argument-type") return "wrong-argument-type";
+  if (fault.kind === "operand-type") return "wrong-operand-type";
   if (fault.kind === "unreadable") return "unfilterable-field";
   if (fault.kind === "formula-name") return "invalid-formula-name";
   if (fault.kind === "formula-result") return "invalid-formula-result";
@@ -1125,6 +1141,16 @@ function signature(
 }
 
 /** Shared rendering for engine faults and adapter rejections or operational failures. */
+/** The operand types that each arithmetic operator takes. */
+const OPERAND_TYPES: Readonly<Record<string, string>> = {
+  "+": "two numbers, two lists, a string and any value, or a date and a duration",
+  "-": "two numbers, or a date and a duration",
+  "*": "two numbers",
+  "/": "two numbers",
+  "%": "two numbers",
+  "unary -": "a number",
+};
+
 export function renderDiagnostic<Code extends string>(
   base: {
     readonly code: Code;
@@ -1315,6 +1341,11 @@ export function diagnoseWarning(
   };
 }
 
+/** Whether a conversion gave a value: neither null nor an Error Value. */
+function converts(value: FilterValue): boolean {
+  return value !== null && !isError(value);
+}
+
 function constantCorrection(
   fault: Extract<Fault, { kind: "constant" }>,
   text: string,
@@ -1376,7 +1407,7 @@ function constantCorrection(
           definition.diagnosticCorrection === "conversion" &&
           definition.returns === fault.left.type &&
           eligible(definition) &&
-          definition.call(null, [rightAst.value], clock) !== null,
+          converts(definition.call(null, [rightAst.value], clock)),
       );
       if (conversions.length === 1)
         replacement = `${left} ${fault.operator} ${conversions[0]![0]}(${right})`;

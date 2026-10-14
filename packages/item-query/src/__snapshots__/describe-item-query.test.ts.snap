@@ -7334,6 +7334,24 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
       "unknown-formula",
       "formula-cycle",
     ],
+    "error": {
+      "codes": [
+        "wrong-operand-type",
+        "wrong-argument-type",
+        "wrong-subject-type",
+        "not-finite",
+        "unparseable-text",
+        "argument-out-of-range",
+        "invalid-index",
+        "date-out-of-range",
+      ],
+      "row": {
+        "code": "<code>",
+        "kind": "error",
+        "message": "<message>",
+      },
+      "type": "error",
+    },
     "name": "^[A-Za-z_][A-Za-z0-9_]*$",
     "path": "formula.<name>",
     "results": [
@@ -7485,6 +7503,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
             "date",
             "duration",
             "regexp",
+            "error",
           ],
         },
       ],
@@ -8034,6 +8053,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
     "date",
     "duration",
     "regexp",
+    "error",
   ],
 }
 `;
