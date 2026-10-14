@@ -31,8 +31,11 @@ import { GUIDE_EXAMPLES, GUIDE_FILTERS, GUIDE_TOPIC_NAMES } from "./guide";
 
 const itemQueryGuideHandler = guideHandler;
 
-/** Runs the Item Query of flat arguments on `scenario`, as a Query Job would. */
-function runnerOf(
+/**
+ * Runs the Item Query of flat arguments on `scenario`, as a Query Job would,
+ * and gives the answer text.
+ */
+function rawRunnerOf(
   scenario: ScenarioDatabase,
   scope: LibraryScope = MY_LIBRARY_SCOPE,
 ) {
@@ -61,8 +64,18 @@ function runnerOf(
         Effect.provideService(Scheduler.Scheduler, new ItemQueryScheduler()),
       ),
     );
-    return JSON.parse(reply.answer) as Record<string, unknown>;
+    return reply.answer;
   };
+}
+
+/** Runs the Item Query of flat arguments on `scenario` and parses the answer. */
+function runnerOf(
+  scenario: ScenarioDatabase,
+  scope: LibraryScope = MY_LIBRARY_SCOPE,
+) {
+  const run = rawRunnerOf(scenario, scope);
+  return async (params: CliData = {}) =>
+    JSON.parse(await run(params)) as Record<string, unknown>;
 }
 
 describe("zotlit:query-cancel", () => {
@@ -169,6 +182,49 @@ describe("zotlit:query formulas", () => {
         ]),
       },
     });
+  });
+});
+
+describe("zotlit:query formula answer text", () => {
+  // The CLI fails a wrong Formula with the Fault in its own text, and keeps
+  // each answer byte-identical when the engine leaves Formulas out for
+  // another caller.
+  it.each<[string, CliData]>([
+    [
+      "a Formula that fields reads",
+      {
+        filter: 'indexedKey == "BK2MNTH2"',
+        formulas: '{"year":"date.year","unused":"title"}',
+        fields: "title,formula.year",
+      },
+    ],
+    [
+      "a wrong Formula that fields reads",
+      { formulas: '{"bad":"title * 2"}', fields: "title,formula.bad" },
+    ],
+    [
+      "a wrong Formula that another Formula reads",
+      {
+        formulas: '{"a":"formula.bad + 1","bad":"title * 2"}',
+        fields: "title,formula.a",
+      },
+    ],
+    [
+      "a wrong Formula that the filter reads",
+      {
+        filter: "formula.bad > 0",
+        formulas: '{"bad":"title * 2"}',
+        fields: "title",
+      },
+    ],
+    [
+      "a Formula that fields reads and no request defines",
+      { formulas: '{"year":"date.year"}', fields: "title,formula.yeer" },
+    ],
+  ])("keeps the answer text for %s", async (_, params) => {
+    using scenario = openScenarioDatabase();
+
+    expect(await rawRunnerOf(scenario)(params)).toMatchSnapshot();
   });
 });
 

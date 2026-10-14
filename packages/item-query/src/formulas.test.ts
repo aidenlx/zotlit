@@ -1,7 +1,7 @@
 // Formulas: named Filter Expressions that a query evaluates for each record
 // and returns with the Query Row as `formula.<name>`.
 import { Cause } from "effect";
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
   openScenarioDatabase,
@@ -553,3 +553,268 @@ it("reports the first mistake in request order: names, then the filter, then fie
     location: { argument: "formulas", path: "worse" },
   });
 });
+
+describe('formulaFaults: "leave-out"', () => {
+  it("answers the rows without a wrong Formula, and its Diagnostic beside the warnings", async () => {
+    using scenario = openScenarioDatabase();
+    const result = await run(scenario, {
+      filter: 'indexedKey == "BK2MNTH2"',
+      formulas: { year: "date.year", bad: "title * 2" },
+      fields: ["title", "formula.bad", "formula.year"],
+      formulaFaults: "leave-out",
+    });
+    expect(result.rows!.map((row) => row.values)).toEqual([
+      { title: expect.any(String), "formula.year": 2019 },
+    ]);
+    expect(result.query.fields).toEqual([
+      "title",
+      "formula.bad",
+      "formula.year",
+    ]);
+    expect(result.warnings).toEqual([]);
+    expect(result.formulaFaults).toEqual({
+      bad: expect.objectContaining({
+        code: "wrong-operand-type",
+        severity: "error",
+        message: expect.stringMatching(/^In formula\.bad: /),
+        location: {
+          argument: "formulas",
+          path: "bad",
+          span: { from: 0, to: 9 },
+        },
+      }),
+    });
+  });
+
+  it("leaves out each Formula that reads a wrong one, with one Diagnostic that names the first wrong Formula it reads", async () => {
+    using scenario = openScenarioDatabase();
+    const result = await run(scenario, {
+      filter: 'indexedKey == "BK2MNTH2"',
+      formulas: {
+        bad: "title * 2",
+        worse: "title.nope()",
+        a: "formula.worse + formula.bad",
+        b: "formula.a + 1",
+        ok: "date.year",
+      },
+      fields: ["formula.b", "formula.ok"],
+      formulaFaults: "leave-out",
+    });
+    expect(result.rows!.map((row) => row.values)).toEqual([
+      { "formula.ok": 2019 },
+    ]);
+    const faults = result.formulaFaults!;
+    // The text of a stops at its first read of a wrong Formula, so the query
+    // plans no read of bad.
+    expect(Object.keys(faults).sort()).toEqual(["a", "b", "worse"]);
+    expect(faults.a).toMatchObject({
+      code: "reads-faulted-formula",
+      message: "formula.a reads formula.worse, which has a mistake.",
+      location: { argument: "formulas", path: "a", span: { from: 0, to: 13 } },
+      report: [
+        "formula.a reads formula.worse, which has a mistake.",
+        "formula.worse + formula.bad",
+        "^^^^^^^^^^^^^",
+        faults.worse!.message,
+        "Correct the mistake in formula.worse.",
+      ],
+    });
+    expect(faults.b).toMatchObject({
+      code: "reads-faulted-formula",
+      message: "formula.b reads formula.a, which has a mistake.",
+      hint: "Correct the mistake in formula.worse.",
+    });
+    expect(faults.worse).toMatchObject({
+      code: "unknown-function",
+      location: { argument: "formulas", path: "worse" },
+    });
+  });
+
+  it.each([
+    [
+      "an invalid Formula name",
+      { formulas: { "2nd": "title", ok: "date.year" }, fields: ["formula.ok"] },
+      { "2nd": "invalid-formula-name" },
+    ],
+    [
+      "a cycle",
+      {
+        formulas: { a: "formula.b + 1", b: "formula.a * 2", ok: "date.year" },
+        fields: ["formula.a", "formula.ok"],
+      },
+      { a: "reads-faulted-formula", b: "formula-cycle" },
+    ],
+    [
+      "a read of an undefined Formula",
+      {
+        formulas: { a: "formula.zz + 1", ok: "date.year" },
+        fields: ["formula.a", "formula.ok"],
+      },
+      { a: "unknown-formula" },
+    ],
+    [
+      "a result type that a Query Row cannot hold",
+      {
+        formulas: { a: "/x/", ok: "date.year" },
+        fields: ["formula.a", "formula.ok"],
+      },
+      { a: "invalid-formula-result" },
+    ],
+    [
+      "a syntax mistake",
+      {
+        formulas: { a: "date.year +", ok: "date.year" },
+        fields: ["formula.a", "formula.ok"],
+      },
+      { a: "invalid-filter" },
+    ],
+    [
+      "a Formula that fields reads and the request does not define",
+      { formulas: { ok: "date.year" }, fields: ["formula.zz", "formula.ok"] },
+      { zz: "unknown-formula" },
+    ],
+  ] satisfies [
+    string,
+    Omit<ItemQueryRequest, "libraries">,
+    Record<string, string>,
+  ][])("leaves out only the Formula for %s", async (_, request, codes) => {
+    using scenario = openScenarioDatabase();
+    const result = await run(scenario, {
+      filter: 'indexedKey == "BK2MNTH2"',
+      ...request,
+      formulaFaults: "leave-out",
+    });
+    expect(result.rows!.map((row) => row.values)).toEqual([
+      { "formula.ok": 2019 },
+    ]);
+    expect(
+      Object.fromEntries(
+        Object.entries(result.formulaFaults!).map(([name, fault]) => [
+          name,
+          fault.code,
+        ]),
+      ),
+    ).toEqual(codes);
+  });
+
+  it("gives no Diagnostic and no Formula fault for an answer without a mistake", async () => {
+    using scenario = openScenarioDatabase();
+    const result = await run(scenario, {
+      filter: 'indexedKey == "BK2MNTH2"',
+      formulas: { ok: "date.year", unused: "title" },
+      fields: ["formula.ok"],
+      formulaFaults: "leave-out",
+    });
+    expect({ ...result.formulaFaults }).toEqual({});
+    expect(result.warnings.map((warning) => warning.code)).toEqual([
+      "unused-formula",
+    ]);
+  });
+
+  it("fails a filter that reads a wrong Formula at the filter, with the root mistake as a note and every Formula fault", async () => {
+    using scenario = openScenarioDatabase();
+    const error = await failure(scenario, {
+      filter: "title != null && formula.a > 0",
+      formulas: {
+        a: "formula.bad + 1",
+        bad: "title * 2",
+        shown: "title.nope()",
+      },
+      fields: ["title", "formula.shown"],
+      formulaFaults: "leave-out",
+    });
+    expect(error.diagnostic).toMatchObject({
+      code: "reads-faulted-formula",
+      message: "The filter reads formula.a, which has a mistake.",
+      location: { argument: "filter", span: { from: 17, to: 26 } },
+      report: [
+        "The filter reads formula.a, which has a mistake.",
+        "title != null && formula.a > 0",
+        "                 ^^^^^^^^^",
+        "In formula.bad: The operator * cannot use a string and a number.",
+        "Correct the mistake in formula.bad.",
+      ],
+    });
+    expect(
+      Object.fromEntries(
+        Object.entries(error.formulaFaults!).map(([name, fault]) => [
+          name,
+          fault.code,
+        ]),
+      ),
+    ).toEqual({
+      a: "reads-faulted-formula",
+      bad: "wrong-operand-type",
+      shown: "unknown-function",
+    });
+  });
+
+  it("fails a filter that reads a wrong Formula with the root mistake when the request fails on it", async () => {
+    using scenario = openScenarioDatabase();
+    const error = await failure(scenario, {
+      filter: "formula.a > 0",
+      formulas: { a: "formula.bad + 1", bad: "title * 2" },
+      fields: ["title"],
+    });
+    expect(error.diagnostic).toMatchObject({
+      code: "wrong-operand-type",
+      location: { argument: "formulas", path: "bad" },
+    });
+    expect(error.formulaFaults).toBeUndefined();
+  });
+});
+
+describe.each(["fail", "leave-out"] as const)(
+  'formulaFaults: "%s" fails the whole run',
+  (policy) => {
+    it.each([
+      [
+        'for formula["x"] in fields',
+        { formulas: { x: "date.year" }, fields: ['formula["x"]'] },
+        "invalid-path",
+      ],
+      [
+        "for a sort by a Formula",
+        {
+          formulas: { x: "date.year" },
+          fields: ["formula.x"],
+          sort: [{ field: "formula.x", direction: "asc" }],
+        },
+        "unsortable-field",
+      ],
+      [
+        "for a group by a Formula",
+        {
+          formulas: { x: "date.year" },
+          fields: ["formula.x"],
+          group: "formula.x",
+        },
+        "invalid-group",
+      ],
+      [
+        "for a mistake outside a Formula",
+        { formulas: { x: "title * 2" }, fields: ["titel", "formula.x"] },
+        "unknown-field",
+      ],
+      [
+        "for a mistake in the filter text",
+        {
+          filter: "title.nope()",
+          formulas: { x: "title * 2" },
+          fields: ["formula.x"],
+        },
+        "unknown-function",
+      ],
+    ] satisfies [string, Omit<ItemQueryRequest, "libraries">, string][])(
+      "%s",
+      async (_, request, code) => {
+        using scenario = openScenarioDatabase();
+        const error = await failure(scenario, {
+          ...request,
+          formulaFaults: policy,
+        });
+        expect(error.diagnostic.code).toBe(code);
+      },
+    );
+  },
+);
