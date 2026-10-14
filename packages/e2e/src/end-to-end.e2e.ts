@@ -1922,6 +1922,171 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(reopened.count).toBe(after.count);
   }, 180000);
 
+  it("steps the Card Selection through the cards a grouped Query File draws: past a collapsed group, and to each place of a card under two tags", async () => {
+    const layout = await obEval(
+      vaultId,
+      "JSON.stringify(app.workspace.getLayout())",
+    );
+    const colourPath = "query-files/Step by colour.zotquery";
+    const tagPath = "query-files/Step by tag.zotquery";
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));for(const path of ${JSON.stringify([colourPath, tagPath])}){const file=app.vault.getFileByPath(path);if(file)await app.vault.delete(file);}return true;})()`,
+      );
+    });
+    const tab = "app.workspace.getMostRecentLeaf().view";
+    /** The cards on screen in DOM order, each at its place, and the headings. */
+    const readCards = (path: string) =>
+      `(async()=>{const view=${tab};if(view.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(path)})return 'null';await view.query.settled;const grid=view.contentEl.querySelector('[role="grid"]');return JSON.stringify({cards:[...grid?.querySelectorAll('.zt-annot-card')??[]].map(n=>({key:n.getAttribute('data-zotero-annotation-key'),place:n.getAttribute('data-card-place')})),headings:[...grid?.querySelectorAll('[data-query-group]')??[]].map(n=>({key:n.getAttribute('data-query-group'),collapsed:n.hasAttribute('data-collapsed')}))});})()`;
+    interface Shown {
+      cards: { key: string; place: string }[];
+      headings: { key: string; collapsed: boolean }[];
+    }
+    const open = async (
+      path: string,
+      text: string,
+      ready: (shown: Shown) => boolean,
+    ): Promise<Shown> => {
+      await obEval(
+        vaultId,
+        `(async()=>{const file=await app.vault.create(${JSON.stringify(path)},${JSON.stringify(text)});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
+      );
+      return shownWhen(path, ready);
+    };
+    const shownWhen = async (
+      path: string,
+      ready: (shown: Shown) => boolean,
+    ): Promise<Shown> => {
+      let shown: Shown | null = null;
+      const settled = await waitFor(async () => {
+        shown = JSON.parse(await obEval(vaultId, readCards(path))) as Shown;
+        return shown !== null && ready(shown);
+      }, 120);
+      if (!settled) throw new Error(`Query File tab: ${JSON.stringify(shown)}`);
+      return shown!;
+    };
+    /**
+     * The Card Selection, the place its focus holds, and what the screen
+     * shows of it: the card at that place, and the card that has the focus.
+     */
+    const readSelection = `(()=>{const view=${tab};const sel=view.query.layout.store.getState().cardSelection;const el=view.contentEl;const at=[...el.querySelectorAll('.zt-annot-card')].find(n=>n.getAttribute('data-card-place')===sel.focus);return JSON.stringify({focus:sel.focus,selected:sel.selected,drawn:!!at&&at.getClientRects().length>0&&at.hasAttribute('data-selected'),active:el.ownerDocument.activeElement?.closest?.('.zt-annot-card')?.getAttribute('data-card-place')??null});})()`;
+    interface Selection {
+      focus: string | null;
+      selected: string[];
+      drawn: boolean;
+      active: string | null;
+    }
+    const selection = async () =>
+      JSON.parse(await obEval(vaultId, readSelection)) as Selection;
+    /** Click the card at one place, as a pointer does. */
+    const clickAt = (place: string) =>
+      obEval(
+        vaultId,
+        `(()=>{const card=[...${tab}.contentEl.querySelectorAll('.zt-annot-card')].find(n=>n.getAttribute('data-card-place')===${JSON.stringify(place)});card.click();card.focus();return true;})()`,
+      );
+    /**
+     * One key as Obsidian delivers it: through the view's own Scope, with the
+     * focused card as the event's target.
+     * @returns whether the view handled it.
+     */
+    const press = async (key: "ArrowDown" | "ArrowUp" | "Delete") =>
+      (await obEval(
+        vaultId,
+        `(()=>{const view=${tab};const el=view.contentEl;const active=el.ownerDocument.activeElement;const target=active&&el.contains(active)?active:el.querySelector('[role="grid"]');const event=new KeyboardEvent('keydown',{key:${JSON.stringify(key)},code:${JSON.stringify(key)},bubbles:true,cancelable:true});Object.defineProperty(event,'target',{value:target});return String(view.scope.handleKey(event,{modifiers:'',key:${JSON.stringify(key)},vkey:${JSON.stringify(key)}})===false);})()`,
+      )) === "true";
+    /** The card at a place, selected alone, drawn, and holding the focus. */
+    const on = (place: string, key: string): Selection => ({
+      focus: place,
+      selected: [key],
+      drawn: true,
+      active: place,
+    });
+
+    // Grouped by colour, with the second group collapsed, ↓ from the last
+    // card of the first group lands on the first card of the third: the
+    // cards of a collapsed group are not drawn, so the keys pass them.
+    const colours = await open(
+      colourPath,
+      "views:\n  - type: annotations\n    name: Colours\n    from: annotations\n    limit: 100\n    groupBy:\n      property: colorName\n      direction: ASC\n",
+      (shown) => shown.headings.length > 2 && shown.cards.length > 3,
+    );
+    const [first, second, third] = colours.headings;
+    const inGroup = (shown: Shown, group: string) =>
+      shown.cards.filter((card) => card.place.startsWith(`${group}\n`));
+    const secondCards = inGroup(colours, second!.key);
+    await obEval(
+      vaultId,
+      `(()=>{${tab}.contentEl.querySelector('[data-query-group=${JSON.stringify(second!.key)}] button').click();return true;})()`,
+    );
+    const folded = await shownWhen(
+      colourPath,
+      (shown) =>
+        shown.headings.find((heading) => heading.key === second!.key)!
+          .collapsed,
+    );
+    const lastOfFirst = inGroup(folded, first!.key).at(-1)!;
+    const firstOfThird = inGroup(folded, third!.key)[0]!;
+    await clickAt(lastOfFirst.place);
+    expect(await press("ArrowDown")).toBe(true);
+    expect(await selection()).toEqual(on(firstOfThird.place, firstOfThird.key));
+    expect(await press("ArrowUp")).toBe(true);
+    expect(await selection()).toEqual(on(lastOfFirst.place, lastOfFirst.key));
+
+    // A collapse that folds the Selected Card away drops it, so a Delete
+    // that follows acts on no hidden Annotation.
+    const toggleSecond = `(()=>{${tab}.contentEl.querySelector('[data-query-group=${JSON.stringify(second!.key)}] button').click();return true;})()`;
+    await obEval(vaultId, toggleSecond);
+    await shownWhen(colourPath, (shown) =>
+      shown.cards.some((card) => card.place === secondCards[0]!.place),
+    );
+    await clickAt(secondCards[0]!.place);
+    expect((await selection()).selected).toEqual([secondCards[0]!.key]);
+    await obEval(vaultId, toggleSecond);
+    await shownWhen(
+      colourPath,
+      (shown) =>
+        shown.headings.find((heading) => heading.key === second!.key)!
+          .collapsed,
+    );
+    expect((await selection()).selected).toEqual([]);
+    expect(await press("Delete")).toBe(false);
+
+    // Grouped by tag, a card with two tags shows under both headings. ↓ and
+    // ↑ reach it at each place and step on from the place it holds.
+    const tags = await open(
+      tagPath,
+      "views:\n  - type: annotations\n    name: Tags\n    from: annotations\n    limit: 100\n    groupBy:\n      property: tags[]\n      direction: ASC\n",
+      (shown) =>
+        shown.headings.length > 1 &&
+        shown.cards.some(
+          (card, index) =>
+            shown.cards.findIndex((other) => other.key === card.key) < index,
+        ),
+    );
+    const twice = tags.cards.findIndex(
+      (card, index) =>
+        index < tags.cards.length - 1 &&
+        tags.cards.findIndex((other) => other.key === card.key) < index,
+    );
+    expect(twice).toBeGreaterThan(0);
+    const [before, at, after] = tags.cards.slice(twice - 1, twice + 2);
+    await clickAt(at!.place);
+    expect(await press("ArrowDown")).toBe(true);
+    expect(await selection()).toEqual(on(after!.place, after!.key));
+    expect(await press("ArrowUp")).toBe(true);
+    expect(await selection()).toEqual(on(at!.place, at!.key));
+    expect(await press("ArrowUp")).toBe(true);
+    expect(await selection()).toEqual(on(before!.place, before!.key));
+
+    // From the first card, ↓ walks every card in the order drawn.
+    await clickAt(tags.cards[0]!.place);
+    const walk = [tags.cards[0]!.place];
+    while (await press("ArrowDown")) walk.push((await selection()).focus!);
+    expect(walk).toEqual(tags.cards.map((card) => card.place));
+  }, 300000);
+
   it("embeds a Query File in two notes, and a change in one embed saves the file and updates the other", async () => {
     const queryPath = "query-files/Lab annotations.zotquery";
     const labNote = "query-files/Lab note.md";
