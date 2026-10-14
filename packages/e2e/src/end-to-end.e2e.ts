@@ -921,7 +921,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       "    groupBy:\n      property: colorName\n      direction: ASC\n",
     );
     expect(text).toContain(
-      `    groupOrder:\n${shown.map((colour) => `      - ${colour}\n`).join("")}`,
+      `    groupOrder:\n${shown.map((colour) => `      - ${colour}`).join("\n")}`,
     );
     await obEval(vaultId, open);
     const reopened = await tabWhen((tab) => tab.count !== null);
