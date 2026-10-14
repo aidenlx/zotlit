@@ -5780,6 +5780,45 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ],
     });
 
+    // A value that the Item cannot compute is an Error Value cell; a filter
+    // that meets one excludes the Item.
+    const failed = await query({
+      filter: `indexedKey == "${annotationItem.key}"`,
+      formulas: JSON.stringify({ volumes: "number(title)" }),
+      fields: "formula.volumes",
+    });
+    expect(failed).toMatchObject({
+      ok: true,
+      rows: [
+        {
+          indexedKey: annotationItem.key,
+          values: {
+            "formula.volumes": {
+              kind: "error",
+              code: "unparseable-text",
+              message: `number() cannot read ${JSON.stringify(annotationItem.title)} as a number.`,
+            },
+          },
+        },
+      ],
+    });
+    const excluded = await query({
+      filter: `indexedKey == "${annotationItem.key}" && number(title) > 0`,
+    });
+    expect(excluded).toMatchObject({ ok: true, rows: [] });
+
+    const arithmetic = await query({
+      formulas: JSON.stringify({ twice: "title * 2" }),
+      fields: "formula.twice",
+    });
+    expect(arithmetic).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "wrong-operand-type",
+        location: { argument: "formulas", path: "twice" },
+      },
+    });
+
     const wrong = await query({
       formulas: JSON.stringify({ short: "title.nope()" }),
       fields: "formula.short",
@@ -5801,6 +5840,55 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         location: { argument: "fields", index: 0 },
       },
     });
+  });
+
+  it("filters by a Formula and reads a dependent Formula through ZotLit Query", async () => {
+    const query = async (args: Record<string, string>) =>
+      JSON.parse(
+        await cliCommand(vaultId, "zotlit:query", {
+          args: { library: "personal", ...args },
+        }),
+      ) as ItemQueryReport;
+    const yearOf = (item: FixtureItem) => Number(item.date.slice(0, 4));
+    const recent = ITEMS.filter(
+      (item) => item.libraryID === 1 && yearOf(item) >= 2020,
+    );
+    expect(recent.length).toBeGreaterThan(1);
+
+    const report = await query({
+      formulas: JSON.stringify({
+        year: "date.year",
+        next: "formula.year + 1",
+      }),
+      filter: "formula.year >= 2020",
+      fields: "formula.next",
+      limit: "100",
+    });
+    expect(report).toMatchObject({ ok: true, warnings: [] });
+    expect(report.rows).toHaveLength(recent.length);
+    expect(report.rows).toEqual(
+      expect.arrayContaining(
+        recent.map((item) => ({
+          indexedKey: item.key,
+          values: { "formula.next": yearOf(item) + 1 },
+        })),
+      ),
+    );
+
+    const cycle = await query({
+      formulas: JSON.stringify({ a: "formula.b + 1", b: "formula.a" }),
+      fields: "formula.a",
+    });
+    expect(cycle).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "formula-cycle",
+        location: { argument: "formulas", path: "b" },
+      },
+    });
+    expect(cycle.diagnostic!.report.join("\n")).toContain(
+      "formula.a → formula.b → formula.a",
+    );
   });
 
   it("groups papers per tag and per Collection through zotlit:query", async () => {
