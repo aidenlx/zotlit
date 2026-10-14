@@ -151,8 +151,8 @@ export function ListLayout({ view }: { view: QueryView }) {
                     ? []
                     : [
                         <CellContent
-                          key={properties[at]}
-                          value={row.values[properties[at]!]}
+                          key={properties[at]!.path}
+                          value={row.values[properties[at]!.path]}
                           text={text}
                         />,
                       ],

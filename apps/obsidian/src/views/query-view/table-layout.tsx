@@ -25,12 +25,12 @@ import type { QueryService } from "@/services/item-query/service";
 import { useAnnotStore } from "@/views/annot-view/store";
 
 import type { QueryLayout } from "./layouts";
-import { formulaIssue } from "./query-file";
 import { CellContent } from "./record-rows";
 import type { LiteratureNotes } from "./table-notes";
-import { cellText, propertyLabel } from "./value-text";
+import { cellText } from "./value-text";
 import type { QueryView } from "./view";
-import { visibleProperties } from "./visible-properties";
+import { useViewProperties } from "./view-properties";
+import type { PropertyEntry } from "./view-properties";
 
 export const TABLE_LAYOUT: QueryLayout = {
   type: "table",
@@ -423,28 +423,21 @@ function ChildRow({
 
 /** The view's rows as a table of Items. */
 export function TableLayout({ view }: { view: QueryView }) {
-  const shown = useStore(view.state, (s) => s.view);
   const rows = useStore(view.state, (s) => s.records);
-  const formulaIssues = useStore(view.state, (s) => s.formulaIssues);
-  const file = useStore(view.state, (s) => s.file);
   const search = useAnnotStore((s) => s.filterQuery)
     .trim()
     .toLowerCase();
   const { query, literatureNotes } = view.tableDeps;
   const { children: expanded, toggle } = useChildren(query);
-  const columns = useMemo(
-    () => (shown ? visibleProperties(shown, { fallback: true }) : []),
-    [shown],
-  );
+  const properties = useViewProperties(view);
+  const columns = useMemo(() => properties?.columns ?? [], [properties]);
   const visible = useMemo(
     () =>
       search === ""
         ? rows
         : rows.filter(({ row }) =>
-            columns.some((property) =>
-              cellText(property, row.values[property])
-                .toLowerCase()
-                .includes(search),
+            columns.some(({ path }) =>
+              cellText(path, row.values[path]).toLowerCase().includes(search),
             ),
           ),
     [rows, columns, search],
@@ -460,29 +453,26 @@ export function TableLayout({ view }: { view: QueryView }) {
         <thead>
           <tr className="zt:border-b zt:border-(--background-modifier-border) zt:text-left">
             <th className="zt:w-6" />
-            {columns.map((property) => {
-              const issue = formulaIssue(formulaIssues, property);
-              return (
-                <th
-                  key={property}
-                  className="zt:px-2 zt:py-1 zt:font-medium"
-                  data-query-column={property}
-                  data-query-formula-issue={issue ?? undefined}
-                >
-                  {issue === null ? (
-                    propertyLabel(file, property)
-                  ) : (
-                    <span
-                      className="zt:inline-flex zt:items-center zt:gap-1 zt:text-(--text-error)"
-                      {...tooltipAttrs(issue)}
-                    >
-                      <Icon name="alert-triangle" size={14} />
-                      {propertyLabel(file, property)}
-                    </span>
-                  )}
-                </th>
-              );
-            })}
+            {columns.map(({ path, label, issue }) => (
+              <th
+                key={path}
+                className="zt:px-2 zt:py-1 zt:font-medium"
+                data-query-column={path}
+                data-query-formula-issue={issue ?? undefined}
+              >
+                {issue === null ? (
+                  label
+                ) : (
+                  <span
+                    className="zt:inline-flex zt:items-center zt:gap-1 zt:text-(--text-error)"
+                    {...tooltipAttrs(issue)}
+                  >
+                    <Icon name="alert-triangle" size={14} />
+                    {label}
+                  </span>
+                )}
+              </th>
+            ))}
             <th className="zt:px-2 zt:py-1 zt:font-medium">
               {m.query_view_table_literature_note()}
             </th>
@@ -535,7 +525,7 @@ function ItemRow({
 }: {
   heading: ReactNode;
   record: TableRecord;
-  columns: readonly string[];
+  columns: readonly PropertyEntry[];
   notes: LiteratureNotes;
   expanded: ReadonlyMap<string, ChildState>;
   toggle: (record: TableRecord) => void;
@@ -557,11 +547,11 @@ function ItemRow({
             onToggle={() => toggle(record)}
           />
         </td>
-        {columns.map((property) => (
-          <td key={property} className="zt:px-2 zt:py-1">
+        {columns.map(({ path }) => (
+          <td key={path} className="zt:px-2 zt:py-1">
             <CellContent
-              value={record.values[property]}
-              text={cellText(property, record.values[property])}
+              value={record.values[path]}
+              text={cellText(path, record.values[path])}
             />
           </td>
         ))}
