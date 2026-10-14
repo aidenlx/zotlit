@@ -30,7 +30,7 @@ import { AnnotationsLayout } from "@/views/annot-view/layout";
 import type { AnnotationsLayoutDeps } from "@/views/annot-view/layout";
 import { useAnnotStore } from "@/views/annot-view/store";
 
-import { parseQueryFile, viewFilter } from "./query-file";
+import { parseQueryFile, serializeQueryFile, viewFilter } from "./query-file";
 import type { QueryFile, QueryFileProblem, QueryFileView } from "./query-file";
 import { LAYOUT_FIELDS, LAYOUT_GROUP_PATHS, layoutRows } from "./rows";
 
@@ -58,6 +58,13 @@ export interface QueryViewHost {
   context: () => QueryContext | undefined;
   /** The user chose another view of the file; the host may remember it. */
   onSelectView?: (name: string) => void;
+  /** Write the file's new text after a change in the view. */
+  save?: (text: string) => void;
+  /**
+   * Whether a change in the view stays. Where it is `false`, the toolbar says
+   * that a change is not saved.
+   */
+  canSave?: () => boolean;
 }
 
 /** What the view shows now, as the toolbar and the host read it. */
@@ -197,6 +204,23 @@ export class QueryView extends Component {
   setText(text: string): void {
     this.state.setState({ file: parseQueryFile(text) });
     this.#choose();
+  }
+
+  /**
+   * Change the file from the view: show the change, and hand the file's new
+   * text to the host to save.
+   */
+  edit(change: (file: QueryFile) => QueryFile): void {
+    const { file } = this.state.getState();
+    if (!file) return;
+    const text = serializeQueryFile(change(file));
+    this.setText(text);
+    this.#host.save?.(text);
+  }
+
+  /** Whether a change in the view stays. */
+  get canSave(): boolean {
+    return this.#host.canSave?.() ?? true;
   }
 
   /** Show the view named `name`, or the file's first view for `null`. */
@@ -458,6 +482,21 @@ function NoResults({ view }: { view: QueryView }) {
   );
 }
 
+function ReadOnlyNote({ view }: { view: QueryView }) {
+  // A host can tell where it stands only once it is on the page, which is
+  // before a run lands; each run asks again.
+  useQueryViewState(view, (s) => s.phase);
+  if (view.canSave) return null;
+  return (
+    <span
+      className="zt:ml-auto zt:text-xs zt:text-(--text-faint)"
+      data-query-read-only=""
+    >
+      {m.query_view_read_only()}
+    </span>
+  );
+}
+
 function QueryViewBody({ view }: { view: QueryView }) {
   return (
     <div className="zt:flex zt:h-full zt:flex-col">
@@ -469,6 +508,7 @@ function QueryViewBody({ view }: { view: QueryView }) {
         <span className="zt:text-(--text-muted)">
           <ResultCount view={view} />
         </span>
+        <ReadOnlyNote view={view} />
       </div>
       <Problems view={view} />
       <NoResults view={view} />

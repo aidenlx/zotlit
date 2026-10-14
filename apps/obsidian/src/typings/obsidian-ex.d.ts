@@ -38,6 +38,15 @@ declare module "obsidian" {
   export function loadPdfJs(): Promise<
     import("../services/excerpt-image/renderer").ExcerptPdfJs
   >;
+  interface MarkdownPostProcessorContext {
+    /**
+     * A code block's own write-back: replaces the code of the block the
+     * processor rendered. In Live Preview it keeps the widget mounted. Internal;
+     * verified against Obsidian 1.14.4. Read only through
+     * `views/query-view/block-write.ts`.
+     */
+    replaceCode?: (code: string) => void;
+  }
   interface ViewStateResult {
     /** Runs after native group assignment and ephemeral handoff (Obsidian 1.14). */
     done?: () => void;
