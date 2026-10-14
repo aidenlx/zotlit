@@ -14,6 +14,13 @@ import type { QueryAttachment } from "./attachment-fields";
 import type { AttachmentNeeds } from "./attachment-hydration";
 import { fieldDefinition, itemFilterRegistry } from "./fields";
 import type { QueryItem, FieldNeeds } from "./fields";
+import {
+  NOTE_PARENTS,
+  noteFieldDefinition,
+  noteFilterRegistry,
+} from "./note-fields";
+import type { QueryNote } from "./note-fields";
+import type { NoteNeeds } from "./note-hydration";
 import type { RecordVocabulary } from "./record-field";
 
 export const ITEM_SUMMARY = ["indexedKey", "title", "citationKey"] as const;
@@ -33,6 +40,7 @@ export const ANNOTATION_SUMMARY = [
   "pageLabel",
   "pageIndex",
 ] as const;
+export const NOTE_SUMMARY = ["indexedKey", "title"] as const;
 
 export const itemVocabulary = (): RecordVocabulary<QueryItem, FieldNeeds> => ({
   id: "items",
@@ -99,8 +107,18 @@ export const annotationVocabulary = (): RecordVocabulary<
   filter: annotationFilterRegistry,
 });
 
+export const noteVocabulary = (): RecordVocabulary<QueryNote, NoteNeeds> => ({
+  id: "notes",
+  parents: NOTE_PARENTS,
+  summary: NOTE_SUMMARY,
+  projectionFields: [...NOTE_SUMMARY, "key", "dateAdded", "dateModified"],
+  field: noteFieldDefinition,
+  filter: noteFilterRegistry,
+});
+
 export const RECORD_VOCABULARIES = {
   items: itemVocabulary,
   attachments: attachmentVocabulary,
   annotations: annotationVocabulary,
+  notes: noteVocabulary,
 };
