@@ -1,6 +1,7 @@
 import type { WorkbenchDocumentController } from "#/document/controller";
 import type { MatchItemFacts } from "#/match/condition";
 import { useEffect, useMemo, useState, useRef } from "react";
+import type { TextareaHTMLAttributes } from "react";
 
 import type { MatchTree } from "@zotlit/templates/facade";
 
@@ -228,6 +229,20 @@ const emptyGroup = <Row extends LabelledRow>(): ConditionGroup<Row> => ({
  * condition rows. The caller owns the stored filter and the conditions it
  * offers; `onChange` answers whether the caller kept the new filter.
  */
+/**
+ * The expression input of a Match condition: a Filter Expression textarea
+ * that takes the `expression` part of the match theme. It reads the theme
+ * where it renders, so a host that wraps it in `WorkbenchThemeProvider` gets
+ * the Match editor's look.
+ */
+export function MatchExpressionInput(
+  props: Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "className"> &
+    Partial<Record<`data-${string}`, string>>,
+) {
+  const part = useParts("match");
+  return <textarea rows={1} {...part("expression")} {...props} />;
+}
+
 export function MatchEditor<Row extends LabelledRow>({
   value,
   onChange,
@@ -481,9 +496,7 @@ function Row<Row extends LabelledRow>({
           )}
           <div {...part("value")}>
             {isExpression(condition) ? (
-              <textarea
-                rows={1}
-                {...part("expression")}
+              <MatchExpressionInput
                 aria-label={m.workbench_match_expression()}
                 aria-invalid={issue !== null}
                 value={condition.text}
