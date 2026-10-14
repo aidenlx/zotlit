@@ -384,6 +384,10 @@ describe("Error Values", () => {
     ['number(number("abc"))', error("unparseable-text")],
     ['["1", "x"].map(number(value))', [1, error("unparseable-text")]],
     ['["1", "x"].reduce(acc + number(value), 0)', error("unparseable-text")],
+    // An Error Value among the arguments of an element method is its result,
+    // whether the expression reads the argument or not.
+    ['[1].reduce(value, number("bad"))', error("unparseable-text")],
+    ['[].reduce(acc, number("bad"))', error("unparseable-text")],
     ['if(true, date("x"), tags).filter(value)', error("unparseable-text")],
     ['[number("abc")].length', 1],
     ['[number("abc")].isTruthy()', true],

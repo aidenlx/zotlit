@@ -15,7 +15,7 @@ import {
   today,
 } from "./filter-dates";
 import type { DateValue } from "./filter-dates";
-import { errorValue, isError } from "./filter-error";
+import { errorValue, firstError } from "./filter-error";
 import type { ErrorValue } from "./filter-error";
 import {
   equals,
@@ -836,7 +836,7 @@ export function invoke(
   },
   clock: QueryClock,
 ): FilterValue {
-  const failed = args.find((value) => isError(value));
+  const failed = firstError(args);
   if (failed !== undefined) return failed;
   for (const [index, value] of args.entries()) {
     const parameter = parameterAt(definition, index);
