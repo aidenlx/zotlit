@@ -22,7 +22,10 @@ export type ItemQueryErrorCode =
   | "wrong-argument-count"
   | "wrong-argument-type"
   | "invalid-context"
-  | "unbound-context";
+  | "unbound-context"
+  | "invalid-formula-name"
+  | "invalid-formula-result"
+  | "unknown-formula";
 
 /** The part of the request an {@link ItemQueryError} points at. */
 export interface ItemQueryErrorLocation {
@@ -33,7 +36,8 @@ export interface ItemQueryErrorLocation {
     | "sort"
     | "limit"
     | "group"
-    | "context";
+    | "context"
+    | "formulas";
   /** The position of the entry in a list argument. */
   readonly index?: number;
   readonly path?: string;

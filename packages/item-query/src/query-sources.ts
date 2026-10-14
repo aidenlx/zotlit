@@ -33,18 +33,23 @@ export const openQuerySources = Effect.sync(() => {
   const checkCustomFields = Effect.fnUntraced(function* (
     plan: LoadRequest<unknown>,
   ) {
-    const { dataset, filter, paths, group } = plan;
+    const { dataset, filter, paths, group, formulas = [] } = plan;
     if (
       !filter?.customFields.length &&
+      !formulas.some((formula) => formula.plan.customFields.length) &&
       !paths.some((path) => path.customField !== null) &&
       !(group && group.customField !== null)
     )
       return;
     const vocabulary = yield* readVocabulary();
     const known = new Set(vocabulary.customFieldNames);
-    // The filter first, then the Projection Paths.
-    const customFields: CustomFieldUse[] = [
-      ...(filter?.customFields ?? []).map(
+    /** The custom fields of a Filter Expression: the filter or a Formula. */
+    const expressionUses = (
+      uses: NonNullable<typeof filter>["customFields"],
+      at: Pick<ItemQueryErrorLocation, "argument" | "path">,
+      argumentText: string,
+    ) =>
+      uses.map(
         ({ name, bare, from, to, deferred, dotted }): CustomFieldUse =>
           dotted && !known.has(name) && known.has(dotted.name)
             ? {
@@ -52,18 +57,25 @@ export const openQuerySources = Effect.sync(() => {
                 bare,
                 dotted: true,
                 location: {
-                  argument: "filter",
+                  ...at,
                   span: { from: dotted.from, to: dotted.to },
                 },
-                argumentText: plan.query.filter ?? "",
+                argumentText,
               }
             : {
                 name,
                 bare,
                 deferred,
-                location: { argument: "filter", span: { from, to } },
-                argumentText: plan.query.filter ?? "",
+                location: { ...at, span: { from, to } },
+                argumentText,
               },
+      );
+    // The filter first, then the Projection Paths and the Formulas.
+    const customFields: CustomFieldUse[] = [
+      ...expressionUses(
+        filter?.customFields ?? [],
+        { argument: "filter" },
+        plan.query.filter ?? "",
       ),
       ...paths.flatMap(({ customField: name, text }): CustomFieldUse[] =>
         name === null
@@ -94,6 +106,13 @@ export const openQuerySources = Effect.sync(() => {
             },
           ]
         : []),
+      ...formulas.flatMap((formula) =>
+        expressionUses(
+          formula.plan.customFields,
+          { argument: "formulas", path: formula.name },
+          formula.text,
+        ),
+      ),
     ];
     const missing = customFields.find(
       ({ name, deferred, dotted }) => dotted || deferred || !known.has(name),

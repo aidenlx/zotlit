@@ -237,9 +237,14 @@ export function hasBareForm(customFieldName: string): boolean {
   return ast?.type === "identifier" && ast.name === customFieldName;
 }
 
-/** The bare names that always mean a built-in; a keyword parses as a literal. */
+/**
+ * The bare names that always mean a built-in; a keyword parses as a literal.
+ * `formula` is the first segment of every Formula, so a custom field of that
+ * name is read as `custom["formula"]`.
+ */
 const RESERVED_NAMES: ReadonlySet<string> = new Set([
   "this",
+  "formula",
   ...BUILT_IN_NAMES,
   ...GLOBAL_FUNCTION_NAMES,
 ]);

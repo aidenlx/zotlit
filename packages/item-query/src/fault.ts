@@ -20,7 +20,8 @@ export type Role =
   | "method"
   | "property"
   | "projection-path"
-  | "sortable-field";
+  | "sortable-field"
+  | "formula";
 export interface Receiver {
   readonly type: StaticType;
   readonly at: Span;
@@ -58,6 +59,8 @@ export type Fault =
       readonly receiver?: Receiver;
       readonly customFields?: readonly string[];
       readonly dotted?: boolean;
+      /** Role `formula`: the names of the Formulas that the request defines. */
+      readonly formulas?: readonly string[];
       readonly pathResolution?: {
         readonly found: ValueShape["kind"];
         readonly expected: "list" | "list-element";
@@ -80,6 +83,15 @@ export type Fault =
       readonly expected: string;
     }
   | { readonly kind: "unreadable"; readonly name: string; readonly at: Span }
+  /** A Formula name that is not an identifier. */
+  | { readonly kind: "formula-name"; readonly name: string }
+  | {
+      /** A Formula whose value is of a type that a Query Row cannot hold. */
+      readonly kind: "formula-result";
+      readonly name: string;
+      readonly found: StaticType;
+      readonly at: Span;
+    }
   | {
       readonly kind: "plain";
       readonly code: ItemQueryErrorCode;

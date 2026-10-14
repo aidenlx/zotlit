@@ -10,7 +10,7 @@ import type {
 
 import { collectionWarnings } from "./collection-warnings";
 import type { QueryDataset } from "./dataset";
-import { diagnoseWarning } from "./diagnose";
+import { diagnoseUnusedFormula, diagnoseWarning } from "./diagnose";
 import type { ItemQueryError } from "./error";
 import { consumeDataset } from "./execution";
 import { indexedKeyWarnings } from "./indexed-key-selection";
@@ -122,28 +122,31 @@ export function consumeQuery<Request extends ItemQueryRequest, A, E, R>(
         filter: plan.filter?.root,
         query,
         warnings: [
-          ...plan.warnings,
-          ...(yield* collectionWarnings(
-            plan.filter?.root,
-            request.libraries,
-            sources,
-          )),
-          ...(plan.filter
-            ? indexedKeyWarnings(
-                plan.filter.root,
-                dataset.id,
-                request.libraries,
-              )
-            : []),
-        ]
-          .sort((a, b) => a.at.from - b.at.from)
-          .map((fault) =>
-            diagnoseWarning(fault, query.filter!, {
-              clock,
-              dataset,
-              context: query.context,
-            }),
-          ),
+          ...[
+            ...plan.warnings,
+            ...(yield* collectionWarnings(
+              plan.filter?.root,
+              request.libraries,
+              sources,
+            )),
+            ...(plan.filter
+              ? indexedKeyWarnings(
+                  plan.filter.root,
+                  dataset.id,
+                  request.libraries,
+                )
+              : []),
+          ]
+            .sort((a, b) => a.at.from - b.at.from)
+            .map((fault) =>
+              diagnoseWarning(fault, query.filter!, {
+                clock,
+                dataset,
+                context: query.context,
+              }),
+            ),
+          ...plan.unusedFormulas.map(diagnoseUnusedFormula),
+        ],
         libraries: request.libraries,
         sort: plan.order,
         readScanPage: dataset.readScanPage,

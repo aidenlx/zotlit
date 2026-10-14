@@ -7327,6 +7327,25 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
       ],
     },
   },
+  "formulas": {
+    "codes": [
+      "invalid-formula-name",
+      "invalid-formula-result",
+      "unknown-formula",
+    ],
+    "name": "^[A-Za-z_][A-Za-z0-9_]*$",
+    "path": "formula.<name>",
+    "results": [
+      "boolean",
+      "number",
+      "string",
+      "list",
+      "date",
+    ],
+    "warnings": [
+      "unused-formula",
+    ],
+  },
   "functions": [
     {
       "name": "if",

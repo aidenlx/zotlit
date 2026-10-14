@@ -78,6 +78,28 @@ export interface Diagnostic<Code extends string = string> {
 export function diagnose(
   fault: ItemQueryFault,
   text: string,
+  context: DiagnosisContext,
+): Diagnostic<ItemQueryErrorCode> {
+  const diagnostic = diagnoseFault(fault, text, context);
+  // A fault inside the text of a Formula names the Formula.
+  if (
+    context.argument !== "formulas" ||
+    context.path === undefined ||
+    fault.kind === "formula-name" ||
+    fault.kind === "formula-result"
+  )
+    return diagnostic;
+  const message = `In formula.${context.path}: ${diagnostic.message}`;
+  return {
+    ...diagnostic,
+    message,
+    report: [message, ...diagnostic.report.slice(1)],
+  };
+}
+
+function diagnoseFault(
+  fault: ItemQueryFault,
+  text: string,
   { dataset, context, ...location }: DiagnosisContext,
 ): Diagnostic<ItemQueryErrorCode> {
   const at = "at" in fault ? fault.at : undefined;
@@ -167,6 +189,36 @@ export function diagnose(
     }
     case "unknown":
       return diagnoseUnknown(fault, text, { ...location, dataset, context });
+    case "formula-name":
+      return renderDiagnostic(
+        {
+          code: "invalid-formula-name",
+          message: `The Formula name ${JSON.stringify(fault.name)} is not an identifier.`,
+          hint: "Name a Formula with letters, digits, and _, with a letter or _ first, such as year or first_author.",
+          location,
+        },
+        "",
+        { found: fault.name, expected: ["an identifier"] },
+      );
+    case "formula-result":
+      return renderDiagnostic(
+        {
+          code: "invalid-formula-result",
+          message: `formula.${fault.name} gives a ${fault.found}; a Formula gives a boolean, a number, a string, a list, or a date.`,
+          hint:
+            fault.found === "duration"
+              ? "Give a number from the duration, such as its days property, or add it to a date."
+              : fault.found === "record"
+                ? "Give one field of the record, such as its title or indexedKey."
+                : "Use the regular expression in a method, such as matches(), and give its result.",
+          location: faultLocation,
+        },
+        text,
+        {
+          found: fault.found,
+          expected: ["boolean", "number", "string", "list", "date"],
+        },
+      );
   }
 }
 
@@ -213,7 +265,11 @@ export function codeOfFault(
   if (fault.kind === "arity") return "wrong-argument-count";
   if (fault.kind === "argument-type") return "wrong-argument-type";
   if (fault.kind === "unreadable") return "unfilterable-field";
+  if (fault.kind === "formula-name") return "invalid-formula-name";
+  if (fault.kind === "formula-result") return "invalid-formula-result";
   switch (fault.role) {
+    case "formula":
+      return "unknown-formula";
     case "global":
     case "method":
       return "unknown-function";
@@ -243,6 +299,8 @@ function diagnoseUnknown(
     prefix && sourceFault.role === "field" && sourceFault.customFields
       ? { ...sourceFault, name: prefix + sourceFault.name }
       : sourceFault;
+  if (fault.role === "formula")
+    return diagnoseUnknownFormula(fault, text, location);
   if (
     fault.role === "projection-path" ||
     fault.role === "sortable-field" ||
@@ -309,7 +367,9 @@ function diagnoseUnknown(
       hint,
       location: {
         ...location,
-        ...(location.argument === "filter" ? { span: fault.at } : {}),
+        ...(location.argument === "filter" || location.argument === "formulas"
+          ? { span: fault.at }
+          : {}),
       },
     },
     text,
@@ -331,6 +391,66 @@ function diagnoseUnknown(
     ...diagnostic,
     report: [...diagnostic.report.slice(0, -1), ...notes, hint],
     suggestions,
+  };
+}
+
+/** `formula.<name>` in `fields` names no Formula of the request. */
+function diagnoseUnknownFormula(
+  fault: Extract<Fault, { readonly kind: "unknown" }>,
+  text: string,
+  location: ItemQueryErrorLocation,
+): Diagnostic<"unknown-formula"> {
+  const defined = fault.formulas ?? [];
+  const nearby = nearMatches(fault.name, defined);
+  const replaced =
+    nearby.length === 1 && location.index !== undefined
+      ? replaceJsonValue(text, [location.index], `formula.${nearby[0]!}`)
+      : undefined;
+  const corrected =
+    replaced === undefined ? undefined : shellArgument("fields", replaced);
+  const entry =
+    projectionEntry(text, location.index) ?? `formula.${fault.name}`;
+  const diagnostic = renderDiagnostic(
+    {
+      code: "unknown-formula",
+      message: `${JSON.stringify(entry)} reads the Formula ${JSON.stringify(fault.name)}, which the request does not define.`,
+      hint: corrected
+        ? `Try: ${corrected}`
+        : defined.length > 0
+          ? `Read a Formula of the request: ${defined.map((name) => `formula.${name}`).join(", ")}.`
+          : `Define the Formula in formulas, such as formulas='${JSON.stringify({ [fault.name]: "date.year" })}'.`,
+      location: { ...location, span: { from: 0, to: entry.length } },
+    },
+    entry,
+    { found: fault.name, expected: defined },
+  );
+  return {
+    ...diagnostic,
+    location: {
+      argument: location.argument,
+      index: location.index,
+      path: location.path,
+    },
+    suggestions: corrected ? [corrected] : nearby,
+  };
+}
+
+/** A Formula that the request names and never reads: planned and run never. */
+export function diagnoseUnusedFormula(
+  name: string,
+): Diagnostic<"unused-formula"> {
+  return {
+    ...renderDiagnostic(
+      {
+        code: "unused-formula",
+        message: `The request defines formula.${name} and reads it nowhere, so the query does not compute it.`,
+        hint: `Add formula.${name} to fields to get its value, or remove it from formulas.`,
+        location: { argument: "formulas", path: name },
+      },
+      "",
+      { found: name, expected: ["formula.<name> in fields"] },
+    ),
+    severity: "warning",
   };
 }
 
@@ -683,6 +803,7 @@ function candidatesFor(
     case "custom-field":
     case "projection-path":
     case "sortable-field":
+    case "formula":
       return [];
   }
 }
@@ -742,6 +863,8 @@ function unknownMessage(
       return `${quoted} is not a Projection Path of ${family}.`;
     case "sortable-field":
       return `${quoted} is not a Sortable Field of ${family}.`;
+    case "formula":
+      return `${quoted} is not a Formula of the request.`;
   }
 }
 
@@ -776,6 +899,8 @@ function recoveryAction(
       return `Use a Projection Path from the ${family} Schema.`;
     case "sortable-field":
       return `Use a Sortable Field from the ${family} Schema.`;
+    case "formula":
+      return "Define the Formula in formulas.";
   }
 }
 
@@ -811,6 +936,7 @@ function suggestionAction(
     case "custom-field":
     case "projection-path":
     case "sortable-field":
+    case "formula":
       return `Choose a matching field, such as ${suggestion}.`;
   }
 }

@@ -27,8 +27,8 @@ import type { QueryDataset } from "./dataset";
 import type { DatasetRun } from "./execution";
 import { matches as isMatch } from "./filter-evaluate";
 import { planFilter } from "./filter-plan";
+import { projectColumns } from "./formulas";
 import { parentPathResolver, parentRootName } from "./parent-records";
-import { readPath } from "./projection";
 import { ATTACHMENTS } from "./query-attachments";
 import { ITEMS } from "./query-items";
 import { openRecordLoader } from "./record-loader";
@@ -88,7 +88,7 @@ export const ANNOTATIONS: QueryDataset<ItemQueryRequest> = {
   readUniverseRows: readAnnotationUniverseRows,
   open: (plan, request, { clock, sources }) =>
     Effect.gen(function* () {
-      const { filter, paths } = plan;
+      const { filter, columns } = plan;
       const hydration = yield* openRecordLoader(ANNOTATION_LOADING, plan, {
         libraries: request.libraries,
         sources,
@@ -107,9 +107,7 @@ export const ANNOTATIONS: QueryDataset<ItemQueryRequest> = {
             item.scan.parent.key,
             library.groupID,
           ),
-          values: Object.fromEntries(
-            paths.map((path) => [path.text, readPath(path, item)]),
-          ),
+          values: projectColumns(columns, item, clock),
         }),
       };
       return run;

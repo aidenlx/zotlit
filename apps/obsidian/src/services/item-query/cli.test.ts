@@ -123,6 +123,55 @@ describe("zotlit:query-cancel", () => {
   });
 });
 
+describe("zotlit:query formulas", () => {
+  it("answers formula.<name> in each row and echoes formulas in the request", async () => {
+    using scenario = openScenarioDatabase();
+    const run = runnerOf(scenario);
+
+    const answer = await run({
+      filter: 'indexedKey == "BK2MNTH2"',
+      formulas: '{"year":"date.year","unused":"title"}',
+      fields: "formula.year",
+    });
+
+    expect(answer).toMatchObject({
+      ok: true,
+      request: {
+        formulas: { year: "date.year", unused: "title" },
+        fields: ["formula.year"],
+      },
+      warnings: [
+        {
+          code: "unused-formula",
+          location: { argument: "formulas", path: "unused" },
+        },
+      ],
+      rows: [{ indexedKey: "BK2MNTH2", values: { "formula.year": 2019 } }],
+    });
+  });
+
+  it("fails a wrong Formula with a diagnostic that names it", async () => {
+    using scenario = openScenarioDatabase();
+    const run = runnerOf(scenario);
+
+    const answer = await run({
+      formulas: '{"short":"title.nope()"}',
+      fields: "formula.short",
+    });
+
+    expect(answer).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "unknown-function",
+        location: { argument: "formulas", path: "short" },
+        report: expect.arrayContaining([
+          expect.stringContaining("formula.short"),
+        ]),
+      },
+    });
+  });
+});
+
 describe("zotlit:query-guide", () => {
   it("prints the quickstart as plain text with every command and topic", () => {
     const output = itemQueryGuideHandler({});
@@ -141,6 +190,7 @@ describe("zotlit:query-guide", () => {
       "obsidian zotlit:query [from=<items|attachments|annotations>]",
     );
     expect(output).toContain("[fields=<list|json>]");
+    expect(output).toContain("[formulas=<json>]");
     expect(output).toContain("[library=<list|all>]");
     expect(output).toContain("Library scope");
     expect(output).toContain("from=annotations");

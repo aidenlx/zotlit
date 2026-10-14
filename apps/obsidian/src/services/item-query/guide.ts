@@ -321,7 +321,27 @@ PATHS
 VALUES
   Each row has every requested path. A missing value is null; an empty list
   is []. Timestamps and dates are ISO 8601 text, such as
-  2024-06-01T10:00:00Z, 2020-03-15, or 2019-11.`;
+  2024-06-01T10:00:00Z, 2020-03-15, or 2019-11.
+
+FORMULAS
+  formulas takes a JSON object: each key is a Formula name, each value a
+  Filter Expression. Read a Formula as formula.<name> in fields; each row
+  then has its value under that path. Formulas have no comma-list form.
+    ${example({ formulas: '{"year":"date.year","authors":"creators.length"}', fields: "title,formula.year,formula.authors", limit: "5" })}
+  A Formula name has letters, digits, and _, with a letter or _ first, and
+  letter case counts. formula is a reserved first path segment in every
+  dataset; a custom field named formula is custom["formula"].
+  A Formula reads the fields of the selected dataset, and this.item and
+  this.attachment when the query binds them. It gives a boolean, a number,
+  a string, a list, or a date; a date has the shape of the date field, and
+  a timestamp is ISO 8601 text. A value that one row cannot compute is null.
+  A Formula that fields never reads is not computed; the answer then has
+  the warning unused-formula. A mistake in a Formula fails the query:
+  location.argument is formulas and location.path is the Formula name.
+  invalid-formula-name, invalid-formula-result (a duration, a regular
+  expression, or a record), and unknown-formula (formula.<name> without
+  that name in formulas) are the Formula codes. The catalog's formulas entry
+  lists the name form, the result types, and these codes.`;
 
 const SORT_SECTION = `SORT AND LIMIT
 
