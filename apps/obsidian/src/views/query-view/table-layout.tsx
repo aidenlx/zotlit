@@ -430,7 +430,10 @@ export function TableLayout({ view }: { view: QueryView }) {
   const { query, literatureNotes } = view.tableDeps;
   const { children: expanded, toggle } = useChildren(query);
   const properties = useViewProperties(view);
-  const columns = useMemo(() => properties?.columns ?? [], [properties]);
+  const columns = useMemo(
+    () => properties?.visibleProperties ?? [],
+    [properties],
+  );
   const visible = useMemo(
     () =>
       search === ""
