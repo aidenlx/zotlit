@@ -241,6 +241,17 @@ inner.release();`,
     lock.release();
   });
 
+  it("includes a second acquire in the holder's own process", async () => {
+    // Each Vitest project's global setup takes the lock in one process.
+    const lock = await acquireDesktopLock({ path });
+    const inner = await acquireDesktopLock({ path, pollMs: 10 });
+    expect(inner.reused).toBe(true);
+    inner.release();
+    expect(await exists(join(path, "owner.json"))).toBe(true);
+    lock.release();
+    expect(await exists(path)).toBe(false);
+  });
+
   it("acquires normally when the inherited token is not the holder's", async () => {
     process.env[DESKTOP_LOCK_ENV] = "stale";
     const lock = await acquireDesktopLock({ path });
