@@ -18,7 +18,7 @@ import type {
 } from "@/services/annotation-repository/service";
 import { byTextField, IDLE } from "@/services/annotation-repository/write";
 
-import { NO_SELECTION } from "./card-selection";
+import { cardPlace, NO_SELECTION } from "./card-selection";
 import type { CardSelection } from "./card-selection";
 import type { CaretPoint } from "./editor-sheet";
 import { filterAnnotations } from "./filter";
@@ -435,39 +435,82 @@ function filterOf(s: FilterSlices): AnnotFilter {
   };
 }
 
+/** One card under one group heading, as the grid draws it. */
+export interface GroupedCard {
+  annot: AnnotationRecord;
+  group: CardGroup;
+  /** Whether a heading opens the group before this card. */
+  opens: boolean;
+}
+
+/** The shown cards under their groups, in the order of the placements. */
+export function groupedCards(
+  groups: readonly CardPlacement[],
+  shown: readonly AnnotationRecord[],
+): GroupedCard[] {
+  const byKey = new Map(shown.map((annot) => [annot.key, annot]));
+  const cards: GroupedCard[] = [];
+  for (const { annotationKey, group } of groups) {
+    const annot = byKey.get(annotationKey);
+    if (!annot) continue;
+    cards.push({ annot, group, opens: cards.at(-1)?.group.key !== group.key });
+  }
+  return cards;
+}
+
+type OrderSlices = FilterSlices &
+  Pick<AnnotState, "groups" | "collapsedGroups">;
+
 /**
- * The last order worked out over each list, and the filter slices it was
- * worked out under. Keyed on the list itself, so each view keeps its own.
+ * The last order worked out over each list, and the slices it was worked out
+ * under. Keyed on the list itself, so each view keeps its own.
  */
 const orders = new WeakMap<
   readonly AnnotationRecord[],
-  { slices: FilterSlices; order: readonly string[] }
+  { slices: OrderSlices; order: readonly string[] }
 >();
 
 /**
- * The Indexed Keys the list shows, in the order it shows them — the list the
- * Card Selection's transitions read, filtered as {@link useAnnotFilter}
- * filters the cards on screen. The view's subscription reads it on every
- * store update, so it filters again only when the list or a filter slice
- * changes.
+ * The places of the cards the list shows, in the order it shows them — the
+ * list the Card Selection's transitions read. It is filtered as
+ * {@link useAnnotFilter} filters the cards on screen, and grouped as the grid
+ * draws them: a card stands at each group it shows under, and a collapsed
+ * group shows none. The view's subscription reads it on every store update,
+ * so it works the order out again only when the list, a filter slice or the
+ * groups change.
  */
 export function visibleOrder(
-  s: FilterSlices & Pick<AnnotState, "annotations">,
+  s: OrderSlices & Pick<AnnotState, "annotations">,
 ): readonly string[] {
   if (s.annotations === null) return [];
   const held = orders.get(s.annotations);
   if (
     held?.slices.filterQuery === s.filterQuery &&
     held.slices.selectedColors === s.selectedColors &&
-    held.slices.selectedTags === s.selectedTags
+    held.slices.selectedTags === s.selectedTags &&
+    held.slices.groups === s.groups &&
+    held.slices.collapsedGroups === s.collapsedGroups
   )
     return held.order;
-  const { filterQuery, selectedColors, selectedTags } = s;
-  const order = filterAnnotations(s.annotations, filterOf(s)).map(
-    ({ key }) => key,
-  );
+  const { filterQuery, selectedColors, selectedTags, groups, collapsedGroups } =
+    s;
+  const shown = filterAnnotations(s.annotations, filterOf(s));
+  const order =
+    groups === null
+      ? shown.map(({ key }) => cardPlace(key, null))
+      : groupedCards(groups, shown).flatMap(({ annot, group }) =>
+          collapsedGroups.has(group.key)
+            ? []
+            : [cardPlace(annot.key, group.key)],
+        );
   orders.set(s.annotations, {
-    slices: { filterQuery, selectedColors, selectedTags },
+    slices: {
+      filterQuery,
+      selectedColors,
+      selectedTags,
+      groups,
+      collapsedGroups,
+    },
     order,
   });
   return order;
