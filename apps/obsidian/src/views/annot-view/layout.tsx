@@ -490,15 +490,20 @@ export class AnnotationsLayout extends Component {
    * does: the run a list change asked for keeps the cards on screen while its
    * rows lack an Annotation that change added and the repository still
    * holds, and the database change that follows runs the query again. The
-   * rows of any other run show. Every run's rows answer it: an added
-   * Annotation they name, or that the repository no longer holds, is no
-   * longer waited for.
+   * rows of any other run show, and are the rows the next list change
+   * measures against: an Annotation they leave out, as a filter edit does,
+   * is no longer waited for. An added Annotation that a run's rows name, or
+   * that the repository no longer holds, is no longer waited for either.
    *
    * @param rowKeys the Annotations the run's rows name.
    * @param fromListChange whether the run is the one that
    *   {@link AnnotationsLayoutHost.onListChanged} asked for.
    */
   keepsBack(rowKeys: Iterable<string>, fromListChange: boolean): boolean {
+    if (!fromListChange) {
+      this.#listAdded.clear();
+      return false;
+    }
     const named = new Set(rowKeys);
     for (const [key, attachmentKey] of this.#listAdded) {
       if (
@@ -507,7 +512,7 @@ export class AnnotationsLayout extends Component {
       )
         this.#listAdded.delete(key);
     }
-    return fromListChange && this.#listAdded.size > 0;
+    return this.#listAdded.size > 0;
   }
 
   /** Show no Attachment, and drop every list, draft and editor with them. */
