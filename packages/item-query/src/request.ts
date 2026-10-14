@@ -337,6 +337,7 @@ export function planRequest(
           // Formula with a mistake.
           for (const text of request.fields ?? dataset.defaultFields)
             formulas.column(text);
+          formulas.planReads([request.filter]);
           return yield* new ItemQueryError({
             dataset,
             context,
@@ -486,6 +487,9 @@ export function planRequest(
         },
       });
     }
+
+    // Each Formula that the request reads gets its own mark.
+    if (leaveOut) formulas.planReads([]);
 
     const normalized = sort.map(({ field, direction }) => ({
       field,
