@@ -1,0 +1,478 @@
+// The one Query View: a Query File's text, one of its views, and the rows
+// ZotLit Query gives for it, drawn by the view's Layout. It is host-neutral:
+// the Query File tab mounts it today, and the embed, the Query Block and the
+// sidebar mount the same part, each with its own Query Context.
+//
+// @see apps/obsidian/docs/adr/0068-query-files-are-a-zotlit-file-type-embedded-through-the-private-embed-registry.md
+// @see apps/obsidian/docs/adr/0069-the-annotation-view-is-the-annotations-layout-of-the-query-view.md
+import { Component, Menu } from "obsidian";
+import type { Scope } from "obsidian";
+import { useStore } from "zustand";
+import { createStore } from "zustand/vanilla";
+
+import type { QueryContext } from "@zotlit/item-query";
+
+import { Icon } from "@/components/obsidian/icon";
+import * as m from "@/lib/i18n/generated/messages";
+import { getLogger } from "@/lib/log";
+import { showMenuAtButton } from "@/lib/menu";
+import type { AnnotationRepository } from "@/services/annotation-repository/service";
+import type { Diagnostic } from "@/services/item-query/contract";
+import type {
+  QueryViewOutcome,
+  QueryViewRequest,
+} from "@/services/item-query/query-view";
+import type { QueryService } from "@/services/item-query/service";
+import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import { AnnotList } from "@/views/annot-view/AnnotView";
+import { AnnotationsLayout } from "@/views/annot-view/layout";
+import type { AnnotationsLayoutDeps } from "@/views/annot-view/layout";
+import { useAnnotStore } from "@/views/annot-view/store";
+
+import { parseQueryFile, viewFilter } from "./query-file";
+import type { QueryFile, QueryFileProblem, QueryFileView } from "./query-file";
+import { LAYOUT_FIELDS, LAYOUT_GROUP_PATHS, layoutRows } from "./rows";
+
+const logger = getLogger(["views", "query-view"]);
+
+/** The services a Query View reads through. */
+export interface QueryViewDeps extends AnnotationsLayoutDeps {
+  annotations: AnnotationsLayoutDeps["annotations"] &
+    Pick<AnnotationRepository, "hold">;
+  query: Pick<QueryService, "run">;
+  reads: AnnotationsLayoutDeps["reads"] & Pick<ZoteroReadsService, "on">;
+  libraryScope: Pick<LibraryScopeService, "on">;
+}
+
+/** What the host gives the Query View, beside the services. */
+export interface QueryViewHost {
+  /** The Scope the card keys go on, as for the Annotations Layout. */
+  scope: Scope;
+  /** The note that links in a card's comment resolve against. */
+  sourcePath: () => string;
+  /**
+   * The Query Context: the Item and Attachment `this` reads. `undefined` in a
+   * Query File's own tab, where `this` has no value.
+   */
+  context: () => QueryContext | undefined;
+  /** The user chose another view of the file; the host may remember it. */
+  onSelectView?: (name: string) => void;
+}
+
+/** What the view shows now, as the toolbar and the host read it. */
+export interface QueryViewState {
+  file: QueryFile | null;
+  /** The view shown; `null` while the file has none. */
+  view: QueryFileView | null;
+  /** What keeps the view from running, for the file and for the view. */
+  problems: readonly string[];
+  phase: "idle" | "loading" | "ready" | "failed";
+  /** Why the last run gave no rows, while `phase` is `failed`. */
+  diagnostic:
+    | (Pick<Diagnostic, "message" | "hint" | "report"> & { code: string })
+    | null;
+  /** The rows the query gave. */
+  count: number;
+  /** Whether the view's limit cut the rows short. */
+  truncated: boolean;
+}
+
+const INITIAL_STATE: QueryViewState = {
+  file: null,
+  view: null,
+  problems: [],
+  phase: "idle",
+  diagnostic: null,
+  count: 0,
+  truncated: false,
+};
+
+function problemText(problem: QueryFileProblem): string {
+  switch (problem.code) {
+    case "invalid-yaml":
+      return m.query_view_problem_invalid_yaml({ message: problem.message });
+    case "not-a-map":
+      return m.query_view_problem_not_a_map();
+    case "no-views":
+      return m.query_view_problem_no_views();
+    case "missing-key":
+      return m.query_view_problem_missing_key({ key: problem.key });
+    case "invalid-value":
+      return m.query_view_problem_invalid_value({
+        key: problem.key,
+        value: JSON.stringify(problem.value) ?? String(problem.value),
+      });
+    default:
+      problem satisfies never;
+      return "";
+  }
+}
+
+/** What keeps the Annotations Layout from showing a view, beside the parser's own problems. */
+function layoutProblems(view: QueryFileView): string[] {
+  const problems: string[] = [];
+  if (view.type !== "" && view.type !== "annotations")
+    problems.push(m.query_view_problem_layout({ type: view.type }));
+  else if (view.from !== undefined && view.from !== "annotations")
+    problems.push(m.query_view_problem_dataset());
+  if (
+    view.groupBy &&
+    !(LAYOUT_GROUP_PATHS as readonly string[]).includes(view.groupBy.property)
+  )
+    problems.push(
+      m.query_view_problem_group({ property: view.groupBy.property }),
+    );
+  return problems;
+}
+
+export class QueryView extends Component {
+  readonly state = createStore<QueryViewState>()(() => INITIAL_STATE);
+  readonly #deps: QueryViewDeps;
+  readonly #host: QueryViewHost;
+  readonly #layout: AnnotationsLayout;
+  /** The view the host asked for by name; the first view where `null`. */
+  #wanted: string | null = null;
+  #run: AbortController | null = null;
+  /** The lists the cards on screen come from, held while they show. */
+  #hold: Disposable | null = null;
+  /** The view whose rows are on screen, which a failed refresh keeps. */
+  #shownView: QueryFileView | null = null;
+  #settled: Promise<void> = Promise.resolve();
+  #subscriptions: DisposableStack | null = null;
+
+  constructor(deps: QueryViewDeps, host: QueryViewHost) {
+    super();
+    this.#deps = deps;
+    this.#host = host;
+    this.#layout = new AnnotationsLayout(deps, {
+      scope: host.scope,
+      sourcePath: host.sourcePath,
+    });
+  }
+
+  /** The cards, their store and their actions. */
+  get layout(): AnnotationsLayout {
+    return this.#layout;
+  }
+
+  /** Settles once the cards show the last run the view started. Never rejects. */
+  get settled(): Promise<void> {
+    return this.#settled.then(() => this.#layout.read);
+  }
+
+  override onload(): void {
+    this.addChild(this.#layout);
+    const rerun = () => this.refresh();
+    const { reads, libraryScope } = this.#deps;
+    const subscriptions = new DisposableStack();
+    this.#subscriptions = subscriptions;
+    // A new database connection, a database that cannot be read, and another
+    // Library Scope each change what the query gives. A change to one
+    // Attachment's Annotations reaches the cards through the layout, which
+    // reads the live records again; the rows stand until the query runs.
+    subscriptions.defer(reads.on("changed", rerun));
+    subscriptions.defer(reads.on("degraded", rerun));
+    subscriptions.defer(reads.on("db-file-missing", rerun));
+    subscriptions.defer(libraryScope.on("libraries-changed", rerun));
+  }
+
+  override onunload(): void {
+    this.#subscriptions?.dispose();
+    this.#subscriptions = null;
+    this.#run?.abort();
+    this.#run = null;
+    this.#hold?.[Symbol.dispose]();
+    this.#hold = null;
+    this.#shownView = null;
+  }
+
+  /** Draw the toolbar and the cards into `el`. Call it once the view has loaded. */
+  render(el: HTMLElement): void {
+    el.addClass("zt-query-view");
+    this.#layout.render(el, <QueryViewBody view={this} />);
+  }
+
+  /** Read a Query File's text, and show the view the host asked for. */
+  setText(text: string): void {
+    this.state.setState({ file: parseQueryFile(text) });
+    this.#choose();
+  }
+
+  /** Show the view named `name`, or the file's first view for `null`. */
+  selectView(name: string | null): void {
+    if (name === this.#wanted && this.state.getState().view?.name === name)
+      return;
+    this.#wanted = name;
+    this.#choose();
+  }
+
+  /** The name of the view shown, as the host remembers it. */
+  get viewName(): string | null {
+    return this.state.getState().view?.name ?? this.#wanted;
+  }
+
+  /** The user picked a view from the view menu. */
+  pickView(name: string): void {
+    this.selectView(name);
+    this.#host.onSelectView?.(name);
+  }
+
+  #choose(): void {
+    const { file } = this.state.getState();
+    if (!file) return;
+    const wanted = this.#wanted;
+    const view =
+      (wanted === null
+        ? file.views[0]
+        : file.views.find((candidate) => candidate.name === wanted)) ?? null;
+    const problems = file.problems.map(problemText);
+    if (view) {
+      problems.push(...view.problems.map(problemText), ...layoutProblems(view));
+    } else if (wanted !== null && file.views.length > 0) {
+      problems.push(m.query_view_problem_no_view({ name: wanted }));
+    }
+    this.state.setState({ view, problems });
+    this.refresh();
+  }
+
+  /** Run the view's query again, and show its rows. */
+  refresh(): void {
+    this.#run?.abort();
+    this.#run = null;
+    const { file, view, problems } = this.state.getState();
+    if (!file || !view || problems.length > 0) {
+      void this.#show(null);
+      this.state.setState({
+        phase: "idle",
+        diagnostic: null,
+        count: 0,
+        truncated: false,
+      });
+      return;
+    }
+    const controller = new AbortController();
+    this.#run = controller;
+    if (this.#shownView !== view) this.state.setState({ phase: "loading" });
+    const request: QueryViewRequest = {
+      from: view.from ?? "annotations",
+      ...(viewFilter(file, view) === undefined
+        ? {}
+        : { filter: viewFilter(file, view) }),
+      ...(view.sort && {
+        sort: view.sort.map(({ property, direction }) => ({
+          field: property,
+          direction: direction === "DESC" ? "desc" : "asc",
+        })),
+      }),
+      fields: [...LAYOUT_FIELDS],
+      limit: view.limit ?? null,
+      ...(this.#host.context() && { context: this.#host.context() }),
+    };
+    this.#settled = this.#deps.query.run(request, controller.signal).then(
+      (outcome) => {
+        if (this.#run !== controller) return;
+        this.#run = null;
+        return this.#land(view, outcome);
+      },
+      (error: unknown) => {
+        if (this.#run !== controller) return;
+        this.#run = null;
+        logger.warn("A Query View could not run its query", { error });
+        this.#fail(view, {
+          code: "query-failed",
+          message: error instanceof Error ? error.message : String(error),
+          hint: "",
+          report: [],
+        });
+      },
+    );
+  }
+
+  async #land(view: QueryFileView, outcome: QueryViewOutcome): Promise<void> {
+    switch (outcome.kind) {
+      case "cancelled":
+        return;
+      case "failed":
+        this.#fail(view, outcome.diagnostic);
+        return;
+      case "result": {
+        const { result } = outcome;
+        const rows = layoutRows(result.rows ?? [], view.groupBy);
+        this.state.setState({
+          phase: "ready",
+          diagnostic: null,
+          count: result.returnedCount,
+          truncated: result.truncated,
+        });
+        await this.#show(view, rows);
+        return;
+      }
+      default:
+        outcome satisfies never;
+    }
+  }
+
+  /**
+   * A run that gives no rows says why. A refresh of the view on screen keeps
+   * its last rows under the message; another view shows none.
+   */
+  #fail(view: QueryFileView, diagnostic: QueryViewState["diagnostic"]): void {
+    if (this.#shownView !== view) void this.#show(null);
+    this.state.setState({ phase: "failed", diagnostic });
+  }
+
+  /** Put these rows on screen, holding their lists before the old ones go. */
+  async #show(
+    view: QueryFileView | null,
+    rows: Parameters<AnnotationsLayout["showRows"]>[0] = [],
+  ): Promise<void> {
+    const previous = this.#hold;
+    this.#shownView = view;
+    if (view === null) {
+      this.#hold = null;
+      this.#layout.clear();
+      previous?.[Symbol.dispose]();
+      return;
+    }
+    this.#hold = this.#deps.annotations.hold(
+      rows.map((row) => row.attachmentKey),
+    );
+    await this.#layout.showRows(rows);
+    previous?.[Symbol.dispose]();
+  }
+}
+
+function useQueryViewState<T>(
+  view: QueryView,
+  selector: (state: QueryViewState) => T,
+): T {
+  return useStore(view.state, selector);
+}
+
+function ViewMenuButton({ view }: { view: QueryView }) {
+  const file = useQueryViewState(view, (s) => s.file);
+  const current = useQueryViewState(view, (s) => s.view);
+  if (!file || file.views.length === 0) return null;
+  return (
+    <button
+      type="button"
+      className="clickable-icon zt:flex zt:items-center zt:gap-1 zt:font-semibold"
+      aria-label={m.query_view_views()}
+      data-query-view-menu=""
+      onClick={(event) => {
+        const menu = new Menu();
+        for (const candidate of file.views)
+          menu.addItem((item) =>
+            item
+              .setTitle(candidate.name)
+              .setChecked(candidate === current)
+              .onClick(() => view.pickView(candidate.name)),
+          );
+        showMenuAtButton(menu, event.currentTarget);
+      }}
+    >
+      <span>{current?.name ?? file.views[0]!.name}</span>
+      <Icon name="chevrons-up-down" size={14} />
+    </button>
+  );
+}
+
+function ResultCount({ view }: { view: QueryView }) {
+  const phase = useQueryViewState(view, (s) => s.phase);
+  const count = useQueryViewState(view, (s) => s.count);
+  const truncated = useQueryViewState(view, (s) => s.truncated);
+  if (phase === "loading")
+    return <span data-query-count="">{m.query_view_loading()}</span>;
+  if (phase !== "ready") return null;
+  return (
+    <span data-query-count={count}>
+      {truncated
+        ? m.query_view_results_limited({ count })
+        : m.query_view_results({ count })}
+    </span>
+  );
+}
+
+function Problems({ view }: { view: QueryView }) {
+  const problems = useQueryViewState(view, (s) => s.problems);
+  const phase = useQueryViewState(view, (s) => s.phase);
+  const diagnostic = useQueryViewState(view, (s) => s.diagnostic);
+  const unresolved = useAnnotStore((s) => s.unresolved);
+  return (
+    <>
+      {problems.length > 0 && (
+        <div
+          className="zt:rounded zt:mx-3 zt:mt-2 zt:border zt:border-(--background-modifier-error) zt:p-2 zt:text-sm"
+          role="alert"
+          data-query-problems=""
+        >
+          {problems.map((problem) => (
+            <p key={problem} className="zt:m-0">
+              {problem}
+            </p>
+          ))}
+        </div>
+      )}
+      {phase === "failed" && diagnostic && (
+        <div
+          className="zt:rounded zt:mx-3 zt:mt-2 zt:border zt:border-(--background-modifier-error) zt:p-2 zt:text-sm"
+          role="alert"
+          data-query-diagnostic={diagnostic.code}
+        >
+          <p className="zt:m-0 zt:font-semibold">{m.query_view_failed()}</p>
+          {diagnostic.report.length > 0 ? (
+            <pre className="zt:m-0 zt:mt-1 zt:overflow-auto zt:text-xs zt:whitespace-pre-wrap">
+              {diagnostic.report.join("\n")}
+            </pre>
+          ) : (
+            <p className="zt:m-0 zt:mt-1">
+              {diagnostic.message} {diagnostic.hint}
+            </p>
+          )}
+        </div>
+      )}
+      {unresolved.length > 0 && (
+        <p
+          className="zt:mx-3 zt:mt-2 zt:mb-0 zt:text-sm zt:text-(--text-warning)"
+          data-query-unresolved={unresolved.length}
+        >
+          {m.query_view_unresolved({
+            count: unresolved.length,
+            keys: unresolved.join(", "),
+          })}
+        </p>
+      )}
+    </>
+  );
+}
+
+function NoResults({ view }: { view: QueryView }) {
+  const phase = useQueryViewState(view, (s) => s.phase);
+  const count = useQueryViewState(view, (s) => s.count);
+  if (phase !== "ready" || count > 0) return null;
+  return (
+    <div className="pane-empty zt:p-2" data-query-empty="">
+      {m.query_view_no_results()}
+    </div>
+  );
+}
+
+function QueryViewBody({ view }: { view: QueryView }) {
+  return (
+    <div className="zt:flex zt:h-full zt:flex-col">
+      <div
+        className="zt:flex zt:items-center zt:gap-2 zt:border-b zt:border-(--background-modifier-border) zt:px-3 zt:py-1 zt:text-sm"
+        role="toolbar"
+      >
+        <ViewMenuButton view={view} />
+        <span className="zt:text-(--text-muted)">
+          <ResultCount view={view} />
+        </span>
+      </div>
+      <Problems view={view} />
+      <NoResults view={view} />
+      <AnnotList collapsed />
+    </div>
+  );
+}

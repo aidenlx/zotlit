@@ -61,7 +61,7 @@ import {
   toggledTags,
   visibleOrder,
 } from "./store";
-import type { AnnotState, AnnotStore, HeldSource } from "./store";
+import type { AnnotState, AnnotStore, CardGroup, HeldSource } from "./store";
 
 const logger = getLogger(["views", "annot-view"]);
 
@@ -197,6 +197,14 @@ export interface AnnotationsLayoutHost {
 /** One Attachment's list as the layout last took it, or `null` where its read failed. */
 type Landed = { list: AnnotationList; scope: string | null } | null;
 
+/** One row of a query a Query View shows: an Annotation and the Attachment that holds it. */
+export interface LayoutRow {
+  annotationKey: string;
+  attachmentKey: string;
+  /** The group the row stands in; a row with none stands under no heading. */
+  group?: CardGroup;
+}
+
 export class AnnotationsLayout extends Component {
   /** What the cards show, which the host's own chrome may read and extend. */
   readonly store: AnnotStore = createAnnotStore();
@@ -208,6 +216,8 @@ export class AnnotationsLayout extends Component {
   #subscriptions: DisposableStack | null = null;
   /** The Attachments shown, in the order the host gave. */
   #shown: readonly string[] = [];
+  /** The rows of a query the cards show; `null` while they show whole lists. */
+  #rows: readonly LayoutRow[] | null = null;
   /** The list each shown Attachment's last read left. */
   readonly #landed = new Map<string, Landed>();
   /** The last read started for each Attachment; a slower one never lands after it. */
@@ -374,6 +384,35 @@ export class AnnotationsLayout extends Component {
    *   a cancelled one or a failure left another there.
    */
   show(attachmentKeys: readonly string[]): Promise<boolean> {
+    if (this.#rows !== null) {
+      this.#rows = null;
+      this.store.setState({ groups: null, unresolved: [] });
+    }
+    return this.#showAttachments(attachmentKeys);
+  }
+
+  /**
+   * Show the rows of a query, in the query's order, from the live lists of
+   * the Attachments that hold them: a card shows its record as the repository
+   * holds it now, and stays while the rows stand, whatever a write changed on
+   * it. A row no list holds is named in `unresolved`.
+   *
+   * @returns as {@link show}.
+   */
+  showRows(rows: readonly LayoutRow[]): Promise<boolean> {
+    this.#rows = rows;
+    const groups = new Map<string, CardGroup>();
+    for (const row of rows)
+      if (row.group) groups.set(row.annotationKey, row.group);
+    this.store.setState({ groups: groups.size > 0 ? groups : null });
+    const attachmentKeys = [...new Set(rows.map((row) => row.attachmentKey))];
+    const landing = this.#showAttachments(attachmentKeys);
+    // The lists that already stand show the new rows at once.
+    this.#publish();
+    return landing;
+  }
+
+  #showAttachments(attachmentKeys: readonly string[]): Promise<boolean> {
     if (!sameKeys(attachmentKeys, this.#shown)) {
       this.#shown = [...attachmentKeys];
       for (const key of this.#landed.keys())
@@ -393,9 +432,12 @@ export class AnnotationsLayout extends Component {
   clear(): void {
     this.cancelReads();
     this.#shown = [];
+    this.#rows = null;
     this.#landed.clear();
     this.#syncCapabilities();
     this.store.setState({
+      groups: null,
+      unresolved: [],
       annotations: null,
       sources: new Map(),
       fieldDrafts: noFieldDrafts(),
@@ -448,12 +490,16 @@ export class AnnotationsLayout extends Component {
         // A slower read never overwrites a later one. A null answer is a read
         // an invalidation cancelled; the same invalidation announces the
         // change the layout re-reads on, so the list is not left waiting.
-        if (
-          !current() ||
-          list === null ||
-          scope !== this.#deps.zoteroPref.dataDir
-        )
+        if (!current() || scope !== this.#deps.zoteroPref.dataDir) return false;
+        if (list === null) {
+          // The rows of a query wait for no list: an Attachment no read has
+          // answered for yet names its rows unresolved until one does.
+          if (this.#rows !== null && !this.#landed.has(attachmentKey)) {
+            this.#landed.set(attachmentKey, null);
+            this.#publish();
+          }
           return false;
+        }
         this.#landed.set(attachmentKey, { list, scope });
         this.#publish();
         return true;
@@ -471,7 +517,10 @@ export class AnnotationsLayout extends Component {
   }
 
   /** The cards of every shown Attachment, once each list has landed. */
-  #composed(): Pick<AnnotState, "annotations" | "sources"> | null {
+  #composed(): Pick<
+    AnnotState,
+    "annotations" | "sources" | "unresolved"
+  > | null {
     const landed = this.#shown.map((key) => this.#landed.get(key));
     if (landed.includes(undefined)) return null;
     const sources = new Map<string, HeldSource>();
@@ -480,10 +529,29 @@ export class AnnotationsLayout extends Component {
       if (held)
         sources.set(key, { source: held.list.source, scope: held.scope });
     }
-    return {
-      annotations: landed.flatMap((held) => held?.list.annotations ?? []),
-      sources,
-    };
+    const rows = this.#rows;
+    if (rows === null)
+      return {
+        annotations: landed.flatMap((held) => held?.list.annotations ?? []),
+        sources,
+        unresolved: [],
+      };
+    const records = new Map(
+      landed.flatMap(
+        (held) =>
+          held?.list.annotations.map(
+            (record) => [`${record.parentKey}\n${record.key}`, record] as const,
+          ) ?? [],
+      ),
+    );
+    const annotations: AnnotationRecord[] = [];
+    const unresolved: string[] = [];
+    for (const row of rows) {
+      const record = records.get(`${row.attachmentKey}\n${row.annotationKey}`);
+      if (record) annotations.push(record);
+      else unresolved.push(row.annotationKey);
+    }
+    return { annotations, sources, unresolved };
   }
 
   /** Puts the composed lists on screen, with the drafts their records hold. */

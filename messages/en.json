@@ -2561,5 +2561,52 @@
   "pdf_create_popup_copy": "Copy selected text",
   "pdf_create_failed": "The annotation was not created. {reason}",
   "pdf_create_reason_no_document": "The PDF is no longer open.",
-  "pdf_adjust_failed": "The annotation was not adjusted. {reason}"
+  "pdf_adjust_failed": "The annotation was not adjusted. {reason}",
+  "command_new_query_file_name": "Create new query file",
+  "query_file_new": "New query file",
+  "query_file_untitled": "Untitled",
+  "query_file_default_view_name": "Annotations",
+  "query_view_views": "Views",
+  "query_view_loading": "Loading…",
+  "query_view_results": [
+    {
+      "declarations": ["input count", "local countPlural = count: plural"],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "1 result",
+        "countPlural=*": "{count} results"
+      }
+    }
+  ],
+  "query_view_results_limited": [
+    {
+      "declarations": ["input count", "local countPlural = count: plural"],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "1 result (limit reached)",
+        "countPlural=*": "{count} results (limit reached)"
+      }
+    }
+  ],
+  "query_view_no_results": "No annotations match this view.",
+  "query_view_unresolved": [
+    {
+      "declarations": ["input count", "local countPlural = count: plural"],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "1 result could not be read: {keys}",
+        "countPlural=*": "{count} results could not be read: {keys}"
+      }
+    }
+  ],
+  "query_view_failed": "This view cannot show results.",
+  "query_view_problem_invalid_yaml": "This file is not valid YAML. {message}",
+  "query_view_problem_not_a_map": "This file must hold keys such as \"views\".",
+  "query_view_problem_no_views": "This file has no views. Add one under \"views\".",
+  "query_view_problem_missing_key": "This view has no \"{key}\".",
+  "query_view_problem_invalid_value": "This view has an invalid \"{key}\": {value}",
+  "query_view_problem_layout": "The \"{type}\" layout is not available yet.",
+  "query_view_problem_dataset": "The Annotations layout shows \"from: annotations\" only.",
+  "query_view_problem_group": "Grouping by \"{property}\" is not available yet.",
+  "query_view_problem_no_view": "This file has no view named \"{name}\"."
 }
