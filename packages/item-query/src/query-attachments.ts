@@ -72,8 +72,8 @@ export const ATTACHMENTS: QueryDataset<ItemQueryRequest> = {
   sortableFields: ATTACHMENT_SORT_FIELDS,
   definition: attachmentFieldDefinition,
   filterField: (name) => attachmentFilterRegistry.field(name),
-  planFilter: (text, context) =>
-    planFilter(text, { registry: attachmentFilterRegistry, context }),
+  planFilter: (text, context, formula) =>
+    planFilter(text, { registry: attachmentFilterRegistry, context, formula }),
   sortable: attachmentSortableField,
   resolvePath: parentPathResolver(
     attachmentFieldDefinition,

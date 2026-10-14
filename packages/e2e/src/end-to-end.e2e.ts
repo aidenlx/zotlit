@@ -5718,6 +5718,55 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
   });
 
+  it("filters by a Formula and reads a dependent Formula through ZotLit Query", async () => {
+    const query = async (args: Record<string, string>) =>
+      JSON.parse(
+        await cliCommand(vaultId, "zotlit:query", {
+          args: { library: "personal", ...args },
+        }),
+      ) as ItemQueryReport;
+    const yearOf = (item: FixtureItem) => Number(item.date.slice(0, 4));
+    const recent = ITEMS.filter(
+      (item) => item.libraryID === 1 && yearOf(item) >= 2020,
+    );
+    expect(recent.length).toBeGreaterThan(1);
+
+    const report = await query({
+      formulas: JSON.stringify({
+        year: "date.year",
+        next: "formula.year + 1",
+      }),
+      filter: "formula.year >= 2020",
+      fields: "formula.next",
+      limit: "100",
+    });
+    expect(report).toMatchObject({ ok: true, warnings: [] });
+    expect(report.rows).toHaveLength(recent.length);
+    expect(report.rows).toEqual(
+      expect.arrayContaining(
+        recent.map((item) => ({
+          indexedKey: item.key,
+          values: { "formula.next": yearOf(item) + 1 },
+        })),
+      ),
+    );
+
+    const cycle = await query({
+      formulas: JSON.stringify({ a: "formula.b + 1", b: "formula.a" }),
+      fields: "formula.a",
+    });
+    expect(cycle).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "formula-cycle",
+        location: { argument: "formulas", path: "b" },
+      },
+    });
+    expect(cycle.diagnostic!.report.join("\n")).toContain(
+      "formula.a → formula.b → formula.a",
+    );
+  });
+
   it("groups papers per tag and per Collection through zotlit:query", async () => {
     const papers = ITEMS.filter((item) => item.libraryID === 1);
     /** Each group value with the keys of its papers, from the Fixture Spec. */

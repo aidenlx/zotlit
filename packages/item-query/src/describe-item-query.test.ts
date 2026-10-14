@@ -645,6 +645,7 @@ describe("the Item Query Schema and collectQuery", () => {
       "invalid-formula-result",
     ],
     [{ fields: ["formula.notAFormula"] }, "unknown-formula"],
+    [{ filter: "formula.notAFormula > 0" }, "unknown-formula"],
   ] satisfies [Omit<ItemQueryRequest, "libraries">, string][])(
     "rejects a name outside it: %j",
     async (request, code) => {
@@ -684,6 +685,7 @@ it("publishes the Formula path, name form, result types, Fault codes, and Error 
       "invalid-formula-name",
       "invalid-formula-result",
       "unknown-formula",
+      "formula-cycle",
     ],
     warnings: ["unused-formula"],
     error: {

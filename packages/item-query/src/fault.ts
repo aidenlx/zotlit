@@ -91,6 +91,15 @@ export type Fault =
       readonly operands: readonly Receiver[];
       readonly at: Span;
     }
+  /**
+   * Formulas that read each other: `chain` starts and ends with the same name,
+   * and `at` is the reference that closes the cycle.
+   */
+  | {
+      readonly kind: "formula-cycle";
+      readonly chain: readonly string[];
+      readonly at: Span;
+    }
   /** A Formula name that is not an identifier. */
   | { readonly kind: "formula-name"; readonly name: string }
   | {

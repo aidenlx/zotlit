@@ -49,6 +49,36 @@ export function evaluate<Item>(
   return valueOf(node, { item, clock, bindings: new Map() });
 }
 
+/** The value of each Formula for each record, by the root of the Formula. */
+const formulaValues = new WeakMap<
+  object,
+  Map<
+    FilterNode<any>,
+    { readonly clock: QueryClock; readonly value: FilterValue }
+  >
+>();
+
+/**
+ * The value of a Formula for one record. The Formula runs once for each
+ * record and Query Clock: a second read, from the filter, another Formula, or
+ * the projection, gives the first value. The Formula text binds no names.
+ */
+export function evaluateFormula<Item>(
+  root: FilterNode<Item>,
+  item: Item,
+  clock: QueryClock,
+): FilterValue {
+  if (typeof item !== "object" || item === null)
+    return evaluate(root, item, clock);
+  let values = formulaValues.get(item);
+  if (!values) formulaValues.set(item, (values = new Map()));
+  const known = values.get(root);
+  if (known?.clock === clock) return known.value;
+  const value = evaluate(root, item, clock);
+  values.set(root, { clock, value });
+  return value;
+}
+
 /** The value of a node in `context`. */
 function valueOf<Item>(
   node: FilterNode<Item>,
@@ -66,6 +96,8 @@ function valueOf<Item>(
       return node.value.read(item);
     case "binding":
       return bindings.get(node.name) ?? null;
+    case "formula":
+      return evaluateFormula(node.root, item, clock);
     case "unary": {
       const operand = value(node.operand);
       // Null and an Error Value are falsy, so `!` of them is true.
