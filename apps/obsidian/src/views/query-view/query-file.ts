@@ -524,6 +524,8 @@ export function withDisplayName(
   property: string,
   name: string | undefined,
 ): QueryFile {
+  if (name === undefined && displayName(file, property) === undefined)
+    return file;
   const properties: Entries = { ...file.properties };
   const entry = properties[property];
   const current: Entries = isMap(entry) ? entry : {};
