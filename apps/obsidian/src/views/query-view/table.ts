@@ -3,8 +3,8 @@
 // this table.
 import type { QueryViewRow } from "@/services/item-query/query-view";
 
-import type { QueryFile } from "./query-file";
-import { cellText, propertyLabel } from "./value-text";
+import { cellText } from "./value-text";
+import type { PropertyEntry } from "./view-properties";
 
 export interface ResultTable {
   readonly header: readonly string[];
@@ -12,19 +12,17 @@ export interface ResultTable {
 }
 
 /**
- * The table of `rows`, in their order, with the columns `order` names. The
- * header names each column as the view shows it, by its Display Name in
- * `file`, else by its label.
+ * The table of `rows`, in their order, with one column for each entry of
+ * `columns`. The header names each column by its label, as the view shows it.
  */
 export function resultTable(
   rows: readonly QueryViewRow[],
-  order: readonly string[],
-  file: QueryFile | null = null,
+  columns: readonly Pick<PropertyEntry, "path" | "label">[],
 ): ResultTable {
   return {
-    header: order.map((property) => propertyLabel(file, property)),
+    header: columns.map(({ label }) => label),
     body: rows.map((row) =>
-      order.map((property) => cellText(property, row.values[property])),
+      columns.map(({ path }) => cellText(path, row.values[path])),
     ),
   };
 }

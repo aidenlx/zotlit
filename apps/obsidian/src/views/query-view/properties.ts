@@ -17,24 +17,37 @@ export interface PropertyOption {
   readonly kind: PropertyKind;
 }
 
+/**
+ * The label of a property, as a view's Property entries give it; `undefined`
+ * where the caller has no view, which leaves the labels of the dataset.
+ */
+export type OptionLabel = ((path: string) => string) | undefined;
+
 /** The properties a view of `dataset` can sort by, in the order Sort lists them. */
 export function sortOptions(
   dataset: QueryFileDataset | undefined,
+  labelOf?: OptionLabel,
 ): PropertyOption[] {
   const { engine, sort } = datasetSpec(dataset);
   const sortable = new Set(engine.sortableFields);
   return sort
     .filter(([path]) => sortable.has(path))
-    .map(([path, label, kind]) => ({ path, label: label(), kind }));
+    .map(([path, label, kind]) => ({
+      path,
+      label: labelOf?.(path) ?? label(),
+      kind,
+    }));
 }
 
 /** The properties a view of `dataset` can group by, in the order Group lists them. */
 export function groupOptions(
   dataset: QueryFileDataset | undefined,
+  labelOf?: OptionLabel,
 ): PropertyOption[] {
   return datasetSpec(dataset).group.map(({ path, label }) => ({
     path,
-    label: label(),
+    // A grouping by a list path names one value of the list.
+    label: labelOf?.(path.replace(/\[\]$/, "")) ?? label(),
     kind: "text",
   }));
 }
