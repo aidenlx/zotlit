@@ -1,12 +1,15 @@
-// Formulas: named Filter Expressions of a request. The planner plans the
-// Formulas that the request reads; the projection pass evaluates each one for
-// a record and converts its value into the Query Row shape.
+// Formulas: named Filter Expressions of a request. The Formula planner plans
+// the Formulas that the request reads and gives each one as a value, planned
+// or faulted; the projection pass evaluates each one for a record and
+// converts its value into the Query Row shape.
 import { regex } from "arkregex";
 
 import { parseExpressionAst } from "@zotlit/filter-expression";
 import type { ExpressionNode } from "@zotlit/filter-expression";
 
-import type { ItemQueryErrorCode } from "./error";
+import type { QueryDataset } from "./dataset";
+import type { ItemQueryErrorCode, ItemQueryErrorLocation } from "./error";
+import type { ItemQueryFault, Span } from "./fault";
 import { dateText } from "./filter-dates";
 import type { DateValue } from "./filter-dates";
 import {
@@ -15,13 +18,19 @@ import {
   renderEvaluationFault,
 } from "./filter-error";
 import { evaluateFormula } from "./filter-evaluate";
-import type { FilterPlan } from "./filter-plan";
+import type {
+  FaultedFormulaRead,
+  FilterPlan,
+  FormulaResolver,
+} from "./filter-plan";
 import { isDate, isList } from "./filter-values";
 import type { FilterValue } from "./filter-values";
-import type { PlannedPath } from "./projection";
+import { nameDictionary } from "./name-dictionary";
+import type { PathProblem, PlannedPath } from "./projection";
 import { readPath } from "./projection";
+import { parseProjectionPath } from "./projection-path";
 import type { QueryClock } from "./query-clock";
-import type { ProjectionValue } from "./request";
+import type { ProjectionValue, QueryContext } from "./request";
 
 /** The first segment of the Projection Path of every Formula. */
 export const FORMULA_SEGMENT = "formula";
@@ -116,6 +125,248 @@ export interface PlannedFormula<Item = any, Needs = any> {
   /** The Filter Expression text of the Formula. */
   readonly text: string;
   readonly plan: FilterPlan<Item, Needs>;
+}
+
+/** A Formula that the request defines and that has a mistake. */
+export interface FaultedFormula {
+  readonly name: string;
+  /** The Filter Expression text of the Formula. */
+  readonly text: string;
+  readonly fault: FormulaFault;
+}
+
+/**
+ * The mistake of a {@link FaultedFormula}: a Fault in its own definition, or
+ * the first Formula with a mistake that its text reads.
+ */
+export type FormulaFault =
+  | { readonly kind: "own"; readonly error: FormulaError }
+  | FaultedFormulaRead;
+
+/**
+ * The parts of the `ItemQueryError` of a Fault in a Formula definition, all
+ * but the Query Dataset.
+ */
+export interface FormulaError {
+  readonly fault: ItemQueryFault;
+  readonly location: ItemQueryErrorLocation & { readonly argument: "formulas" };
+  readonly argumentText: string;
+  readonly context?: QueryContext | undefined;
+}
+
+/**
+ * A Formula that `fields` reads as `formula.<name>`, or the Fault of the
+ * Projection Path: another form of a path in the `formula` segment, or a name
+ * that no Formula has.
+ */
+export type FormulaColumn<Item = any, Needs = any> =
+  | PlannedFormula<Item, Needs>
+  | FaultedFormula
+  | { readonly problem: PathProblem | ItemQueryFault };
+
+/**
+ * The Formulas of one request, planned against its Query Dataset. A Formula
+ * is planned once, when a Filter Expression or `fields` first reads it, and
+ * gives the same answer to each later read.
+ */
+export interface FormulaPlanner<Item = any, Needs = any> {
+  /**
+   * The Formulas whose name is not an identifier, in request order. Each one
+   * is faulted before any Formula is planned.
+   */
+  readonly invalidNames: readonly FaultedFormula[];
+  /** The meaning of `formula.<name>` in a Filter Expression of the request. */
+  readonly resolve: FormulaResolver<Item, Needs>;
+  /**
+   * The Formula that the Projection Path `text` of `fields` reads, or null for
+   * a path outside the reserved `formula` segment.
+   */
+  readonly column: (text: string) => FormulaColumn<Item, Needs> | null;
+  /**
+   * The Fault at the root of a faulted Formula, or of a read of one: the
+   * Fault in the definition of the first Formula, along the reads, that has
+   * one of its own.
+   */
+  readonly rootError: (
+    faulted: FaultedFormula | FaultedFormulaRead,
+  ) => FormulaError;
+  /** The planned Formulas, each once, a Formula after the Formulas it reads. */
+  readonly planned: () => readonly PlannedFormula<Item, Needs>[];
+  /** The faulted Formulas, each once, with the invalid names first. */
+  readonly faulted: () => readonly FaultedFormula[];
+  /** The Formulas that the request defines and no read has planned. */
+  readonly unread: () => readonly string[];
+}
+
+/** Plan the Formulas `definitions` of a request against `dataset`. */
+export function planFormulas(
+  dataset: QueryDataset<any>,
+  definitions: Readonly<Record<string, string>> | undefined,
+  context: QueryContext | undefined,
+): FormulaPlanner {
+  // The names come from the caller's text: a name such as __proto__ is a
+  // Formula like any other.
+  const defined = nameDictionary(Object.entries(definitions ?? {}));
+  const names = Object.keys(defined);
+  const invalidNames: FaultedFormula[] = names
+    .filter((name) => !FORMULA_NAME.test(name))
+    .map((name) => ({
+      name,
+      text: defined[name]!,
+      fault: {
+        kind: "own",
+        error: {
+          location: { argument: "formulas", path: name },
+          fault: { kind: "formula-name", name },
+          argumentText: name,
+        },
+      },
+    }));
+  const planned = new Map<string, PlannedFormula>();
+  const faulted = new Map<string, FaultedFormula>(
+    invalidNames.map((formula) => [formula.name, formula]),
+  );
+  // A Formula in `planning` is a reader of the one in planning after it, so a
+  // name already there closes a cycle.
+  const planning: string[] = [];
+
+  const unknown = (name: string, at: Span) =>
+    ({ kind: "unknown", role: "formula", name, at, formulas: names }) as const;
+
+  const plan = (name: string): PlannedFormula | FaultedFormula => {
+    const known = planned.get(name) ?? faulted.get(name);
+    if (known) return known;
+    const text = defined[name]!;
+    planning.push(name);
+    let result: ReturnType<typeof dataset.planFilter>;
+    try {
+      result = dataset.planFilter(text, context, resolve);
+    } finally {
+      planning.pop();
+    }
+    const own = (fault: ItemQueryFault, span: Span): FaultedFormula => ({
+      name,
+      text,
+      fault: {
+        kind: "own",
+        error: {
+          context,
+          fault,
+          location: { argument: "formulas", path: name, span },
+          argumentText: text,
+        },
+      },
+    });
+    let formula: PlannedFormula | FaultedFormula;
+    if ("kind" in result && result.kind === "reads-faulted-formula") {
+      formula = { name, text, fault: result };
+    } else if ("kind" in result) {
+      formula = own(
+        result,
+        result.kind === "syntax"
+          ? { from: result.fault.from, to: result.fault.to }
+          : result.at,
+      );
+    } else {
+      const found = result.root.valueType;
+      if (found === "duration" || found === "regexp" || found === "record") {
+        const at = { from: result.root.from, to: result.root.to };
+        formula = own({ kind: "formula-result", name, found, at }, at);
+      } else {
+        formula = { name, text, plan: result };
+      }
+    }
+    if ("fault" in formula) faulted.set(name, formula);
+    else planned.set(name, formula);
+    return formula;
+  };
+
+  const resolve: FormulaResolver<any, any> = (name, at) => {
+    if (!Object.hasOwn(defined, name)) return unknown(name, at);
+    const open = planning.indexOf(name);
+    if (open !== -1) {
+      return {
+        kind: "formula-cycle",
+        chain: [...planning.slice(open), name],
+        at,
+      };
+    }
+    const formula = plan(name);
+    if ("fault" in formula) return { kind: "reads-faulted-formula", name, at };
+    return { root: formula.plan.root, needs: formula.plan.needs };
+  };
+
+  return {
+    invalidNames,
+    resolve,
+    column: (text) => {
+      const name = formulaPath(text);
+      if (name === null) return null;
+      if (typeof name === "object") return { problem: name };
+      if (!Object.hasOwn(defined, name))
+        return { problem: unknown(name, { from: 0, to: text.length }) };
+      return plan(name);
+    },
+    rootError: (formula) => {
+      let fault = "fault" in formula ? formula.fault : formula;
+      while (fault.kind === "reads-faulted-formula")
+        fault = faulted.get(fault.name)!.fault;
+      return fault.error;
+    },
+    planned: () => [...planned.values()],
+    faulted: () => [...faulted.values()],
+    unread: () =>
+      names.filter((name) => !planned.has(name) && !faulted.has(name)),
+  };
+}
+
+/**
+ * The Formula name of a `formula.<name>` Projection Path, or null for a path
+ * outside the reserved `formula` segment. A Query Row holds a Formula under
+ * `formula.<name>` alone, so another form of a path in that segment, such as
+ * `formula["name"]`, is a Fault.
+ */
+function formulaPath(text: string): string | null | PathProblem {
+  const parsed = parseProjectionPath(text);
+  if (!parsed.ok || parsed.segments[0] !== FORMULA_SEGMENT) return null;
+  const [, name, ...rest] = parsed.segments;
+  if (
+    typeof name === "string" &&
+    rest.length === 0 &&
+    text === `${FORMULA_SEGMENT}.${name}`
+  )
+    return name;
+  return {
+    kind: "plain",
+    code: "invalid-path",
+    action:
+      typeof name === "string" && FORMULA_NAME.test(name)
+        ? `Read the Formula as ${FORMULA_SEGMENT}.${name}.`
+        : `Read a Formula as ${FORMULA_SEGMENT}.<name>.`,
+    at: { from: 0, to: text.length },
+    message: `"${text}" is not a Formula path: fields reads a Formula as ${FORMULA_SEGMENT}.<name>, and a Query Row holds its value under that key.`,
+  };
+}
+
+/**
+ * The Fault of a sort or a group by the Projection Path `text`, when it is in
+ * the reserved `formula` segment: a Formula runs in the projection pass,
+ * after the engine orders and groups the records. Null for every other path.
+ */
+export function formulaOrderFault(
+  code: "unsortable-field" | "invalid-group",
+  text: string,
+): PathProblem | null {
+  const parsed = parseProjectionPath(text);
+  if (!parsed.ok || parsed.segments[0] !== FORMULA_SEGMENT) return null;
+  const verb = code === "invalid-group" ? "group" : "sort";
+  return {
+    kind: "plain",
+    code,
+    at: { from: 0, to: text.length },
+    message: `A query cannot ${verb} by ${text} yet: it ${verb}s by a field, not by a Formula.`,
+    action: `${verb === "group" ? "Group" : "Sort"} by a field of the Query Dataset.`,
+  };
 }
 
 /** One value of a Query Row: a Projection Path or a Formula. */

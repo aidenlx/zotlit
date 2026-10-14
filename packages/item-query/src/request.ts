@@ -9,13 +9,11 @@ import type { Diagnostic } from "./diagnose";
 import { ItemQueryError } from "./error";
 import type { ItemQueryFault } from "./fault";
 import type { FieldNeeds, QueryItem, SortKey } from "./fields";
-import type { FilterPlan, FormulaResolver } from "./filter-plan";
-import { FORMULA_NAME, FORMULA_SEGMENT } from "./formulas";
-import type { PlannedColumn, PlannedFormula } from "./formulas";
-import { nameDictionary } from "./name-dictionary";
+import type { FaultedFormulaRead, FilterPlan } from "./filter-plan";
+import { formulaOrderFault, planFormulas } from "./formulas";
+import type { FaultedFormula, PlannedColumn, PlannedFormula } from "./formulas";
 import { canGroup, planPath, readPath } from "./projection";
-import type { PathProblem, PlannedPath } from "./projection";
-import { parseProjectionPath } from "./projection-path";
+import type { PlannedPath } from "./projection";
 import type { QueryClock } from "./query-clock";
 
 /**
@@ -269,97 +267,26 @@ export function planRequest(
       context = { ...context, [member]: key };
     }
 
-    // The names come from the caller's text: a name such as __proto__ is a
-    // Formula like any other.
-    const definedFormulas = nameDictionary(
-      Object.entries(request.formulas ?? {}),
-    );
-    for (const name of Object.keys(definedFormulas)) {
-      if (!FORMULA_NAME.test(name)) {
-        return yield* new ItemQueryError({
-          dataset,
-          location: { argument: "formulas", path: name },
-          fault: { kind: "formula-name", name },
-          argumentText: name,
-        });
-      }
-    }
-    // Every Formula that fields, the filter, or another Formula reads, each
-    // planned once. A Formula in `planning` is a reader of the one in planning
-    // after it, so a name already there closes a cycle.
-    const formulas = new Map<string, PlannedFormula>();
-    const planning: string[] = [];
-    const resolveFormula: FormulaResolver<any, any> = (name, at) => {
-      if (!Object.hasOwn(definedFormulas, name)) {
-        return {
-          kind: "unknown",
-          role: "formula",
-          name,
-          at,
-          formulas: Object.keys(definedFormulas),
-        };
-      }
-      const open = planning.indexOf(name);
-      if (open !== -1) {
-        return {
-          kind: "formula-cycle",
-          chain: [...planning.slice(open), name],
-          at,
-        };
-      }
-      const { plan } = planFormula(name);
-      return { root: plan.root, needs: plan.needs };
-    };
-    /** Plan a Formula; a Fault in its text throws {@link FormulaFailure}. */
-    const planFormula = (name: string): PlannedFormula => {
-      const known = formulas.get(name);
-      if (known) return known;
-      const text = definedFormulas[name]!;
-      const fail = (
-        fault: ItemQueryFault,
-        span: { from: number; to: number },
-      ) =>
-        new FormulaFailure(
-          new ItemQueryError({
-            dataset,
-            context,
-            fault,
-            location: { argument: "formulas", path: name, span },
-            argumentText: text,
-          }),
-        );
-      planning.push(name);
-      let planned: ReturnType<typeof dataset.planFilter>;
-      try {
-        planned = dataset.planFilter(text, context, resolveFormula);
-      } finally {
-        planning.pop();
-      }
-      if ("kind" in planned) {
-        throw fail(
-          planned,
-          planned.kind === "syntax"
-            ? { from: planned.fault.from, to: planned.fault.to }
-            : planned.at,
-        );
-      }
-      const found = planned.root.valueType;
-      if (found === "duration" || found === "regexp" || found === "record") {
-        const at = { from: planned.root.from, to: planned.root.to };
-        throw fail({ kind: "formula-result", name, found, at }, at);
-      }
-      const formula = { name, text, plan: planned };
-      formulas.set(name, formula);
-      return formula;
-    };
+    // The policy for a Formula with a mistake: the request fails with the
+    // Fault at its root, the first in request order.
+    const formulas = planFormulas(dataset, request.formulas, context);
+    const formulaFailure = (
+      faulted: FaultedFormula | FaultedFormulaRead,
+    ): ItemQueryError =>
+      new ItemQueryError({ dataset, ...formulas.rootError(faulted) });
+    const [invalidName] = formulas.invalidNames;
+    if (invalidName) return yield* formulaFailure(invalidName);
 
     let filter: FilterPlan | null = null;
     if (request.filter !== undefined) {
-      const planned = catchFormulaFailure(() =>
-        dataset.planFilter(request.filter!, context, resolveFormula),
+      const planned = dataset.planFilter(
+        request.filter,
+        context,
+        formulas.resolve,
       );
-      if (planned instanceof ItemQueryError) return yield* planned;
       if ("kind" in planned) {
+        if (planned.kind === "reads-faulted-formula")
+          return yield* formulaFailure(planned);
         return yield* new ItemQueryError({
           dataset,
           context,
@@ -381,32 +308,17 @@ export function planRequest(
     const paths: PlannedPath[] = [];
     const columns: PlannedColumn[] = [];
     for (const [index, text] of fields.entries()) {
-      const formulaName = formulaPath(text);
-      if (typeof formulaName === "object" && formulaName !== null) {
-        return yield* new ItemQueryError({
-          dataset,
-          fault: formulaName,
-          location: { argument: "fields", index, path: `fields[${index}]` },
-          argumentText: JSON.stringify(fields),
-        });
-      }
-      if (formulaName !== null) {
-        if (!Object.hasOwn(definedFormulas, formulaName)) {
+      const formula = formulas.column(text);
+      if (formula !== null) {
+        if ("problem" in formula) {
           return yield* new ItemQueryError({
             dataset,
-            fault: {
-              kind: "unknown",
-              role: "formula",
-              name: formulaName,
-              at: { from: 0, to: text.length },
-              formulas: Object.keys(definedFormulas),
-            },
+            fault: formula.problem,
             location: { argument: "fields", index, path: `fields[${index}]` },
             argumentText: JSON.stringify(fields),
           });
         }
-        const formula = catchFormulaFailure(() => planFormula(formulaName));
-        if (formula instanceof ItemQueryError) return yield* formula;
+        if ("fault" in formula) return yield* formulaFailure(formula);
         columns.push({ kind: "formula", formula });
         continue;
       }
@@ -433,8 +345,8 @@ export function planRequest(
           location: { argument: "group" },
           argumentText: text,
         });
-      if (readsFormula(text))
-        return yield* fail(formulaOrderFault("invalid-group", text));
+      const byFormula = formulaOrderFault("invalid-group", text);
+      if (byFormula) return yield* fail(byFormula);
       const path = planPath(text, dataset.resolvePath);
       if ("kind" in path) return yield* fail(path);
       if (!canGroup(path.shape, path.each))
@@ -455,12 +367,13 @@ export function planRequest(
     const sort = request.sort ?? dataset.defaultSort;
     const sorts: PlannedSort<any, any>[] = [];
     for (const [index, { field, direction }] of sort.entries()) {
-      if (readsFormula(field)) {
+      const byFormula = formulaOrderFault("unsortable-field", field);
+      if (byFormula) {
         return yield* new ItemQueryError({
           dataset,
           location: { argument: "sort", index, path: `sort[${index}].field` },
           argumentText: JSON.stringify(sort),
-          fault: formulaOrderFault("unsortable-field", field),
+          fault: byFormula,
         });
       }
       const sortable = dataset.sortable(field);
@@ -521,10 +434,8 @@ export function planRequest(
       },
       filter,
       paths,
-      formulas: [...formulas.values()],
-      unusedFormulas: Object.keys(definedFormulas).filter(
-        (name) => !formulas.has(name),
-      ),
+      formulas: formulas.planned(),
+      unusedFormulas: formulas.unread(),
       columns,
       group,
       groupNeeds: group ? [group.needs] : [],
@@ -532,71 +443,4 @@ export function planRequest(
       sorts,
     };
   });
-}
-
-/**
- * The Formula name of a `formula.<name>` Projection Path, or null for a path
- * outside the reserved `formula` segment. A Query Row holds a Formula under
- * `formula.<name>` alone, so another form of a path in that segment, such as
- * `formula["name"]`, is a Fault.
- */
-function formulaPath(text: string): string | null | PathProblem {
-  const parsed = parseProjectionPath(text);
-  if (!parsed.ok || parsed.segments[0] !== FORMULA_SEGMENT) return null;
-  const [, name, ...rest] = parsed.segments;
-  if (
-    typeof name === "string" &&
-    rest.length === 0 &&
-    text === `${FORMULA_SEGMENT}.${name}`
-  )
-    return name;
-  return {
-    kind: "plain",
-    code: "invalid-path",
-    action:
-      typeof name === "string" && FORMULA_NAME.test(name)
-        ? `Read the Formula as ${FORMULA_SEGMENT}.${name}.`
-        : `Read a Formula as ${FORMULA_SEGMENT}.<name>.`,
-    at: { from: 0, to: text.length },
-    message: `"${text}" is not a Formula path: fields reads a Formula as ${FORMULA_SEGMENT}.<name>, and a Query Row holds its value under that key.`,
-  };
-}
-
-/** Whether the Projection Path `text` is in the reserved `formula` segment. */
-function readsFormula(text: string): boolean {
-  const parsed = parseProjectionPath(text);
-  return parsed.ok && parsed.segments[0] === FORMULA_SEGMENT;
-}
-
-/**
- * The Fault of a sort or a group by a Formula: a Formula runs in the
- * projection pass, after the engine orders and groups the records.
- */
-function formulaOrderFault(
-  code: "unsortable-field" | "invalid-group",
-  text: string,
-): PathProblem {
-  const verb = code === "invalid-group" ? "group" : "sort";
-  return {
-    kind: "plain",
-    code,
-    at: { from: 0, to: text.length },
-    message: `A query cannot ${verb} by ${text} yet: it ${verb}s by a field, not by a Formula.`,
-    action: `${verb === "group" ? "Group" : "Sort"} by a field of the Query Dataset.`,
-  };
-}
-
-/** The failure of a Formula that another Filter Expression reads. */
-class FormulaFailure {
-  constructor(readonly error: ItemQueryError) {}
-}
-
-/** The result of `plan`, or the failure of a Formula that it reads. */
-function catchFormulaFailure<A>(plan: () => A): A | ItemQueryError {
-  try {
-    return plan();
-  } catch (thrown) {
-    if (thrown instanceof FormulaFailure) return thrown.error;
-    throw thrown;
-  }
 }
