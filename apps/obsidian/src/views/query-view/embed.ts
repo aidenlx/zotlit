@@ -16,10 +16,9 @@ import type {
 } from "@/lib/obsidian-private/embed-registry";
 
 import { NoteQueryHost } from "./note-host";
-import type { QueryView, QueryViewDeps } from "./view";
+import type { QueryViewDeps } from "./view";
 
 export class QueryFileEmbed extends Component implements EmbedComponent {
-  readonly query: QueryView;
   readonly #app: App;
   readonly #file: TFile;
   readonly #host: NoteQueryHost;
@@ -51,8 +50,7 @@ export class QueryFileEmbed extends Component implements EmbedComponent {
         openFile: (event) => this.#open(event),
       },
     });
-    this.query = this.#host.query;
-    this.query.selectView(viewName);
+    this.#host.selectView(viewName);
   }
 
   override onload(): void {
@@ -77,13 +75,13 @@ export class QueryFileEmbed extends Component implements EmbedComponent {
    * them.
    */
   async loadFile(): Promise<void> {
-    this.query.setText(await readLiveText(this.#app, this.#file));
+    this.#host.setText(await readLiveText(this.#app, this.#file));
     await this.#host.shown();
   }
 
   /** Open the Query File at the view the embed shows; Cmd/Ctrl opens a new tab. */
   #open(event: MouseEvent): void {
-    const view = this.query.viewName;
+    const view = this.#host.viewName;
     void this.#app.workspace
       .getLeaf(Keymap.isModEvent(event))
       .openFile(this.#file, {

@@ -17,7 +17,7 @@ import type { QueryViewDeps, QueryViewHost } from "./view";
 export type NoteStorage = Pick<QueryViewHost, "save" | "canSave" | "openFile">;
 
 export class NoteQueryHost extends Component {
-  readonly query: QueryView;
+  readonly #query: QueryView;
   readonly #deps: QueryViewDeps;
   readonly #el: HTMLElement;
   readonly #sourcePath: () => string;
@@ -46,7 +46,7 @@ export class NoteQueryHost extends Component {
     this.#scope = new Scope(deps.app.scope);
     this.#item = this.#readItem();
     el.addClass("zt-root", "interactive-child");
-    this.query = new QueryView(deps, {
+    this.#query = new QueryView(deps, {
       ...storage,
       scope: this.#scope,
       sourcePath,
@@ -54,14 +54,14 @@ export class NoteQueryHost extends Component {
     });
     // e2e-only: packages/e2e reaches the view of every host from its element.
     // A dev-build port, absent from a production build.
-    if (__DEV__) Object.assign(el, { zotlitQueryView: this.query });
+    if (__DEV__) Object.assign(el, { zotlitQueryView: this.#query });
   }
 
   override onload(): void {
-    this.addChild(this.query);
-    this.query.render(this.#el);
+    this.addChild(this.#query);
+    this.#query.render(this.#el);
     // A card in the view takes the card keys while it has focus.
-    const keys = this.#deps.cardFocus.hold(this.#el, this.#scope, this.query);
+    const keys = this.#deps.cardFocus.hold(this.#el, this.#scope, this.#query);
     this.register(() => keys[Symbol.dispose]());
     // `this` follows the note's `zotero-key`.
     const { metadataCache } = this.#deps.app;
@@ -69,9 +69,24 @@ export class NoteQueryHost extends Component {
       metadataCache.on("changed", (file) => {
         if (file.path !== this.#sourcePath()) return;
         this.#item = this.#readItem();
-        this.query.contextChanged();
+        this.#query.contextChanged();
       }),
     );
+  }
+
+  /** Read the Query File's text, as the host holds it. */
+  setText(text: string): void {
+    this.#query.setText(text);
+  }
+
+  /** Show the view named `name`, or the file's first view for `null`. */
+  selectView(name: string | null): void {
+    this.#query.selectView(name);
+  }
+
+  /** The name of the view shown. */
+  get viewName(): string | null {
+    return this.#query.viewName;
   }
 
   /**
@@ -79,7 +94,7 @@ export class NoteQueryHost extends Component {
    * it to print them. Never rejects.
    */
   shown(): Promise<void> {
-    return this.query.shownIn(this.#el);
+    return this.#query.shownIn(this.#el);
   }
 
   #readItem(): string | null {
