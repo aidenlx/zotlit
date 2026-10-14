@@ -477,19 +477,26 @@ export function AnnotList({ collapsed }: { collapsed: boolean }) {
           );
           // A Query View's grouped rows: a heading opens each run of cards
           // that stands in one group, across every column.
+          // The card keeps one place in the tree whether or not a heading
+          // stands before it, so a card that starts or stops a group is not
+          // mounted again and an open editor on it stays.
           const group = groups?.get(annot.key);
           const before = index > 0 ? filtered[index - 1] : undefined;
-          if (!group || (before && groups?.get(before.key)?.key === group.key))
-            return card;
+          const opens =
+            group !== undefined &&
+            (!before || groups?.get(before.key)?.key !== group.key);
           return (
             <Fragment key={annot.key}>
-              <div
-                role="row"
-                data-query-group={group.key}
-                className="zt:col-span-full zt:mt-2 zt:truncate zt:text-sm zt:font-semibold zt:text-(--text-muted) zt:first:mt-0"
-              >
-                <span role="rowheader">{group.label}</span>
-              </div>
+              {opens && (
+                <div
+                  key="group-heading"
+                  role="row"
+                  data-query-group={group.key}
+                  className="zt:col-span-full zt:mt-2 zt:truncate zt:text-sm zt:font-semibold zt:text-(--text-muted) zt:first:mt-0"
+                >
+                  <span role="rowheader">{group.label}</span>
+                </div>
+              )}
               {card}
             </Fragment>
           );
