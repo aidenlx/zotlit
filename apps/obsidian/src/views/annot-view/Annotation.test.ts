@@ -23,6 +23,7 @@ import { editorApp } from "./__fixtures__/editor-app";
 import { AnnotActionsContext } from "./actions";
 import type { AnnotActions } from "./actions";
 import { Annotation } from "./Annotation";
+import { cardPlace } from "./card-selection";
 import { AnnotStoreProvider, createAnnotStore } from "./store";
 
 vi.mock("zustand", () => import("../__fixtures__/zustand"));
@@ -187,7 +188,7 @@ async function mountCard({
         { value: actions },
         createElement(Annotation, {
           annot: { ...CARD, comment },
-          place: CARD.key,
+          place: cardPlace(CARD.key, null),
           collapsed: false,
           tabStop: true,
         }),
@@ -719,7 +720,7 @@ describe("an image card's Excerpt Image demand", () => {
           { value: actions },
           createElement(Annotation, {
             annot: image,
-            place: image.key,
+            place: cardPlace(image.key, null),
             collapsed: false,
             tabStop: true,
           }),

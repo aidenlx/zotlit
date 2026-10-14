@@ -16,8 +16,7 @@ import type {
 
 import { QueryCardFocus } from "./card-focus";
 import { createQueryFileEmbed } from "./embed";
-import type { QueryFileEmbed } from "./embed";
-import type { QueryViewDeps } from "./view";
+import type { QueryView, QueryViewDeps } from "./view";
 
 vi.mock("zustand", () => import("../__fixtures__/zustand"));
 
@@ -92,7 +91,7 @@ function setup() {
   async function embed(
     sourcePath: string,
     subpath = "",
-  ): Promise<{ embed: QueryFileEmbed; el: HTMLElement }> {
+  ): Promise<{ el: HTMLElement; view: QueryView }> {
     const el = document.createElement("div");
     document.body.append(el);
     const context: EmbedContext = {
@@ -110,13 +109,17 @@ function setup() {
     await act(async () => {
       component.load();
       await component.loadFile();
-      await component.query.settled;
+      await viewOf(el).settled;
     });
     cleanup.defer(() => act(() => component.unload()));
-    return { embed: component, el };
+    return { el, view: viewOf(el) };
   }
   return { host, run, embed };
 }
+
+/** The Query View the End-to-end Run reads from the embed's element. */
+const viewOf = (el: HTMLElement): QueryView =>
+  (el as HTMLElement & { zotlitQueryView: QueryView }).zotlitQueryView;
 
 const viewName = (el: HTMLElement) =>
   el.querySelector("[data-query-view-menu]")?.textContent;
@@ -136,14 +139,14 @@ it("saves a toolbar change to the file, and another embed of it follows", async 
   const second = await embed("notes/Plain.md");
 
   await act(async () => {
-    first.embed.query.renameView(0, "Yellow ones");
-    await first.embed.query.flush();
+    first.view.renameView(0, "Yellow ones");
+    await first.view.flush();
   });
 
   expect(host.text(FILE_PATH)).toContain("name: Yellow ones");
   expect(viewName(first.el)).toBe("Yellow ones");
   await act(async () => {
-    await second.embed.query.settled;
+    await second.view.settled;
   });
   expect(viewName(second.el)).toBe("Yellow ones");
 });
@@ -151,10 +154,10 @@ it("saves a toolbar change to the file, and another embed of it follows", async 
 it("saves through an open tab of the file, so the tab shows the change", async () => {
   const { embed, host } = setup();
   const tab = host.openInEditor(host.file(FILE_PATH));
-  const { embed: component } = await embed("notes/Lab.md");
+  const { view } = await embed("notes/Lab.md");
   await act(async () => {
-    component.query.moveView(1, 0);
-    await component.query.flush();
+    view.moveView(1, 0);
+    await view.flush();
   });
   expect(tab.getViewData().indexOf("name: Mine")).toBeLessThan(
     tab.getViewData().indexOf("name: Yellow"),

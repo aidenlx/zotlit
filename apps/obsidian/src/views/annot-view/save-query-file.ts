@@ -23,8 +23,10 @@ import {
   note,
   NOTE_CLASS,
 } from "@/setting-tab/profile-dialog";
-import { QUERY_FILE_EXTENSION } from "@/views/query-view/query-file";
-import { untitledName } from "@/views/query-view/register";
+import {
+  QUERY_FILE_EXTENSION,
+  untitledName,
+} from "@/views/query-view/query-file";
 
 import { savedQueryFileText } from "./sidebar-query";
 import type { SaveQueryFileInput, SavedRecords } from "./sidebar-query";
@@ -81,6 +83,7 @@ class SaveQueryFileModal extends Modal {
     });
     // The first `Untitled`, `Untitled 1`, … free in the folder.
     let name = untitledName(
+      m.query_file_untitled(),
       (candidate) =>
         this.app.vault.getAbstractFileByPath(
           filePath(this.#folder, candidate),
