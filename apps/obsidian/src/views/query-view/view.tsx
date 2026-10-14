@@ -45,7 +45,7 @@ import type { AnnotState } from "@/views/annot-view/store";
 
 import type { QueryCardFocus } from "./card-focus";
 import { CardsLayout } from "./cards-layout";
-import { datasetSpec } from "./datasets";
+import { datasetSpec, grouping } from "./datasets";
 import { FilterButton } from "./filter-popover";
 import type { FilterValues } from "./filter-popover";
 import {
@@ -84,7 +84,7 @@ import type {
 } from "./query-file";
 import type { ShownRecord } from "./record-rows";
 import { ResultsMenu } from "./results-menu";
-import { groupPaths, layoutFields, layoutRows } from "./rows";
+import { layoutRows } from "./rows";
 import type { LayoutGroup } from "./rows";
 import { SearchControl } from "./search-control";
 import { SortEditor } from "./sort-control";
@@ -241,10 +241,10 @@ function problemText(problem: QueryFileProblem): string {
 /** What keeps the view's Layout from showing it, beside the parser's own problems. */
 function layoutProblems(view: QueryFileView): string[] {
   const problems: string[] = [];
-  // The Layout gathers the rows into groups itself, by the group paths of the
+  // The Layout gathers the rows into groups itself, by the groupings of the
   // view's dataset; a grouping of no dataset, such as a Formula, it cannot do.
   const group = usedGroupBy(view)?.property;
-  if (group !== undefined && !groupPaths(view.from).includes(group))
+  if (group !== undefined && grouping(view.from, group) === undefined)
     problems.push(m.query_view_problem_group({ property: group }));
   const layout = layoutOf(view);
   if (!layout) problems.push(m.query_view_problem_layout({ type: view.type }));
@@ -681,9 +681,10 @@ export class QueryView extends Component implements HistorySurface {
     const context = this.#host.context();
     const unused = new Set(unusedSettings(view).sort);
     const sort = view.sort?.filter(({ property }) => !unused.has(property));
+    const grouped = view.groupBy && grouping(view.from, view.groupBy.property);
     const fields = [
       ...new Set([
-        ...layoutFields(view.from ?? "annotations"),
+        ...(grouped?.fields ?? []),
         ...(layoutOf(view)?.type === "table" ? TABLE_FIELDS : []),
         ...visibleProperties(view, { fallback: true }),
       ]),
@@ -922,11 +923,7 @@ export class QueryView extends Component implements HistorySurface {
         // screen, and the database change that follows runs the view again.
         const named = (result.rows ?? []).map((row) => row.indexedKey);
         if (this.#layout.keepsBack(named, fromList)) return;
-        const shown = layoutRows(
-          result.rows ?? [],
-          usedGroupBy(view),
-          view.groupOrder,
-        );
+        const shown = layoutRows(result.rows ?? [], view);
         const byKey = new Map(
           (result.rows ?? []).map((row) => [row.indexedKey, row]),
         );
@@ -1100,28 +1097,50 @@ function Problems({ view }: { view: QueryView }) {
   );
 }
 
-/** What the view keeps in its file but does not use, since its dataset lacks it. */
+/**
+ * What the view keeps in its file but does not use: what its dataset lacks,
+ * and the properties of the dataset that no cell shows.
+ */
 function UnusedNote({ view }: { view: QueryView }) {
   const current = useQueryViewState(view, (s) => s.view);
   if (!current) return null;
   const unused = unusedSettings(current);
+  const { engine, name } = datasetSpec(current.from);
+  // A visible property the dataset has but no cell shows, such as the tags
+  // of Items.
+  const unshown = unused.order.filter(
+    (property) => engine.definition(property) !== undefined,
+  );
   const properties = [
     ...new Set([
       ...unused.sort,
       ...(unused.groupBy === null ? [] : [unused.groupBy]),
-      ...unused.order,
+      ...unused.order.filter((property) => !unshown.includes(property)),
     ]),
   ];
-  if (properties.length === 0) return null;
+  const text = [
+    properties.length > 0
+      ? m.query_view_unused({
+          dataset: name(),
+          properties: properties.join(", "),
+        })
+      : "",
+    unshown.length > 0
+      ? m.query_view_unshown({
+          dataset: name(),
+          properties: unshown.join(", "),
+        })
+      : "",
+  ]
+    .filter((sentence) => sentence !== "")
+    .join(" ");
+  if (text === "") return null;
   return (
     <p
       className="zt:mx-3 zt:mt-1 zt:mb-0 zt:text-xs zt:text-(--text-muted) zt:in-[.print]:hidden"
       data-query-unused=""
     >
-      {m.query_view_unused({
-        dataset: datasetSpec(current.from).name(),
-        properties: properties.join(", "),
-      })}
+      {text}
     </p>
   );
 }

@@ -2,45 +2,21 @@
 // order, and, for a grouped view, gathered under one heading per group. A row
 // with several values of a list path, such as two tags, stands in each of
 // their groups.
-import { annotationColorLabel } from "@/lib/annotation-colors";
-import * as m from "@/lib/i18n/generated/messages";
 import type { QueryViewRow } from "@/services/item-query/query-view";
-import { itemTypeLabel } from "@/services/profile-selection/describe";
 import type { LayoutRow } from "@/views/annot-view/layout";
 
-import { datasetSpec } from "./datasets";
+import { datasetSpec, grouping } from "./datasets";
 import type {
   QueryFileDataset,
   QueryFileGroupValue,
-  QueryFileSort,
+  QueryFileView,
 } from "./query-file";
-import { datasetProperties } from "./visible-properties";
 
 /** The group paths a view of `dataset` can gather its rows by. */
 export function groupPaths(
   dataset: QueryFileDataset | undefined,
 ): readonly string[] {
-  return datasetSpec(dataset).group.map(([path]) => path);
-}
-
-/** The Projection Paths each row carries for its group and its heading. */
-export const LAYOUT_FIELDS = [
-  "item.title",
-  "attachment.title",
-  "color",
-  "colorName",
-  "tags",
-  "item.collections",
-] as const;
-
-/**
- * The {@link LAYOUT_FIELDS} a view of `dataset` can read: a dataset of
- * Attachments or Items has no colour, and names its own title plainly.
- */
-export function layoutFields(dataset: QueryFileDataset): readonly string[] {
-  if (dataset === "annotations") return LAYOUT_FIELDS;
-  const properties = new Set(datasetProperties(dataset));
-  return LAYOUT_FIELDS.filter((field) => properties.has(field));
+  return datasetSpec(dataset).group.map(({ path }) => path);
 }
 
 /** One group of the rows, as the Manual group order lists it. */
@@ -63,74 +39,6 @@ export interface LayoutRows {
   count: number;
 }
 
-function text(value: unknown): string | null {
-  return typeof value === "string" && value !== "" ? value : null;
-}
-
-/** The texts of a list; an Item's tags come as `{ name, type }`. */
-function texts(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value
-        .map((entry: unknown) =>
-          typeof entry === "object" && entry !== null && "name" in entry
-            ? text(entry.name)
-            : text(entry),
-        )
-        .filter((entry) => entry !== null)
-    : [];
-}
-
-interface Placement {
-  value: QueryFileGroupValue;
-  label: string;
-}
-
-function placements(row: QueryViewRow, property: string): Placement[] {
-  const attachment = row.attachmentIndexedKey ?? row.indexedKey;
-  const attachmentGroup = {
-    value: attachment,
-    label: text(row.values["attachment.title"]) ?? attachment,
-  };
-  const none = (values: string[]): Placement[] =>
-    values.length > 0
-      ? values.map((value) => ({ value, label: value }))
-      : [{ value: null, label: m.query_view_group_none() }];
-  switch (property) {
-    case "item.indexedKey":
-      // An Attachment that stands alone has no Item: it is its own group.
-      return row.itemIndexedKey === undefined
-        ? [attachmentGroup]
-        : [
-            {
-              value: row.itemIndexedKey,
-              label: text(row.values["item.title"]) ?? row.itemIndexedKey,
-            },
-          ];
-    case "attachment.indexedKey":
-      return [attachmentGroup];
-    case "colorName": {
-      const hex = text(row.values.color)?.toLowerCase() ?? null;
-      const value = text(row.values.colorName) ?? hex;
-      if (value === null) return none([]);
-      return [{ value, label: hex ? annotationColorLabel(hex) : value }];
-    }
-    case "tags[]":
-      return none(texts(row.values.tags));
-    case "item.collections[]":
-      return none(texts(row.values["item.collections"]));
-    case "collections[]":
-      return none(texts(row.values.collections));
-    case "itemType": {
-      const itemType = text(row.values.itemType);
-      return itemType === null
-        ? none([])
-        : [{ value: itemType, label: itemTypeLabel(itemType) }];
-    }
-    default:
-      return [];
-  }
-}
-
 /** The string order of ZotLit Query, so groups order as its sort does. */
 const COLLATOR = new Intl.Collator("en", {
   usage: "sort",
@@ -145,24 +53,30 @@ const COLLATOR = new Intl.Collator("en", {
  * as Bases orders them by value: A to Z, or Z to A for a descending grouping.
  * A Manual group order shows the groups it lists, in its order, and hides
  * the rest. The group of no value stands last. The rows inside a group keep
- * the query's order.
+ * the query's order. A grouping the view's dataset does not offer leaves the
+ * rows ungrouped.
  */
 export function layoutRows(
   rows: readonly QueryViewRow[],
-  groupBy: QueryFileSort | undefined,
-  groupOrder?: readonly QueryFileGroupValue[],
+  {
+    from,
+    groupBy,
+    groupOrder,
+  }: Pick<QueryFileView, "from" | "groupBy" | "groupOrder">,
 ): LayoutRows {
   const base = (row: QueryViewRow): LayoutRow => ({
     annotationKey: row.indexedKey,
     attachmentKey: row.attachmentIndexedKey ?? row.indexedKey,
   });
-  if (!groupBy) return { rows: rows.map(base), groups: [], count: rows.length };
+  const by = groupBy && grouping(from, groupBy.property);
+  if (!groupBy || !by)
+    return { rows: rows.map(base), groups: [], count: rows.length };
   const groups = new Map<
     QueryFileGroupValue,
     { label: string; rows: LayoutRow[] }
   >();
   for (const row of rows)
-    for (const { value, label } of placements(row, groupBy.property)) {
+    for (const { value, label } of by.place(row)) {
       const group = groups.get(value) ?? { label, rows: [] };
       group.rows.push({
         ...base(row),
