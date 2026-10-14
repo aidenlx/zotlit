@@ -1683,6 +1683,59 @@ it("shows a wrong Formula that the filters read at their condition, and no rows 
   expect(tableText(el)).toHaveLength(2);
 });
 
+it("shows no rows while the filters read a Formula that the file no longer defines", async () => {
+  const file = `formulas:
+  year: date.year
+views:
+  - type: table
+    name: Reading list
+    from: items
+    filters: formula . year > 2000
+    order:
+      - title
+`;
+  const { view, el, run, settle } = await mount([
+    result([formulaRow("ITEMAAAA", "Ten simple rules", 2014)]),
+    {
+      kind: "failed",
+      diagnostic: {
+        code: "unknown-formula",
+        message:
+          '"formula.year" reads the Formula "year", which the request does not define.',
+        hint: "Define the Formula in formulas.",
+        severity: "error",
+        report: [],
+        location: { argument: "filter", span: { from: 0, to: 14 } },
+        found: "year",
+        expected: [],
+        suggestions: [],
+      },
+    },
+  ]);
+  await act(() => view.setText(file));
+  await settle();
+  expect(run.mock.calls[0]![0].formulas).toEqual({ year: "date.year" });
+  expect(tableText(el)).toHaveLength(2);
+
+  await act(() =>
+    view.setText(file.replace("formulas:\n  year: date.year\n", "")),
+  );
+  await settle();
+  expect(run).toHaveBeenCalledTimes(2);
+  expect(run.mock.calls[1]![0]).not.toHaveProperty("formulas");
+  expect(view.state.getState()).toMatchObject({
+    phase: "failed",
+    records: [],
+    filterIssue: {
+      section: "view",
+      path: [0],
+      message:
+        '"formula.year" reads the Formula "year", which the request does not define. Define the Formula in formulas.',
+    },
+  });
+  expect(el.querySelector('[data-query-table-row="item"]')).toBeNull();
+});
+
 it("shows each Error Value element of a list cell as a warning icon in the Table, the List and the Cards", async () => {
   const wrong = (text: string) => ({
     kind: "error",

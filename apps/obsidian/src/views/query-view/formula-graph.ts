@@ -1,69 +1,16 @@
 // The Formulas of a Query File as a graph: which Formulas a view reads, which
 // Formula a failed run names as wrong, which Formulas read it in turn, and
 // which condition of the view's filters reads one of them. A Formula
-// reference is `formula.<name>` as the Filter Expression parser reads it, so
-// the same text inside a quoted string reads no Formula.
-import { parseExpressionAst } from "@zotlit/filter-expression";
-import type { ExpressionNode } from "@zotlit/filter-expression";
-import { FORMULA_SEGMENT } from "@zotlit/item-query";
+// reference is `formula.<name>` as ZotLit Query resolves it
+// (`formulaReferences`), so the same text inside a quoted string reads no
+// Formula.
+import { formulaReferences } from "@zotlit/item-query";
 
 import type { Diagnostic } from "@/services/item-query/contract";
 import type { QueryViewRequest } from "@/services/item-query/query-view";
 
 import { formulaName, locateFilterFault, viewFilter } from "./query-file";
 import type { ConditionIssue, QueryFile, QueryFileView } from "./query-file";
-
-/** One `formula.<name>` in a Filter Expression, with its place in the text. */
-interface FormulaReference {
-  readonly name: string;
-  readonly from: number;
-  readonly to: number;
-}
-
-/** The nodes directly under `node`. */
-function children(node: ExpressionNode): readonly ExpressionNode[] {
-  switch (node.type) {
-    case "binary":
-      return [node.left, node.right];
-    case "unary":
-      return [node.operand];
-    case "call":
-      return [node.callee, ...node.args];
-    case "array-access":
-      return [node.object, node.index];
-    case "object-access":
-      return [node.object];
-    case "array":
-      return node.elements;
-    case "group":
-      return [node.expression];
-    default:
-      return [];
-  }
-}
-
-/**
- * The Formulas that the Filter Expression `text` reads, in the order of the
- * text. A text that does not parse reads none: ZotLit Query names its
- * mistake.
- */
-export function formulaReferences(text: string): FormulaReference[] {
-  const { ast } = parseExpressionAst(text);
-  const found: FormulaReference[] = [];
-  const visit = (node: ExpressionNode) => {
-    if (
-      node.type === "object-access" &&
-      node.object.type === "identifier" &&
-      node.object.name === FORMULA_SEGMENT
-    ) {
-      found.push({ name: node.property, from: node.from, to: node.to });
-      return;
-    }
-    for (const child of children(node)) visit(child);
-  };
-  if (ast) visit(ast);
-  return found.sort((a, b) => a.from - b.from);
-}
 
 /**
  * The Formulas of the file that `fields` and `filter` read, with those the
@@ -89,8 +36,9 @@ export function readFormulas(
 }
 
 /**
- * The Formula that a failed run names as wrong: one with a mistake in its
- * text, or one that `fields` reads and the file does not define.
+ * The Formula that a failed run names: the one whose text holds the mistake,
+ * or the one that `fields`, the filter or a Formula reads and the request
+ * does not define. `null` when the mistake is in no Formula.
  */
 export function faultedFormula(
   diagnostic: Diagnostic,
@@ -102,15 +50,7 @@ export function faultedFormula(
       Object.hasOwn(request.formulas ?? {}, location.path)
       ? location.path
       : null;
-  if (
-    diagnostic.code === "unknown-formula" &&
-    location?.argument === "fields" &&
-    location.index !== undefined
-  ) {
-    const field = request.fields?.[location.index];
-    return field === undefined ? null : formulaName(field);
-  }
-  return null;
+  return diagnostic.code === "unknown-formula" ? diagnostic.found : null;
 }
 
 /**
