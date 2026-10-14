@@ -118,6 +118,21 @@ describe("parseQueryFile", () => {
     ]);
   });
 
+  it("names two views of one name as a problem of the file", () => {
+    const file = parseQueryFile(`views:
+  - type: annotations
+    name: Figures
+  - type: list
+    name: Figures
+  - type: annotations
+    name: Methods
+`);
+    expect(file.views).toHaveLength(3);
+    expect(file.problems).toEqual([
+      { code: "duplicate-view-name", name: "Figures" },
+    ]);
+  });
+
   it("opens an empty file with a problem that it has no views", () => {
     expect(parseQueryFile("").problems).toEqual([{ code: "no-views" }]);
   });
@@ -273,7 +288,7 @@ describe("withFilters", () => {
     const file = parseQueryFile(TWO_VIEWS);
     const next = withFilters(
       withFilters(file, null, { and: ['tags.contains("x")'] }),
-      "Figures",
+      1,
       { or: ['colorName == "red"', 'colorName == "blue"'] },
     );
     const text = serializeQueryFile(next);
@@ -291,9 +306,7 @@ describe("withFilters", () => {
 
   it("drops the filters key when the researcher clears every condition", () => {
     const file = parseQueryFile(TWO_VIEWS);
-    const text = serializeQueryFile(
-      withFilters(file, "All annotations", undefined),
-    );
+    const text = serializeQueryFile(withFilters(file, 0, undefined));
     expect(parseQueryFile(text).views[0]!.filters).toBeUndefined();
     expect(text).toContain("cardWidth: 300");
   });

@@ -1,6 +1,6 @@
 // "Configure view": the name, the rows and the Layout of one view of a
 // Query File, and the options of its Layout. Each change saves to the file at
-// once.
+// once; a typed name saves after a short wait.
 import { Menu, Modal, Setting } from "obsidian";
 import type { App, TextComponent } from "obsidian";
 

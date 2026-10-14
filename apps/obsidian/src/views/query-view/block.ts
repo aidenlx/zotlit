@@ -15,7 +15,6 @@ import { MarkdownRenderChild, Scope } from "obsidian";
 import type { MarkdownPostProcessorContext, Plugin } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 
@@ -23,8 +22,6 @@ import { canWriteBlock, writeBlockCode } from "./block-write";
 import { QUERY_FILE_EXTENSION } from "./query-file";
 import { QueryView } from "./view";
 import type { QueryViewDeps } from "./view";
-
-const logger = getLogger(["views", "query-view", "block"]);
 
 /** A Query View: a block in one of its cards' comments shows its text only. */
 const IN_QUERY_VIEW = ".zt-query-view";
@@ -81,7 +78,7 @@ class QueryBlock extends MarkdownRenderChild {
       sourcePath: () => sourcePath,
       context: () =>
         this.#itemKey === null ? undefined : { item: this.#itemKey },
-      save: (text) => void this.#save(text),
+      save: (text) => this.#save(text),
       canSave: () => this.#canSave(),
     });
     this.addChild(query);
@@ -128,7 +125,6 @@ class QueryBlock extends MarkdownRenderChild {
   }
 
   async #save(file: string): Promise<void> {
-    if (!this.#canSave()) return;
     // The closing fence takes the place of the file's last line break.
     const text = file.replace(/\n$/, "");
     const previous = this.#source;
@@ -142,8 +138,8 @@ class QueryBlock extends MarkdownRenderChild {
       );
     } catch (error) {
       this.#source = previous;
-      logger.warn("A Query Block could not save its text", { error });
       new BaseNotice(m.query_block_save_failed());
+      throw error;
     }
   }
 }

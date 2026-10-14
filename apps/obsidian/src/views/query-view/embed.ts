@@ -5,13 +5,12 @@
 // reads the new text.
 //
 // @see apps/obsidian/docs/adr/0068-query-files-are-a-zotlit-file-type-embedded-through-the-private-embed-registry.md
-import { Component, debounce, Keymap, Scope, TFile } from "obsidian";
-import type { App, Debouncer, EventRef } from "obsidian";
+import { Component, Keymap, Scope, TFile } from "obsidian";
+import type { App, EventRef } from "obsidian";
 
 import type { QueryContext } from "@zotlit/item-query";
 
 import { processLiveText, readLiveText } from "@/lib/live-text";
-import { getLogger } from "@/lib/log";
 import type {
   EmbedComponent,
   EmbedContext,
@@ -22,22 +21,13 @@ import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import { QueryView } from "./view";
 import type { QueryViewDeps } from "./view";
 
-const logger = getLogger(["views", "query-view", "embed"]);
-
-/** How long the embed waits after a toolbar change before it writes the file. */
-const SAVE_DELAY_MS = 500;
-
 export class QueryFileEmbed extends Component implements EmbedComponent {
   readonly query: QueryView;
   readonly #app: App;
   readonly #context: EmbedContext;
   readonly #file: TFile;
-  /** The text the view shows, so the embed's own save does not run it twice. */
-  #text: string | null = null;
   /** The Item key `this` reads, as the embedding note's Properties give it. */
   #item: string | null;
-  readonly #save: Debouncer<[string], Promise<void>>;
-  #pending: Promise<void> = Promise.resolve();
   readonly #events: [{ offref(ref: EventRef): void }, EventRef][] = [];
   readonly #deps: QueryViewDeps;
   readonly #scope: Scope;
@@ -63,27 +53,20 @@ export class QueryFileEmbed extends Component implements EmbedComponent {
     this.#context = context;
     this.#file = file;
     this.#item = this.#readItem();
-    this.#save = debounce(
-      (text: string) => (this.#pending = this.#write(text)),
-      SAVE_DELAY_MS,
-      true,
-    );
     context.containerEl.addClass("zt-root", "interactive-child");
     this.query = new QueryView(deps, {
       scope: this.#scope,
       sourcePath: () => context.sourcePath,
       context: (): QueryContext | undefined =>
         this.#item === null ? undefined : { item: this.#item },
-      save: (text) => {
-        this.#text = text;
-        this.#save(text);
-      },
+      // Through an open tab of the file, so the tab shows the change and its
+      // own save does not write over it.
+      save: (text) => processLiveText(this.#app, this.#file, () => text),
       openFile: (event) => this.#open(event),
     });
     this.query.selectView(viewName);
-    // e2e-only: packages/e2e reaches the embed from its element to make a
-    // toolbar change through `query.commit`. A dev-build port, absent from a
-    // production build.
+    // e2e-only: packages/e2e reaches the embed from its element to read its
+    // Query View. A dev-build port, absent from a production build.
     if (__DEV__) Object.assign(context.containerEl, { zotlitQueryEmbed: this });
   }
 
@@ -120,7 +103,6 @@ export class QueryFileEmbed extends Component implements EmbedComponent {
     this.#events.length = 0;
     this.#keys?.[Symbol.dispose]();
     this.#keys = null;
-    void this.flush();
   }
 
   /**
@@ -129,30 +111,8 @@ export class QueryFileEmbed extends Component implements EmbedComponent {
    * them.
    */
   async loadFile(): Promise<void> {
-    const text = await readLiveText(this.#app, this.#file);
-    if (text === this.#text) return;
-    this.#text = text;
-    this.query.setText(text);
+    this.query.setText(await readLiveText(this.#app, this.#file));
     await this.query.shownIn(this.#context.containerEl);
-  }
-
-  /** Write a toolbar change that waits for its delay now. */
-  flush(): Promise<void> {
-    void this.#save.run();
-    return this.#pending;
-  }
-
-  async #write(text: string): Promise<void> {
-    try {
-      // Through an open tab of the file, so the tab shows the change and its
-      // own save does not write over it.
-      await processLiveText(this.#app, this.#file, () => text);
-    } catch (error) {
-      logger.warn("A Query File embed could not save the file", {
-        error,
-        path: this.#file.path,
-      });
-    }
   }
 
   #readItem(): string | null {
