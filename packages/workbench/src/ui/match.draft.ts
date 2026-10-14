@@ -3,6 +3,7 @@ import type {
   FlatCondition,
   MatchCondition,
 } from "#/match/condition";
+import type { ReactNode } from "react";
 
 import type { MatchTree } from "@zotlit/templates/facade";
 
@@ -21,20 +22,105 @@ export interface ExpressionCondition {
   text: string;
 }
 
+/**
+ * A row a condition kind shows with its own controls. `kind` names its entry
+ * in the vocabulary; `"group"` and `"expression"` belong to the editor.
+ */
+export interface LabelledRow {
+  kind: string;
+}
+
 /** A condition the editor shows as one row. */
-export type RowCondition = FlatCondition | ExpressionCondition;
+export type RowCondition<Row extends LabelledRow = FlatCondition> =
+  | Row
+  | ExpressionCondition;
 /** What a labelled row can test; an expression row is reached by toggling a row. */
 export type ConditionKind = FlatCondition["kind"];
 export type GroupMatch = "all" | "any";
-export interface ConditionGroup {
+export interface ConditionGroup<Row extends LabelledRow = FlatCondition> {
   kind: "group";
   match: GroupMatch;
-  conditions: EditorCondition[];
+  conditions: EditorCondition<Row>[];
 }
-export type EditorCondition = ConditionGroup | RowCondition;
+export type EditorCondition<Row extends LabelledRow = FlatCondition> =
+  | ConditionGroup<Row>
+  | RowCondition<Row>;
 
 /** A child's position in the tree: the index at each nesting level. */
 export type ConditionPath = readonly number[];
+
+/**
+ * A stored filter in the Bases `filters` shape. The editor writes `and` and
+ * `or` groups; it reads a `not` group as one expression row.
+ */
+export type MatchFilter =
+  | string
+  | { readonly and: readonly MatchFilter[] }
+  | { readonly or: readonly MatchFilter[] }
+  | { readonly not: readonly MatchFilter[] };
+
+/** The controls of one labelled row, wired to its value. */
+export interface ConditionControlProps<Row extends LabelledRow> {
+  condition: Row;
+  onChange: (next: Row) => void;
+}
+
+/** One thing a condition can test: its label, its controls, and its expression text. */
+export interface MatchConditionKind<Row extends LabelledRow> {
+  kind: Row["kind"];
+  /** The name the kind picker shows, in the reader's language. */
+  label: string;
+  /** A row of this kind at its starting value. */
+  fresh: () => Row;
+  /** The row one Filter Expression leaf reads as, or `null` when it is not this kind. */
+  parse: (text: string) => Row | null;
+  /** The Filter Expression a row of this kind stores. */
+  format: (row: Row) => string;
+  /** The operator control, shown after the kind picker. */
+  renderOperator?: (props: ConditionControlProps<Row>) => ReactNode;
+  /** The value control. */
+  renderValue: (props: ConditionControlProps<Row>) => ReactNode;
+}
+
+/** The conditions a Match editor offers, which its caller supplies. */
+export interface MatchVocabulary<Row extends LabelledRow> {
+  kinds: readonly MatchConditionKind<Row>[];
+  /** The kind of the row an empty Match shows. */
+  starterKind: Row["kind"];
+  /** The kind "Add condition" adds and a new group starts with. */
+  newKind: Row["kind"];
+  /** What keeps one row from being saved, as the reader reads it. */
+  issue?: (condition: RowCondition<Row>, path: ConditionPath) => string | null;
+}
+
+export function isGroup<Row extends LabelledRow>(
+  node: EditorCondition<Row>,
+): node is ConditionGroup<Row> {
+  return node.kind === "group";
+}
+
+export function isExpression<Row extends LabelledRow>(
+  node: RowCondition<Row>,
+): node is ExpressionCondition {
+  return node.kind === "expression";
+}
+
+function kindOf<Row extends LabelledRow>(
+  vocabulary: MatchVocabulary<Row>,
+  kind: Row["kind"],
+): MatchConditionKind<Row> {
+  const entry = vocabulary.kinds.find((entry) => entry.kind === kind);
+  if (!entry) throw new Error(`Unknown Match condition kind: ${kind}`);
+  return entry;
+}
+
+/** A row of `kind` at its starting value. */
+export function freshRow<Row extends LabelledRow>(
+  vocabulary: MatchVocabulary<Row>,
+  kind: Row["kind"],
+): Row {
+  return kindOf(vocabulary, kind).fresh();
+}
 
 /** Vocabulary supplied by the current host. */
 export interface MatchEditorDeps {
@@ -45,34 +131,155 @@ export interface MatchEditorDeps {
 }
 
 /**
- * The tree of a stored filter. A leaf that reads as one item-type,
- * Collection, or Tag test becomes that row; any other leaf — a blank, a
- * problem, or an expression that combines tests — stays as written in an
- * expression row. A lone leaf sits in a "Match all" group.
+ * The tree of a stored filter. A leaf that one condition kind reads becomes
+ * that row; any other leaf — a blank, a problem, or an expression that
+ * combines tests — stays as written in an expression row, and so does a
+ * `not` group. A lone leaf sits in a "Match all" group.
  */
-export function fromFilter(filter: MatchTree): ConditionGroup {
-  const node = editorNode(filter);
-  return node.kind === "group"
+export function fromFilter<Row extends LabelledRow>(
+  filter: MatchFilter,
+  vocabulary: MatchVocabulary<Row>,
+): ConditionGroup<Row> {
+  const node = editorNode(filter, vocabulary);
+  return isGroup(node)
     ? node
     : { kind: "group", match: "all", conditions: [node] };
 }
 
-function editorNode(filter: MatchTree): EditorCondition {
-  if (typeof filter !== "string") {
-    const all = "and" in filter;
-    return {
-      kind: "group",
-      match: all ? "all" : "any",
-      conditions: (all ? filter.and : filter.or).map(editorNode),
-    };
-  }
-  const { condition } = compileCondition(filter);
-  return condition && visuallyEditable(condition)
-    ? condition
-    : { kind: "expression", text: filter };
+function editorNode<Row extends LabelledRow>(
+  filter: MatchFilter,
+  vocabulary: MatchVocabulary<Row>,
+): EditorCondition<Row> {
+  if (typeof filter === "string")
+    return (
+      asLabelled({ kind: "expression", text: filter }, vocabulary) ?? {
+        kind: "expression",
+        text: filter,
+      }
+    );
+  if ("not" in filter) return { kind: "expression", text: filterText(filter) };
+  const all = "and" in filter;
+  return {
+    kind: "group",
+    match: all ? "all" : "any",
+    conditions: (all ? filter.and : filter.or).map((entry) =>
+      editorNode(entry, vocabulary),
+    ),
+  };
 }
 
-function visuallyEditable(
+/** One Filter Expression with the meaning of a stored filter. */
+function filterText(filter: MatchFilter): string {
+  if (typeof filter === "string") return filter;
+  const [entries, operator, empty] =
+    "and" in filter
+      ? [filter.and, " && ", "true"]
+      : "or" in filter
+        ? [filter.or, " || ", "!true"]
+        : [filter.not, " || ", "!true"];
+  const joined =
+    entries.length === 0
+      ? empty
+      : entries.length === 1
+        ? filterText(entries[0]!)
+        : entries.map((entry) => `(${filterText(entry)})`).join(operator);
+  // A `not` group holds when none of its entries does.
+  return "not" in filter ? `!(${joined})` : joined;
+}
+
+/** The filter a tree stores: rows as their kind writes them, expression rows as typed. */
+export function toFilter<Row extends LabelledRow>(
+  group: ConditionGroup<Row>,
+  vocabulary: MatchVocabulary<Row>,
+): MatchTree {
+  const entries = group.conditions.map((condition) =>
+    isGroup(condition)
+      ? toFilter(condition, vocabulary)
+      : isExpression(condition)
+        ? condition.text
+        : kindOf(vocabulary, condition.kind).format(condition),
+  );
+  return group.match === "all" ? { and: entries } : { or: entries };
+}
+
+/** Whether `group` stores `filter`, so that reading `filter` again changes nothing. */
+export function storesFilter<Row extends LabelledRow>(
+  group: ConditionGroup<Row>,
+  filter: MatchFilter | undefined,
+  vocabulary: MatchVocabulary<Row>,
+): boolean {
+  return filter === undefined
+    ? group.conditions.length === 0
+    : JSON.stringify(toFilter(group, vocabulary)) === JSON.stringify(filter);
+}
+
+/** The tree a compiled condition reads as: a lone condition sits in a "Match all" group. */
+export function asGroup(condition: MatchCondition): ConditionGroup {
+  return condition.kind === "group"
+    ? condition
+    : { kind: "group", match: "all", conditions: [condition] };
+}
+
+/** `root` with the group at `path` replaced by `fn`'s result. */
+export function updateGroup<Row extends LabelledRow>(
+  root: ConditionGroup<Row>,
+  path: ConditionPath,
+  fn: (group: ConditionGroup<Row>) => ConditionGroup<Row>,
+): ConditionGroup<Row> {
+  if (path.length === 0) return fn(root);
+  const [index, ...rest] = path;
+  return {
+    ...root,
+    conditions: root.conditions.map((child, at) =>
+      at === index && isGroup(child) ? updateGroup(child, rest, fn) : child,
+    ),
+  };
+}
+
+/** `root` with the condition at `path` replaced by `next`. */
+export function replaceAt<Row extends LabelledRow>(
+  root: ConditionGroup<Row>,
+  path: ConditionPath,
+  next: EditorCondition<Row>,
+): ConditionGroup<Row> {
+  const index = path.at(-1)!;
+  return updateGroup(root, path.slice(0, -1), (group) => ({
+    ...group,
+    conditions: group.conditions.map((child, at) =>
+      at === index ? next : child,
+    ),
+  }));
+}
+
+/** `root` without the condition at `path`. */
+export function removeAt<Row extends LabelledRow>(
+  root: ConditionGroup<Row>,
+  path: ConditionPath,
+): ConditionGroup<Row> {
+  const index = path.at(-1)!;
+  return updateGroup(root, path.slice(0, -1), (group) => ({
+    ...group,
+    conditions: group.conditions.filter((_, at) => at !== index),
+  }));
+}
+
+/** `root` with `child` appended to the group at `path`. */
+export function appendAt<Row extends LabelledRow>(
+  root: ConditionGroup<Row>,
+  path: ConditionPath,
+  child: EditorCondition<Row>,
+): ConditionGroup<Row> {
+  return updateGroup(root, path, (group) => ({
+    ...group,
+    conditions: [...group.conditions, child],
+  }));
+}
+
+/**
+ * Whether the Profile rows show `condition`: a negated "contains any" or
+ * "contains all" has no row operator.
+ */
+export function visuallyEditable(
   condition: MatchCondition,
 ): condition is FlatCondition {
   return (
@@ -85,87 +292,11 @@ function visuallyEditable(
   );
 }
 
-/** The filter a tree stores: rows as canonical expressions, expression rows as typed. */
-export function toFilter(group: ConditionGroup): MatchTree {
-  const entries = group.conditions.map((condition) =>
-    condition.kind === "group"
-      ? toFilter(condition)
-      : condition.kind === "expression"
-        ? condition.text
-        : formatCondition(condition),
-  );
-  return group.match === "all" ? { and: entries } : { or: entries };
-}
-
-/** The tree a compiled condition reads as: a lone condition sits in a "Match all" group. */
-export function asGroup(condition: MatchCondition): ConditionGroup {
-  return condition.kind === "group"
-    ? condition
-    : { kind: "group", match: "all", conditions: [condition] };
-}
-
-/** `root` with the group at `path` replaced by `fn`'s result. */
-export function updateGroup(
-  root: ConditionGroup,
-  path: ConditionPath,
-  fn: (group: ConditionGroup) => ConditionGroup,
-): ConditionGroup {
-  if (path.length === 0) return fn(root);
-  const [index, ...rest] = path;
-  return {
-    ...root,
-    conditions: root.conditions.map((child, at) =>
-      at === index && child.kind === "group"
-        ? updateGroup(child, rest, fn)
-        : child,
-    ),
-  };
-}
-
-/** `root` with the condition at `path` replaced by `next`. */
-export function replaceAt(
-  root: ConditionGroup,
-  path: ConditionPath,
-  next: EditorCondition,
-): ConditionGroup {
-  const index = path.at(-1)!;
-  return updateGroup(root, path.slice(0, -1), (group) => ({
-    ...group,
-    conditions: group.conditions.map((child, at) =>
-      at === index ? next : child,
-    ),
-  }));
-}
-
-/** `root` without the condition at `path`. */
-export function removeAt(
-  root: ConditionGroup,
-  path: ConditionPath,
-): ConditionGroup {
-  const index = path.at(-1)!;
-  return updateGroup(root, path.slice(0, -1), (group) => ({
-    ...group,
-    conditions: group.conditions.filter((_, at) => at !== index),
-  }));
-}
-
-/** `root` with `child` appended to the group at `path`. */
-export function appendAt(
-  root: ConditionGroup,
-  path: ConditionPath,
-  child: EditorCondition,
-): ConditionGroup {
-  return updateGroup(root, path, (group) => ({
-    ...group,
-    conditions: [...group.conditions, child],
-  }));
-}
-
 /** A condition of `kind` at its starting value, keeping the operator. */
 export function freshCondition(
   kind: ConditionKind,
   negated: boolean,
-): RowCondition {
+): FlatCondition {
   switch (kind) {
     case "library":
       return { kind, operator: "is", negated, values: ["personal"] };
@@ -179,30 +310,43 @@ export function freshCondition(
 }
 
 /** A labelled row as an expression row: its meaning, as text. */
-export function asExpression(condition: FlatCondition): ExpressionCondition {
-  return { kind: "expression", text: formatCondition(condition) };
+export function asExpression<Row extends LabelledRow>(
+  condition: Row,
+  vocabulary: MatchVocabulary<Row>,
+): ExpressionCondition {
+  return {
+    kind: "expression",
+    text: kindOf(vocabulary, condition.kind).format(condition),
+  };
 }
 
 /**
- * An expression row as a labelled row, when its text reads as one item-type,
- * Collection, or Tag test; `null` while it reads as anything else.
+ * An expression row as a labelled row, when one condition kind reads its
+ * text; `null` while it reads as anything else.
  */
-export function asLabelled(
+export function asLabelled<Row extends LabelledRow>(
   condition: ExpressionCondition,
-): FlatCondition | null {
-  const compiled = compileCondition(condition.text).condition;
-  return compiled && visuallyEditable(compiled) ? compiled : null;
+  vocabulary: MatchVocabulary<Row>,
+): Row | null {
+  for (const kind of vocabulary.kinds) {
+    const row = kind.parse(condition.text);
+    if (row) return row;
+  }
+  return null;
 }
 
 /**
  * A new group takes the other match and one condition, so it starts as the
  * alternative or exception the user reached for.
  */
-export function freshGroup(parent: GroupMatch): ConditionGroup {
+export function freshGroup<Row extends LabelledRow>(
+  parent: GroupMatch,
+  vocabulary: MatchVocabulary<Row>,
+): ConditionGroup<Row> {
   return {
     kind: "group",
     match: parent === "all" ? "any" : "all",
-    conditions: [freshCondition("item-type", false)],
+    conditions: [freshRow(vocabulary, vocabulary.newKind)],
   };
 }
 
