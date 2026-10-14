@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { NO_SELECTION, nextCardSelection } from "./card-selection";
+import { NO_SELECTION, cardPlace, nextCardSelection } from "./card-selection";
 import type { CardSelection } from "./card-selection";
 
 /** Five cards, in the order the list shows them. */
@@ -442,5 +442,130 @@ describe("extend", () => {
       anchor: "AAAA1111",
       focus: "AAAA1111",
     });
+  });
+});
+
+describe("a card shown under two group headings", () => {
+  // AAAA1111 has two tags, so it shows under both: one record at two places.
+  const A1 = cardPlace("AAAA1111", "figure");
+  const B = cardPlace("BBBB2222", "figure");
+  const A2 = cardPlace("AAAA1111", "method");
+  const C = cardPlace("CCCC3333", "method");
+  const PLACES = [A1, B, A2, C];
+  const down = { kind: "move", step: 1 } as const;
+  const up = { kind: "move", step: -1 } as const;
+  const at = (place: string, key: string): CardSelection => ({
+    selected: [key],
+    anchor: place,
+    focus: place,
+  });
+
+  it("reaches the card at each place it shows, in list order", () => {
+    const walk: CardSelection[] = [];
+    let current = NO_SELECTION;
+    for (let i = 0; i < PLACES.length; i++) {
+      current = nextCardSelection(current, PLACES, down);
+      walk.push(current);
+    }
+    expect(walk).toEqual([
+      at(A1, "AAAA1111"),
+      at(B, "BBBB2222"),
+      at(A2, "AAAA1111"),
+      at(C, "CCCC3333"),
+    ]);
+  });
+
+  it("steps on from the place the focus holds, not from the first place", () => {
+    expect(nextCardSelection(at(A2, "AAAA1111"), PLACES, down)).toEqual(
+      at(C, "CCCC3333"),
+    );
+    expect(nextCardSelection(at(A2, "AAAA1111"), PLACES, up)).toEqual(
+      at(B, "BBBB2222"),
+    );
+  });
+
+  it("selects the card at the place clicked", () => {
+    expect(
+      nextCardSelection(NO_SELECTION, PLACES, { kind: "click", key: A2 }),
+    ).toEqual(at(A2, "AAAA1111"));
+  });
+
+  it("puts a card named by its Indexed Key alone at its first place", () => {
+    expect(
+      nextCardSelection(NO_SELECTION, PLACES, {
+        kind: "click",
+        key: "AAAA1111",
+      }),
+    ).toEqual(at(A1, "AAAA1111"));
+  });
+
+  it("keeps the focus at its place for the card it already holds, named by its Indexed Key", () => {
+    const second = at(A2, "AAAA1111");
+    expect(
+      nextCardSelection(second, PLACES, { kind: "click", key: "AAAA1111" }),
+    ).toBe(second);
+  });
+
+  it("holds the card once for a range over both its places", () => {
+    expect(
+      nextCardSelection(at(A1, "AAAA1111"), PLACES, {
+        kind: "range",
+        key: A2,
+      }),
+    ).toEqual({
+      selected: ["AAAA1111", "BBBB2222"],
+      anchor: A1,
+      focus: A2,
+    });
+    expect(
+      nextCardSelection(at(B, "BBBB2222"), PLACES, {
+        kind: "extend",
+        step: 1,
+      }),
+    ).toEqual({ selected: ["BBBB2222", "AAAA1111"], anchor: B, focus: A2 });
+  });
+
+  it("holds every card once for all", () => {
+    expect(nextCardSelection(NO_SELECTION, PLACES, { kind: "all" })).toEqual({
+      selected: ["AAAA1111", "BBBB2222", "CCCC3333"],
+      anchor: null,
+      focus: null,
+    });
+  });
+
+  it("removes the card for a toggle at either place", () => {
+    expect(
+      nextCardSelection(at(A1, "AAAA1111"), PLACES, {
+        kind: "toggle",
+        key: A2,
+      }),
+    ).toEqual({ selected: [], anchor: A2, focus: A2 });
+  });
+
+  it("takes a reader's card at its first place", () => {
+    expect(
+      nextCardSelection(NO_SELECTION, PLACES, {
+        kind: "replace",
+        keys: ["CCCC3333", "AAAA1111"],
+      }),
+    ).toEqual({ selected: ["AAAA1111", "CCCC3333"], anchor: A1, focus: A1 });
+  });
+
+  it("keeps the card while the list still shows it at one place", () => {
+    const second = at(A2, "AAAA1111");
+    expect(nextCardSelection(second, [A1, B, C], { kind: "prune" })).toBe(
+      second,
+    );
+    expect(nextCardSelection(second, [B, C], { kind: "prune" })).toEqual({
+      selected: [],
+      anchor: A2,
+      focus: A2,
+    });
+  });
+
+  it("steps from the first place of a Selected Card where the list no longer shows the focus", () => {
+    expect(nextCardSelection(at(A2, "AAAA1111"), [A1, B, C], down)).toEqual(
+      at(B, "BBBB2222"),
+    );
   });
 });
