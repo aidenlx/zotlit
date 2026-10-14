@@ -273,7 +273,7 @@ describe("withFilters", () => {
     const file = parseQueryFile(TWO_VIEWS);
     const next = withFilters(
       withFilters(file, null, { and: ['tags.contains("x")'] }),
-      "Figures",
+      1,
       { or: ['colorName == "red"', 'colorName == "blue"'] },
     );
     const text = serializeQueryFile(next);
@@ -291,9 +291,7 @@ describe("withFilters", () => {
 
   it("drops the filters key when the researcher clears every condition", () => {
     const file = parseQueryFile(TWO_VIEWS);
-    const text = serializeQueryFile(
-      withFilters(file, "All annotations", undefined),
-    );
+    const text = serializeQueryFile(withFilters(file, 0, undefined));
     expect(parseQueryFile(text).views[0]!.filters).toBeUndefined();
     expect(text).toContain("cardWidth: 300");
   });
