@@ -453,18 +453,6 @@ export function formulaName(property: string): string | null {
 }
 
 /**
- * The message of the Formula that `property` shows, where ZotLit Query names
- * a mistake in it; else `null`.
- */
-export function formulaIssue(
-  issues: Readonly<Record<string, string>>,
-  property: string,
-): string | null {
-  const name = formulaName(property);
-  return name !== null && Object.hasOwn(issues, name) ? issues[name]! : null;
-}
-
-/**
  * The file with the Formula `name` set to `text`: an existing one changes in
  * place, a new one goes after the others.
  */

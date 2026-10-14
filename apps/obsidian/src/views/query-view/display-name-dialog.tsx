@@ -11,8 +11,8 @@ import { useStore } from "zustand";
 import * as m from "@/lib/i18n/generated/messages";
 
 import { displayName } from "./query-file";
-import { columnLabel } from "./value-text";
 import type { QueryView } from "./view";
+import { fieldLabel } from "./view-properties";
 
 /** The Display Name field, as the rename dialog and the Formula dialog show it. */
 export function DisplayNameField({
@@ -31,12 +31,12 @@ export function DisplayNameField({
       <input
         type="text"
         value={value}
-        placeholder={columnLabel(property)}
+        placeholder={fieldLabel(property)}
         data-query-display-name=""
         onInput={(event) => onChange(event.currentTarget.value)}
       />
       <span className="zt:text-xs zt:text-(--text-muted)">
-        {m.query_view_display_name_desc({ label: columnLabel(property) })}
+        {m.query_view_display_name_desc({ label: fieldLabel(property) })}
       </span>
     </label>
   );
