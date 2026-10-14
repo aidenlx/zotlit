@@ -1120,3 +1120,76 @@ it.each([
   // Seeds and reads up to 10,000 records; the default 5000 ms limit fails on CI runners.
   20_000,
 );
+
+it.each([
+  ['notes.filter(value.title == "Child note").length > 0', ["ART2FULL"]],
+  ['notes.filter(value.title == "Trashed note").length > 0', []],
+  [
+    'notes.filter(value.item.title == "Group Copy of Exact Matching").length > 0',
+    ["ART2FULLg4815"],
+  ],
+  [
+    'notes.filter(value.dateAdded < date("2020-03-17")).length > 0',
+    ["ART2FULL"],
+  ],
+])("filters Items by their Child Notes with %s", async (filter, keys) => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  const { exit } = await runEffect(
+    collectQuery(ITEMS, {
+      libraries: [SCENARIO_LIBRARIES.personal, SCENARIO_LIBRARIES.group],
+      filter,
+      fields: [],
+      sort: [],
+    }),
+    { client: scenario.db },
+  );
+  if (exit._tag === "Failure") throw Cause.squash(exit.cause);
+  expect(exit.value.rows!.map((row) => row.indexedKey)).toEqual(keys);
+});
+
+it("reports an unknown Child Note field as a typed Fault", async () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  const { exit } = await runEffect(
+    collectQuery(ITEMS, {
+      libraries: [SCENARIO_LIBRARIES.personal],
+      filter: 'notes.filter(value.titel == "Child note").length > 0',
+      fields: [],
+    }),
+    { client: scenario.db },
+  );
+  expect(exit._tag).toBe("Failure");
+  if (exit._tag === "Failure")
+    expect(Cause.squash(exit.cause)).toMatchObject({
+      code: "unknown-property",
+    });
+});
+
+it("lists the live Child Notes of each Item, without trashed notes", async () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  const { exit } = await runEffect(
+    collectQuery(ITEMS, {
+      libraries: [SCENARIO_LIBRARIES.personal, SCENARIO_LIBRARIES.group],
+      filter: "notes.length > 0",
+      fields: ["notes", "notes[].title"],
+      sort: [],
+    }),
+    { client: scenario.db },
+  );
+  if (exit._tag === "Failure") throw Cause.squash(exit.cause);
+  expect(exit.value.rows!.map((row) => [row.indexedKey, row.values])).toEqual([
+    [
+      "ART2FULL",
+      {
+        notes: [{ indexedKey: "NTE2CHLD", title: "Child note" }],
+        "notes[].title": ["Child note"],
+      },
+    ],
+    [
+      "ART2FULLg4815",
+      {
+        notes: [{ indexedKey: "NTE2GRUPg4815", title: "Group reading note" }],
+        "notes[].title": ["Group reading note"],
+      },
+    ],
+  ]);
+});

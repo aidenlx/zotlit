@@ -428,6 +428,33 @@ const BASE_ITEMS = {
 } as const satisfies Record<string, ScenarioItemSpec>;
 
 const ANNOTATION_ITEMS = {
+  // A trashed Child Note beside the live `childNote` of the same Item.
+  trashedChildNote: {
+    library: "personal",
+    key: "NTE2TRSH",
+    itemType: "note",
+    dateAdded: "2020-03-16 09:51:00",
+    dateModified: "2020-03-16 09:51:00",
+    parent: "fullDateArticle",
+    note: {
+      note: '<div data-schema-version="9"><p>Trashed note</p></div>',
+      title: "Trashed note",
+    },
+    trashed: true,
+  },
+  // A Child Note in the group Library, read with its group Indexed Key.
+  groupChildNote: {
+    library: "group",
+    key: "NTE2GRUP",
+    itemType: "note",
+    dateAdded: "2020-04-01 09:10:00",
+    dateModified: "2020-04-01 09:10:00",
+    parent: "groupArticle",
+    note: {
+      note: '<div data-schema-version="9"><p>Group reading note</p></div>',
+      title: "Group reading note",
+    },
+  },
   linkedUrlAttachment: {
     library: "personal",
     key: "URL2LIVE",

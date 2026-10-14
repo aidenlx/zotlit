@@ -368,6 +368,15 @@ const PLAN_PATHS: readonly {
     },
   },
   {
+    name: "an unlimited scan that reads Child Notes",
+    request: { filter: "notes.isEmpty()", fields: [], limit: null },
+    reads: {
+      "scan-page": [500, 500, 500, 500, 500, 100],
+      // 2,600 parents in chunks of 250; the bulk Library has no Child Note.
+      "item-notes": Array<number>(11).fill(0),
+    },
+  },
+  {
     name: "an unlimited scan",
     request: { fields: ["title"], limit: null },
     reads: {
@@ -520,6 +529,7 @@ describe("the Items one statement reads", () => {
         "annotation-attachment-titles",
         "attachment-candidate-set",
         "annotation-candidate-set",
+        "item-notes",
       ]) {
         expect(itemsRead(events, reader), reader).toEqual(reads[reader] ?? []);
       }

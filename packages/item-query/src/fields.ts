@@ -32,6 +32,8 @@ import { isQueryRecord } from "./filter-values";
 import type { FilterValue, FilterValueType } from "./filter-values";
 import { keyField, indexedKeyField } from "./key-fields";
 import { libraryField } from "./library-field";
+import type { QueryNote } from "./note-fields";
+import type { NoteNeeds } from "./note-hydration";
 import type { PathSegment } from "./projection-path";
 import type { QueryClock } from "./query-clock";
 import type { FilterNavigation, RecordVocabulary } from "./record-field";
@@ -39,6 +41,7 @@ import { recordField } from "./record-field";
 import { definitionFilter } from "./record-field";
 import { annotationVocabulary } from "./record-vocabularies";
 import { attachmentVocabulary } from "./record-vocabularies";
+import { noteVocabulary } from "./record-vocabularies";
 import type { ProjectionValue } from "./request";
 
 /**
@@ -53,6 +56,7 @@ export interface QueryItem {
   readonly customFieldNames: readonly string[];
   readonly attachments?: readonly QueryAttachment[];
   readonly annotations?: readonly QueryAnnotation[];
+  readonly notes?: readonly QueryNote[];
 }
 
 /** The JSON type of a scalar value in a Query Row. */
@@ -87,6 +91,7 @@ export interface FieldNeeds {
   readonly relations?: readonly HydrateRelation[];
   readonly attachments?: readonly AttachmentNeeds[];
   readonly annotations?: readonly AnnotationNeeds[];
+  readonly notes?: readonly NoteNeeds[];
 }
 
 /**
@@ -501,6 +506,15 @@ const FIELDS: ReadonlyMap<string, FieldDefinition> = new Map<
       list: true,
       rows: (item) => item.annotations ?? [],
       needs: (annotations) => ({ annotations }),
+    }),
+  ],
+  [
+    "notes",
+    recordField({
+      vocabulary: () => noteVocabulary(),
+      list: true,
+      rows: (item) => item.notes ?? [],
+      needs: (notes) => ({ notes }),
     }),
   ],
 ]);
