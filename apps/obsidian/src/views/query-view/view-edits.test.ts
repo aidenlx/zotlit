@@ -8,6 +8,7 @@ import {
   duplicateView,
   moveView,
   renameView,
+  setViewDataset,
   setViewLayout,
   setViewOption,
   viewNameIssue,
@@ -122,6 +123,73 @@ describe("view edits", () => {
   it("sets the layout of a view", () => {
     const file = saved(setViewLayout(parseQueryFile(FILE), 2, "table"));
     expect(file.views[2]!.type).toBe("table");
+  });
+
+  it("switches a view to Items: the Table draws it, its filters stay, and what Items lack comes off and is named", () => {
+    const edit = setViewDataset(
+      parseQueryFile(`views:
+  - type: annotations
+    name: Figures
+    from: annotations
+    filters: tags.contains("figure")
+    sort:
+      - property: pageIndex
+        direction: ASC
+      - property: dateAdded
+        direction: DESC
+    groupBy:
+      property: item.indexedKey
+      direction: ASC
+    groupOrder:
+      - RUGIER24
+    order:
+      - comment
+      - dateAdded
+    limit: 100
+`),
+      0,
+      "items",
+    );
+    const view = saved(edit.file).views[0]!;
+    expect(view).toMatchObject({
+      type: "table",
+      from: "items",
+      filters: 'tags.contains("figure")',
+      sort: [{ property: "dateAdded", direction: "DESC" }],
+      order: ["dateAdded"],
+      limit: 100,
+    });
+    expect(view.groupBy).toBeUndefined();
+    expect(view.groupOrder).toBeUndefined();
+    expect(edit.removed).toEqual({
+      sort: ["pageIndex"],
+      groupBy: "item.indexedKey",
+      order: ["comment"],
+    });
+  });
+
+  it("keeps the layout of a view that can show the new dataset", () => {
+    const edit = setViewDataset(
+      parseQueryFile(
+        "views:\n  - type: list\n    name: Sources\n    from: items\n",
+      ),
+      0,
+      "attachments",
+    );
+    expect(saved(edit.file).views[0]).toMatchObject({
+      type: "list",
+      from: "attachments",
+    });
+    expect(edit.removed).toEqual({ sort: [], groupBy: null, order: [] });
+  });
+
+  it("adds a view of the dataset it is given, drawn by the first layout of that dataset", () => {
+    const edit = addView(parseQueryFile(FILE), "View", "items");
+    expect(saved(edit.file).views.at(-1)).toMatchObject({
+      name: "View",
+      type: "table",
+      from: "items",
+    });
   });
 
   it("says why a view name cannot stand", () => {

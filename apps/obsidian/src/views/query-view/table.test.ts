@@ -47,6 +47,50 @@ describe("resultTable", () => {
   it("writes an empty cell for a property the row does not carry", () => {
     expect(resultTable(ROWS, ["colorName"]).body).toEqual([[""], [""]]);
   });
+
+  it("writes an Item's date, creators and tags as Zotero shows them", () => {
+    const item: QueryViewRow = {
+      indexedKey: "RUGIER24",
+      values: {
+        date: {
+          kind: "year",
+          value: null,
+          year: 2011,
+          month: null,
+          day: null,
+          text: null,
+          raw: "2011-00-00 2011",
+        },
+        dateAdded: {
+          kind: "date",
+          value: "2014-09-11",
+          year: 2014,
+          month: 9,
+          day: 11,
+          text: "September 11, 2014",
+          raw: "2014-09-11 September 11, 2014",
+        },
+        creators: [
+          { firstName: "Nicolas P.", lastName: "Rougier", fullName: null },
+          { fullName: "W3C", firstName: null, lastName: null },
+        ],
+        tags: [
+          { name: "figure", type: "manual" },
+          { name: "visualization", type: "automatic" },
+        ],
+      },
+    };
+    expect(
+      resultTable([item], ["date", "dateAdded", "creators", "tags"]).body,
+    ).toEqual([
+      [
+        "2011",
+        "September 11, 2014",
+        "Nicolas P. Rougier, W3C",
+        "figure, visualization",
+      ],
+    ]);
+  });
 });
 
 describe("toCSV", () => {
