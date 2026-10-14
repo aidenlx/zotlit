@@ -2209,14 +2209,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     tab: string,
     { button, popup, ready }: { button: string; popup: string; ready: string },
   ): Promise<void> {
-    await obEval(
-      vaultId,
-      `(()=>{if(!${toolbarPopup(popup)})${tab}.contentEl.querySelector(${JSON.stringify(button)}).click();return true;})()`,
-    );
+    // The poll clicks the button while the popover is closed, so a view that
+    // is not on screen yet gets the click once it is.
     expect(
       await obEvalUntil(
         vaultId,
-        `String(!!${toolbarPopup(popup)}?.querySelector(${JSON.stringify(ready)}))`,
+        `(()=>{const popup=${toolbarPopup(popup)};if(popup?.querySelector(${JSON.stringify(ready)}))return 'true';if(!popup)${tab}?.contentEl?.querySelector(${JSON.stringify(button)})?.click();return 'false';})()`,
         { expected: "true" },
       ),
     ).toBe(true);
@@ -2924,7 +2922,7 @@ views:
     const found = JSON.parse(
       await obEval(
         vaultId,
-        `(()=>{const popup=${propertiesPopup};const rows=[...popup.querySelectorAll('[data-query-property]')].map(n=>n.dataset.queryProperty);popup.hidePopover();return JSON.stringify(rows);})()`,
+        `(()=>{const popup=${propertiesPopup};const rows=[...popup.querySelectorAll('[data-query-property]')].map(n=>n.dataset.queryProperty);const input=popup.querySelector('input[role="combobox"]');input.value='';input.dispatchEvent(new InputEvent('input',{bubbles:true}));popup.hidePopover();return JSON.stringify(rows);})()`,
       ),
     ) as string[];
     expect(found).toContain("formula.year");
