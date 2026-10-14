@@ -11,9 +11,9 @@ import {
   setViewDataset,
   setViewLayout,
   setViewOption,
-  unusedSettings,
   viewNameIssue,
 } from "./view-edits";
+import { unusedSettings } from "./view-properties";
 
 const FILE = `views:
   - type: annotations

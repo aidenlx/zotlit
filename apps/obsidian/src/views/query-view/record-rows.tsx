@@ -18,7 +18,8 @@ import {
 
 import { cell, cellText, errorCell } from "./value-text";
 import type { QueryView } from "./view";
-import { visibleProperties } from "./visible-properties";
+import { useViewProperties } from "./view-properties";
+import type { PropertyEntry } from "./view-properties";
 
 /** One row on screen, and the group it stands in. */
 export interface ShownRecord {
@@ -42,19 +43,17 @@ export interface RecordGroup {
  * find stays off screen.
  */
 export function useRecordGroups(view: QueryView): {
-  properties: readonly string[];
+  properties: readonly PropertyEntry[];
   groups: readonly RecordGroup[];
 } {
-  const shown = useStore(view.state, (s) => s.view);
+  const columns = useViewProperties(view)?.columns;
   const records = useStore(view.state, (s) => s.records);
   const query = useAnnotStore((s) => s.filterQuery)
     .trim()
     .toLowerCase();
   const collapsed = useAnnotStore((s) => s.collapsedGroups);
   return useMemo(() => {
-    const properties = shown
-      ? visibleProperties(shown, { fallback: true })
-      : [];
+    const properties = columns ?? [];
     const groups: {
       key: string | null;
       label: string | null;
@@ -62,8 +61,8 @@ export function useRecordGroups(view: QueryView): {
       rows: { row: QueryViewRow; cells: string[] }[];
     }[] = [];
     for (const { row, group } of records) {
-      const cells = properties.map((property) =>
-        cellText(property, row.values[property]),
+      const cells = properties.map(({ path }) =>
+        cellText(path, row.values[path]),
       );
       if (
         query !== "" &&
@@ -84,7 +83,7 @@ export function useRecordGroups(view: QueryView): {
       last.rows.push({ row, cells });
     }
     return { properties, groups };
-  }, [shown, records, query, collapsed]);
+  }, [columns, records, query, collapsed]);
 }
 
 /**

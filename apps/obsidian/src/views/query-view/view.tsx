@@ -77,10 +77,12 @@ import type { ResultTable } from "./table";
 import { TABLE_FIELDS, TableLayout } from "./table-layout";
 import type { LiteratureNotes } from "./table-notes";
 import { ToolbarPopover } from "./toolbar-popover";
-import { propertyLabel } from "./value-text";
-import { unusedSettings } from "./view-edits";
 import { ViewMenu } from "./view-menu";
-import { visibleProperties } from "./visible-properties";
+import {
+  unusedSettings,
+  useViewProperties,
+  viewProperties,
+} from "./view-properties";
 
 const logger = getLogger(["views", "query-view"]);
 
@@ -637,8 +639,7 @@ export class QueryView extends Component implements HistorySurface {
     const { file, view } = this.state.getState();
     return resultTable(
       this.#rows,
-      view ? visibleProperties(view, { fallback: true }) : [],
-      file,
+      view ? viewProperties(file, view).columns : [],
     );
   }
 
@@ -665,7 +666,7 @@ export class QueryView extends Component implements HistorySurface {
       ...new Set([
         ...(grouped?.fields ?? []),
         ...(layoutOf(view)?.type === "table" ? TABLE_FIELDS : []),
-        ...visibleProperties(view, { fallback: true }),
+        ...viewProperties(file, view).columns.map(({ path }) => path),
       ]),
     ];
     const formulas = file.formulas ?? {};
@@ -996,9 +997,9 @@ const PARENTS: Partial<Record<string, () => string>> = {
  */
 function UnusedNote({ view }: { view: QueryView }) {
   const current = useQueryViewState(view, (s) => s.view);
-  const file = useQueryViewState(view, (s) => s.file);
-  if (!current) return null;
-  const unused = unusedSettings(current);
+  const entries = useViewProperties(view);
+  if (!current || !entries) return null;
+  const { unused } = entries;
   const { engine, name } = datasetSpec(current.from);
   const known = (property: string) => engine.definition(property) !== undefined;
   // A property the dataset has that no cell shows, such as the tags of
@@ -1014,7 +1015,7 @@ function UnusedNote({ view }: { view: QueryView }) {
   ];
   const labels = (list: readonly string[]) =>
     list
-      .map((property) => PARENTS[property]?.() ?? propertyLabel(file, property))
+      .map((property) => PARENTS[property]?.() ?? entries.entry(property).label)
       .join(", ");
   const text = [
     properties.length > 0
@@ -1148,7 +1149,8 @@ function OpenFileButton({ view }: { view: QueryView }) {
 
 function SortButton({ view }: { view: QueryView }) {
   const current = useQueryViewState(view, (s) => s.view);
-  if (!current) return null;
+  const properties = useViewProperties(view);
+  if (!current || !properties) return null;
   const sort = current.sort ?? [];
   return (
     <ToolbarPopover
@@ -1159,8 +1161,11 @@ function SortButton({ view }: { view: QueryView }) {
     >
       <SortEditor
         value={sort}
-        options={sortOptions(current.from)}
-        unused={unusedSettings(current).sort}
+        options={sortOptions(
+          current.from,
+          (path) => properties.entry(path).label,
+        )}
+        unused={properties.unused.sort}
         onChange={(next) =>
           view.editView({ sort: next.length > 0 ? next : undefined })
         }
@@ -1172,7 +1177,8 @@ function SortButton({ view }: { view: QueryView }) {
 function GroupButton({ view }: { view: QueryView }) {
   const current = useQueryViewState(view, (s) => s.view);
   const groups = useQueryViewState(view, (s) => s.groups);
-  if (!current) return null;
+  const properties = useViewProperties(view);
+  if (!current || !properties) return null;
   return (
     <ToolbarPopover
       icon="layout-list"
@@ -1182,8 +1188,11 @@ function GroupButton({ view }: { view: QueryView }) {
     >
       <GroupEditor
         value={{ groupBy: current.groupBy, groupOrder: current.groupOrder }}
-        options={groupOptions(current.from)}
-        unused={unusedSettings(current).groupBy !== null}
+        options={groupOptions(
+          current.from,
+          (path) => properties.entry(path).label,
+        )}
+        unused={properties.unused.groupBy !== null}
         groups={groups}
         onChange={(next) =>
           view.editView({

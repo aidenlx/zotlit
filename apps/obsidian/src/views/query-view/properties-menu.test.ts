@@ -5,6 +5,7 @@ import type { ChooserMatcher } from "@/components/chooser-logic";
 
 import { propertyRow } from "./properties-menu";
 import { parseQueryFile } from "./query-file";
+import { viewProperties } from "./view-properties";
 
 const FILE = parseQueryFile(`formulas:
   year: date.year
@@ -27,14 +28,17 @@ function search(rows: ReturnType<typeof propertyRow>[], query: string) {
 }
 
 describe("propertyRow", () => {
-  const rows = ["title", "formula.year", "date", "url"].map((property) =>
-    propertyRow(FILE, property),
-  );
+  const properties = viewProperties(FILE, FILE.views[0]!);
+  const rows = properties.entries.map(propertyRow);
 
-  it("finds a property by its Display Name, its field label and its path", () => {
-    expect(search(rows, "Work")).toEqual(["title"]);
+  it("finds a property by its Display Name, its field label and its path, visible or not", () => {
+    expect(properties.entry("formula.year").place).toBe(null);
+    expect(search(rows, "Work")).toContain("title");
+    expect(search(rows, "Work")).not.toContain("shortTitle");
     expect(search(rows, "Year of source")).toEqual(["formula.year"]);
     expect(search(rows, "formula.year")).toEqual(["formula.year"]);
-    expect(search(rows, "title")).toEqual(["title"]);
+    expect(search(rows, "title")).toEqual(
+      expect.arrayContaining(["title", "shortTitle"]),
+    );
   });
 });
