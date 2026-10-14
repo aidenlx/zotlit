@@ -2583,6 +2583,8 @@
   "query_view_property_item_type": "条目类型",
   "query_view_property_attachment_title": "附件标题",
   "query_view_property_attachment_date_added": "附件添加日期",
+  "query_view_property_of_item": "条目{property}",
+  "query_view_property_of_attachment": "附件{property}",
   "query_view_read_only": "此处的更改不会保存。打开笔记以更改此视图。",
   "query_block_save_failed": "无法保存查询块。笔记中的块文本已更改；请重新打开笔记后再试。",
   "query_view_filter": "筛选",
