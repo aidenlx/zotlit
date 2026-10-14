@@ -124,6 +124,11 @@ interface AnnotationProps {
 }
 
 interface AnnotationCardProps extends AnnotationProps {
+  /**
+   * Where the card stands in the list: a card with two tags stands under two
+   * group headings, once at each place.
+   */
+  place: string;
   /** Whether this card is the card list's one tab stop. */
   tabStop: boolean;
 }
@@ -191,7 +196,12 @@ function useVerbBlocks(annot: AnnotationRecord): VerbBlocks {
 }
 
 /** One row of the card list's grid, its content in one cell. */
-export function Annotation({ annot, collapsed, tabStop }: AnnotationCardProps) {
+export function Annotation({
+  annot,
+  place,
+  collapsed,
+  tabStop,
+}: AnnotationCardProps) {
   const actions = useContext(AnnotActionsContext);
   const selected = useAnnotStore((s) =>
     s.cardSelection.selected.includes(annot.key),
@@ -229,6 +239,7 @@ export function Annotation({ annot, collapsed, tabStop }: AnnotationCardProps) {
       style={{ "--zt-annot-color": annot.color } as React.CSSProperties}
       data-annot-color={annot.color ?? undefined}
       data-zotero-annotation-key={annot.key}
+      data-card-place={place}
       data-selected={selected ? "" : undefined}
       data-alone={alone ? "" : undefined}
       role="row"
@@ -266,6 +277,7 @@ export function Annotation({ annot, collapsed, tabStop }: AnnotationCardProps) {
             : Keymap.isModifier(e.nativeEvent, "Mod")
               ? "toggle"
               : "click",
+          place,
         );
       }}
       // A right-click opens the "…" menu at the pointer. A text field keeps
