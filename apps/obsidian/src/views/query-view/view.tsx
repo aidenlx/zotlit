@@ -556,7 +556,7 @@ function QueryViewBody({ view }: { view: QueryView }) {
         role="toolbar"
       >
         <ViewMenuButton view={view} />
-        <span className="zt:text-(--text-muted)">
+        <span className="zt:shrink-0 zt:whitespace-nowrap zt:text-(--text-muted)">
           <ResultCount view={view} />
         </span>
         <SortButton view={view} />
