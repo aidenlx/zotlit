@@ -18,6 +18,8 @@ import * as m from "@/lib/i18n/generated/messages";
 import { tooltipAttrs } from "@/lib/utils";
 import { matchTheme } from "@/views/template-workbench/match-pane";
 
+import { DisplayNameField } from "./display-name-dialog";
+import { displayName, formulaProperty } from "./query-file";
 import type { QueryView } from "./view";
 
 /** Why a Formula name cannot be saved, or `null` when it can. */
@@ -52,12 +54,20 @@ function FormulaForm({
   editing: string | null;
   close: () => void;
 }) {
-  const formulas = useStore(view.state, (s) => s.file?.formulas) ?? {};
+  const file = useStore(view.state, (s) => s.file);
+  const formulas = file?.formulas ?? {};
   const issues = useStore(view.state, (s) => s.formulaIssues);
   const part = useParts("match");
   const saved = editing === null ? undefined : formulas[editing];
   const [name, setName] = useState(editing ?? "");
   const [text, setText] = useState(saved ?? "");
+  const [label, setLabel] = useState(
+    () =>
+      (editing !== null &&
+        file &&
+        displayName(file, formulaProperty(editing))) ||
+      "",
+  );
   const nameIssue = editing === null ? formulaNameIssue(name, formulas) : null;
   const syntaxIssue = formulaSyntaxIssue(text);
   // What ZotLit Query found in the saved text, while it stays as saved.
@@ -68,7 +78,7 @@ function FormulaForm({
   const fieldIssue = syntaxIssue ?? runIssue;
   const save = () => {
     if (nameIssue !== null || syntaxIssue !== null) return;
-    if (view.saveFormula(name, text)) close();
+    if (view.saveFormula(name, text, label)) close();
   };
   return (
     <form
@@ -144,6 +154,11 @@ function FormulaForm({
           </span>
         </label>
       </WorkbenchThemeProvider>
+      <DisplayNameField
+        property={formulaProperty(name || "…")}
+        value={label}
+        onChange={setLabel}
+      />
       <div className="modal-button-container">
         {editing !== null && (
           <button
