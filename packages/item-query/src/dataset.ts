@@ -25,6 +25,7 @@ import type {
 import type {
   FilterNode,
   FilterPlan,
+  FaultedFormulaRead,
   FilterProblem,
   FormulaResolver,
 } from "./filter-plan";
@@ -149,7 +150,7 @@ export interface QueryDataset<
     text: string,
     context?: QueryContext,
     formula?: FormulaResolver<any, any>,
-  ) => FilterPlan<any, any> | FilterProblem;
+  ) => FilterPlan<any, any> | FilterProblem | FaultedFormulaRead;
   /** The Sortable Field of a name, or nothing for a name that does not sort. */
   readonly sortable: (name: string) => SortableField<any, any> | undefined;
   /** The field that the leading segments of a Projection Path name. */
