@@ -14,7 +14,7 @@ import type { FilterPlan } from "./filter-plan";
 import { formulaOrderFault, planFormulas } from "./formulas";
 import type {
   FormulaFaultPolicy,
-  FormulaSourceFault,
+  FormulaSourceCheck,
   PlannedColumn,
   PlannedFormula,
 } from "./formulas";
@@ -259,10 +259,10 @@ export function planRequest(
   dataset: QueryDataset<any>,
   request: ItemQueryRequest,
   /**
-   * The Faults that the source finds in the Formulas of an earlier plan of
-   * the request, by Formula name.
+   * The check of the source on each planned Formula, when the request leaves
+   * out a Formula with a mistake.
    */
-  sourceFaults?: ReadonlyMap<string, FormulaSourceFault>,
+  sourceCheck?: FormulaSourceCheck,
 ): Effect.Effect<ItemQueryPlan, ItemQueryError> {
   return Effect.gen(function* () {
     const libraryIDs = request.libraries.map((library) => library.libraryID);
@@ -310,7 +310,7 @@ export function planRequest(
       fields,
       context,
       policy: request.onFormulaFault ?? "fail",
-      sourceFaults,
+      sourceCheck,
     });
     if (formulas instanceof ItemQueryError) return yield* formulas;
 
