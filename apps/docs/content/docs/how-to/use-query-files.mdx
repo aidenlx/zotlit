@@ -1,0 +1,285 @@
+---
+title: "Use query files and query blocks"
+description: "Create a query file, filter, sort, and group its views, embed it in notes, and save the annotation sidebar as a query file."
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Command } from "@/components/command";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+A query file shows live annotations, files, or papers from your Zotero library in a tab or in a note. This page shows how to create one, change its views, and embed it. [Query files and query blocks](/docs/concepts/query-files-and-query-blocks) explains the ideas behind them.
+
+## Create a query file [#create]
+
+Use one of these:
+
+- Open the command palette and run <Command inline name={m.command_new_query_file_name()} />. The file goes in the folder where Obsidian puts new notes.
+- In the file explorer, right-click a folder, or a file in that folder, and select <UiLabel name={m.query_file_new()} />.
+
+ZotLit creates a file named `Untitled.zotquery` and opens it in a tab. Hold `Ctrl` (Windows and Linux) or `Command` (macOS) when you select the menu item to open it in a new tab. Rename the file as you rename any note.
+
+The new file has one view, <UiLabel name={m.query_file_default_view_name()} />. It shows the annotations of your whole library, grouped by paper, at most 100 at a time.
+
+## Work with views [#views]
+
+The toolbar at the top of the file has these controls, from left to right:
+
+| Control                                      | What it does                                                                                 |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| The view menu                                | Shows the view on screen. Switch, add, and configure views here.                             |
+| The result count                             | Shows how many records match. Opens the <UiLabel name={m.query_view_results_menu()} /> menu. |
+| <UiLabel name={m.query_view_filter()} />     | Chooses which records the view shows.                                                        |
+| <UiLabel name={m.query_view_sort()} />       | Sets the order of the rows.                                                                  |
+| <UiLabel name={m.query_view_group()} />      | Collects the rows under headings.                                                            |
+| <UiLabel name={m.query_view_properties()} /> | Chooses the values that each row shows.                                                      |
+| <UiLabel name={m.query_view_search()} />     | Finds text in the rows on screen.                                                            |
+
+On a narrow pane, the toolbar shows icons without labels.
+
+### Switch, add, and arrange views [#view-menu]
+
+Select the view menu to see the views of the file. Type in <UiLabel name={m.query_view_search_views()} /> to find a view by name, then select it.
+
+- To add a view, select <UiLabel name={m.query_view_add_view()} />. ZotLit opens <UiLabel name={m.query_view_configure_view()} /> so that you can name it.
+- To change the order of the views, drag a view in the list.
+- To make a view the default, right-click it and select <UiLabel name={m.query_view_default_view()} />. The default view moves to the top of the list. An embed without a view name shows it.
+- To copy or remove a view, right-click it and select <UiLabel name={m.query_view_duplicate_view()} /> or <UiLabel name={m.query_view_delete_view()} />.
+
+### Configure a view [#configure]
+
+Select the view menu, then <UiLabel name={m.query_view_configure_view()} />. Each change saves at once.
+
+| Setting                                     | What it does                                                                                    |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| <UiLabel name={m.query_view_view_name()} /> | The name in the view menu and after `#` in an embed.                                            |
+| <UiLabel name={m.query_view_dataset()} />   | The Zotero records that each row shows: annotations, attachments, or items.                     |
+| <UiLabel name={m.query_view_layout()} />    | How the view draws the rows. The list offers only the layouts that can show the chosen records. |
+
+When you change the records, the view keeps its filters, sort, and grouping where the new records have the same properties. A notice names the ones that no longer apply. They stay in the file and apply again when you switch back.
+
+Each layout adds its own options:
+
+| Layout                                               | Options                                                                                                                                                                                |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <UiLabel name={m.query_view_layout_annotations()} /> | <UiLabel name={m.query_view_card_width()} />, <UiLabel name={m.query_view_show_comment()} />, <UiLabel name={m.query_view_show_tags()} />, <UiLabel name={m.query_view_show_page()} /> |
+| <UiLabel name={m.query_view_layout_list()} />        | <UiLabel name={m.query_view_list_markers()} />, <UiLabel name={m.query_view_list_indent_properties()} />, <UiLabel name={m.query_view_list_property_separator()} />                    |
+| <UiLabel name={m.query_view_layout_cards()} />       | <UiLabel name={m.query_view_card_size()} />                                                                                                                                            |
+
+## Filter the rows [#filter]
+
+Select <UiLabel name={m.query_view_filter()} />. The filter editor has two parts:
+
+- <UiLabel name={m.query_view_filter_all_views()} />: conditions for every view
+  of the file that reads the same records as the first view.
+- <UiLabel name={m.query_view_filter_this_view()} />: conditions for the view on
+  screen only.
+
+<Steps>
+  <Step>
+    ### Add a condition
+
+    Select <UiLabel name={m.workbench_match_add_condition()} />. Choose a property, an operator, and a value. For example, choose <UiLabel name={m.query_view_property_color()} />, <UiLabel name={m.workbench_match_operator_is()} />, and a color.
+
+  </Step>
+  <Step>
+    ### Combine conditions
+
+    Choose <UiLabel name={m.workbench_match_match_all()} /> to show the records that match every condition, or <UiLabel name={m.workbench_match_match_any()} /> to show the records that match at least one. Select <UiLabel name={m.workbench_match_add_group()} /> to put a group of conditions inside another group.
+
+  </Step>
+  <Step>
+    ### Check the result
+
+    The view refreshes as you edit. The result count shows the new number of records.
+
+  </Step>
+</Steps>
+
+The properties depend on the records of the view. An annotations view offers the color, Tags, comment, text, page, and dates of each annotation. Every view offers the paper's title, creators, first author, year, item type, Collection, and library. Annotations and attachments views also offer the file's title and file type.
+
+To write a condition as a [Filter Expression](/docs/concepts/how-zotlit-query-works#steps), select <UiLabel name={m.workbench_match_edit_as_expression()} /> on its row. Select <UiLabel name={m.workbench_match_edit_visually()} /> to return to the visual row.
+
+When a condition has an error, its row shows the reason. The view keeps the rows it showed last and shows <UiLabel name={m.query_view_filter_error()} />
+
+## Sort and group the rows [#sort-group]
+
+### Sort [#sort]
+
+Select <UiLabel name={m.query_view_sort()} />, then <UiLabel name={m.query_view_sort_add()} />. Choose a property and a direction, such as <UiLabel name={m.query_view_sort_new_old()} /> for dates. Add more properties to break ties. Drag a property to change its priority: the first property sorts first.
+
+The properties depend on the records of the view:
+
+| Records     | Sort properties                                                                                                                                |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Annotations | Position in the file, page, dates, color, annotation type, and the paper's title, first author, and dates, and the file's title and date added |
+| Attachments | Title, dates, and the paper's title, first author, and date                                                                                    |
+| Items       | Title, first author, date, dates added and modified, and item type                                                                             |
+
+### Group [#group]
+
+Select <UiLabel name={m.query_view_group()} />, then choose a property in <UiLabel name={m.query_view_group_by()} />:
+
+| Records     | Group properties                                                                                                                                                                                                                                                |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Annotations | <UiLabel name={m.query_view_property_item()} />, <UiLabel name={m.query_view_property_attachment()} />, <UiLabel name={m.query_view_property_color()} />, <UiLabel name={m.query_view_property_tag()} />, <UiLabel name={m.query_view_property_collection()} /> |
+| Attachments | <UiLabel name={m.query_view_property_item()} />, <UiLabel name={m.query_view_property_tag()} />, <UiLabel name={m.query_view_property_collection()} />                                                                                                          |
+| Items       | <UiLabel name={m.query_view_property_item_type()} />, <UiLabel name={m.query_view_property_tag()} />, <UiLabel name={m.query_view_property_collection()} />                                                                                                     |
+
+Then choose the order of the groups:
+
+- <UiLabel name={m.query_view_group_ascending()} /> or
+  <UiLabel name={m.query_view_group_descending()} /> sorts the groups by their
+  value.
+- <UiLabel name={m.query_view_group_manual()} /> lists the groups. Select the
+  checkbox of a group to show or hide it, and drag a group to change its place.
+  For example, show only the yellow and red groups for one writing task.
+
+A record with several Tags or Collections shows in the group of each one. Records with no value show under <UiLabel name={m.query_view_group_none()} />. In the Annotations, List, and Cards layouts, select a group heading to collapse its rows.
+
+## Choose the properties [#properties]
+
+Select <UiLabel name={m.query_view_properties()} />. Select the checkbox of a property to show or hide it, and drag a property to change its place. Type in <UiLabel name={m.query_view_properties_search()} /> to find a property. To add a property that the list does not have, type its path, such as `item.citationKey`, and select the row that adds it.
+
+The Table, List, and Cards layouts show these properties in this order. Copy and CSV export use them as columns.
+
+## Limit, copy, and export the results [#results]
+
+Select the result count to open the <UiLabel name={m.query_view_results_menu()} /> menu:
+
+- <UiLabel name={m.query_view_limit()} />: the most rows the view shows. Clear
+  the field, or select the
+  <UiLabel name={m.query_view_show_all({ count: 250 })} /> row, to show every
+  match. When more records match than the view shows, the count reads, for
+  example,
+  <UiLabel name={m.query_view_results_limited({ count: 250, shown: 100 })} />.
+- <UiLabel name={m.query_view_copy()} />: copies the rows on screen as a table.
+  Paste it into a note or a spreadsheet.
+- <UiLabel name={m.query_view_export_csv()} />: saves the rows on screen as a
+  CSV file.
+
+## Search the rows [#search]
+
+Select <UiLabel name={m.query_view_search()} /> and type. The view shows only the rows on screen that contain the text. Search does not change the file. Clear the field to see every row again.
+
+## Use the Table layout [#table]
+
+The Table layout lists papers, as Zotero's item list does. To use it, set the records of the view to items in <UiLabel name={m.query_view_configure_view()} />, then choose <UiLabel name={m.query_view_layout_table()} />.
+
+- Select <UiLabel name={m.query_view_table_expand()} /> on a paper to see its files and notes. Expand a file to see its annotations.
+- The <UiLabel name={m.query_view_table_literature_note()} /> column opens the paper's Literature Note. When the paper has no note, select <UiLabel name={m.query_view_table_create_note()} /> to create one.
+
+## Embed a query file in a note [#embed]
+
+Type an embed link in any note:
+
+```md
+![[Figures.zotquery]]
+```
+
+The embed shows the default view. To show another view, add its name after `#`:
+
+```md
+![[Figures.zotquery#Yellow highlights]]
+```
+
+The embed has the same toolbar as the tab. A change in the embed saves to the query file, so every note that embeds the file shows it. Select <UiLabel name={m.query_view_open_file()} /> to open the file in a tab. Embeds work in Reading view, Live Preview, and hover popovers.
+
+To show the annotations of the note's own paper, use `this.item` in the filter of the view:
+
+```yaml
+filters: item == this.item
+```
+
+In a Literature Note, `this.item` is the paper that the note's `zotero-key` property names. See [`this`: the paper of the note](/docs/concepts/query-files-and-query-blocks#this).
+
+## Add a query block to a note [#block]
+
+A query block keeps a view in one note, with no separate file. Type a code block with the language `zotquery`:
+
+````md
+```zotquery
+views:
+  - type: annotations
+    name: Yellow highlights
+    from: annotations
+    filters: item == this.item && colorName == "yellow"
+```
+````
+
+The block shows the view and its toolbar. A change in the toolbar rewrites the block text. This also works when the block shows through a section embed or a hover popover. When the note text changed in the meantime, the block shows <UiLabel name={m.query_block_save_failed()} />
+
+[Query file format](/docs/reference/query-file-format) lists every key that you can write.
+
+### The block in Literature Notes [#literature-note-block]
+
+The default Literature Note template puts a query block under the Annotations heading. The block shows the annotations of the note's paper. A Literature Note that you made with an earlier version gets the block on its next update. A paper in the Zotero trash shows no annotations there. See [Default templates](/docs/reference/templates/defaults#content-template).
+
+## Save the annotation sidebar as a query file [#save-sidebar]
+
+The sidebar <UiLabel name={m.annot_view_name()} /> has more view controls in its <UiLabel name={m.annot_view_more_tooltip()} /> menu (⋮):
+
+| Menu item                                            | What it does                                                                                 |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| <UiLabel name={m.annot_view_sort()} />               | Sorts the cards by one property of the annotation, in either direction.                      |
+| <UiLabel name={m.annot_view_group_by()} />           | Groups the cards by color or Tag, or <UiLabel name={m.annot_view_group_by_none()} />.        |
+| <UiLabel name={m.annot_view_filter()} />             | Opens the filter editor for the sidebar.                                                     |
+| <UiLabel name={m.annot_view_save_as_query_file()} /> | Saves what the sidebar shows as a new query file. Available while the sidebar shows an item. |
+
+To keep a sidebar filter as a file:
+
+<Steps>
+  <Step>
+    ### Open the dialog
+
+    In the sidebar, open <UiLabel name={m.annot_view_more_tooltip()} /> and select <UiLabel name={m.annot_view_save_as_query_file()} />.
+
+  </Step>
+  <Step>
+    ### Name the file
+
+    Type a <UiLabel name={m.annot_view_save_name_label()} /> and choose a <UiLabel name={m.annot_view_save_folder_label()} />.
+
+  </Step>
+  <Step>
+    ### Choose which annotations the file shows
+
+    Under <UiLabel name={m.annot_view_save_records_label()} />, choose one:
+
+    - <UiLabel name={m.annot_view_save_records_this_item()} />: the annotations of the attachment that the sidebar shows. When the sidebar shows an item with no attachment chosen, the file shows the annotations of that item.
+    - <UiLabel name={m.annot_view_save_records_note_item()} />: the annotations of the paper of each note that embeds the file. Use this for a file that you embed in many Literature Notes.
+
+  </Step>
+  <Step>
+    ### Save
+
+    Select <UiLabel name={m.annot_view_save_action()} />. ZotLit creates the file and opens it in a tab. The file keeps the sidebar's sort, grouping, and filters, including the colors, Tags, and search text that you chose in the sidebar.
+
+  </Step>
+</Steps>
+
+## See also
+
+<Cards>
+  <Card
+    title="Query files and query blocks"
+    description="Views, layouts, where changes save, and what this.item means."
+    href="/docs/concepts/query-files-and-query-blocks"
+  />
+  <Card
+    title="Query file format"
+    description="Every key of a query file or query block."
+    href="/docs/reference/query-file-format"
+  />
+  <Card
+    title="Use the annotation view"
+    description="Follow modes, filters, and card actions in the sidebar."
+    href="/docs/how-to/use-annotation-view"
+  />
+  <Card
+    title="Commands"
+    description="The command and menu entries that create a query file."
+    href="/docs/reference/commands#query-files"
+  />
+</Cards>
