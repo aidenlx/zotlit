@@ -2817,10 +2817,10 @@ views:
       `(async()=>{const file=await app.vault.create(${JSON.stringify(path)},${JSON.stringify(source())});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
     );
     const tab = "app.workspace.getMostRecentLeaf().view";
-    const readTab = `(async()=>{const view=${tab};if(view.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(path)})return 'null';await view.query.settled;const el=view.contentEl;return JSON.stringify({runs:window.__zotlitQueryRuns??null,warnings:view.query.state.getState().warnings.map(w=>w.code),text:await app.vault.read(view.file),columns:[...el.querySelectorAll('[data-query-table] thead th')].map(n=>n.getAttribute('data-query-column')),headerIssues:Object.fromEntries([...el.querySelectorAll('[data-query-table] thead [data-query-column]')].map(n=>[n.getAttribute('data-query-column'),n.getAttribute('data-query-formula-issue')])),rows:[...el.querySelectorAll('[data-query-table-row="item"]')].map(tr=>[tr.getAttribute('data-query-key'),...[...tr.children].map(td=>td.textContent)]),diagnostic:el.querySelector('[data-query-diagnostic]')?.getAttribute('data-query-diagnostic')??null});})()`;
+    const readTab = `(async()=>{const view=${tab};if(view.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(path)})return 'null';await view.query.settled;const el=view.contentEl;return JSON.stringify({runs:app.plugins.plugins.zotlit.services.query.viewRuns,warnings:[...el.querySelectorAll('[data-query-warning]')].map(n=>n.getAttribute('data-query-warning')),text:await app.vault.read(view.file),columns:[...el.querySelectorAll('[data-query-table] thead th')].map(n=>n.getAttribute('data-query-column')),headerIssues:Object.fromEntries([...el.querySelectorAll('[data-query-table] thead [data-query-column]')].map(n=>[n.getAttribute('data-query-column'),n.getAttribute('data-query-formula-issue')])),rows:[...el.querySelectorAll('[data-query-table-row="item"]')].map(tr=>[tr.getAttribute('data-query-key'),...[...tr.children].map(td=>td.textContent)]),diagnostic:el.querySelector('[data-query-diagnostic]')?.getAttribute('data-query-diagnostic')??null});})()`;
     interface Tab {
-      /** The runs of ZotLit Query since `countRuns`. */
-      runs: number | null;
+      /** The Query View runs of ZotLit Query since the plugin loaded. */
+      runs: number;
       warnings: string[];
       text: string;
       columns: (string | null)[];
@@ -2844,18 +2844,14 @@ views:
         vaultId,
         `(async()=>{const view=${tab};view.setViewData(${JSON.stringify(text)},false);await view.save();return true;})()`,
       );
-    /** Count each run of ZotLit Query from now on. */
-    const countRuns = () =>
-      obEval(
-        vaultId,
-        `(()=>{const query=app.plugins.plugins.zotlit.services.query;window.__zotlitQueryRuns=0;if(!Object.hasOwn(query,'run')){const run=query.run;query.run=function(...args){window.__zotlitQueryRuns++;return run.apply(this,args);};}return true;})()`,
+    /** The Query View runs of ZotLit Query so far, as the dev build counts them. */
+    const countRuns = async () =>
+      Number(
+        await obEval(
+          vaultId,
+          `String(app.plugins.plugins.zotlit.services.query.viewRuns)`,
+        ),
       );
-    cleanup.defer(async () => {
-      await obEval(
-        vaultId,
-        `(()=>{const query=app.plugins.plugins.zotlit.services.query;delete query.run;delete window.__zotlitQueryRuns;return true;})()`,
-      );
-    });
     /** The key and the cell of one column of each Table row. */
     const column = (shown: Tab, property: string) => {
       // The first cell is the expander.
@@ -2925,14 +2921,14 @@ views:
     // its own reason, from one run; the view still shows its rows and its
     // other columns.
     const reads = "formula.next reads formula.year, which has a mistake.";
-    await countRuns();
+    let runs = await countRuns();
     await write(source({ year: "dat.year" }));
     const wrong = await tabWhen(
       (t) =>
         (t.headerIssues["formula.next"]?.startsWith(reads) ?? false) &&
         t.rows.length > 0,
     );
-    expect(wrong.runs).toBe(1);
+    expect(wrong.runs - runs).toBe(1);
     expect(wrong.headerIssues["formula.year"]).toContain("In formula.year");
     expect(wrong.diagnostic).toBeNull();
     expect(column(wrong, "title")).toEqual(column(shown, "title"));
@@ -2948,12 +2944,12 @@ views:
 
     // A condition that reads the wrong Formula says so, and the view shows
     // no rows until the Formula is fixed.
-    await countRuns();
+    runs = await countRuns();
     await write(source({ year: "dat.year", filter: "formula.next > 2020" }));
     const filtered = await tabWhen(
       (t) => t.rows.length === 0 && t.diagnostic !== null,
     );
-    expect(filtered.runs).toBe(1);
+    expect(filtered.runs - runs).toBe(1);
     expect(await rowIssues()).toMatchObject({
       next: wrong.headerIssues["formula.next"],
     });
