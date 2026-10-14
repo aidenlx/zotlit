@@ -1061,6 +1061,15 @@ function Problems({ view }: { view: QueryView }) {
 }
 
 /**
+ * The parent record a grouping by Item or by Attachment reads, by the name
+ * the notice gives it: a view of Items has no parent item to group by.
+ */
+const PARENTS: Partial<Record<string, () => string>> = {
+  "item.indexedKey": m.query_view_property_parent_item,
+  "attachment.indexedKey": m.query_view_property_source_attachment,
+};
+
+/**
  * What the view keeps in its file but does not use: what its dataset lacks,
  * the properties of the dataset that no cell shows, and those it cannot
  * sort by. Each property shows by its label, as a column header does.
@@ -1082,7 +1091,10 @@ function UnusedNote({ view }: { view: QueryView }) {
       ...unused.order.filter((property) => !known(property)),
     ]),
   ];
-  const labels = (list: readonly string[]) => list.map(columnLabel).join(", ");
+  const labels = (list: readonly string[]) =>
+    list
+      .map((property) => (PARENTS[property] ?? columnLabel)(property))
+      .join(", ");
   const text = [
     properties.length > 0
       ? m.query_view_unused({ dataset: name(), properties: labels(properties) })
