@@ -62,19 +62,17 @@ const vocabulary: MatchVocabulary<Row> = {
       label: "Title",
       fresh: () => ({ kind: "title", operator: "contains", value: "" }),
       parse: (text) => {
-        const contains = /^title\.contains\((".*")\)$/.exec(text);
-        if (contains)
+        if (text.startsWith("title.contains(") && text.endsWith(")"))
           return {
             kind: "title",
             operator: "contains",
-            value: JSON.parse(contains[1]!) as string,
+            value: JSON.parse(text.slice(15, -1)) as string,
           };
-        const is = /^title == (".*")$/.exec(text);
-        return is
+        return text.startsWith("title == ")
           ? {
               kind: "title",
               operator: "is",
-              value: JSON.parse(is[1]!) as string,
+              value: JSON.parse(text.slice(9)) as string,
             }
           : null;
       },
@@ -90,13 +88,12 @@ const vocabulary: MatchVocabulary<Row> = {
       label: "Pages",
       fresh: () => ({ kind: "pages", operator: ">", value: "0" }),
       parse: (text) => {
-        const found = /^pages (>|==) (\d+)$/.exec(text);
-        return found
-          ? {
-              kind: "pages",
-              operator: found[1] as PagesRow["operator"],
-              value: found[2]!,
-            }
+        const [field, operator, value, ...rest] = text.split(" ");
+        return field === "pages" &&
+          (operator === ">" || operator === "==") &&
+          value !== undefined &&
+          rest.length === 0
+          ? { kind: "pages", operator, value }
           : null;
       },
       format: (row) => `pages ${row.operator} ${row.value}`,
