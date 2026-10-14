@@ -9,7 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { RefObject } from "react";
+import type { CSSProperties, RefObject } from "react";
 
 import { Icon } from "@/components/obsidian/icon";
 import { SearchInput } from "@/components/obsidian/search-input";
@@ -371,7 +371,18 @@ function SearchRow({
 }
 
 /** The Annotation Cards, in the grid the Annotations Layout draws them in. */
-export function AnnotList({ collapsed }: { collapsed: boolean }) {
+export function AnnotList({
+  collapsed,
+  cardWidth,
+}: {
+  collapsed: boolean;
+  /**
+   * The narrowest a card is drawn, in pixels, as a Query View's Annotations
+   * layout sets it: the tracks fill the row from there. Without one the
+   * tracks follow the pane's width steps.
+   */
+  cardWidth?: number;
+}) {
   const actions = useContext(AnnotActionsContext);
   const annotations = useAnnotStore((s) => s.annotations);
   const groups = useAnnotStore((s) => s.groups);
@@ -461,7 +472,18 @@ export function AnnotList({ collapsed }: { collapsed: boolean }) {
           order, however many tracks the layout draws them in. */}
       <div
         ref={mountGrid}
-        className="zt:grid zt:grid-cols-1 zt:items-start zt:gap-2 zt:@2xl:grid-cols-2 zt:@5xl:grid-cols-3"
+        className={cn(
+          "zt:grid zt:items-start zt:gap-2",
+          cardWidth === undefined
+            ? "zt:grid-cols-1 zt:@2xl:grid-cols-2 zt:@5xl:grid-cols-3"
+            : "zt:grid-cols-[repeat(auto-fill,minmax(min(100%,var(--zt-card-width)),1fr))]",
+        )}
+        style={
+          cardWidth === undefined
+            ? undefined
+            : ({ "--zt-card-width": `${cardWidth}px` } as CSSProperties)
+        }
+        data-card-width={cardWidth}
         role="grid"
         aria-multiselectable="true"
         aria-labelledby={labelId}
