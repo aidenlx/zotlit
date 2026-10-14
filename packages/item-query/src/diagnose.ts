@@ -14,7 +14,7 @@ import type {
   SyntaxFault,
 } from "./fault";
 import type { ValueShape } from "./fields";
-import { isError, typeNoun } from "./filter-error";
+import { isError, operandMessage, typeNoun } from "./filter-error";
 import {
   GLOBAL_FUNCTION_NAMES,
   GLOBAL_FUNCTIONS,
@@ -133,11 +133,12 @@ function diagnoseFault(
       );
     }
     case "operand-type": {
-      const found = fault.operands.map((operand) => typeNoun(operand.type));
+      const types = fault.operands.map((operand) => operand.type);
+      const found = types.map(typeNoun);
       return renderDiagnostic(
         {
           code: "wrong-operand-type",
-          message: `The operator ${fault.operator} cannot use ${found.join(" and ")}.`,
+          message: operandMessage(fault.operator, types),
           hint: `${fault.operator} takes ${OPERAND_TYPES[fault.operands.length === 1 ? "unary -" : fault.operator]}. Convert a text first with number(), such as number(volume), or with date().`,
           location: faultLocation,
         },
