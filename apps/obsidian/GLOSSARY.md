@@ -285,7 +285,7 @@ _Avoid_: attempt (bare), run, preview retention (the editor's, not the CLI's)
 ### Annotation view
 
 **Annotation View** _(Obsidian)_:
-The sidebar pane that shows one Attachment's live Annotations as Annotation Cards, chosen by its Follow Mode and narrowed by its Annotation Filter. It reads whether or not Zotero is running; the Editing Capability decides only whether a card's verbs can act. Under [#1459](https://github.com/aidenlx/zotlit/issues/1459) it becomes the sidebar Query View: the Annotations Layout with the followed Item as its Query Context, showing only the controls that have a meaning for one Item.
+The sidebar pane that shows one Attachment's live Annotations as Annotation Cards, chosen by its Follow Mode and narrowed by its Annotation Filter. It reads whether or not Zotero is running; the Editing Capability decides only whether a card's verbs can act. Under [#1459](https://github.com/aidenlx/zotlit/issues/1459) it becomes the sidebar Query View: the Annotations Layout with the followed Item and Attachment as its Query Context, showing only the controls that have a meaning for one Attachment.
 _Avoid_: annotation sidebar, annotation panel, annotation list (that is the cards alone)
 
 **Annotation Filter**:
@@ -449,7 +449,7 @@ A `.zotquery` vault file that holds one or more Query Views over the Zotero libr
 _Avoid_: base, query note, view file
 
 **Query Block**:
-A ` ```zotquery ` code block in a note that holds the same text as a Query File. The default Literature Note Template renders one in place of the annotation listing in the Managed Region.
+A ` ```zotquery ` code block in a note that holds the same text as a Query File. The default Literature Note Template renders one in place of the annotation listing in the Managed Region; a full update keeps the existing block text, so toolbar changes stay.
 _Avoid_: annotation block, embed block
 
 **Query View**:
@@ -461,7 +461,7 @@ How a Query View draws its rows: Annotations (Annotation Cards), Table (Item row
 _Avoid_: view type, mode
 
 **Query Context**:
-The record a Query View is relative to, read as `this` in its filters: the Query File in its own tab, the note that embeds the file or holds the block, or the Item the sidebar Annotation View follows.
+The Item, and the Attachment when there is one, that a Query View is relative to, read as `this.item` and `this.attachment` in its filters: the Item of the note that embeds the file or holds the block, or the Item and Attachment the sidebar Annotation View follows. In a Query File's own tab `this` has no value.
 _Avoid_: current note, scope
 
 ### Note content
