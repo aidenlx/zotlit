@@ -16,7 +16,8 @@ import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import { loadMatchFacts } from "./match-data";
 import { templateWorkbenchTheme } from "./theme";
 
-const matchTheme = {
+/** The Workbench theme with Obsidian's own dropdown for the Match editor's selects. */
+export const matchTheme = {
   ...templateWorkbenchTheme,
   classes: {
     ...templateWorkbenchTheme.classes,

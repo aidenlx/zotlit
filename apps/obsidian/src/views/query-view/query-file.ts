@@ -276,7 +276,11 @@ function writeView(view: QueryFileView): Entries {
 
 /** Writes a Query File's text. A key the parser kept stays where it was. */
 export function serializeQueryFile(file: QueryFile): string {
-  const entries = merged(file.source, {
+  // New filters for all views go first, where a `.base` file has them.
+  const source = Object.hasOwn(file.source, "filters")
+    ? file.source
+    : { filters: undefined, ...file.source };
+  const entries = merged(source, {
     filters: writeFilter(file.filters) ?? file.source.filters,
     views: file.views.map(writeView),
   });
@@ -303,17 +307,155 @@ export function newQueryFileText(viewName: string): string {
 }
 
 /**
- * The Filter Expression of one view: the filters for all views and the view's
- * own filters, both of which must hold. `undefined` where neither names one.
+ * The Query Dataset the filters for all views are written for: the dataset of
+ * the first view. They apply to the views of that dataset alone, since each
+ * dataset names its fields in its own way.
+ */
+export function allViewsDataset(file: QueryFile): QueryFileDataset {
+  return file.views[0]?.from ?? "annotations";
+}
+
+/** Which filters a condition belongs to: the file's, or the view's own. */
+export type FilterSection = "all" | "view";
+
+/** One condition of the filters, where the Match editor shows it. */
+export interface FilterLocation {
+  readonly section: FilterSection;
+  /** The condition's position as the Match editor counts it. */
+  readonly path: readonly number[];
+}
+
+interface FilterLeaf extends FilterLocation {
+  readonly from: number;
+  readonly to: number;
+}
+
+/**
+ * The Filter Expression of a filter tree, with the place of each condition in
+ * it. A lone condition sits in the editor's root group, so its path is `[0]`.
+ */
+function composeFilter(
+  tree: MatchTree,
+  at: FilterLocation & { readonly offset: number },
+): { text: string; leaves: FilterLeaf[] } {
+  const { section, path, offset } = at;
+  if (typeof tree === "string")
+    return {
+      text: tree,
+      leaves: [{ section, path, from: offset, to: offset + tree.length }],
+    };
+  const [entries, joiner, empty] =
+    "and" in tree ? [tree.and, " && ", "true"] : [tree.or, " || ", "false"];
+  if (entries.length === 0) return { text: empty, leaves: [] };
+  if (entries.length === 1)
+    return composeFilter(entries[0]!, { section, path: [...path, 0], offset });
+  let text = "";
+  const leaves: FilterLeaf[] = [];
+  entries.forEach((entry, index) => {
+    if (index > 0) text += joiner;
+    text += "(";
+    const part = composeFilter(entry, {
+      section,
+      path: [...path, index],
+      offset: offset + text.length,
+    });
+    text += `${part.text})`;
+    leaves.push(...part.leaves);
+  });
+  return { text, leaves };
+}
+
+function composeSection(
+  tree: MatchTree,
+  section: FilterSection,
+  offset: number,
+) {
+  return composeFilter(tree, {
+    section,
+    path: typeof tree === "string" ? [0] : [],
+    offset,
+  });
+}
+
+function composeView(
+  file: QueryFile,
+  view: QueryFileView,
+): { text: string; leaves: FilterLeaf[] } | undefined {
+  const sections: [MatchTree, FilterSection][] = [];
+  if (
+    file.filters !== undefined &&
+    (view.from ?? "annotations") === allViewsDataset(file)
+  )
+    sections.push([file.filters, "all"]);
+  if (view.filters !== undefined) sections.push([view.filters, "view"]);
+  if (sections.length === 0) return undefined;
+  if (sections.length === 1) {
+    const [[tree, section]] = sections as [[MatchTree, FilterSection]];
+    return composeSection(tree, section, 0);
+  }
+  let text = "";
+  const leaves: FilterLeaf[] = [];
+  sections.forEach(([tree, section], index) => {
+    if (index > 0) text += " && ";
+    text += "(";
+    const part = composeSection(tree, section, text.length);
+    text += `${part.text})`;
+    leaves.push(...part.leaves);
+  });
+  return { text, leaves };
+}
+
+/**
+ * The Filter Expression of one view: the filters for all views of its dataset
+ * and the view's own filters, both of which must hold. `undefined` where
+ * neither names one.
  */
 export function viewFilter(
   file: QueryFile,
   view: QueryFileView,
 ): string | undefined {
-  const parts = [file.filters, view.filters]
-    .filter((tree) => tree !== undefined)
-    .map(filterExpression);
-  if (parts.length === 0) return undefined;
-  if (parts.length === 1) return parts[0];
-  return parts.map(operand).join(" && ");
+  return composeView(file, view)?.text;
+}
+
+/**
+ * The condition that a fault at `span` of the view's Filter Expression marks,
+ * or `null` when the span does not fall inside one condition.
+ */
+export function locateFilterFault(
+  file: QueryFile,
+  view: QueryFileView,
+  span: { readonly from: number; readonly to: number },
+): FilterLocation | null {
+  const leaf = composeView(file, view)?.leaves.find(
+    ({ from, to }) => from <= span.from && span.to <= to,
+  );
+  return leaf ? { section: leaf.section, path: leaf.path } : null;
+}
+
+/**
+ * The file with new filters: for all views when `viewName` is `null`, else
+ * for the view of that name. `undefined` removes the filters.
+ */
+export function withFilters(
+  file: QueryFile,
+  viewName: string | null,
+  filters: MatchTree | undefined,
+): QueryFile {
+  const set = <T extends { readonly source: Readonly<Entries> }>(
+    target: T,
+  ): T => {
+    const { filters: _dropped, ...source } = target.source;
+    return {
+      ...target,
+      filters,
+      source: filters === undefined ? source : target.source,
+    };
+  };
+  if (viewName === null) return set(file);
+  return {
+    ...file,
+    views: file.views.map((view) =>
+      view.name === viewName ? set(view) : view,
+    ),
+  };
 }
