@@ -4,7 +4,8 @@
 // reference is `formula.<name>` as ZotLit Query resolves it
 // (`formulaReferences`), so the same text inside a quoted string reads no
 // Formula.
-import { formulaReferences } from "@zotlit/item-query";
+import { formulaReferences, nameDictionary } from "@zotlit/item-query";
+import type { NameDictionary } from "@zotlit/item-query";
 
 import type { Diagnostic } from "@/services/item-query/contract";
 import type { QueryViewRequest } from "@/services/item-query/query-view";
@@ -14,25 +15,34 @@ import type { ConditionIssue, QueryFile, QueryFileView } from "./query-file";
 
 /**
  * The Formulas of the file that `fields` and `filter` read, with those the
- * Formulas read in turn, each with its text.
+ * Formulas read in turn, each with its text. A Formula in `leftOut` is not
+ * read, nor what it alone reads.
  */
 export function readFormulas(
   file: QueryFile,
-  fields: readonly string[],
-  filter: string | undefined,
-): Record<string, string> {
-  const defined = file.formulas ?? {};
-  const read: Record<string, string> = {};
+  {
+    fields,
+    filter,
+    leftOut = new Map(),
+  }: {
+    fields: readonly string[];
+    filter: string | undefined;
+    leftOut?: ReadonlyMap<string, string>;
+  },
+): NameDictionary<string> {
+  const defined = file.formulas ?? nameDictionary<string>();
+  const read = new Map<string, string>();
   const add = (name: string | null) => {
-    if (name === null || Object.hasOwn(read, name)) return;
+    if (name === null || read.has(name) || leftOut.has(name)) return;
     if (!Object.hasOwn(defined, name)) return;
-    read[name] = defined[name]!;
-    for (const reference of formulaReferences(read[name])) add(reference.name);
+    const text = defined[name]!;
+    read.set(name, text);
+    for (const reference of formulaReferences(text)) add(reference.name);
   };
   for (const field of fields) add(formulaName(field));
   if (filter !== undefined)
     for (const reference of formulaReferences(filter)) add(reference.name);
-  return read;
+  return nameDictionary(read);
 }
 
 /**
@@ -82,14 +92,15 @@ export function readersOf(
 export function formulaCondition(
   file: QueryFile,
   view: QueryFileView,
-  formulasLeftOut: Readonly<Record<string, string>>,
+  formulasLeftOut: ReadonlyMap<string, string>,
 ): ConditionIssue | null {
   const filter = viewFilter(file, view);
   if (filter === undefined) return null;
   for (const { name, from, to } of formulaReferences(filter)) {
-    if (!Object.hasOwn(formulasLeftOut, name)) continue;
+    const message = formulasLeftOut.get(name);
+    if (message === undefined) continue;
     const at = locateFilterFault(file, view, { from, to });
-    if (at) return { ...at, message: formulasLeftOut[name]! };
+    if (at) return { ...at, message };
   }
   return null;
 }

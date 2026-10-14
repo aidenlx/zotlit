@@ -663,3 +663,34 @@ views:
     );
   });
 });
+
+describe("Formula names that are also object members", () => {
+  it("adds, renames and removes a Formula named __proto__ like any other", () => {
+    const file = parseQueryFile(`formulas:
+  __proto__: date.year
+views:
+  - type: table
+    name: Items
+    from: items
+    order:
+      - formula.__proto__
+`);
+    expect(Object.entries(file.formulas ?? {})).toEqual([
+      ["__proto__", "date.year"],
+    ]);
+    const added = withDisplayName(
+      withFormula(file, "constructor", "title"),
+      "formula.__proto__",
+      "Year",
+    );
+    expect(displayName(added, "formula.__proto__")).toBe("Year");
+    expect(serializeQueryFile(added)).toContain(
+      "formulas:\n  __proto__: date.year\n  constructor: title\nproperties:\n  formula.__proto__:\n    displayName: Year\n",
+    );
+    const removed = removeFormula(added, "__proto__");
+    expect(Object.entries(removed.formulas ?? {})).toEqual([
+      ["constructor", "title"],
+    ]);
+    expect(removed.properties).toBeUndefined();
+  });
+});

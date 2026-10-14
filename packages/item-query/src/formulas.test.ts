@@ -460,3 +460,17 @@ it.each([
     expect(error.diagnostic.message).toContain("formula.year yet");
   },
 );
+
+it("reads a Formula whose name is also an object member, such as __proto__", async () => {
+  using scenario = openScenarioDatabase();
+  const result = await run(scenario, {
+    filter: 'indexedKey == "BK2MNTH2"',
+    formulas: JSON.parse(
+      '{"__proto__":"date.year","constructor":"formula.__proto__ + 1"}',
+    ) as Record<string, string>,
+    fields: ["formula.__proto__", "formula.constructor"],
+  });
+  expect(result.rows!.map((row) => row.values)).toEqual([
+    { "formula.__proto__": 2019, "formula.constructor": 2020 },
+  ]);
+});

@@ -292,6 +292,18 @@ describe("decodeQuery formulas", () => {
     });
   });
 
+  it("keeps a Formula whose name is also an object member, such as __proto__", () => {
+    const decoded = decodeQuery({
+      formulas: '{"__proto__":"date.year","constructor":"title"}',
+    });
+    expect(decoded).toHaveProperty("formulas");
+    const { formulas } = decoded as { formulas: object };
+    expect(Object.entries(formulas)).toEqual([
+      ["__proto__", "date.year"],
+      ["constructor", "title"],
+    ]);
+  });
+
   it("omits formulas when the argument is absent", () => {
     expect(decodeQuery({})).not.toHaveProperty("formulas");
   });

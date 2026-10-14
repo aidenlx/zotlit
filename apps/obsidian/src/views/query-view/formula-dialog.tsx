@@ -10,7 +10,7 @@ import type { Root } from "react-dom/client";
 import { useStore } from "zustand";
 
 import { parseExpression } from "@zotlit/filter-expression";
-import { FORMULA_NAME } from "@zotlit/item-query";
+import { FORMULA_NAME, nameDictionary } from "@zotlit/item-query";
 import {
   MatchExpressionInput,
   WorkbenchThemeProvider,
@@ -58,7 +58,7 @@ function FormulaForm({
   close: () => void;
 }) {
   const file = useStore(view.state, (s) => s.file);
-  const formulas = file?.formulas ?? {};
+  const formulas = file?.formulas ?? nameDictionary<string>();
   const issues = useStore(view.state, (s) => s.formulaIssues);
   const saved = editing === null ? undefined : formulas[editing];
   const [name, setName] = useState(editing ?? "");

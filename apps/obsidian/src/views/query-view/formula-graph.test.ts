@@ -15,7 +15,10 @@ views:
     from: items
 `);
   expect(
-    readFormulas(file, ["title", "formula.next", "formula.label"], undefined),
+    readFormulas(file, {
+      fields: ["title", "formula.next", "formula.label"],
+      filter: undefined,
+    }),
   ).toEqual({
     next: "formula.year + 1",
     year: "date.year",

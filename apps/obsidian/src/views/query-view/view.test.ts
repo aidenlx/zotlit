@@ -1736,6 +1736,56 @@ views:
   expect(el.querySelector('[data-query-table-row="item"]')).toBeNull();
 });
 
+it("runs a Formula whose name is also an object member, such as __proto__", async () => {
+  const { view, el, run, settle } = await mount([
+    {
+      kind: "failed",
+      diagnostic: {
+        code: "unknown-field",
+        message: "In formula.__proto__: dat is not a field of Items.",
+        hint: "",
+        severity: "error",
+        report: [],
+        location: { argument: "formulas", path: "__proto__" },
+        found: "dat",
+        expected: [],
+        suggestions: [],
+      },
+    },
+    result([formulaRow("ITEMAAAA", "Ten simple rules", 2014)]),
+  ]);
+  await act(() =>
+    view.setText(`formulas:
+  __proto__: dat.year
+  constructor: title
+views:
+  - type: table
+    name: Reading list
+    from: items
+    order:
+      - title
+      - formula.__proto__
+      - formula.constructor
+`),
+  );
+  await settle();
+  expect(Object.entries(run.mock.calls[0]![0].formulas ?? {})).toEqual([
+    ["__proto__", "dat.year"],
+    ["constructor", "title"],
+  ]);
+  expect(Object.entries(run.mock.calls[1]![0].formulas ?? {})).toEqual([
+    ["constructor", "title"],
+  ]);
+  expect(Object.entries(view.state.getState().formulaIssues)).toEqual([
+    ["__proto__", "In formula.__proto__: dat is not a field of Items."],
+  ]);
+  expect(
+    el
+      .querySelector('[data-query-column="formula.__proto__"]')
+      ?.getAttribute("data-query-formula-issue"),
+  ).toBe("In formula.__proto__: dat is not a field of Items.");
+});
+
 it("sends a sort by a Formula to ZotLit Query, and shows a grouping by a Formula as the view's problem", async () => {
   const file = `formulas:
   year: date.year

@@ -12,7 +12,7 @@ import type { CliData } from "obsidian";
 import * as v from "valibot";
 
 import { parseIndexedKey } from "@zotlit/db";
-import { UNLIMITED_LIMIT } from "@zotlit/item-query";
+import { nameDictionary, UNLIMITED_LIMIT } from "@zotlit/item-query";
 
 import {
   cliParams,
@@ -253,7 +253,20 @@ const queryOptions = {
           (input) => !Array.isArray(input),
           'formulas is a JSON array: use a JSON object, such as {"year":"date.year"}.',
         ),
-        v.record(v.string(), v.string()),
+        v.custom<Readonly<Record<string, unknown>>>(
+          (input) => typeof input === "object" && input !== null,
+          'formulas is not a JSON object: use a JSON object, such as {"year":"date.year"}.',
+        ),
+        v.check(
+          (input) =>
+            Object.values(input).every((text) => typeof text === "string"),
+          'formulas holds an expression that is not text: give each Formula a Filter Expression string, such as {"year":"date.year"}.',
+        ),
+        // The names come from the caller's text: a Formula named __proto__
+        // stays a Formula, in a dictionary without a prototype.
+        v.transform((input) =>
+          nameDictionary(Object.entries(input as Record<string, string>)),
+        ),
       ),
     ),
   ),
