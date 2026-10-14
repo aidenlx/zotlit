@@ -84,6 +84,8 @@ unrun baseline, not a pass.
 
 `mark-landing-test.md` is generated rather than committed, because it holds real `file://` links and the Fixture learns its own absolute paths only at build time. It walks Mark Landing: an Attachment File Link carrying an Annotation Anchor, the wikilink spelling of the same Anchor, the degradation cases, and the Zotero deep link ZotLit leaves to Zotero.
 
+`query-files/Reading annotations.zotquery` is a Query File with two Annotations views, grouped by Item: "All annotations" shows every Annotation of the Target Libraries, and "Figures" shows the Annotations tagged `figure`. Open it to check the Query File tab.
+
 The configured Fixture keeps these source documents in `profile-examples/`, outside the template folder. You can select them with **Choose file…** without adding them to the installed Profiles:
 
 | File | Purpose |

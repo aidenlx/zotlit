@@ -361,3 +361,66 @@ it("follows a capability change for each Attachment it shows", async () => {
       ?.hasAttribute("data-blocked"),
   ).toBe(false);
 });
+
+const DELTA = record("DDDD4444", "PDFAAAAA", "delta");
+
+function cardKeys(el: HTMLElement): (string | null)[] {
+  return [...el.querySelectorAll(".zt-annot-card")].map((node) =>
+    node.getAttribute("data-zotero-annotation-key"),
+  );
+}
+
+it("shows only the rows a query gives, in the query's order, under their group headings", async () => {
+  const { layout, el, repo } = await mountLayout();
+  repo.lists.PDFAAAAA = { ...LISTS.PDFAAAAA!, annotations: [ALPHA, DELTA] };
+  await act(async () => {
+    await layout.showRows([
+      {
+        annotationKey: BETA.key,
+        attachmentKey: "PDFBBBBB",
+        group: { key: "ITEMB", label: "Item B" },
+      },
+      {
+        annotationKey: DELTA.key,
+        attachmentKey: "PDFAAAAA",
+        group: { key: "ITEMA", label: "Item A" },
+      },
+    ]);
+  });
+  expect(cardKeys(el)).toEqual([BETA.key, DELTA.key]);
+  const headings = [...el.querySelectorAll("[data-query-group]")].map(
+    (node) => node.textContent,
+  );
+  expect(headings).toEqual(["Item B", "Item A"]);
+  expect(layout.store.getState().unresolved).toEqual([]);
+});
+
+it("names the rows a query gives that no Attachment's list holds", async () => {
+  const { layout, el } = await mountLayout();
+  await act(async () => {
+    await layout.showRows([
+      { annotationKey: ALPHA.key, attachmentKey: "PDFAAAAA" },
+      { annotationKey: "GONE0000", attachmentKey: "PDFAAAAA" },
+      { annotationKey: "NOLIST00", attachmentKey: "PDFMISSING" },
+    ]);
+  });
+  expect(cardKeys(el)).toEqual([ALPHA.key]);
+  expect(layout.store.getState().unresolved).toEqual(["GONE0000", "NOLIST00"]);
+});
+
+it("keeps a recoloured row on screen while the query's rows stand", async () => {
+  const { layout, el, repo } = await mountLayout();
+  await act(async () => {
+    await layout.showRows([
+      { annotationKey: ALPHA.key, attachmentKey: "PDFAAAAA" },
+    ]);
+  });
+  const recoloured = { ...ALPHA, color: "#ff6666" };
+  repo.lists.PDFAAAAA = { ...LISTS.PDFAAAAA!, annotations: [recoloured] };
+  await act(async () => {
+    repo.emit("annotations-changed", "PDFAAAAA");
+    await layout.read;
+  });
+  expect(cardKeys(el)).toEqual([ALPHA.key]);
+  expect(layout.store.getState().annotations).toEqual([recoloured]);
+});
