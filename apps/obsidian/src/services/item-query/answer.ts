@@ -208,6 +208,7 @@ function answerQuery(
       fields: decoded.fields,
       sort: decoded.sort,
       limit: decoded.limit,
+      context: decoded.context,
       libraries: available.map(({ libraryID, selector }) => ({
         libraryID,
         groupID: selector.type === "group" ? selector.groupID : null,
