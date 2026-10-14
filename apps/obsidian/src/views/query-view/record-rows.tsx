@@ -6,13 +6,17 @@ import { useMemo } from "react";
 import { useStore } from "zustand";
 
 import { Icon } from "@/components/obsidian/icon";
-import type { QueryViewRow } from "@/services/item-query/query-view";
+import { tooltipAttrs } from "@/lib/utils";
+import type {
+  QueryViewRow,
+  QueryViewValue,
+} from "@/services/item-query/query-view";
 import {
   useAnnotStore,
   useToggleGroupCollapsed,
 } from "@/views/annot-view/store";
 
-import { cell } from "./table";
+import { cell, errorValue } from "./table";
 import type { QueryView } from "./view";
 import { visibleProperties } from "./visible-properties";
 
@@ -108,5 +112,30 @@ export function RecordGroupHeading({ group }: { group: RecordGroup }) {
         <span className="zt:truncate">{group.label}</span>
       </button>
     </div>
+  );
+}
+
+/**
+ * One cell on screen: its text, or, for an Error Value, a warning icon with
+ * the error's message as its tooltip.
+ */
+export function CellContent({
+  value,
+  text,
+}: {
+  value: QueryViewValue | undefined;
+  text: string;
+}) {
+  const error = errorValue(value);
+  if (error === null) return text;
+  return (
+    <span
+      role="img"
+      className="zt:inline-flex zt:items-center zt:align-middle zt:text-(--text-error)"
+      data-query-error={error.code}
+      {...tooltipAttrs(error.message)}
+    >
+      <Icon name="alert-triangle" size={14} />
+    </span>
   );
 }
