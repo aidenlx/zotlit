@@ -500,7 +500,11 @@ export class QueryView extends Component implements HistorySurface {
    * `show` on screen, and hand its text to the host to save, at once or, for
    * typed text, after {@link SAVE_DELAY_MS}.
    */
-  #commit(next: QueryFile, show: string | null, { typed }: EditTiming): void {
+  #commit(
+    next: QueryFile,
+    show: string | null,
+    { typed }: EditTiming = {},
+  ): void {
     const text = serializeQueryFile(next);
     const shown = this.state.getState().view?.name ?? null;
     const file = parseQueryFile(text);
@@ -559,7 +563,7 @@ export class QueryView extends Component implements HistorySurface {
     const { file, view } = this.state.getState();
     if (!file || !view) return false;
     const index = section === "all" ? null : this.#shownIndex();
-    this.#commit(withFilters(file, index, filters), view.name, {});
+    this.#commit(withFilters(file, index, filters), view.name);
     return true;
   }
 
@@ -729,7 +733,7 @@ export class QueryView extends Component implements HistorySurface {
       base,
       this.state.getState().view?.from ?? "annotations",
     );
-    this.#commit(edit.file, edit.name, {});
+    this.#commit(edit.file, edit.name);
     return edit.name;
   }
 
@@ -747,7 +751,7 @@ export class QueryView extends Component implements HistorySurface {
     const { file } = this.state.getState();
     if (!file) return;
     const edit = edits.duplicateView(file, index);
-    this.#commit(edit.file, edit.name, {});
+    this.#commit(edit.file, edit.name);
   }
 
   /** Delete a view; where it was on screen, the view before it shows. */
@@ -761,7 +765,6 @@ export class QueryView extends Component implements HistorySurface {
       shown === index
         ? edit.name
         : this.#nameAt(file, shown === -1 ? 0 : shown),
-      {},
     );
   }
 
@@ -773,7 +776,6 @@ export class QueryView extends Component implements HistorySurface {
     this.#commit(
       edits.moveView(file, from, to),
       this.#nameAt(file, shown === -1 ? 0 : shown),
-      {},
     );
   }
 
@@ -784,7 +786,6 @@ export class QueryView extends Component implements HistorySurface {
     this.#commit(
       edits.setViewOption(file, index, { key, value }),
       this.#nameAt(file, this.#shownIndex()),
-      {},
     );
   }
 
@@ -794,7 +795,6 @@ export class QueryView extends Component implements HistorySurface {
     this.#commit(
       edits.setViewLayout(file, index, type),
       this.#nameAt(file, this.#shownIndex()),
-      {},
     );
   }
 
@@ -805,7 +805,6 @@ export class QueryView extends Component implements HistorySurface {
     this.#commit(
       edits.setViewDataset(file, index, dataset),
       this.#nameAt(file, this.#shownIndex()),
-      {},
     );
   }
 

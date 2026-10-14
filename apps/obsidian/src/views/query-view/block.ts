@@ -83,7 +83,7 @@ class QueryBlock extends MarkdownRenderChild {
       },
     });
     this.addChild(host);
-    host.query.setText(this.#source);
+    host.setText(this.#source);
     this.#host = host;
   }
 
