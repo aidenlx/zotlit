@@ -22,7 +22,23 @@ export function cell(value: QueryViewValue | undefined): string {
       .map((entry: QueryViewValue) => cell(entry))
       .filter((text) => text !== "")
       .join(", ");
-  return JSON.stringify(value);
+  const record = value as Readonly<Record<string, QueryViewValue>>;
+  // A date reads as Zotero shows it: its text, else the part of its stored
+  // "2011-00-00 2011" form after the first space.
+  if (typeof record.raw === "string") {
+    if (typeof record.text === "string" && record.text !== "")
+      return record.text;
+    const space = record.raw.indexOf(" ");
+    return space === -1 ? record.raw : record.raw.slice(space + 1);
+  }
+  // A tag or a Collection reads as its name, a creator as their name.
+  for (const key of ["name", "fullName", "title"])
+    if (typeof record[key] === "string" && record[key] !== "")
+      return record[key];
+  const names = [record.firstName, record.lastName].filter(
+    (part): part is string => typeof part === "string" && part !== "",
+  );
+  return names.length > 0 ? names.join(" ") : JSON.stringify(value);
 }
 
 /** The table of `rows`, in their order, with the columns `order` names. */

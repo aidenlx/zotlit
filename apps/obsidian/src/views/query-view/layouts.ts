@@ -36,7 +36,7 @@ export function layoutOf(view: QueryFileView): QueryLayout | undefined {
 }
 
 /** The Layouts that can show the view's dataset, as the Layout picker offers them. */
-export function layoutsFor(view: QueryFileView): QueryLayout[] {
+export function layoutsFor(view: Pick<QueryFileView, "from">): QueryLayout[] {
   const dataset = view.from ?? "annotations";
   return QUERY_LAYOUTS.filter((layout) => layout.datasets.includes(dataset));
 }

@@ -1225,3 +1225,54 @@ it("offers Item fields to sort and group a view of Items by", async () => {
   expect(document.body.textContent).toContain("Item type");
   expect(document.body.textContent).not.toContain("Attachment");
 });
+
+it("switches a view of Annotations to Items, saves it, and draws the Items in the Table", async () => {
+  const { view, el, run, saved, settle } = await mount([
+    result([row("ANNOTBBB")]),
+    result([itemRow("ITEMAAAA", "Ten simple rules")]),
+  ]);
+  await act(() => view.setText(FILE));
+  await settle();
+  expect(cards(el)).toEqual(["ANNOTBBB"]);
+
+  let removed: ReturnType<QueryView["setViewDataset"]> = null;
+  await act(() => {
+    removed = view.setViewDataset(0, "items");
+  });
+  await settle();
+  expect(removed).toEqual({
+    sort: [],
+    groupBy: "item.indexedKey",
+    order: [],
+  });
+  expect(saved.at(-1)).toContain("type: table");
+  expect(saved.at(-1)).toContain("from: items");
+  expect(run.mock.calls.at(-1)![0]).toMatchObject({ from: "items" });
+  expect(cards(el)).toEqual([]);
+  // A view with no visible properties shows the default fields of Items.
+  const [header, first] = tableText(el);
+  expect(header).toContain("Title");
+  expect(first).toContain("Journal Article");
+  expect(first).toContain("Ten simple rules");
+  expect(first!.at(-1)).toBe("Create");
+});
+
+it("shows no rows of the old dataset when the filters fail on the new one", async () => {
+  const { view, el, settle } = await mount([
+    result([row("ANNOTBBB")]),
+    filterFault(0, 9),
+  ]);
+  await act(() => view.setText(FILE));
+  await settle();
+
+  await act(() => {
+    view.setViewDataset(0, "items");
+  });
+  await settle();
+  expect(view.state.getState()).toMatchObject({
+    phase: "failed",
+    keptResults: false,
+    records: [],
+  });
+  expect(cards(el)).toEqual([]);
+});

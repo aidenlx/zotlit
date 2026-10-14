@@ -62,6 +62,7 @@ import type {
   FilterLocation,
   FilterSection,
   QueryFile,
+  QueryFileDataset,
   QueryFileProblem,
   QueryFileView,
   QueryFileViewEdit,
@@ -238,6 +239,8 @@ export class QueryView extends Component implements HistorySurface {
   #runRequest: string | null = null;
   /** The name of the view whose rows are on screen. */
   #shownViewName: string | null = null;
+  /** The dataset of the rows on screen. */
+  #shownDataset: QueryFileDataset | null = null;
   #settled: Promise<void> = Promise.resolve();
   /** The rows on screen, each once, in the order they show. */
   #rows: readonly QueryViewRow[] = [];
@@ -573,7 +576,12 @@ export class QueryView extends Component implements HistorySurface {
   addView(base: string = m.query_view_new_view_name()): string {
     const { file } = this.state.getState();
     if (!file) return base;
-    const edit = edits.addView(file, base);
+    // A new view reads what the view on screen reads.
+    const edit = edits.addView(
+      file,
+      base,
+      this.state.getState().view?.from ?? "annotations",
+    );
     this.#apply(edit.file, edit.name);
     return edit.name;
   }
@@ -636,6 +644,21 @@ export class QueryView extends Component implements HistorySurface {
       edits.setViewLayout(file, index, type),
       this.#nameAt(file, this.#shownIndex()),
     );
+  }
+
+  /**
+   * Set the dataset a view reads. Returns what the change took off the view
+   * because the dataset lacks it, or `null` where there is no file.
+   */
+  setViewDataset(
+    index: number,
+    dataset: QueryFileDataset,
+  ): edits.DatasetRemovals | null {
+    const { file } = this.state.getState();
+    if (!file) return null;
+    const edit = edits.setViewDataset(file, index, dataset);
+    this.#apply(edit.file, this.#nameAt(file, this.#shownIndex()));
+    return edit.removed;
   }
 
   /** Run the view's query again, and show its rows. */
@@ -724,6 +747,7 @@ export class QueryView extends Component implements HistorySurface {
         const current = this.state.getState().view ?? view;
         await this.#show(key, drawsCards(current) ? shown.rows : null);
         this.#shownViewName = view.name;
+        this.#shownDataset = view.from ?? "annotations";
         return;
       }
       default:
@@ -743,7 +767,9 @@ export class QueryView extends Component implements HistorySurface {
   ): void {
     const kept =
       this.#shownRequest === key ||
-      (this.#shownRequest !== null && this.#shownViewName === view.name);
+      (this.#shownRequest !== null &&
+        this.#shownViewName === view.name &&
+        this.#shownDataset === (view.from ?? "annotations"));
     if (!kept) void this.#show(null);
     const span =
       "location" in diagnostic && diagnostic.location?.argument === "filter"
