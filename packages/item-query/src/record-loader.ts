@@ -43,7 +43,10 @@ export type LoadRequest<Needs> = Pick<ItemQueryPlan, "dataset" | "query"> & {
     readonly customField: string | null;
   }[];
   readonly sorts: readonly { readonly needs: Needs }[];
-  /** The Formulas of the projection, each planned once. */
+  /**
+   * Every Formula the request reads, each planned once. The needs of a
+   * Formula include the needs of the Formulas it reads.
+   */
   readonly formulas?: readonly {
     readonly name: string;
     readonly text: string;
@@ -52,6 +55,16 @@ export type LoadRequest<Needs> = Pick<ItemQueryPlan, "dataset" | "query"> & {
       readonly customFields: FilterPlan["customFields"];
     };
   }[];
+  /** The values of each Query Row: the projection pass loads its Formulas. */
+  readonly columns?: readonly (
+    | { readonly kind: "path" }
+    | {
+        readonly kind: "formula";
+        readonly formula: {
+          readonly plan: { readonly needs: readonly Needs[] };
+        };
+      }
+  )[];
 };
 
 export interface LoadContext {
@@ -134,7 +147,9 @@ export const openRecordLoader = Effect.fnUntraced(function* <
       descriptor,
       [
         ...request.paths.map((path) => path.needs),
-        ...(request.formulas ?? []).flatMap((formula) => formula.plan.needs),
+        ...(request.columns ?? []).flatMap((column) =>
+          column.kind === "formula" ? column.formula.plan.needs : [],
+        ),
       ],
       context,
     ),

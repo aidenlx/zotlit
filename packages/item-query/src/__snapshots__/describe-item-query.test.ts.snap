@@ -7332,6 +7332,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
       "invalid-formula-name",
       "invalid-formula-result",
       "unknown-formula",
+      "formula-cycle",
     ],
     "error": {
       "codes": [
