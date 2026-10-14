@@ -119,6 +119,7 @@ export interface AnnotationsLayoutDeps {
     | "patchColors"
     | "editTextField"
     | "editTags"
+    | "hold"
     | "peek"
     | "read"
     | "redo"
@@ -205,10 +206,24 @@ export interface AnnotationsLayoutHost {
    * query. Grouped rows wait for the next run.
    */
   showNewRecords?: boolean;
+  /**
+   * A list the rows hold gained or lost an Annotation since the rows landed,
+   * so the query can run again and give the rows that list holds now.
+   */
+  onListChanged?: () => void;
 }
 
 /** One Attachment's list as the layout last took it, or `null` where its read failed. */
 type Landed = { list: AnnotationList; scope: string | null } | null;
+
+/** The keys of the Annotations the repository holds for an Attachment now. */
+function annotationKeys(
+  annotations: Pick<AnnotationRepository, "peek">,
+  attachmentKey: string,
+): ReadonlySet<string> | null {
+  const held = annotations.peek(attachmentKey);
+  return held ? new Set(held.value.annotations.map(({ key }) => key)) : null;
+}
 
 /** One row of a query a Query View shows: an Annotation and the Attachment that holds it. */
 export interface LayoutRow {
@@ -229,8 +244,17 @@ export class AnnotationsLayout extends Component {
   #subscriptions: DisposableStack | null = null;
   /** The Attachments shown, in the order the host gave. */
   #shown: readonly string[] = [];
-  /** The rows of a query the cards show; `null` while they show whole lists. */
-  #rows: readonly LayoutRow[] | null = null;
+  /** The rows of a query the cards show. */
+  #rows: readonly LayoutRow[] = [];
+  /** The lists the cards on screen come from, held while they show. */
+  #hold: Disposable | null = null;
+  /** The Annotations of each Attachment shown, as the rows last found them. */
+  readonly #listKeys = new Map<string, ReadonlySet<string>>();
+  /**
+   * The Annotations a list change added that no run's rows have named yet,
+   * each with its Attachment's Indexed Key.
+   */
+  readonly #listAdded = new Map<string, string>();
   /**
    * The records the shown lists held when the rows first stood on screen, by
    * Attachment and key; `null` until they do. A record outside it is new.
@@ -362,6 +386,8 @@ export class AnnotationsLayout extends Component {
     this.#submitOpenEditor();
     this.#subscriptions?.dispose();
     this.#subscriptions = null;
+    this.#hold?.[Symbol.dispose]();
+    this.#hold = null;
     // An open tag editor ends its session, and saves it, as it unmounts.
     this.#root?.unmount();
     this.#root = null;
@@ -392,32 +418,19 @@ export class AnnotationsLayout extends Component {
   // #region the list
 
   /**
-   * Show the Annotations of these Attachments, one list after another in this
-   * order. What is on screen stays until every list has landed. Another set
-   * of Attachments clears the Card Selection; the bound reader's own
-   * selection applies over the clear.
-   *
-   * @returns what settles once the reads this started have landed: `true`
-   *   where each of them put its list on screen, `false` where a later read,
-   *   a cancelled one or a failure left another there.
-   */
-  show(attachmentKeys: readonly string[]): Promise<boolean> {
-    if (this.#rows !== null) {
-      this.#rows = null;
-      this.store.setState({ groups: null, unresolved: [] });
-    }
-    return this.#showAttachments(attachmentKeys);
-  }
-
-  /**
    * Show the rows of a query, in the query's order, from the live lists of
    * the Attachments that hold them: a card shows its record as the repository
    * holds it now, and stays while the rows stand, whatever a write changed on
-   * it. A row no list holds is named in `unresolved`.
+   * it. A row no list holds is named in `unresolved`. What is on screen stays
+   * until every list has landed, and the layout holds the new lists before
+   * it lets the old ones go. Another set of Attachments clears the Card
+   * Selection; the bound reader's own selection applies over the clear.
    *
    * @param also Attachments whose lists the layout reads beside those the
    *   rows name, so a record new to one of them can show (`showNewRecords`).
-   * @returns as {@link show}.
+   * @returns what settles once the reads this started have landed: `true`
+   *   where each of them put its list on screen, `false` where a later read,
+   *   a cancelled one or a failure left another there.
    */
   showRows(
     rows: readonly LayoutRow[],
@@ -425,6 +438,7 @@ export class AnnotationsLayout extends Component {
   ): Promise<boolean> {
     this.#rows = rows;
     this.#known = null;
+    this.#listKeys.clear();
     const groups: CardPlacement[] = rows.flatMap((row) =>
       row.group ? [{ annotationKey: row.annotationKey, group: row.group }] : [],
     );
@@ -432,13 +446,8 @@ export class AnnotationsLayout extends Component {
     const attachmentKeys = [
       ...new Set([...rows.map((row) => row.attachmentKey), ...also]),
     ];
-    const landing = this.#showAttachments(attachmentKeys);
-    // The lists that already stand show the new rows at once.
-    this.#publish();
-    return landing;
-  }
-
-  #showAttachments(attachmentKeys: readonly string[]): Promise<boolean> {
+    const previous = this.#hold;
+    this.#hold = this.#deps.annotations.hold(attachmentKeys);
     if (!sameKeys(attachmentKeys, this.#shown)) {
       this.#shown = [...attachmentKeys];
       for (const key of this.#landed.keys())
@@ -451,14 +460,51 @@ export class AnnotationsLayout extends Component {
       attachmentKeys.map((key) => this.#readAttachment(key)),
     ).then((landed) => landed.every(Boolean));
     this.#reading = landing.then(() => {});
+    // The lists that already stand show the new rows at once.
+    this.#publish();
+    void landing.then(() => {
+      previous?.[Symbol.dispose]();
+      if (this.#rows !== rows) return;
+      for (const attachmentKey of attachmentKeys) {
+        const keys = annotationKeys(this.#deps.annotations, attachmentKey);
+        if (keys) this.#listKeys.set(attachmentKey, keys);
+      }
+    });
     return landing;
+  }
+
+  /**
+   * Whether the rows of a run stay off screen. The query reads Zotero's
+   * database, which can take a new Annotation after the repository's list
+   * does: the run a list change asked for keeps the cards on screen while its
+   * rows lack an Annotation that change added and the repository still
+   * holds, and the database change that follows runs the query again. The
+   * rows of any other run show. Every run's rows answer it: an added
+   * Annotation they name, or that the repository no longer holds, is no
+   * longer waited for.
+   *
+   * @param rowKeys the Annotations the run's rows name.
+   * @param fromListChange whether the run is the one that
+   *   {@link AnnotationsLayoutHost.onListChanged} asked for.
+   */
+  keepsBack(rowKeys: Iterable<string>, fromListChange: boolean): boolean {
+    const named = new Set(rowKeys);
+    for (const [key, attachmentKey] of this.#listAdded) {
+      if (
+        named.has(key) ||
+        !annotationKeys(this.#deps.annotations, attachmentKey)?.has(key)
+      )
+        this.#listAdded.delete(key);
+    }
+    return fromListChange && this.#listAdded.size > 0;
   }
 
   /** Show no Attachment, and drop every list, draft and editor with them. */
   clear(): void {
     this.cancelReads();
     this.#shown = [];
-    this.#rows = null;
+    this.#rows = [];
+    this.#listKeys.clear();
     this.#landed.clear();
     this.#syncCapabilities();
     this.store.setState({
@@ -472,9 +518,11 @@ export class AnnotationsLayout extends Component {
       cardSelection: NO_SELECTION,
     });
     this.#takeReaderSelection();
+    this.#hold?.[Symbol.dispose]();
+    this.#hold = null;
   }
 
-  /** Drop the answers of the reads still running: a later `show` replaces them. */
+  /** Drop the answers of the reads still running: a later `showRows` replaces them. */
   cancelReads(): void {
     this.#latest.clear();
   }
@@ -520,7 +568,7 @@ export class AnnotationsLayout extends Component {
         if (list === null) {
           // The rows of a query wait for no list: an Attachment no read has
           // answered for yet names its rows unresolved until one does.
-          if (this.#rows !== null && !this.#landed.has(attachmentKey)) {
+          if (!this.#landed.has(attachmentKey)) {
             this.#landed.set(attachmentKey, null);
             this.#publish();
           }
@@ -555,13 +603,6 @@ export class AnnotationsLayout extends Component {
       if (held)
         sources.set(key, { source: held.list.source, scope: held.scope });
     }
-    const rows = this.#rows;
-    if (rows === null)
-      return {
-        annotations: landed.flatMap((held) => held?.list.annotations ?? []),
-        sources,
-        unresolved: [],
-      };
     const records = new Map(
       landed.flatMap(
         (held) =>
@@ -574,7 +615,7 @@ export class AnnotationsLayout extends Component {
     const unresolved: string[] = [];
     // A row stands once for each group it is in; its card is one record.
     const seen = new Set<string>();
-    for (const row of rows) {
+    for (const row of this.#rows) {
       const id = `${row.attachmentKey}\n${row.annotationKey}` as const;
       if (seen.has(id)) continue;
       seen.add(id);
@@ -665,6 +706,23 @@ export class AnnotationsLayout extends Component {
     return this.#composed();
   }
 
+  /** Tell the host once a list the rows hold gains or loses an Annotation. */
+  #listChanged(attachmentKey: string): void {
+    const before = this.#listKeys.get(attachmentKey);
+    if (!before) return;
+    const now = annotationKeys(this.#deps.annotations, attachmentKey);
+    if (
+      now === null ||
+      (now.size === before.size && [...now].every((key) => before.has(key)))
+    )
+      return;
+    this.#listKeys.set(attachmentKey, now);
+    for (const key of now) {
+      if (!before.has(key)) this.#listAdded.set(key, attachmentKey);
+    }
+    this.#host.onListChanged?.();
+  }
+
   /**
    * The Editing Capability of each Attachment shown: it moves with the probe
    * as well as with the Attachments.
@@ -697,6 +755,9 @@ export class AnnotationsLayout extends Component {
         const held = this.#heldList(attachmentKey);
         if (held) this.store.setState(held);
         this.#reading = this.#readAttachment(attachmentKey).then(() => {});
+        // An Annotation added to or removed from a list the rows hold runs
+        // the query again, so it takes its place.
+        this.#listChanged(attachmentKey);
       }),
     );
     // One snapshot per Annotation: what a write left on it, its drafts, and
