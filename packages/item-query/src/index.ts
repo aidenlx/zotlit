@@ -44,6 +44,7 @@ export type {
   QueryResult,
   QueryGroup,
   GroupValue,
+  QueryContext,
   QueryRow,
   SortSpec,
   TargetLibrary,

@@ -23,6 +23,11 @@ export const ANNOTATION_SCENARIO_QUERIES: readonly Omit<
   {},
   { fields: [], limit: 2 },
   { filter: '["ART2FULL", "ART2FULLg4815"].contains(item.indexedKey)' },
+  { filter: "item == this.item", context: { item: "ART2FULLg4815" } },
+  {
+    filter: "attachment != this.attachment && this.item == item",
+    context: { item: "ART2FULL", attachment: "PDF2LIVE" },
+  },
   { filter: '["PDF2LIVE", "PDF2GRUPg4815"].contains(attachment.indexedKey)' },
   {
     filter:
