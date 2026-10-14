@@ -830,6 +830,148 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(folderMenu).toContain(m.query_file_new());
   }, 180000);
 
+  it("shows a Query File toolbar as icons with tooltips on a narrow pane, and with names on a wide one", async () => {
+    const layout = await obEval(
+      vaultId,
+      "JSON.stringify(app.workspace.getLayout())",
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{delete window.zotlitE2EPanes;await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+      );
+    });
+    // The Fixture's Query File in two panes side by side: one wide, one
+    // narrow, as a user drags the divider.
+    await obEval(
+      vaultId,
+      `(async()=>{app.workspace.leftSplit.collapse();app.workspace.rightSplit.collapse();const file=app.vault.getFileByPath('query-files/Reading annotations.zotquery');const wide=app.workspace.getLeaf('tab');await wide.openFile(file);app.workspace.setActiveLeaf(wide,{focus:true});const narrow=app.workspace.createLeafBySplit(wide,'vertical');await narrow.openFile(file);await Promise.all([wide.view.query.settled,narrow.view.query.settled]);wide.parent.setDimension(80);narrow.parent.setDimension(20);window.zotlitE2EPanes={wide,narrow};return true;})()`,
+    );
+    const names = {
+      filter: m.query_view_filter(),
+      sort: m.query_view_sort(),
+      group: m.query_view_group(),
+      properties: m.settings_profile_properties_name(),
+      search: m.query_view_search(),
+    };
+    /** Each toolbar button's tooltip text and whether its name shows beside its icon. */
+    const readPane = (pane: "wide" | "narrow") =>
+      `(async()=>{await new Promise(r=>setTimeout(r,200));const bar=window.zotlitE2EPanes.${pane}.view.contentEl.querySelector('[role="toolbar"]');const button=hook=>hook==='properties'?bar.querySelector('[data-query-properties]'):bar.querySelector('[data-query-toolbar="'+hook+'"]');const out={width:bar.clientWidth,overflow:bar.scrollWidth>bar.clientWidth,buttons:{}};for(const hook of ${JSON.stringify(Object.keys(names))}){const el=button(hook);const name=[...el.querySelectorAll('span')].find(s=>s.textContent.trim()!=='');out.buttons[hook]={tooltip:el.getAttribute('aria-label'),nameShown:!!name&&getComputedStyle(name).display!=='none',iconShown:!!el.querySelector('svg')&&el.querySelector('svg').getBoundingClientRect().width>0};}return JSON.stringify(out);})()`;
+    interface Pane {
+      width: number;
+      overflow: boolean;
+      buttons: Record<
+        string,
+        { tooltip: string | null; nameShown: boolean; iconShown: boolean }
+      >;
+    }
+    const each = (nameShown: boolean) =>
+      Object.fromEntries(
+        Object.entries(names).map(([hook, name]) => [
+          hook,
+          { tooltip: name, nameShown, iconShown: true },
+        ]),
+      );
+
+    const narrow = JSON.parse(
+      await obEval(vaultId, readPane("narrow")),
+    ) as Pane;
+    expect(narrow.width).toBeLessThan(400);
+    expect(narrow).toMatchObject({ overflow: false, buttons: each(false) });
+
+    const wide = JSON.parse(await obEval(vaultId, readPane("wide"))) as Pane;
+    expect(wide.width).toBeGreaterThan(700);
+    expect(wide).toMatchObject({ overflow: false, buttons: each(true) });
+
+    // A pointer over an icon-only button shows its name as a tooltip.
+    const tooltip = await obEval(
+      vaultId,
+      `(async()=>{const el=window.zotlitE2EPanes.narrow.view.contentEl.querySelector('[data-query-toolbar="sort"]');const r=el.getBoundingClientRect();const at={bubbles:true,pointerType:'mouse',clientX:r.x+5,clientY:r.y+5};for(let i=0;i<3;i++){el.dispatchEvent(new PointerEvent('pointermove',{...at,clientX:at.clientX+i}));el.dispatchEvent(new MouseEvent('mousemove',{...at,clientX:at.clientX+i}));}el.dispatchEvent(new PointerEvent('pointerover',at));for(let i=0;i<30;i++){const tip=activeDocument.querySelector('.tooltip');if(tip)return tip.textContent;await new Promise(r=>setTimeout(r,100));}return null;})()`,
+    );
+    expect(tooltip).toBe(names.sort);
+  }, 120000);
+
+  it("exports a note with a Query File embed and a Query Block to PDF with their rows and no toolbar", async () => {
+    const notePath = "query-files/Export check.md";
+    const pdfPath = join(workspaceRoot, ".scratch", "e2e-query-export.pdf");
+    const layout = await obEval(
+      vaultId,
+      "JSON.stringify(app.workspace.getLayout())",
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await rm(pdfPath, { force: true });
+      await obEval(
+        vaultId,
+        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));const file=app.vault.getFileByPath(${JSON.stringify(notePath)});if(file)await app.vault.delete(file);return true;})()`,
+      );
+    });
+    const note = [
+      "---",
+      "zotero-key: SAKIMA22",
+      "---",
+      "![[Lab annotations.zotquery#This item]]",
+      "",
+      "```zotquery",
+      "views:",
+      "  - type: annotations",
+      "    name: Block view",
+      "    from: annotations",
+      "    filters: item == this.item",
+      "```",
+      "",
+    ].join("\n");
+    const report = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query", {
+        args: {
+          from: "annotations",
+          filter: "item == this.item",
+          "this-item": "SAKIMA22",
+          fields: "item.title",
+          limit: "100",
+        },
+      }),
+    ) as ItemQueryReport;
+    expect(report.ok).toBe(true);
+    const own = report.rows!.map((row) => row.indexedKey);
+    expect(own.length).toBeGreaterThan(1);
+
+    // Obsidian's own Export to PDF: its modal's export, with the file path
+    // the save dialog would give. The printed page is read as it is drawn,
+    // in the hidden window Obsidian prints from.
+    const printed = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{const file=await app.vault.create(${JSON.stringify(notePath)},${JSON.stringify(note)});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file,{state:{mode:'preview'}});app.workspace.setActiveLeaf(leaf,{focus:true});const modalProto=Object.getPrototypeOf(Object.getPrototypeOf(Object.getPrototypeOf(app.setting)));const open=modalProto.open;let modal=null;modalProto.open=function(){modal=this;return open.call(this);};try{leaf.view.printToPdf();}finally{modalProto.open=open;}modal.close();let page=null;const print=modal.print.bind(modal);modal.print=async(el,component,includeName)=>{const out=await print(el,component,includeName);const win=el.win;const shown=n=>win.getComputedStyle(n).display!=='none';const views=[...el.querySelectorAll('.zt-query-view')];page={ownWindow:win!==window,views:views.map(view=>({host:view.classList.contains('internal-embed')?'embed':view.classList.contains('block-language-zotquery')?'block':'other',cards:[...view.querySelectorAll('.zt-annot-card')].map(n=>n.getAttribute('data-zotero-annotation-key')),toolbar:[...view.querySelectorAll('[role="toolbar"]')].some(shown),readOnly:[...view.querySelectorAll('[data-query-read-only]')].some(shown),clipped:[...view.querySelectorAll('.annots-container')].some(list=>list.scrollHeight>list.clientHeight+1),blank:view.offsetHeight-(view.querySelector('[role="grid"]')?.offsetHeight??0)>100}))};return out;};await modal.printToPdf({filepath:${JSON.stringify(pdfPath)},includeName:true,pageSize:'A4',landscape:false,marginsType:0,scaleFactor:100,scale:1,open:false});return JSON.stringify(page);})()`,
+        180000,
+      ),
+    ) as {
+      ownWindow: boolean;
+      views: {
+        host: string;
+        cards: string[];
+        toolbar: boolean;
+        readOnly: boolean;
+        clipped: boolean;
+        /** Empty space below the cards, as a fixed height leaves. */
+        blank: boolean;
+      }[];
+    };
+    expect(printed).toEqual({
+      ownWindow: true,
+      views: ["embed", "block"].map((host) => ({
+        host,
+        cards: own,
+        toolbar: false,
+        readOnly: false,
+        clipped: false,
+        blank: false,
+      })),
+    });
+    expect((await readFile(pdfPath)).subarray(0, 5).toString()).toBe("%PDF-");
+  }, 240000);
+
   it("filters a Query File tab from its Filter popover, and the file text and the cards follow", async () => {
     const layout = await obEval(
       vaultId,
