@@ -181,19 +181,32 @@ export interface FormulaRead<Item, Needs> {
 }
 
 /**
- * The meaning of `formula.<name>` at `at`: the planned Formula, or the Fault of
- * the reference. Without a resolver, every Formula name is unknown.
+ * A `formula.<name>` at `at` that reads a Formula with a mistake. The Fault is
+ * in that Formula, so the reader gives this problem in place of a Fault of its
+ * own text.
+ */
+export interface FaultedFormulaRead {
+  readonly kind: "reads-faulted-formula";
+  /** The Formula with the mistake. */
+  readonly name: string;
+  readonly at: Span;
+}
+
+/**
+ * The meaning of `formula.<name>` at `at`: the planned Formula, the Fault of
+ * the reference, or a Formula with a mistake. Without a resolver, every
+ * Formula name is unknown.
  */
 export type FormulaResolver<Item, Needs> = (
   name: string,
   at: Span,
-) => FormulaRead<Item, Needs> | FilterFailure;
+) => FormulaRead<Item, Needs> | FilterFailure | FaultedFormulaRead;
 export type FilterProblem =
   | FilterFailure
   | Extract<Fault, { readonly kind: "syntax" }>;
 
 class Invalid extends Error {
-  constructor(readonly problem: FilterFailure) {
+  constructor(readonly problem: FilterFailure | FaultedFormulaRead) {
     super(problem.kind);
   }
 }
@@ -220,6 +233,26 @@ export interface FilterRegistry<Item, Needs = FieldNeeds> {
   readonly equalityField?: (name: string, literal: string) => string;
 }
 
+/** Options of {@link planFilter}. */
+export interface PlanFilterOptions<Item, Needs> {
+  readonly registry?: FilterRegistry<Item, Needs>;
+  /** The Query Context that `this` reads. */
+  readonly context?: QueryContext | undefined;
+  /**
+   * The Formulas that `formula.<name>` reads. A read of a Formula with a
+   * mistake gives a {@link FaultedFormulaRead}.
+   */
+  readonly formula?: FormulaResolver<Item, Needs> | undefined;
+}
+
+export function planFilter<Item = QueryItem, Needs = FieldNeeds>(
+  text: string,
+  options?: PlanFilterOptions<Item, Needs> & { readonly formula?: undefined },
+): FilterPlan<Item, Needs> | FilterProblem;
+export function planFilter<Item = QueryItem, Needs = FieldNeeds>(
+  text: string,
+  options: PlanFilterOptions<Item, Needs>,
+): FilterPlan<Item, Needs> | FilterProblem | FaultedFormulaRead;
 export function planFilter<Item = QueryItem, Needs = FieldNeeds>(
   text: string,
   {
@@ -228,14 +261,8 @@ export function planFilter<Item = QueryItem, Needs = FieldNeeds>(
     registry = itemFilterRegistry as FilterRegistry<any, any>,
     context,
     formula,
-  }: {
-    registry?: FilterRegistry<Item, Needs>;
-    /** The Query Context that `this` reads. */
-    context?: QueryContext;
-    /** The Formulas that `formula.<name>` reads. */
-    formula?: FormulaResolver<Item, Needs>;
-  } = {},
-): FilterPlan<Item, Needs> | FilterProblem {
+  }: PlanFilterOptions<Item, Needs> = {},
+): FilterPlan<Item, Needs> | FilterProblem | FaultedFormulaRead {
   const { ast, error } = parseExpressionAst(text);
   if (!ast) {
     return { kind: "syntax", fault: error };
@@ -281,7 +308,7 @@ const RESERVED_NAMES: ReadonlySet<string> = new Set([
   ...GLOBAL_FUNCTION_NAMES,
 ]);
 
-function fail(fault: FilterFailure): never {
+function fail(fault: FilterFailure | FaultedFormulaRead): never {
   throw new Invalid(fault);
 }
 

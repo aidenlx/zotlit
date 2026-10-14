@@ -474,3 +474,82 @@ it("reads a Formula whose name is also an object member, such as __proto__", asy
     { "formula.__proto__": 2019, "formula.constructor": 2020 },
   ]);
 });
+
+it.each([
+  [
+    "a Formula that reads it",
+    { formulas: { a: "formula.b + 1", b: "title * 2" }, fields: ["formula.a"] },
+  ],
+  [
+    "the filter",
+    {
+      filter: "title != null && formula.a > 0",
+      formulas: { a: "formula.b + 1", b: "title * 2" },
+      fields: ["title"],
+    },
+  ],
+] satisfies [string, Omit<ItemQueryRequest, "libraries">][])(
+  "reports a mistake in the Formula's own text when %s reads it",
+  async (_, request) => {
+    using scenario = openScenarioDatabase();
+    const error = await failure(scenario, request);
+    expect(error.diagnostic).toMatchObject({
+      code: "wrong-operand-type",
+      location: { argument: "formulas", path: "b", span: { from: 0, to: 9 } },
+    });
+  },
+);
+
+it("reports a Formula that reads an undefined Formula in its own text", async () => {
+  using scenario = openScenarioDatabase();
+  const error = await failure(scenario, {
+    formulas: { a: "formula.b + formula.zz", b: "date.year" },
+    fields: ["formula.a"],
+  });
+  expect(error.diagnostic).toMatchObject({
+    code: "unknown-formula",
+    found: "zz",
+    location: { argument: "formulas", path: "a", span: { from: 12, to: 22 } },
+  });
+});
+
+it("reports a cycle at the Formula that closes it, from the first Formula read", async () => {
+  using scenario = openScenarioDatabase();
+  const error = await failure(scenario, {
+    formulas: { a: "formula.b + 1", b: "formula.a * 2" },
+    fields: ["formula.b"],
+  });
+  expect(error.diagnostic).toMatchObject({
+    code: "formula-cycle",
+    location: { argument: "formulas", path: "a", span: { from: 0, to: 9 } },
+  });
+  expect(error.diagnostic.report.join("\n")).toContain(
+    "formula.b → formula.a → formula.b",
+  );
+});
+
+it("reports the first mistake in request order: names, then the filter, then fields", async () => {
+  using scenario = openScenarioDatabase();
+  const formulas = { bad: "title * 2", worse: "title.nope()" };
+  const named = await failure(scenario, {
+    filter: "formula.bad > 0",
+    formulas: { ...formulas, "2nd": "title" },
+    fields: ["formula.worse"],
+  });
+  expect(named.diagnostic).toMatchObject({ code: "invalid-formula-name" });
+  const filtered = await failure(scenario, {
+    filter: "formula.bad > 0",
+    formulas,
+    fields: ["formula.worse"],
+  });
+  expect(filtered.diagnostic).toMatchObject({
+    location: { argument: "formulas", path: "bad" },
+  });
+  const projected = await failure(scenario, {
+    formulas,
+    fields: ["formula.worse", "formula.bad"],
+  });
+  expect(projected.diagnostic).toMatchObject({
+    location: { argument: "formulas", path: "worse" },
+  });
+});
