@@ -3,7 +3,8 @@
   "extends": ["//"],
   "tasks": {
     "e2e": {
-      "env": ["WEB_WORKBENCH_ENABLED"]
+      "env": ["WEB_WORKBENCH_ENABLED"],
+      "passThroughEnv": ["ZOTLIT_DESKTOP_LOCK"]
     }
   }
 }

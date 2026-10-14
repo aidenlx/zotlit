@@ -3,6 +3,7 @@ import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { $ } from "zx";
 
+import { acquireDesktopLock } from "@zotlit/scripts/desktop-lock";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
 import { isObsidianReachable } from "./vault-script.ts";
@@ -13,6 +14,8 @@ if (!(await isObsidianReachable(root))) {
     "Worker responsiveness requires a running desktop Obsidian with its CLI enabled. Open a host vault, then run pnpm e2e:worker again.",
   );
 }
+// The nested `pnpm e2e` reuses this lock through the environment.
+using _lock = await acquireDesktopLock({ cwd: root });
 const report = join(root, ".scratch", "e2e-results", "results.json");
 await rm(report, { force: true });
 await $({ cwd: root, stdio: "inherit" })`pnpm e2e citation-index`;
