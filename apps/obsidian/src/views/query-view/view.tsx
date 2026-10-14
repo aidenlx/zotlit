@@ -68,12 +68,14 @@ import type {
 } from "./query-file";
 import type { ShownRecord } from "./record-rows";
 import { ResultsMenu } from "./results-menu";
-import { LAYOUT_GROUP_PATHS, layoutFields, layoutRows } from "./rows";
+import { groupPaths, layoutFields, layoutRows } from "./rows";
 import type { LayoutGroup } from "./rows";
 import { SearchControl } from "./search-control";
 import { SortEditor } from "./sort-control";
 import { resultTable } from "./table";
 import type { ResultTable } from "./table";
+import { TABLE_FIELDS, TableLayout } from "./table-layout";
+import type { LiteratureNotes } from "./table-notes";
 import { ToolbarPopover } from "./toolbar-popover";
 import * as edits from "./view-edits";
 import { ViewMenu } from "./view-menu";
@@ -91,6 +93,8 @@ export interface QueryViewDeps extends AnnotationsLayoutDeps {
   libraryScope: Pick<LibraryScopeService, "on" | "current">;
   /** The keyboard of a view that a note holds, which the embed and the block share. */
   cardFocus: Pick<QueryCardFocus, "hold">;
+  /** The Table's "Literature note" column. */
+  literatureNotes: LiteratureNotes;
 }
 
 /** What the host gives the Query View, beside the services. */
@@ -190,11 +194,15 @@ function layoutProblems(view: QueryFileView): string[] {
   const layout = layoutOf(view);
   if (!layout) problems.push(m.query_view_problem_layout({ type: view.type }));
   else if (!layout.datasets.includes(view.from ?? "annotations"))
-    problems.push(m.query_view_problem_dataset());
-  if (
-    view.groupBy &&
-    !(LAYOUT_GROUP_PATHS as readonly string[]).includes(view.groupBy.property)
-  )
+    problems.push(
+      layout.type === "annotations"
+        ? m.query_view_problem_dataset()
+        : m.query_view_problem_layout_dataset({
+            layout: layout.name(),
+            datasets: layout.datasets.join(", "),
+          }),
+    );
+  if (view.groupBy && !groupPaths(view.from).includes(view.groupBy.property))
     problems.push(
       m.query_view_problem_group({ property: view.groupBy.property }),
     );
@@ -269,6 +277,11 @@ export class QueryView extends Component implements HistorySurface {
     const attachmentKey = this.historyAttachment;
     if (attachmentKey !== null)
       this.#layout.stepHistory(direction, attachmentKey);
+  }
+
+  /** What the Table reads beside the rows: the queries of its child rows and its notes. */
+  get tableDeps(): Pick<QueryViewDeps, "query" | "literatureNotes"> {
+    return this.#deps;
   }
 
   /** Settles once the cards show the last run the view started. Never rejects. */
@@ -523,6 +536,7 @@ export class QueryView extends Component implements HistorySurface {
       fields: [
         ...new Set([
           ...layoutFields(view.from ?? "annotations"),
+          ...(layoutOf(view)?.type === "table" ? TABLE_FIELDS : []),
           ...visibleProperties(view, { fallback: true }),
         ]),
       ],
@@ -895,6 +909,8 @@ function LayoutBody({ view }: { view: QueryView }) {
       return <ListLayout view={view} />;
     case "cards":
       return <CardsLayout view={view} />;
+    case "table":
+      return <TableLayout view={view} />;
     default:
       return <AnnotationsCards view={view} />;
   }
@@ -972,7 +988,7 @@ function GroupButton({ view }: { view: QueryView }) {
     >
       <GroupEditor
         value={{ groupBy: current.groupBy, groupOrder: current.groupOrder }}
-        options={groupOptions()}
+        options={groupOptions(current.from)}
         groups={groups}
         onChange={(next) =>
           view.editView({

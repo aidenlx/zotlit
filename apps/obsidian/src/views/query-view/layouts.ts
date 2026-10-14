@@ -5,6 +5,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { CARDS_LAYOUT } from "./cards-layout";
 import { LIST_LAYOUT } from "./list-layout";
 import type { QueryFileDataset, QueryFileView } from "./query-file";
+import { TABLE_LAYOUT } from "./table-layout";
 
 export interface QueryLayout {
   /** The view's `type`. */
@@ -23,6 +24,7 @@ export const QUERY_LAYOUTS: readonly QueryLayout[] = [
     name: () => m.query_view_layout_annotations(),
     icon: "highlighter",
   },
+  TABLE_LAYOUT,
   LIST_LAYOUT,
   CARDS_LAYOUT,
 ];
