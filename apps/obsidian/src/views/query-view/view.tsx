@@ -37,7 +37,10 @@ import { AnnotList } from "@/views/annot-view/AnnotView";
 import { CardDisplayContext } from "@/views/annot-view/card-display";
 import type { CardDisplay } from "@/views/annot-view/card-display";
 import { AnnotationsLayout } from "@/views/annot-view/layout";
-import type { AnnotationsLayoutDeps } from "@/views/annot-view/layout";
+import type {
+  AnnotationsLayoutDeps,
+  AnnotationsLayoutHost,
+} from "@/views/annot-view/layout";
 import { useAnnotStore } from "@/views/annot-view/store";
 
 import type { QueryCardFocus } from "./card-focus";
@@ -114,6 +117,11 @@ export interface QueryViewHost {
   canSave?: () => boolean;
   /** Open the Query File; the toolbar shows a link button when the host gives it. */
   openFile?: (event: MouseEvent) => void;
+  /**
+   * What the host gives the Annotations Layout beside the Scope and the
+   * source path: the sidebar's own gestures and its list frame.
+   */
+  layout?: Pick<AnnotationsLayoutHost, "gestures" | "onList" | "onEscape">;
 }
 
 /** What the view shows now, as the toolbar and the host read it. */
@@ -231,6 +239,7 @@ export class QueryView extends Component implements HistorySurface {
     this.#deps = deps;
     this.#host = host;
     this.#layout = new AnnotationsLayout(deps, {
+      ...host.layout,
       scope: host.scope,
       sourcePath: host.sourcePath,
     });
@@ -298,6 +307,16 @@ export class QueryView extends Component implements HistorySurface {
   setText(text: string): void {
     this.state.setState({ file: parseQueryFile(text) });
     this.#choose();
+  }
+
+  /**
+   * Show nothing and run nothing until the next {@link setText}: the host has
+   * no Query Context to run the file with.
+   */
+  clear(): void {
+    this.state.setState({ file: null });
+    this.#runRequest = null;
+    this.refresh();
   }
 
   /** Whether a change in the view stays. */
