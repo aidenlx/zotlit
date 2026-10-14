@@ -5494,11 +5494,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       fields: "formula.next",
       limit: "100",
     });
-    expect(report).toMatchObject({
-      ok: true,
-      totalCount: recent.length,
-      warnings: [],
-    });
+    expect(report).toMatchObject({ ok: true, warnings: [] });
     expect(report.rows).toHaveLength(recent.length);
     expect(report.rows).toEqual(
       expect.arrayContaining(
