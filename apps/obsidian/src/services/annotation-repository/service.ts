@@ -742,9 +742,10 @@ export class LocalApiReadFailed extends Error {
  * such a change moved are announced even with no surface mounted to ask.
  *
  * A surface holds the lists it shows through {@link AnnotationRepository.hold}
- * and reads many of them at once through {@link AnnotationRepository.readMany},
- * which the Zotero DB source answers in one batch read. A list no surface holds
- * any more is let go, so a view over a whole Library leaves nothing behind.
+ * and reads them through {@link AnnotationRepository.read}: the reads it asks
+ * in one task the Zotero DB source answers in one batch read. A list no surface
+ * holds any more is let go, so a view over a whole Library leaves nothing
+ * behind.
  *
  * @see apps/obsidian/docs/adr/0034-the-annotation-source-is-atomic-per-attachment.md
  * @see docs/adr/0060-held-reads-are-realized-on-tanstack-query-core.md
@@ -948,29 +949,6 @@ export class AnnotationRepository extends Service<void> {
       return this.#drawn(attachmentKey, candidate);
     }
     return this.#published(attachmentKey)?.value ?? null;
-  }
-
-  /**
-   * Reads the Annotations of many Attachments at once — what a view over a
-   * whole Library asks. Where the Zotero DB is the source, every Attachment is
-   * read in one batch read; each still has its own Held Read, so an
-   * invalidation, a refresh, or a peek works per Attachment as after
-   * {@link read}.
-   *
-   * @param attachmentKeys the Attachments' Indexed Keys.
-   * @returns each Attachment's list as {@link read} answers it, by Indexed Key.
-   */
-  async readMany(
-    attachmentKeys: Iterable<string>,
-  ): Promise<Map<string, AnnotationList | null>> {
-    return new Map(
-      await Promise.all(
-        [...new Set(attachmentKeys)].map(
-          async (attachmentKey) =>
-            [attachmentKey, await this.read(attachmentKey)] as const,
-        ),
-      ),
-    );
   }
 
   /**

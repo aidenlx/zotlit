@@ -23,7 +23,7 @@ import type { NoteFeature } from "@/services/note-feature";
 import { stateEditor } from "./__fixtures__/editor";
 import { editorApp } from "./__fixtures__/editor-app";
 import { AnnotationsLayout } from "./layout";
-import type { AnnotationsLayoutDeps } from "./layout";
+import type { AnnotationsLayoutDeps, AnnotationsLayoutHost } from "./layout";
 
 vi.mock("zustand", () => import("../__fixtures__/zustand"));
 
@@ -110,6 +110,7 @@ function repository() {
         listeners.set(event, set);
         return () => set.delete(cb);
       },
+      hold: () => ({ [Symbol.dispose]: () => {} }),
     },
   };
 }
@@ -131,8 +132,10 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-/** Mounts the layout, as a host does, over both Attachments. */
-async function mountLayout() {
+/** Mounts the layout, as a host does, over the rows of both Attachments. */
+async function mountLayout(
+  host: Pick<AnnotationsLayoutHost, "showNewRecords" | "onListChanged"> = {},
+) {
   const repo = repository();
   const workspaceListeners = new Map<string, Set<Listener>>();
   const app = Object.assign(editorApp(), {
@@ -167,6 +170,7 @@ async function mountLayout() {
   const layout = new AnnotationsLayout(deps, {
     scope,
     sourcePath: () => "",
+    ...host,
   });
   const el = document.createElement("div");
   document.body.append(el);
@@ -174,7 +178,10 @@ async function mountLayout() {
   await act(() => layout.render(el));
   cleanup.defer(() => act(() => layout.unload()));
   await act(async () => {
-    await layout.show(["PDFAAAAA", "PDFBBBBB"]);
+    await layout.showRows([
+      { annotationKey: ALPHA.key, attachmentKey: "PDFAAAAA" },
+      { annotationKey: BETA.key, attachmentKey: "PDFBBBBB" },
+    ]);
   });
   const emitWorkspace = (event: string, ...args: unknown[]) => {
     for (const cb of workspaceListeners.get(event) ?? [])
@@ -332,7 +339,7 @@ it("drags each card with the Annotation Source of its own Attachment", async () 
 });
 
 it("reads again only the Attachment whose list changed, and keeps the others", async () => {
-  const { el, repo } = await mountLayout();
+  const { el, repo } = await mountLayout({ showNewRecords: true });
   repo.api.read.mockClear();
   const GAMMA = record("CCCC3333", "PDFBBBBB", "gamma");
   repo.lists.PDFBBBBB = { ...LISTS.PDFBBBBB!, annotations: [BETA, GAMMA] };
@@ -423,4 +430,65 @@ it("keeps a recoloured row on screen while the query's rows stand", async () => 
   });
   expect(cardKeys(el)).toEqual([ALPHA.key]);
   expect(layout.store.getState().annotations).toEqual([recoloured]);
+});
+
+it("tells the host once a list it shows gains or loses an Annotation", async () => {
+  const onListChanged = vi.fn();
+  const { repo } = await mountLayout({ onListChanged });
+  const change = (attachmentKey: string) =>
+    act(() => repo.emit("annotations-changed", attachmentKey));
+
+  // A change that keeps the list's Annotations, such as a new colour, says
+  // nothing; the cards show it from the live list.
+  repo.lists.PDFAAAAA = {
+    ...LISTS.PDFAAAAA!,
+    annotations: [{ ...ALPHA, color: "#ff6666" }],
+  };
+  await change("PDFAAAAA");
+  expect(onListChanged).not.toHaveBeenCalled();
+
+  // A new Annotation says so once, and a later change that keeps it says
+  // nothing more.
+  repo.lists.PDFAAAAA = { ...LISTS.PDFAAAAA!, annotations: [ALPHA, DELTA] };
+  await change("PDFAAAAA");
+  expect(onListChanged).toHaveBeenCalledTimes(1);
+  await change("PDFAAAAA");
+  expect(onListChanged).toHaveBeenCalledTimes(1);
+
+  // So does an Annotation the list lost.
+  repo.lists.PDFAAAAA = LISTS.PDFAAAAA!;
+  await change("PDFAAAAA");
+  expect(onListChanged).toHaveBeenCalledTimes(2);
+
+  // A change to an Attachment the layout does not show says nothing.
+  await change("PDFOTHER");
+  expect(onListChanged).toHaveBeenCalledTimes(2);
+});
+
+it("keeps a new Annotation on screen when the run its list change asked for has not read it yet", async () => {
+  const { layout, el, repo } = await mountLayout({ showNewRecords: true });
+  repo.lists.PDFAAAAA = { ...LISTS.PDFAAAAA!, annotations: [ALPHA, DELTA] };
+  await act(async () => {
+    repo.emit("annotations-changed", "PDFAAAAA");
+    await layout.read;
+  });
+  expect(cardKeys(el)).toEqual([ALPHA.key, DELTA.key, BETA.key]);
+
+  // Zotero's database does not hold the new Annotation yet: the rows of the
+  // run the list change asked for stay off screen. The rows of any other run
+  // show, as a filter that leaves the Annotation out does.
+  expect(layout.keepsBack([ALPHA.key, BETA.key], true)).toBe(true);
+  expect(layout.keepsBack([ALPHA.key, BETA.key], false)).toBe(false);
+
+  // Rows that name it show.
+  expect(layout.keepsBack([ALPHA.key, DELTA.key, BETA.key], true)).toBe(false);
+});
+
+it("waits no more for a new Annotation the repository no longer holds", async () => {
+  const { layout, repo } = await mountLayout({ showNewRecords: true });
+  repo.lists.PDFAAAAA = { ...LISTS.PDFAAAAA!, annotations: [ALPHA, DELTA] };
+  await act(() => repo.emit("annotations-changed", "PDFAAAAA"));
+  repo.lists.PDFAAAAA = LISTS.PDFAAAAA!;
+
+  expect(layout.keepsBack([ALPHA.key, BETA.key], true)).toBe(false);
 });
