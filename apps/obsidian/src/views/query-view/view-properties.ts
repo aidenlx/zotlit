@@ -66,7 +66,7 @@ export interface ViewProperties {
    * them: the Visible Properties the dataset can read. A view that shows
    * none gives the fields ZotLit Query projects by default.
    */
-  readonly columns: readonly PropertyEntry[];
+  readonly visibleProperties: readonly PropertyEntry[];
   /** What the view keeps in its file but does not use. */
   readonly unused: UnusedSettings;
   /** The entry of `path`, which the view may not know, such as a sort of another dataset. */
@@ -115,13 +115,13 @@ export function viewProperties(
   const entries = [...paths].map(entry);
   const shown = entries.filter((each) => each.place !== null && each.fits);
   const properties = datasetProperties(dataset);
-  const columns =
+  const visibleProperties =
     shown.length > 0
       ? shown
       : DATASETS[dataset].engine.defaultFields
           .filter((field) => properties.includes(field))
           .map(entry);
-  return { entries, columns, unused: unusedSettings(view), entry };
+  return { entries, visibleProperties, unused: unusedSettings(view), entry };
 }
 
 /** The Properties of the view on screen, as the last run marks them. */

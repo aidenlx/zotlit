@@ -104,7 +104,7 @@ describe("viewProperties entries", () => {
       true,
       true,
     ]);
-    expect(properties.columns.map((entry) => entry.path)).toEqual([
+    expect(properties.visibleProperties.map((entry) => entry.path)).toEqual([
       "title",
       'custom["Reading status"]',
     ]);
@@ -117,12 +117,12 @@ describe("viewProperties entries", () => {
       order: ["title"],
     });
     expect(properties.entries[0]).toMatchObject({ path: "title", fits: false });
-    const columns = properties.columns.map((entry) => entry.path);
+    const columns = properties.visibleProperties.map((entry) => entry.path);
     expect(columns.slice(0, 3)).toEqual(["type", "text", "comment"]);
     expect(columns).toContain("item.title");
-    expect(properties.columns.every((entry) => entry.place === null)).toBe(
-      true,
-    );
+    expect(
+      properties.visibleProperties.every((entry) => entry.place === null),
+    ).toBe(true);
   });
 
   it("names a Property it does not list, such as a sort of another dataset", () => {
