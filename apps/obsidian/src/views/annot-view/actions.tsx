@@ -34,7 +34,7 @@ import { InertTemplateError } from "@/services/template/errors";
 import { chooseAttachment } from "./attachment-suggester";
 import { groupControl, pressControl } from "./card-controls";
 import type { CardBlock, CardControl, CardControls } from "./card-controls";
-import type { CardClick } from "./card-selection";
+import type { CardClick, CardPlace } from "./card-selection";
 import { blockedNotice, confirmDelete, copyText, recolor } from "./card-verbs";
 import type { CommentRenderer } from "./comment-render";
 import { copiedText } from "./copied-text";
@@ -114,7 +114,7 @@ export interface AnnotActions {
   onSelectAnnotation(
     annot: AnnotationRecord,
     gesture: CardClick,
-    place: string,
+    place: CardPlace,
   ): void;
   /**
    * A click on the empty list: an open card editor closes, or, with none

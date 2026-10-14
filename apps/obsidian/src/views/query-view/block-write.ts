@@ -5,7 +5,8 @@
 // Obsidian update removes it, the block writes through public API: the
 // section's lines from `getSectionInfo`, and the note's live text through
 // `processLiveText`, after a check that the block text did not change. Live
-// Preview then builds a new widget.
+// Preview then builds a new widget. A block that left the page, as its note
+// closes, writes through the same public path at the line it last stood at.
 //
 // @see apps/obsidian/docs/adr/0068-query-files-are-a-zotlit-file-type-embedded-through-the-private-embed-registry.md
 import type { MarkdownPostProcessorContext, Vault } from "obsidian";
@@ -29,14 +30,6 @@ export interface BlockEdit {
   /** The code the block holds now, as the block last read or wrote it. */
   readonly previous: string;
   readonly next: string;
-}
-
-/**
- * Whether a rendered block has a place in its note to write to. A section
- * embed, a popover, a print and a Markdown render outside a note give none.
- */
-export function canWriteBlock({ ctx, el }: RenderedBlock): boolean {
-  return ctx.getSectionInfo(el) !== null;
 }
 
 /** The offset line `line` of `text` starts at; `-1` past its last line. */
@@ -69,10 +62,36 @@ export async function writeBlockCode(
     replaceCode.call(ctx, next);
     return;
   }
-  const file = app.vault.getFileByPath(ctx.sourcePath);
-  if (file === null) throw new Error(`No note at ${ctx.sourcePath}`);
+  await writeBlockAt(
+    app,
+    { sourcePath: ctx.sourcePath, lineStart: info.lineStart },
+    { previous, next },
+  );
+}
+
+/** Where a block stood in its note: the note, and the line of its opening fence. */
+export interface BlockPlace {
+  readonly sourcePath: string;
+  readonly lineStart: number;
+}
+
+/**
+ * Replace the code of a block at `place` with `edit.next`, through the
+ * note's live text. A block that left the page writes this way, at the line
+ * it last stood at.
+ *
+ * @throws Error when the note is gone, or when its text at that line is no
+ *   longer `edit.previous`.
+ */
+export async function writeBlockAt(
+  app: BlockWriteApp,
+  { sourcePath, lineStart }: BlockPlace,
+  { previous, next }: BlockEdit,
+): Promise<void> {
+  const file = app.vault.getFileByPath(sourcePath);
+  if (file === null) throw new Error(`No note at ${sourcePath}`);
   await processLiveText(app, file, (text) => {
-    const start = lineOffset(text, info.lineStart + 1);
+    const start = lineOffset(text, lineStart + 1);
     if (start === -1 || text.slice(start, start + previous.length) !== previous)
       throw new Error("The Query Block text changed since it rendered");
     return text.slice(0, start) + next + text.slice(start + previous.length);

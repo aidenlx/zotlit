@@ -1736,9 +1736,31 @@ it("says a view of Items cannot show their tags, and still groups the Items by t
   await settle();
 
   expect(el.querySelector("[data-query-unused]")?.textContent).toBe(
-    "Views of Items cannot show these properties: tags.",
+    "Views of Items cannot show these properties: Tag.",
   );
   expect(headings(el)).toEqual(["read-later"]);
+});
+
+it("says a view of Items cannot sort by their tags, and runs without that sort", async () => {
+  const { view, el, run, settle } = await mount([
+    result([itemRow("ITEMAAAA", "Ten simple rules")]),
+  ]);
+  await act(() =>
+    view.setText(`views:
+  - type: table
+    name: Tagged
+    from: items
+    sort:
+      - property: tags
+        direction: ASC
+`),
+  );
+  await settle();
+
+  expect(run.mock.calls.at(-1)![0]).not.toHaveProperty("sort");
+  expect(el.querySelector("[data-query-unused]")?.textContent).toBe(
+    "Views of Items cannot sort by these properties: Tag.",
+  );
 });
 
 it("switches a view of Annotations to Items, saves it, and draws the Items in the Table", async () => {
@@ -1796,7 +1818,7 @@ it("keeps what the new dataset lacks in the file, says the view does not use it,
   expect(view.state.getState().problems).toEqual([]);
   expect(tableText(el)[1]).toContain("Ten simple rules");
   expect(el.querySelector("[data-query-unused]")?.textContent).toBe(
-    "Items have no pageIndex, item.indexedKey, so this view does not use them.",
+    "Items have none of these properties, so this view does not use them: Page, Parent item.",
   );
   await act(() =>
     el.querySelector<HTMLElement>('[data-query-toolbar="sort"]')!.click(),

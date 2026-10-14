@@ -304,6 +304,10 @@ _Avoid_: annotation item, annotation row
 The Annotation Cards an Annotation View has selected — none, one, or several; each view holds its own, whatever its Follow Mode. It is kept in step with the Obsidian PDF view the Follow Mode follows, and each Zotero Reader selection replaces it. It holds only cards the list draws: a card the Annotation Filter hides, or one in a collapsed group, leaves it. ↑ and ↓ step through the cards in the order they are drawn, so a card shown under two group headings is reached at each.
 _Avoid_: selected annotations (the reader's are selected Annotation Marks), multi-selection (as a separate thing), primary card
 
+**Card Place**:
+Where one Annotation Card stands in the drawn list: its Annotation alone, or the group heading it stands under and its Annotation. A card shown under two group headings has two Card Places and is one card in the Card Selection; ↑ and ↓ step from place to place.
+_Avoid_: card position, card slot, card copy
+
 **Selected Card**:
 An Annotation Card in the Card Selection. A card selected alone opens its full text and offers its edit controls. A card selected with others stays compact but still shows its tag control; a press on it first selects that card alone. Only on a card selected alone is the comment an editable field: a click on an unselected card selects it and edits nothing.
 _Avoid_: focused card, active card, primary card
@@ -459,6 +463,10 @@ _Avoid_: tab, page, saved search
 **Layout**:
 How a Query View draws its rows: Annotations (Annotation Cards), Table (Item rows that expand into Attachments, Annotations and notes, as in Zotero's item list), List, or Cards.
 _Avoid_: view type, mode
+
+**Grouping**:
+How a Query View gathers its rows under group headings: by one group path its Query Dataset offers, such as the Item, the colour or a tag, in an ascending, descending or manual order. A row with two values of a list path, such as two tags, stands under both headings; a row with no value stands under "No value".
+_Avoid_: group by (the file key), section, category
 
 **Query Context**:
 The Item, and the Attachment when there is one, that a Query View is relative to, read as `this.item` and `this.attachment` in its filters: the Item of the note that embeds the file or holds the block, or the Item and Attachment the sidebar Annotation View follows. In a Query File's own tab `this` has no value.
