@@ -7,6 +7,7 @@ import type { App, TextComponent } from "obsidian";
 import * as m from "@/lib/i18n/generated/messages";
 
 import { addCardsOptions, cardsLayoutOptions } from "./cards-layout";
+import { DATASETS } from "./datasets";
 import { annotationsLayoutOptions, CARD_WIDTH, layoutsFor } from "./layouts";
 import type { AnnotationsLayoutOptions } from "./layouts";
 import { addListOptions, listLayoutOptions } from "./list-layout";
@@ -15,21 +16,6 @@ import type { QueryFileDataset } from "./query-file";
 import type { QueryView } from "./view";
 import { VIEW_NAME_RESERVED, viewNameIssue } from "./view-edits";
 import type { ViewNameIssue } from "./view-edits";
-
-/** The name of a Query Dataset, as "Records" lists it. */
-function datasetName(dataset: QueryFileDataset): string {
-  switch (dataset) {
-    case "annotations":
-      return m.query_view_dataset_annotations();
-    case "attachments":
-      return m.query_view_dataset_attachments();
-    case "items":
-      return m.query_view_dataset_items();
-    default:
-      dataset satisfies never;
-      return dataset;
-  }
-}
 
 function issueText(issue: ViewNameIssue): string {
   switch (issue) {
@@ -204,7 +190,7 @@ export class ConfigureViewModal extends Modal {
       .setDesc(m.query_view_dataset_desc())
       .addDropdown((dropdown) => {
         for (const dataset of QUERY_FILE_DATASETS)
-          dropdown.addOption(dataset, datasetName(dataset));
+          dropdown.addOption(dataset, DATASETS[dataset].name());
         dropdown.selectEl.dataset.queryViewDataset = "";
         dropdown.setValue(view.from ?? "annotations").onChange((value) => {
           const dataset = value as QueryFileDataset;
@@ -219,7 +205,7 @@ export class ConfigureViewModal extends Modal {
           if (names.length > 0)
             new Notice(
               m.query_view_dataset_removed({
-                dataset: datasetName(dataset),
+                dataset: DATASETS[dataset].name(),
                 properties: [...new Set(names)].join(", "),
               }),
             );

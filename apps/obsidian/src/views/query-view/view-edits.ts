@@ -1,8 +1,7 @@
 // The edits the view menu and "Configure view" make to a Query File's views,
 // as plain functions from one file to the next. Each one leaves every key it
 // does not touch where it was, so a save writes them back.
-import { ANNOTATIONS, ATTACHMENTS, ITEMS } from "@zotlit/item-query";
-
+import { DATASETS } from "./datasets";
 import { layoutsFor } from "./layouts";
 import { editView, NEW_QUERY_FILE_LIMIT } from "./query-file";
 import type {
@@ -164,12 +163,6 @@ export interface DatasetEdit {
   readonly removed: DatasetRemovals;
 }
 
-const SORTABLE: Record<QueryFileDataset, readonly string[]> = {
-  annotations: ANNOTATIONS.sortableFields,
-  attachments: ATTACHMENTS.sortableFields,
-  items: ITEMS.sortableFields,
-};
-
 /**
  * The view set to read `dataset`. A layout that cannot show the dataset
  * gives way to the dataset's first layout. The filters stay as they are: a
@@ -188,7 +181,7 @@ export function setViewDataset(
   const type = layouts.some((layout) => layout.type === view.type)
     ? view.type
     : (layouts[0]?.type ?? view.type);
-  const sortable = new Set(SORTABLE[dataset]);
+  const sortable = new Set(DATASETS[dataset].engine.sortableFields);
   const properties = new Set(datasetProperties(dataset));
   const sort = view.sort ?? [];
   const order = view.order ?? [];
