@@ -7131,7 +7131,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         `(async()=>{const leaf=app.workspace.getLeaf('split');await leaf.setViewState({type:'markdown',state:{file:${JSON.stringify(notePath)},mode:'source',source:false},active:true});app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
       );
       const note = `app.workspace.getLeavesOfType('markdown').find((leaf)=>leaf.view.file?.path===${JSON.stringify(notePath)}).view`;
-      const card = `[...${note}.containerEl.querySelectorAll('.internal-embed')].find((el)=>el.zotlitQueryEmbed)?.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(key)}]')`;
+      const card = `[...${note}.containerEl.querySelectorAll('.internal-embed')].find((el)=>el.zotlitQueryView)?.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(key)}]')`;
       expect(
         await obEvalUntil(vaultId!, `String(!!${card})`, {
           expected: "true",
