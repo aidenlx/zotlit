@@ -2915,6 +2915,21 @@ views:
       ["formula.year", "Year of source"],
     ]);
 
+    // The popover search finds a property by its Display Name.
+    await openProperties(tab);
+    await obEval(
+      vaultId,
+      `(()=>{const input=${propertiesPopup}.querySelector('input[role="combobox"]');input.value='Year of source';input.dispatchEvent(new InputEvent('input',{bubbles:true}));return true;})()`,
+    );
+    const found = JSON.parse(
+      await obEval(
+        vaultId,
+        `(()=>{const popup=${propertiesPopup};const rows=[...popup.querySelectorAll('[data-query-property]')].map(n=>n.dataset.queryProperty);popup.hidePopover();return JSON.stringify(rows);})()`,
+      ),
+    ) as string[];
+    expect(found).toContain("formula.year");
+    expect(found).not.toContain("title");
+
     // "Export CSV…" names the columns by their Display Names.
     await openResults(tab);
     const exported = JSON.parse(
