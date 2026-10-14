@@ -1992,6 +1992,7 @@ describe("the generated Obsidian vault", () => {
       "query-files/Lab note.md",
       "query-files/Lab overview.md",
       "query-files/Reading annotations.zotquery",
+      "query-files/Reading list.zotquery",
       "tools-for-thought.md",
       "wikilink-display-test.md",
       "wikilink-parity-test.md",

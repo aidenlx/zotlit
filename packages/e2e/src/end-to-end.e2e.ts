@@ -1915,6 +1915,169 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(rows.every((row) => row.values.colorName)).toBe(true);
   }, 180000);
 
+  it("shows a Fixture Query File as a Table, expands an Item into its Attachments and Annotations, and creates a Literature Note from its column", async () => {
+    const path = "query-files/Reading list.zotquery";
+    const layout = await obEval(
+      vaultId,
+      "JSON.stringify(app.workspace.getLayout())",
+    );
+    const created: string[] = [];
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))leaf.detach();for(const path of ${JSON.stringify(created)}){const file=app.vault.getFileByPath(path);if(file)await app.vault.delete(file);}await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+      );
+    });
+    const tab = "app.workspace.getMostRecentLeaf().view";
+    await obEval(
+      vaultId,
+      `(async()=>{const leaf=app.workspace.getLeaf('tab');await leaf.openFile(app.vault.getFileByPath(${JSON.stringify(path)}));app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
+    );
+    /** What the Table shows once its query settled. */
+    const readTable = `(async()=>{const view=${tab};if(view.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(path)})return 'null';await view.query.settled;const el=view.contentEl;const keys=kind=>[...el.querySelectorAll('[data-query-table-row="'+kind+'"]')].map(n=>n.getAttribute('data-query-key'));return JSON.stringify({header:[...el.querySelectorAll('[data-query-table] thead th')].map(n=>n.textContent),items:keys('item'),attachments:keys('attachment'),annotations:keys('annotation'),notes:Object.fromEntries([...el.querySelectorAll('[data-query-note]')].map(n=>[n.closest('tr').getAttribute('data-query-key'),n.getAttribute('data-query-note')])),create:[...el.querySelectorAll('[data-query-create-note]')].map(n=>n.getAttribute('data-query-create-note'))});})()`;
+    interface Table {
+      header: string[];
+      items: string[];
+      attachments: string[];
+      annotations: string[];
+      notes: Record<string, string>;
+      create: string[];
+    }
+    const tableWhen = async (ready: (table: Table) => boolean) => {
+      let table: Table | null = null;
+      const settled = await waitFor(async () => {
+        table = JSON.parse(await obEval(vaultId, readTable)) as Table | null;
+        return table !== null && ready(table);
+      }, 120);
+      if (!settled)
+        throw new Error(`Query File Table: ${JSON.stringify(table)}`);
+      return table!;
+    };
+    const query = async (args: Record<string, string>) => {
+      const report = JSON.parse(
+        await cliCommand(vaultId, "zotlit:query", { args }),
+      ) as ItemQueryReport;
+      expect(report.ok).toBe(true);
+      return report.rows!;
+    };
+
+    // The rows are the Items ZotLit Query gives for the view, in its order,
+    // and the columns follow the view's visible properties.
+    const items = await query({
+      from: "items",
+      fields: "title",
+      sort: "title",
+      limit: "100",
+    });
+    const shown = await tableWhen((table) => table.items.length > 0);
+    expect(shown.items).toEqual(items.map((row) => row.indexedKey));
+    expect(shown.header).toEqual([
+      "",
+      "Title",
+      m.query_view_property_first_author(),
+      "Date",
+      m.query_view_table_literature_note(),
+    ]);
+
+    // Configure view offers the Table for this view of Items.
+    await obEval(
+      vaultId,
+      `(()=>{${tab}.contentEl.querySelector('[data-query-view-menu]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true}));return true;})()`,
+    );
+    // The Configure view this view opened is the last one on screen.
+    const configureModal =
+      "[...activeDocument.querySelectorAll('.modal.zt-configure-view')].at(-1)";
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(${configureModal}?.querySelector('[data-query-view-name]')?.value===${JSON.stringify("Reading list")})`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    expect(
+      JSON.parse(
+        await obEval(
+          vaultId,
+          `JSON.stringify([...${configureModal}.querySelectorAll('[data-query-view-layout] option')].map(n=>[n.textContent,n.selected]))`,
+        ),
+      ),
+    ).toEqual([
+      [m.query_view_layout_table(), true],
+      [m.query_view_layout_list(), false],
+      [m.query_view_layout_cards(), false],
+    ]);
+    await obEval(
+      vaultId,
+      `(()=>{const modal=${configureModal};(modal.querySelector('.modal-close-button')??modal.querySelector('.modal-header-button:has(.lucide-x)')).click();return true;})()`,
+    );
+
+    // The Item expands into its Attachments, and an Attachment with
+    // Annotations into those Annotations, as ZotLit Query lists them.
+    const item = ITEMS.find(
+      ({ itemID }) => itemID === annotationAttachment.parentItemID,
+    )!.key;
+    const attachments = await query({
+      from: "attachments",
+      filter: `item.indexedKey == "${item}"`,
+      fields: "title",
+      limit: "all",
+    });
+    const annotations = await query({
+      from: "annotations",
+      filter: `attachment.indexedKey == "${annotationAttachment.key}"`,
+      fields: "text",
+      sort: "sortIndex",
+      limit: "all",
+    });
+    expect(annotations.length).toBeGreaterThan(0);
+    const click = (selector: string) =>
+      obEval(
+        vaultId,
+        `(()=>{${tab}.contentEl.querySelector(${JSON.stringify(selector)}).click();return true;})()`,
+      );
+    await click(`[data-query-expand="item:${item}"]`);
+    await tableWhen((table) => table.attachments.length === attachments.length);
+    await click(`[data-query-expand="attachment:${annotationAttachment.key}"]`);
+    const expanded = await tableWhen(
+      (table) => table.annotations.length === annotations.length,
+    );
+    expect(expanded.attachments).toEqual(
+      attachments.map((row) => row.indexedKey),
+    );
+    expect(expanded.annotations).toEqual(
+      annotations.map((row) => row.indexedKey),
+    );
+
+    // "Create" asks for a Profile where more than one fits; the new
+    // Literature Note, made with the Profile chosen, then shows as a link in
+    // the column.
+    const book = shown.create.find(
+      (key) =>
+        key === booksProfileTargetItem.key ||
+        key.startsWith(`${booksProfileTargetItem.key}g`),
+    )!;
+    expect(book, "the Item has no Literature Note yet").toBeDefined();
+    await click(`[data-query-create-note="${book}"]`);
+    expect(await selectSuggestion(vaultId, booksProfile.label)).toContain(
+      booksProfile.label,
+    );
+    await obEval(
+      vaultId,
+      "activeDocument.querySelector('.prompt input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
+    );
+    const linked = await tableWhen((table) => book in table.notes);
+    created.push(linked.notes[book]!);
+    expect(linked.create).not.toContain(book);
+    expect(linked.notes[book]).toMatch(/^books\//);
+    expect(
+      await obEval(
+        vaultId,
+        `String(app.metadataCache.getFileCache(app.vault.getFileByPath(${JSON.stringify(linked.notes[book])}))?.frontmatter?.['zotero-key'])`,
+      ),
+    ).toBe(book);
+  }, 180000);
+
   it("renders the deterministic PDF matrix and reuses its cache", async () => {
     await verifyExcerptRendering(vaultId);
   }, 120000);
