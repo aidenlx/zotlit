@@ -156,7 +156,6 @@ export interface QueryMetadata {
 /** The validated form of a request that the engine executes. */
 export interface ItemQueryPlan<Item = any, Needs = any> {
   readonly dataset: QueryDataset<any>;
-  readonly warnings: FilterPlan["warnings"];
   readonly query: ItemQuery;
   /** `null`: every record matches. */
   readonly filter: FilterPlan<Item, Needs> | null;
@@ -498,7 +497,6 @@ export function planRequest(
           : { formulas: { ...request.formulas } }),
       },
       filter,
-      warnings: filter?.warnings ?? [],
       paths,
       formulas: [...formulas.values()],
       unusedFormulas: Object.keys(definedFormulas).filter(

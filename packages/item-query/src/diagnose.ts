@@ -92,12 +92,7 @@ export function diagnose(
     fault.kind === "formula-cycle"
   )
     return diagnostic;
-  const message = `In formula.${context.path}: ${diagnostic.message}`;
-  return {
-    ...diagnostic,
-    message,
-    report: [message, ...diagnostic.report.slice(1)],
-  };
+  return inFormula(diagnostic, context.path);
 }
 
 function diagnoseFault(
@@ -1246,8 +1241,57 @@ function diagnoseSyntax(
   return { ...diagnostic, suggestions, report };
 }
 
-/** Warnings describe the marked comparison; they never replace its evaluation. */
+/** A diagnostic of the text of the Formula `name`, which its message names. */
+function inFormula<D extends Diagnostic<string>>(
+  diagnostic: D,
+  name: string,
+): D {
+  const message = `In formula.${name}: ${diagnostic.message}`;
+  return {
+    ...diagnostic,
+    message,
+    report: [message, ...diagnostic.report.slice(1)],
+  };
+}
+
+/**
+ * A Filter Expression of the request that a warning marks: the filter, or
+ * the text of the Formula `formula`.
+ */
+export interface WarningSource {
+  readonly text: string;
+  readonly formula?: string;
+}
+
+/**
+ * Warnings describe the marked comparison; they never replace its evaluation.
+ * A warning in the text of a Formula is located at the Formula and names it.
+ */
 export function diagnoseWarning(
+  fault:
+    | Extract<Fault, { kind: "constant" }>
+    | KeyLibraryWarning
+    | CollectionWarning,
+  { text, formula }: WarningSource,
+  context: WarningContext,
+): Diagnostic<
+  | "never-true"
+  | "always-true"
+  | "key-outside-target-libraries"
+  | "unknown-collection"
+> {
+  const diagnostic = diagnoseExpressionWarning(fault, text, context);
+  if (formula === undefined) return diagnostic;
+  return inFormula(
+    {
+      ...diagnostic,
+      location: { ...diagnostic.location, argument: "formulas", path: formula },
+    },
+    formula,
+  );
+}
+
+function diagnoseExpressionWarning(
   fault:
     | Extract<Fault, { kind: "constant" }>
     | KeyLibraryWarning

@@ -11,11 +11,14 @@ import type {
 import { collectionWarnings } from "./collection-warnings";
 import type { QueryDataset } from "./dataset";
 import { diagnoseUnusedFormula, diagnoseWarning } from "./diagnose";
+import type { WarningSource } from "./diagnose";
 import type { ItemQueryError } from "./error";
 import { consumeDataset } from "./execution";
+import type { FilterPlan } from "./filter-plan";
 import { indexedKeyWarnings } from "./indexed-key-selection";
 import { readQueryClock } from "./query-clock";
 import { openQuerySources } from "./query-sources";
+import type { QuerySources } from "./query-sources";
 import { planRequest } from "./request";
 import type {
   ItemQueryRequest,
@@ -23,6 +26,7 @@ import type {
   QueryRow,
   QueryMetadata,
   QueryGroup,
+  TargetLibrary,
 } from "./request";
 
 /** Metadata known before the projection pass begins. */
@@ -36,6 +40,34 @@ export interface QuerySummary extends QueryMetadata {
    */
   readonly matchedCount: number;
 }
+
+/**
+ * The warnings of one Filter Expression of the request, the filter or the
+ * text of one Formula, in the order of the text.
+ */
+const expressionWarnings = Effect.fnUntraced(function* (
+  source: WarningSource,
+  expression: FilterPlan,
+  {
+    dataset,
+    libraries,
+    sources,
+    warning,
+  }: {
+    dataset: QueryDataset<any>;
+    libraries: readonly TargetLibrary[];
+    sources: QuerySources;
+    warning: Parameters<typeof diagnoseWarning>[2];
+  },
+) {
+  return [
+    ...expression.warnings,
+    ...(yield* collectionWarnings(expression.root, libraries, sources)),
+    ...indexedKeyWarnings(expression.root, dataset.id, libraries),
+  ]
+    .sort((a, b) => a.at.from - b.at.from)
+    .map((fault) => diagnoseWarning(fault, source, warning));
+});
 
 /** Each write completes before the engine projects the next chunk. */
 export interface QueryConsumer<A, E = never, R = never> {
@@ -122,29 +154,26 @@ export function consumeQuery<Request extends ItemQueryRequest, A, E, R>(
         filter: plan.filter?.root,
         query,
         warnings: [
-          ...[
-            ...plan.warnings,
-            ...(yield* collectionWarnings(
-              plan.filter?.root,
-              request.libraries,
-              sources,
-            )),
-            ...(plan.filter
-              ? indexedKeyWarnings(
-                  plan.filter.root,
-                  dataset.id,
-                  request.libraries,
-                )
-              : []),
-          ]
-            .sort((a, b) => a.at.from - b.at.from)
-            .map((fault) =>
-              diagnoseWarning(fault, query.filter!, {
-                clock,
+          // The filter and each Formula the request reads warn alike, each
+          // at its own text.
+          ...(yield* Effect.forEach(
+            [
+              ...(plan.filter
+                ? [{ source: { text: query.filter! }, plan: plan.filter }]
+                : []),
+              ...plan.formulas.map((formula) => ({
+                source: { text: formula.text, formula: formula.name },
+                plan: formula.plan,
+              })),
+            ],
+            (expression) =>
+              expressionWarnings(expression.source, expression.plan, {
                 dataset,
-                context: query.context,
+                libraries: request.libraries,
+                sources,
+                warning: { clock, dataset, context: query.context },
               }),
-            ),
+          )).flat(),
           ...plan.unusedFormulas.map(diagnoseUnusedFormula),
         ],
         libraries: request.libraries,
