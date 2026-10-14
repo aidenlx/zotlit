@@ -4,10 +4,11 @@
 // Preview hands a code block no frontmatter. A change in the view rewrites the
 // block text only (see `block-write.ts`).
 //
-// The block saves where it stands in its own note. Shown somewhere else (a
-// section embed, a popover, an Annotation comment, a note preview), the view
-// still reads and its toolbar says a change is not saved. Inside a Query View,
-// a block shows its text only, so a Query View never holds another live one.
+// The block saves to the note that holds it, also through a section embed or a
+// hover popover. Where it has no save path (print, export, an Annotation
+// comment, a note preview), the view still reads and its toolbar says a change
+// is not saved. Inside a Query View, a block shows its text only, so a Query
+// View never holds another live one.
 //
 // @see apps/obsidian/docs/adr/0068-query-files-are-a-zotlit-file-type-embedded-through-the-private-embed-registry.md
 import { MarkdownRenderChild, Notice, Scope } from "obsidian";
@@ -26,12 +27,8 @@ const logger = getLogger(["views", "query-view", "block"]);
 
 /** A Query View: a block in one of its cards' comments shows its text only. */
 const IN_QUERY_VIEW = ".zt-query-view";
-/**
- * Where a block shows outside its own note: a section embed, a popover, an
- * Annotation comment, a note preview.
- */
-const OUTSIDE_NOTE =
-  ".markdown-embed, .hover-popover, .zt-annot-comment, [data-zotlit-draft]";
+/** Where a block shows as a preview: an Annotation comment, a note preview. */
+const IN_PREVIEW = ".zt-annot-comment, [data-zotlit-draft]";
 
 type QueryBlockPlugin = Pick<Plugin, "registerMarkdownCodeBlockProcessor">;
 
@@ -107,7 +104,7 @@ class QueryBlock extends MarkdownRenderChild {
   #canSave(): boolean {
     const el = this.containerEl;
     return (
-      el.closest(OUTSIDE_NOTE) === null && canWriteBlock({ ctx: this.#ctx, el })
+      el.closest(IN_PREVIEW) === null && canWriteBlock({ ctx: this.#ctx, el })
     );
   }
 
