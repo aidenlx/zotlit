@@ -31,6 +31,7 @@ import { useAnnotStore } from "@/views/annot-view/store";
 import type { QueryLayout } from "./layouts";
 import { displayName, formulaIssue } from "./query-file";
 import type { QueryFile } from "./query-file";
+import { CellContent } from "./record-rows";
 import { cell } from "./table";
 import type { LiteratureNotes } from "./table-notes";
 import type { QueryView } from "./view";
@@ -606,7 +607,10 @@ function ItemRow({
         </td>
         {columns.map((property) => (
           <td key={property} className="zt:px-2 zt:py-1">
-            {cellText(property, record.values[property])}
+            <CellContent
+              value={record.values[property]}
+              text={cellText(property, record.values[property])}
+            />
           </td>
         ))}
         <td className="zt:px-2 zt:py-1">

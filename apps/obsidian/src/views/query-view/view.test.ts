@@ -1556,3 +1556,129 @@ it("marks a wrong Formula at its column, and runs the view again without it", as
   });
   expect(view.state.getState().formulaIssues).toEqual({});
 });
+
+const DEPENDENT_FILE = `formulas:
+  year: date.year
+  next: formula.year + 1
+  after: formula.next * 2
+  short: title.slice(0, 3)
+views:
+  - type: table
+    name: Reading list
+    from: items
+    order:
+      - title
+      - formula.year
+      - formula.next
+      - formula.after
+      - formula.short
+`;
+
+function formulaFault(name: string): QueryViewOutcome {
+  return {
+    kind: "failed",
+    diagnostic: {
+      code: "unknown-field",
+      message: `In formula.${name}: dat is not a field of Items.`,
+      hint: "Use date.",
+      severity: "error",
+      report: [],
+      location: { argument: "formulas", path: name, span: { from: 0, to: 3 } },
+      found: "dat",
+      expected: [],
+      suggestions: ["date"],
+    },
+  };
+}
+
+it("marks a wrong Formula and every Formula that reads it, and runs the view once more without them", async () => {
+  const { view, el, run, settle } = await mount([
+    formulaFault("year"),
+    result([
+      {
+        indexedKey: "ITEMAAAA",
+        values: { title: "Ten simple rules", "formula.short": "Ten" },
+      },
+    ]),
+  ]);
+  await act(() => view.setText(DEPENDENT_FILE));
+  await settle();
+
+  expect(run).toHaveBeenCalledTimes(2);
+  expect(run.mock.calls[0]![0].formulas).toEqual({
+    year: "date.year",
+    next: "formula.year + 1",
+    after: "formula.next * 2",
+    short: "title.slice(0, 3)",
+  });
+  const [retry] = run.mock.calls[1]!;
+  expect(retry.formulas).toEqual({ short: "title.slice(0, 3)" });
+  expect(retry.fields).not.toContain("formula.year");
+  expect(retry.fields).not.toContain("formula.next");
+  expect(retry.fields).not.toContain("formula.after");
+  expect(view.state.getState()).toMatchObject({
+    phase: "ready",
+    formulaIssues: {
+      year: "In formula.year: dat is not a field of Items. Use date.",
+      next: "Reads formula.year, which has a mistake.",
+      after: "Reads formula.year, which has a mistake.",
+    },
+  });
+  expect(tableText(el)).toEqual([
+    [
+      "",
+      "Title",
+      "formula.year",
+      "formula.next",
+      "formula.after",
+      "formula.short",
+      "Literature note",
+    ],
+    ["", "Ten simple rules", "", "", "", "Ten", "Create"],
+  ]);
+});
+
+it("shows a wrong Formula that the filters read at their condition, and no rows until it is fixed", async () => {
+  const filtered = DEPENDENT_FILE.replace(
+    "      - formula.short\n",
+    "      - formula.short\n    filters: formula.next > 2000\n",
+  );
+  const { view, el, run, settle } = await mount([
+    result([formulaRow("ITEMAAAA", "Ten simple rules", 2014)]),
+    formulaFault("year"),
+    result([formulaRow("ITEMAAAA", "Ten simple rules", 2014)]),
+  ]);
+  await act(() => view.setText(filtered));
+  await settle();
+  expect(tableText(el)).toHaveLength(2);
+
+  await act(() => view.setText(filtered.replace("date.year", "dat.year")));
+  await settle();
+
+  expect(run).toHaveBeenCalledTimes(2);
+  expect(view.state.getState()).toMatchObject({
+    phase: "failed",
+    records: [],
+    filterIssue: {
+      section: "view",
+      path: [0],
+      message: "Reads formula.year, which has a mistake.",
+    },
+    formulaIssues: {
+      year: "In formula.year: dat is not a field of Items. Use date.",
+      next: "Reads formula.year, which has a mistake.",
+      after: "Reads formula.year, which has a mistake.",
+    },
+  });
+  expect(el.querySelector('[data-query-table-row="item"]')).toBeNull();
+
+  await act(() => view.setText(filtered));
+  await settle();
+  expect(run).toHaveBeenCalledTimes(3);
+  expect(view.state.getState()).toMatchObject({
+    phase: "ready",
+    filterIssue: null,
+    formulaIssues: {},
+  });
+  expect(tableText(el)).toHaveLength(2);
+});

@@ -2696,6 +2696,7 @@
   "query_view_display_name": "Display name",
   "query_view_display_name_desc": "The name the view shows in its headings and in exported files. Leave it empty to show {label}.",
   "query_view_display_name_save": "Save",
+  "query_view_formula_reads_wrong": "Reads formula.{name}, which has a mistake.",
   "query_view_unresolved": [
     {
       "declarations": ["input count", "local countPlural = count: plural"],
