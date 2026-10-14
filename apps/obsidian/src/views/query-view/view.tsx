@@ -53,18 +53,7 @@ import { annotationsLayoutOptions, layoutOf } from "./layouts";
 import { ListLayout } from "./list-layout";
 import { groupOptions, sortOptions } from "./properties";
 import { PropertiesMenu } from "./properties-menu";
-import {
-  editView,
-  formulaProperty,
-  locateFilterFault,
-  parseQueryFile,
-  removeFormula,
-  serializeQueryFile,
-  viewFilter,
-  withDisplayName,
-  withFilters,
-  withFormula,
-} from "./query-file";
+import { locateFilterFault, viewFilter } from "./query-file";
 import type {
   ConditionIssue,
   FilterSection,
@@ -75,6 +64,8 @@ import type {
   QueryFileView,
   QueryFileViewEdit,
 } from "./query-file";
+import { QueryFileDocument } from "./query-file-document";
+import type { EditTiming } from "./query-file-document";
 import type { ShownRecord } from "./record-rows";
 import { ResultsMenu } from "./results-menu";
 import { layoutRows } from "./rows";
@@ -87,7 +78,6 @@ import { TABLE_FIELDS, TableLayout } from "./table-layout";
 import type { LiteratureNotes } from "./table-notes";
 import { ToolbarPopover } from "./toolbar-popover";
 import { propertyLabel } from "./value-text";
-import * as edits from "./view-edits";
 import { unusedSettings } from "./view-edits";
 import { ViewMenu } from "./view-menu";
 import { visibleProperties } from "./visible-properties";
@@ -272,24 +262,6 @@ function usedGroupBy(view: QueryFileView): QueryFileSort | undefined {
  */
 export const RERUN_DELAY_MS = 300;
 
-/** How long typed text, such as a limit or a view name, waits after the last key before it is saved. */
-export const SAVE_DELAY_MS = 500;
-
-/** How a toolbar change saves: typed text waits for {@link SAVE_DELAY_MS}. */
-export interface EditTiming {
-  typed?: boolean;
-}
-
-/** The view of `file` that `wanted` names; the first view for `null`. */
-function viewNamed(
-  file: QueryFile,
-  wanted: string | null,
-): QueryFileView | undefined {
-  return wanted === null
-    ? file.views[0]
-    : file.views.find((candidate) => candidate.name === wanted);
-}
-
 /** One run of a view: its request key, and the file and view it ran for. */
 interface ViewRun {
   key: string;
@@ -332,8 +304,8 @@ export class QueryView extends Component implements HistorySurface {
   readonly #deps: QueryViewDeps;
   readonly #host: QueryViewHost;
   readonly #layout: AnnotationsLayout;
-  /** The view the host asked for by name; the first view where `null`. */
-  #wanted: string | null = null;
+  /** The file's text, the view on screen, the edits and their saves. */
+  readonly #document: QueryFileDocument;
   #run: AbortController | null = null;
   /** Whether the rows on screen are drawn as Annotation Cards. */
   #cardsShown = false;
@@ -360,23 +332,14 @@ export class QueryView extends Component implements HistorySurface {
   /** What waits for the list to draw the cards the store holds now. */
   #drawWaiters: (() => void)[] = [];
   #rerunTimer: ReturnType<typeof setTimeout> | null = null;
-  /**
-   * The text the file on screen was read from. The host gives the text of
-   * the view's own save back, which then changes nothing.
-   */
-  #text: string | null = null;
-  /** The text of a typed change that waits for its delay before it is saved. */
-  #typedSave: { text: string; timer: ReturnType<typeof setTimeout> } | null =
-    null;
-  /** The host's last write, which settles once it is done. Never rejects. */
-  #writing: Promise<void> = Promise.resolve();
-  /** How many saves the view started, so that only the last one's result shows. */
-  #saves = 0;
-
   constructor(deps: QueryViewDeps, host: QueryViewHost) {
     super();
     this.#deps = deps;
     this.#host = host;
+    this.#document = new QueryFileDocument(host, {
+      show: () => this.#choose(),
+      saveFailed: (saveFailed) => this.state.setState({ saveFailed }),
+    });
     this.#layout = new AnnotationsLayout(deps, {
       ...host.layout,
       scope: host.scope,
@@ -510,10 +473,7 @@ export class QueryView extends Component implements HistorySurface {
    * {@link contextChanged}.
    */
   setText(text: string): void {
-    if (text === this.#text) return;
-    this.#text = text;
-    this.state.setState({ file: parseQueryFile(text) });
-    this.#choose();
+    this.#document.setText(text);
   }
 
   /**
@@ -531,7 +491,7 @@ export class QueryView extends Component implements HistorySurface {
    * no Query Context to run the file with.
    */
   clear(): void {
-    this.#text = null;
+    this.#document.clear();
     this.state.setState({ file: null });
     this.#runRequest = null;
     this.refresh();
@@ -539,67 +499,12 @@ export class QueryView extends Component implements HistorySurface {
 
   /** Whether a change in the view can stay. */
   get canSave(): boolean {
-    return this.#host.canSave?.() ?? true;
-  }
-
-  /**
-   * The one path of a toolbar change: show `next` at once with the view named
-   * `show` on screen, and hand its text to the host to save, at once or, for
-   * typed text, after {@link SAVE_DELAY_MS}.
-   */
-  #commit(
-    next: QueryFile,
-    show: string | null,
-    { typed }: EditTiming = {},
-  ): void {
-    const text = serializeQueryFile(next);
-    const shown = this.state.getState().view?.name ?? null;
-    const file = parseQueryFile(text);
-    this.#text = text;
-    this.state.setState({ file });
-    // The view the host asked for stays asked for while it names the view to show.
-    if (viewNamed(file, this.#wanted)?.name !== show) this.#wanted = show;
-    if (show !== null && show !== shown) this.#host.onSelectView?.(show);
-    this.#choose();
-    this.#cancelTypedSave();
-    if (typed) {
-      const timer = setTimeout(() => {
-        this.#typedSave = null;
-        this.#save(text);
-      }, SAVE_DELAY_MS);
-      this.#typedSave = { text, timer };
-    } else this.#save(text);
+    return this.#document.canSave;
   }
 
   /** Save typed text that waits for its delay now. Settles once the host wrote it. Never rejects. */
   flush(): Promise<void> {
-    const typed = this.#typedSave;
-    this.#cancelTypedSave();
-    if (typed) this.#save(typed.text);
-    return this.#writing;
-  }
-
-  #cancelTypedSave(): void {
-    if (this.#typedSave) clearTimeout(this.#typedSave.timer);
-    this.#typedSave = null;
-  }
-
-  /** Hand `text` to the host to write; a failed write keeps the change on screen and says so. */
-  #save(text: string): void {
-    if (!this.canSave) return;
-    const save = ++this.#saves;
-    const previous = this.#writing;
-    this.#writing = (async () => {
-      let failed = false;
-      try {
-        await this.#host.save(text);
-      } catch (error) {
-        failed = true;
-        logger.warn("A Query View could not save its file", { error });
-      }
-      await previous;
-      if (save === this.#saves) this.state.setState({ saveFailed: failed });
-    })();
+    return this.#document.flush();
   }
 
   /**
@@ -607,11 +512,7 @@ export class QueryView extends Component implements HistorySurface {
    * removes them. Answers whether the view took the change.
    */
   setFilters(section: FilterSection, filters: MatchTree | undefined): boolean {
-    const { file, view } = this.state.getState();
-    if (!file || !view) return false;
-    const index = section === "all" ? null : this.#shownIndex();
-    this.#commit(withFilters(file, index, filters), view.name);
-    return true;
+    return this.#document.setFilters(section, filters);
   }
 
   /**
@@ -619,13 +520,7 @@ export class QueryView extends Component implements HistorySurface {
    * whether the view took the change.
    */
   renameProperty(property: string, name: string): boolean {
-    const { file, view } = this.state.getState();
-    if (!file || !view) return false;
-    this.#commit(
-      withDisplayName(file, property, name.trim() || undefined),
-      view.name,
-    );
-    return true;
+    return this.#document.renameProperty(property, name);
   }
 
   /**
@@ -635,25 +530,7 @@ export class QueryView extends Component implements HistorySurface {
    * change.
    */
   saveFormula(name: string, text: string, label?: string): boolean {
-    const { file, view } = this.state.getState();
-    if (!file || !view) return false;
-    let next = withFormula(file, name, text);
-    const property = formulaProperty(name);
-    if (label !== undefined)
-      next = withDisplayName(next, property, label.trim() || undefined);
-    if (
-      !Object.hasOwn(file.formulas ?? {}, name) &&
-      !(view.order ?? []).includes(property)
-    ) {
-      // A view that shows no property chosen shows the defaults; they stay.
-      const shown =
-        visibleProperties(view).length > 0
-          ? (view.order ?? [])
-          : visibleProperties(view, { fallback: true });
-      next = editView(next, view, { order: [...shown, property] });
-    }
-    this.#commit(next, view.name);
-    return true;
+    return this.#document.saveFormula(name, text, label);
   }
 
   /**
@@ -661,10 +538,7 @@ export class QueryView extends Component implements HistorySurface {
    * whether the view took the change.
    */
   removeFormula(name: string): boolean {
-    const { file, view } = this.state.getState();
-    if (!file || !view) return false;
-    this.#commit(removeFormula(file, name), view.name);
-    return true;
+    return this.#document.removeFormula(name);
   }
 
   /** The values a filter condition offers, from the Libraries the view reads. */
@@ -699,21 +573,17 @@ export class QueryView extends Component implements HistorySurface {
 
   /** Show the view named `name`, or the file's first view for `null`. */
   selectView(name: string | null): void {
-    if (name === this.#wanted && this.state.getState().view?.name === name)
-      return;
-    this.#wanted = name;
-    this.#choose();
+    this.#document.selectView(name);
   }
 
   /** The name of the view shown, as the host remembers it. */
   get viewName(): string | null {
-    return this.state.getState().view?.name ?? this.#wanted;
+    return this.#document.viewName;
   }
 
   /** The user picked a view from the view menu. */
   pickView(name: string): void {
-    this.selectView(name);
-    this.#host.onSelectView?.(name);
+    this.#document.pickView(name);
   }
 
   /**
@@ -721,23 +591,20 @@ export class QueryView extends Component implements HistorySurface {
    * text through the host.
    */
   editView(edit: QueryFileViewEdit, timing: EditTiming = {}): void {
-    const { file, view } = this.state.getState();
-    if (!file || !view) return;
-    this.#commit(editView(file, view, edit), view.name, timing);
+    this.#document.editView(edit, timing);
   }
 
+  /** The document shows another file or view: say what keeps it from running, and run it. */
   #choose(): void {
-    const { file } = this.state.getState();
+    const { file, view, wanted } = this.#document;
     if (!file) return;
-    const wanted = this.#wanted;
-    const view = viewNamed(file, wanted) ?? null;
     const problems = file.problems.map(problemText);
     if (view) {
       problems.push(...view.problems.map(problemText), ...layoutProblems(view));
     } else if (wanted !== null && file.views.length > 0) {
       problems.push(m.query_view_problem_no_view({ name: wanted }));
     }
-    this.state.setState({ view, problems });
+    this.state.setState({ file, view, problems });
     if (
       view &&
       problems.length === 0 &&
@@ -819,100 +686,43 @@ export class QueryView extends Component implements HistorySurface {
     };
   }
 
-  /** The place of the view on screen in the file's list. */
-  #shownIndex(): number {
-    const { file, view } = this.state.getState();
-    return file && view ? file.views.indexOf(view) : -1;
-  }
-
-  /** The name of the view at `index` in `file`, or `null` where it has none. */
-  #nameAt(file: QueryFile, index: number): string | null {
-    return file.views[index]?.name ?? null;
-  }
-
   /** Add a view at the end of the list, and show it. Returns its name. */
-  addView(base: string = m.query_view_new_view_name()): string {
-    const { file } = this.state.getState();
-    if (!file) return base;
-    // A new view reads what the view on screen reads.
-    const edit = edits.addView(
-      file,
-      base,
-      this.state.getState().view?.from ?? "annotations",
-    );
-    this.#commit(edit.file, edit.name);
-    return edit.name;
+  addView(base?: string): string {
+    return this.#document.addView(base);
   }
 
   /** Rename a view as the researcher types its name; it saves after a short wait. */
   renameView(index: number, name: string): void {
-    const { file } = this.state.getState();
-    if (!file) return;
-    const shown = this.#shownIndex();
-    const next = edits.renameView(file, index, name);
-    this.#commit(next, this.#nameAt(next, shown), { typed: true });
+    this.#document.renameView(index, name);
   }
 
   /** Copy a view after itself, and show the copy. */
   duplicateView(index: number): void {
-    const { file } = this.state.getState();
-    if (!file) return;
-    const edit = edits.duplicateView(file, index);
-    this.#commit(edit.file, edit.name);
+    this.#document.duplicateView(index);
   }
 
-  /** Delete a view; where it was on screen, the view before it shows. */
+  /** Delete a view; where it was on screen, its neighbour shows. */
   deleteView(index: number): void {
-    const { file } = this.state.getState();
-    if (!file || file.views.length <= 1) return;
-    const shown = this.#shownIndex();
-    const edit = edits.deleteView(file, index);
-    this.#commit(
-      edit.file,
-      shown === index
-        ? edit.name
-        : this.#nameAt(file, shown === -1 ? 0 : shown),
-    );
+    this.#document.deleteView(index);
   }
 
   /** Move a view to `to`; a move to `0` makes it the default view. */
   moveView(from: number, to: number): void {
-    const { file } = this.state.getState();
-    if (!file || from === to) return;
-    const shown = this.#shownIndex();
-    this.#commit(
-      edits.moveView(file, from, to),
-      this.#nameAt(file, shown === -1 ? 0 : shown),
-    );
+    this.#document.moveView(from, to);
   }
 
   /** Set a layout option of a view, or remove it for `undefined`. */
   setViewOption(index: number, key: string, value: unknown): void {
-    const { file } = this.state.getState();
-    if (!file) return;
-    this.#commit(
-      edits.setViewOption(file, index, { key, value }),
-      this.#nameAt(file, this.#shownIndex()),
-    );
+    this.#document.setViewOption(index, key, value);
   }
 
   setViewLayout(index: number, type: string): void {
-    const { file } = this.state.getState();
-    if (!file) return;
-    this.#commit(
-      edits.setViewLayout(file, index, type),
-      this.#nameAt(file, this.#shownIndex()),
-    );
+    this.#document.setViewLayout(index, type);
   }
 
   /** Set the dataset a view reads; what the dataset lacks stays in the file, unused. */
   setViewDataset(index: number, dataset: QueryFileDataset): void {
-    const { file } = this.state.getState();
-    if (!file) return;
-    this.#commit(
-      edits.setViewDataset(file, index, dataset),
-      this.#nameAt(file, this.#shownIndex()),
-    );
+    this.#document.setViewDataset(index, dataset);
   }
 
   /** Run the view's query again, and show its rows. */
