@@ -198,6 +198,13 @@ export interface AnnotationsLayoutHost {
    * clear. Return `false` to stop the key there.
    */
   onEscape?: (event: KeyboardEvent) => false | undefined;
+  /**
+   * Whether a record that came into a shown list after the rows landed shows
+   * as well, in list order, until the rows run again: a new Annotation then
+   * shows as its write starts, as it did in the sidebar before it ran a
+   * query. Grouped rows wait for the next run.
+   */
+  showNewRecords?: boolean;
 }
 
 /** One Attachment's list as the layout last took it, or `null` where its read failed. */
@@ -224,6 +231,11 @@ export class AnnotationsLayout extends Component {
   #shown: readonly string[] = [];
   /** The rows of a query the cards show; `null` while they show whole lists. */
   #rows: readonly LayoutRow[] | null = null;
+  /**
+   * The records the shown lists held when the rows first stood on screen, by
+   * Attachment and key; `null` until they do. A record outside it is new.
+   */
+  #known: ReadonlySet<string> | null = null;
   /** The list each shown Attachment's last read left. */
   readonly #landed = new Map<string, Landed>();
   /** The last read started for each Attachment; a slower one never lands after it. */
@@ -403,15 +415,23 @@ export class AnnotationsLayout extends Component {
    * holds it now, and stays while the rows stand, whatever a write changed on
    * it. A row no list holds is named in `unresolved`.
    *
+   * @param also Attachments whose lists the layout reads beside those the
+   *   rows name, so a record new to one of them can show (`showNewRecords`).
    * @returns as {@link show}.
    */
-  showRows(rows: readonly LayoutRow[]): Promise<boolean> {
+  showRows(
+    rows: readonly LayoutRow[],
+    also: readonly string[] = [],
+  ): Promise<boolean> {
     this.#rows = rows;
+    this.#known = null;
     const groups: CardPlacement[] = rows.flatMap((row) =>
       row.group ? [{ annotationKey: row.annotationKey, group: row.group }] : [],
     );
     this.store.setState({ groups: groups.length > 0 ? groups : null });
-    const attachmentKeys = [...new Set(rows.map((row) => row.attachmentKey))];
+    const attachmentKeys = [
+      ...new Set([...rows.map((row) => row.attachmentKey), ...also]),
+    ];
     const landing = this.#showAttachments(attachmentKeys);
     // The lists that already stand show the new rows at once.
     this.#publish();
@@ -562,7 +582,44 @@ export class AnnotationsLayout extends Component {
       if (record) annotations.push(record);
       else unresolved.push(row.annotationKey);
     }
+    this.#known ??= new Set(records.keys());
+    if (this.#host.showNewRecords && this.store.getState().groups === null)
+      this.#placeNewRecords(annotations, landed, this.#known);
     return { annotations, sources, unresolved };
+  }
+
+  /**
+   * Put each record the lists gained since the rows landed after the record
+   * before it in its own list, so a new Annotation stands where the next run
+   * of the query will put it in reading order.
+   */
+  #placeNewRecords(
+    annotations: AnnotationRecord[],
+    landed: readonly (Landed | undefined)[],
+    known: ReadonlySet<string>,
+  ): void {
+    for (const held of landed) {
+      if (!held) continue;
+      let at = -1;
+      for (const record of held.list.annotations) {
+        const id = `${record.parentKey}\n${record.key}`;
+        const shown = annotations.indexOf(record);
+        if (shown !== -1) {
+          at = shown;
+          continue;
+        }
+        if (known.has(id)) continue;
+        if (at === -1) {
+          // Before the first card of its Attachment, or after every card.
+          const first = annotations.findIndex(
+            ({ parentKey }) => parentKey === record.parentKey,
+          );
+          at = (first === -1 ? annotations.length : first) - 1;
+        }
+        annotations.splice(at + 1, 0, record);
+        at += 1;
+      }
+    }
   }
 
   /** Puts the composed lists on screen, with the drafts their records hold. */
