@@ -2502,7 +2502,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       name: "Shared figures.csv",
       type: "text/csv",
       text: [
-        "pageLabel,colorName",
+        // The header names a property by its label where it has one.
+        `pageLabel,${m.query_view_property_color()}`,
         ...rows.map(
           (row) =>
             `${cell(row.values.pageLabel)},${cell(row.values.colorName)}`,
