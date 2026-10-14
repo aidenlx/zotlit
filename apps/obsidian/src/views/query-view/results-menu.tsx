@@ -31,13 +31,13 @@ export async function copyResults(view: QueryView): Promise<void> {
     new Notice(m.query_view_copied());
   } catch (error) {
     logger.warn("The Query View could not copy its results", { error });
-    new Notice(m.annot_view_copy_failed());
+    new Notice(m.query_view_copy_failed());
   }
 }
 
 /** Save the rows on screen as a CSV file named after the view. */
 export function exportResults(view: QueryView): void {
-  const name = view.state.getState().view?.name || m.query_file_untitled();
+  const name = view.state.getState().view?.name || m.query_view_results_menu();
   saveFile(
     new Blob([toCSV(view.table())], { type: "text/csv" }),
     `${name}.csv`,
@@ -99,6 +99,7 @@ function LimitField({ view, close }: { view: QueryView; close: () => void }) {
         min={1}
         step={1}
         value={text}
+        placeholder={m.query_view_limit_placeholder()}
         data-query-limit=""
         className={cn("zt:w-20", invalid && "mod-error")}
         onChange={(event) => {
@@ -199,7 +200,7 @@ export function ResultsMenu({ view }: { view: QueryView }) {
                 void copyResults(view);
               }}
             >
-              {m.profile_share_copy()}
+              {m.query_view_copy()}
             </MenuRow>
             <MenuRow
               icon="file-down"

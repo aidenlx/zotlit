@@ -84,6 +84,7 @@ import {
   queryFileFolderMenu,
   registerQueryFileView,
 } from "./views/query-view/register";
+import { literatureNotes } from "./views/query-view/table-notes";
 import type { QueryViewDeps } from "./views/query-view/view";
 import { registerQuickSwitch } from "./views/quick-switch/register";
 import { registerReferencesView } from "./views/references/register";
@@ -444,28 +445,6 @@ export default class ZotLitPlugin extends Plugin {
     );
 
     const queryCardFocus = new QueryCardFocus(this.app);
-    registerAnnotView(this, {
-      app: this.app,
-      cardFocus: queryCardFocus,
-      query: services.query,
-      reads: services.zoteroReads,
-      libraryScope: services.libraryScope,
-      liveUpdate: services.localServer,
-      pdfReaders: services.pdfAnnotationEditor,
-      annotations: services.annotationRepository,
-      excerptDisplay: services.excerptDisplay,
-      allowEditing: () => void services.capabilityNotices.allowEditing(),
-      reportBlockedGesture: (attachmentKey) =>
-        services.capabilityNotices.reportBlockedGesture(attachmentKey),
-      libraryTagNames: (annotationKey) =>
-        libraryTagNames(services.zoteroReads, annotationKey),
-      zoteroPref: services.zoteroPref,
-      noteFeature: services.noteFeature,
-      noteIndex: services.noteIndex,
-      itemLookup: services.itemLookup,
-      settings: services.settings,
-    });
-
     const queryViewDeps: QueryViewDeps = {
       app: this.app,
       cardFocus: queryCardFocus,
@@ -481,7 +460,27 @@ export default class ZotLitPlugin extends Plugin {
         libraryTagNames(services.zoteroReads, annotationKey),
       zoteroPref: services.zoteroPref,
       noteFeature: services.noteFeature,
+      literatureNotes: literatureNotes({
+        app: this.app,
+        createProfile: services.createProfile,
+        importProfile: services.importProfile,
+        noteFeature: services.noteFeature,
+        noteIndex: services.noteIndex,
+        zoteroPref: services.zoteroPref,
+        zoteroReads: services.zoteroReads,
+      }),
     };
+    registerAnnotView(this, {
+      ...queryViewDeps,
+      reads: services.zoteroReads,
+      libraryScope: services.libraryScope,
+      excerptDisplay: services.excerptDisplay,
+      liveUpdate: services.localServer,
+      pdfReaders: services.pdfAnnotationEditor,
+      noteIndex: services.noteIndex,
+      itemLookup: services.itemLookup,
+      settings: services.settings,
+    });
     registerQueryFileView(this, queryViewDeps);
     registerQueryBlock(this, queryViewDeps);
 

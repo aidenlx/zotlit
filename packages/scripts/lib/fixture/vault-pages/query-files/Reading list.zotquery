@@ -1,0 +1,12 @@
+views:
+  - type: table
+    name: Reading list
+    from: items
+    sort:
+      - property: title
+        direction: ASC
+    order:
+      - title
+      - firstAuthor
+      - date
+    limit: 100

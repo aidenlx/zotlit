@@ -7,7 +7,7 @@
 // @see apps/obsidian/docs/adr/0069-the-annotation-view-is-the-annotations-layout-of-the-query-view.md
 import { Component } from "obsidian";
 import type { Scope } from "obsidian";
-import { useMemo } from "react";
+import { useLayoutEffect, useMemo } from "react";
 import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
@@ -42,12 +42,15 @@ import type {
   AnnotationsLayoutHost,
 } from "@/views/annot-view/layout";
 import { useAnnotStore } from "@/views/annot-view/store";
+import type { AnnotState } from "@/views/annot-view/store";
 
 import type { QueryCardFocus } from "./card-focus";
+import { CardsLayout } from "./cards-layout";
 import { FilterButton } from "./filter-popover";
 import type { FilterValues } from "./filter-popover";
 import { GroupEditor } from "./group-control";
-import { annotationsLayoutOptions } from "./layouts";
+import { annotationsLayoutOptions, layoutOf } from "./layouts";
+import { ListLayout } from "./list-layout";
 import { groupOptions, sortOptions } from "./properties";
 import { PropertiesMenu } from "./properties-menu";
 import {
@@ -66,13 +69,16 @@ import type {
   QueryFileView,
   QueryFileViewEdit,
 } from "./query-file";
+import type { ShownRecord } from "./record-rows";
 import { ResultsMenu } from "./results-menu";
-import { LAYOUT_FIELDS, LAYOUT_GROUP_PATHS, layoutRows } from "./rows";
+import { groupPaths, layoutFields, layoutRows } from "./rows";
 import type { LayoutGroup } from "./rows";
 import { SearchControl } from "./search-control";
 import { SortEditor } from "./sort-control";
 import { resultTable } from "./table";
 import type { ResultTable } from "./table";
+import { TABLE_FIELDS, TableLayout } from "./table-layout";
+import type { LiteratureNotes } from "./table-notes";
 import { ToolbarPopover } from "./toolbar-popover";
 import * as edits from "./view-edits";
 import { ViewMenu } from "./view-menu";
@@ -90,6 +96,8 @@ export interface QueryViewDeps extends AnnotationsLayoutDeps {
   libraryScope: Pick<LibraryScopeService, "on" | "current">;
   /** The keyboard of a view that a note holds, which the embed and the block share. */
   cardFocus: Pick<QueryCardFocus, "hold">;
+  /** The Table's "Literature note" column. */
+  literatureNotes: LiteratureNotes;
 }
 
 /** What the host gives the Query View, beside the services. */
@@ -142,6 +150,8 @@ export interface QueryViewState {
   keptResults: boolean;
   /** The rows shown, each once however many groups it stands in. */
   count: number;
+  /** The rows in the order they show, a row once in each group it stands in. */
+  records: readonly ShownRecord[];
   /** The records that match the view, before its limit. */
   matched: number;
   /** Every group the rows hold, the shown ones first; empty when ungrouped. */
@@ -159,6 +169,7 @@ const INITIAL_STATE: QueryViewState = {
   filterIssue: null,
   keptResults: false,
   count: 0,
+  records: [],
   matched: 0,
   groups: [],
   truncated: false,
@@ -185,17 +196,21 @@ function problemText(problem: QueryFileProblem): string {
   }
 }
 
-/** What keeps the Annotations Layout from showing a view, beside the parser's own problems. */
+/** What keeps the view's Layout from showing it, beside the parser's own problems. */
 function layoutProblems(view: QueryFileView): string[] {
   const problems: string[] = [];
-  if (view.type !== "" && view.type !== "annotations")
-    problems.push(m.query_view_problem_layout({ type: view.type }));
-  else if (view.from !== undefined && view.from !== "annotations")
-    problems.push(m.query_view_problem_dataset());
-  if (
-    view.groupBy &&
-    !(LAYOUT_GROUP_PATHS as readonly string[]).includes(view.groupBy.property)
-  )
+  const layout = layoutOf(view);
+  if (!layout) problems.push(m.query_view_problem_layout({ type: view.type }));
+  else if (!layout.datasets.includes(view.from ?? "annotations"))
+    problems.push(
+      layout.type === "annotations"
+        ? m.query_view_problem_dataset()
+        : m.query_view_problem_layout_dataset({
+            layout: layout.name(),
+            datasets: layout.datasets.join(", "),
+          }),
+    );
+  if (view.groupBy && !groupPaths(view.from).includes(view.groupBy.property))
     problems.push(
       m.query_view_problem_group({ property: view.groupBy.property }),
     );
@@ -217,6 +232,8 @@ export class QueryView extends Component implements HistorySurface {
   /** The view the host asked for by name; the first view where `null`. */
   #wanted: string | null = null;
   #run: AbortController | null = null;
+  /** Whether the rows on screen are drawn as Annotation Cards. */
+  #cardsShown = false;
   /** The lists the cards on screen come from, held while they show. */
   #hold: Disposable | null = null;
   /**
@@ -233,6 +250,12 @@ export class QueryView extends Component implements HistorySurface {
   /** The rows on screen, each once, in the order they show. */
   #rows: readonly QueryViewRow[] = [];
   #subscriptions: DisposableStack | null = null;
+  /** Whether the view draws into an element; until then no card waits to show. */
+  #rendered = false;
+  /** The cards the list last drew, as the layout's store held them. */
+  #drawnCards: AnnotState["annotations"] | undefined = undefined;
+  /** What waits for the list to draw the cards the store holds now. */
+  #drawWaiters: (() => void)[] = [];
 
   constructor(deps: QueryViewDeps, host: QueryViewHost) {
     super();
@@ -265,9 +288,49 @@ export class QueryView extends Component implements HistorySurface {
       this.#layout.stepHistory(direction, attachmentKey);
   }
 
+  /** What the Table reads beside the rows: the queries of its child rows and its notes. */
+  get tableDeps(): Pick<QueryViewDeps, "query" | "literatureNotes"> {
+    return this.#deps;
+  }
+
   /** Settles once the cards show the last run the view started. Never rejects. */
   get settled(): Promise<void> {
     return this.#settled.then(() => this.#layout.read);
+  }
+
+  /**
+   * Settles once the cards of the last run are drawn on the page in `el`, as
+   * Export to PDF needs before it prints: a print renders under `.print`.
+   * Elsewhere it settles as {@link settled}. Never rejects.
+   */
+  async shownIn(el: HTMLElement): Promise<void> {
+    await this.settled;
+    // A List or Cards layout draws its rows from the state, with no list of
+    // cards to wait for.
+    if (el.closest(".print") !== null && this.#cardsShown)
+      await this.#cardsDrawn();
+  }
+
+  /**
+   * The list drew these cards. Preact subscribes a list to its store only
+   * after a paint, so a hidden print window can draw a store change later
+   * than the read that made it.
+   */
+  drewCards(cards: AnnotState["annotations"]): void {
+    this.#drawnCards = cards;
+    if (cards !== this.#layout.store.getState().annotations) return;
+    const waiters = this.#drawWaiters;
+    this.#drawWaiters = [];
+    for (const resolve of waiters) resolve();
+  }
+
+  #cardsDrawn(): Promise<void> {
+    if (
+      !this.#rendered ||
+      this.#drawnCards === this.#layout.store.getState().annotations
+    )
+      return Promise.resolve();
+    return new Promise((resolve) => this.#drawWaiters.push(resolve));
   }
 
   override onload(): void {
@@ -295,11 +358,16 @@ export class QueryView extends Component implements HistorySurface {
     this.#hold = null;
     this.#shownRequest = null;
     this.#runRequest = null;
+    this.#rendered = false;
+    const waiters = this.#drawWaiters;
+    this.#drawWaiters = [];
+    for (const resolve of waiters) resolve();
   }
 
   /** Draw the toolbar and the cards into `el`. Call it once the view has loaded. */
   render(el: HTMLElement): void {
     el.addClass("zt-query-view");
+    this.#rendered = true;
     this.#layout.render(el, <QueryViewBody view={this} />);
   }
 
@@ -430,9 +498,24 @@ export class QueryView extends Component implements HistorySurface {
       view &&
       problems.length === 0 &&
       this.#runKey(file, view) === this.#runRequest
-    )
+    ) {
+      // Another Layout of the same query draws the rows on screen as they are.
+      if (this.#shownRequest === this.#runRequest) this.#redraw(view);
       return;
+    }
     this.refresh();
+  }
+
+  /** Draw the rows on screen as Annotation Cards, or let the cards go, as the view's Layout asks. */
+  #redraw(view: QueryFileView): void {
+    const cards = drawsCards(view);
+    if (cards === this.#cardsShown) return;
+    const rows = this.state.getState().records.map(({ row, group }) => ({
+      annotationKey: row.indexedKey,
+      attachmentKey: row.attachmentIndexedKey ?? row.indexedKey,
+      ...(group && { group }),
+    }));
+    this.#settled = this.#show(this.#shownRequest, cards ? rows : null);
   }
 
   /**
@@ -471,7 +554,8 @@ export class QueryView extends Component implements HistorySurface {
       }),
       fields: [
         ...new Set([
-          ...LAYOUT_FIELDS,
+          ...layoutFields(view.from ?? "annotations"),
+          ...(layoutOf(view)?.type === "table" ? TABLE_FIELDS : []),
           ...visibleProperties(view, { fallback: true }),
         ]),
       ],
@@ -647,11 +731,17 @@ export class QueryView extends Component implements HistorySurface {
           diagnostic: null,
           filterIssue: null,
           count: shown.count,
+          records: shown.rows.map(({ annotationKey, group }) => ({
+            row: byKey.get(annotationKey)!,
+            ...(group && { group }),
+          })),
           matched: result.matchedCount,
           groups: shown.groups,
           truncated: result.truncated,
         });
-        await this.#show(key, shown.rows);
+        // The Layout may have changed while the query ran.
+        const current = this.state.getState().view ?? view;
+        await this.#show(key, drawsCards(current) ? shown.rows : null);
         this.#shownViewName = view.name;
         return;
       }
@@ -692,16 +782,24 @@ export class QueryView extends Component implements HistorySurface {
     });
   }
 
-  /** Put these rows on screen, holding their lists before the old ones go. */
+  /**
+   * Put these rows on screen, holding their lists before the old ones go.
+   * `null` rows stand for a Layout that draws no Annotation Cards: it shows
+   * the rows from the state, and holds no list.
+   */
   async #show(
     key: string | null,
-    rows: Parameters<AnnotationsLayout["showRows"]>[0] = [],
+    rows: Parameters<AnnotationsLayout["showRows"]>[0] | null = [],
   ): Promise<void> {
     const previous = this.#hold;
     this.#shownRequest = key;
     if (key === null) {
       this.#shownViewName = null;
       this.#rows = [];
+      this.state.setState({ records: [] });
+    }
+    this.#cardsShown = key !== null && rows !== null;
+    if (key === null || rows === null) {
       this.#hold = null;
       this.#layout.clear();
       previous?.[Symbol.dispose]();
@@ -807,7 +905,7 @@ function ReadOnlyNote({ view }: { view: QueryView }) {
   if (view.canSave) return null;
   return (
     <p
-      className="zt:mx-3 zt:mt-1 zt:mb-0 zt:text-xs zt:text-(--text-faint)"
+      className="zt:mx-3 zt:mt-1 zt:mb-0 zt:text-xs zt:text-(--text-faint) zt:in-[.print]:hidden"
       data-query-read-only=""
     >
       {m.query_view_read_only()}
@@ -815,9 +913,33 @@ function ReadOnlyNote({ view }: { view: QueryView }) {
   );
 }
 
+/** Whether the view's Layout draws live Annotation Cards. */
+function drawsCards(view: QueryFileView): boolean {
+  return layoutOf(view)?.type === "annotations";
+}
+
+/** The rows, drawn by the shown view's Layout. */
+function LayoutBody({ view }: { view: QueryView }) {
+  const type = useQueryViewState(view, (s) =>
+    s.view ? layoutOf(s.view)?.type : undefined,
+  );
+  switch (type) {
+    case "list":
+      return <ListLayout view={view} />;
+    case "cards":
+      return <CardsLayout view={view} />;
+    case "table":
+      return <TableLayout view={view} />;
+    default:
+      return <AnnotationsCards view={view} />;
+  }
+}
+
 /** The cards, drawn with the shown view's Annotations layout options. */
 function AnnotationsCards({ view }: { view: QueryView }) {
   const shown = useQueryViewState(view, (s) => s.view);
+  const cards = useAnnotStore((s) => s.annotations);
+  useLayoutEffect(() => view.drewCards(cards), [view, cards]);
   const options = annotationsLayoutOptions(shown);
   const display = useMemo<CardDisplay>(
     () => ({
@@ -885,7 +1007,7 @@ function GroupButton({ view }: { view: QueryView }) {
     >
       <GroupEditor
         value={{ groupBy: current.groupBy, groupOrder: current.groupOrder }}
-        options={groupOptions()}
+        options={groupOptions(current.from)}
         groups={groups}
         onChange={(next) =>
           view.editView({
@@ -900,9 +1022,11 @@ function GroupButton({ view }: { view: QueryView }) {
 
 function QueryViewBody({ view }: { view: QueryView }) {
   return (
-    <div className="zt:flex zt:h-full zt:flex-col">
+    <div className="zt:flex zt:h-full zt:flex-col zt:in-[.print]:h-auto">
+      {/* The toolbar is a size container: on a narrow pane its buttons show
+          icons only. Export to PDF prints the rows without it. */}
       <div
-        className="zt:flex zt:items-center zt:gap-2 zt:border-b zt:border-(--background-modifier-border) zt:px-3 zt:py-1 zt:text-sm"
+        className="zt:@container zt:flex zt:flex-wrap zt:items-center zt:gap-x-2 zt:gap-y-1 zt:border-b zt:border-(--background-modifier-border) zt:px-3 zt:py-1 zt:text-sm zt:in-[.print]:hidden"
         role="toolbar"
       >
         <ViewMenu view={view} />
@@ -918,7 +1042,7 @@ function QueryViewBody({ view }: { view: QueryView }) {
       <ReadOnlyNote view={view} />
       <Problems view={view} />
       <NoResults view={view} />
-      <AnnotationsCards view={view} />
+      <LayoutBody view={view} />
     </div>
   );
 }

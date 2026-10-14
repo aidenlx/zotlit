@@ -53,7 +53,7 @@ export function sidebarSortOptions(): PropertyOption[] {
 
 /** The properties the sidebar groups by: colour and tag. */
 export function sidebarGroupOptions(): PropertyOption[] {
-  return groupOptions().filter(
+  return groupOptions("annotations").filter(
     (option) => option.path === "colorName" || option.path === "tags[]",
   );
 }

@@ -122,6 +122,7 @@ afterEach(() => {
 async function mount(
   answers: QueryViewOutcome[],
   onWrite?: (text: string) => void,
+  { notes = {} }: { notes?: Record<string, string> } = {},
 ) {
   setMockPlatform({ isMacOS: true });
   cleanup.defer(resetMockPlatform);
@@ -133,6 +134,21 @@ async function mount(
   const run = vi.fn((_request: QueryViewRequest, _signal: AbortSignal) =>
     Promise.resolve(answers.shift() ?? result([])),
   );
+  const notesChanged = emitter();
+  const literatureNotes = {
+    find: (itemKey: string) => {
+      const path = notes[itemKey];
+      return path === undefined
+        ? null
+        : { path, basename: path.replace(/\.md$/, "") };
+    },
+    on: notesChanged.on,
+    open: vi.fn(),
+    create: vi.fn(async (itemKey: string) => {
+      notes[itemKey] = `${itemKey}.md`;
+      notesChanged.emit("changed");
+    }),
+  };
   const deps = {
     app: editorApp() as unknown as App,
     reads: {
@@ -193,6 +209,7 @@ async function mount(
     libraryTagNames: () => Promise.resolve([]),
     allowEditing: vi.fn(),
     reportBlockedGesture: vi.fn(),
+    literatureNotes,
   } as unknown as QueryViewDeps;
   const save = vi.fn((_text: string) => {});
   const onSelectView = vi.fn((_name: string) => {});
@@ -229,6 +246,7 @@ async function mount(
     save,
     onSelectView,
     saved,
+    literatureNotes,
   };
 }
 
@@ -333,12 +351,14 @@ it("says why when the query cannot read Zotero's data, rather than looking empty
 it("opens a file with a broken view and names the problem without running it", async () => {
   const { view, el, run, settle } = await mount([]);
   await act(() =>
-    view.setText("views:\n  - type: table\n    name: Items\n    from: items\n"),
+    view.setText(
+      "views:\n  - type: kanban\n    name: Items\n    from: items\n",
+    ),
   );
   await settle();
   expect(run).not.toHaveBeenCalled();
   expect(el.querySelector("[data-query-problems]")?.textContent).toContain(
-    "table",
+    "kanban",
   );
 });
 
@@ -805,4 +825,403 @@ it("saves a new order and a new limit to the file, and runs the view again with 
   await settle();
   expect(saved[1]).not.toContain("limit: 5");
   expect(run.mock.calls.at(-1)![0]).toMatchObject({ limit: null });
+});
+
+/** The rows a List or Cards layout shows, as their Indexed Keys. */
+function shownRows(el: HTMLElement): (string | null)[] {
+  return [...el.querySelectorAll("[data-query-row]")].map((node) =>
+    node.getAttribute("data-query-row"),
+  );
+}
+
+function item(key: string, title: string, year: string): QueryViewRow {
+  return {
+    indexedKey: key,
+    values: { title, "date.year": year, tags: ["thesis"] },
+  };
+}
+
+it("lists the Items of an items view, with the visible properties in their order", async () => {
+  const { view, el, run, settle } = await mount([
+    result([
+      item("ITEMAAAA", "Ten simple rules", "2021"),
+      item("ITEMBBBB", "Reading at scale", "2019"),
+    ]),
+  ]);
+  await act(() =>
+    view.setText(`views:
+  - type: list
+    name: Sources
+    from: items
+    order:
+      - date.year
+      - title
+`),
+  );
+  await settle();
+
+  expect(view.state.getState().problems).toEqual([]);
+  const [request] = run.mock.calls[0]!;
+  expect(request.from).toBe("items");
+  expect(request.fields).toEqual(
+    expect.arrayContaining(["date.year", "title"]),
+  );
+  expect(request.fields).not.toContain("color");
+  expect(shownRows(el)).toEqual(["ITEMAAAA", "ITEMBBBB"]);
+  expect(
+    [...el.querySelectorAll("[data-query-row]")].map((n) => n.textContent),
+  ).toEqual(["2021, Ten simple rules", "2019, Reading at scale"]);
+  expect(cards(el)).toEqual([]);
+});
+
+it("switches an Annotations view to Cards and to List, and keeps its rows, filters, sort and grouping", async () => {
+  const { view, el, run, settle, saved } = await mount([
+    result([
+      tagged("ANNOTAAA", ["figure", "method"]),
+      tagged("ANNOTBBB", ["method"]),
+    ]),
+  ]);
+  await act(() =>
+    view.setText(`views:
+  - type: annotations
+    name: Tags
+    from: annotations
+    filters: colorName == "yellow"
+    sort:
+      - property: dateAdded
+        direction: DESC
+    groupBy:
+      property: tags[]
+      direction: ASC
+    order:
+      - tags
+`),
+  );
+  await settle();
+  expect(cards(el)).toEqual(["ANNOTAAA", "ANNOTAAA", "ANNOTBBB"]);
+
+  await act(() => view.setViewLayout(0, "cards"));
+  await settle();
+  expect(cards(el)).toEqual([]);
+  expect(shownRows(el)).toEqual(["ANNOTAAA", "ANNOTAAA", "ANNOTBBB"]);
+  expect(headings(el)).toEqual(["figure", "method"]);
+  expect(el.querySelector("[data-query-count]")?.textContent).toBe("2 results");
+
+  await act(() => view.setViewLayout(0, "list"));
+  await settle();
+  expect(shownRows(el)).toEqual(["ANNOTAAA", "ANNOTAAA", "ANNOTBBB"]);
+  expect(headings(el)).toEqual(["figure", "method"]);
+
+  // Each switch saves the layout alone; the query stays as it was.
+  const text = saved.at(-1)!;
+  expect(text).toContain("type: list");
+  expect(text).toContain('filters: colorName == "yellow"');
+  expect(text).toContain("property: dateAdded");
+  expect(text).toContain("property: tags[]");
+  expect(
+    new Set(run.mock.calls.map(([request]) => JSON.stringify(request))),
+  ).toHaveLength(1);
+
+  // Back on the Annotations layout, the same rows are cards again.
+  await act(() => view.setViewLayout(0, "annotations"));
+  await settle();
+  expect(cards(el)).toEqual(["ANNOTAAA", "ANNOTAAA", "ANNOTBBB"]);
+  expect(shownRows(el)).toEqual([]);
+});
+
+it("draws the List and Cards options at once, and saves them to the file", async () => {
+  const { view, el, run, settle, saved } = await mount([
+    result([item("ITEMAAAA", "Ten simple rules", "2021")]),
+  ]);
+  await act(() =>
+    view.setText(`views:
+  - type: cards
+    name: Sources
+    from: items
+    order:
+      - title
+      - date.year
+`),
+  );
+  await settle();
+  const card = el.querySelector("[data-query-row]")!;
+  expect(card.textContent).toBe("Ten simple rulesdate.year2021");
+  expect(
+    el.querySelector("[data-card-size]")?.getAttribute("data-card-size"),
+  ).toBe("200");
+
+  await act(() => view.setViewOption(0, "cardSize", 320));
+  expect(
+    el.querySelector("[data-card-size]")?.getAttribute("data-card-size"),
+  ).toBe("320");
+  expect(saved.at(-1)).toContain("cardSize: 320");
+
+  await act(() => view.setViewLayout(0, "list"));
+  await settle();
+  expect(el.querySelector("ul[data-query-markers='bullet']")).not.toBeNull();
+  await act(() => view.setViewOption(0, "markers", "number"));
+  await act(() => view.setViewOption(0, "separator", " · "));
+  expect(el.querySelector("ol[data-query-markers='number']")).not.toBeNull();
+  expect(el.querySelector("[data-query-row]")?.textContent).toBe(
+    "Ten simple rules · 2021",
+  );
+  await act(() => view.setViewOption(0, "indentProperties", true));
+  expect(
+    [...el.querySelectorAll("[data-query-row] span")].map((n) => n.textContent),
+  ).toEqual(["Ten simple rules", "2021", "2021"]);
+  const text = saved.at(-1)!;
+  expect(text).toContain("markers: number");
+  expect(text).toContain("indentProperties: true");
+  expect(run).toHaveBeenCalledTimes(1);
+});
+
+const TABLE_FILE = `views:
+  - type: table
+    name: Reading list
+    from: items
+    order:
+      - title
+      - date
+`;
+
+function itemRow(
+  key: string,
+  title: string,
+  attachments: string[] = [],
+): QueryViewRow {
+  return {
+    indexedKey: key,
+    values: {
+      title,
+      // A date as ZotLit Query gives it; the Table shows it as Zotero does.
+      date: {
+        kind: "year",
+        value: null,
+        year: 2014,
+        month: null,
+        day: null,
+        text: null,
+        raw: "2014-00-00 2014",
+      },
+      itemType: "journalArticle",
+      "attachments[].indexedKey": attachments,
+    },
+  };
+}
+
+/** The Table's rows as text: each cell of each row, the header first. */
+function tableText(el: HTMLElement): string[][] {
+  return [...el.querySelectorAll("[data-query-table] tr")].map((tr) =>
+    [...tr.querySelectorAll("th, td")].map(
+      (cell) => cell.textContent?.trim() ?? "",
+    ),
+  );
+}
+
+it("shows a view of Items as a Table: one row for each Item, a column for each visible property", async () => {
+  const { view, el, run, settle } = await mount([
+    result([
+      itemRow("ITEMAAAA", "Ten simple rules"),
+      itemRow("ITEMBBBB", "Deep learning"),
+    ]),
+  ]);
+  await act(() => view.setText(TABLE_FILE));
+  await settle();
+
+  expect(view.state.getState().problems).toEqual([]);
+  expect(run.mock.calls[0]![0]).toMatchObject({ from: "items" });
+  expect(run.mock.calls[0]![0].fields).toEqual(
+    expect.arrayContaining(["title", "date"]),
+  );
+  expect(tableText(el)).toEqual([
+    ["", "Title", "Date", "Literature note"],
+    ["", "Ten simple rules", "2014", "Create"],
+    ["", "Deep learning", "2014", "Create"],
+  ]);
+  expect(cards(el)).toEqual([]);
+  expect(el.querySelector("[data-query-count]")?.textContent).toBe("2 results");
+});
+
+it("expands an Item row into its Attachments, and an Attachment row into its Annotations", async () => {
+  const { view, el, run, settle } = await mount([
+    result([
+      itemRow("ITEMAAAA", "Ten simple rules", ["PDFAAAAA"]),
+      itemRow("ITEMBBBB", "Deep learning"),
+    ]),
+    result([
+      {
+        indexedKey: "PDFAAAAA",
+        values: {
+          title: "Full text PDF",
+          "annotations[].indexedKey": ["ANNOTAAA"],
+        },
+      },
+    ]),
+    result([
+      {
+        indexedKey: "ANNOTAAA",
+        values: {
+          text: "Rule 1: know your audience",
+          color: "#ffd400",
+          pageLabel: "3",
+        },
+      },
+    ]),
+  ]);
+  await act(() => view.setText(TABLE_FILE));
+  await settle();
+
+  // Only an Item with Attachments can expand.
+  expect(
+    [...el.querySelectorAll("[data-query-expand]")].map((node) =>
+      node.getAttribute("data-query-expand"),
+    ),
+  ).toEqual(["item:ITEMAAAA"]);
+
+  await act(async () => {
+    el.querySelector<HTMLElement>(
+      '[data-query-expand="item:ITEMAAAA"]',
+    )!.click();
+  });
+  await act(async () => {});
+  expect(run.mock.calls[1]![0]).toMatchObject({
+    from: "attachments",
+    filter: 'item.indexedKey == "ITEMAAAA"',
+  });
+  await act(async () => {
+    el.querySelector<HTMLElement>(
+      '[data-query-expand="attachment:PDFAAAAA"]',
+    )!.click();
+  });
+  await act(async () => {});
+  expect(run.mock.calls[2]![0]).toMatchObject({
+    from: "annotations",
+    filter: 'attachment.indexedKey == "PDFAAAAA"',
+  });
+  expect(tableText(el)).toEqual([
+    ["", "Title", "Date", "Literature note"],
+    ["", "Ten simple rules", "2014", "Create"],
+    ["", "Full text PDF"],
+    ["", "Rule 1: know your audiencePage 3"],
+    ["", "Deep learning", "2014", "Create"],
+  ]);
+
+  // Collapsing the Item hides every row under it.
+  await act(async () => {
+    el.querySelector<HTMLElement>(
+      '[data-query-expand="item:ITEMAAAA"]',
+    )!.click();
+  });
+  expect(tableText(el)).toHaveLength(3);
+});
+
+it("links an Item's Literature Note, and creates one where it has none, then links it", async () => {
+  const { view, el, settle, literatureNotes } = await mount(
+    [
+      result([
+        itemRow("ITEMAAAA", "Ten simple rules"),
+        itemRow("ITEMBBBB", "Deep learning"),
+      ]),
+    ],
+    undefined,
+    { notes: { ITEMAAAA: "Rougier 2014.md" } },
+  );
+  await act(() => view.setText(TABLE_FILE));
+  await settle();
+
+  const link = el.querySelector<HTMLElement>(
+    '[data-query-note="Rougier 2014.md"]',
+  )!;
+  expect(link.textContent).toBe("Rougier 2014");
+  await act(() => link.click());
+  expect(literatureNotes.open).toHaveBeenCalledWith(
+    expect.objectContaining({ path: "Rougier 2014.md" }),
+    expect.anything(),
+  );
+
+  await act(async () => {
+    el.querySelector<HTMLElement>(
+      '[data-query-create-note="ITEMBBBB"]',
+    )!.click();
+  });
+  expect(literatureNotes.create).toHaveBeenCalledWith("ITEMBBBB");
+  expect(el.querySelector("[data-query-create-note]")).toBeNull();
+  expect(el.querySelector('[data-query-note="ITEMBBBB.md"]')?.textContent).toBe(
+    "ITEMBBBB",
+  );
+});
+
+it("sorts, groups and searches the Table by Item fields", async () => {
+  const { view, el, run, settle } = await mount([
+    result([
+      {
+        ...itemRow("ITEMAAAA", "Ten simple rules"),
+        values: {
+          ...itemRow("ITEMAAAA", "Ten simple rules").values,
+          itemType: "journalArticle",
+        },
+      },
+      {
+        ...itemRow("ITEMBBBB", "Deep learning"),
+        values: {
+          ...itemRow("ITEMBBBB", "Deep learning").values,
+          itemType: "book",
+        },
+      },
+    ]),
+  ]);
+  await act(() =>
+    view.setText(`views:
+  - type: table
+    name: Reading list
+    from: items
+    sort:
+      - property: title
+        direction: DESC
+    groupBy:
+      property: itemType
+      direction: ASC
+    order:
+      - title
+`),
+  );
+  await settle();
+
+  expect(view.state.getState().problems).toEqual([]);
+  expect(run.mock.calls[0]![0]).toMatchObject({
+    from: "items",
+    sort: [{ field: "title", direction: "desc" }],
+  });
+  expect(tableText(el)).toEqual([
+    ["", "Title", "Literature note"],
+    ["Journal Article"],
+    ["", "Ten simple rules", "Create"],
+    ["Book"],
+    ["", "Deep learning", "Create"],
+  ]);
+
+  await act(() =>
+    el.querySelector<HTMLElement>('[data-query-toolbar="search"]')!.click(),
+  );
+  const input = el.querySelector<HTMLInputElement>("[data-query-search]")!;
+  await act(() => {
+    input.value = "deep";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(tableText(el)).toEqual([
+    ["", "Title", "Literature note"],
+    ["Book"],
+    ["", "Deep learning", "Create"],
+  ]);
+});
+
+it("offers Item fields to sort and group a view of Items by", async () => {
+  const { view, el, settle } = await mount([result([])]);
+  await act(() => view.setText(TABLE_FILE));
+  await settle();
+  await act(() =>
+    el.querySelector<HTMLElement>('[data-query-toolbar="group"]')!.click(),
+  );
+  expect(document.body.textContent).toContain("Item type");
+  expect(document.body.textContent).not.toContain("Attachment");
 });
