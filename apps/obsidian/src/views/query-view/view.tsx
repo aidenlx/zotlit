@@ -84,6 +84,11 @@ export interface QueryViewHost {
    * cannot save; the change then shows until the file is read again.
    */
   save?: (text: string) => void;
+  /**
+   * Whether a change in the view stays. Where it is `false`, the toolbar says
+   * that a change is not saved.
+   */
+  canSave?: () => boolean;
   /** Open the Query File; the toolbar shows a link button when the host gives it. */
   openFile?: (event: MouseEvent) => void;
 }
@@ -235,6 +240,11 @@ export class QueryView extends Component {
   setText(text: string): void {
     this.state.setState({ file: parseQueryFile(text) });
     this.#choose();
+  }
+
+  /** Whether a change in the view stays. */
+  get canSave(): boolean {
+    return this.#host.canSave?.() ?? true;
   }
 
   /**
@@ -619,6 +629,21 @@ function NoResults({ view }: { view: QueryView }) {
   );
 }
 
+function ReadOnlyNote({ view }: { view: QueryView }) {
+  // A host can tell where it stands only once it is on the page, which is
+  // before a run lands; each run asks again.
+  useQueryViewState(view, (s) => s.phase);
+  if (view.canSave) return null;
+  return (
+    <p
+      className="zt:mx-3 zt:mt-1 zt:mb-0 zt:text-xs zt:text-(--text-faint)"
+      data-query-read-only=""
+    >
+      {m.query_view_read_only()}
+    </p>
+  );
+}
+
 /** The cards, drawn with the shown view's Annotations layout options. */
 function AnnotationsCards({ view }: { view: QueryView }) {
   const shown = useQueryViewState(view, (s) => s.view);
@@ -719,6 +744,7 @@ function QueryViewBody({ view }: { view: QueryView }) {
         <SearchControl />
         <OpenFileButton view={view} />
       </div>
+      <ReadOnlyNote view={view} />
       <Problems view={view} />
       <NoResults view={view} />
       <AnnotationsCards view={view} />

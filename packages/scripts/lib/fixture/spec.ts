@@ -172,6 +172,12 @@ export interface FixtureItem {
    * that region, so the note stands for work a reader has already done.
    */
   literatureNoteStaleAnnotations?: boolean;
+  /**
+   * End this Item's Literature Note with a Query Block of the Item's own
+   * Annotations (`item == this.item`), so the note shows a Query View whose
+   * `this` comes from its `zotero-key`.
+   */
+  literatureNoteQueryBlock?: boolean;
   title: string;
   /**
    * The Item's **Venue**. The builder resolves which per-type field receives
@@ -458,6 +464,7 @@ export const ITEMS: readonly FixtureItem[] = [
     creators: [author("Ursula", "Nafula")],
     dateModified: "2025-02-21 12:00:00",
     collectionIDs: [1],
+    literatureNoteQueryBlock: true,
   },
   {
     itemID: 28,
