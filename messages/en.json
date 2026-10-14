@@ -2683,6 +2683,7 @@
       }
     }
   ],
+  "query_view_warning_outside_library_scope": "This item's library is not in the library scope, so the view cannot show it. Add the library to the library scope in ZotLit settings.",
   "query_view_failed": "This view cannot show results.",
   "query_view_problem_invalid_yaml": "This file is not valid YAML. {message}",
   "query_view_problem_not_a_map": "This file must hold keys such as \"views\".",

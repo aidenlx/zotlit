@@ -321,6 +321,38 @@ it("holds the lists it shows, and lets the old ones go only after the new ones",
   expect(released).toEqual([["PDFAAAAA"]]);
 });
 
+it("says the Item's library is outside the library scope, rather than only that nothing matches", async () => {
+  const outside = result([]);
+  if (outside.kind !== "result") throw new Error("unreachable");
+  const { view, el, settle } = await mount([
+    {
+      kind: "result",
+      result: {
+        ...outside.result,
+        warnings: [
+          {
+            code: "key-outside-target-libraries",
+            severity: "warning",
+            message:
+              'Indexed Key "RUGIER24G4815" names group:4815, which is outside the Target Libraries.',
+            hint: "Use library=group:4815 to include group:4815.",
+            report: [],
+          } as never,
+        ],
+      },
+    },
+  ]);
+  await act(() => view.setText(FILE));
+  await settle();
+
+  expect(
+    el.querySelector('[data-query-warning="key-outside-target-libraries"]')
+      ?.textContent,
+  ).toBe(
+    "This item's library is not in the library scope, so the view cannot show it. Add the library to the library scope in ZotLit settings.",
+  );
+});
+
 it("says why when the query cannot read Zotero's data, rather than looking empty", async () => {
   const { view, el, settle } = await mount([
     {
