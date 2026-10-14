@@ -68,6 +68,8 @@ export class QueryFileDocument {
     null;
   /** The host's last write, which settles once it is done. Never rejects. */
   #writing: Promise<void> = Promise.resolve();
+  /** How many writes the host has to do or to finish. */
+  #pending = 0;
   /** How many saves the document started, so that only the last one's result shows. */
   #saves = 0;
 
@@ -328,12 +330,15 @@ export class QueryFileDocument {
     this.#typedSave = null;
   }
 
-  /** Hand `text` to the host to write; a failed write keeps the change on screen and says so. */
+  /**
+   * Hand `text` to the host to write once its earlier writes are done, so the
+   * saves land in the order of the edits. A failed write keeps the change on
+   * screen and says so.
+   */
   #save(text: string): void {
     if (!this.canSave) return;
     const save = ++this.#saves;
-    const previous = this.#writing;
-    this.#writing = (async () => {
+    const write = async () => {
       let failed = false;
       try {
         await this.#host.save(text);
@@ -341,9 +346,11 @@ export class QueryFileDocument {
         failed = true;
         logger.warn("A Query View could not save its file", { error });
       }
-      await previous;
+      this.#pending--;
       if (save === this.#saves) this.#events.saveFailed(failed);
-    })();
+    };
+    // With no write in progress, the host starts to write at once.
+    this.#writing = this.#pending++ === 0 ? write() : this.#writing.then(write);
   }
 
   /** Show the view the host asks for, at its place where the view on screen has its name. */
