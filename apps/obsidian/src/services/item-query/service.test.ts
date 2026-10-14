@@ -1087,6 +1087,38 @@ describe("typed Query View call", () => {
     });
   });
 
+  it("binds this to the Query Context of the request", async () => {
+    using scenario = openScenarioDatabase({ storage: "temp-directory" });
+    seedBulkLibrary(scenario.sqlite, 30);
+    const { service } = setup(scenario);
+    await using _owned = service;
+    const item = `${bulkItemKey(7)}g${BULK_LIBRARY.groupID}`;
+    const request = {
+      from: "items",
+      libraries: bulkLibraries,
+      fields: ["title"],
+      filter: "indexedKey == this.item.indexedKey",
+    } as const;
+
+    const bound = await service.run(
+      { ...request, context: { item } },
+      signal(),
+    );
+    const unbound = await service.run(request, signal());
+
+    expect(bound).toMatchObject({
+      kind: "result",
+      result: {
+        returnedCount: 1,
+        rows: [{ indexedKey: item, values: { title: "Bulk item 00007" } }],
+      },
+    });
+    expect(unbound).toMatchObject({
+      kind: "failed",
+      diagnostic: { code: "unbound-context" },
+    });
+  });
+
   it("stops a cancelled call with a cancelled outcome and keeps other queries running", async () => {
     using scenario = openScenarioDatabase({ storage: "temp-directory" });
     seedBulkLibrary(scenario.sqlite, 20000);

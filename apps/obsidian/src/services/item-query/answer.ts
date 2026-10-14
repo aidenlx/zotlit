@@ -283,6 +283,7 @@ export function answerView(
       fields: view.fields,
       sort: view.sort,
       limit: view.limit ?? null,
+      context: view.context,
       libraries: available.map(({ libraryID, selector }) => ({
         libraryID,
         groupID: selector.type === "group" ? selector.groupID : null,
