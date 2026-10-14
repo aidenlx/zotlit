@@ -5,7 +5,14 @@ import { parseIndexedKey } from "@zotlit/db";
 import { parseExpressionAst } from "@zotlit/filter-expression";
 import type { BinaryOperator, ExpressionNode } from "@zotlit/filter-expression";
 
-import type { Callee, Fault, Receiver, Role, Span } from "./fault";
+import type {
+  Callee,
+  FaultedFormulaRead,
+  Fault,
+  Receiver,
+  Role,
+  Span,
+} from "./fault";
 export type { Span } from "./fault";
 import { BUILT_IN_NAMES, itemFilterRegistry } from "./fields";
 import type {
@@ -178,18 +185,6 @@ export interface FormulaRead<Item, Needs> {
   readonly root: FilterNode<Item>;
   /** What hydration loads before the Formula runs, with the Formulas it reads. */
   readonly needs: readonly Needs[];
-}
-
-/**
- * A `formula.<name>` at `at` that reads a Formula with a mistake. The Fault is
- * in that Formula, so the reader gives this problem in place of a Fault of its
- * own text.
- */
-export interface FaultedFormulaRead {
-  readonly kind: "reads-faulted-formula";
-  /** The Formula with the mistake. */
-  readonly name: string;
-  readonly at: Span;
 }
 
 /**

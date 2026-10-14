@@ -281,9 +281,9 @@ const FORMULA_READ_FAULTS: ReadonlySet<string> = new Set([
 function formulaIssues(outcome: QueryViewOutcome): NameDictionary<string> {
   const faults =
     outcome.kind === "result"
-      ? outcome.result.formulaFaults
+      ? outcome.result.formulaDiagnostics
       : outcome.kind === "failed"
-        ? outcome.formulaFaults
+        ? outcome.formulaDiagnostics
         : undefined;
   return nameDictionary(
     Object.entries(faults ?? {}).map(([name, diagnostic]) => [

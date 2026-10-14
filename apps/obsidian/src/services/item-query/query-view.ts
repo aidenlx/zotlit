@@ -4,7 +4,7 @@
 // and result are plain JSON: they cross the ZoteroReads worker seam as they are.
 
 import type {
-  FormulaFaults,
+  FormulaDiagnostics,
   GroupValue,
   ItemQuery,
   QueryContext,
@@ -89,7 +89,7 @@ export type QueryViewResult = {
    * The Formulas that the query left out, each with its Diagnostic: a
    * Formula with a mistake, or one that reads such a Formula.
    */
-  readonly formulaFaults?: FormulaFaults;
+  readonly formulaDiagnostics?: FormulaDiagnostics;
 } & (
   | {
       readonly rows: readonly QueryViewRow[];
@@ -117,6 +117,6 @@ export type QueryViewOutcome =
       readonly kind: "failed";
       readonly diagnostic: Diagnostic;
       /** As in the result, where the filter reads a Formula with a mistake. */
-      readonly formulaFaults?: FormulaFaults;
+      readonly formulaDiagnostics?: FormulaDiagnostics;
     }
   | { readonly kind: "cancelled" };

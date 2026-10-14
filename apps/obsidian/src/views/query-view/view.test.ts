@@ -9,7 +9,7 @@ import { act } from "preact/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { nameDictionary } from "@zotlit/item-query";
-import type { FormulaFaults, QueryContext } from "@zotlit/item-query";
+import type { FormulaDiagnostics, QueryContext } from "@zotlit/item-query";
 
 import { Effect } from "@/lib/effect";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
@@ -1829,17 +1829,17 @@ it("runs a view with every Formula of the file, and shows the values of those it
 });
 
 /** The Diagnostic of a Formula that ZotLit Query left out. */
-type Diagnostic = FormulaFaults[string];
+type Diagnostic = FormulaDiagnostics[string];
 
 /** `outcome` with the Formulas that ZotLit Query left out. */
 function withFaults(
   outcome: QueryViewOutcome,
   faults: Record<string, Diagnostic>,
 ): QueryViewOutcome {
-  const formulaFaults = nameDictionary(Object.entries(faults));
+  const formulaDiagnostics = nameDictionary(Object.entries(faults));
   if (outcome.kind === "result")
-    return { ...outcome, result: { ...outcome.result, formulaFaults } };
-  if (outcome.kind === "failed") return { ...outcome, formulaFaults };
+    return { ...outcome, result: { ...outcome.result, formulaDiagnostics } };
+  if (outcome.kind === "failed") return { ...outcome, formulaDiagnostics };
   return outcome;
 }
 

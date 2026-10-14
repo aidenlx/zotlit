@@ -1171,7 +1171,7 @@ describe("typed Query View call", () => {
     expect(outcome.result.warnings).toEqual([]);
     expect(
       Object.fromEntries(
-        Object.entries(outcome.result.formulaFaults ?? {}).map(
+        Object.entries(outcome.result.formulaDiagnostics ?? {}).map(
           ([name, { code }]) => [name, code],
         ),
       ),
@@ -1188,7 +1188,7 @@ describe("typed Query View call", () => {
         message: "The filter reads formula.next, which has a mistake.",
         location: { argument: "filter" },
       },
-      formulaFaults: {
+      formulaDiagnostics: {
         year: { code: "unknown-property" },
         next: { code: "reads-faulted-formula" },
       },

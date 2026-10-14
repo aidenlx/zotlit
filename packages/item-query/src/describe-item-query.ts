@@ -247,7 +247,7 @@ const PROJECTION_PATH_GRAMMAR = {
 function describeFields(dataset: QueryDataset): SchemaField[] {
   const capability = (path: string): SchemaCapabilities["filter"] => {
     const plan = dataset.planFilter(path);
-    if (!("root" in plan)) return null;
+    if ("kind" in plan) return null;
     const type = plan.root.valueType;
     return type === "unknown" ? "any" : type === "null" ? null : type;
   };
