@@ -29,7 +29,8 @@ import { itemTypeLabel } from "@/services/profile-selection/describe";
 import { useAnnotStore } from "@/views/annot-view/store";
 
 import type { QueryLayout } from "./layouts";
-import { formulaIssue } from "./query-file";
+import { displayName, formulaIssue } from "./query-file";
+import type { QueryFile } from "./query-file";
 import { cell } from "./table";
 import type { LiteratureNotes } from "./table-notes";
 import type { QueryView } from "./view";
@@ -210,6 +211,17 @@ export function columnLabel(property: string): string {
     default:
       return property;
   }
+}
+
+/**
+ * The name a view shows for `property`: its Display Name in `file`, else its
+ * column header.
+ */
+export function propertyLabel(
+  file: QueryFile | null,
+  property: string,
+): string {
+  return (file && displayName(file, property)) ?? columnLabel(property);
 }
 
 /** One value as the text of a cell. */
@@ -461,6 +473,7 @@ export function TableLayout({ view }: { view: QueryView }) {
   const shown = useStore(view.state, (s) => s.view);
   const rows = useStore(view.state, (s) => s.records);
   const formulaIssues = useStore(view.state, (s) => s.formulaIssues);
+  const file = useStore(view.state, (s) => s.file);
   const search = useAnnotStore((s) => s.filterQuery)
     .trim()
     .toLowerCase();
@@ -504,14 +517,14 @@ export function TableLayout({ view }: { view: QueryView }) {
                   data-query-formula-issue={issue ?? undefined}
                 >
                   {issue === null ? (
-                    columnLabel(property)
+                    propertyLabel(file, property)
                   ) : (
                     <span
                       className="zt:inline-flex zt:items-center zt:gap-1 zt:text-(--text-error)"
                       {...tooltipAttrs(issue)}
                     >
                       <Icon name="alert-triangle" size={14} />
-                      {columnLabel(property)}
+                      {propertyLabel(file, property)}
                     </span>
                   )}
                 </th>

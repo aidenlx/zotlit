@@ -64,6 +64,7 @@ import {
   removeFormula,
   serializeQueryFile,
   viewFilter,
+  withDisplayName,
   withFilters,
   withFormula,
 } from "./query-file";
@@ -85,7 +86,7 @@ import { SearchControl } from "./search-control";
 import { SortEditor } from "./sort-control";
 import { resultTable } from "./table";
 import type { ResultTable } from "./table";
-import { TABLE_FIELDS, TableLayout } from "./table-layout";
+import { propertyLabel, TABLE_FIELDS, TableLayout } from "./table-layout";
 import type { LiteratureNotes } from "./table-notes";
 import { ToolbarPopover } from "./toolbar-popover";
 import * as edits from "./view-edits";
@@ -580,15 +581,29 @@ export class QueryView extends Component implements HistorySurface {
   }
 
   /**
-   * Save the Formula `name` with its text. A new Formula also shows in the
-   * view on screen, after its other properties. Answers whether the host
-   * saves the change.
+   * Save the Display Name of `property`; an empty name removes it. Answers
+   * whether the host saves the change.
    */
-  saveFormula(name: string, text: string): boolean {
+  renameProperty(property: string, name: string): boolean {
+    const { file } = this.state.getState();
+    if (!file || !this.writable) return false;
+    this.commit(withDisplayName(file, property, name.trim() || undefined));
+    return true;
+  }
+
+  /**
+   * Save the Formula `name` with its text and, where given, its Display Name;
+   * an empty Display Name removes it. A new Formula also shows in the view on
+   * screen, after its other properties. Answers whether the host saves the
+   * change.
+   */
+  saveFormula(name: string, text: string, label?: string): boolean {
     const { file, view } = this.state.getState();
     if (!file || !view || !this.writable) return false;
     let next = withFormula(file, name, text);
     const property = formulaProperty(name);
+    if (label !== undefined)
+      next = withDisplayName(next, property, label.trim() || undefined);
     if (
       !Object.hasOwn(file.formulas ?? {}, name) &&
       !(view.order ?? []).includes(property)
@@ -718,10 +733,11 @@ export class QueryView extends Component implements HistorySurface {
    * the view's order: what "Copy to clipboard" and "Export CSV…" write.
    */
   table(): ResultTable {
-    const { view } = this.state.getState();
+    const { file, view } = this.state.getState();
     return resultTable(
       this.#rows,
       view ? visibleProperties(view, { fallback: true }) : [],
+      (property) => propertyLabel(file, property),
     );
   }
 

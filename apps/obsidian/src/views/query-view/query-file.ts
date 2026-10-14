@@ -1,8 +1,8 @@
 // The one Query File parser and serializer, shared by the Query File tab, the
 // Query File embed, the Query Block and the sidebar. A Query File is YAML in
 // the shape of an Obsidian `.base` file; the parser keeps every key it does
-// not read (`summaries`, `properties`, and keys it does not know) in its
-// place, so a save writes them back.
+// not read (`summaries`, and keys it does not know) in its place, so a save
+// writes them back.
 //
 // @see apps/obsidian/docs/adr/0068-query-files-are-a-zotlit-file-type-embedded-through-the-private-embed-registry.md
 import { parse, stringify } from "yaml";
@@ -88,6 +88,13 @@ export interface QueryFile {
    * Formula as the property `formula.<name>`.
    */
   readonly formulas?: Readonly<Record<string, string>>;
+  /**
+   * The settings of each property, by the text of its `order` entry: a bare
+   * Projection Path for a field, `formula.<name>` for a Formula. Its
+   * `displayName` is the property's Display Name; the parser keeps the other
+   * keys as the file holds them.
+   */
+  readonly properties?: Readonly<Record<string, unknown>>;
   /** The views, the default view first. */
   readonly views: readonly QueryFileView[];
   readonly problems: readonly QueryFileProblem[];
@@ -285,6 +292,16 @@ export function parseQueryFile(text: string): QueryFile {
         value: formulas,
       });
   }
+  if (value.properties !== undefined) {
+    const { properties } = value;
+    if (isMap(properties)) file.properties = properties;
+    else
+      problems.push({
+        code: "invalid-value",
+        key: "properties",
+        value: properties,
+      });
+  }
   if (value.views !== undefined && !Array.isArray(value.views))
     problems.push({ code: "invalid-value", key: "views", value: value.views });
   file.views = Array.isArray(value.views) ? value.views.map(readView) : [];
@@ -372,23 +389,28 @@ export function editView(
 
 /** Writes a Query File's text. A key the parser kept stays where it was. */
 export function serializeQueryFile(file: QueryFile): string {
-  // New filters for all views go first, and new Formulas before the views,
-  // where a `.base` file has them.
+  // New filters for all views go first, and new Formulas and properties
+  // before the views, where a `.base` file has them.
   let source: Entries = Object.hasOwn(file.source, "filters")
     ? file.source
     : { filters: undefined, ...file.source };
-  if (!Object.hasOwn(source, "formulas")) {
+  for (const added of ["formulas", "properties"]) {
+    if (Object.hasOwn(source, added)) continue;
     const keys = Object.keys(source);
     const at = keys.includes("views") ? keys.indexOf("views") : keys.length;
+    const before = source;
     source = Object.fromEntries([
-      ...keys.slice(0, at).map((key) => [key, source[key]]),
-      ["formulas", undefined],
-      ...keys.slice(at).map((key) => [key, source[key]]),
+      ...keys.slice(0, at).map((key) => [key, before[key]]),
+      [added, undefined],
+      ...keys.slice(at).map((key) => [key, before[key]]),
     ]);
   }
   const entries = merged(source, {
     filters: writeFilter(file.filters) ?? file.source.filters,
     formulas: file.formulas ? { ...file.formulas } : file.source.formulas,
+    properties: file.properties
+      ? { ...file.properties }
+      : file.source.properties,
     views: file.views.map(writeView),
   });
   return stringify(entries, { lineWidth: 0 });
@@ -431,9 +453,34 @@ export function withFormula(
   };
 }
 
+/** The file without its top-level `key`. */
+function withoutKey(
+  file: QueryFile,
+  key: "formulas" | "properties",
+): QueryFile {
+  const { [key]: _dropped, ...source } = file.source;
+  const { [key]: _none, ...rest } = file;
+  return { ...rest, source };
+}
+
+/** The file with `properties` as its property settings; an empty map leaves the file without the key. */
+function withProperties(file: QueryFile, properties: Entries): QueryFile {
+  if (Object.keys(properties).length === 0)
+    return withoutKey(file, "properties");
+  return {
+    ...file,
+    properties,
+    problems: file.problems.filter(
+      (problem) =>
+        !(problem.code === "invalid-value" && problem.key === "properties"),
+    ),
+  };
+}
+
 /**
  * The file without the Formula `name`, which also leaves the visible
- * properties of every view. The `formulas` key goes with the last Formula.
+ * properties of every view and the file's property settings. The `formulas`
+ * key goes with the last Formula.
  */
 export function removeFormula(file: QueryFile, name: string): QueryFile {
   const { [name]: _removed, ...formulas } = file.formulas ?? {};
@@ -444,10 +491,49 @@ export function removeFormula(file: QueryFile, name: string): QueryFile {
       next = editView(next, view, {
         order: view.order.filter((entry) => entry !== property),
       });
+  if (next.properties && Object.hasOwn(next.properties, property)) {
+    const { [property]: _settings, ...properties } = next.properties;
+    next = withProperties(next, properties);
+  }
   if (Object.keys(formulas).length > 0) return { ...next, formulas };
-  const { formulas: _dropped, ...source } = next.source;
-  const { formulas: _none, ...rest } = next;
-  return { ...rest, source };
+  return withoutKey(next, "formulas");
+}
+
+/**
+ * The Display Name of `property`, as its `order` entry names it; `undefined`
+ * where the file gives it none.
+ */
+export function displayName(
+  file: QueryFile,
+  property: string,
+): string | undefined {
+  const settings = file.properties?.[property];
+  if (!Object.hasOwn(file.properties ?? {}, property) || !isMap(settings))
+    return undefined;
+  const { displayName: name } = settings;
+  return typeof name === "string" && name !== "" ? name : undefined;
+}
+
+/**
+ * The file with the Display Name of `property` set to `name`; `undefined`
+ * removes it. The property's other settings stay; a property left with none
+ * leaves `properties`, and the key goes with the last one.
+ */
+export function withDisplayName(
+  file: QueryFile,
+  property: string,
+  name: string | undefined,
+): QueryFile {
+  const properties: Entries = { ...file.properties };
+  const entry = properties[property];
+  const current: Entries = isMap(entry) ? entry : {};
+  const { displayName: _old, ...settings } = current;
+  // A name that changes keeps its place among the property's settings.
+  if (name !== undefined)
+    properties[property] = { ...current, displayName: name };
+  else if (Object.keys(settings).length > 0) properties[property] = settings;
+  else delete properties[property];
+  return withProperties(file, properties);
 }
 
 /** The text of a new Query File: one Annotations view of the whole library. */

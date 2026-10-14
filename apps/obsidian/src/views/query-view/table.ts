@@ -41,13 +41,17 @@ export function cell(value: QueryViewValue | undefined): string {
   return names.length > 0 ? names.join(" ") : JSON.stringify(value);
 }
 
-/** The table of `rows`, in their order, with the columns `order` names. */
+/**
+ * The table of `rows`, in their order, with the columns `order` names. The
+ * header names each column by `label`, else by its property.
+ */
 export function resultTable(
   rows: readonly QueryViewRow[],
   order: readonly string[],
+  label: (property: string) => string = (property) => property,
 ): ResultTable {
   return {
-    header: [...order],
+    header: order.map(label),
     body: rows.map((row) =>
       order.map((property) => cell(row.values[property])),
     ),

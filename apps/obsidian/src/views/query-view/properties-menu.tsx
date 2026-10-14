@@ -2,7 +2,8 @@
 // view shows, drag them into order, or type a Projection Path to add one. The
 // order saves to the view's `order` key. A Formula of the file shows as the
 // property `formula.<name>`; "Add formula" and its row's edit button open the
-// Formula dialog.
+// Formula dialog. Each row shows its property's Display Name, and its rename
+// button opens the dialog that sets it.
 import { useMemo, useState } from "react";
 import { useStore } from "zustand";
 
@@ -13,9 +14,10 @@ import { useObsidianApp } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
+import { DisplayNameModal } from "./display-name-dialog";
 import { FormulaModal } from "./formula-dialog";
-import { formulaIssue, formulaProperty } from "./query-file";
-import type { QueryFileDataset } from "./query-file";
+import { displayName, formulaIssue, formulaProperty } from "./query-file";
+import type { QueryFile, QueryFileDataset } from "./query-file";
 import { NotUsed } from "./sort-control";
 import { TOOLBAR_LABEL } from "./toolbar-popover";
 import type { QueryView } from "./view";
@@ -45,7 +47,8 @@ function reordered(
 
 export function PropertiesMenu({ view }: { view: QueryView }) {
   const current = useStore(view.state, (s) => s.view);
-  const formulas = useStore(view.state, (s) => s.file?.formulas);
+  const file = useStore(view.state, (s) => s.file);
+  const formulas = file?.formulas;
   const issues = useStore(view.state, (s) => s.formulaIssues);
   const app = useObsidianApp();
   if (!current) return null;
@@ -77,6 +80,12 @@ export function PropertiesMenu({ view }: { view: QueryView }) {
               ? (name) => new FormulaModal(app, view, name).open()
               : null
           }
+          file={file}
+          rename={
+            view.writable
+              ? (property) => new DisplayNameModal(app, view, property).open()
+              : null
+          }
         />
       </Chooser.Popup>
     </Chooser>
@@ -90,6 +99,8 @@ function PropertyList({
   formulas,
   issues,
   openFormula,
+  file,
+  rename,
 }: {
   dataset: QueryFileDataset;
   order: readonly string[];
@@ -100,6 +111,10 @@ function PropertyList({
   issues: Readonly<Record<string, string>>;
   /** Open the Formula dialog: `null` adds one. `null` where the view cannot save. */
   openFormula: ((name: string | null) => void) | null;
+  /** The file whose Display Names the rows show. */
+  file: QueryFile | null;
+  /** Open the dialog that renames a property. `null` where the view cannot save. */
+  rename: ((property: string) => void) | null;
 }) {
   const query = useChooserQuery().trim();
   const [dragging, setDragging] = useState<string | null>(null);
@@ -193,7 +208,15 @@ function PropertyList({
             onDragEnd={() => setDragging(null)}
           >
             <span className="zt:inline-flex zt:max-w-full zt:items-center zt:gap-1 zt:align-middle">
-              {row.label}
+              <PropertyName file={file} property={row.value} />
+              {rename && (
+                <RowButton
+                  icon="text-cursor-input"
+                  tooltip={m.query_view_property_rename()}
+                  data-query-property-rename={row.value}
+                  onClick={() => rename(row.value)}
+                />
+              )}
               <FormulaRowParts
                 property={row.value}
                 formulas={formulas}
@@ -241,22 +264,59 @@ function FormulaRowParts({
         </span>
       )}
       {openFormula && (
-        <button
-          type="button"
-          className="clickable-icon zt:p-0.5"
+        <RowButton
+          icon="pencil"
+          tooltip={m.query_view_formula_edit()}
           data-query-formula-edit={name}
-          {...tooltipAttrs(m.query_view_formula_edit())}
-          onClick={(event) => {
-            event.stopPropagation();
-            event.currentTarget
-              .closest<HTMLElement>("[popover]")
-              ?.hidePopover();
-            openFormula(name);
-          }}
-        >
-          <Icon name="pencil" size={14} />
-        </button>
+          onClick={() => openFormula(name)}
+        />
       )}
     </>
+  );
+}
+
+/** A row's property: its Display Name before its path, else its path alone. */
+function PropertyName({
+  file,
+  property,
+}: {
+  file: QueryFile | null;
+  property: string;
+}) {
+  const name = file ? displayName(file, property) : undefined;
+  if (name === undefined) return <>{property}</>;
+  return (
+    <>
+      <span data-query-property-name="">{name}</span>
+      <span className="zt:text-(--text-faint)">{property}</span>
+    </>
+  );
+}
+
+/** A button at the end of a row, which closes the popover before it acts. */
+function RowButton({
+  icon,
+  tooltip,
+  onClick,
+  ...data
+}: {
+  icon: string;
+  tooltip: string;
+  onClick: () => void;
+} & Record<`data-${string}`, string>) {
+  return (
+    <button
+      type="button"
+      className="clickable-icon zt:p-0.5"
+      {...data}
+      {...tooltipAttrs(tooltip)}
+      onClick={(event) => {
+        event.stopPropagation();
+        event.currentTarget.closest<HTMLElement>("[popover]")?.hidePopover();
+        onClick();
+      }}
+    >
+      <Icon name={icon} size={14} />
+    </button>
   );
 }

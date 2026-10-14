@@ -4,9 +4,11 @@ import {
   editView,
   NEW_QUERY_FILE_LIMIT,
   allViewsDataset,
+  displayName,
   locateFilterFault,
   newQueryFileText,
   removeFormula,
+  withDisplayName,
   withFilters,
   withFormula,
   parseQueryFile,
@@ -538,5 +540,106 @@ custom: kept
     const text = serializeQueryFile(file);
     expect(text).not.toContain("formulas");
     expect(parseQueryFile(text).views[0]!.order).toEqual(["title"]);
+  });
+});
+
+describe("display names", () => {
+  const NAMED = `formulas:
+  year: date.year
+properties:
+  title:
+    displayName: Work
+    width: 200
+  formula.year:
+    displayName: Year of source
+  note.date:
+    displayName: Note date
+views:
+  - type: table
+    name: Items
+    from: items
+    order:
+      - title
+      - formula.year
+custom: kept
+`;
+
+  it("reads the Display Name of each property by its order entry, and a note. prefix names nothing", () => {
+    const file = parseQueryFile(NAMED);
+    expect(file.problems).toEqual([]);
+    expect(displayName(file, "title")).toBe("Work");
+    expect(displayName(file, "formula.year")).toBe("Year of source");
+    // A Bases-style note. prefix is not a Projection Path: it names no field.
+    expect(displayName(file, "date")).toBeUndefined();
+    expect(displayName(file, "item.title")).toBeUndefined();
+  });
+
+  it("names a properties key that is not a map as a problem", () => {
+    const file = parseQueryFile(`properties: [title]
+views:
+  - type: list
+    name: Items
+    from: items
+`);
+    expect(displayName(file, "title")).toBeUndefined();
+    expect(file.problems).toEqual([
+      { code: "invalid-value", key: "properties", value: ["title"] },
+    ]);
+  });
+
+  it("writes a changed Display Name in place, and keeps the keys it does not know", () => {
+    const file = withDisplayName(parseQueryFile(NAMED), "title", "Source");
+    expect(displayName(file, "title")).toBe("Source");
+    expect(serializeQueryFile(file)).toBe(
+      NAMED.replace("displayName: Work", "displayName: Source"),
+    );
+  });
+
+  it("adds a Display Name after the others, and a properties key before the views of a file that had none", () => {
+    expect(
+      serializeQueryFile(
+        withDisplayName(parseQueryFile(NAMED), "date", "Published"),
+      ),
+    ).toBe(
+      NAMED.replace("views:", "  date:\n    displayName: Published\nviews:"),
+    );
+    expect(
+      serializeQueryFile(
+        withDisplayName(
+          parseQueryFile(
+            "views:\n  - type: list\n    name: Items\n    from: items\n",
+          ),
+          "title",
+          "Work",
+        ),
+      ),
+    ).toBe(
+      "properties:\n  title:\n    displayName: Work\nviews:\n  - type: list\n    name: Items\n    from: items\n",
+    );
+  });
+
+  it("removes a Display Name, its property entry when nothing else is left, and the properties key with the last one", () => {
+    const cleared = withDisplayName(parseQueryFile(NAMED), "title", undefined);
+    expect(displayName(cleared, "title")).toBeUndefined();
+    expect(serializeQueryFile(cleared)).toBe(
+      NAMED.replace("    displayName: Work\n", ""),
+    );
+    const single =
+      "properties:\n  title:\n    displayName: Work\nviews:\n  - type: list\n    name: Items\n    from: items\n";
+    expect(
+      serializeQueryFile(
+        withDisplayName(parseQueryFile(single), "title", undefined),
+      ),
+    ).toBe("views:\n  - type: list\n    name: Items\n    from: items\n");
+  });
+
+  it("removes the properties entry of a removed Formula", () => {
+    const file = removeFormula(parseQueryFile(NAMED), "year");
+    expect(displayName(file, "formula.year")).toBeUndefined();
+    expect(serializeQueryFile(file)).toBe(
+      NAMED.replace("formulas:\n  year: date.year\n", "")
+        .replace("  formula.year:\n    displayName: Year of source\n", "")
+        .replace("      - formula.year\n", ""),
+    );
   });
 });

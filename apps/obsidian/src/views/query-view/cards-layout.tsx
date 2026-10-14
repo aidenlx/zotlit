@@ -11,6 +11,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import type { QueryLayout } from "./layouts";
 import type { QueryFileView } from "./query-file";
 import { RecordGroupHeading, useRecordGroups } from "./record-rows";
+import { propertyLabel } from "./table-layout";
 import type { QueryView } from "./view";
 
 export const CARDS_LAYOUT: QueryLayout = {
@@ -61,6 +62,7 @@ export function addCardsOptions(
 export function CardsLayout({ view }: { view: QueryView }) {
   const { properties, groups } = useRecordGroups(view);
   const options = cardsLayoutOptions(useStore(view.state, (s) => s.view));
+  const file = useStore(view.state, (s) => s.file);
   return (
     <div
       className="zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:pt-1 zt:pb-11"
@@ -93,7 +95,7 @@ export function CardsLayout({ view }: { view: QueryView }) {
                     {rest.map((text, at) => (
                       <div key={properties[at + 1]} className="zt:min-w-0">
                         <div className="zt:truncate zt:text-xs zt:text-(--text-faint)">
-                          {properties[at + 1]}
+                          {propertyLabel(file, properties[at + 1]!)}
                         </div>
                         <div className="zt:truncate">{text}</div>
                       </div>
