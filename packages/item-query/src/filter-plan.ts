@@ -157,6 +157,7 @@ type FilterFailure = Extract<
       | "unknown"
       | "arity"
       | "argument-type"
+      | "operand-type"
       | "unreadable";
   }
 > & { readonly at: Span };
@@ -278,6 +279,50 @@ const argumentType = <Item>(
   at: { from: args[wrong.index]!.from, to: args[wrong.index]!.to },
   ...wrong,
 });
+
+const operandType = <Item>(
+  operator: string,
+  operands: readonly FilterNode<Item>[],
+  at: Span,
+): Extract<Fault, { readonly kind: "operand-type" }> => ({
+  kind: "operand-type",
+  operator,
+  operands: operands.map(receiver),
+  at: { from: at.from, to: at.to },
+});
+
+/**
+ * Whether an arithmetic operator takes operands of these types: `+` takes a
+ * string on either side, two numbers, two lists, or a date and a duration;
+ * `-` two numbers or a date and a duration; `*`, `/`, and `%` two numbers.
+ * Every other operator takes every type.
+ */
+function takesOperands(
+  operator: BinaryOperator,
+  left: Exclude<FilterValueType, "null">,
+  right: Exclude<FilterValueType, "null">,
+): boolean {
+  const numbers = left === "number" && right === "number";
+  switch (operator) {
+    case "+":
+      return (
+        numbers ||
+        left === "string" ||
+        right === "string" ||
+        (left === "list" && right === "list") ||
+        (left === "date" && right === "duration") ||
+        (left === "duration" && right === "date")
+      );
+    case "-":
+      return numbers || (left === "date" && right === "duration");
+    case "*":
+    case "/":
+    case "%":
+      return numbers;
+    default:
+      return true;
+  }
+}
 
 const unreadable = (
   name: string,
@@ -477,6 +522,13 @@ class Validator<Item, Needs> {
         return this.#identifier(ast.name, span);
       case "unary": {
         const operand = this.node(ast.operand);
+        if (
+          ast.operator === "-" &&
+          isDefinite(operand.valueType) &&
+          operand.valueType !== "number"
+        ) {
+          fail(operandType("-", [operand], span));
+        }
         return {
           ...span,
           kind: "unary",
@@ -546,6 +598,13 @@ class Validator<Item, Needs> {
             };
             [left, right] = field === left ? [keyField, key] : [key, keyField];
           }
+        }
+        if (
+          isDefinite(left.valueType) &&
+          isDefinite(right.valueType) &&
+          !takesOperands(ast.operator, left.valueType, right.valueType)
+        ) {
+          fail(operandType(ast.operator, [left, right], span));
         }
         const equality = ast.operator === "==" || ast.operator === "!=";
         const ordering = ["<", "<=", ">", ">="].includes(ast.operator);

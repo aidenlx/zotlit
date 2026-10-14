@@ -251,18 +251,26 @@ CUSTOM FIELDS
   built-in field when one has that name.
 
 ERRORS AND EMPTY VALUES
-  Invalid syntax, unknown names, and wrong argument counts or types fail the
-  query, also inside an if branch. Read diagnostic.report for the marked text
+  Invalid syntax, unknown names, wrong argument counts or types, and
+  arithmetic on types that the operator never takes, such as title * 2,
+  fail the query, also inside an if branch. Read diagnostic.report for the marked text
   and recovery action; suggestions gives available corrections.
   A comparison of incompatible types can produce a warning on a successful
   query. Read warnings before you report an empty result. A warning describes
   the marked comparison, which can be part of a larger filter. Equality
   warnings require proof that the operands cannot both be null; ordering
   different types is never true. A filter without warnings can still match no rows.
-  A value that is missing or unreadable for one row is null for that row.
-  null is false in a filter, so !x is true when x is null. This selects the
-  Items from 2000 on and the Items without a year:
+  A value that is missing for one row is null for that row. A value that one
+  row cannot compute is an error: a text that number(), date(), or
+  duration() cannot read, an ordering of two different types, a result that
+  is not a finite number, or an argument out of range. An error passes
+  through each operator, method, and function; isType("error") is true for
+  it. null and an error are false in a filter, so !x is true when x is null
+  or an error, and an error equals no value. This selects the Items from
+  2000 on and the Items without a year:
     ${filter("!(date.year < 2000)")}
+  This selects the Items whose volume is not a number:
+    ${filter('number(volume).isType("error")')}
 
 SEE ALSO
   The downloaded catalog's functions, methods, and properties list every
@@ -334,7 +342,10 @@ FORMULAS
   A Formula reads the fields of the selected dataset, and this.item and
   this.attachment when the query binds them. It gives a boolean, a number,
   a string, a list, or a date; a date has the shape of the date field, and
-  a timestamp is ISO 8601 text. A value that one row cannot compute is null.
+  a timestamp is ISO 8601 text. A missing value is null. A value that one
+  row cannot compute is an error object, such as
+  {"kind":"error","code":"unparseable-text","message":"..."}; match on
+  code and show message. The catalog's formulas.error lists the codes.
   A Formula that fields never reads is not computed; the answer then has
   the warning unused-formula. A mistake in a Formula fails the query:
   location.argument is formulas and location.path is the Formula name.

@@ -5449,6 +5449,45 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ],
     });
 
+    // A value that the Item cannot compute is an Error Value cell; a filter
+    // that meets one excludes the Item.
+    const failed = await query({
+      filter: `indexedKey == "${annotationItem.key}"`,
+      formulas: JSON.stringify({ volumes: "number(title)" }),
+      fields: "formula.volumes",
+    });
+    expect(failed).toMatchObject({
+      ok: true,
+      rows: [
+        {
+          indexedKey: annotationItem.key,
+          values: {
+            "formula.volumes": {
+              kind: "error",
+              code: "unparseable-text",
+              message: `number() cannot read ${JSON.stringify(annotationItem.title)} as a number.`,
+            },
+          },
+        },
+      ],
+    });
+    const excluded = await query({
+      filter: `indexedKey == "${annotationItem.key}" && number(title) > 0`,
+    });
+    expect(excluded).toMatchObject({ ok: true, rows: [] });
+
+    const arithmetic = await query({
+      formulas: JSON.stringify({ twice: "title * 2" }),
+      fields: "formula.twice",
+    });
+    expect(arithmetic).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "wrong-operand-type",
+        location: { argument: "formulas", path: "twice" },
+      },
+    });
+
     const wrong = await query({
       formulas: JSON.stringify({ short: "title.nope()" }),
       fields: "formula.short",

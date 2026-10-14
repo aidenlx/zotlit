@@ -83,6 +83,14 @@ export type Fault =
       readonly expected: string;
     }
   | { readonly kind: "unreadable"; readonly name: string; readonly at: Span }
+  | {
+      /** Arithmetic or unary minus on operands of types it never takes. */
+      readonly kind: "operand-type";
+      readonly operator: string;
+      /** The operands in order: one for unary minus, two for a binary operator. */
+      readonly operands: readonly Receiver[];
+      readonly at: Span;
+    }
   /** A Formula name that is not an identifier. */
   | { readonly kind: "formula-name"; readonly name: string }
   | {
