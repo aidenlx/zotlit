@@ -112,11 +112,22 @@ export function typeNoun(type: string): string {
   return `${/^[aeiou]/.test(type) ? "an" : "a"} ${type}`;
 }
 
+/**
+ * The sentence of an operator that cannot use its operands, for an Error
+ * Value and for the plan-time Fault alike.
+ */
+export function operandMessage(
+  operator: string,
+  found: readonly string[],
+): string {
+  return `The operator ${operator} cannot use ${found.map(typeNoun).join(" and ")}.`;
+}
+
 /** The message of an Error Value, from its fact. */
 export function renderEvaluationFault(fault: EvaluationFault): string {
   switch (fault.code) {
     case "wrong-operand-type":
-      return `The operator ${fault.operator} cannot use ${fault.found.map(typeNoun).join(" and ")}.`;
+      return operandMessage(fault.operator, fault.found);
     case "wrong-argument-type":
       return `Argument ${fault.index + 1} of ${fault.callee} is ${typeNoun(fault.found)}; ${fault.callee} takes ${fault.expected.join(" or ")} there.`;
     case "wrong-subject-type":
