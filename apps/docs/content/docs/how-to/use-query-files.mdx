@@ -54,10 +54,10 @@ Select the view menu, then <UiLabel name={m.query_view_configure_view()} />. Eac
 | Setting                                     | What it does                                                                                    |
 | ------------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | <UiLabel name={m.query_view_view_name()} /> | The name in the view menu and after `#` in an embed.                                            |
-| <UiLabel name={m.query_view_dataset()} />   | The Zotero records that each row shows: annotations, attachments, or items.                     |
+| <UiLabel name={m.query_view_dataset()} />   | What each row is: one annotation, one attachment, or one item.                                  |
 | <UiLabel name={m.query_view_layout()} />    | How the view draws the rows. The list offers only the layouts that can show the chosen records. |
 
-When you change the records, the view keeps its filters, sort, and grouping where the new records have the same properties. A notice names the ones that no longer apply. They stay in the file and apply again when you switch back.
+When you change the rows, the sort, grouping, and properties stay in the file. The view ignores the ones that the new rows do not have. <UiLabel name={m.query_view_sort()} />, <UiLabel name={m.query_view_group()} />, and <UiLabel name={m.query_view_properties()} /> mark each of them <UiLabel name={m.query_view_not_used()} />, and a note under the toolbar names them. When you switch back to rows that have them, the view uses them again.
 
 Each layout adds its own options:
 
@@ -111,7 +111,7 @@ Select <UiLabel name={m.query_view_sort()} />, then <UiLabel name={m.query_view_
 
 The properties depend on the records of the view:
 
-| Records     | Sort properties                                                                                                                                |
+| Rows        | Sort properties                                                                                                                                |
 | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | Annotations | Position in the file, page, dates, color, annotation type, and the paper's title, first author, and dates, and the file's title and date added |
 | Attachments | Title, dates, and the paper's title, first author, and date                                                                                    |
@@ -121,7 +121,7 @@ The properties depend on the records of the view:
 
 Select <UiLabel name={m.query_view_group()} />, then choose a property in <UiLabel name={m.query_view_group_by()} />:
 
-| Records     | Group properties                                                                                                                                                                                                                                                |
+| Rows        | Group properties                                                                                                                                                                                                                                                |
 | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Annotations | <UiLabel name={m.query_view_property_item()} />, <UiLabel name={m.query_view_property_attachment()} />, <UiLabel name={m.query_view_property_color()} />, <UiLabel name={m.query_view_property_tag()} />, <UiLabel name={m.query_view_property_collection()} /> |
 | Attachments | <UiLabel name={m.query_view_property_item()} />, <UiLabel name={m.query_view_property_tag()} />, <UiLabel name={m.query_view_property_collection()} />                                                                                                          |
@@ -192,7 +192,7 @@ To show the annotations of the note's own paper, use `this.item` in the filter o
 filters: item == this.item
 ```
 
-In a Literature Note, `this.item` is the paper that the note's `zotero-key` property names. See [`this`: the paper of the note](/docs/concepts/query-files-and-query-blocks#this).
+In a Literature Note, `this.item` is the paper that the note's `zotero-key` property names. When that paper's library is outside your <UiLabel name={m.settings_library_scope_name()} /> setting, the embed shows <UiLabel name={m.query_view_warning_outside_library_scope()} /> See [`this`: the paper of the note](/docs/concepts/query-files-and-query-blocks#this).
 
 ## Add a query block to a note [#block]
 

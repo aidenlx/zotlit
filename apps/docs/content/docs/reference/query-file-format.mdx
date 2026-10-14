@@ -101,7 +101,7 @@ filters:
 
 A filter can name the Query Context as `this.item` and `this.attachment`:
 
-| Records       | Filter for the records of the note's paper | Filter for the records of one attachment   |
+| `from`        | Filter for the records of the note's paper | Filter for the records of one attachment   |
 | ------------- | ------------------------------------------ | ------------------------------------------ |
 | `annotations` | `item == this.item`                        | `attachment == this.attachment`            |
 | `attachments` | `item == this.item`                        | `indexedKey == this.attachment.indexedKey` |
