@@ -666,6 +666,170 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     }
   }, 120000);
 
+  it("opens a Query File in a tab with cards grouped by Item, with Zotero closed", async () => {
+    const layout = await obEval(
+      vaultId,
+      "JSON.stringify(app.workspace.getLayout())",
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+      );
+    });
+    const scratchFiles: string[] = [];
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{for(const path of ${JSON.stringify(scratchFiles)}){const file=app.vault.getFileByPath(path);if(file)await app.vault.delete(file);}return true;})()`,
+      );
+    });
+    /** What the active Query File tab shows, once its query settled. */
+    const readTab = `(async()=>{const view=app.workspace.getMostRecentLeaf().view;if(view.getViewType()!=='zotlit-query-file')return 'null';await view.query.settled;const el=view.contentEl;const cards=[...el.querySelectorAll('.zt-annot-card')].map(n=>n.getAttribute('data-zotero-annotation-key'));const headings=[...el.querySelectorAll('[data-query-group]')].map(n=>n.textContent);return JSON.stringify({file:view.file?.path,view:el.querySelector('[data-query-view-menu]')?.textContent??null,count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,cards,headings,diagnostic:el.querySelector('[data-query-diagnostic]')?.getAttribute('data-query-diagnostic')??null,problems:el.querySelector('[data-query-problems]')?.textContent??null,unresolved:el.querySelector('[data-query-unresolved]')?.textContent??null});})()`;
+    interface Tab {
+      file: string;
+      view: string | null;
+      count: string | null;
+      cards: string[];
+      headings: string[];
+      diagnostic: string | null;
+      problems: string | null;
+      unresolved: string | null;
+    }
+    const tabWhen = async (ready: (tab: Tab) => boolean): Promise<Tab> => {
+      let tab: Tab | null = null;
+      const settled = await waitFor(async () => {
+        tab = JSON.parse(await obEval(vaultId, readTab)) as Tab | null;
+        return tab !== null && ready(tab);
+      }, 120);
+      if (!settled) throw new Error(`Query File tab: ${JSON.stringify(tab)}`);
+      return tab!;
+    };
+    /** The rows ZotLit Query gives for a view, through the CLI. */
+    const queryRows = async (filter?: string) => {
+      const report = JSON.parse(
+        await cliCommand(vaultId, "zotlit:query", {
+          args: {
+            from: "annotations",
+            fields: "item.title",
+            limit: "100",
+            ...(filter === undefined ? {} : { filter }),
+          },
+        }),
+      ) as ItemQueryReport;
+      expect(report.ok).toBe(true);
+      return report.rows!;
+    };
+    /** The Item titles of the rows, one for each run of rows of one Item. */
+    const itemRuns = (rows: Awaited<ReturnType<typeof queryRows>>) =>
+      rows
+        .filter(
+          (row, index) =>
+            index === 0 ||
+            rows[index - 1]!.itemIndexedKey !== row.itemIndexedKey,
+        )
+        .map((row) => row.values["item.title"]);
+
+    // "New query file" from the command palette writes one Annotations view
+    // of the whole library, with a limit, and opens it in a tab.
+    const before = JSON.parse(
+      await obEval(
+        vaultId,
+        "JSON.stringify(app.vault.getFiles().map(f=>f.path))",
+      ),
+    ) as string[];
+    await obEval(
+      vaultId,
+      "app.commands.executeCommandById('zotlit:new-query-file');true",
+    );
+    const created = await tabWhen((tab) => tab.count !== null);
+    expect(before).not.toContain(created.file);
+    scratchFiles.push(created.file);
+    expect(created.file).toMatch(/\.zotquery$/);
+    const text = await obEval(
+      vaultId,
+      `app.vault.cachedRead(app.vault.getFileByPath(${JSON.stringify(created.file)}))`,
+    );
+    expect(text).toContain("from: annotations");
+    expect(text).toContain("limit: 100");
+
+    // The cards come in query order, grouped by Item under its title, and
+    // the count is the query's own. No Zotero answers this vault.
+    const all = await queryRows();
+    expect(all.length).toBeGreaterThan(0);
+    expect(created).toMatchObject({
+      count: String(all.length),
+      cards: all.map((row) => row.indexedKey),
+      headings: itemRuns(all),
+      diagnostic: null,
+      problems: null,
+      unresolved: null,
+    });
+
+    // The view menu of the Fixture's Query File lists its views and switches.
+    await obEval(
+      vaultId,
+      `(async()=>{const leaf=app.workspace.getLeaf('tab');await leaf.openFile(app.vault.getFileByPath('query-files/Reading annotations.zotquery'));app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
+    );
+    await tabWhen(
+      (tab) => tab.view === "All annotations" && tab.count !== null,
+    );
+    const menu = JSON.parse(
+      await obEval(
+        vaultId,
+        `(()=>{const view=app.workspace.getMostRecentLeaf().view;view.contentEl.querySelector('[data-query-view-menu]').click();const items=[...activeDocument.querySelectorAll('.menu .menu-item')];const titles=items.map(n=>n.querySelector('.menu-item-title')?.textContent);items.find(n=>n.textContent==='Figures').click();return JSON.stringify(titles);})()`,
+      ),
+    ) as string[];
+    expect(menu).toEqual(["All annotations", "Figures"]);
+    const figureRows = await queryRows('tags.contains("figure")');
+    expect(figureRows.length).toBeGreaterThan(0);
+    const figures = await tabWhen((tab) => tab.view === "Figures");
+    expect(figures).toMatchObject({
+      count: String(figureRows.length),
+      cards: figureRows.map((row) => row.indexedKey),
+      headings: itemRuns(figureRows),
+    });
+    expect(
+      await obEval(
+        vaultId,
+        "app.workspace.getMostRecentLeaf().getViewState().state.view",
+      ),
+    ).toBe("Figures");
+
+    // A filter that reads `this` shows the diagnostic: a tab has no Query
+    // Context. A bad expression and an unknown field open and say so too.
+    for (const [name, filter, code] of [
+      ["this", "item == this.item", "unbound-context"],
+      ["bad", "colorName ==", "invalid-filter"],
+      ["unknown", "nosuchfield == 1", "unknown-field"],
+    ] as const) {
+      const path = `query-files/${name}.zotquery`;
+      scratchFiles.push(path);
+      await obEval(
+        vaultId,
+        `(async()=>{const file=await app.vault.create(${JSON.stringify(path)},${JSON.stringify(`views:\n  - type: annotations\n    name: Broken\n    from: annotations\n    filters: ${filter}\n`)});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
+      );
+      const broken = await tabWhen(
+        (tab) => tab.file === path && tab.diagnostic !== null,
+      );
+      expect(broken).toMatchObject({
+        diagnostic: code,
+        cards: [],
+        count: null,
+      });
+    }
+
+    // "New query file" stands in a folder's menu in the file explorer.
+    const folderMenu = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{app.workspace.leftSplit.expand();const explorer=app.workspace.getLeavesOfType('file-explorer')[0];await app.workspace.revealLeaf(explorer);const title=explorer.view.containerEl.querySelector('.nav-folder-title[data-path="query-files"]');title.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,clientX:10,clientY:10}));await new Promise(r=>setTimeout(r,200));const titles=[...activeDocument.querySelectorAll('.menu .menu-item-title')].map(n=>n.textContent);activeDocument.body.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));return JSON.stringify(titles);})()`,
+      ),
+    ) as string[];
+    expect(folderMenu).toContain(m.query_file_new());
+  }, 180000);
+
   it("renders the deterministic PDF matrix and reuses its cache", async () => {
     await verifyExcerptRendering(vaultId);
   }, 120000);
@@ -4949,7 +5113,11 @@ interface ItemQueryReport {
     rows: { indexedKey: string; values: Record<string, unknown> }[];
   }[];
   truncated?: boolean;
-  rows?: { indexedKey: string; values: Record<string, unknown> }[];
+  rows?: {
+    indexedKey: string;
+    itemIndexedKey?: string;
+    values: Record<string, unknown>;
+  }[];
   diagnostic?: ItemQueryDiagnostic;
   warnings?: ItemQueryDiagnostic[];
 }

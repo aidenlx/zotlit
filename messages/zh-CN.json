@@ -2403,5 +2403,52 @@
   "pdf_create_popup_copy": "复制所选文本",
   "pdf_create_failed": "标注未创建。{reason}",
   "pdf_create_reason_no_document": "此 PDF 已关闭。",
-  "pdf_adjust_failed": "标注未调整。{reason}"
+  "pdf_adjust_failed": "标注未调整。{reason}",
+  "command_new_query_file_name": "新建查询文件",
+  "query_file_new": "新建查询文件",
+  "query_file_untitled": "未命名",
+  "query_file_default_view_name": "标注",
+  "query_view_views": "视图",
+  "query_view_loading": "加载中…",
+  "query_view_results": [
+    {
+      "declarations": ["input count", "local countPlural = count: plural"],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "1 条结果",
+        "countPlural=*": "{count} 条结果"
+      }
+    }
+  ],
+  "query_view_results_limited": [
+    {
+      "declarations": ["input count", "local countPlural = count: plural"],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "1 条结果（已达上限）",
+        "countPlural=*": "{count} 条结果（已达上限）"
+      }
+    }
+  ],
+  "query_view_no_results": "没有标注符合此视图。",
+  "query_view_unresolved": [
+    {
+      "declarations": ["input count", "local countPlural = count: plural"],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "1 条结果无法读取：{keys}",
+        "countPlural=*": "{count} 条结果无法读取：{keys}"
+      }
+    }
+  ],
+  "query_view_failed": "此视图无法显示结果。",
+  "query_view_problem_invalid_yaml": "此文件不是有效的 YAML。{message}",
+  "query_view_problem_not_a_map": "此文件必须包含 \"views\" 等键。",
+  "query_view_problem_no_views": "此文件没有视图。请在 \"views\" 下添加一个。",
+  "query_view_problem_missing_key": "此视图缺少 \"{key}\"。",
+  "query_view_problem_invalid_value": "此视图的 \"{key}\" 无效：{value}",
+  "query_view_problem_layout": "\"{type}\" 布局尚不可用。",
+  "query_view_problem_dataset": "标注布局仅显示 \"from: annotations\"。",
+  "query_view_problem_group": "尚不能按 \"{property}\" 分组。",
+  "query_view_problem_no_view": "此文件中没有名为 \"{name}\" 的视图。"
 }

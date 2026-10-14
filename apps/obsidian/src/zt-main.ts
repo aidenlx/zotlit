@@ -76,6 +76,11 @@ import { registerCitationSuggest } from "./views/citation-suggest/register";
 import { registerCitedByView } from "./views/cited-by/register";
 import { registerNotePreview } from "./views/note-preview/register";
 import { registerPandocExport } from "./views/pandoc-export/register";
+import {
+  queryFileFileMenu,
+  queryFileFolderMenu,
+  registerQueryFileView,
+} from "./views/query-view/register";
 import { registerQuickSwitch } from "./views/quick-switch/register";
 import { registerReferencesView } from "./views/references/register";
 import {
@@ -454,6 +459,22 @@ export default class ZotLitPlugin extends Plugin {
       settings: services.settings,
     });
 
+    registerQueryFileView(this, {
+      app: this.app,
+      reads: services.zoteroReads,
+      libraryScope: services.libraryScope,
+      query: services.query,
+      annotations: services.annotationRepository,
+      excerptDisplay: services.excerptDisplay,
+      allowEditing: () => void services.capabilityNotices.allowEditing(),
+      reportBlockedGesture: (attachmentKey) =>
+        services.capabilityNotices.reportBlockedGesture(attachmentKey),
+      libraryTagNames: (annotationKey) =>
+        libraryTagNames(services.zoteroReads, annotationKey),
+      zoteroPref: services.zoteroPref,
+      noteFeature: services.noteFeature,
+    });
+
     // The Annotation History's own verbs. A bound PDF view and an Annotation
     // View each step the Attachment they show, so the palette acts on
     // whichever of them the user is in, and the menu on the leaf it was
@@ -611,20 +632,25 @@ export default class ZotLitPlugin extends Plugin {
 
     // Every ZotLit entry on Obsidian's file menu. Each entry names its own
     // section; this order is the order of the rows inside each section.
-    registerFileMenu(this, [
-      attachmentOpenFileMenu(attachmentOpenDeps),
-      templateWorkbenchFileMenu(this.app, templateWorkbenchDeps),
-      noteFeatureFileMenu(noteFeatureDeps),
-      customizeFileMenu(this.app, customizeDeps),
-      citationPresentationFileMenu(citationPresentationDeps),
-      annotationHistoryFileMenu({
-        annotations: services.annotationRepository,
-        surfaceFor: (leaf) =>
-          services.pdfAnnotationEditor.bindingFor(leaf.view),
-      }),
-      indexedKeyFileMenu(),
-      explorerFileMenu(this.app),
-    ]);
+    registerFileMenu(
+      this,
+      [
+        attachmentOpenFileMenu(attachmentOpenDeps),
+        templateWorkbenchFileMenu(this.app, templateWorkbenchDeps),
+        noteFeatureFileMenu(noteFeatureDeps),
+        customizeFileMenu(this.app, customizeDeps),
+        citationPresentationFileMenu(citationPresentationDeps),
+        annotationHistoryFileMenu({
+          annotations: services.annotationRepository,
+          surfaceFor: (leaf) =>
+            services.pdfAnnotationEditor.bindingFor(leaf.view),
+        }),
+        indexedKeyFileMenu(),
+        explorerFileMenu(this.app),
+        queryFileFileMenu(this.app),
+      ],
+      [queryFileFolderMenu(this.app)],
+    );
 
     registerWelcomeView(this, {
       app: this.app,

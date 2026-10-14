@@ -6941,6 +6941,106 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       await verifyExternalAnnotationLock({ vaultId: vaultId!, rdp, m });
     }, 180000);
   });
+
+  describe.skipIf(!debuggerPort || !vaultId)("a Query File", () => {
+    it("shows the library's cards in a new Query File tab, and a comment typed on one reaches Zotero", async () => {
+      await prepareAuthorizationFixture();
+      await using cleanup = new AsyncDisposableStack();
+      const key = seededAnnotation.key;
+      const original =
+        (await storedAnnotation(api, serverID, key)).annotationComment ?? "";
+      const tab = `app.workspace.getLeavesOfType('zotlit-query-file').map((leaf)=>leaf.view).find((view)=>view.file?.path===created)`;
+      const card = `(${tab})?.contentEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(key)}]')`;
+
+      // The Annotation Source must be the Local API before a card can write.
+      expect(
+        await obEvalUntil(
+          vaultId!,
+          `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;await repository.probe();const list=await repository.read(${JSON.stringify(attachment.key)});return String(list?.source.kind);})()`,
+          { expected: "zotero-local-api" },
+        ),
+      ).toBe(true);
+
+      const before = await obJson<string[]>(
+        vaultId!,
+        "JSON.stringify(app.vault.getFiles().map((file)=>file.path))",
+      );
+      await obEval(
+        vaultId!,
+        "app.commands.executeCommandById('zotlit:new-query-file');true",
+      );
+      let created = "";
+      expect(
+        await waitFor(async () => {
+          const files = await obJson<string[]>(
+            vaultId!,
+            "JSON.stringify(app.vault.getFiles().map((file)=>file.path))",
+          );
+          created = files.find((path) => !before.includes(path)) ?? "";
+          return created.endsWith(".zotquery");
+        }),
+      ).toBe(true);
+      cleanup.defer(async () => {
+        await obEval(
+          vaultId!,
+          `(async()=>{const created=${JSON.stringify(created)};for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))if(leaf.view.file?.path===created)leaf.detach();const file=app.vault.getFileByPath(created);if(file)await app.vault.delete(file);return true;})()`,
+        );
+      });
+      const declare = `const created=${JSON.stringify(created)};`;
+
+      // The tab shows the seeded Annotation's card among the library's.
+      expect(
+        await obEvalUntil(
+          vaultId!,
+          `(function(){${declare}return String(!!${card});})()`,
+          { expected: "true", tries: 120 },
+        ),
+      ).toBe(true);
+
+      // Select the card alone, open its comment editor, and type.
+      const editor = `${card}?.querySelector('.cm-content')`;
+      expect(
+        await obEvalUntil(
+          vaultId!,
+          `(function(){${declare}const card=${card};if(${editor})return 'open';if(!card.hasAttribute('data-alone')){card.click();return 'selecting';}getSelection().removeAllRanges();card.querySelector('.zt-annot-comment-field')?.click();return String(!!${editor}&&'open');})()`,
+          { expected: "open" },
+        ),
+      ).toBe(true);
+      const comment = "Typed in a Query File";
+      cleanup.defer(async () => {
+        await restoreAnnotationComment(api, {
+          serverID,
+          key: await obEval(
+            vaultId!,
+            `JSON.parse(app.secretStorage.getSecret('zotlit-zotero-write-authorization')).key`,
+          ),
+          annotationKey: key,
+          comment: original,
+        }).catch(() => {});
+      });
+      await obEval(
+        vaultId!,
+        `(function(){${declare}const content=${editor};const view=content.cmTile.root.view;view.focus();view.dispatch({changes:{from:0,to:view.state.doc.length,insert:${JSON.stringify(comment)}},userEvent:'input.type'});content.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return true;})()`,
+      );
+
+      // Zotero holds the comment, and the card shows it.
+      expect(
+        await waitFor(
+          async () =>
+            (await storedAnnotation(api, serverID, key)).annotationComment ===
+            comment,
+          120,
+        ),
+      ).toBe(true);
+      expect(
+        await obEvalUntil(
+          vaultId!,
+          `(function(){${declare}return ${card}?.querySelector('.zt-annot-comment')?.textContent??'';})()`,
+          { expected: comment },
+        ),
+      ).toBe(true);
+    }, 180000);
+  });
 });
 
 /**

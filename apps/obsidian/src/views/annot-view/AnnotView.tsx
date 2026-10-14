@@ -1,5 +1,6 @@
 import type { IconName } from "obsidian";
 import {
+  Fragment,
   useCallback,
   useContext,
   useId,
@@ -373,6 +374,7 @@ function SearchRow({
 export function AnnotList({ collapsed }: { collapsed: boolean }) {
   const actions = useContext(AnnotActionsContext);
   const annotations = useAnnotStore((s) => s.annotations);
+  const groups = useAnnotStore((s) => s.groups);
   const clearFilters = useClearFilters();
   const gridRef = useRef<HTMLDivElement>(null);
   const labelId = useId();
@@ -464,14 +466,41 @@ export function AnnotList({ collapsed }: { collapsed: boolean }) {
         aria-multiselectable="true"
         aria-labelledby={labelId}
       >
-        {filtered.map((annot) => (
-          <Annotation
-            key={annot.key}
-            annot={annot}
-            collapsed={collapsed}
-            tabStop={annot.key === tabStop}
-          />
-        ))}
+        {filtered.map((annot, index) => {
+          const card = (
+            <Annotation
+              key={annot.key}
+              annot={annot}
+              collapsed={collapsed}
+              tabStop={annot.key === tabStop}
+            />
+          );
+          // A Query View's grouped rows: a heading opens each run of cards
+          // that stands in one group, across every column.
+          // The card keeps one place in the tree whether or not a heading
+          // stands before it, so a card that starts or stops a group is not
+          // mounted again and an open editor on it stays.
+          const group = groups?.get(annot.key);
+          const before = index > 0 ? filtered[index - 1] : undefined;
+          const opens =
+            group !== undefined &&
+            (!before || groups?.get(before.key)?.key !== group.key);
+          return (
+            <Fragment key={annot.key}>
+              {opens && (
+                <div
+                  key="group-heading"
+                  role="row"
+                  data-query-group={group.key}
+                  className="zt:col-span-full zt:mt-2 zt:truncate zt:text-sm zt:font-semibold zt:text-(--text-muted) zt:first:mt-0"
+                >
+                  <span role="rowheader">{group.label}</span>
+                </div>
+              )}
+              {card}
+            </Fragment>
+          );
+        })}
       </div>
     </div>
   );

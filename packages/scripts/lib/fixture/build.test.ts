@@ -1988,6 +1988,7 @@ describe("the generated Obsidian vault", () => {
       "profile-examples/profile-import-replacement-v1.md",
       "profile-examples/profile-import-replacement-v2.md",
       "profile-examples/profile-import-unavailable-style.md",
+      "query-files/Reading annotations.zotquery",
       "tools-for-thought.md",
       "wikilink-display-test.md",
       "wikilink-parity-test.md",
