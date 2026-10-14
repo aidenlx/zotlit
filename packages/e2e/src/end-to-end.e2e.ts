@@ -2198,6 +2198,213 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(rows.every((row) => row.values.colorName)).toBe(true);
   }, 180000);
 
+  it("adds a Formula Property from the Properties popover, edits it, marks a wrong one at its row, and removes it, and an embed and a Query Block show its column", async () => {
+    const path = "query-files/Formula items.zotquery";
+    const notePath = "query-files/Formula note.md";
+    const layout = await obEval(
+      vaultId,
+      "JSON.stringify(app.workspace.getLayout())",
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{for(const modal of activeDocument.querySelectorAll('.modal.zt-query-formula-modal'))modal.querySelector('.modal-close-button')?.click();await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));for(const path of ${JSON.stringify([path, notePath])}){const file=app.vault.getFileByPath(path);if(file)await app.vault.delete(file);}return true;})()`,
+      );
+    });
+    const source = `views:\n  - type: table\n    name: Items\n    from: items\n    order:\n      - title\n    limit: 5\n`;
+    await obEval(
+      vaultId,
+      `(async()=>{const file=await app.vault.create(${JSON.stringify(path)},${JSON.stringify(source)});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
+    );
+    const tab = "app.workspace.getMostRecentLeaf().view";
+    /** What the tab shows once its query settled, and the file's saved text. */
+    const readTab = `(async()=>{const view=${tab};if(view.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(path)})return 'null';await view.query.settled;await view.save();const el=view.contentEl;const columns=[...el.querySelectorAll('[data-query-table] thead th')].map(n=>n.getAttribute('data-query-column'));return JSON.stringify({columns,headerIssue:el.querySelector('[data-query-table] thead [data-query-formula-issue]')?.getAttribute('data-query-formula-issue')??null,rows:[...el.querySelectorAll('[data-query-table-row="item"]')].map(tr=>[tr.getAttribute('data-query-key'),...[...tr.children].map(td=>td.textContent)]),list:[...el.querySelectorAll('[data-query-layout="list"] [data-query-row]')].map(li=>[li.getAttribute('data-query-row'),li.textContent]),text:await app.vault.read(view.file)});})()`;
+    interface Tab {
+      columns: (string | null)[];
+      headerIssue: string | null;
+      /** Each Item row: its key, then the text of each cell. */
+      rows: string[][];
+      list: [string, string][];
+      text: string;
+    }
+    const tabWhen = async (ready: (tab: Tab) => boolean): Promise<Tab> => {
+      let tab: Tab | null = null;
+      const settled = await waitFor(async () => {
+        tab = JSON.parse(await obEval(vaultId, readTab)) as Tab | null;
+        return tab !== null && ready(tab);
+      }, 120);
+      if (!settled) throw new Error(`Query File tab: ${JSON.stringify(tab)}`);
+      return tab!;
+    };
+    /** The value of each row's Formula, as ZotLit Query gives it. */
+    const formulaValues = async (expression: string) => {
+      const report = JSON.parse(
+        await cliCommand(vaultId, "zotlit:query", {
+          args: {
+            from: "items",
+            formulas: JSON.stringify({ year: expression }),
+            fields: "title,formula.year",
+            limit: "5",
+          },
+        }),
+      ) as ItemQueryReport;
+      expect(report.ok).toBe(true);
+      return report.rows!.map((row) => [
+        row.indexedKey,
+        row.values["formula.year"] === null
+          ? ""
+          : String(row.values["formula.year"]),
+      ]);
+    };
+    /** The key and the cell of one column of each Table row. */
+    const column = (shown: Tab, property: string) => {
+      // The first cell is the expander.
+      const at = shown.columns.indexOf(property);
+      return shown.rows.map((row) => [row[0], row[at + 1]]);
+    };
+    const shown = await tabWhen((tab) => tab.rows.length > 0);
+    expect(shown.columns).toEqual([null, "title", null]);
+
+    // "Add formula" in the Properties popover opens the Formula dialog.
+    const formulaModal =
+      "[...activeDocument.querySelectorAll('.modal.zt-query-formula-modal')].at(-1)";
+    const openPopover = `${tab}.contentEl.querySelector('[data-query-properties]').click();await new Promise(r=>setTimeout(r,100));const popup=activeDocument.querySelector('[data-query-properties-popup]');`;
+    await obEval(
+      vaultId,
+      `(async()=>{${openPopover}[...popup.querySelectorAll('[role="option"]')].find(n=>n.textContent===${JSON.stringify(m.query_view_formula_add())}).click();return true;})()`,
+    );
+    /** Types into the dialog, and reads what it says about the text. */
+    const typeFormula = (fields: { name?: string; expression: string }) =>
+      obEval(
+        vaultId,
+        `(async()=>{const modal=${formulaModal};const set=(el,value)=>{el.value=value;el.dispatchEvent(new InputEvent('input',{bubbles:true}));};${fields.name === undefined ? "" : `set(modal.querySelector('[data-query-formula-name]'),${JSON.stringify(fields.name)});`}set(modal.querySelector('[data-query-formula-expression]'),${JSON.stringify(fields.expression)});await new Promise(r=>setTimeout(r,100));return JSON.stringify({syntax:modal.querySelector('[data-query-formula-syntax]')?.getAttribute('data-query-formula-syntax')??null,save:!modal.querySelector('[data-query-formula-save]').disabled});})()`,
+      ).then((text) => JSON.parse(text) as { syntax: string; save: boolean });
+    const saveFormula = () =>
+      obEval(
+        vaultId,
+        `(()=>{${formulaModal}.querySelector('[data-query-formula-save]').click();return true;})()`,
+      );
+    expect(
+      await obEvalUntil(vaultId, `String(!!${formulaModal})`, {
+        expected: "true",
+      }),
+    ).toBe(true);
+    // The parse-only check marks a text that does not parse, and keeps it
+    // from being saved.
+    expect(
+      await typeFormula({ name: "year", expression: "date.year +" }),
+    ).toEqual({
+      syntax: "invalid",
+      save: false,
+    });
+    expect(await typeFormula({ expression: "date.year" })).toEqual({
+      syntax: "valid",
+      save: true,
+    });
+    await saveFormula();
+
+    // The Formula saves under formulas, shows after the view's properties,
+    // and each row shows the value ZotLit Query gives.
+    const years = await formulaValues("date.year");
+    expect(years.some(([, year]) => year !== "")).toBe(true);
+    const added = await tabWhen((tab) => tab.columns.includes("formula.year"));
+    expect(added.text).toContain("formulas:\n  year: date.year\nviews:");
+    expect(added.text).toContain(
+      "    order:\n      - title\n      - formula.year\n",
+    );
+    expect(column(added, "formula.year")).toEqual(years);
+
+    // An embed and a Query Block of the same text show the same column.
+    await obEval(
+      vaultId,
+      `(async()=>{const file=await app.vault.create(${JSON.stringify(notePath)},${JSON.stringify(`![[Formula items.zotquery]]\n\n\`\`\`zotquery\n`)}+${JSON.stringify(added.text)}+"\`\`\`\\n");const leaf=app.workspace.getLeaf('split');await leaf.openFile(file,{state:{mode:'preview'}});return true;})()`,
+    );
+    const readNote = `(async()=>{const leaf=app.workspace.getLeavesOfType('markdown').find(l=>l.view.file?.path===${JSON.stringify(notePath)});if(!leaf)return 'null';const el=leaf.view.containerEl;const embed=[...el.querySelectorAll('.internal-embed')].find(n=>n.zotlitQueryEmbed);const block=el.querySelector('.block-language-zotquery');if(!embed||!block?.zotlitQueryView)return 'null';await embed.zotlitQueryEmbed.query.settled;await block.zotlitQueryView.settled;const read=root=>{const columns=[...root.querySelectorAll('[data-query-table] thead th')].map(n=>n.getAttribute('data-query-column'));const at=columns.indexOf('formula.year');return [...root.querySelectorAll('[data-query-table-row="item"]')].map(tr=>[tr.getAttribute('data-query-key'),tr.children[at]?.textContent??null]);};return JSON.stringify({embed:read(embed),block:read(block)});})()`;
+    expect(
+      await obEvalUntil(vaultId, readNote, {
+        expected: JSON.stringify({ embed: years, block: years }),
+        tries: 120,
+      }),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      `(async()=>{const leaf=app.workspace.getLeavesOfType('zotlit-query-file').find(l=>l.view.file?.path===${JSON.stringify(path)});app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
+    );
+
+    // The List shows the same values.
+    await obEval(
+      vaultId,
+      `(()=>{${tab}.query.setViewLayout(0,'list');return true;})()`,
+    );
+    const listed = await tabWhen((tab) => tab.list.length > 0);
+    expect(listed.list.map(([key]) => key)).toEqual(years.map(([key]) => key));
+    for (const [index, [, year]] of years.entries())
+      expect(listed.list[index]![1].endsWith(year!)).toBe(true);
+    await obEval(
+      vaultId,
+      `(()=>{${tab}.query.setViewLayout(0,'table');return true;})()`,
+    );
+    await tabWhen((tab) => tab.columns.includes("formula.year"));
+
+    // The edit button of the Formula's row opens it for editing.
+    const editFormula = async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{${openPopover}popup.querySelector('[data-query-formula-edit="year"]').click();return true;})()`,
+      );
+      expect(
+        await obEvalUntil(
+          vaultId,
+          `String(${formulaModal}?.querySelector('[data-query-formula-dialog]')?.getAttribute('data-query-formula-dialog'))`,
+          { expected: "year" },
+        ),
+      ).toBe(true);
+    };
+    await editFormula();
+    await typeFormula({ expression: "date.year + 1" });
+    await saveFormula();
+    const next = await formulaValues("date.year + 1");
+    const edited = await tabWhen((tab) =>
+      tab.text.includes("  year: date.year + 1\n"),
+    );
+    expect(column(await tabWhen(() => true), "formula.year")).toEqual(next);
+    expect(edited.columns).toContain("title");
+
+    // A Formula ZotLit Query names as wrong shows its message at its row and
+    // its column; the other columns still show their values.
+    await editFormula();
+    expect(await typeFormula({ expression: "title.nope()" })).toEqual({
+      syntax: "valid",
+      save: true,
+    });
+    await saveFormula();
+    const wrong = await tabWhen((tab) => tab.headerIssue !== null);
+    expect(wrong.headerIssue).toContain("formula.year");
+    expect(column(wrong, "formula.year").every(([, cell]) => cell === "")).toBe(
+      true,
+    );
+    expect(column(wrong, "title")).toEqual(column(added, "title"));
+    const rowIssue = await obEval(
+      vaultId,
+      `(async()=>{${openPopover}const issue=popup.querySelector('[data-query-property="formula.year"] [data-query-formula-issue]')?.getAttribute('data-query-formula-issue')??null;popup.hidePopover();return String(issue);})()`,
+    );
+    expect(rowIssue).toBe(wrong.headerIssue);
+
+    // Remove leaves the file without the Formula and its property.
+    await editFormula();
+    await obEval(
+      vaultId,
+      `(()=>{${formulaModal}.querySelector('[data-query-formula-remove]').click();return true;})()`,
+    );
+    const removed = await tabWhen(
+      (tab) =>
+        !tab.text.includes("formula") && !tab.columns.includes("formula.year"),
+    );
+    expect(removed.text).toBe(source);
+    expect(removed.headerIssue).toBeNull();
+  }, 240000);
+
   it("switches a Fixture Query File view to Items and the Table, expands an Item into its Attachments, Annotations and Child Notes, and creates a Literature Note from its column", async () => {
     const path = "query-files/Reading annotations.zotquery";
     const layout = await obEval(

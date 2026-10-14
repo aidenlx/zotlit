@@ -1455,3 +1455,104 @@ it("shows no rows of the old dataset when the filters fail on the new one", asyn
   });
   expect(cards(el)).toEqual([]);
 });
+
+const FORMULA_FILE = `formulas:
+  year: date.year
+  short: title.nope()
+  unused: title
+views:
+  - type: table
+    name: Reading list
+    from: items
+    order:
+      - title
+      - formula.year
+      - formula.short
+`;
+
+function formulaRow(key: string, title: string, year: number): QueryViewRow {
+  return { indexedKey: key, values: { title, "formula.year": year } };
+}
+
+it("runs a view with the Formulas its visible properties read, and shows their values", async () => {
+  const { view, el, run, settle } = await mount([
+    result([formulaRow("ITEMAAAA", "Ten simple rules", 2014)]),
+  ]);
+  await act(() =>
+    view.setText(FORMULA_FILE.replace("      - formula.short\n", "")),
+  );
+  await settle();
+
+  const [request] = run.mock.calls[0]!;
+  expect(request.formulas).toEqual({ year: "date.year" });
+  expect(request.fields).toEqual(expect.arrayContaining(["formula.year"]));
+  expect(tableText(el)).toEqual([
+    ["", "Title", "formula.year", "Literature note"],
+    ["", "Ten simple rules", "2014", "Create"],
+  ]);
+});
+
+it("marks a wrong Formula at its column, and runs the view again without it", async () => {
+  const { view, el, run, settle } = await mount([
+    {
+      kind: "failed",
+      diagnostic: {
+        code: "unknown-function",
+        message: "In formula.short: nope is not a method of string.",
+        hint: "Use slice.",
+        severity: "error",
+        report: [],
+        location: {
+          argument: "formulas",
+          path: "short",
+          span: { from: 6, to: 10 },
+        },
+        found: "nope",
+        expected: [],
+        suggestions: [],
+      },
+    },
+    result([formulaRow("ITEMAAAA", "Ten simple rules", 2014)]),
+  ]);
+  await act(() => view.setText(FORMULA_FILE));
+  await settle();
+
+  expect(run).toHaveBeenCalledTimes(2);
+  expect(run.mock.calls[0]![0].formulas).toEqual({
+    year: "date.year",
+    short: "title.nope()",
+  });
+  const [retry] = run.mock.calls[1]!;
+  expect(retry.formulas).toEqual({ year: "date.year" });
+  expect(retry.fields).not.toContain("formula.short");
+  expect(view.state.getState()).toMatchObject({
+    phase: "ready",
+    formulaIssues: {
+      short: "In formula.short: nope is not a method of string. Use slice.",
+    },
+  });
+  expect(tableText(el)).toEqual([
+    ["", "Title", "formula.year", "formula.short", "Literature note"],
+    ["", "Ten simple rules", "2014", "", "Create"],
+  ]);
+  expect(
+    el
+      .querySelector('[data-query-column="formula.short"]')
+      ?.getAttribute("data-query-formula-issue"),
+  ).toBe("In formula.short: nope is not a method of string. Use slice.");
+
+  // The same text runs as it did; a fixed Formula runs again.
+  await act(() => view.setText(FORMULA_FILE));
+  await settle();
+  expect(run).toHaveBeenCalledTimes(2);
+  await act(() =>
+    view.setText(FORMULA_FILE.replace("title.nope()", "title.slice(0, 3)")),
+  );
+  await settle();
+  expect(run).toHaveBeenCalledTimes(3);
+  expect(run.mock.calls[2]![0].formulas).toEqual({
+    year: "date.year",
+    short: "title.slice(0, 3)",
+  });
+  expect(view.state.getState().formulaIssues).toEqual({});
+});
