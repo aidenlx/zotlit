@@ -22,6 +22,10 @@ export interface ToolbarPopoverProps {
   active?: boolean;
   /** A `data-*` hook for the button and the popover. */
   hook: string;
+  /** Called each time the popover opens. */
+  onOpen?: () => void;
+  /** Classes for the popover, after its own. */
+  className?: string;
   children: ReactNode;
 }
 
@@ -30,6 +34,8 @@ export function ToolbarPopover({
   label,
   active,
   hook,
+  onOpen,
+  className,
   children,
 }: ToolbarPopoverProps) {
   const [id] = useState(() => `zt-query-popover-${(popoverSequence += 1)}`);
@@ -55,12 +61,16 @@ export function ToolbarPopover({
         id={id}
         popover="auto"
         data-query-popover={hook}
-        onToggle={(event) => setOpen(event.newState === "open")}
+        onToggle={(event) => {
+          setOpen(event.newState === "open");
+          if (event.newState === "open") onOpen?.();
+        }}
         className={cn(
           "zt:inset-auto zt:my-1 zt:max-h-[min(--spacing(120),calc(100%_-_--spacing(2)))] zt:max-w-110 zt:min-w-60 zt:flex-col zt:overflow-auto zt:p-(--menu-padding) zt:[&:popover-open]:flex",
           "zt:border-(length:--menu-border-width) zt:border-(--menu-border-color) zt:bg-(--menu-background) zt:text-foreground zt:shadow-(--menu-shadow)",
           "zt:rounded-(--menu-radius) zt:[corner-shape:var(--menu-corner-shape)]",
           "zt:[position-anchor:var(--zt-query-popover-anchor)] zt:[position-area:block-end_span-inline-end] zt:[position-try-fallbacks:flip-block]",
+          className,
         )}
         style={anchor}
       >

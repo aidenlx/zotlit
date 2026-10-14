@@ -8,6 +8,7 @@ import type { App } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, expect, it, vi } from "vitest";
 
+import { Effect } from "@/lib/effect";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type {
   AnnotationList,
@@ -118,7 +119,10 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
-async function mount(answers: QueryViewOutcome[]) {
+async function mount(
+  answers: QueryViewOutcome[],
+  onWrite?: (text: string) => void,
+) {
   setMockPlatform({ isMacOS: true });
   cleanup.defer(resetMockPlatform);
   const reads = emitter();
@@ -131,8 +135,36 @@ async function mount(answers: QueryViewOutcome[]) {
   );
   const deps = {
     app: editorApp() as unknown as App,
-    reads: { on: reads.on },
-    libraryScope: { on: libraryScope.on },
+    reads: {
+      on: reads.on,
+      acquireRead: () =>
+        Promise.resolve({
+          reads: {
+            TagNames: ({ libraryID }: { libraryID: number }) =>
+              Effect.succeed(
+                libraryID === 1 ? ["figure", "method"] : ["group"],
+              ),
+            CollectionPaths: ({ libraryIDs }: { libraryIDs: number[] }) =>
+              Effect.succeed(
+                libraryIDs.length === 2 ? [["Thesis", "Methods"]] : [],
+              ),
+          },
+          [Symbol.asyncDispose]: () => Promise.resolve(),
+        }),
+    },
+    libraryScope: {
+      on: libraryScope.on,
+      current: {
+        available: [
+          { selector: { type: "personal" }, libraryID: 1, name: null },
+          {
+            selector: { type: "group", groupID: 4815 },
+            libraryID: 2,
+            name: "Lab",
+          },
+        ],
+      },
+    },
     query: { run },
     annotations: {
       read: () => Promise.resolve(LIST),
@@ -171,6 +203,7 @@ async function mount(answers: QueryViewOutcome[]) {
     save: (text) => {
       saved.push(text);
       save(text);
+      onWrite?.(text);
     },
     onSelectView,
   });
@@ -554,6 +587,156 @@ it("finds text in the shown cards from the toolbar search", async () => {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
   expect(cards(el)).toEqual(["ANNOTBBB"]);
+});
+
+function filterFault(from: number, to: number): QueryViewOutcome {
+  return {
+    kind: "failed",
+    diagnostic: {
+      code: "unknown-field",
+      message: "colourName is not a field of Annotations.",
+      hint: "Use colorName.",
+      severity: "error",
+      report: ["colourName is not a field of Annotations."],
+      location: { argument: "filter", span: { from, to } },
+      found: "colourName",
+      expected: [],
+      suggestions: ["colorName"],
+    },
+  };
+}
+
+it("writes a filter change to the file, and runs the view with it", async () => {
+  const written: string[] = [];
+  const { view, run, settle } = await mount(
+    [result([row("ANNOTBBB")]), result([row("ANNOTAAA")])],
+    (text) => written.push(text),
+  );
+  await act(() => view.setText(FILE));
+  await settle();
+
+  await act(() => {
+    view.setFilters("view", {
+      and: ['colorName == "yellow"', 'tags.contains("figure")'],
+    });
+  });
+  await settle();
+
+  expect(written).toHaveLength(1);
+  expect(written[0]).toContain(`    filters:
+      and:
+        - colorName == "yellow"
+        - tags.contains("figure")`);
+  expect(run.mock.calls[1]![0].filter).toBe(
+    '(colorName == "yellow") && (tags.contains("figure"))',
+  );
+});
+
+it("shows a wrong condition's diagnostic at its row and keeps the last good results", async () => {
+  const { view, el, settle } = await mount(
+    [result([row("ANNOTBBB")]), filterFault(1, 11)],
+    () => {},
+  );
+  await act(() => view.setText(FILE));
+  await settle();
+
+  await act(() => {
+    view.setFilters("view", {
+      and: ['colourName == "yellow"', 'tags.contains("figure")'],
+    });
+  });
+  await settle();
+
+  expect(view.state.getState().filterIssue).toEqual({
+    section: "view",
+    path: [0],
+    message: "colourName is not a field of Annotations. Use colorName.",
+  });
+  expect(cards(el)).toEqual(["ANNOTBBB"]);
+  expect(el.querySelector("[data-query-filter-error]")?.textContent).toBe(
+    "The filter has an error. The view shows the last results.",
+  );
+});
+
+function section(el: HTMLElement, name: "all" | "view"): HTMLElement {
+  return el.querySelector<HTMLElement>(`[data-filter-section="${name}"]`)!;
+}
+
+function chooseValue(select: HTMLSelectElement, value: string) {
+  select.value = value;
+  select.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+it("edits the filters for all views and for this view from the Filter popover", async () => {
+  const written: string[] = [];
+  const { view, el, run, settle } = await mount(
+    [result([row("ANNOTBBB")]), result([]), result([])],
+    (text) => written.push(text),
+  );
+  await act(() => view.setText(FILE));
+  await settle();
+
+  expect(
+    el.querySelector('[data-query-toolbar="filter"]')?.textContent,
+  ).toContain("Filter");
+  expect(section(el, "all").textContent).toContain("All views");
+  expect(section(el, "view").textContent).toContain("This view");
+
+  const [color] = section(el, "view").querySelectorAll("[data-condition-row]");
+  await act(() =>
+    chooseValue(color!.querySelector('select[aria-label="Value"]')!, "red"),
+  );
+  await settle();
+  expect(written.at(-1)).toContain(
+    'filters:\n      and:\n        - colorName == "red"',
+  );
+  expect(run.mock.calls.at(-1)![0].filter).toBe('colorName == "red"');
+
+  // The starter row of the empty "All views" section is a colour condition.
+  const [starter] = section(el, "all").querySelectorAll("[data-condition-row]");
+  await act(() =>
+    chooseValue(starter!.querySelector('select[aria-label="Value"]')!, "blue"),
+  );
+  await settle();
+  expect(written.at(-1)).toMatch(
+    /^filters:\n  and:\n    - colorName == "blue"\n/,
+  );
+  expect(run.mock.calls.at(-1)![0].filter).toBe(
+    '(colorName == "blue") && (colorName == "red")',
+  );
+});
+
+it("shows the query's diagnostic at the wrong condition in the Filter popover", async () => {
+  const { view, el, settle } = await mount(
+    [result([row("ANNOTBBB")]), filterFault(1, 11)],
+    () => {},
+  );
+  await act(() => view.setText(FILE));
+  await settle();
+  await act(() => {
+    view.setFilters("view", {
+      and: ['colourName == "yellow"', 'tags.contains("figure")'],
+    });
+  });
+  await settle();
+
+  const rows = section(el, "view").querySelectorAll("[data-condition-row]");
+  expect(rows[0]!.querySelector('[role="alert"]')?.textContent).toBe(
+    "colourName is not a field of Annotations. Use colorName.",
+  );
+  expect(rows[1]!.querySelector('[role="alert"]')).toBeNull();
+});
+
+it("offers the Tags and Collections of the Libraries the view reads", async () => {
+  const { view } = await mount([]);
+  await expect(view.filterValues()).resolves.toEqual({
+    tags: ["figure", "group", "method"],
+    collections: ["Thesis/Methods"],
+    libraries: [
+      { id: "personal", name: null },
+      { id: "group:4815", name: "Lab" },
+    ],
+  });
 });
 
 it("counts every match, and says how many of them the limit shows", async () => {

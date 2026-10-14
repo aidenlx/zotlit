@@ -12,8 +12,10 @@ import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
 import type { QueryContext } from "@zotlit/item-query";
+import type { MatchTree } from "@zotlit/templates/facade";
 
 import { Icon } from "@/components/obsidian/icon";
+import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import type { HistorySurface } from "@/services/annotation-repository/actions";
@@ -28,6 +30,7 @@ import type {
   QueryViewRow,
 } from "@/services/item-query/query-view";
 import type { QueryService } from "@/services/item-query/service";
+import { selectorKey } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import { AnnotList } from "@/views/annot-view/AnnotView";
@@ -38,17 +41,23 @@ import type { AnnotationsLayoutDeps } from "@/views/annot-view/layout";
 import { useAnnotStore } from "@/views/annot-view/store";
 
 import type { QueryCardFocus } from "./card-focus";
+import { FilterButton } from "./filter-popover";
+import type { FilterValues } from "./filter-popover";
 import { GroupEditor } from "./group-control";
 import { annotationsLayoutOptions } from "./layouts";
 import { groupOptions, sortOptions } from "./properties";
 import { PropertiesMenu } from "./properties-menu";
 import {
   editView,
+  locateFilterFault,
   parseQueryFile,
   serializeQueryFile,
   viewFilter,
+  withFilters,
 } from "./query-file";
 import type {
+  FilterLocation,
+  FilterSection,
   QueryFile,
   QueryFileProblem,
   QueryFileView,
@@ -73,8 +82,9 @@ export interface QueryViewDeps extends AnnotationsLayoutDeps {
   annotations: AnnotationsLayoutDeps["annotations"] &
     Pick<AnnotationRepository, "hold">;
   query: Pick<QueryService, "run">;
-  reads: AnnotationsLayoutDeps["reads"] & Pick<ZoteroReadsService, "on">;
-  libraryScope: Pick<LibraryScopeService, "on">;
+  reads: AnnotationsLayoutDeps["reads"] &
+    Pick<ZoteroReadsService, "on" | "acquireRead">;
+  libraryScope: Pick<LibraryScopeService, "on" | "current">;
   /** The keyboard of a view that a note holds, which the embed and the block share. */
   cardFocus: Pick<QueryCardFocus, "hold">;
 }
@@ -118,6 +128,10 @@ export interface QueryViewState {
   diagnostic:
     | (Pick<Diagnostic, "message" | "hint" | "report"> & { code: string })
     | null;
+  /** The condition of the filters that the last run's diagnostic marks. */
+  filterIssue: (FilterLocation & { message: string }) | null;
+  /** Whether a failed run left the last good rows on screen. */
+  keptResults: boolean;
   /** The rows shown, each once however many groups it stands in. */
   count: number;
   /** The records that match the view, before its limit. */
@@ -134,6 +148,8 @@ const INITIAL_STATE: QueryViewState = {
   problems: [],
   phase: "idle",
   diagnostic: null,
+  filterIssue: null,
+  keptResults: false,
   count: 0,
   matched: 0,
   groups: [],
@@ -178,6 +194,13 @@ function layoutProblems(view: QueryFileView): string[] {
   return problems;
 }
 
+/** One run of a view: its request key, and the file and view it ran for. */
+interface ViewRun {
+  key: string;
+  file: QueryFile;
+  view: QueryFileView;
+}
+
 export class QueryView extends Component implements HistorySurface {
   readonly state = createStore<QueryViewState>()(() => INITIAL_STATE);
   readonly #deps: QueryViewDeps;
@@ -196,6 +219,8 @@ export class QueryView extends Component implements HistorySurface {
   #shownRequest: string | null = null;
   /** The request of the last run the view started. */
   #runRequest: string | null = null;
+  /** The name of the view whose rows are on screen. */
+  #shownViewName: string | null = null;
   #settled: Promise<void> = Promise.resolve();
   /** The rows on screen, each once, in the order they show. */
   #rows: readonly QueryViewRow[] = [];
@@ -288,6 +313,49 @@ export class QueryView extends Component implements HistorySurface {
     const text = serializeQueryFile(file);
     this.setText(text);
     this.#host.save?.(text);
+  }
+
+  /** Whether the host saves the view's changes to the file. */
+  get writable(): boolean {
+    return this.#host.save !== undefined;
+  }
+
+  /**
+   * Save new filters: for all views, or for the view shown. `undefined`
+   * removes them. Answers whether the host saves the change.
+   */
+  setFilters(section: FilterSection, filters: MatchTree | undefined): boolean {
+    const { file, view } = this.state.getState();
+    if (!file || !view || !this.writable) return false;
+    this.commit(
+      withFilters(file, section === "all" ? null : view.name, filters),
+    );
+    return true;
+  }
+
+  /** The values a filter condition offers, from the Libraries the view reads. */
+  async filterValues(): Promise<FilterValues> {
+    const libraries = this.#deps.libraryScope.current?.available ?? [];
+    await using lease = await this.#deps.reads.acquireRead();
+    const tags = new Set<string>();
+    for (const { libraryID } of libraries)
+      for (const tag of await Effect.runPromise(
+        lease.reads.TagNames({ libraryID }),
+      ))
+        tags.add(tag);
+    const collections = await Effect.runPromise(
+      lease.reads.CollectionPaths({
+        libraryIDs: libraries.map(({ libraryID }) => libraryID),
+      }),
+    );
+    return {
+      tags: [...tags].sort(),
+      collections: collections.map((path) => path.join("/")),
+      libraries: libraries.map(({ selector, name }) => ({
+        id: selectorKey(selector),
+        name,
+      })),
+    };
   }
 
   /** The host's link to the Query File, for the toolbar. */
@@ -497,6 +565,7 @@ export class QueryView extends Component implements HistorySurface {
       this.state.setState({
         phase: "idle",
         diagnostic: null,
+        filterIssue: null,
         count: 0,
         matched: 0,
         groups: [],
@@ -514,32 +583,32 @@ export class QueryView extends Component implements HistorySurface {
       (outcome) => {
         if (this.#run !== controller) return;
         this.#run = null;
-        return this.#land(key, view, outcome);
+        return this.#land({ key, file, view }, outcome);
       },
       (error: unknown) => {
         if (this.#run !== controller) return;
         this.#run = null;
         logger.warn("A Query View could not run its query", { error });
-        this.#fail(key, {
-          code: "query-failed",
-          message: error instanceof Error ? error.message : String(error),
-          hint: "",
-          report: [],
-        });
+        this.#fail(
+          { key, file, view },
+          {
+            code: "query-failed",
+            message: error instanceof Error ? error.message : String(error),
+            hint: "",
+            report: [],
+          },
+        );
       },
     );
   }
 
-  async #land(
-    key: string,
-    view: QueryFileView,
-    outcome: QueryViewOutcome,
-  ): Promise<void> {
+  async #land(run: ViewRun, outcome: QueryViewOutcome): Promise<void> {
+    const { key, view } = run;
     switch (outcome.kind) {
       case "cancelled":
         return;
       case "failed":
-        this.#fail(key, outcome.diagnostic);
+        this.#fail(run, outcome.diagnostic);
         return;
       case "result": {
         const { result } = outcome;
@@ -557,12 +626,14 @@ export class QueryView extends Component implements HistorySurface {
         this.state.setState({
           phase: "ready",
           diagnostic: null,
+          filterIssue: null,
           count: shown.count,
           matched: result.matchedCount,
           groups: shown.groups,
           truncated: result.truncated,
         });
         await this.#show(key, shown.rows);
+        this.#shownViewName = view.name;
         return;
       }
       default:
@@ -571,12 +642,35 @@ export class QueryView extends Component implements HistorySurface {
   }
 
   /**
-   * A run that gives no rows says why. A refresh of the view on screen keeps
-   * its last rows under the message; another view shows none.
+   * A run that gives no rows says why. A refresh of the rows on screen, or a
+   * new filter of the view they belong to, keeps them under the message;
+   * another view shows none. A fault in one condition of the filters is
+   * marked at that condition.
    */
-  #fail(key: string, diagnostic: QueryViewState["diagnostic"]): void {
-    if (this.#shownRequest !== key) void this.#show(null);
-    this.state.setState({ phase: "failed", diagnostic });
+  #fail(
+    { key, file, view }: ViewRun,
+    diagnostic: Diagnostic | NonNullable<QueryViewState["diagnostic"]>,
+  ): void {
+    const kept =
+      this.#shownRequest === key ||
+      (this.#shownRequest !== null && this.#shownViewName === view.name);
+    if (!kept) void this.#show(null);
+    const span =
+      "location" in diagnostic && diagnostic.location?.argument === "filter"
+        ? diagnostic.location.span
+        : undefined;
+    const at = span ? locateFilterFault(file, view, span) : null;
+    this.state.setState({
+      phase: "failed",
+      diagnostic,
+      keptResults: kept,
+      filterIssue: at && {
+        ...at,
+        message: [diagnostic.message, diagnostic.hint]
+          .filter(Boolean)
+          .join(" "),
+      },
+    });
   }
 
   /** Put these rows on screen, holding their lists before the old ones go. */
@@ -587,6 +681,7 @@ export class QueryView extends Component implements HistorySurface {
     const previous = this.#hold;
     this.#shownRequest = key;
     if (key === null) {
+      this.#shownViewName = null;
       this.#rows = [];
       this.#hold = null;
       this.#layout.clear();
@@ -612,6 +707,11 @@ function Problems({ view }: { view: QueryView }) {
   const problems = useQueryViewState(view, (s) => s.problems);
   const phase = useQueryViewState(view, (s) => s.phase);
   const diagnostic = useQueryViewState(view, (s) => s.diagnostic);
+  const filterIssue = useQueryViewState(view, (s) => s.filterIssue);
+  const keptResults = useQueryViewState(view, (s) => s.keptResults);
+  // A fault in one condition, under the last good rows, is marked at its row
+  // in the Filter popover; the view says only that the filter has an error.
+  const marked = filterIssue !== null && keptResults;
   const unresolved = useAnnotStore((s) => s.unresolved);
   return (
     <>
@@ -628,7 +728,16 @@ function Problems({ view }: { view: QueryView }) {
           ))}
         </div>
       )}
-      {phase === "failed" && diagnostic && (
+      {phase === "failed" && marked && (
+        <p
+          className="zt:mx-3 zt:mt-2 zt:mb-0 zt:text-sm zt:text-(--text-error)"
+          role="alert"
+          data-query-filter-error=""
+        >
+          {m.query_view_filter_error()}
+        </p>
+      )}
+      {phase === "failed" && !marked && diagnostic && (
         <div
           className="zt:rounded zt:mx-3 zt:mt-2 zt:border zt:border-(--background-modifier-error) zt:p-2 zt:text-sm"
           role="alert"
@@ -779,6 +888,7 @@ function QueryViewBody({ view }: { view: QueryView }) {
       >
         <ViewMenu view={view} />
         <ResultsMenu view={view} />
+        <FilterButton view={view} />
         <SortButton view={view} />
         <GroupButton view={view} />
         <PropertiesMenu view={view} />
