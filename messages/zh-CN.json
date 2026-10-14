@@ -2409,6 +2409,7 @@
   "query_file_untitled": "未命名",
   "query_file_default_view_name": "标注",
   "query_view_views": "视图",
+  "query_view_open_file": "打开查询文件",
   "query_view_loading": "加载中…",
   "query_view_results": [
     {
