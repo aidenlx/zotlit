@@ -2540,6 +2540,7 @@
   "query_view_problem_dataset": "标注布局仅显示 \"from: annotations\"。",
   "query_view_problem_layout_dataset": "{layout}布局仅显示 \"from: {datasets}\"。",
   "query_view_problem_no_view": "此文件中没有名为 \"{name}\" 的视图。",
+  "query_view_problem_duplicate_view": "此文件中有多个名为 \"{name}\" 的视图。请为每个视图使用不同的名称。",
   "query_view_sort": "排序",
   "query_view_sort_by": "排序依据",
   "query_view_sort_add": "添加排序",
