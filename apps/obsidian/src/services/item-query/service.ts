@@ -69,6 +69,7 @@ export class QueryService extends Service {
   /** The failure of startup: every job then rejects with it. */
   #startup: { failed: true; error: unknown } | undefined;
   ready: Promise<void>;
+  #viewRuns = 0;
 
   constructor(deps: QueryServiceDeps) {
     super();
@@ -152,6 +153,7 @@ export class QueryService extends Service {
     request: QueryViewRequest,
     signal: AbortSignal,
   ): Promise<QueryViewOutcome> {
+    if (__DEV__) this.#viewRuns++;
     const command: QueryViewCommand = {
       command: QUERY_COMMAND,
       schema: false,
@@ -181,6 +183,14 @@ export class QueryService extends Service {
       this.#job({ schema: false, command, values: request.value }),
       signal,
     );
+  }
+
+  /**
+   * How many typed queries of a Query View the service started. Counted in
+   * dev builds alone, for the End-to-end Run; `0` in production.
+   */
+  get viewRuns(): number {
+    return this.#viewRuns;
   }
 
   /** The jobs that have not settled. */
