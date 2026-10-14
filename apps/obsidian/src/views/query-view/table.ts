@@ -12,7 +12,7 @@ export interface ResultTable {
 }
 
 /** One value as the text of one cell. */
-function cell(value: QueryViewValue | undefined): string {
+export function cell(value: QueryViewValue | undefined): string {
   if (value === undefined || value === null) return "";
   if (typeof value === "string") return value;
   if (typeof value === "number" || typeof value === "boolean")

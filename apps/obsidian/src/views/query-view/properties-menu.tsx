@@ -11,6 +11,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
 
 import type { QueryFileDataset } from "./query-file";
+import { TOOLBAR_LABEL } from "./toolbar-popover";
 import type { QueryView } from "./view";
 import { datasetProperties, propertyChoices } from "./visible-properties";
 
@@ -41,16 +42,16 @@ export function PropertiesMenu({ view }: { view: QueryView }) {
     <Chooser value={order} onValueChange={setOrder}>
       <Chooser.Trigger
         className={trigger}
-        aria-label={m.settings_profile_properties_name()}
+        aria-label={m.query_view_properties()}
         data-query-properties=""
       >
         <Icon name="list" />
-        <span>{m.settings_profile_properties_name()}</span>
+        <span className={TOOLBAR_LABEL}>{m.query_view_properties()}</span>
       </Chooser.Trigger>
       <Chooser.Popup className="zt:min-w-60" data-query-properties-popup="">
         <Chooser.Input
           placeholder={m.query_view_properties_search()}
-          clearLabel={m.query_view_clear_search()}
+          clearLabel={m.query_view_properties_clear_search()}
         />
         <PropertyList
           dataset={current.from ?? "annotations"}
@@ -88,7 +89,7 @@ function PropertyList({
     if (order.length > 0)
       actions.push({
         value: "zt:hide-all",
-        label: m.query_view_group_hide_all(),
+        label: m.query_view_properties_hide_all(),
         action: () => setOrder([]),
       });
     return actions.length > 0
@@ -99,7 +100,8 @@ function PropertyList({
   return (
     <Chooser.List
       groups={groups}
-      aria-label={m.settings_profile_properties_name()}
+      aria-label={m.query_view_properties()}
+      emptyLabel={m.query_view_properties_empty()}
     >
       {(row) =>
         row.action ? (

@@ -5,9 +5,15 @@
 import { annotationColorLabel } from "@/lib/annotation-colors";
 import * as m from "@/lib/i18n/generated/messages";
 import type { QueryViewRow } from "@/services/item-query/query-view";
+import { itemTypeLabel } from "@/services/profile-selection/describe";
 import type { LayoutRow } from "@/views/annot-view/layout";
 
-import type { QueryFileGroupValue, QueryFileSort } from "./query-file";
+import type {
+  QueryFileDataset,
+  QueryFileGroupValue,
+  QueryFileSort,
+} from "./query-file";
+import { datasetProperties } from "./visible-properties";
 
 /** The group paths the Annotations Layout can gather rows by. */
 export const LAYOUT_GROUP_PATHS = [
@@ -19,6 +25,35 @@ export const LAYOUT_GROUP_PATHS = [
 ] as const;
 export type LayoutGroupPath = (typeof LAYOUT_GROUP_PATHS)[number];
 
+/** The group paths the Table can gather Item rows by. */
+export const ITEM_GROUP_PATHS = [
+  "itemType",
+  "tags[]",
+  "collections[]",
+] as const;
+export type ItemGroupPath = (typeof ITEM_GROUP_PATHS)[number];
+
+/** The group paths a view of Attachments can gather its rows by. */
+export const ATTACHMENT_GROUP_PATHS = [
+  "item.indexedKey",
+  "tags[]",
+  "item.collections[]",
+] as const;
+
+/** The group paths a view of `dataset` can gather its rows by. */
+export function groupPaths(
+  dataset: QueryFileDataset | undefined,
+): readonly string[] {
+  switch (dataset) {
+    case "items":
+      return ITEM_GROUP_PATHS;
+    case "attachments":
+      return ATTACHMENT_GROUP_PATHS;
+    default:
+      return LAYOUT_GROUP_PATHS;
+  }
+}
+
 /** The Projection Paths each row carries for its group and its heading. */
 export const LAYOUT_FIELDS = [
   "item.title",
@@ -28,6 +63,16 @@ export const LAYOUT_FIELDS = [
   "tags",
   "item.collections",
 ] as const;
+
+/**
+ * The {@link LAYOUT_FIELDS} a view of `dataset` can read: a dataset of
+ * Attachments or Items has no colour, and names its own title plainly.
+ */
+export function layoutFields(dataset: QueryFileDataset): readonly string[] {
+  if (dataset === "annotations") return LAYOUT_FIELDS;
+  const properties = new Set(datasetProperties(dataset));
+  return LAYOUT_FIELDS.filter((field) => properties.has(field));
+}
 
 /** One group of the rows, as the Manual group order lists it. */
 export interface LayoutGroup {
@@ -53,9 +98,16 @@ function text(value: unknown): string | null {
   return typeof value === "string" && value !== "" ? value : null;
 }
 
+/** The texts of a list; an Item's tags come as `{ name, type }`. */
 function texts(value: unknown): string[] {
   return Array.isArray(value)
-    ? value.filter((entry): entry is string => text(entry) !== null)
+    ? value
+        .map((entry: unknown) =>
+          typeof entry === "object" && entry !== null && "name" in entry
+            ? text(entry.name)
+            : text(entry),
+        )
+        .filter((entry) => entry !== null)
     : [];
 }
 
@@ -97,6 +149,14 @@ function placements(row: QueryViewRow, property: string): Placement[] {
       return none(texts(row.values.tags));
     case "item.collections[]":
       return none(texts(row.values["item.collections"]));
+    case "collections[]":
+      return none(texts(row.values.collections));
+    case "itemType": {
+      const itemType = text(row.values.itemType);
+      return itemType === null
+        ? none([])
+        : [{ value: itemType, label: itemTypeLabel(itemType) }];
+    }
     default:
       return [];
   }
