@@ -1,8 +1,8 @@
 // The Table layout: the Items of a view as rows, like Zotero's item list, with
 // the visible properties as columns and a "Literature note" column. An Item
-// row expands into its Attachments, and an Attachment row into its
-// Annotations. Each kind of child row comes from one Table Child Source, so a
-// new kind (such as an Item's notes) joins the list without another branch.
+// row expands into its Attachments and Child Notes, and an Attachment row
+// into its Annotations. Each kind of child row comes from one Table Child
+// Source, so a new kind joins the list without another branch.
 import {
   useEffect,
   useMemo,
@@ -41,7 +41,7 @@ export const TABLE_LAYOUT: QueryLayout = {
 };
 
 /** The kinds of row the Table shows: an Item, and the records under it. */
-export type TableRowKind = "item" | "attachment" | "annotation";
+export type TableRowKind = "item" | "attachment" | "annotation" | "note";
 
 /** One row of the Table: a record of one kind and the values it was read with. */
 export interface TableRecord {
@@ -109,6 +109,25 @@ export const TABLE_CHILD_SOURCES: readonly TableChildSource[] = [
       fields: ["title", ...markers("attachment")],
       limit: null,
     })),
+    render: ({ key, values }) => text(values.title) || key,
+  },
+  {
+    parent: "item",
+    kind: "note",
+    icon: "sticky-note",
+    // The Item row's `notes` list holds the key and title of each live Child
+    // Note, so these rows need no query of their own.
+    marker: "notes",
+    load: async (parent) => {
+      const notes = parent.values.notes;
+      if (!Array.isArray(notes)) return [];
+      return notes.flatMap((note: QueryViewValue): TableRecord[] => {
+        if (note === null || typeof note !== "object" || Array.isArray(note))
+          return [];
+        const values = note as QueryViewRow["values"];
+        return [{ kind: "note", key: text(values.indexedKey), values }];
+      });
+    },
     render: ({ key, values }) => text(values.title) || key,
   },
   {
