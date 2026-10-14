@@ -3,6 +3,7 @@
   "pages": [
     "settings",
     "commands",
+    "query-file-format",
     "template-workbench-cli",
     "protocol-links",
     "theme-hooks",
