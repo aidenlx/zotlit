@@ -1814,6 +1814,96 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(cards.text).toContain("limit: 100\n");
   }, 180000);
 
+  it("finds the same Items in the Table, List and Cards from one search, and Cards name and show properties as the Table does", async () => {
+    const path = "query-files/Items in three layouts.zotquery";
+    const layout = await obEval(
+      vaultId,
+      "JSON.stringify(app.workspace.getLayout())",
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{for(const modal of activeDocument.querySelectorAll('.modal.zt-configure-view'))(modal.querySelector('.modal-close-button')??modal.querySelector('.modal-header-button:has(.lucide-x)'))?.click();for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))leaf.detach();const file=app.vault.getFileByPath(${JSON.stringify(path)});if(file)await app.vault.delete(file);await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+      );
+    });
+    await obEval(
+      vaultId,
+      `(async()=>{const file=await app.vault.create(${JSON.stringify(path)},${JSON.stringify("views:\n  - type: table\n    name: Items\n    from: items\n    order:\n      - title\n      - itemType\n      - date\n      - publicationTitle\n    limit: 100\n")});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
+    );
+    /**
+     * The Items the tab shows, each with the text of its cells, and the
+     * names of the properties: the Table's column headers, or the labels of
+     * the first card.
+     */
+    const readTab = `(async()=>{const view=app.workspace.getMostRecentLeaf().view;if(view.getViewType()!=='zotlit-query-file')return 'null';await view.query.settled;const el=view.contentEl;const layout=el.querySelector('[data-query-layout]')?.getAttribute('data-query-layout')??(el.querySelector('[data-query-table]')?'table':'annotations');const rows=layout==='table'?[...el.querySelectorAll('tr[data-query-table-row="item"]')].map(n=>({key:n.getAttribute('data-query-key'),cells:[...n.querySelectorAll('td')].slice(1).map(c=>c.textContent)})):[...el.querySelectorAll('[data-query-row]')].map(n=>({key:n.getAttribute('data-query-row'),cells:layout==='cards'?[...n.children].map((part,at)=>at===0?part.textContent:part.children[1]?.textContent):[n.textContent]}));const labels=layout==='table'?[...el.querySelectorAll('th[data-query-column]')].map(n=>n.textContent):[...el.querySelector('[data-query-row]')?.children??[]].slice(1).map(part=>part.children[0]?.textContent);return JSON.stringify({layout,rows,labels});})()`;
+    interface Tab {
+      layout: string;
+      rows: { key: string; cells: string[] }[];
+      labels: string[];
+    }
+    const tabWhen = async (ready: (tab: Tab) => boolean): Promise<Tab> => {
+      let tab: Tab | null = null;
+      const settled = await waitFor(async () => {
+        tab = JSON.parse(await obEval(vaultId, readTab)) as Tab | null;
+        return tab !== null && ready(tab);
+      }, 120);
+      if (!settled) throw new Error(`Query File tab: ${JSON.stringify(tab)}`);
+      return tab!;
+    };
+    /** Pick a Layout in Configure view, then close it. */
+    const pickLayout = (type: string) =>
+      obEval(
+        vaultId,
+        `(async()=>{const el=app.workspace.getMostRecentLeaf().view.contentEl;el.querySelector('[data-query-view-menu]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:200,clientY:200}));await new Promise(r=>setTimeout(r,100));const modal=activeDocument.querySelector('.modal.zt-configure-view');const select=modal.querySelector('[data-query-view-layout]');select.value=${JSON.stringify(type)};select.dispatchEvent(new Event('change',{bubbles:true}));(modal.querySelector('.modal-close-button')??modal.querySelector('.modal-header-button:has(.lucide-x)')).click();return true;})()`,
+      );
+    /** Type into the toolbar search, which opens on its first use. */
+    const search = (text: string) =>
+      obEval(
+        vaultId,
+        `(async()=>{const el=app.workspace.getMostRecentLeaf().view.contentEl;if(!el.querySelector('[data-query-search]')){el.querySelector('[data-query-toolbar="search"]').click();await new Promise(r=>setTimeout(r,100));}const input=el.querySelector('[data-query-search]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(text)});input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+      );
+
+    const table = await tabWhen(
+      (tab) => tab.layout === "table" && tab.rows.length > 0,
+    );
+    const total = table.rows.length;
+    // Each layout finds the Items by the Item Type the Table shows, not by
+    // the name Zotero stores.
+    const found: Record<string, string[]> = {};
+    for (const type of ["table", "list", "cards"]) {
+      if (type !== "table") {
+        await search("");
+        await pickLayout(type);
+        await tabWhen(
+          (tab) => tab.layout === type && tab.rows.length === total,
+        );
+      }
+      await search("journal article");
+      const hits = await tabWhen(
+        (tab) =>
+          tab.layout === type && tab.rows.length > 0 && tab.rows.length < total,
+      );
+      found[type] = hits.rows.map((row) => row.key).toSorted();
+      await search("journalarticle");
+      await tabWhen((tab) => tab.layout === type && tab.rows.length === 0);
+    }
+    expect(found.list).toEqual(found.table);
+    expect(found.cards).toEqual(found.table);
+
+    // A card names each property under the title by the Table's column
+    // header, and shows each value as the Table's cell does.
+    await search("");
+    const cards = await tabWhen(
+      (tab) => tab.layout === "cards" && tab.rows.length === total,
+    );
+    expect(table.labels.slice(0, 2)).toEqual(["Title", "Item Type"]);
+    expect(cards.labels).toEqual(table.labels.slice(1));
+    const cells = new Map(table.rows.map((row) => [row.key, row.cells]));
+    for (const card of cards.rows)
+      expect(card.cells).toEqual(cells.get(card.key)!.slice(0, 4));
+  }, 180000);
+
   it("groups a Query File by colour in a Manual order, hides a colour, and keeps it on reopen", async () => {
     const layout = await obEval(
       vaultId,
