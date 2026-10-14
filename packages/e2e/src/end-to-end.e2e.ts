@@ -1815,6 +1815,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         "(()=>{for(const leaf of app.workspace.getLeavesOfType('pdf'))leaf.detach();return String(app.workspace.getLeavesOfType('pdf').length);})()",
       ),
     ).toBe("0");
+    // The default Profile shows Annotations in a Query Block; a Profile that
+    // lists them in the note renders their excerpts.
+    await obEval(
+      id,
+      `(async()=>{const profile=app.plugins.plugins.zotlit.services.profile;const source=profile.getBuiltInSource();const listed=source.replace(/## Annotations\\n\\n\`\`\`zotquery\\n[\\s\\S]*?\`\`\`\\n/,'{% for annotation in zt.annotations %}\\n{% render_annotation annotation %}\\n{% endfor %}\\n');if(listed===source)throw new Error('Default Profile has no Query Block');const path=profile.defaultDocumentPath;const folder=path.slice(0,path.lastIndexOf('/'));if(folder&&!app.vault.getFolderByPath(folder))await app.vault.createFolder(folder);await app.vault.create(path,listed);return true;})()`,
+    );
+    expect(
+      await obEvalUntil(
+        id,
+        "String(!!app.plugins.plugins.zotlit.services.profile.resolveProfile('default')?.document)",
+        { expected: "true" },
+      ),
+    ).toBe(true);
     const result = await createFixtureNote(id, 46);
     expect(result.outcome).toBe("created");
     if (result.outcome !== "created")
@@ -2009,8 +2022,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       `(async()=>{const file=app.vault.getFileByPath(${JSON.stringify(note.path)});const indexed=new Promise(resolve=>{const ref=app.metadataCache.on('changed',(changed,data)=>{if(changed!==file||!data.includes(${JSON.stringify(personal)}))return;app.metadataCache.offref(ref);resolve();});});await app.vault.append(file,${JSON.stringify(personal)});await indexed;await app.workspace.getLeaf(false).openFile(file);return true;})()`,
     );
     const before = await readFile(join(freshPath, note.path!), "utf-8");
-    expect(before).toContain("[!note]");
-    expect(before.split("[!note]").length - 1).toBe(annotationKeys.length);
+    // The default Profile shows the Annotations in a Query Block.
+    expect(managedRegion(before)).toContain("```zotquery");
+    expect(before).not.toContain("[!note]");
     expect(
       await obEval(
         freshId,
@@ -2118,13 +2132,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       }),
     ).toBe(true);
     expect(
-      await waitFor(
-        async () =>
+      await waitFor(async () =>
+        /^collections:/m.test(
           (await readFile(join(freshPath, note.path!), "utf-8")).split(
-            "[!quote]",
-          ).length -
-            1 ===
-          annotationKeys.length,
+            "---",
+          )[1]!,
+        ),
       ),
     ).toBe(true);
     const updated = m.template_workbench_updated_note({
@@ -2976,7 +2989,22 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(updated).toContain(`\ntitle: ${booksProfileTargetItem.title}\n`);
     expect(updated).toContain(`citekey: ${booksProfileTargetItem.citationKey}`);
     expect(updated).toContain("collections:");
-    expect(managedRegion(updated)).toBe("%%zt-managed%%\n\n%%/zt-managed%%");
+    expect(managedRegion(updated)).toBe(
+      [
+        "%%zt-managed%%",
+        "## Annotations",
+        "",
+        "```zotquery",
+        "views:",
+        "  - type: annotations",
+        "    name: Annotations",
+        "    from: annotations",
+        "    filters: item == this.item",
+        "```",
+        "",
+        "%%/zt-managed%%",
+      ].join("\n"),
+    );
     expect(noteBody(updated).replace(managedRegion(updated), "")).toBe(
       noteBody(afterMove).replace(managedRegion(afterMove), ""),
     );
@@ -5929,7 +5957,7 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
       throw new Error("First Literature Note was not created");
     expect(first.path).toBe("literatures/rougierTenSimpleRules2014.md");
     const original = await readFile(join(vaultPath, first.path), "utf-8");
-    expect(original).toContain("[!note]");
+    expect(original).toContain("```zotquery");
     await obEval(
       vaultId,
       `(async function(){await app.workspace.getLeaf(false).openFile(app.vault.getFileByPath(${JSON.stringify(first.path)}));return true;})()`,

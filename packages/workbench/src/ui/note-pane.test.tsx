@@ -9,12 +9,12 @@ import { fakeHost, renderWithMessages as render } from "./test-host";
 import { m } from "./test-messages";
 
 import { WorkbenchDocumentController } from "#/document/controller";
-import { DEFAULT_PROFILE_SOURCE } from "#/render/default-profile";
+import { ANNOTATION_LIST_PROFILE_SOURCE } from "#/render/test-profiles";
 
 afterEach(cleanup);
 
 function note(
-  controller = new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE),
+  controller = new WorkbenchDocumentController(ANNOTATION_LIST_PROFILE_SOURCE),
   example: { preview?: string | null; previewHint?: string | null } = {},
 ) {
   const host = fakeHost();
@@ -124,12 +124,14 @@ it("keeps edits in the master history when Advanced mounts and unmounts", () => 
   act(() => {
     controller.undo();
   });
-  expect(controller.source).toBe(DEFAULT_PROFILE_SOURCE);
+  expect(controller.source).toBe(ANNOTATION_LIST_PROFILE_SOURCE);
   expect(view.state.doc.toString()).toBe(controller.sliceText("note"));
 });
 
 it("moves one example between calls and retains it through a source edit", () => {
-  const controller = new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE);
+  const controller = new WorkbenchDocumentController(
+    ANNOTATION_LIST_PROFILE_SOURCE,
+  );
   const call = controller.noteRegions.annotationCalls[0]!.call;
   const text = controller.source.slice(call.from, call.to);
   controller.dispatch({ changes: { from: call.to, insert: `\n${text}` } });
@@ -204,7 +206,7 @@ it("reveals annotation and managed tags while the selection touches their source
 });
 
 it("shares preview toggles on one line and turns other lines off", () => {
-  const source = DEFAULT_PROFILE_SOURCE.replace(
+  const source = ANNOTATION_LIST_PROFILE_SOURCE.replace(
     "# {{ zt.title }}",
     "# {{ zt.title }}\n\n{% render_annotation zt.annotations[0] %} {% render_annotation zt.annotations[0] %}",
   );
@@ -233,7 +235,7 @@ it("keeps the preview on its line through Note and Source edits", () => {
   const call = "{% render_annotation zt.annotations[0] %}";
   const { container, view, controller } = note(
     new WorkbenchDocumentController(
-      DEFAULT_PROFILE_SOURCE.replace(
+      ANNOTATION_LIST_PROFILE_SOURCE.replace(
         "# {{ zt.title }}",
         `# {{ zt.title }}\n\n${call}`,
       ),

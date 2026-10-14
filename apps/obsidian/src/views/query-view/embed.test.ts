@@ -4,9 +4,9 @@
 // component it returns added to the note and loaded, and the file's text on
 // disk changing under it.
 import { resetMockPlatform, setMockPlatform } from "@mock/obsidian";
-import type { App, EmbedContext } from "obsidian";
+import type { App, EmbedContext, Scope } from "obsidian";
 import { act } from "preact/test-utils";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import type {
@@ -14,6 +14,7 @@ import type {
   QueryViewRequest,
 } from "@/services/item-query/query-view";
 
+import { QueryCardFocus } from "./card-focus";
 import { createQueryFileEmbed } from "./embed";
 import type { QueryFileEmbed } from "./embed";
 import { parseQueryFile } from "./query-file";
@@ -65,11 +66,21 @@ function setup() {
     "notes/Lab.md": NOTE,
     "notes/Plain.md": "No properties\n",
   });
+  /** The keymap's pushed Scopes, the last one on top. */
+  const scopes: Scope[] = [];
   const app = {
     ...host.app,
     scope: undefined,
+    keymap: {
+      pushScope: (scope: Scope) => scopes.push(scope),
+      popScope: (scope: Scope) => {
+        const index = scopes.indexOf(scope);
+        if (index !== -1) scopes.splice(index, 1);
+      },
+    },
     workspace: { ...host.workspace, getLeaf: vi.fn() },
   } as unknown as App;
+  const cardFocus = new QueryCardFocus(app);
   const run = vi.fn((_request: QueryViewRequest, _signal: AbortSignal) =>
     Promise.resolve(EMPTY),
   );
@@ -79,6 +90,7 @@ function setup() {
     reads: { on: off },
     libraryScope: { on: off },
     query: { run },
+    cardFocus,
     annotations: {
       on: off,
       hold: () => ({ [Symbol.dispose]: () => {} }),
@@ -112,7 +124,7 @@ function setup() {
     cleanup.defer(() => act(() => component.unload()));
     return { embed: component, el };
   }
-  return { host, run, embed };
+  return { host, run, embed, scopes, cardFocus };
 }
 
 const viewName = (el: HTMLElement) =>
@@ -177,4 +189,74 @@ it("saves through an open tab of the file, so the tab shows the change", async (
     tab.getViewData().indexOf("name: Yellow"),
   );
   expect(host.text(FILE_PATH)).toBe(tab.getViewData());
+});
+
+it("keeps a drag that starts in it from the note's editor, which would drag the embed's link", async () => {
+  const { embed } = setup();
+  const note = document.body.createDiv();
+  const { el } = await embed("notes/Lab.md");
+  note.append(el);
+  const editorDrag = vi.fn();
+  note.addEventListener("dragstart", editorDrag);
+  const handle = el.createEl("a", { attr: { draggable: "true" } });
+
+  handle.dispatchEvent(new DragEvent("dragstart", { bubbles: true }));
+  expect(editorDrag).not.toHaveBeenCalled();
+});
+
+describe("the card keys", () => {
+  /** A control in the embed that takes focus as a card does, and is no text field. */
+  const control = (el: HTMLElement) => {
+    const button = el.querySelector("button");
+    if (!button) throw new Error("The embed shows no button");
+    return button;
+  };
+
+  it("are on the keymap while focus is in the embed, and leave with focus to the note", async () => {
+    const { embed, scopes } = setup();
+    const { el } = await embed("notes/Lab.md");
+    const note = document.body.createEl("textarea");
+
+    control(el).focus();
+    expect(scopes).toHaveLength(1);
+    note.focus();
+    expect(scopes).toEqual([]);
+  });
+
+  it("stay off the keymap while focus is in a text field of the embed", async () => {
+    const { embed, scopes } = setup();
+    const { el } = await embed("notes/Lab.md");
+    const field = el.createEl("input", { type: "text" });
+
+    field.focus();
+    expect(scopes).toEqual([]);
+  });
+
+  it("leave the keymap when the embed unloads with focus in it", async () => {
+    const { embed, scopes } = setup();
+    const { embed: component, el } = await embed("notes/Lab.md");
+
+    control(el).focus();
+    await act(() => component.unload());
+    expect(scopes).toEqual([]);
+  });
+
+  it("let the palette step the embed focus was last in, through a modal over it", async () => {
+    const { embed, cardFocus } = setup();
+    const note = document.body.createDiv();
+    const { embed: component, el } = await embed("notes/Lab.md");
+    note.append(el);
+    const palette = document.body
+      .createDiv({ cls: "modal-container" })
+      .createEl("input");
+
+    expect(cardFocus.surfaceIn(note)).toBeNull();
+    control(el).focus();
+    palette.focus();
+    expect(cardFocus.surfaceIn(note)).toBe(component.query);
+
+    control(el).focus();
+    note.createEl("textarea").focus();
+    expect(cardFocus.surfaceIn(note)).toBeNull();
+  });
 });
