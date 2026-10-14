@@ -48,7 +48,9 @@ export type QueryFileProblem =
       readonly code: "invalid-value";
       readonly key: string;
       readonly value: unknown;
-    };
+    }
+  /** Two views have one name, which a link to a view or a view choice cannot tell apart. */
+  | { readonly code: "duplicate-view-name"; readonly name: string };
 
 export interface QueryFileView {
   /** The Layout. */
@@ -312,6 +314,12 @@ export function parseQueryFile(text: string): QueryFile {
   file.views = Array.isArray(value.views) ? value.views.map(readView) : [];
   if (file.views.length === 0 && problems.length === 0)
     problems.push({ code: "no-views" });
+  const names = new Set<string>();
+  const duplicates = new Set<string>();
+  for (const { name } of file.views)
+    if (name) (names.has(name) ? duplicates : names).add(name);
+  for (const name of duplicates)
+    problems.push({ code: "duplicate-view-name", name });
   return file;
 }
 
@@ -718,12 +726,12 @@ export function locateFilterFault(
 }
 
 /**
- * The file with new filters: for all views when `viewName` is `null`, else
- * for the view of that name. `undefined` removes the filters.
+ * The file with new filters: for all views when `index` is `null`, else for
+ * the view at that place. `undefined` removes the filters.
  */
 export function withFilters(
   file: QueryFile,
-  viewName: string | null,
+  index: number | null,
   filters: MatchTree | undefined,
 ): QueryFile {
   const set = <T extends { readonly source: Readonly<Entries> }>(
@@ -736,11 +744,9 @@ export function withFilters(
       source: filters === undefined ? source : target.source,
     };
   };
-  if (viewName === null) return set(file);
+  if (index === null) return set(file);
   return {
     ...file,
-    views: file.views.map((view) =>
-      view.name === viewName ? set(view) : view,
-    ),
+    views: file.views.map((view, at) => (at === index ? set(view) : view)),
   };
 }

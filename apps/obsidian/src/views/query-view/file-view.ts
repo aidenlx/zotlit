@@ -2,7 +2,7 @@
 // Query View. In its own tab a Query File has no Query Context, so `this` has
 // no value and a filter that reads it shows the engine's diagnostic.
 import { Scope, TextFileView } from "obsidian";
-import type { ViewStateResult, WorkspaceLeaf } from "obsidian";
+import type { TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
 
 import { QueryView } from "./view";
 import type { QueryViewDeps } from "./view";
@@ -47,11 +47,16 @@ export class QueryFileView extends TextFileView {
     return this.data;
   }
 
-  override setViewData(data: string, clear: boolean): void {
-    // The view's own save comes back as the text it already shows.
-    const shown = !clear && data === this.data;
+  override setViewData(data: string): void {
     this.data = data;
-    if (!shown) this.query.setText(data);
+    this.query.setText(data);
+  }
+
+  override async onUnloadFile(file: TFile): Promise<void> {
+    // A typed change that waits for its delay belongs to this file, which the
+    // tab saves as it lets the file go.
+    await this.query.flush();
+    await super.onUnloadFile(file);
   }
 
   override clear(): void {}

@@ -24,6 +24,7 @@ import {
   NOTE_CLASS,
 } from "@/setting-tab/profile-dialog";
 import { QUERY_FILE_EXTENSION } from "@/views/query-view/query-file";
+import { untitledName } from "@/views/query-view/register";
 
 import { savedQueryFileText } from "./sidebar-query";
 import type { SaveQueryFileInput, SavedRecords } from "./sidebar-query";
@@ -71,16 +72,6 @@ class SaveQueryFileModal extends Modal {
     this.#folder = folder;
   }
 
-  /** The first `Untitled`, `Untitled 1`, … free in the folder. */
-  #freeName(): string {
-    const base = m.query_file_untitled();
-    for (let index = 0; ; index++) {
-      const name = index === 0 ? base : `${base} ${index}`;
-      if (!this.app.vault.getAbstractFileByPath(filePath(this.#folder, name)))
-        return name;
-    }
-  }
-
   override onOpen(): void {
     frameDialog(this);
     this.modalEl.addClass("zt-save-query-file-modal");
@@ -88,7 +79,13 @@ class SaveQueryFileModal extends Modal {
     const body = this.contentEl.createDiv({
       cls: "zt:flex zt:flex-col zt:gap-4",
     });
-    let name = this.#freeName();
+    // The first `Untitled`, `Untitled 1`, … free in the folder.
+    let name = untitledName(
+      (candidate) =>
+        this.app.vault.getAbstractFileByPath(
+          filePath(this.#folder, candidate),
+        ) !== null,
+    );
     let folder = this.#folder;
     let records: SavedRecords = "this-item";
 

@@ -176,9 +176,7 @@ function FormulaForm({
         <button
           type="submit"
           className="mod-cta"
-          disabled={
-            !view.writable || nameIssue !== null || syntaxIssue !== null
-          }
+          disabled={nameIssue !== null || syntaxIssue !== null}
           data-query-formula-save=""
         >
           {m.query_view_formula_save()}

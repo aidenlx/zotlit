@@ -320,7 +320,6 @@ export interface FilterEditorProps {
   thisView: MatchFilter | undefined;
   values: FilterValues;
   issue: FilterIssue;
-  disabled?: boolean;
   /** The sections that show; both by default. */
   sections?: readonly FilterSection[];
   /** Save one section's filters; answers whether they were kept. */
@@ -335,7 +334,6 @@ export function FilterEditor({
   thisView,
   values,
   issue,
-  disabled = false,
   sections: shown = ["all", "view"],
   onChange,
 }: FilterEditorProps) {
@@ -386,7 +384,6 @@ export function FilterEditor({
                 <MatchEditor
                   value={value}
                   vocabulary={vocabulary(section)}
-                  disabled={disabled}
                   onChange={(next) => onChange(section, next)}
                 />
               )}
@@ -425,7 +422,6 @@ export function FilterButton({ view }: { view: QueryView }) {
         thisView={shown.filters}
         values={values}
         issue={filterIssue}
-        disabled={!view.writable}
         onChange={(section, next) => view.setFilters(section, next)}
       />
     </ToolbarPopover>
