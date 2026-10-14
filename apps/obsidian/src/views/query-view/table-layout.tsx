@@ -18,7 +18,7 @@ import { FIELD_LABELS } from "@zotlit/zotero-types/field-labels";
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
 import { runtime } from "@/lib/i18n/generated/runtime";
-import { cn } from "@/lib/utils";
+import { cn, tooltipAttrs } from "@/lib/utils";
 import type {
   QueryViewRequest,
   QueryViewRow,
@@ -29,6 +29,7 @@ import { itemTypeLabel } from "@/services/profile-selection/describe";
 import { useAnnotStore } from "@/views/annot-view/store";
 
 import type { QueryLayout } from "./layouts";
+import { formulaIssue } from "./query-file";
 import { cell } from "./table";
 import type { LiteratureNotes } from "./table-notes";
 import type { QueryView } from "./view";
@@ -459,6 +460,7 @@ function ChildRow({
 export function TableLayout({ view }: { view: QueryView }) {
   const shown = useStore(view.state, (s) => s.view);
   const rows = useStore(view.state, (s) => s.records);
+  const formulaIssues = useStore(view.state, (s) => s.formulaIssues);
   const search = useAnnotStore((s) => s.filterQuery)
     .trim()
     .toLowerCase();
@@ -492,15 +494,29 @@ export function TableLayout({ view }: { view: QueryView }) {
         <thead>
           <tr className="zt:border-b zt:border-(--background-modifier-border) zt:text-left">
             <th className="zt:w-6" />
-            {columns.map((property) => (
-              <th
-                key={property}
-                className="zt:px-2 zt:py-1 zt:font-medium"
-                data-query-column={property}
-              >
-                {columnLabel(property)}
-              </th>
-            ))}
+            {columns.map((property) => {
+              const issue = formulaIssue(formulaIssues, property);
+              return (
+                <th
+                  key={property}
+                  className="zt:px-2 zt:py-1 zt:font-medium"
+                  data-query-column={property}
+                  data-query-formula-issue={issue ?? undefined}
+                >
+                  {issue === null ? (
+                    columnLabel(property)
+                  ) : (
+                    <span
+                      className="zt:inline-flex zt:items-center zt:gap-1 zt:text-(--text-error)"
+                      {...tooltipAttrs(issue)}
+                    >
+                      <Icon name="alert-triangle" size={14} />
+                      {columnLabel(property)}
+                    </span>
+                  )}
+                </th>
+              );
+            })}
             <th className="zt:px-2 zt:py-1 zt:font-medium">
               {m.query_view_table_literature_note()}
             </th>
