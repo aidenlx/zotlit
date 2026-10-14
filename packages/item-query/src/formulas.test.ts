@@ -9,7 +9,13 @@ import {
 } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
-import { ANNOTATIONS, ATTACHMENTS, collectQuery, ITEMS } from ".";
+import {
+  ANNOTATIONS,
+  ATTACHMENTS,
+  collectQuery,
+  formulaReferences,
+  ITEMS,
+} from ".";
 import type { ItemQueryRequest, QueryDataset, QueryResult } from ".";
 import { ItemQueryError } from "./error";
 import { runEffect } from "./test-helpers";
@@ -412,4 +418,16 @@ it("warns about a comparison in the text of a Formula, at the Formula", async ()
       location: { argument: "formulas", path: "x", span: { from: 0, to: 13 } },
     },
   ]);
+});
+
+it("finds the Formulas a Filter Expression reads as the planner resolves them", () => {
+  expect(
+    formulaReferences('formula . year > 2000 && title == "formula.bad"'),
+  ).toEqual([{ name: "year", from: 0, to: 14 }]);
+  expect(formulaReferences("formula.parts[0] + formula.n.round()")).toEqual([
+    { name: "parts", from: 0, to: 13 },
+    { name: "n", from: 19, to: 28 },
+  ]);
+  // A text that does not parse reads no Formula.
+  expect(formulaReferences("formula.year +")).toEqual([]);
 });

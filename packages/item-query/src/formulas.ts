@@ -3,6 +3,9 @@
 // a record and converts its value into the Query Row shape.
 import { regex } from "arkregex";
 
+import { parseExpressionAst } from "@zotlit/filter-expression";
+import type { ExpressionNode } from "@zotlit/filter-expression";
+
 import type { ItemQueryErrorCode } from "./error";
 import { dateText } from "./filter-dates";
 import type { DateValue } from "./filter-dates";
@@ -25,6 +28,59 @@ export const FORMULA_SEGMENT = "formula";
 
 /** The form of a Formula name: an identifier. */
 export const FORMULA_NAME = regex("^[A-Za-z_][A-Za-z0-9_]*$");
+
+/** One `formula.<name>` that a Filter Expression reads, with its span. */
+export interface FormulaReference {
+  readonly name: string;
+  readonly from: number;
+  readonly to: number;
+}
+
+/**
+ * The Formulas that the Filter Expression `text` reads, in the order of the
+ * text: each `formula.<name>` as the planner resolves it, so a quoted
+ * "formula.x" reads none and `formula . x` reads x. A text that does not
+ * parse reads none; planning it gives its Syntax Fault.
+ */
+export function formulaReferences(text: string): FormulaReference[] {
+  const { ast } = parseExpressionAst(text);
+  const found: FormulaReference[] = [];
+  const visit = (node: ExpressionNode) => {
+    if (
+      node.type === "object-access" &&
+      node.object.type === "identifier" &&
+      node.object.name === FORMULA_SEGMENT
+    ) {
+      found.push({ name: node.property, from: node.from, to: node.to });
+      return;
+    }
+    for (const child of expressionChildren(node)) visit(child);
+  };
+  if (ast) visit(ast);
+  return found.sort((a, b) => a.from - b.from);
+}
+
+/** The nodes directly under `node`. */
+function expressionChildren(node: ExpressionNode): readonly ExpressionNode[] {
+  switch (node.type) {
+    case "binary":
+      return [node.left, node.right];
+    case "unary":
+      return [node.operand];
+    case "call":
+      return [node.callee, ...node.args];
+    case "array-access":
+      return [node.object, node.index];
+    case "object-access":
+      return [node.object];
+    case "array":
+      return node.elements;
+    case "group":
+      return [node.expression];
+    default:
+      return [];
+  }
+}
 
 /** The Formula vocabulary of the Item Query Schema catalog. */
 export const FORMULA_SCHEMA = {
