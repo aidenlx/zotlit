@@ -11,11 +11,12 @@
 // View never holds another live one.
 //
 // @see apps/obsidian/docs/adr/0068-query-files-are-a-zotlit-file-type-embedded-through-the-private-embed-registry.md
-import { MarkdownRenderChild, Notice, Scope } from "obsidian";
+import { MarkdownRenderChild, Scope } from "obsidian";
 import type { MarkdownPostProcessorContext, Plugin } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import { BaseNotice } from "@/lib/notice";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 
 import { canWriteBlock, writeBlockCode } from "./block-write";
@@ -142,7 +143,7 @@ class QueryBlock extends MarkdownRenderChild {
     } catch (error) {
       this.#source = previous;
       logger.warn("A Query Block could not save its text", { error });
-      new Notice(m.query_block_save_failed());
+      new BaseNotice(m.query_block_save_failed());
     }
   }
 }
