@@ -21,6 +21,7 @@ import type { Diagnostic } from "@/services/item-query/contract";
 import type {
   QueryViewOutcome,
   QueryViewRequest,
+  QueryViewRow,
 } from "@/services/item-query/query-view";
 import type { QueryService } from "@/services/item-query/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
@@ -30,9 +31,29 @@ import { AnnotationsLayout } from "@/views/annot-view/layout";
 import type { AnnotationsLayoutDeps } from "@/views/annot-view/layout";
 import { useAnnotStore } from "@/views/annot-view/store";
 
-import { parseQueryFile, viewFilter } from "./query-file";
-import type { QueryFile, QueryFileProblem, QueryFileView } from "./query-file";
-import { LAYOUT_FIELDS, LAYOUT_GROUP_PATHS, layoutRows } from "./rows";
+import { visibleProperties } from "./properties";
+import { PropertiesMenu } from "./properties-menu";
+import {
+  parseQueryFile,
+  serializeQueryFile,
+  updateView,
+  viewFilter,
+} from "./query-file";
+import type {
+  QueryFile,
+  QueryFileProblem,
+  QueryFileView,
+  QueryFileViewChange,
+} from "./query-file";
+import { ResultsMenu } from "./results-menu";
+import {
+  LAYOUT_FIELDS,
+  LAYOUT_GROUP_PATHS,
+  layoutRows,
+  shownRows,
+} from "./rows";
+import { resultTable } from "./table";
+import type { ResultTable } from "./table";
 
 const logger = getLogger(["views", "query-view"]);
 
@@ -58,6 +79,11 @@ export interface QueryViewHost {
   context: () => QueryContext | undefined;
   /** The user chose another view of the file; the host may remember it. */
   onSelectView?: (name: string) => void;
+  /**
+   * Keep the file's text after a toolbar change. Without it, a change holds
+   * only while the view stays open.
+   */
+  save?: (text: string) => void;
 }
 
 /** What the view shows now, as the toolbar and the host read it. */
@@ -72,8 +98,10 @@ export interface QueryViewState {
   diagnostic:
     | (Pick<Diagnostic, "message" | "hint" | "report"> & { code: string })
     | null;
-  /** The rows the query gave. */
+  /** The records that match the view, before its limit. */
   count: number;
+  /** The rows on screen, after the view's limit. */
+  shown: number;
   /** Whether the view's limit cut the rows short. */
   truncated: boolean;
 }
@@ -85,6 +113,7 @@ const INITIAL_STATE: QueryViewState = {
   phase: "idle",
   diagnostic: null,
   count: 0,
+  shown: 0,
   truncated: false,
 };
 
@@ -139,6 +168,8 @@ export class QueryView extends Component {
   /** The view whose rows are on screen, which a failed refresh keeps. */
   #shownView: QueryFileView | null = null;
   #settled: Promise<void> = Promise.resolve();
+  /** The rows on screen, in the order they show. */
+  #rows: readonly QueryViewRow[] = [];
   #subscriptions: DisposableStack | null = null;
 
   constructor(deps: QueryViewDeps, host: QueryViewHost) {
@@ -199,6 +230,30 @@ export class QueryView extends Component {
     this.#choose();
   }
 
+  /**
+   * Apply a toolbar change to the view shown, run it again, and hand the
+   * file's new text to the host to keep.
+   */
+  changeView(change: QueryFileViewChange): void {
+    const { file, view } = this.state.getState();
+    if (!file || !view) return;
+    const text = serializeQueryFile(updateView(file, view, change));
+    this.setText(text);
+    this.#host.save?.(text);
+  }
+
+  /**
+   * The rows on screen as a table, one column for each visible property in
+   * the view's order: what "Copy to clipboard" and "Export CSV..." write.
+   */
+  table(): ResultTable {
+    const { view } = this.state.getState();
+    return resultTable(
+      this.#rows,
+      view ? visibleProperties(view, { fallback: true }) : [],
+    );
+  }
+
   /** Show the view named `name`, or the file's first view for `null`. */
   selectView(name: string | null): void {
     if (name === this.#wanted && this.state.getState().view?.name === name)
@@ -247,6 +302,7 @@ export class QueryView extends Component {
         phase: "idle",
         diagnostic: null,
         count: 0,
+        shown: 0,
         truncated: false,
       });
       return;
@@ -265,7 +321,12 @@ export class QueryView extends Component {
           direction: direction === "DESC" ? "desc" : "asc",
         })),
       }),
-      fields: [...LAYOUT_FIELDS],
+      fields: [
+        ...new Set([
+          ...LAYOUT_FIELDS,
+          ...visibleProperties(view, { fallback: true }),
+        ]),
+      ],
       limit: view.limit ?? null,
       ...(this.#host.context() && { context: this.#host.context() }),
     };
@@ -299,10 +360,12 @@ export class QueryView extends Component {
       case "result": {
         const { result } = outcome;
         const rows = layoutRows(result.rows ?? [], view.groupBy);
+        this.#rows = shownRows(result.rows ?? [], view.groupBy);
         this.state.setState({
           phase: "ready",
           diagnostic: null,
-          count: result.returnedCount,
+          count: result.matchedCount,
+          shown: result.returnedCount,
           truncated: result.truncated,
         });
         await this.#show(view, rows);
@@ -330,6 +393,7 @@ export class QueryView extends Component {
     const previous = this.#hold;
     this.#shownView = view;
     if (view === null) {
+      this.#rows = [];
       this.#hold = null;
       this.#layout.clear();
       previous?.[Symbol.dispose]();
@@ -375,22 +439,6 @@ function ViewMenuButton({ view }: { view: QueryView }) {
       <span>{current?.name ?? file.views[0]!.name}</span>
       <Icon name="chevrons-up-down" size={14} />
     </button>
-  );
-}
-
-function ResultCount({ view }: { view: QueryView }) {
-  const phase = useQueryViewState(view, (s) => s.phase);
-  const count = useQueryViewState(view, (s) => s.count);
-  const truncated = useQueryViewState(view, (s) => s.truncated);
-  if (phase === "loading")
-    return <span data-query-count="">{m.query_view_loading()}</span>;
-  if (phase !== "ready") return null;
-  return (
-    <span data-query-count={count}>
-      {truncated
-        ? m.query_view_results_limited({ count })
-        : m.query_view_results({ count })}
-    </span>
   );
 }
 
@@ -466,9 +514,9 @@ function QueryViewBody({ view }: { view: QueryView }) {
         role="toolbar"
       >
         <ViewMenuButton view={view} />
-        <span className="zt:text-(--text-muted)">
-          <ResultCount view={view} />
-        </span>
+        <ResultsMenu view={view} />
+        <div className="zt:flex-1" />
+        <PropertiesMenu view={view} />
       </div>
       <Problems view={view} />
       <NoResults view={view} />

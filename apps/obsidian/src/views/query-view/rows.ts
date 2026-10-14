@@ -34,27 +34,35 @@ function groupOf(
 }
 
 /**
- * The rows the layout shows. Groups follow the query order of their first
- * rows, and a descending grouping reverses them; the rows inside a group keep
- * the query's order.
+ * The rows in the order the view shows them. Groups follow the query order of
+ * their first rows, and a descending grouping reverses them; the rows inside a
+ * group keep the query's order.
  */
-export function layoutRows(
+export function shownRows(
   rows: readonly QueryViewRow[],
   groupBy: QueryFileSort | undefined,
-): LayoutRow[] {
-  const base = (row: QueryViewRow): LayoutRow => ({
-    annotationKey: row.indexedKey,
-    attachmentKey: row.attachmentIndexedKey ?? row.indexedKey,
-  });
-  if (!groupBy) return rows.map(base);
-  const groups = new Map<string, LayoutRow[]>();
+): QueryViewRow[] {
+  if (!groupBy) return [...rows];
+  const groups = new Map<string, QueryViewRow[]>();
   for (const row of rows) {
-    const group = groupOf(row, groupBy.property);
-    const members = groups.get(group.key) ?? [];
-    members.push({ ...base(row), group });
-    groups.set(group.key, members);
+    const { key } = groupOf(row, groupBy.property);
+    const members = groups.get(key) ?? [];
+    members.push(row);
+    groups.set(key, members);
   }
   const ordered = [...groups.values()];
   if (groupBy.direction === "DESC") ordered.reverse();
   return ordered.flat();
+}
+
+/** The rows the layout shows, in the order of {@link shownRows}. */
+export function layoutRows(
+  rows: readonly QueryViewRow[],
+  groupBy: QueryFileSort | undefined,
+): LayoutRow[] {
+  return shownRows(rows, groupBy).map((row) => ({
+    annotationKey: row.indexedKey,
+    attachmentKey: row.attachmentIndexedKey ?? row.indexedKey,
+    ...(groupBy && { group: groupOf(row, groupBy.property) }),
+  }));
 }

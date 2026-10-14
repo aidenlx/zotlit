@@ -59,6 +59,12 @@ export interface QueryFileView {
    */
   readonly groupBy?: QueryFileSort;
   readonly limit?: number;
+  /**
+   * The visible properties, as Projection Paths, in the order the view shows
+   * them. Copy and CSV export write these columns; the Table, List and Cards
+   * layouts show them in this order.
+   */
+  readonly order?: readonly string[];
   readonly problems: readonly QueryFileProblem[];
   /** The view's map as the file holds it, with every key the parser does not read. */
   readonly source: Readonly<Record<string, unknown>>;
@@ -192,6 +198,15 @@ function readView(value: unknown): QueryFileView {
       view.limit = limit;
     else invalid("limit");
   }
+  if (source.order !== undefined) {
+    const { order } = source;
+    if (
+      Array.isArray(order) &&
+      order.every((entry) => typeof entry === "string" && entry !== "")
+    )
+      view.order = order as string[];
+    else invalid("order");
+  }
   return view;
 }
 
@@ -262,6 +277,12 @@ function writeFilter(tree: MatchTree | undefined): unknown {
     : { or: tree.or.map(writeFilter) };
 }
 
+function invalidKey(view: QueryFileView, key: string): boolean {
+  return view.problems.some(
+    (problem) => problem.code === "invalid-value" && problem.key === key,
+  );
+}
+
 function writeView(view: QueryFileView): Entries {
   return merged(view.source, {
     type: view.type || undefined,
@@ -270,8 +291,45 @@ function writeView(view: QueryFileView): Entries {
     filters: writeFilter(view.filters) ?? view.source.filters,
     sort: view.sort?.map((sort) => ({ ...sort })) ?? view.source.sort,
     groupBy: view.groupBy ? { ...view.groupBy } : view.source.groupBy,
-    limit: view.limit ?? view.source.limit,
+    // A view without a limit shows every result, so its key goes; a limit the
+    // parser could not read stays as the file holds it.
+    limit:
+      view.limit ?? (invalidKey(view, "limit") ? view.source.limit : undefined),
+    order: view.order ? [...view.order] : view.source.order,
   });
+}
+
+/** What a toolbar change sets on one view. */
+export interface QueryFileViewChange {
+  readonly order?: readonly string[];
+  /** `null`: no limit, so the view shows every result. */
+  readonly limit?: number | null;
+}
+
+/** The file with one of its views changed; the other views stay as they are. */
+export function updateView(
+  file: QueryFile,
+  view: QueryFileView,
+  change: QueryFileViewChange,
+): QueryFile {
+  const next: { -readonly [K in keyof QueryFileView]: QueryFileView[K] } = {
+    ...view,
+  };
+  if (change.order !== undefined) next.order = [...change.order];
+  if (change.limit !== undefined) {
+    if (change.limit === null) delete next.limit;
+    else next.limit = change.limit;
+    next.problems = view.problems.filter(
+      (problem) =>
+        !(problem.code === "invalid-value" && problem.key === "limit"),
+    );
+  }
+  return {
+    ...file,
+    views: file.views.map((candidate) =>
+      candidate === view ? next : candidate,
+    ),
+  };
 }
 
 /** Writes a Query File's text. A key the parser kept stays where it was. */

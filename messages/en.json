@@ -2580,14 +2580,32 @@
   ],
   "query_view_results_limited": [
     {
-      "declarations": ["input count", "local countPlural = count: plural"],
+      "declarations": [
+        "input count",
+        "input shown",
+        "local countPlural = count: plural"
+      ],
       "selectors": ["countPlural"],
       "match": {
-        "countPlural=one": "1 result (limit reached)",
-        "countPlural=*": "{count} results (limit reached)"
+        "countPlural=one": "{shown} of 1 result",
+        "countPlural=*": "{shown} of {count} results"
       }
     }
   ],
+  "query_view_results_menu": "Results",
+  "query_view_limit": "Limit number of results",
+  "query_view_limit_placeholder": "e.g. 10",
+  "query_view_show_all": "Show all ({count})",
+  "query_view_copy": "Copy to clipboard",
+  "query_view_copied": "Copied to your clipboard",
+  "query_view_copy_failed": "Failed to copy to clipboard",
+  "query_view_export_csv": "Export CSV...",
+  "query_view_properties": "Properties",
+  "query_view_properties_search": "Find or create...",
+  "query_view_properties_clear_search": "Clear search",
+  "query_view_properties_empty": "No results found.",
+  "query_view_properties_add": "Add \"{name}\" property",
+  "query_view_properties_hide_all": "Hide all",
   "query_view_no_results": "No annotations match this view.",
   "query_view_unresolved": [
     {
