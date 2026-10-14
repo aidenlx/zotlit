@@ -471,6 +471,25 @@ export function handlersLayer(options?: HandlersOptions) {
             };
           }),
 
+        AnnotationsOfAttachments: ({ attachmentKeys, snapshot }) =>
+          withClient(snapshot, (client) => {
+            const accountUserID = getAccountUserID(client);
+            return attachmentKeys.map((attachmentKey) => {
+              const library = resolveIndexedKeyLibrary(client, attachmentKey);
+              const attachment = library
+                ? getAttachmentByKey(client, library.key, library.libraryID)
+                : null;
+              return {
+                attachmentKey,
+                attachment,
+                annotations: attachment
+                  ? getAnnotationsByParent(client, attachment.itemID)
+                  : [],
+                accountUserID,
+              };
+            });
+          }),
+
         AttachmentsOf: ({ itemIDs, snapshot }) =>
           withClient(snapshot, (client) =>
             getAttachmentsByParents(client, itemIDs),
