@@ -431,3 +431,32 @@ it("finds the Formulas a Filter Expression reads as the planner resolves them", 
   // A text that does not parse reads no Formula.
   expect(formulaReferences("formula.year +")).toEqual([]);
 });
+
+it.each([
+  [
+    "sort",
+    {
+      formulas: { year: "date.year" },
+      fields: ["formula.year"],
+      sort: [{ field: "formula.year", direction: "asc" }],
+    },
+    { code: "unsortable-field", location: { argument: "sort", index: 0 } },
+  ],
+  [
+    "group",
+    {
+      formulas: { year: "date.year" },
+      fields: ["formula.year"],
+      group: "formula.year",
+    },
+    { code: "invalid-group", location: { argument: "group" } },
+  ],
+] satisfies [string, Omit<ItemQueryRequest, "libraries">, object][])(
+  "rejects a %s by a Formula, and says that it is not available yet",
+  async (_, request, expected) => {
+    using scenario = openScenarioDatabase();
+    const error = await failure(scenario, request);
+    expect(error.diagnostic).toMatchObject(expected);
+    expect(error.diagnostic.message).toContain("formula.year yet");
+  },
+);

@@ -86,7 +86,7 @@ import type {
 } from "./query-file";
 import type { ShownRecord } from "./record-rows";
 import { ResultsMenu } from "./results-menu";
-import { layoutFields, layoutRows } from "./rows";
+import { groupPaths, layoutFields, layoutRows } from "./rows";
 import type { LayoutGroup } from "./rows";
 import { SearchControl } from "./search-control";
 import { SortEditor } from "./sort-control";
@@ -245,6 +245,11 @@ function problemText(problem: QueryFileProblem): string {
 /** What keeps the view's Layout from showing it, beside the parser's own problems. */
 function layoutProblems(view: QueryFileView): string[] {
   const problems: string[] = [];
+  // The Layout gathers the rows into groups itself, by the group paths of the
+  // view's dataset; a grouping of no dataset, such as a Formula, it cannot do.
+  const group = usedGroupBy(view)?.property;
+  if (group !== undefined && !groupPaths(view.from).includes(group))
+    problems.push(m.query_view_problem_group({ property: group }));
   const layout = layoutOf(view);
   if (!layout) problems.push(m.query_view_problem_layout({ type: view.type }));
   else if (!layout.datasets.includes(view.from ?? "annotations"))

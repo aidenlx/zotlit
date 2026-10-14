@@ -3,7 +3,7 @@
 // does not touch where it was, so a save writes them back.
 import { DATASETS } from "./datasets";
 import { layoutsFor } from "./layouts";
-import { NEW_QUERY_FILE_LIMIT } from "./query-file";
+import { NEW_QUERY_FILE_LIMIT, QUERY_FILE_DATASETS } from "./query-file";
 import type { QueryFile, QueryFileDataset, QueryFileView } from "./query-file";
 import { groupPaths } from "./rows";
 import { fitsDataset } from "./visible-properties";
@@ -161,13 +161,23 @@ export function unusedSettings(
   view: Pick<QueryFileView, "from" | "sort" | "groupBy" | "order">,
 ): UnusedSettings {
   const dataset = view.from ?? "annotations";
-  const sortable = new Set(DATASETS[dataset].engine.sortableFields);
+  // A setting of no dataset, such as formula.<name>, is the view's own: the
+  // view uses it, and ZotLit Query or the view says what is wrong with it.
+  const ofAnotherDataset = (has: (other: QueryFileDataset) => boolean) =>
+    !has(dataset) && QUERY_FILE_DATASETS.some((other) => has(other));
   return {
     sort: (view.sort ?? [])
       .map(({ property }) => property)
-      .filter((property) => !sortable.has(property)),
+      .filter((property) =>
+        ofAnotherDataset((other) =>
+          DATASETS[other].engine.sortableFields.includes(property),
+        ),
+      ),
     groupBy:
-      view.groupBy && !groupPaths(dataset).includes(view.groupBy.property)
+      view.groupBy &&
+      ofAnotherDataset((other) =>
+        groupPaths(other).includes(view.groupBy!.property),
+      )
         ? view.groupBy.property
         : null,
     order: (view.order ?? []).filter(
