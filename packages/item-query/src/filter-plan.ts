@@ -194,13 +194,16 @@ export interface FilterRegistry<Item, Needs = FieldNeeds> {
 
 export function planFilter<Item = QueryItem, Needs = FieldNeeds>(
   text: string,
-  // The default is the Item Query registry, with its `QueryItem` and its
-  // `FieldNeeds`.
-  registry: FilterRegistry<Item, Needs> = itemFilterRegistry as FilterRegistry<
-    any,
-    any
-  >,
-  context?: QueryContext,
+  {
+    // The default is the Item Query registry, with its `QueryItem` and its
+    // `FieldNeeds`.
+    registry = itemFilterRegistry as FilterRegistry<any, any>,
+    context,
+  }: {
+    registry?: FilterRegistry<Item, Needs>;
+    /** The Query Context that `this` reads. */
+    context?: QueryContext;
+  } = {},
 ): FilterPlan<Item, Needs> | FilterProblem {
   const { ast, error } = parseExpressionAst(text);
   if (!ast) {
