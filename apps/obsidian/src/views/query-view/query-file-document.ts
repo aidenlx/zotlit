@@ -27,7 +27,7 @@ import type {
 } from "./query-file";
 import type { QueryViewHost } from "./view";
 import * as edits from "./view-edits";
-import { visibleProperties } from "./visible-properties";
+import { viewProperties } from "./view-properties";
 
 const logger = getLogger(["views", "query-view"]);
 
@@ -184,10 +184,10 @@ export class QueryFileDocument {
       !(view.order ?? []).includes(property)
     ) {
       // A view that shows no property chosen shows the defaults; they stay.
-      const shown =
-        visibleProperties(view).length > 0
-          ? (view.order ?? [])
-          : visibleProperties(view, { fallback: true });
+      const { columns } = viewProperties(file, view);
+      const shown = columns.some((entry) => entry.place !== null)
+        ? (view.order ?? [])
+        : columns.map((entry) => entry.path);
       next = editView(next, view, { order: [...shown, property] });
     }
     this.#commit(next, this.#shown);
