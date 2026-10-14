@@ -30,7 +30,7 @@ import { AnnotationsLayout } from "@/views/annot-view/layout";
 import type { AnnotationsLayoutDeps } from "@/views/annot-view/layout";
 import { useAnnotStore } from "@/views/annot-view/store";
 
-import { parseQueryFile, viewFilter } from "./query-file";
+import { parseQueryFile, serializeQueryFile, viewFilter } from "./query-file";
 import type { QueryFile, QueryFileProblem, QueryFileView } from "./query-file";
 import { LAYOUT_FIELDS, LAYOUT_GROUP_PATHS, layoutRows } from "./rows";
 
@@ -58,6 +58,13 @@ export interface QueryViewHost {
   context: () => QueryContext | undefined;
   /** The user chose another view of the file; the host may remember it. */
   onSelectView?: (name: string) => void;
+  /**
+   * Keep the file's new text after a toolbar change: the Query File the tab
+   * or the embed shows. Without it a change shows but does not stay.
+   */
+  save?: (text: string) => void;
+  /** Open the Query File; the toolbar shows a link button when the host gives it. */
+  openFile?: (event: MouseEvent) => void;
 }
 
 /** What the view shows now, as the toolbar and the host read it. */
@@ -197,6 +204,21 @@ export class QueryView extends Component {
   setText(text: string): void {
     this.state.setState({ file: parseQueryFile(text) });
     this.#choose();
+  }
+
+  /**
+   * A toolbar change: show `file` at once, and hand its text to the host to
+   * save.
+   */
+  commit(file: QueryFile): void {
+    const text = serializeQueryFile(file);
+    this.setText(text);
+    this.#host.save?.(text);
+  }
+
+  /** The host's link to the Query File, for the toolbar. */
+  get openFile(): QueryViewHost["openFile"] {
+    return this.#host.openFile;
   }
 
   /** Show the view named `name`, or the file's first view for `null`. */
@@ -458,6 +480,22 @@ function NoResults({ view }: { view: QueryView }) {
   );
 }
 
+function OpenFileButton({ view }: { view: QueryView }) {
+  const { openFile } = view;
+  if (!openFile) return null;
+  return (
+    <button
+      type="button"
+      className="clickable-icon zt:ml-auto"
+      aria-label={m.query_view_open_file()}
+      data-query-open-file=""
+      onClick={(event) => openFile(event.nativeEvent)}
+    >
+      <Icon name="external-link" size={14} />
+    </button>
+  );
+}
+
 function QueryViewBody({ view }: { view: QueryView }) {
   return (
     <div className="zt:flex zt:h-full zt:flex-col">
@@ -469,6 +507,7 @@ function QueryViewBody({ view }: { view: QueryView }) {
         <span className="zt:text-(--text-muted)">
           <ResultCount view={view} />
         </span>
+        <OpenFileButton view={view} />
       </div>
       <Problems view={view} />
       <NoResults view={view} />
