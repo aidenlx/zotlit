@@ -183,7 +183,31 @@ function setup(kind: HostKind) {
     });
     return held!;
   }
-  return { host, run, show, hold, scopes, cardFocus };
+  /**
+   * Show the block `source` under the context `ctx` gives, as Obsidian's
+   * code block processor does, and wait until its rows show.
+   */
+  async function block(
+    source: string,
+    ctx: Omit<MarkdownPostProcessorContext, "addChild">,
+  ): Promise<Held> {
+    const el = document.body.createDiv();
+    let child: MarkdownRenderChild | undefined;
+    await act(async () => {
+      await processor!(source, el, {
+        ...ctx,
+        addChild: (added: MarkdownRenderChild) => {
+          child = added;
+          added.load();
+        },
+      } as MarkdownPostProcessorContext);
+      await viewOf(el).settled;
+    });
+    const unload = () => child?.unload();
+    cleanup.defer(() => act(unload));
+    return { el, view: viewOf(el), unload };
+  }
+  return { host, run, show, hold, block, scopes, cardFocus };
 }
 
 describe.each<HostKind>(["embed", "block"])("a %s", (kind) => {
@@ -321,5 +345,71 @@ describe.each<HostKind>(["embed", "block"])("a %s", (kind) => {
       note.createEl("textarea").focus();
       expect(cardFocus.surfaceIn(note)).toBeNull();
     });
+  });
+});
+
+describe("a Query Block that leaves the page", () => {
+  const PATH = "notes/Lab.md";
+  const SOURCE = `${FILE}    limit: 100`;
+  const BLOCK_NOTE = `${NOTE("RUGIER24")}\n\`\`\`zotquery\n${SOURCE}\n\`\`\`\n\nAfter the block.\n`;
+  /** The opening fence's line in {@link BLOCK_NOTE}. */
+  const LINE_START = 5;
+
+  /**
+   * A block on the page until it unloads, as in Reading view and Live
+   * Preview: its section, while it stands there, and Live Preview's own
+   * `replaceCode`, which writes into an editor that no longer shows the note
+   * once the block has left it.
+   */
+  async function leaving({ replaceCode }: { replaceCode?: () => void }) {
+    const { block, host } = setup("block");
+    host.vault.modifyFile(PATH, BLOCK_NOTE);
+    let onPage = true;
+    const held = await block(SOURCE, {
+      docId: "doc",
+      sourcePath: PATH,
+      frontmatter: {},
+      getSectionInfo: () =>
+        onPage
+          ? { text: BLOCK_NOTE, lineStart: LINE_START, lineEnd: LINE_START + 7 }
+          : null,
+      ...(replaceCode && { replaceCode }),
+    } as Omit<MarkdownPostProcessorContext, "addChild">);
+    return {
+      host,
+      held,
+      leave: async () => {
+        onPage = false;
+        await act(async () => {
+          held.unload();
+          await delay(0);
+        });
+      },
+    };
+  }
+
+  it("in Reading view, saves a limit typed just before it left", async () => {
+    const { host, held, leave } = await leaving({});
+    await act(() => held.view.editView({ limit: 3 }, { typed: true }));
+    await leave();
+    expect(host.text(PATH)).toBe(BLOCK_NOTE.replace("limit: 100", "limit: 3"));
+  });
+
+  it("in Live Preview, saves a limit typed just before it left into its note, not into the editor it left", async () => {
+    const replaceCode = vi.fn();
+    const { host, held, leave } = await leaving({ replaceCode });
+    await act(() => held.view.editView({ limit: 3 }, { typed: true }));
+    await leave();
+    expect(replaceCode).not.toHaveBeenCalled();
+    expect(host.text(PATH)).toBe(BLOCK_NOTE.replace("limit: 100", "limit: 3"));
+  });
+
+  it("saves nothing where the note's text at its line changed meanwhile", async () => {
+    const { host, held, leave } = await leaving({});
+    await act(() => held.view.editView({ limit: 3 }, { typed: true }));
+    const moved = `Inserted above.\n${BLOCK_NOTE}`;
+    host.vault.modifyFile(PATH, moved);
+    await leave();
+    expect(host.text(PATH)).toBe(moved);
   });
 });

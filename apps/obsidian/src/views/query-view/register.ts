@@ -10,7 +10,11 @@ import type { FileMenuSegment, FolderMenuSegment } from "@/services/file-menu";
 
 import { createQueryFileEmbed } from "./embed";
 import { QueryFileView, QUERY_FILE_VIEW_TYPE } from "./file-view";
-import { newQueryFileText, QUERY_FILE_EXTENSION } from "./query-file";
+import {
+  newQueryFileText,
+  QUERY_FILE_EXTENSION,
+  untitledName,
+} from "./query-file";
 import type { QueryViewDeps } from "./view";
 
 type QueryFilePlugin = Pick<
@@ -47,15 +51,6 @@ export function registerQueryFileView(
   });
 }
 
-/** The first `Untitled`, `Untitled 1`, … name that `taken` does not hold. */
-export function untitledName(taken: (name: string) => boolean): string {
-  const base = m.query_file_untitled();
-  for (let index = 0; ; index++) {
-    const name = index === 0 ? base : `${base} ${index}`;
-    if (!taken(name)) return name;
-  }
-}
-
 /** The first `Untitled.zotquery`, `Untitled 1.zotquery`, … free in `folder`. */
 function freePath(app: App, folder: TFolder): string {
   const path = (name: string) =>
@@ -64,6 +59,7 @@ function freePath(app: App, folder: TFolder): string {
     );
   return path(
     untitledName(
+      m.query_file_untitled(),
       (name) => app.vault.getAbstractFileByPath(path(name)) !== null,
     ),
   );
