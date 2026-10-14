@@ -778,7 +778,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const menu = JSON.parse(
       await obEval(
         vaultId,
-        `(()=>{const view=app.workspace.getMostRecentLeaf().view;view.contentEl.querySelector('[data-query-view-menu]').click();const items=[...activeDocument.querySelectorAll('.menu .menu-item')];const titles=items.map(n=>n.querySelector('.menu-item-title')?.textContent);items.find(n=>n.textContent==='Figures').click();return JSON.stringify(titles);})()`,
+        `(()=>{const view=app.workspace.getMostRecentLeaf().view;view.contentEl.querySelector('[data-query-view-menu]').click();const rows=[...view.contentEl.querySelectorAll('[data-query-view-list]:popover-open [data-query-view-row]')];const titles=rows.map(n=>n.getAttribute('data-query-view-row'));rows.find(n=>n.getAttribute('data-query-view-row')==='Figures').click();return JSON.stringify(titles);})()`,
       ),
     ) as string[];
     expect(menu).toEqual(["All annotations", "Figures"]);
@@ -973,6 +973,310 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         `return section('view').querySelector('[data-condition-row] input[aria-label="${m.workbench_match_value()}"]')?.value??null;`,
       ),
     ).toBe("figure");
+  }, 180000);
+
+  // The Fixture's Literature Note of SAKIMA22 ends with a Query Block of
+  // `item == this.item`. A change in the view rewrites the block text only,
+  // and the Live Preview widget stays on the page.
+  it("shows a Query Block of its note's Item and saves a sort change into the block", async () => {
+    const notePath = "literatures/SAKIMA22.md";
+    const layout = await obEval(
+      vaultId,
+      "JSON.stringify(app.workspace.getLayout())",
+    );
+    const original = await obEval(
+      vaultId,
+      `app.vault.read(app.vault.getFileByPath(${JSON.stringify(notePath)}))`,
+    );
+    await using cleanup = new AsyncDisposableStack();
+    const scratchFiles: string[] = [];
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(notePath)}),${JSON.stringify(original)});for(const path of ${JSON.stringify(scratchFiles)}){const file=app.vault.getFileByPath(path);if(file)await app.vault.delete(file);}return true;})()`,
+      );
+    });
+
+    /** What the Query Block in the active note shows, once its query settled. */
+    const readBlock = `(async()=>{const view=app.workspace.getMostRecentLeaf().view;const el=view.containerEl.querySelector('.block-language-zotquery');if(!el?.zotlitQueryView)return 'null';await el.zotlitQueryView.settled;return JSON.stringify({file:view.file?.path,mark:el.dataset.e2eMark??null,count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,cards:[...el.querySelectorAll('.zt-annot-card')].map(n=>n.getAttribute('data-zotero-annotation-key')),diagnostic:el.querySelector('[data-query-diagnostic]')?.getAttribute('data-query-diagnostic')??null,readOnly:el.querySelector('[data-query-read-only]')?.textContent??null});})()`;
+    interface Block {
+      file: string;
+      mark: string | null;
+      count: string | null;
+      cards: string[];
+      diagnostic: string | null;
+      readOnly: string | null;
+    }
+    const blockWhen = async (
+      ready: (block: Block) => boolean,
+    ): Promise<Block> => {
+      let block: Block | null = null;
+      const settled = await waitFor(async () => {
+        block = JSON.parse(await obEval(vaultId, readBlock)) as Block | null;
+        return block !== null && ready(block);
+      }, 120);
+      if (!settled) throw new Error(`Query Block: ${JSON.stringify(block)}`);
+      return block!;
+    };
+    /** The Annotation keys ZotLit Query gives for an Item, through the CLI. */
+    const itemAnnotations = async (item: string, sort?: string) => {
+      const report = JSON.parse(
+        await cliCommand(vaultId, "zotlit:query", {
+          args: {
+            from: "annotations",
+            filter: "item == this.item",
+            "this-item": item,
+            fields: "item.title",
+            limit: "100",
+            ...(sort === undefined ? {} : { sort }),
+          },
+        }),
+      ) as ItemQueryReport;
+      expect(report.ok).toBe(true);
+      return report.rows!.map((row) => row.indexedKey);
+    };
+    const open = (path: string, mode: "live" | "reading") =>
+      obEval(
+        vaultId,
+        `(async()=>{const leaf=app.workspace.getLeaf('tab');await leaf.openFile(app.vault.getFileByPath(${JSON.stringify(path)}),{state:${mode === "live" ? "{mode:'source',source:false}" : "{mode:'preview'}"}});app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
+      );
+
+    // In Live Preview, `this` is the Item of the note's `zotero-key`.
+    const own = await itemAnnotations("SAKIMA22");
+    expect(own.length).toBeGreaterThan(1);
+    await open(notePath, "live");
+    const live = await blockWhen((block) => block.count !== null);
+    expect(live).toMatchObject({
+      file: notePath,
+      count: String(own.length),
+      cards: own,
+      diagnostic: null,
+      readOnly: null,
+    });
+
+    // A sort change in the toolbar rewrites the block text, and nothing else
+    // in the note. Each step of the Sort control saves.
+    const inBlock = (script: string) =>
+      obEval(
+        vaultId,
+        `(()=>{const el=app.workspace.getMostRecentLeaf().view.containerEl.querySelector('.block-language-zotquery');${script};return true;})()`,
+      );
+    await inBlock(
+      "el.dataset.e2eMark='kept';el.querySelector('[data-query-toolbar=\"sort\"]').click()",
+    );
+    await inBlock(
+      "el.querySelector('[data-query-popover=\"sort\"] [data-sort-add]').click()",
+    );
+    for (const [control, value] of [
+      ["data-sort-property", "type"],
+      ["data-sort-direction", "DESC"],
+    ] as const) {
+      expect(
+        await waitFor(async () =>
+          JSON.parse(
+            await obEval(
+              vaultId,
+              `JSON.stringify(!!app.workspace.getMostRecentLeaf().view.containerEl.querySelector('.block-language-zotquery [data-query-popover="sort"] [${control}]'))`,
+            ),
+          ),
+        ),
+      ).toBe(true);
+      await inBlock(
+        `const select=el.querySelector('[data-query-popover="sort"] [${control}]');select.value=${JSON.stringify(value)};select.dispatchEvent(new Event('change',{bubbles:true}))`,
+      );
+    }
+    const written = original.replace(
+      "    limit: 100\n```",
+      "    limit: 100\n    sort:\n      - property: type\n        direction: DESC\n```",
+    );
+    expect(written).not.toBe(original);
+    expect(
+      await waitFor(
+        async () =>
+          (await obEval(
+            vaultId,
+            `app.vault.read(app.vault.getFileByPath(${JSON.stringify(notePath)}))`,
+          )) === written,
+      ),
+    ).toBe(true);
+    const sorted = await itemAnnotations("SAKIMA22", "-type");
+    const resorted = await blockWhen(
+      (block) => JSON.stringify(block.cards) === JSON.stringify(sorted),
+    );
+    // The Live Preview widget that showed the view is the one that shows it now.
+    expect(resorted.mark).toBe("kept");
+
+    // Reading view shows the saved sort, and `this` follows the note's
+    // `zotero-key` when the frontmatter changes.
+    await open(notePath, "reading");
+    await blockWhen(
+      (block) => JSON.stringify(block.cards) === JSON.stringify(sorted),
+    );
+    const other = await itemAnnotations("RUGIER24", "-type");
+    expect(other.length).toBeGreaterThan(0);
+    await obEval(
+      vaultId,
+      `(async()=>{await app.fileManager.processFrontMatter(app.vault.getFileByPath(${JSON.stringify(notePath)}),fm=>{fm['zotero-key']='RUGIER24';});return true;})()`,
+    );
+    await blockWhen(
+      (block) => JSON.stringify(block.cards) === JSON.stringify(other),
+    );
+
+    // A section embed reads the block and says a change is not saved.
+    const embedPath = "Query block embed.md";
+    scratchFiles.push(embedPath);
+    await obEval(
+      vaultId,
+      `(async()=>{await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(notePath)}),${JSON.stringify(written)});await app.vault.create(${JSON.stringify(embedPath)},'![[SAKIMA22#Sakima’s song]]\\n');return true;})()`,
+    );
+    await open(embedPath, "reading");
+    const embedded = await blockWhen(
+      (block) => JSON.stringify(block.cards) === JSON.stringify(sorted),
+    );
+    expect(embedded.readOnly).toBe(m.query_view_read_only());
+
+    // In a note without a `zotero-key`, the view names `this`.
+    const plainPath = "Query block without key.md";
+    scratchFiles.push(plainPath);
+    await obEval(
+      vaultId,
+      `(async()=>{await app.vault.create(${JSON.stringify(plainPath)},${JSON.stringify("# Without a key\n\n```zotquery\nviews:\n  - type: annotations\n    name: Mine\n    from: annotations\n    filters: item == this.item\n```\n")});return true;})()`,
+    );
+    await open(plainPath, "live");
+    const unbound = await blockWhen((block) => block.diagnostic !== null);
+    expect(unbound).toMatchObject({
+      diagnostic: "unbound-context",
+      cards: [],
+    });
+  }, 180000);
+
+  it("adds, renames and sets a default view of a Query File from the view menu, and the file keeps them", async () => {
+    const path = "query-files/Reading annotations.zotquery";
+    const layout = await obEval(
+      vaultId,
+      "JSON.stringify(app.workspace.getLayout())",
+    );
+    const original = await obEval(
+      vaultId,
+      `app.vault.read(app.vault.getFileByPath(${JSON.stringify(path)}))`,
+    );
+    await using cleanup = new AsyncDisposableStack();
+    // The tab closes before the text goes back, so no pending save of the
+    // tab writes over it.
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))leaf.detach();await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(path)}),${JSON.stringify(original)});await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+      );
+    });
+    const tab = "app.workspace.getMostRecentLeaf().view";
+    const open = `(async()=>{const old=app.workspace.getLeavesOfType('zotlit-query-file');const leaf=app.workspace.getLeaf('tab');await leaf.openFile(app.vault.getFileByPath(${JSON.stringify(path)}));app.workspace.setActiveLeaf(leaf,{focus:true});for(const other of old)other.detach();return true;})()`;
+    /** The view on screen, its cards, and the page labels the cards show. */
+    const shown = (view: string) =>
+      obEvalUntil(
+        vaultId,
+        `(async()=>{const view=${tab};if(view.getViewType()!=='zotlit-query-file')return 'none';await view.query.settled;const el=view.contentEl;const cards=el.querySelectorAll('.zt-annot-card').length;return el.querySelector('[data-query-view-menu]')?.textContent+':'+(cards>0);})()`,
+        { expected: `${view}:true` },
+      );
+    const pages = `(()=>JSON.stringify([...${tab}.contentEl.querySelectorAll('.zt-annot-page-chip')].map(n=>n.textContent).filter(Boolean)))()`;
+    /** The view rows the open view menu shows. */
+    const rows = `(()=>JSON.stringify([...${tab}.contentEl.querySelectorAll('[data-query-view-list]:popover-open [data-query-view-row]')].map(n=>n.getAttribute('data-query-view-row'))))()`;
+    const search = (text: string) =>
+      `(()=>{const input=${tab}.contentEl.querySelector('[data-query-view-list] input');input.value=${JSON.stringify(text)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`;
+
+    await obEval(vaultId, open);
+    expect(await shown("All annotations")).toBe(true);
+    expect(JSON.parse(await obEval(vaultId, pages))).not.toEqual([]);
+
+    // The view menu narrows its views as the researcher types.
+    await obEval(
+      vaultId,
+      `(()=>{${tab}.contentEl.querySelector('[data-query-view-menu]').click();return true;})()`,
+    );
+    expect(
+      await obEvalUntil(vaultId, rows, {
+        expected: JSON.stringify(["All annotations", "Figures"]),
+      }),
+    ).toBe(true);
+    await obEval(vaultId, search("fig"));
+    expect(
+      await obEvalUntil(vaultId, rows, {
+        expected: JSON.stringify(["Figures"]),
+      }),
+    ).toBe(true);
+    await obEval(vaultId, search(""));
+
+    // "Add view" adds a view, shows it, and opens Configure view on its
+    // name; the name typed there renames it.
+    await obEval(
+      vaultId,
+      `(()=>{${tab}.contentEl.querySelector('[data-query-view-action="add"]').click();return true;})()`,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(!!activeDocument.querySelector('.modal [data-query-view-name]'))`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    // Configure view offers only the layouts built for the view's dataset.
+    expect(
+      await obEval(
+        vaultId,
+        `JSON.stringify([...activeDocument.querySelectorAll('.modal [data-query-view-layout] option')].map(n=>n.textContent))`,
+      ),
+    ).toBe(JSON.stringify([m.query_view_layout_annotations()]));
+    await obEval(
+      vaultId,
+      `(()=>{const input=activeDocument.querySelector('.modal [data-query-view-name]');input.value='Methods';input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return true;})()`,
+    );
+    expect(await shown("Methods")).toBe(true);
+
+    // "Show page" off takes the page labels off the cards at once.
+    expect(JSON.parse(await obEval(vaultId, pages))).not.toEqual([]);
+    await obEval(
+      vaultId,
+      `(()=>{const modal=activeDocument.querySelector('.modal.zt-configure-view');modal.querySelector('[data-query-view-option="showPage"]').click();(modal.querySelector('.modal-close-button')??modal.querySelector('.modal-header-button:has(.lucide-x)')).click();return true;})()`,
+    );
+    expect(await obEvalUntil(vaultId, pages, { expected: "[]" })).toBe(true);
+
+    // "Default view" on the view's row moves it to the top of the list.
+    await obEval(
+      vaultId,
+      `(()=>{${tab}.contentEl.querySelector('[data-query-view-menu]').click();return true;})()`,
+    );
+    expect(
+      await obEvalUntil(vaultId, rows, {
+        expected: JSON.stringify(["All annotations", "Figures", "Methods"]),
+      }),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      `(()=>{const row=${tab}.contentEl.querySelector('[data-query-view-row="Methods"]');row.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,clientX:200,clientY:200}));const item=[...activeDocument.querySelectorAll('.menu .menu-item')].find(n=>n.querySelector('.menu-item-title')?.textContent===${JSON.stringify(m.query_view_default_view())});item.click();return true;})()`,
+    );
+
+    // Each change saved to the file.
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `app.vault.read(app.vault.getFileByPath(${JSON.stringify(path)})).then(t=>String(t.indexOf('name: Methods')>-1&&t.indexOf('name: Methods')<t.indexOf('name: All annotations')&&t.includes('showPage: false')))`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+
+    // A plain open of the file shows the first view, as the file holds it.
+    await obEval(vaultId, open);
+    expect(await shown("Methods")).toBe(true);
+    expect(await obEval(vaultId, pages)).toBe("[]");
+    await obEval(
+      vaultId,
+      `(()=>{${tab}.contentEl.querySelector('[data-query-view-menu]').click();return true;})()`,
+    );
+    expect(
+      await obEvalUntil(vaultId, rows, {
+        expected: JSON.stringify(["Methods", "All annotations", "Figures"]),
+      }),
+    ).toBe(true);
   }, 180000);
 
   it("groups a Query File by colour in a Manual order, hides a colour, and keeps it on reopen", async () => {

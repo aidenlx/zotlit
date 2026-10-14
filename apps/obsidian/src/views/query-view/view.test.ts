@@ -190,14 +190,18 @@ async function mount(
     allowEditing: vi.fn(),
     reportBlockedGesture: vi.fn(),
   } as unknown as QueryViewDeps;
+  const save = vi.fn((_text: string) => {});
+  const onSelectView = vi.fn((_name: string) => {});
   const view = new QueryView(deps, {
     scope: new Scope(),
     sourcePath: () => "query-files/Reading.zotquery",
     context: () => undefined,
     save: (text) => {
       saved.push(text);
+      save(text);
       onWrite?.(text);
     },
+    onSelectView,
   });
   const saved: string[] = [];
   const el = document.createElement("div");
@@ -209,7 +213,19 @@ async function mount(
     act(async () => {
       await view.settled;
     });
-  return { view, el, run, reads, libraryScope, held, released, settle, saved };
+  return {
+    view,
+    el,
+    run,
+    reads,
+    libraryScope,
+    held,
+    released,
+    settle,
+    save,
+    onSelectView,
+    saved,
+  };
 }
 
 function cards(el: HTMLElement): (string | null)[] {
@@ -319,6 +335,77 @@ it("opens a file with a broken view and names the problem without running it", a
   expect(run).not.toHaveBeenCalled();
   expect(el.querySelector("[data-query-problems]")?.textContent).toContain(
     "table",
+  );
+});
+
+it("saves a view edit to the file, and keeps a renamed view on screen without running it again", async () => {
+  const { view, el, run, settle, save, onSelectView } = await mount([
+    result([row("ANNOTBBB")]),
+  ]);
+  await act(() => view.setText(FILE));
+  await settle();
+  await act(() => view.renameView(0, "Yellow highlights"));
+  await settle();
+
+  expect(save).toHaveBeenCalledTimes(1);
+  const [text] = save.mock.calls[0]!;
+  expect(text).toContain("name: Yellow highlights");
+  expect(text).toContain("name: Everything");
+  expect(el.querySelector("[data-query-view-menu]")?.textContent).toBe(
+    "Yellow highlights",
+  );
+  expect(onSelectView).toHaveBeenLastCalledWith("Yellow highlights");
+  expect(run).toHaveBeenCalledTimes(1);
+  expect(cards(el)).toEqual(["ANNOTBBB"]);
+});
+
+it("changes the cards at once for an Annotations layout option, and saves it", async () => {
+  const { view, el, run, settle, save } = await mount([
+    result([row("ANNOTBBB")]),
+  ]);
+  await act(() => view.setText(FILE));
+  await settle();
+  expect(el.querySelector(".zt-annot-page-chip")?.textContent).toContain("1");
+
+  await act(() => view.setViewOption(0, "showPage", false));
+  await act(() => view.setViewOption(0, "cardWidth", 420));
+  await settle();
+
+  expect(el.querySelector(".zt-annot-page-chip")?.textContent).toBe("");
+  expect(
+    el.querySelector("[data-card-width]")?.getAttribute("data-card-width"),
+  ).toBe("420");
+  expect(save.mock.calls.at(-1)![0]).toContain("showPage: false");
+  expect(save.mock.calls.at(-1)![0]).toContain("cardWidth: 420");
+  expect(run).toHaveBeenCalledTimes(1);
+  expect(cards(el)).toEqual(["ANNOTBBB"]);
+});
+
+it("shows the view before a deleted view, and saves a move to the top", async () => {
+  const { view, el, settle, save } = await mount([
+    result([row("ANNOTBBB")]),
+    result([row("ANNOTAAA")]),
+    result([row("ANNOTBBB")]),
+  ]);
+  await act(() => view.setText(FILE));
+  await settle();
+  await act(() => view.pickView("Everything"));
+  await settle();
+  await act(() => view.deleteView(1));
+  await settle();
+  expect(el.querySelector("[data-query-view-menu]")?.textContent).toBe(
+    "Yellow",
+  );
+  expect(save.mock.calls.at(-1)![0]).not.toContain("Everything");
+
+  await act(() => {
+    view.addView();
+  });
+  await act(() => view.moveView(1, 0));
+  await settle();
+  const saved = save.mock.calls.at(-1)![0];
+  expect(saved.indexOf("name: View")).toBeLessThan(
+    saved.indexOf("name: Yellow"),
   );
 });
 

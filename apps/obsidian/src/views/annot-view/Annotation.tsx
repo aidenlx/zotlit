@@ -58,6 +58,7 @@ import type {
   HeldDraft,
   VerbBlocks,
 } from "./card-controls";
+import { CardDisplayContext } from "./card-display";
 import {
   CommentView,
   ConflictPanelSlot,
@@ -561,6 +562,7 @@ function TagSlot({
   endSession: RefObject<EndTagSession | null>;
 }) {
   const actions = useContext(AnnotActionsContext);
+  const display = useContext(CardDisplayContext);
   const session = useTagSession(annot);
   const auto = useMemo(() => autoTags(annot), [annot]);
   const block = useVerbBlocks(annot).tags;
@@ -606,6 +608,7 @@ function TagSlot({
       </div>
     );
   }
+  if (!display.tags) return null;
   return <TagRow names={shownTagNames(annot, draft)} />;
 }
 
@@ -670,6 +673,7 @@ function CommentSlot({
   control: CardControl | null;
 }) {
   const actions = useContext(AnnotActionsContext);
+  const display = useContext(CardDisplayContext);
   const editing = useFieldEditing(annot, "comment");
   const panel = useFieldDraftPanel(annot, "comment");
   const entry = control
@@ -685,6 +689,8 @@ function CommentSlot({
         entry={entry}
       />
     );
+  // A host can hide the comment; the card selected alone still offers it.
+  if (!display.comment && !control) return null;
   // A card that does not offer the field shows the comment it has, and
   // nothing where it has none.
   if (!control && annot.comment === null) return null;
@@ -1175,6 +1181,7 @@ function PageChip({
   backlink?: string;
   onDragStart: (e: DragEvent<HTMLElement>) => void;
 }) {
+  const display = useContext(CardDisplayContext);
   const chip = cn(
     "zt-annot-page-chip zt:flex zt:h-5 zt:min-w-0 zt:items-center zt:gap-1 zt:rounded-sm zt:px-1 zt:font-mono zt:font-medium zt:tabular-nums",
     color
@@ -1188,7 +1195,7 @@ function PageChip({
         size={12}
         className={cn("zt:shrink-0", color && "zt:text-(--zt-annot-color)")}
       />
-      {page && (
+      {page && display.page && (
         <span className="zt:truncate">{m.annot_view_page({ page })}</span>
       )}
     </>
