@@ -600,7 +600,7 @@ export class QueryView extends Component implements HistorySurface {
 
   /**
    * The rows on screen as a table, one column for each visible property in
-   * the view's order: what "Copy to clipboard" and "Export CSV..." write.
+   * the view's order: what "Copy to clipboard" and "Export CSV…" write.
    */
   table(): ResultTable {
     const { view } = this.state.getState();
@@ -1054,10 +1054,11 @@ function Warnings({ view }: { view: QueryView }) {
 function NoResults({ view }: { view: QueryView }) {
   const phase = useQueryViewState(view, (s) => s.phase);
   const count = useQueryViewState(view, (s) => s.count);
+  const dataset = useQueryViewState(view, (s) => s.view?.from);
   if (phase !== "ready" || count > 0) return null;
   return (
     <div className="pane-empty zt:p-2" data-query-empty="">
-      {m.query_view_no_results()}
+      {datasetSpec(dataset).empty()}
     </div>
   );
 }
@@ -1202,7 +1203,7 @@ function QueryViewBody({ view }: { view: QueryView }) {
         <GroupButton view={view} />
         <PropertiesMenu view={view} />
         <span className="zt:flex-1" />
-        <SearchControl />
+        <SearchControl view={view} />
         <OpenFileButton view={view} />
       </div>
       <ReadOnlyNote view={view} />

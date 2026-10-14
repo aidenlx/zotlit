@@ -56,7 +56,7 @@ export function PropertiesMenu({ view }: { view: QueryView }) {
       <Chooser.Popup className="zt:min-w-60" data-query-properties-popup="">
         <Chooser.Input
           placeholder={m.query_view_properties_search()}
-          clearLabel={m.query_view_properties_clear_search()}
+          clearLabel={m.query_view_clear_search()}
         />
         <PropertyList
           dataset={current.from ?? "annotations"}

@@ -1,6 +1,7 @@
 // The toolbar's Search: a button that opens a field which finds text in the
 // rows on screen. It filters the cards the query gave; it runs no query.
 import { useLayoutEffect, useRef, useState } from "react";
+import { useStore } from "zustand";
 
 import { Icon } from "@/components/obsidian/icon";
 import { SearchInput } from "@/components/obsidian/search-input";
@@ -8,9 +9,12 @@ import * as m from "@/lib/i18n/generated/messages";
 import { cn, tooltipAttrs } from "@/lib/utils";
 import { useAnnotStore, useSetFilterQuery } from "@/views/annot-view/store";
 
+import { datasetSpec } from "./datasets";
 import { TOOLBAR_LABEL } from "./toolbar-popover";
+import type { QueryView } from "./view";
 
-export function SearchControl() {
+export function SearchControl({ view }: { view: QueryView }) {
+  const dataset = useStore(view.state, (s) => s.view?.from);
   const query = useAnnotStore((s) => s.filterQuery);
   const setQuery = useSetFilterQuery();
   const [open, setOpen] = useState(false);
@@ -53,8 +57,8 @@ export function SearchControl() {
           className="zt:w-48"
           value={query}
           onChange={setQuery}
-          placeholder={m.query_view_search_placeholder()}
-          clearLabel={m.query_view_search_clear()}
+          placeholder={datasetSpec(dataset).search()}
+          clearLabel={m.query_view_clear_search()}
           onKeyDown={(event) => {
             if (event.key !== "Escape") return;
             event.stopPropagation();

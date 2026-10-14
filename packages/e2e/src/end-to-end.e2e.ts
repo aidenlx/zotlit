@@ -2178,7 +2178,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       countText: `2 of ${figures.length} results`,
     });
 
-    // "Export CSV..." writes the rows on screen with the two columns in the
+    // "Export CSV…" writes the rows on screen with the two columns in the
     // order they were ticked.
     const exported = JSON.parse(
       await obEval(

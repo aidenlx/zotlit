@@ -77,7 +77,7 @@ export type FilterIssue = (FilterLocation & { message: string }) | null;
 
 const KIND_LABELS: Record<FilterFieldKind, () => string> = {
   color: m.query_view_property_color,
-  tags: m.workbench_match_condition_tag,
+  tags: m.query_view_property_tag,
   comment: m.annot_view_card_comment_label,
   text: m.query_view_filter_text,
   page: m.query_view_property_page,
@@ -87,24 +87,24 @@ const KIND_LABELS: Record<FilterFieldKind, () => string> = {
   creators: m.query_view_filter_creator,
   "first-author": m.query_view_property_first_author,
   year: m.query_view_filter_year,
-  "item-type": m.workbench_match_condition_item_type,
-  collection: m.workbench_match_condition_collection,
-  library: m.workbench_match_condition_library,
+  "item-type": m.query_view_property_item_type,
+  collection: m.query_view_property_collection,
+  library: m.query_view_property_library,
   "attachment-title": m.query_view_property_attachment_title,
   "file-type": m.query_view_filter_file_type,
 };
 
 const OPERATOR_LABELS: Record<FilterOperator, () => string> = {
-  contains: m.workbench_match_tag_contains,
-  "does-not-contain": m.workbench_match_tag_does_not_contain,
-  "contains-any": m.workbench_match_tag_contains_any,
-  "contains-all": m.workbench_match_tag_contains_all,
-  within: m.workbench_match_collection_within,
-  "not-within": m.workbench_match_collection_not_within,
-  is: m.workbench_match_operator_is,
-  "is-not": m.workbench_match_operator_is_not,
-  "is-empty": m.workbench_match_tag_is_empty,
-  "is-not-empty": m.workbench_match_tag_is_not_empty,
+  contains: m.query_view_filter_op_contains,
+  "does-not-contain": m.query_view_filter_op_does_not_contain,
+  "contains-any": m.query_view_filter_op_contains_any,
+  "contains-all": m.query_view_filter_op_contains_all,
+  within: m.query_view_filter_op_within,
+  "not-within": m.query_view_filter_op_not_within,
+  is: m.query_view_filter_op_is,
+  "is-not": m.query_view_filter_op_is_not,
+  "is-empty": m.query_view_filter_op_is_empty,
+  "is-not-empty": m.query_view_filter_op_is_not_empty,
   before: m.query_view_filter_op_before,
   after: m.query_view_filter_op_after,
   "on-or-before": m.query_view_filter_op_on_or_before,
@@ -113,12 +113,12 @@ const OPERATOR_LABELS: Record<FilterOperator, () => string> = {
 
 /** A Collection is a member, not a text: "is" reads better than "contains". */
 const COLLECTION_LABELS: Partial<Record<FilterOperator, () => string>> = {
-  contains: m.workbench_match_collection_contains,
-  "does-not-contain": m.workbench_match_collection_not_contains,
-  "contains-any": m.workbench_match_collection_contains_any,
-  "contains-all": m.workbench_match_collection_contains_all,
-  "is-empty": m.workbench_match_collection_is_empty,
-  "is-not-empty": m.workbench_match_collection_is_not_empty,
+  contains: m.query_view_filter_op_is,
+  "does-not-contain": m.query_view_filter_op_is_not,
+  "contains-any": m.query_view_filter_op_is_any,
+  "contains-all": m.query_view_filter_op_is_all,
+  "is-empty": m.query_view_filter_op_is_empty,
+  "is-not-empty": m.query_view_filter_op_is_not_empty,
 };
 
 const COLORS: readonly [string, () => string][] = [
@@ -178,7 +178,7 @@ function RowOperator({
 }) {
   return (
     <MatchSelect
-      aria-label={m.workbench_match_operator()}
+      aria-label={m.query_view_filter_operator()}
       value={condition.operator}
       onChange={(value) =>
         onChange(withOperator(condition, value as FilterOperator))
@@ -217,10 +217,10 @@ function RowValue({
         : undefined;
   const placeholder =
     field.kind === "tags"
-      ? m.workbench_match_tag_placeholder()
+      ? m.query_view_filter_tag_placeholder()
       : field.type === "collection"
-        ? m.workbench_match_collection_placeholder()
-        : m.workbench_match_value();
+        ? m.query_view_filter_collection_placeholder()
+        : m.query_view_filter_value();
   if (operator === "contains-any" || operator === "contains-all")
     return (
       <ChipInput
@@ -235,7 +235,7 @@ function RowValue({
     return (
       <MatchSelect
         {...part("control")}
-        aria-label={m.workbench_match_value()}
+        aria-label={m.query_view_filter_value()}
         value={condition.value}
         onChange={(value) => onChange({ ...condition, value })}
       >
@@ -255,7 +255,7 @@ function RowValue({
       <input
         {...part("input")}
         type={field.type}
-        aria-label={m.workbench_match_value()}
+        aria-label={m.query_view_filter_value()}
         value={condition.value}
         onInput={(event) =>
           onChange({ ...condition, value: event.currentTarget.value })
@@ -265,7 +265,7 @@ function RowValue({
   return (
     <MatchInput
       {...part("input")}
-      aria-label={m.workbench_match_value()}
+      aria-label={m.query_view_filter_value()}
       placeholder={placeholder}
       suggestions={suggestions}
       value={condition.value}

@@ -1,5 +1,5 @@
 // The rows of a Query View as a table of text: one column for each visible
-// property, in the view's order. "Copy to clipboard" and "Export CSV..." write
+// property, in the view's order. "Copy to clipboard" and "Export CSV…" write
 // this table.
 import type {
   QueryViewRow,
