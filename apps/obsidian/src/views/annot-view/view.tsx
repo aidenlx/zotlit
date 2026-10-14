@@ -841,9 +841,10 @@ export class AnnotationView extends ItemView implements HistorySurface {
     { restoreFilter }: { restoreFilter: boolean },
   ): Promise<void> {
     const memoryKey = this.#memoryKey;
-    if (this.#query.state.getState().file === null)
-      this.#query.setText(this.#queryText ?? sidebarQueryText());
-    else this.#query.refresh();
+    // The query runs again only for another Attachment or file: a database
+    // change already runs it again through the Query View, and a reload for
+    // the same Attachment (a tab switch, a note edit) changes nothing it reads.
+    this.#query.setText(this.#queryText ?? sidebarQueryText());
     return this.#query.settled.then(() => {
       const landed =
         this.#query.state.getState().phase === "ready" &&

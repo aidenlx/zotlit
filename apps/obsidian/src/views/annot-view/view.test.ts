@@ -369,6 +369,22 @@ it("sorts the cards by one property and direction from More options", async () =
   ]);
 });
 
+it("runs the query once for a reload that keeps the Attachment, and again on a database change", async () => {
+  const { view, run, reads, settle } = await openSidebar([PDF]);
+  await using cleanup = new AsyncDisposableStack();
+  cleanup.defer(() => act(() => view.close()));
+  const runs = run.mock.calls.length;
+
+  await act(() => view.setState(view.getState(), { history: false }));
+  await settle();
+  expect(run.mock.calls.length).toBe(runs);
+
+  await act(() => reads.emit("changed"));
+  await settle();
+  expect(run.mock.calls.length).toBeGreaterThan(runs);
+  expect(cards(view.contentEl)).toEqual(["ANNOTAAA", "ANNOTBBB"]);
+});
+
 it("runs no query and shows no card while the Item has no Attachment", async () => {
   const { view, run } = await openSidebar([]);
   await using cleanup = new AsyncDisposableStack();
