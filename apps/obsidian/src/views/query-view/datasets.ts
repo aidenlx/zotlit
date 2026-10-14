@@ -23,6 +23,10 @@ export interface DatasetSpec {
   readonly engine: QueryDataset;
   /** The dataset's name, as "Configure view" lists it. */
   readonly name: () => string;
+  /** What the view says when no row matches. */
+  readonly empty: () => string;
+  /** The placeholder of the toolbar's Search. */
+  readonly search: () => string;
   /** The properties Sort offers, in order; the engine's Sortable Fields filter them. */
   readonly sort: readonly SortCandidate[];
   /** The group paths the layouts of the dataset can gather rows by, in order. */
@@ -41,6 +45,8 @@ export const DATASETS: Readonly<Record<QueryFileDataset, DatasetSpec>> = {
   annotations: {
     engine: ANNOTATIONS,
     name: m.query_view_dataset_annotations,
+    empty: m.query_view_no_results_annotations,
+    search: m.query_view_search_annotations,
     sort: [
       ["sortIndex", m.query_view_property_position, "number"],
       ["pageIndex", m.query_view_property_page, "number"],
@@ -71,6 +77,8 @@ export const DATASETS: Readonly<Record<QueryFileDataset, DatasetSpec>> = {
   attachments: {
     engine: ATTACHMENTS,
     name: m.query_view_dataset_attachments,
+    empty: m.query_view_no_results_attachments,
+    search: m.query_view_search_attachments,
     sort: [
       ["title", m.query_view_property_title, "text"],
       ["dateAdded", m.query_view_property_date_added, "date"],
@@ -89,6 +97,8 @@ export const DATASETS: Readonly<Record<QueryFileDataset, DatasetSpec>> = {
   items: {
     engine: ITEMS,
     name: m.query_view_dataset_items,
+    empty: m.query_view_no_results_items,
+    search: m.query_view_search_items,
     sort: [
       ["title", m.query_view_property_title, "text"],
       ["firstAuthor", m.query_view_property_first_author, "text"],

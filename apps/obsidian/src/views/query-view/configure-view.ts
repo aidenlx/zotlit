@@ -1,4 +1,4 @@
-// "Configure view": the name, the records and the Layout of one view of a
+// "Configure view": the name, the rows and the Layout of one view of a
 // Query File, and the options of its Layout. Each change saves to the file at
 // once.
 import { Menu, Modal, Setting } from "obsidian";

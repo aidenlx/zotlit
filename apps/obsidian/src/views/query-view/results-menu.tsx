@@ -1,5 +1,5 @@
 // The result count of the Query View toolbar, and the Results menu it opens:
-// a limit that saves to the view, and "Copy to clipboard" and "Export CSV..."
+// a limit that saves to the view, and "Copy to clipboard" and "Export CSV…"
 // for the rows on screen, with one column for each visible property.
 //
 // The menu is a native popover rather than a Chooser: its limit field takes
