@@ -1,6 +1,6 @@
 ---
 title: "Use query files and query blocks"
-description: "Create a query file, filter, sort, and group its views, embed it in notes, and save the annotation sidebar as a query file."
+description: "Create a query file, filter, sort, and group its views, add formulas, embed it in notes, and save the annotation sidebar as a query file."
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
@@ -143,6 +143,74 @@ A record with several Tags or Collections shows in the group of each one. Record
 Select <UiLabel name={m.query_view_properties()} />. Select the checkbox of a property to show or hide it, and drag a property to change its place. Type in <UiLabel name={m.query_view_properties_search()} /> to find a property. To add a property that the list does not have, type its path, such as `item.citationKey`, and select the row that adds it.
 
 The Table, List, and Cards layouts show these properties in this order. Copy and CSV export use them as columns.
+
+## Add a formula [#formulas]
+
+A formula is a property that ZotLit computes for each row from other properties. It uses the same [Filter Expression](/docs/concepts/how-zotlit-query-works#steps) language as a filter condition. For example, a formula can show the year of each paper, or the number of its authors.
+
+To show the year of each paper in an items view:
+
+<Steps>
+  <Step>
+    ### Open the dialog
+
+    Select <UiLabel name={m.query_view_properties()} />, then <UiLabel name={m.query_view_formula_add()} />.
+
+  </Step>
+  <Step>
+    ### Name the formula
+
+    In <UiLabel name={m.query_view_formula_name()} />, type `year`. A name has letters, digits, and underscores, and starts with a letter or an underscore. Letter case counts. The view names the property `formula.year`.
+
+  </Step>
+  <Step>
+    ### Write the expression
+
+    In <UiLabel name={m.query_view_formula_expression()} />, type `date.year`. A check mark next to the label shows that the text has no syntax errors. When the text has a syntax error, a warning icon shows in its place and the reason shows under the field.
+
+  </Step>
+  <Step>
+    ### Save
+
+    Select <UiLabel name={m.query_view_formula_save()} />. The view shows the new property after its other properties, with the year of each paper.
+
+  </Step>
+</Steps>
+
+The file saves the formula under its top-level `formulas` key, and every view of the file can show it. To filter by a formula, select <UiLabel name={m.workbench_match_edit_as_expression()} /> on a condition in the filter editor and type, for example, `formula.year >= 2020`. One formula can also use another, for example `formula.year + 1`.
+
+To change a formula, select the pencil button on its row in <UiLabel name={m.query_view_properties()} />. The dialog <UiLabel name={m.query_view_formula_edit()} /> opens. The name stays as it is: to use a new name, remove the formula and add it again.
+
+To remove a formula, open <UiLabel name={m.query_view_formula_edit()} /> and select <UiLabel name={m.query_view_formula_remove()} />. ZotLit removes the formula from every view of the file. A filter condition that still uses it shows an error until you change it.
+
+### When a formula has a mistake [#formula-errors]
+
+A formula that ZotLit Query cannot run, such as `title * 2`, shows a warning icon on its row in <UiLabel name={m.query_view_properties()} /> and on its column header in the Table layout. Hover over the icon to read the reason. The other properties of the view stay on screen. A formula that uses the wrong one shows <UiLabel name={m.query_view_formula_reads_wrong({ name: "year" })} /> When a filter condition of the view uses the wrong formula, the view shows the error and no rows until you correct it.
+
+A formula can work for most rows and fail on one row. For example, `number(volume)` fails on a paper whose volume is text, such as "Spring". That row shows a warning icon in its cell, with the reason in a tooltip. Copy and CSV export write `Error: ` and the reason in that cell. A paper with no volume shows an empty cell. [Error Values](/docs/concepts/how-zotlit-query-works#error-values) explains the difference.
+
+## Rename a property [#display-names]
+
+A display name replaces the path of a property in the view. For example, the property `formula.year` can show as "Year of source".
+
+<Steps>
+  <Step>
+    ### Open the dialog
+
+    Select <UiLabel name={m.query_view_properties()} />. On the row of `formula.year`, select the <UiLabel name={m.query_view_property_rename()} /> button.
+
+  </Step>
+  <Step>
+    ### Type the name
+
+    In <UiLabel name={m.query_view_display_name()} />, type `Year of source`, then select <UiLabel name={m.query_view_display_name_save()} />.
+
+  </Step>
+</Steps>
+
+The Table header, the Cards labels, the rows in <UiLabel name={m.query_view_properties()} />, and the header row of copy and CSV export show "Year of source". The display name applies to every view of the file. For a formula, you can also set it in <UiLabel name={m.query_view_display_name()} /> of the formula dialog.
+
+To return to the default name, clear the field and save. Without a display name, a property shows its field name, such as Title, or its path.
 
 ## Limit, copy, and export the results [#results]
 
