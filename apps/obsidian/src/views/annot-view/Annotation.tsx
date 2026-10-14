@@ -83,6 +83,7 @@ import type {
 } from "./excerpt-image-state";
 import { CARD_SELECTOR } from "./history";
 import {
+  capabilityOf,
   fieldDraft,
   isEditing,
   selectedAlone,
@@ -146,7 +147,7 @@ interface CardOffer extends Omit<CardControls, "comment" | "text"> {
  * @see https://github.com/aidenlx/zotlit/issues/1146
  */
 function useCardControls(annot: AnnotationRecord, alone: boolean): CardOffer {
-  const capability = useAnnotStore((s) => s.capability);
+  const capability = useAnnotStore((s) => capabilityOf(s, annot.parentKey));
   const mutation = useMutation(annot.key);
   const hasTags = annot.tags.length > 0;
   const { type } = annot;
@@ -182,7 +183,9 @@ export function blocksNow(
  * drawn.
  */
 function useVerbBlocks(annot: AnnotationRecord): VerbBlocks {
-  const capability = useAnnotStore((state) => state.capability);
+  const capability = useAnnotStore((state) =>
+    capabilityOf(state, annot.parentKey),
+  );
   return blocksNow(annot, capability);
 }
 
@@ -714,7 +717,9 @@ function useFieldDraftPanel(
   field: TextField,
 ): FieldDraftPanelState | null {
   const draft = useAnnotStore((state) => fieldDraft(state, field, annot.key));
-  const capability = useAnnotStore((state) => state.capability);
+  const capability = useAnnotStore((state) =>
+    capabilityOf(state, annot.parentKey),
+  );
   // Held by identity while the draft and the capability stand, so a panel
   // redraws on a change and not on every render of the card.
   return useMemo(() => {
@@ -1055,8 +1060,12 @@ function EditTextButton({
 
 function ExcerptImage({ annot, collapsed }: AnnotationProps) {
   const actions = useContext(AnnotActionsContext);
-  const source = useAnnotStore((s) => s.annotationSource);
-  const sourceScope = useAnnotStore((s) => s.annotationSourceScope);
+  const source = useAnnotStore(
+    (s) => s.sources.get(annot.parentKey)?.source ?? null,
+  );
+  const sourceScope = useAnnotStore(
+    (s) => s.sources.get(annot.parentKey)?.scope ?? null,
+  );
   const heldTarget = useRef<ExcerptImageTarget | null>(null);
   const target = excerptImageTarget(heldTarget.current, {
     annotation: annot,
