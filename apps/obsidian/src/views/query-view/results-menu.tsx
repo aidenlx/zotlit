@@ -4,7 +4,6 @@
 //
 // The menu is a native popover rather than a Chooser: its limit field takes
 // the arrow keys and Enter, which a Chooser's key scope would hold.
-import { Notice } from "obsidian";
 import type { IconName } from "obsidian";
 import { useId, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
@@ -15,6 +14,7 @@ import { writeClipboardRichText } from "@/lib/clipboard";
 import { saveFile } from "@/lib/file-save";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import { BaseNotice } from "@/lib/notice";
 import { themeHook } from "@/lib/theme-hooks";
 import { cn } from "@/lib/utils";
 
@@ -28,10 +28,10 @@ export async function copyResults(view: QueryView): Promise<void> {
   const table = view.table();
   try {
     await writeClipboardRichText({ html: toHTML(table), text: toTSV(table) });
-    new Notice(m.query_view_copied());
+    new BaseNotice(m.query_view_copied());
   } catch (error) {
     logger.warn("The Query View could not copy its results", { error });
-    new Notice(m.query_view_copy_failed());
+    new BaseNotice(m.query_view_copy_failed());
   }
 }
 
