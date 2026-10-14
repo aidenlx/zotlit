@@ -77,14 +77,18 @@ function row(key: string): QueryViewRow {
   };
 }
 
-function result(rows: QueryViewRow[]): QueryViewOutcome {
+function result(
+  rows: QueryViewRow[],
+  matchedCount = rows.length,
+): QueryViewOutcome {
   return {
     kind: "result",
     result: {
       libraries: [{ type: "personal" }],
       query: {} as never,
       returnedCount: rows.length,
-      truncated: false,
+      matchedCount,
+      truncated: matchedCount > rows.length,
       warnings: [],
       rows,
     },
@@ -733,4 +737,72 @@ it("offers the Tags and Collections of the Libraries the view reads", async () =
       { id: "group:4815", name: "Lab" },
     ],
   });
+});
+
+it("counts every match, and says how many of them the limit shows", async () => {
+  const { view, el, settle } = await mount([
+    result([row("ANNOTAAA"), row("ANNOTBBB")], 12),
+  ]);
+  await act(() => view.setText(FILE));
+  await settle();
+
+  const count = el.querySelector("[data-query-count]");
+  expect(count?.getAttribute("data-query-count")).toBe("2");
+  expect(count?.getAttribute("data-query-matched")).toBe("12");
+  expect(count?.textContent).toBe("2 of 12 results");
+});
+
+function valued(key: string, comment: string): QueryViewRow {
+  return {
+    ...row(key),
+    values: { ...row(key).values, comment, pageLabel: "4" },
+  };
+}
+
+it("reads the visible properties with the rows, and gives them as the table's columns in order", async () => {
+  const { view, run, settle } = await mount([
+    result([valued("ANNOTAAA", "Key figure"), valued("ANNOTBBB", "")]),
+  ]);
+  await act(() =>
+    view.setText(`views:
+  - type: annotations
+    name: Shared
+    from: annotations
+    order:
+      - pageLabel
+      - comment
+`),
+  );
+  await settle();
+
+  expect(run.mock.calls[0]![0].fields).toEqual(
+    expect.arrayContaining(["pageLabel", "comment"]),
+  );
+  expect(view.state.getState().view?.order).toEqual(["pageLabel", "comment"]);
+  expect(view.table()).toEqual({
+    header: ["pageLabel", "comment"],
+    body: [
+      ["4", "Key figure"],
+      ["4", ""],
+    ],
+  });
+});
+
+it("saves a new order and a new limit to the file, and runs the view again with them", async () => {
+  const { view, run, saved, settle } = await mount([]);
+  await act(() => view.setText(FILE));
+  await settle();
+
+  await act(() => view.editView({ order: ["comment"], limit: 5 }));
+  await settle();
+  expect(saved).toHaveLength(1);
+  expect(saved[0]).toContain("    order:\n      - comment\n");
+  expect(saved[0]).toContain("    limit: 5\n");
+  expect(run.mock.calls.at(-1)![0]).toMatchObject({ limit: 5 });
+  expect(view.state.getState().view?.name).toBe("Yellow");
+
+  await act(() => view.editView({ limit: undefined }));
+  await settle();
+  expect(saved[1]).not.toContain("limit: 5");
+  expect(run.mock.calls.at(-1)![0]).toMatchObject({ limit: null });
 });

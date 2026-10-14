@@ -69,6 +69,12 @@ export interface QueryFileView {
    */
   readonly groupOrder?: readonly QueryFileGroupValue[];
   readonly limit?: number;
+  /**
+   * The visible properties, as Projection Paths, in the order the view shows
+   * them. Copy and CSV export write these columns; the Table, List and Cards
+   * layouts show them in this order.
+   */
+  readonly order?: readonly string[];
   readonly problems: readonly QueryFileProblem[];
   /** The view's map as the file holds it, with every key the parser does not read. */
   readonly source: Readonly<Record<string, unknown>>;
@@ -211,6 +217,15 @@ function readView(value: unknown): QueryFileView {
       view.limit = limit;
     else invalid("limit");
   }
+  if (source.order !== undefined) {
+    const { order } = source;
+    if (
+      Array.isArray(order) &&
+      order.every((entry) => typeof entry === "string" && entry !== "")
+    )
+      view.order = order as string[];
+    else invalid("order");
+  }
   return view;
 }
 
@@ -291,17 +306,19 @@ function writeView(view: QueryFileView): Entries {
     groupBy: view.groupBy ? { ...view.groupBy } : view.source.groupBy,
     groupOrder: view.groupOrder ? [...view.groupOrder] : view.source.groupOrder,
     limit: view.limit ?? view.source.limit,
+    order: view.order ? [...view.order] : view.source.order,
   });
 }
 
 /** What a toolbar control changes in one view. A key set to `undefined` is removed. */
 export type QueryFileViewEdit = Partial<
-  Pick<QueryFileView, "sort" | "groupBy" | "groupOrder">
+  Pick<QueryFileView, "sort" | "groupBy" | "groupOrder" | "order" | "limit">
 >;
 
 /**
  * The file with one view changed. A grouping that takes another property
- * drops the Manual group order, since its values name the old groups.
+ * drops the Manual group order, since its values name the old groups. A key
+ * the edit sets is no longer a problem of the view.
  */
 export function editView(
   file: QueryFile,
@@ -319,7 +336,13 @@ export function editView(
   const source: Entries = { ...view.source };
   for (const [key, value] of Object.entries(changes))
     if (value === undefined) delete source[key];
-  const next: QueryFileView = { ...view, ...changes, source };
+  const problems = view.problems.filter(
+    (problem) =>
+      !(
+        problem.code === "invalid-value" && Object.hasOwn(changes, problem.key)
+      ),
+  );
+  const next: QueryFileView = { ...view, ...changes, source, problems };
   return {
     ...file,
     views: file.views.map((candidate) =>

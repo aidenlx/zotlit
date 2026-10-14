@@ -27,6 +27,7 @@ import type { Diagnostic } from "@/services/item-query/contract";
 import type {
   QueryViewOutcome,
   QueryViewRequest,
+  QueryViewRow,
 } from "@/services/item-query/query-view";
 import type { QueryService } from "@/services/item-query/service";
 import { selectorKey } from "@/services/library-scope/scope";
@@ -45,6 +46,7 @@ import type { FilterValues } from "./filter-popover";
 import { GroupEditor } from "./group-control";
 import { annotationsLayoutOptions } from "./layouts";
 import { groupOptions, sortOptions } from "./properties";
+import { PropertiesMenu } from "./properties-menu";
 import {
   editView,
   locateFilterFault,
@@ -61,13 +63,17 @@ import type {
   QueryFileView,
   QueryFileViewEdit,
 } from "./query-file";
+import { ResultsMenu } from "./results-menu";
 import { LAYOUT_FIELDS, LAYOUT_GROUP_PATHS, layoutRows } from "./rows";
 import type { LayoutGroup } from "./rows";
 import { SearchControl } from "./search-control";
 import { SortEditor } from "./sort-control";
+import { resultTable } from "./table";
+import type { ResultTable } from "./table";
 import { ToolbarPopover } from "./toolbar-popover";
 import * as edits from "./view-edits";
 import { ViewMenu } from "./view-menu";
+import { visibleProperties } from "./visible-properties";
 
 const logger = getLogger(["views", "query-view"]);
 
@@ -128,6 +134,8 @@ export interface QueryViewState {
   keptResults: boolean;
   /** The rows shown, each once however many groups it stands in. */
   count: number;
+  /** The records that match the view, before its limit. */
+  matched: number;
   /** Every group the rows hold, the shown ones first; empty when ungrouped. */
   groups: readonly LayoutGroup[];
   /** Whether the view's limit cut the rows short. */
@@ -143,6 +151,7 @@ const INITIAL_STATE: QueryViewState = {
   filterIssue: null,
   keptResults: false,
   count: 0,
+  matched: 0,
   groups: [],
   truncated: false,
 };
@@ -213,6 +222,8 @@ export class QueryView extends Component implements HistorySurface {
   /** The name of the view whose rows are on screen. */
   #shownViewName: string | null = null;
   #settled: Promise<void> = Promise.resolve();
+  /** The rows on screen, each once, in the order they show. */
+  #rows: readonly QueryViewRow[] = [];
   #subscriptions: DisposableStack | null = null;
 
   constructor(deps: QueryViewDeps, host: QueryViewHost) {
@@ -405,6 +416,18 @@ export class QueryView extends Component implements HistorySurface {
     this.refresh();
   }
 
+  /**
+   * The rows on screen as a table, one column for each visible property in
+   * the view's order: what "Copy to clipboard" and "Export CSV..." write.
+   */
+  table(): ResultTable {
+    const { view } = this.state.getState();
+    return resultTable(
+      this.#rows,
+      view ? visibleProperties(view, { fallback: true }) : [],
+    );
+  }
+
   /** What tells one run from another: the request, and the grouping the rows are gathered by. */
   #runKey(file: QueryFile, view: QueryFileView): string {
     return JSON.stringify([
@@ -427,7 +450,12 @@ export class QueryView extends Component implements HistorySurface {
           direction: direction === "DESC" ? "desc" : "asc",
         })),
       }),
-      fields: [...LAYOUT_FIELDS],
+      fields: [
+        ...new Set([
+          ...LAYOUT_FIELDS,
+          ...visibleProperties(view, { fallback: true }),
+        ]),
+      ],
       limit: view.limit ?? null,
       ...(context && { context }),
     };
@@ -539,6 +567,7 @@ export class QueryView extends Component implements HistorySurface {
         diagnostic: null,
         filterIssue: null,
         count: 0,
+        matched: 0,
         groups: [],
         truncated: false,
       });
@@ -588,11 +617,18 @@ export class QueryView extends Component implements HistorySurface {
           view.groupBy,
           view.groupOrder,
         );
+        const byKey = new Map(
+          (result.rows ?? []).map((row) => [row.indexedKey, row]),
+        );
+        this.#rows = [
+          ...new Set(shown.rows.map((row) => row.annotationKey)),
+        ].map((key) => byKey.get(key)!);
         this.state.setState({
           phase: "ready",
           diagnostic: null,
           filterIssue: null,
           count: shown.count,
+          matched: result.matchedCount,
           groups: shown.groups,
           truncated: result.truncated,
         });
@@ -646,6 +682,7 @@ export class QueryView extends Component implements HistorySurface {
     this.#shownRequest = key;
     if (key === null) {
       this.#shownViewName = null;
+      this.#rows = [];
       this.#hold = null;
       this.#layout.clear();
       previous?.[Symbol.dispose]();
@@ -664,22 +701,6 @@ function useQueryViewState<T>(
   selector: (state: QueryViewState) => T,
 ): T {
   return useStore(view.state, selector);
-}
-
-function ResultCount({ view }: { view: QueryView }) {
-  const phase = useQueryViewState(view, (s) => s.phase);
-  const count = useQueryViewState(view, (s) => s.count);
-  const truncated = useQueryViewState(view, (s) => s.truncated);
-  if (phase === "loading")
-    return <span data-query-count="">{m.query_view_loading()}</span>;
-  if (phase !== "ready") return null;
-  return (
-    <span data-query-count={count}>
-      {truncated
-        ? m.query_view_results_limited({ count })
-        : m.query_view_results({ count })}
-    </span>
-  );
 }
 
 function Problems({ view }: { view: QueryView }) {
@@ -866,12 +887,11 @@ function QueryViewBody({ view }: { view: QueryView }) {
         role="toolbar"
       >
         <ViewMenu view={view} />
-        <span className="zt:shrink-0 zt:whitespace-nowrap zt:text-(--text-muted)">
-          <ResultCount view={view} />
-        </span>
+        <ResultsMenu view={view} />
         <FilterButton view={view} />
         <SortButton view={view} />
         <GroupButton view={view} />
+        <PropertiesMenu view={view} />
         <span className="zt:flex-1" />
         <SearchControl />
         <OpenFileButton view={view} />
