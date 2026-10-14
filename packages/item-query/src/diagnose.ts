@@ -86,7 +86,8 @@ export function diagnose(
     context.argument !== "formulas" ||
     context.path === undefined ||
     fault.kind === "formula-name" ||
-    fault.kind === "formula-result"
+    fault.kind === "formula-result" ||
+    fault.kind === "formula-cycle"
   )
     return diagnostic;
   const message = `In formula.${context.path}: ${diagnostic.message}`;
@@ -200,6 +201,22 @@ function diagnoseFault(
         "",
         { found: fault.name, expected: ["an identifier"] },
       );
+    case "formula-cycle": {
+      const chain = fault.chain.map((name) => `formula.${name}`).join(" → ");
+      return renderDiagnostic(
+        {
+          code: "formula-cycle",
+          message: `The Formulas read each other in a cycle: ${chain}.`,
+          hint: "Make one Formula in the cycle read fields only, not another Formula of the cycle.",
+          location: faultLocation,
+        },
+        text,
+        {
+          found: chain,
+          expected: ["a Formula that reads no Formula of the cycle"],
+        },
+      );
+    }
     case "formula-result":
       return renderDiagnostic(
         {
@@ -267,6 +284,7 @@ export function codeOfFault(
   if (fault.kind === "unreadable") return "unfilterable-field";
   if (fault.kind === "formula-name") return "invalid-formula-name";
   if (fault.kind === "formula-result") return "invalid-formula-result";
+  if (fault.kind === "formula-cycle") return "formula-cycle";
   switch (fault.role) {
     case "formula":
       return "unknown-formula";
@@ -394,7 +412,7 @@ function diagnoseUnknown(
   };
 }
 
-/** `formula.<name>` in `fields` names no Formula of the request. */
+/** `formula.<name>` names no Formula of the request. */
 function diagnoseUnknownFormula(
   fault: Extract<Fault, { readonly kind: "unknown" }>,
   text: string,
@@ -402,6 +420,30 @@ function diagnoseUnknownFormula(
 ): Diagnostic<"unknown-formula"> {
   const defined = fault.formulas ?? [];
   const nearby = nearMatches(fault.name, defined);
+  if (location.argument === "filter" || location.argument === "formulas") {
+    const suggestions = nearby.map((name) => `formula.${name}`);
+    return {
+      ...renderDiagnostic(
+        {
+          code: "unknown-formula",
+          message:
+            fault.name === ""
+              ? "formula alone names no Formula; a filter reads a Formula as formula.<name>."
+              : `formula.${fault.name} reads the Formula ${JSON.stringify(fault.name)}, which the request does not define.`,
+          hint:
+            nearby.length === 1
+              ? `Try: ${text.slice(0, fault.at.from)}${suggestions[0]!}${text.slice(fault.at.to)}`
+              : defined.length > 0
+                ? `Read a Formula of the request: ${defined.map((name) => `formula.${name}`).join(", ")}.`
+                : `Define the Formula in formulas, such as formulas='${JSON.stringify({ [fault.name]: "date.year" })}'.`,
+          location: { ...location, span: fault.at },
+        },
+        text,
+        { found: fault.name, expected: defined },
+      ),
+      suggestions,
+    };
+  }
   const replaced =
     nearby.length === 1 && location.index !== undefined
       ? replaceJsonValue(text, [location.index], `formula.${nearby[0]!}`)

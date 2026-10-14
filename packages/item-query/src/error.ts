@@ -25,7 +25,8 @@ export type ItemQueryErrorCode =
   | "unbound-context"
   | "invalid-formula-name"
   | "invalid-formula-result"
-  | "unknown-formula";
+  | "unknown-formula"
+  | "formula-cycle";
 
 /** The part of the request an {@link ItemQueryError} points at. */
 export interface ItemQueryErrorLocation {

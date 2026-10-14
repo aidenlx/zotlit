@@ -228,11 +228,73 @@ it("warns about a Formula that the request names and never reads", async () => {
   expect(result.warnings[0]!.report.join("\n")).toContain("formula.unused");
 });
 
-it("reserves formula: a filter cannot read it as a bare custom field", async () => {
+it("reserves formula: a filter reads a Formula as formula.<name>", async () => {
   using scenario = openScenarioDatabase();
-  const error = await failure(scenario, { filter: 'formula == "x"' });
+  const error = await failure(scenario, {
+    filter: 'formula == "x"',
+    formulas: { year: "date.year" },
+  });
   expect(error.diagnostic).toMatchObject({
-    code: "unfilterable-field",
+    code: "unknown-formula",
     location: { argument: "filter", span: { from: 0, to: 7 } },
   });
+  expect(error.diagnostic.hint).toContain("formula.year");
+});
+
+it("selects the records whose Formula value the filter accepts", async () => {
+  using scenario = openScenarioDatabase();
+  const keys = async (request: Omit<ItemQueryRequest, "libraries">) =>
+    (await run(scenario, { ...request, fields: ["title"] })).rows!.map(
+      (row) => row.indexedKey,
+    );
+  const byFormula = await keys({
+    filter: "formula.year > 2018",
+    formulas: { year: "date.year" },
+  });
+  expect(byFormula.length).toBeGreaterThan(0);
+  expect(byFormula).toEqual(await keys({ filter: "date.year > 2018" }));
+});
+
+it("projects a Formula that reads another Formula", async () => {
+  using scenario = openScenarioDatabase();
+  const result = await run(scenario, {
+    filter: 'indexedKey == "BK2MNTH2"',
+    formulas: { a: "formula.b + 1", b: "date.year" },
+    fields: ["formula.a"],
+  });
+  expect(result.rows!.map((row) => row.values)).toEqual([
+    { "formula.a": 2020 },
+  ]);
+  expect(result.warnings).toEqual([]);
+});
+
+it("fails Formulas that read each other, and the report names the chain", async () => {
+  using scenario = openScenarioDatabase();
+  const error = await failure(scenario, {
+    formulas: { a: "formula.b + 1", b: "formula.a * 2" },
+    fields: ["formula.a"],
+  });
+  expect(error.diagnostic).toMatchObject({
+    code: "formula-cycle",
+    location: { argument: "formulas", path: "b", span: { from: 0, to: 9 } },
+  });
+  expect(error.diagnostic.report.join("\n")).toContain(
+    "formula.a → formula.b → formula.a",
+  );
+});
+
+it("fails a filter that reads a Formula the request does not define", async () => {
+  using scenario = openScenarioDatabase();
+  const error = await failure(scenario, {
+    filter: "title != null && formula.yeer > 2000",
+    formulas: { year: "date.year" },
+  });
+  expect(error.diagnostic).toMatchObject({
+    code: "unknown-formula",
+    location: { argument: "filter", span: { from: 17, to: 29 } },
+    found: "yeer",
+    suggestions: ["formula.year"],
+  });
+  expect(error.fault).toMatchObject({ kind: "unknown", role: "formula" });
+  expect(error.diagnostic.report.join("\n")).toContain("formula.yeer");
 });
