@@ -8,7 +8,7 @@ import type { TargetLibrary } from "./request";
 
 type KeyTarget = "self" | "item" | "attachment";
 function keyTarget(
-  dataset: QueryDataset["id"],
+  dataset: keyof typeof RECORD_VOCABULARIES,
   path: string,
 ): KeyTarget | undefined {
   if (path === "indexedKey") return "self";

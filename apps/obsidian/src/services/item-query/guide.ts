@@ -502,8 +502,13 @@ const DATASETS_SECTION = `QUERY DATASETS
   annotations. Attachments reach their marks through annotations and their
   parent Item through item. Annotations reach both parents through item and
   attachment. Each record has the vocabulary of its Query Dataset.
+  Items also reach their Child Notes outside the trash through notes. A note
+  record has indexedKey, key, title, dateAdded, dateModified, library, and its
+  parent item; no dataset reads notes as rows. Papers with a Child Note:
+    ${example({ filter: "!notes.isEmpty()", fields: "title,notes[].title" })}
   Attachment lists follow Attachment key order. Annotation lists follow
   Attachment key, then Sort Index; a single file's marks follow Sort Index.
+  Note lists follow note key order.
   These Relation Lists contain only records in the dataset universes above.
   Use list methods in filters and [] in Projection Paths. A complete record
   projects as its fixed summary; topic=fields lists the summary fields.
