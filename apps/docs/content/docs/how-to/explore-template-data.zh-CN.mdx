@@ -1,0 +1,178 @@
+---
+title: "浏览模板数据"
+description: "打开模板数据浏览器以查阅可用字段、复制属性访问路径并生成即用型模板代码片段。"
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { Command } from "@/components/command";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+模板数据浏览器（Template Data Explorer）直观展示了模板在面对某篇 Zotero 条目、标注、笔记名称或引文时实际接收到的全部强类型字段。借助它，您可以快速查找字段路径、读取真实取值并将开箱即用的代码片段直接复制到模板中。
+
+## 打开数据浏览器
+
+数据浏览器既可以作为侧边栏面板独立呈现，也可与模板工作台视图并排展示。您可以通过多种途径打开它：
+
+### 通过命令面板
+
+<Steps>
+  <Step>
+    ### 运行命令
+
+    打开命令面板并运行：
+
+    <Command name={m.command_open_template_data_explorer_name()} />
+
+    如果编辑器当前正打开着某篇文献笔记，数据浏览器将直接使用该笔记对应的 Zotero 条目。没有选定条目时，会显示选项列表。
+
+  </Step>
+</Steps>
+
+### 从文献笔记打开
+
+在文件列表或标签页中右键单击某篇文献笔记（或点击三点菜单），选择 <UiLabel name={m.template_data_explorer_menu_explore()} />。数据浏览器将以该笔记绑定的条目为数据源直接打开。
+
+### 从标注视图打开
+
+在标注侧边栏中，打开任意标注卡片上的更多操作菜单，选择 <UiLabel name={m.template_data_explorer_menu_explore()} />。数据浏览器将以该条标注为根节点锚点打开。
+
+### 从 Zotero 打开（条目）
+
+ZotLit Companion（Zotero 配套插件）在 Zotero 中注入了这些入口。右键单击单个条目，展开 <UiLabel name={m["zotero.menu_submenu.label"]()} /> 子菜单，选择 <UiLabel name={m.template_data_explorer_menu_explore()} />。Zotero 会通过协议链接在 Obsidian 中呼出数据浏览器。
+
+### 从 Zotero 打开（标注）
+
+在 Zotero PDF 阅读器中，右键单击某条批注并选择由 Companion 提供的 <UiLabel name={m["zotero.menu_reader_annot_explore"]()} />。数据浏览器将在 Obsidian 中以此标注为锚点直接打开。
+
+<include>./_security-prompt-callout.zh-CN.mdx</include>
+
+## 选取数据
+
+您可以直接选择内置的期刊文章、会议论文、图书或学位论文等示例数据，或在 <UiLabel name={m.workbench_recently_updated()} /> 下选择最近更新的条目。选择 <UiLabel name={m.workbench_search_zotero()} /> 可在 Zotero 文献库中直接搜索。选中条目后，其所有字段将被完整列出。
+
+使用 <UiLabel name={m.workbench_choose_item()} /> 可以切换条目。对于标注字段，使用 <UiLabel name={m.workbench_choose_annotation()} />。标注选取器既可从选定条目中挑选标注，也可体验高亮、下划线、笔记、文本、区域图片或手写墨迹等六个内置示例。
+
+数据选择会联动更新其他面板。标注字段与预览采用选定的标注及其自身的父级条目数据；笔记预览则使用选定的条目。独立工作台各自保留其选择。
+
+面板标题开头展示选定的数据名称，末尾为 <UiLabel name={m.workbench_view_fields()} />。标注标题会标明类型、页码和简短摘录。标题会标明内置示例；未选择数据时，面板使用通用名称。全功能面板在标题栏中提供了选择操作项；侧边栏则在数据附近提供紧凑的选择控件。在任一布局中，都可右键选择面板标题来打开菜单。若要将编辑器、字段列表与预览界面并排展开，可在模板工作台视图的面板菜单中选择 <UiLabel name={m.template_workbench_open_layout()} />。
+
+预览使用的数据会自动更新。如需重新加载，可在面板菜单中选择 <UiLabel name={m.workbench_refresh_item()} />。在 <UiLabel name={m.workbench_preview_on_demand()} /> 模式下，点击 <UiLabel name={m.workbench_preview_run()} /> 可手动触发渲染预览。
+
+## 复制 Zotero 标识符 [#indexed-key]
+
+Zotero 标识符（Zotero key）唯一指代一个对象：包含条目、附件、标注或笔记。当工具需要您指定操作对象时，可直接复制此标识符。
+
+在 Obsidian 中：
+
+- 对于当前活动的文献笔记，运行 <Command inline name={m.command_copy_item_key_name()} />，或从文件菜单中选择 <UiLabel name={m.command_copy_item_key_name()} />。
+- 在标注卡片上，打开更多操作菜单并选择 <UiLabel name={m.indexed_key_menu_copy_annotation()} />。
+- 在数据浏览器中，打开面板菜单并选择 <UiLabel name={m.command_copy_item_key_name()} /> 或 <UiLabel name={m.indexed_key_menu_copy_annotation()} />。标签文本会随当前面板所列的根节点类型自适应调整。
+
+如果文献笔记已经打开，您也可以手动复制其 frontmatter 中的 `zotero-key` 值。
+
+Companion 在 Zotero 中还提供了两个入口：
+
+- 右键选择一行或多行文献库条目，打开 <UiLabel name={m["zotero.menu_submenu.label"]()} /> 子菜单。入口名称会说明所选对象类型，例如 <UiLabel name={m["zotero.menu_item_copy_key.label"]({ count: 1, kind: "item" })} /> 或 <UiLabel name={m["zotero.menu_item_copy_key.label"]({ count: 1, kind: "attachment" })} />。选择多行时，每行复制一个标识键。
+- 在 PDF 阅读器中右键选择标注，再选择 <UiLabel name={m["zotero.menu_reader_annot_copy_key"]()} />。
+
+一个标识键就足够了。面板当前列出的根节点决定它指代哪个对象：笔记根节点复制条目标识键，标注根节点复制标注标识键。
+
+## 浏览字段 [#browse-the-fields]
+
+面板列出一个根节点的字段，并按章节分组。
+
+### 面板当前列出的根节点 [#the-root-the-pane-lists]
+
+面板标题会说明所读取的根节点：<UiLabel name={m.workbench_fields_root_note()} />、<UiLabel name={m.workbench_fields_root_annotation()} />、<UiLabel name={m.workbench_fields_root_filename()} /> 或 <UiLabel name={m.workbench_fields_root_citation()} />。
+
+根节点会跟随您正在编辑的配置方案部分：笔记正文及其属性使用笔记根节点，标注格式区域使用标注根节点，manifest 的 `filename` 值使用笔记名称根节点，引文文本使用引文根节点。
+
+独立的数据浏览器会采用旁边模板工作台视图的根节点。切换到标注后，列表上方会显示 <UiLabel name={m.template_data_explorer_note_root()} /> 导航路径；选择提示为 <UiLabel name={m.template_data_explorer_back_to_note_root()} /> 的返回按钮，即可回到笔记根节点。
+
+若要从笔记根节点查看某条标注自身的字段，请在 `zt.annotations` 下打开该标注行的更多选项菜单，选择 <UiLabel name={m.workbench_explorer_menu_explore_annotation()} />。
+
+### 章节 [#sections]
+
+所有根节点都以 <UiLabel name={m.workbench_explorer_section_common()} /> 开头，收录大多数模板会使用的字段。
+笔记根节点与笔记名称根节点将其余字段分为
+
+<UiLabel name={m.workbench_explorer_section_reference()} />、
+<UiLabel name={m.workbench_explorer_section_identifiers()} />、
+<UiLabel name={m.workbench_explorer_section_content()} />、
+<UiLabel name={m.workbench_explorer_section_organization()} />、
+<UiLabel name={m.workbench_explorer_section_links()} /> 和
+<UiLabel name={m.workbench_explorer_section_record()} />。
+标注根节点将其余字段分为
+<UiLabel name={m.workbench_explorer_section_annotation()} />、
+<UiLabel name={m.workbench_explorer_section_source()} />、
+<UiLabel name={m.workbench_explorer_section_organization()} />、
+<UiLabel name={m.workbench_explorer_section_links()} /> 和
+<UiLabel name={m.workbench_explorer_section_record()} />。
+引文根节点目前没有其他章节。
+
+选择章节标题即可展开或折叠该章节。面板选择控件旁的按钮可以全部展开或全部折叠，提示分别为 <UiLabel name={m.workbench_explorer_expand_all()} /> 与 <UiLabel name={m.workbench_explorer_collapse_all()} />。面板菜单中也提供相同操作。
+
+每个顶层行显示便于读者理解的名称，原始路径保留在提示文本与 <UiLabel name={m.workbench_explorer_menu_copy_path()} /> 中。展开对象或数组行可查看其成员。较长的值默认只显示第一行；选择 <UiLabel name={m.workbench_explorer_show_more()} /> 可展开，选择 <UiLabel name={m.workbench_explorer_show_less()} /> 可再次收起。
+
+### 筛选字段 [#filter-fields]
+
+在搜索框中输入内容以缩小列表范围。搜索框会说明正在搜索的根节点：<UiLabel name={m.workbench_fields_search_note()} />、<UiLabel name={m.workbench_fields_search_annotation()} />、<UiLabel name={m.workbench_fields_search_filename()} /> 或 <UiLabel name={m.workbench_fields_search_citation()} />。
+
+搜索会对字段名称、键和值进行不区分大小写的子串匹配。匹配行及其所有上级节点会自动展开。没有匹配项时，列表显示 <UiLabel name={m.workbench_fields_no_matches()} />。
+
+## 复制路径与代码片段 [#copy-paths-and-snippets]
+
+每行都有菜单。可从该行标记为 <UiLabel name={m.workbench_explorer_row_actions()} /> 的操作按钮组打开，也可右键选择该行。
+
+### 复制路径 [#copy-path]
+
+选择 <UiLabel name={m.workbench_explorer_menu_copy_path()} />，复制与模板引擎无关的属性路径，例如 `zt.creators[0].lastName`。
+
+### 复制值 [#copy-value]
+
+选择 <UiLabel name={m.workbench_explorer_menu_copy_value()} />，复制该行当前的值。基本类型按原样复制，对象与数组复制为 JSON。该行没有值时，此菜单项不可用。
+
+### 复制模板代码片段 [#copy-template-snippets]
+
+同一菜单还提供与当前模板语法匹配、可直接使用的代码片段：
+
+- <UiLabel name={m.workbench_explorer_menu_copy_output()} /> 输出该值，例如 `{{ zt.title }}`。
+- <UiLabel name={m.workbench_explorer_menu_copy_if_present()} />
+  将该值放入条件块中。
+- <UiLabel name={m.workbench_explorer_menu_copy_loop()} /> 遍历数组节点。
+- <UiLabel name={m.workbench_explorer_menu_copy_joined()} />
+  将数组连接为以分隔符分隔的字符串。
+
+数组节点提供 <UiLabel name={m.workbench_explorer_menu_copy_loop()} />；如果元素可连接为文本，还会提供 <UiLabel name={m.workbench_explorer_menu_copy_joined()} />。其他节点提供 <UiLabel name={m.workbench_explorer_menu_copy_output()} /> 与 <UiLabel name={m.workbench_explorer_menu_copy_if_present()} />。
+
+开启 <UiLabel name={m.settings_template_js_enable_name()} /> 后，代码片段菜单项会分入名为 “Liquid” 和 “Eta” 的两个子菜单，方便选择模板所用语法。关闭开关时，Liquid 菜单项直接显示在主菜单中。
+
+复制成功会显示 <UiLabel name={m.workbench_field_copy_done()} />；复制失败则显示 <UiLabel name={m.workbench_field_copy_failed()} />。
+
+<Callout type="info" title="反馈模板问题">
+  如需在问题反馈中附上这些数据，请按“收集调试日志”中的
+  [模板数据](/docs/how-to/collect-debug-logs#template-data)步骤操作。
+</Callout>
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="自定义模板"
+    description="创建可编辑的模板文档并应用修改。"
+    href="/docs/how-to/customize-a-template"
+  />
+  <Card
+    title="模板的工作原理"
+    description="三类模板文档、模板语言与文件名匹配规则。"
+    href="/docs/concepts/how-templates-work"
+  />
+  <Card
+    title="配置 frontmatter 属性"
+    description="使用模板表达式添加自定义 YAML 属性。"
+    href="/docs/how-to/configure-frontmatter-properties"
+  />
+</Cards>

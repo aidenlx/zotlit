@@ -1,0 +1,152 @@
+---
+title: "正文引文渲染与导航机制"
+description: "ZotLit 如何在当前活动笔记中选择、格式化、列出并打开引文。"
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+ZotLit 使用一个有序的引文集合来对当前活动笔记进行格式化、为其参考文献编号，并提供引文交互导航支持。
+
+## 文档引文集（Document Citation Set）
+
+文档引文集包含来自当前活动笔记的所有引文出现项（Citation Occurrences）。每个出现项都会保留其在源码中的位置和引文详细信息。
+
+<SettingsPath page={m.settings_page_citations()} />
+下的两项设置决定了哪些引文来源可以加入该集合：
+
+| 设置项                                                           | 默认值 | 包含的引文来源                                      |
+| ---------------------------------------------------------------- | ------ | --------------------------------------------------- |
+| <UiLabel name={m.settings_citation_pandoc_citations_name()} />   | 开启   | 字面量 Pandoc 语法，例如 `@doe2024` 与 `[@doe2024]` |
+| <UiLabel name={m.settings_citation_wikilink_citations_name()} /> | 关闭   | 指向文献笔记的合格双链（wikilink）                  |
+
+您可以将两种来源均行关闭。此时，参考文献侧边栏、正文格式化引文、数字序号排版以及文献引用标识（citation key）导航（Citekey Navigation）都将收到一个空集合。
+
+合格的双链是指不带显示别名（unaliased）且直接指向文献笔记的链接。它可以不带链接片段，或者带有形如 `#cite:locator=33` 的有效引文片段。
+
+带有别名的链接、嵌入块、无法解析的目标、标题片段以及块链接均不会纳入该集合。格式错误的引文片段同样会被排除。在 <UiLabel name={m.settings_citation_wikilink_citations_name()} /> 开启期间，参考文献侧边栏会将格式错误的片段报告为参考文献错误（Reference Error）。
+
+该集合严格保持其在源码中的出现顺序。该顺序至关重要，因为数字编号样式需要根据整篇笔记的内容统一计算序号，而非依据当前可见的部分。
+
+### 引文索引（Citation Index）
+
+引文索引是 ZotLit 内部在整个仓库范围内维护的引文出现项记录。无论上述两项来源设置如何配置，该索引均会保持活跃并独立追踪这两类引文来源。
+
+当某项引文功能查询当前活动笔记时，文档引文集会动态应用您的来源设置。更改任一设置都会立即重新计算文档引文集，无需重新扫描整个仓库。
+
+引文插入与内置导出拥有各自独立的来源准入规则。关闭某种来源并不会禁用引文插入功能，也不会从导出中移除该来源。
+
+## Pandoc 引文
+
+Pandoc 引文可以引用单篇文献或多篇文献组合：
+
+- `@key` 为作者置入正文形式（author-in-text）的单篇引文。
+- `-@key` 会在输出中省略作者姓名。
+- `[@key]` 与 `[@key, p. 3]` 为带括号的引文簇（Citation Cluster）。
+- `[see @a, p. 3; @b]` 在一个引文簇中组合引用多篇文献。
+- `@{https://example.com/paper}` 为带花括号的标识键，用于包含普通键所不支持的字符。
+
+紧跟在后的尾部标点符号不属于文献引用标识的一部分。包含 `@` 的电子邮件地址和 URL 会被视为普通文本。
+
+ZotLit 还会自动排除代码块、行内代码、数学公式、`%%` 注释、frontmatter 属性区以及 URL 中类似引文的文本。
+
+### 解析机制
+
+ZotLit 会对照您在 <UiLabel name={m.settings_library_scope_name()} /> 中涵盖的所有文献库，基于 Zotero 原生的文献引用标识字段来解析 Pandoc 文献引用标识。它不会使用 frontmatter 中的 `citekey` 字段进行解析。
+
+文献条目可以在创建对应的文献笔记之前就以引文形式出现在正文中。点击打开此类引文会先自动创建对应的文献笔记，随后将其打开。未能成功解析的标识键会保持原始字面量形式，并在侧边栏中显示为参考文献错误。
+
+当 Zotero 数据库发生变动时，解析数据会及时刷新。重新更改标识键的条目会在下一次刷新后生效。
+
+### 匹配多个条目的标识键（歧义键）[#ambiguous-key]
+
+一个文献引用标识可能解析为单个 Zotero 条目、未找到任何条目，或者匹配到多个条目。匹配到多个条目即为歧义键（ambiguous key）。当同一个文献库中有两个条目拥有相同的文献引用标识，或者同时纳入作用域的两个不同文献库中各存在一个同名标识时，就会发生歧义。
+
+ZotLit 绝不会擅自猜测选择其中任何一个候选条目。编辑器、阅读视图、引文悬停浮窗以及参考文献侧边栏均会一致报告歧义状态，并且该标识键保持独立：它不会关联任何候选条目，也不会向文末参考文献列表中添加任何条目。
+
+如果一个引文簇中既包含歧义键又包含完全未找到的键，则引文簇会优先报告未找到的键。这是因为缺失属于更严重的故障状态，应当保持醒目可见。
+
+有两种方式可以消除歧义：在 Zotero 中为其中一个条目修改分配不同的文献引用标识；或者缩小您的[文献库作用域](/docs/reference/settings#library-scope)，直到仅剩一个候选条目，从而使该标识键重新恢复唯一性。
+
+## 双链引文
+
+指向文献笔记的合格双链代表了与该笔记关联的 Zotero 条目。有效的引文片段（Citation Fragment）可以为其补充 Pandoc 的具体细节，例如前缀、定位符、后缀或作者省略模式。
+
+例如，当条目的文献引用标识为 `doe2020` 时，`[[Doe 2020#cite:locator=33]]` 即代表了 Pandoc 源码 `[@doe2020, p. 33]` 的效果。
+
+双链引文完整保留了 Obsidian 原生的链接目标、点击交互以及拖拽行为。在源码模式下，始终显示原始的双链文本。
+
+## 格式化的文内引文 [#formatted-in-text-citations]
+
+<UiLabel name={m.settings_citation_show_formatted_name()} />
+默认开启。它会在实时预览和阅读视图中应用所选的
+<UiLabel name={m.settings_citation_references_style_name()} />
+。源码模式始终显示 Markdown。
+
+ZotLit 会让 Pandoc 引擎对整篇文档的引文集合进行格式化。完整渲染可确保整篇笔记的编号和样式上下文保持一致。只有渲染完成后，ZotLit 才会将整篇文档中的引文切换为格式化文本。
+
+在实时预览中，只有光标或选区触及的引文会恢复显示 Markdown 源码。其他引文仍保持格式化显示。
+
+如果无法生成完整的格式化结果，ZotLit 会继续显示原生源码。
+
+只要一个引文簇中有条目未能解析，整个引文簇就会保持原样。其中已解析的条目仍会影响后续的数字编号和参考文献侧边栏。
+
+关闭 <UiLabel name={m.settings_citation_show_formatted_name()} /> 后，所有引文源码都会使用 Obsidian 的原生显示方式。此设置不会改变引文集合的成员、文献引用标识导航、插入或导出行为。
+
+## 参考文献与错误 [#references-and-errors]
+
+参考文献侧边栏会为文档引文集合中的每个已解析条目显示一条记录。格式化列表遵循所选样式的参考文献排序和条目标记。
+
+没有格式化输出时，侧边栏会按首次出现的顺序显示简化列表。参考文献错误会保留其准确的源码位置，且不会产生参考文献条目。
+
+[参考文献操作指南](/docs/how-to/review-copy-troubleshoot-references)介绍了导航、条目操作、参考文献复制和错误修复。
+
+## 文献引用标识导航 [#citekey-navigation]
+
+<UiLabel name={m.settings_citation_open_as_links_name()} /> 同时控制字面形式的
+Pandoc
+引文和显示为引文的文献笔记双链的导航行为。此功能独立于格式化显示和悬停行为。
+
+单条目引文可以打开或创建对应的文献笔记。多条目引文需要先选择条目。[歧义键](#ambiguous-key)则需要先选择候选条目，因为这个键本身不能唯一确定一个条目。
+
+引文浮窗会按引文顺序显示每个被引条目的完整参考文献记录。未解析或存在歧义的键会保留其自身状态，不会被分配给某个条目。
+
+[参考文献操作指南](/docs/how-to/review-copy-troubleshoot-references)介绍了引文悬停及可用的导航操作。[命令参考](/docs/reference/commands)列出了打开光标处引文的命令。
+
+## 主题样式接口 [#theme-hooks]
+
+ZotLit 只会为文档引文集合中由它提供渲染或导航的源码添加公开的 CSS 类。被排除的源码，以及两项适用功能均未启用的源码，都不会获得公开的 ZotLit 类。
+
+有关类名、状态含义和启用规则，请参阅[主题样式接口](/docs/reference/theme-hooks)。
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="插入引文"
+    description="独立于引文来源设置插入 Markdown 引文。"
+    href="/docs/how-to/insert-citations"
+  />
+  <Card
+    title="创建和打开文献笔记"
+    description="通过引文或快速切换器打开或创建文献笔记。"
+    href="/docs/how-to/create-and-open-notes"
+  />
+  <Card
+    title="查看、复制和排查参考文献"
+    description="跳转到引文位置、查看引文浮窗、复制条目并修复错误。"
+    href="/docs/how-to/review-copy-troubleshoot-references"
+  />
+  <Card
+    title="导出含引文的笔记"
+    description="将当前活动笔记导出为 Word 文档或网页。"
+    href="/docs/how-to/export-note-with-citations"
+  />
+  <Card
+    title="设置"
+    description="查阅引文控件、默认值、存储方式和依赖关系。"
+    href="/docs/reference/settings"
+  />
+</Cards>

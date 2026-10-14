@@ -1,0 +1,273 @@
+---
+title: "导入 Zotero 笔记"
+description: "将 Zotero 子笔记和独立笔记作为 Markdown 文件导入仓库，支持批量重新导入和批注模板化映射。"
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+ZotLit 能够将 Zotero 子笔记作为独立的 Markdown 文件导入您的仓库中，并在父级文献笔记中建立指向它们的双链链接。
+
+## 导入是如何触发的
+
+笔记导入完全由链接引用驱动。当模板或 frontmatter 表达式引用了子笔记的 `noteLink` 属性时，ZotLit 就会自动将该笔记作为 Markdown 文件导入仓库。如果从未引用过 `noteLink`，则不会为该子笔记创建任何落地文件。
+
+在 Liquid 模板中，访问该属性即可自动触发导入：
+
+```liquid
+{{ note.noteLink }}
+```
+
+在 frontmatter 表达式中，对 `noteLink` 进行映射计算即可为每个子笔记触发导入：
+
+```liquid
+zt.notes | map: "noteLink"
+```
+
+仅访问其他属性（例如 `title`）不会触发落地文件导入。
+
+## 导入单篇子笔记
+
+当您创建、更新或覆盖一篇文献笔记，且其模板或 frontmatter 中引用了 `noteLink` 时，ZotLit 会在该操作期间导入被引用的子笔记，无需额外运行单独的命令。
+
+<Callout type="info" title="仅更新元数据操作">
+  仅更新元数据（
+  <Command inline name={m.command_update_note_metadata_name()} />
+  ）会重新计算 frontmatter，但不会重绘笔记正文。如果 frontmatter 表达式引用了
+  `noteLink`，子笔记依然会在该更新期间正常导入。若 `noteLink`
+  仅存在于正文模板中，则在仅更新元数据时不会生效，因为正文没有重新渲染。
+</Callout>
+
+## 一键导入当前条目的所有子笔记
+
+<Steps>
+  <Step>
+    ### 打开父级文献笔记
+
+    在 Obsidian 中打开您希望导入其下属子笔记的文献笔记。
+
+  </Step>
+  <Step>
+    ### 运行导入命令
+
+    打开命令面板并运行：
+
+    <Command name={m.command_import_child_notes_name()} />
+
+    随后会出现标题为 <UiLabel name={m.batch_import_child_title()} /> 的弹窗，说明将导入的子笔记数量，并列出已经导入的笔记。
+
+    选择 <UiLabel name={m.batch_import_confirm_button()} /> 继续。
+
+  </Step>
+</Steps>
+
+文献笔记文件的右键菜单中也提供此命令。
+
+## 仅创建一次的行为 [#create-once-behavior]
+
+导入笔记只创建一次，不会自动更新。如果某篇子笔记已经有对应的导入文件，`noteLink` 会链接到已有文件，不再重新导入。之后在 Zotero 中编辑该笔记，也不会修改已导入的文件。
+
+要更新导入笔记，请使用下文的重新导入命令。
+
+如果附件因来源文件夹未获授权而被跳过，通知会列出被阻止的来源文件夹。这可能发生在 Zotero 链接文件上，因为该类文件保存在外部文件夹，而非 Zotero 数据目录。请参阅 [Zotero 链接文件指南](https://www.zotero.org/support/attaching_files#adding_linked_files)。
+
+选择 <UiLabel name={m.notice_attachment_sources_skipped_action()} />，打开 <SettingsPath page={m.settings_page_attachments()} setting={m.settings_attachment_approved_name()} />。如果信任该文件夹，请授权，然后重新导入笔记以复制附件。授权只影响今后的导入，不会自动更新之前导入的文件。
+
+## 重新导入单篇笔记 [#re-import-a-single-note]
+
+<Steps>
+  <Step>
+    ### 打开导入笔记 [#open-an-imported-note]
+
+    打开之前从 Zotero 导入的笔记，其 frontmatter 中包含 `zotero-note-key` 字段。
+
+  </Step>
+  <Step>
+    ### 运行更新命令 [#run-the-update-command]
+
+    打开命令面板并运行：
+
+    <Command name={m.command_reimport_note_name()} />
+
+    随后会出现确认对话框，标题为 <UiLabel name={m.modal_reimport_note_title()} />，正文为 <UiLabel name={m.modal_reimport_note_desc()} />。
+
+    选择 <UiLabel name={m.modal_reimport_note_confirm()} /> 继续。
+
+  </Step>
+</Steps>
+
+## 导入文献库或分类中的全部笔记 [#import-all]
+
+此操作同时导入两类笔记：附属于普通条目的子笔记，以及与普通条目并列存放的独立笔记。
+
+要导入整个文献库，请打开命令面板并运行：
+
+<Command name={m.command_import_all_notes_name()} />
+
+要导入某个分类，请在 Zotero 侧边栏中右键选择它，再选择 <UiLabel name={m["zotero.menu_submenu.label"]()} /> > <UiLabel name={m["zotero.menu_collection_import_all_notes.label"]()} />。操作包含嵌套子分类。在 **My Library** 或群组文献库上选择同一入口，则覆盖整个文献库。
+
+Obsidian 会打开下文介绍的 <UiLabel name={m.batch_import_title()} /> 弹窗，列出找到的全部笔记。检查列表后确认，即可开始批量导入。
+
+没有父级文献笔记的笔记会列在 <UiLabel name={m.batch_import_group_orphan({ count: "…" })} /> 分组中，而不是 <UiLabel name={m.batch_import_group_import({ count: "…" })} /> 下。该分组会说明导入所用的配置方案，并允许更换；此选择影响该组中的新笔记。
+
+Obsidian 命令覆盖[文献库作用域](/docs/reference/settings#library-scope)内的所有文献库，作用域可在 <SettingsPath /> 中设置。Zotero 入口覆盖您右键选择的文献库或分类，不受该作用域限制。
+
+如果分类已不在 Zotero 数据库中，Obsidian 会显示 <UiLabel name={m.notice_collection_not_found()} />。如果文献库已不存在，则显示 <UiLabel name={m.batch_all_library_unavailable()} />。
+
+如果笔记来自多个文献库，<UiLabel name={m.batch_import_title()} /> 弹窗会在每个分组标题旁标明文献库。如果选定的某个文献库未出现在 Zotero 数据库中，导入会继续处理其他文献库，并说明跳过的数量。如果所有选定文献库都不可用，则不会打开弹窗，而会显示 <UiLabel name={m.batch_all_no_library_in_scope()} />。
+
+## 批量重新导入笔记 [#re-import-notes-in-batch]
+
+Zotero 附加组件 ZotLit Companion 可以从 Zotero 启动批量重新导入。
+
+<Steps>
+  <Step>
+    ### 在 Zotero 中选择笔记 [#select-notes-in-zotero]
+
+    在 Zotero 中选择需要重新导入的子笔记或独立笔记。右键打开菜单，再选择 <UiLabel name={m["zotero.menu_submenu.label"]()} /> > <UiLabel name={m["zotero.menu_item_import_notes.label"]({ count: 2 })} />。
+
+    （所选对象包含笔记条目时才会出现此入口。如果选择普通条目，菜单会显示 <UiLabel name={m["zotero.menu_item_import_child_notes.label"]()} />，触发的是另一种导入方式。）
+
+  </Step>
+  <Step>
+    ### 在 Obsidian 中确认导入 [#confirm-import-in-obsidian]
+
+    后续行为取决于所选笔记数量：
+
+    **单篇笔记：** 如果尚未导入，会直接导入并显示成功通知。如果仓库中已存在该笔记，Obsidian 会显示确认窗口，标题为 <UiLabel name={m.modal_import_overwrite_title()} />，正文为 <UiLabel name={m.modal_import_overwrite_desc({ title: "…" })} />。选择 <UiLabel name={m.modal_import_overwrite_confirm()} /> 继续，或关闭窗口取消。
+
+    **两篇或更多笔记：** Obsidian 会打开标题为 <UiLabel name={m.batch_import_title()} /> 的弹窗，并按状态分组：
+
+    - <UiLabel name={m.batch_import_group_import({ count: "…" })} />：仓库中尚不存在的新笔记。
+    - <UiLabel name={m.batch_import_group_orphan({ count: "…" })} />：没有父级文献笔记的新笔记。分组会标明其导入方案，并允许更换。请参阅[导入文献库或分类中的全部笔记](#import-all)。
+    - <UiLabel name={m.batch_import_group_overwrite({ count: "…" })} />：自上次导入后，Zotero 内容发生了变化的笔记。
+    - <UiLabel name={m.batch_import_group_up_to_date({ count: "…" })} />：Zotero 中未发生变化、将被跳过的笔记。
+
+    是否已是最新版本，通过比较已有文件 frontmatter 中的 `zotero-lastmod` 与 Zotero 当前的 `dateModified` 时间戳判断，精确到整秒。
+
+    选择 <UiLabel name={m.batch_import_confirm_button()} /> 继续。
+
+  </Step>
+</Steps>
+
+<Callout type="info" title="所选条目较多时">
+  如果所选内容过多，无法放入协议链接，操作会改用 HTTP 连接 Obsidian。 如果
+  Obsidian 中未启用 ZotLit 服务器，Zotero 会提示您启用服务器或减少所选条目。
+  服务器设置请参阅[设置实时更新](/docs/how-to/set-up-live-updates)。
+</Callout>
+
+<include>./_security-prompt-callout.zh-CN.mdx</include>
+
+## 导入笔记的配置方案 [#profile-of-an-imported-note]
+
+导入笔记会在 frontmatter 的 `zotlit-profile` 字段中记录创建它的配置方案。仅当方案不是默认方案时，ZotLit 才写入此字段；没有此字段的笔记就是使用默认方案导入的。
+
+重新导入时会读取该字段，因此笔记会继续使用原方案渲染。如果该方案已不存在，ZotLit 会显示 <UiLabel name={m.notice_imported_note_profile_unknown({ stamp: "…", target: "…" })} />，并提供 <UiLabel name={m.profile_switch_recovery()} />。
+
+## 导入文件夹 [#import-folder]
+
+导入笔记使用所属方案的 <UiLabel name={m.settings_note_import_folder_name()} />，默认值为 `zotero_notes`。默认方案的绑定配置位于 <SettingsPath />，其他方案则在自己的文档中设置 `importFolder`。文件夹不存在时会自动创建。每个文件名都带有一段简短的随机后缀，以确保唯一。
+
+## 导入笔记中的引文 [#citations-in-imported-notes]
+
+导入笔记的正文由 Zotero 笔记的 HTML 转换为 Markdown。其中的引文通过[引文文本](/docs/how-to/customize-a-template#citation-text)渲染，始终使用 `main` 变体。
+
+每篇被引文献按以下顺序解析文献引用标识：
+
+1. 当前 Zotero 条目自身的文献引用标识。
+2. Zotero 笔记内嵌的引文快照。
+3. 可见的占位标记：Zotero 条目标识键后加 `?`，例如内置引文文本中的 `-@ABC123?`。末尾的 `?` 方便您在仓库中搜索未解析的引文。
+
+如果某条引文中的所有参考文献都无法解析（所有来源均没有文献引用标识），ZotLit 会原样保留该引文的 HTML，不丢失内容。
+
+## 使用彩色高亮语法 [#use-colored-highlight-syntax]
+
+1. 开启 <SettingsPath page={m.settings_page_note_import()} setting={m.settings_note_import_colored_highlights_name()} />。非默认方案需要在自己的方案文档中设置。
+2. 打开 <UiLabel name={m.settings_note_import_highlight_mappings_name()} />，配置每种 Zotero 颜色的输出。这些映射应用于全部方案。
+3. 选择 <UiLabel name={m.settings_note_import_highlight_mark()} />、圆形表情符号（🔴 🟠 🟡 🟢 🔵 🟣），或 <UiLabel name={m.settings_note_import_highlight_custom()} />。
+4. 使用 <UiLabel name={m.settings_note_import_highlight_custom()} /> 时，在下方输入一个表情符号，也支持 👩‍🔬 这样的组合表情。
+5. 导入或重新导入笔记以应用映射。
+
+默认情况下，红、橙、黄、绿、蓝、紫使用对应颜色的圆形表情，品红、灰、梅紫使用彩色 HTML 标记。九种颜色的映射均可修改。
+
+表情映射会将所选表情添加到彩色高亮语法开头：
+
+```markdown
+==🔵Highlighted text==
+```
+
+主题或其他插件需要支持所选表情，才能显示相应的高亮颜色。选择自定义表情本身不会提供这种渲染支持。
+
+此设置同时适用于 Zotero 笔记编辑器中创建的高亮与行内标注摘录。标注摘录会保留指向 Zotero 的反向链接：
+
+```markdown
+[==🔵Highlighted text==](zotero://...)
+```
+
+来源颜色未知或缺失时，高亮仍保留为 HTML。自定义表情为空或无效时，也使用 HTML 标记。如果文本包含 `==`，因其与 Markdown 分隔符冲突，ZotLit 同样保留 HTML。
+
+此设置默认关闭。关闭后使用 HTML 标记，但保留已经保存的映射。
+
+修改只影响之后的导入与重新导入，已有文件在重新导入前保持不变。开启 <UiLabel name={m.settings_note_import_annotations_template_name()} /> 时，标注模板的输出保持原样。
+
+## 使用模板渲染标注 [#render-annotations-from-template]
+
+默认情况下，导入笔记中的标注段落会保留 Zotero 插入的 HTML，即带有引文链接的高亮或下划线摘录。
+
+为默认方案开启 <SettingsPath page={m.settings_page_note_import()} setting={m.settings_note_import_annotations_template_name()} />，或在方案文档中设置 `importAnnotationsAsTemplate`，ZotLit 就会通过该方案的标注格式区域渲染这些段落，生成与文献笔记中相同的丰富提示块。
+
+<Callout type="warn" title="刷新时替换内容">
+  开启此设置后，每条标注的文本、评注、颜色和页码都取自 Zotero 保存的数据。
+  图片和手写墨迹摘录会在导入时生成。您在导入笔记的该段落内所做的修改会被替换，
+  因此此设置默认关闭。
+</Callout>
+
+### 哪些内容会通过模板渲染 [#what-is-rendered]
+
+只有仍符合 Zotero 原始结构的段落才会通过模板渲染。出现以下情况时，段落保持原样：
+
+- 您在摘录前输入了文本。
+- 您在段落中加入了其他元素，例如第二条标注或额外格式。
+- 段落嵌套在列表项、引用块或表格单元格中。
+- 标注已在 Zotero 中删除，无法再获取。
+
+高亮、下划线、图片和手写墨迹标注可以通过模板渲染。笔记与文本标注不包含摘录，会按 Zotero 插入的原样保留。
+
+图片与手写墨迹段落使用[实时摘录图片](/docs/concepts/excerpt-images)，两个 PDF 阅读器均关闭时也可生成。普通嵌入图片继续使用子笔记中保存的快照。通过标注模板转换的段落，不会再复制其保存的快照。
+
+重新导入只为当前导入笔记选择新的图片版本，其他笔记与旧图片文件保持不变。刷新失败时，如果有经过验证的旧图片，就继续使用它；否则会写入说明与来源链接。图片失败不会阻止其他内容与笔记导入。
+
+关闭 <UiLabel name={m.settings_attachment_import_name()} /> 时，实时摘录不会创建新图片文件。导入摘要只统计模板实际请求的图片，并汇总整批操作的结果。
+
+现有的重新导入规则仍然适用。即使实时标注有变化，只要 Zotero 笔记的修改时间未变，批量导入仍会跳过该笔记。此时请使用单篇笔记的重新导入命令。标注缺失或标注模板为空时，ZotLit 会将保存的段落按普通笔记内容转换。
+
+<Callout type="warn" title="引文标记后的文字">
+  您在引文标记后添加的文字（评注位置）不会得到保护。Zotero
+  会将标注自身的评注放在该位置，
+  因此刷新时它会与段落其余部分一起被替换。需要保留的个人笔记请写在独立段落中。
+</Callout>
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="保持笔记更新"
+    description="Zotero 数据变化后更新文献笔记。"
+    href="/docs/how-to/keep-notes-updated"
+  />
+  <Card
+    title="使用标注视图"
+    description="从侧边栏浏览标注，并拖入笔记。"
+    href="/docs/how-to/use-annotation-view"
+  />
+  <Card
+    title="设置实时更新"
+    description="启用从 Zotero 到 Obsidian 的自动推送。"
+    href="/docs/how-to/set-up-live-updates"
+  />
+</Cards>

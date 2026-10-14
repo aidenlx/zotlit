@@ -1,0 +1,225 @@
+---
+title: "从 Zotero Integration 迁移"
+description: "从 mgmeyers 的 Zotero Integration 插件切换至 ZotLit、转换 Nunjucks 模板，并理解两者间的核心机制差异。"
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+如果您当前正在使用 mgmeyers 开发的 **Zotero Integration** 插件，并希望平滑切换到 ZotLit，请依照本指南进行操作。
+
+<Callout type="info" title="核心变更速览">
+
+- 您的 Zotero 文献库以及文献引用标识保持完全不变。
+- 仓库中已有的文献笔记依然作为普通的 Markdown 文件保留。
+- 模板需要转换迁移：Zotero Integration 使用 Nunjucks；ZotLit 默认采用 [Liquid](/docs/reference/templates/syntax)（亦可选 [Eta](/docs/reference/templates/eta-syntax)）。
+- 不再强制依赖 Better BibTeX。ZotLit 直接读取 Zotero 本地数据库。不过依然建议保留 Better BibTeX 以便稳定管理文献引用标识格式。
+- `{% persist %}` 持久块机制转变为[受管区域（managed region）](/docs/concepts/literature-notes-and-the-managed-region)机制。两者的设计逻辑正好相反：Zotero Integration 标记要“保留”的内容；而 ZotLit 则标记要“替换刷新”的内容。
+
+</Callout>
+
+## 安装 ZotLit [#install]
+
+<Steps>
+  <Step>
+    ### 禁用 Zotero Integration
+
+    在 Obsidian 中，打开**设置 → 社区插件**。禁用（或卸载）**Zotero Integration**。两款插件拥有不同的插件 ID，可以共存用于过渡测试，但同时保持开启可能会在读取 Zotero 数据库时产生连接竞争。
+
+  </Step>
+  <Step>
+    ### 安装 ZotLit
+
+    在**设置 → 社区插件**中搜索 **ZotLit** 并完成安装。安装后点击启用插件。
+
+  </Step>
+  <Step>
+    ### 连接您的 Zotero 文献库
+
+    打开 <SettingsPath page={m.settings_page_zotero()} />。ZotLit 会自动直接连接到您的本地 Zotero 数据库，无需在 Zotero 端安装额外的中间服务插件即可完成基础读取。
+
+  </Step>
+</Steps>
+
+## 既有笔记的处理 [#existing-notes]
+
+由 Zotero Integration 生成的笔记属于标准的 Markdown 文件。在完成切换后，它们依然安全保存在您的仓库中，随时可正常查阅。
+
+ZotLit 通过 frontmatter 中的 `zotero-key` 属性来识别文献笔记。如果您原有的 Zotero Integration 笔记已经在 frontmatter 中包含了该条目的 Zotero 标识（且 ZotLit 能够顺利解析），ZotLit 会直接将其识别为文献笔记。如果未包含，建议将其作为普通参考笔记保留，并通过 ZotLit 为条目重新创建全新的文献笔记。
+
+ZotLit 不会去识别 Zotero Integration 的 `%% begin notes %%` 与 `%% end notes %%` 标记，这些标记将作为普通无害的 Markdown 注释继续留在文件中。
+
+## 模板转换迁移 [#translate-templates]
+
+<Callout type="info" title="一直在使用默认模板？">
+  如果您在 Zotero Integration
+  中使用的是默认模板，则无需执行任何模板迁移操作。ZotLit
+  的内置默认模板能生成类似的文献笔记。
+</Callout>
+
+### 语法差异 [#syntax]
+
+Zotero Integration 使用 Nunjucks。ZotLit 默认使用 Liquid。下表列出了常见 Nunjucks 结构对应的 Liquid 写法。
+
+| Nunjucks（Zotero Integration）                       | Liquid（ZotLit）                                                  |
+| ---------------------------------------------------- | ----------------------------------------------------------------- |
+| `{{ title }}`                                        | `{{ zt.title }}`                                                  |
+| `{% set x = value %}`                                | `{% assign x = value %}`                                          |
+| `{% for item in array %}`                            | `{% for item in array %}`                                         |
+| `{% include "[[file]]" %}`                           | `{% render "partial-name" with zt as zt %}`                       |
+| `loop.index`                                         | `forloop.index`                                                   |
+| `loop.first` / `loop.last`                           | `forloop.first` / `forloop.last`                                  |
+| `{{ date \| format("YYYY-MM-DD") }}`                 | `{{ zt.date \| date: "%Y-%m-%d" }}`                               |
+| `{{ array \| filterby("prop", "startswith", "x") }}` | 模板逻辑或 [Eta JavaScript](/docs/reference/templates/eta-syntax) |
+| `{{ obj \| setAttribute("key", "val") }}`            | `{% assign key = val %}`                                          |
+
+### 数据路径变化 [#data-paths]
+
+ZotLit 的所有模板数据都位于 `zt` 变量下。下表列出了 Zotero Integration 变量对应的 ZotLit 字段。
+
+| Zotero Integration             | ZotLit                          | 说明                                                                                 |
+| ------------------------------ | ------------------------------- | ------------------------------------------------------------------------------------ |
+| `title`                        | `zt.title`                      | 所有条目字段移到 `zt.` 下                                                            |
+| `citekey`                      | `zt.citationKey`                |                                                                                      |
+| `desktopURI`                   | `zt.backlink`                   | `zotero://select` URI                                                                |
+| `authors`（逗号分隔的字符串）  | `zt.creators`（创建者对象数组） | 使用 `{% for c in zt.creators %}` 遍历；每个对象都有 `family`、`given` 和 `fullName` |
+| `annotation.annotatedText`     | `zt.text`                       | 用于配置方案的标注部分                                                               |
+| `annotation.colorCategory`     | `zt.colorName`                  | 解析后的调色板颜色名称（`"yellow"`、`"red"` 等）                                     |
+| `annotation.imageRelativePath` | `zt.imgLink`                    | 链接辅助函数；调用 `{{ zt.imgLink }}` 获取 Markdown 链接                             |
+| `annotation.comment`           | `zt.comment`                    | 纯文本评注                                                                           |
+
+[模板数据浏览器](/docs/how-to/explore-template-data)会显示当前 Zotero 条目的所有可用字段。您可以用它查找任意 Zotero Integration 变量在 ZotLit 中的对应字段。
+
+### 从保留区块转向受管区域 [#persist-vs-managed]
+
+这是两个插件在概念上最重要的区别。
+
+- 在 Zotero Integration 中，`{% persist "id" %}` 标记在重新导入时需要**保留**的内容。保留区块之外的所有内容都会重新渲染。
+- 在 ZotLit 中，`{% managed %}...{% endmanaged %}` 标记在更新时需要**重新渲染**的内容。受管区域之外的所有内容都会保留。
+
+两者的模型相反：Zotero Integration 标记要保留的内容，ZotLit 标记要替换的内容。
+
+Zotero Integration 可以有多个保留区块，而 ZotLit 的每篇笔记只有一个受管区域。
+
+**Zotero Integration 模板：**
+
+```text
+# {{ title }}
+Authors: {{ authors }}
+
+{% persist "notes" %}
+{% if isFirstImport %}
+- [ ] Read this paper
+{% endif %}
+{% endpersist %}
+
+{% persist "annotations" %}
+{% set newAnnots = annotations | filterby("date", "dateafter", lastImportDate) %}
+{% for a in newAnnots %}
+> {{ a.annotatedText }}
+{% endfor %}
+{% endpersist %}
+```
+
+**对应的 ZotLit 写法（配置方案的笔记源码）：**
+
+笔记正文包含一个用于生成内容的受管区域。个人笔记放在该区域之外。
+
+```liquid
+# {{ zt.title }}
+Authors: {% for c in zt.creators %}{{ c.fullName }}{% unless forloop.last %}, {% endunless %}{% endfor %}
+
+{% managed %}
+(Annotations and generated content go here. Re-rendered on every update.)
+{% endmanaged %}
+
+## My notes
+(This section is never touched by updates. Write freely here.)
+- [ ] Read this paper
+```
+
+标注部分是配置方案文档中独立的一部分（位于 `--- zotlit:annotation ---` 标题之后），用于控制单条标注的格式：
+
+```liquid
+> {{ zt.text }}
+```
+
+要点：
+
+- 将原来位于 `{% persist "notes" %}` 内的个人笔记移到受管区域**之外**。
+- 将标注循环移到配置方案的[标注部分](/docs/reference/templates/profile-document)。ZotLit 会自动遍历标注。
+- `isFirstImport` 和 `lastImportDate` 没有对应项。每次更新都会重新渲染受管区域的全部内容。
+- 每次都会渲染全部标注，过时标注会自动移除。
+
+### 引用其他模板 [#includes]
+
+Zotero Integration 的 `{% include "[[file]]" %}` 对应 ZotLit 的共享片段。在[模板文件夹](/docs/concepts/how-templates-work#template-folder)中创建 `zotlit-partial.<name>.md` 文件，再通过 `{% render "<name>" with zt as zt %}` 引用。
+
+操作步骤请参阅[自定义模板](/docs/how-to/customize-a-template)。
+
+### 引文格式 [#citation-formats]
+
+Zotero Integration 为每种引文格式注册一个命令。ZotLit 则通过引文模板渲染所有引文，因此格式由同一份文档中的过滤器决定：
+
+| Zotero Integration 格式 | 引文模板                                     |
+| ----------------------- | -------------------------------------------- |
+| `pandoc`                | `{{ zt.citations \| pandoc_cite }}`          |
+| `latex`                 | `{{ zt.citations \| tex_cite }}`             |
+| `biblatex`              | `{{ zt.citations \| tex_cite: "autocite" }}` |
+| `template`              | 引文模板本身                                 |
+
+有关前注、后注的规则，以及 LaTeX 无对应位置可容纳的输入，请参阅 [`tex_cite`](/docs/reference/templates/syntax#tex-cite)。
+
+引文模板读取 `zt.variant` 来渲染两种形式：在建议列表中按 Enter 插入 `main`，按 Shift+Enter 插入 `alt`。因此，一个模板一次可以提供上述格式中的两种，而 Zotero Integration 会为每种格式分别提供一个命令。
+
+`formatted-citation` 和 `formatted-bibliography` 通过 CSL 样式而非模板进行渲染。ZotLit 在[导出含引文的笔记](/docs/how-to/export-note-with-citations)时生成此类输出。
+
+## 没有直接对应项的功能 [#no-equivalent]
+
+| Zotero Integration 功能            | ZotLit 中的替代方式                                                          |
+| ---------------------------------- | ---------------------------------------------------------------------------- |
+| `{% persist %}`（多个区块）        | 将个人内容放在唯一的受管区域之外                                             |
+| `isFirstImport` / `lastImportDate` | 受管区域每次都重新渲染全部内容                                               |
+| 标注拼接（`+` 前缀）               | 在 Zotero 的标注编辑器中合并文本                                             |
+| `pdfannots2json`（外部标注提取器） | 使用 Zotero 内置的 PDF 阅读器                                                |
+| 图片 DPI、格式、质量和 OCR 设置    | ZotLit 按需生成[摘录图片](/docs/concepts/excerpt-images)；这些设置没有对应项 |
+| `runImport()` 公共 API             | 使用 [ZotLit 协议链接](/docs/reference/protocol-links)                       |
+
+## 新增的可用功能 [#features-you-gain]
+
+- **无需依赖 Better BibTeX。** ZotLit 直接读取 Zotero 数据库，效率更高。
+- **模板工作台。** 编辑模板时实时预览，并在编辑器旁使用数据浏览器。
+- **配置方案匹配。** 根据条目类型、标签或分类自动选择模板。
+- **图谱引文。** 引文关系会显示在 Obsidian 关系图谱中。
+- **受管区域。** 区域之外的修改在每次更新后都会保留，无需特殊语法。
+- **切换配置方案。** 创建笔记后仍可更换其模板。
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="自定义模板"
+    description="在模板工作台视图中编辑配置方案、引文文本或共享片段。"
+    href="/docs/how-to/customize-a-template"
+  />
+  <Card
+    title="文献笔记与受管区域"
+    description="ZotLit 如何区分您撰写的文字与生成的内容。"
+    href="/docs/concepts/literature-notes-and-the-managed-region"
+  />
+  <Card
+    title="模板工作原理"
+    description="三种模板文档及 ZotLit 查找它们的方式。"
+    href="/docs/concepts/how-templates-work"
+  />
+  <Card
+    title="浏览模板数据"
+    description="在模板数据浏览器中浏览可用字段并复制路径。"
+    href="/docs/how-to/explore-template-data"
+  />
+</Cards>

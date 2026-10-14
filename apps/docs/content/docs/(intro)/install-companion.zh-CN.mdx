@@ -1,0 +1,104 @@
+---
+title: "安装 ZotLit Companion"
+description: "在 Zotero 中安装必备的 ZotLit Companion 配套插件。"
+---
+
+import { Tabs, Tab } from "@/components/tabs";
+import { VersionLedger } from "@/components/version-ledger";
+import { XpiDownload } from "@/components/xpi-download";
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+ZotLit Companion（Zotero 端的必备插件）保持 Zotero 中的最新更改能即时供 ZotLit 读取。在每一个受支持的 ZotLit 环境中，Companion 都是不可或缺的一部分。
+
+## 安装插件
+
+<Tabs items={["正式版本", "预发布版本"]} updateAnchor>
+  <Tab id="stable" value="正式版本">
+    <VersionLedger app="zotero" channel="stable" />
+
+    <Steps>
+      <Step>
+        ### 下载 `.xpi` 文件
+
+        直接下载最新的 Companion 安装包：
+
+        <XpiDownload channel="stable" />
+
+        如果您使用的是 Firefox 浏览器，请右键选择链接并点击“链接另存为…”。
+
+        如需手动选择文件，请在 [ZotLit 发布页面](https://github.com/aidenlx/zotlit/releases)查找最新的 Companion 发布版本。其文件名以 `zt-` 开头。
+
+      </Step>
+      <Step>
+        ### 在 Zotero 中安装
+
+        在 Zotero 中打开**工具 → 附加组件**（Tools > Add-ons）。选择齿轮菜单并选择 **Install Add-on From File...**（从文件安装附加组件）。选择下载好的 `.xpi` 文件，并在系统提示时确认安装。
+
+      </Step>
+      <Step>
+        ### 确认安装完成
+
+        安装完成后，Zotero 设置中应当会出现 <UiLabel name={m["zotero.prefs_pane_label"]()} /> 设置面板。
+
+        此时您无需在此处进行任何额外配置。下一节将解释这些设置的作用。
+
+      </Step>
+    </Steps>
+
+  </Tab>
+  <Tab id="pre-release" value="预发布版本">
+    <VersionLedger app="zotero" channel="pre-release" />
+
+    预发布版本会在任一频道发布新版本时通过 Zotero 自动更新。如果您希望在功能进入正式版本前进行测试，请使用此版本。
+
+    <Steps>
+      <Step>
+        ### 下载 `.xpi` 文件
+
+        下载此频道的最新 Companion 安装包：
+
+        <XpiDownload channel="pre-release" />
+
+        如果您使用的是 Firefox 浏览器，请右键选择链接并点击“链接另存为…”。
+
+        如需手动选择文件，请在 [ZotLit 发布页面](https://github.com/aidenlx/zotlit/releases)查找最新的 Companion 发布版本。其文件名以 `zt-` 开头。
+
+      </Step>
+      <Step>
+        ### 在 Zotero 中安装
+
+        在 Zotero 中打开**工具 → 附加组件**（Tools > Add-ons）。选择齿轮菜单并选择 **Install Add-on From File...**（从文件安装附加组件）。选择下载好的 `.xpi` 文件，并在系统提示时确认安装。
+
+      </Step>
+      <Step>
+        ### 确认安装完成
+
+        安装完成后，Zotero 设置中应当会出现 <UiLabel name={m["zotero.prefs_pane_label"]()} /> 设置面板。
+
+        此时您无需在此处进行任何额外配置。下一节将解释这些设置的作用。
+
+      </Step>
+    </Steps>
+
+  </Tab>
+</Tabs>
+
+## 保持数据库文件即时更新
+
+Companion 默认启用 <UiLabel name={m["zotero.prefs_wal_checkpoint.label"]()} />。此设置使 ZotLit 在您更新文献笔记时能即时读取 Zotero 的最新更改。请在 <UiLabel name={m["zotero.prefs_pane_label"]()} /> 面板的 <UiLabel name={m["zotero.prefs_database_section"]()} /> 区域下保持此项启用。
+
+该数据库设置在未开启即时同步更新（live updates）的情况下也可正常工作。右键菜单的基础操作亦可通过协议链接运作，无需额外配置。
+
+## 关于即时同步更新
+
+即时同步更新会将更改从 Zotero 文献库推送到 Obsidian。这需要开启 Companion 的通知设置以及 Obsidian 中的 ZotLit 本地服务器。
+
+即时同步更新是可选的。即使关闭即时同步更新，Companion 也会保持数据库文件的时效性。
+
+有关即时同步更新的设置，请参阅[配置即时同步更新](/docs/how-to/set-up-live-updates)。
+
+## 下一步
+
+按照教程[创建第一篇文献笔记](/docs/tutorial/first-note)。

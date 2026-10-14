@@ -1,0 +1,289 @@
+---
+title: "在 Obsidian 中编辑 PDF 批注"
+description: "在 Obsidian 中阅读 PDF 的同时创建、修改、调整与删除 Zotero PDF 批注。"
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+在 Obsidian 中直接创建高亮、下划线、笔记批注、文本批注（直接键入在页面上的文字）、区域图片截图批注以及手写墨迹批注（手绘笔画），修改批注颜色、评注及标签，微调标注位置，或直接删除批注。
+
+## 编辑前准备 [#before-you-edit]
+
+首先在 Obsidian 中打开对应条目的 PDF 文件。有关打开 PDF 的途径，请参阅[在 Obsidian 中打开条目的 PDF](/docs/how-to/open-pdf-in-obsidian)。
+
+仅仅阅读标注无需额外配置。但如需直接在 Obsidian 中编辑批注，需要满足以下四个条件：
+
+1. Zotero 10 或更高版本。在 Zotero 9 下，PDF 可以正常打开并显示其已有标注，但无法直接在 Obsidian 中进行修改。此时 ZotLit 会显示 <UiLabel name={m.capability_incompatible_zotero()} /> 并提示您更新 Zotero。
+2. Zotero 处于运行状态。ZotLit 会将每项变动实时同步给 Zotero，在 Zotero 关闭期间无法编辑批注。在编辑时请保持 Zotero 开启。
+3. Zotero 允许其他程序与其通信。在 Zotero 中，打开“设置 → 高级”，并开启**允许本计算机上的其他应用程序与 Zotero 通信**。当此选项关闭时，ZotLit 会提示 <UiLabel name={m.capability_local_api_disabled()} />。
+4. ZotLit 已获得您的编辑授权。您只需完成一次授权即可，具体步骤如下。
+
+若要授权 ZotLit 修改 Zotero 中的批注，请选择 <UiLabel name={m.capability_enable_editing()} />。该入口位于两处：
+
+- 在标注视图中，选择视图工具栏起点的模式按钮，然后点击 <UiLabel name={m.capability_enable_editing()} />。
+- 前往 <SettingsPath page={m.settings_page_zotero()} />，在 <UiLabel name={m.settings_zotero_editing_heading()} /> 分组下的 <UiLabel name={m.settings_zotero_editing_name()} /> 所在行，选择 <UiLabel name={m.settings_zotero_editing_enable()} />。
+
+Zotero 会随即弹出权限申请对话框。在对话框中请务必选择 **Always Allow（始终允许）**。ZotLit 仅能在获得 Zotero 记住的持久授权下正常执行编辑，单次生效的 **Allow** 会使编辑功能保持关闭。如需拒绝，请选择 **Deny**。
+
+在等待您在 Zotero 中确认期间，PDF 阅读器工具栏会显示 <UiLabel name={m.capability_authorizing()} />。
+
+<Callout type="warn" title="请勿在两个应用中同时编辑同一条批注">
+  当在 Zotero 和 Obsidian 中同时重叠编辑同一条批注时，Zotero 存在一个[已知缺陷](https://github.com/aidenlx/zotlit/issues/1165)。即使两个应用都报告保存成功，其中一处评注也可能被另一处无声覆盖。此外，在 Obsidian 中执行删除还可能意外移除刚刚在 Zotero 中更新过的标注。
+
+您可以同时保持两个应用程序处于打开状态。但请在同一个应用程序中完成某项修改并等待其保存完毕后，再切换到另一端操作。这能降低风险，但不能保证不会发生重叠编辑。
+
+</Callout>
+
+## 受锁定的批注 [#locked]
+
+部分批注在 Obsidian 中处于只读状态，这与在 Zotero 自身阅读器中的表现完全一致。对应的标注卡片会在页码旁显示一把小锁图标。将鼠标悬停在图标上即可查看锁定原因：
+
+- Zotero 从外部 PDF 文件中直接读取导入了该批注。您无法在 Obsidian 中对其进行修改或删除。当源文件发生变动时 Zotero 会重新导入，任何本地改动均会丢失。
+- 在群组文献库中，该批注由其他成员创建。您无法对其进行修改，但拥有删除权限。
+
+当您同时选中多张卡片且其中包含受锁定的批注时，被锁定的操作将拒绝应用到任何一张卡片上。
+
+## 创建高亮或下划线
+
+1. 在 PDF 中选中文本。
+2. 在弹出菜单中，选择 <UiLabel name={m.pdf_toolbar_highlight()} /> 或 <UiLabel name={m.pdf_toolbar_underline()} />。
+3. 等待新的标注标记呈现后，再继续后续编辑或切换到 Zotero。
+
+PDF 阅读器右侧的工具栏提供了相同的两个工具。选择某个工具可使其保持激活状态，随后只需选中文本即可连续创建标注，无需每次都通过浮动菜单点击。点击工具旁的箭头可切换颜色。
+
+如需以其他特定颜色创建单条高亮，请选中文本并直接从弹出浮窗中点击对应颜色。当没有激活任何工具时，点击颜色会直接创建高亮。
+
+## 创建笔记批注 [#create-a-note-annotation]
+
+使用笔记工具，将评注固定在页面上的某个位置。
+
+1. 在 PDF 阅读器右侧的工具栏中，选择 <UiLabel name={m.pdf_toolbar_note()} />。
+2. 点击笔记所在的位置。笔记以点击位置为中心出现，弹出浮窗随即打开，您可以直接输入评注。
+3. 输入评注。保存方式与其他评注相同，参见[添加或编辑评注](#add-or-edit-a-comment)。
+
+与 Zotero 一样，每创建一条笔记后，工具都会关闭。点击已有的批注标记会选中该标记，而不会创建笔记；拖动也不会创建笔记。
+
+## 创建文本批注 [#create-a-text-annotation]
+
+使用文本工具，直接在页面上键入文字。
+
+1. 在 PDF 阅读器右侧的工具栏中，选择 <UiLabel name={m.pdf_toolbar_text()} />。文本框打开后，工具会关闭。
+2. 点击文字的起始位置。文本框会在点击处打开。
+3. 输入文字。按 `Enter` 换行。与 Zotero 一样，文本框会先以单行形式随文字增长，宽度达到 300 pt 后自动换行。
+4. 按 `Escape` 或点击文本框外部。文字会成为 Zotero 中的文本批注，并在保存期间保留在页面上。
+
+离开空文本框不会创建任何批注。点击已有的批注标记会选中该标记，而不会打开文本框。由于 ZotLit 会在输入完成后一次性创建带有文字的批注，因此 Zotero 只会在您完成输入后显示它。
+
+### 选择文字颜色与字号 [#choose-the-text-color-and-font-size]
+
+选择 <UiLabel name={m.pdf_toolbar_text()} /> 旁的箭头。菜单先列出颜色，再在 <UiLabel name={m.pdf_toolbar_text_font_size()} /> 下列出字号：10、12、14、18、24 和 36 pt。勾选标记表示当前颜色和字号。默认字号为 14 pt。
+
+ZotLit 会记住您选择的颜色和字号，并在其他 PDF 中沿用。
+
+## 创建图片批注 [#create-an-image-annotation]
+
+使用图片工具，截取插图、表格或其他非文字区域。
+
+1. 在 PDF 阅读器右侧的工具栏中，选择 <UiLabel name={m.pdf_toolbar_image()} />。
+2. 拖出一个矩形，框住目标区域。在矩形达到可保存的最小尺寸之前，其颜色会保持较浅。
+3. 松开指针。新的批注标记随即出现，其卡片会显示截取的区域。
+
+每次截取后，工具都会关闭。按 `Escape` 可取消当前拖动，再按一次 `Escape` 可关闭工具。在已有批注标记上按下指针会选中该标记，而不会开始绘制矩形。
+
+## 创建墨迹批注 [#create-an-ink-annotation]
+
+使用墨迹工具，在页面上手绘笔画。
+
+1. 在 PDF 阅读器右侧的工具栏中，选择 <UiLabel name={m.pdf_toolbar_ink()} />。工具最初使用 Zotero 默认的蓝色墨迹。
+2. 在页面上按下指针并拖动。笔画会跟随指针移动。
+3. 松开指针。笔画会成为 Zotero 中的墨迹批注，并在保存期间保留在页面上。
+
+每个笔画都是独立的批注。完成一个笔画后，工具会保持激活，您可以立即开始下一个笔画。轻点而不移动会保存一个点。若要将多个笔画合成一条批注，请在 Zotero 中合并它们。
+
+墨迹工具支持鼠标、数位板、触控板和触摸屏手指操作。工具激活时，触摸拖动会绘制笔画，而不会滚动页面。笔画可以覆盖文字和其他批注标记，因此在已有标记上按下指针会开始绘制，而不会选中该标记。
+
+即使指针离开页面，笔画也会留在开始绘制的页面上。Zotero 对单条批注的大小有限制。长笔画达到该限制时，ZotLit 会保存已绘制的部分，并以新批注继续记录笔画；您无需抬起指针。
+
+如需取消笔画，请在松开指针前按 `Escape`。工具会保持激活，再按一次 `Escape` 才会关闭。在绘制过程中用第二根手指触碰屏幕，例如开始双指缩放时，也会取消当前笔画。
+
+### 选择墨迹颜色与宽度 [#choose-the-ink-color-and-width]
+
+选择 <UiLabel name={m.pdf_toolbar_ink()} /> 旁的箭头。菜单先列出颜色，再在 <UiLabel name={m.pdf_toolbar_ink_width()} /> 下列出宽度：0.4、1、2、3、5、8 和 12 pt。勾选标记表示当前颜色和宽度。默认宽度为 2 pt。
+
+ZotLit 会记住您选择的颜色和宽度，并在其他 PDF 中沿用。每个笔画会保留开始绘制时的颜色和宽度。
+
+## 添加或编辑评注 [#add-or-edit-a-comment]
+
+1. 在 PDF 中选中批注标记。弹出浮窗会在按钮行下方显示评注。
+2. 点击评注。如果批注尚无评注，请点击 <UiLabel name={m.annot_view_card_comment_placeholder()} />。光标会移动到点击处。
+3. 输入评注。ZotLit 会在您输入时自动保存。
+4. 按 `Escape` 或点击浮窗外部，关闭编辑器。
+5. 等待评注保存完成后，再在 Zotero 中编辑该批注。
+
+停止输入一秒后，评注会请求自动保存。连续输入时，ZotLit 会在首次未保存的修改出现十秒后请求保存。按 `Enter` 换行。按 `Ctrl+Enter`（Windows）或 `Command+Enter`（macOS）可请求保存，并保持编辑器打开。
+
+您也可以直接编辑批注卡片上的评注。仅选中该卡片，再点击其评注或 <UiLabel name={m.annot_view_card_comment_placeholder()} />。按 `Escape` 或点击标注视图中的其他位置，可关闭编辑器。选中多张卡片时，点击评注只会选中对应卡片。浮窗编辑器和卡片编辑器共享同一份草稿，因此在任一处输入的文字都会出现在另一处。
+
+如果 ZotLit 检测到评注已在 Zotero 中发生变化，会显示 <UiLabel name={m.annot_view_conflict_title()} />，并列出两个版本。选择 <UiLabel name={m.annot_view_conflict_use_comment()} />，以草稿覆盖 Zotero 中的评注；或选择 <UiLabel name={m.annot_view_conflict_keep_zotero_comment()} />，放弃草稿。
+
+## 编辑摘录文本 [#edit-the-quoted-text]
+
+高亮或下划线的摘录文本，就是它所标记的 PDF 文字。当 PDF 文本提取有误时，例如连字、被连字符拆开的词或错误符号，您可以修正这些文字。此操作需要启用编辑功能，参见[编辑前准备](#before-you-edit)。摘录文本只能在标注视图中编辑，PDF 内的弹出浮窗不提供此操作。
+
+1. 在标注视图中，仅选中需要编辑的高亮或下划线卡片。
+2. 将指针移到摘录文本上，点击第一行末尾出现的铅笔按钮。按钮提示为 <UiLabel name={m.annot_view_menu_edit_text()} />。也可以打开卡片的 <UiLabel name={m.annot_view_more_tooltip()} /> 菜单，或右键点击卡片，然后选择 <UiLabel name={m.annot_view_menu_edit_text()} />。编辑器会替换原来的摘录文本，光标位于末尾。直接点击摘录文本不会打开编辑器，因此您仍可选中并复制文字。
+3. 修正文本。按 `Enter` 换行。粗体、斜体、下标和上标使用与评注编辑器相同的快捷键。
+4. 按 `Escape` 或点击标注视图中的其他位置，保存并关闭编辑器。
+
+摘录文本的保存方式与评注相同：停止输入一秒后保存，或在连续输入十秒后保存。按 `Ctrl+Enter`（Windows）或 `Command+Enter`（macOS）可保存并保持编辑器打开。点击标注视图外部，例如点击 PDF，也会保存并保持编辑器打开。您可以保存空的摘录文本，此时卡片会显示 <UiLabel name={m.annot_view_card_no_text()} />。
+
+修改只会替换文字。批注的位置及其在批注列表中的顺序均保持不变，Zotero 会显示新文字。一次编辑过程计为一个撤销步骤，参见[撤销与重做修改](#undo-and-redo-a-change)。
+
+如果编辑期间摘录文本在 Zotero 中发生了变化，卡片会显示 <UiLabel name={m.annot_view_conflict_title()} />，并列出两个版本。选择 <UiLabel name={m.annot_view_conflict_use_text()} />，以您编辑的文字覆盖 Zotero 版本；或选择 <UiLabel name={m.annot_view_conflict_keep_zotero_text()} />，放弃您的修改。保存失败时，卡片会保留您编辑的文字。选择 <UiLabel name={m.annot_view_text_save()} /> 可重试。
+
+## 更改颜色 [#change-a-color]
+
+1. 在 PDF 中选中批注标记。
+2. 在弹出浮窗中选择 <UiLabel name={m.annot_view_card_color()} />。
+3. 选择一种 Zotero 批注颜色。
+
+批注卡片上的调色板按钮提供相同的颜色。
+
+若要同时为多条批注更改颜色，请在标注视图中选中它们的卡片，然后按 `1` 到 `8` 中的一个数字键。按键顺序与调色板中的颜色顺序一致。一次撤销会恢复整组批注的颜色。多选卡片的方法参见[使用标注视图](/docs/how-to/use-annotation-view#select-several)。
+
+## 添加或编辑标签 [#add-or-edit-tags]
+
+1. 在 PDF 中选中批注标记。
+2. 在弹出浮窗中选择 <UiLabel name={m.annot_view_card_add_tags()} />。如果批注已有标签，按钮会显示为 <UiLabel name={m.annot_view_card_edit_tags()} />。
+3. 输入标签名称并按 `Enter`。ZotLit 会建议条目所属文献库中的标签名称。若要移除标签，请点击其上的叉号。
+4. 按 `Escape` 或点击浮窗外部。ZotLit 会将标签保存到 Zotero。
+
+批注卡片提供相同的标签按钮。在卡片上点击其他位置会保存标签，但编辑器会保持打开，方便继续修改。按 `Escape` 或再次点击标签按钮可关闭编辑器。
+
+按 `Escape` 不会添加已输入但尚未通过 `Enter` 确认的名称。逗号会作为标签名称的一部分，因为 Zotero 标签名称允许包含逗号。与 Zotero 一样，您也可以移除自动标签。
+
+如果 Zotero 未能保存标签，或编辑标签期间编辑功能停止可用，卡片和浮窗会在 <UiLabel name={m.annot_view_tags_draft()} /> 下保留您的标签。选择 <UiLabel name={m.annot_view_tags_save()} /> 可重试。
+
+## 调整批注位置 [#adjust-an-annotations-position]
+
+您可以移动或缩放图片、墨迹和文本批注，移动笔记批注，以及调整高亮或下划线的任一端点。此操作需要启用编辑功能。未启用时，选中的标记不会显示调整手柄，下述按键也不会执行任何操作。
+
+1. 在 PDF 中选中批注标记。标记上会出现调整手柄。
+2. 拖动手柄或标记本身。标记会跟随指针移动。
+3. 松开指针。ZotLit 会将新位置发送给 Zotero。
+
+拖动期间按 `Escape` 可将标记恢复原位，不保存修改。拖动终点与起点相同时，不会保存任何修改。浮窗会在拖动期间隐藏，并在拖动结束后重新出现。
+
+### 各类批注的调整手柄 [#handles-for-each-annotation-type]
+
+| 批注类型     | 手柄                                         | 拖动效果                                                                                     |
+| ------------ | -------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| 图片         | 四个角和四条边的中点上，共八个方形手柄。     | 拖动角点会移动两条边，拖动边上的手柄会移动一条边，拖动图片内部会移动整个矩形。               |
+| 墨迹         | 略大于笔画范围的方框上，有四个角点手柄。     | 拖动角点会等比例缩放绘图，笔宽随之缩放。拖动方框内部会移动绘图。                             |
+| 高亮或下划线 | 第一行起点和最后一行终点处，各有一条窄手柄。 | 拖动手柄会逐字符移动对应端点，摘录文本随新范围更新。                                         |
+| 文本         | 四个角和左右两边的中点上，共六个方形手柄。   | 拖动侧边手柄会改变宽度，字号不变；拖动角点会同时缩放文本框和字号；拖动框内区域会移动文本框。 |
+| 笔记         | 无。                                         | 拖动笔记图标会移动笔记。                                                                     |
+
+图片矩形会留在所在页面内，宽和高均不得小于 10 点。文本框宽度不得小于 10 点，拖动侧边手柄后，高度会随文字内容调整。对于单行文本框，松开侧边手柄时，文本框宽度会贴合文字。旋转文本框的手柄也会随框一起旋转。高亮或下划线范围至少保留一个字符，起点必须留在批注所在页面，终点可以移到下一页，但不能更远。在高亮主体上拖动仍会像平常一样选中文字。
+
+### 使用键盘调整 [#adjust-from-the-keyboard]
+
+先选中批注标记。每次按键会调整一步。
+
+| 批注类型               | 按键                                             | 效果                                                          |
+| ---------------------- | ------------------------------------------------ | ------------------------------------------------------------- |
+| 高亮或下划线           | `Shift+Left arrow`、`Shift+Right arrow`          | 将终点向前或向后移动一个字符。                                |
+| 高亮或下划线           | `Shift+Up arrow`、`Shift+Down arrow`             | 将终点移到上一行或下一行最接近的字符处。                      |
+| 图片                   | `Shift+Right arrow`、`Shift+Left arrow`          | 将右边缘向外或向内移动 5 点。                                 |
+| 图片                   | `Shift+Down arrow`、`Shift+Up arrow`             | 将下边缘向下或向上移动 5 点。                                 |
+| 墨迹                   | `Shift+Right arrow`、`Shift+Down arrow`          | 将绘图放大 5 点，保持比例和左上角位置不变。                   |
+| 墨迹                   | `Shift+Left arrow`、`Shift+Up arrow`             | 将绘图缩小 5 点，保持比例和左上角位置不变。                   |
+| 文本                   | `Shift+Right arrow`、`Shift+Left arrow`          | 将右边缘向外或向内移动 5 点，高度随文字调整。                 |
+| 文本                   | `Shift+Down arrow`、`Shift+Up arrow`             | 将文本框宽度增大或减小 5 点，并同步缩放字号，左上角位置不变。 |
+| 图片、墨迹、笔记或文本 | `Alt+arrow`（Windows）或 `Option+arrow`（macOS） | 沿箭头方向移动标记 5 点。                                     |
+
+对于高亮或下划线，在 `Shift` 组合键中再按住 `Ctrl`（Windows）或 `Command`（macOS），即可调整起点而非终点。若按键会导致范围内没有任何字符，则不会执行操作。图片和文本的 `Shift` 组合键与 Zotero 阅读器相同，只有一个例外：`Shift+Up arrow` 不会将文本框缩窄到 10 点以下。移动标记时，Zotero 阅读器使用不带修饰键的方向键，而 ZotLit 使用 `Alt+arrow` 或 `Option+arrow`。
+
+当标记与该方向的页面边缘距离不足 10 点时，`Alt+arrow` 或 `Option+arrow` 不会移动它。不带修饰键的 `Up arrow` 和 `Down arrow` 仍用于按阅读顺序选中上一条或下一条批注。
+
+### 修改如何保存 [#how-the-change-saves]
+
+每次松开拖动或按下按键都算一次修改，ZotLit 会立即将其发送给 Zotero。同时，ZotLit 会更新批注在列表中的顺序；若是高亮或下划线，还会更新摘录文本。Zotero 阅读器和侧栏会显示新位置，标注视图中的图片也会刷新。若要恢复原位，参见[撤销与重做修改](#undo-and-redo-a-change)。
+
+如果您调整位置期间，批注在 Zotero 中发生了变化，批注卡片会显示 <UiLabel name={m.annot_view_conflict_title()} />，并说明位置已在 Zotero 中更改。对于高亮或下划线，卡片还会并列显示 Zotero 的摘录文本和您的版本。选择 <UiLabel name={m.annot_view_conflict_apply_again()} />，以您的位置覆盖 Zotero 版本；或选择 <UiLabel name={m.annot_view_conflict_discard()} />，保留 Zotero 中的位置。在您作出选择之前，标记会显示在 Zotero 的位置上。
+
+如果 Zotero 拒绝修改，标记会回到已保存的位置，并显示一条通知，说明批注未能调整及其原因。
+
+## 删除批注 [#delete-an-annotation]
+
+1. 在标注视图中定位该批注。
+2. 打开其 <UiLabel name={m.annot_view_more_tooltip()} /> 菜单。
+3. 选择 <UiLabel name={m.annot_view_menu_delete()} />。
+4. 在确认对话框中，选择 <UiLabel name={m.annot_view_delete_confirm_action()} />。
+
+批注会从 Zotero 中删除。只要 PDF 仍在 Obsidian 中打开，您就可以撤销删除，但恢复的批注会获得新的 Zotero 标识符。参见[撤销与重做修改](#undo-and-redo-a-change)。
+
+若要同时删除多条批注，请在标注视图中选中它们的卡片。然后按 `Delete` 或 `Backspace`，或打开其中一张已选卡片的 <UiLabel name={m.annot_view_more_tooltip()} /> 菜单并选择删除项，例如 <UiLabel name={m.annot_view_menu_delete_group({ count: 3 })} />。确认后，一次撤销即可恢复整组批注。多选卡片的方法参见[使用标注视图](/docs/how-to/use-annotation-view#select-several)。
+
+## 撤销与重做修改 [#undo-and-redo-a-change]
+
+当 PDF 在 Obsidian 中打开时，ZotLit 会记录为该 PDF 保存到 Zotero 的批注修改，包括创建、删除、颜色、评注、标签、摘录文本和位置。撤销会请求 Zotero 恢复先前的值，重做则重新应用修改。两者都属于普通编辑操作，因此 Zotero 必须运行，且编辑功能必须启用。
+
+| 平台             | 撤销        | 重做                       |
+| ---------------- | ----------- | -------------------------- |
+| macOS            | `Command+Z` | `Command+Shift+Z`          |
+| Windows 和 Linux | `Ctrl+Z`    | `Ctrl+Y` 或 `Ctrl+Shift+Z` |
+
+只要 PDF 仍然打开，这些按键在 PDF 视图的任意位置，以及标注视图中已选中的卡片上都可使用。在正在输入的评注编辑器或文本框内，相同按键会撤销输入内容。长按按键只会执行一步。
+
+命令面板提供 <Command inline name={m.command_undo_annotation_change_name()} /> 和 <Command inline name={m.command_redo_annotation_change_name()} />。它们均未默认绑定独立快捷键，您可以自行分配。PDF 视图的“更多选项”菜单也提供这两个操作；没有可执行的步骤时，对应操作会变灰。
+
+### 哪些修改算作一步 [#what-counts-as-one-step]
+
+每次创建、删除、改色或拖动都算一步。对多张已选卡片执行删除或改色，也只算一步。一个墨迹笔画算一步，即使 ZotLit 将长笔画保存成了多条批注。
+
+每次保存标签算一步。撤销会移除该次保存新增的标签，并恢复其移除的标签。此后在 Zotero 中修改过的标签会保持现状。一次摘录文本编辑过程也算一步。
+
+在同一条批注上保存的整段评注编辑过程也算一步，无论输入期间自动保存了多少次；撤销会恢复到开始编辑时的评注。修改其他内容，或在 Zotero 中修改该评注，都会结束这一步。因此，下次在同一批注上输入评注时，会开始新的一步。如果评注内容最终未变，则不会记录步骤。
+
+连续用键盘微调同一标记时，只要按键间隔小于半秒，就会合并为一步。间隔超过半秒，或执行其他类型的修改，都会开始新的一步。
+
+### 历史记录的范围 [#what-the-history-covers]
+
+历史记录属于 PDF，而非窗口。同一 PDF 的两个视图及旁边的标注视图共享一份历史记录，顺序与修改发生的顺序一致。对其他 PDF 的修改不会包含在内。
+
+只有在该 PDF 的某个视图打开期间，ZotLit 才会记录修改；关闭最后一个视图后，历史记录就会结束。重新打开 PDF 时会从空历史记录开始，因此先前会话不会撤销今天的工作。刷新数据、重新加载批注以及在 Zotero 中修改内容都不会清空历史记录。撤销后执行新的修改，会丢弃原本可重做的步骤。历史记录仅保留最近 100 步，且从不写入磁盘。
+
+每执行一步，PDF 视图都会选中发生变化的批注，并滚动到它的位置。如果这一步移除了批注，视图会清除选中状态，并返回该批注原先所在的页面。
+
+### 撤销何时会停止 [#when-undo-stops]
+
+写入之前，ZotLit 会检查 Zotero 当前保存的内容是否仍与上次修改后的值一致。如果该批注此后在 Zotero 中被手动修改、通过同步更新或从其他设备更改，ZotLit 不会写入任何内容，而会丢弃该步骤并显示 <UiLabel name={m.annot_history_changed_in_zotero()} />。再次按撤销可尝试前一步。对同一批注其他字段的修改不会阻止撤销；如果 Zotero 当前的值已经等于撤销操作准备写入的值，也不会阻止撤销。
+
+如果修改仍在保存，或目标批注存在尚未保存的评注文字，撤销和重做不会执行任何操作。未启用编辑功能时，它们会显示与其他被阻止的编辑操作相同的通知。
+
+### 恢复的批注会获得新键 [#a-restored-annotation-gets-a-new-key]
+
+Zotero 无法用原来的键恢复已删除的批注。撤销删除，或重做曾被撤销的创建操作时，Zotero 会重新创建批注，保留其颜色、评注、文字和位置，但分配一个新的 Zotero 标识符。
+
+笔记中指向旧键的链接、摘录图片和 `obsidian://` URI 将无法继续解析。ZotLit 不会为此显示通知。请将恢复的批注重新拉取到笔记中，或手动更新键。
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="在 Obsidian 中打开条目的 PDF"
+    description="在 Obsidian 的 PDF 阅读器中打开 Zotero PDF 附件。"
+    href="/docs/how-to/open-pdf-in-obsidian"
+  />
+  <Card
+    title="使用标注视图"
+    description="浏览条目的批注，并将其拉取到笔记中。"
+    href="/docs/how-to/use-annotation-view"
+  />
+</Cards>

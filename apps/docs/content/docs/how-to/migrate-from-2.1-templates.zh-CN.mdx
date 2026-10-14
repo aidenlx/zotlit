@@ -1,0 +1,102 @@
+---
+title: "从 2.1 模板迁移"
+description: "保持 2.1 模板文件继续正常工作，并在准备就绪后将其一键转换为配置方案文档。"
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+如果您使用的是 ZotLit 2.1，模板目前依然正常运行，本篇指南将协助您了解升级带来的具体改动。
+
+## 发生了哪些变化
+
+在 2.1 版本中，一篇笔记的外观格式分散在模板文件夹中的多个独立文件内，每个组成部分对应一个文件。在 2.2 版本中，所有这些格式全部整合归纳到单一的[配置方案文档](/docs/reference/templates/profile-document)中。
+
+| 2.1 旧版文件                                        | 2.2 归宿                                                    |
+| --------------------------------------------------- | ----------------------------------------------------------- |
+| `zotlit-note.<lang>.md`                             | `zotlit-profile.default.md` 中的笔记模板源码主体            |
+| `zotlit-content.<lang>.md`                          | 位于该笔记源码内部的受管块（managed block）                 |
+| `zotlit-filename.<lang>.md`                         | 配置方案文档 manifest 中的 `filename` 属性键                |
+| `zotlit-annotation.<lang>.md`                       | 位于 `--- zotlit:annotation ---` 标题下方的标注格式区域     |
+| `zotlit-cite.<lang>.md` 与 `zotlit-cite2.<lang>.md` | 单一引文文本文档 `zotlit-citation.md` 的两个分支            |
+| 任何其他 `zotlit-<name>.<lang>.md`                  | 各自独立的 `zotlit-partial.<name>.md` 共享片段              |
+| 设置中的 frontmatter 属性字段列表                   | manifest 中的 `frontmatter` 列表（受管 frontmatter 属性项） |
+
+## 升级过程绝不破坏现有文件
+
+在升级后，您的 2.1 文件会继续正常加载并执行渲染。ZotLit 绝不会擅自执行转换或移动您的文件，您已有的笔记丝毫不会受到影响。只有当您主动点击时，转换流程才会启动。
+
+## 准备就绪后执行转换
+
+<Steps>
+  <Step>
+    ### 打开模板转换入口
+
+    在升级后首次启动 Obsidian 时，欢迎视图会自动打开一次。转换引导横幅位于快速入门时间线上方，标题为 <UiLabel name={m.welcome_template_conversion_title()} />。后续您也可以通过运行命令 <Command inline name={m.command_open_welcome_name()} /> 重新唤起该视图，或者使用 <SettingsPath /> 顶部的提醒横幅。
+
+  </Step>
+  <Step>
+    ### 选择 <UiLabel name={m.welcome_template_conversion_action()} /> [#点击转换模板]
+
+    点击 <UiLabel name={m.welcome_template_conversion_action()} /> 并等待转换处理完毕。若直接关闭欢迎视图而不进行转换，所有内容都会保持原状，且提醒横幅会继续保留在 <SettingsPath /> 顶部，并提供 <UiLabel name={m.settings_template_conversion_reminder_action()} /> 操作入口。
+
+  </Step>
+</Steps>
+
+## 转换过程中会执行什么
+
+ZotLit 会先在内存中构建出全新的文档结构，并对照您 Zotero 文献库中的一个条目的数据进行模拟渲染。它会将新文档生成的笔记、更新结果、笔记名称、标注格式以及两种引文输出，与您的 2.1 旧文件产出进行严格对比。只有当所有产出与旧版逐字节（byte-for-byte）完全吻合时，才会真正执行落盘写入。
+
+当产出完全一致时，ZotLit 会写入 `zotlit-profile.default.md`、`zotlit-citation.md` 以及各个共享片段文件。随后，它会将您的 2.1 旧文件移动到 Obsidian 配置的废纸篓中。该废纸篓是唯一的安全备份：ZotLit 不会额外保留旧文件的副本。如果某些文件无法移动到废纸篓，转换依然成立且新转换的文档已经正常激活生效，系统会弹出通知列出遗留的文件：<UiLabel name={m.notice_literature_note_template_conversion_pending_cleanup({ files: "…" })} />。欢迎视图中也会展示相同的列表，标题为 <UiLabel name={m.welcome_template_cleanup_body()} />，点击 <UiLabel name={m.welcome_template_cleanup_retry()} /> 可再次尝试清理移动。仍无法移入废纸篓的文件会继续留在列表中。
+
+有一种特殊情况会保留原有文件：如果您的两个旧引文文件采用了不同的语言引擎，引文文本会转换为 Liquid，而 Eta 文件则会安全留在原地；ZotLit 会通过 <UiLabel name={m.notice_literature_note_template_conversion_kept({ files: "…" })} /> 提示保留的文件。
+
+## 拒绝执行的情况与提示
+
+任何阻断性校验均发生在首次物理写入之前，因此您的仓库文件和设置将安全保持原样。每次拒绝均会通过通知弹窗给出清晰说明。
+
+- **转换后的输出无法复现旧输出。** <UiLabel name={m.notice_literature_note_template_conversion_mismatch({ difference: "…", files: "…" })} /> 这是最可能遇到的拒绝原因，因为逐字节校验会报告这种差异。通知只列出需要修改的文件，并指出有差异的输出：`create output`、`update output`、`filename output`、`annotation output`、`main citation output` 或 `alternate citation output`。请修改生成该输出的 2.1 文件，使转换后的形式能复现旧输出，然后再次选择转换按钮。
+
+- **ZotLit 无法自动转换的布局。** <UiLabel name={m.notice_literature_note_template_conversion_unsupported({ files: "…" })} /> 转换仅支持 2.1 提供的结构：笔记文件中插入一次内容，且所有文件使用同一种语言。通知只列出需要修改的文件。请在磁盘上修改这些文件，使其符合要求，然后再次选择转换按钮。如果涉及 Eta 文件且 <UiLabel name={m.settings_template_js_enable_name()} /> 已关闭，也会显示此通知；请在 <SettingsPath page={m.settings_page_advanced()} setting={m.settings_advanced_template_engine_heading()} /> 中开启权限后重试。
+
+- **frontmatter 字段使用 JavaScript，但权限开关已关闭。** <UiLabel name={m.notice_literature_note_template_conversion_frontmatter_inert({ fields: "…" })} /> 请在 <SettingsPath page={m.settings_page_advanced()} setting={m.settings_advanced_template_engine_heading()} /> 中开启 <UiLabel name={m.settings_template_js_enable_name()} />，然后再次选择转换按钮。请参阅[启用 JavaScript 模板](/docs/how-to/enable-javascript-templates)。
+
+- **字段无法使用 ZotLit 选中的条目进行求值。** <UiLabel name={m.notice_literature_note_template_conversion_frontmatter_evaluation({ fields: "…" })} /> 此版本没有旧字段列表的编辑器，且转换尚未完成时，配置方案的编辑操作保持禁用。该列表位于插件保存的设置文件中的 `note.frontmatter-fields` 下；请在那里修正所列字段，然后再次选择转换按钮。手动编写配置方案文档无法修复此问题：只要 `zotlit-profile.default.md` 存在，无论内容是什么，转换入口都会停止提供转换。
+
+- **没有可用于验证的条目或标注。** <UiLabel name={m.notice_literature_note_template_conversion_no_item()} /> 或 <UiLabel name={m.notice_literature_note_template_conversion_no_annotation()} /> 请连接一个包含条目的 Zotero 文献库，然后再次选择转换按钮。只有待转换的文件中包含标注文件时，才会出现缺少标注的通知。
+
+- **转换后的文档已存在。** <UiLabel name={m.notice_literature_note_template_conversion_exists()} /> 请重命名或移除占用目标位置的文件，然后再次选择转换按钮。即使占用位置的是 `zotlit-citation.md` 或共享片段，通知仍会称其为“配置方案文档”。
+
+- **没有需要转换的旧模板。** <UiLabel name={m.notice_literature_note_template_conversion_none()} /> ZotLit 未找到转换流程要读取的任何文件，因此不会写入或更改任何内容。您可以继续使用内置模板。
+
+## 转换尚未完成时 [#while-the-conversion-is-pending]
+
+在完成转换前，ZotLit 会拒绝通过默认配置方案以外的配置方案创建、更新或切换笔记，并显示通知 <UiLabel name={m.notice_literature_note_template_conversion_required()} />。使用默认配置方案的笔记不受影响。所有配置方案文档操作会保持锁定，直到转换完成：配置方案页面不显示添加或导入操作；保留的行中，编辑、复制、分享和删除等操作均不可用。
+
+## 预期结果 [#expected-result]
+
+您的 2.1 文件已移入 Obsidian 配置的废纸篓，转换后的文档生成与原先相同的输出。界面显示通知 <UiLabel name={m.notice_literature_note_template_conversion_success()} />，所有配置方案恢复可用。
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="模板工作原理"
+    description="三种模板文档及 ZotLit 查找它们的方式。"
+    href="/docs/concepts/how-templates-work#convert-legacy"
+  />
+  <Card
+    title="配置方案文档"
+    description="manifest、笔记源码、受管区块和标注部分。"
+    href="/docs/reference/templates/profile-document"
+  />
+  <Card
+    title="设置参考"
+    description="所有 ZotLit 设置，包括模板引擎设置项。"
+    href="/docs/reference/settings"
+  />
+</Cards>

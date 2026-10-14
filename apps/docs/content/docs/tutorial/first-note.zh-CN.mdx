@@ -1,0 +1,127 @@
+---
+title: "创建第一篇文献笔记"
+description: "实操指引：从 Zotero 文献库中选择一个条目，并在 Obsidian 中创建包含元数据和批注的文献笔记。"
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { Command } from "@/components/command";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+本教程将引导您从 Zotero 文献库条目出发，在 Obsidian 中创建第一篇文献笔记。完成本教程后，您将获得一篇包含条目标题、指向 Zotero 的链接以及您已在 PDF 上做好的批注的 Markdown 笔记。您还可以在笔记旁直接打开论文原件，并在页面上查看您的 Zotero 高亮。
+
+<Callout type="info" title="准备工作">
+  请先完成两个安装步骤：
+
+- [安装 ZotLit](/docs/install-zotlit)
+- [安装 ZotLit Companion（Zotero 配套插件）](/docs/install-companion)
+
+ZotLit 会通过您的 Zotero 配置文件自动找到您的 Zotero 数据库。
+
+</Callout>
+
+## 创建笔记
+
+<Steps>
+  <Step>
+    ### 打开快速切换器
+
+    打开 Obsidian 命令面板（Windows/Linux 上为 `Ctrl+P`，macOS 上为 `Cmd+P`）并运行：
+
+    <Command name={m.command_open_lit_note_name()} />
+
+    随后将出现一个已连接到您 Zotero 文献库的搜索弹窗。
+
+  </Step>
+  <Step>
+    ### 选择一个文献库条目
+
+    键入关键词以在文献库中搜索条目。在本教程中，建议选择一个已有 PDF 批注（即您在 Zotero PDF 阅读器中做过高亮或笔记）的条目。这样您就能看到批注直接呈现在最终生成的笔记中。
+
+    ![在快速切换器中输入“ten simple rules”后的一条搜索结果：Ten Simple Rules for Better Figures, Rougier et al. (2014), PLOS Computational Biology](/img/tutorial/first-note-quick-switcher.webp)
+
+    选择该条目并按 `Enter`。
+
+  </Step>
+  <Step>
+    ### 查看生成结果
+
+    ZotLit 将创建该笔记并将其打开。您会看到一条简短的提示：<UiLabel name={m.notice_created_note()} />
+
+    该笔记将出现在您仓库的 `literatures` 文件夹中（默认保存位置）。它包含：
+
+    - 带有条目标题的一级标题
+    - 指向 Zotero 中对应条目的链接
+    - 指向所有关联附件文件的链接
+    - 一个**批注（Annotations）**区域，包含您的 PDF 高亮与笔记（若该条目已有批注）
+
+    ![保存在 literatures 文件夹中的新笔记 rougier2014，以论文标题为一级标题，包含 Zotero 和 PDF 链接以及批注区域；角落显示提示“文献笔记已创建。”](/img/tutorial/first-note-literature-note.webp)
+
+    在默认情况下，笔记的文件名即为该条目的文献引用标识（citation key）。
+
+    ZotLit 根据默认配置方案构建了此笔记，该配置方案决定了笔记的名称、存放目录、属性（properties）及正文格式。阅读关于[配置方案](/docs/concepts/profiles)的文档以了解您可以调整的内容。
+
+  </Step>
+</Steps>
+
+## 理解笔记结构
+
+笔记中包含一个被称为**受管区域（managed region）**的标记区域（位于 `%%zt-managed%%` 与 `%%/zt-managed%%` 之间）。ZotLit 拥有此区域的控制权；您自己撰写的内容应放在该标记的上方或下方。后续更新笔记时，ZotLit 会刷新受管区域，同时完整保留您自己撰写的内容。
+
+关于其工作原理的更多信息，请参阅[文献笔记与受管区域](/docs/concepts/literature-notes-and-the-managed-region)。
+
+## 打开已有的笔记
+
+如果您再次运行快速切换器并选择同一个条目，ZotLit 会直接打开已有的笔记，而不会创建重复的副本。
+
+## 在笔记旁对照阅读论文
+
+现在，将论文在笔记旁分栏打开，以便您在写作时随时对照阅读。此功能需要 Obsidian 1.14.2 或更高版本（ZotLit 2.2 已默认要求）。
+
+<Steps>
+  <Step>
+    ### 为论文腾出分栏空间
+
+    右键选择笔记的标签页，选择**向右拆分**。此时笔记将并排显示两份。
+
+  </Step>
+  <Step>
+    ### 打开 PDF
+
+    选择右侧分栏中的笔记，然后打开命令面板并运行：
+
+    <Command name={m.command_open_pdf_name()} />
+
+    论文的 PDF 将替换右侧分栏的笔记，从而实现左侧保留笔记、右侧呈现论文。ZotLit 不会将文件复制到您的仓库中。
+
+  </Step>
+  <Step>
+    ### 查看您的高亮标注
+
+    您在 Zotero 中添加的高亮和笔记已呈现在页面上，并保持相同颜色。<UiLabel name={m.annot_view_name()} />视图也将在右侧侧边栏中打开，并将每条标注列为卡片。
+
+    ![左侧为文献笔记，右侧为论文 PDF 且第一页带有彩色的 Zotero 高亮，右侧侧边栏中显示标注卡片](/img/tutorial/first-note-note-beside-pdf.webp)
+
+  </Step>
+</Steps>
+
+若要了解打开 PDF 的所有其他方式，请参阅[在 Obsidian 中打开条目的 PDF](/docs/how-to/open-pdf-in-obsidian)。
+
+## 后续步骤
+
+现在您已经拥有了一篇带有批注的文献笔记，下一课将向您展示如何自定义这些批注的呈现格式。
+
+<Cards>
+  <Card
+    title="自定义批注样式"
+    description="编辑模板以调整标注 callout 的渲染方式，然后就地更新笔记。"
+    href="/docs/tutorial/customize-template"
+  />
+  <Card
+    title="在 Obsidian 中打开条目的 PDF"
+    description="在 Obsidian 中打开论文 PDF 的所有途径，以及打开后呈现的内容。"
+    href="/docs/how-to/open-pdf-in-obsidian"
+  />
+</Cards>

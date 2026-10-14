@@ -1,0 +1,129 @@
+---
+title: "ZotLit 与 Zotero 的连接原理"
+description: "数据库直接读取、Zotero 上下文操作与可选的即时同步更新如何连接 Zotero 与 Obsidian。"
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+ZotLit 直接通过 Zotero 数据库读取您的文献库。ZotLit Companion（Zotero 配套插件）确保最近的变动能够即时被读取，并将 Zotero 内的操作与 Obsidian 无缝串联。即时同步更新（live updates）则提供了可选的第三种连接机制。
+
+ZotLit 支持 Zotero 9 及更高版本，且必须安装配套插件 Companion。如需直接在 Obsidian 中保存批注的修改，需要使用 Zotero 10 或更高版本。在 Zotero 9 下，您可以阅读 PDF 及其标注，但无法直接将标注编辑写回。
+
+## 读取 Zotero 数据库
+
+Zotero 在运行期间可能会将最新更改保存在独立的数据库文件中。ZotLit 使用读取模式访问文献库，以免干扰 Zotero 的运行。
+
+默认的 <UiLabel name={m.settings_db_read_mode_auto()} /> 设置会自动选取当前环境下最优的读取模式。在 macOS 和 Linux 上，它会优先尝试使用 <UiLabel name={m.settings_db_read_mode_reflink()} />。在 APFS、Btrfs 以及开启了写时复制（reflink）的 XFS 文件系统上，<UiLabel name={m.settings_db_read_mode_auto()} /> 会使用轻量快照副本。在 Windows 和其他常见文件系统（例如 ext4）上，<UiLabel name={m.settings_db_read_mode_auto()} /> 会回退到 <UiLabel name={m.settings_db_read_mode_immutable()} />。您随时可以在设置中手动指定。
+
+<UiLabel name={m.settings_db_read_mode_reflink()} />
+会为数据库创建快速、轻量的瞬时快照。它能即时看到未提交到主库文件的最新改动，也是
+<UiLabel name={m.settings_db_read_mode_auto()} /> 在任何支持克隆特性的 macOS 或
+Linux 文件系统上的首选方案。
+
+<UiLabel name={m.settings_db_read_mode_immutable()} /> 直接以 SQLite
+的只读不可变模式（immutable mode）读取数据库主文件，无需额外生成副本文件。这是
+<UiLabel name={m.settings_db_read_mode_auto()} />
+在不支持文件克隆时的默认回退模式。由于该模式仅读取主数据库文件，尚未写入主文件的最新变动会暂留在
+Zotero 独立的预写式日志（WAL）中，直到 Zotero 触发检查点写入。
+
+Companion通过自动将最新更改写入主文件，确保 ZotLit 随时能够读取到最新数据。其自带的 <UiLabel name={m["zotero.prefs_wal_checkpoint.label"]()} /> 设置项默认处于开启状态。这一数据库检查点功能无需开启[即时同步更新](/docs/how-to/set-up-live-updates)即可独立稳定运行。
+
+<UiLabel name={m.settings_db_read_mode_copy()} />
+可以在任何文件系统上正常运作，并且同样能读取到最新变动。但由于其每次都需要完整复制整个数据库文件，因此速度较慢且会消耗额外的磁盘空间，尤其是在大型
+Zotero 文献库中。
+<UiLabel name={m.settings_db_read_mode_auto()} />
+绝不会主动选择此项，仅在其他模式均不可用时建议手动选用。
+
+有关各个选项的完整列表与技术解释，请参阅[设置参考](/docs/reference/settings)。
+
+### 单设备独立的路径解析机制
+
+Zotero 的个人配置文件目录（profile directory）和数据目录（data directory）属于特定计算机上的绝对文件系统路径。ZotLit 采用单设备独立解析策略：在每台设备上，它都会自动侦测默认的 Zotero 配置文件（读取 `profiles.ini`）及对应的数据目录。如果您的 Zotero 数据存放于非标准目录，您只需在该特定设备上配置设备覆盖项（Device Override）。该覆盖项保存在本地环境（按单仓库、单设备划分），绝不会通过云端在多设备间同步，因此一台电脑上的路径设置绝不会误覆盖另一台电脑。
+
+详细的分步操作说明请参阅[在多台设备上同步使用 ZotLit](/docs/how-to/sync-across-devices)。
+
+## ZotLit Companion 配套插件
+
+Companion在 Zotero 内部扩展了右键菜单操作。这些动作包括：打开、更新或导入笔记，以及在 Obsidian 中直接打开条目的 PDF。Companion 还可以向 Obsidian 主动推送即时变动事件。
+
+Companion 确保 Zotero 的主数据库文件随时处于最新状态。Zotero 会使用预写式日志（WAL）来暂存最新变动，随后再批量刷写至主文件。Companion 会在 Zotero 更新文献库后主动要求 Zotero 将更改立即刷写至主库文件。此行为默认开启，且无需运行任何后台服务器。
+
+Companion 本身不运行任何后台监听服务。它的右键菜单操作通过构造 `obsidian://zotlit/...` 自定义协议链接并交由操作系统处理，随后由系统自动调度唤起 Obsidian。这套机制在 Obsidian 未开启任何本地服务器或网络端口时也能完全正常工作。
+
+## 协议链接与即时同步更新的区别
+
+ZotLit 在 Zotero 与 Obsidian 之间提供了两种不同的通信机制，它们定位不同且彼此独立：
+
+### 协议链接（无需启用服务器）
+
+当您在 Zotero 中右键选择条目并执行 ZotLit 操作（打开笔记、更新笔记、导入或打开 PDF）时，Companion 会生成并打开一个 `obsidian://zotlit/...` URL。Obsidian 接收 URL 后，由 ZotLit 执行相应操作。
+
+安装 ZotLit 和 Companion 后即可使用协议链接。链接包含来源标识符，以便 ZotLit 只处理来自预期 Zotero 安装实例的链接。
+
+<Callout type="info" title="批量操作与 URL 长度限制">
+  批量操作（在 Zotero 中选中多个条目）可能超出 URL 长度限制。此时，Companion
+  会改为向 ZotLit 服务器发送 HTTP 请求。如果未启用服务器，Zotero
+  会提示您启用服务器或减少所选条目。
+</Callout>
+
+### 即时同步更新（需要本地服务器）
+
+即时同步更新是一条推送通道。当您在 Zotero PDF 阅读器中阅读和添加标注时，Companion 会向 Obsidian 发送 HTTP 通知，支持标注视图跟随阅读器。Companion 完成对主数据库文件的处理后，还会发送一个不含数据负载的信号，通知 ZotLit 刷新，以便更改立即显示。
+
+将更改写入主文件的数据库检查点操作独立于即时同步更新。即时同步更新只额外提供通知 ZotLit 何时刷新的信号。
+
+即时同步更新需要同时启用两项设置：
+
+- **在 Obsidian 中：**启用 ZotLit 服务器（默认在端口 9091 上运行的本地 HTTP 监听器），并开启 <UiLabel name={m.settings_live_updates_enabled_name()} />。
+- **在 Zotero 中：**启用 Companion 的通知设置，并指向同一个地址。
+
+两端均携带来源标识符和协议版本。服务器会丢弃来自未识别的 Zotero 安装实例的请求（来源不匹配），并拒绝协议版本不兼容的请求。
+
+<Callout type="info" title="默认关闭">
+  Obsidian 服务器和 Companion
+  的通知设置默认都处于关闭状态。协议链接无需这两项功能即可处理所有右键菜单操作。仅在需要
+  Zotero 实时推送时开启即时同步更新。
+</Callout>
+
+## 将标注更改保存到 Zotero [#saving-annotation-changes-to-zotero]
+
+数据库连接只负责读取。当您在 Obsidian 中编辑标注时，ZotLit 会将更改发送给正在运行的 Zotero。Zotero 会像保存其自身阅读器中创建的标注一样保存更改，因此这些更改也会随 Zotero 文献库同步。
+
+ZotLit 通过 Zotero 的本地 API 发送这些更改。这是 Zotero 为同一台计算机上的其他应用提供的连接，需要满足两个条件：
+
+- **在 Zotero 中：**在 Settings → Advanced 下开启 **Allow other applications on this computer to communicate with Zotero**（允许此计算机上的其他应用与 Zotero 通信）。
+- **您的授权：**首次允许编辑时，Zotero 会显示权限对话框。选择一次 **Always Allow**（始终允许）即可。ZotLit 仅为当前设备上的当前仓库保存此权限，因此每台计算机上的每个仓库都需要分别授权一次。
+
+此连接不使用协议链接或 ZotLit 服务器。操作步骤请参阅[在 Obsidian 中编辑 PDF 标注](/docs/how-to/edit-pdf-annotations)。
+
+## 各部分如何协同工作 [#how-the-pieces-fit-together]
+
+Zotero 关闭时，ZotLit 仍能读取数据库。在 Zotero 中安装 Companion，可以确保更改后的数据保持最新。协议链接和即时同步更新也依赖 Companion。
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="排查 Zotero 更改未显示的问题"
+    description="Zotero 中的更改未出现在 ZotLit 中时的处理方法。"
+    href="/docs/how-to/fix-stale-data"
+  />
+  <Card
+    title="配置即时同步更新"
+    description="逐步启用服务器和 Companion 通知设置。"
+    href="/docs/how-to/set-up-live-updates"
+  />
+  <Card
+    title="安装 ZotLit Companion"
+    description="下载并安装必备的 ZotLit Companion（Zotero 配套插件）。"
+    href="/docs/install-companion"
+  />
+  <Card
+    title="文献笔记与受管区域"
+    description="ZotLit 如何区分您撰写的文字与生成的内容。"
+    href="/docs/concepts/literature-notes-and-the-managed-region"
+  />
+</Cards>
