@@ -2669,5 +2669,7 @@
   "query_view_property_item_date_modified": "Item date modified",
   "query_view_property_first_author": "First author",
   "query_view_property_attachment_title": "Attachment title",
-  "query_view_property_attachment_date_added": "Attachment date added"
+  "query_view_property_attachment_date_added": "Attachment date added",
+  "query_view_read_only": "Changes here are not saved. Open the note to change this view.",
+  "query_block_save_failed": "The query block could not save. Its text in the note changed; reopen the note and try again."
 }
