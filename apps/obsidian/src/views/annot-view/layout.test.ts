@@ -475,13 +475,45 @@ it("keeps a new Annotation on screen when the run its list change asked for has 
   expect(cardKeys(el)).toEqual([ALPHA.key, DELTA.key, BETA.key]);
 
   // Zotero's database does not hold the new Annotation yet: the rows of the
-  // run the list change asked for stay off screen. The rows of any other run
-  // show, as a filter that leaves the Annotation out does.
-  expect(layout.keepsBack([ALPHA.key, BETA.key], true)).toBe(true);
-  expect(layout.keepsBack([ALPHA.key, BETA.key], false)).toBe(false);
+  // run the list change asked for stay off screen.
+  expect(layout.keepsBack([ALPHA.key, BETA.key], "list-change")).toBe(true);
 
   // Rows that name it show.
-  expect(layout.keepsBack([ALPHA.key, DELTA.key, BETA.key], true)).toBe(false);
+  expect(
+    layout.keepsBack([ALPHA.key, DELTA.key, BETA.key], "list-change"),
+  ).toBe(false);
+});
+
+it("keeps waiting for a new Annotation through a rerun of the same request that no list change asked for", async () => {
+  const { layout, repo } = await mountLayout({ showNewRecords: true });
+  repo.lists.PDFAAAAA = { ...LISTS.PDFAAAAA!, annotations: [ALPHA, DELTA] };
+  await act(() => repo.emit("annotations-changed", "PDFAAAAA"));
+
+  // A database change runs the same request before the list change's run
+  // lands; Zotero's database does not hold the new Annotation yet.
+  expect(layout.keepsBack([ALPHA.key, BETA.key], "rerun")).toBe(false);
+
+  // The list change's run still waits for it.
+  expect(layout.keepsBack([ALPHA.key, BETA.key], "list-change")).toBe(true);
+});
+
+it("waits no more for a new Annotation once a new request shows without it", async () => {
+  const { layout, repo } = await mountLayout({ showNewRecords: true });
+  repo.lists.PDFAAAAA = { ...LISTS.PDFAAAAA!, annotations: [ALPHA, DELTA] };
+  await act(() => repo.emit("annotations-changed", "PDFAAAAA"));
+
+  // A filter edit leaves the new Annotation out: its rows show.
+  expect(layout.keepsBack([ALPHA.key, BETA.key], "new-request")).toBe(false);
+
+  // The next run a list change asks for shows too, without it.
+  repo.lists.PDFAAAAA = {
+    ...LISTS.PDFAAAAA!,
+    annotations: [ALPHA, DELTA, { ...ALPHA, key: "EPSILON1" }],
+  };
+  await act(() => repo.emit("annotations-changed", "PDFAAAAA"));
+  expect(
+    layout.keepsBack([ALPHA.key, "EPSILON1", BETA.key], "list-change"),
+  ).toBe(false);
 });
 
 it("waits no more for a new Annotation the repository no longer holds", async () => {
@@ -490,7 +522,7 @@ it("waits no more for a new Annotation the repository no longer holds", async ()
   await act(() => repo.emit("annotations-changed", "PDFAAAAA"));
   repo.lists.PDFAAAAA = LISTS.PDFAAAAA!;
 
-  expect(layout.keepsBack([ALPHA.key, BETA.key], true)).toBe(false);
+  expect(layout.keepsBack([ALPHA.key, BETA.key], "list-change")).toBe(false);
 });
 
 /** Every card shown for one Annotation, in list order. */

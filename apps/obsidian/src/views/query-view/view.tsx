@@ -93,6 +93,7 @@ import type { ResultTable } from "./table";
 import { TABLE_FIELDS, TableLayout } from "./table-layout";
 import type { LiteratureNotes } from "./table-notes";
 import { ToolbarPopover } from "./toolbar-popover";
+import { propertyLabel } from "./value-text";
 import * as edits from "./view-edits";
 import { unusedSettings } from "./view-edits";
 import { ViewMenu } from "./view-menu";
@@ -531,7 +532,11 @@ export class QueryView extends Component implements HistorySurface {
    * `show` on screen, and hand its text to the host to save, at once or, for
    * typed text, after {@link SAVE_DELAY_MS}.
    */
-  #commit(next: QueryFile, show: string | null, { typed }: EditTiming): void {
+  #commit(
+    next: QueryFile,
+    show: string | null,
+    { typed }: EditTiming = {},
+  ): void {
     const text = serializeQueryFile(next);
     const shown = this.state.getState().view?.name ?? null;
     const file = parseQueryFile(text);
@@ -590,7 +595,7 @@ export class QueryView extends Component implements HistorySurface {
     const { file, view } = this.state.getState();
     if (!file || !view) return false;
     const index = section === "all" ? null : this.#shownIndex();
-    this.#commit(withFilters(file, index, filters), view.name, {});
+    this.#commit(withFilters(file, index, filters), view.name);
     return true;
   }
 
@@ -604,7 +609,6 @@ export class QueryView extends Component implements HistorySurface {
     this.#commit(
       withDisplayName(file, property, name.trim() || undefined),
       view.name,
-      {},
     );
     return true;
   }
@@ -633,7 +637,7 @@ export class QueryView extends Component implements HistorySurface {
           : visibleProperties(view, { fallback: true });
       next = editView(next, view, { order: [...shown, property] });
     }
-    this.#commit(next, view.name, {});
+    this.#commit(next, view.name);
     return true;
   }
 
@@ -644,7 +648,7 @@ export class QueryView extends Component implements HistorySurface {
   removeFormula(name: string): boolean {
     const { file, view } = this.state.getState();
     if (!file || !view) return false;
-    this.#commit(removeFormula(file, name), view.name, {});
+    this.#commit(removeFormula(file, name), view.name);
     return true;
   }
 
@@ -832,7 +836,7 @@ export class QueryView extends Component implements HistorySurface {
       base,
       this.state.getState().view?.from ?? "annotations",
     );
-    this.#commit(edit.file, edit.name, {});
+    this.#commit(edit.file, edit.name);
     return edit.name;
   }
 
@@ -850,7 +854,7 @@ export class QueryView extends Component implements HistorySurface {
     const { file } = this.state.getState();
     if (!file) return;
     const edit = edits.duplicateView(file, index);
-    this.#commit(edit.file, edit.name, {});
+    this.#commit(edit.file, edit.name);
   }
 
   /** Delete a view; where it was on screen, the view before it shows. */
@@ -864,7 +868,6 @@ export class QueryView extends Component implements HistorySurface {
       shown === index
         ? edit.name
         : this.#nameAt(file, shown === -1 ? 0 : shown),
-      {},
     );
   }
 
@@ -876,7 +879,6 @@ export class QueryView extends Component implements HistorySurface {
     this.#commit(
       edits.moveView(file, from, to),
       this.#nameAt(file, shown === -1 ? 0 : shown),
-      {},
     );
   }
 
@@ -887,7 +889,6 @@ export class QueryView extends Component implements HistorySurface {
     this.#commit(
       edits.setViewOption(file, index, { key, value }),
       this.#nameAt(file, this.#shownIndex()),
-      {},
     );
   }
 
@@ -897,7 +898,6 @@ export class QueryView extends Component implements HistorySurface {
     this.#commit(
       edits.setViewLayout(file, index, type),
       this.#nameAt(file, this.#shownIndex()),
-      {},
     );
   }
 
@@ -908,7 +908,6 @@ export class QueryView extends Component implements HistorySurface {
     this.#commit(
       edits.setViewDataset(file, index, dataset),
       this.#nameAt(file, this.#shownIndex()),
-      {},
     );
   }
 
@@ -1012,7 +1011,12 @@ export class QueryView extends Component implements HistorySurface {
         // after the repository's list does. Such a run keeps the cards on
         // screen, and the database change that follows runs the view again.
         const named = (result.rows ?? []).map((row) => row.indexedKey);
-        if (this.#layout.keepsBack(named, fromList)) return;
+        const cause = fromList
+          ? "list-change"
+          : key === this.#shownRequest
+            ? "rerun"
+            : "new-request";
+        if (this.#layout.keepsBack(named, cause)) return;
         const shown = layoutRows(result.rows ?? [], view);
         const byKey = new Map(
           (result.rows ?? []).map((row) => [row.indexedKey, row]),
@@ -1188,38 +1192,50 @@ function Problems({ view }: { view: QueryView }) {
 }
 
 /**
+ * The parent record a grouping by Item or by Attachment reads, by the name
+ * the notice gives it: a view of Items has no parent item to group by.
+ */
+const PARENTS: Partial<Record<string, () => string>> = {
+  "item.indexedKey": m.query_view_property_parent_item,
+  "attachment.indexedKey": m.query_view_property_source_attachment,
+};
+
+/**
  * What the view keeps in its file but does not use: what its dataset lacks,
- * and the properties of the dataset that no cell shows.
+ * the properties of the dataset that no cell shows, and those it cannot
+ * sort by. Each property shows by its label, as a column header does.
  */
 function UnusedNote({ view }: { view: QueryView }) {
   const current = useQueryViewState(view, (s) => s.view);
+  const file = useQueryViewState(view, (s) => s.file);
   if (!current) return null;
   const unused = unusedSettings(current);
   const { engine, name } = datasetSpec(current.from);
-  // A visible property the dataset has but no cell shows, such as the tags
-  // of Items.
-  const unshown = unused.order.filter(
-    (property) => engine.definition(property) !== undefined,
-  );
+  const known = (property: string) => engine.definition(property) !== undefined;
+  // A property the dataset has that no cell shows, such as the tags of
+  // Items, and one it has that ZotLit Query cannot sort by.
+  const unshown = unused.order.filter(known);
+  const unsorted = unused.sort.filter(known);
   const properties = [
     ...new Set([
-      ...unused.sort,
+      ...unused.sort.filter((property) => !known(property)),
       ...(unused.groupBy === null ? [] : [unused.groupBy]),
-      ...unused.order.filter((property) => !unshown.includes(property)),
+      ...unused.order.filter((property) => !known(property)),
     ]),
   ];
+  const labels = (list: readonly string[]) =>
+    list
+      .map((property) => PARENTS[property]?.() ?? propertyLabel(file, property))
+      .join(", ");
   const text = [
     properties.length > 0
-      ? m.query_view_unused({
-          dataset: name(),
-          properties: properties.join(", "),
-        })
+      ? m.query_view_unused({ dataset: name(), properties: labels(properties) })
       : "",
     unshown.length > 0
-      ? m.query_view_unshown({
-          dataset: name(),
-          properties: unshown.join(", "),
-        })
+      ? m.query_view_unshown({ dataset: name(), properties: labels(unshown) })
+      : "",
+    unsorted.length > 0
+      ? m.query_view_unsorted({ dataset: name(), properties: labels(unsorted) })
       : "",
   ]
     .filter((sentence) => sentence !== "")

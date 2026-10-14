@@ -59,6 +59,7 @@ import type {
   VerbBlocks,
 } from "./card-controls";
 import { CardDisplayContext } from "./card-display";
+import type { CardPlace } from "./card-selection";
 import {
   CommentView,
   ConflictPanelSlot,
@@ -128,7 +129,7 @@ interface AnnotationCardProps extends AnnotationProps {
    * Where the card stands in the list: a card with two tags stands under two
    * group headings, once at each place.
    */
-  place: string;
+  place: CardPlace;
   /** Whether this card is the card list's one tab stop. */
   tabStop: boolean;
 }

@@ -30,3 +30,7 @@ Accepted 2026-09-25. A blur saves the card's comment editor and keeps it open, a
 ## Amendment: the card list is a grid of rows
 
 Accepted 2026-09-25. The list is a multi-select `grid` of `row`s that carry `aria-selected`, not a `listbox`, because each card holds controls and a `listbox` option cannot.
+
+## Amendment: a collapsed group drops the cards it hides
+
+Accepted 2026-10-15 by [#1497](https://github.com/aidenlx/zotlit/issues/1497). The Card Selection holds only cards the list draws. A group collapse drops the cards it hides from the Card Selection, as a filter change does, so Delete and copy act only on cards in view. A reader selection or a reveal of a card that shows only in a collapsed group selects nothing. The bound Obsidian PDF view follows the smaller selection. A card shown under two group headings is one Selected Card at two Card Places; ↑ and ↓ step through the places in the order the list draws them.
