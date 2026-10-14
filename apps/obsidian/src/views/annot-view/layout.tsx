@@ -61,7 +61,13 @@ import {
   toggledTags,
   visibleOrder,
 } from "./store";
-import type { AnnotState, AnnotStore, CardGroup, HeldSource } from "./store";
+import type {
+  AnnotState,
+  AnnotStore,
+  CardGroup,
+  CardPlacement,
+  HeldSource,
+} from "./store";
 
 const logger = getLogger(["views", "annot-view"]);
 
@@ -401,10 +407,10 @@ export class AnnotationsLayout extends Component {
    */
   showRows(rows: readonly LayoutRow[]): Promise<boolean> {
     this.#rows = rows;
-    const groups = new Map<string, CardGroup>();
-    for (const row of rows)
-      if (row.group) groups.set(row.annotationKey, row.group);
-    this.store.setState({ groups: groups.size > 0 ? groups : null });
+    const groups: CardPlacement[] = rows.flatMap((row) =>
+      row.group ? [{ annotationKey: row.annotationKey, group: row.group }] : [],
+    );
+    this.store.setState({ groups: groups.length > 0 ? groups : null });
     const attachmentKeys = [...new Set(rows.map((row) => row.attachmentKey))];
     const landing = this.#showAttachments(attachmentKeys);
     // The lists that already stand show the new rows at once.
@@ -546,8 +552,13 @@ export class AnnotationsLayout extends Component {
     );
     const annotations: AnnotationRecord[] = [];
     const unresolved: string[] = [];
+    // A row stands once for each group it is in; its card is one record.
+    const seen = new Set<string>();
     for (const row of rows) {
-      const record = records.get(`${row.attachmentKey}\n${row.annotationKey}`);
+      const id = `${row.attachmentKey}\n${row.annotationKey}` as const;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const record = records.get(id);
       if (record) annotations.push(record);
       else unresolved.push(row.annotationKey);
     }
