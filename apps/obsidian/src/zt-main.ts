@@ -444,26 +444,6 @@ export default class ZotLitPlugin extends Plugin {
       }),
     );
 
-    registerAnnotView(this, {
-      app: this.app,
-      reads: services.zoteroReads,
-      libraryScope: services.libraryScope,
-      liveUpdate: services.localServer,
-      pdfReaders: services.pdfAnnotationEditor,
-      annotations: services.annotationRepository,
-      excerptDisplay: services.excerptDisplay,
-      allowEditing: () => void services.capabilityNotices.allowEditing(),
-      reportBlockedGesture: (attachmentKey) =>
-        services.capabilityNotices.reportBlockedGesture(attachmentKey),
-      libraryTagNames: (annotationKey) =>
-        libraryTagNames(services.zoteroReads, annotationKey),
-      zoteroPref: services.zoteroPref,
-      noteFeature: services.noteFeature,
-      noteIndex: services.noteIndex,
-      itemLookup: services.itemLookup,
-      settings: services.settings,
-    });
-
     const queryCardFocus = new QueryCardFocus(this.app);
     const queryViewDeps: QueryViewDeps = {
       app: this.app,
@@ -490,6 +470,17 @@ export default class ZotLitPlugin extends Plugin {
         zoteroReads: services.zoteroReads,
       }),
     };
+    registerAnnotView(this, {
+      ...queryViewDeps,
+      reads: services.zoteroReads,
+      libraryScope: services.libraryScope,
+      excerptDisplay: services.excerptDisplay,
+      liveUpdate: services.localServer,
+      pdfReaders: services.pdfAnnotationEditor,
+      noteIndex: services.noteIndex,
+      itemLookup: services.itemLookup,
+      settings: services.settings,
+    });
     registerQueryFileView(this, queryViewDeps);
     registerQueryBlock(this, queryViewDeps);
 

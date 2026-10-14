@@ -45,22 +45,26 @@ import { ZoteroReaderSession } from "@/services/reader-session/zotero";
 import type { ZoteroReaderResolution } from "@/services/reader-session/zotero";
 import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import { QueryView } from "@/views/query-view/view";
+import type { QueryViewDeps, QueryViewHost } from "@/views/query-view/view";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
 
 import type { AnnotActions } from "./actions";
 import { AnnotView } from "./AnnotView";
 import { sanitizeSavedFilter } from "./filter";
 import type { SavedFilter } from "./filter";
-import { AnnotationsLayout } from "./layout";
-import type { AnnotationsLayoutDeps } from "./layout";
+import { SidebarFilterModal } from "./filter-modal";
+import type { AnnotationsLayout } from "./layout";
 import { buildPaneMenu } from "./pane-menu";
 import { resolveLoadTarget } from "./resolve-target";
 import type { ActiveLeafTarget, LoadTarget } from "./resolve-target";
+import { addSidebarQueryMenu, sidebarQueryText } from "./sidebar-query";
 import { INITIAL_FILTER_STATE, selectActiveAttachment } from "./store";
 import type { AnnotState, AnnotStore, FollowMode } from "./store";
 import {
   DEFAULT_FOLLOW_MODE,
   parseAnnotViewState,
+  readSidebarQuery,
   serializeAnnotViewState,
   unpinnedMode,
 } from "./view-state";
@@ -83,9 +87,9 @@ const FILTER_STORAGE_KEY_PREFIX = "zotlit-annot-filter-";
  * keeps. The Annotations come from the repository through the Annotations
  * Layout, which may answer from the Zotero Local API.
  */
-export interface AnnotViewDeps extends AnnotationsLayoutDeps {
+export interface AnnotViewDeps extends QueryViewDeps {
   reads: Pick<ZoteroReadsService, "ready" | "state" | "on" | "acquireRead">;
-  libraryScope: Pick<LibraryScopeService, "libraryRows" | "on">;
+  libraryScope: Pick<LibraryScopeService, "libraryRows" | "on" | "current">;
   liveUpdate: Pick<
     LocalServerService,
     "available" | "readerTarget" | "readerClosed" | "on"
@@ -104,6 +108,13 @@ export interface AnnotViewDeps extends AnnotationsLayoutDeps {
 
 export class AnnotationView extends ItemView implements HistorySurface {
   override scope: Scope;
+  /**
+   * The Query View the sidebar is: the Annotations of the followed Attachment,
+   * through `attachment == this.attachment`.
+   */
+  readonly #query: QueryView;
+  /** The Query File the sidebar runs, once a change made it differ from the default. */
+  #queryText: string | null = null;
   /** The cards, their store, their actions, the Card Selection and the card keys. */
   readonly #layout: AnnotationsLayout;
   readonly #store: AnnotStore;
@@ -128,7 +139,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
    * Never rejects.
    */
   get read(): Promise<void> {
-    return this.#reading.then(() => this.#layout.read);
+    return this.#reading.then(() => this.#query.settled);
   }
 
   /** Follow mode lives in the store (single source of truth); read it here. */
@@ -141,9 +152,29 @@ export class AnnotationView extends ItemView implements HistorySurface {
     this.scope = new Scope(deps.app.scope);
     this.contentEl.addClass("zt-root");
     this.#deps = deps;
-    this.#layout = new AnnotationsLayout(deps, {
+    this.#query = new QueryView(deps, {
       scope: this.scope,
       sourcePath: () => this.#sourcePath(),
+      context: () => {
+        const { itemKey, selectedAttachmentKey } = this.#store.getState();
+        return {
+          item: itemKey ?? undefined,
+          attachment: selectedAttachmentKey ?? undefined,
+        };
+      },
+      save: (text) => {
+        this.#queryText = text;
+        void this.#deps.app.workspace.requestSaveLayout();
+      },
+      layout: this.#layoutHost(),
+    });
+    this.#layout = this.#query.layout;
+    this.#store = this.#layout.store;
+  }
+
+  /** The sidebar's own gestures and list frame, which its cards answer through. */
+  #layoutHost(): QueryViewHost["layout"] {
+    return {
       gestures: {
         setSelectedAttachmentKey: (key) =>
           this.#store.setState({ selectedAttachmentKey: key }),
@@ -176,8 +207,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
         if (root === leftSplit || root === rightSplit) return;
         return false;
       },
-    });
-    this.#store = this.#layout.store;
+    };
   }
 
   override getViewType(): string {
@@ -194,7 +224,11 @@ export class AnnotationView extends ItemView implements HistorySurface {
 
   override getState(): Record<string, unknown> {
     const { followMode, previousMode, pinnedItemKey } = this.#store.getState();
-    return serializeAnnotViewState({ followMode, previousMode, pinnedItemKey });
+    const query = this.#queryText;
+    return {
+      ...serializeAnnotViewState({ followMode, previousMode, pinnedItemKey }),
+      ...(query !== null && { query }),
+    };
   }
 
   override async setState(
@@ -206,6 +240,12 @@ export class AnnotationView extends ItemView implements HistorySurface {
     // rather than a source that cannot answer. Every other stored mode is kept
     // whether or not its source answers right now.
     this.#store.setState(parseAnnotViewState(state));
+    const query = readSidebarQuery(state);
+    if (query !== this.#queryText) {
+      this.#queryText = query;
+      // The restored Query File runs with the next Attachment shown.
+      this.#query.clear();
+    }
     this.#reload();
   }
 
@@ -272,10 +312,18 @@ export class AnnotationView extends ItemView implements HistorySurface {
     if (source !== "more-options") return;
     const actions = this.#layout.actions;
     if (!actions) return;
+    const { file, view } = this.#query.state.getState();
     buildPaneMenu(menu, {
       state: this.snapshot,
       actions,
       now: Temporal.Now.instant(),
+      query: (target) =>
+        addSidebarQueryMenu(target, {
+          view: file ? view : null,
+          edit: (edit) => this.#query.editView(edit),
+          openFilter: () =>
+            new SidebarFilterModal(this.#deps.app, this.#query).open(),
+        }),
     });
   }
 
@@ -287,7 +335,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
     });
     this.register(() => this.#zoteroReader?.[Symbol.dispose]());
 
-    this.#layout.load();
+    this.#query.load();
 
     this.#store.setState({
       liveUpdatesOn: this.#deps.liveUpdate.available,
@@ -401,7 +449,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
     this.#leafSession?.();
     this.#leafSession = null;
     // The layout saves an open card editor and unmounts the cards.
-    this.#layout.unload();
+    this.#query.unload();
   }
 
   // #region follow mode
@@ -740,7 +788,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
 
     if (activeKey === null) {
       this.#store.setState({ selectedAttachmentKey: null });
-      this.#layout.clear();
+      this.#query.clear();
       return;
     }
 
@@ -784,15 +832,23 @@ export class AnnotationView extends ItemView implements HistorySurface {
   }
 
   /**
-   * Shows one Attachment's Annotations in the layout. A new Item's first list
-   * brings back the colour and tag filter saved for it.
+   * Shows one Attachment's Annotations: the sidebar's Query File runs with the
+   * Attachment as `this.attachment`. A new Item's first list brings back the
+   * colour and tag filter saved for it.
    */
   #showAnnotations(
     attachmentKey: string,
     { restoreFilter }: { restoreFilter: boolean },
   ): Promise<void> {
     const memoryKey = this.#memoryKey;
-    return this.#layout.show([attachmentKey]).then((landed) => {
+    // The query runs again only for another Attachment or file: a database
+    // change already runs it again through the Query View, and a reload for
+    // the same Attachment (a tab switch, a note edit) changes nothing it reads.
+    this.#query.setText(this.#queryText ?? sidebarQueryText());
+    return this.#query.settled.then(() => {
+      const landed =
+        this.#query.state.getState().phase === "ready" &&
+        this.#store.getState().selectedAttachmentKey === attachmentKey;
       if (!landed || !restoreFilter || memoryKey === null) return;
       const { annotations } = this.#store.getState();
       const saved = this.#loadFilterSelection(memoryKey, annotations ?? []);
@@ -908,7 +964,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
       attachmentLock: null,
       pinnable: null,
     });
-    this.#layout.clear();
+    this.#query.clear();
     this.#itemKey = null;
     this.#memoryKey = null;
   }
