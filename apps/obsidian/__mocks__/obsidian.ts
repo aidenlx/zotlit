@@ -124,6 +124,7 @@ export class MarkdownView {
 export class Component {
   #loaded = false;
   readonly #children: Component[] = [];
+  #callbacks: (() => unknown)[] = [];
 
   load(): void {
     if (this.#loaded) return;
@@ -137,7 +138,16 @@ export class Component {
     this.#loaded = false;
     for (const child of this.#children) child.unload();
     this.onunload();
+    const callbacks = this.#callbacks;
+    this.#callbacks = [];
+    for (const callback of callbacks) callback();
   }
+
+  register(callback: () => unknown): void {
+    this.#callbacks.push(callback);
+  }
+
+  registerEvent(_ref: unknown): void {}
 
   addChild<T extends Component>(child: T): T {
     this.#children.push(child);

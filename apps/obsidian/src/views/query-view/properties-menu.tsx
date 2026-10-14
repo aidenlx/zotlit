@@ -11,6 +11,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
 
 import type { QueryFileDataset } from "./query-file";
+import { TOOLBAR_LABEL } from "./toolbar-popover";
 import type { QueryView } from "./view";
 import { datasetProperties, propertyChoices } from "./visible-properties";
 
@@ -45,7 +46,9 @@ export function PropertiesMenu({ view }: { view: QueryView }) {
         data-query-properties=""
       >
         <Icon name="list" />
-        <span>{m.settings_profile_properties_name()}</span>
+        <span className={TOOLBAR_LABEL}>
+          {m.settings_profile_properties_name()}
+        </span>
       </Chooser.Trigger>
       <Chooser.Popup className="zt:min-w-60" data-query-properties-popup="">
         <Chooser.Input
