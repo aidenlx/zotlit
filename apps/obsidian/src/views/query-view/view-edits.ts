@@ -1,8 +1,18 @@
 // The edits the view menu and "Configure view" make to a Query File's views,
 // as plain functions from one file to the next. Each one leaves every key it
 // does not touch where it was, so a save writes them back.
-import { NEW_QUERY_FILE_LIMIT } from "./query-file";
-import type { QueryFile, QueryFileView } from "./query-file";
+import { ANNOTATIONS, ATTACHMENTS, ITEMS } from "@zotlit/item-query";
+
+import { layoutsFor } from "./layouts";
+import { editView, NEW_QUERY_FILE_LIMIT } from "./query-file";
+import type {
+  QueryFile,
+  QueryFileDataset,
+  QueryFileView,
+  QueryFileViewEdit,
+} from "./query-file";
+import { groupPaths } from "./rows";
+import { datasetProperties } from "./visible-properties";
 
 /** A file after an edit, and the view to show in it. */
 export interface ViewEdit {
@@ -59,13 +69,20 @@ function replaced(
   );
 }
 
-/** A new Annotations view at the end of the list, with the new-file limit. */
-export function addView(file: QueryFile, base: string): ViewEdit {
+/**
+ * A new view of `dataset` at the end of the list, drawn by the first layout
+ * of that dataset, with the new-file limit.
+ */
+export function addView(
+  file: QueryFile,
+  base: string,
+  dataset: QueryFileDataset = "annotations",
+): ViewEdit {
   const name = freeViewName(file, base);
   const view: QueryFileView = {
-    type: "annotations",
+    type: layoutsFor({ from: dataset })[0]?.type ?? "annotations",
     name,
-    from: "annotations",
+    from: dataset,
     limit: NEW_QUERY_FILE_LIMIT,
     problems: [],
     source: {},
@@ -129,4 +146,84 @@ export function setViewLayout(
   type: string,
 ): QueryFile {
   return replaced(file, index, { ...file.views[index]!, type });
+}
+
+/** What a change of dataset took off a view, since the new dataset lacks it. */
+export interface DatasetRemovals {
+  /** The sort properties taken off. */
+  readonly sort: readonly string[];
+  /** The group property taken off, or `null`. */
+  readonly groupBy: string | null;
+  /** The visible properties taken off. */
+  readonly order: readonly string[];
+}
+
+/** A file after a change of dataset, and what the change took off the view. */
+export interface DatasetEdit {
+  readonly file: QueryFile;
+  readonly removed: DatasetRemovals;
+}
+
+const SORTABLE: Record<QueryFileDataset, readonly string[]> = {
+  annotations: ANNOTATIONS.sortableFields,
+  attachments: ATTACHMENTS.sortableFields,
+  items: ITEMS.sortableFields,
+};
+
+/**
+ * The view set to read `dataset`. A layout that cannot show the dataset
+ * gives way to the dataset's first layout. The filters stay as they are: a
+ * condition the new dataset cannot read shows the filter's diagnostic. The
+ * sort keys, the grouping and the visible properties the dataset lacks come
+ * off, and the edit names them, so the view runs and the researcher sees
+ * what changed.
+ */
+export function setViewDataset(
+  file: QueryFile,
+  index: number,
+  dataset: QueryFileDataset,
+): DatasetEdit {
+  const view = file.views[index]!;
+  const layouts = layoutsFor({ from: dataset });
+  const type = layouts.some((layout) => layout.type === view.type)
+    ? view.type
+    : (layouts[0]?.type ?? view.type);
+  const sortable = new Set(SORTABLE[dataset]);
+  const properties = new Set(datasetProperties(dataset));
+  const sort = view.sort ?? [];
+  const order = view.order ?? [];
+  const keepsGroup =
+    !view.groupBy || groupPaths(dataset).includes(view.groupBy.property);
+  const removed: DatasetRemovals = {
+    sort: sort
+      .filter(({ property }) => !sortable.has(property))
+      .map(({ property }) => property),
+    groupBy: keepsGroup ? null : view.groupBy!.property,
+    order: order.filter((property) => !properties.has(property)),
+  };
+  const edit: {
+    -readonly [K in keyof QueryFileViewEdit]: QueryFileViewEdit[K];
+  } = {};
+  if (removed.sort.length > 0) {
+    const kept = sort.filter(({ property }) => sortable.has(property));
+    edit.sort = kept.length > 0 ? kept : undefined;
+  }
+  if (!keepsGroup) edit.groupBy = undefined;
+  if (removed.order.length > 0) {
+    const kept = order.filter((property) => properties.has(property));
+    edit.order = kept.length > 0 ? kept : undefined;
+  }
+  const edited = editView(file, view, edit).views[index]!;
+  return {
+    file: replaced(file, index, {
+      ...edited,
+      type,
+      from: dataset,
+      problems: edited.problems.filter(
+        (problem) =>
+          !(problem.code === "invalid-value" && problem.key === "from"),
+      ),
+    }),
+    removed,
+  };
 }
