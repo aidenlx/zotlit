@@ -231,6 +231,12 @@ function annotationKeys(
   return held ? new Set(held.value.annotations.map(({ key }) => key)) : null;
 }
 
+/**
+ * What started a run of the query whose rows the layout shows: a list
+ * change, another run of the request on screen, or a new request.
+ */
+export type RunCause = "list-change" | "rerun" | "new-request";
+
 /** One record of the held lists, by its Attachment's key and its own Indexed Key. */
 function recordId(attachmentKey: string, annotationKey: string): string {
   return `${attachmentKey}\n${annotationKey}`;
@@ -490,17 +496,18 @@ export class AnnotationsLayout extends Component {
    * does: the run a list change asked for keeps the cards on screen while its
    * rows lack an Annotation that change added and the repository still
    * holds, and the database change that follows runs the query again. The
-   * rows of any other run show, and are the rows the next list change
-   * measures against: an Annotation they leave out, as a filter edit does,
-   * is no longer waited for. An added Annotation that a run's rows name, or
-   * that the repository no longer holds, is no longer waited for either.
+   * rows of any other run show. A new request, such as a filter edit, ends
+   * the wait: an Annotation its rows leave out is not waited for. A rerun of
+   * the request on screen keeps it. An added Annotation that a run's rows
+   * name, or that the repository no longer holds, is no longer waited for.
    *
    * @param rowKeys the Annotations the run's rows name.
-   * @param fromListChange whether the run is the one that
-   *   {@link AnnotationsLayoutHost.onListChanged} asked for.
+   * @param cause what started the run: the list change that
+   *   {@link AnnotationsLayoutHost.onListChanged} reported, another run of
+   *   the request on screen, or a new request.
    */
-  keepsBack(rowKeys: Iterable<string>, fromListChange: boolean): boolean {
-    if (!fromListChange) {
+  keepsBack(rowKeys: Iterable<string>, cause: RunCause): boolean {
+    if (cause === "new-request") {
       this.#listAdded.clear();
       return false;
     }
@@ -512,7 +519,7 @@ export class AnnotationsLayout extends Component {
       )
         this.#listAdded.delete(key);
     }
-    return this.#listAdded.size > 0;
+    return cause === "list-change" && this.#listAdded.size > 0;
   }
 
   /** Show no Attachment, and drop every list, draft and editor with them. */

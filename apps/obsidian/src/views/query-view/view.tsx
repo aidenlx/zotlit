@@ -881,7 +881,12 @@ export class QueryView extends Component implements HistorySurface {
         // after the repository's list does. Such a run keeps the cards on
         // screen, and the database change that follows runs the view again.
         const named = (result.rows ?? []).map((row) => row.indexedKey);
-        if (this.#layout.keepsBack(named, fromList)) return;
+        const cause = fromList
+          ? "list-change"
+          : key === this.#shownRequest
+            ? "rerun"
+            : "new-request";
+        if (this.#layout.keepsBack(named, cause)) return;
         const shown = layoutRows(result.rows ?? [], view);
         const byKey = new Map(
           (result.rows ?? []).map((row) => [row.indexedKey, row]),
