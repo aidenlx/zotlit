@@ -87,10 +87,10 @@ export function queryFileFolderMenu(app: App): FolderMenuSegment {
   };
 }
 
-/** "New query file" on a file's menu, in the folder that holds the file. */
+/** "New query file" on a file in the file explorer, in the folder that holds it. */
 export function queryFileFileMenu(app: App): FileMenuSegment {
-  return (menu, { file }) => {
-    if (!file.parent) return;
+  return (menu, { file, source }) => {
+    if (source !== "file-explorer-context-menu" || !file.parent) return;
     addNewQueryFile(menu, app, file.parent);
   };
 }
