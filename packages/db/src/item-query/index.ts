@@ -64,6 +64,8 @@ export {
   type HydratedAttachment,
 } from "./attachments";
 
+export { readItemNotes, type NoteScanRow } from "./notes";
+
 export {
   readAttachmentCandidateSet,
   type AttachmentCandidateLeaf,

@@ -2902,6 +2902,47 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(files.ok).toBe(true);
       expect(files.rows!.map((row) => row.indexedKey)).toEqual(["RGRPDF24"]);
     });
+    it("lists the Child Notes of each paper across the Fixture Libraries", async () => {
+      const answer = await query({
+        library: "all",
+        filter: "!notes.isEmpty()",
+        fields: "notes[].title",
+        sort: "indexedKey",
+      });
+      expect(answer.ok).toBe(true);
+      expect(
+        answer.rows!.map((row) => [
+          row.indexedKey,
+          row.values["notes[].title"],
+        ]),
+      ).toEqual([
+        ["AAAAAAAA", ["Reading notes on the personal alpha"]],
+        ["AAAAAAAAg4200309", ["Reading notes on the shared alpha"]],
+        ["EEEE5555", ["Reading notes on the unkeyed personal item"]],
+        ["HHHH8888g118", ["Reading notes on the lab archive alpha"]],
+        ["IIII9999g990117", ["Reading notes on the consortium alpha"]],
+      ]);
+      const paper = await query({
+        filter: 'key == "AAAAAAAA"',
+        fields: "notes",
+      });
+      expect(paper).toMatchObject({
+        ok: true,
+        rows: [
+          {
+            indexedKey: "AAAAAAAA",
+            values: {
+              notes: [
+                {
+                  indexedKey: "NNNNAAAA",
+                  title: "Reading notes on the personal alpha",
+                },
+              ],
+            },
+          },
+        ],
+      });
+    });
     it("finds papers with no usable PDF on this machine", async () => {
       const answer = await query({
         filter: `(${papers} || ["AAAAAAAA", "DMRGRART"].contains(key)) && attachments.filter(value.contentType == "application/pdf" && value.exists).isEmpty()`,
