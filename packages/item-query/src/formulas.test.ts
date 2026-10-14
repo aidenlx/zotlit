@@ -222,6 +222,23 @@ it.each([
     },
   ],
   [
+    "a Formula in fields in the bracket form",
+    { formulas: { f: "title" }, fields: ["title", 'formula["f"]'] },
+    {
+      code: "invalid-path",
+      location: { argument: "fields", index: 1, path: "fields[1]" },
+      hint: "Read the Formula as formula.f.",
+    },
+  ],
+  [
+    "a Formula in fields with a path after its name",
+    { formulas: { f: "title" }, fields: ["formula.f.length"] },
+    {
+      code: "invalid-path",
+      location: { argument: "fields", index: 0, path: "fields[0]" },
+    },
+  ],
+  [
     "a syntax mistake in the Formula text",
     { formulas: { short: "title +" }, fields: ["formula.short"] },
     {
