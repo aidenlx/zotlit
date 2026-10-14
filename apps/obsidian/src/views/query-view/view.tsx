@@ -217,7 +217,7 @@ export class QueryView extends Component implements HistorySurface {
   #wanted: string | null = null;
   #run: AbortController | null = null;
   /** Whether the rows on screen are drawn as Annotation Cards. */
-  #cardsDrawn = false;
+  #cardsShown = false;
   /** The lists the cards on screen come from, held while they show. */
   #hold: Disposable | null = null;
   /**
@@ -283,7 +283,10 @@ export class QueryView extends Component implements HistorySurface {
    */
   async shownIn(el: HTMLElement): Promise<void> {
     await this.settled;
-    if (el.closest(".print") !== null) await this.#cardsDrawn();
+    // A List or Cards layout draws its rows from the state, with no list of
+    // cards to wait for.
+    if (el.closest(".print") !== null && this.#cardsShown)
+      await this.#cardsDrawn();
   }
 
   /**
@@ -474,7 +477,7 @@ export class QueryView extends Component implements HistorySurface {
   /** Draw the rows on screen as Annotation Cards, or let the cards go, as the view's Layout asks. */
   #redraw(view: QueryFileView): void {
     const cards = drawsCards(view);
-    if (cards === this.#cardsDrawn) return;
+    if (cards === this.#cardsShown) return;
     const rows = this.state.getState().records.map(({ row, group }) => ({
       annotationKey: row.indexedKey,
       attachmentKey: row.attachmentIndexedKey ?? row.indexedKey,
@@ -762,7 +765,7 @@ export class QueryView extends Component implements HistorySurface {
       this.#rows = [];
       this.state.setState({ records: [] });
     }
-    this.#cardsDrawn = key !== null && rows !== null;
+    this.#cardsShown = key !== null && rows !== null;
     if (key === null || rows === null) {
       this.#hold = null;
       this.#layout.clear();
