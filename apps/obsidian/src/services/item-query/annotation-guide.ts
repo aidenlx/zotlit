@@ -64,6 +64,15 @@ SELECT PARENTS
     ${example({ filter: 'item.indexedKey == "ART2FULL"', limit: "all" })}
     ${example({ filter: 'attachment.indexedKey == "PDF2LIVE"', fields: "text,pageLabel", limit: "all" })}
 
+QUERY CONTEXT
+  this-item=<Indexed Key> binds this.item, and this-attachment=<Indexed Key>
+  binds this.attachment. item == this.item selects the Annotations of the
+  bound Item; attachment == this.attachment selects those of the bound
+  Attachment. Both select by key, as fast as the item.indexedKey form. A
+  filter that reads this when nothing is bound fails with unbound-context.
+    ${example({ filter: "item == this.item", "this-item": "ART2FULL", limit: "all" })}
+    ${example({ filter: "attachment == this.attachment", "this-attachment": "PDF2LIVE", fields: "text,pageLabel", limit: "all" })}
+
 RESULT IDENTITIES
   Every row has indexedKey for the Annotation, attachmentIndexedKey for its
   Attachment, and itemIndexedKey for its parent Item. Personal-library keys are

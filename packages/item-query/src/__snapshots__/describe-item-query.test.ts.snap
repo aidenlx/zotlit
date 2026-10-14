@@ -2,6 +2,26 @@
 
 exports[`publishes one catalog with datasets and shared language vocabulary 1`] = `
 {
+  "context": [
+    {
+      "dataset": "items",
+      "description": "The Item the caller binds, such as the Item of the note that shows the query. On Attachments and Annotations, item == this.item selects the records of that Item; on Items, indexedKey == this.item.indexedKey selects it. A filter that reads this.item when no Item is bound fails with unbound-context.",
+      "members": [
+        "indexedKey",
+        "key",
+      ],
+      "name": "this.item",
+    },
+    {
+      "dataset": "attachments",
+      "description": "The Attachment the caller binds, such as the Attachment open in the reader. On Annotations, attachment == this.attachment selects the Annotations of that Attachment; on Attachments, indexedKey == this.attachment.indexedKey selects it. A filter that reads this.attachment when no Attachment is bound fails with unbound-context.",
+      "members": [
+        "indexedKey",
+        "key",
+      ],
+      "name": "this.attachment",
+    },
+  ],
   "datasets": {
     "annotations": {
       "fields": [

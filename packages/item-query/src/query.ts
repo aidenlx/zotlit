@@ -127,7 +127,11 @@ export function consumeQuery<Request extends ItemQueryRequest, A, E, R>(
         ]
           .sort((a, b) => a.at.from - b.at.from)
           .map((fault) =>
-            diagnoseWarning(fault, query.filter!, { clock, dataset }),
+            diagnoseWarning(fault, query.filter!, {
+              clock,
+              dataset,
+              context: query.context,
+            }),
           ),
         libraries: request.libraries,
         sort: plan.order,
