@@ -464,6 +464,10 @@ _Avoid_: view type, mode
 The Item, and the Attachment when there is one, that a Query View is relative to, read as `this.item` and `this.attachment` in its filters: the Item of the note that embeds the file or holds the block, or the Item and Attachment the sidebar Annotation View follows. In a Query File's own tab `this` has no value.
 _Avoid_: current note, scope
 
+**Property**:
+One value that a Query View can show, sort, group, filter and name for each record: a field of its Query Dataset, read by its path, or a Formula Property.
+_Avoid_: column, field (on the view side), attribute
+
 **Visible Properties**:
 The properties a Query View shows, in its order: the columns of the Table, the lines of the List and Cards, and the columns of copy and CSV export. Saved as the view's `order`.
 _Avoid_: columns (alone), fields, shown properties
