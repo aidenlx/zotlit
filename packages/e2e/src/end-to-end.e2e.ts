@@ -2405,6 +2405,144 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(removed.headerIssue).toBeNull();
   }, 240000);
 
+  it("shows an Error Value of a Formula as a warning icon in the Table, the List and the Cards, and copies and exports it as its message", async () => {
+    const path = "query-files/Formula errors.zotquery";
+    const layout = await obEval(
+      vaultId,
+      "JSON.stringify(app.workspace.getLayout())",
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));const file=app.vault.getFileByPath(${JSON.stringify(path)});if(file)await app.vault.delete(file);return true;})()`,
+      );
+    });
+    // The Formula cannot read the title of one Item as a number; the other
+    // Item gives its year.
+    const formula = `if(indexedKey == "${annotationItem.key}", number(title), date.year)`;
+    const filter = `indexedKey == "${annotationItem.key}" || indexedKey == "${positionDocumentItem.key}"`;
+    const view = (type: string, name: string) =>
+      `  - type: ${type}\n    name: ${name}\n    from: items\n    filters: ${JSON.stringify(filter)}\n    order:\n      - title\n      - formula.n\n`;
+    const source = `formulas:\n  n: ${JSON.stringify(formula)}\nviews:\n${view("table", "Table")}${view("list", "List")}${view("cards", "Cards")}`;
+    await obEval(
+      vaultId,
+      `(async()=>{const file=await app.vault.create(${JSON.stringify(path)},${JSON.stringify(source)});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
+    );
+
+    const report = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query", {
+        args: {
+          from: "items",
+          filter,
+          formulas: JSON.stringify({ n: formula }),
+          fields: "title,formula.n",
+        },
+      }),
+    ) as ItemQueryReport;
+    expect(report.ok).toBe(true);
+    const rows = report.rows!;
+    const failed = rows.filter((row) => row.indexedKey === annotationItem.key);
+    expect(failed.length).toBeGreaterThan(0);
+    for (const row of failed)
+      expect(row.values["formula.n"]).toEqual({
+        kind: "error",
+        code: "unparseable-text",
+        message: `number() cannot read ${JSON.stringify(annotationItem.title)} as a number.`,
+      });
+    const computed = rows.filter(
+      (row) => row.indexedKey === positionDocumentItem.key,
+    );
+    expect(computed.length).toBeGreaterThan(0);
+    for (const row of computed)
+      expect(row.values["formula.n"]).toBe(
+        Number(positionDocumentItem.date.slice(0, 4)),
+      );
+    const message = (failed[0]!.values["formula.n"] as { message: string })
+      .message;
+
+    // Each row's key, the text of each cell, and the Error Value marks.
+    const readRows = (selector: string) =>
+      `[...el.querySelectorAll(${JSON.stringify(selector)})].map(row=>({key:row.getAttribute('data-query-key')??row.getAttribute('data-query-row'),text:row.textContent,errors:[...row.querySelectorAll('[data-query-error]')].map(n=>[n.getAttribute('data-query-error'),n.getAttribute('aria-label'),!!n.querySelector('svg')])}))`;
+    interface Shown {
+      key: string;
+      text: string;
+      errors: [string, string, boolean][];
+    }
+    const showView = async (name: string, selector: string) => {
+      let shown: Shown[] | null = null;
+      const settled = await waitFor(async () => {
+        shown = JSON.parse(
+          await obEval(
+            vaultId,
+            `(async()=>{const leaf=app.workspace.getMostRecentLeaf();if(leaf.view.getViewType()!=='zotlit-query-file'||leaf.view.file?.path!==${JSON.stringify(path)})return 'null';if(leaf.getViewState().state.view!==${JSON.stringify(name)})await leaf.setViewState({...leaf.getViewState(),state:{...leaf.getViewState().state,view:${JSON.stringify(name)}}});await leaf.view.query.settled;const el=leaf.view.contentEl;return JSON.stringify(${readRows(selector)});})()`,
+          ),
+        ) as Shown[] | null;
+        return shown !== null && shown.length === rows.length;
+      }, 120);
+      if (!settled) throw new Error(`${name} view: ${JSON.stringify(shown)}`);
+      return shown!;
+    };
+    const expectMarks = (shown: Shown[]) => {
+      for (const row of shown) {
+        if (row.key === annotationItem.key) {
+          expect(row.errors).toEqual([["unparseable-text", message, true]]);
+          expect(row.text).not.toContain("Error");
+        } else {
+          expect(row.errors).toEqual([]);
+          expect(row.text).toContain(positionDocumentItem.date.slice(0, 4));
+        }
+      }
+    };
+    expectMarks(await showView("Table", '[data-query-table-row="item"]'));
+    expectMarks(
+      await showView("List", '[data-query-layout="list"] [data-query-row]'),
+    );
+    expectMarks(
+      await showView("Cards", '[data-query-layout="cards"] [data-query-row]'),
+    );
+
+    // "Copy to clipboard" and "Export CSV…" write the Formula column after
+    // the title, as the view's order has it, and the Error Value as its
+    // message.
+    const cell = (value: unknown) => {
+      const text =
+        value === null || value === undefined
+          ? ""
+          : typeof value === "object"
+            ? `Error: ${(value as { message: string }).message}`
+            : String(value as string | number);
+      return /[",\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+    };
+    const lines = (separator: string) =>
+      [
+        ["title", "formula.n"].join(separator),
+        ...rows.map((row) =>
+          [cell(row.values.title), cell(row.values["formula.n"])].join(
+            separator,
+          ),
+        ),
+      ].join("\n");
+    const written = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{const el=app.workspace.getMostRecentLeaf().view.contentEl;el.querySelector('[data-query-results]').click();await new Promise(r=>setTimeout(r,100));const popup=activeDocument.querySelector('[data-query-results-popup]');let copied=null;navigator.clipboard.write=async items=>{copied=await (await items[0].getType('text/plain')).text();};const create=URL.createObjectURL;const click=HTMLAnchorElement.prototype.click;let blob=null,name=null;URL.createObjectURL=b=>{blob=b;return create.call(URL,b);};HTMLAnchorElement.prototype.click=function(){name=this.download;};try{popup.querySelector('[data-query-copy]').click();for(let i=0;i<50&&copied===null;i++)await new Promise(r=>setTimeout(r,100));el.querySelector('[data-query-results]').click();await new Promise(r=>setTimeout(r,100));activeDocument.querySelector('[data-query-results-popup] [data-query-export]').click();}finally{delete navigator.clipboard.write;URL.createObjectURL=create;HTMLAnchorElement.prototype.click=click;}return JSON.stringify({copied,name,type:blob?.type??null,text:blob?await blob.text():null});})()`,
+      ),
+    ) as {
+      copied: string | null;
+      name: string | null;
+      type: string | null;
+      text: string | null;
+    };
+    expect(written).toEqual({
+      copied: lines("\t"),
+      name: "Cards.csv",
+      type: "text/csv",
+      text: lines(","),
+    });
+    expect(written.text).toContain(`"Error: ${message.replaceAll('"', '""')}"`);
+  }, 240000);
+
   it("switches a Fixture Query File view to Items and the Table, expands an Item into its Attachments, Annotations and Child Notes, and creates a Literature Note from its column", async () => {
     const path = "query-files/Reading annotations.zotquery";
     const layout = await obEval(
