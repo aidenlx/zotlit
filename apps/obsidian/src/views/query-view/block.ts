@@ -70,8 +70,9 @@ class QueryBlock extends MarkdownRenderChild {
     const { app } = this.#deps;
     const sourcePath = this.#ctx.sourcePath;
     this.#itemKey = this.#readItemKey();
+    const scope = new Scope(app.scope);
     const query = new QueryView(this.#deps, {
-      scope: new Scope(app.scope),
+      scope,
       sourcePath: () => sourcePath,
       context: () =>
         this.#itemKey === null ? undefined : { item: this.#itemKey },
@@ -81,6 +82,9 @@ class QueryBlock extends MarkdownRenderChild {
     this.addChild(query);
     this.containerEl.addClass("zt-root", "interactive-child");
     query.render(this.containerEl);
+    // A card in the block takes the card keys while it has focus.
+    const keys = this.#deps.cardFocus.hold(this.containerEl, scope, query);
+    this.register(() => keys[Symbol.dispose]());
     query.setText(this.#source);
     // The End-to-end Run reaches the block's view through its element.
     if (__DEV__) Object.assign(this.containerEl, { zotlitQueryView: query });

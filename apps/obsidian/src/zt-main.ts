@@ -77,6 +77,8 @@ import { registerCitedByView } from "./views/cited-by/register";
 import { registerNotePreview } from "./views/note-preview/register";
 import { registerPandocExport } from "./views/pandoc-export/register";
 import { registerQueryBlock } from "./views/query-view/block";
+import { QueryCardFocus } from "./views/query-view/card-focus";
+import { QueryFileView } from "./views/query-view/file-view";
 import {
   queryFileFileMenu,
   queryFileFolderMenu,
@@ -461,8 +463,10 @@ export default class ZotLitPlugin extends Plugin {
       settings: services.settings,
     });
 
+    const queryCardFocus = new QueryCardFocus(this.app);
     const queryViewDeps: QueryViewDeps = {
       app: this.app,
+      cardFocus: queryCardFocus,
       reads: services.zoteroReads,
       libraryScope: services.libraryScope,
       query: services.query,
@@ -480,16 +484,19 @@ export default class ZotLitPlugin extends Plugin {
     registerQueryBlock(this, queryViewDeps);
 
     // The Annotation History's own verbs. A bound PDF view and an Annotation
-    // View each step the Attachment they show, so the palette acts on
-    // whichever of them the user is in, and the menu on the leaf it was
-    // opened over.
+    // View each step the Attachment they show, and a Query View the
+    // Attachment of its focused card, so the palette acts on whichever of
+    // them the user is in, and the menu on the leaf it was opened over.
     addAnnotationHistoryActions(this, {
       annotations: services.annotationRepository,
       activeSurface: (): HistorySurface | null => {
         const view = this.app.workspace.getActiveViewOfType(View);
-        return view instanceof AnnotationView
-          ? view
-          : services.pdfAnnotationEditor.bindingFor(view);
+        if (view instanceof AnnotationView) return view;
+        if (view instanceof QueryFileView) return view.query;
+        return (
+          (view && queryCardFocus.surfaceIn(view.containerEl)) ??
+          services.pdfAnnotationEditor.bindingFor(view)
+        );
       },
     });
 
