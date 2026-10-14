@@ -47,16 +47,26 @@ export function registerQueryFileView(
   });
 }
 
-/** The first `Untitled.zotquery`, `Untitled 1.zotquery`, … free in `folder`. */
-function freePath(app: App, folder: TFolder): string {
+/** The first `Untitled`, `Untitled 1`, … name that `taken` does not hold. */
+export function untitledName(taken: (name: string) => boolean): string {
   const base = m.query_file_untitled();
   for (let index = 0; ; index++) {
     const name = index === 0 ? base : `${base} ${index}`;
-    const path = normalizePath(
+    if (!taken(name)) return name;
+  }
+}
+
+/** The first `Untitled.zotquery`, `Untitled 1.zotquery`, … free in `folder`. */
+function freePath(app: App, folder: TFolder): string {
+  const path = (name: string) =>
+    normalizePath(
       `${folder.isRoot() ? "" : `${folder.path}/`}${name}.${QUERY_FILE_EXTENSION}`,
     );
-    if (!app.vault.getAbstractFileByPath(path)) return path;
-  }
+  return path(
+    untitledName(
+      (name) => app.vault.getAbstractFileByPath(path(name)) !== null,
+    ),
+  );
 }
 
 /**
