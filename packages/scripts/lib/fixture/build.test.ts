@@ -2127,6 +2127,21 @@ describe("the generated Obsidian vault", () => {
     }
   });
 
+  it("ends one Literature Note with a Query Block of its own Item", async () => {
+    const withBlock = ITEMS.filter(
+      ({ literatureNoteQueryBlock }) => literatureNoteQueryBlock === true,
+    );
+    expect(withBlock.map(({ key }) => key)).toEqual(["SAKIMA22"]);
+    const note = await readFile(
+      join(layout.vaultDir, "literatures", "SAKIMA22.md"),
+      "utf-8",
+    );
+    expect(note).toContain("zotero-key: SAKIMA22");
+    expect(note).toMatch(
+      /\n```zotquery\nviews:\n[^`]*filters: item == this\.item\n[^`]*```\n$/,
+    );
+  });
+
   it("stamps the Books Profile Literature Note and leaves the others bare", async () => {
     const stamped = await readFile(
       join(layout.vaultDir, "books", "books-duplicateWithin2020.md"),

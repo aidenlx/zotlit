@@ -31,13 +31,13 @@ export async function copyResults(view: QueryView): Promise<void> {
     new Notice(m.query_view_copied());
   } catch (error) {
     logger.warn("The Query View could not copy its results", { error });
-    new Notice(m.query_view_copy_failed());
+    new Notice(m.annot_view_copy_failed());
   }
 }
 
 /** Save the rows on screen as a CSV file named after the view. */
 export function exportResults(view: QueryView): void {
-  const name = view.state.getState().view?.name || m.query_view_results_menu();
+  const name = view.state.getState().view?.name || m.query_file_untitled();
   saveFile(
     new Blob([toCSV(view.table())], { type: "text/csv" }),
     `${name}.csv`,
@@ -99,7 +99,6 @@ function LimitField({ view, close }: { view: QueryView; close: () => void }) {
         min={1}
         step={1}
         value={text}
-        placeholder={m.query_view_limit_placeholder()}
         data-query-limit=""
         className={cn("zt:w-20", invalid && "mod-error")}
         onChange={(event) => {
@@ -149,7 +148,6 @@ export function ResultsMenu({ view }: { view: QueryView }) {
         type="button"
         popoverTarget={popupId}
         aria-expanded={open}
-        aria-label={m.query_view_results_menu()}
         data-query-results=""
         className={cn(
           "clickable-icon zt:shrink-0 zt:text-sm zt:whitespace-nowrap zt:text-(--text-muted) zt:[anchor-name:var(--zt-results-anchor)]",
@@ -201,7 +199,7 @@ export function ResultsMenu({ view }: { view: QueryView }) {
                 void copyResults(view);
               }}
             >
-              {m.query_view_copy()}
+              {m.profile_share_copy()}
             </MenuRow>
             <MenuRow
               icon="file-down"
