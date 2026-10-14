@@ -113,8 +113,23 @@ export interface SchemaProperty {
   readonly returns: FilterType;
 }
 
+/**
+ * A record of the Query Context: a Filter Expression reads it as `name` when
+ * the caller binds it, by its Indexed Key.
+ */
+export interface SchemaContextRecord {
+  readonly name: "this.item" | "this.attachment";
+  /** The Query Dataset of the record. */
+  readonly dataset: "items" | "attachments";
+  /** The members a filter reads on the record, such as `this.item.indexedKey`. */
+  readonly members: readonly string[];
+  readonly description: string;
+}
+
 /** The Item Query Schema: what a request can name on the active source. */
 export interface ItemQuerySchema {
+  /** The records that `this` binds when the caller gives a Query Context. */
+  readonly context: readonly SchemaContextRecord[];
   readonly projectionPathGrammar: typeof PROJECTION_PATH_GRAMMAR;
   /** The built-in fields and the Projection Paths below them. */
   readonly fields: readonly SchemaField[];
@@ -185,6 +200,7 @@ export function describeDatasetVocabulary(
   dataset: QueryDataset,
 ): Omit<ItemQuerySchema, "customFields" | "defaults"> {
   return {
+    context: QUERY_CONTEXT,
     projectionPathGrammar: PROJECTION_PATH_GRAMMAR,
     fields: describeFields(dataset),
     functions: FUNCTIONS,
@@ -193,6 +209,23 @@ export function describeDatasetVocabulary(
     types: VALUE_TYPES,
   };
 }
+
+const QUERY_CONTEXT: readonly SchemaContextRecord[] = [
+  {
+    name: "this.item",
+    dataset: "items",
+    members: ["indexedKey", "key"],
+    description:
+      "The Item the caller binds, such as the Item of the note that shows the query. On Attachments and Annotations, item == this.item selects the records of that Item; on Items, indexedKey == this.item.indexedKey selects it. A filter that reads this.item when no Item is bound fails with unbound-context.",
+  },
+  {
+    name: "this.attachment",
+    dataset: "attachments",
+    members: ["indexedKey", "key"],
+    description:
+      "The Attachment the caller binds, such as the Attachment open in the reader. On Annotations, attachment == this.attachment selects the Annotations of that Attachment; on Attachments, indexedKey == this.attachment.indexedKey selects it. A filter that reads this.attachment when no Attachment is bound fails with unbound-context.",
+  },
+];
 
 const PROJECTION_PATH_GRAMMAR = {
   member: { syntax: ".name", description: "Read an object member." },

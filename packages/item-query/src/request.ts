@@ -2,6 +2,8 @@
 // applies the defaults and resolves each name against the registries.
 import { Effect } from "effect";
 
+import { parseIndexedKey } from "@zotlit/db";
+
 import type { QueryDataset } from "./dataset";
 import type { Diagnostic } from "./diagnose";
 import { ItemQueryError } from "./error";
@@ -52,6 +54,18 @@ export interface ItemQueryRequest {
   readonly group?: string | undefined;
   /** The most rows to return. Omitted or `null`: every match. */
   readonly limit?: number | null | undefined;
+  /**
+   * The Query Context: the records a Filter Expression reads as `this.item`
+   * and `this.attachment`, each named by its Indexed Key. Omitted: `this`
+   * has no value, and a filter that reads it is invalid.
+   */
+  readonly context?: QueryContext | undefined;
+}
+
+/** The records `this` binds, each by its Indexed Key. */
+export interface QueryContext {
+  readonly item?: string | undefined;
+  readonly attachment?: string | undefined;
 }
 
 export interface SortSpec {
@@ -67,6 +81,8 @@ export interface ItemQuery {
   readonly sort: readonly SortSpec[];
   readonly limit: number | null;
   readonly group?: string;
+  /** The Query Context of the request, when it binds a record. */
+  readonly context?: QueryContext;
 }
 
 /** A value of one Projection Path in a Query Row. */
@@ -211,12 +227,34 @@ export function planRequest(
       });
     }
 
+    let context: QueryContext | undefined;
+    for (const member of ["item", "attachment"] as const) {
+      const key = request.context?.[member];
+      if (key === undefined) continue;
+      const parsed = parseIndexedKey(key);
+      if (!parsed || (parsed.groupID !== null && parsed.groupID <= 0)) {
+        return yield* new ItemQueryError({
+          dataset,
+          location: { argument: "context", path: `context.${member}` },
+          fault: {
+            kind: "plain",
+            code: "invalid-context",
+            message: `this.${member} names ${JSON.stringify(key)}, which is not an Indexed Key.`,
+            action:
+              'Bind an Indexed Key: a Zotero Key such as "ABCD2345", with g<groupID> after it for a group Library.',
+          },
+        });
+      }
+      context = { ...context, [member]: key };
+    }
+
     let filter: FilterPlan | null = null;
     if (request.filter !== undefined) {
-      const planned = dataset.planFilter(request.filter);
+      const planned = dataset.planFilter(request.filter, context);
       if ("kind" in planned) {
         return yield* new ItemQueryError({
           dataset,
+          context,
           fault: planned,
           location: {
             argument: "filter",
@@ -327,6 +365,7 @@ export function planRequest(
         sort: normalized,
         limit,
         ...(request.group === undefined ? {} : { group: request.group }),
+        ...(context === undefined ? {} : { context }),
       },
       filter,
       warnings: filter?.warnings ?? [],
