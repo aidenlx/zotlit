@@ -488,6 +488,7 @@ describe("describeItemQuery functions", () => {
       "date",
       "duration",
       "regexp",
+      "error",
     ]);
   });
 });
@@ -674,7 +675,7 @@ it("publishes one catalog with datasets and shared language vocabulary", async (
   expect(catalog).toMatchSnapshot();
 });
 
-it("publishes the Formula path, name form, result types, and Fault codes", async () => {
+it("publishes the Formula path, name form, result types, Fault codes, and Error Value", async () => {
   const { describeQueryVocabulary } = await import("./schema");
   expect(describeQueryVocabulary().formulas).toEqual({
     path: "formula.<name>",
@@ -687,5 +688,19 @@ it("publishes the Formula path, name form, result types, and Fault codes", async
       "formula-cycle",
     ],
     warnings: ["unused-formula"],
+    error: {
+      type: "error",
+      row: { kind: "error", code: "<code>", message: "<message>" },
+      codes: [
+        "wrong-operand-type",
+        "wrong-argument-type",
+        "wrong-subject-type",
+        "not-finite",
+        "unparseable-text",
+        "argument-out-of-range",
+        "invalid-index",
+        "date-out-of-range",
+      ],
+    },
   });
 });

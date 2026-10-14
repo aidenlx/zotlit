@@ -104,6 +104,45 @@ it("returns a date in the date object shape and a list element by element", asyn
   ]);
 });
 
+it("returns an Error Value cell as kind, code, and message", async () => {
+  using scenario = openScenarioDatabase();
+  const result = await run(scenario, {
+    filter: 'indexedKey == "BK2MNTH2"',
+    formulas: {
+      volumes: "number(title)",
+      pair: "[date.year, number(title)]",
+      checked: 'number(title).isType("error")',
+    },
+    fields: ["title", "formula.volumes", "formula.pair", "formula.checked"],
+  });
+  const [row] = result.rows!;
+  const title = row!.values.title as string;
+  const cell = {
+    kind: "error",
+    code: "unparseable-text",
+    message: `number() cannot read ${JSON.stringify(title)} as a number.`,
+  };
+  expect(row!.values).toEqual({
+    title,
+    "formula.volumes": cell,
+    "formula.pair": [2019, cell],
+    "formula.checked": true,
+  });
+});
+
+it("excludes a record whose filter reads an Error Value of a Formula", async () => {
+  using scenario = openScenarioDatabase();
+  const read = (filter: string) =>
+    run(scenario, {
+      filter: `indexedKey == "BK2MNTH2" && (${filter})`,
+      formulas: { volumes: "number(title)" },
+      fields: ["title"],
+    });
+  expect((await read("formula.volumes")).rows).toEqual([]);
+  expect((await read("formula.volumes == formula.volumes")).rows).toEqual([]);
+  expect((await read("formula.volumes != null")).rows).toHaveLength(1);
+});
+
 async function failure(
   scenario: ScenarioDatabase,
   request: Omit<ItemQueryRequest, "libraries">,
@@ -167,6 +206,18 @@ it.each([
         argument: "formulas",
         path: "short",
         span: { from: 6, to: 10 },
+      },
+    },
+  ],
+  [
+    "arithmetic on a type that the operator never takes",
+    { formulas: { twice: "title * 2" }, fields: ["formula.twice"] },
+    {
+      code: "wrong-operand-type",
+      location: {
+        argument: "formulas",
+        path: "twice",
+        span: { from: 0, to: 9 },
       },
     },
   ],

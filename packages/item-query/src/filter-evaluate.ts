@@ -1,6 +1,8 @@
 // The evaluator of a validated Filter Expression: the authority for every
-// match. A failure that depends on the Item's data gives null for that node.
+// match. Missing data gives null; a value that the Item cannot compute gives
+// an Error Value, which passes through every node that does not read a truth.
 import { addDuration } from "./filter-dates";
+import { errorValue, isError } from "./filter-error";
 import { finite, invoke, methodOf, propertyOf } from "./filter-functions";
 import type { FilterNode } from "./filter-plan";
 import {
@@ -26,7 +28,7 @@ interface Context<Item> {
   readonly bindings: Bindings;
 }
 
-/** Whether the filter selects the Item: null is falsy. */
+/** Whether the filter selects the Item: null and an Error Value are falsy. */
 export function matches<Item>(
   root: FilterNode<Item>,
   item: Item,
@@ -98,9 +100,16 @@ function valueOf<Item>(
       return evaluateFormula(node.root, item, clock);
     case "unary": {
       const operand = value(node.operand);
-      // Null is falsy, so `!` of null is true.
+      // Null and an Error Value are falsy, so `!` of them is true.
       if (node.operator === "!") return !truthy(operand);
-      return typeof operand === "number" ? -operand : null;
+      if (operand === null || isError(operand)) return operand;
+      return typeof operand === "number"
+        ? -operand
+        : errorValue({
+            code: "wrong-operand-type",
+            operator: "-",
+            found: [typeOf(operand)],
+          });
     }
     case "binary":
       return binary(node, context);
@@ -111,28 +120,47 @@ function valueOf<Item>(
     case "function":
       return invoke(
         node.definition,
-        { subject: null, args: node.args.map(value) },
+        { name: node.name, subject: null, args: node.args.map(value) },
         clock,
       );
     case "method": {
       const subject = value(node.subject);
       const method = methodOf(typeOf(subject), node.name);
-      if (!method) return null;
-      return invoke(method, { subject, args: node.args.map(value) }, clock);
+      // An Error Value answers only the methods of every value.
+      if (!method) return wrongSubject(subject, `${node.name}()`);
+      return invoke(
+        method,
+        { name: node.name, subject, args: node.args.map(value) },
+        clock,
+      );
     }
     case "element":
       return element(node, context);
     case "property": {
       const subject = value(node.subject);
+      if (isError(subject)) return subject;
       if (node.read) return node.read(subject);
       const property = propertyOf(typeOf(subject), node.name);
-      return property ? property.read(subject, clock) : null;
+      return property
+        ? property.read(subject, clock)
+        : wrongSubject(subject, node.name);
     }
     case "index": {
       const subject = value(node.subject);
       const index = value(node.index);
-      if (typeof index !== "number" || !Number.isInteger(index)) return null;
-      if (!isList(subject) && typeof subject !== "string") return null;
+      if (isError(subject)) return subject;
+      if (isError(index)) return index;
+      if (subject === null || index === null) return null;
+      if (!isList(subject) && typeof subject !== "string") {
+        return wrongSubject(subject, "index access");
+      }
+      if (typeof index !== "number" || !Number.isInteger(index)) {
+        return errorValue({
+          code: "invalid-index",
+          found:
+            typeof index === "string" ? JSON.stringify(index) : toText(index),
+        });
+      }
       // A negative index counts from the end.
       return subject[index < 0 ? index + subject.length : index] ?? null;
     }
@@ -140,16 +168,31 @@ function valueOf<Item>(
 }
 
 /**
+ * The value of an operation on a subject of a type without it: null on null,
+ * the subject itself when it is an Error Value, and an Error Value otherwise.
+ */
+function wrongSubject(subject: FilterValue, callee: string): FilterValue {
+  if (subject === null || isError(subject)) return subject;
+  return errorValue({
+    code: "wrong-subject-type",
+    callee,
+    found: typeOf(subject),
+  });
+}
+
+/**
  * An element expression: the expression runs once for each element of the
- * list with `value` and `index` bound, and `acc` in `reduce`. A subject that
- * is not a list gives null; `initial` is evaluated once, outside the binding.
+ * list with `value` and `index` bound, and `acc` in `reduce`. A null subject
+ * gives null, another subject that is not a list an Error Value; `initial` is
+ * evaluated once, outside the binding. `filter` drops an element whose
+ * expression gives an Error Value.
  */
 function element<Item>(
   node: Extract<FilterNode<Item>, { kind: "element" }>,
   context: Context<Item>,
 ): FilterValue {
   const subject = valueOf(node.subject, context);
-  if (!isList(subject)) return null;
+  if (!isList(subject)) return wrongSubject(subject, `${node.name}()`);
   const args = node.args.map((arg) => valueOf(arg, context));
   const at = (index: number, acc?: FilterValue): FilterValue =>
     valueOf(node.expression, {
@@ -176,6 +219,11 @@ function element<Item>(
   }
 }
 
+/** A date that date arithmetic gave; none is a date out of range. */
+function shifted(date: FilterValue, operator: string): FilterValue {
+  return date ?? errorValue({ code: "date-out-of-range", operator });
+}
+
 function binary<Item>(
   node: Extract<FilterNode<Item>, { kind: "binary" }>,
   context: Context<Item>,
@@ -192,11 +240,12 @@ function binary<Item>(
   }
   const left = value(node.left);
   const right = value(node.right);
+  if (operator === "==") return equals(left, right, clock);
+  if (operator === "!=") return !equals(left, right, clock);
+  // Every other operator passes an Error Value through.
+  if (isError(left)) return left;
+  if (isError(right)) return right;
   switch (operator) {
-    case "==":
-      return equals(left, right, clock);
-    case "!=":
-      return !equals(left, right, clock);
     case "<":
     case "<=":
     case ">":
@@ -213,29 +262,40 @@ function binary<Item>(
       if (isList(left) && isList(right)) return [...left, ...right];
       // Date arithmetic follows the calendar of the query time zone.
       if (isDate(left) && isDuration(right)) {
-        return addDuration(left, right.duration, clock);
+        return shifted(addDuration(left, right.duration, clock), operator);
       }
       if (isDuration(left) && isDate(right)) {
-        return addDuration(right, left.duration, clock);
+        return shifted(addDuration(right, left.duration, clock), operator);
       }
       break;
     case "-":
       if (isDate(left) && isDuration(right)) {
-        return addDuration(left, right.duration.negated(), clock);
+        return shifted(
+          addDuration(left, right.duration.negated(), clock),
+          operator,
+        );
       }
       break;
   }
-  if (typeof left !== "number" || typeof right !== "number") return null;
+  // Null in arithmetic is missing data.
+  if (left === null || right === null) return null;
+  if (typeof left !== "number" || typeof right !== "number") {
+    return errorValue({
+      code: "wrong-operand-type",
+      operator,
+      found: [typeOf(left), typeOf(right)],
+    });
+  }
   switch (operator) {
     case "+":
-      return finite(left + right);
+      return finite(left + right, operator);
     case "-":
-      return finite(left - right);
+      return finite(left - right, operator);
     case "*":
-      return finite(left * right);
+      return finite(left * right, operator);
     case "/":
-      return finite(left / right);
+      return finite(left / right, operator);
     case "%":
-      return finite(left % right);
+      return finite(left % right, operator);
   }
 }
