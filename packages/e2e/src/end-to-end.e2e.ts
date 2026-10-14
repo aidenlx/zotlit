@@ -2915,12 +2915,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         tries: 80,
       }),
     ).toBe(true);
+    // The Default document already exists, so the workbench shows its file
+    // before Customize sets the note it came from.
     expect(
-      await obEval(
+      await obEvalUntil(
         freshId,
         `(function(){const view=${editor};return String(view.contentEl.textContent.includes(${JSON.stringify(m.template_workbench_shared_template({ name: m.settings_profile_default_name() }))})&&view.store.getState().item?.id==='RUGIER24');})()`,
+        { expected: "true" },
       ),
-    ).toBe("true");
+    ).toBe(true);
     await changeNativeAnnotationCallout(freshId, {
       view: editor,
       vaultPath: freshPath,
