@@ -56,6 +56,7 @@ import {
   verifySavedEditDisplay,
 } from "./excerpt-acceptance.ts";
 import { verifyExcerptRendering } from "./excerpt-rendering.ts";
+import { useListingProfile } from "./listing-profile.ts";
 import {
   clearNotices,
   cli,
@@ -2709,17 +2710,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe("0");
     // The default Profile shows Annotations in a Query Block; a Profile that
     // lists them in the note renders their excerpts.
-    await obEval(
-      id,
-      `(async()=>{const profile=app.plugins.plugins.zotlit.services.profile;const source=profile.getBuiltInSource();const listed=source.replace(/## Annotations\\n\\n\`\`\`zotquery\\n[\\s\\S]*?\`\`\`\\n/,'{% for annotation in zt.annotations %}\\n{% render_annotation annotation %}\\n{% endfor %}\\n');if(listed===source)throw new Error('Default Profile has no Query Block');const path=profile.defaultDocumentPath;const folder=path.slice(0,path.lastIndexOf('/'));if(folder&&!app.vault.getFolderByPath(folder))await app.vault.createFolder(folder);await app.vault.create(path,listed);return true;})()`,
-    );
-    expect(
-      await obEvalUntil(
-        id,
-        "String(!!app.plugins.plugins.zotlit.services.profile.resolveProfile('default')?.document)",
-        { expected: "true" },
-      ),
-    ).toBe(true);
+    await useListingProfile(id);
     const result = await createFixtureNote(id, 46);
     expect(result.outcome).toBe("created");
     if (result.outcome !== "created")
@@ -2894,6 +2885,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         "String(app.plugins.plugins.zotlit.services.profile.profiles.length)",
       ),
     ).toBe("0");
+    // A default Profile that lists the Annotations in the note puts one
+    // callout for each of them in the body, where the customized callout
+    // must arrive.
+    await useListingProfile(freshId);
     await quickSwitchCreate(annotatedItem, freshId);
     expect(
       await obEvalUntil(
@@ -2914,9 +2909,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       `(async()=>{const file=app.vault.getFileByPath(${JSON.stringify(note.path)});const indexed=new Promise(resolve=>{const ref=app.metadataCache.on('changed',(changed,data)=>{if(changed!==file||!data.includes(${JSON.stringify(personal)}))return;app.metadataCache.offref(ref);resolve();});});await app.vault.append(file,${JSON.stringify(personal)});await indexed;await app.workspace.getLeaf(false).openFile(file);return true;})()`,
     );
     const before = await readFile(join(freshPath, note.path!), "utf-8");
-    // The default Profile shows the Annotations in a Query Block.
-    expect(managedRegion(before)).toContain("```zotquery");
-    expect(before).not.toContain("[!note]");
+    expect(before.split("[!note]").length - 1).toBe(annotationKeys.length);
     expect(
       await obEval(
         freshId,
@@ -3030,6 +3023,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             "---",
           )[1]!,
         ),
+      ),
+    ).toBe(true);
+    // The update puts the customized callout in the body, one for each
+    // Annotation.
+    expect(
+      await waitFor(
+        async () =>
+          (await readFile(join(freshPath, note.path!), "utf-8")).split(
+            "[!quote]",
+          ).length -
+            1 ===
+          annotationKeys.length,
       ),
     ).toBe(true);
     const updated = m.template_workbench_updated_note({

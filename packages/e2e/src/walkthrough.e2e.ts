@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
 import { keepRendering } from "./background-throttling.ts";
+import { LIST_ANNOTATIONS_JS, useListingProfile } from "./listing-profile.ts";
 import { obEval, obEvalUntil } from "./obsidian-cli.ts";
 import {
   clearVault,
@@ -640,17 +641,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         "(async()=>{await app.plugins.plugins.zotlit.services.profile.restoreDefault();return true;})()",
       );
     });
-    await obEval(
-      vaultId,
-      `(async()=>{const profile=app.plugins.plugins.zotlit.services.profile;await profile.restoreDefault();const source=profile.getBuiltInSource();const listed=source.replace(/## Annotations\\n\\n\`\`\`zotquery\\n[\\s\\S]*?\`\`\`\\n/,'{% for annotation in zt.annotations %}\\n{% render_annotation annotation %}\\n{% endfor %}\\n');if(listed===source)throw new Error('Default Profile has no Query Block');const path=profile.defaultDocumentPath;const folder=path.slice(0,path.lastIndexOf('/'));if(folder&&!app.vault.getFolderByPath(folder))await app.vault.createFolder(folder);await app.vault.create(path,listed);return true;})()`,
-    );
-    expect(
-      await obEvalUntil(
-        vaultId,
-        "String(!!app.plugins.plugins.zotlit.services.profile.resolveProfile('default')?.document)",
-        { expected: "true" },
-      ),
-    ).toBe(true);
+    await useListingProfile(vaultId, { restore: true });
     const notePath = "Scroll update.md";
     const source =
       "---\nzotero-key: DMRGRART\n---\n%%zt-managed%%\nstale\n%%/zt-managed%%\n";
@@ -798,8 +789,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       const profile=app.plugins.plugins.zotlit.services.profile;
       const file=app.vault.getFileByPath(profile.defaultDocumentPath);
       const source=await app.vault.read(file);
-      const listed=source.replace(/## Annotations\\n\\n\`\`\`zotquery\\n[\\s\\S]*?\`\`\`\\n/,'{% for annotation in zt.annotations %}\\n{% render_annotation annotation %}\\n{% endfor %}\\n');
-      if(listed===source)throw new Error('Default Profile has no Query Block');
+      const listed=(${LIST_ANNOTATIONS_JS})(source);
       await app.vault.modify(file,listed);
       const leaf=app.workspace.getLeaf('tab');
       await leaf.openFile(app.vault.getFileByPath(profile.defaultDocumentPath));

@@ -6,6 +6,7 @@ import annotationSchema from "@zotlit/db/contract/annotation.schema.json";
 import filenameSchema from "@zotlit/db/contract/filename.schema.json";
 import noteSchema from "@zotlit/db/contract/note.schema.json";
 
+import { DEFAULT_PROFILE_SOURCE } from "./default-profile";
 import {
   currentSliceSite,
   renderProfile,
@@ -150,14 +151,18 @@ describe("Sample Items", () => {
     }
   });
 
-  it("renders the default Profile over every Sample Item without diagnostics", () => {
-    for (const sample of SAMPLE_ITEMS) {
-      const result = renderProfile(ANNOTATION_LIST_PROFILE_SOURCE, sample);
+  it("renders the default Profile and the annotation-listing Profile over every Sample Item without diagnostics", () => {
+    for (const source of [
+      DEFAULT_PROFILE_SOURCE,
+      ANNOTATION_LIST_PROFILE_SOURCE,
+    ])
+      for (const sample of SAMPLE_ITEMS) {
+        const result = renderProfile(source, sample);
 
-      expect(result.diagnostics).toEqual([]);
-      expect(result.filename).toBeTruthy();
-      expect(result.creationBody).toContain(sample.item.title);
-    }
+        expect(result.diagnostics).toEqual([]);
+        expect(result.filename).toBeTruthy();
+        expect(result.creationBody).toContain(sample.item.title);
+      }
   });
 
   it("previews a free filename without exposing the collision marker", () => {
