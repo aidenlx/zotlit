@@ -123,6 +123,14 @@ export function finite(value: number, operation: string): number | ErrorValue {
     : errorValue({ code: "not-finite", operation });
 }
 
+/**
+ * Whether a conversion function reads `text` as missing data: an empty text,
+ * or one of spaces alone, gives null, as null does.
+ */
+function blank(text: string): boolean {
+  return text.trim() === "";
+}
+
 /** The Error Value of a text that a conversion function cannot read. */
 function unparseable(
   callee: "number" | "date" | "duration",
@@ -199,6 +207,7 @@ export const GLOBAL_FUNCTIONS: Registry<FunctionDefinition> = functions({
       if (typeof value === "number") return value;
       if (typeof value === "boolean") return value ? 1 : 0;
       if (typeof value === "string") {
+        if (blank(value)) return null;
         const parsed = Number.parseFloat(value);
         return Number.isNaN(parsed)
           ? unparseable("number", value)
@@ -235,7 +244,9 @@ export const GLOBAL_FUNCTIONS: Registry<FunctionDefinition> = functions({
     // A date stays as it is.
     call: (_subject, [text], clock) =>
       typeof text === "string"
-        ? (parseDate(text, clock) ?? unparseable("date", text))
+        ? blank(text)
+          ? null
+          : (parseDate(text, clock) ?? unparseable("date", text))
         : text!,
   },
   duration: {
@@ -243,7 +254,10 @@ export const GLOBAL_FUNCTIONS: Registry<FunctionDefinition> = functions({
     parameters: [string("text")],
     returns: "duration",
     call: (_subject, [text]) =>
-      parseDuration(text as string) ?? unparseable("duration", text as string),
+      blank(text as string)
+        ? null
+        : (parseDuration(text as string) ??
+          unparseable("duration", text as string)),
   },
   // A list stays as it is; null is the empty list; any other value is a
   // one-element list.

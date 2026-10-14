@@ -260,10 +260,11 @@ ERRORS AND EMPTY VALUES
   the marked comparison, which can be part of a larger filter. Equality
   warnings require proof that the operands cannot both be null; ordering
   different types is never true. A filter without warnings can still match no rows.
-  A value that is missing for one row is null for that row. A value that one
-  row cannot compute is an error: a text that number(), date(), or
-  duration() cannot read, an ordering of two different types, a result that
-  is not a finite number, or an argument out of range. An error passes
+  A value that is missing for one row is null for that row, and so is an
+  empty text given to number(), date(), or duration(). A value that one row
+  cannot compute is an error: a text that is not empty and that number(),
+  date(), or duration() cannot read, an ordering of two different types, a
+  result that is not a finite number, or an argument out of range. An error passes
   through each operator, method, and function; isType("error") is true for
   it. null and an error are false in a filter, so !x is true when x is null
   or an error, and an error equals no value. This selects the Items from
