@@ -25,13 +25,15 @@ it("reads the Annotations of several Attachments in one batch read", async () =>
   const { repository, acquireRead } = await setup(stack);
   acquireRead.mockClear();
 
-  const lists = await repository.readMany(["RGRPDF24", "EPUBBKS2"]);
+  // A view reads each Attachment it shows in the same task.
+  const [pdf, epub] = await Promise.all([
+    repository.read("RGRPDF24"),
+    repository.read("EPUBBKS2"),
+  ]);
 
   expect(acquireRead).toHaveBeenCalledTimes(1);
-  expect(lists.get("RGRPDF24")?.annotations).toHaveLength(7);
-  expect(lists.get("EPUBBKS2")?.annotations.map(({ key }) => key)).toEqual([
-    "EPUBMRK2",
-  ]);
+  expect(pdf?.annotations).toHaveLength(7);
+  expect(epub?.annotations.map(({ key }) => key)).toEqual(["EPUBMRK2"]);
 });
 
 it("drops a list no surface holds, and reads it fresh for the next surface that holds it", async () => {
@@ -133,9 +135,9 @@ it("lets the lists go as views over many Attachments close", async () => {
   const first = repository.hold(keys.slice(0, 25));
   const second = repository.hold(keys.slice(15));
   acquireRead.mockClear();
-  const lists = await repository.readMany(keys);
+  const lists = await Promise.all(keys.map((key) => repository.read(key)));
   expect(acquireRead).toHaveBeenCalledTimes(1);
-  expect(lists.get(keys[39]!)?.annotations).toHaveLength(1);
+  expect(lists[39]?.annotations).toHaveLength(1);
   expect(published(repository, keys)).toHaveLength(40);
 
   // The lists both views showed stay while the second view is open.
@@ -157,7 +159,7 @@ it("reads again on a database change only the lists that surfaces hold", async (
   const [shown, closed] = seedAttachments(client, 2) as [string, string];
   using _view = repository.hold([shown]);
   const closing = repository.hold([closed]);
-  await repository.readMany([shown, closed]);
+  await Promise.all([shown, closed].map((key) => repository.read(key)));
   closing[Symbol.dispose]();
 
   acquireRead.mockClear();
