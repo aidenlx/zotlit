@@ -11,7 +11,8 @@ import { useLayoutEffect, useMemo } from "react";
 import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
-import type { QueryContext } from "@zotlit/item-query";
+import { nameDictionary } from "@zotlit/item-query";
+import type { NameDictionary, QueryContext } from "@zotlit/item-query";
 import type { MatchTree } from "@zotlit/templates/facade";
 
 import { Icon } from "@/components/obsidian/icon";
@@ -174,7 +175,7 @@ export interface QueryViewState {
    * The Formulas the last run left out, since ZotLit Query names a mistake in
    * them: each name with the message. Their columns show no values.
    */
-  formulaIssues: Readonly<Record<string, string>>;
+  formulaIssues: NameDictionary<string>;
   /** Whether a failed run left the last good rows on screen. */
   keptResults: boolean;
   /** The rows shown, each once however many groups it stands in. */
@@ -204,7 +205,7 @@ const INITIAL_STATE: QueryViewState = {
   phase: "idle",
   diagnostic: null,
   filterIssue: null,
-  formulaIssues: {},
+  formulaIssues: nameDictionary(),
   keptResults: false,
   count: 0,
   records: [],
@@ -718,7 +719,7 @@ export class QueryView extends Component implements HistorySurface {
   #request(
     file: QueryFile,
     view: QueryFileView,
-    formulasLeftOut: Readonly<Record<string, string>> = {},
+    formulasLeftOut: ReadonlyMap<string, string> = new Map(),
   ): QueryViewRequest {
     const filter = viewFilter(file, view);
     const context = this.#host.context();
@@ -732,10 +733,13 @@ export class QueryView extends Component implements HistorySurface {
       ]),
     ].filter((field) => {
       const name = formulaName(field);
-      return name === null || !Object.hasOwn(formulasLeftOut, name);
+      return name === null || !formulasLeftOut.has(name);
     });
-    const formulas = readFormulas(file, fields, filter);
-    for (const name of Object.keys(formulasLeftOut)) delete formulas[name];
+    const formulas = readFormulas(file, {
+      fields,
+      filter,
+      leftOut: formulasLeftOut,
+    });
     return {
       from: view.from ?? "annotations",
       ...(filter === undefined ? {} : { filter }),
@@ -875,7 +879,7 @@ export class QueryView extends Component implements HistorySurface {
         phase: "idle",
         diagnostic: null,
         filterIssue: null,
-        formulaIssues: {},
+        formulaIssues: nameDictionary(),
         count: 0,
         matched: 0,
         groups: [],
@@ -892,29 +896,30 @@ export class QueryView extends Component implements HistorySurface {
     // A mistake in a Formula leaves that Formula and the Formulas that read
     // it out, and the view runs again, so the other columns still show. The
     // filters cannot hold without a Formula they read: the view shows no rows.
-    const runWithout = async (formulasLeftOut: Record<string, string>) => {
+    const runWithout = async (formulasLeftOut: Map<string, string>) => {
       for (;;) {
         const request = this.#request(file, view, formulasLeftOut);
         const outcome = await this.#deps.query.run(request, controller.signal);
         if (outcome.kind !== "failed") return { outcome };
         const name = faultedFormula(outcome.diagnostic, request);
-        if (name === null || Object.hasOwn(formulasLeftOut, name))
-          return { outcome };
-        formulasLeftOut[name] = diagnosticText(outcome.diagnostic);
+        if (name === null || formulasLeftOut.has(name)) return { outcome };
+        formulasLeftOut.set(name, diagnosticText(outcome.diagnostic));
         for (const reader of readersOf(request.formulas ?? {}, name))
-          formulasLeftOut[reader] ??= m.query_view_formula_reads_wrong({
-            name,
-          });
+          if (!formulasLeftOut.has(reader))
+            formulasLeftOut.set(
+              reader,
+              m.query_view_formula_reads_wrong({ name }),
+            );
         const condition = formulaCondition(file, view, formulasLeftOut);
         if (condition) return { outcome, condition };
       }
     };
-    const formulasLeftOut: Record<string, string> = {};
+    const formulasLeftOut = new Map<string, string>();
     this.#settled = runWithout(formulasLeftOut).then(
       ({ outcome, condition }) => {
         if (this.#run !== controller) return;
         this.#run = null;
-        this.state.setState({ formulaIssues: formulasLeftOut });
+        this.state.setState({ formulaIssues: nameDictionary(formulasLeftOut) });
         if (condition && outcome.kind === "failed") {
           this.#fail({ key, file, view }, outcome.diagnostic, condition);
           return;
@@ -925,7 +930,7 @@ export class QueryView extends Component implements HistorySurface {
         if (this.#run !== controller) return;
         this.#run = null;
         logger.warn("A Query View could not run its query", { error });
-        this.state.setState({ formulaIssues: formulasLeftOut });
+        this.state.setState({ formulaIssues: nameDictionary(formulasLeftOut) });
         this.#fail(
           { key, file, view },
           {

@@ -38,6 +38,7 @@ export {
   type QuerySummary,
 } from "./query";
 export { COUNT_FIELDS, UNLIMITED_LIMIT } from "./request";
+export { nameDictionary, type NameDictionary } from "./name-dictionary";
 export {
   FORMULA_NAME,
   FORMULA_SEGMENT,

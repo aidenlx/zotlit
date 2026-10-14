@@ -12,6 +12,7 @@ import type { FieldNeeds, QueryItem, SortKey } from "./fields";
 import type { FilterPlan, FormulaResolver } from "./filter-plan";
 import { FORMULA_NAME, FORMULA_SEGMENT } from "./formulas";
 import type { PlannedColumn, PlannedFormula } from "./formulas";
+import { nameDictionary } from "./name-dictionary";
 import { canGroup, planPath, readPath } from "./projection";
 import type { PathProblem, PlannedPath } from "./projection";
 import { parseProjectionPath } from "./projection-path";
@@ -268,7 +269,11 @@ export function planRequest(
       context = { ...context, [member]: key };
     }
 
-    const definedFormulas = request.formulas ?? {};
+    // The names come from the caller's text: a name such as __proto__ is a
+    // Formula like any other.
+    const definedFormulas = nameDictionary(
+      Object.entries(request.formulas ?? {}),
+    );
     for (const name of Object.keys(definedFormulas)) {
       if (!FORMULA_NAME.test(name)) {
         return yield* new ItemQueryError({
