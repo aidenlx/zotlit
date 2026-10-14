@@ -15,7 +15,7 @@ import {
   RecordGroupHeading,
   useRecordGroups,
 } from "./record-rows";
-import { propertyLabel } from "./table-layout";
+import { propertyLabel } from "./value-text";
 import type { QueryView } from "./view";
 
 export const CARDS_LAYOUT: QueryLayout = {

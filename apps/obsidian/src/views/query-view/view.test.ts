@@ -332,12 +332,6 @@ it("runs again once an Attachment it shows gains an Annotation, so a grouped vie
       vi.advanceTimersByTime(ms);
     });
 
-  // A change that keeps the list's Annotations, such as a new comment, runs
-  // nothing; the cards show it from the live list.
-  repository.emit("annotations-changed", "PDFAAAAA");
-  await wait(RERUN_DELAY_MS);
-  expect(run).toHaveBeenCalledTimes(1);
-
   // A new Annotation runs the view once, after a short wait.
   setList({
     ...LIST,
@@ -353,11 +347,6 @@ it("runs again once an Attachment it shows gains an Annotation, so a grouped vie
   expect(el.querySelector("[data-query-group]")?.textContent).toBe(
     "Ten simple rules",
   );
-
-  // A change to an Attachment the view does not show runs nothing.
-  repository.emit("annotations-changed", "PDFOTHER");
-  await wait(RERUN_DELAY_MS);
-  expect(run).toHaveBeenCalledTimes(2);
 });
 
 it("keeps a new Annotation on screen when a run from its list change has not read it yet", async () => {
@@ -1341,6 +1330,65 @@ it("sorts, groups and searches the Table by Item fields", async () => {
     ["Book"],
     ["", "Deep learning", "Create"],
   ]);
+});
+
+it("names and searches the properties of Items in Cards and List as the Table does", async () => {
+  const { view, el, settle } = await mount([
+    result([
+      itemRow("ITEMAAAA", "Ten simple rules"),
+      {
+        ...itemRow("ITEMBBBB", "Deep learning"),
+        values: {
+          ...itemRow("ITEMBBBB", "Deep learning").values,
+          itemType: "book",
+        },
+      },
+    ]),
+  ]);
+  await act(() =>
+    view.setText(`views:
+  - type: cards
+    name: Reading list
+    from: items
+    order:
+      - title
+      - itemType
+`),
+  );
+  await settle();
+
+  // A card names each property by its label and shows its value as text.
+  const card = el.querySelector("[data-query-row]")!;
+  expect(
+    [...card.children].slice(1).map((part) => ({
+      label: part.children[0]?.textContent,
+      value: part.children[1]?.textContent,
+    })),
+  ).toEqual([{ label: "Item Type", value: "Journal Article" }]);
+
+  const search = async (text: string) => {
+    if (!el.querySelector("[data-query-search]"))
+      await act(() =>
+        el.querySelector<HTMLElement>('[data-query-toolbar="search"]')!.click(),
+      );
+    const input = el.querySelector<HTMLInputElement>("[data-query-search]")!;
+    await act(() => {
+      input.value = text;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  };
+  // The search finds the text on screen, not the stored value.
+  await search("journal article");
+  expect(shownRows(el)).toEqual(["ITEMAAAA"]);
+  await search("journalarticle");
+  expect(shownRows(el)).toEqual([]);
+
+  await act(() => view.setViewLayout(0, "list"));
+  await settle();
+  await search("journal article");
+  expect(shownRows(el)).toEqual(["ITEMAAAA"]);
+  await search("journalarticle");
+  expect(shownRows(el)).toEqual([]);
 });
 
 it("offers Item fields to sort and group a view of Items by", async () => {

@@ -19,8 +19,8 @@ import { FormulaModal } from "./formula-dialog";
 import { formulaIssue, formulaProperty } from "./query-file";
 import type { QueryFile, QueryFileDataset } from "./query-file";
 import { NotUsed } from "./sort-control";
-import { propertyLabel } from "./table-layout";
 import { TOOLBAR_LABEL } from "./toolbar-popover";
+import { propertyLabel } from "./value-text";
 import type { QueryView } from "./view";
 import {
   datasetProperties,
