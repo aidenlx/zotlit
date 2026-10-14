@@ -1,19 +1,21 @@
-// The Query File as an Obsidian file type: its tab, and "New query file" in
-// the command palette and the file explorer's menus.
+// The Query File as an Obsidian file type: its tab, its embed in a note, and
+// "New query file" in the command palette and the file explorer's menus.
 import { Keymap, normalizePath } from "obsidian";
 import type { App, Menu, Plugin, TFile, TFolder } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { MENU_SECTION } from "@/lib/menu-section";
+import { registerEmbed } from "@/lib/obsidian-private/embed-registry";
 import type { FileMenuSegment, FolderMenuSegment } from "@/services/file-menu";
 
+import { createQueryFileEmbed } from "./embed";
 import { QueryFileView, QUERY_FILE_VIEW_TYPE } from "./file-view";
 import { newQueryFileText, QUERY_FILE_EXTENSION } from "./query-file";
 import type { QueryViewDeps } from "./view";
 
 type QueryFilePlugin = Pick<
   Plugin,
-  "registerView" | "registerExtensions" | "addCommand" | "app"
+  "registerView" | "registerExtensions" | "addCommand" | "register" | "app"
 >;
 
 export function registerQueryFileView(
@@ -25,6 +27,12 @@ export function registerQueryFileView(
     (leaf) => new QueryFileView(leaf, deps),
   );
   plugin.registerExtensions([QUERY_FILE_EXTENSION], QUERY_FILE_VIEW_TYPE);
+  const unregisterEmbed = registerEmbed(
+    plugin.app,
+    QUERY_FILE_EXTENSION,
+    createQueryFileEmbed(deps),
+  );
+  if (unregisterEmbed) plugin.register(unregisterEmbed);
   plugin.addCommand({
     id: "new-query-file",
     name: m.command_new_query_file_name(),
