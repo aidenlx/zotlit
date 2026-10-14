@@ -179,9 +179,9 @@ To show the year of each paper in an items view:
 
 The file saves the formula under its top-level `formulas` key, and every view of the file can show it. To filter by a formula, select <UiLabel name={m.workbench_match_edit_as_expression()} /> on a condition in the filter editor and type, for example, `formula.year >= 2020`. One formula can also use another, for example `formula.year + 1`.
 
-To change a formula, select the pencil button on its row in <UiLabel name={m.query_view_properties()} />. The dialog <UiLabel name={m.query_view_formula_edit()} /> opens. The name stays as it is: to use a new name, remove the formula and add it again.
+To change a formula, select <UiLabel name={m.query_view_formula_edit()} /> (the pencil button) on its row in <UiLabel name={m.query_view_properties()} />. The formula dialog opens. The name stays as it is: to use a new name, remove the formula and add it again.
 
-To remove a formula, open <UiLabel name={m.query_view_formula_edit()} /> and select <UiLabel name={m.query_view_formula_remove()} />. ZotLit removes the formula from every view of the file. A filter condition that still uses it shows an error until you change it.
+To remove a formula, open its formula dialog and select <UiLabel name={m.query_view_formula_remove()} />. ZotLit removes the formula from every view of the file. A filter condition that still uses it shows an error until you change it.
 
 ### When a formula has a mistake [#formula-errors]
 
