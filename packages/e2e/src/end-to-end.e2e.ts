@@ -917,11 +917,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     const methodology = await queryKeys('tags.contains("methodology")');
     expect(methodology).not.toEqual(figures);
-    const viewOnly = await tabWhen(
-      (tab) => JSON.stringify(tab.cards) === JSON.stringify(methodology),
-    );
-    expect(viewOnly.text).toContain(
-      '    filters:\n      and:\n        - tags.contains("methodology")\n',
+    // The tab saves after a short delay, so the file text follows the cards.
+    await tabWhen(
+      (tab) =>
+        JSON.stringify(tab.cards) === JSON.stringify(methodology) &&
+        tab.text.includes(
+          '    filters:\n      and:\n        - tags.contains("methodology")\n',
+        ),
     );
 
     // A colour condition for all views saves the file's top-level filters,
@@ -932,13 +934,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const yellow = await queryKeys(
       '(colorName == "yellow") && (tags.contains("methodology"))',
     );
-    const both = await tabWhen(
+    await tabWhen(
       (tab) =>
-        tab.text.startsWith("filters:") &&
-        JSON.stringify(tab.cards) === JSON.stringify(yellow),
-    );
-    expect(both.text).toMatch(
-      /^filters:\n {2}and:\n {4}- colorName == "yellow"\nviews:/,
+        /^filters:\n {2}and:\n {4}- colorName == "yellow"\nviews:/.test(
+          tab.text,
+        ) && JSON.stringify(tab.cards) === JSON.stringify(yellow),
     );
 
     // A wrong expression marks its row with the query's diagnostic; the
@@ -947,9 +947,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       `section('view').querySelector('[data-condition-row] button[aria-label="${m.workbench_match_edit_as_expression()}"]').click();await new Promise(r=>setTimeout(r,50));set(section('view').querySelector('[data-condition-row] textarea'),'nosuchfield == 1');return true;`,
     );
     const broken = await tabWhen(
-      (tab) => tab.filterError && tab.rowIssues[0] !== null,
+      (tab) =>
+        tab.filterError &&
+        tab.rowIssues[0] !== null &&
+        tab.text.includes("        - nosuchfield == 1\n"),
     );
-    expect(broken.text).toContain("        - nosuchfield == 1\n");
     expect(broken.cards).toEqual(yellow);
     expect(broken.rowIssues[0]).toContain("nosuchfield");
 
@@ -960,11 +962,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const back = await queryKeys(
       '(colorName == "yellow") && (tags.contains("figure"))',
     );
-    const fixed = await tabWhen(
+    await tabWhen(
       (tab) =>
-        !tab.filterError && JSON.stringify(tab.cards) === JSON.stringify(back),
+        !tab.filterError &&
+        JSON.stringify(tab.cards) === JSON.stringify(back) &&
+        tab.text.includes('        - tags.contains("figure")\n'),
     );
-    expect(fixed.text).toContain('        - tags.contains("figure")\n');
     expect(
       await inPopover(
         `return section('view').querySelector('[data-condition-row] input[aria-label="${m.workbench_match_value()}"]')?.value??null;`,
