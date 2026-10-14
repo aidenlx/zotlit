@@ -22,6 +22,10 @@ export class QueryFileView extends TextFileView {
       sourcePath: () => this.file?.path ?? "",
       context: () => undefined,
       onSelectView: () => this.app.workspace.requestSaveLayout(),
+      save: (text) => {
+        this.data = text;
+        this.requestSave();
+      },
     });
   }
 
