@@ -6,6 +6,7 @@
 import type {
   GroupValue,
   ItemQuery,
+  QueryContext,
   QuerySummary,
   SortSpec,
 } from "@zotlit/item-query";
@@ -34,6 +35,12 @@ export interface QueryViewRequest {
   readonly limit?: number | null;
   /** The Target Libraries. Omitted: the Library Scope in force. */
   readonly libraries?: LibraryScope;
+  /**
+   * The Query Context: the Indexed Keys of the Item and the Attachment that
+   * a filter reads as `this.item` and `this.attachment`. Omitted: `this` has
+   * no value, and a filter that reads it fails with `unbound-context`.
+   */
+  readonly context?: QueryContext;
 }
 
 /** A value of one Projection Path as JSON: a date is its ISO text. */
