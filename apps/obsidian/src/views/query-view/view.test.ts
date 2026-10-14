@@ -22,7 +22,7 @@ import type {
 } from "@/services/item-query/query-view";
 import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
 
-import { QueryView } from "./view";
+import { QueryView, RERUN_DELAY_MS } from "./view";
 import type { QueryViewDeps } from "./view";
 
 vi.mock("zustand", () => import("../__fixtures__/zustand"));
@@ -129,6 +129,7 @@ async function mount(
   const reads = emitter();
   const libraryScope = emitter();
   const repository = emitter();
+  let list = LIST;
   const held: string[][] = [];
   const released: string[][] = [];
   const run = vi.fn((_request: QueryViewRequest, _signal: AbortSignal) =>
@@ -183,8 +184,8 @@ async function mount(
     },
     query: { run },
     annotations: {
-      read: () => Promise.resolve(LIST),
-      peek: () => ({ value: LIST }),
+      read: () => Promise.resolve(list),
+      peek: () => ({ value: list }),
       refresh: () => Promise.resolve(),
       capabilityFor: (): EditingCapability => ({ kind: "writable" }),
       textDraftFor: () => null,
@@ -240,6 +241,11 @@ async function mount(
     run,
     reads,
     libraryScope,
+    repository,
+    /** Change what the repository holds for the Attachment. */
+    setList: (next: AnnotationList) => {
+      list = next;
+    },
     held,
     released,
     settle,
@@ -303,6 +309,48 @@ it("runs again on a database change and a Library Scope change", async () => {
   libraryScope.emit("libraries-changed");
   await settle();
   expect(run).toHaveBeenCalledTimes(3);
+});
+
+it("runs again once an Attachment it shows gains an Annotation, so a grouped view shows it", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  cleanup.defer(() => vi.useRealTimers());
+  const { view, el, run, repository, setList, settle } = await mount([
+    result([row("ANNOTAAA"), row("ANNOTBBB")]),
+    result([row("ANNOTAAA"), row("ANNOTBBB"), row("ANNOTCCC")]),
+  ]);
+  await act(() => view.setText(FILE));
+  await settle();
+  const wait = (ms: number) =>
+    act(() => {
+      vi.advanceTimersByTime(ms);
+    });
+
+  // A change that keeps the list's Annotations, such as a new comment, runs
+  // nothing; the cards show it from the live list.
+  repository.emit("annotations-changed", "PDFAAAAA");
+  await wait(RERUN_DELAY_MS);
+  expect(run).toHaveBeenCalledTimes(1);
+
+  // A new Annotation runs the view once, after a short wait.
+  setList({
+    ...LIST,
+    annotations: [...LIST.annotations, record("ANNOTCCC", "PDFAAAAA")],
+  });
+  repository.emit("annotations-changed", "PDFAAAAA");
+  await wait(RERUN_DELAY_MS - 1);
+  expect(run).toHaveBeenCalledTimes(1);
+  await wait(1);
+  await settle();
+  expect(run).toHaveBeenCalledTimes(2);
+  expect(cards(el)).toEqual(["ANNOTAAA", "ANNOTBBB", "ANNOTCCC"]);
+  expect(el.querySelector("[data-query-group]")?.textContent).toBe(
+    "Ten simple rules",
+  );
+
+  // A change to an Attachment the view does not show runs nothing.
+  repository.emit("annotations-changed", "PDFOTHER");
+  await wait(RERUN_DELAY_MS);
+  expect(run).toHaveBeenCalledTimes(2);
 });
 
 it("holds the lists it shows, and lets the old ones go only after the new ones", async () => {

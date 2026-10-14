@@ -247,6 +247,21 @@ function usedGroupBy(view: QueryFileView): QueryFileSort | undefined {
   return unusedSettings(view).groupBy === null ? view.groupBy : undefined;
 }
 
+/**
+ * How long the view waits after an Attachment it shows gains or loses an
+ * Annotation before it runs again, so a burst of changes runs it once.
+ */
+export const RERUN_DELAY_MS = 300;
+
+/** The keys of the Annotations the repository holds for an Attachment now. */
+function annotationKeys(
+  annotations: Pick<AnnotationRepository, "peek">,
+  attachmentKey: string,
+): ReadonlySet<string> | null {
+  const held = annotations.peek(attachmentKey);
+  return held ? new Set(held.value.annotations.map(({ key }) => key)) : null;
+}
+
 /** One run of a view: its request key, and the file and view it ran for. */
 interface ViewRun {
   key: string;
@@ -288,6 +303,9 @@ export class QueryView extends Component implements HistorySurface {
   #drawnCards: AnnotState["annotations"] | undefined = undefined;
   /** What waits for the list to draw the cards the store holds now. */
   #drawWaiters: (() => void)[] = [];
+  /** The Annotations of each Attachment the cards show, as the last run found them. */
+  readonly #listKeys = new Map<string, ReadonlySet<string>>();
+  #rerunTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(deps: QueryViewDeps, host: QueryViewHost) {
     super();
@@ -374,11 +392,41 @@ export class QueryView extends Component implements HistorySurface {
     // A new database connection, a database that cannot be read, and another
     // Library Scope each change what the query gives. A change to one
     // Attachment's Annotations reaches the cards through the layout, which
-    // reads the live records again; the rows stand until the query runs.
+    // reads the live records again; an Annotation added to or removed from an
+    // Attachment the cards show runs the query again, so it takes its place.
     subscriptions.defer(reads.on("changed", rerun));
     subscriptions.defer(reads.on("degraded", rerun));
     subscriptions.defer(reads.on("db-file-missing", rerun));
     subscriptions.defer(libraryScope.on("libraries-changed", rerun));
+    subscriptions.defer(
+      this.#deps.annotations.on("annotations-changed", (attachmentKey) =>
+        this.#listChanged(attachmentKey),
+      ),
+    );
+    subscriptions.defer(() => this.#cancelRerun());
+  }
+
+  /** Run again, after a short wait, once a shown Attachment gains or loses an Annotation. */
+  #listChanged(attachmentKey: string): void {
+    const before = this.#listKeys.get(attachmentKey);
+    if (!before) return;
+    const now = annotationKeys(this.#deps.annotations, attachmentKey);
+    if (
+      now === null ||
+      (now.size === before.size && [...now].every((key) => before.has(key)))
+    )
+      return;
+    this.#listKeys.set(attachmentKey, now);
+    this.#cancelRerun();
+    this.#rerunTimer = setTimeout(() => {
+      this.#rerunTimer = null;
+      this.refresh();
+    }, RERUN_DELAY_MS);
+  }
+
+  #cancelRerun(): void {
+    if (this.#rerunTimer !== null) clearTimeout(this.#rerunTimer);
+    this.#rerunTimer = null;
   }
 
   override onunload(): void {
@@ -862,6 +910,7 @@ export class QueryView extends Component implements HistorySurface {
       this.state.setState({ records: [] });
     }
     this.#cardsShown = key !== null && rows !== null;
+    this.#listKeys.clear();
     if (key === null || rows === null) {
       this.#hold = null;
       this.#layout.clear();
@@ -869,12 +918,17 @@ export class QueryView extends Component implements HistorySurface {
       return;
     }
     const also = this.#host.attachments?.() ?? [];
-    this.#hold = this.#deps.annotations.hold([
-      ...rows.map((row) => row.attachmentKey),
-      ...also,
-    ]);
+    const attachmentKeys = [
+      ...new Set([...rows.map((row) => row.attachmentKey), ...also]),
+    ];
+    this.#hold = this.#deps.annotations.hold(attachmentKeys);
     await this.#layout.showRows(rows, also);
     previous?.[Symbol.dispose]();
+    if (this.#shownRequest !== key) return;
+    for (const attachmentKey of attachmentKeys) {
+      const keys = annotationKeys(this.#deps.annotations, attachmentKey);
+      if (keys) this.#listKeys.set(attachmentKey, keys);
+    }
   }
 }
 
