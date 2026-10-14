@@ -600,10 +600,10 @@ export class QueryView extends Component implements HistorySurface {
    */
   renameProperty(property: string, name: string): boolean {
     const { file, view } = this.state.getState();
-    if (!file) return false;
+    if (!file || !view) return false;
     this.#commit(
       withDisplayName(file, property, name.trim() || undefined),
-      view?.name ?? null,
+      view.name,
       {},
     );
     return true;
@@ -643,8 +643,8 @@ export class QueryView extends Component implements HistorySurface {
    */
   removeFormula(name: string): boolean {
     const { file, view } = this.state.getState();
-    if (!file) return false;
-    this.#commit(removeFormula(file, name), view?.name ?? null, {});
+    if (!file || !view) return false;
+    this.#commit(removeFormula(file, name), view.name, {});
     return true;
   }
 
