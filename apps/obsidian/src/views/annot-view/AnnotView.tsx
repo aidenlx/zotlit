@@ -15,6 +15,7 @@ import { Icon } from "@/components/obsidian/icon";
 import { SearchInput } from "@/components/obsidian/search-input";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
+import type { AnnotationRecord } from "@/services/annotation-repository/service";
 
 import { AnnotActionsContext } from "./actions";
 import { Annotation, FIELD_SHEET_SELECTOR } from "./Annotation";
@@ -32,8 +33,10 @@ import {
   useAnnotStore,
   useClearFilters,
   useSetFilterQuery,
+  useToggleGroupCollapsed,
   useToggleSearchOpen,
 } from "./store";
+import type { CardPlacement } from "./store";
 import { confineTabOrder } from "./tab-order";
 
 /**
@@ -375,6 +378,8 @@ export function AnnotList({ collapsed }: { collapsed: boolean }) {
   const actions = useContext(AnnotActionsContext);
   const annotations = useAnnotStore((s) => s.annotations);
   const groups = useAnnotStore((s) => s.groups);
+  const collapsedGroups = useAnnotStore((s) => s.collapsedGroups);
+  const toggleGroup = useToggleGroupCollapsed();
   const clearFilters = useClearFilters();
   const gridRef = useRef<HTMLDivElement>(null);
   const labelId = useId();
@@ -466,42 +471,105 @@ export function AnnotList({ collapsed }: { collapsed: boolean }) {
         aria-multiselectable="true"
         aria-labelledby={labelId}
       >
-        {filtered.map((annot, index) => {
-          const card = (
-            <Annotation
-              key={annot.key}
-              annot={annot}
-              collapsed={collapsed}
-              tabStop={annot.key === tabStop}
-            />
-          );
-          // A Query View's grouped rows: a heading opens each run of cards
-          // that stands in one group, across every column.
-          // The card keeps one place in the tree whether or not a heading
-          // stands before it, so a card that starts or stops a group is not
-          // mounted again and an open editor on it stays.
-          const group = groups?.get(annot.key);
-          const before = index > 0 ? filtered[index - 1] : undefined;
-          const opens =
-            group !== undefined &&
-            (!before || groups?.get(before.key)?.key !== group.key);
-          return (
-            <Fragment key={annot.key}>
-              {opens && (
-                <div
-                  key="group-heading"
-                  role="row"
-                  data-query-group={group.key}
-                  className="zt:col-span-full zt:mt-2 zt:truncate zt:text-sm zt:font-semibold zt:text-(--text-muted) zt:first:mt-0"
-                >
-                  <span role="rowheader">{group.label}</span>
-                </div>
-              )}
-              {card}
-            </Fragment>
-          );
-        })}
+        {groups === null
+          ? filtered.map((annot) => (
+              <Annotation
+                key={annot.key}
+                annot={annot}
+                collapsed={collapsed}
+                tabStop={annot.key === tabStop}
+              />
+            ))
+          : groupedCards(groups, filtered).map(({ annot, group, opens }) => {
+              // A Query View's grouped rows: a heading opens each run of
+              // cards that stands in one group, across every column, and a
+              // card with two tags stands once under each. The card keeps one
+              // place in the tree whether or not a heading stands before it,
+              // so a card that starts or stops a group is not mounted again
+              // and an open editor on it stays.
+              const folded = collapsedGroups.has(group.key);
+              return (
+                <Fragment key={`${group.key}\n${annot.key}`}>
+                  {opens && (
+                    <GroupHeading
+                      key="group-heading"
+                      label={group.label}
+                      groupKey={group.key}
+                      expanded={!folded}
+                      onToggle={() => toggleGroup(group.key)}
+                    />
+                  )}
+                  {!folded && (
+                    <Annotation
+                      key={annot.key}
+                      annot={annot}
+                      collapsed={collapsed}
+                      tabStop={annot.key === tabStop}
+                    />
+                  )}
+                </Fragment>
+              );
+            })}
       </div>
+    </div>
+  );
+}
+
+interface GroupedCard {
+  annot: AnnotationRecord;
+  group: CardPlacement["group"];
+  /** Whether a heading opens the group before this card. */
+  opens: boolean;
+}
+
+/** The shown cards under their groups, in the order of the placements. */
+function groupedCards(
+  groups: readonly CardPlacement[],
+  shown: readonly AnnotationRecord[],
+): GroupedCard[] {
+  const byKey = new Map(shown.map((annot) => [annot.key, annot]));
+  const cards: GroupedCard[] = [];
+  for (const { annotationKey, group } of groups) {
+    const annot = byKey.get(annotationKey);
+    if (!annot) continue;
+    cards.push({ annot, group, opens: cards.at(-1)?.group.key !== group.key });
+  }
+  return cards;
+}
+
+/**
+ * A group's heading. Its button collapses the group's cards and expands them
+ * again; the heading's own text names it, so it needs no tooltip.
+ */
+function GroupHeading({
+  label,
+  groupKey,
+  expanded,
+  onToggle,
+}: {
+  label: string;
+  groupKey: string;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div
+      role="row"
+      data-query-group={groupKey}
+      data-collapsed={expanded ? undefined : ""}
+      className="zt:col-span-full zt:mt-2 zt:first:mt-0"
+    >
+      <span role="rowheader" className="zt:flex zt:min-w-0">
+        <button
+          type="button"
+          aria-expanded={expanded}
+          className="clickable-icon zt:flex zt:min-w-0 zt:items-center zt:gap-1 zt:text-sm zt:font-semibold zt:text-(--text-muted)"
+          onClick={onToggle}
+        >
+          <Icon name={expanded ? "chevron-down" : "chevron-right"} size={14} />
+          <span className="zt:truncate">{label}</span>
+        </button>
+      </span>
     </div>
   );
 }

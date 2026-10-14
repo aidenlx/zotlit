@@ -4,11 +4,11 @@
 // host, so the toolbar popover here and the sidebar's "Filter..." mount the
 // same part.
 //
-// The popover is a native popover in the top layer (apps/obsidian ADR 0044).
+// The popover is the toolbar's native popover in the top layer (apps/obsidian
+// ADR 0044).
 // Obsidian's typing suggestions draw in the page under it, so the value fields
 // take the browser's own suggestion list instead.
-import { useEffect, useId, useMemo, useState } from "react";
-import type { CSSProperties } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type { MatchTree } from "@zotlit/templates/facade";
 import {
@@ -28,7 +28,6 @@ import type {
 } from "@zotlit/workbench/ui";
 import { ITEM_TYPES } from "@zotlit/zotero-types/item-types";
 
-import { Icon } from "@/components/obsidian/icon";
 import { useObsidianApp } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
 import { runtime } from "@/lib/i18n/generated/runtime";
@@ -56,6 +55,7 @@ import type {
   FilterSection,
   QueryFileDataset,
 } from "./query-file";
+import { ToolbarPopover } from "./toolbar-popover";
 import type { QueryView } from "./view";
 
 const logger = getLogger(["views", "query-view", "filter"]);
@@ -94,16 +94,16 @@ const KIND_LABELS: Record<FilterFieldKind, () => string> = {
 };
 
 const OPERATOR_LABELS: Record<FilterOperator, () => string> = {
-  contains: m.query_view_filter_op_contains,
-  "does-not-contain": m.query_view_filter_op_does_not_contain,
-  "contains-any": m.query_view_filter_op_contains_any,
-  "contains-all": m.query_view_filter_op_contains_all,
+  contains: m.workbench_match_tag_contains,
+  "does-not-contain": m.workbench_match_tag_does_not_contain,
+  "contains-any": m.workbench_match_tag_contains_any,
+  "contains-all": m.workbench_match_tag_contains_all,
   within: m.workbench_match_collection_within,
   "not-within": m.workbench_match_collection_not_within,
-  is: m.query_view_filter_op_is,
-  "is-not": m.query_view_filter_op_is_not,
-  "is-empty": m.query_view_filter_op_is_empty,
-  "is-not-empty": m.query_view_filter_op_is_not_empty,
+  is: m.workbench_match_operator_is,
+  "is-not": m.workbench_match_operator_is_not,
+  "is-empty": m.workbench_match_tag_is_empty,
+  "is-not-empty": m.workbench_match_tag_is_not_empty,
   before: m.query_view_filter_op_before,
   after: m.query_view_filter_op_after,
   "on-or-before": m.query_view_filter_op_on_or_before,
@@ -395,48 +395,31 @@ export function FilterButton({ view }: { view: QueryView }) {
   const [state, setState] = useState(() => view.state.getState());
   useEffect(() => view.state.subscribe(setState), [view]);
   const [values, setValues] = useState<FilterValues>(NO_VALUES);
-  const popupId = useId().replaceAll(":", "");
-  const anchor = `--zt-query-filter-${popupId}`;
   const { file, view: shown, filterIssue } = state;
   if (!file || !shown) return null;
-  const active = file.filters !== undefined || shown.filters !== undefined;
   return (
-    <>
-      <button
-        type="button"
-        className="clickable-icon zt:flex zt:items-center zt:gap-1"
-        popoverTarget={popupId}
-        data-query-filter=""
-        data-active={active ? "" : undefined}
-        style={{ anchorName: anchor } as CSSProperties}
-      >
-        <Icon name="list-filter" size={14} />
-        <span>{m.query_view_filter()}</span>
-      </button>
-      <div
-        id={popupId}
-        popover="auto"
-        data-query-filter-popover=""
-        onToggle={(event) => {
-          if (event.newState !== "open") return;
-          view.filterValues().then(setValues, (error: unknown) => {
-            logger.warn("The filter values could not be read", { error });
-          });
-        }}
-        className="zt-root zt:inset-auto zt:my-1 zt:max-h-[min(36rem,calc(100%_-_1rem))] zt:w-[min(40rem,calc(100vw_-_2rem))] zt:overflow-auto zt:rounded-(--menu-radius) zt:border-(length:--menu-border-width) zt:border-(--menu-border-color) zt:bg-(--menu-background) zt:p-3 zt:text-foreground zt:shadow-(--menu-shadow) zt:[position-area:block-end_span-inline-end] zt:[position-try-fallbacks:flip-block,flip-inline]"
-        style={{ positionAnchor: anchor } as CSSProperties}
-      >
-        <FilterEditor
-          dataset={shown.from ?? "annotations"}
-          allViewsDataset={allViewsDataset(file)}
-          allViews={file.filters}
-          thisView={shown.filters}
-          values={values}
-          issue={filterIssue}
-          disabled={!view.writable}
-          onChange={(section, next) => view.setFilters(section, next)}
-        />
-      </div>
-    </>
+    <ToolbarPopover
+      icon="list-filter"
+      label={m.query_view_filter()}
+      active={file.filters !== undefined || shown.filters !== undefined}
+      hook="filter"
+      className="zt:w-[min(40rem,calc(100vw_-_2rem))] zt:max-w-none zt:p-3"
+      onOpen={() => {
+        view.filterValues().then(setValues, (error: unknown) => {
+          logger.warn("The filter values could not be read", { error });
+        });
+      }}
+    >
+      <FilterEditor
+        dataset={shown.from ?? "annotations"}
+        allViewsDataset={allViewsDataset(file)}
+        allViews={file.filters}
+        thisView={shown.filters}
+        values={values}
+        issue={filterIssue}
+        disabled={!view.writable}
+        onChange={(section, next) => view.setFilters(section, next)}
+      />
+    </ToolbarPopover>
   );
 }

@@ -874,7 +874,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const inPopover = (body: string) =>
       obEval(
         vaultId,
-        `(async()=>{const el=app.workspace.getMostRecentLeaf().view.contentEl;const popover=el.querySelector('[data-query-filter-popover]');if(!popover.matches(':popover-open'))el.querySelector('[data-query-filter]').click();const section=name=>popover.querySelector('[data-filter-section="'+name+'"]');const set=(control,value)=>{control.value=value;control.dispatchEvent(new Event('input',{bubbles:true}));};${body}})()`,
+        `(async()=>{const el=app.workspace.getMostRecentLeaf().view.contentEl;const popover=el.querySelector('[data-query-popover="filter"]');if(!popover.matches(':popover-open'))el.querySelector('[data-query-toolbar="filter"]').click();const section=name=>popover.querySelector('[data-filter-section="'+name+'"]');const set=(control,value)=>{control.value=value;control.dispatchEvent(new Event('input',{bubbles:true}));};${body}})()`,
       );
 
     await obEval(
@@ -970,6 +970,268 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         `return section('view').querySelector('[data-condition-row] input[aria-label="${m.workbench_match_value()}"]')?.value??null;`,
       ),
     ).toBe("figure");
+  }, 180000);
+
+  it("groups a Query File by colour in a Manual order, hides a colour, and keeps it on reopen", async () => {
+    const layout = await obEval(
+      vaultId,
+      "JSON.stringify(app.workspace.getLayout())",
+    );
+    const path = "query-files/By colour.zotquery";
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));const file=app.vault.getFileByPath(${JSON.stringify(path)});if(file)await app.vault.delete(file);return true;})()`,
+      );
+    });
+    const open = `(async()=>{const file=app.vault.getFileByPath(${JSON.stringify(path)});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`;
+    await obEval(
+      vaultId,
+      `(async()=>{await app.vault.create(${JSON.stringify(path)},${JSON.stringify("views:\n  - type: annotations\n    name: Colours\n    from: annotations\n    limit: 100\n")});return true;})()`,
+    );
+    await obEval(vaultId, open);
+
+    /** The group headings and the Manual order rows of the active tab, once settled. */
+    const readTab = `(async()=>{const view=app.workspace.getMostRecentLeaf().view;if(view.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(path)})return 'null';await view.query.settled;const el=view.contentEl;return JSON.stringify({count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,headings:[...el.querySelectorAll('[data-query-group]')].map(n=>n.textContent),order:[...el.querySelectorAll('[data-group-row]')].map(n=>[n.getAttribute('data-group-row'),n.querySelector('input').checked])});})()`;
+    interface Tab {
+      count: string | null;
+      headings: string[];
+      order: [string, boolean][];
+    }
+    const tabWhen = async (ready: (tab: Tab) => boolean): Promise<Tab> => {
+      let tab: Tab | null = null;
+      const settled = await waitFor(async () => {
+        tab = JSON.parse(await obEval(vaultId, readTab)) as Tab | null;
+        return tab !== null && ready(tab);
+      }, 120);
+      if (!settled) throw new Error(`Query File tab: ${JSON.stringify(tab)}`);
+      return tab!;
+    };
+    /** Choose an option of a select in the Group popover. */
+    const choose = (selector: string, value: string) =>
+      obEval(
+        vaultId,
+        `(()=>{const el=app.workspace.getMostRecentLeaf().view.contentEl;const select=el.querySelector('[data-query-popover="group"] ${selector}');select.value=${JSON.stringify(value)};select.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
+      );
+
+    await tabWhen((tab) => tab.count !== null);
+    // The colours of the rows, in the order each first shows.
+    const report = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query", {
+        args: { from: "annotations", fields: "colorName", limit: "100" },
+      }),
+    ) as ItemQueryReport;
+    expect(report.ok).toBe(true);
+    const colours = [
+      ...new Set(report.rows!.map((row) => String(row.values.colorName))),
+    ];
+    expect(colours.length).toBeGreaterThan(1);
+
+    await choose("[data-group-property]", "colorName");
+    await tabWhen((tab) => tab.headings.length === colours.length);
+    await choose("[data-group-direction]", "MANUAL");
+    const manual = await tabWhen((tab) => tab.order.length > 0);
+    expect(manual.order).toEqual(colours.map((colour) => [colour, true]));
+
+    // A tick hides the first colour.
+    const [hidden, ...shown] = colours;
+    await obEval(
+      vaultId,
+      `(()=>{const el=app.workspace.getMostRecentLeaf().view.contentEl;el.querySelector('[data-query-popover="group"] [data-group-row=${JSON.stringify(hidden)}] input').click();return true;})()`,
+    );
+    const after = await tabWhen((tab) => tab.headings.length === shown.length);
+    const expectedCount = report.rows!.filter(
+      (row) => row.values.colorName !== hidden,
+    ).length;
+    expect(after.count).toBe(String(expectedCount));
+
+    // The file holds the grouping; a reopened tab shows the same groups.
+    await obEval(
+      vaultId,
+      "(async()=>{app.workspace.getMostRecentLeaf().detach();return true;})()",
+    );
+    let text = "";
+    await waitFor(async () => {
+      text = await obEval(
+        vaultId,
+        `app.vault.read(app.vault.getFileByPath(${JSON.stringify(path)}))`,
+      );
+      return text.includes("groupOrder");
+    }, 30);
+    expect(text).toContain(
+      "    groupBy:\n      property: colorName\n      direction: ASC\n",
+    );
+    expect(text).toContain(
+      `    groupOrder:\n${shown.map((colour) => `      - ${colour}`).join("\n")}`,
+    );
+    await obEval(vaultId, open);
+    const reopened = await tabWhen((tab) => tab.count !== null);
+    expect(reopened.headings).toEqual(after.headings);
+    expect(reopened.count).toBe(after.count);
+  }, 180000);
+
+  it("embeds a Query File in two notes, and a change in one embed saves the file and updates the other", async () => {
+    const queryPath = "query-files/Lab annotations.zotquery";
+    const labNote = "query-files/Lab note.md";
+    const overview = "query-files/Lab overview.md";
+    const layout = await obEval(
+      vaultId,
+      "JSON.stringify(app.workspace.getLayout())",
+    );
+    const original = await obEval(
+      vaultId,
+      `app.vault.read(app.vault.getFileByPath(${JSON.stringify(queryPath)}))`,
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(queryPath)}),${JSON.stringify(original)});return true;})()`,
+      );
+    });
+
+    // The Lab note in Reading view, the overview in Live Preview, and the
+    // Query File in its own tab, each in a pane of its own so all render.
+    await obEval(
+      vaultId,
+      `(async()=>{const open=async(path,state)=>{const leaf=app.workspace.getLeaf('split');await leaf.setViewState({type:state?'markdown':'zotlit-query-file',state:{file:path,...state},active:true});};await open(${JSON.stringify(labNote)},{mode:'preview'});await open(${JSON.stringify(overview)},{mode:'source',source:false});await open(${JSON.stringify(queryPath)});return true;})()`,
+    );
+
+    /** What each pane shows of the Query File, once every query settled. */
+    const readPanes = `(async()=>{const out={};const show=async(el,query)=>{await query.settled;return {view:el.querySelector('[data-query-view-menu]')?.textContent??null,count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,cards:[...el.querySelectorAll('.zt-annot-card')].map(n=>n.getAttribute('data-zotero-annotation-key'))};};for(const leaf of app.workspace.getLeavesOfType('markdown')){if(leaf.view.getMode()==='source'){const line=leaf.view.editor.getValue().split('\\n').findIndex(text=>text.startsWith('![['));leaf.view.editor.scrollIntoView({from:{line,ch:0},to:{line,ch:0}});await new Promise(r=>setTimeout(r,100));}const embeds=[...leaf.view.containerEl.querySelectorAll('.internal-embed')].filter(el=>el.zotlitQueryEmbed&&el.isShown());out[leaf.view.file.path]=await Promise.all(embeds.map(async el=>({...await show(el,el.zotlitQueryEmbed.query),interactive:el.classList.contains('interactive-child')})));}for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))out.tab=await show(leaf.view.contentEl,leaf.view.query);return JSON.stringify(out);})()`;
+    interface Pane {
+      view: string | null;
+      count: string | null;
+      cards: string[];
+      interactive?: boolean;
+    }
+    type Panes = Record<string, Pane[]> & { tab?: Pane };
+    const panesWhen = async (ready: (panes: Panes) => boolean) => {
+      let panes: Panes | null = null;
+      const settled = await waitFor(async () => {
+        panes = JSON.parse(await obEval(vaultId, readPanes)) as Panes;
+        return ready(panes);
+      }, 120);
+      if (!settled)
+        throw new Error(`Query File panes: ${JSON.stringify(panes)}`);
+      return panes!;
+    };
+    /** The Annotation keys ZotLit Query gives, through the CLI. */
+    const queryKeys = async (filter: string | null, thisItem?: string) => {
+      const report = JSON.parse(
+        await cliCommand(vaultId, "zotlit:query", {
+          args: {
+            from: "annotations",
+            fields: "item.title",
+            limit: "100",
+            ...(filter === null ? {} : { filter }),
+            ...(thisItem === undefined ? {} : { "this-item": thisItem }),
+          },
+        }),
+      ) as ItemQueryReport;
+      expect(report.ok).toBe(true);
+      return report.rows!.map((row) => row.indexedKey);
+    };
+
+    // `![[file#View]]` shows that view, with `this.item` the Lab note's Item;
+    // `![[file]]` shows the first view.
+    const mine = await queryKeys("item == this.item", annotationItem.key);
+    const all = await queryKeys(null);
+    expect(mine.length).toBeGreaterThan(0);
+    expect(mine.length).toBeLessThan(all.length);
+    const before = await panesWhen(
+      (panes) =>
+        panes[labNote]?.[0]?.count != null &&
+        panes[overview]?.[0]?.count != null &&
+        panes.tab?.count != null,
+    );
+    expect(before[labNote]).toEqual([
+      {
+        view: "This item",
+        count: String(mine.length),
+        cards: mine,
+        interactive: true,
+      },
+    ]);
+    expect(before[overview]).toEqual([
+      {
+        view: "All annotations",
+        count: String(all.length),
+        cards: all,
+        interactive: true,
+      },
+    ]);
+
+    // A filter for all views, set in the Lab note's embed, saves to the file;
+    // the overview's embed and the open tab show it.
+    const figure = 'tags.contains("figure")';
+    await obEval(
+      vaultId,
+      `(async()=>{const leaf=app.workspace.getLeavesOfType('markdown').find(l=>l.view.file.path===${JSON.stringify(labNote)});const el=[...leaf.view.containerEl.querySelectorAll('.internal-embed')].find(el=>el.zotlitQueryEmbed&&el.isShown());el.querySelector('[data-query-toolbar="filter"]').click();const all=()=>el.querySelector('[data-query-popover="filter"] [data-filter-section="all"] [data-condition-row]');const set=(control,value)=>{control.value=value;control.dispatchEvent(new Event('input',{bubbles:true}));};set(all().querySelector('select[aria-label="${m.workbench_match_condition_kind()}"]'),'tags');await new Promise(r=>setTimeout(r,50));set(all().querySelector('input[aria-label="${m.workbench_match_value()}"]'),'figure');el.querySelector('[data-query-popover="filter"]').hidePopover();return true;})()`,
+    );
+    const figures = await queryKeys(figure);
+    const myFigures = await queryKeys(
+      `(${figure}) && (item == this.item)`,
+      annotationItem.key,
+    );
+    expect(figures.length).toBeLessThan(all.length);
+    const after = await panesWhen(
+      (panes) =>
+        panes[overview]?.[0]?.count === String(figures.length) &&
+        panes.tab?.count === String(figures.length),
+    );
+    expect(
+      await obEval(
+        vaultId,
+        `app.vault.read(app.vault.getFileByPath(${JSON.stringify(queryPath)}))`,
+      ),
+    ).toMatch(/^filters:\n {2}and:\n {4}- tags\.contains\("figure"\)$/m);
+    expect(after[overview]![0]!.cards).toEqual(figures);
+    expect(after.tab!.cards).toEqual(figures);
+    expect(after[labNote]![0]!.cards).toEqual(myFigures);
+
+    // A click in the Live Preview embed leaves the editor's selection alone.
+    const selection = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{const leaf=app.workspace.getLeavesOfType('markdown').find(l=>l.view.file.path===${JSON.stringify(overview)});app.workspace.setActiveLeaf(leaf,{focus:true});const cm=leaf.view.editor.cm;cm.dispatch({selection:{anchor:0}});const target=[...leaf.view.containerEl.querySelectorAll('.internal-embed')].find(el=>el.zotlitQueryEmbed&&el.isShown()).querySelector('[role=toolbar]');const rect=target.getBoundingClientRect();const init={bubbles:true,cancelable:true,clientX:rect.left+rect.width/2,clientY:rect.top+rect.height/2,button:0,detail:1};target.dispatchEvent(new MouseEvent('mousedown',init));target.dispatchEvent(new MouseEvent('mouseup',init));target.dispatchEvent(new MouseEvent('click',init));await new Promise(r=>setTimeout(r,400));const {from,to}=cm.state.selection.main;return JSON.stringify({from,to});})()`,
+      ),
+    ) as { from: number; to: number };
+    expect(selection).toEqual({ from: 0, to: 0 });
+
+    // A hover popover over a link to the file shows the embed's first view.
+    const popover = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{const leaf=app.workspace.getLeavesOfType('markdown').find(l=>l.view.file.path===${JSON.stringify(labNote)});const targetEl=leaf.view.containerEl.querySelector('.markdown-reading-view h1')??leaf.view.containerEl;const rect=targetEl.getBoundingClientRect();app.workspace.trigger('hover-link',{event:new MouseEvent('mouseover',{clientX:rect.left+5,clientY:rect.top+5,ctrlKey:true,metaKey:true}),source:'preview',hoverParent:leaf.view,targetEl,linktext:${JSON.stringify(queryPath)},sourcePath:${JSON.stringify(labNote)}});for(let i=0;i<100;i++){const el=[...activeDocument.querySelectorAll('.hover-popover .internal-embed, .hover-popover .zt-query-view')].find(el=>el.zotlitQueryEmbed);if(el){await el.zotlitQueryEmbed.query.settled;const out={view:el.querySelector('[data-query-view-menu]')?.textContent??null,count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null};activeDocument.querySelectorAll('.hover-popover').forEach(p=>p.remove());return JSON.stringify(out);}await new Promise(r=>setTimeout(r,100));}return 'null';})()`,
+      ),
+    ) as { view: string | null; count: string | null } | null;
+    expect(popover).toEqual({
+      view: "All annotations",
+      count: String(figures.length),
+    });
+
+    // The link button opens the Query File at the view the embed shows.
+    await obEval(
+      vaultId,
+      `(()=>{const leaf=app.workspace.getLeavesOfType('markdown').find(l=>l.view.file.path===${JSON.stringify(labNote)});app.workspace.setActiveLeaf(leaf,{focus:true});[...leaf.view.containerEl.querySelectorAll('.internal-embed')].find(el=>el.zotlitQueryEmbed&&el.isShown()).querySelector('[data-query-open-file]').click();return true;})()`,
+    );
+    expect(
+      await waitFor(async () => {
+        const state = JSON.parse(
+          await obEval(
+            vaultId,
+            "JSON.stringify(app.workspace.getMostRecentLeaf().getViewState())",
+          ),
+        ) as { type: string; state: { file?: string; view?: string } };
+        return (
+          state.type === "zotlit-query-file" &&
+          state.state.file === queryPath &&
+          state.state.view === "This item"
+        );
+      }, 30),
+    ).toBe(true);
   }, 180000);
 
   it("renders the deterministic PDF matrix and reuses its cache", async () => {
