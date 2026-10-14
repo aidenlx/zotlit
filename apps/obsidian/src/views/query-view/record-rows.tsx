@@ -2,7 +2,7 @@
 // records of any Query Dataset, under their group headings, each shown by
 // the text of its visible properties. The toolbar search and a collapsed
 // heading act on them as they do on the Annotations layout's cards.
-import { useMemo } from "react";
+import { Fragment, useMemo } from "react";
 import { useStore } from "zustand";
 
 import { Icon } from "@/components/obsidian/icon";
@@ -16,7 +16,7 @@ import {
   useToggleGroupCollapsed,
 } from "@/views/annot-view/store";
 
-import { cell, errorValue } from "./table";
+import { cell, errorCell } from "./table";
 import type { QueryView } from "./view";
 import { visibleProperties } from "./visible-properties";
 
@@ -115,9 +115,18 @@ export function RecordGroupHeading({ group }: { group: RecordGroup }) {
   );
 }
 
+/** Whether `value` is an Error Value, or a list that holds one at any depth. */
+function holdsError(value: QueryViewValue | undefined): boolean {
+  return (
+    errorCell(value) !== null ||
+    (Array.isArray(value) && value.some((entry) => holdsError(entry)))
+  );
+}
+
 /**
  * One cell on screen: its text, or, for an Error Value, a warning icon with
- * the error's message as its tooltip.
+ * the error's message as its tooltip. A list that holds an Error Value shows
+ * its elements as `cell` writes them, each Error Value as its icon.
  */
 export function CellContent({
   value,
@@ -126,16 +135,28 @@ export function CellContent({
   value: QueryViewValue | undefined;
   text: string;
 }) {
-  const error = errorValue(value);
-  if (error === null) return text;
+  const error = errorCell(value);
+  if (error !== null)
+    return (
+      <span
+        role="img"
+        className="zt:inline-flex zt:items-center zt:align-middle zt:text-(--text-error)"
+        data-query-error={error.code}
+        {...tooltipAttrs(error.message)}
+      >
+        <Icon name="alert-triangle" size={14} />
+      </span>
+    );
+  if (!Array.isArray(value) || !holdsError(value)) return text;
+  const shown = value.filter((entry: QueryViewValue) => cell(entry) !== "");
   return (
-    <span
-      role="img"
-      className="zt:inline-flex zt:items-center zt:align-middle zt:text-(--text-error)"
-      data-query-error={error.code}
-      {...tooltipAttrs(error.message)}
-    >
-      <Icon name="alert-triangle" size={14} />
-    </span>
+    <>
+      {shown.map((entry: QueryViewValue, at) => (
+        <Fragment key={at}>
+          {at > 0 && ", "}
+          <CellContent value={entry} text={cell(entry)} />
+        </Fragment>
+      ))}
+    </>
   );
 }

@@ -1682,3 +1682,60 @@ it("shows a wrong Formula that the filters read at their condition, and no rows 
   });
   expect(tableText(el)).toHaveLength(2);
 });
+
+it("shows each Error Value element of a list cell as a warning icon in the Table, the List and the Cards", async () => {
+  const wrong = (text: string) => ({
+    kind: "error",
+    code: "unparseable-text",
+    message: `number() cannot read "${text}" as a number.`,
+  });
+  const parts = [1, wrong("a"), null, wrong("b")];
+  const shown = result([
+    {
+      indexedKey: "ITEMAAAA",
+      values: { title: "Ten simple rules", "formula.parts": parts },
+    },
+  ]);
+  // The List and the Cards ask for other fields than the Table.
+  const { view, el, settle } = await mount([shown, shown, shown]);
+  await act(() =>
+    view.setText(`formulas:
+  parts: '[1, number("a"), null, number("b")]'
+views:
+  - type: table
+    name: Reading list
+    from: items
+    order:
+      - title
+      - formula.parts
+`),
+  );
+  await settle();
+  const marks = (root: Element) =>
+    [...root.querySelectorAll("[data-query-error]")].map((n) => [
+      n.getAttribute("data-query-error"),
+      n.getAttribute("aria-label"),
+    ]);
+  const expected = [
+    ["unparseable-text", 'number() cannot read "a" as a number.'],
+    ["unparseable-text", 'number() cannot read "b" as a number.'],
+  ];
+
+  const cell = el.querySelector('[data-query-table-row="item"]')!.children[2]!;
+  expect(marks(cell)).toEqual(expected);
+  expect(cell.textContent).toBe("1, , ");
+  for (const layout of ["list", "cards"] as const) {
+    await act(() => view.setViewLayout(0, layout));
+    await settle();
+    const row = el.querySelector("[data-query-row]")!;
+    expect(marks(row)).toEqual(expected);
+    expect(row.textContent).not.toContain("Error");
+  }
+  // Copy and CSV write each Error Value as its message.
+  expect(view.table().body).toEqual([
+    [
+      "Ten simple rules",
+      '1, Error: number() cannot read "a" as a number., Error: number() cannot read "b" as a number.',
+    ],
+  ]);
+});
