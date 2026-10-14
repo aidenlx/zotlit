@@ -1146,6 +1146,18 @@ export const NOTES: readonly FixtureNote[] = [
     trashed: true,
     collectionIDs: [],
   },
+  {
+    itemID: 34,
+    libraryID: 1,
+    key: "NNNNFFFF",
+    parentItemID: 57,
+    title: "Reading notes on the preprint",
+    note: '<div class="zotero-note znv1"><div data-schema-version="9"><h1>Reading notes on the preprint</h1>\n<p>A Child Note of an item that also has an Attachment.</p>\n</div></div>',
+    importedNoteBody:
+      "# Reading notes on the preprint\n\nA Child Note of an item that also has an Attachment.\n",
+    dateModified: "2025-02-20 12:00:00",
+    collectionIDs: [],
+  },
 ];
 
 export type FixtureAnnotationAsset =
