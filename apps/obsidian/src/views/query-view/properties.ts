@@ -2,7 +2,7 @@
 // researcher knows them by. Sort offers only Sortable Fields of ZotLit Query;
 // Group offers the group paths the layouts of the view's dataset can gather
 // rows by.
-import { ANNOTATIONS, ITEMS } from "@zotlit/item-query";
+import { ANNOTATIONS, ATTACHMENTS, ITEMS } from "@zotlit/item-query";
 
 import * as m from "@/lib/i18n/generated/messages";
 
@@ -47,6 +47,19 @@ const ITEM_SORT_CANDIDATES: readonly [string, () => string, PropertyKind][] = [
   ["itemType", m.query_view_property_item_type, "text"],
 ];
 
+const ATTACHMENT_SORT_CANDIDATES: readonly [
+  string,
+  () => string,
+  PropertyKind,
+][] = [
+  ["title", m.query_view_property_title, "text"],
+  ["dateAdded", m.query_view_property_date_added, "date"],
+  ["dateModified", m.query_view_property_date_modified, "date"],
+  ["item.title", m.query_view_property_item_title, "text"],
+  ["item.firstAuthor", m.query_view_property_first_author, "text"],
+  ["item.date", m.query_view_property_item_date, "date"],
+];
+
 /** The properties a view of `dataset` can sort by, in the order Sort lists them. */
 export function sortOptions(
   dataset: QueryFileDataset | undefined,
@@ -54,9 +67,9 @@ export function sortOptions(
   const [candidates, fields] =
     dataset === "items"
       ? [ITEM_SORT_CANDIDATES, ITEMS.sortableFields]
-      : dataset === undefined || dataset === "annotations"
-        ? [ANNOTATION_SORT_CANDIDATES, ANNOTATIONS.sortableFields]
-        : [[], []];
+      : dataset === "attachments"
+        ? [ATTACHMENT_SORT_CANDIDATES, ATTACHMENTS.sortableFields]
+        : [ANNOTATION_SORT_CANDIDATES, ANNOTATIONS.sortableFields];
   const sortable = new Set(fields);
   return candidates
     .filter(([path]) => sortable.has(path))
@@ -74,13 +87,19 @@ export function groupOptions(
           ["tags[]", m.query_view_property_tag],
           ["collections[]", m.query_view_property_collection],
         ]
-      : [
-          ["item.indexedKey", m.query_view_property_item],
-          ["attachment.indexedKey", m.query_view_property_attachment],
-          ["colorName", m.query_view_property_color],
-          ["tags[]", m.query_view_property_tag],
-          ["item.collections[]", m.query_view_property_collection],
-        ];
+      : dataset === "attachments"
+        ? [
+            ["item.indexedKey", m.query_view_property_item],
+            ["tags[]", m.query_view_property_tag],
+            ["item.collections[]", m.query_view_property_collection],
+          ]
+        : [
+            ["item.indexedKey", m.query_view_property_item],
+            ["attachment.indexedKey", m.query_view_property_attachment],
+            ["colorName", m.query_view_property_color],
+            ["tags[]", m.query_view_property_tag],
+            ["item.collections[]", m.query_view_property_collection],
+          ];
   return options.map(([path, label]) => ({
     path,
     label: label(),

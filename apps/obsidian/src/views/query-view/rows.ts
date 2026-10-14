@@ -33,11 +33,25 @@ export const ITEM_GROUP_PATHS = [
 ] as const;
 export type ItemGroupPath = (typeof ITEM_GROUP_PATHS)[number];
 
+/** The group paths a view of Attachments can gather its rows by. */
+export const ATTACHMENT_GROUP_PATHS = [
+  "item.indexedKey",
+  "tags[]",
+  "item.collections[]",
+] as const;
+
 /** The group paths a view of `dataset` can gather its rows by. */
 export function groupPaths(
   dataset: QueryFileDataset | undefined,
 ): readonly string[] {
-  return dataset === "items" ? ITEM_GROUP_PATHS : LAYOUT_GROUP_PATHS;
+  switch (dataset) {
+    case "items":
+      return ITEM_GROUP_PATHS;
+    case "attachments":
+      return ATTACHMENT_GROUP_PATHS;
+    default:
+      return LAYOUT_GROUP_PATHS;
+  }
 }
 
 /** The Projection Paths each row carries for its group and its heading. */
