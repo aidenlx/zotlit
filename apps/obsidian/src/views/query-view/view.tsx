@@ -16,7 +16,11 @@ import type { QueryContext } from "@zotlit/item-query";
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import type { AnnotationRepository } from "@/services/annotation-repository/service";
+import type { HistorySurface } from "@/services/annotation-repository/actions";
+import type {
+  AnnotationRepository,
+  HistoryDirection,
+} from "@/services/annotation-repository/service";
 import type { Diagnostic } from "@/services/item-query/contract";
 import type {
   QueryViewOutcome,
@@ -33,6 +37,7 @@ import { AnnotationsLayout } from "@/views/annot-view/layout";
 import type { AnnotationsLayoutDeps } from "@/views/annot-view/layout";
 import { useAnnotStore } from "@/views/annot-view/store";
 
+import type { QueryCardFocus } from "./card-focus";
 import { GroupEditor } from "./group-control";
 import { annotationsLayoutOptions } from "./layouts";
 import { groupOptions, sortOptions } from "./properties";
@@ -70,6 +75,8 @@ export interface QueryViewDeps extends AnnotationsLayoutDeps {
   query: Pick<QueryService, "run">;
   reads: AnnotationsLayoutDeps["reads"] & Pick<ZoteroReadsService, "on">;
   libraryScope: Pick<LibraryScopeService, "on">;
+  /** The keyboard of a view that a note holds, which the embed and the block share. */
+  cardFocus: Pick<QueryCardFocus, "hold">;
 }
 
 /** What the host gives the Query View, beside the services. */
@@ -171,7 +178,7 @@ function layoutProblems(view: QueryFileView): string[] {
   return problems;
 }
 
-export class QueryView extends Component {
+export class QueryView extends Component implements HistorySurface {
   readonly state = createStore<QueryViewState>()(() => INITIAL_STATE);
   readonly #deps: QueryViewDeps;
   readonly #host: QueryViewHost;
@@ -207,6 +214,21 @@ export class QueryView extends Component {
   /** The cards, their store and their actions. */
   get layout(): AnnotationsLayout {
     return this.#layout;
+  }
+
+  /**
+   * The Attachment whose Annotation History the palette steps: the one of the
+   * card the Card Selection is on, as for the card's own undo key.
+   */
+  get historyAttachment(): string | null {
+    return this.#layout.historyAttachment;
+  }
+
+  /** Step one confirmed edit of the Annotation History, from the palette. */
+  stepHistory(direction: HistoryDirection): void {
+    const attachmentKey = this.historyAttachment;
+    if (attachmentKey !== null)
+      this.#layout.stepHistory(direction, attachmentKey);
   }
 
   /** Settles once the cards show the last run the view started. Never rejects. */

@@ -36,7 +36,7 @@ In a Profile document: the note body, above the Annotation Section.
 
 In a Profile document: the part of the note body inside the `{% managed %}` / `{% endmanaged %}` block.
 
-```liquid
+````liquid
 {% if zt.notes.size > 0 %}
 ## Notes
 
@@ -44,25 +44,35 @@ In a Profile document: the part of the note body inside the `{% managed %}` / `{
 - {{ note.noteLink }}
 {% endfor %}
 {% endif %}
-{% if zt.annotations.size > 0 %}
 ## Annotations
 
-{% for annotation in zt.annotations %}
-{% render_annotation annotation %}
-{% endfor %}
-{% endif %}
+```zotquery
+views:
+  - type: annotations
+    name: Annotations
+    from: annotations
+    filters: item == this.item
 ```
+````
 
 The `content` template is the one whose rendered output is wrapped in managed-region markers. Running <Command inline name={m.command_update_note_name()} /> re-renders this section while leaving the rest of the note body untouched.
 
-| Section     | What it renders                                                                                                                   |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Notes       | A bulleted list of linked child notes. Each `note.noteLink` resolves to an Obsidian wiki-link pointing at the imported note file. |
-| Annotations | Each annotation rendered via the `annotation` template (see below).                                                               |
+| Section     | What it renders                                                                                                                                                                  |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Notes       | A bulleted list of linked child notes. Each `note.noteLink` resolves to an Obsidian wiki-link pointing at the imported note file. It appears only when the item has child notes. |
+| Annotations | A `zotquery` block that shows the annotations of the note's own item as live cards. `this.item` is the item that the note's `zotero-key` property names.                         |
 
-Both sections appear only when the corresponding array is non-empty.
+The annotation cards stay current with Zotero, and you can edit a comment or tags on a card in the note. A change you make in the block's toolbar, such as a new sort, changes the block text. <Command inline name={m.command_update_note_name()} /> keeps the block text that the note holds, so your change stays.
 
-The `render_annotation` tag passes each annotation as `zt`. See [Annotation rendering](/docs/reference/templates/syntax#render-annotation) for the equivalent native syntax.
+A note that you made with an earlier default lists its annotations as text. Its next update replaces that list with the block.
+
+To list the annotations as text in the note, put the loop below in your own Profile in place of the block. Each annotation renders through the annotation template, and the `render_annotation` tag passes each annotation as `zt`. See [Annotation rendering](/docs/reference/templates/syntax#render-annotation) for the equivalent native syntax.
+
+```liquid
+{% for annotation in zt.annotations %}
+{% render_annotation annotation %}
+{% endfor %}
+```
 
 ## Annotation template
 

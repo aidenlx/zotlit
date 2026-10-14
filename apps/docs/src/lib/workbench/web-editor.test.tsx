@@ -11,6 +11,7 @@ import { DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS } from "@zotlit/workbench/render";
 import { m } from "@/paraglide/messages.js";
 
 import {
+  ANNOTATION_LIST,
   KEY,
   KEPT,
   withSampleItemType,
@@ -543,7 +544,7 @@ describe("the simplified editing flow", () => {
 describe("the annotation box", () => {
   it("routes a failing note call to the format while keeping a successful example", async () => {
     keep(
-      DEFAULT_PROFILE_SOURCE.replace(
+      ANNOTATION_LIST.replace(
         "{{ zt.imgLink | embed }}{{ zt.text }}",
         "{% if zt.type == 'highlight' %}{% render 'missing-for-highlight' %}{% endif %}{{ zt.comment }}",
       ),
@@ -712,7 +713,9 @@ describe("the annotation box", () => {
   });
 
   it("keeps Preview annotation choices separate from editor fields and compact examples", async () => {
+    keep(ANNOTATION_LIST, SAMPLE_ITEMS[0]!);
     await using page = await open();
+    page.press(m.workbench_restore_accept());
     page.press(m.workbench_tab_annotation());
     await page.waitFor(() =>
       expect(
