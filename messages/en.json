@@ -2631,6 +2631,7 @@
   "query_view_search_items": "Search shown items…",
   "query_view_unused": "{dataset} have no {properties}, so this view does not use them.",
   "query_view_unshown": "Views of {dataset} cannot show these properties: {properties}.",
+  "query_view_unsorted": "Views of {dataset} cannot sort by these properties: {properties}.",
   "query_view_not_used": "Not used",
   "query_view_list_markers": "Markers",
   "query_view_list_marker_bullet": "Bullet",

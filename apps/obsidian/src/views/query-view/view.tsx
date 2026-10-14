@@ -81,6 +81,7 @@ import type { ResultTable } from "./table";
 import { TABLE_FIELDS, TableLayout } from "./table-layout";
 import type { LiteratureNotes } from "./table-notes";
 import { ToolbarPopover } from "./toolbar-popover";
+import { columnLabel } from "./value-text";
 import * as edits from "./view-edits";
 import { unusedSettings } from "./view-edits";
 import { ViewMenu } from "./view-menu";
@@ -1056,37 +1057,36 @@ function Problems({ view }: { view: QueryView }) {
 
 /**
  * What the view keeps in its file but does not use: what its dataset lacks,
- * and the properties of the dataset that no cell shows.
+ * the properties of the dataset that no cell shows, and those it cannot
+ * sort by. Each property shows by its label, as a column header does.
  */
 function UnusedNote({ view }: { view: QueryView }) {
   const current = useQueryViewState(view, (s) => s.view);
   if (!current) return null;
   const unused = unusedSettings(current);
   const { engine, name } = datasetSpec(current.from);
-  // A visible property the dataset has but no cell shows, such as the tags
-  // of Items.
-  const unshown = unused.order.filter(
-    (property) => engine.definition(property) !== undefined,
-  );
+  const known = (property: string) => engine.definition(property) !== undefined;
+  // A property the dataset has that no cell shows, such as the tags of
+  // Items, and one it has that ZotLit Query cannot sort by.
+  const unshown = unused.order.filter(known);
+  const unsorted = unused.sort.filter(known);
   const properties = [
     ...new Set([
-      ...unused.sort,
+      ...unused.sort.filter((property) => !known(property)),
       ...(unused.groupBy === null ? [] : [unused.groupBy]),
-      ...unused.order.filter((property) => !unshown.includes(property)),
+      ...unused.order.filter((property) => !known(property)),
     ]),
   ];
+  const labels = (list: readonly string[]) => list.map(columnLabel).join(", ");
   const text = [
     properties.length > 0
-      ? m.query_view_unused({
-          dataset: name(),
-          properties: properties.join(", "),
-        })
+      ? m.query_view_unused({ dataset: name(), properties: labels(properties) })
       : "",
     unshown.length > 0
-      ? m.query_view_unshown({
-          dataset: name(),
-          properties: unshown.join(", "),
-        })
+      ? m.query_view_unshown({ dataset: name(), properties: labels(unshown) })
+      : "",
+    unsorted.length > 0
+      ? m.query_view_unsorted({ dataset: name(), properties: labels(unsorted) })
       : "",
   ]
     .filter((sentence) => sentence !== "")
