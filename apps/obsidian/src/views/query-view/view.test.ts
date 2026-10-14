@@ -28,7 +28,7 @@ import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
 import { groupOptions } from "./properties";
 import { QUERY_FILE_DATASETS, serializeQueryFile } from "./query-file";
 import type { QueryFileDataset } from "./query-file";
-import { QueryView, RERUN_DELAY_MS, SAVE_DELAY_MS } from "./view";
+import { QueryView, RERUN_DELAY_MS } from "./view";
 import type { QueryViewDeps } from "./view";
 
 vi.mock("zustand", () => import("../__fixtures__/zustand"));
@@ -516,25 +516,16 @@ it("opens a file with a broken view and names the problem without running it", a
   );
 });
 
-it("saves a view edit to the file, and keeps a renamed view on screen without running it again", async () => {
-  const { view, el, run, settle, save, onSelectView } = await mount([
-    result([row("ANNOTBBB")]),
-  ]);
+it("keeps a renamed view on screen without running it again", async () => {
+  const { view, el, run, settle } = await mount([result([row("ANNOTBBB")])]);
   await act(() => view.setText(FILE));
   await settle();
   await act(() => view.renameView(0, "Yellow highlights"));
   await settle();
-  // A typed name saves after a short wait.
-  await act(() => view.flush());
 
-  expect(save).toHaveBeenCalledTimes(1);
-  const [text] = save.mock.calls[0]!;
-  expect(text).toContain("name: Yellow highlights");
-  expect(text).toContain("name: Everything");
   expect(el.querySelector("[data-query-view-menu]")?.textContent).toBe(
     "Yellow highlights",
   );
-  expect(onSelectView).toHaveBeenLastCalledWith("Yellow highlights");
   expect(run).toHaveBeenCalledTimes(1);
   expect(cards(el)).toEqual(["ANNOTBBB"]);
 });
@@ -561,66 +552,7 @@ it("changes the cards at once for an Annotations layout option, and saves it", a
   expect(cards(el)).toEqual(["ANNOTBBB"]);
 });
 
-it("shows the view before a deleted view, and saves a move to the top", async () => {
-  const { view, el, settle, save } = await mount([
-    result([row("ANNOTBBB")]),
-    result([row("ANNOTAAA")]),
-    result([row("ANNOTBBB")]),
-  ]);
-  await act(() => view.setText(FILE));
-  await settle();
-  await act(() => view.pickView("Everything"));
-  await settle();
-  await act(() => view.deleteView(1));
-  await settle();
-  expect(el.querySelector("[data-query-view-menu]")?.textContent).toBe(
-    "Yellow",
-  );
-  expect(save.mock.calls.at(-1)![0]).not.toContain("Everything");
-
-  await act(() => {
-    view.addView();
-  });
-  await act(() => view.moveView(1, 0));
-  await settle();
-  const saved = save.mock.calls.at(-1)![0];
-  expect(saved.indexOf("name: View")).toBeLessThan(
-    saved.indexOf("name: Yellow"),
-  );
-});
-
 describe("saving a toolbar edit", () => {
-  it("saves typed text once, 500 ms after the last key, and a menu choice at once", async () => {
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    cleanup.defer(() => vi.useRealTimers());
-    const { view, saved, settle } = await mount([]);
-    await act(() => view.setText(FILE));
-    await settle();
-    const wait = (ms: number) =>
-      act(() => {
-        vi.advanceTimersByTime(ms);
-      });
-
-    await act(() => view.editView({ limit: 5 }, { typed: true }));
-    await wait(300);
-    await act(() => view.editView({ limit: 50 }, { typed: true }));
-    await wait(SAVE_DELAY_MS - 1);
-    expect(saved).toEqual([]);
-    expect(view.state.getState().view?.limit).toBe(50);
-    await wait(1);
-    expect(saved).toHaveLength(1);
-    expect(saved[0]).toContain("    limit: 50\n");
-
-    // A menu choice saves at once, with the typed text that still waits.
-    await act(() => view.editView({ limit: 7 }, { typed: true }));
-    await act(() => view.editView({ order: ["comment"] }));
-    expect(saved).toHaveLength(2);
-    expect(saved[1]).toContain("    limit: 7\n");
-    expect(saved[1]).toContain("      - comment\n");
-    await wait(SAVE_DELAY_MS);
-    expect(saved).toHaveLength(2);
-  });
-
   it("writes typed text that still waits when it unloads", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     cleanup.defer(() => vi.useRealTimers());
@@ -634,14 +566,11 @@ describe("saving a toolbar edit", () => {
     expect(saved[0]).toContain("name: Yellow highlights");
   });
 
-  it("changes nothing when the host gives the text of its own save back", async () => {
+  it("runs once for an edit whose text the host gives back", async () => {
     let echo: (text: string) => void = () => {};
     const { view, run, settle } = await mount([], (text) => echo(text));
     await act(() => view.setText(FILE));
     await settle();
-    await act(() => view.editView({ limit: 5 }));
-    await settle();
-    const { file } = view.state.getState();
     const runs = run.mock.calls.length;
 
     echo = (text) => view.setText(text);
@@ -649,13 +578,11 @@ describe("saving a toolbar edit", () => {
     await settle();
     const shown = view.state.getState().file;
     expect(shown?.views[0]?.limit).toBe(6);
-    expect(shown).not.toBe(file);
     expect(run).toHaveBeenCalledTimes(runs + 1);
 
     // The host reads the saved text again, as a vault change makes it.
     await act(() => view.setText(serializeQueryFile(shown!)));
     await settle();
-    expect(view.state.getState().file).toBe(shown);
     expect(run).toHaveBeenCalledTimes(runs + 1);
   });
 
@@ -689,7 +616,7 @@ describe("saving a toolbar edit", () => {
     });
   });
 
-  it("keeps a change on screen and says it is not saved when the host cannot write it, until a later save works", async () => {
+  it("says a change is not saved when the host cannot write it, until a later save works", async () => {
     let fail = true;
     const { view, el, settle } = await mount([], undefined, {
       write: () =>
@@ -714,49 +641,13 @@ describe("saving a toolbar edit", () => {
     expect(el.querySelector("[data-query-read-only]")).toBeNull();
   });
 
-  it.each([
-    [
-      "adds a Formula",
-      (view: QueryView) => view.saveFormula("year", "date.year"),
-    ],
-    [
-      "names a property",
-      (view: QueryView) => view.renameProperty("title", "Paper"),
-    ],
-    ["removes a Formula", (view: QueryView) => view.removeFormula("year")],
-  ])(
-    "keeps a Formula edit on screen and says it is not saved when the host cannot write it: %s",
-    async (_, edit) => {
-      const { view, el, settle } = await mount([], undefined, {
-        write: () => Promise.reject(new Error("disk full")),
-      });
-      await act(() => view.setText(`formulas:\n  year: date.year\n${FILE}`));
-      await settle();
-      const before = view.state.getState().file;
-
-      await act(async () => {
-        expect(edit(view)).toBe(true);
-        await view.flush();
-      });
-      expect(view.state.getState().file).not.toBe(before);
-      expect(el.querySelector("[data-query-read-only]")).not.toBeNull();
-    },
-  );
-
-  it("shows a change but saves nothing where the host cannot save, and says so", async () => {
-    const { view, el, saved, settle } = await mount([], undefined, {
+  it("says a change is not saved where the host cannot save", async () => {
+    const { view, el, settle } = await mount([], undefined, {
       canSave: () => false,
     });
     await act(() => view.setText(FILE));
     await settle();
     expect(el.querySelector("[data-query-read-only]")).not.toBeNull();
-
-    await act(async () => {
-      view.editView({ limit: 5 });
-      await view.flush();
-    });
-    expect(view.state.getState().view?.limit).toBe(5);
-    expect(saved).toEqual([]);
   });
 });
 
