@@ -18,6 +18,7 @@ import type {
   QueryViewRequest,
   QueryViewRow,
 } from "@/services/item-query/query-view";
+import { requested } from "@/views/query-view/__fixtures__/query-run";
 import {
   parseQueryFile,
   serializeQueryFile,
@@ -188,7 +189,7 @@ async function openSidebar(
   setMockPlatform({ isMacOS: true });
   let list = LIST;
   const run = vi.fn((request: QueryViewRequest, _signal: AbortSignal) =>
-    Promise.resolve(answer(request)),
+    Promise.resolve(requested(answer(request), request)),
   );
   const reads = emitter();
   const app = Object.assign(editorApp(), {
