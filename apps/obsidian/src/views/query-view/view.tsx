@@ -306,6 +306,13 @@ export class QueryView extends Component implements HistorySurface {
   /** The Annotations of each Attachment the cards show, as the last run found them. */
   readonly #listKeys = new Map<string, ReadonlySet<string>>();
   #rerunTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * The Annotations a list change added that no run's rows have named yet,
+   * each with its Attachment's Indexed Key.
+   */
+  readonly #listAdded = new Map<string, string>();
+  /** Whether the next run is the one a list change asked for. */
+  #listRerun = false;
 
   constructor(deps: QueryViewDeps, host: QueryViewHost) {
     super();
@@ -417,9 +424,13 @@ export class QueryView extends Component implements HistorySurface {
     )
       return;
     this.#listKeys.set(attachmentKey, now);
+    for (const key of now) {
+      if (!before.has(key)) this.#listAdded.set(key, attachmentKey);
+    }
     this.#cancelRerun();
     this.#rerunTimer = setTimeout(() => {
       this.#rerunTimer = null;
+      this.#listRerun = true;
       this.refresh();
     }, RERUN_DELAY_MS);
   }
@@ -759,6 +770,8 @@ export class QueryView extends Component implements HistorySurface {
   refresh(): void {
     this.#run?.abort();
     this.#run = null;
+    const fromList = this.#listRerun;
+    this.#listRerun = false;
     const { file, view, problems } = this.state.getState();
     if (!file || !view || problems.length > 0) {
       this.#runRequest = null;
@@ -785,7 +798,7 @@ export class QueryView extends Component implements HistorySurface {
       (outcome) => {
         if (this.#run !== controller) return;
         this.#run = null;
-        return this.#land({ key, file, view }, outcome);
+        return this.#land({ key, file, view }, outcome, fromList);
       },
       (error: unknown) => {
         if (this.#run !== controller) return;
@@ -804,7 +817,11 @@ export class QueryView extends Component implements HistorySurface {
     );
   }
 
-  async #land(run: ViewRun, outcome: QueryViewOutcome): Promise<void> {
+  async #land(
+    run: ViewRun,
+    outcome: QueryViewOutcome,
+    fromList = false,
+  ): Promise<void> {
     const { key, view } = run;
     switch (outcome.kind) {
       case "cancelled":
@@ -814,6 +831,11 @@ export class QueryView extends Component implements HistorySurface {
         return;
       case "result": {
         const { result } = outcome;
+        // The query reads Zotero's database, which can take a new Annotation
+        // after the repository's list does. Such a run keeps the cards on
+        // screen, and the database change that follows runs the view again.
+        const waiting = this.#lacksListAdded(result.rows ?? []);
+        if (fromList && waiting) return;
         const shown = layoutRows(
           result.rows ?? [],
           usedGroupBy(view),
@@ -856,6 +878,23 @@ export class QueryView extends Component implements HistorySurface {
       default:
         outcome satisfies never;
     }
+  }
+
+  /**
+   * Whether these rows lack an Annotation a list change added that the
+   * repository still holds. An added Annotation the rows name, or that the
+   * repository no longer holds, is no longer waited for.
+   */
+  #lacksListAdded(rows: readonly QueryViewRow[]): boolean {
+    const named = new Set(rows.map((row) => row.indexedKey));
+    for (const [key, attachmentKey] of this.#listAdded) {
+      if (
+        named.has(key) ||
+        !annotationKeys(this.#deps.annotations, attachmentKey)?.has(key)
+      )
+        this.#listAdded.delete(key);
+    }
+    return this.#listAdded.size > 0;
   }
 
   /**
