@@ -2608,5 +2608,7 @@
   "query_view_problem_layout": "The \"{type}\" layout is not available yet.",
   "query_view_problem_dataset": "The Annotations layout shows \"from: annotations\" only.",
   "query_view_problem_group": "Grouping by \"{property}\" is not available yet.",
-  "query_view_problem_no_view": "This file has no view named \"{name}\"."
+  "query_view_problem_no_view": "This file has no view named \"{name}\".",
+  "query_view_read_only": "Changes here are not saved. Open the note to change this view.",
+  "query_block_save_failed": "The query block could not save. Its text in the note changed; reopen the note and try again."
 }

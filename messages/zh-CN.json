@@ -2450,5 +2450,7 @@
   "query_view_problem_layout": "\"{type}\" 布局尚不可用。",
   "query_view_problem_dataset": "标注布局仅显示 \"from: annotations\"。",
   "query_view_problem_group": "尚不能按 \"{property}\" 分组。",
-  "query_view_problem_no_view": "此文件中没有名为 \"{name}\" 的视图。"
+  "query_view_problem_no_view": "此文件中没有名为 \"{name}\" 的视图。",
+  "query_view_read_only": "此处的更改不会保存。打开笔记以更改此视图。",
+  "query_block_save_failed": "无法保存查询块。笔记中的块文本已更改；请重新打开笔记后再试。"
 }
