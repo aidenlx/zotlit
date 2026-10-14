@@ -1003,15 +1003,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(report.ok).toBe(true);
       return report.rows!;
     };
-    /** The Item titles of the rows, one for each run of rows of one Item. */
-    const itemRuns = (rows: Awaited<ReturnType<typeof queryRows>>) =>
-      rows
-        .filter(
-          (row, index) =>
-            index === 0 ||
-            rows[index - 1]!.itemIndexedKey !== row.itemIndexedKey,
-        )
-        .map((row) => row.values["item.title"]);
 
     // "New query file" from the command palette writes one Annotations view
     // of the whole library, with a limit, and opens it in a tab.
@@ -1036,14 +1027,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(text).toContain("from: annotations");
     expect(text).toContain("limit: 100");
 
-    // The cards come in query order, grouped by Item under its title, and
-    // the count is the query's own. No Zotero answers this vault.
+    // The cards come grouped by Item under its title, in query order inside
+    // a group, and the count is the query's own. No Zotero answers this
+    // vault.
     const all = await queryRows();
     expect(all.length).toBeGreaterThan(0);
     expect(created).toMatchObject({
       count: String(all.length),
-      cards: all.map((row) => row.indexedKey),
-      headings: itemRuns(all),
+      ...byItem(all),
       diagnostic: null,
       problems: null,
       unresolved: null,
@@ -1069,8 +1060,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const figures = await tabWhen((tab) => tab.view === "Figures");
     expect(figures).toMatchObject({
       count: String(figureRows.length),
-      cards: figureRows.map((row) => row.indexedKey),
-      headings: itemRuns(figureRows),
+      ...byItem(figureRows),
     });
     expect(
       await obEval(
@@ -1978,8 +1968,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         throw new Error(`Query File panes: ${JSON.stringify(panes)}`);
       return panes!;
     };
-    /** The Annotation keys ZotLit Query gives, through the CLI. */
-    const queryKeys = async (filter: string | null, thisItem?: string) => {
+    /** The Annotation rows ZotLit Query gives, through the CLI. */
+    const queryRows = async (filter: string | null, thisItem?: string) => {
       const report = JSON.parse(
         await cliCommand(vaultId, "zotlit:query", {
           args: {
@@ -1992,13 +1982,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         }),
       ) as ItemQueryReport;
       expect(report.ok).toBe(true);
-      return report.rows!.map((row) => row.indexedKey);
+      return report.rows!;
     };
+    const queryKeys = async (filter: string | null, thisItem?: string) =>
+      (await queryRows(filter, thisItem)).map((row) => row.indexedKey);
 
     // `![[file#View]]` shows that view, with `this.item` the Lab note's Item;
-    // `![[file]]` shows the first view.
+    // `![[file]]` shows the first view, grouped by Item.
     const mine = await queryKeys("item == this.item", annotationItem.key);
-    const all = await queryKeys(null);
+    const all = byItem(await queryRows(null)).cards;
     expect(mine.length).toBeGreaterThan(0);
     expect(mine.length).toBeLessThan(all.length);
     const before = await panesWhen(
@@ -2031,7 +2023,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       vaultId,
       `(async()=>{const leaf=app.workspace.getLeavesOfType('markdown').find(l=>l.view.file.path===${JSON.stringify(labNote)});const el=[...leaf.view.containerEl.querySelectorAll('.internal-embed')].find(el=>el.zotlitQueryEmbed&&el.isShown());el.querySelector('[data-query-toolbar="filter"]').click();const all=()=>el.querySelector('[data-query-popover="filter"] [data-filter-section="all"] [data-condition-row]');const set=(control,value)=>{control.value=value;control.dispatchEvent(new Event('input',{bubbles:true}));};set(all().querySelector('select[aria-label="${m.workbench_match_condition_kind()}"]'),'tags');await new Promise(r=>setTimeout(r,50));set(all().querySelector('input[aria-label="${m.workbench_match_value()}"]'),'figure');el.querySelector('[data-query-popover="filter"]').hidePopover();return true;})()`,
     );
-    const figures = await queryKeys(figure);
+    const figures = byItem(await queryRows(figure)).cards;
     const myFigures = await queryKeys(
       `(${figure}) && (item == this.item)`,
       annotationItem.key,
@@ -6757,6 +6749,30 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
 /** The `zotlit:query` reply shape this suite reads (see
  *  apps/obsidian/src/services/item-query/contract.ts and answer.ts). */
+/**
+ * Rows with `item.title`, grouped by Item as a Query View groups them: the
+ * groups from A to Z by the Item's title, the rows of a group in query order.
+ */
+function byItem(rows: NonNullable<ItemQueryReport["rows"]>): {
+  cards: string[];
+  headings: string[];
+} {
+  const groups = Map.groupBy(rows, (row) => row.itemIndexedKey);
+  const title = (key: string | undefined) =>
+    String(groups.get(key)![0]!.values["item.title"]);
+  const order = [...groups.keys()].toSorted(
+    (a, b) =>
+      title(a).localeCompare(title(b), "en") ||
+      String(a).localeCompare(String(b), "en"),
+  );
+  return {
+    cards: order.flatMap((key) =>
+      groups.get(key)!.map((row) => row.indexedKey),
+    ),
+    headings: order.map(title),
+  };
+}
+
 interface ItemQueryReport {
   contractVersion: number;
   command: string;
