@@ -2739,7 +2739,7 @@ views:
     const tab = "app.workspace.getMostRecentLeaf().view";
     const openPopover = `${tab}.contentEl.querySelector('[data-query-properties]').click();await new Promise(r=>setTimeout(r,100));const popup=activeDocument.querySelector('[data-query-properties-popup]');`;
     /** The Table header, each popover row's Display Name, and the file's saved text. */
-    const readTab = `(async()=>{const view=${tab};if(view.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(path)})return 'null';await view.query.settled;await view.save();const el=view.contentEl;const header=[...el.querySelectorAll('[data-query-table] thead th[data-query-column]')].map(n=>[n.getAttribute('data-query-column'),n.textContent]);if(!el.querySelector('[data-query-properties]'))return 'null';${openPopover}const names=[...popup.querySelectorAll('[data-query-property]')].filter(n=>n.querySelector('[data-query-property-name]')).map(n=>[n.dataset.queryProperty,n.querySelector('[data-query-property-name]').textContent]);popup.hidePopover();return JSON.stringify({header,names,rows:el.querySelectorAll('[data-query-table-row="item"]').length,text:await app.vault.read(view.file)});})()`;
+    const readTab = `(async()=>{const view=${tab};if(view.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(path)})return 'null';await view.query.settled;await view.save();const el=view.contentEl;const header=[...el.querySelectorAll('[data-query-table] thead th[data-query-column]')].map(n=>[n.getAttribute('data-query-column'),n.textContent]);if(!el.querySelector('[data-query-properties]'))return 'null';${openPopover}const names=['title','formula.year'].map(property=>popup.querySelector('[data-query-property="'+property+'"]')).filter(n=>n?.querySelector('[data-query-property-name]')).map(n=>[n.dataset.queryProperty,n.querySelector('[data-query-property-name]').textContent]);popup.hidePopover();return JSON.stringify({header,names,rows:el.querySelectorAll('[data-query-table-row="item"]').length,text:await app.vault.read(view.file)});})()`;
     interface Tab {
       header: [string, string][];
       names: [string, string][];
@@ -2756,12 +2756,13 @@ views:
       return tab!;
     };
     const shown = await tabWhen((tab) => tab.rows > 0 && tab.header.length > 0);
-    // Without a Display Name, a field shows its label and a Formula its path.
+    // Without a Display Name, a field shows its label and a Formula its path,
+    // in the Table header and in the Properties popover.
     expect(shown.header).toEqual([
       ["title", "Title"],
       ["formula.year", "formula.year"],
     ]);
-    expect(shown.names).toEqual([]);
+    expect(shown.names).toEqual([["title", "Title"]]);
 
     // The rename button of the title row opens "Rename property".
     const renameModal =
