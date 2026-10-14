@@ -1,3 +1,4 @@
+import { parseIndexedKey } from "@zotlit/db";
 // Validation of a Filter Expression against the registries. The result is a
 // typed tree in which every name is resolved, so that execution and the
 // planner read one structure.
@@ -26,8 +27,14 @@ import {
   takesType,
 } from "./filter-functions";
 import type { FunctionDefinition } from "./filter-functions";
-import type { FilterValue, FilterValueType } from "./filter-values";
+import { isQueryRecord } from "./filter-values";
+import type {
+  FilterValue,
+  FilterValueType,
+  RecordValue,
+} from "./filter-values";
 import type { FilterNavigation } from "./record-field";
+import type { QueryContext } from "./request";
 
 /**
  * The type of a node's value as validation knows it. Each type also holds
@@ -193,6 +200,7 @@ export function planFilter<Item = QueryItem, Needs = FieldNeeds>(
     any,
     any
   >,
+  context?: QueryContext,
 ): FilterPlan<Item, Needs> | FilterProblem {
   const { ast, error } = parseExpressionAst(text);
   if (!ast) {
@@ -205,6 +213,7 @@ export function planFilter<Item = QueryItem, Needs = FieldNeeds>(
     const root = new Validator(
       { needs, customFields, warnings },
       registry,
+      context,
     ).node(ast);
     warnings.sort((a, b) => a.at.from - b.at.from);
     return { root, needs, customFields, warnings };
@@ -227,6 +236,7 @@ export function hasBareForm(customFieldName: string): boolean {
 
 /** The bare names that always mean a built-in; a keyword parses as a literal. */
 const RESERVED_NAMES: ReadonlySet<string> = new Set([
+  "this",
   ...BUILT_IN_NAMES,
   ...GLOBAL_FUNCTION_NAMES,
 ]);
@@ -422,6 +432,7 @@ class Validator<Item, Needs> {
       warnings: Extract<Fault, { kind: "constant" }>[];
     },
     readonly registry: FilterRegistry<Item, Needs>,
+    readonly context: QueryContext | undefined,
   ) {
     this.#needs = needs;
     this.#customFields = customFields;
@@ -467,6 +478,7 @@ class Validator<Item, Needs> {
         };
       }
       case "binary": {
+        const planned = this.#needs.length;
         let left = this.node(ast.left);
         let right = this.node(ast.right);
         if (ast.operator === "==" || ast.operator === "!=") {
@@ -497,6 +509,35 @@ class Validator<Item, Needs> {
           };
           left = replace(left, right);
           right = replace(right, left);
+          // A Parent Record compared with the Query Context record compares
+          // Indexed Keys, so the candidate plan selects the bound key.
+          const byKey = (field: FilterNode<Item>, other: FilterNode<Item>) =>
+            field.kind === "field" &&
+            field.recordDataset !== undefined &&
+            other.kind === "literal" &&
+            other.recordDataset === field.recordDataset &&
+            isQueryRecord(other.value);
+          const keyed = byKey(left, right)
+            ? ([left, right] as const)
+            : byKey(right, left)
+              ? ([right, left] as const)
+              : null;
+          if (keyed) {
+            const [field, record] = keyed;
+            this.#needs.length = planned;
+            const keyField = this.#identifier(
+              `${(field as { name: string }).name}.indexedKey`,
+              field,
+            );
+            const key: FilterNode<Item> = {
+              ...literal(
+                record,
+                (record as { value: RecordValue }).value.read("indexedKey"),
+              ),
+              valueType: "string",
+            };
+            [left, right] = field === left ? [keyField, key] : [key, keyField];
+          }
         }
         const equality = ast.operator === "==" || ast.operator === "!=";
         const ordering = ["<", "<=", ">", ">="].includes(ast.operator);
@@ -535,6 +576,11 @@ class Validator<Item, Needs> {
       }
       case "object-access": {
         const object = ast.object;
+        if (isThis(object)) return this.#contextRecord(ast.property, span);
+        if (object.type === "object-access" && isThis(object.object)) {
+          const record = this.#contextRecord(object.property, object);
+          return this.#contextMember(record, ast.property, span);
+        }
         if (
           object.type === "identifier" &&
           !this.#scopes.some((scope) => scope.includes(object.name)) &&
@@ -678,6 +724,17 @@ class Validator<Item, Needs> {
         navigation,
       );
     }
+    if (name === "this") {
+      return fail({
+        kind: "plain",
+        code: this.context ? "invalid-filter" : "unbound-context",
+        at: span,
+        message: this.context
+          ? "this is the Query Context; a filter reads one of its records."
+          : "The filter reads this, but the query binds no Query Context.",
+        action: "Read this.item or this.attachment.",
+      });
+    }
     const field = this.registry.field(name);
     if (field?.filterable) {
       this.#needs.push(field.needs);
@@ -710,6 +767,67 @@ class Validator<Item, Needs> {
       span,
       true,
     );
+  }
+
+  /** `this.item` or `this.attachment`: the bound record, as a literal. */
+  #contextRecord(member: string, span: Span): FilterNode<Item> {
+    if (member !== "item" && member !== "attachment") {
+      return fail({
+        kind: "plain",
+        code: "unknown-property",
+        at: span,
+        message: `this has no ${JSON.stringify(member)}; the Query Context has item and attachment.`,
+        action: "Read this.item or this.attachment.",
+      });
+    }
+    const noun = member === "item" ? "Item" : "Attachment";
+    const key = this.context?.[member];
+    if (key === undefined) {
+      return fail({
+        kind: "plain",
+        code: "unbound-context",
+        at: span,
+        message: `The filter reads this.${member}, but the query binds no ${noun} to this.`,
+        action: `Bind this.${member} to an ${noun} when you run the query, such as this-${member}=<Indexed Key> in zotlit:query, or name the ${noun} by its Indexed Key.`,
+      });
+    }
+    const dataset = member === "item" ? "items" : "attachments";
+    const value: RecordValue = {
+      type: "record",
+      identity: `${dataset}:${key}`,
+      read: (name) =>
+        name === "indexedKey"
+          ? key
+          : name === "key"
+            ? (parseIndexedKey(key)?.key ?? null)
+            : null,
+    };
+    return {
+      ...literal(span, value),
+      valueType: "record",
+      recordDataset: dataset,
+    };
+  }
+
+  /** A member of a Query Context record: its Indexed Key or its Zotero Key. */
+  #contextMember(
+    record: FilterNode<Item>,
+    name: string,
+    span: Span,
+  ): FilterNode<Item> {
+    const subject = (record as { value: RecordValue }).value;
+    if (name !== "indexedKey" && name !== "key") {
+      const at = { from: span.to - name.length, to: span.to };
+      return fail({
+        kind: "plain",
+        code: "unknown-property",
+        at,
+        message: `A Query Context record gives indexedKey and key; a filter cannot read ${JSON.stringify(name)} on it.`,
+        action:
+          "Compare the record itself, such as item == this.item, or read this.item.indexedKey.",
+      });
+    }
+    return { ...literal(span, subject.read(name)), valueType: "string" };
   }
 
   #isCustomRoot(ast: ExpressionNode): boolean {
@@ -1045,6 +1163,10 @@ function literal(
   value: FilterValue,
 ): Span & { kind: "literal"; value: FilterValue } {
   return { ...span, kind: "literal", value };
+}
+
+function isThis(node: ExpressionNode): boolean {
+  return node.type === "identifier" && node.name === "this";
 }
 
 function isCustomRoot(node: ExpressionNode): boolean {

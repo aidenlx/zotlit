@@ -3413,6 +3413,79 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     }
   });
 
+  it("binds this to an Item and an Attachment through zotlit:query", async () => {
+    const parents = ATTACHMENTS.filter(
+      (attachment) => attachment.parentItemID === annotationItem.itemID,
+    );
+    const query = async (args: Record<string, string>) =>
+      JSON.parse(
+        await cliCommand(vaultId, "zotlit:query", {
+          args: { fields: "[]", limit: "all", library: "personal", ...args },
+        }),
+      ) as ItemQueryReport;
+    const keysOf = (report: ItemQueryReport) =>
+      report.rows!.map((row) => row.indexedKey).toSorted();
+
+    const marks = await query({
+      from: "annotations",
+      filter: "item == this.item",
+      "this-item": annotationItem.key,
+    });
+    expect(marks).toMatchObject({
+      ok: true,
+      request: { context: { item: annotationItem.key } },
+      warnings: [],
+    });
+    expect(keysOf(marks)).toEqual(
+      ANNOTATIONS.filter((annotation) =>
+        parents.some((parent) => parent.itemID === annotation.parentItemID),
+      )
+        .map((annotation) => annotation.key)
+        .toSorted(),
+    );
+
+    const attachment = parents[0]!;
+    const attachmentMarks = await query({
+      from: "annotations",
+      filter: "attachment == this.attachment",
+      "this-attachment": attachment.key,
+    });
+    expect(keysOf(attachmentMarks)).toEqual(
+      ANNOTATIONS.filter(
+        (annotation) => annotation.parentItemID === attachment.itemID,
+      )
+        .map((annotation) => annotation.key)
+        .toSorted(),
+    );
+
+    const files = await query({
+      from: "attachments",
+      filter: "item == this.item",
+      "this-item": annotationItem.key,
+    });
+    expect(keysOf(files)).toEqual(
+      parents.map((parent) => parent.key).toSorted(),
+    );
+
+    const item = await query({
+      filter: "indexedKey == this.item.indexedKey",
+      "this-item": annotationItem.key,
+    });
+    expect(keysOf(item)).toEqual([annotationItem.key]);
+
+    const unbound = await query({
+      from: "annotations",
+      filter: "item == this.item",
+    });
+    expect(unbound).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "unbound-context",
+        location: { argument: "filter", span: { from: 8, to: 17 } },
+      },
+    });
+  });
+
   it("groups marks per paper through zotlit:query", async () => {
     const report = JSON.parse(
       await cliCommand(vaultId, "zotlit:query", {

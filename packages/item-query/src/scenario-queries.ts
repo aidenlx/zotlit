@@ -393,6 +393,14 @@ const REQUESTS: readonly ScenarioQuery[] = [
     },
   ]),
   {
+    name: "Query Context Item by Indexed Key",
+    libraries: ["personal", "group"],
+    request: {
+      filter: "indexedKey == this.item.indexedKey",
+      context: { item: "ART2FULLg4815" },
+    },
+  },
+  {
     name: "element group over a candidate set",
     libraries: ["personal", "group"],
     request: {

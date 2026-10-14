@@ -23,8 +23,13 @@ import {
 } from "./contract";
 import type { QueryCliCommand } from "./contract";
 import { decodeQuery, decodeSchemaArguments, decodeValues } from "./decode";
+import type { QueryViewOutcome, QueryViewRequest } from "./query-view";
 import type { CancellationEvent, QueryObserver } from "./trace";
-import type { QueryAnswer, QueryCommand } from "./worker-protocol";
+import type {
+  QueryAnswer,
+  QueryCommand,
+  QueryViewCommand,
+} from "./worker-protocol";
 
 interface QueryServiceDeps {
   pluginVersion: string;
@@ -40,9 +45,9 @@ interface QueryServiceDeps {
 /** Forks a job into the map of jobs under its key. */
 type JobRunner = (
   key: string,
-  job: Effect.Effect<string, unknown>,
+  job: Effect.Effect<unknown, unknown>,
   options: Effect.RunOptions,
-) => Fiber.Fiber<string, unknown>;
+) => Fiber.Fiber<unknown, unknown>;
 
 /**
  * The key of a job that the caller does not name. A query id has no `:`, so
@@ -59,7 +64,7 @@ const unnamedKey = (): string => `:${randomUUID()}`;
  */
 export class QueryService extends Service {
   readonly #deps;
-  #jobs!: FiberMap.FiberMap<string, string>;
+  #jobs!: FiberMap.FiberMap<string, unknown>;
   #run!: JobRunner;
   /** The failure of startup: every job then rejects with it. */
   #startup: { failed: true; error: unknown } | undefined;
@@ -77,7 +82,7 @@ export class QueryService extends Service {
     const { scope, close } = openScope();
     stack.defer(close);
     this.#jobs = Effect.runSync(
-      Scope.provide(FiberMap.make<string, string>(), scope),
+      Scope.provide(FiberMap.make<string, unknown>(), scope),
     );
     this.#run = Effect.runSync(FiberMap.runtime(this.#jobs)());
     try {
@@ -134,6 +139,36 @@ export class QueryService extends Service {
       signal,
       id,
     );
+  }
+
+  /**
+   * Run the typed query of a Query View: every row up to `request.limit`, as
+   * parsed groups of rows. An invalid query, or a source that cannot answer,
+   * gives the diagnostic of `zotlit:query` as data; an abort of `signal`
+   * stops the query and gives `cancelled`.
+   * @throws The startup failure of the service, or an internal error.
+   */
+  async run(
+    request: QueryViewRequest,
+    signal: AbortSignal,
+  ): Promise<QueryViewOutcome> {
+    const command: QueryViewCommand = {
+      command: QUERY_COMMAND,
+      schema: false,
+      view: request,
+    };
+    const settled = await this.#settle(
+      this.#send(command).pipe(
+        Effect.map((answer) => {
+          if (answer.view) return answer.view;
+          throw new Error("ZotLit Query answered a typed query with text.");
+        }),
+      ),
+      signal,
+    );
+    if (settled.done) return settled.value;
+    if (this.#startup) throw this.#startup.error;
+    return { kind: "cancelled" };
   }
 
   /** List Collection paths or Tag names through the same worker connection. */
@@ -194,13 +229,8 @@ export class QueryService extends Service {
     signal: AbortSignal,
     id?: string,
   ): Promise<string> {
-    const fiber = this.#run(id ?? unnamedKey(), job, {
-      signal,
-      uninterruptible: true,
-    });
-    return Effect.runPromise(Fiber.await(fiber)).then((exit) => {
-      if (Exit.isSuccess(exit)) return exit.value;
-      if (!Cause.hasInterruptsOnly(exit.cause)) throw Cause.squash(exit.cause);
+    return this.#settle(job, signal, id).then((settled) => {
+      if (settled.done) return settled.value;
       if (signal.aborted) throw signal.reason;
       if (this.#startup) throw this.#startup.error;
       throw new DOMException(
@@ -213,24 +243,81 @@ export class QueryService extends Service {
   }
 
   /**
-   * One job: send the command to the worker and publish its export. An
-   * interrupt while the worker runs the job sends `CancelItemQuery` and waits
-   * for the answer, so the worker closes its writer and ends its borrow
-   * before the job ends. The staging file is removed when the job ends.
+   * Run `job` as a fiber of the map under `id`, or under an unnamed key
+   * without one, until it settles; `signal` interrupts it.
+   * @returns `done: false` when the job was interrupted.
+   */
+  #settle<A>(
+    job: Effect.Effect<A, unknown>,
+    signal: AbortSignal,
+    id?: string,
+  ): Promise<{ done: true; value: A } | { done: false }> {
+    const fiber = this.#run(id ?? unnamedKey(), job, {
+      signal,
+      uninterruptible: true,
+    });
+    return Effect.runPromise(Fiber.await(fiber)).then((exit) => {
+      if (Exit.isSuccess(exit)) return { done: true, value: exit.value as A };
+      if (!Cause.hasInterruptsOnly(exit.cause)) throw Cause.squash(exit.cause);
+      return { done: false };
+    });
+  }
+
+  /**
+   * One job: send the command to the worker and publish its export. The
+   * staging file is removed when the job ends.
    */
   #job(
     command: QueryCommand,
     measure?: QueryObserver & { heap: boolean },
   ): Effect.Effect<string, unknown> {
+    const send = this.#send.bind(this);
+    return Effect.gen(function* () {
+      const id = randomUUID();
+      const output = command.schema ? undefined : command.query?.output;
+      const stagePath =
+        output === undefined ? undefined : yield* stageExport(output, id);
+      const result = yield* send(command, { id, stagePath, measure });
+      if (result.view)
+        return yield* Effect.die(
+          new Error("ZotLit Query answered a CLI command with data."),
+        );
+      if (stagePath !== undefined && result.receipt.kind === "file")
+        return yield* publishExport({
+          stagePath,
+          output: result.receipt.path,
+          answer: result.answer,
+          command: result.command,
+        });
+      return result.answer;
+    }).pipe(
+      Effect.scoped,
+      Effect.onInterrupt(() => reportCancel(measure, "cleanup-finished")),
+    );
+  }
+
+  /**
+   * Send one command to the worker and wait for its answer. An interrupt
+   * while the worker runs the job sends `CancelItemQuery` and waits for the
+   * answer, so the worker closes its writer and ends its borrow before the
+   * job ends; a job that the worker cancelled interrupts.
+   */
+  #send(
+    command: QueryCommand | QueryViewCommand,
+    {
+      id = randomUUID(),
+      stagePath,
+      measure,
+    }: {
+      id?: string;
+      stagePath?: string | undefined;
+      measure?: (QueryObserver & { heap: boolean }) | undefined;
+    } = {},
+  ): Effect.Effect<QueryAnswer, unknown> {
     const deps = this.#deps;
     const ready = this.ready;
     const report = (phase: CancellationEvent["phase"]) =>
-      Effect.sync(() =>
-        measure?.cancelled?.({
-          phase,
-          atEpochMs: Temporal.Now.instant().epochMilliseconds,
-        }),
-      );
+      reportCancel(measure, phase);
     return Effect.gen(function* () {
       const reads = yield* Effect.interruptible(
         Effect.promise(async () => {
@@ -238,10 +325,6 @@ export class QueryService extends Service {
           return (await deps.reads.ready).reads;
         }),
       ).pipe(Effect.onInterrupt(() => report("requested")));
-      const id = randomUUID();
-      const output = command.schema ? undefined : command.query?.output;
-      const stagePath =
-        output === undefined ? undefined : yield* stageExport(output, id);
       const call = yield* Effect.forkChild(
         reads
           .ItemQuery({
@@ -267,16 +350,26 @@ export class QueryService extends Service {
             },
           })
           .pipe(
-            Effect.catchTag("DbUnavailable", (error) =>
-              Effect.succeed<QueryAnswer>({
-                command: command.command,
-                answer: failure(
-                  command.command,
-                  diagnostic("source-unavailable", error.message),
-                ),
-                receipt: { kind: "inline" },
-              }),
-            ),
+            Effect.catchTag("DbUnavailable", (error) => {
+              const unavailable = diagnostic(
+                "source-unavailable",
+                error.message,
+              );
+              return Effect.succeed<QueryAnswer>(
+                "view" in command
+                  ? {
+                      command: command.command,
+                      answer: "",
+                      receipt: { kind: "inline" },
+                      view: { kind: "failed", diagnostic: unavailable },
+                    }
+                  : {
+                      command: command.command,
+                      answer: failure(command.command, unavailable),
+                      receipt: { kind: "inline" },
+                    },
+              );
+            }),
           ),
       );
       const result = yield* Effect.interruptible(Fiber.join(call)).pipe(
@@ -291,19 +384,22 @@ export class QueryService extends Service {
       );
       if (result.cancelled) return yield* Effect.interrupt;
       if (result.measurement) measure?.completed(result.measurement);
-      if (stagePath !== undefined && result.receipt.kind === "file")
-        return yield* publishExport({
-          stagePath,
-          output: result.receipt.path,
-          answer: result.answer,
-          command: result.command,
-        });
-      return result.answer;
-    }).pipe(
-      Effect.scoped,
-      Effect.onInterrupt(() => report("cleanup-finished")),
-    );
+      return result;
+    });
   }
+}
+
+/** Report one phase of a cancel to the measurement, when one observes. */
+function reportCancel(
+  measure: QueryObserver | undefined,
+  phase: CancellationEvent["phase"],
+): Effect.Effect<void> {
+  return Effect.sync(() =>
+    measure?.cancelled?.({
+      phase,
+      atEpochMs: Temporal.Now.instant().epochMilliseconds,
+    }),
+  );
 }
 
 /** The staging path of an export, beside its output; removed with the job. */

@@ -9,6 +9,11 @@ export const ATTACHMENT_SCENARIO_QUERIES: readonly Omit<
   { fields: [], group: "tags[]", limit: 1 },
   { fields: [], group: "item.collections[]", limit: 2 },
   { fields: [], limit: 2 },
+  { filter: "item == this.item", context: { item: "ART2FULLg4815" } },
+  {
+    filter: "indexedKey == this.attachment.indexedKey",
+    context: { attachment: "PDF2LIVE" },
+  },
   { fields: ["item.creators[].fullName", "tags[]", "item", "item.indexedKey"] },
   ...[
     'key == "PDF2LINK"',

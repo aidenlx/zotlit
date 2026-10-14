@@ -4,8 +4,9 @@ import type { QueryDataset } from "@zotlit/item-query";
 import type { LibraryScope } from "@/services/library-scope/scope";
 import type { WorkbenchIdentity } from "@/services/template-workbench/envelope";
 
-import type { QueryCliCommand } from "./contract";
+import type { QUERY_COMMAND, QueryCliCommand } from "./contract";
 import type { DecodedQuery, DecodedValues } from "./decode";
+import type { QueryViewOutcome, QueryViewRequest } from "./query-view";
 import type { WorkerMeasurement } from "./trace";
 
 /** The Query Dataset that a job reads: Items or Annotations. */
@@ -23,8 +24,15 @@ export type QueryCommand = {
   | { schema: false; query: DecodedQuery; dataset: QueryDatasetId }
 );
 
+/** The typed query of a Query View; its answer is data, not envelope text. */
+export interface QueryViewCommand {
+  command: typeof QUERY_COMMAND;
+  schema: false;
+  view: QueryViewRequest;
+}
+
 /** Small request data for the ZoteroReads worker. Query rows stay in that worker. */
-export type QueryJob = QueryCommand & {
+export type QueryJob = (QueryCommand | QueryViewCommand) & {
   id: string;
   source: WorkbenchIdentity["source"];
   vault: WorkbenchIdentity["vault"];
@@ -50,9 +58,16 @@ export interface QueryReply {
   receipt: QueryReceipt;
 }
 
+/** The answer to a typed query: the outcome as data; `answer` is empty. */
+export interface QueryViewReply extends QueryReply {
+  view: Exclude<QueryViewOutcome, { kind: "cancelled" }>;
+}
+
 /** The answer of the worker to one job. */
 export interface QueryAnswer extends QueryReply {
   /** `CancelItemQuery` interrupted the job; `answer` is empty. */
   cancelled?: true;
+  /** The outcome of a typed query; `answer` is empty. */
+  view?: QueryViewReply["view"];
   measurement?: WorkerMeasurement;
 }
