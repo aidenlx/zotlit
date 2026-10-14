@@ -2706,6 +2706,120 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(book);
   }, 180000);
 
+  // A List or Cards view of Items gathers its rows by a grouping whose
+  // fields it does not show, as the Table does (#1495).
+  it("groups a List and Cards view of Items by item type, Collection and tag, as the Table does", async () => {
+    const layout = await obEval(
+      vaultId,
+      "JSON.stringify(app.workspace.getLayout())",
+    );
+    const paths: string[] = [];
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))leaf.detach();for(const path of ${JSON.stringify(paths)}){const file=app.vault.getFileByPath(path);if(file)await app.vault.delete(file);}await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+      );
+    });
+    const itemTypes = [
+      "Book",
+      "Book Section",
+      "Conference Paper",
+      "Journal Article",
+      "Letter",
+      "Preprint",
+      "Thesis",
+    ];
+    const none = m.query_view_group_none();
+    const cases: {
+      name: string;
+      type: "list" | "cards" | "table";
+      group: string;
+      order?: string[];
+      headings: string[];
+      unused?: string;
+    }[] = [
+      {
+        name: "List by item type",
+        type: "list",
+        group: "itemType",
+        order: ["title"],
+        headings: itemTypes,
+      },
+      {
+        name: "Cards by Collection",
+        type: "cards",
+        group: "collections[]",
+        headings: [
+          "Personal only",
+          "Personal only/Personal child",
+          "Shared key",
+          none,
+        ],
+      },
+      {
+        name: "List by tag",
+        type: "list",
+        group: "tags[]",
+        headings: ["fixture-core", "read-later", none],
+      },
+      {
+        name: "List by tag showing tags",
+        type: "list",
+        group: "tags[]",
+        order: ["title", "tags"],
+        headings: ["fixture-core", "read-later", none],
+        unused: m.query_view_unshown({
+          dataset: m.query_view_dataset_items(),
+          properties: "tags",
+        }),
+      },
+      {
+        name: "Table by item type",
+        type: "table",
+        group: "itemType",
+        order: ["title"],
+        headings: itemTypes,
+      },
+    ];
+    for (const { name, type, group, order, headings, unused } of cases) {
+      const path = `query-files/${name}.zotquery`;
+      paths.push(path);
+      const text = [
+        "views:",
+        `  - type: ${type}`,
+        `    name: ${name}`,
+        "    from: items",
+        "    groupBy:",
+        `      property: ${group}`,
+        "      direction: ASC",
+        ...(order ? ["    order:", ...order.map((p) => `      - ${p}`)] : []),
+        "    limit: 100",
+        "",
+      ].join("\n");
+      await obEval(
+        vaultId,
+        `(async()=>{const file=await app.vault.create(${JSON.stringify(path)},${JSON.stringify(text)});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
+      );
+      const read = `(async()=>{const view=app.workspace.getMostRecentLeaf().view;if(view.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(path)})return 'null';await view.query.settled;const el=view.contentEl;return JSON.stringify({rows:el.querySelectorAll('[data-query-row], [data-query-table-row="item"]').length,headings:[...el.querySelectorAll('[data-query-group]')].map(n=>n.textContent),unused:el.querySelector('[data-query-unused]')?.textContent??null});})()`;
+      let shown: {
+        rows: number;
+        headings: string[];
+        unused: string | null;
+      } | null = null;
+      const settled = await waitFor(async () => {
+        shown = JSON.parse(await obEval(vaultId, read)) as typeof shown;
+        return shown !== null && shown.rows > 0;
+      }, 120);
+      if (!settled) throw new Error(`${name}: ${JSON.stringify(shown)}`);
+      expect({ name, ...shown! }).toMatchObject({
+        name,
+        headings,
+        unused: unused ?? null,
+      });
+    }
+  }, 180000);
+
   it("renders the deterministic PDF matrix and reuses its cache", async () => {
     await verifyExcerptRendering(vaultId);
   }, 120000);

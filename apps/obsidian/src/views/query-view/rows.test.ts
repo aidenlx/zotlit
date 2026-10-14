@@ -50,7 +50,7 @@ const placed = (shown: ReturnType<typeof layoutRows>) =>
 
 describe("layoutRows", () => {
   it("keeps the query's order when the view has no grouping", () => {
-    const shown = layoutRows(ROWS, undefined);
+    const shown = layoutRows(ROWS, { from: "annotations" });
     expect(shown.rows.map((r) => r.annotationKey)).toEqual([
       "ANNOT001",
       "ANNOT002",
@@ -64,8 +64,11 @@ describe("layoutRows", () => {
 
   it("groups by Item in the order of the Items' titles, named by its title", () => {
     const shown = layoutRows(ROWS, {
-      property: "item.indexedKey",
-      direction: "ASC",
+      from: "annotations",
+      groupBy: {
+        property: "item.indexedKey",
+        direction: "ASC",
+      },
     });
     expect(
       shown.rows.map((r) => [r.annotationKey, r.attachmentKey, r.group?.label]),
@@ -80,8 +83,11 @@ describe("layoutRows", () => {
 
   it("orders the groups from Z to A for a descending grouping, and keeps the rows' order in a group", () => {
     const shown = layoutRows(ROWS, {
-      property: "item.indexedKey",
-      direction: "DESC",
+      from: "annotations",
+      groupBy: {
+        property: "item.indexedKey",
+        direction: "DESC",
+      },
     });
     expect(shown.rows.map((r) => r.annotationKey)).toEqual([
       "ANNOT001",
@@ -98,17 +104,24 @@ describe("layoutRows", () => {
       row("ANNOT003", "ITEMAAAA", { itemTitle: "A", tags: ["figure"] }),
     ];
     const order = (direction: "ASC" | "DESC") =>
-      layoutRows(rows, { property: "tags[]", direction }).groups.map(
-        (g) => g.value,
-      );
+      layoutRows(rows, {
+        from: "annotations",
+        groupBy: {
+          property: "tags[]",
+          direction,
+        },
+      }).groups.map((g) => g.value);
     expect(order("ASC")).toEqual(["figure", "method", null]);
     expect(order("DESC")).toEqual(["method", "figure", null]);
   });
 
   it("groups by Attachment, named by its title", () => {
     const shown = layoutRows(ROWS, {
-      property: "attachment.indexedKey",
-      direction: "ASC",
+      from: "annotations",
+      groupBy: {
+        property: "attachment.indexedKey",
+        direction: "ASC",
+      },
     });
     expect(shown.groups.map((g) => [g.value, g.label, g.count])).toEqual([
       ["ATTACHMT", "Full text PDF", 3],
@@ -131,7 +144,10 @@ describe("layoutRows", () => {
           colorName: null,
         }),
       ],
-      { property: "colorName", direction: "ASC" },
+      {
+        from: "annotations",
+        groupBy: { property: "colorName", direction: "ASC" },
+      },
     );
     expect(placed(shown)).toEqual([
       // A colour outside Zotero's palette is its own group, named by its hex.
@@ -156,7 +172,10 @@ describe("layoutRows", () => {
         row("ANNOT002", "ITEMAAAA", { itemTitle: "A", tags: ["method"] }),
         row("ANNOT003", "ITEMAAAA", { itemTitle: "A" }),
       ],
-      { property: "tags[]", direction: "ASC" },
+      {
+        from: "annotations",
+        groupBy: { property: "tags[]", direction: "ASC" },
+      },
     );
     expect(placed(shown)).toEqual([
       ["ANNOT001", "figure"],
@@ -180,7 +199,10 @@ describe("layoutRows", () => {
           collections: ["Thesis/Chapter 1", "Reading"],
         }),
       ],
-      { property: "item.collections[]", direction: "ASC" },
+      {
+        from: "annotations",
+        groupBy: { property: "item.collections[]", direction: "ASC" },
+      },
     );
     expect(placed(shown)).toEqual([
       ["ANNOT001", "Reading"],
@@ -204,8 +226,11 @@ describe("layoutRows", () => {
         }),
         row("ANNOT004", "ITEMAAAA", { itemTitle: "A" }),
       ],
-      { property: "colorName", direction: "ASC" },
-      ["red", "blue", "yellow"],
+      {
+        from: "annotations",
+        groupBy: { property: "colorName", direction: "ASC" },
+        groupOrder: ["red", "blue", "yellow"],
+      },
     );
     expect(placed(shown)).toEqual([
       ["ANNOT002", "Red"],
