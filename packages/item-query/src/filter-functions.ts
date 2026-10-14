@@ -15,6 +15,8 @@ import {
   today,
 } from "./filter-dates";
 import type { DateValue } from "./filter-dates";
+import { errorValue, isError } from "./filter-error";
+import type { ErrorValue } from "./filter-error";
 import {
   equals,
   isDate,
@@ -54,9 +56,9 @@ export interface FunctionParameter {
  * One function or method. A call with a wrong argument count, or with an
  * argument whose type is known before execution and differs from the
  * parameter, fails the query; so does a string literal outside the `values`
- * of its parameter. At execution, a null or wrongly typed argument of a typed
- * parameter, or a text outside its `values`, gives null and `call` does not
- * run.
+ * of its parameter. At execution, a null argument of a typed parameter gives
+ * null, and a wrongly typed argument or a text outside its `values` gives an
+ * Error Value; `call` does not run. An Error Value argument is the result.
  */
 export interface FunctionDefinition {
   /** Semantic eligibility for a diagnostic correction, checked with the signature. */
@@ -78,8 +80,8 @@ export interface FunctionDefinition {
   readonly scope?: readonly string[];
   /**
    * `subject` is the value the method is called on, and null for a global
-   * function. `clock` is the Query Clock of the query. A null result is a
-   * failure that depends on the Item's data.
+   * function. `clock` is the Query Clock of the query. A null result is
+   * missing data; an Error Value is a value that this Item cannot compute.
    */
   readonly call: (
     subject: FilterValue,
@@ -111,9 +113,36 @@ const string = (name: string): FunctionParameter => ({ name, type: "string" });
 const number = (name: string): FunctionParameter => ({ name, type: "number" });
 const any = (name: string): FunctionParameter => ({ name, type: "any" });
 
-/** A number that a calculation gave; a result outside the finite numbers is null. */
-export function finite(value: number): number | null {
-  return Number.isFinite(value) ? value : null;
+/**
+ * A number that `operation` gave; a result outside the finite numbers is an
+ * Error Value.
+ */
+export function finite(value: number, operation: string): number | ErrorValue {
+  return Number.isFinite(value)
+    ? value
+    : errorValue({ code: "not-finite", operation });
+}
+
+/** The Error Value of a text that a conversion function cannot read. */
+function unparseable(
+  callee: "number" | "date" | "duration",
+  text: string,
+): ErrorValue {
+  return errorValue({ code: "unparseable-text", callee, text });
+}
+
+/** The Error Value of an argument outside the values its parameter takes. */
+function outOfRange(
+  callee: string,
+  index: number,
+  found: FilterValue | undefined,
+): ErrorValue {
+  return errorValue({
+    code: "argument-out-of-range",
+    callee,
+    index,
+    found: toText(found ?? null),
+  });
 }
 
 /** The largest count `repeat` takes: one query cannot exhaust the worker. */
@@ -165,12 +194,24 @@ export const GLOBAL_FUNCTIONS: Registry<FunctionDefinition> = functions({
     parameters: [any("value")],
     returns: "number",
     call: (_subject, [value = null], clock) => {
+      if (value === null) return null;
       if (typeof value === "number") return value;
       if (typeof value === "boolean") return value ? 1 : 0;
-      if (typeof value === "string") return finite(Number.parseFloat(value));
+      if (typeof value === "string") {
+        const parsed = Number.parseFloat(value);
+        return Number.isNaN(parsed)
+          ? unparseable("number", value)
+          : finite(parsed, "number");
+      }
       // A date is its Unix time in milliseconds, as its `timestamp` property.
       if (isDate(value)) return datePart(value, "timestamp", clock);
-      return null;
+      return errorValue({
+        code: "wrong-argument-type",
+        callee: "number",
+        index: 0,
+        found: typeOf(value),
+        expected: ["a number", "a string", "a boolean", "a date"],
+      });
     },
   },
   min: extreme(Math.min),
@@ -192,13 +233,16 @@ export const GLOBAL_FUNCTIONS: Registry<FunctionDefinition> = functions({
     returns: "date",
     // A date stays as it is.
     call: (_subject, [text], clock) =>
-      typeof text === "string" ? parseDate(text, clock) : text!,
+      typeof text === "string"
+        ? (parseDate(text, clock) ?? unparseable("date", text))
+        : text!,
   },
   duration: {
     diagnosticCorrection: "conversion",
     parameters: [string("text")],
     returns: "duration",
-    call: (_subject, [text]) => parseDuration(text as string),
+    call: (_subject, [text]) =>
+      parseDuration(text as string) ?? unparseable("duration", text as string),
   },
   // A list stays as it is; null is the empty list; any other value is a
   // one-element list.
@@ -240,7 +284,10 @@ const includes = (
 const candidates = (args: readonly FilterValue[]): readonly FilterValue[] =>
   args.length === 1 && isList(args[0]!) ? args[0] : args;
 
-/** The group of each value type in the order of `sort`; null comes last. */
+/**
+ * The group of each value type in the order of `sort`; Error Values come
+ * before null, which comes last.
+ */
 const SORT_GROUPS: Readonly<Record<FilterValueType, number>> = {
   boolean: 0,
   number: 1,
@@ -250,7 +297,8 @@ const SORT_GROUPS: Readonly<Record<FilterValueType, number>> = {
   list: 5,
   regexp: 6,
   record: 7,
-  null: 8,
+  error: 8,
+  null: 9,
 };
 
 /**
@@ -303,22 +351,31 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
         parameters: NONE,
         optional: [number("digits")],
         returns: "number",
+        // A digit count whose power of ten is zero or not finite is out of
+        // range.
         call: (subject, [digits]) => {
           const factor = typeof digits === "number" ? 10 ** digits : 1;
-          return finite(Math.round((subject as number) * factor) / factor);
+          if (factor === 0 || !Number.isFinite(factor)) {
+            return outOfRange("round", 0, digits);
+          }
+          return finite(
+            Math.round((subject as number) * factor) / factor,
+            "round",
+          );
         },
       },
       ceil: rounding(Math.ceil),
       floor: rounding(Math.floor),
       abs: rounding(Math.abs),
-      // A text with `precision` decimals; a precision outside 0 to 100 is null.
+      // A text with `precision` decimals; a precision outside 0 to 100 is
+      // out of range.
       toFixed: {
         parameters: [number("precision")],
         returns: "string",
         call: (subject, [precision]) =>
           inRange(precision, MAX_PRECISION)
             ? (subject as number).toFixed(precision)
-            : null,
+            : outOfRange("toFixed", 0, precision),
       },
     }),
     string: functions({
@@ -376,7 +433,8 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
               before + first.toUpperCase(),
           ),
       },
-      // A count above 10 000, or a result above 1 000 000 code units, is null.
+      // A count that is negative, not an integer, or above 10 000, or that
+      // gives a result above 1 000 000 code units, is out of range.
       repeat: {
         parameters: [number("count")],
         returns: "string",
@@ -384,7 +442,7 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
           isCount(count, MAX_REPEAT) &&
           (subject as string).length * count <= MAX_REPEAT_LENGTH
             ? (subject as string).repeat(count)
-            : null,
+            : outOfRange("repeat", 0, count),
       },
       // By code point, so an emoji survives.
       reverse: {
@@ -433,7 +491,9 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
         optional: [number("n")],
         returns: "list",
         call: (subject, [separator = null, n]) => {
-          if (n !== undefined && !isCount(n, Infinity)) return null;
+          if (n !== undefined && !isCount(n, Infinity)) {
+            return outOfRange("split", 1, n);
+          }
           return (subject as string)
             .split(
               isRegexp(separator) ? separator.regexp : (separator as string),
@@ -586,6 +646,8 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
         },
       },
     }),
+    // An Error Value has only the methods of every value.
+    error: functions({}),
   };
 
 /** The value types of the Filter Expression language. */
@@ -655,6 +717,7 @@ const PROPERTIES: Readonly<
     timestamp: datePartProperty("timestamp"),
   }),
   duration: properties({}),
+  error: properties({}),
   regexp: properties({}),
 };
 
@@ -740,28 +803,48 @@ export const PROPERTY_ENTRIES: readonly (readonly [
 );
 
 /**
- * Call a function with evaluated arguments. A null or wrongly typed argument
- * of a typed parameter gives null.
+ * Call the function `name` with evaluated arguments. The first Error Value
+ * among the arguments is the result. A null argument of a typed parameter
+ * gives null; a wrongly typed argument, or a text outside the `values` of its
+ * parameter, gives an Error Value.
  */
 export function invoke(
   definition: FunctionDefinition,
   {
+    name,
     subject,
     args,
-  }: { readonly subject: FilterValue; readonly args: readonly FilterValue[] },
+  }: {
+    readonly name: string;
+    readonly subject: FilterValue;
+    readonly args: readonly FilterValue[];
+  },
   clock: QueryClock,
 ): FilterValue {
+  const failed = args.find((value) => isError(value));
+  if (failed !== undefined) return failed;
   for (const [index, value] of args.entries()) {
     const parameter = parameterAt(definition, index);
     if (!parameter) return null;
-    if (value === null && parameter.nullable) continue;
-    if (!takesType(parameter, typeOf(value))) return null;
-    if (parameter.values && !parameter.values.includes(value as string)) {
+    if (value === null) {
+      if (takesType(parameter, "null")) continue;
       return null;
+    }
+    if (!takesType(parameter, typeOf(value))) {
+      return errorValue({
+        code: "wrong-argument-type",
+        callee: name,
+        index,
+        found: typeOf(value),
+        expected: parameterTypes(parameter).map((type) => `a ${type}`),
+      });
+    }
+    if (parameter.values && !parameter.values.includes(value as string)) {
+      return outOfRange(name, index, value);
     }
   }
   const result = definition.call(subject, args, clock);
-  return typeof result === "number" ? finite(result) : result;
+  return typeof result === "number" ? finite(result, name) : result;
 }
 
 /** Whether the parameter takes a value of `type`. */

@@ -441,6 +441,26 @@ const REQUESTS: readonly ScenarioQuery[] = [
       ],
     },
   },
+  {
+    name: "Formulas with Error Values over a candidate set and the scan",
+    libraries: ["personal", "group"],
+    request: {
+      filter: 'tags.contains("to-read") || number(title) > 0',
+      formulas: {
+        volume: "number(volume)",
+        title: "number(title)",
+        order: 'date > "2019"',
+        parts: "[number(title), title.length]",
+      },
+      fields: [
+        "title",
+        "formula.volume",
+        "formula.title",
+        "formula.order",
+        "formula.parts",
+      ],
+    },
+  },
   { name: "no filter, defaults", libraries: ["personal"], request: {} },
   { name: "no filter, defaults, group", libraries: ["group"], request: {} },
   {
@@ -777,4 +797,18 @@ export const GENERATED_FILTER_PARTS: readonly string[] = [
   "/a/.matches(publisher)",
   'title.replace(/\\s+/g, "") == "SameTitle"',
   'title.split(/ /)[0] == "Group"',
+  // Error Values: false where a truth is read, equal to no value, and passed
+  // through every other operator.
+  'date > "2019"',
+  "number(title) > 0",
+  "number(volume) > 0",
+  "!number(title)",
+  "number(title) != null",
+  "number(title) == number(title)",
+  'number(title).isType("error")',
+  "title.repeat(-1)",
+  "tags[0.5]",
+  "tags.filter(number(value) > 0).length == 0",
+  "if(number(title), true, false)",
+  'date("x" + key) || key == "ART2FULL"',
 ];

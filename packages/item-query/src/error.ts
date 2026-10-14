@@ -21,6 +21,7 @@ export type ItemQueryErrorCode =
   | "unknown-property"
   | "wrong-argument-count"
   | "wrong-argument-type"
+  | "wrong-operand-type"
   | "invalid-context"
   | "unbound-context"
   | "invalid-formula-name"
