@@ -372,3 +372,27 @@ it("plans a Formula that reads another one many times once for each Formula", as
     2019 * 2 ** 18,
   ]);
 });
+
+it("warns about a comparison in the text of a Formula, at the Formula", async () => {
+  using scenario = openScenarioDatabase();
+  const result = await run(scenario, {
+    filter: 'indexedKey == "BK2MNTH2"',
+    formulas: { x: 'date > "2019"' },
+    fields: ["formula.x"],
+  });
+  expect(
+    result.warnings.map(({ code, message, location }) => ({
+      code,
+      message,
+      location,
+    })),
+  ).toEqual([
+    {
+      code: expect.stringMatching(/^(never|always)-true$/),
+      message: expect.stringMatching(
+        /^In formula\.x: date is a date and "2019" is a string/,
+      ),
+      location: { argument: "formulas", path: "x", span: { from: 0, to: 13 } },
+    },
+  ]);
+});
