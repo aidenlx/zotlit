@@ -41,16 +41,16 @@ export function PropertiesMenu({ view }: { view: QueryView }) {
     <Chooser value={order} onValueChange={setOrder}>
       <Chooser.Trigger
         className={trigger}
-        aria-label={m.query_view_properties()}
+        aria-label={m.settings_profile_properties_name()}
         data-query-properties=""
       >
         <Icon name="list" />
-        <span>{m.query_view_properties()}</span>
+        <span>{m.settings_profile_properties_name()}</span>
       </Chooser.Trigger>
       <Chooser.Popup className="zt:min-w-60" data-query-properties-popup="">
         <Chooser.Input
           placeholder={m.query_view_properties_search()}
-          clearLabel={m.query_view_properties_clear_search()}
+          clearLabel={m.query_view_clear_search()}
         />
         <PropertyList
           dataset={current.from ?? "annotations"}
@@ -88,7 +88,7 @@ function PropertyList({
     if (order.length > 0)
       actions.push({
         value: "zt:hide-all",
-        label: m.query_view_properties_hide_all(),
+        label: m.query_view_group_hide_all(),
         action: () => setOrder([]),
       });
     return actions.length > 0
@@ -99,8 +99,7 @@ function PropertyList({
   return (
     <Chooser.List
       groups={groups}
-      aria-label={m.query_view_properties()}
-      emptyLabel={m.query_view_properties_empty()}
+      aria-label={m.settings_profile_properties_name()}
     >
       {(row) =>
         row.action ? (

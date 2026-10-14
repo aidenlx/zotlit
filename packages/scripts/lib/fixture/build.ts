@@ -1556,8 +1556,22 @@ function literatureNote(
         ]),
     ...attachments,
     ...(attachments.length === 0 ? [] : [""]),
+    ...(item.literatureNoteQueryBlock === true ? QUERY_BLOCK : []),
   ].join("\n");
 }
+
+/** A Query Block of the note's own Item's Annotations. */
+const QUERY_BLOCK = [
+  "```zotquery",
+  "views:",
+  "  - type: annotations",
+  "    name: This item",
+  "    from: annotations",
+  "    filters: item == this.item",
+  "    limit: 100",
+  "```",
+  "",
+];
 
 /**
  * The Mark Landing walkthrough (#1156). Generated rather than committed,

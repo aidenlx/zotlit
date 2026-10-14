@@ -76,11 +76,13 @@ import { registerCitationSuggest } from "./views/citation-suggest/register";
 import { registerCitedByView } from "./views/cited-by/register";
 import { registerNotePreview } from "./views/note-preview/register";
 import { registerPandocExport } from "./views/pandoc-export/register";
+import { registerQueryBlock } from "./views/query-view/block";
 import {
   queryFileFileMenu,
   queryFileFolderMenu,
   registerQueryFileView,
 } from "./views/query-view/register";
+import type { QueryViewDeps } from "./views/query-view/view";
 import { registerQuickSwitch } from "./views/quick-switch/register";
 import { registerReferencesView } from "./views/references/register";
 import {
@@ -459,7 +461,7 @@ export default class ZotLitPlugin extends Plugin {
       settings: services.settings,
     });
 
-    registerQueryFileView(this, {
+    const queryViewDeps: QueryViewDeps = {
       app: this.app,
       reads: services.zoteroReads,
       libraryScope: services.libraryScope,
@@ -473,7 +475,9 @@ export default class ZotLitPlugin extends Plugin {
         libraryTagNames(services.zoteroReads, annotationKey),
       zoteroPref: services.zoteroPref,
       noteFeature: services.noteFeature,
-    });
+    };
+    registerQueryFileView(this, queryViewDeps);
+    registerQueryBlock(this, queryViewDeps);
 
     // The Annotation History's own verbs. A bound PDF view and an Annotation
     // View each step the Attachment they show, so the palette acts on
