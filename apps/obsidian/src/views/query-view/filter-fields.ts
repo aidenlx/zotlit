@@ -6,6 +6,7 @@
 import { parseExpressionAst } from "@zotlit/filter-expression";
 import type { ExpressionNode } from "@zotlit/filter-expression";
 
+import { DATASETS } from "./datasets";
 import type { QueryFileDataset } from "./query-file";
 
 /** How a field's value is tested, and so which operators it offers. */
@@ -114,8 +115,7 @@ const FIRST_CHOICE: Partial<Record<FilterFieldKind, string>> = {
 
 /** The conditions of a view's dataset, in the order the kind picker lists them. */
 export function filterFields(dataset: QueryFileDataset): FilterField[] {
-  const item = dataset === "items" ? "" : "item.";
-  const attachment = dataset === "attachments" ? "" : "attachment.";
+  const { item, attachment } = DATASETS[dataset].prefix;
   const fields: FilterField[] = [];
   if (dataset === "annotations")
     fields.push(
@@ -140,7 +140,7 @@ export function filterFields(dataset: QueryFileDataset): FilterField[] {
     { kind: "collection", path: `${item}collections`, type: "collection" },
     { kind: "library", path: "library", type: "choice" },
   );
-  if (dataset !== "items")
+  if (attachment !== null)
     fields.push(
       { kind: "attachment-title", path: `${attachment}title`, type: "text" },
       { kind: "file-type", path: `${attachment}fileType`, type: "choice" },

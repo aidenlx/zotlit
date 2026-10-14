@@ -8,6 +8,7 @@ import type { QueryViewRow } from "@/services/item-query/query-view";
 import { itemTypeLabel } from "@/services/profile-selection/describe";
 import type { LayoutRow } from "@/views/annot-view/layout";
 
+import { datasetSpec } from "./datasets";
 import type {
   QueryFileDataset,
   QueryFileGroupValue,
@@ -15,43 +16,11 @@ import type {
 } from "./query-file";
 import { datasetProperties } from "./visible-properties";
 
-/** The group paths the Annotations Layout can gather rows by. */
-export const LAYOUT_GROUP_PATHS = [
-  "item.indexedKey",
-  "attachment.indexedKey",
-  "colorName",
-  "tags[]",
-  "item.collections[]",
-] as const;
-export type LayoutGroupPath = (typeof LAYOUT_GROUP_PATHS)[number];
-
-/** The group paths the Table can gather Item rows by. */
-export const ITEM_GROUP_PATHS = [
-  "itemType",
-  "tags[]",
-  "collections[]",
-] as const;
-export type ItemGroupPath = (typeof ITEM_GROUP_PATHS)[number];
-
-/** The group paths a view of Attachments can gather its rows by. */
-export const ATTACHMENT_GROUP_PATHS = [
-  "item.indexedKey",
-  "tags[]",
-  "item.collections[]",
-] as const;
-
 /** The group paths a view of `dataset` can gather its rows by. */
 export function groupPaths(
   dataset: QueryFileDataset | undefined,
 ): readonly string[] {
-  switch (dataset) {
-    case "items":
-      return ITEM_GROUP_PATHS;
-    case "attachments":
-      return ATTACHMENT_GROUP_PATHS;
-    default:
-      return LAYOUT_GROUP_PATHS;
-  }
+  return datasetSpec(dataset).group.map(([path]) => path);
 }
 
 /** The Projection Paths each row carries for its group and its heading. */

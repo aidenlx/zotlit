@@ -1,21 +1,10 @@
 // The properties a Query View can show: the Projection Paths of its Query
 // Dataset that give one cell each, read from the same descriptor ZotLit Query
 // plans with.
-import {
-  ANNOTATIONS,
-  ATTACHMENTS,
-  cellProperties,
-  ITEMS,
-} from "@zotlit/item-query";
-import type { QueryDataset } from "@zotlit/item-query";
+import { cellProperties } from "@zotlit/item-query";
 
+import { DATASETS } from "./datasets";
 import type { QueryFileDataset, QueryFileView } from "./query-file";
-
-const DATASETS: Record<QueryFileDataset, QueryDataset> = {
-  annotations: ANNOTATIONS,
-  attachments: ATTACHMENTS,
-  items: ITEMS,
-};
 
 const cache = new Map<QueryFileDataset, readonly string[]>();
 
@@ -29,7 +18,7 @@ export function datasetProperties(
 ): readonly string[] {
   let properties = cache.get(dataset);
   if (!properties) {
-    properties = cellProperties(DATASETS[dataset]).filter(
+    properties = cellProperties(DATASETS[dataset].engine).filter(
       (path) => path !== "position" && !path.startsWith("position."),
     );
     cache.set(dataset, properties);
@@ -68,7 +57,7 @@ export function visibleProperties(
   if (!fallback) return [];
   const dataset = view.from ?? "annotations";
   const properties = datasetProperties(dataset);
-  return DATASETS[dataset].defaultFields.filter((field) =>
+  return DATASETS[dataset].engine.defaultFields.filter((field) =>
     properties.includes(field),
   );
 }

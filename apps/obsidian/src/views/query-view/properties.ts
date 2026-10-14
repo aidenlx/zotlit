@@ -2,12 +2,10 @@
 // researcher knows them by. Sort offers only Sortable Fields of ZotLit Query;
 // Group offers the group paths the layouts of the view's dataset can gather
 // rows by.
-import { ANNOTATIONS, ATTACHMENTS, ITEMS } from "@zotlit/item-query";
-
 import * as m from "@/lib/i18n/generated/messages";
 
+import { datasetSpec } from "./datasets";
 import type { QueryFileDataset, QueryFileDirection } from "./query-file";
-import type { ItemGroupPath, LayoutGroupPath } from "./rows";
 
 /** How a property's values order, which names its two directions. */
 export type PropertyKind = "text" | "date" | "number";
@@ -19,59 +17,13 @@ export interface PropertyOption {
   readonly kind: PropertyKind;
 }
 
-const ANNOTATION_SORT_CANDIDATES: readonly [
-  string,
-  () => string,
-  PropertyKind,
-][] = [
-  ["sortIndex", m.query_view_property_position, "number"],
-  ["pageIndex", m.query_view_property_page, "number"],
-  ["dateAdded", m.query_view_property_date_added, "date"],
-  ["dateModified", m.query_view_property_date_modified, "date"],
-  ["color", m.query_view_property_color, "text"],
-  ["type", m.query_view_property_type, "text"],
-  ["item.title", m.query_view_property_item_title, "text"],
-  ["item.firstAuthor", m.query_view_property_first_author, "text"],
-  ["item.date", m.query_view_property_item_date, "date"],
-  ["item.dateModified", m.query_view_property_item_date_modified, "date"],
-  ["attachment.title", m.query_view_property_attachment_title, "text"],
-  ["attachment.dateAdded", m.query_view_property_attachment_date_added, "date"],
-];
-
-const ITEM_SORT_CANDIDATES: readonly [string, () => string, PropertyKind][] = [
-  ["title", m.query_view_property_title, "text"],
-  ["firstAuthor", m.query_view_property_first_author, "text"],
-  ["date", m.query_view_property_date, "date"],
-  ["dateAdded", m.query_view_property_date_added, "date"],
-  ["dateModified", m.query_view_property_date_modified, "date"],
-  ["itemType", m.query_view_property_item_type, "text"],
-];
-
-const ATTACHMENT_SORT_CANDIDATES: readonly [
-  string,
-  () => string,
-  PropertyKind,
-][] = [
-  ["title", m.query_view_property_title, "text"],
-  ["dateAdded", m.query_view_property_date_added, "date"],
-  ["dateModified", m.query_view_property_date_modified, "date"],
-  ["item.title", m.query_view_property_item_title, "text"],
-  ["item.firstAuthor", m.query_view_property_first_author, "text"],
-  ["item.date", m.query_view_property_item_date, "date"],
-];
-
 /** The properties a view of `dataset` can sort by, in the order Sort lists them. */
 export function sortOptions(
   dataset: QueryFileDataset | undefined,
 ): PropertyOption[] {
-  const [candidates, fields] =
-    dataset === "items"
-      ? [ITEM_SORT_CANDIDATES, ITEMS.sortableFields]
-      : dataset === "attachments"
-        ? [ATTACHMENT_SORT_CANDIDATES, ATTACHMENTS.sortableFields]
-        : [ANNOTATION_SORT_CANDIDATES, ANNOTATIONS.sortableFields];
-  const sortable = new Set(fields);
-  return candidates
+  const { engine, sort } = datasetSpec(dataset);
+  const sortable = new Set(engine.sortableFields);
+  return sort
     .filter(([path]) => sortable.has(path))
     .map(([path, label, kind]) => ({ path, label: label(), kind }));
 }
@@ -80,27 +32,7 @@ export function sortOptions(
 export function groupOptions(
   dataset: QueryFileDataset | undefined,
 ): PropertyOption[] {
-  const options: [LayoutGroupPath | ItemGroupPath, () => string][] =
-    dataset === "items"
-      ? [
-          ["itemType", m.query_view_property_item_type],
-          ["tags[]", m.query_view_property_tag],
-          ["collections[]", m.query_view_property_collection],
-        ]
-      : dataset === "attachments"
-        ? [
-            ["item.indexedKey", m.query_view_property_item],
-            ["tags[]", m.query_view_property_tag],
-            ["item.collections[]", m.query_view_property_collection],
-          ]
-        : [
-            ["item.indexedKey", m.query_view_property_item],
-            ["attachment.indexedKey", m.query_view_property_attachment],
-            ["colorName", m.query_view_property_color],
-            ["tags[]", m.query_view_property_tag],
-            ["item.collections[]", m.query_view_property_collection],
-          ];
-  return options.map(([path, label]) => ({
+  return datasetSpec(dataset).group.map(([path, label]) => ({
     path,
     label: label(),
     kind: "text",
