@@ -41,7 +41,7 @@ function SidebarFilter({ query }: { query: QueryView }) {
       values={values}
       issue={filterIssue}
       sections={["view"]}
-      onChange={(section, next) => query.setFilters(section, next)}
+      onChange={(section, next) => query.document.setFilters(section, next)}
     />
   );
 }

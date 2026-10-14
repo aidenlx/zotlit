@@ -422,7 +422,7 @@ export function FilterButton({ view }: { view: QueryView }) {
         thisView={shown.filters}
         values={values}
         issue={filterIssue}
-        onChange={(section, next) => view.setFilters(section, next)}
+        onChange={(section, next) => view.document.setFilters(section, next)}
       />
     </ToolbarPopover>
   );

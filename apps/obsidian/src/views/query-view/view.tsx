@@ -13,7 +13,6 @@ import { createStore } from "zustand/vanilla";
 
 import { nameDictionary } from "@zotlit/item-query";
 import type { NameDictionary, QueryContext } from "@zotlit/item-query";
-import type { MatchTree } from "@zotlit/templates/facade";
 
 import { Icon } from "@/components/obsidian/icon";
 import { Effect } from "@/lib/effect";
@@ -56,16 +55,13 @@ import { PropertiesMenu } from "./properties-menu";
 import { locateFilterFault, viewFilter } from "./query-file";
 import type {
   ConditionIssue,
-  FilterSection,
   QueryFile,
   QueryFileDataset,
   QueryFileProblem,
   QueryFileSort,
   QueryFileView,
-  QueryFileViewEdit,
 } from "./query-file";
 import { QueryFileDocument } from "./query-file-document";
-import type { EditTiming } from "./query-file-document";
 import type { ShownRecord } from "./record-rows";
 import { ResultsMenu } from "./results-menu";
 import { layoutRows } from "./rows";
@@ -350,6 +346,14 @@ export class QueryView extends Component implements HistorySurface {
     });
   }
 
+  /**
+   * The Query File on screen: its text, the view on screen, and every edit,
+   * which saves through the host.
+   */
+  get document(): QueryFileDocument {
+    return this.#document;
+  }
+
   /** The cards, their store and their actions. */
   get layout(): AnnotationsLayout {
     return this.#layout;
@@ -509,40 +513,6 @@ export class QueryView extends Component implements HistorySurface {
     return this.#document.flush();
   }
 
-  /**
-   * Save new filters: for all views, or for the view shown. `undefined`
-   * removes them. Answers whether the view took the change.
-   */
-  setFilters(section: FilterSection, filters: MatchTree | undefined): boolean {
-    return this.#document.setFilters(section, filters);
-  }
-
-  /**
-   * Save the Display Name of `property`; an empty name removes it. Answers
-   * whether the view took the change.
-   */
-  renameProperty(property: string, name: string): boolean {
-    return this.#document.renameProperty(property, name);
-  }
-
-  /**
-   * Save the Formula `name` with its text and, where given, its Display Name;
-   * an empty Display Name removes it. A new Formula also shows in the view on
-   * screen, after its other properties. Answers whether the view took the
-   * change.
-   */
-  saveFormula(name: string, text: string, label?: string): boolean {
-    return this.#document.saveFormula(name, text, label);
-  }
-
-  /**
-   * Remove the Formula `name` from the file and from every view. Answers
-   * whether the view took the change.
-   */
-  removeFormula(name: string): boolean {
-    return this.#document.removeFormula(name);
-  }
-
   /** The values a filter condition offers, from the Libraries the view reads. */
   async filterValues(): Promise<FilterValues> {
     const libraries = this.#deps.libraryScope.current?.available ?? [];
@@ -586,14 +556,6 @@ export class QueryView extends Component implements HistorySurface {
   /** The user picked a view from the view menu. */
   pickView(name: string): void {
     this.#document.pickView(name);
-  }
-
-  /**
-   * Change the view shown, as a toolbar control asks, and save the file's new
-   * text through the host.
-   */
-  editView(edit: QueryFileViewEdit, timing: EditTiming = {}): void {
-    this.#document.editView(edit, timing);
   }
 
   /** The document shows another file or view: say what keeps it from running, and run it. */
@@ -685,45 +647,6 @@ export class QueryView extends Component implements HistorySurface {
       limit: view.limit ?? null,
       ...(context && { context }),
     };
-  }
-
-  /** Add a view at the end of the list, and show it. Returns its name. */
-  addView(base?: string): string {
-    return this.#document.addView(base);
-  }
-
-  /** Rename a view as the researcher types its name; it saves after a short wait. */
-  renameView(index: number, name: string): void {
-    this.#document.renameView(index, name);
-  }
-
-  /** Copy a view after itself, and show the copy. */
-  duplicateView(index: number): void {
-    this.#document.duplicateView(index);
-  }
-
-  /** Delete a view; where it was on screen, its neighbour shows. */
-  deleteView(index: number): void {
-    this.#document.deleteView(index);
-  }
-
-  /** Move a view to `to`; a move to `0` makes it the default view. */
-  moveView(from: number, to: number): void {
-    this.#document.moveView(from, to);
-  }
-
-  /** Set a layout option of a view, or remove it for `undefined`. */
-  setViewOption(index: number, key: string, value: unknown): void {
-    this.#document.setViewOption(index, key, value);
-  }
-
-  setViewLayout(index: number, type: string): void {
-    this.#document.setViewLayout(index, type);
-  }
-
-  /** Set the dataset a view reads; what the dataset lacks stays in the file, unused. */
-  setViewDataset(index: number, dataset: QueryFileDataset): void {
-    this.#document.setViewDataset(index, dataset);
   }
 
   /** Run the view's query again, and show its rows. */
@@ -1167,7 +1090,7 @@ function SortButton({ view }: { view: QueryView }) {
         )}
         unused={properties.unused.sort}
         onChange={(next) =>
-          view.editView({ sort: next.length > 0 ? next : undefined })
+          view.document.editView({ sort: next.length > 0 ? next : undefined })
         }
       />
     </ToolbarPopover>
@@ -1195,7 +1118,7 @@ function GroupButton({ view }: { view: QueryView }) {
         unused={properties.unused.groupBy !== null}
         groups={groups}
         onChange={(next) =>
-          view.editView({
+          view.document.editView({
             groupBy: next.groupBy,
             groupOrder: next.groupOrder,
           })

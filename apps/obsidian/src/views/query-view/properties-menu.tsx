@@ -47,7 +47,8 @@ export function PropertiesMenu({ view }: { view: QueryView }) {
   const app = useObsidianApp();
   if (!current || !properties) return null;
   const order = current.order ?? [];
-  const setOrder = (next: readonly string[]) => view.editView({ order: next });
+  const setOrder = (next: readonly string[]) =>
+    view.document.editView({ order: next });
   return (
     <Chooser value={order} onValueChange={setOrder}>
       <Chooser.Trigger

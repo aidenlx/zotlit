@@ -2702,7 +2702,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // The List shows the same values.
     await obEval(
       vaultId,
-      `(()=>{${tab}.query.setViewLayout(0,'list');return true;})()`,
+      `(()=>{${tab}.query.document.setViewLayout(0,'list');return true;})()`,
     );
     const listed = await tabWhen((tab) => tab.list.length > 0);
     expect(listed.list.map(([key]) => key)).toEqual(years.map(([key]) => key));
@@ -2710,7 +2710,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(listed.list[index]![1].endsWith(year!)).toBe(true);
     await obEval(
       vaultId,
-      `(()=>{${tab}.query.setViewLayout(0,'table');return true;})()`,
+      `(()=>{${tab}.query.document.setViewLayout(0,'table');return true;})()`,
     );
     await tabWhen((tab) => tab.columns.includes("formula.year"));
 
@@ -2975,7 +2975,7 @@ views:
     // and ZotLit Query's message shows at it.
     await obEval(
       vaultId,
-      `(async()=>{${tab}.query.removeFormula('next');return true;})()`,
+      `(async()=>{${tab}.query.document.removeFormula('next');return true;})()`,
     );
     const removed = await tabWhen((t) => !t.text.includes("formula.next\n"));
     expect(removed.text).toContain("filters: formula.next > 2020\n");
