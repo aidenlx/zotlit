@@ -249,7 +249,9 @@ export function planFilter<Item = QueryItem, Needs = FieldNeeds>(
       formula,
     }).node(ast);
     warnings.sort((a, b) => a.at.from - b.at.from);
-    return { root, needs, customFields, warnings };
+    // A Formula is planned once and gives the same needs to each read of it,
+    // so the needs merge as a set: a Formula read twice adds its needs once.
+    return { root, needs: [...new Set(needs)], customFields, warnings };
   } catch (thrown) {
     if (thrown instanceof Invalid) return thrown.problem;
     throw thrown;
