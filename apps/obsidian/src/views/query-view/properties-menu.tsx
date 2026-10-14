@@ -1,15 +1,20 @@
 // The Properties popover of the Query View toolbar: tick the properties the
 // view shows, drag them into order, or type a Projection Path to add one. The
-// order saves to the view's `order` key.
+// order saves to the view's `order` key. A Formula of the file shows as the
+// property `formula.<name>`; "Add formula" and its row's edit button open the
+// Formula dialog.
 import { useMemo, useState } from "react";
 import { useStore } from "zustand";
 
 import { Chooser, useChooserQuery } from "@/components/chooser";
 import type { ChooserGroup, ChooserRow } from "@/components/chooser-logic";
 import { Icon } from "@/components/obsidian/icon";
+import { useObsidianApp } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
-import { cn } from "@/lib/utils";
+import { cn, tooltipAttrs } from "@/lib/utils";
 
+import { FormulaModal } from "./formula-dialog";
+import { formulaIssue, formulaProperty } from "./query-file";
 import type { QueryFileDataset } from "./query-file";
 import { NotUsed } from "./sort-control";
 import { TOOLBAR_LABEL } from "./toolbar-popover";
@@ -40,6 +45,9 @@ function reordered(
 
 export function PropertiesMenu({ view }: { view: QueryView }) {
   const current = useStore(view.state, (s) => s.view);
+  const formulas = useStore(view.state, (s) => s.file?.formulas);
+  const issues = useStore(view.state, (s) => s.formulaIssues);
+  const app = useObsidianApp();
   if (!current) return null;
   const order = current.order ?? [];
   const setOrder = (next: readonly string[]) => view.editView({ order: next });
@@ -62,6 +70,13 @@ export function PropertiesMenu({ view }: { view: QueryView }) {
           dataset={current.from ?? "annotations"}
           order={order}
           setOrder={setOrder}
+          formulas={Object.keys(formulas ?? {})}
+          issues={issues}
+          openFormula={
+            view.writable
+              ? (name) => new FormulaModal(app, view, name).open()
+              : null
+          }
         />
       </Chooser.Popup>
     </Chooser>
@@ -72,19 +87,49 @@ function PropertyList({
   dataset,
   order,
   setOrder,
+  formulas,
+  issues,
+  openFormula,
 }: {
   dataset: QueryFileDataset;
   order: readonly string[];
   setOrder: (next: readonly string[]) => void;
+  /** The names of the file's Formulas. */
+  formulas: readonly string[];
+  /** The Formulas the last run left out, with their messages. */
+  issues: Readonly<Record<string, string>>;
+  /** Open the Formula dialog: `null` adds one. `null` where the view cannot save. */
+  openFormula: ((name: string | null) => void) | null;
 }) {
   const query = useChooserQuery().trim();
   const [dragging, setDragging] = useState<string | null>(null);
   const groups = useMemo<ChooserGroup<ChooserRow>[]>(() => {
     const properties = datasetProperties(dataset);
-    const rows = propertyChoices(properties, order, query).map(
-      (property): ChooserRow => ({ value: property, label: property }),
-    );
+    const choices = propertyChoices(properties, order, query);
+    const lowered = query.toLowerCase();
+    // The Formulas the view does not show come after those it shows.
+    const hidden = formulas
+      .map(formulaProperty)
+      .filter(
+        (property) =>
+          !order.includes(property) &&
+          (lowered === "" || property.toLowerCase().includes(lowered)),
+      );
+    const rows = [
+      ...choices.slice(0, order.length),
+      ...hidden,
+      ...choices.slice(order.length),
+    ].map((property): ChooserRow => ({ value: property, label: property }));
     const actions: ChooserRow[] = [];
+    if (openFormula)
+      actions.push({
+        value: "zt:add-formula",
+        label: m.query_view_formula_add(),
+        action: (close) => {
+          close();
+          openFormula(null);
+        },
+      });
     if (query !== "" && !properties.includes(query) && !order.includes(query))
       actions.push({
         value: "zt:add-property",
@@ -100,7 +145,7 @@ function PropertyList({
     return actions.length > 0
       ? [{ items: rows }, { items: actions }]
       : [{ items: rows }];
-  }, [dataset, order, query, setOrder]);
+  }, [dataset, order, query, setOrder, formulas, openFormula]);
 
   return (
     <Chooser.List
@@ -113,7 +158,13 @@ function PropertyList({
           <Chooser.Action
             key={row.value}
             value={row.value}
-            icon={row.value === "zt:hide-all" ? "eye-off" : "plus"}
+            icon={
+              row.value === "zt:hide-all"
+                ? "eye-off"
+                : row.value === "zt:add-formula"
+                  ? "function-square"
+                  : "plus"
+            }
           >
             {row.label}
           </Chooser.Action>
@@ -141,7 +192,15 @@ function PropertyList({
             }}
             onDragEnd={() => setDragging(null)}
           >
-            {row.label}
+            <span className="zt:inline-flex zt:max-w-full zt:items-center zt:gap-1 zt:align-middle">
+              {row.label}
+              <FormulaRowParts
+                property={row.value}
+                formulas={formulas}
+                issues={issues}
+                openFormula={openFormula}
+              />
+            </span>
             {order.includes(row.value) && !fitsDataset(row.value, dataset) && (
               <span data-query-property-unused="">
                 {" "}
@@ -152,5 +211,52 @@ function PropertyList({
         )
       }
     </Chooser.List>
+  );
+}
+
+/** A Formula row's mark of a mistake, and its button that edits the Formula. */
+function FormulaRowParts({
+  property,
+  formulas,
+  issues,
+  openFormula,
+}: {
+  property: string;
+  formulas: readonly string[];
+  issues: Readonly<Record<string, string>>;
+  openFormula: ((name: string | null) => void) | null;
+}) {
+  const name = formulas.find((entry) => formulaProperty(entry) === property);
+  if (name === undefined) return null;
+  const issue = formulaIssue(issues, property);
+  return (
+    <>
+      {issue !== null && (
+        <span
+          className="zt:inline-flex zt:text-(--text-error)"
+          data-query-formula-issue={issue}
+          {...tooltipAttrs(issue)}
+        >
+          <Icon name="alert-triangle" size={14} />
+        </span>
+      )}
+      {openFormula && (
+        <button
+          type="button"
+          className="clickable-icon zt:p-0.5"
+          data-query-formula-edit={name}
+          {...tooltipAttrs(m.query_view_formula_edit())}
+          onClick={(event) => {
+            event.stopPropagation();
+            event.currentTarget
+              .closest<HTMLElement>("[popover]")
+              ?.hidePopover();
+            openFormula(name);
+          }}
+        >
+          <Icon name="pencil" size={14} />
+        </button>
+      )}
+    </>
   );
 }

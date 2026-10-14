@@ -1,8 +1,8 @@
 // The one Query File parser and serializer, shared by the Query File tab, the
 // Query File embed, the Query Block and the sidebar. A Query File is YAML in
 // the shape of an Obsidian `.base` file; the parser keeps every key it does
-// not read (`formulas`, `summaries`, `properties`, and keys it does not know)
-// in its place, so a save writes them back.
+// not read (`summaries`, `properties`, and keys it does not know) in its
+// place, so a save writes them back.
 //
 // @see apps/obsidian/docs/adr/0068-query-files-are-a-zotlit-file-type-embedded-through-the-private-embed-registry.md
 import { parse, stringify } from "yaml";
@@ -83,6 +83,11 @@ export interface QueryFileView {
 export interface QueryFile {
   /** The filters for all views of the same dataset. */
   readonly filters?: MatchTree;
+  /**
+   * The Formulas: each name with its Filter Expression text. A view shows a
+   * Formula as the property `formula.<name>`.
+   */
+  readonly formulas?: Readonly<Record<string, string>>;
   /** The views, the default view first. */
   readonly views: readonly QueryFileView[];
   readonly problems: readonly QueryFileProblem[];
@@ -266,6 +271,20 @@ export function parseQueryFile(text: string): QueryFile {
       });
     else file.filters = filters;
   }
+  if (value.formulas !== undefined) {
+    const { formulas } = value;
+    if (
+      isMap(formulas) &&
+      Object.values(formulas).every((text) => typeof text === "string")
+    )
+      file.formulas = formulas as Record<string, string>;
+    else
+      problems.push({
+        code: "invalid-value",
+        key: "formulas",
+        value: formulas,
+      });
+  }
   if (value.views !== undefined && !Array.isArray(value.views))
     problems.push({ code: "invalid-value", key: "views", value: value.views });
   file.views = Array.isArray(value.views) ? value.views.map(readView) : [];
@@ -353,15 +372,82 @@ export function editView(
 
 /** Writes a Query File's text. A key the parser kept stays where it was. */
 export function serializeQueryFile(file: QueryFile): string {
-  // New filters for all views go first, where a `.base` file has them.
-  const source = Object.hasOwn(file.source, "filters")
+  // New filters for all views go first, and new Formulas before the views,
+  // where a `.base` file has them.
+  let source: Entries = Object.hasOwn(file.source, "filters")
     ? file.source
     : { filters: undefined, ...file.source };
+  if (!Object.hasOwn(source, "formulas")) {
+    const keys = Object.keys(source);
+    const at = keys.includes("views") ? keys.indexOf("views") : keys.length;
+    source = Object.fromEntries([
+      ...keys.slice(0, at).map((key) => [key, source[key]]),
+      ["formulas", undefined],
+      ...keys.slice(at).map((key) => [key, source[key]]),
+    ]);
+  }
   const entries = merged(source, {
     filters: writeFilter(file.filters) ?? file.source.filters,
+    formulas: file.formulas ? { ...file.formulas } : file.source.formulas,
     views: file.views.map(writeView),
   });
   return stringify(entries, { lineWidth: 0 });
+}
+
+/** The Projection Path a view shows a Formula as. */
+export function formulaProperty(name: string): string {
+  return `formula.${name}`;
+}
+
+/**
+ * The message of the Formula that `property` shows, where ZotLit Query names
+ * a mistake in it; else `null`.
+ */
+export function formulaIssue(
+  issues: Readonly<Record<string, string>>,
+  property: string,
+): string | null {
+  if (!property.startsWith("formula.")) return null;
+  const name = property.slice("formula.".length);
+  return Object.hasOwn(issues, name) ? issues[name]! : null;
+}
+
+/**
+ * The file with the Formula `name` set to `text`: an existing one changes in
+ * place, a new one goes after the others.
+ */
+export function withFormula(
+  file: QueryFile,
+  name: string,
+  text: string,
+): QueryFile {
+  return {
+    ...file,
+    formulas: { ...file.formulas, [name]: text },
+    problems: file.problems.filter(
+      (problem) =>
+        !(problem.code === "invalid-value" && problem.key === "formulas"),
+    ),
+  };
+}
+
+/**
+ * The file without the Formula `name`, which also leaves the visible
+ * properties of every view. The `formulas` key goes with the last Formula.
+ */
+export function removeFormula(file: QueryFile, name: string): QueryFile {
+  const { [name]: _removed, ...formulas } = file.formulas ?? {};
+  const property = formulaProperty(name);
+  let next = file;
+  for (const view of file.views)
+    if (view.order?.includes(property))
+      next = editView(next, view, {
+        order: view.order.filter((entry) => entry !== property),
+      });
+  if (Object.keys(formulas).length > 0) return { ...next, formulas };
+  const { formulas: _dropped, ...source } = next.source;
+  const { formulas: _none, ...rest } = next;
+  return { ...rest, source };
 }
 
 /** The text of a new Query File: one Annotations view of the whole library. */
