@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { cn } from "@/lib/cn";
 import { repoSlug } from "@/lib/shared";
+import { getLocale } from "@/paraglide/runtime.js";
 
 /**
  * Giscus mount, framed only by its own "N reactions / N comments / input"
@@ -47,7 +48,7 @@ export function Comments({
         emitMetadata="0"
         inputPosition="top"
         theme={`${origin}/giscus/${resolvedTheme === "dark" ? "dark" : "light"}.css`}
-        lang="en"
+        lang={getLocale()}
         loading="lazy"
         host="https://giscus.app"
       />

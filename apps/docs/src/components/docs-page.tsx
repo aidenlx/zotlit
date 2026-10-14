@@ -27,6 +27,8 @@ import { RedirectNotice } from "@/components/redirect-notice";
 import { ReleaseSnapshotProvider } from "@/components/release-snapshot";
 import { docs } from "@/lib/collections";
 import { installPageSlugs } from "@/lib/github-releases";
+import { validateSiteLocale } from "@/lib/i18n";
+import type { SiteLocale } from "@/lib/i18n";
 import { contentRouteUrl } from "@/lib/markdown-routes";
 import { ztProse } from "@/lib/prose";
 import { getReleaseSnapshot } from "@/lib/release-data";
@@ -37,15 +39,19 @@ import { source } from "@/lib/source";
 import type { Crumb } from "@/lib/structured-data";
 import { breadcrumbListSchema } from "@/lib/structured-data";
 import * as m from "@/paraglide/messages.js";
+import { getLocale, localizeHref } from "@/paraglide/runtime.js";
 
 /** Resolves a docs URL to the collection file the client loader compiles, plus what the head needs. */
 export const resolveDocsPage = createServerFn({ method: "GET" })
-  .validator((splat: string) => splat)
-  .handler(async ({ data: splat }) => {
-    const page = source.getPage(splat.split("/").filter(Boolean));
+  .validator((input: { splat: string; locale: SiteLocale }) => {
+    validateSiteLocale(input.locale);
+    return input;
+  })
+  .handler(async ({ data: { splat, locale } }) => {
+    const page = source.getPage(splat.split("/").filter(Boolean), locale);
     if (!page) throw notFound();
 
-    const trail = getBreadcrumbItems(page.url, source.pageTree, {
+    const trail = getBreadcrumbItems(page.url, source.getPageTree(locale), {
       includePage: true,
     }).filter(
       (crumb): crumb is Crumb =>
@@ -59,7 +65,10 @@ export const resolveDocsPage = createServerFn({ method: "GET" })
       title: page.data.title,
       description: page.data.description,
       trail,
-      markdownUrl: contentRouteUrl({ section: "docs", slugs: page.slugs }),
+      markdownUrl: localizeHref(
+        contentRouteUrl({ section: "docs", slugs: page.slugs }),
+        { locale },
+      ),
       githubUrl: `https://github.com/${gitConfig.user}/${gitConfig.repo}/blob/${docsSourceBranch(env.DOCS_LINE)}/apps/docs/content/docs/${page.path}`,
       // Only the install pages carry release facts. The snapshot is the one
       // this render saw — the build's own in a prerendered page, where the
@@ -108,7 +117,7 @@ function DocsPageContent({
 
 /** Loader shared by both docs routes: resolve the file, then compile it. */
 export async function loadDocsPage(splat: string) {
-  const page = await resolveDocsPage({ data: splat });
+  const page = await resolveDocsPage({ data: { splat, locale: getLocale() } });
   await docs.getPage(page.path)?.preload();
   return page;
 }
@@ -119,14 +128,11 @@ type DocsPageData = Awaited<ReturnType<typeof loadDocsPage>>;
 export function docsPageHead(page: DocsPageData | undefined) {
   if (page === undefined) return {};
 
-  // A folder whose index resolves to the docs root (e.g. `(intro)`) yields a
-  // crumb pointing at `docsRoute`, colliding with the hardcoded one below.
-  const seen = new Set<string>();
   const crumbs = [
     { name: appName, url: "/" },
     { name: m.docs_documentation(), url: docsRoute },
     ...page.trail,
-  ].filter((crumb) => !seen.has(crumb.url) && seen.add(crumb.url));
+  ];
 
   return pageHead({
     title: page.title,

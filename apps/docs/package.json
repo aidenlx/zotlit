@@ -92,6 +92,7 @@
     "typescript": "catalog:",
     "vite": "catalog:",
     "vitest": "catalog:",
-    "wrangler": "^4.125.0"
+    "wrangler": "^4.125.0",
+    "yargs": "catalog:"
   }
 }

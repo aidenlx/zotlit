@@ -13,6 +13,7 @@ import { paraglideVitePlugin } from "@zotlit/paraglide-vite";
 
 import { paraglideOptions } from "./paraglide.config.js";
 import { agentSkillAssets } from "./src/lib/agent-skills.js";
+import { chinesePagesPlugin } from "./src/lib/chinese-pages-plugin.js";
 import { renderHeadersFile } from "./src/lib/headers.js";
 import { createOgCardRenderer } from "./src/lib/og-card.js";
 import { ogCards } from "./src/lib/og-cards.js";
@@ -196,6 +197,7 @@ export default defineConfig(({ command }) => ({
     },
   },
   plugins: [
+    chinesePagesPlugin(packageRoot),
     fumadocsServerOnWorker(),
     paraglideVitePlugin({
       ...paraglideOptions,

@@ -54,6 +54,7 @@
         "@zotlit/item-lookup#build",
         "@zotlit/item-query#build",
         "@zotlit/obsidian#generate:language-packs",
+        "@zotlit/pdf-structure#build",
         "@zotlit/protocol#build",
         "@zotlit/shared#build",
         "@zotlit/templates#build",

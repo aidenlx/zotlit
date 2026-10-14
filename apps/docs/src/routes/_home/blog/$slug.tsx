@@ -9,17 +9,24 @@ import { getMDXComponents } from "@/components/mdx";
 import { FooterCards } from "@/layouts/docs/page/slots/footer";
 import { cn } from "@/lib/cn";
 import { blogs } from "@/lib/collections";
+import { unlocalizedPath, validateSiteLocale } from "@/lib/i18n";
+import type { SiteLocale } from "@/lib/i18n";
+import { getPageLocaleState } from "@/lib/locale-state";
 import { ztProse } from "@/lib/prose";
 import { pageHead } from "@/lib/seo";
 import { appName, blogRoute, formatReleaseDate } from "@/lib/shared";
 import { blog, getBlogPages } from "@/lib/source";
 import { blogPostingSchema, breadcrumbListSchema } from "@/lib/structured-data";
 import { m } from "@/paraglide/messages.js";
+import { getLocale } from "@/paraglide/runtime.js";
 
 const getPost = createServerFn({ method: "GET" })
-  .validator((slug: string) => slug)
-  .handler(async ({ data: slug }) => {
-    const page = blog.getPage([slug]);
+  .validator((input: { slug: string; locale: SiteLocale }) => {
+    validateSiteLocale(input.locale);
+    return input;
+  })
+  .handler(async ({ data: { slug, locale } }) => {
+    const page = blog.getPage([slug], locale);
     if (!page) throw notFound();
     // The git date rides with the compiled body, not the frontmatter head.
     const modified = (await page.data.load()).lastModified
@@ -27,7 +34,7 @@ const getPost = createServerFn({ method: "GET" })
       .slice(0, 10);
     // getBlogPages() runs newest-first, so the neighbour after this post in
     // the list is the older one and the neighbour before it is the newer one.
-    const pages = getBlogPages();
+    const pages = getBlogPages({ locale });
     const index = pages.findIndex((entry) => entry.url === page.url);
     const neighbour = (entry: (typeof pages)[number] | undefined) =>
       entry && { name: entry.data.title, url: entry.url };
@@ -68,7 +75,9 @@ function PostBody({ path, modified }: { path: string; modified?: string }) {
 export const Route = createFileRoute("/_home/blog/$slug")({
   component: BlogPost,
   loader: async ({ params }) => {
-    const post = await getPost({ data: params.slug });
+    const post = await getPost({
+      data: { slug: params.slug, locale: getLocale() },
+    });
     await blogs.get(post.path)?.preload();
     return post;
   },
@@ -96,7 +105,7 @@ export const Route = createFileRoute("/_home/blog/$slug")({
               author: post.author,
               date: post.date,
               modified: post.modified,
-              url: post.url,
+              url: getPageLocaleState(post.url, getLocale()).canonicalPath,
             }),
             breadcrumbListSchema([
               { name: appName, url: "/" },
@@ -125,7 +134,7 @@ function BlogPost() {
           )}
           <p className="mb-1.5 font-mono text-xs font-medium tracking-widest text-fd-muted-foreground uppercase">
             {m.docs_blog_post_byline({
-              date: formatReleaseDate(post.date),
+              date: formatReleaseDate(post.date, { locale: getLocale() }),
               author: post.author,
             })}
           </p>
@@ -145,7 +154,10 @@ function BlogPost() {
             />
           )}
           {/* `mapping="specific"` keyed on the path, so a thread stays with its post. */}
-          <Comments term={post.url.replace("/", "")} className="mt-10" />
+          <Comments
+            term={unlocalizedPath(post.url).replace("/", "")}
+            className="mt-10"
+          />
         </footer>
       </article>
     </main>
