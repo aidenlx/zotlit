@@ -253,6 +253,11 @@ export const UNLIMITED_LIMIT = "all";
 export function planRequest(
   dataset: QueryDataset<any>,
   request: ItemQueryRequest,
+  /**
+   * The custom fields of the source, which a request that leaves out
+   * Formulas with a mistake reads before it plans them.
+   */
+  customFieldNames?: readonly string[],
 ): Effect.Effect<ItemQueryPlan, ItemQueryError> {
   return Effect.gen(function* () {
     const libraryIDs = request.libraries.map((library) => library.libraryID);
@@ -298,7 +303,10 @@ export function planRequest(
     // the Query Rows leave out the Formula, and each Formula with a mistake
     // gets its Diagnostic.
     const leaveOut = request.formulaFaults === "leave-out";
-    const formulas = planFormulas(dataset, request.formulas, context);
+    const formulas = planFormulas(dataset, request.formulas, {
+      context,
+      customFieldNames: leaveOut ? customFieldNames : undefined,
+    });
     const formulaFailure = (
       faulted: FaultedFormula | FaultedFormulaRead,
     ): ItemQueryError =>

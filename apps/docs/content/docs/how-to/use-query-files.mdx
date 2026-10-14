@@ -185,7 +185,7 @@ To remove a formula, open its formula dialog and select <UiLabel name={m.query_v
 
 ### When a formula has a mistake [#formula-errors]
 
-A formula that ZotLit Query cannot run, such as `title * 2`, shows a warning icon on its row in <UiLabel name={m.query_view_properties()} /> and on its column header in the Table layout. Hover over the icon to read the reason. The other properties of the view stay on screen. A formula that uses the wrong one shows <UiLabel name={m.query_view_formula_reads_wrong({ name: "year" })} /> When a filter condition of the view uses the wrong formula, the view shows the error and no rows until you correct it.
+A formula that ZotLit Query cannot run, such as `title * 2`, shows a warning icon on its row in <UiLabel name={m.query_view_properties()} /> and on its column header in the Table layout. Hover over the icon to read the reason. The other properties of the view stay on screen. A formula that uses the wrong one shows the name of the formula with the mistake. When a filter condition of the view uses the wrong formula, the view shows the error and no rows until you correct it.
 
 A formula can work for most rows and fail on one row. For example, `number(volume)` fails on a paper whose volume is text, such as "Spring". That row shows a warning icon in its cell, with the reason in a tooltip. Copy and CSV export write `Error: ` and the reason in that cell. A paper with no volume shows an empty cell. [Error Values](/docs/concepts/how-zotlit-query-works#error-values) explains the difference.
 
