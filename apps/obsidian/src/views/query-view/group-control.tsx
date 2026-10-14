@@ -10,6 +10,7 @@ import type { PropertyOption } from "./properties";
 import type { QueryFileGroupValue, QueryFileSort } from "./query-file";
 import { GripIcon, moved, useReorder } from "./reorder";
 import type { LayoutGroup } from "./rows";
+import { NotUsed } from "./sort-control";
 
 /** A view's grouping, as the Group control reads and writes it. */
 export interface GroupSetting {
@@ -23,6 +24,8 @@ export interface GroupEditorProps {
   options: readonly PropertyOption[];
   /** The groups the view's rows hold now, the shown ones first. */
   groups: readonly LayoutGroup[];
+  /** Whether the view's dataset lacks the group property, so the view does not use it. */
+  unused?: boolean;
   onChange: (next: GroupSetting) => void;
 }
 
@@ -33,6 +36,7 @@ export function GroupEditor({
   value,
   options,
   groups,
+  unused = false,
   onChange,
 }: GroupEditorProps) {
   const { groupBy, groupOrder } = value;
@@ -76,6 +80,11 @@ export function GroupEditor({
             </DropdownItem>
           ))}
         </Dropdown>
+        {unused && (
+          <span data-group-unused="">
+            <NotUsed />
+          </span>
+        )}
         {groupBy && (
           <Dropdown
             aria-label={m.query_view_group()}

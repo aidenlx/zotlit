@@ -16,6 +16,8 @@ export interface SortEditorProps {
   value: readonly QueryFileSort[];
   /** The properties ZotLit Query can sort the view's dataset by. */
   options: readonly PropertyOption[];
+  /** The sort properties the view's dataset lacks, which the view does not use. */
+  unused?: readonly string[];
   onChange: (next: QueryFileSort[]) => void;
 }
 
@@ -33,7 +35,21 @@ function optionOf(
   );
 }
 
-export function SortEditor({ value, options, onChange }: SortEditorProps) {
+/** The mark of a setting the view keeps but does not use. */
+export function NotUsed() {
+  return (
+    <span className="zt:shrink-0 zt:text-xs zt:text-(--text-faint)">
+      {m.query_view_not_used()}
+    </span>
+  );
+}
+
+export function SortEditor({
+  value,
+  options,
+  unused: notUsed = [],
+  onChange,
+}: SortEditorProps) {
   const reorder = useReorder(value.length, (from, to) =>
     onChange(moved(value, from, to)),
   );
@@ -54,6 +70,7 @@ export function SortEditor({ value, options, onChange }: SortEditorProps) {
           <div
             key={sort.property}
             data-sort-row={sort.property}
+            data-sort-unused={notUsed.includes(sort.property) ? "" : undefined}
             {...row}
             className={cn(
               "zt:rounded zt:flex zt:items-center zt:gap-1 zt:px-1",
@@ -93,6 +110,7 @@ export function SortEditor({ value, options, onChange }: SortEditorProps) {
                 </DropdownItem>
               ))}
             </Dropdown>
+            {notUsed.includes(sort.property) && <NotUsed />}
             <button
               type="button"
               className="clickable-icon"

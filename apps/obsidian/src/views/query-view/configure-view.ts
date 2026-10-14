@@ -1,7 +1,7 @@
 // "Configure view": the name, the records and the Layout of one view of a
 // Query File, and the options of its Layout. Each change saves to the file at
 // once.
-import { Menu, Modal, Notice, Setting } from "obsidian";
+import { Menu, Modal, Setting } from "obsidian";
 import type { App, TextComponent } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -193,22 +193,7 @@ export class ConfigureViewModal extends Modal {
           dropdown.addOption(dataset, DATASETS[dataset].name());
         dropdown.selectEl.dataset.queryViewDataset = "";
         dropdown.setValue(view.from ?? "annotations").onChange((value) => {
-          const dataset = value as QueryFileDataset;
-          const removed = this.#view.setViewDataset(this.#index(), dataset);
-          const names = removed
-            ? [
-                ...removed.sort,
-                ...(removed.groupBy === null ? [] : [removed.groupBy]),
-                ...removed.order,
-              ]
-            : [];
-          if (names.length > 0)
-            new Notice(
-              m.query_view_dataset_removed({
-                dataset: DATASETS[dataset].name(),
-                properties: [...new Set(names)].join(", "),
-              }),
-            );
+          this.#view.setViewDataset(this.#index(), value as QueryFileDataset);
           this.#display();
         });
       });

@@ -2257,9 +2257,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       return report.rows!;
     };
 
-    // Configure view switches the view's records to Items. The Layout
-    // picker then offers the layouts of Items, with the Table chosen, and
-    // the grouping by Item, which Items lack, comes off with a notice.
+    // Configure view switches the view's rows to Items. The Layout picker
+    // then offers the layouts of Items, with the Table chosen. The grouping
+    // by Item, which Items lack, stays in the file, and the view says it does
+    // not use it.
     await obEval(
       vaultId,
       `(()=>{${tab}.contentEl.querySelector('[data-query-view-menu]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true}));return true;})()`,
@@ -2292,25 +2293,26 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     ).toBe(true);
     expect(
-      await obEval(
+      await obEvalUntil(
         vaultId,
-        `String([...activeDocument.querySelectorAll('.notice')].some(n=>n.textContent.includes(${JSON.stringify(
-          m.query_view_dataset_removed({
+        `String(${tab}.contentEl.querySelector('[data-query-unused]')?.textContent)`,
+        {
+          expected: m.query_view_unused({
             dataset: m.query_view_dataset_items(),
             properties: "item.indexedKey",
           }),
-        )})))`,
+        },
       ),
-    ).toBe("true");
+    ).toBe(true);
     await obEval(
       vaultId,
       `(()=>{const modal=${configureModal};(modal.querySelector('.modal-close-button')??modal.querySelector('.modal-header-button:has(.lucide-x)')).click();return true;})()`,
     );
-    // The view saves as a Table of Items, without its grouping.
+    // The view saves as a Table of Items, and keeps its grouping.
     expect(
       await obEvalUntil(
         vaultId,
-        `(async()=>{const text=await app.vault.read(app.vault.getFileByPath(${JSON.stringify(path)}));const first=text.split('name: Figures')[0];return String(first.includes(${JSON.stringify("  - type: table\n    name: All annotations\n    from: items\n")})&&!first.includes('groupBy'));})()`,
+        `(async()=>{const text=await app.vault.read(app.vault.getFileByPath(${JSON.stringify(path)}));const first=text.split('name: Figures')[0];return String(first.includes(${JSON.stringify("  - type: table\n    name: All annotations\n    from: items\n")})&&first.includes('groupBy'));})()`,
         { expected: "true" },
       ),
     ).toBe(true);
