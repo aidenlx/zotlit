@@ -443,8 +443,11 @@ export default class ZotLitPlugin extends Plugin {
       }),
     );
 
+    const queryCardFocus = new QueryCardFocus(this.app);
     registerAnnotView(this, {
       app: this.app,
+      cardFocus: queryCardFocus,
+      query: services.query,
       reads: services.zoteroReads,
       libraryScope: services.libraryScope,
       liveUpdate: services.localServer,
@@ -463,7 +466,6 @@ export default class ZotLitPlugin extends Plugin {
       settings: services.settings,
     });
 
-    const queryCardFocus = new QueryCardFocus(this.app);
     const queryViewDeps: QueryViewDeps = {
       app: this.app,
       cardFocus: queryCardFocus,

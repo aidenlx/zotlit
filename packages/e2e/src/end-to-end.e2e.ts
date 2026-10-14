@@ -666,6 +666,146 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     }
   }, 120000);
 
+  it("groups the sidebar Annotation View by colour from More options", async () => {
+    const layout = await obEval(
+      vaultId,
+      "JSON.stringify(app.workspace.getLayout())",
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+      );
+    });
+    await obEval(
+      vaultId,
+      `(async()=>{const file=app.vault.getFileByPath(${JSON.stringify(annotationAttachment.path)});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});app.commands.executeCommandById('zotlit:open-annot-view');app.commands.executeCommandById('zotlit:annot-view-follow-active-tab');return true;})()`,
+    );
+    const sidebar =
+      "app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view";
+    /** The sidebar's cards in screen order, each under the group heading above it. */
+    const readSidebar = `(async()=>{const view=${sidebar};if(!view)return 'null';await view.read;const grid=view.contentEl.querySelector('[role="grid"]');let group=null;const cards=[];for(const node of grid?.querySelectorAll('[data-query-group], .zt-annot-card[data-zotero-annotation-key]')??[]){if(node.hasAttribute('data-query-group')){group=node.getAttribute('data-query-group');continue;}cards.push({key:node.getAttribute('data-zotero-annotation-key'),color:node.getAttribute('data-annot-color'),group});}return JSON.stringify({cards,query:view.getState().query??null});})()`;
+    interface Sidebar {
+      cards: { key: string; color: string; group: string | null }[];
+      query: string | null;
+    }
+    const sidebarWhen = async (
+      ready: (state: Sidebar) => boolean,
+    ): Promise<Sidebar> => {
+      let state: Sidebar | null = null;
+      await expect
+        .poll(
+          async () => {
+            const text = await obEval(vaultId, readSidebar);
+            state = text === "null" ? null : (JSON.parse(text) as Sidebar);
+            return state !== null && ready(state);
+          },
+          { timeout: 30_000, interval: 250 },
+        )
+        .toBe(true);
+      return state!;
+    };
+    const expected = [...annotationKeys].sort();
+    const before = await sidebarWhen(
+      ({ cards }) =>
+        JSON.stringify(cards.map(({ key }) => key).sort()) ===
+        JSON.stringify(expected),
+    );
+    // A plain sidebar stands under no heading.
+    expect(before.cards.every(({ group }) => group === null)).toBe(true);
+    const colors = new Set(before.cards.map(({ color }) => color));
+    expect(colors.size).toBeGreaterThan(1);
+
+    // More options → Group by → Color, through Obsidian's own menu.
+    await obEval(
+      vaultId,
+      `(function(){${sidebar}.containerEl.querySelector('.view-actions .view-action[aria-label="More options"]').click();return true;})()`,
+    );
+    const menuItem = (title: string) =>
+      `Array.from(document.querySelectorAll('.menu .menu-item')).find(item=>item.querySelector('.menu-item-title')?.textContent===${JSON.stringify(title)})`;
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(!!${menuItem(m.annot_view_group_by())})`,
+        {
+          expected: "true",
+        },
+      ),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      `(function(){const item=${menuItem(m.annot_view_group_by())};item.dispatchEvent(new MouseEvent('mouseover',{bubbles:true}));item.click();return true;})()`,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(!!${menuItem(m.query_view_property_color())})`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      `(function(){${menuItem(m.query_view_property_color())}.click();return true;})()`,
+    );
+
+    const grouped = await sidebarWhen(({ cards }) =>
+      cards.some(({ group }) => group !== null),
+    );
+    // The same cards, one group for each colour, each colour under one heading.
+    expect(grouped.cards.map(({ key }) => key).sort()).toEqual(expected);
+    const headings = new Map<string, string>();
+    for (const { color, group } of grouped.cards) {
+      expect(group).not.toBeNull();
+      expect(headings.get(color) ?? group).toBe(group);
+      headings.set(color, group!);
+    }
+    expect(new Set(headings.values()).size).toBe(colors.size);
+    // The grouping is the sidebar's Query File, which its state keeps.
+    expect(grouped.query).toContain("attachment == this.attachment");
+    expect(grouped.query).toContain("colorName");
+
+    // "Filter…" opens the Match editor of the sidebar's one view, without the
+    // filter that names the followed Attachment.
+    await obEval(
+      vaultId,
+      `(function(){${sidebar}.containerEl.querySelector('.view-actions .view-action[aria-label="More options"]').click();return true;})()`,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(!!${menuItem(m.annot_view_filter())})`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      `(function(){${menuItem(m.annot_view_filter())}.click();return true;})()`,
+    );
+    const filterModal = `(function(){const modal=document.querySelector('.modal.zt-annot-filter-modal');return JSON.stringify(modal?{title:modal.querySelector('.modal-title')?.textContent??null,sections:Array.from(modal.querySelectorAll('[data-filter-section]'),el=>el.getAttribute('data-filter-section')),text:modal.textContent.includes('this.attachment')}:null);})()`;
+    expect(
+      await obEvalUntil(vaultId, filterModal, {
+        expected: JSON.stringify({
+          title: m.annot_view_filter_title(),
+          sections: ["view"],
+          text: false,
+        }),
+      }),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      "(function(){const target=document.activeElement??document.body;target.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',bubbles:true}));return true;})()",
+    );
+    // No menu or dialog stays over the window for the cases after this one.
+    expect(
+      await obEvalUntil(
+        vaultId,
+        "String(document.querySelectorAll('.menu, .modal-container').length)",
+        { expected: "0" },
+      ),
+    ).toBe(true);
+  }, 120000);
+
   it("opens a Query File in a tab with cards grouped by Item, with Zotero closed", async () => {
     const layout = await obEval(
       vaultId,

@@ -321,6 +321,8 @@ export interface FilterEditorProps {
   values: FilterValues;
   issue: FilterIssue;
   disabled?: boolean;
+  /** The sections that show; both by default. */
+  sections?: readonly FilterSection[];
   /** Save one section's filters; answers whether they were kept. */
   onChange: (section: FilterSection, next: MatchTree | undefined) => boolean;
 }
@@ -334,6 +336,7 @@ export function FilterEditor({
   values,
   issue,
   disabled = false,
+  sections: shown = ["all", "view"],
   onChange,
 }: FilterEditorProps) {
   const app = useObsidianApp();
@@ -358,19 +361,23 @@ export function FilterEditor({
         ? issue.message
         : null,
     );
-  const sections: [FilterSection, string, MatchFilter | undefined][] = [
-    ["all", m.query_view_filter_all_views(), allViews],
-    ["view", m.query_view_filter_this_view(), thisView],
-  ];
+  const sections = (
+    [
+      ["all", m.query_view_filter_all_views(), allViews],
+      ["view", m.query_view_filter_this_view(), thisView],
+    ] satisfies [FilterSection, string, MatchFilter | undefined][]
+  ).filter(([section]) => shown.includes(section));
   return (
     <WorkbenchHostProvider host={host}>
       <WorkbenchThemeProvider theme={matchTheme}>
         <div className="zt:flex zt:flex-col zt:gap-3">
           {sections.map(([section, heading, value]) => (
             <section key={section} data-filter-section={section}>
-              <h4 className="zt:m-0 zt:mb-1 zt:text-sm zt:font-semibold">
-                {heading}
-              </h4>
+              {sections.length > 1 && (
+                <h4 className="zt:m-0 zt:mb-1 zt:text-sm zt:font-semibold">
+                  {heading}
+                </h4>
+              )}
               {section === "all" && shared !== dataset ? (
                 <p className="zt:m-0 zt:text-sm zt:text-(--text-muted)">
                   {m.query_view_filter_other_dataset()}

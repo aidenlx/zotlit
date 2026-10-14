@@ -78,6 +78,16 @@ export function unpinnedMode(previousMode: FollowMode): FollowMode {
   return previousMode === "pinned" ? DEFAULT_FOLLOW_MODE : previousMode;
 }
 
+/**
+ * The sidebar's Query File text, which keeps its Sort, Group by and filter;
+ * `null` where the state holds none and the sidebar runs its default.
+ */
+export function readSidebarQuery(raw: unknown): string | null {
+  if (!raw || typeof raw !== "object") return null;
+  const { query } = raw as Record<string, unknown>;
+  return typeof query === "string" && query.length > 0 ? query : null;
+}
+
 function readMode(value: unknown): FollowMode {
   if (typeof value !== "string") return DEFAULT_FOLLOW_MODE;
   if (MODES.includes(value as FollowMode)) return value as FollowMode;
