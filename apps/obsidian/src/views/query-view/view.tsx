@@ -337,6 +337,50 @@ function faultedFormula(
   return null;
 }
 
+/**
+ * The Formulas of `formulas` that read the Formula `name`, directly or through
+ * another Formula.
+ */
+function readersOf(
+  formulas: Readonly<Record<string, string>>,
+  name: string,
+): string[] {
+  const readers = new Set<string>();
+  const pending = [name];
+  for (let target = pending.pop(); target !== undefined; target = pending.pop())
+    for (const [reader, text] of Object.entries(formulas)) {
+      if (reader === name || readers.has(reader)) continue;
+      if ([...text.matchAll(FORMULA_REFERENCE)].some(([, n]) => n === target)) {
+        readers.add(reader);
+        pending.push(reader);
+      }
+    }
+  return [...readers];
+}
+
+/**
+ * The first condition of the view's filters that reads one of the Formulas in
+ * `left`, with the message of that Formula; `null` when none reads one.
+ */
+function formulaCondition(
+  file: QueryFile,
+  view: QueryFileView,
+  left: Readonly<Record<string, string>>,
+): (FilterLocation & { message: string }) | null {
+  const filter = viewFilter(file, view);
+  if (filter === undefined) return null;
+  for (const match of filter.matchAll(FORMULA_REFERENCE)) {
+    const [text, name] = match;
+    if (name === undefined || !Object.hasOwn(left, name)) continue;
+    const at = locateFilterFault(file, view, {
+      from: match.index,
+      to: match.index + text.length,
+    });
+    if (at) return { ...at, message: left[name]! };
+  }
+  return null;
+}
+
 export class QueryView extends Component implements HistorySurface {
   readonly state = createStore<QueryViewState>()(() => INITIAL_STATE);
   readonly #deps: QueryViewDeps;
@@ -913,25 +957,34 @@ export class QueryView extends Component implements HistorySurface {
     const key = this.#runKey(file, view);
     this.#runRequest = key;
     if (this.#shownRequest !== key) this.state.setState({ phase: "loading" });
-    // A mistake in a Formula leaves that Formula out, and the view runs
-    // again, so the other columns still show.
+    // A mistake in a Formula leaves that Formula and the Formulas that read
+    // it out, and the view runs again, so the other columns still show. The
+    // filters cannot hold without a Formula they read: the view shows no rows.
     const runWithout = async (left: Record<string, string>) => {
       for (;;) {
         const request = this.#request(file, view, left);
         const outcome = await this.#deps.query.run(request, controller.signal);
-        if (outcome.kind !== "failed") return outcome;
+        if (outcome.kind !== "failed") return { outcome };
         const name = faultedFormula(outcome.diagnostic, request);
-        if (name === null || Object.hasOwn(left, name)) return outcome;
+        if (name === null || Object.hasOwn(left, name)) return { outcome };
         const { message, hint } = outcome.diagnostic;
         left[name] = [message, hint].filter(Boolean).join(" ");
+        for (const reader of readersOf(request.formulas ?? {}, name))
+          left[reader] ??= m.query_view_formula_reads_wrong({ name });
+        const condition = formulaCondition(file, view, left);
+        if (condition) return { outcome, condition };
       }
     };
     const left: Record<string, string> = {};
     this.#settled = runWithout(left).then(
-      (outcome) => {
+      ({ outcome, condition }) => {
         if (this.#run !== controller) return;
         this.#run = null;
         this.state.setState({ formulaIssues: left });
+        if (condition && outcome.kind === "failed") {
+          this.#fail({ key, file, view }, outcome.diagnostic, condition);
+          return;
+        }
         return this.#land({ key, file, view }, outcome, fromList);
       },
       (error: unknown) => {
@@ -1036,17 +1089,21 @@ export class QueryView extends Component implements HistorySurface {
    * A run that gives no rows says why. A refresh of the rows on screen, or a
    * new filter of the view they belong to, keeps them under the message;
    * another view shows none. A fault in one condition of the filters is
-   * marked at that condition.
+   * marked at that condition. A condition that reads a Formula with a mistake
+   * (`formulaCondition`) is marked with that Formula's message, and the view
+   * shows no rows.
    */
   #fail(
     { key, file, view }: ViewRun,
     diagnostic: Diagnostic | NonNullable<QueryViewState["diagnostic"]>,
+    formulaCondition?: FilterLocation & { message: string },
   ): void {
     const kept =
-      this.#shownRequest === key ||
-      (this.#shownRequest !== null &&
-        this.#shownViewName === view.name &&
-        this.#shownDataset === (view.from ?? "annotations"));
+      formulaCondition === undefined &&
+      (this.#shownRequest === key ||
+        (this.#shownRequest !== null &&
+          this.#shownViewName === view.name &&
+          this.#shownDataset === (view.from ?? "annotations")));
     if (!kept) void this.#show(null);
     const span =
       "location" in diagnostic && diagnostic.location?.argument === "filter"
@@ -1058,12 +1115,14 @@ export class QueryView extends Component implements HistorySurface {
       diagnostic,
       warnings: [],
       keptResults: kept,
-      filterIssue: at && {
-        ...at,
-        message: [diagnostic.message, diagnostic.hint]
-          .filter(Boolean)
-          .join(" "),
-      },
+      filterIssue:
+        formulaCondition ??
+        (at && {
+          ...at,
+          message: [diagnostic.message, diagnostic.hint]
+            .filter(Boolean)
+            .join(" "),
+        }),
     });
   }
 
