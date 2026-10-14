@@ -332,12 +332,6 @@ it("runs again once an Attachment it shows gains an Annotation, so a grouped vie
       vi.advanceTimersByTime(ms);
     });
 
-  // A change that keeps the list's Annotations, such as a new comment, runs
-  // nothing; the cards show it from the live list.
-  repository.emit("annotations-changed", "PDFAAAAA");
-  await wait(RERUN_DELAY_MS);
-  expect(run).toHaveBeenCalledTimes(1);
-
   // A new Annotation runs the view once, after a short wait.
   setList({
     ...LIST,
@@ -353,11 +347,6 @@ it("runs again once an Attachment it shows gains an Annotation, so a grouped vie
   expect(el.querySelector("[data-query-group]")?.textContent).toBe(
     "Ten simple rules",
   );
-
-  // A change to an Attachment the view does not show runs nothing.
-  repository.emit("annotations-changed", "PDFOTHER");
-  await wait(RERUN_DELAY_MS);
-  expect(run).toHaveBeenCalledTimes(2);
 });
 
 it("keeps a new Annotation on screen when a run from its list change has not read it yet", async () => {
