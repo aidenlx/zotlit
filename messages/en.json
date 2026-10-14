@@ -2567,6 +2567,7 @@
   "query_file_untitled": "Untitled",
   "query_file_default_view_name": "Annotations",
   "query_view_views": "Views",
+  "query_view_open_file": "Open query file",
   "query_view_loading": "Loading…",
   "query_view_results": [
     {
