@@ -76,6 +76,10 @@ export class QueryFileEmbed extends Component implements EmbedComponent {
       openFile: (event) => this.#open(event),
     });
     this.query.selectView(viewName);
+    // e2e-only: packages/e2e reaches the embed from its element to make a
+    // toolbar change through `query.commit`. A dev-build port, absent from a
+    // production build.
+    if (__DEV__) Object.assign(context.containerEl, { zotlitQueryEmbed: this });
   }
 
   override onload(): void {
