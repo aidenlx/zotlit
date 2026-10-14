@@ -38,13 +38,14 @@ import { CardDisplayContext } from "@/views/annot-view/card-display";
 import type { CardDisplay } from "@/views/annot-view/card-display";
 import { AnnotationsLayout } from "@/views/annot-view/layout";
 import type { AnnotationsLayoutDeps } from "@/views/annot-view/layout";
+import type { CardGroup } from "@/views/annot-view/store";
 import { useAnnotStore } from "@/views/annot-view/store";
 
 import type { QueryCardFocus } from "./card-focus";
 import { FilterButton } from "./filter-popover";
 import type { FilterValues } from "./filter-popover";
 import { GroupEditor } from "./group-control";
-import { annotationsLayoutOptions } from "./layouts";
+import { annotationsLayoutOptions, QUERY_LAYOUTS } from "./layouts";
 import { groupOptions, sortOptions } from "./properties";
 import { PropertiesMenu } from "./properties-menu";
 import {
@@ -64,12 +65,14 @@ import type {
   QueryFileViewEdit,
 } from "./query-file";
 import { ResultsMenu } from "./results-menu";
-import { LAYOUT_FIELDS, LAYOUT_GROUP_PATHS, layoutRows } from "./rows";
+import { groupPaths, LAYOUT_FIELDS, layoutRows } from "./rows";
 import type { LayoutGroup } from "./rows";
 import { SearchControl } from "./search-control";
 import { SortEditor } from "./sort-control";
 import { resultTable } from "./table";
 import type { ResultTable } from "./table";
+import { TABLE_FIELDS, TableLayout } from "./table-layout";
+import type { LiteratureNotes } from "./table-notes";
 import { ToolbarPopover } from "./toolbar-popover";
 import * as edits from "./view-edits";
 import { ViewMenu } from "./view-menu";
@@ -87,6 +90,8 @@ export interface QueryViewDeps extends AnnotationsLayoutDeps {
   libraryScope: Pick<LibraryScopeService, "on" | "current">;
   /** The keyboard of a view that a note holds, which the embed and the block share. */
   cardFocus: Pick<QueryCardFocus, "hold">;
+  /** The Table's "Literature note" column. */
+  literatureNotes: LiteratureNotes;
 }
 
 /** What the host gives the Query View, beside the services. */
@@ -140,6 +145,17 @@ export interface QueryViewState {
   groups: readonly LayoutGroup[];
   /** Whether the view's limit cut the rows short. */
   truncated: boolean;
+  /**
+   * The rows shown, in order, each under the group it stands in; a row
+   * stands once in each of its groups. The cards read their own store.
+   */
+  rows: readonly ShownRow[];
+}
+
+/** One row on screen, and the group it stands under. */
+export interface ShownRow {
+  readonly row: QueryViewRow;
+  readonly group?: CardGroup;
 }
 
 const INITIAL_STATE: QueryViewState = {
@@ -154,6 +170,7 @@ const INITIAL_STATE: QueryViewState = {
   matched: 0,
   groups: [],
   truncated: false,
+  rows: [],
 };
 
 function problemText(problem: QueryFileProblem): string {
@@ -177,17 +194,23 @@ function problemText(problem: QueryFileProblem): string {
   }
 }
 
-/** What keeps the Annotations Layout from showing a view, beside the parser's own problems. */
+/** What keeps the view's Layout from showing it, beside the parser's own problems. */
 function layoutProblems(view: QueryFileView): string[] {
   const problems: string[] = [];
-  if (view.type !== "" && view.type !== "annotations")
+  const layout = QUERY_LAYOUTS.find((entry) => entry.type === view.type);
+  const dataset = view.from ?? "annotations";
+  if (view.type !== "" && !layout)
     problems.push(m.query_view_problem_layout({ type: view.type }));
-  else if (view.from !== undefined && view.from !== "annotations")
+  else if (view.type === "annotations" && dataset !== "annotations")
     problems.push(m.query_view_problem_dataset());
-  if (
-    view.groupBy &&
-    !(LAYOUT_GROUP_PATHS as readonly string[]).includes(view.groupBy.property)
-  )
+  else if (layout && !layout.datasets.includes(dataset))
+    problems.push(
+      m.query_view_problem_layout_dataset({
+        layout: layout.name(),
+        datasets: layout.datasets.join(", "),
+      }),
+    );
+  if (view.groupBy && !groupPaths(view.from).includes(view.groupBy.property))
     problems.push(
       m.query_view_problem_group({ property: view.groupBy.property }),
     );
@@ -254,6 +277,11 @@ export class QueryView extends Component implements HistorySurface {
     const attachmentKey = this.historyAttachment;
     if (attachmentKey !== null)
       this.#layout.stepHistory(direction, attachmentKey);
+  }
+
+  /** What the Table reads beside the rows: the queries of its child rows and its notes. */
+  get tableDeps(): Pick<QueryViewDeps, "query" | "literatureNotes"> {
+    return this.#deps;
   }
 
   /** Settles once the cards show the last run the view started. Never rejects. */
@@ -452,7 +480,7 @@ export class QueryView extends Component implements HistorySurface {
       }),
       fields: [
         ...new Set([
-          ...LAYOUT_FIELDS,
+          ...(view.type === "table" ? TABLE_FIELDS : LAYOUT_FIELDS),
           ...visibleProperties(view, { fallback: true }),
         ]),
       ],
@@ -631,8 +659,13 @@ export class QueryView extends Component implements HistorySurface {
           matched: result.matchedCount,
           groups: shown.groups,
           truncated: result.truncated,
+          rows: shown.rows.map(({ annotationKey, group }) => ({
+            row: byKey.get(annotationKey)!,
+            ...(group && { group }),
+          })),
         });
-        await this.#show(key, shown.rows);
+        // Only the Annotations layout draws cards; another layout reads `rows`.
+        await this.#show(key, view.type === "annotations" ? shown.rows : []);
         this.#shownViewName = view.name;
         return;
       }
@@ -683,6 +716,7 @@ export class QueryView extends Component implements HistorySurface {
     if (key === null) {
       this.#shownViewName = null;
       this.#rows = [];
+      this.state.setState({ rows: [] });
       this.#hold = null;
       this.#layout.clear();
       previous?.[Symbol.dispose]();
@@ -815,6 +849,16 @@ function AnnotationsCards({ view }: { view: QueryView }) {
   );
 }
 
+/** The rows, drawn by the view's Layout. */
+function LayoutBody({ view }: { view: QueryView }) {
+  const type = useQueryViewState(view, (s) => s.view?.type);
+  return type === "table" ? (
+    <TableLayout view={view} />
+  ) : (
+    <AnnotationsCards view={view} />
+  );
+}
+
 function OpenFileButton({ view }: { view: QueryView }) {
   const { openFile } = view;
   if (!openFile) return null;
@@ -866,7 +910,7 @@ function GroupButton({ view }: { view: QueryView }) {
     >
       <GroupEditor
         value={{ groupBy: current.groupBy, groupOrder: current.groupOrder }}
-        options={groupOptions()}
+        options={groupOptions(current.from)}
         groups={groups}
         onChange={(next) =>
           view.editView({
@@ -899,7 +943,7 @@ function QueryViewBody({ view }: { view: QueryView }) {
       <ReadOnlyNote view={view} />
       <Problems view={view} />
       <NoResults view={view} />
-      <AnnotationsCards view={view} />
+      <LayoutBody view={view} />
     </div>
   );
 }

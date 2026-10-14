@@ -1,12 +1,13 @@
 // The properties a Query View's Sort and Group controls offer, by the names a
 // researcher knows them by. Sort offers only Sortable Fields of ZotLit Query;
-// Group offers the group paths the Annotations Layout can gather rows by.
-import { ANNOTATIONS } from "@zotlit/item-query";
+// Group offers the group paths the layouts of the view's dataset can gather
+// rows by.
+import { ANNOTATIONS, ITEMS } from "@zotlit/item-query";
 
 import * as m from "@/lib/i18n/generated/messages";
 
 import type { QueryFileDataset, QueryFileDirection } from "./query-file";
-import type { LayoutGroupPath } from "./rows";
+import type { ItemGroupPath, LayoutGroupPath } from "./rows";
 
 /** How a property's values order, which names its two directions. */
 export type PropertyKind = "text" | "date" | "number";
@@ -37,26 +38,49 @@ const ANNOTATION_SORT_CANDIDATES: readonly [
   ["attachment.dateAdded", m.query_view_property_attachment_date_added, "date"],
 ];
 
+const ITEM_SORT_CANDIDATES: readonly [string, () => string, PropertyKind][] = [
+  ["title", m.query_view_property_title, "text"],
+  ["firstAuthor", m.query_view_property_first_author, "text"],
+  ["date", m.query_view_property_date, "date"],
+  ["dateAdded", m.query_view_property_date_added, "date"],
+  ["dateModified", m.query_view_property_date_modified, "date"],
+  ["itemType", m.query_view_property_item_type, "text"],
+];
+
 /** The properties a view of `dataset` can sort by, in the order Sort lists them. */
 export function sortOptions(
   dataset: QueryFileDataset | undefined,
 ): PropertyOption[] {
-  if (dataset !== undefined && dataset !== "annotations") return [];
-  const sortable = new Set(ANNOTATIONS.sortableFields);
-  return ANNOTATION_SORT_CANDIDATES.filter(([path]) => sortable.has(path)).map(
-    ([path, label, kind]) => ({ path, label: label(), kind }),
-  );
+  const [candidates, fields] =
+    dataset === "items"
+      ? [ITEM_SORT_CANDIDATES, ITEMS.sortableFields]
+      : dataset === undefined || dataset === "annotations"
+        ? [ANNOTATION_SORT_CANDIDATES, ANNOTATIONS.sortableFields]
+        : [[], []];
+  const sortable = new Set(fields);
+  return candidates
+    .filter(([path]) => sortable.has(path))
+    .map(([path, label, kind]) => ({ path, label: label(), kind }));
 }
 
-/** The properties the Annotations Layout can group by, in the order Group lists them. */
-export function groupOptions(): PropertyOption[] {
-  const options: [LayoutGroupPath, () => string][] = [
-    ["item.indexedKey", m.query_view_property_item],
-    ["attachment.indexedKey", m.query_view_property_attachment],
-    ["colorName", m.query_view_property_color],
-    ["tags[]", m.query_view_property_tag],
-    ["item.collections[]", m.query_view_property_collection],
-  ];
+/** The properties a view of `dataset` can group by, in the order Group lists them. */
+export function groupOptions(
+  dataset: QueryFileDataset | undefined,
+): PropertyOption[] {
+  const options: [LayoutGroupPath | ItemGroupPath, () => string][] =
+    dataset === "items"
+      ? [
+          ["itemType", m.query_view_property_item_type],
+          ["tags[]", m.query_view_property_tag],
+          ["collections[]", m.query_view_property_collection],
+        ]
+      : [
+          ["item.indexedKey", m.query_view_property_item],
+          ["attachment.indexedKey", m.query_view_property_attachment],
+          ["colorName", m.query_view_property_color],
+          ["tags[]", m.query_view_property_tag],
+          ["item.collections[]", m.query_view_property_collection],
+        ];
   return options.map(([path, label]) => ({
     path,
     label: label(),
