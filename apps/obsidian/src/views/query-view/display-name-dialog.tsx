@@ -11,7 +11,7 @@ import { useStore } from "zustand";
 import * as m from "@/lib/i18n/generated/messages";
 
 import { displayName } from "./query-file";
-import { columnLabel } from "./table-layout";
+import { columnLabel } from "./value-text";
 import type { QueryView } from "./view";
 
 /** The Display Name field, as the rename dialog and the Formula dialog show it. */

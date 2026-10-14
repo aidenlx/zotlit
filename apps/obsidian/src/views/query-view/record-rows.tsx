@@ -16,7 +16,7 @@ import {
   useToggleGroupCollapsed,
 } from "@/views/annot-view/store";
 
-import { cell, errorCell } from "./table";
+import { cell, cellText, errorCell } from "./value-text";
 import type { QueryView } from "./view";
 import { visibleProperties } from "./visible-properties";
 
@@ -62,7 +62,9 @@ export function useRecordGroups(view: QueryView): {
       rows: { row: QueryViewRow; cells: string[] }[];
     }[] = [];
     for (const { row, group } of records) {
-      const cells = properties.map((property) => cell(row.values[property]));
+      const cells = properties.map((property) =>
+        cellText(property, row.values[property]),
+      );
       if (
         query !== "" &&
         !cells.some((text) => text.toLowerCase().includes(query))

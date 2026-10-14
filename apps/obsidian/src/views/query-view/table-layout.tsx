@@ -13,11 +13,8 @@ import {
 import type { ReactNode } from "react";
 import { useStore } from "zustand";
 
-import { FIELD_LABELS } from "@zotlit/zotero-types/field-labels";
-
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
-import { runtime } from "@/lib/i18n/generated/runtime";
 import { cn, tooltipAttrs } from "@/lib/utils";
 import type {
   QueryViewRequest,
@@ -25,15 +22,13 @@ import type {
   QueryViewValue,
 } from "@/services/item-query/query-view";
 import type { QueryService } from "@/services/item-query/service";
-import { itemTypeLabel } from "@/services/profile-selection/describe";
 import { useAnnotStore } from "@/views/annot-view/store";
 
 import type { QueryLayout } from "./layouts";
-import { displayName, formulaIssue } from "./query-file";
-import type { QueryFile } from "./query-file";
+import { formulaIssue } from "./query-file";
 import { CellContent } from "./record-rows";
-import { cell } from "./table";
 import type { LiteratureNotes } from "./table-notes";
+import { cellText, propertyLabel } from "./value-text";
 import type { QueryView } from "./view";
 import { visibleProperties } from "./visible-properties";
 
@@ -193,46 +188,6 @@ function expandable(record: TableRecord): boolean {
     const keys = record.values[source.marker];
     return Array.isArray(keys) && keys.length > 0;
   });
-}
-
-/** The header of a column: Zotero's label for an Item field, else the path. */
-export function columnLabel(property: string): string {
-  const locale = runtime.getLocale() === "zh-CN" ? "zh-CN" : "en-US";
-  const label = FIELD_LABELS[locale][property];
-  if (label) return label;
-  switch (property) {
-    case "itemType":
-      return m.query_view_property_item_type();
-    case "dateAdded":
-      return m.query_view_property_date_added();
-    case "dateModified":
-      return m.query_view_property_date_modified();
-    case "firstAuthor":
-      return m.query_view_property_first_author();
-    default:
-      return property;
-  }
-}
-
-/**
- * The name a view shows for `property`: its Display Name in `file`, else its
- * column header.
- */
-export function propertyLabel(
-  file: QueryFile | null,
-  property: string,
-): string {
-  return (file && displayName(file, property)) ?? columnLabel(property);
-}
-
-/** One value as the text of a cell. */
-export function cellText(
-  property: string,
-  value: QueryViewValue | undefined,
-): string {
-  if (property === "itemType" && typeof value === "string")
-    return itemTypeLabel(value);
-  return cell(value);
 }
 
 type ChildState =
