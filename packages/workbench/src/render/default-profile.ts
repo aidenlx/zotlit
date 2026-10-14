@@ -45,6 +45,11 @@ views:
     name: Annotations
     from: annotations
     filters: item == this.item
+    sort:
+      - property: attachment.dateAdded
+        direction: ASC
+      - property: sortIndex
+        direction: ASC
 \`\`\`
 {% endmanaged %}
 
