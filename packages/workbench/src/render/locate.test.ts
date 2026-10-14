@@ -1,14 +1,15 @@
 import { regex } from "arkregex";
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_PROFILE_SOURCE, renderProfile, SAMPLE_ITEMS } from "./index";
+import { renderProfile, SAMPLE_ITEMS } from "./index";
 import { currentCallSite, currentSliceSite } from "./locate";
 import type { RenderDiagnostic } from "./result";
+import { ANNOTATION_LIST_PROFILE_SOURCE } from "./test-profiles";
 
 describe("current repair call", () => {
   it("locates an unchanged failed section after edits and rejects changed or repeated source", () => {
     const tag = "{% for annotation i zt.annotations %}";
-    const source = DEFAULT_PROFILE_SOURCE.replace(
+    const source = ANNOTATION_LIST_PROFILE_SOURCE.replace(
       "{% for annotation in zt.annotations %}",
       tag,
     );
@@ -26,7 +27,7 @@ describe("current repair call", () => {
     });
     expect(
       currentCallSite(failure, {
-        source: DEFAULT_PROFILE_SOURCE,
+        source: ANNOTATION_LIST_PROFILE_SOURCE,
         language: "liquid",
       }),
     ).toBeUndefined();
@@ -120,7 +121,7 @@ function entryFailure(rows: string): {
   diagnostic: RenderDiagnostic;
   expression: string;
 } {
-  const source = DEFAULT_PROFILE_SOURCE.replace(
+  const source = ANNOTATION_LIST_PROFILE_SOURCE.replace(
     "---\n# {{ zt.title }}",
     `${rows}\n---\n# {{ zt.title }}`,
   );

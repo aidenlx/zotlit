@@ -13,6 +13,7 @@ import { mount, renderWithMessages as render } from "./test-host";
 import { m } from "./test-messages";
 
 import { DEFAULT_PROFILE_SOURCE } from "#/render/default-profile";
+import { ANNOTATION_LIST_PROFILE_SOURCE } from "#/render/test-profiles";
 
 afterEach(cleanup);
 
@@ -76,7 +77,7 @@ it("keeps one undo history when switching between Basic and Source", () => {
 });
 
 it("opens the format from a collapsed placeholder and preserves the note across tabs and modes", () => {
-  const source = DEFAULT_PROFILE_SOURCE.replace(
+  const source = ANNOTATION_LIST_PROFILE_SOURCE.replace(
     "# {{ zt.title }}",
     '# {{ zt.title }}\n\nBefore {% render "annotation" with annotation as zt %} after',
   );

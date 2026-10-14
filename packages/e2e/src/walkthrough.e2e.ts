@@ -631,6 +631,26 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
   });
 
   it("keeps the viewport and unsaved writing when an update replaces multiple callouts", async () => {
+    // The default Profile shows Annotations in a Query Block; a default
+    // document that lists them puts one callout per Annotation in the note.
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        "(async()=>{await app.plugins.plugins.zotlit.services.profile.restoreDefault();return true;})()",
+      );
+    });
+    await obEval(
+      vaultId,
+      `(async()=>{const profile=app.plugins.plugins.zotlit.services.profile;await profile.restoreDefault();const source=profile.getBuiltInSource();const listed=source.replace(/## Annotations\\n\\n\`\`\`zotquery\\n[\\s\\S]*?\`\`\`\\n/,'{% for annotation in zt.annotations %}\\n{% render_annotation annotation %}\\n{% endfor %}\\n');if(listed===source)throw new Error('Default Profile has no Query Block');const path=profile.defaultDocumentPath;const folder=path.slice(0,path.lastIndexOf('/'));if(folder&&!app.vault.getFolderByPath(folder))await app.vault.createFolder(folder);await app.vault.create(path,listed);return true;})()`,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        "String(!!app.plugins.plugins.zotlit.services.profile.resolveProfile('default')?.document)",
+        { expected: "true" },
+      ),
+    ).toBe(true);
     const notePath = "Scroll update.md";
     const source =
       "---\nzotero-key: DMRGRART\n---\n%%zt-managed%%\nstale\n%%/zt-managed%%\n";
@@ -759,11 +779,28 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
   );
 
   it("finds a paper in Choose item and previews its callouts with native paragraph styling", async () => {
+    // The default Profile shows Annotations in a Query Block; a default
+    // document that lists them puts one callout per Annotation in the note.
+    const original = await obEval(
+      vaultId,
+      `(async()=>{const profile=app.plugins.plugins.zotlit.services.profile;await profile.materializeDefault();return app.vault.read(app.vault.getFileByPath(profile.defaultDocumentPath));})()`,
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{const profile=app.plugins.plugins.zotlit.services.profile;await app.vault.modify(app.vault.getFileByPath(profile.defaultDocumentPath),${JSON.stringify(original)});return true;})()`,
+      );
+    });
     await obEval(
       vaultId,
       `(async()=>{
       const profile=app.plugins.plugins.zotlit.services.profile;
-      await profile.materializeDefault();
+      const file=app.vault.getFileByPath(profile.defaultDocumentPath);
+      const source=await app.vault.read(file);
+      const listed=source.replace(/## Annotations\\n\\n\`\`\`zotquery\\n[\\s\\S]*?\`\`\`\\n/,'{% for annotation in zt.annotations %}\\n{% render_annotation annotation %}\\n{% endfor %}\\n');
+      if(listed===source)throw new Error('Default Profile has no Query Block');
+      await app.vault.modify(file,listed);
       const leaf=app.workspace.getLeaf('tab');
       await leaf.openFile(app.vault.getFileByPath(profile.defaultDocumentPath));
       app.workspace.setActiveLeaf(leaf,{focus:true});
