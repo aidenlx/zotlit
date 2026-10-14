@@ -1581,7 +1581,7 @@ it("says a view of Items cannot show their tags, and still groups the Items by t
   await settle();
 
   expect(el.querySelector("[data-query-unused]")?.textContent).toBe(
-    "Views of Items cannot show tags.",
+    "Views of Items cannot show these properties: tags.",
   );
   expect(headings(el)).toEqual(["read-later"]);
 });
