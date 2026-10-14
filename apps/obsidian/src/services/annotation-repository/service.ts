@@ -22,6 +22,7 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { Effect } from "@/lib/effect";
 import { getLogger } from "@/lib/log";
+import { yieldToMain } from "@/lib/yield-to-main";
 import { excerptFingerprint } from "@/services/excerpt-image/contract";
 import type { Held, QueryClientService } from "@/services/query-client/service";
 import { Service } from "@/services/service-base";
@@ -847,6 +848,12 @@ export class AnnotationRepository extends Service<void> {
   readonly #confirmedWrites = new Map<string, AnnotationConfirmation[]>();
   /** Gives each database acquisition a separate query-cache generation. */
   #databaseGeneration = 0;
+  /**
+   * The database read now gathering: every database read asked in one task,
+   * and in one database generation, joins it, and it reads all of them under
+   * one lease.
+   */
+  #databaseBatch: DatabaseBatch | null = null;
   readonly #writeToken;
   /**
    * The pixels this device's persisted Excerpt Image of one Annotation was made
@@ -911,6 +918,29 @@ export class AnnotationRepository extends Service<void> {
       return this.#drawn(attachmentKey, candidate);
     }
     return this.#published(attachmentKey)?.value ?? null;
+  }
+
+  /**
+   * Reads the Annotations of many Attachments at once — what a view over a
+   * whole Library asks. Where the Zotero DB is the source, every Attachment is
+   * read in one batch read; each still has its own Held Read, so an
+   * invalidation, a refresh, or a peek works per Attachment as after
+   * {@link read}.
+   *
+   * @param attachmentKeys the Attachments' Indexed Keys.
+   * @returns each Attachment's list as {@link read} answers it, by Indexed Key.
+   */
+  async readMany(
+    attachmentKeys: Iterable<string>,
+  ): Promise<Map<string, AnnotationList | null>> {
+    return new Map(
+      await Promise.all(
+        [...new Set(attachmentKeys)].map(
+          async (attachmentKey) =>
+            [attachmentKey, await this.read(attachmentKey)] as const,
+        ),
+      ),
+    );
   }
 
   /**
@@ -3732,13 +3762,8 @@ export class AnnotationRepository extends Service<void> {
     const generation = this.#databaseGeneration;
     let annotations: readonly AnnotationRecord[];
     try {
-      await using lease = await this.#db.acquireRead();
-      annotations = toRecords(
-        attachmentKey,
-        await Effect.runPromise(
-          lease.reads.AnnotationsOfAttachment({ attachmentKey }),
-        ),
-      );
+      const { found } = await this.#databaseRead(attachmentKey);
+      annotations = toRecords(attachmentKey, found);
     } catch (error) {
       logger.debug("No lock facts could be read from the Zotero database", {
         attachmentKey,
@@ -3797,17 +3822,8 @@ export class AnnotationRepository extends Service<void> {
 
   async #readFromDatabase(attachmentKey: string): Promise<AnnotationList> {
     const generation = this.#databaseGeneration;
-    await using lease = await this.#db.acquireRead();
-    const [found, libraries, database] = await Effect.runPromise(
-      Effect.all(
-        [
-          lease.reads.AnnotationsOfAttachment({ attachmentKey }),
-          lease.reads.Libraries({}),
-          lease.reads.DatabaseIdentity({}),
-        ],
-        { concurrency: "unbounded" },
-      ),
-    );
+    const { found, libraries, database } =
+      await this.#databaseRead(attachmentKey);
     const annotations = toRecords(attachmentKey, found);
     const source = databaseAnnotationSource(attachmentKey, libraries, database);
     if (generation === this.#databaseGeneration)
@@ -3817,6 +3833,60 @@ export class AnnotationRepository extends Service<void> {
       annotations: annotations.length,
     });
     return { source, annotations };
+  }
+
+  /**
+   * One Attachment's rows from the Zotero database, read in the batch that
+   * every database read asked in the same task joins: one lease and one query
+   * for all of them, whatever number of Attachments a view shows.
+   */
+  #databaseRead(attachmentKey: string): Promise<DatabaseAnswer> {
+    const waiting = Promise.withResolvers<DatabaseAnswer>();
+    let batch = this.#databaseBatch;
+    // A read asked after a database change leaves the batch the change
+    // overtook, so it takes a lease on the database that stands now.
+    if (batch?.generation !== this.#databaseGeneration) {
+      const gathering: DatabaseBatch = {
+        generation: this.#databaseGeneration,
+        readers: new Map(),
+      };
+      this.#databaseBatch = batch = gathering;
+      void yieldToMain().then(() => this.#flushDatabaseBatch(gathering));
+    }
+    const readers = batch.readers.get(attachmentKey) ?? [];
+    readers.push(waiting);
+    batch.readers.set(attachmentKey, readers);
+    return waiting.promise;
+  }
+
+  async #flushDatabaseBatch({ readers: batch }: DatabaseBatch): Promise<void> {
+    if (this.#databaseBatch?.readers === batch) this.#databaseBatch = null;
+    const attachmentKeys = [...batch.keys()];
+    try {
+      await using lease = await this.#db.acquireRead();
+      const [entries, libraries, database] = await Effect.runPromise(
+        Effect.all(
+          [
+            lease.reads.AnnotationsOfAttachments({ attachmentKeys }),
+            lease.reads.Libraries({}),
+            lease.reads.DatabaseIdentity({}),
+          ],
+          { concurrency: "unbounded" },
+        ),
+      );
+      logger.debug("Annotations batch read from the Zotero database", {
+        attachments: attachmentKeys.length,
+      });
+      for (const found of entries) {
+        for (const { resolve } of batch.get(found.attachmentKey) ?? []) {
+          resolve({ found, libraries, database });
+        }
+      }
+    } catch (error) {
+      for (const readers of batch.values()) {
+        for (const { reject } of readers) reject(error);
+      }
+    }
   }
 
   #adoptDatabaseSource(
@@ -4363,6 +4433,23 @@ function describeCapability(capability: EditingCapability): string {
  *   named an Attachment the database has since dropped reads as no Annotations
  *   rather than as a failure.
  */
+/** One Attachment's answer from a batch read of the Zotero database. */
+interface DatabaseAnswer {
+  readonly found: {
+    readonly attachment: Attachment | null;
+    readonly annotations: readonly Annotation[];
+    readonly accountUserID: number | null;
+  };
+  readonly libraries: readonly Library[];
+  readonly database: ZoteroDatabaseIdentity;
+}
+
+/** The database reads one task gathered, by Attachment, in one generation. */
+interface DatabaseBatch {
+  readonly generation: number;
+  readonly readers: Map<string, PromiseWithResolvers<DatabaseAnswer>[]>;
+}
+
 function toRecords(
   attachmentKey: string,
   found: {
