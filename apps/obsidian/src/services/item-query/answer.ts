@@ -56,7 +56,17 @@ import {
 import type { Diagnostic, QueryCliCommand, LibraryWire } from "./contract";
 import { CLI_DATASETS } from "./datasets";
 import type { DecodedQuery, NamedLibraries } from "./decode";
-import type { QueryCommand, QueryReply } from "./worker-protocol";
+import type {
+  QueryViewGroup,
+  QueryViewResult,
+  QueryViewRow,
+} from "./query-view";
+import type {
+  QueryCommand,
+  QueryReply,
+  QueryViewCommand,
+  QueryViewReply,
+} from "./worker-protocol";
 
 const logger = getLogger(["item-query"]);
 
@@ -241,6 +251,108 @@ function answerQuery(
   return (env.instrument?.(operation) ?? operation).pipe(
     answerFailure(command, named?.parameter),
   );
+}
+
+/** What the answer of a typed query reads of its job. */
+export type AnswerViewJob = QueryViewCommand & {
+  /** The Library Scope in force: the default Target Libraries. */
+  scope: LibraryScope;
+};
+
+/**
+ * The answer of the typed query of a Query View: every row up to the limit
+ * of the request, as JSON data. A typed failure is the diagnostic that the
+ * envelope of the same query carries. Cancellation interrupts it, and an
+ * implementation defect dies with an `Error`.
+ */
+export function answerView(
+  job: AnswerViewJob,
+  env: Pick<AnswerEnv, "attachmentFiles">,
+): Effect.Effect<QueryViewReply, never, ItemQueryDatabase> {
+  const { command, view } = job;
+  const named =
+    view.libraries === undefined
+      ? null
+      : { scope: view.libraries, parameter: "library" as const };
+  return Effect.gen(function* () {
+    const available = yield* targetLibraries(named, job.scope);
+    const request: ItemQueryRequest = {
+      filter: view.filter,
+      group: view.group,
+      fields: view.fields,
+      sort: view.sort,
+      limit: view.limit ?? null,
+      libraries: available.map(({ libraryID, selector }) => ({
+        libraryID,
+        groupID: selector.type === "group" ? selector.groupID : null,
+      })),
+    };
+    const libraries = available.map(({ selector, name }) =>
+      selector.type === "group" ? { ...selector, name: name ?? "" } : selector,
+    );
+    const result = yield* consumeQuery(
+      CLI_DATASETS[view.from].engine,
+      request,
+      (summary) => Effect.sync(() => collectView(summary, libraries)),
+    ).pipe(
+      Effect.provideService(
+        AttachmentFileResolver,
+        env.attachmentFiles ?? null,
+      ),
+    );
+    return viewReply(command, { kind: "result", result });
+  }).pipe(
+    Effect.catch((failed) =>
+      Effect.succeed(
+        viewReply(command, {
+          kind: "failed",
+          diagnostic: failureDiagnostic(failed, named?.parameter),
+        }),
+      ),
+    ),
+    Effect.catchDefect(dieOfDefect),
+  );
+}
+
+const viewReply = (
+  command: QueryCliCommand,
+  view: QueryViewReply["view"],
+): QueryViewReply => ({
+  command,
+  answer: "",
+  receipt: { kind: "inline" },
+  view,
+});
+
+/**
+ * Collect the rows of a typed query in their groups. Each chunk becomes JSON
+ * as it arrives, as the envelope writes it, so the result crosses the worker
+ * seam.
+ */
+function collectView(summary: QuerySummary, libraries: readonly LibraryWire[]) {
+  const { groups: summaries, totalCount, ...metadata } = summary;
+  const rows: QueryViewRow[] = [];
+  const groups = summaries?.map(
+    (group): QueryViewGroup & { rows: QueryViewRow[] } => ({
+      ...group,
+      rows: [],
+    }),
+  );
+  return {
+    write: (chunk: readonly QueryRow[], groupIndex?: number) =>
+      Effect.sync(() => {
+        const target =
+          groups && groupIndex !== undefined ? groups[groupIndex]!.rows : rows;
+        const wire = JSON.parse(JSON.stringify(chunk)) as QueryViewRow[];
+        for (const row of wire) target.push(row);
+      }),
+    end: () =>
+      Effect.succeed<QueryViewResult>(
+        groups
+          ? { ...metadata, libraries, totalCount: totalCount!, groups }
+          : { ...metadata, libraries, rows },
+      ),
+  };
 }
 
 /** Resolve the same Target Libraries for queries and value discovery. */
@@ -497,17 +609,20 @@ function answerFailure(
           ),
         ),
       ),
-      Effect.catchDefect((defect) => {
-        logger.error("ZotLit Query failed with a defect", {
-          cause: Cause.pretty(Cause.die(defect)),
-        });
-        return Effect.die(
-          new Error("ZotLit Query failed with an internal error.", {
-            cause: defect,
-          }),
-        );
-      }),
+      Effect.catchDefect(dieOfDefect),
     );
+}
+
+/** Log a defect of one run and die with an `Error` that wraps it. */
+function dieOfDefect(defect: unknown): Effect.Effect<never> {
+  logger.error("ZotLit Query failed with a defect", {
+    cause: Cause.pretty(Cause.die(defect)),
+  });
+  return Effect.die(
+    new Error("ZotLit Query failed with an internal error.", {
+      cause: defect,
+    }),
+  );
 }
 
 function failureDiagnostic(
