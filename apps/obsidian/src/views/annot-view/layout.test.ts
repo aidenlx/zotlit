@@ -492,3 +492,99 @@ it("waits no more for a new Annotation the repository no longer holds", async ()
 
   expect(layout.keepsBack([ALPHA.key, BETA.key], true)).toBe(false);
 });
+
+/** Every card shown for one Annotation, in list order. */
+function copies(el: HTMLElement, key: string): HTMLElement[] {
+  return [
+    ...el.querySelectorAll<HTMLElement>(
+      `.zt-annot-card[data-zotero-annotation-key="${key}"]`,
+    ),
+  ];
+}
+
+async function toggleGroup(el: HTMLElement, groupKey: string): Promise<void> {
+  await click(el.querySelector(`[data-query-group="${groupKey}"] button`)!);
+}
+
+it("steps over the cards of a collapsed group with the arrow keys, and drops a Selected Card the group folds away", async () => {
+  const { layout, el, scope, repo } = await mountLayout();
+  repo.lists.PDFAAAAA = { ...LISTS.PDFAAAAA!, annotations: [ALPHA, DELTA] };
+  const row = (annot: AnnotationRecord, group: string) => ({
+    annotationKey: annot.key,
+    attachmentKey: annot.parentKey,
+    group: { key: group, label: group },
+  });
+  await act(async () => {
+    await layout.showRows([
+      row(BETA, "blue"),
+      row(DELTA, "green"),
+      row(ALPHA, "red"),
+    ]);
+  });
+  const selected = () => layout.store.getState().cardSelection.selected;
+
+  await toggleGroup(el, "green");
+  expect(cardKeys(el)).toEqual([BETA.key, ALPHA.key]);
+  await click(card(el, BETA.key));
+  expect(await press(scope, card(el, BETA.key), ["ArrowDown"])).toBe(true);
+  expect(selected()).toEqual([ALPHA.key]);
+  expect(document.activeElement).toBe(card(el, ALPHA.key));
+  expect(await press(scope, card(el, ALPHA.key), ["ArrowUp"])).toBe(true);
+  expect(selected()).toEqual([BETA.key]);
+  // At the top of the list the key goes on, so the list still scrolls.
+  expect(await press(scope, card(el, BETA.key), ["ArrowUp"])).toBe(false);
+
+  await toggleGroup(el, "green");
+  await click(card(el, DELTA.key));
+  expect(selected()).toEqual([DELTA.key]);
+  await toggleGroup(el, "green");
+  expect(selected()).toEqual([]);
+  const grid = el.querySelector('[role="grid"]')!;
+  expect(await press(scope, grid, ["Delete"])).toBe(false);
+});
+
+it("reaches a card under each group heading it shows under, and steps on from the one clicked", async () => {
+  const { layout, el, scope, repo } = await mountLayout();
+  repo.lists.PDFAAAAA = { ...LISTS.PDFAAAAA!, annotations: [ALPHA, DELTA] };
+  const writeText = vi.fn(() => Promise.resolve());
+  Object.defineProperty(navigator, "clipboard", {
+    value: { writeText },
+    configurable: true,
+  });
+  const row = (annot: AnnotationRecord, group: string) => ({
+    annotationKey: annot.key,
+    attachmentKey: annot.parentKey,
+    group: { key: group, label: group },
+  });
+  await act(async () => {
+    await layout.showRows([
+      row(ALPHA, "figure"),
+      row(BETA, "figure"),
+      row(ALPHA, "method"),
+      row(DELTA, "method"),
+    ]);
+  });
+  const selection = () => layout.store.getState().cardSelection;
+  const [firstAlpha, secondAlpha] = copies(el, ALPHA.key);
+
+  await click(secondAlpha!);
+  expect(await press(scope, secondAlpha!, ["ArrowDown"])).toBe(true);
+  expect(selection().selected).toEqual([DELTA.key]);
+  expect(await press(scope, card(el, DELTA.key), ["ArrowUp"])).toBe(true);
+  expect(selection().selected).toEqual([ALPHA.key]);
+  expect(document.activeElement).toBe(secondAlpha);
+  expect(await press(scope, secondAlpha!, ["ArrowUp"])).toBe(true);
+  expect(selection().selected).toEqual([BETA.key]);
+  expect(await press(scope, card(el, BETA.key), ["ArrowUp"])).toBe(true);
+  expect(document.activeElement).toBe(firstAlpha);
+
+  // A range over both places holds the one Annotation once.
+  expect(await press(scope, firstAlpha!, ["ArrowDown", ["Shift"]])).toBe(true);
+  expect(await press(scope, card(el, BETA.key), ["ArrowDown", ["Shift"]])).toBe(
+    true,
+  );
+  expect(selection().selected).toEqual([ALPHA.key, BETA.key]);
+  expect(document.activeElement).toBe(secondAlpha);
+  expect(await press(scope, secondAlpha!, ["C", ["Mod"]])).toBe(true);
+  expect(writeText).toHaveBeenCalledWith("alpha\n\nbeta");
+});

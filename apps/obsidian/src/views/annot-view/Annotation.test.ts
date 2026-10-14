@@ -187,6 +187,7 @@ async function mountCard({
         { value: actions },
         createElement(Annotation, {
           annot: { ...CARD, comment },
+          place: CARD.key,
           collapsed: false,
           tabStop: true,
         }),
@@ -262,9 +263,9 @@ describe("a click on the comment of a card not selected alone", () => {
       await click(comment, { metaKey: true });
       await click(comment, { shiftKey: true });
       expect(onSelectAnnotation.mock.calls).toEqual([
-        [CARD, "click"],
-        [CARD, "toggle"],
-        [CARD, "range"],
+        [CARD, "click", CARD.key],
+        [CARD, "toggle", CARD.key],
+        [CARD, "range", CARD.key],
       ]);
       expect(onOpenField).not.toHaveBeenCalled();
       expect(store.getState().editing).toBeNull();
@@ -285,8 +286,8 @@ describe("a click on the comment of a card not selected alone", () => {
     await click(text);
     await click(text, { metaKey: true });
     expect(onSelectAnnotation.mock.calls).toEqual([
-      [CARD, "click"],
-      [CARD, "toggle"],
+      [CARD, "click", CARD.key],
+      [CARD, "toggle", CARD.key],
     ]);
     expect(onOpenField).not.toHaveBeenCalled();
   });
@@ -608,7 +609,7 @@ describe("a text field's draft on the card", () => {
       (el) => el.textContent === held.text,
     )!;
     await click(text);
-    expect(onSelectAnnotation.mock.calls).toEqual([[CARD, "click"]]);
+    expect(onSelectAnnotation.mock.calls).toEqual([[CARD, "click", CARD.key]]);
     expect(store.getState().editing).toBeNull();
 
     await act(() =>
@@ -718,6 +719,7 @@ describe("an image card's Excerpt Image demand", () => {
           { value: actions },
           createElement(Annotation, {
             annot: image,
+            place: image.key,
             collapsed: false,
             tabStop: true,
           }),
