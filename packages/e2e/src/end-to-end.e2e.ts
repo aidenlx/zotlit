@@ -2618,7 +2618,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         {
           expected: m.query_view_unused({
             dataset: m.query_view_dataset_items(),
-            properties: "item.indexedKey",
+            properties: m.query_view_property_item(),
           }),
         },
       ),
@@ -2831,7 +2831,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         headings: ["fixture-core", "read-later", none],
         unused: m.query_view_unshown({
           dataset: m.query_view_dataset_items(),
-          properties: "tags",
+          properties: m.query_view_property_tag(),
         }),
       },
       {

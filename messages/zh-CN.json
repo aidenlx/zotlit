@@ -2473,6 +2473,7 @@
   "query_view_search_items": "搜索显示的条目…",
   "query_view_unused": "{dataset}没有 {properties}，此视图暂不使用它们。",
   "query_view_unshown": "{dataset}视图无法显示这些属性：{properties}。",
+  "query_view_unsorted": "{dataset}视图无法按这些属性排序：{properties}。",
   "query_view_not_used": "未使用",
   "query_view_list_markers": "标记",
   "query_view_list_marker_bullet": "圆点",
