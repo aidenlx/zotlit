@@ -1250,7 +1250,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         vaultId,
         `JSON.stringify([...activeDocument.querySelectorAll('.modal [data-query-view-layout] option')].map(n=>n.textContent))`,
       ),
-    ).toBe(JSON.stringify([m.query_view_layout_annotations()]));
+    ).toBe(
+      JSON.stringify([
+        m.query_view_layout_annotations(),
+        m.query_view_layout_list(),
+        m.query_view_layout_cards(),
+      ]),
+    );
     await obEval(
       vaultId,
       `(()=>{const input=activeDocument.querySelector('.modal [data-query-view-name]');input.value='Methods';input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return true;})()`,
@@ -1302,6 +1308,96 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         expected: JSON.stringify(["Methods", "All annotations", "Figures"]),
       }),
     ).toBe(true);
+  }, 180000);
+
+  it("switches a Query File view to List and to Cards, and shows the same rows under the same groups", async () => {
+    const path = "query-files/Reading annotations.zotquery";
+    const layout = await obEval(
+      vaultId,
+      "JSON.stringify(app.workspace.getLayout())",
+    );
+    const original = await obEval(
+      vaultId,
+      `app.vault.read(app.vault.getFileByPath(${JSON.stringify(path)}))`,
+    );
+    await using cleanup = new AsyncDisposableStack();
+    // The tab closes before the text goes back, so no pending save of the
+    // tab writes over it.
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{activeDocument.querySelector('.modal.zt-configure-view .modal-close-button')?.click();for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))leaf.detach();await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(path)}),${JSON.stringify(original)});await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+      );
+    });
+    await obEval(
+      vaultId,
+      `(async()=>{const leaf=app.workspace.getLeaf('tab');await leaf.openFile(app.vault.getFileByPath(${JSON.stringify(path)}));app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
+    );
+    /** The rows the tab shows, by the Layout that draws them. */
+    const readTab = `(async()=>{const view=app.workspace.getMostRecentLeaf().view;if(view.getViewType()!=='zotlit-query-file')return 'null';await view.query.settled;const el=view.contentEl;return JSON.stringify({layout:el.querySelector('[data-query-layout]')?.getAttribute('data-query-layout')??'annotations',cards:[...el.querySelectorAll('.zt-annot-card')].map(n=>n.getAttribute('data-zotero-annotation-key')),rows:[...el.querySelectorAll('[data-query-row]')].map(n=>n.getAttribute('data-query-row')),headings:[...el.querySelectorAll('[data-query-group]')].map(n=>n.textContent),markers:el.querySelector('[data-query-markers]')?.getAttribute('data-query-markers')??null,text:await app.vault.read(view.file)});})()`;
+    interface Tab {
+      layout: string;
+      cards: string[];
+      rows: string[];
+      headings: string[];
+      markers: string | null;
+      text: string;
+    }
+    const tabWhen = async (ready: (tab: Tab) => boolean): Promise<Tab> => {
+      let tab: Tab | null = null;
+      const settled = await waitFor(async () => {
+        tab = JSON.parse(await obEval(vaultId, readTab)) as Tab | null;
+        return tab !== null && ready(tab);
+      }, 120);
+      if (!settled) throw new Error(`Query File tab: ${JSON.stringify(tab)}`);
+      return tab!;
+    };
+    /** Open Configure view on the view on screen, and pick a Layout there. */
+    const pickLayout = (type: string) =>
+      obEval(
+        vaultId,
+        `(async()=>{const el=app.workspace.getMostRecentLeaf().view.contentEl;if(!activeDocument.querySelector('.modal.zt-configure-view'))el.querySelector('[data-query-view-menu]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:200,clientY:200}));await new Promise(r=>setTimeout(r,100));const select=activeDocument.querySelector('.modal.zt-configure-view [data-query-view-layout]');select.value=${JSON.stringify(type)};select.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
+      );
+
+    const annotations = await tabWhen((tab) => tab.cards.length > 0);
+    expect(annotations.layout).toBe("annotations");
+    expect(annotations.headings.length).toBeGreaterThan(1);
+
+    // List: the same rows in the same order, under the same Item headings.
+    await pickLayout("list");
+    const list = await tabWhen((tab) => tab.layout === "list");
+    expect(list).toMatchObject({
+      cards: [],
+      rows: annotations.cards,
+      headings: annotations.headings,
+      markers: "bullet",
+    });
+
+    // A List option in Configure view draws at once and saves to the file.
+    await obEval(
+      vaultId,
+      `(()=>{const select=activeDocument.querySelector('.modal.zt-configure-view [data-query-view-option="markers"]');select.value='number';select.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
+    );
+    const numbered = await tabWhen(
+      (tab) => tab.markers === "number" && tab.text.includes("markers: number"),
+    );
+    expect(numbered.rows).toEqual(annotations.cards);
+
+    // Cards: the same rows again; the switch keeps the grouping and the
+    // limit of the view, and changes only its Layout.
+    await pickLayout("cards");
+    const cards = await tabWhen(
+      (tab) => tab.layout === "cards" && tab.text.includes("type: cards"),
+    );
+    expect(cards).toMatchObject({
+      cards: [],
+      rows: annotations.cards,
+      headings: annotations.headings,
+    });
+    expect(cards.text).toContain(
+      "groupBy:\n      property: item.indexedKey\n      direction: ASC\n",
+    );
+    expect(cards.text).toContain("limit: 100\n");
   }, 180000);
 
   it("groups a Query File by colour in a Manual order, hides a colour, and keeps it on reopen", async () => {
