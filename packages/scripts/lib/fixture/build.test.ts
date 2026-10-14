@@ -588,6 +588,22 @@ describe("the generated Zotero database", () => {
     expect(getNoteRefsByItemIDs(db, [19]).get(19)?.trashed).toBe(true);
   });
 
+  it("keeps a trashed Child Note on an Item that also has a live one", () => {
+    using db = openClient();
+    const refs = getNoteRefsByItemIDs(db, [13, 33]);
+
+    expect(
+      [...refs.values()].map(({ note, trashed }) => [
+        note.key,
+        note.parentItemID,
+        trashed,
+      ]),
+    ).toEqual([
+      ["NNNNAAAA", 1, false],
+      ["TRASHCLD", 1, true],
+    ]);
+  });
+
   it("resolves every file-backed Attachment and preserves one deliberate miss", async () => {
     using db = openClient();
     const attachments = getAttachmentsByParents(db, [20]);

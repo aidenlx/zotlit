@@ -42,6 +42,7 @@ import {
   LITERATURE_NOTE_PROFILES,
   LIBRARIES,
   LIBRARY_SCOPE_SETTING_KEY,
+  NOTES,
 } from "@zotlit/scripts/fixture";
 import type { FixtureItem, LibrarySelector } from "@zotlit/scripts/fixture";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
@@ -2055,7 +2056,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(rows.every((row) => row.values.colorName)).toBe(true);
   }, 180000);
 
-  it("switches a Fixture Query File view to Items and the Table, expands an Item into its Attachments and Annotations, and creates a Literature Note from its column", async () => {
+  it("switches a Fixture Query File view to Items and the Table, expands an Item into its Attachments, Annotations and Child Notes, and creates a Literature Note from its column", async () => {
     const path = "query-files/Reading annotations.zotquery";
     const layout = await obEval(
       vaultId,
@@ -2088,12 +2089,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     ).toBe(true);
     /** What the Table shows once its query settled. */
-    const readTable = `(async()=>{const view=${tab};if(view.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(path)})return 'null';await view.query.settled;const el=view.contentEl;const keys=kind=>[...el.querySelectorAll('[data-query-table-row="'+kind+'"]')].map(n=>n.getAttribute('data-query-key'));return JSON.stringify({header:[...el.querySelectorAll('[data-query-table] thead th')].map(n=>n.textContent),items:keys('item'),attachments:keys('attachment'),annotations:keys('annotation'),notes:Object.fromEntries([...el.querySelectorAll('[data-query-note]')].map(n=>[n.closest('tr').getAttribute('data-query-key'),n.getAttribute('data-query-note')])),create:[...el.querySelectorAll('[data-query-create-note]')].map(n=>n.getAttribute('data-query-create-note'))});})()`;
+    const readTable = `(async()=>{const view=${tab};if(view.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(path)})return 'null';await view.query.settled;const el=view.contentEl;const keys=kind=>[...el.querySelectorAll('[data-query-table-row="'+kind+'"]')].map(n=>n.getAttribute('data-query-key'));return JSON.stringify({header:[...el.querySelectorAll('[data-query-table] thead th')].map(n=>n.textContent),items:keys('item'),attachments:keys('attachment'),annotations:keys('annotation'),childNotes:[...el.querySelectorAll('[data-query-table-row="note"]')].map(n=>[n.getAttribute('data-query-key'),n.textContent]),notes:Object.fromEntries([...el.querySelectorAll('[data-query-note]')].map(n=>[n.closest('tr').getAttribute('data-query-key'),n.getAttribute('data-query-note')])),create:[...el.querySelectorAll('[data-query-create-note]')].map(n=>n.getAttribute('data-query-create-note'))});})()`;
     interface Table {
       header: string[];
       items: string[];
       attachments: string[];
       annotations: string[];
+      childNotes: [string, string][];
       notes: Record<string, string>;
       create: string[];
     }
@@ -2218,6 +2220,24 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     expect(expanded.annotations).toEqual(
       annotations.map((row) => row.indexedKey),
+    );
+
+    // An Item with Child Notes expands into them with their titles; its
+    // trashed Child Note stays out.
+    const noted = ITEMS.find(({ itemID }) => itemID === 1)!.key;
+    const live = NOTES.filter(
+      (note) => note.parentItemID === 1 && !note.trashed,
+    );
+    expect(
+      NOTES.some((note) => note.parentItemID === 1 && note.trashed),
+      "the Fixture Item has a trashed Child Note",
+    ).toBe(true);
+    await click(`[data-query-expand="item:${noted}"]`);
+    const withNotes = await tableWhen(
+      (table) => table.childNotes.length === live.length,
+    );
+    expect(withNotes.childNotes).toEqual(
+      live.map((note) => [note.key, note.title]),
     );
 
     // "Create" asks for a Profile where more than one fits; the new
