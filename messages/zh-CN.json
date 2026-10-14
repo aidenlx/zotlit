@@ -2429,6 +2429,7 @@
   "query_view_show_comment": "显示评论",
   "query_view_show_tags": "显示标签",
   "query_view_show_page": "显示页码",
+  "query_view_open_file": "打开查询文件",
   "query_view_loading": "加载中…",
   "query_view_results": [
     {

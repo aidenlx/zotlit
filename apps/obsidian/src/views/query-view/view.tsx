@@ -13,6 +13,7 @@ import { createStore } from "zustand/vanilla";
 
 import type { QueryContext } from "@zotlit/item-query";
 
+import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import type { AnnotationRepository } from "@/services/annotation-repository/service";
@@ -83,6 +84,8 @@ export interface QueryViewHost {
    * cannot save; the change then shows until the file is read again.
    */
   save?: (text: string) => void;
+  /** Open the Query File; the toolbar shows a link button when the host gives it. */
+  openFile?: (event: MouseEvent) => void;
 }
 
 /** What the view shows now, as the toolbar and the host read it. */
@@ -234,6 +237,21 @@ export class QueryView extends Component {
     this.#choose();
   }
 
+  /**
+   * A toolbar change: show `file` at once, and hand its text to the host to
+   * save.
+   */
+  commit(file: QueryFile): void {
+    const text = serializeQueryFile(file);
+    this.setText(text);
+    this.#host.save?.(text);
+  }
+
+  /** The host's link to the Query File, for the toolbar. */
+  get openFile(): QueryViewHost["openFile"] {
+    return this.#host.openFile;
+  }
+
   /** Show the view named `name`, or the file's first view for `null`. */
   selectView(name: string | null): void {
     if (name === this.#wanted && this.state.getState().view?.name === name)
@@ -260,9 +278,7 @@ export class QueryView extends Component {
   editView(edit: QueryFileViewEdit): void {
     const { file, view } = this.state.getState();
     if (!file || !view) return;
-    const text = serializeQueryFile(editView(file, view, edit));
-    this.setText(text);
-    this.#host.save?.(text);
+    this.commit(editView(file, view, edit));
   }
 
   #choose(): void {
@@ -622,6 +638,22 @@ function AnnotationsCards({ view }: { view: QueryView }) {
   );
 }
 
+function OpenFileButton({ view }: { view: QueryView }) {
+  const { openFile } = view;
+  if (!openFile) return null;
+  return (
+    <button
+      type="button"
+      className="clickable-icon"
+      aria-label={m.query_view_open_file()}
+      data-query-open-file=""
+      onClick={(event) => openFile(event.nativeEvent)}
+    >
+      <Icon name="external-link" size={14} />
+    </button>
+  );
+}
+
 function SortButton({ view }: { view: QueryView }) {
   const current = useQueryViewState(view, (s) => s.view);
   if (!current) return null;
@@ -685,6 +717,7 @@ function QueryViewBody({ view }: { view: QueryView }) {
         <GroupButton view={view} />
         <span className="zt:flex-1" />
         <SearchControl />
+        <OpenFileButton view={view} />
       </div>
       <Problems view={view} />
       <NoResults view={view} />
