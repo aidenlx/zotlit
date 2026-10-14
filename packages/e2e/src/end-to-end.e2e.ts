@@ -1886,7 +1886,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     // Ascending groups go from A to Z by the colour's name, as in Bases.
     expect(grouped.headings).toEqual(
-      grouped.headings.toSorted(new Intl.Collator("en").compare),
+      grouped.headings.toSorted((a, b) => a.localeCompare(b, "en")),
     );
     await choose("[data-group-direction]", "MANUAL");
     const manual = await tabWhen((tab) => tab.order.length > 0);
