@@ -12,6 +12,8 @@ export const QUERY_FILE_VIEW_TYPE = "zotlit-query-file";
 export class QueryFileView extends TextFileView {
   override scope: Scope;
   readonly query: QueryView;
+  /** The tab's last write of a toolbar change, which settles once it is done. Never rejects. */
+  #writing: Promise<void> = Promise.resolve();
 
   constructor(leaf: WorkspaceLeaf, deps: QueryViewDeps) {
     super(leaf);
@@ -22,9 +24,16 @@ export class QueryFileView extends TextFileView {
       sourcePath: () => this.file?.path ?? "",
       context: () => undefined,
       onSelectView: () => this.app.workspace.requestSaveLayout(),
+      // Each change writes at once, after the write before it: Obsidian's
+      // own save returns early while a write runs, and would not report
+      // whether the later text was written.
       save: (text) => {
-        this.data = text;
-        this.requestSave();
+        const write = this.#writing.then(() => {
+          this.data = text;
+          return this.save();
+        });
+        this.#writing = write.catch(() => {});
+        return write;
       },
     });
   }
