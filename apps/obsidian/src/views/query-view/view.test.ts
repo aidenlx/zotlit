@@ -1818,7 +1818,7 @@ it("keeps what the new dataset lacks in the file, says the view does not use it,
   expect(view.state.getState().problems).toEqual([]);
   expect(tableText(el)[1]).toContain("Ten simple rules");
   expect(el.querySelector("[data-query-unused]")?.textContent).toBe(
-    "Items have no Page, Item, so this view does not use them.",
+    "Items have none of these properties, so this view does not use them: Page, Parent item.",
   );
   await act(() =>
     el.querySelector<HTMLElement>('[data-query-toolbar="sort"]')!.click(),

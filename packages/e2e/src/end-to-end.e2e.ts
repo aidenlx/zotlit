@@ -2618,7 +2618,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         {
           expected: m.query_view_unused({
             dataset: m.query_view_dataset_items(),
-            properties: m.query_view_property_item(),
+            properties: m.query_view_property_parent_item(),
           }),
         },
       ),
