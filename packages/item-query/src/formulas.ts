@@ -30,6 +30,7 @@ import type { PathProblem, PlannedPath } from "./projection";
 import { readPath } from "./projection";
 import { parseProjectionPath } from "./projection-path";
 import type { QueryClock } from "./query-clock";
+import { missingCustomField } from "./query-sources";
 import type { ProjectionValue, QueryContext } from "./request";
 
 /** The first segment of the Projection Path of every Formula. */
@@ -209,11 +210,21 @@ export interface FormulaPlanner<Item = any, Needs = any> {
   readonly unread: () => readonly string[];
 }
 
-/** Plan the Formulas `definitions` of a request against `dataset`. */
+/**
+ * Plan the Formulas `definitions` of a request against `dataset`. With the
+ * custom fields `customFieldNames` of the source, a custom field that a
+ * Formula names and the source lacks is a mistake in that Formula.
+ */
 export function planFormulas(
   dataset: QueryDataset<any>,
   definitions: Readonly<Record<string, string>> | undefined,
-  context: QueryContext | undefined,
+  {
+    context,
+    customFieldNames,
+  }: {
+    context: QueryContext | undefined;
+    customFieldNames?: readonly string[] | undefined;
+  },
 ): FormulaPlanner {
   // The names come from the caller's text: a name such as __proto__ is a
   // Formula like any other.
@@ -293,7 +304,11 @@ export function planFormulas(
         const at = { from: result.root.from, to: result.root.to };
         formula = own({ kind: "formula-result", name, found, at }, at);
       } else {
-        formula = { name, text, plan: result };
+        const missing =
+          customFieldNames && missingCustomField(result, customFieldNames);
+        formula = missing
+          ? own(missing.fault, missing.at)
+          : { name, text, plan: result };
       }
     }
     if ("fault" in formula) faulted.set(name, formula);

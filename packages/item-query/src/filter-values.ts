@@ -155,10 +155,15 @@ function order(a: FilterValue, b: FilterValue): number | null {
   return null;
 }
 
+/** The text of an Error Value whose message is `message`. */
+export function errorValueText(message: string): string {
+  return `Error: ${message}`;
+}
+
 /** The text of a value for `toString()` and for `+` with a string. */
 export function toText(value: FilterValue): string {
   if (value === null) return "null";
-  if (isError(value)) return `Error: ${renderEvaluationFault(value.fault)}`;
+  if (isError(value)) return errorValueText(renderEvaluationFault(value.fault));
   if (isList(value)) return value.map(toText).join(", ");
   if (isDate(value)) return dateText(value);
   if (isDuration(value)) return value.duration.toString();

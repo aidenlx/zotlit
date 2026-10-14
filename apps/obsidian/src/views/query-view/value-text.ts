@@ -1,3 +1,4 @@
+import { errorValueText } from "@zotlit/item-query";
 // How a Query View names a property and writes its value as text. The Table,
 // the List and Cards layouts, their search, and "Copy to clipboard" and
 // "Export CSV…" all read them from here, so each shows and finds the same text.
@@ -133,7 +134,7 @@ export function cell(value: QueryViewValue | undefined): string {
       .join(", ");
   // An Error Value reads as the Formula's toString() gives it.
   const error = errorCell(value);
-  if (error) return `Error: ${error.message}`;
+  if (error) return errorValueText(error.message);
   const record = value as Readonly<Record<string, QueryViewValue>>;
   // A date reads as Zotero shows it: its text, else the part of its stored
   // "2011-00-00 2011" form after the first space.
