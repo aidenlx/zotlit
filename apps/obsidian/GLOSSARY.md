@@ -23,7 +23,7 @@ The text a vault note or document holds now: the text of the view that has it op
 _Avoid_: buffer, editor text, file content (the disk text only)
 
 **Managed Region**:
-The `%%zt-managed%%`-delimited portion of a Literature Note's body, re-rendered from the Managed Block (previously the `content` template) on every update. Content outside the markers is user-owned and preserved.
+The `%%zt-managed%%`-delimited portion of a Literature Note's body, re-rendered from the Managed Block (previously the `content` template) on every update. A Query Block in it keeps its text through the update. Content outside the markers is user-owned and preserved.
 _Avoid_: managed block, template region, synced region
 
 **Managed Frontmatter**:

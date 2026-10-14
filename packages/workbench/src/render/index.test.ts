@@ -8,18 +8,18 @@ import noteSchema from "@zotlit/db/contract/note.schema.json";
 
 import {
   currentSliceSite,
-  DEFAULT_PROFILE_SOURCE,
   renderProfile,
   restoreTemplateData,
   SAMPLE_ITEMS,
   SAMPLE_ANNOTATIONS,
 } from "./index";
+import { ANNOTATION_LIST_PROFILE_SOURCE } from "./test-profiles";
 
 import { WorkbenchDocumentController } from "#/document/index";
 import { workbenchDiagnoses } from "#/ui/problems";
 
 /** The default Profile with the annotation section printing `zt.citation`. */
-const SAMPLE_WITH_CITATION = DEFAULT_PROFILE_SOURCE.replace(
+const SAMPLE_WITH_CITATION = ANNOTATION_LIST_PROFILE_SOURCE.replace(
   "{{ zt.imgLink | embed }}{{ zt.text }}",
   "{{ zt.citation }} {{ zt.text }}",
 );
@@ -27,7 +27,10 @@ const SAMPLE_WITH_CITATION = DEFAULT_PROFILE_SOURCE.replace(
 describe("Sample Items", () => {
   it("locates a runtime error's traced expression for highlighting", () => {
     const expression = '{{ "bad" | pandoc_cite }}';
-    const source = DEFAULT_PROFILE_SOURCE.replace("## Annotations", expression);
+    const source = ANNOTATION_LIST_PROFILE_SOURCE.replace(
+      "## Annotations",
+      expression,
+    );
     const result = renderProfile(source, SAMPLE_ITEMS[1]!);
     expect(result.diagnostics[0]).toMatchObject({
       code: "render-error",
@@ -40,11 +43,11 @@ describe("Sample Items", () => {
 
   it("reports malformed Liquid syntax at the Profile source token", () => {
     const tag = "{% for annotation i zt.annotations %}";
-    const source = DEFAULT_PROFILE_SOURCE.replace(
+    const source = ANNOTATION_LIST_PROFILE_SOURCE.replace(
       "{% for annotation in zt.annotations %}",
       tag,
     );
-    expect(source).not.toBe(DEFAULT_PROFILE_SOURCE);
+    expect(source).not.toBe(ANNOTATION_LIST_PROFILE_SOURCE);
     const result = renderProfile(source, SAMPLE_ITEMS[0]!);
     const failure = result.diagnostics.find(
       ({ code }) => code === "liquid-syntax-error",
@@ -149,7 +152,7 @@ describe("Sample Items", () => {
 
   it("renders the default Profile over every Sample Item without diagnostics", () => {
     for (const sample of SAMPLE_ITEMS) {
-      const result = renderProfile(DEFAULT_PROFILE_SOURCE, sample);
+      const result = renderProfile(ANNOTATION_LIST_PROFILE_SOURCE, sample);
 
       expect(result.diagnostics).toEqual([]);
       expect(result.filename).toBeTruthy();
@@ -159,18 +162,18 @@ describe("Sample Items", () => {
 
   it("previews a free filename without exposing the collision marker", () => {
     expect(
-      renderProfile(DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS[0]!).filename,
+      renderProfile(ANNOTATION_LIST_PROFILE_SOURCE, SAMPLE_ITEMS[0]!).filename,
     ).toBe("ioannidisWhyMost2005");
   });
 
   it("resolves the note path the way note creation writes it", () => {
     const withName = (filename: string) =>
-      DEFAULT_PROFILE_SOURCE.replace(
+      ANNOTATION_LIST_PROFILE_SOURCE.replace(
         /^filename: .*$/m,
         `filename: '${filename}'`,
       );
     expect(
-      renderProfile(DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS[0]!).notePath,
+      renderProfile(ANNOTATION_LIST_PROFILE_SOURCE, SAMPLE_ITEMS[0]!).notePath,
     ).toBe("ioannidisWhyMost2005");
     const routed = renderProfile(
       withName("{{ zt.citationKey }}/Why: most?{% suffix %}"),
@@ -184,7 +187,9 @@ describe("Sample Items", () => {
   });
 
   it("renders fixed property text without YAML quoting and restores its field with undo", () => {
-    const controller = new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE);
+    const controller = new WorkbenchDocumentController(
+      ANNOTATION_LIST_PROFILE_SOURCE,
+    );
     const text = 'To read: John\'s "paper"';
     controller.editManagedEntry({
       action: "language",
@@ -212,11 +217,11 @@ describe("Sample Items", () => {
       )?.value,
     ).toBe(text);
     controller.undo();
-    expect(controller.source).toBe(DEFAULT_PROFILE_SOURCE);
+    expect(controller.source).toBe(ANNOTATION_LIST_PROFILE_SOURCE);
   });
 
   it("returns the complete result set for an edited Profile over every Sample Item", () => {
-    const edited = DEFAULT_PROFILE_SOURCE.replace(
+    const edited = ANNOTATION_LIST_PROFILE_SOURCE.replace(
       "# {{ zt.title }}",
       "# Edited: {{ zt.title }}",
     );
@@ -242,7 +247,7 @@ describe("Sample Items", () => {
   it("locates each rendered highlight inside the note it produced", () => {
     // The conference paper is the Sample Item that carries highlights.
     const sample = SAMPLE_ITEMS[1]!;
-    const result = renderProfile(DEFAULT_PROFILE_SOURCE, sample);
+    const result = renderProfile(ANNOTATION_LIST_PROFILE_SOURCE, sample);
     const body = result.creationBody!;
 
     // One range per highlight, in reading order, none overlapping the last.
@@ -262,7 +267,7 @@ describe("Sample Items", () => {
   });
 
   it("names the format as the part that failed when it alone cannot render", () => {
-    const broken = DEFAULT_PROFILE_SOURCE.replace(
+    const broken = ANNOTATION_LIST_PROFILE_SOURCE.replace(
       "{{ zt.imgLink | embed }}{{ zt.text }}",
       "{% if zt.text %}{{ zt.text }}",
     );
@@ -284,7 +289,7 @@ describe("Sample Items", () => {
   it("reports note and annotation failures as occurrences of one missing partial", () => {
     // The engine could not resolve the same partial in either attempt, so both
     // failures reach the Problems area and can be grouped there by cause.
-    const source = DEFAULT_PROFILE_SOURCE.replace(
+    const source = ANNOTATION_LIST_PROFILE_SOURCE.replace(
       "{{ zt.imgLink | embed }}{{ zt.text }}",
       "{% render 'book-details' %}{{ zt.text }}",
     );
@@ -326,7 +331,7 @@ describe("Sample Items", () => {
     // A partial the engine refuses: it reports the failure inside the partial,
     // and the reader repairs it where that partial was called.
     const withPartial = (body: string) =>
-      DEFAULT_PROFILE_SOURCE.replace(
+      ANNOTATION_LIST_PROFILE_SOURCE.replace(
         "filename:",
         [
           "partials:",
@@ -361,7 +366,7 @@ describe("Sample Items", () => {
   });
 
   it("keeps the note preview when a broken format is never called", () => {
-    const silent = DEFAULT_PROFILE_SOURCE.replace(
+    const silent = ANNOTATION_LIST_PROFILE_SOURCE.replace(
       "{% render_annotation annotation %}\n",
       "",
     ).replace("{{ zt.imgLink | embed }}{{ zt.text }}", "{% if zt.text %}");
@@ -373,7 +378,7 @@ describe("Sample Items", () => {
   });
 
   it("keeps successful note output and its marks when only the selected example fails", () => {
-    const source = DEFAULT_PROFILE_SOURCE.replace(
+    const source = ANNOTATION_LIST_PROFILE_SOURCE.replace(
       "{{ zt.imgLink | embed }}{{ zt.text }}",
       "{% if zt.type == 'note' %}{% render 'missing-example' %}{% endif %}{{ zt.text }}",
     );
@@ -400,11 +405,11 @@ describe("Sample Items", () => {
   });
 
   it("names the note name as the part that failed and leaves the rest on screen", () => {
-    const source = DEFAULT_PROFILE_SOURCE.replace(
+    const source = ANNOTATION_LIST_PROFILE_SOURCE.replace(
       "{{ zt.citationKey | default: zt.DOI | default: zt.title | default: zt.key }}{% suffix %}",
       "{% for tag i zt.tags %}{{ tag }}{% endfor %}",
     );
-    expect(source).not.toBe(DEFAULT_PROFILE_SOURCE);
+    expect(source).not.toBe(ANNOTATION_LIST_PROFILE_SOURCE);
     const result = renderProfile(source, SAMPLE_ITEMS[0]!);
 
     expect(result.filename).toBeNull();
@@ -428,7 +433,7 @@ describe("Sample Items", () => {
   it("marks a note name YAML wrote as a block scalar, and names no other pane", () => {
     // A run-time partial name, spelled literally in a note branch this item
     // never takes: a scan of the whole document would blame that call.
-    const source = DEFAULT_PROFILE_SOURCE.replace(
+    const source = ANNOTATION_LIST_PROFILE_SOURCE.replace(
       "filename: '{{ zt.citationKey | default: zt.DOI | default: zt.title | default: zt.key }}{% suffix %}'",
       `filename: |\n  {% assign part = "book-details" %}{% render part %}`,
     ).replace(
@@ -446,7 +451,7 @@ describe("Sample Items", () => {
   });
 
   it("keeps the note name when the note itself cannot render", () => {
-    const source = DEFAULT_PROFILE_SOURCE.replace(
+    const source = ANNOTATION_LIST_PROFILE_SOURCE.replace(
       "# {{ zt.title }}",
       "{% render 'missing-note' %}",
     );
@@ -458,7 +463,7 @@ describe("Sample Items", () => {
   });
 
   it("keeps a selected example available when the note has a separate error", () => {
-    const source = DEFAULT_PROFILE_SOURCE.replace(
+    const source = ANNOTATION_LIST_PROFILE_SOURCE.replace(
       "# {{ zt.title }}",
       "{% render 'missing-note' %}",
     );
@@ -476,7 +481,7 @@ describe("Sample Items", () => {
   });
 
   it("identifies a format error in a note call while the selected example succeeds", () => {
-    const source = DEFAULT_PROFILE_SOURCE.replace(
+    const source = ANNOTATION_LIST_PROFILE_SOURCE.replace(
       "{{ zt.imgLink | embed }}{{ zt.text }}",
       "{% if zt.type == 'highlight' %}{% render 'missing-for-highlight' %}{% endif %}{{ zt.comment }}",
     );
@@ -496,7 +501,7 @@ describe("Sample Items", () => {
   });
 
   it("reports both a selected-example error and an unrelated note error", () => {
-    const source = DEFAULT_PROFILE_SOURCE.replace(
+    const source = ANNOTATION_LIST_PROFILE_SOURCE.replace(
       "# {{ zt.title }}",
       "{% render 'missing-note' %}",
     ).replace(
@@ -517,7 +522,7 @@ describe("Sample Items", () => {
   });
 
   it("locates no highlight when the note calls the format nowhere", () => {
-    const silent = DEFAULT_PROFILE_SOURCE.replace(
+    const silent = ANNOTATION_LIST_PROFILE_SOURCE.replace(
       "{% render_annotation annotation %}\n",
       "",
     );
@@ -533,7 +538,7 @@ describe("Sample Items", () => {
       contractVersion: CONTRACT_VERSION + 1,
     };
 
-    expect(renderProfile(DEFAULT_PROFILE_SOURCE, stale)).toMatchObject({
+    expect(renderProfile(ANNOTATION_LIST_PROFILE_SOURCE, stale)).toMatchObject({
       filename: null,
       creationBody: null,
       diagnostics: [{ code: "contract-version-mismatch" }],
@@ -541,7 +546,7 @@ describe("Sample Items", () => {
   });
 
   it("renders a required partial supplied by a Workbench Connection", () => {
-    const source = DEFAULT_PROFILE_SOURCE.replace(
+    const source = ANNOTATION_LIST_PROFILE_SOURCE.replace(
       "# {{ zt.title }}",
       "{% render 'connected-heading' with zt as zt %}",
     );
@@ -603,7 +608,7 @@ describe("Sample Items", () => {
   });
 
   it("reports a dependency the Local Bridge could not bundle", () => {
-    const source = DEFAULT_PROFILE_SOURCE.replace(
+    const source = ANNOTATION_LIST_PROFILE_SOURCE.replace(
       "# {{ zt.title }}",
       "{% render 'summary' with zt as zt %}",
     );
@@ -636,7 +641,7 @@ describe("Sample Items", () => {
       "<citation><layout/></citation></style>";
 
     expect(
-      renderProfile(DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS[0]!, {
+      renderProfile(ANNOTATION_LIST_PROFILE_SOURCE, SAMPLE_ITEMS[0]!, {
         resources: {
           dependencies: bundle,
           citationStyle: { kind: "installed", styleId: "apa", xml: standalone },
@@ -647,7 +652,7 @@ describe("Sample Items", () => {
     // A style with nothing to format through is a bundle the preview cannot be
     // shown under, whatever the Local Bridge called it.
     expect(
-      renderProfile(DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS[0]!, {
+      renderProfile(ANNOTATION_LIST_PROFILE_SOURCE, SAMPLE_ITEMS[0]!, {
         resources: {
           dependencies: bundle,
           citationStyle: {
@@ -665,7 +670,7 @@ describe("Sample Items", () => {
   });
 
   it("names an Eta dependency instead of running it", () => {
-    const source = DEFAULT_PROFILE_SOURCE.replace(
+    const source = ANNOTATION_LIST_PROFILE_SOURCE.replace(
       "# {{ zt.title }}",
       "{% render 'connected-heading' with zt as zt %}",
     );
@@ -697,16 +702,20 @@ describe("Sample Items", () => {
   });
 
   it("reports a selected citation style the Local Bridge could not resolve", () => {
-    const result = renderProfile(DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS[0]!, {
-      resources: {
-        dependencies: { templates: [], diagnostics: [] },
-        citationStyle: {
-          kind: "failed",
-          styleId: "http://www.zotero.org/styles/missing",
-          reason: "style-missing",
+    const result = renderProfile(
+      ANNOTATION_LIST_PROFILE_SOURCE,
+      SAMPLE_ITEMS[0]!,
+      {
+        resources: {
+          dependencies: { templates: [], diagnostics: [] },
+          citationStyle: {
+            kind: "failed",
+            styleId: "http://www.zotero.org/styles/missing",
+            reason: "style-missing",
+          },
         },
       },
-    });
+    );
 
     expect(result.diagnostics).toContainEqual({
       code: "citation-style-error",
@@ -792,7 +801,7 @@ describe("Sample Items", () => {
  * one new key and overrides one an earlier entry set, a rule that cannot
  * evaluate, and a `js` entry the web host refuses to run.
  */
-const ROWS_PROFILE = DEFAULT_PROFILE_SOURCE.replace(
+const ROWS_PROFILE = ANNOTATION_LIST_PROFILE_SOURCE.replace(
   "---\n# {{ zt.title }}",
   `  - value: { title: 'From the spread', kind: { $eval: 'zt.itemType' } }
     merge: replace
@@ -811,7 +820,7 @@ const ROWS_PROFILE = DEFAULT_PROFILE_SOURCE.replace(
  * followed by a spread that produces the same key, then a value one entry sets
  * and a spread that cannot append to it.
  */
-const MERGE_PROFILE = DEFAULT_PROFILE_SOURCE.replace(
+const MERGE_PROFILE = ANNOTATION_LIST_PROFILE_SOURCE.replace(
   "---\n# {{ zt.title }}",
   `  - key: doi
     expr: zt.nowhere
@@ -906,8 +915,8 @@ describe("Managed Frontmatter rows", () => {
 });
 
 it("keeps a synthesized update note without a Managed Region unchanged", () => {
-  const manifestEnd = DEFAULT_PROFILE_SOURCE.indexOf("\n---\n") + 5;
-  const source = `${DEFAULT_PROFILE_SOURCE.slice(0, manifestEnd)}Personal notes.\n--- zotlit:annotation ---\nAn annotation.\n`;
+  const manifestEnd = ANNOTATION_LIST_PROFILE_SOURCE.indexOf("\n---\n") + 5;
+  const source = `${ANNOTATION_LIST_PROFILE_SOURCE.slice(0, manifestEnd)}Personal notes.\n--- zotlit:annotation ---\nAn annotation.\n`;
   const result = renderProfile(source, SAMPLE_ITEMS[0]!, { mode: "update" });
   expect(result.previewMode).toBe("update");
   expect(result.managedRegion).toBeNull();
