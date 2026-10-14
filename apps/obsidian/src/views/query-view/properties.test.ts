@@ -59,9 +59,7 @@ views:
     const label = (path: string) => properties.entry(path).label;
     const sort = sortOptions("items", label);
     expect(sort.find((option) => option.path === "title")?.label).toBe("Work");
-    expect(sort.find((option) => option.path === "date")?.label).toBe(
-      properties.entry("date").label,
-    );
+    expect(sort.find((option) => option.path === "date")?.label).toBe("Date");
     const group = groupOptions("items", label);
     expect(group.find((option) => option.path === "tags[]")?.label).toBe(
       "Keywords",
