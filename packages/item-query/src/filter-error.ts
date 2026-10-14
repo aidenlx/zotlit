@@ -72,6 +72,12 @@ export const EVALUATION_ERROR_CODES = [
   "date-out-of-range",
 ] as const satisfies readonly EvaluationErrorCode[];
 
+/** Compiles only while `EVALUATION_ERROR_CODES` names every code. */
+type Exhaustive<Missing extends never> = Missing;
+export type EvaluationErrorCodesExhaustive = Exhaustive<
+  Exclude<EvaluationErrorCode, (typeof EVALUATION_ERROR_CODES)[number]>
+>;
+
 /** The value of an evaluation that cannot be computed on one record. */
 export interface ErrorValue {
   readonly type: "error";

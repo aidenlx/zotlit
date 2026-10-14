@@ -7,6 +7,7 @@
 // @see apps/obsidian/docs/adr/0068-query-files-are-a-zotlit-file-type-embedded-through-the-private-embed-registry.md
 import { parse, stringify } from "yaml";
 
+import { FORMULA_SEGMENT } from "@zotlit/item-query";
 import type { MatchTree } from "@zotlit/templates/facade";
 
 /** The file extension of a Query File, and the language of a Query Block. */
@@ -416,9 +417,18 @@ export function serializeQueryFile(file: QueryFile): string {
   return stringify(entries, { lineWidth: 0 });
 }
 
+const FORMULA_PREFIX = `${FORMULA_SEGMENT}.`;
+
 /** The Projection Path a view shows a Formula as. */
 export function formulaProperty(name: string): string {
-  return `formula.${name}`;
+  return `${FORMULA_PREFIX}${name}`;
+}
+
+/** The name of the Formula that `property` shows; `null` for a field. */
+export function formulaName(property: string): string | null {
+  return property.startsWith(FORMULA_PREFIX)
+    ? property.slice(FORMULA_PREFIX.length)
+    : null;
 }
 
 /**
@@ -429,9 +439,8 @@ export function formulaIssue(
   issues: Readonly<Record<string, string>>,
   property: string,
 ): string | null {
-  if (!property.startsWith("formula.")) return null;
-  const name = property.slice("formula.".length);
-  return Object.hasOwn(issues, name) ? issues[name]! : null;
+  const name = formulaName(property);
+  return name !== null && Object.hasOwn(issues, name) ? issues[name]! : null;
 }
 
 /**
@@ -446,11 +455,18 @@ export function withFormula(
   return {
     ...file,
     formulas: { ...file.formulas, [name]: text },
-    problems: file.problems.filter(
-      (problem) =>
-        !(problem.code === "invalid-value" && problem.key === "formulas"),
-    ),
+    problems: validKey(file.problems, "formulas"),
   };
+}
+
+/** `problems` without the one that names `key` as an invalid value. */
+function validKey(
+  problems: readonly QueryFileProblem[],
+  key: "formulas" | "properties",
+): QueryFileProblem[] {
+  return problems.filter(
+    (problem) => !(problem.code === "invalid-value" && problem.key === key),
+  );
 }
 
 /** The file without its top-level `key`. */
@@ -470,10 +486,7 @@ function withProperties(file: QueryFile, properties: Entries): QueryFile {
   return {
     ...file,
     properties,
-    problems: file.problems.filter(
-      (problem) =>
-        !(problem.code === "invalid-value" && problem.key === "properties"),
-    ),
+    problems: validKey(file.problems, "properties"),
   };
 }
 
@@ -574,6 +587,11 @@ export interface FilterLocation {
   readonly section: FilterSection;
   /** The condition's position as the Match editor counts it. */
   readonly path: readonly number[];
+}
+
+/** A condition of the filters, with the message the Match editor marks it with. */
+export interface ConditionIssue extends FilterLocation {
+  readonly message: string;
 }
 
 interface FilterLeaf extends FilterLocation {
