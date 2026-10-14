@@ -39,7 +39,10 @@ export function registerQueryBlock(
   plugin.registerMarkdownCodeBlockProcessor(
     QUERY_FILE_EXTENSION,
     (source, el, ctx) => {
-      ctx.addChild(new QueryBlock(el, deps, { ctx, source }));
+      const block = new QueryBlock(el, deps, { ctx, source });
+      ctx.addChild(block);
+      // Export to PDF waits for this promise before it prints the note.
+      return block.shown;
     },
   );
 }
@@ -50,6 +53,7 @@ class QueryBlock extends MarkdownRenderChild {
   /** The block text as the note holds it, as this block last read or wrote it. */
   #source: string;
   #itemKey: string | null = null;
+  #query: QueryView | null = null;
 
   constructor(
     el: HTMLElement,
@@ -86,6 +90,7 @@ class QueryBlock extends MarkdownRenderChild {
     const keys = this.#deps.cardFocus.hold(this.containerEl, scope, query);
     this.register(() => keys[Symbol.dispose]());
     query.setText(this.#source);
+    this.#query = query;
     // The End-to-end Run reaches the block's view through its element.
     if (__DEV__) Object.assign(this.containerEl, { zotlitQueryView: query });
     // `this` follows the note's `zotero-key`.
@@ -98,6 +103,11 @@ class QueryBlock extends MarkdownRenderChild {
         query.refresh();
       }),
     );
+  }
+
+  /** Settles once the block shows its first rows, or its text only. Never rejects. */
+  get shown(): Promise<void> {
+    return this.#query?.shownIn(this.containerEl) ?? Promise.resolve();
   }
 
   /** Whether a change saves: the block stands in its own note. */

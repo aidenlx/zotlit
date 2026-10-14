@@ -4,6 +4,7 @@
 // component it returns added to the note and loaded, and the file's text on
 // disk changing under it.
 import { resetMockPlatform, setMockPlatform } from "@mock/obsidian";
+import { delay } from "@std/async";
 import type { App, EmbedContext, Scope } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -98,10 +99,14 @@ function setup() {
     },
   } as unknown as QueryViewDeps;
 
-  /** Embed the Query File in `sourcePath` as Obsidian does, and load it. */
+  /**
+   * Embed the Query File in `sourcePath` as Obsidian does, and load it. With
+   * `wait: "load"` it waits for `loadFile` alone, as Export to PDF does.
+   */
   async function embed(
     sourcePath: string,
     subpath = "",
+    { wait = "settled" }: { wait?: "settled" | "load" } = {},
   ): Promise<{ embed: QueryFileEmbed; el: HTMLElement }> {
     const el = document.createElement("div");
     document.body.append(el);
@@ -120,7 +125,7 @@ function setup() {
     await act(async () => {
       component.load();
       await component.loadFile();
-      await component.query.settled;
+      if (wait === "settled") await component.query.settled;
     });
     cleanup.defer(() => act(() => component.unload()));
     return { embed: component, el };
@@ -146,6 +151,23 @@ it("binds `this.item` to the Item of the embedding note", async () => {
   expect(run.mock.calls.at(-1)![0].context).toEqual({ item: "RUGIER24" });
   await embed("notes/Plain.md", "#Mine");
   expect(run.mock.calls.at(-1)![0].context).toBeUndefined();
+});
+
+it("settles its load once the first rows show, as Export to PDF waits for it", async () => {
+  const { embed, run } = setup();
+  const answer = Promise.withResolvers<QueryViewOutcome>();
+  run.mockReturnValueOnce(answer.promise);
+  let loaded = false;
+  const shown = embed("notes/Lab.md", "", { wait: "load" }).then((result) => {
+    loaded = true;
+    return result;
+  });
+  await delay(50);
+  expect(run).toHaveBeenCalled();
+  expect(loaded).toBe(false);
+  answer.resolve(EMPTY);
+  const { el } = await shown;
+  expect(el.querySelector("[data-query-empty]")).not.toBeNull();
 });
 
 it("keeps a click inside it from selecting the embed in Live Preview", async () => {
