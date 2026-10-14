@@ -69,6 +69,7 @@ export const ITEM_QUERY_LAYOUT = {
     "position",
     "authorName",
   ],
+  itemNotes: ["itemID", "parentItemID", "title"],
   libraries: ["libraryID", "type", "version"],
   groups: ["groupID", "libraryID", "name"],
 } as const satisfies Readonly<Record<string, readonly string[]>>;
