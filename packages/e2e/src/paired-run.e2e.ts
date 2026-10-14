@@ -999,6 +999,20 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       };
 
       it("creates an Annotation that reaches Zotero, the page overlay and the card", async () => {
+        // ZotLit Query waits while the Annotation is created, so the card can
+        // come only from the Annotation Repository's live list: the sidebar
+        // shows a new Annotation before its query runs again, as it did
+        // before it ran a query.
+        await obEval(
+          vaultId!,
+          `(function(){const query=app.plugins.plugins.zotlit.services.query;const run=query.run;let release;const gate=new Promise((resolve)=>{release=resolve;});query.run=(request,signal)=>gate.then(()=>run.call(query,request,signal));window.__ztQueryGate=()=>{query.run=run;release();};return true;})()`,
+        );
+        cleanup.defer(async () => {
+          await obEval(
+            vaultId!,
+            "(function(){window.__ztQueryGate?.();delete window.__ztQueryGate;return true;})()",
+          );
+        });
         const created = await obJson<{ kind: string; annotationKey?: string }>(
           vaultId!,
           `(async()=>{const outcome=await app.plugins.plugins.zotlit.services.annotationRepository.createAnnotation(${JSON.stringify(attachment.key)},${JSON.stringify(
@@ -1019,6 +1033,18 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         );
         expect(created.kind).toBe("created");
         createdKey = created.annotationKey!;
+        // The Annotation Card, in the Annotation View, while the query waits.
+        expect(
+          await obEvalUntil(
+            vaultId!,
+            `String(app.workspace.getLeavesOfType('zotero-annotation-view').some(({view})=>view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(createdKey)}]')))`,
+            { expected: "true" },
+          ),
+        ).toBe(true);
+        await obEval(
+          vaultId!,
+          "(function(){window.__ztQueryGate();delete window.__ztQueryGate;return true;})()",
+        );
         cleanup.defer(async () => {
           await rdp.json(`(async () => {
             const item = Zotero.Items.getByLibraryAndKey(

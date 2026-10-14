@@ -170,6 +170,13 @@ export interface AnnotState {
    * Key, in the query's order.
    */
   unresolved: readonly string[];
+  /**
+   * Why the sidebar's query shows no cards: the query failed, or Zotero's
+   * data cannot be read. `null` while nothing stands in the way.
+   */
+  queryProblem: { message: string; detail: string } | null;
+  /** Whether a filter condition has an error while the last cards stay. */
+  filterError: boolean;
 }
 
 /** The group a card stands in, and the heading that names it. */
@@ -230,6 +237,8 @@ export function createAnnotStore() {
         groups: null,
         collapsedGroups: new Set(),
         unresolved: [],
+        queryProblem: null,
+        filterError: false,
       }),
     ),
   );
