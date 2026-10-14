@@ -898,6 +898,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
     // change already runs it again through the Query View, and a reload for
     // the same Attachment (a tab switch, a note edit) changes nothing it reads.
     this.#query.setText(this.#queryText ?? sidebarQueryText());
+    this.#query.contextChanged();
     return this.#query.settled.then(() => {
       const landed =
         this.#query.state.getState().phase === "ready" &&

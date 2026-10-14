@@ -658,7 +658,7 @@ describe("saving a toolbar edit", () => {
     expect(run).toHaveBeenCalledTimes(runs + 1);
   });
 
-  it("runs its own saved text again for another Query Context, as the sidebar gives it for another Attachment", async () => {
+  it("runs again once the host says its Query Context changed, as the sidebar does for another Attachment", async () => {
     let attachment = "PDFAAAAA";
     const { view, run, saved, settle } = await mount([], undefined, {
       context: () => ({ attachment }),
@@ -669,8 +669,17 @@ describe("saving a toolbar edit", () => {
     await settle();
     const runs = run.mock.calls.length;
 
+    // The same Query Context runs nothing.
+    await act(() => view.contextChanged());
+    await settle();
+    expect(run).toHaveBeenCalledTimes(runs);
+
     attachment = "PDFBBBBB";
+    // The text alone does not read the Query Context again.
     await act(() => view.setText(saved.at(-1)!));
+    await settle();
+    expect(run).toHaveBeenCalledTimes(runs);
+    await act(() => view.contextChanged());
     await settle();
     expect(run).toHaveBeenCalledTimes(runs + 1);
     expect(run.mock.calls.at(-1)![0]).toMatchObject({

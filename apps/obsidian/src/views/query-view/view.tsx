@@ -459,14 +459,24 @@ export class QueryView extends Component implements HistorySurface {
   /**
    * Read a Query File's text, and show the view the host asked for. The text
    * the file on screen was read from changes nothing, so the host gives the
-   * view's own save back as it reads it: a new Query Context still runs.
+   * view's own save back as it reads it. A new Query Context comes through
+   * {@link contextChanged}.
    */
   setText(text: string): void {
-    if (text !== this.#text) {
-      this.#text = text;
-      this.state.setState({ file: parseQueryFile(text) });
-    }
+    if (text === this.#text) return;
+    this.#text = text;
+    this.state.setState({ file: parseQueryFile(text) });
     this.#choose();
+  }
+
+  /**
+   * The host's Query Context may have changed: run again where the view's
+   * query reads another one.
+   */
+  contextChanged(): void {
+    const { file, view, problems } = this.state.getState();
+    if (!file || !view || problems.length > 0) return;
+    if (this.#runKey(file, view) !== this.#runRequest) this.refresh();
   }
 
   /**
