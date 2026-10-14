@@ -12,16 +12,14 @@ export interface ResultTable {
 }
 
 /** The code and message of a Formula cell that holds an Error Value. */
-export interface ErrorValue {
+export interface ErrorCell {
   readonly kind: "error";
   readonly code: string;
   readonly message: string;
 }
 
-/** The Error Value that `value` holds, else null. */
-export function errorValue(
-  value: QueryViewValue | undefined,
-): ErrorValue | null {
+/** The Error Value that `value` holds, as a cell shows it; else null. */
+export function errorCell(value: QueryViewValue | undefined): ErrorCell | null {
   if (value === null || typeof value !== "object" || Array.isArray(value))
     return null;
   const record = value as Readonly<Record<string, QueryViewValue>>;
@@ -44,7 +42,7 @@ export function cell(value: QueryViewValue | undefined): string {
       .filter((text) => text !== "")
       .join(", ");
   // An Error Value reads as the Formula's toString() gives it.
-  const error = errorValue(value);
+  const error = errorCell(value);
   if (error) return `Error: ${error.message}`;
   const record = value as Readonly<Record<string, QueryViewValue>>;
   // A date reads as Zotero shows it: its text, else the part of its stored
