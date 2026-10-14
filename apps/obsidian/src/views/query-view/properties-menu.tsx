@@ -122,20 +122,15 @@ function PropertyList({
   const groups = useMemo<ChooserGroup<ChooserRow>[]>(() => {
     const properties = datasetProperties(dataset);
     const choices = propertyChoices(properties, order, query);
-    const lowered = query.toLowerCase();
     // The Formulas the view does not show come after those it shows.
     const hidden = formulas
       .map(formulaProperty)
-      .filter(
-        (property) =>
-          !order.includes(property) &&
-          (lowered === "" || property.toLowerCase().includes(lowered)),
-      );
+      .filter((property) => !order.includes(property));
     const rows = [
       ...choices.slice(0, order.length),
       ...hidden,
       ...choices.slice(order.length),
-    ].map((property): ChooserRow => ({ value: property, label: property }));
+    ].map((property) => propertyRow(file, property));
     const actions: ChooserRow[] = [];
     if (openFormula)
       actions.push({
@@ -161,7 +156,7 @@ function PropertyList({
     return actions.length > 0
       ? [{ items: rows }, { items: actions }]
       : [{ items: rows }];
-  }, [dataset, order, query, setOrder, formulas, openFormula]);
+  }, [dataset, order, query, setOrder, formulas, openFormula, file]);
 
   return (
     <Chooser.List
@@ -236,6 +231,22 @@ function PropertyList({
       }
     </Chooser.List>
   );
+}
+
+/**
+ * The row of `property` in the popover. The search matches its label, so the
+ * label holds the name the row shows (its Display Name, else its field
+ * label) and its path.
+ */
+export function propertyRow(
+  file: QueryFile | null,
+  property: string,
+): ChooserRow {
+  const name = propertyLabel(file, property);
+  return {
+    value: property,
+    label: name === property ? property : `${name} ${property}`,
+  };
 }
 
 /** A Formula row's mark of a mistake, and its button that edits the Formula. */
