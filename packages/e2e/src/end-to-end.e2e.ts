@@ -852,7 +852,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       filter: m.query_view_filter(),
       sort: m.query_view_sort(),
       group: m.query_view_group(),
-      properties: m.settings_profile_properties_name(),
+      properties: m.query_view_properties(),
       search: m.query_view_search(),
     };
     /** Each toolbar button's tooltip text and whether its name shows beside its icon. */
