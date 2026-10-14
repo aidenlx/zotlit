@@ -91,6 +91,24 @@ describe("resultTable", () => {
       ],
     ]);
   });
+
+  it("writes an Error Value as its message and leaves a null Formula empty", () => {
+    const error = {
+      kind: "error",
+      code: "unparseable-text",
+      message: 'number() cannot read "Deep learning" as a number.',
+    };
+    const rows: QueryViewRow[] = [
+      { indexedKey: "A", values: { "formula.n": error } },
+      { indexedKey: "B", values: { "formula.n": null } },
+      { indexedKey: "C", values: { "formula.n": [1, error] } },
+    ];
+    expect(resultTable(rows, ["formula.n"]).body).toEqual([
+      ['Error: number() cannot read "Deep learning" as a number.'],
+      [""],
+      ['1, Error: number() cannot read "Deep learning" as a number.'],
+    ]);
+  });
 });
 
 describe("toCSV", () => {
