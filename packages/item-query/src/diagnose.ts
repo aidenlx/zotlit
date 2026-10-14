@@ -89,7 +89,8 @@ export function diagnose(
     context.path === undefined ||
     fault.kind === "formula-name" ||
     fault.kind === "formula-result" ||
-    fault.kind === "formula-cycle"
+    fault.kind === "formula-cycle" ||
+    fault.kind === "reads-faulted-formula"
   )
     return diagnostic;
   return inFormula(diagnostic, context.path);
@@ -228,6 +229,40 @@ function diagnoseFault(
         },
       );
     }
+    case "reads-faulted-formula": {
+      // The reader names the Formula it reads; the note states the mistake at
+      // the root of the reads.
+      const root = diagnose(fault.root.fault, fault.root.argumentText, {
+        ...fault.root.location,
+        dataset,
+        context: fault.root.context,
+      });
+      const reader =
+        location.argument === "filter"
+          ? "The filter"
+          : `formula.${location.path}`;
+      const diagnostic = renderDiagnostic(
+        {
+          code: "reads-faulted-formula",
+          message: `${reader} reads formula.${fault.name}, which has a mistake.`,
+          hint: `Correct the mistake in formula.${fault.root.location.path}.`,
+          location: faultLocation,
+        },
+        text,
+        {
+          found: `formula.${fault.name}`,
+          expected: ["a Formula without a mistake"],
+        },
+      );
+      return {
+        ...diagnostic,
+        report: [
+          ...diagnostic.report.slice(0, -1),
+          root.message,
+          diagnostic.hint,
+        ],
+      };
+    }
     case "formula-result":
       return renderDiagnostic(
         {
@@ -297,6 +332,7 @@ export function codeOfFault(
   if (fault.kind === "formula-name") return "invalid-formula-name";
   if (fault.kind === "formula-result") return "invalid-formula-result";
   if (fault.kind === "formula-cycle") return "formula-cycle";
+  if (fault.kind === "reads-faulted-formula") return "reads-faulted-formula";
   switch (fault.role) {
     case "formula":
       return "unknown-formula";

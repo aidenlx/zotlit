@@ -190,6 +190,11 @@ export interface FormulaPlanner<Item = any, Needs = any> {
   readonly rootError: (
     faulted: FaultedFormula | FaultedFormulaRead,
   ) => FormulaError;
+  /**
+   * The Fault of a faulted Formula itself: the Fault in its own definition,
+   * or the read of the first Formula with a mistake that its text reads.
+   */
+  readonly error: (faulted: FaultedFormula) => FormulaError;
   /** The planned Formulas, each once, a Formula after the Formulas it reads. */
   readonly planned: () => readonly PlannedFormula<Item, Needs>[];
   /** The faulted Formulas, each once, with the invalid names first. */
@@ -229,6 +234,15 @@ export function planFormulas(
   // A Formula in `planning` is a reader of the one in planning after it, so a
   // name already there closes a cycle.
   const planning: string[] = [];
+
+  const rootError = (
+    formula: FaultedFormula | FaultedFormulaRead,
+  ): FormulaError => {
+    let fault = "fault" in formula ? formula.fault : formula;
+    while (fault.kind === "reads-faulted-formula")
+      fault = faulted.get(fault.name)!.fault;
+    return fault.error;
+  };
 
   const unknown = (name: string, at: Span) =>
     ({ kind: "unknown", role: "formula", name, at, formulas: names }) as const;
@@ -307,11 +321,15 @@ export function planFormulas(
         return { problem: unknown(name, { from: 0, to: text.length }) };
       return plan(name);
     },
-    rootError: (formula) => {
-      let fault = "fault" in formula ? formula.fault : formula;
-      while (fault.kind === "reads-faulted-formula")
-        fault = faulted.get(fault.name)!.fault;
-      return fault.error;
+    rootError,
+    error: ({ name, text, fault }) => {
+      if (fault.kind === "own") return fault.error;
+      return {
+        context,
+        fault: { ...fault, root: rootError(fault) },
+        location: { argument: "formulas", path: name, span: fault.at },
+        argumentText: text,
+      };
     },
     planned: () => [...planned.values()],
     faulted: () => [...faulted.values()],

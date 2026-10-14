@@ -494,6 +494,20 @@ const REQUESTS: readonly ScenarioQuery[] = [
       ],
     },
   },
+  {
+    name: "Formulas with mistakes left out over a candidate set",
+    libraries: ["personal", "group"],
+    request: {
+      filter: 'tags.contains("to-read")',
+      formulas: {
+        authors: "creators.length",
+        bad: "title * 2",
+        reader: "formula.bad + 1",
+      },
+      fields: ["title", "formula.authors", "formula.reader", "formula.zz"],
+      formulaFaults: "leave-out",
+    },
+  },
   { name: "no filter, defaults", libraries: ["personal"], request: {} },
   { name: "no filter, defaults, group", libraries: ["group"], request: {} },
   {
