@@ -6,7 +6,9 @@ import { resetMockPlatform, setMockPlatform } from "@mock/obsidian";
 import { Scope } from "obsidian";
 import type { App } from "obsidian";
 import { act } from "preact/test-utils";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import type { QueryContext } from "@zotlit/item-query";
 
 import { Effect } from "@/lib/effect";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
@@ -23,9 +25,9 @@ import type {
 import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
 
 import { groupOptions } from "./properties";
-import { QUERY_FILE_DATASETS } from "./query-file";
+import { QUERY_FILE_DATASETS, serializeQueryFile } from "./query-file";
 import type { QueryFileDataset } from "./query-file";
-import { QueryView, RERUN_DELAY_MS } from "./view";
+import { QueryView, RERUN_DELAY_MS, SAVE_DELAY_MS } from "./view";
 import type { QueryViewDeps } from "./view";
 
 vi.mock("zustand", () => import("../__fixtures__/zustand"));
@@ -149,9 +151,16 @@ async function mount(
   {
     notes = {},
     layout,
+    write,
+    canSave,
+    context = () => undefined,
   }: {
     notes?: Record<string, string>;
     layout?: ConstructorParameters<typeof QueryView>[1]["layout"];
+    /** The host's write; it rejects where the text was not saved. */
+    write?: (text: string) => Promise<void>;
+    canSave?: () => boolean;
+    context?: () => QueryContext | undefined;
   } = {},
 ) {
   setMockPlatform({ isMacOS: true });
@@ -248,13 +257,15 @@ async function mount(
   const view = new QueryView(deps, {
     scope: new Scope(),
     sourcePath: () => "query-files/Reading.zotquery",
-    context: () => undefined,
+    context,
     save: (text) => {
       saved.push(text);
       save(text);
       onWrite?.(text);
+      return write?.(text);
     },
     onSelectView,
+    ...(canSave && { canSave }),
     ...(layout && { layout }),
   });
   const saved: string[] = [];
@@ -512,6 +523,8 @@ it("saves a view edit to the file, and keeps a renamed view on screen without ru
   await settle();
   await act(() => view.renameView(0, "Yellow highlights"));
   await settle();
+  // A typed name saves after a short wait.
+  await act(() => view.flush());
 
   expect(save).toHaveBeenCalledTimes(1);
   const [text] = save.mock.calls[0]!;
@@ -573,6 +586,139 @@ it("shows the view before a deleted view, and saves a move to the top", async ()
   expect(saved.indexOf("name: View")).toBeLessThan(
     saved.indexOf("name: Yellow"),
   );
+});
+
+describe("saving a toolbar edit", () => {
+  it("saves typed text once, 500 ms after the last key, and a menu choice at once", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    cleanup.defer(() => vi.useRealTimers());
+    const { view, saved, settle } = await mount([]);
+    await act(() => view.setText(FILE));
+    await settle();
+    const wait = (ms: number) =>
+      act(() => {
+        vi.advanceTimersByTime(ms);
+      });
+
+    await act(() => view.editView({ limit: 5 }, { typed: true }));
+    await wait(300);
+    await act(() => view.editView({ limit: 50 }, { typed: true }));
+    await wait(SAVE_DELAY_MS - 1);
+    expect(saved).toEqual([]);
+    expect(view.state.getState().view?.limit).toBe(50);
+    await wait(1);
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toContain("    limit: 50\n");
+
+    // A menu choice saves at once, with the typed text that still waits.
+    await act(() => view.editView({ limit: 7 }, { typed: true }));
+    await act(() => view.editView({ order: ["comment"] }));
+    expect(saved).toHaveLength(2);
+    expect(saved[1]).toContain("    limit: 7\n");
+    expect(saved[1]).toContain("      - comment\n");
+    await wait(SAVE_DELAY_MS);
+    expect(saved).toHaveLength(2);
+  });
+
+  it("writes typed text that still waits when it unloads", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    cleanup.defer(() => vi.useRealTimers());
+    const { view, saved, settle } = await mount([]);
+    await act(() => view.setText(FILE));
+    await settle();
+    await act(() => view.renameView(0, "Yellow highlights"));
+    expect(saved).toEqual([]);
+    await act(() => view.unload());
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toContain("name: Yellow highlights");
+  });
+
+  it("changes nothing when the host gives the text of its own save back", async () => {
+    let echo: (text: string) => void = () => {};
+    const { view, run, settle } = await mount([], (text) => echo(text));
+    await act(() => view.setText(FILE));
+    await settle();
+    await act(() => view.editView({ limit: 5 }));
+    await settle();
+    const { file } = view.state.getState();
+    const runs = run.mock.calls.length;
+
+    echo = (text) => view.setText(text);
+    await act(() => view.editView({ limit: 6 }));
+    await settle();
+    const shown = view.state.getState().file;
+    expect(shown?.views[0]?.limit).toBe(6);
+    expect(shown).not.toBe(file);
+    expect(run).toHaveBeenCalledTimes(runs + 1);
+
+    // The host reads the saved text again, as a vault change makes it.
+    await act(() => view.setText(serializeQueryFile(shown!)));
+    await settle();
+    expect(view.state.getState().file).toBe(shown);
+    expect(run).toHaveBeenCalledTimes(runs + 1);
+  });
+
+  it("runs its own saved text again for another Query Context, as the sidebar gives it for another Attachment", async () => {
+    let attachment = "PDFAAAAA";
+    const { view, run, saved, settle } = await mount([], undefined, {
+      context: () => ({ attachment }),
+    });
+    await act(() => view.setText(FILE));
+    await settle();
+    await act(() => view.editView({ limit: 5 }));
+    await settle();
+    const runs = run.mock.calls.length;
+
+    attachment = "PDFBBBBB";
+    await act(() => view.setText(saved.at(-1)!));
+    await settle();
+    expect(run).toHaveBeenCalledTimes(runs + 1);
+    expect(run.mock.calls.at(-1)![0]).toMatchObject({
+      limit: 5,
+      context: { attachment: "PDFBBBBB" },
+    });
+  });
+
+  it("keeps a change on screen and says it is not saved when the host cannot write it, until a later save works", async () => {
+    let fail = true;
+    const { view, el, settle } = await mount([], undefined, {
+      write: () =>
+        fail ? Promise.reject(new Error("disk full")) : Promise.resolve(),
+    });
+    await act(() => view.setText(FILE));
+    await settle();
+    expect(el.querySelector("[data-query-read-only]")).toBeNull();
+
+    await act(async () => {
+      view.editView({ limit: 5 });
+      await view.flush();
+    });
+    expect(view.state.getState().view?.limit).toBe(5);
+    expect(el.querySelector("[data-query-read-only]")).not.toBeNull();
+
+    fail = false;
+    await act(async () => {
+      view.editView({ limit: 6 });
+      await view.flush();
+    });
+    expect(el.querySelector("[data-query-read-only]")).toBeNull();
+  });
+
+  it("shows a change but saves nothing where the host cannot save, and says so", async () => {
+    const { view, el, saved, settle } = await mount([], undefined, {
+      canSave: () => false,
+    });
+    await act(() => view.setText(FILE));
+    await settle();
+    expect(el.querySelector("[data-query-read-only]")).not.toBeNull();
+
+    await act(async () => {
+      view.editView({ limit: 5 });
+      await view.flush();
+    });
+    expect(view.state.getState().view?.limit).toBe(5);
+    expect(saved).toEqual([]);
+  });
 });
 
 const TAGGED = `views:

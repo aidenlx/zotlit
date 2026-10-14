@@ -18,7 +18,6 @@ import type {
 import { QueryCardFocus } from "./card-focus";
 import { createQueryFileEmbed } from "./embed";
 import type { QueryFileEmbed } from "./embed";
-import { parseQueryFile } from "./query-file";
 import type { QueryViewDeps } from "./view";
 
 vi.mock("zustand", () => import("../__fixtures__/zustand"));
@@ -181,14 +180,9 @@ it("saves a toolbar change to the file, and another embed of it follows", async 
   const first = await embed("notes/Lab.md");
   const second = await embed("notes/Plain.md");
 
-  const file = parseQueryFile(FILE);
-  const [yellow, mine] = file.views;
   await act(async () => {
-    first.embed.query.commit({
-      ...file,
-      views: [{ ...yellow!, name: "Yellow ones" }, mine!],
-    });
-    await first.embed.flush();
+    first.embed.query.renameView(0, "Yellow ones");
+    await first.embed.query.flush();
   });
 
   expect(host.text(FILE_PATH)).toContain("name: Yellow ones");
@@ -203,10 +197,9 @@ it("saves through an open tab of the file, so the tab shows the change", async (
   const { embed, host } = setup();
   const tab = host.openInEditor(host.file(FILE_PATH));
   const { embed: component } = await embed("notes/Lab.md");
-  const file = parseQueryFile(FILE);
   await act(async () => {
-    component.query.commit({ ...file, views: [...file.views].reverse() });
-    await component.flush();
+    component.query.moveView(1, 0);
+    await component.query.flush();
   });
   expect(tab.getViewData().indexOf("name: Mine")).toBeLessThan(
     tab.getViewData().indexOf("name: Yellow"),

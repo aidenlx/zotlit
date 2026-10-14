@@ -249,12 +249,8 @@ export class AnnotationView extends ItemView implements HistorySurface {
     // rather than a source that cannot answer. Every other stored mode is kept
     // whether or not its source answers right now.
     this.#store.setState(parseAnnotViewState(state));
-    const query = readSidebarQuery(state);
-    if (query !== this.#queryText) {
-      this.#queryText = query;
-      // The restored Query File runs with the next Attachment shown.
-      this.#query.clear();
-    }
+    // The restored Query File runs with the Attachment the reload shows.
+    this.#queryText = readSidebarQuery(state);
     this.#reload();
   }
 
