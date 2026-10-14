@@ -113,9 +113,9 @@ export function consumeDataset<I extends { scan: ScanRow }, A, E, R>(
           for (const item of items) {
             if (!run.matches(item)) continue;
             const keys = run.keys(item);
+            totalCount++;
             if (run.groupValues) {
               // A record joins one group for each of its distinct values.
-              totalCount++;
               for (const value of run.groupValues(item)) {
                 let group = groups.get(value);
                 if (!group) {
@@ -230,6 +230,7 @@ export function consumeDataset<I extends { scan: ScanRow }, A, E, R>(
     const consumer = yield* begin({
       query,
       warnings: run.warnings,
+      matchedCount: totalCount,
       returnedCount:
         query.group === undefined
           ? returned.length

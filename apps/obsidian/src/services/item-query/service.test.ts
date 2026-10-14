@@ -1015,6 +1015,31 @@ describe("typed Query View call", () => {
     expect(leases()).toBe(0);
   });
 
+  it("counts every match beside the rows that a limit returns", async () => {
+    using scenario = openScenarioDatabase({ storage: "temp-directory" });
+    seedBulkLibrary(scenario.sqlite, 300);
+    const { service } = setup(scenario);
+    await using _owned = service;
+
+    const outcome = await service.run(
+      {
+        from: "items",
+        libraries: bulkLibraries,
+        fields: ["title"],
+        filter: 'tags.contains("bulk-fifth")',
+        limit: 7,
+      },
+      signal(),
+    );
+
+    if (outcome.kind !== "result") throw new Error(outcome.kind);
+    expect(outcome.result).toMatchObject({
+      returnedCount: 7,
+      matchedCount: 60,
+      truncated: true,
+    });
+  });
+
   it("returns the groups with their value, their count and the total count", async () => {
     using scenario = openScenarioDatabase({ storage: "temp-directory" });
     seedBulkLibrary(scenario.sqlite, 300);

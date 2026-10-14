@@ -45,6 +45,7 @@ const EMPTY: QueryViewOutcome = {
     libraries: [{ type: "personal" }],
     query: {} as never,
     returnedCount: 0,
+    matchedCount: 0,
     truncated: false,
     warnings: [],
     rows: [],
