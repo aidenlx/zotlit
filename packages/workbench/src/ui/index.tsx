@@ -1,4 +1,14 @@
-export { MatchPane } from "./match";
+export { MatchEditor, MatchPane } from "./match";
+export type {
+  ConditionControlProps,
+  ConditionPath,
+  ExpressionCondition,
+  LabelledRow,
+  MatchConditionKind,
+  MatchFilter,
+  MatchVocabulary,
+  RowCondition,
+} from "./match";
 // The Workbench UI: the headless component tree both the web Template
 // Workbench and the Obsidian Template Workbench View mount over one Template
 // Document

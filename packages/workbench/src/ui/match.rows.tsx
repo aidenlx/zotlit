@@ -1,10 +1,11 @@
+import type { FlatCondition } from "#/match/condition";
 import type { ComponentProps } from "react";
 
 import { ITEM_TYPES } from "@zotlit/zotero-types/item-types";
 
 import { useWorkbenchHost } from "./host";
 import { ChipInput } from "./match.chips";
-import type { RowCondition, MatchEditorDeps } from "./match.draft";
+import type { MatchEditorDeps } from "./match.draft";
 import { MatchInput } from "./match.input";
 // Kind, operator, and value controls preserve the established Match vocabulary.
 import { useWorkbenchMessages } from "./messages";
@@ -29,8 +30,8 @@ export function ConditionOperator({
   condition,
   onChange,
 }: {
-  condition: Exclude<RowCondition, { kind: "expression" }>;
-  onChange: (next: RowCondition) => void;
+  condition: FlatCondition;
+  onChange: (next: FlatCondition) => void;
 }) {
   const m = useWorkbenchMessages();
   const part = useParts("match");
@@ -152,8 +153,8 @@ export function ConditionValue({
   onChange,
   deps,
 }: {
-  condition: Exclude<RowCondition, { kind: "expression" }>;
-  onChange: (next: RowCondition) => void;
+  condition: FlatCondition;
+  onChange: (next: FlatCondition) => void;
   deps: MatchEditorDeps;
 }) {
   const m = useWorkbenchMessages();
