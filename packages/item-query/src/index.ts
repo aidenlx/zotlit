@@ -38,6 +38,7 @@ export {
   type QuerySummary,
 } from "./query";
 export { COUNT_FIELDS, UNLIMITED_LIMIT } from "./request";
+export { FORMULA_NAME } from "./formulas";
 export type {
   ItemQuery,
   ItemQueryRequest,

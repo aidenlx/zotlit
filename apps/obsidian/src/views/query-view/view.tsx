@@ -58,11 +58,14 @@ import { groupOptions, sortOptions } from "./properties";
 import { PropertiesMenu } from "./properties-menu";
 import {
   editView,
+  formulaProperty,
   locateFilterFault,
   parseQueryFile,
+  removeFormula,
   serializeQueryFile,
   viewFilter,
   withFilters,
+  withFormula,
 } from "./query-file";
 import type {
   FilterLocation,
@@ -573,6 +576,42 @@ export class QueryView extends Component implements HistorySurface {
     this.commit(
       withFilters(file, section === "all" ? null : view.name, filters),
     );
+    return true;
+  }
+
+  /**
+   * Save the Formula `name` with its text. A new Formula also shows in the
+   * view on screen, after its other properties. Answers whether the host
+   * saves the change.
+   */
+  saveFormula(name: string, text: string): boolean {
+    const { file, view } = this.state.getState();
+    if (!file || !view || !this.writable) return false;
+    let next = withFormula(file, name, text);
+    const property = formulaProperty(name);
+    if (
+      !Object.hasOwn(file.formulas ?? {}, name) &&
+      !(view.order ?? []).includes(property)
+    ) {
+      // A view that shows no property chosen shows the defaults; they stay.
+      const shown =
+        visibleProperties(view).length > 0
+          ? (view.order ?? [])
+          : visibleProperties(view, { fallback: true });
+      next = editView(next, view, { order: [...shown, property] });
+    }
+    this.commit(next);
+    return true;
+  }
+
+  /**
+   * Remove the Formula `name` from the file and from every view. Answers
+   * whether the host saves the change.
+   */
+  removeFormula(name: string): boolean {
+    const { file } = this.state.getState();
+    if (!file || !this.writable) return false;
+    this.commit(removeFormula(file, name));
     return true;
   }
 
