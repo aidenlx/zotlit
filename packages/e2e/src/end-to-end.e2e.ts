@@ -1867,7 +1867,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
 
     await tabWhen((tab) => tab.count !== null);
-    // The colours of the rows, in the order each first shows.
+    // The colours of the rows.
     const report = JSON.parse(
       await cliCommand(vaultId, "zotlit:query", {
         args: { from: "annotations", fields: "colorName", limit: "100" },
@@ -1880,13 +1880,22 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(colours.length).toBeGreaterThan(1);
 
     await choose("[data-group-property]", "colorName");
-    await tabWhen((tab) => tab.headings.length === colours.length);
+    const grouped = await tabWhen(
+      (tab) => tab.headings.length === colours.length,
+    );
+    // Ascending groups go from A to Z by the colour's name, as in Bases.
+    expect(grouped.headings).toEqual(
+      grouped.headings.toSorted(new Intl.Collator("en").compare),
+    );
     await choose("[data-group-direction]", "MANUAL");
     const manual = await tabWhen((tab) => tab.order.length > 0);
-    expect(manual.order).toEqual(colours.map((colour) => [colour, true]));
+    expect(manual.order.map(([colour]) => colour).toSorted()).toEqual(
+      colours.toSorted(),
+    );
+    expect(manual.order.every(([, ticked]) => ticked)).toBe(true);
 
     // A tick hides the first colour.
-    const [hidden, ...shown] = colours;
+    const [hidden, ...shown] = manual.order.map(([colour]) => colour);
     await obEval(
       vaultId,
       `(()=>{const el=app.workspace.getMostRecentLeaf().view.contentEl;el.querySelector('[data-query-popover="group"] [data-group-row=${JSON.stringify(hidden)}] input').click();return true;})()`,

@@ -131,11 +131,21 @@ function placements(row: QueryViewRow, property: string): Placement[] {
   }
 }
 
+/** The string order of ZotLit Query, so groups order as its sort does. */
+const COLLATOR = new Intl.Collator("en", {
+  usage: "sort",
+  sensitivity: "variant",
+  numeric: false,
+  caseFirst: "false",
+  ignorePunctuation: false,
+});
+
 /**
- * The rows the layout shows. Groups follow the query order of their first
- * rows, and a descending grouping reverses them; a Manual group order shows
- * the groups it lists, in its order, and hides the rest. The group of no
- * value stands last. The rows inside a group keep the query's order.
+ * The rows the layout shows. Groups order by the name each one shows under,
+ * as Bases orders them by value: A to Z, or Z to A for a descending grouping.
+ * A Manual group order shows the groups it lists, in its order, and hides
+ * the rest. The group of no value stands last. The rows inside a group keep
+ * the query's order.
  */
 export function layoutRows(
   rows: readonly QueryViewRow[],
@@ -160,10 +170,15 @@ export function layoutRows(
       });
       groups.set(value, group);
     }
-  let order: QueryFileGroupValue[] = [...groups.keys()].filter(
-    (value) => value !== null,
-  );
-  if (groupBy.direction === "DESC") order.reverse();
+  const sign = groupBy.direction === "DESC" ? -1 : 1;
+  let order: QueryFileGroupValue[] = [...groups.keys()]
+    .filter((value) => value !== null)
+    .sort(
+      (a, b) =>
+        sign *
+        (COLLATOR.compare(groups.get(a)!.label, groups.get(b)!.label) ||
+          COLLATOR.compare(a!, b!)),
+    );
   if (groups.has(null)) order.push(null);
   let hidden: QueryFileGroupValue[] = [];
   if (groupOrder) {

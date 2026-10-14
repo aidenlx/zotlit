@@ -1194,10 +1194,10 @@ it("sorts, groups and searches the Table by Item fields", async () => {
   });
   expect(tableText(el)).toEqual([
     ["", "Title", "Literature note"],
-    ["Journal Article"],
-    ["", "Ten simple rules", "Create"],
     ["Book"],
     ["", "Deep learning", "Create"],
+    ["Journal Article"],
+    ["", "Ten simple rules", "Create"],
   ]);
 
   await act(() =>
