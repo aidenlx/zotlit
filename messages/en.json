@@ -2717,6 +2717,7 @@
   "query_view_problem_layout": "The \"{type}\" layout is not available yet.",
   "query_view_problem_dataset": "The Annotations layout shows \"from: annotations\" only.",
   "query_view_problem_layout_dataset": "The {layout} layout shows \"from: {datasets}\" only.",
+  "query_view_problem_group": "This view cannot group by \"{property}\".",
   "query_view_problem_no_view": "This file has no view named \"{name}\".",
   "query_view_sort": "Sort",
   "query_view_sort_by": "Sort by",

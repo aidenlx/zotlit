@@ -1736,6 +1736,41 @@ views:
   expect(el.querySelector('[data-query-table-row="item"]')).toBeNull();
 });
 
+it("sends a sort by a Formula to ZotLit Query, and shows a grouping by a Formula as the view's problem", async () => {
+  const file = `formulas:
+  year: date.year
+views:
+  - type: table
+    name: Reading list
+    from: items
+    sort:
+      - property: formula.year
+        direction: DESC
+    order:
+      - title
+`;
+  const { view, run, settle } = await mount([result([])]);
+  await act(() => view.setText(file));
+  await settle();
+  expect(view.state.getState().problems).toEqual([]);
+  expect(run.mock.calls[0]![0].sort).toEqual([
+    { field: "formula.year", direction: "desc" },
+  ]);
+
+  await act(() =>
+    view.setText(
+      file.replace(
+        "    order:",
+        "    groupBy:\n      property: formula.year\n      direction: ASC\n    order:",
+      ),
+    ),
+  );
+  await settle();
+  expect(view.state.getState().problems).toEqual([
+    'This view cannot group by "formula.year".',
+  ]);
+});
+
 it("shows each Error Value element of a list cell as a warning icon in the Table, the List and the Cards", async () => {
   const wrong = (text: string) => ({
     kind: "error",

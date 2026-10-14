@@ -421,7 +421,6 @@ export function planRequest(
     let group: PlannedGroup | null = null;
     if (request.group !== undefined) {
       const text = request.group;
-      const path = planPath(text, dataset.resolvePath);
       const fail = (fault: ItemQueryFault) =>
         new ItemQueryError({
           dataset,
@@ -429,6 +428,9 @@ export function planRequest(
           location: { argument: "group" },
           argumentText: text,
         });
+      if (readsFormula(text))
+        return yield* fail(formulaOrderFault("invalid-group", text));
+      const path = planPath(text, dataset.resolvePath);
       if ("kind" in path) return yield* fail(path);
       if (!canGroup(path.shape, path.each))
         return yield* fail({
@@ -448,6 +450,14 @@ export function planRequest(
     const sort = request.sort ?? dataset.defaultSort;
     const sorts: PlannedSort<any, any>[] = [];
     for (const [index, { field, direction }] of sort.entries()) {
+      if (readsFormula(field)) {
+        return yield* new ItemQueryError({
+          dataset,
+          location: { argument: "sort", index, path: `sort[${index}].field` },
+          argumentText: JSON.stringify(sort),
+          fault: formulaOrderFault("unsortable-field", field),
+        });
+      }
       const sortable = dataset.sortable(field);
       if (!sortable) {
         return yield* new ItemQueryError({
@@ -544,6 +554,30 @@ function formulaPath(text: string): string | null | PathProblem {
         : `Read a Formula as ${FORMULA_SEGMENT}.<name>.`,
     at: { from: 0, to: text.length },
     message: `"${text}" is not a Formula path: fields reads a Formula as ${FORMULA_SEGMENT}.<name>, and a Query Row holds its value under that key.`,
+  };
+}
+
+/** Whether the Projection Path `text` is in the reserved `formula` segment. */
+function readsFormula(text: string): boolean {
+  const parsed = parseProjectionPath(text);
+  return parsed.ok && parsed.segments[0] === FORMULA_SEGMENT;
+}
+
+/**
+ * The Fault of a sort or a group by a Formula: a Formula runs in the
+ * projection pass, after the engine orders and groups the records.
+ */
+function formulaOrderFault(
+  code: "unsortable-field" | "invalid-group",
+  text: string,
+): PathProblem {
+  const verb = code === "invalid-group" ? "group" : "sort";
+  return {
+    kind: "plain",
+    code,
+    at: { from: 0, to: text.length },
+    message: `A query cannot ${verb} by ${text} yet: it ${verb}s by a field, not by a Formula.`,
+    action: `${verb === "group" ? "Group" : "Sort"} by a field of the Query Dataset.`,
   };
 }
 

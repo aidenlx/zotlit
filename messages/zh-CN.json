@@ -2559,6 +2559,7 @@
   "query_view_problem_layout": "\"{type}\" 布局尚不可用。",
   "query_view_problem_dataset": "标注布局仅显示 \"from: annotations\"。",
   "query_view_problem_layout_dataset": "{layout}布局仅显示 \"from: {datasets}\"。",
+  "query_view_problem_group": "此视图无法按 \"{property}\" 分组。",
   "query_view_problem_no_view": "此文件中没有名为 \"{name}\" 的视图。",
   "query_view_sort": "排序",
   "query_view_sort_by": "排序依据",
