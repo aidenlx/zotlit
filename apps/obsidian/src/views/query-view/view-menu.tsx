@@ -49,7 +49,7 @@ export function ViewMenu({ view }: { view: QueryView }) {
             label: m.query_view_add_view(),
             action: (close) => {
               close();
-              view.addView();
+              view.document.addView();
               const added = view.state.getState();
               if (added.file && added.view)
                 openConfigureView(app, view, {
@@ -144,7 +144,7 @@ export function ViewMenu({ view }: { view: QueryView }) {
                   const from = event.dataTransfer.getData(VIEW_ROW_DRAG_TYPE);
                   if (from === "") return;
                   event.preventDefault();
-                  view.moveView(Number(from), index);
+                  view.document.moveView(Number(from), index);
                 }}
                 onContextMenu={(event) => {
                   event.preventDefault();

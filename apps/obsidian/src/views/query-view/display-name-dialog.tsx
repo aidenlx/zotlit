@@ -61,7 +61,7 @@ function DisplayNameForm({
       data-query-rename-dialog={property}
       onSubmit={(event) => {
         event.preventDefault();
-        if (view.renameProperty(property, name)) close();
+        if (view.document.renameProperty(property, name)) close();
       }}
     >
       <DisplayNameField property={property} value={name} onChange={setName} />

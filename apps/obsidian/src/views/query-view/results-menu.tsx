@@ -107,13 +107,13 @@ function LimitField({ view, close }: { view: QueryView; close: () => void }) {
           setText(next);
           if (next === "") {
             setInvalid(false);
-            view.editView({ limit: undefined }, { typed: true });
+            view.document.editView({ limit: undefined }, { typed: true });
             return;
           }
           const value = Number(next);
           const valid = Number.isInteger(value) && value > 0;
           setInvalid(!valid);
-          if (valid) view.editView({ limit: value }, { typed: true });
+          if (valid) view.document.editView({ limit: value }, { typed: true });
         }}
         onKeyDown={(event) => {
           if (event.nativeEvent.isComposing || event.key !== "Enter") return;
@@ -181,7 +181,7 @@ export function ResultsMenu({ view }: { view: QueryView }) {
                 icon="rotate-ccw"
                 data-query-show-all=""
                 onClick={() => {
-                  view.editView({ limit: undefined });
+                  view.document.editView({ limit: undefined });
                   close();
                 }}
               >

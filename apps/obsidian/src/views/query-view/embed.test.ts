@@ -139,7 +139,7 @@ it("saves a toolbar change to the file, and another embed of it follows", async 
   const second = await embed("notes/Plain.md");
 
   await act(async () => {
-    first.view.renameView(0, "Yellow ones");
+    first.view.document.renameView(0, "Yellow ones");
     await first.view.flush();
   });
 
@@ -156,7 +156,7 @@ it("saves through an open tab of the file, so the tab shows the change", async (
   const tab = host.openInEditor(host.file(FILE_PATH));
   const { view } = await embed("notes/Lab.md");
   await act(async () => {
-    view.moveView(1, 0);
+    view.document.moveView(1, 0);
     await view.flush();
   });
   expect(tab.getViewData().indexOf("name: Mine")).toBeLessThan(
