@@ -58,6 +58,7 @@ import type { AnnotationsLayout } from "./layout";
 import { buildPaneMenu } from "./pane-menu";
 import { resolveLoadTarget } from "./resolve-target";
 import type { ActiveLeafTarget, LoadTarget } from "./resolve-target";
+import { saveSidebarAsQueryFile } from "./save-query-file";
 import { addSidebarQueryMenu, sidebarQueryText } from "./sidebar-query";
 import { INITIAL_FILTER_STATE, selectActiveAttachment } from "./store";
 import type { AnnotState, AnnotStore, FollowMode } from "./store";
@@ -331,6 +332,24 @@ export class AnnotationView extends ItemView implements HistorySurface {
           edit: (edit) => this.#query.editView(edit),
           openFilter: () =>
             new SidebarFilterModal(this.#deps.app, this.#query).open(),
+          ...(file &&
+            view &&
+            this.#itemKey !== null && {
+              saveAs: () => {
+                const state = this.#store.getState();
+                void saveSidebarAsQueryFile(this.#deps.app, {
+                  file,
+                  view,
+                  filter: {
+                    query: state.filterQuery,
+                    colors: state.selectedColors,
+                    tags: state.selectedTags,
+                  },
+                  itemKey: state.itemKey,
+                  attachmentKey: state.selectedAttachmentKey,
+                });
+              },
+            }),
         }),
     });
   }

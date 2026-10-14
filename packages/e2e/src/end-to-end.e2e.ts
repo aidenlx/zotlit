@@ -42,6 +42,7 @@ import {
   LITERATURE_NOTE_PROFILES,
   LIBRARIES,
   LIBRARY_SCOPE_SETTING_KEY,
+  NOTES,
 } from "@zotlit/scripts/fixture";
 import type { FixtureItem, LibrarySelector } from "@zotlit/scripts/fixture";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
@@ -805,6 +806,146 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     ).toBe(true);
   }, 120000);
+
+  it("saves the sidebar filtered by one colour as a Query File, and a Literature Note that embeds it shows its Annotations of that colour", async () => {
+    const savedPath = "query-files/Saved colour.zotquery";
+    const notePath = `literatures/${annotationItem.literatureNoteName ?? annotationItem.key}.md`;
+    const layout = await obEval(
+      vaultId,
+      "JSON.stringify(app.workspace.getLayout())",
+    );
+    const noteText = await obEval(
+      vaultId,
+      `app.vault.read(app.vault.getFileByPath(${JSON.stringify(notePath)}))`,
+    );
+    const sidebar =
+      "app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view";
+    /**
+     * Opens the colour Chooser, ticks the row of `color` (or "Clear selected
+     * colors" for `null`), and closes the Chooser.
+     */
+    const pickColor = (color: string | null) =>
+      `(async()=>{const el=${sidebar}?.containerEl;const trigger=Array.from(el?.querySelectorAll('button[aria-label]')??[]).find(b=>b.getAttribute('aria-label')===${JSON.stringify(m.annot_view_filter_color_trigger())}||b.getAttribute('aria-label').startsWith(${JSON.stringify(m.annot_view_filter_color_trigger_active({ colors: "" }))}));if(!trigger)return 'no chooser';trigger.click();await new Promise(r=>setTimeout(r,200));const list=document.querySelector('[role="listbox"][aria-label=${JSON.stringify(m.annot_view_filter_color_list())}]');const row=Array.from(list?.querySelectorAll('[role="option"]')??[]).find(option=>${color === null ? `option.textContent===${JSON.stringify(m.annot_view_filter_color_clear())}` : `option.querySelector('[style*="--zt-swatch-color"]')?.style.getPropertyValue('--zt-swatch-color').trim().toLowerCase()===${JSON.stringify(color.toLowerCase())}`});row?.click();await new Promise(r=>setTimeout(r,100));(document.activeElement??document.body).dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));return row?'picked':'no row';})()`;
+    let picked = false;
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      // The colour filter is saved for the Item; clearing it takes it back.
+      if (picked) await obEval(vaultId, pickColor(null));
+      await obEval(
+        vaultId,
+        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(notePath)}),${JSON.stringify(noteText)});const saved=app.vault.getFileByPath(${JSON.stringify(savedPath)});if(saved)await app.vault.delete(saved);return true;})()`,
+      );
+    });
+    await obEval(
+      vaultId,
+      `(async()=>{const file=app.vault.getFileByPath(${JSON.stringify(annotationAttachment.path)});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});app.commands.executeCommandById('zotlit:open-annot-view');app.commands.executeCommandById('zotlit:annot-view-follow-active-tab');return true;})()`,
+    );
+    const readCards = `(async()=>{const view=${sidebar};if(!view)return 'null';await view.read;return JSON.stringify([...view.contentEl.querySelectorAll('.zt-annot-card[data-zotero-annotation-key]')].map(n=>n.getAttribute('data-zotero-annotation-key')).sort());})()`;
+    const expected = [...annotationKeys].sort();
+    expect(
+      await obEvalUntil(vaultId, readCards, {
+        expected: JSON.stringify(expected),
+        tries: 120,
+      }),
+    ).toBe(true);
+
+    // Filter the sidebar by the colour of the Fixture's first Annotation.
+    const color = attachmentAnnotations[0]!.color;
+    const ofColor = attachmentAnnotations
+      .filter((annotation) => annotation.color === color)
+      .map(({ key }) => key)
+      .sort();
+    expect(ofColor.length).toBeGreaterThan(0);
+    expect(ofColor.length).toBeLessThan(expected.length);
+    expect(await obEval(vaultId, pickColor(color))).toBe("picked");
+    picked = true;
+    expect(
+      await obEvalUntil(vaultId, readCards, {
+        expected: JSON.stringify(ofColor),
+        tries: 80,
+      }),
+    ).toBe(true);
+
+    // More options → "Save as query file…", through Obsidian's own menu.
+    await obEval(
+      vaultId,
+      `(function(){${sidebar}.containerEl.querySelector('.view-actions .view-action[aria-label="More options"]').click();return true;})()`,
+    );
+    const menuItem = `Array.from(document.querySelectorAll('.menu .menu-item')).find(item=>item.querySelector('.menu-item-title')?.textContent===${JSON.stringify(m.annot_view_save_as_query_file())})`;
+    expect(
+      await obEvalUntil(vaultId, `String(!!${menuItem})`, {
+        expected: "true",
+      }),
+    ).toBe(true);
+    await obEval(vaultId, `(function(){${menuItem}.click();return true;})()`);
+
+    // The dialog asks the name, the folder, and which records the file shows.
+    const modal = "document.querySelector('.modal.zt-save-query-file-modal')";
+    const dialog = JSON.parse(
+      await obEval(
+        vaultId,
+        `(function(){const modal=${modal};return JSON.stringify(modal?{title:modal.querySelector('.modal-title')?.textContent??null,fields:[...modal.querySelectorAll('[data-save-field]')].map(n=>n.getAttribute('data-save-field')),records:[...modal.querySelectorAll('[data-save-records]')].map(n=>({value:n.getAttribute('data-save-records'),label:n.closest('label').textContent,checked:n.checked}))}:null);})()`,
+      ),
+    ) as {
+      title: string;
+      fields: string[];
+      records: { value: string; label: string; checked: boolean }[];
+    } | null;
+    expect(dialog).toMatchObject({
+      title: m.annot_view_save_title(),
+      fields: ["name", "folder"],
+      records: [
+        {
+          value: "this-item",
+          label: m.annot_view_save_records_this_item(),
+          checked: true,
+        },
+        {
+          value: "note-item",
+          label: expect.stringContaining(m.annot_view_save_records_note_item()),
+          checked: false,
+        },
+      ],
+    });
+    await obEval(
+      vaultId,
+      `(function(){const modal=${modal};const set=(field,value)=>{const input=modal.querySelector('[data-save-field="'+field+'"]');input.value=value;input.dispatchEvent(new Event('input',{bubbles:true}));};set('name','Saved colour');set('folder','query-files');const radio=modal.querySelector('[data-save-records="note-item"]');radio.click();modal.querySelector('.modal-button-container button.mod-cta').click();return true;})()`,
+    );
+
+    // The file opens in a tab, where `this` has no value.
+    const readTab = `(async()=>{const view=app.workspace.getMostRecentLeaf()?.view;if(view?.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(savedPath)})return 'null';await view.query.settled;return JSON.stringify({diagnostic:view.contentEl.querySelector('[data-query-diagnostic]')?.getAttribute('data-query-diagnostic')??null,cards:view.contentEl.querySelectorAll('.zt-annot-card').length});})()`;
+    expect(
+      await obEvalUntil(vaultId, readTab, {
+        expected: JSON.stringify({ diagnostic: "unbound-context", cards: 0 }),
+        tries: 120,
+      }),
+    ).toBe(true);
+    const saved = await obEval(
+      vaultId,
+      `app.vault.read(app.vault.getFileByPath(${JSON.stringify(savedPath)}))`,
+    );
+    expect(saved).toMatch(/^filters: item == this\.item$/m);
+    expect(saved).toMatch(/^ {4}filters: color/m);
+
+    // Embedded in the Item's Literature Note, it shows that note's
+    // Annotations of the colour.
+    await obEval(
+      vaultId,
+      `(async()=>{const file=app.vault.getFileByPath(${JSON.stringify(notePath)});await app.vault.modify(file,${JSON.stringify(noteText.replace(/^(---\n[\s\S]*?\n---\n)/, "$1\n![[Saved colour.zotquery]]\n\n"))});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file,{state:{mode:'preview'}});app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
+    );
+    // The embed stands at the top of the note, where Reading view draws it
+    // without a scroll.
+    const readEmbed = `(async()=>{const view=app.workspace.getMostRecentLeaf()?.view;if(view?.file?.path!==${JSON.stringify(notePath)})return JSON.stringify({file:view?.file?.path??null});const el=[...view.containerEl.querySelectorAll('.internal-embed')].find(el=>el.zotlitQueryEmbed&&el.isShown());if(!el)return JSON.stringify({embed:null});await el.zotlitQueryEmbed.query.settled;return JSON.stringify({cards:[...el.querySelectorAll('.zt-annot-card[data-zotero-annotation-key]')].map(n=>n.getAttribute('data-zotero-annotation-key')).sort(),diagnostic:el.querySelector('[data-query-diagnostic]')?.getAttribute('data-query-diagnostic')??null});})()`;
+    let embed: unknown = null;
+    const shown = await waitFor(async () => {
+      embed = JSON.parse(await obEval(vaultId, readEmbed));
+      return (
+        JSON.stringify((embed as { cards?: string[] }).cards) ===
+        JSON.stringify(ofColor)
+      );
+    }, 120);
+    if (!shown) throw new Error(`Query File embed: ${JSON.stringify(embed)}`);
+  }, 180000);
 
   it("opens a Query File in a tab with cards grouped by Item, with Zotero closed", async () => {
     const layout = await obEval(
@@ -2055,7 +2196,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(rows.every((row) => row.values.colorName)).toBe(true);
   }, 180000);
 
-  it("switches a Fixture Query File view to Items and the Table, expands an Item into its Attachments and Annotations, and creates a Literature Note from its column", async () => {
+  it("switches a Fixture Query File view to Items and the Table, expands an Item into its Attachments, Annotations and Child Notes, and creates a Literature Note from its column", async () => {
     const path = "query-files/Reading annotations.zotquery";
     const layout = await obEval(
       vaultId,
@@ -2088,12 +2229,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     ).toBe(true);
     /** What the Table shows once its query settled. */
-    const readTable = `(async()=>{const view=${tab};if(view.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(path)})return 'null';await view.query.settled;const el=view.contentEl;const keys=kind=>[...el.querySelectorAll('[data-query-table-row="'+kind+'"]')].map(n=>n.getAttribute('data-query-key'));return JSON.stringify({header:[...el.querySelectorAll('[data-query-table] thead th')].map(n=>n.textContent),items:keys('item'),attachments:keys('attachment'),annotations:keys('annotation'),notes:Object.fromEntries([...el.querySelectorAll('[data-query-note]')].map(n=>[n.closest('tr').getAttribute('data-query-key'),n.getAttribute('data-query-note')])),create:[...el.querySelectorAll('[data-query-create-note]')].map(n=>n.getAttribute('data-query-create-note'))});})()`;
+    const readTable = `(async()=>{const view=${tab};if(view.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(path)})return 'null';await view.query.settled;const el=view.contentEl;const keys=kind=>[...el.querySelectorAll('[data-query-table-row="'+kind+'"]')].map(n=>n.getAttribute('data-query-key'));return JSON.stringify({header:[...el.querySelectorAll('[data-query-table] thead th')].map(n=>n.textContent),items:keys('item'),attachments:keys('attachment'),annotations:keys('annotation'),childNotes:[...el.querySelectorAll('[data-query-table-row="note"]')].map(n=>[n.getAttribute('data-query-key'),n.textContent]),notes:Object.fromEntries([...el.querySelectorAll('[data-query-note]')].map(n=>[n.closest('tr').getAttribute('data-query-key'),n.getAttribute('data-query-note')])),create:[...el.querySelectorAll('[data-query-create-note]')].map(n=>n.getAttribute('data-query-create-note'))});})()`;
     interface Table {
       header: string[];
       items: string[];
       attachments: string[];
       annotations: string[];
+      childNotes: [string, string][];
       notes: Record<string, string>;
       create: string[];
     }
@@ -2218,6 +2360,24 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     expect(expanded.annotations).toEqual(
       annotations.map((row) => row.indexedKey),
+    );
+
+    // An Item with Child Notes expands into them with their titles; its
+    // trashed Child Note stays out.
+    const noted = ITEMS.find(({ itemID }) => itemID === 1)!.key;
+    const live = NOTES.filter(
+      (note) => note.parentItemID === 1 && !note.trashed,
+    );
+    expect(
+      NOTES.some((note) => note.parentItemID === 1 && note.trashed),
+      "the Fixture Item has a trashed Child Note",
+    ).toBe(true);
+    await click(`[data-query-expand="item:${noted}"]`);
+    const withNotes = await tableWhen(
+      (table) => table.childNotes.length === live.length,
+    );
+    expect(withNotes.childNotes).toEqual(
+      live.map((note) => [note.key, note.title]),
     );
 
     // "Create" asks for a Profile where more than one fits; the new
