@@ -249,7 +249,7 @@ export function savedQueryFileText({
         : `item.indexedKey == ${JSON.stringify(itemKey ?? "")}`;
   const one = withFilters(
     { ...file, views: [view] },
-    view.name,
+    0,
     allOf(view.filters, filterBarConditions(filter)),
   );
   return serializeQueryFile(withFilters(one, null, scope));

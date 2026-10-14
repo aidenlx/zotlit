@@ -53,7 +53,7 @@ ZotLit keeps every other key in the file when it saves.
 | Key          | Value                                                                                                                                                                     |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `type`       | The layout: `annotations`, `table`, `list`, or `cards`. Required.                                                                                                         |
-| `name`       | The view name. Required, and different from the other views of the file.                                                                                                  |
+| `name`       | The view name. Required, and different from the other views of the file. When two views have the same name, the file shows a problem in place of its rows.                |
 | `from`       | The records of each row: `annotations`, `attachments`, or `items`. Required.                                                                                              |
 | `filters`    | The filters for this view. See [Filters](#filters).                                                                                                                       |
 | `sort`       | A list of `property` and `direction` pairs. The first pair sorts first. `direction` is `ASC` or `DESC`; the default is `ASC`.                                             |

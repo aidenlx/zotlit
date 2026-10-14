@@ -69,7 +69,6 @@ function DisplayNameForm({
         <button
           type="submit"
           className="mod-cta"
-          disabled={!view.writable}
           data-query-display-name-save=""
         >
           {m.query_view_display_name_save()}

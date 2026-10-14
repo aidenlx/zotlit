@@ -76,16 +76,10 @@ export function PropertiesMenu({ view }: { view: QueryView }) {
           setOrder={setOrder}
           formulas={Object.keys(formulas ?? {})}
           issues={issues}
-          openFormula={
-            view.writable
-              ? (name) => new FormulaModal(app, view, name).open()
-              : null
-          }
+          openFormula={(name) => new FormulaModal(app, view, name).open()}
           file={file}
-          rename={
-            view.writable
-              ? (property) => new DisplayNameModal(app, view, property).open()
-              : null
+          rename={(property) =>
+            new DisplayNameModal(app, view, property).open()
           }
         />
       </Chooser.Popup>
@@ -110,12 +104,12 @@ function PropertyList({
   formulas: readonly string[];
   /** The Formulas the last run left out, with their messages. */
   issues: Readonly<Record<string, string>>;
-  /** Open the Formula dialog: `null` adds one. `null` where the view cannot save. */
-  openFormula: ((name: string | null) => void) | null;
+  /** Open the Formula dialog: `null` adds one. */
+  openFormula: (name: string | null) => void;
   /** The file whose Display Names the rows show. */
   file: QueryFile | null;
-  /** Open the dialog that renames a property. `null` where the view cannot save. */
-  rename: ((property: string) => void) | null;
+  /** Open the dialog that renames a property. */
+  rename: (property: string) => void;
 }) {
   const query = useChooserQuery().trim();
   const [dragging, setDragging] = useState<string | null>(null);
@@ -131,16 +125,16 @@ function PropertyList({
       ...hidden,
       ...choices.slice(order.length),
     ].map((property) => propertyRow(file, property));
-    const actions: ChooserRow[] = [];
-    if (openFormula)
-      actions.push({
+    const actions: ChooserRow[] = [
+      {
         value: "zt:add-formula",
         label: m.query_view_formula_add(),
         action: (close) => {
           close();
           openFormula(null);
         },
-      });
+      },
+    ];
     if (query !== "" && !properties.includes(query) && !order.includes(query))
       actions.push({
         value: "zt:add-property",
@@ -153,9 +147,7 @@ function PropertyList({
         label: m.query_view_properties_hide_all(),
         action: () => setOrder([]),
       });
-    return actions.length > 0
-      ? [{ items: rows }, { items: actions }]
-      : [{ items: rows }];
+    return [{ items: rows }, { items: actions }];
   }, [dataset, order, query, setOrder, formulas, openFormula, file]);
 
   return (
@@ -205,14 +197,12 @@ function PropertyList({
           >
             <span className="zt:inline-flex zt:max-w-full zt:items-center zt:gap-1 zt:align-middle">
               <PropertyName file={file} property={row.value} />
-              {rename && (
-                <RowButton
-                  icon="text-cursor-input"
-                  tooltip={m.query_view_property_rename()}
-                  data-query-property-rename={row.value}
-                  onClick={() => rename(row.value)}
-                />
-              )}
+              <RowButton
+                icon="text-cursor-input"
+                tooltip={m.query_view_property_rename()}
+                data-query-property-rename={row.value}
+                onClick={() => rename(row.value)}
+              />
               <FormulaRowParts
                 property={row.value}
                 formulas={formulas}
@@ -259,7 +249,7 @@ function FormulaRowParts({
   property: string;
   formulas: readonly string[];
   issues: Readonly<Record<string, string>>;
-  openFormula: ((name: string | null) => void) | null;
+  openFormula: (name: string | null) => void;
 }) {
   const name = formulas.find((entry) => formulaProperty(entry) === property);
   if (name === undefined) return null;
@@ -275,14 +265,12 @@ function FormulaRowParts({
           <Icon name="alert-triangle" size={14} />
         </span>
       )}
-      {openFormula && (
-        <RowButton
-          icon="pencil"
-          tooltip={m.query_view_formula_edit()}
-          data-query-formula-edit={name}
-          onClick={() => openFormula(name)}
-        />
-      )}
+      <RowButton
+        icon="pencil"
+        tooltip={m.query_view_formula_edit()}
+        data-query-formula-edit={name}
+        onClick={() => openFormula(name)}
+      />
     </>
   );
 }

@@ -107,13 +107,13 @@ function LimitField({ view, close }: { view: QueryView; close: () => void }) {
           setText(next);
           if (next === "") {
             setInvalid(false);
-            view.editView({ limit: undefined });
+            view.editView({ limit: undefined }, { typed: true });
             return;
           }
           const value = Number(next);
           const valid = Number.isInteger(value) && value > 0;
           setInvalid(!valid);
-          if (valid) view.editView({ limit: value });
+          if (valid) view.editView({ limit: value }, { typed: true });
         }}
         onKeyDown={(event) => {
           if (event.nativeEvent.isComposing || event.key !== "Enter") return;

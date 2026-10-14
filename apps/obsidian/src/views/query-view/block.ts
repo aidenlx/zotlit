@@ -1,8 +1,7 @@
 // The Query Block: a ` ```zotquery ` code block in a note that holds a Query
-// File's text and shows it as the one Query View. `this` is the Item of the
-// note's `zotero-key`, read from the metadata cache of the note, since Live
-// Preview hands a code block no frontmatter. A change in the view rewrites the
-// block text only (see `block-write.ts`).
+// File's text and shows it as the one Query View, with `this` bound as for an
+// embed (see `note-host.ts`). A change in the view rewrites the block text only
+// (see `block-write.ts`).
 //
 // The block saves to the note that holds it, also through a section embed or a
 // hover popover. Where it has no save path (print, export, an Annotation
@@ -11,20 +10,16 @@
 // View never holds another live one.
 //
 // @see apps/obsidian/docs/adr/0068-query-files-are-a-zotlit-file-type-embedded-through-the-private-embed-registry.md
-import { MarkdownRenderChild, Scope } from "obsidian";
+import { MarkdownRenderChild } from "obsidian";
 import type { MarkdownPostProcessorContext, Plugin } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
-import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 
 import { canWriteBlock, writeBlockCode } from "./block-write";
+import { NoteQueryHost } from "./note-host";
 import { QUERY_FILE_EXTENSION } from "./query-file";
-import { QueryView } from "./view";
 import type { QueryViewDeps } from "./view";
-
-const logger = getLogger(["views", "query-view", "block"]);
 
 /** A Query View: a block in one of its cards' comments shows its text only. */
 const IN_QUERY_VIEW = ".zt-query-view";
@@ -53,8 +48,7 @@ class QueryBlock extends MarkdownRenderChild {
   readonly #ctx: MarkdownPostProcessorContext;
   /** The block text as the note holds it, as this block last read or wrote it. */
   #source: string;
-  #itemKey: string | null = null;
-  #query: QueryView | null = null;
+  #host: NoteQueryHost | null = null;
 
   constructor(
     el: HTMLElement,
@@ -72,43 +66,23 @@ class QueryBlock extends MarkdownRenderChild {
       this.containerEl.createEl("pre").createEl("code", { text: this.#source });
       return;
     }
-    const { app } = this.#deps;
     const sourcePath = this.#ctx.sourcePath;
-    this.#itemKey = this.#readItemKey();
-    const scope = new Scope(app.scope);
-    const query = new QueryView(this.#deps, {
-      scope,
+    const host = new NoteQueryHost(this.#deps, {
+      el: this.containerEl,
       sourcePath: () => sourcePath,
-      context: () =>
-        this.#itemKey === null ? undefined : { item: this.#itemKey },
-      save: (text) => void this.#save(text),
-      canSave: () => this.#canSave(),
+      storage: {
+        save: (text) => this.#save(text),
+        canSave: () => this.#canSave(),
+      },
     });
-    this.addChild(query);
-    this.containerEl.addClass("zt-root", "interactive-child");
-    query.render(this.containerEl);
-    // A card in the block takes the card keys while it has focus.
-    const keys = this.#deps.cardFocus.hold(this.containerEl, scope, query);
-    this.register(() => keys[Symbol.dispose]());
-    query.setText(this.#source);
-    this.#query = query;
-    // The End-to-end Run reaches the block's view through its element.
-    if (__DEV__) Object.assign(this.containerEl, { zotlitQueryView: query });
-    // `this` follows the note's `zotero-key`.
-    this.registerEvent(
-      app.metadataCache.on("changed", (file) => {
-        if (file.path !== sourcePath) return;
-        const itemKey = this.#readItemKey();
-        if (itemKey === this.#itemKey) return;
-        this.#itemKey = itemKey;
-        query.refresh();
-      }),
-    );
+    this.addChild(host);
+    host.query.setText(this.#source);
+    this.#host = host;
   }
 
   /** Settles once the block shows its first rows, or its text only. Never rejects. */
   get shown(): Promise<void> {
-    return this.#query?.shownIn(this.containerEl) ?? Promise.resolve();
+    return this.#host?.shown() ?? Promise.resolve();
   }
 
   /** Whether a change saves: the block stands in its own note. */
@@ -119,16 +93,7 @@ class QueryBlock extends MarkdownRenderChild {
     );
   }
 
-  #readItemKey(): string | null {
-    const { app } = this.#deps;
-    const file = app.vault.getFileByPath(this.#ctx.sourcePath);
-    return file === null
-      ? null
-      : itemKeyFromFrontmatter(app.metadataCache.getFileCache(file));
-  }
-
   async #save(file: string): Promise<void> {
-    if (!this.#canSave()) return;
     // The closing fence takes the place of the file's last line break.
     const text = file.replace(/\n$/, "");
     const previous = this.#source;
@@ -142,8 +107,8 @@ class QueryBlock extends MarkdownRenderChild {
       );
     } catch (error) {
       this.#source = previous;
-      logger.warn("A Query Block could not save its text", { error });
       new BaseNotice(m.query_block_save_failed());
+      throw error;
     }
   }
 }
