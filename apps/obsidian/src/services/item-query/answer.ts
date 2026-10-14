@@ -333,6 +333,8 @@ const viewReply = (
  */
 function collectView(summary: QuerySummary, libraries: readonly LibraryWire[]) {
   const { groups: summaries, totalCount, ...metadata } = summary;
+  // `metadata` carries `matchedCount`: the count of every match before the
+  // limit, grouped or not.
   const rows: QueryViewRow[] = [];
   const groups = summaries?.map(
     (group): QueryViewGroup & { rows: QueryViewRow[] } => ({

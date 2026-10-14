@@ -1566,6 +1566,117 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
   }, 180000);
 
+  it("chooses two properties in a Query File view, limits it, and exports those columns as CSV", async () => {
+    const layout = await obEval(
+      vaultId,
+      "JSON.stringify(app.workspace.getLayout())",
+    );
+    const path = "query-files/Shared figures.zotquery";
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));const file=app.vault.getFileByPath(${JSON.stringify(path)});if(file)await app.vault.delete(file);return true;})()`,
+      );
+    });
+    const filter = 'tags.contains("figure")';
+    await obEval(
+      vaultId,
+      `(async()=>{const file=await app.vault.create(${JSON.stringify(path)},${JSON.stringify(`views:\n  - type: annotations\n    name: Shared figures\n    from: annotations\n    filters: ${filter}\n    limit: 100\n`)});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
+    );
+    /** What the tab shows once its query settled, and the file's saved text. */
+    const readTab = `(async()=>{const view=app.workspace.getMostRecentLeaf().view;if(view.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(path)})return 'null';await view.query.settled;await view.save();const el=view.contentEl;return JSON.stringify({count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,matched:el.querySelector('[data-query-count]')?.getAttribute('data-query-matched')??null,countText:el.querySelector('[data-query-count]')?.textContent??null,cards:el.querySelectorAll('.zt-annot-card').length,text:await app.vault.read(view.file)});})()`;
+    interface Tab {
+      count: string | null;
+      matched: string | null;
+      countText: string | null;
+      cards: number;
+      text: string;
+    }
+    const tabWhen = async (ready: (tab: Tab) => boolean): Promise<Tab> => {
+      let tab: Tab | null = null;
+      const settled = await waitFor(async () => {
+        tab = JSON.parse(await obEval(vaultId, readTab)) as Tab | null;
+        return tab !== null && ready(tab);
+      }, 120);
+      if (!settled) throw new Error(`Query File tab: ${JSON.stringify(tab)}`);
+      return tab!;
+    };
+    const queryRows = async (fields: string, limit: string) => {
+      const report = JSON.parse(
+        await cliCommand(vaultId, "zotlit:query", {
+          args: { from: "annotations", filter, fields, limit },
+        }),
+      ) as ItemQueryReport;
+      expect(report.ok).toBe(true);
+      return report.rows!;
+    };
+    const figures = await queryRows("pageLabel", "100");
+    expect(figures.length).toBeGreaterThan(2);
+    await tabWhen((tab) => tab.count === String(figures.length));
+
+    // Tick "pageLabel", then "colorName", in the Properties popover: the
+    // order of the ticks is the order of the columns, and it saves.
+    const ticked = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{const el=app.workspace.getMostRecentLeaf().view.contentEl;el.querySelector('[data-query-properties]').click();await new Promise(r=>setTimeout(r,100));const popup=activeDocument.querySelector('[data-query-properties-popup]');const open=popup.matches(':popover-open');for(const name of ['pageLabel','colorName']){popup.querySelector('[data-query-property="'+name+'"]').click();await new Promise(r=>setTimeout(r,100));}const shown=[...popup.querySelectorAll('[data-query-property]')].slice(0,2).map(n=>[n.dataset.queryProperty,n.getAttribute('aria-selected')]);popup.hidePopover();return JSON.stringify({open,shown});})()`,
+      ),
+    ) as { open: boolean; shown: [string, string][] };
+    expect(ticked).toEqual({
+      open: true,
+      shown: [
+        ["pageLabel", "true"],
+        ["colorName", "true"],
+      ],
+    });
+    const ordered = await tabWhen((tab) =>
+      tab.text.includes("order:\n      - pageLabel\n      - colorName\n"),
+    );
+    expect(ordered.count).toBe(String(figures.length));
+
+    // A limit of 2 from the Results menu saves to the file; the count still
+    // names every match.
+    await obEval(
+      vaultId,
+      `(async()=>{const el=app.workspace.getMostRecentLeaf().view.contentEl;el.querySelector('[data-query-results]').click();await new Promise(r=>setTimeout(r,100));const input=activeDocument.querySelector('[data-query-results-popup] [data-query-limit]');input.value='2';input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+    );
+    const limited = await tabWhen(
+      (tab) => tab.text.includes("limit: 2\n") && tab.cards === 2,
+    );
+    expect(limited).toMatchObject({
+      count: "2",
+      matched: String(figures.length),
+      countText: `2 of ${figures.length} results`,
+    });
+
+    // "Export CSV..." writes the rows on screen with the two columns in the
+    // order they were ticked.
+    const exported = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{const create=URL.createObjectURL;const click=HTMLAnchorElement.prototype.click;let blob=null,name=null;URL.createObjectURL=b=>{blob=b;return create.call(URL,b);};HTMLAnchorElement.prototype.click=function(){name=this.download;};try{activeDocument.querySelector('[data-query-results-popup] [data-query-export]').click();}finally{URL.createObjectURL=create;HTMLAnchorElement.prototype.click=click;}return JSON.stringify({name,type:blob?.type??null,text:blob?await blob.text():null});})()`,
+      ),
+    ) as { name: string | null; type: string | null; text: string | null };
+    const rows = await queryRows("pageLabel,colorName", "2");
+    const cell = (value: unknown) => {
+      const text = value === null || value === undefined ? "" : String(value);
+      return /[",\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+    };
+    expect(exported).toEqual({
+      name: "Shared figures.csv",
+      type: "text/csv",
+      text: [
+        "pageLabel,colorName",
+        ...rows.map(
+          (row) =>
+            `${cell(row.values.pageLabel)},${cell(row.values.colorName)}`,
+        ),
+      ].join("\n"),
+    });
+    expect(rows.every((row) => row.values.colorName)).toBe(true);
+  }, 180000);
+
   it("renders the deterministic PDF matrix and reuses its cache", async () => {
     await verifyExcerptRendering(vaultId);
   }, 120000);

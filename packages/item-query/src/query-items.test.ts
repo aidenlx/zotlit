@@ -2778,6 +2778,8 @@ describe("incremental query consumption", () => {
       const expected = await result(scenario, request);
       const operation = consumeQuery(ITEMS, request, (summary) =>
         Effect.sync(() => {
+          // The complete result leaves out the count of every match.
+          const { matchedCount: _matched, ...metadata } = summary;
           const rows: QueryRow[] = [];
           return {
             write: (chunk) =>
@@ -2785,7 +2787,7 @@ describe("incremental query consumption", () => {
                 expect(chunk.length).toBeLessThanOrEqual(2);
                 rows.push(...chunk);
               }),
-            end: () => Effect.succeed({ ...summary, rows }),
+            end: () => Effect.succeed({ ...metadata, rows }),
           };
         }),
       );

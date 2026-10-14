@@ -2443,14 +2443,24 @@
   ],
   "query_view_results_limited": [
     {
-      "declarations": ["input count", "local countPlural = count: plural"],
+      "declarations": [
+        "input count",
+        "input shown",
+        "local countPlural = count: plural"
+      ],
       "selectors": ["countPlural"],
       "match": {
-        "countPlural=one": "1 条结果（已达上限）",
-        "countPlural=*": "{count} 条结果（已达上限）"
+        "countPlural=one": "{shown} / 1 条结果",
+        "countPlural=*": "{shown} / {count} 条结果"
       }
     }
   ],
+  "query_view_limit": "限制结果数量",
+  "query_view_show_all": "显示全部（{count}）",
+  "query_view_copied": "已复制到剪贴板",
+  "query_view_export_csv": "导出 CSV...",
+  "query_view_properties_search": "查找或创建...",
+  "query_view_properties_add": "添加“{name}”属性",
   "query_view_no_results": "没有标注符合此视图。",
   "query_view_unresolved": [
     {

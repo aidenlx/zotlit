@@ -118,6 +118,14 @@ function useChooser(): ChooserState {
   return state;
 }
 
+/**
+ * The search term in the Chooser's search field, for a caller whose rows
+ * depend on it, such as an action that creates what the user typed.
+ */
+export function useChooserQuery(): string {
+  return useChooser().query;
+}
+
 /** What a row needs from the list it is drawn in. */
 interface ChooserListState {
   /** Where each visible row sits, so a row can name its own index. */

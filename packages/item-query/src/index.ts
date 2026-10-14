@@ -11,6 +11,7 @@ export {
   type SchemaProperty,
 } from "./describe-item-query";
 export { describeQueryCustomFields } from "./describe-query-custom-fields";
+export { cellProperties } from "./cell-properties";
 export {
   AttachmentFileResolver,
   type QueryDataset,
