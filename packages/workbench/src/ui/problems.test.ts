@@ -21,7 +21,6 @@ import { m } from "./test-messages";
 
 import { WorkbenchDocumentController } from "#/document/controller";
 import {
-  DEFAULT_PROFILE_SOURCE,
   captureRenderReport,
   formatRenderReport,
   engineEvidence,
@@ -29,10 +28,11 @@ import {
   renderFailureDiagnostic,
   SAMPLE_ITEMS,
 } from "#/render/index";
+import { ANNOTATION_LIST_PROFILE_SOURCE } from "#/render/test-profiles";
 
 describe("problemText", () => {
   it("explains Liquid syntax and exposes its verified source and report", () => {
-    const source = DEFAULT_PROFILE_SOURCE.replace(
+    const source = ANNOTATION_LIST_PROFILE_SOURCE.replace(
       "{% for annotation in zt.annotations %}",
       "{% for annotation i zt.annotations %}",
     );
@@ -78,7 +78,10 @@ describe("problemText", () => {
 
   it("writes the web host's own codes in the reader's catalog", () => {
     const controller = new WorkbenchDocumentController(
-      DEFAULT_PROFILE_SOURCE.replace("language: liquid", "language: eta"),
+      ANNOTATION_LIST_PROFILE_SOURCE.replace(
+        "language: liquid",
+        "language: eta",
+      ),
     );
 
     expect(problemText(m, controller.problems[0]!)).toEqual({
@@ -118,7 +121,7 @@ describe("problemText", () => {
 
   it("names the bundled partials a vault-side document still carries", () => {
     const controller = new WorkbenchDocumentController(
-      DEFAULT_PROFILE_SOURCE.replace(
+      ANNOTATION_LIST_PROFILE_SOURCE.replace(
         "filename:",
         [
           "partials:",
@@ -144,7 +147,7 @@ describe("problemText", () => {
 
   it("leaves the web host to read a bundle as the transport it is", () => {
     const controller = new WorkbenchDocumentController(
-      DEFAULT_PROFILE_SOURCE.replace(
+      ANNOTATION_LIST_PROFILE_SOURCE.replace(
         "filename:",
         [
           "partials:",
@@ -161,7 +164,7 @@ describe("problemText", () => {
 
   it("names the manifest field a schema failure came from", () => {
     const controller = new WorkbenchDocumentController(
-      DEFAULT_PROFILE_SOURCE.replace(/^name: .*$/m, "name: 12"),
+      ANNOTATION_LIST_PROFILE_SOURCE.replace(/^name: .*$/m, "name: 12"),
     );
 
     expect(problemText(m, controller.problems[0]!).message).toContain("name");
@@ -171,7 +174,7 @@ describe("problemText", () => {
 describe("diagnosticText", () => {
   it("writes a citation-style failure under the reason it carries", () => {
     const [diagnostic] = renderProfile(
-      DEFAULT_PROFILE_SOURCE,
+      ANNOTATION_LIST_PROFILE_SOURCE,
       SAMPLE_ITEMS[0]!,
       {
         resources: {

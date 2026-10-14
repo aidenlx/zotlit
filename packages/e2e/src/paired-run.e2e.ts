@@ -38,6 +38,7 @@ import {
 import {
   clearNotices,
   cli,
+  cliCommand,
   obEval,
   obEvalUntil,
   obJson,
@@ -7040,7 +7041,344 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         ),
       ).toBe(true);
     }, 180000);
+
+    it("undoes a comment typed on a card in a note's embed with the card's undo key, and drags the card into the note", async () => {
+      await prepareAuthorizationFixture();
+      await using cleanup = new AsyncDisposableStack();
+      const key = seededAnnotation.key;
+      const notePath = "query-files/Lab note.md";
+      const original =
+        (await storedAnnotation(api, serverID, key)).annotationComment ?? "";
+      const storedComment = async () =>
+        (await storedAnnotation(api, serverID, key)).annotationComment ?? "";
+      const platformKey = process.platform === "darwin" ? "metaKey" : "ctrlKey";
+
+      // The Annotation Source must be the Local API before a card can write.
+      expect(
+        await obEvalUntil(
+          vaultId!,
+          `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;await repository.probe();const list=await repository.read(${JSON.stringify(attachment.key)});return String(list?.source.kind);})()`,
+          { expected: "zotero-local-api" },
+        ),
+      ).toBe(true);
+
+      // The PDF open in Obsidian holds the Attachment's Annotation History;
+      // the Lab note, in Live Preview beside it, embeds a view of its Item.
+      const layout = await obEval(
+        vaultId!,
+        "JSON.stringify(app.workspace.getLayout())",
+      );
+      const noteText = await obEval(
+        vaultId!,
+        `app.vault.read(app.vault.getFileByPath(${JSON.stringify(notePath)}))`,
+      );
+      cleanup.defer(async () => {
+        await obEval(
+          vaultId!,
+          `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(notePath)}),${JSON.stringify(noteText)});return true;})()`,
+        );
+      });
+      cleanup.defer(async () => {
+        await restoreAnnotationComment(api, {
+          serverID,
+          key: await obEval(
+            vaultId!,
+            `JSON.parse(app.secretStorage.getSecret('zotlit-zotero-write-authorization')).key`,
+          ),
+          annotationKey: key,
+          comment: original,
+        }).catch(() => {});
+      });
+      await obEval(
+        vaultId!,
+        `(async()=>{await app.workspace.getLeaf('tab').openFile(app.vault.getFileByPath(${JSON.stringify(attachmentPath)}));return true;})()`,
+      );
+      expect(
+        await obEvalUntil(
+          vaultId!,
+          `String(!!app.plugins.plugins.zotlit.services.pdfAnnotationEditor.sessionForPath(${JSON.stringify(attachmentPath)}))`,
+          { expected: "true" },
+        ),
+      ).toBe(true);
+      await obEval(
+        vaultId!,
+        `(async()=>{const leaf=app.workspace.getLeaf('split');await leaf.setViewState({type:'markdown',state:{file:${JSON.stringify(notePath)},mode:'source',source:false},active:true});app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
+      );
+      const note = `app.workspace.getLeavesOfType('markdown').find((leaf)=>leaf.view.file?.path===${JSON.stringify(notePath)}).view`;
+      const card = `[...${note}.containerEl.querySelectorAll('.internal-embed')].find((el)=>el.zotlitQueryEmbed)?.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(key)}]')`;
+      expect(
+        await obEvalUntil(vaultId!, `String(!!${card})`, {
+          expected: "true",
+          tries: 120,
+        }),
+      ).toBe(true);
+
+      // Type a comment on the embedded card, as on the sidebar's.
+      const editor = `${card}?.querySelector('.cm-content')`;
+      expect(
+        await obEvalUntil(
+          vaultId!,
+          `(function(){const card=${card};if(${editor})return 'open';if(!card.hasAttribute('data-alone')){card.focus();card.click();return 'selecting';}getSelection().removeAllRanges();card.querySelector('.zt-annot-comment-field')?.click();return String(!!${editor}&&'open');})()`,
+          { expected: "open" },
+        ),
+      ).toBe(true);
+      const comment = "Typed in a note's embed";
+      await obEval(
+        vaultId!,
+        `(function(){const content=${editor};const view=content.cmTile.root.view;view.focus();view.dispatch({changes:{from:0,to:view.state.doc.length,insert:${JSON.stringify(comment)}},userEvent:'input.type'});content.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return true;})()`,
+      );
+      expect(
+        await waitFor(async () => (await storedComment()) === comment, 120),
+      ).toBe(true);
+      expect(
+        await obEvalUntil(
+          vaultId!,
+          `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;return String(repository.mutationFor(${JSON.stringify(key)}).kind==='idle'&&!repository.textDraftFor('comment',${JSON.stringify(key)})&&repository.canUndo(${JSON.stringify(attachment.key)}));})()`,
+          { expected: "true" },
+        ),
+      ).toBe(true);
+
+      /** The platform's undo chord, pressed where `target` names, as the keyboard sends it. */
+      const pressUndo = (target: string) =>
+        obJson<{ prevented: boolean }>(
+          vaultId!,
+          `(function(){const target=${target};target.focus();const event=new KeyboardEvent('keydown',{key:'z',code:'KeyZ',${platformKey}:true,bubbles:true,cancelable:true});target.dispatchEvent(event);return JSON.stringify({prevented:event.defaultPrevented});})()`,
+        );
+
+      // The undo key in the note's own text is the note's: the comment stays.
+      await pressUndo(`${note}.editor.cm.contentDOM`);
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      expect(await storedComment()).toBe(comment);
+
+      // On the focused card, it takes the comment back in Zotero.
+      expect(await pressUndo(card)).toEqual({ prevented: true });
+      expect(
+        await waitFor(async () => (await storedComment()) === original, 120),
+      ).toBe(true);
+
+      // A card dragged from the embed lands in the note, as from the sidebar.
+      expect(
+        await obEval(
+          vaultId!,
+          `(function(){const view=${note};const cm=view.editor.cm;const transfer=new DataTransfer();const handle=${card}.querySelector('[draggable]');const from=handle.getBoundingClientRect();handle.dispatchEvent(new DragEvent('dragstart',{bubbles:true,cancelable:true,dataTransfer:transfer,clientX:Math.floor(from.left+from.width/2),clientY:Math.floor(from.top+from.height/2)}));const rect=cm.coordsAtPos(cm.state.doc.length);cm.contentDOM.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:transfer,clientX:Math.floor(rect.left+1),clientY:Math.floor((rect.top+rect.bottom)/2)}));return 'dropped';})()`,
+        ),
+      ).toBe("dropped");
+      expect(
+        await obEvalUntil(
+          vaultId!,
+          `String(${note}.editor.getValue().includes('> [!note]')&&${note}.editor.getValue().includes('zt-annotation=${key}'))`,
+          { expected: "true" },
+        ),
+      ).toBe(true);
+    }, 180000);
   });
+
+  describe.skipIf(!debuggerPort || !vaultId)(
+    "a Literature Note on the default Profile",
+    () => {
+      it("shows its Item's Annotations in a Query Block, sends a comment typed there to Zotero, and keeps the block text through an update", async () => {
+        await prepareAuthorizationFixture();
+        await using cleanup = new AsyncDisposableStack();
+        const itemKey = "RUGIER24";
+        const key = seededAnnotation.key;
+        const original =
+          (await storedAnnotation(api, serverID, key)).annotationComment ?? "";
+
+        // The Annotation Source must be the Local API before a card can write.
+        expect(
+          await obEvalUntil(
+            vaultId!,
+            `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;await repository.probe();const list=await repository.read(${JSON.stringify(attachment.key)});return String(list?.source.kind);})()`,
+            { expected: "zotero-local-api" },
+          ),
+        ).toBe(true);
+
+        // The Fixture wrote notes for the Item. Set them aside, so that the
+        // plugin creates the note the default Profile renders.
+        const layout = await obEval(
+          vaultId!,
+          "JSON.stringify(app.workspace.getLayout())",
+        );
+        const fixtureNotes = await obJson<{ path: string; text: string }[]>(
+          vaultId!,
+          `(async()=>{const services=app.plugins.plugins.zotlit.services;await services.noteIndex.whenIndexed();const notes=[];for(const note of services.noteIndex.getNotesByItemKey(${JSON.stringify(itemKey)})){const file=app.vault.getFileByPath(note.path);notes.push({path:note.path,text:await app.vault.read(file)});await app.vault.delete(file);}return JSON.stringify(notes);})()`,
+        );
+        // The Fixture's Literature Note holds the earlier static listing.
+        const listingNote = fixtureNotes.find(({ text }) =>
+          text.includes("[!note]"),
+        )!;
+        expect(listingNote).toBeDefined();
+        let created = "";
+        cleanup.defer(async () => {
+          await obEval(
+            vaultId!,
+            `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));const created=app.vault.getFileByPath(${JSON.stringify(created)});if(created)await app.vault.delete(created);for(const {path,text} of ${JSON.stringify(fixtureNotes)}){const file=app.vault.getFileByPath(path);if(file)await app.vault.modify(file,text);else await app.vault.create(path,text);}return true;})()`,
+          );
+        });
+        cleanup.defer(async () => {
+          await restoreAnnotationComment(api, {
+            serverID,
+            key: await obEval(
+              vaultId!,
+              `JSON.parse(app.secretStorage.getSecret('zotlit-zotero-write-authorization')).key`,
+            ),
+            annotationKey: key,
+            comment: original,
+          }).catch(() => {});
+        });
+        expect(
+          await obEvalUntil(
+            vaultId!,
+            `String(app.plugins.plugins.zotlit.services.noteIndex.getNotesByItemKey(${JSON.stringify(itemKey)}).length)`,
+            { expected: "0" },
+          ),
+        ).toBe(true);
+        const result = await obJson<{ outcome: string; path?: string }>(
+          vaultId!,
+          `(async()=>{const services=app.plugins.plugins.zotlit.services;const hits=await services.itemLookup.search('',{limit:100});const hit=hits.find((candidate)=>candidate.item.indexedKey===${JSON.stringify(itemKey)});if(!hit)throw new Error('Fixture Item not found');const result=await services.noteFeature.createNote(hit.item,{profile:'default'});return JSON.stringify(result.outcome==='created'?{outcome:'created',path:result.file.path}:{outcome:result.outcome});})()`,
+        );
+        expect(result.outcome).toBe("created");
+        created = result.path!;
+        const read = () =>
+          obEval(
+            vaultId!,
+            `app.vault.read(app.vault.getFileByPath(${JSON.stringify(created)}))`,
+          );
+        const block = [
+          "## Annotations",
+          "",
+          "```zotquery",
+          "views:",
+          "  - type: annotations",
+          "    name: Annotations",
+          "    from: annotations",
+          "    filters: item == this.item",
+          "```",
+        ].join("\n");
+        const managed = (text: string) =>
+          /%%zt-managed%%\n([\s\S]*?)%%\/zt-managed%%/.exec(text)?.[1] ?? "";
+        const createdText = await read();
+        expect(managed(createdText)).toContain(block);
+        expect(createdText).not.toContain("[!note]");
+
+        // The block shows the Item's own Annotations, as ZotLit Query gives
+        // them for that Item.
+        const report = JSON.parse(
+          await cliCommand(vaultId!, "zotlit:query", {
+            args: {
+              from: "annotations",
+              filter: "item == this.item",
+              "this-item": itemKey,
+              limit: "100",
+            },
+          }),
+        ) as { ok: boolean; rows?: { indexedKey: string }[] };
+        expect(report.ok).toBe(true);
+        const own = report.rows!.map((row) => row.indexedKey);
+        expect(own).toContain(key);
+        await obEval(
+          vaultId!,
+          `(async()=>{const leaf=app.workspace.getLeaf('tab');await leaf.openFile(app.vault.getFileByPath(${JSON.stringify(created)}),{state:{mode:'source',source:false}});app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
+        );
+        const blockEl = `app.workspace.getLeavesOfType('markdown').find((leaf)=>leaf.view.file?.path===${JSON.stringify(created)})?.view.containerEl.querySelector('.block-language-zotquery')`;
+        expect(
+          await obEvalUntil(
+            vaultId!,
+            `(async()=>{const el=${blockEl};if(!el?.zotlitQueryView)return 'null';await el.zotlitQueryView.settled;return JSON.stringify([...el.querySelectorAll('.zt-annot-card')].map((n)=>n.getAttribute('data-zotero-annotation-key')));})()`,
+            { expected: JSON.stringify(own), tries: 120 },
+          ),
+        ).toBe(true);
+
+        // Select the card alone, open its comment editor, and type.
+        const card = `${blockEl}?.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(key)}]')`;
+        const editor = `${card}?.querySelector('.cm-content')`;
+        expect(
+          await obEvalUntil(
+            vaultId!,
+            `(function(){const card=${card};if(${editor})return 'open';if(!card.hasAttribute('data-alone')){card.click();return 'selecting';}getSelection().removeAllRanges();card.querySelector('.zt-annot-comment-field')?.click();return String(!!${editor}&&'open');})()`,
+            { expected: "open" },
+          ),
+        ).toBe(true);
+        const comment = "Typed in a Literature Note";
+        await obEval(
+          vaultId!,
+          `(function(){const content=${editor};const view=content.cmTile.root.view;view.focus();view.dispatch({changes:{from:0,to:view.state.doc.length,insert:${JSON.stringify(comment)}},userEvent:'input.type'});content.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return true;})()`,
+        );
+        expect(
+          await waitFor(
+            async () =>
+              (await storedAnnotation(api, serverID, key)).annotationComment ===
+              comment,
+            120,
+          ),
+        ).toBe(true);
+        expect(
+          await obEvalUntil(
+            vaultId!,
+            `(function(){return ${card}?.querySelector('.zt-annot-comment')?.textContent??'';})()`,
+            { expected: comment },
+          ),
+        ).toBe(true);
+
+        // A sort change in the block's toolbar rewrites the block text.
+        const inBlock = (script: string) =>
+          obEval(
+            vaultId!,
+            `(()=>{const el=${blockEl};${script};return true;})()`,
+          );
+        await inBlock(
+          "el.querySelector('[data-query-toolbar=\"sort\"]').click()",
+        );
+        await inBlock(
+          "el.querySelector('[data-query-popover=\"sort\"] [data-sort-add]').click()",
+        );
+        for (const [control, value] of [
+          ["data-sort-property", "type"],
+          ["data-sort-direction", "DESC"],
+        ] as const) {
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `String(!!${blockEl}?.querySelector('[data-query-popover="sort"] [${control}]'))`,
+              { expected: "true" },
+            ),
+          ).toBe(true);
+          await inBlock(
+            `const select=el.querySelector('[data-query-popover="sort"] [${control}]');select.value=${JSON.stringify(value)};select.dispatchEvent(new Event('change',{bubbles:true}))`,
+          );
+        }
+        const sorted = block.replace(
+          "    filters: item == this.item\n```",
+          "    filters: item == this.item\n    sort:\n      - property: type\n        direction: DESC\n```",
+        );
+        expect(
+          await waitFor(async () => managed(await read()).includes(sorted)),
+        ).toBe(true);
+
+        // A full update renders the Managed Region again and keeps the
+        // block text the note holds.
+        const update = () =>
+          obJson<{ diagnostic: unknown }>(
+            vaultId!,
+            `(async()=>{const services=app.plugins.plugins.zotlit.services;const result=await services.noteFeature.updateNote(app.vault.getFileByPath(${JSON.stringify(created)}),{indexedKey:${JSON.stringify(itemKey)},scope:'full'});return JSON.stringify({diagnostic:result.diagnostic??null});})()`,
+          );
+        expect(await update()).toEqual({ diagnostic: null });
+        expect(managed(await read())).toContain(sorted);
+
+        // A note that holds the earlier static listing gets the block on its
+        // next full update.
+        expect(managed(listingNote.text)).toContain("[!note]");
+        await obEval(
+          vaultId!,
+          `(async()=>{await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(created)}),${JSON.stringify(listingNote.text)});return true;})()`,
+        );
+        expect(await update()).toEqual({ diagnostic: null });
+        const migrated = managed(await read());
+        expect(migrated).toContain(block);
+        expect(migrated).not.toContain("[!note]");
+      }, 240000);
+    },
+  );
 });
 
 /**

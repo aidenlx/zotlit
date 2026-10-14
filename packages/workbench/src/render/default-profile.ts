@@ -37,13 +37,15 @@ frontmatter:
 - {{ note.noteLink }}
 {% endfor %}
 {% endif %}
-{% if zt.annotations.size > 0 %}
 ## Annotations
 
-{% for annotation in zt.annotations %}
-{% render_annotation annotation %}
-{% endfor %}
-{% endif %}
+\`\`\`zotquery
+views:
+  - type: annotations
+    name: Annotations
+    from: annotations
+    filters: item == this.item
+\`\`\`
 {% endmanaged %}
 
 --- zotlit:annotation ---
