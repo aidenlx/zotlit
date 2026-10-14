@@ -71,6 +71,60 @@ export function formulaReferences(text: string): FormulaReference[] {
   return found.sort((a, b) => a.from - b.from);
 }
 
+/** A cycle of reads from one Formula, at its read of the next one. */
+interface FormulaCycle {
+  /** The Formulas of the cycle, from the Formula back to it. */
+  readonly chain: readonly string[];
+  readonly at: Span;
+}
+
+/**
+ * Each Formula of `defined` on a cycle of reads, with the shortest cycle from
+ * it. Each Formula reads the Formulas its text names, in the order of the
+ * text: of two shortest cycles, a Formula gets the one it reads first.
+ */
+function formulaCycles(
+  defined: Readonly<Record<string, string>>,
+): Map<string, FormulaCycle> {
+  const reads = new Map(
+    Object.entries(defined).map(([name, text]) => [
+      name,
+      formulaReferences(text).filter((read) =>
+        Object.hasOwn(defined, read.name),
+      ),
+    ]),
+  );
+  const cycles = new Map<string, FormulaCycle>();
+  for (const [start, first] of reads) {
+    // A breadth-first walk of reads from `start`: each Formula reached, with
+    // the Formula that reads it on the shortest path.
+    const via = new Map<string, string>();
+    let found: string | null = null;
+    let at: Span | null = null;
+    const queue = [start];
+    walk: for (const name of queue) {
+      for (const read of reads.get(name)!) {
+        if (read.name === start) {
+          found = name;
+          if (name === start) at = read;
+          break walk;
+        }
+        if (via.has(read.name)) continue;
+        via.set(read.name, name);
+        queue.push(read.name);
+      }
+    }
+    if (found === null) continue;
+    const chain = [start];
+    for (let name = found; name !== start; name = via.get(name)!)
+      chain.splice(1, 0, name);
+    chain.push(start);
+    at ??= first.find((read) => read.name === chain[1])!;
+    cycles.set(start, { chain, at: { from: at.from, to: at.to } });
+  }
+  return cycles;
+}
+
 /** The nodes directly under `node`. */
 function expressionChildren(node: ExpressionNode): readonly ExpressionNode[] {
   switch (node.type) {
@@ -168,6 +222,14 @@ export interface FormulaSourceFault {
   readonly at: Span;
 }
 
+/**
+ * The check of the source on the plan of one Formula text: the first custom
+ * field that the text names and the source lacks, or null.
+ */
+export type FormulaSourceCheck = (
+  plan: Pick<FilterPlan, "customFields">,
+) => FormulaSourceFault | null;
+
 /** The parts of a request that the Formula planner reads. */
 export interface FormulaRequest {
   /** The Formulas that the request defines, each name with its text. */
@@ -178,10 +240,11 @@ export interface FormulaRequest {
   readonly context: QueryContext | undefined;
   readonly policy: FormulaFaultPolicy;
   /**
-   * The Faults that the source finds in planned Formulas, by name: a custom
-   * field that the source lacks. Each one is a mistake in its Formula.
+   * The check of the source on each planned Formula: a custom field that the
+   * source lacks is a mistake in its Formula. Without it, the custom-field
+   * check of Query Sources fails the request after planning.
    */
-  readonly sourceFaults?: ReadonlyMap<string, FormulaSourceFault> | undefined;
+  readonly sourceCheck?: FormulaSourceCheck | undefined;
 }
 
 /**
@@ -235,12 +298,15 @@ export interface PlannedFormulas<Item = any, Needs = any> {
 /**
  * Plan the Formulas of `request` against `dataset`. `"fail"` with a Formula
  * name that is not an identifier gives the failure of the request.
+ * `"leave-out"` finds each cycle of reads before it plans a Formula, so each
+ * Formula on a cycle gets the cycle and each other Formula that reads one
+ * gets the read.
  */
 export function planFormulas(
   dataset: QueryDataset<any>,
   request: FormulaRequest,
 ): FormulaPlanner | ItemQueryError {
-  const { context, fields, sourceFaults } = request;
+  const { context, fields, sourceCheck } = request;
   const leaveOut = request.policy === "leave-out";
   // The names come from the caller's text: a name such as __proto__ is a
   // Formula like any other.
@@ -268,6 +334,7 @@ export function planFormulas(
   const [invalidName] = invalidNames;
   if (invalidName && !leaveOut) return failure(invalidName);
 
+  const cycles = leaveOut ? formulaCycles(defined) : new Map<string, never>();
   const planned = new Map<string, PlannedFormula>();
   const faulted = new Map<string, FaultedFormula>(
     invalidNames.map((formula) => [formula.name, formula]),
@@ -285,6 +352,24 @@ export function planFormulas(
     const known = planned.get(name) ?? faulted.get(name);
     if (known) return known;
     const text = defined[name]!;
+    const cycle = cycles.get(name);
+    if (cycle) {
+      const formula: FaultedFormula = {
+        name,
+        text,
+        fault: {
+          kind: "own",
+          error: {
+            context,
+            fault: { kind: "formula-cycle", ...cycle },
+            location: { argument: "formulas", path: name, span: cycle.at },
+            argumentText: text,
+          },
+        },
+      };
+      faulted.set(name, formula);
+      return formula;
+    }
     planning.push(name);
     let result: ReturnType<typeof dataset.planFilter>;
     try {
@@ -317,7 +402,7 @@ export function planFormulas(
       );
     } else {
       const found = result.root.valueType;
-      const fromSource = sourceFaults?.get(name);
+      const fromSource = sourceCheck?.(result);
       if (found === "duration" || found === "regexp" || found === "record") {
         const at = { from: result.root.from, to: result.root.to };
         formula = own({ kind: "formula-result", name, found, at }, at);
@@ -359,23 +444,6 @@ export function planFormulas(
    * or the read of the first Formula with a mistake that its text reads.
    */
   const ownError = ({ name, text, fault }: FaultedFormula): FormulaError => {
-    // A Formula on a cycle gives the cycle from itself, at its read of the
-    // next Formula of the cycle.
-    const root = fault.kind === "own" ? fault.error : fault.root;
-    if (root.fault.kind === "formula-cycle") {
-      const chain = root.fault.chain.slice(0, -1);
-      const at = chain.indexOf(name);
-      if (at !== -1) {
-        const from = [...chain.slice(at), ...chain.slice(0, at)];
-        const span = fault.kind === "own" ? root.fault.at : fault.at;
-        return {
-          ...root,
-          fault: { ...root.fault, chain: [...from, name], at: span },
-          location: { ...root.location, path: name, span },
-          argumentText: text,
-        };
-      }
-    }
     if (fault.kind === "own") return fault.error;
     return {
       context,
@@ -431,7 +499,7 @@ export function planFormulas(
 
   const column: FormulaPlanner["column"] = (index) => {
     const text = fields[index]!;
-    const name = formulaPath(text);
+    const name = formulaPath(text, defined);
     if (name === null) return null;
     const fieldFailure = (fault: ItemQueryFault) =>
       new ItemQueryError({
@@ -494,11 +562,21 @@ export function planFormulas(
 
 /**
  * The Formula name of a `formula.<name>` Projection Path, or null for a path
- * outside the reserved `formula` segment. A Query Row holds a Formula under
- * `formula.<name>` alone, so another form of a path in that segment, such as
- * `formula["name"]`, is a Fault.
+ * outside the reserved `formula` segment. `formula.<name>` names each Formula
+ * of `defined`, also one whose name is not an identifier. A Query Row holds a
+ * Formula under `formula.<name>` alone, so another form of a path in that
+ * segment, such as `formula["name"]`, is a Fault.
  */
-function formulaPath(text: string): string | null | PathProblem {
+function formulaPath(
+  text: string,
+  defined: Readonly<Record<string, string>>,
+): string | null | PathProblem {
+  const prefix = `${FORMULA_SEGMENT}.`;
+  if (
+    text.startsWith(prefix) &&
+    Object.hasOwn(defined, text.slice(prefix.length))
+  )
+    return text.slice(prefix.length);
   const parsed = parseProjectionPath(text);
   if (!parsed.ok || parsed.segments[0] !== FORMULA_SEGMENT) return null;
   const [, name, ...rest] = parsed.segments;
