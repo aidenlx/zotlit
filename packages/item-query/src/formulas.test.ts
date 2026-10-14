@@ -227,3 +227,12 @@ it("warns about a Formula that the request names and never reads", async () => {
   ]);
   expect(result.warnings[0]!.report.join("\n")).toContain("formula.unused");
 });
+
+it("reserves formula: a filter cannot read it as a bare custom field", async () => {
+  using scenario = openScenarioDatabase();
+  const error = await failure(scenario, { filter: 'formula == "x"' });
+  expect(error.diagnostic).toMatchObject({
+    code: "unfilterable-field",
+    location: { argument: "filter", span: { from: 0, to: 7 } },
+  });
+});

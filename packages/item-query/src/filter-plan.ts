@@ -757,7 +757,8 @@ class Validator<Item, Needs> {
         field.navigation,
       );
     }
-    if (name === "custom") {
+    // `formula` is the reserved first segment of a Formula path.
+    if (name === "custom" || name === "formula") {
       return fail(unreadable(name, span));
     }
     if (field) {
