@@ -52,15 +52,20 @@ views:
     name: Annotations
     from: annotations
     filters: item == this.item
+    sort:
+      - property: attachment.dateAdded
+        direction: ASC
+      - property: sortIndex
+        direction: ASC
 ```
 ````
 
 The `content` template is the one whose rendered output is wrapped in managed-region markers. Running <Command inline name={m.command_update_note_name()} /> re-renders this section while leaving the rest of the note body untouched.
 
-| Section     | What it renders                                                                                                                                                                  |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Notes       | A bulleted list of linked child notes. Each `note.noteLink` resolves to an Obsidian wiki-link pointing at the imported note file. It appears only when the item has child notes. |
-| Annotations | A `zotquery` block that shows the annotations of the note's own item as live cards. `this.item` is the item that the note's `zotero-key` property names.                         |
+| Section     | What it renders                                                                                                                                                                                                                    |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Notes       | A bulleted list of linked child notes. Each `note.noteLink` resolves to an Obsidian wiki-link pointing at the imported note file. It appears only when the item has child notes.                                                   |
+| Annotations | A `zotquery` block that shows the annotations of the note's own item as live cards. `this.item` is the item that the note's `zotero-key` property names. The cards sort by attachment, oldest first, then by position in the file. |
 
 The annotation cards stay current with Zotero, and you can edit a comment or tags on a card in the note. A change you make in the block's toolbar, such as a new sort, changes the block text. <Command inline name={m.command_update_note_name()} /> keeps the block text that the note holds, so your change stays.
 
