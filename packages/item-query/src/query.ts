@@ -29,6 +29,12 @@ import type {
 export interface QuerySummary extends QueryMetadata {
   readonly groups?: readonly Omit<QueryGroup, "rows">[];
   readonly totalCount?: number;
+  /**
+   * The matching records, each once, grouped or not. The `zotlit:query`
+   * envelope leaves it out; a typed caller reads it as the count before the
+   * limit.
+   */
+  readonly matchedCount: number;
 }
 
 /** Each write completes before the engine projects the next chunk. */
@@ -57,7 +63,12 @@ export function collectQuery<Request extends ItemQueryRequest>(
   return consumeQuery(dataset, request, (summary) =>
     Effect.sync(() => {
       const rows: QueryRow[] = [];
-      const { groups: summaries, totalCount, ...metadata } = summary;
+      const {
+        groups: summaries,
+        totalCount,
+        matchedCount: _matched,
+        ...metadata
+      } = summary;
       const groups = summaries?.map((group) => ({
         ...group,
         rows: [] as QueryRow[],
