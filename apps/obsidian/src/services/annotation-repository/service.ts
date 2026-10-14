@@ -126,6 +126,14 @@ const logger = getLogger("annotation-repository");
 /** The namespace this repository owns on the plugin-wide query client. */
 const ANNOTATIONS = "annotations";
 
+/**
+ * How long after the last ask the list of an Attachment no surface holds is
+ * still read again on a database change. A list asked for longer ago is let
+ * go at that change instead, so a surface that reads without a hold keeps its
+ * list while it keeps asking.
+ */
+export const UNHELD_RETENTION = Temporal.Duration.from({ minutes: 5 });
+
 /** The partition the Zotero database answers from, keyed by Indexed Key. */
 const ZOTERO_DB = "zotero-db";
 
@@ -733,6 +741,11 @@ export class LocalApiReadFailed extends Error {
  * only signal that a list was superseded, and read again here, so the pixels
  * such a change moved are announced even with no surface mounted to ask.
  *
+ * A surface holds the lists it shows through {@link AnnotationRepository.hold}
+ * and reads many of them at once through {@link AnnotationRepository.readMany},
+ * which the Zotero DB source answers in one batch read. A list no surface holds
+ * any more is let go, so a view over a whole Library leaves nothing behind.
+ *
  * @see apps/obsidian/docs/adr/0034-the-annotation-source-is-atomic-per-attachment.md
  * @see docs/adr/0060-held-reads-are-realized-on-tanstack-query-core.md
  */
@@ -838,6 +851,14 @@ export class AnnotationRepository extends Service<void> {
   >();
   /** The whole collection currently published to both surfaces. */
   readonly #publishedLists = new Map<string, AnnotationList>();
+  /**
+   * How many surfaces hold each Attachment's list, by Indexed Key. A list no
+   * surface holds is dropped, so the collection grows only with what is on
+   * screen.
+   */
+  readonly #holds = new Map<string, number>();
+  /** When a caller last asked for each Attachment's list, by Indexed Key. */
+  readonly #lastAsked = new Map<string, Temporal.Instant>();
   readonly #publishedStatuses = new Map<
     string,
     Held<AnnotationList>["status"]
@@ -886,7 +907,16 @@ export class AnnotationRepository extends Service<void> {
    * @returns the list that stands, with the Pending Proposal of each write in
    *   flight drawn over it, or null while no read has answered for it.
    */
-  async read(attachmentKey: string): Promise<AnnotationList | null> {
+  read(attachmentKey: string): Promise<AnnotationList | null> {
+    this.#lastAsked.set(attachmentKey, this.#now());
+    return this.#read(attachmentKey);
+  }
+
+  /**
+   * {@link read} for this repository's own reads, which are no ask: a list
+   * read again after a database change is let go on time all the same.
+   */
+  async #read(attachmentKey: string): Promise<AnnotationList | null> {
     const source = this.#localApi.demandSource();
     const binding = this.#databaseBindings.get(attachmentKey);
     if (
@@ -940,6 +970,109 @@ export class AnnotationRepository extends Service<void> {
             [attachmentKey, await this.read(attachmentKey)] as const,
         ),
       ),
+    );
+  }
+
+  /**
+   * Keeps the lists of these Attachments published while a surface shows
+   * them: a database change reads them again, and a write finds their
+   * records. Disposing the hold lets each list go once no other surface holds
+   * it, and the next surface that holds it again gets a fresh read.
+   *
+   * @param attachmentKeys the Attachments' Indexed Keys.
+   */
+  hold(attachmentKeys: Iterable<string>): Disposable {
+    const held = [...new Set(attachmentKeys)];
+    for (const attachmentKey of held) {
+      this.#holds.set(attachmentKey, (this.#holds.get(attachmentKey) ?? 0) + 1);
+    }
+    let released = false;
+    return {
+      [Symbol.dispose]: () => {
+        if (released) return;
+        released = true;
+        for (const attachmentKey of held) {
+          const left = (this.#holds.get(attachmentKey) ?? 1) - 1;
+          if (left > 0) {
+            this.#holds.set(attachmentKey, left);
+            continue;
+          }
+          this.#holds.delete(attachmentKey);
+          // A surface that reads with no hold of its own may still show the
+          // list; the announcement is its word to read it again.
+          if (this.#letGo(attachmentKey)) {
+            this.#emitter.emit("annotations-changed", attachmentKey);
+          }
+        }
+      },
+    };
+  }
+
+  /**
+   * Drops the list of an Attachment no surface holds, with what this
+   * repository kept beside it, so its next read is a fresh one. A list that
+   * work in progress still stands on — an Annotation Draft, a write, an open
+   * Annotation History — stays until that work ends.
+   *
+   * @returns whether a published list was let go.
+   */
+  #letGo(attachmentKey: string): boolean {
+    if (this.#holds.has(attachmentKey) || this.#inUse(attachmentKey))
+      return false;
+    this.#lastAsked.delete(attachmentKey);
+    this.#queries.client.removeQueries({
+      queryKey: [ANNOTATIONS],
+      predicate: ({ queryKey }) => queryKey.at(-1) === attachmentKey,
+    });
+    const published = this.#publishedLists.delete(attachmentKey);
+    this.#publishedStatuses.delete(attachmentKey);
+    this.#locks.delete(attachmentKey);
+    this.#databaseBindings.delete(attachmentKey);
+    this.#lastCapability.delete(attachmentKey);
+    for (const completeID of this.#completeKeys.keys()) {
+      if (completeID.endsWith(indexedID("", attachmentKey))) {
+        this.#completeKeys.delete(completeID);
+      }
+    }
+    logger.debug("Annotation list no surface holds was dropped", {
+      attachmentKey,
+    });
+    return published;
+  }
+
+  /**
+   * Whether an Attachment's list stands for a surface: one holds it, work in
+   * progress stands on it, or a caller asked for it within
+   * {@link UNHELD_RETENTION}.
+   */
+  #wanted(attachmentKey: string): boolean {
+    const asked = this.#lastAsked.get(attachmentKey);
+    return (
+      this.#holds.has(attachmentKey) ||
+      this.#inUse(attachmentKey) ||
+      (asked !== undefined &&
+        Temporal.Instant.compare(this.#now(), asked.add(UNHELD_RETENTION)) < 0)
+    );
+  }
+
+  /** Whether work in progress still stands on an Attachment's list. */
+  #inUse(attachmentKey: string): boolean {
+    if (
+      this.#histories.has(attachmentKey) ||
+      this.#writesInFlight.has(attachmentKey) ||
+      this.#refreshes.has(attachmentKey) ||
+      this.#steppingAttachments.has(attachmentKey) ||
+      this.#confirmedWrites.has(attachmentKey)
+    )
+      return true;
+    for (const drafts of Object.values(this.#drafts)) {
+      for (const draft of drafts.values()) {
+        if (draft.attachmentKey === attachmentKey) return true;
+      }
+    }
+    return (this.#publishedLists.get(attachmentKey)?.annotations ?? []).some(
+      ({ key }) =>
+        this.#outcomes.has(key) || this.#pendingWrites(key).length > 0,
     );
   }
 
@@ -4003,6 +4136,12 @@ export class AnnotationRepository extends Service<void> {
    * screen. The lists this repository still stands for are read too, because a
    * Held Read the query client collected leaves the standing list behind.
    *
+   * Only a list a surface still wants is read again: one a surface holds, one
+   * work in progress stands on, or one a caller asked for within
+   * {@link UNHELD_RETENTION}. Every other list is let go here, so a view over a
+   * whole Library costs nothing once it closes. Its next read compares against
+   * the image this device persists, as a session's first read does.
+   *
    * Whether this device holds an image for an Annotation is not this
    * repository's to know: the consumer resolves that against its own store, so
    * one this device never cached stays on demand.
@@ -4012,7 +4151,11 @@ export class AnnotationRepository extends Service<void> {
       ...announced,
       ...this.#publishedLists.keys(),
     ])) {
-      void this.read(attachmentKey).catch((error: unknown) => {
+      if (!this.#wanted(attachmentKey)) {
+        this.#letGo(attachmentKey);
+        continue;
+      }
+      void this.#read(attachmentKey).catch((error: unknown) => {
         logger.debug("A superseded Attachment was not read again", {
           attachmentKey,
           error,
