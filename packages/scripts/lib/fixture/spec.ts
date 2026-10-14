@@ -1134,6 +1134,18 @@ export const NOTES: readonly FixtureNote[] = [
     trashed: true,
     collectionIDs: [],
   },
+  {
+    itemID: 33,
+    libraryID: 1,
+    key: "TRASHCLD",
+    parentItemID: 1,
+    title: "A trashed reading note on the personal alpha",
+    note: '<div class="zotero-note znv1"><div data-schema-version="9"><h1>A trashed reading note on the personal alpha</h1>\n<p>A Child Note in the trash, so views of the Item leave it out.</p>\n</div></div>',
+    importedNoteBody: null,
+    dateModified: "2025-02-21 12:00:00",
+    trashed: true,
+    collectionIDs: [],
+  },
 ];
 
 export type FixtureAnnotationAsset =
