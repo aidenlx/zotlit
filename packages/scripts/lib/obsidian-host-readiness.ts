@@ -1,19 +1,27 @@
 // Bounded Obsidian vault-host discovery and registry-based recovery diagnostics.
 
-import { basename } from "node:path";
+import { basename, resolve } from "node:path";
 
 export const OBSIDIAN_HOST_TIMEOUT_MS = 5_000;
+/** Opening a closed vault loads a new window, so its probe waits longer. */
+export const OBSIDIAN_VAULT_OPEN_TIMEOUT_MS = 30_000;
 export const OBSIDIAN_HOST_VAULT_ENV = "ZT_HOST_VAULT";
 
 const CHECK_COMMAND = "packages/scripts/scripts/obsidian-vault.ts check";
 const HOST_PROBE =
   "JSON.stringify({id:app.appId,path:app.vault.adapter.basePath})";
+/**
+ * Obsidian's reply to a call without `vault=` when no vault window is open and
+ * the working directory is outside every registered vault.
+ */
+const NO_VAULT_WINDOW = "Vault not found.";
 const LIVE_VAULTS_PROBE =
   "JSON.stringify(require('electron').ipcRenderer.sendSync('vault-list'))";
 
 interface RegistryVaultEntry {
   open?: boolean;
   path: string;
+  ts?: number;
 }
 
 interface HostReadinessEffects {
@@ -29,7 +37,15 @@ export interface ObsidianHost {
 
 interface HostReadinessConfig {
   environment?: Record<string, string | undefined>;
+  /** Obsidian's sandbox vault folder, the preferred host to open when no vault window is open. */
+  sandboxVaultPath?: string;
   timeoutMs?: number;
+  vaultOpenTimeoutMs?: number;
+}
+
+interface HostCheckOptions {
+  /** A vault folder the check must not open as the host. */
+  avoidPath?: string;
 }
 
 function timeoutLabel(timeoutMs: number): string {
@@ -125,6 +141,40 @@ function parseLiveVaults(
   return vaults;
 }
 
+/** The value of an `eval` reply: Obsidian prefixes it with `=> `. */
+function evalValue(output: string): string | undefined {
+  return output.startsWith("=> ") ? output.slice(3) : undefined;
+}
+
+function samePath(a: string, b: string): boolean {
+  return resolve(a) === resolve(b);
+}
+
+/**
+ * Registered vaults to open as the host when no vault window is open: the
+ * sandbox vault first, then the most recently opened, never `avoidPath`.
+ */
+function hostCandidates(
+  registry: Record<string, RegistryVaultEntry>,
+  {
+    sandboxVaultPath,
+    avoidPath,
+  }: { sandboxVaultPath?: string; avoidPath?: string },
+): Array<[string, RegistryVaultEntry]> {
+  const isSandbox = (vault: RegistryVaultEntry): boolean =>
+    sandboxVaultPath !== undefined && samePath(vault.path, sandboxVaultPath);
+  return Object.entries(registry)
+    .filter(
+      ([, vault]) =>
+        avoidPath === undefined || !samePath(vault.path, avoidPath),
+    )
+    .sort(
+      ([, a], [, b]) =>
+        Number(isSandbox(b)) - Number(isSandbox(a)) ||
+        (b.ts ?? 0) - (a.ts ?? 0),
+    );
+}
+
 function selectOpenHost(
   vaults: Array<ObsidianHost & { open?: boolean }>,
   selected: string,
@@ -143,36 +193,95 @@ export function createObsidianHostReadiness(
   effects: HostReadinessEffects,
   {
     environment = process.env,
+    sandboxVaultPath,
     timeoutMs = OBSIDIAN_HOST_TIMEOUT_MS,
+    vaultOpenTimeoutMs = OBSIDIAN_VAULT_OPEN_TIMEOUT_MS,
   }: HostReadinessConfig = {},
-): () => Promise<ObsidianHost> {
+): (options?: HostCheckOptions) => Promise<ObsidianHost> {
   const noLiveHost = `No live Obsidian vault answered within ${timeoutLabel(timeoutMs)}.`;
 
-  return async () => {
+  return async ({ avoidPath }: HostCheckOptions = {}) => {
     const fail = async (message: string): Promise<never> => {
       throw await readinessError(message, effects);
     };
-    const evaluate = async (code: string, target?: string): Promise<string> => {
-      let output: string;
+    const reply = async (
+      code: string,
+      target?: string,
+      { limitMs, timeoutMessage } = {
+        limitMs: timeoutMs,
+        timeoutMessage: noLiveHost,
+      },
+    ): Promise<string> => {
       try {
-        output = await runWithTimeout(
+        return await runWithTimeout(
           (signal) =>
             effects.runObsidian(
               [...(target ? [`vault=${target}`] : []), "eval", `code=${code}`],
               signal,
             ),
-          timeoutMs,
+          limitMs,
         );
       } catch {
-        return fail(noLiveHost);
+        return fail(timeoutMessage);
       }
-      if (!output.startsWith("=> ")) return fail(noLiveHost);
-      return output.slice(3);
+    };
+    const evaluate = async (code: string, target?: string): Promise<string> =>
+      evalValue(await reply(code, target)) ?? fail(noLiveHost);
+    const readRegistryOr = async (
+      message: string,
+    ): Promise<Record<string, RegistryVaultEntry>> => {
+      try {
+        return await effects.readRegistry();
+      } catch {
+        return fail(message);
+      }
+    };
+    // A call with `vault=<id>` makes Obsidian open that registered vault's
+    // window and holds the call until the window has loaded, so a running
+    // Obsidian with no vault window can still host calls.
+    const openRegisteredVault = async (): Promise<string> => {
+      const noVaultWindow = "Obsidian is running, but no vault window is open.";
+      const registry = await readRegistryOr(
+        `${noVaultWindow} Cannot read the Obsidian vault registry to find a vault to open.`,
+      );
+      let hostId: string | undefined;
+      for (const [id, vault] of hostCandidates(registry, {
+        sandboxVaultPath,
+        avoidPath,
+      })) {
+        if (await effects.pathExists(vault.path)) {
+          hostId = id;
+          break;
+        }
+      }
+      if (!hostId) {
+        return fail(
+          `${noVaultWindow} No registered vault can be opened as the host.`,
+        );
+      }
+      const value = evalValue(
+        await reply(HOST_PROBE, hostId, {
+          limitMs: vaultOpenTimeoutMs,
+          timeoutMessage: `Obsidian vault ${hostId} did not open within ${timeoutLabel(vaultOpenTimeoutMs)}.`,
+        }),
+      );
+      if (value === undefined) {
+        return fail(`Obsidian vault ${hostId} did not open.`);
+      }
+      if (parseHost(value)?.id !== hostId) {
+        return fail(`Obsidian vault ${hostId} returned a different vault ID.`);
+      }
+      return value;
     };
 
     const selected = environment[OBSIDIAN_HOST_VAULT_ENV];
     if (!selected) {
-      const focused = parseHost(await evaluate(HOST_PROBE));
+      const output = await reply(HOST_PROBE);
+      const focused = parseHost(
+        output === NO_VAULT_WINDOW
+          ? await openRegisteredVault()
+          : (evalValue(output) ?? (await fail(noLiveHost))),
+      );
       if (!focused) {
         return fail(
           "Obsidian answered, but it did not return a valid vault ID and base path.",
@@ -186,14 +295,9 @@ export function createObsidianHostReadiness(
       return focused;
     }
 
-    let registry: Record<string, RegistryVaultEntry>;
-    try {
-      registry = await effects.readRegistry();
-    } catch {
-      return fail(
-        `Cannot read the Obsidian vault registry to select ${selected}.`,
-      );
-    }
+    const registry = await readRegistryOr(
+      `Cannot read the Obsidian vault registry to select ${selected}.`,
+    );
     const registeredVaults = Object.entries(registry).map(([id, vault]) => ({
       ...vault,
       id,
