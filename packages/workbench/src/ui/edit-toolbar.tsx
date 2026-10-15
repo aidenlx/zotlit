@@ -4,14 +4,12 @@
 
 import type { ReactNode } from "react";
 
-import { useUniqueId } from "@zotlit/ui";
-
 import {
   useDocumentRevision,
   useOptionalEditor,
   useWorkbenchStore,
 } from "./editor";
-import { HiddenName, useTooltip } from "./host";
+import { useContainerName, useTooltip } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import { useIcon, useParts } from "./theme";
 
@@ -35,7 +33,7 @@ export function EditToolbar({
   const advanced = useWorkbenchStore((state) => state.advanced);
   const setAdvanced = useWorkbenchStore((state) => state.setAdvanced);
   const part = useParts("editToolbar");
-  const modeId = useUniqueId();
+  const modeName = useContainerName(m.workbench_editing_mode());
   const icon = useIcon();
   const undoTooltip = useTooltip(m.workbench_undo());
   const redoTooltip = useTooltip(m.workbench_redo());
@@ -97,8 +95,8 @@ export function EditToolbar({
         </>
       ) : (
         <>
-          <div role="group" aria-labelledby={modeId} {...part("mode-group")}>
-            <HiddenName id={modeId}>{m.workbench_editing_mode()}</HiddenName>
+          <div role="group" {...modeName.attrs} {...part("mode-group")}>
+            {modeName.hiddenName}
             {mode(false, m.workbench_basic(), "basic")}
             {mode(true, m.workbench_advanced(), "advanced")}
           </div>

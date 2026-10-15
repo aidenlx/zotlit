@@ -4,9 +4,7 @@ import type { RenderDiagnostic, TemplateRenderResult } from "#/render/result";
 import { Suspense } from "react";
 import type { ReactNode, Ref } from "react";
 
-import { useUniqueId } from "@zotlit/ui";
-
-import { HiddenName, useWorkbenchHost, useTooltip } from "./host";
+import { useContainerName, useWorkbenchHost, useTooltip } from "./host";
 import type { WorkbenchMarkdownProps } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import { diagnosticText } from "./problems";
@@ -69,17 +67,17 @@ export function ResultRegion({
 }) {
   const m = useWorkbenchMessages();
   const part = useParts("resultRegion");
-  const nameId = useUniqueId();
+  const name = useContainerName(m.workbench_view_result());
   return (
     <div
       role="region"
       tabIndex={0}
-      aria-labelledby={nameId}
+      {...name.attrs}
       ref={ref}
       data-emphasis={emphasis || undefined}
       {...part("region")}
     >
-      <HiddenName id={nameId}>{m.workbench_view_result()}</HiddenName>
+      {name.hiddenName}
       {children}
     </div>
   );

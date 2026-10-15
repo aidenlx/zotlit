@@ -10,6 +10,8 @@ let sequence = 0;
  *
  * Client render only: the id comes from a module counter, so a server render
  * and the hydrating client count apart, and the hydrated attributes mismatch.
+ * In a part that the docs site prerenders, keep the id out of the server
+ * markup: Workbench containers name themselves through `useContainerName`.
  */
 export function useUniqueId(): string {
   const [id] = useState(() => `zt-${(sequence += 1)}`);
