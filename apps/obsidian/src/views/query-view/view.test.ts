@@ -1917,6 +1917,74 @@ it("marks a wrong Formula at its column from the one run, and shows the other co
   expect(view.state.getState().formulaIssues).toEqual({});
 });
 
+it("keeps the count, the Formula marks and the Error Values with the last results on a filter error", async () => {
+  const wrong = {
+    kind: "error",
+    code: "unparseable-text",
+    message: 'number() cannot read "x" as a number.',
+  };
+  const { view, el, settle } = await mount(
+    [
+      withFaults(
+        result([
+          {
+            indexedKey: "ITEMAAAA",
+            values: { title: "Ten simple rules", "formula.year": wrong },
+          },
+        ]),
+        {
+          short: {
+            code: "unknown-function",
+            message: "In formula.short: nope is not a method of string.",
+            hint: "Use slice.",
+            severity: "error",
+            report: [],
+            location: {
+              argument: "formulas",
+              path: "short",
+              span: { from: 6, to: 10 },
+            },
+            found: "nope",
+            expected: [],
+            suggestions: [],
+          },
+        },
+      ),
+      filterFault(1, 11),
+    ],
+    () => {},
+  );
+  await act(() => view.setText(FORMULA_FILE));
+  await settle();
+  await act(() => {
+    view.document.setFilters("view", {
+      and: ['colourName == "yellow"', 'title.contains("rules")'],
+    });
+  });
+  await settle();
+
+  expect(view.state.getState()).toMatchObject({
+    phase: "failed",
+    keptResults: true,
+    count: 1,
+    formulaIssues: {
+      short: "In formula.short: nope is not a method of string. Use slice.",
+    },
+  });
+  expect(el.querySelector("[data-query-filter-error]")).not.toBeNull();
+  expect(el.querySelector("[data-query-count]")?.textContent).toBe("1 result");
+  expect(
+    el
+      .querySelector('[data-query-column="formula.short"]')
+      ?.getAttribute("data-query-formula-issue"),
+  ).toBe("In formula.short: nope is not a method of string. Use slice.");
+  expect(
+    el
+      .querySelector('[data-query-table-row="item"] [data-query-error]')
+      ?.getAttribute("data-query-error"),
+  ).toBe("unparseable-text");
+});
+
 const DEPENDENT_FILE = `formulas:
   year: date.year
   next: formula.year + 1

@@ -1271,10 +1271,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       text: string;
       cards: string[];
       filterError: boolean;
+      /** The row count the Results menu shows, or `null` while it shows none. */
+      count: string | null;
       /** The text of each row's diagnostic in the "This view" section. */
       rowIssues: (string | null)[];
     }
-    const readTab = `(async()=>{const view=app.workspace.getMostRecentLeaf().view;if(view.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(path)})return 'null';await view.query.settled;const el=view.contentEl;return JSON.stringify({text:await app.vault.read(view.file),cards:[...el.querySelectorAll('.zt-annot-card')].map(n=>n.getAttribute('data-zotero-annotation-key')),filterError:el.querySelector('[data-query-filter-error]')!==null,rowIssues:[...el.querySelectorAll('[data-filter-section="view"] [data-condition-row]')].map(n=>n.querySelector('[role="alert"]')?.textContent??null)});})()`;
+    const readTab = `(async()=>{const view=app.workspace.getMostRecentLeaf().view;if(view.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(path)})return 'null';await view.query.settled;const el=view.contentEl;return JSON.stringify({text:await app.vault.read(view.file),cards:[...el.querySelectorAll('.zt-annot-card')].map(n=>n.getAttribute('data-zotero-annotation-key')),filterError:el.querySelector('[data-query-filter-error]')!==null,count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,rowIssues:[...el.querySelectorAll('[data-filter-section="view"] [data-condition-row]')].map(n=>n.querySelector('[role="alert"]')?.textContent??null)});})()`;
     const tabWhen = async (ready: (tab: Tab) => boolean): Promise<Tab> => {
       let tab: Tab | null = null;
       const settled = await waitFor(async () => {
@@ -1367,6 +1369,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         tab.text.includes("        - nosuchfield == 1\n"),
     );
     expect(broken.cards).toEqual(yellow);
+    // The count of the kept cards stays in the Results menu.
+    expect(broken.count).toBe(String(yellow.length));
     expect(broken.rowIssues[0]).toContain("nosuchfield");
 
     // "Edit visually" goes back once the expression fits a row.

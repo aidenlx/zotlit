@@ -688,14 +688,12 @@ export class QueryView extends Component implements HistorySurface {
         (outcome) => {
           if (this.#run !== controller) return;
           this.#run = null;
-          this.state.setState({ formulaIssues: formulaIssues(outcome) });
           return this.#land({ key, file, view }, outcome, fromList);
         },
         (error: unknown) => {
           if (this.#run !== controller) return;
           this.#run = null;
           logger.warn("A Query View could not run its query", { error });
-          this.state.setState({ formulaIssues: nameDictionary() });
           this.#fail(
             { key, file, view },
             {
@@ -704,6 +702,7 @@ export class QueryView extends Component implements HistorySurface {
               hint: "",
               report: [],
             },
+            nameDictionary(),
           );
         },
       );
@@ -719,10 +718,11 @@ export class QueryView extends Component implements HistorySurface {
       case "cancelled":
         return;
       case "failed":
-        this.#fail(run, outcome.diagnostic);
+        this.#fail(run, outcome.diagnostic, formulaIssues(outcome));
         return;
       case "result": {
         const { result } = outcome;
+        this.state.setState({ formulaIssues: formulaIssues(outcome) });
         // The query reads Zotero's database, which can take a new Annotation
         // after the repository's list does. Such a run keeps the cards on
         // screen, and the database change that follows runs the view again.
@@ -779,11 +779,13 @@ export class QueryView extends Component implements HistorySurface {
    * another view shows none. A fault in one condition of the filters is
    * marked at that condition. The filters cannot hold without a Formula they
    * read: a condition that reads a Formula with a mistake, or one that the
-   * file does not define, shows no rows.
+   * file does not define, shows no rows. Kept rows keep the Formula marks of
+   * the run that gave them; `issues` mark the Formulas otherwise.
    */
   #fail(
     { key, file, view }: ViewRun,
     diagnostic: Diagnostic | NonNullable<QueryViewState["diagnostic"]>,
+    issues: NameDictionary<string>,
   ): void {
     const kept =
       !FORMULA_READ_FAULTS.has(diagnostic.code) &&
@@ -802,6 +804,7 @@ export class QueryView extends Component implements HistorySurface {
       diagnostic,
       warnings: [],
       keptResults: kept,
+      ...(!kept && { formulaIssues: issues }),
       filterIssue: at && { ...at, message: diagnosticText(diagnostic) },
     });
   }

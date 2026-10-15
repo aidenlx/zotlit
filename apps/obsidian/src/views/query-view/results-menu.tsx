@@ -54,9 +54,11 @@ function CountText({ view }: { view: QueryView }) {
   const count = useStore(view.state, (s) => s.count);
   const matched = useStore(view.state, (s) => s.matched);
   const truncated = useStore(view.state, (s) => s.truncated);
+  // A failed run that keeps the last rows keeps their count too.
+  const kept = useStore(view.state, (s) => s.keptResults);
   if (phase === "loading")
     return <span data-query-count="">{m.query_view_loading()}</span>;
-  if (phase !== "ready") return null;
+  if (phase !== "ready" && !(phase === "failed" && kept)) return null;
   return (
     <span data-query-count={count} data-query-matched={matched}>
       {truncated
