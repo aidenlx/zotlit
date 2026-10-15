@@ -10,6 +10,7 @@
   "scripts": {
     "release": "pnpm --filter @zotlit/scripts release",
     "build:plugin": "turbo run build --filter=@zotlit/obsidian --output-logs=full",
+    "desktop-lock": "node packages/scripts/scripts/desktop-lock.ts",
     "deploy:docs": "pnpm --filter @zotlit/docs deploy",
     "dev": "turbo run dev",
     "fixture": "turbo run fixture --output-logs=full --",

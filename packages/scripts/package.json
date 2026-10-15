@@ -5,6 +5,7 @@
   "type": "module",
   "imports": {
     "#commit-tree": "./lib/commit-tree.ts",
+    "#desktop-lock": "./lib/desktop-lock.ts",
     "#fixture": "./lib/fixture/build.ts",
     "#fixture/*": "./lib/fixture/*.ts",
     "#obsidian-manifest": "./lib/obsidian-manifest.ts",
@@ -17,6 +18,7 @@
     "#dev-vault": "./lib/dev-vault.ts"
   },
   "exports": {
+    "./desktop-lock": "./lib/desktop-lock.ts",
     "./fixture": "./lib/fixture/build.ts",
     "./fixture/paired-run-node": "./lib/fixture/paired-run-node.ts",
     "./fixture/spec": "./lib/fixture/spec.ts",
