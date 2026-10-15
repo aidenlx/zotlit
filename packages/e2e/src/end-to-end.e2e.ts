@@ -2487,7 +2487,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const focus = JSON.parse(
       await obEval(
         vaultId,
-        `(async()=>{${embeds}const el=views[1];el.querySelector('[data-query-results]').click();const popup=el.querySelector('[data-query-results-popup]');for(let i=0;i<50&&!popup.querySelector('[data-query-limit]');i++)await new Promise(r=>setTimeout(r,20));const field=popup.querySelector('[data-query-limit]');const label=popup.querySelector('label');field.blur();const blurred=activeDocument.activeElement!==field;label.click();await new Promise(r=>setTimeout(r,50));const out={blurred,sameId:label.htmlFor===field.id,unique:activeDocument.querySelectorAll('#'+CSS.escape(field.id)).length===1,focused:activeDocument.activeElement===field};activeDocument.querySelectorAll(':popover-open').forEach(p=>p.hidePopover());return JSON.stringify(out);})()`,
+        `(async()=>{${embeds}const el=views[1];el.querySelector('[data-query-results]').click();const popup=el.querySelector('[data-query-results-popup]');for(let i=0;i<50&&!popup.querySelector('[data-query-limit]');i++)await new Promise(r=>setTimeout(r,20));const field=popup.querySelector('[data-query-limit]');const label=popup.querySelector('label');field.blur();const blurred=activeDocument.activeElement!==field;label.click();for(let i=0;i<50&&activeDocument.activeElement!==field;i++)await new Promise(r=>setTimeout(r,20));const out={blurred,sameId:label.htmlFor===field.id,unique:activeDocument.querySelectorAll('#'+CSS.escape(field.id)).length===1,focused:activeDocument.activeElement===field};activeDocument.querySelectorAll(':popover-open').forEach(p=>p.hidePopover());return JSON.stringify(out);})()`,
       ),
     ) as Record<string, boolean>;
     expect(focus).toEqual({
@@ -2551,19 +2551,34 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // properties the cards show, at the top of the list. "Hide all" clears
     // them; tick "pageLabel", then "colorName": the order of the ticks is the
     // order of the columns, and it saves.
+    /** The default fields of the annotations dataset that give one cell each. */
+    const defaultProperties = [
+      "type",
+      "text",
+      "comment",
+      "color",
+      "colorName",
+      "pageLabel",
+      "pageIndex",
+      "tags",
+      "dateAdded",
+      "dateModified",
+      "hasExcerptImage",
+      "item.title",
+      "item.citationKey",
+    ];
     const ticked = JSON.parse(
       await obEval(
         vaultId,
-        `(async()=>{const el=app.workspace.getMostRecentLeaf().view.contentEl;el.querySelector('[data-query-properties]').click();await new Promise(r=>setTimeout(r,100));const popup=activeDocument.querySelector('[data-query-properties-popup]');const open=popup.matches(':popover-open');const ticks=[...popup.querySelectorAll('[data-query-property]')].map(n=>n.getAttribute('aria-selected')==='true');const defaults=ticks.filter(Boolean).length;const leading=ticks.slice(0,defaults).every(Boolean);popup.querySelector('[data-query-properties-action="hide-all"]').click();await new Promise(r=>setTimeout(r,100));for(const name of ['pageLabel','colorName']){popup.querySelector('[data-query-property="'+name+'"]').click();await new Promise(r=>setTimeout(r,100));}const shown=[...popup.querySelectorAll('[data-query-property]')].slice(0,3).map(n=>[n.dataset.queryProperty,n.getAttribute('aria-selected')]);popup.hidePopover();return JSON.stringify({open,defaults,leading,shown});})()`,
+        `(async()=>{const until=async(what,ok)=>{for(let i=0;i<100;i++){if(ok())return;await new Promise(r=>setTimeout(r,20));}throw new Error('Properties popover: '+what);};const el=app.workspace.getMostRecentLeaf().view.contentEl;el.querySelector('[data-query-properties]').click();const popup=()=>activeDocument.querySelector('[data-query-properties-popup]');const rows=()=>[...popup().querySelectorAll('[data-query-property]')];const selected=()=>rows().filter(n=>n.getAttribute('aria-selected')==='true').map(n=>n.dataset.queryProperty);await until('opens',()=>popup()?.matches(':popover-open')&&rows().length>0);const defaults=selected();const leading=rows().slice(0,defaults.length).map(n=>n.dataset.queryProperty);popup().querySelector('[data-query-properties-action="hide-all"]').click();await until('hides all',()=>selected().length===0);for(const name of ['pageLabel','colorName']){popup().querySelector('[data-query-property="'+name+'"]').click();await until('ticks '+name,()=>selected().includes(name));}const shown=rows().slice(0,3).map(n=>[n.dataset.queryProperty,n.getAttribute('aria-selected')]);popup().hidePopover();return JSON.stringify({defaults,leading,shown});})()`,
       ),
     ) as {
-      open: boolean;
-      defaults: number;
-      leading: boolean;
+      defaults: string[];
+      leading: string[];
       shown: [string, string][];
     };
-    expect(ticked).toMatchObject({ open: true, leading: true });
-    expect(ticked.defaults).toBeGreaterThan(2);
+    expect(ticked.defaults).toEqual(defaultProperties);
+    expect(ticked.leading).toEqual(defaultProperties);
     expect(ticked.shown.slice(0, 2)).toEqual([
       ["pageLabel", "true"],
       ["colorName", "true"],
