@@ -337,7 +337,7 @@ function Group<Row extends LabelledRow>({
     : group.conditions;
   return (
     <div {...part("group", path.length ? "nested" : "root")}>
-      <div {...part("actions")}>
+      <div {...part("actions", "header")}>
         <MatchSelect
           aria-label={m.workbench_match_match()}
           value={group.match}
@@ -418,7 +418,7 @@ function Group<Row extends LabelledRow>({
           </li>
         ))}
       </ul>
-      <div {...part("actions")}>
+      <div {...part("actions", "footer")}>
         <button
           {...part("button")}
           type="button"
@@ -474,10 +474,15 @@ function Row<Row extends LabelledRow>({
     : vocabulary.kinds.find((entry) => entry.kind === condition.kind);
   return (
     <div {...part("condition")} data-condition-row="">
-      <div {...part("statement")}>
+      <div {...part("statement", issue ? "error" : undefined)}>
         <div {...part("fields")}>
           {!isExpression(condition) && (
-            <div {...part("predicate")}>
+            <div {...part("predicate", kind?.icon ? "icon" : undefined)}>
+              {kind?.icon && (
+                <span aria-hidden {...part("kind-icon")}>
+                  {kind.icon}
+                </span>
+              )}
               <MatchSelect
                 aria-label={m.workbench_match_condition_kind()}
                 value={condition.kind}
