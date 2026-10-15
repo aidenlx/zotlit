@@ -153,6 +153,31 @@ describe("a dead holder", () => {
     lock.release();
   });
 
+  it("includes a holder whose pid now belongs to a new process", async () => {
+    await mkdir(path);
+    await writeFile(
+      join(path, "owner.json"),
+      JSON.stringify({
+        token: "old",
+        pid: process.pid,
+        processStart: "Thu Jan  1 00:00:00 1970",
+        command: "crashed",
+        worktree: "/w",
+      }),
+    );
+    const messages: string[] = [];
+    const lock = await acquireDesktopLock({
+      path,
+      pollMs: 10,
+      log: (message) => messages.push(message),
+    });
+    expect(lock.reused).toBe(false);
+    expect(messages.join("\n")).toContain(
+      `pid ${process.pid} (crashed) is gone`,
+    );
+    lock.release();
+  });
+
   it("includes an acquire that died before it wrote its record", async () => {
     await mkdir(path);
     const old = Temporal.Now.instant().epochMilliseconds / 1000 - 60;
