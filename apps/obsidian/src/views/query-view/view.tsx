@@ -1062,7 +1062,6 @@ function OpenFileButton({ view }: { view: QueryView }) {
       icon="external-link"
       label={m.query_view_open_file()}
       labelClassName="zt:sr-only"
-      keepLabel
       data-query-open-file=""
       onClick={(event) => openFile(event.nativeEvent)}
     />
