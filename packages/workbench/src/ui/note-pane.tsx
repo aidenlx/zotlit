@@ -9,9 +9,11 @@ import { MapMode, StateEffect } from "@codemirror/state";
 import type { EditorState, Extension } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import type { DecorationSet } from "@codemirror/view";
-import { Suspense, useEffect, useId, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
+
+import { useUniqueId } from "@zotlit/ui";
 
 import { useDocumentRevision } from "./editor";
 import {
@@ -64,7 +66,7 @@ export function NotePane({
   const managedClass = part("managed-line").className;
   const labelClass = part("managed-label").className;
   const host = useRef<HTMLDivElement>(null);
-  const previewId = useId();
+  const previewId = useUniqueId();
   const [opened, setOpened] = useState<{
     controller: WorkbenchDocumentController;
     line: number;

@@ -4,6 +4,7 @@
 import { Scope, TextFileView } from "obsidian";
 import type { TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
 
+import "./file-view.css";
 import { QueryView } from "./view";
 import type { QueryViewDeps } from "./view";
 

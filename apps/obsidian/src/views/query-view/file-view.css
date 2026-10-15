@@ -1,0 +1,10 @@
+/* A Query File tab runs its toolbar to the pane's edges, as a Bases tab does,
+   so the tab takes back Obsidian's `.view-content` inset. The layouts below
+   the toolbar carry their own gutters. Obsidian's rule is unlayered, so a
+   utility on `contentEl` cannot reach it; this rule has the same specificity
+   and loads after it. The bottom inset stays, so the last row clears the
+   status bar. */
+.view-content.zt-query-view {
+  padding: 0;
+  padding-bottom: max(var(--safe-area-inset-bottom), var(--size-4-8));
+}

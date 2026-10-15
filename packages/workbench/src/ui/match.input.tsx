@@ -1,6 +1,8 @@
 // Hosts can attach their native typing suggestions to the shared text control.
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useRef } from "react";
 import type { ComponentProps, ReactNode, RefObject } from "react";
+
+import { useUniqueId } from "@zotlit/ui";
 
 import { useWorkbenchHost } from "./host";
 
@@ -22,7 +24,7 @@ export function useInputSuggestions(
   },
 ): { list: string | undefined; datalist: ReactNode } {
   const host = useWorkbenchHost();
-  const id = useId();
+  const id = useUniqueId();
   const latest = useRef({ suggestions, hint, onSelect });
   latest.current = { suggestions, hint, onSelect };
   useEffect(() => {

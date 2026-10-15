@@ -36,7 +36,7 @@ export function useReorder(
         dragging === index && "zt:opacity-50",
         over === index &&
           dragging !== index &&
-          "zt:outline-2 zt:outline-(--interactive-accent)",
+          "zt:shadow-(--metadata-property-box-shadow-focus)",
       ),
       onDragOver: (event: DragEvent) => {
         if (dragging === null) return;
@@ -57,8 +57,10 @@ export function useReorder(
       tabIndex: 0,
       "aria-label": m.query_view_drag_to_reorder(),
       "data-reorder-handle": "",
+      // Drawn as the Bases grip: faint, muted on hover, no button box. It
+      // stays focusable, so the keyboard can move the row.
       className:
-        "clickable-icon zt:cursor-grab zt:text-(--text-faint) zt:shrink-0",
+        "zt:flex zt:shrink-0 zt:items-center zt:self-center zt:rounded-sm zt:cursor-grab zt:text-(--text-faint) zt:hover:text-muted-foreground zt:active:cursor-grabbing zt:focus-visible:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)] zt:focus-visible:outline-none",
       onDragStart: (event: DragEvent) => {
         event.dataTransfer?.setData(DRAG_TYPE, String(index));
         if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
@@ -82,5 +84,11 @@ export function useReorder(
 }
 
 export function GripIcon() {
-  return <Icon name="grip-vertical" size={14} />;
+  return (
+    <Icon
+      name="grip-vertical"
+      size="var(--icon-s)"
+      strokeWidth="var(--icon-s-stroke-width)"
+    />
+  );
 }

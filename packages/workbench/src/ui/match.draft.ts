@@ -70,6 +70,8 @@ export interface MatchConditionKind<Row extends LabelledRow> {
   kind: Row["kind"];
   /** The name the kind picker shows, in the reader's language. */
   label: string;
+  /** The icon the kind picker shows before the chosen kind's name, if any. */
+  icon?: ReactNode;
   /** A row of this kind at its starting value. */
   fresh: () => Row;
   /** The row one Filter Expression leaf reads as, or `null` when it is not this kind. */
@@ -85,8 +87,6 @@ export interface MatchConditionKind<Row extends LabelledRow> {
 /** The conditions a Match editor offers, which its caller supplies. */
 export interface MatchVocabulary<Row extends LabelledRow> {
   kinds: readonly MatchConditionKind<Row>[];
-  /** The kind of the row an empty Match shows. */
-  starterKind: Row["kind"];
   /** The kind "Add condition" adds and a new group starts with. */
   newKind: Row["kind"];
   /** What keeps one row from being saved, as the reader reads it. */

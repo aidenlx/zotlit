@@ -5,12 +5,14 @@
 import { Modal } from "obsidian";
 import type { App } from "obsidian";
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { useStore } from "zustand";
 
 import { parseExpression } from "@zotlit/filter-expression";
 import { FORMULA_NAME, nameDictionary } from "@zotlit/item-query";
+import { useUniqueId } from "@zotlit/ui";
 import {
   MatchExpressionInput,
   WorkbenchThemeProvider,
@@ -18,11 +20,13 @@ import {
 
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
-import { tooltipAttrs } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { matchTheme } from "@/views/template-workbench/match-pane";
 
 import { DisplayNameField } from "./display-name-dialog";
+import "./formula-dialog.css";
 import { displayName, formulaProperty } from "./query-file";
+import { formulaIssuesOf } from "./results";
 import type { QueryView } from "./view";
 
 /** Why a Formula name cannot be saved, or `null` when it can. */
@@ -50,16 +54,20 @@ export function formulaSyntaxIssue(text: string): string | null {
 function FormulaForm({
   view,
   editing,
+  footer,
   close,
 }: {
   view: QueryView;
   /** The name of the Formula to edit; `null` adds one. */
   editing: string | null;
+  /** The modal's button row, which stands outside the scrolling body. */
+  footer: HTMLElement;
   close: () => void;
 }) {
+  const formId = useUniqueId();
   const file = useStore(view.state, (s) => s.file);
   const formulas = file?.formulas ?? nameDictionary<string>();
-  const issues = useStore(view.state, (s) => s.formulaIssues);
+  const issues = useStore(view.state, formulaIssuesOf);
   const saved = editing === null ? undefined : formulas[editing];
   const [name, setName] = useState(editing ?? "");
   const [text, setText] = useState(saved ?? "");
@@ -84,6 +92,7 @@ function FormulaForm({
   };
   return (
     <form
+      id={formId}
       className="zt:flex zt:flex-col zt:gap-3"
       data-query-formula-dialog={editing ?? ""}
       onSubmit={(event) => {
@@ -92,7 +101,9 @@ function FormulaForm({
       }}
     >
       <label className="zt:flex zt:flex-col zt:gap-1">
-        <span className="zt:font-medium">{m.query_view_formula_name()}</span>
+        <span className="zt:text-sm zt:text-foreground">
+          {m.query_view_formula_name()}
+        </span>
         <input
           type="text"
           value={name}
@@ -112,26 +123,8 @@ function FormulaForm({
       </label>
       <WorkbenchThemeProvider theme={matchTheme}>
         <label className="zt:flex zt:flex-col zt:gap-1">
-          <span className="zt:flex zt:items-center zt:gap-1 zt:font-medium">
+          <span className="zt:text-sm zt:text-foreground">
             {m.query_view_formula_expression()}
-            {text !== "" && (
-              <span
-                className={
-                  fieldIssue === null
-                    ? "zt:text-(--text-success)"
-                    : "zt:text-(--text-error)"
-                }
-                data-query-formula-syntax={
-                  syntaxIssue === null ? "valid" : "invalid"
-                }
-                {...tooltipAttrs(fieldIssue ?? m.query_view_formula_valid())}
-              >
-                <Icon
-                  name={fieldIssue === null ? "check" : "alert-triangle"}
-                  size={14}
-                />
-              </span>
-            )}
           </span>
           <MatchExpressionInput
             rows={2}
@@ -141,18 +134,40 @@ function FormulaForm({
             data-query-formula-expression=""
             onInput={(event) => setText(event.currentTarget.value)}
           />
-          <span className="zt:text-xs zt:text-(--text-muted)">
-            {text !== "" && fieldIssue !== null ? (
-              <span
-                className="zt:text-(--text-error)"
-                data-query-formula-message=""
-              >
-                {fieldIssue}
+          {/* The validity line under the field, as the formula editor of
+              Bases shows it: an icon and the verdict, in the success or the
+              error colour. An empty field shows what to type instead. */}
+          {text === "" ? (
+            <span className="zt:text-xs zt:text-(--text-muted)">
+              {m.query_view_formula_expression_desc()}
+            </span>
+          ) : (
+            <span
+              className={cn(
+                "zt:flex zt:items-start zt:gap-1 zt:text-xs",
+                fieldIssue === null
+                  ? "zt:text-(--text-success)"
+                  : "zt:text-(--text-error)",
+              )}
+              data-query-formula-syntax={
+                syntaxIssue === null ? "valid" : "invalid"
+              }
+            >
+              {/* The icon keeps to the first line of a long message. */}
+              <span className="zt:flex zt:h-lh zt:shrink-0 zt:items-center">
+                <Icon
+                  name={fieldIssue === null ? "circle-check" : "x-circle"}
+                  size="var(--icon-xs)"
+                  strokeWidth="var(--icon-xs-stroke-width)"
+                />
               </span>
-            ) : (
-              m.query_view_formula_expression_desc()
-            )}
-          </span>
+              {fieldIssue === null ? (
+                m.query_view_formula_valid()
+              ) : (
+                <span data-query-formula-message="">{fieldIssue}</span>
+              )}
+            </span>
+          )}
         </label>
       </WorkbenchThemeProvider>
       <DisplayNameField
@@ -160,28 +175,36 @@ function FormulaForm({
         value={label}
         onChange={setLabel}
       />
-      <div className="modal-button-container">
-        {editing !== null && (
+      {/* The buttons stand in the modal's pinned footer, outside the form's
+          box; `form` keeps Save the form's submit button, so Enter in a
+          field still saves. The destructive button stands at the start, apart
+          from Save (`mod-secondary`), as Obsidian lays out a dialog. */}
+      {createPortal(
+        <>
+          {editing !== null && (
+            <button
+              type="button"
+              className="mod-warning mod-secondary"
+              data-query-formula-remove=""
+              onClick={() => {
+                if (view.document.removeFormula(editing)) close();
+              }}
+            >
+              {m.query_view_formula_remove()}
+            </button>
+          )}
           <button
-            type="button"
-            className="mod-warning"
-            data-query-formula-remove=""
-            onClick={() => {
-              if (view.document.removeFormula(editing)) close();
-            }}
+            type="submit"
+            form={formId}
+            className="mod-cta"
+            disabled={nameIssue !== null || syntaxIssue !== null}
+            data-query-formula-save=""
           >
-            {m.query_view_formula_remove()}
+            {m.query_view_formula_save()}
           </button>
-        )}
-        <button
-          type="submit"
-          className="mod-cta"
-          disabled={nameIssue !== null || syntaxIssue !== null}
-          data-query-formula-save=""
-        >
-          {m.query_view_formula_save()}
-        </button>
-      </div>
+        </>,
+        footer,
+      )}
     </form>
   );
 }
@@ -203,13 +226,22 @@ export class FormulaModal extends Modal {
   }
 
   override onOpen(): void {
-    this.modalEl.addClass("zt-query-formula-modal");
+    // A long formula grows its field without a limit, so the body scrolls
+    // between a pinned title and a pinned button row.
+    this.modalEl.addClasses([
+      "zt-query-formula-modal",
+      "mod-scrollable-content",
+    ]);
     this.contentEl.addClass("zt-root");
+    const footer = this.modalEl.createDiv({
+      cls: "modal-button-container",
+    });
     this.#root = createRoot(this.contentEl);
     this.#root.render(
       <FormulaForm
         view={this.#view}
         editing={this.#editing}
+        footer={footer}
         close={() => this.close()}
       />,
     );

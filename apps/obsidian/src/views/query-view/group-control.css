@@ -1,0 +1,7 @@
+/* Obsidian's checkbox rule is unlayered and adds `margin-inline-end: 6px`,
+   which outranks every `zt:` utility and widens the space after the tick of a
+   Manual group row past the row's own gap. Bases clears the margin on its
+   group rows; this rule does the same. */
+.zt-root [data-group-row] > input[type="checkbox"] {
+  margin-inline-end: 0;
+}

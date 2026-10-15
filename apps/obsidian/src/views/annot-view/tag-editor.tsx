@@ -7,11 +7,11 @@ import {
   renderMatches,
 } from "obsidian";
 import type { App } from "obsidian";
-import { useId, useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 import type { KeyboardEvent, RefObject } from "react";
 
 import { tagTypeToName } from "@zotlit/db";
-import { TagsInput, useTagsInput } from "@zotlit/ui";
+import { TagsInput, useTagsInput, useUniqueId } from "@zotlit/ui";
 
 import { Icon } from "@/components/obsidian/icon";
 import { useObsidianApp } from "@/lib/app-context";
@@ -135,7 +135,7 @@ export function TagEditor({
                 className="zt:flex zt:shrink-0"
                 {...tooltipAttrs(m.annot_view_card_tag_auto())}
               >
-                <Icon name="bot" size={12} aria-hidden />
+                <Icon name="bot" size="var(--icon-xs)" aria-hidden />
                 <span className="zt:sr-only">
                   {m.annot_view_card_tag_auto()}
                 </span>
@@ -147,7 +147,7 @@ export function TagEditor({
               disabled={saving}
               {...tooltipAttrs(m.annot_view_card_tag_remove({ name }))}
             >
-              <Icon name="x" size={12} />
+              <Icon name="x" size="var(--icon-xs)" />
             </TagsInput.ItemRemove>
           </TagsInput.Item>
         ))}
@@ -198,7 +198,7 @@ function TagField({
   const app = useObsidianApp();
   const { value, add } = useTagsInput();
   const inputRef = useRef<HTMLInputElement>(null);
-  const labelId = useId();
+  const labelId = useUniqueId();
   const suggest = useRef<TagSuggest | null>(null);
   /**
    * Whether the session has ended. Every way out runs through {@link end},

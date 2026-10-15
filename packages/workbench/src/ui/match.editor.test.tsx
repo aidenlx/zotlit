@@ -55,7 +55,6 @@ function valueInput(
 
 /** A Title text field and a Pages number field, with their labels as data. */
 const vocabulary: MatchVocabulary<Row> = {
-  starterKind: "title",
   newKind: "pages",
   kinds: [
     {
@@ -160,6 +159,16 @@ it("edits a condition through a caller's text and number fields into a Filter Ex
   expect(onChange).toHaveBeenLastCalledWith({
     and: ["pages == 12", "pages > 0"],
   });
+});
+
+it("shows an empty filter as only its add actions", () => {
+  const onChange = vi.fn<(next: MatchFilter | undefined) => void>();
+  render(<Editor initial={undefined} onChange={onChange} />);
+  expect(document.querySelectorAll("[data-condition-row]")).toHaveLength(0);
+  expect(screen.queryByText(m.workbench_match_remove())).toBeNull();
+  fireEvent.click(screen.getByText(m.workbench_match_add_condition()));
+  expect(document.querySelectorAll("[data-condition-row]")).toHaveLength(1);
+  expect(onChange).toHaveBeenLastCalledWith({ and: ["pages > 0"] });
 });
 
 it("opens a None of the following group as one expression condition", () => {

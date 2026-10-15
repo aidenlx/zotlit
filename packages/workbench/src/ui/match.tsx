@@ -256,7 +256,6 @@ export function MatchEditor<Row extends LabelledRow>({
   disabled?: boolean;
 }) {
   const part = useParts("match");
-  const [showStarter, setShowStarter] = useState(true);
   const [root, setRootState] = useState<ConditionGroup<Row>>(() =>
     value === undefined ? emptyGroup() : fromFilter(value, vocabulary),
   );
@@ -271,7 +270,6 @@ export function MatchEditor<Row extends LabelledRow>({
   latest.current = vocabulary;
   useEffect(() => {
     if (storesFilter(shown.current, value, latest.current)) return;
-    setShowStarter(true);
     setRoot(
       value === undefined ? emptyGroup() : fromFilter(value, latest.current),
     );
@@ -292,16 +290,8 @@ export function MatchEditor<Row extends LabelledRow>({
         group={root}
         path={[]}
         vocabulary={vocabulary}
-        showStarter={showStarter}
-        onRemoveMatch={
-          value === undefined && !showStarter
-            ? undefined
-            : () => {
-                if (write(undefined)) setShowStarter(false);
-              }
-        }
+        onRemoveMatch={value === undefined ? undefined : () => write(undefined)}
         onChange={(next) => {
-          setShowStarter(true);
           setRoot(next);
           write(toFilter(next, vocabulary));
         }}
@@ -317,7 +307,6 @@ function Group<Row extends LabelledRow>({
   vocabulary,
   onChange,
   onRemoveMatch,
-  showStarter = false,
 }: {
   root: ConditionGroup<Row>;
   group: ConditionGroup<Row>;
@@ -325,19 +314,14 @@ function Group<Row extends LabelledRow>({
   vocabulary: MatchVocabulary<Row>;
   onChange: (root: ConditionGroup<Row>) => void;
   onRemoveMatch?: () => void;
-  showStarter?: boolean;
 }) {
   const m = useWorkbenchMessages();
   const part = useParts("match");
   const icon = useIcon();
   const host = useWorkbenchHost();
-  const starter = showStarter && group.conditions.length === 0;
-  const conditions = starter
-    ? [freshRow(vocabulary, vocabulary.starterKind)]
-    : group.conditions;
   return (
     <div {...part("group", path.length ? "nested" : "root")}>
-      <div {...part("actions")}>
+      <div {...part("actions", "header")}>
         <MatchSelect
           aria-label={m.workbench_match_match()}
           value={group.match}
@@ -375,7 +359,7 @@ function Group<Row extends LabelledRow>({
         )}
       </div>
       <ul {...part("rows")}>
-        {conditions.map((node, index) => (
+        {group.conditions.map((node, index) => (
           <li
             key={index}
             {...part("row", isGroup(node) ? "group" : "condition")}
@@ -401,24 +385,17 @@ function Group<Row extends LabelledRow>({
               <Row
                 condition={node}
                 path={[...path, index]}
-                starter={starter}
                 vocabulary={vocabulary}
                 onChange={(next) =>
-                  onChange(
-                    starter
-                      ? appendAt(root, path, next)
-                      : replaceAt(root, [...path, index], next),
-                  )
+                  onChange(replaceAt(root, [...path, index], next))
                 }
-                onRemove={() => {
-                  if (!starter) onChange(removeAt(root, [...path, index]));
-                }}
+                onRemove={() => onChange(removeAt(root, [...path, index]))}
               />
             )}
           </li>
         ))}
       </ul>
-      <div {...part("actions")}>
+      <div {...part("actions", "footer")}>
         <button
           {...part("button")}
           type="button"
@@ -449,14 +426,12 @@ function Group<Row extends LabelledRow>({
 function Row<Row extends LabelledRow>({
   condition,
   path,
-  starter = false,
   vocabulary,
   onChange,
   onRemove,
 }: {
   condition: RowCondition<Row>;
   path: ConditionPath;
-  starter?: boolean;
   vocabulary: MatchVocabulary<Row>;
   onChange: (condition: RowCondition<Row>) => void;
   onRemove: () => void;
@@ -465,7 +440,7 @@ function Row<Row extends LabelledRow>({
   const part = useParts("match");
   const icon = useIcon();
   const host = useWorkbenchHost();
-  const issue = starter ? null : (vocabulary.issue?.(condition, path) ?? null);
+  const issue = vocabulary.issue?.(condition, path) ?? null;
   const labelled = isExpression(condition)
     ? asLabelled(condition, vocabulary)
     : null;
@@ -474,10 +449,15 @@ function Row<Row extends LabelledRow>({
     : vocabulary.kinds.find((entry) => entry.kind === condition.kind);
   return (
     <div {...part("condition")} data-condition-row="">
-      <div {...part("statement")}>
+      <div {...part("statement", issue ? "error" : undefined)}>
         <div {...part("fields")}>
           {!isExpression(condition) && (
-            <div {...part("predicate")}>
+            <div {...part("predicate", kind?.icon ? "icon" : undefined)}>
+              {kind?.icon && (
+                <span aria-hidden {...part("kind-icon")}>
+                  {kind.icon}
+                </span>
+              )}
               <MatchSelect
                 aria-label={m.workbench_match_condition_kind()}
                 value={condition.kind}

@@ -24,7 +24,10 @@ const NO_VALUES: FilterValues = { tags: [], collections: [], libraries: [] };
 function SidebarFilter({ query }: { query: QueryView }) {
   const file = useStore(query.state, (s) => s.file);
   const shown = useStore(query.state, (s) => s.view);
-  const filterIssue = useStore(query.state, (s) => s.filterIssue);
+  const filterIssue = useStore(
+    query.state,
+    (s) => s.failure?.filterIssue ?? null,
+  );
   const properties = useViewProperties(query);
   const [values, setValues] = useState<FilterValues>(NO_VALUES);
   useEffect(() => {

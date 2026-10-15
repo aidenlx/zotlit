@@ -129,7 +129,7 @@ export function ListLayout({ view }: { view: QueryView }) {
   const List = options.markers === "number" ? "ol" : "ul";
   return (
     <div
-      className="zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:pt-1 zt:pb-11 zt:text-sm"
+      className="zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:pt-2 zt:pb-11 zt:in-[.zt-query-note]:pb-2"
       data-query-layout="list"
     >
       {groups.map((group, groupIndex) => (
@@ -138,9 +138,11 @@ export function ListLayout({ view }: { view: QueryView }) {
           {!group.collapsed && (
             <List
               className={cn(
-                "zt:my-0 zt:flex zt:flex-col zt:gap-1 zt:py-1",
-                options.markers === "bullet" && "zt:list-disc zt:pl-5",
-                options.markers === "number" && "zt:list-decimal zt:pl-6",
+                "zt:my-0 zt:py-1 zt:text-(length:--bases-table-font-size) zt:marker:text-(--list-marker-color)",
+                options.markers === "bullet" &&
+                  "zt:list-disc zt:pl-(--list-indent)",
+                options.markers === "number" &&
+                  "zt:list-decimal zt:pl-(--list-indent)",
                 options.markers === "none" && "zt:list-none zt:pl-0",
               )}
               data-query-markers={options.markers}
@@ -161,13 +163,14 @@ export function ListLayout({ view }: { view: QueryView }) {
                 return (
                   <li
                     key={`${row.indexedKey}\n${index}`}
+                    className="zt:py-(--list-spacing)"
                     data-query-row={row.indexedKey}
                   >
                     {options.indentProperties ? (
                       <>
                         <span>{first}</span>
                         {rest.length > 0 && (
-                          <span className="zt:block zt:pl-4 zt:text-(--text-muted)">
+                          <span className="zt:block zt:pl-(--list-indent) zt:text-muted-foreground">
                             {rest.map((content, at) => (
                               <span key={at} className="zt:block">
                                 {content}
@@ -179,7 +182,11 @@ export function ListLayout({ view }: { view: QueryView }) {
                     ) : (
                       filled.map((content, at) => (
                         <Fragment key={at}>
-                          {at > 0 && options.separator}
+                          {at > 0 && (
+                            <span className="zt:text-muted-foreground">
+                              {options.separator}
+                            </span>
+                          )}
                           {content}
                         </Fragment>
                       ))

@@ -8,7 +8,9 @@ import type {
   WorkbenchSliceRange,
 } from "#/document/index";
 import type { RenderedProperty } from "#/render/result";
-import { useEffect, useState, useId, useRef, useMemo } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
+
+import { useUniqueId } from "@zotlit/ui";
 
 import { ExampleActions, useExampleState } from "./example-state";
 import type { WorkbenchMessages } from "./generated/messages";
@@ -137,7 +139,7 @@ export function PropertiesPane({
   const exampleMessage = example.message;
   const produced = byEntry(exampleMessage ? [] : properties);
   const icon = useIcon();
-  const instanceId = useId();
+  const instanceId = useUniqueId();
   const host = useOptionalHost();
   const tooltip = (text: string) => host?.tooltip(text) ?? { title: text };
   const problems = Map.groupBy(

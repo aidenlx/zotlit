@@ -110,7 +110,9 @@ export class ConfigureViewModal extends Modal {
   }
 
   override onOpen(): void {
-    this.modalEl.addClass("zt-configure-view");
+    // A Layout with many options can outgrow the window: the title stays
+    // and the options scroll.
+    this.modalEl.addClasses(["zt-configure-view", "mod-scrollable-content"]);
     this.setTitle(m.query_view_configure_view());
     this.#display(this.#focusName);
   }

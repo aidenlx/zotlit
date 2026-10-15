@@ -21,6 +21,7 @@ import {
   formulaProperty,
 } from "./query-file";
 import type { QueryFile, QueryFileDataset, QueryFileView } from "./query-file";
+import { formulaIssuesOf } from "./results";
 import { groupPaths } from "./rows";
 import type { QueryView } from "./view";
 
@@ -57,20 +58,30 @@ export interface UnusedSettings {
 
 export interface ViewProperties {
   /**
+   * The Visible Properties in their order, an entry's `place` its index: what
+   * the Layouts, copy and CSV and the run show, and what the Properties
+   * popover ticks. A view without `order` shows the fields ZotLit Query
+   * projects by default. An empty `order`, as "Hide all" leaves it, shows
+   * none, as in Bases. Else it shows the Properties of `order` the dataset
+   * can read; where these are none, as for an `order` of another dataset
+   * kept across a dataset change, it shows the default fields.
+   */
+  readonly visible: readonly PropertyEntry[];
+  /**
    * Every Property the view knows: the Visible Properties in their order,
    * then the file's other Formula Properties, then the dataset's other fields.
    */
   readonly entries: readonly PropertyEntry[];
-  /**
-   * The Properties each record shows, as the Layouts, copy and CSV write
-   * them: the Visible Properties the dataset can read. A view that shows
-   * none gives the fields ZotLit Query projects by default.
-   */
-  readonly visibleProperties: readonly PropertyEntry[];
   /** What the view keeps in its file but does not use. */
   readonly unused: UnusedSettings;
   /** The entry of `path`, which the view may not know, such as a sort of another dataset. */
   entry(path: string): PropertyEntry;
+  /**
+   * The `order` to write for the Visible Properties `next`: `next`, then the
+   * unused visible properties, which a switch back to their dataset shows
+   * again. An empty `next` writes an empty `order`, so the view shows none.
+   */
+  orderOf(next: readonly string[]): string[];
 }
 
 /**
@@ -83,13 +94,27 @@ export function viewProperties(
   formulaIssues: Readonly<Record<string, string>> = {},
 ): ViewProperties {
   const dataset = view.from ?? "annotations";
-  const order = view.order ?? [];
+  const properties = datasetProperties(dataset);
+  const defaults = DATASETS[dataset].engine.defaultFields.filter((field) =>
+    properties.includes(field),
+  );
+  const fitting = [
+    ...new Set((view.order ?? []).filter((path) => fitsDataset(path, dataset))),
+  ];
+  const shown =
+    view.order === undefined
+      ? defaults
+      : view.order.length === 0
+        ? []
+        : fitting.length > 0
+          ? fitting
+          : defaults;
   const known = new Map<string, PropertyEntry>();
   const entry = (path: string): PropertyEntry => {
     let found = known.get(path);
     if (!found) {
       const formula = formulaName(path);
-      const place = order.indexOf(path);
+      const place = shown.indexOf(path);
       const named = (file && displayName(file, path)) ?? null;
       found = {
         path,
@@ -108,27 +133,31 @@ export function viewProperties(
     return found;
   };
   const paths = new Set([
-    ...order,
+    ...shown,
     ...Object.keys(file?.formulas ?? {}).map(formulaProperty),
     ...datasetProperties(dataset),
   ]);
-  const entries = [...paths].map(entry);
-  const shown = entries.filter((each) => each.place !== null && each.fits);
-  const properties = datasetProperties(dataset);
-  const visibleProperties =
-    shown.length > 0
-      ? shown
-      : DATASETS[dataset].engine.defaultFields
-          .filter((field) => properties.includes(field))
-          .map(entry);
-  return { entries, visibleProperties, unused: unusedSettings(view), entry };
+  const unused = unusedSettings(view);
+  return {
+    visible: shown.map(entry),
+    entries: [...paths].map(entry),
+    unused,
+    entry,
+    orderOf: (next) =>
+      next.length === 0
+        ? []
+        : [
+            ...next,
+            ...unused.order.filter((property) => !next.includes(property)),
+          ],
+  };
 }
 
 /** The Properties of the view on screen, as the last run marks them. */
 export function useViewProperties(view: QueryView): ViewProperties | null {
   const file = useStore(view.state, (s) => s.file);
   const shown = useStore(view.state, (s) => s.view);
-  const faults = useStore(view.state, (s) => s.formulaIssues);
+  const faults = useStore(view.state, formulaIssuesOf);
   return useMemo(
     () => (shown ? viewProperties(file, shown, faults) : null),
     [file, shown, faults],
