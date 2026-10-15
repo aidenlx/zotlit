@@ -1,10 +1,12 @@
 // Required desktop gate for changes that can block the database worker.
-import { readFile, rm } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { $ } from "zx";
 
+import { acquireDesktopLock } from "@zotlit/scripts/desktop-lock";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
+import { E2E_RESULTS_ENV, newE2eResultsDir } from "./results-dir.ts";
 import { isObsidianReachable } from "./vault-script.ts";
 
 const root = await getWorkspaceRoot(import.meta.dirname);
@@ -13,9 +15,16 @@ if (!(await isObsidianReachable(root))) {
     "Worker responsiveness requires a running desktop Obsidian with its CLI enabled. Open a host vault, then run pnpm e2e:worker again.",
   );
 }
-const report = join(root, ".scratch", "e2e-results", "results.json");
-await rm(report, { force: true });
-await $({ cwd: root, stdio: "inherit" })`pnpm e2e citation-index`;
+// The nested `pnpm e2e` reuses this lock through the environment.
+using _lock = await acquireDesktopLock({ cwd: root });
+// The nested run writes its results to the folder chosen here.
+const results = newE2eResultsDir();
+const report = join(results, "results.json");
+await $({
+  cwd: root,
+  stdio: "inherit",
+  env: { ...process.env, [E2E_RESULTS_ENV]: results },
+})`pnpm e2e citation-index`;
 const result = JSON.parse(await readFile(report, "utf8")) as {
   numPassedTests: number;
   numPendingTests: number;

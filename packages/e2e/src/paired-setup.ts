@@ -7,6 +7,7 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
 import { openPairedEnvironment } from "./paired-environment.ts";
 import type { PairedEnvironment } from "./paired-environment.ts";
+import { e2eResultsDir } from "./results-dir.ts";
 import { isObsidianReachable } from "./vault-script.ts";
 
 type PairedContext = Omit<PairedEnvironment, typeof Symbol.asyncDispose>;
@@ -20,7 +21,7 @@ declare module "vitest" {
 /** Launch once before test collection; keep ownership in the main process. */
 export default async function setup(project: TestProject) {
   const root = await getWorkspaceRoot(import.meta.dirname);
-  const directory = join(root, ".scratch", "e2e-results");
+  const directory = e2eResultsDir();
   const log = join(directory, "paired-startup.log");
   await rm(log, { force: true });
   if (!(await isObsidianReachable(root))) {
