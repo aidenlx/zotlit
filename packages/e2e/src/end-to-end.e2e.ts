@@ -867,11 +867,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       }),
     ).toBe(true);
 
-    // More options → "Save as query file…", through Obsidian's own menu.
-    await obEval(
-      vaultId,
-      `(function(){${sidebar}.containerEl.querySelector('.view-actions .view-action[aria-label="More options"]').click();return true;})()`,
-    );
+    // More options → "Save as query file…", through Obsidian's own menu. A
+    // side dock hides the view header, so the reader presses the control
+    // row's own "More options".
+    expect(
+      JSON.parse(
+        await obEval(
+          vaultId,
+          `(function(){const button=${sidebar}.contentEl.querySelector('[data-annot-view-more-options]');if(!button)return 'null';const r=button.getBoundingClientRect();const visible=button.checkVisibility()&&r.width>0&&r.height>0;if(visible)button.click();return JSON.stringify({label:button.getAttribute('aria-label'),visible});})()`,
+        ),
+      ),
+    ).toEqual({ label: m.annot_view_more_tooltip(), visible: true });
     const menuItem = `Array.from(document.querySelectorAll('.menu .menu-item')).find(item=>item.querySelector('.menu-item-title')?.textContent===${JSON.stringify(m.annot_view_save_as_query_file())})`;
     expect(
       await obEvalUntil(vaultId, `String(!!${menuItem})`, {
@@ -2582,7 +2588,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   const runPropertyAction = (property: string, title: string) =>
     obEval(
       vaultId,
-      `(async()=>{${propertiesPopup}.querySelector('[data-query-property-more="${property}"]').click();const find=()=>[...activeDocument.querySelectorAll('.menu .menu-item')].find(item=>item.querySelector('.menu-item-title')?.textContent===${JSON.stringify(title)});for(let i=0;i<50&&!find();i++)await new Promise(r=>setTimeout(r,20));const item=find();if(!item)throw new Error('No menu item '+${JSON.stringify(title)});item.click();return true;})()`,
+      `(async()=>{const popup=${propertiesPopup};const button=popup.querySelector('[data-query-property-more="${property}"]');button.scrollIntoView({block:'nearest'});const r=button.getBoundingClientRect(),box=popup.getBoundingClientRect();if(!button.checkVisibility()||r.width===0||r.height===0||r.top<box.top||r.bottom>box.bottom)throw new Error('Property row not visible: '+${JSON.stringify(property)});button.click();const find=()=>[...activeDocument.querySelectorAll('.menu .menu-item')].find(item=>item.querySelector('.menu-item-title')?.textContent===${JSON.stringify(title)});for(let i=0;i<50&&!find();i++)await new Promise(r=>setTimeout(r,20));const item=find();if(!item)throw new Error('No menu item '+${JSON.stringify(title)});item.click();return true;})()`,
     );
   /** Opens the results popover and waits for its "Export CSV…" action. */
   const openResults = (tab: string) =>

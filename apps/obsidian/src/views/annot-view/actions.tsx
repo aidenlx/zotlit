@@ -64,6 +64,11 @@ export interface AnnotActions {
   onCardMenu(evt: MouseEvent<HTMLElement>, annot: AnnotationRecord): void;
   /** Open the header block's one grouped menu, from the block itself. */
   onHeaderMenu(evt: MouseEvent<HTMLElement>): void;
+  /**
+   * Open the view's "More options" menu from the control row, where the view
+   * header that carries it is hidden.
+   */
+  onViewMenu(evt: MouseEvent<HTMLElement>): void;
   /** Choose another Attachment of the Item on screen, in a suggester. */
   onChooseAttachment(): void;
   /** Open the Attachment on screen in Obsidian's own PDF view. */
@@ -288,6 +293,8 @@ export interface AnnotActionDeps {
   offerAnnotationInsert: () => ((annot: AnnotationRecord) => void) | null;
   /** Comment renderer built by the view (owns the app, component, source path). */
   renderComment: CommentRenderer;
+  /** Fill the view's "More options" menu, as the view header would. */
+  fillViewMenu: (menu: Menu) => void;
   onSetFollowMode: AnnotActions["onSetFollowMode"];
   onAllowEditing: AnnotActions["onAllowEditing"];
   onOpenPdf: AnnotActions["onOpenPdf"];
@@ -772,6 +779,9 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
         }),
       );
     },
+    onViewMenu(evt) {
+      showMenu(evt, deps.fillViewMenu, "end");
+    },
     onChooseAttachment,
     onOpenPdf: deps.onOpenPdf,
     onAllowEditing: deps.onAllowEditing,
@@ -819,6 +829,7 @@ export const NOOP_ACTIONS: AnnotActions = {
   onMoreOptions: () => {},
   onCardMenu: () => {},
   onHeaderMenu: () => {},
+  onViewMenu: () => {},
   onChooseAttachment: () => {},
   onOpenPdf: () => {},
   onAllowEditing: () => {},
