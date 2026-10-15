@@ -66,6 +66,7 @@ import {
   waitFor,
   WINDOW_DOCUMENTS,
 } from "./obsidian-cli.ts";
+import { PAGE } from "./page-gestures.ts";
 import {
   clearVault,
   e2eVaultDir,
@@ -774,7 +775,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEval(
         vaultId,
-        `(function(){const button=${sidebar}.contentEl.querySelector('[data-annot-view-more-options]');const r=button?.getBoundingClientRect();const visible=!!button&&button.checkVisibility()&&r.width>0&&r.height>0;if(visible)button.click();return String(visible);})()`,
+        `(function(){${PAGE}press(${sidebar}.contentEl.querySelector('[data-annot-view-more-options]'),'More options');return 'true';})()`,
       ),
     ).toBe("true");
     expect(
@@ -878,10 +879,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       JSON.parse(
         await obEval(
           vaultId,
-          `(function(){const button=${sidebar}.contentEl.querySelector('[data-annot-view-more-options]');if(!button)return 'null';const r=button.getBoundingClientRect();const visible=button.checkVisibility()&&r.width>0&&r.height>0;if(visible)button.click();return JSON.stringify({label:button.getAttribute('aria-label'),visible});})()`,
+          `(function(){${PAGE}const button=press(${sidebar}.contentEl.querySelector('[data-annot-view-more-options]'),'More options');return JSON.stringify({label:button.getAttribute('aria-label')});})()`,
         ),
       ),
-    ).toEqual({ label: m.annot_view_more_tooltip(), visible: true });
+    ).toEqual({ label: m.annot_view_more_tooltip() });
     const menuItem = `Array.from(document.querySelectorAll('.menu .menu-item')).find(item=>item.querySelector('.menu-item-title')?.textContent===${JSON.stringify(m.annot_view_save_as_query_file())})`;
     expect(
       await obEvalUntil(vaultId, `String(!!${menuItem})`, {
@@ -1302,7 +1303,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const inPopover = (body: string) =>
       obEval(
         vaultId,
-        `(async()=>{const el=app.workspace.getMostRecentLeaf().view.contentEl;const popover=el.querySelector('[data-query-popover="filter"]');if(!popover.matches(':popover-open'))el.querySelector('[data-query-toolbar="filter"]').click();const section=name=>popover.querySelector('[data-filter-section="'+name+'"]');const set=(control,value)=>{control.value=value;control.dispatchEvent(new Event('input',{bubbles:true}));};${body}})()`,
+        `(async()=>{${PAGE}const el=app.workspace.getMostRecentLeaf().view.contentEl;const popover=el.querySelector('[data-query-popover="filter"]');if(!popover.matches(':popover-open'))press(el.querySelector('[data-query-toolbar="filter"]'),'Filter');const section=name=>popover.querySelector('[data-filter-section="'+name+'"]');const set=(control,value)=>{control.value=value;control.dispatchEvent(new Event('input',{bubbles:true}));};${body}})()`,
       );
 
     await obEval(
@@ -1356,9 +1357,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
 
     // "Add condition" for all views adds a colour condition, Yellow, and
-    // saves it as the file's top-level filters; both sections hold.
+    // saves it as the file's top-level filters; both sections hold. The empty
+    // section starts folded, so the reader unfolds it first.
     await inPopover(
-      `[...section('all').querySelectorAll('button')].find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_match_add_condition())}).click();return true;`,
+      `const fold=section('all').querySelector('details');if(!fold.open)press(fold.querySelector('summary'),'All views heading');press([...section('all').querySelectorAll('button')].find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_match_add_condition())}),'Add condition');return true;`,
     );
     const yellow = await queryKeys(
       '(colorName == "yellow") && (tags.contains("methodology"))',
@@ -2025,7 +2027,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const hidden = JSON.parse(
       await obEval(
         vaultId,
-        `(async()=>{const until=async(what,ok)=>{for(let i=0;i<100;i++){if(ok())return;await new Promise(r=>setTimeout(r,20));}throw new Error('Properties popover: '+what);};const view=app.workspace.getMostRecentLeaf().view;const el=view.contentEl;el.querySelector('[data-query-properties]').click();const popup=()=>activeDocument.querySelector('[data-query-properties-popup]');const selected=()=>[...popup().querySelectorAll('[data-query-property][aria-selected="true"]')];await until('opens',()=>popup()?.matches(':popover-open')&&selected().length>0);popup().querySelector('[data-query-properties-action="hide-all"]').click();await until('hides all',()=>selected().length===0);const ticks=selected().length;popup().hidePopover();await until('drops the columns',()=>!el.querySelector('th[data-query-column]'));await view.query.settled;return JSON.stringify({header:[...el.querySelectorAll('[data-query-table] thead th')].map(n=>n.textContent.trim()),rows:el.querySelectorAll('tr[data-query-table-row="item"]').length,ticks});})()`,
+        `(async()=>{${PAGE}const view=app.workspace.getMostRecentLeaf().view;const el=view.contentEl;press(el.querySelector('[data-query-properties]'),'Properties');const popup=()=>activeDocument.querySelector('[data-query-properties-popup]');const selected=()=>[...popup().querySelectorAll('[data-query-property][aria-selected="true"]')];await until('Properties popover opens',()=>popup()?.matches(':popover-open')&&selected().length>0);press(popup().querySelector('[data-query-properties-action="hide-all"]'),'Hide all');await until('Hide all clears the ticks',()=>selected().length===0);const ticks=selected().length;popup().hidePopover();await until('Table drops the columns',()=>!el.querySelector('th[data-query-column]'));await view.query.settled;return JSON.stringify({header:[...el.querySelectorAll('[data-query-table] thead th')].map(n=>n.textContent.trim()),rows:el.querySelectorAll('tr[data-query-table-row="item"]').length,ticks});})()`,
       ),
     ) as { header: string[]; rows: number; ticks: number };
     expect(hidden).toEqual({
@@ -2413,7 +2415,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const figure = 'tags.contains("figure")';
     await obEval(
       vaultId,
-      `(async()=>{const leaf=app.workspace.getLeavesOfType('markdown').find(l=>l.view.file.path===${JSON.stringify(labNote)});const el=[...leaf.view.containerEl.querySelectorAll('.internal-embed')].find(el=>el.zotlitQueryView&&el.isShown());el.querySelector('[data-query-toolbar="filter"]').click();const all=()=>el.querySelector('[data-query-popover="filter"] [data-filter-section="all"] [data-condition-row]');const set=(control,value)=>{control.value=value;control.dispatchEvent(new Event('input',{bubbles:true}));};[...el.querySelectorAll('[data-query-popover="filter"] [data-filter-section="all"] button')].find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_match_add_condition())}).click();for(let i=0;i<50&&!all();i++)await new Promise(r=>setTimeout(r,20));set(all().querySelector('select[aria-label="${m.workbench_match_condition_kind()}"]'),'tags');await new Promise(r=>setTimeout(r,50));set(all().querySelector('input[aria-label="${m.workbench_match_value()}"]'),'figure');el.querySelector('[data-query-popover="filter"]').hidePopover();return true;})()`,
+      `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('markdown').find(l=>l.view.file.path===${JSON.stringify(labNote)});const el=[...leaf.view.containerEl.querySelectorAll('.internal-embed')].find(el=>el.zotlitQueryView&&el.isShown());press(el.querySelector('[data-query-toolbar="filter"]'),'Filter');const all=()=>el.querySelector('[data-query-popover="filter"] [data-filter-section="all"] [data-condition-row]');const set=(control,value)=>{control.value=value;control.dispatchEvent(new Event('input',{bubbles:true}));};const fold=el.querySelector('[data-query-popover="filter"] [data-filter-section="all"] details');if(!fold.open)press(fold.querySelector('summary'),'All views heading');press([...el.querySelectorAll('[data-query-popover="filter"] [data-filter-section="all"] button')].find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_match_add_condition())}),'Add condition');await until('condition row',all);set(all().querySelector('select[aria-label="${m.workbench_match_condition_kind()}"]'),'tags');set(await until('tag value field',()=>all().querySelector('input[aria-label="${m.workbench_match_value()}"]')),'figure');el.querySelector('[data-query-popover="filter"]').hidePopover();return true;})()`,
     );
     const figures = byItem(await queryRows(figure)).cards;
     const myFigures = await queryKeys(
@@ -2424,7 +2426,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const after = await panesWhen(
       (panes) =>
         panes[overview]?.[0]?.count === String(figures.length) &&
-        panes.tab?.count === String(figures.length),
+        panes.tab?.count === String(figures.length) &&
+        panes[labNote]?.[0]?.cards.length === myFigures.length,
     );
     expect(
       await obEval(
@@ -2529,7 +2532,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const focus = JSON.parse(
       await obEval(
         vaultId,
-        `(async()=>{${embeds}const el=views[1];el.querySelector('[data-query-results]').click();const popup=el.querySelector('[data-query-results-popup]');for(let i=0;i<50&&!popup.querySelector('[data-query-limit]');i++)await new Promise(r=>setTimeout(r,20));const field=popup.querySelector('[data-query-limit]');const label=popup.querySelector('label');field.blur();const blurred=activeDocument.activeElement!==field;label.click();for(let i=0;i<50&&activeDocument.activeElement!==field;i++)await new Promise(r=>setTimeout(r,20));const out={blurred,sameId:label.htmlFor===field.id,unique:activeDocument.querySelectorAll('#'+CSS.escape(field.id)).length===1,focused:activeDocument.activeElement===field};activeDocument.querySelectorAll(':popover-open').forEach(p=>p.hidePopover());return JSON.stringify(out);})()`,
+        `(async()=>{${PAGE}${embeds}const el=views[1];press(el.querySelector('[data-query-results]'),'Results');const popup=el.querySelector('[data-query-results-popup]');const field=await until('limit field',()=>popup.querySelector('[data-query-limit]'));const label=popup.querySelector('label');field.blur();const blurred=activeDocument.activeElement!==field;press(label,'limit label');await until('label focuses the limit field',()=>activeDocument.activeElement===field);const out={blurred,sameId:label.htmlFor===field.id,unique:activeDocument.querySelectorAll('#'+CSS.escape(field.id)).length===1,focused:activeDocument.activeElement===field};activeDocument.querySelectorAll(':popover-open').forEach(p=>p.hidePopover());return JSON.stringify(out);})()`,
       ),
     ) as Record<string, boolean>;
     expect(focus).toEqual({
@@ -2612,7 +2615,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const ticked = JSON.parse(
       await obEval(
         vaultId,
-        `(async()=>{const until=async(what,ok)=>{for(let i=0;i<100;i++){if(ok())return;await new Promise(r=>setTimeout(r,20));}throw new Error('Properties popover: '+what);};const el=app.workspace.getMostRecentLeaf().view.contentEl;el.querySelector('[data-query-properties]').click();const popup=()=>activeDocument.querySelector('[data-query-properties-popup]');const rows=()=>[...popup().querySelectorAll('[data-query-property]')];const selected=()=>rows().filter(n=>n.getAttribute('aria-selected')==='true').map(n=>n.dataset.queryProperty);await until('opens',()=>popup()?.matches(':popover-open')&&rows().length>0);const defaults=selected();const leading=rows().slice(0,defaults.length).map(n=>n.dataset.queryProperty);popup().querySelector('[data-query-properties-action="hide-all"]').click();await until('hides all',()=>selected().length===0);for(const name of ['pageLabel','colorName']){popup().querySelector('[data-query-property="'+name+'"]').click();await until('ticks '+name,()=>selected().includes(name));}const shown=rows().slice(0,3).map(n=>[n.dataset.queryProperty,n.getAttribute('aria-selected')]);popup().hidePopover();return JSON.stringify({defaults,leading,shown});})()`,
+        `(async()=>{${PAGE}const el=app.workspace.getMostRecentLeaf().view.contentEl;press(el.querySelector('[data-query-properties]'),'Properties');const popup=()=>activeDocument.querySelector('[data-query-properties-popup]');const rows=()=>[...popup().querySelectorAll('[data-query-property]')];const selected=()=>rows().filter(n=>n.getAttribute('aria-selected')==='true').map(n=>n.dataset.queryProperty);await until('Properties popover opens',()=>popup()?.matches(':popover-open')&&rows().length>0);const defaults=selected();const leading=rows().slice(0,defaults.length).map(n=>n.dataset.queryProperty);press(popup().querySelector('[data-query-properties-action="hide-all"]'),'Hide all');await until('Hide all clears the ticks',()=>selected().length===0);for(const name of ['pageLabel','colorName']){press(popup().querySelector('[data-query-property="'+name+'"]'),'property '+name);await until('ticks '+name,()=>selected().includes(name));}const shown=rows().slice(0,3).map(n=>[n.dataset.queryProperty,n.getAttribute('aria-selected')]);popup().hidePopover();return JSON.stringify({defaults,leading,shown});})()`,
       ),
     ) as {
       defaults: string[];
@@ -2712,7 +2715,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   const runPropertyAction = (property: string, title: string) =>
     obEval(
       vaultId,
-      `(async()=>{const popup=${propertiesPopup};const button=popup.querySelector('[data-query-property-more="${property}"]');button.scrollIntoView({block:'nearest'});const r=button.getBoundingClientRect(),box=popup.getBoundingClientRect();if(!button.checkVisibility()||r.width===0||r.height===0||r.top<box.top||r.bottom>box.bottom)throw new Error('Property row not visible: '+${JSON.stringify(property)});button.click();const find=()=>[...activeDocument.querySelectorAll('.menu .menu-item')].find(item=>item.querySelector('.menu-item-title')?.textContent===${JSON.stringify(title)});for(let i=0;i<50&&!find();i++)await new Promise(r=>setTimeout(r,20));const item=find();if(!item)throw new Error('No menu item '+${JSON.stringify(title)});item.click();return true;})()`,
+      `(async()=>{${PAGE}const popup=${propertiesPopup};press(popup.querySelector('[data-query-property-more="${property}"]'),'actions of property '+${JSON.stringify(property)});const item=await until('menu item '+${JSON.stringify(title)},()=>[...activeDocument.querySelectorAll('.menu .menu-item')].find(item=>item.querySelector('.menu-item-title')?.textContent===${JSON.stringify(title)}));press(item,'menu item '+${JSON.stringify(title)});return true;})()`,
     );
   /** Opens the results popover and waits for its "Export CSV…" action. */
   const openResults = (tab: string) =>
