@@ -1,5 +1,7 @@
 // Item and annotation choice controls; the host owns the searchable overlay.
-import { useId, useState } from "react";
+import { useState } from "react";
+
+import { useUniqueId } from "@zotlit/ui";
 
 import { useTooltip, useWorkbenchHost } from "./host";
 import { useIcon, useParts } from "./theme";
@@ -34,7 +36,7 @@ export function SampleSuggester({
   const host = useWorkbenchHost();
   const labelTooltip = useTooltip(label);
   const triggerTooltip = useTooltip(title);
-  const instanceId = useId();
+  const instanceId = useUniqueId();
   const [open, setOpen] = useState(false);
   return (
     <div {...part("suggester")}>

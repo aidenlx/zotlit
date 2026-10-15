@@ -10,11 +10,12 @@ import {
 } from "react";
 import type { CSSProperties, RefObject } from "react";
 
+import { useUniqueId } from "@zotlit/ui";
+
 import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
 import { SearchInput } from "@/components/obsidian/search-input";
 import * as m from "@/lib/i18n/generated/messages";
-import { useUniqueId } from "@/lib/use-unique-id";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
 import { AnnotActionsContext } from "./actions";

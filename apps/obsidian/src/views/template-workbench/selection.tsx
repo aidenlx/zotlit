@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 import { isChildItemFields, isPageNumber } from "@zotlit/db";
 import type { CitationVariant } from "@zotlit/db";
+import { useUniqueId } from "@zotlit/ui";
 import { SAMPLE_ANNOTATIONS } from "@zotlit/workbench/render";
 import type {
   AnnotationExample,
@@ -19,7 +20,6 @@ import { selectionControl } from "@/components/obsidian/selection-control";
 import * as m from "@/lib/i18n/generated/messages";
 import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { itemSummary } from "@/lib/item-summary";
-import { useUniqueId } from "@/lib/use-unique-id";
 import { pickItem } from "@/services/item-lookup/search-modal";
 import type { ItemSearchDeps } from "@/services/item-lookup/search-modal";
 import { DEFAULT_LIMIT } from "@/services/item-lookup/service";

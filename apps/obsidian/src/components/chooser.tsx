@@ -42,12 +42,13 @@ import type {
   RefObject,
 } from "react";
 
+import { useUniqueId } from "@zotlit/ui";
+
 import { Icon } from "@/components/obsidian/icon";
 import { SearchInput } from "@/components/obsidian/search-input";
 import { useObsidianApp } from "@/lib/app-context";
 import { registerKeymap } from "@/lib/disposables";
 import { themeHook } from "@/lib/theme-hooks";
-import { useUniqueId } from "@/lib/use-unique-id";
 import { cn } from "@/lib/utils";
 
 import {
