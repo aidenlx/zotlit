@@ -2249,3 +2249,39 @@ views:
     ],
   ]);
 });
+
+it("ticks the default properties of a view without order, and a tick writes them with it", async () => {
+  const written: string[] = [];
+  const { view, el, settle } = await mount([result([]), result([])], (text) =>
+    written.push(text),
+  );
+  await act(() =>
+    view.setText(`views:
+  - type: table
+    name: Reading list
+    from: items
+`),
+  );
+  await settle();
+  await act(() =>
+    el.querySelector<HTMLElement>("[data-query-properties]")!.click(),
+  );
+  const rows = [
+    ...document.querySelectorAll<HTMLElement>("[data-query-property]"),
+  ];
+  expect(
+    rows
+      .slice(0, 4)
+      .map((row) => [row.dataset.queryProperty, row.dataset.hidden]),
+  ).toEqual([
+    ["itemType", undefined],
+    ["title", undefined],
+    ["dateModified", undefined],
+    ["abstractNote", ""],
+  ]);
+  await act(() => rows[3]!.click());
+  await settle();
+  expect(written.at(-1)).toContain(
+    "order:\n      - itemType\n      - title\n      - dateModified\n      - abstractNote\n",
+  );
+});

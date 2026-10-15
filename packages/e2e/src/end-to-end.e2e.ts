@@ -2482,21 +2482,28 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(figures.length).toBeGreaterThan(2);
     await tabWhen((tab) => tab.count === String(figures.length));
 
-    // Tick "pageLabel", then "colorName", in the Properties popover: the
-    // order of the ticks is the order of the columns, and it saves.
+    // The view has no order: the Properties popover ticks the default
+    // properties the cards show, at the top of the list. "Hide all" clears
+    // them; tick "pageLabel", then "colorName": the order of the ticks is the
+    // order of the columns, and it saves.
     const ticked = JSON.parse(
       await obEval(
         vaultId,
-        `(async()=>{const el=app.workspace.getMostRecentLeaf().view.contentEl;el.querySelector('[data-query-properties]').click();await new Promise(r=>setTimeout(r,100));const popup=activeDocument.querySelector('[data-query-properties-popup]');const open=popup.matches(':popover-open');for(const name of ['pageLabel','colorName']){popup.querySelector('[data-query-property="'+name+'"]').click();await new Promise(r=>setTimeout(r,100));}const shown=[...popup.querySelectorAll('[data-query-property]')].slice(0,2).map(n=>[n.dataset.queryProperty,n.getAttribute('aria-selected')]);popup.hidePopover();return JSON.stringify({open,shown});})()`,
+        `(async()=>{const el=app.workspace.getMostRecentLeaf().view.contentEl;el.querySelector('[data-query-properties]').click();await new Promise(r=>setTimeout(r,100));const popup=activeDocument.querySelector('[data-query-properties-popup]');const open=popup.matches(':popover-open');const ticks=[...popup.querySelectorAll('[data-query-property]')].map(n=>n.getAttribute('aria-selected')==='true');const defaults=ticks.filter(Boolean).length;const leading=ticks.slice(0,defaults).every(Boolean);popup.querySelector('[data-query-properties-action="hide-all"]').click();await new Promise(r=>setTimeout(r,100));for(const name of ['pageLabel','colorName']){popup.querySelector('[data-query-property="'+name+'"]').click();await new Promise(r=>setTimeout(r,100));}const shown=[...popup.querySelectorAll('[data-query-property]')].slice(0,3).map(n=>[n.dataset.queryProperty,n.getAttribute('aria-selected')]);popup.hidePopover();return JSON.stringify({open,defaults,leading,shown});})()`,
       ),
-    ) as { open: boolean; shown: [string, string][] };
-    expect(ticked).toEqual({
-      open: true,
-      shown: [
-        ["pageLabel", "true"],
-        ["colorName", "true"],
-      ],
-    });
+    ) as {
+      open: boolean;
+      defaults: number;
+      leading: boolean;
+      shown: [string, string][];
+    };
+    expect(ticked).toMatchObject({ open: true, leading: true });
+    expect(ticked.defaults).toBeGreaterThan(2);
+    expect(ticked.shown.slice(0, 2)).toEqual([
+      ["pageLabel", "true"],
+      ["colorName", "true"],
+    ]);
+    expect(ticked.shown[2]?.[1]).toBe("false");
     const ordered = await tabWhen((tab) =>
       tab.text.includes("order:\n      - pageLabel\n      - colorName\n"),
     );

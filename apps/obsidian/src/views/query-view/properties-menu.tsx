@@ -57,7 +57,9 @@ export function PropertiesMenu({ view }: { view: QueryView }) {
   const app = useObsidianApp();
   const popup = useRef<HTMLDivElement>(null);
   if (!current || !properties) return null;
-  const order = current.order ?? [];
+  // A view without `order` shows its default properties: they are ticked,
+  // and a change writes them with it.
+  const order = properties.order;
   const setOrder = (next: readonly string[]) =>
     view.document.editView({ order: next });
   const dataset = current.from ?? "annotations";

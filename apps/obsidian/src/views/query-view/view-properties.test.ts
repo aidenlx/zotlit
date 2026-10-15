@@ -125,6 +125,27 @@ describe("viewProperties entries", () => {
     ).toBe(true);
   });
 
+  it("gives a view without order the default fields as its order, first and visible", () => {
+    const properties = viewProperties(null, { from: "items" });
+    // The default fields that give one cell each, as the Table shows them.
+    expect(properties.order).toEqual(["itemType", "title", "dateModified"]);
+    expect(
+      properties.entries.slice(0, 4).map((entry) => [entry.path, entry.place]),
+    ).toEqual([
+      ["itemType", 0],
+      ["title", 1],
+      ["dateModified", 2],
+      ["abstractNote", null],
+    ]);
+    expect(properties.visibleProperties.map((entry) => entry.path)).toEqual(
+      properties.order,
+    );
+    // "Hide all" leaves an empty order: no property is ticked.
+    const hidden = viewProperties(null, { from: "items", order: [] });
+    expect(hidden.order).toEqual([]);
+    expect(hidden.entries.every((entry) => entry.place === null)).toBe(true);
+  });
+
   it("names a Property it does not list, such as a sort of another dataset", () => {
     const properties = viewProperties(FILE, VIEW);
     expect(properties.entry("pageIndex")).toMatchObject({

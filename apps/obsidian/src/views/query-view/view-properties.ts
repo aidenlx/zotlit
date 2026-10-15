@@ -57,6 +57,11 @@ export interface UnusedSettings {
 
 export interface ViewProperties {
   /**
+   * The Visible Properties in their order: the view's `order`, else, for a
+   * view without one, the fields ZotLit Query projects by default.
+   */
+  readonly order: readonly string[];
+  /**
    * Every Property the view knows: the Visible Properties in their order,
    * then the file's other Formula Properties, then the dataset's other fields.
    */
@@ -83,7 +88,11 @@ export function viewProperties(
   formulaIssues: Readonly<Record<string, string>> = {},
 ): ViewProperties {
   const dataset = view.from ?? "annotations";
-  const order = view.order ?? [];
+  const properties = datasetProperties(dataset);
+  const defaults = DATASETS[dataset].engine.defaultFields.filter((field) =>
+    properties.includes(field),
+  );
+  const order = view.order ?? defaults;
   const known = new Map<string, PropertyEntry>();
   const entry = (path: string): PropertyEntry => {
     let found = known.get(path);
@@ -114,14 +123,14 @@ export function viewProperties(
   ]);
   const entries = [...paths].map(entry);
   const shown = entries.filter((each) => each.place !== null && each.fits);
-  const properties = datasetProperties(dataset);
-  const visibleProperties =
-    shown.length > 0
-      ? shown
-      : DATASETS[dataset].engine.defaultFields
-          .filter((field) => properties.includes(field))
-          .map(entry);
-  return { entries, visibleProperties, unused: unusedSettings(view), entry };
+  const visibleProperties = shown.length > 0 ? shown : defaults.map(entry);
+  return {
+    order,
+    entries,
+    visibleProperties,
+    unused: unusedSettings(view),
+    entry,
+  };
 }
 
 /** The Properties of the view on screen, as the last run marks them. */
