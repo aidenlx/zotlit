@@ -3,6 +3,7 @@ min_version = "2024.9.5"
 [tools]
 node = "26"
 "npm:zx" = "8"
+worktrunk = "0.80"
 
 [settings]
 idiomatic_version_file_enable_tools = ["pnpm"]
