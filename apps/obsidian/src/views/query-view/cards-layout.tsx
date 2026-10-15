@@ -7,6 +7,7 @@ import type { CSSProperties } from "react";
 import { useStore } from "zustand";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { cn } from "@/lib/utils";
 
 import type { QueryLayout } from "./layouts";
 import type { QueryFileView } from "./query-file";
@@ -61,22 +62,35 @@ export function addCardsOptions(
   });
 }
 
+/**
+ * One line of a card: the line height of a Bases card, and a dash where the
+ * row has no value, so a blank property still holds its place.
+ */
+const CARD_LINE =
+  "zt:truncate zt:leading-(--bases-cards-line-height) zt:empty:before:text-faint zt:empty:before:content-['—']";
+
 /** The rows of the shown view, one card each, under their group headings. */
 export function CardsLayout({ view }: { view: QueryView }) {
   const { properties, groups } = useRecordGroups(view);
   const options = cardsLayoutOptions(useStore(view.state, (s) => s.view));
   return (
     <div
-      className="zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:pt-1 zt:pb-11"
+      className="zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:pt-3 zt:pb-11"
       data-query-layout="cards"
     >
       {groups.map((group, groupIndex) => (
-        <section key={`${groupIndex}\n${group.key ?? ""}`}>
+        <section
+          key={`${groupIndex}\n${group.key ?? ""}`}
+          className={cn(
+            group.key !== null &&
+              "zt:border-b zt:border-(--background-modifier-border) zt:pb-4",
+          )}
+        >
           <RecordGroupHeading group={group} />
           {!group.collapsed && (
             <div
               role="list"
-              className="zt:grid zt:grid-cols-[repeat(auto-fill,minmax(min(100%,var(--zt-card-size)),1fr))] zt:items-start zt:gap-2 zt:py-1"
+              className="zt:grid zt:grid-cols-[repeat(auto-fill,minmax(min(100%,var(--zt-card-size)),1fr))] zt:items-start zt:gap-3 zt:py-1"
               style={
                 {
                   "--zt-card-size": `${options.cardSize}px`,
@@ -90,10 +104,15 @@ export function CardsLayout({ view }: { view: QueryView }) {
                   <div
                     key={`${row.indexedKey}\n${index}`}
                     role="listitem"
-                    className="zt:flex zt:min-w-0 zt:flex-col zt:gap-1 zt:rounded-(--radius-m) zt:bg-(--background-primary) zt:p-2 zt:text-sm zt:shadow-[0_0_0_1px_var(--background-modifier-border)]"
+                    className="zt:flex zt:min-w-0 zt:flex-col zt:gap-2 zt:rounded-(--bases-cards-radius) zt:bg-(--bases-cards-background) zt:px-2 zt:pt-2 zt:pb-0.5 zt:shadow-(--bases-cards-shadow)"
                     data-query-row={row.indexedKey}
                   >
-                    <div className="zt:truncate zt:font-semibold">
+                    <div
+                      className={cn(
+                        "zt:text-base zt:font-[calc(var(--font-weight)+var(--bold-modifier))]",
+                        CARD_LINE,
+                      )}
+                    >
                       <CellContent
                         value={row.values[properties[0]!.path]}
                         text={title}
@@ -104,10 +123,10 @@ export function CardsLayout({ view }: { view: QueryView }) {
                         key={properties[at + 1]!.path}
                         className="zt:min-w-0"
                       >
-                        <div className="zt:truncate zt:text-xs zt:text-(--text-faint)">
+                        <div className="zt:truncate zt:text-xs zt:text-muted-foreground">
                           {properties[at + 1]!.label}
                         </div>
-                        <div className="zt:truncate">
+                        <div className={CARD_LINE}>
                           <CellContent
                             value={row.values[properties[at + 1]!.path]}
                             text={text}
