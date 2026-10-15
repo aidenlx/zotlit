@@ -1,0 +1,9 @@
+/* A group heading's toggle is a `<button>`, and Obsidian's `button` rules
+   are unlayered, so they outrank every `zt:` utility it wears: its font size
+   would stay the UI size, where a Bases group value takes the size of the
+   text around it. This rule is unlayered too, and `revert-layer` rolls the
+   element back to the plugin's own layers, so the utilities draw it.
+   @see ./toolbar-button.css */
+.zt-root button.zt-query-group-toggle {
+  all: revert-layer;
+}

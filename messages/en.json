@@ -2626,6 +2626,7 @@
   "query_view_no_results_annotations": "No annotations match this view.",
   "query_view_no_results_attachments": "No attachments match this view.",
   "query_view_no_results_items": "No items match this view.",
+  "query_view_no_results_filter_hint": "Change or remove a filter to see more results.",
   "query_view_search_annotations": "Search shown annotations…",
   "query_view_search_attachments": "Search shown attachments…",
   "query_view_search_items": "Search shown items…",
