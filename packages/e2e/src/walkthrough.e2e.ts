@@ -7,6 +7,7 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 import { keepRendering } from "./background-throttling.ts";
 import { LIST_ANNOTATIONS_JS, useListingProfile } from "./listing-profile.ts";
 import { obEval, obEvalUntil } from "./obsidian-cli.ts";
+import { PAGE } from "./page-gestures.ts";
 import {
   clearVault,
   e2eVaultDir,
@@ -22,7 +23,9 @@ const reachable = await isObsidianReachable(root);
 
 // These callbacks run inside Obsidian. Poll only arrivals with no completion
 // promise; CodeMirror layout and native suggestion updates have their own signals.
-const browserWaits = `
+// `waitFor` predates `until` and compares a read against an expected value; its
+// 25 ms timer is the poll interval, not a sleep.
+const browserWaits = `${PAGE}
   const measure=(cm)=>new Promise(resolve=>cm.requestMeasure({read:()=>null,write:resolve}));
   const waitFor=async(read,expected,label)=>{
     using timers=new DisposableStack();
@@ -173,6 +176,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});
         const doc=leaf.view.containerEl.ownerDocument;
         const dialog=()=>[...doc.querySelectorAll('.modal')].find(el=>el.querySelector('.modal-title')?.textContent==='Export with citations');
+        // Teardown dismisses whatever dialog is left, not a reader's press.
         cleanup.defer(()=>dialog()?.parentElement.querySelector('.modal-bg')?.click());
         app.commands.executeCommandById('zotlit:pandoc-export');
         await waitFor(()=>!!dialog(),true,'Export dialog');
@@ -560,14 +564,14 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
             app.vault.setConfig('settingsPopoutWindow',false);
             app.setting.open();app.setting.openTabById('zotlit');
             const row=(name)=>Array.from(app.setting.containerEl.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===name);
-            row('Citations').click();
+            press(row('Citations'),'Citations');
             const tutorial=!!row('Pandoc citation tutorial')?.querySelector('button');
             const changed=[];
             for(const [name,key] of controls){
               const initial=tab.getControlValue(key);
               for(const expected of [!initial,initial]){
                 const tutorialButton=row('Pandoc citation tutorial').querySelector('button');
-                row(name).querySelector('.checkbox-container').click();
+                press(row(name).querySelector('.checkbox-container'),name);
                 await waitFor(()=>({value:tab.getControlValue(key),refreshed:row('Pandoc citation tutorial').querySelector('button')!==tutorialButton}),{value:expected,refreshed:true},'Citation settings refresh');
                 changed.push(tab.getControlValue(key)===expected);
               }
@@ -780,6 +784,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
   );
 
   it("finds a paper in Choose item and previews its callouts with native paragraph styling", async () => {
+    const m = await import("@obsidian-messages");
     // The default Profile shows Annotations in a Query Block; a default
     // document that lists them puts one callout per Annotation in the note.
     const original = await obEval(
@@ -814,14 +819,16 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     expect(
       await obEvalUntil(
         vaultId,
-        `(()=>{
+        `(()=>{${PAGE}
           const view=${editor};
           const doc=view?.contentEl?.ownerDocument;
           const ready=doc&&doc!==document
             &&['zotlit-template-data-explorer','zotlit-note-preview'].every(type=>app.workspace.getLeavesOfType(type).some(leaf=>leaf.view.contentEl?.ownerDocument===doc));
-          const trigger=ready&&view.contentEl.querySelector('.zt-selection-trigger');
+          // A main-area pane shows the view header, so the reader presses its
+          // Choose item action; the in-pane trigger is for a sidebar alone.
+          const trigger=ready&&view.containerEl.querySelector(${JSON.stringify(`.view-actions .view-action[aria-label="${m.workbench_choose_item()}"]`)});
           if(!trigger)return 'false';
-          trigger.click();return 'true';
+          press(trigger,'Choose item');return 'true';
         })()`,
         { expected: "true" },
       ),
@@ -838,7 +845,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     expect(
       await obEvalUntil(
         vaultId,
-        `(()=>{const row=${result};if(!row)return 'false';row.dispatchEvent(new row.ownerDocument.defaultView.MouseEvent('mousemove',{bubbles:true}));row.click();return 'true';})()`,
+        `(()=>{${PAGE}const row=${result};if(!row)return 'false';row.dispatchEvent(new row.ownerDocument.defaultView.MouseEvent('mousemove',{bubbles:true}));press(row,'search result');return 'true';})()`,
         { expected: "true" },
       ),
     ).toBe(true);
@@ -890,24 +897,26 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           const view=()=>app.workspace.getLeavesOfType('zotlit-template-workbench')[0]?.view;
           await waitFor(()=>!!view()?.contentEl.querySelector('[role="tab"]'),true,'Profile Editor');
           const el=view().contentEl;
-          const open=(label)=>Array.from(el.querySelectorAll('[role="tab"]')).find(tab=>tab.textContent===label).click();
+          // The layout can still be moving the editor into its popout; press a
+          // tab once the reader can see it.
+          const open=async(label)=>press(await until(label+' tab shown',()=>Array.from(el.querySelectorAll('[role="tab"]')).find(tab=>tab.textContent===label&&tab.checkVisibility()),5000),label);
           const type=(content,text)=>{
             const cm=content.cmTile.view;
             cm.focus();
             cm.dispatch({changes:{from:0,to:cm.state.doc.length,insert:text},selection:{anchor:text.length},userEvent:'input.type'});
             return ()=>cm.state.doc.toString();
           };
-          open(${JSON.stringify(m.workbench_tab_properties())});
+          await open(${JSON.stringify(m.workbench_tab_properties())});
           const toggleOf=()=>Array.from(el.querySelectorAll('button[aria-controls][aria-expanded]')).find(button=>button.closest('li')?.innerText.startsWith('title\\n'));
           await waitFor(()=>!!toggleOf(),true,'Title property row');
           const toggle=toggleOf();
-          toggle.click();
+          press(toggle,'title property');
           const ruleEditor=()=>el.ownerDocument.getElementById(toggle.getAttribute('aria-controls'))?.querySelector('.cm-content');
           await waitFor(()=>!!ruleEditor(),true,'Title rule editor');
           const ruleShown=type(ruleEditor(),${JSON.stringify(rule)});
           const storedRule=${JSON.stringify(`expr: '${rule}'`)};
           await waitFor(()=>view().data.includes(storedRule),true,'Stored rule');
-          open(${JSON.stringify(m.workbench_tab_name_and_folder())});
+          await open(${JSON.stringify(m.workbench_tab_name_and_folder())});
           const nameEditor=()=>Array.from(el.querySelectorAll('.cm-content')).find(content=>el.ownerDocument.getElementById(content.getAttribute('aria-labelledby'))?.textContent===${JSON.stringify(m.workbench_name_filename_label())});
           await waitFor(()=>!!nameEditor(),true,'Note name editor');
           const nameShown=type(nameEditor(),${JSON.stringify(name)});
@@ -939,13 +948,11 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           const detach=()=>{for(const type of types)for(const leaf of app.workspace.getLeavesOfType(type))leaf.detach();};
           detach();
           // The paper is searchable once the item index answers.
-          let hit,hits=[];
-          for(let attempt=0;attempt<400&&!hit;attempt++){
+          let hits=[];
+          const hit=await until('Paper not found',async()=>{
             hits=await services.itemLookup.search('ioannidis',{limit:20});
-            hit=hits.find(candidate=>candidate.item.key==='DMIANART');
-            if(!hit)await new Promise(resolve=>setTimeout(resolve,25));
-          }
-          if(!hit)throw new Error('Paper not found: '+JSON.stringify(hits.map(candidate=>candidate.item.key)));
+            return hits.find(candidate=>candidate.item.key==='DMIANART');
+          },10000).catch(()=>{throw new Error('Paper not found: '+JSON.stringify(hits.map(candidate=>candidate.item.key)));});
           const profile=await services.profile.create({label:'Path preview',bindings:{folder:'path-notes'}});
           cleanup.defer(async()=>{
             detach();
@@ -960,7 +967,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           const el=view().contentEl;
           // Choose item has its own walkthrough; this one starts from the paper.
           if(!await view().selectItem({id:hit.item.indexedKey,title:${JSON.stringify(title)}}))throw new Error('Profile item was not selected');
-          Array.from(el.querySelectorAll('[role="tab"]')).find(tab=>tab.textContent===${JSON.stringify(m.workbench_tab_name_and_folder())}).click();
+          press(Array.from(el.querySelectorAll('[role="tab"]')).find(tab=>tab.textContent===${JSON.stringify(m.workbench_tab_name_and_folder())}),'Name and folder');
           const preview=()=>el.querySelector('[data-part="filename-output"]')?.textContent;
           await waitFor(()=>/^path-notes\\/[^/]+\\.md$/.test(preview()??''),true,'Preview under the Profile folder');
           // A slash in the note name makes a subfolder under the folder.
@@ -1032,7 +1039,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     ).toBe(true);
     await obEval(
       vaultId,
-      `Array.from((${editor}).contentEl.querySelectorAll('[role="tab"]')).find(tab=>tab.textContent==='Annotation').click();true`,
+      `(()=>{${PAGE}press(Array.from((${editor}).contentEl.querySelectorAll('[role="tab"]')).find(tab=>tab.textContent==='Annotation'),'Annotation');return true;})()`,
     );
     const contexts = `(()=>({
       tab:(${editor}).store.getState().tab,
@@ -1107,16 +1114,22 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     expect(
       await obEvalUntil(vaultId, `String(!!(${row}))`, { expected: "true" }),
     ).toBe(true);
-    await obEval(vaultId, `(${row}).click();true`);
+    await obEval(
+      vaultId,
+      `(()=>{${PAGE}press(${row},'Profile row');return true;})()`,
+    );
     const move = `(()=>{const modal=Array.from(activeDocument.querySelectorAll('.modal')).at(-1);return Array.from(modal?.querySelectorAll('input[type=checkbox]')??[]).find(input=>{for(let el=input.parentElement;el&&el!==modal;el=el.parentElement){if(el.querySelectorAll('input[type=checkbox]').length>1)return false;if(el.textContent.includes('Move to books/2024/'))return true;}return false;});})()`;
     expect(
       await obEvalUntil(vaultId, `String(!!${move})`, { expected: "true" }),
     ).toBe(true);
-    await obEval(vaultId, `${move}.click();true`);
+    await obEval(
+      vaultId,
+      `(()=>{${PAGE}press(${move},'Move to books/2024/');return true;})()`,
+    );
     expect(
       await obEvalUntil(
         vaultId,
-        `(()=>{const modal=Array.from(activeDocument.querySelectorAll('.modal')).at(-1);const button=Array.from(modal?.querySelectorAll('button')??[]).find(el=>el.textContent.trim()==='Switch to “Books”');if(!button)return false;button.click();return true;})()`,
+        `(()=>{${PAGE}const modal=Array.from(activeDocument.querySelectorAll('.modal')).at(-1);const button=Array.from(modal?.querySelectorAll('button')??[]).find(el=>el.textContent.trim()==='Switch to “Books”');if(!button)return false;press(button,'Switch to Books');return true;})()`,
         { expected: "true" },
       ),
     ).toBe(true);
@@ -1159,7 +1172,10 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     expect(
       await obEvalUntil(vaultId, `String(!!(${add}))`, { expected: "true" }),
     ).toBe(true);
-    await obEval(vaultId, `(${add}).click();true`);
+    await obEval(
+      vaultId,
+      `(()=>{${PAGE}press(${add},'Add profile');return true;})()`,
+    );
     const dialog = `Array.from(activeDocument.querySelectorAll('.modal')).find(el=>el.querySelector('.modal-title')?.textContent===${JSON.stringify(m.settings_profile_add())})`;
     const status = `(${dialog})?.querySelector('p[role="status"]')`;
     expect(
@@ -1184,7 +1200,10 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         expected: "false",
       }),
     ).toBe(true);
-    await obEval(vaultId, `(${action}).click();true`);
+    await obEval(
+      vaultId,
+      `(()=>{${PAGE}press(${action},'Add');return true;})()`,
+    );
     const editor = `app.workspace.getLeavesOfType('zotlit-template-workbench').map(leaf=>leaf.view).find(view=>view.file?.name==='zotlit-profile.reading-group.md')`;
     expect(
       await obEvalUntil(vaultId, `String((${editor})?.store.getState().tab)`, {
