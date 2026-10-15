@@ -4,7 +4,7 @@
 // when the view runs, and marks a mistake it finds at the Formula's row.
 import { Modal } from "obsidian";
 import type { App } from "obsidian";
-import { useId, useState } from "react";
+import { useState } from "react";
 import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
@@ -49,6 +49,13 @@ export function formulaSyntaxIssue(text: string): string | null {
     : m.query_view_formula_syntax({ found: error.found, expected });
 }
 
+/**
+ * Numbers each Formula form. The dialog is a Preact root of its own, and
+ * `useId` counts within one root, so its id could match an element of a
+ * Query View and its Save button would submit nothing.
+ */
+let formSequence = 0;
+
 function FormulaForm({
   view,
   editing,
@@ -62,7 +69,7 @@ function FormulaForm({
   footer: HTMLElement;
   close: () => void;
 }) {
-  const formId = useId();
+  const [formId] = useState(() => `zt-formula-form-${(formSequence += 1)}`);
   const file = useStore(view.state, (s) => s.file);
   const formulas = file?.formulas ?? nameDictionary<string>();
   const issues = useStore(view.state, (s) => s.formulaIssues);

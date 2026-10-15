@@ -23,15 +23,15 @@ export function renderPreviewPlaceholder(
 ): void {
   el.empty();
   const box = el.createDiv({
-    cls: "zt:flex zt:items-center zt:gap-2 zt:rounded-md zt:border-(length:--border-width) zt:border-solid zt:border-(--background-modifier-border) zt:px-3 zt:py-2 zt:text-sm zt:text-(--text-muted)",
+    cls: "zt:flex zt:items-center zt:gap-2 zt:rounded-md zt:border-(length:--border-width) zt:border-solid zt:border-(--background-modifier-border) zt:px-3 zt:py-2 zt:text-sm zt:text-muted-foreground",
     attr: { "data-query-placeholder": "" },
   });
   setIcon(
-    box.createSpan({ cls: "zt:flex zt:shrink-0 zt:text-(--text-faint)" }),
+    box.createSpan({ cls: "zt:flex zt:shrink-0 zt:text-faint" }),
     "list-filter",
   );
   box.createSpan({
-    cls: "zt:font-medium zt:text-(--text-normal)",
+    cls: "zt:[font-weight:var(--font-medium)] zt:text-foreground",
     text: name ?? m.query_view_placeholder(),
   });
   box.createSpan({ text: m.query_view_placeholder_desc() });

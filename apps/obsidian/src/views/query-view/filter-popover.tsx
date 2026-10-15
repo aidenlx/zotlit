@@ -60,7 +60,7 @@ import type {
   FilterSection,
   QueryFileDataset,
 } from "./query-file";
-import { toolbarButtonClass } from "./toolbar-button";
+import { toolbarButtonLook } from "./toolbar-button";
 import {
   PopoverHeader,
   PopoverSection,
@@ -352,8 +352,10 @@ const filterTheme = {
     ...matchTheme.classes,
     match: {
       ...matchTheme.classes.match,
-      button: toolbarButtonClass,
-      "remove-button": toolbarButtonClass,
+      // A condition's actions are bare `<button>`s in the popover, rolled
+      // back as its action rows are (see `toolbar-button.css`).
+      button: cn("zt-query-popover-action", toolbarButtonLook),
+      "remove-button": cn("zt-query-popover-action", toolbarButtonLook),
       fieldset: cn(
         "zt:m-0 zt:flex zt:min-w-0 zt:flex-col zt:border-0 zt:p-0 zt:text-sm",
         "zt:[--icon-size:var(--icon-s)] zt:[--icon-stroke:var(--icon-s-stroke-width)]",
@@ -384,7 +386,7 @@ const filterTheme = {
       // The property select carries the icon of the property's type, as the
       // Bases property picker does, and is capped as Bases caps it.
       predicate: cn(
-        "zt:flex zt:max-w-full zt:min-w-0 zt:[&>[data-part=wrapper]]:border-border zt:[&>[data-part=wrapper]+[data-part=wrapper]]:border-s",
+        "zt:flex zt:max-w-full zt:min-w-0 zt:[&>[data-part=wrapper]]:border-border zt:[&>[data-part=wrapper]+[data-part=wrapper]]:border-s-(length:--border-width)",
         "zt:[&>[data-part=wrapper]:first-of-type]:max-w-[14em]",
         // The icon takes the select's start padding, so the name follows it
         // at the gap Bases leaves.

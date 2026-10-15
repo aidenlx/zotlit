@@ -164,7 +164,7 @@ export const TABLE_CHILD_SOURCES: readonly TableChildSource[] = [
           {text(values.text) || text(values.comment)}
         </span>
         {text(values.pageLabel) !== "" && (
-          <span className="zt:shrink-0 zt:text-(--text-muted)">
+          <span className="zt:shrink-0 zt:text-muted-foreground">
             {isPageNumber(text(values.pageLabel))
               ? m.query_view_table_page({ page: text(values.pageLabel) })
               : text(values.pageLabel)}
@@ -547,7 +547,7 @@ export function TableLayout({ view }: { view: QueryView }) {
                 <Icon
                   name="file"
                   size="var(--icon-xs)"
-                  className="zt:shrink-0"
+                  className="zt:[display:var(--bases-table-header-icon-display)] zt:shrink-0"
                 />
                 {m.query_view_table_literature_note()}
               </span>

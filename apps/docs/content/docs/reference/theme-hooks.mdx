@@ -190,17 +190,16 @@ These class names, data attribute values, and default styles are ZotLit's public
 
 ## Annotation View hooks [#annot-view]
 
-The Annotation View lists a Zotero attachment's Annotations beside the reader, with its own toolbar. Its menus are Obsidian's own, which a theme reaches through `menu`. Its tag filter and its color filter are Choosers, which a theme reaches through `zt-chooser` and `zt-chooser-trigger`. The Sort, Group, Filter and Properties buttons of its toolbar, and of every Query View, are `zt-query-toolbar-button`.
+The Annotation View lists a Zotero attachment's Annotations beside the reader, with its own toolbar. Its menus are Obsidian's own, which a theme reaches through `menu`. Its tag filter and its color filter are Choosers, which a theme reaches through `zt-chooser` and `zt-chooser-trigger`.
 
-| Class                     | Marks                                                                                                               |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `zt-annot-conflict`       | The panel an Annotation Card shows while a Write Conflict stands on it.                                             |
-| `zt-annot-draft`          | The panel an Annotation Card or the Mark Popup shows over a comment, Quoted Text or tags that Zotero has not saved. |
-| `zt-annot-comment-field`  | The comment as a field you can select to edit, on a card selected alone and in the Mark Popup.                      |
-| `zt-annot-lock`           | The lock icon in the header of a card whose annotation is locked.                                                   |
-| `zt-chooser`              | The Chooser popup the tag filter or the color filter opens.                                                         |
-| `zt-chooser-trigger`      | The control that Chooser popup hangs under.                                                                         |
-| `zt-query-toolbar-button` | A button of the Query View toolbar that opens a popover, such as Sort or Filter.                                    |
+| Class                    | Marks                                                                                                               |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| `zt-annot-conflict`      | The panel an Annotation Card shows while a Write Conflict stands on it.                                             |
+| `zt-annot-draft`         | The panel an Annotation Card or the Mark Popup shows over a comment, Quoted Text or tags that Zotero has not saved. |
+| `zt-annot-comment-field` | The comment as a field you can select to edit, on a card selected alone and in the Mark Popup.                      |
+| `zt-annot-lock`          | The lock icon in the header of a card whose annotation is locked.                                                   |
+| `zt-chooser`             | The Chooser popup the tag filter or the color filter opens.                                                         |
+| `zt-chooser-trigger`     | The control that Chooser popup hangs under.                                                                         |
 
 `zt-annot-conflict` appears on a card whose last edit met a newer value in Zotero, or whose create Zotero never answered for. It names what happened, shows the two values, and offers the verbs that settle it.
 
@@ -214,9 +213,19 @@ The Annotation View lists a Zotero attachment's Annotations beside the reader, w
 
 `zt-chooser-trigger` marks the control the popup hangs under, which is a `<button>` because that is what the popover invoker attribute takes. It carries `aria-expanded` and `data-open` while its popup stands, and its Obsidian button styling is reverted, so a theme styles it from this class rather than from `button`.
 
+These class names and data attribute values are ZotLit's public theme contract for the Annotation View. DOM structure remains private.
+
+## Query View hooks [#query-view]
+
+A Query View shows a Query File in a tab, in a note, or in the Annotation View. Its toolbar holds the view menu, the result count, and the Sort, Group, Filter and Properties buttons.
+
+| Class                     | Marks                                                                  |
+| ------------------------- | ---------------------------------------------------------------------- |
+| `zt-query-toolbar-button` | A toolbar button that opens a popover, such as **Sort** or **Filter**. |
+
 `zt-query-toolbar-button` marks a toolbar button that opens a popover. It shows an icon, a name, and a count badge (`data-query-badge`) while its control holds settings. It carries `data-active` while its control holds a setting and `data-open` while its popover stands. Its Obsidian button styling is reverted, as on `zt-chooser-trigger`.
 
-These class names and data attribute values are ZotLit's public theme contract for the Annotation View. DOM structure remains private.
+This class name and these data attribute values are ZotLit's public theme contract for the Query View toolbar. DOM structure remains private.
 
 ## Template editor hooks [#template-editor]
 

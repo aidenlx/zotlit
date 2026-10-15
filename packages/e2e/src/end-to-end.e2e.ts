@@ -2582,7 +2582,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   const runPropertyAction = (property: string, title: string) =>
     obEval(
       vaultId,
-      `(async()=>{${propertiesPopup}.querySelector('[data-query-property-more="${property}"]').click();const find=()=>[...activeDocument.querySelectorAll('.menu .menu-item')].find(item=>item.querySelector('.menu-item-title')?.textContent===${JSON.stringify(title)});for(let i=0;i<50&&!find();i++)await new Promise(r=>setTimeout(r,20));find().click();return true;})()`,
+      `(async()=>{${propertiesPopup}.querySelector('[data-query-property-more="${property}"]').click();const find=()=>[...activeDocument.querySelectorAll('.menu .menu-item')].find(item=>item.querySelector('.menu-item-title')?.textContent===${JSON.stringify(title)});for(let i=0;i<50&&!find();i++)await new Promise(r=>setTimeout(r,20));const item=find();if(!item)throw new Error('No menu item '+${JSON.stringify(title)});item.click();return true;})()`,
     );
   /** Opens the results popover and waits for its "Export CSV…" action. */
   const openResults = (tab: string) =>

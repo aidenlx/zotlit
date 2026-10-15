@@ -5,6 +5,7 @@ import { useStore } from "zustand";
 
 import { SearchInput } from "@/components/obsidian/search-input";
 import * as m from "@/lib/i18n/generated/messages";
+import { cn } from "@/lib/utils";
 import { useAnnotStore, useSetFilterQuery } from "@/views/annot-view/store";
 
 import { datasetSpec } from "./datasets";
@@ -28,7 +29,14 @@ export function SearchControl({ view }: { view: QueryView }) {
     buttonRef.current?.focus();
   };
   return (
-    <div className="zt:flex zt:min-w-min zt:items-center zt:gap-(--size-2-2)">
+    <div
+      className={cn(
+        "zt:flex zt:items-center zt:gap-(--size-2-2)",
+        // An open field shrinks on a narrow toolbar, so the buttons stay in
+        // the row; a closed one keeps its button whole.
+        open ? "zt:min-w-0" : "zt:min-w-min",
+      )}
+    >
       <ToolbarButton
         ref={buttonRef}
         icon="search"

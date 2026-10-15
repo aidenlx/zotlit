@@ -14,6 +14,8 @@
 // - `ToolbarButtonContent` — the icon, name, chevron and badge, for a trigger
 //   another component renders, such as `Chooser.Trigger`.
 // - `toolbarButtonClass` — the class list for such a trigger.
+// - `toolbarButtonLook` — the same look without the theme hook, for a button
+//   that is not a toolbar trigger.
 //
 // @see ./toolbar-button.css
 import type { IconName } from "obsidian";
@@ -26,11 +28,11 @@ import { cn, tooltipAttrs } from "@/lib/utils";
 import "./toolbar-button.css";
 
 /**
- * The class list of a toolbar button. Colour, radius, font size and the hover
- * fill all read Obsidian's variables — the ones its `.text-icon-button` reads.
+ * How a toolbar button looks, without its theme hook, for a button of the
+ * same look elsewhere. Colour, radius, font size and the hover fill all read
+ * Obsidian's variables — the ones its `.text-icon-button` reads.
  */
-export const toolbarButtonClass = cn(
-  themeHook.queryToolbarButton,
+export const toolbarButtonLook = cn(
   "zt:inline-flex zt:min-w-0 zt:shrink-0 zt:items-center zt:gap-(--size-2-2) zt:overflow-hidden zt:p-(--size-2-2) zt:whitespace-nowrap",
   "zt:cursor-(--cursor) zt:rounded-(--button-radius) zt:text-sm zt:[font-weight:var(--input-font-weight)] zt:text-muted-foreground zt:[corner-shape:var(--button-corner-shape)]",
   // An active button keeps the accent ink while hovered or open, and takes
@@ -40,9 +42,18 @@ export const toolbarButtonClass = cn(
   "zt:focus-visible:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)] zt:focus-visible:outline-none",
 );
 
+/** The class list of a toolbar button: its look and its theme hook. */
+export const toolbarButtonClass = cn(
+  themeHook.queryToolbarButton,
+  toolbarButtonLook,
+);
+
 /** A toolbar button's name: hidden on a narrow toolbar unless `keep` is set. */
 const labelClass = (keep?: boolean) =>
-  cn("zt:truncate zt:pe-(--size-2-1)", !keep && "zt:hidden zt:@xl:inline");
+  cn(
+    "zt:truncate zt:pe-(--size-2-1)",
+    !keep && "zt:hidden zt:@xl:[display:var(--bases-toolbar-label-display)]",
+  );
 
 export interface ToolbarButtonContentProps {
   icon?: IconName;
