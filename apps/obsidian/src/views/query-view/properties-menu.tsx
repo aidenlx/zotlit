@@ -163,6 +163,15 @@ function PropertyList({
     () => new Map(entries.map((entry) => [entry.path, entry])),
     [entries],
   );
+  // Two fields can share a label, such as "Type": their rows also show the
+  // path, so the reader can tell them apart.
+  const sharedLabels = useMemo(() => {
+    const seen = new Set<string>();
+    const shared = new Set<string>();
+    for (const { label } of entries)
+      (seen.has(label) ? shared : seen).add(label);
+    return shared;
+  }, [entries]);
   const groups = useMemo<ChooserGroup<ChooserRow>[]>(() => {
     // The properties of the parent records come only while the user searches.
     const rows = entries
@@ -340,6 +349,9 @@ function PropertyList({
             }
           >
             <span data-query-property-name="">{entry.label}</span>
+            {sharedLabels.has(entry.label) && entry.label !== entry.path && (
+              <span className="zt:text-(--text-faint)"> {entry.path}</span>
+            )}
             {entry.place !== null && !entry.fits && (
               <span data-query-property-unused="">
                 {" "}
