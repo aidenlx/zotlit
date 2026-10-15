@@ -653,22 +653,25 @@ export class AnnotationView extends ItemView implements HistorySurface {
    * with an error under the last cards.
    */
   #syncQueryProblem(): void {
-    const { phase, diagnostic, keptResults, filterIssue } =
-      this.#query.state.getState();
-    const failed = phase === "failed" && diagnostic !== null;
+    const { phase, failure, results } = this.#query.state.getState();
+    const failed = phase === "failed" && failure !== null;
+    const keptResults = results !== null;
     this.#store.setState({
       queryProblem: this.#unreadable
         ? { message: m.annot_view_zotero_unreadable(), detail: "" }
         : failed && !keptResults
           ? {
               message: m.annot_view_query_failed(),
-              detail: [diagnostic.message, diagnostic.hint]
+              detail: [failure.diagnostic.message, failure.diagnostic.hint]
                 .filter(Boolean)
                 .join(" "),
             }
           : null,
       filterError:
-        !this.#unreadable && failed && keptResults && filterIssue !== null,
+        !this.#unreadable &&
+        failed &&
+        keptResults &&
+        failure.filterIssue !== null,
     });
   }
 

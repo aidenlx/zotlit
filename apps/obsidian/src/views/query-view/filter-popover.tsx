@@ -571,7 +571,10 @@ function conditionCount(tree: MatchFilter | undefined): number {
 export function FilterButton({ view }: { view: QueryView }) {
   const file = useStore(view.state, (s) => s.file);
   const shown = useStore(view.state, (s) => s.view);
-  const filterIssue = useStore(view.state, (s) => s.filterIssue);
+  const filterIssue = useStore(
+    view.state,
+    (s) => s.failure?.filterIssue ?? null,
+  );
   const properties = useViewProperties(view);
   const [values, setValues] = useState<FilterValues>(NO_VALUES);
   if (!file || !shown) return null;

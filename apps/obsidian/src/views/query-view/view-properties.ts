@@ -21,6 +21,7 @@ import {
   formulaProperty,
 } from "./query-file";
 import type { QueryFile, QueryFileDataset, QueryFileView } from "./query-file";
+import { formulaIssuesOf } from "./results";
 import { groupPaths } from "./rows";
 import type { QueryView } from "./view";
 
@@ -140,7 +141,7 @@ export function viewProperties(
 export function useViewProperties(view: QueryView): ViewProperties | null {
   const file = useStore(view.state, (s) => s.file);
   const shown = useStore(view.state, (s) => s.view);
-  const faults = useStore(view.state, (s) => s.formulaIssues);
+  const faults = useStore(view.state, formulaIssuesOf);
   return useMemo(
     () => (shown ? viewProperties(file, shown, faults) : null),
     [file, shown, faults],

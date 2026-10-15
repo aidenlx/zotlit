@@ -26,6 +26,7 @@ import { matchTheme } from "@/views/template-workbench/match-pane";
 import { DisplayNameField } from "./display-name-dialog";
 import "./formula-dialog.css";
 import { displayName, formulaProperty } from "./query-file";
+import { formulaIssuesOf } from "./results";
 import type { QueryView } from "./view";
 
 /** Why a Formula name cannot be saved, or `null` when it can. */
@@ -66,7 +67,7 @@ function FormulaForm({
   const formId = useUniqueId();
   const file = useStore(view.state, (s) => s.file);
   const formulas = file?.formulas ?? nameDictionary<string>();
-  const issues = useStore(view.state, (s) => s.formulaIssues);
+  const issues = useStore(view.state, formulaIssuesOf);
   const saved = editing === null ? undefined : formulas[editing];
   const [name, setName] = useState(editing ?? "");
   const [text, setText] = useState(saved ?? "");
