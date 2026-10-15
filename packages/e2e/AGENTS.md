@@ -15,7 +15,7 @@ The End-to-end Run suite — the plugin running in a real desktop Obsidian windo
 
 The End-to-end Run and the measurement drive a real Electron app and stay out of `pnpm test` / CI: the `test` script runs the unit tests alone.
 
-The default reporter prints suite progress and the final counts. Read `.scratch/e2e-results/results.json` for individual results and `.scratch/e2e-results/console.log` for console evidence. A Paired Run setup failure writes `paired-startup.log` in that directory with the launch error chain. These files describe the latest run; copy evidence you need to retain before another run.
+The default reporter prints suite progress, the run's evidence folder, and the final counts. Each run writes its evidence to its own folder, `.scratch/e2e-results/<start time>-<pid>/`, and `.scratch/e2e-results/latest` points to the run that started last. Read `results.json` there for individual results and `console.log` for console evidence. A Paired Run setup failure writes `paired-startup.log` in that folder with the launch error chain. The ten newest run folders stay; copy evidence you need to retain longer. A tool that reads the results of a run it starts sets `ZOTLIT_E2E_RESULTS` to the folder (see `src/verify-worker.ts`).
 
 ## Requirements
 
@@ -27,9 +27,9 @@ The e2e vault's plugin bundle comes from `@zotlit/obsidian`'s dev build (`build:
 
 ## Desktop lock
 
-One process at a time drives the desktop Obsidian and its Paired Zotero, across all worktrees and sessions. `pnpm e2e` (each Vitest project's first global setup), `pnpm e2e:worker` (and so the commit hook), and `measure:query` take the desktop lock themselves and wait while another process holds it. The waiter prints the holder's pid, command, and worktree.
+One process at a time drives the desktop Obsidian and its Paired Zotero, across all worktrees and sessions. `pnpm e2e` (each Vitest project's first global setup), `pnpm e2e:worker` (and so the commit hook), and `measure:query` take the desktop lock themselves and wait while another process holds it. A `pnpm e2e` run without a reachable Obsidian skips its tests without the lock. The waiter prints the holder's pid, command, and worktree.
 
-- The lock is `zotlit-desktop.lock` in the git common dir (`git rev-parse --git-common-dir`), shared by every worktree of the clone. A lock whose holder process is gone is taken over.
+- The lock is `zotlit-desktop.lock` in the git common dir (`git rev-parse --git-common-dir`), shared by every worktree of the clone. A lock whose holder process is gone is taken over. The owner record holds the process start time from `ps`, so a holder whose pid the system gave to a new process also counts as gone.
 - The holder exports `ZOTLIT_DESKTOP_LOCK`; a ZotLit tool started under it reuses the lock.
 - For a manual session on the desktop app (an `/obsidian-debug` walk, a series of `git commit` runs), hold the lock with `pnpm desktop-lock -- <command>`. The exit code is the command's.
 - Code: `packages/scripts/lib/desktop-lock.ts`.

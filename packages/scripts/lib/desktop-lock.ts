@@ -25,6 +25,8 @@ const SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
 export interface DesktopLockOwner {
   token: string;
   pid: number;
+  /** When the process `pid` started, as `ps` reports it; tells a reused pid apart. */
+  processStart?: string;
   command: string;
   worktree: string;
   startedAt: string;
@@ -78,7 +80,7 @@ export async function acquireDesktopLock(
   const inherited = process.env[DESKTOP_LOCK_ENV];
   if (inherited) {
     const owner = await readOwner(path);
-    if (owner?.token === inherited && isAlive(owner.pid)) {
+    if (owner?.token === inherited && (await isHolderAlive(owner))) {
       return reusedLock(path, owner);
     }
   }
@@ -86,6 +88,7 @@ export async function acquireDesktopLock(
   const owner: DesktopLockOwner = {
     token: randomUUID(),
     pid: process.pid,
+    processStart: await processStart(process.pid),
     command: options.command ?? process.argv.slice(1).join(" "),
     worktree: options.worktree ?? cwd,
     startedAt: Temporal.Now.instant().toString(),
@@ -94,7 +97,7 @@ export async function acquireDesktopLock(
   for (;;) {
     if (await tryCreate(path, owner)) return heldLock(path, owner, options);
     const holder = await readOwner(path);
-    if (holder && !isAlive(holder.pid)) {
+    if (holder && !(await isHolderAlive(holder))) {
       log(
         `Desktop lock: pid ${holder.pid} (${holder.command}) is gone; taking over ${path}.`,
       );
@@ -194,6 +197,28 @@ function isAlive(pid: number): boolean {
   } catch (error) {
     return (error as NodeJS.ErrnoException).code === "EPERM";
   }
+}
+
+/** When `pid` started, or undefined when `ps` cannot tell (no `ps`, no process). */
+async function processStart(pid: number): Promise<string | undefined> {
+  try {
+    const { stdout } = await promisify(execFile)(
+      "ps",
+      ["-o", "lstart=", "-p", String(pid)],
+      { env: { ...process.env, LC_ALL: "C" } },
+    );
+    return stdout.trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The holder's process runs, and its pid was not given to a new process. */
+async function isHolderAlive(owner: DesktopLockOwner): Promise<boolean> {
+  if (!isAlive(owner.pid)) return false;
+  if (owner.processStart === undefined) return true;
+  const start = await processStart(owner.pid);
+  return start === undefined || start === owner.processStart;
 }
 
 /**
