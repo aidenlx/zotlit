@@ -181,6 +181,9 @@ function PropertyList({
       (seen.has(label) ? shared : seen).add(label);
     return shared;
   }, [entries]);
+  // What the keys and a row's `next` read at the moment they run.
+  const keys = useRef({ order, setOrder, openActions, list });
+  keys.current = { order, setOrder, openActions, list };
   const groups = useMemo<ChooserGroup<ChooserRow>[]>(() => {
     // The properties of the parent records come only while the user searches.
     const rows = entries
@@ -191,7 +194,18 @@ function PropertyList({
           query !== "" ||
           !entry.path.includes("."),
       )
-      .map(propertyRow);
+      .map(
+        (entry): ChooserRow => ({
+          ...propertyRow(entry),
+          // The right arrow opens the property's actions beside its row.
+          next: () => {
+            const row = keys.current.list.current?.querySelector<HTMLElement>(
+              `[data-query-property="${CSS.escape(entry.path)}"]`,
+            );
+            if (row) keys.current.openActions(entry, row);
+          },
+        }),
+      );
     const actions: ChooserRow[] = [];
     if (query !== "" && !byPath.has(query))
       actions.push({
@@ -217,16 +231,9 @@ function PropertyList({
     return [{ items: rows }, { items: actions, pinned: true }];
   }, [entries, byPath, order, query, setOrder, openFormula]);
 
-  // The keys of a Bases Properties menu: the right arrow opens the
-  // highlighted property's actions, and Alt with an up or down arrow moves a
-  // visible property one place in the order.
-  const keys = useRef({ order, setOrder, byPath, openActions, list });
-  keys.current = { order, setOrder, byPath, openActions, list };
+  // Alt with an up or down arrow moves the highlighted visible property one
+  // place in the order, as in the Bases Properties menu.
   useLayoutEffect(() => {
-    const rowOf = (path: string) =>
-      keys.current.list.current?.querySelector<HTMLElement>(
-        `[data-query-property="${CSS.escape(path)}"]`,
-      ) ?? null;
     const move = (step: number) => (event: KeyboardEvent) => {
       if (event.isComposing) return;
       const path = activeValue();
@@ -242,18 +249,6 @@ function PropertyList({
       return false;
     };
     const stack = new DisposableStack();
-    stack.use(
-      registerKeymap(scope, [], "ArrowRight", (event) => {
-        if (event.isComposing) return;
-        const path = activeValue();
-        const entry = path === null ? undefined : keys.current.byPath.get(path);
-        const row = path === null ? null : rowOf(path);
-        // Elsewhere the key moves the caret in the search field.
-        if (!entry || !row) return;
-        keys.current.openActions(entry, row);
-        return false;
-      }),
-    );
     stack.use(registerKeymap(scope, ["Alt"], "ArrowUp", move(-1)));
     stack.use(registerKeymap(scope, ["Alt"], "ArrowDown", move(1)));
     return () => stack.dispose();
@@ -272,7 +267,6 @@ function PropertyList({
             <Chooser.Action
               key={row.value}
               value={row.value}
-              className={rowSpacing}
               data-query-properties-action={row.value.slice("zt:".length)}
               leading={
                 <RowIcon
@@ -299,7 +293,6 @@ function PropertyList({
             data-hidden={shown ? undefined : ""}
             draggable={shown}
             className={cn(
-              rowSpacing,
               "zt:data-hidden:text-(--text-faint) zt:data-hidden:[--icon-color:var(--text-faint)]",
               dragging === row.value && "zt:opacity-50",
             )}
@@ -337,7 +330,7 @@ function PropertyList({
                 <TypeIcon entry={entry} icon={iconOf(entry)} grab={shown} />
               </>
             }
-            trailing={
+            end={
               <button
                 type="button"
                 tabIndex={-1}
@@ -373,9 +366,6 @@ function PropertyList({
     </Chooser.List>
   );
 }
-
-/** The padding and gap of a Bases menu row, from Obsidian's size variables. */
-const rowSpacing = "zt:p-(--size-2-2) zt:ps-(--size-2-3) zt:gap-(--size-4-2)";
 
 /** An icon of a row, at the size Obsidian draws a menu icon. */
 function RowIcon({ name, className }: { name: IconName; className?: string }) {

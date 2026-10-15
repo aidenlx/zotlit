@@ -1781,6 +1781,25 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         expected: JSON.stringify(["Methods", "All annotations", "Figures"]),
       }),
     ).toBe(true);
+
+    // The chevron on a view's row opens Configure view on that view and
+    // leaves the view on screen as it is.
+    await obEval(
+      vaultId,
+      `(()=>{${tab}.contentEl.querySelector('[data-query-view-list]:popover-open [data-query-view-configure="Figures"]').click();return true;})()`,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(activeDocument.querySelector('.modal.zt-configure-view [data-query-view-name]')?.value)`,
+        { expected: "Figures" },
+      ),
+    ).toBe(true);
+    expect(await shown("Methods")).toBe(true);
+    await obEval(
+      vaultId,
+      `(()=>{const modal=activeDocument.querySelector('.modal.zt-configure-view');(modal.querySelector('.modal-close-button')??modal.querySelector('.modal-header-button:has(.lucide-x)')).click();return true;})()`,
+    );
   }, 180000);
 
   it("switches a Query File view to List and to Cards, and shows the same rows under the same groups", async () => {

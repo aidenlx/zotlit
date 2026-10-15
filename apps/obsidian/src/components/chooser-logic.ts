@@ -24,6 +24,12 @@ export interface ChooserRow {
    * an action that never calls it leaves the popup standing.
    */
   action?: (close: () => void) => void;
+  /**
+   * What ArrowRight runs on the highlighted row: the row's own page, as the
+   * chevron of a Bases view row opens that view's configuration. A row
+   * without one leaves ArrowRight to the search field's caret.
+   */
+  next?: (close: () => void) => void;
 }
 
 /** A run of rows drawn together, under a heading when the caller names one. */

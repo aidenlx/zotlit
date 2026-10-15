@@ -2,15 +2,32 @@
 // the groups, and, in a Manual group order, which groups show and where. It
 // is host-neutral: it reads the grouping and the groups the rows hold, and
 // reports the next grouping; the host saves it.
+//
+// It lays out as the Bases Group menu: a "Group by" section with one joined
+// [property | direction] box and a delete button. A Manual group order adds
+// a section of group rows and a "Show all" / "Hide all" footer.
 import { Dropdown, DropdownItem } from "@/components/obsidian/dropdown";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
 
+import { directionLabel } from "./properties";
 import type { PropertyOption } from "./properties";
 import type { QueryFileGroupValue, QueryFileSort } from "./query-file";
 import { GripIcon, moved, useReorder } from "./reorder";
 import type { LayoutGroup } from "./rows";
-import { NotUsed } from "./sort-control";
+import {
+  JoinedSelects,
+  NotUsed,
+  RemoveButton,
+  sortRowClass,
+  sortRowsClass,
+} from "./sort-control";
+import {
+  PopoverAction,
+  PopoverActions,
+  PopoverHeader,
+  PopoverSection,
+} from "./toolbar-popover";
 
 /** A view's grouping, as the Group control reads and writes it. */
 export interface GroupSetting {
@@ -41,83 +58,97 @@ export function GroupEditor({
 }: GroupEditorProps) {
   const { groupBy, groupOrder } = value;
   const manual = groupOrder !== undefined;
-  const known = options.some((option) => option.path === groupBy?.property);
+  const option = options.find((entry) => entry.path === groupBy?.property);
   return (
-    <div className="zt:flex zt:flex-col zt:gap-1" data-group-editor="">
-      <div className="zt:px-1 zt:text-xs zt:font-semibold zt:text-(--text-muted)">
-        {m.query_view_group_by()}
-      </div>
-      <div className="zt:flex zt:items-center zt:gap-1 zt:px-1">
-        <Dropdown
-          aria-label={m.query_view_group_by()}
-          data-group-property=""
-          className="zt:min-w-0 zt:flex-1"
-          value={groupBy?.property ?? NONE}
-          onChange={(property) =>
-            onChange(
-              property === NONE
-                ? {}
-                : {
-                    groupBy: {
-                      property,
-                      direction: groupBy?.direction ?? "ASC",
-                    },
-                  },
-            )
-          }
-        >
-          <DropdownItem value={NONE}>
-            {m.query_view_group_by_none()}
-          </DropdownItem>
-          {!known && groupBy && (
-            <DropdownItem value={groupBy.property}>
-              {groupBy.property}
-            </DropdownItem>
-          )}
-          {options.map((option) => (
-            <DropdownItem key={option.path} value={option.path}>
-              {option.label}
-            </DropdownItem>
-          ))}
-        </Dropdown>
-        {unused && (
-          <span data-group-unused="">
-            <NotUsed />
-          </span>
-        )}
-        {groupBy && (
-          <Dropdown
-            aria-label={m.query_view_group()}
-            data-group-direction=""
-            value={manual ? MANUAL : groupBy.direction}
-            onChange={(direction) =>
-              onChange(
-                direction === MANUAL
-                  ? {
-                      groupBy,
-                      groupOrder: groups.map((group) => group.value),
-                    }
-                  : {
-                      groupBy: {
-                        ...groupBy,
-                        direction: direction === "DESC" ? "DESC" : "ASC",
-                      },
-                    },
-              )
-            }
-          >
-            <DropdownItem value="ASC">
-              {m.query_view_group_ascending()}
-            </DropdownItem>
-            <DropdownItem value="DESC">
-              {m.query_view_group_descending()}
-            </DropdownItem>
-            <DropdownItem value={MANUAL}>
-              {m.query_view_group_manual()}
-            </DropdownItem>
-          </Dropdown>
-        )}
-      </div>
+    <>
+      <PopoverSection data-group-editor="">
+        <PopoverHeader>{m.query_view_group_by()}</PopoverHeader>
+        <div className={cn(sortRowsClass, "zt:ps-(--size-2-3)")}>
+          <div className={sortRowClass}>
+            <JoinedSelects
+              property={
+                <Dropdown
+                  aria-label={m.query_view_group_by()}
+                  data-group-property=""
+                  className="zt:min-w-0 zt:flex-1"
+                  value={groupBy?.property ?? NONE}
+                  onChange={(property) =>
+                    onChange(
+                      property === NONE
+                        ? {}
+                        : {
+                            groupBy: {
+                              property,
+                              direction: groupBy?.direction ?? "ASC",
+                            },
+                          },
+                    )
+                  }
+                >
+                  <DropdownItem value={NONE}>
+                    {m.query_view_group_by_none()}
+                  </DropdownItem>
+                  {!option && groupBy && (
+                    <DropdownItem value={groupBy.property}>
+                      {groupBy.property}
+                    </DropdownItem>
+                  )}
+                  {options.map((candidate) => (
+                    <DropdownItem key={candidate.path} value={candidate.path}>
+                      {candidate.label}
+                    </DropdownItem>
+                  ))}
+                </Dropdown>
+              }
+              direction={
+                <Dropdown
+                  aria-label={m.query_view_group()}
+                  data-group-direction=""
+                  className="zt:shrink-0"
+                  disabled={!groupBy}
+                  value={manual ? MANUAL : (groupBy?.direction ?? "ASC")}
+                  onChange={(direction) => {
+                    if (!groupBy) return;
+                    onChange(
+                      direction === MANUAL
+                        ? {
+                            groupBy,
+                            groupOrder: groups.map((group) => group.value),
+                          }
+                        : {
+                            groupBy: {
+                              ...groupBy,
+                              direction: direction === "DESC" ? "DESC" : "ASC",
+                            },
+                          },
+                    );
+                  }}
+                >
+                  {(["ASC", "DESC"] as const).map((direction) => (
+                    <DropdownItem key={direction} value={direction}>
+                      {directionLabel(option?.kind ?? "text", direction)}
+                    </DropdownItem>
+                  ))}
+                  <DropdownItem value={MANUAL}>
+                    {m.query_view_group_manual()}
+                  </DropdownItem>
+                </Dropdown>
+              }
+            />
+            {unused && (
+              <span data-group-unused="">
+                <NotUsed />
+              </span>
+            )}
+            <RemoveButton
+              label={m.query_view_group_remove()}
+              data-group-remove=""
+              disabled={!groupBy}
+              onClick={() => onChange({})}
+            />
+          </div>
+        </div>
+      </PopoverSection>
       {groupBy && groupOrder && (
         <ManualOrder
           groups={groups}
@@ -125,7 +156,7 @@ export function GroupEditor({
           onChange={(next) => onChange({ groupBy, groupOrder: next })}
         />
       )}
-    </div>
+    </>
   );
 }
 
@@ -158,66 +189,71 @@ function ManualOrder({
   );
   if (groups.length === 0)
     return (
-      <div className="zt:px-1 zt:text-sm zt:text-(--text-muted)">
-        {m.query_view_group_empty()}
-      </div>
+      <PopoverSection data-group-order="">
+        <div className="zt:px-(--size-4-3) zt:py-(--size-4-2) zt:text-sm zt:text-muted-foreground">
+          {m.query_view_group_empty()}
+        </div>
+      </PopoverSection>
     );
   const anyShown = groups.some((group) => group.shown);
   return (
-    <div className="zt:flex zt:flex-col" data-group-order="">
-      {groups.map((group, index) => {
-        const { row, handle } = reorder(index);
-        return (
-          <label
-            key={group.value ?? ""}
-            data-group-row={group.value ?? ""}
-            {...row}
-            className={cn(
-              "zt:rounded zt:flex zt:items-center zt:gap-2 zt:px-1 zt:py-0.5 zt:text-sm",
-              row.className,
-            )}
-          >
-            <span {...handle}>
-              <GripIcon />
-            </span>
-            <input
-              type="checkbox"
-              className="task-list-item-checkbox"
-              checked={group.shown}
-              onChange={() =>
-                save(
-                  groups.map((candidate) =>
-                    candidate === group
-                      ? { ...candidate, shown: !candidate.shown }
-                      : candidate,
-                  ),
-                )
-              }
-            />
-            <span className="zt:min-w-0 zt:flex-1 zt:truncate">
-              {group.label}
-            </span>
-            <span
-              className="zt:text-(--text-faint) zt:tabular-nums"
-              data-group-count=""
+    <>
+      <PopoverSection data-group-order="">
+        {groups.map((group, index) => {
+          const { row, handle } = reorder(index);
+          return (
+            <label
+              key={group.value ?? ""}
+              data-group-row={group.value ?? ""}
+              {...row}
+              className={cn(
+                "zt:flex zt:items-center zt:gap-(--size-4-2) zt:rounded-sm zt:p-(--size-2-2) zt:ps-(--size-2-3) zt:text-sm zt:text-foreground zt:[corner-shape:var(--corner-shape)] zt:hover:bg-muted",
+                row.className,
+              )}
             >
-              {group.count}
-            </span>
-          </label>
-        );
-      })}
-      <button
-        type="button"
-        className="clickable-icon zt:self-start"
-        data-group-toggle-all=""
-        onClick={() =>
-          save(groups.map((group) => ({ ...group, shown: !anyShown })))
-        }
-      >
-        {anyShown
-          ? m.query_view_group_hide_all()
-          : m.query_view_group_show_all()}
-      </button>
-    </div>
+              <span {...handle}>
+                <GripIcon />
+              </span>
+              <input
+                type="checkbox"
+                className="zt:shrink-0"
+                checked={group.shown}
+                onChange={() =>
+                  save(
+                    groups.map((candidate) =>
+                      candidate === group
+                        ? { ...candidate, shown: !candidate.shown }
+                        : candidate,
+                    ),
+                  )
+                }
+              />
+              <span className="zt:min-w-0 zt:flex-1 zt:truncate">
+                {group.label}
+              </span>
+              <span
+                className="zt:pe-(--size-2-2) zt:text-xs zt:text-(--text-faint) zt:tabular-nums"
+                data-group-count=""
+              >
+                {group.count}
+              </span>
+            </label>
+          );
+        })}
+      </PopoverSection>
+      <PopoverActions>
+        <PopoverAction
+          icon={anyShown ? "eye-off" : "eye"}
+          data-group-toggle-all=""
+          onClick={() =>
+            save(groups.map((group) => ({ ...group, shown: !anyShown })))
+          }
+        >
+          {anyShown
+            ? m.query_view_group_hide_all()
+            : m.query_view_group_show_all()}
+        </PopoverAction>
+      </PopoverActions>
+    </>
   );
 }

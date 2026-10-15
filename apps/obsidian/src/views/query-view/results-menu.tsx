@@ -4,12 +4,10 @@
 //
 // The menu is a native popover rather than a Chooser: its limit field takes
 // the arrow keys and Enter, which a Chooser's key scope would hold.
-import type { IconName } from "obsidian";
 import { useId, useLayoutEffect, useRef, useState } from "react";
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties } from "react";
 import { useStore } from "zustand";
 
-import { Icon } from "@/components/obsidian/icon";
 import { writeClipboardRichText } from "@/lib/clipboard";
 import { saveFile } from "@/lib/file-save";
 import * as m from "@/lib/i18n/generated/messages";
@@ -20,7 +18,12 @@ import { cn } from "@/lib/utils";
 
 import { toCSV, toHTML, toTSV } from "./table";
 import { ToolbarButtonContent, toolbarButtonClass } from "./toolbar-button";
-import { toolbarPopoverClass } from "./toolbar-popover";
+import {
+  PopoverAction,
+  PopoverActions,
+  PopoverSection,
+  toolbarPopoverClass,
+} from "./toolbar-popover";
 import type { QueryView } from "./view";
 
 const logger = getLogger(["views", "query-view", "results"]);
@@ -63,38 +66,19 @@ function CountText({ view }: { view: QueryView }) {
   );
 }
 
-function MenuRow({
-  icon,
-  onClick,
-  children,
-  ...rest
-}: {
-  icon: IconName;
-  onClick: () => void;
-  children: ReactNode;
-  [data: `data-${string}`]: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      {...rest}
-      className="zt:flex zt:w-full zt:cursor-clickable zt:items-center zt:gap-2 zt:rounded-sm zt:py-1 zt:ps-1.5 zt:pe-1 zt:text-start zt:text-sm zt:hover:bg-muted"
-    >
-      <Icon name={icon} size={14} className="zt:shrink-0" />
-      <span className="zt:truncate">{children}</span>
-    </button>
-  );
-}
-
 function LimitField({ view, close }: { view: QueryView; close: () => void }) {
   const limit = useStore(view.state, (s) => s.view?.limit);
   const [text, setText] = useState(limit === undefined ? "" : String(limit));
   const [invalid, setInvalid] = useState(false);
   const id = useId();
+  // The form a Bases results menu opens with: the label over a field that
+  // takes the menu's width. An invalid number turns the field's own border
+  // and focus ring to the error colour, through the variables they read.
   return (
-    <div className="zt:flex zt:items-center zt:justify-between zt:gap-3 zt:px-1.5 zt:py-1 zt:text-sm">
-      <label htmlFor={id}>{m.query_view_limit()}</label>
+    <PopoverSection className="zt:px-(--size-4-2) zt:pt-(--size-4-1) zt:pb-(--size-4-2) zt:text-sm">
+      <label htmlFor={id} className="zt:px-(--size-2-1) zt:py-(--size-2-2)">
+        {m.query_view_limit()}
+      </label>
       <input
         id={id}
         type="number"
@@ -103,7 +87,8 @@ function LimitField({ view, close }: { view: QueryView; close: () => void }) {
         value={text}
         placeholder={m.query_view_limit_placeholder()}
         data-query-limit=""
-        className={cn("zt:w-20", invalid && "mod-error")}
+        aria-invalid={invalid || undefined}
+        className="zt:w-full zt:aria-invalid:[--background-modifier-border-focus:var(--background-modifier-error)] zt:aria-invalid:[--background-modifier-border-hover:var(--background-modifier-error)] zt:aria-invalid:[--background-modifier-border:var(--background-modifier-error)]"
         onChange={(event) => {
           const next = event.currentTarget.value;
           setText(next);
@@ -123,7 +108,7 @@ function LimitField({ view, close }: { view: QueryView; close: () => void }) {
           close();
         }}
       />
-    </div>
+    </PopoverSection>
   );
 }
 
@@ -177,49 +162,49 @@ export function ResultsMenu({ view }: { view: QueryView }) {
         className={cn(
           themeHook.chooser,
           toolbarPopoverClass,
-          "zt:max-w-80 zt:min-w-60 zt:p-(--menu-padding)",
+          "zt:max-w-80 zt:min-w-60",
         )}
         style={{ "--zt-query-popover-anchor": anchor } as CSSProperties}
       >
         {open && (
           <>
             <LimitField view={view} close={close} />
-            {current.limit !== undefined && phase === "ready" && (
-              <MenuRow
+            <PopoverActions>
+              {/* The row stays in place while no limit is set, dimmed as Bases
+                  dims it, so the rows under it hold still as a limit is typed. */}
+              <PopoverAction
                 icon="rotate-ccw"
                 data-query-show-all=""
+                disabled={current.limit === undefined || phase !== "ready"}
+                className="zt:disabled:cursor-default zt:disabled:text-faint zt:disabled:hover:bg-transparent zt:disabled:[&_svg]:text-faint"
                 onClick={() => {
                   view.document.editView({ limit: undefined });
                   close();
                 }}
               >
                 {m.query_view_show_all({ count: matched })}
-              </MenuRow>
-            )}
-            <div
-              role="presentation"
-              className="zt:my-1 zt:h-[var(--menu-divider-width,1px)] zt:bg-[var(--menu-divider-color,var(--background-modifier-border))]"
-            />
-            <MenuRow
-              icon="copy"
-              data-query-copy=""
-              onClick={() => {
-                close();
-                void copyResults(view);
-              }}
-            >
-              {m.query_view_copy()}
-            </MenuRow>
-            <MenuRow
-              icon="file-down"
-              data-query-export=""
-              onClick={() => {
-                close();
-                exportResults(view);
-              }}
-            >
-              {m.query_view_export_csv()}
-            </MenuRow>
+              </PopoverAction>
+              <PopoverAction
+                icon="copy"
+                data-query-copy=""
+                onClick={() => {
+                  close();
+                  void copyResults(view);
+                }}
+              >
+                {m.query_view_copy()}
+              </PopoverAction>
+              <PopoverAction
+                icon="file-down"
+                data-query-export=""
+                onClick={() => {
+                  close();
+                  exportResults(view);
+                }}
+              >
+                {m.query_view_export_csv()}
+              </PopoverAction>
+            </PopoverActions>
           </>
         )}
       </div>
