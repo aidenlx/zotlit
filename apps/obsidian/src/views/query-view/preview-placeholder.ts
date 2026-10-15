@@ -1,5 +1,5 @@
-// A Query View that stands in a preview — a template's note preview in the
-// Template Workbench, an Annotation comment — draws a placeholder in its place.
+// A Query View that stands in a template's note preview in the Template
+// Workbench draws a placeholder in its place.
 // A preview is not the note: the view could neither save a change nor read
 // the note's own `this`, so it marks where the note shows the view. A
 // Markdown render places each section in its target before the section's
@@ -8,8 +8,8 @@ import { setIcon } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 
-/** Where a Query View shows as a preview: an Annotation comment, a note preview. */
-const IN_PREVIEW = ".zt-annot-comment, [data-zotlit-draft]";
+/** A template's note preview. */
+const IN_PREVIEW = "[data-zotlit-draft]";
 
 /** Whether `el` stands in a preview, where a Query View draws its placeholder. */
 export function inPreview(el: HTMLElement): boolean {
@@ -23,7 +23,7 @@ export function renderPreviewPlaceholder(
 ): void {
   el.empty();
   const box = el.createDiv({
-    cls: "zt:flex zt:items-center zt:gap-2 zt:rounded-(--radius-m) zt:border zt:border-solid zt:border-(--background-modifier-border) zt:px-3 zt:py-2 zt:text-sm zt:text-(--text-muted)",
+    cls: "zt:flex zt:items-center zt:gap-2 zt:rounded-md zt:border-(length:--border-width) zt:border-solid zt:border-(--background-modifier-border) zt:px-3 zt:py-2 zt:text-sm zt:text-(--text-muted)",
     attr: { "data-query-placeholder": "" },
   });
   setIcon(

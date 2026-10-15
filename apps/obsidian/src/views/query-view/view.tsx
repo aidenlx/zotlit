@@ -851,7 +851,7 @@ function Problems({ view }: { view: QueryView }) {
     <>
       {problems.length > 0 && (
         <div
-          className="zt:mx-3 zt:mt-2 zt:rounded-sm zt:border zt:border-(--background-modifier-error) zt:p-2 zt:text-sm"
+          className="zt:mx-3 zt:mt-2 zt:rounded-sm zt:border-(length:--border-width) zt:border-(--background-modifier-error) zt:p-2 zt:text-sm"
           role="alert"
           data-query-problems=""
         >
@@ -873,7 +873,7 @@ function Problems({ view }: { view: QueryView }) {
       )}
       {phase === "failed" && !marked && diagnostic && (
         <div
-          className="zt:mx-3 zt:mt-2 zt:rounded-sm zt:border zt:border-(--background-modifier-error) zt:p-2 zt:text-sm"
+          className="zt:mx-3 zt:mt-2 zt:rounded-sm zt:border-(length:--border-width) zt:border-(--background-modifier-error) zt:p-2 zt:text-sm"
           role="alert"
           data-query-diagnostic={diagnostic.code}
         >
@@ -1090,7 +1090,6 @@ function SortButton({ view }: { view: QueryView }) {
       active={sort.length > 0}
       count={sort.length}
       hook="sort"
-      composed
     >
       <SortEditor
         value={sort}
@@ -1118,7 +1117,6 @@ function GroupButton({ view }: { view: QueryView }) {
       label={m.query_view_group()}
       active={current.groupBy !== undefined}
       hook="group"
-      composed
     >
       <GroupEditor
         value={{ groupBy: current.groupBy, groupOrder: current.groupOrder }}

@@ -13,9 +13,10 @@ import {
 import type { CSSProperties, ReactNode } from "react";
 import { useStore } from "zustand";
 
+import { isPageNumber } from "@zotlit/db";
+
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
-import { isPageNumber } from "@/lib/page-label";
 import { cn, tooltipAttrs } from "@/lib/utils";
 import type {
   QueryViewRequest,
@@ -342,14 +343,14 @@ function NoteCell({
 
 /** The inset of a row `depth` levels under its Item, for `zt:ps-(--zt-indent)`. */
 const indent = (depth: number) =>
-  ({ "--zt-indent": `calc(${depth - 1} * 1.25rem)` }) as CSSProperties;
+  ({ "--zt-indent": `calc(${depth - 1} * var(--size-4-5))` }) as CSSProperties;
 
 /**
  * A cell's height, padding and row line, from the variables Obsidian's Bases
  * table draws with, so a theme that restyles that table restyles this one.
  */
 const CELL =
-  "zt:h-(--bases-table-row-height) zt:border-b zt:border-(--bases-table-border-color) zt:px-2 zt:py-1";
+  "zt:h-(--bases-table-row-height) zt:border-b-(length:--bases-table-row-border-width) zt:border-(--bases-table-border-color) zt:px-2 zt:py-1";
 /** The narrow first column that holds a row's expand button. */
 const GUTTER = cn(CELL, "zt:w-0 zt:py-0 zt:ps-1 zt:pe-0");
 /**
@@ -360,7 +361,7 @@ const GUTTER = cn(CELL, "zt:w-0 zt:py-0 zt:ps-1 zt:pe-0");
 const FIRST = "zt:min-w-48 zt:ps-1";
 /** A column after the first: a line parts it from the one before it. */
 const LATER =
-  "zt:max-w-[calc(var(--bases-table-column-max-width)*1px)] zt:border-s";
+  "zt:max-w-[calc(var(--bases-table-column-max-width)*1px)] zt:border-s-(length:--bases-table-column-border-width)";
 const ROW = "zt:hover:bg-(--bases-table-row-background-hover)";
 /** A header cell, which stays at the top as the rows scroll under it. */
 const HEADER =
@@ -521,7 +522,7 @@ export function TableLayout({ view }: { view: QueryView }) {
                     <Icon
                       name={propertyIcon(dataset, property)}
                       size="var(--icon-xs)"
-                      className="zt:shrink-0"
+                      className="zt:[display:var(--bases-table-header-icon-display)] zt:shrink-0"
                     />
                     {property.label}
                   </span>

@@ -4,10 +4,11 @@
 // (see `block-write.ts`).
 //
 // The block saves to the note that holds it, also through a section embed or a
-// hover popover. Where it has no save path (print, export), the view still
-// reads and its toolbar says a change is not saved. An Annotation comment and
-// a note preview show a placeholder (see `preview-placeholder.ts`). Inside a Query View, a block shows its text only, so a Query
-// View never holds another live one.
+// hover popover. Where it has no save path (print, export, an Annotation
+// comment), the view still reads and its toolbar says a change is not saved.
+// A note preview shows a placeholder (see `preview-placeholder.ts`). Inside a
+// Query View, a block shows its text only, so a Query View never holds another
+// live one.
 //
 // @see apps/obsidian/docs/adr/0068-query-files-are-a-zotlit-file-type-embedded-through-the-private-embed-registry.md
 import { MarkdownRenderChild } from "obsidian";
@@ -24,6 +25,8 @@ import type { QueryViewDeps } from "./view";
 
 /** A Query View: a block in one of its cards' comments shows its text only. */
 const IN_QUERY_VIEW = ".zt-query-view";
+/** An Annotation comment, which gives a block no place to save to. */
+const IN_COMMENT = ".zt-annot-comment";
 
 type QueryBlockPlugin = Pick<Plugin, "registerMarkdownCodeBlockProcessor">;
 
@@ -113,6 +116,7 @@ class QueryBlock extends MarkdownRenderChild {
   #canSave(): boolean {
     if (this.#leaving) return this.#lineStart !== null;
     const el = this.containerEl;
+    if (el.closest(IN_COMMENT) !== null) return false;
     const info = this.#ctx.getSectionInfo(el);
     if (info !== null) this.#lineStart = info.lineStart;
     return info !== null;

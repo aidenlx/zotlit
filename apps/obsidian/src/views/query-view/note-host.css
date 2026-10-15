@@ -43,11 +43,12 @@
 
 /* In Live Preview, Obsidian puts the Query Block's "Edit this block" button
    at the block's top end, over the toolbar's last button. The toolbar leaves
-   room for it and centers it on the row, as Obsidian does for a Base. */
-.markdown-source-view.mod-cm6 .cm-content > .cm-lang-zotquery {
+   room for it and centers it on the row, as Obsidian does for a Base. The
+   button is the view's sibling, so the rules start from the view. */
+.cm-embed-block:has(> .zt-query-note) {
   --bases-header-padding-end: calc(var(--icon-m) + var(--size-4-4));
 }
-.markdown-source-view.mod-cm6 .cm-content > .cm-lang-zotquery .embed-actions {
+.cm-embed-block:has(> .zt-query-note) > .embed-actions {
   top: calc(
     var(--bases-header-height) / 2 - var(--icon-m) / 2 - var(--size-2-2)
   );

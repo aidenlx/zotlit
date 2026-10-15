@@ -2384,7 +2384,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const results = JSON.parse(
       await obEval(
         vaultId,
-        `(async()=>{const views=[...app.workspace.getLeavesOfType('markdown').flatMap(l=>[...l.view.containerEl.querySelectorAll('.internal-embed')].filter(el=>el.zotlitQueryView&&el.isShown())),...app.workspace.getLeavesOfType('zotlit-query-file').map(l=>l.view.contentEl)];const out=[];for(const el of views){el.querySelector('[data-query-results]').click();await new Promise(r=>setTimeout(r,100));out.push(el.querySelector('[data-query-results-popup]').matches(':popover-open'));activeDocument.querySelectorAll(':popover-open').forEach(p=>p.hidePopover());}return JSON.stringify(out);})()`,
+        `(async()=>{const views=[...app.workspace.getLeavesOfType('markdown').flatMap(l=>[...l.view.containerEl.querySelectorAll('.internal-embed')].filter(el=>el.zotlitQueryView&&el.isShown())),...app.workspace.getLeavesOfType('zotlit-query-file').map(l=>l.view.contentEl)];const out=[];for(const el of views){el.querySelector('[data-query-results]').click();const popup=el.querySelector('[data-query-results-popup]');for(let i=0;i<50&&!popup.matches(':popover-open');i++)await new Promise(r=>setTimeout(r,20));out.push(popup.matches(':popover-open'));activeDocument.querySelectorAll(':popover-open').forEach(p=>p.hidePopover());}return JSON.stringify(out);})()`,
       ),
     ) as boolean[];
     expect(results).toEqual([true, true, true]);
@@ -2582,7 +2582,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   const runPropertyAction = (property: string, title: string) =>
     obEval(
       vaultId,
-      `(async()=>{${propertiesPopup}.querySelector('[data-query-property-more="${property}"]').click();await new Promise(r=>setTimeout(r,100));[...activeDocument.querySelectorAll('.menu .menu-item')].find(item=>item.querySelector('.menu-item-title')?.textContent===${JSON.stringify(title)}).click();return true;})()`,
+      `(async()=>{${propertiesPopup}.querySelector('[data-query-property-more="${property}"]').click();const find=()=>[...activeDocument.querySelectorAll('.menu .menu-item')].find(item=>item.querySelector('.menu-item-title')?.textContent===${JSON.stringify(title)});for(let i=0;i<50&&!find();i++)await new Promise(r=>setTimeout(r,20));find().click();return true;})()`,
     );
   /** Opens the results popover and waits for its "Export CSV…" action. */
   const openResults = (tab: string) =>

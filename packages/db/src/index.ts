@@ -157,6 +157,7 @@ export {
 } from "./queries/index-items";
 export { formatItemDate, parseItemDate, type ItemDate } from "./lib/zt-date";
 export { parseItemExtra, type ExtraLine, type ItemExtra } from "./lib/zt-extra";
+export { isPageNumber } from "./lib/zt-page-label";
 export {
   annotationHasCacheImage,
   annotationTypeToName,

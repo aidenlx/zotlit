@@ -591,7 +591,7 @@ function GroupHeading({
       role="row"
       data-query-group={groupKey}
       data-collapsed={expanded ? undefined : ""}
-      className="zt:group/heading zt:col-span-full zt:not-first:mt-1 zt:not-first:border-t zt:not-first:border-border zt:not-first:pt-2"
+      className="zt:group/heading zt:col-span-full zt:not-first:mt-1 zt:not-first:border-t-(length:--border-width) zt:not-first:border-border zt:not-first:pt-2"
     >
       <span role="rowheader" className="zt:flex zt:min-w-0">
         {/* The press target is Obsidian's `clickable-icon`, which takes back

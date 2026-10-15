@@ -83,7 +83,7 @@ export function CardsLayout({ view }: { view: QueryView }) {
           key={`${groupIndex}\n${group.key ?? ""}`}
           className={cn(
             group.key !== null &&
-              "zt:border-b zt:border-(--background-modifier-border) zt:pb-4",
+              "zt:border-b-(length:--border-width) zt:border-(--background-modifier-border) zt:pb-4",
           )}
         >
           <RecordGroupHeading group={group} />

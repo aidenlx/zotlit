@@ -10,12 +10,12 @@ import {
 import type { DragEvent, KeyboardEvent, MouseEvent, RefObject } from "react";
 
 import type { ResolvedAnnotationTypeName } from "@zotlit/db";
+import { isPageNumber } from "@zotlit/db";
 
 import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
 import { useObsidianApp } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
-import { isPageNumber } from "@/lib/page-label";
 import { useSanitizedHtml } from "@/lib/sanitize-html";
 import { themeHook } from "@/lib/theme-hooks";
 import {
@@ -1206,7 +1206,7 @@ function PageChip({
 }) {
   const display = useContext(CardDisplayContext);
   const chip = cn(
-    "zt-annot-page-chip zt:flex zt:h-5 zt:min-w-0 zt:items-center zt:gap-1 zt:rounded-sm zt:px-1 zt:font-mono zt:text-xs zt:font-medium zt:tracking-tight zt:tabular-nums zt:[word-spacing:-0.5ch]",
+    "zt-annot-page-chip zt:flex zt:h-5 zt:min-w-0 zt:items-center zt:gap-1 zt:rounded-sm zt:px-1 zt:font-mono zt:text-xs zt:font-medium zt:tracking-tight zt:tabular-nums",
     // Obsidian draws a bare `<a>` from its `--link-*` variables, unlayered,
     // where no colour or weight utility reaches. The chip sets those
     // variables instead, so the link keeps the chip's ink and weight and

@@ -371,7 +371,7 @@ const filterTheme = {
         "zt:data-[state=footer]:pt-(--size-2-2)",
       ),
       rows: "zt:m-0 zt:flex zt:list-none zt:flex-col zt:gap-(--size-2-3) zt:p-0",
-      row: "zt:grid zt:min-w-0 zt:grid-cols-[4.5rem_minmax(0,1fr)] zt:items-start zt:gap-(--size-4-2) zt:[&>[data-part=group]]:col-span-2",
+      row: "zt:grid zt:min-w-0 zt:grid-cols-[var(--size-4-18)_minmax(0,1fr)] zt:items-start zt:gap-(--size-4-2) zt:[&>[data-part=group]]:col-span-2",
       conjunction:
         "zt:flex zt:min-h-(--input-height) zt:items-center zt:justify-end zt:text-end zt:text-sm zt:[overflow-wrap:anywhere]",
       statement: cn(
@@ -481,7 +481,8 @@ export function FilterEditor({
               heading={heading}
               count={conditionCount(value)}
               // The filters for all views start folded while they hold none,
-              // as in Bases; a section with conditions shows them.
+              // as in Bases. A section with conditions shows them, unlike
+              // Bases, so every filter that narrows the results is in sight.
               initiallyOpen={section === "view" || value !== undefined}
             >
               {body(section, value)}
@@ -577,7 +578,6 @@ export function FilterButton({ view }: { view: QueryView }) {
       active={file.filters !== undefined || shown.filters !== undefined}
       count={conditionCount(file.filters) + conditionCount(shown.filters)}
       hook="filter"
-      composed
       className="zt:w-[min(var(--bases-filter-menu-width),calc(100vw_-_var(--size-4-8)))] zt:max-w-none"
       onOpen={() => {
         view.filterValues().then(setValues, (error: unknown) => {

@@ -3,7 +3,7 @@ import "./selection.css";
 import type { ItemView, WorkspaceLeaf } from "obsidian";
 import { useEffect, useId, useState } from "react";
 
-import { isChildItemFields } from "@zotlit/db";
+import { isChildItemFields, isPageNumber } from "@zotlit/db";
 import type { CitationVariant } from "@zotlit/db";
 import { SAMPLE_ANNOTATIONS } from "@zotlit/workbench/render";
 import type {
@@ -261,9 +261,11 @@ export function selectionName(input: {
             : "";
       name = [
         type,
-        typeof root.pageLabel === "string" && root.pageLabel
-          ? m.workbench_annotation_page({ page: root.pageLabel })
-          : null,
+        typeof root.pageLabel !== "string" || !root.pageLabel
+          ? null
+          : isPageNumber(root.pageLabel)
+            ? m.workbench_annotation_page({ page: root.pageLabel })
+            : root.pageLabel,
         text.length > 48 ? `${text.slice(0, 48)}…` : text,
       ]
         .filter(Boolean)

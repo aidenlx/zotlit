@@ -8,19 +8,15 @@
 // variables: the `--menu-*` surface, sections split by a rule, a section
 // header, and text-style action rows ("+ Add sort") in a footer section.
 //
-// Shell parts, for a popover's contents to compose (pass `composed` so the
-// shell adds no padding of its own):
+// Shell parts, for a popover's contents to compose; the shell adds no padding
+// of its own:
 // - `PopoverSection` — one block of the popover. Sections stack with a rule
 //   between them, as Bases splits "Sort by" from its "Add sort" footer.
 // - `PopoverHeader` — a section's title, such as "Sort by". Takes trailing
 //   content (a count, a button) after the title.
-// - `PopoverRow` — a row of a section: icon, name and trailing controls, with
-//   the hover fill of a Bases menu row. Pass `onClick` to make it a button.
 // - `PopoverActions` — the footer section that holds the action rows.
 // - `PopoverAction` — an action row: a muted icon and a text label, such as
 //   "Add sort" with `icon="plus"`.
-// - `PopoverDivider` — a rule inside a section, for a split that is not
-//   between two sections.
 // - `toolbarPopoverClass` — the surface classes, for a popover another
 //   component owns, such as the Results menu.
 // - `popoverFallbacks` — the placement fallbacks alone, for a Chooser popup
@@ -79,11 +75,6 @@ export interface ToolbarPopoverProps {
   hook: string;
   /** Called each time the popover opens. */
   onOpen?: () => void;
-  /**
-   * The children are built from the shell parts, which pad themselves. Without
-   * it the shell pads its children by `--menu-padding`.
-   */
-  composed?: boolean;
   /** Classes for the popover, after its own. */
   className?: string;
   children: ReactNode;
@@ -96,7 +87,6 @@ export function ToolbarPopover({
   count,
   hook,
   onOpen,
-  composed,
   className,
   children,
 }: ToolbarPopoverProps) {
@@ -125,11 +115,7 @@ export function ToolbarPopover({
           setOpen(event.newState === "open");
           if (event.newState === "open") onOpen?.();
         }}
-        className={cn(
-          toolbarPopoverClass,
-          !composed && "zt:p-(--menu-padding)",
-          className,
-        )}
+        className={cn(toolbarPopoverClass, className)}
         style={anchor}
       >
         {children}
@@ -173,14 +159,6 @@ export function PopoverHeader({
 
 const rowClass =
   "zt:flex zt:w-full zt:items-center zt:gap-(--size-4-2) zt:rounded-sm zt:[corner-shape:var(--corner-shape)] zt:p-(--size-2-2) zt:ps-(--size-2-3) zt:text-start zt:text-sm zt:text-foreground zt:hover:bg-muted";
-
-/** A row of a section, as a Bases menu row draws it. */
-export function PopoverRow({
-  className,
-  ...rest
-}: HTMLAttributes<HTMLDivElement>) {
-  return <div {...rest} className={cn(rowClass, className)} />;
-}
 
 /** The footer section of a popover, which holds its action rows. */
 export function PopoverActions({
@@ -231,19 +209,5 @@ export function PopoverAction({
       />
       <span className="zt:truncate">{children}</span>
     </button>
-  );
-}
-
-/** A rule inside a section, as Obsidian's `.menu-separator` draws it. */
-export function PopoverDivider({ className }: { className?: string }) {
-  return (
-    <div
-      role="separator"
-      data-query-popover-divider=""
-      className={cn(
-        "zt:my-(--size-2-1) zt:border-b-(length:--border-width) zt:border-border",
-        className,
-      )}
-    />
   );
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isPageNumber } from "./page-label";
+import { isPageNumber } from "./zt-page-label";
 
 describe("isPageNumber", () => {
   it.each([

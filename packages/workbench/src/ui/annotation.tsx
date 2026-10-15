@@ -7,6 +7,8 @@ import type {
 import type { AnnotationExample } from "#/render/index";
 import { useId, useRef, useState } from "react";
 
+import { isPageNumber } from "@zotlit/db";
+
 import { useDocumentRevision } from "./editor";
 import type { WorkbenchMessages } from "./generated/messages";
 import { useWorkbenchHost } from "./host";
@@ -131,9 +133,11 @@ export function annotationOption(
         : type,
     description: [
       parent?.title,
-      typeof root.pageLabel === "string"
-        ? m.workbench_annotation_page({ page: root.pageLabel })
-        : null,
+      typeof root.pageLabel !== "string"
+        ? null
+        : isPageNumber(root.pageLabel)
+          ? m.workbench_annotation_page({ page: root.pageLabel })
+          : root.pageLabel,
       root.text ? root.comment : null,
       ...tags.map(({ name }) => `#${name}`),
     ]
