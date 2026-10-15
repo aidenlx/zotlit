@@ -321,6 +321,20 @@ export function Chooser({ value, onValueChange, children }: ChooserProps) {
     stack.use(registerKeymap(scope, ["Ctrl"], "p", move("previous")));
     stack.use(registerKeymap(scope, ["Ctrl"], "n", move("next")));
     stack.use(registerKeymap(scope, [], "Enter", activate));
+    // ArrowRight is the one registered key that can fall through: on a row
+    // with a page of its own it opens that page, and anywhere else it stays
+    // the search field's caret key.
+    stack.use(
+      registerKeymap(scope, [], "ArrowRight", (event) => {
+        if (composing(event)) return;
+        const { rows: shown, highlight: at } = latest.current;
+        const next =
+          at < 0 ? undefined : shown[clampedHighlight(at, shown.length)]?.next;
+        if (!next) return;
+        next(close);
+        return false;
+      }),
+    );
     return () => stack.dispose();
   }, [scope, close]);
 
@@ -772,9 +786,10 @@ function useRowSlot(value: string) {
 /** The box an entry and an action are both drawn in. */
 const rowBox = (disabled: boolean, className?: string) =>
   cn(
-    // The row a Bases toolbar menu draws: 4px of padding, 6px before the
-    // mark, an 8px gap between the mark and the name.
-    "zt:flex zt:cursor-clickable zt:items-center zt:gap-2 zt:rounded-sm zt:py-1 zt:ps-1.5 zt:pe-1 zt:text-sm",
+    // The row a Bases toolbar menu draws, from the variables it reads:
+    // `--size-2-2` of padding, `--size-2-3` before the mark, a `--size-4-2`
+    // gap between the mark and the name.
+    "zt:flex zt:cursor-clickable zt:items-center zt:gap-(--size-4-2) zt:rounded-sm zt:p-(--size-2-2) zt:ps-(--size-2-3) zt:text-sm",
     // Two tints on one row box: the pointer's, which is the platform's hover
     // state and leaves with the pointer, and the highlight's, which is row
     // state and stays put until a key or a click moves it.
@@ -793,6 +808,8 @@ interface RowShellProps extends HTMLAttributes<HTMLDivElement> {
    * draws nothing in it, so every label in the list lines up either way.
    */
   icon?: IconName;
+  /** Trailing content after the label, such as a chevron to the row's page. */
+  end?: ReactNode;
 }
 
 /**
@@ -806,6 +823,7 @@ function RowShell({
   value,
   selected,
   icon,
+  end,
   className,
   children,
   ...rest
@@ -826,10 +844,12 @@ function RowShell({
     >
       <Icon
         name={icon ?? "check"}
-        size={14}
+        size="var(--icon-s)"
+        strokeWidth="var(--icon-s-stroke-width)"
         className={cn("zt:shrink-0", !icon && "zt:invisible")}
       />
       <span className="zt:truncate">{children}</span>
+      {end}
     </div>
   );
 }
@@ -841,6 +861,14 @@ export interface ChooserItemProps extends HTMLAttributes<HTMLDivElement> {
    * so the pointer and the keyboard read one flag rather than two.
    */
   value: string;
+  /**
+   * The glyph in the tick's place, drawn whether or not the row is ticked,
+   * such as a view's layout icon. The row still reports its tick through
+   * `aria-selected` and `data-selected`.
+   */
+  icon?: IconName;
+  /** Trailing content after the label, such as a chevron to the row's page. */
+  end?: ReactNode;
 }
 
 /**
@@ -857,17 +885,18 @@ export interface ChooserItemProps extends HTMLAttributes<HTMLDivElement> {
  * option may hold no focusable control; `aria-selected` is what reports it.
  *
  * Spec aidenlx/zotlit#1190 names `Chooser.ItemText` and `Chooser.ItemIndicator`
- * as parts inside it. There are none: a row is a tick and one line of label in
- * that order, always, and the two parts exist to let a caller reorder or
- * restyle a pair this one draws itself. The caller's children are the label,
- * and the indicator is the row's own.
+ * as parts inside it. There are none: a row is a leading glyph, one line of
+ * label and optional trailing content in that order, always, and the two parts
+ * exist to let a caller reorder or restyle a pair this one draws itself. The
+ * caller's children are the label; the glyph is the tick unless the caller
+ * names an `icon`.
  *
  * It stays a separate part from {@link Action} rather than one row component
  * with a flag: the two say different things — one ticks and reports
  * `aria-selected`, the other runs and reports none. What they draw the same is
  * drawn once, in {@link RowShell}.
  */
-function Item({ value, ...rest }: ChooserItemProps) {
+function Item({ value, icon, ...rest }: ChooserItemProps) {
   const { selected } = useChooser();
   const ticked = selected.includes(value);
 
@@ -875,7 +904,8 @@ function Item({ value, ...rest }: ChooserItemProps) {
     <RowShell
       value={value}
       selected={ticked}
-      icon={ticked ? "check" : undefined}
+      icon={icon ?? (ticked ? "check" : undefined)}
+      data-selected={ticked ? "" : undefined}
       {...rest}
     />
   );
