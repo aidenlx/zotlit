@@ -28,7 +28,7 @@ export function SearchControl({ view }: { view: QueryView }) {
     buttonRef.current?.focus();
   };
   return (
-    <div className="zt:flex zt:min-w-0 zt:items-center zt:gap-(--size-2-2)">
+    <div className="zt:flex zt:min-w-min zt:items-center zt:gap-(--size-2-2)">
       <ToolbarButton
         ref={buttonRef}
         icon="search"

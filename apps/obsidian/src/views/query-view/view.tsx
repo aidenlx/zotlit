@@ -1138,7 +1138,7 @@ function QueryViewBody({ view }: { view: QueryView }) {
           the rows without it. */}
       <div
         className={cn(
-          "zt:@container zt:flex zt:min-h-(--bases-header-height) zt:shrink-0 zt:flex-nowrap zt:items-center zt:gap-(--size-2-2) zt:overflow-hidden zt:border-b-(length:--border-width) zt:border-(--bases-table-border-color) zt:ps-(--bases-header-padding-start) zt:pe-(--bases-header-padding-end) zt:in-[.print]:hidden",
+          "zt:@container zt:flex zt:min-h-(--bases-header-height) zt:shrink-0 zt:flex-nowrap zt:items-center zt:gap-(--size-2-2) zt:overflow-hidden zt:[border-width:var(--bases-header-border-width)] zt:border-(--bases-table-border-color) zt:ps-(--bases-header-padding-start) zt:pe-(--bases-header-padding-end) zt:in-[.print]:hidden",
           "zt:in-[.view-content.zt-query-view]:-mx-(--size-4-3) zt:in-[.view-content.zt-query-view]:-mt-(--size-4-3)",
         )}
         role="toolbar"

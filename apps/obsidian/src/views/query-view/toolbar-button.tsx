@@ -73,7 +73,9 @@ export function ToolbarButtonContent({
           name={icon}
           size="var(--icon-s)"
           strokeWidth="var(--icon-s-stroke-width)"
-          className="zt:shrink-0"
+          // A button that keeps its name gives up its icon instead on the
+          // narrowest toolbar, so the row still holds every control.
+          className={cn("zt:shrink-0", keepLabel && "zt:@max-2xs:hidden")}
         />
       )}
       <span className={cn(labelClass(keepLabel), labelClassName)}>{label}</span>
