@@ -29,6 +29,7 @@ import { requested } from "./__fixtures__/query-run";
 import { groupOptions } from "./properties";
 import { QUERY_FILE_DATASETS, serializeQueryFile } from "./query-file";
 import type { QueryFileDataset } from "./query-file";
+import { formulaIssuesOf } from "./results";
 import { QueryView, RERUN_DELAY_MS } from "./view";
 import type { QueryViewDeps } from "./view";
 
@@ -865,7 +866,7 @@ it("shows a wrong condition's diagnostic at its row and keeps the last good resu
   });
   await settle();
 
-  expect(view.state.getState().filterIssue).toEqual({
+  expect(view.state.getState().failure?.filterIssue).toEqual({
     section: "view",
     path: [0],
     message: "colourName is not a field of Annotations. Use colorName.",
@@ -876,8 +877,11 @@ it("shows a wrong condition's diagnostic at its row and keeps the last good resu
   );
 });
 
-/** A syntax fault at the end of the filter, as ZotLit Query reports it. */
-function endOfFilterFault(at: number | null): QueryViewOutcome {
+/**
+ * A syntax fault at the end of the filter text `before`, as ZotLit Query
+ * reports it: the caret of its `report` counts the JSON-escaped text.
+ */
+function endOfFilterFault(at: number | null, before: string): QueryViewOutcome {
   const message =
     "Found end of filter where the filter takes !, (, -, [, a name, a number, a regular expression, a string, false, null, true.";
   const hint =
@@ -889,7 +893,13 @@ function endOfFilterFault(at: number | null): QueryViewOutcome {
       message,
       hint,
       severity: "error",
-      report: [message, "place !=", "        ^", hint],
+      report: [
+        message,
+        before,
+        `${" ".repeat(JSON.stringify(before).length - 2)}^`,
+        hint,
+      ],
+      excerpt: { before, at: "", after: "" },
       ...(at !== null && {
         location: { argument: "filter", span: { from: at, to: at } },
       }),
@@ -912,9 +922,13 @@ function endOfFilterFault(at: number | null): QueryViewOutcome {
   };
 }
 
-it("names the tokens a syntax error lacks once, at the row and in the view's diagnostic", async () => {
+it("names the tokens a syntax error lacks once, at the row and in the view's diagnostic, with the caret under the fault", async () => {
   const { view, el, settle } = await mount(
-    [result([row("ANNOTBBB")]), endOfFilterFault(8), endOfFilterFault(null)],
+    [
+      result([row("ANNOTBBB")]),
+      endOfFilterFault(8, "place !="),
+      endOfFilterFault(null, 'tags.contains("figure") && place !='),
+    ],
     () => {},
   );
   await act(() => view.setText(FILE));
@@ -924,7 +938,7 @@ it("names the tokens a syntax error lacks once, at the row and in the view's dia
     view.document.setFilters("view", "place !=");
   });
   await settle();
-  expect(view.state.getState().filterIssue).toEqual({
+  expect(view.state.getState().failure?.filterIssue).toEqual({
     section: "view",
     path: [0],
     message:
@@ -933,14 +947,18 @@ it("names the tokens a syntax error lacks once, at the row and in the view's dia
 
   await act(() => {
     view.document.setFilters("view", {
-      and: ["place !=", 'tags.contains("figure")'],
+      and: ['tags.contains("figure")', "place !="],
     });
   });
   await settle();
 
-  expect(view.state.getState().filterIssue).toBeNull();
+  expect(view.state.getState().failure?.filterIssue).toBeNull();
   expect(el.querySelector("[data-query-diagnostic] pre")?.textContent).toBe(
-    "Found end of filter where the filter takes !, (, -, [, a name, a number, a regular expression, a string, false, null, true.\nplace !=\n        ^",
+    [
+      "Found end of filter where the filter takes !, (, -, [, a name, a number, a regular expression, a string, false, null, true.",
+      'tags.contains("figure") && place !=',
+      `${" ".repeat('tags.contains("figure") && place !='.length)}^`,
+    ].join("\n"),
   );
 });
 
@@ -1887,9 +1905,9 @@ it("keeps what the new dataset lacks in the file, says the view does not use it,
     sort: [{ field: "pageIndex", direction: "asc" }],
   });
   expect(el.querySelector("[data-query-unused]")).toBeNull();
-  expect(view.state.getState().groups.map((group) => group.label)).toEqual([
-    "Ten simple rules",
-  ]);
+  expect(
+    view.state.getState().results!.groups.map((group) => group.label),
+  ).toEqual(["Ten simple rules"]);
 });
 
 it("shows no rows of the old dataset when the filters fail on the new one", async () => {
@@ -1906,8 +1924,7 @@ it("shows no rows of the old dataset when the filters fail on the new one", asyn
   await settle();
   expect(view.state.getState()).toMatchObject({
     phase: "failed",
-    keptResults: false,
-    records: [],
+    results: null,
   });
   expect(cards(el)).toEqual([]);
 });
@@ -2014,8 +2031,10 @@ it("marks a wrong Formula at its column from the one run, and shows the other co
   expect(run).toHaveBeenCalledTimes(1);
   expect(view.state.getState()).toMatchObject({
     phase: "ready",
-    formulaIssues: {
-      short: "In formula.short: nope is not a method of string. Use slice.",
+    results: {
+      formulaIssues: {
+        short: "In formula.short: nope is not a method of string. Use slice.",
+      },
     },
   });
   expect(tableText(el)).toEqual([
@@ -2037,7 +2056,7 @@ it("marks a wrong Formula at its column from the one run, and shows the other co
   );
   await settle();
   expect(run).toHaveBeenCalledTimes(2);
-  expect(view.state.getState().formulaIssues).toEqual({});
+  expect(formulaIssuesOf(view.state.getState())).toEqual({});
 });
 
 it("keeps the count, the Formula marks and the Error Values with the last results on a filter error", async () => {
@@ -2088,10 +2107,11 @@ it("keeps the count, the Formula marks and the Error Values with the last result
 
   expect(view.state.getState()).toMatchObject({
     phase: "failed",
-    keptResults: true,
-    count: 1,
-    formulaIssues: {
-      short: "In formula.short: nope is not a method of string. Use slice.",
+    results: {
+      count: 1,
+      formulaIssues: {
+        short: "In formula.short: nope is not a method of string. Use slice.",
+      },
     },
   });
   expect(el.querySelector("[data-query-filter-error]")).not.toBeNull();
@@ -2106,6 +2126,84 @@ it("keeps the count, the Formula marks and the Error Values with the last result
       .querySelector('[data-query-table-row="item"] [data-query-error]')
       ?.getAttribute("data-query-error"),
   ).toBe("unparseable-text");
+});
+
+it("keeps the warnings of the last results on a filter error", async () => {
+  const warned = result([row("ANNOTBBB")]);
+  if (warned.kind !== "result") throw new Error("unreachable");
+  const warning = {
+    code: "never-true",
+    severity: "warning",
+    message: "colorName == 1 is never true.",
+    hint: "Compare values of the same type.",
+    report: [],
+  } as never;
+  const { view, settle } = await mount(
+    [
+      { kind: "result", result: { ...warned.result, warnings: [warning] } },
+      filterFault(1, 11),
+    ],
+    () => {},
+  );
+  await act(() => view.setText(FILE));
+  await settle();
+  await act(() => {
+    view.document.setFilters("view", {
+      and: ['colourName == "yellow"', 'tags.contains("figure")'],
+    });
+  });
+  await settle();
+
+  expect(view.state.getState()).toMatchObject({
+    phase: "failed",
+    results: {
+      warnings: [
+        { code: "never-true", message: "colorName == 1 is never true." },
+      ],
+    },
+  });
+});
+
+it("keeps the Formula marks of the cards on screen when it keeps back a run", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  cleanup.defer(() => vi.useRealTimers());
+  const fault = (message: string): Diagnostic => ({
+    code: "unknown-function",
+    message,
+    hint: "",
+    severity: "error",
+    report: [],
+    found: "nope",
+    expected: [],
+    suggestions: [],
+  });
+  const { view, run, repository, setList, settle } = await mount(
+    [
+      withFaults(result([row("ANNOTBBB")]), { short: fault("First run.") }),
+      // Zotero's database does not hold the new Annotation yet.
+      withFaults(result([row("ANNOTBBB")]), { short: fault("Second run.") }),
+    ],
+    undefined,
+    { layout: { showNewRecords: true } },
+  );
+  await act(() => view.setText(`formulas:\n  short: title.nope()\n${FILE}`));
+  await settle();
+
+  setList({
+    ...LIST,
+    annotations: [...LIST.annotations, record("ANNOTCCC", "PDFAAAAA")],
+  });
+  repository.emit("annotations-changed", "PDFAAAAA");
+  await settle();
+  await act(() => {
+    vi.advanceTimersByTime(RERUN_DELAY_MS);
+  });
+  await settle();
+
+  expect(run).toHaveBeenCalledTimes(2);
+  expect(formulaIssuesOf(view.state.getState())).toEqual({
+    short: "First run.",
+  });
 });
 
 const DEPENDENT_FILE = `formulas:
@@ -2161,11 +2259,13 @@ it("marks a wrong Formula and each Formula that reads it with its own reason", a
   expect(run).toHaveBeenCalledTimes(1);
   expect(view.state.getState()).toMatchObject({
     phase: "ready",
-    formulaIssues: {
-      year: "In formula.year: dat is not a field of Items. Use date.",
-      next: "formula.next reads formula.year, which has a mistake. Correct the mistake in formula.year.",
-      after:
-        "formula.after reads formula.next, which has a mistake. Correct the mistake in formula.year.",
+    results: {
+      formulaIssues: {
+        year: "In formula.year: dat is not a field of Items. Use date.",
+        next: "formula.next reads formula.year, which has a mistake. Correct the mistake in formula.year.",
+        after:
+          "formula.after reads formula.next, which has a mistake. Correct the mistake in formula.year.",
+      },
     },
   });
   expect(tableText(el)).toEqual([
@@ -2218,16 +2318,18 @@ it("marks the condition that reads a wrong Formula, and shows no rows until it i
   expect(run).toHaveBeenCalledTimes(2);
   expect(view.state.getState()).toMatchObject({
     phase: "failed",
-    records: [],
-    filterIssue: {
-      section: "view",
-      path: [0],
-      message:
-        "The filter reads formula.next, which has a mistake. Correct the mistake in formula.year.",
-    },
-    formulaIssues: {
-      year: "In formula.year: dat is not a field of Items. Use date.",
-      next: "formula.next reads formula.year, which has a mistake. Correct the mistake in formula.year.",
+    results: null,
+    failure: {
+      filterIssue: {
+        section: "view",
+        path: [0],
+        message:
+          "The filter reads formula.next, which has a mistake. Correct the mistake in formula.year.",
+      },
+      formulaIssues: {
+        year: "In formula.year: dat is not a field of Items. Use date.",
+        next: "formula.next reads formula.year, which has a mistake. Correct the mistake in formula.year.",
+      },
     },
   });
   expect(el.querySelector('[data-query-table-row="item"]')).toBeNull();
@@ -2237,8 +2339,8 @@ it("marks the condition that reads a wrong Formula, and shows no rows until it i
   expect(run).toHaveBeenCalledTimes(3);
   expect(view.state.getState()).toMatchObject({
     phase: "ready",
-    filterIssue: null,
-    formulaIssues: {},
+    failure: null,
+    results: { formulaIssues: {} },
   });
   expect(tableText(el)).toHaveLength(2);
 });
@@ -2284,12 +2386,14 @@ views:
   expect(run).toHaveBeenCalledTimes(2);
   expect(view.state.getState()).toMatchObject({
     phase: "failed",
-    records: [],
-    filterIssue: {
-      section: "view",
-      path: [0],
-      message:
-        '"formula.year" reads the Formula "year", which the request does not define. Define the Formula in formulas.',
+    results: null,
+    failure: {
+      filterIssue: {
+        section: "view",
+        path: [0],
+        message:
+          '"formula.year" reads the Formula "year", which the request does not define. Define the Formula in formulas.',
+      },
     },
   });
   expect(el.querySelector('[data-query-table-row="item"]')).toBeNull();
@@ -2330,7 +2434,7 @@ views:
     ["__proto__", "dat.year"],
     ["constructor", "title"],
   ]);
-  expect(Object.entries(view.state.getState().formulaIssues)).toEqual([
+  expect(Object.entries(formulaIssuesOf(view.state.getState()))).toEqual([
     ["__proto__", "In formula.__proto__: dat is not a field of Items."],
   ]);
   expect(

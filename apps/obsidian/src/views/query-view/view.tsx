@@ -24,7 +24,6 @@ import type {
   QueryViewOutcome,
   QueryViewRequest,
   QueryViewResult,
-  QueryViewRow,
 } from "@/services/item-query/query-view";
 import type { QueryService } from "@/services/item-query/service";
 import { selectorKey } from "@/services/library-scope/scope";
@@ -53,7 +52,6 @@ import { groupOptions, sortOptions } from "./properties";
 import { PropertiesMenu } from "./properties-menu";
 import { locateFilterFault, viewFilter } from "./query-file";
 import type {
-  ConditionIssue,
   QueryFile,
   QueryFileDataset,
   QueryFileProblem,
@@ -61,10 +59,11 @@ import type {
   QueryFileView,
 } from "./query-file";
 import { QueryFileDocument } from "./query-file-document";
-import type { ShownRecord } from "./record-rows";
+import { readerDiagnostic } from "./reader-diagnostic";
+import { NO_RESULTS } from "./results";
+import type { QueryViewFailure, ResultSnapshot } from "./results";
 import { ResultsMenu } from "./results-menu";
 import { layoutRows } from "./rows";
-import type { LayoutGroup } from "./rows";
 import { SearchControl } from "./search-control";
 import { SortEditor } from "./sort-control";
 import { resultTable } from "./table";
@@ -144,34 +143,14 @@ export interface QueryViewState {
   /** What keeps the view from running, for the file and for the view. */
   problems: readonly string[];
   phase: "idle" | "loading" | "ready" | "failed";
-  /** Why the last run gave no rows, while `phase` is `failed`. */
-  diagnostic:
-    | (Pick<Diagnostic, "message" | "hint" | "report"> & {
-        code: string;
-        suggestions?: readonly string[];
-      })
-    | null;
-  /** The condition of the filters that the last run's diagnostic marks. */
-  filterIssue: ConditionIssue | null;
   /**
-   * The Formulas the last run left out, since ZotLit Query names a mistake in
-   * them: each name with the message. Their columns show no values.
+   * The rows of the last run that gave rows, with what that run says about
+   * them; `null` while no rows are on screen. A failed run keeps them whole
+   * or clears them.
    */
-  formulaIssues: NameDictionary<string>;
-  /** Whether a failed run left the last good rows on screen. */
-  keptResults: boolean;
-  /** The rows shown, each once however many groups it stands in. */
-  count: number;
-  /** The rows in the order they show, a row once in each group it stands in. */
-  records: readonly ShownRecord[];
-  /** The records that match the view, before its limit. */
-  matched: number;
-  /** Every group the rows hold, the shown ones first; empty when ungrouped. */
-  groups: readonly LayoutGroup[];
-  /** Whether the view's limit cut the rows short. */
-  truncated: boolean;
-  /** What the last run that gave rows says about its query, each once. */
-  warnings: readonly QueryViewWarning[];
+  results: ResultSnapshot | null;
+  /** Why the last run gave no rows; `null` once a run gives rows. */
+  failure: QueryViewFailure | null;
   /** Whether the host could not save the last toolbar change. */
   saveFailed: boolean;
 }
@@ -187,16 +166,8 @@ const INITIAL_STATE: QueryViewState = {
   view: null,
   problems: [],
   phase: "idle",
-  diagnostic: null,
-  filterIssue: null,
-  formulaIssues: nameDictionary(),
-  keptResults: false,
-  count: 0,
-  records: [],
-  matched: 0,
-  groups: [],
-  truncated: false,
-  warnings: [],
+  results: null,
+  failure: null,
   saveFailed: false,
 };
 
@@ -287,30 +258,9 @@ function formulaIssues(outcome: QueryViewOutcome): NameDictionary<string> {
   return nameDictionary(
     Object.entries(faults ?? {}).map(([name, diagnostic]) => [
       name,
-      diagnosticText(diagnostic),
+      readerDiagnostic(diagnostic).sentence,
     ]),
   );
-}
-
-/** The part of a diagnostic that tells whether its hint adds to its message. */
-type HintedDiagnostic = Pick<Diagnostic, "message" | "hint"> & {
-  code: string;
-  suggestions?: readonly string[];
-};
-
-/**
- * Whether the hint lists again what the message lists: a syntax error's hint
- * without a correction names the same tokens as its message.
- */
-function hintRepeats({ code, suggestions = [] }: HintedDiagnostic): boolean {
-  return code === "invalid-filter" && suggestions.length === 0;
-}
-
-/** A diagnostic's message, with its hint after it where the hint adds to it. */
-function diagnosticText(diagnostic: HintedDiagnostic): string {
-  const { message, hint } = diagnostic;
-  if (hintRepeats(diagnostic)) return message;
-  return [message, hint].filter(Boolean).join(" ");
 }
 
 export class QueryView extends Component implements HistorySurface {
@@ -336,8 +286,6 @@ export class QueryView extends Component implements HistorySurface {
   /** The dataset of the rows on screen. */
   #shownDataset: QueryFileDataset | null = null;
   #settled: Promise<void> = Promise.resolve();
-  /** The rows on screen, each once, in the order they show. */
-  #rows: readonly QueryViewRow[] = [];
   #subscriptions: DisposableStack | null = null;
   /** Whether the view draws into an element; until then no card waits to show. */
   #rendered = false;
@@ -601,7 +549,8 @@ export class QueryView extends Component implements HistorySurface {
   #redraw(view: QueryFileView): void {
     const cards = drawsCards(view);
     if (cards === this.#cardsShown) return;
-    const rows = this.state.getState().records.map(({ row, group }) => ({
+    const records = this.state.getState().results?.records ?? [];
+    const rows = records.map(({ row, group }) => ({
       annotationKey: row.indexedKey,
       attachmentKey: row.attachmentIndexedKey ?? row.indexedKey,
       ...(group && { group }),
@@ -616,7 +565,7 @@ export class QueryView extends Component implements HistorySurface {
   table(): ResultTable {
     const { file, view } = this.state.getState();
     return resultTable(
-      this.#rows,
+      this.state.getState().results?.rows ?? [],
       view ? viewProperties(file, view).visible : [],
     );
   }
@@ -680,14 +629,8 @@ export class QueryView extends Component implements HistorySurface {
       void this.#show(null);
       this.state.setState({
         phase: "idle",
-        diagnostic: null,
-        filterIssue: null,
-        formulaIssues: nameDictionary(),
-        count: 0,
-        matched: 0,
-        groups: [],
-        truncated: false,
-        warnings: [],
+        results: null,
+        failure: null,
       });
       return;
     }
@@ -716,7 +659,6 @@ export class QueryView extends Component implements HistorySurface {
               code: "query-failed",
               message: error instanceof Error ? error.message : String(error),
               hint: "",
-              report: [],
             },
             nameDictionary(),
           );
@@ -738,7 +680,6 @@ export class QueryView extends Component implements HistorySurface {
         return;
       case "result": {
         const { result } = outcome;
-        this.state.setState({ formulaIssues: formulaIssues(outcome) });
         // The query reads Zotero's database, which can take a new Annotation
         // after the repository's list does. Such a run keeps the cards on
         // screen, and the database change that follows runs the view again.
@@ -753,29 +694,31 @@ export class QueryView extends Component implements HistorySurface {
         const byKey = new Map(
           (result.rows ?? []).map((row) => [row.indexedKey, row]),
         );
-        this.#rows = [
-          ...new Set(shown.rows.map((row) => row.annotationKey)),
-        ].map((key) => byKey.get(key)!);
         this.state.setState({
           phase: "ready",
-          diagnostic: null,
-          filterIssue: null,
-          count: shown.count,
-          records: shown.rows.map(({ annotationKey, group }) => ({
-            row: byKey.get(annotationKey)!,
-            ...(group && { group }),
-          })),
-          matched: result.matchedCount,
-          groups: shown.groups,
-          truncated: result.truncated,
-          warnings: [
-            ...new Map(
-              result.warnings.map(({ code, message }) => [
-                code === "key-outside-target-libraries" ? code : message,
-                { code, message },
-              ]),
-            ).values(),
-          ],
+          results: {
+            rows: [...new Set(shown.rows.map((row) => row.annotationKey))].map(
+              (key) => byKey.get(key)!,
+            ),
+            count: shown.count,
+            records: shown.rows.map(({ annotationKey, group }) => ({
+              row: byKey.get(annotationKey)!,
+              ...(group && { group }),
+            })),
+            matched: result.matchedCount,
+            groups: shown.groups,
+            truncated: result.truncated,
+            warnings: [
+              ...new Map(
+                result.warnings.map(({ code, message }) => [
+                  code === "key-outside-target-libraries" ? code : message,
+                  { code, message },
+                ]),
+              ).values(),
+            ],
+            formulaIssues: formulaIssues(outcome),
+          },
+          failure: null,
         });
         // The Layout may have changed while the query ran.
         const current = this.state.getState().view ?? view;
@@ -800,7 +743,7 @@ export class QueryView extends Component implements HistorySurface {
    */
   #fail(
     { key, file, view }: ViewRun,
-    diagnostic: Diagnostic | NonNullable<QueryViewState["diagnostic"]>,
+    diagnostic: Diagnostic | QueryViewFailure["diagnostic"],
     issues: NameDictionary<string>,
   ): void {
     const kept =
@@ -815,14 +758,18 @@ export class QueryView extends Component implements HistorySurface {
         ? diagnostic.location.span
         : undefined;
     const at = span ? locateFilterFault(file, view, span) : null;
-    this.state.setState({
+    this.state.setState((state) => ({
       phase: "failed",
-      diagnostic,
-      warnings: [],
-      keptResults: kept,
-      ...(!kept && { formulaIssues: issues }),
-      filterIssue: at && { ...at, message: diagnosticText(diagnostic) },
-    });
+      results: kept ? state.results : null,
+      failure: {
+        diagnostic,
+        filterIssue: at && {
+          ...at,
+          message: readerDiagnostic(diagnostic).sentence,
+        },
+        formulaIssues: issues,
+      },
+    }));
   }
 
   /**
@@ -835,11 +782,7 @@ export class QueryView extends Component implements HistorySurface {
     rows: Parameters<AnnotationsLayout["showRows"]>[0] | null = [],
   ): Promise<void> {
     this.#shownRequest = key;
-    if (key === null) {
-      this.#shownViewName = null;
-      this.#rows = [];
-      this.state.setState({ records: [] });
-    }
+    if (key === null) this.#shownViewName = null;
     this.#cardsShown = key !== null && rows !== null;
     if (key === null || rows === null) {
       this.#layout.clear();
@@ -859,12 +802,13 @@ function useQueryViewState<T>(
 function Problems({ view }: { view: QueryView }) {
   const problems = useQueryViewState(view, (s) => s.problems);
   const phase = useQueryViewState(view, (s) => s.phase);
-  const diagnostic = useQueryViewState(view, (s) => s.diagnostic);
-  const filterIssue = useQueryViewState(view, (s) => s.filterIssue);
-  const keptResults = useQueryViewState(view, (s) => s.keptResults);
+  const diagnostic = useQueryViewState(view, (s) => s.failure?.diagnostic);
+  const marked = useQueryViewState(
+    view,
+    (s) => (s.failure?.filterIssue ?? null) !== null && s.results !== null,
+  );
   // A fault in one condition, under the last good rows, is marked at its row
   // in the Filter popover; the view says only that the filter has an error.
-  const marked = filterIssue !== null && keptResults;
   const unresolved = useAnnotStore((s) => s.unresolved);
   return (
     <>
@@ -897,18 +841,7 @@ function Problems({ view }: { view: QueryView }) {
           data-query-diagnostic={diagnostic.code}
         >
           <p className="zt:m-0 zt:font-semibold">{m.query_view_failed()}</p>
-          {diagnostic.report.length > 0 ? (
-            <pre className="zt:m-0 zt:mt-1 zt:overflow-auto zt:text-xs zt:whitespace-pre-wrap">
-              {(hintRepeats(diagnostic)
-                ? diagnostic.report.slice(0, -1)
-                : diagnostic.report
-              ).join("\n")}
-            </pre>
-          ) : (
-            <p className="zt:m-0 zt:mt-1">
-              {diagnostic.message} {diagnostic.hint}
-            </p>
-          )}
+          <DiagnosticText diagnostic={diagnostic} />
         </div>
       )}
       {unresolved.length > 0 && (
@@ -923,6 +856,31 @@ function Problems({ view }: { view: QueryView }) {
         </p>
       )}
     </>
+  );
+}
+
+/**
+ * What the run's diagnostic says, and where the filter holds the fault: its
+ * line, with a caret under the fault.
+ */
+function DiagnosticText({
+  diagnostic,
+}: {
+  diagnostic: QueryViewFailure["diagnostic"];
+}) {
+  const { sentence, excerpt } = readerDiagnostic(diagnostic);
+  if (!excerpt) return <p className="zt:m-0 zt:mt-1">{sentence}</p>;
+  return (
+    <pre className="zt:m-0 zt:mt-1 zt:overflow-auto zt:text-xs zt:whitespace-pre-wrap">
+      {sentence}
+      {"\n"}
+      {excerpt.line}
+      {"\n"}
+      {" ".repeat(excerpt.from)}
+      <span className="zt:text-(--text-error)">
+        {"^".repeat(excerpt.length)}
+      </span>
+    </pre>
   );
 }
 
@@ -988,7 +946,10 @@ function UnusedNote({ view }: { view: QueryView }) {
 
 function Warnings({ view }: { view: QueryView }) {
   const phase = useQueryViewState(view, (s) => s.phase);
-  const warnings = useQueryViewState(view, (s) => s.warnings);
+  const warnings = useQueryViewState(
+    view,
+    (s) => (s.results ?? NO_RESULTS).warnings,
+  );
   if (phase !== "ready" || warnings.length === 0) return null;
   return (
     <>
@@ -1007,7 +968,7 @@ function Warnings({ view }: { view: QueryView }) {
 
 function NoResults({ view }: { view: QueryView }) {
   const phase = useQueryViewState(view, (s) => s.phase);
-  const count = useQueryViewState(view, (s) => s.count);
+  const count = useQueryViewState(view, (s) => s.results?.count ?? 0);
   const dataset = useQueryViewState(view, (s) => s.view?.from);
   // A filter of this view or of all views can be what leaves it empty.
   const filtered = useQueryViewState(
@@ -1130,7 +1091,10 @@ function SortButton({ view }: { view: QueryView }) {
 
 function GroupButton({ view }: { view: QueryView }) {
   const current = useQueryViewState(view, (s) => s.view);
-  const groups = useQueryViewState(view, (s) => s.groups);
+  const groups = useQueryViewState(
+    view,
+    (s) => (s.results ?? NO_RESULTS).groups,
+  );
   const properties = useViewProperties(view);
   if (!current || !properties) return null;
   return (

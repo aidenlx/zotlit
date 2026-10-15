@@ -52,14 +52,12 @@ export function exportResults(view: QueryView): void {
 
 function CountText({ view }: { view: QueryView }) {
   const phase = useStore(view.state, (s) => s.phase);
-  const count = useStore(view.state, (s) => s.count);
-  const matched = useStore(view.state, (s) => s.matched);
-  const truncated = useStore(view.state, (s) => s.truncated);
   // A failed run that keeps the last rows keeps their count too.
-  const kept = useStore(view.state, (s) => s.keptResults);
+  const results = useStore(view.state, (s) => s.results);
   if (phase === "loading")
     return <span data-query-count="">{m.query_view_loading()}</span>;
-  if (phase !== "ready" && !(phase === "failed" && kept)) return null;
+  if (!results) return null;
+  const { count, matched, truncated } = results;
   return (
     <span data-query-count={count} data-query-matched={matched}>
       {truncated
@@ -118,7 +116,7 @@ function LimitField({ view, close }: { view: QueryView; close: () => void }) {
 export function ResultsMenu({ view }: { view: QueryView }) {
   const current = useStore(view.state, (s) => s.view);
   const phase = useStore(view.state, (s) => s.phase);
-  const matched = useStore(view.state, (s) => s.matched);
+  const matched = useStore(view.state, (s) => s.results?.matched ?? 0);
   const [open, setOpen] = useState(false);
   const popup = useRef<HTMLDivElement>(null);
   const popupId = useUniqueId();

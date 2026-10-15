@@ -29,6 +29,7 @@ import { useAnnotStore } from "@/views/annot-view/store";
 import type { QueryLayout } from "./layouts";
 import { propertyIcon } from "./property-icon";
 import { CellContent } from "./record-rows";
+import { NO_RESULTS } from "./results";
 import type { LiteratureNotes } from "./table-notes";
 import { cellText } from "./value-text";
 import type { QueryView } from "./view";
@@ -476,7 +477,7 @@ function ChildRow({
 
 /** The view's rows as a table of Items. */
 export function TableLayout({ view }: { view: QueryView }) {
-  const rows = useStore(view.state, (s) => s.records);
+  const rows = useStore(view.state, (s) => (s.results ?? NO_RESULTS).records);
   const search = useAnnotStore((s) => s.filterQuery)
     .trim()
     .toLowerCase();

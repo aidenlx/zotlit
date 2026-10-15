@@ -16,6 +16,7 @@ import {
   useToggleGroupCollapsed,
 } from "@/views/annot-view/store";
 
+import { NO_RESULTS } from "./results";
 import { cell, cellText, errorCell } from "./value-text";
 import type { QueryView } from "./view";
 import { useViewProperties } from "./view-properties";
@@ -48,7 +49,10 @@ export function useRecordGroups(view: QueryView): {
   groups: readonly RecordGroup[];
 } {
   const columns = useViewProperties(view)?.visible;
-  const records = useStore(view.state, (s) => s.records);
+  const records = useStore(
+    view.state,
+    (s) => (s.results ?? NO_RESULTS).records,
+  );
   const query = useAnnotStore((s) => s.filterQuery)
     .trim()
     .toLowerCase();
