@@ -506,7 +506,7 @@ export function AnnotList({
       <div
         ref={mountGrid}
         className={cn(
-          "zt:grid zt:items-start zt:gap-2",
+          "zt:grid zt:items-start zt:gap-3",
           cardWidth === undefined
             ? "zt:grid-cols-1 zt:@2xl:grid-cols-2 zt:@5xl:grid-cols-3"
             : "zt:grid-cols-[repeat(auto-fill,minmax(min(100%,var(--zt-card-width)),1fr))]",
@@ -584,21 +584,37 @@ function GroupHeading({
   onToggle: () => void;
 }) {
   return (
+    // A group ends on a hairline, as a group does in a Bases Cards view: every
+    // heading after the first stands under one, a little further from the
+    // cards above it than the cards stand from each other.
     <div
       role="row"
       data-query-group={groupKey}
       data-collapsed={expanded ? undefined : ""}
-      className="zt:col-span-full zt:mt-2 zt:first:mt-0"
+      className="zt:col-span-full zt:not-first:mt-1 zt:not-first:border-t zt:not-first:border-border zt:not-first:pt-2"
     >
       <span role="rowheader" className="zt:flex zt:min-w-0">
+        {/* The press target is Obsidian's `clickable-icon`, which takes back
+            the button chrome Obsidian draws, unlayered, on a bare `<button>`
+            and gives the theme's own hover. It pulls back by its inline
+            padding, so the chevron starts on the cards' edge. Obsidian
+            sets a button's weight and colour unlayered as well, so the label
+            carries the heading type itself. The chevron stays shown, so a
+            collapsed group reads as collapsed without a pointer over it. */}
         <button
           type="button"
           aria-expanded={expanded}
-          className="clickable-icon zt:flex zt:min-w-0 zt:items-center zt:gap-1 zt:text-sm zt:font-semibold zt:text-(--text-muted)"
+          className="clickable-icon zt:-ms-(--size-2-3) zt:flex zt:min-w-0 zt:items-center zt:gap-1"
           onClick={onToggle}
         >
-          <Icon name={expanded ? "chevron-down" : "chevron-right"} size={14} />
-          <span className="zt:truncate">{label}</span>
+          <Icon
+            name={expanded ? "chevron-down" : "chevron-right"}
+            size="var(--icon-xs)"
+            className="zt:shrink-0 zt:text-(--collapse-icon-color)"
+          />
+          <span className="zt:truncate zt:text-sm zt:font-(weight:--bases-group-heading-value-weight) zt:text-foreground">
+            {label}
+          </span>
         </button>
       </span>
     </div>

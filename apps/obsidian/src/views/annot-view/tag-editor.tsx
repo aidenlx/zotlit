@@ -135,7 +135,7 @@ export function TagEditor({
                 className="zt:flex zt:shrink-0"
                 {...tooltipAttrs(m.annot_view_card_tag_auto())}
               >
-                <Icon name="bot" size={12} aria-hidden />
+                <Icon name="bot" size="var(--icon-xs)" aria-hidden />
                 <span className="zt:sr-only">
                   {m.annot_view_card_tag_auto()}
                 </span>
@@ -147,7 +147,7 @@ export function TagEditor({
               disabled={saving}
               {...tooltipAttrs(m.annot_view_card_tag_remove({ name }))}
             >
-              <Icon name="x" size={12} />
+              <Icon name="x" size="var(--icon-xs)" />
             </TagsInput.ItemRemove>
           </TagsInput.Item>
         ))}
