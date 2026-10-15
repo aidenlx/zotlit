@@ -146,7 +146,10 @@ export interface QueryViewState {
   phase: "idle" | "loading" | "ready" | "failed";
   /** Why the last run gave no rows, while `phase` is `failed`. */
   diagnostic:
-    | (Pick<Diagnostic, "message" | "hint" | "report"> & { code: string })
+    | (Pick<Diagnostic, "message" | "hint" | "report"> & {
+        code: string;
+        suggestions?: readonly string[];
+      })
     | null;
   /** The condition of the filters that the last run's diagnostic marks. */
   filterIssue: ConditionIssue | null;
@@ -289,11 +292,24 @@ function formulaIssues(outcome: QueryViewOutcome): NameDictionary<string> {
   );
 }
 
-/** A diagnostic's message, with its hint after it where it has one. */
-function diagnosticText({
-  message,
-  hint,
-}: Pick<Diagnostic, "message" | "hint">): string {
+/** The part of a diagnostic that tells whether its hint adds to its message. */
+type HintedDiagnostic = Pick<Diagnostic, "message" | "hint"> & {
+  code: string;
+  suggestions?: readonly string[];
+};
+
+/**
+ * Whether the hint lists again what the message lists: a syntax error's hint
+ * without a correction names the same tokens as its message.
+ */
+function hintRepeats({ code, suggestions = [] }: HintedDiagnostic): boolean {
+  return code === "invalid-filter" && suggestions.length === 0;
+}
+
+/** A diagnostic's message, with its hint after it where the hint adds to it. */
+function diagnosticText(diagnostic: HintedDiagnostic): string {
+  const { message, hint } = diagnostic;
+  if (hintRepeats(diagnostic)) return message;
   return [message, hint].filter(Boolean).join(" ");
 }
 
@@ -883,7 +899,10 @@ function Problems({ view }: { view: QueryView }) {
           <p className="zt:m-0 zt:font-semibold">{m.query_view_failed()}</p>
           {diagnostic.report.length > 0 ? (
             <pre className="zt:m-0 zt:mt-1 zt:overflow-auto zt:text-xs zt:whitespace-pre-wrap">
-              {diagnostic.report.join("\n")}
+              {(hintRepeats(diagnostic)
+                ? diagnostic.report.slice(0, -1)
+                : diagnostic.report
+              ).join("\n")}
             </pre>
           ) : (
             <p className="zt:m-0 zt:mt-1">

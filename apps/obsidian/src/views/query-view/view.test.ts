@@ -876,6 +876,74 @@ it("shows a wrong condition's diagnostic at its row and keeps the last good resu
   );
 });
 
+/** A syntax fault at the end of the filter, as ZotLit Query reports it. */
+function endOfFilterFault(at: number | null): QueryViewOutcome {
+  const message =
+    "Found end of filter where the filter takes !, (, -, [, a name, a number, a regular expression, a string, false, null, true.";
+  const hint =
+    "Use !, (, -, [, a name, a number, a regular expression, a string, false, null, true.";
+  return {
+    kind: "failed",
+    diagnostic: {
+      code: "invalid-filter",
+      message,
+      hint,
+      severity: "error",
+      report: [message, "place !=", "        ^", hint],
+      ...(at !== null && {
+        location: { argument: "filter", span: { from: at, to: at } },
+      }),
+      found: "end of filter",
+      expected: [
+        "!",
+        "(",
+        "-",
+        "[",
+        "a name",
+        "a number",
+        "a regular expression",
+        "a string",
+        "false",
+        "null",
+        "true",
+      ],
+      suggestions: [],
+    },
+  };
+}
+
+it("names the tokens a syntax error lacks once, at the row and in the view's diagnostic", async () => {
+  const { view, el, settle } = await mount(
+    [result([row("ANNOTBBB")]), endOfFilterFault(8), endOfFilterFault(null)],
+    () => {},
+  );
+  await act(() => view.setText(FILE));
+  await settle();
+
+  await act(() => {
+    view.document.setFilters("view", "place !=");
+  });
+  await settle();
+  expect(view.state.getState().filterIssue).toEqual({
+    section: "view",
+    path: [0],
+    message:
+      "Found end of filter where the filter takes !, (, -, [, a name, a number, a regular expression, a string, false, null, true.",
+  });
+
+  await act(() => {
+    view.document.setFilters("view", {
+      and: ["place !=", 'tags.contains("figure")'],
+    });
+  });
+  await settle();
+
+  expect(view.state.getState().filterIssue).toBeNull();
+  expect(el.querySelector("[data-query-diagnostic] pre")?.textContent).toBe(
+    "Found end of filter where the filter takes !, (, -, [, a name, a number, a regular expression, a string, false, null, true.\nplace !=\n        ^",
+  );
+});
+
 function section(el: HTMLElement, name: "all" | "view"): HTMLElement {
   return el.querySelector<HTMLElement>(`[data-filter-section="${name}"]`)!;
 }
