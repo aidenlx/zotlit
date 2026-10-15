@@ -2377,6 +2377,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(after.tab!.cards).toEqual(figures);
     expect(after[labNote]![0]!.cards).toEqual(myFigures);
 
+    // The count in each pane opens that pane's own Results menu.
+    const results = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{const views=[...app.workspace.getLeavesOfType('markdown').flatMap(l=>[...l.view.containerEl.querySelectorAll('.internal-embed')].filter(el=>el.zotlitQueryView&&el.isShown())),...app.workspace.getLeavesOfType('zotlit-query-file').map(l=>l.view.contentEl)];const out=[];for(const el of views){el.querySelector('[data-query-results]').click();await new Promise(r=>setTimeout(r,100));out.push(el.querySelector('[data-query-results-popup]').matches(':popover-open'));activeDocument.querySelectorAll(':popover-open').forEach(p=>p.hidePopover());}return JSON.stringify(out);})()`,
+      ),
+    ) as boolean[];
+    expect(results).toEqual([true, true, true]);
+
     // A click in the Live Preview embed leaves the editor's selection alone.
     const selection = JSON.parse(
       await obEval(

@@ -112,14 +112,23 @@ function LimitField({ view, close }: { view: QueryView; close: () => void }) {
   );
 }
 
+/**
+ * Numbers each Results menu's popup. `useId` counts within one Preact root,
+ * and every Query View is a root of its own, so two views in one window —
+ * a note's embeds, its Reading view and its editor — would share an id, and
+ * a button would open the other view's popup.
+ */
+let resultsSequence = 0;
+
 export function ResultsMenu({ view }: { view: QueryView }) {
   const current = useStore(view.state, (s) => s.view);
   const phase = useStore(view.state, (s) => s.phase);
   const matched = useStore(view.state, (s) => s.matched);
   const [open, setOpen] = useState(false);
   const popup = useRef<HTMLDivElement>(null);
-  const id = useId();
-  const popupId = `zt-query-results-${id.replaceAll(":", "")}`;
+  const [popupId] = useState(
+    () => `zt-query-results-${(resultsSequence += 1)}`,
+  );
   const anchor = `--${popupId}`;
   const close = () => popup.current?.hidePopover();
   // The limit field takes focus once the open menu has drawn it.
