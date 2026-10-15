@@ -23,6 +23,7 @@ import {
 import type { FixtureAnnotation } from "@zotlit/scripts/fixture";
 
 import { obEval, obEvalUntil } from "./obsidian-cli.ts";
+import { PAGE } from "./page-gestures.ts";
 
 /** The Fixture Attachment the reader opens and every excerpt here resolves. */
 const attachment = ATTACHMENTS.find(({ key }) => key === "RGRPDF24")!;
@@ -108,17 +109,6 @@ function findImage(key: string): string {
 /** Whether that card paints a decoded image. */
 function painted(key: string): string {
   return `!!(()=>{const image=${findImage(key)};return image&&image.complete&&image.naturalWidth>0&&image.src.startsWith('blob:');})()`;
-}
-
-/**
- * The colour-filter swatch for one colour, as the FilterBar paints it: the
- * pointer target is the swatch's parent, and the colour lives in the swatch's
- * own `--zt-swatch-color` declaration.
- */
-function swatch(color: string): string {
-  return `Array.from(app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view.containerEl.querySelectorAll('span[style*="--zt-swatch-color"]')??[]).find(element=>element.style.getPropertyValue('--zt-swatch-color').trim().toLowerCase()===${JSON.stringify(
-    color.toLowerCase(),
-  )})?.parentElement`;
 }
 
 /**
@@ -371,6 +361,7 @@ function paintedPixels(key: string): string {
 export async function verifyReaderBackedExcerpts(
   vaultId: string,
 ): Promise<void> {
+  const m = await import("@obsidian-messages");
   const layout = await obEval(
     vaultId,
     "JSON.stringify(app.workspace.getLayout())",
@@ -692,10 +683,19 @@ export async function verifyReaderBackedExcerpts(
         const state=leaf.view.snapshot;
         if(state.followMode!=='pinned'||state.pinnedItemKey!==${JSON.stringify(item.key)})
           await leaf.setViewState({type:'zotero-annotation-view',state:{followMode:'pinned',previousMode:'active-tab',pinnedItemKey:${JSON.stringify(item.key)}},active:true});
-        const element=${swatch(target.color)};
-        if(!element)return JSON.stringify('no swatch');
-        if(element.getAttribute('aria-pressed')!=='true')element.click();
+        ${PAGE}
+        try{
+        const root=leaf.view.containerEl;
+        const trigger=Array.from(root.querySelectorAll('button[aria-label]')).find(button=>button.getAttribute('aria-label')===${JSON.stringify(m.annot_view_filter_color_trigger())}||button.getAttribute('aria-label').startsWith(${JSON.stringify(m.annot_view_filter_color_trigger_active({ colors: "" }))}));
+        if(!trigger)return JSON.stringify('no colour Chooser');
+        press(trigger,'colour Chooser');
+        const list=await until('colour list opens',()=>{const list=root.ownerDocument.querySelector('[role="listbox"][aria-label=${JSON.stringify(m.annot_view_filter_color_list())}]');return list?.checkVisibility()?list:null;});
+        const row=Array.from(list.querySelectorAll('[role="option"]')).find(option=>option.querySelector('[style*="--zt-swatch-color"]')?.style.getPropertyValue('--zt-swatch-color').trim().toLowerCase()===${JSON.stringify(target.color.toLowerCase())});
+        if(!row)return JSON.stringify('no swatch');
+        if(row.getAttribute('aria-selected')!=='true'){press(row,'colour row');await until('colour filter applies',()=>row.getAttribute('aria-selected')==='true');}
+        (root.ownerDocument.activeElement??root.ownerDocument.body).dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
         return JSON.stringify('demanded');
+        }catch(error){return JSON.stringify(String(error.message));}
       })()`,
       { expected: JSON.stringify("demanded"), tries: 80 },
     ),
