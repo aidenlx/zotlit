@@ -2695,6 +2695,7 @@
   "query_view_formula_save": "Save",
   "query_view_formula_remove": "Remove formula",
   "query_view_property_rename": "Rename property",
+  "query_view_property_edit": "Edit property",
   "query_view_display_name": "Display name",
   "query_view_display_name_desc": "The name the view shows in its headings and in exported files. Leave it empty to show {label}.",
   "query_view_display_name_save": "Save",

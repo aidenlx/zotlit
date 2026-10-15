@@ -108,6 +108,10 @@ interface ChooserState {
   active: number;
   /** The `id` the highlight points at, or `null` while it points at no row. */
   activeOptionId: string | null;
+  /** The Scope the Chooser holds the keyboard with while the popup stands. */
+  scope: Scope;
+  /** The highlighted row's value at the moment a key fires, else `null`. */
+  activeValue: () => string | null;
 }
 
 const ChooserContext = createContext<ChooserState | null>(null);
@@ -124,6 +128,16 @@ function useChooser(): ChooserState {
  */
 export function useChooserQuery(): string {
   return useChooser().query;
+}
+
+/**
+ * The Chooser's Scope and its highlighted row, for a caller that adds keys of
+ * its own, such as a key that moves the highlighted row. A key registered on
+ * the scope reaches the caller only while the popup stands.
+ */
+export function useChooserScope(): Pick<ChooserState, "scope" | "activeValue"> {
+  const { scope, activeValue } = useChooser();
+  return { scope, activeValue };
 }
 
 /** What a row needs from the list it is drawn in. */
@@ -179,9 +193,11 @@ function runActivation(
  * has no row for a page step to move over either.
  */
 function pageSizeOf(list: HTMLElement | null): number {
-  const row = list?.querySelector<HTMLElement>('[role="option"]');
-  if (!list || !row || row.offsetHeight === 0) return 0;
-  return Math.floor(list.clientHeight / row.offsetHeight);
+  // A list with a pinned group scrolls a box inside it.
+  const box = list?.querySelector<HTMLElement>("[data-chooser-scroll]") ?? list;
+  const row = box?.querySelector<HTMLElement>('[role="option"]');
+  if (!box || !row || row.offsetHeight === 0) return 0;
+  return Math.floor(box.clientHeight / row.offsetHeight);
 }
 
 /**
@@ -267,6 +283,10 @@ export function Chooser({ value, onValueChange, children }: ChooserProps) {
    * scope is built once with the root rather than rebuilt per open.
    */
   const [scope] = useState(() => new Scope(app.scope));
+  const activeValue = useCallback(() => {
+    const { rows: shown, highlight: at } = latest.current;
+    return shown[clampedHighlight(at, shown.length)]?.value ?? null;
+  }, []);
 
   // Layout effects throughout this component, not passive ones. A passive
   // effect is flushed on the browser's own schedule, and a key arrives through
@@ -364,6 +384,8 @@ export function Chooser({ value, onValueChange, children }: ChooserProps) {
       optionId,
       active,
       activeOptionId: active < 0 ? null : optionId(active),
+      scope,
+      activeValue,
     }),
     [
       value,
@@ -376,6 +398,8 @@ export function Chooser({ value, onValueChange, children }: ChooserProps) {
       publishRows,
       optionId,
       active,
+      scope,
+      activeValue,
     ],
   );
 
@@ -626,6 +650,35 @@ function List<Row extends ChooserRow>({
   // that knows them; where the highlight then lands is the root's to say.
   useLayoutEffect(() => publishRows(rows), [rows, publishRows]);
 
+  const scrolled = sections.filter((section) => !section.pinned);
+  const pinned = sections.filter((section) => section.pinned);
+  /** Groups drawn one after another, a rule between each two. */
+  const drawSections = (drawn: typeof sections, footer = false) =>
+    drawn.map((section, index) => (
+      <Fragment key={section.groupIndex}>
+        {(index > 0 || (empty && !footer)) && <Separator />}
+        {section.label === undefined ? (
+          section.rows.map(children)
+        ) : (
+          // A labelled run is a list-box group, so a screen reader reads
+          // the heading with the rows under it. The heading itself is no
+          // option and carries no id the highlight can point at.
+          <div
+            role="group"
+            aria-labelledby={`${listId}-group-${section.groupIndex}`}
+          >
+            <div
+              id={`${listId}-group-${section.groupIndex}`}
+              className="zt:ps-1.5 zt:pt-1 zt:pb-0.5 zt:text-xs zt:text-muted-foreground"
+            >
+              {section.label}
+            </div>
+            {section.rows.map(children)}
+          </div>
+        )}
+      </Fragment>
+    ));
+
   const list = useMemo<ChooserListState>(
     () => ({
       indexOf: new Map(rows.map((row, index) => [row.value, index])),
@@ -674,35 +727,37 @@ function List<Row extends ChooserRow>({
         aria-activedescendant={activeOptionId ?? undefined}
         {...rest}
         className={cn(
-          "zt:min-h-0 zt:flex-1 zt:overflow-y-auto zt:p-(--menu-padding)",
+          pinned.length === 0
+            ? "zt:min-h-0 zt:flex-1 zt:overflow-y-auto zt:p-(--menu-padding)"
+            : "zt:flex zt:min-h-0 zt:flex-1 zt:flex-col",
           className,
         )}
       >
         <ChooserListContext value={list}>
-          {sections.map((section, index) => (
-            <Fragment key={section.groupIndex}>
-              {(index > 0 || empty) && <Separator />}
-              {section.label === undefined ? (
-                section.rows.map(children)
-              ) : (
-                // A labelled run is a list-box group, so a screen reader reads
-                // the heading with the rows under it. The heading itself is no
-                // option and carries no id the highlight can point at.
-                <div
-                  role="group"
-                  aria-labelledby={`${listId}-group-${section.groupIndex}`}
-                >
-                  <div
-                    id={`${listId}-group-${section.groupIndex}`}
-                    className="zt:ps-1.5 zt:pt-1 zt:pb-0.5 zt:text-xs zt:text-muted-foreground"
-                  >
-                    {section.label}
-                  </div>
-                  {section.rows.map(children)}
-                </div>
-              )}
-            </Fragment>
-          ))}
+          {pinned.length === 0 ? (
+            drawSections(scrolled)
+          ) : (
+            <>
+              {/* The rows scroll in a box of their own, and the pinned groups
+                  stand under it below a rule, as the actions group of a
+                  Bases menu does. Both boxes are presentation: their rows are
+                  the list box's own options. */}
+              <div
+                role="presentation"
+                data-chooser-scroll=""
+                className="zt:min-h-0 zt:flex-1 zt:overflow-y-auto zt:p-(--menu-padding)"
+              >
+                {drawSections(scrolled)}
+              </div>
+              <div
+                role="presentation"
+                data-chooser-pinned=""
+                className="zt:shrink-0 zt:border-t-(length:--border-width) zt:border-border zt:p-(--size-4-1)"
+              >
+                {drawSections(pinned, true)}
+              </div>
+            </>
+          )}
         </ChooserListContext>
       </div>
     </>
@@ -793,6 +848,13 @@ interface RowShellProps extends HTMLAttributes<HTMLDivElement> {
    * draws nothing in it, so every label in the list lines up either way.
    */
   icon?: IconName;
+  /**
+   * What the row draws in the glyph's place, such as a checkbox and a type
+   * icon. The row's `aria-selected` still reports its state.
+   */
+  leading?: ReactNode;
+  /** What the row draws after its label, at its end edge, such as a chevron. */
+  trailing?: ReactNode;
 }
 
 /**
@@ -806,6 +868,8 @@ function RowShell({
   value,
   selected,
   icon,
+  leading,
+  trailing,
   className,
   children,
   ...rest
@@ -824,17 +888,25 @@ function RowShell({
       {...rest}
       className={rowBox(disabled, className)}
     >
-      <Icon
-        name={icon ?? "check"}
-        size={14}
-        className={cn("zt:shrink-0", !icon && "zt:invisible")}
-      />
-      <span className="zt:truncate">{children}</span>
+      {leading ?? (
+        <Icon
+          name={icon ?? "check"}
+          size={14}
+          className={cn("zt:shrink-0", !icon && "zt:invisible")}
+        />
+      )}
+      <span className={cn("zt:truncate", trailing && "zt:min-w-0 zt:flex-1")}>
+        {children}
+      </span>
+      {trailing}
     </div>
   );
 }
 
-export interface ChooserItemProps extends HTMLAttributes<HTMLDivElement> {
+export interface ChooserItemProps
+  extends
+    HTMLAttributes<HTMLDivElement>,
+    Pick<RowShellProps, "leading" | "trailing"> {
   /**
    * Which published row this draws. Everything else about the row — whether it
    * is disabled, and whether it ticks or runs — travels with the row itself,
@@ -881,7 +953,8 @@ function Item({ value, ...rest }: ChooserItemProps) {
   );
 }
 
-export interface ChooserActionProps extends HTMLAttributes<HTMLDivElement> {
+export interface ChooserActionProps
+  extends HTMLAttributes<HTMLDivElement>, Pick<RowShellProps, "leading"> {
   /** Which published row this draws; what it runs travels with that row. */
   value: string;
   /**

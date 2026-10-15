@@ -2543,6 +2543,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       popup: "[data-query-properties-popup]",
       ready: "[data-query-property]",
     });
+  /**
+   * Runs an action of a property's row in the open Properties popover: its
+   * chevron opens the actions menu, as a reader presses it, and the menu item
+   * named `title` runs.
+   */
+  const runPropertyAction = (property: string, title: string) =>
+    obEval(
+      vaultId,
+      `(async()=>{${propertiesPopup}.querySelector('[data-query-property-more="${property}"]').click();await new Promise(r=>setTimeout(r,100));[...activeDocument.querySelectorAll('.menu .menu-item')].find(item=>item.querySelector('.menu-item-title')?.textContent===${JSON.stringify(title)}).click();return true;})()`,
+    );
   /** Opens the results popover and waits for its "Export CSV…" action. */
   const openResults = (tab: string) =>
     openToolbarPopup(tab, {
@@ -2714,13 +2724,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     await tabWhen((tab) => tab.columns.includes("formula.year"));
 
-    // The edit button of the Formula's row opens it for editing.
+    // The Formula row's "Edit formula" action opens it for editing.
     const editFormula = async () => {
       await openProperties(tab);
-      await obEval(
-        vaultId,
-        `(()=>{${propertiesPopup}.querySelector('[data-query-formula-edit="year"]').click();return true;})()`,
-      );
+      await runPropertyAction("formula.year", m.query_view_formula_edit());
       expect(
         await obEvalUntil(
           vaultId,
@@ -3180,16 +3187,16 @@ views:
       ["title", "Title"],
       ["formula.year", "formula.year"],
     ]);
-    expect(shown.names).toEqual([["title", "Title"]]);
+    expect(shown.names).toEqual([
+      ["title", "Title"],
+      ["formula.year", "formula.year"],
+    ]);
 
-    // The rename button of the title row opens "Rename property".
+    // The title row's "Rename property" action opens its dialog.
     const renameModal =
       "[...activeDocument.querySelectorAll('.modal.zt-query-display-name-modal')].at(-1)";
     await openProperties(tab);
-    await obEval(
-      vaultId,
-      `(()=>{${propertiesPopup}.querySelector('[data-query-property-rename="title"]').click();return true;})()`,
-    );
+    await runPropertyAction("title", m.query_view_property_rename());
     expect(
       await obEvalUntil(
         vaultId,
@@ -3221,10 +3228,7 @@ views:
     /** Opens the Formula dialog of `formula.year`. */
     const editYear = async () => {
       await openProperties(tab);
-      await obEval(
-        vaultId,
-        `(()=>{${propertiesPopup}.querySelector('[data-query-formula-edit="year"]').click();return true;})()`,
-      );
+      await runPropertyAction("formula.year", m.query_view_formula_edit());
       expect(
         await obEvalUntil(
           vaultId,

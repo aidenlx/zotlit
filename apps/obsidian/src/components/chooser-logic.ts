@@ -31,6 +31,12 @@ export interface ChooserGroup<Row extends ChooserRow> {
   /** The heading over the group. A group without one draws no heading. */
   label?: string;
   items: readonly Row[];
+  /**
+   * Whether the group stands below the scrolling rows rather than among them,
+   * as the "Add formula" and "Hide all" footer of a Bases menu does. Its rows
+   * stay in the same highlight sequence.
+   */
+  pinned?: boolean;
 }
 
 /**
@@ -50,6 +56,8 @@ export interface ChooserSection<Row extends ChooserRow> {
    */
   groupIndex: number;
   rows: Row[];
+  /** Whether the group stands below the scrolling rows. */
+  pinned?: boolean;
 }
 
 /** How the rows are drawn, and the order the highlight walks them in. */
@@ -100,7 +108,12 @@ export function chooserLayout<Row extends ChooserRow>(
         matcher(row.label) !== null,
     );
     if (rows.length > 0)
-      sections.push({ label: group.label, groupIndex, rows });
+      sections.push({
+        label: group.label,
+        groupIndex,
+        rows,
+        ...(group.pinned && { pinned: true }),
+      });
   }
   const rows = sections.flatMap((section) => section.rows);
   return {

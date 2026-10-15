@@ -2537,6 +2537,7 @@
   "query_view_formula_save": "保存",
   "query_view_formula_remove": "移除公式",
   "query_view_property_rename": "重命名属性",
+  "query_view_property_edit": "编辑属性",
   "query_view_display_name": "显示名称",
   "query_view_display_name_desc": "视图在标题和导出文件中显示的名称。留空则显示 {label}。",
   "query_view_display_name_save": "保存",
