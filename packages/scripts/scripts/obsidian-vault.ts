@@ -10,9 +10,9 @@
 // applies, so cleanup never has to wake a shut app.
 //
 // Creating needs Obsidian 1.13.4+ with "Command line interface" enabled
-// (Settings → General) and one open vault window to host the eval calls. With
-// no vault window open, the host check opens a registered vault instead,
-// Obsidian's sandbox vault first.
+// (Settings → General) and one registered vault to host the eval calls: the
+// focused vault window, else a registered vault the host check opens, Obsidian's
+// sandbox vault first.
 
 import { execFile } from "node:child_process";
 import {
@@ -56,6 +56,7 @@ import {
   createObsidianHostReadiness,
   OBSIDIAN_HOST_TIMEOUT_MS,
   OBSIDIAN_HOST_VAULT_ENV,
+  OBSIDIAN_VAULT_OPEN_TIMEOUT_MS,
 } from "#obsidian-host-readiness";
 import { getWorkspaceRoot } from "#package-roots";
 
@@ -70,6 +71,8 @@ let fixtureVault = getFixtureVaultDir(workspaceRoot);
 // `--inactive` opens vault windows behind the app that has the OS focus.
 let inactive = false;
 const pluginId = "zotlit";
+/** The folder in Obsidian's user data that holds its sandbox vault. */
+const sandboxFolder = "Obsidian Sandbox";
 
 interface VaultEntry {
   path: string;
@@ -139,7 +142,7 @@ const checkObsidianHost = createObsidianHostReadiness(
     readRegistry: readVaultRegistry,
     runObsidian: (args, signal) => cli(args, { signal }),
   },
-  { sandboxVaultPath: join(obsidianUserData(), "Obsidian Sandbox") },
+  { sandboxVaultPath: join(obsidianUserData(), sandboxFolder) },
 );
 
 /** Run JavaScript in a vault window. Without `target`, the focused one answers. */
@@ -995,10 +998,11 @@ const hostReadinessReference = `Host readiness:
   or remove the conflicting registration. The selected path must exist and be recorded open.
   Saved open state can be stale; Obsidian can still open a closed window.
   With an unset value and Obsidian running with no vault window open, the check
-  opens a registered vault and uses it as the host: Obsidian's sandbox vault if
-  registered, else the most recently opened vault whose folder exists.
+  opens a registered vault as the host and waits up to ${OBSIDIAN_VAULT_OPEN_TIMEOUT_MS / 1_000} seconds for its window:
+  the sandbox vault ('${sandboxFolder}' in Obsidian's user data) if registered,
+  else the most recently opened vault whose folder exists.
   On failure, check lists existing registered paths and missing stale paths.
-  Open the selected host vault yourself, then rerun the reported command.`;
+  Open a host vault in Obsidian, then rerun the reported command.`;
 
 const reference = `The open, create, and sync commands rebuild the Fixture Vault first. Run the
 Obsidian dev build before them so its bundle is available to copy into the
@@ -1032,7 +1036,7 @@ const vaultCli = yargs(hideBin(process.argv))
   })
   .command(
     "check",
-    "verify that a live Obsidian vault can host CLI calls",
+    "verify that a live Obsidian vault can host CLI calls, opening one when no vault window is open",
     (y) => y.epilogue(hostReadinessReference),
     async () => {
       const host = await checkObsidianHost();
@@ -1135,7 +1139,7 @@ const vaultCli = yargs(hideBin(process.argv))
   )
   .command(
     "status",
-    "print the live Obsidian host vault ID and base path",
+    "print the live Obsidian host vault ID and base path, opening a host vault when no vault window is open",
     () => {},
     async () => {
       const host = await checkObsidianHost();

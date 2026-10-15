@@ -141,6 +141,40 @@ function parseLiveVaults(
   return vaults;
 }
 
+/** The value of an `eval` reply: Obsidian prefixes it with `=> `. */
+function evalValue(output: string): string | undefined {
+  return output.startsWith("=> ") ? output.slice(3) : undefined;
+}
+
+function samePath(a: string, b: string): boolean {
+  return resolve(a) === resolve(b);
+}
+
+/**
+ * Registered vaults to open as the host when no vault window is open: the
+ * sandbox vault first, then the most recently opened, never `avoidPath`.
+ */
+function hostCandidates(
+  registry: Record<string, RegistryVaultEntry>,
+  {
+    sandboxVaultPath,
+    avoidPath,
+  }: { sandboxVaultPath?: string; avoidPath?: string },
+): Array<[string, RegistryVaultEntry]> {
+  const isSandbox = (vault: RegistryVaultEntry): boolean =>
+    sandboxVaultPath !== undefined && samePath(vault.path, sandboxVaultPath);
+  return Object.entries(registry)
+    .filter(
+      ([, vault]) =>
+        avoidPath === undefined || !samePath(vault.path, avoidPath),
+    )
+    .sort(
+      ([, a], [, b]) =>
+        Number(isSandbox(b)) - Number(isSandbox(a)) ||
+        (b.ts ?? 0) - (a.ts ?? 0),
+    );
+}
+
 function selectOpenHost(
   vaults: Array<ObsidianHost & { open?: boolean }>,
   selected: string,
@@ -170,7 +204,7 @@ export function createObsidianHostReadiness(
     const fail = async (message: string): Promise<never> => {
       throw await readinessError(message, effects);
     };
-    const run = async (
+    const reply = async (
       code: string,
       target?: string,
       { limitMs, timeoutMessage } = {
@@ -191,41 +225,30 @@ export function createObsidianHostReadiness(
         return fail(timeoutMessage);
       }
     };
-    const evaluate = async (code: string, target?: string): Promise<string> => {
-      const output = await run(code, target);
-      if (!output.startsWith("=> ")) return fail(noLiveHost);
-      return output.slice(3);
+    const evaluate = async (code: string, target?: string): Promise<string> =>
+      evalValue(await reply(code, target)) ?? fail(noLiveHost);
+    const readRegistryOr = async (
+      message: string,
+    ): Promise<Record<string, RegistryVaultEntry>> => {
+      try {
+        return await effects.readRegistry();
+      } catch {
+        return fail(message);
+      }
     };
     // A call with `vault=<id>` makes Obsidian open that registered vault's
     // window and holds the call until the window has loaded, so a running
-    // Obsidian with no vault window can still host calls. The sandbox vault is
-    // preferred; else the most recently opened registered vault.
+    // Obsidian with no vault window can still host calls.
     const openRegisteredVault = async (): Promise<string> => {
       const noVaultWindow = "Obsidian is running, but no vault window is open.";
-      let registry: Record<string, RegistryVaultEntry>;
-      try {
-        registry = await effects.readRegistry();
-      } catch {
-        return fail(
-          `${noVaultWindow} Cannot read the Obsidian vault registry to find a vault to open.`,
-        );
-      }
-      const isSandbox = (path: string): boolean =>
-        sandboxVaultPath !== undefined &&
-        resolve(path) === resolve(sandboxVaultPath);
-      const candidates = Object.entries(registry)
-        .filter(
-          ([, vault]) =>
-            avoidPath === undefined ||
-            resolve(vault.path) !== resolve(avoidPath),
-        )
-        .sort(
-          ([, a], [, b]) =>
-            Number(isSandbox(b.path)) - Number(isSandbox(a.path)) ||
-            (b.ts ?? 0) - (a.ts ?? 0),
-        );
+      const registry = await readRegistryOr(
+        `${noVaultWindow} Cannot read the Obsidian vault registry to find a vault to open.`,
+      );
       let hostId: string | undefined;
-      for (const [id, vault] of candidates) {
+      for (const [id, vault] of hostCandidates(registry, {
+        sandboxVaultPath,
+        avoidPath,
+      })) {
         if (await effects.pathExists(vault.path)) {
           hostId = id;
           break;
@@ -236,29 +259,28 @@ export function createObsidianHostReadiness(
           `${noVaultWindow} No registered vault can be opened as the host.`,
         );
       }
-      const output = await run(HOST_PROBE, hostId, {
-        limitMs: vaultOpenTimeoutMs,
-        timeoutMessage: `Obsidian vault ${hostId} did not open within ${timeoutLabel(vaultOpenTimeoutMs)}.`,
-      });
-      if (!output.startsWith("=> ")) {
+      const value = evalValue(
+        await reply(HOST_PROBE, hostId, {
+          limitMs: vaultOpenTimeoutMs,
+          timeoutMessage: `Obsidian vault ${hostId} did not open within ${timeoutLabel(vaultOpenTimeoutMs)}.`,
+        }),
+      );
+      if (value === undefined) {
         return fail(`Obsidian vault ${hostId} did not open.`);
       }
-      if (parseHost(output.slice(3))?.id !== hostId) {
+      if (parseHost(value)?.id !== hostId) {
         return fail(`Obsidian vault ${hostId} returned a different vault ID.`);
       }
-      return output.slice(3);
+      return value;
     };
 
     const selected = environment[OBSIDIAN_HOST_VAULT_ENV];
     if (!selected) {
-      const output = await run(HOST_PROBE);
-      if (output !== NO_VAULT_WINDOW && !output.startsWith("=> ")) {
-        return fail(noLiveHost);
-      }
+      const output = await reply(HOST_PROBE);
       const focused = parseHost(
         output === NO_VAULT_WINDOW
           ? await openRegisteredVault()
-          : output.slice(3),
+          : (evalValue(output) ?? (await fail(noLiveHost))),
       );
       if (!focused) {
         return fail(
@@ -273,14 +295,9 @@ export function createObsidianHostReadiness(
       return focused;
     }
 
-    let registry: Record<string, RegistryVaultEntry>;
-    try {
-      registry = await effects.readRegistry();
-    } catch {
-      return fail(
-        `Cannot read the Obsidian vault registry to select ${selected}.`,
-      );
-    }
+    const registry = await readRegistryOr(
+      `Cannot read the Obsidian vault registry to select ${selected}.`,
+    );
     const registeredVaults = Object.entries(registry).map(([id, vault]) => ({
       ...vault,
       id,

@@ -41,51 +41,61 @@ describe("Obsidian host readiness", () => {
 
   describe("with Obsidian running and no vault window open", () => {
     const sandbox = "/userData/Obsidian Sandbox";
-    const sandboxRegistry = {
-      "notes-id": { path: "/vaults/notes", ts: 2 },
-      "sandbox-id": { open: false, path: sandbox, ts: 1 },
-    };
+    const sandboxHost = `=> ${JSON.stringify({ id: "sandbox-id", path: sandbox })}`;
 
-    it("opens the sandbox vault as the host", async () => {
-      const receivedArgs: string[][] = [];
+    /**
+     * A check where a call without `vault=` gets "Vault not found." and a call
+     * with `vault=<id>` gets `open(id)`. Records each call's first argument.
+     */
+    function noWindowCheck({
+      registry = {
+        "notes-id": { path: "/vaults/notes", ts: 2 },
+        "sandbox-id": { open: false, path: sandbox, ts: 1 },
+      },
+      pathExists = async () => true,
+      open,
+      sandboxVaultPath = sandbox,
+    }: {
+      registry?: Awaited<ReturnType<HostReadinessEffects["readRegistry"]>>;
+      pathExists?: HostReadinessEffects["pathExists"];
+      open: (id: string) => Promise<string> | string;
+      sandboxVaultPath?: string;
+    }) {
+      const firstArgs: string[] = [];
       const check = createObsidianHostReadiness(
         {
-          pathExists: async () => true,
-          readRegistry: async () => sandboxRegistry,
-          runObsidian: async (args) => {
-            receivedArgs.push(args);
-            return args.includes("vault=sandbox-id")
-              ? `=> ${JSON.stringify({ id: "sandbox-id", path: sandbox })}`
+          pathExists,
+          readRegistry: async () => registry,
+          runObsidian: async ([first]) => {
+            firstArgs.push(first!);
+            return first!.startsWith("vault=")
+              ? open(first!.slice("vault=".length))
               : "Vault not found.";
           },
         },
-        { environment: {}, sandboxVaultPath: sandbox },
+        { environment: {}, sandboxVaultPath },
       );
+      return { check, firstArgs };
+    }
+
+    it("opens the sandbox vault as the host", async () => {
+      const { check, firstArgs } = noWindowCheck({ open: () => sandboxHost });
 
       await expect(check()).resolves.toEqual({
         id: "sandbox-id",
         path: sandbox,
       });
-      expect(receivedArgs.map((args) => args[0])).toEqual([
-        "eval",
-        "vault=sandbox-id",
-      ]);
+      expect(firstArgs).toEqual(["eval", "vault=sandbox-id"]);
     });
 
     it("waits longer for the sandbox window to load", async () => {
       vi.useFakeTimers();
-      const check = createObsidianHostReadiness(
-        {
-          pathExists: async () => true,
-          readRegistry: async () => sandboxRegistry,
-          runObsidian: async (args) => {
-            if (!args.includes("vault=sandbox-id")) return "Vault not found.";
-            await new Promise((resolve) => setTimeout(resolve, 20_000));
-            return `=> ${JSON.stringify({ id: "sandbox-id", path: sandbox })}`;
-          },
+      const { check } = noWindowCheck({
+        open: async () => {
+          await new Promise((resolve) => setTimeout(resolve, 20_000));
+          return sandboxHost;
         },
-        { environment: {}, sandboxVaultPath: sandbox },
-      );
+      });
 
       await Promise.all([
         expect(check()).resolves.toEqual({ id: "sandbox-id", path: sandbox }),
@@ -95,17 +105,7 @@ describe("Obsidian host readiness", () => {
 
     it("reports a sandbox vault that does not answer", async () => {
       vi.useFakeTimers();
-      const check = createObsidianHostReadiness(
-        {
-          pathExists: async () => true,
-          readRegistry: async () => sandboxRegistry,
-          runObsidian: async (args) =>
-            args.includes("vault=sandbox-id")
-              ? new Promise(() => {})
-              : "Vault not found.",
-        },
-        { environment: {}, sandboxVaultPath: sandbox },
-      );
+      const { check } = noWindowCheck({ open: () => new Promise(() => {}) });
 
       await Promise.all([
         expect(check()).rejects.toThrow(
@@ -116,85 +116,51 @@ describe("Obsidian host readiness", () => {
     });
 
     it("opens the most recent existing vault when no sandbox is registered", async () => {
-      const receivedArgs: string[][] = [];
-      const check = createObsidianHostReadiness(
-        {
-          pathExists: async (path) => path !== "/vaults/missing",
-          readRegistry: async () => ({
-            "old-id": { path: "/vaults/old", ts: 1 },
-            "missing-id": { path: "/vaults/missing", ts: 3 },
-            "recent-id": { path: "/vaults/recent", ts: 2 },
-          }),
-          runObsidian: async (args) => {
-            receivedArgs.push(args);
-            return args.includes("vault=recent-id")
-              ? '=> {"id":"recent-id","path":"/vaults/recent"}'
-              : "Vault not found.";
-          },
+      const { check, firstArgs } = noWindowCheck({
+        registry: {
+          "old-id": { path: "/vaults/old", ts: 1 },
+          "missing-id": { path: "/vaults/missing", ts: 3 },
+          "recent-id": { path: "/vaults/recent", ts: 2 },
         },
-        { environment: {}, sandboxVaultPath: sandbox },
-      );
+        pathExists: async (path) => path !== "/vaults/missing",
+        open: () => '=> {"id":"recent-id","path":"/vaults/recent"}',
+      });
 
       await expect(check()).resolves.toEqual({
         id: "recent-id",
         path: "/vaults/recent",
       });
-      expect(receivedArgs.map((args) => args[0])).toEqual([
-        "eval",
-        "vault=recent-id",
-      ]);
+      expect(firstArgs).toEqual(["eval", "vault=recent-id"]);
     });
 
     it("skips the vault at avoidPath", async () => {
-      const check = createObsidianHostReadiness(
-        {
-          pathExists: async () => true,
-          readRegistry: async () => sandboxRegistry,
-          runObsidian: async (args) =>
-            args.includes("vault=notes-id")
-              ? '=> {"id":"notes-id","path":"/vaults/notes"}'
-              : "Vault not found.",
-        },
-        { environment: {} },
-      );
+      const { check, firstArgs } = noWindowCheck({
+        open: () => '=> {"id":"notes-id","path":"/vaults/notes"}',
+      });
 
       await expect(check({ avoidPath: sandbox })).resolves.toEqual({
         id: "notes-id",
         path: "/vaults/notes",
       });
+      expect(firstArgs).toEqual(["eval", "vault=notes-id"]);
     });
 
     it("reports when no registered vault can be opened", async () => {
-      const runObsidian = vi.fn<HostReadinessEffects["runObsidian"]>(
-        async () => "Vault not found.",
-      );
-      const check = createObsidianHostReadiness(
-        {
-          pathExists: async () => false,
-          readRegistry: async () => sandboxRegistry,
-          runObsidian,
-        },
-        { environment: {}, sandboxVaultPath: sandbox },
-      );
+      const { check, firstArgs } = noWindowCheck({
+        pathExists: async () => false,
+        open: () => sandboxHost,
+      });
 
       await expect(check()).rejects.toThrow(
         "Obsidian is running, but no vault window is open. No registered vault can be opened as the host.",
       );
-      expect(runObsidian).toHaveBeenCalledTimes(1);
+      expect(firstArgs).toEqual(["eval"]);
     });
 
     it("rejects a sandbox reply from a different vault", async () => {
-      const check = createObsidianHostReadiness(
-        {
-          pathExists: async () => true,
-          readRegistry: async () => sandboxRegistry,
-          runObsidian: async (args) =>
-            args.includes("vault=sandbox-id")
-              ? '=> {"id":"notes-id","path":"/vaults/notes"}'
-              : "Vault not found.",
-        },
-        { environment: {}, sandboxVaultPath: sandbox },
-      );
+      const { check } = noWindowCheck({
+        open: () => '=> {"id":"notes-id","path":"/vaults/notes"}',
+      });
 
       await expect(check()).rejects.toThrow(
         "Obsidian vault sandbox-id returned a different vault ID.",
