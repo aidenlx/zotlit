@@ -92,8 +92,17 @@ export function PropertiesMenu({ view }: { view: QueryView }) {
           .setIcon("pencil")
           .onClick(run(() => new FormulaModal(app, view, formula).open())),
       );
+    // A click outside the menu dismisses the popover as well; Escape steps
+    // back to it, as the back step of a Bases menu page does.
+    let clickedAway = false;
+    const onPointer = (event: PointerEvent) => {
+      if (!(event.target as HTMLElement | null)?.closest(".menu"))
+        clickedAway = true;
+    };
+    doc.addEventListener("pointerdown", onPointer, true);
     menu.onHide(() => {
-      if (!ran) popup.current?.showPopover();
+      doc.removeEventListener("pointerdown", onPointer, true);
+      if (!ran && !clickedAway) popup.current?.showPopover();
     });
     popup.current?.hidePopover();
     menu.showAtPosition({ x: box.right, y: box.top }, doc);
@@ -332,7 +341,7 @@ function PropertyList({
               <button
                 type="button"
                 tabIndex={-1}
-                className="clickable-icon zt:-m-(--size-2-2) zt:shrink-0 zt:p-(--size-2-2)"
+                className="clickable-icon zt:-m-(--size-2-2) zt:shrink-0"
                 data-query-property-more={row.value}
                 {...tooltipAttrs(m.query_view_property_edit())}
                 onMouseDown={(event) => event.preventDefault()}
