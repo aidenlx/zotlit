@@ -52,6 +52,8 @@ export function ViewMenu({ view }: { view: QueryView }) {
         })),
       },
       {
+        // "Add view" stays in reach below a long list of views.
+        pinned: true,
         items: [
           {
             value: ADD_ROW,
