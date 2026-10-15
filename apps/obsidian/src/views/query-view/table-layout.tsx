@@ -15,6 +15,7 @@ import { useStore } from "zustand";
 
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
+import { isPageNumber } from "@/lib/page-label";
 import { cn, tooltipAttrs } from "@/lib/utils";
 import type {
   QueryViewRequest,
@@ -151,15 +152,21 @@ export const TABLE_CHILD_SOURCES: readonly TableChildSource[] = [
     render: ({ values }) => (
       <>
         <span
-          className="zt:inline-block zt:size-2.5 zt:shrink-0 zt:rounded-full"
-          style={{ backgroundColor: text(values.color) || undefined }}
+          className="zt:inline-block zt:size-2.5 zt:shrink-0 zt:rounded-full zt:bg-(--zt-annot-color)"
+          style={
+            {
+              "--zt-annot-color": text(values.color) || undefined,
+            } as CSSProperties
+          }
         />
         <span className="zt:truncate">
           {text(values.text) || text(values.comment)}
         </span>
         {text(values.pageLabel) !== "" && (
           <span className="zt:shrink-0 zt:text-(--text-muted)">
-            {m.query_view_table_page({ page: text(values.pageLabel) })}
+            {isPageNumber(text(values.pageLabel))
+              ? m.query_view_table_page({ page: text(values.pageLabel) })
+              : text(values.pageLabel)}
           </span>
         )}
       </>
@@ -258,12 +265,23 @@ function Expander({
   open: boolean;
   onToggle: () => void;
 }) {
+  // The chevron takes the icon button's own padding, and a row with nothing
+  // under it holds a hidden one, so every row's text starts at one edge.
+  const chevron = (
+    <Icon
+      name={open ? "chevron-down" : "chevron-right"}
+      size="var(--icon-xs)"
+      strokeWidth="var(--icon-xs-stroke-width)"
+    />
+  );
   if (!expandable(record))
-    return <span className="zt:inline-block zt:w-5 zt:shrink-0" />;
+    return (
+      <span className="clickable-icon zt:invisible zt:shrink-0">{chevron}</span>
+    );
   return (
     <button
       type="button"
-      className="clickable-icon zt:w-5 zt:shrink-0 zt:p-0.5"
+      className="clickable-icon zt:shrink-0"
       aria-expanded={open}
       aria-label={
         open ? m.query_view_table_collapse() : m.query_view_table_expand()
@@ -271,7 +289,7 @@ function Expander({
       data-query-expand={id(record)}
       onClick={onToggle}
     >
-      <Icon name={open ? "chevron-down" : "chevron-right"} size={14} />
+      {chevron}
     </button>
   );
 }
@@ -434,7 +452,12 @@ function ChildRow({
               open={expanded.has(id(record))}
               onToggle={() => toggle(record)}
             />
-            <Icon name={source.icon} size={14} className="zt:shrink-0" />
+            <Icon
+              name={source.icon}
+              size="var(--icon-xs)"
+              strokeWidth="var(--icon-xs-stroke-width)"
+              className="zt:shrink-0"
+            />
             {source.render(record)}
           </span>
         </td>
@@ -510,6 +533,7 @@ export function TableLayout({ view }: { view: QueryView }) {
                     <Icon
                       name="alert-triangle"
                       size="var(--icon-xs)"
+                      strokeWidth="var(--icon-xs-stroke-width)"
                       className="zt:shrink-0"
                     />
                     {property.label}

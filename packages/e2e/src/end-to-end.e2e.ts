@@ -1684,7 +1684,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     await obEval(vaultId, open);
     expect(await shown("All annotations")).toBe(true);
-    expect(JSON.parse(await obEval(vaultId, pages))).not.toEqual([]);
+    // A page number takes "p."; a named page label reads as it is.
+    const shownPages: string[] = JSON.parse(await obEval(vaultId, pages));
+    expect(shownPages).toContain("p. 1");
+    expect(shownPages).toContain("Chapter 1");
 
     // The view menu narrows its views as the researcher types.
     await obEval(

@@ -851,7 +851,7 @@ function Problems({ view }: { view: QueryView }) {
     <>
       {problems.length > 0 && (
         <div
-          className="zt:rounded zt:mx-3 zt:mt-2 zt:border zt:border-(--background-modifier-error) zt:p-2 zt:text-sm"
+          className="zt:mx-3 zt:mt-2 zt:rounded-sm zt:border zt:border-(--background-modifier-error) zt:p-2 zt:text-sm"
           role="alert"
           data-query-problems=""
         >
@@ -873,7 +873,7 @@ function Problems({ view }: { view: QueryView }) {
       )}
       {phase === "failed" && !marked && diagnostic && (
         <div
-          className="zt:rounded zt:mx-3 zt:mt-2 zt:border zt:border-(--background-modifier-error) zt:p-2 zt:text-sm"
+          className="zt:mx-3 zt:mt-2 zt:rounded-sm zt:border zt:border-(--background-modifier-error) zt:p-2 zt:text-sm"
           role="alert"
           data-query-diagnostic={diagnostic.code}
         >
@@ -987,10 +987,20 @@ function NoResults({ view }: { view: QueryView }) {
   const phase = useQueryViewState(view, (s) => s.phase);
   const count = useQueryViewState(view, (s) => s.count);
   const dataset = useQueryViewState(view, (s) => s.view?.from);
+  // A filter of this view or of all views can be what leaves it empty.
+  const filtered = useQueryViewState(
+    view,
+    (s) => s.file?.filters !== undefined || s.view?.filters !== undefined,
+  );
   if (phase !== "ready" || count > 0) return null;
   return (
     <div className="pane-empty zt:p-2" data-query-empty="">
       {datasetSpec(dataset).empty()}
+      {filtered && (
+        <p className="zt:m-0 zt:mt-1" data-query-empty-hint="">
+          {m.query_view_no_results_filter_hint()}
+        </p>
+      )}
     </div>
   );
 }

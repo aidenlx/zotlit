@@ -28,6 +28,7 @@ import {
   PopoverHeader,
   PopoverSection,
 } from "./toolbar-popover";
+import "./group-control.css";
 
 /** A view's grouping, as the Group control reads and writes it. */
 export interface GroupSetting {
