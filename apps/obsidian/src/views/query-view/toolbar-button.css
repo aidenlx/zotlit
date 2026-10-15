@@ -1,0 +1,12 @@
+/* A toolbar button is a `<button>`, because the popover invoker attribute
+   only works on one, and Obsidian's `button` rules are unlayered, so they
+   outrank every `zt:` utility the button wears. This rule is unlayered too and
+   outranks them in turn, and `revert-layer` rolls the element back to the
+   plugin's own layers: the utilities on the button draw it. The anchor name
+   is one of those utilities, so rolling back keeps it.
+   A popover's action row is a bare `<button>` for the same reason.
+   @see ../../components/chooser.css */
+.zt-root button.zt-query-toolbar-button,
+.zt-root button.zt-query-popover-action {
+  all: revert-layer;
+}

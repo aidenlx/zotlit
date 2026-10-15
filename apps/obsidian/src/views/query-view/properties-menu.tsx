@@ -17,13 +17,11 @@ import { cn, tooltipAttrs } from "@/lib/utils";
 import { DisplayNameModal } from "./display-name-dialog";
 import { FormulaModal } from "./formula-dialog";
 import { NotUsed } from "./sort-control";
-import { TOOLBAR_LABEL } from "./toolbar-popover";
+import { ToolbarButtonContent, toolbarButtonClass } from "./toolbar-button";
+import { popoverFallbacks } from "./toolbar-popover";
 import type { QueryView } from "./view";
 import { useViewProperties } from "./view-properties";
 import type { PropertyEntry } from "./view-properties";
-
-const trigger =
-  "clickable-icon zt:inline-flex zt:min-w-0 zt:items-center zt:gap-1 zt:rounded-(--clickable-icon-radius) zt:px-1.5 zt:py-1 zt:text-muted-foreground zt:hover:bg-muted zt:hover:text-foreground zt:focus-visible:ring-2 zt:focus-visible:ring-border-focus zt:focus-visible:outline-none zt:data-open:bg-muted zt:data-open:text-foreground";
 
 /** `order` with `moved` placed where `target` stands. */
 function reordered(
@@ -52,14 +50,16 @@ export function PropertiesMenu({ view }: { view: QueryView }) {
   return (
     <Chooser value={order} onValueChange={setOrder}>
       <Chooser.Trigger
-        className={trigger}
+        className={toolbarButtonClass}
         aria-label={m.query_view_properties()}
         data-query-properties=""
       >
-        <Icon name="list" />
-        <span className={TOOLBAR_LABEL}>{m.query_view_properties()}</span>
+        <ToolbarButtonContent icon="list" label={m.query_view_properties()} />
       </Chooser.Trigger>
-      <Chooser.Popup className="zt:min-w-60" data-query-properties-popup="">
+      <Chooser.Popup
+        className={cn("zt:min-w-60", popoverFallbacks)}
+        data-query-properties-popup=""
+      >
         <Chooser.Input
           placeholder={m.query_view_properties_search()}
           clearLabel={m.query_view_clear_search()}

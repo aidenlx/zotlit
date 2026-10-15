@@ -415,6 +415,14 @@ export function FilterEditor({
   );
 }
 
+/** How many conditions a filter holds, groups not counted. */
+function conditionCount(tree: MatchTree | undefined): number {
+  if (tree === undefined) return 0;
+  if (typeof tree === "string") return 1;
+  const children = "and" in tree ? tree.and : tree.or;
+  return children.reduce((sum, child) => sum + conditionCount(child), 0);
+}
+
 /** The toolbar's Filter control: a button and the popover it opens. */
 export function FilterButton({ view }: { view: QueryView }) {
   const file = useStore(view.state, (s) => s.file);
@@ -428,6 +436,7 @@ export function FilterButton({ view }: { view: QueryView }) {
       icon="list-filter"
       label={m.query_view_filter()}
       active={file.filters !== undefined || shown.filters !== undefined}
+      count={conditionCount(file.filters) + conditionCount(shown.filters)}
       hook="filter"
       className="zt:w-[min(40rem,calc(100vw_-_2rem))] zt:max-w-none zt:p-3"
       onOpen={() => {

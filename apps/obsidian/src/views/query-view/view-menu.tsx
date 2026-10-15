@@ -13,11 +13,14 @@ import { useStore } from "zustand";
 
 import { Chooser } from "@/components/chooser";
 import type { ChooserGroup, ChooserRow } from "@/components/chooser-logic";
-import { Icon } from "@/components/obsidian/icon";
 import { useObsidianApp } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
+import { cn } from "@/lib/utils";
 
 import { addViewActions, openConfigureView } from "./configure-view";
+import { layoutOf } from "./layouts";
+import { ToolbarButtonContent, toolbarButtonClass } from "./toolbar-button";
+import { popoverFallbacks } from "./toolbar-popover";
 import type { QueryView } from "./view";
 
 /** The drag payload of a view row: its place in the file's list. */
@@ -77,6 +80,7 @@ export function ViewMenu({ view }: { view: QueryView }) {
   );
 
   if (!file || views.length === 0) return null;
+  const shown = current ?? views[0]!;
   return (
     <Chooser
       value={currentIndex === -1 ? [] : [String(currentIndex)]}
@@ -90,7 +94,9 @@ export function ViewMenu({ view }: { view: QueryView }) {
       }}
     >
       <Chooser.Trigger
-        className="clickable-icon zt:flex zt:items-center zt:gap-1 zt:font-semibold zt:data-open:bg-muted"
+        // The switcher keeps its name on a narrow toolbar and gives way
+        // first when the row runs out of room. It reads in the normal ink.
+        className={cn(toolbarButtonClass, "zt:shrink zt:text-foreground")}
         aria-label={m.query_view_views()}
         data-query-view-menu=""
         // A right-click configures the view on screen, as in Bases.
@@ -100,10 +106,18 @@ export function ViewMenu({ view }: { view: QueryView }) {
           openConfigureView(app, view, { name: current.name });
         }}
       >
-        <span>{current?.name ?? views[0]!.name}</span>
-        <Icon name="chevrons-up-down" size={14} />
+        <ToolbarButtonContent
+          icon={layoutOf(shown)?.icon}
+          label={shown.name}
+          keepLabel
+          chevron
+        />
       </Chooser.Trigger>
-      <Chooser.Popup ref={popup} data-query-view-list="">
+      <Chooser.Popup
+        ref={popup}
+        className={popoverFallbacks}
+        data-query-view-list=""
+      >
         <Chooser.Input
           placeholder={m.query_view_search_views()}
           clearLabel={m.query_view_clear_search()}

@@ -19,6 +19,8 @@ import { themeHook } from "@/lib/theme-hooks";
 import { cn } from "@/lib/utils";
 
 import { toCSV, toHTML, toTSV } from "./table";
+import { ToolbarButtonContent, toolbarButtonClass } from "./toolbar-button";
+import { toolbarPopoverClass } from "./toolbar-popover";
 import type { QueryView } from "./view";
 
 const logger = getLogger(["views", "query-view", "results"]);
@@ -145,18 +147,26 @@ export function ResultsMenu({ view }: { view: QueryView }) {
   if (!current) return null;
   return (
     <>
+      {/* The count is plain muted text, and takes the free room after it,
+          so the controls after it sit at the toolbar's end. */}
       <button
         type="button"
         popoverTarget={popupId}
         aria-expanded={open}
         data-query-results=""
+        data-active={current.limit !== undefined ? "" : undefined}
+        data-open={open ? "" : undefined}
         className={cn(
-          "clickable-icon zt:shrink-0 zt:text-sm zt:whitespace-nowrap zt:text-(--text-muted) zt:[anchor-name:var(--zt-results-anchor)]",
-          (current.limit !== undefined || open) && "is-active",
+          toolbarButtonClass,
+          "zt:me-auto zt:shrink zt:[anchor-name:var(--zt-query-popover-anchor)]",
         )}
-        style={{ "--zt-results-anchor": anchor } as CSSProperties}
+        style={{ "--zt-query-popover-anchor": anchor } as CSSProperties}
       >
-        <CountText view={view} />
+        <ToolbarButtonContent
+          label={<CountText view={view} />}
+          keepLabel
+          labelClassName="zt:text-xs"
+        />
       </button>
       <div
         ref={popup}
@@ -166,12 +176,10 @@ export function ResultsMenu({ view }: { view: QueryView }) {
         onToggle={(event) => setOpen(event.newState === "open")}
         className={cn(
           themeHook.chooser,
-          "zt:inset-auto zt:my-1 zt:max-w-80 zt:min-w-60 zt:flex-col zt:p-(--menu-padding) zt:[&:popover-open]:flex",
-          "zt:border-(length:--menu-border-width) zt:border-(--menu-border-color) zt:bg-(--menu-background) zt:text-foreground zt:shadow-(--menu-shadow)",
-          "zt:rounded-(--menu-radius) zt:[corner-shape:var(--menu-corner-shape)]",
-          "zt:[position-anchor:var(--zt-results-anchor)] zt:[position-area:block-end_span-inline-end] zt:[position-try-fallbacks:flip-block]",
+          toolbarPopoverClass,
+          "zt:max-w-80 zt:min-w-60 zt:p-(--menu-padding)",
         )}
-        style={{ "--zt-results-anchor": anchor } as CSSProperties}
+        style={{ "--zt-query-popover-anchor": anchor } as CSSProperties}
       >
         {open && (
           <>

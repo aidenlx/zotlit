@@ -14,10 +14,10 @@ import { createStore } from "zustand/vanilla";
 import { nameDictionary } from "@zotlit/item-query";
 import type { NameDictionary, QueryContext } from "@zotlit/item-query";
 
-import { Icon } from "@/components/obsidian/icon";
 import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import { cn } from "@/lib/utils";
 import type { HistorySurface } from "@/services/annotation-repository/actions";
 import type { HistoryDirection } from "@/services/annotation-repository/service";
 import type { Diagnostic } from "@/services/item-query/contract";
@@ -72,6 +72,7 @@ import { resultTable } from "./table";
 import type { ResultTable } from "./table";
 import { TABLE_FIELDS, TableLayout } from "./table-layout";
 import type { LiteratureNotes } from "./table-notes";
+import { ToolbarButton } from "./toolbar-button";
 import { ToolbarPopover } from "./toolbar-popover";
 import { ViewMenu } from "./view-menu";
 import {
@@ -1058,15 +1059,14 @@ function OpenFileButton({ view }: { view: QueryView }) {
   const { openFile } = view;
   if (!openFile) return null;
   return (
-    <button
-      type="button"
-      className="clickable-icon"
-      aria-label={m.query_view_open_file()}
+    <ToolbarButton
+      icon="external-link"
+      label={m.query_view_open_file()}
+      labelClassName="zt:sr-only"
+      keepLabel
       data-query-open-file=""
       onClick={(event) => openFile(event.nativeEvent)}
-    >
-      <Icon name="external-link" size={14} />
-    </button>
+    />
   );
 }
 
@@ -1080,6 +1080,7 @@ function SortButton({ view }: { view: QueryView }) {
       icon="arrow-up-down"
       label={m.query_view_sort()}
       active={sort.length > 0}
+      count={sort.length}
       hook="sort"
     >
       <SortEditor
@@ -1132,18 +1133,22 @@ function QueryViewBody({ view }: { view: QueryView }) {
   return (
     <div className="zt:flex zt:h-full zt:flex-col zt:in-[.print]:h-auto">
       {/* The toolbar is a size container: on a narrow pane its buttons show
-          icons only. Export to PDF prints the rows without it. */}
+          icons only, and it stays one row. In a Query File tab it runs to
+          the pane's edges, as the Bases header does. Export to PDF prints
+          the rows without it. */}
       <div
-        className="zt:@container zt:flex zt:flex-wrap zt:items-center zt:gap-x-2 zt:gap-y-1 zt:border-b zt:border-(--background-modifier-border) zt:px-3 zt:py-1 zt:text-sm zt:in-[.print]:hidden"
+        className={cn(
+          "zt:@container zt:flex zt:min-h-(--bases-header-height) zt:shrink-0 zt:flex-nowrap zt:items-center zt:gap-(--size-2-2) zt:overflow-hidden zt:border-b-(length:--border-width) zt:border-(--bases-table-border-color) zt:ps-(--bases-header-padding-start) zt:pe-(--bases-header-padding-end) zt:in-[.print]:hidden",
+          "zt:in-[.view-content.zt-query-view]:-mx-(--size-4-3) zt:in-[.view-content.zt-query-view]:-mt-(--size-4-3)",
+        )}
         role="toolbar"
       >
         <ViewMenu view={view} />
         <ResultsMenu view={view} />
-        <FilterButton view={view} />
         <SortButton view={view} />
         <GroupButton view={view} />
+        <FilterButton view={view} />
         <PropertiesMenu view={view} />
-        <span className="zt:flex-1" />
         <SearchControl view={view} />
         <OpenFileButton view={view} />
       </div>

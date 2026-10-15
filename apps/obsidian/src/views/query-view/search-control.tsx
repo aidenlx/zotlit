@@ -3,14 +3,12 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { useStore } from "zustand";
 
-import { Icon } from "@/components/obsidian/icon";
 import { SearchInput } from "@/components/obsidian/search-input";
 import * as m from "@/lib/i18n/generated/messages";
-import { cn, tooltipAttrs } from "@/lib/utils";
 import { useAnnotStore, useSetFilterQuery } from "@/views/annot-view/store";
 
 import { datasetSpec } from "./datasets";
-import { TOOLBAR_LABEL } from "./toolbar-popover";
+import { ToolbarButton } from "./toolbar-button";
 import type { QueryView } from "./view";
 
 export function SearchControl({ view }: { view: QueryView }) {
@@ -30,31 +28,25 @@ export function SearchControl({ view }: { view: QueryView }) {
     buttonRef.current?.focus();
   };
   return (
-    <div className="zt:flex zt:items-center zt:gap-1">
-      <button
+    <div className="zt:flex zt:min-w-0 zt:items-center zt:gap-(--size-2-2)">
+      <ToolbarButton
         ref={buttonRef}
-        type="button"
+        icon="search"
+        label={m.query_view_search()}
+        labelClassName={open ? "zt:@xl:hidden" : undefined}
         aria-expanded={open}
-        {...tooltipAttrs(m.query_view_search())}
+        active={query !== ""}
+        open={open}
         data-query-toolbar="search"
-        className={cn(
-          "clickable-icon zt:flex zt:items-center zt:gap-1",
-          (open || query !== "") && "is-active",
-        )}
         onClick={() => (open ? close() : setOpen(true))}
-      >
-        <Icon name="search" size={14} />
-        {!open && (
-          <span className={TOOLBAR_LABEL}>{m.query_view_search()}</span>
-        )}
-      </button>
+      />
       {open && (
         <SearchInput
           ref={inputRef}
           type="text"
           data-query-search=""
           aria-label={m.query_view_search()}
-          className="zt:w-48"
+          className="zt:w-48 zt:min-w-0 zt:shrink"
           value={query}
           onChange={setQuery}
           placeholder={datasetSpec(dataset).search()}
