@@ -47,19 +47,13 @@
       ],
       "cache": false
     },
+    "lint:deps": {
+      "dependsOn": ["^build"]
+    },
     "//#lint:repo:deps": {
       "dependsOn": [
-        "@zotlit/db#build",
-        "@zotlit/filter-expression#build",
-        "@zotlit/item-lookup#build",
-        "@zotlit/item-query#build",
+        "^lint:deps",
         "@zotlit/obsidian#generate:language-packs",
-        "@zotlit/protocol#build",
-        "@zotlit/shared#build",
-        "@zotlit/templates#build",
-        "@zotlit/ui#build",
-        "@zotlit/workbench#build",
-        "@zotlit/zotero-types#build",
         "@zotlit/docs#generate:messages",
         "@zotlit/docs#cf-typegen:check"
       ]
@@ -69,17 +63,8 @@
     },
     "//#review:plugin:deps": {
       "dependsOn": [
-        "@zotlit/db#build",
-        "@zotlit/filter-expression#build",
-        "@zotlit/item-lookup#build",
-        "@zotlit/item-query#build",
-        "@zotlit/obsidian#generate:language-packs",
-        "@zotlit/protocol#build",
-        "@zotlit/shared#build",
-        "@zotlit/templates#build",
-        "@zotlit/ui#build",
-        "@zotlit/workbench#build",
-        "@zotlit/zotero-types#build"
+        "@zotlit/obsidian#lint:deps",
+        "@zotlit/obsidian#generate:language-packs"
       ]
     },
     "//#review:plugin": {
