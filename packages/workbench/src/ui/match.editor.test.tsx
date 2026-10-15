@@ -107,9 +107,11 @@ const vocabulary: MatchVocabulary<Row> = {
 function Editor({
   initial,
   onChange,
+  starter,
 }: {
   initial: MatchFilter | undefined;
   onChange: (next: MatchFilter | undefined) => void;
+  starter?: boolean;
 }) {
   const [value, setValue] = useState(initial);
   return (
@@ -117,6 +119,7 @@ function Editor({
       <MatchEditor
         value={value}
         vocabulary={vocabulary}
+        starter={starter}
         onChange={(next) => {
           onChange(next);
           setValue(next);
@@ -160,6 +163,22 @@ it("edits a condition through a caller's text and number fields into a Filter Ex
   expect(onChange).toHaveBeenLastCalledWith({
     and: ["pages == 12", "pages > 0"],
   });
+});
+
+it("shows a starter row in an empty filter unless the caller turns it off", () => {
+  const onChange = vi.fn<(next: MatchFilter | undefined) => void>();
+  const { unmount } = render(
+    <Editor initial={undefined} onChange={onChange} />,
+  );
+  expect(document.querySelectorAll("[data-condition-row]")).toHaveLength(1);
+  unmount();
+
+  render(<Editor initial={undefined} onChange={onChange} starter={false} />);
+  expect(document.querySelectorAll("[data-condition-row]")).toHaveLength(0);
+  expect(screen.queryByText(m.workbench_match_remove())).toBeNull();
+  fireEvent.click(screen.getByText(m.workbench_match_add_condition()));
+  expect(document.querySelectorAll("[data-condition-row]")).toHaveLength(1);
+  expect(onChange).toHaveBeenLastCalledWith({ and: ["pages > 0"] });
 });
 
 it("opens a None of the following group as one expression condition", () => {

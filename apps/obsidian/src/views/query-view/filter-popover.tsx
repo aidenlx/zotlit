@@ -469,6 +469,8 @@ export function FilterEditor({
       <MatchEditor
         value={value}
         vocabulary={vocabulary(section)}
+        // An empty filter shows only "Add condition", as the docs describe.
+        starter={false}
         onChange={(next) => onChange(section, next)}
       />
     );
