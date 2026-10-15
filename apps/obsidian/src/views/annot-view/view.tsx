@@ -335,14 +335,6 @@ export class AnnotationView extends ItemView implements HistorySurface {
   /** "Refresh data" and the mode switches live here, off the toolbar row. */
   override onPaneMenu(menu: ObsidianMenu, source: string): void {
     super.onPaneMenu(menu, source);
-    // Obsidian 1.14.4 names a sidebar tab's context menu
-    // "sidebar-context-menu" and a main-area tab's "tab-header".
-    if (
-      source !== "more-options" &&
-      source !== "sidebar-context-menu" &&
-      source !== "tab-header"
-    )
-      return;
     const actions = this.#layout.actions;
     if (!actions) return;
     const { file, view } = this.#query.state.getState();
