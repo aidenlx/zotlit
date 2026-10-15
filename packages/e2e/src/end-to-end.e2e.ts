@@ -1312,15 +1312,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
 
     // The popover opens with the two sections; the view's tag condition
-    // shows as a visual row.
+    // shows as a visual row, and the empty "All views" section shows no row.
     const sections = JSON.parse(
       await inPopover(
-        `return JSON.stringify({open:popover.matches(':popover-open'),all:section('all').querySelector('[data-filter-heading]').textContent,view:section('view').querySelector('[data-filter-heading]').textContent,tag:section('view').querySelector('[data-condition-row] input[aria-label="${m.workbench_match_value()}"]').value});`,
+        `return JSON.stringify({open:popover.matches(':popover-open'),all:section('all').querySelector('[data-filter-heading]').textContent,allRows:section('all').querySelectorAll('[data-condition-row]').length,view:section('view').querySelector('[data-filter-heading]').textContent,tag:section('view').querySelector('[data-condition-row] input[aria-label="${m.workbench_match_value()}"]').value});`,
       ),
     ) as Record<string, unknown>;
     expect(sections).toEqual({
       open: true,
       all: m.query_view_filter_all_views(),
+      allRows: 0,
       view: m.query_view_filter_this_view(),
       tag: "figure",
     });
@@ -1340,10 +1341,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ),
     );
 
-    // A colour condition for all views saves the file's top-level filters,
-    // and both sections hold.
+    // "Add condition" for all views adds a colour condition, Yellow, and
+    // saves it as the file's top-level filters; both sections hold.
     await inPopover(
-      `set(section('all').querySelector('[data-condition-row] select[aria-label="${m.workbench_match_value()}"]'),'yellow');return true;`,
+      `[...section('all').querySelectorAll('button')].find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_match_add_condition())}).click();return true;`,
     );
     const yellow = await queryKeys(
       '(colorName == "yellow") && (tags.contains("methodology"))',

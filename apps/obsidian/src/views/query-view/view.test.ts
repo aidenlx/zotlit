@@ -910,10 +910,18 @@ it("edits the filters for all views and for this view from the Filter popover", 
   );
   expect(run.mock.calls.at(-1)![0].filter).toBe('colorName == "red"');
 
-  // The starter row of the empty "All views" section is a colour condition.
-  const [starter] = section(el, "all").querySelectorAll("[data-condition-row]");
+  // The empty "All views" section shows no condition row, only the action
+  // that adds one: a colour condition.
+  const all = section(el, "all");
+  expect(all.querySelectorAll("[data-condition-row]")).toHaveLength(0);
+  const add = [...all.querySelectorAll("button")].find(
+    (button) => button.textContent === "Add condition",
+  );
+  await act(() => add!.click());
+  await settle();
+  const [added] = all.querySelectorAll("[data-condition-row]");
   await act(() =>
-    chooseValue(starter!.querySelector('select[aria-label="Value"]')!, "blue"),
+    chooseValue(added!.querySelector('select[aria-label="Value"]')!, "blue"),
   );
   await settle();
   expect(written.at(-1)).toMatch(
@@ -1502,7 +1510,8 @@ it("offers Item fields to sort and group a view of Items by", async () => {
   await act(() =>
     el.querySelector<HTMLElement>('[data-query-toolbar="group"]')!.click(),
   );
-  expect(document.body.textContent).toContain("Item type");
+  const group = document.querySelector("[data-group-editor]")!;
+  expect(group.textContent).toContain("Item Type");
   expect(document.body.textContent).not.toContain("Attachment");
 });
 

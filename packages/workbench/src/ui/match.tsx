@@ -248,15 +248,22 @@ export function MatchEditor<Row extends LabelledRow>({
   onChange,
   vocabulary,
   disabled = false,
+  starter = true,
 }: {
   value: MatchFilter | undefined;
   /** `undefined` when the author clears every condition. */
   onChange: (next: MatchTree | undefined) => boolean;
   vocabulary: MatchVocabulary<Row>;
   disabled?: boolean;
+  /**
+   * Whether an empty filter shows a starter row of `starterKind`. Without
+   * it, an empty filter shows only the actions that add a condition.
+   */
+  starter?: boolean;
 }) {
   const part = useParts("match");
-  const [showStarter, setShowStarter] = useState(true);
+  const [starterShown, setShowStarter] = useState(true);
+  const showStarter = starter && starterShown;
   const [root, setRootState] = useState<ConditionGroup<Row>>(() =>
     value === undefined ? emptyGroup() : fromFilter(value, vocabulary),
   );
