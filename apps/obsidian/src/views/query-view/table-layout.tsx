@@ -15,6 +15,7 @@ import { useStore } from "zustand";
 
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
+import { isPageNumber } from "@/lib/page-label";
 import { cn, tooltipAttrs } from "@/lib/utils";
 import type {
   QueryViewRequest,
@@ -163,7 +164,9 @@ export const TABLE_CHILD_SOURCES: readonly TableChildSource[] = [
         </span>
         {text(values.pageLabel) !== "" && (
           <span className="zt:shrink-0 zt:text-(--text-muted)">
-            {m.query_view_table_page({ page: text(values.pageLabel) })}
+            {isPageNumber(text(values.pageLabel))
+              ? m.query_view_table_page({ page: text(values.pageLabel) })
+              : text(values.pageLabel)}
           </span>
         )}
       </>

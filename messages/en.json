@@ -2500,6 +2500,7 @@
   "annot_view_menu_insert": "Insert into note",
   "annot_view_insert_no_note": "Open a note to insert annotations into it",
   "annot_view_card_image_alt": "Area excerpt from page {page}",
+  "annot_view_card_image_alt_label": "Area excerpt from {label}",
   "annot_view_card_image_alt_no_page": "Area excerpt",
   "annot_view_image_unavailable": "Image unavailable",
   "annot_view_image_loading": "Loading image…",

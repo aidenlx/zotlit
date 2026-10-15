@@ -15,6 +15,7 @@ import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
 import { useObsidianApp } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
+import { isPageNumber } from "@/lib/page-label";
 import { useSanitizedHtml } from "@/lib/sanitize-html";
 import { themeHook } from "@/lib/theme-hooks";
 import {
@@ -1163,7 +1164,9 @@ function ExcerptImage({ annot, collapsed }: AnnotationProps) {
         annot.text ??
         (annot.pageLabel === null
           ? m.annot_view_card_image_alt_no_page()
-          : m.annot_view_card_image_alt({ page: annot.pageLabel }))
+          : isPageNumber(annot.pageLabel)
+            ? m.annot_view_card_image_alt({ page: annot.pageLabel })
+            : m.annot_view_card_image_alt_label({ label: annot.pageLabel }))
       }
     />
   );
@@ -1221,7 +1224,9 @@ function PageChip({
         className={cn("zt:shrink-0", color && "zt:text-(--zt-annot-color)")}
       />
       {page && display.page && (
-        <span className="zt:truncate">{m.annot_view_page({ page })}</span>
+        <span className="zt:truncate">
+          {isPageNumber(page) ? m.annot_view_page({ page }) : page}
+        </span>
       )}
     </>
   );
