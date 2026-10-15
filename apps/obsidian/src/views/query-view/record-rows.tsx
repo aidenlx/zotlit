@@ -47,7 +47,7 @@ export function useRecordGroups(view: QueryView): {
   properties: readonly PropertyEntry[];
   groups: readonly RecordGroup[];
 } {
-  const columns = useViewProperties(view)?.visibleProperties;
+  const columns = useViewProperties(view)?.visible;
   const records = useStore(view.state, (s) => s.records);
   const query = useAnnotStore((s) => s.filterQuery)
     .trim()

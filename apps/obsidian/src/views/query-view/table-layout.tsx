@@ -484,10 +484,7 @@ export function TableLayout({ view }: { view: QueryView }) {
   const { children: expanded, toggle } = useChildren(query);
   const properties = useViewProperties(view);
   const dataset = useStore(view.state, (s) => s.view?.from ?? "annotations");
-  const columns = useMemo(
-    () => properties?.visibleProperties ?? [],
-    [properties],
-  );
+  const columns = useMemo(() => properties?.visible ?? [], [properties]);
   const visible = useMemo(
     () =>
       search === ""

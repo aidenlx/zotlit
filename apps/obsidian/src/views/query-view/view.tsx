@@ -617,7 +617,7 @@ export class QueryView extends Component implements HistorySurface {
     const { file, view } = this.state.getState();
     return resultTable(
       this.#rows,
-      view ? viewProperties(file, view).visibleProperties : [],
+      view ? viewProperties(file, view).visible : [],
     );
   }
 
@@ -644,7 +644,7 @@ export class QueryView extends Component implements HistorySurface {
       ...new Set([
         ...(grouped?.fields ?? []),
         ...(layoutOf(view)?.type === "table" ? TABLE_FIELDS : []),
-        ...viewProperties(file, view).visibleProperties.map(({ path }) => path),
+        ...viewProperties(file, view).visible.map(({ path }) => path),
       ]),
     ];
     const formulas = file.formulas ?? {};
