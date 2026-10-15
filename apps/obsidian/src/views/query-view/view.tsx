@@ -1080,6 +1080,7 @@ function SortButton({ view }: { view: QueryView }) {
       active={sort.length > 0}
       count={sort.length}
       hook="sort"
+      composed
     >
       <SortEditor
         value={sort}
@@ -1107,6 +1108,7 @@ function GroupButton({ view }: { view: QueryView }) {
       label={m.query_view_group()}
       active={current.groupBy !== undefined}
       hook="group"
+      composed
     >
       <GroupEditor
         value={{ groupBy: current.groupBy, groupOrder: current.groupOrder }}
