@@ -9,9 +9,10 @@ import type { App } from "obsidian";
 import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import type { HTMLAttributes, RefObject } from "react";
 
+import { useUniqueId } from "@zotlit/ui";
+
 import * as m from "@/lib/i18n/generated/messages";
 import { themeHook } from "@/lib/theme-hooks";
-import { useUniqueId } from "@/lib/use-unique-id";
 import { claimClick, cn } from "@/lib/utils";
 import type { WriteConflict } from "@/services/annotation-repository/write";
 

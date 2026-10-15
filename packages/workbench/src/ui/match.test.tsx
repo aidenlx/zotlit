@@ -132,7 +132,7 @@ it("places Match between Name and Profile on both hosts", () => {
   ]);
 });
 
-it("validates the starter condition after an autosaved edit", async () => {
+it("starts an empty Match with only its add actions, then saves and validates the condition the author adds", async () => {
   const controller = new WorkbenchDocumentController(
     DEFAULT_PROFILE_SOURCE.replace("id: default", "id: Bk3Qn7XvT2Lp"),
   );
@@ -146,21 +146,29 @@ it("validates the starter condition after an autosaved edit", async () => {
       m.workbench_loading_item(),
     ),
   );
-  expect(screen.queryByRole("alert")).toBeNull();
+  expect(document.querySelectorAll("[data-condition-row]")).toHaveLength(0);
+  expect(screen.queryByText(m.workbench_match_remove())).toBeNull();
   expect(controller.document?.manifest.match).toBeUndefined();
-  const input = screen.getByLabelText(m.workbench_match_value());
-  fireEvent.input(input, { target: { value: "Thesis" } });
+  fireEvent.click(
+    screen.getByRole("button", { name: m.workbench_match_add_condition() }),
+  );
+  expect(document.querySelectorAll("[data-condition-row]")).toHaveLength(1);
+  expect(controller.document?.manifest.match).toEqual({
+    and: ['itemType == "book"'],
+  });
+  fireEvent.input(screen.getByLabelText(m.workbench_match_condition_kind()), {
+    target: { value: "collections" },
+  });
+  expect(screen.getByRole("alert").textContent).toBe(
+    m.workbench_match_collection_empty(),
+  );
+  fireEvent.input(screen.getByLabelText(m.workbench_match_value()), {
+    target: { value: "Thesis" },
+  });
   expect(controller.document?.manifest.match).toEqual({
     and: ['collections.within("Thesis")'],
   });
   expect(screen.queryByRole("alert")).toBeNull();
-  fireEvent.input(input, { target: { value: "" } });
-  expect(screen.getByRole("alert").textContent).toBe(
-    m.workbench_match_collection_empty(),
-  );
-  expect(controller.document?.manifest.match).toEqual({
-    and: ['collections.within("")'],
-  });
 });
 
 it("keeps nested expression rows as written while a labelled row changes, and restores the source on undo", async () => {

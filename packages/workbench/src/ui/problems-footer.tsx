@@ -25,12 +25,13 @@ import type { RenderDiagnostic, TemplateRenderResult } from "#/render/result";
 import {
   useCallback,
   useEffect,
-  useId,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
+
+import { useUniqueId } from "@zotlit/ui";
 
 import type { WorkbenchMessages } from "./generated/messages";
 import { useOptionalHost } from "./host";
@@ -290,8 +291,8 @@ export function ProblemsFooter({
   const panel = useRef<HTMLElement>(null);
   const [size, setSize] = useState(55);
   const drag = useRef<{ y: number; size: number; height: number } | null>(null);
-  const headingId = useId();
-  const bodyId = useId();
+  const headingId = useUniqueId();
+  const bodyId = useUniqueId();
   const {
     diagnoses,
     selected,

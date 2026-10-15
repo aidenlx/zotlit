@@ -2552,9 +2552,15 @@ it("ticks the default properties of a view without order, and a tick writes them
 `),
   );
   await settle();
-  await act(() =>
-    el.querySelector<HTMLElement>("[data-query-properties]")!.click(),
-  );
+  await act(() => {
+    el.querySelector<HTMLElement>("[data-query-properties]")!.click();
+    // happy-dom has no popover, so the test sends the event that opens it.
+    document
+      .querySelector("[data-query-properties-popup]")!
+      .dispatchEvent(
+        Object.assign(new Event("beforetoggle"), { newState: "open" }),
+      );
+  });
   const rows = [
     ...document.querySelectorAll<HTMLElement>("[data-query-property]"),
   ];

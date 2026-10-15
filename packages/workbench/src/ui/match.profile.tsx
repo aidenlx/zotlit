@@ -50,7 +50,6 @@ export function profileVocabulary(
       kind("collections", m.workbench_match_condition_collection()),
       kind("tags", m.workbench_match_condition_tag()),
     ],
-    starterKind: "collections",
     newKind: "item-type",
     issue: (condition) => conditionIssue(m, condition, deps),
   };

@@ -33,8 +33,9 @@ import type {
   Ref,
 } from "react";
 
+import { useUniqueId } from "@zotlit/ui";
+
 import { Icon } from "@/components/obsidian/icon";
-import { useUniqueId } from "@/lib/use-unique-id";
 import { cn } from "@/lib/utils";
 
 import { ToolbarButton } from "./toolbar-button";

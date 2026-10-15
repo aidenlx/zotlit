@@ -11,12 +11,11 @@ import { useLayoutEffect, useRef } from "react";
 import type { KeyboardEvent, RefObject } from "react";
 
 import { tagTypeToName } from "@zotlit/db";
-import { TagsInput, useTagsInput } from "@zotlit/ui";
+import { TagsInput, useTagsInput, useUniqueId } from "@zotlit/ui";
 
 import { Icon } from "@/components/obsidian/icon";
 import { useObsidianApp } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
-import { useUniqueId } from "@/lib/use-unique-id";
 import { tooltipAttrs } from "@/lib/utils";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 

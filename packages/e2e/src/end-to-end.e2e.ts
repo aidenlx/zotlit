@@ -573,14 +573,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       // still holds its rows in the DOM, so what tells is whether its own box
       // is still around them.
       //
-      // The tag Chooser is named by the search field it holds, never by DOM
-      // order: the filter bar draws the colour Chooser first whenever the
-      // palette has a colour, and every Fixture Annotation under this
-      // attachment carries one. The search field is the difference between the
-      // two — the colour Chooser has none — and the trigger is then the button
-      // whose popover target is this popup, rather than whichever trigger comes
-      // first.
-      const tagPopup = `(()=>{const root=app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view.containerEl;return Array.from(root?.querySelectorAll('.zt-chooser')??[]).find(p=>p.querySelector('input[role="combobox"]'))??null;})()`;
+      // The tag Chooser is named by its trigger's label, never by DOM order:
+      // the filter bar draws the colour Chooser first whenever the palette has
+      // a colour, and every Fixture Annotation under this attachment carries
+      // one. The popup is then the popover target of that trigger. A closed
+      // popup holds no rows or search field, so neither can name it.
+      const tagPopup = `(()=>{const root=app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view.containerEl;const trigger=Array.from(root?.querySelectorAll('button[popovertarget]')??[]).find(b=>{const label=b.getAttribute('aria-label')??'';return label===${JSON.stringify(m.annot_view_filter_tag_trigger())}||label.startsWith(${JSON.stringify(m.annot_view_filter_tag_trigger_active({ tags: "" }))});});return trigger?root.ownerDocument.getElementById(trigger.getAttribute('popovertarget')):null;})()`;
       await obEval(
         vaultId,
         `(function(){${PAGE}const root=app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view.containerEl;const popup=${tagPopup};if(!popup)throw new Error('No tag Chooser in the Annotation View');if(!popup.matches(':popover-open'))press(root.querySelector('[popovertarget="'+popup.id+'"]'),'tag Chooser');return true;})()`,
@@ -1068,7 +1066,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const menu = JSON.parse(
       await obEval(
         vaultId,
-        `(()=>{${PAGE}const view=app.workspace.getMostRecentLeaf().view;press(view.contentEl.querySelector('[data-query-view-menu]'),'View menu');const rows=[...view.contentEl.querySelectorAll('[data-query-view-list]:popover-open [data-query-view-row]')];const titles=rows.map(n=>n.getAttribute('data-query-view-row'));press(rows.find(n=>n.getAttribute('data-query-view-row')==='Figures'),'Figures');return JSON.stringify(titles);})()`,
+        `(async()=>{${PAGE}const view=app.workspace.getMostRecentLeaf().view;press(view.contentEl.querySelector('[data-query-view-menu]'),'View menu');const rows=await until('view menu rows',()=>{const found=[...view.contentEl.querySelectorAll('[data-query-view-list]:popover-open [data-query-view-row]')];return found.length>0&&found;});const titles=rows.map(n=>n.getAttribute('data-query-view-row'));press(rows.find(n=>n.getAttribute('data-query-view-row')==='Figures'),'Figures');return JSON.stringify(titles);})()`,
       ),
     ) as string[];
     expect(menu).toEqual(["All annotations", "Figures"]);

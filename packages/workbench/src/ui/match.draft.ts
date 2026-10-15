@@ -87,8 +87,6 @@ export interface MatchConditionKind<Row extends LabelledRow> {
 /** The conditions a Match editor offers, which its caller supplies. */
 export interface MatchVocabulary<Row extends LabelledRow> {
   kinds: readonly MatchConditionKind<Row>[];
-  /** The kind of the row an empty Match shows. */
-  starterKind: Row["kind"];
   /** The kind "Add condition" adds and a new group starts with. */
   newKind: Row["kind"];
   /** What keeps one row from being saved, as the reader reads it. */

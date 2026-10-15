@@ -55,7 +55,6 @@ function valueInput(
 
 /** A Title text field and a Pages number field, with their labels as data. */
 const vocabulary: MatchVocabulary<Row> = {
-  starterKind: "title",
   newKind: "pages",
   kinds: [
     {
@@ -107,11 +106,9 @@ const vocabulary: MatchVocabulary<Row> = {
 function Editor({
   initial,
   onChange,
-  starter,
 }: {
   initial: MatchFilter | undefined;
   onChange: (next: MatchFilter | undefined) => void;
-  starter?: boolean;
 }) {
   const [value, setValue] = useState(initial);
   return (
@@ -119,7 +116,6 @@ function Editor({
       <MatchEditor
         value={value}
         vocabulary={vocabulary}
-        starter={starter}
         onChange={(next) => {
           onChange(next);
           setValue(next);
@@ -165,15 +161,9 @@ it("edits a condition through a caller's text and number fields into a Filter Ex
   });
 });
 
-it("shows a starter row in an empty filter unless the caller turns it off", () => {
+it("shows an empty filter as only its add actions", () => {
   const onChange = vi.fn<(next: MatchFilter | undefined) => void>();
-  const { unmount } = render(
-    <Editor initial={undefined} onChange={onChange} />,
-  );
-  expect(document.querySelectorAll("[data-condition-row]")).toHaveLength(1);
-  unmount();
-
-  render(<Editor initial={undefined} onChange={onChange} starter={false} />);
+  render(<Editor initial={undefined} onChange={onChange} />);
   expect(document.querySelectorAll("[data-condition-row]")).toHaveLength(0);
   expect(screen.queryByText(m.workbench_match_remove())).toBeNull();
   fireEvent.click(screen.getByText(m.workbench_match_add_condition()));
