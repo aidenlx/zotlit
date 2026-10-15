@@ -44,6 +44,7 @@ export const templateWorkbenchIcons: Record<WorkbenchIcon, string> = {
   "property-checkbox": "check-square",
   "property-date": "calendar",
   "property-datetime": "clock",
+  drag: "grip-vertical",
 };
 /** Text actions share the Match tab's outlined native control surface. */
 export const templateWorkbenchButton =
@@ -148,6 +149,37 @@ const bar =
  * The shared accent-bar treatment every inline preview notice wears: a bar
  * states which condition, and the box holds the sentence and its action.
  */
+/**
+ * The rows of a Match tree as the Bases filter menu draws them: a grip, the
+ * conjunction, then the condition, where a nested group spans the last two.
+ * In a drag, the row that moves fades, an accent line marks the place it
+ * lands, and an empty group that takes it shows the focus ring. `look` sets
+ * each host's conjunction column and gaps.
+ */
+export const matchRows = tv({
+  slots: {
+    row: [
+      "zt:group/row zt:grid zt:min-w-0 zt:items-start zt:[&>[data-part=group]]:col-span-2",
+      "zt:data-dragging:opacity-50 zt:data-[drop=after]:shadow-[0_var(--size-2-1)_0_0_var(--interactive-accent)] zt:data-[drop=before]:shadow-[0_calc(-1*var(--size-2-1))_0_0_var(--interactive-accent)]",
+    ],
+    /** Faint, shown while its row is hovered or it has focus; a disabled editor has none. */
+    handle: [
+      "zt:me-[calc(-1*var(--size-2-1))] zt:flex zt:min-h-(--input-height) zt:shrink-0 zt:cursor-grab zt:items-center zt:rounded-sm zt:text-faint zt:hover:text-muted-foreground zt:active:cursor-grabbing",
+      "zt:opacity-0 zt:group-hover/row:opacity-100 zt:focus-visible:opacity-100 zt:aria-disabled:hidden zt:[.is-mobile_&]:opacity-100",
+      "zt:focus-visible:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)] zt:focus-visible:outline-none",
+    ],
+    group: "zt:data-[drop=into]:shadow-(--metadata-property-box-shadow-focus)",
+  },
+  variants: {
+    look: {
+      workbench: { row: "zt:grid-cols-[auto_4.5rem_minmax(0,1fr)] zt:gap-2" },
+      filter: {
+        row: "zt:grid-cols-[auto_var(--size-4-18)_minmax(0,1fr)] zt:gap-(--size-4-2)",
+      },
+    },
+  },
+});
+const workbenchRows = matchRows({ look: "workbench" });
 const previewNotice =
   "zt:flex zt:min-w-0 zt:gap-x-3 zt:gap-y-1 zt:border-s-2 zt:bg-(--background-secondary) zt:px-3 zt:py-2 zt:text-xs zt:leading-normal";
 export const templateWorkbenchTheme: WorkbenchTheme = {
@@ -174,11 +206,14 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       ),
       fieldset:
         "zt:flex zt:min-w-0 zt:flex-col zt:items-start zt:gap-4 zt:border-0 zt:p-0",
-      group:
-        "zt:flex zt:min-w-0 zt:w-full zt:flex-1 zt:flex-col zt:gap-2 zt:data-[state=nested]:rounded-md zt:data-[state=nested]:border zt:data-[state=nested]:border-border zt:data-[state=nested]:bg-card zt:data-[state=nested]:p-2 zt:[&>[data-part=actions]:first-child]:justify-between",
+      group: cn(
+        "zt:flex zt:w-full zt:min-w-0 zt:flex-1 zt:flex-col zt:gap-2 zt:data-[state=nested]:rounded-md zt:data-[state=nested]:border zt:data-[state=nested]:border-border zt:data-[state=nested]:bg-card zt:data-[state=nested]:p-2 zt:[&>[data-part=actions]:first-child]:justify-between",
+        workbenchRows.group(),
+      ),
       rows: "zt:flex zt:flex-col zt:gap-2 zt:list-none zt:m-0 zt:p-0",
-      row: "zt:grid zt:min-w-0 zt:grid-cols-[4.5rem_minmax(0,1fr)] zt:items-start zt:gap-2 zt:[&>[data-part=group]]:col-span-2",
-      condition: "zt:col-start-2 zt:min-w-0",
+      row: workbenchRows.row(),
+      handle: workbenchRows.handle(),
+      condition: "zt:col-start-3 zt:min-w-0",
       statement: cn(
         "zt:flex zt:min-w-0 zt:items-start zt:overflow-hidden zt:rounded-md zt:bg-input zt:ring-1 zt:ring-border-hover zt:focus-within:ring-2 zt:focus-within:ring-border-focus",
         "zt:[--dropdown-background-hover:var(--background-modifier-form-field-hover)] zt:[--dropdown-background:var(--background-modifier-form-field)] zt:[--input-border-width-focus:0px] zt:[--input-border-width:0px] zt:[--input-radius:0px] zt:[--input-shadow:none]",

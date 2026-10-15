@@ -34,6 +34,8 @@ import type {
   RowCondition,
 } from "./match.draft";
 import { profileVocabulary } from "./match.profile";
+import { useMatchReorder } from "./match.reorder";
+import type { MatchReorder } from "./match.reorder";
 import { MatchSelect } from "./match.rows";
 // One Match tree over the document controller; rows write through the master history.
 import { useWorkbenchMessages } from "./messages";
@@ -283,18 +285,21 @@ export function MatchEditor<Row extends LabelledRow>({
     else if (next === undefined) setRoot(emptyGroup());
     return saved;
   }
+  function change(next: ConditionGroup<Row>) {
+    setRoot(next);
+    write(toFilter(next, vocabulary));
+  }
+  const reorder = useMatchReorder({ root, disabled, onChange: change });
   return (
-    <fieldset disabled={disabled} {...part("fieldset")}>
+    <fieldset disabled={disabled} {...part("fieldset")} {...reorder.fieldset}>
       <Group
         root={root}
         group={root}
         path={[]}
         vocabulary={vocabulary}
+        reorder={reorder}
         onRemoveMatch={value === undefined ? undefined : () => write(undefined)}
-        onChange={(next) => {
-          setRoot(next);
-          write(toFilter(next, vocabulary));
-        }}
+        onChange={change}
       />
     </fieldset>
   );
@@ -305,6 +310,7 @@ function Group<Row extends LabelledRow>({
   group,
   path,
   vocabulary,
+  reorder,
   onChange,
   onRemoveMatch,
 }: {
@@ -312,6 +318,7 @@ function Group<Row extends LabelledRow>({
   group: ConditionGroup<Row>;
   path: ConditionPath;
   vocabulary: MatchVocabulary<Row>;
+  reorder: MatchReorder;
   onChange: (root: ConditionGroup<Row>) => void;
   onRemoveMatch?: () => void;
 }) {
@@ -320,8 +327,11 @@ function Group<Row extends LabelledRow>({
   const icon = useIcon();
   const host = useWorkbenchHost();
   return (
-    <div {...part("group", path.length ? "nested" : "root")}>
-      <div {...part("actions", "header")}>
+    <div
+      {...part("group", path.length ? "nested" : "root")}
+      {...reorder.group(path, group.conditions.length)}
+    >
+      <div {...part("actions", "header")} {...reorder.header(path)}>
         <MatchSelect
           aria-label={m.workbench_match_match()}
           value={group.match}
@@ -358,12 +368,21 @@ function Group<Row extends LabelledRow>({
           </button>
         )}
       </div>
-      <ul {...part("rows")}>
+      <ul {...part("rows")} {...reorder.rows}>
         {group.conditions.map((node, index) => (
           <li
             key={index}
             {...part("row", isGroup(node) ? "group" : "condition")}
+            {...reorder.row([...path, index], group.conditions.length)}
           >
+            <span
+              {...part("handle")}
+              aria-label={m.workbench_match_drag_to_reorder()}
+              {...host.tooltip(m.workbench_match_drag_to_reorder())}
+              {...reorder.handle([...path, index], group.conditions.length)}
+            >
+              {icon("drag")}
+            </span>
             {!isGroup(node) && (
               <span {...part("conjunction")}>
                 {index === 0
@@ -379,6 +398,7 @@ function Group<Row extends LabelledRow>({
                 group={node}
                 path={[...path, index]}
                 vocabulary={vocabulary}
+                reorder={reorder}
                 onChange={onChange}
               />
             ) : (

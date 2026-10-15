@@ -1428,6 +1428,27 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         `return section('view').querySelector('[data-condition-row] input[aria-label="${m.workbench_match_value()}"]')?.value??null;`,
       ),
     ).toBe("figure");
+
+    // A condition dragged by its grip above another takes the first place,
+    // and the file keeps the new order.
+    const figureLine = '        - tags.contains("figure")';
+    const nextLine = (text: string) => {
+      const lines = text.split("\n");
+      return lines[lines.indexOf(figureLine) + 1] ?? "";
+    };
+    await inPopover(
+      `press([...section('view').querySelectorAll('button')].find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_match_add_condition())}),'Add condition');return true;`,
+    );
+    const added = nextLine(
+      (await tabWhen((tab) => nextLine(tab.text).startsWith("        - ")))
+        .text,
+    );
+    await inPopover(
+      `const handles=[...section('view').querySelectorAll('[data-reorder-handle]')];const first=handles[0].closest('[data-part="row"]');const transfer=new DataTransfer();const fire=(target,type,y)=>{const r=target.getBoundingClientRect();target.dispatchEvent(new DragEvent(type,{bubbles:true,cancelable:true,dataTransfer:transfer,clientX:r.left+r.width/2,clientY:y??r.top+r.height/2}));};fire(handles[1],'dragstart');const top=first.getBoundingClientRect().top+2;fire(first,'dragover',top);fire(first,'drop',top);fire(handles[1],'dragend');return true;`,
+    );
+    await tabWhen((tab) =>
+      tab.text.includes(`    filters:\n      and:\n${added}\n${figureLine}\n`),
+    );
   }, 180000);
 
   // The Fixture's Literature Note of SAKIMA22 ends with a Query Block of

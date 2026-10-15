@@ -275,6 +275,60 @@ export function appendAt<Row extends LabelledRow>(
   }));
 }
 
+function nodeAt<Row extends LabelledRow>(
+  root: ConditionGroup<Row>,
+  path: ConditionPath,
+): EditorCondition<Row> | undefined {
+  let node: EditorCondition<Row> | undefined = root;
+  for (const index of path)
+    node = node && isGroup(node) ? node.conditions[index] : undefined;
+  return node;
+}
+
+/** A place in a Match tree: the index in the group at `group`. */
+export interface ConditionPlace {
+  group: ConditionPath;
+  index: number;
+}
+
+/**
+ * `root` with the condition at `from` moved to `to`: into the group at
+ * `to.group`, at `to.index` among that group's conditions once the moved one
+ * has left. `to.group` names the group as it sits before the move. A group the move
+ * empties stays, as it does when its last row is removed. A move to the
+ * condition's own place, a group moved into itself, or a path that names no
+ * node answers `root` itself.
+ */
+export function moveAt<Row extends LabelledRow>(
+  root: ConditionGroup<Row>,
+  from: ConditionPath,
+  { group: toGroup, index }: ConditionPlace,
+): ConditionGroup<Row> {
+  const node = nodeAt(root, from);
+  const target = nodeAt(root, toGroup);
+  if (from.length === 0 || !node || !target || !isGroup(target)) return root;
+  if (from.every((at, depth) => toGroup[depth] === at)) return root;
+  const parent = from.slice(0, -1);
+  const removed = from.at(-1)!;
+  const sameGroup =
+    parent.length === toGroup.length &&
+    parent.every((at, depth) => toGroup[depth] === at);
+  if (sameGroup && index === removed) return root;
+  // The target's step at the depth of `from` shifts back once `from` leaves.
+  const shifted = toGroup.map((at, depth) =>
+    depth === parent.length &&
+    parent.every((step, above) => toGroup[above] === step) &&
+    at > removed
+      ? at - 1
+      : at,
+  );
+  return updateGroup(removeAt(root, from), shifted, (group) => {
+    const conditions = [...group.conditions];
+    conditions.splice(Math.max(0, Math.min(index, conditions.length)), 0, node);
+    return { ...group, conditions };
+  });
+}
+
 /**
  * Whether the Profile rows show `condition`: a negated "contains any" or
  * "contains all" has no row operator.

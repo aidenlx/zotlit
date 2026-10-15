@@ -11,6 +11,16 @@ import { WorkbenchThemeProvider } from "./theme";
 
 afterEach(cleanup);
 
+// happy-dom has no `ondragstart`-style properties, which Preact reads to pick
+// the lowercase event name a browser dispatches.
+for (const type of ["dragstart", "dragend", "dragover", "dragleave", "drop"])
+  if (!(`on${type}` in HTMLElement.prototype))
+    Object.defineProperty(HTMLElement.prototype, `on${type}`, {
+      value: null,
+      writable: true,
+      configurable: true,
+    });
+
 type TitleRow = { kind: "title"; operator: "contains" | "is"; value: string };
 type PagesRow = { kind: "pages"; operator: ">" | "=="; value: string };
 type Row = TitleRow | PagesRow;
@@ -209,4 +219,150 @@ it("draws the expression input with the match theme of the provider it renders i
   const input = screen.getByRole("textbox", { name: "Formula" });
   expect(input.classList.contains("match-expression")).toBe(true);
   expect(input.getAttribute("data-part")).toBe("expression");
+});
+
+/** What a browser hands a drag: enough for the editor to start and place one. */
+function dataTransfer() {
+  return {
+    setData: vi.fn(),
+    setDragImage: vi.fn(),
+    effectAllowed: "",
+    dropEffect: "",
+  };
+}
+
+const handles = () =>
+  screen.getAllByRole("button", { name: m.workbench_match_drag_to_reorder() });
+
+const rowOf = (element: Element) => element.closest("[data-part=row]")!;
+
+/** Drag `handle` over `target`, in its upper half or its lower half, and drop. */
+function drag(handle: Element, target: Element, half: "upper" | "lower") {
+  const transfer = dataTransfer();
+  fireEvent.dragStart(handle, { dataTransfer: transfer });
+  // happy-dom lays nothing out, so every row is a zero-height box at the
+  // top, and its DragEvent drops `clientY`: a MouseEvent carries it instead.
+  const over = new MouseEvent("dragover", {
+    bubbles: true,
+    cancelable: true,
+    clientY: half === "upper" ? 0 : 1,
+  });
+  Object.defineProperty(over, "dataTransfer", { value: transfer });
+  fireEvent(target, over);
+  fireEvent.drop(target, { dataTransfer: transfer });
+  fireEvent.dragEnd(handle, { dataTransfer: transfer });
+}
+
+it("drags a condition by its handle before or after another condition", () => {
+  const onChange = vi.fn<(next: MatchFilter | undefined) => void>();
+  render(
+    <Editor
+      initial={{ and: ["pages > 1", "pages > 2", "pages > 3"] }}
+      onChange={onChange}
+    />,
+  );
+  drag(handles()[0]!, rowOf(handles()[2]!), "lower");
+  expect(onChange).toHaveBeenLastCalledWith({
+    and: ["pages > 2", "pages > 3", "pages > 1"],
+  });
+  drag(handles()[2]!, rowOf(handles()[0]!), "upper");
+  expect(onChange).toHaveBeenLastCalledWith({
+    and: ["pages > 1", "pages > 2", "pages > 3"],
+  });
+});
+
+it("drags a condition into a nested group, and a nested condition out to its parent", () => {
+  const onChange = vi.fn<(next: MatchFilter | undefined) => void>();
+  render(
+    <Editor
+      initial={{ and: ["pages > 1", { or: ["pages > 2"] }] }}
+      onChange={onChange}
+    />,
+  );
+  const nested = () =>
+    document.querySelector("[data-part=group][data-state=nested]")!;
+  drag(handles()[0]!, nested(), "lower");
+  expect(onChange).toHaveBeenLastCalledWith({
+    and: [{ or: ["pages > 2", "pages > 1"] }],
+  });
+  // Handles in document order: the group, then its two conditions.
+  drag(handles()[2]!, rowOf(handles()[0]!), "upper");
+  expect(onChange).toHaveBeenLastCalledWith({
+    and: ["pages > 1", { or: ["pages > 2"] }],
+  });
+});
+
+it("drops a condition into a group the drags emptied", () => {
+  const onChange = vi.fn<(next: MatchFilter | undefined) => void>();
+  render(
+    <Editor
+      initial={{ and: ["pages > 1", { or: ["pages > 2"] }] }}
+      onChange={onChange}
+    />,
+  );
+  drag(handles()[2]!, rowOf(handles()[0]!), "upper");
+  expect(onChange).toHaveBeenLastCalledWith({
+    and: ["pages > 2", "pages > 1", { or: [] }],
+  });
+  drag(
+    handles()[0]!,
+    document.querySelector("[data-part=group][data-state=nested]")!,
+    "lower",
+  );
+  expect(onChange).toHaveBeenLastCalledWith({
+    and: ["pages > 1", { or: ["pages > 2"] }],
+  });
+});
+
+it("leaves the filter unchanged when a group is dropped into itself", () => {
+  const onChange = vi.fn<(next: MatchFilter | undefined) => void>();
+  render(
+    <Editor
+      initial={{ and: ["pages > 1", { or: ["pages > 2", "pages > 3"] }] }}
+      onChange={onChange}
+    />,
+  );
+  drag(handles()[1]!, rowOf(handles()[3]!), "lower");
+  expect(onChange).not.toHaveBeenCalled();
+});
+
+it("moves a condition one place with Alt+ArrowDown and Alt+ArrowUp on its handle", () => {
+  const onChange = vi.fn<(next: MatchFilter | undefined) => void>();
+  render(
+    <Editor
+      initial={{ and: ["pages > 1", "pages > 2"] }}
+      onChange={onChange}
+    />,
+  );
+  fireEvent.keyDown(handles()[0]!, { key: "ArrowDown", altKey: true });
+  expect(onChange).toHaveBeenLastCalledWith({
+    and: ["pages > 2", "pages > 1"],
+  });
+  fireEvent.keyDown(handles()[1]!, { key: "ArrowUp", altKey: true });
+  expect(onChange).toHaveBeenLastCalledWith({
+    and: ["pages > 1", "pages > 2"],
+  });
+  // The first row has no place above it.
+  fireEvent.keyDown(handles()[0]!, { key: "ArrowUp", altKey: true });
+  expect(onChange).toHaveBeenCalledTimes(2);
+});
+
+it("offers no drag or keyboard move in a disabled editor", () => {
+  const onChange = vi.fn<(next: MatchFilter | undefined) => boolean>(
+    () => true,
+  );
+  render(
+    <WorkbenchHostProvider host={fakeHost()}>
+      <MatchEditor
+        value={{ and: ["pages > 1", "pages > 2"] }}
+        vocabulary={vocabulary}
+        onChange={onChange}
+        disabled
+      />
+    </WorkbenchHostProvider>,
+  );
+  expect(handles()[0]!.getAttribute("draggable")).not.toBe("true");
+  fireEvent.keyDown(handles()[0]!, { key: "ArrowDown", altKey: true });
+  drag(handles()[0]!, rowOf(handles()[1]!), "lower");
+  expect(onChange).not.toHaveBeenCalled();
 });
