@@ -877,8 +877,11 @@ it("shows a wrong condition's diagnostic at its row and keeps the last good resu
   );
 });
 
-/** A syntax fault at the end of the filter, as ZotLit Query reports it. */
-function endOfFilterFault(at: number | null): QueryViewOutcome {
+/**
+ * A syntax fault at the end of the filter text `before`, as ZotLit Query
+ * reports it: the caret of its `report` counts the JSON-escaped text.
+ */
+function endOfFilterFault(at: number | null, before: string): QueryViewOutcome {
   const message =
     "Found end of filter where the filter takes !, (, -, [, a name, a number, a regular expression, a string, false, null, true.";
   const hint =
@@ -890,7 +893,13 @@ function endOfFilterFault(at: number | null): QueryViewOutcome {
       message,
       hint,
       severity: "error",
-      report: [message, "place !=", "        ^", hint],
+      report: [
+        message,
+        before,
+        `${" ".repeat(JSON.stringify(before).length - 2)}^`,
+        hint,
+      ],
+      excerpt: { before, at: "", after: "" },
       ...(at !== null && {
         location: { argument: "filter", span: { from: at, to: at } },
       }),
@@ -913,9 +922,13 @@ function endOfFilterFault(at: number | null): QueryViewOutcome {
   };
 }
 
-it("names the tokens a syntax error lacks once, at the row and in the view's diagnostic", async () => {
+it("names the tokens a syntax error lacks once, at the row and in the view's diagnostic, with the caret under the fault", async () => {
   const { view, el, settle } = await mount(
-    [result([row("ANNOTBBB")]), endOfFilterFault(8), endOfFilterFault(null)],
+    [
+      result([row("ANNOTBBB")]),
+      endOfFilterFault(8, "place !="),
+      endOfFilterFault(null, 'tags.contains("figure") && place !='),
+    ],
     () => {},
   );
   await act(() => view.setText(FILE));
@@ -934,14 +947,18 @@ it("names the tokens a syntax error lacks once, at the row and in the view's dia
 
   await act(() => {
     view.document.setFilters("view", {
-      and: ["place !=", 'tags.contains("figure")'],
+      and: ['tags.contains("figure")', "place !="],
     });
   });
   await settle();
 
   expect(view.state.getState().failure?.filterIssue).toBeNull();
   expect(el.querySelector("[data-query-diagnostic] pre")?.textContent).toBe(
-    "Found end of filter where the filter takes !, (, -, [, a name, a number, a regular expression, a string, false, null, true.\nplace !=\n        ^",
+    [
+      "Found end of filter where the filter takes !, (, -, [, a name, a number, a regular expression, a string, false, null, true.",
+      'tags.contains("figure") && place !=',
+      `${" ".repeat('tags.contains("figure") && place !='.length)}^`,
+    ].join("\n"),
   );
 });
 

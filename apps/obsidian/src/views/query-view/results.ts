@@ -4,10 +4,10 @@
 import { nameDictionary } from "@zotlit/item-query";
 import type { NameDictionary } from "@zotlit/item-query";
 
-import type { Diagnostic } from "@/services/item-query/contract";
 import type { QueryViewRow } from "@/services/item-query/query-view";
 
 import type { ConditionIssue } from "./query-file";
+import type { ReaderDiagnosticSource } from "./reader-diagnostic";
 import type { ShownRecord } from "./record-rows";
 import type { LayoutGroup } from "./rows";
 import type { QueryViewState, QueryViewWarning } from "./view";
@@ -37,10 +37,7 @@ export interface ResultSnapshot {
 
 /** Why a run gave no rows. */
 export interface QueryViewFailure {
-  diagnostic: Pick<Diagnostic, "message" | "hint" | "report"> & {
-    code: string;
-    suggestions?: readonly string[];
-  };
+  diagnostic: ReaderDiagnosticSource;
   /** The condition of the filters that the diagnostic marks. */
   filterIssue: ConditionIssue | null;
   /** The Formulas the run left out, by name, with the message of each. */

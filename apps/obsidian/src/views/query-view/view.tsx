@@ -59,6 +59,7 @@ import type {
   QueryFileView,
 } from "./query-file";
 import { QueryFileDocument } from "./query-file-document";
+import { readerDiagnostic } from "./reader-diagnostic";
 import { NO_RESULTS } from "./results";
 import type { QueryViewFailure, ResultSnapshot } from "./results";
 import { ResultsMenu } from "./results-menu";
@@ -257,30 +258,9 @@ function formulaIssues(outcome: QueryViewOutcome): NameDictionary<string> {
   return nameDictionary(
     Object.entries(faults ?? {}).map(([name, diagnostic]) => [
       name,
-      diagnosticText(diagnostic),
+      readerDiagnostic(diagnostic).sentence,
     ]),
   );
-}
-
-/** The part of a diagnostic that tells whether its hint adds to its message. */
-type HintedDiagnostic = Pick<Diagnostic, "message" | "hint"> & {
-  code: string;
-  suggestions?: readonly string[];
-};
-
-/**
- * Whether the hint lists again what the message lists: a syntax error's hint
- * without a correction names the same tokens as its message.
- */
-function hintRepeats({ code, suggestions = [] }: HintedDiagnostic): boolean {
-  return code === "invalid-filter" && suggestions.length === 0;
-}
-
-/** A diagnostic's message, with its hint after it where the hint adds to it. */
-function diagnosticText(diagnostic: HintedDiagnostic): string {
-  const { message, hint } = diagnostic;
-  if (hintRepeats(diagnostic)) return message;
-  return [message, hint].filter(Boolean).join(" ");
 }
 
 export class QueryView extends Component implements HistorySurface {
@@ -679,7 +659,6 @@ export class QueryView extends Component implements HistorySurface {
               code: "query-failed",
               message: error instanceof Error ? error.message : String(error),
               hint: "",
-              report: [],
             },
             nameDictionary(),
           );
@@ -784,7 +763,10 @@ export class QueryView extends Component implements HistorySurface {
       results: kept ? state.results : null,
       failure: {
         diagnostic,
-        filterIssue: at && { ...at, message: diagnosticText(diagnostic) },
+        filterIssue: at && {
+          ...at,
+          message: readerDiagnostic(diagnostic).sentence,
+        },
         formulaIssues: issues,
       },
     }));
@@ -859,18 +841,7 @@ function Problems({ view }: { view: QueryView }) {
           data-query-diagnostic={diagnostic.code}
         >
           <p className="zt:m-0 zt:font-semibold">{m.query_view_failed()}</p>
-          {diagnostic.report.length > 0 ? (
-            <pre className="zt:m-0 zt:mt-1 zt:overflow-auto zt:text-xs zt:whitespace-pre-wrap">
-              {(hintRepeats(diagnostic)
-                ? diagnostic.report.slice(0, -1)
-                : diagnostic.report
-              ).join("\n")}
-            </pre>
-          ) : (
-            <p className="zt:m-0 zt:mt-1">
-              {diagnostic.message} {diagnostic.hint}
-            </p>
-          )}
+          <DiagnosticText diagnostic={diagnostic} />
         </div>
       )}
       {unresolved.length > 0 && (
@@ -885,6 +856,31 @@ function Problems({ view }: { view: QueryView }) {
         </p>
       )}
     </>
+  );
+}
+
+/**
+ * What the run's diagnostic says, and where the filter holds the fault: its
+ * line, with a caret under the fault.
+ */
+function DiagnosticText({
+  diagnostic,
+}: {
+  diagnostic: QueryViewFailure["diagnostic"];
+}) {
+  const { sentence, excerpt } = readerDiagnostic(diagnostic);
+  if (!excerpt) return <p className="zt:m-0 zt:mt-1">{sentence}</p>;
+  return (
+    <pre className="zt:m-0 zt:mt-1 zt:overflow-auto zt:text-xs zt:whitespace-pre-wrap">
+      {sentence}
+      {"\n"}
+      {excerpt.line}
+      {"\n"}
+      {" ".repeat(excerpt.from)}
+      <span className="zt:text-(--text-error)">
+        {"^".repeat(excerpt.length)}
+      </span>
+    </pre>
   );
 }
 
