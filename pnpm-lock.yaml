@@ -310,9 +310,21 @@ importers:
       '@zotlit/config':
         specifier: workspace:*
         version: link:packages/config
+      '@zotlit/docs':
+        specifier: workspace:*
+        version: link:apps/docs
+      '@zotlit/e2e':
+        specifier: workspace:*
+        version: link:packages/e2e
+      '@zotlit/obsidian':
+        specifier: workspace:*
+        version: link:apps/obsidian
       '@zotlit/scripts':
         specifier: workspace:*
         version: link:packages/scripts
+      '@zotlit/zotero':
+        specifier: workspace:*
+        version: link:apps/zotero
       eslint:
         specifier: ^10.8.0
         version: 10.8.0(jiti@2.7.0)(supports-color@10.2.2)
