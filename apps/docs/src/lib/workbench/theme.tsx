@@ -116,9 +116,9 @@ export const WEB_THEME: WorkbenchTheme = {
       group:
         "flex min-w-0 flex-1 flex-col gap-2 rounded-md border border-fd-border p-2 data-[state=root]:border-0 data-[state=root]:p-0 [&>[data-part=actions]:first-child]:justify-between data-[drop=into]:ring-2 data-[drop=into]:ring-fd-primary",
       rows: "flex flex-col gap-2 list-none m-0 p-0",
-      row: "group/row grid min-w-0 grid-cols-[auto_4.5rem_minmax(0,1fr)] items-start gap-2 [&>[data-part=group]]:col-span-2 data-dragging:opacity-50 data-[drop=before]:shadow-[0_-2px_0_0_var(--color-fd-primary)] data-[drop=after]:shadow-[0_2px_0_0_var(--color-fd-primary)]",
+      row: "grid min-w-0 grid-cols-[auto_4.5rem_minmax(0,1fr)] items-start gap-2 [&>[data-part=group]]:col-span-2 data-dragging:opacity-50 [&:hover>[data-part=handle]]:opacity-100 data-[drop=before]:shadow-[0_calc(var(--spacing)*-0.5)_0_0_var(--color-fd-primary)] data-[drop=after]:shadow-[0_calc(var(--spacing)*0.5)_0_0_var(--color-fd-primary)]",
       handle:
-        "flex min-h-8 shrink-0 items-center -me-1 rounded-sm text-fd-muted-foreground cursor-grab active:cursor-grabbing opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-fd-ring aria-disabled:hidden [&_svg]:size-4",
+        "flex min-h-8 shrink-0 items-center -me-1 rounded-sm text-fd-muted-foreground cursor-grab active:cursor-grabbing opacity-0 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-fd-ring aria-disabled:hidden [&_svg]:size-4",
       condition: "min-w-0 flex-1",
       statement:
         "flex flex-wrap min-w-0 items-start gap-1 [&_[data-part=wrapper]]:w-auto",

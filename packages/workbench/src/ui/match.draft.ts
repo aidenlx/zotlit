@@ -275,6 +275,21 @@ export function appendAt<Row extends LabelledRow>(
   }));
 }
 
+/** Whether `path` is `prefix` or names a node inside it. */
+export function pathStartsWith(
+  path: ConditionPath,
+  prefix: ConditionPath,
+): boolean {
+  return (
+    prefix.length <= path.length &&
+    prefix.every((at, depth) => path[depth] === at)
+  );
+}
+
+export function samePath(a: ConditionPath, b: ConditionPath): boolean {
+  return a.length === b.length && pathStartsWith(a, b);
+}
+
 function nodeAt<Row extends LabelledRow>(
   root: ConditionGroup<Row>,
   path: ConditionPath,
@@ -307,18 +322,13 @@ export function moveAt<Row extends LabelledRow>(
   const node = nodeAt(root, from);
   const target = nodeAt(root, toGroup);
   if (from.length === 0 || !node || !target || !isGroup(target)) return root;
-  if (from.every((at, depth) => toGroup[depth] === at)) return root;
+  if (pathStartsWith(toGroup, from)) return root;
   const parent = from.slice(0, -1);
   const removed = from.at(-1)!;
-  const sameGroup =
-    parent.length === toGroup.length &&
-    parent.every((at, depth) => toGroup[depth] === at);
-  if (sameGroup && index === removed) return root;
+  if (samePath(parent, toGroup) && index === removed) return root;
   // The target's step at the depth of `from` shifts back once `from` leaves.
   const shifted = toGroup.map((at, depth) =>
-    depth === parent.length &&
-    parent.every((step, above) => toGroup[above] === step) &&
-    at > removed
+    depth === parent.length && pathStartsWith(toGroup, parent) && at > removed
       ? at - 1
       : at,
   );

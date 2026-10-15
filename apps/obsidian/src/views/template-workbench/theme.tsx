@@ -146,10 +146,6 @@ const chipIcon = "clickable-icon zt:p-1 zt:[--icon-size:var(--icon-xs)]";
 const bar =
   "zt:flex zt:flex-wrap zt:items-center zt:gap-x-3 zt:gap-y-1 zt:rounded-md zt:border zt:border-border zt:bg-card zt:px-2.5 zt:py-1.5 zt:text-xs";
 /**
- * The shared accent-bar treatment every inline preview notice wears: a bar
- * states which condition, and the box holds the sentence and its action.
- */
-/**
  * The rows of a Match tree as the Bases filter menu draws them: a grip, the
  * conjunction, then the condition, where a nested group spans the last two.
  * In a drag, the row that moves fades, an accent line marks the place it
@@ -159,13 +155,13 @@ const bar =
 export const matchRows = tv({
   slots: {
     row: [
-      "zt:group/row zt:grid zt:min-w-0 zt:items-start zt:[&>[data-part=group]]:col-span-2",
+      "zt:grid zt:min-w-0 zt:items-start zt:[&:hover>[data-part=handle]]:opacity-100 zt:[&>[data-part=group]]:col-span-2",
       "zt:data-dragging:opacity-50 zt:data-[drop=after]:shadow-[0_var(--size-2-1)_0_0_var(--interactive-accent)] zt:data-[drop=before]:shadow-[0_calc(-1*var(--size-2-1))_0_0_var(--interactive-accent)]",
     ],
-    /** Faint, shown while its row is hovered or it has focus; a disabled editor has none. */
+    /** Faint, shown while the pointer is over its own row or it has focus; a disabled editor has none. */
     handle: [
       "zt:me-[calc(-1*var(--size-2-1))] zt:flex zt:min-h-(--input-height) zt:shrink-0 zt:cursor-grab zt:items-center zt:rounded-sm zt:text-faint zt:hover:text-muted-foreground zt:active:cursor-grabbing",
-      "zt:opacity-0 zt:group-hover/row:opacity-100 zt:focus-visible:opacity-100 zt:aria-disabled:hidden zt:[.is-mobile_&]:opacity-100",
+      "zt:opacity-0 zt:focus-visible:opacity-100 zt:aria-disabled:hidden",
       "zt:focus-visible:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)] zt:focus-visible:outline-none",
     ],
     group: "zt:data-[drop=into]:shadow-(--metadata-property-box-shadow-focus)",
@@ -180,6 +176,10 @@ export const matchRows = tv({
   },
 });
 const workbenchRows = matchRows({ look: "workbench" });
+/**
+ * The shared accent-bar treatment every inline preview notice wears: a bar
+ * states which condition, and the box holds the sentence and its action.
+ */
 const previewNotice =
   "zt:flex zt:min-w-0 zt:gap-x-3 zt:gap-y-1 zt:border-s-2 zt:bg-(--background-secondary) zt:px-3 zt:py-2 zt:text-xs zt:leading-normal";
 export const templateWorkbenchTheme: WorkbenchTheme = {

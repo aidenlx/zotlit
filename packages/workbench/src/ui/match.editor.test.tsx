@@ -1,6 +1,6 @@
-import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterAll, afterEach, expect, it, vi } from "vitest";
 
 import { WorkbenchHostProvider } from "./host";
 import { MatchEditor, MatchExpressionInput } from "./match";
@@ -13,13 +13,23 @@ afterEach(cleanup);
 
 // happy-dom has no `ondragstart`-style properties, which Preact reads to pick
 // the lowercase event name a browser dispatches.
-for (const type of ["dragstart", "dragend", "dragover", "dragleave", "drop"])
-  if (!(`on${type}` in HTMLElement.prototype))
-    Object.defineProperty(HTMLElement.prototype, `on${type}`, {
-      value: null,
-      writable: true,
-      configurable: true,
-    });
+const DRAG_HANDLERS = [
+  "ondragstart",
+  "ondragend",
+  "ondragover",
+  "ondragleave",
+  "ondrop",
+].filter((name) => !(name in HTMLElement.prototype));
+for (const name of DRAG_HANDLERS)
+  Object.defineProperty(HTMLElement.prototype, name, {
+    value: null,
+    writable: true,
+    configurable: true,
+  });
+afterAll(() => {
+  for (const name of DRAG_HANDLERS)
+    Reflect.deleteProperty(HTMLElement.prototype, name);
+});
 
 type TitleRow = { kind: "title"; operator: "contains" | "is"; value: string };
 type PagesRow = { kind: "pages"; operator: ">" | "=="; value: string };
@@ -326,25 +336,35 @@ it("leaves the filter unchanged when a group is dropped into itself", () => {
   expect(onChange).not.toHaveBeenCalled();
 });
 
-it("moves a condition one place with Alt+ArrowDown and Alt+ArrowUp on its handle", () => {
+it("moves a condition one place at a time with Alt+ArrowDown and Alt+ArrowUp, and its handle keeps the focus", async () => {
   const onChange = vi.fn<(next: MatchFilter | undefined) => void>();
   render(
     <Editor
-      initial={{ and: ["pages > 1", "pages > 2"] }}
+      initial={{ and: ["pages > 1", "pages > 2", "pages > 3"] }}
       onChange={onChange}
     />,
   );
-  fireEvent.keyDown(handles()[0]!, { key: "ArrowDown", altKey: true });
+  const press = async (key: string, at: number) => {
+    fireEvent.keyDown(document.activeElement!, { key, altKey: true });
+    await waitFor(() => expect(document.activeElement).toBe(handles()[at]));
+  };
+  handles()[0]!.focus();
+  await press("ArrowDown", 1);
   expect(onChange).toHaveBeenLastCalledWith({
-    and: ["pages > 2", "pages > 1"],
+    and: ["pages > 2", "pages > 1", "pages > 3"],
   });
-  fireEvent.keyDown(handles()[1]!, { key: "ArrowUp", altKey: true });
+  await press("ArrowDown", 2);
   expect(onChange).toHaveBeenLastCalledWith({
-    and: ["pages > 1", "pages > 2"],
+    and: ["pages > 2", "pages > 3", "pages > 1"],
+  });
+  await press("ArrowUp", 1);
+  expect(onChange).toHaveBeenLastCalledWith({
+    and: ["pages > 2", "pages > 1", "pages > 3"],
   });
   // The first row has no place above it.
+  handles()[0]!.focus();
   fireEvent.keyDown(handles()[0]!, { key: "ArrowUp", altKey: true });
-  expect(onChange).toHaveBeenCalledTimes(2);
+  expect(onChange).toHaveBeenCalledTimes(3);
 });
 
 it("offers no drag or keyboard move in a disabled editor", () => {

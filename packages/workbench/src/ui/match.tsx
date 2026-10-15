@@ -368,7 +368,7 @@ function Group<Row extends LabelledRow>({
           </button>
         )}
       </div>
-      <ul {...part("rows")} {...reorder.rows}>
+      <ul {...part("rows")} {...reorder.rows(path)}>
         {group.conditions.map((node, index) => (
           <li
             key={index}

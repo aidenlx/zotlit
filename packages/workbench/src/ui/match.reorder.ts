@@ -3,39 +3,33 @@
 // nested group by its header, or at the end of a group by its body. The
 // keyboard moves one place with Alt+ArrowUp and Alt+ArrowDown on the handle,
 // as the Query View's Sort and Group lists do.
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { DragEvent, KeyboardEvent } from "react";
 
-import { moveAt } from "./match.draft";
-import type {
-  ConditionGroup,
-  ConditionPath,
-  ConditionPlace,
-  LabelledRow,
-} from "./match.draft";
+import { moveAt, pathStartsWith, samePath } from "./match.draft";
+import type { ConditionGroup, ConditionPath, LabelledRow } from "./match.draft";
 
 const DRAG_TYPE = "application/x-zotlit-match-condition";
 
-/** Where a drop lands: before the condition at `index` of the group, as it stands. */
-type DropPlace = ConditionPlace;
-
-const startsWith = (path: ConditionPath, prefix: ConditionPath) =>
-  prefix.length <= path.length &&
-  prefix.every((at, depth) => path[depth] === at);
-
-const samePath = (a: ConditionPath, b: ConditionPath) =>
-  a.length === b.length && startsWith(a, b);
+/**
+ * Where a drop lands: before the condition at `before` in the group at
+ * `group`, both as the tree stands while the dragged condition is still in it.
+ */
+interface DropTarget {
+  group: ConditionPath;
+  before: number;
+}
 
 /**
- * The index `moveAt` takes for `place`, or `null` where the drop changes
- * nothing: the dragged condition's own place, or a group into itself.
+ * The index `moveAt` takes for a drop of the condition at `from` on `target`.
+ *
+ * @returns `null` where the drop changes nothing: the condition's own place.
  */
-function placeIndex(from: ConditionPath, place: DropPlace): number | null {
-  if (startsWith(place.group, from)) return null;
+function moveIndex(from: ConditionPath, target: DropTarget): number | null {
   const at = from.at(-1)!;
-  if (!samePath(from.slice(0, -1), place.group)) return place.index;
-  if (place.index === at || place.index === at + 1) return null;
-  return place.index > at ? place.index - 1 : place.index;
+  if (!samePath(from.slice(0, -1), target.group)) return target.before;
+  if (target.before === at || target.before === at + 1) return null;
+  return target.before > at ? target.before - 1 : target.before;
 }
 
 /** Whether the pointer is past the middle of the element it is over. */
@@ -44,11 +38,13 @@ function lowerHalf(event: DragEvent<HTMLElement>): boolean {
   return event.clientY > rect.top + rect.height / 2;
 }
 
+const pathKey = (path: ConditionPath) => path.join(".");
+
 /**
  * The drag state of one Match editor and the props that wire its parts:
  * `fieldset` commits a drop, `handle` starts one, `row` and `header` place it
  * beside a condition or above a group, `group` and `rows` place it at the end
- * of a group.
+ * of a group or keep the place across a gap.
  */
 export function useMatchReorder<Row extends LabelledRow>({
   root,
@@ -62,20 +58,27 @@ export function useMatchReorder<Row extends LabelledRow>({
   // The handlers read the drag from refs: a browser can send the next drag
   // event before the state of the last one has rendered.
   const [dragging, setDraggingState] = useState<ConditionPath | null>(null);
-  const [over, setOverState] = useState<DropPlace | null>(null);
+  const [over, setOverState] = useState<DropTarget | null>(null);
   const draggingRef = useRef<ConditionPath | null>(null);
-  const overRef = useRef<DropPlace | null>(null);
-  function setDragging(next: ConditionPath | null) {
-    draggingRef.current = next;
-    setDraggingState(next);
-  }
-  function setOver(next: DropPlace | null) {
+  const overRef = useRef<DropTarget | null>(null);
+  // Rows render by index, so a handle the keyboard moved hands its focus to
+  // the handle that now holds the row.
+  const focusNext = useRef<{ list: Element; path: string } | null>(null);
+  useEffect(() => {
+    const next = focusNext.current;
+    if (!next) return;
+    focusNext.current = null;
+    next.list
+      .querySelector<HTMLElement>(`[data-reorder-handle="${next.path}"]`)
+      ?.focus();
+  });
+  function setOver(next: DropTarget | null) {
     const current = overRef.current;
     if (
       current === next ||
       (current &&
         next &&
-        current.index === next.index &&
+        current.before === next.before &&
         samePath(current.group, next.group))
     )
       return;
@@ -83,25 +86,36 @@ export function useMatchReorder<Row extends LabelledRow>({
     setOverState(next);
   }
   const shown =
-    dragging && over && placeIndex(dragging, over) !== null ? over : null;
+    dragging && over && moveIndex(dragging, over) !== null ? over : null;
   function end() {
-    setDragging(null);
+    draggingRef.current = null;
+    setDraggingState(null);
     setOver(null);
   }
-  function move(from: ConditionPath, place: DropPlace) {
-    const index = placeIndex(from, place);
-    if (index === null) return;
-    const next = moveAt(root, from, { group: place.group, index });
-    if (next !== root) onChange(next);
+  /** The tree with `from` dropped on `target`, saved when it changed. */
+  function move(from: ConditionPath, target: DropTarget): boolean {
+    const index = moveIndex(from, target);
+    if (index === null) return false;
+    const next = moveAt(root, from, { group: target.group, index });
+    if (next === root) return false;
+    onChange(next);
+    return true;
   }
-  /** A dragover handler that places the drop where `place` answers. */
-  function target(place: (event: DragEvent<HTMLElement>) => DropPlace | null) {
+  /**
+   * A dragover handler that places the drop where `place` answers. Where it
+   * answers none, or a group into itself, the element takes no drop.
+   */
+  function target(place: (event: DragEvent<HTMLElement>) => DropTarget | null) {
     return (event: DragEvent<HTMLElement>) => {
-      if (!draggingRef.current) return;
+      const from = draggingRef.current;
+      if (!from) return;
       event.stopPropagation();
-      event.preventDefault();
       const next = place(event);
-      if (next === null) return;
+      if (next === null || pathStartsWith(next.group, from)) {
+        setOver(null);
+        return;
+      }
+      event.preventDefault();
       if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
       setOver(next);
     };
@@ -116,7 +130,14 @@ export function useMatchReorder<Row extends LabelledRow>({
         end();
       },
       onDragLeave: (event: DragEvent<HTMLElement>) => {
-        const into = event.relatedTarget;
+        // Chromium may leave `relatedTarget` empty on a drag event, so the
+        // point the pointer went to answers where it is.
+        const into =
+          event.relatedTarget ??
+          event.currentTarget.ownerDocument.elementFromPoint(
+            event.clientX,
+            event.clientY,
+          );
         if (!(into instanceof Node) || !event.currentTarget.contains(into))
           setOver(null);
       },
@@ -126,11 +147,11 @@ export function useMatchReorder<Row extends LabelledRow>({
       role: "button" as const,
       tabIndex: disabled ? -1 : 0,
       "aria-disabled": disabled || undefined,
-      "data-reorder-handle": "",
+      "data-reorder-handle": pathKey(path),
       onDragStart: (event: DragEvent<HTMLElement>) => {
         if (disabled) return;
         event.stopPropagation();
-        event.dataTransfer?.setData(DRAG_TYPE, path.join("."));
+        event.dataTransfer?.setData(DRAG_TYPE, pathKey(path));
         if (event.dataTransfer) {
           event.dataTransfer.effectAllowed = "move";
           // The browser draws the whole row, as Bases draws the card, rather
@@ -144,7 +165,11 @@ export function useMatchReorder<Row extends LabelledRow>({
               event.clientY - rect.top,
             );
         }
-        setDragging(path);
+        draggingRef.current = path;
+        // The row fades once the browser has taken its drag image.
+        setTimeout(() => {
+          if (draggingRef.current === path) setDraggingState(path);
+        });
       },
       onDragEnd: end,
       onKeyDown: (event: KeyboardEvent<HTMLElement>) => {
@@ -154,10 +179,10 @@ export function useMatchReorder<Row extends LabelledRow>({
         const at = path.at(-1)!;
         if (step === 0 || at + step < 0 || at + step >= count) return;
         event.preventDefault();
-        move(path, {
-          group: path.slice(0, -1),
-          index: step > 0 ? at + 2 : at - 1,
-        });
+        const group = path.slice(0, -1);
+        const list = event.currentTarget.closest("fieldset");
+        if (move(path, { group, before: step > 0 ? at + 2 : at - 1 }) && list)
+          focusNext.current = { list, path: pathKey([...group, at + step]) };
       },
     }),
     // One mark per place: before a row, or after the last row of a group.
@@ -168,23 +193,23 @@ export function useMatchReorder<Row extends LabelledRow>({
         "data-dragging": dragging && samePath(dragging, path) ? "" : undefined,
         "data-drop":
           shown && samePath(shown.group, group)
-            ? shown.index === at
+            ? shown.before === at
               ? "before"
-              : shown.index === count && at === count - 1
+              : shown.before === count && at === count - 1
                 ? "after"
                 : undefined
             : undefined,
         onDragOver: target((event) => ({
           group,
-          index: lowerHalf(event) ? at + 1 : at,
+          before: lowerHalf(event) ? at + 1 : at,
         })),
       };
     },
     header: (path: ConditionPath) => ({
       onDragOver: target(() =>
         path.length === 0
-          ? { group: path, index: 0 }
-          : { group: path.slice(0, -1), index: path.at(-1)! },
+          ? { group: path, before: 0 }
+          : { group: path.slice(0, -1), before: path.at(-1)! },
       ),
     }),
     group: (path: ConditionPath, count: number) => ({
@@ -193,10 +218,16 @@ export function useMatchReorder<Row extends LabelledRow>({
         shown && count === 0 && samePath(shown.group, path)
           ? "into"
           : undefined,
-      onDragOver: target(() => ({ group: path, index: count })),
+      onDragOver: target(() => ({ group: path, before: count })),
     }),
-    // A gap between rows keeps the place the last row gave.
-    rows: { onDragOver: target(() => overRef.current) },
+    // A gap between the rows of a group keeps the place its last row gave.
+    rows: (path: ConditionPath) => ({
+      onDragOver: target(() =>
+        overRef.current && samePath(overRef.current.group, path)
+          ? overRef.current
+          : null,
+      ),
+    }),
   };
 }
 
