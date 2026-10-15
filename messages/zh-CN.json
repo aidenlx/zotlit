@@ -2555,6 +2555,7 @@
   ],
   "query_view_warning_outside_library_scope": "此条目的文库不在文库范围内，因此视图无法显示它。请在 ZotLit 设置中将该文库加入文库范围。",
   "query_view_failed": "此视图无法显示结果。",
+  "query_view_diagnostic_corrections": "可能的修正：{suggestions}。",
   "query_view_problem_invalid_yaml": "此文件不是有效的 YAML。{message}",
   "query_view_problem_not_a_map": "此文件必须包含 \"views\" 等键。",
   "query_view_problem_no_views": "此文件没有视图。请在 \"views\" 下添加一个。",

@@ -4,13 +4,21 @@
 import { nameDictionary } from "@zotlit/item-query";
 import type { NameDictionary } from "@zotlit/item-query";
 
-import type { QueryViewRow } from "@/services/item-query/query-view";
+import type {
+  QueryViewResult,
+  QueryViewRow,
+} from "@/services/item-query/query-view";
 
 import type { ConditionIssue } from "./query-file";
 import type { ReaderDiagnosticSource } from "./reader-diagnostic";
 import type { ShownRecord } from "./record-rows";
 import type { LayoutGroup } from "./rows";
-import type { QueryViewState, QueryViewWarning } from "./view";
+
+/** A warning of ZotLit Query about the view's query. */
+export interface QueryViewWarning {
+  code: QueryViewResult["warnings"][number]["code"];
+  message: string;
+}
 
 /** The rows of one run that gave rows, and what the run says about them. */
 export interface ResultSnapshot {
@@ -60,9 +68,10 @@ export const NO_RESULTS: ResultSnapshot = {
  * The Formula marks of what the view shows: those of the rows on screen, or
  * of the failed run that cleared them.
  */
-export function formulaIssuesOf(
-  state: Pick<QueryViewState, "results" | "failure">,
-): NameDictionary<string> {
+export function formulaIssuesOf(state: {
+  results: ResultSnapshot | null;
+  failure: QueryViewFailure | null;
+}): NameDictionary<string> {
   return (
     state.results?.formulaIssues ??
     state.failure?.formulaIssues ??

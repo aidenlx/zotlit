@@ -23,7 +23,6 @@ import type { Diagnostic } from "@/services/item-query/contract";
 import type {
   QueryViewOutcome,
   QueryViewRequest,
-  QueryViewResult,
 } from "@/services/item-query/query-view";
 import type { QueryService } from "@/services/item-query/service";
 import { selectorKey } from "@/services/library-scope/scope";
@@ -59,9 +58,17 @@ import type {
   QueryFileView,
 } from "./query-file";
 import { QueryFileDocument } from "./query-file-document";
-import { readerDiagnostic } from "./reader-diagnostic";
+import {
+  correctionsText,
+  readerDiagnostic,
+  readerText,
+} from "./reader-diagnostic";
 import { NO_RESULTS } from "./results";
-import type { QueryViewFailure, ResultSnapshot } from "./results";
+import type {
+  QueryViewFailure,
+  QueryViewWarning,
+  ResultSnapshot,
+} from "./results";
 import { ResultsMenu } from "./results-menu";
 import { layoutRows } from "./rows";
 import { SearchControl } from "./search-control";
@@ -153,12 +160,6 @@ export interface QueryViewState {
   failure: QueryViewFailure | null;
   /** Whether the host could not save the last toolbar change. */
   saveFailed: boolean;
-}
-
-/** A warning of ZotLit Query about the view's query. */
-export interface QueryViewWarning {
-  code: QueryViewResult["warnings"][number]["code"];
-  message: string;
 }
 
 const INITIAL_STATE: QueryViewState = {
@@ -258,7 +259,7 @@ function formulaIssues(outcome: QueryViewOutcome): NameDictionary<string> {
   return nameDictionary(
     Object.entries(faults ?? {}).map(([name, diagnostic]) => [
       name,
-      readerDiagnostic(diagnostic).sentence,
+      readerText(diagnostic),
     ]),
   );
 }
@@ -765,7 +766,7 @@ export class QueryView extends Component implements HistorySurface {
         diagnostic,
         filterIssue: at && {
           ...at,
-          message: readerDiagnostic(diagnostic).sentence,
+          message: readerText(diagnostic),
         },
         formulaIssues: issues,
       },
@@ -861,26 +862,33 @@ function Problems({ view }: { view: QueryView }) {
 
 /**
  * What the run's diagnostic says, and where the filter holds the fault: its
- * line, with a caret under the fault.
+ * line, with a caret under the fault. The corrections ZotLit Query gives
+ * follow.
  */
 function DiagnosticText({
   diagnostic,
 }: {
   diagnostic: QueryViewFailure["diagnostic"];
 }) {
-  const { sentence, excerpt } = readerDiagnostic(diagnostic);
-  if (!excerpt) return <p className="zt:m-0 zt:mt-1">{sentence}</p>;
+  const { sentence, corrections, excerpt } = readerDiagnostic(diagnostic);
+  if (!excerpt)
+    return <p className="zt:m-0 zt:mt-1">{readerText(diagnostic)}</p>;
   return (
-    <pre className="zt:m-0 zt:mt-1 zt:overflow-auto zt:text-xs zt:whitespace-pre-wrap">
-      {sentence}
-      {"\n"}
-      {excerpt.line}
-      {"\n"}
-      {" ".repeat(excerpt.from)}
-      <span className="zt:text-(--text-error)">
-        {"^".repeat(excerpt.length)}
-      </span>
-    </pre>
+    <>
+      <pre className="zt:m-0 zt:mt-1 zt:overflow-auto zt:text-xs zt:whitespace-pre-wrap">
+        {sentence}
+        {"\n"}
+        {excerpt.line}
+        {"\n"}
+        {" ".repeat(excerpt.from)}
+        <span className="zt:text-(--text-error)">
+          {"^".repeat(excerpt.length)}
+        </span>
+      </pre>
+      {corrections.length > 0 && (
+        <p className="zt:m-0 zt:mt-1">{correctionsText(corrections)}</p>
+      )}
+    </>
   );
 }
 
@@ -945,12 +953,12 @@ function UnusedNote({ view }: { view: QueryView }) {
 }
 
 function Warnings({ view }: { view: QueryView }) {
-  const phase = useQueryViewState(view, (s) => s.phase);
+  // The warnings belong to the rows on screen, which a failed run can keep.
   const warnings = useQueryViewState(
     view,
     (s) => (s.results ?? NO_RESULTS).warnings,
   );
-  if (phase !== "ready" || warnings.length === 0) return null;
+  if (warnings.length === 0) return null;
   return (
     <>
       {warnings.map((warning) => (

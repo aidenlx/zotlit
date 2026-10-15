@@ -3,7 +3,7 @@
 // fields rather than from the CLI report.
 import { expect, it } from "vitest";
 
-import { readerDiagnostic } from "./reader-diagnostic";
+import { readerDiagnostic, readerText } from "./reader-diagnostic";
 import type { ReaderDiagnosticSource } from "./reader-diagnostic";
 
 const SYNTAX_FORMS = ["!", "(", "a name", "a string"];
@@ -106,4 +106,33 @@ it("keeps a hint that adds to the message", () => {
       hint: "",
     }).sentence,
   ).toBe("The database is locked.");
+});
+
+it("names every correction ZotLit Query gives, after the sentence", () => {
+  expect(
+    readerText({
+      code: "unknown-field",
+      message: "year is not a field of Items.",
+      hint: "Choose a matching field, such as date.year.",
+      expected: [],
+      suggestions: ["date.year", "issueDate.year", "filingDate.year"],
+    }),
+  ).toBe(
+    "year is not a field of Items. Choose a matching field, such as date.year. Possible corrections: date.year, issueDate.year, filingDate.year.",
+  );
+});
+
+it("keeps a hint that names a form only in part of the message", () => {
+  expect(
+    readerDiagnostic({
+      code: "unknown-formula",
+      message:
+        'formula.foobar reads the Formula "foobar", which the request does not define.',
+      hint: "Read a Formula of the request: formula.foo.",
+      expected: ["foo"],
+      suggestions: [],
+    }).sentence,
+  ).toBe(
+    'formula.foobar reads the Formula "foobar", which the request does not define. Read a Formula of the request: formula.foo.',
+  );
 });

@@ -2128,7 +2128,7 @@ it("keeps the count, the Formula marks and the Error Values with the last result
   ).toBe("unparseable-text");
 });
 
-it("keeps the warnings of the last results on a filter error", async () => {
+it("keeps the warnings of the last results on a filter error, and shows them", async () => {
   const warned = result([row("ANNOTBBB")]);
   if (warned.kind !== "result") throw new Error("unreachable");
   const warning = {
@@ -2138,7 +2138,7 @@ it("keeps the warnings of the last results on a filter error", async () => {
     hint: "Compare values of the same type.",
     report: [],
   } as never;
-  const { view, settle } = await mount(
+  const { view, el, settle } = await mount(
     [
       { kind: "result", result: { ...warned.result, warnings: [warning] } },
       filterFault(1, 11),
@@ -2162,6 +2162,9 @@ it("keeps the warnings of the last results on a filter error", async () => {
       ],
     },
   });
+  expect(
+    el.querySelector('[data-query-warning="never-true"]')?.textContent,
+  ).toBe("colorName == 1 is never true.");
 });
 
 it("keeps the Formula marks of the cards on screen when it keeps back a run", async () => {

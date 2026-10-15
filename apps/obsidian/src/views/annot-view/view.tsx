@@ -45,7 +45,7 @@ import { ZoteroReaderSession } from "@/services/reader-session/zotero";
 import type { ZoteroReaderResolution } from "@/services/reader-session/zotero";
 import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
-import { readerDiagnostic } from "@/views/query-view/reader-diagnostic";
+import { readerText } from "@/views/query-view/reader-diagnostic";
 import { QueryView } from "@/views/query-view/view";
 import type { QueryViewDeps, QueryViewHost } from "@/views/query-view/view";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
@@ -655,7 +655,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
         : failed && !keptResults
           ? {
               message: m.annot_view_query_failed(),
-              detail: readerDiagnostic(failure.diagnostic).sentence,
+              detail: readerText(failure.diagnostic),
             }
           : null,
       filterError:
