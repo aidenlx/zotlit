@@ -47,6 +47,7 @@ import { SearchInput } from "@/components/obsidian/search-input";
 import { useObsidianApp } from "@/lib/app-context";
 import { registerKeymap } from "@/lib/disposables";
 import { themeHook } from "@/lib/theme-hooks";
+import { useUniqueId } from "@/lib/use-unique-id";
 import { cn } from "@/lib/utils";
 
 import {
@@ -201,12 +202,6 @@ function pageSizeOf(list: HTMLElement | null): number {
 }
 
 /**
- * An anchor name is a global identifier, so each mounted Chooser takes one of
- * its own rather than accepting one from its caller.
- */
-let chooserSequence = 0;
-
-/**
  * The selection API is narrower than the Chooser's parts list on purpose: no
  * `multiple` flag and no `isItemEqualToValue`. Every row here ticks alongside
  * the others and every consumer holds plain strings, so neither knob has a
@@ -224,7 +219,9 @@ export function Chooser({ value, onValueChange, children }: ChooserProps) {
   const app = useObsidianApp();
   const [query, setQueryState] = useState("");
   const [open, setOpen] = useState(false);
-  const [popupId] = useState(() => `zt-chooser-${(chooserSequence += 1)}`);
+  // An anchor name is a global identifier, so each mounted Chooser takes one
+  // of its own rather than accepting one from its caller.
+  const popupId = useUniqueId();
   const [rows, setRows] = useState<readonly ChooserRow[]>([]);
   // No row is highlighted until a key names one or a row is clicked: a popup
   // that opened with its first row darkened told a pointer user it was chosen.

@@ -34,11 +34,10 @@ import type {
 } from "react";
 
 import { Icon } from "@/components/obsidian/icon";
+import { useUniqueId } from "@/lib/use-unique-id";
 import { cn } from "@/lib/utils";
 
 import { ToolbarButton } from "./toolbar-button";
-
-let popoverSequence = 0;
 
 /**
  * The surface of a toolbar popover: Obsidian's menu, from the `--menu-*`
@@ -90,7 +89,7 @@ export function ToolbarPopover({
   className,
   children,
 }: ToolbarPopoverProps) {
-  const [id] = useState(() => `zt-query-popover-${(popoverSequence += 1)}`);
+  const id = useUniqueId();
   const [open, setOpen] = useState(false);
   const anchor = { "--zt-query-popover-anchor": `--${id}` } as CSSProperties;
   return (
