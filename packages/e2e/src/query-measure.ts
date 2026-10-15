@@ -37,6 +37,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 
+import { acquireDesktopLock } from "@zotlit/scripts/desktop-lock";
 import {
   buildFixture,
   discardFixture,
@@ -417,6 +418,7 @@ if (!(await isObsidianReachable(workspaceRoot))) {
   );
   process.exit(1);
 }
+using _desktopLock = await acquireDesktopLock({ cwd: workspaceRoot });
 
 let vaultId = "";
 
