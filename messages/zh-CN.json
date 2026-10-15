@@ -2611,6 +2611,8 @@
   "query_view_property_parent_item": "所属条目",
   "query_view_property_source_attachment": "来源附件",
   "query_view_read_only": "此处的更改不会保存。打开笔记以更改此视图。",
+  "query_view_placeholder": "查询块",
+  "query_view_placeholder_desc": "结果会显示在笔记中。",
   "query_block_save_failed": "无法保存查询块。笔记中的块文本已更改；请重新打开笔记后再试。",
   "query_view_filter": "筛选",
   "query_view_filter_all_views": "所有视图",

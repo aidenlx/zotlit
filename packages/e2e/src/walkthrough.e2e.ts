@@ -766,6 +766,16 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         mainSamples: 0,
         customized: true,
       });
+      // The template's Query Block shows a placeholder in the note preview.
+      expect(
+        await obEvalUntil(
+          vaultId,
+          `(()=>{const el=app.workspace.getLeavesOfType('zotlit-note-preview')[0]?.view.contentEl;
+            return String(!!el?.querySelector('[data-zotlit-draft] [data-query-placeholder]')
+              &&!el.querySelector('[data-zotlit-draft] [role="toolbar"]'));})()`,
+          { expected: "true" },
+        ),
+      ).toBe(true);
     },
   );
 

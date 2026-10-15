@@ -4,9 +4,9 @@
 // (see `block-write.ts`).
 //
 // The block saves to the note that holds it, also through a section embed or a
-// hover popover. Where it has no save path (print, export, an Annotation
-// comment, a note preview), the view still reads and its toolbar says a change
-// is not saved. Inside a Query View, a block shows its text only, so a Query
+// hover popover. Where it has no save path (print, export), the view still
+// reads and its toolbar says a change is not saved. An Annotation comment and
+// a note preview show a placeholder (see `preview-placeholder.ts`). Inside a Query View, a block shows its text only, so a Query
 // View never holds another live one.
 //
 // @see apps/obsidian/docs/adr/0068-query-files-are-a-zotlit-file-type-embedded-through-the-private-embed-registry.md
@@ -18,13 +18,12 @@ import { BaseNotice } from "@/lib/notice";
 
 import { writeBlockAt, writeBlockCode } from "./block-write";
 import { NoteQueryHost } from "./note-host";
+import { inPreview, renderPreviewPlaceholder } from "./preview-placeholder";
 import { QUERY_FILE_EXTENSION } from "./query-file";
 import type { QueryViewDeps } from "./view";
 
 /** A Query View: a block in one of its cards' comments shows its text only. */
 const IN_QUERY_VIEW = ".zt-query-view";
-/** Where a block shows as a preview: an Annotation comment, a note preview. */
-const IN_PREVIEW = ".zt-annot-comment, [data-zotlit-draft]";
 
 type QueryBlockPlugin = Pick<Plugin, "registerMarkdownCodeBlockProcessor">;
 
@@ -73,6 +72,10 @@ class QueryBlock extends MarkdownRenderChild {
       this.containerEl.createEl("pre").createEl("code", { text: this.#source });
       return;
     }
+    if (inPreview(this.containerEl)) {
+      renderPreviewPlaceholder(this.containerEl, null);
+      return;
+    }
     const sourcePath = this.#ctx.sourcePath;
     const host = new NoteQueryHost(this.#deps, {
       el: this.containerEl,
@@ -110,7 +113,6 @@ class QueryBlock extends MarkdownRenderChild {
   #canSave(): boolean {
     if (this.#leaving) return this.#lineStart !== null;
     const el = this.containerEl;
-    if (el.closest(IN_PREVIEW) !== null) return false;
     const info = this.#ctx.getSectionInfo(el);
     if (info !== null) this.#lineStart = info.lineStart;
     return info !== null;

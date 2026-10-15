@@ -114,7 +114,31 @@ function setup() {
     cleanup.defer(() => act(() => component.unload()));
     return { el, view: viewOf(el) };
   }
-  return { host, run, embed };
+
+  /** Embed the Query File in a template's note preview, and load it. */
+  async function preview(subpath = ""): Promise<HTMLElement> {
+    const draft = document.body.createDiv();
+    draft.dataset["zotlitDraft"] = "";
+    const el = draft.createDiv();
+    const component = createQueryFileEmbed(deps)(
+      {
+        app,
+        containerEl: el,
+        linktext: `Reading.zotquery${subpath}`,
+        sourcePath: "notes/Lab.md",
+        depth: 1,
+      },
+      host.file(FILE_PATH),
+      subpath,
+    );
+    await act(async () => {
+      component.load();
+      await component.loadFile();
+    });
+    cleanup.defer(() => act(() => component.unload()));
+    return el;
+  }
+  return { host, run, embed, preview };
 }
 
 /** The Query View the End-to-end Run reads from the embed's element. */
@@ -131,6 +155,19 @@ it("shows the first view, or the view the link names", async () => {
   const named = await embed("notes/Lab.md", "#Mine");
   expect(viewName(named.el)).toBe("Mine");
   expect(run.mock.calls.at(-1)![0].filter).toBe("item == this.item");
+});
+
+it("shows a placeholder named after the file in a note preview", async () => {
+  const { preview, run } = setup();
+  const plain = await preview();
+  expect(
+    plain.querySelector("[data-query-placeholder]")?.textContent,
+  ).toContain("Reading");
+  expect(viewOf(plain)).toBeUndefined();
+  expect(plain.querySelector('[role="toolbar"]')).toBeNull();
+  const named = await preview("#Mine");
+  expect(named.textContent).toContain("Reading › Mine");
+  expect(run).not.toHaveBeenCalled();
 });
 
 it("saves a toolbar change to the file, and another embed of it follows", async () => {
