@@ -11,17 +11,11 @@ import type {
   WorkbenchDocumentController,
   WorkbenchSliceRange,
 } from "#/document/index";
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useId,
-  useRef,
-  useState,
-} from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import { joinNotePath } from "@zotlit/templates";
+import { useUniqueId } from "@zotlit/ui";
 
 import { ExampleActions, useExampleState } from "./example-state";
 import type { WorkbenchMessages } from "./generated/messages";
@@ -200,9 +194,9 @@ export function NameFolderPane({
 }: NameFolderPaneProps) {
   const m = useWorkbenchMessages();
   const example = useExampleState("filename");
-  const prefix = useId();
-  const statusId = useId();
-  const previewLabelId = useId();
+  const prefix = useUniqueId();
+  const statusId = useUniqueId();
+  const previewLabelId = useUniqueId();
   // The note name on screen: this attempt's own, or the last that worked while
   // the Filename Template is under repair. Anything else the tab cannot show,
   // and its condition is read in place of a name.
@@ -504,7 +498,7 @@ function Group({
   children: ReactNode;
 }) {
   const part = useParts("nameFolder");
-  const headingId = useId();
+  const headingId = useUniqueId();
   return (
     <section
       aria-labelledby={region ? headingId : undefined}

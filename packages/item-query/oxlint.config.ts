@@ -3,6 +3,7 @@ import { defineConfig } from "oxlint";
 import baseConfig, {
   itemQuerySchemaPaths,
   parentImportPattern,
+  uniqueIdPaths,
 } from "@zotlit/config/oxlint";
 
 export default defineConfig({
@@ -38,7 +39,7 @@ export default defineConfig({
               "The static Item Query Schema and vocabulary are build-only.",
           },
         ],
-        paths: itemQuerySchemaPaths,
+        paths: [...itemQuerySchemaPaths, ...uniqueIdPaths],
       },
     ],
   },

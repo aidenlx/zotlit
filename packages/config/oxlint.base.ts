@@ -20,6 +20,19 @@ export const itemQuerySchemaPaths = [
   },
 ];
 
+/**
+ * `useId` counts within one Preact root, and Obsidian mounts each view, modal
+ * and pane as a root of its own, so two of them in one window share its ids.
+ */
+export const uniqueIdPaths = ["react", "preact/compat", "preact/hooks"].map(
+  (name) => ({
+    name,
+    importNames: ["useId"],
+    message:
+      "Use useUniqueId from @zotlit/ui: useId counts within one Preact root, so two views in one window share its ids.",
+  }),
+);
+
 export default defineConfig({
   options: {
     typeAware: true,
@@ -63,7 +76,7 @@ export default defineConfig({
       "error",
       {
         patterns: [parentImportPattern],
-        paths: itemQuerySchemaPaths,
+        paths: [...itemQuerySchemaPaths, ...uniqueIdPaths],
       },
     ],
     "typescript/consistent-type-imports": [
@@ -85,6 +98,20 @@ export default defineConfig({
           "error",
           {
             patterns: [parentImportPattern],
+            paths: uniqueIdPaths,
+          },
+        ],
+      },
+    },
+    {
+      // The module that defines the hook the ban points to.
+      files: ["**/use-unique-id.ts"],
+      rules: {
+        "no-restricted-imports": [
+          "error",
+          {
+            patterns: [parentImportPattern],
+            paths: itemQuerySchemaPaths,
           },
         ],
       },

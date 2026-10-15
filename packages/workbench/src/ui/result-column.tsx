@@ -1,8 +1,10 @@
 // The shared result controls and render selection, with Markdown supplied by the host.
 
 import type { RenderDiagnostic, TemplateRenderResult } from "#/render/result";
-import { Suspense, useId } from "react";
+import { Suspense } from "react";
 import type { ReactNode, Ref } from "react";
+
+import { useUniqueId } from "@zotlit/ui";
 
 import { HiddenName, useWorkbenchHost, useTooltip } from "./host";
 import type { WorkbenchMarkdownProps } from "./host";
@@ -67,7 +69,7 @@ export function ResultRegion({
 }) {
   const m = useWorkbenchMessages();
   const part = useParts("resultRegion");
-  const nameId = useId();
+  const nameId = useUniqueId();
   return (
     <div
       role="region"

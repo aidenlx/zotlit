@@ -12,6 +12,7 @@ import { useStore } from "zustand";
 
 import { parseExpression } from "@zotlit/filter-expression";
 import { FORMULA_NAME, nameDictionary } from "@zotlit/item-query";
+import { useUniqueId } from "@zotlit/ui";
 import {
   MatchExpressionInput,
   WorkbenchThemeProvider,
@@ -19,7 +20,6 @@ import {
 
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
-import { useUniqueId } from "@/lib/use-unique-id";
 import { cn } from "@/lib/utils";
 import { matchTheme } from "@/views/template-workbench/match-pane";
 

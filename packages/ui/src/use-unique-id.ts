@@ -7,6 +7,9 @@ let sequence = 0;
  * `aria-labelledby`, `aria-describedby`, `form` and popover references.
  * `useId` counts within one Preact root, and each view, modal and pane is a
  * root of its own, so two of them in one window would share its ids.
+ *
+ * Client render only: the id comes from a module counter, so a server render
+ * and the hydrating client count apart, and the hydrated attributes mismatch.
  */
 export function useUniqueId(): string {
   const [id] = useState(() => `zt-${(sequence += 1)}`);

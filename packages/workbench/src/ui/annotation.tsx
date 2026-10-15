@@ -5,9 +5,10 @@ import type {
   WorkbenchSliceRange,
 } from "#/document/index";
 import type { AnnotationExample } from "#/render/index";
-import { useId, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 import { isPageNumber } from "@zotlit/db";
+import { useUniqueId } from "@zotlit/ui";
 
 import { useDocumentRevision } from "./editor";
 import type { WorkbenchMessages } from "./generated/messages";
@@ -165,8 +166,8 @@ export function AnnotationPane({
   const m = useWorkbenchMessages();
   const part = useParts("annotation");
   const icon = useIcon();
-  const problemId = useId();
-  const helpId = useId();
+  const problemId = useUniqueId();
+  const helpId = useUniqueId();
   const helpButton = useRef<HTMLButtonElement>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const closeHelp = () => {

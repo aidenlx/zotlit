@@ -2,8 +2,10 @@
 // strip owns the keyboard: arrow keys move through the tabs and choose as they
 // go, Home and End jump to the ends. The chosen tab lives in the editor's store.
 
-import { useEffect, useId, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
+
+import { useUniqueId } from "@zotlit/ui";
 
 import {
   useDocumentRevision,
@@ -59,7 +61,7 @@ export function TabBar({
   const tab = useWorkbenchStore((state) => state.tab);
   const setTab = useWorkbenchStore((state) => state.setTab);
   const part = useParts("tabBar");
-  const nameId = useId();
+  const nameId = useUniqueId();
   const prefix = editor?.id ?? "";
   useDocumentRevision(editor?.controller ?? null);
   const disabled = editor === null;

@@ -2,8 +2,9 @@
 // document's one history. A host's own controls for the row come as children.
 // Inert outside an editor.
 
-import { useId } from "react";
 import type { ReactNode } from "react";
+
+import { useUniqueId } from "@zotlit/ui";
 
 import {
   useDocumentRevision,
@@ -34,7 +35,7 @@ export function EditToolbar({
   const advanced = useWorkbenchStore((state) => state.advanced);
   const setAdvanced = useWorkbenchStore((state) => state.setAdvanced);
   const part = useParts("editToolbar");
-  const modeId = useId();
+  const modeId = useUniqueId();
   const icon = useIcon();
   const undoTooltip = useTooltip(m.workbench_undo());
   const redoTooltip = useTooltip(m.workbench_redo());
