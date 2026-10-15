@@ -70,6 +70,8 @@ export interface MatchConditionKind<Row extends LabelledRow> {
   kind: Row["kind"];
   /** The name the kind picker shows, in the reader's language. */
   label: string;
+  /** The icon the kind picker shows before the chosen kind's name, if any. */
+  icon?: ReactNode;
   /** A row of this kind at its starting value. */
   fresh: () => Row;
   /** The row one Filter Expression leaf reads as, or `null` when it is not this kind. */
