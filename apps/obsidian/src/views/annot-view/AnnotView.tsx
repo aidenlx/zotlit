@@ -591,7 +591,7 @@ function GroupHeading({
       role="row"
       data-query-group={groupKey}
       data-collapsed={expanded ? undefined : ""}
-      className="zt:col-span-full zt:not-first:mt-1 zt:not-first:border-t zt:not-first:border-border zt:not-first:pt-2"
+      className="zt:group/heading zt:col-span-full zt:not-first:mt-1 zt:not-first:border-t zt:not-first:border-border zt:not-first:pt-2"
     >
       <span role="rowheader" className="zt:flex zt:min-w-0">
         {/* The press target is Obsidian's `clickable-icon`, which takes back
@@ -600,7 +600,8 @@ function GroupHeading({
             padding, so the chevron starts on the cards' edge. Obsidian
             sets a button's weight and colour unlayered as well, so the label
             carries the heading type itself. The chevron stays shown, so a
-            collapsed group reads as collapsed without a pointer over it. */}
+            collapsed group reads as collapsed without a pointer over it, in the
+            colour Obsidian gives a collapsed fold. */}
         <button
           type="button"
           aria-expanded={expanded}
@@ -610,7 +611,7 @@ function GroupHeading({
           <Icon
             name={expanded ? "chevron-down" : "chevron-right"}
             size="var(--icon-xs)"
-            className="zt:shrink-0 zt:text-(--collapse-icon-color)"
+            className="zt:shrink-0 zt:text-(--collapse-icon-color) zt:group-data-collapsed/heading:text-(--collapse-icon-color-collapsed)"
           />
           <span className="zt:truncate zt:text-sm zt:font-(weight:--bases-group-heading-value-weight) zt:text-foreground">
             {label}
