@@ -28,7 +28,6 @@ import { cn, tooltipAttrs } from "@/lib/utils";
 import { DisplayNameModal } from "./display-name-dialog";
 import { FormulaModal } from "./formula-dialog";
 import { propertyIcon } from "./property-icon";
-import { NotUsed } from "./sort-control";
 import { ToolbarButtonContent, toolbarButtonClass } from "./toolbar-button";
 import { popoverFallbacks } from "./toolbar-popover";
 import type { QueryView } from "./view";
@@ -57,11 +56,11 @@ export function PropertiesMenu({ view }: { view: QueryView }) {
   const app = useObsidianApp();
   const popup = useRef<HTMLDivElement>(null);
   if (!current || !properties) return null;
-  // A view without `order` shows its default properties: they are ticked,
-  // and a change writes them with it.
-  const order = properties.order;
+  // The popover ticks the properties the Layouts show; a change writes
+  // them, with the unused ones the view keeps.
+  const order = properties.visible.map((entry) => entry.path);
   const setOrder = (next: readonly string[]) =>
-    view.document.editView({ order: next });
+    view.document.editView({ order: properties.orderOf(next) });
   const dataset = current.from ?? "annotations";
   const formulaNames = Object.keys(formulas ?? {});
 
@@ -355,12 +354,6 @@ function PropertyList({
             <span data-query-property-name="">{entry.label}</span>
             {sharedLabels.has(entry.label) && entry.label !== entry.path && (
               <span className="zt:text-(--text-faint)"> {entry.path}</span>
-            )}
-            {entry.place !== null && !entry.fits && (
-              <span data-query-property-unused="">
-                {" "}
-                <NotUsed />
-              </span>
             )}
           </Chooser.Item>
         );

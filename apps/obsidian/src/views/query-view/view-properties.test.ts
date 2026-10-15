@@ -99,54 +99,83 @@ describe("viewProperties entries", () => {
       order: ["comment", "title", 'custom["Reading status"]'],
     };
     const properties = viewProperties(FILE, view);
-    expect(properties.entries.slice(0, 3).map((entry) => entry.fits)).toEqual([
-      false,
-      true,
-      true,
-    ]);
-    expect(properties.visibleProperties.map((entry) => entry.path)).toEqual([
+    expect(properties.entry("comment").fits).toBe(false);
+    expect(properties.entries.map((entry) => entry.path)).not.toContain(
+      "comment",
+    );
+    expect(properties.visible.map((entry) => entry.path)).toEqual([
       "title",
       'custom["Reading status"]',
     ]);
     expect(properties.unused.order).toEqual(["comment"]);
   });
+});
 
-  it("shows the dataset's default fields for a view that shows none it can read", () => {
-    const properties = viewProperties(null, {
-      from: "annotations",
-      order: ["title"],
-    });
-    expect(properties.entries[0]).toMatchObject({ path: "title", fits: false });
-    const columns = properties.visibleProperties.map((entry) => entry.path);
-    expect(columns.slice(0, 3)).toEqual(["type", "text", "comment"]);
-    expect(columns).toContain("item.title");
-    expect(
-      properties.visibleProperties.every((entry) => entry.place === null),
-    ).toBe(true);
-  });
+/** The paths the Properties popover ticks: the entries with a place, by place. */
+const ticked = ({ entries }: ReturnType<typeof viewProperties>) =>
+  entries
+    .filter((entry) => entry.place !== null)
+    .toSorted((a, b) => a.place! - b.place!)
+    .map((entry) => entry.path);
 
-  it("gives a view without order the default fields as its order, first and visible", () => {
+describe("viewProperties visible", () => {
+  const paths = (properties: ReturnType<typeof viewProperties>) =>
+    properties.visible.map((entry) => entry.path);
+
+  it("shows the default fields for a view without order, and ticks them", () => {
     const properties = viewProperties(null, { from: "items" });
     // The default fields that give one cell each, as the Table shows them.
-    expect(properties.order).toEqual(["itemType", "title", "dateModified"]);
-    expect(
-      properties.entries.slice(0, 4).map((entry) => [entry.path, entry.place]),
-    ).toEqual([
-      ["itemType", 0],
-      ["title", 1],
-      ["dateModified", 2],
-      ["abstractNote", null],
-    ]);
-    expect(properties.visibleProperties.map((entry) => entry.path)).toEqual(
-      properties.order,
-    );
-    // "Hide all" leaves an empty order: no property is ticked or shown.
-    const hidden = viewProperties(null, { from: "items", order: [] });
-    expect(hidden.order).toEqual([]);
-    expect(hidden.entries.every((entry) => entry.place === null)).toBe(true);
-    expect(hidden.visibleProperties).toEqual([]);
+    expect(paths(properties)).toEqual(["itemType", "title", "dateModified"]);
+    expect(ticked(properties)).toEqual(paths(properties));
+    expect(properties.entries[3]).toMatchObject({
+      path: "abstractNote",
+      place: null,
+    });
+    expect(properties.orderOf(["title"])).toEqual(["title"]);
   });
 
+  it("shows and ticks nothing for an empty order, as Hide all leaves it", () => {
+    const properties = viewProperties(null, { from: "items", order: [] });
+    expect(properties.visible).toEqual([]);
+    expect(ticked(properties)).toEqual([]);
+  });
+
+  it("shows and ticks the default fields for an order of another dataset, and keeps that order on a change", () => {
+    const view = { from: "annotations" as const, order: ["title"] };
+    const properties = viewProperties(null, view);
+    const columns = paths(properties);
+    expect(columns.slice(0, 3)).toEqual(["type", "text", "comment"]);
+    expect(columns).toContain("item.title");
+    expect(ticked(properties)).toEqual(columns);
+    expect(properties.unused.order).toEqual(["title"]);
+
+    // A tick shows the ticked fields and keeps "title" for the Items.
+    const order = properties.orderOf(["text"]);
+    expect(order).toEqual(["text", "title"]);
+    expect(paths(viewProperties(null, { ...view, order }))).toEqual(["text"]);
+    // "Hide all" shows none.
+    expect(properties.orderOf([])).toEqual([]);
+  });
+
+  it("shows and ticks the Properties of a mixed order that the dataset can read, in order", () => {
+    const view = {
+      from: "items" as const,
+      order: ["comment", "title", "formula.pages", "title"],
+    };
+    const properties = viewProperties(FILE, view);
+    expect(paths(properties)).toEqual(["title", "formula.pages"]);
+    expect(ticked(properties)).toEqual(paths(properties));
+    expect(properties.visible.map((entry) => entry.place)).toEqual([0, 1]);
+
+    const order = properties.orderOf(["formula.pages", "title", "date"]);
+    expect(order).toEqual(["formula.pages", "title", "date", "comment"]);
+    const next = viewProperties(FILE, { ...view, order });
+    expect(paths(next)).toEqual(["formula.pages", "title", "date"]);
+    expect(ticked(next)).toEqual(paths(next));
+  });
+});
+
+describe("viewProperties entry", () => {
   it("names a Property it does not list, such as a sort of another dataset", () => {
     const properties = viewProperties(FILE, VIEW);
     expect(properties.entry("pageIndex")).toMatchObject({
