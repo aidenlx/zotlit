@@ -324,6 +324,7 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
               maximum=Math.max(maximum,performance.now()-start);samples++;
               correct&&=hits.length===1&&hits[0].item.itemID===${item.itemID};
               fresh=hits[0]?.item.fields.title===${JSON.stringify(title)};
+              // Sampling cadence: each pass measures one search during the refresh.
               await new Promise(resolve=>setTimeout(resolve,50));
             }while((!refreshed||!fresh)&&performance.now()<deadline);
             await settled;

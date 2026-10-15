@@ -165,7 +165,7 @@ async function changeNativeAnnotationCallout(
   expect(
     await obEvalUntil(
       vaultId,
-      `(function(){const view=${view};const tab=Array.from(view?.contentEl.querySelectorAll('[role=tab]')??[]).find(element=>element.textContent.trim()===${JSON.stringify(tabLabel)});if(!tab)return false;tab.click();return true;})()`,
+      `(function(){${PAGE}const view=${view};const tab=Array.from(view?.contentEl.querySelectorAll('[role=tab]')??[]).find(element=>element.textContent.trim()===${JSON.stringify(tabLabel)});if(!tab)return false;press(tab,${JSON.stringify(tabLabel)});return true;})()`,
       { expected: "true" },
     ),
   ).toBe(true);
@@ -236,7 +236,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   async function addLibraryCondition(selector: string): Promise<void> {
     await obEval(
       vaultId,
-      `(function(){var editor=${activeWorkbenchContent};Array.from(editor.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.settings_profile_match_add_condition())}).click();return true;})()`,
+      `(function(){${PAGE}var editor=${activeWorkbenchContent};press(Array.from(editor.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.settings_profile_match_add_condition())}),'Add condition');return true;})()`,
     );
     expect(
       await conditionReady({
@@ -273,20 +273,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEvalUntil(
         vaultId,
-        `(function(){var settings=${settingsContent};var row=Array.from(settings.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(booksProfile.label)});var button=row&&Array.from(row.querySelectorAll('button')).find(button=>button.getAttribute('aria-label')===${JSON.stringify(m.settings_profile_edit())});if(!button||button.disabled)return false;button.click();return true;})()`,
+        `(function(){${PAGE}var settings=${settingsContent};var row=Array.from(settings.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(booksProfile.label)});var button=row&&Array.from(row.querySelectorAll('button')).find(button=>button.getAttribute('aria-label')===${JSON.stringify(m.settings_profile_edit())});if(!button||button.disabled)return false;press(button,'Edit profile');return true;})()`,
         { expected: "true" },
       ),
     ).toBe(true);
     expect(
       await obEvalUntil(
         vaultId,
-        `(function(){var editor=${activeWorkbenchContent};var tab=Array.from(editor?.querySelectorAll('[role=tab]')??[]).find(tab=>tab.textContent.trim()===${JSON.stringify(m.workbench_tab_match())});tab?.click();return String(!!editor?.querySelector('[data-part=fieldset]')&&!editor?.ownerDocument.querySelector('.modal.mod-settings'));})()`,
+        `(function(){${PAGE}var editor=${activeWorkbenchContent};var tab=Array.from(editor?.querySelectorAll('[role=tab]')??[]).find(tab=>tab.textContent.trim()===${JSON.stringify(m.workbench_tab_match())});press(tab,'Match tab');return String(!!editor?.querySelector('[data-part=fieldset]')&&!editor?.ownerDocument.querySelector('.modal.mod-settings'));})()`,
         { expected: "true" },
       ),
     ).toBe(true);
     await obEval(
       vaultId,
-      `(function(){var editor=${activeWorkbenchContent};if(!editor.querySelector('[data-condition-row]'))Array.from(editor.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.settings_profile_match_add_condition())}).click();return true;})()`,
+      `(function(){${PAGE}var editor=${activeWorkbenchContent};if(!editor.querySelector('[data-condition-row]'))press(Array.from(editor.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.settings_profile_match_add_condition())}),'Add condition');return true;})()`,
     );
   }
 
@@ -300,7 +300,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   function clickTemplateCustomize() {
     return obEvalUntil(
       vaultId,
-      `(function(){var settings=${settingsContent};var row=Array.from(settings.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(m.settings_profile_document_name())});var button=row&&Array.from(row.querySelectorAll('button')).find(el=>el.getAttribute('aria-label')===${JSON.stringify(m.settings_profile_edit())});if(!button||button.disabled)return false;button.click();return true;})()`,
+      `(function(){${PAGE}var settings=${settingsContent};var row=Array.from(settings.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(m.settings_profile_document_name())});var button=row&&Array.from(row.querySelectorAll('button')).find(el=>el.getAttribute('aria-label')===${JSON.stringify(m.settings_profile_edit())});if(!button||button.disabled)return false;press(button,'Edit template');return true;})()`,
       { expected: "true" },
     );
   }
@@ -527,6 +527,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       }
       expect(JSON.parse(await obEval(vaultId, visibleCards))).toEqual(expected);
       // Wait for the card's growing excerpt to settle before starting a transition.
+      // The 50 ms sleep samples the height: 300 ms unchanged counts as settled.
       // Seek each transition to its midpoint so a late timer cannot sample its end.
       // Under reduced motion neither property has an intermediate value.
       const selectionEase = `(async()=>{
@@ -580,7 +581,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       const tagPopup = `(()=>{const root=app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view.containerEl;const trigger=Array.from(root?.querySelectorAll('button[popovertarget]')??[]).find(b=>{const label=b.getAttribute('aria-label')??'';return label===${JSON.stringify(m.annot_view_filter_tag_trigger())}||label.startsWith(${JSON.stringify(m.annot_view_filter_tag_trigger_active({ tags: "" }))});});return trigger?root.ownerDocument.getElementById(trigger.getAttribute('popovertarget')):null;})()`;
       await obEval(
         vaultId,
-        `(function(){const root=app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view.containerEl;const popup=${tagPopup};if(!popup)throw new Error('No tag Chooser in the Annotation View');if(!popup.matches(':popover-open'))root.querySelector('[popovertarget="'+popup.id+'"]').click();return true;})()`,
+        `(function(){${PAGE}const root=app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view.containerEl;const popup=${tagPopup};if(!popup)throw new Error('No tag Chooser in the Annotation View');if(!popup.matches(':popover-open'))press(root.querySelector('[popovertarget="'+popup.id+'"]'),'tag Chooser');return true;})()`,
       );
       // `menuChrome` is the computed-style half of the proof. The popup wears no
       // `.menu` class, so its chrome can only come from Obsidian's `--menu-*`
@@ -719,10 +720,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const colors = new Set(before.cards.map(({ color }) => color));
     expect(colors.size).toBeGreaterThan(1);
 
-    // More options → Group by → Color, through Obsidian's own menu.
+    // More options → Group by → Color, through Obsidian's own menu. A side
+    // dock hides the view header, so the reader presses the header row's own
+    // "More options".
     await obEval(
       vaultId,
-      `(function(){${sidebar}.containerEl.querySelector('.view-actions .view-action[aria-label="More options"]').click();return true;})()`,
+      `(function(){${PAGE}press(${sidebar}.contentEl.querySelector('[data-annot-view-more-options]'),'More options');return true;})()`,
     );
     const menuItem = (title: string) =>
       `Array.from(document.querySelectorAll('.menu .menu-item')).find(item=>item.querySelector('.menu-item-title')?.textContent===${JSON.stringify(title)})`;
@@ -737,7 +740,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
     await obEval(
       vaultId,
-      `(function(){const item=${menuItem(m.annot_view_group_by())};item.dispatchEvent(new MouseEvent('mouseover',{bubbles:true}));item.click();return true;})()`,
+      `(function(){${PAGE}const item=${menuItem(m.annot_view_group_by())};item.dispatchEvent(new MouseEvent('mouseover',{bubbles:true}));press(item,'Group by');return true;})()`,
     );
     expect(
       await obEvalUntil(
@@ -748,7 +751,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
     await obEval(
       vaultId,
-      `(function(){${menuItem(m.query_view_property_color())}.click();return true;})()`,
+      `(function(){${PAGE}press(${menuItem(m.query_view_property_color())},'Color');return true;})()`,
     );
 
     const grouped = await sidebarWhen(({ cards }) =>
@@ -785,7 +788,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
     await obEval(
       vaultId,
-      `(function(){${menuItem(m.annot_view_filter())}.click();return true;})()`,
+      `(function(){${PAGE}press(${menuItem(m.annot_view_filter())},'Filter');return true;})()`,
     );
     const filterModal = `(function(){const modal=document.querySelector('.modal.zt-annot-filter-modal');return JSON.stringify(modal?{title:modal.querySelector('.modal-title')?.textContent??null,sections:Array.from(modal.querySelectorAll('[data-filter-section]'),el=>el.getAttribute('data-filter-section')),text:modal.textContent.includes('this.attachment')}:null);})()`;
     expect(
@@ -829,7 +832,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
      * colors" for `null`), and closes the Chooser.
      */
     const pickColor = (color: string | null) =>
-      `(async()=>{const el=${sidebar}?.containerEl;const trigger=Array.from(el?.querySelectorAll('button[aria-label]')??[]).find(b=>b.getAttribute('aria-label')===${JSON.stringify(m.annot_view_filter_color_trigger())}||b.getAttribute('aria-label').startsWith(${JSON.stringify(m.annot_view_filter_color_trigger_active({ colors: "" }))}));if(!trigger)return 'no chooser';trigger.click();await new Promise(r=>setTimeout(r,200));const list=document.querySelector('[role="listbox"][aria-label=${JSON.stringify(m.annot_view_filter_color_list())}]');const row=Array.from(list?.querySelectorAll('[role="option"]')??[]).find(option=>${color === null ? `option.textContent===${JSON.stringify(m.annot_view_filter_color_clear())}` : `option.querySelector('[style*="--zt-swatch-color"]')?.style.getPropertyValue('--zt-swatch-color').trim().toLowerCase()===${JSON.stringify(color.toLowerCase())}`});row?.click();await new Promise(r=>setTimeout(r,100));(document.activeElement??document.body).dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));return row?'picked':'no row';})()`;
+      `(async()=>{${PAGE}const el=${sidebar}?.containerEl;const trigger=Array.from(el?.querySelectorAll('button[aria-label]')??[]).find(b=>b.getAttribute('aria-label')===${JSON.stringify(m.annot_view_filter_color_trigger())}||b.getAttribute('aria-label').startsWith(${JSON.stringify(m.annot_view_filter_color_trigger_active({ colors: "" }))}));if(!trigger)return 'no chooser';press(trigger,'colour Chooser');const list=await until('colour list opens',()=>{const list=document.querySelector('[role="listbox"][aria-label=${JSON.stringify(m.annot_view_filter_color_list())}]');return list?.checkVisibility()?list:null;});const row=Array.from(list?.querySelectorAll('[role="option"]')??[]).find(option=>${color === null ? `option.textContent===${JSON.stringify(m.annot_view_filter_color_clear())}` : `option.querySelector('[style*="--zt-swatch-color"]')?.style.getPropertyValue('--zt-swatch-color').trim().toLowerCase()===${JSON.stringify(color.toLowerCase())}`});if(row){press(row,'colour row');await until('colour filter applies',()=>${color === null ? `trigger.getAttribute('aria-label')===${JSON.stringify(m.annot_view_filter_color_trigger())}` : `row.getAttribute('aria-selected')==='true'`});}(document.activeElement??document.body).dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));return row?'picked':'no row';})()`;
     let picked = false;
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
@@ -887,7 +890,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         expected: "true",
       }),
     ).toBe(true);
-    await obEval(vaultId, `(function(){${menuItem}.click();return true;})()`);
+    await obEval(
+      vaultId,
+      `(function(){${PAGE}press(${menuItem},'Save as query file');return true;})()`,
+    );
 
     // The dialog asks the name, the folder, and which records the file shows.
     const modal = "document.querySelector('.modal.zt-save-query-file-modal')";
@@ -919,7 +925,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
     await obEval(
       vaultId,
-      `(function(){const modal=${modal};const set=(field,value)=>{const input=modal.querySelector('[data-save-field="'+field+'"]');input.value=value;input.dispatchEvent(new Event('input',{bubbles:true}));};set('name','Saved colour');set('folder','query-files');const radio=modal.querySelector('[data-save-records="note-item"]');radio.click();modal.querySelector('.modal-button-container button.mod-cta').click();return true;})()`,
+      `(function(){${PAGE}const modal=${modal};const set=(field,value)=>{const input=modal.querySelector('[data-save-field="'+field+'"]');input.value=value;input.dispatchEvent(new Event('input',{bubbles:true}));};set('name','Saved colour');set('folder','query-files');press(modal.querySelector('[data-save-records="note-item"]').closest('label'),'note-item records');press(modal.querySelector('.modal-button-container button.mod-cta'),'Save');return true;})()`,
     );
 
     // The file opens in a tab, where `this` has no value.
@@ -1060,7 +1066,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const menu = JSON.parse(
       await obEval(
         vaultId,
-        `(async()=>{${PAGE}const view=app.workspace.getMostRecentLeaf().view;view.contentEl.querySelector('[data-query-view-menu]').click();const rows=await until('view menu rows',()=>{const found=[...view.contentEl.querySelectorAll('[data-query-view-list]:popover-open [data-query-view-row]')];return found.length>0&&found;});const titles=rows.map(n=>n.getAttribute('data-query-view-row'));rows.find(n=>n.getAttribute('data-query-view-row')==='Figures').click();return JSON.stringify(titles);})()`,
+        `(async()=>{${PAGE}const view=app.workspace.getMostRecentLeaf().view;press(view.contentEl.querySelector('[data-query-view-menu]'),'View menu');const rows=await until('view menu rows',()=>{const found=[...view.contentEl.querySelectorAll('[data-query-view-list]:popover-open [data-query-view-row]')];return found.length>0&&found;});const titles=rows.map(n=>n.getAttribute('data-query-view-row'));press(rows.find(n=>n.getAttribute('data-query-view-row')==='Figures'),'Figures');return JSON.stringify(titles);})()`,
       ),
     ) as string[];
     expect(menu).toEqual(["All annotations", "Figures"]);
@@ -1105,7 +1111,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const folderMenu = JSON.parse(
       await obEval(
         vaultId,
-        `(async()=>{app.workspace.leftSplit.expand();const explorer=app.workspace.getLeavesOfType('file-explorer')[0];await app.workspace.revealLeaf(explorer);const title=explorer.view.containerEl.querySelector('.nav-folder-title[data-path="query-files"]');title.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,clientX:10,clientY:10}));await new Promise(r=>setTimeout(r,200));const titles=[...activeDocument.querySelectorAll('.menu .menu-item-title')].map(n=>n.textContent);activeDocument.body.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));return JSON.stringify(titles);})()`,
+        `(async()=>{${PAGE}app.workspace.leftSplit.expand();const explorer=app.workspace.getLeavesOfType('file-explorer')[0];await app.workspace.revealLeaf(explorer);const title=explorer.view.containerEl.querySelector('.nav-folder-title[data-path="query-files"]');title.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,clientX:10,clientY:10}));await until('folder menu opens',()=>activeDocument.querySelector('.menu .menu-item-title'));const titles=[...activeDocument.querySelectorAll('.menu .menu-item-title')].map(n=>n.textContent);activeDocument.body.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));return JSON.stringify(titles);})()`,
       ),
     ) as string[];
     expect(folderMenu).toContain(m.query_file_new());
@@ -1137,8 +1143,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       search: m.query_view_search(),
     };
     /** Each toolbar button's tooltip text and whether its name shows beside its icon. */
+    // The sidebars fold with an animation; a width the same over three frames
+    // is the settled pane.
     const readPane = (pane: "wide" | "narrow") =>
-      `(async()=>{await new Promise(r=>setTimeout(r,200));const bar=window.zotlitE2EPanes.${pane}.view.contentEl.querySelector('[role="toolbar"]');const button=hook=>hook==='properties'?bar.querySelector('[data-query-properties]'):bar.querySelector('[data-query-toolbar="'+hook+'"]');const out={width:bar.clientWidth,overflow:bar.scrollWidth>bar.clientWidth,buttons:{}};for(const hook of ${JSON.stringify(Object.keys(names))}){const el=button(hook);const name=[...el.querySelectorAll('span')].find(s=>s.textContent.trim()!=='');out.buttons[hook]={tooltip:el.getAttribute('aria-label'),nameShown:!!name&&getComputedStyle(name).display!=='none',iconShown:!!el.querySelector('svg')&&el.querySelector('svg').getBoundingClientRect().width>0};}return JSON.stringify(out);})()`;
+      `(async()=>{${PAGE}const bar=window.zotlitE2EPanes.${pane}.view.contentEl.querySelector('[role="toolbar"]');let last=-1,steady=0;await until('toolbar width settles',async()=>{await new Promise(r=>requestAnimationFrame(r));const width=bar.clientWidth;steady=width>0&&width===last?steady+1:0;last=width;return steady>=3;});const button=hook=>hook==='properties'?bar.querySelector('[data-query-properties]'):bar.querySelector('[data-query-toolbar="'+hook+'"]');const out={width:bar.clientWidth,overflow:bar.scrollWidth>bar.clientWidth,buttons:{}};for(const hook of ${JSON.stringify(Object.keys(names))}){const el=button(hook);const name=[...el.querySelectorAll('span')].find(s=>s.textContent.trim()!=='');out.buttons[hook]={tooltip:el.getAttribute('aria-label'),nameShown:!!name&&getComputedStyle(name).display!=='none',iconShown:!!el.querySelector('svg')&&el.querySelector('svg').getBoundingClientRect().width>0};}return JSON.stringify(out);})()`;
     interface Pane {
       width: number;
       overflow: boolean;
@@ -1168,7 +1176,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // A pointer over an icon-only button shows its name as a tooltip.
     const tooltip = await obEval(
       vaultId,
-      `(async()=>{const el=window.zotlitE2EPanes.narrow.view.contentEl.querySelector('[data-query-toolbar="sort"]');const r=el.getBoundingClientRect();const at={bubbles:true,pointerType:'mouse',clientX:r.x+5,clientY:r.y+5};for(let i=0;i<3;i++){el.dispatchEvent(new PointerEvent('pointermove',{...at,clientX:at.clientX+i}));el.dispatchEvent(new MouseEvent('mousemove',{...at,clientX:at.clientX+i}));}el.dispatchEvent(new PointerEvent('pointerover',at));for(let i=0;i<30;i++){const tip=activeDocument.querySelector('.tooltip');if(tip)return tip.textContent;await new Promise(r=>setTimeout(r,100));}return null;})()`,
+      `(async()=>{${PAGE}const el=window.zotlitE2EPanes.narrow.view.contentEl.querySelector('[data-query-toolbar="sort"]');const r=el.getBoundingClientRect();const at={bubbles:true,pointerType:'mouse',clientX:r.x+5,clientY:r.y+5};for(let i=0;i<3;i++){el.dispatchEvent(new PointerEvent('pointermove',{...at,clientX:at.clientX+i}));el.dispatchEvent(new MouseEvent('mousemove',{...at,clientX:at.clientX+i}));}el.dispatchEvent(new PointerEvent('pointerover',at));return (await until('tooltip shows',()=>activeDocument.querySelector('.tooltip'),3000)).textContent;})()`,
     );
     expect(tooltip).toBe(names.sort);
   }, 120000);
@@ -1373,7 +1381,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // A wrong expression marks its row with the query's diagnostic; the
     // cards stay, and the view says the filter has an error.
     await inPopover(
-      `section('view').querySelector('[data-condition-row] button[aria-label="${m.workbench_match_edit_as_expression()}"]').click();await new Promise(r=>setTimeout(r,50));set(section('view').querySelector('[data-condition-row] textarea'),'nosuchfield == 1');return true;`,
+      `press(section('view').querySelector('[data-condition-row] button[aria-label="${m.workbench_match_edit_as_expression()}"]'),'Edit as expression');set(await until('expression field',()=>section('view').querySelector('[data-condition-row] textarea')),'nosuchfield == 1');return true;`,
     );
     const broken = await tabWhen(
       (tab) =>
@@ -1404,7 +1412,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // "Edit visually" goes back once the expression fits a row.
     await inPopover(
-      `const row=section('view').querySelector('[data-condition-row]');set(row.querySelector('textarea'),'tags.contains("figure")');await new Promise(r=>setTimeout(r,50));row.querySelector('button[aria-label="${m.workbench_match_edit_visually()}"]').click();return true;`,
+      `const row=section('view').querySelector('[data-condition-row]');set(row.querySelector('textarea'),'tags.contains("figure")');press(await until('Edit visually enabled',()=>{const button=row.querySelector('button[aria-label="${m.workbench_match_edit_visually()}"]');return button&&!button.disabled?button:null;}),'Edit visually');return true;`,
     );
     const back = await queryKeys(
       '(colorName == "yellow") && (tags.contains("figure"))',
@@ -1506,13 +1514,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const inBlock = (script: string) =>
       obEval(
         vaultId,
-        `(()=>{const el=app.workspace.getMostRecentLeaf().view.containerEl.querySelector('.block-language-zotquery');${script};return true;})()`,
+        `(()=>{${PAGE}const el=app.workspace.getMostRecentLeaf().view.containerEl.querySelector('.block-language-zotquery');${script};return true;})()`,
       );
     await inBlock(
-      "el.dataset.e2eMark='kept';el.querySelector('[data-query-toolbar=\"sort\"]').click()",
+      "el.dataset.e2eMark='kept';press(el.querySelector('[data-query-toolbar=\"sort\"]'),'Sort')",
     );
     await inBlock(
-      "el.querySelector('[data-query-popover=\"sort\"] [data-sort-add]').click()",
+      "press(el.querySelector('[data-query-popover=\"sort\"] [data-sort-add]'),'Add sort')",
     );
     for (const [control, value] of [
       ["data-sort-property", "type"],
@@ -1582,7 +1590,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       (block) => JSON.stringify(block.cards) === JSON.stringify(sorted),
     );
     expect(embedded.readOnly).toBeNull();
-    await inBlock("el.querySelector('[data-query-toolbar=\"sort\"]').click()");
+    await inBlock(
+      "press(el.querySelector('[data-query-toolbar=\"sort\"]'),'Sort')",
+    );
     await inBlock(
       `const select=el.querySelector('[data-query-popover="sort"] [data-sort-direction]');select.value='ASC';select.dispatchEvent(new Event('change',{bubbles:true}))`,
     );
@@ -1660,14 +1670,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(
         await obEvalUntil(
           vaultId,
-          `(async()=>{const el=window.zotlitE2EBlockLeaf.view.containerEl.querySelector('.block-language-zotquery');if(!el?.zotlitQueryView)return 'no';await el.zotlitQueryView.settled;return el.querySelector('[data-query-count]')?'ready':'no';})()`,
+          `(async()=>{const el=[...window.zotlitE2EBlockLeaf.view.containerEl.querySelectorAll('.block-language-zotquery')].find(el=>el.checkVisibility());if(!el?.zotlitQueryView)return 'no';await el.zotlitQueryView.settled;return el.querySelector('[data-query-count]')?'ready':'no';})()`,
           { expected: "ready", tries: 120 },
         ),
       ).toBe(true);
-      // The limit, then the note goes at once, well inside the save delay.
+      // The limit, then the note goes at once, well inside the save delay. The
+      // block is the one the mode shows; the other mode's copy stays hidden.
       await obEval(
         vaultId,
-        `(async()=>{const leaf=window.zotlitE2EBlockLeaf;const el=leaf.view.containerEl.querySelector('.block-language-zotquery');el.querySelector('[data-query-results]').click();for(let i=0;i<50&&!el.querySelector('[data-query-results-popup] [data-query-limit]');i++)await new Promise(r=>requestAnimationFrame(r));const input=el.querySelector('[data-query-results-popup] [data-query-limit]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(limit)});input.dispatchEvent(new Event('input',{bubbles:true}));${leave === "close" ? "leaf.detach();" : `await leaf.openFile(app.vault.getMarkdownFiles().find(f=>f.path!==${JSON.stringify(notePath)}));`}delete window.zotlitE2EBlockLeaf;return true;})()`,
+        `(async()=>{${PAGE}const leaf=window.zotlitE2EBlockLeaf;const el=[...leaf.view.containerEl.querySelectorAll('.block-language-zotquery')].find(el=>el.checkVisibility());press(el.querySelector('[data-query-results]'),'Results');const input=await until('limit field',()=>el.querySelector('[data-query-results-popup] [data-query-limit]'));Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(limit)});input.dispatchEvent(new Event('input',{bubbles:true}));${leave === "close" ? "leaf.detach();" : `await leaf.openFile(app.vault.getMarkdownFiles().find(f=>f.path!==${JSON.stringify(notePath)}));`}delete window.zotlitE2EBlockLeaf;return true;})()`,
       );
       const expected = original.replace(
         "    limit: 100\n```",
@@ -1725,7 +1736,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // The view menu narrows its views as the researcher types.
     await obEval(
       vaultId,
-      `(()=>{${tab}.contentEl.querySelector('[data-query-view-menu]').click();return true;})()`,
+      `(()=>{${PAGE}press(${tab}.contentEl.querySelector('[data-query-view-menu]'),'View menu');return true;})()`,
     );
     expect(
       await obEvalUntil(vaultId, rows, {
@@ -1744,7 +1755,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // name; the name typed there renames it.
     await obEval(
       vaultId,
-      `(()=>{${tab}.contentEl.querySelector('[data-query-view-action="add"]').click();return true;})()`,
+      `(()=>{${PAGE}press(${tab}.contentEl.querySelector('[data-query-view-action="add"]'),'Add view');return true;})()`,
     );
     expect(
       await obEvalUntil(
@@ -1776,14 +1787,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(JSON.parse(await obEval(vaultId, pages))).not.toEqual([]);
     await obEval(
       vaultId,
-      `(()=>{const modal=activeDocument.querySelector('.modal.zt-configure-view');modal.querySelector('[data-query-view-option="showPage"]').click();(modal.querySelector('.modal-close-button')??modal.querySelector('.modal-header-button:has(.lucide-x)')).click();return true;})()`,
+      `(()=>{${PAGE}const modal=activeDocument.querySelector('.modal.zt-configure-view');press(modal.querySelector('[data-query-view-option="showPage"]'),'Show page');press((modal.querySelector('.modal-close-button')??modal.querySelector('.modal-header-button:has(.lucide-x)')),'Close');return true;})()`,
     );
     expect(await obEvalUntil(vaultId, pages, { expected: "[]" })).toBe(true);
 
     // "Default view" on the view's row moves it to the top of the list.
     await obEval(
       vaultId,
-      `(()=>{${tab}.contentEl.querySelector('[data-query-view-menu]').click();return true;})()`,
+      `(()=>{${PAGE}press(${tab}.contentEl.querySelector('[data-query-view-menu]'),'View menu');return true;})()`,
     );
     expect(
       await obEvalUntil(vaultId, rows, {
@@ -1792,7 +1803,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
     await obEval(
       vaultId,
-      `(()=>{const row=${tab}.contentEl.querySelector('[data-query-view-row="Methods"]');row.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,clientX:200,clientY:200}));const item=[...activeDocument.querySelectorAll('.menu .menu-item')].find(n=>n.querySelector('.menu-item-title')?.textContent===${JSON.stringify(m.query_view_default_view())});item.click();return true;})()`,
+      `(()=>{${PAGE}const row=${tab}.contentEl.querySelector('[data-query-view-row="Methods"]');row.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,clientX:200,clientY:200}));const item=[...activeDocument.querySelectorAll('.menu .menu-item')].find(n=>n.querySelector('.menu-item-title')?.textContent===${JSON.stringify(m.query_view_default_view())});press(item,'Default view');return true;})()`,
     );
 
     // Each change saved to the file.
@@ -1810,7 +1821,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(await obEval(vaultId, pages)).toBe("[]");
     await obEval(
       vaultId,
-      `(()=>{${tab}.contentEl.querySelector('[data-query-view-menu]').click();return true;})()`,
+      `(()=>{${PAGE}press(${tab}.contentEl.querySelector('[data-query-view-menu]'),'View menu');return true;})()`,
     );
     expect(
       await obEvalUntil(vaultId, rows, {
@@ -1822,7 +1833,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // leaves the view on screen as it is.
     await obEval(
       vaultId,
-      `(()=>{${tab}.contentEl.querySelector('[data-query-view-list]:popover-open [data-query-view-configure="Figures"]').click();return true;})()`,
+      `(()=>{${PAGE}press(${tab}.contentEl.querySelector('[data-query-view-list]:popover-open [data-query-view-configure="Figures"]'),'Configure Figures');return true;})()`,
     );
     expect(
       await obEvalUntil(
@@ -1834,7 +1845,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(await shown("Methods")).toBe(true);
     await obEval(
       vaultId,
-      `(()=>{const modal=activeDocument.querySelector('.modal.zt-configure-view');(modal.querySelector('.modal-close-button')??modal.querySelector('.modal-header-button:has(.lucide-x)')).click();return true;})()`,
+      `(()=>{${PAGE}const modal=activeDocument.querySelector('.modal.zt-configure-view');press((modal.querySelector('.modal-close-button')??modal.querySelector('.modal-header-button:has(.lucide-x)')),'Close');return true;})()`,
     );
   }, 180000);
 
@@ -1852,6 +1863,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // The tab closes before the text goes back, so no pending save of the
     // tab writes over it.
     cleanup.defer(async () => {
+      // Teardown closes a dialog a failed step left open; not a reader's press.
       await obEval(
         vaultId,
         `(async()=>{for(const modal of activeDocument.querySelectorAll('.modal.zt-configure-view'))(modal.querySelector('.modal-close-button')??modal.querySelector('.modal-header-button:has(.lucide-x)'))?.click();for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))leaf.detach();await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(path)}),${JSON.stringify(original)});await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
@@ -1884,7 +1896,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const pickLayout = (type: string) =>
       obEval(
         vaultId,
-        `(async()=>{const el=app.workspace.getMostRecentLeaf().view.contentEl;if(!activeDocument.querySelector('.modal.zt-configure-view'))el.querySelector('[data-query-view-menu]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:200,clientY:200}));await new Promise(r=>setTimeout(r,100));const select=activeDocument.querySelector('.modal.zt-configure-view [data-query-view-layout]');select.value=${JSON.stringify(type)};select.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
+        `(async()=>{${PAGE}const el=app.workspace.getMostRecentLeaf().view.contentEl;if(!activeDocument.querySelector('.modal.zt-configure-view'))el.querySelector('[data-query-view-menu]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:200,clientY:200}));const select=await until('Configure view opens',()=>activeDocument.querySelector('.modal.zt-configure-view [data-query-view-layout]'));select.value=${JSON.stringify(type)};select.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
       );
 
     const annotations = await tabWhen((tab) => tab.cards.length > 0);
@@ -1936,6 +1948,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
+      // Teardown closes a dialog a failed step left open; not a reader's press.
       await obEval(
         vaultId,
         `(async()=>{for(const modal of activeDocument.querySelectorAll('.modal.zt-configure-view'))(modal.querySelector('.modal-close-button')??modal.querySelector('.modal-header-button:has(.lucide-x)'))?.click();for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))leaf.detach();const file=app.vault.getFileByPath(${JSON.stringify(path)});if(file)await app.vault.delete(file);await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
@@ -1969,13 +1982,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const pickLayout = (type: string) =>
       obEval(
         vaultId,
-        `(async()=>{const el=app.workspace.getMostRecentLeaf().view.contentEl;el.querySelector('[data-query-view-menu]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:200,clientY:200}));const open=()=>activeDocument.querySelector('.modal.zt-configure-view [data-query-view-layout]');for(let i=0;i<100&&!open();i++)await new Promise(r=>setTimeout(r,20));const modal=activeDocument.querySelector('.modal.zt-configure-view');const select=modal.querySelector('[data-query-view-layout]');select.value=${JSON.stringify(type)};select.dispatchEvent(new Event('change',{bubbles:true}));(modal.querySelector('.modal-close-button')??modal.querySelector('.modal-header-button:has(.lucide-x)')).click();return true;})()`,
+        `(async()=>{${PAGE}const el=app.workspace.getMostRecentLeaf().view.contentEl;el.querySelector('[data-query-view-menu]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:200,clientY:200}));await until('Configure view opens',()=>activeDocument.querySelector('.modal.zt-configure-view [data-query-view-layout]'));const modal=activeDocument.querySelector('.modal.zt-configure-view');const select=modal.querySelector('[data-query-view-layout]');select.value=${JSON.stringify(type)};select.dispatchEvent(new Event('change',{bubbles:true}));press((modal.querySelector('.modal-close-button')??modal.querySelector('.modal-header-button:has(.lucide-x)')),'Close');return true;})()`,
       );
     /** Type into the toolbar search, which opens on its first use. */
     const search = (text: string) =>
       obEval(
         vaultId,
-        `(async()=>{const el=app.workspace.getMostRecentLeaf().view.contentEl;if(!el.querySelector('[data-query-search]')){el.querySelector('[data-query-toolbar="search"]').click();for(let i=0;i<100&&!el.querySelector('[data-query-search]');i++)await new Promise(r=>setTimeout(r,20));}const input=el.querySelector('[data-query-search]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(text)});input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+        `(async()=>{${PAGE}const el=app.workspace.getMostRecentLeaf().view.contentEl;if(!el.querySelector('[data-query-search]')){press(el.querySelector('[data-query-toolbar="search"]'),'Search');await until('search field',()=>el.querySelector('[data-query-search]'));}const input=el.querySelector('[data-query-search]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(text)});input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
       );
 
     const table = await tabWhen(
@@ -2116,7 +2129,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const [hidden, ...shown] = manual.order.map(([colour]) => colour);
     await obEval(
       vaultId,
-      `(()=>{const el=app.workspace.getMostRecentLeaf().view.contentEl;el.querySelector('[data-query-popover="group"] [data-group-row=${JSON.stringify(hidden)}] input').click();return true;})()`,
+      `(()=>{${PAGE}const el=app.workspace.getMostRecentLeaf().view.contentEl;const popover=el.querySelector('[data-query-popover="group"]');if(!popover.matches(':popover-open'))press(el.querySelector('[data-query-toolbar="group"]'),'Group');press(popover.querySelector('[data-group-row=${JSON.stringify(hidden)}] input'),'group row '+${JSON.stringify(hidden)});popover.hidePopover();return true;})()`,
     );
     const after = await tabWhen((tab) => tab.headings.length === shown.length);
     const expectedCount = report.rows!.filter(
@@ -2211,7 +2224,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const clickAt = (place: string) =>
       obEval(
         vaultId,
-        `(()=>{const card=[...${tab}.contentEl.querySelectorAll('.zt-annot-card')].find(n=>n.getAttribute('data-card-place')===${JSON.stringify(place)});card.click();card.focus();return true;})()`,
+        `(()=>{${PAGE}const card=[...${tab}.contentEl.querySelectorAll('.zt-annot-card')].find(n=>n.getAttribute('data-card-place')===${JSON.stringify(place)});press(card,'card '+${JSON.stringify(place)});card.focus();return true;})()`,
       );
     /**
      * One key as Obsidian delivers it: through the view's own Scope, with the
@@ -2245,7 +2258,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const secondCards = inGroup(colours, second!.key);
     await obEval(
       vaultId,
-      `(()=>{${tab}.contentEl.querySelector('[data-query-group=${JSON.stringify(second!.key)}] button').click();return true;})()`,
+      `(()=>{${PAGE}press(${tab}.contentEl.querySelector('[data-query-group=${JSON.stringify(second!.key)}] button'),'group heading');return true;})()`,
     );
     const folded = await shownWhen(
       colourPath,
@@ -2263,7 +2276,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // A collapse that folds the Selected Card away drops it, so a Delete
     // that follows acts on no hidden Annotation.
-    const toggleSecond = `(()=>{${tab}.contentEl.querySelector('[data-query-group=${JSON.stringify(second!.key)}] button').click();return true;})()`;
+    const toggleSecond = `(()=>{${PAGE}press(${tab}.contentEl.querySelector('[data-query-group=${JSON.stringify(second!.key)}] button'),'group heading');return true;})()`;
     await obEval(vaultId, toggleSecond);
     await shownWhen(colourPath, (shown) =>
       shown.cards.some((card) => card.place === secondCards[0]!.place),
@@ -2342,7 +2355,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
 
     /** What each pane shows of the Query File, once every query settled. */
-    const readPanes = `(async()=>{const out={};const show=async(el,query)=>{await query.settled;return {view:el.querySelector('[data-query-view-menu]')?.textContent??null,count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,cards:[...el.querySelectorAll('.zt-annot-card')].map(n=>n.getAttribute('data-zotero-annotation-key'))};};for(const leaf of app.workspace.getLeavesOfType('markdown')){if(leaf.view.getMode()==='source'){const line=leaf.view.editor.getValue().split('\\n').findIndex(text=>text.startsWith('![['));leaf.view.editor.scrollIntoView({from:{line,ch:0},to:{line,ch:0}});await new Promise(r=>setTimeout(r,100));}const embeds=[...leaf.view.containerEl.querySelectorAll('.internal-embed')].filter(el=>el.zotlitQueryView&&el.isShown());out[leaf.view.file.path]=await Promise.all(embeds.map(async el=>({...await show(el,el.zotlitQueryView),interactive:el.classList.contains('interactive-child')})));}for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))out.tab=await show(leaf.view.contentEl,leaf.view.query);return JSON.stringify(out);})()`;
+    const readPanes = `(async()=>{${PAGE}const out={};const show=async(el,query)=>{await query.settled;return {view:el.querySelector('[data-query-view-menu]')?.textContent??null,count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,cards:[...el.querySelectorAll('.zt-annot-card')].map(n=>n.getAttribute('data-zotero-annotation-key'))};};for(const leaf of app.workspace.getLeavesOfType('markdown')){if(leaf.view.getMode()==='source'){const line=leaf.view.editor.getValue().split('\\n').findIndex(text=>text.startsWith('![['));leaf.view.editor.scrollIntoView({from:{line,ch:0},to:{line,ch:0}});await until('embed renders',()=>[...leaf.view.containerEl.querySelectorAll('.internal-embed')].some(el=>el.zotlitQueryView&&el.isShown()));}const embeds=[...leaf.view.containerEl.querySelectorAll('.internal-embed')].filter(el=>el.zotlitQueryView&&el.isShown());out[leaf.view.file.path]=await Promise.all(embeds.map(async el=>({...await show(el,el.zotlitQueryView),interactive:el.classList.contains('interactive-child')})));}for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))out.tab=await show(leaf.view.contentEl,leaf.view.query);return JSON.stringify(out);})()`;
     interface Pane {
       view: string | null;
       count: string | null;
@@ -2441,12 +2454,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const results = JSON.parse(
       await obEval(
         vaultId,
-        `(async()=>{const views=[...app.workspace.getLeavesOfType('markdown').flatMap(l=>[...l.view.containerEl.querySelectorAll('.internal-embed')].filter(el=>el.zotlitQueryView&&el.isShown())),...app.workspace.getLeavesOfType('zotlit-query-file').map(l=>l.view.contentEl)];const out=[];for(const el of views){el.querySelector('[data-query-results]').click();const popup=el.querySelector('[data-query-results-popup]');for(let i=0;i<50&&!popup.matches(':popover-open');i++)await new Promise(r=>setTimeout(r,20));out.push(popup.matches(':popover-open'));activeDocument.querySelectorAll(':popover-open').forEach(p=>p.hidePopover());}return JSON.stringify(out);})()`,
+        `(async()=>{${PAGE}const views=[...app.workspace.getLeavesOfType('markdown').flatMap(l=>[...l.view.containerEl.querySelectorAll('.internal-embed')].filter(el=>el.zotlitQueryView&&el.isShown())),...app.workspace.getLeavesOfType('zotlit-query-file').map(l=>l.view.contentEl)];const out=[];for(const el of views){press(el.querySelector('[data-query-results]'),'Results');const popup=el.querySelector('[data-query-results-popup]');out.push(await until('Results opens',()=>popup.matches(':popover-open'),1000).catch(()=>false));activeDocument.querySelectorAll(':popover-open').forEach(p=>p.hidePopover());}return JSON.stringify(out);})()`,
       ),
     ) as boolean[];
     expect(results).toEqual([true, true, true]);
 
     // A click in the Live Preview embed leaves the editor's selection alone.
+    // The 400 ms after the click is the window an absent selection change is
+    // checked over; no event marks "nothing happened".
     const selection = JSON.parse(
       await obEval(
         vaultId,
@@ -2459,7 +2474,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const popover = JSON.parse(
       await obEval(
         vaultId,
-        `(async()=>{const leaf=app.workspace.getLeavesOfType('markdown').find(l=>l.view.file.path===${JSON.stringify(labNote)});const targetEl=leaf.view.containerEl.querySelector('.markdown-reading-view h1')??leaf.view.containerEl;const rect=targetEl.getBoundingClientRect();app.workspace.trigger('hover-link',{event:new MouseEvent('mouseover',{clientX:rect.left+5,clientY:rect.top+5,ctrlKey:true,metaKey:true}),source:'preview',hoverParent:leaf.view,targetEl,linktext:${JSON.stringify(queryPath)},sourcePath:${JSON.stringify(labNote)}});for(let i=0;i<100;i++){const el=[...activeDocument.querySelectorAll('.hover-popover .internal-embed, .hover-popover .zt-query-view')].find(el=>el.zotlitQueryView);if(el){await el.zotlitQueryView.settled;const out={view:el.querySelector('[data-query-view-menu]')?.textContent??null,count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null};activeDocument.querySelectorAll('.hover-popover').forEach(p=>p.remove());return JSON.stringify(out);}await new Promise(r=>setTimeout(r,100));}return 'null';})()`,
+        `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('markdown').find(l=>l.view.file.path===${JSON.stringify(labNote)});const targetEl=leaf.view.containerEl.querySelector('.markdown-reading-view h1')??leaf.view.containerEl;const rect=targetEl.getBoundingClientRect();app.workspace.trigger('hover-link',{event:new MouseEvent('mouseover',{clientX:rect.left+5,clientY:rect.top+5,ctrlKey:true,metaKey:true}),source:'preview',hoverParent:leaf.view,targetEl,linktext:${JSON.stringify(queryPath)},sourcePath:${JSON.stringify(labNote)}});const el=await until('hover popover',()=>[...activeDocument.querySelectorAll('.hover-popover .internal-embed, .hover-popover .zt-query-view')].find(el=>el.zotlitQueryView),10000).catch(()=>null);if(!el)return 'null';await el.zotlitQueryView.settled;const out={view:el.querySelector('[data-query-view-menu]')?.textContent??null,count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null};activeDocument.querySelectorAll('.hover-popover').forEach(p=>p.remove());return JSON.stringify(out);})()`,
       ),
     ) as { view: string | null; count: string | null } | null;
     expect(popover).toEqual({
@@ -2470,7 +2485,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // The link button opens the Query File at the view the embed shows.
     await obEval(
       vaultId,
-      `(()=>{const leaf=app.workspace.getLeavesOfType('markdown').find(l=>l.view.file.path===${JSON.stringify(labNote)});app.workspace.setActiveLeaf(leaf,{focus:true});[...leaf.view.containerEl.querySelectorAll('.internal-embed')].find(el=>el.zotlitQueryView&&el.isShown()).querySelector('[data-query-open-file]').click();return true;})()`,
+      `(()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('markdown').find(l=>l.view.file.path===${JSON.stringify(labNote)});app.workspace.setActiveLeaf(leaf,{focus:true});press([...leaf.view.containerEl.querySelectorAll('.internal-embed')].find(el=>el.zotlitQueryView&&el.isShown()).querySelector('[data-query-open-file]'),'Open query file');return true;})()`,
     );
     expect(
       await waitFor(async () => {
@@ -2636,7 +2651,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // names every match.
     await obEval(
       vaultId,
-      `(async()=>{const el=app.workspace.getMostRecentLeaf().view.contentEl;el.querySelector('[data-query-results]').click();await new Promise(r=>setTimeout(r,100));const input=activeDocument.querySelector('[data-query-results-popup] [data-query-limit]');input.value='2';input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+      `(async()=>{${PAGE}const el=app.workspace.getMostRecentLeaf().view.contentEl;press(el.querySelector('[data-query-results]'),'Results');const input=await until('limit field',()=>activeDocument.querySelector('[data-query-results-popup]:popover-open [data-query-limit]'));input.value='2';input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
     );
     const limited = await tabWhen(
       (tab) => tab.text.includes("limit: 2\n") && tab.cards === 2,
@@ -2652,7 +2667,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const exported = JSON.parse(
       await obEval(
         vaultId,
-        `(async()=>{const create=URL.createObjectURL;const click=HTMLAnchorElement.prototype.click;let blob=null,name=null;URL.createObjectURL=b=>{blob=b;return create.call(URL,b);};HTMLAnchorElement.prototype.click=function(){name=this.download;};try{activeDocument.querySelector('[data-query-results-popup] [data-query-export]').click();}finally{URL.createObjectURL=create;HTMLAnchorElement.prototype.click=click;}return JSON.stringify({name,type:blob?.type??null,text:blob?await blob.text():null});})()`,
+        `(async()=>{${PAGE}const create=URL.createObjectURL;const click=HTMLAnchorElement.prototype.click;let blob=null,name=null;URL.createObjectURL=b=>{blob=b;return create.call(URL,b);};HTMLAnchorElement.prototype.click=function(){name=this.download;};try{press(activeDocument.querySelector('[data-query-results-popup] [data-query-export]'),'Export CSV');}finally{URL.createObjectURL=create;HTMLAnchorElement.prototype.click=click;}return JSON.stringify({name,type:blob?.type??null,text:blob?await blob.text():null});})()`,
       ),
     ) as { name: string | null; type: string | null; text: string | null };
     const rows = await queryRows("pageLabel,colorName", "2");
@@ -2691,7 +2706,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEvalUntil(
         vaultId,
-        `(()=>{const popup=${toolbarPopup(popup)};if(popup?.querySelector(${JSON.stringify(ready)}))return 'true';if(!popup)${tab}?.contentEl?.querySelector(${JSON.stringify(button)})?.click();return 'false';})()`,
+        `(()=>{${PAGE}const popup=${toolbarPopup(popup)};if(popup?.querySelector(${JSON.stringify(ready)}))return 'true';if(!popup)press(${tab}?.contentEl?.querySelector(${JSON.stringify(button)}),${JSON.stringify(button)});return 'false';})()`,
         { expected: "true" },
       ),
     ).toBe(true);
@@ -2732,6 +2747,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
+      // Teardown closes a dialog a failed step left open; not a reader's press.
       await obEval(
         vaultId,
         `(async()=>{for(const modal of activeDocument.querySelectorAll('.modal.zt-query-formula-modal'))modal.querySelector('.modal-close-button')?.click();await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));for(const path of ${JSON.stringify([path, notePath])}){const file=app.vault.getFileByPath(path);if(file)await app.vault.delete(file);}return true;})()`,
@@ -2797,7 +2813,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await openProperties(tab);
     await obEval(
       vaultId,
-      `(()=>{[...${propertiesPopup}.querySelectorAll('[role="option"]')].find(n=>n.textContent===${JSON.stringify(m.query_view_formula_add())}).click();return true;})()`,
+      `(()=>{${PAGE}press([...${propertiesPopup}.querySelectorAll('[role="option"]')].find(n=>n.textContent===${JSON.stringify(m.query_view_formula_add())}),'Add formula');return true;})()`,
     );
     /**
      * Types into the dialog, and reads what it says about the text. The
@@ -2822,7 +2838,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const saveFormula = () =>
       obEval(
         vaultId,
-        `(()=>{${formulaModal}.querySelector('[data-query-formula-save]').click();return true;})()`,
+        `(()=>{${PAGE}press(${formulaModal}.querySelector('[data-query-formula-save]'),'Save');return true;})()`,
       );
     expect(
       await obEvalUntil(vaultId, `String(!!${formulaModal})`, {
@@ -2933,7 +2949,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await editFormula();
     await obEval(
       vaultId,
-      `(()=>{${formulaModal}.querySelector('[data-query-formula-remove]').click();return true;})()`,
+      `(()=>{${PAGE}press(${formulaModal}.querySelector('[data-query-formula-remove]'),'Remove');return true;})()`,
     );
     const removed = await tabWhen(
       (tab) =>
@@ -3281,13 +3297,13 @@ views:
     // fail when it does not come.
     const copied = await obEval(
       vaultId,
-      `(async()=>{let copied=null;navigator.clipboard.write=async items=>{copied=await (await items[0].getType('text/plain')).text();};try{${resultsPopup}.querySelector('[data-query-copy]').click();for(let i=0;i<50&&copied===null;i++)await new Promise(r=>setTimeout(r,100));}finally{delete navigator.clipboard.write;}if(copied===null)throw new Error('"Copy to clipboard" wrote nothing');return copied;})()`,
+      `(async()=>{${PAGE}let copied=null;navigator.clipboard.write=async items=>{copied=await (await items[0].getType('text/plain')).text();};try{press(${resultsPopup}.querySelector('[data-query-copy]'),'Copy to clipboard');await until('clipboard write',()=>copied!==null,5000).catch(()=>{});}finally{delete navigator.clipboard.write;}if(copied===null)throw new Error('"Copy to clipboard" wrote nothing');return copied;})()`,
     );
     await openResults(resultsTab);
     const exportedCsv = JSON.parse(
       await obEval(
         vaultId,
-        `(async()=>{const create=URL.createObjectURL;const click=HTMLAnchorElement.prototype.click;let blob=null,name=null;URL.createObjectURL=b=>{blob=b;return create.call(URL,b);};HTMLAnchorElement.prototype.click=function(){name=this.download;};try{${resultsPopup}.querySelector('[data-query-export]').click();}finally{URL.createObjectURL=create;HTMLAnchorElement.prototype.click=click;}return JSON.stringify({name,type:blob?.type??null,text:blob?await blob.text():null});})()`,
+        `(async()=>{${PAGE}const create=URL.createObjectURL;const click=HTMLAnchorElement.prototype.click;let blob=null,name=null;URL.createObjectURL=b=>{blob=b;return create.call(URL,b);};HTMLAnchorElement.prototype.click=function(){name=this.download;};try{press(${resultsPopup}.querySelector('[data-query-export]'),'Export CSV');}finally{URL.createObjectURL=create;HTMLAnchorElement.prototype.click=click;}return JSON.stringify({name,type:blob?.type??null,text:blob?await blob.text():null});})()`,
       ),
     ) as { name: string | null; type: string | null; text: string | null };
     const written = { copied, ...exportedCsv } as {
@@ -3313,6 +3329,7 @@ views:
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
+      // Teardown closes a dialog a failed step left open; not a reader's press.
       await obEval(
         vaultId,
         `(async()=>{for(const modal of activeDocument.querySelectorAll('.modal.zt-query-formula-modal,.modal.zt-query-display-name-modal'))modal.querySelector('.modal-close-button')?.click();await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));const file=app.vault.getFileByPath(${JSON.stringify(path)});if(file)await app.vault.delete(file);return true;})()`,
@@ -3374,7 +3391,7 @@ views:
     );
     await obEval(
       vaultId,
-      `(()=>{${renameModal}.querySelector('[data-query-display-name-save]').click();return true;})()`,
+      `(()=>{${PAGE}press(${renameModal}.querySelector('[data-query-display-name-save]'),'Save');return true;})()`,
     );
     const field = await tabWhen((tab) => tab.text.includes("displayName"));
     expect(field.text).toBe(
@@ -3406,7 +3423,7 @@ views:
     );
     await obEval(
       vaultId,
-      `(()=>{${formulaModal}.querySelector('[data-query-formula-save]').click();return true;})()`,
+      `(()=>{${PAGE}press(${formulaModal}.querySelector('[data-query-formula-save]'),'Save');return true;})()`,
     );
     const named = await tabWhen((tab) => tab.text.includes("Year of source"));
     expect(named.text).toBe(
@@ -3458,7 +3475,7 @@ views:
     const exported = JSON.parse(
       await obEval(
         vaultId,
-        `(async()=>{const create=URL.createObjectURL;const click=HTMLAnchorElement.prototype.click;let blob=null;URL.createObjectURL=b=>{blob=b;return create.call(URL,b);};HTMLAnchorElement.prototype.click=function(){};try{${toolbarPopup("[data-query-results-popup]")}.querySelector('[data-query-export]').click();}finally{URL.createObjectURL=create;HTMLAnchorElement.prototype.click=click;}return JSON.stringify({text:blob?await blob.text():null});})()`,
+        `(async()=>{${PAGE}const create=URL.createObjectURL;const click=HTMLAnchorElement.prototype.click;let blob=null;URL.createObjectURL=b=>{blob=b;return create.call(URL,b);};HTMLAnchorElement.prototype.click=function(){};try{press(${toolbarPopup("[data-query-results-popup]")}.querySelector('[data-query-export]'),'Export CSV');}finally{URL.createObjectURL=create;HTMLAnchorElement.prototype.click=click;}return JSON.stringify({text:blob?await blob.text():null});})()`,
       ),
     ) as { text: string | null };
     expect(exported.text?.split("\n")[0]).toBe("Work,Year of source");
@@ -3467,7 +3484,7 @@ views:
     await editYear();
     await obEval(
       vaultId,
-      `(()=>{${formulaModal}.querySelector('[data-query-formula-remove]').click();return true;})()`,
+      `(()=>{${PAGE}press(${formulaModal}.querySelector('[data-query-formula-remove]'),'Remove');return true;})()`,
     );
     const removed = await tabWhen((tab) => !tab.text.includes("formula"));
     expect(removed.text).toBe(
@@ -3491,6 +3508,7 @@ views:
     // The tab closes before the text goes back, so no pending save of the
     // tab writes over it.
     cleanup.defer(async () => {
+      // Teardown closes a dialog a failed step left open; not a reader's press.
       await obEval(
         vaultId,
         `(async()=>{for(const modal of activeDocument.querySelectorAll('.modal.zt-configure-view'))(modal.querySelector('.modal-close-button')??modal.querySelector('.modal-header-button:has(.lucide-x)'))?.click();for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))leaf.detach();await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(path)}),${JSON.stringify(original)});for(const path of ${JSON.stringify(created)}){const file=app.vault.getFileByPath(path);if(file)await app.vault.delete(file);}await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
@@ -3588,7 +3606,7 @@ views:
     ).toBe(true);
     await obEval(
       vaultId,
-      `(()=>{const modal=${configureModal};(modal.querySelector('.modal-close-button')??modal.querySelector('.modal-header-button:has(.lucide-x)')).click();return true;})()`,
+      `(()=>{${PAGE}const modal=${configureModal};press(modal.querySelector('.modal-close-button')??modal.querySelector('.modal-header-button:has(.lucide-x)'),'Close');return true;})()`,
     );
     // The view saves as a Table of Items, and keeps its grouping.
     expect(
@@ -3631,7 +3649,7 @@ views:
     const click = (selector: string) =>
       obEval(
         vaultId,
-        `(()=>{${tab}.contentEl.querySelector(${JSON.stringify(selector)}).click();return true;})()`,
+        `(()=>{${PAGE}press(${tab}.contentEl.querySelector(${JSON.stringify(selector)}),${JSON.stringify(selector)});return true;})()`,
       );
     await click(`[data-query-expand="item:${item}"]`);
     await tableWhen((table) => table.attachments.length === attachments.length);
@@ -4027,14 +4045,12 @@ views:
     const copy = (refuse: boolean) =>
       obEval(
         vaultId,
-        `(async()=>{
+        `(async()=>{${PAGE}
           await using cleanup=new AsyncDisposableStack();
           const leaf=cleanup.adopt(app.workspace.getRightLeaf(true),leaf=>leaf.detach());
           await leaf.setViewState({type:'zotero-annotation-view',state:{followMode:'pinned',pinnedItemKey:${JSON.stringify(annotationItem.key)}}});
           const view=leaf.view;await view.read;
-          let button=null;
-          for(let i=0;i<100&&!button;i++){button=view.contentEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(copiedAnnotation.key)}] [aria-label=${JSON.stringify(m.annot_view_more_tooltip())}]');if(!button)await new Promise(r=>setTimeout(r,50));}
-          if(!button)throw new Error('Annotation card menu missing');
+          const button=await until('Annotation card menu missing',()=>view.contentEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(copiedAnnotation.key)}] [aria-label=${JSON.stringify(m.annot_view_more_tooltip())}]'),5000);
           const clipboard=require('electron').clipboard;
           const saved={text:clipboard.readText(),html:clipboard.readHTML(),rtf:clipboard.readRTF(),image:clipboard.readImage()};
           const bookmark=clipboard.readBookmark();if(bookmark.title)saved.bookmark=bookmark.title;
@@ -4043,13 +4059,11 @@ views:
           cleanup.defer(()=>{navigator.clipboard.writeText=write;});
           clipboard.writeText('');
           if(${refuse})navigator.clipboard.writeText=()=>Promise.reject(new Error('Clipboard write refused'));
-          button.click();
-          let item=null;
-          for(let i=0;i<50&&!item;i++){item=Array.from(activeDocument.querySelectorAll('.menu .menu-item')).find(e=>e.textContent.trim()===${JSON.stringify(m.annot_view_menu_copy_citation())});if(!item)await new Promise(r=>setTimeout(r,50));}
-          if(!item)throw new Error('Copy citation missing from the card menu');
-          item.click();
+          press(button,'card More options');
+          const item=await until('Copy citation missing from the card menu',()=>Array.from(activeDocument.querySelectorAll('.menu .menu-item')).find(e=>e.textContent.trim()===${JSON.stringify(m.annot_view_menu_copy_citation())}),2500);
+          press(item,'Copy citation');
           let text='';
-          for(let i=0;i<50&&text!==${JSON.stringify(citation)};i++){text=clipboard.readText();if(text!==${JSON.stringify(citation)})await new Promise(r=>setTimeout(r,100));}
+          await until('citation on the clipboard',()=>(text=clipboard.readText())===${JSON.stringify(citation)},5000).catch(()=>{});
           return text;
         })()`,
       );
@@ -4330,7 +4344,7 @@ views:
         ).toBe(true);
         await obEval(
           freshId,
-          `(function(){const view=${editor};view.contentEl.querySelector('button[aria-label=${JSON.stringify(m.workbench_help())}]').click();return true;})()`,
+          `(function(){${PAGE}const view=${editor};press(view.contentEl.querySelector('button[aria-label=${JSON.stringify(m.workbench_help())}]'),'Help');return true;})()`,
         );
         expect(
           await obEvalUntil(
@@ -4396,7 +4410,7 @@ views:
     );
     await obEval(
       freshId,
-      `(function(){const view=${editor};Array.from(view.contentEl.querySelectorAll('button')).find(button=>button.innerText.trim()===${JSON.stringify(m.template_workbench_update_this_note())}).click();return true;})()`,
+      `(function(){${PAGE}const view=${editor};press(Array.from(view.contentEl.querySelectorAll('button')).find(button=>button.innerText.trim()===${JSON.stringify(m.template_workbench_update_this_note())}),'Update this note');return true;})()`,
     );
     expect(
       await obEvalUntil(freshId, `String(!(${editor}).updatingNote)`, {
@@ -4960,7 +4974,7 @@ views:
     expect(confirmation).not.toContain(m.batch_profile_recovery_help());
     await obEval(
       vaultId,
-      "Array.from(activeDocument.querySelectorAll('.modal')).at(-1).querySelector('[data-profile-choice-scope=unresolved] [data-profile-choice]').click();true",
+      `(()=>{${PAGE}press(Array.from(activeDocument.querySelectorAll('.modal')).at(-1).querySelector('[data-profile-choice-scope=unresolved] [data-profile-choice]'),'unresolved Profile choice');return true;})()`,
     );
     const candidate = await selectSuggestion(
       vaultId,
@@ -5162,14 +5176,14 @@ views:
     expect(
       await obEvalUntil(
         vaultId,
-        `(function(){var settings=${settingsContent};var row=Array.from(settings.querySelectorAll('.setting-item')).find(row=>row.querySelector('.setting-item-name')?.textContent===${JSON.stringify(booksProfile.label)});var button=row&&(Array.from(row.querySelectorAll('button')).find(button=>button.getAttribute('aria-label')===${JSON.stringify(m.workbench_more_actions())})??row.querySelector('.extra-setting-button'));if(!button)return false;button.click();return true;})()`,
+        `(function(){${PAGE}var settings=${settingsContent};var row=Array.from(settings.querySelectorAll('.setting-item')).find(row=>row.querySelector('.setting-item-name')?.textContent===${JSON.stringify(booksProfile.label)});var button=row&&(Array.from(row.querySelectorAll('button')).find(button=>button.getAttribute('aria-label')===${JSON.stringify(m.workbench_more_actions())})??row.querySelector('.extra-setting-button'));if(!button)return false;press(button,'More actions');return true;})()`,
         { expected: "true" },
       ),
     ).toBe(true);
     expect(
       await obEvalUntil(
         vaultId,
-        `(function(){var doc=(${settingsContent}).ownerDocument;var title=Array.from(doc.querySelectorAll('.menu-item-title')).find(title=>title.textContent.trim()===${JSON.stringify(m.settings_profile_delete())});var item=title?.closest('.menu-item');if(!item)return false;item.click();return true;})()`,
+        `(function(){${PAGE}var doc=(${settingsContent}).ownerDocument;var title=Array.from(doc.querySelectorAll('.menu-item-title')).find(title=>title.textContent.trim()===${JSON.stringify(m.settings_profile_delete())});var item=title?.closest('.menu-item');if(!item)return false;press(item,'Delete');return true;})()`,
         { expected: "true" },
       ),
     ).toBe(true);
@@ -5190,7 +5204,7 @@ views:
     expect(
       await obEval(
         vaultId,
-        `(function(){var doc=(${settingsContent}).ownerDocument;var label=Array.from(doc.querySelectorAll('.modal label')).find(label=>label.textContent===${JSON.stringify(m.settings_profile_delete_move_files({ folder: "literatures/" }))});var checkbox=label?.querySelector('input[type=checkbox]');if(!checkbox||checkbox.checked)return false;checkbox.click();return checkbox.checked;})()`,
+        `(function(){${PAGE}var doc=(${settingsContent}).ownerDocument;var label=Array.from(doc.querySelectorAll('.modal label')).find(label=>label.textContent===${JSON.stringify(m.settings_profile_delete_move_files({ folder: "literatures/" }))});var checkbox=label?.querySelector('input[type=checkbox]');if(!checkbox||checkbox.checked)return false;press(label,'Move files');return checkbox.checked;})()`,
       ),
     ).toBe("true");
     const deletionDialog = await obEval(
@@ -5423,7 +5437,7 @@ views:
       expect(
         await obEvalUntil(
           vaultId,
-          `(function(){var radio=document.querySelector('input[name="zotlit-customize-destination"][value="native"]');if(!radio)return false;radio.click();var row=Array.from(document.querySelectorAll('.modal .setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(m.modal_workbench_launch_remember())});var toggle=row?.querySelector('.checkbox-container');if(!toggle)return false;toggle.click();return true;})()`,
+          `(function(){${PAGE}var radio=document.querySelector('input[name="zotlit-customize-destination"][value="native"]');if(!radio)return false;press(radio.closest('label')??radio,'Native destination');var row=Array.from(document.querySelectorAll('.modal .setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(m.modal_workbench_launch_remember())});var toggle=row?.querySelector('.checkbox-container');if(!toggle)return false;press(toggle,'Remember');return true;})()`,
           { expected: "true" },
         ),
       ).toBe(true);
@@ -5602,7 +5616,7 @@ views:
       expect(
         await obEvalUntil(
           vaultId,
-          `(function(){var row=Array.from(document.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(m.settings_local_server_workbench_connection_name())});if(!row||!row.textContent.includes(${JSON.stringify(new URL(origin).host)}))return false;var button=Array.from(row.querySelectorAll('button')).find(el=>el.textContent===${JSON.stringify(m.settings_local_server_workbench_disconnect())});if(!button)return false;button.click();return true;})()`,
+          `(function(){${PAGE}var row=Array.from(document.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(m.settings_local_server_workbench_connection_name())});if(!row||!row.textContent.includes(${JSON.stringify(new URL(origin).host)}))return false;var button=Array.from(row.querySelectorAll('button')).find(el=>el.textContent===${JSON.stringify(m.settings_local_server_workbench_disconnect())});if(!button)return false;press(button,'Disconnect');return true;})()`,
           { expected: "true" },
         ),
       ).toBe(true);
@@ -5687,14 +5701,18 @@ views:
     const popup =
       "app.workspace.getLeavesOfType('zotero-annotation-view')[0].view.contentEl.doc.querySelector('.menu')";
 
+    // An earlier case leaves the settings modal open over the workspace.
     await obEval(
       vaultId,
-      "(async function(){var type='zotero-annotation-view';var leaf=app.workspace.getLeavesOfType(type)[0];if(!leaf){leaf=app.workspace.getRightLeaf(false);await leaf.setViewState({type:type,active:true});}app.workspace.revealLeaf(leaf);return true;})()",
+      "(async function(){app.setting.close();var type='zotero-annotation-view';var leaf=app.workspace.getLeavesOfType(type)[0];if(!leaf){leaf=app.workspace.getRightLeaf(false);await leaf.setViewState({type:type,active:true});}app.workspace.revealLeaf(leaf);return true;})()",
     );
     expect(
       await obEvalUntil(vaultId, `String(!!${trigger})`, { expected: "true" }),
     ).toBe(true);
-    await obEval(vaultId, `(function(){${trigger}.click();return true;})()`);
+    await obEval(
+      vaultId,
+      `(function(){${PAGE}press(${trigger},'Annotation View header');return true;})()`,
+    );
     expect(
       await obEvalUntil(vaultId, `String(!!${popup})`, { expected: "true" }),
     ).toBe(true);
@@ -5733,7 +5751,10 @@ views:
     // A second press closes it. The press is itself what dismisses an open
     // menu, so a trigger that does not check for that reopens the menu it just
     // closed and the menu never appears to shut.
-    await obEval(vaultId, `(function(){${trigger}.click();return true;})()`);
+    await obEval(
+      vaultId,
+      `(function(){${PAGE}press(${trigger},'Annotation View header');return true;})()`,
+    );
     expect(
       await obEvalUntil(vaultId, `String(${popup}===null)`, {
         expected: "true",
@@ -7710,13 +7731,13 @@ views:
     expect(
       await obEval(
         vaultId,
-        `(async()=>{
+        `(async()=>{${PAGE}
           await using cleanup=new AsyncDisposableStack();
           const leaf=cleanup.adopt(app.workspace.getRightLeaf(true),leaf=>leaf.detach());
           await leaf.setViewState({type:'zotero-annotation-view',state:{followMode:'pinned',pinnedItemKey:${JSON.stringify(annotationItem.key)}}});
           const view=leaf.view;await view.read;
           const count=()=>view.contentEl.querySelectorAll('.zt-annot-card').length;
-          for(let i=0;i<100&&count()===0;i++)await new Promise(r=>setTimeout(r,50));
+          await until('sidebar cards',()=>count()>0,5000).catch(()=>{});
           const watch={before:count(),least:count()};
           watch.observer=new MutationObserver(()=>{watch.least=Math.min(watch.least,count());});
           cleanup.defer(()=>watch.observer.disconnect());
@@ -7801,7 +7822,8 @@ views:
     });
     await signalDatabaseUpdated(vaultId);
     // Until the build completes, the held index answers: a known Item stays
-    // found. The new Items show once it completes.
+    // found. The new Items show once it completes. The 10 ms pause is the
+    // sampling cadence of the measurement, not a wait for a state.
     const rebuild = JSON.parse(
       await obEval(
         vaultId,
@@ -8458,7 +8480,7 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
       expect(
         await obEvalUntil(
           vaultId,
-          `(function(){var settings=${settingsContent};var button=Array.from(settings.querySelectorAll('[aria-label],button')).find(el=>el.getAttribute('aria-label')===${JSON.stringify(m.settings_profile_add())}||el.textContent.trim()===${JSON.stringify(m.settings_profile_add())});if(!button||button.disabled)return false;button.click();return true;})()`,
+          `(function(){${PAGE}var settings=${settingsContent};var button=Array.from(settings.querySelectorAll('[aria-label],button')).find(el=>el.getAttribute('aria-label')===${JSON.stringify(m.settings_profile_add())}||el.textContent.trim()===${JSON.stringify(m.settings_profile_add())});if(!button||button.disabled)return false;press(button,'Add profile');return true;})()`,
           { expected: "true" },
         ),
       ).toBe(true);
@@ -8767,7 +8789,7 @@ function clickModalButton(
 ): Promise<boolean> {
   return obEvalUntil(
     vaultId,
-    `(function(){var doc=${documentExpression};var modal=Array.from(doc.querySelectorAll('.modal')).at(-1);var button=modal&&Array.from(modal.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(label)});if(!button||button.disabled)return false;button.click();return true;})()`,
+    `(function(){${PAGE}var doc=${documentExpression};var modal=Array.from(doc.querySelectorAll('.modal')).at(-1);var button=modal&&Array.from(modal.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(label)});if(!button||button.disabled)return false;press(button,${JSON.stringify(label)});return true;})()`,
     { expected: "true" },
   );
 }
