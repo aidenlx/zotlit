@@ -369,9 +369,14 @@ export function Chooser({ value, onValueChange, children }: ChooserProps) {
    * takes focus when the caller rendered one; the list box takes it otherwise,
    * which is why the list carries a programmatic tab index. The search part is
    * optional, so the highlight cannot depend on it to have an owner.
+   *
+   * Each open starts with an empty search: the root stays mounted while the
+   * popup is closed, so the last query would otherwise narrow the rows and
+   * the next typed text would add to it.
    */
   useLayoutEffect(() => {
     if (!open) return;
+    setQueryState("");
     setHighlight(-1);
     const field = popupRef.current?.querySelector<HTMLElement>("input");
     (field ?? listRef.current)?.focus();

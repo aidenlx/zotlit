@@ -3414,11 +3414,25 @@ views:
     const found = JSON.parse(
       await obEval(
         vaultId,
-        `(()=>{const popup=${propertiesPopup};const rows=[...popup.querySelectorAll('[data-query-property]')].map(n=>n.dataset.queryProperty);const input=popup.querySelector('input[role="combobox"]');input.value='';input.dispatchEvent(new InputEvent('input',{bubbles:true}));popup.hidePopover();return JSON.stringify(rows);})()`,
+        `(()=>{const popup=${propertiesPopup};const rows=[...popup.querySelectorAll('[data-query-property]')].map(n=>n.dataset.queryProperty);popup.hidePopover();return JSON.stringify(rows);})()`,
       ),
     ) as string[];
     expect(found).toContain("formula.year");
     expect(found).not.toContain("title");
+    // The popover opens again with an empty search and every property, so
+    // the next typed text replaces the last search instead of adding to it.
+    await openProperties(tab);
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `(()=>{const popup=${propertiesPopup};const rows=[...popup.querySelectorAll('[data-query-property]')].map(n=>n.dataset.queryProperty);return JSON.stringify({search:popup.querySelector('input[role="combobox"]').value,title:rows.includes('title'),year:rows.includes('formula.year')});})()`,
+        { expected: JSON.stringify({ search: "", title: true, year: true }) },
+      ),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      `(()=>{${propertiesPopup}.hidePopover();return true;})()`,
+    );
 
     // "Export CSV…" names the columns by their Display Names.
     await openResults(tab);
