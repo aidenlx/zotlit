@@ -768,11 +768,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(grouped.query).toContain("colorName");
 
     // "Filter…" opens the Match editor of the sidebar's one view, without the
-    // filter that names the followed Attachment.
-    await obEval(
-      vaultId,
-      `(function(){${sidebar}.containerEl.querySelector('.view-actions .view-action[aria-label="More options"]').click();return true;})()`,
-    );
+    // filter that names the followed Attachment. A side dock hides the view
+    // header, so the reader presses the header row's own "More options".
+    expect(
+      await obEval(
+        vaultId,
+        `(function(){const button=${sidebar}.contentEl.querySelector('[data-annot-view-more-options]');const r=button?.getBoundingClientRect();const visible=!!button&&button.checkVisibility()&&r.width>0&&r.height>0;if(visible)button.click();return String(visible);})()`,
+      ),
+    ).toBe("true");
     expect(
       await obEvalUntil(
         vaultId,
@@ -868,7 +871,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
 
     // More options → "Save as query file…", through Obsidian's own menu. A
-    // side dock hides the view header, so the reader presses the control
+    // side dock hides the view header, so the reader presses the header
     // row's own "More options".
     expect(
       JSON.parse(

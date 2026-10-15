@@ -1,7 +1,7 @@
 // The control row: colour and tag Choosers, the search toggle, and a trailing
 // group carrying the count, Clear and collapse. One row of icon buttons under
 // the header, its grouping carried by space rather than by a rule.
-import { useContext, useMemo } from "react";
+import { useMemo } from "react";
 import type { Ref } from "react";
 
 import { Chooser } from "@/components/chooser";
@@ -13,7 +13,6 @@ import * as m from "@/lib/i18n/generated/messages";
 import { runtime } from "@/lib/i18n/generated/runtime";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
-import { AnnotActionsContext } from "./actions";
 import {
   cappedSelection,
   deriveSwatchColors,
@@ -56,8 +55,6 @@ export function FilterBar({
   const annotations = useAnnotStore((s) => s.annotations);
   const selectedColors = useAnnotStore((s) => s.selectedColors);
   const searchOpen = useAnnotStore((s) => s.searchOpen);
-  const inSideDock = useAnnotStore((s) => s.inSideDock);
-  const actions = useContext(AnnotActionsContext);
   const clearFilters = useClearFilters();
   const toggleSearchOpen = useToggleSearchOpen();
   const toggleColor = useToggleSelectedColor();
@@ -136,17 +133,6 @@ export function FilterBar({
               : m.annot_view_collapse_tooltip(),
           )}
         />
-        {/* A side dock hides the view header and its "More options"; the
-            row carries the same menu there. */}
-        {inSideDock && (
-          <IconButton
-            icon="more-vertical"
-            aria-haspopup="menu"
-            data-annot-view-more-options=""
-            onClick={(evt) => actions.onViewMenu(evt)}
-            {...tooltipAttrs(m.annot_view_more_tooltip())}
-          />
-        )}
       </div>
     </div>
   );

@@ -150,11 +150,6 @@ export interface AnnotState {
   liveUpdatesOn: boolean;
   /** Whether the Zotero Reader closed, its last Attachment still on screen. */
   zoteroReaderClosed: boolean;
-  /**
-   * Whether the view stands in a side dock, where Obsidian hides the view
-   * header and its "More options" with it.
-   */
-  inSideDock: boolean;
   /** Search row visible. */
   searchOpen: boolean;
   /** Case-insensitive substring query typed into the search row. */
@@ -239,7 +234,6 @@ export function createAnnotStore() {
         pinnable: null,
         liveUpdatesOn: false,
         zoteroReaderClosed: false,
-        inSideDock: false,
         ...INITIAL_FILTER_STATE,
         groups: null,
         collapsedGroups: new Set(),

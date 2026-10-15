@@ -335,7 +335,14 @@ export class AnnotationView extends ItemView implements HistorySurface {
   /** "Refresh data" and the mode switches live here, off the toolbar row. */
   override onPaneMenu(menu: ObsidianMenu, source: string): void {
     super.onPaneMenu(menu, source);
-    if (source !== "more-options" && source !== "tab-header") return;
+    // Obsidian 1.14.4 names a sidebar tab's context menu
+    // "sidebar-context-menu" and a main-area tab's "tab-header".
+    if (
+      source !== "more-options" &&
+      source !== "sidebar-context-menu" &&
+      source !== "tab-header"
+    )
+      return;
     const actions = this.#layout.actions;
     if (!actions) return;
     const { file, view } = this.#query.state.getState();
@@ -372,22 +379,13 @@ export class AnnotationView extends ItemView implements HistorySurface {
   }
 
   /**
-   * The view header's "More options" menu, for the control row's own button:
+   * The view header's "More options" menu, for the header row's own button:
    * the same sections, the same entries, and the same `leaf-menu` event.
    */
   #fillViewMenu(menu: ObsidianMenu): void {
     menu.addSections(VIEW_MENU_SECTIONS);
     this.onPaneMenu(menu, "more-options");
     this.#deps.app.workspace.trigger("leaf-menu", menu, this.leaf);
-  }
-
-  /** Whether the leaf stands in a side dock, where its view header is hidden. */
-  #syncSideDock(): void {
-    const { leftSplit, rightSplit } = this.#deps.app.workspace;
-    const root = this.leaf.getRoot();
-    const inSideDock = root === leftSplit || root === rightSplit;
-    if (this.#store.getState().inSideDock !== inSideDock)
-      this.#store.setState({ inSideDock });
   }
 
   protected override async onOpen(): Promise<void> {
@@ -406,11 +404,6 @@ export class AnnotationView extends ItemView implements HistorySurface {
       zoteroReaderClosed: this.#deps.liveUpdate.readerClosed,
       capability: this.#deps.annotations.capability,
     });
-
-    this.#syncSideDock();
-    this.registerEvent(
-      this.#deps.app.workspace.on("layout-change", () => this.#syncSideDock()),
-    );
 
     this.#layout.render(this.contentEl, <AnnotView />);
 

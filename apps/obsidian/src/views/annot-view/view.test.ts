@@ -254,10 +254,7 @@ async function openSidebar(
     allowEditing: vi.fn(),
     reportBlockedGesture: vi.fn(),
   } as unknown as AnnotViewDeps;
-  const view = new OpenView(
-    { getRoot: () => app.workspace.rightSplit } as unknown as WorkspaceLeaf,
-    deps,
-  );
+  const view = new OpenView({} as WorkspaceLeaf, deps);
   document.body.append(view.contentEl);
   await act(() => view.open());
   await act(() =>

@@ -11,10 +11,11 @@ import {
 import type { CSSProperties, RefObject } from "react";
 
 import { Icon } from "@/components/obsidian/icon";
+import { IconButton } from "@/components/obsidian/icon-button";
 import { SearchInput } from "@/components/obsidian/search-input";
 import * as m from "@/lib/i18n/generated/messages";
 import { useUniqueId } from "@/lib/use-unique-id";
-import { cn } from "@/lib/utils";
+import { cn, tooltipAttrs } from "@/lib/utils";
 
 import { AnnotActionsContext } from "./actions";
 import { Annotation, FIELD_SHEET_SELECTOR } from "./Annotation";
@@ -221,13 +222,13 @@ function AnnotHeader() {
   const labelId = useUniqueId();
 
   return (
-    <div className="zt:px-2 zt:pt-2">
+    <div className="zt:flex zt:items-start zt:gap-1 zt:px-2 zt:pt-2">
       <button
         type="button"
         aria-haspopup="menu"
         aria-labelledby={labelId}
         onClick={(evt) => actions.onHeaderMenu(evt)}
-        className="zt-annot-header zt:inline-flex zt:max-w-full zt:items-center zt:gap-2 zt:rounded-sm zt:px-1.5 zt:py-1 zt:text-start zt:hover:bg-card zt:hover:ring-1 zt:hover:ring-border zt:focus-visible:bg-card zt:focus-visible:ring-2 zt:focus-visible:ring-border-focus"
+        className="zt-annot-header zt:inline-flex zt:max-w-full zt:min-w-0 zt:items-center zt:gap-2 zt:rounded-sm zt:px-1.5 zt:py-1 zt:text-start zt:hover:bg-card zt:hover:ring-1 zt:hover:ring-border zt:focus-visible:bg-card zt:focus-visible:ring-2 zt:focus-visible:ring-border-focus"
       >
         {/* The name the block promises assistive technology, held apart from
             the words on screen: an `aria-label` would reach the pointer too,
@@ -248,6 +249,19 @@ function AnnotHeader() {
             wide the pane grows, and no wrapped byline segment runs under it. */}
         <ChromeIcon name="chevron-down" />
       </button>
+      {/* A side dock hides the view header and its "More options", so the
+          header row carries the same menu there, in every state of the
+          view. Obsidian's own `.mod-sidedock` ancestor shows it; the wrapper
+          holds the display, since `.clickable-icon` sets its own. */}
+      <div className="zt:ms-auto zt:hidden zt:shrink-0 zt:in-[.mod-sidedock]:flex">
+        <IconButton
+          icon="more-vertical"
+          aria-haspopup="menu"
+          data-annot-view-more-options=""
+          onClick={(evt) => actions.onViewMenu(evt)}
+          {...tooltipAttrs(m.annot_view_more_tooltip())}
+        />
+      </div>
     </div>
   );
 }
