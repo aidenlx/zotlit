@@ -4,7 +4,7 @@
 //
 // The menu is a native popover rather than a Chooser: its limit field takes
 // the arrow keys and Enter, which a Chooser's key scope would hold.
-import { useId, useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { useStore } from "zustand";
 
@@ -14,6 +14,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { themeHook } from "@/lib/theme-hooks";
+import { useUniqueId } from "@/lib/use-unique-id";
 import { cn } from "@/lib/utils";
 
 import { toCSV, toHTML, toTSV } from "./table";
@@ -54,9 +55,11 @@ function CountText({ view }: { view: QueryView }) {
   const count = useStore(view.state, (s) => s.count);
   const matched = useStore(view.state, (s) => s.matched);
   const truncated = useStore(view.state, (s) => s.truncated);
+  // A failed run that keeps the last rows keeps their count too.
+  const kept = useStore(view.state, (s) => s.keptResults);
   if (phase === "loading")
     return <span data-query-count="">{m.query_view_loading()}</span>;
-  if (phase !== "ready") return null;
+  if (phase !== "ready" && !(phase === "failed" && kept)) return null;
   return (
     <span data-query-count={count} data-query-matched={matched}>
       {truncated
@@ -70,7 +73,7 @@ function LimitField({ view, close }: { view: QueryView; close: () => void }) {
   const limit = useStore(view.state, (s) => s.view?.limit);
   const [text, setText] = useState(limit === undefined ? "" : String(limit));
   const [invalid, setInvalid] = useState(false);
-  const id = useId();
+  const id = useUniqueId();
   // The form a Bases results menu opens with: the label over a field that
   // takes the menu's width. An invalid number turns the field's own border
   // and focus ring to the error colour, through the variables they read.
@@ -112,23 +115,13 @@ function LimitField({ view, close }: { view: QueryView; close: () => void }) {
   );
 }
 
-/**
- * Numbers each Results menu's popup. `useId` counts within one Preact root,
- * and every Query View is a root of its own, so two views in one window —
- * a note's embeds, its Reading view and its editor — would share an id, and
- * a button would open the other view's popup.
- */
-let resultsSequence = 0;
-
 export function ResultsMenu({ view }: { view: QueryView }) {
   const current = useStore(view.state, (s) => s.view);
   const phase = useStore(view.state, (s) => s.phase);
   const matched = useStore(view.state, (s) => s.matched);
   const [open, setOpen] = useState(false);
   const popup = useRef<HTMLDivElement>(null);
-  const [popupId] = useState(
-    () => `zt-query-results-${(resultsSequence += 1)}`,
-  );
+  const popupId = useUniqueId();
   const anchor = `--${popupId}`;
   const close = () => popup.current?.hidePopover();
   // The limit field takes focus once the open menu has drawn it.
