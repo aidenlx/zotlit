@@ -75,7 +75,7 @@ export function CardsLayout({ view }: { view: QueryView }) {
   const options = cardsLayoutOptions(useStore(view.state, (s) => s.view));
   return (
     <div
-      className="zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:pt-3 zt:pb-11"
+      className="zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:pt-3 zt:pb-11 zt:in-[.zt-query-note]:pb-3"
       data-query-layout="cards"
     >
       {groups.map((group, groupIndex) => (
@@ -126,7 +126,15 @@ export function CardsLayout({ view }: { view: QueryView }) {
                         <div className="zt:truncate zt:text-xs zt:text-muted-foreground">
                           {properties[at + 1]!.label}
                         </div>
-                        <div className={CARD_LINE}>
+                        {/* A value takes a Bases value's size, relative to
+                            the host's text, so it stays below the title in
+                            a note too. */}
+                        <div
+                          className={cn(
+                            "zt:text-(length:--bases-table-font-size)",
+                            CARD_LINE,
+                          )}
+                        >
                           <CellContent
                             value={row.values[properties[at + 1]!.path]}
                             text={text}

@@ -10,6 +10,7 @@ import { Component, Scope } from "obsidian";
 
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 
+import "./note-host.css";
 import { QueryView } from "./view";
 import type { QueryViewDeps, QueryViewHost } from "./view";
 
@@ -45,7 +46,8 @@ export class NoteQueryHost extends Component {
     this.#sourcePath = sourcePath;
     this.#scope = new Scope(deps.app.scope);
     this.#item = this.#readItem();
-    el.addClass("zt-root", "interactive-child");
+    // `zt-query-note`: the view stands in a note (see `note-host.css`).
+    el.addClass("zt-root", "zt-query-note", "interactive-child");
     this.#query = new QueryView(deps, {
       ...storage,
       scope: this.#scope,

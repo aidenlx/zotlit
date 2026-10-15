@@ -129,7 +129,7 @@ export function ListLayout({ view }: { view: QueryView }) {
   const List = options.markers === "number" ? "ol" : "ul";
   return (
     <div
-      className="zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:pt-2 zt:pb-11"
+      className="zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:pt-2 zt:pb-11 zt:in-[.zt-query-note]:pb-2"
       data-query-layout="list"
     >
       {groups.map((group, groupIndex) => (
@@ -138,7 +138,7 @@ export function ListLayout({ view }: { view: QueryView }) {
           {!group.collapsed && (
             <List
               className={cn(
-                "zt:my-0 zt:py-1 zt:marker:text-(--list-marker-color)",
+                "zt:my-0 zt:py-1 zt:text-(length:--bases-table-font-size) zt:marker:text-(--list-marker-color)",
                 options.markers === "bullet" &&
                   "zt:list-disc zt:pl-(--list-indent)",
                 options.markers === "number" &&
@@ -183,7 +183,7 @@ export function ListLayout({ view }: { view: QueryView }) {
                       filled.map((content, at) => (
                         <Fragment key={at}>
                           {at > 0 && (
-                            <span className="zt:text-(length:--bases-table-font-size) zt:text-muted-foreground">
+                            <span className="zt:text-muted-foreground">
                               {options.separator}
                             </span>
                           )}
