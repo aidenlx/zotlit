@@ -45,6 +45,7 @@ import {
   waitFor,
   WINDOW_DOCUMENTS,
 } from "./obsidian-cli.ts";
+import { PAGE } from "./page-gestures.ts";
 import type {} from "./paired-setup.ts";
 import {
   authorizationCount,
@@ -1213,7 +1214,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         // is the flicker this guards.
         const shown = await obJson<string[]>(
           vaultId!,
-          `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const key=${JSON.stringify(createdKey)};const card=()=>app.workspace.getLeavesOfType('zotero-annotation-view').map((leaf)=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key='+JSON.stringify(key)+']')).find(Boolean);const row=()=>card()?.querySelector('.zt-annot-tag-input')?'editor':'chips:'+[...(card()?.querySelectorAll('[aria-pressed]')??[])].map((chip)=>chip.textContent).join('|');const shown=[row()];const record=()=>{const state=row();if(state!==shown.at(-1))shown.push(state);};const observer=new MutationObserver(record);observer.observe(document.body,{subtree:true,childList:true,characterData:true});card().querySelector(${JSON.stringify(toggle)}).click();const sleep=(ms)=>new Promise((resolve)=>setTimeout(resolve,ms));for(let waited=0;waited<10000&&!(repository.mutationFor(key).kind==='idle'&&!repository.tagDraftFor(key));waited+=50)await sleep(50);await sleep(300);observer.disconnect();record();return JSON.stringify(shown);})()`,
+          `(async()=>{${PAGE}const repository=app.plugins.plugins.zotlit.services.annotationRepository;const key=${JSON.stringify(createdKey)};const card=()=>app.workspace.getLeavesOfType('zotero-annotation-view').map((leaf)=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key='+JSON.stringify(key)+']')).find(Boolean);const row=()=>card()?.querySelector('.zt-annot-tag-input')?'editor':'chips:'+[...(card()?.querySelectorAll('[aria-pressed]')??[])].map((chip)=>chip.textContent).join('|');const shown=[row()];const record=()=>{const state=row();if(state!==shown.at(-1))shown.push(state);};const observer=new MutationObserver(record);observer.observe(document.body,{subtree:true,childList:true,characterData:true});press(card().querySelector(${JSON.stringify(toggle)}),'tag toggle');await until('tag save settles',()=>repository.mutationFor(key).kind==='idle'&&!repository.tagDraftFor(key),10000).catch(()=>{});/* 300 ms after the save is the window a late flicker would show in. */await new Promise((resolve)=>setTimeout(resolve,300));observer.disconnect();record();return JSON.stringify(shown);})()`,
         );
         expect(shown).toEqual(["editor", `chips:${added}`]);
         expect(await annotationTags(api, serverID, createdKey)).toEqual([
@@ -1233,7 +1234,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         const pressVerb = () =>
           obEvalUntil(
             vaultId!,
-            `(function(){const verb=${popup}?.querySelector('[data-zt-verb=tags]');if(!verb)return 'absent';verb.click();return 'pressed';})()`,
+            `(function(){${PAGE}const verb=${popup}?.querySelector('[data-zt-verb=tags]');if(!verb)return 'absent';press(verb,'Tags');return 'pressed';})()`,
             { expected: "pressed" },
           );
         /** The read-only chips under the comment, by name, while no editor is open. */
@@ -1270,7 +1271,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         expect(
           await obEvalUntil(
             vaultId!,
-            `(function(){if(!${popup})return 'no popup';if((${mark})?.classList.contains('is-selected'))return 'selected';${popup}.querySelector('[data-zt-verb=stack]')?.click();return 'stepped';})()`,
+            `(function(){${PAGE}if(!${popup})return 'no popup';if((${mark})?.classList.contains('is-selected'))return 'selected';press(${popup}.querySelector('[data-zt-verb=stack]'),'Stack');return 'stepped';})()`,
             { expected: "selected" },
           ),
         ).toBe(true);
@@ -1687,7 +1688,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           const inkMenu = (pick?: number) =>
             obEval(
               vaultId!,
-              `(function(){${pdfView}.containerEl.querySelector('[data-zt-tool="ink-color"]').click();const items=[...document.querySelectorAll('.menu .menu-item')];const label=items.findIndex((item)=>item.classList.contains('is-label'));const word=(item)=>item.textContent.trim().split(/\\s/)[0];const checked=items.slice(label+1).find((item)=>item.querySelector('.mod-checked'));${pick === undefined ? "window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));" : `items.slice(label+1).find((item)=>word(item)===${JSON.stringify(String(pick))}).click();`}return checked?word(checked):'none';})()`,
+              `(function(){${PAGE}press(${pdfView}.containerEl.querySelector('[data-zt-tool="ink-color"]'),'Ink color');const items=[...document.querySelectorAll('.menu .menu-item')];const label=items.findIndex((item)=>item.classList.contains('is-label'));const word=(item)=>item.textContent.trim().split(/\\s/)[0];const checked=items.slice(label+1).find((item)=>item.querySelector('.mod-checked'));${pick === undefined ? "window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));" : `press(items.slice(label+1).find((item)=>word(item)===${JSON.stringify(String(pick))}),${JSON.stringify(`colour ${pick}`)});`}return checked?word(checked):'none';})()`,
             );
           await using restore = new AsyncDisposableStack();
           const [nativeMenus, width] = (
@@ -1772,7 +1773,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(await obEval(vaultId!, readerCursor)).not.toBe("crosshair");
           await obEval(
             vaultId!,
-            `(function(){${tool}.click();return true;})()`,
+            `(function(){${PAGE}press(${tool},'tool');return true;})()`,
           );
           expect(
             await obEval(vaultId!, `${tool}.getAttribute('aria-pressed')`),
@@ -1792,7 +1793,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           const arm = (id: string) =>
             obEval(
               vaultId!,
-              `(function(){const tool=${toolOf(id)};tool.click();return tool.getAttribute('aria-pressed');})()`,
+              `(function(){${PAGE}const tool=${toolOf(id)};press(tool,${JSON.stringify(id)});return tool.getAttribute('aria-pressed');})()`,
             );
 
           expect(await obEval(vaultId!, cursors)).toBe("crosshair,crosshair");
@@ -2334,7 +2335,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           await typeText("Tool changed");
           await obEval(
             vaultId!,
-            `(function(){${toolButtonOf(pdfView, "note")}.click();return true;})()`,
+            `(function(){${PAGE}press(${toolButtonOf(pdfView, "note")},'Note tool');return true;})()`,
           );
 
           expect(await freshComment(before)).toMatchObject({
@@ -2453,7 +2454,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           const textMenu = (pick?: number) =>
             obEval(
               vaultId!,
-              `(function(){${pdfView}.containerEl.querySelector('[data-zt-tool="text-color"]').click();const items=[...document.querySelectorAll('.menu .menu-item')];const label=items.findIndex((item)=>item.classList.contains('is-label'));const word=(item)=>item.textContent.trim().split(/\\s/)[0];const checked=items.slice(label+1).find((item)=>item.querySelector('.mod-checked'));${pick === undefined ? "" : `items.slice(label+1).find((item)=>word(item)===${JSON.stringify(String(pick))}).click();`}return checked?word(checked):'none';})()`,
+              `(function(){${PAGE}press(${pdfView}.containerEl.querySelector('[data-zt-tool="text-color"]'),'Text color');const items=[...document.querySelectorAll('.menu .menu-item')];const label=items.findIndex((item)=>item.classList.contains('is-label'));const word=(item)=>item.textContent.trim().split(/\\s/)[0];const checked=items.slice(label+1).find((item)=>item.querySelector('.mod-checked'));${pick === undefined ? "" : `press(items.slice(label+1).find((item)=>word(item)===${JSON.stringify(String(pick))}),${JSON.stringify(`colour ${pick}`)});`}return checked?word(checked):'none';})()`,
             );
           /**
            * Closes the menu with Escape, outside the reader so the reader's
@@ -2537,7 +2538,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(
             await obEval(
               vaultId!,
-              `(function(){${pdfView}.containerEl.querySelector('[data-zt-tool="text-color"]').click();const item=[...document.querySelectorAll('.menu .menu-item')].find((one)=>one.querySelector('[style*=${JSON.stringify(green)}]'));item.click();return String(!!item);})()`,
+              `(function(){${PAGE}press(${pdfView}.containerEl.querySelector('[data-zt-tool="text-color"]'),'Text color');const item=[...document.querySelectorAll('.menu .menu-item')].find((one)=>one.querySelector('[style*=${JSON.stringify(green)}]'));press(item,'Green');return String(!!item);})()`,
             ),
           ).toBe("true");
           expect(
@@ -2838,7 +2839,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // click over selected text only reads.
           await obEval(
             vaultId!,
-            `(getSelection().removeAllRanges(),document.querySelector('.zt-pdf-mark-popup .zt-annot-comment-field').click(),true)`,
+            `(()=>{${PAGE}getSelection().removeAllRanges();press(document.querySelector('.zt-pdf-mark-popup .zt-annot-comment-field'),'comment field');return true;})()`,
           );
           expect(
             await obEvalUntil(vaultId!, `String(!!${POPUP_EDITOR})`, {
@@ -3219,7 +3220,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(
             rectIs((await image.stored()).data.annotationPosition, fresh),
           ).toBe(true);
-          const applyAgain = `(function(){const button=[...(${card})?.querySelectorAll('.zt-annot-conflict button')??[]].find((node)=>node.getBoundingClientRect().width>0&&node.textContent==='Apply again');if(!button)return 'no button';button.click();return 'applied';})()`;
+          const applyAgain = `(function(){${PAGE}const button=[...(${card})?.querySelectorAll('.zt-annot-conflict button')??[]].find((node)=>node.getBoundingClientRect().width>0&&node.textContent==='Apply again');if(!button)return 'no button';press(button,'Apply again');return 'applied';})()`;
 
           // Zotero's open Reader saves the image it renders after a position
           // change; a retry sent before that save meets a newer version once
@@ -3278,7 +3279,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         ).toBe(true);
         await obEval(
           vaultId!,
-          `(document.querySelector('.zt-pdf-mark-popup [data-zt-verb="comment"]').click(),true)`,
+          `(()=>{${PAGE}press(document.querySelector('.zt-pdf-mark-popup [data-zt-verb="comment"]'),'Comment');return true;})()`,
         );
         expect(
           await obEvalUntil(vaultId!, `String(!!${POPUP_EDITOR})`, {
@@ -4421,7 +4422,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         async function openCommentEditor(): Promise<void> {
           await obEval(
             vaultId!,
-            `(getSelection().removeAllRanges(),document.querySelector('.zt-pdf-mark-popup .zt-annot-comment-field').click(),true)`,
+            `(()=>{${PAGE}getSelection().removeAllRanges();press(document.querySelector('.zt-pdf-mark-popup .zt-annot-comment-field'),'comment field');return true;})()`,
           );
           expect(
             await obEvalUntil(vaultId!, `String(!!${POPUP_EDITOR})`, {
@@ -4538,7 +4539,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // closed editor and the new text is the flicker this guards.
           const shown = await obJson<{ popup: string[]; card: string[] }>(
             vaultId!,
-            `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const key=${JSON.stringify(historyKey)};const slot=(root)=>{if(root?.querySelector('.cm-content'))return 'editor';const view=root?.querySelector('.zt-annot-comment');return view?'view:'+view.textContent:'none';};const roots={popup:()=>document.querySelector('.zt-pdf-mark-popup'),card:()=>app.workspace.getLeavesOfType('zotero-annotation-view').map((leaf)=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key='+JSON.stringify(key)+']')).find(Boolean)};const shown={popup:[slot(roots.popup())],card:[slot(roots.card())]};const record=()=>{for(const name of ['popup','card']){const state=slot(roots[name]());if(state!==shown[name].at(-1))shown[name].push(state);}};const observer=new MutationObserver(record);observer.observe(document.body,{subtree:true,childList:true,characterData:true});${POPUP_EDITOR}.dispatchEvent(new FocusEvent('blur',{relatedTarget:null}));const sleep=(ms)=>new Promise((resolve)=>setTimeout(resolve,ms));for(let waited=0;waited<10000&&!(repository.mutationFor(key).kind==='idle'&&!repository.textDraftFor('comment',key));waited+=50)await sleep(50);await sleep(300);observer.disconnect();record();return JSON.stringify(shown);})()`,
+            `(async()=>{${PAGE}const repository=app.plugins.plugins.zotlit.services.annotationRepository;const key=${JSON.stringify(historyKey)};const slot=(root)=>{if(root?.querySelector('.cm-content'))return 'editor';const view=root?.querySelector('.zt-annot-comment');return view?'view:'+view.textContent:'none';};const roots={popup:()=>document.querySelector('.zt-pdf-mark-popup'),card:()=>app.workspace.getLeavesOfType('zotero-annotation-view').map((leaf)=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key='+JSON.stringify(key)+']')).find(Boolean)};const shown={popup:[slot(roots.popup())],card:[slot(roots.card())]};const record=()=>{for(const name of ['popup','card']){const state=slot(roots[name]());if(state!==shown[name].at(-1))shown[name].push(state);}};const observer=new MutationObserver(record);observer.observe(document.body,{subtree:true,childList:true,characterData:true});${POPUP_EDITOR}.dispatchEvent(new FocusEvent('blur',{relatedTarget:null}));await until('comment save settles',()=>repository.mutationFor(key).kind==='idle'&&!repository.textDraftFor('comment',key),10000).catch(()=>{});/* 300 ms after the save is the window a late flicker would show in. */await new Promise((resolve)=>setTimeout(resolve,300));observer.disconnect();record();return JSON.stringify(shown);})()`,
           );
           expect(shown.popup).toEqual(["editor", `view:${after}`]);
           // The card may show the stored comment up to the blur; from there it
@@ -4555,7 +4556,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(
             await obEval(
               vaultId!,
-              `(async()=>{getSelection().removeAllRanges();document.querySelector('.zt-pdf-mark-popup .zt-annot-comment-field').click();await new Promise((resolve)=>requestAnimationFrame(resolve));return String(!!${POPUP_EDITOR});})()`,
+              `(async()=>{${PAGE}getSelection().removeAllRanges();press(document.querySelector('.zt-pdf-mark-popup .zt-annot-comment-field'),'comment field');await new Promise((resolve)=>requestAnimationFrame(resolve));return String(!!${POPUP_EDITOR});})()`,
             ),
           ).toBe("true");
           await closeCommentEditor();
@@ -4574,7 +4575,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             expect(
               await obEvalUntil(
                 vaultId!,
-                `(function(){const card=${card};if(!card)return 'no card';card.click();return String(card.hasAttribute('data-alone'));})()`,
+                `(function(){${PAGE}const card=${card};if(!card)return 'no card';press(card,'card');return String(card.hasAttribute('data-alone'));})()`,
                 { expected: "true" },
               ),
             ).toBe(true);
@@ -4984,7 +4985,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(
             await obEvalUntil(
               vaultId!,
-              `(function(){const card=${cardOf(key)};if(!card)return 'no card';card.click();return 'clicked';})()`,
+              `(function(){${PAGE}const card=${cardOf(key)};if(!card)return 'no card';press(card,'card');return 'clicked';})()`,
               { expected: "clicked" },
             ),
           ).toBe(true);
@@ -5274,7 +5275,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(
             await obEvalUntil(
               vaultId!,
-              `(function(){if(${editor})return 'open';getSelection().removeAllRanges();${cardOf(cardKey)}?.querySelector('.zt-annot-comment-field')?.click();return String(!!${editor}&&'open');})()`,
+              `(function(){${PAGE}if(${editor})return 'open';getSelection().removeAllRanges();press(${cardOf(cardKey)}?.querySelector('.zt-annot-comment-field'),'comment field');return String(!!${editor}&&'open');})()`,
               { expected: "open" },
             ),
           ).toBe(true);
@@ -5335,7 +5336,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             expect(
               await obEvalUntil(
                 vaultId!,
-                `(function(){const item=document.querySelector('.menu .menu-item');if(!item)return 'no menu';if(item.textContent.trim()!==${JSON.stringify(m.annot_view_menu_edit_text())}||item.classList.contains('is-disabled'))return 'not offered';item.click();return 'chosen';})()`,
+                `(function(){${PAGE}const item=document.querySelector('.menu .menu-item');if(!item)return 'no menu';if(item.textContent.trim()!==${JSON.stringify(m.annot_view_menu_edit_text())}||item.classList.contains('is-disabled'))return 'not offered';press(item,'Edit text');return 'chosen';})()`,
                 { expected: "chosen" },
               ),
             ).toBe(true);
@@ -5699,11 +5700,11 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // The search field holds the focus, and ↓ is the field's. Its own
           // keyup says the keydown before it has run its course.
           const search = `${annotView}.containerEl.querySelector('input[placeholder^="Search annotations"]')`;
-          const toggleSearch = `${annotView}.containerEl.querySelector('[aria-label="Search annotations"]').click()`;
+          const toggleSearch = `press(${annotView}.containerEl.querySelector('[aria-label="Search annotations"]'),'Search annotations')`;
           expect(
             await obEvalUntil(
               vaultId!,
-              `(function(){if(!${search})${toggleSearch};const input=${search};if(!input)return 'closed';input.focus();return String(document.activeElement===input&&'focused');})()`,
+              `(function(){${PAGE}if(!${search})${toggleSearch};const input=${search};if(!input)return 'closed';input.focus();return String(document.activeElement===input&&'focused');})()`,
               { expected: "focused" },
             ),
           ).toBe(true);
@@ -5730,7 +5731,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           } finally {
             await obEval(
               vaultId!,
-              `(function(){if(${search})${toggleSearch};return true;})()`,
+              `(function(){${PAGE}if(${search})${toggleSearch};return true;})()`,
             );
           }
         }, 120000);
@@ -5984,7 +5985,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             expect(
               await obEval(
                 vaultId!,
-                `(function(){const button=[...document.querySelectorAll('.modal-container .modal-button-container button')].find((node)=>node.textContent==='Delete');button.click();return 'confirmed';})()`,
+                `(function(){${PAGE}const button=[...document.querySelectorAll('.modal-container .modal-button-container button')].find((node)=>node.textContent==='Delete');press(button,'Delete');return 'confirmed';})()`,
               ),
             ).toBe("confirmed");
 
@@ -6032,6 +6033,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           } finally {
             // A confirmation left open by a failed step would block every
             // later test; its close answers "cancel".
+            // Teardown, not a reader's press.
             await obEval(
               vaultId!,
               "(function(){for(const modal of app.workspace.containerEl.doc.querySelectorAll('.modal-container .modal-close-button'))modal.click();return true;})()",
@@ -6167,7 +6169,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               expect(
                 await obEvalUntil(
                   vaultId!,
-                  `(function(){const button=${cardOf(made[1])}?.querySelector('[aria-label=${JSON.stringify("Change color")}]');if(!button)return 'no button';button.click();const green=[...document.querySelectorAll('.menu .menu-item')].find((item)=>item.textContent.trim()==='Green');if(!green)return 'no menu';green.click();return 'picked';})()`,
+                  `(function(){${PAGE}const button=${cardOf(made[1])}?.querySelector('[aria-label=${JSON.stringify("Change color")}]');if(!button)return 'no button';press(button,'Change color');const green=[...document.querySelectorAll('.menu .menu-item')].find((item)=>item.textContent.trim()==='Green');if(!green)return 'no menu';press(green,'Green');return 'picked';})()`,
                   { expected: "picked" },
                 ),
               ).toBe(true);
@@ -6294,7 +6296,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         expect(
           await obEvalUntil(
             vaultId!,
-            `(function(){const card=(${card});if(!card)return false;card.click();return card.hasAttribute('data-alone');})()`,
+            `(function(){${PAGE}const card=(${card});if(!card)return false;press(card,'card');return card.hasAttribute('data-alone');})()`,
             { expected: "true" },
           ),
         ).toBe(true);
@@ -6304,7 +6306,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         expect(
           await obEvalUntil(
             vaultId!,
-            `(function(){const field=(${card})?.querySelector('.zt-annot-comment-field');if(!field)return false;field.doc.getSelection().removeAllRanges();field.click();return true;})()`,
+            `(function(){${PAGE}const field=(${card})?.querySelector('.zt-annot-comment-field');if(!field)return false;field.doc.getSelection().removeAllRanges();press(field,'comment field');return true;})()`,
             { expected: "true" },
           ),
         ).toBe(true);
@@ -6907,7 +6909,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         expect(
           await obEvalUntil(
             vaultId!,
-            `(function(){const row=[...app.setting.containerEl.querySelectorAll('.setting-item')].find((el)=>el.querySelector('.setting-item-name')?.textContent==='Zotero editing');const button=row&&[...row.querySelectorAll('button')].find((el)=>el.textContent.trim()==='Allow editing');if(!button||button.disabled||button.style.display==='none')return 'false';button.click();return 'true';})()`,
+            `(function(){${PAGE}const row=[...app.setting.containerEl.querySelectorAll('.setting-item')].find((el)=>el.querySelector('.setting-item-name')?.textContent==='Zotero editing');const button=row&&[...row.querySelectorAll('button')].find((el)=>el.textContent.trim()==='Allow editing');if(!button||button.disabled||button.style.display==='none')return 'false';press(button,'Allow editing');return 'true';})()`,
             { expected: "true" },
           ),
         ).toBe(true);
@@ -6925,7 +6927,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         expect(
           await obEval(
             vaultId!,
-            `(function(){const notice=[...document.querySelectorAll('.zt-notice')].find((node)=>node.textContent.includes(${JSON.stringify(notAllowed)}));const button=notice&&[...notice.querySelectorAll('button')].find((el)=>el.textContent.trim()==='Allow editing');if(!button)return 'false';button.click();return 'true';})()`,
+            `(function(){${PAGE}const notice=[...document.querySelectorAll('.zt-notice')].find((node)=>node.textContent.includes(${JSON.stringify(notAllowed)}));const button=notice&&[...notice.querySelectorAll('button')].find((el)=>el.textContent.trim()==='Allow editing');if(!button)return 'false';press(button,'Allow editing');return 'true';})()`,
           ),
         ).toBe("true");
 
@@ -7029,7 +7031,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       expect(
         await obEvalUntil(
           vaultId!,
-          `(function(){${declare}const card=${card};if(${editor})return 'open';if(!card.hasAttribute('data-alone')){card.click();return 'selecting';}getSelection().removeAllRanges();card.querySelector('.zt-annot-comment-field')?.click();return String(!!${editor}&&'open');})()`,
+          `(function(){${PAGE}${declare}const card=${card};if(${editor})return 'open';if(!card.hasAttribute('data-alone')){press(card,'card');return 'selecting';}getSelection().removeAllRanges();press(card.querySelector('.zt-annot-comment-field'),'comment field');return String(!!${editor}&&'open');})()`,
           { expected: "open" },
         ),
       ).toBe(true);
@@ -7144,7 +7146,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       expect(
         await obEvalUntil(
           vaultId!,
-          `(function(){const card=${card};if(${editor})return 'open';if(!card.hasAttribute('data-alone')){card.focus();card.click();return 'selecting';}getSelection().removeAllRanges();card.querySelector('.zt-annot-comment-field')?.click();return String(!!${editor}&&'open');})()`,
+          `(function(){${PAGE}const card=${card};if(${editor})return 'open';if(!card.hasAttribute('data-alone')){card.focus();press(card,'card');return 'selecting';}getSelection().removeAllRanges();press(card.querySelector('.zt-annot-comment-field'),'comment field');return String(!!${editor}&&'open');})()`,
           { expected: "open" },
         ),
       ).toBe(true);
@@ -7173,6 +7175,8 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
       // The undo key in the note's own text is the note's: the comment stays.
       await pressUndo(`${note}.editor.cm.contentDOM`);
+      // A second is the window a wrongly taken undo would reach Zotero in;
+      // no event marks that it did not.
       await new Promise((resolve) => setTimeout(resolve, 1000));
       expect(await storedComment()).toBe(comment);
 
@@ -7327,7 +7331,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         expect(
           await obEvalUntil(
             vaultId!,
-            `(function(){const card=${card};if(${editor})return 'open';if(!card.hasAttribute('data-alone')){card.click();return 'selecting';}getSelection().removeAllRanges();card.querySelector('.zt-annot-comment-field')?.click();return String(!!${editor}&&'open');})()`,
+            `(function(){${PAGE}const card=${card};if(${editor})return 'open';if(!card.hasAttribute('data-alone')){press(card,'card');return 'selecting';}getSelection().removeAllRanges();press(card.querySelector('.zt-annot-comment-field'),'comment field');return String(!!${editor}&&'open');})()`,
             { expected: "open" },
           ),
         ).toBe(true);
@@ -7356,13 +7360,13 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         const inBlock = (script: string) =>
           obEval(
             vaultId!,
-            `(()=>{const el=${blockEl};${script};return true;})()`,
+            `(()=>{${PAGE}const el=${blockEl};${script};return true;})()`,
           );
         await inBlock(
-          "el.querySelector('[data-query-toolbar=\"sort\"]').click()",
+          "press(el.querySelector('[data-query-toolbar=\"sort\"]'),'Sort')",
         );
         await inBlock(
-          "el.querySelector('[data-query-popover=\"sort\"] [data-sort-add]').click()",
+          "press(el.querySelector('[data-query-popover=\"sort\"] [data-sort-add]'),'Add sort')",
         );
         // The new sort goes after the two of the default block.
         expect(
@@ -8049,7 +8053,7 @@ function cardTagEditor(annotationKey: string) {
     press: (target: string) =>
       obEvalUntil(
         vaultId!,
-        `(function(){const target=(${card})?.querySelector(${JSON.stringify(target)});if(!target)return 'absent';target.click();return 'pressed';})()`,
+        `(function(){${PAGE}const target=(${card})?.querySelector(${JSON.stringify(target)});if(!target)return 'absent';press(target,${JSON.stringify(target)});return 'pressed';})()`,
         { expected: "pressed" },
       ),
     /** The tag toggle in the card's action bar. */
@@ -8096,7 +8100,7 @@ function tagEditorIn(root: string) {
     remove: (name: string) =>
       obEval(
         vaultId!,
-        `(function(){const chip=[...(${root}).querySelectorAll('[data-slot=tags-input-item]')].find(item=>item.querySelector('[data-slot=tags-input-item-text]')?.textContent===${JSON.stringify(name)});if(!chip)return 'absent';chip.querySelector('[data-slot=tags-input-item-remove]').click();return 'removed';})()`,
+        `(function(){${PAGE}const chip=[...(${root}).querySelectorAll('[data-slot=tags-input-item]')].find(item=>item.querySelector('[data-slot=tags-input-item-text]')?.textContent===${JSON.stringify(name)});if(!chip)return 'absent';press(chip.querySelector('[data-slot=tags-input-item-remove]'),'remove '+${JSON.stringify(name)});return 'removed';})()`,
       ),
   };
 }
