@@ -172,6 +172,7 @@ export type HostGestures = Pick<
   | "onEnableLiveUpdates"
   | "onOpenPdf"
   | "onExploreAnnotation"
+  | "fillViewMenu"
 >;
 
 const NO_HOST_GESTURES: HostGestures = {
@@ -183,6 +184,7 @@ const NO_HOST_GESTURES: HostGestures = {
   onEnableLiveUpdates: () => {},
   onOpenPdf: () => {},
   onExploreAnnotation: () => {},
+  fillViewMenu: () => {},
 };
 
 /** What the host gives the layout, beside the services. */
