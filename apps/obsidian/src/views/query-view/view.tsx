@@ -17,7 +17,6 @@ import type { NameDictionary, QueryContext } from "@zotlit/item-query";
 import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import { cn } from "@/lib/utils";
 import type { HistorySurface } from "@/services/annotation-repository/actions";
 import type { HistoryDirection } from "@/services/annotation-repository/service";
 import type { Diagnostic } from "@/services/item-query/contract";
@@ -1134,13 +1133,10 @@ function QueryViewBody({ view }: { view: QueryView }) {
     <div className="zt:flex zt:h-full zt:flex-col zt:in-[.print]:h-auto">
       {/* The toolbar is a size container: on a narrow pane its buttons show
           icons only, and it stays one row. In a Query File tab it runs to
-          the pane's edges, as the Bases header does. Export to PDF prints
-          the rows without it. */}
+          the pane's edges, as the Bases header does (see file-view.css).
+          Export to PDF prints the rows without it. */}
       <div
-        className={cn(
-          "zt:@container zt:flex zt:min-h-(--bases-header-height) zt:shrink-0 zt:flex-nowrap zt:items-center zt:gap-(--size-2-2) zt:overflow-hidden zt:[border-width:var(--bases-header-border-width)] zt:border-(--bases-table-border-color) zt:ps-(--bases-header-padding-start) zt:pe-(--bases-header-padding-end) zt:in-[.print]:hidden",
-          "zt:in-[.view-content.zt-query-view]:-mx-(--size-4-3) zt:in-[.view-content.zt-query-view]:-mt-(--size-4-3)",
-        )}
+        className="zt:@container zt:flex zt:min-h-(--bases-header-height) zt:shrink-0 zt:flex-nowrap zt:items-center zt:gap-(--size-2-2) zt:overflow-hidden zt:[border-width:var(--bases-header-border-width)] zt:border-(--bases-table-border-color) zt:ps-(--bases-header-padding-start) zt:pe-(--bases-header-padding-end) zt:in-[.print]:hidden"
         role="toolbar"
       >
         <ViewMenu view={view} />
