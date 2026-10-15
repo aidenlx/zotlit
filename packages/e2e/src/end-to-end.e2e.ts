@@ -1315,7 +1315,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // shows as a visual row.
     const sections = JSON.parse(
       await inPopover(
-        `return JSON.stringify({open:popover.matches(':popover-open'),all:section('all').querySelector('h4').textContent,view:section('view').querySelector('h4').textContent,tag:section('view').querySelector('[data-condition-row] input[aria-label="${m.workbench_match_value()}"]').value});`,
+        `return JSON.stringify({open:popover.matches(':popover-open'),all:section('all').querySelector('[data-filter-heading]').textContent,view:section('view').querySelector('[data-filter-heading]').textContent,tag:section('view').querySelector('[data-condition-row] input[aria-label="${m.workbench_match_value()}"]').value});`,
       ),
     ) as Record<string, unknown>;
     expect(sections).toEqual({
