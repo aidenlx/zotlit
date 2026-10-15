@@ -7,7 +7,7 @@ import {
   renderMatches,
 } from "obsidian";
 import type { App } from "obsidian";
-import { useId, useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 import type { KeyboardEvent, RefObject } from "react";
 
 import { tagTypeToName } from "@zotlit/db";
@@ -16,6 +16,7 @@ import { TagsInput, useTagsInput } from "@zotlit/ui";
 import { Icon } from "@/components/obsidian/icon";
 import { useObsidianApp } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
+import { useUniqueId } from "@/lib/use-unique-id";
 import { tooltipAttrs } from "@/lib/utils";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 
@@ -198,7 +199,7 @@ function TagField({
   const app = useObsidianApp();
   const { value, add } = useTagsInput();
   const inputRef = useRef<HTMLInputElement>(null);
-  const labelId = useId();
+  const labelId = useUniqueId();
   const suggest = useRef<TagSuggest | null>(null);
   /**
    * Whether the session has ended. Every way out runs through {@link end},

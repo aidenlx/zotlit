@@ -19,6 +19,7 @@ import {
 
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
+import { useUniqueId } from "@/lib/use-unique-id";
 import { cn } from "@/lib/utils";
 import { matchTheme } from "@/views/template-workbench/match-pane";
 
@@ -49,13 +50,6 @@ export function formulaSyntaxIssue(text: string): string | null {
     : m.query_view_formula_syntax({ found: error.found, expected });
 }
 
-/**
- * Numbers each Formula form. The dialog is a Preact root of its own, and
- * `useId` counts within one root, so its id could match an element of a
- * Query View and its Save button would submit nothing.
- */
-let formSequence = 0;
-
 function FormulaForm({
   view,
   editing,
@@ -69,7 +63,7 @@ function FormulaForm({
   footer: HTMLElement;
   close: () => void;
 }) {
-  const [formId] = useState(() => `zt-formula-form-${(formSequence += 1)}`);
+  const formId = useUniqueId();
   const file = useStore(view.state, (s) => s.file);
   const formulas = file?.formulas ?? nameDictionary<string>();
   const issues = useStore(view.state, (s) => s.formulaIssues);

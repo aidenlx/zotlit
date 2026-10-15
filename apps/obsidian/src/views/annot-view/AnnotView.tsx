@@ -3,7 +3,6 @@ import {
   Fragment,
   useCallback,
   useContext,
-  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -14,6 +13,7 @@ import type { CSSProperties, RefObject } from "react";
 import { Icon } from "@/components/obsidian/icon";
 import { SearchInput } from "@/components/obsidian/search-input";
 import * as m from "@/lib/i18n/generated/messages";
+import { useUniqueId } from "@/lib/use-unique-id";
 import { cn } from "@/lib/utils";
 
 import { AnnotActionsContext } from "./actions";
@@ -127,7 +127,7 @@ export function AnnotView() {
    * here and reaches the control row as a prop.
    */
   const [collapsed, setCollapsed] = useState(true);
-  const searchBarId = useId();
+  const searchBarId = useUniqueId();
   /** Where Escape in the search bar sends focus, the button that opened it. */
   const searchButtonRef = useRef<HTMLDivElement>(null);
 
@@ -218,7 +218,7 @@ export function AnnotView() {
 function AnnotHeader() {
   const actions = useContext(AnnotActionsContext);
   const shape = useHeaderShape();
-  const labelId = useId();
+  const labelId = useUniqueId();
 
   return (
     <div className="zt:px-2 zt:pt-2">
@@ -369,7 +369,7 @@ function SearchRow({
   // layout effect runs at commit, where a passive effect waits for a frame the
   // window may not paint.
   const inputRef = useRef<HTMLInputElement>(null);
-  const inputId = useId();
+  const inputId = useUniqueId();
   useLayoutEffect(() => {
     inputRef.current?.focus();
   }, []);
@@ -421,7 +421,7 @@ export function AnnotList({
   const toggleGroup = useToggleGroupCollapsed();
   const clearFilters = useClearFilters();
   const gridRef = useRef<HTMLDivElement>(null);
-  const labelId = useId();
+  const labelId = useUniqueId();
   /** Whether the list is scrolled off its top, which shows the top fade. */
   const [scrolled, setScrolled] = useState(false);
 

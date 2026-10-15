@@ -2436,6 +2436,58 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
   }, 180000);
 
+  // Each Query View is a Preact root of its own; the ids its labels point
+  // to must still be unique in the window.
+  it("focuses the limit field of the second of two embeds of one Query File when its label is selected", async () => {
+    const queryPath = "query-files/Lab annotations.zotquery";
+    const notePath = "query-files/Two embeds.md";
+    const layout = await obEval(
+      vaultId,
+      "JSON.stringify(app.workspace.getLayout())",
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));const file=app.vault.getFileByPath(${JSON.stringify(notePath)});if(file)await app.vault.delete(file);return true;})()`,
+      );
+    });
+
+    await obEval(
+      vaultId,
+      `(async()=>{await app.vault.create(${JSON.stringify(notePath)},${JSON.stringify(
+        `![[${queryPath}]]\n\n![[${queryPath}]]\n`,
+      )});const leaf=app.workspace.getLeaf('tab');await leaf.setViewState({type:'markdown',state:{file:${JSON.stringify(notePath)},mode:'preview'},active:true});return true;})()`,
+    );
+    /** The embeds of the Query File in the note, once each query settled. */
+    const embeds = `const leaf=app.workspace.getLeavesOfType('markdown').find(l=>l.view.file?.path===${JSON.stringify(notePath)});const views=[...leaf.view.containerEl.querySelectorAll('.internal-embed')].filter(el=>el.zotlitQueryView&&el.isShown());for(const el of views)await el.zotlitQueryView.settled;`;
+    expect(
+      await waitFor(
+        async () =>
+          (await obEval(
+            vaultId,
+            `(async()=>{${embeds}return views.length===2&&views.every(el=>el.querySelector('[data-query-count]')?.getAttribute('data-query-count'))?'ready':'no';})()`,
+          )) === "ready",
+        120,
+      ),
+    ).toBe(true);
+
+    // The second embed's Results menu opens with its limit field focused;
+    // focus leaves it, and its label brings it back.
+    const focus = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{${embeds}const el=views[1];el.querySelector('[data-query-results]').click();const popup=el.querySelector('[data-query-results-popup]');for(let i=0;i<50&&!popup.querySelector('[data-query-limit]');i++)await new Promise(r=>setTimeout(r,20));const field=popup.querySelector('[data-query-limit]');const label=popup.querySelector('label');field.blur();const blurred=activeDocument.activeElement!==field;label.click();await new Promise(r=>setTimeout(r,50));const out={blurred,sameId:label.htmlFor===field.id,unique:activeDocument.querySelectorAll('#'+CSS.escape(field.id)).length===1,focused:activeDocument.activeElement===field};activeDocument.querySelectorAll(':popover-open').forEach(p=>p.hidePopover());return JSON.stringify(out);})()`,
+      ),
+    ) as Record<string, boolean>;
+    expect(focus).toEqual({
+      blurred: true,
+      sameId: true,
+      unique: true,
+      focused: true,
+    });
+  }, 180000);
+
   it("chooses two properties in a Query File view, limits it, and exports those columns as CSV", async () => {
     const layout = await obEval(
       vaultId,

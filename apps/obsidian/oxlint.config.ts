@@ -19,6 +19,12 @@ const obsidianImportPaths = [
     message:
       "Extend PopoutAwareHoverPopover from @/lib/popout-aware-hover-popover; it cancels Obsidian's popover timers on the window that armed them (see policies/hover-popover.md).",
   },
+  ...["react", "preact/compat", "preact/hooks"].map((name) => ({
+    name,
+    importNames: ["useId"],
+    message:
+      "Use useUniqueId from @/lib/use-unique-id: useId counts within one Preact root, so two views in one window share its ids.",
+  })),
 ];
 
 const commonImports = {

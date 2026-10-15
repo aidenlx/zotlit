@@ -1,7 +1,7 @@
 // Native selection shares examples, search, and labels across independent views.
 import "./selection.css";
 import type { ItemView, WorkspaceLeaf } from "obsidian";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { isChildItemFields, isPageNumber } from "@zotlit/db";
 import type { CitationVariant } from "@zotlit/db";
@@ -19,6 +19,7 @@ import { selectionControl } from "@/components/obsidian/selection-control";
 import * as m from "@/lib/i18n/generated/messages";
 import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { itemSummary } from "@/lib/item-summary";
+import { useUniqueId } from "@/lib/use-unique-id";
 import { pickItem } from "@/services/item-lookup/search-modal";
 import type { ItemSearchDeps } from "@/services/item-lookup/search-modal";
 import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
@@ -317,7 +318,7 @@ function SelectionGroup({
   label: string;
   children: React.ReactNode;
 }) {
-  const headingId = useId();
+  const headingId = useUniqueId();
   return (
     <div role="group" aria-labelledby={headingId} className={selectionGroup}>
       <p id={headingId} className={selectionGroupHeading}>
