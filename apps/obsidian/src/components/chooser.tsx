@@ -885,10 +885,11 @@ export interface ChooserItemProps extends HTMLAttributes<HTMLDivElement> {
  * option may hold no focusable control; `aria-selected` is what reports it.
  *
  * Spec aidenlx/zotlit#1190 names `Chooser.ItemText` and `Chooser.ItemIndicator`
- * as parts inside it. There are none: a row is a tick and one line of label in
- * that order, always, and the two parts exist to let a caller reorder or
- * restyle a pair this one draws itself. The caller's children are the label,
- * and the indicator is the row's own.
+ * as parts inside it. There are none: a row is a leading glyph, one line of
+ * label and optional trailing content in that order, always, and the two parts
+ * exist to let a caller reorder or restyle a pair this one draws itself. The
+ * caller's children are the label; the glyph is the tick unless the caller
+ * names an `icon`.
  *
  * It stays a separate part from {@link Action} rather than one row component
  * with a flag: the two say different things — one ticks and reports
