@@ -3,7 +3,6 @@ import {
   Fragment,
   useCallback,
   useContext,
-  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -11,10 +10,13 @@ import {
 } from "react";
 import type { CSSProperties, RefObject } from "react";
 
+import { useUniqueId } from "@zotlit/ui";
+
 import { Icon } from "@/components/obsidian/icon";
+import { IconButton } from "@/components/obsidian/icon-button";
 import { SearchInput } from "@/components/obsidian/search-input";
 import * as m from "@/lib/i18n/generated/messages";
-import { cn } from "@/lib/utils";
+import { cn, tooltipAttrs } from "@/lib/utils";
 
 import { AnnotActionsContext } from "./actions";
 import { Annotation, FIELD_SHEET_SELECTOR } from "./Annotation";
@@ -127,7 +129,7 @@ export function AnnotView() {
    * here and reaches the control row as a prop.
    */
   const [collapsed, setCollapsed] = useState(true);
-  const searchBarId = useId();
+  const searchBarId = useUniqueId();
   /** Where Escape in the search bar sends focus, the button that opened it. */
   const searchButtonRef = useRef<HTMLDivElement>(null);
 
@@ -218,16 +220,16 @@ export function AnnotView() {
 function AnnotHeader() {
   const actions = useContext(AnnotActionsContext);
   const shape = useHeaderShape();
-  const labelId = useId();
+  const labelId = useUniqueId();
 
   return (
-    <div className="zt:px-2 zt:pt-2">
+    <div className="zt:flex zt:items-start zt:gap-1 zt:px-2 zt:pt-2">
       <button
         type="button"
         aria-haspopup="menu"
         aria-labelledby={labelId}
         onClick={(evt) => actions.onHeaderMenu(evt)}
-        className="zt-annot-header zt:inline-flex zt:max-w-full zt:items-center zt:gap-2 zt:rounded-sm zt:px-1.5 zt:py-1 zt:text-start zt:hover:bg-card zt:hover:ring-1 zt:hover:ring-border zt:focus-visible:bg-card zt:focus-visible:ring-2 zt:focus-visible:ring-border-focus"
+        className="zt-annot-header zt:inline-flex zt:max-w-full zt:min-w-0 zt:items-center zt:gap-2 zt:rounded-sm zt:px-1.5 zt:py-1 zt:text-start zt:hover:bg-card zt:hover:ring-1 zt:hover:ring-border zt:focus-visible:bg-card zt:focus-visible:ring-2 zt:focus-visible:ring-border-focus"
       >
         {/* The name the block promises assistive technology, held apart from
             the words on screen: an `aria-label` would reach the pointer too,
@@ -248,6 +250,19 @@ function AnnotHeader() {
             wide the pane grows, and no wrapped byline segment runs under it. */}
         <ChromeIcon name="chevron-down" />
       </button>
+      {/* A side dock hides the view header and its "More options", so the
+          header row carries the same menu there, in every state of the
+          view. Obsidian's own `.mod-sidedock` ancestor shows it; the wrapper
+          holds the display, since `.clickable-icon` sets its own. */}
+      <div className="zt:ms-auto zt:hidden zt:shrink-0 zt:in-[.mod-sidedock]:flex">
+        <IconButton
+          icon="more-vertical"
+          aria-haspopup="menu"
+          data-annot-view-more-options=""
+          onClick={(evt) => actions.onViewMenu(evt)}
+          {...tooltipAttrs(m.annot_view_more_tooltip())}
+        />
+      </div>
     </div>
   );
 }
@@ -369,7 +384,7 @@ function SearchRow({
   // layout effect runs at commit, where a passive effect waits for a frame the
   // window may not paint.
   const inputRef = useRef<HTMLInputElement>(null);
-  const inputId = useId();
+  const inputId = useUniqueId();
   useLayoutEffect(() => {
     inputRef.current?.focus();
   }, []);
@@ -421,7 +436,7 @@ export function AnnotList({
   const toggleGroup = useToggleGroupCollapsed();
   const clearFilters = useClearFilters();
   const gridRef = useRef<HTMLDivElement>(null);
-  const labelId = useId();
+  const labelId = useUniqueId();
   /** Whether the list is scrolled off its top, which shows the top fade. */
   const [scrolled, setScrolled] = useState(false);
 
@@ -506,7 +521,7 @@ export function AnnotList({
       <div
         ref={mountGrid}
         className={cn(
-          "zt:grid zt:items-start zt:gap-2",
+          "zt:grid zt:items-start zt:gap-3",
           cardWidth === undefined
             ? "zt:grid-cols-1 zt:@2xl:grid-cols-2 zt:@5xl:grid-cols-3"
             : "zt:grid-cols-[repeat(auto-fill,minmax(min(100%,var(--zt-card-width)),1fr))]",
@@ -584,21 +599,38 @@ function GroupHeading({
   onToggle: () => void;
 }) {
   return (
+    // A group ends on a hairline, as a group does in a Bases Cards view: every
+    // heading after the first stands under one, a little further from the
+    // cards above it than the cards stand from each other.
     <div
       role="row"
       data-query-group={groupKey}
       data-collapsed={expanded ? undefined : ""}
-      className="zt:col-span-full zt:mt-2 zt:first:mt-0"
+      className="zt:group/heading zt:col-span-full zt:not-first:mt-1 zt:not-first:border-t-(length:--border-width) zt:not-first:border-border zt:not-first:pt-2"
     >
       <span role="rowheader" className="zt:flex zt:min-w-0">
+        {/* The press target is Obsidian's `clickable-icon`, which takes back
+            the button chrome Obsidian draws, unlayered, on a bare `<button>`
+            and gives the theme's own hover. It pulls back by its inline
+            padding, so the chevron starts on the cards' edge. Obsidian
+            sets a button's weight and colour unlayered as well, so the label
+            carries the heading type itself. The chevron stays shown, so a
+            collapsed group reads as collapsed without a pointer over it, in the
+            colour Obsidian gives a collapsed fold. */}
         <button
           type="button"
           aria-expanded={expanded}
-          className="clickable-icon zt:flex zt:min-w-0 zt:items-center zt:gap-1 zt:text-sm zt:font-semibold zt:text-(--text-muted)"
+          className="clickable-icon zt:-ms-(--size-2-3) zt:flex zt:min-w-0 zt:items-center zt:gap-1"
           onClick={onToggle}
         >
-          <Icon name={expanded ? "chevron-down" : "chevron-right"} size={14} />
-          <span className="zt:truncate">{label}</span>
+          <Icon
+            name={expanded ? "chevron-down" : "chevron-right"}
+            size="var(--icon-xs)"
+            className="zt:shrink-0 zt:text-(--collapse-icon-color) zt:group-data-collapsed/heading:text-(--collapse-icon-color-collapsed)"
+          />
+          <span className="zt:truncate zt:text-sm zt:font-(weight:--bases-group-heading-value-weight) zt:text-foreground">
+            {label}
+          </span>
         </button>
       </span>
     </div>

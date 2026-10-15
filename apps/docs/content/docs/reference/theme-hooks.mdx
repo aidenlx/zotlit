@@ -215,6 +215,18 @@ The Annotation View lists a Zotero attachment's Annotations beside the reader, w
 
 These class names and data attribute values are ZotLit's public theme contract for the Annotation View. DOM structure remains private.
 
+## Query View hooks [#query-view]
+
+A Query View shows a Query File in a tab, in a note, or in the Annotation View. Its toolbar holds the view menu, the result count, and the Sort, Group, Filter and Properties buttons.
+
+| Class                     | Marks                                                                  |
+| ------------------------- | ---------------------------------------------------------------------- |
+| `zt-query-toolbar-button` | A toolbar button that opens a popover, such as **Sort** or **Filter**. |
+
+`zt-query-toolbar-button` marks a toolbar button that opens a popover. It shows an icon, a name, and a count badge (`data-query-badge`) while its control holds settings. It carries `data-active` while its control holds a setting and `data-open` while its popover stands. Its Obsidian button styling is reverted, as on `zt-chooser-trigger`.
+
+This class name and these data attribute values are ZotLit's public theme contract for the Query View toolbar. DOM structure remains private.
+
 ## Template editor hooks [#template-editor]
 
 The Template Workbench View styles frontmatter and colors template source and Markdown markers through one set of classes, in every pane that holds template code: the note body, the annotation format, a property expression, the note name, and the whole file in Source. The Template Workbench on this site emits the same classes.

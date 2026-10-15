@@ -1,0 +1,64 @@
+/* A Query View in a note: the Query File embed and the Query Block, in
+   Reading view and Live Preview. `.zt-query-note` is the element the view
+   draws into (see `note-host.ts`). */
+
+/* A note's `.markdown-rendered` draws its own Markdown tables: cell borders,
+   a bold header, striped rows, the note's table text size and wrapping.
+   Those rules are unlayered, where no utility reaches them, and they find
+   the Table layout too — in Reading view and in a Query Block in Live
+   Preview. `revert-layer` rolls the table back to the plugin's layers, where
+   its utilities draw it, as they do in a Query File tab. The child
+   combinators stop at the layout's own cells, so a Markdown table a cell
+   renders keeps the note's look. Two classes outrank Obsidian's striped-row
+   hover rule. */
+.zt-root.zt-query-note table[data-query-table],
+.zt-root.zt-query-note table[data-query-table] > :is(thead, tbody) > tr,
+.zt-root.zt-query-note
+  table[data-query-table]
+  > :is(thead, tbody)
+  > tr
+  > :is(th, td) {
+  all: revert-layer;
+}
+
+/* The same for the view's paragraphs and lists — the List layout, a
+   popover's rows, a problem message: a note's rules add their paragraph
+   margin and a `3ch` list indent over the view's own. Markdown the view
+   renders (an Annotation comment) is a `.markdown-rendered` of its own and
+   keeps the note's look. */
+.zt-root.zt-query-note
+  :is(p, pre, ul, ol, li):not(.zt-query-note .markdown-rendered *) {
+  all: revert-layer;
+}
+
+/* The toolbar and its popovers are the view's controls, and a note's text
+   is the editor font at the editor size and line height. They take the
+   interface text a Query File tab gives them, so a button and a popover row
+   keep their size in every host. The rows below keep the note's text. */
+.zt-query-note [role="toolbar"] {
+  font-family: var(--font-interface);
+  font-size: var(--font-ui-medium);
+  line-height: var(--line-height-tight);
+}
+
+/* In Live Preview, Obsidian puts the Query Block's "Edit this block" button
+   at the block's top end, over the toolbar's last button. The toolbar leaves
+   room for it and centers it on the row, as Obsidian does for a Base. The
+   button is the view's sibling, so the rules start from the view. */
+.cm-embed-block:has(> .zt-query-note) {
+  --bases-header-padding-end: calc(var(--icon-m) + var(--size-4-4));
+}
+.cm-embed-block:has(> .zt-query-note) > .embed-actions {
+  top: calc(
+    var(--bases-header-height) / 2 - var(--icon-m) / 2 - var(--size-2-2)
+  );
+}
+
+/* Live Preview's editor breaks a word anywhere, and its rows pass that on:
+   a Table column shrinks to a few letters and a name breaks mid-word. The
+   view breaks words as Reading view and a Query File tab do; a column takes
+   its content's width and the table scrolls. */
+.zt-query-note {
+  word-break: normal;
+  overflow-wrap: break-word;
+}

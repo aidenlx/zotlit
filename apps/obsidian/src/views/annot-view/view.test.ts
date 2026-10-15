@@ -319,9 +319,9 @@ it("shows the followed Attachment's Annotations through attachment == this.attac
   ]);
 });
 
-function paneMenu(view: AnnotationView): Menu {
+function paneMenu(view: AnnotationView, source = "more-options"): Menu {
   const menu = new Menu();
-  view.onPaneMenu(menu as unknown as ObsidianMenu, "more-options");
+  view.onPaneMenu(menu as unknown as ObsidianMenu, source);
   return menu;
 }
 
@@ -348,6 +348,14 @@ it("groups the cards by colour from More options, and keeps the grouping in its 
       "Refresh data",
     ]),
   );
+  // The tab's own context menu, in the sidebar or the main area, is the same
+  // pane menu.
+  const titles = menu.items.map(({ title }) => title);
+  for (const source of ["sidebar-context-menu", "tab-header"]) {
+    expect(paneMenu(view, source).items.map(({ title }) => title)).toEqual(
+      titles,
+    );
+  }
   const groupBy = menuItem(menu, "Group by").submenu!;
   expect(groupBy.items.map(({ title }) => title)).toEqual([
     "None",

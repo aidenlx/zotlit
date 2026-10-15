@@ -181,16 +181,13 @@ export class QueryFileDocument {
     const property = formulaProperty(name);
     if (label !== undefined)
       next = withDisplayName(next, property, label.trim() || undefined);
-    if (
-      !Object.hasOwn(file.formulas ?? {}, name) &&
-      !(view.order ?? []).includes(property)
-    ) {
-      // A view that shows no property chosen shows the defaults; they stay.
-      const { visibleProperties } = viewProperties(file, view);
-      const shown = visibleProperties.some((entry) => entry.place !== null)
-        ? (view.order ?? [])
-        : visibleProperties.map((entry) => entry.path);
-      next = editView(next, view, { order: [...shown, property] });
+    if (!Object.hasOwn(file.formulas ?? {}, name)) {
+      const properties = viewProperties(file, view);
+      const shown = properties.visible.map((entry) => entry.path);
+      if (!shown.includes(property))
+        next = editView(next, view, {
+          order: properties.orderOf([...shown, property]),
+        });
     }
     this.#commit(next, this.#shown);
     return true;

@@ -10,8 +10,10 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { useStore } from "zustand";
+
+import { isPageNumber } from "@zotlit/db";
 
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
@@ -25,7 +27,9 @@ import type { QueryService } from "@/services/item-query/service";
 import { useAnnotStore } from "@/views/annot-view/store";
 
 import type { QueryLayout } from "./layouts";
+import { propertyIcon } from "./property-icon";
 import { CellContent } from "./record-rows";
+import { NO_RESULTS } from "./results";
 import type { LiteratureNotes } from "./table-notes";
 import { cellText } from "./value-text";
 import type { QueryView } from "./view";
@@ -150,15 +154,21 @@ export const TABLE_CHILD_SOURCES: readonly TableChildSource[] = [
     render: ({ values }) => (
       <>
         <span
-          className="zt:inline-block zt:size-2.5 zt:shrink-0 zt:rounded-full"
-          style={{ backgroundColor: text(values.color) || undefined }}
+          className="zt:inline-block zt:size-2.5 zt:shrink-0 zt:rounded-full zt:bg-(--zt-annot-color)"
+          style={
+            {
+              "--zt-annot-color": text(values.color) || undefined,
+            } as CSSProperties
+          }
         />
         <span className="zt:truncate">
           {text(values.text) || text(values.comment)}
         </span>
         {text(values.pageLabel) !== "" && (
-          <span className="zt:shrink-0 zt:text-(--text-muted)">
-            {m.query_view_table_page({ page: text(values.pageLabel) })}
+          <span className="zt:shrink-0 zt:text-muted-foreground">
+            {isPageNumber(text(values.pageLabel))
+              ? m.query_view_table_page({ page: text(values.pageLabel) })
+              : text(values.pageLabel)}
           </span>
         )}
       </>
@@ -257,12 +267,23 @@ function Expander({
   open: boolean;
   onToggle: () => void;
 }) {
+  // The chevron takes the icon button's own padding, and a row with nothing
+  // under it holds a hidden one, so every row's text starts at one edge.
+  const chevron = (
+    <Icon
+      name={open ? "chevron-down" : "chevron-right"}
+      size="var(--icon-xs)"
+      strokeWidth="var(--icon-xs-stroke-width)"
+    />
+  );
   if (!expandable(record))
-    return <span className="zt:inline-block zt:w-5 zt:shrink-0" />;
+    return (
+      <span className="clickable-icon zt:invisible zt:shrink-0">{chevron}</span>
+    );
   return (
     <button
       type="button"
-      className="clickable-icon zt:w-5 zt:shrink-0 zt:p-0.5"
+      className="clickable-icon zt:shrink-0"
       aria-expanded={open}
       aria-label={
         open ? m.query_view_table_collapse() : m.query_view_table_expand()
@@ -270,7 +291,7 @@ function Expander({
       data-query-expand={id(record)}
       onClick={onToggle}
     >
-      <Icon name={open ? "chevron-down" : "chevron-right"} size={14} />
+      {chevron}
     </button>
   );
 }
@@ -302,10 +323,12 @@ function NoteCell({
         {note.basename}
       </a>
     );
+  // A text button in the style of an icon button, so it fits the row's
+  // height as a link does.
   return (
     <button
       type="button"
-      className="zt:px-2 zt:py-0.5 zt:text-xs"
+      className="clickable-icon zt:gap-1"
       disabled={creating}
       data-query-create-note={itemKey}
       onClick={() => {
@@ -313,15 +336,37 @@ function NoteCell({
         void notes.create(itemKey).finally(() => setCreating(false));
       }}
     >
+      <Icon name="file-plus" size="var(--icon-xs)" />
       {m.query_view_table_create_note()}
     </button>
   );
 }
 
-/** The inset of a row `depth` levels under its Item. */
-const indent = (depth: number) => ({
-  paddingInlineStart: `calc(${depth - 1} * 1.25rem)`,
-});
+/** The inset of a row `depth` levels under its Item, for `zt:ps-(--zt-indent)`. */
+const indent = (depth: number) =>
+  ({ "--zt-indent": `calc(${depth - 1} * var(--size-4-5))` }) as CSSProperties;
+
+/**
+ * A cell's height, padding and row line, from the variables Obsidian's Bases
+ * table draws with, so a theme that restyles that table restyles this one.
+ */
+const CELL =
+  "zt:h-(--bases-table-row-height) zt:border-b-(length:--bases-table-row-border-width) zt:border-(--bases-table-border-color) zt:px-2 zt:py-1";
+/** The narrow first column that holds a row's expand button. */
+const GUTTER = cn(CELL, "zt:w-0 zt:py-0 zt:ps-1 zt:pe-0");
+/**
+ * The first column of properties. Text wraps in every column, so a long
+ * title stays readable in full; the first column keeps a width a title
+ * reads well in, and the others stop at the width of a Bases column.
+ */
+const FIRST = "zt:min-w-48 zt:ps-1";
+/** A column after the first: a line parts it from the one before it. */
+const LATER =
+  "zt:max-w-[calc(var(--bases-table-column-max-width)*1px)] zt:border-s-(length:--bases-table-column-border-width)";
+const ROW = "zt:hover:bg-(--bases-table-row-background-hover)";
+/** A header cell, which stays at the top as the rows scroll under it. */
+const HEADER =
+  "zt:sticky zt:top-0 zt:z-(--layer-cover) zt:bg-(--bases-table-header-background) zt:py-0 zt:font-(--bases-table-header-weight) zt:whitespace-nowrap zt:text-(--bases-table-header-color)";
 
 /** The rows under one expanded row, and the rows under those that are expanded. */
 function ChildRows({
@@ -342,11 +387,11 @@ function ChildRows({
   if (state.phase !== "ready")
     return (
       <tr data-query-table-status={state.phase}>
-        <td />
+        <td className={GUTTER} />
         <td
           colSpan={columns + 1}
           style={indent(depth)}
-          className="zt:px-2 zt:py-0.5 zt:text-(--text-muted)"
+          className={cn(CELL, "zt:ps-(--zt-indent) zt:text-(--text-muted)")}
         >
           {state.phase === "loading"
             ? m.query_view_table_loading()
@@ -393,11 +438,15 @@ function ChildRow({
 }) {
   return (
     <>
-      <tr data-query-table-row={record.kind} data-query-key={record.key}>
-        <td />
-        <td colSpan={columns + 1} className="zt:px-2 zt:py-0.5">
+      <tr
+        className={ROW}
+        data-query-table-row={record.kind}
+        data-query-key={record.key}
+      >
+        <td className={GUTTER} />
+        <td colSpan={columns + 1} className={cn(CELL, "zt:ps-1")}>
           <span
-            className="zt:flex zt:min-w-0 zt:items-center zt:gap-1.5"
+            className="zt:flex zt:min-w-0 zt:items-center zt:gap-1.5 zt:ps-(--zt-indent)"
             style={indent(depth)}
           >
             <Expander
@@ -405,7 +454,12 @@ function ChildRow({
               open={expanded.has(id(record))}
               onToggle={() => toggle(record)}
             />
-            <Icon name={source.icon} size={14} className="zt:shrink-0" />
+            <Icon
+              name={source.icon}
+              size="var(--icon-xs)"
+              strokeWidth="var(--icon-xs-stroke-width)"
+              className="zt:shrink-0"
+            />
             {source.render(record)}
           </span>
         </td>
@@ -423,17 +477,15 @@ function ChildRow({
 
 /** The view's rows as a table of Items. */
 export function TableLayout({ view }: { view: QueryView }) {
-  const rows = useStore(view.state, (s) => s.records);
+  const rows = useStore(view.state, (s) => (s.results ?? NO_RESULTS).records);
   const search = useAnnotStore((s) => s.filterQuery)
     .trim()
     .toLowerCase();
   const { query, literatureNotes } = view.tableDeps;
   const { children: expanded, toggle } = useChildren(query);
   const properties = useViewProperties(view);
-  const columns = useMemo(
-    () => properties?.visibleProperties ?? [],
-    [properties],
-  );
+  const dataset = useStore(view.state, (s) => s.view?.from ?? "annotations");
+  const columns = useMemo(() => properties?.visible ?? [], [properties]);
   const visible = useMemo(
     () =>
       search === ""
@@ -450,34 +502,53 @@ export function TableLayout({ view }: { view: QueryView }) {
   return (
     <div className="zt:min-h-0 zt:flex-1 zt:overflow-auto">
       <table
-        className="zt:w-full zt:border-collapse zt:text-sm"
+        className="zt:min-w-full zt:border-separate zt:border-spacing-0 zt:text-(length:--bases-table-font-size)"
         data-query-table=""
       >
         <thead>
-          <tr className="zt:border-b zt:border-(--background-modifier-border) zt:text-left">
-            <th className="zt:w-6" />
-            {columns.map(({ path, label, issue }) => (
+          <tr className="zt:text-start">
+            <th className={cn(GUTTER, HEADER)} />
+            {columns.map((property, at) => (
               <th
-                key={path}
-                className="zt:px-2 zt:py-1 zt:font-medium"
-                data-query-column={path}
-                data-query-formula-issue={issue ?? undefined}
+                key={property.path}
+                className={cn(CELL, HEADER, at === 0 ? FIRST : LATER)}
+                data-query-column={property.path}
+                data-query-formula-issue={property.issue ?? undefined}
               >
-                {issue === null ? (
-                  label
+                {property.issue === null ? (
+                  <span className="zt:flex zt:items-center zt:gap-1">
+                    <Icon
+                      name={propertyIcon(dataset, property)}
+                      size="var(--icon-xs)"
+                      className="zt:[display:var(--bases-table-header-icon-display)] zt:shrink-0"
+                    />
+                    {property.label}
+                  </span>
                 ) : (
                   <span
-                    className="zt:inline-flex zt:items-center zt:gap-1 zt:text-(--text-error)"
-                    {...tooltipAttrs(issue)}
+                    className="zt:flex zt:items-center zt:gap-1 zt:text-(--text-error)"
+                    {...tooltipAttrs(property.issue)}
                   >
-                    <Icon name="alert-triangle" size={14} />
-                    {label}
+                    <Icon
+                      name="alert-triangle"
+                      size="var(--icon-xs)"
+                      strokeWidth="var(--icon-xs-stroke-width)"
+                      className="zt:shrink-0"
+                    />
+                    {property.label}
                   </span>
                 )}
               </th>
             ))}
-            <th className="zt:px-2 zt:py-1 zt:font-medium">
-              {m.query_view_table_literature_note()}
+            <th className={cn(CELL, HEADER, LATER)}>
+              <span className="zt:flex zt:items-center zt:gap-1">
+                <Icon
+                  name="file"
+                  size="var(--icon-xs)"
+                  className="zt:[display:var(--bases-table-header-icon-display)] zt:shrink-0"
+                />
+                {m.query_view_table_literature_note()}
+              </span>
             </th>
           </tr>
         </thead>
@@ -493,7 +564,10 @@ export function TableLayout({ view }: { view: QueryView }) {
                 <tr data-query-group={placed.key}>
                   <th
                     colSpan={columns.length + 2}
-                    className="zt:px-2 zt:pt-3 zt:pb-1 zt:text-left zt:font-semibold"
+                    className={cn(
+                      CELL,
+                      "zt:bg-(--bases-table-group-background) zt:text-start zt:font-(--bases-group-heading-value-weight)",
+                    )}
                   >
                     {placed.label}
                   </th>
@@ -537,28 +611,26 @@ function ItemRow({
     <>
       {heading}
       <tr
-        className={cn(
-          "zt:border-b zt:border-(--background-modifier-border-hover)",
-        )}
+        className={ROW}
         data-query-table-row="item"
         data-query-key={record.key}
       >
-        <td className="zt:px-1">
+        <td className={GUTTER}>
           <Expander
             record={record}
             open={expanded.has(id(record))}
             onToggle={() => toggle(record)}
           />
         </td>
-        {columns.map(({ path }) => (
-          <td key={path} className="zt:px-2 zt:py-1">
+        {columns.map(({ path }, at) => (
+          <td key={path} className={cn(CELL, at === 0 ? FIRST : LATER)}>
             <CellContent
               value={record.values[path]}
               text={cellText(path, record.values[path])}
             />
           </td>
         ))}
-        <td className="zt:px-2 zt:py-1">
+        <td className={cn(CELL, LATER, "zt:py-0")}>
           <NoteCell notes={notes} itemKey={record.key} />
         </td>
       </tr>

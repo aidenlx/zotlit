@@ -3,6 +3,7 @@ import { defineConfig } from "oxlint";
 import baseConfig, {
   itemQuerySchemaPaths,
   parentImportPattern,
+  uniqueIdPaths,
 } from "@zotlit/config/oxlint";
 
 const obsidianImportPaths = [
@@ -19,6 +20,7 @@ const obsidianImportPaths = [
     message:
       "Extend PopoutAwareHoverPopover from @/lib/popout-aware-hover-popover; it cancels Obsidian's popover timers on the window that armed them (see policies/hover-popover.md).",
   },
+  ...uniqueIdPaths,
 ];
 
 const commonImports = {

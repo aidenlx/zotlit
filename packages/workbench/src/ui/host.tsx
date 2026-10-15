@@ -19,6 +19,8 @@ import type { Extension } from "@codemirror/state";
 import { createContext, useContext } from "react";
 import type { ComponentType, HTMLAttributes, ReactNode } from "react";
 
+import { useUniqueId } from "@zotlit/ui";
+
 import type { WorkbenchMessages } from "./generated/messages";
 import { WorkbenchMessagesProvider } from "./messages";
 import type { WorkbenchIcon } from "./theme";
@@ -262,6 +264,26 @@ export function HiddenName({ id, children }: { id: string; children: string }) {
       {children}
     </span>
   );
+}
+
+/**
+ * A container's accessible name. Inside a host, a {@link HiddenName} carries
+ * it. Outside a host — the skeleton the docs site prerenders — `aria-label`
+ * carries it, so the server markup holds no id from `useUniqueId` and the
+ * hydrating client renders the same attributes.
+ * @returns The attributes for the container and the element to put in it.
+ */
+export function useContainerName(name: string): {
+  attrs: HTMLAttributes<HTMLElement>;
+  hiddenName: ReactNode;
+} {
+  const host = useContext(HostContext);
+  const id = useUniqueId();
+  if (!host) return { attrs: { "aria-label": name }, hiddenName: null };
+  return {
+    attrs: { "aria-labelledby": id },
+    hiddenName: <HiddenName id={id}>{name}</HiddenName>,
+  };
 }
 
 /** The host, when the surface is mounted inside one. */

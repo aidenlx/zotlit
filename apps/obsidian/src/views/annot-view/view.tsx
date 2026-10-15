@@ -45,6 +45,7 @@ import { ZoteroReaderSession } from "@/services/reader-session/zotero";
 import type { ZoteroReaderResolution } from "@/services/reader-session/zotero";
 import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import { readerText } from "@/views/query-view/reader-diagnostic";
 import { QueryView } from "@/views/query-view/view";
 import type { QueryViewDeps, QueryViewHost } from "@/views/query-view/view";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
@@ -77,6 +78,26 @@ const logger = getLogger(["views", "annot-view"]);
 
 const STORAGE_KEY_PREFIX = "zotlit-annot-atch-";
 const FILTER_STORAGE_KEY_PREFIX = "zotlit-annot-filter-";
+
+/**
+ * The sections the view header's "More options" menu registers before the
+ * view fills it, in its order. Verified against Obsidian 1.14.4's
+ * `ItemView.onMoreOptions`.
+ */
+const VIEW_MENU_SECTIONS = [
+  "close",
+  "pane",
+  "open",
+  "action",
+  "find",
+  "info",
+  "info.copy",
+  "view",
+  "view.linked",
+  "system",
+  "",
+  "danger",
+] as const;
 
 /**
  * Every member is a structural `Pick` of the full service sized to what the view
@@ -193,6 +214,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
         onUnpin: () => this.#unpin(),
         onEnableLiveUpdates: () => this.#enableLiveUpdates(),
         onOpenPdf: () => void this.#openPdf(),
+        fillViewMenu: (menu) => this.#fillViewMenu(menu),
         onExploreAnnotation: (annotationKey) => {
           if (!this.#itemKey) return;
           void openTemplateDataExplorer(this.#deps.app, {
@@ -314,7 +336,6 @@ export class AnnotationView extends ItemView implements HistorySurface {
   /** "Refresh data" and the mode switches live here, off the toolbar row. */
   override onPaneMenu(menu: ObsidianMenu, source: string): void {
     super.onPaneMenu(menu, source);
-    if (source !== "more-options") return;
     const actions = this.#layout.actions;
     if (!actions) return;
     const { file, view } = this.#query.state.getState();
@@ -348,6 +369,16 @@ export class AnnotationView extends ItemView implements HistorySurface {
             }),
         }),
     });
+  }
+
+  /**
+   * The view header's "More options" menu, for the header row's own button:
+   * the same sections, the same entries, and the same `leaf-menu` event.
+   */
+  #fillViewMenu(menu: ObsidianMenu): void {
+    menu.addSections(VIEW_MENU_SECTIONS);
+    this.onPaneMenu(menu, "more-options");
+    this.#deps.app.workspace.trigger("leaf-menu", menu, this.leaf);
   }
 
   protected override async onOpen(): Promise<void> {
@@ -615,22 +646,23 @@ export class AnnotationView extends ItemView implements HistorySurface {
    * with an error under the last cards.
    */
   #syncQueryProblem(): void {
-    const { phase, diagnostic, keptResults, filterIssue } =
-      this.#query.state.getState();
-    const failed = phase === "failed" && diagnostic !== null;
+    const { phase, failure, results } = this.#query.state.getState();
+    const failed = phase === "failed" && failure !== null;
+    const keptResults = results !== null;
     this.#store.setState({
       queryProblem: this.#unreadable
         ? { message: m.annot_view_zotero_unreadable(), detail: "" }
         : failed && !keptResults
           ? {
               message: m.annot_view_query_failed(),
-              detail: [diagnostic.message, diagnostic.hint]
-                .filter(Boolean)
-                .join(" "),
+              detail: readerText(failure.diagnostic),
             }
           : null,
       filterError:
-        !this.#unreadable && failed && keptResults && filterIssue !== null,
+        !this.#unreadable &&
+        failed &&
+        keptResults &&
+        failure.filterIssue !== null,
     });
   }
 

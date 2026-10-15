@@ -156,6 +156,14 @@ export const themeHook = {
    * reverted, so what draws it is the caller's classes alone.
    */
   chooserTrigger: "zt-chooser-trigger",
+  /**
+   * A button of the Query View toolbar: an icon, a name, and a count badge
+   * (`[data-query-badge]`) while the control holds settings. It carries
+   * `data-active` while its control holds a setting and `data-open` while its
+   * popover stands. Its own Obsidian button styling is reverted, as the
+   * Chooser trigger's is.
+   */
+  queryToolbarButton: "zt-query-toolbar-button",
 } as const;
 
 /**

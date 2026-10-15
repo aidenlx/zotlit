@@ -10,15 +10,10 @@ import { linter, setDiagnostics } from "@codemirror/lint";
 import { Compartment, EditorSelection, EditorState } from "@codemirror/state";
 import type { Extension } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-} from "react";
+import { createContext, useContext, useEffect, useMemo, useRef } from "react";
 import type { ReactNode } from "react";
+
+import { useUniqueId } from "@zotlit/ui";
 
 import { completionFields } from "./completion-fields";
 import { useDocumentRevision } from "./editor";
@@ -154,7 +149,7 @@ export function SliceEditor({
   const part = useParts("sliceEditor");
   const adapter = useOptionalHost();
   const editorExtension = useEditorExtension();
-  const nameId = useId();
+  const nameId = useUniqueId();
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView>(null);
   const syntaxSlot = useRef(new Compartment());

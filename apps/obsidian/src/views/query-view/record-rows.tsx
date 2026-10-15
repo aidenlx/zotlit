@@ -16,10 +16,12 @@ import {
   useToggleGroupCollapsed,
 } from "@/views/annot-view/store";
 
+import { NO_RESULTS } from "./results";
 import { cell, cellText, errorCell } from "./value-text";
 import type { QueryView } from "./view";
 import { useViewProperties } from "./view-properties";
 import type { PropertyEntry } from "./view-properties";
+import "./record-rows.css";
 
 /** One row on screen, and the group it stands in. */
 export interface ShownRecord {
@@ -46,8 +48,11 @@ export function useRecordGroups(view: QueryView): {
   properties: readonly PropertyEntry[];
   groups: readonly RecordGroup[];
 } {
-  const columns = useViewProperties(view)?.visibleProperties;
-  const records = useStore(view.state, (s) => s.records);
+  const columns = useViewProperties(view)?.visible;
+  const records = useStore(
+    view.state,
+    (s) => (s.results ?? NO_RESULTS).records,
+  );
   const query = useAnnotStore((s) => s.filterQuery)
     .trim()
     .toLowerCase();
@@ -88,7 +93,9 @@ export function useRecordGroups(view: QueryView): {
 
 /**
  * A group's heading. Its button collapses the group's rows and expands them
- * again; the heading's own text names it, so it needs no tooltip.
+ * again; the heading's own text names it, so it needs no tooltip. It reads
+ * as the heading of a Bases group: the value in its size and weight, on the
+ * line height of a Bases row, after a chevron in the collapse icon's ink.
  */
 export function RecordGroupHeading({ group }: { group: RecordGroup }) {
   const toggle = useToggleGroupCollapsed();
@@ -103,12 +110,14 @@ export function RecordGroupHeading({ group }: { group: RecordGroup }) {
       <button
         type="button"
         aria-expanded={!group.collapsed}
-        className="clickable-icon zt:flex zt:min-w-0 zt:items-center zt:gap-1 zt:text-sm zt:font-semibold zt:text-(--text-muted)"
+        className="zt-query-group-toggle zt:flex zt:max-w-full zt:min-w-0 zt:cursor-(--cursor) zt:items-baseline zt:gap-(--size-4-1) zt:rounded-(--clickable-icon-radius) zt:px-(--size-2-2) zt:text-(length:--bases-group-heading-value-size) zt:leading-(--bases-table-row-height) zt:font-(--bases-group-heading-value-weight) zt:text-(--text-normal) zt:hover:bg-(--background-modifier-hover) zt:focus-visible:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)] zt:focus-visible:outline-none"
         onClick={() => toggle(key)}
       >
         <Icon
           name={group.collapsed ? "chevron-right" : "chevron-down"}
-          size={14}
+          size="var(--icon-xs)"
+          strokeWidth="var(--icon-xs-stroke-width)"
+          className="zt:shrink-0 zt:self-center zt:text-(--collapse-icon-color)"
         />
         <span className="zt:truncate">{group.label}</span>
       </button>
@@ -145,7 +154,11 @@ export function CellContent({
         data-query-error={error.code}
         {...tooltipAttrs(error.message)}
       >
-        <Icon name="alert-triangle" size={14} />
+        <Icon
+          name="alert-triangle"
+          size="var(--icon-xs)"
+          strokeWidth="var(--icon-xs-stroke-width)"
+        />
       </span>
     );
   if (!Array.isArray(value) || !holdsError(value)) return text;

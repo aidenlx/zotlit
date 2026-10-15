@@ -33,6 +33,7 @@ export interface WorkbenchParts {
     | "condition"
     | "statement"
     | "predicate"
+    | "kind-icon"
     | "fields"
     | "value"
     | "actions"

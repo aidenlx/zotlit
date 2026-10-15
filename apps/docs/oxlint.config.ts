@@ -1,6 +1,9 @@
 import { defineConfig } from "oxlint";
 
-import baseConfig from "@zotlit/config/oxlint";
+import baseConfig, {
+  itemQuerySchemaPaths,
+  parentImportPattern,
+} from "@zotlit/config/oxlint";
 
 export default defineConfig({
   extends: [baseConfig],
@@ -29,6 +32,13 @@ export default defineConfig({
     "nextjs/no-title-in-document-head": "off",
     "nextjs/no-typos": "off",
     "nextjs/no-unwanted-polyfillio": "off",
+    // The site renders on the server and hydrates one React root, so its ids
+    // come from useId, the one id that matches across the two renders. The
+    // base rule without its useId ban:
+    "no-restricted-imports": [
+      "error",
+      { patterns: [parentImportPattern], paths: itemQuerySchemaPaths },
+    ],
   },
   overrides: [
     {
