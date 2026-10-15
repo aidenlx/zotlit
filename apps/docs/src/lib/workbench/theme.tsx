@@ -118,7 +118,7 @@ export const WEB_THEME: WorkbenchTheme = {
       rows: "flex flex-col gap-2 list-none m-0 p-0",
       row: "grid min-w-0 grid-cols-[auto_4.5rem_minmax(0,1fr)] items-start gap-2 [&>[data-part=group]]:col-span-2 data-dragging:opacity-50 [&:hover>[data-part=handle]]:opacity-100 data-[drop=before]:shadow-[0_calc(var(--spacing)*-0.5)_0_0_var(--color-fd-primary)] data-[drop=after]:shadow-[0_calc(var(--spacing)*0.5)_0_0_var(--color-fd-primary)]",
       handle:
-        "flex min-h-8 shrink-0 items-center -me-1 rounded-sm text-fd-muted-foreground cursor-grab active:cursor-grabbing opacity-0 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-fd-ring aria-disabled:hidden [&_svg]:size-4",
+        "flex min-h-8 min-w-6 shrink-0 items-center justify-center -me-1 rounded-sm text-fd-muted-foreground cursor-grab active:cursor-grabbing opacity-0 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-fd-ring aria-disabled:hidden [&_svg]:size-4",
       condition: "min-w-0 flex-1",
       statement:
         "flex flex-wrap min-w-0 items-start gap-1 [&_[data-part=wrapper]]:w-auto",
