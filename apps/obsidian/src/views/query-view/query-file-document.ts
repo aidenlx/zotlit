@@ -185,7 +185,7 @@ export class QueryFileDocument {
       !Object.hasOwn(file.formulas ?? {}, name) &&
       !(view.order ?? []).includes(property)
     ) {
-      // A view that shows no property chosen shows the defaults; they stay.
+      // A view without order shows the defaults; they stay.
       const { order, visibleProperties } = viewProperties(file, view);
       const shown = visibleProperties.some((entry) => entry.place !== null)
         ? order

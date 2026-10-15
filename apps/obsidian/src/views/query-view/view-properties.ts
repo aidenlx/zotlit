@@ -68,8 +68,10 @@ export interface ViewProperties {
   readonly entries: readonly PropertyEntry[];
   /**
    * The Properties each record shows, as the Layouts, copy and CSV write
-   * them: the Visible Properties the dataset can read. A view that shows
-   * none gives the fields ZotLit Query projects by default.
+   * them: the Visible Properties the dataset can read. An empty `order`, as
+   * "Hide all" leaves it, shows none, as in Bases. An `order` that names only
+   * Properties of another dataset, kept across a dataset change, gives the
+   * fields ZotLit Query projects by default.
    */
   readonly visibleProperties: readonly PropertyEntry[];
   /** What the view keeps in its file but does not use. */
@@ -123,7 +125,8 @@ export function viewProperties(
   ]);
   const entries = [...paths].map(entry);
   const shown = entries.filter((each) => each.place !== null && each.fits);
-  const visibleProperties = shown.length > 0 ? shown : defaults.map(entry);
+  const visibleProperties =
+    shown.length > 0 || order.length === 0 ? shown : defaults.map(entry);
   return {
     order,
     entries,

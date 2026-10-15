@@ -318,6 +318,22 @@ describe("saving an edit", () => {
     expect(failed).toEqual([true, false]);
   });
 
+  it("adds a new Formula after the default fields of a view without order, and alone to a view with an empty order", () => {
+    const items = (order: string) =>
+      `views:\n  - type: table\n    name: Items\n    from: items\n${order}`;
+    const defaults = open(items(""));
+    defaults.document.saveFormula("month", "date.month");
+    expect(defaults.document.view?.order).toEqual([
+      "itemType",
+      "title",
+      "dateModified",
+      "formula.month",
+    ]);
+    const hidden = open(items("    order: []\n"));
+    hidden.document.saveFormula("month", "date.month");
+    expect(hidden.document.view?.order).toEqual(["formula.month"]);
+  });
+
   it.each([
     [
       "adds a Formula",

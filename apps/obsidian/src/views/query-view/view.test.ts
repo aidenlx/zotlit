@@ -1247,6 +1247,52 @@ function tableText(el: HTMLElement): string[][] {
   );
 }
 
+it("shows no property in the Table, Cards, List, copy and the run of a view with an empty order", async () => {
+  const rows = () =>
+    result([
+      itemRow("ITEMAAAA", "Ten simple rules"),
+      itemRow("ITEMBBBB", "Deep learning"),
+    ]);
+  // Cards read less than the Table, so the switch runs again.
+  const { view, el, run, settle } = await mount([rows(), rows()]);
+  await act(() =>
+    view.setText(`views:
+  - type: table
+    name: Reading list
+    from: items
+    order: []
+`),
+  );
+  await settle();
+
+  // The run asks for what the Table itself reads, and no property.
+  const [request] = run.mock.calls[0]!;
+  expect(request.fields).not.toContain("title");
+  expect(request.fields).not.toContain("itemType");
+  // The Table keeps its Literature note column, one row for each Item.
+  const [header, ...body] = tableText(el);
+  expect(header).toEqual(["", "Literature note"]);
+  expect(body).toHaveLength(2);
+  expect(el.querySelector("[data-query-column]")).toBeNull();
+  // Copy and CSV write no column.
+  expect(view.table()).toEqual({ header: [], body: [] });
+
+  // Cards and List keep one empty record for each Item.
+  await act(() => view.document.setViewLayout(0, "cards"));
+  await settle();
+  expect(shownRows(el)).toEqual(["ITEMAAAA", "ITEMBBBB"]);
+  expect(
+    [...el.querySelectorAll("[data-query-row]")].map((n) => n.textContent),
+  ).toEqual(["", ""]);
+  expect(run.mock.calls.at(-1)![0].fields).toEqual([]);
+  await act(() => view.document.setViewLayout(0, "list"));
+  await settle();
+  expect(shownRows(el)).toEqual(["ITEMAAAA", "ITEMBBBB"]);
+  expect(
+    [...el.querySelectorAll("[data-query-row]")].map((n) => n.textContent),
+  ).toEqual(["", ""]);
+});
+
 it("shows a view of Items as a Table: one row for each Item, a column for each visible property", async () => {
   const { view, el, run, settle } = await mount([
     result([

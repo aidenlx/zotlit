@@ -1997,6 +1997,29 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const cells = new Map(table.rows.map((row) => [row.key, row.cells]));
     for (const card of cards.rows)
       expect(card.cells).toEqual(cells.get(card.key)!.slice(0, 4));
+
+    // "Hide all" leaves no property ticked and none shown, as in Bases: the
+    // Table keeps its Literature note column and a row for each Item, and a
+    // card stays for each Item with nothing in it.
+    await pickLayout("table");
+    await tabWhen((tab) => tab.layout === "table" && tab.rows.length === total);
+    const hidden = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{const until=async(what,ok)=>{for(let i=0;i<100;i++){if(ok())return;await new Promise(r=>setTimeout(r,20));}throw new Error('Properties popover: '+what);};const view=app.workspace.getMostRecentLeaf().view;const el=view.contentEl;el.querySelector('[data-query-properties]').click();const popup=()=>activeDocument.querySelector('[data-query-properties-popup]');const selected=()=>[...popup().querySelectorAll('[data-query-property][aria-selected="true"]')];await until('opens',()=>popup()?.matches(':popover-open')&&selected().length>0);popup().querySelector('[data-query-properties-action="hide-all"]').click();await until('hides all',()=>selected().length===0);const ticks=selected().length;popup().hidePopover();await until('drops the columns',()=>!el.querySelector('th[data-query-column]'));await view.query.settled;return JSON.stringify({header:[...el.querySelectorAll('[data-query-table] thead th')].map(n=>n.textContent.trim()),rows:el.querySelectorAll('tr[data-query-table-row="item"]').length,ticks});})()`,
+      ),
+    ) as { header: string[]; rows: number; ticks: number };
+    expect(hidden).toEqual({
+      header: ["", m.query_view_table_literature_note()],
+      rows: total,
+      ticks: 0,
+    });
+    await pickLayout("cards");
+    const empty = await tabWhen(
+      (tab) => tab.layout === "cards" && tab.rows.length === total,
+    );
+    expect(empty.labels).toEqual([]);
+    expect(empty.rows.every((row) => row.cells.length === 0)).toBe(true);
   }, 180000);
 
   it("groups a Query File by colour in a Manual order, hides a colour, and keeps it on reopen", async () => {

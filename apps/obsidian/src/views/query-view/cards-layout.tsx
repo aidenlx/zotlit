@@ -107,17 +107,21 @@ export function CardsLayout({ view }: { view: QueryView }) {
                     className="zt:flex zt:min-w-0 zt:flex-col zt:gap-2 zt:rounded-(--bases-cards-radius) zt:bg-(--bases-cards-background) zt:px-2 zt:pt-2 zt:pb-0.5 zt:shadow-(--bases-cards-shadow)"
                     data-query-row={row.indexedKey}
                   >
-                    <div
-                      className={cn(
-                        "zt:text-base zt:font-[calc(var(--font-weight)+var(--bold-modifier))]",
-                        CARD_LINE,
-                      )}
-                    >
-                      <CellContent
-                        value={row.values[properties[0]!.path]}
-                        text={title}
-                      />
-                    </div>
+                    {/* A view that shows no property leaves the card
+                        empty, as a Bases card is. */}
+                    {properties.length > 0 && (
+                      <div
+                        className={cn(
+                          "zt:text-base zt:font-[calc(var(--font-weight)+var(--bold-modifier))]",
+                          CARD_LINE,
+                        )}
+                      >
+                        <CellContent
+                          value={row.values[properties[0]!.path]}
+                          text={title}
+                        />
+                      </div>
+                    )}
                     {rest.map((text, at) => (
                       <div
                         key={properties[at + 1]!.path}

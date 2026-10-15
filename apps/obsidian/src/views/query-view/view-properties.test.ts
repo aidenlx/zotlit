@@ -140,10 +140,11 @@ describe("viewProperties entries", () => {
     expect(properties.visibleProperties.map((entry) => entry.path)).toEqual(
       properties.order,
     );
-    // "Hide all" leaves an empty order: no property is ticked.
+    // "Hide all" leaves an empty order: no property is ticked or shown.
     const hidden = viewProperties(null, { from: "items", order: [] });
     expect(hidden.order).toEqual([]);
     expect(hidden.entries.every((entry) => entry.place === null)).toBe(true);
+    expect(hidden.visibleProperties).toEqual([]);
   });
 
   it("names a Property it does not list, such as a sort of another dataset", () => {

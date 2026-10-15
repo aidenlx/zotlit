@@ -21,9 +21,14 @@ export function resultTable(
 ): ResultTable {
   return {
     header: columns.map(({ label }) => label),
-    body: rows.map((row) =>
-      columns.map(({ path }) => cellText(path, row.values[path])),
-    ),
+    // A row of no columns has no cell to write: a view that shows no
+    // property writes an empty table.
+    body:
+      columns.length === 0
+        ? []
+        : rows.map((row) =>
+            columns.map(({ path }) => cellText(path, row.values[path])),
+          ),
   };
 }
 
