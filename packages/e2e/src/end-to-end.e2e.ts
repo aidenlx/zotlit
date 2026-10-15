@@ -556,12 +556,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         select: { fill: motion, ring: motion },
         deselect: { fill: motion, ring: motion },
       });
-      // The header block is one press target however much it reports, and the
-      // pane names its controls with `aria-label` alone. Both are shapes only a
+      // The header block is one press target however much it reports (the
+      // view's own More options beside it is not part of it), and the pane
+      // names its controls with `aria-label` alone. Both are shapes only a
       // rendered view has: the focus stops are what the DOM ended up with, and
       // a `title` anywhere in the view is the hover tooltip Obsidian would draw
       // over its own.
-      const headerChrome = `JSON.stringify((()=>{const root=app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view.containerEl;const block=root?.querySelector('.zt-annot-header')?.parentElement??null;return {focusable:block?block.querySelectorAll('button, [tabindex]:not([tabindex="-1"]), a[href], input').length:-1,titled:root?root.querySelectorAll('[title]').length:-1};})())`;
+      const headerChrome = `JSON.stringify((()=>{const root=app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view.containerEl;const block=root?.querySelector('.zt-annot-header')?.parentElement??null;return {focusable:block?[...block.querySelectorAll('button, [tabindex]:not([tabindex="-1"]), a[href], input')].filter(el=>!el.closest('[data-annot-view-more-options]')).length:-1,titled:root?root.querySelectorAll('[title]').length:-1};})())`;
       expect(await obEval(vaultId, headerChrome)).toBe(
         JSON.stringify({ focusable: 1, titled: 0 }),
       );
