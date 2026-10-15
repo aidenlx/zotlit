@@ -27,7 +27,9 @@ export function DisplayNameField({
 }) {
   return (
     <label className="zt:flex zt:flex-col zt:gap-1">
-      <span className="zt:font-medium">{m.query_view_display_name()}</span>
+      <span className="zt:text-sm zt:text-foreground">
+        {m.query_view_display_name()}
+      </span>
       <input
         type="text"
         value={value}
