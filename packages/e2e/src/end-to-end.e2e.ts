@@ -1143,8 +1143,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       search: m.query_view_search(),
     };
     /** Each toolbar button's tooltip text and whether its name shows beside its icon. */
+    // The sidebars fold with an animation; a width the same over three frames
+    // is the settled pane.
     const readPane = (pane: "wide" | "narrow") =>
-      `(async()=>{${PAGE}const bar=await until('toolbar laid out',()=>{const bar=window.zotlitE2EPanes.${pane}.view.contentEl.querySelector('[role="toolbar"]');return bar?.clientWidth>0?bar:null;});const button=hook=>hook==='properties'?bar.querySelector('[data-query-properties]'):bar.querySelector('[data-query-toolbar="'+hook+'"]');const out={width:bar.clientWidth,overflow:bar.scrollWidth>bar.clientWidth,buttons:{}};for(const hook of ${JSON.stringify(Object.keys(names))}){const el=button(hook);const name=[...el.querySelectorAll('span')].find(s=>s.textContent.trim()!=='');out.buttons[hook]={tooltip:el.getAttribute('aria-label'),nameShown:!!name&&getComputedStyle(name).display!=='none',iconShown:!!el.querySelector('svg')&&el.querySelector('svg').getBoundingClientRect().width>0};}return JSON.stringify(out);})()`;
+      `(async()=>{${PAGE}const bar=window.zotlitE2EPanes.${pane}.view.contentEl.querySelector('[role="toolbar"]');let last=-1,steady=0;await until('toolbar width settles',async()=>{await new Promise(r=>requestAnimationFrame(r));const width=bar.clientWidth;steady=width>0&&width===last?steady+1:0;last=width;return steady>=3;});const button=hook=>hook==='properties'?bar.querySelector('[data-query-properties]'):bar.querySelector('[data-query-toolbar="'+hook+'"]');const out={width:bar.clientWidth,overflow:bar.scrollWidth>bar.clientWidth,buttons:{}};for(const hook of ${JSON.stringify(Object.keys(names))}){const el=button(hook);const name=[...el.querySelectorAll('span')].find(s=>s.textContent.trim()!=='');out.buttons[hook]={tooltip:el.getAttribute('aria-label'),nameShown:!!name&&getComputedStyle(name).display!=='none',iconShown:!!el.querySelector('svg')&&el.querySelector('svg').getBoundingClientRect().width>0};}return JSON.stringify(out);})()`;
     interface Pane {
       width: number;
       overflow: boolean;
