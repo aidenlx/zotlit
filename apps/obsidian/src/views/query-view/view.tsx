@@ -41,6 +41,8 @@ import type { AnnotState } from "@/views/annot-view/store";
 
 import type { QueryCardFocus } from "./card-focus";
 import { CardsLayout } from "./cards-layout";
+import { contextHint } from "./context-hint";
+import type { ContextSource } from "./context-hint";
 import { datasetSpec, grouping } from "./datasets";
 import { FilterButton } from "./filter-popover";
 import type { FilterValues } from "./filter-popover";
@@ -114,6 +116,12 @@ export interface QueryViewHost {
    * Query File's own tab, where `this` has no value.
    */
   context: () => QueryContext | undefined;
+  /**
+   * The surface the host is, by what it binds to `this`; a filter that reads
+   * a record with none bound shows where to get one. Absent in a Query
+   * File's own tab, which binds nothing.
+   */
+  contextSource?: ContextSource;
   /** The user chose another view of the file; the host may remember it. */
   onSelectView?: (name: string) => void;
   /**
@@ -512,6 +520,11 @@ export class QueryView extends Component implements HistorySurface {
     };
   }
 
+  /** The surface the host is, by what it binds to `this`. */
+  get contextSource(): ContextSource | undefined {
+    return this.#host.contextSource;
+  }
+
   /** The host's link to the Query File, for the toolbar. */
   get openFile(): QueryViewHost["openFile"] {
     return this.#host.openFile;
@@ -820,8 +833,20 @@ function Problems({ view }: { view: QueryView }) {
   // A fault in one condition, under the last good rows, is marked at its row
   // in the Filter popover; the view says only that the filter has an error.
   const unresolved = useAnnotStore((s) => s.unresolved);
+  const hint =
+    phase === "failed" && diagnostic
+      ? contextHint(diagnostic, view.contextSource)
+      : null;
   return (
     <>
+      {hint !== null && (
+        <p
+          className="zt:mx-3 zt:mt-2 zt:mb-0 zt:text-sm zt:text-(--text-muted)"
+          data-query-context-hint=""
+        >
+          {hint}
+        </p>
+      )}
       {problems.length > 0 && (
         <div
           className="zt:mx-3 zt:mt-2 zt:rounded-sm zt:border-(length:--border-width) zt:border-(--background-modifier-error) zt:p-2 zt:text-sm"

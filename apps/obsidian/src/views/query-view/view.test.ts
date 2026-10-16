@@ -12,6 +12,7 @@ import { nameDictionary } from "@zotlit/item-query";
 import type { FormulaDiagnostics, QueryContext } from "@zotlit/item-query";
 
 import { Effect } from "@/lib/effect";
+import * as m from "@/lib/i18n/generated/messages";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type {
   AnnotationList,
@@ -26,6 +27,7 @@ import type {
 import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
 
 import { requested } from "./__fixtures__/query-run";
+import type { ContextSource } from "./context-hint";
 import { groupOptions } from "./properties";
 import { QUERY_FILE_DATASETS, serializeQueryFile } from "./query-file";
 import type { QueryFileDataset } from "./query-file";
@@ -136,6 +138,7 @@ async function mount(
     write,
     canSave,
     context = () => undefined,
+    contextSource,
   }: {
     notes?: Record<string, string>;
     layout?: ConstructorParameters<typeof QueryView>[1]["layout"];
@@ -143,6 +146,7 @@ async function mount(
     write?: (text: string) => Promise<void>;
     canSave?: () => boolean;
     context?: () => QueryContext | undefined;
+    contextSource?: ContextSource;
   } = {},
 ) {
   setMockPlatform({ isMacOS: true });
@@ -240,6 +244,7 @@ async function mount(
     scope: new Scope(),
     sourcePath: () => "query-files/Reading.zotquery",
     context,
+    contextSource,
     save: (text) => {
       saved.push(text);
       save(text);
@@ -481,6 +486,41 @@ it("says why when the query cannot read Zotero's data, rather than looking empty
       ?.getAttribute("data-query-diagnostic"),
   ).toBe("source-unavailable");
   expect(el.querySelector("[data-query-empty]")).toBeNull();
+});
+
+it("shows where this.item gets an Item above the diagnostic of a filter that reads it unbound", async () => {
+  const at = "this.item";
+  const { view, el, settle } = await mount(
+    [
+      {
+        kind: "failed",
+        diagnostic: {
+          code: "unbound-context",
+          message:
+            "The filter reads this.item, but the query binds no Item to this.",
+          hint: "Bind this.item to an Item when you run the query.",
+          severity: "error",
+          report: [],
+          excerpt: { before: "item == ", at, after: "" },
+          found: "",
+          expected: [],
+          suggestions: [],
+        },
+      },
+    ],
+    undefined,
+    { contextSource: "note" },
+  );
+  await act(() => view.setText(FILE));
+  await settle();
+
+  const hint = el.querySelector("[data-query-context-hint]");
+  const box = el.querySelector('[data-query-diagnostic="unbound-context"]');
+  expect(hint?.textContent).toBe(m.query_view_context_hint_note_item());
+  expect(box).not.toBeNull();
+  expect(
+    hint!.compareDocumentPosition(box!) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
 });
 
 it("opens a file with a broken view and names the problem without running it", async () => {

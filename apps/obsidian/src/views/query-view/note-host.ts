@@ -53,6 +53,7 @@ export class NoteQueryHost extends Component {
       scope: this.#scope,
       sourcePath,
       context: () => (this.#item === null ? undefined : { item: this.#item }),
+      contextSource: "note",
     });
     // e2e-only: packages/e2e reaches the view of every host from its element.
     // A dev-build port, absent from a production build.
