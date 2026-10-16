@@ -3693,6 +3693,180 @@ views:
     expect(removed.header).toEqual([["title", "Work"]]);
   }, 240000);
 
+  it("moves a Table column by its header and sets its width by its edge, saves both in the Query File view, and a double click sets the width back", async () => {
+    const path = "query-files/Column widths.zotquery";
+    const layout = await obEval(
+      vaultId,
+      "JSON.stringify(app.workspace.getLayout())",
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{document.body.classList.remove('is-grabbing');await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));const file=app.vault.getFileByPath(${JSON.stringify(path)});if(file)await app.vault.delete(file);return true;})()`,
+      );
+    });
+    const source = `views:\n  - type: table\n    name: Column widths\n    from: items\n    order:\n      - title\n      - firstAuthor\n      - date\n    limit: 3\n`;
+    await obEval(
+      vaultId,
+      `(async()=>{const file=await app.vault.create(${JSON.stringify(path)},${JSON.stringify(source)});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
+    );
+    /**
+     * Runs `steps` against the open Query File tab once its Table shows, with
+     * `th(path)`, `edge(path)` and `fire(target, type, x)`, a drag event at
+     * the client x `x`; then saves and reads the header and the file text.
+     */
+    const inTable = async <T>(steps: string): Promise<T> => {
+      let out: T | null = null;
+      const settled = await waitFor(async () => {
+        out = JSON.parse(
+          await obEval(
+            vaultId,
+            `(async()=>{const view=app.workspace.getMostRecentLeaf().view;if(view.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(path)})return 'null';await view.query.settled;const el=view.contentEl;const th=p=>el.querySelector('[data-query-table] th[data-query-column="'+p+'"]');if(!th('title')||!el.querySelector('[data-query-table-row="item"]'))return 'null';const edge=p=>th(p).querySelector('[data-query-column-resizer]');const transfer=new DataTransfer();const fire=(target,type,x)=>{const r=target.getBoundingClientRect();const event=new DragEvent(type,{bubbles:true,cancelable:true,dataTransfer:transfer,clientX:x,clientY:r.top+r.height/2});target.dispatchEvent(event);return event.defaultPrevented;};const frame=()=>new Promise(r=>requestAnimationFrame(()=>r()));const until=async(what,test)=>{for(let i=0;i<100;i++){if(test())return;await frame();}throw new Error(what);};const width=p=>Math.round(th(p).getBoundingClientRect().width);const out=await (async()=>{${steps}})();await view.query.flush();return JSON.stringify({...out,columns:[...el.querySelectorAll('[data-query-table] th[data-query-column]')].map(n=>n.getAttribute('data-query-column')),text:await app.vault.read(view.file)});})()`,
+          ),
+        ) as T | null;
+        return out !== null;
+      }, 120);
+      if (!settled) throw new Error("Query File tab shows no Table");
+      return out!;
+    };
+    interface Read {
+      columns: string[];
+      text: string;
+    }
+
+    // A header dragged over a column after it drops after that column, and
+    // the drop line stands at that column's end edge while the drag is on.
+    const moved = await inTable<
+      Read & { line: number; edge: number; layer: string; header: string }
+    >(
+      `const date=th('date').getBoundingClientRect();fire(th('title'),'dragstart',th('title').getBoundingClientRect().left+5);fire(th('date'),'dragover',date.left+5);const line=el.querySelector('.table-drag-target.mod-col');const at=line?Math.round(line.getBoundingClientRect().left):null;const layer=line?getComputedStyle(line).zIndex:null;const header=getComputedStyle(th('title')).zIndex;fire(th('date'),'drop',date.left+5);fire(th('title'),'dragend',0);await frame();return {line:at,edge:Math.round(date.right),layer,header};`,
+    );
+    expect(moved.line).toBe(moved.edge);
+    // The line stands over the sticky header, not under it.
+    expect(moved.layer).toBe(moved.header);
+    expect(moved.columns).toEqual(["firstAuthor", "date", "title"]);
+    expect(moved.text).toContain(
+      "    order:\n      - firstAuthor\n      - date\n      - title\n",
+    );
+
+    // A drag on a column's edge sets its width as it goes, and saves it on
+    // the drop; the header does not move.
+    const resized = await inTable<
+      Read & { before: number; live: number; after: number }
+    >(
+      `const before=width('date');const x=edge('date').getBoundingClientRect().left+2;fire(edge('date'),'dragstart',x);fire(el,'dragover',x+80);await until('live width',()=>width('date')!==before);const live=width('date');fire(el,'drop',x+80);fire(edge('date'),'dragend',0);await frame();return {before,live,after:width('date')};`,
+    );
+    expect(resized.columns).toEqual(["firstAuthor", "date", "title"]);
+    expect(resized.live).toBe(resized.before + 80);
+    expect(resized.after).toBe(resized.before + 80);
+    expect(resized.text).toContain(
+      `    columnSize:\n      date: ${resized.before + 80}\n`,
+    );
+
+    // A drag on an edge that ends without a drop, as Escape ends it, puts the
+    // width back and saves nothing.
+    const cancelled = await inTable<
+      Read & { before: number; live: number; after: number }
+    >(
+      `const before=width('title');const x=edge('title').getBoundingClientRect().left+2;fire(edge('title'),'dragstart',x);fire(el,'dragover',x+60);await until('live width',()=>width('title')!==before);const live=width('title');fire(edge('title'),'dragend',0);await frame();return {before,live,after:width('title')};`,
+    );
+    expect(cancelled.live).toBe(cancelled.before + 60);
+    expect(cancelled.after).toBe(cancelled.before);
+    expect(cancelled.text).toBe(resized.text);
+
+    // A double click on the edge sets the column back to its auto width and
+    // removes the key with its last width.
+    const reset = await inTable<Read & { after: number }>(
+      `edge('date').dispatchEvent(new MouseEvent('dblclick',{bubbles:true,cancelable:true}));await until('auto width',()=>!('sized' in th('date').dataset));return {after:width('date')};`,
+    );
+    expect(reset.after).toBe(resized.before);
+    expect(reset.text).not.toContain("columnSize");
+    expect(reset.columns).toEqual(["firstAuthor", "date", "title"]);
+
+    // A column can be narrower than its longest word: it stops at the
+    // narrowest Bases width, and its cells clip what does not fit.
+    const narrowed = await inTable<
+      Read & {
+        min: number;
+        auto: number;
+        after: number;
+        clipped: boolean;
+        label: boolean;
+      }
+    >(
+      `const min=Number.parseFloat(getComputedStyle(th('firstAuthor')).getPropertyValue('--bases-table-column-min-width'));const before=width('firstAuthor');const x=edge('firstAuthor').getBoundingClientRect().left+2;fire(edge('firstAuthor'),'dragstart',x);fire(el,'dragover',x-before);fire(el,'drop',x-before);fire(edge('firstAuthor'),'dragend',0);await until('narrow width',()=>width('firstAuthor')===min);const at=th('firstAuthor').cellIndex;const cells=[...el.querySelectorAll('[data-query-table-row="item"]')].map(row=>row.cells[at]);const label=th('firstAuthor').firstElementChild.lastElementChild;return {min,auto:before,after:width('firstAuthor'),clipped:cells.some(cell=>cell.scrollWidth>cell.clientWidth),label:label.scrollWidth>label.clientWidth};`,
+    );
+    expect(narrowed.after).toBe(narrowed.min);
+    expect(narrowed.clipped).toBe(true);
+    expect(narrowed.label).toBe(true);
+    expect(narrowed.text).toContain(
+      `    columnSize:\n      firstAuthor: ${narrowed.min}\n`,
+    );
+
+    // A right click on a resized header offers Reset column size, which
+    // sets the column back to its auto width.
+    const menuReset = await inTable<
+      Read & { autoMenu: boolean; item: string | null; after: number }
+    >(
+      `const plain=new MouseEvent('contextmenu',{bubbles:true,cancelable:true});th('date').dispatchEvent(plain);const autoMenu=plain.defaultPrevented||!!activeDocument.querySelector('.menu');th('firstAuthor').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:th('firstAuthor').getBoundingClientRect().left+5,clientY:th('firstAuthor').getBoundingClientRect().top+5}));await until('header menu',()=>document.querySelector('.menu .menu-item'));const items=[...document.querySelectorAll('.menu .menu-item')];const item=items.map(n=>n.textContent.trim());items[0].click();await until('auto width',()=>!('sized' in th('firstAuthor').dataset));return {autoMenu,item:item.join('|'),after:width('firstAuthor')};`,
+    );
+    // A column at its auto width has nothing to reset: no menu opens.
+    expect(menuReset.autoMenu).toBe(false);
+    expect(menuReset.item).toBe("Reset column size");
+    expect(menuReset.after).toBe(narrowed.auto);
+    expect(menuReset.text).not.toContain("columnSize");
+
+    // A drag whose end reaches only the window, as for a header the Table
+    // took off the page, still ends: the live width goes back, with no save.
+    const ended = await inTable<
+      Read & { before: number; live: number; after: number; grabbing: boolean }
+    >(
+      `const before=width('date');const x=edge('date').getBoundingClientRect().left+2;fire(edge('date'),'dragstart',x);fire(el,'dragover',x+50);await until('live width',()=>width('date')!==before);const live=width('date');activeDocument.body.dispatchEvent(new DragEvent('dragend',{bubbles:true}));return {before,live,after:width('date'),grabbing:activeDocument.body.classList.contains('is-grabbing')};`,
+    );
+    expect(ended.live).toBe(ended.before + 50);
+    expect(ended.after).toBe(ended.before);
+    expect(ended.grabbing).toBe(false);
+    expect(ended.text).toBe(menuReset.text);
+
+    // A header dropped outside the table moves nothing, and the drag leaves
+    // no drop line and no grabbing cursor.
+    const outside = await inTable<Read & { line: boolean; grabbing: boolean }>(
+      `const date=th('date').getBoundingClientRect();fire(th('title'),'dragstart',th('title').getBoundingClientRect().left+5);fire(th('date'),'dragover',date.left+5);const away=view.containerEl.querySelector('.view-header');fire(away,'dragover',away.getBoundingClientRect().left+5);fire(away,'drop',away.getBoundingClientRect().left+5);fire(th('title'),'dragend',0);return {line:!!activeDocument.querySelector('.table-drag-target'),grabbing:activeDocument.body.classList.contains('is-grabbing')};`,
+    );
+    expect(outside.line).toBe(false);
+    expect(outside.grabbing).toBe(false);
+    expect(outside.columns).toEqual(["firstAuthor", "date", "title"]);
+    expect(outside.text).toBe(menuReset.text);
+
+    // A move reads the order the view holds at the drop: here a save during
+    // the drag puts the dragged column last, and the drop over the first
+    // column still puts it first.
+    const stale = await inTable<Read>(
+      `fire(th('firstAuthor'),'dragstart',th('firstAuthor').getBoundingClientRect().left+5);view.query.document.editView({order:['date','title','firstAuthor']});await view.query.flush();await until('order changes',()=>[...el.querySelectorAll('[data-query-table] th[data-query-column]')].map(n=>n.getAttribute('data-query-column')).join()==='date,title,firstAuthor');const date=th('date').getBoundingClientRect();fire(th('date'),'dragover',date.left+5);fire(th('date'),'drop',date.left+5);fire(th('firstAuthor'),'dragend',0);await until('dropped',()=>[...el.querySelectorAll('[data-query-table] th[data-query-column]')].map(n=>n.getAttribute('data-query-column')).join()==='firstAuthor,date,title');return {};`,
+    );
+    expect(stale.columns).toEqual(["firstAuthor", "date", "title"]);
+    expect(stale.text).toContain(
+      "    order:\n      - firstAuthor\n      - date\n      - title\n",
+    );
+
+    // A tab that closes mid-drag ends the drag: no drop line, no grabbing
+    // cursor, the width as it was, and a later drop saves nothing.
+    const closed = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{const leaf=app.workspace.getMostRecentLeaf();const view=leaf.view;const el=view.contentEl;const th=p=>el.querySelector('[data-query-table] th[data-query-column="'+p+'"]');const transfer=new DataTransfer();const fire=(target,type,x)=>{const r=target.getBoundingClientRect();const event=new DragEvent(type,{bubbles:true,cancelable:true,dataTransfer:transfer,clientX:x,clientY:r.top+r.height/2});target.dispatchEvent(event);return event.defaultPrevented;};const before=await app.vault.read(view.file);const file=view.file;const date=th('date').getBoundingClientRect();fire(th('title'),'dragstart',th('title').getBoundingClientRect().left+5);fire(th('date'),'dragover',date.left+5);const during={line:!!activeDocument.querySelector('.table-drag-target'),grabbing:activeDocument.body.classList.contains('is-grabbing')};const layout=view.query.layout;const left=()=>!activeDocument.querySelector('.table-drag-target')&&!activeDocument.body.classList.contains('is-grabbing');leaf.detach();if(layout._loaded)throw new Error('the Table stays mounted');for(let i=0;i<100&&!left();i++)await new Promise(r=>setTimeout(r,20));const after={line:!!activeDocument.querySelector('.table-drag-target'),grabbing:activeDocument.body.classList.contains('is-grabbing')};fire(activeDocument.body,'dragover',10);fire(activeDocument.body,'drop',10);return JSON.stringify({during,after,same:(await app.vault.read(file))===before});})()`,
+      ),
+    ) as {
+      during: { line: boolean; grabbing: boolean };
+      after: { line: boolean; grabbing: boolean };
+      same: boolean;
+    };
+    expect(closed.during).toEqual({ line: true, grabbing: true });
+    expect(closed.after).toEqual({ line: false, grabbing: false });
+    expect(closed.same).toBe(true);
+  }, 240000);
+
   it("switches a Fixture Query File view to Items and the Table, expands an Item into its Attachments, Annotations and Child Notes, and creates a Literature Note from its column", async () => {
     const path = "query-files/Reading annotations.zotquery";
     const layout = await obEval(

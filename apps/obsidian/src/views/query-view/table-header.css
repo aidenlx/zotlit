@@ -1,0 +1,7 @@
+/*
+ * Outranks Obsidian's unlayered `.table-drag-target` layer, so the column drop
+ * line stands over the Table's sticky header.
+ */
+.zt-column-drop-line.table-drag-target {
+  z-index: var(--layer-cover);
+}

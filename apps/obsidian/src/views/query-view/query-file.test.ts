@@ -220,6 +220,128 @@ describe("editView: order and limit", () => {
   });
 });
 
+describe("columnSize", () => {
+  const SIZED = `views:
+  - type: table
+    name: Papers
+    from: items
+    order:
+      - title
+      - date
+    columnSize:
+      title: 320
+      date: 96
+    limit: 20
+`;
+
+  it("reads the width of each resized column, by property path", () => {
+    expect(parseQueryFile(SIZED).views[0]!.columnSize).toEqual({
+      title: 320,
+      date: 96,
+    });
+  });
+
+  it("drops an entry that is not a width and keeps the others, without a problem", () => {
+    const view = parseQueryFile(`views:
+  - type: table
+    name: Papers
+    from: items
+    columnSize:
+      title: 320
+      date: wide
+      creators: -5
+      tags: 0
+`).views[0]!;
+    expect(view.columnSize).toEqual({ title: 320 });
+    expect(view.problems).toEqual([]);
+  });
+
+  it("keeps a columnSize with no width in the file as it is", () => {
+    const text = `views:
+  - type: table
+    name: Papers
+    from: items
+    columnSize:
+      title: wide
+`;
+    const file = parseQueryFile(text);
+    expect(file.views[0]!.columnSize).toBeUndefined();
+    expect(serializeQueryFile(editView(file, file.views[0]!, { limit: 5 })))
+      .toBe(`${text}    limit: 5
+`);
+  });
+
+  it("opens a view whose columnSize is not a map, with every column at its auto width", () => {
+    const view = parseQueryFile(`views:
+  - type: table
+    name: Papers
+    from: items
+    columnSize: wide
+`).views[0]!;
+    expect(view.columnSize).toBeUndefined();
+    expect(view.problems).toEqual([]);
+  });
+
+  it("writes new widths in place, and keeps the other keys", () => {
+    const file = parseQueryFile(SIZED);
+    expect(
+      serializeQueryFile(
+        editView(file, file.views[0]!, {
+          columnSize: { title: 240, creators: 180 },
+        }),
+      ),
+    ).toBe(`views:
+  - type: table
+    name: Papers
+    from: items
+    order:
+      - title
+      - date
+    columnSize:
+      title: 240
+      creators: 180
+    limit: 20
+`);
+  });
+
+  it("removes the columnSize key when no column keeps a width", () => {
+    const file = parseQueryFile(SIZED);
+    expect(
+      serializeQueryFile(
+        editView(file, file.views[0]!, { columnSize: undefined }),
+      ),
+    ).toBe(`views:
+  - type: table
+    name: Papers
+    from: items
+    order:
+      - title
+      - date
+    limit: 20
+`);
+  });
+
+  it("replaces a columnSize that is not a map with the new widths", () => {
+    const file = parseQueryFile(`views:
+  - type: table
+    name: Papers
+    from: items
+    columnSize: wide
+`);
+    expect(
+      serializeQueryFile(
+        editView(file, file.views[0]!, { columnSize: { title: 200 } }),
+      ),
+    ).toBe(`views:
+  - type: table
+    name: Papers
+    from: items
+    columnSize:
+      title: 200
+`);
+  });
+});
+
 describe("viewFilter", () => {
   it("joins the filters for all views and the view's own filters with and", () => {
     const file = parseQueryFile(TWO_VIEWS);

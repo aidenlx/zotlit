@@ -1407,6 +1407,57 @@ it("shows a view of Items as a Table: one row for each Item, a column for each v
   expect(el.querySelector("[data-query-count]")?.textContent).toBe("2 results");
 });
 
+it("shows a column at the width the view keeps, and a double click on its edge sets it back to its auto width in one save", async () => {
+  const { view, el, settle, save, saved } = await mount([
+    result([itemRow("ITEMAAAA", "Ten simple rules")]),
+  ]);
+  await act(() =>
+    view.setText(`${TABLE_FILE}    columnSize:
+      title: 260
+`),
+  );
+  await settle();
+  const header = (path: string) =>
+    el.querySelector<HTMLElement>(`th[data-query-column="${path}"]`)!;
+  expect(header("title").dataset.sized).toBe("");
+  expect(header("title").style.getPropertyValue("--zt-column-width")).toBe(
+    "260px",
+  );
+  expect(header("date").dataset.sized).toBeUndefined();
+
+  // A double click on the edge of a column at its auto width saves nothing.
+  const edge = (path: string) =>
+    header(path).querySelector("[data-query-column-resizer]")!;
+  await act(() => {
+    edge("date").dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+  });
+  expect(save).not.toHaveBeenCalled();
+
+  await act(async () => {
+    edge("title").dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    await view.flush();
+  });
+  expect(save).toHaveBeenCalledTimes(1);
+  expect(saved.at(-1)).not.toContain("columnSize");
+  expect(header("title").dataset.sized).toBeUndefined();
+});
+
+it("offers no column move and no column resize where the host cannot save", async () => {
+  const { view, el, settle } = await mount(
+    [result([itemRow("ITEMAAAA", "Ten simple rules")])],
+    undefined,
+    { canSave: () => false },
+  );
+  await act(() => view.setText(TABLE_FILE));
+  await settle();
+  const headers = [...el.querySelectorAll("th[data-query-column]")];
+  expect(headers).toHaveLength(2);
+  expect(headers.some((th) => th.getAttribute("draggable") === "true")).toBe(
+    false,
+  );
+  expect(el.querySelector("[data-query-column-resizer]")).toBeNull();
+});
+
 it("expands an Item row into its Attachments, and an Attachment row into its Annotations", async () => {
   const { view, el, run, settle } = await mount([
     result([

@@ -61,6 +61,7 @@ ZotLit keeps every other key in the file when it saves.
 | `groupOrder` | A list of group values for a Manual group order. Only the listed groups show, in this order. `null` is the group of rows with no value.                                   |
 | `limit`      | A positive whole number: the most rows the view shows. Without `limit`, the view shows every match.                                                                       |
 | `order`      | A list of property paths that each row shows, in order. Copy and CSV export use them as columns. Without `order`, the layout shows the default properties of the records. |
+| `columnSize` | The width in pixels of each table column that you resized, by property path. A column without an entry takes its automatic width.                                         |
 
 `property` values are property paths of the view's records, as [ZotLit Query](/docs/reference/commands#query-cli) names them. For example, `title` is the paper title in an items view, and `item.title` is the paper title in an annotations view.
 
