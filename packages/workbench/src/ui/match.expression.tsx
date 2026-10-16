@@ -48,7 +48,8 @@ export interface MatchExpressionInputProps {
  * A Filter Expression field. It takes the `expression` part of the match
  * theme where it renders, so a host that wraps it in
  * `WorkbenchThemeProvider` gets the Match editor's look; the `data-*`
- * attributes go on that part.
+ * attributes go on that part. The editor draws no focus outline and no
+ * padding, so the part owns both: it must show `:focus-within`.
  */
 export function MatchExpressionInput({
   value,
@@ -97,8 +98,12 @@ export function MatchExpressionInput({
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap]),
           EditorView.lineWrapping,
+          // CodeMirror's base theme is unlayered CSS, so it outranks a
+          // host's layered utilities on these parts.
           EditorView.theme({
-            ".cm-content": { minHeight: `${lines * 1.5}em` },
+            "&.cm-focused": { outline: "none" },
+            ".cm-content": { minHeight: `${lines * 1.5}em`, padding: "0" },
+            ".cm-line": { padding: "0" },
           }),
           placeholder ? placeholderText(placeholder) : [],
           EditorView.contentAttributes.of({ spellcheck: "false" }),

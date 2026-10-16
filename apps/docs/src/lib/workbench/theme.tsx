@@ -132,6 +132,8 @@ export const WEB_THEME: WorkbenchTheme = {
       expression: cn(
         nameInput,
         "[field-sizing:content] min-w-0 flex-1 resize-y font-mono",
+        // The editor inside draws no outline; this box shows the focus.
+        "focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-fd-ring",
       ),
       conjunction:
         "flex min-h-8 items-center justify-end text-end text-xs [overflow-wrap:anywhere]",
