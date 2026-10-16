@@ -61,6 +61,9 @@
     "//#lint:repo": {
       "dependsOn": ["//#lint:repo:deps"]
     },
+    "//#lint:messages": {
+      "cache": false
+    },
     "//#review:plugin:deps": {
       "dependsOn": [
         "@zotlit/obsidian#lint:deps",
