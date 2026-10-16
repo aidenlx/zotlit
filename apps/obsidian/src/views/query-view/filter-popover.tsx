@@ -62,8 +62,8 @@ function samePath(a: readonly number[], b: readonly number[]): boolean {
 }
 
 /**
- * The Match editor as the Bases filter menu draws it, from the variables that
- * menu reads: `--bases-filter-input-background` for a condition's fields, the
+ * The Match editor as the Bases filter menu draws it: the form field
+ * background for a condition's fields, the
  * table border on a nested group, a borderless conjunction select, and text
  * actions in the toolbar button's `.text-icon-button` look. The Template
  * Workbench keeps `matchTheme`.
@@ -102,9 +102,9 @@ const filterTheme = {
       conjunction:
         "zt:flex zt:min-h-(--input-height) zt:items-center zt:justify-end zt:text-end zt:text-sm zt:[overflow-wrap:anywhere]",
       statement: cn(
-        "zt:flex zt:min-w-0 zt:items-start zt:overflow-hidden zt:rounded-(--metadata-property-radius) zt:bg-(--bases-filter-input-background) zt:[corner-shape:var(--metadata-property-corner-shape)]",
+        "zt:flex zt:min-w-0 zt:items-start zt:overflow-hidden zt:rounded-(--metadata-property-radius) zt:bg-input zt:[corner-shape:var(--metadata-property-corner-shape)]",
         "zt:shadow-[0_0_0_var(--border-width)_var(--background-modifier-border-hover)] zt:focus-within:shadow-(--metadata-property-box-shadow-focus) zt:data-[state=error]:shadow-[0_0_0_var(--border-width)_var(--background-modifier-error)] zt:[&:has([aria-invalid=true])]:shadow-[0_0_0_var(--border-width)_var(--background-modifier-error)]",
-        "zt:[--background-modifier-form-field:var(--bases-filter-input-background)] zt:[--dropdown-background-hover:var(--background-modifier-form-field-hover)] zt:[--dropdown-background:var(--bases-filter-input-background)] zt:[--input-border-width-focus:0px] zt:[--input-border-width:0px] zt:[--input-radius:0px] zt:[--input-shadow:none]",
+        "zt:[--dropdown-background-hover:var(--background-modifier-form-field-hover)] zt:[--dropdown-background:var(--background-modifier-form-field)] zt:[--input-border-width-focus:0px] zt:[--input-border-width:0px] zt:[--input-radius:0px] zt:[--input-shadow:none]",
         "zt:[&_[data-part=wrapper]>select]:[field-sizing:content] zt:[&_[data-part=wrapper]>select]:w-full",
         "zt:[&>[data-part=actions]]:h-(--input-height) zt:[&>[data-part=actions]]:shrink-0 zt:[&>[data-part=actions]]:flex-nowrap zt:[&>[data-part=actions]]:px-(--size-2-1)",
       ),
@@ -323,7 +323,7 @@ export function FilterButton({ view }: { view: QueryView }) {
       active={file.filters !== undefined || shown.filters !== undefined}
       count={conditionCount(file.filters) + conditionCount(shown.filters)}
       hook="filter"
-      className="zt:w-[min(var(--bases-filter-menu-width),calc(100vw_-_var(--size-4-8)))] zt:max-w-none"
+      className="zt:w-[min(--spacing(130),calc(100vw_-_var(--size-4-8)))] zt:max-w-none"
       onOpen={() => {
         view.filterValues().then(setValues, (error: unknown) => {
           logger.warn("The filter values could not be read", { error });

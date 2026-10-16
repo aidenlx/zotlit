@@ -2763,15 +2763,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const ticked = JSON.parse(
       await obEval(
         vaultId,
-        `(async()=>{${PAGE}const el=app.workspace.getMostRecentLeaf().view.contentEl;press(el.querySelector('[data-query-properties]'),'Properties');const popup=()=>activeDocument.querySelector('[data-query-properties-popup]');const rows=()=>[...popup().querySelectorAll('[data-query-property]')];const selected=()=>rows().filter(n=>n.getAttribute('aria-selected')==='true').map(n=>n.dataset.queryProperty);await until('Properties popover opens',()=>popup()?.matches(':popover-open')&&rows().length>0);const defaults=selected();const leading=rows().slice(0,defaults.length).map(n=>n.dataset.queryProperty);press(popup().querySelector('[data-query-properties-action="hide-all"]'),'Hide all');await until('Hide all clears the ticks',()=>selected().length===0);for(const name of ['pageLabel','colorName']){press(popup().querySelector('[data-query-property="'+name+'"]'),'property '+name);await until('ticks '+name,()=>selected().includes(name));}const shown=rows().slice(0,3).map(n=>[n.dataset.queryProperty,n.getAttribute('aria-selected')]);popup().hidePopover();return JSON.stringify({defaults,leading,shown});})()`,
+        `(async()=>{${PAGE}const el=app.workspace.getMostRecentLeaf().view.contentEl;press(el.querySelector('[data-query-properties]'),'Properties');const popup=()=>activeDocument.querySelector('[data-query-properties-popup]');const rows=()=>[...popup().querySelectorAll('[data-query-property]')];const selected=()=>rows().filter(n=>n.getAttribute('aria-selected')==='true').map(n=>n.dataset.queryProperty);await until('Properties popover opens',()=>popup()?.matches(':popover-open')&&rows().length>0);const defaults=selected();const leading=rows().slice(0,defaults.length).map(n=>n.dataset.queryProperty);press(popup().querySelector('[data-query-properties-action="hide-all"]'),'Hide all');await until('Hide all clears the ticks',()=>selected().length===0);const paths=()=>rows().map(n=>n.dataset.queryProperty);const untouched=paths();for(const name of ['pageLabel','colorName']){press(popup().querySelector('[data-query-property="'+name+'"]'),'property '+name);await until('ticks '+name,()=>selected().includes(name));}const kept=paths();popup().hidePopover();await until('Properties popover closes',()=>!popup()?.matches(':popover-open'));press(el.querySelector('[data-query-properties]'),'Properties');await until('Properties popover opens again',()=>popup()?.matches(':popover-open')&&rows().length>0);const shown=rows().slice(0,3).map(n=>[n.dataset.queryProperty,n.getAttribute('aria-selected')]);popup().hidePopover();return JSON.stringify({defaults,leading,untouched,kept,shown});})()`,
       ),
     ) as {
       defaults: string[];
       leading: string[];
+      untouched: string[];
+      kept: string[];
       shown: [string, string][];
     };
     expect(ticked.defaults).toEqual(defaultProperties);
     expect(ticked.leading).toEqual(defaultProperties);
+    // A tick leaves every row in place, as in Bases; the popover sorts the
+    // visible properties first when it opens again.
+    expect(ticked.kept).toEqual(ticked.untouched);
     expect(ticked.shown.slice(0, 2)).toEqual([
       ["pageLabel", "true"],
       ["colorName", "true"],

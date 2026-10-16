@@ -71,7 +71,7 @@ import type {
 } from "./results";
 import { ResultsMenu } from "./results-menu";
 import { layoutRows } from "./rows";
-import { SearchControl } from "./search-control";
+import { SearchButton, SearchRow, useSearchBar } from "./search-control";
 import { SortEditor } from "./sort-control";
 import { resultTable } from "./table";
 import type { ResultTable } from "./table";
@@ -1132,6 +1132,7 @@ function GroupButton({ view }: { view: QueryView }) {
 }
 
 function QueryViewBody({ view }: { view: QueryView }) {
+  const search = useSearchBar();
   return (
     <div className="zt:flex zt:h-full zt:flex-col zt:in-[.print]:h-auto">
       {/* The toolbar is a size container: on a narrow pane its buttons show
@@ -1139,7 +1140,7 @@ function QueryViewBody({ view }: { view: QueryView }) {
           the pane's edges, as the Bases header does (see file-view.css).
           Export to PDF prints the rows without it. */}
       <div
-        className="zt:@container zt:flex zt:min-h-(--bases-header-height) zt:shrink-0 zt:flex-nowrap zt:items-center zt:gap-(--size-2-2) zt:overflow-hidden zt:[border-width:var(--bases-header-border-width)] zt:border-(--bases-table-border-color) zt:ps-(--bases-header-padding-start) zt:pe-(--bases-header-padding-end) zt:in-[.print]:hidden"
+        className="zt:@container zt:flex zt:min-h-(--size-4-10) zt:shrink-0 zt:flex-nowrap zt:items-center zt:gap-(--size-2-2) zt:overflow-hidden zt:border-b-(length:--border-width) zt:border-(--table-border-color) zt:ps-[var(--zt-query-toolbar-inset-start,var(--size-2-1))] zt:pe-[var(--zt-query-toolbar-inset-end,var(--size-2-1))] zt:in-[.is-mobile]:min-h-(--touch-size-l) zt:in-[.print]:hidden"
         role="toolbar"
       >
         <ViewMenu view={view} />
@@ -1148,9 +1149,10 @@ function QueryViewBody({ view }: { view: QueryView }) {
         <GroupButton view={view} />
         <FilterButton view={view} />
         <PropertiesMenu view={view} />
-        <SearchControl view={view} />
+        <SearchButton bar={search} />
         <OpenFileButton view={view} />
       </div>
+      <SearchRow view={view} bar={search} />
       <ReadOnlyNote view={view} />
       <UnusedNote view={view} />
       <Problems view={view} />

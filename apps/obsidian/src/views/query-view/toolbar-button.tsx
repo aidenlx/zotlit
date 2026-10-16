@@ -1,7 +1,7 @@
 // The Query View toolbar button: an icon, a name, an optional chevron and an
 // optional count badge, as the Bases toolbar lays them out. It is ZotLit's
 // own control, drawn only by `zt:` utilities over Obsidian's variables, so a
-// theme that restyles Obsidian's buttons and Bases restyles it too. States are
+// theme that restyles Obsidian's buttons restyles it too. States are
 // `data-*` presence attributes: `data-active` (the control holds a setting,
 // drawn in the accent ink) and `data-open` (its popover stands).
 //
@@ -50,10 +50,7 @@ export const toolbarButtonClass = cn(
 
 /** A toolbar button's name: hidden on a narrow toolbar unless `keep` is set. */
 const labelClass = (keep?: boolean) =>
-  cn(
-    "zt:truncate zt:pe-(--size-2-1)",
-    !keep && "zt:hidden zt:@xl:[display:var(--bases-toolbar-label-display)]",
-  );
+  cn("zt:truncate zt:pe-(--size-2-1)", !keep && "zt:hidden zt:@xl:block");
 
 export interface ToolbarButtonContentProps {
   icon?: IconName;
