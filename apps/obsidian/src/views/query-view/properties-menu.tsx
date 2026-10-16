@@ -4,35 +4,38 @@
 // property `formula.<name>`. It is laid out as the Bases Properties menu: a
 // search field, a row per property — checkbox, type icon, name, chevron — and
 // "Add formula" and "Hide all" pinned under the list. The chevron, or the
-// right arrow key on the highlighted row, opens the property's actions: the
-// dialog that sets its Display Name and, for a Formula, the Formula dialog.
-// Alt with an up or down arrow moves the highlighted property in the order.
-import { Menu } from "obsidian";
+// right arrow key on the highlighted row, opens the property's page in the
+// popover: its Display Name and, for a Formula, its text. "Add formula" opens
+// a page too. Alt with an up or down arrow moves the highlighted property in
+// the order.
 import type { IconName } from "obsidian";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode, RefObject } from "react";
+import type { ReactNode } from "react";
 import { useStore } from "zustand";
 
 import {
   Chooser,
+  chooserIconButton,
+  useChooserPage,
   useChooserQuery,
   useChooserScope,
 } from "@/components/chooser";
 import type { ChooserGroup, ChooserRow } from "@/components/chooser-logic";
 import { Icon } from "@/components/obsidian/icon";
-import { useObsidianApp } from "@/lib/app-context";
 import { registerKeymap } from "@/lib/disposables";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
-import { DisplayNameModal } from "./display-name-dialog";
-import { FormulaModal } from "./formula-dialog";
 import { propertyIcon } from "./property-icon";
+import { NewFormulaPage, PropertyPage } from "./property-page";
 import { ToolbarButtonContent, toolbarButtonClass } from "./toolbar-button";
 import { popoverFallbacks } from "./toolbar-popover";
 import type { QueryView } from "./view";
 import { useViewProperties } from "./view-properties";
 import type { PropertyEntry } from "./view-properties";
+
+/** The page "Add formula" opens; a property's page is named by its path. */
+const NEW_FORMULA_PAGE = "zt:new-formula";
 
 /** `order` with `moved` placed where `target` stands. */
 function reordered(
@@ -51,10 +54,7 @@ function reordered(
 
 export function PropertiesMenu({ view }: { view: QueryView }) {
   const current = useStore(view.state, (s) => s.view);
-  const formulas = useStore(view.state, (s) => s.file?.formulas);
   const properties = useViewProperties(view);
-  const app = useObsidianApp();
-  const popup = useRef<HTMLDivElement>(null);
   if (!current || !properties) return null;
   // The popover ticks the properties the Layouts show; a change writes
   // them, with the unused ones the view keeps.
@@ -62,52 +62,6 @@ export function PropertiesMenu({ view }: { view: QueryView }) {
   const setOrder = (next: readonly string[]) =>
     view.document.editView({ order: properties.orderOf(next) });
   const dataset = current.from ?? "annotations";
-  const formulaNames = Object.keys(formulas ?? {});
-
-  /**
-   * The actions of a property, as the submenu a Bases row's chevron opens.
-   * An Obsidian menu stands under the popover's top layer, so the popover
-   * steps aside while the menu stands, and comes back when the menu closes
-   * with no action run.
-   */
-  const openActions = (entry: PropertyEntry, row: HTMLElement) => {
-    const box = row.getBoundingClientRect();
-    const doc = row.doc;
-    let ran = false;
-    const run = (act: () => void) => () => {
-      ran = true;
-      act();
-    };
-    const menu = new Menu();
-    menu.addItem((item) =>
-      item
-        .setTitle(m.query_view_property_rename())
-        .setIcon("text-cursor-input")
-        .onClick(run(() => new DisplayNameModal(app, view, entry.path).open())),
-    );
-    const formula = entry.formula;
-    if (formula !== null && formulaNames.includes(formula))
-      menu.addItem((item) =>
-        item
-          .setTitle(m.query_view_formula_edit())
-          .setIcon("pencil")
-          .onClick(run(() => new FormulaModal(app, view, formula).open())),
-      );
-    // A click outside the menu dismisses the popover as well; Escape steps
-    // back to it, as the back step of a Bases menu page does.
-    let clickedAway = false;
-    const onPointer = (event: PointerEvent) => {
-      if (!(event.target as HTMLElement | null)?.closest(".menu"))
-        clickedAway = true;
-    };
-    doc.addEventListener("pointerdown", onPointer, true);
-    menu.onHide(() => {
-      doc.removeEventListener("pointerdown", onPointer, true);
-      if (!ran && !clickedAway) popup.current?.showPopover();
-    });
-    popup.current?.hidePopover();
-    menu.showAtPosition({ x: box.right, y: box.top }, doc);
-  };
 
   return (
     <Chooser value={order} onValueChange={setOrder}>
@@ -119,7 +73,6 @@ export function PropertiesMenu({ view }: { view: QueryView }) {
         <ToolbarButtonContent icon="list" label={m.query_view_properties()} />
       </Chooser.Trigger>
       <Chooser.Popup
-        ref={popup}
         className={cn(
           "zt:[max-height:min(--spacing(120),calc(100%_-_--spacing(2)))] zt:min-w-60",
           popoverFallbacks,
@@ -135,10 +88,32 @@ export function PropertiesMenu({ view }: { view: QueryView }) {
           order={order}
           setOrder={setOrder}
           iconOf={(entry) => propertyIcon(dataset, entry)}
-          openFormula={() => new FormulaModal(app, view, null).open()}
-          openActions={openActions}
-          list={popup}
         />
+        <Chooser.Page>
+          {(page) => {
+            if (page === NEW_FORMULA_PAGE)
+              return <NewFormulaPage view={view} />;
+            const entry = properties.entries.find(
+              (candidate) => candidate.path === page,
+            );
+            if (!entry) return <Chooser.PageGone />;
+            const shown = order.includes(page);
+            return (
+              <PropertyPage
+                view={view}
+                entry={entry}
+                shown={shown}
+                onShownChange={(show) =>
+                  setOrder(
+                    show
+                      ? [...order, page]
+                      : order.filter((path) => path !== page),
+                  )
+                }
+              />
+            );
+          }}
+        </Chooser.Page>
       </Chooser.Popup>
     </Chooser>
   );
@@ -149,9 +124,6 @@ function PropertyList({
   order,
   setOrder,
   iconOf,
-  openFormula,
-  openActions,
-  list,
 }: {
   /** The Properties of the view, the visible ones first. */
   entries: readonly PropertyEntry[];
@@ -159,15 +131,10 @@ function PropertyList({
   setOrder: (next: readonly string[]) => void;
   /** The type icon of a property. */
   iconOf: (entry: PropertyEntry) => string;
-  /** Open the Formula dialog to add a Formula. */
-  openFormula: () => void;
-  /** Open the actions of a property, beside its row. */
-  openActions: (entry: PropertyEntry, row: HTMLElement) => void;
-  /** The popup the rows stand in. */
-  list: RefObject<HTMLDivElement | null>;
 }) {
   const query = useChooserQuery().trim();
   const { scope, activeValue } = useChooserScope();
+  const { page, openPage } = useChooserPage();
   const [dragging, setDragging] = useState<string | null>(null);
   const byPath = useMemo(
     () => new Map(entries.map((entry) => [entry.path, entry])),
@@ -183,8 +150,8 @@ function PropertyList({
     return shared;
   }, [entries]);
   // What the keys and a row's `next` read at the moment they run.
-  const keys = useRef({ order, setOrder, openActions, list });
-  keys.current = { order, setOrder, openActions, list };
+  const keys = useRef({ order, setOrder, page });
+  keys.current = { order, setOrder, page };
   const groups = useMemo<ChooserGroup<ChooserRow>[]>(() => {
     // The properties of the parent records come only while the user searches.
     const rows = entries
@@ -198,13 +165,8 @@ function PropertyList({
       .map(
         (entry): ChooserRow => ({
           ...propertyRow(entry),
-          // The right arrow opens the property's actions beside its row.
-          next: () => {
-            const row = keys.current.list.current?.querySelector<HTMLElement>(
-              `[data-query-property="${CSS.escape(entry.path)}"]`,
-            );
-            if (row) keys.current.openActions(entry, row);
-          },
+          // The right arrow opens the property's page.
+          next: () => openPage(entry.path),
         }),
       );
     const actions: ChooserRow[] = [];
@@ -218,10 +180,7 @@ function PropertyList({
       {
         value: "zt:add-formula",
         label: m.query_view_formula_add(),
-        action: (close) => {
-          close();
-          openFormula();
-        },
+        action: () => openPage(NEW_FORMULA_PAGE),
       },
       {
         value: "zt:hide-all",
@@ -230,13 +189,14 @@ function PropertyList({
       },
     );
     return [{ items: rows }, { items: actions, pinned: true }];
-  }, [entries, byPath, order, query, setOrder, openFormula]);
+  }, [entries, byPath, order, query, setOrder, openPage]);
 
   // Alt with an up or down arrow moves the highlighted visible property one
   // place in the order, as in the Bases Properties menu.
   useLayoutEffect(() => {
     const move = (step: number) => (event: KeyboardEvent) => {
-      if (event.isComposing) return;
+      // A page's fields keep their own keys.
+      if (event.isComposing || keys.current.page !== null) return;
       const path = activeValue();
       const { order: now, setOrder: save } = keys.current;
       const at = path === null ? -1 : now.indexOf(path);
@@ -335,16 +295,13 @@ function PropertyList({
               <button
                 type="button"
                 tabIndex={-1}
-                className="clickable-icon zt:-m-(--size-2-2) zt:shrink-0"
+                className={cn(chooserIconButton, "zt:-m-(--size-2-2)")}
                 data-query-property-more={row.value}
                 {...tooltipAttrs(m.query_view_property_edit())}
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={(event) => {
                   event.stopPropagation();
-                  const at = event.currentTarget.closest<HTMLElement>(
-                    "[data-query-property]",
-                  );
-                  if (at) openActions(entry, at);
+                  openPage(entry.path);
                 }}
               >
                 <RowIcon name="chevron-right" />
