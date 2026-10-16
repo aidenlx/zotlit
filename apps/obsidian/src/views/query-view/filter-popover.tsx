@@ -38,6 +38,7 @@ import { getLogger } from "@/lib/log";
 import { cn } from "@/lib/utils";
 import { createTemplateWorkbenchHost } from "@/views/template-workbench/host";
 import { matchTheme } from "@/views/template-workbench/match-pane";
+import { matchRows } from "@/views/template-workbench/theme";
 
 import {
   FILTER_OPERATORS,
@@ -346,6 +347,7 @@ export function filterVocabulary(
  * actions in the toolbar button's `.text-icon-button` look. The Template
  * Workbench keeps `matchTheme`.
  */
+const filterRows = matchRows({ look: "filter" });
 const filterTheme = {
   ...matchTheme,
   classes: {
@@ -363,6 +365,7 @@ const filterTheme = {
       group: cn(
         "zt:flex zt:w-full zt:min-w-0 zt:flex-col zt:gap-(--size-2-3)",
         "zt:data-[state=nested]:rounded-md zt:data-[state=nested]:border-(length:--table-border-width) zt:data-[state=nested]:border-(--table-border-color) zt:data-[state=nested]:bg-(--background-primary-alt) zt:data-[state=nested]:p-(--size-2-3)",
+        filterRows.group(),
       ),
       // The header holds the conjunction, a select drawn without its box, as
       // Bases draws it; the footer holds the text actions.
@@ -373,7 +376,8 @@ const filterTheme = {
         "zt:data-[state=footer]:pt-(--size-2-2)",
       ),
       rows: "zt:m-0 zt:flex zt:list-none zt:flex-col zt:gap-(--size-2-3) zt:p-0",
-      row: "zt:grid zt:min-w-0 zt:grid-cols-[var(--size-4-18)_minmax(0,1fr)] zt:items-start zt:gap-(--size-4-2) zt:[&>[data-part=group]]:col-span-2",
+      row: filterRows.row(),
+      handle: filterRows.handle(),
       conjunction:
         "zt:flex zt:min-h-(--input-height) zt:items-center zt:justify-end zt:text-end zt:text-sm zt:[overflow-wrap:anywhere]",
       statement: cn(
