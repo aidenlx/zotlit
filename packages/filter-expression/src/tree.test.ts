@@ -1,7 +1,12 @@
 // The Filter Tree: reading a stored filter, folding it, and composing it.
 import { describe, expect, it } from "vitest";
 
-import { composeFilterTree, foldFilterTree, readFilterTree } from "./index";
+import {
+  composeFilterTree,
+  foldFilterTree,
+  isFilterTree,
+  readFilterTree,
+} from "./index";
 import type { FilterTree } from "./index";
 
 describe("composeFilterTree", () => {
@@ -93,5 +98,29 @@ describe("readFilterTree", () => {
     ["a bad entry", { and: ["a", { or: null }] }],
   ])("refuses %s", (_, value) => {
     expect(readFilterTree(value)).toBeNull();
+  });
+});
+
+describe("isFilterTree", () => {
+  it.each<unknown>([
+    'itemType == "book"',
+    { and: [] },
+    { or: ['tags.contains("Read")', { not: ["true"] }] },
+  ])("accepts %j", (value) => {
+    expect(isFilterTree(value)).toBe(true);
+  });
+
+  it.each<unknown>([
+    true,
+    12,
+    null,
+    [],
+    {},
+    { and: [], or: [] },
+    { nor: [] },
+    { and: "x" },
+    { and: [23] },
+  ])("refuses %j, which it reads as no Filter Tree", (value) => {
+    expect(isFilterTree(value)).toBe(false);
   });
 });

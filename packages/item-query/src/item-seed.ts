@@ -2,6 +2,7 @@
 // a caller holds outside the database, such as a sample Item, keeps the
 // values the Items dataset filters on.
 import { Effect } from "effect";
+import * as v from "valibot";
 
 import {
   readCollectionPaths,
@@ -10,35 +11,67 @@ import {
   readUniverseRows,
 } from "@zotlit/db/item-query";
 import type {
-  HydratedCreator,
-  HydratedTag,
   ItemQueryDatabase,
   ItemQueryReaderError,
-  ScanRow,
 } from "@zotlit/db/item-query";
 
 import { BUILT_IN_NAMES, fieldDefinition } from "./fields";
 import type { QueryItem } from "./fields";
 
+const readonlyArray = <TItem extends v.GenericSchema>(item: TItem) =>
+  v.pipe(v.array(item), v.readonly());
+
 /**
  * The values of one top-level Item, as JSON. The Item itself alone: a filter
- * that reads its Attachments, Annotations, or Notes finds none.
+ * that reads its Attachments, Annotations, or Notes finds none. The schema is
+ * the one definition of the seed; a host that stores or receives a seed
+ * validates it with this schema.
  */
-export interface QueryItemSeed {
-  readonly scan: ScanRow;
-  /** `null` for the personal Library. */
-  readonly groupID: number | null;
-  /** Each built-in field with a value, by name. */
-  readonly fields: Readonly<Record<string, string>>;
-  /** Each custom field with a value, by its source name. */
-  readonly custom: Readonly<Record<string, string>>;
-  /** Every custom field of the source, with a value or not. */
-  readonly customFieldNames: readonly string[];
-  readonly creators: readonly HydratedCreator[];
-  readonly tags: readonly HydratedTag[];
-  /** The root-first name path of each Collection the Item is in. */
-  readonly collections: readonly (readonly string[])[];
-}
+export const queryItemSeedSchema = v.pipe(
+  v.object({
+    scan: v.pipe(
+      v.object({
+        itemID: v.number(),
+        key: v.string(),
+        itemType: v.string(),
+        dateAdded: v.nullable(v.number()),
+        dateModified: v.nullable(v.number()),
+      }),
+      v.readonly(),
+    ),
+    /** `null` for the personal Library. */
+    groupID: v.nullable(v.number()),
+    /** Each built-in field with a value, by name. */
+    fields: v.pipe(v.record(v.string(), v.string()), v.readonly()),
+    /** Each custom field with a value, by its source name. */
+    custom: v.pipe(v.record(v.string(), v.string()), v.readonly()),
+    /** Every custom field of the source, with a value or not. */
+    customFieldNames: readonlyArray(v.string()),
+    creators: readonlyArray(
+      v.pipe(
+        v.object({
+          firstName: v.string(),
+          lastName: v.string(),
+          fieldMode: v.picklist([0, 1]),
+          creatorType: v.string(),
+          primary: v.boolean(),
+        }),
+        v.readonly(),
+      ),
+    ),
+    tags: readonlyArray(
+      v.pipe(
+        v.object({ name: v.string(), type: v.picklist([0, 1]) }),
+        v.readonly(),
+      ),
+    ),
+    /** The root-first name path of each Collection the Item is in. */
+    collections: readonlyArray(readonlyArray(v.string())),
+  }),
+  v.readonly(),
+);
+
+export type QueryItemSeed = v.InferOutput<typeof queryItemSeedSchema>;
 
 /** The Item that a filter reads from `seed`. */
 export function queryItemFrom(seed: QueryItemSeed): QueryItem {
@@ -94,8 +127,9 @@ export function readQueryItemSeed(item: {
       }),
     })).get(item.itemID);
     if (!hydrated) return null;
+    const { itemID, key, itemType, dateAdded, dateModified } = scan;
     return {
-      scan,
+      scan: { itemID, key, itemType, dateAdded, dateModified },
       groupID: item.groupID,
       fields: Object.fromEntries(hydrated.fields),
       custom: Object.fromEntries(hydrated.custom),

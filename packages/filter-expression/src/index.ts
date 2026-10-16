@@ -49,9 +49,11 @@ export type {
 
 export {
   composeFilterTree,
+  FILTER_GROUP_KINDS,
   filterGroup,
   foldFilterTree,
   joinComposed,
+  isFilterTree,
   readFilterTree,
 } from "./tree.js";
 export type {
