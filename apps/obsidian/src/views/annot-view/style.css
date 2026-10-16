@@ -81,24 +81,13 @@
   font-size: var(--font-ui-smaller);
 }
 
-/* Obsidian paints a bare `<a>` in the accent with an underline, unlayered, so
-   no utility can quiet it. The page chip is a row of chrome that happens to
-   open Zotero: it keeps the ink its utilities set, and its hover is the ring
-   of its own colour rather than the theme's link underline. */
-.zt-root a.zt-annot-page-link {
-  color: inherit;
-  text-decoration-line: none;
-}
-
-/* The page is a locator in the chip beside the row's verbs, one step under
-   the card's 12px so the chip reads as the verbs' size rather than as a line
-   of the excerpt. 11px is the floor the design test holds chrome to. In the
-   monospace face the no-break space between "p." and the number is a whole
-   cell, which reads as a gap; the word-spacing takes it back to a hair. */
-.zt-annot-page-chip {
-  font-size: 11px;
-  letter-spacing: -0.02em;
-  word-spacing: -0.5ch;
+/* A Query Block stands inside a note's `.markdown-rendered`, whose own
+   `blockquote` rule — unlayered, where no utility reaches it — paints a note's
+   quote on the excerpt: the accent rule, a wide indent and the quote ink.
+   `revert-layer` rolls the excerpt back to the plugin's layers, where its
+   utilities draw it, as they do in every other host. */
+.zt-annot-card blockquote.zt-annot-excerpt {
+  all: revert-layer;
 }
 
 /* The header block is one `<button>`, and Obsidian's own `button` rules are

@@ -23,6 +23,7 @@ import { editorApp } from "./__fixtures__/editor-app";
 import { AnnotActionsContext } from "./actions";
 import type { AnnotActions } from "./actions";
 import { Annotation } from "./Annotation";
+import { cardPlace } from "./card-selection";
 import { AnnotStoreProvider, createAnnotStore } from "./store";
 
 vi.mock("zustand", () => import("../__fixtures__/zustand"));
@@ -187,6 +188,7 @@ async function mountCard({
         { value: actions },
         createElement(Annotation, {
           annot: { ...CARD, comment },
+          place: cardPlace(CARD.key, null),
           collapsed: false,
           tabStop: true,
         }),
@@ -262,9 +264,9 @@ describe("a click on the comment of a card not selected alone", () => {
       await click(comment, { metaKey: true });
       await click(comment, { shiftKey: true });
       expect(onSelectAnnotation.mock.calls).toEqual([
-        [CARD, "click"],
-        [CARD, "toggle"],
-        [CARD, "range"],
+        [CARD, "click", CARD.key],
+        [CARD, "toggle", CARD.key],
+        [CARD, "range", CARD.key],
       ]);
       expect(onOpenField).not.toHaveBeenCalled();
       expect(store.getState().editing).toBeNull();
@@ -285,8 +287,8 @@ describe("a click on the comment of a card not selected alone", () => {
     await click(text);
     await click(text, { metaKey: true });
     expect(onSelectAnnotation.mock.calls).toEqual([
-      [CARD, "click"],
-      [CARD, "toggle"],
+      [CARD, "click", CARD.key],
+      [CARD, "toggle", CARD.key],
     ]);
     expect(onOpenField).not.toHaveBeenCalled();
   });
@@ -608,7 +610,7 @@ describe("a text field's draft on the card", () => {
       (el) => el.textContent === held.text,
     )!;
     await click(text);
-    expect(onSelectAnnotation.mock.calls).toEqual([[CARD, "click"]]);
+    expect(onSelectAnnotation.mock.calls).toEqual([[CARD, "click", CARD.key]]);
     expect(store.getState().editing).toBeNull();
 
     await act(() =>
@@ -676,8 +678,15 @@ describe("an image card's Excerpt Image demand", () => {
     };
     const store = createAnnotStore();
     store.setState({
-      annotationSource: { kind: "zotero-local-api", serverID: "SERVER000001" },
-      annotationSourceScope: "/zotero",
+      sources: new Map([
+        [
+          image.parentKey,
+          {
+            source: { kind: "zotero-local-api", serverID: "SERVER000001" },
+            scope: "/zotero",
+          },
+        ],
+      ]),
     });
     const reading = { image: null, current: false, status: "reading" } as const;
     const resolutions: PromiseWithResolvers<ExcerptRequest | null>[] = [];
@@ -711,6 +720,7 @@ describe("an image card's Excerpt Image demand", () => {
           { value: actions },
           createElement(Annotation, {
             annot: image,
+            place: cardPlace(image.key, null),
             collapsed: false,
             tabStop: true,
           }),
@@ -719,10 +729,15 @@ describe("an image card's Excerpt Image demand", () => {
     );
     await act(() =>
       store.setState({
-        annotationSource: {
-          kind: "zotero-local-api",
-          serverID: "OTHER0000001",
-        },
+        sources: new Map([
+          [
+            image.parentKey,
+            {
+              source: { kind: "zotero-local-api", serverID: "OTHER0000001" },
+              scope: "/zotero",
+            },
+          ],
+        ]),
       }),
     );
     expect(resolutions).toHaveLength(2);

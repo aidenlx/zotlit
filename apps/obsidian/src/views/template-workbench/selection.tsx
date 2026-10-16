@@ -1,10 +1,11 @@
 // Native selection shares examples, search, and labels across independent views.
 import "./selection.css";
 import type { ItemView, WorkspaceLeaf } from "obsidian";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useState } from "react";
 
-import { isChildItemFields } from "@zotlit/db";
+import { isChildItemFields, isPageNumber } from "@zotlit/db";
 import type { CitationVariant } from "@zotlit/db";
+import { useUniqueId } from "@zotlit/ui";
 import { SAMPLE_ANNOTATIONS } from "@zotlit/workbench/render";
 import type {
   AnnotationExample,
@@ -261,9 +262,11 @@ export function selectionName(input: {
             : "";
       name = [
         type,
-        typeof root.pageLabel === "string" && root.pageLabel
-          ? m.workbench_annotation_page({ page: root.pageLabel })
-          : null,
+        typeof root.pageLabel !== "string" || !root.pageLabel
+          ? null
+          : isPageNumber(root.pageLabel)
+            ? m.workbench_annotation_page({ page: root.pageLabel })
+            : root.pageLabel,
         text.length > 48 ? `${text.slice(0, 48)}…` : text,
       ]
         .filter(Boolean)
@@ -315,7 +318,7 @@ function SelectionGroup({
   label: string;
   children: React.ReactNode;
 }) {
-  const headingId = useId();
+  const headingId = useUniqueId();
   return (
     <div role="group" aria-labelledby={headingId} className={selectionGroup}>
       <p id={headingId} className={selectionGroupHeading}>

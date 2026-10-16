@@ -15,6 +15,7 @@ import type {
   SchemaCustomField,
   SortSpec,
 } from "@zotlit/item-query";
+import { DELIMITED_FORMATS } from "@zotlit/shared/delimited";
 
 import { createRenderedCliDiagnostics } from "@/lib/cli-diagnostic";
 import type { CliRejection } from "@/lib/cli-params";
@@ -47,6 +48,12 @@ export type QueryCliCommand =
 export const DEFAULT_CLI_LIMIT = 100;
 /** Bounds the string transferred through Obsidian's renderer and CLI. */
 export const INLINE_MAX_BYTES = 1024 * 1024;
+/**
+ * The formats of an output file: the JSON response, or one delimited line for
+ * each row, which only a file holds.
+ */
+export const QUERY_OUTPUT_FORMATS = ["json", ...DELIMITED_FORMATS] as const;
+export type QueryOutputFormat = (typeof QUERY_OUTPUT_FORMATS)[number];
 export const QUERY_ID_MAX_LENGTH = 128;
 /** The form of a query id, as the help, the guide, and the diagnostic state it. */
 export const QUERY_ID_FORM = `1 to ${QUERY_ID_MAX_LENGTH} ASCII letters, digits, ., _, or -`;
@@ -71,6 +78,11 @@ export const queryFlags = {
     description:
       "Comma list or JSON array of Projection Paths, such as title,date.year; [] returns only row identities",
   },
+  formulas: {
+    value: "<json>",
+    description:
+      'JSON object of Formulas: each name with a Filter Expression, such as {"year":"date.year"}; read one as formula.<name> in fields',
+  },
   sort: {
     value: "<list|json>",
     description:
@@ -93,11 +105,26 @@ export const queryFlags = {
   output: {
     value: "<absolute-path>",
     description:
-      "Write the complete JSON response to a new file and return its path and counts",
+      "Write the complete response to a new file in the given format and return its path and counts",
+  },
+  format: {
+    value: "<json|csv|tsv>",
+    description:
+      "Format of the output file: the JSON response, or one CSV or TSV line for each row (default: json); csv and tsv need output",
   },
   id: {
     value: "<id>",
     description: `Name this query so that ${QUERY_CANCEL_COMMAND} can stop it: ${QUERY_ID_FORM}`,
+  },
+  "this-item": {
+    value: "<indexed-key>",
+    description:
+      "Bind this.item to the Item with this Indexed Key; a filter reads it, as in item == this.item",
+  },
+  "this-attachment": {
+    value: "<indexed-key>",
+    description:
+      "Bind this.attachment to the Attachment with this Indexed Key, as in attachment == this.attachment",
   },
 } satisfies Record<QueryParam, CliFlag>;
 
@@ -216,7 +243,7 @@ export type EnvelopeTail =
       truncated: boolean;
       warnings: QuerySummary["warnings"];
       rows?: readonly { indexedKey: string; values: object }[];
-      file?: { path: string; bytes: number; format: "json" };
+      file?: { path: string; bytes: number; format: QueryOutputFormat };
     }
   | {
       ok: true;

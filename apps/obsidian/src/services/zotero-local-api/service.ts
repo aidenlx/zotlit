@@ -594,6 +594,7 @@ export class ZoteroLocalApiClient extends Service<void> {
       reason,
       was: previous.kind,
       state: this.#state,
+      ...("failure" in reply ? { answered: reply.failure } : {}),
     });
     // A focus inside the reader probes again, and every surface redraws on the
     // announcement — so one that changed nothing would rebuild a control under
@@ -913,10 +914,6 @@ function noSessionFailure(
 }
 
 /**
- * A probe that was cancelled by its own deadline has learned the same thing a
- * refused connection teaches: Zotero is not answering.
- */
-/**
  * Whether two probe answers leave every surface with the same capability: the
  * same server and authorization, or the same kind of failure.
  */
@@ -932,8 +929,24 @@ function sameProbeState(a: ProbeState, b: ProbeState): boolean {
   return a.kind === b.kind;
 }
 
+/**
+ * What a failed Capability Probe leaves the session. Zotero answers the root
+ * route `200` whatever it holds, `403` with its Local API switched off, and
+ * names its API version, so only those failures say something about Zotero.
+ * Every other failure says Zotero is not answering on its port: a probe its
+ * own deadline cancelled has learned what a refused connection teaches, and any
+ * other answer comes from another server on Zotero's port — ZotLit's own Local
+ * Server among them.
+ */
 function probeFailure(failure: LocalApiFailure): LocalApiFailure {
-  return failure.kind === "unknown-outcome" ? { kind: "unreachable" } : failure;
+  switch (failure.kind) {
+    case "unreachable":
+    case "local-api-disabled":
+    case "incompatible-zotero":
+      return failure;
+    default:
+      return { kind: "unreachable" };
+  }
 }
 
 /**

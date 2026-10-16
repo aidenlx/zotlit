@@ -3,6 +3,10 @@ import { join, relative, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const contentDirectory = resolve(import.meta.dirname, "../../content");
+const catalogPath = resolve(
+  import.meta.dirname,
+  "../../../../messages/en.json",
+);
 
 function getMdxFiles(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -59,5 +63,28 @@ describe("MDX content", () => {
     );
 
     expect(bareMessages).toEqual([]);
+  });
+
+  // A key renamed or removed in the catalog fails the docs build, which no
+  // other check runs.
+  it("names only Messages the catalog holds", () => {
+    const catalog = JSON.parse(readFileSync(catalogPath, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    const missing = getMdxFiles(contentDirectory).flatMap((path) =>
+      readFileSync(path, "utf8")
+        .split("\n")
+        .flatMap((line, index) =>
+          [...line.matchAll(/\bm\.(\w+)\(/g)]
+            .filter(([, key]) => !Object.hasOwn(catalog, key!))
+            .map(
+              ([, key]) =>
+                `${relative(contentDirectory, path)}:${index + 1} ${key}`,
+            ),
+        ),
+    );
+
+    expect(missing).toEqual([]);
   });
 });

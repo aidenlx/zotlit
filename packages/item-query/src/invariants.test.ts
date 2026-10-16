@@ -351,6 +351,36 @@ const PLAN_PATHS: readonly {
     },
   },
   {
+    name: "a limited scan that leaves out a Formula with a mistake",
+    request: {
+      fields: ["title", "formula.bad", "formula.next"],
+      formulas: { bad: "title * 2", next: "date.year + 1" },
+      onFormulaFault: "leave-out",
+      limit: 10,
+    },
+    reads: {
+      "scan-page": [500, 500, 500, 500, 500, 100],
+      "hydrate-chunk": [10],
+    },
+  },
+  {
+    name: "a limited scan that leaves out a Formula with a custom field the source lacks, and a Formula that reads it",
+    request: {
+      fields: ["title", "formula.missing", "formula.reader", "formula.next"],
+      formulas: {
+        missing: 'custom["absent"]',
+        reader: "formula.missing + 1",
+        next: "date.year + 1",
+      },
+      onFormulaFault: "leave-out",
+      limit: 10,
+    },
+    reads: {
+      "scan-page": [500, 500, 500, 500, 500, 100],
+      "hydrate-chunk": [10],
+    },
+  },
+  {
     name: "a limited scan that hydrates every Item for the filter and the sort",
     request: {
       filter: 'title.contains("Bulk")',
@@ -365,6 +395,15 @@ const PLAN_PATHS: readonly {
         // The projection: the title and the Tags of 300 rows.
         250, 250, 50, 50,
       ],
+    },
+  },
+  {
+    name: "an unlimited scan that reads Child Notes",
+    request: { filter: "notes.isEmpty()", fields: [], limit: null },
+    reads: {
+      "scan-page": [500, 500, 500, 500, 500, 100],
+      // 2,600 parents in chunks of 250; the bulk Library has no Child Note.
+      "item-notes": Array<number>(11).fill(0),
     },
   },
   {
@@ -520,6 +559,7 @@ describe("the Items one statement reads", () => {
         "annotation-attachment-titles",
         "attachment-candidate-set",
         "annotation-candidate-set",
+        "item-notes",
       ]) {
         expect(itemsRead(events, reader), reader).toEqual(reads[reader] ?? []);
       }

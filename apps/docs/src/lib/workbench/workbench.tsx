@@ -33,7 +33,6 @@ import type {
   WorkbenchSliceRange,
 } from "@zotlit/workbench/document";
 import type { DisplayNode } from "@zotlit/workbench/explorer";
-import { snapshotMatchFacts } from "@zotlit/workbench/match";
 import {
   currentCallSite,
   DEFAULT_PROFILE_SOURCE,
@@ -1165,7 +1164,6 @@ export function Workbench() {
                 <h2 className="sr-only">{tabLabel(m, "match")}</h2>
                 <MatchPane
                   controller={controller}
-                  facts={snapshotMatchFacts(sample)}
                   vocabularyRevision={sample.revision}
                 />
               </TabPanel>

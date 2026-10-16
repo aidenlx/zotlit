@@ -18,7 +18,8 @@ import type {
 } from "@/services/annotation-repository/service";
 import { byTextField, IDLE } from "@/services/annotation-repository/write";
 
-import { NO_SELECTION } from "./card-selection";
+import { cardPlace, NO_SELECTION } from "./card-selection";
+import type { CardPlace } from "./card-selection";
 import type { CardSelection } from "./card-selection";
 import type { CaretPoint } from "./editor-sheet";
 import { filterAnnotations } from "./filter";
@@ -66,17 +67,41 @@ export interface EditingTarget {
   caretAt?: CaretPoint;
 }
 
+/** One Attachment's Annotation Source, and the data directory it was read under. */
+export interface HeldSource {
+  source: AnnotationSource;
+  scope: string | null;
+}
+
 export interface AnnotState {
   attachments: AnnotViewAttachment[] | null;
   /** Indexed Key of the Attachment on screen. */
   selectedAttachmentKey: string | null;
   /** Why the Attachment cannot be chosen here; `null` while the picker is live. */
   attachmentLock: AttachmentLock;
+  /**
+   * The Annotations the cards show: the list of each Attachment the
+   * Annotations Layout shows, one after another in the order its host gave.
+   */
   annotations: readonly AnnotationRecord[] | null;
-  /** Which Annotation Source answered for {@link annotations}. */
-  annotationSource: AnnotationSource | null;
-  annotationSourceScope: string | null;
-  /** What the cards may do to the Attachment on screen. */
+  /**
+   * Which Annotation Source answered for each Attachment the cards show, by
+   * the Attachment's Indexed Key. The source is atomic per Attachment, so a
+   * card reads the one of its own Attachment.
+   *
+   * @see apps/obsidian/docs/adr/0034-the-annotation-source-is-atomic-per-attachment.md
+   */
+  sources: ReadonlyMap<string, HeldSource>;
+  /**
+   * What the cards may do to each Attachment they show, by the Attachment's
+   * Indexed Key.
+   */
+  capabilities: ReadonlyMap<string, EditingCapability>;
+  /**
+   * The Editing Capability the host reports in its own chrome — the sidebar
+   * reports the one of the Attachment on screen — and the one a card answers
+   * to while {@link capabilities} holds none for its Attachment.
+   */
   capability: EditingCapability;
   /**
    * What the last write left on each Annotation, by Indexed Key. A key with no
@@ -133,6 +158,38 @@ export interface AnnotState {
   selectedColors: string[];
   /** Selected tags, by name. */
   selectedTags: string[];
+  /**
+   * Where each card stands, in order, while a Query View shows the rows of a
+   * grouped query: one entry for each group a card stands in, so a card with
+   * two tags stands under both. `null` while the cards stand in one list.
+   */
+  groups: readonly CardPlacement[] | null;
+  /** The groups whose headings are collapsed, by group key. */
+  collapsedGroups: ReadonlySet<string>;
+  /**
+   * The rows a Query View gave that no Attachment's list holds, by Indexed
+   * Key, in the query's order.
+   */
+  unresolved: readonly string[];
+  /**
+   * Why the sidebar's query shows no cards: the query failed, or Zotero's
+   * data cannot be read. `null` while nothing stands in the way.
+   */
+  queryProblem: { message: string; detail: string } | null;
+  /** Whether a filter condition has an error while the last cards stay. */
+  filterError: boolean;
+}
+
+/** The group a card stands in, and the heading that names it. */
+export interface CardGroup {
+  key: string;
+  label: string;
+}
+
+/** One card under one group heading. */
+export interface CardPlacement {
+  annotationKey: string;
+  group: CardGroup;
 }
 
 /**
@@ -159,8 +216,8 @@ export function createAnnotStore() {
         selectedAttachmentKey: null,
         attachmentLock: null,
         annotations: null,
-        annotationSource: null,
-        annotationSourceScope: null,
+        sources: new Map(),
+        capabilities: new Map(),
         // Nothing has probed Zotero yet, which is exactly what "probing" says.
         capability: { kind: "read-only", reason: "probing" },
         mutations: new Map(),
@@ -178,9 +235,22 @@ export function createAnnotStore() {
         liveUpdatesOn: false,
         zoteroReaderClosed: false,
         ...INITIAL_FILTER_STATE,
+        groups: null,
+        collapsedGroups: new Set(),
+        unresolved: [],
+        queryProblem: null,
+        filterError: false,
       }),
     ),
   );
+}
+
+/** The Editing Capability one card answers to: the one of its own Attachment. */
+export function capabilityOf(
+  state: Pick<AnnotState, "capabilities" | "capability">,
+  attachmentKey: string,
+): EditingCapability {
+  return state.capabilities.get(attachmentKey) ?? state.capability;
 }
 
 /** Selected attachment, falling back to the first when none is chosen. */
@@ -299,6 +369,16 @@ export function useToggleSearchOpen(): () => void {
   };
 }
 
+/** Collapse a group heading, or expand it again. */
+export function useToggleGroupCollapsed(): (groupKey: string) => void {
+  const store = useAnnotStoreApi();
+  return (groupKey) => {
+    const collapsed = new Set(store.getState().collapsedGroups);
+    if (!collapsed.delete(groupKey)) collapsed.add(groupKey);
+    store.setState({ collapsedGroups: collapsed });
+  };
+}
+
 export function useSetFilterQuery(): (query: string) => void {
   const store = useAnnotStoreApi();
   return (query) => store.setState({ filterQuery: query });
@@ -356,39 +436,82 @@ function filterOf(s: FilterSlices): AnnotFilter {
   };
 }
 
+/** One card under one group heading, as the grid draws it. */
+export interface GroupedCard {
+  annot: AnnotationRecord;
+  group: CardGroup;
+  /** Whether a heading opens the group before this card. */
+  opens: boolean;
+}
+
+/** The shown cards under their groups, in the order of the placements. */
+export function groupedCards(
+  groups: readonly CardPlacement[],
+  shown: readonly AnnotationRecord[],
+): GroupedCard[] {
+  const byKey = new Map(shown.map((annot) => [annot.key, annot]));
+  const cards: GroupedCard[] = [];
+  for (const { annotationKey, group } of groups) {
+    const annot = byKey.get(annotationKey);
+    if (!annot) continue;
+    cards.push({ annot, group, opens: cards.at(-1)?.group.key !== group.key });
+  }
+  return cards;
+}
+
+type OrderSlices = FilterSlices &
+  Pick<AnnotState, "groups" | "collapsedGroups">;
+
 /**
- * The last order worked out over each list, and the filter slices it was
- * worked out under. Keyed on the list itself, so each view keeps its own.
+ * The last order worked out over each list, and the slices it was worked out
+ * under. Keyed on the list itself, so each view keeps its own.
  */
 const orders = new WeakMap<
   readonly AnnotationRecord[],
-  { slices: FilterSlices; order: readonly string[] }
+  { slices: OrderSlices; order: readonly CardPlace[] }
 >();
 
 /**
- * The Indexed Keys the list shows, in the order it shows them — the list the
- * Card Selection's transitions read, filtered as {@link useAnnotFilter}
- * filters the cards on screen. The view's subscription reads it on every
- * store update, so it filters again only when the list or a filter slice
- * changes.
+ * The places of the cards the list shows, in the order it shows them — the
+ * list the Card Selection's transitions read. It is filtered as
+ * {@link useAnnotFilter} filters the cards on screen, and grouped as the grid
+ * draws them: a card stands at each group it shows under, and a collapsed
+ * group shows none. The view's subscription reads it on every store update,
+ * so it works the order out again only when the list, a filter slice or the
+ * groups change.
  */
 export function visibleOrder(
-  s: FilterSlices & Pick<AnnotState, "annotations">,
-): readonly string[] {
+  s: OrderSlices & Pick<AnnotState, "annotations">,
+): readonly CardPlace[] {
   if (s.annotations === null) return [];
   const held = orders.get(s.annotations);
   if (
     held?.slices.filterQuery === s.filterQuery &&
     held.slices.selectedColors === s.selectedColors &&
-    held.slices.selectedTags === s.selectedTags
+    held.slices.selectedTags === s.selectedTags &&
+    held.slices.groups === s.groups &&
+    held.slices.collapsedGroups === s.collapsedGroups
   )
     return held.order;
-  const { filterQuery, selectedColors, selectedTags } = s;
-  const order = filterAnnotations(s.annotations, filterOf(s)).map(
-    ({ key }) => key,
-  );
+  const { filterQuery, selectedColors, selectedTags, groups, collapsedGroups } =
+    s;
+  const shown = filterAnnotations(s.annotations, filterOf(s));
+  const order =
+    groups === null
+      ? shown.map(({ key }) => cardPlace(key, null))
+      : groupedCards(groups, shown).flatMap(({ annot, group }) =>
+          collapsedGroups.has(group.key)
+            ? []
+            : [cardPlace(annot.key, group.key)],
+        );
   orders.set(s.annotations, {
-    slices: { filterQuery, selectedColors, selectedTags },
+    slices: {
+      filterQuery,
+      selectedColors,
+      selectedTags,
+      groups,
+      collapsedGroups,
+    },
     order,
   });
   return order;

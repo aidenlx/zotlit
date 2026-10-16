@@ -246,3 +246,5 @@ For list properties and similar.
 | --- | --- |
 | `--drag-ghost-background` | Ghost background while dragging |
 | `--drag-ghost-text-color` | Ghost text color |
+| `--drag-item-background` | Background of a dragged item and its reorder ghost (`--background-primary` on `body`) |
+| `--drag-item-shadow` | Shadow of a dragged item and its reorder ghost (`0 2px 8px var(--background-modifier-box-shadow)`) |

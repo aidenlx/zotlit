@@ -11,9 +11,11 @@ import type { CandidateSources } from "./candidate-plan";
 import type { QueryDataset } from "./dataset";
 import { ItemQueryError } from "./error";
 import type { ItemQueryErrorLocation } from "./error";
-import type { ItemQueryFault } from "./fault";
+import type { ItemQueryFault, Span } from "./fault";
+import type { FilterPlan } from "./filter-plan";
+import type { FormulaSourceCheck, FormulaSourceFault } from "./formulas";
 import type { LoadRequest } from "./record-loader";
-import type { TargetLibrary } from "./request";
+import type { ItemQueryRequest, TargetLibrary } from "./request";
 
 /** Each query runs sequentially in one fiber. Cache only completed reads. */
 export const openQuerySources = Effect.sync(() => {
@@ -33,37 +35,32 @@ export const openQuerySources = Effect.sync(() => {
   const checkCustomFields = Effect.fnUntraced(function* (
     plan: LoadRequest<unknown>,
   ) {
-    const { dataset, filter, paths, group } = plan;
+    const { dataset, filter, paths, group, formulas = [] } = plan;
     if (
       !filter?.customFields.length &&
+      !formulas.some((formula) => formula.plan.customFields.length) &&
       !paths.some((path) => path.customField !== null) &&
       !(group && group.customField !== null)
     )
       return;
     const vocabulary = yield* readVocabulary();
     const known = new Set(vocabulary.customFieldNames);
-    // The filter first, then the Projection Paths.
+    /** The custom fields of a Filter Expression: the filter or a Formula. */
+    const expressionUses = (
+      uses: NonNullable<typeof filter>["customFields"],
+      at: Pick<ItemQueryErrorLocation, "argument" | "path">,
+      argumentText: string,
+    ) =>
+      uses.map((use): CustomFieldUse => {
+        const { at: span, ...read } = expressionUse(use, known);
+        return { ...read, location: { ...at, span }, argumentText };
+      });
+    // The filter first, then the Projection Paths and the Formulas.
     const customFields: CustomFieldUse[] = [
-      ...(filter?.customFields ?? []).map(
-        ({ name, bare, from, to, deferred, dotted }): CustomFieldUse =>
-          dotted && !known.has(name) && known.has(dotted.name)
-            ? {
-                name: dotted.name,
-                bare,
-                dotted: true,
-                location: {
-                  argument: "filter",
-                  span: { from: dotted.from, to: dotted.to },
-                },
-                argumentText: plan.query.filter ?? "",
-              }
-            : {
-                name,
-                bare,
-                deferred,
-                location: { argument: "filter", span: { from, to } },
-                argumentText: plan.query.filter ?? "",
-              },
+      ...expressionUses(
+        filter?.customFields ?? [],
+        { argument: "filter" },
+        plan.query.filter ?? "",
       ),
       ...paths.flatMap(({ customField: name, text }): CustomFieldUse[] =>
         name === null
@@ -94,10 +91,15 @@ export const openQuerySources = Effect.sync(() => {
             },
           ]
         : []),
+      ...formulas.flatMap((formula) =>
+        expressionUses(
+          formula.plan.customFields,
+          { argument: "formulas", path: formula.name },
+          formula.text,
+        ),
+      ),
     ];
-    const missing = customFields.find(
-      ({ name, deferred, dotted }) => dotted || deferred || !known.has(name),
-    );
+    const missing = customFields.find((use) => isMissing(use, known));
     if (missing) {
       return yield* unknownCustomField(
         dataset,
@@ -106,10 +108,31 @@ export const openQuerySources = Effect.sync(() => {
       );
     }
   });
+  /**
+   * The check of a request that leaves out a Formula with a mistake, for
+   * the Formula planner: the first custom field that the text of a Formula
+   * names and the source lacks. Undefined under `"fail"`, where the
+   * custom-field check fails the request, and for a request without
+   * Formulas. It reads the field vocabulary only for a request it checks.
+   */
+  const formulaSourceCheck = Effect.fnUntraced(function* (
+    request: Pick<ItemQueryRequest, "formulas" | "onFormulaFault">,
+  ) {
+    if (
+      request.onFormulaFault !== "leave-out" ||
+      Object.keys(request.formulas ?? {}).length === 0
+    )
+      return undefined;
+    const { customFieldNames } = yield* readVocabulary();
+    const check: FormulaSourceCheck = (plan) =>
+      missingCustomField(plan, customFieldNames);
+    return check;
+  });
   const sources = {
     vocabulary: readVocabulary,
     collectionPaths,
     checkCustomFields,
+    formulaSourceCheck,
     /** The sources already demanded by the request, for synchronous leaf lowering. */
     candidateContext: (library: TargetLibrary): CandidateSources => ({
       library,
@@ -121,44 +144,109 @@ export const openQuerySources = Effect.sync(() => {
 });
 export type QuerySources = Effect.Success<typeof openQuerySources>;
 
-/** A custom field that the request names, and where it names it. */
-interface CustomFieldUse {
+/** A custom field that an expression names, as the source reads it. */
+interface ExpressionUse {
   readonly name: string;
   /** The filter names it with its bare form. */
   readonly bare: boolean;
   readonly deferred?: Extract<ItemQueryFault, { kind: "unknown" }>;
   readonly dotted?: boolean;
+  /** Where the expression text names it. */
+  readonly at: Span;
+}
+
+/** A custom field that the request names, and where it names it. */
+interface CustomFieldUse extends Omit<ExpressionUse, "at"> {
   readonly location: ItemQueryErrorLocation;
   readonly argumentText?: string;
 }
 
 /**
- * A custom field that the source does not define fails the query. A bare name
- * outside the built-in names is a custom field of the source or an unknown
- * field.
+ * A custom field use of a Filter Expression against the custom fields `known`
+ * of the source: a property chain whose prefix the source defines is a use of
+ * that prefix.
  */
+function expressionUse(
+  {
+    name,
+    bare,
+    from,
+    to,
+    deferred,
+    dotted,
+  }: FilterPlan["customFields"][number],
+  known: ReadonlySet<string>,
+): ExpressionUse {
+  return dotted && !known.has(name) && known.has(dotted.name)
+    ? {
+        name: dotted.name,
+        bare,
+        dotted: true,
+        at: { from: dotted.from, to: dotted.to },
+      }
+    : { name, bare, deferred, at: { from, to } };
+}
+
+/** Whether the source lacks the custom field of `use`. */
+function isMissing(
+  { name, deferred, dotted }: Omit<ExpressionUse, "at">,
+  known: ReadonlySet<string>,
+): boolean {
+  return Boolean(dotted || deferred || !known.has(name));
+}
+
+/**
+ * The Fault of a custom field use that the source lacks. A bare name outside
+ * the built-in names is a custom field of the source or an unknown field.
+ */
+function missingFault(
+  names: readonly string[],
+  { name, bare, deferred, dotted }: Omit<ExpressionUse, "at">,
+  at: Span,
+): ItemQueryFault {
+  return deferred && !names.includes(name)
+    ? deferred
+    : {
+        kind: "unknown",
+        role: bare && !deferred && !dotted ? "field" : "custom-field",
+        name,
+        at,
+        customFields: names,
+        ...(deferred || dotted ? { dotted: true } : {}),
+      };
+}
+
+/**
+ * The first custom field that the Filter Expression of `plan` names and the
+ * source, with the custom fields `names`, lacks, as a Fault at its text; null
+ * when the source has each.
+ */
+export function missingCustomField(
+  plan: Pick<FilterPlan, "customFields">,
+  names: readonly string[],
+): FormulaSourceFault | null {
+  const known = new Set(names);
+  for (const use of plan.customFields) {
+    const read = expressionUse(use, known);
+    if (isMissing(read, known))
+      return { fault: missingFault(names, read, read.at), at: read.at };
+  }
+  return null;
+}
+
+/** A custom field that the source does not define fails the query. */
 function unknownCustomField(
   dataset: QueryDataset<any>,
   names: readonly string[],
-  { name, bare, location, deferred, dotted, argumentText }: CustomFieldUse,
+  use: CustomFieldUse,
 ): Effect.Effect<never, ItemQueryError> {
-  const fault: ItemQueryFault =
-    deferred && !names.includes(name)
-      ? deferred
-      : {
-          kind: "unknown",
-          role: bare && !deferred && !dotted ? "field" : "custom-field",
-          name,
-          at: location.span ?? { from: 0, to: 0 },
-          customFields: names,
-          ...(deferred || dotted ? { dotted: true } : {}),
-        };
+  const { location, argumentText } = use;
   return Effect.fail(
     new ItemQueryError({
       dataset,
       location,
       ...(argumentText === undefined ? {} : { argumentText }),
-      fault,
+      fault: missingFault(names, use, location.span ?? { from: 0, to: 0 }),
     }),
   );
 }

@@ -2,6 +2,7 @@
 import { describeAnnotationQueryVocabulary } from "./describe-annotation-query";
 import { describeAttachmentQueryVocabulary } from "./describe-attachment-query";
 import { describeItemQueryVocabulary } from "./describe-item-query";
+import { FORMULA_SCHEMA } from "./formulas";
 import {
   ITEM_SUMMARY,
   ATTACHMENT_SUMMARY,
@@ -20,9 +21,10 @@ export {
 
 /** One static catalog per plugin version, with shared language definitions. */
 export function describeQueryVocabulary() {
-  const { functions, methods, properties, types, ...items } =
+  const { context, functions, methods, properties, types, ...items } =
     describeItemQueryVocabulary();
   const {
+    context: _context,
     functions: _functions,
     methods: _methods,
     properties: _properties,
@@ -30,6 +32,7 @@ export function describeQueryVocabulary() {
     ...annotations
   } = describeAnnotationQueryVocabulary();
   const {
+    context: _ac,
     functions: _af,
     methods: _am,
     properties: _ap,
@@ -42,6 +45,8 @@ export function describeQueryVocabulary() {
       attachments: { ...attachments, summary: ATTACHMENT_SUMMARY },
       annotations: { ...annotations, summary: ANNOTATION_SUMMARY },
     },
+    context,
+    formulas: FORMULA_SCHEMA,
     functions,
     methods,
     properties,

@@ -11,12 +11,25 @@ export {
   type SchemaProperty,
 } from "./describe-item-query";
 export { describeQueryCustomFields } from "./describe-query-custom-fields";
+export { cellProperties } from "./cell-properties";
 export {
   AttachmentFileResolver,
   type QueryDataset,
   type ResolveAttachmentFile,
 } from "./dataset";
 export { ITEMS } from "./query-items";
+export {
+  planItemFilter,
+  testItemSeed,
+  type ItemFilter,
+  type SeedTest,
+} from "./item-filter";
+export {
+  queryItemFrom,
+  queryItemSeedSchema,
+  readQueryItemSeed,
+  type QueryItemSeed,
+} from "./item-seed";
 export { ANNOTATIONS } from "./query-annotations";
 export {
   ItemQueryError,
@@ -37,13 +50,31 @@ export {
   type QuerySummary,
 } from "./query";
 export { COUNT_FIELDS, UNLIMITED_LIMIT } from "./request";
+export { planPath } from "./projection";
+export { errorValueText } from "./filter-values";
+export {
+  errorCell,
+  valueText,
+  type ErrorCell,
+  type ProjectionJson,
+} from "./value-text";
+export { nameDictionary, type NameDictionary } from "./name-dictionary";
+export {
+  FORMULA_NAME,
+  FORMULA_SEGMENT,
+  formulaReferences,
+  type FormulaFaultPolicy,
+  type FormulaReference,
+} from "./formulas";
 export type {
+  FormulaDiagnostics,
   ItemQuery,
   ItemQueryRequest,
   ProjectionValue,
   QueryResult,
   QueryGroup,
   GroupValue,
+  QueryContext,
   QueryRow,
   SortSpec,
   TargetLibrary,

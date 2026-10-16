@@ -1080,7 +1080,7 @@ describe("Profile Match document writes", () => {
         state: "evaluable",
         tree: { or: [] },
       });
-      expect(f.profile.profiles[0]!.match.summary).toBe(m.profile_match_none());
+      expect(f.profile.profiles[0]!.match.summary).toBe("false");
       const remove = f.profile.setMatch(BOOKS, undefined);
       await vi.advanceTimersByTimeAsync(500);
       await remove;
@@ -1100,7 +1100,7 @@ describe("Profile Match document writes", () => {
   it("uses the latest document bytes and clears an invalid expression diagnostic", async () => {
     const path = "templates/zotlit-profile.books.md";
     await using f = await harness({
-      [path]: document(BOOKS, "match: 'title == \"Books\"'"),
+      [path]: document(BOOKS, "match: 'title ==' "),
     });
     expect(f.profile.profiles[0]!.match.state).toBe("unevaluable");
     const edited = document(
@@ -1175,7 +1175,6 @@ describe("seedProfileEntry", () => {
         seedProfileEntry(manifest, {
           document: "zotlit-profile.books.md",
           path: PATH,
-          libraries: [],
         }),
       ),
     ).toEqual(ENTRY);

@@ -162,6 +162,41 @@ describe("Record Loader", () => {
     expect([...article.hydrated.custom]).toEqual([["review.status", "done"]]);
   });
 
+  it("loads a Formula the filter reads in the scan pass only", async () => {
+    using scenario = openScenarioDatabase();
+    const { hydration, hydrates, scanned } = await open(scenario, {
+      filter: "formula.marked",
+      formulas: {
+        marked: "formula.tagged",
+        tagged: 'tags.contains("to-read")',
+      },
+      fields: ["title"],
+    });
+
+    expect(hydration.scan.hydrates).toBe(true);
+    expect(hydration.projection.hydrates).toBe(true);
+    // The scan pass: the Tags. The projection pass: the title.
+    expect(hydrates).toHaveLength(2);
+    const article = scanned.find((item) => item.scan.key === "ART2FULL")!;
+    expect(article.hydrated.tags?.map((tag) => tag.name)).toContain("to-read");
+  });
+
+  it("loads a Formula that a projected Formula reads in the projection pass", async () => {
+    using scenario = openScenarioDatabase();
+    const { hydration, projected } = await open(scenario, {
+      formulas: {
+        marked: "formula.tagged",
+        tagged: 'tags.contains("to-read")',
+      },
+      fields: ["formula.marked"],
+    });
+
+    expect(hydration.scan.hydrates).toBe(false);
+    expect(hydration.projection.hydrates).toBe(true);
+    const article = projected.find((item) => item.scan.key === "ART2FULL")!;
+    expect(article.hydrated.tags?.map((tag) => tag.name)).toContain("to-read");
+  });
+
   it("loads the fields of a branch that does not run for an Item", async () => {
     using scenario = openScenarioDatabase();
     const { hydration, hydrates, scanned } = await open(scenario, {

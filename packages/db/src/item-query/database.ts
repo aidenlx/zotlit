@@ -69,6 +69,7 @@ export type ItemQueryReader =
   | "item-attachments"
   | "item-annotations"
   | "attachment-annotations"
+  | "item-notes"
   | "attachment-row-count"
   | "attachment-candidate-set"
   | "attachment-scan-page"

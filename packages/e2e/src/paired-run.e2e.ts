@@ -38,12 +38,14 @@ import {
 import {
   clearNotices,
   cli,
+  cliCommand,
   obEval,
   obEvalUntil,
   obJson,
   waitFor,
   WINDOW_DOCUMENTS,
 } from "./obsidian-cli.ts";
+import { PAGE } from "./page-gestures.ts";
 import type {} from "./paired-setup.ts";
 import {
   authorizationCount,
@@ -998,6 +1000,20 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       };
 
       it("creates an Annotation that reaches Zotero, the page overlay and the card", async () => {
+        // ZotLit Query waits while the Annotation is created, so the card can
+        // come only from the Annotation Repository's live list: the sidebar
+        // shows a new Annotation before its query runs again, as it did
+        // before it ran a query.
+        await obEval(
+          vaultId!,
+          `(function(){const query=app.plugins.plugins.zotlit.services.query;const run=query.run;let release;const gate=new Promise((resolve)=>{release=resolve;});query.run=(request,signal)=>gate.then(()=>run.call(query,request,signal));window.__ztQueryGate=()=>{query.run=run;release();};return true;})()`,
+        );
+        cleanup.defer(async () => {
+          await obEval(
+            vaultId!,
+            "(function(){window.__ztQueryGate?.();delete window.__ztQueryGate;return true;})()",
+          );
+        });
         const created = await obJson<{ kind: string; annotationKey?: string }>(
           vaultId!,
           `(async()=>{const outcome=await app.plugins.plugins.zotlit.services.annotationRepository.createAnnotation(${JSON.stringify(attachment.key)},${JSON.stringify(
@@ -1018,6 +1034,18 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         );
         expect(created.kind).toBe("created");
         createdKey = created.annotationKey!;
+        // The Annotation Card, in the Annotation View, while the query waits.
+        expect(
+          await obEvalUntil(
+            vaultId!,
+            `String(app.workspace.getLeavesOfType('zotero-annotation-view').some(({view})=>view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(createdKey)}]')))`,
+            { expected: "true" },
+          ),
+        ).toBe(true);
+        await obEval(
+          vaultId!,
+          "(function(){window.__ztQueryGate();delete window.__ztQueryGate;return true;})()",
+        );
         cleanup.defer(async () => {
           await rdp.json(`(async () => {
             const item = Zotero.Items.getByLibraryAndKey(
@@ -1186,7 +1214,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         // is the flicker this guards.
         const shown = await obJson<string[]>(
           vaultId!,
-          `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const key=${JSON.stringify(createdKey)};const card=()=>app.workspace.getLeavesOfType('zotero-annotation-view').map((leaf)=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key='+JSON.stringify(key)+']')).find(Boolean);const row=()=>card()?.querySelector('.zt-annot-tag-input')?'editor':'chips:'+[...(card()?.querySelectorAll('[aria-pressed]')??[])].map((chip)=>chip.textContent).join('|');const shown=[row()];const record=()=>{const state=row();if(state!==shown.at(-1))shown.push(state);};const observer=new MutationObserver(record);observer.observe(document.body,{subtree:true,childList:true,characterData:true});card().querySelector(${JSON.stringify(toggle)}).click();const sleep=(ms)=>new Promise((resolve)=>setTimeout(resolve,ms));for(let waited=0;waited<10000&&!(repository.mutationFor(key).kind==='idle'&&!repository.tagDraftFor(key));waited+=50)await sleep(50);await sleep(300);observer.disconnect();record();return JSON.stringify(shown);})()`,
+          `(async()=>{${PAGE}const repository=app.plugins.plugins.zotlit.services.annotationRepository;const key=${JSON.stringify(createdKey)};const card=()=>app.workspace.getLeavesOfType('zotero-annotation-view').map((leaf)=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key='+JSON.stringify(key)+']')).find(Boolean);const row=()=>card()?.querySelector('.zt-annot-tag-input')?'editor':'chips:'+[...(card()?.querySelectorAll('[aria-pressed]')??[])].map((chip)=>chip.textContent).join('|');const shown=[row()];const record=()=>{const state=row();if(state!==shown.at(-1))shown.push(state);};const observer=new MutationObserver(record);observer.observe(document.body,{subtree:true,childList:true,characterData:true});press(card().querySelector(${JSON.stringify(toggle)}),'tag toggle');await until('tag save settles',()=>repository.mutationFor(key).kind==='idle'&&!repository.tagDraftFor(key),10000).catch(()=>{});/* 300 ms after the save is the window a late flicker would show in. */await new Promise((resolve)=>setTimeout(resolve,300));observer.disconnect();record();return JSON.stringify(shown);})()`,
         );
         expect(shown).toEqual(["editor", `chips:${added}`]);
         expect(await annotationTags(api, serverID, createdKey)).toEqual([
@@ -1206,7 +1234,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         const pressVerb = () =>
           obEvalUntil(
             vaultId!,
-            `(function(){const verb=${popup}?.querySelector('[data-zt-verb=tags]');if(!verb)return 'absent';verb.click();return 'pressed';})()`,
+            `(function(){${PAGE}const verb=${popup}?.querySelector('[data-zt-verb=tags]');if(!verb)return 'absent';press(verb,'Tags');return 'pressed';})()`,
             { expected: "pressed" },
           );
         /** The read-only chips under the comment, by name, while no editor is open. */
@@ -1243,7 +1271,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         expect(
           await obEvalUntil(
             vaultId!,
-            `(function(){if(!${popup})return 'no popup';if((${mark})?.classList.contains('is-selected'))return 'selected';${popup}.querySelector('[data-zt-verb=stack]')?.click();return 'stepped';})()`,
+            `(function(){${PAGE}if(!${popup})return 'no popup';if((${mark})?.classList.contains('is-selected'))return 'selected';press(${popup}.querySelector('[data-zt-verb=stack]'),'Stack');return 'stepped';})()`,
             { expected: "selected" },
           ),
         ).toBe(true);
@@ -1660,7 +1688,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           const inkMenu = (pick?: number) =>
             obEval(
               vaultId!,
-              `(function(){${pdfView}.containerEl.querySelector('[data-zt-tool="ink-color"]').click();const items=[...document.querySelectorAll('.menu .menu-item')];const label=items.findIndex((item)=>item.classList.contains('is-label'));const word=(item)=>item.textContent.trim().split(/\\s/)[0];const checked=items.slice(label+1).find((item)=>item.querySelector('.mod-checked'));${pick === undefined ? "window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));" : `items.slice(label+1).find((item)=>word(item)===${JSON.stringify(String(pick))}).click();`}return checked?word(checked):'none';})()`,
+              `(function(){${PAGE}press(${pdfView}.containerEl.querySelector('[data-zt-tool="ink-color"]'),'Ink color');const items=[...document.querySelectorAll('.menu .menu-item')];const label=items.findIndex((item)=>item.classList.contains('is-label'));const word=(item)=>item.textContent.trim().split(/\\s/)[0];const checked=items.slice(label+1).find((item)=>item.querySelector('.mod-checked'));${pick === undefined ? "window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));" : `press(items.slice(label+1).find((item)=>word(item)===${JSON.stringify(String(pick))}),${JSON.stringify(`colour ${pick}`)});`}return checked?word(checked):'none';})()`,
             );
           await using restore = new AsyncDisposableStack();
           const [nativeMenus, width] = (
@@ -1745,7 +1773,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(await obEval(vaultId!, readerCursor)).not.toBe("crosshair");
           await obEval(
             vaultId!,
-            `(function(){${tool}.click();return true;})()`,
+            `(function(){${PAGE}press(${tool},'tool');return true;})()`,
           );
           expect(
             await obEval(vaultId!, `${tool}.getAttribute('aria-pressed')`),
@@ -1765,7 +1793,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           const arm = (id: string) =>
             obEval(
               vaultId!,
-              `(function(){const tool=${toolOf(id)};tool.click();return tool.getAttribute('aria-pressed');})()`,
+              `(function(){${PAGE}const tool=${toolOf(id)};press(tool,${JSON.stringify(id)});return tool.getAttribute('aria-pressed');})()`,
             );
 
           expect(await obEval(vaultId!, cursors)).toBe("crosshair,crosshair");
@@ -2307,7 +2335,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           await typeText("Tool changed");
           await obEval(
             vaultId!,
-            `(function(){${toolButtonOf(pdfView, "note")}.click();return true;})()`,
+            `(function(){${PAGE}press(${toolButtonOf(pdfView, "note")},'Note tool');return true;})()`,
           );
 
           expect(await freshComment(before)).toMatchObject({
@@ -2426,7 +2454,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           const textMenu = (pick?: number) =>
             obEval(
               vaultId!,
-              `(function(){${pdfView}.containerEl.querySelector('[data-zt-tool="text-color"]').click();const items=[...document.querySelectorAll('.menu .menu-item')];const label=items.findIndex((item)=>item.classList.contains('is-label'));const word=(item)=>item.textContent.trim().split(/\\s/)[0];const checked=items.slice(label+1).find((item)=>item.querySelector('.mod-checked'));${pick === undefined ? "" : `items.slice(label+1).find((item)=>word(item)===${JSON.stringify(String(pick))}).click();`}return checked?word(checked):'none';})()`,
+              `(function(){${PAGE}press(${pdfView}.containerEl.querySelector('[data-zt-tool="text-color"]'),'Text color');const items=[...document.querySelectorAll('.menu .menu-item')];const label=items.findIndex((item)=>item.classList.contains('is-label'));const word=(item)=>item.textContent.trim().split(/\\s/)[0];const checked=items.slice(label+1).find((item)=>item.querySelector('.mod-checked'));${pick === undefined ? "" : `press(items.slice(label+1).find((item)=>word(item)===${JSON.stringify(String(pick))}),${JSON.stringify(`colour ${pick}`)});`}return checked?word(checked):'none';})()`,
             );
           /**
            * Closes the menu with Escape, outside the reader so the reader's
@@ -2510,7 +2538,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(
             await obEval(
               vaultId!,
-              `(function(){${pdfView}.containerEl.querySelector('[data-zt-tool="text-color"]').click();const item=[...document.querySelectorAll('.menu .menu-item')].find((one)=>one.querySelector('[style*=${JSON.stringify(green)}]'));item.click();return String(!!item);})()`,
+              `(function(){${PAGE}press(${pdfView}.containerEl.querySelector('[data-zt-tool="text-color"]'),'Text color');const item=[...document.querySelectorAll('.menu .menu-item')].find((one)=>one.querySelector('[style*=${JSON.stringify(green)}]'));press(item,'Green');return String(!!item);})()`,
             ),
           ).toBe("true");
           expect(
@@ -2811,7 +2839,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // click over selected text only reads.
           await obEval(
             vaultId!,
-            `(getSelection().removeAllRanges(),document.querySelector('.zt-pdf-mark-popup .zt-annot-comment-field').click(),true)`,
+            `(()=>{${PAGE}getSelection().removeAllRanges();press(document.querySelector('.zt-pdf-mark-popup .zt-annot-comment-field'),'comment field');return true;})()`,
           );
           expect(
             await obEvalUntil(vaultId!, `String(!!${POPUP_EDITOR})`, {
@@ -3192,7 +3220,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(
             rectIs((await image.stored()).data.annotationPosition, fresh),
           ).toBe(true);
-          const applyAgain = `(function(){const button=[...(${card})?.querySelectorAll('.zt-annot-conflict button')??[]].find((node)=>node.getBoundingClientRect().width>0&&node.textContent==='Apply again');if(!button)return 'no button';button.click();return 'applied';})()`;
+          const applyAgain = `(function(){${PAGE}const button=[...(${card})?.querySelectorAll('.zt-annot-conflict button')??[]].find((node)=>node.getBoundingClientRect().width>0&&node.textContent==='Apply again');if(!button)return 'no button';press(button,'Apply again');return 'applied';})()`;
 
           // Zotero's open Reader saves the image it renders after a position
           // change; a retry sent before that save meets a newer version once
@@ -3251,7 +3279,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         ).toBe(true);
         await obEval(
           vaultId!,
-          `(document.querySelector('.zt-pdf-mark-popup [data-zt-verb="comment"]').click(),true)`,
+          `(()=>{${PAGE}press(document.querySelector('.zt-pdf-mark-popup [data-zt-verb="comment"]'),'Comment');return true;})()`,
         );
         expect(
           await obEvalUntil(vaultId!, `String(!!${POPUP_EDITOR})`, {
@@ -4394,7 +4422,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         async function openCommentEditor(): Promise<void> {
           await obEval(
             vaultId!,
-            `(getSelection().removeAllRanges(),document.querySelector('.zt-pdf-mark-popup .zt-annot-comment-field').click(),true)`,
+            `(()=>{${PAGE}getSelection().removeAllRanges();press(document.querySelector('.zt-pdf-mark-popup .zt-annot-comment-field'),'comment field');return true;})()`,
           );
           expect(
             await obEvalUntil(vaultId!, `String(!!${POPUP_EDITOR})`, {
@@ -4511,7 +4539,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // closed editor and the new text is the flicker this guards.
           const shown = await obJson<{ popup: string[]; card: string[] }>(
             vaultId!,
-            `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const key=${JSON.stringify(historyKey)};const slot=(root)=>{if(root?.querySelector('.cm-content'))return 'editor';const view=root?.querySelector('.zt-annot-comment');return view?'view:'+view.textContent:'none';};const roots={popup:()=>document.querySelector('.zt-pdf-mark-popup'),card:()=>app.workspace.getLeavesOfType('zotero-annotation-view').map((leaf)=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key='+JSON.stringify(key)+']')).find(Boolean)};const shown={popup:[slot(roots.popup())],card:[slot(roots.card())]};const record=()=>{for(const name of ['popup','card']){const state=slot(roots[name]());if(state!==shown[name].at(-1))shown[name].push(state);}};const observer=new MutationObserver(record);observer.observe(document.body,{subtree:true,childList:true,characterData:true});${POPUP_EDITOR}.dispatchEvent(new FocusEvent('blur',{relatedTarget:null}));const sleep=(ms)=>new Promise((resolve)=>setTimeout(resolve,ms));for(let waited=0;waited<10000&&!(repository.mutationFor(key).kind==='idle'&&!repository.textDraftFor('comment',key));waited+=50)await sleep(50);await sleep(300);observer.disconnect();record();return JSON.stringify(shown);})()`,
+            `(async()=>{${PAGE}const repository=app.plugins.plugins.zotlit.services.annotationRepository;const key=${JSON.stringify(historyKey)};const slot=(root)=>{if(root?.querySelector('.cm-content'))return 'editor';const view=root?.querySelector('.zt-annot-comment');return view?'view:'+view.textContent:'none';};const roots={popup:()=>document.querySelector('.zt-pdf-mark-popup'),card:()=>app.workspace.getLeavesOfType('zotero-annotation-view').map((leaf)=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key='+JSON.stringify(key)+']')).find(Boolean)};const shown={popup:[slot(roots.popup())],card:[slot(roots.card())]};const record=()=>{for(const name of ['popup','card']){const state=slot(roots[name]());if(state!==shown[name].at(-1))shown[name].push(state);}};const observer=new MutationObserver(record);observer.observe(document.body,{subtree:true,childList:true,characterData:true});${POPUP_EDITOR}.dispatchEvent(new FocusEvent('blur',{relatedTarget:null}));await until('comment save settles',()=>repository.mutationFor(key).kind==='idle'&&!repository.textDraftFor('comment',key),10000).catch(()=>{});/* 300 ms after the save is the window a late flicker would show in. */await new Promise((resolve)=>setTimeout(resolve,300));observer.disconnect();record();return JSON.stringify(shown);})()`,
           );
           expect(shown.popup).toEqual(["editor", `view:${after}`]);
           // The card may show the stored comment up to the blur; from there it
@@ -4528,7 +4556,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(
             await obEval(
               vaultId!,
-              `(async()=>{getSelection().removeAllRanges();document.querySelector('.zt-pdf-mark-popup .zt-annot-comment-field').click();await new Promise((resolve)=>requestAnimationFrame(resolve));return String(!!${POPUP_EDITOR});})()`,
+              `(async()=>{${PAGE}getSelection().removeAllRanges();press(document.querySelector('.zt-pdf-mark-popup .zt-annot-comment-field'),'comment field');await new Promise((resolve)=>requestAnimationFrame(resolve));return String(!!${POPUP_EDITOR});})()`,
             ),
           ).toBe("true");
           await closeCommentEditor();
@@ -4547,7 +4575,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             expect(
               await obEvalUntil(
                 vaultId!,
-                `(function(){const card=${card};if(!card)return 'no card';card.click();return String(card.hasAttribute('data-alone'));})()`,
+                `(function(){${PAGE}const card=${card};if(!card)return 'no card';press(card,'card');return String(card.hasAttribute('data-alone'));})()`,
                 { expected: "true" },
               ),
             ).toBe(true);
@@ -4957,7 +4985,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(
             await obEvalUntil(
               vaultId!,
-              `(function(){const card=${cardOf(key)};if(!card)return 'no card';card.click();return 'clicked';})()`,
+              `(function(){${PAGE}const card=${cardOf(key)};if(!card)return 'no card';press(card,'card');return 'clicked';})()`,
               { expected: "clicked" },
             ),
           ).toBe(true);
@@ -5247,7 +5275,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(
             await obEvalUntil(
               vaultId!,
-              `(function(){if(${editor})return 'open';getSelection().removeAllRanges();${cardOf(cardKey)}?.querySelector('.zt-annot-comment-field')?.click();return String(!!${editor}&&'open');})()`,
+              `(function(){${PAGE}if(${editor})return 'open';getSelection().removeAllRanges();press(${cardOf(cardKey)}?.querySelector('.zt-annot-comment-field'),'comment field');return String(!!${editor}&&'open');})()`,
               { expected: "open" },
             ),
           ).toBe(true);
@@ -5308,7 +5336,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             expect(
               await obEvalUntil(
                 vaultId!,
-                `(function(){const item=document.querySelector('.menu .menu-item');if(!item)return 'no menu';if(item.textContent.trim()!==${JSON.stringify(m.annot_view_menu_edit_text())}||item.classList.contains('is-disabled'))return 'not offered';item.click();return 'chosen';})()`,
+                `(function(){${PAGE}const item=document.querySelector('.menu .menu-item');if(!item)return 'no menu';if(item.textContent.trim()!==${JSON.stringify(m.annot_view_menu_edit_text())}||item.classList.contains('is-disabled'))return 'not offered';press(item,'Edit text');return 'chosen';})()`,
                 { expected: "chosen" },
               ),
             ).toBe(true);
@@ -5672,11 +5700,11 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // The search field holds the focus, and ↓ is the field's. Its own
           // keyup says the keydown before it has run its course.
           const search = `${annotView}.containerEl.querySelector('input[placeholder^="Search annotations"]')`;
-          const toggleSearch = `${annotView}.containerEl.querySelector('[aria-label="Search annotations"]').click()`;
+          const toggleSearch = `press(${annotView}.containerEl.querySelector('[aria-label="Search annotations"]'),'Search annotations')`;
           expect(
             await obEvalUntil(
               vaultId!,
-              `(function(){if(!${search})${toggleSearch};const input=${search};if(!input)return 'closed';input.focus();return String(document.activeElement===input&&'focused');})()`,
+              `(function(){${PAGE}if(!${search})${toggleSearch};const input=${search};if(!input)return 'closed';input.focus();return String(document.activeElement===input&&'focused');})()`,
               { expected: "focused" },
             ),
           ).toBe(true);
@@ -5703,7 +5731,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           } finally {
             await obEval(
               vaultId!,
-              `(function(){if(${search})${toggleSearch};return true;})()`,
+              `(function(){${PAGE}if(${search})${toggleSearch};return true;})()`,
             );
           }
         }, 120000);
@@ -5957,7 +5985,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             expect(
               await obEval(
                 vaultId!,
-                `(function(){const button=[...document.querySelectorAll('.modal-container .modal-button-container button')].find((node)=>node.textContent==='Delete');button.click();return 'confirmed';})()`,
+                `(function(){${PAGE}const button=[...document.querySelectorAll('.modal-container .modal-button-container button')].find((node)=>node.textContent==='Delete');press(button,'Delete');return 'confirmed';})()`,
               ),
             ).toBe("confirmed");
 
@@ -6005,6 +6033,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           } finally {
             // A confirmation left open by a failed step would block every
             // later test; its close answers "cancel".
+            // Teardown, not a reader's press.
             await obEval(
               vaultId!,
               "(function(){for(const modal of app.workspace.containerEl.doc.querySelectorAll('.modal-container .modal-close-button'))modal.click();return true;})()",
@@ -6140,7 +6169,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               expect(
                 await obEvalUntil(
                   vaultId!,
-                  `(function(){const button=${cardOf(made[1])}?.querySelector('[aria-label=${JSON.stringify("Change color")}]');if(!button)return 'no button';button.click();const green=[...document.querySelectorAll('.menu .menu-item')].find((item)=>item.textContent.trim()==='Green');if(!green)return 'no menu';green.click();return 'picked';})()`,
+                  `(function(){${PAGE}const button=${cardOf(made[1])}?.querySelector('[aria-label=${JSON.stringify("Change color")}]');if(!button)return 'no button';press(button,'Change color');const green=[...document.querySelectorAll('.menu .menu-item')].find((item)=>item.textContent.trim()==='Green');if(!green)return 'no menu';press(green,'Green');return 'picked';})()`,
                   { expected: "picked" },
                 ),
               ).toBe(true);
@@ -6267,7 +6296,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         expect(
           await obEvalUntil(
             vaultId!,
-            `(function(){const card=(${card});if(!card)return false;card.click();return card.hasAttribute('data-alone');})()`,
+            `(function(){${PAGE}const card=(${card});if(!card)return false;press(card,'card');return card.hasAttribute('data-alone');})()`,
             { expected: "true" },
           ),
         ).toBe(true);
@@ -6277,7 +6306,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         expect(
           await obEvalUntil(
             vaultId!,
-            `(function(){const field=(${card})?.querySelector('.zt-annot-comment-field');if(!field)return false;field.doc.getSelection().removeAllRanges();field.click();return true;})()`,
+            `(function(){${PAGE}const field=(${card})?.querySelector('.zt-annot-comment-field');if(!field)return false;field.doc.getSelection().removeAllRanges();press(field,'comment field');return true;})()`,
             { expected: "true" },
           ),
         ).toBe(true);
@@ -6880,7 +6909,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         expect(
           await obEvalUntil(
             vaultId!,
-            `(function(){const row=[...app.setting.containerEl.querySelectorAll('.setting-item')].find((el)=>el.querySelector('.setting-item-name')?.textContent==='Zotero editing');const button=row&&[...row.querySelectorAll('button')].find((el)=>el.textContent.trim()==='Allow editing');if(!button||button.disabled||button.style.display==='none')return 'false';button.click();return 'true';})()`,
+            `(function(){${PAGE}const row=[...app.setting.containerEl.querySelectorAll('.setting-item')].find((el)=>el.querySelector('.setting-item-name')?.textContent==='Zotero editing');const button=row&&[...row.querySelectorAll('button')].find((el)=>el.textContent.trim()==='Allow editing');if(!button||button.disabled||button.style.display==='none')return 'false';press(button,'Allow editing');return 'true';})()`,
             { expected: "true" },
           ),
         ).toBe(true);
@@ -6898,7 +6927,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         expect(
           await obEval(
             vaultId!,
-            `(function(){const notice=[...document.querySelectorAll('.zt-notice')].find((node)=>node.textContent.includes(${JSON.stringify(notAllowed)}));const button=notice&&[...notice.querySelectorAll('button')].find((el)=>el.textContent.trim()==='Allow editing');if(!button)return 'false';button.click();return 'true';})()`,
+            `(function(){${PAGE}const notice=[...document.querySelectorAll('.zt-notice')].find((node)=>node.textContent.includes(${JSON.stringify(notAllowed)}));const button=notice&&[...notice.querySelectorAll('button')].find((el)=>el.textContent.trim()==='Allow editing');if(!button)return 'false';press(button,'Allow editing');return 'true';})()`,
           ),
         ).toBe("true");
 
@@ -6941,6 +6970,459 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       await verifyExternalAnnotationLock({ vaultId: vaultId!, rdp, m });
     }, 180000);
   });
+
+  describe.skipIf(!debuggerPort || !vaultId)("a Query File", () => {
+    it("shows the library's cards in a new Query File tab, and a comment typed on one reaches Zotero", async () => {
+      await prepareAuthorizationFixture();
+      await using cleanup = new AsyncDisposableStack();
+      const key = seededAnnotation.key;
+      const original =
+        (await storedAnnotation(api, serverID, key)).annotationComment ?? "";
+      const tab = `app.workspace.getLeavesOfType('zotlit-query-file').map((leaf)=>leaf.view).find((view)=>view.file?.path===created)`;
+      const card = `(${tab})?.contentEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(key)}]')`;
+
+      // The Annotation Source must be the Local API before a card can write.
+      expect(
+        await obEvalUntil(
+          vaultId!,
+          `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;await repository.probe();const list=await repository.read(${JSON.stringify(attachment.key)});return String(list?.source.kind);})()`,
+          { expected: "zotero-local-api" },
+        ),
+      ).toBe(true);
+
+      const before = await obJson<string[]>(
+        vaultId!,
+        "JSON.stringify(app.vault.getFiles().map((file)=>file.path))",
+      );
+      await obEval(
+        vaultId!,
+        "app.commands.executeCommandById('zotlit:new-query-file');true",
+      );
+      let created = "";
+      expect(
+        await waitFor(async () => {
+          const files = await obJson<string[]>(
+            vaultId!,
+            "JSON.stringify(app.vault.getFiles().map((file)=>file.path))",
+          );
+          created = files.find((path) => !before.includes(path)) ?? "";
+          return created.endsWith(".zotquery");
+        }),
+      ).toBe(true);
+      cleanup.defer(async () => {
+        await obEval(
+          vaultId!,
+          `(async()=>{const created=${JSON.stringify(created)};for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))if(leaf.view.file?.path===created)leaf.detach();const file=app.vault.getFileByPath(created);if(file)await app.vault.delete(file);return true;})()`,
+        );
+      });
+      const declare = `const created=${JSON.stringify(created)};`;
+
+      // The tab shows the seeded Annotation's card among the library's.
+      expect(
+        await obEvalUntil(
+          vaultId!,
+          `(function(){${declare}return String(!!${card});})()`,
+          { expected: "true", tries: 120 },
+        ),
+      ).toBe(true);
+
+      // Select the card alone, open its comment editor, and type.
+      const editor = `${card}?.querySelector('.cm-content')`;
+      expect(
+        await obEvalUntil(
+          vaultId!,
+          `(function(){${PAGE}${declare}const card=${card};if(${editor})return 'open';if(!card.hasAttribute('data-alone')){press(card,'card');return 'selecting';}getSelection().removeAllRanges();press(card.querySelector('.zt-annot-comment-field'),'comment field');return String(!!${editor}&&'open');})()`,
+          { expected: "open" },
+        ),
+      ).toBe(true);
+      const comment = "Typed in a Query File";
+      cleanup.defer(async () => {
+        await restoreAnnotationComment(api, {
+          serverID,
+          key: await obEval(
+            vaultId!,
+            `JSON.parse(app.secretStorage.getSecret('zotlit-zotero-write-authorization')).key`,
+          ),
+          annotationKey: key,
+          comment: original,
+        }).catch(() => {});
+      });
+      await obEval(
+        vaultId!,
+        `(function(){${declare}const content=${editor};const view=content.cmTile.root.view;view.focus();view.dispatch({changes:{from:0,to:view.state.doc.length,insert:${JSON.stringify(comment)}},userEvent:'input.type'});content.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return true;})()`,
+      );
+
+      // Zotero holds the comment, and the card shows it.
+      expect(
+        await waitFor(
+          async () =>
+            (await storedAnnotation(api, serverID, key)).annotationComment ===
+            comment,
+          120,
+        ),
+      ).toBe(true);
+      expect(
+        await obEvalUntil(
+          vaultId!,
+          `(function(){${declare}return ${card}?.querySelector('.zt-annot-comment')?.textContent??'';})()`,
+          { expected: comment },
+        ),
+      ).toBe(true);
+    }, 180000);
+
+    it("undoes a comment typed on a card in a note's embed with the card's undo key, and drags the card into the note", async () => {
+      await prepareAuthorizationFixture();
+      await using cleanup = new AsyncDisposableStack();
+      const key = seededAnnotation.key;
+      const notePath = "literatures/rougierTenSimpleRules2014.md";
+      const original =
+        (await storedAnnotation(api, serverID, key)).annotationComment ?? "";
+      const storedComment = async () =>
+        (await storedAnnotation(api, serverID, key)).annotationComment ?? "";
+      const platformKey = process.platform === "darwin" ? "metaKey" : "ctrlKey";
+
+      // The Annotation Source must be the Local API before a card can write.
+      expect(
+        await obEvalUntil(
+          vaultId!,
+          `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;await repository.probe();const list=await repository.read(${JSON.stringify(attachment.key)});return String(list?.source.kind);})()`,
+          { expected: "zotero-local-api" },
+        ),
+      ).toBe(true);
+
+      // The PDF open in Obsidian holds the Attachment's Annotation History;
+      // its Literature Note, in Live Preview beside it, embeds a view of its Item.
+      const layout = await obEval(
+        vaultId!,
+        "JSON.stringify(app.workspace.getLayout())",
+      );
+      const noteText = await obEval(
+        vaultId!,
+        `app.vault.read(app.vault.getFileByPath(${JSON.stringify(notePath)}))`,
+      );
+      cleanup.defer(async () => {
+        await obEval(
+          vaultId!,
+          `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(notePath)}),${JSON.stringify(noteText)});return true;})()`,
+        );
+      });
+      cleanup.defer(async () => {
+        await restoreAnnotationComment(api, {
+          serverID,
+          key: await obEval(
+            vaultId!,
+            `JSON.parse(app.secretStorage.getSecret('zotlit-zotero-write-authorization')).key`,
+          ),
+          annotationKey: key,
+          comment: original,
+        }).catch(() => {});
+      });
+      await obEval(
+        vaultId!,
+        `(async()=>{await app.workspace.getLeaf('tab').openFile(app.vault.getFileByPath(${JSON.stringify(attachmentPath)}));return true;})()`,
+      );
+      expect(
+        await obEvalUntil(
+          vaultId!,
+          `String(!!app.plugins.plugins.zotlit.services.pdfAnnotationEditor.sessionForPath(${JSON.stringify(attachmentPath)}))`,
+          { expected: "true" },
+        ),
+      ).toBe(true);
+      await obEval(
+        vaultId!,
+        `(async()=>{const leaf=app.workspace.getLeaf('split');await leaf.setViewState({type:'markdown',state:{file:${JSON.stringify(notePath)},mode:'source',source:false},active:true});app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
+      );
+      const note = `app.workspace.getLeavesOfType('markdown').find((leaf)=>leaf.view.file?.path===${JSON.stringify(notePath)}).view`;
+      const card = `[...${note}.containerEl.querySelectorAll('.internal-embed')].find((el)=>el.zotlitQueryView)?.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(key)}]')`;
+      expect(
+        await obEvalUntil(vaultId!, `String(!!${card})`, {
+          expected: "true",
+          tries: 120,
+        }),
+      ).toBe(true);
+
+      // Type a comment on the embedded card, as on the sidebar's.
+      const editor = `${card}?.querySelector('.cm-content')`;
+      expect(
+        await obEvalUntil(
+          vaultId!,
+          `(function(){${PAGE}const card=${card};if(${editor})return 'open';if(!card.hasAttribute('data-alone')){card.focus();press(card,'card');return 'selecting';}getSelection().removeAllRanges();press(card.querySelector('.zt-annot-comment-field'),'comment field');return String(!!${editor}&&'open');})()`,
+          { expected: "open" },
+        ),
+      ).toBe(true);
+      const comment = "Typed in a note's embed";
+      await obEval(
+        vaultId!,
+        `(function(){const content=${editor};const view=content.cmTile.root.view;view.focus();view.dispatch({changes:{from:0,to:view.state.doc.length,insert:${JSON.stringify(comment)}},userEvent:'input.type'});content.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return true;})()`,
+      );
+      expect(
+        await waitFor(async () => (await storedComment()) === comment, 120),
+      ).toBe(true);
+      expect(
+        await obEvalUntil(
+          vaultId!,
+          `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;return String(repository.mutationFor(${JSON.stringify(key)}).kind==='idle'&&!repository.textDraftFor('comment',${JSON.stringify(key)})&&repository.canUndo(${JSON.stringify(attachment.key)}));})()`,
+          { expected: "true" },
+        ),
+      ).toBe(true);
+
+      /** The platform's undo chord, pressed where `target` names, as the keyboard sends it. */
+      const pressUndo = (target: string) =>
+        obJson<{ prevented: boolean }>(
+          vaultId!,
+          `(function(){const target=${target};target.focus();const event=new KeyboardEvent('keydown',{key:'z',code:'KeyZ',${platformKey}:true,bubbles:true,cancelable:true});target.dispatchEvent(event);return JSON.stringify({prevented:event.defaultPrevented});})()`,
+        );
+
+      // The undo key in the note's own text is the note's: the comment stays.
+      await pressUndo(`${note}.editor.cm.contentDOM`);
+      // A second is the window a wrongly taken undo would reach Zotero in;
+      // no event marks that it did not.
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      expect(await storedComment()).toBe(comment);
+
+      // On the focused card, it takes the comment back in Zotero.
+      expect(await pressUndo(card)).toEqual({ prevented: true });
+      expect(
+        await waitFor(async () => (await storedComment()) === original, 120),
+      ).toBe(true);
+
+      // A card dragged from the embed lands in the note, as from the sidebar.
+      expect(
+        await obEval(
+          vaultId!,
+          `(function(){const view=${note};const cm=view.editor.cm;const transfer=new DataTransfer();const handle=${card}.querySelector('[draggable]');const from=handle.getBoundingClientRect();handle.dispatchEvent(new DragEvent('dragstart',{bubbles:true,cancelable:true,dataTransfer:transfer,clientX:Math.floor(from.left+from.width/2),clientY:Math.floor(from.top+from.height/2)}));const rect=cm.coordsAtPos(cm.state.doc.length);cm.contentDOM.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:transfer,clientX:Math.floor(rect.left+1),clientY:Math.floor((rect.top+rect.bottom)/2)}));return 'dropped';})()`,
+        ),
+      ).toBe("dropped");
+      expect(
+        await obEvalUntil(
+          vaultId!,
+          `String(${note}.editor.getValue().includes('> [!note]')&&${note}.editor.getValue().includes('zt-annotation=${key}'))`,
+          { expected: "true" },
+        ),
+      ).toBe(true);
+    }, 180000);
+  });
+
+  describe.skipIf(!debuggerPort || !vaultId)(
+    "a Literature Note on the default Profile",
+    () => {
+      it("shows its Item's Annotations in a Query Block, sends a comment typed there to Zotero, and keeps the block text through an update", async () => {
+        await prepareAuthorizationFixture();
+        await using cleanup = new AsyncDisposableStack();
+        const itemKey = "RUGIER24";
+        const key = seededAnnotation.key;
+        const original =
+          (await storedAnnotation(api, serverID, key)).annotationComment ?? "";
+
+        // The Annotation Source must be the Local API before a card can write.
+        expect(
+          await obEvalUntil(
+            vaultId!,
+            `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;await repository.probe();const list=await repository.read(${JSON.stringify(attachment.key)});return String(list?.source.kind);})()`,
+            { expected: "zotero-local-api" },
+          ),
+        ).toBe(true);
+
+        // The Fixture wrote notes for the Item. Set them aside, so that the
+        // plugin creates the note the default Profile renders.
+        const layout = await obEval(
+          vaultId!,
+          "JSON.stringify(app.workspace.getLayout())",
+        );
+        const fixtureNotes = await obJson<{ path: string; text: string }[]>(
+          vaultId!,
+          `(async()=>{const services=app.plugins.plugins.zotlit.services;await services.noteIndex.whenIndexed();const notes=[];for(const note of services.noteIndex.getNotesByItemKey(${JSON.stringify(itemKey)})){const file=app.vault.getFileByPath(note.path);notes.push({path:note.path,text:await app.vault.read(file)});await app.vault.delete(file);}return JSON.stringify(notes);})()`,
+        );
+        // The Fixture's Literature Note holds the earlier static listing.
+        const listingNote = fixtureNotes.find(({ text }) =>
+          text.includes("[!note]"),
+        )!;
+        expect(listingNote).toBeDefined();
+        let created = "";
+        cleanup.defer(async () => {
+          await obEval(
+            vaultId!,
+            `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));const created=app.vault.getFileByPath(${JSON.stringify(created)});if(created)await app.vault.delete(created);for(const {path,text} of ${JSON.stringify(fixtureNotes)}){const file=app.vault.getFileByPath(path);if(file)await app.vault.modify(file,text);else await app.vault.create(path,text);}return true;})()`,
+          );
+        });
+        cleanup.defer(async () => {
+          await restoreAnnotationComment(api, {
+            serverID,
+            key: await obEval(
+              vaultId!,
+              `JSON.parse(app.secretStorage.getSecret('zotlit-zotero-write-authorization')).key`,
+            ),
+            annotationKey: key,
+            comment: original,
+          }).catch(() => {});
+        });
+        expect(
+          await obEvalUntil(
+            vaultId!,
+            `String(app.plugins.plugins.zotlit.services.noteIndex.getNotesByItemKey(${JSON.stringify(itemKey)}).length)`,
+            { expected: "0" },
+          ),
+        ).toBe(true);
+        const result = await obJson<{ outcome: string; path?: string }>(
+          vaultId!,
+          `(async()=>{const services=app.plugins.plugins.zotlit.services;const hits=await services.itemLookup.search('',{limit:100});const hit=hits.find((candidate)=>candidate.item.indexedKey===${JSON.stringify(itemKey)});if(!hit)throw new Error('Fixture Item not found');const result=await services.noteFeature.createNote(hit.item,{profile:'default'});return JSON.stringify(result.outcome==='created'?{outcome:'created',path:result.file.path}:{outcome:result.outcome});})()`,
+        );
+        expect(result.outcome).toBe("created");
+        created = result.path!;
+        const read = () =>
+          obEval(
+            vaultId!,
+            `app.vault.read(app.vault.getFileByPath(${JSON.stringify(created)}))`,
+          );
+        const block = [
+          "## Annotations",
+          "",
+          "```zotquery",
+          "views:",
+          "  - type: annotations",
+          "    name: Annotations",
+          "    from: annotations",
+          "    filters: item == this.item",
+          "    sort:",
+          "      - property: attachment.dateAdded",
+          "        direction: ASC",
+          "      - property: sortIndex",
+          "        direction: ASC",
+          "```",
+        ].join("\n");
+        const managed = (text: string) =>
+          /%%zt-managed%%\n([\s\S]*?)%%\/zt-managed%%/.exec(text)?.[1] ?? "";
+        const createdText = await read();
+        expect(managed(createdText)).toContain(block);
+        expect(createdText).not.toContain("[!note]");
+
+        // The block shows the Item's own Annotations, as ZotLit Query gives
+        // them for that Item.
+        const report = JSON.parse(
+          await cliCommand(vaultId!, "zotlit:query", {
+            args: {
+              from: "annotations",
+              filter: "item == this.item",
+              "this-item": itemKey,
+              sort: "attachment.dateAdded,sortIndex",
+              limit: "100",
+            },
+          }),
+        ) as { ok: boolean; rows?: { indexedKey: string }[] };
+        expect(report.ok).toBe(true);
+        const own = report.rows!.map((row) => row.indexedKey);
+        expect(own).toContain(key);
+        await obEval(
+          vaultId!,
+          `(async()=>{const leaf=app.workspace.getLeaf('tab');await leaf.openFile(app.vault.getFileByPath(${JSON.stringify(created)}),{state:{mode:'source',source:false}});app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
+        );
+        const blockEl = `app.workspace.getLeavesOfType('markdown').find((leaf)=>leaf.view.file?.path===${JSON.stringify(created)})?.view.containerEl.querySelector('.block-language-zotquery')`;
+        expect(
+          await obEvalUntil(
+            vaultId!,
+            `(async()=>{const el=${blockEl};if(!el?.zotlitQueryView)return 'null';await el.zotlitQueryView.settled;return JSON.stringify([...el.querySelectorAll('.zt-annot-card')].map((n)=>n.getAttribute('data-zotero-annotation-key')));})()`,
+            { expected: JSON.stringify(own), tries: 120 },
+          ),
+        ).toBe(true);
+
+        // Select the card alone, open its comment editor, and type.
+        const card = `${blockEl}?.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(key)}]')`;
+        const editor = `${card}?.querySelector('.cm-content')`;
+        expect(
+          await obEvalUntil(
+            vaultId!,
+            `(function(){${PAGE}const card=${card};if(${editor})return 'open';if(!card.hasAttribute('data-alone')){press(card,'card');return 'selecting';}getSelection().removeAllRanges();press(card.querySelector('.zt-annot-comment-field'),'comment field');return String(!!${editor}&&'open');})()`,
+            { expected: "open" },
+          ),
+        ).toBe(true);
+        const comment = "Typed in a Literature Note";
+        await obEval(
+          vaultId!,
+          `(function(){const content=${editor};const view=content.cmTile.root.view;view.focus();view.dispatch({changes:{from:0,to:view.state.doc.length,insert:${JSON.stringify(comment)}},userEvent:'input.type'});content.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return true;})()`,
+        );
+        expect(
+          await waitFor(
+            async () =>
+              (await storedAnnotation(api, serverID, key)).annotationComment ===
+              comment,
+            120,
+          ),
+        ).toBe(true);
+        expect(
+          await obEvalUntil(
+            vaultId!,
+            `(function(){return ${card}?.querySelector('.zt-annot-comment')?.textContent??'';})()`,
+            { expected: comment },
+          ),
+        ).toBe(true);
+
+        // A sort change in the block's toolbar rewrites the block text.
+        const inBlock = (script: string) =>
+          obEval(
+            vaultId!,
+            `(()=>{${PAGE}const el=${blockEl};${script};return true;})()`,
+          );
+        await inBlock(
+          "press(el.querySelector('[data-query-toolbar=\"sort\"]'),'Sort')",
+        );
+        await inBlock(
+          "press(el.querySelector('[data-query-popover=\"sort\"] [data-sort-add]'),'Add sort')",
+        );
+        // The new sort goes after the two of the default block.
+        expect(
+          await obEvalUntil(
+            vaultId!,
+            `String(${blockEl}?.querySelectorAll('[data-query-popover="sort"] [data-sort-row]').length)`,
+            { expected: "3" },
+          ),
+        ).toBe(true);
+        for (const [control, value] of [
+          ["data-sort-property", "type"],
+          ["data-sort-direction", "DESC"],
+        ] as const) {
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `String(!!${blockEl}?.querySelector('[data-query-popover="sort"] [data-sort-row]:last-of-type [${control}]'))`,
+              { expected: "true" },
+            ),
+          ).toBe(true);
+          await inBlock(
+            `const select=el.querySelector('[data-query-popover="sort"] [data-sort-row]:last-of-type [${control}]');select.value=${JSON.stringify(value)};select.dispatchEvent(new Event('change',{bubbles:true}))`,
+          );
+        }
+        const sorted = block.replace(
+          "        direction: ASC\n```",
+          "        direction: ASC\n      - property: type\n        direction: DESC\n```",
+        );
+        expect(
+          await waitFor(async () => managed(await read()).includes(sorted)),
+        ).toBe(true);
+
+        // A full update renders the Managed Region again and keeps the
+        // block text the note holds.
+        const update = () =>
+          obJson<{ diagnostic: unknown }>(
+            vaultId!,
+            `(async()=>{const services=app.plugins.plugins.zotlit.services;const result=await services.noteFeature.updateNote(app.vault.getFileByPath(${JSON.stringify(created)}),{indexedKey:${JSON.stringify(itemKey)},scope:'full'});return JSON.stringify({diagnostic:result.diagnostic??null});})()`,
+          );
+        expect(await update()).toEqual({ diagnostic: null });
+        expect(managed(await read())).toContain(sorted);
+
+        // A note that holds the earlier static listing gets the block on its
+        // next full update.
+        expect(managed(listingNote.text)).toContain("[!note]");
+        await obEval(
+          vaultId!,
+          `(async()=>{await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(created)}),${JSON.stringify(listingNote.text)});return true;})()`,
+        );
+        expect(await update()).toEqual({ diagnostic: null });
+        const migrated = managed(await read());
+        expect(migrated).toContain(block);
+        expect(migrated).not.toContain("[!note]");
+      }, 240000);
+    },
+  );
 });
 
 /**
@@ -7571,7 +8053,7 @@ function cardTagEditor(annotationKey: string) {
     press: (target: string) =>
       obEvalUntil(
         vaultId!,
-        `(function(){const target=(${card})?.querySelector(${JSON.stringify(target)});if(!target)return 'absent';target.click();return 'pressed';})()`,
+        `(function(){${PAGE}const target=(${card})?.querySelector(${JSON.stringify(target)});if(!target)return 'absent';press(target,${JSON.stringify(target)});return 'pressed';})()`,
         { expected: "pressed" },
       ),
     /** The tag toggle in the card's action bar. */
@@ -7618,7 +8100,7 @@ function tagEditorIn(root: string) {
     remove: (name: string) =>
       obEval(
         vaultId!,
-        `(function(){const chip=[...(${root}).querySelectorAll('[data-slot=tags-input-item]')].find(item=>item.querySelector('[data-slot=tags-input-item-text]')?.textContent===${JSON.stringify(name)});if(!chip)return 'absent';chip.querySelector('[data-slot=tags-input-item-remove]').click();return 'removed';})()`,
+        `(function(){${PAGE}const chip=[...(${root}).querySelectorAll('[data-slot=tags-input-item]')].find(item=>item.querySelector('[data-slot=tags-input-item-text]')?.textContent===${JSON.stringify(name)});if(!chip)return 'absent';press(chip.querySelector('[data-slot=tags-input-item-remove]'),'remove '+${JSON.stringify(name)});return 'removed';})()`,
       ),
   };
 }

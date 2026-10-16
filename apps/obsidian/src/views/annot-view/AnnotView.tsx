@@ -1,23 +1,26 @@
 import type { IconName } from "obsidian";
 import {
+  Fragment,
   useCallback,
   useContext,
-  useId,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import type { RefObject } from "react";
+import type { CSSProperties, RefObject } from "react";
+
+import { useUniqueId } from "@zotlit/ui";
 
 import { Icon } from "@/components/obsidian/icon";
+import { IconButton } from "@/components/obsidian/icon-button";
 import { SearchInput } from "@/components/obsidian/search-input";
 import * as m from "@/lib/i18n/generated/messages";
-import { cn } from "@/lib/utils";
+import { cn, tooltipAttrs } from "@/lib/utils";
 
 import { AnnotActionsContext } from "./actions";
 import { Annotation, FIELD_SHEET_SELECTOR } from "./Annotation";
-import { moveOrigin } from "./card-selection";
+import { cardPlace, moveOrigin } from "./card-selection";
 import { filterAnnotations, isFilterActive } from "./filter";
 import { FilterBar } from "./FilterBar";
 import { annotViewBody, headerShape } from "./presentation";
@@ -27,11 +30,14 @@ import type {
   HeaderShape,
 } from "./presentation";
 import {
+  groupedCards,
   useAnnotFilter,
   useAnnotStore,
   useClearFilters,
   useSetFilterQuery,
+  useToggleGroupCollapsed,
   useToggleSearchOpen,
+  visibleOrder,
 } from "./store";
 import { confineTabOrder } from "./tab-order";
 
@@ -92,6 +98,7 @@ function useBody(): AnnotViewBody {
   const followMode = useAnnotStore((s) => s.followMode);
   const liveUpdatesOn = useAnnotStore((s) => s.liveUpdatesOn);
   const pinnedItemKey = useAnnotStore((s) => s.pinnedItemKey);
+  const queryProblem = useAnnotStore((s) => s.queryProblem);
   return useMemo(
     () =>
       annotViewBody({
@@ -100,8 +107,16 @@ function useBody(): AnnotViewBody {
         followMode,
         liveUpdatesOn,
         pinnedItemKey,
+        queryProblem,
       }),
-    [attachments, annotations, followMode, liveUpdatesOn, pinnedItemKey],
+    [
+      attachments,
+      annotations,
+      followMode,
+      liveUpdatesOn,
+      pinnedItemKey,
+      queryProblem,
+    ],
   );
 }
 
@@ -114,11 +129,12 @@ export function AnnotView() {
    * here and reaches the control row as a prop.
    */
   const [collapsed, setCollapsed] = useState(true);
-  const searchBarId = useId();
+  const searchBarId = useUniqueId();
   /** Where Escape in the search bar sends focus, the button that opened it. */
   const searchButtonRef = useRef<HTMLDivElement>(null);
 
   const hasItem = body.kind === "list" || body.kind === "loading";
+  const filterError = useAnnotStore((s) => s.filterError);
   const actions = useContext(AnnotActionsContext);
   const editingText = useAnnotStore(
     (s) => s.editing !== null && s.editing.field !== "tags",
@@ -161,8 +177,26 @@ export function AnnotView() {
       {hasItem && searchOpen && (
         <SearchRow id={searchBarId} searchButtonRef={searchButtonRef} />
       )}
+      {body.kind === "list" && filterError && (
+        <p
+          className="zt:mx-2 zt:my-1 zt:text-sm zt:text-(--text-error)"
+          role="alert"
+          data-annot-view-filter-error=""
+        >
+          {m.annot_view_filter_error()}
+        </p>
+      )}
       {body.kind === "list" ? (
         <AnnotList collapsed={collapsed} />
+      ) : body.kind === "problem" ? (
+        <div
+          className="pane-empty zt:p-2"
+          role="alert"
+          data-annot-view-problem=""
+        >
+          <p className="zt:m-0">{body.message}</p>
+          {body.detail && <p className="zt:m-0 zt:mt-1">{body.detail}</p>}
+        </div>
       ) : body.kind === "loading" ? (
         <div className="pane-empty zt:p-2">{m.annot_view_loading()}</div>
       ) : body.kind === "no-attachments" ? (
@@ -186,16 +220,16 @@ export function AnnotView() {
 function AnnotHeader() {
   const actions = useContext(AnnotActionsContext);
   const shape = useHeaderShape();
-  const labelId = useId();
+  const labelId = useUniqueId();
 
   return (
-    <div className="zt:px-2 zt:pt-2">
+    <div className="zt:flex zt:items-start zt:gap-1 zt:px-2 zt:pt-2">
       <button
         type="button"
         aria-haspopup="menu"
         aria-labelledby={labelId}
         onClick={(evt) => actions.onHeaderMenu(evt)}
-        className="zt-annot-header zt:inline-flex zt:max-w-full zt:items-center zt:gap-2 zt:rounded-sm zt:px-1.5 zt:py-1 zt:text-start zt:hover:bg-card zt:hover:ring-1 zt:hover:ring-border zt:focus-visible:bg-card zt:focus-visible:ring-2 zt:focus-visible:ring-border-focus"
+        className="zt-annot-header zt:inline-flex zt:max-w-full zt:min-w-0 zt:items-center zt:gap-2 zt:rounded-sm zt:px-1.5 zt:py-1 zt:text-start zt:hover:bg-card zt:hover:ring-1 zt:hover:ring-border zt:focus-visible:bg-card zt:focus-visible:ring-2 zt:focus-visible:ring-border-focus"
       >
         {/* The name the block promises assistive technology, held apart from
             the words on screen: an `aria-label` would reach the pointer too,
@@ -216,6 +250,19 @@ function AnnotHeader() {
             wide the pane grows, and no wrapped byline segment runs under it. */}
         <ChromeIcon name="chevron-down" />
       </button>
+      {/* A side dock hides the view header and its "More options", so the
+          header row carries the same menu there, in every state of the
+          view. Obsidian's own `.mod-sidedock` ancestor shows it; the wrapper
+          holds the display, since `.clickable-icon` sets its own. */}
+      <div className="zt:ms-auto zt:hidden zt:shrink-0 zt:in-[.mod-sidedock]:flex">
+        <IconButton
+          icon="more-vertical"
+          aria-haspopup="menu"
+          data-annot-view-more-options=""
+          onClick={(evt) => actions.onViewMenu(evt)}
+          {...tooltipAttrs(m.annot_view_more_tooltip())}
+        />
+      </div>
     </div>
   );
 }
@@ -337,7 +384,7 @@ function SearchRow({
   // layout effect runs at commit, where a passive effect waits for a frame the
   // window may not paint.
   const inputRef = useRef<HTMLInputElement>(null);
-  const inputId = useId();
+  const inputId = useUniqueId();
   useLayoutEffect(() => {
     inputRef.current?.focus();
   }, []);
@@ -369,12 +416,27 @@ function SearchRow({
   );
 }
 
-function AnnotList({ collapsed }: { collapsed: boolean }) {
+/** The Annotation Cards, in the grid the Annotations Layout draws them in. */
+export function AnnotList({
+  collapsed,
+  cardWidth,
+}: {
+  collapsed: boolean;
+  /**
+   * The narrowest a card is drawn, in pixels, as a Query View's Annotations
+   * layout sets it: the tracks fill the row from there. Without one the
+   * tracks follow the pane's width steps.
+   */
+  cardWidth?: number;
+}) {
   const actions = useContext(AnnotActionsContext);
   const annotations = useAnnotStore((s) => s.annotations);
+  const groups = useAnnotStore((s) => s.groups);
+  const collapsedGroups = useAnnotStore((s) => s.collapsedGroups);
+  const toggleGroup = useToggleGroupCollapsed();
   const clearFilters = useClearFilters();
   const gridRef = useRef<HTMLDivElement>(null);
-  const labelId = useId();
+  const labelId = useUniqueId();
   /** Whether the list is scrolled off its top, which shows the top fade. */
   const [scrolled, setScrolled] = useState(false);
 
@@ -383,11 +445,11 @@ function AnnotList({ collapsed }: { collapsed: boolean }) {
     () => (annotations ? filterAnnotations(annotations, filter) : []),
     [annotations, filter],
   );
-  const visible = useMemo(() => filtered.map(({ key }) => key), [filtered]);
-  /** The list's one tab stop: the card a move steps from, else the first. */
-  const tabStop = useAnnotStore(
-    (s) => moveOrigin(s.cardSelection, visible) ?? visible[0] ?? null,
-  );
+  /** The list's one tab stop: the place a move steps from, else the first. */
+  const tabStop = useAnnotStore((s) => {
+    const visible = visibleOrder(s);
+    return moveOrigin(s.cardSelection, visible) ?? visible[0] ?? null;
+  });
   const tabOrder = useRef<Disposable | null>(null);
   /** Only the tab stop's controls stay in the Tab order. */
   const mountGrid = useCallback((grid: HTMLDivElement | null) => {
@@ -458,20 +520,119 @@ function AnnotList({ collapsed }: { collapsed: boolean }) {
           order, however many tracks the layout draws them in. */}
       <div
         ref={mountGrid}
-        className="zt:grid zt:grid-cols-1 zt:items-start zt:gap-2 zt:@2xl:grid-cols-2 zt:@5xl:grid-cols-3"
+        className={cn(
+          "zt:grid zt:items-start zt:gap-3",
+          cardWidth === undefined
+            ? "zt:grid-cols-1 zt:@2xl:grid-cols-2 zt:@5xl:grid-cols-3"
+            : "zt:grid-cols-[repeat(auto-fill,minmax(min(100%,var(--zt-card-width)),1fr))]",
+        )}
+        style={
+          cardWidth === undefined
+            ? undefined
+            : ({ "--zt-card-width": `${cardWidth}px` } as CSSProperties)
+        }
+        data-card-width={cardWidth}
         role="grid"
         aria-multiselectable="true"
         aria-labelledby={labelId}
       >
-        {filtered.map((annot) => (
-          <Annotation
-            key={annot.key}
-            annot={annot}
-            collapsed={collapsed}
-            tabStop={annot.key === tabStop}
-          />
-        ))}
+        {groups === null
+          ? filtered.map((annot) => (
+              <Annotation
+                key={annot.key}
+                annot={annot}
+                place={cardPlace(annot.key, null)}
+                collapsed={collapsed}
+                tabStop={cardPlace(annot.key, null) === tabStop}
+              />
+            ))
+          : groupedCards(groups, filtered).map(({ annot, group, opens }) => {
+              // A Query View's grouped rows: a heading opens each run of
+              // cards that stands in one group, across every column, and a
+              // card with two tags stands once under each. The card keeps one
+              // place in the tree whether or not a heading stands before it,
+              // so a card that starts or stops a group is not mounted again
+              // and an open editor on it stays.
+              const folded = collapsedGroups.has(group.key);
+              const place = cardPlace(annot.key, group.key);
+              return (
+                <Fragment key={place}>
+                  {opens && (
+                    <GroupHeading
+                      key="group-heading"
+                      label={group.label}
+                      groupKey={group.key}
+                      expanded={!folded}
+                      onToggle={() => toggleGroup(group.key)}
+                    />
+                  )}
+                  {!folded && (
+                    <Annotation
+                      key={annot.key}
+                      annot={annot}
+                      place={place}
+                      collapsed={collapsed}
+                      tabStop={place === tabStop}
+                    />
+                  )}
+                </Fragment>
+              );
+            })}
       </div>
+    </div>
+  );
+}
+
+/**
+ * A group's heading. Its button collapses the group's cards and expands them
+ * again; the heading's own text names it, so it needs no tooltip.
+ */
+function GroupHeading({
+  label,
+  groupKey,
+  expanded,
+  onToggle,
+}: {
+  label: string;
+  groupKey: string;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    // A group ends on a hairline, as a group does in a Bases Cards view: every
+    // heading after the first stands under one, a little further from the
+    // cards above it than the cards stand from each other.
+    <div
+      role="row"
+      data-query-group={groupKey}
+      data-collapsed={expanded ? undefined : ""}
+      className="zt:group/heading zt:col-span-full zt:not-first:mt-1 zt:not-first:border-t-(length:--border-width) zt:not-first:border-border zt:not-first:pt-2"
+    >
+      <span role="rowheader" className="zt:flex zt:min-w-0">
+        {/* The press target is Obsidian's `clickable-icon`, which takes back
+            the button chrome Obsidian draws, unlayered, on a bare `<button>`
+            and gives the theme's own hover. It pulls back by its inline
+            padding, so the chevron starts on the cards' edge. Obsidian
+            sets a button's weight and colour unlayered as well, so the label
+            carries the heading type itself. The chevron stays shown, so a
+            collapsed group reads as collapsed without a pointer over it, in the
+            colour Obsidian gives a collapsed fold. */}
+        <button
+          type="button"
+          aria-expanded={expanded}
+          className="clickable-icon zt:-ms-(--size-2-3) zt:flex zt:min-w-0 zt:items-center zt:gap-1"
+          onClick={onToggle}
+        >
+          <Icon
+            name={expanded ? "chevron-down" : "chevron-right"}
+            size="var(--icon-xs)"
+            className="zt:shrink-0 zt:text-(--collapse-icon-color) zt:group-data-collapsed/heading:text-(--collapse-icon-color-collapsed)"
+          />
+          <span className="zt:truncate zt:text-sm zt:font-(weight:--font-semibold) zt:text-foreground">
+            {label}
+          </span>
+        </button>
+      </span>
     </div>
   );
 }

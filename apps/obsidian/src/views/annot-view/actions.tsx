@@ -34,7 +34,7 @@ import { InertTemplateError } from "@/services/template/errors";
 import { chooseAttachment } from "./attachment-suggester";
 import { groupControl, pressControl } from "./card-controls";
 import type { CardBlock, CardControl, CardControls } from "./card-controls";
-import type { CardClick } from "./card-selection";
+import type { CardClick, CardPlace } from "./card-selection";
 import { blockedNotice, confirmDelete, copyText, recolor } from "./card-verbs";
 import type { CommentRenderer } from "./comment-render";
 import { copiedText } from "./copied-text";
@@ -64,6 +64,11 @@ export interface AnnotActions {
   onCardMenu(evt: MouseEvent<HTMLElement>, annot: AnnotationRecord): void;
   /** Open the header block's one grouped menu, from the block itself. */
   onHeaderMenu(evt: MouseEvent<HTMLElement>): void;
+  /**
+   * Open the view's "More options" menu from the control row, where the view
+   * header that carries it is hidden.
+   */
+  onViewMenu(evt: MouseEvent<HTMLElement>): void;
   /** Choose another Attachment of the Item on screen, in a suggester. */
   onChooseAttachment(): void;
   /** Open the Attachment on screen in Obsidian's own PDF view. */
@@ -107,9 +112,15 @@ export interface AnnotActions {
    * Obsidian PDF view lands quietly on the Annotation Mark of a card the click
    * adds.
    *
+   * @param place where the clicked card stands in the list: a card under two
+   *   group headings stands at two places.
    * @see apps/obsidian/docs/adr/0061-the-annotation-view-owns-its-card-selection.md
    */
-  onSelectAnnotation(annot: AnnotationRecord, gesture: CardClick): void;
+  onSelectAnnotation(
+    annot: AnnotationRecord,
+    gesture: CardClick,
+    place: CardPlace,
+  ): void;
   /**
    * A click on the empty list: an open card editor closes, or, with none
    * open, the Card Selection clears.
@@ -282,6 +293,8 @@ export interface AnnotActionDeps {
   offerAnnotationInsert: () => ((annot: AnnotationRecord) => void) | null;
   /** Comment renderer built by the view (owns the app, component, source path). */
   renderComment: CommentRenderer;
+  /** Fill the view's "More options" menu, as the view header would. */
+  fillViewMenu: (menu: Menu) => void;
   onSetFollowMode: AnnotActions["onSetFollowMode"];
   onAllowEditing: AnnotActions["onAllowEditing"];
   onOpenPdf: AnnotActions["onOpenPdf"];
@@ -766,6 +779,9 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
         }),
       );
     },
+    onViewMenu(evt) {
+      showMenu(evt, deps.fillViewMenu, "end");
+    },
     onChooseAttachment,
     onOpenPdf: deps.onOpenPdf,
     onAllowEditing: deps.onAllowEditing,
@@ -813,6 +829,7 @@ export const NOOP_ACTIONS: AnnotActions = {
   onMoreOptions: () => {},
   onCardMenu: () => {},
   onHeaderMenu: () => {},
+  onViewMenu: () => {},
   onChooseAttachment: () => {},
   onOpenPdf: () => {},
   onAllowEditing: () => {},

@@ -60,6 +60,7 @@ export interface QueryRun<I extends { scan: ScanRow }> extends DatasetRun<I> {
   readonly filter: FilterNode<never> | undefined;
   readonly query: ItemQuery;
   readonly warnings: QuerySummary["warnings"];
+  readonly formulaDiagnostics: QuerySummary["formulaDiagnostics"];
   readonly sort: readonly SortSpec[];
   readonly libraries: readonly TargetLibrary[];
   readonly readScanPage: (page: {
@@ -113,9 +114,9 @@ export function consumeDataset<I extends { scan: ScanRow }, A, E, R>(
           for (const item of items) {
             if (!run.matches(item)) continue;
             const keys = run.keys(item);
+            totalCount++;
             if (run.groupValues) {
               // A record joins one group for each of its distinct values.
-              totalCount++;
               for (const value of run.groupValues(item)) {
                 let group = groups.get(value);
                 if (!group) {
@@ -230,6 +231,10 @@ export function consumeDataset<I extends { scan: ScanRow }, A, E, R>(
     const consumer = yield* begin({
       query,
       warnings: run.warnings,
+      ...(run.formulaDiagnostics && {
+        formulaDiagnostics: run.formulaDiagnostics,
+      }),
+      matchedCount: totalCount,
       returnedCount:
         query.group === undefined
           ? returned.length

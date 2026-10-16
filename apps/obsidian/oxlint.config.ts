@@ -3,6 +3,7 @@ import { defineConfig } from "oxlint";
 import baseConfig, {
   itemQuerySchemaPaths,
   parentImportPattern,
+  uniqueIdPaths,
 } from "@zotlit/config/oxlint";
 
 const obsidianImportPaths = [
@@ -19,6 +20,7 @@ const obsidianImportPaths = [
     message:
       "Extend PopoutAwareHoverPopover from @/lib/popout-aware-hover-popover; it cancels Obsidian's popover timers on the window that armed them (see policies/hover-popover.md).",
   },
+  ...uniqueIdPaths,
 ];
 
 const commonImports = {
@@ -31,6 +33,7 @@ export default defineConfig({
   jsPlugins: [
     "./scripts/oxlint-plugin-popout-windows.ts",
     "./scripts/oxlint-plugin-menu-sections.ts",
+    "./scripts/oxlint-plugin-obsidian-css.ts",
   ],
   rules: {
     "no-console": "error",
@@ -78,6 +81,24 @@ export default defineConfig({
     ],
   },
   overrides: [
+    {
+      // UI code runs in the window it stands in, a pop-out included.
+      files: ["src/views/**", "src/components/**", "src/**/*.tsx"],
+      rules: { "zotlit-obsidian/no-global-timer": "error" },
+    },
+    {
+      // React draws its controls from JSX; imperative DOM builds on Obsidian's.
+      files: ["src/**/*.tsx"],
+      rules: {
+        "zotlit-css/no-obsidian-class": "error",
+        "zotlit-css/no-setting-in-react": "error",
+      },
+    },
+    {
+      // The wrappers that hand Obsidian's control classes to everything else.
+      files: ["src/components/obsidian/**"],
+      rules: { "zotlit-css/no-obsidian-class": "off" },
+    },
     {
       // Tests can inspect the schema; the plugin's other import rules remain.
       files: [
@@ -141,6 +162,31 @@ export default defineConfig({
       rules: {
         "no-restricted-imports": "off",
       },
+    },
+    {
+      // Code written before the rule; new code follows it, and a file moves
+      // off this list when it is next reworked.
+      files: [
+        "src/views/annot-view/AnnotView.tsx",
+        "src/views/annot-view/FilterBar.tsx",
+        "src/views/annot-view/tag-editor.tsx",
+        "src/views/query-view/sort-control.tsx",
+        "src/views/query-view/table-layout.tsx",
+        "src/views/template-workbench/theme.tsx",
+      ],
+      rules: { "zotlit-css/no-obsidian-class": "off" },
+    },
+    {
+      // Code written before the rule; new code follows it, and a file moves
+      // off this list when it is next reworked.
+      files: [
+        "src/views/cited-by/CitedBy.tsx",
+        "src/views/query-view/query-file-document.ts",
+        "src/views/query-view/view.tsx",
+        "src/views/welcome/companion-refresh.ts",
+        "src/views/welcome/view.tsx",
+      ],
+      rules: { "zotlit-obsidian/no-global-timer": "off" },
     },
     {
       // Node runs these straight from source, where the `@/` alias the rule

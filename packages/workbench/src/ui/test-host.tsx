@@ -105,6 +105,7 @@ export function fakeHost(): FakeHost {
       collections: () => Promise.resolve([["Thesis", "Chapter 1"]]),
       libraries: () =>
         Promise.resolve([{ id: "personal", name: "My Library" }]),
+      matches: () => Promise.resolve({ kind: "result", matched: false }),
     },
     insertTarget: () => null,
     persistence: {

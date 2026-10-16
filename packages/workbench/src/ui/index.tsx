@@ -1,4 +1,20 @@
-export { MatchPane } from "./match";
+export { MatchEditor, MatchPane } from "./match";
+export { MatchExpressionInput } from "./match.expression";
+export { filterVocabulary } from "./match.fields";
+export type { FilterValues } from "./match.fields";
+export { ChipInput } from "./match.chips";
+export { MatchInput } from "./match.input";
+export { MatchSelect } from "./match.rows";
+export type {
+  ConditionControlProps,
+  ConditionPath,
+  ExpressionCondition,
+  LabelledRow,
+  MatchConditionKind,
+  MatchFilter,
+  MatchVocabulary,
+  RowCondition,
+} from "./match";
 // The Workbench UI: the headless component tree both the web Template
 // Workbench and the Obsidian Template Workbench View mount over one Template
 // Document
@@ -34,6 +50,7 @@ export type {
   WorkbenchInputSuggestionsRequest,
   WorkbenchLibrary,
   WorkbenchMatchData,
+  WorkbenchMatchResult,
   WorkbenchMenuItem,
   WorkbenchMenuRequest,
   WorkbenchPersistence,

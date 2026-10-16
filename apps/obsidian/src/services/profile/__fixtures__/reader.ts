@@ -21,7 +21,7 @@ export function profileReader(
   return {
     ready: Promise.resolve(), loaded: true,
     on: () => () => {},
-    get profiles() { return (current().profiles ?? []).map((entry) => ({ document: `zotlit-profile.${entry.label.toLowerCase()}.md`, path: "", bindings: {}, match: compileProfileMatch(undefined, []), ...entry })); },
+    get profiles() { return (current().profiles ?? []).map((entry) => ({ document: `zotlit-profile.${entry.label.toLowerCase()}.md`, path: "", bindings: {}, match: compileProfileMatch(undefined), ...entry })); },
     resolveProfile(selector) { return resolveProfile(current(), selector); },
     profileOf(file) {
       const stamp = file && readProfileStamp(metadataCache, file);
@@ -36,5 +36,5 @@ export function resolveProfile(settings: ProfileFixtureSettings, selector: Profi
 export function resolveProfile(settings: ProfileFixtureSettings, selector: ProfileSelector): ResolvedProfile | undefined {
   const entry = settings.profiles?.find(({ id }) => id === selector);
   if (selector !== "default" && !entry) return undefined;
-  return bindProfile(settings, { selector, document: entry?.document ?? (selector === "default" ? settings.defaultDocument : undefined), entry: entry && { path: "", document: "", bindings: {}, match: compileProfileMatch(undefined, []), ...entry } });
+  return bindProfile(settings, { selector, document: entry?.document ?? (selector === "default" ? settings.defaultDocument : undefined), entry: entry && { path: "", document: "", bindings: {}, match: compileProfileMatch(undefined), ...entry } });
 }

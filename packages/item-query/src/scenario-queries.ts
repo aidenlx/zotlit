@@ -19,6 +19,28 @@ export interface ScenarioQuery {
 }
 
 /**
+ * The Formulas of the scenario: a scenario filter that reads `formula.<name>`
+ * runs with all of them. `decade` reads `year`, so a filter that reads it
+ * reads a Formula through another Formula.
+ */
+const SCENARIO_FORMULAS: Readonly<Record<string, string>> = {
+  year: "date.year",
+  decade: "formula.year - formula.year % 10",
+  tagged: 'tags.contains("to-read")',
+  lovelace: 'creators.filter(value.contains("Lovelace")).length > 0',
+  status: 'custom["review.status"]',
+  // An Error Value on each Item whose title is not a number.
+  volumes: "number(title)",
+};
+
+/** The Formulas of a scenario request: all of them when the filter reads one. */
+export function scenarioFormulas(
+  filter: string,
+): Pick<ItemQueryRequest, "formulas"> {
+  return filter.includes("formula") ? { formulas: SCENARIO_FORMULAS } : {};
+}
+
+/**
  * The Filter Expressions of the scenario. Each one runs in each Library and
  * in both Libraries together as an unlimited identity-only query in key order,
  * and in the personal Library and in both Libraries together as a limited,
@@ -347,6 +369,17 @@ const FILTERS: readonly string[] = [
   'tags.contains("tie") && noSuchFunction()',
   'key == "ART2FULL" && noSuchField == 1',
   'tags.contains("tie") || custom["Review.Status"] == "done"',
+  // Formulas: alone, beside a leaf that lowers, through another Formula, in
+  // an element predicate, and over a custom field. A Formula never lowers.
+  "formula.year > 2018",
+  'formula.decade == 2010 && tags.contains("to-read")',
+  'formula.tagged || indexedKey == "ART2FULL"',
+  "!formula.tagged && formula.year > 2018",
+  "formula.lovelace",
+  'formula.status == "done"',
+  'attachments.filter(value.contentType == "application/pdf" && formula.year > 2000).length > 0',
+  // Typed failure: a Formula the scenario does not define.
+  "formula.noSuchFormula > 0",
 ];
 
 const byTitleThenVolume: readonly SortSpec[] = [
@@ -393,6 +426,14 @@ const REQUESTS: readonly ScenarioQuery[] = [
     },
   ]),
   {
+    name: "Query Context Item by Indexed Key",
+    libraries: ["personal", "group"],
+    request: {
+      filter: "indexedKey == this.item.indexedKey",
+      context: { item: "ART2FULLg4815" },
+    },
+  },
+  {
     name: "element group over a candidate set",
     libraries: ["personal", "group"],
     request: {
@@ -412,6 +453,59 @@ const REQUESTS: readonly ScenarioQuery[] = [
         "tags[].name",
         "collections[]",
       ],
+    },
+  },
+  {
+    name: "Formulas over a candidate set, with a custom field and a date",
+    libraries: ["personal", "group"],
+    request: {
+      filter: 'tags.contains("to-read")',
+      formulas: {
+        status: 'custom["review.status"]',
+        published: "date",
+        authors: "creators.length",
+        unused: "title",
+      },
+      fields: [
+        "title",
+        "formula.authors",
+        "formula.status",
+        "formula.published",
+      ],
+    },
+  },
+  {
+    name: "Formulas with Error Values over a candidate set and the scan",
+    libraries: ["personal", "group"],
+    request: {
+      filter: 'tags.contains("to-read") || number(title) > 0',
+      formulas: {
+        volume: "number(volume)",
+        title: "number(title)",
+        order: 'date > "2019"',
+        parts: "[number(title), title.length]",
+      },
+      fields: [
+        "title",
+        "formula.volume",
+        "formula.title",
+        "formula.order",
+        "formula.parts",
+      ],
+    },
+  },
+  {
+    name: "Formulas with mistakes left out over a candidate set",
+    libraries: ["personal", "group"],
+    request: {
+      filter: 'tags.contains("to-read")',
+      formulas: {
+        authors: "creators.length",
+        bad: "title * 2",
+        reader: "formula.bad + 1",
+      },
+      fields: ["title", "formula.authors", "formula.reader", "formula.zz"],
+      onFormulaFault: "leave-out",
     },
   },
   { name: "no filter, defaults", libraries: ["personal"], request: {} },
@@ -620,18 +714,19 @@ export const SCENARIO_QUERIES: readonly ScenarioQuery[] = [
     {
       name: `${filter} [personal, key order]`,
       libraries: ["personal"],
-      request: { filter, fields: [], sort: [] },
+      request: { filter, ...scenarioFormulas(filter), fields: [], sort: [] },
     },
     {
       name: `${filter} [group, key order]`,
       libraries: ["group"],
-      request: { filter, fields: [], sort: [] },
+      request: { filter, ...scenarioFormulas(filter), fields: [], sort: [] },
     },
     {
       name: `${filter} [personal, sorted, limit 2]`,
       libraries: ["personal"],
       request: {
         filter,
+        ...scenarioFormulas(filter),
         fields: ["title", "tags", "date.year"],
         sort: byTitleThenVolume,
         limit: 2,
@@ -640,13 +735,14 @@ export const SCENARIO_QUERIES: readonly ScenarioQuery[] = [
     {
       name: `${filter} [both Libraries, key order]`,
       libraries: ["personal", "group"],
-      request: { filter, fields: [], sort: [] },
+      request: { filter, ...scenarioFormulas(filter), fields: [], sort: [] },
     },
     {
       name: `${filter} [both Libraries, sorted, limit 2]`,
       libraries: ["group", "personal"],
       request: {
         filter,
+        ...scenarioFormulas(filter),
         fields: ["title", "tags", "collections"],
         sort: byDateThenTitle,
         limit: 2,
@@ -750,4 +846,25 @@ export const GENERATED_FILTER_PARTS: readonly string[] = [
   "/a/.matches(publisher)",
   'title.replace(/\\s+/g, "") == "SameTitle"',
   'title.split(/ /)[0] == "Group"',
+  // Formulas: see SCENARIO_FORMULAS.
+  "formula.year == 2019",
+  "formula.decade == 2020",
+  "formula.tagged",
+  "formula.year > 3000",
+  "formula.volumes",
+  "formula.volumes > 0 || formula.tagged",
+  // Error Values: false where a truth is read, equal to no value, and passed
+  // through every other operator.
+  'date > "2019"',
+  "number(title) > 0",
+  "number(volume) > 0",
+  "!number(title)",
+  "number(title) != null",
+  "number(title) == number(title)",
+  'number(title).isType("error")',
+  "title.repeat(-1)",
+  "tags[0.5]",
+  "tags.filter(number(value) > 0).length == 0",
+  "if(number(title), true, false)",
+  'date("x" + key) || key == "ART2FULL"',
 ];

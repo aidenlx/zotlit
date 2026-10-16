@@ -8,7 +8,7 @@ import type { ProjectionValue } from "./request";
 
 /** A record uses its dataset's vocabulary at every depth. Callbacks allow cycles. */
 export interface RecordVocabulary<Row, Needs> {
-  readonly id: "items" | "attachments" | "annotations";
+  readonly id: "items" | "attachments" | "annotations" | "notes";
   readonly summary: readonly string[];
   readonly parents?: readonly ParentRecord<Row, Needs>[];
   /** Representative fields listed below this record in the Query Schema. */

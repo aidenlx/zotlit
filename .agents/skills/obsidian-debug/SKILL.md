@@ -119,6 +119,23 @@ promise from an async IIFE; the CLI awaits it and prints the settled value. Hold
 and `revealLeaf(it)` in the same call rather than re-querying `getLeavesOfType(...)` after an
 async `setViewState` (races, returns `[]`).
 
+### Trusted input
+
+`el.click()` and `dispatchEvent(new KeyboardEvent(…))` send untrusted events. The browser
+skips its own handling for them: Escape and a click outside never close a `popover="auto"`,
+and close watchers group stacked popovers as one, so one Escape closes both. When the
+browser's handling is the thing under test — popover light-dismiss, close watchers, user
+activation — send trusted input through the window's `webContents`, no CDP needed:
+
+```js
+const wc = require("@electron/remote").getCurrentWebContents();
+wc.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
+wc.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
+```
+
+Use `mouseDown`/`mouseUp` with `x`, `y`, `button: "left"`, `clickCount: 1` for a click at a
+point. The window must hold focus; pass `--no-throttle`.
+
 ### CodeMirror editors
 
 Reach an editor's `EditorView` from its content element: `el.querySelector('.cm-content').cmTile.root.view`.

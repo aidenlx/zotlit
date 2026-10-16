@@ -8,6 +8,7 @@ import annotationSchema from "@zotlit/db/contract/annotation.schema.json";
 import filenameSchema from "@zotlit/db/contract/filename.schema.json";
 import noteSchema from "@zotlit/db/contract/note.schema.json";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
+import { planItemFilter, queryItemFrom } from "@zotlit/item-query";
 import zoteroSchema from "@zotlit/zotero-types/schema.json" with { type: "json" };
 
 import { MARKER_KEYS } from "./allowlist";
@@ -92,6 +93,28 @@ describe("exportItemSnapshot", () => {
         .split("")
         .every((character) => "0123456789abcdef".includes(character)),
     ).toBe(true);
+  });
+
+  it("carries the Item as a Profile Match reads it", () => {
+    using fixture = createFixture();
+
+    const snapshot = exportItemSnapshot(
+      fixture.client,
+      { library: { type: "personal" }, key: "MAIN2345" },
+      { provenance: { kind: "sample", id: "journal-article" } },
+    );
+
+    const item = queryItemFrom(snapshot.seed!);
+    const holds = (filter: string) => {
+      const planned = planItemFilter(filter);
+      if (!("matches" in planned)) throw new Error(planned.message);
+      return planned.matches(item);
+    };
+    expect(holds('itemType == "journalArticle" && library == "personal"')).toBe(
+      true,
+    );
+    expect(holds('title == "An exported paper"')).toBe(true);
+    expect(holds('itemType == "book"')).toBe(false);
   });
 
   it("redacts host data and records unavailable values explicitly", () => {

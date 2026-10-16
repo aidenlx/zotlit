@@ -38,6 +38,15 @@ declare module "obsidian" {
   export function loadPdfJs(): Promise<
     import("../services/excerpt-image/renderer").ExcerptPdfJs
   >;
+  interface MarkdownPostProcessorContext {
+    /**
+     * A code block's own write-back: replaces the code of the block the
+     * processor rendered. In Live Preview it keeps the widget mounted. Internal;
+     * verified against Obsidian 1.14.4. Read only through
+     * `views/query-view/block-write.ts`.
+     */
+    replaceCode?: (code: string) => void;
+  }
   interface ViewStateResult {
     /** Runs after native group assignment and ephemeral handoff (Obsidian 1.14). */
     done?: () => void;
@@ -176,7 +185,48 @@ declare module "obsidian" {
         type: string,
       ): ((leaf: WorkspaceLeaf) => View) | undefined;
     };
+    /**
+     * Draws `![[file.ext]]` for each file extension. Internal; verified
+     * against Obsidian 1.14.4. Optional, and each member optional, so a build
+     * that drops one is a guarded branch: read it only through
+     * `src/lib/obsidian-private/embed-registry.ts`.
+     */
+    embedRegistry?: Partial<EmbedRegistry>;
   }
+  /** Obsidian's embed registry (`app.embedRegistry`). Internal; Obsidian 1.14.4. */
+  interface EmbedRegistry {
+    /** Throws when the extension already has a creator. */
+    registerExtension(extension: string, creator: EmbedCreator): void;
+    unregisterExtension(extension: string): void;
+    isExtensionRegistered(extension: string): boolean;
+  }
+  /** What Obsidian hands an embed creator. Internal; Obsidian 1.14.4. */
+  interface EmbedContext {
+    app: App;
+    /** The element the embed draws into. */
+    containerEl: HTMLElement;
+    /** The link text, with its `#subpath`. */
+    linktext: string;
+    /** The note that holds the embed. */
+    sourcePath: string;
+    /** How deep in embeds this one sits; Obsidian stops past 5. */
+    depth: number;
+    /** `true` for a print or an export to PDF. */
+    displayMode?: boolean;
+  }
+  /** An embed drawn by a plugin: Obsidian calls `loadFile` once it is added. */
+  interface EmbedComponent extends Component {
+    loadFile(): Promise<void> | void;
+  }
+  /**
+   * Draws one embed of `file`; `subpath` is the link's `#…` part, `""` when
+   * none. `null` lets Obsidian draw its own file card.
+   */
+  type EmbedCreator = (
+    context: EmbedContext,
+    file: TFile,
+    subpath: string,
+  ) => EmbedComponent | null;
   /**
    * The core `graph` view (`leaf.view` of view type `"graph"`). Internal;
    * shape verified against Obsidian 1.13.7 and 1.14.0. Every member optional

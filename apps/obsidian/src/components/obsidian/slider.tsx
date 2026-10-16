@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { InputHTMLAttributes, Ref } from "react";
+import type { CSSProperties, InputHTMLAttributes, Ref } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -52,6 +52,7 @@ export function Slider({
   dynamicTooltip,
   formatValue,
   className,
+  style,
   ref,
   "data-tooltip-position": tooltipPosition,
   ...rest
@@ -82,6 +83,13 @@ export function Slider({
       {...rest}
       aria-label={ariaLabel}
       className={cn("slider", className)}
+      // How far the track fills, which Obsidian's own slider sets as well.
+      style={
+        {
+          "--slider-fill-ratio": max > min ? (draft - min) / (max - min) : 0,
+          ...style,
+        } as CSSProperties
+      }
       onChange={(e) => {
         const next = e.currentTarget.valueAsNumber;
         setDraft(next);

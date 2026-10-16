@@ -42,7 +42,9 @@ A profile decides a literature note's name, folder, properties, and body. Add on
 
     Select <UiLabel name={m.workbench_tab_match()} />. The tab reads <UiLabel name={m.workbench_match_conditions_desc()} />
 
-    Select <UiLabel name={m.workbench_match_add_condition()} /> for the first condition, then pick what it tests: <UiLabel name={m.workbench_match_condition_item_type()} />, <UiLabel name={m.workbench_match_condition_collection()} />, <UiLabel name={m.workbench_match_condition_tag()} />, or <UiLabel name={m.workbench_match_condition_library()} />. A profile matches when <UiLabel name={m.workbench_match_match_all()} /> holds, or when <UiLabel name={m.workbench_match_match_any()} /> does. Switch between the two above the conditions.
+    The tab starts with one empty condition row. Pick what it tests: <UiLabel name={m.workbench_filter_field_item_title()} />, <UiLabel name={m.workbench_filter_field_creator()} />, <UiLabel name={m.workbench_filter_field_first_author()} />, <UiLabel name={m.workbench_filter_field_year()} />, <UiLabel name={m.workbench_filter_field_item_type()} />, <UiLabel name={m.workbench_filter_field_collection()} />, <UiLabel name={m.workbench_filter_field_library()} />, or <UiLabel name={m.workbench_filter_field_tag()} />. These are the same conditions as the filter of an items [Query View](/docs/how-to/use-query-files#filter). A row with no value reads <UiLabel name={m.workbench_match_value_empty()} /> and selects nothing until you fill it in. Select <UiLabel name={m.workbench_match_add_condition()} /> to add another condition.
+
+    Above the conditions, choose how they combine: <UiLabel name={m.workbench_match_match_all()} />, <UiLabel name={m.workbench_match_match_any()} />, or <UiLabel name={m.workbench_match_match_none()} />. The last one excludes every item that meets any of its conditions.
 
     The complete condition language, including the expression form, is in [Profile Match](/docs/reference/templates/profile-match).
 
@@ -109,7 +111,7 @@ A profile is a single document, so you can move it to another vault as one file,
   <Step>
     ### Read what the import dialog reports
 
-    The dialog previews the partials it will unpack into the template folder, the citation style, and the incoming Profile Match written out in words. <UiLabel name={m.profile_import_include_match()} /> imports the Match with the profile, so it selects notes in this vault too; turn it off to keep the profile for manual selection only. When the shared profile carries no Match, the dialog reads <UiLabel name={m.profile_match_absent()} /> and hides the toggle. Select <UiLabel name={m.profile_import_confirm()} /> to write the profile.
+    The dialog previews the partials it will unpack into the template folder, the citation style, and the incoming Profile Match as its Filter Expression. <UiLabel name={m.profile_import_include_match()} /> imports the Match with the profile, so it selects notes in this vault too; turn it off to keep the profile for manual selection only. When the shared profile carries no Match, the dialog reads <UiLabel name={m.profile_match_absent()} /> and hides the toggle. Select <UiLabel name={m.profile_import_confirm()} /> to write the profile.
 
   </Step>
 </Steps>

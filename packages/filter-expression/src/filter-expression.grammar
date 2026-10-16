@@ -53,7 +53,7 @@ Call { expression !call "(" commaSep<expression> ")" }
 
 ArrayAccess { expression !member "[" expression "]" }
 
-ObjectAccess { expression !member "." Identifier }
+ObjectAccess { expression !member "." PropertyName }
 
 Array { "[" commaSep<expression> "]" }
 
@@ -65,6 +65,8 @@ NullLiteral { @specialize<identifier, "null"> }
 BooleanLiteral { @specialize<identifier, "true"> | @specialize<identifier, "false"> }
 
 Identifier { identifier }
+
+PropertyName { identifier }
 
 @skip {} {
   String[isolate] {

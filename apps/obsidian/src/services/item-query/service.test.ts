@@ -6,10 +6,14 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   BULK_LIBRARY,
+  bulkItemKey,
   openScenarioDatabase,
   seedBulkLibrary,
 } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
+import { valueText } from "@zotlit/item-query";
+import type { ProjectionJson } from "@zotlit/item-query";
+import { delimited } from "@zotlit/shared/delimited";
 
 import { MY_LIBRARY_SCOPE } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
@@ -420,6 +424,119 @@ describe("Item Query worker jobs", () => {
     expect(leases()).toBe(0);
   });
 
+  it("exports the rows of the JSON answer as CSV and TSV files, a group column first when the query groups", async () => {
+    using scenario = openScenarioDatabase({
+      storage: "temp-directory",
+      annotations: true,
+    });
+    const { service, leases } = setup(scenario);
+    await using _owned = service;
+    const params = {
+      from: "items",
+      limit: "all",
+      fields: '["title","date","creators","tags"]',
+    };
+    const fields = ["title", "date", "creators", "tags"];
+    type Row = { indexedKey: string; values: Record<string, ProjectionJson> };
+    const lines = (rows: readonly Row[], group: string[] = []) =>
+      rows.map((row) => [
+        ...group,
+        row.indexedKey,
+        ...fields.map((field) => valueText(row.values[field])),
+      ]);
+    const json = JSON.parse(await service.query(params, signal())) as {
+      rows: Row[];
+    };
+    expect(json.rows.length).toBeGreaterThan(0);
+
+    for (const format of ["csv", "tsv"] as const) {
+      const output = join(dirname(scenario.path), `items.${format}`);
+      const receipt = JSON.parse(
+        await service.query({ ...params, format, output }, signal()),
+      );
+      const text = await readFile(output, "utf8");
+      expect(receipt).toMatchObject({
+        ok: true,
+        returnedCount: json.rows.length,
+        file: { path: output, bytes: Buffer.byteLength(text), format },
+      });
+      expect(receipt).not.toHaveProperty("rows");
+      expect(text).toBe(
+        delimited([["indexedKey", ...fields], ...lines(json.rows)], format),
+      );
+    }
+    // CSV opens in a spreadsheet as UTF-8 text; TSV is plain lines.
+    const csv = await readFile(join(dirname(scenario.path), "items.csv"));
+    expect([...csv.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
+    expect(
+      await readFile(join(dirname(scenario.path), "items.tsv"), "utf8"),
+    ).toMatch(/^indexedKey\ttitle\tdate\tcreators\ttags\n/);
+
+    const grouped = { ...params, group: "itemType" };
+    const groups = (
+      JSON.parse(await service.query(grouped, signal())) as {
+        groups: { value: string | null; rows: Row[] }[];
+      }
+    ).groups;
+    expect(groups.length).toBeGreaterThan(1);
+    const output = join(dirname(scenario.path), "grouped.csv");
+    await service.query({ ...grouped, format: "csv", output }, signal());
+    expect(await readFile(output, "utf8")).toBe(
+      delimited(
+        [
+          ["group", "indexedKey", ...fields],
+          ...groups.flatMap((group) =>
+            lines(group.rows, [valueText(group.value)]),
+          ),
+        ],
+        "csv",
+      ),
+    );
+    expect(leases()).toBe(0);
+  });
+
+  it("asks for an output file with CSV and TSV, and names the formats it writes", async () => {
+    using scenario = openScenarioDatabase({ storage: "temp-directory" });
+    const { service, leases } = setup(scenario);
+    await using _owned = service;
+    expect(
+      JSON.parse(
+        await service.query({ from: "items", format: "csv" }, signal()),
+      ),
+    ).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "invalid-argument",
+        message: expect.stringContaining("add output=<absolute-path>"),
+        details: { parameter: "format" },
+      },
+    });
+    const output = join(dirname(scenario.path), "items.xlsx");
+    expect(
+      JSON.parse(
+        await service.query(
+          { from: "items", format: "xlsx", output },
+          signal(),
+        ),
+      ),
+    ).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "invalid-argument",
+        message: "format 'xlsx' is not an output format: use json, csv, tsv.",
+        details: { parameter: "format" },
+      },
+    });
+    expect(await readdir(dirname(output))).not.toContain("items.xlsx");
+    // format=json is the default, as given or omitted.
+    expect(
+      JSON.parse(
+        await service.query({ from: "items", format: "json" }, signal()),
+      ),
+    ).toMatchObject({ ok: true });
+    expect(leases()).toBe(0);
+  });
+
   it("bounds inline replies and exports every row of a large result", async () => {
     using scenario = openScenarioDatabase({ storage: "temp-directory" });
     seedBulkLibrary(scenario.sqlite, 6000);
@@ -442,6 +559,19 @@ describe("Item Query worker jobs", () => {
       file: { bytes: Buffer.byteLength(text) },
     });
     expect(JSON.parse(text).rows).toHaveLength(6000);
+    // A CSV export writes the same rows in chunks, one line each.
+    const csvOutput = join(dirname(scenario.path), "large.csv");
+    expect(
+      JSON.parse(
+        await service.query(
+          { from: "items", ...bulk, format: "csv", output: csvOutput },
+          signal(),
+        ),
+      ),
+    ).toMatchObject({ ok: true, returnedCount: 6000, file: { format: "csv" } });
+    const csvLines = (await readFile(csvOutput, "utf8")).split("\r\n");
+    expect(csvLines).toHaveLength(6002);
+    expect(csvLines.at(-1)).toBe("");
     expect(JSON.parse(text)).toMatchObject({
       ok: true,
       returnedCount: 6000,
@@ -974,4 +1104,258 @@ it("discovers Collection values through the query worker and reports invalid arg
     diagnostic: { code: "invalid-argument", details: { parameter: "kind" } },
   });
   expect(invalid.diagnostic.report.at(-1)).toBe(invalid.diagnostic.hint);
+});
+
+describe("typed Query View call", () => {
+  const bulkLibraries = {
+    mode: "selected",
+    libraries: [{ type: "group", groupID: BULK_LIBRARY.groupID }],
+  } as const;
+
+  it("returns every matching row with no default limit and no size cap", async () => {
+    using scenario = openScenarioDatabase({ storage: "temp-directory" });
+    seedBulkLibrary(scenario.sqlite, 6000);
+    const { service, leases } = setup(scenario);
+    await using _owned = service;
+
+    const outcome = await service.run(
+      {
+        from: "items",
+        libraries: bulkLibraries,
+        fields: ["title", "tags", "dateModified"],
+      },
+      signal(),
+    );
+
+    if (outcome.kind !== "result") throw new Error(outcome.kind);
+    const { result } = outcome;
+    expect(result).toMatchObject({ returnedCount: 6000, truncated: false });
+    expect(result.groups).toBeUndefined();
+    expect(result.rows).toHaveLength(6000);
+    // The Items default sort: the last modified first.
+    expect(result.rows?.[0]).toEqual({
+      indexedKey: `${bulkItemKey(5999)}g${BULK_LIBRARY.groupID}`,
+      values: {
+        title: "Bulk item 05999",
+        tags: [{ name: "bulk", type: "manual" }],
+        dateModified: "2021-01-01T01:39:59Z",
+      },
+    });
+    expect(leases()).toBe(0);
+  });
+
+  it("counts every match beside the rows that a limit returns", async () => {
+    using scenario = openScenarioDatabase({ storage: "temp-directory" });
+    seedBulkLibrary(scenario.sqlite, 300);
+    const { service } = setup(scenario);
+    await using _owned = service;
+
+    const outcome = await service.run(
+      {
+        from: "items",
+        libraries: bulkLibraries,
+        fields: ["title"],
+        filter: 'tags.contains("bulk-fifth")',
+        limit: 7,
+      },
+      signal(),
+    );
+
+    if (outcome.kind !== "result") throw new Error(outcome.kind);
+    expect(outcome.result).toMatchObject({
+      returnedCount: 7,
+      matchedCount: 60,
+      truncated: true,
+    });
+  });
+
+  it("returns the groups with their value, their count and the total count", async () => {
+    using scenario = openScenarioDatabase({ storage: "temp-directory" });
+    seedBulkLibrary(scenario.sqlite, 300);
+    const { service } = setup(scenario);
+    await using _owned = service;
+
+    const outcome = await service.run(
+      {
+        from: "items",
+        libraries: bulkLibraries,
+        fields: ["title"],
+        sort: [{ field: "title", direction: "asc" }],
+        group: "tags[].name",
+        limit: 2,
+      },
+      signal(),
+    );
+
+    if (outcome.kind !== "result") throw new Error(outcome.kind);
+    const { result } = outcome;
+    expect(result.rows).toBeUndefined();
+    expect(result).toMatchObject({ totalCount: 300, truncated: true });
+    expect(
+      result.groups?.map(({ value, count, rows }) => ({
+        value,
+        count,
+        titles: rows.map((row) => row.values.title),
+      })),
+    ).toEqual([
+      {
+        value: "bulk",
+        count: 300,
+        titles: ["Bulk item 00000", "Bulk item 00001"],
+      },
+      {
+        value: "bulk-fifth",
+        count: 60,
+        titles: ["Bulk item 00000", "Bulk item 00005"],
+      },
+    ]);
+  });
+
+  it("gives the diagnostic of zotlit:query as data", async () => {
+    using scenario = openScenarioDatabase({ storage: "temp-directory" });
+    const { service, leases } = setup(scenario);
+    await using _owned = service;
+    const filter = 'titel == "Exact"';
+
+    const outcome = await service.run({ from: "items", filter }, signal());
+    const cli = JSON.parse(
+      await service.query({ from: "items", filter }, signal()),
+    );
+
+    expect(cli.diagnostic).toMatchObject({
+      code: "unknown-field",
+      location: { argument: "filter" },
+    });
+    expect(outcome).toEqual({ kind: "failed", diagnostic: cli.diagnostic });
+    expect(leases()).toBe(0);
+
+    const unavailable = setup(scenario, () => {
+      throw new Error("source closed");
+    });
+    await using _unavailable = unavailable.service;
+    expect(
+      await unavailable.service.run({ from: "items" }, signal()),
+    ).toMatchObject({
+      kind: "failed",
+      diagnostic: { code: "source-unavailable" },
+    });
+  });
+
+  it("binds this to the Query Context of the request", async () => {
+    using scenario = openScenarioDatabase({ storage: "temp-directory" });
+    seedBulkLibrary(scenario.sqlite, 30);
+    const { service } = setup(scenario);
+    await using _owned = service;
+    const item = `${bulkItemKey(7)}g${BULK_LIBRARY.groupID}`;
+    const request = {
+      from: "items",
+      libraries: bulkLibraries,
+      fields: ["title"],
+      filter: "indexedKey == this.item.indexedKey",
+    } as const;
+
+    const bound = await service.run(
+      { ...request, context: { item } },
+      signal(),
+    );
+    const unbound = await service.run(request, signal());
+
+    expect(bound).toMatchObject({
+      kind: "result",
+      result: {
+        returnedCount: 1,
+        rows: [{ indexedKey: item, values: { title: "Bulk item 00007" } }],
+      },
+    });
+    expect(unbound).toMatchObject({
+      kind: "failed",
+      diagnostic: { code: "unbound-context" },
+    });
+  });
+
+  it("leaves out each wrong Formula with its Diagnostic, and gives no warning for an unread Formula", async () => {
+    using scenario = openScenarioDatabase({ storage: "temp-directory" });
+    seedBulkLibrary(scenario.sqlite, 3);
+    const { service } = setup(scenario);
+    await using _owned = service;
+    const request = {
+      from: "items",
+      libraries: bulkLibraries,
+      fields: ["title", "formula.year", "formula.next", "formula.short"],
+      formulas: {
+        year: "dat.year",
+        next: "formula.year + 1",
+        short: "title.slice(0, 4)",
+        unused: "title",
+      },
+    } as const;
+
+    const outcome = await service.run(request, signal());
+
+    if (outcome.kind !== "result") throw new Error(outcome.kind);
+    expect(outcome.result.returnedCount).toBe(3);
+    expect(outcome.result.rows![0]!.values).toMatchObject({
+      "formula.short": "Bulk",
+    });
+    expect(outcome.result.warnings).toEqual([]);
+    expect(
+      Object.fromEntries(
+        Object.entries(outcome.result.formulaDiagnostics ?? {}).map(
+          ([name, { code }]) => [name, code],
+        ),
+      ),
+    ).toEqual({ year: "unknown-property", next: "reads-faulted-formula" });
+
+    const filtered = await service.run(
+      { ...request, filter: "formula.next > 2000" },
+      signal(),
+    );
+    expect(filtered).toMatchObject({
+      kind: "failed",
+      diagnostic: {
+        code: "reads-faulted-formula",
+        message: "The filter reads formula.next, which has a mistake.",
+        location: { argument: "filter" },
+      },
+      formulaDiagnostics: {
+        year: { code: "unknown-property" },
+        next: { code: "reads-faulted-formula" },
+      },
+    });
+  });
+
+  it("stops a cancelled call with a cancelled outcome and keeps other queries running", async () => {
+    using scenario = openScenarioDatabase({ storage: "temp-directory" });
+    seedBulkLibrary(scenario.sqlite, 20000);
+    const { service, leases, jobs } = setup(scenario);
+    await using _owned = service;
+    await service.ready;
+    const request = {
+      from: "items",
+      libraries: bulkLibraries,
+      fields: ["title", "tags", "dateModified"],
+    } as const;
+    const cancel = new AbortController();
+    const queued = new AbortController();
+
+    const running = service.run(request, cancel.signal);
+    const other = service.run({ ...request, limit: 100 }, signal());
+    // Two worker slots: the third call waits for one.
+    const waiting = service.run({ ...request, limit: 1 }, queued.signal);
+    await vi.waitFor(() => expect(jobs).toHaveLength(3), { interval: 1 });
+    queued.abort();
+    cancel.abort();
+
+    expect(await running).toEqual({ kind: "cancelled" });
+    expect(await waiting).toEqual({ kind: "cancelled" });
+    expect(await other).toMatchObject({
+      kind: "result",
+      result: { returnedCount: 100 },
+    });
+    expect(leases()).toBe(0);
+    expect(service.runningJobs).toBe(0);
+    expect(await service.run({ ...request, limit: 1 }, signal())).toMatchObject(
+      { kind: "result", result: { returnedCount: 1 } },
+    );
+  });
 });

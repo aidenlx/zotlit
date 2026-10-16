@@ -1,5 +1,4 @@
 import annotation from "@defaults/annotation.eta?raw";
-import content from "@defaults/content.eta?raw";
 import { describe, expect, it } from "vitest";
 
 import { TemplateError, TemplateFacade } from "./facade";
@@ -30,7 +29,11 @@ describe("eta suite through the facade", () => {
   it("resolves eta->eta includes by registered name", () => {
     const facade = new TemplateFacade();
     facade.define("annotation", annotation, "eta");
-    facade.define("content", content, "eta");
+    facade.define(
+      "content",
+      "<% for (const annotation of zt.annotations) { %><%~ renderAnnotation(annotation) %><% } %>",
+      "eta",
+    );
 
     const rendered = facade.render("content", {
       notes: [],

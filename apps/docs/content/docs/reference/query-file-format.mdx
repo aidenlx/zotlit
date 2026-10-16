@@ -1,0 +1,192 @@
+---
+title: "Query file format"
+description: "Every key of a .zotquery query file and a zotquery query block, with their values and defaults."
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+This reference lists the keys of a query file (`.zotquery`) and a query block (` ```zotquery `). Both hold the same YAML text, in the shape of an Obsidian `.base` file.
+
+The toolbar writes these keys for you. Write them by hand when you type a query block, or when you copy a view from one file to another.
+
+## Example [#example]
+
+```yaml
+filters: collections.within("Thesis")
+views:
+  - type: table
+    name: Reading list
+    from: items
+    sort:
+      - property: title
+        direction: ASC
+    order:
+      - title
+      - firstAuthor
+      - date
+      - vault.literatureNote
+    limit: 100
+  - type: annotations
+    name: Figures
+    from: annotations
+    filters: tags.contains("figure")
+    groupBy:
+      property: item.indexedKey
+      direction: ASC
+    limit: 100
+```
+
+## Top-level keys [#top-level]
+
+| Key          | Value                                                                                                                   |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `filters`    | The filters for all views. They apply to each view that has the same `from` as the first view. See [Filters](#filters). |
+| `formulas`   | The formulas of the file, by name. See [Formulas](#formulas).                                                           |
+| `properties` | The display name of each property, by property path. See [Display names](#properties).                                  |
+| `views`      | A list of views. Required. The first view is the default view, which an embed without `#View name` shows.               |
+
+ZotLit keeps every other key in the file when it saves.
+
+## View keys [#view]
+
+| Key          | Value                                                                                                                                                                                                                                                                        |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`       | The layout: `annotations`, `table`, `list`, or `cards`. Required.                                                                                                                                                                                                            |
+| `name`       | The view name. Required, and different from the other views of the file. When two views have the same name, the file shows a problem in place of its rows.                                                                                                                   |
+| `from`       | The records of each row: `annotations`, `attachments`, or `items`. Required.                                                                                                                                                                                                 |
+| `filters`    | The filters for this view. See [Filters](#filters).                                                                                                                                                                                                                          |
+| `sort`       | A list of `property` and `direction` pairs. The first pair sorts first. `direction` is `ASC` or `DESC`; the default is `ASC`.                                                                                                                                                |
+| `groupBy`    | One `property` and `direction` pair. The rows collect under one heading for each value of the property.                                                                                                                                                                      |
+| `groupOrder` | A list of group values for a Manual group order. Only the listed groups show, in this order. `null` is the group of rows with no value.                                                                                                                                      |
+| `limit`      | A positive whole number: the most rows the view shows. Without `limit`, the view shows every match.                                                                                                                                                                          |
+| `order`      | A list of property paths that each row shows, in order. Copy and CSV export use them as columns. Without `order`, the layout shows the default properties of the records. For an items table, it can also include `vault.literatureNote` to show the literature note column. |
+| `columnSize` | The width in pixels of each table column that you resized, by property path. A column without an entry takes its automatic width.                                                                                                                                            |
+
+`property` values are property paths of the view's records, as [ZotLit Query](/docs/reference/commands#query-cli) names them. For example, `title` is the paper title in an items view, and `item.title` is the paper title in an annotations view.
+
+`order` also takes `vault.literatureNote` (in an items table) and `formula.<name>` for a [formula](#formulas). `sort` and `groupBy` do not take a formula yet: a view that sorts or groups by one shows an error in place of its rows.
+
+### Layouts and records [#layouts]
+
+| `type`        | Allowed `from`                           |
+| ------------- | ---------------------------------------- |
+| `annotations` | `annotations`                            |
+| `table`       | `items`                                  |
+| `list`        | `annotations`, `attachments`, or `items` |
+| `cards`       | `annotations`, `attachments`, or `items` |
+
+A view whose `type` and `from` do not fit shows a message in place of its rows.
+
+### Layout options [#layout-options]
+
+| Layout        | Key                | Value                                                | Default  |
+| ------------- | ------------------ | ---------------------------------------------------- | -------- |
+| `annotations` | `cardWidth`        | The narrowest card width, in pixels, from 200 to 800 | `320`    |
+| `annotations` | `showComment`      | `true` or `false`                                    | `true`   |
+| `annotations` | `showTags`         | `true` or `false`                                    | `true`   |
+| `annotations` | `showPage`         | `true` or `false`                                    | `true`   |
+| `list`        | `markers`          | `bullet`, `number`, or `none`                        | `bullet` |
+| `list`        | `indentProperties` | `true` or `false`                                    | `false`  |
+| `list`        | `separator`        | The text between two properties on a line            | `, `     |
+| `cards`       | `cardSize`         | The narrowest card width, in pixels, from 50 to 800  | `200`    |
+
+## Filters [#filters]
+
+A filter is one [Filter Expression](/docs/concepts/how-zotlit-query-works#steps), or a group of filters under `and`, `or`, or `not`:
+
+```yaml
+filters:
+  and:
+    - colorName == "yellow"
+    - or:
+        - tags.contains("method")
+        - tags.contains("result")
+```
+
+`and` matches the records that match every entry. `or` matches the records that match at least one. The filter editor opens a `not` group as one expression condition.
+
+A filter can name the Query Context as `this.item` and `this.attachment`:
+
+| `from`        | Filter for the records of the note's paper | Filter for the records of one attachment   |
+| ------------- | ------------------------------------------ | ------------------------------------------ |
+| `annotations` | `item == this.item`                        | `attachment == this.attachment`            |
+| `attachments` | `item == this.item`                        | `indexedKey == this.attachment.indexedKey` |
+| `items`       | `indexedKey == this.item.indexedKey`       |                                            |
+
+In an embed or a query block, `this.item` is the item that the note's `zotero-key` property names. In a query file's own tab, `this` has no value. See [`this`: the paper of the note](/docs/concepts/query-files-and-query-blocks#this).
+
+## Formulas [#formulas]
+
+`formulas` maps each formula name to a [Filter Expression](/docs/concepts/how-zotlit-query-works#steps). A view shows the result as the property `formula.<name>`:
+
+```yaml
+formulas:
+  year: date.year
+  authors: creators.length
+views:
+  - type: table
+    name: Reading list
+    from: items
+    filters: formula.year >= 2020
+    order:
+      - title
+      - formula.year
+      - formula.authors
+```
+
+| Rule       | Value                                                                                                                                 |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Name       | Letters, digits, and `_`, starting with a letter or `_`. Letter case counts.                                                          |
+| Expression | The same language as a filter. It reads the properties of the view's records, `this.item`, `this.attachment`, and the other formulas. |
+| Result     | `true` or `false`, a number, a text, a date, or a list.                                                                               |
+| Used in    | `order` and `filters` of any view, and other formulas.                                                                                |
+
+A view computes only the formulas that its `order` and `filters` use. A formula that uses itself through other formulas is a mistake.
+
+A formula that cannot run on the records of a view marks its property in that view only. For example, a formula `colour` with the expression `colorName` runs in an annotations view. An items view of the same file that shows `formula.colour` marks it, and its other properties stay on screen. A record on which a formula cannot compute its result shows an [Error Value](/docs/concepts/how-zotlit-query-works#error-values) in that cell.
+
+## Display names [#properties]
+
+`properties` gives a property its display name. Each key is the same text as an `order` entry: a property path, `vault.literatureNote`, or `formula.<name>` for a formula.
+
+```yaml
+properties:
+  title:
+    displayName: Work
+  formula.year:
+    displayName: Year of source
+```
+
+The display name shows in every view of the file: the Table header, the Cards labels, the <UiLabel name={m.query_view_properties()} /> menu, and the header row of copy and CSV export. ZotLit keeps the other keys under each property. A key with the Obsidian Bases prefix `note.`, such as `note.date`, names no property.
+
+## A new query file [#new-file]
+
+A query file that you [create from the command palette or the file explorer](/docs/how-to/use-query-files#create) holds this text:
+
+```yaml
+views:
+  - type: annotations
+    name: Annotations
+    from: annotations
+    groupBy:
+      property: item.indexedKey
+      direction: ASC
+    limit: 100
+```
+
+## See also
+
+<Cards>
+  <Card
+    title="Query files and query blocks"
+    description="Views, layouts, where changes save, and what this.item means."
+    href="/docs/concepts/query-files-and-query-blocks"
+  />
+  <Card
+    title="Commands"
+    description="ZotLit Query parameters and the fields of each kind of record."
+    href="/docs/reference/commands#query-cli"
+  />
+</Cards>

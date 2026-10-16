@@ -21,6 +21,7 @@ or a direct edit. State the expected behavior and what the reviewer must check.
 - [Deep modules](policies/pure-logic.md)
 - [Regex](policies/regex.md)
 - [Resource disposal](policies/resource-disposal.md)
+- [Root fixes](policies/root-fixes.md)
 - [Simplicity](policies/simplicity.md)
 - [Tautological tests](policies/tautological-tests.md)
 - [Temporal dates](policies/temporal-dates.md)

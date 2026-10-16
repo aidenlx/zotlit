@@ -3,3 +3,5 @@
 Default to one cohesive module. Prefer private functions before sibling files. If you split, re-export the public surface from the entry module.
 
 Split when: file past ~250 lines with unrelated concerns, same logic in multiple modules, orchestration and branching too tangled to read together, or testing through the orchestrator requires awkward mocking. Pure helpers take all inputs as args, hold no state, perform no I/O, never import the orchestrator.
+
+One value, one source: when several Layouts, hosts, or exports show the same value — a property label, a value's text, the text a search matches, the order keys step through — one function makes it, and every surface calls that function.

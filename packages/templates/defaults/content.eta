@@ -5,10 +5,17 @@
 - <%~ note.noteLink() %>
 <% } %>
 <% } %>
-<% if (zt.annotations.length) { %>
 ## Annotations
 
-<% for (const annotation of zt.annotations) { %>
-<%~ renderAnnotation(annotation) %>
-<% } %>
-<% } %>
+```zotquery
+views:
+  - type: annotations
+    name: Annotations
+    from: annotations
+    filters: item == this.item
+    sort:
+      - property: attachment.dateAdded
+        direction: ASC
+      - property: sortIndex
+        direction: ASC
+```

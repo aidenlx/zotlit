@@ -577,3 +577,21 @@ it("shows the Default folder read-only and still previews the full path", () => 
   );
   expect(onOpenSettings).toHaveBeenCalledOnce();
 });
+
+it("points each label at the field in its own pane when two panes share a window", () => {
+  // Obsidian mounts each Workbench pane as a root of its own in one document.
+  const first = open().container;
+  const second = open().container;
+  const label = within(second).getByText<HTMLLabelElement>(
+    m.workbench_name_binding_folder(),
+    { selector: "label" },
+  );
+  // A click on a label focuses the field its `for` names in the document;
+  // happy-dom resolves that field but does not move focus itself.
+  act(() => {
+    label.control?.focus();
+  });
+  expect(document.activeElement).toBeInstanceOf(HTMLInputElement);
+  expect(first.contains(document.activeElement)).toBe(false);
+  expect(second.contains(document.activeElement)).toBe(true);
+});

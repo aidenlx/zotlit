@@ -33,6 +33,7 @@ export interface WorkbenchParts {
     | "condition"
     | "statement"
     | "predicate"
+    | "kind-icon"
     | "fields"
     | "value"
     | "actions"
@@ -41,6 +42,7 @@ export interface WorkbenchParts {
     | "chip"
     | "expression"
     | "conjunction"
+    | "handle"
     | "result"
     | "error";
   dataExplorer:
@@ -315,7 +317,8 @@ export type WorkbenchIcon =
   | "property-number"
   | "property-checkbox"
   | "property-date"
-  | "property-datetime";
+  | "property-datetime"
+  | "drag";
 
 export interface WorkbenchTheme {
   readonly classes?: WorkbenchClassMap;

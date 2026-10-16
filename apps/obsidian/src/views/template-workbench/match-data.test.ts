@@ -1,15 +1,18 @@
-// Vault-wide suggestions and Item facts use the same pinned database.
+// Vault-wide suggestions and the Match test of a real Item read one database.
+import type { Vault } from "obsidian";
 import { expect, it, vi } from "vitest";
 
 import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
+import { QueryService } from "@/services/item-query/service";
+import type { LibraryScopeService } from "@/services/library-scope/service";
 import {
   inProcessReadsService,
   sharedClientOpener,
 } from "@/services/zotero-reads/test-utils";
 
-import { createMatchData, loadMatchFacts } from "./match-data";
+import { createMatchData } from "./match-data";
 
 it("includes Libraries outside the chosen paper and keeps automatic Tags and direct Collection paths", async () => {
   await using stack = new AsyncDisposableStack();
@@ -41,7 +44,25 @@ it("includes Libraries outside the chosen paper and keeps automatic Tags and dir
       };
     },
   };
-  const data = createMatchData(db);
+  await using query = new QueryService({
+    pluginVersion: "2.2.0",
+    reads: service,
+    zoteroPref: {
+      sourceId: "match-data",
+      databasePath: ":memory:",
+      dataDir: "/zotero",
+      baseAttachmentPath: "/zotero/linked",
+    },
+    libraryScope: {
+      ready: Promise.resolve(),
+      effective: { mode: "all" },
+    } as LibraryScopeService,
+    vault: {
+      getName: () => "Match tests",
+      adapter: { getBasePath: () => "/vault" },
+    } as unknown as Vault,
+  });
+  const data = createMatchData(db, query);
   await expect(data.tags()).resolves.toEqual([
     "Automatic",
     "Manual",
@@ -58,11 +79,27 @@ it("includes Libraries outside the chosen paper and keeps automatic Tags and dir
     { id: "personal" },
     { id: "group:118", name: "Team" },
   ]);
-  await expect(loadMatchFacts(db, "BKKKK222")).resolves.toEqual({
-    library: { type: "personal" },
-    itemType: "book",
-    tags: ["Automatic", "Manual"],
-    collections: [["Project", "Drafts"], ["A/B"]],
+  // Automatic Tags and direct Collection paths count, as in selection.
+  for (const [filter, matched] of [
+    ['itemType == "book" && library == "personal"', true],
+    ['tags.containsAll("Automatic", "Manual")', true],
+    ['collections.contains("Project/Drafts")', true],
+    ['collections.contains("Project")', false],
+    ['collections.within("Project")', true],
+    ['tags.contains("Other paper")', false],
+  ] as const)
+    await expect(data.matches("BKKKK222", filter), filter).resolves.toEqual({
+      kind: "result",
+      matched,
+    });
+  await expect(data.matches("ABSENT22", "true")).resolves.toEqual({
+    kind: "missing",
   });
-  expect(dispose).toHaveBeenCalledTimes(4);
+  await expect(
+    data.matches("BKKKK222", "tags.contain(1)"),
+  ).resolves.toMatchObject({
+    kind: "problem",
+    span: { from: 5, to: 12 },
+  });
+  expect(dispose).toHaveBeenCalledTimes(3);
 });

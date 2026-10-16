@@ -1565,20 +1565,6 @@ describe("ZoteroReads Profile Match operations", () => {
       both: [["Lab Notes"], ["Reading"], ["Reading", "Theory"]],
     });
   });
-
-  it("MembershipFacts names an item's tags and direct collection paths", async () => {
-    const { open } = fixtureOpener();
-    const facts = await withReads(open, (reads) =>
-      Effect.all({
-        main: reads.MembershipFacts({ itemID: 1, libraryID: 1 }),
-        group: reads.MembershipFacts({ itemID: 300, libraryID: 2 }),
-      }),
-    );
-    expect(facts).toEqual({
-      main: { tags: ["zt"], collections: [["Reading"]] },
-      group: { tags: [], collections: [] },
-    });
-  });
 });
 
 describe("ZoteroReads SearchItems", () => {

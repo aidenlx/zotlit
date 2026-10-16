@@ -1027,5 +1027,46 @@
       "reason": "The Attachment has no permitted vault-relative target."
     }
   ],
-  "revision": "9b591ec234cfd5d4a809884df86c5f80c218bc012eace9a8c4b26afd357370a0"
+  "seed": {
+    "scan": {
+      "itemID": 60,
+      "key": "CNPF226A",
+      "itemType": "conferencePaper",
+      "dateAdded": 1735905600000,
+      "dateModified": 1735905600000
+    },
+    "groupID": null,
+    "fields": {
+      "title": "Designing reproducible research interfaces",
+      "date": "2026",
+      "citationKey": "riveraResearchInterfaces2026",
+      "proceedingsTitle": "Proceedings of the Open Research Conference",
+      "publicationTitle": "Proceedings of the Open Research Conference"
+    },
+    "custom": {},
+    "customFieldNames": [],
+    "creators": [
+      {
+        "firstName": "Mara",
+        "lastName": "Rivera",
+        "fieldMode": 0,
+        "creatorType": "author",
+        "primary": true
+      },
+      {
+        "firstName": "Tao",
+        "lastName": "Chen",
+        "fieldMode": 0,
+        "creatorType": "author",
+        "primary": true
+      }
+    ],
+    "tags": [],
+    "collections": [
+      [
+        "Shared key"
+      ]
+    ]
+  },
+  "revision": "cf203d28bb3f4516e58c2356eae39b72d3efdec530616cd7f124d7cd444989f4"
 }
