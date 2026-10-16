@@ -132,6 +132,8 @@ const reachable = await isObsidianReachable(workspaceRoot);
 afterAll(() => discardFixture(e2eFixture));
 const webWorkbenchEnabled = process.env.WEB_WORKBENCH_ENABLED === "true";
 const settingsContent = "app.setting.containerEl";
+/** The byte order mark that starts a CSV file. */
+const BYTE_ORDER_MARK = String.fromCharCode(0xfeff);
 
 async function openProfilesSettings(
   vaultId: string,
@@ -2807,7 +2809,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const exported = JSON.parse(
       await obEval(
         vaultId,
-        `(async()=>{${PAGE}const create=URL.createObjectURL;const click=HTMLAnchorElement.prototype.click;let blob=null,name=null;URL.createObjectURL=b=>{blob=b;return create.call(URL,b);};HTMLAnchorElement.prototype.click=function(){name=this.download;};try{press(activeDocument.querySelector('[data-query-results-popup] [data-query-export]'),'Export CSV');}finally{URL.createObjectURL=create;HTMLAnchorElement.prototype.click=click;}return JSON.stringify({name,type:blob?.type??null,text:blob?await blob.text():null});})()`,
+        `(async()=>{${PAGE}const create=URL.createObjectURL;const click=HTMLAnchorElement.prototype.click;let blob=null,name=null;URL.createObjectURL=b=>{blob=b;return create.call(URL,b);};HTMLAnchorElement.prototype.click=function(){name=this.download;};try{press(activeDocument.querySelector('[data-query-results-popup] [data-query-export]'),'Export CSV');}finally{URL.createObjectURL=create;HTMLAnchorElement.prototype.click=click;}return JSON.stringify({name,type:blob?.type??null,text:blob?new TextDecoder('utf-8',{ignoreBOM:true}).decode(await blob.arrayBuffer()):null});})()`,
       ),
     ) as { name: string | null; type: string | null; text: string | null };
     const rows = await queryRows("pageLabel,colorName", "2");
@@ -2818,14 +2820,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(exported).toEqual({
       name: "Shared figures.csv",
       type: "text/csv",
-      text: [
-        // The header names a property by its label where it has one.
-        `pageLabel,${m.query_view_property_color()}`,
-        ...rows.map(
-          (row) =>
-            `${cell(row.values.pageLabel)},${cell(row.values.colorName)}`,
-        ),
-      ].join("\n"),
+      // A byte order mark first, so a spreadsheet reads UTF-8; CRLF after each line.
+      text:
+        BYTE_ORDER_MARK +
+        [
+          // The header names a property by its label where it has one.
+          `pageLabel,${m.query_view_property_color()}`,
+          ...rows.map(
+            (row) =>
+              `${cell(row.values.pageLabel)},${cell(row.values.colorName)}`,
+          ),
+        ]
+          .map((line) => `${line}\r\n`)
+          .join(""),
     });
     expect(rows.every((row) => row.values.colorName)).toBe(true);
   }, 180000);
@@ -3487,7 +3494,7 @@ views:
             : String(value as string | number);
       return /[",\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
     };
-    const lines = (separator: string) =>
+    const lines = (separator: string, newline: string) =>
       [
         // The header names a field by its label, a Formula by its path.
         ["Title", "formula.n"].join(separator),
@@ -3496,21 +3503,26 @@ views:
             separator,
           ),
         ),
-      ].join("\n");
+      ]
+        .map((line) => `${line}${newline}`)
+        .join("");
     const resultsTab = "app.workspace.getMostRecentLeaf().view";
     const resultsPopup = toolbarPopup("[data-query-results-popup]");
     await openResults(resultsTab);
     // The clipboard write has no time the test can name: poll for it, and
     // fail when it does not come.
-    const copied = await obEval(
-      vaultId,
-      `(async()=>{${PAGE}let copied=null;navigator.clipboard.write=async items=>{copied=await (await items[0].getType('text/plain')).text();};try{press(${resultsPopup}.querySelector('[data-query-copy]'),'Copy to clipboard');await until('clipboard write',()=>copied!==null,5000).catch(()=>{});}finally{delete navigator.clipboard.write;}if(copied===null)throw new Error('"Copy to clipboard" wrote nothing');return copied;})()`,
-    );
+    // JSON keeps the final newline, which the CLI reply would trim.
+    const copied = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{${PAGE}let copied=null;navigator.clipboard.write=async items=>{copied=await (await items[0].getType('text/plain')).text();};try{press(${resultsPopup}.querySelector('[data-query-copy]'),'Copy to clipboard');await until('clipboard write',()=>copied!==null,5000).catch(()=>{});}finally{delete navigator.clipboard.write;}if(copied===null)throw new Error('"Copy to clipboard" wrote nothing');return JSON.stringify(copied);})()`,
+      ),
+    ) as string;
     await openResults(resultsTab);
     const exportedCsv = JSON.parse(
       await obEval(
         vaultId,
-        `(async()=>{${PAGE}const create=URL.createObjectURL;const click=HTMLAnchorElement.prototype.click;let blob=null,name=null;URL.createObjectURL=b=>{blob=b;return create.call(URL,b);};HTMLAnchorElement.prototype.click=function(){name=this.download;};try{press(${resultsPopup}.querySelector('[data-query-export]'),'Export CSV');}finally{URL.createObjectURL=create;HTMLAnchorElement.prototype.click=click;}return JSON.stringify({name,type:blob?.type??null,text:blob?await blob.text():null});})()`,
+        `(async()=>{${PAGE}const create=URL.createObjectURL;const click=HTMLAnchorElement.prototype.click;let blob=null,name=null;URL.createObjectURL=b=>{blob=b;return create.call(URL,b);};HTMLAnchorElement.prototype.click=function(){name=this.download;};try{press(${resultsPopup}.querySelector('[data-query-export]'),'Export CSV');}finally{URL.createObjectURL=create;HTMLAnchorElement.prototype.click=click;}return JSON.stringify({name,type:blob?.type??null,text:blob?new TextDecoder('utf-8',{ignoreBOM:true}).decode(await blob.arrayBuffer()):null});})()`,
       ),
     ) as { name: string | null; type: string | null; text: string | null };
     const written = { copied, ...exportedCsv } as {
@@ -3520,10 +3532,12 @@ views:
       text: string | null;
     };
     expect(written).toEqual({
-      copied: lines("\t"),
+      // TSV on the clipboard puts LF between lines, none after the last; the
+      // CSV file starts with a byte order mark and ends each line with CRLF.
+      copied: lines("\t", "\n").slice(0, -1),
       name: "Cards.csv",
       type: "text/csv",
-      text: lines(","),
+      text: BYTE_ORDER_MARK + lines(",", "\r\n"),
     });
     expect(written.text).toContain(`"Error: ${message.replaceAll('"', '""')}"`);
   }, 240000);
@@ -3667,10 +3681,12 @@ views:
     const exported = JSON.parse(
       await obEval(
         vaultId,
-        `(async()=>{${PAGE}const create=URL.createObjectURL;const click=HTMLAnchorElement.prototype.click;let blob=null;URL.createObjectURL=b=>{blob=b;return create.call(URL,b);};HTMLAnchorElement.prototype.click=function(){};try{press(${toolbarPopup("[data-query-results-popup]")}.querySelector('[data-query-export]'),'Export CSV');}finally{URL.createObjectURL=create;HTMLAnchorElement.prototype.click=click;}return JSON.stringify({text:blob?await blob.text():null});})()`,
+        `(async()=>{${PAGE}const create=URL.createObjectURL;const click=HTMLAnchorElement.prototype.click;let blob=null;URL.createObjectURL=b=>{blob=b;return create.call(URL,b);};HTMLAnchorElement.prototype.click=function(){};try{press(${toolbarPopup("[data-query-results-popup]")}.querySelector('[data-query-export]'),'Export CSV');}finally{URL.createObjectURL=create;HTMLAnchorElement.prototype.click=click;}return JSON.stringify({text:blob?new TextDecoder('utf-8',{ignoreBOM:true}).decode(await blob.arrayBuffer()):null});})()`,
       ),
     ) as { text: string | null };
-    expect(exported.text?.split("\n")[0]).toBe("Work,Year of source");
+    expect(exported.text?.split("\r\n")[0]).toBe(
+      `${BYTE_ORDER_MARK}Work,Year of source`,
+    );
 
     // Removing the Formula also removes its Display Name; the field keeps its own.
     await editYear();
@@ -7330,6 +7346,118 @@ views:
     ) as ItemQueryReport;
     expect(split).toMatchObject({ ok: true, totalCount: ITEMS.length });
     expect(split.groups).toHaveLength(LIBRARIES.length);
+  });
+
+  it("exports papers per year as CSV and every paper as TSV through zotlit:query", async () => {
+    const args = {
+      group: "date.year",
+      limit: "1",
+      library: "personal",
+      fields: "title,date.year",
+    };
+    const report = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query", { args }),
+    ) as ItemQueryReport;
+    expect(report.groups!.length).toBeGreaterThan(1);
+    const quote = (text: string, separator: string) =>
+      text.includes(separator) || /["\n]/.test(text)
+        ? `"${text.replaceAll('"', '""')}"`
+        : text;
+    // Each cell here is a scalar: a title, a year, or an Indexed Key.
+    const line = (cells: unknown[], separator: string) =>
+      cells
+        .map((value) =>
+          quote(
+            value == null
+              ? ""
+              : typeof value === "string"
+                ? value
+                : JSON.stringify(value),
+            separator,
+          ),
+        )
+        .join(separator);
+    const csvPath = join(e2eFixture.root, "query-per-year.csv");
+    const tsvPath = join(e2eFixture.root, "query-papers.tsv");
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(() => rm(csvPath, { force: true }));
+    cleanup.defer(() => rm(tsvPath, { force: true }));
+
+    // A grouped CSV export: the group value first, a byte order mark, CRLF.
+    const receipt = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query", {
+        args: { ...args, format: "csv", output: csvPath },
+      }),
+    );
+    const csv = await readFile(csvPath);
+    expect(receipt).toMatchObject({
+      ok: true,
+      returnedCount: report.returnedCount,
+      file: { path: csvPath, bytes: csv.byteLength, format: "csv" },
+    });
+    expect(receipt).not.toHaveProperty("groups");
+    expect(new TextDecoder("utf-8", { ignoreBOM: true }).decode(csv)).toBe(
+      BYTE_ORDER_MARK +
+        [
+          "group,indexedKey,title,date.year",
+          ...report.groups!.flatMap((group) =>
+            group.rows.map((row) =>
+              line(
+                [
+                  group.value,
+                  row.indexedKey,
+                  row.values.title,
+                  row.values["date.year"],
+                ],
+                ",",
+              ),
+            ),
+          ),
+        ]
+          .map((text) => `${text}\r\n`)
+          .join(""),
+    );
+
+    // A TSV export of every paper: no byte order mark, LF.
+    const papers = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query", {
+        args: { library: "personal", fields: "title", limit: "all" },
+      }),
+    ) as ItemQueryReport;
+    await cliCommand(vaultId, "zotlit:query", {
+      args: {
+        library: "personal",
+        fields: "title",
+        limit: "all",
+        format: "tsv",
+        output: tsvPath,
+      },
+    });
+    expect(await readFile(tsvPath, "utf8")).toBe(
+      [
+        "indexedKey\ttitle",
+        ...papers.rows!.map((row) =>
+          line([row.indexedKey, row.values.title], "\t"),
+        ),
+      ]
+        .map((text) => `${text}\n`)
+        .join(""),
+    );
+
+    // The answer itself is JSON: CSV without a file is refused.
+    expect(
+      JSON.parse(
+        await cliCommand(vaultId, "zotlit:query", {
+          args: { ...args, format: "csv" },
+        }),
+      ),
+    ).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "invalid-argument",
+        details: { parameter: "format" },
+      },
+    });
   });
 
   it("computes Formulas on a Fixture Item through ZotLit Query", async () => {

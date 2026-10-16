@@ -1,6 +1,8 @@
 // The rows of a Query View as a table of text: one column for each visible
 // property, in the view's order. "Copy to clipboard" and "Export CSV…" write
 // this table.
+import { delimited } from "@zotlit/shared/delimited";
+
 import type { QueryViewRow } from "@/services/item-query/query-view";
 
 import { cellText } from "./value-text";
@@ -32,24 +34,18 @@ export function resultTable(
   };
 }
 
-function toText(table: ResultTable, separator: string): string {
-  const quote = (text: string) =>
-    /["\n\r]/.test(text) || text.includes(separator)
-      ? `"${text.replaceAll('"', '""')}"`
-      : text;
-  return [table.header, ...table.body]
-    .map((line) => line.map(quote).join(separator))
-    .join("\n");
-}
-
 /** The table as CSV, the header first. */
 export function toCSV(table: ResultTable): string {
-  return toText(table, ",");
+  return delimited([table.header, ...table.body], "csv");
 }
 
-/** The table as tab-separated text, which a spreadsheet takes on paste. */
+/**
+ * The table as tab-separated text, which a spreadsheet takes on paste. A paste
+ * lands at the cursor, so the text ends after the last cell, with no newline;
+ * a cell that ends with one is quoted, so only the line end is cut.
+ */
 export function toTSV(table: ResultTable): string {
-  return toText(table, "\t");
+  return delimited([table.header, ...table.body], "tsv").slice(0, -1);
 }
 
 function escapeHTML(text: string): string {

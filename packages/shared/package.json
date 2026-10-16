@@ -8,6 +8,7 @@
   "type": "module",
   "sideEffects": false,
   "exports": {
+    "./delimited": "./dist/delimited.mjs",
     "./log-formatter": "./dist/log-formatter.mjs",
     "./nanoevents": "./dist/nanoevents.mjs",
     "./package.json": "./package.json"
@@ -15,14 +16,17 @@
   "scripts": {
     "build": "tsdown",
     "dev": "tsdown --watch",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@types/node": "catalog:",
     "@zotlit/config": "workspace:*",
     "oxlint": "catalog:",
     "tsdown": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   },
   "peerDependencies": {
     "@logtape/logtape": ">=2.0.0"

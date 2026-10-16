@@ -1,7 +1,8 @@
 // The answer of one Query Job inside the ZoteroReads worker: the versioned
 // envelope of ADR 0065 for the schema or the query of a CLI dataset. A query
 // answer resolves the Target Libraries on the database of the job, runs the
-// engine, and encodes the envelope in chunks, inline or to the export writer.
+// engine, and encodes the envelope in chunks, inline or to the export writer;
+// a CSV or TSV export writes delimited rows to the file in its place.
 // Every typed failure is the envelope of the command of the job. The Query Job
 // (`job.ts`) provides the database, the scheduler and the scope.
 //
@@ -23,14 +24,18 @@ import {
   describeQueryCustomFields,
   SLICE_BUDGET_MS,
   ITEMS,
+  valueText,
 } from "@zotlit/item-query";
 import type {
   ItemQueryRequest,
   ItemQueryError,
+  ProjectionJson,
   QueryRow,
   QuerySummary,
   ResolveAttachmentFile,
 } from "@zotlit/item-query";
+import { delimitedLines, delimitedStart } from "@zotlit/shared/delimited";
+import type { DelimitedFormat } from "@zotlit/shared/delimited";
 
 import { resourceReleaseUrl } from "@/lib/constants";
 import { Cause, Data, Effect } from "@/lib/effect";
@@ -241,6 +246,7 @@ function answerQuery(
           ),
           onAnswerStep: env.onAnswerStep,
           output: decoded.output,
+          format: decoded.format,
           openOutput: env.openOutput,
         }),
     ).pipe(
@@ -469,13 +475,93 @@ interface AnswerContext {
   libraries: readonly LibraryWire[];
   onAnswerStep?: (ms: number) => void;
   output?: string;
+  /** The format of the output file; omitted, the JSON response. */
+  format?: DelimitedFormat;
   openOutput?: AnswerEnv["openOutput"];
 }
 
+/** How the answer writes its rows: the JSON envelope, or delimited lines. */
+interface RowsEncoder {
+  /** The text before the first row. */
+  readonly start: string;
+  /** The text that closes the group `previous`, if any, and opens `groupIndex`. */
+  group(groupIndex: number, previous: number | undefined): string;
+  /** The text of one chunk of the rows of the group open now, if any. */
+  rows(chunk: readonly QueryRow[], groupIndex: number | undefined): string;
+  /** The text after the last row, with `lastGroup` open, if any. */
+  end(lastGroup: number | undefined): string;
+}
+
+/** Byte-identical pretty JSON of the envelope that `head` begins. */
+function jsonRows(result: QuerySummary, head: string): RowsEncoder {
+  const grouped = result.groups !== undefined;
+  let first = true;
+  return {
+    start:
+      result.returnedCount === 0 ? head : `${head.slice(0, -NO_ROWS.length)}[`,
+    group(groupIndex, previous) {
+      const group = result.groups![groupIndex]!;
+      const header = JSON.stringify({ ...group, rows: [] }, null, 2);
+      first = true;
+      return `${previous === undefined ? "" : "\n      ]\n    },"}\n    ${header.slice(0, -NO_ROWS.length).replaceAll("\n", "\n    ")}[`;
+    },
+    rows(chunk) {
+      const wire = JSON.stringify({ rows: chunk }, null, 2).slice(
+        CHUNK_START.length,
+        -CHUNK_END.length,
+      );
+      const indented = grouped ? wire.replaceAll("\n", "\n    ") : wire;
+      const part = first ? indented : `,${indented}`;
+      first = false;
+      return part;
+    },
+    end: (lastGroup) =>
+      `${lastGroup === undefined ? "" : "\n      ]\n    }"}${result.returnedCount > 0 ? CHUNK_END : ""}`,
+  };
+}
+
 /**
- * Byte-identical pretty JSON; only the current projection chunk is retained.
- * Each chunk is one step of the job fiber, so the scheduler of the job can end
- * a slice and an interrupt can land between two chunks.
+ * One delimited line for each row: its group value when the query groups,
+ * its Indexed Key, and the text of each field, under a header line of their
+ * names. A row in two groups is a line in each. Each value reads as the Query
+ * View writes it, from the JSON the envelope would hold.
+ */
+function delimitedRows(
+  result: QuerySummary,
+  format: DelimitedFormat,
+): RowsEncoder {
+  const grouped = result.groups !== undefined;
+  const { fields } = result.query;
+  const header = [...(grouped ? ["group"] : []), "indexedKey", ...fields];
+  return {
+    start: delimitedStart(format) + delimitedLines([header], format),
+    group: () => "",
+    rows(chunk, groupIndex) {
+      const group = grouped
+        ? [valueText(result.groups![groupIndex!]!.value)]
+        : [];
+      // A date is its ISO text in JSON, as the envelope writes it.
+      const wire = JSON.parse(JSON.stringify(chunk)) as readonly {
+        indexedKey: string;
+        values: Readonly<Record<string, ProjectionJson>>;
+      }[];
+      return delimitedLines(
+        wire.map((row) => [
+          ...group,
+          row.indexedKey,
+          ...fields.map((field) => valueText(row.values[field])),
+        ]),
+        format,
+      );
+    },
+    end: () => "",
+  };
+}
+
+/**
+ * The answer in chunks: only the current projection chunk is retained. Each
+ * chunk is one step of the job fiber, so the scheduler of the job can end a
+ * slice and an interrupt can land between two chunks.
  */
 const createAnswer = Effect.fnUntraced(function* (
   result: QuerySummary,
@@ -498,17 +584,27 @@ const createAnswer = Effect.fnUntraced(function* (
     warnings: result.warnings,
   };
   const grouped = result.groups !== undefined;
-  const head = envelope(context.command, {
-    ...summary,
-    ...(grouped ? { groups: [] } : { rows: [] }),
-  });
+  const { output, openOutput, format } = context;
+  // Only a file holds CSV or TSV: the decoder asks for output with them.
+  if (format !== undefined && output === undefined)
+    return yield* Effect.die(
+      new Error(`ZotLit Query ${format} export has no output path`),
+    );
+  const encoder =
+    format === undefined
+      ? jsonRows(
+          result,
+          envelope(context.command, {
+            ...summary,
+            ...(grouped ? { groups: [] } : { rows: [] }),
+          }),
+        )
+      : delimitedRows(result, format);
   let activeGroup: number | undefined;
   let text = "";
   let bytes = 0;
-  let first = true;
   let chunkRows = FIRST_CHUNK_ROWS;
   // Open only after query validation and Library resolution succeed.
-  const { output, openOutput } = context;
   let file: QueryWriter | undefined;
   if (output !== undefined) {
     if (!openOutput)
@@ -533,39 +629,25 @@ const createAnswer = Effect.fnUntraced(function* (
       text += chunk;
       return Effect.void;
     });
-  yield* append(
-    result.returnedCount === 0 ? head : `${head.slice(0, -NO_ROWS.length)}[`,
-  );
+  yield* append(encoder.start);
   return {
     write: Effect.fnUntraced(function* (
       rows: readonly QueryRow[],
       groupIndex?: number,
     ) {
       if (grouped && groupIndex !== activeGroup) {
-        if (activeGroup !== undefined) yield* append("\n      ]\n    },");
-        const group = result.groups![groupIndex!]!;
-        const header = JSON.stringify({ ...group, rows: [] }, null, 2);
-        yield* append(
-          `\n    ${header.slice(0, -NO_ROWS.length).replaceAll("\n", "\n    ")}[`,
-        );
+        yield* append(encoder.group(groupIndex!, activeGroup));
         activeGroup = groupIndex;
-        first = true;
       }
       let stepMs = 0;
       for (let start = 0; start < rows.length; ) {
         const stepStart = performance.now();
         const chunk = rows.slice(start, start + chunkRows);
-        const wire = JSON.stringify({ rows: chunk }, null, 2).slice(
-          CHUNK_START.length,
-          -CHUNK_END.length,
-        );
-        const indented = grouped ? wire.replaceAll("\n", "\n    ") : wire;
-        const part = first ? indented : `,${indented}`;
-        first = false;
+        const part = encoder.rows(chunk, groupIndex);
         start += chunk.length;
         chunkRows = Math.max(
           1,
-          Math.ceil(CHUNK_TEXT_LENGTH / (wire.length / chunk.length)),
+          Math.ceil(CHUNK_TEXT_LENGTH / (part.length / chunk.length)),
         );
         stepMs += performance.now() - stepStart;
         yield* append(part);
@@ -576,14 +658,13 @@ const createAnswer = Effect.fnUntraced(function* (
       context.onAnswerStep?.(stepMs);
     }),
     end: Effect.fnUntraced(function* () {
-      if (activeGroup !== undefined) yield* append("\n      ]\n    }");
-      if (result.returnedCount > 0) yield* append(CHUNK_END);
+      yield* append(encoder.end(activeGroup));
       if (output === undefined) return inline(context.command, text);
       return {
         command: context.command,
         answer: envelope(context.command, {
           ...summary,
-          file: { path: output, bytes, format: "json" },
+          file: { path: output, bytes, format: format ?? "json" },
         }),
         receipt: { kind: "file", path: output, bytes },
       } satisfies QueryReply;

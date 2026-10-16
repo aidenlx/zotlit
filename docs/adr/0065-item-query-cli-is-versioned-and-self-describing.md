@@ -1,5 +1,7 @@
 # Item Query CLI is versioned and self-describing
 
+> Amended 2026-10-16: `format=csv` or `format=tsv` beside `output` writes one delimited line for each row to the file in place of the JSON envelope, with `file.format` naming the format; the CLI answer stays JSON. This is an addition to version 3.
+
 > Amended 2026-10-10 by ADR 0071: contract version 3 exposes one `zotlit:query` command with `from=`, comma-list `fields` and `sort` beside the JSON form, one `library` argument, `group=`, and selection through the filter alone.
 
 > Amended 2026-10-09: contract version 2 keeps every version-1 field of a diagnostic and adds the Diagnostic Report, the structured excerpt, what was found and expected, suggestions, severity, and `warnings` on a successful answer. Version 2 grows by additions without a bump; a changed meaning of an existing field bumps. See ADR 0070.

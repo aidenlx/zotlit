@@ -150,20 +150,20 @@ views:
     const properties = viewProperties(file, file.views[0]!);
     const table = resultTable([], properties.visible);
     expect(table.header).toEqual(["Work", "Item Type"]);
-    expect(toCSV(table)).toBe("Work,Item Type");
+    expect(toCSV(table)).toBe("\ufeffWork,Item Type\r\n");
   });
 });
 
 describe("toCSV", () => {
-  it("quotes a cell that holds a comma, a quote or a line break", () => {
+  it("starts with a byte order mark, quotes a cell that holds a comma, a quote or a line break, and ends each line with CRLF", () => {
     expect(toCSV(resultTable(ROWS, columns(["item.title", "comment"])))).toBe(
-      'Item title,comment\nTen simple rules,"Key figure, ""panel B"""\n"Deep learning\nA review",',
+      '\ufeffItem title,comment\r\nTen simple rules,"Key figure, ""panel B"""\r\n"Deep learning\nA review",\r\n',
     );
   });
 });
 
 describe("toTSV", () => {
-  it("separates cells with tabs and quotes only what needs it", () => {
+  it("separates cells with tabs, quotes only what needs it, and puts LF between lines, none after the last", () => {
     expect(toTSV(resultTable(ROWS, columns(["item.title", "comment"])))).toBe(
       'Item title\tcomment\nTen simple rules\t"Key figure, ""panel B"""\n"Deep learning\nA review"\t',
     );

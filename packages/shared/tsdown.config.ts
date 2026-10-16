@@ -3,6 +3,7 @@ import { defineLibrary } from "@zotlit/config/tsdown";
 export default defineLibrary({
   entry: [
     {
+      delimited: "./src/delimited.ts",
       "log-formatter": "./src/log-formatter.ts",
       nanoevents: "./src/nanoevents.ts",
     },
