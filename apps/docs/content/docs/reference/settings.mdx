@@ -146,13 +146,11 @@ See [template document naming](/docs/reference/templates/syntax#template-documen
 
 ### Profile Match [#profile-match]
 
-A Profile Match is the set of conditions that select a Profile automatically for new literature notes. Each condition tests a Zotero item's Library, item type, Tags, or Collections, and the Match lives in the Profile's template document. The default Profile is the fallback: it has no Profile Match.
+A Profile Match is the set of conditions that select a Profile automatically for new literature notes. Each condition tests a Zotero item with the same conditions as the filter of an items Query View, such as its title, creators, year, item type, Collections, Library, or Tags. The Match lives in the Profile's template document. The default Profile is the fallback: it has no Profile Match.
 
 Nothing on this page edits a Match. A Profile row reports the status word from the table above, and the row's own controls act on the Profile rather than its conditions. Change the conditions in the Profile's document, on the <UiLabel name={m.workbench_tab_match()} /> tab of the Template Workbench View. See [Use different templates](/docs/how-to/use-different-templates) for that procedure, and [Profile Match](/docs/reference/templates/profile-match) for the condition language, its operators, and the Collection path rules.
 
-ZotLit also spells conditions out in words where it presents a Match: the import consent dialog describes an incoming Match as <UiLabel name={m.settings_profile_match_item_type_is({ type: "…" })} />, <UiLabel name={m.settings_profile_match_library_is_not({ library: "…" })} />, <UiLabel name={m.settings_profile_match_tags_contain({ tags: "…" })} />, or <UiLabel name={m.settings_profile_match_collections_inside({ collections: "…" })} />, joined by `and` or `or` as the Match requires, with a nested group written <UiLabel name={m.settings_profile_match_summary_group({ conditions: "…" })} />.
-
-ZotLit skips a Profile Match that it cannot evaluate. Causes include invalid expression syntax, unsupported fields or functions, incorrect arguments, an unknown Library, or an unknown item type. The Profile row then shows <UiLabel name={m.settings_profile_match_status({ state: "unevaluable" })} />, and the Match tab reports the problem in place of a result. Other Profiles continue to take part in automatic selection. A template document that ZotLit cannot load appears in <UiLabel name={m.settings_profile_excluded_heading()} /> and takes no part in selection.
+ZotLit skips a Profile Match that it cannot evaluate. The cause is a mistake in the expression: invalid syntax, an unknown function or method, or an incorrect argument. The Profile row then shows <UiLabel name={m.settings_profile_match_status({ state: "unevaluable" })} />, and the Match tab shows the same error as a Query View, on the row that has the mistake. A condition that names a Library or item type that does not exist is not a mistake: it matches no item. Other Profiles continue to take part in automatic selection. A template document that ZotLit cannot load appears in <UiLabel name={m.settings_profile_excluded_heading()} /> and takes no part in selection.
 
 #### Selection for new notes
 
@@ -184,7 +182,7 @@ The <UiLabel name={m.settings_profile_share()} /> dialog and import consent dial
 | <UiLabel name={m.profile_share_include_match()} />  | On      | Includes the Profile Match in the shared copy or file. Turning it off omits the Profile Match from that output.           |
 | <UiLabel name={m.profile_import_include_match()} /> | On      | Saves the incoming Profile Match with the imported Profile. Turning it off imports the Profile for manual selection only. |
 
-The import consent dialog describes the incoming Match conditions in words. When the incoming Profile has no Profile Match, the dialog shows <UiLabel name={m.profile_match_absent()} /> and hides <UiLabel name={m.profile_import_include_match()} />.
+The import consent dialog shows the incoming Match conditions as their Filter Expression. When the incoming Profile has no Profile Match, the dialog shows <UiLabel name={m.profile_match_absent()} /> and hides <UiLabel name={m.profile_import_include_match()} />.
 
 Library references, Collection paths, and Tag names stay as written during sharing and import. Review the imported conditions against your own Libraries, Collections, and Tags on the <UiLabel name={m.workbench_tab_match()} /> tab of the Template Workbench View.
 

@@ -1,13 +1,27 @@
-// The conditions the Query View's Filter offers, as Filter Expression text:
-// each one is a field of the view's Query Dataset, an operator and a value.
-// The fields are dataset-relative: an Item's title is `title` on Items and
-// `item.title` on Annotations. What a condition cannot read stays an
-// expression row in the Match editor.
+// The conditions a filter offers over a Query Dataset, as Filter Expression
+// text: each one is a field of the dataset, an operator and a value. The
+// Query View's Filter and the Profile Match both offer them. The fields are
+// dataset-relative: an Item's title is `title` on Items and `item.title` on
+// Annotations. What a condition cannot read stays an expression row in the
+// Match editor.
 import { parseExpressionAst } from "@zotlit/filter-expression";
 import type { ExpressionNode } from "@zotlit/filter-expression";
 
-import { DATASETS } from "./datasets";
-import type { QueryFileDataset } from "./query-file";
+/** The records a filter selects. */
+export type FilterDataset = "annotations" | "attachments" | "items";
+
+/**
+ * What a condition puts before a field of the Item and of the Attachment;
+ * `null` where the dataset has no Attachment.
+ */
+const PREFIX: Record<
+  FilterDataset,
+  { readonly item: string; readonly attachment: string | null }
+> = {
+  annotations: { item: "item.", attachment: "attachment." },
+  attachments: { item: "item.", attachment: "" },
+  items: { item: "", attachment: null },
+};
 
 /** How a field's value is tested, and so which operators it offers. */
 export type FilterValueType =
@@ -106,8 +120,8 @@ export const FILTER_OPERATORS: Record<
 };
 
 /** The conditions of a view's dataset, in the order the kind picker lists them. */
-export function filterFields(dataset: QueryFileDataset): FilterField[] {
-  const { item, attachment } = DATASETS[dataset].prefix;
+export function filterFields(dataset: FilterDataset): FilterField[] {
+  const { item, attachment } = PREFIX[dataset];
   const fields: FilterField[] = [];
   if (dataset === "annotations")
     fields.push(
@@ -132,6 +146,9 @@ export function filterFields(dataset: QueryFileDataset): FilterField[] {
     { kind: "collection", path: `${item}collections`, type: "collection" },
     { kind: "library", path: "library", type: "choice" },
   );
+  // An Annotation lists the Tags of its own above; an Item, those of the Item.
+  if (dataset === "items")
+    fields.push({ kind: "tags", path: "tags", type: "list" });
   if (attachment !== null)
     fields.push(
       { kind: "attachment-title", path: `${attachment}title`, type: "text" },

@@ -80,13 +80,15 @@ Select <UiLabel name={m.query_view_filter()} />. The filter editor has two parts
   <Step>
     ### Add a condition
 
-    Select <UiLabel name={m.workbench_match_add_condition()} />. Choose a property, an operator, and a value. For example, choose <UiLabel name={m.query_view_property_color()} />, <UiLabel name={m.workbench_match_operator_is()} />, and a color.
+    Select <UiLabel name={m.workbench_match_add_condition()} />. A new row reads <UiLabel name={m.workbench_match_value_empty()} /> and filters nothing until it has a value. Choose a property, an operator, and a value. For example, choose <UiLabel name={m.workbench_filter_field_color()} />, <UiLabel name={m.workbench_filter_op_is()} />, and <UiLabel name={m.workbench_filter_color_yellow()} />.
 
   </Step>
   <Step>
     ### Combine conditions
 
-    Choose <UiLabel name={m.workbench_match_match_all()} /> to show the records that match every condition, or <UiLabel name={m.workbench_match_match_any()} /> to show the records that match at least one. Select <UiLabel name={m.workbench_match_add_group()} /> to put a group of conditions inside another group.
+    Choose <UiLabel name={m.workbench_match_match_all()} /> to show the records that match every condition, <UiLabel name={m.workbench_match_match_any()} /> to show the records that match at least one, or <UiLabel name={m.workbench_match_match_none()} /> to hide the records that match any of them. In a <UiLabel name={m.workbench_match_match_none()} /> group, the rows are joined by <UiLabel name={m.workbench_match_conjunction_or()} />. Select <UiLabel name={m.workbench_match_add_group()} /> to put a group of conditions inside another group.
+
+    To remove a condition, delete its row. When you delete the last row of a nested group, the group goes too. When you delete the last row of the filter, the filter goes too.
 
   </Step>
   <Step>
@@ -99,7 +101,7 @@ Select <UiLabel name={m.query_view_filter()} />. The filter editor has two parts
 
 The properties depend on the records of the view. An annotations view offers the color, Tags, comment, text, page, and dates of each annotation. Every view offers the paper's title, creators, first author, year, item type, Collection, and library. Annotations and attachments views also offer the file's title and file type.
 
-To write a condition as a [Filter Expression](/docs/concepts/how-zotlit-query-works#steps), select <UiLabel name={m.workbench_match_edit_as_expression()} /> on its row. Select <UiLabel name={m.workbench_match_edit_visually()} /> to return to the visual row.
+To write a condition as a [Filter Expression](/docs/concepts/how-zotlit-query-works#steps), select <UiLabel name={m.workbench_match_edit_as_expression()} /> on its row. The expression is colored to make its parts easy to read. Select <UiLabel name={m.workbench_match_edit_visually()} /> to return to the visual row.
 
 When a condition has an error, its row shows the reason. The view keeps the rows it showed last and shows <UiLabel name={m.query_view_filter_error()} />
 

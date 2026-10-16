@@ -8,6 +8,7 @@ import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
+import { testItemSeed } from "@zotlit/item-query";
 import type { RenderRequest } from "@zotlit/workbench/render";
 import { WorkbenchMessagesProvider } from "@zotlit/workbench/ui";
 import type {
@@ -47,6 +48,7 @@ import { webCompletion } from "./completion";
 import { webHover } from "./hover";
 import { renderInThread } from "./render";
 import { ResultSheet } from "./result-sheet";
+import { ensureTemporal } from "./temporal";
 import { WEB_THEME } from "./theme";
 
 const STORAGE_PREFIX = "zotlit.workbench.preference";
@@ -86,6 +88,7 @@ function matchData(
       )
     : [];
   const { library } = snapshot.item;
+  const { seed } = snapshot;
   return {
     tags: () => Promise.resolve(tags),
     collections: () => Promise.resolve(collections),
@@ -98,6 +101,20 @@ function matchData(
               : `group:${library.groupID}`,
         },
       ]),
+    // The sample is the one Item the page has; it is tested in memory.
+    matches: async (_, filter) => {
+      if (!seed) return { kind: "missing" };
+      // The test reads the clock, so it waits for the `Temporal` polyfill.
+      await ensureTemporal();
+      const answer = testItemSeed(filter, seed);
+      if (answer.kind !== "problem") return answer;
+      const { message, location } = answer.diagnostic;
+      return {
+        kind: "problem",
+        message,
+        ...(location?.span ? { span: location.span } : {}),
+      };
+    },
   };
 }
 
@@ -154,6 +171,8 @@ export function useWebHost({
         tags: () => latest.current.data.tags(),
         collections: () => latest.current.data.collections(),
         libraries: () => latest.current.data.libraries(),
+        matches: (indexedKey, filter) =>
+          latest.current.data.matches(indexedKey, filter),
       },
       insertTarget: () => latest.current.insertTarget(),
       persistence: {

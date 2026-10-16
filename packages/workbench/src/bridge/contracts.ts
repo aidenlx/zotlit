@@ -165,6 +165,32 @@ const snapshotRootDescriptorsSchema = v.object({
   ),
 });
 
+/** What the Items filter reads of a Sample Item; see `QueryItemSeed`. */
+const queryItemSeedSchema = v.object({
+  scan: v.object({
+    itemID: v.number(),
+    key: v.string(),
+    itemType: v.string(),
+    dateAdded: v.nullable(v.number()),
+    dateModified: v.nullable(v.number()),
+  }),
+  groupID: v.nullable(v.number()),
+  fields: v.record(v.string(), v.string()),
+  custom: v.record(v.string(), v.string()),
+  customFieldNames: v.array(v.string()),
+  creators: v.array(
+    v.object({
+      firstName: v.string(),
+      lastName: v.string(),
+      fieldMode: v.picklist([0, 1]),
+      creatorType: v.string(),
+      primary: v.boolean(),
+    }),
+  ),
+  tags: v.array(v.object({ name: v.string(), type: v.picklist([0, 1]) })),
+  collections: v.array(v.array(v.string())),
+});
+
 export const itemSnapshotSchema: v.GenericSchema<ItemSnapshot> = v.object({
   contractVersion: v.number(),
   revision: v.string(),
@@ -187,6 +213,7 @@ export const itemSnapshotSchema: v.GenericSchema<ItemSnapshot> = v.object({
     annotations: v.array(snapshotRootDescriptorsSchema),
   }),
   unavailable: v.array(v.object({ path: v.string(), reason: v.string() })),
+  seed: v.optional(queryItemSeedSchema),
 });
 
 export const profileDocumentSchema = v.variant("state", [

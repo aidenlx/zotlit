@@ -1,12 +1,12 @@
 import { expect, it } from "vitest";
 
+import { planItemFilter, queryItemFrom } from "@zotlit/item-query";
 import type { LanguagePack } from "@zotlit/obsidian-i18n";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { runtime } from "@/lib/i18n/generated/runtime";
 import chinesePack from "@/lib/i18n/generated/zh-CN.json";
 import type { ProfileId } from "@/lib/profile-stamp";
-import { selectProfileByMatch } from "@/services/profile-selection";
 
 import { profileServiceFixture } from "./__fixtures__/service";
 
@@ -103,10 +103,8 @@ it.each([
     expect(f.vault.contents.get(imported.path)).toBe(expected);
     if (includeMatch === false) expect(imported.match.state).toBe("absent");
     else
-      expect(imported.match).toMatchObject({
-        state: "unevaluable",
-        problem: { code: "unknown-library", text: '"group:987654"' },
-      });
+      // An unknown Library is an ordinary nonmatch.
+      expect(imported.match.state).toBe("evaluable");
   },
 );
 
@@ -141,14 +139,30 @@ it("imports an unknown collection and tag unchanged as an ordinary nonmatch", as
   const imported = await (await f.profile.prepareImport(source)).import();
   expect(f.vault.contents.get(imported.path)).toBe(source);
   expect(imported.match.state).toBe("evaluable");
+  const planned = planItemFilter(
+    imported.match.state === "evaluable" ? imported.match.filter : "",
+  );
+  if (!("matches" in planned)) throw new Error(planned.message);
   expect(
-    selectProfileByMatch(f.profile.profiles, {
-      library: { type: "personal" },
-      itemType: "book",
-      collections: [["Local", "Reading"]],
-      tags: ["Reading"],
-    }),
-  ).toEqual({ outcome: "unmatched" });
+    planned.matches(
+      queryItemFrom({
+        scan: {
+          itemID: 1,
+          key: "BOOK2345",
+          itemType: "book",
+          dateAdded: null,
+          dateModified: null,
+        },
+        groupID: null,
+        fields: {},
+        custom: {},
+        customFieldNames: [],
+        creators: [],
+        tags: [{ name: "Reading", type: 0 }],
+        collections: [["Local", "Reading"]],
+      }),
+    ),
+  ).toBe(false);
 });
 
 it("allows changed Share metadata after omitting an aliased match, while retaining the source", async () => {

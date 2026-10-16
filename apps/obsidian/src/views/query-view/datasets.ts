@@ -151,14 +151,6 @@ export interface DatasetSpec {
   readonly sort: readonly SortCandidate[];
   /** The groupings the layouts of the dataset can gather rows by, in order. */
   readonly group: readonly Grouping[];
-  /**
-   * What a filter condition puts before a field of the Item and of the
-   * Attachment; `null` where the dataset has no Attachment.
-   */
-  readonly prefix: {
-    readonly item: string;
-    readonly attachment: string | null;
-  };
 }
 
 export const DATASETS: Readonly<Record<QueryFileDataset, DatasetSpec>> = {
@@ -192,7 +184,6 @@ export const DATASETS: Readonly<Record<QueryFileDataset, DatasetSpec>> = {
       BY_TAG,
       BY_ITEM_COLLECTION,
     ],
-    prefix: { item: "item.", attachment: "attachment." },
   },
   attachments: {
     engine: ATTACHMENTS,
@@ -208,7 +199,6 @@ export const DATASETS: Readonly<Record<QueryFileDataset, DatasetSpec>> = {
       ["item.date", m.query_view_property_item_date, "date"],
     ],
     group: [byItem("title"), BY_TAG, BY_ITEM_COLLECTION],
-    prefix: { item: "item.", attachment: "" },
   },
   items: {
     engine: ITEMS,
@@ -229,7 +219,6 @@ export const DATASETS: Readonly<Record<QueryFileDataset, DatasetSpec>> = {
       BY_TAG,
       byList("collections[]", m.query_view_property_collection, "collections"),
     ],
-    prefix: { item: "", attachment: null },
   },
 };
 

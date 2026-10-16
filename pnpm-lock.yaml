@@ -418,6 +418,9 @@ importers:
       '@unpic/react':
         specifier: ^1.0.2
         version: 1.0.2(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@zotlit/item-query':
+        specifier: workspace:*
+        version: link:../../packages/item-query
       '@zotlit/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -1447,6 +1450,9 @@ importers:
       '@zotlit/filter-expression':
         specifier: workspace:*
         version: link:../filter-expression
+      '@zotlit/item-query':
+        specifier: workspace:*
+        version: link:../item-query
       '@zotlit/templates':
         specifier: workspace:*
         version: link:../templates
@@ -1462,6 +1468,9 @@ importers:
       diff:
         specifier: 'catalog:'
         version: 8.0.4
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0
       jsonc-parser:
         specifier: ^3.3.1
         version: 3.3.1

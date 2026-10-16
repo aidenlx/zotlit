@@ -62,7 +62,7 @@ export async function profileServiceFixture(
     } as unknown as ZoteroReadsService),
   }));
   const profile = stack.use(
-    new ProfileService({ app, settings, template, noteIndex, libraryScope }),
+    new ProfileService({ app, settings, template, noteIndex }),
   );
   await profile.ready;
   const cleanup = stack.move();

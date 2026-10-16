@@ -5,8 +5,8 @@ import {
   formatFilterRow,
   freshFilterRow,
   parseFilterRow,
-} from "./filter-fields";
-import type { FilterFieldKind } from "./filter-fields";
+} from "./fields";
+import type { FilterFieldKind } from "./fields";
 
 const ANNOTATION_KINDS: FilterFieldKind[] = [
   "color",
@@ -34,7 +34,7 @@ describe("filterFields", () => {
     );
   });
 
-  it("names Item fields without a prefix on Items, and offers no Annotation or Attachment conditions", () => {
+  it("names Item fields without a prefix on Items, and offers the Item's Tags but no Annotation or Attachment conditions", () => {
     const fields = filterFields("items");
     expect(fields.map((field) => field.kind)).toEqual([
       "item-title",
@@ -44,6 +44,7 @@ describe("filterFields", () => {
       "item-type",
       "collection",
       "library",
+      "tags",
     ]);
     expect(fields.find((field) => field.kind === "year")?.path).toBe(
       "date.year",

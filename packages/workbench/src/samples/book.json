@@ -240,5 +240,34 @@
       "reason": "A personal-library web link carries the Zotero account name, so it is not included in Item Snapshots."
     }
   ],
-  "revision": "bf38b34fa28345d700cf89072e847b333a3eeabfb623644c4783da7aeca25061"
+  "seed": {
+    "scan": {
+      "itemID": 61,
+      "key": "NW2CPDTC",
+      "itemType": "book",
+      "dateAdded": 1747884630000,
+      "dateModified": 1747884630000
+    },
+    "groupID": null,
+    "fields": {
+      "title": "Thinking, fast and slow",
+      "date": "2011-00-00 2011",
+      "citationKey": "Kahneman2011",
+      "publisher": "Penguin Books"
+    },
+    "custom": {},
+    "customFieldNames": [],
+    "creators": [
+      {
+        "firstName": "D",
+        "lastName": "Kahneman",
+        "fieldMode": 0,
+        "creatorType": "author",
+        "primary": true
+      }
+    ],
+    "tags": [],
+    "collections": []
+  },
+  "revision": "9cffd7ec56df0181eead532c44b8b4d3f05eed9f9c47961b916a08182ae162db"
 }

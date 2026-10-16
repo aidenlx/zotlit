@@ -1,8 +1,3 @@
-import type {
-  AvailableLibrary,
-  FlatCondition,
-  MatchCondition,
-} from "#/match/condition";
 import type { ReactNode } from "react";
 
 import { filterGroup } from "@zotlit/filter-expression";
@@ -13,10 +8,6 @@ import type {
 } from "@zotlit/filter-expression";
 
 // Preserve nested Match trees and expression rows through labelled edits.
-import type { WorkbenchMessages } from "./generated/messages";
-import { describeProblem } from "./match.diagnostic";
-
-import { compileCondition, formatCondition } from "#/match/condition";
 
 /** A leaf the visual rows cannot show: its Filter Expression, as written. */
 export interface ExpressionCondition {
@@ -33,19 +24,15 @@ export interface LabelledRow {
 }
 
 /** A condition the editor shows as one row. */
-export type RowCondition<Row extends LabelledRow = FlatCondition> =
-  | Row
-  | ExpressionCondition;
-/** What a labelled row can test; an expression row is reached by toggling a row. */
-export type ConditionKind = FlatCondition["kind"];
+export type RowCondition<Row extends LabelledRow> = Row | ExpressionCondition;
 /** `all`: every condition must hold; `any`: one must; `none`: none may. */
 export type GroupMatch = "all" | "any" | "none";
-export interface ConditionGroup<Row extends LabelledRow = FlatCondition> {
+export interface ConditionGroup<Row extends LabelledRow> {
   kind: "group";
   match: GroupMatch;
   conditions: EditorCondition<Row>[];
 }
-export type EditorCondition<Row extends LabelledRow = FlatCondition> =
+export type EditorCondition<Row extends LabelledRow> =
   | ConditionGroup<Row>
   | RowCondition<Row>;
 
@@ -132,14 +119,6 @@ export function freshRow<Row extends LabelledRow>(
   kind: Row["kind"],
 ): Row {
   return kindOf(vocabulary, kind).fresh();
-}
-
-/** Vocabulary supplied by the current host. */
-export interface MatchEditorDeps {
-  libraries: readonly (AvailableLibrary & { name?: string })[];
-  tags: readonly string[];
-  /** Root-first Collection paths available in this host. */
-  collections: readonly { path: readonly string[] }[];
 }
 
 /**
@@ -295,13 +274,6 @@ export function settle<Row extends LabelledRow>(
     : pruned;
 }
 
-/** The tree a compiled condition reads as: a lone condition sits in a "Match all" group. */
-export function asGroup(condition: MatchCondition): ConditionGroup {
-  return condition.kind === "group"
-    ? condition
-    : { kind: "group", match: "all", conditions: [condition] };
-}
-
 /** `root` with the group at `path` replaced by `fn`'s result. */
 export function updateGroup<Row extends LabelledRow>(
   root: ConditionGroup<Row>,
@@ -421,40 +393,6 @@ export function moveAt<Row extends LabelledRow>(
   });
 }
 
-/**
- * Whether the Profile rows show `condition`: a negated "contains any" or
- * "contains all" has no row operator.
- */
-export function visuallyEditable(
-  condition: MatchCondition,
-): condition is FlatCondition {
-  return (
-    condition.kind !== "group" &&
-    ((condition.kind !== "collections" && condition.kind !== "tags") ||
-      !condition.negated ||
-      condition.operator === "contains" ||
-      condition.operator === "within" ||
-      condition.operator === "isEmpty")
-  );
-}
-
-/** A condition of `kind` with no value yet, keeping the negation. */
-export function freshCondition(
-  kind: ConditionKind,
-  negated: boolean,
-): FlatCondition {
-  switch (kind) {
-    case "library":
-      return { kind, operator: "is", negated, values: [""] };
-    case "item-type":
-      return { kind, operator: "is", negated, values: [""] };
-    case "collections":
-      return { kind, operator: "within", negated, values: [] };
-    case "tags":
-      return { kind, operator: "contains", negated, values: [] };
-  }
-}
-
 /** A labelled row as an expression row: its meaning, as text. */
 export function asExpression<Row extends LabelledRow>(
   condition: Row,
@@ -490,84 +428,4 @@ export function freshGroup<Row extends LabelledRow>(
     match: "all",
     conditions: [placeholderRow(vocabulary)],
   };
-}
-
-/** Whether a Profile row has a value to test, so that it stores a condition. */
-export function hasValue(condition: FlatCondition): boolean {
-  switch (condition.kind) {
-    case "library":
-    case "item-type":
-      return condition.values[0] !== "";
-    case "collections":
-      return (
-        condition.operator === "isEmpty" ||
-        condition.values.some((path) => path.join("") !== "")
-      );
-    case "tags":
-      return (
-        condition.operator === "isEmpty" ||
-        condition.values.some((value) => value !== "")
-      );
-  }
-}
-
-/**
- * What keeps one row from being saved, as the user reads it. An expression
- * row answers through the same tree checks as the visual rows.
- */
-export function conditionIssue(
-  m: WorkbenchMessages,
-  condition: RowCondition,
-  deps: MatchEditorDeps,
-): string | null {
-  switch (condition.kind) {
-    case "library": {
-      const { problem } = compileCondition(
-        formatCondition(condition),
-        deps.libraries,
-      );
-      return problem ? describeProblem(m, problem) : null;
-    }
-    case "item-type":
-      return null;
-    case "collections":
-      return condition.operator !== "isEmpty" &&
-        (condition.values.length === 0 ||
-          condition.values.some(
-            (path) =>
-              path.length === 0 || path.some((segment) => segment === ""),
-          ))
-        ? m.workbench_match_collection_empty()
-        : null;
-    case "tags":
-      return condition.operator !== "isEmpty" &&
-        (condition.values.length === 0 ||
-          condition.values.some((value) => value === ""))
-        ? m.workbench_match_tag_empty()
-        : null;
-    case "expression": {
-      const { condition: compiled, problem } = compileCondition(
-        condition.text,
-        deps.libraries,
-      );
-      if (problem) return describeProblem(m, problem);
-      return treeIssue(m, asGroup(compiled), deps);
-    }
-  }
-}
-
-/** The first incomplete condition, as the user reads it. */
-export function treeIssue(
-  m: WorkbenchMessages,
-  group: ConditionGroup,
-  deps: MatchEditorDeps,
-): string | null {
-  for (const condition of group.conditions) {
-    const issue =
-      condition.kind === "group"
-        ? treeIssue(m, condition, deps)
-        : conditionIssue(m, condition, deps);
-    if (issue) return issue;
-  }
-  return null;
 }

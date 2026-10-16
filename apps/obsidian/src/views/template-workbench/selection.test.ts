@@ -40,6 +40,7 @@ it("searches Zotero from the first item chooser and selects a matching paper", a
       tags: async () => [],
       collections: async () => [],
       libraries: async () => [],
+      matches: async () => ({ kind: "missing" }),
     },
     insertTarget: () => null,
   });

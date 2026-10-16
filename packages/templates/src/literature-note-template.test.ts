@@ -1474,7 +1474,7 @@ Annotation`;
     "match: null",
     "match: []",
     "match: {and: [], or: []}",
-    "match: {not: []}",
+    "match: {nor: []}",
     "match: {and: [23]}",
   ])("rejects a structurally invalid match: %s", (match) => {
     expect(() =>
@@ -1487,6 +1487,7 @@ Annotation`;
     'match: " "',
     "match: {and: []}",
     "match: {or: []}",
+    "match: {not: []}",
   ])("excludes Default when it carries %s", (match) => {
     expect(() =>
       new TemplateFacade().parseLiteratureNoteTemplate(

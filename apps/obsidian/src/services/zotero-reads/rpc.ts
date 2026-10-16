@@ -810,13 +810,4 @@ export class ZoteroReads extends RpcGroup.make(
     success: Schema.Array(Schema.Array(Schema.String)),
     error: ReadError,
   }),
-  /** An item's tag names and the root-first path of each direct collection. */
-  Rpc.make("MembershipFacts", {
-    payload: { itemID: Schema.Number, libraryID: Schema.Number, ...snapshot },
-    success: Schema.Struct({
-      tags: Schema.Array(Schema.String),
-      collections: Schema.Array(Schema.Array(Schema.String)),
-    }),
-    error: ReadError,
-  }),
 ) {}

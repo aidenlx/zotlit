@@ -105,14 +105,18 @@ import {
 
 import type { NoteFeatureDeps } from "./context";
 /** The note feature's deps, with the fixture database its reads serve. */
-type TestDeps = Omit<NoteFeatureDeps, "profile"> &
-  Partial<Pick<NoteFeatureDeps, "profile">> & {
+type TestDeps = Omit<NoteFeatureDeps, "profile" | "query"> &
+  Partial<Pick<NoteFeatureDeps, "profile" | "query">> & {
     db: { client: NodeDatabaseClient };
   };
 import { createNoteFeature as createFeature } from "./operations";
 function createNoteFeature(deps: TestDeps) {
   const feature = createFeature({
     ...deps,
+    // These Profiles name no Match, so creation runs no query.
+    query: deps.query ?? {
+      run: () => Promise.reject(new Error("This test runs no query.")),
+    },
     profile:
       deps.profile ??
       profileReader(
