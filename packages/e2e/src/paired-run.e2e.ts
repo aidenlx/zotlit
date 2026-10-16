@@ -7074,7 +7074,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       await prepareAuthorizationFixture();
       await using cleanup = new AsyncDisposableStack();
       const key = seededAnnotation.key;
-      const notePath = "query-files/Lab note.md";
+      const notePath = "literatures/rougierTenSimpleRules2014.md";
       const original =
         (await storedAnnotation(api, serverID, key)).annotationComment ?? "";
       const storedComment = async () =>
@@ -7091,7 +7091,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       ).toBe(true);
 
       // The PDF open in Obsidian holds the Attachment's Annotation History;
-      // the Lab note, in Live Preview beside it, embeds a view of its Item.
+      // its Literature Note, in Live Preview beside it, embeds a view of its Item.
       const layout = await obEval(
         vaultId!,
         "JSON.stringify(app.workspace.getLayout())",

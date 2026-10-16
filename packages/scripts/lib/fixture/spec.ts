@@ -166,12 +166,12 @@ export interface FixtureItem {
    */
   literatureNoteProfile?: string;
   /**
-   * Seed this Item's Literature Note with a managed region holding the
-   * per-Annotation output ZotLit wrote before Mark Landing (#1156): a plain
-   * page label, with no link and no Annotation Anchor. Update Note rewrites
-   * that region, so the note stands for work a reader has already done.
+   * Seed this Item's Literature Note as the default note template renders it:
+   * the Zotero and Attachment links, then a managed region whose Annotations
+   * are a Query Block. Below the region, outside what Update Note rewrites,
+   * the note embeds a view of a Query File, so one note holds both forms.
    */
-  literatureNoteStaleAnnotations?: boolean;
+  literatureNoteRendered?: boolean;
   /**
    * End this Item's Literature Note with a Query Block of the Item's own
    * Annotations (`item == this.item`), so the note shows a Query View whose
@@ -586,7 +586,7 @@ export const ITEMS: readonly FixtureItem[] = [
     ],
     dateModified: "2025-02-05 12:00:00",
     collectionIDs: [1],
-    literatureNoteStaleAnnotations: true,
+    literatureNoteRendered: true,
   },
   {
     itemID: 57,

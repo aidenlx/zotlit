@@ -2466,7 +2466,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
   it("embeds a Query File in two notes, and a change in one embed saves the file and updates the other", async () => {
     const queryPath = "query-files/Lab annotations.zotquery";
-    const labNote = "query-files/Lab note.md";
+    const labNote = `literatures/${annotationItem.literatureNoteName ?? annotationItem.key}.md`;
     const overview = "query-files/Lab overview.md";
     const layout = await obEval(
       vaultId,
@@ -2484,7 +2484,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
     });
 
-    // The Lab note in Reading view, the overview in Live Preview, and the
+    // The Literature Note in Reading view, the overview in Live Preview, and the
     // Query File in its own tab, each in a pane of its own so all render.
     await obEval(
       vaultId,
@@ -2529,7 +2529,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const queryKeys = async (filter: string | null, thisItem?: string) =>
       (await queryRows(filter, thisItem)).map((row) => row.indexedKey);
 
-    // `![[file#View]]` shows that view, with `this.item` the Lab note's Item;
+    // `![[file#View]]` shows that view, with `this.item` the note's Item;
     // `![[file]]` shows the first view, grouped by Item.
     const mine = await queryKeys("item == this.item", annotationItem.key);
     const all = byItem(await queryRows(null)).cards;
@@ -2558,7 +2558,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
     ]);
 
-    // A filter for all views, set in the Lab note's embed, saves to the file;
+    // A filter for all views, set in the Literature Note's embed, saves to the file;
     // the overview's embed and the open tab show it.
     const figure = 'tags.contains("figure")';
     await obEval(
