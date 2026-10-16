@@ -13,7 +13,7 @@ Use them to keep a set of annotations in front of you while you write. For examp
 
 ## Query files and query blocks [#hosts]
 
-A **query file** is a vault file with the extension `.zotquery`. It works like an Obsidian `.base` file, but it reads your Zotero library instead of your notes. You can open it in a tab, or embed it in any note:
+A **query file** is a vault file with the extension `.zotquery`. It displays a live, interactive view of items, files, or annotations from your Zotero library. If you are familiar with Obsidian Bases (`.base`), a query file uses a similar structure and toolbar controls, but queries your Zotero library directly. You can open it in a tab, or embed it in any note:
 
 ```md
 ![[Figures.zotquery]]
@@ -51,12 +51,12 @@ A query file or query block holds one or more **views**. Each view has a name an
 
 Each layout shows some kinds of records:
 
-| Layout                                               | <UiLabel name={m.query_view_dataset()} /> | What you see                                                                                       |
-| ---------------------------------------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| <UiLabel name={m.query_view_layout_annotations()} /> | Annotations                               | Annotation cards, the same as in the sidebar. You can edit a comment or tags on a card.            |
-| <UiLabel name={m.query_view_layout_table()} />       | Items                                     | One row per paper, as in Zotero's item list. A row expands into its files, annotations, and notes. |
-| <UiLabel name={m.query_view_layout_list()} />        | Annotations, attachments, or items        | One line per record with its properties.                                                           |
-| <UiLabel name={m.query_view_layout_cards()} />       | Annotations, attachments, or items        | One card per record. The first property is the card's title.                                       |
+| Layout                                               | <UiLabel name={m.query_view_dataset()} /> | What you see                                                                                                                                                                           |
+| ---------------------------------------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <UiLabel name={m.query_view_layout_annotations()} /> | Annotations                               | Annotation cards, the same as in the sidebar. You can edit a comment or tags on a card.                                                                                                |
+| <UiLabel name={m.query_view_layout_table()} />       | Items                                     | One row per paper, as in Zotero's item list. A row expands into its files, annotations, and notes. Attachment titles and annotation text are clickable links that open the source PDF. |
+| <UiLabel name={m.query_view_layout_list()} />        | Annotations, attachments, or items        | One line per record with its properties.                                                                                                                                               |
+| <UiLabel name={m.query_view_layout_cards()} />       | Annotations, attachments, or items        | One card per record. The first property is the card's title.                                                                                                                           |
 
 Filters come in two kinds. The filters for **all views** apply to every view of the file that reads the same records as the first view. The filters for **this view** apply to one view only. Put a rule that every view shares, such as one Collection, in the filters for all views.
 
@@ -96,7 +96,7 @@ What `this` refers to depends on where the view shows:
 
 When the paper is in a library outside your <UiLabel name={m.settings_library_scope_name()} /> setting, the view shows no rows and says <UiLabel name={m.query_view_warning_outside_library_scope()} /> Other query warnings show above the rows in the same way.
 
-A filter that reads `this` where it has no value cannot run. The view then shows <UiLabel name={m.query_view_failed()} /> with the reason. Open the file through an embed in a Literature Note to see its rows.
+A filter that reads `this` where it has no value cannot run. The view then shows <UiLabel name={m.query_view_failed()} /> with the reason. The view also displays a suggestion explaining where to open it, such as embedding the view in a Literature Note or opening a PDF in the sidebar.
 
 ## Annotations in Literature Notes [#literature-notes]
 

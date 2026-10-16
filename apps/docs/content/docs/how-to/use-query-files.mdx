@@ -66,13 +66,14 @@ Each layout adds its own options:
 | <UiLabel name={m.query_view_layout_annotations()} /> | <UiLabel name={m.query_view_card_width()} />, <UiLabel name={m.query_view_show_comment()} />, <UiLabel name={m.query_view_show_tags()} />, <UiLabel name={m.query_view_show_page()} /> |
 | <UiLabel name={m.query_view_layout_list()} />        | <UiLabel name={m.query_view_list_markers()} />, <UiLabel name={m.query_view_list_indent_properties()} />, <UiLabel name={m.query_view_list_property_separator()} />                    |
 | <UiLabel name={m.query_view_layout_cards()} />       | <UiLabel name={m.query_view_card_size()} />                                                                                                                                            |
+| <UiLabel name={m.query_view_layout_table()} />       | Column order and widths are adjusted directly on table headers (see [Use the Table layout](#table)).                                                                                   |
 
 ## Filter the rows [#filter]
 
 Select <UiLabel name={m.query_view_filter()} />. The filter editor has two parts:
 
 - <UiLabel name={m.query_view_filter_all_views()} />: conditions for every view
-  of the file that reads the same records as the first view.
+  of the file that shows the same kind of rows as the first view.
 - <UiLabel name={m.query_view_filter_this_view()} />: conditions for the view on
   screen only.
 
@@ -80,13 +81,19 @@ Select <UiLabel name={m.query_view_filter()} />. The filter editor has two parts
   <Step>
     ### Add a condition
 
-    Select <UiLabel name={m.workbench_match_add_condition()} />. A new row reads <UiLabel name={m.workbench_match_value_empty()} /> and filters nothing until it has a value. Choose a property, an operator, and a value. For example, choose <UiLabel name={m.workbench_filter_field_color()} />, <UiLabel name={m.workbench_filter_op_is()} />, and <UiLabel name={m.workbench_filter_color_yellow()} />.
+    Select <UiLabel name={m.workbench_match_add_condition()} />. A new row reads <UiLabel name={m.workbench_match_value_empty()} /> and filters nothing until it has a value. Choose a property, an operator, and a value. For example, choose <UiLabel name={m.workbench_filter_field_color()} />, <UiLabel name={m.workbench_filter_op_is()} />, and <UiLabel name={m.workbench_filter_color_yellow()} /> to find key highlights. In an items view, choose <UiLabel name={m.workbench_filter_field_year()} />, <UiLabel name={m.workbench_filter_op_on_or_after()} />, and enter `2020` to find recent publications.
 
   </Step>
   <Step>
     ### Combine conditions
 
-    Choose <UiLabel name={m.workbench_match_match_all()} /> to show the records that match every condition, <UiLabel name={m.workbench_match_match_any()} /> to show the records that match at least one, or <UiLabel name={m.workbench_match_match_none()} /> to hide the records that match any of them. In a <UiLabel name={m.workbench_match_match_none()} /> group, the rows are joined by <UiLabel name={m.workbench_match_conjunction_or()} />. Select <UiLabel name={m.workbench_match_add_group()} /> to put a group of conditions inside another group.
+    Choose <UiLabel name={m.workbench_match_match_all()} /> to show records that match every condition, <UiLabel name={m.workbench_match_match_any()} /> to show records that match at least one, or <UiLabel name={m.workbench_match_match_none()} /> to hide records that match any condition in the group. Select <UiLabel name={m.workbench_match_add_group()} /> to nest a group of conditions inside another group (for example, to find yellow highlights that also have either the tag `#theory` or `#method`).
+
+  </Step>
+  <Step>
+    ### Arrange conditions
+
+    Drag the handle (<UiLabel name={m.workbench_match_drag_to_reorder()} />) on any condition or group to move it up or down. You can drag a condition within a group, into a nested group, or out to a parent group. You can also select the handle and press `Alt+Arrow Up` or `Alt+Arrow Down` to move the row.
 
     To remove a condition, delete its row. When you delete the last row of a nested group, the group goes too. When you delete the last row of the filter, the filter goes too.
 
@@ -142,6 +149,8 @@ A record with several Tags or Collections shows in the group of each one. Record
 ## Choose the properties [#properties]
 
 Select <UiLabel name={m.query_view_properties()} />. Select the checkbox of a property to show or hide it, and drag a property to change its place. Type in <UiLabel name={m.query_view_properties_search()} /> to find a property. To add a property that the list does not have, type its path, such as `item.citationKey`, and select the row that adds it.
+
+Select the chevron button on any property row (or press the Right arrow key) to open its settings page, where you can set a [display name](#display-names) or edit a [formula](#formulas).
 
 The Table, List, and Cards layouts show these properties in this order. Copy and CSV export use them as columns.
 
@@ -217,16 +226,22 @@ To return to the default name, clear the field. Without a display name, a proper
 
 Select the result count to open the <UiLabel name={m.query_view_results_menu()} /> menu:
 
-- <UiLabel name={m.query_view_limit()} />: the most rows the view shows. Clear
-  the field, or select the
-  <UiLabel name={m.query_view_show_all({ count: 250 })} /> row, to show every
-  match. When more records match than the view shows, the count reads, for
-  example,
+- <UiLabel name={m.query_view_limit()} />: sets the maximum number of rows to
+  show. Clear the field or select
+  <UiLabel name={m.query_view_show_all({ count: 250 })} /> to show every match.
+  When more records match than the view shows, the result count displays both
+  numbers, such as
   <UiLabel name={m.query_view_results_limited({ count: 250, shown: 100 })} />.
-- <UiLabel name={m.query_view_copy()} />: copies the rows on screen as a table.
-  Paste it into a note or a spreadsheet.
-- <UiLabel name={m.query_view_export_csv()} />: saves the rows on screen as a
-  CSV file.
+- <UiLabel name={m.query_view_copy()} />: copies the visible columns of the
+  shown rows to your clipboard as a table. Paste it into an Obsidian note as a
+  Markdown table, or into spreadsheets such as Microsoft Excel, Google Sheets,
+  or Apple Numbers.
+- <UiLabel name={m.query_view_export_csv()} />: saves the visible columns of the
+  shown rows as a CSV file. The file uses UTF-8 encoding with a byte order mark
+  so Excel and statistical software such as R or SPSS open international titles
+  and author names cleanly.
+
+Both copy and CSV export include only the properties shown in the view, in their visible order. Interface buttons, such as the <UiLabel name={m.query_view_table_literature_note()} /> column, are omitted.
 
 ## Search the rows [#search]
 
@@ -234,10 +249,36 @@ Select <UiLabel name={m.query_view_search()} /> and type. The view shows only th
 
 ## Use the Table layout [#table]
 
-The Table layout lists papers, as Zotero's item list does. To use it, set the records of the view to items in <UiLabel name={m.query_view_configure_view()} />, then choose <UiLabel name={m.query_view_layout_table()} />.
+The Table layout displays papers in a grid, similar to the main item list in Zotero. To use it, set the rows to items in <UiLabel name={m.query_view_configure_view()} />, then choose <UiLabel name={m.query_view_layout_table()} />.
 
-- Select <UiLabel name={m.query_view_table_expand()} /> on a paper to see its files and notes. Expand a file to see its annotations.
-- The <UiLabel name={m.query_view_table_literature_note()} /> column opens the paper's Literature Note. When the paper has no note, select <UiLabel name={m.query_view_table_create_note()} /> to create one. It is a property like the others: show or hide it in <UiLabel name={m.query_view_properties()} />, and drag its header to move it or its edge to resize it. Copying the rows and CSV export leave it out.
+### View files, notes, and annotations [#table-expand]
+
+Select <UiLabel name={m.query_view_table_expand()} /> on any paper to reveal its attached files, child notes, and annotations. Expand an attachment to see its individual annotations.
+
+Attachment titles and annotation text in table cells are clickable links:
+
+- Select a PDF attachment to open the file in Obsidian's PDF viewer.
+- Select an annotation to open the PDF directly to that page and highlight the mark.
+- Select any other file type to open it in Zotero.
+
+Hold `Ctrl` (Windows and Linux) or `Command` (macOS) while selecting a link to open it in a new tab.
+
+### Arrange and resize columns [#table-columns]
+
+You can adjust table columns directly in the view:
+
+- Drag a column header left or right to change column order.
+- Drag the boundary between two headers to resize a column width.
+- Double-click the boundary between two headers to return the column to its automatic width.
+- Select or right-click any column header to open its menu. The menu offers <UiLabel name={m.query_view_table_move_column_left()} />, <UiLabel name={m.query_view_table_move_column_right()} />, and <UiLabel name={m.query_view_table_reset_column_width()} />.
+
+Resized column widths save automatically in the query file.
+
+### Literature note column [#table-literature-note]
+
+The <UiLabel name={m.query_view_table_literature_note()} /> column opens the paper's Literature Note in Obsidian. When the paper does not have a Literature Note yet, select <UiLabel name={m.query_view_table_create_note()} /> to create one.
+
+This column behaves like any other property: you can show, hide, move, or rename it in <UiLabel name={m.query_view_properties()} />. Copy and CSV export leave this column out.
 
 ## Embed a query file in a note [#embed]
 
@@ -263,9 +304,11 @@ filters: item == this.item
 
 In a Literature Note, `this.item` is the paper that the note's `zotero-key` property names. When that paper's library is outside your <UiLabel name={m.settings_library_scope_name()} /> setting, the embed shows <UiLabel name={m.query_view_warning_outside_library_scope()} /> See [`this`: the paper of the note](/docs/concepts/query-files-and-query-blocks#this).
 
+When a view uses `this.item` or `this.attachment` without an active context (for example, in a standalone query file tab or an unlinked note), the view displays a suggestion explaining where to open it.
+
 ## Add a query block to a note [#block]
 
-A query block keeps a view in one note, with no separate file. Type a code block with the language `zotquery`:
+A query block keeps a live view inside one note without creating a separate file. Type a code block with the language `zotquery`:
 
 ````md
 ```zotquery
@@ -277,7 +320,7 @@ views:
 ```
 ````
 
-The block shows the view and its toolbar. A change in the toolbar rewrites the block text. This also works when the block shows through a section embed or a hover popover. When the note text changed in the meantime, the block shows <UiLabel name={m.query_block_save_failed()} />
+The block shows the view and its toolbar. Any change you make in the toolbar, such as changing sort order, adding filters, or selecting properties, rewrites the block text in your note automatically. This also works when the block shows through a section embed or a hover popover. When the note text changed in the meantime, the block shows <UiLabel name={m.query_block_save_failed()} /> Reopen the note to refresh the view.
 
 [Query file format](/docs/reference/query-file-format) lists every key that you can write.
 

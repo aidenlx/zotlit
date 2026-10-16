@@ -26,6 +26,7 @@ views:
       - title
       - firstAuthor
       - date
+      - vault.literatureNote
     limit: 100
   - type: annotations
     name: Figures
@@ -50,22 +51,22 @@ ZotLit keeps every other key in the file when it saves.
 
 ## View keys [#view]
 
-| Key          | Value                                                                                                                                                                     |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `type`       | The layout: `annotations`, `table`, `list`, or `cards`. Required.                                                                                                         |
-| `name`       | The view name. Required, and different from the other views of the file. When two views have the same name, the file shows a problem in place of its rows.                |
-| `from`       | The records of each row: `annotations`, `attachments`, or `items`. Required.                                                                                              |
-| `filters`    | The filters for this view. See [Filters](#filters).                                                                                                                       |
-| `sort`       | A list of `property` and `direction` pairs. The first pair sorts first. `direction` is `ASC` or `DESC`; the default is `ASC`.                                             |
-| `groupBy`    | One `property` and `direction` pair. The rows collect under one heading for each value of the property.                                                                   |
-| `groupOrder` | A list of group values for a Manual group order. Only the listed groups show, in this order. `null` is the group of rows with no value.                                   |
-| `limit`      | A positive whole number: the most rows the view shows. Without `limit`, the view shows every match.                                                                       |
-| `order`      | A list of property paths that each row shows, in order. Copy and CSV export use them as columns. Without `order`, the layout shows the default properties of the records. |
-| `columnSize` | The width in pixels of each table column that you resized, by property path. A column without an entry takes its automatic width.                                         |
+| Key          | Value                                                                                                                                                                                                                                                                        |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`       | The layout: `annotations`, `table`, `list`, or `cards`. Required.                                                                                                                                                                                                            |
+| `name`       | The view name. Required, and different from the other views of the file. When two views have the same name, the file shows a problem in place of its rows.                                                                                                                   |
+| `from`       | The records of each row: `annotations`, `attachments`, or `items`. Required.                                                                                                                                                                                                 |
+| `filters`    | The filters for this view. See [Filters](#filters).                                                                                                                                                                                                                          |
+| `sort`       | A list of `property` and `direction` pairs. The first pair sorts first. `direction` is `ASC` or `DESC`; the default is `ASC`.                                                                                                                                                |
+| `groupBy`    | One `property` and `direction` pair. The rows collect under one heading for each value of the property.                                                                                                                                                                      |
+| `groupOrder` | A list of group values for a Manual group order. Only the listed groups show, in this order. `null` is the group of rows with no value.                                                                                                                                      |
+| `limit`      | A positive whole number: the most rows the view shows. Without `limit`, the view shows every match.                                                                                                                                                                          |
+| `order`      | A list of property paths that each row shows, in order. Copy and CSV export use them as columns. Without `order`, the layout shows the default properties of the records. For an items table, it can also include `vault.literatureNote` to show the literature note column. |
+| `columnSize` | The width in pixels of each table column that you resized, by property path. A column without an entry takes its automatic width.                                                                                                                                            |
 
 `property` values are property paths of the view's records, as [ZotLit Query](/docs/reference/commands#query-cli) names them. For example, `title` is the paper title in an items view, and `item.title` is the paper title in an annotations view.
 
-`order` also takes `formula.<name>` for a [formula](#formulas). `sort` and `groupBy` do not take a formula yet: a view that sorts or groups by one shows an error in place of its rows.
+`order` also takes `vault.literatureNote` (in an items table) and `formula.<name>` for a [formula](#formulas). `sort` and `groupBy` do not take a formula yet: a view that sorts or groups by one shows an error in place of its rows.
 
 ### Layouts and records [#layouts]
 
@@ -148,7 +149,7 @@ A formula that cannot run on the records of a view marks its property in that vi
 
 ## Display names [#properties]
 
-`properties` gives a property its display name. Each key is the same text as an `order` entry: a property path, or `formula.<name>` for a formula.
+`properties` gives a property its display name. Each key is the same text as an `order` entry: a property path, `vault.literatureNote`, or `formula.<name>` for a formula.
 
 ```yaml
 properties:
