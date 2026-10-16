@@ -5,3 +5,10 @@
 .zt-column-drop-line.table-drag-target {
   z-index: var(--layer-cover);
 }
+
+/* A column resize keeps its cursor wherever the pointer goes. */
+body.zt-is-resizing-column,
+body.zt-is-resizing-column * {
+  cursor: col-resize !important;
+  user-select: none;
+}

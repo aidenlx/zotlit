@@ -468,7 +468,7 @@
   "annot_view_color_orange": "Orange",
   "annot_view_color_gray": "Gray",
   "annot_view_color_plum": "Plum",
-  "annot_view_page": "p.\u00a0{page}",
+  "annot_view_page": "p. {page}",
   "annot_view_open_page": "Open in Zotero",
   "annot_view_unsupported_type": "Unsupported annotation type: {type}",
   "annot_view_menu_copy_backlink": "Copy backlink",
@@ -846,7 +846,7 @@
   "graph_citations_citekey_copied": "Citation key copied.",
   "graph_citations_citekey_copy_failed": "Failed to copy citation key.",
   "graph_citations_add_literature_notes_group": "Add literature notes group",
-  "graph_citations_core_plugin_disabled": "The Graph view core plugin is disabled. Turn it on in Settings \u2192 Core plugins.",
+  "graph_citations_core_plugin_disabled": "The Graph view core plugin is disabled. Turn it on in Settings → Core plugins.",
   "graph_citations_unavailable": "Citation graph is not available.",
   "graph_citations_disabled": "“Show citations in graph view” is turned off. Turn it on in Settings → ZotLit → Citations.",
   "settings_citation_editor_heading": "In-text citations",
@@ -1919,10 +1919,18 @@
     "prefs_pane_label": "ZotLit",
     "prefs_open_section": "Opening in Obsidian",
     "prefs_pane_type": "Open notes in",
-    "prefs_pane_type_active": { "label": "Active tab" },
-    "prefs_pane_type_tab": { "label": "New tab" },
-    "prefs_pane_type_split": { "label": "New tab group" },
-    "prefs_pane_type_window": { "label": "New window" },
+    "prefs_pane_type_active": {
+      "label": "Active tab"
+    },
+    "prefs_pane_type_tab": {
+      "label": "New tab"
+    },
+    "prefs_pane_type_split": {
+      "label": "New tab group"
+    },
+    "prefs_pane_type_window": {
+      "label": "New window"
+    },
     "prefs_pane_type_description": "Where a literature note or the template data explorer opens in Obsidian. New window is desktop only.",
     "prefs_notify_section": "Obsidian Notifications",
     "prefs_notify_enable": {
@@ -2608,7 +2616,10 @@
   "query_view_table_loading": "Loading…",
   "query_view_table_children_failed": "Could not load these rows.",
   "query_view_table_page": "Page {page}",
-  "query_view_table_reset_column_size": "Reset column size",
+  "query_view_table_move_column_left": "Move left",
+  "query_view_table_move_column_right": "Move right",
+  "query_view_table_reset_column_width": "Reset column width",
+  "query_view_table_resize_column_hint": "Drag to resize, double-click to reset",
   "query_view_card_width": "Card width",
   "query_view_show_comment": "Show comment",
   "query_view_show_tags": "Show tags",
@@ -2711,6 +2722,11 @@
   ],
   "query_view_warning_outside_library_scope": "This item's library is not in the library scope, so the view cannot show it. Add the library to the library scope in ZotLit settings.",
   "query_view_failed": "This view cannot show results.",
+  "query_view_context_hint_item": "Embed this view in a literature note to see its Item's records: there this.item is the note's Item.",
+  "query_view_context_hint_attachment": "Only the annotation view in the sidebar binds this.attachment, to the Zotero PDF it follows.",
+  "query_view_context_hint_note_item": "This note has no zotero-key, so this.item has no Item. Add the Item's key to the note's properties.",
+  "query_view_context_hint_sidebar_item": "Open a literature note or a Zotero PDF; this.item is its Item.",
+  "query_view_context_hint_sidebar_attachment": "Open a Zotero PDF; this.attachment is its Attachment.",
   "query_view_diagnostic_corrections": "Possible corrections: {suggestions}.",
   "query_view_problem_invalid_yaml": "This file is not valid YAML. {message}",
   "query_view_problem_not_a_map": "This file must hold keys such as \"views\".",

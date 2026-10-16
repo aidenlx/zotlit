@@ -2,7 +2,7 @@
 // The Query View runs one view of a Query File through ZotLit Query and shows
 // its rows as live Annotation Cards. These tests drive it as a host does: the
 // file's text in, the cards, the count and the messages out.
-import { resetMockPlatform, setMockPlatform } from "@mock/obsidian";
+import { Menu, resetMockPlatform, setMockPlatform } from "@mock/obsidian";
 import { Scope } from "obsidian";
 import type { App } from "obsidian";
 import { act } from "preact/test-utils";
@@ -1440,6 +1440,70 @@ it("shows a column at the width the view keeps, and a double click on its edge s
   expect(save).toHaveBeenCalledTimes(1);
   expect(saved.at(-1)).not.toContain("columnSize");
   expect(header("title").dataset.sized).toBeUndefined();
+});
+
+it("opens the header menu on a click or a right click, with what has nothing to do disabled, not hidden", async () => {
+  // A move runs the query again, for the new order of the fields.
+  const { view, el, settle, save, saved } = await mount([
+    result([itemRow("ITEMAAAA", "Ten simple rules")]),
+    result([itemRow("ITEMAAAA", "Ten simple rules")]),
+  ]);
+  await act(() =>
+    view.setText(`${TABLE_FILE}    columnSize:
+      date: 140
+`),
+  );
+  await settle();
+  const header = (path: string) =>
+    el.querySelector<HTMLElement>(`th[data-query-column="${path}"]`)!;
+  const open = (path: string, type: "click" | "contextmenu") => {
+    Menu.instances.length = 0;
+    void act(() => {
+      header(path).dispatchEvent(
+        new MouseEvent(type, { bubbles: true, cancelable: true }),
+      );
+    });
+    const menu = Menu.instances.at(-1)!;
+    return Object.fromEntries(
+      menu.items.map((item) => [item.title, item] as const),
+    );
+  };
+
+  // The first column at its auto width: it can only move right.
+  const first = open("title", "contextmenu");
+  expect(Object.keys(first)).toEqual([
+    "Move left",
+    "Move right",
+    "Reset column width",
+  ]);
+  expect(first["Move left"]!.disabled).toBe(true);
+  expect(first["Move right"]!.disabled).toBe(false);
+  expect(first["Reset column width"]!.disabled).toBe(true);
+  first["Reset column width"]!.click();
+  expect(save).not.toHaveBeenCalled();
+
+  // The last column, resized: it can move left and reset.
+  const last = open("date", "click");
+  expect(last["Move left"]!.disabled).toBe(false);
+  expect(last["Move right"]!.disabled).toBe(true);
+  expect(last["Reset column width"]!.disabled).toBe(false);
+  await act(async () => {
+    last["Move left"]!.click();
+    await view.flush();
+  });
+  expect(saved.at(-1)).toContain("    order:\n      - date\n      - title\n");
+  await settle();
+  expect(
+    [...el.querySelectorAll("th[data-query-column]")].map((th) =>
+      th.getAttribute("data-query-column"),
+    ),
+  ).toEqual(["date", "title"]);
+
+  await act(async () => {
+    open("date", "contextmenu")["Reset column width"]!.click();
+    await view.flush();
+  });
+  expect(saved.at(-1)).not.toContain("columnSize");
 });
 
 it("offers no column move and no column resize where the host cannot save", async () => {
