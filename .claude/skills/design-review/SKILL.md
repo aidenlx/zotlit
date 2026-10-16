@@ -35,6 +35,8 @@ A correction lands in the narrowest tier that can hold it for good. A size that 
 
    A native `<select>` with focus stalls screenshot capture; blur it, or capture before opening it.
 
+   The Default profile locks the Match tab. To review Match, write a profile with its own id — `node .claude/skills/design-review/review-profile.mjs .scratch/review-profile.md` — and load it through **Open profile → Open profile from file**.
+
 5. **Route the judgement calls.** Hand the rendered surfaces to `better-layout`, `better-typography`, and `better-ui` with the spec's values as the density system, so the reviewer applies 32 px / 12 px / 4-8-12-16 rather than its generic defaults. `better-interface` consolidates the verdict.
 
 6. **Report** in the `better-*` table format, one row per root cause with every location. Add a `Tier` column: `kit`, `check`, or `spec`, naming where the fix belongs. End with `Block` while any `HIGH` or any check failure remains, `Approve` otherwise. State every viewport and state you did not render as `Not verified`.
