@@ -85,6 +85,7 @@ import {
   registerQueryFileView,
 } from "./views/query-view/register";
 import { literatureNotes } from "./views/query-view/table-notes";
+import { tableReaders } from "./views/query-view/table-readers";
 import type { QueryViewDeps } from "./views/query-view/view";
 import { registerQuickSwitch } from "./views/quick-switch/register";
 import { registerReferencesView } from "./views/references/register";
@@ -468,6 +469,12 @@ export default class ZotLitPlugin extends Plugin {
         noteIndex: services.noteIndex,
         zoteroPref: services.zoteroPref,
         zoteroReads: services.zoteroReads,
+      }),
+      readers: tableReaders({
+        app: this.app,
+        reads: services.zoteroReads,
+        zoteroPref: services.zoteroPref,
+        settings: services.settings,
       }),
     };
     registerAnnotView(this, {

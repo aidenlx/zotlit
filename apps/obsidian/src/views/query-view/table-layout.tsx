@@ -1,3 +1,4 @@
+import { Keymap } from "obsidian";
 // The Table layout: the Items of a view as rows, like Zotero's item list, with
 // the visible properties as columns and a "Literature note" column. An Item
 // row expands into its Attachments and Child Notes, and an Attachment row
@@ -31,6 +32,8 @@ import { propertyIcon } from "./property-icon";
 import { CellContent } from "./record-rows";
 import { NO_RESULTS } from "./results";
 import type { LiteratureNotes } from "./table-notes";
+import { zoteroReaderUri } from "./table-readers";
+import type { ReaderTarget, TableReaders } from "./table-readers";
 import { cellText } from "./value-text";
 import type { QueryView } from "./view";
 import { useViewProperties } from "./view-properties";
@@ -73,8 +76,18 @@ export interface TableChildSource {
     query: Pick<QueryService, "run">,
     signal: AbortSignal,
   ): Promise<readonly TableRecord[]>;
-  /** The text of one row. */
-  render(record: TableRecord): ReactNode;
+  /**
+   * The text of one row, under the row it expands from. An Attachment or
+   * Annotation row puts its text in a `link` that opens it in its reader.
+   */
+  render(record: TableRecord, row: ChildRowContext): ReactNode;
+}
+
+/** What one child row renders with beside its own values. */
+export interface ChildRowContext {
+  readonly parent: TableRecord;
+  /** The text `children` as a link that opens `target` in its reader. */
+  readonly link: (target: ReaderTarget, children: ReactNode) => ReactNode;
 }
 
 function text(value: QueryViewValue | undefined): string {
@@ -112,7 +125,11 @@ export const TABLE_CHILD_SOURCES: readonly TableChildSource[] = [
       fields: ["title", ...markers("attachment")],
       limit: null,
     })),
-    render: ({ key, values }) => text(values.title) || key,
+    render: ({ key, values }, { link }) =>
+      link(
+        { kind: "attachment", attachmentKey: key },
+        text(values.title) || key,
+      ),
   },
   {
     parent: "item",
@@ -146,12 +163,13 @@ export const TABLE_CHILD_SOURCES: readonly TableChildSource[] = [
         "comment",
         "color",
         "pageLabel",
+        "pageIndex",
         ...markers("annotation"),
       ],
       sort: [{ field: "sortIndex", direction: "asc" }],
       limit: null,
     })),
-    render: ({ values }) => (
+    render: ({ key, values }, { parent, link }) => (
       <>
         <span
           className="zt:inline-block zt:size-2.5 zt:shrink-0 zt:rounded-full zt:bg-(--zt-annot-color)"
@@ -161,15 +179,29 @@ export const TABLE_CHILD_SOURCES: readonly TableChildSource[] = [
             } as CSSProperties
           }
         />
-        <span className="zt:truncate">
-          {text(values.text) || text(values.comment)}
-        </span>
-        {text(values.pageLabel) !== "" && (
-          <span className="zt:shrink-0 zt:text-muted-foreground">
-            {isPageNumber(text(values.pageLabel))
-              ? m.query_view_table_page({ page: text(values.pageLabel) })
-              : text(values.pageLabel)}
-          </span>
+        {link(
+          {
+            kind: "annotation",
+            attachmentKey: parent.key,
+            annotationKey: key,
+            pageIndex:
+              typeof values.pageIndex === "number" ? values.pageIndex : null,
+            pageLabel: text(values.pageLabel) || null,
+          },
+          // The page stays in the link, so an Annotation with no text, such
+          // as an image, still has a link to open it by.
+          <>
+            <span className="zt:truncate">
+              {text(values.text) || text(values.comment)}
+            </span>
+            {text(values.pageLabel) !== "" && (
+              <span className="zt:shrink-0 zt:text-muted-foreground">
+                {isPageNumber(text(values.pageLabel))
+                  ? m.query_view_table_page({ page: text(values.pageLabel) })
+                  : text(values.pageLabel)}
+              </span>
+            )}
+          </>,
         )}
       </>
     ),
@@ -342,6 +374,42 @@ function NoteCell({
   );
 }
 
+/**
+ * A link that opens an Attachment or Annotation in its reader, and takes a
+ * click as an Obsidian link does: a Cmd/Ctrl press or a middle click opens
+ * a new tab, and Cmd/Ctrl+Alt a split. Its address is the Zotero link of the
+ * target, which a drag carries out.
+ */
+function ReaderLink({
+  readers,
+  target,
+  children,
+}: {
+  readers: TableReaders;
+  target: ReaderTarget;
+  children: ReactNode;
+}) {
+  const open = (event: MouseEvent) => {
+    event.preventDefault();
+    // Obsidian's own pane for a link click: a middle click or a Cmd/Ctrl
+    // press opens a new tab.
+    void readers.open(target, Keymap.isModEvent(event));
+  };
+  return (
+    <a
+      className="internal-link zt:flex zt:min-w-0 zt:items-center zt:gap-1.5"
+      href={zoteroReaderUri(target) ?? undefined}
+      data-query-open={target.kind}
+      onClick={(event) => open(event.nativeEvent)}
+      onAuxClick={(event) => {
+        if (event.button === 1) open(event.nativeEvent);
+      }}
+    >
+      {children}
+    </a>
+  );
+}
+
 /** The inset of a row `depth` levels under its Item, for `zt:ps-(--zt-indent)`. */
 const indent = (depth: number) =>
   ({ "--zt-indent": `calc(${depth - 1} * var(--size-4-5))` }) as CSSProperties;
@@ -374,12 +442,14 @@ function ChildRows({
   columns,
   expanded,
   toggle,
+  readers,
 }: {
   parent: TableRecord;
   depth: number;
   columns: number;
   expanded: ReadonlyMap<string, ChildState>;
   toggle: (record: TableRecord) => void;
+  readers: TableReaders;
 }) {
   const state = expanded.get(id(parent));
   if (!state) return null;
@@ -407,12 +477,14 @@ function ChildRows({
         return (
           <ChildRow
             key={id(record)}
+            parent={parent}
             record={record}
             source={source}
             depth={depth}
             columns={columns}
             expanded={expanded}
             toggle={toggle}
+            readers={readers}
           />
         );
       })}
@@ -421,20 +493,29 @@ function ChildRows({
 }
 
 function ChildRow({
+  parent,
   record,
   source,
   depth,
   columns,
   expanded,
   toggle,
+  readers,
 }: {
+  parent: TableRecord;
   record: TableRecord;
   source: TableChildSource;
   depth: number;
   columns: number;
   expanded: ReadonlyMap<string, ChildState>;
   toggle: (record: TableRecord) => void;
+  readers: TableReaders;
 }) {
+  const link: ChildRowContext["link"] = (target, children) => (
+    <ReaderLink readers={readers} target={target}>
+      {children}
+    </ReaderLink>
+  );
   return (
     <>
       <tr
@@ -459,7 +540,7 @@ function ChildRow({
               strokeWidth="var(--icon-xs-stroke-width)"
               className="zt:shrink-0"
             />
-            {source.render(record)}
+            {source.render(record, { parent, link })}
           </span>
         </td>
       </tr>
@@ -469,6 +550,7 @@ function ChildRow({
         columns={columns}
         expanded={expanded}
         toggle={toggle}
+        readers={readers}
       />
     </>
   );
@@ -480,7 +562,7 @@ export function TableLayout({ view }: { view: QueryView }) {
   const search = useAnnotStore((s) => s.filterQuery)
     .trim()
     .toLowerCase();
-  const { query, literatureNotes } = view.tableDeps;
+  const { query, literatureNotes, readers } = view.tableDeps;
   const { children: expanded, toggle } = useChildren(query);
   const properties = useViewProperties(view);
   const dataset = useStore(view.state, (s) => s.view?.from ?? "annotations");
@@ -582,6 +664,7 @@ export function TableLayout({ view }: { view: QueryView }) {
                 notes={literatureNotes}
                 expanded={expanded}
                 toggle={toggle}
+                readers={readers}
               />
             );
           })}
@@ -598,6 +681,7 @@ function ItemRow({
   notes,
   expanded,
   toggle,
+  readers,
 }: {
   heading: ReactNode;
   record: TableRecord;
@@ -605,6 +689,7 @@ function ItemRow({
   notes: LiteratureNotes;
   expanded: ReadonlyMap<string, ChildState>;
   toggle: (record: TableRecord) => void;
+  readers: TableReaders;
 }) {
   return (
     <>
@@ -639,6 +724,7 @@ function ItemRow({
         columns={columns.length}
         expanded={expanded}
         toggle={toggle}
+        readers={readers}
       />
     </>
   );

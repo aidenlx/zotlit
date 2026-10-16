@@ -77,6 +77,7 @@ import { resultTable } from "./table";
 import type { ResultTable } from "./table";
 import { TABLE_FIELDS, TableLayout } from "./table-layout";
 import type { LiteratureNotes } from "./table-notes";
+import type { TableReaders } from "./table-readers";
 import { ToolbarButton } from "./toolbar-button";
 import { ToolbarPopover } from "./toolbar-popover";
 import { ViewMenu } from "./view-menu";
@@ -98,6 +99,8 @@ export interface QueryViewDeps extends AnnotationsLayoutDeps {
   cardFocus: Pick<QueryCardFocus, "hold">;
   /** The Table's "Literature note" column. */
   literatureNotes: LiteratureNotes;
+  /** The Table's Attachment and Annotation links. */
+  readers: TableReaders;
 }
 
 /** What the host gives the Query View, beside the services. */
@@ -339,8 +342,14 @@ export class QueryView extends Component implements HistorySurface {
       this.#layout.stepHistory(direction, attachmentKey);
   }
 
-  /** What the Table reads beside the rows: the queries of its child rows and its notes. */
-  get tableDeps(): Pick<QueryViewDeps, "query" | "literatureNotes"> {
+  /**
+   * What the Table reads beside the rows: the queries of its child rows, its
+   * notes, and the readers its links open.
+   */
+  get tableDeps(): Pick<
+    QueryViewDeps,
+    "query" | "literatureNotes" | "readers"
+  > {
     return this.#deps;
   }
 
