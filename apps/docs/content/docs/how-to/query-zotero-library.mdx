@@ -305,6 +305,14 @@ obsidian zotlit:query limit=all fields='title,citationKey,date.year,creators[0].
 
 ZotLit writes the complete answer to that file. The terminal shows the counts and `file.path` in place of the rows. ZotLit keeps an existing file intact, so choose a new name for each export.
 
+To open the result in a spreadsheet such as Excel, add `format=csv`, or `format=tsv` for tab-separated text:
+
+```bash
+obsidian zotlit:query limit=all fields='title,citationKey,date.year,creators' format=csv output="$HOME/Documents/zotlit-export.csv"
+```
+
+The file has a header row, then one row for each result: its Indexed Key, then each field in the order of `fields`. A grouped query adds a `group` column first. Each cell holds a value as text, so a list of creators reads `Ada Lovelace, Alan Turing`. The header and the cells keep the names that the query uses: a column is named by its field, such as `date.year`, and an item type reads as its Zotero name, such as `journalArticle`. CSV and TSV need `output`, because the terminal answer is always JSON.
+
 ## Cancel a long query [#cancel]
 
 Give a long query a name with `id` when you start it:

@@ -40,7 +40,9 @@ import {
   QUERY_VALUES_COMMAND,
   QUERY_ID_FORM,
   QUERY_ID_MAX_LENGTH,
+  QUERY_OUTPUT_FORMATS,
 } from "./contract";
+import type { QueryOutputFormat } from "./contract";
 import { GUIDE_TOPIC_NAMES } from "./guide";
 import type { GuideTopic } from "./guide";
 
@@ -308,9 +310,17 @@ const queryOptions = {
       v.string(),
       v.check(
         (output) => isAbsolute(output) && !output.includes("\0"),
-        "output must be an absolute path to a new JSON file.",
+        "output must be an absolute path to a new file.",
       ),
     ),
+  ),
+  format: v.optional(
+    v.picklist(
+      QUERY_OUTPUT_FORMATS,
+      (issue) =>
+        `format '${String(issue.input)}' is not an output format: use ${QUERY_OUTPUT_FORMATS.join(", ")}.`,
+    ),
+    "json",
   ),
   id: v.optional(queryId),
   "this-item": v.optional(contextKey("this-item", "Item")),
@@ -327,8 +337,18 @@ function decodedQuery(
   options: v.InferOutput<v.StrictObjectSchema<typeof queryOptions, undefined>>,
   libraries: NamedLibraries | null,
 ) {
-  const { from, filter, fields, formulas, sort, limit, output, id, group } =
-    options;
+  const {
+    from,
+    filter,
+    fields,
+    formulas,
+    sort,
+    limit,
+    output,
+    format,
+    id,
+    group,
+  } = options;
   const item = options["this-item"];
   const attachment = options["this-attachment"];
   return {
@@ -341,6 +361,8 @@ function decodedQuery(
     ...(formulas === undefined ? {} : { formulas }),
     ...(sort === undefined ? {} : { sort }),
     ...(output === undefined ? {} : { output }),
+    // Only a file holds CSV or TSV: the answer itself is always JSON.
+    ...(format === "json" ? {} : { format }),
     // The id that `zotlit:query-cancel` names the query by.
     ...(id === undefined ? {} : { id }),
     // The Query Context: the records a filter reads as this.item and this.attachment.
@@ -355,15 +377,39 @@ function decodedQuery(
   };
 }
 
+/** CSV and TSV go to a file: the answer in the terminal is always JSON. */
+const formatHasOutput = (input: {
+  format: QueryOutputFormat;
+  output?: string;
+}) => input.format === "json" || input.output !== undefined;
+const formatNeedsOutput = (issue: { input: { format: QueryOutputFormat } }) =>
+  `format=${issue.input.format} writes a file: add output=<absolute-path> with a new filename.`;
+
 const queryVariants = {
   library: v.pipe(
     cliParams({ library, ...queryOptions }),
+    v.forward(
+      v.partialCheck(
+        [["format"], ["output"]],
+        formatHasOutput,
+        formatNeedsOutput,
+      ),
+      ["format"],
+    ),
     v.transform(({ library: scope, ...options }) =>
       decodedQuery(options, { scope, parameter: "library" }),
     ),
   ),
   scope: v.pipe(
     cliParams(queryOptions),
+    v.forward(
+      v.partialCheck(
+        [["format"], ["output"]],
+        formatHasOutput,
+        formatNeedsOutput,
+      ),
+      ["format"],
+    ),
     v.transform((options) => decodedQuery(options, null)),
   ),
 };

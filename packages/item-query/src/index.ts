@@ -52,6 +52,12 @@ export {
 export { COUNT_FIELDS, UNLIMITED_LIMIT } from "./request";
 export { planPath } from "./projection";
 export { errorValueText } from "./filter-values";
+export {
+  errorCell,
+  valueText,
+  type ErrorCell,
+  type ProjectionJson,
+} from "./value-text";
 export { nameDictionary, type NameDictionary } from "./name-dictionary";
 export {
   FORMULA_NAME,

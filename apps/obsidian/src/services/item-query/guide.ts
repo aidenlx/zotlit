@@ -438,6 +438,18 @@ FILE EXPORTS
   The export becomes available when the complete file is written. An existing
   file is kept intact. Cancellation removes the unpublished file.
   Example: add output=/absolute/path/items.json to a limit=all query.
+  For a spreadsheet, add format=csv or format=tsv beside output. The file
+  then holds one line for each row in place of the JSON envelope: a header
+  line, then group (when the query groups), indexedKey, and each field in
+  the order of fields. A row in two groups is a line in each. Each value is
+  text: a list joins its entries with ", ", a creator is their name, a date
+  is its text. Names stay as the query gives them: the header holds the
+  Projection Paths, and an item type is its Zotero name, such as
+  journalArticle. CSV starts with a UTF-8 byte order mark and ends each line
+  with CRLF; TSV has no byte order mark and ends each line with LF.
+  file.format names the format. The CLI answer itself is always JSON, so csv
+  and tsv need output. Read JSON for the structured values.
+  Example: add format=csv output=/absolute/path/items.csv to a limit=all query.
 
 DIAGNOSTICS
   Read diagnostic.report first on failure, or each warnings entry's report

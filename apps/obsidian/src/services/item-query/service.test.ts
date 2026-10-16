@@ -11,6 +11,9 @@ import {
   seedBulkLibrary,
 } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
+import { valueText } from "@zotlit/item-query";
+import type { ProjectionJson } from "@zotlit/item-query";
+import { delimited } from "@zotlit/shared/delimited";
 
 import { MY_LIBRARY_SCOPE } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
@@ -421,6 +424,119 @@ describe("Item Query worker jobs", () => {
     expect(leases()).toBe(0);
   });
 
+  it("exports the rows of the JSON answer as CSV and TSV files, a group column first when the query groups", async () => {
+    using scenario = openScenarioDatabase({
+      storage: "temp-directory",
+      annotations: true,
+    });
+    const { service, leases } = setup(scenario);
+    await using _owned = service;
+    const params = {
+      from: "items",
+      limit: "all",
+      fields: '["title","date","creators","tags"]',
+    };
+    const fields = ["title", "date", "creators", "tags"];
+    type Row = { indexedKey: string; values: Record<string, ProjectionJson> };
+    const lines = (rows: readonly Row[], group: string[] = []) =>
+      rows.map((row) => [
+        ...group,
+        row.indexedKey,
+        ...fields.map((field) => valueText(row.values[field])),
+      ]);
+    const json = JSON.parse(await service.query(params, signal())) as {
+      rows: Row[];
+    };
+    expect(json.rows.length).toBeGreaterThan(0);
+
+    for (const format of ["csv", "tsv"] as const) {
+      const output = join(dirname(scenario.path), `items.${format}`);
+      const receipt = JSON.parse(
+        await service.query({ ...params, format, output }, signal()),
+      );
+      const text = await readFile(output, "utf8");
+      expect(receipt).toMatchObject({
+        ok: true,
+        returnedCount: json.rows.length,
+        file: { path: output, bytes: Buffer.byteLength(text), format },
+      });
+      expect(receipt).not.toHaveProperty("rows");
+      expect(text).toBe(
+        delimited([["indexedKey", ...fields], ...lines(json.rows)], format),
+      );
+    }
+    // CSV opens in a spreadsheet as UTF-8 text; TSV is plain lines.
+    const csv = await readFile(join(dirname(scenario.path), "items.csv"));
+    expect([...csv.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
+    expect(
+      await readFile(join(dirname(scenario.path), "items.tsv"), "utf8"),
+    ).toMatch(/^indexedKey\ttitle\tdate\tcreators\ttags\n/);
+
+    const grouped = { ...params, group: "itemType" };
+    const groups = (
+      JSON.parse(await service.query(grouped, signal())) as {
+        groups: { value: string | null; rows: Row[] }[];
+      }
+    ).groups;
+    expect(groups.length).toBeGreaterThan(1);
+    const output = join(dirname(scenario.path), "grouped.csv");
+    await service.query({ ...grouped, format: "csv", output }, signal());
+    expect(await readFile(output, "utf8")).toBe(
+      delimited(
+        [
+          ["group", "indexedKey", ...fields],
+          ...groups.flatMap((group) =>
+            lines(group.rows, [valueText(group.value)]),
+          ),
+        ],
+        "csv",
+      ),
+    );
+    expect(leases()).toBe(0);
+  });
+
+  it("asks for an output file with CSV and TSV, and names the formats it writes", async () => {
+    using scenario = openScenarioDatabase({ storage: "temp-directory" });
+    const { service, leases } = setup(scenario);
+    await using _owned = service;
+    expect(
+      JSON.parse(
+        await service.query({ from: "items", format: "csv" }, signal()),
+      ),
+    ).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "invalid-argument",
+        message: expect.stringContaining("add output=<absolute-path>"),
+        details: { parameter: "format" },
+      },
+    });
+    const output = join(dirname(scenario.path), "items.xlsx");
+    expect(
+      JSON.parse(
+        await service.query(
+          { from: "items", format: "xlsx", output },
+          signal(),
+        ),
+      ),
+    ).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "invalid-argument",
+        message: "format 'xlsx' is not an output format: use json, csv, tsv.",
+        details: { parameter: "format" },
+      },
+    });
+    expect(await readdir(dirname(output))).not.toContain("items.xlsx");
+    // format=json is the default, as given or omitted.
+    expect(
+      JSON.parse(
+        await service.query({ from: "items", format: "json" }, signal()),
+      ),
+    ).toMatchObject({ ok: true });
+    expect(leases()).toBe(0);
+  });
+
   it("bounds inline replies and exports every row of a large result", async () => {
     using scenario = openScenarioDatabase({ storage: "temp-directory" });
     seedBulkLibrary(scenario.sqlite, 6000);
@@ -443,6 +559,19 @@ describe("Item Query worker jobs", () => {
       file: { bytes: Buffer.byteLength(text) },
     });
     expect(JSON.parse(text).rows).toHaveLength(6000);
+    // A CSV export writes the same rows in chunks, one line each.
+    const csvOutput = join(dirname(scenario.path), "large.csv");
+    expect(
+      JSON.parse(
+        await service.query(
+          { from: "items", ...bulk, format: "csv", output: csvOutput },
+          signal(),
+        ),
+      ),
+    ).toMatchObject({ ok: true, returnedCount: 6000, file: { format: "csv" } });
+    const csvLines = (await readFile(csvOutput, "utf8")).split("\r\n");
+    expect(csvLines).toHaveLength(6002);
+    expect(csvLines.at(-1)).toBe("");
     expect(JSON.parse(text)).toMatchObject({
       ok: true,
       returnedCount: 6000,

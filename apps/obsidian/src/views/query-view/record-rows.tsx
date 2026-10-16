@@ -5,6 +5,8 @@
 import { Fragment, useMemo } from "react";
 import { useStore } from "zustand";
 
+import { errorCell, valueText } from "@zotlit/item-query";
+
 import { Icon } from "@/components/obsidian/icon";
 import { tooltipAttrs } from "@/lib/utils";
 import type {
@@ -17,7 +19,7 @@ import {
 } from "@/views/annot-view/store";
 
 import { NO_RESULTS } from "./results";
-import { cell, cellText, errorCell } from "./value-text";
+import { cellText } from "./value-text";
 import type { QueryView } from "./view";
 import { useViewProperties } from "./view-properties";
 import type { PropertyEntry } from "./view-properties";
@@ -162,13 +164,15 @@ export function CellContent({
       </span>
     );
   if (!Array.isArray(value) || !holdsError(value)) return text;
-  const shown = value.filter((entry: QueryViewValue) => cell(entry) !== "");
+  const shown = value.filter(
+    (entry: QueryViewValue) => valueText(entry) !== "",
+  );
   return (
     <>
       {shown.map((entry: QueryViewValue, at) => (
         <Fragment key={at}>
           {at > 0 && ", "}
-          <CellContent value={entry} text={cell(entry)} />
+          <CellContent value={entry} text={valueText(entry)} />
         </Fragment>
       ))}
     </>
