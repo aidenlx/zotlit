@@ -46,12 +46,14 @@
    room for it and centers it on the row, as Obsidian does for a Base. The
    button is the view's sibling, so the rules start from the view. */
 .cm-embed-block:has(> .zt-query-note) {
-  --bases-header-padding-end: calc(var(--icon-m) + var(--size-4-4));
+  --zt-query-toolbar-inset-end: calc(var(--icon-m) + var(--size-4-4));
 }
 .cm-embed-block:has(> .zt-query-note) > .embed-actions {
-  top: calc(
-    var(--bases-header-height) / 2 - var(--icon-m) / 2 - var(--size-2-2)
-  );
+  top: calc(var(--size-4-10) / 2 - var(--icon-m) / 2 - var(--size-2-2));
+}
+/* On mobile the toolbar takes the touch height. */
+.is-mobile .cm-embed-block:has(> .zt-query-note) > .embed-actions {
+  top: calc(var(--touch-size-l) / 2 - var(--icon-m) / 2 - var(--size-2-2));
 }
 
 /* Live Preview's editor breaks a word anywhere, and its rows pass that on:

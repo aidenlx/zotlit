@@ -110,7 +110,7 @@ export function RecordGroupHeading({ group }: { group: RecordGroup }) {
       <button
         type="button"
         aria-expanded={!group.collapsed}
-        className="zt-query-group-toggle zt:flex zt:max-w-full zt:min-w-0 zt:cursor-(--cursor) zt:items-baseline zt:gap-(--size-4-1) zt:rounded-(--clickable-icon-radius) zt:px-(--size-2-2) zt:text-(length:--bases-group-heading-value-size) zt:leading-(--bases-table-row-height) zt:font-(--bases-group-heading-value-weight) zt:text-(--text-normal) zt:hover:bg-(--background-modifier-hover) zt:focus-visible:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)] zt:focus-visible:outline-none"
+        className="zt-query-group-toggle zt:flex zt:max-w-full zt:min-w-0 zt:cursor-(--cursor) zt:items-baseline zt:gap-(--size-4-1) zt:rounded-(--clickable-icon-radius) zt:px-(--size-2-2) zt:text-(length:--font-smaller) zt:leading-7.5 zt:font-(--font-semibold) zt:text-(--text-normal) zt:hover:bg-(--background-modifier-hover) zt:focus-visible:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)] zt:focus-visible:outline-none"
         onClick={() => toggle(key)}
       >
         <Icon

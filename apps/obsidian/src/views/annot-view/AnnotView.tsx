@@ -628,7 +628,7 @@ function GroupHeading({
             size="var(--icon-xs)"
             className="zt:shrink-0 zt:text-(--collapse-icon-color) zt:group-data-collapsed/heading:text-(--collapse-icon-color-collapsed)"
           />
-          <span className="zt:truncate zt:text-sm zt:font-(weight:--bases-group-heading-value-weight) zt:text-foreground">
+          <span className="zt:truncate zt:text-sm zt:font-(weight:--font-semibold) zt:text-foreground">
             {label}
           </span>
         </button>

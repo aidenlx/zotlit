@@ -8,3 +8,9 @@
   padding: 0;
   padding-bottom: max(var(--safe-area-inset-bottom), var(--size-4-8));
 }
+
+/* The toolbar and the search row stand clear of the pane's edges. */
+.view-content.zt-query-view {
+  --zt-query-toolbar-inset-start: var(--size-4-2);
+  --zt-query-toolbar-inset-end: var(--size-4-2);
+}

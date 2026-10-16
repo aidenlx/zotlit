@@ -347,11 +347,11 @@ const indent = (depth: number) =>
   ({ "--zt-indent": `calc(${depth - 1} * var(--size-4-5))` }) as CSSProperties;
 
 /**
- * A cell's height, padding and row line, from the variables Obsidian's Bases
- * table draws with, so a theme that restyles that table restyles this one.
+ * A cell's height, padding and row line: the row height of a Bases table,
+ * and Obsidian's table border, so a theme that restyles tables restyles it.
  */
 const CELL =
-  "zt:h-(--bases-table-row-height) zt:border-b-(length:--bases-table-row-border-width) zt:border-(--bases-table-border-color) zt:px-2 zt:py-1";
+  "zt:h-7.5 zt:border-b-(length:--border-width) zt:border-(--table-border-color) zt:px-2 zt:py-1";
 /** The narrow first column that holds a row's expand button. */
 const GUTTER = cn(CELL, "zt:w-0 zt:py-0 zt:ps-1 zt:pe-0");
 /**
@@ -361,12 +361,11 @@ const GUTTER = cn(CELL, "zt:w-0 zt:py-0 zt:ps-1 zt:pe-0");
  */
 const FIRST = "zt:min-w-48 zt:ps-1";
 /** A column after the first: a line parts it from the one before it. */
-const LATER =
-  "zt:max-w-[calc(var(--bases-table-column-max-width)*1px)] zt:border-s-(length:--bases-table-column-border-width)";
-const ROW = "zt:hover:bg-(--bases-table-row-background-hover)";
+const LATER = "zt:max-w-75 zt:border-s-(length:--border-width)";
+const ROW = "zt:hover:bg-(--table-row-background-hover)";
 /** A header cell, which stays at the top as the rows scroll under it. */
 const HEADER =
-  "zt:sticky zt:top-0 zt:z-(--layer-cover) zt:bg-(--bases-table-header-background) zt:py-0 zt:font-(--bases-table-header-weight) zt:whitespace-nowrap zt:text-(--bases-table-header-color)";
+  "zt:sticky zt:top-0 zt:z-(--layer-cover) zt:bg-background zt:py-0 zt:font-(--font-weight) zt:whitespace-nowrap zt:text-muted-foreground zt:in-[.mod-sidedock]:bg-(--background-secondary) zt:in-[.callout]:bg-transparent";
 
 /** The rows under one expanded row, and the rows under those that are expanded. */
 function ChildRows({
@@ -502,7 +501,7 @@ export function TableLayout({ view }: { view: QueryView }) {
   return (
     <div className="zt:min-h-0 zt:flex-1 zt:overflow-auto">
       <table
-        className="zt:min-w-full zt:border-separate zt:border-spacing-0 zt:text-(length:--bases-table-font-size)"
+        className="zt:min-w-full zt:border-separate zt:border-spacing-0 zt:text-(length:--font-smaller)"
         data-query-table=""
       >
         <thead>
@@ -520,7 +519,7 @@ export function TableLayout({ view }: { view: QueryView }) {
                     <Icon
                       name={propertyIcon(dataset, property)}
                       size="var(--icon-xs)"
-                      className="zt:[display:var(--bases-table-header-icon-display)] zt:shrink-0"
+                      className="zt:flex zt:shrink-0"
                     />
                     {property.label}
                   </span>
@@ -545,7 +544,7 @@ export function TableLayout({ view }: { view: QueryView }) {
                 <Icon
                   name="file"
                   size="var(--icon-xs)"
-                  className="zt:[display:var(--bases-table-header-icon-display)] zt:shrink-0"
+                  className="zt:flex zt:shrink-0"
                 />
                 {m.query_view_table_literature_note()}
               </span>
@@ -566,7 +565,7 @@ export function TableLayout({ view }: { view: QueryView }) {
                     colSpan={columns.length + 2}
                     className={cn(
                       CELL,
-                      "zt:bg-(--bases-table-group-background) zt:text-start zt:font-(--bases-group-heading-value-weight)",
+                      "zt:bg-card zt:text-start zt:font-(--font-semibold)",
                     )}
                   >
                     {placed.label}

@@ -144,7 +144,7 @@ export function ListLayout({ view }: { view: QueryView }) {
           {!group.collapsed && (
             <List
               className={cn(
-                "zt:my-0 zt:py-1 zt:text-(length:--bases-table-font-size) zt:marker:text-(--list-marker-color)",
+                "zt:my-0 zt:py-1 zt:text-(length:--font-smaller) zt:marker:text-(--list-marker-color)",
                 options.markers === "bullet" &&
                   "zt:list-disc zt:pl-(--list-indent)",
                 options.markers === "number" &&

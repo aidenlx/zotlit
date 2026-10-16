@@ -222,7 +222,7 @@ export function Annotation({
 
   return (
     <div
-      className="zt-annot-card zt:group zt:overflow-hidden zt:rounded-(--bases-cards-radius) zt:bg-(--bases-cards-background) zt:px-3 zt:py-2 zt:text-xs zt:leading-(--line-height-tight) zt:shadow-(--bases-cards-shadow) zt:hover:shadow-(--bases-cards-shadow-hover) zt:focus-visible:ring-(length:--input-border-width-focus) zt:focus-visible:ring-border-focus zt:data-selected:bg-primary/10 zt:data-selected:ring-1 zt:data-selected:ring-primary zt:data-selected:focus-visible:ring-(length:--input-border-width-focus) zt:motion-safe:transition-[background-color,box-shadow] zt:motion-safe:duration-(--anim-duration-fast)"
+      className="zt-annot-card zt:group zt:overflow-hidden zt:rounded-md zt:bg-background zt:px-3 zt:py-2 zt:text-xs zt:leading-(--line-height-tight) zt:shadow-[0_0_0_1px_var(--background-modifier-border)] zt:hover:shadow-[0_0_0_1px_var(--background-modifier-border-hover)] zt:focus-visible:ring-(length:--input-border-width-focus) zt:focus-visible:ring-border-focus zt:data-selected:bg-primary/10 zt:data-selected:ring-1 zt:data-selected:ring-primary zt:data-selected:focus-visible:ring-(length:--input-border-width-focus) zt:motion-safe:transition-[background-color,box-shadow] zt:motion-safe:duration-(--anim-duration-fast)"
       // The card is the surface Obsidian draws for a card in a Bases Cards
       // view: its fill, its radius, its hairline and the hairline it takes on
       // hover are read from the same theme variables, so a theme that

@@ -9,7 +9,7 @@
 // a page too. Alt with an up or down arrow moves the highlighted property in
 // the order.
 import type { IconName } from "obsidian";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useStore } from "zustand";
 
@@ -136,6 +136,28 @@ function PropertyList({
   const { scope, activeValue } = useChooserScope();
   const { page, openPage } = useChooserPage();
   const [dragging, setDragging] = useState<string | null>(null);
+  // The rows keep the order they had when the list opened, as in the Bases
+  // Properties menu: a tick leaves its row in place. The list sorts again,
+  // the visible properties first, on a search, on a move, on "Hide all" and
+  // on the way back from a page.
+  const [moves, resort] = useReducer((count: number) => count + 1, 0);
+  const sortKey = `${moves}:${page === null}:${query}`;
+  const [sorted, setSorted] = useState(() => ({
+    key: sortKey,
+    paths: entries.map((entry) => entry.path),
+  }));
+  let paths = sorted.paths;
+  if (sorted.key !== sortKey) {
+    paths = entries.map((entry) => entry.path);
+    setSorted({ key: sortKey, paths });
+  }
+  const rows = useMemo(() => {
+    const rank = new Map(paths.map((path, index) => [path, index]));
+    // A property the list did not have yet, such as a new Formula, goes last.
+    return entries.toSorted(
+      (a, b) => (rank.get(a.path) ?? Infinity) - (rank.get(b.path) ?? Infinity),
+    );
+  }, [entries, paths]);
   const byPath = useMemo(
     () => new Map(entries.map((entry) => [entry.path, entry])),
     [entries],
@@ -154,7 +176,7 @@ function PropertyList({
   keys.current = { order, setOrder, page };
   const groups = useMemo<ChooserGroup<ChooserRow>[]>(() => {
     // The properties of the parent records come only while the user searches.
-    const rows = entries
+    const items = rows
       .filter(
         (entry) =>
           entry.place !== null ||
@@ -185,11 +207,14 @@ function PropertyList({
       {
         value: "zt:hide-all",
         label: m.query_view_properties_hide_all(),
-        action: () => setOrder([]),
+        action: () => {
+          setOrder([]);
+          resort();
+        },
       },
     );
-    return [{ items: rows }, { items: actions, pinned: true }];
-  }, [entries, byPath, order, query, setOrder, openPage]);
+    return [{ items }, { items: actions, pinned: true }];
+  }, [rows, byPath, order, query, setOrder, openPage]);
 
   // Alt with an up or down arrow moves the highlighted visible property one
   // place in the order, as in the Bases Properties menu.
@@ -206,6 +231,7 @@ function PropertyList({
         const next = [...now];
         next.splice(to, 0, ...next.splice(at, 1));
         save(next);
+        resort();
       }
       return false;
     };
@@ -268,8 +294,10 @@ function PropertyList({
             }}
             onDrop={(event) => {
               event.preventDefault();
-              if (dragging !== null && dragging !== row.value)
+              if (dragging !== null && dragging !== row.value) {
                 setOrder(reordered(order, dragging, row.value));
+                resort();
+              }
               setDragging(null);
             }}
             onDragEnd={() => setDragging(null)}

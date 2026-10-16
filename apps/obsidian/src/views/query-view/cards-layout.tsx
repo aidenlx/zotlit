@@ -75,7 +75,7 @@ export function CardsLayoutFields({
  * row has no value, so a blank property still holds its place.
  */
 const CARD_LINE =
-  "zt:truncate zt:leading-(--bases-cards-line-height) zt:empty:before:text-faint zt:empty:before:content-['—']";
+  "zt:truncate zt:leading-6 zt:empty:before:text-faint zt:empty:before:content-['—']";
 
 /** The rows of the shown view, one card each, under their group headings. */
 export function CardsLayout({ view }: { view: QueryView }) {
@@ -112,7 +112,7 @@ export function CardsLayout({ view }: { view: QueryView }) {
                   <div
                     key={`${row.indexedKey}\n${index}`}
                     role="listitem"
-                    className="zt:flex zt:min-w-0 zt:flex-col zt:gap-2 zt:rounded-(--bases-cards-radius) zt:bg-(--bases-cards-background) zt:px-2 zt:pt-2 zt:pb-0.5 zt:shadow-(--bases-cards-shadow)"
+                    className="zt:flex zt:min-w-0 zt:flex-col zt:gap-2 zt:rounded-md zt:bg-background zt:px-2 zt:pt-2 zt:pb-0.5 zt:shadow-[0_0_0_1px_var(--background-modifier-border)]"
                     data-query-row={row.indexedKey}
                   >
                     {/* A view that shows no property leaves the card
@@ -143,7 +143,7 @@ export function CardsLayout({ view }: { view: QueryView }) {
                             a note too. */}
                         <div
                           className={cn(
-                            "zt:text-(length:--bases-table-font-size)",
+                            "zt:text-(length:--font-smaller)",
                             CARD_LINE,
                           )}
                         >
