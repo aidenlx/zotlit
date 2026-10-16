@@ -1,7 +1,10 @@
 import { RuleTester } from "oxlint/plugins-dev";
 import { describe, it } from "vitest";
 
-import { noCrossWindowInstanceof } from "../../scripts/oxlint-plugin-popout-windows";
+import {
+  noCrossWindowInstanceof,
+  noGlobalTimer,
+} from "../../scripts/oxlint-plugin-popout-windows";
 
 RuleTester.describe = describe;
 RuleTester.it = it;
@@ -39,6 +42,35 @@ tester.run("no-cross-window-instanceof", noCrossWindowInstanceof, {
     {
       code: "event instanceof CustomEvent",
       errors: [{ messageId: "crossWindow", data: { type: "CustomEvent" } }],
+    },
+  ],
+});
+
+tester.run("no-global-timer", noGlobalTimer, {
+  valid: [
+    "node.win.setTimeout(save, 250)",
+    "activeWindow.requestAnimationFrame(paint)",
+    "pending.win.clearTimeout(pending.timer)",
+    "timers.setTimeout(save, 250)",
+  ],
+  invalid: [
+    {
+      code: "window.setTimeout(save, 250)",
+      errors: [{ messageId: "globalTimer", data: { name: "setTimeout" } }],
+    },
+    {
+      code: "clearTimeout(timer)",
+      errors: [{ messageId: "globalTimer", data: { name: "clearTimeout" } }],
+    },
+    {
+      code: "requestAnimationFrame(paint)",
+      errors: [
+        { messageId: "globalTimer", data: { name: "requestAnimationFrame" } },
+      ],
+    },
+    {
+      code: "globalThis.setInterval(poll, 1000)",
+      errors: [{ messageId: "globalTimer", data: { name: "setInterval" } }],
     },
   ],
 });
