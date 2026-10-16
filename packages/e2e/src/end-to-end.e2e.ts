@@ -1752,7 +1752,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obEval(vaultId, search(""));
 
     // "Add view" adds a view, shows it, and opens Configure view on its
-    // name; the name typed there renames it.
+    // name as a page of the menu; the name typed there renames it.
     await obEval(
       vaultId,
       `(()=>{${PAGE}press(${tab}.contentEl.querySelector('[data-query-view-action="add"]'),'Add view');return true;})()`,
@@ -1760,7 +1760,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEvalUntil(
         vaultId,
-        `String(!!activeDocument.querySelector('.modal [data-query-view-name]'))`,
+        `String(!!activeDocument.querySelector('[data-query-view-list]:popover-open [data-chooser-page] [data-query-view-name]'))`,
         { expected: "true" },
       ),
     ).toBe(true);
@@ -1768,7 +1768,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEval(
         vaultId,
-        `JSON.stringify([...activeDocument.querySelectorAll('.modal [data-query-view-layout] option')].map(n=>n.textContent))`,
+        `JSON.stringify([...activeDocument.querySelectorAll('[data-query-view-list]:popover-open [data-chooser-page] [data-query-view-layout] option')].map(n=>n.textContent))`,
       ),
     ).toBe(
       JSON.stringify([
@@ -1779,7 +1779,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     await obEval(
       vaultId,
-      `(()=>{const input=activeDocument.querySelector('.modal [data-query-view-name]');input.value='Methods';input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return true;})()`,
+      `(()=>{const input=activeDocument.querySelector('[data-query-view-list]:popover-open [data-chooser-page] [data-query-view-name]');input.value='Methods';input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return true;})()`,
     );
     expect(await shown("Methods")).toBe(true);
 
@@ -1787,11 +1787,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(JSON.parse(await obEval(vaultId, pages))).not.toEqual([]);
     await obEval(
       vaultId,
-      `(()=>{${PAGE}const modal=activeDocument.querySelector('.modal.zt-configure-view');press(modal.querySelector('[data-query-view-option="showPage"]'),'Show page');press((modal.querySelector('.modal-close-button')??modal.querySelector('.modal-header-button:has(.lucide-x)')),'Close');return true;})()`,
+      `(()=>{${PAGE}const page=activeDocument.querySelector('[data-query-view-list]:popover-open [data-chooser-page]');press(page.querySelector('[data-query-view-option="showPage"] [role="switch"]'),'Show page');press(page.querySelector('[data-chooser-page-close]'),'Close');return true;})()`,
     );
     expect(await obEvalUntil(vaultId, pages, { expected: "[]" })).toBe(true);
 
-    // "Default view" on the view's row moves it to the top of the list.
+    // A right-click on the view's row opens its Configure view, whose
+    // "Default view" moves it to the top of the list.
     await obEval(
       vaultId,
       `(()=>{${PAGE}press(${tab}.contentEl.querySelector('[data-query-view-menu]'),'View menu');return true;})()`,
@@ -1803,7 +1804,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
     await obEval(
       vaultId,
-      `(()=>{${PAGE}const row=${tab}.contentEl.querySelector('[data-query-view-row="Methods"]');row.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,clientX:200,clientY:200}));const item=[...activeDocument.querySelectorAll('.menu .menu-item')].find(n=>n.querySelector('.menu-item-title')?.textContent===${JSON.stringify(m.query_view_default_view())});press(item,'Default view');return true;})()`,
+      `(async()=>{${PAGE}const row=${tab}.contentEl.querySelector('[data-query-view-row="Methods"]');row.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:200,clientY:200}));const page=await until('Configure view of Methods',()=>activeDocument.querySelector('[data-query-view-list]:popover-open [data-query-configure-view="Methods"]')?.closest('[data-chooser-page]'));press(page.querySelector('[data-chooser-page-menu]'),'More options');const item=await until('Default view',()=>page.querySelector('[role="menu"]:popover-open [data-chooser-page-menu-item="default"]'));press(item,'Default view');press(page.querySelector('[data-chooser-page-close]'),'Close');return true;})()`,
     );
 
     // Each change saved to the file.
@@ -1838,14 +1839,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEvalUntil(
         vaultId,
-        `String(activeDocument.querySelector('.modal.zt-configure-view [data-query-view-name]')?.value)`,
+        `String(activeDocument.querySelector('[data-query-view-list]:popover-open [data-chooser-page] [data-query-view-name]')?.value)`,
         { expected: "Figures" },
       ),
     ).toBe(true);
     expect(await shown("Methods")).toBe(true);
     await obEval(
       vaultId,
-      `(()=>{${PAGE}const modal=activeDocument.querySelector('.modal.zt-configure-view');press((modal.querySelector('.modal-close-button')??modal.querySelector('.modal-header-button:has(.lucide-x)')),'Close');return true;})()`,
+      `(()=>{${PAGE}press(activeDocument.querySelector('[data-query-view-list]:popover-open [data-chooser-page] [data-chooser-page-close]'),'Close');return true;})()`,
     );
   }, 180000);
 
@@ -1863,10 +1864,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // The tab closes before the text goes back, so no pending save of the
     // tab writes over it.
     cleanup.defer(async () => {
-      // Teardown closes a dialog a failed step left open; not a reader's press.
+      // Teardown closes a popover a failed step left open; not a reader's press.
       await obEval(
         vaultId,
-        `(async()=>{for(const modal of activeDocument.querySelectorAll('.modal.zt-configure-view'))(modal.querySelector('.modal-close-button')??modal.querySelector('.modal-header-button:has(.lucide-x)'))?.click();for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))leaf.detach();await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(path)}),${JSON.stringify(original)});await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+        `(async()=>{for(const popup of activeDocument.querySelectorAll('[popover]:popover-open'))popup.hidePopover();for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))leaf.detach();await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(path)}),${JSON.stringify(original)});await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
       );
     });
     await obEval(
@@ -1896,7 +1897,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const pickLayout = (type: string) =>
       obEval(
         vaultId,
-        `(async()=>{${PAGE}const el=app.workspace.getMostRecentLeaf().view.contentEl;if(!activeDocument.querySelector('.modal.zt-configure-view'))el.querySelector('[data-query-view-menu]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:200,clientY:200}));const select=await until('Configure view opens',()=>activeDocument.querySelector('.modal.zt-configure-view [data-query-view-layout]'));select.value=${JSON.stringify(type)};select.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
+        `(async()=>{${PAGE}const el=app.workspace.getMostRecentLeaf().view.contentEl;if(!activeDocument.querySelector('[data-query-view-list]:popover-open [data-chooser-page]'))el.querySelector('[data-query-view-menu]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:200,clientY:200}));const select=await until('Configure view opens',()=>activeDocument.querySelector('[data-query-view-list]:popover-open [data-chooser-page] [data-query-view-layout]'));select.value=${JSON.stringify(type)};select.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
       );
 
     const annotations = await tabWhen((tab) => tab.cards.length > 0);
@@ -1916,7 +1917,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // A List option in Configure view draws at once and saves to the file.
     await obEval(
       vaultId,
-      `(()=>{const select=activeDocument.querySelector('.modal.zt-configure-view [data-query-view-option="markers"]');select.value='number';select.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
+      `(()=>{const select=activeDocument.querySelector('[data-query-view-list]:popover-open [data-chooser-page] [data-query-view-option="markers"]');select.value='number';select.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
     );
     const numbered = await tabWhen(
       (tab) => tab.markers === "number" && tab.text.includes("markers: number"),
@@ -1948,10 +1949,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
-      // Teardown closes a dialog a failed step left open; not a reader's press.
+      // Teardown closes a popover a failed step left open; not a reader's press.
       await obEval(
         vaultId,
-        `(async()=>{for(const modal of activeDocument.querySelectorAll('.modal.zt-configure-view'))(modal.querySelector('.modal-close-button')??modal.querySelector('.modal-header-button:has(.lucide-x)'))?.click();for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))leaf.detach();const file=app.vault.getFileByPath(${JSON.stringify(path)});if(file)await app.vault.delete(file);await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+        `(async()=>{for(const popup of activeDocument.querySelectorAll('[popover]:popover-open'))popup.hidePopover();for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))leaf.detach();const file=app.vault.getFileByPath(${JSON.stringify(path)});if(file)await app.vault.delete(file);await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
       );
     });
     await obEval(
@@ -1982,7 +1983,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const pickLayout = (type: string) =>
       obEval(
         vaultId,
-        `(async()=>{${PAGE}const el=app.workspace.getMostRecentLeaf().view.contentEl;el.querySelector('[data-query-view-menu]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:200,clientY:200}));await until('Configure view opens',()=>activeDocument.querySelector('.modal.zt-configure-view [data-query-view-layout]'));const modal=activeDocument.querySelector('.modal.zt-configure-view');const select=modal.querySelector('[data-query-view-layout]');select.value=${JSON.stringify(type)};select.dispatchEvent(new Event('change',{bubbles:true}));press((modal.querySelector('.modal-close-button')??modal.querySelector('.modal-header-button:has(.lucide-x)')),'Close');return true;})()`,
+        `(async()=>{${PAGE}const el=app.workspace.getMostRecentLeaf().view.contentEl;el.querySelector('[data-query-view-menu]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:200,clientY:200}));await until('Configure view opens',()=>activeDocument.querySelector('[data-query-view-list]:popover-open [data-chooser-page] [data-query-view-layout]'));const page=activeDocument.querySelector('[data-query-view-list]:popover-open [data-chooser-page]');const select=page.querySelector('[data-query-view-layout]');select.value=${JSON.stringify(type)};select.dispatchEvent(new Event('change',{bubbles:true}));press(page.querySelector('[data-chooser-page-close]'),'Close');return true;})()`,
       );
     /** Type into the toolbar search, which opens on its first use. */
     const search = (text: string) =>
@@ -2720,15 +2721,28 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       popup: "[data-query-properties-popup]",
       ready: "[data-query-property]",
     });
+  /** The page open in the Properties popover. */
+  const propertiesPage = `${propertiesPopup}?.querySelector('[data-chooser-page]')`;
   /**
-   * Runs an action of a property's row in the open Properties popover: its
-   * chevron opens the actions menu, as a reader presses it, and the menu item
-   * named `title` runs.
+   * Opens the page of a property's row in the open Properties popover: its
+   * chevron opens it, as a reader presses it.
    */
-  const runPropertyAction = (property: string, title: string) =>
+  const openPropertyPage = (property: string) =>
     obEval(
       vaultId,
-      `(async()=>{${PAGE}const popup=${propertiesPopup};press(popup.querySelector('[data-query-property-more="${property}"]'),'actions of property '+${JSON.stringify(property)});const item=await until('menu item '+${JSON.stringify(title)},()=>[...activeDocument.querySelectorAll('.menu .menu-item')].find(item=>item.querySelector('.menu-item-title')?.textContent===${JSON.stringify(title)}));press(item,'menu item '+${JSON.stringify(title)});return true;})()`,
+      `(async()=>{${PAGE}const popup=${propertiesPopup};press(popup.querySelector('[data-query-property-more="${property}"]'),'page of property '+${JSON.stringify(property)});await until('page of property '+${JSON.stringify(property)},()=>popup.querySelector('[data-query-property-page="${property}"]'));return true;})()`,
+    );
+  /** Runs an item of the "…" menu of the open property page. */
+  const runPageMenuItem = (hook: string) =>
+    obEval(
+      vaultId,
+      `(async()=>{${PAGE}const page=${propertiesPage};press(page.querySelector('[data-chooser-page-menu]'),'More options');const item=await until('menu item '+${JSON.stringify(hook)},()=>page.querySelector('[role="menu"]:popover-open [data-chooser-page-menu-item="${hook}"]'));press(item,'menu item '+${JSON.stringify(hook)});return true;})()`,
+    );
+  /** Closes the open Properties popover from its page's close button. */
+  const closePropertyPage = () =>
+    obEval(
+      vaultId,
+      `(()=>{${PAGE}press(${propertiesPage}.querySelector('[data-chooser-page-close]'),'Close');return true;})()`,
     );
   /** Opens the results popover and waits for its "Export CSV…" action. */
   const openResults = (tab: string) =>
@@ -2747,10 +2761,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
-      // Teardown closes a dialog a failed step left open; not a reader's press.
+      // Teardown closes a popover a failed step left open; not a reader's press.
       await obEval(
         vaultId,
-        `(async()=>{for(const modal of activeDocument.querySelectorAll('.modal.zt-query-formula-modal'))modal.querySelector('.modal-close-button')?.click();await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));for(const path of ${JSON.stringify([path, notePath])}){const file=app.vault.getFileByPath(path);if(file)await app.vault.delete(file);}return true;})()`,
+        `(async()=>{for(const popup of activeDocument.querySelectorAll('[popover]:popover-open'))popup.hidePopover();await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));for(const path of ${JSON.stringify([path, notePath])}){const file=app.vault.getFileByPath(path);if(file)await app.vault.delete(file);}return true;})()`,
       );
     });
     const source = `views:\n  - type: table\n    name: Items\n    from: items\n    order:\n      - title\n    limit: 5\n`;
@@ -2807,18 +2821,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const shown = await tabWhen((tab) => tab.rows.length > 0);
     expect(shown.columns).toEqual([null, "title", null]);
 
-    // "Add formula" in the Properties popover opens the Formula dialog.
-    const formulaModal =
-      "[...activeDocument.querySelectorAll('.modal.zt-query-formula-modal')].at(-1)";
+    // "Add formula" in the Properties popover opens its page.
     await openProperties(tab);
     await obEval(
       vaultId,
       `(()=>{${PAGE}press([...${propertiesPopup}.querySelectorAll('[role="option"]')].find(n=>n.textContent===${JSON.stringify(m.query_view_formula_add())}),'Add formula');return true;})()`,
     );
     /**
-     * Types into the dialog, and reads what it says about the text. The
-     * dialog draws the text in a microtask after the input event, so the read
-     * in the next call sees it.
+     * Types into the formula's page, and reads what it says about the text.
+     * The page draws the text in a microtask after the input event, so the
+     * read in the next call sees it. A Formula's own page saves as it goes:
+     * it has no Save button, and reads `save: null`.
      */
     const typeFormula = async (fields: {
       name?: string;
@@ -2826,22 +2839,27 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     }) => {
       await obEval(
         vaultId,
-        `(()=>{const modal=${formulaModal};const set=(el,value)=>{el.value=value;el.dispatchEvent(new InputEvent('input',{bubbles:true}));};${fields.name === undefined ? "" : `set(modal.querySelector('[data-query-formula-name]'),${JSON.stringify(fields.name)});`}set(modal.querySelector('[data-query-formula-expression]'),${JSON.stringify(fields.expression)});return true;})()`,
+        `(()=>{const page=${propertiesPage};const set=(el,value)=>{el.value=value;el.dispatchEvent(new InputEvent('input',{bubbles:true}));};${fields.name === undefined ? "" : `set(page.querySelector('[data-query-formula-name]'),${JSON.stringify(fields.name)});`}set(page.querySelector('[data-query-formula-expression]'),${JSON.stringify(fields.expression)});return true;})()`,
       );
       return JSON.parse(
         await obEval(
           vaultId,
-          `(()=>{const modal=${formulaModal};return JSON.stringify({syntax:modal.querySelector('[data-query-formula-syntax]')?.getAttribute('data-query-formula-syntax')??null,save:!modal.querySelector('[data-query-formula-save]').disabled});})()`,
+          `(()=>{const page=${propertiesPage};const save=page.querySelector('[data-query-formula-save]');return JSON.stringify({syntax:page.querySelector('[data-query-formula-syntax]')?.getAttribute('data-query-formula-syntax')??null,save:save?!save.disabled:null});})()`,
         ),
-      ) as { syntax: string; save: boolean };
+      ) as { syntax: string; save: boolean | null };
     };
+    /**
+     * Saves the formula's page: "Add formula" by its Save button, which
+     * turns the page into the Formula's own; then the close button, which
+     * saves the text of a Formula's own page as the popover closes.
+     */
     const saveFormula = () =>
       obEval(
         vaultId,
-        `(()=>{${PAGE}press(${formulaModal}.querySelector('[data-query-formula-save]'),'Save');return true;})()`,
+        `(async()=>{${PAGE}const popup=${propertiesPopup};const save=popup.querySelector('[data-chooser-page] [data-query-formula-save]');if(save){press(save,'Save');await until('page of the Formula',()=>popup.querySelector('[data-query-property-page]'));}press(popup.querySelector('[data-chooser-page-close]'),'Close');return true;})()`,
       );
     expect(
-      await obEvalUntil(vaultId, `String(!!${formulaModal})`, {
+      await obEvalUntil(vaultId, `String(!!${propertiesPage})`, {
         expected: "true",
       }),
     ).toBe(true);
@@ -2902,17 +2920,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     await tabWhen((tab) => tab.columns.includes("formula.year"));
 
-    // The Formula row's "Edit formula" action opens it for editing.
+    // The Formula row's chevron opens its page for editing.
     const editFormula = async () => {
       await openProperties(tab);
-      await runPropertyAction("formula.year", m.query_view_formula_edit());
-      expect(
-        await obEvalUntil(
-          vaultId,
-          `String(${formulaModal}?.querySelector('[data-query-formula-dialog]')?.getAttribute('data-query-formula-dialog'))`,
-          { expected: "year" },
-        ),
-      ).toBe(true);
+      await openPropertyPage("formula.year");
     };
     await editFormula();
     await typeFormula({ expression: "date.year + 1" });
@@ -2929,7 +2940,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await editFormula();
     expect(await typeFormula({ expression: "title.nope()" })).toEqual({
       syntax: "valid",
-      save: true,
+      save: null,
     });
     await saveFormula();
     const wrong = await tabWhen((tab) => tab.headerIssue !== null);
@@ -2945,11 +2956,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     expect(rowIssue).toBe(wrong.headerIssue);
 
-    // Remove leaves the file without the Formula and its property.
+    // Remove, in the page's menu, leaves the file without the Formula and
+    // its property, and steps back to the rows.
     await editFormula();
+    await runPageMenuItem("remove-formula");
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `(()=>{const popup=${propertiesPopup};return String(!!popup&&!popup.querySelector('[data-chooser-page]')&&!!popup.querySelector('[data-query-property]'));})()`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
     await obEval(
       vaultId,
-      `(()=>{${PAGE}press(${formulaModal}.querySelector('[data-query-formula-remove]'),'Remove');return true;})()`,
+      `(()=>{${propertiesPopup}.hidePopover();return true;})()`,
     );
     const removed = await tabWhen(
       (tab) =>
@@ -3329,10 +3349,10 @@ views:
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
-      // Teardown closes a dialog a failed step left open; not a reader's press.
+      // Teardown closes a popover a failed step left open; not a reader's press.
       await obEval(
         vaultId,
-        `(async()=>{for(const modal of activeDocument.querySelectorAll('.modal.zt-query-formula-modal,.modal.zt-query-display-name-modal'))modal.querySelector('.modal-close-button')?.click();await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));const file=app.vault.getFileByPath(${JSON.stringify(path)});if(file)await app.vault.delete(file);return true;})()`,
+        `(async()=>{for(const popup of activeDocument.querySelectorAll('[popover]:popover-open'))popup.hidePopover();await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));const file=app.vault.getFileByPath(${JSON.stringify(path)});if(file)await app.vault.delete(file);return true;})()`,
       );
     });
     const source = `formulas:\n  year: date.year\nviews:\n  - type: table\n    name: Named columns\n    from: items\n    order:\n      - title\n      - formula.year\n    limit: 3\n`;
@@ -3371,27 +3391,24 @@ views:
       ["formula.year", "formula.year"],
     ]);
 
-    // The title row's "Rename property" action opens its dialog.
-    const renameModal =
-      "[...activeDocument.querySelectorAll('.modal.zt-query-display-name-modal')].at(-1)";
+    // The title row's chevron opens its page. Escape there steps back to the
+    // rows, with focus in the search field, and saves the name typed.
     await openProperties(tab);
-    await runPropertyAction("title", m.query_view_property_rename());
+    await openPropertyPage("title");
+    await obEval(
+      vaultId,
+      `(()=>{const input=${propertiesPage}.querySelector('[data-query-display-name]');input.value='Work';input.dispatchEvent(new InputEvent('input',{bubbles:true}));input.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return true;})()`,
+    );
     expect(
       await obEvalUntil(
         vaultId,
-        `String(${renameModal}?.querySelector('[data-query-rename-dialog]')?.getAttribute('data-query-rename-dialog'))`,
-        { expected: "title" },
+        `(()=>{const popup=${propertiesPopup};return String(!!popup&&!popup.querySelector('[data-chooser-page]')&&popup.ownerDocument.activeElement?.getAttribute('role')==='combobox');})()`,
+        { expected: "true" },
       ),
     ).toBe(true);
-    // The dialog takes the name in a microtask after the input event, so the
-    // save in the next call sees it.
     await obEval(
       vaultId,
-      `(()=>{const input=${renameModal}.querySelector('[data-query-display-name]');input.value='Work';input.dispatchEvent(new InputEvent('input',{bubbles:true}));return true;})()`,
-    );
-    await obEval(
-      vaultId,
-      `(()=>{${PAGE}press(${renameModal}.querySelector('[data-query-display-name-save]'),'Save');return true;})()`,
+      `(()=>{${propertiesPopup}.hidePopover();return true;})()`,
     );
     const field = await tabWhen((tab) => tab.text.includes("displayName"));
     expect(field.text).toBe(
@@ -3401,30 +3418,18 @@ views:
       ),
     );
 
-    // The Formula dialog holds the Formula's Display Name.
-    const formulaModal =
-      "[...activeDocument.querySelectorAll('.modal.zt-query-formula-modal')].at(-1)";
-    /** Opens the Formula dialog of `formula.year`. */
+    // The Formula's page holds the Formula's Display Name.
+    /** Opens the page of `formula.year`. */
     const editYear = async () => {
       await openProperties(tab);
-      await runPropertyAction("formula.year", m.query_view_formula_edit());
-      expect(
-        await obEvalUntil(
-          vaultId,
-          `String(${formulaModal}?.querySelector('[data-query-formula-dialog]')?.getAttribute('data-query-formula-dialog'))`,
-          { expected: "year" },
-        ),
-      ).toBe(true);
+      await openPropertyPage("formula.year");
     };
     await editYear();
     await obEval(
       vaultId,
-      `(()=>{const input=${formulaModal}.querySelector('[data-query-display-name]');input.value='Year of source';input.dispatchEvent(new InputEvent('input',{bubbles:true}));return true;})()`,
+      `(()=>{const input=${propertiesPage}.querySelector('[data-query-display-name]');input.value='Year of source';input.dispatchEvent(new InputEvent('input',{bubbles:true}));return true;})()`,
     );
-    await obEval(
-      vaultId,
-      `(()=>{${PAGE}press(${formulaModal}.querySelector('[data-query-formula-save]'),'Save');return true;})()`,
-    );
+    await closePropertyPage();
     const named = await tabWhen((tab) => tab.text.includes("Year of source"));
     expect(named.text).toBe(
       source.replace(
@@ -3482,9 +3487,17 @@ views:
 
     // Removing the Formula also removes its Display Name; the field keeps its own.
     await editYear();
+    await runPageMenuItem("remove-formula");
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `(()=>{const popup=${propertiesPopup};return String(!!popup&&!popup.querySelector('[data-chooser-page]')&&!!popup.querySelector('[data-query-property]'));})()`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
     await obEval(
       vaultId,
-      `(()=>{${PAGE}press(${formulaModal}.querySelector('[data-query-formula-remove]'),'Remove');return true;})()`,
+      `(()=>{${propertiesPopup}.hidePopover();return true;})()`,
     );
     const removed = await tabWhen((tab) => !tab.text.includes("formula"));
     expect(removed.text).toBe(
@@ -3508,10 +3521,10 @@ views:
     // The tab closes before the text goes back, so no pending save of the
     // tab writes over it.
     cleanup.defer(async () => {
-      // Teardown closes a dialog a failed step left open; not a reader's press.
+      // Teardown closes a popover a failed step left open; not a reader's press.
       await obEval(
         vaultId,
-        `(async()=>{for(const modal of activeDocument.querySelectorAll('.modal.zt-configure-view'))(modal.querySelector('.modal-close-button')??modal.querySelector('.modal-header-button:has(.lucide-x)'))?.click();for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))leaf.detach();await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(path)}),${JSON.stringify(original)});for(const path of ${JSON.stringify(created)}){const file=app.vault.getFileByPath(path);if(file)await app.vault.delete(file);}await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+        `(async()=>{for(const popup of activeDocument.querySelectorAll('[popover]:popover-open'))popup.hidePopover();for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))leaf.detach();await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(path)}),${JSON.stringify(original)});for(const path of ${JSON.stringify(created)}){const file=app.vault.getFileByPath(path);if(file)await app.vault.delete(file);}await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
       );
     });
     const tab = "app.workspace.getMostRecentLeaf().view";
@@ -3565,24 +3578,24 @@ views:
       vaultId,
       `(()=>{${tab}.contentEl.querySelector('[data-query-view-menu]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true}));return true;})()`,
     );
-    // The Configure view this view opened is the last one on screen.
-    const configureModal =
-      "[...activeDocument.querySelectorAll('.modal.zt-configure-view')].at(-1)";
+    // The Configure view page this view's menu opened.
+    const configurePage =
+      "activeDocument.querySelector('[data-query-view-list]:popover-open [data-chooser-page]')";
     expect(
       await obEvalUntil(
         vaultId,
-        `String(${configureModal}?.querySelector('[data-query-view-name]')?.value===${JSON.stringify("All annotations")})`,
+        `String(${configurePage}?.querySelector('[data-query-view-name]')?.value===${JSON.stringify("All annotations")})`,
         { expected: "true" },
       ),
     ).toBe(true);
     await obEval(
       vaultId,
-      `(()=>{const select=${configureModal}.querySelector('[data-query-view-dataset]');select.value='items';select.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
+      `(()=>{const select=${configurePage}.querySelector('[data-query-view-dataset]');select.value='items';select.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
     );
     expect(
       await obEvalUntil(
         vaultId,
-        `JSON.stringify([...${configureModal}.querySelectorAll('[data-query-view-layout] option')].map(n=>[n.textContent,n.selected]))`,
+        `JSON.stringify([...${configurePage}.querySelectorAll('[data-query-view-layout] option')].map(n=>[n.textContent,n.selected]))`,
         {
           expected: JSON.stringify([
             [m.query_view_layout_table(), true],
@@ -3606,7 +3619,7 @@ views:
     ).toBe(true);
     await obEval(
       vaultId,
-      `(()=>{${PAGE}const modal=${configureModal};press(modal.querySelector('.modal-close-button')??modal.querySelector('.modal-header-button:has(.lucide-x)'),'Close');return true;})()`,
+      `(()=>{${PAGE}press(${configurePage}.querySelector('[data-chooser-page-close]'),'Close');return true;})()`,
     );
     // The view saves as a Table of Items, and keeps its grouping.
     expect(
