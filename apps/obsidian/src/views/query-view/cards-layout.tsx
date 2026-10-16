@@ -2,10 +2,11 @@
 // layout of Bases draws a note. The first visible property is the card's
 // title; each other one shows under its name. Its option is `cardSize`, the
 // narrowest a card is drawn, as in Bases 1.14.4.
-import { Setting } from "obsidian";
 import type { CSSProperties } from "react";
 import { useStore } from "zustand";
 
+import { Chooser } from "@/components/chooser";
+import { Slider } from "@/components/obsidian/slider";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
 
@@ -46,20 +47,27 @@ export function cardsLayoutOptions(
 }
 
 /** The Cards layout's options in "Configure view". */
-export function addCardsOptions(
-  el: HTMLElement,
-  options: CardsLayoutOptions,
-  set: (key: keyof CardsLayoutOptions, value: unknown) => void,
-): void {
-  new Setting(el).setName(m.query_view_card_size()).addSlider((slider) => {
-    slider.sliderEl.dataset.queryViewOption = "cardSize";
-    slider
-      .setLimits(CARD_SIZE.min, CARD_SIZE.max, CARD_SIZE.step)
-      .setValue(options.cardSize)
-      .setDynamicTooltip()
-      .setInstant(true)
-      .onChange((value) => set("cardSize", value));
-  });
+export function CardsLayoutFields({
+  options,
+  set,
+}: {
+  options: CardsLayoutOptions;
+  set: (key: keyof CardsLayoutOptions, value: unknown) => void;
+}) {
+  return (
+    <Chooser.PageField label={m.query_view_card_size()}>
+      <Slider
+        value={options.cardSize}
+        min={CARD_SIZE.min}
+        max={CARD_SIZE.max}
+        step={CARD_SIZE.step}
+        instant
+        dynamicTooltip
+        data-query-view-option="cardSize"
+        onChange={(value) => set("cardSize", value)}
+      />
+    </Chooser.PageField>
+  );
 }
 
 /**

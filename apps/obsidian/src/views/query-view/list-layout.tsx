@@ -2,10 +2,12 @@
 // properties in the view's order, as the List layout of Bases draws a note.
 // Its options are those of Bases 1.14.4: `markers`, `indentProperties` and
 // `separator`.
-import { Setting } from "obsidian";
 import { Fragment } from "react";
 import { useStore } from "zustand";
 
+import { Chooser } from "@/components/chooser";
+import { Dropdown, DropdownItem } from "@/components/obsidian/dropdown";
+import { Toggle } from "@/components/obsidian/toggle";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
 
@@ -65,60 +67,64 @@ export function listLayoutOptions(
 }
 
 /** The List layout's options in "Configure view". */
-export function addListOptions(
-  el: HTMLElement,
-  options: ListLayoutOptions,
-  {
-    set,
-    redraw,
-  }: {
-    set: (key: keyof ListLayoutOptions, value: unknown) => void;
-    /** Draw the options again, as one option shows or hides another. */
-    redraw: () => void;
-  },
-): void {
+export function ListLayoutFields({
+  options,
+  set,
+}: {
+  options: ListLayoutOptions;
+  set: (key: keyof ListLayoutOptions, value: unknown) => void;
+}) {
   const labels: Record<ListMarker, () => string> = {
     bullet: m.query_view_list_marker_bullet,
     number: m.query_view_list_marker_number,
     none: m.query_view_list_marker_none,
   };
-  new Setting(el)
-    .setName(m.query_view_list_markers())
-    .addDropdown((dropdown) => {
-      for (const marker of LIST_MARKERS)
-        dropdown.addOption(marker, labels[marker]());
-      dropdown.selectEl.dataset.queryViewOption = "markers";
-      dropdown
-        .setValue(options.markers)
-        .onChange((value) =>
-          set(
-            "markers",
-            value === LIST_LAYOUT_DEFAULTS.markers ? undefined : value,
-          ),
-        );
-    });
-  new Setting(el)
-    .setName(m.query_view_list_indent_properties())
-    .addToggle((toggle) => {
-      toggle.toggleEl.dataset.queryViewOption = "indentProperties";
-      toggle.setValue(options.indentProperties).onChange((value) => {
-        set("indentProperties", value);
-        // The separator shows only where the properties share one line.
-        redraw();
-      });
-    });
-  if (!options.indentProperties)
-    new Setting(el)
-      .setName(m.query_view_list_property_separator())
-      .addText((text) => {
-        text.inputEl.dataset.queryViewOption = "separator";
-        text
-          .setPlaceholder(LIST_LAYOUT_DEFAULTS.separator)
-          .setValue(options.separator)
-          .onChange((value) =>
-            set("separator", value === "" ? undefined : value),
-          );
-      });
+  return (
+    <>
+      <Chooser.PageField label={m.query_view_list_markers()}>
+        <Dropdown
+          value={options.markers}
+          data-query-view-option="markers"
+          onChange={(value) =>
+            set(
+              "markers",
+              value === LIST_LAYOUT_DEFAULTS.markers ? undefined : value,
+            )
+          }
+        >
+          {LIST_MARKERS.map((marker) => (
+            <DropdownItem key={marker} value={marker}>
+              {labels[marker]()}
+            </DropdownItem>
+          ))}
+        </Dropdown>
+      </Chooser.PageField>
+      <Chooser.PageField label={m.query_view_list_indent_properties()} inline>
+        <span className="zt:flex" data-query-view-option="indentProperties">
+          <Toggle
+            value={options.indentProperties}
+            aria-label={m.query_view_list_indent_properties()}
+            onChange={(value) => set("indentProperties", value)}
+          />
+        </span>
+      </Chooser.PageField>
+      {/* The separator shows only where the properties share one line. */}
+      {!options.indentProperties && (
+        <Chooser.PageField label={m.query_view_list_property_separator()}>
+          <input
+            type="text"
+            value={options.separator}
+            placeholder={LIST_LAYOUT_DEFAULTS.separator}
+            data-query-view-option="separator"
+            onInput={(event) => {
+              const value = event.currentTarget.value;
+              set("separator", value === "" ? undefined : value);
+            }}
+          />
+        </Chooser.PageField>
+      )}
+    </>
+  );
 }
 
 /** The rows of the shown view, one line each, under their group headings. */

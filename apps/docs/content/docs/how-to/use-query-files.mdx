@@ -44,12 +44,12 @@ Select the view menu to see the views of the file. Type in <UiLabel name={m.quer
 
 - To add a view, select <UiLabel name={m.query_view_add_view()} />. ZotLit opens <UiLabel name={m.query_view_configure_view()} /> so that you can name it.
 - To change the order of the views, drag a view in the list.
-- To make a view the default, right-click it and select <UiLabel name={m.query_view_default_view()} />. The default view moves to the top of the list. An embed without a view name shows it.
-- To copy or remove a view, right-click it and select <UiLabel name={m.query_view_duplicate_view()} /> or <UiLabel name={m.query_view_delete_view()} />.
+- To make a view the default, open its <UiLabel name={m.query_view_configure_view()} /> page, select <UiLabel name={m.query_view_more_options()} /> (…), and select <UiLabel name={m.query_view_default_view()} />. The default view moves to the top of the list. An embed without a view name shows it.
+- To copy or remove a view, open its <UiLabel name={m.query_view_configure_view()} /> page, select <UiLabel name={m.query_view_more_options()} /> (…), and select <UiLabel name={m.query_view_duplicate_view()} /> or <UiLabel name={m.query_view_delete_view()} />.
 
 ### Configure a view [#configure]
 
-Select the view menu, then <UiLabel name={m.query_view_configure_view()} />. Each change saves at once.
+Select the view menu. On the row of a view, select the chevron button, tooltipped <UiLabel name={m.query_view_configure_view()} />. You can also right-click the row, or right-click the view menu button to configure the view on screen. The <UiLabel name={m.query_view_configure_view()} /> page opens in the same menu. Each change saves at once. The view name saves when you leave the field.
 
 | Setting                                     | What it does                                                                                    |
 | ------------------------------------------- | ----------------------------------------------------------------------------------------------- |
@@ -151,9 +151,9 @@ To show the year of each paper in an items view:
 
 <Steps>
   <Step>
-    ### Open the dialog
+    ### Open the formula page
 
-    Select <UiLabel name={m.query_view_properties()} />, then <UiLabel name={m.query_view_formula_add()} />.
+    Select <UiLabel name={m.query_view_properties()} />, then <UiLabel name={m.query_view_formula_add()} />. The page for the new formula opens in the same menu.
 
   </Step>
   <Step>
@@ -171,16 +171,16 @@ To show the year of each paper in an items view:
   <Step>
     ### Save
 
-    Select <UiLabel name={m.query_view_formula_save()} />. The view shows the new property after its other properties, with the year of each paper.
+    Select <UiLabel name={m.query_view_formula_save()} />. The view shows the new property after its other properties, with the year of each paper. The page changes to the page of the new formula.
 
   </Step>
 </Steps>
 
 The file saves the formula under its top-level `formulas` key, and every view of the file can show it. To filter by a formula, select <UiLabel name={m.workbench_match_edit_as_expression()} /> on a condition in the filter editor and type, for example, `formula.year >= 2020`. One formula can also use another, for example `formula.year + 1`.
 
-To change a formula, select <UiLabel name={m.query_view_formula_edit()} /> (the pencil button) on its row in <UiLabel name={m.query_view_properties()} />. The formula dialog opens. The name stays as it is: to use a new name, remove the formula and add it again.
+To change a formula, select <UiLabel name={m.query_view_properties()} />. On its row, select the chevron button, tooltipped <UiLabel name={m.query_view_property_edit()} />, or press the Right arrow key. The page of the formula opens in the same menu. Change the text in <UiLabel name={m.query_view_formula_expression()} />. The text saves shortly after you stop typing, when it has no syntax errors. The name stays as it is: to use a new name, remove the formula and add it again. Select <UiLabel name={m.query_view_back()} /> to return to the list.
 
-To remove a formula, open its formula dialog and select <UiLabel name={m.query_view_formula_remove()} />. ZotLit removes the formula from every view of the file. A filter condition that still uses it shows an error until you change it.
+To remove a formula, open its page, select <UiLabel name={m.query_view_more_options()} /> (…), and select <UiLabel name={m.query_view_formula_remove()} />. ZotLit removes the formula from every view of the file and returns to the list. A filter condition that still uses it shows an error until you change it.
 
 ### When a formula has a mistake [#formula-errors]
 
@@ -194,22 +194,22 @@ A display name replaces the path of a property in the view. For example, the pro
 
 <Steps>
   <Step>
-    ### Open the dialog
+    ### Open the property page
 
-    Select <UiLabel name={m.query_view_properties()} />. On the row of `formula.year`, select the <UiLabel name={m.query_view_property_rename()} /> button.
+    Select <UiLabel name={m.query_view_properties()} />. On the row of `formula.year`, select the chevron button, tooltipped <UiLabel name={m.query_view_property_edit()} />.
 
   </Step>
   <Step>
     ### Type the name
 
-    In <UiLabel name={m.query_view_display_name()} />, type `Year of source`, then select <UiLabel name={m.query_view_display_name_save()} />.
+    In <UiLabel name={m.query_view_display_name()} />, type `Year of source`. The name saves when you leave the field, press `Enter`, select <UiLabel name={m.query_view_back()} />, or close the menu.
 
   </Step>
 </Steps>
 
-The Table header, the Cards labels, the rows in <UiLabel name={m.query_view_properties()} />, and the header row of copy and CSV export show "Year of source". The display name applies to every view of the file. For a formula, you can also set it in <UiLabel name={m.query_view_display_name()} /> of the formula dialog.
+The Table header, the Cards labels, the rows in <UiLabel name={m.query_view_properties()} />, and the header row of copy and CSV export show "Year of source". The display name applies to every view of the file. For a new formula, you can also set it in <UiLabel name={m.query_view_display_name()} /> when you add the formula.
 
-To return to the default name, clear the field and save. Without a display name, a property shows its field name, such as Title, or its path.
+To return to the default name, clear the field. Without a display name, a property shows its field name, such as Title, or its path.
 
 ## Limit, copy, and export the results [#results]
 

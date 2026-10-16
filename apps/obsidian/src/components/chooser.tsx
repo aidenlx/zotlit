@@ -28,6 +28,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -49,7 +50,7 @@ import { SearchInput } from "@/components/obsidian/search-input";
 import { useObsidianApp } from "@/lib/app-context";
 import { registerKeymap } from "@/lib/disposables";
 import { themeHook } from "@/lib/theme-hooks";
-import { cn } from "@/lib/utils";
+import { cn, tooltipAttrs } from "@/lib/utils";
 
 import {
   activatedRow,
@@ -90,6 +91,10 @@ interface ChooserState {
   listId: string;
   /** The row box, which a page step measures itself against. */
   listRef: RefObject<HTMLDivElement | null>;
+  /** The page an open from outside the popup starts on, read once by the session. */
+  firstPage: RefObject<string | null>;
+  /** The open session's `openPage`, while a session stands. */
+  sessionPage: RefObject<((page: string) => void) | null>;
 }
 
 const ChooserContext = createContext<ChooserState | null>(null);
@@ -130,6 +135,14 @@ interface ChooserSessionState {
   scope: Scope;
   /** The highlighted row's value at the moment a key fires, else `null`. */
   activeValue: () => string | null;
+  /** The page on screen in place of the rows, or `null` on the rows. */
+  page: string | null;
+  /** Opens a page over the one on screen. */
+  openPage: (page: string) => void;
+  /** Steps back to the page under this one, or to the rows. */
+  back: () => void;
+  /** Puts another page in the place of the one on screen. */
+  replacePage: (page: string) => void;
 }
 
 const ChooserSessionContext = createContext<ChooserSessionState | null>(null);
@@ -159,6 +172,36 @@ export function useChooserScope(): Pick<
 > {
   const { scope, activeValue } = useChooserSession();
   return { scope, activeValue };
+}
+
+/**
+ * The page stack of an open popup, as a Bases toolbar menu steps from its
+ * rows to a row's page and back. A page is named by a string the caller
+ * reads back in {@link Page}.
+ */
+export function useChooserPage(): Pick<
+  ChooserSessionState,
+  "page" | "openPage" | "back" | "replacePage"
+> {
+  const { page, openPage, back, replacePage } = useChooserSession();
+  return { page, openPage, back, replacePage };
+}
+
+/**
+ * Opens the popup on a page, from outside it, such as a right-click on the
+ * trigger. A popup that stands already opens the page over the one on screen.
+ */
+export function useChooserOpenPage(): (page: string) => void {
+  const { popupRef, firstPage, sessionPage } = useChooser();
+  return useCallback(
+    (page: string) => {
+      const open = sessionPage.current;
+      if (open) return open(page);
+      firstPage.current = page;
+      popupRef.current?.showPopover();
+    },
+    [popupRef, firstPage, sessionPage],
+  );
 }
 
 /** What a row needs from the list it is drawn in. */
@@ -243,6 +286,8 @@ export function Chooser({ value, onValueChange, children }: ChooserProps) {
   const listRef = useRef<HTMLDivElement | null>(null);
   const popupRef = useRef<HTMLDivElement | null>(null);
   const close = useCallback(() => popupRef.current?.hidePopover(), []);
+  const firstPage = useRef<string | null>(null);
+  const sessionPage = useRef<((page: string) => void) | null>(null);
 
   const state = useMemo<ChooserState>(
     () => ({
@@ -256,6 +301,8 @@ export function Chooser({ value, onValueChange, children }: ChooserProps) {
       close,
       listId: `${popupId}-list`,
       listRef,
+      firstPage,
+      sessionPage,
     }),
     [value, onValueChange, open, popupId, close],
   );
@@ -271,8 +318,41 @@ export function Chooser({ value, onValueChange, children }: ChooserProps) {
  */
 function ChooserSession({ children }: { children: ReactNode }) {
   const app = useObsidianApp();
-  const { selected, onValueChange, popupId, close, listRef } = useChooser();
+  const {
+    selected,
+    onValueChange,
+    popupId,
+    popupRef,
+    close,
+    listRef,
+    firstPage,
+    sessionPage,
+  } = useChooser();
   const [query, setQueryState] = useState("");
+  // The pages opened over the rows, the one on screen last. An open from
+  // outside the popup can start on a page.
+  const [pages, setPages] = useState<readonly string[]>(() => {
+    const first = firstPage.current;
+    firstPage.current = null;
+    return first === null ? [] : [first];
+  });
+  const page = pages.at(-1) ?? null;
+
+  // A page leaves the DOM with no blur event, so a field that saves on blur
+  // saves again as its page unmounts.
+  // A page already on screen stays one step deep, as a second right-click
+  // on the trigger asks for the page that stands.
+  const openPage = useCallback(
+    (page: string) =>
+      setPages((now) => (now.at(-1) === page ? now : [...now, page])),
+    [],
+  );
+  const back = useCallback(() => setPages((now) => now.slice(0, -1)), []);
+  const replacePage = useCallback(
+    (page: string) => setPages((now) => [...now.slice(0, -1), page]),
+    [],
+  );
+
   const [rows, setRows] = useState<readonly ChooserRow[]>([]);
   // No row is highlighted until a key names one or a row is clicked: a popup
   // that opened with its first row darkened told a pointer user it was chosen.
@@ -299,8 +379,8 @@ function ChooserSession({ children }: { children: ReactNode }) {
    * row the highlight stood on one keystroke ago. Preact renders
    * synchronously, so the write lands with the render it describes.
    */
-  const latest = useRef({ rows, highlight, selected, onValueChange });
-  latest.current = { rows, highlight, selected, onValueChange };
+  const latest = useRef({ rows, highlight, selected, onValueChange, page });
+  latest.current = { rows, highlight, selected, onValueChange, page };
 
   /**
    * A rebuilt row set re-homes the highlight rather than keeping its index: a
@@ -323,7 +403,7 @@ function ChooserSession({ children }: { children: ReactNode }) {
 
   /**
    * One scope per open, parented to the app scope so every key it leaves
-   * alone — Escape included, which stays the platform's — reaches Obsidian's
+   * alone — Escape on the rows included, which stays the platform's — reaches Obsidian's
    * own hotkeys.
    */
   const [scope] = useState(() => new Scope(app.scope));
@@ -346,8 +426,9 @@ function ChooserSession({ children }: { children: ReactNode }) {
     // user aimed at the popup standing in front of it. Falling through is for
     // keys this scope never registered, which reach the app scope it is
     // parented to.
+    // While a page stands, the keys of the rows leave its fields alone.
     const move = (step: ChooserMove) => (event: KeyboardEvent) => {
-      if (composing(event)) return;
+      if (composing(event) || latest.current.page !== null) return;
       const { rows: shown, highlight: at } = latest.current;
       setHighlight(
         movedHighlight(at, step, {
@@ -361,6 +442,7 @@ function ChooserSession({ children }: { children: ReactNode }) {
     // highlight, and the row itself deciding whether it ticks or runs.
     const activate = (event: KeyboardEvent) => {
       if (composing(event)) return;
+      if (latest.current.page !== null) return commitField();
       const {
         rows: shown,
         highlight: at,
@@ -371,9 +453,36 @@ function ChooserSession({ children }: { children: ReactNode }) {
       runActivation(activatedRow(row, ticked), close, emit);
       return false;
     };
-    // Escape is absent on purpose: the popover's own light dismiss closes it,
-    // and a handler here returning `false` would preventDefault and suppress
-    // that. Ctrl-P and Ctrl-N repeat the arrows, the way every Obsidian list
+    // On a page, Enter saves the text field it was typed in, as a Bases menu
+    // page saves on blur, and submits the form the field stands in. A key
+    // anywhere else on the page stays its own.
+    const commitField = () => {
+      // The key reaches the field that holds focus.
+      const field = popupRef.current?.doc.activeElement;
+      if (
+        !field?.instanceOf(HTMLInputElement) ||
+        !["text", "search"].includes(field.type) ||
+        !popupRef.current?.contains(field)
+      )
+        return;
+      // Focus moves to the page itself, which saves the field as it blurs
+      // and keeps the keys inside the popup.
+      field.closest<HTMLElement>("[data-chooser-page]")?.focus();
+      field.form?.requestSubmit();
+      return false;
+    };
+    // On the rows, Escape is the popover's own light dismiss, which a
+    // handler returning `false` would suppress, so it falls through. On a
+    // page, it steps back to the rows — unless a menu opened from the page
+    // stands, which the light dismiss closes first.
+    const escape = (event: KeyboardEvent) => {
+      if (composing(event) || latest.current.page === null) return;
+      if (popupRef.current?.querySelector("[data-chooser-page] :popover-open"))
+        return;
+      back();
+      return false;
+    };
+    // Ctrl-P and Ctrl-N repeat the arrows, the way every Obsidian list
     // does.
     const stack = new DisposableStack();
     stack.use(registerKeymap(scope, [], "ArrowUp", move("previous")));
@@ -385,12 +494,13 @@ function ChooserSession({ children }: { children: ReactNode }) {
     stack.use(registerKeymap(scope, ["Ctrl"], "p", move("previous")));
     stack.use(registerKeymap(scope, ["Ctrl"], "n", move("next")));
     stack.use(registerKeymap(scope, [], "Enter", activate));
+    stack.use(registerKeymap(scope, [], "Escape", escape));
     // ArrowRight is the one registered key that can fall through: on a row
     // with a page of its own it opens that page, and anywhere else it stays
     // the search field's caret key.
     stack.use(
       registerKeymap(scope, [], "ArrowRight", (event) => {
-        if (composing(event)) return;
+        if (composing(event) || latest.current.page !== null) return;
         const { rows: shown, highlight: at } = latest.current;
         const next =
           at < 0 ? undefined : shown[clampedHighlight(at, shown.length)]?.next;
@@ -400,7 +510,7 @@ function ChooserSession({ children }: { children: ReactNode }) {
       }),
     );
     return () => stack.dispose();
-  }, [scope, close, listRef]);
+  }, [scope, close, listRef, popupRef, back]);
 
   /**
    * Pushed when the session mounts and popped when it unmounts, so the
@@ -411,6 +521,25 @@ function ChooserSession({ children }: { children: ReactNode }) {
     app.keymap.pushScope(scope);
     return () => app.keymap.popScope(scope);
   }, [app, scope]);
+
+  // An open from outside the popup reaches the session while it stands.
+  useLayoutEffect(() => {
+    sessionPage.current = openPage;
+    return () => {
+      sessionPage.current = null;
+    };
+  }, [sessionPage, openPage]);
+
+  // Back on the rows, focus returns to the search field, or the list box
+  // when there is none, so the keys reach the rows again.
+  const onPage = useRef(page !== null);
+  useLayoutEffect(() => {
+    const was = onPage.current;
+    onPage.current = page !== null;
+    if (!was || page !== null) return;
+    const popup = popupRef.current;
+    (popup?.querySelector<HTMLElement>("input") ?? listRef.current)?.focus();
+  }, [page, popupRef, listRef]);
 
   const session = useMemo<ChooserSessionState>(
     () => ({
@@ -423,8 +552,24 @@ function ChooserSession({ children }: { children: ReactNode }) {
       activeOptionId: active < 0 ? null : optionId(active),
       scope,
       activeValue,
+      page,
+      openPage,
+      back,
+      replacePage,
     }),
-    [query, setQuery, publishRows, optionId, active, scope, activeValue],
+    [
+      query,
+      setQuery,
+      publishRows,
+      optionId,
+      active,
+      scope,
+      activeValue,
+      page,
+      openPage,
+      back,
+      replacePage,
+    ],
   );
 
   return (
@@ -571,6 +716,8 @@ function Popup({
       setOpen((event as ToggleEvent).newState === "open");
     const onToggle = (event: Event) => {
       if ((event as ToggleEvent).newState !== "open") return;
+      // A popup that opened on a page has focused that page's field already.
+      if (popup.contains(popup.doc.activeElement)) return;
       const field = popup.querySelector<HTMLElement>("input");
       (field ?? listRef.current)?.focus();
     };
@@ -633,7 +780,8 @@ export interface ChooserInputProps {
  */
 function Input({ placeholder, clearLabel }: ChooserInputProps) {
   const { open, listId } = useChooser();
-  const { query, setQuery, activeOptionId } = useChooserSession();
+  const { query, setQuery, activeOptionId, page } = useChooserSession();
+  if (page !== null) return null;
   return (
     <SearchInput
       type="text"
@@ -704,7 +852,7 @@ function List<Row extends ChooserRow>({
   ...rest
 }: ChooserListProps<Row>) {
   const { listId, listRef } = useChooser();
-  const { query, active, activeOptionId, optionId, publishRows } =
+  const { query, active, activeOptionId, optionId, publishRows, page } =
     useChooserSession();
   const { sections, rows, empty } = useMemo(
     () => chooserLayout(groups, query ? prepareFuzzySearch(query) : null),
@@ -714,7 +862,11 @@ function List<Row extends ChooserRow>({
   // The keys are registered on the session, so the rows they move over have to
   // reach it. The list is where the query filter runs, so it is the only part
   // that knows them; where the highlight then lands is the session's to say.
-  useLayoutEffect(() => publishRows(rows), [rows, publishRows]);
+  // A page keeps the rows it covers, so the highlight is where it was when
+  // the user steps back.
+  useLayoutEffect(() => {
+    if (page === null) publishRows(rows);
+  }, [rows, publishRows, page]);
 
   const scrolled = sections.filter((section) => !section.pinned);
   const pinned = sections.filter((section) => section.pinned);
@@ -755,6 +907,7 @@ function List<Row extends ChooserRow>({
     [rows, active, optionId],
   );
 
+  if (page !== null) return null;
   return (
     <>
       {/* The empty message stands beside the rows rather than in their place:
@@ -1061,9 +1214,375 @@ function Action({ value, icon, ...rest }: ChooserActionProps) {
   return <RowShell value={value} selected={false} icon={icon} {...rest} />;
 }
 
+export interface ChooserPageProps extends Omit<
+  HTMLAttributes<HTMLDivElement>,
+  "children"
+> {
+  /** The content of the page on screen, from the name it was opened with. */
+  children: (page: string) => ReactNode;
+}
+
+/**
+ * A page that stands in the place of the search field and the rows, as a
+ * Bases toolbar menu steps from a row to that row's page: a
+ * {@link PageHeader}, then the page's own fields. Escape and the header's
+ * back button step back to the rows, with the highlight where it was.
+ *
+ * Its first field takes focus with its text selected, so the user can type
+ * over it at once; a page with no field takes focus itself, so the keys
+ * still reach the popup. A page unmounts with no blur event, when the user
+ * steps back or the popup closes, so a field that saves on blur saves as it
+ * unmounts too.
+ */
+function Page({ children, ...rest }: ChooserPageProps) {
+  const { page } = useChooserSession();
+  if (page === null) return null;
+  // A page of its own per name, so a replaced page starts fresh.
+  return (
+    <PageBody key={page} {...rest}>
+      {children(page)}
+    </PageBody>
+  );
+}
+
+function PageBody({ className, ...rest }: HTMLAttributes<HTMLDivElement>) {
+  const ref = useRef<HTMLDivElement>(null);
+  // The page's own parts lay out their fields in layout effects too, and a
+  // child's runs before its parent's, so the fields stand by now.
+  useLayoutEffect(() => {
+    const page = ref.current;
+    const field = page?.querySelector<HTMLElement>(
+      "input:not([type=checkbox]):not([type=range]), textarea, select",
+    );
+    (field ?? page)?.focus();
+    if (
+      field?.instanceOf(HTMLInputElement) ||
+      field?.instanceOf(HTMLTextAreaElement)
+    )
+      field.select();
+  }, []);
+  return (
+    <div
+      ref={ref}
+      tabIndex={-1}
+      data-chooser-page=""
+      {...rest}
+      className={cn(
+        "zt:flex zt:min-h-0 zt:flex-col zt:overflow-y-auto zt:outline-none",
+        className,
+      )}
+    />
+  );
+}
+
+/**
+ * Runs `save` as a page leaves, when the user steps back or the popup closes.
+ * A page leaves the DOM with no blur event, so a field that saves on blur
+ * saves once more on its way out; `save` is a no-op when nothing changed.
+ */
+export function useChooserPageSave(save: () => void): void {
+  const latest = useRef(save);
+  latest.current = save;
+  useEffect(() => () => latest.current(), []);
+}
+
+/**
+ * The text of a page's field, with the text the last input event left. A
+ * save reads `typed`: a key, or the page leaving, can land before the render
+ * that follows the typing.
+ */
+export function useChooserPageText(
+  initial: string,
+): [text: string, setText: (next: string) => void, typed: RefObject<string>] {
+  const [text, setTextState] = useState(initial);
+  const typed = useRef(initial);
+  const setText = useCallback((next: string) => {
+    typed.current = next;
+    setTextState(next);
+  }, []);
+  return [text, setText, typed];
+}
+
+/**
+ * What a page shows once its subject leaves the file, such as a view another
+ * pane deleted: it steps back to the page under it.
+ */
+function PageGone() {
+  const { back } = useChooserSession();
+  useLayoutEffect(() => back(), [back]);
+  return null;
+}
+
+/**
+ * An icon button inside a Chooser, such as a row's chevron or a page's close
+ * button, drawn from the variables Obsidian draws a clickable icon with. It
+ * stays a bare `<button>`, its Obsidian button box rolled back in
+ * `chooser.css`: the `…` button opens its menu as the menu's popover
+ * invoker, which only a `<button>` can be, and the `IconButton` wrapper is a
+ * `<div>`.
+ */
+export const chooserIconButton =
+  "zt-chooser-icon zt:flex zt:shrink-0 zt:cursor-(--cursor) zt:items-center zt:justify-center zt:rounded-(--clickable-icon-radius) zt:[corner-shape:var(--corner-shape)] zt:px-(--size-2-3) zt:py-(--size-2-2) zt:text-(--icon-color) zt:hover:bg-(--background-modifier-hover) zt:hover:text-(--icon-color-hover) zt:focus-visible:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)] zt:focus-visible:outline-none zt:[&_svg]:opacity-(--icon-opacity) zt:hover:[&_svg]:opacity-(--icon-opacity-hover)";
+
+export interface ChooserPageHeaderProps {
+  /** The page's title, such as "Configure view". */
+  title: string;
+  /** The tooltip of the back button. */
+  backLabel: string;
+  /** The tooltip of the close button. */
+  closeLabel: string;
+  /** Buttons before the close button, such as a {@link PageMenu}. */
+  actions?: ReactNode;
+}
+
+/**
+ * The header of a page, as a Bases toolbar menu draws it: a back button that
+ * carries the page's title, the page's actions, and a button that closes the
+ * popup. The back button is a menu row rather than a button, so it stays a
+ * bare `<button>` drawn by its utilities, as the trigger is: the `Button`
+ * wrapper would bring the button box this row takes back off.
+ */
+function PageHeader({
+  title,
+  backLabel,
+  closeLabel,
+  actions,
+}: ChooserPageHeaderProps) {
+  const { close } = useChooser();
+  const { back } = useChooserSession();
+  return (
+    <div
+      data-chooser-page-header=""
+      className="zt:flex zt:shrink-0 zt:items-center zt:gap-(--size-4-1) zt:p-(--size-4-1)"
+    >
+      <button
+        type="button"
+        className="zt-chooser-page-back zt:flex zt:min-w-0 zt:flex-1 zt:cursor-(--cursor) zt:items-center zt:gap-(--size-4-1) zt:rounded-(--radius-s) zt:p-(--size-2-2) zt:text-(length:--font-ui-small) zt:[font-weight:var(--font-medium)] zt:text-foreground zt:hover:bg-(--background-modifier-hover)"
+        data-chooser-page-back=""
+        {...tooltipAttrs(backLabel)}
+        onClick={back}
+      >
+        <Icon
+          name="chevron-left"
+          size="var(--icon-s)"
+          strokeWidth="var(--icon-s-stroke-width)"
+          className="zt:shrink-0 zt:text-muted-foreground"
+        />
+        <span className="zt:truncate">{title}</span>
+      </button>
+      {actions}
+      <button
+        type="button"
+        className={chooserIconButton}
+        data-chooser-page-close=""
+        {...tooltipAttrs(closeLabel)}
+        onClick={close}
+      >
+        <Icon
+          name="x"
+          size="var(--icon-s)"
+          strokeWidth="var(--icon-s-stroke-width)"
+        />
+      </button>
+    </div>
+  );
+}
+
+/** The fields of a page, stacked as the form of a Bases menu page. */
+function PageForm({ className, ...rest }: HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div
+      {...rest}
+      className={cn(
+        "zt:flex zt:flex-col zt:gap-(--size-4-2) zt:px-(--size-4-2) zt:pt-(--size-4-1) zt:pb-(--size-4-2) zt:text-(length:--font-ui-small)",
+        className,
+      )}
+    />
+  );
+}
+
+export interface ChooserPageFieldProps {
+  label: string;
+  /** A line under the label, such as what the field sets or what is wrong. */
+  description?: ReactNode;
+  /** Draws the description in the error colour. */
+  invalid?: boolean;
+  /** A line under the control, such as the verdict on a formula's text. */
+  after?: ReactNode;
+  /**
+   * Puts the control beside the label rather than under it, as a toggle
+   * stands. A field of that kind is no `<label>`, so a click on its text
+   * does not reach the control twice.
+   */
+  inline?: boolean;
+  children: ReactNode;
+}
+
+/**
+ * One field of a page: its label, a line under it, and its control, stacked
+ * as the fields of a Bases menu page are.
+ */
+function PageField({
+  label,
+  description,
+  invalid,
+  inline,
+  after,
+  children,
+}: ChooserPageFieldProps) {
+  const Field = inline ? "div" : "label";
+  return (
+    <Field
+      className={cn(
+        "zt:flex zt:gap-(--size-2-2)",
+        inline ? "zt:items-center zt:justify-between" : "zt:flex-col",
+      )}
+    >
+      <span className="zt:flex zt:min-w-0 zt:flex-col zt:gap-0.5">
+        <span className="zt:text-foreground">{label}</span>
+        {description && (
+          <span
+            className={cn(
+              "zt:text-xs",
+              invalid ? "zt:text-(--text-error)" : "zt:text-muted-foreground",
+            )}
+          >
+            {description}
+          </span>
+        )}
+      </span>
+      {inline ? (
+        children
+      ) : (
+        // The control grows to the field's width, as a Bases menu page
+        // lays it out: Obsidian gives a slider a fixed width, which a flex
+        // basis outranks.
+        <span className="zt:flex zt:min-h-(--input-height) zt:items-center zt:*:min-w-0 zt:*:flex-1">
+          {children}
+        </span>
+      )}
+      {after}
+    </Field>
+  );
+}
+
+export interface ChooserPageMenuItem {
+  title: string;
+  icon: IconName;
+  /** Draws a tick after the title, such as the view that opens first. */
+  checked?: boolean;
+  /** Draws the item in the warning colour, after a rule, as a delete is. */
+  warning?: boolean;
+  disabled?: boolean;
+  /** A `data-*` hook for the item. */
+  hook?: string;
+  onSelect: () => void;
+}
+
+export interface ChooserPageMenuProps {
+  /** The tooltip of the button. */
+  label: string;
+  items: readonly ChooserPageMenuItem[];
+}
+
+/**
+ * The "…" button of a page and the menu it opens, as a Bases menu page
+ * offers its page's actions. An Obsidian `Menu` paints under the popup's top
+ * layer, so the menu is a popover of its own, nested in the popup: the
+ * platform keeps the popup open while it stands, and Escape or a click
+ * outside it closes it alone.
+ */
+function PageMenu({ label, items }: ChooserPageMenuProps) {
+  const id = useUniqueId();
+  const menu = useRef<HTMLDivElement>(null);
+  const anchor = { "--zt-chooser-menu-anchor": `--${id}` } as CSSProperties;
+  return (
+    <>
+      <button
+        type="button"
+        popoverTarget={id}
+        className={cn(
+          chooserIconButton,
+          "zt:[anchor-name:var(--zt-chooser-menu-anchor)]",
+        )}
+        data-chooser-page-menu=""
+        {...tooltipAttrs(label)}
+        style={anchor}
+      >
+        <Icon
+          name="more-horizontal"
+          size="var(--icon-s)"
+          strokeWidth="var(--icon-s-stroke-width)"
+        />
+      </button>
+      <div
+        ref={menu}
+        id={id}
+        popover="auto"
+        role="menu"
+        aria-label={label}
+        className={cn(
+          "zt:inset-auto zt:my-1 zt:min-w-45 zt:flex-col zt:p-(--size-4-1) zt:[&:popover-open]:flex",
+          "zt:border-(length:--menu-border-width) zt:border-(--menu-border-color) zt:bg-(--menu-background) zt:text-foreground zt:shadow-(--menu-shadow)",
+          "zt:rounded-(--menu-radius) zt:[corner-shape:var(--menu-corner-shape)]",
+          "zt:[position-anchor:var(--zt-chooser-menu-anchor)] zt:[position-area:block-end_span-inline-start] zt:[position-try-fallbacks:flip-block,flip-inline,flip-block_flip-inline]",
+        )}
+        style={anchor}
+      >
+        {items.map((item, index) => (
+          <Fragment key={item.title}>
+            {item.warning && index > 0 && !items[index - 1]!.warning && (
+              <Separator />
+            )}
+            <button
+              type="button"
+              role="menuitem"
+              disabled={item.disabled}
+              data-chooser-page-menu-item={item.hook}
+              className={cn(
+                "zt-chooser-page-menu-item",
+                rowBox(item.disabled ?? false, "zt:w-full zt:text-start"),
+                item.warning && !item.disabled && "zt:text-(--text-error)",
+              )}
+              onClick={() => {
+                menu.current?.hidePopover();
+                item.onSelect();
+              }}
+            >
+              <Icon
+                name={item.icon}
+                size="var(--icon-s)"
+                strokeWidth="var(--icon-s-stroke-width)"
+                className="zt:shrink-0"
+              />
+              <span className="zt:min-w-0 zt:flex-1 zt:truncate">
+                {item.title}
+              </span>
+              {item.checked && (
+                <Icon
+                  name="check"
+                  size="var(--icon-s)"
+                  strokeWidth="var(--icon-s-stroke-width)"
+                  className="zt:shrink-0"
+                />
+              )}
+            </button>
+          </Fragment>
+        ))}
+      </div>
+    </>
+  );
+}
+
 Chooser.Trigger = Trigger;
 Chooser.Popup = Popup;
 Chooser.Input = Input;
 Chooser.List = List;
 Chooser.Item = Item;
 Chooser.Action = Action;
+Chooser.Page = Page;
+Chooser.PageHeader = PageHeader;
+Chooser.PageForm = PageForm;
+Chooser.PageField = PageField;
+Chooser.PageGone = PageGone;
+Chooser.PageMenu = PageMenu;
