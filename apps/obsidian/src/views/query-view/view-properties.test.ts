@@ -189,6 +189,30 @@ describe("viewProperties entry", () => {
   });
 });
 
+describe("viewProperties kept", () => {
+  it("keeps a field or a typed path the view no longer lists", () => {
+    const properties = viewProperties(FILE, VIEW);
+    expect(properties.kept("myField")).toMatchObject({
+      path: "myField",
+      fits: true,
+      place: null,
+    });
+    expect(properties.kept("title")?.place).toBe(0);
+  });
+
+  it("keeps a Formula while the file defines it or the view shows it, and gives null once neither does", () => {
+    const properties = viewProperties(FILE, VIEW);
+    expect(properties.kept("formula.year")?.place).toBe(null);
+    expect(properties.kept("formula.pages")?.place).toBe(1);
+    expect(properties.kept("formula.gone")).toBe(null);
+    const undefinedShown = viewProperties(FILE, {
+      ...VIEW,
+      order: ["formula.gone"],
+    });
+    expect(undefinedShown.kept("formula.gone")?.place).toBe(0);
+  });
+});
+
 describe("viewProperties dataset fields", () => {
   const paths = (dataset: "annotations" | "items") =>
     viewProperties(null, { from: dataset }).entries.map((entry) => entry.path);
