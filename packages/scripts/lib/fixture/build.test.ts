@@ -2005,7 +2005,6 @@ describe("the generated Obsidian vault", () => {
       "profile-examples/profile-import-replacement-v2.md",
       "profile-examples/profile-import-unavailable-style.md",
       "query-files/Lab annotations.zotquery",
-      "query-files/Lab note.md",
       "query-files/Lab overview.md",
       "query-files/Reading annotations.zotquery",
       "query-files/Reading list.zotquery",
@@ -2055,6 +2054,44 @@ describe("the generated Obsidian vault", () => {
     );
 
     expect(note).toContain("[@ioannidisWhyMost2005]");
+  });
+
+  it("seeds a Literature Note as the default template renders it, with a Query File embed below the managed region", async () => {
+    const note = await readFile(
+      join(layout.vaultDir, "literatures", "rougierTenSimpleRules2014.md"),
+      "utf-8",
+    );
+    const annotations = (
+      await readFile(
+        new URL(
+          import.meta.resolve("@zotlit/templates/defaults/content.liquid"),
+        ),
+        "utf-8",
+      )
+    )
+      .split(/(?=## Annotations\n)/u)[1]!
+      .trimEnd();
+    const pdf = pathToFileURL(
+      join(layout.vaultDir, "attachments", "rougier-2014.pdf"),
+    ).href;
+
+    expect(note).toContain(
+      [
+        "# Ten Simple Rules for Better Figures",
+        "",
+        `[Zotero](zotero://select/library/items/RUGIER24) [rougier-2014.pdf](${pdf})`,
+        "",
+        "%%zt-managed%%",
+        annotations,
+        "",
+        "%%/zt-managed%%",
+      ].join("\n"),
+    );
+    expect(note).not.toContain("[!note]");
+    expect(note).not.toContain("{%");
+    expect(
+      note.indexOf("![[Lab annotations.zotquery#This item]]"),
+    ).toBeGreaterThan(note.indexOf("%%/zt-managed%%"));
   });
 
   it("carries descriptive Profile import examples outside the template folder", async () => {
