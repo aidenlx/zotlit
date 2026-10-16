@@ -1492,7 +1492,7 @@ it("opens the header menu on a click or a right click, with what has nothing to 
   ]);
   await act(() =>
     view.setText(`${TABLE_FILE}    columnSize:
-      date: 140
+      vault.literatureNote: 140
 `),
   );
   await settle();
@@ -1524,8 +1524,9 @@ it("opens the header menu on a click or a right click, with what has nothing to 
   first["Reset column width"]!.click();
   expect(save).not.toHaveBeenCalled();
 
-  // The last column, resized: it can move left and reset.
-  const last = open("date", "click");
+  // The last column, the Literature Note Property, resized: it can move
+  // left and reset.
+  const last = open("vault.literatureNote", "click");
   expect(last["Move left"]!.disabled).toBe(false);
   expect(last["Move right"]!.disabled).toBe(true);
   expect(last["Reset column width"]!.disabled).toBe(false);
@@ -1533,16 +1534,18 @@ it("opens the header menu on a click or a right click, with what has nothing to 
     last["Move left"]!.click();
     await view.flush();
   });
-  expect(saved.at(-1)).toContain("    order:\n      - date\n      - title\n");
+  expect(saved.at(-1)).toContain(
+    "    order:\n      - title\n      - vault.literatureNote\n      - date\n",
+  );
   await settle();
   expect(
     [...el.querySelectorAll("th[data-query-column]")].map((th) =>
       th.getAttribute("data-query-column"),
     ),
-  ).toEqual(["date", "title"]);
+  ).toEqual(["title", "vault.literatureNote", "date"]);
 
   await act(async () => {
-    open("date", "contextmenu")["Reset column width"]!.click();
+    open("vault.literatureNote", "contextmenu")["Reset column width"]!.click();
     await view.flush();
   });
   expect(saved.at(-1)).not.toContain("columnSize");
