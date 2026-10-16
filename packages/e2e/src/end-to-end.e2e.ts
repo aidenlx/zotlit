@@ -3002,6 +3002,54 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         expected: "true",
       }),
     ).toBe(true);
+    // The Formula field looks and focuses as the text input above it: the
+    // same border, radius, fill and focus ring, its text at the same inset,
+    // and no focus outline of the editor's own.
+    interface InputLook {
+      border: string;
+      radius: string;
+      fill: string;
+      ring: string;
+    }
+    const fieldLook = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{${PAGE}
+          const page=${propertiesPage};
+          const input=page.querySelector('[data-query-formula-name]');
+          const field=page.querySelector('[data-query-formula-expression]');
+          const editor=field.querySelector('.cm-editor');
+          const line=field.querySelector('.cm-line');
+          // The box and focus ring that show: the shadows that have a spread.
+          const ringOf=(shadow)=>shadow.split(/,\\s*(?![^(]*\\))/).filter((one)=>!one.endsWith('0px 0px 0px 0px')).join(', ');
+          const look=(el)=>{const c=getComputedStyle(el);return {border:[c.borderTopWidth,c.borderTopStyle,c.borderTopColor].join(' '),radius:c.borderTopLeftRadius,fill:c.backgroundColor,ring:ringOf(c.boxShadow)};};
+          const inputStyle=getComputedStyle(input);
+          const inset={
+            input:parseFloat(inputStyle.borderLeftWidth)+parseFloat(inputStyle.paddingLeft),
+            field:line.getBoundingClientRect().left+parseFloat(getComputedStyle(line).paddingLeft)-field.getBoundingClientRect().left,
+          };
+          // The page focuses the Name input when it opens; rest is the look with no focus.
+          activeDocument.activeElement?.blur();
+          await until('no focus on the page',()=>!editor.classList.contains('cm-focused')&&activeDocument.activeElement!==input);
+          const rest={input:look(input),field:look(field)};
+          input.focus();
+          await until('focus on the Name input',()=>activeDocument.activeElement===input);
+          const inputFocused=look(input);
+          field.querySelector('.cm-content').focus();
+          await until('focus in the Formula field',()=>editor.classList.contains('cm-focused'));
+          return JSON.stringify({rest,focused:{input:inputFocused,field:look(field)},inset,editor:{focused:editor.classList.contains('cm-focused'),outline:getComputedStyle(editor).outlineStyle}});
+        })()`,
+      ),
+    ) as {
+      rest: { input: InputLook; field: InputLook };
+      focused: { input: InputLook; field: InputLook };
+      inset: { input: number; field: number };
+      editor: { focused: boolean; outline: string };
+    };
+    expect(fieldLook.rest.field).toEqual(fieldLook.rest.input);
+    expect(fieldLook.focused.field).toEqual(fieldLook.focused.input);
+    expect(fieldLook.inset.field).toBeCloseTo(fieldLook.inset.input);
+    expect(fieldLook.editor).toEqual({ focused: true, outline: "none" });
     // The parse-only check marks a text that does not parse, and keeps it
     // from being saved.
     expect(

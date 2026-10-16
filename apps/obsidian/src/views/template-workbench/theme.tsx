@@ -134,9 +134,13 @@ const hint =
   "zt:text-xs zt:leading-normal zt:text-muted-foreground zt:text-pretty";
 /** Guidance and status read at hint size wherever the selection UI states a task. */
 export const selectionHint = hint;
-/** A boxed pane wears Obsidian's text-input surface, focus ring included. */
+/**
+ * A boxed pane wears Obsidian's text-input surface, focus ring included. Its
+ * border, padding and ring read the `--input-*` variables a native input
+ * reads, so a host that draws the box itself zeroes them.
+ */
 const editorBox =
-  "zt:rounded-(--input-radius) zt:border zt:border-border zt:bg-input zt:px-2 zt:py-1 zt:focus-within:border-border-focus zt:focus-within:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)]";
+  "zt:rounded-(--input-radius) zt:border-(length:--input-border-width) zt:border-solid zt:border-border zt:bg-input zt:p-(--input-padding) zt:focus-within:border-border-focus zt:focus-within:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)]";
 /** In-editor chrome — labels and boxes CodeMirror paints between lines — reads in the interface font. */
 const editorChip =
   "zt:rounded-sm zt:border zt:border-border zt:bg-card zt:font-sans zt:text-xs zt:font-medium zt:leading-tight zt:text-muted-foreground";
@@ -238,9 +242,10 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       // scopes the template token colors to it.
       expression: cn(
         themeHook.templateEditor,
-        "zt:w-full zt:min-w-0 zt:cursor-text zt:rounded-(--input-radius) zt:bg-(--background-modifier-form-field) zt:px-(--size-4-2) zt:py-(--size-4-1) zt:font-mono zt:text-sm zt:leading-normal",
-        "zt:shadow-(--input-shadow) zt:focus-within:shadow-[0_0_0_var(--input-border-width-focus,2px)_var(--background-modifier-border-focus)] zt:hover:shadow-(--input-shadow-hover) zt:has-[[aria-invalid=true]]:shadow-[0_0_0_var(--input-border-width)_var(--background-modifier-error)]",
-        "zt:[&_.cm-content]:p-0 zt:[&_.cm-editor]:outline-none zt:[&_.cm-line]:p-0 zt:[&_.cm-placeholder]:text-(--text-faint)",
+        editorBox,
+        "zt:w-full zt:min-w-0 zt:cursor-text zt:font-mono zt:text-sm zt:leading-normal zt:[transition:var(--input-transition)]",
+        "zt:hover:bg-(--background-modifier-form-field-hover) zt:not-focus-within:not-has-[[aria-invalid=true]]:hover:border-border-hover zt:has-[[aria-invalid=true]]:border-(--text-error)",
+        "zt:[&_.cm-placeholder]:text-(--text-faint)",
       ),
       conjunction:
         "zt:flex zt:min-h-(--input-height) zt:items-center zt:justify-end zt:text-end zt:text-sm zt:text-muted-foreground zt:[overflow-wrap:anywhere]",
