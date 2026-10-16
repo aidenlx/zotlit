@@ -216,56 +216,50 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     value,
   }: {
     row?: number;
-    kind: "item-type" | "library" | "collections";
+    kind: "item-type" | "library" | "collection";
     operator: string;
     value: string;
   }): Promise<boolean> {
     // A kind change replaces the value control and its options on the next render.
-    const valueControl =
-      kind === "library"
-        ? '[data-part="chip-value"]'
-        : `${kind === "collections" ? 'input[type="text"]' : "select"}[aria-label=${JSON.stringify(m.settings_profile_match_value())}]`;
-    const valueProperty = kind === "library" ? "textContent" : "value";
+    const valueControl = `${kind === "collection" ? "input" : "select"}[aria-label=${JSON.stringify(m.workbench_filter_value())}]`;
     return obEvalUntil(
       vaultId,
-      `(function(){var editor=${activeWorkbenchContent};var row=editor?.querySelectorAll('[data-condition-row]')[${row}];return String(row?.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_match_condition_kind())}]')?.value===${JSON.stringify(kind)}&&row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_match_operator())}]')?.value===${JSON.stringify(operator)}&&row.querySelector('${valueControl}')?.${valueProperty}===${JSON.stringify(value)});})()`,
+      `(function(){var editor=${activeWorkbenchContent};var row=editor?.querySelectorAll('[data-condition-row]')[${row}];return String(row?.querySelector('select[aria-label=${JSON.stringify(m.workbench_match_condition_kind())}]')?.value===${JSON.stringify(kind)}&&row.querySelector('select[aria-label=${JSON.stringify(m.workbench_filter_operator())}]')?.value===${JSON.stringify(operator)}&&row.querySelector('${valueControl}')?.value===${JSON.stringify(value)});})()`,
       { expected: "true" },
     );
   }
 
+  /** Turns row `row` into a `kind` condition that is `value`. */
+  async function shapeCondition(
+    row: number,
+    kind: "item-type" | "library",
+    value: string,
+  ): Promise<void> {
+    const control = (label: string) =>
+      `Array.from((${activeWorkbenchContent}).querySelectorAll('[data-condition-row]'))[${row}].querySelector('select[aria-label=${JSON.stringify(label)}]')`;
+    await obEval(
+      vaultId,
+      `(function(){var kind=${control(m.workbench_match_condition_kind())};kind.value=${JSON.stringify(kind)};kind.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+    );
+    expect(await conditionReady({ row, kind, operator: "is", value: "" })).toBe(
+      true,
+    );
+    await obEval(
+      vaultId,
+      `(function(){var value=${control(m.workbench_filter_value())};value.value=${JSON.stringify(value)};value.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+    );
+    expect(await conditionReady({ row, kind, operator: "is", value })).toBe(
+      true,
+    );
+  }
+
+  /** "Add condition" adds a placeholder row; it becomes a Library row. */
   async function addLibraryCondition(selector: string): Promise<void> {
     await obEval(
       vaultId,
-      `(function(){${PAGE}var editor=${activeWorkbenchContent};press(Array.from(editor.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.settings_profile_match_add_condition())}),'Add condition');return true;})()`,
+      `(function(){${PAGE}var editor=${activeWorkbenchContent};press(Array.from(editor.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_match_add_condition())}),'Add condition');return true;})()`,
     );
-    expect(
-      await conditionReady({
-        row: 1,
-        kind: "item-type",
-        operator: "is",
-        value: "book",
-      }),
-    ).toBe(true);
-    await obEval(
-      vaultId,
-      `(function(){var row=Array.from((${activeWorkbenchContent}).querySelectorAll('[data-condition-row]')).at(-1);var kind=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_match_condition_kind())}]');kind.value='library';kind.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
-    );
-    expect(
-      await conditionReady({
-        row: 1,
-        kind: "library",
-        operator: "is",
-        value: "personal",
-      }),
-    ).toBe(true);
-    await obEval(
-      vaultId,
-      `(function(){var row=Array.from((${activeWorkbenchContent}).querySelectorAll('[data-condition-row]')).at(-1);var value=row.querySelector('input[aria-label=${JSON.stringify(m.settings_profile_match_value())}]');value.value=${JSON.stringify(selector)};value.dispatchEvent(new Event('input',{bubbles:true}));return value.value;})()`,
-    );
-    await obEval(
-      vaultId,
-      `(function(){var editor=${activeWorkbenchContent};var row=Array.from(editor.querySelectorAll('[data-condition-row]')).at(-1);row.querySelector('input').dispatchEvent(new editor.ownerDocument.defaultView.KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return true;})()`,
-    );
+    await shapeCondition(1, "library", selector);
   }
 
   async function openMatchEditor(): Promise<void> {
@@ -284,10 +278,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         { expected: "true" },
       ),
     ).toBe(true);
-    await obEval(
-      vaultId,
-      `(function(){${PAGE}var editor=${activeWorkbenchContent};if(!editor.querySelector('[data-condition-row]'))press(Array.from(editor.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.settings_profile_match_add_condition())}),'Add condition');return true;})()`,
-    );
   }
 
   async function mainSettings() {
@@ -1309,7 +1299,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const inPopover = (body: string) =>
       obEval(
         vaultId,
-        `(async()=>{${PAGE}const el=app.workspace.getMostRecentLeaf().view.contentEl;const popover=el.querySelector('[data-query-popover="filter"]');if(!popover.matches(':popover-open'))press(el.querySelector('[data-query-toolbar="filter"]'),'Filter');const section=name=>popover.querySelector('[data-filter-section="'+name+'"]');const set=(control,value)=>{control.value=value;control.dispatchEvent(new Event('input',{bubbles:true}));};${body}})()`,
+        `(async()=>{${PAGE}const el=app.workspace.getMostRecentLeaf().view.contentEl;const popover=el.querySelector('[data-query-popover="filter"]');if(!popover.matches(':popover-open'))press(el.querySelector('[data-query-toolbar="filter"]'),'Filter');const section=name=>popover.querySelector('[data-filter-section="'+name+'"]');const set=(control,value)=>{control.value=value;control.dispatchEvent(new Event('input',{bubbles:true}));};const write=(field,text)=>{const view=field.querySelector('.cm-content').cmTile.root.view;view.dispatch({changes:{from:0,to:view.state.doc.length,insert:text},userEvent:'input.type'});};${body}})()`,
       );
 
     await obEval(
@@ -1333,23 +1323,24 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
 
     // The popover opens with the two sections; the view's tag condition
-    // shows as a visual row, and the empty "All views" section shows no row.
+    // shows as a visual row, and the empty "All views" section shows one
+    // placeholder row.
     const sections = JSON.parse(
       await inPopover(
-        `return JSON.stringify({open:popover.matches(':popover-open'),all:section('all').querySelector('[data-filter-heading]').textContent,allRows:section('all').querySelectorAll('[data-condition-row]').length,view:section('view').querySelector('[data-filter-heading]').textContent,tag:section('view').querySelector('[data-condition-row] input[aria-label="${m.workbench_match_value()}"]').value});`,
+        `return JSON.stringify({open:popover.matches(':popover-open'),all:section('all').querySelector('[data-filter-heading]').textContent,allRows:section('all').querySelectorAll('[data-condition-row]').length,view:section('view').querySelector('[data-filter-heading]').textContent,tag:section('view').querySelector('[data-condition-row] input[aria-label="${m.workbench_filter_value()}"]').value});`,
       ),
     ) as Record<string, unknown>;
     expect(sections).toEqual({
       open: true,
       all: m.query_view_filter_all_views(),
-      allRows: 0,
+      allRows: 1,
       view: m.query_view_filter_this_view(),
       tag: "figure",
     });
 
     // A new tag value saves the view's filters and runs them.
     await inPopover(
-      `set(section('view').querySelector('[data-condition-row] input[aria-label="${m.workbench_match_value()}"]'),'methodology');return true;`,
+      `set(section('view').querySelector('[data-condition-row] input[aria-label="${m.workbench_filter_value()}"]'),'methodology');return true;`,
     );
     const methodology = await queryKeys('tags.contains("methodology")');
     expect(methodology).not.toEqual(figures);
@@ -1362,11 +1353,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ),
     );
 
-    // "Add condition" for all views adds a colour condition, Yellow, and
-    // saves it as the file's top-level filters; both sections hold. The empty
-    // section starts folded, so the reader unfolds it first.
+    // The placeholder row for all views becomes a colour condition, Yellow,
+    // and saves as the file's top-level filters; both sections hold. The
+    // empty section starts folded, so the reader unfolds it first.
     await inPopover(
-      `const fold=section('all').querySelector('details');if(!fold.open)press(fold.querySelector('summary'),'All views heading');press([...section('all').querySelectorAll('button')].find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_match_add_condition())}),'Add condition');return true;`,
+      `const fold=section('all').querySelector('details');if(!fold.open)press(fold.querySelector('summary'),'All views heading');set(section('all').querySelector('[data-condition-row] select[aria-label="${m.workbench_filter_value()}"]'),'yellow');return true;`,
     );
     const yellow = await queryKeys(
       '(colorName == "yellow") && (tags.contains("methodology"))',
@@ -1381,7 +1372,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // A wrong expression marks its row with the query's diagnostic; the
     // cards stay, and the view says the filter has an error.
     await inPopover(
-      `press(section('view').querySelector('[data-condition-row] button[aria-label="${m.workbench_match_edit_as_expression()}"]'),'Edit as expression');set(await until('expression field',()=>section('view').querySelector('[data-condition-row] textarea')),'nosuchfield == 1');return true;`,
+      `press(section('view').querySelector('[data-condition-row] button[aria-label="${m.workbench_match_edit_as_expression()}"]'),'Edit as expression');write(await until('expression field',()=>section('view').querySelector('[data-condition-row] .cm-content')?.parentElement),'nosuchfield == 1');return true;`,
     );
     const broken = await tabWhen(
       (tab) =>
@@ -1393,12 +1384,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // The count of the kept cards stays in the Results menu.
     expect(broken.count).toBe(String(yellow.length));
     expect(broken.rowIssues[0]).toContain("nosuchfield");
+    // The expression field colors the parts of its Filter Expression.
+    expect(
+      await inPopover(
+        `return section('view').querySelectorAll('[data-condition-row] .cm-line span[class]').length>0;`,
+      ),
+    ).toBe("true");
 
     // A syntax error names the tokens the filter lacks once, with the place
     // in the filter: the hint that lists them again stays out. The fault sits
     // at the ")" after the condition, so the view shows it above the cards.
     await inPopover(
-      `set(section('view').querySelector('[data-condition-row] textarea'),'place !=');return true;`,
+      `write(section('view').querySelector('[data-condition-row]'),'place !=');return true;`,
     );
     const unfinished = await tabWhen(
       (tab) =>
@@ -1412,7 +1409,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // "Edit visually" goes back once the expression fits a row.
     await inPopover(
-      `const row=section('view').querySelector('[data-condition-row]');set(row.querySelector('textarea'),'tags.contains("figure")');press(await until('Edit visually enabled',()=>{const button=row.querySelector('button[aria-label="${m.workbench_match_edit_visually()}"]');return button&&!button.disabled?button:null;}),'Edit visually');return true;`,
+      `const row=section('view').querySelector('[data-condition-row]');write(row,'tags.contains("figure")');press(await until('Edit visually enabled',()=>{const button=row.querySelector('button[aria-label="${m.workbench_match_edit_visually()}"]');return button&&!button.disabled?button:null;}),'Edit visually');return true;`,
     );
     const back = await queryKeys(
       '(colorName == "yellow") && (tags.contains("figure"))',
@@ -1425,7 +1422,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     expect(
       await inPopover(
-        `return section('view').querySelector('[data-condition-row] input[aria-label="${m.workbench_match_value()}"]')?.value??null;`,
+        `return section('view').querySelector('[data-condition-row] input[aria-label="${m.workbench_filter_value()}"]')?.value??null;`,
       ),
     ).toBe("figure");
 
@@ -1437,8 +1434,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       return lines[lines.indexOf(figureLine) + 1] ?? "";
     };
     await inPopover(
-      `press([...section('view').querySelectorAll('button')].find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_match_add_condition())}),'Add condition');return true;`,
+      `press([...section('view').querySelectorAll('button')].find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_match_add_condition())}),'Add condition');set(await until('new row',()=>section('view').querySelector('[data-condition-row] select[aria-label="${m.workbench_filter_value()}"]')),'red');return true;`,
     );
+    // The focus goes to the new row's condition type.
+    expect(
+      await inPopover(
+        `return popover.ownerDocument.activeElement?.closest('[data-condition-row]')===[...section('view').querySelectorAll('[data-condition-row]')].at(-1)&&popover.ownerDocument.activeElement.getAttribute('aria-label');`,
+      ),
+    ).toBe(m.workbench_match_condition_kind());
     const added = nextLine(
       (await tabWhen((tab) => nextLine(tab.text).startsWith("        - ")))
         .text,
@@ -1473,11 +1476,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // above the first row leaves its group.
     const nested = (line: string) => `    ${line}`;
     await inPopover(
-      `press([...section('view').querySelectorAll('button')].find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_match_add_group())}),'Add group');return true;`,
+      `press([...section('view').querySelectorAll('button')].find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_match_add_group())}),'Add group');set(await until('group row',()=>section('view').querySelectorAll('[data-condition-row] select[aria-label="${m.workbench_filter_value()}"]')[1]),'red');return true;`,
     );
     await tabWhen((tab) =>
       tab.text.includes(
-        viewFilters(added, figureLine, "        - or:", nested(added)),
+        viewFilters(added, figureLine, "        - and:", nested(added)),
       ),
     );
     expect(
@@ -1487,7 +1490,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe("true");
     await tabWhen((tab) =>
       tab.text.includes(
-        viewFilters(added, "        - or:", nested(added), nested(figureLine)),
+        viewFilters(added, "        - and:", nested(added), nested(figureLine)),
       ),
     );
     expect(
@@ -1500,9 +1503,65 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     await tabWhen((tab) =>
       tab.text.includes(
-        viewFilters(figureLine, added, "        - or:", nested(added)),
+        viewFilters(figureLine, added, "        - and:", nested(added)),
       ),
     );
+
+    // A None group stores as `not`, and its rows after the first read "or".
+    const blue = '            - colorName == "blue"';
+    const nestedGroup = `section('view').querySelector('[data-part="group"][data-state="nested"]')`;
+    await inPopover(
+      `set(${nestedGroup}.querySelector('select[aria-label="${m.workbench_match_match()}"]'),'none');return true;`,
+    );
+    await tabWhen((tab) =>
+      tab.text.includes(
+        viewFilters(figureLine, added, "        - not:", nested(added)),
+      ),
+    );
+    await inPopover(
+      `const group=()=>${nestedGroup};press([...group().querySelectorAll('button')].find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_match_add_condition())}),'Add condition');set(await until('second row',()=>group()?.querySelectorAll('[data-condition-row] select[aria-label="${m.workbench_filter_value()}"]')[1]),'blue');return true;`,
+    );
+    await tabWhen((tab) =>
+      tab.text.includes(
+        viewFilters(figureLine, added, "        - not:", nested(added), blue),
+      ),
+    );
+    expect(
+      JSON.parse(
+        await inPopover(
+          `return JSON.stringify([...section('view').querySelectorAll('[data-part="group"][data-state="nested"] [data-part="conjunction"]')].map(label=>label.textContent));`,
+        ),
+      ),
+    ).toEqual([
+      m.workbench_match_conjunction_where(),
+      m.workbench_match_conjunction_or(),
+    ]);
+
+    // Removing the last row of a nested group removes the group, and
+    // removing the last row of the view's filter removes its filter.
+    const removeRow = (scope: string) =>
+      inPopover(
+        `press(${scope}.querySelector('[data-condition-row] button[aria-label="${m.workbench_match_remove_condition()}"]'),'Remove condition');return true;`,
+      );
+    await removeRow(nestedGroup);
+    await tabWhen((tab) =>
+      tab.text.includes(viewFilters(figureLine, added, "        - not:", blue)),
+    );
+    await removeRow(nestedGroup);
+    await tabWhen(
+      (tab) =>
+        tab.text.includes(viewFilters(figureLine, added)) &&
+        !tab.text.includes("- not:"),
+    );
+    expect(await inPopover(`return ${nestedGroup}===null;`)).toBe("true");
+    await removeRow("section('view')");
+    await removeRow("section('view')");
+    await tabWhen((tab) => !/^ {4}filters:/m.test(tab.text));
+    expect(
+      await inPopover(
+        `return section('view').querySelectorAll('[data-condition-row]').length;`,
+      ),
+    ).toBe("1");
   }, 180000);
 
   // The Fixture's Literature Note of SAKIMA22 ends with a Query Block of
@@ -2502,7 +2561,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const figure = 'tags.contains("figure")';
     await obEval(
       vaultId,
-      `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('markdown').find(l=>l.view.file.path===${JSON.stringify(labNote)});const el=[...leaf.view.containerEl.querySelectorAll('.internal-embed')].find(el=>el.zotlitQueryView&&el.isShown());press(el.querySelector('[data-query-toolbar="filter"]'),'Filter');const all=()=>el.querySelector('[data-query-popover="filter"] [data-filter-section="all"] [data-condition-row]');const set=(control,value)=>{control.value=value;control.dispatchEvent(new Event('input',{bubbles:true}));};const fold=el.querySelector('[data-query-popover="filter"] [data-filter-section="all"] details');if(!fold.open)press(fold.querySelector('summary'),'All views heading');press([...el.querySelectorAll('[data-query-popover="filter"] [data-filter-section="all"] button')].find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_match_add_condition())}),'Add condition');await until('condition row',all);set(all().querySelector('select[aria-label="${m.workbench_match_condition_kind()}"]'),'tags');set(await until('tag value field',()=>all().querySelector('input[aria-label="${m.workbench_match_value()}"]')),'figure');el.querySelector('[data-query-popover="filter"]').hidePopover();return true;})()`,
+      `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('markdown').find(l=>l.view.file.path===${JSON.stringify(labNote)});const el=[...leaf.view.containerEl.querySelectorAll('.internal-embed')].find(el=>el.zotlitQueryView&&el.isShown());press(el.querySelector('[data-query-toolbar="filter"]'),'Filter');const all=()=>el.querySelector('[data-query-popover="filter"] [data-filter-section="all"] [data-condition-row]');const set=(control,value)=>{control.value=value;control.dispatchEvent(new Event('input',{bubbles:true}));};const fold=el.querySelector('[data-query-popover="filter"] [data-filter-section="all"] details');if(!fold.open)press(fold.querySelector('summary'),'All views heading');await until('placeholder row',all);set(all().querySelector('select[aria-label="${m.workbench_match_condition_kind()}"]'),'tags');set(await until('tag value field',()=>all().querySelector('input[aria-label="${m.workbench_filter_value()}"]')),'figure');el.querySelector('[data-query-popover="filter"]').hidePopover();return true;})()`,
     );
     const figures = byItem(await queryRows(figure)).cards;
     const myFigures = await queryKeys(
@@ -2914,7 +2973,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     }) => {
       await obEval(
         vaultId,
-        `(()=>{const page=${propertiesPage};const set=(el,value)=>{el.value=value;el.dispatchEvent(new InputEvent('input',{bubbles:true}));};${fields.name === undefined ? "" : `set(page.querySelector('[data-query-formula-name]'),${JSON.stringify(fields.name)});`}set(page.querySelector('[data-query-formula-expression]'),${JSON.stringify(fields.expression)});return true;})()`,
+        `(()=>{const page=${propertiesPage};const set=(el,value)=>{el.value=value;el.dispatchEvent(new InputEvent('input',{bubbles:true}));};${fields.name === undefined ? "" : `set(page.querySelector('[data-query-formula-name]'),${JSON.stringify(fields.name)});`}const view=page.querySelector('[data-query-formula-expression] .cm-content').cmTile.root.view;view.dispatch({changes:{from:0,to:view.state.doc.length,insert:${JSON.stringify(fields.expression)}},userEvent:'input.type'});return true;})()`,
       );
       return JSON.parse(
         await obEval(
@@ -4871,13 +4930,8 @@ views:
     await cli([`vault=${vaultId}`, "delete", `path=${seededPath}`]);
     expect(await hasIndexedNotes(vaultId, bookItem.key, 0)).toBe(true);
     await openMatchEditor();
-    expect(
-      await conditionReady({
-        kind: "item-type",
-        operator: "is",
-        value: "book",
-      }),
-    ).toBe(true);
+    // A Profile with no Match shows one placeholder row.
+    await shapeCondition(0, "item-type", "book");
     await addLibraryCondition("personal");
     await saveMatch(bookMatch);
     const description = m.settings_profile_match_status({ state: "evaluable" });
@@ -4954,6 +5008,59 @@ views:
     expect(await hasOneIndexedNote(vaultId, bookItem.key)).toBe(true);
     await cli([`vault=${vaultId}`, "delete", `path=${notePath}`]);
     expect(await hasIndexedNotes(vaultId, bookItem.key, 0)).toBe(true);
+  });
+
+  it("checks a Profile Match against a chosen Item and marks a mistake on its row", async () => {
+    const bookItem = ITEMS.find((item) => item.itemID === 61)!;
+    const articleItem = ITEMS.find((item) => item.itemID === 1)!;
+    const documentPath = join(e2eVaultPath, "templates", booksProfile.document);
+    const original = await readFile(documentPath, "utf-8");
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        "for(const type of ['zotlit-template-workbench','zotlit-template-data-explorer','zotlit-note-preview'])app.workspace.detachLeavesOfType(type);true",
+      );
+      await writeFile(documentPath, original);
+    });
+    await writeMatch(booksProfile, bookMatch);
+    await openMatchEditor();
+    /** The Match tab's result once it tests the Item `key` and settles. */
+    const resultFor = async (key: string) => {
+      let text = "";
+      await waitFor(async () => {
+        text = await obEval(
+          vaultId,
+          `(async()=>{const view=app.workspace.activeLeaf.view;if(view.getState().itemIndexedKey!==${JSON.stringify(key)})await view.setState({...view.getState(),itemIndexedKey:${JSON.stringify(key)}},{history:false});const result=view.contentEl.querySelector('[data-part="result"]');return result?.getAttribute('data-state')==='loading'?'loading':(result?.textContent??'loading');})()`,
+        );
+        return text !== "loading";
+      });
+      return text;
+    };
+    // ZotLit Query tests a real Item, as creation does.
+    expect(await resultFor(bookItem.key)).toBe(m.workbench_match_result_yes());
+    expect(await resultFor(articleItem.key)).toBe(
+      m.workbench_match_result_no(),
+    );
+    // A mistake in one condition shows on that row, with the reason ZotLit
+    // Query gives.
+    await writeMatch(booksProfile, {
+      and: ['itemType == "book"', 'tags.contain("Read")'],
+    });
+    let rows: (string | null)[] = [];
+    expect(
+      await waitFor(async () => {
+        rows = JSON.parse(
+          await obEval(
+            vaultId,
+            `(function(){return JSON.stringify(Array.from((${activeWorkbenchContent})?.querySelectorAll('[data-condition-row]')??[]).map(row=>row.querySelector('[role=alert]')?.textContent??null));})()`,
+          ),
+        ) as (string | null)[];
+        return rows.length === 2 && rows[1] !== null;
+      }),
+    ).toBe(true);
+    expect(rows[0]).toBeNull();
+    expect(rows[1]).toContain("contain");
   });
 
   it("keeps per-Item matches in a mixed-Library batch with one unmatched-or-overlap fallback", async () => {
@@ -5193,18 +5300,18 @@ views:
     await openMatchEditor();
     expect(
       await conditionReady({
-        kind: "collections",
+        kind: "collection",
         operator: "within",
         value: parent.name,
       }),
     ).toBe(true);
     await obEval(
       vaultId,
-      `(function(){var editor=${activeWorkbenchContent};var operator=editor.querySelector('[data-condition-row] select[aria-label=${JSON.stringify(m.settings_profile_match_operator())}]');operator.value='contains';operator.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+      `(function(){var editor=${activeWorkbenchContent};var operator=editor.querySelector('[data-condition-row] select[aria-label=${JSON.stringify(m.workbench_filter_operator())}]');operator.value='contains';operator.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
     );
     expect(
       await conditionReady({
-        kind: "collections",
+        kind: "collection",
         operator: "contains",
         value: parent.name,
       }),

@@ -107,12 +107,35 @@ export interface WorkbenchLibrary {
   readonly name?: string;
 }
 
-/** The names a Match condition can be written against. */
+/**
+ * Whether an Item matches a filter:
+ * - `result`: the filter holds for the Item, or not.
+ * - `missing`: the host cannot read the Item.
+ * - `problem`: the filter has a mistake. `span` is where it is in the filter
+ *   text, where the mistake has a place.
+ */
+export type WorkbenchMatchResult =
+  | { readonly kind: "result"; readonly matched: boolean }
+  | { readonly kind: "missing" }
+  /** An example item keeps no Attachments, Annotations, or Notes to test. */
+  | { readonly kind: "unavailable" }
+  | {
+      readonly kind: "problem";
+      readonly message: string;
+      readonly span?: { readonly from: number; readonly to: number };
+    };
+
+/** The names a Match condition can be written against, and its test. */
 export interface WorkbenchMatchData {
   tags(): Promise<readonly string[]>;
   /** Root-first Collection path segments; display formatting stays in the UI. */
   collections(): Promise<readonly (readonly string[])[]>;
   libraries(): Promise<readonly WorkbenchLibrary[]>;
+  /**
+   * Test the Item `indexedKey` against `filter`, a filter of the Items
+   * dataset, as Profile selection tests it.
+   */
+  matches(indexedKey: string, filter: string): Promise<WorkbenchMatchResult>;
 }
 
 /** The slice editor a field is inserted into, and where in it. */

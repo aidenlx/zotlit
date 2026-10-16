@@ -28,6 +28,7 @@ function setup() {
       tags: async () => [],
       collections: async () => [],
       libraries: async () => [],
+      matches: async () => ({ kind: "missing" }),
     },
     insertTarget: () => null,
   });

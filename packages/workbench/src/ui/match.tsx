@@ -1,14 +1,14 @@
 import type { WorkbenchDocumentController } from "#/document/controller";
-import type { MatchItemFacts } from "#/match/condition";
 import { useEffect, useMemo, useState, useRef } from "react";
 
+import { composeFilterTree } from "@zotlit/filter-expression";
 import type { FilterPath } from "@zotlit/filter-expression";
 import type { MatchTree } from "@zotlit/templates/facade";
 
-import { useOptionalEditor, useWorkbenchStore } from "./editor";
+import { useWorkbenchStore } from "./editor";
 import { ExampleActions } from "./example-state";
 import { useWorkbenchHost } from "./host";
-import { describeProblem } from "./match.diagnostic";
+import type { WorkbenchMatchResult } from "./host";
 import {
   appendAt,
   asExpression,
@@ -32,21 +32,19 @@ import type {
   ConditionGroup,
   ConditionPath,
   LabelledRow,
-  MatchEditorDeps,
   MatchFilter,
   MatchVocabulary,
   RowCondition,
 } from "./match.draft";
 import { MatchExpressionInput } from "./match.expression";
-import { profileVocabulary } from "./match.profile";
+import { filterVocabulary } from "./match.fields";
+import type { FilterValues } from "./match.fields";
 import { useMatchReorder } from "./match.reorder";
 import type { MatchReorder } from "./match.reorder";
 import { MatchSelect } from "./match.rows";
 // One Match tree over the document controller; rows write through the master history.
 import { useWorkbenchMessages } from "./messages";
 import { useParts, useIcon } from "./theme";
-
-import { compileFilter, matchCondition } from "#/match/condition";
 
 export type {
   ConditionControlProps,
@@ -59,16 +57,21 @@ export type {
   RowCondition,
 } from "./match.draft";
 
+const NO_VALUES: FilterValues = { tags: [], collections: [], libraries: [] };
+
+/**
+ * The Match of the open Profile document: the Match editor with the
+ * conditions of the Items dataset, and whether the example Item matches, as
+ * the host tests it.
+ */
 export function MatchPane({
   controller,
-  facts,
   vocabularyRevision,
   exampleMessage,
   onRetry,
   onChooseItem,
 }: {
   controller: WorkbenchDocumentController;
-  facts: MatchItemFacts | null;
   /** Changes when the host has a new snapshot or database vocabulary. */
   vocabularyRevision?: string | number;
   exampleMessage?: string | null;
@@ -78,19 +81,12 @@ export function MatchPane({
   const m = useWorkbenchMessages();
   const host = useWorkbenchHost();
   const part = useParts("match");
-  const editor = useOptionalEditor();
   const item = useWorkbenchStore((state) => state.item);
-  const hasItem = editor ? item !== null : facts !== null;
   const [match, setMatch] = useState<MatchTree | undefined>(
     controller.document?.manifest.match,
   );
   const [readable, setReadable] = useState(controller.document !== null);
-  const [deps, setDeps] = useState<MatchEditorDeps>({
-    tags: [],
-    collections: [],
-    libraries: [],
-  });
-  const vocabulary = useMemo(() => profileVocabulary(m, deps), [m, deps]);
+  const [values, setValues] = useState<FilterValues>(NO_VALUES);
   const [writeProblem, setWriteProblem] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -113,15 +109,12 @@ export function MatchPane({
     ]).then(
       ([tags, collections, libraries]) => {
         if (active) {
-          setDeps({
+          setValues({
             tags,
-            collections: collections.map((path) => ({ path })),
+            collections: collections.map((path) => path.join("/")),
             libraries: libraries.map(({ id, name }) => ({
-              selector:
-                id === "personal"
-                  ? { type: "personal" as const }
-                  : { type: "group" as const, groupID: Number(id.slice(6)) },
-              ...(name === undefined ? {} : { name }),
+              id,
+              name: name ?? null,
             })),
           });
           setProblem(null);
@@ -139,42 +132,71 @@ export function MatchPane({
       active = false;
     };
   }, [host.matchData, vocabularyRevision, m, retry]);
+  const filter = useMemo(
+    () => (match === undefined ? null : composeFilterTree(match)),
+    [match],
+  );
+  const test = useMatchTest(
+    item?.id ?? null,
+    filter?.text ?? null,
+    `${vocabularyRevision ?? ""}:${retry}`,
+  );
+  const answer = typeof test === "object" ? test : null;
+  // A mistake shows on the condition it is in, where it has a place.
+  const span = answer?.kind === "problem" ? answer.span : undefined;
+  const faulty = span
+    ? filter?.leaves.find(({ from, to }) => span.from >= from && span.to <= to)
+    : undefined;
+  const vocabulary = useMemo(
+    () =>
+      filterVocabulary("items", {
+        m,
+        values,
+        issue: (_, path) =>
+          faulty &&
+          answer?.kind === "problem" &&
+          placeKey(path) === placeKey(faulty.path)
+            ? answer.message
+            : null,
+      }),
+    [m, values, faulty, answer],
+  );
   function write(next: MatchTree | undefined) {
     const saved = controller.setMatch(next);
     setWriteProblem(saved ? null : m.workbench_match_source_only());
     return saved;
   }
-  const compiled =
-    match === undefined ? null : compileFilter(match, deps.libraries);
   const reason =
     controller.document?.manifest.id === "default"
       ? m.workbench_match_default()
       : !readable
         ? m.workbench_match_source_only()
-        : compiled?.problem
-          ? describeProblem(m, compiled.problem)
-          : facts === null
+        : test === "failed"
+          ? m.workbench_example_failed()
+          : answer?.kind === "missing"
             ? m.workbench_match_missing_facts()
-            : null;
-  const matched =
-    compiled?.condition && facts
-      ? matchCondition(compiled.condition, facts)
-      : false;
+            : answer?.kind === "unavailable"
+              ? m.workbench_match_example_unavailable()
+              : answer?.kind === "problem" && !faulty
+                ? answer.message
+                : null;
+  const matched = answer?.kind === "result" && answer.matched;
+  const pending = filter !== null && test === undefined;
   const failed = problem ?? reason;
-  const resultMessage = !hasItem
+  const resultMessage = !item
     ? m.workbench_match_choose_item()
     : (exampleMessage ??
-      (loading ? m.workbench_loading_item() : null) ??
+      (loading || pending ? m.workbench_loading_item() : null) ??
       (failed
         ? m.workbench_match_result_unavailable({ reason: failed })
         : matched
           ? m.workbench_match_result_yes()
           : m.workbench_match_result_no()));
-  const resultState = !hasItem
+  const resultState = !item
     ? "no-selection"
     : onRetry || (!loading && failed)
       ? "error"
-      : exampleMessage || loading
+      : exampleMessage || loading || pending
         ? "loading"
         : matched
           ? "match"
@@ -216,13 +238,52 @@ export function MatchPane({
           onChooseItem={onChooseItem}
           onRetry={
             onRetry ??
-            (problem ? () => setRetry((value) => value + 1) : undefined)
+            (problem || test === "failed"
+              ? () => setRetry((value) => value + 1)
+              : undefined)
           }
         />
       </div>
       {writeProblem && <p role="alert">{writeProblem}</p>}
     </section>
   );
+}
+
+/**
+ * The host's test of the Item `indexedKey` against `filter`: `undefined`
+ * while it runs, and `failed` when the host could not answer. A filter or an
+ * Item of `null` is not tested. A new `revision` tests again.
+ */
+function useMatchTest(
+  indexedKey: string | null,
+  filter: string | null,
+  revision: string,
+): WorkbenchMatchResult | "failed" | undefined {
+  const host = useWorkbenchHost();
+  const key =
+    indexedKey === null || filter === null
+      ? null
+      : JSON.stringify([indexedKey, filter, revision]);
+  const [answer, setAnswer] = useState<{
+    key: string;
+    value: WorkbenchMatchResult | "failed";
+  } | null>(null);
+  useEffect(() => {
+    if (key === null || indexedKey === null || filter === null) return;
+    let active = true;
+    void host.matchData.matches(indexedKey, filter).then(
+      (value) => {
+        if (active) setAnswer({ key, value });
+      },
+      () => {
+        if (active) setAnswer({ key, value: "failed" });
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [host.matchData, key, indexedKey, filter]);
+  return answer?.key === key ? answer.value : undefined;
 }
 
 /**
@@ -318,6 +379,18 @@ function Group<Row extends LabelledRow>({
   const part = useParts("match");
   const icon = useIcon();
   const host = useWorkbenchHost();
+  // "Add condition" hands the focus to the new row's condition type.
+  const rows = useRef<HTMLUListElement>(null);
+  const focusAdded = useRef(false);
+  useEffect(() => {
+    if (!focusAdded.current) return;
+    focusAdded.current = false;
+    rows.current
+      ?.querySelector<HTMLElement>(
+        ":scope > li:last-child [data-condition-row] select",
+      )
+      ?.focus();
+  }, [group.conditions.length]);
   return (
     <div
       {...part("group", path.length ? "nested" : "root")}
@@ -353,7 +426,7 @@ function Group<Row extends LabelledRow>({
           </button>
         )}
       </div>
-      <ul {...part("rows")} {...reorder.rows(path)}>
+      <ul ref={rows} {...part("rows")} {...reorder.rows(path)}>
         {group.conditions.map((node, index) => (
           <li
             key={index}
@@ -405,9 +478,10 @@ function Group<Row extends LabelledRow>({
         <button
           {...part("button")}
           type="button"
-          onClick={() =>
-            onChange(appendAt(root, path, placeholderRow(vocabulary)))
-          }
+          onClick={() => {
+            focusAdded.current = true;
+            onChange(appendAt(root, path, placeholderRow(vocabulary)));
+          }}
         >
           {icon("add")}
           {m.workbench_match_add_condition()}

@@ -507,6 +507,7 @@ export default class ZotLitPlugin extends Plugin {
       customize,
       app: this.app,
       zoteroReads: services.zoteroReads,
+      query: services.query,
       noteIndex: services.noteIndex,
       zoteroPref: services.zoteroPref,
       itemLookup: services.itemLookup,

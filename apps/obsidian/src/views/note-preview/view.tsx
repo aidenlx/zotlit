@@ -491,6 +491,8 @@ export class NotePreviewView extends ItemView {
           tags: async () => [],
           collections: async () => [],
           libraries: async () => [],
+          // This view shows no Match.
+          matches: async () => ({ kind: "missing" }),
         },
         insertTarget: () => null,
         markdown: (props) => (

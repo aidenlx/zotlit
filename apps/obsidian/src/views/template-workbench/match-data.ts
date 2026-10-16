@@ -1,19 +1,28 @@
-import type { MatchItemFacts } from "@zotlit/workbench/match";
-import { snapshotMatchFacts } from "@zotlit/workbench/match";
-import type { WorkbenchHost, WorkbenchLibrary } from "@zotlit/workbench/ui";
+import { parseIndexedKey } from "@zotlit/db";
+import { planItemFilter, testItemSeed } from "@zotlit/item-query";
+import type {
+  WorkbenchHost,
+  WorkbenchLibrary,
+  WorkbenchMatchResult,
+} from "@zotlit/workbench/ui";
 
 // Match vocabulary spans every Library in the pinned live database.
 import { Effect } from "@/lib/effect";
+import type { QueryService } from "@/services/item-query/service";
 import {
   resolveLibraryScope,
   selectorKey,
 } from "@/services/library-scope/scope";
+import { testItemMatches } from "@/services/profile-selection";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import { readerText } from "@/views/query-view/reader-diagnostic";
+import type { ReaderDiagnosticSource } from "@/views/query-view/reader-diagnostic";
 
 import { getSampleItem } from "./selection-data";
 
 export function createMatchData(
   db: Pick<ZoteroReadsService, "acquireRead">,
+  query: Pick<QueryService, "run"> | undefined,
 ): WorkbenchHost["matchData"] {
   return {
     async tags() {
@@ -43,37 +52,46 @@ export function createMatchData(
         ...(library.name === null ? {} : { name: library.name }),
       }));
     },
+    matches: (indexedKey, filter) => testMatch(query, indexedKey, filter),
   };
 }
 
-/** The Item's real memberships, including automatic Tags and direct Collections. */
-export async function loadMatchFacts(
-  db: Pick<ZoteroReadsService, "acquireRead">,
+/**
+ * Whether the Item matches `filter`, as Profile selection tests it: a sample
+ * Item in memory, from its seed, and a real Item through ZotLit Query.
+ */
+async function testMatch(
+  query: Pick<QueryService, "run"> | undefined,
   indexedKey: string,
-): Promise<MatchItemFacts | null> {
+  filter: string,
+): Promise<WorkbenchMatchResult> {
+  const planned = planItemFilter(filter);
+  if (!("matches" in planned)) return problem(planned);
   const sample = getSampleItem(indexedKey);
-  if (sample) return snapshotMatchFacts(sample);
-  await using lease = await db.acquireRead();
-  const items = await Effect.runPromise(
-    lease.reads.ItemsByIndexedKeys({ indexedKeys: [indexedKey] }),
-  );
-  const item = items.get(indexedKey);
-  if (!item) return null;
-  const library = resolveLibraryScope(
-    await Effect.runPromise(lease.reads.Libraries({})),
-    { mode: "all" },
-  ).available.find((entry) => entry.libraryID === item.libraryID);
-  if (!library) return null;
-  const facts = await Effect.runPromise(
-    lease.reads.MembershipFacts({
-      itemID: item.itemID,
-      libraryID: item.libraryID,
-    }),
-  );
+  if (sample) {
+    if (!sample.seed) return { kind: "missing" };
+    const answer = testItemSeed(filter, sample.seed);
+    return answer.kind === "problem" ? problem(answer.diagnostic) : answer;
+  }
+  const parsed = parseIndexedKey(indexedKey);
+  if (!parsed || !query) return { kind: "missing" };
+  const answer = await testItemMatches(query, parsed, [filter]);
+  if (answer.kind === "missing") return answer;
+  const fault = answer.kind === "failed" ? answer.diagnostic : answer.faults[0];
+  if (fault) return problem(fault);
+  if (answer.kind === "failed") return { kind: "missing" };
+  return { kind: "result", matched: answer.matched[0] === true };
+}
+
+/** A Diagnostic as the Match tab shows it, on its condition where it has one. */
+function problem(
+  diagnostic: ReaderDiagnosticSource & {
+    location?: { span?: { from: number; to: number } };
+  },
+): WorkbenchMatchResult {
   return {
-    library: library.selector,
-    itemType: item.fields.itemType,
-    tags: [...facts.tags],
-    collections: facts.collections.map((path) => [...path]),
+    kind: "problem",
+    message: readerText(diagnostic),
+    ...(diagnostic.location?.span ? { span: diagnostic.location.span } : {}),
   };
 }

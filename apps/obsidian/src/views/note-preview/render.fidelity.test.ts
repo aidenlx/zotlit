@@ -56,7 +56,6 @@ async function realCreate(
   const entry = seedProfileEntry(document.manifest, {
     document: "zotlit-profile.paper.md",
     path: "templates/zotlit-profile.paper.md",
-    libraries: [],
   });
   const current: ProfileFixtureSettings = {
     ...settingsDefaults,

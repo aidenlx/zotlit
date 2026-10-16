@@ -15,46 +15,22 @@ import { useStore } from "zustand";
 import { foldFilterTree } from "@zotlit/filter-expression";
 import type { MatchTree } from "@zotlit/templates/facade";
 import {
-  ChipInput,
   MatchEditor,
-  MatchInput,
-  MatchSelect,
   WorkbenchHostProvider,
   WorkbenchThemeProvider,
-  useParts,
+  filterVocabulary,
 } from "@zotlit/workbench/ui";
-import type {
-  MatchConditionKind,
-  MatchFilter,
-  MatchVocabulary,
-  RowCondition,
-} from "@zotlit/workbench/ui";
-import { ITEM_TYPES } from "@zotlit/zotero-types/item-types";
+import type { FilterValues, MatchFilter } from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
 import { useObsidianApp } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
-import { runtime } from "@/lib/i18n/generated/runtime";
 import { getLogger } from "@/lib/log";
 import { cn } from "@/lib/utils";
 import { createTemplateWorkbenchHost } from "@/views/template-workbench/host";
 import { matchTheme } from "@/views/template-workbench/match-pane";
 import { matchRows } from "@/views/template-workbench/theme";
 
-import {
-  FILTER_OPERATORS,
-  filterFields,
-  formatFilterRow,
-  freshFilterRow,
-  parseFilterRow,
-  withOperator,
-} from "./filter-fields";
-import type {
-  FilterField,
-  FilterFieldKind,
-  FilterOperator,
-  FilterRow,
-} from "./filter-fields";
 import { propertyIcon } from "./property-icon";
 import { allViewsDataset } from "./query-file";
 import type {
@@ -74,276 +50,15 @@ import type { ViewProperties } from "./view-properties";
 
 const logger = getLogger(["views", "query-view", "filter"]);
 
-/** The values a condition offers, from the Libraries the view reads. */
-export interface FilterValues {
-  readonly tags: readonly string[];
-  /** Collection paths, joined by `/`. */
-  readonly collections: readonly string[];
-  /** `personal` or `group:<groupID>`, with the group's name. */
-  readonly libraries: readonly { id: string; name: string | null }[];
-}
+export type { FilterValues };
 
 const NO_VALUES: FilterValues = { tags: [], collections: [], libraries: [] };
 
 /** The issue of one condition, as the Query View last found it. */
 export type FilterIssue = ConditionIssue | null;
 
-const KIND_LABELS: Record<FilterFieldKind, () => string> = {
-  color: m.query_view_property_color,
-  tags: m.query_view_property_tag,
-  comment: m.annot_view_card_comment_label,
-  text: m.query_view_filter_text,
-  page: m.query_view_property_page,
-  "date-added": m.query_view_property_date_added,
-  "date-modified": m.query_view_property_date_modified,
-  "item-title": m.query_view_property_item_title,
-  creators: m.query_view_filter_creator,
-  "first-author": m.query_view_property_first_author,
-  year: m.query_view_filter_year,
-  "item-type": m.query_view_property_item_type,
-  collection: m.query_view_property_collection,
-  library: m.query_view_property_library,
-  "attachment-title": m.query_view_property_attachment_title,
-  "file-type": m.query_view_filter_file_type,
-};
-
-const OPERATOR_LABELS: Record<FilterOperator, () => string> = {
-  contains: m.query_view_filter_op_contains,
-  "does-not-contain": m.query_view_filter_op_does_not_contain,
-  "contains-any": m.query_view_filter_op_contains_any,
-  "contains-all": m.query_view_filter_op_contains_all,
-  within: m.query_view_filter_op_within,
-  "not-within": m.query_view_filter_op_not_within,
-  is: m.query_view_filter_op_is,
-  "is-not": m.query_view_filter_op_is_not,
-  "is-empty": m.query_view_filter_op_is_empty,
-  "is-not-empty": m.query_view_filter_op_is_not_empty,
-  before: m.query_view_filter_op_before,
-  after: m.query_view_filter_op_after,
-  "on-or-before": m.query_view_filter_op_on_or_before,
-  "on-or-after": m.query_view_filter_op_on_or_after,
-};
-
-/** A Collection is a member, not a text: "is" reads better than "contains". */
-const COLLECTION_LABELS: Partial<Record<FilterOperator, () => string>> = {
-  contains: m.query_view_filter_op_is,
-  "does-not-contain": m.query_view_filter_op_is_not,
-  "contains-any": m.query_view_filter_op_is_any,
-  "contains-all": m.query_view_filter_op_is_all,
-  "is-empty": m.query_view_filter_op_is_empty,
-  "is-not-empty": m.query_view_filter_op_is_not_empty,
-};
-
-const COLORS: readonly [string, () => string][] = [
-  ["yellow", m.annot_view_color_yellow],
-  ["red", m.annot_view_color_red],
-  ["green", m.annot_view_color_green],
-  ["blue", m.annot_view_color_blue],
-  ["purple", m.annot_view_color_purple],
-  ["magenta", m.annot_view_color_magenta],
-  ["orange", m.annot_view_color_orange],
-  ["gray", m.annot_view_color_gray],
-  ["plum", m.annot_view_color_plum],
-];
-
-const FILE_TYPES: readonly [string, () => string][] = [
-  ["pdf", m.query_view_filter_file_type_pdf],
-  ["epub", m.query_view_filter_file_type_epub],
-  ["web", m.query_view_filter_file_type_web],
-  ["other", m.query_view_filter_file_type_other],
-];
-
-function choices(
-  kind: FilterFieldKind,
-  values: FilterValues,
-): readonly [string, string][] {
-  switch (kind) {
-    case "color":
-      return COLORS.map(([value, label]) => [value, label()]);
-    case "file-type":
-      return FILE_TYPES.map(([value, label]) => [value, label()]);
-    case "item-type": {
-      const locale = runtime.getLocale() === "zh-CN" ? "zh-CN" : "en-US";
-      return ITEM_TYPES.map((type) => [type.name, type.labels[locale]]);
-    }
-    case "library":
-      return values.libraries.map(({ id, name }) => [
-        id,
-        id === "personal" ? m.settings_library_scope_personal() : (name ?? id),
-      ]);
-    default:
-      return [];
-  }
-}
-
 function samePath(a: readonly number[], b: readonly number[]): boolean {
   return a.length === b.length && a.every((value, at) => value === b[at]);
-}
-
-function RowOperator({
-  field,
-  condition,
-  onChange,
-}: {
-  field: FilterField;
-  condition: FilterRow;
-  onChange: (next: FilterRow) => void;
-}) {
-  return (
-    <MatchSelect
-      aria-label={m.query_view_filter_operator()}
-      value={condition.operator}
-      onChange={(value) =>
-        onChange(withOperator(condition, value as FilterOperator))
-      }
-    >
-      {FILTER_OPERATORS[field.type].map((operator) => (
-        <option key={operator} value={operator}>
-          {(field.type === "collection"
-            ? (COLLECTION_LABELS[operator] ?? OPERATOR_LABELS[operator])
-            : OPERATOR_LABELS[operator])()}
-        </option>
-      ))}
-    </MatchSelect>
-  );
-}
-
-function RowValue({
-  field,
-  condition,
-  values,
-  onChange,
-}: {
-  field: FilterField;
-  condition: FilterRow;
-  values: FilterValues;
-  onChange: (next: FilterRow) => void;
-}) {
-  const part = useParts("match");
-  const { operator } = condition;
-  if (operator === "is-empty" || operator === "is-not-empty") return null;
-  const suggestions =
-    field.kind === "tags"
-      ? values.tags
-      : field.type === "collection"
-        ? values.collections
-        : undefined;
-  const placeholder =
-    field.kind === "tags"
-      ? m.query_view_filter_tag_placeholder()
-      : field.type === "collection"
-        ? m.query_view_filter_collection_placeholder()
-        : m.query_view_filter_value();
-  if (operator === "contains-any" || operator === "contains-all")
-    return (
-      <ChipInput
-        values={condition.values}
-        onChange={(next) => onChange({ ...condition, values: next })}
-        placeholder={placeholder}
-        suggestions={suggestions}
-      />
-    );
-  if (field.type === "choice") {
-    const options = choices(field.kind, values);
-    return (
-      <MatchSelect
-        {...part("control")}
-        aria-label={m.query_view_filter_value()}
-        value={condition.value}
-        onChange={(value) => onChange({ ...condition, value })}
-      >
-        {condition.value === "" ? (
-          <option value="" disabled>
-            {m.workbench_match_value_empty()}
-          </option>
-        ) : options.some(([value]) => value === condition.value) ? null : (
-          <option value={condition.value}>{condition.value}</option>
-        )}
-        {options.map(([value, label]) => (
-          <option key={value} value={value}>
-            {label}
-          </option>
-        ))}
-      </MatchSelect>
-    );
-  }
-  if (field.type === "number" || field.type === "date")
-    return (
-      <input
-        {...part("input")}
-        type={field.type}
-        aria-label={m.query_view_filter_value()}
-        placeholder={m.workbench_match_value_empty()}
-        value={condition.value}
-        onInput={(event) =>
-          onChange({ ...condition, value: event.currentTarget.value })
-        }
-      />
-    );
-  return (
-    <MatchInput
-      {...part("input")}
-      aria-label={m.query_view_filter_value()}
-      placeholder={placeholder}
-      suggestions={suggestions}
-      value={condition.value}
-      onChange={(value) => onChange({ ...condition, value })}
-    />
-  );
-}
-
-/**
- * The conditions of one dataset, as the Match editor offers them. A
- * condition shows the Display Name of its field in `properties`, else the
- * name of its kind.
- */
-export function filterVocabulary(
-  dataset: QueryFileDataset,
-  {
-    values,
-    issue,
-    properties,
-  }: {
-    values: FilterValues;
-    issue: (
-      condition: RowCondition<FilterRow>,
-      path: readonly number[],
-    ) => string | null;
-    properties: Pick<ViewProperties, "entry"> | null;
-  },
-): MatchVocabulary<FilterRow> {
-  const fields = filterFields(dataset);
-  const kinds = fields.map(
-    (field): MatchConditionKind<FilterRow> => ({
-      kind: field.kind,
-      label:
-        properties?.entry(field.path).displayName ?? KIND_LABELS[field.kind](),
-      icon: (
-        <Icon
-          name={propertyIcon(dataset, { path: field.path, formula: null })}
-        />
-      ),
-      fresh: () => freshFilterRow(field),
-      parse: (text) => {
-        const row = parseFilterRow(text, fields);
-        return row?.kind === field.kind ? row : null;
-      },
-      format: (row) => formatFilterRow(row, fields),
-      renderOperator: ({ condition, onChange }) => (
-        <RowOperator field={field} condition={condition} onChange={onChange} />
-      ),
-      renderValue: ({ condition, onChange }) => (
-        <RowValue
-          field={field}
-          condition={condition}
-          values={values}
-          onChange={onChange}
-        />
-      ),
-    }),
-  );
-  const first = fields[0]!.kind;
-  return { kinds, newKind: first, issue };
 }
 
 /**
@@ -448,6 +163,8 @@ export function FilterEditor({
         tags: async () => [],
         collections: async () => [],
         libraries: async () => [],
+        // The Filter offers its own values and tests no Item.
+        matches: async () => ({ kind: "missing" }),
       },
       insertTarget: () => null,
     });
@@ -457,12 +174,23 @@ export function FilterEditor({
   useEffect(() => () => host[Symbol.dispose](), [host]);
   const vocabulary = (section: FilterSection) =>
     filterVocabulary(section === "all" ? shared : dataset, {
+      m: host.messages,
       values,
       issue: (_, path) =>
         issue && issue.section === section && samePath(issue.path, path)
           ? issue.message
           : null,
-      properties,
+      // A condition shows the Display Name of its field in the view's
+      // Properties, and the icon the view's property list shows.
+      label: (field) => properties?.entry(field.path).displayName,
+      icon: (field) => (
+        <Icon
+          name={propertyIcon(section === "all" ? shared : dataset, {
+            path: field.path,
+            formula: null,
+          })}
+        />
+      ),
     });
   const sections = (
     [

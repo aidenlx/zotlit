@@ -31,8 +31,7 @@ const BOOK_PROFILE = {
   match: {
     state: "all",
     summary: m.profile_match_all(),
-    tree: "true",
-    condition: { kind: "group", match: "all", conditions: [] },
+    tree: { and: [] },
   },
 } satisfies LiteratureNoteProfile;
 

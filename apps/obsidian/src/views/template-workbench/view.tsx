@@ -107,6 +107,7 @@ import { MENU_SECTION } from "@/lib/menu-section";
 import { BaseNotice } from "@/lib/notice";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import type { ArrivingProblem } from "@/lib/workbench-recovery";
+import type { QueryService } from "@/services/item-query/service";
 import type {
   NoteFeature,
   UpdateResult,
@@ -206,6 +207,8 @@ export function originatingNoteUpdateNotice(
 
 export type TemplateWorkbenchDeps = Omit<ExplorerViewDeps, "pluginVersion"> & {
   noteFeature?: Pick<NoteFeature, "updateNote">;
+  /** ZotLit Query, which tests the Match of a Profile on a real Item. */
+  query?: Pick<QueryService, "run">;
   render?: WorkbenchHost["render"];
   nativePreview?: NativeRenderDeps;
   pluginVersion?: string;
@@ -476,7 +479,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
             result={this.scheduler.getState().result}
           />
         ),
-        matchData: createMatchData(deps.zoteroReads),
+        matchData: createMatchData(deps.zoteroReads, deps.query),
         insertTarget: () => this.insertTarget,
         partials: {
           names: () =>

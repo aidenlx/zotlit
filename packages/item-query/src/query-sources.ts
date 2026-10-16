@@ -221,7 +221,7 @@ function missingFault(
  * source, with the custom fields `names`, lacks, as a Fault at its text; null
  * when the source has each.
  */
-function missingCustomField(
+export function missingCustomField(
   plan: Pick<FilterPlan, "customFields">,
   names: readonly string[],
 ): FormulaSourceFault | null {

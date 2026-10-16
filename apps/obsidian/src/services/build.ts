@@ -309,13 +309,12 @@ export function buildServices(
         }),
     })
     .use({
-      profile: ({ settings, template, noteIndex, libraryScope }) =>
+      profile: ({ settings, template, noteIndex }) =>
         new ProfileService({
           app: plugin.app,
           settings,
           template,
           noteIndex,
-          libraryScope,
         }),
     })
     .use({
@@ -407,6 +406,7 @@ export function buildServices(
         profile,
         template,
         zoteroReads,
+        query,
         noteIndex,
         zoteroPref,
         settings,
@@ -433,6 +433,7 @@ export function buildServices(
           app: plugin.app,
           template,
           zoteroReads,
+          query,
           noteIndex,
           zoteroPref,
           settings,

@@ -18,6 +18,17 @@ export {
   type ResolveAttachmentFile,
 } from "./dataset";
 export { ITEMS } from "./query-items";
+export {
+  planItemFilter,
+  testItemSeed,
+  type ItemFilter,
+  type SeedTest,
+} from "./item-filter";
+export {
+  queryItemFrom,
+  readQueryItemSeed,
+  type QueryItemSeed,
+} from "./item-seed";
 export { ANNOTATIONS } from "./query-annotations";
 export {
   ItemQueryError,

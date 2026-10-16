@@ -1,2 +1,1 @@
-export * from "./condition";
-export { snapshotMatchFacts } from "./snapshot";
+export * from "./fields";

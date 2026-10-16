@@ -495,7 +495,9 @@ it.each([
     await using f = await realImportFixture(held);
     using buttons = observeButtons();
     f.modal.onOpen();
-    expect(f.modal.contentEl.textContent).toContain("Library is Group 987654");
+    expect(f.modal.contentEl.textContent).toContain(
+      'library == "group:987654"',
+    );
     expect(matchToggle(f.modal)?.getValue()).toBe(true);
     if (!held)
       await vi.waitFor(() =>
@@ -550,7 +552,7 @@ it("retains unchecked consent when a fresh ID becomes Replace, and cancels witho
     expect(buttons.labels()).toContain(m.profile_import_replace()),
   );
   expect(matchToggle(f.modal)?.getValue()).toBe(false);
-  expect(f.modal.contentEl.textContent).toContain("Library is Group 987654");
+  expect(f.modal.contentEl.textContent).toContain('library == "group:987654"');
   const before = new Map(f.vault.contents);
   f.modal.onClose();
   await expect(f.modal.result).resolves.toBeUndefined();

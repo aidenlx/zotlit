@@ -304,5 +304,38 @@
       "reason": "A personal-library web link carries the Zotero account name, so it is not included in Item Snapshots."
     }
   ],
-  "revision": "41274f82e0cf4ffae448a68b8b37248e2b784cded1a8fa9a39a7c215d1a9b138"
+  "seed": {
+    "scan": {
+      "itemID": 28,
+      "key": "IANNP5A2",
+      "itemType": "journalArticle",
+      "dateAdded": 1739448000000,
+      "dateModified": 1739448000000
+    },
+    "groupID": null,
+    "fields": {
+      "title": "Why Most Published Research Findings Are False",
+      "date": "2005",
+      "citationKey": "ioannidisWhyMost2005",
+      "publicationTitle": "PLoS Medicine"
+    },
+    "custom": {},
+    "customFieldNames": [],
+    "creators": [
+      {
+        "firstName": "John P. A.",
+        "lastName": "Ioannidis",
+        "fieldMode": 0,
+        "creatorType": "author",
+        "primary": true
+      }
+    ],
+    "tags": [],
+    "collections": [
+      [
+        "Shared key"
+      ]
+    ]
+  },
+  "revision": "bccddd287b76fabfa977e32a72821b7756b4ed50340a147282462e98e53189ca"
 }

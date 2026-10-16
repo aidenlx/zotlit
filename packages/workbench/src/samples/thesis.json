@@ -240,5 +240,35 @@
       "reason": "A personal-library web link carries the Zotero account name, so it is not included in Item Snapshots."
     }
   ],
-  "revision": "296825c0efbbcb2ce871f5a5e50d5e274c65707fac53b84a347fd81630bbdde4"
+  "seed": {
+    "scan": {
+      "itemID": 62,
+      "key": "I49R3FTL",
+      "itemType": "thesis",
+      "dateAdded": 1747884630000,
+      "dateModified": 1747884630000
+    },
+    "groupID": null,
+    "fields": {
+      "title": "Bicycle Sharing in Developing Countries: A proposal towards sustainable transportation in Brazilian media cities",
+      "date": "2010-00-00 2010",
+      "citationKey": "Batista2010",
+      "publisher": "",
+      "university": ""
+    },
+    "custom": {},
+    "customFieldNames": [],
+    "creators": [
+      {
+        "firstName": "Edgard Antunes Dias",
+        "lastName": "Batista",
+        "fieldMode": 0,
+        "creatorType": "author",
+        "primary": true
+      }
+    ],
+    "tags": [],
+    "collections": []
+  },
+  "revision": "e065729884c6cd982c0bd5b9878bbe7a3575d486ccf7d9a6708b64eac8522ce5"
 }
