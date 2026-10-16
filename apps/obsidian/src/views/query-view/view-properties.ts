@@ -130,6 +130,14 @@ export interface ViewProperties {
   /** The entry of `path`, which the view may not know, such as a sort of another dataset. */
   entry(path: string): PropertyEntry;
   /**
+   * The entry of a path the view knew a moment ago, such as a row the
+   * Properties popover keeps after a tick hides it, or the Property of one
+   * of its pages: the entry of `path`, whether the view still lists it or
+   * not, or `null` once its subject leaves the file, as a Formula the file
+   * no longer defines does.
+   */
+  kept(path: string): PropertyEntry | null;
+  /**
    * The `order` to write for the Visible Properties `next`: `next`, then the
    * unused visible properties, which a switch back to their dataset shows
    * again. An empty `next` writes an empty `order`, so the view shows none.
@@ -208,12 +216,18 @@ export function viewProperties(
       ? [LITERATURE_NOTE]
       : [];
   const visible = shown.map(entry);
+  const entries = [...paths].map(entry);
   return {
     visible,
     queried: visible.filter(({ kind }) => kind !== "literatureNote"),
-    entries: [...paths].map(entry),
+    entries,
     unused,
     entry,
+    // A field or a path the researcher typed has no definition in the file
+    // to lose; a Formula does, and leaves the entries once neither the file
+    // defines it nor the view shows it.
+    kept: (path) =>
+      paths.has(path) || classify(path).kind !== "formula" ? entry(path) : null,
     orderOf: (next) =>
       next.length === 0
         ? []

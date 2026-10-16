@@ -32,7 +32,7 @@ import { ToolbarButtonContent, toolbarButtonClass } from "./toolbar-button";
 import { popoverFallbacks } from "./toolbar-popover";
 import type { QueryView } from "./view";
 import { useViewProperties } from "./view-properties";
-import type { PropertyEntry } from "./view-properties";
+import type { PropertyEntry, ViewProperties } from "./view-properties";
 
 /** The page "Add formula" opens; a property's page is named by its path. */
 const NEW_FORMULA_PAGE = "zt:new-formula";
@@ -84,7 +84,7 @@ export function PropertiesMenu({ view }: { view: QueryView }) {
           clearLabel={m.query_view_clear_search()}
         />
         <PropertyList
-          entries={properties.entries}
+          properties={properties}
           order={order}
           setOrder={setOrder}
           iconOf={(entry) => propertyIcon(dataset, entry)}
@@ -93,9 +93,8 @@ export function PropertiesMenu({ view }: { view: QueryView }) {
           {(page) => {
             if (page === NEW_FORMULA_PAGE)
               return <NewFormulaPage view={view} />;
-            const entry = properties.entries.find(
-              (candidate) => candidate.path === page,
-            );
+            // A tick on the page that hides its Property keeps the page.
+            const entry = properties.kept(page);
             if (!entry) return <Chooser.PageGone />;
             const shown = order.includes(page);
             return (
@@ -120,13 +119,13 @@ export function PropertiesMenu({ view }: { view: QueryView }) {
 }
 
 function PropertyList({
-  entries,
+  properties,
   order,
   setOrder,
   iconOf,
 }: {
   /** The Properties of the view, the visible ones first. */
-  entries: readonly PropertyEntry[];
+  properties: ViewProperties;
   order: readonly string[];
   setOrder: (next: readonly string[]) => void;
   /** The type icon of a property. */
@@ -136,56 +135,51 @@ function PropertyList({
   const { scope, activeValue } = useChooserScope();
   const { page, openPage } = useChooserPage();
   const [dragging, setDragging] = useState<string | null>(null);
-  // The rows keep the order they had when the list opened, as in the Bases
-  // Properties menu: a tick leaves its row in place. The list sorts again,
-  // the visible properties first, on a search, on a move, on "Hide all" and
-  // on the way back from a page.
+  // The rows keep the places they had when the list opened, as in the Bases
+  // Properties menu: a tick neither moves a row nor takes it away. The list
+  // sorts again, the visible properties first, on a search, on a move, on
+  // "Hide all" and on the way back from a page.
   const [moves, resort] = useReducer((count: number) => count + 1, 0);
   const sortKey = `${moves}:${page === null}:${query}`;
-  const [sorted, setSorted] = useState(() => ({
-    key: sortKey,
-    paths: entries.map((entry) => entry.path),
-  }));
+  const sortOf = (key: string) => ({
+    key,
+    paths: listedProperties(properties, query).map((entry) => entry.path),
+  });
+  const [sorted, setSorted] = useState(() => sortOf(sortKey));
   let paths = sorted.paths;
   if (sorted.key !== sortKey) {
-    paths = entries.map((entry) => entry.path);
-    setSorted({ key: sortKey, paths });
+    const next = sortOf(sortKey);
+    paths = next.paths;
+    setSorted(next);
   }
-  const rows = useMemo(() => {
-    const rank = new Map(paths.map((path, index) => [path, index]));
-    // A property the list did not have yet, such as a new Formula, goes last.
-    return entries.toSorted(
-      (a, b) => (rank.get(a.path) ?? Infinity) - (rank.get(b.path) ?? Infinity),
-    );
-  }, [entries, paths]);
+  const rows = useMemo(
+    () => listedProperties(properties, query, paths),
+    [properties, query, paths],
+  );
   const byPath = useMemo(
-    () => new Map(entries.map((entry) => [entry.path, entry])),
-    [entries],
+    () => new Map(rows.map((entry) => [entry.path, entry])),
+    [rows],
   );
   // Two fields can share a label, such as "Type": their rows also show the
   // path, so the reader can tell them apart.
   const sharedLabels = useMemo(() => {
     const seen = new Set<string>();
     const shared = new Set<string>();
-    for (const { label } of entries)
+    for (const { label } of properties.entries)
       (seen.has(label) ? shared : seen).add(label);
     return shared;
-  }, [entries]);
+  }, [properties]);
   // What the keys and a row's `next` read at the moment they run.
   const keys = useRef({ order, setOrder, page });
   keys.current = { order, setOrder, page };
   const groups = useMemo<ChooserGroup<ChooserRow>[]>(() => {
-    // A nested property, a member of a field or a field of a parent record,
-    // comes only while the user searches, or while the view shows it.
-    const items = rows
-      .filter((entry) => entry.place !== null || query !== "" || !entry.nested)
-      .map(
-        (entry): ChooserRow => ({
-          ...propertyRow(entry),
-          // The right arrow opens the property's page.
-          next: () => openPage(entry.path),
-        }),
-      );
+    const items = rows.map(
+      (entry): ChooserRow => ({
+        ...propertyRow(entry),
+        // The right arrow opens the property's page.
+        next: () => openPage(entry.path),
+      }),
+    );
     const actions: ChooserRow[] = [];
     if (query !== "" && !byPath.has(query))
       actions.push({
@@ -393,4 +387,33 @@ export function propertyRow({
   label,
 }: Pick<PropertyEntry, "path" | "label">): ChooserRow {
   return { value: path, label: label === path ? path : `${label} ${path}` };
+}
+
+/**
+ * The Properties the popover lists, in their order: the view's entries as
+ * they come, the visible ones first, less the nested ones, a member of a
+ * field or a field of a parent record, which come only while the user
+ * searches or while the view shows them. The popover keeps what this gives
+ * until the list sorts again, so a tick neither moves a row nor takes it
+ * away, even from a Property the view no longer knows, such as a path the
+ * user typed. `before` is what the list gave when it last sorted: its
+ * Properties keep their places, unless their subject left the file, as a
+ * deleted Formula has; one it lacks, such as a new Formula, goes last.
+ */
+export function listedProperties(
+  properties: Pick<ViewProperties, "entries" | "kept">,
+  query: string,
+  before?: readonly string[],
+): PropertyEntry[] {
+  const listable = (entry: PropertyEntry) =>
+    entry.place !== null || query !== "" || !entry.nested;
+  if (before === undefined) return properties.entries.filter(listable);
+  const kept = before.flatMap((path) => properties.kept(path) ?? []);
+  const known = new Set(before);
+  return [
+    ...kept,
+    ...properties.entries.filter(
+      (entry) => !known.has(entry.path) && listable(entry),
+    ),
+  ];
 }

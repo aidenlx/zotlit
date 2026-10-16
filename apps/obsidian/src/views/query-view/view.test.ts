@@ -6,7 +6,7 @@ import { Menu, resetMockPlatform, setMockPlatform } from "@mock/obsidian";
 import { Scope } from "obsidian";
 import type { App } from "obsidian";
 import { act } from "preact/test-utils";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { nameDictionary } from "@zotlit/item-query";
 import type { FormulaDiagnostics, QueryContext } from "@zotlit/item-query";
@@ -2817,4 +2817,109 @@ it("offers the Literature Note Property in the Properties popover of a Table tha
     "order:\n      - title\n      - vault.literatureNote\n",
   );
   expect(tableText(el)[0]).toEqual(["", "Title", "Literature note"]);
+});
+
+it("keeps the row of a nested property in the Properties popover when a tick hides it", async () => {
+  const written: string[] = [];
+  const { view, el, settle } = await mount([result([]), result([])], (text) =>
+    written.push(text),
+  );
+  await act(() =>
+    view.setText(`views:
+  - type: annotations
+    name: Everything
+    from: annotations
+    order:
+      - type
+      - item.title
+`),
+  );
+  await settle();
+  await act(() => {
+    el.querySelector<HTMLElement>("[data-query-properties]")!.click();
+    // happy-dom has no popover, so the test sends the event that opens it.
+    document
+      .querySelector("[data-query-properties-popup]")!
+      .dispatchEvent(
+        Object.assign(new Event("beforetoggle"), { newState: "open" }),
+      );
+  });
+  const row = () =>
+    document.querySelector<HTMLElement>('[data-query-property="item.title"]');
+  const listed = () =>
+    [...document.querySelectorAll<HTMLElement>("[data-query-property]")].map(
+      (row) => row.dataset.queryProperty,
+    );
+  const before = listed();
+  expect(row()?.dataset.hidden).toBe(undefined);
+  await act(() => row()!.click());
+  await settle();
+  expect(written.at(-1)).toContain("order:\n      - type\n");
+  expect(written.at(-1)).not.toContain("item.title");
+  // A tick leaves its row in place, so a second tick shows it again.
+  expect(row()?.dataset.hidden).toBe("");
+  expect(listed()).toEqual(before);
+});
+
+it("keeps the row and the page of a typed path in the Properties popover when it hides the path", async () => {
+  const written: string[] = [];
+  const { view, el, settle } = await mount(
+    [result([]), result([]), result([])],
+    (text) => written.push(text),
+  );
+  await act(() =>
+    view.setText(`views:
+  - type: annotations
+    name: Everything
+    from: annotations
+    order:
+      - type
+      - myField
+      - comment
+`),
+  );
+  await settle();
+  await act(() => {
+    el.querySelector<HTMLElement>("[data-query-properties]")!.click();
+    // happy-dom has no popover, so the test sends the event that opens it.
+    document
+      .querySelector("[data-query-properties-popup]")!
+      .dispatchEvent(
+        Object.assign(new Event("beforetoggle"), { newState: "open" }),
+      );
+  });
+  const row = () =>
+    document.querySelector<HTMLElement>('[data-query-property="myField"]');
+  await act(() => row()!.click());
+  await settle();
+  expect(written.at(-1)).not.toContain("myField");
+  expect(row()?.dataset.hidden).toBe("");
+  // Its page, opened from the row, stays open as it shows and hides the path.
+  await act(() =>
+    document
+      .querySelector<HTMLElement>('[data-query-property-more="myField"]')!
+      .click(),
+  );
+  const page = () =>
+    document.querySelector('[data-query-property-page="myField"]');
+  // happy-dom has no popover, so the menu's hidePopover does nothing here.
+  const proto: Partial<HTMLElement> = HTMLElement.prototype;
+  if (!proto.hidePopover) {
+    proto.hidePopover = () => {};
+    onTestFinished(() => {
+      delete proto.hidePopover;
+    });
+  }
+  const pick = (hook: string) =>
+    document
+      .querySelector<HTMLElement>(`[data-chooser-page-menu-item="${hook}"]`)!
+      .click();
+  expect(page()).not.toBe(null);
+  await act(() => pick("show"));
+  await settle();
+  expect(written.at(-1)).toContain("myField");
+  await act(() => pick("hide"));
+  await settle();
+  expect(written.at(-1)).not.toContain("myField");
+  expect(page()).not.toBe(null);
 });
