@@ -15,7 +15,8 @@
     "#paired-zotero": "./lib/fixture/paired-zotero.ts",
     "#package-roots": "./lib/package-roots.ts",
     "#zotero-rdp": "./lib/zotero-rdp.ts",
-    "#dev-vault": "./lib/dev-vault.ts"
+    "#dev-vault": "./lib/dev-vault.ts",
+    "#message-usage": "./lib/message-usage.ts"
   },
   "exports": {
     "./desktop-lock": "./lib/desktop-lock.ts",
