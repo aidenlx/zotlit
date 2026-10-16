@@ -3841,7 +3841,7 @@ views:
     const annotations = await query({
       from: "annotations",
       filter: `attachment.indexedKey == "${annotationAttachment.key}"`,
-      fields: "text",
+      fields: "text,pageIndex",
       sort: "sortIndex",
       limit: "all",
     });
@@ -3863,6 +3863,81 @@ views:
     expect(expanded.annotations).toEqual(
       annotations.map((row) => row.indexedKey),
     );
+
+    // An Attachment link opens the PDF in Obsidian's reader as an Obsidian
+    // link does: a Cmd/Ctrl click and a middle click each in a new tab, so
+    // the Table stays open in its own.
+    // A new tab takes the focus from the Table, so the links are read off
+    // the Query File's own leaf.
+    const queryLeaf = "app.workspace.getLeavesOfType('zotlit-query-file')[0]";
+    const link = (kind: string, key: string) =>
+      `${queryLeaf}.view.contentEl.querySelector('[data-query-table-row="${kind}"][data-query-key="${key}"] [data-query-open="${kind}"]')`;
+    /** A click on `el` with the buttons and keys `init` names, as an eval statement. */
+    const pointer = (el: string, type: string, init: string) =>
+      `{const el=${el};el.dispatchEvent(new el.ownerDocument.defaultView.MouseEvent('${type}',{bubbles:true,cancelable:true,...${init}}));}`;
+    const MOD_CLICK =
+      "{button:0,metaKey:process.platform==='darwin',ctrlKey:process.platform!=='darwin'}";
+    const MIDDLE_CLICK = "{button:1}";
+    const pdfName = annotationAttachment.path!.split("/").pop()!;
+    const pdfTabs = `app.workspace.getLeavesOfType('pdf').filter(l=>l.view.file?.name===${JSON.stringify(pdfName)}).length`;
+    const before = Number(await obEval(vaultId, `String(${pdfTabs})`));
+    await obEval(
+      vaultId,
+      `(()=>{${pointer(link("attachment", annotationAttachment.key), "click", MOD_CLICK)}return true;})()`,
+    );
+    expect(
+      await obEvalUntil(vaultId, `String(${pdfTabs})`, {
+        expected: String(before + 1),
+      }),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      `(()=>{${pointer(link("attachment", annotationAttachment.key), "auxclick", MIDDLE_CLICK)}return true;})()`,
+    );
+    expect(
+      await obEvalUntil(vaultId, `String(${pdfTabs})`, {
+        expected: String(before + 2),
+      }),
+    ).toBe(true);
+    expect(
+      await obEval(
+        vaultId,
+        `String(app.workspace.getLeavesOfType('zotlit-query-file').length)`,
+      ),
+    ).toBe("1");
+
+    // An Annotation link opens the PDF at the Annotation's page, with the
+    // Annotation Anchor that lands on its mark.
+    const anchored = annotations.find(
+      (row) => typeof row.values.pageIndex === "number",
+    )!;
+    expect(anchored, "an Annotation has a PDF page").toBeDefined();
+    expect(
+      await obEval(
+        vaultId,
+        `(async()=>{${PAGE}const proto=Object.getPrototypeOf(app.workspace.getMostRecentLeaf());const native=proto.setEphemeralState;let subpath=null;proto.setEphemeralState=function(state){if(typeof state?.subpath==='string')subpath=state.subpath;return native.call(this,state);};try{${pointer(link("annotation", anchored.indexedKey), "auxclick", MIDDLE_CLICK)}return await until('the PDF opens at the Annotation',()=>subpath,10000);}finally{proto.setEphemeralState=native;}})()`,
+      ),
+    ).toBe(
+      `#page=${(anchored.values.pageIndex as number) + 1}&zt-annotation=${anchored.indexedKey}`,
+    );
+
+    await obEval(
+      vaultId,
+      `(()=>{app.workspace.setActiveLeaf(${queryLeaf},{focus:true});return true;})()`,
+    );
+
+    // An Attachment Obsidian's reader cannot host, such as a web snapshot,
+    // opens in Zotero's reader through its Zotero link.
+    const snapshot = ATTACHMENTS.find(({ key }) => key === "HTMLSNAP")!;
+    expect(snapshot.parentItemID).toBe(positionDocumentItem.itemID);
+    await click(`[data-query-expand="item:${positionDocumentItem.key}"]`);
+    await tableWhen((table) => table.attachments.includes(snapshot.key));
+    expect(
+      await obEval(
+        vaultId,
+        `(async()=>{${PAGE}const native=window.open;let opened=null;window.open=url=>{opened=String(url);return null;};try{press(${link("attachment", snapshot.key)},'snapshot link');return await until('Zotero opens the snapshot',()=>opened,10000);}finally{window.open=native;}})()`,
+      ),
+    ).toBe(`zotero://open/library/items/${snapshot.key}`);
 
     // An Item with Child Notes expands into them with their titles; its
     // trashed Child Note stays out.
