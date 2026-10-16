@@ -18,7 +18,7 @@ import { isPageNumber } from "@zotlit/db";
 
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
-import { cn, tooltipAttrs } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import type {
   QueryViewRequest,
   QueryViewRow,
@@ -28,9 +28,10 @@ import type { QueryService } from "@/services/item-query/service";
 import { useAnnotStore } from "@/views/annot-view/store";
 
 import type { QueryLayout } from "./layouts";
-import { propertyIcon } from "./property-icon";
+import type { ColumnSizes } from "./query-file";
 import { CellContent } from "./record-rows";
 import { NO_RESULTS } from "./results";
+import { TableHeader, sizedMark } from "./table-header";
 import type { LiteratureNotes } from "./table-notes";
 import { zoteroReaderUri } from "./table-readers";
 import type { ReaderTarget, TableReaders } from "./table-readers";
@@ -423,13 +424,23 @@ const CELL =
 /** The narrow first column that holds a row's expand button. */
 const GUTTER = cn(CELL, "zt:w-0 zt:py-0 zt:ps-1 zt:pe-0");
 /**
+ * A cell of a column the researcher resized, marked `data-sized`: it takes
+ * no room of its own, so the header's width holds the column, and what does
+ * not fit is clipped, as in a Bases table. Text still wraps, so only a word
+ * longer than the column is cut.
+ */
+const CLIP =
+  "zt:data-sized:max-w-0 zt:data-sized:overflow-hidden zt:data-sized:text-ellipsis";
+/**
  * The first column of properties. Text wraps in every column, so a long
  * title stays readable in full; the first column keeps a width a title
- * reads well in, and the others stop at the width of a Bases column.
+ * reads well in, from its header cell, where a width the researcher sets
+ * replaces it, and the others stop at the width of a Bases column.
  */
-const FIRST = "zt:min-w-48 zt:ps-1";
+const FIRST = cn("zt:ps-1", CLIP);
+const FIRST_HEADER = cn(FIRST, "zt:min-w-48");
 /** A column after the first: a line parts it from the one before it. */
-const LATER = "zt:max-w-75 zt:border-s-(length:--border-width)";
+const LATER = cn("zt:max-w-75 zt:border-s-(length:--border-width)", CLIP);
 const ROW = "zt:hover:bg-(--table-row-background-hover)";
 /** A header cell, which stays at the top as the rows scroll under it. */
 const HEADER =
@@ -567,6 +578,8 @@ export function TableLayout({ view }: { view: QueryView }) {
   const properties = useViewProperties(view);
   const dataset = useStore(view.state, (s) => s.view?.from ?? "annotations");
   const columns = useMemo(() => properties?.visible ?? [], [properties]);
+  const scroller = useRef<HTMLDivElement>(null);
+  const sizes = useStore(view.state, (s) => s.view?.columnSize);
   const visible = useMemo(
     () =>
       search === ""
@@ -581,58 +594,29 @@ export function TableLayout({ view }: { view: QueryView }) {
   if (rows.length === 0) return null;
   let group: string | null = null;
   return (
-    <div className="zt:min-h-0 zt:flex-1 zt:overflow-auto">
+    <div
+      ref={scroller}
+      className="zt:relative zt:min-h-0 zt:flex-1 zt:overflow-auto"
+    >
       <table
         className="zt:min-w-full zt:border-separate zt:border-spacing-0 zt:text-(length:--font-smaller)"
         data-query-table=""
       >
-        <thead>
-          <tr className="zt:text-start">
-            <th className={cn(GUTTER, HEADER)} />
-            {columns.map((property, at) => (
-              <th
-                key={property.path}
-                className={cn(CELL, HEADER, at === 0 ? FIRST : LATER)}
-                data-query-column={property.path}
-                data-query-formula-issue={property.issue ?? undefined}
-              >
-                {property.issue === null ? (
-                  <span className="zt:flex zt:items-center zt:gap-1">
-                    <Icon
-                      name={propertyIcon(dataset, property)}
-                      size="var(--icon-xs)"
-                      className="zt:flex zt:shrink-0"
-                    />
-                    {property.label}
-                  </span>
-                ) : (
-                  <span
-                    className="zt:flex zt:items-center zt:gap-1 zt:text-(--text-error)"
-                    {...tooltipAttrs(property.issue)}
-                  >
-                    <Icon
-                      name="alert-triangle"
-                      size="var(--icon-xs)"
-                      strokeWidth="var(--icon-xs-stroke-width)"
-                      className="zt:shrink-0"
-                    />
-                    {property.label}
-                  </span>
-                )}
-              </th>
-            ))}
-            <th className={cn(CELL, HEADER, LATER)}>
-              <span className="zt:flex zt:items-center zt:gap-1">
-                <Icon
-                  name="file"
-                  size="var(--icon-xs)"
-                  className="zt:flex zt:shrink-0"
-                />
-                {m.query_view_table_literature_note()}
-              </span>
-            </th>
-          </tr>
-        </thead>
+        {properties && (
+          <TableHeader
+            view={view}
+            properties={properties}
+            dataset={dataset}
+            scroller={scroller}
+            sizes={sizes}
+            classes={{
+              gutter: cn(GUTTER, HEADER),
+              cell: cn(CELL, HEADER),
+              first: FIRST_HEADER,
+              later: LATER,
+            }}
+          />
+        )}
         <tbody>
           {visible.map(({ row, group: placed }, index) => {
             const record: TableRecord = {
@@ -661,6 +645,7 @@ export function TableLayout({ view }: { view: QueryView }) {
                 heading={heading}
                 record={record}
                 columns={columns}
+                sizes={sizes}
                 notes={literatureNotes}
                 expanded={expanded}
                 toggle={toggle}
@@ -678,6 +663,7 @@ function ItemRow({
   heading,
   record,
   columns,
+  sizes,
   notes,
   expanded,
   toggle,
@@ -686,6 +672,8 @@ function ItemRow({
   heading: ReactNode;
   record: TableRecord;
   columns: readonly PropertyEntry[];
+  /** The widths the researcher set, by property path. */
+  sizes: ColumnSizes | undefined;
   notes: LiteratureNotes;
   expanded: ReadonlyMap<string, ChildState>;
   toggle: (record: TableRecord) => void;
@@ -707,7 +695,11 @@ function ItemRow({
           />
         </td>
         {columns.map(({ path }, at) => (
-          <td key={path} className={cn(CELL, at === 0 ? FIRST : LATER)}>
+          <td
+            key={path}
+            className={cn(CELL, at === 0 ? FIRST : LATER)}
+            data-sized={sizedMark(sizes, path)}
+          >
             <CellContent
               value={record.values[path]}
               text={cellText(path, record.values[path])}

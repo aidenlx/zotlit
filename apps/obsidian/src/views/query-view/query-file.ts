@@ -5,6 +5,7 @@
 // writes them back.
 //
 // @see apps/obsidian/docs/adr/0068-query-files-are-a-zotlit-file-type-embedded-through-the-private-embed-registry.md
+import * as v from "valibot";
 import { parse, stringify } from "yaml";
 
 import {
@@ -72,6 +73,9 @@ export type QueryFileProblem =
   /** Two views have one name, which a link to a view or a view choice cannot tell apart. */
   | { readonly code: "duplicate-view-name"; readonly name: string };
 
+/** The width in pixels of each resized column of a view, by property path. */
+export type ColumnSizes = Readonly<Record<string, number>>;
+
 export interface QueryFileView {
   /** The Layout. */
   readonly type: string;
@@ -99,6 +103,11 @@ export interface QueryFileView {
    * layouts show them in this order.
    */
   readonly order?: readonly string[];
+  /**
+   * The width in pixels of each column the researcher resized, by property
+   * path, as Bases keeps it. A column without an entry takes its auto width.
+   */
+  readonly columnSize?: ColumnSizes;
   readonly problems: readonly QueryFileProblem[];
   /** The view's map as the file holds it, with every key the parser does not read. */
   readonly source: Readonly<Record<string, unknown>>;
@@ -143,6 +152,22 @@ function readSort(value: unknown): QueryFileSort | null {
   if (!isMap(value) || typeof value.property !== "string") return null;
   const direction = readDirection(value.direction);
   return direction ? { property: value.property, direction } : null;
+}
+
+/** One column width: a whole number of pixels above zero. */
+const ColumnWidth = v.pipe(v.number(), v.integer(), v.minValue(1));
+
+/**
+ * The column widths of a view. A width only changes how the Table looks, so
+ * an entry that is not a width is dropped and a value that is not a map is
+ * left unread, with no problem: the view still runs.
+ */
+function readColumnSize(value: unknown): ColumnSizes | undefined {
+  if (!isMap(value)) return undefined;
+  const sizes = Object.entries(value).filter(
+    (entry): entry is [string, number] => v.is(ColumnWidth, entry[1]),
+  );
+  return sizes.length > 0 ? Object.fromEntries(sizes) : undefined;
 }
 
 function readView(value: unknown): QueryFileView {
@@ -216,6 +241,8 @@ function readView(value: unknown): QueryFileView {
       view.order = order as string[];
     else invalid("order");
   }
+  const columnSize = readColumnSize(source.columnSize);
+  if (columnSize) view.columnSize = columnSize;
   return view;
 }
 
@@ -323,12 +350,18 @@ function writeView(view: QueryFileView): Entries {
     groupOrder: view.groupOrder ? [...view.groupOrder] : view.source.groupOrder,
     limit: view.limit ?? view.source.limit,
     order: view.order ? [...view.order] : view.source.order,
+    columnSize: view.columnSize
+      ? { ...view.columnSize }
+      : view.source.columnSize,
   });
 }
 
 /** What a toolbar control changes in one view. A key set to `undefined` is removed. */
 export type QueryFileViewEdit = Partial<
-  Pick<QueryFileView, "sort" | "groupBy" | "groupOrder" | "order" | "limit">
+  Pick<
+    QueryFileView,
+    "sort" | "groupBy" | "groupOrder" | "order" | "limit" | "columnSize"
+  >
 >;
 
 /**

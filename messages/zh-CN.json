@@ -2450,6 +2450,7 @@
   "query_view_table_loading": "正在加载…",
   "query_view_table_children_failed": "无法加载这些行。",
   "query_view_table_page": "第 {page} 页",
+  "query_view_table_reset_column_size": "重置列宽",
   "query_view_card_width": "卡片宽度",
   "query_view_show_comment": "显示评论",
   "query_view_show_tags": "显示标签",

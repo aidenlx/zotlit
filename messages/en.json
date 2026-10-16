@@ -2608,6 +2608,7 @@
   "query_view_table_loading": "Loading…",
   "query_view_table_children_failed": "Could not load these rows.",
   "query_view_table_page": "Page {page}",
+  "query_view_table_reset_column_size": "Reset column size",
   "query_view_card_width": "Card width",
   "query_view_show_comment": "Show comment",
   "query_view_show_tags": "Show tags",
