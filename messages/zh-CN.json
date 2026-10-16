@@ -1153,10 +1153,18 @@
     "prefs_pane_label": "ZotLit",
     "prefs_open_section": "在 Obsidian 中打开",
     "prefs_pane_type": "笔记打开位置",
-    "prefs_pane_type_active": { "label": "当前标签页" },
-    "prefs_pane_type_tab": { "label": "新标签页" },
-    "prefs_pane_type_split": { "label": "新标签页组" },
-    "prefs_pane_type_window": { "label": "新窗口" },
+    "prefs_pane_type_active": {
+      "label": "当前标签页"
+    },
+    "prefs_pane_type_tab": {
+      "label": "新标签页"
+    },
+    "prefs_pane_type_split": {
+      "label": "新标签页组"
+    },
+    "prefs_pane_type_window": {
+      "label": "新窗口"
+    },
     "prefs_pane_type_description": "文献笔记或模板数据浏览器在 Obsidian 中的打开位置。新窗口仅限桌面端。",
     "prefs_notify_section": "Obsidian 通知",
     "prefs_notify_enable": {
@@ -2450,7 +2458,10 @@
   "query_view_table_loading": "正在加载…",
   "query_view_table_children_failed": "无法加载这些行。",
   "query_view_table_page": "第 {page} 页",
-  "query_view_table_reset_column_size": "重置列宽",
+  "query_view_table_move_column_left": "左移",
+  "query_view_table_move_column_right": "右移",
+  "query_view_table_reset_column_width": "重置列宽",
+  "query_view_table_resize_column_hint": "拖动以调整宽度，双击以重置",
   "query_view_card_width": "卡片宽度",
   "query_view_show_comment": "显示评论",
   "query_view_show_tags": "显示标签",
@@ -2553,6 +2564,11 @@
   ],
   "query_view_warning_outside_library_scope": "此条目的文库不在文库范围内，因此视图无法显示它。请在 ZotLit 设置中将该文库加入文库范围。",
   "query_view_failed": "此视图无法显示结果。",
+  "query_view_context_hint_item": "将此视图嵌入文献笔记即可查看其条目的记录：在那里 this.item 是该笔记的条目。",
+  "query_view_context_hint_attachment": "只有侧边栏中的注释视图会绑定 this.attachment，即它所跟随的 Zotero PDF。",
+  "query_view_context_hint_note_item": "此笔记没有 zotero-key，因此 this.item 没有条目。请在笔记属性中添加条目的键。",
+  "query_view_context_hint_sidebar_item": "打开一篇文献笔记或一个 Zotero PDF；this.item 即为其条目。",
+  "query_view_context_hint_sidebar_attachment": "打开一个 Zotero PDF；this.attachment 即为其附件。",
   "query_view_diagnostic_corrections": "可能的修正：{suggestions}。",
   "query_view_problem_invalid_yaml": "此文件不是有效的 YAML。{message}",
   "query_view_problem_not_a_map": "此文件必须包含 \"views\" 等键。",

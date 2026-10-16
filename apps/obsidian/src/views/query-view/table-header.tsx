@@ -2,7 +2,13 @@
 
 import { Menu } from "obsidian";
 import { useEffect, useRef } from "react";
-import type { CSSProperties, DragEvent, MouseEvent, RefObject } from "react";
+import type {
+  CSSProperties,
+  DragEvent,
+  MouseEvent,
+  PointerEvent,
+  RefObject,
+} from "react";
 
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
@@ -112,6 +118,22 @@ function followDrag(
   const end = () => controller.abort();
   source.addEventListener("dragend", end, { signal });
   win.addEventListener("dragend", end, options);
+}
+
+/**
+ * Keep the click that ends a resize from the header under the pointer, which
+ * would open its menu. A pointer let go with no click leaves later clicks.
+ */
+function swallowClick(win: Window): void {
+  const swallow = (click: globalThis.MouseEvent) => {
+    click.preventDefault();
+    click.stopPropagation();
+  };
+  win.addEventListener("click", swallow, { capture: true, once: true });
+  win.setTimeout(
+    () => win.removeEventListener("click", swallow, { capture: true }),
+    0,
+  );
 }
 
 /** The narrowest a column can be, from the variable Bases reads. */
@@ -231,6 +253,7 @@ export function TableHeader({
     startDrag(event);
     const line = th.doc.createElement("div");
     line.className = DROP_LINE;
+    th.dataset.dragging = "";
     /**
      * Where the pointer at `clientX` drops the column, read from the header
      * on screen: its columns, the place of the dragged one, and the gap.
@@ -296,17 +319,29 @@ export function TableHeader({
           });
         return true;
       },
-      done: () => line.remove(),
+      done: () => {
+        line.remove();
+        delete th.dataset.dragging;
+      },
     });
   };
 
-  const resizeColumn = (event: DragEvent<HTMLElement>, path: string) => {
-    // The header cell would take the drag as a move.
+  /**
+   * Follow a drag on a column's edge with the pointer, not as a drag and
+   * drop, so the resize cursor holds over the whole page while it goes. The
+   * width saves when the pointer lets go, after it moved; Escape, a lost
+   * pointer or the Table that closes put the width back.
+   */
+  const resizeColumn = (event: PointerEvent<HTMLElement>, path: string) => {
+    if (event.button !== 0) return;
+    // The header cell would take the press as the start of a move.
+    event.preventDefault();
     event.stopPropagation();
     const handle = event.currentTarget;
     const th = handle.closest("th")!;
+    const { doc, win } = th;
     const controller = begin();
-    startDrag(event);
+    const { signal } = controller;
     const before = {
       sized: th.dataset.sized,
       width: th.style.getPropertyValue(COLUMN_WIDTH),
@@ -316,46 +351,95 @@ export function TableHeader({
     const min = minColumnWidth(th);
     const direction = isRTL(th) ? "rtl" : "ltr";
     let width = Math.max(min, Math.round(start));
+    let changed = false;
+    let saved = false;
     let frame = 0;
-    const { win } = th;
+    const { pointerId } = event;
+    const options = { capture: true, signal };
+    // The window follows the pointer; capture keeps it past the window's edge.
+    try {
+      handle.setPointerCapture(pointerId);
+    } catch {
+      // A pointer the browser does not track, as a test sends, has no capture.
+    }
     handle.classList.add("is-active");
-    followDrag(handle, controller, {
-      over: (over) => {
+    doc.body.classList.add(RESIZING);
+    signal.addEventListener(
+      "abort",
+      () => {
+        win.cancelAnimationFrame(frame);
+        handle.classList.remove("is-active");
+        doc.body.classList.remove(RESIZING);
+        if (handle.hasPointerCapture(pointerId))
+          handle.releasePointerCapture(pointerId);
+        if (saved) return;
+        if (before.sized === undefined) markSized(th, false);
+        th.style.setProperty(COLUMN_WIDTH, before.width);
+      },
+      { once: true },
+    );
+    const end = () => controller.abort();
+    const mine = (pointer: globalThis.PointerEvent) =>
+      pointer.pointerId === pointerId;
+    win.addEventListener(
+      "pointermove",
+      (move) => {
+        if (!mine(move)) return;
+        if (move.clientX !== origin) changed = true;
+        if (!changed) return;
         width = resizedWidth({
           start,
-          delta: over.clientX - origin,
+          delta: move.clientX - origin,
           direction,
           min,
         });
-        if (frame) return true;
+        if (frame) return;
         frame = win.requestAnimationFrame(() => {
           frame = 0;
           showWidth(th, width);
         });
-        return true;
       },
-      drop: (drop) => {
-        drop.preventDefault();
-        win.cancelAnimationFrame(frame);
-        showWidth(th, width);
-        // The widths as the view holds them now, which a save can change
-        // while the drag is on.
-        const saved = view.state.getState().view?.columnSize;
-        if (saved?.[path] !== width)
-          view.document.editView({
-            columnSize: withColumnWidth(saved, path, width),
-          });
-        return true;
+      options,
+    );
+    win.addEventListener(
+      "pointerup",
+      (up) => {
+        if (!mine(up)) return;
+        // A press that does not move, as half of a double click, sets nothing.
+        if (changed) {
+          saved = true;
+          swallowClick(win);
+          win.cancelAnimationFrame(frame);
+          showWidth(th, width);
+          // The widths as the view holds them now, which a save can change
+          // while the drag is on.
+          const current = view.state.getState().view?.columnSize;
+          if (current?.[path] !== width)
+            view.document.editView({
+              columnSize: withColumnWidth(current, path, width),
+            });
+        }
+        end();
       },
-      // A drag that ends without a drop leaves the width as it was.
-      done: (dropped) => {
-        win.cancelAnimationFrame(frame);
-        handle.classList.remove("is-active");
-        if (dropped) return;
-        if (before.sized === undefined) markSized(th, false);
-        th.style.setProperty(COLUMN_WIDTH, before.width);
+      options,
+    );
+    win.addEventListener(
+      "pointercancel",
+      (cancel) => {
+        if (mine(cancel)) end();
       },
-    });
+      options,
+    );
+    win.addEventListener(
+      "keydown",
+      (key) => {
+        if (key.key !== "Escape") return;
+        key.preventDefault();
+        key.stopPropagation();
+        end();
+      },
+      options,
+    );
   };
 
   const resetColumn = (path: string) => {
@@ -365,18 +449,54 @@ export function TableHeader({
     });
   };
 
-  /** A right click on a resized header offers to set its width back. */
+  /** Move the column of `path` one place along the order the view holds now. */
+  const stepColumn = (path: string, step: -1 | 1) => {
+    const { file, view: shown } = view.state.getState();
+    if (!shown) return;
+    const current = viewProperties(file, shown);
+    const order = current.visible.map((entry) => entry.path);
+    const from = order.indexOf(path);
+    const to = from + step;
+    if (from < 0 || to < 0 || to >= order.length) return;
+    view.document.editView({ order: current.orderOf(moved(order, from, to)) });
+  };
+
+  /**
+   * The header menu, on a click or a right click: what a drag does, spelled
+   * out, with each entry that has nothing to do there shown and disabled.
+   */
   const columnMenu = (event: MouseEvent<HTMLElement>, path: string) => {
-    if (sizes?.[path] === undefined) return;
     event.preventDefault();
+    const th = event.currentTarget;
+    const at = columns.findIndex((entry) => entry.path === path);
+    const toStart = at <= 0;
+    const toEnd = at < 0 || at >= columns.length - 1;
+    // Left and right as the researcher sees them, in either direction.
+    const rtl = isRTL(th);
     new Menu()
       .addItem((item) =>
         item
-          .setTitle(m.query_view_table_reset_column_size())
+          .setTitle(m.query_view_table_move_column_left())
+          .setIcon("lucide-arrow-left")
+          .setDisabled(rtl ? toEnd : toStart)
+          .onClick(() => stepColumn(path, rtl ? 1 : -1)),
+      )
+      .addItem((item) =>
+        item
+          .setTitle(m.query_view_table_move_column_right())
+          .setIcon("lucide-arrow-right")
+          .setDisabled(rtl ? toStart : toEnd)
+          .onClick(() => stepColumn(path, rtl ? -1 : 1)),
+      )
+      .addSeparator()
+      .addItem((item) =>
+        item
+          .setTitle(m.query_view_table_reset_column_width())
           .setIcon("lucide-rotate-ccw")
+          .setDisabled(sizes?.[path] === undefined)
           .onClick(() => resetColumn(path)),
       )
-      .setParentElement(event.currentTarget)
+      .setParentElement(th)
       .showAtMouseEvent(event.nativeEvent);
   };
 
@@ -395,6 +515,7 @@ export function TableHeader({
                 cell,
                 at === 0 ? first : later,
                 SIZED,
+                editable && MOVABLE,
               )}
               style={width === undefined ? undefined : widthStyle(width)}
               data-sized={sizedMark(sizes, property.path)}
@@ -404,6 +525,11 @@ export function TableHeader({
               onDragStart={
                 editable
                   ? (event) => moveColumn(event, property.path)
+                  : undefined
+              }
+              onClick={
+                editable
+                  ? (event) => columnMenu(event, property.path)
                   : undefined
               }
               onContextMenu={
@@ -417,8 +543,18 @@ export function TableHeader({
                   <Icon
                     name={propertyIcon(dataset, property)}
                     size="var(--icon-xs)"
-                    className="zt:flex zt:shrink-0"
+                    className={cn(
+                      "zt:flex zt:shrink-0",
+                      editable && "zt:group-hover/column:hidden",
+                    )}
                   />
+                  {editable && (
+                    <Icon
+                      name="lucide-grip-vertical"
+                      size="var(--icon-xs)"
+                      className="zt:hidden zt:shrink-0 zt:group-hover/column:flex"
+                    />
+                  )}
                   <span className="zt:truncate">{property.label}</span>
                 </span>
               ) : (
@@ -438,9 +574,14 @@ export function TableHeader({
               {editable && (
                 <span
                   className={RESIZER}
-                  draggable
                   data-query-column-resizer={property.path}
-                  onDragStart={(event) => resizeColumn(event, property.path)}
+                  {...tooltipAttrs(m.query_view_table_resize_column_hint())}
+                  onPointerDown={(event) => resizeColumn(event, property.path)}
+                  // The header cell would take a drag from its edge as a move.
+                  onDragStart={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
                   onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
@@ -471,9 +612,22 @@ export function TableHeader({
 }
 
 /**
- * The edge of a header cell that sets the column's width: the handle of a
- * Bases table header, a thin strip over the column's end line that shows on
- * hover and holds the accent while it is dragged.
+ * A header cell whose column moves: it grabs, its label brightens on hover,
+ * and it fades while it is dragged.
+ */
+const MOVABLE =
+  "zt:cursor-grab zt:hover:text-foreground zt:data-dragging:opacity-50";
+
+/**
+ * The body class of a column resize on: the resize cursor over the whole
+ * page, whatever the pointer passes over. `table-header.css` sets it.
+ */
+const RESIZING = "zt-is-resizing-column";
+
+/**
+ * The edge of a header cell that sets the column's width: a strip at the
+ * column's end with the resize cursor, whose line shows on hover and holds
+ * the accent while it is dragged.
  */
 const RESIZER =
-  "zt:absolute zt:-end-px zt:inset-y-0 zt:z-(--layer-cover) zt:w-1.5 zt:cursor-col-resize zt:touch-none zt:hover:bg-(--divider-color-hover) zt:[&.is-active]:bg-(--color-accent)";
+  "zt:absolute zt:-end-px zt:inset-y-0 zt:z-(--layer-cover) zt:w-2 zt:cursor-col-resize zt:touch-none zt:after:absolute zt:after:inset-y-1 zt:after:end-px zt:after:w-0.5 zt:after:rounded-full zt:hover:after:bg-(--interactive-accent) zt:[&.is-active]:after:inset-y-0 zt:[&.is-active]:after:bg-(--interactive-accent)";

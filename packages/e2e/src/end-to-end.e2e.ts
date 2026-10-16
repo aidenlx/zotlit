@@ -3703,7 +3703,7 @@ views:
     cleanup.defer(async () => {
       await obEval(
         vaultId,
-        `(async()=>{document.body.classList.remove('is-grabbing');await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));const file=app.vault.getFileByPath(${JSON.stringify(path)});if(file)await app.vault.delete(file);return true;})()`,
+        `(async()=>{document.body.classList.remove('is-grabbing','zt-is-resizing-column');await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));const file=app.vault.getFileByPath(${JSON.stringify(path)});if(file)await app.vault.delete(file);return true;})()`,
       );
     });
     const source = `views:\n  - type: table\n    name: Column widths\n    from: items\n    order:\n      - title\n      - firstAuthor\n      - date\n    limit: 3\n`;
@@ -3713,8 +3713,9 @@ views:
     );
     /**
      * Runs `steps` against the open Query File tab once its Table shows, with
-     * `th(path)`, `edge(path)` and `fire(target, type, x)`, a drag event at
-     * the client x `x`; then saves and reads the header and the file text.
+     * `th(path)`, `edge(path)`, `fire(target, type, x)`, a drag event at
+     * the client x `x`, and `press(target, type, x)`, a pointer event there;
+     * then saves and reads the header and the file text.
      */
     const inTable = async <T>(steps: string): Promise<T> => {
       let out: T | null = null;
@@ -3722,7 +3723,7 @@ views:
         out = JSON.parse(
           await obEval(
             vaultId,
-            `(async()=>{const view=app.workspace.getMostRecentLeaf().view;if(view.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(path)})return 'null';await view.query.settled;const el=view.contentEl;const th=p=>el.querySelector('[data-query-table] th[data-query-column="'+p+'"]');if(!th('title')||!el.querySelector('[data-query-table-row="item"]'))return 'null';const edge=p=>th(p).querySelector('[data-query-column-resizer]');const transfer=new DataTransfer();const fire=(target,type,x)=>{const r=target.getBoundingClientRect();const event=new DragEvent(type,{bubbles:true,cancelable:true,dataTransfer:transfer,clientX:x,clientY:r.top+r.height/2});target.dispatchEvent(event);return event.defaultPrevented;};const frame=()=>new Promise(r=>requestAnimationFrame(()=>r()));const until=async(what,test)=>{for(let i=0;i<100;i++){if(test())return;await frame();}throw new Error(what);};const width=p=>Math.round(th(p).getBoundingClientRect().width);const out=await (async()=>{${steps}})();await view.query.flush();return JSON.stringify({...out,columns:[...el.querySelectorAll('[data-query-table] th[data-query-column]')].map(n=>n.getAttribute('data-query-column')),text:await app.vault.read(view.file)});})()`,
+            `(async()=>{const view=app.workspace.getMostRecentLeaf().view;if(view.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(path)})return 'null';await view.query.settled;const el=view.contentEl;const th=p=>el.querySelector('[data-query-table] th[data-query-column="'+p+'"]');if(!th('title')||!el.querySelector('[data-query-table-row="item"]'))return 'null';const edge=p=>th(p).querySelector('[data-query-column-resizer]');const transfer=new DataTransfer();const fire=(target,type,x)=>{const r=target.getBoundingClientRect();const event=new DragEvent(type,{bubbles:true,cancelable:true,dataTransfer:transfer,clientX:x,clientY:r.top+r.height/2});target.dispatchEvent(event);return event.defaultPrevented;};const press=(target,type,x)=>{const r=target.getBoundingClientRect();const event=new PointerEvent(type,{bubbles:true,cancelable:true,pointerId:7,isPrimary:true,button:0,buttons:type==='pointerup'?0:1,clientX:x,clientY:r.top+r.height/2});target.dispatchEvent(event);return event.defaultPrevented;};const frame=()=>new Promise(r=>requestAnimationFrame(()=>r()));const until=async(what,test)=>{for(let i=0;i<100;i++){if(test())return;await frame();}throw new Error(what);};const width=p=>Math.round(th(p).getBoundingClientRect().width);const out=await (async()=>{${steps}})();await view.query.flush();return JSON.stringify({...out,columns:[...el.querySelectorAll('[data-query-table] th[data-query-column]')].map(n=>n.getAttribute('data-query-column')),text:await app.vault.read(view.file)});})()`,
           ),
         ) as T | null;
         return out !== null;
@@ -3750,13 +3751,24 @@ views:
       "    order:\n      - firstAuthor\n      - date\n      - title\n",
     );
 
-    // A drag on a column's edge sets its width as it goes, and saves it on
-    // the drop; the header does not move.
+    // A drag on a column's edge sets its width as it goes, with the resize
+    // cursor over the whole page, and saves it when the pointer lets go; the
+    // header does not move and its menu does not open.
     const resized = await inTable<
-      Read & { before: number; live: number; after: number }
+      Read & {
+        before: number;
+        live: number;
+        after: number;
+        cursor: string;
+        cursorAfter: string;
+        menu: boolean;
+      }
     >(
-      `const before=width('date');const x=edge('date').getBoundingClientRect().left+2;fire(edge('date'),'dragstart',x);fire(el,'dragover',x+80);await until('live width',()=>width('date')!==before);const live=width('date');fire(el,'drop',x+80);fire(edge('date'),'dragend',0);await frame();return {before,live,after:width('date')};`,
+      `const before=width('date');const x=edge('date').getBoundingClientRect().left+2;press(edge('date'),'pointerdown',x);press(el,'pointermove',x+80);await until('live width',()=>width('date')!==before);const live=width('date');const cursor=getComputedStyle(th('title')).cursor;press(th('date'),'pointerup',x+80);th('date').dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));await frame();const menu=!!activeDocument.querySelector('.menu');return {before,live,after:width('date'),cursor,cursorAfter:getComputedStyle(th('title')).cursor,menu};`,
     );
+    expect(resized.cursor).toBe("col-resize");
+    expect(resized.cursorAfter).toBe("grab");
+    expect(resized.menu).toBe(false);
     expect(resized.columns).toEqual(["firstAuthor", "date", "title"]);
     expect(resized.live).toBe(resized.before + 80);
     expect(resized.after).toBe(resized.before + 80);
@@ -3764,12 +3776,11 @@ views:
       `    columnSize:\n      date: ${resized.before + 80}\n`,
     );
 
-    // A drag on an edge that ends without a drop, as Escape ends it, puts the
-    // width back and saves nothing.
+    // Escape ends a drag on an edge: the width goes back and nothing saves.
     const cancelled = await inTable<
       Read & { before: number; live: number; after: number }
     >(
-      `const before=width('title');const x=edge('title').getBoundingClientRect().left+2;fire(edge('title'),'dragstart',x);fire(el,'dragover',x+60);await until('live width',()=>width('title')!==before);const live=width('title');fire(edge('title'),'dragend',0);await frame();return {before,live,after:width('title')};`,
+      `const before=width('title');const x=edge('title').getBoundingClientRect().left+2;press(edge('title'),'pointerdown',x);press(el,'pointermove',x+60);await until('live width',()=>width('title')!==before);const live=width('title');activeDocument.body.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));press(el,'pointerup',x+60);await frame();return {before,live,after:width('title')};`,
     );
     expect(cancelled.live).toBe(cancelled.before + 60);
     expect(cancelled.after).toBe(cancelled.before);
@@ -3795,7 +3806,7 @@ views:
         label: boolean;
       }
     >(
-      `const min=Number.parseFloat(getComputedStyle(th('firstAuthor')).getPropertyValue('--bases-table-column-min-width'));const before=width('firstAuthor');const x=edge('firstAuthor').getBoundingClientRect().left+2;fire(edge('firstAuthor'),'dragstart',x);fire(el,'dragover',x-before);fire(el,'drop',x-before);fire(edge('firstAuthor'),'dragend',0);await until('narrow width',()=>width('firstAuthor')===min);const at=th('firstAuthor').cellIndex;const cells=[...el.querySelectorAll('[data-query-table-row="item"]')].map(row=>row.cells[at]);const label=th('firstAuthor').firstElementChild.lastElementChild;return {min,auto:before,after:width('firstAuthor'),clipped:cells.some(cell=>cell.scrollWidth>cell.clientWidth),label:label.scrollWidth>label.clientWidth};`,
+      `const min=Number.parseFloat(getComputedStyle(th('firstAuthor')).getPropertyValue('--bases-table-column-min-width'));const before=width('firstAuthor');const x=edge('firstAuthor').getBoundingClientRect().left+2;press(edge('firstAuthor'),'pointerdown',x);press(el,'pointermove',x-before);press(el,'pointerup',x-before);await until('narrow width',()=>width('firstAuthor')===min);const at=th('firstAuthor').cellIndex;const cells=[...el.querySelectorAll('[data-query-table-row="item"]')].map(row=>row.cells[at]);const label=th('firstAuthor').firstElementChild.lastElementChild;return {min,auto:before,after:width('firstAuthor'),clipped:cells.some(cell=>cell.scrollWidth>cell.clientWidth),label:label.scrollWidth>label.clientWidth};`,
     );
     expect(narrowed.after).toBe(narrowed.min);
     expect(narrowed.clipped).toBe(true);
@@ -3804,29 +3815,37 @@ views:
       `    columnSize:\n      firstAuthor: ${narrowed.min}\n`,
     );
 
-    // A right click on a resized header offers Reset column size, which
-    // sets the column back to its auto width.
+    // A right click on a header opens its menu whatever the column's
+    // state: an entry with nothing to do shows disabled, and Reset column
+    // width on a resized column sets it back to its auto width.
     const menuReset = await inTable<
-      Read & { autoMenu: boolean; item: string | null; after: number }
+      Read & { auto: string[]; sized: string[]; after: number }
     >(
-      `const plain=new MouseEvent('contextmenu',{bubbles:true,cancelable:true});th('date').dispatchEvent(plain);const autoMenu=plain.defaultPrevented||!!activeDocument.querySelector('.menu');th('firstAuthor').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:th('firstAuthor').getBoundingClientRect().left+5,clientY:th('firstAuthor').getBoundingClientRect().top+5}));await until('header menu',()=>document.querySelector('.menu .menu-item'));const items=[...document.querySelectorAll('.menu .menu-item')];const item=items.map(n=>n.textContent.trim());items[0].click();await until('auto width',()=>!('sized' in th('firstAuthor').dataset));return {autoMenu,item:item.join('|'),after:width('firstAuthor')};`,
+      `const items=()=>[...activeDocument.querySelectorAll('.menu')].at(-1).querySelectorAll('.menu-item');const read=()=>[...items()].map(n=>n.textContent.trim()+(n.classList.contains('is-disabled')?' (disabled)':''));const open=async p=>{const r=th(p).getBoundingClientRect();th(p).dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:r.left+5,clientY:r.top+5}));await until('header menu',()=>activeDocument.querySelector('.menu .menu-item'));};await open('date');const auto=read();const menus=()=>activeDocument.querySelectorAll('.menu').length;const opened=menus();await open('firstAuthor');await until('second menu',()=>menus()>opened);const sized=read();[...items()].find(n=>n.textContent.trim()==='Reset column width').click();await until('auto width',()=>!('sized' in th('firstAuthor').dataset));return {auto,sized,after:width('firstAuthor')};`,
     );
-    // A column at its auto width has nothing to reset: no menu opens.
-    expect(menuReset.autoMenu).toBe(false);
-    expect(menuReset.item).toBe("Reset column size");
+    expect(menuReset.auto).toEqual([
+      "Move left",
+      "Move right",
+      "Reset column width (disabled)",
+    ]);
+    expect(menuReset.sized).toEqual([
+      "Move left (disabled)",
+      "Move right",
+      "Reset column width",
+    ]);
     expect(menuReset.after).toBe(narrowed.auto);
     expect(menuReset.text).not.toContain("columnSize");
 
-    // A drag whose end reaches only the window, as for a header the Table
-    // took off the page, still ends: the live width goes back, with no save.
+    // A pointer the system takes away ends a drag on an edge: the live width
+    // goes back, the resize cursor goes, and nothing saves.
     const ended = await inTable<
-      Read & { before: number; live: number; after: number; grabbing: boolean }
+      Read & { before: number; live: number; after: number; resizing: boolean }
     >(
-      `const before=width('date');const x=edge('date').getBoundingClientRect().left+2;fire(edge('date'),'dragstart',x);fire(el,'dragover',x+50);await until('live width',()=>width('date')!==before);const live=width('date');activeDocument.body.dispatchEvent(new DragEvent('dragend',{bubbles:true}));return {before,live,after:width('date'),grabbing:activeDocument.body.classList.contains('is-grabbing')};`,
+      `const before=width('date');const x=edge('date').getBoundingClientRect().left+2;press(edge('date'),'pointerdown',x);press(el,'pointermove',x+50);await until('live width',()=>width('date')!==before);const live=width('date');press(el,'pointercancel',x+50);await frame();return {before,live,after:width('date'),resizing:activeDocument.body.classList.contains('zt-is-resizing-column')};`,
     );
     expect(ended.live).toBe(ended.before + 50);
     expect(ended.after).toBe(ended.before);
-    expect(ended.grabbing).toBe(false);
+    expect(ended.resizing).toBe(false);
     expect(ended.text).toBe(menuReset.text);
 
     // A header dropped outside the table moves nothing, and the drag leaves
