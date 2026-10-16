@@ -996,20 +996,24 @@ it("edits the filters for all views and for this view from the Filter popover", 
   );
   expect(run.mock.calls.at(-1)![0].filter).toBe('colorName == "red"');
 
-  // The empty "All views" section shows no condition row, only the action
-  // that adds one: a colour condition.
+  // The empty "All views" section shows one placeholder: a colour condition
+  // with no value, which the file does not keep until it has one.
   const all = section(el, "all");
-  expect(all.querySelectorAll("[data-condition-row]")).toHaveLength(0);
-  const add = [...all.querySelectorAll("button")].find(
-    (button) => button.textContent === "Add condition",
-  );
-  await act(() => add!.click());
-  await settle();
-  const [added] = all.querySelectorAll("[data-condition-row]");
+  const [placeholder] = all.querySelectorAll("[data-condition-row]");
+  expect(all.querySelectorAll("[data-condition-row]")).toHaveLength(1);
+  const writes = written.length;
+  expect(
+    placeholder!.querySelector<HTMLSelectElement>('select[aria-label="Value"]')!
+      .value,
+  ).toBe("");
   await act(() =>
-    chooseValue(added!.querySelector('select[aria-label="Value"]')!, "blue"),
+    chooseValue(
+      placeholder!.querySelector('select[aria-label="Value"]')!,
+      "blue",
+    ),
   );
   await settle();
+  expect(written).toHaveLength(writes + 1);
   expect(written.at(-1)).toMatch(
     /^filters:\n  and:\n    - colorName == "blue"\n/,
   );

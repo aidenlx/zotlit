@@ -404,7 +404,10 @@ describe("calls", () => {
       expected: "Call(Identifier, Call(Identifier, RealNumber))",
     },
     { input: "f()()", expected: "Call(Call(Identifier))" },
-    { input: "a.b()", expected: "Call(ObjectAccess(Identifier, Identifier))" },
+    {
+      input: "a.b()",
+      expected: "Call(ObjectAccess(Identifier, PropertyName))",
+    },
     { input: "(f)()", expected: "Call(GroupedExpression(Identifier))" },
   ])("parses $input", ({ input, expected }) => {
     expect(shape(input)).toBe(expected);
@@ -449,11 +452,11 @@ describe("calls", () => {
 
 describe("object and array access", () => {
   it.each([
-    { input: "a.b", expected: "ObjectAccess(Identifier, Identifier)" },
+    { input: "a.b", expected: "ObjectAccess(Identifier, PropertyName)" },
     {
       input: "a.b.c",
       expected:
-        "ObjectAccess(ObjectAccess(Identifier, Identifier), Identifier)",
+        "ObjectAccess(ObjectAccess(Identifier, PropertyName), PropertyName)",
     },
     { input: "a[0]", expected: "ArrayAccess(Identifier, RealNumber)" },
     {
@@ -467,21 +470,21 @@ describe("object and array access", () => {
     {
       input: "a.b[0].c",
       expected:
-        "ObjectAccess(ArrayAccess(ObjectAccess(Identifier, Identifier), RealNumber), Identifier)",
+        "ObjectAccess(ArrayAccess(ObjectAccess(Identifier, PropertyName), RealNumber), PropertyName)",
     },
     {
       input: "a.b(c)[0]",
       expected:
-        "ArrayAccess(Call(ObjectAccess(Identifier, Identifier), Identifier), RealNumber)",
+        "ArrayAccess(Call(ObjectAccess(Identifier, PropertyName), Identifier), RealNumber)",
     },
-    { input: "true.x", expected: "ObjectAccess(BooleanLiteral, Identifier)" },
+    { input: "true.x", expected: "ObjectAccess(BooleanLiteral, PropertyName)" },
   ])("parses $input", ({ input, expected }) => {
     expect(shape(input)).toBe(expected);
     expect(errorOf(input)).toBeNull();
   });
 
   it("keeps the dot and the brackets in the child layout", () => {
-    expect(layout("a.b")).toEqual(["Identifier", ".", "Identifier"]);
+    expect(layout("a.b")).toEqual(["Identifier", ".", "PropertyName"]);
     expect(layout("a[0]")).toEqual(["Identifier", "[", "RealNumber", "]"]);
   });
 
@@ -544,7 +547,7 @@ describe("precedence", () => {
   it.each([
     {
       input: "-a.b",
-      expected: "UnaryExpression(ObjectAccess(Identifier, Identifier))",
+      expected: "UnaryExpression(ObjectAccess(Identifier, PropertyName))",
       why: "access binds tighter than unary",
     },
     {
@@ -755,6 +758,7 @@ describe("highlighting vocabulary", () => {
     "ObjectAccess",
     ".",
     "Identifier",
+    "PropertyName",
     "NullLiteral",
     "BooleanLiteral",
     "RealNumber",

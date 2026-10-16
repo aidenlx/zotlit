@@ -171,14 +171,11 @@ function ExpressionField({
         }
       >
         <MatchExpressionInput
-          rows={3}
-          spellCheck={false}
+          lines={3}
           aria-invalid={value !== "" && issue !== null}
           value={value}
           data-query-formula-expression=""
-          onInput={(event) =>
-            onChange(event.currentTarget.value, event.currentTarget.win)
-          }
+          onChange={onChange}
           onBlur={onBlur}
         />
       </Chooser.PageField>

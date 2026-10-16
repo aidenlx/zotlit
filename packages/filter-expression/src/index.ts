@@ -46,3 +46,19 @@ export type {
   ExpressionNode,
   ParseExpressionAstResult,
 } from "./ast.js";
+
+export {
+  composeFilterTree,
+  filterGroup,
+  foldFilterTree,
+  joinComposed,
+  readFilterTree,
+} from "./tree.js";
+export type {
+  ComposedFilter,
+  FilterGroupKind,
+  FilterLeaf,
+  FilterPath,
+  FilterTree,
+  FilterTreeFold,
+} from "./tree.js";

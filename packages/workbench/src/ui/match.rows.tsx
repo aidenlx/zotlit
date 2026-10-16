@@ -190,6 +190,11 @@ export function ConditionValue({
             onChange({ ...condition, values: [itemType] })
           }
         >
+          {condition.values[0] === "" && (
+            <option value="" disabled>
+              {m.workbench_match_value_empty()}
+            </option>
+          )}
           {ITEM_TYPES.map((itemType) => (
             <option key={itemType.name} value={itemType.name}>
               {

@@ -1320,6 +1320,9 @@ importers:
 
   packages/templates:
     dependencies:
+      '@zotlit/filter-expression':
+        specifier: workspace:*
+        version: link:../filter-expression
       '@zotlit/shared':
         specifier: workspace:*
         version: link:../shared

@@ -5,6 +5,7 @@ import type { WorkbenchMessages } from "./generated/messages";
 import {
   conditionIssue,
   freshCondition,
+  hasValue,
   visuallyEditable,
 } from "./match.draft";
 import type {
@@ -35,7 +36,8 @@ export function profileVocabulary(
         ? condition
         : null;
     },
-    format: formatCondition,
+    format: (condition) =>
+      hasValue(condition) ? formatCondition(condition) : null,
     renderOperator: ({ condition, onChange }) => (
       <ConditionOperator condition={condition} onChange={onChange} />
     ),
@@ -51,6 +53,10 @@ export function profileVocabulary(
       kind("tags", m.workbench_match_condition_tag()),
     ],
     newKind: "item-type",
-    issue: (condition) => conditionIssue(m, condition, deps),
+    // A row with no value yet stores nothing, so it has no issue.
+    issue: (condition) =>
+      condition.kind !== "expression" && !hasValue(condition)
+        ? null
+        : conditionIssue(m, condition, deps),
   };
 }

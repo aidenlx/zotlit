@@ -77,7 +77,7 @@ describe("parseQueryFile", () => {
     expect(text).toBe(TWO_VIEWS);
   });
 
-  it("opens a not group as one expression condition", () => {
+  it("keeps a not group", () => {
     const file = parseQueryFile(`views:
   - type: annotations
     name: Not yellow
@@ -92,7 +92,7 @@ describe("parseQueryFile", () => {
     expect(file.views[0]!.filters).toEqual({
       and: [
         'tags.contains("figure")',
-        '!((colorName == "yellow") || (comment == null))',
+        { not: ['colorName == "yellow"', "comment == null"] },
       ],
     });
   });

@@ -12,6 +12,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useStore } from "zustand";
 
+import { foldFilterTree } from "@zotlit/filter-expression";
 import type { MatchTree } from "@zotlit/templates/facade";
 import {
   ChipInput,
@@ -251,7 +252,11 @@ function RowValue({
         value={condition.value}
         onChange={(value) => onChange({ ...condition, value })}
       >
-        {options.some(([value]) => value === condition.value) ? null : (
+        {condition.value === "" ? (
+          <option value="" disabled>
+            {m.workbench_match_value_empty()}
+          </option>
+        ) : options.some(([value]) => value === condition.value) ? null : (
           <option value={condition.value}>{condition.value}</option>
         )}
         {options.map(([value, label]) => (
@@ -268,6 +273,7 @@ function RowValue({
         {...part("input")}
         type={field.type}
         aria-label={m.query_view_filter_value()}
+        placeholder={m.workbench_match_value_empty()}
         value={condition.value}
         onInput={(event) =>
           onChange({ ...condition, value: event.currentTarget.value })
@@ -563,10 +569,12 @@ function FoldSection({
 
 /** How many conditions a filter holds, groups not counted. */
 function conditionCount(tree: MatchFilter | undefined): number {
-  if (tree === undefined) return 0;
-  if (typeof tree === "string") return 1;
-  const children = "and" in tree ? tree.and : "or" in tree ? tree.or : tree.not;
-  return children.reduce((sum, child) => sum + conditionCount(child), 0);
+  return tree === undefined
+    ? 0
+    : foldFilterTree(tree, {
+        leaf: () => 1,
+        group: (_, counts) => counts.reduce((sum, count) => sum + count, 0),
+      });
 }
 
 /** The toolbar's Filter control: a button and the popover it opens. */
