@@ -1078,6 +1078,9 @@ importers:
       effect:
         specifier: 'catalog:'
         version: 4.0.0
+      valibot:
+        specifier: 'catalog:'
+        version: 1.4.2(typescript@7.0.2)
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

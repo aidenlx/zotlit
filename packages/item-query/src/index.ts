@@ -26,6 +26,7 @@ export {
 } from "./item-filter";
 export {
   queryItemFrom,
+  queryItemSeedSchema,
   readQueryItemSeed,
   type QueryItemSeed,
 } from "./item-seed";

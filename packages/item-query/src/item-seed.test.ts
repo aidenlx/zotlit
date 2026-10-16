@@ -1,6 +1,7 @@
 // A seed keeps what the Items filter reads: an Item from its seed matches a
 // filter in memory exactly when a query with that filter returns it.
 import { Effect, Exit } from "effect";
+import * as v from "valibot";
 import { describe, expect, it } from "vitest";
 
 import { formatIndexedKey } from "@zotlit/db";
@@ -11,7 +12,13 @@ import {
   SCENARIO_LIBRARIES,
 } from "@zotlit/db/test-scenario";
 
-import { collectQuery, ITEMS, planItemFilter, queryItemFrom } from ".";
+import {
+  collectQuery,
+  ITEMS,
+  planItemFilter,
+  queryItemFrom,
+  queryItemSeedSchema,
+} from ".";
 import { readQueryItemSeed } from ".";
 import { runEffect, TEST_NOW } from "./test-helpers";
 
@@ -38,6 +45,9 @@ describe("readQueryItemSeed", () => {
       // The Library has top-level Items, and child Items have no seed.
       expect(seeds.length).toBeGreaterThan(0);
       expect(seeds.length).toBeLessThan(rows.length);
+      // A seed passes its schema unchanged, as a host that stores it reads it.
+      for (const seed of seeds)
+        expect(v.parse(queryItemSeedSchema, seed)).toEqual(seed);
       for (const filter of FILTERS) {
         const planned = planItemFilter(filter);
         if (!("matches" in planned)) throw new Error(planned.message);

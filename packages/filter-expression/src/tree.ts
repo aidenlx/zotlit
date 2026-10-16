@@ -9,11 +9,13 @@
  */
 export type FilterTree =
   | string
-  | { readonly and: readonly FilterTree[] }
-  | { readonly or: readonly FilterTree[] }
-  | { readonly not: readonly FilterTree[] };
+  | {
+      [K in FilterGroupKind]: { readonly [P in K]: readonly FilterTree[] };
+    }[FilterGroupKind];
 
-export type FilterGroupKind = "and" | "or" | "not";
+/** The group kinds, which the type and the reader both read. */
+export const FILTER_GROUP_KINDS = ["and", "or", "not"] as const;
+export type FilterGroupKind = (typeof FILTER_GROUP_KINDS)[number];
 
 /**
  * The place of an entry: its index in each group from the root down. The
@@ -58,32 +60,51 @@ export function foldFilterTree<T>(
 
 /**
  * Reads a stored filter from a YAML or JSON value; `null` when the value is
- * not one. A number or a boolean reads as its Filter Expression text.
+ * not one. A number or a boolean leaf reads as its Filter Expression text
+ * under `scalars: "text"`, and is no Filter Tree under `"refuse"`.
  */
-export function readFilterTree(value: unknown): FilterTree | null {
+export function readFilterTree(
+  value: unknown,
+  scalars: "text" | "refuse" = "text",
+): FilterTree | null {
   if (typeof value === "string") return value;
   if (typeof value === "number" || typeof value === "boolean")
-    return String(value);
+    return scalars === "text" ? String(value) : null;
   if (typeof value !== "object" || value === null || Array.isArray(value))
     return null;
   const keys = Object.keys(value);
   if (keys.length !== 1) return null;
-  const [key] = keys as [string];
-  const entries = (value as Record<string, unknown>)[key];
+  const kind = FILTER_GROUP_KINDS.find((group) => group === keys[0]);
+  if (kind === undefined) return null;
+  const entries = (value as Record<string, unknown>)[kind];
   if (!Array.isArray(entries)) return null;
-  const read = entries.map(readFilterTree);
-  if (read.includes(null)) return null;
-  const children = read as FilterTree[];
-  switch (key) {
-    case "and":
-      return { and: children };
-    case "or":
-      return { or: children };
-    case "not":
-      return { not: children };
-    default:
-      return null;
+  const children: FilterTree[] = [];
+  for (const entry of entries) {
+    const child = readFilterTree(entry, scalars);
+    if (child === null) return null;
+    children.push(child);
   }
+  return filterGroupOf(kind, children);
+}
+
+/** The group of `kind` with `entries`; each kind must have its case. */
+function filterGroupOf(
+  kind: FilterGroupKind,
+  entries: readonly FilterTree[],
+): FilterTree {
+  switch (kind) {
+    case "and":
+      return { and: entries };
+    case "or":
+      return { or: entries };
+    case "not":
+      return { not: entries };
+  }
+}
+
+/** Whether `value` is a Filter Tree as stored: no number or boolean leaf. */
+export function isFilterTree(value: unknown): value is FilterTree {
+  return readFilterTree(value, "refuse") !== null;
 }
 
 /** One leaf of a composed filter: its path, and its span in the text. */
