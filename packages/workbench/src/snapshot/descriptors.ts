@@ -2,29 +2,19 @@
 
 import type { TemplatePathSegment } from "#/explorer/accessor-path";
 
-export interface SnapshotStringCoercion {
-  readonly path: readonly TemplatePathSegment[];
-  readonly value: string;
-}
+import type {
+  SnapshotGraphReference,
+  SnapshotRootDescriptors,
+  SnapshotStringCoercion,
+  SnapshotTemporalValue,
+} from "./schema";
 
-export interface SnapshotTemporalValue {
-  readonly path: readonly TemplatePathSegment[];
-  readonly type:
-    | "Temporal.Instant"
-    | "Temporal.PlainDate"
-    | "Temporal.PlainYearMonth";
-}
-
-export interface SnapshotGraphReference {
-  readonly path: readonly TemplatePathSegment[];
-  readonly target: readonly TemplatePathSegment[];
-}
-
-export interface SnapshotRootDescriptors {
-  readonly stringCoercions: readonly SnapshotStringCoercion[];
-  readonly temporalValues: readonly SnapshotTemporalValue[];
-  readonly graphReferences: readonly SnapshotGraphReference[];
-}
+export type {
+  SnapshotGraphReference,
+  SnapshotRootDescriptors,
+  SnapshotStringCoercion,
+  SnapshotTemporalValue,
+} from "./schema";
 
 export function collectRootDescriptors(root: object): SnapshotRootDescriptors {
   const stringCoercions: SnapshotStringCoercion[] = [];

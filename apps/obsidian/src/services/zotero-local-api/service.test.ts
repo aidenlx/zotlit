@@ -3,6 +3,7 @@ import { expect, it } from "vitest";
 import {
   annotationPage,
   ATTACHMENT_KEY,
+  foreignServer,
   freshnessSignal,
   incompatibleZotero,
   localApiClient,
@@ -407,6 +408,12 @@ it.each([
   ["a connection nothing answers", unreachable, "unreachable"],
   ["the local API switched off", localApiDisabled, "local-api-disabled"],
   ["another API version", incompatibleZotero, "incompatible-zotero"],
+  ["another server on Zotero's port", () => foreignServer(), "unreachable"],
+  [
+    "another server's error on Zotero's port",
+    () => foreignServer(500),
+    "unreachable",
+  ],
 ] as const)("stands the source down on %s", async (_case, answer, kind) => {
   await using stack = new AsyncDisposableStack();
   const { client } = await setup(stack, { root: answer });

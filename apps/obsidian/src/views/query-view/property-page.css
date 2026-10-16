@@ -1,0 +1,10 @@
+/* The formula field reads in the code font, as the formula editor of Bases
+   does. Obsidian's `textarea` rule is unlayered and sets `font-family:
+   inherit`, so it outranks the field's `zt:font-mono` utility; this rule is
+   unlayered too and takes the family and colour Bases reads. The size stays
+   Obsidian's input size, so the field matches the inputs beside it. */
+.zt-chooser [data-chooser-page] textarea[data-query-formula-expression] {
+  font-family: var(--font-monospace);
+  color: var(--code-normal);
+  resize: vertical;
+}

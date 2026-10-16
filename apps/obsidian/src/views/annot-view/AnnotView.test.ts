@@ -17,7 +17,12 @@ import { editorApp } from "./__fixtures__/editor-app";
 import { AnnotActionsContext, NOOP_ACTIONS } from "./actions";
 import type { AnnotActions } from "./actions";
 import { AnnotView } from "./AnnotView";
-import { NO_SELECTION, nextCardSelection, sameKeys } from "./card-selection";
+import {
+  cardPlace,
+  NO_SELECTION,
+  nextCardSelection,
+  sameKeys,
+} from "./card-selection";
 import type { CardSelection } from "./card-selection";
 import { AnnotStoreProvider, createAnnotStore, visibleOrder } from "./store";
 
@@ -188,8 +193,8 @@ describe("the card list", () => {
 
     await select({
       selected: ["BBBB2222"],
-      anchor: "BBBB2222",
-      focus: "BBBB2222",
+      anchor: cardPlace("BBBB2222", null),
+      focus: cardPlace("BBBB2222", null),
     });
     expect(rows(host)).toEqual([
       { key: "AAAA1111", selected: "false", tabbable: false },
@@ -200,8 +205,8 @@ describe("the card list", () => {
 
     await select({
       selected: ["AAAA1111", "CCCC3333"],
-      anchor: "CCCC3333",
-      focus: "CCCC3333",
+      anchor: cardPlace("CCCC3333", null),
+      focus: cardPlace("CCCC3333", null),
     });
     expect(rows(host)).toEqual([
       { key: "AAAA1111", selected: "true", tabbable: false },
@@ -239,14 +244,14 @@ describe("the card list", () => {
     // the tab stop goes to it.
     await select({
       selected: ["AAAA1111", "CCCC3333"],
-      anchor: "AAAA1111",
-      focus: "AAAA1111",
+      anchor: cardPlace("AAAA1111", null),
+      focus: cardPlace("AAAA1111", null),
     });
     await act(() => store.setState({ filterQuery: "shared" }));
     expect(store.getState().cardSelection).toEqual({
       selected: ["CCCC3333"],
-      anchor: "AAAA1111",
-      focus: "AAAA1111",
+      anchor: cardPlace("AAAA1111", null),
+      focus: cardPlace("AAAA1111", null),
     });
     expect(rows(host)).toEqual([
       { key: "BBBB2222", selected: "false", tabbable: false },
@@ -259,8 +264,8 @@ describe("the card list", () => {
     await act(() => store.setState({ filterQuery: "" }));
     await select({
       selected: ["AAAA1111"],
-      anchor: "AAAA1111",
-      focus: "AAAA1111",
+      anchor: cardPlace("AAAA1111", null),
+      focus: cardPlace("AAAA1111", null),
     });
     await act(() => store.setState({ filterQuery: "shared" }));
     expect(store.getState().cardSelection.selected).toEqual([]);

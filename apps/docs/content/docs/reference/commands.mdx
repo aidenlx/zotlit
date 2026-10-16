@@ -314,6 +314,21 @@ Undo takes back the last annotation change ZotLit saved to Zotero for the PDF yo
 | More options    | The PDF view's **More options** menu (⋮). Both entries appear, dimmed when there is no step to take. |
 | Hotkey          | None by default; assign one under **Settings > Hotkeys**                                             |
 
+## Query files [#query-files]
+
+<Command name={m.command_new_query_file_name()} />
+
+Creates a query file named `Untitled.zotquery` and opens it in a tab. The file has one Annotations view of your whole library, grouped by paper, with a limit of 100 rows. See [Use query files and query blocks](/docs/how-to/use-query-files).
+
+| Entry point     | Details                                                                                                                                                                                    |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Command palette | Always available. The file goes in the folder for new notes.                                                                                                                               |
+| File explorer   | Right-click a folder, or a file in it > <UiLabel name={m.query_file_new()} />. The file goes in that folder. Hold `Ctrl` (Windows and Linux) or `Command` (macOS) to open it in a new tab. |
+
+<UiLabel name={m.annot_view_save_as_query_file()} /> in the annotation view's
+**More options** menu also creates a query file. See [Save the annotation
+sidebar as a query file](/docs/how-to/use-query-files#save-sidebar).
+
 ## Template data explorer
 
 <Command name={m.command_open_template_data_explorer_name()} />
@@ -443,6 +458,7 @@ Opens the release notes for the installed ZotLit version.
 | <UiLabel name={m.command_annot_view_pin_current_item_name()} />     |   yes   |   no   |      no      | Annotation view open on an item, not already pinned |
 | <UiLabel name={m.command_annot_view_pin_item_name()} />             |   yes   |   no   |      no      | Annotation view open                                |
 | <UiLabel name={m.command_annot_view_unpin_name()} />                |   yes   |   no   |      no      | Annotation view open and pinned                     |
+| <UiLabel name={m.command_new_query_file_name()} />                  |   yes   |   no   |   explorer   | Always                                              |
 | <UiLabel name={m.command_open_template_data_explorer_name()} />     |   yes   |   no   |     yes      | Always                                              |
 | <UiLabel name={m.template_workbench_open_layout()} />               |   yes   |   no   |     yes      | Active on a profile document                        |
 | <UiLabel name={m.template_workbench_open()} />                      |   yes   |   no   |     yes      | Active on a template document or a literature note  |
@@ -464,28 +480,31 @@ The Query CLI is experimental. Parameters, output schemas, and diagnostic report
 
 The Query CLI reads works, files, and reading marks for agents and scripts. One `zotlit:query` command selects a Query Dataset with `from`. [How ZotLit Query works](/docs/concepts/how-zotlit-query-works) explains the datasets, filters, and groups.
 
-| Command                   | Parameters                                                                      | Result                                                                    |
-| ------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `zotlit:query`            | `from`, `filter`, `fields`, `sort`, `group`, `limit`, `library`, `output`, `id` | One Query Row per matching Item, Attachment, or Annotation                |
-| `zotlit:query-schema`     | `from`                                                                          | The schema URL, source custom fields, dataset fields, and defaults        |
-| `zotlit:query-values`     | `kind`, `library`, `match`, `limit`                                             | The exact Collection paths or Tag names of each Library                   |
-| `zotlit:query-guide`      | `topic`                                                                         | Instructions for one topic, or the full guide when `topic` is omitted     |
-| `zotlit:annotation-image` | `key`                                                                           | The local PNG path, format, and provenance for an image or ink Annotation |
-| `zotlit:query-cancel`     | `id`                                                                            | Whether ZotLit found the named query and requested its cancel             |
+| Command                   | Parameters                                                                                                                  | Result                                                                    |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `zotlit:query`            | `from`, `filter`, `fields`, `formulas`, `sort`, `group`, `limit`, `library`, `output`, `id`, `this-item`, `this-attachment` | One Query Row per matching Item, Attachment, or Annotation                |
+| `zotlit:query-schema`     | `from`                                                                                                                      | The schema URL, source custom fields, dataset fields, and defaults        |
+| `zotlit:query-values`     | `kind`, `library`, `match`, `limit`                                                                                         | The exact Collection paths or Tag names of each Library                   |
+| `zotlit:query-guide`      | `topic`                                                                                                                     | Instructions for one topic, or the full guide when `topic` is omitted     |
+| `zotlit:annotation-image` | `key`                                                                                                                       | The local PNG path, format, and provenance for an image or ink Annotation |
+| `zotlit:query-cancel`     | `id`                                                                                                                        | Whether ZotLit found the named query and requested its cancel             |
 
 `zotlit:query` uses these parameters:
 
-| Parameter | Value                                                                                                                                              |
-| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `from`    | `items`, `attachments`, or `annotations`. The default is `items`.                                                                                  |
-| `filter`  | A Filter Expression over the selected dataset and its related records.                                                                             |
-| `fields`  | A comma list of Projection Paths or a JSON array. `fields=[]` returns identity-only rows.                                                          |
-| `sort`    | A comma list or a JSON array of `{ "field", "direction" }` objects. Use `-field` for descending order and `field` or `+field` for ascending order. |
-| `group`   | One scalar Projection Path, or a path with one `[]` such as `tags[].name`. The result contains one group for each value.                           |
-| `limit`   | A positive integer or `all`. The default is 100. In a grouped query, the limit applies inside each group.                                          |
-| `library` | `personal`, `group:<groupID>`, a comma list, a JSON array, or `all`. The default comes from the Library Scope setting.                             |
-| `output`  | A new absolute file path for the complete JSON result.                                                                                             |
-| `id`      | A query ID used by `zotlit:query-cancel`.                                                                                                          |
+| Parameter         | Value                                                                                                                                                                                                                   |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `from`            | `items`, `attachments`, or `annotations`. The default is `items`.                                                                                                                                                       |
+| `filter`          | A Filter Expression over the selected dataset and its related records.                                                                                                                                                  |
+| `fields`          | A comma list of Projection Paths or a JSON array. `fields=[]` returns identity-only rows.                                                                                                                               |
+| `formulas`        | A JSON object from Formula names to Filter Expressions. Read a Formula as `formula.<name>` in `fields`, `filter`, or another Formula. See [Compute a value with a formula](/docs/how-to/query-zotero-library#formulas). |
+| `sort`            | A comma list or a JSON array of `{ "field", "direction" }` objects. Use `-field` for descending order and `field` or `+field` for ascending order.                                                                      |
+| `group`           | One scalar Projection Path, or a path with one `[]` such as `tags[].name`. The result contains one group for each value.                                                                                                |
+| `limit`           | A positive integer or `all`. The default is 100. In a grouped query, the limit applies inside each group.                                                                                                               |
+| `library`         | `personal`, `group:<groupID>`, a comma list, a JSON array, or `all`. The default comes from the Library Scope setting.                                                                                                  |
+| `output`          | A new absolute file path for the complete JSON result.                                                                                                                                                                  |
+| `id`              | A query ID used by `zotlit:query-cancel`.                                                                                                                                                                               |
+| `this-item`       | An Item Indexed Key. A filter reads that Item as `this.item`. See [Query Context](#query-context).                                                                                                                      |
+| `this-attachment` | An Attachment Indexed Key. A filter reads that Attachment as `this.attachment`. See [Query Context](#query-context).                                                                                                    |
 
 ZotLit splits `fields` and `sort` at commas outside quotes and brackets.
 
@@ -493,13 +512,19 @@ ZotLit splits `fields` and `sort` at commas outside quotes and brackets.
 
 Choose the dataset that represents one result row:
 
-| `from` value  | One row represents | Dataset contents                                                                   | Related records              |
-| ------------- | ------------------ | ---------------------------------------------------------------------------------- | ---------------------------- |
-| `items`       | A work             | Top-level Items outside the trash                                                  | `attachments`, `annotations` |
-| `attachments` | A file or URL      | Non-trashed Attachments of top-level, non-trashed Items                            | `item`, `annotations`        |
-| `annotations` | A reading mark     | Non-trashed Annotations on non-trashed Attachments of top-level, non-trashed Items | `item`, `attachment`         |
+| `from` value  | One row represents | Dataset contents                                                                   | Related records                       |
+| ------------- | ------------------ | ---------------------------------------------------------------------------------- | ------------------------------------- |
+| `items`       | A work             | Top-level Items outside the trash                                                  | `attachments`, `annotations`, `notes` |
+| `attachments` | A file or URL      | Non-trashed Attachments of top-level, non-trashed Items                            | `item`, `annotations`                 |
+| `annotations` | A reading mark     | Non-trashed Annotations on non-trashed Attachments of top-level, non-trashed Items | `item`, `attachment`                  |
 
 Standalone Attachments are outside these datasets. Relation Lists contain records from the same dataset universes. Use list methods in filters and an explicit `[]` in Projection Paths.
+
+`notes` lists the Child Notes of an Item that are outside the trash, in note key order. A note record has `indexedKey`, `key`, `title`, `dateAdded`, `dateModified`, `library`, and its parent `item`. No dataset reads notes as rows. This query finds papers with a Child Note and lists the note titles:
+
+```bash
+obsidian zotlit:query filter='!notes.isEmpty()' fields='title,notes[].title'
+```
 
 For example, this query finds papers with no PDF that ZotLit can open on this computer:
 
@@ -515,6 +540,22 @@ obsidian zotlit:query from=attachments filter='linkMode == "linked_file" && !exi
 
 Select a record by Indexed Key in the filter. Use `indexedKey` for a row, `item.indexedKey` for its parent Item, or `attachment.indexedKey` for an Annotation's parent Attachment. A key outside the Target Libraries gives a Query Warning. The Target Libraries stay unchanged.
 
+### Query Context [#query-context]
+
+`this-item` and `this-attachment` set the Query Context of a query: the Item and the Attachment that a filter reads as `this.item` and `this.attachment`. Query files and query blocks set the same context from the note that shows them. See [`this`: the paper of the note](/docs/concepts/query-files-and-query-blocks#this).
+
+| Dataset       | Records of the bound Item            | Records of the bound Attachment            |
+| ------------- | ------------------------------------ | ------------------------------------------ |
+| `items`       | `indexedKey == this.item.indexedKey` |                                            |
+| `attachments` | `item == this.item`                  | `indexedKey == this.attachment.indexedKey` |
+| `annotations` | `item == this.item`                  | `attachment == this.attachment`            |
+
+```bash
+obsidian zotlit:query from=annotations filter='item == this.item' this-item=ABCD2345 limit=all
+```
+
+A filter that reads `this.item` or `this.attachment` without its parameter fails with the `unbound-context` diagnostic.
+
 ### Projection and grouping
 
 A path such as `attachments[].path` returns one value for each Attachment. It keeps source order and keeps `null` in its original position. A complete related record has a fixed summary:
@@ -524,6 +565,7 @@ A path such as `attachments[].path` returns one value for each Attachment. It ke
 | Item       | `indexedKey`, `title`, `citationKey`                               |
 | Attachment | `indexedKey`, `title`, `contentType`, `linkMode`, `path`, `exists` |
 | Annotation | `indexedKey`, `type`, `text`, `comment`, `pageLabel`, `pageIndex`  |
+| Note       | `indexedKey`, `title`                                              |
 
 `group` accepts one scalar path. This command counts Attachments by `fileType`, which is `pdf`, `epub`, `web`, or `other`:
 

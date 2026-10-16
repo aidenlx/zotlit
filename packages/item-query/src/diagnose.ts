@@ -14,6 +14,7 @@ import type {
   SyntaxFault,
 } from "./fault";
 import type { ValueShape } from "./fields";
+import { isError, operandMessage, typeNoun } from "./filter-error";
 import {
   GLOBAL_FUNCTION_NAMES,
   GLOBAL_FUNCTIONS,
@@ -31,13 +32,17 @@ import {
 import type { FunctionDefinition } from "./filter-functions";
 import { hasBareForm } from "./filter-plan";
 import type { StaticType } from "./filter-plan";
+import type { FilterValue } from "./filter-values";
 import { nearMatches } from "./near-match";
 import { planPath } from "./projection";
 import type { QueryClock } from "./query-clock";
 import { COUNT_FIELDS, UNLIMITED_LIMIT } from "./request";
+import type { QueryContext } from "./request";
 
 interface DiagnosisContext extends ItemQueryErrorLocation {
   readonly dataset: QueryDataset<any>;
+  /** The Query Context of the request: a correction is planned with it. */
+  readonly context?: QueryContext | undefined;
 }
 import type { CollectionWarning } from "./collection-warnings";
 import type { KeyLibraryWarning } from "./indexed-key-selection";
@@ -45,6 +50,7 @@ import type { KeyLibraryWarning } from "./indexed-key-selection";
 interface WarningContext {
   readonly clock: QueryClock;
   readonly dataset: QueryDataset<any>;
+  readonly context?: QueryContext | undefined;
 }
 
 export interface DiagnosticLocation {
@@ -74,7 +80,26 @@ export interface Diagnostic<Code extends string = string> {
 export function diagnose(
   fault: ItemQueryFault,
   text: string,
-  { dataset, ...location }: DiagnosisContext,
+  context: DiagnosisContext,
+): Diagnostic<ItemQueryErrorCode> {
+  const diagnostic = diagnoseFault(fault, text, context);
+  // A fault inside the text of a Formula names the Formula.
+  if (
+    context.argument !== "formulas" ||
+    context.path === undefined ||
+    fault.kind === "formula-name" ||
+    fault.kind === "formula-result" ||
+    fault.kind === "formula-cycle" ||
+    fault.kind === "reads-faulted-formula"
+  )
+    return diagnostic;
+  return inFormula(diagnostic, context.path);
+}
+
+function diagnoseFault(
+  fault: ItemQueryFault,
+  text: string,
+  { dataset, context, ...location }: DiagnosisContext,
 ): Diagnostic<ItemQueryErrorCode> {
   const at = "at" in fault ? fault.at : undefined;
   const faultLocation = { ...location, ...(at ? { span: at } : {}) };
@@ -106,6 +131,20 @@ export function diagnose(
         },
         text,
         { found: fault.found, expected: [fault.expected] },
+      );
+    }
+    case "operand-type": {
+      const types = fault.operands.map((operand) => operand.type);
+      const found = types.map(typeNoun);
+      return renderDiagnostic(
+        {
+          code: "wrong-operand-type",
+          message: operandMessage(fault.operator, types),
+          hint: `${fault.operator} takes ${OPERAND_TYPES[fault.operands.length === 1 ? "unary -" : fault.operator]}. Convert a text first with number(), such as number(volume), or with date().`,
+          location: faultLocation,
+        },
+        text,
+        { found: found.join(" and ") },
       );
     }
     case "unreadable": {
@@ -162,7 +201,87 @@ export function diagnose(
         : diagnostic;
     }
     case "unknown":
-      return diagnoseUnknown(fault, text, { ...location, dataset });
+      return diagnoseUnknown(fault, text, { ...location, dataset, context });
+    case "formula-name":
+      return renderDiagnostic(
+        {
+          code: "invalid-formula-name",
+          message: `The Formula name ${JSON.stringify(fault.name)} is not an identifier.`,
+          hint: "Name a Formula with letters, digits, and _, with a letter or _ first, such as year or first_author.",
+          location,
+        },
+        "",
+        { found: fault.name, expected: ["an identifier"] },
+      );
+    case "formula-cycle": {
+      const chain = fault.chain.map((name) => `formula.${name}`).join(" → ");
+      return renderDiagnostic(
+        {
+          code: "formula-cycle",
+          message: `The Formulas read each other in a cycle: ${chain}.`,
+          hint: "Make one Formula in the cycle read fields only, not another Formula of the cycle.",
+          location: faultLocation,
+        },
+        text,
+        {
+          found: chain,
+          expected: ["a Formula that reads no Formula of the cycle"],
+        },
+      );
+    }
+    case "reads-faulted-formula": {
+      // The reader names the Formula it reads; the note states the mistake at
+      // the root of the reads.
+      const root = diagnose(fault.root.fault, fault.root.argumentText, {
+        ...fault.root.location,
+        dataset,
+        context: fault.root.context,
+      });
+      const reader =
+        location.argument === "filter"
+          ? "The filter"
+          : `formula.${location.path}`;
+      const diagnostic = renderDiagnostic(
+        {
+          code: "reads-faulted-formula",
+          message: `${reader} reads formula.${fault.name}, which has a mistake.`,
+          hint: `Correct the mistake in formula.${fault.root.location.path}.`,
+          location: faultLocation,
+        },
+        text,
+        {
+          found: `formula.${fault.name}`,
+          expected: ["a Formula without a mistake"],
+        },
+      );
+      return {
+        ...diagnostic,
+        report: [
+          ...diagnostic.report.slice(0, -1),
+          root.message,
+          diagnostic.hint,
+        ],
+      };
+    }
+    case "formula-result":
+      return renderDiagnostic(
+        {
+          code: "invalid-formula-result",
+          message: `formula.${fault.name} gives a ${fault.found}; a Formula gives a boolean, a number, a string, a list, or a date.`,
+          hint:
+            fault.found === "duration"
+              ? "Give a number from the duration, such as its days property, or add it to a date."
+              : fault.found === "record"
+                ? "Give one field of the record, such as its title or indexedKey."
+                : "Use the regular expression in a method, such as matches(), and give its result.",
+          location: faultLocation,
+        },
+        text,
+        {
+          found: fault.found,
+          expected: ["boolean", "number", "string", "list", "date"],
+        },
+      );
   }
 }
 
@@ -208,8 +327,15 @@ export function codeOfFault(
     return "invalid-filter";
   if (fault.kind === "arity") return "wrong-argument-count";
   if (fault.kind === "argument-type") return "wrong-argument-type";
+  if (fault.kind === "operand-type") return "wrong-operand-type";
   if (fault.kind === "unreadable") return "unfilterable-field";
+  if (fault.kind === "formula-name") return "invalid-formula-name";
+  if (fault.kind === "formula-result") return "invalid-formula-result";
+  if (fault.kind === "formula-cycle") return "formula-cycle";
+  if (fault.kind === "reads-faulted-formula") return "reads-faulted-formula";
   switch (fault.role) {
+    case "formula":
+      return "unknown-formula";
     case "global":
     case "method":
       return "unknown-function";
@@ -232,13 +358,15 @@ export function codeOfFault(
 function diagnoseUnknown(
   sourceFault: Extract<Fault, { readonly kind: "unknown" }>,
   text: string,
-  { dataset, ...location }: DiagnosisContext,
+  { dataset, context, ...location }: DiagnosisContext,
 ): Diagnostic<PlainFault["code"]> {
   const prefix = dataset.customPrefix;
   const fault =
     prefix && sourceFault.role === "field" && sourceFault.customFields
       ? { ...sourceFault, name: prefix + sourceFault.name }
       : sourceFault;
+  if (fault.role === "formula")
+    return diagnoseUnknownFormula(fault, text, location);
   if (
     fault.role === "projection-path" ||
     fault.role === "sortable-field" ||
@@ -253,7 +381,10 @@ function diagnoseUnknown(
   const nearby = fault.dotted
     ? [`${prefix}custom[${JSON.stringify(fault.name)}]`]
     : nearMatches(fault.name, candidates);
-  const receiverSwap = receiverSwapCorrection(fault, text, dataset);
+  const receiverSwap = receiverSwapCorrection(fault, text, {
+    dataset,
+    context,
+  });
   const guidance = crossRoleGuidance(fault);
   const caseCorrection = nearby[0]?.toLowerCase() === fault.name.toLowerCase();
   const hint = receiverSwap
@@ -302,7 +433,9 @@ function diagnoseUnknown(
       hint,
       location: {
         ...location,
-        ...(location.argument === "filter" ? { span: fault.at } : {}),
+        ...(location.argument === "filter" || location.argument === "formulas"
+          ? { span: fault.at }
+          : {}),
       },
     },
     text,
@@ -324,6 +457,92 @@ function diagnoseUnknown(
     ...diagnostic,
     report: [...diagnostic.report.slice(0, -1), ...notes, hint],
     suggestions,
+  };
+}
+
+/** `formula.<name>` names no Formula of the request. */
+function diagnoseUnknownFormula(
+  fault: Extract<Fault, { readonly kind: "unknown" }>,
+  text: string,
+  location: ItemQueryErrorLocation,
+): Diagnostic<"unknown-formula"> {
+  const defined = fault.formulas ?? [];
+  const nearby = nearMatches(fault.name, defined);
+  if (location.argument === "filter" || location.argument === "formulas") {
+    const suggestions = nearby.map((name) => `formula.${name}`);
+    return {
+      ...renderDiagnostic(
+        {
+          code: "unknown-formula",
+          message:
+            fault.name === ""
+              ? "formula alone names no Formula; a filter reads a Formula as formula.<name>."
+              : `formula.${fault.name} reads the Formula ${JSON.stringify(fault.name)}, which the request does not define.`,
+          hint:
+            nearby.length === 1
+              ? `Try: ${text.slice(0, fault.at.from)}${suggestions[0]!}${text.slice(fault.at.to)}`
+              : defined.length > 0
+                ? `Read a Formula of the request: ${defined.map((name) => `formula.${name}`).join(", ")}.`
+                : fault.name === ""
+                  ? `Define a Formula in formulas, such as formulas='{"year":"date.year"}', and read it as formula.year.`
+                  : `Define the Formula in formulas, such as formulas='${JSON.stringify({ [fault.name]: "date.year" })}'.`,
+          location: { ...location, span: fault.at },
+        },
+        text,
+        { found: fault.name, expected: defined },
+      ),
+      suggestions,
+    };
+  }
+  const replaced =
+    nearby.length === 1 && location.index !== undefined
+      ? replaceJsonValue(text, [location.index], `formula.${nearby[0]!}`)
+      : undefined;
+  const corrected =
+    replaced === undefined ? undefined : shellArgument("fields", replaced);
+  const entry =
+    projectionEntry(text, location.index) ?? `formula.${fault.name}`;
+  const diagnostic = renderDiagnostic(
+    {
+      code: "unknown-formula",
+      message: `${JSON.stringify(entry)} reads the Formula ${JSON.stringify(fault.name)}, which the request does not define.`,
+      hint: corrected
+        ? `Try: ${corrected}`
+        : defined.length > 0
+          ? `Read a Formula of the request: ${defined.map((name) => `formula.${name}`).join(", ")}.`
+          : `Define the Formula in formulas, such as formulas='${JSON.stringify({ [fault.name]: "date.year" })}'.`,
+      location: { ...location, span: { from: 0, to: entry.length } },
+    },
+    entry,
+    { found: fault.name, expected: defined },
+  );
+  return {
+    ...diagnostic,
+    location: {
+      argument: location.argument,
+      index: location.index,
+      path: location.path,
+    },
+    suggestions: corrected ? [corrected] : nearby,
+  };
+}
+
+/** A Formula that the request names and never reads: planned and run never. */
+export function diagnoseUnusedFormula(
+  name: string,
+): Diagnostic<"unused-formula"> {
+  return {
+    ...renderDiagnostic(
+      {
+        code: "unused-formula",
+        message: `The request defines formula.${name} and reads it nowhere, so the query does not compute it.`,
+        hint: `Add formula.${name} to fields to get its value, or remove it from formulas.`,
+        location: { argument: "formulas", path: name },
+      },
+      "",
+      { found: name, expected: ["formula.<name> in fields"] },
+    ),
+    severity: "warning",
   };
 }
 
@@ -572,7 +791,7 @@ function projectionEntry(text: string, index?: number): string | undefined {
 function receiverSwapCorrection(
   fault: Extract<Fault, { readonly kind: "unknown" }>,
   text: string,
-  dataset: QueryDataset<any>,
+  { dataset, context }: Pick<DiagnosisContext, "dataset" | "context">,
 ): string | undefined {
   if (fault.role !== "method" || !fault.receiver) return undefined;
   const receiver = fault.receiver;
@@ -584,7 +803,7 @@ function receiverSwapCorrection(
   if (!call || call.args.length !== 1) return undefined;
   const argument = call.args[0]!;
   const argumentText = text.slice(argument.from, argument.to);
-  const argumentPlan = dataset.planFilter(argumentText);
+  const argumentPlan = dataset.planFilter(argumentText, context);
   if ("kind" in argumentPlan || argumentPlan.root.valueType === "unknown")
     return undefined;
   const methods = methodsNamed(fault.name).filter(([owner, definition]) => {
@@ -603,7 +822,9 @@ function receiverSwapCorrection(
   const replacement = `${argumentText}.${fault.name}(${receiverText})`;
   const corrected =
     text.slice(0, call.from) + replacement + text.slice(call.to);
-  return "kind" in dataset.planFilter(corrected) ? undefined : corrected;
+  return "kind" in dataset.planFilter(corrected, context)
+    ? undefined
+    : corrected;
 }
 
 function findMethodCall(
@@ -674,6 +895,7 @@ function candidatesFor(
     case "custom-field":
     case "projection-path":
     case "sortable-field":
+    case "formula":
       return [];
   }
 }
@@ -733,6 +955,8 @@ function unknownMessage(
       return `${quoted} is not a Projection Path of ${family}.`;
     case "sortable-field":
       return `${quoted} is not a Sortable Field of ${family}.`;
+    case "formula":
+      return `${quoted} is not a Formula of the request.`;
   }
 }
 
@@ -767,6 +991,8 @@ function recoveryAction(
       return `Use a Projection Path from the ${family} Schema.`;
     case "sortable-field":
       return `Use a Sortable Field from the ${family} Schema.`;
+    case "formula":
+      return "Define the Formula in formulas.";
   }
 }
 
@@ -802,6 +1028,7 @@ function suggestionAction(
     case "custom-field":
     case "projection-path":
     case "sortable-field":
+    case "formula":
       return `Choose a matching field, such as ${suggestion}.`;
   }
 }
@@ -946,6 +1173,16 @@ function signature(
 }
 
 /** Shared rendering for engine faults and adapter rejections or operational failures. */
+/** The operand types that each arithmetic operator takes. */
+const OPERAND_TYPES: Readonly<Record<string, string>> = {
+  "+": "two numbers, two lists, a string and any value, or a date and a duration",
+  "-": "two numbers, or a date and a duration",
+  "*": "two numbers",
+  "/": "two numbers",
+  "%": "two numbers",
+  "unary -": "a number",
+};
+
 export function renderDiagnostic<Code extends string>(
   base: {
     readonly code: Code;
@@ -1041,14 +1278,63 @@ function diagnoseSyntax(
   return { ...diagnostic, suggestions, report };
 }
 
-/** Warnings describe the marked comparison; they never replace its evaluation. */
+/** A diagnostic of the text of the Formula `name`, which its message names. */
+function inFormula<D extends Diagnostic<string>>(
+  diagnostic: D,
+  name: string,
+): D {
+  const message = `In formula.${name}: ${diagnostic.message}`;
+  return {
+    ...diagnostic,
+    message,
+    report: [message, ...diagnostic.report.slice(1)],
+  };
+}
+
+/**
+ * A Filter Expression of the request that a warning marks: the filter, or
+ * the text of the Formula `formula`.
+ */
+export interface WarningSource {
+  readonly text: string;
+  readonly formula?: string;
+}
+
+/**
+ * Warnings describe the marked comparison; they never replace its evaluation.
+ * A warning in the text of a Formula is located at the Formula and names it.
+ */
 export function diagnoseWarning(
   fault:
     | Extract<Fault, { kind: "constant" }>
     | KeyLibraryWarning
     | CollectionWarning,
+  { text, formula }: WarningSource,
+  context: WarningContext,
+): Diagnostic<
+  | "never-true"
+  | "always-true"
+  | "key-outside-target-libraries"
+  | "unknown-collection"
+> {
+  const diagnostic = diagnoseExpressionWarning(fault, text, context);
+  if (formula === undefined) return diagnostic;
+  return inFormula(
+    {
+      ...diagnostic,
+      location: { ...diagnostic.location, argument: "formulas", path: formula },
+    },
+    formula,
+  );
+}
+
+function diagnoseExpressionWarning(
+  fault:
+    | Extract<Fault, { kind: "constant" }>
+    | KeyLibraryWarning
+    | CollectionWarning,
   text: string,
-  { clock, dataset }: WarningContext,
+  { clock, dataset, context }: WarningContext,
 ): Diagnostic<
   | "never-true"
   | "always-true"
@@ -1093,7 +1379,11 @@ export function diagnoseWarning(
   }
   const left = text.slice(fault.left.at.from, fault.left.at.to);
   const right = text.slice(fault.right.at.from, fault.right.at.to);
-  const suggestion = constantCorrection(fault, text, { clock, dataset });
+  const suggestion = constantCorrection(fault, text, {
+    clock,
+    dataset,
+    context,
+  });
   const whole = parseExpressionAst(text).ast;
   const ungroup = (node: ExpressionNode): ExpressionNode =>
     node.type === "group" ? ungroup(node.expression) : node;
@@ -1132,10 +1422,15 @@ export function diagnoseWarning(
   };
 }
 
+/** Whether a conversion gave a value: neither null nor an Error Value. */
+function converts(value: FilterValue): boolean {
+  return value !== null && !isError(value);
+}
+
 function constantCorrection(
   fault: Extract<Fault, { kind: "constant" }>,
   text: string,
-  { clock, dataset }: WarningContext,
+  { clock, dataset, context }: WarningContext,
 ): string | undefined {
   const left = text.slice(fault.left.at.from, fault.left.at.to);
   const right = text.slice(fault.right.at.from, fault.right.at.to);
@@ -1193,7 +1488,7 @@ function constantCorrection(
           definition.diagnosticCorrection === "conversion" &&
           definition.returns === fault.left.type &&
           eligible(definition) &&
-          definition.call(null, [rightAst.value], clock) !== null,
+          converts(definition.call(null, [rightAst.value], clock)),
       );
       if (conversions.length === 1)
         replacement = `${left} ${fault.operator} ${conversions[0]![0]}(${right})`;
@@ -1202,7 +1497,9 @@ function constantCorrection(
   if (!replacement) return undefined;
   const corrected =
     text.slice(0, fault.at.from) + replacement + text.slice(fault.at.to);
-  return "kind" in dataset.planFilter(corrected) ? undefined : corrected;
+  return "kind" in dataset.planFilter(corrected, context)
+    ? undefined
+    : corrected;
 }
 
 /** Decoder facts are independent of the Obsidian adapter and validation library. */

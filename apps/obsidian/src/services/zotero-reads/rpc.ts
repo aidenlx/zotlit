@@ -570,6 +570,23 @@ export class ZoteroReads extends RpcGroup.make(
     }),
     error: ReadError,
   }),
+  /**
+   * The annotations of many attachments, read against one snapshot: one entry
+   * per requested key, in request order, as {@link AnnotationsOfAttachment}
+   * answers each.
+   */
+  Rpc.make("AnnotationsOfAttachments", {
+    payload: { attachmentKeys: Schema.Array(Schema.String), ...snapshot },
+    success: Schema.Array(
+      Schema.Struct({
+        attachmentKey: Schema.String,
+        attachment: Schema.NullOr(AttachmentSchema),
+        annotations: Schema.Array(AnnotationSchema),
+        accountUserID: Schema.NullOr(Schema.Number),
+      }),
+    ),
+    error: ReadError,
+  }),
   /** The attachments of the given parent items, in display order. */
   Rpc.make("AttachmentsOf", {
     payload: { itemIDs: Schema.Array(Schema.Number), ...snapshot },
@@ -791,15 +808,6 @@ export class ZoteroReads extends RpcGroup.make(
   Rpc.make("CollectionPaths", {
     payload: { libraryIDs: Schema.Array(Schema.Number), ...snapshot },
     success: Schema.Array(Schema.Array(Schema.String)),
-    error: ReadError,
-  }),
-  /** An item's tag names and the root-first path of each direct collection. */
-  Rpc.make("MembershipFacts", {
-    payload: { itemID: Schema.Number, libraryID: Schema.Number, ...snapshot },
-    success: Schema.Struct({
-      tags: Schema.Array(Schema.String),
-      collections: Schema.Array(Schema.Array(Schema.String)),
-    }),
     error: ReadError,
   }),
 ) {}

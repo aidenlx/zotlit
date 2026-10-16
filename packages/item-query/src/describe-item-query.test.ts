@@ -128,6 +128,20 @@ describe("describeItemQuery custom fields", () => {
 });
 
 describe("the static Item Query vocabulary", () => {
+  it("describes the Query Context that a filter reads as this", () => {
+    expect(describeItemQueryVocabulary().context).toEqual([
+      expect.objectContaining({
+        name: "this.item",
+        dataset: "items",
+        members: ["indexedKey", "key"],
+      }),
+      expect.objectContaining({
+        name: "this.attachment",
+        dataset: "attachments",
+        members: ["indexedKey", "key"],
+      }),
+    ]);
+  });
   it("describes explicit list element projection in the Query Schema", () => {
     const vocabulary = describeItemQueryVocabulary();
     expect(vocabulary).toHaveProperty("projectionPathGrammar.each", {
@@ -160,9 +174,11 @@ describe("the static Item Query vocabulary", () => {
       properties,
       types,
       projectionPathGrammar,
+      context,
     } = await schema(scenario);
 
     expect(describeItemQueryVocabulary()).toEqual({
+      context,
       fields,
       functions,
       methods,
@@ -472,6 +488,7 @@ describe("describeItemQuery functions", () => {
       "date",
       "duration",
       "regexp",
+      "error",
     ]);
   });
 });
@@ -622,6 +639,13 @@ describe("the Item Query Schema and collectQuery", () => {
     [{ filter: "title.notAMethod()" }, "unknown-function"],
     [{ filter: "title.notAProperty" }, "unknown-property"],
     [{ filter: 'title.isType("notAType")' }, "wrong-argument-type"],
+    [{ formulas: { "2nd": "title" } }, "invalid-formula-name"],
+    [
+      { formulas: { wait: 'duration("1 day")' }, fields: ["formula.wait"] },
+      "invalid-formula-result",
+    ],
+    [{ fields: ["formula.notAFormula"] }, "unknown-formula"],
+    [{ filter: "formula.notAFormula > 0" }, "unknown-formula"],
   ] satisfies [Omit<ItemQueryRequest, "libraries">, string][])(
     "rejects a name outside it: %j",
     async (request, code) => {
@@ -649,4 +673,34 @@ it("publishes one catalog with datasets and shared language vocabulary", async (
   expect(catalog.datasets.annotations).not.toHaveProperty("functions");
   expect(catalog.functions.length).toBeGreaterThan(0);
   expect(catalog).toMatchSnapshot();
+});
+
+it("publishes the Formula path, name form, result types, Fault codes, and Error Value", async () => {
+  const { describeQueryVocabulary } = await import("./schema");
+  expect(describeQueryVocabulary().formulas).toEqual({
+    path: "formula.<name>",
+    name: "^[A-Za-z_][A-Za-z0-9_]*$",
+    results: ["boolean", "number", "string", "list", "date"],
+    codes: [
+      "invalid-formula-name",
+      "invalid-formula-result",
+      "unknown-formula",
+      "formula-cycle",
+    ],
+    warnings: ["unused-formula"],
+    error: {
+      type: "error",
+      row: { kind: "error", code: "<code>", message: "<message>" },
+      codes: [
+        "wrong-operand-type",
+        "wrong-argument-type",
+        "wrong-subject-type",
+        "not-finite",
+        "unparseable-text",
+        "argument-out-of-range",
+        "invalid-index",
+        "date-out-of-range",
+      ],
+    },
+  });
 });

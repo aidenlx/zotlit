@@ -54,7 +54,7 @@ import {
   itemKeyFromFrontmatter,
   noteKeyFromFrontmatter,
 } from "@/services/note-index/service";
-import { matchItem, selectProfileByMatch } from "@/services/profile-selection";
+import { selectProfileByMatch } from "@/services/profile-selection";
 import { noteProfileSelector } from "@/services/profile/bindings";
 import type { NoteProfile, ResolvedProfile } from "@/services/profile/bindings";
 import { relocatedNotePath } from "@/services/profile/relocation";
@@ -750,19 +750,16 @@ async function resolveCreationProfile(
     return { selector, source, shouldAsk };
   }
   if (sources.item) {
-    const { reads } = await ctx.zoteroReads.ready;
-    const facts = await Effect.runPromise(
-      reads.MembershipFacts({
-        itemID: sources.item.itemID,
-        libraryID: sources.item.libraryID,
-      }),
-    );
-    const result = selectProfileByMatch(
+    const result = await selectProfileByMatch(
       ctx.profile.profiles,
-      matchItem(sources.item, facts),
+      sources.item,
+      ctx.query,
     );
     if (result.outcome === "overlap")
       return stopped({ kind: "overlap", candidates: result.candidates });
+    // With no Match known, the researcher chooses the Profile.
+    if (result.outcome === "failed")
+      return { selector: DEFAULT_PROFILE, source: "bound", shouldAsk: true };
     if (result.outcome === "matched") {
       logger.debug("Profile Match selected {selector}", {
         selector: result.profile.id,

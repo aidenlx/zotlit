@@ -44,6 +44,7 @@ export const templateWorkbenchIcons: Record<WorkbenchIcon, string> = {
   "property-checkbox": "check-square",
   "property-date": "calendar",
   "property-datetime": "clock",
+  drag: "grip-vertical",
 };
 /** Text actions share the Match tab's outlined native control surface. */
 export const templateWorkbenchButton =
@@ -133,9 +134,13 @@ const hint =
   "zt:text-xs zt:leading-normal zt:text-muted-foreground zt:text-pretty";
 /** Guidance and status read at hint size wherever the selection UI states a task. */
 export const selectionHint = hint;
-/** A boxed pane wears Obsidian's text-input surface, focus ring included. */
+/**
+ * A boxed pane wears Obsidian's text-input surface, focus ring included. Its
+ * border, padding and ring read the `--input-*` variables a native input
+ * reads, so a host that draws the box itself zeroes them.
+ */
 const editorBox =
-  "zt:rounded-(--input-radius) zt:border zt:border-border zt:bg-input zt:px-2 zt:py-1 zt:focus-within:border-border-focus zt:focus-within:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)]";
+  "zt:rounded-(--input-radius) zt:border-(length:--input-border-width) zt:border-solid zt:border-border zt:bg-input zt:p-(--input-padding) zt:focus-within:border-border-focus zt:focus-within:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)]";
 /** In-editor chrome — labels and boxes CodeMirror paints between lines — reads in the interface font. */
 const editorChip =
   "zt:rounded-sm zt:border zt:border-border zt:bg-card zt:font-sans zt:text-xs zt:font-medium zt:leading-tight zt:text-muted-foreground";
@@ -144,6 +149,37 @@ const chipIcon = "clickable-icon zt:p-1 zt:[--icon-size:var(--icon-xs)]";
 /** A one-line bar of chrome: a heading, a hint, and an action at the end. */
 const bar =
   "zt:flex zt:flex-wrap zt:items-center zt:gap-x-3 zt:gap-y-1 zt:rounded-md zt:border zt:border-border zt:bg-card zt:px-2.5 zt:py-1.5 zt:text-xs";
+/**
+ * The rows of a Match tree as the Bases filter menu draws them: a grip, the
+ * conjunction, then the condition, where a nested group spans the last two.
+ * In a drag, the row that moves fades, an accent line marks the place it
+ * lands, and an empty group that takes it shows the focus ring. `look` sets
+ * each host's conjunction column and gaps.
+ */
+export const matchRows = tv({
+  slots: {
+    row: [
+      "zt:grid zt:min-w-0 zt:items-start zt:[&:hover>[data-part=handle]]:opacity-100 zt:[&>[data-part=group]]:col-span-2",
+      "zt:data-dragging:opacity-50 zt:data-[drop=after]:shadow-[0_var(--size-2-1)_0_0_var(--interactive-accent)] zt:data-[drop=before]:shadow-[0_calc(-1*var(--size-2-1))_0_0_var(--interactive-accent)]",
+    ],
+    /** Faint, shown while the pointer is over its own row or it has focus; a disabled editor has none. */
+    handle: [
+      "zt:me-[calc(-1*var(--size-2-1))] zt:flex zt:min-h-(--input-height) zt:shrink-0 zt:cursor-grab zt:items-center zt:rounded-sm zt:text-faint zt:hover:text-muted-foreground zt:active:cursor-grabbing",
+      "zt:opacity-0 zt:focus-visible:opacity-100 zt:aria-disabled:hidden",
+      "zt:focus-visible:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)] zt:focus-visible:outline-none",
+    ],
+    group: "zt:data-[drop=into]:shadow-(--metadata-property-box-shadow-focus)",
+  },
+  variants: {
+    look: {
+      workbench: { row: "zt:grid-cols-[auto_4.5rem_minmax(0,1fr)] zt:gap-2" },
+      filter: {
+        row: "zt:grid-cols-[auto_var(--size-4-18)_minmax(0,1fr)] zt:gap-(--size-4-2)",
+      },
+    },
+  },
+});
+const workbenchRows = matchRows({ look: "workbench" });
 /**
  * The shared accent-bar treatment every inline preview notice wears: a bar
  * states which condition, and the box holds the sentence and its action.
@@ -174,11 +210,14 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       ),
       fieldset:
         "zt:flex zt:min-w-0 zt:flex-col zt:items-start zt:gap-4 zt:border-0 zt:p-0",
-      group:
-        "zt:flex zt:min-w-0 zt:w-full zt:flex-1 zt:flex-col zt:gap-2 zt:data-[state=nested]:rounded-md zt:data-[state=nested]:border zt:data-[state=nested]:border-border zt:data-[state=nested]:bg-card zt:data-[state=nested]:p-2 zt:[&>[data-part=actions]:first-child]:justify-between",
+      group: cn(
+        "zt:flex zt:w-full zt:min-w-0 zt:flex-1 zt:flex-col zt:gap-2 zt:data-[state=nested]:rounded-md zt:data-[state=nested]:border zt:data-[state=nested]:border-border zt:data-[state=nested]:bg-card zt:data-[state=nested]:p-2 zt:[&>[data-part=actions]:first-child]:justify-between",
+        workbenchRows.group(),
+      ),
       rows: "zt:flex zt:flex-col zt:gap-2 zt:list-none zt:m-0 zt:p-0",
-      row: "zt:grid zt:min-w-0 zt:grid-cols-[4.5rem_minmax(0,1fr)] zt:items-start zt:gap-2 zt:[&>[data-part=group]]:col-span-2",
-      condition: "zt:col-start-2 zt:min-w-0",
+      row: workbenchRows.row(),
+      handle: workbenchRows.handle(),
+      condition: "zt:col-start-3 zt:min-w-0",
       statement: cn(
         "zt:flex zt:min-w-0 zt:items-start zt:overflow-hidden zt:rounded-md zt:bg-input zt:ring-1 zt:ring-border-hover zt:focus-within:ring-2 zt:focus-within:ring-border-focus",
         "zt:[--dropdown-background-hover:var(--background-modifier-form-field-hover)] zt:[--dropdown-background:var(--background-modifier-form-field)] zt:[--input-border-width-focus:0px] zt:[--input-border-width:0px] zt:[--input-radius:0px] zt:[--input-shadow:none]",
@@ -199,8 +238,15 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       chips:
         "zt:flex zt:min-h-(--input-height) zt:min-w-0 zt:w-max zt:flex-wrap zt:items-start zt:gap-x-1.5 zt:px-2 zt:[--metadata-divider-width:0px] zt:[--metadata-input-font-size:var(--font-ui-small)] zt:[--metadata-input-text-color:var(--text-normal)]",
       chip: "multi-select-pill",
-      expression:
-        "zt:min-w-0 zt:w-full zt:font-mono zt:text-sm zt:leading-normal zt:[field-sizing:content] zt:resize-y",
+      // A CodeMirror field drawn as an Obsidian text input; the editor hook
+      // scopes the template token colors to it.
+      expression: cn(
+        themeHook.templateEditor,
+        editorBox,
+        "zt:w-full zt:min-w-0 zt:cursor-text zt:font-mono zt:text-sm zt:leading-normal zt:[transition:var(--input-transition)]",
+        "zt:hover:bg-(--background-modifier-form-field-hover) zt:not-focus-within:not-has-[[aria-invalid=true]]:hover:border-border-hover zt:has-[[aria-invalid=true]]:border-(--text-error)",
+        "zt:[&_.cm-placeholder]:text-(--text-faint)",
+      ),
       conjunction:
         "zt:flex zt:min-h-(--input-height) zt:items-center zt:justify-end zt:text-end zt:text-sm zt:text-muted-foreground zt:[overflow-wrap:anywhere]",
       result: "zt:text-xs zt:leading-normal zt:text-muted-foreground",

@@ -588,6 +588,22 @@ describe("the generated Zotero database", () => {
     expect(getNoteRefsByItemIDs(db, [19]).get(19)?.trashed).toBe(true);
   });
 
+  it("keeps a trashed Child Note on an Item that also has a live one", () => {
+    using db = openClient();
+    const refs = getNoteRefsByItemIDs(db, [13, 33]);
+
+    expect(
+      [...refs.values()].map(({ note, trashed }) => [
+        note.key,
+        note.parentItemID,
+        trashed,
+      ]),
+    ).toEqual([
+      ["NNNNAAAA", 1, false],
+      ["TRASHCLD", 1, true],
+    ]);
+  });
+
   it("resolves every file-backed Attachment and preserves one deliberate miss", async () => {
     using db = openClient();
     const attachments = getAttachmentsByParents(db, [20]);
@@ -1165,7 +1181,7 @@ describe("the generated Zotero database", () => {
   it("gives a note import work in every Library", () => {
     using db = openClient();
 
-    expect(getNoteItemIDsByLibrary(db, 1)).toEqual([13, 14, 15]);
+    expect(getNoteItemIDsByLibrary(db, 1)).toEqual([13, 14, 15, 34]);
     expect(getNoteItemIDsByLibrary(db, 2)).toEqual([16]);
     expect(getNoteItemIDsByLibrary(db, 3)).toEqual([17]);
     expect(getNoteItemIDsByLibrary(db, 4)).toEqual([18]);
@@ -1179,7 +1195,7 @@ describe("the generated Zotero database", () => {
         libraryID: 1,
         collectionKey: "SHAREDCL",
       }),
-    ).toEqual([13]);
+    ).toEqual([13, 34]);
     expect(
       getNoteItemIDsByCollection(db, {
         libraryID: 1,
@@ -1548,7 +1564,7 @@ describe("a Stress Build", () => {
       [1, 2, 3, 4].map(
         (libraryID) => getNoteItemIDsByLibrary(db, libraryID).length,
       ),
-    ).toEqual([3, 1, 1, 1]);
+    ).toEqual([4, 1, 1, 1]);
     expect(
       [1, 2, 3].map((libraryID) =>
         getCollectionIDByKey(db, {
@@ -1988,6 +2004,10 @@ describe("the generated Obsidian vault", () => {
       "profile-examples/profile-import-replacement-v1.md",
       "profile-examples/profile-import-replacement-v2.md",
       "profile-examples/profile-import-unavailable-style.md",
+      "query-files/Lab annotations.zotquery",
+      "query-files/Lab overview.md",
+      "query-files/Reading annotations.zotquery",
+      "query-files/Reading list.zotquery",
       "tools-for-thought.md",
       "wikilink-display-test.md",
       "wikilink-parity-test.md",
@@ -2034,6 +2054,44 @@ describe("the generated Obsidian vault", () => {
     );
 
     expect(note).toContain("[@ioannidisWhyMost2005]");
+  });
+
+  it("seeds a Literature Note as the default template renders it, with a Query File embed below the managed region", async () => {
+    const note = await readFile(
+      join(layout.vaultDir, "literatures", "rougierTenSimpleRules2014.md"),
+      "utf-8",
+    );
+    const annotations = (
+      await readFile(
+        new URL(
+          import.meta.resolve("@zotlit/templates/defaults/content.liquid"),
+        ),
+        "utf-8",
+      )
+    )
+      .split(/(?=## Annotations\n)/u)[1]!
+      .trimEnd();
+    const pdf = pathToFileURL(
+      join(layout.vaultDir, "attachments", "rougier-2014.pdf"),
+    ).href;
+
+    expect(note).toContain(
+      [
+        "# Ten Simple Rules for Better Figures",
+        "",
+        `[Zotero](zotero://select/library/items/RUGIER24) [rougier-2014.pdf](${pdf})`,
+        "",
+        "%%zt-managed%%",
+        annotations,
+        "",
+        "%%/zt-managed%%",
+      ].join("\n"),
+    );
+    expect(note).not.toContain("[!note]");
+    expect(note).not.toContain("{%");
+    expect(
+      note.indexOf("![[Lab annotations.zotquery#This item]]"),
+    ).toBeGreaterThan(note.indexOf("%%/zt-managed%%"));
   });
 
   it("carries descriptive Profile import examples outside the template folder", async () => {
@@ -2121,6 +2179,21 @@ describe("the generated Obsidian vault", () => {
       expect(citationKeys.get(item.itemID) ?? null).toBe(item.citationKey);
       expect(note.includes("\ncitekey:")).toBe(item.citationKey !== null);
     }
+  });
+
+  it("ends one Literature Note with a Query Block of its own Item", async () => {
+    const withBlock = ITEMS.filter(
+      ({ literatureNoteQueryBlock }) => literatureNoteQueryBlock === true,
+    );
+    expect(withBlock.map(({ key }) => key)).toEqual(["SAKIMA22"]);
+    const note = await readFile(
+      join(layout.vaultDir, "literatures", "SAKIMA22.md"),
+      "utf-8",
+    );
+    expect(note).toContain("zotero-key: SAKIMA22");
+    expect(note).toMatch(
+      /\n```zotquery\nviews:\n[^`]*filters: item == this\.item\n[^`]*```\n$/,
+    );
   });
 
   it("stamps the Books Profile Literature Note and leaves the others bare", async () => {

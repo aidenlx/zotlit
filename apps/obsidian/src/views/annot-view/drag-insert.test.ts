@@ -101,6 +101,21 @@ it("inserts at the note's selection after the annotation sidebar takes focus", a
   expect(f.notify).not.toHaveBeenCalled();
 });
 
+it("offers no insert into a note in Reading view, and says to open one", async () => {
+  using f = fixture();
+  const reading = Object.assign(Object.create(MarkdownView.prototype), f.info, {
+    getMode: () => "preview",
+  }) as MarkdownView;
+  f.workspace.activeEditor = reading;
+  f.workspace.getMostRecentLeaf = () => ({ view: reading });
+
+  expect(f.insert.offer()).toBeNull();
+  await f.insert(card);
+  expect(f.prepare).not.toHaveBeenCalled();
+  expect(f.cm.state.doc.toString()).toBe("one two");
+  expect(f.notify).toHaveBeenCalledWith(m.annot_view_insert_no_note());
+});
+
 it("keeps a menu offer bound to its note if another tab becomes active", async () => {
   using f = fixture();
   const offered = f.insert.offer();

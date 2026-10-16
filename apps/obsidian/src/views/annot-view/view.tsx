@@ -1,12 +1,9 @@
-import { ItemView, Platform, Scope } from "obsidian";
+import { ItemView, Scope } from "obsidian";
 import type {
   Menu as ObsidianMenu,
-  App,
   ViewStateResult,
   WorkspaceLeaf,
 } from "obsidian";
-import { createRoot } from "react-dom/client";
-import type { Root } from "react-dom/client";
 
 import {
   annotationOpenUri,
@@ -15,39 +12,24 @@ import {
 } from "@zotlit/db";
 import type { AnnotViewAttachment, Attachment } from "@zotlit/db";
 
-import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
-import { AppContext } from "@/lib/app-context";
 import { openAttachments } from "@/lib/attachment-open";
-import {
-  registerKeymap,
-  registerMigratingWindowEvent,
-} from "@/lib/disposables";
+import { registerMigratingWindowEvent } from "@/lib/disposables";
 import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
 import type { ItemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
-import { BaseNotice } from "@/lib/notice";
-import { historyOutcomeNotice } from "@/services/annotation-repository/actions";
 import type { HistorySurface } from "@/services/annotation-repository/actions";
 import type {
   AnnotationRecord,
-  AnnotationRepository,
   AnnotationSource,
   HistoryDirection,
 } from "@/services/annotation-repository/service";
-import {
-  byTextField,
-  IDLE,
-  writeFailureMessage,
-} from "@/services/annotation-repository/write";
 import {
   createPdfReader,
   toObsidianOpenable,
 } from "@/services/attachment-open/actions";
 import type { ExcerptDisplayService } from "@/services/excerpt-image/display";
-import { savedExcerptRequest } from "@/services/excerpt-image/request";
-import type { ExcerptRequest } from "@/services/excerpt-image/service";
 import { pickItem } from "@/services/item-lookup/search-modal";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
@@ -55,54 +37,36 @@ import type {
   LocalServerService,
   ReaderTarget,
 } from "@/services/local-server/service";
-import type { NoteFeature } from "@/services/note-feature";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import type { NoteIndex } from "@/services/note-index/service";
-import { inTextEntry } from "@/services/pdf-annotation-editor/capability-affordance";
 import type { PdfAnnotationEditor } from "@/services/pdf-annotation-editor/service";
 import type { ReaderSession } from "@/services/reader-session/session";
 import { ZoteroReaderSession } from "@/services/reader-session/zotero";
 import type { ZoteroReaderResolution } from "@/services/reader-session/zotero";
 import type { SettingsService } from "@/services/settings/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import { readerText } from "@/views/query-view/reader-diagnostic";
+import { QueryView } from "@/views/query-view/view";
+import type { QueryViewDeps, QueryViewHost } from "@/views/query-view/view";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
 
-import { AnnotActionsContext, createAnnotActions } from "./actions";
 import type { AnnotActions } from "./actions";
-import { blocksNow } from "./Annotation";
 import { AnnotView } from "./AnnotView";
-import { cardControls } from "./card-controls";
-import type { CardControls } from "./card-controls";
-import { NO_SELECTION, nextCardSelection, sameKeys } from "./card-selection";
-import type {
-  CardClick,
-  CardSelection,
-  SelectionChange,
-} from "./card-selection";
-import { createCommentRenderer } from "./comment-render";
-import { createDragInsertHandler, createInsertHandler } from "./drag-insert";
 import { sanitizeSavedFilter } from "./filter";
 import type { SavedFilter } from "./filter";
-import { mountCardHistoryKeys } from "./history";
+import { SidebarFilterModal } from "./filter-modal";
+import type { AnnotationsLayout } from "./layout";
 import { buildPaneMenu } from "./pane-menu";
 import { resolveLoadTarget } from "./resolve-target";
 import type { ActiveLeafTarget, LoadTarget } from "./resolve-target";
-import {
-  AnnotStoreProvider,
-  createAnnotStore,
-  editorOpen,
-  INITIAL_FILTER_STATE,
-  noFieldDrafts,
-  selectActiveAttachment,
-  selectedAlone,
-  toggledTags,
-  visibleOrder,
-} from "./store";
-import type { AnnotState, FollowMode } from "./store";
+import { saveSidebarAsQueryFile } from "./save-query-file";
+import { addSidebarQueryMenu, sidebarQueryText } from "./sidebar-query";
+import { INITIAL_FILTER_STATE, selectActiveAttachment } from "./store";
+import type { AnnotState, AnnotStore, FollowMode } from "./store";
 import {
   DEFAULT_FOLLOW_MODE,
   parseAnnotViewState,
+  readSidebarQuery,
   serializeAnnotViewState,
   unpinnedMode,
 } from "./view-state";
@@ -112,26 +76,28 @@ export const ANNOT_VIEW_TYPE = "zotero-annotation-view";
 
 const logger = getLogger(["views", "annot-view"]);
 
-/** The composite widgets in the view that answer their own keys. */
-const COMPOSITE_WIDGET =
-  '[role="listbox"], [role="combobox"], [role="menu"], [role="menuitem"]';
-
-/**
- * Whether a key belongs to the control it landed on rather than to the Card
- * Selection: a text field, or a composite widget such as the filter bar's
- * list boxes.
- */
-function controlOwnsKey(target: EventTarget | null): boolean {
-  if (inTextEntry(target)) return true;
-  const node = target as Node | null;
-  return (
-    node?.instanceOf(HTMLElement) === true &&
-    node.closest(COMPOSITE_WIDGET) !== null
-  );
-}
-
 const STORAGE_KEY_PREFIX = "zotlit-annot-atch-";
 const FILTER_STORAGE_KEY_PREFIX = "zotlit-annot-filter-";
+
+/**
+ * The sections the view header's "More options" menu registers before the
+ * view fills it, in its order. Verified against Obsidian 1.14.4's
+ * `ItemView.onMoreOptions`.
+ */
+const VIEW_MENU_SECTIONS = [
+  "close",
+  "pane",
+  "open",
+  "action",
+  "find",
+  "info",
+  "info.copy",
+  "view",
+  "view.linked",
+  "system",
+  "",
+  "danger",
+] as const;
 
 /**
  * Every member is a structural `Pick` of the full service sized to what the view
@@ -140,71 +106,22 @@ const FILTER_STORAGE_KEY_PREFIX = "zotlit-annot-filter-";
  *
  * The database reads here await ZoteroReads, and what is on screen stays
  * until a read replaces it. The Libraries are the Held Read Library Scope
- * keeps. The Annotations come from the repository, which may answer from the
- * Zotero Local API, and are read under a serial guard.
+ * keeps. The Annotations come from the repository through the Annotations
+ * Layout, which may answer from the Zotero Local API.
  */
-export interface AnnotViewDeps {
-  app: App;
+export interface AnnotViewDeps extends QueryViewDeps {
   reads: Pick<ZoteroReadsService, "ready" | "state" | "on" | "acquireRead">;
-  libraryScope: Pick<LibraryScopeService, "libraryRows" | "on">;
+  libraryScope: Pick<LibraryScopeService, "libraryRows" | "on" | "current">;
   liveUpdate: Pick<
     LocalServerService,
     "available" | "readerTarget" | "readerClosed" | "on"
   >;
   /** Every open Obsidian PDF view, as the Reader Session it exposes. */
   pdfReaders: Pick<PdfAnnotationEditor, "sessionForPath" | "on">;
-  /**
-   * The one read and write path for an Attachment's Annotations, so the cards
-   * and the reader overlay show one Annotation Source's records rather than
-   * two, and an edit stamps its precondition off the record they show.
-   */
-  annotations: Pick<
-    AnnotationRepository,
-    | "annotationState"
-    | "capability"
-    | "capabilityFor"
-    | "textDraftFor"
-    | "deleteAnnotation"
-    | "deleteAnnotations"
-    | "discardTextDraft"
-    | "discardTagDraft"
-    | "discardConflict"
-    | "on"
-    | "patchColor"
-    | "patchColors"
-    | "editTextField"
-    | "editTags"
-    | "peek"
-    | "read"
-    | "redo"
-    | "refresh"
-    | "retryWrite"
-    | "retryTextDraft"
-    | "submitTextField"
-    | "submitTags"
-    | "tagDraftFor"
-    | "undo"
-  >;
-  /** Allow editing, from every entry the view offers, which the UI seam owns. */
-  allowEditing: () => void;
-  /**
-   * An edit gesture met a block on this Attachment, which the one notice
-   * ledger answers — the same seam the reader's blocked keystrokes reach.
-   *
-   * @param attachmentKey the Attachment's Indexed Key.
-   */
-  reportBlockedGesture: (attachmentKey: string) => void;
-  /** The tag names of an Annotation's Library, which the tag editor suggests. */
-  libraryTagNames: (annotationKey: string) => Promise<readonly string[]>;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
   /** The plugin's live display surface for Excerpt Images. */
   excerptDisplay: Pick<
     ExcerptDisplayService,
     "open" | "refresh" | "revalidate"
-  >;
-  noteFeature: Pick<
-    NoteFeature,
-    "renderAnnotationCitation" | "prepareAnnotationInsert"
   >;
   noteIndex: Pick<NoteIndex, "getNotesByItemKey">;
   itemLookup: Pick<ItemLookup, "openSession">;
@@ -213,10 +130,19 @@ export interface AnnotViewDeps {
 
 export class AnnotationView extends ItemView implements HistorySurface {
   override scope: Scope;
-  readonly #store = createAnnotStore();
+  /**
+   * The Query View the sidebar is: the Annotations of the followed Attachment,
+   * through `attachment == this.attachment`.
+   */
+  readonly #query: QueryView;
+  /** Whether Zotero's data cannot be read, which the sidebar says in place of cards. */
+  #unreadable = false;
+  /** The Query File the sidebar runs, once a change made it differ from the default. */
+  #queryText: string | null = null;
+  /** The cards, their store, their actions, the Card Selection and the card keys. */
+  readonly #layout: AnnotationsLayout;
+  readonly #store: AnnotStore;
   readonly #deps: AnnotViewDeps;
-  #root: Root | null = null;
-  #actions: AnnotActions | null = null;
   #loadDisposables: DisposableStack | null = null;
   /** The load whose reads run; a later load or a clear supersedes it. */
   #loading: object | null = null;
@@ -224,28 +150,10 @@ export class AnnotationView extends ItemView implements HistorySurface {
   #zoteroReader: ZoteroReaderSession | null = null;
   /** The active leaf's PDF view session, while one is being followed. */
   #leafSession: (() => void) | null = null;
-  /**
-   * The reader the Card Selection is kept in step with: the followed Obsidian
-   * PDF view, or the Zotero Reader. `null` in Pinned and on a Literature Note.
-   */
-  #boundReader: ReaderSession | null = null;
-  /**
-   * Whether the bound reader's selection waits to replace the Card Selection:
-   * an open card editor holds it back, or it names a key the list has not
-   * loaded. The selection itself is read from the reader when it applies.
-   */
-  #readerPending = false;
-  /**
-   * The keys this view is sending to the bound Obsidian PDF view, while the
-   * send runs. The reader reports them straight back, and that echo is the
-   * view's own change: it leaves the anchor and the focus where they are.
-   */
-  #pushing: readonly string[] | null = null;
   /** What the attachment choice and the saved filter are remembered against. */
   #memoryKey: string | null = null;
   #itemKey: string | null = null;
-  /** Counts the annotation reads, so a slower one never lands after a later one. */
-  #reads = 0;
+  /** The last load's attachment read, and the Annotation reads it started. */
   #reading = Promise.resolve();
   /** Whether the view has closed, which the work it started away reads. */
   #closed = false;
@@ -255,7 +163,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
    * Never rejects.
    */
   get read(): Promise<void> {
-    return this.#reading;
+    return this.#reading.then(() => this.#query.settled);
   }
 
   /** Follow mode lives in the store (single source of truth); read it here. */
@@ -268,6 +176,70 @@ export class AnnotationView extends ItemView implements HistorySurface {
     this.scope = new Scope(deps.app.scope);
     this.contentEl.addClass("zt-root");
     this.#deps = deps;
+    this.#query = new QueryView(deps, {
+      scope: this.scope,
+      sourcePath: () => this.#sourcePath(),
+      context: () => {
+        const { itemKey, selectedAttachmentKey } = this.#store.getState();
+        return {
+          item: itemKey ?? undefined,
+          attachment: selectedAttachmentKey ?? undefined,
+        };
+      },
+      contextSource: "sidebar",
+      save: (text) => {
+        this.#queryText = text;
+        void this.#deps.app.workspace.requestSaveLayout();
+      },
+      layout: { ...this.#layoutHost(), showNewRecords: true },
+      // The followed Attachment's own list, so its first new Annotation shows
+      // as the write starts, before the database has it.
+      attachments: () => {
+        const key = this.#store.getState().selectedAttachmentKey;
+        return key === null ? [] : [key];
+      },
+    });
+    this.#layout = this.#query.layout;
+    this.#store = this.#layout.store;
+  }
+
+  /** The sidebar's own gestures and list frame, which its cards answer through. */
+  #layoutHost(): QueryViewHost["layout"] {
+    return {
+      gestures: {
+        setSelectedAttachmentKey: (key) =>
+          this.#store.setState({ selectedAttachmentKey: key }),
+        onSetFollowMode: (mode) => this.#setFollowMode(mode),
+        onPinCurrentItem: () => this.#pinCurrentItem(),
+        onPinItem: () => this.#pickItemToPin(),
+        onUnpin: () => this.#unpin(),
+        onEnableLiveUpdates: () => this.#enableLiveUpdates(),
+        onOpenPdf: () => void this.#openPdf(),
+        fillViewMenu: (menu) => this.#fillViewMenu(menu),
+        onExploreAnnotation: (annotationKey) => {
+          if (!this.#itemKey) return;
+          void openTemplateDataExplorer(this.#deps.app, {
+            itemIndexedKey: this.#itemKey,
+            anchorAnnotationKey: annotationKey,
+          });
+        },
+      },
+      // A click on the empty list leaves the focus on the body, and the key
+      // reaches this view's Scope only while the view is the active leaf.
+      onList: (node) =>
+        node === this.containerEl ||
+        node === this.contentEl ||
+        node === node.doc.body,
+      // Otherwise Obsidian moves focus to the last navigable leaf: right from
+      // the sidebar, but in the main area that switches the tab away from
+      // this view, so the key stops here.
+      onEscape: () => {
+        const { leftSplit, rightSplit } = this.#deps.app.workspace;
+        const root = this.leaf.getRoot();
+        if (root === leftSplit || root === rightSplit) return;
+        return false;
+      },
+    };
   }
 
   override getViewType(): string {
@@ -284,7 +256,11 @@ export class AnnotationView extends ItemView implements HistorySurface {
 
   override getState(): Record<string, unknown> {
     const { followMode, previousMode, pinnedItemKey } = this.#store.getState();
-    return serializeAnnotViewState({ followMode, previousMode, pinnedItemKey });
+    const query = this.#queryText;
+    return {
+      ...serializeAnnotViewState({ followMode, previousMode, pinnedItemKey }),
+      ...(query !== null && { query }),
+    };
   }
 
   override async setState(
@@ -296,6 +272,8 @@ export class AnnotationView extends ItemView implements HistorySurface {
     // rather than a source that cannot answer. Every other stored mode is kept
     // whether or not its source answers right now.
     this.#store.setState(parseAnnotViewState(state));
+    // The restored Query File runs with the Attachment the reload shows.
+    this.#queryText = readSidebarQuery(state);
     this.#reload();
   }
 
@@ -303,8 +281,19 @@ export class AnnotationView extends ItemView implements HistorySurface {
    * What this view is showing, as its own surfaces read it: the pane menu, the
    * React tree through the store, and the commands through the accessors below.
    */
-  get snapshot(): Readonly<AnnotState> {
-    return this.#store.getState();
+  get snapshot(): Readonly<
+    AnnotState & { annotationSource: AnnotationSource | null }
+  > {
+    const state = this.#store.getState();
+    const { selectedAttachmentKey } = state;
+    return {
+      ...state,
+      // Which Annotation Source answered for the Attachment on screen.
+      annotationSource:
+        selectedAttachmentKey === null
+          ? null
+          : (state.sources.get(selectedAttachmentKey)?.source ?? null),
+    };
   }
 
   /**
@@ -316,7 +305,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
    * header's action buttons.
    */
   get gestures(): AnnotActions | null {
-    return this.#actions;
+    return this.#layout.actions;
   }
 
   /**
@@ -342,51 +331,55 @@ export class AnnotationView extends ItemView implements HistorySurface {
   stepHistory(direction: HistoryDirection): void {
     const attachmentKey = this.historyAttachment;
     if (attachmentKey === null) return;
-    const stepping =
-      direction === "undo"
-        ? this.#deps.annotations.undo(attachmentKey)
-        : this.#deps.annotations.redo(attachmentKey);
-    void stepping.then((outcome) => {
-      // The view can close while the step is away, and a closed view neither
-      // scrolls nor speaks.
-      if (this.#closed) return;
-      const notice = historyOutcomeNotice(outcome, Temporal.Now.instant());
-      if (notice !== null) new BaseNotice(notice);
-      switch (outcome.kind) {
-        case "stepped":
-          return this.#scrollToCard([outcome.annotationKey]);
-        case "removed":
-          // The step took its Annotations off the Attachment, so this view
-          // has no card left to bring into view. The reader that holds the
-          // PDF lands on the page they sat on.
-          return;
-        case "blocked":
-          this.#deps.reportBlockedGesture(attachmentKey);
-          return;
-        case "changed":
-        case "failed":
-        case "locked":
-        case "idle":
-          return;
-        default:
-          // A new outcome must be answered here rather than fall through.
-          outcome satisfies never;
-          return;
-      }
-    });
+    this.#layout.stepHistory(direction, attachmentKey);
   }
 
   /** "Refresh data" and the mode switches live here, off the toolbar row. */
   override onPaneMenu(menu: ObsidianMenu, source: string): void {
     super.onPaneMenu(menu, source);
-    if (source !== "more-options") return;
-    const actions = this.#actions;
+    const actions = this.#layout.actions;
     if (!actions) return;
+    const { file, view } = this.#query.state.getState();
     buildPaneMenu(menu, {
       state: this.snapshot,
       actions,
       now: Temporal.Now.instant(),
+      query: (target) =>
+        addSidebarQueryMenu(target, {
+          view: file ? view : null,
+          edit: (edit) => this.#query.document.editView(edit),
+          openFilter: () =>
+            new SidebarFilterModal(this.#deps.app, this.#query).open(),
+          ...(file &&
+            view &&
+            this.#itemKey !== null && {
+              saveAs: () => {
+                const state = this.#store.getState();
+                void saveSidebarAsQueryFile(this.#deps.app, {
+                  file,
+                  view,
+                  filter: {
+                    query: state.filterQuery,
+                    colors: state.selectedColors,
+                    tags: state.selectedTags,
+                  },
+                  itemKey: state.itemKey,
+                  attachmentKey: state.selectedAttachmentKey,
+                });
+              },
+            }),
+        }),
     });
+  }
+
+  /**
+   * The view header's "More options" menu, for the header row's own button:
+   * the same sections, the same entries, and the same `leaf-menu` event.
+   */
+  #fillViewMenu(menu: ObsidianMenu): void {
+    menu.addSections(VIEW_MENU_SECTIONS);
+    this.onPaneMenu(menu, "more-options");
+    this.#deps.app.workspace.trigger("leaf-menu", menu, this.leaf);
   }
 
   protected override async onOpen(): Promise<void> {
@@ -397,88 +390,8 @@ export class AnnotationView extends ItemView implements HistorySurface {
     });
     this.register(() => this.#zoteroReader?.[Symbol.dispose]());
 
-    const insertDeps: Parameters<typeof createInsertHandler>[0] = {
-      app: this.#deps.app,
-      noteFeature: this.#deps.noteFeature,
-      notify: (message) => void new BaseNotice(message),
-      snapshot: (annotation) => {
-        const state = this.#store.getState();
-        return {
-          source: state.annotations?.includes(annotation)
-            ? state.annotationSource
-            : null,
-          sourceScope: state.annotationSourceScope,
-        };
-      },
-    };
-    const insert = createInsertHandler(insertDeps);
-    const drag = createDragInsertHandler(insertDeps);
-    this.register(insert.cancel);
-    this.register(drag.cancel);
-
-    this.#actions = createAnnotActions({
-      app: this.#deps.app,
-      excerptDisplay: this.#deps.excerptDisplay,
-      excerptImageRequest: (target) => this.#excerptRequest(target),
-      annotations: this.#deps.annotations,
-      controls: (annot) => this.#cardControls(annot),
-      selectedCards: () => this.#selectedCards(),
-      libraryTagNames: (annot) => this.#deps.libraryTagNames(annot.key),
-      getState: () => this.#store.getState(),
-      setSelectedAttachmentKey: (key) =>
-        this.#store.setState({ selectedAttachmentKey: key }),
-      toggleSelectedTag: (tag) =>
-        this.#store.setState({
-          selectedTags: toggledTags(this.#store.getState().selectedTags, tag),
-        }),
-      refresh: async () => {
-        const attachmentKey = this.#store.getState().selectedAttachmentKey;
-        if (attachmentKey === null) return;
-        await this.#deps.annotations.refresh(attachmentKey);
-        await this.#reading;
-        if (this.#store.getState().selectedAttachmentKey === attachmentKey)
-          this.#deps.excerptDisplay.refresh();
-      },
-      noteFeature: this.#deps.noteFeature,
-      onSetFollowMode: (mode) => this.#setFollowMode(mode),
-      onPinCurrentItem: () => this.#pinCurrentItem(),
-      onPinItem: () => this.#pickItemToPin(),
-      onUnpin: () => this.#unpin(),
-      onEnableLiveUpdates: () => this.#enableLiveUpdates(),
-      onAllowEditing: () => this.#deps.allowEditing(),
-      onOpenPdf: () => void this.#openPdf(),
-      onSelectAnnotation: (annot, gesture) =>
-        this.#clickFromView({ kind: gesture, key: annot.key }),
-      onClearSelection: () => void this.#clearFromView(),
-      selectAlone: (annot) => this.#selectAloneFromView(annot.key),
-      closeEditors: () => void this.#closeEditors(),
-      openEditor: (annot, field) =>
-        this.#store.setState({ editing: { annotationKey: annot.key, field } }),
-      onDragStart: drag,
-      offerAnnotationInsert: () => {
-        const offered = insert.offer();
-        if (!offered) return null;
-        return (annotation) => {
-          // A read can replace the card's record while its menu is open.
-          const current = this.#store
-            .getState()
-            .annotations?.find(({ key }) => key === annotation.key);
-          void offered(current ?? annotation);
-        };
-      },
-      renderComment: createCommentRenderer({
-        app: this.#deps.app,
-        component: this,
-        getSourcePath: () => this.#sourcePath(),
-      }),
-      onExploreAnnotation: (annotationKey) => {
-        if (!this.#itemKey) return;
-        void openTemplateDataExplorer(this.#deps.app, {
-          itemIndexedKey: this.#itemKey,
-          anchorAnnotationKey: annotationKey,
-        });
-      },
-    });
+    this.#query.load();
+    this.register(this.#query.state.subscribe(() => this.#syncQueryProblem()));
 
     this.#store.setState({
       liveUpdatesOn: this.#deps.liveUpdate.available,
@@ -486,16 +399,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
       capability: this.#deps.annotations.capability,
     });
 
-    this.#root = createRoot(this.contentEl);
-    this.#root.render(
-      <AppContext value={this.app}>
-        <AnnotStoreProvider value={this.#store}>
-          <AnnotActionsContext value={this.#actions}>
-            <AnnotView />
-          </AnnotActionsContext>
-        </AnnotStoreProvider>
-      </AppContext>,
-    );
+    this.#layout.render(this.contentEl, <AnnotView />);
 
     this.register(
       this.#deps.reads.on("changed", () => {
@@ -512,7 +416,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
     this.registerEvent(
       this.#deps.app.workspace.on("active-leaf-change", () => {
         if (this.#deps.app.workspace.activeLeaf === this.leaf) {
-          this.#refreshAnnotations();
+          this.#layout.revalidate();
         }
         if (this.#followMode === "active-tab") {
           this.#reload();
@@ -534,7 +438,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
     const windowFocus = registerMigratingWindowEvent(
       this.containerEl,
       "focus",
-      () => this.#refreshAnnotations(),
+      () => this.#layout.revalidate(),
     );
     this.register(() => windowFocus[Symbol.dispose]());
 
@@ -546,120 +450,17 @@ export class AnnotationView extends ItemView implements HistorySurface {
       }),
     );
 
+    const zoteroReader = this.#zoteroReader;
     this.register(
-      this.#zoteroReader.on("target-changed", () => {
+      zoteroReader.on("target-changed", () => {
         if (this.#followMode === "zotero-reader") this.#reload();
       }),
     );
     this.register(
-      this.#zoteroReader.on("selection-changed", () => {
-        if (this.#boundReader === this.#zoteroReader)
-          this.#takeReaderSelection();
-      }),
+      zoteroReader.on("selection-changed", () =>
+        this.#layout.readerSelectionChanged(zoteroReader),
+      ),
     );
-
-    // Escape closes an open card editor, then clears the Card Selection. One
-    // typed into a field goes on to the field. Otherwise Obsidian moves focus
-    // to the last navigable leaf: right from the sidebar, but in the main area
-    // that switches the tab away from this view, so the key stops here.
-    const escape = registerKeymap(this.scope, [], "Escape", (event) => {
-      if (inTextEntry(event.target)) return;
-      if (this.#clearFromView()) return false;
-      const { leftSplit, rightSplit } = this.#deps.app.workspace;
-      const root = this.leaf.getRoot();
-      if (root === leftSplit || root === rightSplit) return;
-      return false;
-    });
-    this.register(() => escape[Symbol.dispose]());
-
-    // ↑ and ↓ move the Card Selection to one card in list order, which reads
-    // across the grid's columns row by row. A key on any other control goes on
-    // to it, and so does one that moves nothing, so the list still scrolls at
-    // either end; ← and → are left to Obsidian.
-    for (const [key, step] of [
-      ["ArrowUp", -1],
-      ["ArrowDown", 1],
-    ] as const) {
-      const move = registerKeymap(this.scope, [], key, (event) => {
-        if (!this.#onCardList(event.target)) return;
-        if (this.#moveFromView(step)) return false;
-      });
-      this.register(() => move[Symbol.dispose]());
-      // Shift extends the selection from the anchor instead.
-      const extend = registerKeymap(this.scope, ["Shift"], key, (event) => {
-        if (!this.#onCardList(event.target)) return;
-        if (this.#extendFromView(step)) return false;
-      });
-      this.register(() => extend[Symbol.dispose]());
-    }
-
-    // Cmd/Ctrl+A selects every card the list shows, from anywhere in the
-    // view. One typed into a field goes on to the field, which selects its own
-    // text, and one on a list box or a menu goes on to that widget.
-    const all = registerKeymap(this.scope, ["Mod"], "A", (event) => {
-      if (controlOwnsKey(event.target)) return;
-      this.#changeFromView({ kind: "all" });
-      return false;
-    });
-    this.register(() => all[Symbol.dispose]());
-
-    // Delete and Backspace erase every Selected Card. The Mac keyboards that
-    // print "delete" on the backspace key send `Backspace`. One on any other
-    // control goes on to it, so a field still deletes its own text.
-    for (const key of ["Delete", "Backspace"]) {
-      const erase = registerKeymap(this.scope, [], key, (event) => {
-        if (!this.#onCardList(event.target)) return;
-        if (this.#store.getState().cardSelection.selected.length === 0) return;
-        this.#actions?.onDeleteSelection();
-        return false;
-      });
-      this.register(() => erase[Symbol.dispose]());
-    }
-
-    // `1`–`8` recolour every Selected Card, in the palette's own order, as the
-    // same keys do in the PDF. One on a field, a list box or a menu goes on to
-    // that control.
-    for (const [index, color] of ANNOTATION_COLORS.entries()) {
-      const swatch = registerKeymap(
-        this.scope,
-        [],
-        String(index + 1),
-        (event) => {
-          if (controlOwnsKey(event.target)) return;
-          if (this.#store.getState().cardSelection.selected.length === 0)
-            return;
-          this.#actions?.onRecolorSelection(color);
-          return false;
-        },
-      );
-      this.register(() => swatch[Symbol.dispose]());
-    }
-
-    // Cmd/Ctrl+C copies the text of every Selected Card, from anywhere in the
-    // view. One typed into a field, on a list box or a menu, or over text the
-    // user selected in the view, goes on to that control or the platform's own
-    // copy.
-    const copy = registerKeymap(this.scope, ["Mod"], "C", (event) => {
-      if (controlOwnsKey(event.target)) return;
-      const selection = this.contentEl.win.getSelection();
-      if (
-        selection &&
-        !selection.isCollapsed &&
-        this.contentEl.contains(selection.anchorNode)
-      )
-        return;
-      if (this.#actions?.onCopySelection()) return false;
-    });
-    this.register(() => copy[Symbol.dispose]());
-
-    // The platform's undo and redo keys, which a card answers with the
-    // Annotation History of the Attachment this view shows.
-    const historyKeys = mountCardHistoryKeys(
-      this.scope,
-      (direction) => this.stepHistory(direction),
-      { isMacOS: Platform.isMacOS },
-    );
-    this.register(() => historyKeys[Symbol.dispose]());
 
     this.register(
       this.#deps.liveUpdate.on("available", (available) => {
@@ -681,8 +482,8 @@ export class AnnotationView extends ItemView implements HistorySurface {
         this.#syncCapability(),
       ),
     );
-    // The capability is the Attachment's, so it moves with the Attachment as
-    // well as with the probe.
+    // The capability the header reports is the Attachment's, so it moves with
+    // the Attachment as well as with the probe.
     this.register(
       this.#store.subscribe(
         (s) => s.selectedAttachmentKey,
@@ -690,105 +491,6 @@ export class AnnotationView extends ItemView implements HistorySurface {
           this.#syncCapability();
         },
       ),
-    );
-    // A Card Selection belongs to one Attachment; the bound reader's own
-    // selection, which is of the same Attachment, applies over the clear.
-    this.register(
-      this.#store.subscribe(
-        (s) => s.selectedAttachmentKey,
-        () => {
-          this.#store.setState({ cardSelection: NO_SELECTION });
-          this.#takeReaderSelection();
-        },
-      ),
-    );
-    // A filter, a search, or a list that lost an Annotation drops the cards it
-    // no longer shows. It only prunes: a reader selection is never applied
-    // again for a card the list shows once more.
-    this.register(
-      this.#store.subscribe(
-        (s) => visibleOrder(s),
-        () => {
-          // A list that is loading shows nothing yet, and hides nothing.
-          if (this.#store.getState().annotations === null) return;
-          const { selection, changed } = this.#setSelection({ kind: "prune" });
-          // The bound Obsidian PDF view drops the marks the list now hides,
-          // so its keys never act on a card the list does not show. A reader
-          // selection still waiting is the reader's own, and stays. A second
-          // view bound to the same PDF takes the pruned selection through
-          // that reader, as two such views share one selection.
-          const session = this.#boundPdfSession();
-          const push =
-            changed &&
-            !this.#readerPending &&
-            session !== null &&
-            !sameKeys(session.selected, selection.selected);
-          if (changed)
-            logger.debug("A prune dropped hidden cards from the selection", {
-              selected: selection.selected.length,
-              pushed: push,
-              readerPending: this.#readerPending,
-              bound: session !== null,
-            });
-          if (push && session) this.#pushToPdf(session, selection.selected);
-        },
-        { equalityFn: sameKeys },
-      ),
-    );
-    // A waiting reader selection applies once the list loads a key it names.
-    this.register(
-      this.#store.subscribe(
-        (s) => s.annotations,
-        (next, previous) => {
-          if (!this.#readerPending) return;
-          const before = new Set(previous?.map(({ key }) => key));
-          const loaded = next?.some(
-            ({ key }) =>
-              !before.has(key) && this.#boundReader?.selected.includes(key),
-          );
-          if (loaded) this.#takeReaderSelection();
-        },
-      ),
-    );
-    // A reader selection an open editor held back applies once it closes.
-    this.register(
-      this.#store.subscribe(
-        (s) => editorOpen(s),
-        (open) => {
-          if (!open && this.#readerPending) this.#takeReaderSelection();
-        },
-      ),
-    );
-    // One snapshot per Annotation: what a write left on it, its drafts, and
-    // whether a complete read found it gone, which ends its editors.
-    this.register(
-      this.#deps.annotations.on("annotation-changed", (annotationKey) => {
-        const state = this.#store.getState();
-        const now = this.#deps.annotations.annotationState(annotationKey);
-        const mutations = new Map(state.mutations);
-        mutations.set(annotationKey, now.mutation);
-        const fieldDrafts = byTextField((field) => {
-          const drafts = new Map(state.fieldDrafts[field]);
-          const draft = now.textDrafts[field];
-          if (draft) drafts.set(annotationKey, draft);
-          else drafts.delete(annotationKey);
-          return drafts;
-        });
-        const tagDrafts = new Map(state.tagDrafts);
-        const ended = now.tagDraft ? undefined : tagDrafts.get(annotationKey);
-        if (now.tagDraft) tagDrafts.set(annotationKey, now.tagDraft);
-        else tagDrafts.delete(annotationKey);
-        this.#store.setState({
-          mutations,
-          fieldDrafts,
-          tagDrafts,
-          ...(ended && this.#heldList(ended.attachmentKey)),
-          ...(now.gone &&
-            state.editing?.annotationKey === annotationKey && {
-              editing: null,
-            }),
-        });
-      }),
     );
 
     await this.#deps.reads.ready;
@@ -798,16 +500,12 @@ export class AnnotationView extends ItemView implements HistorySurface {
   protected override async onClose(): Promise<void> {
     this.#closed = true;
     this.#loading = null;
-    this.#reads += 1;
-    this.#submitOpenEditor();
     this.#loadDisposables?.[Symbol.dispose]();
     this.#loadDisposables = null;
     this.#leafSession?.();
     this.#leafSession = null;
-    // An open tag editor ends its session, and saves it, as it unmounts.
-    this.#root?.unmount();
-    this.#root = null;
-    this.#actions = null;
+    // The layout saves an open card editor and unmounts the cards.
+    this.#query.unload();
   }
 
   // #region follow mode
@@ -905,8 +603,8 @@ export class AnnotationView extends ItemView implements HistorySurface {
     logger.debug("Follow mode changed by a gesture", { ...next });
     // A Follow Mode change clears the Card Selection; a reader the new mode
     // binds reports its own when the reload binds it.
-    this.#readerPending = false;
-    this.#store.setState({ ...next, cardSelection: NO_SELECTION });
+    this.#layout.resetSelection();
+    this.#store.setState(next);
     void this.#deps.app.workspace.requestSaveLayout();
     this.#reload();
   }
@@ -931,12 +629,42 @@ export class AnnotationView extends ItemView implements HistorySurface {
         ? (this.#deps.app.workspace.getActiveFile()?.path ?? null)
         : null,
     );
-    this.#bindReader();
+    this.#layout.bindReader(this.#followedSession());
     if (this.#deps.reads.state !== "ready") {
       this.#clearState();
+      // A database still opening says nothing yet; one that failed says so.
+      this.#unreadable = this.#deps.reads.state === "degraded";
+      this.#syncQueryProblem();
       return;
     }
+    this.#unreadable = false;
     this.#loadTarget(this.#resolveTarget());
+  }
+
+  /**
+   * What stands in the way of the cards, from the Query View's own state:
+   * Zotero's data that cannot be read, a failed query, or a filter condition
+   * with an error under the last cards.
+   */
+  #syncQueryProblem(): void {
+    const { phase, failure, results } = this.#query.state.getState();
+    const failed = phase === "failed" && failure !== null;
+    const keptResults = results !== null;
+    this.#store.setState({
+      queryProblem: this.#unreadable
+        ? { message: m.annot_view_zotero_unreadable(), detail: "" }
+        : failed && !keptResults
+          ? {
+              message: m.annot_view_query_failed(),
+              detail: readerText(failure.diagnostic),
+            }
+          : null,
+      filterError:
+        !this.#unreadable &&
+        failed &&
+        keptResults &&
+        failure.filterIssue !== null,
+    });
   }
 
   #resolveTarget(): LoadTarget | null {
@@ -1002,9 +730,9 @@ export class AnnotationView extends ItemView implements HistorySurface {
     stack.defer(session.addSelectionSurface(this.contentEl));
     stack.defer(session.on("target-changed", () => this.#reload()));
     stack.defer(
-      session.on("selection-changed", () => {
-        if (this.#boundReader === session) this.#takeReaderSelection();
-      }),
+      session.on("selection-changed", () =>
+        this.#layout.readerSelectionChanged(session),
+      ),
     );
     this.#leafSession = () => stack.dispose();
   }
@@ -1063,7 +791,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
     if (memoryChanged) {
       this.#loadDisposables?.[Symbol.dispose]();
       this.#loadDisposables = null;
-      this.#reads += 1;
+      this.#layout.cancelReads();
     }
     const load = {};
     this.#loading = load;
@@ -1120,7 +848,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
     );
   }
 
-  /** Shows the attachments one load read, and reads the active one's Annotations. */
+  /** Shows the attachments one load read, and the active one's Annotations. */
   #showAttachments(
     { lockedAttachmentKey, key, libraryID }: LoadTarget,
     attachments: AnnotViewAttachment[],
@@ -1145,18 +873,15 @@ export class AnnotationView extends ItemView implements HistorySurface {
       null;
 
     if (activeKey === null) {
-      this.#store.setState({
-        selectedAttachmentKey: null,
-        annotations: null,
-        annotationSource: null,
-        annotationSourceScope: null,
-      });
+      this.#store.setState({ selectedAttachmentKey: null });
+      this.#query.clear();
       return;
     }
 
     this.#store.setState({ selectedAttachmentKey: activeKey });
-    this.#readAnnotations(activeKey, { restoreFilter: memoryChanged });
-    const reading = this.#reading;
+    const reading = this.#showAnnotations(activeKey, {
+      restoreFilter: memoryChanged,
+    });
 
     load.defer(
       this.#store.subscribe(
@@ -1166,24 +891,9 @@ export class AnnotationView extends ItemView implements HistorySurface {
           if (lockedAttachmentKey === null) {
             this.#saveAttachmentSelection(memoryKey, attachmentKey);
           }
-          this.#readAnnotations(attachmentKey, { restoreFilter: false });
+          void this.#showAnnotations(attachmentKey, { restoreFilter: false });
         },
       ),
-    );
-
-    // The repository's own event is the only word that a list was superseded;
-    // a held read says nothing about an invalidation of its own.
-    load.defer(
-      this.#deps.annotations.on("annotations-changed", (changedKey) => {
-        if (changedKey !== this.#store.getState().selectedAttachmentKey) {
-          return;
-        }
-        // What the repository holds now, a write's Pending Proposal among
-        // it, stands in the same task; the read that follows replaces it.
-        const held = this.#heldList(changedKey);
-        if (held) this.#store.setState(held);
-        this.#readAnnotations(changedKey, { restoreFilter: false });
-      }),
     );
 
     load.defer(
@@ -1208,109 +918,39 @@ export class AnnotationView extends ItemView implements HistorySurface {
   }
 
   /**
-   * The list the repository holds for the Attachment on screen, for an update
-   * that cannot wait for the view's own re-read: a write's Pending Proposal as
-   * it starts, and the drop of a tag draft, which the repository makes only
-   * once the read-back stands in that list, so the draft and the chips change
-   * in one update.
+   * Shows one Attachment's Annotations: the sidebar's Query File runs with the
+   * Attachment as `this.attachment`. A new Item's first list brings back the
+   * colour and tag filter saved for it.
    */
-  #heldList(
-    attachmentKey: string,
-  ): Pick<AnnotState, "annotations" | "annotationSource"> | null {
-    if (attachmentKey !== this.#store.getState().selectedAttachmentKey) {
-      return null;
-    }
-    const held = this.#deps.annotations.peek(attachmentKey);
-    return held
-      ? {
-          annotations: held.value.annotations,
-          annotationSource: held.value.source,
-        }
-      : null;
-  }
-
-  /**
-   * Reads one Attachment's Annotations through the repository, so the list on
-   * screen comes from whichever Annotation Source is active for it and says
-   * which — the same source, and the same records, the overlay draws from.
-   *
-   * @see apps/obsidian/docs/adr/0034-the-annotation-source-is-atomic-per-attachment.md
-   */
-  #readAnnotations(
+  #showAnnotations(
     attachmentKey: string,
     { restoreFilter }: { restoreFilter: boolean },
-  ): void {
-    const read = ++this.#reads;
+  ): Promise<void> {
     const memoryKey = this.#memoryKey;
-    const sourceScope = this.#deps.zoteroPref.dataDir;
-    this.#reading = this.#deps.annotations
-      .read(attachmentKey)
-      .then((list) => {
-        // A slower read never overwrites a later one, and a load that has
-        // moved on leaves this answer where it fell. A null answer is a read
-        // an invalidation cancelled; the same invalidation announces the
-        // change this view re-reads on, so the list is not left waiting.
-        if (
-          read !== this.#reads ||
-          list === null ||
-          sourceScope !== this.#deps.zoteroPref.dataDir
-        )
-          return;
-        const fieldDrafts = byTextField(
-          (field) =>
-            new Map(
-              list.annotations.flatMap((annotation) => {
-                const draft = this.#deps.annotations.textDraftFor(
-                  field,
-                  annotation.key,
-                );
-                return draft ? [[annotation.key, draft] as const] : [];
-              }),
-            ),
-        );
-        const tagDrafts = new Map(
-          list.annotations.flatMap((annotation) => {
-            const draft = this.#deps.annotations.tagDraftFor(annotation.key);
-            return draft ? [[annotation.key, draft] as const] : [];
-          }),
-        );
+    // The query runs again only for another Attachment or file: a database
+    // change already runs it again through the Query View, and a reload for
+    // the same Attachment (a tab switch, a note edit) changes nothing it reads.
+    this.#query.setText(this.#queryText ?? sidebarQueryText());
+    this.#query.contextChanged();
+    return this.#query.settled.then(() => {
+      const landed =
+        this.#query.state.getState().phase === "ready" &&
+        this.#store.getState().selectedAttachmentKey === attachmentKey;
+      if (!landed || !restoreFilter || memoryKey === null) return;
+      const { annotations } = this.#store.getState();
+      const saved = this.#loadFilterSelection(memoryKey, annotations ?? []);
+      if (saved) {
         this.#store.setState({
-          annotations: list.annotations,
-          annotationSource: list.source,
-          annotationSourceScope: sourceScope,
-          fieldDrafts,
-          tagDrafts,
+          selectedColors: saved.colors,
+          selectedTags: saved.tags,
         });
-        if (!restoreFilter || memoryKey === null) return;
-        const saved = this.#loadFilterSelection(memoryKey, list.annotations);
-        if (saved) {
-          this.#store.setState({
-            selectedColors: saved.colors,
-            selectedTags: saved.tags,
-          });
-        }
-      })
-      .catch((error: unknown) => {
-        if (read !== this.#reads) return;
-        logger.warn("Failed to read the annotations of an attachment", {
-          attachmentKey,
-          error,
-        });
-        this.#store.setState({ annotations: [] });
-      });
-  }
-
-  /** Revalidates the collection the view currently presents. */
-  #refreshAnnotations(): void {
-    const attachmentKey = this.#store.getState().selectedAttachmentKey;
-    if (attachmentKey !== null) {
-      void this.#deps.annotations.refresh(attachmentKey);
-    }
+      }
+    });
   }
 
   /**
-   * The Editing Capability the cards read: the Attachment's own, or — with
-   * none on screen — the session's, which names no library.
+   * The Editing Capability the header reports: the Attachment's own, or —
+   * with none on screen — the session's, which names no library.
    */
   #syncCapability(): void {
     const { selectedAttachmentKey } = this.#store.getState();
@@ -1319,34 +959,6 @@ export class AnnotationView extends ItemView implements HistorySurface {
         selectedAttachmentKey === null
           ? this.#deps.annotations.capability
           : this.#deps.annotations.capabilityFor(selectedAttachmentKey),
-    });
-  }
-
-  /** The file inputs one record on screen resolves through ({@link savedExcerptRequest}). */
-  #excerptRequest(input: {
-    annotation: AnnotationRecord;
-    source: AnnotationSource | null;
-    sourceScope: string | null;
-  }): Promise<ExcerptRequest | null> {
-    return savedExcerptRequest({
-      ...input,
-      zoteroReads: this.#deps.reads,
-      paths: this.#deps.zoteroPref,
-    });
-  }
-
-  /**
-   * What one card's editing verbs may do, for the native overflow menu, which
-   * is built outside React and so reads the store itself.
-   */
-  #cardControls(annot: AnnotationRecord): CardControls {
-    const state = this.#store.getState();
-    const { capability, mutations } = state;
-    return cardControls({
-      blocks: blocksNow(annot, capability),
-      mutation: mutations.get(annot.key) ?? IDLE,
-      hasTags: annot.tags.length > 0,
-      type: annot.type,
     });
   }
 
@@ -1382,266 +994,6 @@ export class AnnotationView extends ItemView implements HistorySurface {
     return this.#deps.noteIndex.getNotesByItemKey(this.#itemKey)[0]?.path ?? "";
   }
 
-  // #region card selection
-
-  /**
-   * Bind the reader this Follow Mode keeps in step, and take its selection
-   * when it is a new one. Two views bound to one Obsidian PDF view share a
-   * selection through it.
-   */
-  #bindReader(): void {
-    const reader = this.#followedSession();
-    if (reader === this.#boundReader) return;
-    logger.debug("The Card Selection binds another reader", {
-      followMode: this.#followMode,
-      source: reader?.source ?? null,
-    });
-    this.#boundReader = reader;
-    this.#takeReaderSelection();
-  }
-
-  /** @returns the Card Selection after the change, and whether it moved. */
-  #setSelection(change: SelectionChange): {
-    selection: CardSelection;
-    changed: boolean;
-  } {
-    const state = this.#store.getState();
-    const current = state.cardSelection;
-    const selection = nextCardSelection(current, visibleOrder(state), change);
-    if (selection === current) return { selection, changed: false };
-    this.#store.setState({ cardSelection: selection });
-    return { selection, changed: true };
-  }
-
-  /**
-   * The bound reader's selection replaces the Card Selection, and brings its
-   * first card into view. While a card editor is open it waits, so the card
-   * being edited keeps its selection; a key the list has not loaded waits for
-   * the list. Each call drops what waited before it: the reader's selection
-   * now is the latest.
-   */
-  #takeReaderSelection(): void {
-    this.#readerPending = false;
-    const reader = this.#boundReader;
-    if (!reader) return;
-    if (this.#pushing !== null && sameKeys(reader.selected, this.#pushing))
-      return;
-    const state = this.#store.getState();
-    const keys = reader.selected;
-    if (editorOpen(state)) {
-      this.#readerPending = true;
-      logger.debug("A reader selection waits for the card editor to close", {
-        source: reader.source,
-        keys: keys.length,
-      });
-      return;
-    }
-    const listed = new Set(state.annotations?.map(({ key }) => key));
-    this.#readerPending = !keys.every((key) => listed.has(key));
-    const { selection, changed } = this.#setSelection({
-      kind: "replace",
-      keys,
-    });
-    logger.debug("A reader selection replaced the Card Selection", {
-      source: reader.source,
-      keys: keys.length,
-      selected: selection.selected.length,
-      waitsForList: this.#readerPending,
-    });
-    if (changed) this.#scrollToCard(selection.selected);
-  }
-
-  /**
-   * A gesture in the view changes the Card Selection, and a change saves and
-   * closes an open card editor. A bound Obsidian PDF view takes the selection;
-   * the Zotero Reader takes nothing from ZotLit (ADR 0036).
-   *
-   * @param landOn the Annotation whose Mark the PDF view lands on quietly: a
-   *   Mark Landing, with no Mark Popup.
-   */
-  #changeFromView(change: SelectionChange, landOn?: string): CardSelection {
-    this.#readerPending = false;
-    const { selection, changed } = this.#setSelection(change);
-    if (changed) this.#closeEditors();
-    const session = this.#boundPdfSession();
-    if (!session) return selection;
-    if (!sameKeys(session.selected, selection.selected))
-      this.#pushToPdf(session, selection.selected);
-    if (landOn !== undefined) session.navigateToAnnotation(landOn);
-    return selection;
-  }
-
-  /** Sends the Card Selection to the bound Obsidian PDF view. */
-  #pushToPdf(session: ReaderSession, keys: readonly string[]): void {
-    this.#pushing = keys;
-    try {
-      session.setSelectedAnnotations(keys);
-    } finally {
-      this.#pushing = null;
-    }
-  }
-
-  /**
-   * Whether a key landed on the card list itself: a card's row, the grid, or
-   * the view around it with no control focused. A click on the empty list
-   * leaves the focus on the body, and the key reaches this view's Scope only
-   * while the view is the active leaf.
-   */
-  #onCardList(target: EventTarget | null): boolean {
-    const node = target as Node | null;
-    if (!node?.instanceOf(HTMLElement)) return false;
-    if (node === this.containerEl || node === this.contentEl) return true;
-    if (node === node.doc.body) return true;
-    return (
-      this.contentEl.contains(node) &&
-      node.matches('.zt-annot-card, .annots-container, [role="grid"]')
-    );
-  }
-
-  /** The Selected Cards, in list order. */
-  #selectedCards(): AnnotationRecord[] {
-    const { annotations, cardSelection } = this.#store.getState();
-    const byKey = new Map(annotations?.map((annot) => [annot.key, annot]));
-    return cardSelection.selected.flatMap((key) => byKey.get(key) ?? []);
-  }
-
-  /**
-   * A click on a card: alone, or with Cmd/Ctrl or Shift held. A bound
-   * Obsidian PDF view lands quietly on the mark of a card that a plain click
-   * or a Cmd/Ctrl-click adds; a card that leaves, and a range, only repaint.
-   */
-  #clickFromView(change: Extract<SelectionChange, { kind: CardClick }>): void {
-    const adds =
-      change.kind === "click" ||
-      (change.kind === "toggle" &&
-        !this.#store.getState().cardSelection.selected.includes(change.key));
-    this.#changeFromView(change, adds ? change.key : undefined);
-  }
-
-  /**
-   * A card's edit control was pressed: a card not selected alone is first
-   * selected alone, as a click selects it, so an editor never opens on a card
-   * in a group.
-   */
-  #selectAloneFromView(key: string): void {
-    if (selectedAlone(this.#store.getState(), key)) return;
-    this.#clickFromView({ kind: "click", key });
-  }
-
-  /**
-   * A key moves the Card Selection to one card, and a bound Obsidian PDF view
-   * lands quietly on its mark, as a click does.
-   *
-   * @returns whether the selection moved; at either end of the list it stays.
-   */
-  #moveFromView(step: 1 | -1): boolean {
-    const key = this.#stepFromView({ kind: "move", step });
-    if (key === null) return false;
-    this.#boundPdfSession()?.navigateToAnnotation(key);
-    return true;
-  }
-
-  /**
-   * Shift and a key extend the Card Selection by one card; the PDF only
-   * repaints.
-   *
-   * @returns whether the selection moved; at either end of the list it stays.
-   */
-  #extendFromView(step: 1 | -1): boolean {
-    return this.#stepFromView({ kind: "extend", step }) !== null;
-  }
-
-  /**
-   * One keyboard step of the Card Selection. The card it ends on takes the
-   * focus and comes into view.
-   *
-   * @returns the card it ends on, or `null` where the selection stayed.
-   */
-  #stepFromView(
-    change: Extract<SelectionChange, { kind: "move" | "extend" }>,
-  ): string | null {
-    const current = this.#store.getState().cardSelection;
-    const next = this.#changeFromView(change);
-    const key = next.focus;
-    if (next === current || key === null) return null;
-    const card = this.#cardElement(key);
-    card?.focus({ preventScroll: true });
-    card?.scrollIntoView({ block: "nearest" });
-    return key;
-  }
-
-  /**
-   * Escape, or a click on the empty list: an open card editor closes first,
-   * and with none open the selection clears — the view's own, and a bound PDF
-   * view's where that holds a mark the list hides.
-   *
-   * @returns whether there was anything to close or clear.
-   */
-  #clearFromView(): boolean {
-    if (this.#closeEditors()) return true;
-    const selected =
-      this.#store.getState().cardSelection.selected.length > 0 ||
-      (this.#boundPdfSession()?.selected.length ?? 0) > 0;
-    if (selected) this.#changeFromView({ kind: "clear" });
-    return selected;
-  }
-
-  /**
-   * Saves and closes the open field editor.
-   *
-   * @returns whether one was open.
-   */
-  #closeEditors(): boolean {
-    if (!editorOpen(this.#store.getState())) return false;
-    this.#submitOpenEditor();
-    this.#store.setState({ editing: null });
-    return true;
-  }
-
-  /**
-   * Submits the open field editor's draft, as its own close would, and says
-   * why in a notice where the write did not land.
-   */
-  #submitOpenEditor(): void {
-    const { editing } = this.#store.getState();
-    // The tag editor saves its session as it unmounts. A text field's text is
-    // already its draft, which this submits as the editor's own close would.
-    if (!editing || editing.field === "tags") return;
-    const { annotations } = this.#deps;
-    const submitting = annotations.submitTextField(
-      editing.field,
-      editing.annotationKey,
-      { automatic: true },
-    );
-    void submitting.then((outcome) => {
-      if (outcome.kind === "failed")
-        new BaseNotice(
-          writeFailureMessage(outcome.failure, Temporal.Now.instant()),
-        );
-    });
-  }
-
-  // #endregion
-
-  /** Bring the first of these cards the list holds into view. */
-  #scrollToCard(keys: readonly string[]): void {
-    for (const key of keys) {
-      const el = this.#cardElement(key);
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
-        return;
-      }
-    }
-  }
-
-  /** One Annotation's card, while the list shows it. */
-  #cardElement(key: string): HTMLElement | null {
-    const el = this.contentEl.querySelector(
-      `.zt-annot-card[data-zotero-annotation-key="${key}"]`,
-    );
-    return el?.instanceOf(HTMLElement) ? el : null;
-  }
-
   /**
    * Bring one Annotation's card forward and select it, from the Mark Popup in
    * the PDF reader or a notice. A card the list on screen does not hold is
@@ -1651,21 +1003,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
    * @see apps/obsidian/docs/adr/0041-the-annotation-view-changes-its-follow-mode-only-on-a-user-gesture.md
    */
   revealAnnotation(annotationKey: string): void {
-    const held = this.#store
-      .getState()
-      .annotations?.some((record) => record.key === annotationKey);
-    if (held !== true) return;
-    this.#changeFromView({ kind: "click", key: annotationKey });
-    this.#scrollToCard([annotationKey]);
-  }
-
-  /**
-   * The bound reader, while it is an Obsidian PDF view: the one reader this
-   * view can select in. Zotero owns every gesture on its own reader.
-   */
-  #boundPdfSession(): ReaderSession | null {
-    const reader = this.#boundReader;
-    return reader?.source === "obsidian-pdf" ? reader : null;
+    this.#layout.revealAnnotation(annotationKey);
   }
 
   /** The reader this view's Follow Mode is driven by, while one answers. */
@@ -1712,13 +1050,8 @@ export class AnnotationView extends ItemView implements HistorySurface {
       selectedAttachmentKey: null,
       attachmentLock: null,
       pinnable: null,
-      annotations: null,
-      annotationSource: null,
-      annotationSourceScope: null,
-      fieldDrafts: noFieldDrafts(),
-      tagDrafts: new Map(),
-      editing: null,
     });
+    this.#query.clear();
     this.#itemKey = null;
     this.#memoryKey = null;
   }

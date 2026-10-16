@@ -96,9 +96,15 @@ async function prepareAndCommit(
   }
 }
 
-/** Sidebar focus leaves the most recently used note and its cursor in place. */
+/**
+ * Sidebar focus leaves the most recently used note and its cursor in place. A
+ * note in Reading view shows no editor, so nothing is inserted into it.
+ */
 function getInsertionEditor(app: App): MarkdownFileInfo | null {
-  if (app.workspace.activeEditor) return app.workspace.activeEditor;
+  const active = app.workspace.activeEditor;
+  if (active instanceof MarkdownView && active.getMode() !== "source")
+    return null;
+  if (active) return active;
   const view = app.workspace.getMostRecentLeaf()?.view;
   return view instanceof MarkdownView && view.getMode() === "source"
     ? view

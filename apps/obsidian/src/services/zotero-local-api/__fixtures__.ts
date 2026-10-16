@@ -689,6 +689,19 @@ export function libraryReadOnly(): Response {
   });
 }
 
+/**
+ * SYNTHESISED — what another server on Zotero's port answers the root route
+ * with: no Zotero header. The default is the `404` with Hono's default body
+ * that ZotLit's own Local Server sends once its port fallback has taken
+ * Zotero's port.
+ */
+export function foreignServer(status = 404): Response {
+  return new Response(status === 404 ? "404 Not Found" : "Server error", {
+    status,
+    headers: { "Content-Type": "text/plain; charset=UTF-8" },
+  });
+}
+
 /** A connection that nothing answered, as `nodeFetch` reports one. */
 export function unreachable(): never {
   throw new TypeError("fetch failed", { cause: new Error("ECONNREFUSED") });

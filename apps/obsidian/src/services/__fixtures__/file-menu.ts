@@ -2,7 +2,10 @@
 import type { Menu, TAbstractFile, WorkspaceLeaf } from "obsidian";
 
 import { registerFileMenu } from "@/services/file-menu";
-import type { FileMenuSegment } from "@/services/file-menu";
+import type {
+  FileMenuSegment,
+  FolderMenuSegment,
+} from "@/services/file-menu";
 
 /** Obsidian's own `file-menu` listener shape. */
 // oxlint-disable-next-line max-params -- Obsidian's own `file-menu` shape.
@@ -20,6 +23,7 @@ export type FileMenuHandler = (
 export function fileMenuHandler(
   segments: readonly FileMenuSegment[],
   frontmatter: Record<string, unknown> = {},
+  folderSegments: readonly FolderMenuSegment[] = [],
 ): FileMenuHandler {
   let handler: FileMenuHandler | undefined;
   registerFileMenu(
@@ -36,6 +40,7 @@ export function fileMenuHandler(
       } as never,
     },
     segments,
+    folderSegments,
   );
   if (!handler) throw new Error("file-menu handler was not registered");
   return handler;

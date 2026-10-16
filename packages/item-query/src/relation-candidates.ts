@@ -242,9 +242,11 @@ function elementPredicate(node: Node, dataset: CandidateDataset): Node {
     return { ...node, kind: "field", name: path!, value: field.value };
   const visit = (node: Node) => elementPredicate(node, dataset);
   switch (node.kind) {
-    // Bare fields belong to the outer row, never to the element dataset.
+    // Bare fields and Formulas belong to the outer row, never to the element
+    // dataset.
     case "field":
     case "custom-field":
+    case "formula":
       return { ...node, kind: "binding", name: "outer" };
     case "binary":
       return { ...node, left: visit(node.left), right: visit(node.right) };

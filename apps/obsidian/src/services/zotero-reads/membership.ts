@@ -1,43 +1,12 @@
-// The database side of Profile Selection Rules: Item membership facts and the Collection paths the editor offers.
-import {
-  getCollectionIDsByItem,
-  getCollectionNodesByLibrary,
-  resolveItemTags,
-} from "@zotlit/db";
-import type { CollectionNode, Item } from "@zotlit/db";
+// The Collection paths the Match editor offers.
+import { getCollectionNodesByLibrary } from "@zotlit/db";
+import type { CollectionNode } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
-
-import type { MatchItemFacts } from "@/services/profile-selection/condition";
 
 /** One Collection the editor offers, with the words it is shown by. */
 export interface CollectionChoice {
   /** Root-to-leaf Collection names, this Collection last. */
   path: readonly string[];
-}
-
-/**
- * The Item's actual memberships: every Tag name and each direct Collection's
- * root-first path.
- */
-export function resolveMembershipFacts(
-  client: NodeDatabaseClient,
-  item: Pick<Item, "itemID" | "libraryID">,
-): Pick<MatchItemFacts, "tags" | "collections"> {
-  const tags = resolveItemTags(client, item.itemID, new Map()).map(
-    ({ tag }) => tag.name,
-  );
-  const nodes = nodeMap(getCollectionNodesByLibrary(client, item.libraryID));
-  const collections: string[][] = [];
-  for (const collectionID of getCollectionIDsByItem(client, item.itemID)) {
-    const node = nodes.get(collectionID);
-    if (!node) continue;
-    collections.push(
-      [...ancestorsOf(node, nodes).toReversed(), node].map(
-        ({ collectionName }) => collectionName,
-      ),
-    );
-  }
-  return { tags, collections };
 }
 
 /**

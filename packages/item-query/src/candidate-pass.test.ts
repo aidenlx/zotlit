@@ -70,7 +70,7 @@ it.each(["items", "attachments", "annotations"] as const)(
   async (id) => {
     const { dataset, reads } = fake(12, [1, 2, 3], id);
     const filter = planFilter('tags.contains("selected")');
-    if (!("root" in filter)) throw new Error("Invalid test filter");
+    if ("kind" in filter) throw new Error("Invalid test filter");
     const run = await runEffect(
       runCandidatePass({
         dataset,
@@ -482,7 +482,7 @@ it.each([false, true])(
       },
     };
     const filter = ATTACHMENTS.planFilter('item.tags.contains("selected")');
-    if (!("root" in filter)) throw new Error("Invalid test filter");
+    if ("kind" in filter) throw new Error("Invalid test filter");
     const run = await runEffect(
       runCandidatePass({
         dataset,

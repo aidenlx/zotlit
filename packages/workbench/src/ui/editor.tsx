@@ -8,12 +8,13 @@ import {
   createContext,
   useContext,
   useEffect,
-  useId,
   useState,
   useSyncExternalStore,
 } from "react";
 import type { ReactNode } from "react";
 import { useStore } from "zustand";
+
+import { useUniqueId } from "@zotlit/ui";
 
 import type { WorkbenchHost } from "./host";
 import { createRenderScheduler } from "./scheduler";
@@ -157,7 +158,7 @@ export function WorkbenchEditorProvider({
   scheduler: RenderScheduler;
   children?: ReactNode;
 }) {
-  const id = useId();
+  const id = useUniqueId();
   return (
     <EditorContext.Provider value={{ store, controller, scheduler, id }}>
       {children}

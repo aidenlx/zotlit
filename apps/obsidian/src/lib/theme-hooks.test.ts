@@ -33,6 +33,12 @@ it("promises the Chooser hooks by literal name", () => {
   });
 });
 
+it("promises the Query View toolbar button hook by literal name", () => {
+  expect({ button: themeHook.queryToolbarButton }).toEqual({
+    button: "zt-query-toolbar-button",
+  });
+});
+
 it("promises the PDF reader's mode attributes by literal name", () => {
   expect({ inking: themeAttribute.pdfInking }).toEqual({
     inking: "data-zt-inking",

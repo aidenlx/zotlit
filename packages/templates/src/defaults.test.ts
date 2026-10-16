@@ -13,6 +13,24 @@ import { managedRegionTransform, MARKER_END, MARKER_START } from "./obsidian";
 
 const wrapContent = managedRegionTransform("content");
 
+/** The Annotations section of the default content template. */
+const QUERY_BLOCK_SECTION = [
+  "## Annotations",
+  "",
+  "```zotquery",
+  "views:",
+  "  - type: annotations",
+  "    name: Annotations",
+  "    from: annotations",
+  "    filters: item == this.item",
+  "    sort:",
+  "      - property: attachment.dateAdded",
+  "        direction: ASC",
+  "      - property: sortIndex",
+  "        direction: ASC",
+  "```",
+].join("\n");
+
 function defineLiquidDefaults(facade: TemplateFacade): void {
   facade.define("annotation", annotationLiquid, "liquid");
   facade.define("content", contentLiquid, "liquid");
@@ -23,7 +41,11 @@ describe("Liquid default templates via the facade", () => {
   it("resolves includes by registered name", () => {
     const facade = new TemplateFacade();
     facade.define("annotation", annotationLiquid, "liquid");
-    facade.define("content", contentLiquid, "liquid");
+    facade.define(
+      "content",
+      "{% for annotation in zt.annotations %}{% render_annotation annotation %}{% endfor %}",
+      "liquid",
+    );
 
     const rendered = facade.render("content", {
       notes: [],
@@ -88,7 +110,22 @@ describe("Liquid default templates via the facade", () => {
 
     expect(rendered).toContain("## Notes");
     expect(rendered).toContain("- [[a|A]]\n- [[b|B]]");
-    expect(rendered).not.toContain("## Annotations");
+  });
+
+  // The Annotations show live through `this`: the block names no Item, and an
+  // Item that has no Annotation yet shows the ones added later.
+  it("renders a Query Block of the note's own Item's Annotations", () => {
+    const facade = new TemplateFacade();
+    facade.define("annotation", annotationLiquid, "liquid");
+    facade.define("content", contentLiquid, "liquid");
+
+    for (const annotations of [
+      [],
+      [{ pageLabel: "4", imgLink: null, text: "Highlighted", comment: null }],
+    ]) {
+      const rendered = facade.render("content", { notes: [], annotations });
+      expect(rendered.trim()).toBe(QUERY_BLOCK_SECTION);
+    }
   });
 
   it("embeds the excerpt image via the embed filter when imgLink is present", () => {
@@ -159,7 +196,7 @@ describe("Liquid default templates via the facade", () => {
     defineLiquidDefaults(facade);
 
     expect(facade.render("note", noteContext)).toContain(
-      `${MARKER_START}\n\n${MARKER_END}`,
+      `${MARKER_START}\n${QUERY_BLOCK_SECTION}\n\n${MARKER_END}`,
     );
   });
 
@@ -169,7 +206,7 @@ describe("Liquid default templates via the facade", () => {
     facade.define("content", contentLiquid, "liquid");
 
     expect(facade.render("content", { annotations: [], notes: [] })).toBe(
-      `${MARKER_START}\n\n${MARKER_END}`,
+      `${MARKER_START}\n${QUERY_BLOCK_SECTION}\n\n${MARKER_END}`,
     );
   });
 
@@ -183,6 +220,11 @@ describe("Liquid default templates via the facade", () => {
   it("changes the composed note/content output when annotation is redefined", () => {
     const facade = new TemplateFacade();
     defineLiquidDefaults(facade);
+    facade.define(
+      "content",
+      "{% for annotation in zt.annotations %}{% render_annotation annotation %}{% endfor %}",
+      "liquid",
+    );
 
     const data = {
       ...noteContext,
@@ -327,9 +369,7 @@ describe("Liquid defaults match Eta defaults byte-for-byte", () => {
     for (const needle of [
       "## Notes",
       "- [[a|A]]\n- [[b|B]]",
-      "## Annotations",
-      "Page 4",
-      "Highlighted text",
+      QUERY_BLOCK_SECTION,
     ]) {
       expect(etaOut).toContain(needle);
       expect(liquidOut).toContain(needle);

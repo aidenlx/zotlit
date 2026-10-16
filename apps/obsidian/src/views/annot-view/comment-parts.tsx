@@ -6,8 +6,10 @@
 // of the surface around it never drops a click between its press and its
 // release.
 import type { App } from "obsidian";
-import { useCallback, useId, useLayoutEffect, useMemo, useRef } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import type { HTMLAttributes, RefObject } from "react";
+
+import { useUniqueId } from "@zotlit/ui";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { themeHook } from "@/lib/theme-hooks";
@@ -87,7 +89,7 @@ export function CommentView({
   entry?: CommentEntry;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const labelId = useId();
+  const labelId = useUniqueId();
   useLayoutEffect(() => {
     if (!ref.current || html === null) return;
     return render(ref.current, html);

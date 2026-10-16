@@ -15,9 +15,11 @@ import { MapMode, StateEffect } from "@codemirror/state";
 import type { EditorState, Extension } from "@codemirror/state";
 import { Decoration, ViewPlugin } from "@codemirror/view";
 import type { DecorationSet, EditorView } from "@codemirror/view";
-import { Suspense, useEffect, useId, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
+
+import { useUniqueId } from "@zotlit/ui";
 
 import { useDocumentRevision } from "./editor";
 import { PreviewWidget, boxAt, boxField, boxRanges } from "./editor-boxes";
@@ -81,7 +83,7 @@ export function usePartialBoxes(
   host: PartialPlaceholderHost | undefined,
 ): PartialBoxes {
   useDocumentRevision(controller);
-  const previewId = useId();
+  const previewId = useUniqueId();
   const [opened, setOpened] = useState<{
     controller: WorkbenchDocumentController;
     /** The call's own start, in master offsets, so every pane moves it alike. */

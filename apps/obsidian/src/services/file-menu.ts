@@ -6,7 +6,7 @@
 // named in one ordered list, so where an entry sits is decided in one place:
 // its section (`@/lib/menu-section`) picks the group, and the list's order
 // picks its row inside that group.
-import { TFile } from "obsidian";
+import { TFile, TFolder } from "obsidian";
 import type { Menu, Plugin, WorkspaceLeaf } from "obsidian";
 
 import {
@@ -38,18 +38,34 @@ export interface FileMenuContext {
  */
 export type FileMenuSegment = (menu: Menu, ctx: FileMenuContext) => void;
 
+/** What a folder segment reads: the folder, and the surface that raised the menu. */
+export interface FolderMenuContext {
+  folder: TFolder;
+  source: string;
+}
+
+/** Adds a feature's entries to a folder's menu, as {@link FileMenuSegment} does for a file. */
+export type FolderMenuSegment = (menu: Menu, ctx: FolderMenuContext) => void;
+
 /**
  * Register `segments` on Obsidian's file menu, in the order given. A
- * segment's entries keep that order inside their section.
+ * segment's entries keep that order inside their section. A folder's menu
+ * runs `folderSegments` alone.
  */
 export function registerFileMenu(
   plugin: Pick<Plugin, "registerEvent" | "app">,
   segments: readonly FileMenuSegment[],
+  folderSegments: readonly FolderMenuSegment[] = [],
 ): void {
   const { app } = plugin;
   plugin.registerEvent(
     // oxlint-disable-next-line max-params -- Obsidian's own `file-menu` shape.
     app.workspace.on("file-menu", (menu, file, source, leaf) => {
+      if (file instanceof TFolder) {
+        for (const segment of folderSegments)
+          segment(menu, { folder: file, source });
+        return;
+      }
       if (!(file instanceof TFile)) return;
       const cache =
         file.extension === "md" ? app.metadataCache.getFileCache(file) : null;

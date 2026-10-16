@@ -2,7 +2,7 @@
 // strip owns the keyboard: arrow keys move through the tabs and choose as they
 // go, Home and End jump to the ends. The chosen tab lives in the editor's store.
 
-import { useEffect, useId, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 
 import {
@@ -10,7 +10,7 @@ import {
   useOptionalEditor,
   useWorkbenchStore,
 } from "./editor";
-import { HiddenName } from "./host";
+import { useContainerName } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import { SliceEditorVisibility } from "./slice-editor";
 import { TABS, tabLabel, tabLede } from "./tabs";
@@ -59,7 +59,7 @@ export function TabBar({
   const tab = useWorkbenchStore((state) => state.tab);
   const setTab = useWorkbenchStore((state) => state.setTab);
   const part = useParts("tabBar");
-  const nameId = useId();
+  const name = useContainerName(m.workbench_title());
   const prefix = editor?.id ?? "";
   useDocumentRevision(editor?.controller ?? null);
   const disabled = editor === null;
@@ -96,12 +96,12 @@ export function TabBar({
   return (
     <div
       role="tablist"
-      aria-labelledby={nameId}
+      {...name.attrs}
       aria-orientation="horizontal"
       onKeyDown={disabled ? undefined : onKeyDown}
       {...part("tab-bar")}
     >
-      <HiddenName id={nameId}>{m.workbench_title()}</HiddenName>
+      {name.hiddenName}
       {tabs.map((id) => {
         const tabDisabled = disabled || (isDefault && id === "match");
         const active = id === tab && !tabDisabled;

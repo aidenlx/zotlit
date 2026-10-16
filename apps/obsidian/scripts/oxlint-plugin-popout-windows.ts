@@ -77,7 +77,56 @@ export const noCrossWindowInstanceof: Rule = {
   },
 };
 
+const timers = new Set([
+  "setTimeout",
+  "clearTimeout",
+  "setInterval",
+  "clearInterval",
+  "requestAnimationFrame",
+  "cancelAnimationFrame",
+]);
+
+/**
+ * A timer belongs to a window: one set on the main window keeps running, or
+ * stops, apart from the pop-out the UI stands in.
+ */
+export const noGlobalTimer: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description: "Require timers from the window the UI stands in.",
+    },
+    messages: {
+      globalTimer:
+        "Call {{name}} on node.win, or on activeWindow when focus owns the work; a global timer runs on the main window, not the pop-out (see policies/popout-windows.md).",
+    },
+    schema: [],
+  },
+  create(context) {
+    return {
+      CallExpression(node) {
+        const { callee } = node;
+        const name =
+          callee.type === "Identifier"
+            ? callee.name
+            : callee.type === "MemberExpression" &&
+                callee.object.type === "Identifier" &&
+                (callee.object.name === "window" ||
+                  callee.object.name === "globalThis") &&
+                callee.property.type === "Identifier"
+              ? callee.property.name
+              : null;
+        if (name !== null && timers.has(name))
+          context.report({ node, messageId: "globalTimer", data: { name } });
+      },
+    };
+  },
+};
+
 export default {
   meta: { name: "zotlit-obsidian" },
-  rules: { "no-cross-window-instanceof": noCrossWindowInstanceof },
+  rules: {
+    "no-cross-window-instanceof": noCrossWindowInstanceof,
+    "no-global-timer": noGlobalTimer,
+  },
 };

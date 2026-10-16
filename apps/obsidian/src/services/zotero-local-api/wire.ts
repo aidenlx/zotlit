@@ -119,7 +119,9 @@ export type LocalApiFailure =
   | { kind: "write-token-used" }
   /**
    * `404` — Zotero holds no such object. Only a write produces one, and there
-   * it means the Annotation was deleted in Zotero.
+   * it means the Annotation was deleted in Zotero. The Capability Probe reads a
+   * `404` as `unreachable`: there it comes from another server on Zotero's
+   * port.
    *
    * @see https://github.com/aidenlx/zotlit/issues/1151
    */

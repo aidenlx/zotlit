@@ -1,6 +1,5 @@
 // Wire contract for the browser Workbench and one approved Local Bridge.
 
-import type { ItemSnapshot } from "#/snapshot/types";
 import * as v from "valibot";
 
 export const BRIDGE_VERSION = 2;
@@ -127,67 +126,7 @@ export type TemplateSchemaResponse = v.InferOutput<
   typeof templateSchemaResponseSchema
 >;
 
-const snapshotLibrarySelectorSchema = v.variant("type", [
-  v.object({ type: v.literal("personal") }),
-  v.object({ type: v.literal("group"), groupID: v.number() }),
-]);
-
-const snapshotProvenanceSchema = v.variant("kind", [
-  v.object({
-    kind: v.literal("sample"),
-    id: v.string(),
-    source: v.optional(v.string()),
-  }),
-  v.object({
-    kind: v.literal("connected"),
-    installationId: v.string(),
-    vault: v.string(),
-  }),
-]);
-
-const templatePathSchema = v.array(v.union([v.string(), v.number()]));
-const snapshotRootDescriptorsSchema = v.object({
-  stringCoercions: v.array(
-    v.object({ path: templatePathSchema, value: v.string() }),
-  ),
-  temporalValues: v.array(
-    v.object({
-      path: templatePathSchema,
-      type: v.picklist([
-        "Temporal.Instant",
-        "Temporal.PlainDate",
-        "Temporal.PlainYearMonth",
-      ]),
-    }),
-  ),
-  graphReferences: v.array(
-    v.object({ path: templatePathSchema, target: templatePathSchema }),
-  ),
-});
-
-export const itemSnapshotSchema: v.GenericSchema<ItemSnapshot> = v.object({
-  contractVersion: v.number(),
-  revision: v.string(),
-  item: v.object({
-    key: v.string(),
-    indexedKey: v.string(),
-    itemType: v.string(),
-    title: v.nullable(v.string()),
-    library: snapshotLibrarySelectorSchema,
-  }),
-  provenance: snapshotProvenanceSchema,
-  roots: v.object({
-    note: jsonObjectSchema,
-    filename: jsonObjectSchema,
-    annotations: v.array(jsonObjectSchema),
-  }),
-  descriptors: v.object({
-    note: snapshotRootDescriptorsSchema,
-    filename: snapshotRootDescriptorsSchema,
-    annotations: v.array(snapshotRootDescriptorsSchema),
-  }),
-  unavailable: v.array(v.object({ path: v.string(), reason: v.string() })),
-});
+export { itemSnapshotSchema } from "#/snapshot/schema";
 
 export const profileDocumentSchema = v.variant("state", [
   v.object({

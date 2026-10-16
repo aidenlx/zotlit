@@ -418,6 +418,9 @@ importers:
       '@unpic/react':
         specifier: ^1.0.2
         version: 1.0.2(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@zotlit/item-query':
+        specifier: workspace:*
+        version: link:../../packages/item-query
       '@zotlit/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -1075,6 +1078,9 @@ importers:
       effect:
         specifier: 'catalog:'
         version: 4.0.0
+      valibot:
+        specifier: 'catalog:'
+        version: 1.4.2(typescript@7.0.2)
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
@@ -1317,9 +1323,15 @@ importers:
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.6(@types/node@26.1.2)(happy-dom@20.9.0)(vite@8.1.5(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
 
   packages/templates:
     dependencies:
+      '@zotlit/filter-expression':
+        specifier: workspace:*
+        version: link:../filter-expression
       '@zotlit/shared':
         specifier: workspace:*
         version: link:../shared
@@ -1444,6 +1456,9 @@ importers:
       '@zotlit/filter-expression':
         specifier: workspace:*
         version: link:../filter-expression
+      '@zotlit/item-query':
+        specifier: workspace:*
+        version: link:../item-query
       '@zotlit/templates':
         specifier: workspace:*
         version: link:../templates
@@ -1459,6 +1474,9 @@ importers:
       diff:
         specifier: 'catalog:'
         version: 8.0.4
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0
       jsonc-parser:
         specifier: ^3.3.1
         version: 3.3.1

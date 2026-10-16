@@ -76,6 +76,17 @@ import { registerCitationSuggest } from "./views/citation-suggest/register";
 import { registerCitedByView } from "./views/cited-by/register";
 import { registerNotePreview } from "./views/note-preview/register";
 import { registerPandocExport } from "./views/pandoc-export/register";
+import { registerQueryBlock } from "./views/query-view/block";
+import { QueryCardFocus } from "./views/query-view/card-focus";
+import { QueryFileView } from "./views/query-view/file-view";
+import {
+  queryFileFileMenu,
+  queryFileFolderMenu,
+  registerQueryFileView,
+} from "./views/query-view/register";
+import { literatureNotes } from "./views/query-view/table-notes";
+import { tableReaders } from "./views/query-view/table-readers";
+import type { QueryViewDeps } from "./views/query-view/view";
 import { registerQuickSwitch } from "./views/quick-switch/register";
 import { registerReferencesView } from "./views/references/register";
 import {
@@ -434,12 +445,13 @@ export default class ZotLitPlugin extends Plugin {
       }),
     );
 
-    registerAnnotView(this, {
+    const queryCardFocus = new QueryCardFocus(this.app);
+    const queryViewDeps: QueryViewDeps = {
       app: this.app,
+      cardFocus: queryCardFocus,
       reads: services.zoteroReads,
       libraryScope: services.libraryScope,
-      liveUpdate: services.localServer,
-      pdfReaders: services.pdfAnnotationEditor,
+      query: services.query,
       annotations: services.annotationRepository,
       excerptDisplay: services.excerptDisplay,
       allowEditing: () => void services.capabilityNotices.allowEditing(),
@@ -449,22 +461,50 @@ export default class ZotLitPlugin extends Plugin {
         libraryTagNames(services.zoteroReads, annotationKey),
       zoteroPref: services.zoteroPref,
       noteFeature: services.noteFeature,
+      literatureNotes: literatureNotes({
+        app: this.app,
+        createProfile: services.createProfile,
+        importProfile: services.importProfile,
+        noteFeature: services.noteFeature,
+        noteIndex: services.noteIndex,
+        zoteroPref: services.zoteroPref,
+        zoteroReads: services.zoteroReads,
+      }),
+      readers: tableReaders({
+        app: this.app,
+        reads: services.zoteroReads,
+        zoteroPref: services.zoteroPref,
+        settings: services.settings,
+      }),
+    };
+    registerAnnotView(this, {
+      ...queryViewDeps,
+      reads: services.zoteroReads,
+      libraryScope: services.libraryScope,
+      excerptDisplay: services.excerptDisplay,
+      liveUpdate: services.localServer,
+      pdfReaders: services.pdfAnnotationEditor,
       noteIndex: services.noteIndex,
       itemLookup: services.itemLookup,
       settings: services.settings,
     });
+    registerQueryFileView(this, queryViewDeps);
+    registerQueryBlock(this, queryViewDeps);
 
     // The Annotation History's own verbs. A bound PDF view and an Annotation
-    // View each step the Attachment they show, so the palette acts on
-    // whichever of them the user is in, and the menu on the leaf it was
-    // opened over.
+    // View each step the Attachment they show, and a Query View the
+    // Attachment of its focused card, so the palette acts on whichever of
+    // them the user is in, and the menu on the leaf it was opened over.
     addAnnotationHistoryActions(this, {
       annotations: services.annotationRepository,
       activeSurface: (): HistorySurface | null => {
         const view = this.app.workspace.getActiveViewOfType(View);
-        return view instanceof AnnotationView
-          ? view
-          : services.pdfAnnotationEditor.bindingFor(view);
+        if (view instanceof AnnotationView) return view;
+        if (view instanceof QueryFileView) return view.query;
+        return (
+          (view && queryCardFocus.surfaceIn(view.containerEl)) ??
+          services.pdfAnnotationEditor.bindingFor(view)
+        );
       },
     });
 
@@ -474,6 +514,7 @@ export default class ZotLitPlugin extends Plugin {
       customize,
       app: this.app,
       zoteroReads: services.zoteroReads,
+      query: services.query,
       noteIndex: services.noteIndex,
       zoteroPref: services.zoteroPref,
       itemLookup: services.itemLookup,
@@ -611,20 +652,25 @@ export default class ZotLitPlugin extends Plugin {
 
     // Every ZotLit entry on Obsidian's file menu. Each entry names its own
     // section; this order is the order of the rows inside each section.
-    registerFileMenu(this, [
-      attachmentOpenFileMenu(attachmentOpenDeps),
-      templateWorkbenchFileMenu(this.app, templateWorkbenchDeps),
-      noteFeatureFileMenu(noteFeatureDeps),
-      customizeFileMenu(this.app, customizeDeps),
-      citationPresentationFileMenu(citationPresentationDeps),
-      annotationHistoryFileMenu({
-        annotations: services.annotationRepository,
-        surfaceFor: (leaf) =>
-          services.pdfAnnotationEditor.bindingFor(leaf.view),
-      }),
-      indexedKeyFileMenu(),
-      explorerFileMenu(this.app),
-    ]);
+    registerFileMenu(
+      this,
+      [
+        attachmentOpenFileMenu(attachmentOpenDeps),
+        templateWorkbenchFileMenu(this.app, templateWorkbenchDeps),
+        noteFeatureFileMenu(noteFeatureDeps),
+        customizeFileMenu(this.app, customizeDeps),
+        citationPresentationFileMenu(citationPresentationDeps),
+        annotationHistoryFileMenu({
+          annotations: services.annotationRepository,
+          surfaceFor: (leaf) =>
+            services.pdfAnnotationEditor.bindingFor(leaf.view),
+        }),
+        indexedKeyFileMenu(),
+        explorerFileMenu(this.app),
+        queryFileFileMenu(this.app),
+      ],
+      [queryFileFolderMenu(this.app)],
+    );
 
     registerWelcomeView(this, {
       app: this.app,

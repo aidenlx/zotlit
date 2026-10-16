@@ -28,7 +28,8 @@
     "@zotlit/filter-expression": "workspace:*",
     "@zotlit/zotero-types": "workspace:*",
     "arkregex": "catalog:",
-    "effect": "catalog:"
+    "effect": "catalog:",
+    "valibot": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",

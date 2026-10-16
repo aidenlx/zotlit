@@ -86,7 +86,7 @@ it("lowers only leaves prefixed by this Parent Record", () => {
     field: parent.filter,
     custom: parent.custom,
   };
-  const planned = planFilter('item.title == "Research"', registry);
+  const planned = planFilter('item.title == "Research"', { registry });
   if (!("root" in planned)) throw new Error("Expected a Filter Expression");
   expect(parent.candidateLeaf(planned.root)).toMatchObject({
     kind: "binary",
@@ -94,16 +94,18 @@ it("lowers only leaves prefixed by this Parent Record", () => {
     right: { kind: "literal", value: "Research" },
   });
   expect(planned.root).toMatchObject({ left: { name: "item.title" } });
-  const method = planFilter('item.title.contains("Research")', registry);
+  const method = planFilter('item.title.contains("Research")', { registry });
   if (!("root" in method)) throw new Error("Expected a Filter Expression");
   expect(parent.candidateLeaf(method.root)).toMatchObject({
     kind: "method",
     subject: { kind: "field", name: "title" },
   });
-  const own = planFilter('title == "Research"', vocabulary.filter);
+  const own = planFilter('title == "Research"', {
+    registry: vocabulary.filter,
+  });
   if (!("root" in own)) throw new Error("Expected a Filter Expression");
   expect(parent.candidateLeaf(own.root)).toBeNull();
-  const scanOnly = planFilter('item.secret == "Draft"', registry);
+  const scanOnly = planFilter('item.secret == "Draft"', { registry });
   if (!("root" in scanOnly)) throw new Error("Expected a Filter Expression");
   expect(parent.candidateLeaf(scanOnly.root)).toBeNull();
   expect(parent.indexedKeyTarget("item.indexedKey")).toBe("item");
@@ -159,8 +161,7 @@ it("reaches attachment.item.title through the parent's own declaration", () => {
   expect(attachment.owns("attachment.missing.title", "title")).toBe(false);
   expect(attachment.sortable("attachment.item.title")).toBeUndefined();
   const filter = planFilter('attachment.item.title == "Nested"', {
-    field: attachment.filter,
-    custom: attachment.custom,
+    registry: { field: attachment.filter, custom: attachment.custom },
   });
   if (!("root" in filter)) throw new Error("Expected a Filter Expression");
   const clock = {

@@ -23,7 +23,7 @@ The text a vault note or document holds now: the text of the view that has it op
 _Avoid_: buffer, editor text, file content (the disk text only)
 
 **Managed Region**:
-The `%%zt-managed%%`-delimited portion of a Literature Note's body, re-rendered from the Managed Block (previously the `content` template) on every update. Content outside the markers is user-owned and preserved.
+The `%%zt-managed%%`-delimited portion of a Literature Note's body, re-rendered from the Managed Block (previously the `content` template) on every update. A Query Block in it keeps its text through the update. Content outside the markers is user-owned and preserved.
 _Avoid_: managed block, template region, synced region
 
 **Managed Frontmatter**:
@@ -285,7 +285,7 @@ _Avoid_: attempt (bare), run, preview retention (the editor's, not the CLI's)
 ### Annotation view
 
 **Annotation View** _(Obsidian)_:
-The sidebar pane that shows one Attachment's live Annotations as Annotation Cards, chosen by its Follow Mode and narrowed by its Annotation Filter. It reads whether or not Zotero is running; the Editing Capability decides only whether a card's verbs can act.
+The sidebar pane that shows one Attachment's live Annotations as Annotation Cards, chosen by its Follow Mode and narrowed by its Annotation Filter. It reads whether or not Zotero is running; the Editing Capability decides only whether a card's verbs can act. Under [#1459](https://github.com/aidenlx/zotlit/issues/1459) it becomes the sidebar Query View: the Annotations Layout with the followed Item and Attachment as its Query Context, showing only the controls that have a meaning for one Attachment.
 _Avoid_: annotation sidebar, annotation panel, annotation list (that is the cards alone)
 
 **Annotation Filter**:
@@ -301,8 +301,12 @@ One live Annotation presented as a card in the annotation-view sidebar — type 
 _Avoid_: annotation item, annotation row
 
 **Card Selection**:
-The Annotation Cards an Annotation View has selected — none, one, or several; each view holds its own, whatever its Follow Mode. It is kept in step with the Obsidian PDF view the Follow Mode follows, and each Zotero Reader selection replaces it. It holds only cards the Annotation Filter shows.
+The Annotation Cards an Annotation View has selected — none, one, or several; each view holds its own, whatever its Follow Mode. It is kept in step with the Obsidian PDF view the Follow Mode follows, and each Zotero Reader selection replaces it. It holds only cards the list draws: a card the Annotation Filter hides, or one in a collapsed group, leaves it. ↑ and ↓ step through the cards in the order they are drawn, so a card shown under two group headings is reached at each.
 _Avoid_: selected annotations (the reader's are selected Annotation Marks), multi-selection (as a separate thing), primary card
+
+**Card Place**:
+Where one Annotation Card stands in the drawn list: its Annotation alone, or the group heading it stands under and its Annotation. A card shown under two group headings has two Card Places and is one card in the Card Selection; ↑ and ↓ step from place to place.
+_Avoid_: card position, card slot, card copy
 
 **Selected Card**:
 An Annotation Card in the Card Selection. A card selected alone opens its full text and offers its edit controls. A card selected with others stays compact but still shows its tag control; a press on it first selects that card alone. Only on a card selected alone is the comment an editable field: a click on an unselected card selects it and edits nothing.
@@ -441,6 +445,52 @@ _Avoid_: char array, text layer (that is Obsidian's DOM), page text
 **Page Label**:
 The printed page number Zotero shows for a page, predicted from the document's characters and catalog, then aligned to the user's earlier Annotations on the Attachment.
 _Avoid_: page number (the 1-based index), page index
+
+### Query views
+
+**Query File** _(Obsidian)_:
+A `.zotquery` vault file that holds one or more Query Views over the Zotero library, with shared filters, formulas and property settings in the shape of an Obsidian `.base` file. It opens in a tab and embeds with `![[file.zotquery]]` or `![[file.zotquery#View]]`.
+_Avoid_: base, query note, view file
+
+**Query Block**:
+A ` ```zotquery ` code block in a note that holds the same text as a Query File. The default Literature Note Template renders one in place of the annotation listing in the Managed Region; a full update keeps the existing block text, so toolbar changes stay.
+_Avoid_: annotation block, embed block
+
+**Query View**:
+One named view of a Query File or Query Block: a Layout with its own filters, sort, grouping and visible properties, edited through its toolbar. The sidebar Annotation View is a Query View with a fixed Query Context.
+_Avoid_: tab, page, saved search
+
+**Layout**:
+How a Query View draws its rows: Annotations (Annotation Cards), Table (Item rows that expand into Attachments, Annotations and notes, as in Zotero's item list), List, or Cards.
+_Avoid_: view type, mode
+
+**Grouping**:
+How a Query View gathers its rows under group headings: by one group path its Query Dataset offers, such as the Item, the colour or a tag, in an ascending, descending or manual order. A row with two values of a list path, such as two tags, stands under both headings; a row with no value stands under "No value".
+_Avoid_: group by (the file key), section, category
+
+**Query Context**:
+The Item, and the Attachment when there is one, that a Query View is relative to, read as `this.item` and `this.attachment` in its filters: the Item of the note that embeds the file or holds the block, or the Item and Attachment the sidebar Annotation View follows. In a Query File's own tab `this` has no value.
+_Avoid_: current note, scope
+
+**Property**:
+One value that a Query View can show, sort, group, filter and name for each record: a field of its Query Dataset, read by its path, a Formula Property, or the Literature Note Property.
+_Avoid_: column, field (on the view side), attribute
+
+**Visible Properties**:
+The properties a Query View shows, in its order: the columns of the Table, the lines of the List and Cards, and the columns of copy and CSV export. Saved as the view's `order`. A Table whose `order` leaves out the Literature Note Property hides its column, as Bases hides a property its `order` leaves out.
+_Avoid_: columns (alone), fields, shown properties
+
+**Formula Property**:
+A property of a Query File that a Formula under its top-level `formulas` key yields, named `formula.<name>`, added, edited and removed from the Properties popover. It is shown and exported like any other property; a record on which its Formula gives an Error Value shows that error in its cell. On a view whose Query Dataset cannot read its Formula, it is a problem of that view's property; a filter that reads such a Formula is a problem of that condition too.
+_Avoid_: computed property, calculated property, formula column
+
+**Literature Note Property**:
+The property `vault.literatureNote` of a Table view: the Item's Literature Note, which the Note Index answers. Each Item row shows it as a link to the note, or as a button that creates the note. It shows, moves, resizes and takes a Display Name like any other property, and the Properties popover lists it as a top-level property. The Table is the Layout that shows it; Cards and List keep it in `order` for a switch back to the Table. ZotLit Query reads the other Visible Properties, which are also the columns of copy and CSV export. Sorting, grouping and filtering use the fields of the Query Dataset. A Table without `order` shows it after the default fields.
+_Avoid_: note column, Literature note column (in code)
+
+**Display Name**:
+The text a Query View shows for one property in its headers, its labels, its Properties popover, and the header row of copy and CSV export, saved under the Query File's top-level `properties` key. A property without a Display Name shows its field label or its path.
+_Avoid_: alias, column title, rename (the action, not the text)
 
 ### Note content
 

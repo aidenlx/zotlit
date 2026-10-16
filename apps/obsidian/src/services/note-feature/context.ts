@@ -30,6 +30,7 @@ import type {
   PreparedExcerpts,
 } from "@/services/excerpt-image/prepare";
 import type { prepareSingleExcerpt } from "@/services/excerpt-image/prepare-single";
+import type { QueryService } from "@/services/item-query/service";
 import type { NoteImport, NoteImporter } from "@/services/note-import/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import { getProfileBinding } from "@/services/profile/bindings";
@@ -86,6 +87,8 @@ export interface NoteFeatureDeps {
    * Literature Note and the Child Notes it imports read one database state.
    */
   zoteroReads: Pick<ZoteroReadsService, "acquireRead" | "ready">;
+  /** ZotLit Query, which tests the Profile Matches of an Item. */
+  query: Pick<QueryService, "run">;
   noteIndex: Pick<
     NoteIndex,
     "ready" | "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"

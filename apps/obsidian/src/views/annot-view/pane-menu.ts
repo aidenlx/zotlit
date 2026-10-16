@@ -14,6 +14,8 @@ export interface PaneMenuInput {
   actions: AnnotActions;
   /** The instant a cooldown's remaining seconds are measured from. */
   now: Temporal.Instant;
+  /** Adds the Query View's Sort, Group by and "Filter..." rows. */
+  query?: (menu: Menu) => void;
 }
 
 /**
@@ -24,10 +26,15 @@ export interface PaneMenuInput {
  */
 export function buildPaneMenu(
   menu: Menu,
-  { state, actions, now }: PaneMenuInput,
+  { state, actions, now, query }: PaneMenuInput,
 ): void {
   // Obsidian already sets these unsectioned rows off from its own sections.
   buildHeaderMenu(menu, { groups: headerMenu(state, now), actions });
+
+  if (query) {
+    menu.addSeparator();
+    query(menu);
+  }
 
   menu.addSeparator();
   menu.addItem((item) =>

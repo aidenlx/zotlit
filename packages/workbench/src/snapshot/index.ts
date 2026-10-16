@@ -1,5 +1,6 @@
 // Node-only export of redacted, renderable Item Snapshots from Zotero data.
 
+import { Effect } from "effect";
 import { createHash } from "node:crypto";
 
 import {
@@ -18,6 +19,8 @@ import {
 } from "@zotlit/db";
 import type { Item } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
+import { ItemQueryDatabase } from "@zotlit/db/item-query";
+import { readQueryItemSeed } from "@zotlit/item-query";
 
 import { applyFieldAllowList } from "./allowlist";
 import { collectRootDescriptors } from "./descriptors";
@@ -113,6 +116,11 @@ export function exportItemSnapshot(
       ),
     ),
   };
+  const seed = Effect.runSync(
+    readQueryItemSeed(item).pipe(
+      Effect.provideService(ItemQueryDatabase, { client }),
+    ),
+  );
   const body = {
     contractVersion: CONTRACT_VERSION,
     item: {
@@ -136,6 +144,7 @@ export function exportItemSnapshot(
         collectUnavailable(annotation, `annotations[${index}].zt`),
       ),
     ],
+    ...(seed ? { seed } : {}),
   };
 
   return {

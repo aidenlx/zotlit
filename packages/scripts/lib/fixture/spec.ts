@@ -166,12 +166,18 @@ export interface FixtureItem {
    */
   literatureNoteProfile?: string;
   /**
-   * Seed this Item's Literature Note with a managed region holding the
-   * per-Annotation output ZotLit wrote before Mark Landing (#1156): a plain
-   * page label, with no link and no Annotation Anchor. Update Note rewrites
-   * that region, so the note stands for work a reader has already done.
+   * Seed this Item's Literature Note as the default note template renders it:
+   * the Zotero and Attachment links, then a managed region whose Annotations
+   * are a Query Block. Below the region, outside what Update Note rewrites,
+   * the note embeds a view of a Query File, so one note holds both forms.
    */
-  literatureNoteStaleAnnotations?: boolean;
+  literatureNoteRendered?: boolean;
+  /**
+   * End this Item's Literature Note with a Query Block of the Item's own
+   * Annotations (`item == this.item`), so the note shows a Query View whose
+   * `this` comes from its `zotero-key`.
+   */
+  literatureNoteQueryBlock?: boolean;
   title: string;
   /**
    * The Item's **Venue**. The builder resolves which per-type field receives
@@ -458,6 +464,7 @@ export const ITEMS: readonly FixtureItem[] = [
     creators: [author("Ursula", "Nafula")],
     dateModified: "2025-02-21 12:00:00",
     collectionIDs: [1],
+    literatureNoteQueryBlock: true,
   },
   {
     itemID: 28,
@@ -579,7 +586,7 @@ export const ITEMS: readonly FixtureItem[] = [
     ],
     dateModified: "2025-02-05 12:00:00",
     collectionIDs: [1],
-    literatureNoteStaleAnnotations: true,
+    literatureNoteRendered: true,
   },
   {
     itemID: 57,
@@ -1125,6 +1132,30 @@ export const NOTES: readonly FixtureNote[] = [
     importedNoteBody: null,
     dateModified: "2025-02-22 12:00:00",
     trashed: true,
+    collectionIDs: [],
+  },
+  {
+    itemID: 33,
+    libraryID: 1,
+    key: "TRASHCLD",
+    parentItemID: 1,
+    title: "A trashed reading note on the personal alpha",
+    note: '<div class="zotero-note znv1"><div data-schema-version="9"><h1>A trashed reading note on the personal alpha</h1>\n<p>A Child Note in the trash, so views of the Item leave it out.</p>\n</div></div>',
+    importedNoteBody: null,
+    dateModified: "2025-02-21 12:00:00",
+    trashed: true,
+    collectionIDs: [],
+  },
+  {
+    itemID: 34,
+    libraryID: 1,
+    key: "NNNNFFFF",
+    parentItemID: 57,
+    title: "Reading notes on the preprint",
+    note: '<div class="zotero-note znv1"><div data-schema-version="9"><h1>Reading notes on the preprint</h1>\n<p>A Child Note of an item that also has an Attachment.</p>\n</div></div>',
+    importedNoteBody:
+      "# Reading notes on the preprint\n\nA Child Note of an item that also has an Attachment.\n",
+    dateModified: "2025-02-20 12:00:00",
     collectionIDs: [],
   },
 ];

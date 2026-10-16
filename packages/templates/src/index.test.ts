@@ -4,7 +4,11 @@ import note from "@defaults/note.eta?raw";
 import { describe, expect, it } from "vitest";
 
 import { basename, formatBlockquote, TemplateEngine } from "./index";
-import { managedRegionTransform, MARKER_END, MARKER_START } from "./obsidian";
+import {
+  formatManagedRegion,
+  managedRegionTransform,
+  MARKER_START,
+} from "./obsidian";
 
 const wrapContent = managedRegionTransform("content");
 
@@ -74,8 +78,11 @@ describe("TemplateEngine", () => {
     engine.define("content", content);
     engine.define("note", note);
 
+    const plain = new TemplateEngine();
+    plain.define("content", content);
+
     expect(engine.render("note", noteContext)).toContain(
-      `${MARKER_START}\n\n${MARKER_END}`,
+      formatManagedRegion(plain.render("content", noteContext)),
     );
   });
 
@@ -84,8 +91,13 @@ describe("TemplateEngine", () => {
     engine.define("annotation", annotation);
     engine.define("content", content);
 
+    const plain = new TemplateEngine();
+    plain.define("content", content);
+
     expect(engine.render("content", { annotations: [], notes: [] })).toBe(
-      `${MARKER_START}\n\n${MARKER_END}`,
+      formatManagedRegion(
+        plain.render("content", { annotations: [], notes: [] }),
+      ),
     );
   });
 

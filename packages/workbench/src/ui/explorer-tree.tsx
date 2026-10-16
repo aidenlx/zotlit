@@ -7,7 +7,9 @@ import type {
   ValueNode,
 } from "#/explorer/index";
 import { regex } from "arkregex";
-import { useId, useState } from "react";
+import { useState } from "react";
+
+import { useUniqueId } from "@zotlit/ui";
 
 import { useTooltip } from "./host";
 import { useWorkbenchMessages } from "./messages";
@@ -62,7 +64,7 @@ export function DisplayTree({
   onFieldContextMenu,
 }: DisplayTreeProps): React.ReactElement {
   const part = useParts("explorerTree");
-  const id = useId();
+  const id = useUniqueId();
   return (
     <div {...part("sections")}>
       {sections.map((section) => (

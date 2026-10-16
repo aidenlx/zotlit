@@ -66,6 +66,15 @@ export const ETA = DEFAULT_PROFILE_SOURCE.replace(
   "language: eta",
 );
 
+/**
+ * The default Profile with a static annotation listing in place of its Query
+ * Block, so the note calls the annotation template for each Annotation.
+ */
+export const ANNOTATION_LIST = DEFAULT_PROFILE_SOURCE.replace(
+  /## Annotations\n\n```zotquery\n[\s\S]*?```\n/,
+  "{% for annotation in zt.annotations %}\n{% render_annotation annotation %}\n{% endfor %}\n",
+);
+
 export const CONNECTED = DEFAULT_PROFILE_SOURCE.replace(
   "name: Default",
   "name: Connected profile",

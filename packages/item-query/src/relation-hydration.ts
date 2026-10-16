@@ -2,6 +2,7 @@ import { Effect } from "effect";
 
 import {
   readItemAttachments,
+  readItemNotes,
   readItemAnnotations,
   readAttachmentAnnotations,
   HYDRATE_CHUNK_SIZE,
@@ -11,6 +12,7 @@ import type {
   AnnotationScanRow,
   ItemQueryDatabase,
   ItemQueryReaderError,
+  NoteScanRow,
   ScanRow,
 } from "@zotlit/db/item-query";
 
@@ -23,6 +25,7 @@ export interface RelationChunk {
   readonly attachments: Map<number, readonly AttachmentScanRow[]>;
   readonly itemAnnotations: Map<number, readonly AnnotationScanRow[]>;
   readonly attachmentAnnotations: Map<number, readonly AnnotationScanRow[]>;
+  readonly notes: Map<number, readonly NoteScanRow[]>;
 }
 
 export const relationChunk = (): RelationChunk => ({
@@ -30,6 +33,7 @@ export const relationChunk = (): RelationChunk => ({
   attachments: new Map(),
   itemAnnotations: new Map(),
   attachmentAnnotations: new Map(),
+  notes: new Map(),
 });
 
 const readCached = Effect.fnUntraced(function* <Row>(
@@ -82,6 +86,16 @@ export const relatedAttachmentAnnotations = (
     ids,
     read: readAttachmentAnnotations,
     parentID: (row) => row.attachmentID,
+  });
+
+export const relatedItemNotes = (
+  chunk: RelationChunk,
+  ids: readonly number[],
+) =>
+  readCached(chunk.notes, {
+    ids,
+    read: readItemNotes,
+    parentID: (row) => row.parent.itemID,
   });
 
 /** Child lists can exceed the parent chunk; hydrate them with the existing bounded readers. */

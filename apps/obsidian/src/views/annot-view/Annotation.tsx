@@ -10,6 +10,7 @@ import {
 import type { DragEvent, KeyboardEvent, MouseEvent, RefObject } from "react";
 
 import type { ResolvedAnnotationTypeName } from "@zotlit/db";
+import { isPageNumber } from "@zotlit/db";
 
 import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
@@ -58,6 +59,8 @@ import type {
   HeldDraft,
   VerbBlocks,
 } from "./card-controls";
+import { CardDisplayContext } from "./card-display";
+import type { CardPlace } from "./card-selection";
 import {
   CommentView,
   ConflictPanelSlot,
@@ -83,6 +86,7 @@ import type {
 } from "./excerpt-image-state";
 import { CARD_SELECTOR } from "./history";
 import {
+  capabilityOf,
   fieldDraft,
   isEditing,
   selectedAlone,
@@ -122,6 +126,11 @@ interface AnnotationProps {
 }
 
 interface AnnotationCardProps extends AnnotationProps {
+  /**
+   * Where the card stands in the list: a card with two tags stands under two
+   * group headings, once at each place.
+   */
+  place: CardPlace;
   /** Whether this card is the card list's one tab stop. */
   tabStop: boolean;
 }
@@ -146,7 +155,7 @@ interface CardOffer extends Omit<CardControls, "comment" | "text"> {
  * @see https://github.com/aidenlx/zotlit/issues/1146
  */
 function useCardControls(annot: AnnotationRecord, alone: boolean): CardOffer {
-  const capability = useAnnotStore((s) => s.capability);
+  const capability = useAnnotStore((s) => capabilityOf(s, annot.parentKey));
   const mutation = useMutation(annot.key);
   const hasTags = annot.tags.length > 0;
   const { type } = annot;
@@ -182,12 +191,19 @@ export function blocksNow(
  * drawn.
  */
 function useVerbBlocks(annot: AnnotationRecord): VerbBlocks {
-  const capability = useAnnotStore((state) => state.capability);
+  const capability = useAnnotStore((state) =>
+    capabilityOf(state, annot.parentKey),
+  );
   return blocksNow(annot, capability);
 }
 
 /** One row of the card list's grid, its content in one cell. */
-export function Annotation({ annot, collapsed, tabStop }: AnnotationCardProps) {
+export function Annotation({
+  annot,
+  place,
+  collapsed,
+  tabStop,
+}: AnnotationCardProps) {
   const actions = useContext(AnnotActionsContext);
   const selected = useAnnotStore((s) =>
     s.cardSelection.selected.includes(annot.key),
@@ -206,15 +222,18 @@ export function Annotation({ annot, collapsed, tabStop }: AnnotationCardProps) {
 
   return (
     <div
-      className="zt-annot-card zt:group zt:overflow-hidden zt:rounded-(--bases-kanban-card-radius) zt:bg-(--bases-kanban-card-background) zt:px-3 zt:py-2 zt:text-xs zt:leading-(--line-height-tight) zt:shadow-(--bases-kanban-card-shadow) zt:data-selected:bg-primary/10 zt:data-selected:ring-1 zt:data-selected:ring-primary zt:motion-safe:transition-[background-color,box-shadow] zt:motion-safe:duration-(--anim-duration-fast)"
-      // The card is the surface Obsidian draws for a Bases card: its fill, its
-      // radius and its hairline-and-drop shadow are read from the same theme
-      // variables, so a theme that restyles Bases cards restyles these. Inside,
-      // it is set as a search result's match is: 12px on the tight leading in
-      // 8px by 12px of padding, its parts stacked on a 6px gap with no divider
-      // rule between them. The chip at the top and the tag chips at the bottom
-      // each carry their own air inside the 8px, which is what keeps the two
-      // insets reading as one.
+      className="zt-annot-card zt:group zt:overflow-hidden zt:rounded-md zt:bg-background zt:px-3 zt:py-2 zt:text-xs zt:leading-(--line-height-tight) zt:shadow-[0_0_0_1px_var(--background-modifier-border)] zt:hover:shadow-[0_0_0_1px_var(--background-modifier-border-hover)] zt:focus-visible:ring-(length:--input-border-width-focus) zt:focus-visible:ring-border-focus zt:data-selected:bg-primary/10 zt:data-selected:ring-1 zt:data-selected:ring-primary zt:data-selected:focus-visible:ring-(length:--input-border-width-focus) zt:motion-safe:transition-[background-color,box-shadow] zt:motion-safe:duration-(--anim-duration-fast)"
+      // The card is the surface Obsidian draws for a card in a Bases Cards
+      // view: its fill, its radius, its hairline and the hairline it takes on
+      // hover are read from the same theme variables, so a theme that
+      // restyles Bases cards restyles these. A card the keyboard reached
+      // wears the focus ring Obsidian draws on a focused Bases card, and a
+      // Selected Card the accent; the two compose, so the focus stays seen
+      // on a selected card. Inside, it is set as a search result's match is:
+      // 12px on the tight leading in 8px by 12px of padding, its parts
+      // stacked on a 6px gap with no divider rule between them. The chip at
+      // the top and the tag chips at the bottom each carry their own air
+      // inside the 8px, which is what keeps the two insets reading as one.
       //
       // Zotero's hex is data, so it rides in a custom property and
       // `data-annot-color` says it is there; the declaration that reads them
@@ -225,6 +244,7 @@ export function Annotation({ annot, collapsed, tabStop }: AnnotationCardProps) {
       style={{ "--zt-annot-color": annot.color } as React.CSSProperties}
       data-annot-color={annot.color ?? undefined}
       data-zotero-annotation-key={annot.key}
+      data-card-place={place}
       data-selected={selected ? "" : undefined}
       data-alone={alone ? "" : undefined}
       role="row"
@@ -262,6 +282,7 @@ export function Annotation({ annot, collapsed, tabStop }: AnnotationCardProps) {
             : Keymap.isModifier(e.nativeEvent, "Mod")
               ? "toggle"
               : "click",
+          place,
         );
       }}
       // A right-click opens the "…" menu at the pointer. A text field keeps
@@ -350,7 +371,7 @@ function LockMark({ lock }: { lock: AnnotationLock }) {
         m.annot_view_lock_label({ reason: lockReasonText(lock.reason) }),
       )}
     >
-      <Icon name="lock" size={12} />
+      <Icon name="lock" size="var(--icon-xs)" />
     </span>
   );
 }
@@ -558,6 +579,7 @@ function TagSlot({
   endSession: RefObject<EndTagSession | null>;
 }) {
   const actions = useContext(AnnotActionsContext);
+  const display = useContext(CardDisplayContext);
   const session = useTagSession(annot);
   const auto = useMemo(() => autoTags(annot), [annot]);
   const block = useVerbBlocks(annot).tags;
@@ -603,6 +625,7 @@ function TagSlot({
       </div>
     );
   }
+  if (!display.tags) return null;
   return <TagRow names={shownTagNames(annot, draft)} />;
 }
 
@@ -667,6 +690,7 @@ function CommentSlot({
   control: CardControl | null;
 }) {
   const actions = useContext(AnnotActionsContext);
+  const display = useContext(CardDisplayContext);
   const editing = useFieldEditing(annot, "comment");
   const panel = useFieldDraftPanel(annot, "comment");
   const entry = control
@@ -682,6 +706,8 @@ function CommentSlot({
         entry={entry}
       />
     );
+  // A host can hide the comment; the card selected alone still offers it.
+  if (!display.comment && !control) return null;
   // A card that does not offer the field shows the comment it has, and
   // nothing where it has none.
   if (!control && annot.comment === null) return null;
@@ -714,7 +740,9 @@ function useFieldDraftPanel(
   field: TextField,
 ): FieldDraftPanelState | null {
   const draft = useAnnotStore((state) => fieldDraft(state, field, annot.key));
-  const capability = useAnnotStore((state) => state.capability);
+  const capability = useAnnotStore((state) =>
+    capabilityOf(state, annot.parentKey),
+  );
   // Held by identity while the draft and the capability stand, so a panel
   // redraws on a change and not on every render of the card.
   return useMemo(() => {
@@ -989,14 +1017,16 @@ function ExcerptBlock({
 
   return (
     // The excerpt reads as a search result's match does: the card's own 12px
-    // on the tight leading, in the full ink, behind a 2px rule in the
-    // Annotation's colour — the reader's own mark for the document's text, and
-    // what tells the excerpt from the comment the user wrote under it. An
-    // Annotation with no colour gets the rule in the border ink. The clamp cuts
-    // it at three lines.
+    // on the tight leading, in the full ink, behind a rule as thick as the
+    // theme draws a quote's, in the Annotation's colour — the reader's own
+    // mark for the document's text, and what tells the excerpt from the
+    // comment the user wrote under it. An Annotation with no colour gets the
+    // rule in the border ink. The clamp cuts it at three lines.
+    // `zt-annot-excerpt` is where the view stylesheet keeps a note's own
+    // quote style off it inside a Query Block.
     <blockquote
       className={cn(
-        "zt:group/quote zt:border-s-2 zt:ps-2 zt:text-pretty",
+        "zt-annot-excerpt zt:group/quote zt:border-s-(length:--blockquote-border-thickness) zt:ps-2 zt:text-pretty",
         annot.color ? "zt:border-(--zt-annot-color)" : "zt:border-border",
         collapsed &&
           !alone &&
@@ -1055,8 +1085,12 @@ function EditTextButton({
 
 function ExcerptImage({ annot, collapsed }: AnnotationProps) {
   const actions = useContext(AnnotActionsContext);
-  const source = useAnnotStore((s) => s.annotationSource);
-  const sourceScope = useAnnotStore((s) => s.annotationSourceScope);
+  const source = useAnnotStore(
+    (s) => s.sources.get(annot.parentKey)?.source ?? null,
+  );
+  const sourceScope = useAnnotStore(
+    (s) => s.sources.get(annot.parentKey)?.scope ?? null,
+  );
   const heldTarget = useRef<ExcerptImageTarget | null>(null);
   const target = excerptImageTarget(heldTarget.current, {
     annotation: annot,
@@ -1130,7 +1164,9 @@ function ExcerptImage({ annot, collapsed }: AnnotationProps) {
         annot.text ??
         (annot.pageLabel === null
           ? m.annot_view_card_image_alt_no_page()
-          : m.annot_view_card_image_alt({ page: annot.pageLabel }))
+          : isPageNumber(annot.pageLabel)
+            ? m.annot_view_card_image_alt({ page: annot.pageLabel })
+            : m.annot_view_card_image_alt_label({ label: annot.pageLabel }))
       }
     />
   );
@@ -1140,13 +1176,15 @@ function ExcerptImage({ annot, collapsed }: AnnotationProps) {
  * What the Annotation is, where it is and what colour it was made in, as one
  * chip: the type glyph in the highlight colour before the page, on a fill of
  * that colour at 22%, a 20px box centred on the 22px row the verbs wear, with
- * a 12px glyph so the chip reads a step lighter than a verb. The page is a
- * locator, so it is set in the monospace face at 11px, which reads as a
- * reference rather than as a word of the excerpt below it; `zt-annot-page-chip`
- * is where the view stylesheet sets that size, one step under the card's own. The colour is data Zotero stored,
- * so it rides in the card's own `--zt-annot-color` and the declarations that
- * read it stay utilities; an Annotation with no colour gets the glyph in the
- * muted ink on no fill, which is the whole of what "no colour" has to say.
+ * the glyph at the theme's smallest icon size. The page is a locator, so it is
+ * set in the monospace face at the interface's smaller size, which reads as a
+ * reference rather than as a word of the excerpt below it. In the monospace
+ * face the no-break space between "p." and the number is a whole cell, which
+ * reads as a gap; the word spacing takes it back to a hair. The colour is data
+ * Zotero stored, so it rides in the card's own `--zt-annot-color` and the
+ * declarations that read it stay utilities; an Annotation with no colour gets
+ * the glyph in the muted ink on no fill, which is the whole of what "no
+ * colour" has to say.
  *
  * The chip is the card's drag handle. Where a note is open to take it, the
  * drag rides on it; where the Annotation has a backlink, its click opens the
@@ -1166,31 +1204,38 @@ function PageChip({
   backlink?: string;
   onDragStart: (e: DragEvent<HTMLElement>) => void;
 }) {
+  const display = useContext(CardDisplayContext);
   const chip = cn(
-    "zt-annot-page-chip zt:flex zt:h-5 zt:min-w-0 zt:items-center zt:gap-1 zt:rounded-sm zt:px-1 zt:font-mono zt:font-medium zt:tabular-nums",
+    "zt-annot-page-chip zt:flex zt:h-5 zt:min-w-0 zt:items-center zt:gap-1 zt:rounded-sm zt:px-1 zt:font-mono zt:text-xs zt:font-medium zt:tracking-tight zt:tabular-nums",
+    // Obsidian draws a bare `<a>` from its `--link-*` variables, unlayered,
+    // where no colour or weight utility reaches. The chip sets those
+    // variables instead, so the link keeps the chip's ink and weight and
+    // drops the underline; on the `<span>` they are inert.
+    "zt:[--link-decoration-hover:none] zt:[--link-decoration:none] zt:[--link-weight:var(--font-medium)]",
     color
-      ? "zt:bg-(--zt-annot-color)/22 zt:text-foreground zt:hover:ring-1 zt:hover:ring-(--zt-annot-color) zt:motion-safe:transition-shadow"
-      : "zt:text-muted-foreground",
+      ? "zt:bg-(--zt-annot-color)/22 zt:text-foreground zt:[--link-color-hover:var(--text-normal)] zt:[--link-color:var(--text-normal)] zt:hover:ring-1 zt:hover:ring-(--zt-annot-color) zt:motion-safe:transition-shadow"
+      : "zt:text-muted-foreground zt:[--link-color-hover:var(--text-muted)] zt:[--link-color:var(--text-muted)]",
   );
   const marks = (
     <>
       <Icon
         name={typeIcon(type)}
-        size={12}
+        size="var(--icon-xs)"
         className={cn("zt:shrink-0", color && "zt:text-(--zt-annot-color)")}
       />
-      {page && (
-        <span className="zt:truncate">{m.annot_view_page({ page })}</span>
+      {page && display.page && (
+        <span className="zt:truncate">
+          {isPageNumber(page) ? m.annot_view_page({ page }) : page}
+        </span>
       )}
     </>
   );
   if (backlink) {
     return (
-      // Obsidian paints every `<a>` in the accent with an underline and marks
-      // an external one with a boxed glyph, all unlayered; `zt-annot-page-link`
-      // is where the view stylesheet takes the chip back to its own ink.
+      // Obsidian paints every `<a>` in the accent with an underline; the
+      // chip's `--link-*` values take it back to its own ink.
       <a
-        className={cn("zt-annot-page-link", chip)}
+        className={chip}
         href={backlink}
         draggable
         onDragStart={onDragStart}

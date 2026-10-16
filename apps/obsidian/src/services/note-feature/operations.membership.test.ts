@@ -1,6 +1,6 @@
 // Creation preparation and registry behavior over Profile documents and relational Item rows.
 import { Effect } from "effect";
-import type { TFile } from "obsidian";
+import type { TFile, Vault } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { stringify as stringifyYaml } from "yaml";
 
@@ -19,12 +19,9 @@ import {
 } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
-import { matchItem } from "@/services/profile-selection";
+import { QueryService } from "@/services/item-query/service";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
-import {
-  listCollectionChoices,
-  resolveMembershipFacts,
-} from "@/services/zotero-reads/membership";
+import { listCollectionChoices } from "@/services/zotero-reads/membership";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import type {
   ZoteroReadsEvents,
@@ -235,9 +232,29 @@ async function harness(
     return file;
   };
   app.fileManager.generateMarkdownLink = () => "";
+  const zoteroReads = inProcessReadsService(sharedClientOpener(client));
+  // ZotLit Query tests the Profile Matches over the same database.
+  const query = stack.use(
+    new QueryService({
+      pluginVersion: "2.2.0",
+      reads: zoteroReads,
+      zoteroPref: {
+        sourceId: "membership",
+        databasePath: ":memory:",
+        dataDir: "/zotero",
+        baseAttachmentPath: "/zotero/linked",
+      },
+      libraryScope: fixture.libraryScope,
+      vault: {
+        getName: () => "Membership tests",
+        adapter: { getBasePath: () => "/vault" },
+      } as unknown as Vault,
+    }),
+  );
   const deps: NoteFeatureDeps = {
     app,
-    zoteroReads: inProcessReadsService(sharedClientOpener(client)),
+    zoteroReads,
+    query,
     profile,
     template,
     settings,
@@ -314,27 +331,23 @@ async function harness(
 }
 
 describe("Profile document matches at creation preparation", () => {
-  it("resolves Library selectors, exact Tag names, and full Collection paths from relational rows", async () => {
-    await using f = await harness();
+  it("reads the Library, exact Tag names, and full Collection paths from relational rows", async () => {
+    await using empty = await harness();
     expect(
-      matchItem(personalBook, resolveMembershipFacts(f.client, personalBook)),
-    ).toEqual({
-      library: { type: "personal" },
-      itemType: "book",
-      tags: expect.arrayContaining(["Read", "READ"]),
-      collections: [["Project", "Drafts"], ["Other"]],
-    });
-    expect(
-      matchItem(groupBook, resolveMembershipFacts(f.client, groupBook)),
-    ).toEqual({
-      library: { type: "group", groupID: 118 },
-      itemType: "book",
-      tags: [],
-      collections: [["Project"]],
+      await empty.feature.resolveCreationProfile({ item: personalBook }),
+    ).toEqual({ selector: "default", source: "bound", shouldAsk: false });
+    await using f = await harness({
+      [books]:
+        'library == "personal" && itemType == "book" && tags.containsAll("Read", "READ") && collections.contains("Project/Drafts") && collections.contains("Other")',
+      [papers]:
+        'library == "group:118" && tags.isEmpty() && collections.contains("Project")',
     });
     expect(
       await f.feature.resolveCreationProfile({ item: personalBook }),
-    ).toEqual({ selector: "default", source: "bound", shouldAsk: false });
+    ).toMatchObject({ selector: books, source: "match" });
+    expect(
+      await f.feature.resolveCreationProfile({ item: groupBook }),
+    ).toMatchObject({ selector: papers, source: "match" });
   });
 
   it("selects each Item independently, exposes overlap candidates, and lets manual and explicit inputs win", async () => {
@@ -421,7 +434,7 @@ describe("Profile document matches at creation preparation", () => {
     ).toBe("overlap");
   });
 
-  it("distinguishes absent, catch-all, evaluable empty-any, and unevaluable registry states", async () => {
+  it("distinguishes absent, catch-all, and evaluable empty-any registry states", async () => {
     await using f = await harness({
       [books]: undefined,
       [papers]: { and: [] },
@@ -435,7 +448,7 @@ describe("Profile document matches at creation preparation", () => {
       ]),
     ).toEqual([
       [books, "absent", m.profile_match_absent()],
-      [manual, "evaluable", m.profile_match_none()],
+      [manual, "evaluable", "false"],
       [papers, "all", m.profile_match_all()],
     ]);
     expect(
@@ -454,48 +467,22 @@ describe("Profile document matches at creation preparation", () => {
   });
 
   it.each([
-    [
-      'library == "group:2"',
-      "unknown-library",
-      () => m.profile_match_problem_unknown_library({ text: '"group:2"' }),
-    ],
-    [
-      'library != "group:999"',
-      "unknown-library",
-      () => m.profile_match_problem_unknown_library({ text: '"group:999"' }),
-    ],
-    [
-      'itemType == "novel"',
-      "unknown-item-type",
-      () => m.profile_match_problem_unknown_item_type({ text: '"novel"' }),
-    ],
-    [
-      "library ==",
-      "syntax",
-      () => m.profile_match_problem_syntax({ text: "" }),
-    ],
-    [
-      'title == "BOOK0001"',
-      "unsupported",
-      () =>
-        m.profile_match_problem_unsupported({ text: 'title == "BOOK0001"' }),
-    ],
-    [" ", "empty", () => m.profile_match_problem_empty()],
+    ["a syntax mistake", "library =="],
+    ["a blank condition", " "],
+    ["an unknown method", 'tags.contain("Read")'],
   ] as const)(
     "keeps the document with %s active, shows its diagnostic, and skips it for every Item",
-    async (match, code, problem) => {
+    async (_, match) => {
       await using f = await harness({
         [books]: { or: ["true", match] },
         [papers]: 'library == "group:118"',
       });
       const entry = f.profile.profiles.find(({ id }) => id === books)!;
-      expect(entry.match).toMatchObject({
-        state: "unevaluable",
-        problem: { code },
-      });
-      expect(entry.match.summary).toBe(
-        m.profile_match_problem({ problem: problem() }),
-      );
+      expect(entry.match.state).toBe("unevaluable");
+      const problem =
+        entry.match.state === "unevaluable" ? entry.match.problem : "";
+      expect(problem).not.toBe("");
+      expect(entry.match.summary).toBe(m.profile_match_problem({ problem }));
       expect(f.profile.diagnostics).toEqual([]);
       expect(
         await f.feature.resolveCreationProfile({ item: personalBook }),
@@ -511,6 +498,45 @@ describe("Profile document matches at creation preparation", () => {
       ).toMatchObject({ selector: books, source: "headless" });
     },
   );
+
+  it.each(['library == "group:2"', 'itemType == "novel"', 'shelfMark == "A1"'])(
+    "reads %s as a Match that holds for no Item",
+    async (match) => {
+      await using f = await harness({ [books]: match });
+      expect(f.profile.profiles[0]?.match.state).toBe("evaluable");
+      for (const item of [personalBook, groupBook, article])
+        expect(await f.feature.resolveCreationProfile({ item })).toMatchObject({
+          selector: "default",
+          source: "bound",
+        });
+    },
+  );
+
+  it("tests any Item field", async () => {
+    await using f = await harness({ [books]: 'key == "BOOK0001"' });
+    expect(
+      await f.feature.resolveCreationProfile({ item: personalBook }),
+    ).toMatchObject({ selector: books, source: "match" });
+    expect(
+      await f.feature.resolveCreationProfile({ item: article }),
+    ).toMatchObject({ source: "bound" });
+  });
+
+  it("asks for the Profile when ZotLit Query cannot read the Item", async () => {
+    await using f = await harness({
+      [books]: "true",
+      [papers]: 'itemType == "book"',
+    });
+    // With the query, Books and Papers both match the book.
+    expect(
+      await f.feature.resolveCreationProfile({ item: personalBook }),
+    ).toMatchObject({ shouldAsk: true, problem: { kind: "overlap" } });
+    vi.spyOn(f.deps.query, "run").mockResolvedValue({ kind: "cancelled" });
+    // Without it, the catch-all Books does not take the Item alone.
+    expect(
+      await f.feature.resolveCreationProfile({ item: personalBook }),
+    ).toEqual({ selector: "default", source: "bound", shouldAsk: true });
+  });
 
   it("excludes Default with match, failed manifests, and colliding documents from selection", async () => {
     await using f = await harness(
@@ -549,45 +575,6 @@ describe("Profile document matches at creation preparation", () => {
     expect(
       await f.feature.resolveCreationProfile({ item: personalBook }),
     ).toMatchObject({ source: "bound" });
-  });
-
-  it("recompiles when an unselected Library appears, is renamed, disappears, or becomes unavailable", async () => {
-    await using f = await harness({ [books]: 'library == "group:999"' });
-    f.settings.update({
-      "zotero.library-scope": {
-        mode: "selected",
-        libraries: [{ type: "personal" }],
-      },
-    });
-    const selected = f.libraryScope.current;
-    expect(f.profile.profiles[0]?.match).toMatchObject({
-      state: "unevaluable",
-      problem: { code: "unknown-library" },
-    });
-    f.client.$client.exec(
-      "insert into libraries (libraryID, type) values (9, 'group'); insert into groups (groupID, libraryID, name) values (999, 9, 'Remote team')",
-    );
-    await f.refreshLibraries();
-    expect(f.libraryScope.current).toBe(selected);
-    expect(f.profile.profiles[0]?.match).toMatchObject({
-      state: "evaluable",
-      summary: m.settings_profile_match_library_is({ library: "Remote team" }),
-    });
-    f.client.$client.exec(
-      "update groups set name = 'Research team' where groupID = 999",
-    );
-    await f.refreshLibraries();
-    expect(f.libraryScope.current).toBe(selected);
-    expect(f.profile.profiles[0]?.match.summary).toContain("Research team");
-    await f.setReadable(false);
-    expect(f.profile.profiles[0]?.match.state).toBe("unevaluable");
-    await f.setReadable(true);
-    expect(f.profile.profiles[0]?.match.state).toBe("evaluable");
-    f.client.$client.exec(
-      "delete from groups where groupID = 999; delete from libraries where libraryID = 9",
-    );
-    await f.refreshLibraries();
-    expect(f.profile.profiles[0]?.match.state).toBe("unevaluable");
   });
 
   it("uses Collection paths in both Libraries and separates descendant from direct filing", async () => {

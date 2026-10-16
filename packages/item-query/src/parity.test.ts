@@ -13,7 +13,11 @@ import { ATTACHMENTS, AttachmentFileResolver, collectQuery, ITEMS } from ".";
 import type { ItemQueryRequest, SortSpec } from ".";
 import { ATTACHMENT_SCENARIO_QUERIES } from "./attachment-scenario-queries";
 import { RELATION_SCENARIO_QUERIES } from "./relation-scenario-queries";
-import { GENERATED_FILTER_PARTS, SCENARIO_QUERIES } from "./scenario-queries";
+import {
+  GENERATED_FILTER_PARTS,
+  SCENARIO_QUERIES,
+  scenarioFormulas,
+} from "./scenario-queries";
 import type { ScenarioQuery } from "./scenario-queries";
 import { ItemQueryScheduler } from "./scheduler";
 import { runEffect } from "./test-helpers";
@@ -288,16 +292,20 @@ function generateQueries(seed: number, count: number): ScenarioQuery[] {
           : `if(${parts()}, ${parts()})`;
     }
   };
-  return Array.from({ length: count }, (_, index) => ({
-    name: `generated ${seed}/${index}`,
-    libraries: pick(LIBRARIES),
-    request: {
-      filter: combination(3),
-      fields: pick(FIELDS),
-      sort: pick(SORTS),
-      limit: pick(LIMITS),
-    },
-  }));
+  return Array.from({ length: count }, (_, index) => {
+    const filter = combination(3);
+    return {
+      name: `generated ${seed}/${index}`,
+      libraries: pick(LIBRARIES),
+      request: {
+        filter,
+        ...scenarioFormulas(filter),
+        fields: pick(FIELDS),
+        sort: pick(SORTS),
+        limit: pick(LIMITS),
+      },
+    };
+  });
 }
 
 describe("parity of generated filter combinations", () => {

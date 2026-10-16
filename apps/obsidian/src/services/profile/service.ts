@@ -41,8 +41,6 @@ import {
 } from "@/lib/profile-stamp";
 import type { ProfileId, ProfileSelector } from "@/lib/profile-stamp";
 import { isFileExistsError } from "@/lib/vault-errors";
-import type { AvailableLibrary } from "@/services/library-scope/scope";
-import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import { compileProfileMatch } from "@/services/profile-selection";
 import type { ProfileMatch } from "@/services/profile-selection";
@@ -235,7 +233,6 @@ interface ProfileServiceDeps {
   app: App;
   settings: SettingsService;
   template: TemplateService;
-  libraryScope: Pick<LibraryScopeService, "ready" | "libraries" | "on">;
   noteIndex: Pick<NoteIndex, "whenIndexed" | "getNotesByProfile">;
 }
 
@@ -378,10 +375,7 @@ export class ProfileService extends Service {
     const entry: LiteratureNoteProfile = {
       id,
       label,
-      match: compileProfileMatch(
-        look.manifest.match,
-        this.#deps.libraryScope.libraries,
-      ),
+      match: compileProfileMatch(look.manifest.match),
       document,
       path: join(folder, document),
       bindings: Object.fromEntries(
@@ -801,10 +795,7 @@ export class ProfileService extends Service {
     const entry: LiteratureNoteProfile = {
       id,
       label: manifest.name,
-      match: compileProfileMatch(
-        manifest.match,
-        this.#deps.libraryScope.libraries,
-      ),
+      match: compileProfileMatch(manifest.match),
       document,
       path,
       bindings: Object.fromEntries(
@@ -1063,18 +1054,12 @@ export class ProfileService extends Service {
 
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
-    await Promise.all([
-      this.#deps.template.ready,
-      this.#deps.libraryScope.ready,
-    ]);
+    await this.#deps.template.ready;
     stack.defer(
       this.#deps.template.on("compile-status-changed", () => this.#scan()),
     );
     stack.defer(
       this.#deps.settings.subscribe(() => this.#events.emit("changed")),
-    );
-    stack.defer(
-      this.#deps.libraryScope.on("libraries-changed", () => this.#scan()),
     );
     this.#scan();
     this.#loaded = true;
@@ -1155,7 +1140,6 @@ export class ProfileService extends Service {
         seedProfileEntry(status.validation.manifest, {
           document: status.reference,
           path: status.path,
-          libraries: this.#deps.libraryScope.libraries,
         }),
       );
     }
@@ -1189,11 +1173,7 @@ export function bindDraftProfile(
     : bindProfile(settings, {
         selector,
         entry: {
-          ...seedProfileEntry(manifest, {
-            document: "",
-            path: "",
-            libraries: [],
-          }),
+          ...seedProfileEntry(manifest, { document: "", path: "" }),
           id: selector,
         },
       });
@@ -1226,10 +1206,9 @@ export function seedProfileEntry(
   options: {
     document: string;
     path: string;
-    libraries: readonly AvailableLibrary[];
   },
 ): LiteratureNoteProfile {
-  const match = compileProfileMatch(manifest.match, options.libraries);
+  const match = compileProfileMatch(manifest.match);
   if (match.state === "unevaluable")
     logger.debug("Profile {id} match cannot be evaluated", {
       id: manifest.id,

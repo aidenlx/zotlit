@@ -2,7 +2,7 @@
 
 import { readFileSync } from "node:fs";
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { SQLInputValue } from "node:sqlite";
 import { pathToFileURL } from "node:url";
@@ -31,7 +31,6 @@ import {
   writePristineStyles,
 } from "./pristine.ts";
 import {
-  ANNOTATIONS,
   ASSET_DIR,
   assertSeededCitationKeys,
   ATTACHMENTS,
@@ -1516,6 +1515,9 @@ function literatureNote(
     return `[${attachment.path}](${pathToFileURL(path).href})`;
   });
   const { profile } = options;
+  if (item.literatureNoteRendered === true) {
+    return renderedLiteratureNote(item, layout, options);
+  }
   return [
     "---",
     `title: ${JSON.stringify(item.title)}`,
@@ -1543,9 +1545,6 @@ function literatureNote(
           "%%/zt-managed%%",
           "",
         ]),
-    ...(item.literatureNoteStaleAnnotations === true
-      ? staleAnnotationRegion(item)
-      : []),
     ...(item.literatureNoteCitations === undefined
       ? []
       : [
@@ -1556,8 +1555,113 @@ function literatureNote(
         ]),
     ...attachments,
     ...(attachments.length === 0 ? [] : [""]),
+    ...(item.literatureNoteQueryBlock === true ? QUERY_BLOCK : []),
   ].join("\n");
 }
+
+/**
+ * The Annotations section the default note template renders, read from the
+ * shipped `content` template. The section holds no Liquid, so its text is its
+ * own render output; the Notes section above it renders empty for an Item
+ * with no child Notes.
+ * @throws when the section is gone or holds Liquid, so a changed template
+ *   fails the build rather than seeding text no render produces.
+ */
+function renderedAnnotationsSection(): string {
+  const source = readFileSync(
+    new URL(import.meta.resolve("@zotlit/templates/defaults/content.liquid")),
+    "utf-8",
+  );
+  const start = source.indexOf("## Annotations\n");
+  const section = source.slice(start).trimEnd();
+  if (start === -1 || section.includes("{%") || section.includes("{{")) {
+    throw new Error(
+      "the default content template no longer ends with a plain Annotations section; update the Fixture",
+    );
+  }
+  return section;
+}
+
+/** The Query File view a rendered Literature Note embeds. */
+const RENDERED_NOTE_EMBED = "Lab annotations.zotquery#This item";
+
+/**
+ * A Literature Note as the default note template renders it, so Update Note
+ * leaves it as it is. Below the managed region, outside what Update Note
+ * rewrites, the note embeds {@link RENDERED_NOTE_EMBED}, so one note holds
+ * both a Query Block and a Query File embed whose edits save to the file.
+ */
+function renderedLiteratureNote(
+  item: FixtureItem,
+  layout: FixtureLayout,
+  options: { linkedAttachmentVaultDir?: string },
+): string {
+  if (item.libraryID !== USER_LIBRARY_ID) {
+    throw new Error(
+      `Rendered Literature Note ${item.key} must be in My Library`,
+    );
+  }
+  if (NOTES.some(({ parentItemID }) => parentItemID === item.itemID)) {
+    throw new Error(
+      `Rendered Literature Note ${item.key} must have no child Notes`,
+    );
+  }
+  const fileLinks = ATTACHMENTS.filter(
+    (attachment) =>
+      attachment.parentItemID === item.itemID &&
+      attachment.sourceAsset !== null,
+  ).map((attachment) => {
+    const path = attachmentFilePath(
+      attachment,
+      layout,
+      options.linkedAttachmentVaultDir,
+    )!;
+    return `[${basename(path)}](${pathToFileURL(path).href})`;
+  });
+  return [
+    "---",
+    `title: ${JSON.stringify(item.title)}`,
+    `zotero-key: ${item.key}`,
+    ...(item.citationKey === null ? [] : [`citekey: ${item.citationKey}`]),
+    "---",
+    `# ${item.title}`,
+    "",
+    [`[Zotero](zotero://select/library/items/${item.key})`, ...fileLinks].join(
+      " ",
+    ),
+    "",
+    "%%zt-managed%%",
+    renderedAnnotationsSection(),
+    "",
+    "%%/zt-managed%%",
+    "",
+    "The Annotations of this note's Item, from a Query File.",
+    "",
+    `![[${RENDERED_NOTE_EMBED}]]`,
+    "",
+    ...(item.literatureNoteCitations === undefined
+      ? []
+      : [
+          `This note rests on ${item.literatureNoteCitations
+            .map((key) => `[@${key}]`)
+            .join(" ")}.`,
+          "",
+        ]),
+  ].join("\n");
+}
+
+/** A Query Block of the note's own Item's Annotations. */
+const QUERY_BLOCK = [
+  "```zotquery",
+  "views:",
+  "  - type: annotations",
+  "    name: This item",
+  "    from: annotations",
+  "    filters: item == this.item",
+  "    limit: 100",
+  "```",
+  "",
+];
 
 /**
  * The Mark Landing walkthrough (#1156). Generated rather than committed,
@@ -1663,48 +1767,7 @@ the next step rather than rejecting it.
 
 **Pass condition**: Zotero comes forward and opens its own reader on that
 annotation. Obsidian's reader does not open, and no ZotLit notice appears.
-
-## Update Note reaches notes that already exist
-
-\`literatures/rougierTenSimpleRules2014.md\` ships with the per-Annotation output
-ZotLit wrote before this feature: a plain page label, no link. Run **Update all
-notes** and confirm the batch.
-
-**Pass condition**: every Annotation callout now titles on a linked page label
-carrying its own Anchor, and each of those links lands on its own Mark. The
-attachment link at the top of the note keeps the shape it had, because it sits
-outside the managed region.
 `;
-}
-
-/**
- * The per-Annotation output ZotLit wrote before Mark Landing (#1156): a plain
- * page label, with no link and no Annotation Anchor. It sits in the managed
- * region, so **Update Note** rewrites it — which is how the capability reaches
- * notes a reader already has.
- */
-function staleAnnotationRegion(item: FixtureItem): string[] {
-  const attachmentIDs = new Set(
-    ATTACHMENTS.filter(({ parentItemID }) => parentItemID === item.itemID).map(
-      ({ itemID }) => itemID,
-    ),
-  );
-  const callouts = ANNOTATIONS.filter(({ parentItemID }) =>
-    attachmentIDs.has(parentItemID),
-  ).flatMap(({ pageLabel, text, comment }) => [
-    "",
-    `> [!note] Page ${pageLabel ?? ""}`,
-    ">",
-    `> ${text ?? comment ?? ""}`,
-    "",
-  ]);
-  return [
-    "%%zt-managed%%",
-    "## Annotations",
-    ...callouts,
-    "%%/zt-managed%%",
-    "",
-  ];
 }
 
 function fixtureIndexedKey(note: FixtureNote): string {

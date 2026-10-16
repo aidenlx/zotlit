@@ -11,7 +11,8 @@ import { isAbsolute } from "node:path";
 import type { CliData } from "obsidian";
 import * as v from "valibot";
 
-import { UNLIMITED_LIMIT } from "@zotlit/item-query";
+import { parseIndexedKey } from "@zotlit/db";
+import { nameDictionary, UNLIMITED_LIMIT } from "@zotlit/item-query";
 
 import {
   cliParams,
@@ -39,7 +40,9 @@ import {
   QUERY_VALUES_COMMAND,
   QUERY_ID_FORM,
   QUERY_ID_MAX_LENGTH,
+  QUERY_OUTPUT_FORMATS,
 } from "./contract";
+import type { QueryOutputFormat } from "./contract";
 import { GUIDE_TOPIC_NAMES } from "./guide";
 import type { GuideTopic } from "./guide";
 
@@ -215,6 +218,16 @@ const limit = v.lazy((input) =>
       ),
 );
 
+/** The Indexed Key of a record that `this` binds. */
+const contextKey = (parameter: string, noun: string) =>
+  v.pipe(
+    v.string(),
+    v.check((text) => {
+      const parsed = parseIndexedKey(text);
+      return parsed !== null && (parsed.groupID === null || parsed.groupID > 0);
+    }, `${parameter} must be the Indexed Key of an ${noun}, such as ABCD2345 or ABCD2345g4815.`),
+  );
+
 /** The arguments every query takes, whichever Libraries it reads. */
 const queryOptions = {
   from: v.optional(from, "items"),
@@ -231,6 +244,32 @@ const queryOptions = {
       "fields",
       "a JSON array of Projection Path strings",
       v.array(v.string()),
+    ),
+  ),
+  formulas: v.optional(
+    jsonParameter(
+      "formulas",
+      'a JSON object of Formula names and Filter Expressions, such as {"year":"date.year"}',
+      v.pipe(
+        v.custom<unknown>(
+          (input) => !Array.isArray(input),
+          'formulas is a JSON array: use a JSON object, such as {"year":"date.year"}.',
+        ),
+        v.custom<Readonly<Record<string, unknown>>>(
+          (input) => typeof input === "object" && input !== null,
+          'formulas is not a JSON object: use a JSON object, such as {"year":"date.year"}.',
+        ),
+        v.check(
+          (input) =>
+            Object.values(input).every((text) => typeof text === "string"),
+          'formulas holds an expression that is not text: give each Formula a Filter Expression string, such as {"year":"date.year"}.',
+        ),
+        // The names come from the caller's text: a Formula named __proto__
+        // stays a Formula, in a dictionary without a prototype.
+        v.transform((input) =>
+          nameDictionary(Object.entries(input as Record<string, string>)),
+        ),
+      ),
     ),
   ),
   sort: v.optional(
@@ -271,11 +310,21 @@ const queryOptions = {
       v.string(),
       v.check(
         (output) => isAbsolute(output) && !output.includes("\0"),
-        "output must be an absolute path to a new JSON file.",
+        "output must be an absolute path to a new file.",
       ),
     ),
   ),
+  format: v.optional(
+    v.picklist(
+      QUERY_OUTPUT_FORMATS,
+      (issue) =>
+        `format '${String(issue.input)}' is not an output format: use ${QUERY_OUTPUT_FORMATS.join(", ")}.`,
+    ),
+    "json",
+  ),
   id: v.optional(queryId),
+  "this-item": v.optional(contextKey("this-item", "Item")),
+  "this-attachment": v.optional(contextKey("this-attachment", "Attachment")),
 };
 
 /**
@@ -288,7 +337,20 @@ function decodedQuery(
   options: v.InferOutput<v.StrictObjectSchema<typeof queryOptions, undefined>>,
   libraries: NamedLibraries | null,
 ) {
-  const { from, filter, fields, sort, limit, output, id, group } = options;
+  const {
+    from,
+    filter,
+    fields,
+    formulas,
+    sort,
+    limit,
+    output,
+    format,
+    id,
+    group,
+  } = options;
+  const item = options["this-item"];
+  const attachment = options["this-attachment"];
   return {
     from,
     libraries,
@@ -296,22 +358,58 @@ function decodedQuery(
     ...(group === undefined ? {} : { group }),
     ...(filter === undefined ? {} : { filter }),
     ...(fields === undefined ? {} : { fields }),
+    ...(formulas === undefined ? {} : { formulas }),
     ...(sort === undefined ? {} : { sort }),
     ...(output === undefined ? {} : { output }),
+    // Only a file holds CSV or TSV: the answer itself is always JSON.
+    ...(format === "json" ? {} : { format }),
     // The id that `zotlit:query-cancel` names the query by.
     ...(id === undefined ? {} : { id }),
+    // The Query Context: the records a filter reads as this.item and this.attachment.
+    ...(item === undefined && attachment === undefined
+      ? {}
+      : {
+          context: {
+            ...(item === undefined ? {} : { item }),
+            ...(attachment === undefined ? {} : { attachment }),
+          },
+        }),
   };
 }
+
+/** CSV and TSV go to a file: the answer in the terminal is always JSON. */
+const formatHasOutput = (input: {
+  format: QueryOutputFormat;
+  output?: string;
+}) => input.format === "json" || input.output !== undefined;
+const formatNeedsOutput = (issue: { input: { format: QueryOutputFormat } }) =>
+  `format=${issue.input.format} writes a file: add output=<absolute-path> with a new filename.`;
 
 const queryVariants = {
   library: v.pipe(
     cliParams({ library, ...queryOptions }),
+    v.forward(
+      v.partialCheck(
+        [["format"], ["output"]],
+        formatHasOutput,
+        formatNeedsOutput,
+      ),
+      ["format"],
+    ),
     v.transform(({ library: scope, ...options }) =>
       decodedQuery(options, { scope, parameter: "library" }),
     ),
   ),
   scope: v.pipe(
     cliParams(queryOptions),
+    v.forward(
+      v.partialCheck(
+        [["format"], ["output"]],
+        formatHasOutput,
+        formatNeedsOutput,
+      ),
+      ["format"],
+    ),
     v.transform((options) => decodedQuery(options, null)),
   ),
 };
