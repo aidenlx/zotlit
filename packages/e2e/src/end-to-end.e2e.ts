@@ -1428,6 +1428,81 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         `return section('view').querySelector('[data-condition-row] input[aria-label="${m.workbench_match_value()}"]')?.value??null;`,
       ),
     ).toBe("figure");
+
+    // A condition dragged by its grip above another takes the first place,
+    // and the file keeps the new order.
+    const figureLine = '        - tags.contains("figure")';
+    const nextLine = (text: string) => {
+      const lines = text.split("\n");
+      return lines[lines.indexOf(figureLine) + 1] ?? "";
+    };
+    await inPopover(
+      `press([...section('view').querySelectorAll('button')].find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_match_add_condition())}),'Add condition');return true;`,
+    );
+    const added = nextLine(
+      (await tabWhen((tab) => nextLine(tab.text).startsWith("        - ")))
+        .text,
+    );
+    // `drag(from, over, y)` drags the grip at path `from` over `over` at the
+    // height `y` answers from its box, drops it, and tells whether `over`
+    // took the drop.
+    const DRAG = `const grip=path=>section('view').querySelector('[data-reorder-handle="'+path+'"]');const drag=(from,over,y)=>{const transfer=new DataTransfer();const fire=(target,type)=>{const r=target.getBoundingClientRect();const event=new DragEvent(type,{bubbles:true,cancelable:true,dataTransfer:transfer,clientX:r.left+r.width/2,clientY:y(r)});target.dispatchEvent(event);return event.defaultPrevented;};fire(grip(from),'dragstart');const took=fire(over,'dragover');if(took)fire(over,'drop');fire(grip(from),'dragend');return took;};const top=r=>r.top+2;`;
+    const viewFilters = (...lines: string[]) =>
+      `    filters:\n      and:\n${lines.join("\n")}\n`;
+    await inPopover(
+      `${DRAG}return drag('1',grip('0').closest('[data-part="row"]'),top);`,
+    );
+    await tabWhen((tab) => tab.text.includes(viewFilters(added, figureLine)));
+
+    // Alt+ArrowDown and Alt+ArrowUp move the focused condition one place,
+    // and the focus stays on its grip.
+    const press = (key: string) =>
+      inPopover(
+        `document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'${key}',altKey:true,bubbles:true,cancelable:true}));return (await until('focus follows',()=>{const path=document.activeElement?.getAttribute('data-reorder-handle');return path&&path!=='${key === "ArrowDown" ? "0" : "1"}'?path:null;})).toString();`,
+      );
+    await inPopover(
+      `section('view').querySelector('[data-reorder-handle="0"]').focus();return true;`,
+    );
+    expect(await press("ArrowDown")).toBe("1");
+    await tabWhen((tab) => tab.text.includes(viewFilters(figureLine, added)));
+    expect(await press("ArrowUp")).toBe("0");
+    await tabWhen((tab) => tab.text.includes(viewFilters(added, figureLine)));
+
+    // A condition dropped on a nested group's body goes to the end of that
+    // group; a group takes no drop inside itself; a nested condition dragged
+    // above the first row leaves its group.
+    const nested = (line: string) => `    ${line}`;
+    await inPopover(
+      `press([...section('view').querySelectorAll('button')].find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_match_add_group())}),'Add group');return true;`,
+    );
+    await tabWhen((tab) =>
+      tab.text.includes(
+        viewFilters(added, figureLine, "        - or:", nested(added)),
+      ),
+    );
+    expect(
+      await inPopover(
+        `${DRAG}const footer=[...section('view').querySelectorAll('[data-part="group"][data-state="nested"] > [data-part="actions"]')].at(-1);return drag('1',footer,r=>r.top+r.height/2);`,
+      ),
+    ).toBe("true");
+    await tabWhen((tab) =>
+      tab.text.includes(
+        viewFilters(added, "        - or:", nested(added), nested(figureLine)),
+      ),
+    );
+    expect(
+      await inPopover(
+        `${DRAG}return drag('1',grip('1.0').closest('[data-part="row"]'),top);`,
+      ),
+    ).toBe("false");
+    await inPopover(
+      `${DRAG}return drag('1.1',grip('0').closest('[data-part="row"]'),top);`,
+    );
+    await tabWhen((tab) =>
+      tab.text.includes(
+        viewFilters(figureLine, added, "        - or:", nested(added)),
+      ),
+    );
   }, 180000);
 
   // The Fixture's Literature Note of SAKIMA22 ends with a Query Block of
