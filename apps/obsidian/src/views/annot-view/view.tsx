@@ -186,6 +186,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
           attachment: selectedAttachmentKey ?? undefined,
         };
       },
+      contextSource: "sidebar",
       save: (text) => {
         this.#queryText = text;
         void this.#deps.app.workspace.requestSaveLayout();

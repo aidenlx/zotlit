@@ -1,6 +1,7 @@
 // The Query File tab: a `TextFileView` that hands the file's text to the one
 // Query View. In its own tab a Query File has no Query Context, so `this` has
-// no value and a filter that reads it shows the engine's diagnostic.
+// no value and a filter that reads it shows the engine's diagnostic, under a
+// hint at where the record gets bound.
 import { Scope, TextFileView } from "obsidian";
 import type { TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
 
