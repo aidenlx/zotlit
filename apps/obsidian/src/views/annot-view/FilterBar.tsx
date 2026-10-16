@@ -85,21 +85,19 @@ export function FilterBar({
     // inline padding and both pull their first glyph 6px in, so the glyphs
     // share one edge.
     <div className="zt:flex zt:shrink-0 zt:flex-wrap zt:items-center zt:gap-y-1 zt:px-2 zt:pt-1 zt:text-sm">
-      {swatchColors.length >= 1 && (
-        <ColorChooser
-          colors={swatchColors}
-          selectedColors={selectedColors}
-          onToggle={toggleColor}
-          onClear={() => setColors([])}
-        />
-      )}
-      {tagChips.length >= 1 && (
-        <TagChooser
-          chips={tagChips}
-          selectedTags={filter.tags}
-          onChange={setTags}
-        />
-      )}
+      {/* A Chooser with nothing to offer stays in place, blocked, so the row
+          keeps its shape and says why the filter cannot narrow the list. */}
+      <ColorChooser
+        colors={swatchColors}
+        selectedColors={selectedColors}
+        onToggle={toggleColor}
+        onClear={() => setColors([])}
+      />
+      <TagChooser
+        chips={tagChips}
+        selectedTags={filter.tags}
+        onChange={setTags}
+      />
       <IconButton
         ref={searchButtonRef}
         icon="search"
@@ -148,7 +146,7 @@ export function FilterBar({
  * drawn again here in utilities.
  */
 const filterTrigger =
-  "clickable-icon zt:inline-flex zt:min-w-0 zt:items-center zt:gap-1 zt:rounded-(--clickable-icon-radius) zt:px-1.5 zt:py-1 zt:text-muted-foreground zt:hover:bg-muted zt:hover:text-foreground zt:focus-visible:ring-2 zt:focus-visible:ring-border-focus zt:focus-visible:outline-none zt:data-open:bg-muted zt:data-open:text-foreground";
+  "clickable-icon zt:inline-flex zt:min-w-0 zt:items-center zt:gap-1 zt:rounded-(--clickable-icon-radius) zt:px-1.5 zt:py-1 zt:text-muted-foreground zt:hover:bg-muted zt:hover:text-foreground zt:focus-visible:ring-2 zt:focus-visible:ring-border-focus zt:focus-visible:outline-none zt:data-open:bg-muted zt:data-open:text-foreground zt:aria-disabled:bg-transparent zt:aria-disabled:text-muted-foreground";
 
 /**
  * The trigger's disclosure arrow, at the `--icon-xs` Obsidian gives the
@@ -255,6 +253,9 @@ function ColorChooser({
     [colors, selectedColors],
   );
   const { shown, hiddenCount } = cappedSelection(selected, COLOR_CAP);
+  // A selection keeps the trigger open to the Chooser, whose clear row is
+  // the way out of it.
+  const blocked = colors.length === 0 && selectedColors.length === 0;
 
   // The cap reaches the eye alone: the accessible name lists every colour.
   const ariaLabel = counting
@@ -304,7 +305,13 @@ function ColorChooser({
         if (moved !== undefined) onToggle(moved);
       }}
     >
-      <Chooser.Trigger className={filterTrigger} {...tooltipAttrs(ariaLabel)}>
+      <Chooser.Trigger
+        className={filterTrigger}
+        blocked={blocked}
+        {...tooltipAttrs(
+          blocked ? m.annot_view_filter_color_trigger_none() : ariaLabel,
+        )}
+      >
         {counting ? (
           <span className="zt:flex zt:items-center zt:gap-0.5">
             {shown.map((hex) => (
@@ -319,8 +326,8 @@ function ColorChooser({
       </Chooser.Trigger>
       <Chooser.Popup className="zt:min-w-40">
         {/* No empty message: the list carries no search field, so nothing
-            narrows it and the palette is never empty — a trigger stands only
-            where a colour does. */}
+            narrows it and the palette is never empty — a trigger with no colour
+            is blocked and opens nothing. */}
         <Chooser.List
           groups={groups}
           aria-label={m.annot_view_filter_color_list()}
@@ -376,6 +383,9 @@ function TagChooser({
     [chips],
   );
   const { shown, hiddenCount } = cappedSelection(selected, TAG_CAP);
+  // A selection keeps the trigger open to the Chooser, whose clear row is
+  // the way out of it.
+  const blocked = chips.length === 0 && selectedTags.length === 0;
 
   const ariaLabel = counting
     ? m.annot_view_filter_tag_trigger_active({
@@ -419,7 +429,13 @@ function TagChooser({
 
   return (
     <Chooser value={selectedTags} onValueChange={onChange}>
-      <Chooser.Trigger className={filterTrigger} {...tooltipAttrs(ariaLabel)}>
+      <Chooser.Trigger
+        className={filterTrigger}
+        blocked={blocked}
+        {...tooltipAttrs(
+          blocked ? m.annot_view_filter_tag_trigger_none() : ariaLabel,
+        )}
+      >
         <Icon name="tag" />
         {/* The full name is in the accessible name and in the list; the
             trigger spends a bounded share of the row on it. */}

@@ -582,6 +582,12 @@ export interface ChooserTriggerProps extends Omit<
   "popoverTarget" | "type"
 > {
   ref?: Ref<HTMLButtonElement>;
+  /**
+   * A trigger with nothing to choose from keeps its seat and its place in the
+   * tab order, carries its reason in its tooltip, and opens nothing, as a
+   * blocked `IconButton` does.
+   */
+  blocked?: boolean;
 }
 
 /**
@@ -614,7 +620,14 @@ export interface ChooserTriggerProps extends Omit<
  * @see ./chooser.css
  * @see .agents/skills/obsidian-css/SKILL.md
  */
-function Trigger({ className, style, ref, ...rest }: ChooserTriggerProps) {
+function Trigger({
+  className,
+  style,
+  ref,
+  blocked,
+  onClick,
+  ...rest
+}: ChooserTriggerProps) {
   const { anchorName, popupId, open } = useChooser();
   return (
     <button
@@ -622,11 +635,24 @@ function Trigger({ className, style, ref, ...rest }: ChooserTriggerProps) {
       type="button"
       popoverTarget={popupId}
       aria-expanded={open}
+      aria-disabled={blocked || undefined}
       data-open={open ? "" : undefined}
       {...rest}
+      // A native `disabled` would drop the trigger from the tab order and
+      // from the pointer events Obsidian's tooltip reads, so a blocked
+      // trigger cancels the click instead: that cancels the popover invoker
+      // too, for a press from the keyboard as from the pointer.
+      onClick={(e) => {
+        if (blocked) {
+          e.preventDefault();
+          return;
+        }
+        onClick?.(e);
+      }}
       className={cn(
         themeHook.chooserTrigger,
         "zt:group zt:[anchor-name:var(--zt-chooser-anchor)]",
+        "zt:aria-disabled:cursor-default zt:aria-disabled:opacity-50",
         className,
       )}
       style={{ "--zt-chooser-anchor": anchorName, ...style } as CSSProperties}

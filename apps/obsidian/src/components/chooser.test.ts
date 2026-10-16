@@ -34,7 +34,7 @@ afterEach(() => {
   host = null;
 });
 
-function mount(app: App) {
+function mount(app: App, trigger: { blocked?: boolean } = {}) {
   host = document.body.appendChild(document.createElement("div"));
   const list = h(Chooser.List<ChooserRow>, {
     groups: [{ items: ROWS }],
@@ -48,7 +48,7 @@ function mount(app: App) {
       value: [],
       onValueChange: () => {},
       children: [
-        h(Chooser.Trigger, { key: "trigger" }, "Tags"),
+        h(Chooser.Trigger, { key: "trigger", ...trigger }, "Tags"),
         h(Chooser.Popup, {
           key: "popup",
           children: [
@@ -78,8 +78,28 @@ function mount(app: App) {
     );
   const highlighted = () =>
     popup.querySelector<HTMLElement>("[data-highlighted]")?.textContent ?? null;
-  return { popup, toggle, field, options, highlighted };
+  const button = host.querySelector<HTMLButtonElement>("button")!;
+  return { popup, button, toggle, field, options, highlighted };
 }
+
+it("keeps a blocked trigger in the tab order and cancels its press", () => {
+  const { button } = mount(editorApp(), { blocked: true });
+  expect(button.getAttribute("aria-disabled")).toBe("true");
+  // Native `disabled` would drop it from the tab order and its tooltip.
+  expect(button.disabled).toBe(false);
+  // A cancelled click is what keeps the popover invoker from opening.
+  const press = new MouseEvent("click", { bubbles: true, cancelable: true });
+  button.dispatchEvent(press);
+  expect(press.defaultPrevented).toBe(true);
+});
+
+it("leaves the press of a trigger that is not blocked to the popover", () => {
+  const { button } = mount(editorApp());
+  expect(button.hasAttribute("aria-disabled")).toBe(false);
+  const press = new MouseEvent("click", { bubbles: true, cancelable: true });
+  button.dispatchEvent(press);
+  expect(press.defaultPrevented).toBe(false);
+});
 
 it("draws its rows only while the popup is open", async () => {
   const app = editorApp();
