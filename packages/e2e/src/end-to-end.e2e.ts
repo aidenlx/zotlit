@@ -3923,8 +3923,10 @@ views:
     );
     /**
      * Runs `steps` against the open Query File tab once its Table shows, with
-     * `th(path)`, `edge(path)`, `fire(target, type, x)` and `popup()`, the
-     * open Properties popover; then saves and reads the header and the file.
+     * `th(path)`, `edge(path)`, `fire(target, type, x)`, a drag event at the
+     * client x `x`, `pointer(target, type, x)`, a pointer event there, and
+     * `popup()`, the open Properties popover; then saves and reads the
+     * header and the file.
      */
     const inTable = async <T>(steps: string): Promise<T> => {
       let out: T | null = null;
@@ -3932,7 +3934,7 @@ views:
         out = JSON.parse(
           await obEval(
             vaultId,
-            `(async()=>{${PAGE}const view=app.workspace.getMostRecentLeaf().view;if(view.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(path)})return 'null';await view.query.settled;const el=view.contentEl;const th=p=>el.querySelector('[data-query-table] th[data-query-column="'+p+'"]');if(!th('title')||!el.querySelector('[data-query-table-row="item"]'))return 'null';const edge=p=>th(p).querySelector('[data-query-column-resizer]');const transfer=new DataTransfer();const fire=(target,type,x)=>{const r=target.getBoundingClientRect();const event=new DragEvent(type,{bubbles:true,cancelable:true,dataTransfer:transfer,clientX:x,clientY:r.top+r.height/2});target.dispatchEvent(event);return event.defaultPrevented;};const popup=()=>activeDocument.querySelector('[data-query-properties-popup]:popover-open');const columns=()=>[...el.querySelectorAll('[data-query-table] th[data-query-column]')].map(n=>n.getAttribute('data-query-column'));const width=p=>Math.round(th(p).getBoundingClientRect().width);const out=await (async()=>{${steps}})();await view.query.flush();return JSON.stringify({...out,columns:columns(),text:await app.vault.read(view.file)});})()`,
+            `(async()=>{${PAGE}const view=app.workspace.getMostRecentLeaf().view;if(view.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(path)})return 'null';await view.query.settled;const el=view.contentEl;const th=p=>el.querySelector('[data-query-table] th[data-query-column="'+p+'"]');if(!th('title')||!el.querySelector('[data-query-table-row="item"]'))return 'null';const edge=p=>th(p).querySelector('[data-query-column-resizer]');const transfer=new DataTransfer();const fire=(target,type,x)=>{const r=target.getBoundingClientRect();const event=new DragEvent(type,{bubbles:true,cancelable:true,dataTransfer:transfer,clientX:x,clientY:r.top+r.height/2});target.dispatchEvent(event);return event.defaultPrevented;};const pointer=(target,type,x)=>{const r=target.getBoundingClientRect();const event=new PointerEvent(type,{bubbles:true,cancelable:true,pointerId:7,isPrimary:true,button:0,buttons:type==='pointerup'?0:1,clientX:x,clientY:r.top+r.height/2});target.dispatchEvent(event);return event.defaultPrevented;};const popup=()=>activeDocument.querySelector('[data-query-properties-popup]:popover-open');const columns=()=>[...el.querySelectorAll('[data-query-table] th[data-query-column]')].map(n=>n.getAttribute('data-query-column'));const width=p=>Math.round(th(p).getBoundingClientRect().width);const out=await (async()=>{${steps}})();await view.query.flush();return JSON.stringify({...out,columns:columns(),text:await app.vault.read(view.file)});})()`,
           ),
         ) as T | null;
         return out !== null;
@@ -3959,7 +3961,7 @@ views:
 
     // Its edge sets its width, saved by its path.
     const resized = await inTable<Read & { before: number; after: number }>(
-      `const before=width(${N});const x=edge(${N}).getBoundingClientRect().left+2;fire(edge(${N}),'dragstart',x);fire(el,'dragover',x+80);await until('live width',()=>width(${N})!==before);fire(el,'drop',x+80);fire(edge(${N}),'dragend',0);await until('saved width',()=>'sized' in th(${N}).dataset);return {before,after:width(${N})};`,
+      `const before=width(${N});const x=edge(${N}).getBoundingClientRect().left+2;pointer(edge(${N}),'pointerdown',x);pointer(el,'pointermove',x+80);await until('live width',()=>width(${N})!==before);pointer(th(${N}),'pointerup',x+80);await until('saved width',()=>'sized' in th(${N}).dataset);return {before,after:width(${N})};`,
     );
     expect(resized.after).toBe(resized.before + 80);
     expect(resized.text).toContain(
