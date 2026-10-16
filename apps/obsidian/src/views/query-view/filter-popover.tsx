@@ -187,7 +187,7 @@ export function FilterEditor({
         <Icon
           name={propertyIcon(section === "all" ? shared : dataset, {
             path: field.path,
-            formula: null,
+            kind: "field",
           })}
         />
       ),

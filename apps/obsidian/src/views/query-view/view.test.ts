@@ -1341,6 +1341,7 @@ const TABLE_FILE = `views:
     order:
       - title
       - date
+      - vault.literatureNote
 `;
 
 function itemRow(
@@ -1399,9 +1400,10 @@ it("shows no property in the Table, Cards, List, copy and the run of a view with
   const [request] = run.mock.calls[0]!;
   expect(request.fields).not.toContain("title");
   expect(request.fields).not.toContain("itemType");
-  // The Table keeps its Literature note column, one row for each Item.
+  // The Table hides the Literature Note Property too, as `order` names it
+  // not, and keeps one row for each Item.
   const [header, ...body] = tableText(el);
-  expect(header).toEqual(["", "Literature note"]);
+  expect(header).toEqual([""]);
   expect(body).toHaveLength(2);
   expect(el.querySelector("[data-query-column]")).toBeNull();
   // Copy and CSV write no column.
@@ -1555,11 +1557,43 @@ it("offers no column move and no column resize where the host cannot save", asyn
   await act(() => view.setText(TABLE_FILE));
   await settle();
   const headers = [...el.querySelectorAll("th[data-query-column]")];
-  expect(headers).toHaveLength(2);
+  expect(headers).toHaveLength(3);
   expect(headers.some((th) => th.getAttribute("draggable") === "true")).toBe(
     false,
   );
   expect(el.querySelector("[data-query-column-resizer]")).toBeNull();
+});
+
+it("shows the Literature Note Property where the view's order places it, at the width it keeps, and asks ZotLit Query nothing for it", async () => {
+  const { view, el, run, settle } = await mount([
+    result([itemRow("ITEMAAAA", "Ten simple rules")]),
+  ]);
+  await act(() =>
+    view.setText(`views:
+  - type: table
+    name: Reading list
+    from: items
+    order:
+      - vault.literatureNote
+      - title
+    columnSize:
+      vault.literatureNote: 180
+`),
+  );
+  await settle();
+  expect(tableText(el)).toEqual([
+    ["", "Literature note", "Title"],
+    ["", "Create", "Ten simple rules"],
+  ]);
+  const header = el.querySelector<HTMLElement>(
+    'th[data-query-column="vault.literatureNote"]',
+  )!;
+  expect(header.getAttribute("draggable")).toBe("true");
+  expect(header.querySelector("[data-query-column-resizer]")).not.toBeNull();
+  expect(header.style.getPropertyValue("--zt-column-width")).toBe("180px");
+  expect(run.mock.calls[0]![0].fields).not.toContain("vault.literatureNote");
+  // Copy and CSV write the values of the rows, which hold no note.
+  expect(view.table().header).toEqual(["Title"]);
 });
 
 it("expands an Item row into its Attachments, and an Attachment row into its Annotations", async () => {
@@ -1713,11 +1747,11 @@ it("sorts, groups and searches the Table by Item fields", async () => {
     sort: [{ field: "title", direction: "desc" }],
   });
   expect(tableText(el)).toEqual([
-    ["", "Title", "Literature note"],
+    ["", "Title"],
     ["Book"],
-    ["", "Deep learning", "Create"],
+    ["", "Deep learning"],
     ["Journal Article"],
-    ["", "Ten simple rules", "Create"],
+    ["", "Ten simple rules"],
   ]);
 
   await act(() =>
@@ -1729,9 +1763,9 @@ it("sorts, groups and searches the Table by Item fields", async () => {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
   expect(tableText(el)).toEqual([
-    ["", "Title", "Literature note"],
+    ["", "Title"],
     ["Book"],
-    ["", "Deep learning", "Create"],
+    ["", "Deep learning"],
   ]);
 });
 
@@ -2125,8 +2159,8 @@ it("runs a view with every Formula of the file, and shows the values of those it
   expect(request.fields).toEqual(expect.arrayContaining(["formula.year"]));
   expect(request.fields).not.toContain("formula.short");
   expect(tableText(el)).toEqual([
-    ["", "Title", "formula.year", "Literature note"],
-    ["", "Ten simple rules", "2014", "Create"],
+    ["", "Title", "formula.year"],
+    ["", "Ten simple rules", "2014"],
   ]);
 });
 
@@ -2197,8 +2231,8 @@ it("marks a wrong Formula at its column from the one run, and shows the other co
     },
   });
   expect(tableText(el)).toEqual([
-    ["", "Title", "formula.year", "formula.short", "Literature note"],
-    ["", "Ten simple rules", "2014", "", "Create"],
+    ["", "Title", "formula.year", "formula.short"],
+    ["", "Ten simple rules", "2014", ""],
   ]);
   expect(
     el
@@ -2438,9 +2472,8 @@ it("marks a wrong Formula and each Formula that reads it with its own reason", a
       "formula.next",
       "formula.after",
       "formula.short",
-      "Literature note",
     ],
-    ["", "Ten simple rules", "", "", "", "Ten", "Create"],
+    ["", "Ten simple rules", "", "", "", "Ten"],
   ]);
 });
 
@@ -2725,17 +2758,60 @@ it("ticks the default properties of a view without order, and a tick writes them
   ];
   expect(
     rows
-      .slice(0, 4)
+      .slice(0, 5)
       .map((row) => [row.dataset.queryProperty, row.dataset.hidden]),
   ).toEqual([
     ["itemType", undefined],
     ["title", undefined],
     ["dateModified", undefined],
+    // The Table shows the Literature Note Property after the default fields.
+    ["vault.literatureNote", undefined],
     ["abstractNote", ""],
   ]);
-  await act(() => rows[3]!.click());
+  await act(() => rows[4]!.click());
   await settle();
   expect(written.at(-1)).toContain(
-    "order:\n      - itemType\n      - title\n      - dateModified\n      - abstractNote\n",
+    "order:\n      - itemType\n      - title\n      - dateModified\n      - vault.literatureNote\n      - abstractNote\n",
   );
+});
+
+it("offers the Literature Note Property in the Properties popover of a Table that hides it, and a tick shows it again", async () => {
+  const written: string[] = [];
+  const { view, el, settle } = await mount(
+    [result([itemRow("ITEMAAAA", "Ten simple rules")])],
+    (text) => written.push(text),
+  );
+  await act(() =>
+    view.setText(`views:
+  - type: table
+    name: Reading list
+    from: items
+    order:
+      - title
+`),
+  );
+  await settle();
+  expect(tableText(el)[0]).toEqual(["", "Title"]);
+  await act(() => {
+    el.querySelector<HTMLElement>("[data-query-properties]")!.click();
+    // happy-dom has no popover, so the test sends the event that opens it.
+    document
+      .querySelector("[data-query-properties-popup]")!
+      .dispatchEvent(
+        Object.assign(new Event("beforetoggle"), { newState: "open" }),
+      );
+  });
+  // Its path has a dot, as the fields of a parent record do, yet it shows
+  // without a search.
+  const row = document.querySelector<HTMLElement>(
+    '[data-query-property="vault.literatureNote"]',
+  );
+  expect(row?.dataset.hidden).toBe("");
+  expect(row?.textContent).toContain("Literature note");
+  await act(() => row!.click());
+  await settle();
+  expect(written.at(-1)).toContain(
+    "order:\n      - title\n      - vault.literatureNote\n",
+  );
+  expect(tableText(el)[0]).toEqual(["", "Title", "Literature note"]);
 });

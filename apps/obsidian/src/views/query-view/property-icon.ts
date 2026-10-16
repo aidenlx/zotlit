@@ -10,9 +10,10 @@ import type { PropertyEntry } from "./view-properties";
 /** The icon of `property` in a view of `dataset`. */
 export function propertyIcon(
   dataset: QueryFileDataset,
-  property: Pick<PropertyEntry, "path" | "formula">,
+  property: Pick<PropertyEntry, "path" | "kind">,
 ): string {
-  if (property.formula !== null) return "square-function";
+  if (property.kind === "formula") return "square-function";
+  if (property.kind === "literatureNote") return "file";
   const { engine, sort } = DATASETS[dataset];
   const kind = sort.find(([path]) => path === property.path)?.[2];
   if (kind === "date") return "calendar";

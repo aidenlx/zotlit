@@ -99,7 +99,7 @@ export interface QueryViewDeps extends AnnotationsLayoutDeps {
   libraryScope: Pick<LibraryScopeService, "on" | "current">;
   /** The keyboard of a view that a note holds, which the embed and the block share. */
   cardFocus: Pick<QueryCardFocus, "hold">;
-  /** The Table's "Literature note" column. */
+  /** What the Table's Literature Note Property reads and does. */
   literatureNotes: LiteratureNotes;
   /** The Table's Attachment and Annotation links. */
   readers: TableReaders;
@@ -583,13 +583,14 @@ export class QueryView extends Component implements HistorySurface {
 
   /**
    * The rows on screen as a table, one column for each visible property in
-   * the view's order: what "Copy to clipboard" and "Export CSV…" write.
+   * the view's order: what "Copy to clipboard" and "Export CSV…" write. The
+   * Literature Note Property is no value of a row, so it writes no column.
    */
   table(): ResultTable {
     const { file, view } = this.state.getState();
     return resultTable(
       this.state.getState().results?.rows ?? [],
-      view ? viewProperties(file, view).visible : [],
+      view ? viewProperties(file, view).queried : [],
     );
   }
 
@@ -616,7 +617,7 @@ export class QueryView extends Component implements HistorySurface {
       ...new Set([
         ...(grouped?.fields ?? []),
         ...(layoutOf(view)?.type === "table" ? TABLE_FIELDS : []),
-        ...viewProperties(file, view).visible.map(({ path }) => path),
+        ...viewProperties(file, view).queried.map(({ path }) => path),
       ]),
     ];
     const formulas = file.formulas ?? {};

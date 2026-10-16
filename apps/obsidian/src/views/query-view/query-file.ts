@@ -98,9 +98,10 @@ export interface QueryFileView {
   readonly groupOrder?: readonly QueryFileGroupValue[];
   readonly limit?: number;
   /**
-   * The visible properties, as Projection Paths, in the order the view shows
-   * them. Copy and CSV export write these columns; the Table, List and Cards
-   * layouts show them in this order.
+   * The visible properties, as Projection Paths, `formula.<name>` or
+   * `vault.literatureNote`, in the order the view shows them. Copy and CSV
+   * export write these columns but the Literature Note Property; the Table, List and
+   * Cards layouts show them in this order.
    */
   readonly order?: readonly string[];
   /**
@@ -123,7 +124,8 @@ export interface QueryFile {
   readonly formulas?: NameDictionary<string>;
   /**
    * The settings of each property, by the text of its `order` entry: a bare
-   * Projection Path for a field, `formula.<name>` for a Formula. Its
+   * Projection Path for a field, `formula.<name>` for a Formula,
+   * `vault.literatureNote` for the Literature Note Property. Its
    * `displayName` is the property's Display Name; the parser keeps the other
    * keys as the file holds them.
    */

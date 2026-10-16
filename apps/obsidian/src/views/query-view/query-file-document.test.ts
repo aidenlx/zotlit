@@ -318,7 +318,7 @@ describe("saving an edit", () => {
     expect(failed).toEqual([true, false]);
   });
 
-  it("adds a new Formula after the default fields of a view without order or with an order of another dataset, and alone to a view with an empty order", () => {
+  it("adds a new Formula after the default fields and the Literature note of a Table without order or with an order of another dataset, and alone to a view with an empty order", () => {
     const items = (order: string) =>
       `views:\n  - type: table\n    name: Items\n    from: items\n${order}`;
     const defaults = open(items(""));
@@ -327,6 +327,7 @@ describe("saving an edit", () => {
       "itemType",
       "title",
       "dateModified",
+      "vault.literatureNote",
       "formula.month",
     ]);
     const hidden = open(items("    order: []\n"));
@@ -340,6 +341,7 @@ describe("saving an edit", () => {
       "itemType",
       "title",
       "dateModified",
+      "vault.literatureNote",
       "formula.month",
       "comment",
     ]);

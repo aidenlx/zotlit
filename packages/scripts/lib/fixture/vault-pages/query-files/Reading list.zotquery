@@ -9,4 +9,5 @@ views:
       - title
       - firstAuthor
       - date
+      - vault.literatureNote
     limit: 100
