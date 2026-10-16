@@ -234,8 +234,14 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       chips:
         "zt:flex zt:min-h-(--input-height) zt:min-w-0 zt:w-max zt:flex-wrap zt:items-start zt:gap-x-1.5 zt:px-2 zt:[--metadata-divider-width:0px] zt:[--metadata-input-font-size:var(--font-ui-small)] zt:[--metadata-input-text-color:var(--text-normal)]",
       chip: "multi-select-pill",
-      expression:
-        "zt:min-w-0 zt:w-full zt:font-mono zt:text-sm zt:leading-normal zt:[field-sizing:content] zt:resize-y",
+      // A CodeMirror field drawn as an Obsidian text input; the editor hook
+      // scopes the template token colors to it.
+      expression: cn(
+        themeHook.templateEditor,
+        "zt:w-full zt:min-w-0 zt:cursor-text zt:rounded-(--input-radius) zt:bg-(--background-modifier-form-field) zt:px-(--size-4-2) zt:py-(--size-4-1) zt:font-mono zt:text-sm zt:leading-normal",
+        "zt:shadow-(--input-shadow) zt:focus-within:shadow-[0_0_0_var(--input-border-width-focus,2px)_var(--background-modifier-border-focus)] zt:hover:shadow-(--input-shadow-hover) zt:has-[[aria-invalid=true]]:shadow-[0_0_0_var(--input-border-width)_var(--background-modifier-error)]",
+        "zt:[&_.cm-content]:p-0 zt:[&_.cm-editor]:outline-none zt:[&_.cm-line]:p-0 zt:[&_.cm-placeholder]:text-(--text-faint)",
+      ),
       conjunction:
         "zt:flex zt:min-h-(--input-height) zt:items-center zt:justify-end zt:text-end zt:text-sm zt:text-muted-foreground zt:[overflow-wrap:anywhere]",
       result: "zt:text-xs zt:leading-normal zt:text-muted-foreground",

@@ -105,14 +105,6 @@ export const FILTER_OPERATORS: Record<
   date: ["on-or-after", "after", "before", "on-or-before"],
 };
 
-/** The value a new row of a choice field starts with. */
-const FIRST_CHOICE: Partial<Record<FilterFieldKind, string>> = {
-  color: "yellow",
-  "item-type": "book",
-  "file-type": "pdf",
-  library: "personal",
-};
-
 /** The conditions of a view's dataset, in the order the kind picker lists them. */
 export function filterFields(dataset: QueryFileDataset): FilterField[] {
   const { item, attachment } = DATASETS[dataset].prefix;
@@ -148,19 +140,10 @@ export function filterFields(dataset: QueryFileDataset): FilterField[] {
   return fields;
 }
 
-/** A row of `field` at its starting value. */
+/** A row of `field` with its first operator and no value yet. */
 export function freshFilterRow(field: FilterField): FilterRow {
   const operator = FILTER_OPERATORS[field.type][0]!;
-  const today = Temporal.Now.plainDateISO();
-  const value =
-    field.type === "choice"
-      ? (FIRST_CHOICE[field.kind] ?? "")
-      : field.type === "number"
-        ? String(today.year)
-        : field.type === "date"
-          ? today.toString()
-          : "";
-  return { kind: field.kind, operator, value, values: [] };
+  return { kind: field.kind, operator, value: "", values: [] };
 }
 
 /** `row` with another operator, keeping what its values still mean. */
@@ -207,11 +190,26 @@ function fieldOf(
   return field;
 }
 
-/** The Filter Expression of one row. */
+/** Whether a row has the value its operator tests, so that it stores a condition. */
+export function hasFilterValue(row: FilterRow): boolean {
+  switch (row.operator) {
+    case "is-empty":
+    case "is-not-empty":
+      return true;
+    case "contains-any":
+    case "contains-all":
+      return row.values.some((value) => value !== "");
+    default:
+      return row.value !== "";
+  }
+}
+
+/** The Filter Expression of one row; `null` while the row has no value. */
 export function formatFilterRow(
   row: FilterRow,
   fields: readonly FilterField[],
-): string {
+): string | null {
+  if (!hasFilterValue(row)) return null;
   const field = fieldOf(row.kind, fields);
   const { path } = field;
   const one = JSON.stringify(row.value);

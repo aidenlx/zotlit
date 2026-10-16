@@ -139,11 +139,19 @@ describe("formatFilterRow", () => {
     });
   });
 
-  it("reads back the starting row of every condition", () => {
-    for (const field of fields) {
-      const row = freshFilterRow(field);
-      expect(parseFilterRow(formatFilterRow(row, fields), fields)).toEqual(row);
-    }
+  it("stores nothing for the starting row of every condition, which has no value", () => {
+    for (const field of fields)
+      expect(formatFilterRow(freshFilterRow(field), fields)).toBeNull();
+  });
+
+  it("stores an empty test without a value", () => {
+    const title = fields.find((field) => field.kind === "item-title")!;
+    expect(
+      formatFilterRow(
+        { kind: "item-title", operator: "is-empty", value: "", values: [] },
+        fields,
+      ),
+    ).toBe(`${title.path}.isEmpty()`);
   });
 });
 

@@ -1,4 +1,5 @@
-export { MatchEditor, MatchExpressionInput, MatchPane } from "./match";
+export { MatchEditor, MatchPane } from "./match";
+export { MatchExpressionInput } from "./match.expression";
 export { ChipInput } from "./match.chips";
 export { MatchInput } from "./match.input";
 export { MatchSelect } from "./match.rows";

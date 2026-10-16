@@ -5,6 +5,8 @@ import annotationLiquid from "@defaults/annotation.liquid?raw";
 import * as v from "valibot";
 import { stringify as stringifyYaml } from "yaml";
 
+import type { FilterTree } from "@zotlit/filter-expression";
+
 import {
   ANNOTATION_HEADER,
   frontmatterMergeStrategySchema,
@@ -84,16 +86,14 @@ const profileBindingEntries = {
   importAnnotationsAsTemplate: v.optional(v.boolean()),
 };
 
-/** An empty `and` matches every Item; an empty `or` matches none. */
-export type MatchTree =
-  | string
-  | { readonly and: readonly MatchTree[] }
-  | { readonly or: readonly MatchTree[] };
+/** A Profile Match: a Filter Tree over the Items it selects. */
+export type MatchTree = FilterTree;
 
 export const matchTreeSchema: v.GenericSchema<MatchTree> = v.union([
   v.string(),
   v.strictObject({ and: v.array(v.lazy(() => matchTreeSchema)) }),
   v.strictObject({ or: v.array(v.lazy(() => matchTreeSchema)) }),
+  v.strictObject({ not: v.array(v.lazy(() => matchTreeSchema)) }),
 ]);
 
 const manifestSchema = v.pipe(

@@ -1,8 +1,8 @@
 import type { WorkbenchDocumentController } from "#/document/controller";
 import type { MatchItemFacts } from "#/match/condition";
 import { useEffect, useMemo, useState, useRef } from "react";
-import type { TextareaHTMLAttributes } from "react";
 
+import type { FilterPath } from "@zotlit/filter-expression";
 import type { MatchTree } from "@zotlit/templates/facade";
 
 import { useOptionalEditor, useWorkbenchStore } from "./editor";
@@ -15,13 +15,17 @@ import {
   asLabelled,
   freshGroup,
   freshRow,
+  fitsVocabulary,
   fromFilter,
   isExpression,
   isGroup,
+  placeholderRow,
   removeAt,
   replaceAt,
+  placeKey,
+  settle,
+  storedFilter,
   storesFilter,
-  toFilter,
   updateGroup,
 } from "./match.draft";
 import type {
@@ -33,6 +37,7 @@ import type {
   MatchVocabulary,
   RowCondition,
 } from "./match.draft";
+import { MatchExpressionInput } from "./match.expression";
 import { profileVocabulary } from "./match.profile";
 import { useMatchReorder } from "./match.reorder";
 import type { MatchReorder } from "./match.reorder";
@@ -220,31 +225,11 @@ export function MatchPane({
   );
 }
 
-const emptyGroup = <Row extends LabelledRow>(): ConditionGroup<Row> => ({
-  kind: "group",
-  match: "all",
-  conditions: [],
-});
-
 /**
- * A Match tree as "All of the following" / "Any of the following" groups of
+ * A Match tree as "All" / "Any" / "None of the following are true" groups of
  * condition rows. The caller owns the stored filter and the conditions it
  * offers; `onChange` answers whether the caller kept the new filter.
  */
-/**
- * The expression input of a Match condition: a Filter Expression textarea
- * that takes the `expression` part of the match theme. It reads the theme
- * where it renders, so a host that wraps it in `WorkbenchThemeProvider` gets
- * the Match editor's look.
- */
-export function MatchExpressionInput(
-  props: Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "className"> &
-    Partial<Record<`data-${string}`, string>>,
-) {
-  const part = useParts("match");
-  return <textarea rows={1} {...part("expression")} {...props} />;
-}
-
 export function MatchEditor<Row extends LabelledRow>({
   value,
   onChange,
@@ -259,7 +244,7 @@ export function MatchEditor<Row extends LabelledRow>({
 }) {
   const part = useParts("match");
   const [root, setRootState] = useState<ConditionGroup<Row>>(() =>
-    value === undefined ? emptyGroup() : fromFilter(value, vocabulary),
+    fromFilter(value, vocabulary),
   );
   // The tree as last shown: a value it already stores is the editor's own
   // edit coming back, so an expression row the author is typing stays one.
@@ -271,34 +256,40 @@ export function MatchEditor<Row extends LabelledRow>({
   const latest = useRef(vocabulary);
   latest.current = vocabulary;
   useEffect(() => {
-    if (storesFilter(shown.current, value, latest.current)) return;
-    setRoot(
-      value === undefined ? emptyGroup() : fromFilter(value, latest.current),
-    );
+    if (
+      fitsVocabulary(shown.current, latest.current) &&
+      storesFilter(shown.current, value, latest.current)
+    )
+      return;
+    setRoot(fromFilter(value, latest.current));
   }, [value]);
-  function write(next: MatchTree | undefined) {
-    const saved = onChange(next);
-    if (!saved)
-      setRoot(
-        value === undefined ? emptyGroup() : fromFilter(value, vocabulary),
-      );
-    else if (next === undefined) setRoot(emptyGroup());
-    return saved;
-  }
+  // A new vocabulary — a view's dataset changed — may not offer the kinds
+  // of the rows on screen; the stored filter then reads again under it.
+  const fits = fitsVocabulary(root, vocabulary);
+  const tree = fits ? root : fromFilter(value, vocabulary);
+  useEffect(() => {
+    if (!fits) setRoot(tree);
+  });
+  // A change that stores what the caller holds — a placeholder row, a row
+  // with no value yet — stays on screen without a write.
   function change(next: ConditionGroup<Row>) {
-    setRoot(next);
-    write(toFilter(next, vocabulary));
+    const settled = settle(next, vocabulary);
+    setRoot(settled);
+    const { filter } = storedFilter(settled, vocabulary);
+    if (JSON.stringify(filter) === JSON.stringify(value)) return;
+    if (!onChange(filter)) setRoot(fromFilter(value, vocabulary));
   }
-  const reorder = useMatchReorder({ root, disabled, onChange: change });
+  const { places } = storedFilter(tree, vocabulary);
+  const reorder = useMatchReorder({ root: tree, disabled, onChange: change });
   return (
     <fieldset disabled={disabled} {...part("fieldset")} {...reorder.fieldset}>
       <Group
-        root={root}
-        group={root}
+        root={tree}
+        group={tree}
         path={[]}
+        places={places}
         vocabulary={vocabulary}
         reorder={reorder}
-        onRemoveMatch={value === undefined ? undefined : () => write(undefined)}
         onChange={change}
       />
     </fieldset>
@@ -309,18 +300,19 @@ function Group<Row extends LabelledRow>({
   root,
   group,
   path,
+  places,
   vocabulary,
   reorder,
   onChange,
-  onRemoveMatch,
 }: {
   root: ConditionGroup<Row>;
   group: ConditionGroup<Row>;
   path: ConditionPath;
+  /** Where each row sits in the stored filter, as {@link storedFilter} finds it. */
+  places: ReadonlyMap<string, FilterPath>;
   vocabulary: MatchVocabulary<Row>;
   reorder: MatchReorder;
   onChange: (root: ConditionGroup<Row>) => void;
-  onRemoveMatch?: () => void;
 }) {
   const m = useWorkbenchMessages();
   const part = useParts("match");
@@ -339,23 +331,16 @@ function Group<Row extends LabelledRow>({
             onChange(
               updateGroup(root, path, (node) => ({
                 ...node,
-                match: value === "all" ? "all" : "any",
+                match:
+                  value === "any" ? "any" : value === "none" ? "none" : "all",
               })),
             )
           }
         >
           <option value="all">{m.workbench_match_match_all()}</option>
           <option value="any">{m.workbench_match_match_any()}</option>
+          <option value="none">{m.workbench_match_match_none()}</option>
         </MatchSelect>
-        {onRemoveMatch && (
-          <button
-            {...part("remove-button")}
-            type="button"
-            onClick={onRemoveMatch}
-          >
-            {m.workbench_match_remove()}
-          </button>
-        )}
         {path.length > 0 && (
           <button
             {...part("icon-button")}
@@ -397,6 +382,7 @@ function Group<Row extends LabelledRow>({
                 root={root}
                 group={node}
                 path={[...path, index]}
+                places={places}
                 vocabulary={vocabulary}
                 reorder={reorder}
                 onChange={onChange}
@@ -404,7 +390,7 @@ function Group<Row extends LabelledRow>({
             ) : (
               <Row
                 condition={node}
-                path={[...path, index]}
+                stored={places.get(placeKey([...path, index])) ?? null}
                 vocabulary={vocabulary}
                 onChange={(next) =>
                   onChange(replaceAt(root, [...path, index], next))
@@ -420,9 +406,7 @@ function Group<Row extends LabelledRow>({
           {...part("button")}
           type="button"
           onClick={() =>
-            onChange(
-              appendAt(root, path, freshRow(vocabulary, vocabulary.newKind)),
-            )
+            onChange(appendAt(root, path, placeholderRow(vocabulary)))
           }
         >
           {icon("add")}
@@ -431,9 +415,7 @@ function Group<Row extends LabelledRow>({
         <button
           {...part("button")}
           type="button"
-          onClick={() =>
-            onChange(appendAt(root, path, freshGroup(group.match, vocabulary)))
-          }
+          onClick={() => onChange(appendAt(root, path, freshGroup(vocabulary)))}
         >
           {icon("add")}
           {m.workbench_match_add_group()}
@@ -445,13 +427,14 @@ function Group<Row extends LabelledRow>({
 
 function Row<Row extends LabelledRow>({
   condition,
-  path,
+  stored,
   vocabulary,
   onChange,
   onRemove,
 }: {
   condition: RowCondition<Row>;
-  path: ConditionPath;
+  /** The row's place in the stored filter; `null` while it stores nothing. */
+  stored: FilterPath | null;
   vocabulary: MatchVocabulary<Row>;
   onChange: (condition: RowCondition<Row>) => void;
   onRemove: () => void;
@@ -460,7 +443,8 @@ function Row<Row extends LabelledRow>({
   const part = useParts("match");
   const icon = useIcon();
   const host = useWorkbenchHost();
-  const issue = vocabulary.issue?.(condition, path) ?? null;
+  const issue =
+    stored === null ? null : (vocabulary.issue?.(condition, stored) ?? null);
   const labelled = isExpression(condition)
     ? asLabelled(condition, vocabulary)
     : null;
@@ -500,12 +484,7 @@ function Row<Row extends LabelledRow>({
                 aria-label={m.workbench_match_expression()}
                 aria-invalid={issue !== null}
                 value={condition.text}
-                onChange={(event) =>
-                  onChange({
-                    kind: "expression",
-                    text: event.currentTarget.value,
-                  })
-                }
+                onChange={(text) => onChange({ kind: "expression", text })}
               />
             ) : (
               kind?.renderValue({ condition, onChange })

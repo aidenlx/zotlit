@@ -7,9 +7,18 @@
 // @see apps/obsidian/docs/adr/0068-query-files-are-a-zotlit-file-type-embedded-through-the-private-embed-registry.md
 import { parse, stringify } from "yaml";
 
+import {
+  composeFilterTree,
+  joinComposed,
+  readFilterTree,
+} from "@zotlit/filter-expression";
+import type {
+  ComposedFilter,
+  FilterLeaf,
+  FilterTree,
+} from "@zotlit/filter-expression";
 import { FORMULA_SEGMENT, nameDictionary } from "@zotlit/item-query";
 import type { NameDictionary } from "@zotlit/item-query";
-import type { MatchTree } from "@zotlit/templates/facade";
 
 /** The file extension of a Query File, and the language of a Query Block. */
 export const QUERY_FILE_EXTENSION = "zotquery";
@@ -69,7 +78,7 @@ export interface QueryFileView {
   readonly name: string;
   /** The Query Dataset the view reads; `undefined` where the file names none it knows. */
   readonly from: QueryFileDataset | undefined;
-  readonly filters?: MatchTree;
+  readonly filters?: FilterTree;
   readonly sort?: readonly QueryFileSort[];
   /**
    * The group path. Groups follow the query order of their first rows; `DESC`
@@ -97,7 +106,7 @@ export interface QueryFileView {
 
 export interface QueryFile {
   /** The filters for all views of the same dataset. */
-  readonly filters?: MatchTree;
+  readonly filters?: FilterTree;
   /**
    * The Formulas: each name with its Filter Expression text. A view shows a
    * Formula as the property `formula.<name>`.
@@ -121,52 +130,6 @@ type Entries = Record<string, unknown>;
 
 function isMap(value: unknown): value is Entries {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/** Wraps one condition so it binds as one operand. */
-function operand(expression: string): string {
-  return `(${expression})`;
-}
-
-/**
- * Reads a Bases filter. A `not` group becomes one expression condition, since
- * the Match editor has no "None of the following" group.
- */
-function readFilter(value: unknown): MatchTree | null {
-  if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean")
-    return String(value);
-  if (!isMap(value)) return null;
-  const keys = Object.keys(value);
-  if (keys.length !== 1) return null;
-  const [key] = keys as [string];
-  const entries = value[key];
-  if (!Array.isArray(entries)) return null;
-  const read = entries.map(readFilter);
-  if (read.includes(null)) return null;
-  const children = read as MatchTree[];
-  switch (key) {
-    case "and":
-      return { and: children };
-    case "or":
-      return { or: children };
-    case "not":
-      return `!${operand(
-        children.map((child) => operand(filterExpression(child))).join(" || "),
-      )}`;
-    default:
-      return null;
-  }
-}
-
-/** One Filter Expression for a filter tree. */
-export function filterExpression(tree: MatchTree): string {
-  if (typeof tree === "string") return tree;
-  const [entries, joiner, empty] =
-    "and" in tree ? [tree.and, " && ", "true"] : [tree.or, " || ", "false"];
-  if (entries.length === 0) return empty;
-  if (entries.length === 1) return filterExpression(entries[0]!);
-  return entries.map((entry) => operand(filterExpression(entry))).join(joiner);
 }
 
 function readDirection(value: unknown): QueryFileDirection | null {
@@ -215,7 +178,7 @@ function readView(value: unknown): QueryFileView {
   } = { type, name, from, problems, source };
 
   if (source.filters !== undefined) {
-    const filters = readFilter(source.filters);
+    const filters = readFilterTree(source.filters);
     if (filters === null) invalid("filters");
     else view.filters = filters;
   }
@@ -284,7 +247,7 @@ export function parseQueryFile(text: string): QueryFile {
     source: value,
   };
   if (value.filters !== undefined) {
-    const filters = readFilter(value.filters);
+    const filters = readFilterTree(value.filters);
     if (filters === null)
       problems.push({
         code: "invalid-value",
@@ -349,19 +312,12 @@ function merged(source: Readonly<Entries>, entries: Entries): Entries {
   return out;
 }
 
-function writeFilter(tree: MatchTree | undefined): unknown {
-  if (tree === undefined || typeof tree === "string") return tree;
-  return "and" in tree
-    ? { and: tree.and.map(writeFilter) }
-    : { or: tree.or.map(writeFilter) };
-}
-
 function writeView(view: QueryFileView): Entries {
   return merged(view.source, {
     type: view.type || undefined,
     name: view.name || undefined,
     from: view.from ?? view.source.from,
-    filters: writeFilter(view.filters) ?? view.source.filters,
+    filters: view.filters ?? view.source.filters,
     sort: view.sort?.map((sort) => ({ ...sort })) ?? view.source.sort,
     groupBy: view.groupBy ? { ...view.groupBy } : view.source.groupBy,
     groupOrder: view.groupOrder ? [...view.groupOrder] : view.source.groupOrder,
@@ -430,7 +386,7 @@ export function serializeQueryFile(file: QueryFile): string {
     ]);
   }
   const entries = merged(source, {
-    filters: writeFilter(file.filters) ?? file.source.filters,
+    filters: file.filters ?? file.source.filters,
     formulas: file.formulas ?? file.source.formulas,
     properties: file.properties ?? file.source.properties,
     views: file.views.map(writeView),
@@ -617,63 +573,12 @@ export interface ConditionIssue extends FilterLocation {
   readonly message: string;
 }
 
-interface FilterLeaf extends FilterLocation {
-  readonly from: number;
-  readonly to: number;
-}
-
-/**
- * The Filter Expression of a filter tree, with the place of each condition in
- * it. A lone condition sits in the editor's root group, so its path is `[0]`.
- */
-function composeFilter(
-  tree: MatchTree,
-  at: FilterLocation & { readonly offset: number },
-): { text: string; leaves: FilterLeaf[] } {
-  const { section, path, offset } = at;
-  if (typeof tree === "string")
-    return {
-      text: tree,
-      leaves: [{ section, path, from: offset, to: offset + tree.length }],
-    };
-  const [entries, joiner, empty] =
-    "and" in tree ? [tree.and, " && ", "true"] : [tree.or, " || ", "false"];
-  if (entries.length === 0) return { text: empty, leaves: [] };
-  if (entries.length === 1)
-    return composeFilter(entries[0]!, { section, path: [...path, 0], offset });
-  let text = "";
-  const leaves: FilterLeaf[] = [];
-  entries.forEach((entry, index) => {
-    if (index > 0) text += joiner;
-    text += "(";
-    const part = composeFilter(entry, {
-      section,
-      path: [...path, index],
-      offset: offset + text.length,
-    });
-    text += `${part.text})`;
-    leaves.push(...part.leaves);
-  });
-  return { text, leaves };
-}
-
-function composeSection(
-  tree: MatchTree,
-  section: FilterSection,
-  offset: number,
-) {
-  return composeFilter(tree, {
-    section,
-    path: typeof tree === "string" ? [0] : [],
-    offset,
-  });
-}
-
+/** The Filter Expression of one view's filters, with each condition's place. */
 function composeView(
   file: QueryFile,
   view: QueryFileView,
-): { text: string; leaves: FilterLeaf[] } | undefined {
-  const sections: [MatchTree, FilterSection][] = [];
+): ComposedFilter<FilterLocation & FilterLeaf> | undefined {
+  const sections: [FilterTree, FilterSection][] = [];
   if (
     file.filters !== undefined &&
     (view.from ?? "annotations") === allViewsDataset(file)
@@ -681,20 +586,12 @@ function composeView(
     sections.push([file.filters, "all"]);
   if (view.filters !== undefined) sections.push([view.filters, "view"]);
   if (sections.length === 0) return undefined;
-  if (sections.length === 1) {
-    const [[tree, section]] = sections as [[MatchTree, FilterSection]];
-    return composeSection(tree, section, 0);
-  }
-  let text = "";
-  const leaves: FilterLeaf[] = [];
-  sections.forEach(([tree, section], index) => {
-    if (index > 0) text += " && ";
-    text += "(";
-    const part = composeSection(tree, section, text.length);
-    text += `${part.text})`;
-    leaves.push(...part.leaves);
+  // Each section's leaves carry their section, so the joined text keeps it.
+  const parts = sections.map(([tree, section]) => {
+    const { text, leaves } = composeFilterTree(tree);
+    return { text, leaves: leaves.map((leaf) => ({ ...leaf, section })) };
   });
-  return { text, leaves };
+  return joinComposed(parts, " && ");
 }
 
 /**
@@ -731,7 +628,7 @@ export function locateFilterFault(
 export function withFilters(
   file: QueryFile,
   index: number | null,
-  filters: MatchTree | undefined,
+  filters: FilterTree | undefined,
 ): QueryFile {
   const set = <T extends { readonly source: Readonly<Entries> }>(
     target: T,

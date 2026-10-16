@@ -30,11 +30,13 @@ export type ListOperator =
   | "isEmpty";
 export type CollectionOperator = ListOperator | "within";
 
+/** `all`: every condition must hold; `any`: at least one must; `none`: no condition may. */
+export type GroupMatch = "all" | "any" | "none";
+
 export type MatchCondition =
   | {
       kind: "group";
-      /** `all`: every condition must hold; `any`: at least one must. */
-      match: "all" | "any";
+      match: GroupMatch;
       conditions: MatchCondition[];
     }
   | {
@@ -103,7 +105,8 @@ const MATCH_ALL_EXPRESSION = "true";
 
 /**
  * Validate a Match tree against the supported contract: every leaf compiles,
- * and each group becomes a "Match all" / "Match any" group in tree order.
+ * and each group becomes a "Match all" / "Match any" / "Match none" group in
+ * tree order.
  * The first problem found, in reading order, is the filter's problem.
  */
 export function compileFilter(
@@ -111,8 +114,12 @@ export function compileFilter(
   libraries?: readonly AvailableLibrary[],
 ): CompiledCondition {
   if (typeof filter === "string") return compileCondition(filter, libraries);
-  const match = "and" in filter ? "all" : "any";
-  const entries = "and" in filter ? filter.and : filter.or;
+  const [match, entries]: [GroupMatch, readonly MatchTree[]] =
+    "and" in filter
+      ? ["all", filter.and]
+      : "or" in filter
+        ? ["any", filter.or]
+        : ["none", filter.not];
   const conditions: MatchCondition[] = [];
   for (const entry of entries) {
     const compiled = compileFilter(entry, libraries);
@@ -167,10 +174,14 @@ export function matchCondition(
   facts: MatchItemFacts,
 ): boolean {
   switch (condition.kind) {
-    case "group":
+    case "group": {
+      const holds = (entry: MatchCondition) => matchCondition(entry, facts);
       return condition.match === "all"
-        ? condition.conditions.every((entry) => matchCondition(entry, facts))
-        : condition.conditions.some((entry) => matchCondition(entry, facts));
+        ? condition.conditions.every(holds)
+        : condition.match === "any"
+          ? condition.conditions.some(holds)
+          : !condition.conditions.some(holds);
+    }
     case "library":
       return (
         (facts.library !== null &&
@@ -231,17 +242,19 @@ export function formatCondition(condition: MatchCondition): string {
   switch (condition.kind) {
     case "group": {
       if (condition.conditions.length === 0)
-        return condition.match === "all"
-          ? MATCH_ALL_EXPRESSION
-          : `!${MATCH_ALL_EXPRESSION}`;
+        return condition.match === "any"
+          ? `!${MATCH_ALL_EXPRESSION}`
+          : MATCH_ALL_EXPRESSION;
       const operator = condition.match === "all" ? " && " : " || ";
-      return condition.conditions
+      const joined = condition.conditions
         .map((entry) =>
           entry.kind === "group" && entry.conditions.length > 1
             ? `(${formatCondition(entry)})`
             : formatCondition(entry),
         )
         .join(operator);
+      // A "Match none" group holds when no condition does.
+      return condition.match === "none" ? `!(${joined})` : joined;
     }
     case "library":
     case "item-type":
@@ -330,6 +343,8 @@ function flatten(
 function negate(condition: MatchCondition): MatchCondition {
   if (condition.kind !== "group")
     return { ...condition, negated: !condition.negated };
+  // "None of" negates to "any of" the same conditions.
+  if (condition.match === "none") return { ...condition, match: "any" };
   // De Morgan keeps the contract closed under `!` without a `not` group.
   return {
     kind: "group",

@@ -1,0 +1,148 @@
+// The expression input of a Match condition and of a Formula: a small
+// CodeMirror editor that colors its Filter Expression as the template panes
+// color theirs.
+import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+import { syntaxHighlighting } from "@codemirror/language";
+import { Annotation, Compartment, EditorState } from "@codemirror/state";
+import {
+  EditorView,
+  keymap,
+  placeholder as placeholderText,
+} from "@codemirror/view";
+import { useEffect, useRef } from "react";
+
+import { useParts } from "./theme";
+
+import { filterExpressionLanguage } from "#/language/filter-expression";
+import { templateHighlighter } from "#/language/highlight";
+
+/** The label and validity of the field, on its editable content. */
+const contentAttributes = ({
+  label,
+  invalid,
+}: {
+  label: string | undefined;
+  invalid: boolean;
+}) =>
+  EditorView.contentAttributes.of({
+    "aria-invalid": String(invalid),
+    ...(label === undefined ? {} : { "aria-label": label }),
+  });
+
+/** Marks the edit that brings in a new `value`, which is not the user's. */
+const fromValue = Annotation.define<true>();
+
+export interface MatchExpressionInputProps {
+  value: string;
+  /** Each edit, with the window the field is in. */
+  onChange: (text: string, win: Window) => void;
+  onBlur?: () => void;
+  "aria-label"?: string;
+  "aria-invalid"?: boolean;
+  placeholder?: string;
+  /** The lines the field shows before it grows with its text. */
+  lines?: number;
+}
+
+/**
+ * A Filter Expression field. It takes the `expression` part of the match
+ * theme where it renders, so a host that wraps it in
+ * `WorkbenchThemeProvider` gets the Match editor's look; the `data-*`
+ * attributes go on that part.
+ */
+export function MatchExpressionInput({
+  value,
+  onChange,
+  onBlur,
+  "aria-label": label,
+  "aria-invalid": invalid = false,
+  placeholder,
+  lines = 1,
+  ...data
+}: MatchExpressionInputProps & Partial<Record<`data-${string}`, string>>) {
+  const part = useParts("match");
+  const host = useRef<HTMLDivElement>(null);
+  const view = useRef<EditorView | null>(null);
+  // The editor is made once; it reads what it needs then, and later props,
+  // through this ref.
+  const props = useRef({
+    value,
+    onChange,
+    onBlur,
+    label,
+    invalid,
+    placeholder,
+    lines,
+  });
+  props.current = {
+    value,
+    onChange,
+    onBlur,
+    label,
+    invalid,
+    placeholder,
+    lines,
+  };
+  const attributes = useRef(new Compartment());
+  useEffect(() => {
+    const { value, placeholder, lines } = props.current;
+    const parent = host.current!;
+    const editor = new EditorView({
+      parent,
+      state: EditorState.create({
+        doc: value,
+        extensions: [
+          filterExpressionLanguage,
+          syntaxHighlighting(templateHighlighter),
+          history(),
+          keymap.of([...defaultKeymap, ...historyKeymap]),
+          EditorView.lineWrapping,
+          EditorView.theme({
+            ".cm-content": { minHeight: `${lines * 1.5}em` },
+          }),
+          placeholder ? placeholderText(placeholder) : [],
+          EditorView.contentAttributes.of({ spellcheck: "false" }),
+          attributes.current.of(contentAttributes(props.current)),
+          EditorView.updateListener.of((update) => {
+            if (
+              update.docChanged &&
+              !update.transactions.some((tr) => tr.annotation(fromValue))
+            )
+              props.current.onChange(
+                update.state.doc.toString(),
+                parent.ownerDocument.defaultView ?? window,
+              );
+          }),
+          EditorView.domEventHandlers({
+            blur: () => {
+              props.current.onBlur?.();
+            },
+          }),
+        ],
+      }),
+    });
+    view.current = editor;
+    return () => {
+      editor.destroy();
+      view.current = null;
+    };
+  }, []);
+  useEffect(() => {
+    const editor = view.current;
+    if (!editor || editor.state.doc.toString() === value) return;
+    editor.dispatch({
+      changes: { from: 0, to: editor.state.doc.length, insert: value },
+      annotations: fromValue.of(true),
+    });
+  }, [value]);
+  useEffect(() => {
+    const editor = view.current;
+    if (!editor) return;
+    editor.dispatch({
+      effects: attributes.current.reconfigure(
+        contentAttributes({ label, invalid }),
+      ),
+    });
+  }, [invalid, label]);
+  return <div ref={host} {...part("expression")} {...data} />;
+}

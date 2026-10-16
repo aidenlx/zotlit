@@ -61,10 +61,10 @@ function describeFilter(filter: MatchTree, options: DescribeOptions): string {
     return condition ? describeCondition(condition, options) : filter.trim();
   }
   const all = "and" in filter;
-  return new Intl.ListFormat(runtime.getLocale(), {
+  const listed = new Intl.ListFormat(runtime.getLocale(), {
     type: all ? "conjunction" : "disjunction",
   }).format(
-    (all ? filter.and : filter.or).map((entry) =>
+    (all ? filter.and : "or" in filter ? filter.or : filter.not).map((entry) =>
       typeof entry === "string"
         ? describeFilter(entry, options)
         : m.settings_profile_match_summary_group({
@@ -72,6 +72,9 @@ function describeFilter(filter: MatchTree, options: DescribeOptions): string {
           }),
     ),
   );
+  return "not" in filter
+    ? m.settings_profile_match_summary_none({ conditions: listed })
+    : listed;
 }
 
 function describeCondition(
@@ -80,10 +83,10 @@ function describeCondition(
 ): string {
   if (condition.kind !== "group") return describeFlat(condition, options);
   if (condition.conditions.length === 0)
-    return condition.match === "all"
-      ? m.profile_match_all()
-      : m.profile_match_none();
-  return new Intl.ListFormat(runtime.getLocale(), {
+    return condition.match === "any"
+      ? m.profile_match_none()
+      : m.profile_match_all();
+  const listed = new Intl.ListFormat(runtime.getLocale(), {
     type: condition.match === "all" ? "conjunction" : "disjunction",
   }).format(
     condition.conditions.map((entry) =>
@@ -94,6 +97,9 @@ function describeCondition(
         : describeFlat(entry, options),
     ),
   );
+  return condition.match === "none"
+    ? m.settings_profile_match_summary_none({ conditions: listed })
+    : listed;
 }
 
 function describeFlat(
@@ -220,7 +226,7 @@ export function compileProfileMatch(
     };
   const all =
     condition.kind === "group" &&
-    condition.match === "all" &&
+    condition.match !== "any" &&
     condition.conditions.length === 0;
   return {
     state: all ? "all" : "evaluable",
