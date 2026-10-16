@@ -2167,9 +2167,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     for (const card of cards.rows)
       expect(card.cells).toEqual(cells.get(card.key)!.slice(0, 4));
 
-    // "Hide all" leaves no property ticked and none shown, as in Bases: the
-    // Table keeps its Literature note column and a row for each Item, and a
-    // card stays for each Item with nothing in it.
+    // "Hide all" leaves no property ticked and none shown, as in Bases, the
+    // Literature Note Property with them: the Table keeps a row for each Item,
+    // and a card stays for each Item with nothing in it.
     await pickLayout("table");
     await tabWhen((tab) => tab.layout === "table" && tab.rows.length === total);
     const hidden = JSON.parse(
@@ -2179,7 +2179,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     ) as { header: string[]; rows: number; ticks: number };
     expect(hidden).toEqual({
-      header: ["", m.query_view_table_literature_note()],
+      header: [""],
       rows: total,
       ticks: 0,
     });
@@ -3900,6 +3900,105 @@ views:
     expect(closed.during).toEqual({ line: true, grabbing: true });
     expect(closed.after).toEqual({ line: false, grabbing: false });
     expect(closed.same).toBe(true);
+  }, 240000);
+
+  it("moves, resizes and hides the Literature Note Property in the Table, saves it in the Query File view, and keeps it across a switch to Cards", async () => {
+    const path = "query-files/Note column.zotquery";
+    const layout = await obEval(
+      vaultId,
+      "JSON.stringify(app.workspace.getLayout())",
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{for(const popup of activeDocument.querySelectorAll('[popover]:popover-open'))popup.hidePopover();document.body.classList.remove('is-grabbing');await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));const file=app.vault.getFileByPath(${JSON.stringify(path)});if(file)await app.vault.delete(file);return true;})()`,
+      );
+    });
+    const note = "vault.literatureNote";
+    const source = `views:\n  - type: table\n    name: Note column\n    from: items\n    order:\n      - title\n      - date\n      - ${note}\n    limit: 3\n`;
+    await obEval(
+      vaultId,
+      `(async()=>{const file=await app.vault.create(${JSON.stringify(path)},${JSON.stringify(source)});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
+    );
+    /**
+     * Runs `steps` against the open Query File tab once its Table shows, with
+     * `th(path)`, `edge(path)`, `fire(target, type, x)` and `popup()`, the
+     * open Properties popover; then saves and reads the header and the file.
+     */
+    const inTable = async <T>(steps: string): Promise<T> => {
+      let out: T | null = null;
+      const settled = await waitFor(async () => {
+        out = JSON.parse(
+          await obEval(
+            vaultId,
+            `(async()=>{${PAGE}const view=app.workspace.getMostRecentLeaf().view;if(view.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(path)})return 'null';await view.query.settled;const el=view.contentEl;const th=p=>el.querySelector('[data-query-table] th[data-query-column="'+p+'"]');if(!th('title')||!el.querySelector('[data-query-table-row="item"]'))return 'null';const edge=p=>th(p).querySelector('[data-query-column-resizer]');const transfer=new DataTransfer();const fire=(target,type,x)=>{const r=target.getBoundingClientRect();const event=new DragEvent(type,{bubbles:true,cancelable:true,dataTransfer:transfer,clientX:x,clientY:r.top+r.height/2});target.dispatchEvent(event);return event.defaultPrevented;};const popup=()=>activeDocument.querySelector('[data-query-properties-popup]:popover-open');const columns=()=>[...el.querySelectorAll('[data-query-table] th[data-query-column]')].map(n=>n.getAttribute('data-query-column'));const width=p=>Math.round(th(p).getBoundingClientRect().width);const out=await (async()=>{${steps}})();await view.query.flush();return JSON.stringify({...out,columns:columns(),text:await app.vault.read(view.file)});})()`,
+          ),
+        ) as T | null;
+        return out !== null;
+      }, 120);
+      if (!settled) throw new Error("Query File tab shows no Table");
+      return out!;
+    };
+    interface Read {
+      columns: string[];
+      text: string;
+    }
+    const N = JSON.stringify(note);
+
+    // The column's header drags as any other: dropped on the first column,
+    // it goes first, and each Item row shows its note link or Create there.
+    const moved = await inTable<Read & { cells: boolean[] }>(
+      `const title=th('title').getBoundingClientRect();fire(th(${N}),'dragstart',th(${N}).getBoundingClientRect().left+5);fire(th('title'),'dragover',title.left+5);fire(th('title'),'drop',title.left+5);fire(th(${N}),'dragend',0);await until('moved',()=>columns()[0]===${N});const at=th(${N}).cellIndex;return {cells:[...el.querySelectorAll('[data-query-table-row="item"]')].map(row=>!!row.cells[at].querySelector('[data-query-note],[data-query-create-note]'))};`,
+    );
+    expect(moved.columns).toEqual([note, "title", "date"]);
+    expect(moved.cells).toEqual([true, true, true]);
+    expect(moved.text).toContain(
+      `    order:\n      - ${note}\n      - title\n      - date\n`,
+    );
+
+    // Its edge sets its width, saved by its path.
+    const resized = await inTable<Read & { before: number; after: number }>(
+      `const before=width(${N});const x=edge(${N}).getBoundingClientRect().left+2;fire(edge(${N}),'dragstart',x);fire(el,'dragover',x+80);await until('live width',()=>width(${N})!==before);fire(el,'drop',x+80);fire(edge(${N}),'dragend',0);await until('saved width',()=>'sized' in th(${N}).dataset);return {before,after:width(${N})};`,
+    );
+    expect(resized.after).toBe(resized.before + 80);
+    expect(resized.text).toContain(
+      `    columnSize:\n      ${note}: ${resized.before + 80}\n`,
+    );
+
+    // The Properties popover ticks it; an untick hides the column and keeps
+    // its row, unticked, so a tick shows it again, last.
+    const toggled = await inTable<
+      Read & {
+        label: string;
+        hidden: string[];
+        hiddenText: string;
+        kept: boolean;
+      }
+    >(
+      `if(!popup())press(el.querySelector('[data-query-properties]'),'Properties');await until('Properties popover opens',()=>popup()?.querySelector('[data-query-property]'));const row=()=>popup().querySelector('[data-query-property='+JSON.stringify(${N})+']');const label=row().textContent;press(row(),'Literature Note Property row');await until('hidden',()=>!columns().includes(${N}));await view.query.flush();const hidden=columns();const hiddenText=await app.vault.read(view.file);const kept=row()?.getAttribute('aria-selected')==='false';press(row(),'Literature Note Property row');await until('shown',()=>columns().includes(${N}));popup().hidePopover();return {label,hidden,hiddenText,kept};`,
+    );
+    expect(toggled.label).toBe(m.query_view_table_literature_note());
+    expect(toggled.hidden).toEqual(["title", "date"]);
+    expect(toggled.hiddenText).toContain(
+      "    order:\n      - title\n      - date\n    limit",
+    );
+    expect(toggled.kept).toBe(true);
+    expect(toggled.columns).toEqual(["title", "date", note]);
+
+    // Cards do not show it and name it no unused setting, and the Table
+    // shows it again after the switch back.
+    const switched = await inTable<
+      Read & { card: boolean; unused: string | null }
+    >(
+      `view.query.document.setViewLayout(0,'cards');await until('cards',()=>el.querySelector('[data-query-row]'));await view.query.settled;const card=!!el.querySelector('[data-query-row] [data-query-note],[data-query-row] [data-query-create-note]');const unused=el.querySelector('[data-query-unused]')?.textContent??null;view.query.document.setViewLayout(0,'table');await until('table',()=>th(${N}));return {card,unused};`,
+    );
+    expect(switched.card).toBe(false);
+    expect(switched.unused).toBeNull();
+    expect(switched.columns).toEqual(["title", "date", note]);
+    expect(switched.text).toContain(
+      `    order:\n      - title\n      - date\n      - ${note}\n`,
+    );
   }, 240000);
 
   it("switches a Fixture Query File view to Items and the Table, expands an Item into its Attachments, Annotations and Child Notes, and creates a Literature Note from its column", async () => {

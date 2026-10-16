@@ -473,16 +473,20 @@ The Item, and the Attachment when there is one, that a Query View is relative to
 _Avoid_: current note, scope
 
 **Property**:
-One value that a Query View can show, sort, group, filter and name for each record: a field of its Query Dataset, read by its path, or a Formula Property.
+One value that a Query View can show, sort, group, filter and name for each record: a field of its Query Dataset, read by its path, a Formula Property, or the Literature Note Property.
 _Avoid_: column, field (on the view side), attribute
 
 **Visible Properties**:
-The properties a Query View shows, in its order: the columns of the Table, the lines of the List and Cards, and the columns of copy and CSV export. Saved as the view's `order`.
+The properties a Query View shows, in its order: the columns of the Table, the lines of the List and Cards, and the columns of copy and CSV export. Saved as the view's `order`. A Table whose `order` leaves out the Literature Note Property hides its column, as Bases hides a property its `order` leaves out.
 _Avoid_: columns (alone), fields, shown properties
 
 **Formula Property**:
 A property of a Query File that a Formula under its top-level `formulas` key yields, named `formula.<name>`, added, edited and removed from the Properties popover. It is shown and exported like any other property; a record on which its Formula gives an Error Value shows that error in its cell. On a view whose Query Dataset cannot read its Formula, it is a problem of that view's property; a filter that reads such a Formula is a problem of that condition too.
 _Avoid_: computed property, calculated property, formula column
+
+**Literature Note Property**:
+The property `vault.literatureNote` of a Table view: the Item's Literature Note, which the Note Index answers. Each Item row shows it as a link to the note, or as a button that creates the note. It shows, moves, resizes and takes a Display Name like any other property, and the Properties popover lists it as a top-level property. The Table is the Layout that shows it; Cards and List keep it in `order` for a switch back to the Table. ZotLit Query reads the other Visible Properties, which are also the columns of copy and CSV export. Sorting, grouping and filtering use the fields of the Query Dataset. A Table without `order` shows it after the default fields.
+_Avoid_: note column, Literature note column (in code)
 
 **Display Name**:
 The text a Query View shows for one property in its headers, its labels, its Properties popover, and the header row of copy and CSV export, saved under the Query File's top-level `properties` key. A property without a Display Name shows its field label or its path.

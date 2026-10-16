@@ -1,9 +1,11 @@
-// The Properties a Query View knows, one entry each: its label, whether it
-// is a Formula Property and what ZotLit Query says is wrong with it, whether
+// The Properties a Query View knows, one entry each: its label, its kind
+// and what ZotLit Query says is wrong with a Formula Property, whether
 // the view's Query Dataset can read it, and its place in the Visible
 // Properties. The Layouts, copy and CSV, the Properties popover, the Sort
 // and Group controls and the Filter conditions all read these entries, so a
-// Property shows the same label and the same marks in each.
+// Property shows the same label and the same marks in each. The Literature
+// Note Property is one the vault answers rather than ZotLit Query; it shows,
+// moves and resizes in the Table as the others do.
 import { useMemo } from "react";
 import { useStore } from "zustand";
 
@@ -25,21 +27,62 @@ import { formulaIssuesOf } from "./results";
 import { groupPaths } from "./rows";
 import type { QueryView } from "./view";
 
+/**
+ * The path of the Literature Note Property. The vault's Note Index answers
+ * it, not ZotLit Query, so no query reads it, and only the Table shows it.
+ */
+export const LITERATURE_NOTE = "vault.literatureNote";
+
+/**
+ * What a Property is, by the namespace of its path: a field of the Query
+ * Dataset, read by its Projection Path; a Formula Property, `formula.<name>`;
+ * or the Literature Note Property, which the vault answers. In the two
+ * namespaces of the view a dot only names the namespace.
+ */
+export type PropertyKind = "field" | "formula" | "literatureNote";
+
+/** The settings of a view that decide its Properties. */
+type PropertySettings = Pick<
+  QueryFileView,
+  "from" | "order" | "sort" | "groupBy"
+> &
+  Partial<Pick<QueryFileView, "type">>;
+
+/** The kind of `path`, read once with the name of the Formula it shows. */
+function classify(path: string): {
+  kind: PropertyKind;
+  formula: string | null;
+} {
+  if (path === LITERATURE_NOTE)
+    return { kind: "literatureNote", formula: null };
+  const formula = formulaName(path);
+  return { kind: formula === null ? "field" : "formula", formula };
+}
+
 /** One Property of a view. */
 export interface PropertyEntry {
-  /** The Projection Path, as the file names it. */
+  /** The Projection Path, `formula.<name>` or `vault.literatureNote`, as the file names it. */
   readonly path: string;
   /** Its Display Name, else its field label, else its path. */
   readonly label: string;
   /** The Display Name the file gives it; else `null`. */
   readonly displayName: string | null;
-  /** The name of the Formula it shows, for `formula.<name>`; else `null`. */
+  readonly kind: PropertyKind;
+  /**
+   * Whether it is part of another field: a member of a field, as `date.year`
+   * is, or a field of a parent record, as `item.title` is. Only a field's
+   * Projection Path nests, by its dots. The Properties popover lists a
+   * nested Property only while the researcher searches.
+   */
+  readonly nested: boolean;
+  /** The name of the Formula it shows, where `kind` is `"formula"`; else `null`. */
   readonly formula: string | null;
   /** What ZotLit Query names as wrong in its Formula; else `null`. */
   readonly issue: string | null;
   /**
    * Whether the view's Query Dataset can read it: the dataset lists it, or
-   * no dataset does, as for a Formula or a path the researcher typed.
+   * no dataset does, as for a Formula or a path the researcher typed. The
+   * Literature Note Property fits where the Layout shows it: a Table of Items.
    */
   readonly fits: boolean;
   /** Its place in the Visible Properties; `null` where the view hides it. */
@@ -64,9 +107,19 @@ export interface ViewProperties {
    * projects by default. An empty `order`, as "Hide all" leaves it, shows
    * none, as in Bases. Else it shows the Properties of `order` the dataset
    * can read; where these are none, as for an `order` of another dataset
-   * kept across a dataset change, it shows the default fields.
+   * kept across a dataset change, it shows the default fields. The Literature
+   * Note Property counts among those the Table can show: a Table whose
+   * `order` holds only it and fields of another dataset shows only it, and
+   * another Layout, which cannot show it, shows the default fields for an
+   * `order` of only the Literature Note Property.
    */
   readonly visible: readonly PropertyEntry[];
+  /**
+   * The Visible Properties that ZotLit Query reads, in their order: what the
+   * run asks for, and the columns of copy and CSV export. The Literature
+   * Note Property is no value of a row, so it is not among them.
+   */
+  readonly queried: readonly PropertyEntry[];
   /**
    * Every Property the view knows: the Visible Properties in their order,
    * then the file's other Formula Properties, then the dataset's other fields.
@@ -90,17 +143,23 @@ export interface ViewProperties {
  */
 export function viewProperties(
   file: QueryFile | null,
-  view: Pick<QueryFileView, "from" | "order" | "sort" | "groupBy">,
+  view: PropertySettings,
   formulaIssues: Readonly<Record<string, string>> = {},
 ): ViewProperties {
   const dataset = view.from ?? "annotations";
   const properties = datasetProperties(dataset);
-  const defaults = DATASETS[dataset].engine.defaultFields.filter((field) =>
-    properties.includes(field),
-  );
-  const fitting = [
-    ...new Set((view.order ?? []).filter((path) => fitsDataset(path, dataset))),
+  // Only a Table of Items shows the Literature Note Property, at the end of
+  // a view that names no `order` of its own, as it did before it could move.
+  const showsNote = view.type === "table" && dataset === "items";
+  const fits = (path: string) =>
+    path === LITERATURE_NOTE ? showsNote : fitsDataset(path, dataset);
+  const defaults = [
+    ...DATASETS[dataset].engine.defaultFields.filter((field) =>
+      properties.includes(field),
+    ),
+    ...(showsNote ? [LITERATURE_NOTE] : []),
   ];
+  const fitting = [...new Set((view.order ?? []).filter(fits))];
   const shown =
     view.order === undefined
       ? defaults
@@ -113,19 +172,21 @@ export function viewProperties(
   const entry = (path: string): PropertyEntry => {
     let found = known.get(path);
     if (!found) {
-      const formula = formulaName(path);
+      const { kind, formula } = classify(path);
       const place = shown.indexOf(path);
       const named = (file && displayName(file, path)) ?? null;
       found = {
         path,
         label: named ?? fieldLabel(path),
         displayName: named,
+        kind,
+        nested: kind === "field" && path.includes("."),
         formula,
         issue:
           formula !== null && Object.hasOwn(formulaIssues, formula)
             ? formulaIssues[formula]!
             : null,
-        fits: fitsDataset(path, dataset),
+        fits: fits(path),
         place: place === -1 ? null : place,
       };
       known.set(path, found);
@@ -135,11 +196,21 @@ export function viewProperties(
   const paths = new Set([
     ...shown,
     ...Object.keys(file?.formulas ?? {}).map(formulaProperty),
+    ...(showsNote ? [LITERATURE_NOTE] : []),
     ...datasetProperties(dataset),
   ]);
   const unused = unusedSettings(view);
+  // A Layout other than the Table keeps the Literature Note Property in
+  // `order`, so a switch back to the Table shows it again; it is no setting
+  // the dataset lacks, so it is not among the unused ones.
+  const keptForTable =
+    !showsNote && view.order?.includes(LITERATURE_NOTE)
+      ? [LITERATURE_NOTE]
+      : [];
+  const visible = shown.map(entry);
   return {
-    visible: shown.map(entry),
+    visible,
+    queried: visible.filter(({ kind }) => kind !== "literatureNote"),
     entries: [...paths].map(entry),
     unused,
     entry,
@@ -148,7 +219,9 @@ export function viewProperties(
         ? []
         : [
             ...next,
-            ...unused.order.filter((property) => !next.includes(property)),
+            ...[...unused.order, ...keptForTable].filter(
+              (property) => !next.includes(property),
+            ),
           ],
   };
 }
@@ -226,7 +299,8 @@ export function unusedSettings(
         ? view.groupBy.property
         : null,
     order: (view.order ?? []).filter(
-      (property) => !fitsDataset(property, dataset),
+      (property) =>
+        property !== LITERATURE_NOTE && !fitsDataset(property, dataset),
     ),
   };
 }
@@ -238,6 +312,7 @@ export function unusedSettings(
  * name under its parent's. A path with none of these shows as it is.
  */
 export function fieldLabel(property: string): string {
+  if (property === LITERATURE_NOTE) return m.query_view_table_literature_note();
   return labelOf(property) ?? property;
 }
 

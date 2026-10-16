@@ -207,7 +207,7 @@ const LABEL =
 const DROP_LINE =
   "table-drag-target mod-col zt-column-drop-line zt:start-(--zt-drop-x) zt:top-(--zt-drop-top) zt:h-(--zt-drop-height) zt:transition-all zt:duration-75 zt:ease-in";
 
-/** The header row: one cell for each visible property, then the Literature note column. */
+/** The header row: one cell for each visible property, the Literature Note Property among them. */
 export function TableHeader({
   view,
   properties,
@@ -596,16 +596,6 @@ export function TableHeader({
             </th>
           );
         })}
-        <th className={cn(cell, later)}>
-          <span className="zt:flex zt:items-center zt:gap-1">
-            <Icon
-              name="file"
-              size="var(--icon-xs)"
-              className="zt:flex zt:shrink-0"
-            />
-            {m.query_view_table_literature_note()}
-          </span>
-        </th>
       </tr>
     </thead>
   );

@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
+import * as m from "@/lib/i18n/generated/messages";
+
 import { DATASETS } from "./datasets";
 import { parseQueryFile } from "./query-file";
-import { fieldLabel, viewProperties } from "./view-properties";
+import { LITERATURE_NOTE, fieldLabel, viewProperties } from "./view-properties";
 
 const FILE = parseQueryFile(`formulas:
   year: date.year
@@ -264,4 +266,110 @@ describe("fieldLabel", () => {
       for (const [path] of paths) expect(fieldLabel(path)).not.toBe(path);
     },
   );
+});
+
+describe("viewProperties kinds", () => {
+  it.each([
+    ["title", "field", false],
+    ["date.year", "field", true],
+    ["item.title", "field", true],
+    ['custom["Reading status"]', "field", false],
+    ["formula.year", "formula", false],
+    [LITERATURE_NOTE, "literatureNote", false],
+  ])(
+    "names %s a %s, nested: %s; only a field's Projection Path nests by its dots",
+    (path, kind, nested) => {
+      const properties = viewProperties(FILE, {
+        type: "table",
+        from: "items",
+      });
+      expect(properties.entry(path)).toMatchObject({ kind, nested });
+    },
+  );
+
+  it("asks ZotLit Query for the Visible Properties but the Literature Note Property", () => {
+    const properties = viewProperties(FILE, {
+      type: "table",
+      from: "items",
+      order: [LITERATURE_NOTE, "title", "formula.year"],
+    });
+    expect(properties.queried.map((entry) => entry.path)).toEqual([
+      "title",
+      "formula.year",
+    ]);
+  });
+});
+
+describe("viewProperties Literature Note Property", () => {
+  const paths = (properties: ReturnType<typeof viewProperties>) =>
+    properties.visible.map((entry) => entry.path);
+  const table = { type: "table", from: "items" as const };
+
+  it("shows the Literature Note Property after the default fields of a Table without order", () => {
+    const properties = viewProperties(null, table);
+    expect(paths(properties)).toEqual([
+      "itemType",
+      "title",
+      "dateModified",
+      LITERATURE_NOTE,
+    ]);
+    expect(properties.entry(LITERATURE_NOTE)).toMatchObject({
+      label: m.query_view_table_literature_note(),
+      formula: null,
+      fits: true,
+      place: 3,
+    });
+  });
+
+  it("shows the Literature Note Property where a Table's order places it, and hides it where the order leaves it out", () => {
+    const first = viewProperties(null, {
+      ...table,
+      order: [LITERATURE_NOTE, "title"],
+    });
+    expect(paths(first)).toEqual([LITERATURE_NOTE, "title"]);
+    const left = viewProperties(null, { ...table, order: ["title"] });
+    expect(paths(left)).toEqual(["title"]);
+    // The Properties popover still offers it, unticked.
+    expect(left.entry(LITERATURE_NOTE).place).toBeNull();
+    expect(left.entries.map((entry) => entry.path)).toContain(LITERATURE_NOTE);
+  });
+
+  it("shows only the Literature Note Property for a Table whose order holds it and fields of another dataset", () => {
+    const properties = viewProperties(null, {
+      ...table,
+      order: ["comment", LITERATURE_NOTE],
+    });
+    expect(paths(properties)).toEqual([LITERATURE_NOTE]);
+    expect(properties.unused.order).toEqual(["comment"]);
+  });
+
+  it("shows the default fields in a Layout that cannot show the Literature Note Property, for an order of only it", () => {
+    const properties = viewProperties(null, {
+      type: "list",
+      from: "items",
+      order: [LITERATURE_NOTE],
+    });
+    expect(paths(properties)).toEqual(["itemType", "title", "dateModified"]);
+    expect(properties.orderOf(["title"])).toEqual(["title", LITERATURE_NOTE]);
+  });
+
+  it("keeps the Literature Note Property in the order of a Layout that does not show it, and names it no unused setting", () => {
+    const cards = viewProperties(null, {
+      type: "cards",
+      from: "items",
+      order: ["title", LITERATURE_NOTE],
+    });
+    expect(paths(cards)).toEqual(["title"]);
+    expect(cards.entries.map((entry) => entry.path)).not.toContain(
+      LITERATURE_NOTE,
+    );
+    expect(cards.unused.order).toEqual([]);
+    // A change in Cards keeps it for a switch back to the Table.
+    expect(cards.orderOf(["title", "date"])).toEqual([
+      "title",
+      "date",
+      LITERATURE_NOTE,
+    ]);
+    expect(cards.orderOf([])).toEqual([]);
+  });
 });

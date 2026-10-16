@@ -1,6 +1,6 @@
 import { Keymap } from "obsidian";
 // The Table layout: the Items of a view as rows, like Zotero's item list, with
-// the visible properties as columns and a "Literature note" column. An Item
+// the visible properties as columns, the Literature Note Property among them. An Item
 // row expands into its Attachments and Child Notes, and an Attachment row
 // into its Annotations. Each kind of child row comes from one Table Child
 // Source, so a new kind joins the list without another branch.
@@ -446,6 +446,13 @@ const ROW = "zt:hover:bg-(--table-row-background-hover)";
 const HEADER =
   "zt:sticky zt:top-0 zt:z-(--layer-cover) zt:bg-background zt:py-0 zt:font-(--font-weight) zt:whitespace-nowrap zt:text-muted-foreground zt:in-[.mod-sidedock]:bg-(--background-secondary) zt:in-[.callout]:bg-transparent";
 
+/**
+ * The columns a child row's one cell spans beside the gutter: every column
+ * of properties, and one where the view shows none, so the row still has
+ * room for its text.
+ */
+const childSpan = (columns: number) => Math.max(columns, 1);
+
 /** The rows under one expanded row, and the rows under those that are expanded. */
 function ChildRows({
   parent,
@@ -469,7 +476,7 @@ function ChildRows({
       <tr data-query-table-status={state.phase}>
         <td className={GUTTER} />
         <td
-          colSpan={columns + 1}
+          colSpan={childSpan(columns)}
           style={indent(depth)}
           className={cn(CELL, "zt:ps-(--zt-indent) zt:text-(--text-muted)")}
         >
@@ -535,7 +542,7 @@ function ChildRow({
         data-query-key={record.key}
       >
         <td className={GUTTER} />
-        <td colSpan={columns + 1} className={cn(CELL, "zt:ps-1")}>
+        <td colSpan={childSpan(columns)} className={cn(CELL, "zt:ps-1")}>
           <span
             className="zt:flex zt:min-w-0 zt:items-center zt:gap-1.5 zt:ps-(--zt-indent)"
             style={indent(depth)}
@@ -628,7 +635,7 @@ export function TableLayout({ view }: { view: QueryView }) {
               placed && placed.key !== group ? (
                 <tr data-query-group={placed.key}>
                   <th
-                    colSpan={columns.length + 2}
+                    colSpan={childSpan(columns.length) + 1}
                     className={cn(
                       CELL,
                       "zt:bg-card zt:text-start zt:font-(--font-semibold)",
@@ -694,21 +701,25 @@ function ItemRow({
             onToggle={() => toggle(record)}
           />
         </td>
-        {columns.map(({ path }, at) => (
-          <td
-            key={path}
-            className={cn(CELL, at === 0 ? FIRST : LATER)}
-            data-sized={sizedMark(sizes, path)}
-          >
-            <CellContent
-              value={record.values[path]}
-              text={cellText(path, record.values[path])}
-            />
-          </td>
-        ))}
-        <td className={cn(CELL, LATER, "zt:py-0")}>
-          <NoteCell notes={notes} itemKey={record.key} />
-        </td>
+        {columns.map(({ path, kind }, at) => {
+          const note = kind === "literatureNote";
+          return (
+            <td
+              key={path}
+              className={cn(CELL, at === 0 ? FIRST : LATER, note && "zt:py-0")}
+              data-sized={sizedMark(sizes, path)}
+            >
+              {note ? (
+                <NoteCell notes={notes} itemKey={record.key} />
+              ) : (
+                <CellContent
+                  value={record.values[path]}
+                  text={cellText(path, record.values[path])}
+                />
+              )}
+            </td>
+          );
+        })}
       </tr>
       <ChildRows
         parent={record}

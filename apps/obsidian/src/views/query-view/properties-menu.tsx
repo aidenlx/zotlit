@@ -175,15 +175,10 @@ function PropertyList({
   const keys = useRef({ order, setOrder, page });
   keys.current = { order, setOrder, page };
   const groups = useMemo<ChooserGroup<ChooserRow>[]>(() => {
-    // The properties of the parent records come only while the user searches.
+    // A nested property, a member of a field or a field of a parent record,
+    // comes only while the user searches, or while the view shows it.
     const items = rows
-      .filter(
-        (entry) =>
-          entry.place !== null ||
-          entry.formula !== null ||
-          query !== "" ||
-          !entry.path.includes("."),
-      )
+      .filter((entry) => entry.place !== null || query !== "" || !entry.nested)
       .map(
         (entry): ChooserRow => ({
           ...propertyRow(entry),
