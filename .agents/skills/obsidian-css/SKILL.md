@@ -13,7 +13,8 @@ Use `zt:`-prefixed utilities on the styled element. Feature stylesheets sit besi
 
 - **The `zt:` prefix is on every utility** — `zt:flex`, `zt:gap-2`, `zt:bg-background`, `zt:rounded-md` — and variants chain after it: `zt:hover:opacity-100`, `zt:@md:columns-2`. Tailwind v4's `prefix()` scopes the compiled selectors so they never collide with another plugin's output. The `@theme` variables in `src/zt-main.css` keep their authored names (no prefix).
 - **No token for an Obsidian variable** → reference it directly with the arbitrary-variable syntax — `zt:bg-(--modal-background)`, `zt:p-(--size-4-3)` — or extend `zt-main.css` following the existing pattern.
-- **Merge with `cn()`** from `@/lib/utils` (prefix-aware `twMerge`), and compose Obsidian modifier classes (`mod-cta`, `is-enabled`, `clickable-icon`) with `tv` from `@/lib/tw` rather than `tailwind-variants` directly. The wrappers in `src/components/obsidian/` are the pattern.
+- **Merge with `cn()`** from `@/lib/utils` (prefix-aware `twMerge`), and compose variants with `tv` from `@/lib/tw` rather than `tailwind-variants` directly.
+- **Obsidian's control classes stay in the wrappers.** `clickable-icon`, `mod-cta`, `setting-item*` and the like reach a component only through `src/components/obsidian/`; a control or layout of your own is `zt:` utilities over Obsidian's variables (`zt:rounded-(--clickable-icon-radius)`, `zt:text-(--icon-color)`). In a React tree a form row is JSX — a label, the wrapper's control, utilities — rather than `new Setting`. The `zotlit-css` lint rules hold `.tsx` files to both.
 
 ## The three rules
 
@@ -130,6 +131,7 @@ Catalogs of Obsidian variables — read on demand, one topic at a time.
 - `references/editor.md` — markdown content: headings, links, tables, callouts, code, blockquotes, lists, tags, embeds, footnotes, properties, bases, inline title.
 - `references/window.md` — workspace chrome: ribbon, sidebar, status bar, dividers, scrollbars, scroll containers (overlay scrollbar, pane background, sticky edges), window frame, vault profile.
 - `references/plugins.md` — built-in plugin views: file explorer, search, graph, canvas, sync.
+- `../../../apps/obsidian/docs/bases-toolbar-menu.md` — a Bases-style menu, page, or form: the anatomy, keyboard, and save behaviour of Bases toolbar menus.
 
 When a catalog leaves a question open — exactly what Obsidian applies to an element, whether a rule is layered — read Obsidian's own stylesheet: `/obsidian-asar-extract` writes `app.css` next to `app.js` in `node_modules/.ob-rev-<version>/`, and `rg` over it answers against the exact version you build for.
 

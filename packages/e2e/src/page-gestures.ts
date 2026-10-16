@@ -10,6 +10,10 @@
  * holds that node). A control in a folded section fails here. It then clicks
  * `el`, which answers `el`.
  *
+ * The click is untrusted, so the browser's own handling of a real gesture —
+ * a popover's light-dismiss, a close watcher — does not run; the
+ * obsidian-debug skill's "Trusted input" reaches those by hand.
+ *
  * `until` polls `ok` (sync or async) every 20 ms and answers its first truthy
  * result; after `timeout` ms (2000 by default) it throws `what`.
  */
