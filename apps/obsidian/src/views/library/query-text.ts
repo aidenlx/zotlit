@@ -1,11 +1,13 @@
 // The Query View's text, as the Library View Document derives it: the tree
-// node and the Reading State facets become the filters for all views, a
+// node and the Reading State facets become the filters for all views (Recent
+// adds none and reads the whole Library Scope), a
 // search becomes its ranked key set, and the sort, the Layout and the Visible
 // Properties pass through to the one Items view. A toolbar change comes back
 // the other way through `documentWithText`.
 //
 // @see apps/obsidian/docs/adr/0071-the-library-tree-writes-filters.md
 // @see apps/obsidian/docs/adr/0072-search-enters-the-library-view-as-an-ordered-key-set.md
+// @see apps/obsidian/docs/adr/0075-recent-is-a-library-tree-node-that-writes-a-sort.md
 import type { FilterTree } from "@zotlit/filter-expression";
 import { nameDictionary } from "@zotlit/item-query";
 
@@ -23,11 +25,13 @@ import type {
   ReadingStateFacet,
 } from "./document";
 
-/** The names the derived text shows: its view's name and two Display Names. */
+/** The names the derived query shows: its view's name, two Display Names and Recent's reason. */
 export interface LibraryViewLabels {
   readonly papers: string;
   readonly creators: string;
   readonly year: string;
+  /** Recent's reason for an Item Zotero changed last. */
+  readonly editedInZotero: string;
 }
 
 /**
@@ -41,7 +45,7 @@ export type VaultCondition = "has-literature-note" | "no-literature-note";
 export interface LibraryViewQuery {
   /** The Query File text the Query View reads. */
   readonly text: string;
-  /** The Libraries the query reads: the Library of the tree node. */
+  /** The Libraries the query reads: the Library of the tree node, or the Library Scope for Recent. */
   readonly libraries: LibraryScope;
   /**
    * The Indexed Keys of a search, best match first: the order the view shows
@@ -50,6 +54,13 @@ export interface LibraryViewQuery {
   readonly rank: readonly string[] | null;
   /** The conditions every row passes in the vault, after the query. */
   readonly vault: readonly VaultCondition[];
+  /**
+   * Why each row is in the list: on Recent, its last activity; `null`
+   * elsewhere. Until ZotLit Query reads `lastRead` and the Obsidian usage
+   * ledger (#1532, #1533), every Item is on Recent for its last change in
+   * Zotero; the reason then names the source and the time of each row.
+   */
+  readonly reason: string | null;
 }
 
 /**
@@ -76,12 +87,21 @@ const FACETS: Readonly<
 
 /**
  * The query of `doc`.
+ * @param scope the Library Scope in force, which Recent reads.
  * @param keys the ranked Indexed Keys that the search of `doc.search` found;
  * absent while the view browses.
  */
 export function libraryViewQuery(
   doc: LibraryViewDocument,
-  { labels, keys }: { labels: LibraryViewLabels; keys?: readonly string[] },
+  {
+    labels,
+    scope,
+    keys,
+  }: {
+    labels: LibraryViewLabels;
+    scope: LibraryScope;
+    keys?: readonly string[];
+  },
 ): LibraryViewQuery {
   const { node } = doc;
   const filters: string[] = [];
@@ -97,6 +117,7 @@ export function libraryViewQuery(
     filters.push(
       `[${keys.map((key) => JSON.stringify(key)).join(", ")}].contains(indexedKey)`,
     );
+  const recent = node.kind === "recent";
   const text = serializeQueryFile({
     ...(filters.length > 0 && { filters: filterTree(filters) }),
     properties: nameDictionary(
@@ -122,9 +143,10 @@ export function libraryViewQuery(
   });
   return {
     text,
-    libraries: { mode: "selected", libraries: [node.library] },
+    libraries: recent ? scope : { mode: "selected", libraries: [node.library] },
     rank: keys ?? null,
     vault,
+    reason: recent ? labels.editedInZotero : null,
   };
 }
 
@@ -152,14 +174,18 @@ export function documentWithText(
 /**
  * The Query File that "Save as query file" writes for `doc`: the query of
  * `doc` with the Library of its tree node as a filter, since a Query File
- * tab reads every Library in the Library Scope. The search stays out; a
- * Query File cannot express it (ADR 0072).
+ * tab reads every Library in the Library Scope. Recent, which reads the
+ * Library Scope too, needs none. The search stays out; a Query File cannot
+ * express it (ADR 0072).
  */
 export function libraryViewQueryFileText(
   doc: LibraryViewDocument,
   { labels }: { labels: LibraryViewLabels },
 ): string {
-  const file = parseQueryFile(libraryViewQuery(doc, { labels }).text);
+  // The text names no Libraries: the Query File tab reads its own.
+  const { text } = libraryViewQuery(doc, { labels, scope: { mode: "all" } });
+  if (doc.node.kind === "recent") return text;
+  const file = parseQueryFile(text);
   const library = `library == ${JSON.stringify(selectorKey(doc.node.library))}`;
   const rest =
     file.filters === undefined

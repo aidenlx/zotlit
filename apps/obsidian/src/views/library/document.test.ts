@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_LIBRARY_VIEW_DOCUMENT,
+  documentWithNode,
   parseLibraryViewDocument,
   serializeLibraryViewDocument,
 } from "./document";
@@ -48,6 +49,16 @@ describe("parseLibraryViewDocument and serializeLibraryViewDocument", () => {
     ).toEqual({ kind: "library", library: { type: "group", groupID: 118 } });
   });
 
+  it("round-trips Recent, which names no Library", () => {
+    const doc: LibraryViewDocument = {
+      ...CHAPTER,
+      node: { kind: "recent" },
+    };
+    expect(
+      parseLibraryViewDocument(serializeLibraryViewDocument(doc)).node,
+    ).toEqual({ kind: "recent" });
+  });
+
   it("keeps a Collection name that holds a slash as one name of the path", () => {
     const doc: LibraryViewDocument = {
       ...DEFAULT_LIBRARY_VIEW_DOCUMENT,
@@ -62,9 +73,9 @@ describe("parseLibraryViewDocument and serializeLibraryViewDocument", () => {
     ).toEqual(doc.node);
   });
 
-  it("opens My Library on Papers, newest first, when plugin data holds no document", () => {
+  it("opens on Recent as Papers, newest first, when plugin data holds no document", () => {
     expect(parseLibraryViewDocument(null)).toEqual({
-      node: { kind: "library", library: { type: "personal" } },
+      node: { kind: "recent" },
       facets: [],
       search: "",
       sort: [{ property: "dateModified", direction: "DESC" }],
@@ -95,5 +106,20 @@ describe("parseLibraryViewDocument and serializeLibraryViewDocument", () => {
         facets: ["pdf", "unread", "pdf", "has-note"],
       }).facets,
     ).toEqual(["unread", "has-note", "pdf"]);
+  });
+});
+
+describe("documentWithNode", () => {
+  it("selects a Library or a Collection and keeps the sort", () => {
+    const node = { kind: "library", library: { type: "personal" } } as const;
+    expect(documentWithNode(CHAPTER, node)).toEqual({ ...CHAPTER, node });
+  });
+
+  it("selects Recent with its sort, newest change first, and keeps the rest", () => {
+    expect(documentWithNode(CHAPTER, { kind: "recent" })).toEqual({
+      ...CHAPTER,
+      node: { kind: "recent" },
+      sort: [{ property: "dateModified", direction: "DESC" }],
+    });
   });
 });
