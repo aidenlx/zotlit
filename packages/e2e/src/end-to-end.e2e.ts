@@ -3861,7 +3861,8 @@ views:
     expect(reset.columns).toEqual(["firstAuthor", "date", "title"]);
 
     // A column can be narrower than its longest word: it stops at the
-    // narrowest Bases width, and its cells clip what does not fit.
+    // narrowest Bases width, and its cells clip what does not fit — the
+    // cell itself, or the line inside it that truncates its text.
     const narrowed = await inTable<
       Read & {
         min: number;
@@ -3871,7 +3872,7 @@ views:
         label: boolean;
       }
     >(
-      `const min=Number.parseFloat(getComputedStyle(th('firstAuthor')).getPropertyValue('--bases-table-column-min-width'));const before=width('firstAuthor');const x=edge('firstAuthor').getBoundingClientRect().left+2;pointer(edge('firstAuthor'),'pointerdown',x);pointer(el,'pointermove',x-before);pointer(el,'pointerup',x-before);await until('narrow width',()=>width('firstAuthor')===min);const at=th('firstAuthor').cellIndex;const cells=[...el.querySelectorAll('[data-query-table-row="item"]')].map(row=>row.cells[at]);const label=th('firstAuthor').firstElementChild.lastElementChild;return {min,auto:before,after:width('firstAuthor'),clipped:cells.some(cell=>cell.scrollWidth>cell.clientWidth),label:label.scrollWidth>label.clientWidth};`,
+      `const min=Number.parseFloat(getComputedStyle(th('firstAuthor')).getPropertyValue('--bases-table-column-min-width'));const before=width('firstAuthor');const x=edge('firstAuthor').getBoundingClientRect().left+2;pointer(edge('firstAuthor'),'pointerdown',x);pointer(el,'pointermove',x-before);pointer(el,'pointerup',x-before);await until('narrow width',()=>width('firstAuthor')===min);const at=th('firstAuthor').cellIndex;const cells=[...el.querySelectorAll('[data-query-table-row="item"]')].map(row=>row.cells[at]);const label=th('firstAuthor').firstElementChild.lastElementChild;return {min,auto:before,after:width('firstAuthor'),clipped:cells.some(cell=>[cell,...cell.querySelectorAll('*')].some(box=>box.scrollWidth>box.clientWidth)),label:label.scrollWidth>label.clientWidth};`,
     );
     expect(narrowed.after).toBe(narrowed.min);
     expect(narrowed.clipped).toBe(true);
