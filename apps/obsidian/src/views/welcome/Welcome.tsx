@@ -1,4 +1,4 @@
-// Welcome onboarding banner: setup steps, conversion status and evidence-backed v1 guidance.
+// Welcome onboarding banner: the setup steps, the template conversion, the v1 Migration Prompt and the Zotero 10 Companion guidance, each as a section the store decides.
 import { join } from "node:path/posix";
 import type { IconName } from "obsidian";
 import type { ReactNode } from "react";
@@ -10,6 +10,7 @@ import { useUniqueId } from "@zotlit/ui";
 import { Button } from "@/components/obsidian/button";
 import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
+import { DOCS_COMPANION } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
@@ -26,7 +27,7 @@ import {
   SPONSOR,
 } from "./links";
 import { templateMigrationNotice } from "./migration-notice";
-import { useWelcomeStore, welcomeShown } from "./store";
+import { bannerSections, useWelcomeStore } from "./store";
 
 type NodeState = "done" | "active" | "warn" | "todo";
 
@@ -334,115 +335,112 @@ function Callout({
   );
 }
 
-function MigrationBanner() {
+function ConversionOffer() {
   const actions = useWelcomeActions();
-  const templateConversionPending = useWelcomeStore(
-    (state) => state.templateConversionPending,
-  );
   const templateFolder = useWelcomeStore((state) => state.templateFolder);
-  const result = useWelcomeStore((state) => state.templateConversionResult);
-  const v1TemplatesPresent = useWelcomeStore(
-    (state) => state.v1TemplatesPresent,
-  );
   const [converting, setConverting] = useState(false);
   // The notice that names a refusal is transient; the banner keeps the same
   // sentence beside the button until the next attempt.
   const [refusal, setRefusal] = useState<string | null>(null);
-  if (templateConversionPending) {
-    return (
-      <Callout
-        tone="accent"
-        title={m.welcome_template_conversion_title()}
-        action={
+  return (
+    <Callout
+      tone="accent"
+      title={m.welcome_template_conversion_title()}
+      action={
+        <Button
+          variant="cta"
+          icon="combine"
+          loading={converting}
+          disabled={converting}
+          onClick={() => {
+            setConverting(true);
+            setRefusal(null);
+            void actions
+              .convertLiteratureNoteTemplates()
+              .then((outcome) => {
+                if (outcome.outcome === "refused")
+                  setRefusal(templateMigrationNotice(outcome));
+              })
+              .finally(() => {
+                setConverting(false);
+              });
+          }}
+        >
+          {m.welcome_template_conversion_action()}
+        </Button>
+      }
+    >
+      <p className="zt:m-0">
+        {m.welcome_template_conversion_body({
+          path: join(templateFolder, CONVERTED_DEFAULT_PROFILE_DOCUMENT),
+        })}
+      </p>
+      {refusal ? (
+        <p className="zt:mt-2 zt:mb-0 zt:text-destructive" role="alert">
+          {refusal}
+        </p>
+      ) : null}
+    </Callout>
+  );
+}
+
+function ConversionResult() {
+  const actions = useWelcomeActions();
+  const result = useWelcomeStore((state) => state.templateConversionResult);
+  const [retrying, setRetrying] = useState(false);
+  if (!result) return null;
+  const retained = result.pendingCleanup;
+  return (
+    <Callout
+      tone="muted"
+      title={m.welcome_template_conversion_completed_title()}
+      action={
+        retained.length > 0 ? (
           <Button
-            variant="cta"
-            icon="combine"
-            loading={converting}
-            disabled={converting}
+            loading={retrying}
+            disabled={retrying}
             onClick={() => {
-              setConverting(true);
-              setRefusal(null);
-              void actions
-                .convertLiteratureNoteTemplates()
-                .then((outcome) => {
-                  if (outcome.outcome === "refused")
-                    setRefusal(templateMigrationNotice(outcome));
-                })
-                .finally(() => {
-                  setConverting(false);
-                });
+              setRetrying(true);
+              void actions.retryTemplateCleanup().finally(() => {
+                setRetrying(false);
+              });
             }}
           >
-            {m.welcome_template_conversion_action()}
+            {m.welcome_template_cleanup_retry()}
           </Button>
-        }
-      >
-        <p className="zt:m-0">
-          {m.welcome_template_conversion_body({
-            path: join(templateFolder, CONVERTED_DEFAULT_PROFILE_DOCUMENT),
-          })}
-        </p>
-        {refusal ? (
-          <p className="zt:mt-2 zt:mb-0 zt:text-destructive" role="alert">
-            {refusal}
-          </p>
-        ) : null}
-      </Callout>
-    );
-  }
-  if (result) {
-    const retained = result.pendingCleanup;
-    return (
-      <Callout
-        tone="muted"
-        title={m.welcome_template_conversion_completed_title()}
-        action={
-          retained.length > 0 ? (
-            <Button
-              loading={converting}
-              disabled={converting}
-              onClick={() => {
-                setConverting(true);
-                void actions.retryTemplateCleanup().finally(() => {
-                  setConverting(false);
-                });
-              }}
-            >
-              {m.welcome_template_cleanup_retry()}
-            </Button>
-          ) : undefined
-        }
-      >
-        <p className="zt:m-0">
-          {result.document
-            ? m.welcome_template_conversion_completed_body({
-                path: result.document,
-                count: result.trashed,
-              })
-            : m.welcome_template_conversion_completed_files({
-                count: result.trashed,
-              })}
-        </p>
-        {retained.length > 0 ? (
-          <>
-            <p className="zt:mt-2 zt:mb-0">
-              {m.welcome_template_cleanup_body()}
-            </p>
-            <ul className="zt:my-1 zt:flex zt:list-none zt:flex-col zt:gap-1 zt:p-0">
-              {retained.map((path) => (
-                <li key={path}>
-                  <code className="zt:rounded-sm zt:border zt:border-border zt:bg-muted zt:px-2 zt:py-0.5 zt:font-mono zt:text-xs">
-                    {path}
-                  </code>
-                </li>
-              ))}
-            </ul>
-          </>
-        ) : null}
-      </Callout>
-    );
-  }
-  if (!v1TemplatesPresent) return null;
+        ) : undefined
+      }
+    >
+      <p className="zt:m-0">
+        {result.document
+          ? m.welcome_template_conversion_completed_body({
+              path: result.document,
+              count: result.trashed,
+            })
+          : m.welcome_template_conversion_completed_files({
+              count: result.trashed,
+            })}
+      </p>
+      {retained.length > 0 ? (
+        <>
+          <p className="zt:mt-2 zt:mb-0">{m.welcome_template_cleanup_body()}</p>
+          <ul className="zt:my-1 zt:flex zt:list-none zt:flex-col zt:gap-1 zt:p-0">
+            {retained.map((path) => (
+              <li key={path}>
+                <code className="zt:rounded-sm zt:border zt:border-border zt:bg-muted zt:px-2 zt:py-0.5 zt:font-mono zt:text-xs">
+                  {path}
+                </code>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+    </Callout>
+  );
+}
+
+function MigrationGuide() {
+  const actions = useWelcomeActions();
   return (
     <Callout
       tone="accent"
@@ -462,15 +460,45 @@ function MigrationBanner() {
   );
 }
 
+/** What a v1 upgrader on Zotero 10 needs: ZotLit Companion reads its recent changes. */
+function CompanionGuidance() {
+  const actions = useWelcomeActions();
+  return (
+    <Callout
+      tone="muted"
+      title={m.welcome_companion_title()}
+      action={
+        <Button
+          icon="external-link"
+          onClick={() => actions.openExternal(DOCS_COMPANION)}
+        >
+          {m.notice_companion_install_action()}
+        </Button>
+      }
+    >
+      {m.companion_zotero_10_guidance()}
+    </Callout>
+  );
+}
+
 /**
- * The Welcome View as a banner above the Library View: the setup steps while
- * setup is incomplete, and the Migration Prompt of a v1 upgrade until it is
- * acknowledged. Nothing while neither applies.
+ * The Welcome View as a banner above the Library View: exactly the sections
+ * {@link bannerSections} names, and nothing while it names none.
  *
  * @see apps/obsidian/docs/adr/0076-the-library-view-is-the-first-screen.md
  */
 export function Welcome() {
-  const shown = useWelcomeStore(welcomeShown);
+  const shown = useWelcomeStore((s) => bannerSections(s) !== null);
+  const steps = useWelcomeStore((s) => bannerSections(s)?.steps ?? false);
+  const conversion = useWelcomeStore(
+    (s) => bannerSections(s)?.conversion ?? null,
+  );
+  const migration = useWelcomeStore(
+    (s) => bannerSections(s)?.migration ?? false,
+  );
+  const companion = useWelcomeStore(
+    (s) => bannerSections(s)?.companion ?? false,
+  );
   const migrationPending = useWelcomeStore((s) => s.migrationPending);
   const titleId = useUniqueId();
   if (!shown) return null;
@@ -483,14 +511,21 @@ export function Welcome() {
       className="zt:@container zt:border-b-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-secondary) zt:px-(--size-4-6) zt:py-(--size-4-4)"
     >
       <Header titleId={titleId} />
-      <MigrationBanner />
-      <div className="zt:mt-4 zt:grid zt:gap-4 zt:@3xl:grid-cols-3">
-        <StepConnect />
-        <StepFolder />
-        <StepLibrary />
-      </div>
-      <Links />
-      {migrationPending ? null : <FooterLink />}
+      {conversion === "offer" && <ConversionOffer />}
+      {conversion === "result" && <ConversionResult />}
+      {migration && <MigrationGuide />}
+      {companion && <CompanionGuidance />}
+      {steps && (
+        <>
+          <div className="zt:mt-4 zt:grid zt:gap-4 zt:@3xl:grid-cols-3">
+            <StepConnect />
+            <StepFolder />
+            <StepLibrary />
+          </div>
+          <Links />
+          {migrationPending ? null : <FooterLink />}
+        </>
+      )}
     </section>
   );
 }

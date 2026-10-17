@@ -100,6 +100,8 @@ export class LibraryView extends ItemView {
   readonly search: LibrarySearch;
   /** The Reading Card of the selected row. */
   readonly card: ReadingCard;
+  /** The Welcome View banner above the tree and the list. ADR 0076. */
+  readonly welcome: WelcomeBanner;
   readonly #deps: LibraryViewDeps;
   readonly #storage: LibraryViewStorage;
   /** The not-found state and the Welcome View banner, while the tab is open. */
@@ -131,6 +133,13 @@ export class LibraryView extends ItemView {
     this.scope = new Scope(deps.app.scope);
     this.contentEl.addClass("zt-root", "zt-library-view");
     this.contentEl.dataset.libraryView = "";
+    // The banner takes at most half the tab.
+    this.welcome = new WelcomeBanner(
+      deps.welcome,
+      this.contentEl.createDiv({
+        cls: "zt:max-h-1/2 zt:shrink-0 zt:overflow-y-auto",
+      }),
+    );
     this.#storage = new LibraryViewStorage(
       deps.settings,
       () => this.query.document.text,
@@ -230,9 +239,7 @@ export class LibraryView extends ItemView {
     const column = this.contentEl.createDiv({
       cls: "zt:flex zt:h-full zt:flex-col",
     });
-    const banner = column.createDiv({
-      cls: "zt:max-h-1/2 zt:shrink-0 zt:overflow-y-auto",
-    });
+    column.append(this.welcome.el);
     const shell = column.createDiv({
       cls: "zt:group zt:@container zt:relative zt:flex zt:min-h-0 zt:flex-1",
     });
@@ -268,7 +275,7 @@ export class LibraryView extends ItemView {
         // The search the box holds runs again on the database found.
         () => void this.search.run(),
       ),
-      new WelcomeBanner(this.#deps.welcome, banner),
+      this.welcome,
     );
     for (const part of this.#parts) part.load();
     this.tree.load();

@@ -67,7 +67,8 @@ export async function openWelcomeView(
   settings: Pick<SettingsService, "update">,
 ): Promise<void> {
   settings.update({ "welcome.dismissed": false });
-  await openLibraryView(app);
+  const view = await openLibraryView(app);
+  view?.welcome.request();
 }
 
 /** The view type of the Welcome tab that ZotLit had before ADR 0076. */

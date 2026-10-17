@@ -15,6 +15,7 @@ import {
   PluginStub,
 } from "@/lib/__fixtures__/obsidian-host";
 import { Effect } from "@/lib/effect";
+import * as m from "@/lib/i18n/generated/messages";
 import type { SearchHit, SearchOptions } from "@/services/item-lookup/service";
 import type {
   QueryViewOutcome,
@@ -31,6 +32,7 @@ import { selectorKey } from "@/services/library-scope/scope";
 import { QueryClientService } from "@/services/query-client/service";
 import { SettingsService } from "@/services/settings/service";
 import { requested } from "@/views/query-view/__fixtures__/query-run";
+import { openWelcomeView } from "@/views/welcome/register";
 
 import type { LibraryNode } from "./document";
 import { nodeKey } from "./library-tree";
@@ -483,6 +485,7 @@ function pluginData(stored?: unknown) {
   };
   return {
     deps,
+    host,
     run,
     settings,
     change,
@@ -1529,6 +1532,57 @@ it("leaves Enter and the arrow keys to the Welcome View banner's controls", asyn
   expect(await pressKey(view, dismiss, ["ArrowDown"])).toBe(false);
   expect(items.openNote).not.toHaveBeenCalled();
   expect(itemRows(view)[1]).toBe(`${B} *`);
+});
+
+describe("Welcome View banner once setup is complete", () => {
+  /** The banner's headings on screen. */
+  const banner = (view: LibraryView) =>
+    [
+      ...view.contentEl.querySelectorAll(
+        '[data-welcome-banner] [role="heading"]',
+      ),
+    ].map((el) => el.textContent);
+
+  /** A tab of a vault with the literature-notes folder, its banner settled. */
+  async function setUp() {
+    const harness = pluginData();
+    harness.host.vault.addFile("literatures/Paper.md", "");
+    const view = await openTab(harness.deps);
+    await act(() => view.welcome.settled);
+    return { ...harness, view };
+  }
+
+  it("shows nothing until the researcher asks for it", async () => {
+    const { view } = await setUp();
+    expect(banner(view)).toEqual([]);
+  });
+
+  it("shows the setup steps on Open welcome view", async () => {
+    const { view, settings } = await setUp();
+    const leaf = { view } as unknown as WorkspaceLeaf;
+    await act(() =>
+      openWelcomeView(
+        {
+          workspace: {
+            getLeavesOfType: () => [leaf],
+            setActiveLeaf: () => {},
+            revealLeaf: () => Promise.resolve(),
+          },
+        } as unknown as App,
+        settings,
+      ),
+    );
+    expect(banner(view)).toContain(m.welcome_step_connect_title());
+    expect(banner(view)).toContain(m.welcome_step_library_title());
+  });
+
+  it("offers the template conversion while it is pending", async () => {
+    const { view, settings } = await setUp();
+    await act(() => {
+      settings.update({ "note.template-conversion-pending": true });
+    });
+    expect(banner(view)).toContain(m.welcome_template_conversion_title());
+  });
 });
 
 it("asks the database nothing from the search box while Zotero's data folder is missing, and searches once it is set", async () => {
