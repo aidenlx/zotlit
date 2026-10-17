@@ -133,6 +133,7 @@ it("reads the document that plugin data holds", async () => {
       path: ["Thesis", "Chapter 2"],
     },
     facets: ["annotated"],
+    layout: "table",
     order: ["title", "creators"],
   });
   expect(query.state.getState().file?.filters).toEqual({

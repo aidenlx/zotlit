@@ -159,7 +159,7 @@ export function ConfigureViewFields({
           data-query-view-layout=""
           onChange={(type) => view.document.setViewLayout(index, type)}
         >
-          {layoutsFor(shown).map((layout) => (
+          {layoutsFor(shown, view.layouts).map((layout) => (
             <DropdownItem key={layout.type} value={layout.type}>
               {layout.name()}
             </DropdownItem>

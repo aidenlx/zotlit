@@ -228,7 +228,7 @@ export function TableHeader({
   const columns = properties.visible;
   const editable = view.canSave;
   // A host that keeps no column widths offers no resize.
-  const resizable = editable && !view.displayOnly;
+  const resizable = editable && view.can.columnWidth;
   /** The drag on now; the Table that closes ends it. */
   const drag = useRef<AbortController | null>(null);
   useEffect(() => () => drag.current?.abort(), []);
@@ -490,7 +490,7 @@ export function TableHeader({
           .setDisabled(rtl ? toStart : toEnd)
           .onClick(() => stepColumn(path, rtl ? -1 : 1)),
       );
-    if (!view.displayOnly)
+    if (view.can.columnWidth)
       menu.addSeparator().addItem((item) =>
         item
           .setTitle(m.query_view_table_reset_column_width())

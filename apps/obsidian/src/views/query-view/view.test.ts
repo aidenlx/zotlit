@@ -142,6 +142,7 @@ async function mount(
     contextSource,
     libraries,
     displayOnly,
+    layouts,
   }: {
     notes?: Record<string, string>;
     layout?: ConstructorParameters<typeof QueryView>[1]["layout"];
@@ -152,6 +153,7 @@ async function mount(
     contextSource?: ContextSource;
     libraries?: () => LibraryScope;
     displayOnly?: boolean;
+    layouts?: readonly string[];
   } = {},
 ) {
   setMockPlatform({ isMacOS: true });
@@ -181,6 +183,7 @@ async function mount(
       notesChanged.emit("changed");
     }),
   };
+  const readers = { open: vi.fn(() => Promise.resolve()) };
   const deps = {
     app: editorApp() as unknown as App,
     reads: {
@@ -242,6 +245,7 @@ async function mount(
     allowEditing: vi.fn(),
     reportBlockedGesture: vi.fn(),
     literatureNotes,
+    readers,
   } as unknown as QueryViewDeps;
   const save = vi.fn((_text: string) => {});
   const onSelectView = vi.fn((_name: string) => {});
@@ -261,6 +265,7 @@ async function mount(
     ...(layout && { layout }),
     ...(libraries && { libraries }),
     ...(displayOnly && { displayOnly }),
+    ...(layouts && { layouts }),
   });
   const saved: string[] = [];
   const el = document.createElement("div");
@@ -290,6 +295,7 @@ async function mount(
     onSelectView,
     saved,
     literatureNotes,
+    readers,
   };
 }
 
@@ -708,11 +714,95 @@ describe("saving a toolbar edit", () => {
     await act(() => fixed.view.setText(FILE));
     await fixed.settle();
     expect(toolbar(fixed.el)).toEqual([
+      "data-query-view-menu",
       "data-query-results",
       "sort",
       "data-query-properties",
       "search",
     ]);
+  });
+
+  it("ticks and orders the Visible Properties with no page to edit a property, where the host keeps only the Visible Properties", async () => {
+    const open = async (displayOnly: boolean) => {
+      const mounted = await mount([], undefined, { displayOnly });
+      await act(() => mounted.view.setText(FILE));
+      await mounted.settle();
+      await act(() => {
+        mounted.el
+          .querySelector<HTMLElement>("[data-query-properties]")!
+          .click();
+        // happy-dom has no popover, so the test sends the event that opens it.
+        mounted.el
+          .querySelector("[data-query-properties-popup]")!
+          .dispatchEvent(
+            Object.assign(new Event("beforetoggle"), { newState: "open" }),
+          );
+      });
+      return mounted.el;
+    };
+    const full = await open(false);
+    expect(full.querySelector("[data-query-property]")).not.toBeNull();
+    expect(full.querySelector("[data-query-property-more]")).not.toBeNull();
+    cleanup.dispose();
+    cleanup = new DisposableStack();
+    document.body.replaceChildren();
+
+    const fixed = await open(true);
+    expect(fixed.querySelector("[data-query-property]")).not.toBeNull();
+    expect(fixed.querySelector("[data-query-property-more]")).toBeNull();
+  });
+
+  it("switches only between the Layouts the host offers from the view menu, with no view to add or configure, where the host keeps only the Layout of its view", async () => {
+    const { view, el, settle, saved } = await mount(
+      [result([]), result([])],
+      undefined,
+      { displayOnly: true, layouts: ["papers", "table"] },
+    );
+    await act(() =>
+      view.setText(`views:
+  - type: table
+    name: Reading list
+    from: items
+`),
+    );
+    await settle();
+    const trigger = () =>
+      el.querySelector<HTMLElement>("[data-query-view-menu]")!;
+    // The menu names the Layout on screen; the view's own name is the host's.
+    expect(trigger().textContent).toBe("Table");
+    await act(() => {
+      trigger().click();
+      // happy-dom has no popover, so the test sends the event that opens it.
+      document
+        .querySelector("[data-query-view-list]")!
+        .dispatchEvent(
+          Object.assign(new Event("beforetoggle"), { newState: "open" }),
+        );
+    });
+    expect(
+      [...document.querySelectorAll("[data-query-view-layout-option]")].map(
+        (row) => row.getAttribute("data-query-view-layout-option"),
+      ),
+    ).toEqual(["papers", "table"]);
+    expect(document.querySelector("[data-query-view-action]")).toBeNull();
+    expect(document.querySelector("[data-query-view-configure]")).toBeNull();
+
+    const proto: Partial<HTMLElement> = HTMLElement.prototype;
+    if (!proto.hidePopover) {
+      proto.hidePopover = () => {};
+      onTestFinished(() => {
+        delete proto.hidePopover;
+      });
+    }
+    await act(() =>
+      document
+        .querySelector<HTMLElement>('[data-query-view-layout-option="papers"]')!
+        .click(),
+    );
+    await act(() => view.flush());
+    await settle();
+    expect(saved.at(-1)).toContain("type: papers");
+    expect(trigger().textContent).toBe("Papers");
   });
 
   it("leaves the Libraries to the Library Scope where the host selects none", async () => {
@@ -3007,4 +3097,258 @@ it("keeps the row and the page of a typed path in the Properties popover when it
   await settle();
   expect(written.at(-1)).not.toContain("myField");
   expect(page()).not.toBe(null);
+});
+
+const PAPERS_FILE = `views:
+  - type: papers
+    name: Papers
+    from: items
+`;
+
+function paperRow(
+  key: string,
+  values: {
+    title: string;
+    creators?: { family: string; literal?: string; role: string }[];
+    year?: number;
+    publicationTitle?: string;
+    publisher?: string;
+    colors?: string[];
+    fileTypes?: string[];
+    attachments?: string[];
+  },
+): QueryViewRow {
+  return {
+    indexedKey: key,
+    values: {
+      title: values.title,
+      creators: (values.creators ?? []).map(({ family, literal, role }) => ({
+        family: literal ? "" : family,
+        given: "",
+        literal: literal ?? null,
+        role,
+        fullName: literal ?? family,
+      })),
+      date:
+        values.year === undefined
+          ? null
+          : {
+              kind: "year",
+              value: null,
+              year: values.year,
+              month: null,
+              day: null,
+              text: null,
+              raw: `${values.year}-00-00 ${values.year}`,
+            },
+      publicationTitle: values.publicationTitle ?? null,
+      publisher: values.publisher ?? null,
+      "annotations[].color": values.colors ?? [],
+      "attachments[].fileType": values.fileTypes ?? [],
+      "attachments[].indexedKey": values.attachments ?? [],
+    },
+  };
+}
+
+/** Each Papers row on screen, as its lines and end marks read. */
+function papers(el: HTMLElement) {
+  return [...el.querySelectorAll<HTMLElement>("[data-query-papers-row]")].map(
+    (node) => ({
+      key: node.dataset.queryPapersRow,
+      title: node.querySelector("[data-query-papers-title]")?.textContent,
+      meta: node.querySelector("[data-query-papers-meta]")?.textContent,
+      state: node.querySelector("[data-query-papers-state]")?.textContent,
+      dots: [
+        ...node.querySelectorAll<HTMLElement>("[data-query-papers-color]"),
+      ].map((dot) => dot.dataset.queryPapersColor),
+      attachment:
+        node.querySelector<HTMLElement>("[data-query-papers-attachment]")
+          ?.dataset.queryPapersAttachment ?? null,
+      note: node.querySelector("[data-query-papers-note]") !== null,
+    }),
+  );
+}
+
+it("draws each Item of a Papers view as its title, its creators, year and Venue, and a reading-state line, and ends it with its main Attachment kind and its Literature Note", async () => {
+  const { view, el, settle } = await mount(
+    [
+      result([
+        paperRow("ITEMAAAA", {
+          title: "Ten simple rules for better figures",
+          creators: [
+            { family: "Rougier", role: "author" },
+            { family: "Droettboom", role: "author" },
+            { family: "Editor", role: "editor" },
+          ],
+          year: 2014,
+          publicationTitle: "PLOS Computational Biology",
+          publisher: "PLOS",
+          colors: ["#ffd400", "#5fb236", "#ffd400"],
+          fileTypes: ["web", "pdf"],
+          attachments: ["WEBAAAAA", "PDFAAAAA"],
+        }),
+        paperRow("ITEMBBBB", {
+          title: "The structure of scientific revolutions",
+          creators: [
+            { family: "", literal: "Kuhn Society", role: "author" },
+            { family: "B", role: "author" },
+            { family: "C", role: "author" },
+            { family: "D", role: "author" },
+          ],
+          year: 1962,
+          publisher: "University of Chicago Press",
+          fileTypes: ["epub"],
+          attachments: ["EPUBBBBB"],
+        }),
+        paperRow("ITEMCCCC", { title: "A note with no file" }),
+      ]),
+    ],
+    undefined,
+    { notes: { ITEMAAAA: "Rougier 2014.md" } },
+  );
+  await act(() => view.setText(PAPERS_FILE));
+  await settle();
+
+  expect(view.state.getState().problems).toEqual([]);
+  expect(papers(el)).toEqual([
+    {
+      key: "ITEMAAAA",
+      title: "Ten simple rules for better figures",
+      meta: "Rougier, Droettboom · 2014 · PLOS Computational Biology",
+      state: "3 annotations · literature note",
+      dots: ["#ffd400", "#5fb236"],
+      attachment: "pdf",
+      note: true,
+    },
+    {
+      key: "ITEMBBBB",
+      title: "The structure of scientific revolutions",
+      meta: "Kuhn Society, B, C et al. · 1962 · University of Chicago Press",
+      state: undefined,
+      dots: [],
+      attachment: "epub",
+      note: false,
+    },
+    {
+      key: "ITEMCCCC",
+      title: "A note with no file",
+      meta: undefined,
+      state: undefined,
+      dots: [],
+      attachment: null,
+      note: false,
+    },
+  ]);
+  expect(cards(el)).toEqual([]);
+});
+
+it("expands a Papers row into its Attachments, Child Notes and Literature Note, and an Attachment into its Annotations, each opening its own target", async () => {
+  const openWindow = vi.spyOn(window, "open").mockImplementation(() => null);
+  onTestFinished(() => openWindow.mockRestore());
+  const item = paperRow("ITEMAAAA", {
+    title: "Ten simple rules for better figures",
+    attachments: ["PDFAAAAA"],
+  });
+  const { view, el, run, settle, readers, literatureNotes } = await mount(
+    [
+      result([
+        {
+          ...item,
+          values: {
+            ...item.values,
+            notes: [{ indexedKey: "NXTEAAAA", title: "Reading notes" }],
+          },
+        },
+        paperRow("ITEMBBBB", { title: "Nothing under it" }),
+      ]),
+      result([
+        {
+          indexedKey: "PDFAAAAA",
+          values: {
+            title: "Rougier et al. - 2014.pdf",
+            "annotations[].indexedKey": ["ANNOTAAA"],
+          },
+        },
+      ]),
+      result([
+        {
+          indexedKey: "ANNOTAAA",
+          values: {
+            text: "Rule 1: know your audience",
+            color: "#ffd400",
+            pageLabel: "3",
+            pageIndex: 2,
+          },
+        },
+      ]),
+    ],
+    undefined,
+    { notes: { ITEMAAAA: "Rougier 2014.md" } },
+  );
+  await act(() => view.setText(PAPERS_FILE));
+  await settle();
+  const children = () =>
+    [...el.querySelectorAll<HTMLElement>("[data-query-papers-child]")].map(
+      (node) => [node.dataset.queryPapersChild, node.textContent?.trim()],
+    );
+
+  // Only an Item with something under it can expand.
+  expect(
+    [...el.querySelectorAll("[data-query-expand]")].map((node) =>
+      node.getAttribute("data-query-expand"),
+    ),
+  ).toEqual(["item:ITEMAAAA"]);
+  await act(async () => {
+    el.querySelector<HTMLElement>(
+      '[data-query-expand="item:ITEMAAAA"]',
+    )!.click();
+  });
+  await act(async () => {});
+  expect(run.mock.calls[1]![0]).toMatchObject({
+    from: "attachments",
+    filter: 'item.indexedKey == "ITEMAAAA"',
+  });
+  await act(async () => {
+    el.querySelector<HTMLElement>(
+      '[data-query-expand="attachment:PDFAAAAA"]',
+    )!.click();
+  });
+  await act(async () => {});
+  expect(children()).toEqual([
+    ["attachment", "Rougier et al. - 2014.pdf"],
+    ["annotation", "Rule 1: know your audiencePage 3"],
+    ["note", "Reading notes"],
+    ["literature-note", "Rougier 2014"],
+  ]);
+
+  const child = (kind: string) =>
+    el.querySelector<HTMLElement>(
+      `[data-query-papers-child="${kind}"] a, [data-query-papers-child="${kind}"] [data-query-note]`,
+    )!;
+  await act(() => child("attachment").click());
+  expect(readers.open).toHaveBeenLastCalledWith(
+    { kind: "attachment", attachmentKey: "PDFAAAAA" },
+    false,
+  );
+  await act(() => child("annotation").click());
+  expect(readers.open).toHaveBeenLastCalledWith(
+    {
+      kind: "annotation",
+      attachmentKey: "PDFAAAAA",
+      annotationKey: "ANNOTAAA",
+      pageIndex: 2,
+      pageLabel: "3",
+    },
+    false,
+  );
+  // A Child Note lives in Zotero, which shows it from its link.
+  await act(() => child("note").click());
+  expect(openWindow).toHaveBeenCalledWith(
+    "zotero://select/library/items/NXTEAAAA",
+  );
+  await act(() => child("literature-note").click());
+  expect(literatureNotes.open).toHaveBeenCalledWith(
+    expect.objectContaining({ path: "Rougier 2014.md" }),
+    expect.anything(),
+  );
 });

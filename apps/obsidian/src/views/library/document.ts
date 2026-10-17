@@ -18,8 +18,8 @@ export const READING_STATE_FACETS = [
 ] as const;
 export type ReadingStateFacet = (typeof READING_STATE_FACETS)[number];
 
-/** The Layouts the Library View offers. */
-export const LIBRARY_LAYOUTS = ["table"] as const;
+/** The Layouts the Library View offers, in the order its view menu lists them. */
+export const LIBRARY_LAYOUTS = ["papers", "table"] as const;
 export type LibraryLayout = (typeof LIBRARY_LAYOUTS)[number];
 
 /**
@@ -81,14 +81,14 @@ export type StoredLibraryViewDocument = v.InferOutput<
   typeof storedLibraryViewDocumentSchema
 >;
 
-/** What a new Library View shows: My Library on a Table, newest first. */
+/** What a new Library View shows: My Library as Papers, newest first. */
 export const DEFAULT_LIBRARY_VIEW_DOCUMENT: LibraryViewDocument = Object.freeze(
   {
     node: { kind: "library", library: { type: "personal" } },
     facets: [],
     search: "",
     sort: [{ property: "dateModified", direction: "DESC" }],
-    layout: "table",
+    layout: "papers",
     order: ["title", "creators", "date.year", "vault.literatureNote"],
   } satisfies LibraryViewDocument,
 );

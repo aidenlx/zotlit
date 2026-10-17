@@ -6,12 +6,20 @@
 // the popover, as Bases does; a right-click on the button opens it for the
 // view on screen.
 //
+// A host that keeps only the Layout of its one view (`displayOnly`, ADR 0070)
+// gets the menu as a Layout switch: a row per Layout the host offers, and no
+// view to add or configure (ADR 0074). Below them, a host that can write what
+// it shows as a Query File offers "Save as query file".
+//
 // It stands on the Chooser, the one popover that filters as the user types
 // (ADR 0044).
 //
 // @see apps/obsidian/docs/adr/0044-menus-and-popovers-are-obsidians-own-primitives.md
+// @see apps/obsidian/docs/adr/0074-the-papers-layout-is-a-query-view-layout-the-library-view-offers-with-the-table.md
 import { useMemo, useRef, useState } from "react";
 import { useStore } from "zustand";
+
+import { useUniqueId } from "@zotlit/ui";
 
 import {
   Chooser,
@@ -25,7 +33,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
 import { ConfigureViewFields, viewActions } from "./configure-view";
-import { layoutOf } from "./layouts";
+import { layoutOf, layoutsFor } from "./layouts";
 import { ToolbarButtonContent, toolbarButtonClass } from "./toolbar-button";
 import { popoverFallbacks } from "./toolbar-popover";
 import type { QueryView } from "./view";
@@ -34,8 +42,17 @@ import type { QueryView } from "./view";
 const VIEW_ROW_DRAG_TYPE = "application/x-zotlit-query-view";
 
 const ADD_ROW = "action:add";
+const SAVE_AS_ROW = "action:save-as";
 
 export function ViewMenu({ view }: { view: QueryView }) {
+  return view.can.views ? (
+    <ViewSwitch view={view} />
+  ) : (
+    <LayoutSwitch view={view} />
+  );
+}
+
+function ViewSwitch({ view }: { view: QueryView }) {
   const file = useStore(view.state, (s) => s.file);
   const current = useStore(view.state, (s) => s.view);
   const popup = useRef<HTMLDivElement>(null);
@@ -75,6 +92,111 @@ export function ViewMenu({ view }: { view: QueryView }) {
         <Chooser.Page>
           {(name) => <ConfigureViewPage view={view} name={name} />}
         </Chooser.Page>
+      </Chooser.Popup>
+    </Chooser>
+  );
+}
+
+/** The menu as a switch between the Layouts the host offers for the view on screen. */
+function LayoutSwitch({ view }: { view: QueryView }) {
+  const file = useStore(view.state, (s) => s.file);
+  const current = useStore(view.state, (s) => s.view);
+  const popup = useRef<HTMLDivElement>(null);
+  const listName = useUniqueId();
+  const offered = view.layouts;
+  const { saveAs } = view;
+  const layouts = useMemo(
+    () => (current ? layoutsFor(current, offered) : []),
+    [current, offered],
+  );
+  const groups = useMemo<ChooserGroup<ChooserRow>[]>(
+    () => [
+      {
+        items: layouts.map((layout) => ({
+          value: layout.type,
+          label: layout.name(),
+        })),
+      },
+      ...(saveAs
+        ? [
+            {
+              items: [
+                {
+                  value: SAVE_AS_ROW,
+                  label: m.annot_view_save_as_query_file(),
+                  action: () => {
+                    popup.current?.hidePopover();
+                    saveAs();
+                  },
+                },
+              ],
+            },
+          ]
+        : []),
+    ],
+    [layouts, saveAs],
+  );
+  if (!file || !current) return null;
+  const index = file.views.indexOf(current);
+  const shown = layoutOf(current);
+  return (
+    <Chooser
+      value={[current.type]}
+      onValueChange={(next) => {
+        const picked = next.find((type) => type !== current.type);
+        if (picked !== undefined) view.document.setViewLayout(index, picked);
+        popup.current?.hidePopover();
+      }}
+    >
+      <Chooser.Trigger
+        className={cn(toolbarButtonClass, "zt:shrink zt:text-foreground")}
+        aria-label={m.query_view_layout()}
+        data-query-view-menu=""
+      >
+        <ToolbarButtonContent
+          icon={shown?.icon}
+          label={shown?.name() ?? current.type}
+          keepLabel
+          chevron
+        />
+      </Chooser.Trigger>
+      <Chooser.Popup
+        ref={popup}
+        className={popoverFallbacks}
+        data-query-view-list=""
+      >
+        {/* Names the list with no tooltip over it (policies/tooltips.md). */}
+        <span id={listName} hidden>
+          {m.query_view_layout()}
+        </span>
+        <Chooser.List groups={groups} aria-labelledby={listName}>
+          {(row) =>
+            row.action ? (
+              <Chooser.Action
+                key={row.value}
+                value={row.value}
+                icon="file-plus"
+                data-query-view-action={row.value.slice("action:".length)}
+              >
+                {row.label}
+              </Chooser.Action>
+            ) : (
+              <Chooser.Item
+                key={row.value}
+                value={row.value}
+                icon={
+                  layoutsFor(current).find(
+                    (layout) => layout.type === row.value,
+                  )?.icon
+                }
+                className="zt:data-selected:[font-weight:var(--font-medium)]"
+                data-query-view-layout-option={row.value}
+              >
+                {row.label}
+              </Chooser.Item>
+            )
+          }
+        </Chooser.List>
       </Chooser.Popup>
     </Chooser>
   );

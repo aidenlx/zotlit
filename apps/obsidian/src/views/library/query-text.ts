@@ -9,6 +9,7 @@
 import type { FilterTree } from "@zotlit/filter-expression";
 import { nameDictionary } from "@zotlit/item-query";
 
+import { selectorKey } from "@/services/library-scope/scope";
 import type { LibraryScope } from "@/services/library-scope/scope";
 import {
   parseQueryFile,
@@ -146,6 +147,30 @@ export function documentWithText(
       : doc.layout,
     order: view.order ?? [],
   };
+}
+
+/**
+ * The Query File that "Save as query file" writes for `doc`: the query of
+ * `doc` with the Library of its tree node as a filter, since a Query File
+ * tab reads every Library in the Library Scope. The search stays out; a
+ * Query File cannot express it (ADR 0072).
+ */
+export function libraryViewQueryFileText(
+  doc: LibraryViewDocument,
+  { labels }: { labels: LibraryViewLabels },
+): string {
+  const file = parseQueryFile(libraryViewQuery(doc, { labels }).text);
+  const library = `library == ${JSON.stringify(selectorKey(doc.node.library))}`;
+  const rest =
+    file.filters === undefined
+      ? []
+      : typeof file.filters === "object" && "and" in file.filters
+        ? file.filters.and
+        : [file.filters];
+  return serializeQueryFile({
+    ...file,
+    filters: rest.length === 0 ? library : { and: [library, ...rest] },
+  });
 }
 
 function filterTree(filters: readonly string[]): FilterTree {

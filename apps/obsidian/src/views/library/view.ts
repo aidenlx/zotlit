@@ -11,18 +11,20 @@ import type { Component, WorkspaceLeaf } from "obsidian";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import type { SettingsService } from "@/services/settings/service";
+import { saveAsQueryFile } from "@/views/annot-view/save-query-file";
 import { QueryView } from "@/views/query-view/view";
 import type { QueryViewDeps } from "@/views/query-view/view";
 import { WelcomeBanner } from "@/views/welcome/banner";
 import type { WelcomeBannerDeps } from "@/views/welcome/banner";
 
+import { LIBRARY_LAYOUTS } from "./document";
 import type { LibraryNode, LibraryViewDocument } from "./document";
 import { ZOTLIT_MARK_ICON } from "./icon";
 import { LibraryTree } from "./library-tree";
 import type { LibraryTreeDeps } from "./library-tree";
 import { ZoteroNotFound } from "./not-found";
-import { libraryViewQuery } from "./query-text";
-import type { LibraryViewQuery } from "./query-text";
+import { libraryViewQuery, libraryViewQueryFileText } from "./query-text";
+import type { LibraryViewLabels, LibraryViewQuery } from "./query-text";
 import { libraryViewStorage } from "./storage";
 import "./style.css";
 
@@ -63,7 +65,9 @@ export class LibraryView extends ItemView {
       libraries: () => this.#shown!.libraries,
       // The document keeps the sort, the Layout and the Visible Properties.
       displayOnly: true,
+      layouts: LIBRARY_LAYOUTS,
       save: this.#storage.save,
+      saveAs: () => void this.#saveAs(),
       layout: {
         // Otherwise Obsidian moves focus to the last navigable leaf, which in
         // the main area switches the tab away from this view.
@@ -168,15 +172,18 @@ export class LibraryView extends ItemView {
 
   /** Run the query of `doc`; the Libraries change apart from the text. */
   #show(doc: LibraryViewDocument): void {
-    this.#shown = libraryViewQuery(doc, {
-      labels: {
-        papers: m.library_view_papers_view_name(),
-        creators: m.query_file_creators_property(),
-        year: m.query_file_year_property(),
-      },
-    });
+    this.#shown = libraryViewQuery(doc, { labels: labels() });
     this.query.setText(this.#shown.text);
     this.query.contextChanged();
+  }
+
+  /** "Save as query file": the document as it stands, once the toolbar's last change is in. */
+  async #saveAs(): Promise<void> {
+    await this.query.flush();
+    await saveAsQueryFile(
+      this.app,
+      libraryViewQueryFileText(this.#storage.document(), { labels: labels() }),
+    );
   }
 
   protected override async onClose(): Promise<void> {
@@ -185,4 +192,12 @@ export class LibraryView extends ItemView {
     this.tree.unload();
     for (const part of this.#parts.splice(0)) part.unload();
   }
+}
+
+function labels(): LibraryViewLabels {
+  return {
+    papers: m.library_view_papers_view_name(),
+    creators: m.query_file_creators_property(),
+    year: m.query_file_year_property(),
+  };
 }

@@ -50,6 +50,7 @@ import type { FilterValues } from "./filter-popover";
 import { GroupEditor } from "./group-control";
 import { annotationsLayoutOptions, layoutOf } from "./layouts";
 import { ListLayout } from "./list-layout";
+import { PAPERS_FIELDS, PapersLayout } from "./papers-layout";
 import { groupOptions, sortOptions } from "./properties";
 import { PropertiesMenu } from "./properties-menu";
 import { locateFilterFault, viewFilter } from "./query-file";
@@ -170,7 +171,61 @@ export interface QueryViewHost {
    * @see apps/obsidian/docs/adr/0070-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
    */
   displayOnly?: boolean;
+  /**
+   * The Layout types the host offers, in the order its view menu lists them.
+   * Absent: every Layout of the view's dataset.
+   *
+   * @see apps/obsidian/docs/adr/0074-the-papers-layout-is-a-query-view-layout-the-library-view-offers-with-the-table.md
+   */
+  layouts?: readonly string[];
+  /**
+   * Writes what the view shows as a new Query File. Present: the view menu
+   * of a host without views (`displayOnly`) offers "Save as query file".
+   */
+  saveAs?: () => void;
 }
+
+/**
+ * The changes the toolbar offers. A host that keeps only the shown view's
+ * sort, Layout and Visible Properties (`displayOnly`) takes away every other
+ * one, so no control shows a change that would be gone on reopen. Each
+ * control reads its own flag here.
+ *
+ * @see apps/obsidian/docs/adr/0070-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
+ */
+export interface QueryViewCapabilities {
+  /**
+   * Add, configure, reorder and switch the file's views. Without it the view
+   * menu switches only the Layout of the view on screen (ADR 0074).
+   */
+  readonly views: boolean;
+  readonly group: boolean;
+  readonly filter: boolean;
+  /** Set and clear the row limit. */
+  readonly limit: boolean;
+  /** Resize a Table column and reset its width. */
+  readonly columnWidth: boolean;
+  /** Open a property's page: its Display Name, its Formula, "Add formula". */
+  readonly propertyPages: boolean;
+}
+
+const EVERY_CHANGE: QueryViewCapabilities = Object.freeze({
+  views: true,
+  group: true,
+  filter: true,
+  limit: true,
+  columnWidth: true,
+  propertyPages: true,
+});
+
+const DISPLAY_CHANGES: QueryViewCapabilities = Object.freeze({
+  views: false,
+  group: false,
+  filter: false,
+  limit: false,
+  columnWidth: false,
+  propertyPages: false,
+});
 
 /** What the view shows now, as the toolbar and the host read it. */
 export interface QueryViewState {
@@ -544,9 +599,19 @@ export class QueryView extends Component implements HistorySurface {
     return this.#host.contextSource;
   }
 
-  /** Whether a change can set only the sort, the Layout and the Visible Properties. */
-  get displayOnly(): boolean {
-    return this.#host.displayOnly === true;
+  /** The changes the toolbar offers, as the host keeps them. */
+  get can(): QueryViewCapabilities {
+    return this.#host.displayOnly === true ? DISPLAY_CHANGES : EVERY_CHANGE;
+  }
+
+  /** The Layout types the host offers; `undefined` for every one. */
+  get layouts(): readonly string[] | undefined {
+    return this.#host.layouts;
+  }
+
+  /** The host's "Save as query file", for the view menu. */
+  get saveAs(): QueryViewHost["saveAs"] {
+    return this.#host.saveAs;
   }
 
   /** The host's link to the Query File, for the toolbar. */
@@ -641,7 +706,7 @@ export class QueryView extends Component implements HistorySurface {
     const fields = [
       ...new Set([
         ...(grouped?.fields ?? []),
-        ...(layoutOf(view)?.type === "table" ? TABLE_FIELDS : []),
+        ...layoutFields(view),
         ...viewProperties(file, view).queried.map(({ path }) => path),
       ]),
     ];
@@ -1073,6 +1138,18 @@ function ReadOnlyNote({ view }: { view: QueryView }) {
   );
 }
 
+/** The paths the view's Layout reads from each row beside the visible properties. */
+function layoutFields(view: QueryFileView): readonly string[] {
+  switch (layoutOf(view)?.type) {
+    case "table":
+      return TABLE_FIELDS;
+    case "papers":
+      return PAPERS_FIELDS;
+    default:
+      return [];
+  }
+}
+
 /** Whether the view's Layout draws live Annotation Cards. */
 function drawsCards(view: QueryFileView): boolean {
   return layoutOf(view)?.type === "annotations";
@@ -1090,6 +1167,8 @@ function LayoutBody({ view }: { view: QueryView }) {
       return <CardsLayout view={view} />;
     case "table":
       return <TableLayout view={view} />;
+    case "papers":
+      return <PapersLayout view={view} />;
     default:
       return <AnnotationsCards view={view} />;
   }
@@ -1204,11 +1283,11 @@ function QueryViewBody({ view }: { view: QueryView }) {
         className="zt:@container zt:flex zt:min-h-(--size-4-10) zt:shrink-0 zt:flex-nowrap zt:items-center zt:gap-(--size-2-2) zt:overflow-hidden zt:border-b-(length:--border-width) zt:border-(--table-border-color) zt:ps-[var(--zt-query-toolbar-inset-start,var(--size-2-1))] zt:pe-[var(--zt-query-toolbar-inset-end,var(--size-2-1))] zt:in-[.is-mobile]:min-h-(--touch-size-l) zt:in-[.print]:hidden"
         role="toolbar"
       >
-        {!view.displayOnly && <ViewMenu view={view} />}
+        <ViewMenu view={view} />
         <ResultsMenu view={view} />
         <SortButton view={view} />
-        {!view.displayOnly && <GroupButton view={view} />}
-        {!view.displayOnly && <FilterButton view={view} />}
+        {view.can.group && <GroupButton view={view} />}
+        {view.can.filter && <FilterButton view={view} />}
         <PropertiesMenu view={view} />
         <SearchButton bar={search} />
         <OpenFileButton view={view} />

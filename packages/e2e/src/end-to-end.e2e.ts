@@ -1211,7 +1211,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
 
     /** What the Library View shows once its query settled, or `null` while no tab holds it. */
-    const readLibrary = `(async()=>{const leaves=app.workspace.getLeavesOfType('zotlit-library');const view=leaves[0]?.view;if(!view?.query)return 'null';await view.query.settled;const el=view.contentEl;const state=view.query.state.getState();return JSON.stringify({leaves:leaves.length,active:app.workspace.getMostRecentLeaf()?.view.getViewType()??null,title:view.getDisplayText(),phase:state.phase,failure:state.failure?.diagnostic.code??null,count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,rows:[...el.querySelectorAll('tr[data-query-table-row="item"]')].map(n=>n.getAttribute('data-query-key'))});})()`;
+    const readLibrary = `(async()=>{const leaves=app.workspace.getLeavesOfType('zotlit-library');const view=leaves[0]?.view;if(!view?.query)return 'null';await view.query.settled;const el=view.contentEl;const state=view.query.state.getState();return JSON.stringify({leaves:leaves.length,active:app.workspace.getMostRecentLeaf()?.view.getViewType()??null,title:view.getDisplayText(),phase:state.phase,failure:state.failure?.diagnostic.code??null,count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,rows:[...el.querySelectorAll('tr[data-query-table-row="item"], [data-query-papers-row]')].map(n=>n.getAttribute('data-query-key')??n.getAttribute('data-query-papers-row'))});})()`;
     interface Library {
       leaves: number;
       active: string | null;
@@ -1259,13 +1259,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
     };
 
-    // The ribbon icon opens the view in a main-area tab, on My Library in a
-    // Table, newest change first. No Zotero answers this vault.
+    // The ribbon icon opens the view in a main-area tab, on My Library as
+    // Papers, newest change first. No Zotero answers this vault.
     await obEval(
       vaultId,
       `(()=>{${PAGE}press(document.querySelector(${JSON.stringify(`.side-dock-ribbon-action[aria-label="${m.command_open_library_view_name()}"]`)}),'Library View ribbon icon');return true;})()`,
     );
-    /** Whether the Table drew every row the count names. */
+    /** Whether the Layout drew every row the count names. */
     const drawn = (library: Library) =>
       library.phase === "ready" &&
       library.count !== null &&
@@ -1415,7 +1415,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       count: string | null;
       rows: string[];
     }
-    const readShown = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.tree)return 'null';await view.query.settled;await view.tree.settled;const el=view.contentEl;return JSON.stringify({phase:view.query.state.getState().phase,header:el.querySelector('[data-library-header]')?.textContent??null,all:el.querySelector('[data-library-all]')?.getAttribute('data-library-all')??null,tree:[...el.querySelectorAll('[data-library-node]')].map(n=>({key:n.getAttribute('data-library-node'),level:Number(n.getAttribute('aria-level')),label:n.querySelector('[data-library-label]').textContent,count:n.querySelector('[data-library-count]')?.textContent??null,selected:n.getAttribute('aria-selected')==='true'})),count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,rows:[...el.querySelectorAll('tr[data-query-table-row="item"]')].map(n=>n.getAttribute('data-query-key'))});})()`;
+    const readShown = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.tree)return 'null';await view.query.settled;await view.tree.settled;const el=view.contentEl;return JSON.stringify({phase:view.query.state.getState().phase,header:el.querySelector('[data-library-header]')?.textContent??null,all:el.querySelector('[data-library-all]')?.getAttribute('data-library-all')??null,tree:[...el.querySelectorAll('[data-library-node]')].map(n=>({key:n.getAttribute('data-library-node'),level:Number(n.getAttribute('aria-level')),label:n.querySelector('[data-library-label]').textContent,count:n.querySelector('[data-library-count]')?.textContent??null,selected:n.getAttribute('aria-selected')==='true'})),count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,rows:[...el.querySelectorAll('tr[data-query-table-row="item"], [data-query-papers-row]')].map(n=>n.getAttribute('data-query-key')??n.getAttribute('data-query-papers-row'))});})()`;
     const shownWhen = async (ready: (shown: Shown) => boolean) => {
       let shown: Shown | null = null;
       const settled = await waitFor(async () => {
@@ -1575,6 +1575,470 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
   });
 
+  it("draws My Library as Papers with the seeded Annotations, Literature Notes and Attachment kinds, expands a paper into its seeded Attachments, Child Notes and Annotations that open their targets, and keeps a switch to the Table across a plugin reload, with Zotero closed", async () => {
+    const layout = await obEval(
+      vaultId,
+      "JSON.stringify(app.workspace.getLayout())",
+    );
+    const stored = await obEval(
+      vaultId,
+      "JSON.stringify(app.plugins.plugins.zotlit.services.settings.current['library.document'])",
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{const settings=app.plugins.plugins.zotlit.services.settings;settings.update({'library.document':${stored}});await settings.flush();await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+      );
+    });
+    // A Library View that has never saved a document.
+    await obEval(
+      vaultId,
+      "(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=app.plugins.plugins.zotlit.services.settings;settings.update({'library.document':null});await settings.flush();return true;})()",
+    );
+
+    /** What the Library View shows once its query settled, or `null` while no tab holds it. */
+    const readPapers = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.query)return 'null';await view.query.settled;const el=view.contentEl;const state=view.query.state.getState();const text=(n,s)=>n.querySelector(s)?.textContent??null;return JSON.stringify({phase:state.phase,layout:el.querySelector('[data-query-layout]')?.getAttribute('data-query-layout')??null,menu:text(el,'[data-query-view-menu]'),count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,papers:[...el.querySelectorAll('[data-query-papers-row]')].map(n=>({key:n.getAttribute('data-query-papers-row'),title:text(n,'[data-query-papers-title]'),meta:text(n,'[data-query-papers-meta]'),state:text(n,'[data-query-papers-state]'),colors:[...n.querySelectorAll('[data-query-papers-color]')].map(c=>c.getAttribute('data-query-papers-color')),attachment:n.querySelector('[data-query-papers-attachment]')?.getAttribute('data-query-papers-attachment')??null,note:n.querySelector('[data-query-papers-note]')!==null,children:[...n.querySelectorAll('[data-query-papers-child]')].map(c=>[c.getAttribute('data-query-papers-child'),c.getAttribute('data-query-key')])})),tableRows:el.querySelectorAll('tr[data-query-table-row="item"]').length});})()`;
+    interface Paper {
+      key: string;
+      title: string | null;
+      meta: string | null;
+      state: string | null;
+      colors: string[];
+      attachment: string | null;
+      note: boolean;
+      children: [string, string | null][];
+    }
+    interface Papers {
+      phase: string;
+      layout: string | null;
+      menu: string | null;
+      count: string | null;
+      papers: Paper[];
+      tableRows: number;
+    }
+    const papersWhen = async (
+      ready: (papers: Papers) => boolean,
+    ): Promise<Papers> => {
+      let papers: Papers | null = null;
+      const settled = await waitFor(async () => {
+        papers = JSON.parse(await obEval(vaultId, readPapers)) as Papers | null;
+        return papers !== null && ready(papers);
+      }, 120);
+      if (!settled) throw new Error(`Library View: ${JSON.stringify(papers)}`);
+      return papers!;
+    };
+
+    // The seed's My Library: each Item's Attachments and their Annotations,
+    // and the Literature Note the Fixture Vault holds for every Item but the
+    // demo papers.
+    const userLibrary = LIBRARIES.find(({ type }) => type === "user")!;
+    const personal = ITEMS.filter(
+      ({ libraryID }) => libraryID === userLibrary.libraryID,
+    );
+    const attachmentsOf = (item: FixtureItem) =>
+      ATTACHMENTS.filter(({ parentItemID }) => parentItemID === item.itemID);
+    const annotationsOf = (item: FixtureItem) => {
+      const ids = new Set(attachmentsOf(item).map(({ itemID }) => itemID));
+      return ANNOTATIONS.filter(({ parentItemID }) => ids.has(parentItemID));
+    };
+    /** The kind Zotero gives a file: a link to a page is a web page. */
+    const kindOf = ({ linkMode, contentType }: (typeof ATTACHMENTS)[number]) =>
+      linkMode === "linked_url"
+        ? "web"
+        : (
+            {
+              "application/pdf": "pdf",
+              "application/epub+zip": "epub",
+              "text/html": "web",
+            } as Record<string, string>
+          )[contentType];
+    const expected = (item: FixtureItem) => {
+      const annotations = annotationsOf(item);
+      const kinds = new Set(attachmentsOf(item).map(kindOf));
+      const note = !DEMO_ITEMS.includes(item);
+      const state = [
+        annotations.length > 0
+          ? m.query_view_papers_annotation_count({ count: annotations.length })
+          : null,
+        note ? m.query_view_papers_has_note() : null,
+      ].filter((part) => part !== null);
+      return {
+        key: item.key,
+        title: item.title,
+        state: state.length > 0 ? state.join(" · ") : null,
+        colors: new Set(annotations.map(({ color }) => color)).size,
+        attachment:
+          ["pdf", "epub", "web"].find((kind) => kinds.has(kind)) ?? null,
+        note,
+      };
+    };
+
+    await obEval(
+      vaultId,
+      "app.commands.executeCommandById('zotlit:open-library-view');true",
+    );
+    const opened = await papersWhen(
+      (papers) =>
+        papers.phase === "ready" &&
+        papers.count !== null &&
+        papers.papers.length === Number(papers.count),
+    );
+    expect(opened).toMatchObject({
+      layout: "papers",
+      menu: m.query_view_layout_papers(),
+      count: String(personal.length),
+    });
+    expect(
+      opened.papers
+        .map(({ key, title, state, colors, attachment, note }) => ({
+          key,
+          title,
+          state,
+          // The line shows at most five colours.
+          colors: colors.length < 5 ? colors.length : "5+",
+          attachment,
+          note,
+        }))
+        .toSorted((a, b) => a.key.localeCompare(b.key)),
+    ).toEqual(
+      personal
+        .map(expected)
+        .map((paper) => ({
+          ...paper,
+          colors: paper.colors < 5 ? paper.colors : "5+",
+        }))
+        .toSorted((a, b) => a.key.localeCompare(b.key)),
+    );
+    // Each colour shown is one of the Item's Annotations.
+    for (const shown of opened.papers) {
+      const colors = new Set(
+        annotationsOf(personal.find(({ key }) => key === shown.key)!).map(
+          ({ color }) => color,
+        ),
+      );
+      expect(shown.colors.every((color) => colors.has(color))).toBe(true);
+    }
+    // The second line names the first creator, the year and the Venue.
+    const missing = personal.flatMap((item) => {
+      const meta = opened.papers.find(({ key }) => key === item.key)!.meta;
+      return [
+        item.creators[0]?.lastName,
+        item.date.slice(0, 4),
+        item.venue ?? item.publisher,
+      ]
+        .filter((part) => part !== undefined)
+        .filter((part) => !meta?.includes(part))
+        .map((part) => [item.key, part]);
+    });
+    expect(missing).toEqual([]);
+
+    // A paper expands into its Attachments, its live Child Notes and its
+    // Literature Note, and its PDF into its Annotations.
+    const paper = annotationItem;
+    const pdf = annotationAttachment;
+    const live = NOTES.filter(
+      (note) => note.parentItemID === paper.itemID && !note.trashed,
+    );
+    // Each gesture brings the Library View's tab to the front first: a link
+    // it opened may stand in front of it.
+    const inLibrary = (script: string) =>
+      obEval(
+        vaultId,
+        `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];await app.workspace.revealLeaf(leaf);const el=leaf.view.contentEl;${script}})()`,
+      );
+    await inLibrary(
+      `press(el.querySelector('[data-query-expand="item:${paper.key}"]'),'expand paper');return true`,
+    );
+    const childrenOf = (papers: Papers) =>
+      papers.papers.find(({ key }) => key === paper.key)!.children;
+    // The Literature Note row shows at once; the others once their query ran.
+    const expanded = await papersWhen(
+      (papers) =>
+        childrenOf(papers).filter(([kind]) => kind === "attachment").length ===
+        attachmentsOf(paper).length,
+    );
+    expect(childrenOf(expanded).at(-1)?.[0]).toBe("literature-note");
+    expect(
+      childrenOf(expanded)
+        .filter(([kind]) => kind === "attachment")
+        .map(([, key]) => key)
+        .toSorted(),
+    ).toEqual(
+      attachmentsOf(paper)
+        .map(({ key }) => key)
+        .toSorted(),
+    );
+    expect(
+      childrenOf(expanded)
+        .filter(([kind]) => kind === "note")
+        .map(([, key]) => key),
+    ).toEqual(live.map(({ key }) => key));
+    await inLibrary(
+      `press(el.querySelector('[data-query-expand="attachment:${pdf.key}"]'),'expand PDF');return true`,
+    );
+    const pdfAnnotations = ANNOTATIONS.filter(
+      ({ parentItemID }) => parentItemID === pdf.itemID,
+    );
+    const withAnnotations = await papersWhen(
+      (papers) =>
+        childrenOf(papers).filter(([kind]) => kind === "annotation").length ===
+        pdfAnnotations.length,
+    );
+    expect(
+      childrenOf(withAnnotations)
+        .filter(([kind]) => kind === "annotation")
+        .map(([, key]) => key)
+        .toSorted(),
+    ).toEqual(pdfAnnotations.map(({ key }) => key).toSorted());
+
+    // The PDF opens in Obsidian's reader, an Annotation at its page, and the
+    // Literature Note in Obsidian.
+    const child = (kind: string, key: string) =>
+      `el.querySelector('[data-query-papers-row="${paper.key}"] [data-query-papers-child="${kind}"][data-query-key="${key}"] a')`;
+    const pdfName = pdf.path!.split("/").pop()!;
+    expect(
+      await inLibrary(
+        `press(${child("attachment", pdf.key)},'PDF link');return String(!!(await until('the PDF opens',()=>app.workspace.getLeavesOfType('pdf').find(l=>l.view.file?.name===${JSON.stringify(pdfName)}),10000)))`,
+      ),
+    ).toBe("true");
+    const anchored = pdfAnnotations.find(
+      (annotation) => "pageIndex" in annotation.position,
+    )!;
+    expect(
+      await inLibrary(
+        `const proto=Object.getPrototypeOf(app.workspace.getMostRecentLeaf());const native=proto.setEphemeralState;let subpath=null;proto.setEphemeralState=function(state){if(typeof state?.subpath==='string')subpath=state.subpath;return native.call(this,state);};try{/* A middle click opens a new tab, as the Table case does. */const link=${child("annotation", anchored.key)};link.dispatchEvent(new link.ownerDocument.defaultView.MouseEvent('auxclick',{bubbles:true,cancelable:true,button:1}));return await until('the PDF opens at the Annotation',()=>subpath,10000);}finally{proto.setEphemeralState=native;}`,
+      ),
+    ).toBe(
+      `#page=${(anchored.position as { pageIndex: number }).pageIndex + 1}&zt-annotation=${anchored.key}`,
+    );
+
+    expect(
+      await inLibrary(
+        `const link=el.querySelector('[data-query-papers-row="${paper.key}"] [data-query-papers-child="literature-note"] [data-query-note]');press(link,'Literature Note link');const path=link.getAttribute('data-query-note');return String(!!(await until('the Literature Note opens',()=>app.workspace.getLeavesOfType('markdown').find(l=>l.view.file?.path===path),10000)))`,
+      ),
+    ).toBe("true");
+
+    // An Item with Child Notes lists its live ones, and a Child Note opens
+    // in Zotero through its link.
+    const noted = ITEMS.find(({ itemID }) => itemID === 1)!;
+    const notes = NOTES.filter(
+      (note) => note.parentItemID === noted.itemID && !note.trashed,
+    );
+    expect(notes.length, "the Fixture Item has a live Child Note").toBe(1);
+    await inLibrary(
+      `press(el.querySelector('[data-query-expand="item:${noted.key}"]'),'expand noted paper');return true`,
+    );
+    const withNotes = await papersWhen(
+      (papers) =>
+        papers.papers
+          .find(({ key }) => key === noted.key)!
+          .children.filter(([kind]) => kind === "note").length === notes.length,
+    );
+    expect(
+      withNotes.papers
+        .find(({ key }) => key === noted.key)!
+        .children.filter(([kind]) => kind === "note")
+        .map(([, key]) => key),
+    ).toEqual(notes.map(({ key }) => key));
+    expect(
+      await inLibrary(
+        `const native=window.open;let opened=null;window.open=url=>{opened=String(url);return null;};try{press(el.querySelector('[data-query-papers-row="${noted.key}"] [data-query-papers-child="note"][data-query-key="${notes[0]!.key}"] a'),'Child Note link');return await until('Zotero shows the note',()=>opened,10000);}finally{window.open=native;}`,
+      ),
+    ).toBe(`zotero://select/library/items/${notes[0]!.key}`);
+
+    // The view menu switches to the Table, the one other Layout it offers,
+    // and plugin data keeps it.
+    await obEval(
+      vaultId,
+      "(()=>{const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()",
+    );
+    const offered = JSON.parse(
+      await inLibrary(
+        `press(el.querySelector('[data-query-view-menu]'),'View menu');const rows=await until('Layout rows',()=>{const found=[...activeDocument.querySelectorAll('[data-query-view-list]:popover-open [data-query-view-layout-option]')];return found.length>0&&found;});const types=rows.map(n=>n.getAttribute('data-query-view-layout-option'));press(rows.find(n=>n.getAttribute('data-query-view-layout-option')==='table'),'Table');return JSON.stringify(types)`,
+      ),
+    ) as string[];
+    expect(offered).toEqual(["papers", "table"]);
+    const drawnTable = (papers: Papers) =>
+      papers.phase === "ready" &&
+      papers.count !== null &&
+      papers.layout === null &&
+      papers.tableRows === Number(papers.count);
+    expect(await papersWhen(drawnTable)).toMatchObject({
+      menu: m.query_view_layout_table(),
+      count: String(personal.length),
+    });
+    expect(
+      await obEvalUntil(
+        vaultId,
+        "String(app.plugins.plugins.zotlit.services.settings.current['library.document']?.layout)",
+        { expected: "table" },
+      ),
+    ).toBe(true);
+
+    // A plugin reload brings the tab back on the Table.
+    expect(
+      await obEvalUntil(
+        vaultId,
+        "app.plugins.disablePlugin('zotlit').then(function () { return app.plugins.enablePlugin('zotlit'); }).then(function () { return true; })",
+        { expected: "true", tries: 20 },
+      ),
+    ).toBe(true);
+    expect(await papersWhen(drawnTable)).toMatchObject({
+      menu: m.query_view_layout_table(),
+      count: String(personal.length),
+    });
+  }, 180000);
+
+  it("saves the Library View's Collection as a Query File whose tab lists the same papers, after a switch to the Table with its Literature Note column and back to Papers, with Zotero closed", async () => {
+    const services = "app.plugins.plugins.zotlit.services";
+    const savedPath = "query-files/Saved library.zotquery";
+    const snapshot = await obEval(
+      vaultId,
+      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null,scope:${services}.settings.current[${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}]??null})`,
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'library.document':saved.document,${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}:saved.scope});await settings.flush();await app.workspace.changeLayout(saved.layout);const file=app.vault.getFileByPath(${JSON.stringify(savedPath)});if(file)await app.vault.delete(file);return true;})()`,
+      );
+    });
+
+    // The seed's "Shared key" Collection of My Library. A Collection of that
+    // name holds Items in other Libraries too, which the Library Scope
+    // reads, so the saved file has to keep to My Library.
+    const personal = LIBRARIES.find(({ type }) => type === "user")!;
+    const sharedKey = COLLECTIONS.find(
+      (entry) =>
+        entry.libraryID === personal.libraryID && entry.key === "SHAREDCL",
+    )!;
+    const filedIn = (collectionIDs: Set<number>) =>
+      ITEMS.filter((item) =>
+        item.collectionIDs.some((id) => collectionIDs.has(id)),
+      );
+    const subtree = (collectionID: number): number[] => [
+      collectionID,
+      ...COLLECTIONS.filter(
+        (entry) => entry.parentCollectionID === collectionID,
+      ).flatMap((child) => subtree(child.collectionID)),
+    ];
+    const expected = filedIn(new Set(subtree(sharedKey.collectionID)))
+      .map(({ key }) => key)
+      .toSorted();
+    expect(expected.length).toBeGreaterThan(0);
+    const namesakes = COLLECTIONS.filter(
+      (entry) =>
+        entry.name === sharedKey.name && entry.libraryID !== personal.libraryID,
+    );
+    expect(
+      filedIn(new Set(namesakes.map(({ collectionID }) => collectionID)))
+        .length,
+      "another Library files Items in a Collection of the same name",
+    ).toBeGreaterThan(0);
+
+    await obEval(
+      vaultId,
+      `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=${services}.settings;settings.update({'library.document':{node:{kind:'collection',library:{type:'personal'},path:[${JSON.stringify(sharedKey.name)}]},facets:[],search:'',sort:[{property:'dateModified',direction:'DESC'}],layout:'papers',order:['title','creators','date.year','vault.literatureNote']},${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}:{mode:'all'}});await settings.flush();app.commands.executeCommandById('zotlit:open-library-view');return true;})()`,
+    );
+
+    /** What a view shows once its query settled: its Layout, rows and Table columns. */
+    const readRows = (view: string) =>
+      `(async()=>{const view=${view};if(!view?.query)return 'null';await view.query.settled;const el=view.contentEl;return JSON.stringify({type:view.getViewType(),file:view.file?.path??null,phase:view.query.state.getState().phase,layout:el.querySelector('[data-query-layout]')?.getAttribute('data-query-layout')??(el.querySelector('[data-query-table]')?'table':null),count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,rows:[...el.querySelectorAll('[data-query-papers-row], tr[data-query-table-row="item"]')].map(n=>n.getAttribute('data-query-papers-row')??n.getAttribute('data-query-key')),columns:[...el.querySelectorAll('th[data-query-column]')].map(n=>n.getAttribute('data-query-column'))});})()`;
+    interface Rows {
+      type: string;
+      file: string | null;
+      phase: string;
+      layout: string | null;
+      count: string | null;
+      rows: string[];
+      columns: string[];
+    }
+    const rowsWhen = async (
+      view: string,
+      ready: (rows: Rows) => boolean,
+    ): Promise<Rows> => {
+      let rows: Rows | null = null;
+      const settled = await waitFor(async () => {
+        rows = JSON.parse(await obEval(vaultId, readRows(view))) as Rows | null;
+        return rows !== null && ready(rows);
+      }, 120);
+      if (!settled) throw new Error(`${view}: ${JSON.stringify(rows)}`);
+      return rows!;
+    };
+    const library = "app.workspace.getLeavesOfType('zotlit-library')[0]?.view";
+    const drawn = (layout: string) => (rows: Rows) =>
+      rows.phase === "ready" &&
+      rows.layout === layout &&
+      rows.count !== null &&
+      rows.rows.length === Number(rows.count);
+    const papers = await rowsWhen(library, drawn("papers"));
+    expect(papers.rows.toSorted()).toEqual(expected);
+
+    /** Opens the view menu of the Library View and presses the row `selector` names. */
+    const pressMenuRow = (selector: string, what: string) =>
+      obEval(
+        vaultId,
+        `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];await app.workspace.revealLeaf(leaf);app.workspace.setActiveLeaf(leaf,{focus:true});press(leaf.view.contentEl.querySelector('[data-query-view-menu]'),'View menu');const row=await until(${JSON.stringify(what)},()=>activeDocument.querySelector('[data-query-view-list]:popover-open ${selector}'));press(row,${JSON.stringify(what)});return true;})()`,
+      );
+
+    // The Table shows Zotero's grid with the Literature Note column, and
+    // Papers comes back with the same rows.
+    await pressMenuRow('[data-query-view-layout-option="table"]', "Table");
+    const table = await rowsWhen(library, drawn("table"));
+    expect(table.columns).toContain("vault.literatureNote");
+    expect(table.rows.toSorted()).toEqual(expected);
+    await pressMenuRow('[data-query-view-layout-option="papers"]', "Papers");
+    expect((await rowsWhen(library, drawn("papers"))).rows.toSorted()).toEqual(
+      expected,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(${services}.settings.current['library.document']?.layout)`,
+        { expected: "papers" },
+      ),
+    ).toBe(true);
+
+    // "Save as query file" asks the name and the folder only.
+    await pressMenuRow(
+      '[data-query-view-action="save-as"]',
+      "Save as query file",
+    );
+    const modal = "document.querySelector('.modal.zt-save-query-file-modal')";
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `(function(){const modal=${modal};return JSON.stringify(modal?{title:modal.querySelector('.modal-title')?.textContent??null,fields:[...modal.querySelectorAll('[data-save-field]')].map(n=>n.getAttribute('data-save-field')),records:modal.querySelectorAll('[data-save-records]').length}:null);})()`,
+        {
+          expected: JSON.stringify({
+            title: m.annot_view_save_title(),
+            fields: ["name", "folder"],
+            records: 0,
+          }),
+        },
+      ),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      `(function(){${PAGE}const modal=${modal};const set=(field,value)=>{const input=modal.querySelector('[data-save-field="'+field+'"]');input.value=value;input.dispatchEvent(new Event('input',{bubbles:true}));};set('name','Saved library');set('folder','query-files');press(modal.querySelector('.modal-button-container button.mod-cta'),'Save');return true;})()`,
+    );
+
+    // The file opens in a tab that lists the Library View's papers, in its
+    // order, and only those of My Library.
+    const tab = `(()=>{const view=app.workspace.getMostRecentLeaf()?.view;return view?.getViewType()==='zotlit-query-file'&&view.file?.path===${JSON.stringify(savedPath)}?view:null;})()`;
+    const saved = await rowsWhen(tab, drawn("papers"));
+    expect(saved.rows).toEqual(papers.rows);
+    const text = await obEval(
+      vaultId,
+      `app.vault.read(app.vault.getFileByPath(${JSON.stringify(savedPath)}))`,
+    );
+    expect(text).toContain('library == "personal"');
+    expect(text).toContain(
+      `collections.within(${JSON.stringify(sharedKey.name)})`,
+    );
+  }, 180000);
+
   it("opens the Library View once on a fresh install, shows the Welcome View banner above it until dismissed, and says where Zotero's data folder is missing until it is set", async () => {
     const services = "app.plugins.plugins.zotlit.services";
     const dataPath = "app.vault.configDir+'/plugins/zotlit/data.json'";
@@ -1688,13 +2152,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       vaultId,
       `${services}.zoteroPref.setDataDir(${JSON.stringify(emptyDir)});true`,
     );
-    const readNotFound = `(()=>{const el=app.workspace.getLeavesOfType('zotlit-library')[0].view.contentEl;const shown=(n)=>!!n&&n.checkVisibility();const part=(name)=>el.querySelector('[data-library-not-found="'+name+'"]');const pane=el.querySelector('[data-library-tree]');return JSON.stringify({tree:shown(part('tree'))||getComputedStyle(pane).display==='none'?part('tree').textContent:null,list:shown(part('list'))?[...part('list').querySelectorAll('button')].map(b=>b.textContent):null,table:shown(el.querySelector('[data-query-table]')),nodes:[...el.querySelectorAll('[data-library-node]')].some(shown)});})()`;
+    const readNotFound = `(()=>{const el=app.workspace.getLeavesOfType('zotlit-library')[0].view.contentEl;const shown=(n)=>!!n&&n.checkVisibility();const part=(name)=>el.querySelector('[data-library-not-found="'+name+'"]');const pane=el.querySelector('[data-library-tree]');return JSON.stringify({tree:shown(part('tree'))||getComputedStyle(pane).display==='none'?part('tree').textContent:null,list:shown(part('list'))?[...part('list').querySelectorAll('button')].map(b=>b.textContent):null,papers:[...el.querySelectorAll('[data-query-table], [data-query-layout]')].some(shown),nodes:[...el.querySelectorAll('[data-library-node]')].some(shown)});})()`;
     expect(
       await obEvalUntil(vaultId, readNotFound, {
         expected: JSON.stringify({
           tree: `${m.library_view_tree_label()}${m.library_view_not_found_tree()}${m.library_view_locate()}`,
           list: [m.library_view_locate(), m.welcome_action_open_settings()],
-          table: false,
+          papers: false,
           nodes: false,
         }),
         tries: 120,
@@ -1715,7 +2179,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEvalUntil(
         vaultId,
-        `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0].view;await view.query.settled;const el=view.contentEl;return JSON.stringify({missing:el.querySelector('[data-zotero-missing]')!==null,rows:el.querySelectorAll('tr[data-query-table-row="item"]').length});})()`,
+        `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0].view;await view.query.settled;const el=view.contentEl;return JSON.stringify({missing:el.querySelector('[data-zotero-missing]')!==null,rows:el.querySelectorAll('tr[data-query-table-row="item"], [data-query-papers-row]').length});})()`,
         {
           expected: JSON.stringify({ missing: false, rows: personal.length }),
           tries: 120,
@@ -4720,6 +5184,7 @@ views:
             [m.query_view_layout_table(), true],
             [m.query_view_layout_list(), false],
             [m.query_view_layout_cards(), false],
+            [m.query_view_layout_papers(), false],
           ]),
         },
       ),
