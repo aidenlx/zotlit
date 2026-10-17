@@ -202,6 +202,8 @@ export class SettingsService extends Service<void> {
   #loaded = false;
   #hydrationOrigin: HydrationOrigin | null = null;
   #pendingWrite: Promise<void> | undefined;
+  /** Whether the plugin began to unload: each change then goes to the next instance. */
+  #released = false;
 
   ready: Promise<void>;
 
@@ -392,9 +394,17 @@ export class SettingsService extends Service<void> {
 
   /**
    * Start writing any pending change now, as the plugin unloads, and leave
-   * the write where the next instance waits for it before it loads.
+   * the write where the next instance waits for it before it loads. A change
+   * made after this, such as a view that saves its state as it closes, is
+   * written at once and handed on the same way.
    */
   release(): void {
+    this.#released = true;
+    this.#handOff();
+  }
+
+  /** Write every change now, and leave that write as the last one. */
+  #handOff(): void {
     const write = this.flush().catch((error: unknown) => {
       console.error("settings save on unload failed", error);
     });
@@ -428,6 +438,7 @@ export class SettingsService extends Service<void> {
     this.#broken = nextBroken;
     this.#notify();
     this.#scheduleSave();
+    if (this.#released) this.#handOff();
     return candidate;
   }
 
@@ -731,9 +742,12 @@ export class SettingsService extends Service<void> {
       ...Object.fromEntries(this.#broken),
       ...this.#overrides,
     };
+    const earlier = this.#pendingWrite;
     let promise!: Promise<void>;
     promise = (async () => {
       try {
+        // One write at a time, so the last change begun is the last to land.
+        if (earlier) await earlier.catch(() => {});
         await this.#plugin.saveData(payload);
       } finally {
         if (this.#pendingWrite === promise) {

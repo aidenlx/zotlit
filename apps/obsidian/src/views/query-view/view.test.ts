@@ -1381,13 +1381,13 @@ function item(key: string, title: string, year: string): QueryViewRow {
   };
 }
 
-it("shows only the rows the host keeps after the query, cut to the view's limit, and counts them", async () => {
+it("shows only the rows the host keeps after the query, cut to the view's limit, and counts them, reading the fields of those rows alone", async () => {
   // The host answers a condition the query cannot: here, which Items have a
   // note in the vault.
   const kept = new Set(["ITEMAAAA", "ITEMCCCC", "ITEMDDDD"]);
-  let pass: { key: string; keeps: (row: QueryViewRow) => boolean } | null = {
+  let pass: { key: string; keeps: (indexedKey: string) => boolean } | null = {
     key: "noted",
-    keeps: (row) => kept.has(row.indexedKey),
+    keeps: (indexedKey) => kept.has(indexedKey),
   };
   const rows = [
     item("ITEMAAAA", "Ten simple rules", "2021"),
@@ -1395,8 +1395,16 @@ it("shows only the rows the host keeps after the query, cut to the view's limit,
     item("ITEMCCCC", "Close reading", "2018"),
     item("ITEMDDDD", "Distant reading", "2013"),
   ];
+  const [a, , c, d] = rows as [
+    QueryViewRow,
+    QueryViewRow,
+    QueryViewRow,
+    QueryViewRow,
+  ];
+  // Each condition reads every match by key, then the rows it keeps; the
+  // engine gives those back in an order of its own.
   const { view, el, run, settle } = await mount(
-    [result(rows), result(rows), result(rows)],
+    [result(rows), result([c, a]), result(rows), result([d, a]), result(rows)],
     undefined,
     { rowPass: () => pass },
   );
@@ -1411,19 +1419,26 @@ it("shows only the rows the host keeps after the query, cut to the view's limit,
 `),
   );
   await settle();
-  // The query reads every match, so the limit cuts the kept rows alone.
-  expect(run.mock.calls[0]![0].limit).toBeNull();
+  // The query reads the key of every match, so the limit cuts the kept rows
+  // alone; only the rows on screen are read with their fields.
+  const [keys, page] = run.mock.calls.map(([request]) => request);
+  expect(keys).toMatchObject({ fields: [], limit: null });
+  expect(page!.fields).toEqual(expect.arrayContaining(["title"]));
+  expect(page!.filter).toBe('["ITEMAAAA","ITEMCCCC"].contains(indexedKey)');
   expect(shownRows(el)).toEqual(["ITEMAAAA", "ITEMCCCC"]);
+  expect(el.querySelector("[data-query-row]")?.textContent).toContain(
+    "Ten simple rules",
+  );
   expect(el.querySelector("[data-query-count]")?.textContent).toBe(
     "2 of 3 results",
   );
 
   // Another condition of the host runs again, with the same text.
   kept.delete("ITEMCCCC");
-  pass = { key: "noted-2", keeps: (row) => kept.has(row.indexedKey) };
+  pass = { key: "noted-2", keeps: (indexedKey) => kept.has(indexedKey) };
   await act(() => view.contextChanged());
   await settle();
-  expect(run).toHaveBeenCalledTimes(2);
+  expect(run).toHaveBeenCalledTimes(4);
   expect(shownRows(el)).toEqual(["ITEMAAAA", "ITEMDDDD"]);
   expect(el.querySelector("[data-query-count]")?.textContent).toBe("2 results");
 
@@ -1431,7 +1446,28 @@ it("shows only the rows the host keeps after the query, cut to the view's limit,
   pass = null;
   await act(() => view.contextChanged());
   await settle();
-  expect(run.mock.calls[2]![0].limit).toBe(2);
+  expect(run).toHaveBeenCalledTimes(5);
+  expect(run.mock.calls[4]![0]).toMatchObject({ limit: 2 });
+});
+
+it("reads no rows where the host keeps none of the matches", async () => {
+  const { view, el, run, settle } = await mount(
+    [result([item("ITEMAAAA", "Ten simple rules", "2021")])],
+    undefined,
+    { rowPass: () => ({ key: "none", keeps: () => false }) },
+  );
+  await act(() =>
+    view.setText(`views:
+  - type: list
+    name: Sources
+    from: items
+    order:
+      - title
+`),
+  );
+  await settle();
+  expect(run).toHaveBeenCalledTimes(1);
+  expect(shownRows(el)).toEqual([]);
 });
 
 it("lists the Items of an items view, with the visible properties in their order", async () => {

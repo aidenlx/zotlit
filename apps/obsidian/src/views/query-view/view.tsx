@@ -221,9 +221,10 @@ export interface QueryViewHost {
   /**
    * A condition on each row that the host answers and the query cannot, such
    * as the Library View's Has note facet; `null` for none. The query then
-   * reads every match, and the view's limit cuts the rows the condition
-   * keeps, so the count is theirs. A condition with another `key` runs again
-   * through {@link QueryView.contextChanged}.
+   * reads the Indexed Key of every match, the view's limit cuts the keys the
+   * condition keeps, so the count is theirs, and only those rows are read
+   * with their fields. A condition with another `key` runs again through
+   * {@link QueryView.contextChanged}.
    *
    * @see apps/obsidian/docs/adr/0071-the-library-tree-writes-filters.md
    */
@@ -234,7 +235,8 @@ export interface QueryViewHost {
 export interface QueryRowPass {
   /** Tells one condition from another, as part of the run key. */
   readonly key: string;
-  keeps(row: QueryViewRow): boolean;
+  /** Whether the row of the Item with `indexedKey` stays. */
+  keeps(indexedKey: string): boolean;
 }
 
 /**
@@ -379,25 +381,19 @@ function usedGroupBy(view: QueryFileView): QueryFileSort | undefined {
  */
 export const RERUN_DELAY_MS = 300;
 
-/**
- * `result` with only the rows `pass` keeps, cut to `limit`, and counted as
- * the query counts its own matches.
- */
-function passed(
+/** `result` as a list of `rows`, with the counts and warnings in `change`. */
+function listed(
   result: QueryViewResult,
-  pass: QueryRowPass | null | undefined,
-  limit: number | undefined,
+  change: Pick<
+    QueryViewResult,
+    "returnedCount" | "matchedCount" | "truncated"
+  > & {
+    rows: readonly QueryViewRow[];
+    warnings?: QueryViewResult["warnings"];
+  },
 ): QueryViewResult {
-  if (!pass || !result.rows) return result;
-  const kept = result.rows.filter((row) => pass.keeps(row));
-  const rows = limit === undefined ? kept : kept.slice(0, limit);
-  return {
-    ...result,
-    rows,
-    returnedCount: rows.length,
-    matchedCount: kept.length,
-    truncated: rows.length < kept.length,
-  };
+  const { groups: _groups, totalCount: _totalCount, ...list } = result;
+  return { ...list, ...change };
 }
 
 /** One run of a view: its request key, and the file and view it ran for. */
@@ -405,8 +401,6 @@ interface ViewRun {
   key: string;
   file: QueryFile;
   view: QueryFileView;
-  /** The host's condition on the rows as the run started. */
-  pass?: QueryRowPass | null;
   /** The Query Context and the Libraries the run read, as {@link QueryView} keys them. */
   binding: string;
 }
@@ -858,10 +852,66 @@ export class QueryView extends Component implements HistorySurface {
         }),
       fields,
       ...(Object.keys(formulas).length > 0 && { formulas }),
-      // A condition after the query cuts the rows to the limit itself.
-      limit: this.#host.rowPass?.() ? null : (view.limit ?? null),
+      limit: view.limit ?? null,
       ...(libraries && { libraries }),
       ...(context && { context }),
+    };
+  }
+
+  /**
+   * The answer to `request`, with only the rows `pass` keeps. With a pass the
+   * query first reads the Indexed Key of every match, since the pass may keep
+   * any of them; the request's limit cuts the kept keys, and only those rows
+   * are read with their fields, in the order of the keys. The answer counts
+   * the kept rows as the query counts its own matches.
+   */
+  async #read(
+    request: QueryViewRequest,
+    pass: QueryRowPass | null,
+    signal: AbortSignal,
+  ): Promise<QueryViewOutcome> {
+    if (!pass) return this.#deps.query.run(request, signal);
+    const keys = await this.#deps.query.run(
+      { ...request, fields: [], limit: null },
+      signal,
+    );
+    if (keys.kind !== "result") return keys;
+    const kept = (keys.result.rows ?? [])
+      .map((row) => row.indexedKey)
+      .filter((key) => pass.keeps(key));
+    const page =
+      request.limit === null || request.limit === undefined
+        ? kept
+        : kept.slice(0, request.limit);
+    const counts = {
+      returnedCount: page.length,
+      matchedCount: kept.length,
+      truncated: page.length < kept.length,
+    };
+    if (page.length === 0)
+      return { ...keys, result: listed(keys.result, { ...counts, rows: [] }) };
+    const read = await this.#deps.query.run(
+      {
+        ...request,
+        filter: [
+          `${JSON.stringify(page)}.contains(indexedKey)`,
+          ...(request.filter === undefined ? [] : [`(${request.filter})`]),
+        ].join(" && "),
+        limit: null,
+      },
+      signal,
+    );
+    if (read.kind !== "result") return read;
+    const byKey = new Map(
+      (read.result.rows ?? []).map((row) => [row.indexedKey, row]),
+    );
+    return {
+      ...read,
+      result: listed(read.result, {
+        ...counts,
+        rows: page.flatMap((key) => byKey.get(key) ?? []),
+        warnings: [...keys.result.warnings, ...read.result.warnings],
+      }),
     };
   }
 
@@ -898,33 +948,31 @@ export class QueryView extends Component implements HistorySurface {
     if (this.#shownRequest !== key) this.state.setState({ phase: "loading" });
     // A Formula with a mistake, and each Formula that reads it, is left out
     // of the rows; the outcome gives the reason for each.
-    this.#settled = this.#deps.query
-      .run(this.#request(file, view), controller.signal)
-      .then(
-        (outcome) => {
-          if (this.#run !== controller) return;
-          this.#run = null;
-          return this.#land(
-            { key, file, view, pass, binding },
-            outcome,
-            fromList,
-          );
-        },
-        (error: unknown) => {
-          if (this.#run !== controller) return;
-          this.#run = null;
-          logger.warn("A Query View could not run its query", { error });
-          this.#fail(
-            { key, file, view, binding },
-            {
-              code: "query-failed",
-              message: error instanceof Error ? error.message : String(error),
-              hint: "",
-            },
-            nameDictionary(),
-          );
-        },
-      );
+    this.#settled = this.#read(
+      this.#request(file, view),
+      pass,
+      controller.signal,
+    ).then(
+      (outcome) => {
+        if (this.#run !== controller) return;
+        this.#run = null;
+        return this.#land({ key, file, view, binding }, outcome, fromList);
+      },
+      (error: unknown) => {
+        if (this.#run !== controller) return;
+        this.#run = null;
+        logger.warn("A Query View could not run its query", { error });
+        this.#fail(
+          { key, file, view, binding },
+          {
+            code: "query-failed",
+            message: error instanceof Error ? error.message : String(error),
+            hint: "",
+          },
+          nameDictionary(),
+        );
+      },
+    );
   }
 
   async #land(
@@ -940,7 +988,7 @@ export class QueryView extends Component implements HistorySurface {
         this.#fail(run, outcome.diagnostic, formulaIssues(outcome));
         return;
       case "result": {
-        const result = passed(outcome.result, run.pass, view.limit);
+        const result = outcome.result;
         // The query reads Zotero's database, which can take a new Annotation
         // after the repository's list does. Such a run keeps the cards on
         // screen, and the database change that follows runs the view again.

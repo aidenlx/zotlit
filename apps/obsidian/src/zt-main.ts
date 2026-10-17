@@ -75,6 +75,7 @@ import {
 import { registerCitationSuggest } from "./views/citation-suggest/register";
 import { registerCitedByView } from "./views/cited-by/register";
 import { itemActions } from "./views/library/item-actions";
+import { LastNote } from "./views/library/last-note";
 import { registerLibraryView, showInLibrary } from "./views/library/register";
 import { registerNotePreview } from "./views/note-preview/register";
 import { registerPandocExport } from "./views/pandoc-export/register";
@@ -515,6 +516,7 @@ export default class ZotLitPlugin extends Plugin {
       },
       items: itemActions({
         app: this.app,
+        lastNote: stack.use(new LastNote(this.app.workspace)),
         createProfile: services.createProfile,
         importProfile: services.importProfile,
         noteFeature: services.noteFeature,
@@ -779,7 +781,8 @@ export default class ZotLitPlugin extends Plugin {
 
   override onunload(): void {
     // Start the last settings write now rather than at the end of disposal, so
-    // an instance enabled straight after reads it.
+    // an instance enabled straight after reads it; a view that saves as it
+    // closes after this hands its write on the same way.
     this.#services?.settings.release();
     // Drop the service bag before async disposal so late callers fail clearly.
     this.#services = undefined;
