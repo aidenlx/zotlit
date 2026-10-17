@@ -89,7 +89,12 @@ import type { LiteratureNotes, VaultHost } from "./table-notes";
 import type { TableReaders } from "./table-readers";
 import { ToolbarButton } from "./toolbar-button";
 import { ToolbarPopover } from "./toolbar-popover";
-import { vaultText } from "./vault-cell";
+import { useVaultPropertyNames, vaultText } from "./vault-cell";
+import {
+  vaultSortOptions,
+  vaultSortRequest,
+  vaultSortedLayout,
+} from "./vault-sort";
 import { ViewMenu } from "./view-menu";
 import {
   LITERATURE_NOTE,
@@ -264,6 +269,8 @@ export const RERUN_DELAY_MS = 300;
  */
 interface ViewPlan {
   readonly request: QueryViewRequest;
+  /** The view's sort keys in use, Zotero fields and vault properties, in order. */
+  readonly sort: readonly QueryFileSort[];
   readonly vault: {
     /** The sort keys that are vault properties, in the view's order of sort keys. */
     readonly sort: readonly QueryFileSort[];
@@ -644,10 +651,14 @@ export class QueryView extends Component implements HistorySurface {
     );
   }
 
-  /** What tells one run from another: the request, and the grouping the rows are gathered by. */
+  /** What tells one run from another: the request, what the vault answers, the limit, and the grouping the rows are gathered by. */
   #runKey(file: QueryFile, view: QueryFileView): string {
+    const { request, vault } = this.#plan(file, view);
     return JSON.stringify([
-      this.#request(file, view),
+      request,
+      // A vault sort keeps the view's limit out of the request.
+      vault,
+      view.limit ?? null,
       usedGroupBy(view) ?? null,
       view.groupOrder ?? null,
     ]);
@@ -681,6 +692,8 @@ export class QueryView extends Component implements HistorySurface {
       ]),
     ];
     const formulas = file.formulas ?? {};
+    const vaultSort =
+      used?.filter(({ property }) => isVaultProperty(property)) ?? [];
     const request: QueryViewRequest = {
       from: view.from ?? "annotations",
       ...(filter === undefined ? {} : { filter }),
@@ -697,9 +710,10 @@ export class QueryView extends Component implements HistorySurface {
       ...(context && { context }),
     };
     return {
-      request,
+      request: vaultSort.length > 0 ? vaultSortRequest(request) : request,
+      sort: used ?? [],
       vault: {
-        sort: used?.filter(({ property }) => isVaultProperty(property)) ?? [],
+        sort: vaultSort,
         conditions: vaultConditions(file, view),
       },
     };
@@ -762,7 +776,7 @@ export class QueryView extends Component implements HistorySurface {
     outcome: QueryViewOutcome,
     fromList = false,
   ): Promise<void> {
-    const { key, view } = run;
+    const { key, file, view } = run;
     switch (outcome.kind) {
       case "cancelled":
         return;
@@ -781,7 +795,16 @@ export class QueryView extends Component implements HistorySurface {
             ? "rerun"
             : "new-request";
         if (this.#layout.keepsBack(named, cause)) return;
-        const shown = layoutRows(result.rows ?? [], view);
+        const plan = this.#plan(file, view);
+        const host = this.vaultHost();
+        const shown =
+          plan.vault.sort.length > 0
+            ? vaultSortedLayout(result.rows ?? [], view, {
+                sort: plan.sort,
+                read: (row, name) =>
+                  this.#deps.literatureNotes.read(row.indexedKey, name, host),
+              })
+            : { ...layoutRows(result.rows ?? [], view), dropped: false };
         const byKey = new Map(
           (result.rows ?? []).map((row) => [row.indexedKey, row]),
         );
@@ -798,7 +821,7 @@ export class QueryView extends Component implements HistorySurface {
             })),
             matched: result.matchedCount,
             groups: shown.groups,
-            truncated: result.truncated,
+            truncated: result.truncated || shown.dropped,
             warnings: [
               ...new Map(
                 result.warnings.map(({ code, message }) => [
@@ -1173,9 +1196,12 @@ function OpenFileButton({ view }: { view: QueryView }) {
 
 function SortButton({ view }: { view: QueryView }) {
   const current = useQueryViewState(view, (s) => s.view);
-  const properties = useViewProperties(view);
+  const { literatureNotes } = view.tableDeps;
+  const names = useVaultPropertyNames(literatureNotes);
+  const properties = useViewProperties(view, names);
   if (!current || !properties) return null;
   const sort = current.sort ?? [];
+  const labelOf = (path: string) => properties.entry(path).label;
   return (
     <ToolbarPopover
       icon="arrow-up-down"
@@ -1186,10 +1212,13 @@ function SortButton({ view }: { view: QueryView }) {
     >
       <SortEditor
         value={sort}
-        options={sortOptions(
-          current.from,
-          (path) => properties.entry(path).label,
-        )}
+        options={[
+          ...sortOptions(current.from, labelOf),
+          ...vaultSortOptions(current.from, names, {
+            labelOf,
+            typeOf: (name) => literatureNotes.propertyType(name),
+          }),
+        ]}
         unused={properties.unused.sort}
         onChange={(next) =>
           view.document.editView({ sort: next.length > 0 ? next : undefined })

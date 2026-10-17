@@ -3277,3 +3277,206 @@ describe("vault properties", () => {
     );
   });
 });
+
+describe("sorted by a vault property", () => {
+  const sortedFile = (sort: string, extra = "") => `views:
+  - type: table
+    name: Reading list
+    from: items
+    limit: 2
+${extra}    order:
+      - title
+      - vault.status
+    sort:
+${sort}`;
+  const BY_STATUS = `      - property: vault.status
+        direction: ASC
+`;
+  const FOUR = () =>
+    result([
+      itemRow("ITEMAAAA", "Ten simple rules"),
+      itemRow("ITEMBBBB", "Deep learning"),
+      itemRow("ITEMCCCC", "Attention"),
+      itemRow("ITEMDDDD", "Transformers"),
+    ]);
+  const VAULT = {
+    notes: { ITEMAAAA: "A.md", ITEMBBBB: "B.md", ITEMCCCC: "C.md" },
+    frontmatter: {
+      "A.md": { status: "unread" },
+      "B.md": { status: "reading" },
+      "C.md": { status: "done" },
+    },
+  };
+  /** The titles of the rows on screen, in order. */
+  const titles = (view: QueryView) =>
+    (view.state.getState().results?.rows ?? []).map(
+      (row) => row.values["title"],
+    );
+
+  it("asks ZotLit Query for every match up to the cap, and shows exactly `limit` rows in the vault order", async () => {
+    const { view, run, settle } = await mount([FOUR()], undefined, VAULT);
+    await act(() =>
+      view.setText(
+        sortedFile(`${BY_STATUS}      - property: dateAdded
+        direction: DESC
+`),
+      ),
+    );
+    await settle();
+
+    const request = run.mock.calls[0]![0];
+    expect(request.limit).toBe(5000);
+    expect(request.sort).toEqual([{ field: "dateAdded", direction: "desc" }]);
+    // The engine sort field comes back, though no column shows it.
+    expect(request.fields).toContain("dateAdded");
+    expect(request.fields).not.toContain("vault.status");
+    expect(titles(view)).toEqual(["Attention", "Deep learning"]);
+    expect(view.state.getState().results).toMatchObject({
+      count: 2,
+      matched: 4,
+      truncated: true,
+    });
+  });
+
+  it("puts an Item with no note or no value last, descending as well", async () => {
+    const { view, settle } = await mount([FOUR()], undefined, {
+      ...VAULT,
+      frontmatter: { ...VAULT.frontmatter, "B.md": { status: null } },
+    });
+    await act(() =>
+      view.setText(
+        sortedFile(BY_STATUS.replace("ASC", "DESC")).replace(
+          "limit: 2",
+          "limit: 10",
+        ),
+      ),
+    );
+    await settle();
+
+    expect(titles(view)).toEqual([
+      "Ten simple rules",
+      "Attention",
+      "Deep learning",
+      "Transformers",
+    ]);
+    expect(view.state.getState().results?.truncated).toBe(false);
+  });
+
+  it("keeps `limit` rows in each group after the sort", async () => {
+    const rows = [
+      itemRow("ITEMAAAA", "Ten simple rules"),
+      itemRow("ITEMBBBB", "Deep learning"),
+      itemRow("ITEMCCCC", "Attention"),
+      {
+        ...itemRow("ITEMDDDD", "Transformers"),
+        values: {
+          ...itemRow("ITEMDDDD", "Transformers").values,
+          itemType: "book",
+        },
+      },
+    ];
+    const { view, settle } = await mount([result(rows)], undefined, VAULT);
+    await act(() =>
+      view.setText(
+        sortedFile(
+          BY_STATUS,
+          `    groupBy:
+      property: itemType
+      direction: ASC
+`,
+        ).replace("limit: 2", "limit: 1"),
+      ),
+    );
+    await settle();
+
+    expect(
+      view.state
+        .getState()
+        .results?.records.map(({ row, group }) => [
+          row.values["title"],
+          group?.key,
+        ]),
+    ).toEqual([
+      ["Transformers", "book"],
+      ["Attention", "journalArticle"],
+    ]);
+  });
+
+  it("shows that more matched when ZotLit Query stops at the cap", async () => {
+    const { view, settle } = await mount(
+      [result([itemRow("ITEMAAAA", "Ten simple rules")], 5001)],
+      undefined,
+      VAULT,
+    );
+    await act(() =>
+      view.setText(sortedFile(BY_STATUS).replace("limit: 2", "limit: 10")),
+    );
+    await settle();
+
+    expect(view.state.getState().results).toMatchObject({
+      count: 1,
+      matched: 5001,
+      truncated: true,
+    });
+  });
+
+  it("sends the view's limit when no sort key is a vault property", async () => {
+    const { view, run, settle } = await mount([FOUR()], undefined, VAULT);
+    await act(() =>
+      view.setText(
+        sortedFile(`      - property: title
+        direction: ASC
+`),
+      ),
+    );
+    await settle();
+
+    expect(run.mock.calls[0]![0].limit).toBe(2);
+  });
+
+  it("runs again when the limit changes", async () => {
+    const { view, run, settle } = await mount(
+      [FOUR(), FOUR()],
+      undefined,
+      VAULT,
+    );
+    await act(() => view.setText(sortedFile(BY_STATUS)));
+    await settle();
+    await act(() =>
+      view.setText(sortedFile(BY_STATUS).replace("limit: 2", "limit: 3")),
+    );
+    await settle();
+
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(titles(view)).toEqual([
+      "Attention",
+      "Deep learning",
+      "Ten simple rules",
+    ]);
+  });
+
+  it("offers the vault properties in the Sort control of an Items view", async () => {
+    const { view, el, settle } = await mount([FOUR()], undefined, {
+      ...VAULT,
+      propertyNames: ["status", "pages"],
+    });
+    await act(() => view.setText(sortedFile(BY_STATUS)));
+    await settle();
+    await act(() =>
+      el.querySelector<HTMLElement>('[data-query-toolbar="sort"]')!.click(),
+    );
+
+    const select = document.body.querySelector<HTMLSelectElement>(
+      '[data-sort-row="vault.status"] [data-sort-property]',
+    )!;
+    const options = [...select.options].map((o) => o.value);
+    expect(options).toContain("vault.status");
+    expect(options).toContain("vault.pages");
+    expect(options).not.toContain("vault.literatureNote");
+    expect(
+      document.body
+        .querySelector('[data-sort-row="vault.status"]')
+        ?.hasAttribute("data-sort-unused"),
+    ).toBe(false);
+  });
+});
