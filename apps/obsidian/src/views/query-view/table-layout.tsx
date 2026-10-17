@@ -299,10 +299,13 @@ export function Expander({
   record,
   open,
   onToggle,
+  holdsMore = false,
 }: {
   record: TableRecord;
   open: boolean;
   onToggle: () => void;
+  /** Whether the row holds a child that Zotero does not, as Papers' Literature Note. */
+  holdsMore?: boolean;
 }) {
   // The chevron takes the icon button's own padding, and a row with nothing
   // under it holds a hidden one, so every row's text starts at one edge.
@@ -313,7 +316,7 @@ export function Expander({
       strokeWidth="var(--icon-xs-stroke-width)"
     />
   );
-  if (!expandable(record))
+  if (!holdsMore && !expandable(record))
     return (
       <span className="clickable-icon zt:invisible zt:shrink-0">{chevron}</span>
     );
@@ -402,7 +405,7 @@ function ZoteroNoteLink({
       onClick={(event) => {
         event.preventDefault();
         // The window of the link, which may be a pop-out.
-        event.currentTarget.ownerDocument.defaultView?.open(uri);
+        event.currentTarget.win.open(uri);
       }}
     >
       {children}

@@ -84,6 +84,8 @@ interface SeedItem {
   readonly pdf?: boolean;
   readonly title?: string;
   readonly tags?: readonly string[];
+  /** The Indexed Keys of the Item's Attachments, each titled by its key. */
+  readonly attachments?: readonly string[];
   /** The Item's bibliographic fields, as ZotLit Query gives them. */
   readonly fields?: Readonly<Record<string, QueryViewValue>>;
 }
@@ -160,7 +162,12 @@ const SEED: readonly SeedItem[] = [
     title: "Figures in the lab",
   },
   { key: "GGGGGGGG", libraryID: 2, collections: [] },
-  { key: "HHHHHHHH", libraryID: 3, collections: [] },
+  {
+    key: "HHHHHHHH",
+    libraryID: 3,
+    collections: [],
+    attachments: ["HPDFHPDF"],
+  },
 ];
 
 /** The Literature Notes of the vault: the Items D and A have one. */
@@ -227,16 +234,37 @@ function answer(
   );
   // The fake database holds no Annotation.
   if (request.from === "annotations") return EMPTY;
+  if (request.from === "attachments") {
+    // The Attachments of the Item the filter names, in the Libraries read.
+    const parent = /^item\.indexedKey == "(\w+)"$/.exec(request.filter ?? "");
+    const rows = items
+      .filter(({ key, libraryID }) => key === parent?.[1] && ids.has(libraryID))
+      .flatMap(({ attachments }) => attachments ?? [])
+      .map((key) => ({ indexedKey: key, values: { title: key } }));
+    return requested(
+      {
+        kind: "result",
+        result: {
+          ...EMPTY.result,
+          returnedCount: rows.length,
+          matchedCount: rows.length,
+          rows,
+        },
+      },
+      request,
+    );
+  }
   if (request.group !== "collections[]") {
     const rows = items
       .filter(
         (item) => ids.has(item.libraryID) && selects(request.filter, item),
       )
       // The engine lists an Item's Collections as sorted joined paths.
-      .map(({ key, collections, title, fields }) => ({
+      .map(({ key, collections, title, fields, attachments }) => ({
         indexedKey: key,
         values: {
           collections: collections.toSorted(),
+          ...(attachments && { "attachments[].indexedKey": [...attachments] }),
           ...(title !== undefined && { title }),
           ...fields,
         },
@@ -747,6 +775,18 @@ it("shows the libraries outside the Library Scope on request, and lists one", as
     mode: "selected",
     libraries: [ARCHIVE],
   });
+  // An Item of it expands to its Attachments, read in its Library.
+  await act(() =>
+    view.contentEl
+      .querySelector<HTMLElement>('[data-query-expand="item:HHHHHHHH"]')!
+      .click(),
+  );
+  await vi.waitFor(() =>
+    expect(
+      view.contentEl.querySelector('[data-query-papers-child="attachment"]')
+        ?.textContent,
+    ).toBe("HPDFHPDF"),
+  );
   // The selected library stays in the tree while it shows the scope alone.
   await press(view, all());
   expect(tree(view).at(-1)).toBe("Archive 1");
@@ -1182,6 +1222,23 @@ async function pressKey(
 const A = "AAAAAAAA";
 const B = "BBBBBBBB";
 const C = "CCCCCCCC";
+
+it("expands a paper whose only child is its Literature Note, to that note", async () => {
+  const { deps } = pluginData();
+  const view = await openTab(deps);
+  // D has a Literature Note, and no Attachment, Child Note or Annotation.
+  await act(() =>
+    view.contentEl
+      .querySelector<HTMLElement>('[data-query-expand="item:DDDDDDDD"]')!
+      .click(),
+  );
+  expect(
+    view.contentEl
+      .querySelector('[data-query-papers-row="DDDDDDDD"]')!
+      .querySelector('[data-query-papers-child="literature-note"]')
+      ?.textContent,
+  ).toContain("DDDDDDDD");
+});
 
 it("selects a row on a click and moves the selection with the arrow keys", async () => {
   const { deps, items } = pluginData();

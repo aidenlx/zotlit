@@ -499,14 +499,28 @@ export class QueryView extends Component implements HistorySurface {
   }
 
   /**
-   * What the Table reads beside the rows: the queries of its child rows, its
-   * notes, and the readers its links open.
+   * What the Table and Papers read beside the rows: the queries of their
+   * child rows, which read the Libraries the view reads, as a child lives in
+   * its parent's Library; their notes; and the readers their links open.
    */
   get tableDeps(): Pick<
     QueryViewDeps,
     "query" | "literatureNotes" | "readers"
   > {
-    return this.#deps;
+    const { query, literatureNotes, readers } = this.#deps;
+    return {
+      query: {
+        run: (request, signal) => {
+          const libraries = this.#host.libraries?.();
+          return query.run(
+            libraries ? { ...request, libraries } : request,
+            signal,
+          );
+        },
+      },
+      literatureNotes,
+      readers,
+    };
   }
 
   /** Settles once the cards show the last run the view started. Never rejects. */

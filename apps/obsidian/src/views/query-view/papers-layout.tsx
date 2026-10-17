@@ -246,7 +246,12 @@ function PaperRow({
         {...row}
         className="zt:flex zt:items-start zt:gap-1 zt:rounded-sm zt:px-1 zt:py-1.5 zt:hover:bg-(--background-modifier-hover) zt:data-selected:bg-(--nav-item-background-selected)"
       >
-        <Expander record={item} open={open} onToggle={() => toggle(item)} />
+        <Expander
+          record={item}
+          open={open}
+          onToggle={() => toggle(item)}
+          holdsMore={note !== null}
+        />
         <div className="zt:min-w-0 zt:flex-1">
           <div
             className="zt:line-clamp-2 zt:text-sm zt:font-(--font-medium) zt:text-foreground"
