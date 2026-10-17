@@ -66,7 +66,7 @@ import {
   waitFor,
   WINDOW_DOCUMENTS,
 } from "./obsidian-cli.ts";
-import { PAGE } from "./page-gestures.ts";
+import { PAGE, pickQueryView } from "./page-gestures.ts";
 import {
   clearVault,
   e2eVaultDir,
@@ -1031,31 +1031,31 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(before).not.toContain(created.file);
     scratchFiles.push(created.file);
     expect(created.file).toMatch(/\.zotquery$/);
-    const items = JSON.parse(
-      await cliCommand(vaultId, "zotlit:query", {
-        args: {
-          from: "items",
-          fields: "title",
-          sort: "-dateModified",
-          limit: "100",
-        },
-      }),
-    ) as ItemQueryReport;
-    expect(items.ok).toBe(true);
-    expect(items.rows!.length).toBeGreaterThan(0);
+    // The Items of the Libraries of the Library Scope, from the seed.
+    const scope = JSON.parse(
+      await cliCommand(vaultId, "zotlit:library-scope"),
+    ) as LibraryScopeReport;
+    const newest = itemsByModified(
+      (scope.available ?? []).map(
+        (entry) =>
+          LIBRARIES.find((library) => library.libraryID === entry.libraryID)!,
+      ),
+    ).slice(0, 100);
+    expect(newest.length).toBeGreaterThan(1);
     expect(created).toMatchObject({
       view: m.query_file_items_view_name(),
-      count: String(items.rows!.length),
-      rows: items.rows!.map((row) => row.indexedKey),
+      count: String(newest.length),
+      rows: newest,
       columns: [
+        // Zotero's own label for the title field.
         { path: "title", label: expect.stringContaining("Title") },
         {
           path: "creators",
-          label: expect.stringContaining(m.query_file_creators_property()),
+          label: expect.stringContaining(m.query_view_property_creators()),
         },
         {
           path: "date.year",
-          label: expect.stringContaining(m.query_file_year_property()),
+          label: expect.stringContaining(m.query_view_property_year()),
         },
         {
           path: "vault.literatureNote",
@@ -1073,7 +1073,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const annotationsView = m.query_file_annotations_view_name();
     await obEval(
       vaultId,
-      `(async()=>{${PAGE}const view=app.workspace.getMostRecentLeaf().view;press(view.contentEl.querySelector('[data-query-view-menu]'),'View menu');const row=await until('view menu rows',()=>view.contentEl.querySelector('[data-query-view-list]:popover-open [data-query-view-row=${JSON.stringify(annotationsView)}]'));press(row,${JSON.stringify(annotationsView)});return true;})()`,
+      `(async()=>{${PAGE}${pickQueryView("app.workspace.getMostRecentLeaf().view", annotationsView)}return true;})()`,
     );
     const all = await queryRows();
     expect(all.length).toBeGreaterThan(0);
@@ -7071,30 +7071,6 @@ views:
         : { type: "group", groupID: library.groupID, name: library.name };
     const selectorOf = (library: (typeof LIBRARIES)[number]) =>
       library.groupID === null ? "personal" : `group:${library.groupID}`;
-    /** The Indexed Keys of the Libraries, most recently modified first. */
-    const byModified = (libraries: readonly (typeof LIBRARIES)[number][]) =>
-      libraries
-        .flatMap((library) =>
-          ITEMS.filter((item) => item.libraryID === library.libraryID).map(
-            (item) => ({
-              dateModified: item.dateModified,
-              indexedKey:
-                library.groupID === null
-                  ? item.key
-                  : `${item.key}g${library.groupID}`,
-            }),
-          ),
-        )
-        .toSorted(
-          (a, b) =>
-            b.dateModified.localeCompare(a.dateModified) ||
-            (a.indexedKey < b.indexedKey
-              ? -1
-              : a.indexedKey > b.indexedKey
-                ? 1
-                : 0),
-        )
-        .map((item) => item.indexedKey);
 
     // Dispatched as a registered CLI command with arguments, the way an agent
     // calls it. Without a Library argument, the query reads the available
@@ -7132,7 +7108,7 @@ views:
       truncated: true,
     });
     expect(limited.rows!.map((row) => row.indexedKey)).toEqual(
-      byModified(inScope).slice(0, 3),
+      itemsByModified(inScope).slice(0, 3),
     );
 
     // A named range, in another order than the canonical one.
@@ -7158,7 +7134,7 @@ views:
       truncated: false,
     });
     expect(range.rows!.map((row) => row.indexedKey)).toEqual(
-      byModified([myLibrary!, sharedReading!]),
+      itemsByModified([myLibrary!, sharedReading!]),
     );
 
     const group = JSON.parse(
@@ -7178,7 +7154,7 @@ views:
       truncated: false,
     });
     expect(group.rows!.map((row) => row.indexedKey)).toEqual(
-      byModified([sharedReading!]),
+      itemsByModified([sharedReading!]),
     );
 
     // The Bases helpers through the shipped plugin: a regular expression and
@@ -7191,7 +7167,7 @@ views:
           (item) => item.libraryID === myLibrary!.libraryID && predicate(item),
         ).map((item) => item.key),
       );
-      return byModified([myLibrary!]).filter((key) => keys.has(key));
+      return itemsByModified([myLibrary!]).filter((key) => keys.has(key));
     };
     const fullName = (creator: (typeof ITEMS)[number]["creators"][number]) =>
       creator.fieldMode === 1
@@ -9108,6 +9084,37 @@ views:
  * Rows with `item.title`, grouped by Item as a Query View groups them: the
  * groups from A to Z by the Item's title, the rows of a group in query order.
  */
+/**
+ * The Indexed Keys of the Fixture's Items in `libraries`, most recently
+ * modified first, as ZotLit Query orders them by `-dateModified`.
+ */
+function itemsByModified(
+  libraries: readonly (typeof LIBRARIES)[number][],
+): string[] {
+  return libraries
+    .flatMap((library) =>
+      ITEMS.filter((item) => item.libraryID === library.libraryID).map(
+        (item) => ({
+          dateModified: item.dateModified,
+          indexedKey:
+            library.groupID === null
+              ? item.key
+              : `${item.key}g${library.groupID}`,
+        }),
+      ),
+    )
+    .toSorted(
+      (a, b) =>
+        b.dateModified.localeCompare(a.dateModified) ||
+        (a.indexedKey < b.indexedKey
+          ? -1
+          : a.indexedKey > b.indexedKey
+            ? 1
+            : 0),
+    )
+    .map((item) => item.indexedKey);
+}
+
 function byItem(rows: NonNullable<ItemQueryReport["rows"]>): {
   cards: string[];
   headings: string[];

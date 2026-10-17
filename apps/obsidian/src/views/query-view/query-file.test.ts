@@ -20,8 +20,6 @@ import {
 const NEW_FILE_NAMES = {
   items: "Items",
   annotations: "Annotations",
-  creators: "Creators",
-  year: "Year",
 };
 
 const TWO_VIEWS = `filters: item.itemType == "journalArticle"
@@ -460,8 +458,7 @@ describe("newQueryFileText", () => {
       problems: [],
     });
     expect(file.views[0]!.filters).toBeUndefined();
-    expect(displayName(file, "creators")).toBe("Creators");
-    expect(displayName(file, "date.year")).toBe("Year");
+    expect(file.properties).toBeUndefined();
   });
 
   it("keeps the Annotations of the whole library, grouped by Item, as the second view", () => {
