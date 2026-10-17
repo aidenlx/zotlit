@@ -490,3 +490,19 @@ it("names the tree by its heading, with no tooltip over it", async () => {
   // Obsidian shows every `aria-label` as a tooltip on hover.
   expect(pane.querySelectorAll("[aria-label]")).toHaveLength(0);
 });
+
+it("opens on the Papers Layout, offers Papers and the Table only, and opens again on the Table once the researcher switches to it", async () => {
+  const { deps } = pluginData();
+  const first = await openTab(deps);
+  expect(first.query.state.getState().view?.type).toBe("papers");
+  expect(first.query.layouts).toEqual(["papers", "table"]);
+  await act(async () => {
+    first.query.document.setViewLayout(0, "table");
+    await first.query.flush();
+    await first.query.settled;
+  });
+  await act(() => first.close());
+
+  const second = await openTab(deps);
+  expect(second.query.state.getState().view?.type).toBe("table");
+});

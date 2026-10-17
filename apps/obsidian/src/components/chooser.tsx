@@ -827,17 +827,24 @@ function Input({ placeholder, clearLabel }: ChooserInputProps) {
   );
 }
 
-export interface ChooserListProps<Row extends ChooserRow> extends Omit<
+/**
+ * What the list box is called. Required rather than optional: a list box
+ * carries no name of its own, and an unnamed one is announced as a bare
+ * "list box" — the caller is the only one that knows whether its rows are
+ * tags or colours. `aria-labelledby` names it from text the popover holds,
+ * with no hover tooltip over the list (policies/tooltips.md).
+ */
+type ChooserListName =
+  | { "aria-label": string; "aria-labelledby"?: undefined }
+  | { "aria-labelledby": string; "aria-label"?: undefined };
+
+export type ChooserListProps<Row extends ChooserRow> = ChooserListFields<Row> &
+  ChooserListName;
+
+interface ChooserListFields<Row extends ChooserRow> extends Omit<
   HTMLAttributes<HTMLDivElement>,
-  "children" | "aria-label"
+  "children" | "aria-label" | "aria-labelledby"
 > {
-  /**
-   * What the list box is called. Required rather than optional: a list box
-   * carries no name of its own, and an unnamed one is announced as a bare
-   * "list box" — the caller is the only one that knows whether its rows are
-   * tags or colours.
-   */
-  "aria-label": string;
   /**
    * Every row the caller offers, in the order it wants them read, split into
    * the groups it wants them drawn in. A group is a heading and a separator,
