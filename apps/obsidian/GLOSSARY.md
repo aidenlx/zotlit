@@ -523,7 +523,7 @@ The quick switcher action, Alt+Enter, that opens the Library View on an Item's f
 _Avoid_: reveal in library, locate
 
 **Recent**:
-The node at the top of the Library Tree that lists Items by last activity, newest first, each row with the reason it is there, such as "read 2 h ago in Obsidian". It writes a sort, not a filter, over the whole Library Scope, and is the selection of a new Library View.
+The node at the top of the Library Tree that lists Items by last activity, newest first. Once last activity is defined (#1532), each row gives the reason it is there, such as "read 2 h ago in Obsidian"; until then Recent sorts by when Zotero last edited the Item and gives no reason. It writes a sort, not a filter, over the whole Library Scope, and is the selection of a new Library View.
 _Avoid_: history, recently read (Zotero's name for its own list)
 
 ### Note content
