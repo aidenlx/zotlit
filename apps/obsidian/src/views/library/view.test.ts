@@ -821,6 +821,27 @@ it("shows the libraries outside the Library Scope on request, and lists one", as
   expect(tree(view).at(-1)).toBe("Archive 1");
 });
 
+it("lets go of Show all libraries once the Library Scope holds every Library, and offers it again when the scope narrows", async () => {
+  const { deps, rescope } = pluginData();
+  const view = await openTab(deps);
+  const all = () =>
+    view.contentEl.querySelector<HTMLElement>("[data-library-all]");
+  await press(view, all()!);
+  expect(all()?.dataset.libraryAll).toBe("on");
+  await act(async () => {
+    rescope(LIBRARIES);
+    await view.tree.settled;
+  });
+  // No Library lies outside the scope, so there is nothing to show or hide.
+  expect(all()).toBeNull();
+  await act(async () => {
+    rescope(LIBRARIES.slice(0, 1));
+    await view.tree.settled;
+  });
+  expect(all()?.dataset.libraryAll).toBe("off");
+  expect(tree(view)).not.toContain("Archive 1");
+});
+
 it("opens again on the node the tree selected", async () => {
   const { deps, run } = pluginData();
   const first = await openTab(deps);

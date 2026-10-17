@@ -241,6 +241,11 @@ export class LibraryTree extends Component {
 
   /** Read the Collections and the counts of the shown Libraries again. */
   refresh(): void {
+    // "Show all libraries" widens the Library Scope the researcher saw: once
+    // no Library lies outside the scope, there is nothing left to widen, and
+    // a later narrower scope starts unwidened.
+    if (this.store.getState().all && !this.canWiden)
+      this.store.setState({ all: false });
     this.#countUnread();
     this.#run?.abort();
     const controller = new AbortController();
