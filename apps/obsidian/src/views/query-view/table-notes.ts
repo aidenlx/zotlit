@@ -10,9 +10,13 @@ import { Keymap } from "obsidian";
 import type { App, TFile } from "obsidian";
 
 import { Effect } from "@/lib/effect";
+import { processLiveFrontMatter } from "@/lib/live-text";
+import type { LiveTextApp } from "@/lib/live-text";
 import { createNoteInteractively } from "@/services/note-feature/creation-view";
 import type { InteractiveCreationDeps } from "@/services/note-feature/creation-view";
 import type { NoteIndex } from "@/services/note-index/service";
+import type { ProfileService } from "@/services/profile/service";
+import type { TemplateService } from "@/services/template/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { LITERATURE_NOTE } from "./view-properties";
@@ -48,6 +52,21 @@ export type VaultValue =
   | { readonly note: false }
   | { readonly note: true; readonly value: unknown };
 
+/**
+ * What a write of a vault property did: `written` to the note, or nothing
+ * where the Item has no Literature Note to write to.
+ */
+export type VaultWrite = "written" | "no-note";
+
+/** An edit of the vault property `name` of the Item `itemKey` to `value`. */
+export interface VaultEdit {
+  readonly itemKey: string;
+  readonly name: string;
+  readonly value: unknown;
+  /** The note that holds the view, where a note holds it. */
+  readonly host: VaultHost | null;
+}
+
 /** What the "Literature note" column and the vault properties read and do. */
 export interface LiteratureNotes {
   /** The Literature Note of an Item, by its Indexed Key; `null` where it has none. */
@@ -73,6 +92,17 @@ export interface LiteratureNotes {
    * Note.
    */
   read(itemKey: string, name: string, host: VaultHost | null): VaultValue;
+  /**
+   * Whether the Profile of the note {@link read} reads manages `name` with
+   * the replace strategy, so that the next update of the note overwrites it.
+   */
+  managed(itemKey: string, name: string, host: VaultHost | null): boolean;
+  /**
+   * Set the vault property `name` of an Item to `value` on the note
+   * {@link read} reads, through the note's editor where one has it open.
+   * Only that key changes; `null` keeps the key with no value.
+   */
+  write(edit: VaultEdit): Promise<VaultWrite>;
   /** Open the note; a Cmd/Ctrl press opens it in a new tab. */
   open(note: LiteratureNoteLink, event: MouseEvent): void;
   /** Create the Item's Literature Note, as the usual creation does. */
@@ -80,10 +110,15 @@ export interface LiteratureNotes {
 }
 
 export interface LiteratureNotesDeps extends InteractiveCreationDeps {
-  app: App;
+  app: App & LiveTextApp;
   noteIndex: Pick<
     NoteIndex,
     "getNotesByItemKey" | "getIndexedItemKeys" | "getPropertyNames" | "on"
+  >;
+  profile: Pick<ProfileService, "profileOf">;
+  template: Pick<
+    TemplateService,
+    "getLiteratureNoteTemplate" | "frontmatterFields"
   >;
   zoteroReads: Pick<ZoteroReadsService, "ready">;
 }
@@ -92,6 +127,15 @@ export interface LiteratureNotesDeps extends InteractiveCreationDeps {
 export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
   const frontmatterOf = (path: string): Readonly<Record<string, unknown>> =>
     deps.app.metadataCache.getCache(path)?.frontmatter ?? {};
+  /** The path of the note an Item's vault properties are of. */
+  const pathOf = (itemKey: string, host: VaultHost | null) =>
+    host?.itemKey === itemKey
+      ? host.path
+      : deps.noteIndex.getNotesByItemKey(itemKey)[0]?.path;
+  const fileOf = (itemKey: string, host: VaultHost | null) => {
+    const path = pathOf(itemKey, host);
+    return path === undefined ? null : deps.app.vault.getFileByPath(path);
+  };
   return {
     find: (itemKey) => deps.noteIndex.getNotesByItemKey(itemKey)[0] ?? null,
     on: (event, listener) => deps.noteIndex.on(event, () => listener()),
@@ -108,12 +152,21 @@ export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
       return "text";
     },
     read: (itemKey, name, host) => {
-      const path =
-        host?.itemKey === itemKey
-          ? host.path
-          : deps.noteIndex.getNotesByItemKey(itemKey)[0]?.path;
+      const path = pathOf(itemKey, host);
       if (path === undefined) return { note: false };
       return { note: true, value: frontmatterOf(path)[name] ?? null };
+    },
+    managed: (itemKey, name, host) => {
+      const file = fileOf(itemKey, host);
+      return file !== null && replacedKeys(deps, file).includes(name);
+    },
+    write: async ({ itemKey, name, value, host }) => {
+      const file = fileOf(itemKey, host);
+      if (file === null) return "no-note";
+      await processLiveFrontMatter(deps.app, file, (frontmatter) => {
+        frontmatter[name] = value;
+      });
+      return "written";
     },
     open: (note, event) =>
       void deps.app.workspace.openLinkText(
@@ -131,6 +184,34 @@ export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
       if (item) await createNoteInteractively(deps, item);
     },
   };
+}
+
+/**
+ * The keys the Profile of `file` manages with the replace strategy, by the
+ * static keys of its Managed Frontmatter; none where its Profile or template
+ * cannot be read now, so that a cell stays editable rather than locked on a
+ * passing fault. A Spread Entry names no key until it runs, so it names none
+ * here.
+ */
+function replacedKeys(
+  deps: Pick<LiteratureNotesDeps, "profile" | "template">,
+  file: TFile,
+): readonly string[] {
+  try {
+    const resolved = deps.profile.profileOf(file);
+    if (!resolved.ok) return [];
+    const { document } = resolved.profile;
+    const entries =
+      document === undefined
+        ? deps.template.frontmatterFields
+        : (deps.template.getLiteratureNoteTemplate(document)?.frontmatter
+            ?.compiled ?? []);
+    return entries.flatMap(({ key, merge }) =>
+      key !== undefined && merge === "replace" ? [key] : [],
+    );
+  } catch {
+    return [];
+  }
 }
 
 /**

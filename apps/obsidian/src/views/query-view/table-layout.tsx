@@ -37,7 +37,7 @@ import type { LiteratureNotes, VaultHost } from "./table-notes";
 import { zoteroReaderUri } from "./table-readers";
 import type { ReaderTarget, TableReaders } from "./table-readers";
 import { cellText } from "./value-text";
-import { VaultCell } from "./vault-cell";
+import { VaultEditCell } from "./vault-cell";
 import type { QueryView } from "./view";
 import { LITERATURE_NOTE, useViewProperties } from "./view-properties";
 import type { PropertyEntry } from "./view-properties";
@@ -719,7 +719,7 @@ function ItemRow({
               {note ? (
                 <NoteCell notes={notes} itemKey={record.key} />
               ) : name !== null ? (
-                <VaultCell
+                <VaultEditCell
                   notes={notes}
                   itemKey={record.key}
                   name={name}
