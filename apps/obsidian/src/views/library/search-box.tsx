@@ -101,6 +101,8 @@ export class LibrarySearch extends Component {
   }
 
   override onunload(): void {
+    // A search that answers after the tab closed lists nothing.
+    this.#runs++;
     for (const root of this.#roots) root.unmount();
     this.#roots = [];
     this.#session = null;

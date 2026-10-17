@@ -706,6 +706,36 @@ it("clears the search on Escape, and lists the selected node again", async () =>
   expect(settings.current?.["library.document"]?.search).toBe("");
 });
 
+it("lists nothing more once the tab closed during a search", async () => {
+  const { deps, run } = pluginData();
+  // The worker answers once the tab has closed.
+  const gate = Promise.withResolvers<void>();
+  const open = deps.lookup.openSession.bind(deps.lookup);
+  deps.lookup = {
+    openSession: () => {
+      const session = open();
+      return {
+        ...session,
+        search: async (query, opts) => {
+          await gate.promise;
+          return session.search(query, opts);
+        },
+      };
+    },
+  };
+  const view = await openTab(deps);
+  const before = listRuns(run).length;
+  await act(async () => {
+    const input = searchBox(view);
+    input.value = "figures";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await view.close();
+    gate.resolve();
+    await view.searched;
+  });
+  expect(listRuns(run)).toHaveLength(before);
+});
+
 it("keeps the search text, and opens again on its hits", async () => {
   const { deps, settings } = pluginData();
   const first = await openTab(deps);
