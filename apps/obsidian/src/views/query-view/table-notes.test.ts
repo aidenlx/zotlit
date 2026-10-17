@@ -201,15 +201,16 @@ describe("literatureNotes vault properties", () => {
     const { notes, noteIndex, getCache } = setup(frontmatter, {
       ITEMAAAA: [{ path: "A.md" }],
     });
-    const seen: string[] = [];
-    const off = notes.on("frontmatter-changed", () =>
-      seen.push(notes.propertyType("pages")),
-    );
-
+    // Read before any listener, as a view's first render reads.
     notes.propertyType("pages");
     notes.propertyType("pages");
     notes.propertyType("other");
     expect(getCache).toHaveBeenCalledTimes(1);
+
+    const seen: string[] = [];
+    const off = notes.on("frontmatter-changed", () =>
+      seen.push(notes.propertyType("pages")),
+    );
 
     frontmatter["A.md"] = { pages: "twelve" };
     noteIndex.emit("frontmatter-changed");
@@ -546,15 +547,12 @@ describe("literatureNotes vault property writes", () => {
       { ITEMAAAA: [{ path: "A.md" }] },
       { managed: { Books: [{ key: "status", merge: "replace" }] } },
     );
-    const off = notes.on("frontmatter-changed", () => {});
-
     expect(notes.managed("ITEMAAAA", "status", null)).toBe(true);
     expect(notes.managed("ITEMAAAA", "rating", null)).toBe(false);
     expect(profileOf).toHaveBeenCalledTimes(1);
 
     noteIndex.emit("frontmatter-changed");
     notes.managed("ITEMAAAA", "status", null);
-    off();
 
     expect(profileOf).toHaveBeenCalledTimes(2);
   });

@@ -6,7 +6,7 @@
 // of strings, and no value for a cleared field.
 //
 // @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
-import type { FocusEvent, KeyboardEvent, Ref } from "react";
+import type { FocusEvent, KeyboardEvent, RefObject } from "react";
 
 import { valueText } from "@zotlit/item-query";
 import type { ProjectionJson } from "@zotlit/item-query";
@@ -103,7 +103,7 @@ export interface VaultEditorProps {
   readonly onDraft: (draft: VaultDraft) => void;
   /** End the edit, writing it or dropping it. */
   readonly onEnd: (commit: boolean, draft: VaultDraft) => void;
-  readonly inputRef: Ref<HTMLInputElement>;
+  readonly inputRef: RefObject<HTMLInputElement | null>;
 }
 
 /** The field a vault property edits in, by its type; a checkbox has none. */
@@ -155,9 +155,11 @@ export function VaultEditor({
     <div className="zt:flex zt:min-w-0 zt:flex-1 zt:flex-wrap zt:items-center zt:gap-1">
       <VaultChips
         items={draft.items}
-        onRemove={(at) =>
-          onDraft({ ...draft, items: draft.items.filter((_, i) => i !== at) })
-        }
+        onRemove={(at) => {
+          onDraft({ ...draft, items: draft.items.filter((_, i) => i !== at) });
+          // The button leaves the page, so the edit takes the focus back.
+          inputRef.current?.focus();
+        }}
       />
       <div className="zt:min-w-16 zt:flex-1">{field}</div>
     </div>

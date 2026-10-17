@@ -145,63 +145,32 @@ export interface LiteratureNotesDeps extends InteractiveCreationDeps {
 }
 
 /**
- * What the vault properties read across many notes, kept while a listener
- * watches for the changes that make it stale.
+ * What the vault properties read across many notes, kept until a note is
+ * added, changed or removed.
  */
 interface VaultMemo {
   names?: readonly string[];
   /** The type each name's first value infers. */
   inferred?: ReadonlyMap<string, VaultPropertyType>;
-  types: Map<string, VaultPropertyType>;
   /** The keys each note's Profile replaces, by path. */
   replaced: Map<string, readonly string[]>;
 }
 
-const freshMemo = (): VaultMemo => ({ types: new Map(), replaced: new Map() });
+const freshMemo = (): VaultMemo => ({ replaced: new Map() });
 
 /** The column's Literature Notes, from the Note Index and the usual creation. */
 export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
-  // Kept only while a listener watches, as only then does a change of the
-  // notes or of an assigned type clear it.
-  let memo: VaultMemo | null = null;
-  let watchers = 0;
-  let unwatch = () => {};
+  // The type Obsidian assigns is read live, so only what the notes give is
+  // kept. The Note Index lives as long as these notes, so the subscriptions
+  // need no end; they come first, so a listener reads after the clear.
+  let memo = freshMemo();
   const invalidate = () => {
-    if (memo) memo = freshMemo();
+    memo = freshMemo();
   };
-  const watch = () => {
-    if (watchers++ === 0) {
-      memo = freshMemo();
-      const offs = [
-        deps.noteIndex.on("changed", invalidate),
-        deps.noteIndex.on("frontmatter-changed", invalidate),
-        onTypesChanged(deps.app, invalidate),
-      ];
-      unwatch = () => offs.forEach((off) => off());
-    }
-    let watching = true;
-    return () => {
-      if (!watching) return;
-      watching = false;
-      if (--watchers === 0) {
-        unwatch();
-        memo = null;
-      }
-    };
-  };
-  const remember = <K, V>(
-    pick: (memo: VaultMemo) => Map<K, V>,
-    key: K,
-    read: () => V,
-  ): V => {
-    const map = memo && pick(memo);
-    if (map?.has(key)) return map.get(key)!;
-    const value = read();
-    map?.set(key, value);
-    return value;
-  };
+  deps.noteIndex.on("changed", invalidate);
+  deps.noteIndex.on("frontmatter-changed", invalidate);
   const inferredTypes = (): ReadonlyMap<string, VaultPropertyType> => {
-    if (memo?.inferred) return memo.inferred;
+    if (memo.inferred) return memo.inferred;
     const inferred = new Map<string, VaultPropertyType>();
     for (const itemKey of deps.noteIndex.getIndexedItemKeys()) {
       const note = deps.noteIndex.getNotesByItemKey(itemKey)[0];
@@ -210,7 +179,7 @@ export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
         if (!inferred.has(name) && value !== undefined && value !== null)
           inferred.set(name, inferType(value));
     }
-    if (memo) memo.inferred = inferred;
+    memo.inferred = inferred;
     return inferred;
   };
   const frontmatterOf = (path: string): Readonly<Record<string, unknown>> =>
@@ -227,45 +196,25 @@ export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
   return {
     find: (itemKey) => deps.noteIndex.getNotesByItemKey(itemKey)[0] ?? null,
     on: (event, listener) => {
-      const stop = watch();
-      // Each clears what it made stale before the listener reads again.
-      const offs = [
-        deps.noteIndex.on(event, () => {
-          invalidate();
-          listener();
-        }),
-      ];
-      if (event === "frontmatter-changed")
-        offs.push(
-          onTypesChanged(deps.app, () => {
-            invalidate();
-            listener();
-          }),
-        );
+      const off = deps.noteIndex.on(event, () => listener());
+      if (event !== "frontmatter-changed") return off;
+      // A change of an assigned type shows as a change of the frontmatter.
+      const offTypes = onTypesChanged(deps.app, listener);
       return () => {
-        offs.forEach((off) => off());
-        stop();
+        off();
+        offTypes();
       };
     },
-    propertyNames: () => {
-      if (memo?.names) return memo.names;
-      const names = deps.noteIndex
+    propertyNames: () =>
+      (memo.names ??= deps.noteIndex
         .getPropertyNames()
-        .filter((name) => `vault.${name}` !== LITERATURE_NOTE);
-      if (memo) memo.names = names;
-      return names;
+        .filter((name) => `vault.${name}` !== LITERATURE_NOTE)),
+    propertyType: (name) => {
+      const assigned = assignedWidget(deps.app, name);
+      if (assigned !== null && ASSIGNABLE.has(assigned))
+        return assigned as VaultPropertyType;
+      return inferredTypes().get(name) ?? "text";
     },
-    propertyType: (name) =>
-      remember(
-        (memo) => memo.types,
-        name,
-        (): VaultPropertyType => {
-          const assigned = assignedWidget(deps.app, name);
-          if (assigned !== null && ASSIGNABLE.has(assigned))
-            return assigned as VaultPropertyType;
-          return inferredTypes().get(name) ?? "text";
-        },
-      ),
     read: (itemKey, name, host) => {
       const path = pathOf(itemKey, host);
       if (path === undefined) return { note: false };
@@ -274,11 +223,12 @@ export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
     managed: (itemKey, name, host) => {
       const file = fileOf(itemKey, host);
       if (file === null) return false;
-      return remember(
-        (memo) => memo.replaced,
-        file.path,
-        () => replacedKeys(deps, file),
-      ).includes(name);
+      let keys = memo.replaced.get(file.path);
+      if (keys === undefined) {
+        keys = replacedKeys(deps, file);
+        memo.replaced.set(file.path, keys);
+      }
+      return keys.includes(name);
     },
     write: async ({ itemKey, name, value, host }) => {
       const found = fileOf(itemKey, host);
