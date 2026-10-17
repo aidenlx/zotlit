@@ -35,7 +35,7 @@ export function registerLibraryView(
 }
 
 /** Bring the Library View forward, opening it in a new tab when no tab holds it. */
-export async function openLibraryView(app: App): Promise<void> {
+export async function openLibraryView(app: App): Promise<LibraryView | null> {
   const { workspace } = app;
   let leaf = workspace.getLeavesOfType(LIBRARY_VIEW_TYPE)[0];
   if (!leaf) {
@@ -43,4 +43,16 @@ export async function openLibraryView(app: App): Promise<void> {
     await leaf.setViewState({ type: LIBRARY_VIEW_TYPE, active: true });
   }
   await workspace.revealLeaf(leaf);
+  return leaf.view instanceof LibraryView ? leaf.view : null;
+}
+
+/**
+ * Open the Library View on the Item `indexedKey`, selected in its first
+ * Collection: the quick switcher's "Show in Library".
+ */
+export async function showInLibrary(
+  app: App,
+  indexedKey: string,
+): Promise<void> {
+  await (await openLibraryView(app))?.reveal(indexedKey);
 }

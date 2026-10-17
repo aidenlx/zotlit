@@ -2,11 +2,12 @@
 // The Library View tab runs the query its Library View Document derives: the
 // document plugin data holds when the tab opens, and after a toolbar change,
 // the same query when the tab opens again.
-import { resetMockPlatform, setMockPlatform } from "@mock/obsidian";
+import { Menu, resetMockPlatform, setMockPlatform } from "@mock/obsidian";
 import type { App, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, expect, it, vi } from "vitest";
 
+import { formatIndexedKey } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import {
@@ -113,7 +114,6 @@ function answer(
   items: readonly SeedItem[],
   request: QueryViewRequest,
 ): QueryViewOutcome {
-  if (request.group !== "collections[]") return EMPTY;
   const named =
     request.libraries?.mode === "selected" ? request.libraries.libraries : [];
   const ids = new Set(
@@ -122,6 +122,7 @@ function answer(
     ).map(({ libraryID }) => libraryID),
   );
   const matched = items.filter(({ libraryID }) => ids.has(libraryID));
+  if (request.group !== "collections[]") return list(matched, request);
   const groups = new Map<string | null, SeedItem[]>();
   for (const item of matched)
     for (const value of item.collections.length > 0 ? item.collections : [null])
@@ -144,6 +145,49 @@ function answer(
       })),
     },
   };
+}
+
+/**
+ * The Items rows of a list request, each titled by its key, in seed order;
+ * a key-set filter keeps the Items it names. The rows hold the Collection
+ * paths in the engine's order.
+ */
+function list(
+  matched: readonly SeedItem[],
+  request: QueryViewRequest,
+): QueryViewOutcome {
+  const keySet = request.filter?.endsWith(".contains(indexedKey)")
+    ? (JSON.parse(
+        request.filter.slice(0, request.filter.indexOf("]") + 1),
+      ) as string[])
+    : null;
+  const shown = keySet
+    ? matched.filter((item) => keySet.includes(indexedKeyOf(item)))
+    : matched;
+  return {
+    kind: "result",
+    result: {
+      ...EMPTY.result,
+      returnedCount: shown.length,
+      matchedCount: shown.length,
+      rows: shown.map((item) => ({
+        indexedKey: indexedKeyOf(item),
+        values: {
+          title: `Paper ${item.key}`,
+          collections: [...item.collections].sort(),
+        },
+      })),
+    },
+  };
+}
+
+/** The Indexed Key of a seed Item, with the group of its Library. */
+function indexedKeyOf({ key, libraryID }: SeedItem): string {
+  const { selector } = LIBRARIES.find((l) => l.libraryID === libraryID)!;
+  return formatIndexedKey(
+    key,
+    selector.type === "group" ? selector.groupID : null,
+  );
 }
 
 /** Plugin data with `stored` as its Library View Document, still loading. */
@@ -175,6 +219,13 @@ function pluginData(stored?: unknown) {
     Promise.resolve(answer(database.items, request)),
   );
   const reads = createNanoEvents<{ changed: () => void }>();
+  const items = {
+    openNote: vi.fn(() => Promise.resolve()),
+    openPdf: vi.fn(() => Promise.resolve()),
+    insertCitation: vi.fn(() => Promise.resolve()),
+    copyCitationKey: vi.fn(() => Promise.resolve()),
+    showInZotero: vi.fn(),
+  };
   const off = () => () => {};
   const deps = {
     app: {
@@ -210,6 +261,8 @@ function pluginData(stored?: unknown) {
     query: { run },
     cardFocus: { hold: () => ({ [Symbol.dispose]: () => {} }) },
     annotations: { on: off, hold: () => ({ [Symbol.dispose]: () => {} }) },
+    literatureNotes: { find: () => null, on: off, open: vi.fn() },
+    items,
     settings,
   } as unknown as LibraryViewDeps;
   /** Zotero's database changes to hold `items`, and says so. */
@@ -217,7 +270,7 @@ function pluginData(stored?: unknown) {
     database.items = items;
     reads.emit("changed");
   };
-  return { deps, run, settings, change };
+  return { deps, run, settings, change, items };
 }
 
 /** The Items requests, without the count requests of the Library Tree. */
@@ -505,4 +558,188 @@ it("opens on the Papers Layout, offers Papers and the Table only, and opens agai
 
   const second = await openTab(deps);
   expect(second.query.state.getState().view?.type).toBe("table");
+});
+
+/** The Item rows on screen, by Indexed Key, the selected one marked `*`. */
+function itemRows(view: LibraryView): string[] {
+  return [
+    ...view.contentEl.querySelectorAll<HTMLElement>("[data-query-item-row]"),
+  ].map(
+    (el) =>
+      `${el.dataset.queryItemRow}${el.hasAttribute("data-selected") ? " *" : ""}`,
+  );
+}
+
+function itemRow(view: LibraryView, key: string): HTMLElement {
+  const found = view.contentEl.querySelector<HTMLElement>(
+    `[data-query-item-row="${key}"]`,
+  );
+  if (!found) throw new Error(`No Item row for ${key}`);
+  return found;
+}
+
+/**
+ * Press `key` with `modifiers` on `target`, as Obsidian hands a key to the
+ * view's Scope: the first handler that matches and answers `false` takes it.
+ * Whether one took it.
+ */
+async function pressKey(
+  view: LibraryView,
+  target: Element,
+  [key, modifiers = []]: [key: string, modifiers?: string[]],
+): Promise<boolean> {
+  const event = new KeyboardEvent("keydown", {
+    key,
+    metaKey: modifiers.includes("Mod"),
+    shiftKey: modifiers.includes("Shift"),
+    bubbles: true,
+    cancelable: true,
+  });
+  Object.defineProperty(event, "target", { value: target });
+  // The mock Scope records what it was given, which the real type hides.
+  const { handlers } = view.scope as unknown as {
+    handlers: {
+      modifiers: string[] | null;
+      key: string | null;
+      func: (event: KeyboardEvent) => unknown;
+    }[];
+  };
+  let handled = false;
+  await act(() => {
+    for (const handler of handlers) {
+      const fits =
+        (handler.key === null || handler.key === key) &&
+        (handler.modifiers === null ||
+          handler.modifiers.join() === modifiers.join());
+      if (fits && handler.func(event) === false) {
+        handled = true;
+        return;
+      }
+    }
+  });
+  return handled;
+}
+
+const A = "AAAAAAAA";
+const B = "BBBBBBBB";
+const C = "CCCCCCCC";
+
+it("selects a row on a click and moves the selection with the arrow keys", async () => {
+  const { deps, items } = pluginData();
+  const view = await openTab(deps);
+  expect(itemRows(view)).toEqual([A, B, C, "DDDDDDDD", "EEEEEEEE"]);
+  await act(() => itemRow(view, B).click());
+  expect(itemRows(view).slice(0, 3)).toEqual([A, `${B} *`, C]);
+  // A click only selects.
+  expect(items.openNote).not.toHaveBeenCalled();
+  expect(items.openPdf).not.toHaveBeenCalled();
+  expect(await pressKey(view, itemRow(view, B), ["ArrowDown"])).toBe(true);
+  expect(itemRows(view).slice(0, 3)).toEqual([A, B, `${C} *`]);
+  expect(await pressKey(view, itemRow(view, C), ["ArrowUp"])).toBe(true);
+  expect(await pressKey(view, itemRow(view, B), ["ArrowUp"])).toBe(true);
+  expect(itemRows(view).slice(0, 3)).toEqual([`${A} *`, B, C]);
+});
+
+it("answers the quick switcher's keys on the selected row: Enter the note, Mod+Enter the note in a new pane, Shift+Enter the PDF", async () => {
+  const { deps, items } = pluginData();
+  const view = await openTab(deps);
+  await act(() => itemRow(view, B).click());
+  const row = itemRow(view, B);
+  expect(await pressKey(view, row, ["Enter"])).toBe(true);
+  expect(items.openNote).toHaveBeenLastCalledWith(B, false);
+  expect(await pressKey(view, row, ["Enter", ["Mod"]])).toBe(true);
+  expect(items.openNote).toHaveBeenLastCalledWith(B, "tab");
+  expect(await pressKey(view, row, ["Enter", ["Shift"]])).toBe(true);
+  expect(items.openPdf).toHaveBeenLastCalledWith(B, false);
+  expect(await pressKey(view, row, ["Enter", ["Mod", "Shift"]])).toBe(true);
+  expect(items.openPdf).toHaveBeenLastCalledWith(B, "tab");
+  expect(items.openNote).toHaveBeenCalledTimes(2);
+  expect(items.openPdf).toHaveBeenCalledTimes(2);
+});
+
+it("leaves Enter and the arrow keys to a field, a button and the Library Tree", async () => {
+  const { deps, items } = pluginData();
+  const view = await openTab(deps);
+  await act(() => itemRow(view, B).click());
+  const field = view.contentEl.createEl("input");
+  const button =
+    itemRow(view, B).querySelector("button") ??
+    view.contentEl.createEl("button");
+  const tree = view.contentEl.querySelector("[role=tree] [data-library-node]")!;
+  for (const target of [field, button, tree]) {
+    expect(await pressKey(view, target, ["Enter"])).toBe(false);
+    expect(await pressKey(view, target, ["ArrowDown"])).toBe(false);
+  }
+  expect(items.openNote).not.toHaveBeenCalled();
+  expect(itemRows(view)[1]).toBe(`${B} *`);
+});
+
+it("opens the PDF on a double click", async () => {
+  const { deps, items } = pluginData();
+  const view = await openTab(deps);
+  await act(() => {
+    itemRow(view, C).dispatchEvent(
+      new MouseEvent("dblclick", { bubbles: true }),
+    );
+  });
+  expect(items.openPdf).toHaveBeenCalledExactlyOnceWith(C, false);
+});
+
+it("lists the row's actions in its menu, which other plugins add to", async () => {
+  const { deps, items } = pluginData();
+  const trigger = vi.fn();
+  deps.app.workspace.trigger = trigger;
+  const view = await openTab(deps);
+  await act(() => {
+    itemRow(view, C).dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+    );
+  });
+  const menu = Menu.instances.at(-1)!;
+  expect(menu.items.map((item) => [item.section, item.title])).toEqual([
+    ["open", "Open PDF"],
+    ["open", "Open PDF to the right"],
+    ["open", "Write literature note"],
+    ["insert", "Insert citation"],
+    ["clipboard", "Copy citation key"],
+    ["zotero", "Show in Zotero"],
+  ]);
+  expect(menu.items.every((item) => item.icon !== null)).toBe(true);
+  expect(trigger).toHaveBeenCalledExactlyOnceWith("zotlit:item-menu", menu, {
+    source: "library-view",
+    indexedKey: C,
+  });
+  // The menu acts on the row it opened over, which it selects.
+  expect(itemRows(view)[2]).toBe(`${C} *`);
+  menu.items[1]!.click();
+  expect(items.openPdf).toHaveBeenCalledExactlyOnceWith(C, "split");
+  menu.items[5]!.click();
+  expect(items.showInZotero).toHaveBeenCalledExactlyOnceWith(C);
+});
+
+it("shows an Item in its first Collection, selected", async () => {
+  const { deps, run } = pluginData();
+  const view = await openTab(deps);
+  await act(() => view.reveal(A));
+  // A is filed in Chapter 1 and Chapter 2 of Thesis; Chapter 1 comes first.
+  expect(listRuns(run).at(-1)).toMatchObject({
+    libraries: { mode: "selected", libraries: [PERSONAL] },
+    filter: 'collections.within("Thesis/Chapter 1")',
+  });
+  expect(header(view)).toBe("Thesis / Chapter 1 · 1 paper");
+  expect(itemRows(view)).toContain(`${A} *`);
+});
+
+it("shows an Item filed in no Collection in its Library", async () => {
+  const { deps, run } = pluginData();
+  const view = await openTab(deps);
+  await press(view, row(view, THESIS));
+  const g = formatIndexedKey("GGGGGGGG", 4815);
+  await act(() => view.reveal(g));
+  expect(listRuns(run).at(-1)!.libraries).toEqual({
+    mode: "selected",
+    libraries: [LAB],
+  });
+  expect(listRuns(run).at(-1)).not.toHaveProperty("filter");
+  expect(itemRows(view)).toContain(`${g} *`);
 });

@@ -15,6 +15,8 @@ import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
 import type { QueryViewValue } from "@/services/item-query/query-view";
 
+import { useItemRow } from "./item-rows";
+import type { ItemRowGestures } from "./item-rows";
 import type { QueryLayout } from "./layouts";
 import { RecordGroupHeading, useRecordGroups } from "./record-rows";
 import {
@@ -186,6 +188,7 @@ export function PapersLayout({ view }: { view: QueryView }) {
                     readers={readers}
                     expanded={expanded}
                     toggle={toggle}
+                    gestures={view.rows}
                   />
                 );
               })}
@@ -209,7 +212,13 @@ function PaperRow({
   readers,
   expanded,
   toggle,
-}: Expansion & { item: TableRecord; notes: LiteratureNotes }) {
+  gestures,
+}: Expansion & {
+  item: TableRecord;
+  notes: LiteratureNotes;
+  gestures: ItemRowGestures | undefined;
+}) {
+  const row = useItemRow(gestures, item.key);
   const open = expanded.has(id(item));
   const { values } = item;
   const note = useNotePath(notes, item.key);
@@ -228,7 +237,10 @@ function PaperRow({
       className="zt:border-b-(length:--border-width) zt:border-border"
       data-query-papers-row={item.key}
     >
-      <div className="zt:flex zt:items-start zt:gap-1 zt:rounded-sm zt:px-1 zt:py-1.5 zt:hover:bg-(--background-modifier-hover)">
+      <div
+        {...row}
+        className="zt:flex zt:items-start zt:gap-1 zt:rounded-sm zt:px-1 zt:py-1.5 zt:hover:bg-(--background-modifier-hover) zt:data-selected:bg-(--nav-item-background-selected)"
+      >
         <Expander record={item} open={open} onToggle={() => toggle(item)} />
         <div className="zt:min-w-0 zt:flex-1">
           <div
