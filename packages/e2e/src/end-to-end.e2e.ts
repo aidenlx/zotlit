@@ -1446,6 +1446,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const opened = await papersWhen(
       (papers) =>
         papers.phase === "ready" &&
+        papers.count !== null &&
         papers.papers.length === Number(papers.count),
     );
     expect(opened).toMatchObject({
@@ -1625,6 +1626,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(offered).toEqual(["papers", "table"]);
     const drawnTable = (papers: Papers) =>
       papers.phase === "ready" &&
+      papers.count !== null &&
       papers.layout === null &&
       papers.tableRows === Number(papers.count);
     expect(await papersWhen(drawnTable)).toMatchObject({
