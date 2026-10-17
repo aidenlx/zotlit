@@ -84,6 +84,8 @@ const OPERATOR_LABELS: Record<FilterOperator, Label> = {
   after: (m) => m.workbench_filter_op_after(),
   "on-or-before": (m) => m.workbench_filter_op_on_or_before(),
   "on-or-after": (m) => m.workbench_filter_op_on_or_after(),
+  "is-true": (m) => m.workbench_filter_op_is_true(),
+  "is-false": (m) => m.workbench_filter_op_is_false(),
 };
 
 /** A Collection is a member, not a text: "is" reads better than "contains". */
@@ -188,7 +190,13 @@ function RowValue({
   const host = useWorkbenchHost();
   const part = useParts("match");
   const { operator } = condition;
-  if (operator === "is-empty" || operator === "is-not-empty") return null;
+  // These operators test no value the row holds.
+  if (
+    operator === "is-empty" ||
+    operator === "is-not-empty" ||
+    field.type === "boolean"
+  )
+    return null;
   const suggestions =
     field.kind === "tags"
       ? values.tags
@@ -270,6 +278,7 @@ const FIELD_ICONS: Record<FilterField["type"], WorkbenchIcon> = {
   choice: "property-text",
   number: "property-number",
   date: "property-date",
+  boolean: "property-checkbox",
 };
 
 /** The theme's icon of a field's value type. */

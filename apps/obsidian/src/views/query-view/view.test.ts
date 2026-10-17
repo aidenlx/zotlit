@@ -1191,6 +1191,42 @@ it("offers the vault properties in the Filter popover of an Items view, in brack
   );
 });
 
+it("filters by a checkbox vault property as true or false from the Filter popover", async () => {
+  const written: string[] = [];
+  const { view, el, settle } = await mount(
+    [result([itemRow("ITEMAAAA", "Ten simple rules")])],
+    (text) => written.push(text),
+    {
+      propertyNames: ["done"],
+      notes: { ITEMAAAA: "A.md" },
+      frontmatter: { "A.md": { done: true } },
+    },
+  );
+  await act(() =>
+    view.setText(`views:
+  - type: table
+    name: Reading list
+    from: items
+    filters: 'vault["done"] == true'
+`),
+  );
+  await settle();
+
+  const [done] = section(el, "view").querySelectorAll("[data-condition-row]");
+  const [kind, operator] = done!.querySelectorAll<HTMLSelectElement>("select");
+  expect(kind!.selectedOptions[0]?.textContent).toBe("done");
+  expect(operator!.selectedOptions[0]?.textContent).toBe(
+    m.workbench_filter_op_is_true(),
+  );
+  // A boolean has no value to type.
+  expect(done!.querySelector('input[aria-label="Value"]')).toBeNull();
+  await act(() => chooseValue(operator!, "is-false"));
+  await settle();
+  expect(written.at(-1)).toContain(
+    'filters:\n      and:\n        - vault["done"] == false',
+  );
+});
+
 it("names a filter condition by the Display Name of its field", async () => {
   const { view, el, settle } = await mount(
     [result([row("ANNOTBBB")])],

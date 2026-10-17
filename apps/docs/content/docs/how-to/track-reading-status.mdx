@@ -148,7 +148,7 @@ Keep each condition on a vault property as its own row, in a group of <UiLabel n
 - Inside a group of <UiLabel name={m.workbench_match_match_any()} /> or <UiLabel name={m.workbench_match_match_none()} />. The row shows <UiLabel name={m.query_view_vault_filter_nested()} />
 - In one expression with a Zotero property, such as `vault.rating > 3 && date.year >= 2020`. The row shows <UiLabel name={m.query_view_vault_filter_mixed()} /> Split it into two rows.
 
-A checkbox property in the filter editor compares text, so it matches no note. Select <UiLabel name={m.workbench_match_edit_as_expression()} /> on the row and type the condition, such as `vault.done == true`, instead.
+For a checkbox property, choose <UiLabel name={m.workbench_filter_op_is_true()} /> or <UiLabel name={m.workbench_filter_op_is_false()} />. The condition reads `vault["done"] == true` as an expression.
 
 <UiLabel name={m.query_view_search()} /> in the Table does not search vault
 properties. In the List and Cards layouts, it does.

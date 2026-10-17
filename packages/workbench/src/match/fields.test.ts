@@ -209,3 +209,38 @@ describe("a field the host adds", () => {
     },
   );
 });
+
+describe("a boolean field", () => {
+  const done = {
+    kind: "custom:done",
+    path: "vault.done",
+    type: "boolean",
+    label: "done",
+  } as const;
+  const fields = [...filterFields("items"), done];
+
+  it("offers is true and is false, and starts a row at is true", () => {
+    expect(freshFilterRow(done)).toEqual({
+      kind: done.kind,
+      operator: "is-true",
+      value: "",
+      values: [],
+    });
+  });
+
+  it.each([
+    ["is-true", "vault.done == true"],
+    ["is-false", "vault.done == false"],
+  ] as const)(
+    "writes %s as %s, with no value, and reads it back",
+    (operator, text) => {
+      const row = { kind: done.kind, operator, value: "", values: [] };
+      expect(formatFilterRow(row, fields)).toBe(text);
+      expect(parseFilterRow(text, fields)).toEqual(row);
+    },
+  );
+
+  it("reads a comparison with a string as no row of the field", () => {
+    expect(parseFilterRow('vault.done == "true"', fields)).toBeNull();
+  });
+});
