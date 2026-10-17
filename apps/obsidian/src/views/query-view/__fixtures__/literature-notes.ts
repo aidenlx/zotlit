@@ -8,6 +8,8 @@ export function noLiteratureNotes(): LiteratureNotes {
     propertyNames: () => [],
     propertyType: () => "text",
     read: () => ({ note: false }),
+    managed: () => false,
+    write: () => Promise.resolve("no-note"),
     open: () => {},
     create: () => Promise.resolve(),
   };

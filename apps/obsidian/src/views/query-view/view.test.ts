@@ -33,7 +33,12 @@ import { QUERY_FILE_DATASETS, serializeQueryFile } from "./query-file";
 import type { QueryFileDataset } from "./query-file";
 import { formulaIssuesOf } from "./results";
 import { inferType } from "./table-notes";
-import type { VaultHost, VaultPropertyType, VaultValue } from "./table-notes";
+import type {
+  VaultEdit,
+  VaultHost,
+  VaultPropertyType,
+  VaultValue,
+} from "./table-notes";
 import { QueryView, RERUN_DELAY_MS } from "./view";
 import type { QueryViewDeps } from "./view";
 
@@ -143,6 +148,7 @@ async function mount(
   {
     notes = {},
     frontmatter = {},
+    managed = {},
     propertyNames = [],
     sourcePath = "query-files/Reading.zotquery",
     layout,
@@ -154,6 +160,8 @@ async function mount(
     notes?: Record<string, string>;
     /** The frontmatter of each note, by path. */
     frontmatter?: Record<string, Record<string, unknown>>;
+    /** The keys each note's Profile manages with replace, by path. */
+    managed?: Record<string, string[]>;
     /** The names the vault properties take. */
     propertyNames?: string[];
     /** The note or file that holds the view. */
@@ -203,6 +211,17 @@ async function mount(
         return { note: true, value: frontmatter[path]?.[name] ?? null };
       },
     ),
+    managed: (itemKey: string, name: string, host: VaultHost | null) => {
+      const path = host?.itemKey === itemKey ? host.path : notes[itemKey];
+      return path !== undefined && (managed[path]?.includes(name) ?? false);
+    },
+    write: vi.fn(async ({ itemKey, name, value, host }: VaultEdit) => {
+      const path = host?.itemKey === itemKey ? host.path : notes[itemKey];
+      if (path === undefined) return "no-note" as const;
+      frontmatter[path] = { ...frontmatter[path], [name]: value };
+      notesChanged.emit("frontmatter-changed");
+      return "written" as const;
+    }),
     open: vi.fn(),
     create: vi.fn(async (itemKey: string) => {
       notes[itemKey] = `${itemKey}.md`;
@@ -3184,6 +3203,172 @@ describe("vault properties", () => {
         ["Ten simple rules", "reading, to cite"],
         ["Deep learning", ""],
       ],
+    });
+  });
+
+  describe("edited in place in the Table", () => {
+    /** One row of Item ITEMAAAA, whose note `A.md` has `status: unread`. */
+    async function editable(options: Parameters<typeof mount>[2] = {}) {
+      const mounted = await mount(
+        [
+          result([
+            itemRow("ITEMAAAA", "Ten simple rules"),
+            itemRow("ITEMBBBB", "Deep learning"),
+          ]),
+        ],
+        undefined,
+        {
+          notes: { ITEMAAAA: "A.md" },
+          frontmatter: { "A.md": { status: "unread" } },
+          ...options,
+        },
+      );
+      await act(() => mounted.view.setText(VAULT_FILE));
+      await mounted.settle();
+      const cell = (itemKey: string) =>
+        mounted.el.querySelector<HTMLElement>(
+          `[data-query-key="${itemKey}"] [data-query-vault-cell]`,
+        )!;
+      const input = () =>
+        mounted.el.querySelector<HTMLInputElement>("[data-query-vault-input]");
+      const type = (text: string) =>
+        act(() => {
+          const field = input()!;
+          field.value = text;
+          field.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+      const press = (key: string) =>
+        act(() => {
+          input()!.dispatchEvent(
+            new KeyboardEvent("keydown", { key, bubbles: true }),
+          );
+        });
+      return { ...mounted, cell, input, type, press };
+    }
+
+    it("enters edit on a click, which goes no further than the cell, and commits on Enter", async () => {
+      const { el, cell, input, type, press, literatureNotes } =
+        await editable();
+      const outside = vi.fn();
+      el.addEventListener("click", outside);
+
+      await act(() => cell("ITEMAAAA").click());
+      expect(input()?.value).toBe("unread");
+      expect(outside).not.toHaveBeenCalled();
+
+      await type("read");
+      await press("Enter");
+
+      expect(literatureNotes.write).toHaveBeenCalledWith({
+        itemKey: "ITEMAAAA",
+        name: "status",
+        value: "read",
+        host: null,
+      });
+      expect(input()).toBeNull();
+      expect(vaultCells(el)[0]).toEqual(["value", "read"]);
+    });
+
+    it("commits when the cell loses focus", async () => {
+      const { cell, input, type, literatureNotes } = await editable();
+
+      await act(() => cell("ITEMAAAA").click());
+      await type("read");
+      await act(() => {
+        input()!.dispatchEvent(new FocusEvent("blur"));
+        input()!.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+      });
+
+      expect(literatureNotes.write).toHaveBeenCalledTimes(1);
+      expect(literatureNotes.write).toHaveBeenCalledWith({
+        itemKey: "ITEMAAAA",
+        name: "status",
+        value: "read",
+        host: null,
+      });
+    });
+
+    it("cancels on Escape, and writes nothing", async () => {
+      const { el, cell, input, type, press, literatureNotes } =
+        await editable();
+
+      await act(() => cell("ITEMAAAA").click());
+      await type("read");
+      await press("Escape");
+
+      expect(input()).toBeNull();
+      expect(vaultCells(el)[0]).toEqual(["value", "unread"]);
+      expect(literatureNotes.write).not.toHaveBeenCalled();
+    });
+
+    it("writes no value, keeping the key, when the cell is cleared", async () => {
+      const { el, cell, type, press, literatureNotes } = await editable();
+
+      await act(() => cell("ITEMAAAA").click());
+      await type("");
+      await press("Enter");
+
+      expect(literatureNotes.write).toHaveBeenCalledWith({
+        itemKey: "ITEMAAAA",
+        name: "status",
+        value: null,
+        host: null,
+      });
+      expect(vaultCells(el)[0]).toEqual(["empty", ""]);
+    });
+
+    it("writes nothing when the text is unchanged", async () => {
+      const { cell, press, literatureNotes } = await editable();
+
+      await act(() => cell("ITEMAAAA").click());
+      await press("Enter");
+
+      expect(literatureNotes.write).not.toHaveBeenCalled();
+    });
+
+    it("keeps a key the note's Profile replaces read-only, with the managed marker", async () => {
+      const { cell, input, literatureNotes } = await editable({
+        managed: { "A.md": ["status"] },
+      });
+
+      expect(
+        cell("ITEMAAAA").querySelector("[data-query-vault-managed]"),
+      ).not.toBeNull();
+      await act(() => cell("ITEMAAAA").click());
+
+      expect(input()).toBeNull();
+      expect(literatureNotes.write).not.toHaveBeenCalled();
+    });
+
+    it("leaves a row with no note read-only", async () => {
+      const { cell, input } = await editable();
+
+      await act(() => cell("ITEMBBBB").click());
+
+      expect(input()).toBeNull();
+    });
+
+    it("writes the note that holds a Query Block for its own Item", async () => {
+      const { cell, type, press, literatureNotes } = await editable({
+        frontmatter: {
+          "A.md": { status: "unread" },
+          "A (copy).md": { status: "unread" },
+        },
+        sourcePath: "A (copy).md",
+        context: () => ({ item: "ITEMAAAA" }),
+        contextSource: "note",
+      });
+
+      await act(() => cell("ITEMAAAA").click());
+      await type("read");
+      await press("Enter");
+
+      expect(literatureNotes.write).toHaveBeenCalledWith({
+        itemKey: "ITEMAAAA",
+        name: "status",
+        value: "read",
+        host: { path: "A (copy).md", itemKey: "ITEMAAAA" },
+      });
     });
   });
 
