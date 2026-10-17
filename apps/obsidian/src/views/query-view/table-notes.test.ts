@@ -18,19 +18,42 @@ vi.mock("@/views/annot-view/register", () => ({
 function setup(
   frontmatter: Record<string, Record<string, unknown>>,
   index: Record<string, { path: string }[]>,
-  names: readonly string[] = [],
+  {
+    names = [],
+    types,
+  }: {
+    names?: readonly string[];
+    /** The types Obsidian assigns, by name; none for a build without them. */
+    types?: Record<string, string>;
+  } = {},
 ) {
   const noteIndex = new NoteIndexStub(index, names);
+  const typesChanged = new Set<() => void>();
+  const getCache = vi.fn((path: string) =>
+    path in frontmatter ? { frontmatter: frontmatter[path] } : null,
+  );
   const deps = {
     app: {
-      metadataCache: {
-        getCache: (path: string) =>
-          path in frontmatter ? { frontmatter: frontmatter[path] } : null,
-      },
+      metadataCache: { getCache },
+      ...(types && {
+        metadataTypeManager: {
+          getAssignedWidget: (name: string) => types[name] ?? null,
+          on: (_event: string, cb: () => void) => {
+            typesChanged.add(cb);
+            return cb;
+          },
+          offref: (cb: () => void) => typesChanged.delete(cb),
+        },
+      }),
     },
     noteIndex,
   } as unknown as LiteratureNotesDeps;
-  return { notes: literatureNotes(deps), noteIndex };
+  /** Assign `widget` to `name`, as the Properties panel does. */
+  const setType = (name: string, widget: string) => {
+    types![name] = widget;
+    for (const cb of typesChanged) cb();
+  };
+  return { notes: literatureNotes(deps), noteIndex, getCache, setType };
 }
 
 describe("literatureNotes vault properties", () => {
@@ -87,7 +110,11 @@ describe("literatureNotes vault properties", () => {
   });
 
   it("lists the property names of the Literature Notes, without the Literature Note Property", () => {
-    const { notes } = setup({}, {}, ["literatureNote", "rating", "status"]);
+    const { notes } = setup(
+      {},
+      {},
+      { names: ["literatureNote", "rating", "status"] },
+    );
 
     expect(notes.propertyNames()).toEqual(["rating", "status"]);
   });
@@ -107,6 +134,100 @@ describe("literatureNotes vault properties", () => {
     expect(notes.propertyType("due")).toBe("date");
     expect(notes.propertyType("title")).toBe("text");
     expect(notes.propertyType("missing")).toBe("text");
+  });
+
+  it("infers a date and time without seconds, as Obsidian does", () => {
+    const { notes } = setup(
+      { "A.md": { at: "2024-05-01T10:30", stamp: "2024-05-01T10:30:00" } },
+      { ITEMAAAA: [{ path: "A.md" }] },
+    );
+
+    expect(notes.propertyType("at")).toBe("datetime");
+    expect(notes.propertyType("stamp")).toBe("text");
+  });
+
+  it("takes the type Obsidian assigns a property over the one its values show", () => {
+    const { notes } = setup(
+      { "A.md": { pages: "12", due: "soon", tags2: "x", stamp: "a" } },
+      { ITEMAAAA: [{ path: "A.md" }] },
+      {
+        types: {
+          pages: "number",
+          due: "date",
+          tags2: "multitext",
+          stamp: "datetime",
+          read: "checkbox",
+          cover: "file",
+        },
+      },
+    );
+
+    expect(notes.propertyType("pages")).toBe("number");
+    expect(notes.propertyType("due")).toBe("date");
+    expect(notes.propertyType("tags2")).toBe("multitext");
+    expect(notes.propertyType("stamp")).toBe("datetime");
+    expect(notes.propertyType("read")).toBe("checkbox");
+    // A type ZotLit has no editor for falls back to the values.
+    expect(notes.propertyType("cover")).toBe("text");
+  });
+
+  it("reads the notes once for the types until a frontmatter changes", () => {
+    const frontmatter: Record<string, Record<string, unknown>> = {
+      "A.md": { pages: 12 },
+    };
+    const { notes, noteIndex, getCache } = setup(frontmatter, {
+      ITEMAAAA: [{ path: "A.md" }],
+    });
+    const seen: string[] = [];
+    const off = notes.on("frontmatter-changed", () =>
+      seen.push(notes.propertyType("pages")),
+    );
+
+    notes.propertyType("pages");
+    notes.propertyType("pages");
+    notes.propertyType("other");
+    expect(getCache).toHaveBeenCalledTimes(1);
+
+    frontmatter["A.md"] = { pages: "twelve" };
+    noteIndex.emit("frontmatter-changed");
+    off();
+
+    // A listener reads the change, not the type from before it.
+    expect(seen).toEqual(["text"]);
+  });
+
+  it("reads the notes again when a Literature Note is added", () => {
+    const frontmatter: Record<string, Record<string, unknown>> = {};
+    const index: Record<string, { path: string }[]> = {};
+    const { notes, noteIndex } = setup(frontmatter, index);
+    const off = notes.on("changed", () => {});
+
+    expect(notes.propertyType("pages")).toBe("text");
+    frontmatter["A.md"] = { pages: 12 };
+    index.ITEMAAAA = [{ path: "A.md" }];
+    noteIndex.emit("changed");
+
+    expect(notes.propertyType("pages")).toBe("number");
+    off();
+  });
+
+  it("tells a change of an assigned type as a frontmatter change, and reads it", () => {
+    const { notes, setType } = setup(
+      { "A.md": { pages: "12" } },
+      { ITEMAAAA: [{ path: "A.md" }] },
+      { types: {} },
+    );
+    const seen: string[] = [];
+    const off = notes.on("frontmatter-changed", () =>
+      seen.push(notes.propertyType("pages")),
+    );
+
+    expect(notes.propertyType("pages")).toBe("text");
+    setType("pages", "number");
+    off();
+    setType("pages", "text");
+
+    expect(seen).toEqual(["number"]);
   });
 
   it("tells a frontmatter change of a Literature Note", () => {
@@ -131,6 +252,17 @@ describe("literatureNotes vault property writes", () => {
   ) {
     const host = createObsidianHost(files);
     const noteIndex = new NoteIndexStub(index);
+    const profileOf = vi.fn((file?: TFile) => {
+      const stamp = file
+        ? host.metadataCache.getFileCache(file)?.frontmatter?.["zotlit-profile"]
+        : undefined;
+      return {
+        ok: true,
+        profile: {
+          document: stamp === undefined ? undefined : `${stamp}.md`,
+        },
+      };
+    });
     const deps = {
       app: {
         ...host.app,
@@ -142,19 +274,7 @@ describe("literatureNotes vault property writes", () => {
       },
       noteIndex,
       profile: {
-        profileOf: (file?: TFile) => {
-          const stamp = file
-            ? host.metadataCache.getFileCache(file)?.frontmatter?.[
-                "zotlit-profile"
-              ]
-            : undefined;
-          return {
-            ok: true,
-            profile: {
-              document: stamp === undefined ? undefined : `${stamp}.md`,
-            },
-          };
-        },
+        profileOf,
       },
       template: {
         frontmatterFields: managed.legacy ?? [],
@@ -164,7 +284,7 @@ describe("literatureNotes vault property writes", () => {
         },
       },
     } as unknown as LiteratureNotesDeps;
-    return { host, notes: literatureNotes(deps) };
+    return { host, noteIndex, profileOf, notes: literatureNotes(deps) };
   }
 
   it("writes only the edited key of the Item's Literature Note", async () => {
@@ -296,6 +416,25 @@ describe("literatureNotes vault property writes", () => {
     expect(notes.managed("ITEMCCCC", "rating", null)).toBe(true);
     // No note: nothing manages the key.
     expect(notes.managed("ITEMDDDD", "status", null)).toBe(false);
+  });
+
+  it("reads a note's Profile once until a note changes", () => {
+    const { notes, noteIndex, profileOf } = vault(
+      { "A.md": "---\nzotlit-profile: Books\n---\n" },
+      { ITEMAAAA: [{ path: "A.md" }] },
+      { Books: [{ key: "status", merge: "replace" }] },
+    );
+    const off = notes.on("frontmatter-changed", () => {});
+
+    expect(notes.managed("ITEMAAAA", "status", null)).toBe(true);
+    expect(notes.managed("ITEMAAAA", "rating", null)).toBe(false);
+    expect(profileOf).toHaveBeenCalledTimes(1);
+
+    noteIndex.emit("frontmatter-changed");
+    notes.managed("ITEMAAAA", "status", null);
+    off();
+
+    expect(profileOf).toHaveBeenCalledTimes(2);
   });
 
   it("reads the host note's own Profile for its Item", () => {

@@ -3,8 +3,8 @@
 // lacks the key or holds null, and a placeholder where the Item has no note
 // to read it from. A cell reads again when the note's frontmatter changes,
 // with no new run of the view's query. In the Table a cell of a row with a
-// note edits in place, as text; a key the note's Profile replaces on each
-// update stays read-only.
+// note edits in place with the editor of the property's type; a key the
+// note's Profile replaces on each update stays read-only.
 //
 // @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
 import {
@@ -16,7 +16,6 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import type { KeyboardEvent } from "react";
 
 import { valueText } from "@zotlit/item-query";
 import type { ProjectionJson } from "@zotlit/item-query";
@@ -27,7 +26,20 @@ import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { cn } from "@/lib/utils";
 
-import type { LiteratureNotes, VaultHost, VaultValue } from "./table-notes";
+import type {
+  LiteratureNotes,
+  VaultHost,
+  VaultPropertyType,
+  VaultValue,
+} from "./table-notes";
+import {
+  VaultChips,
+  VaultEditor,
+  draftOf,
+  listItems,
+  valueOf,
+} from "./vault-editors";
+import type { VaultDraft } from "./vault-editors";
 
 /** The vault property `name` of the Item `itemKey`, and where it is read. */
 export interface VaultCellProps {
@@ -112,6 +124,18 @@ export function useVaultValue({
   return JSON.parse(snapshot) as VaultValue;
 }
 
+/** The type of the vault property `name`, as it is now. */
+export function useVaultType(
+  notes: Pick<LiteratureNotes, "on" | "propertyType">,
+  name: string,
+): VaultPropertyType {
+  const subscribe = useCallback(
+    (listener: () => void) => onVaultChange(notes, listener),
+    [notes],
+  );
+  return useSyncExternalStore(subscribe, () => notes.propertyType(name));
+}
+
 /** One vault cell on screen. */
 export function VaultCellContent({ value }: { value: VaultValue }) {
   const state = vaultState(value);
@@ -135,25 +159,19 @@ export function VaultCell(props: VaultCellProps) {
 const logger = getLogger("QueryView");
 
 /**
- * The value a cell's text writes: the text, or no value where it is cleared,
- * so the key stays with no value as the Properties panel leaves it.
- */
-function textValue(text: string): string | null {
-  return text === "" ? null : text;
-}
-
-/**
  * The vault cell of `name` for the Item `itemKey` in the Table: a click
- * edits it as text where the Item has a note and its Profile does not
- * replace the key. Enter or leaving the field writes it; Escape drops it.
- * The click stops at the cell, so the gesture of the row or the block that
- * holds the view does not run.
+ * edits it with the editor of its type where the Item has a note and its
+ * Profile does not replace the key, and toggles a checkbox. Enter or
+ * leaving the field writes it; Escape drops it. The click stops at the
+ * cell, so the gesture of the row or the block that holds the view does
+ * not run.
  */
 export function VaultEditCell(props: VaultCellProps) {
   const { notes, itemKey, name, host } = props;
   const value = useVaultValue(props);
+  const type = useVaultType(notes, name);
   const managed = value.note && notes.managed(itemKey, name, host);
-  const [draft, setDraft] = useState<string | null>(null);
+  const [draft, setDraft] = useState<VaultDraft | null>(null);
   // Set when Enter or Escape ends the edit, so the blur that follows the
   // field leaving the page does not end it again.
   const ended = useRef(false);
@@ -163,17 +181,10 @@ export function VaultEditCell(props: VaultCellProps) {
     if (editing) input.current?.focus();
   }, [editing]);
   const editable = value.note && !managed;
-  const begin = () => {
-    ended.current = false;
-    setDraft(vaultText(value));
-  };
-  const end = (commit: boolean) => {
-    if (ended.current || draft === null) return;
-    ended.current = true;
-    setDraft(null);
-    if (!commit || draft === vaultText(value)) return;
+  const current = value.note ? value.value : null;
+  const write = (next: unknown) =>
     notes
-      .write({ itemKey, name, value: textValue(draft), host })
+      .write({ itemKey, name, value: next, host })
       .catch((error: unknown) => {
         logger.warn("The Query View could not write a vault property", {
           error,
@@ -181,32 +192,62 @@ export function VaultEditCell(props: VaultCellProps) {
         });
         new BaseNotice(m.query_view_vault_write_failed({ name }));
       });
+  const begin = () => {
+    ended.current = false;
+    setDraft(draftOf(type, current));
   };
-  const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    event.stopPropagation();
-    if (event.key === "Enter") {
-      event.preventDefault();
-      end(true);
-    } else if (event.key === "Escape") {
-      event.preventDefault();
-      end(false);
-    }
+  const end = (commit: boolean, edited: VaultDraft) => {
+    if (ended.current) return;
+    ended.current = true;
+    setDraft(null);
+    const next = valueOf(type, edited);
+    // Text that is no value of the type, or the value unchanged, writes nothing.
+    if (!commit || next === undefined) return;
+    if (
+      JSON.stringify(next) ===
+      JSON.stringify(valueOf(type, draftOf(type, current)))
+    )
+      return;
+    void write(next);
   };
+  const checkbox = type === "checkbox";
   return (
     <div
       data-query-vault-cell=""
+      data-query-vault-name={name}
       className={cn(
         "zt:flex zt:min-w-0 zt:items-center zt:gap-1",
-        editable && draft === null && "zt:cursor-text",
+        editable && draft === null && !checkbox && "zt:cursor-text",
       )}
       onClick={(event) => {
         event.stopPropagation();
-        if (editable && draft === null) begin();
+        if (editable && draft === null && !checkbox) begin();
       }}
     >
       {draft === null ? (
         <>
-          <VaultCellContent value={value} />
+          {!value.note ? (
+            <VaultCellContent value={value} />
+          ) : checkbox ? (
+            <input
+              data-query-vault-checkbox=""
+              type="checkbox"
+              className="task-list-item-checkbox zt:m-0"
+              aria-label={m.query_view_vault_edit({ name })}
+              checked={current === true}
+              disabled={!editable}
+              onChange={() => void write(current !== true)}
+            />
+          ) : type === "multitext" ? (
+            <span
+              data-query-vault={vaultState(value)}
+              className="zt:flex zt:min-w-0 zt:flex-wrap zt:gap-1"
+            >
+              <VaultChips items={listItems(current)} />
+            </span>
+          ) : (
+            <VaultCellContent value={value} />
+          )}
           {managed && (
             <span
               data-query-vault-managed=""
@@ -219,16 +260,13 @@ export function VaultEditCell(props: VaultCellProps) {
           )}
         </>
       ) : (
-        <input
-          data-query-vault-input=""
-          type="text"
-          className="zt:w-full zt:min-w-0"
-          aria-label={m.query_view_vault_edit({ name })}
-          value={draft}
-          ref={input}
-          onInput={(event) => setDraft(event.currentTarget.value)}
-          onKeyDown={onKeyDown}
-          onBlur={() => end(true)}
+        <VaultEditor
+          type={type}
+          name={name}
+          draft={draft}
+          onDraft={setDraft}
+          onEnd={end}
+          inputRef={input}
         />
       )}
     </div>
