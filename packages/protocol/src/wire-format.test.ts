@@ -169,6 +169,7 @@ describe("wire format", () => {
       noteStatus: noteStatusWireSurface(),
       zoteroNotes: zoteroNotesWireSurface(),
       updateManyUrl: updateManyUrlWireSurface(),
+      // oxlint-disable-next-line vitest/no-large-snapshots -- the whole wire surface is the contract; a change bumps PROTOCOL_VERSION.
     }).toMatchInlineSnapshot(`
       {
         "exploreUrl": {

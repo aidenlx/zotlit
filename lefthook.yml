@@ -16,6 +16,9 @@ pre-commit:
     messages:
       glob: "*.{json,js,jsx,ts,tsx,mjs,mts,mdx,xhtml,html}"
       run: mise exec -- node packages/scripts/scripts/check-messages.ts
+    snapshots:
+      glob: "*.snap"
+      run: mise exec -- node packages/scripts/scripts/snapshot-size.ts {staged_files}
     worker-responsiveness:
       priority: 100
       glob:

@@ -80,6 +80,11 @@ jobs:
       - name: Lint
         run: pnpm lint -- -f github
 
+      # oxlint's jest/no-large-snapshots reads inline snapshots only; this
+      # checks the entries of every tracked .snap file.
+      - name: Snapshot size check
+        run: node packages/scripts/scripts/snapshot-size.ts
+
       # Vitest enables its GitHub Actions reporter from GITHUB_ACTIONS.
       # Each runner uses its own defaults: @zotlit/config uses node --test.
       #
