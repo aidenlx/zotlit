@@ -1,0 +1,144 @@
+// The Query View's text, as the Library View Document derives it: the tree
+// node and the Reading State facets become the filters for all views, a
+// search becomes its ranked key set, and the sort, the Layout and the Visible
+// Properties pass through to the one Items view. A toolbar change comes back
+// the other way through `documentWithText`.
+//
+// @see apps/obsidian/docs/adr/0071-the-library-tree-writes-filters.md
+// @see apps/obsidian/docs/adr/0072-search-enters-the-library-view-as-an-ordered-key-set.md
+import type { FilterTree } from "@zotlit/filter-expression";
+import { nameDictionary } from "@zotlit/item-query";
+
+import type { LibraryScope } from "@/services/library-scope/scope";
+import {
+  parseQueryFile,
+  serializeQueryFile,
+} from "@/views/query-view/query-file";
+
+import { LIBRARY_LAYOUTS } from "./document";
+import type {
+  LibraryLayout,
+  LibraryViewDocument,
+  ReadingStateFacet,
+} from "./document";
+
+/** The names the derived text shows: its view's name and two Display Names. */
+export interface LibraryViewLabels {
+  readonly papers: string;
+  readonly creators: string;
+  readonly year: string;
+}
+
+/**
+ * A condition on a row that the vault answers, not the query: the view
+ * applies it to the rows the query returns (#1531 decides whether the
+ * engine takes it over).
+ */
+export type VaultCondition = "has-literature-note" | "no-literature-note";
+
+/** What the Library View runs for its document. */
+export interface LibraryViewQuery {
+  /** The Query File text the Query View reads. */
+  readonly text: string;
+  /** The Libraries the query reads: the Library of the tree node. */
+  readonly libraries: LibraryScope;
+  /**
+   * The Indexed Keys of a search, best match first: the order the view shows
+   * the rows in, in place of the sort. `null` while the view browses.
+   */
+  readonly rank: readonly string[] | null;
+  /** The conditions every row passes in the vault, after the query. */
+  readonly vault: readonly VaultCondition[];
+}
+
+/** What each facet asks of an Item: a filter, a condition in the vault, or both. */
+const FACETS: Readonly<
+  Record<ReadingStateFacet, { filter?: string; vault?: VaultCondition }>
+> = {
+  // `lastRead` joins this once ZotLit Query reads it (#1532, #1533).
+  unread: { filter: "annotations.isEmpty()", vault: "no-literature-note" },
+  annotated: { filter: "annotations.length > 0" },
+  "has-note": { vault: "has-literature-note" },
+  pdf: {
+    filter:
+      'attachments.filter(value.fileType == "pdf" && value.exists).length > 0',
+  },
+};
+
+/**
+ * The query of `doc`.
+ * @param keys the ranked Indexed Keys that the search of `doc.search` found;
+ * absent while the view browses.
+ */
+export function libraryViewQuery(
+  doc: LibraryViewDocument,
+  { labels, keys }: { labels: LibraryViewLabels; keys?: readonly string[] },
+): LibraryViewQuery {
+  const { node } = doc;
+  const filters: string[] = [];
+  if (node.kind === "collection")
+    filters.push(`collections.within(${JSON.stringify(node.path.join("/"))})`);
+  const vault: VaultCondition[] = [];
+  for (const facet of doc.facets) {
+    const { filter, vault: condition } = FACETS[facet];
+    if (filter !== undefined) filters.push(filter);
+    if (condition !== undefined) vault.push(condition);
+  }
+  if (keys !== undefined)
+    filters.push(
+      `[${keys.map((key) => JSON.stringify(key)).join(", ")}].contains(indexedKey)`,
+    );
+  const text = serializeQueryFile({
+    ...(filters.length > 0 && { filters: filterTree(filters) }),
+    properties: nameDictionary(
+      new Map([
+        ["creators", { displayName: labels.creators }],
+        ["date.year", { displayName: labels.year }],
+      ]),
+    ),
+    views: [
+      {
+        type: doc.layout,
+        name: labels.papers,
+        from: "items",
+        ...(doc.sort.length > 0 && { sort: doc.sort }),
+        order: doc.order,
+        problems: [],
+        source: {},
+      },
+    ],
+    problems: [],
+    source: {},
+  });
+  return {
+    text,
+    libraries: { mode: "selected", libraries: [node.library] },
+    rank: keys ?? null,
+    vault,
+  };
+}
+
+/**
+ * `doc` with what a toolbar change set in `text`: the sort, the Layout and
+ * the Visible Properties of its view. The tree node, the facets and the
+ * search stay as `doc` holds them.
+ */
+export function documentWithText(
+  doc: LibraryViewDocument,
+  text: string,
+): LibraryViewDocument {
+  const view = parseQueryFile(text).views[0];
+  if (!view) return doc;
+  return {
+    ...doc,
+    sort: view.sort ?? [],
+    layout: LIBRARY_LAYOUTS.includes(view.type as LibraryLayout)
+      ? (view.type as LibraryLayout)
+      : doc.layout,
+    order: view.order ?? [],
+  };
+}
+
+function filterTree(filters: readonly string[]): FilterTree {
+  return filters.length === 1 ? filters[0]! : { and: [...filters] };
+}
