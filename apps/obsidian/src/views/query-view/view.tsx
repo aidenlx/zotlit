@@ -49,6 +49,7 @@ import { datasetSpec, grouping } from "./datasets";
 import { FilterButton } from "./filter-popover";
 import type { FilterValues } from "./filter-popover";
 import { GroupEditor } from "./group-control";
+import type { ItemRowGestures } from "./item-rows";
 import { annotationsLayoutOptions, layoutOf } from "./layouts";
 import { ListLayout } from "./list-layout";
 import { PAPERS_FIELDS, PapersLayout } from "./papers-layout";
@@ -179,6 +180,13 @@ export interface QueryViewHost {
    * @see apps/obsidian/docs/adr/0074-the-papers-layout-is-a-query-view-layout-the-library-view-offers-with-the-table.md
    */
   layouts?: readonly string[];
+  /**
+   * What a click, a double click, the context menu and a drag do on an Item
+   * row of the Papers and Table Layouts. Absent: the rows take no gesture.
+   *
+   * @see apps/obsidian/docs/adr/0073-library-view-rows-act-as-quick-switcher-results.md
+   */
+  rows?: ItemRowGestures;
   /**
    * Why `row` is in the list, such as "edited in Zotero" on the Library
    * View's Recent; the Papers reading-state line ends with it. `null`: no
@@ -623,6 +631,11 @@ export class QueryView extends Component implements HistorySurface {
   /** The Layout types the host offers; `undefined` for every one. */
   get layouts(): readonly string[] | undefined {
     return this.#host.layouts;
+  }
+
+  /** What the host does on the gestures over an Item row. */
+  get rows(): ItemRowGestures | undefined {
+    return this.#host.rows;
   }
 
   /** Why `row` is in the list, as the host says; `null` for no reason. */

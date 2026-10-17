@@ -61,6 +61,8 @@ declare module "obsidian" {
     /** Native link and pin state, serialized by the workspace (Obsidian 1.14). */
     group: string | null;
     pinned: boolean;
+    /** Native epoch milliseconds the leaf was last active (Obsidian 1.14). */
+    activeTime: number;
   }
   interface PopoverSuggest<T> {
     /**

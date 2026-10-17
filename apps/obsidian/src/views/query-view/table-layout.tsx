@@ -27,6 +27,8 @@ import type {
 import type { QueryService } from "@/services/item-query/service";
 import { useAnnotStore } from "@/views/annot-view/store";
 
+import { useItemRow } from "./item-rows";
+import type { ItemRowGestures } from "./item-rows";
 import type { QueryLayout } from "./layouts";
 import type { ColumnSizes } from "./query-file";
 import { CellContent } from "./record-rows";
@@ -690,6 +692,7 @@ export function TableLayout({ view }: { view: QueryView }) {
                 expanded={expanded}
                 toggle={toggle}
                 readers={readers}
+                gestures={view.rows}
               />
             );
           })}
@@ -708,6 +711,7 @@ function ItemRow({
   expanded,
   toggle,
   readers,
+  gestures,
 }: {
   heading: ReactNode;
   record: TableRecord;
@@ -718,12 +722,18 @@ function ItemRow({
   expanded: ReadonlyMap<string, ChildState>;
   toggle: (record: TableRecord) => void;
   readers: TableReaders;
+  gestures: ItemRowGestures | undefined;
 }) {
+  const row = useItemRow(gestures, record.key);
   return (
     <>
       {heading}
       <tr
-        className={ROW}
+        {...row}
+        className={cn(
+          ROW,
+          "zt:data-selected:bg-(--nav-item-background-selected)",
+        )}
         data-query-table-row="item"
         data-query-key={record.key}
       >

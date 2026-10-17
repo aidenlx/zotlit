@@ -24,6 +24,8 @@ export interface QuickSwitchDeps {
   >;
   settings: SettingsService;
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
+  /** Open the Library View with the Item selected. */
+  showInLibrary: (indexedKey: string) => Promise<void>;
 }
 
 export function registerQuickSwitch(
