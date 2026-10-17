@@ -23,11 +23,13 @@ Whether ZotLit sees your latest Zotero changes depends on how it reads the datab
 
 <Callout type="warn" title="On Windows, and on Linux with ext4">
   On Windows, and on Linux filesystems that cannot clone files, such as ext4,
-  ZotLit reads only the main database file. While Zotero is open, it can keep
-  your recent changes in a separate log file before it writes them to the main
-  file. Until then, the Library View and the notes you update can show older
-  data. The Companion asks Zotero to write those changes to the main file after
-  each change, so install it on these systems.
+  ZotLit reads only the main database file, `zotero.sqlite`. Zotero 10 and later
+  save each change first to a log file beside it, `zotero.sqlite-wal`, and copy
+  the changes into the main file later: when the log grows large, when Zotero is
+  idle, and when Zotero closes. Until then, the Library View and the notes you
+  update can show older data. The Companion has Zotero copy the changes into the
+  main file shortly after each change, so install it on these systems. Zotero 9
+  normally writes changes straight to the main file.
 </Callout>
 
 On macOS, and on Linux filesystems that can clone files, such as Btrfs and reflink-enabled XFS, ZotLit reads a copy of the database that already holds your recent changes. You can skip the Companion there unless you want its Zotero menu actions or live updates.

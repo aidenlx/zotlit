@@ -88,7 +88,7 @@ A result takes five chords, listed along the bottom of the modal:
 | `Ctrl+Shift+Enter` (`Cmd+Shift+Enter` on macOS) | The same, in a new pane.                                         |
 | `Alt+Enter` (`Option+Enter` on macOS)           | Shows the item in the [Library View](#library-view).             |
 
-`Alt+Enter` opens the Library View on the item's first collection, or on its library when the item is in no collection, and selects its row. It clears the view's search and turns off its reading-state filters, so the row is always in the list.
+`Alt+Enter` opens the Library View on the item's first collection, or on its library when the item is in no collection, and selects its row. It clears the view's search and turns off its reading-state filters, so nothing hides the row. When the item falls beyond the view's limit of 1,000 papers, nothing is selected and a notice says so.
 
 The two PDF chords run <UiLabel name={m.command_open_pdf_name()} /> on the selected result, listed under [Literature note actions](#literature-note-actions).
 
@@ -426,7 +426,7 @@ Four entries join the pane menu outside the **zotlit** section. <UiLabel name={m
 
 <Command name={m.command_open_welcome_name()} />
 
-Opens the [Library View](#library-view) and shows the setup banner above it again, after you dismissed it. The banner holds the setup steps and, after a v1-to-v2 upgrade, the link to the migration guide.
+Opens the [Library View](#library-view) and shows the setup banner above it, even after you dismissed it or setup is complete. The banner holds the setup steps and, after a v1-to-v2 upgrade, the link to the migration guide.
 
 | Entry point     | Details                                                                                                                         |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------- |
