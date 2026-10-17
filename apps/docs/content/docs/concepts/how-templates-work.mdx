@@ -84,7 +84,7 @@ Literature notes work the same way through the built-in Default profile, which y
 
 Template files from ZotLit 2.1 still load and still render, so you do not have to convert them to keep working. That covers `zotlit-note.liquid.md`, `zotlit-content.liquid.md`, `zotlit-annotation.liquid.md`, `zotlit-filename.liquid.md`, the two citation files, and any other `zotlit-<name>.(liquid|eta).md` that served as a partial.
 
-ZotLit offers the conversion once in the Welcome view, as <UiLabel name={m.welcome_template_conversion_title()} />, and repeats it as a reminder row at the top of settings with a <UiLabel name={m.settings_template_conversion_reminder_action()} /> action. One pass folds the note, content, filename, and annotation files into one profile document, folds the two citation files into one citation text, and gives every remaining file its own partial document.
+ZotLit offers the conversion in the setup banner above the Library View, as <UiLabel name={m.welcome_template_conversion_title()} />, and repeats it as a reminder row at the top of settings with a <UiLabel name={m.settings_template_conversion_reminder_action()} /> action. One pass folds the note, content, filename, and annotation files into one profile document, folds the two citation files into one citation text, and gives every remaining file its own partial document.
 
 Before it writes anything, ZotLit renders both citation variants and the note, update, filename, and annotation output, and compares them byte for byte against what your old files produced. A mismatch converts nothing. The old files then go to Obsidian's configured trash, so you can recover them.
 
