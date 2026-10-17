@@ -9,7 +9,7 @@ import { Command } from "@/components/command";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-The Library View is a tab that lists your Zotero library inside Obsidian. Use it to find a paper and open its PDF, write its literature note, or cite it. The view only reads your library: nothing you do in it changes Zotero.
+The Library View is a tab that lists your Zotero library inside Obsidian. Use it to find a paper and open its PDF, write its literature note, or cite it. Browsing, searching, and opening papers only read your library. The one change the view makes in Zotero is an annotation you edit in the [Reading Card](#reading-card).
 
 The Library View reads the Zotero database directly. Zotero does not need to be open, and you do not need ZotLit Companion, the Zotero add-on, to browse, search, or open a PDF.
 
@@ -81,7 +81,7 @@ Turn on several filters to show only the papers that match all of them. The filt
 
 The list draws each paper in the <UiLabel name={m.library_view_papers_view_name()} /> layout by default: the title, then the creators, year, and publication. A third line shows the paper's reading state, with the colors of its annotations, the number of annotations, and whether it has a literature note. Expand a paper to see its attachments, its child notes, its annotations, and its literature note.
 
-To see the papers as a table, open the view menu at the start of the toolbar, which is labeled with the current layout, and choose **Table**. The table shows a column for the literature note, with a link to the note or a button that creates it. Choose <UiLabel name={m.library_view_papers_view_name()} /> to switch back.
+To see the papers as a table, open the view menu at the start of the toolbar, which is labeled with the current layout, and choose <UiLabel name={m.query_view_layout_table()} />. The table shows a column for the literature note, with a link to the note or a button that creates it. Choose <UiLabel name={m.library_view_papers_view_name()} /> to switch back.
 
 The toolbar also sorts the list and picks which properties the table shows. The view lists at most 1,000 papers at a time. When a selection holds more, the toolbar's result count says how many it holds in all.
 
@@ -134,7 +134,7 @@ In the [literature note quick switcher](/docs/reference/commands#quick-switcher)
 
 ## Save the view as a query file [#save-as-query-file]
 
-To keep what the Library View shows as a vault file, open the view menu and choose <UiLabel name={m.annot_view_save_as_query_file()} />. Enter a name and a folder. ZotLit writes a [query file](/docs/how-to/use-query-files) and opens it in a tab.
+To keep what the Library View shows as a vault file, open the view menu and choose <UiLabel name={m.annot_view_save_as_query_file()} />. The name starts as the library or collection you selected; change it if you like, and choose a folder. The dialog also says which parts of the view the file leaves out. ZotLit writes a [query file](/docs/how-to/use-query-files) and opens it in a tab.
 
 The file keeps the library or collection you selected, the sort, the layout, and the table columns, and it lists at most 1,000 papers, as the view does. Some parts of the view do not carry over:
 

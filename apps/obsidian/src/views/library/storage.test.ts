@@ -17,10 +17,13 @@ import { SettingsService } from "@/services/settings/service";
 import { QueryView } from "@/views/query-view/view";
 import type { QueryViewDeps } from "@/views/query-view/view";
 
-import { DEFAULT_LIBRARY_VIEW_DOCUMENT } from "./document";
+import {
+  DEFAULT_LIBRARY_VIEW_DOCUMENT,
+  libraryViewQuery,
+  withNode,
+} from "./document";
 import type { LibraryViewDocument } from "./document";
-import { libraryViewQuery } from "./query-text";
-import { libraryViewStorage } from "./storage";
+import { LibraryViewStorage } from "./storage";
 
 vi.mock("zustand", () => import("../__fixtures__/zustand"));
 
@@ -102,13 +105,17 @@ async function openLibrary() {
     cardFocus: { hold: () => ({ [Symbol.dispose]: () => {} }) },
     annotations: { on: off, hold: () => ({ [Symbol.dispose]: () => {} }) },
   } as unknown as QueryViewDeps;
-  const storage = libraryViewStorage(settings);
+  // The view's text is the toolbar's, which the storage takes changes from.
+  const toolbar = { text: (): string | null => null };
+  const storage = new LibraryViewStorage(settings, () => toolbar.text());
+  storage.load();
   const query = new QueryView(deps, {
     scope: new Scope(),
     sourcePath: () => "",
     context: () => undefined,
-    ...storage,
+    save: () => storage.save(),
   });
+  toolbar.text = () => query.document.text;
   const el = document.body.createDiv();
   query.load();
   query.render(el);
@@ -193,7 +200,7 @@ it("keeps Recent as the tree selection with its sort, newest change first", asyn
     });
     await query.flush();
   });
-  await storage.select({ kind: "recent" });
+  await storage.change((doc) => withNode(doc, { kind: "recent" }));
   expect(saved(plugin)).toEqual({
     ...STORED,
     node: { kind: "recent" },

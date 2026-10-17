@@ -719,12 +719,12 @@ describe("saving a toolbar edit", () => {
     const fixed = await mount([], undefined, { displayOnly: true });
     await act(() => fixed.view.setText(FILE));
     await fixed.settle();
+    // A host that keeps only these has a search of its own (ADR 0072).
     expect(toolbar(fixed.el)).toEqual([
       "data-query-view-menu",
       "data-query-results",
       "sort",
       "data-query-properties",
-      "search",
     ]);
   });
 

@@ -360,6 +360,11 @@ describe("ZoteroReads source", () => {
       ["refreshing", "refresh-failed", "refreshing"],
       before,
     );
+    // The same database failed to refresh: the one serving is still the one
+    // the settings name.
+    expect(
+      source.events.find((e) => e._tag === "refresh-failed"),
+    ).toMatchObject({ moved: false });
   });
 
   it("keeps the active client when the new source is not a Zotero database", async () => {
@@ -382,6 +387,11 @@ describe("ZoteroReads source", () => {
         expect.stringContaining("This file is not a Zotero database."),
       ),
     );
+    // The client still serving reads another database than the settings
+    // name, which a subscriber that comes later learns from the seed too.
+    expect(
+      source.events.find((e) => e._tag === "refresh-failed"),
+    ).toMatchObject({ moved: true });
   });
 
   it("refreshes when the read mode or database path changes, not on an auto-refresh change", async () => {

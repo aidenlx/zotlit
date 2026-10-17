@@ -64,8 +64,8 @@ export interface ReadingCardDeps extends QueryViewDeps {
 }
 
 export interface ReadingCardHost {
-  /** The row menu of the Item, at the pointer. */
-  menu: (indexedKey: string, event: MouseEvent) => void;
+  /** The row menu of the Item, under the button that asks for it. */
+  menu: (indexedKey: string, button: HTMLElement) => void;
   /** Show the Item's Annotations in the sidebar Annotation View. */
   openInSidebar: (indexedKey: string) => void;
   onEscape: NonNullable<QueryViewHost["layout"]>["onEscape"];
@@ -132,6 +132,8 @@ export class ReadingCard extends Component {
     this.register(
       this.#deps.literatureNotes.on("changed", () => this.#noteChanged()),
     );
+    // Zotero's database changed: the Item may read otherwise now.
+    this.register(this.#deps.reads.on("changed", () => this.#reread()));
     this.register(() => this.#read?.abort());
   }
 
@@ -159,6 +161,16 @@ export class ReadingCard extends Component {
     }
     this.query.setText(readingCardQueryText());
     this.query.contextChanged();
+    const controller = new AbortController();
+    this.#read = controller;
+    this.#reading = this.#readItem(key, controller.signal);
+  }
+
+  /** Read the Item shown again, keeping its fields on screen until the read lands. */
+  #reread(): void {
+    const { key } = this.store.getState();
+    if (key === null) return;
+    this.#read?.abort();
     const controller = new AbortController();
     this.#read = controller;
     this.#reading = this.#readItem(key, controller.signal);
@@ -232,6 +244,7 @@ function CardBody({ card }: { card: ReadingCard }) {
   const count = useStore(card.query.state, (s) =>
     s.phase === "ready" ? (s.results?.count ?? 0) : null,
   );
+  const failed = useStore(card.query.state, (s) => s.phase === "failed");
   const titleId = useUniqueId();
   if (key === null) return null;
   const { items, host } = card;
@@ -285,8 +298,8 @@ function CardBody({ card }: { card: ReadingCard }) {
             icon="more-horizontal"
             {...tooltipAttrs(m.library_view_card_more())}
             data-library-card-action="more"
-            onClick={(event: ReactMouseEvent) =>
-              host.menu(key, event.nativeEvent)
+            onClick={(event: ReactMouseEvent<HTMLElement>) =>
+              host.menu(key, event.currentTarget)
             }
           />
         </div>
@@ -318,7 +331,15 @@ function CardBody({ card }: { card: ReadingCard }) {
           </Button>
         )}
       </div>
-      {count === 0 ? (
+      {failed ? (
+        <div
+          role="alert"
+          className="zt:px-(--size-4-3) zt:py-(--size-4-2) zt:text-(length:--font-ui-small) zt:text-(--text-error)"
+          data-library-card-failed=""
+        >
+          {m.library_view_card_failed()}
+        </div>
+      ) : count === 0 ? (
         <div
           className="zt:px-(--size-4-3) zt:py-(--size-4-2) zt:text-(length:--font-ui-small) zt:text-(--text-faint)"
           data-library-card-empty=""

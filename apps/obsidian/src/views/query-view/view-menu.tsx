@@ -267,7 +267,7 @@ function ViewList({ view }: { view: QueryView }) {
   return (
     <Chooser.List
       groups={groups}
-      aria-label={m.query_view_views()}
+      label={m.query_view_views()}
       emptyLabel={m.query_view_no_views_match()}
     >
       {(row) => {

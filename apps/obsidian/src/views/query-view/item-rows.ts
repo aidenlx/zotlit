@@ -12,6 +12,8 @@ import type { StoreApi } from "zustand/vanilla";
 export interface ItemRowGestures {
   /** The Indexed Key of the selected row; `null` for none. */
   readonly selection: StoreApi<{ readonly key: string | null }>;
+  /** The Indexed Key of the row the list shows first; `null` for none. */
+  first(): string | null;
   /** A click on the row: select it. */
   select(key: string): void;
   /** A double click on the row, away from its links and buttons. */
@@ -35,7 +37,10 @@ function onControl(event: { target: EventTarget; currentTarget: Element }) {
 
 /**
  * The attributes and handlers of the Item row `key`; none where the host
- * gives no gestures. The selected row is the one keyboard focus stops on.
+ * gives no gestures. Keyboard focus stops on one row: the selected one, or
+ * the first while none is selected. The selected row is the list's current
+ * one to assistive technology: a row holds links and buttons, which an
+ * option of a list box may not.
  */
 export function useItemRow(
   gestures: ItemRowGestures | undefined,
@@ -43,13 +48,15 @@ export function useItemRow(
 ): HTMLAttributes<HTMLElement> & { "data-selected"?: "" } {
   const selected = useSyncExternalStore(
     (listener) => gestures?.selection.subscribe(listener) ?? (() => {}),
-    () => gestures?.selection.getState().key === key,
+    () => gestures?.selection.getState().key ?? null,
   );
   if (!gestures) return {};
+  const stop = selected === null ? gestures.first() === key : selected === key;
   return {
     [ITEM_ROW_ATTRIBUTE]: key,
-    "data-selected": selected ? "" : undefined,
-    tabIndex: selected ? 0 : -1,
+    "data-selected": selected === key ? "" : undefined,
+    "aria-current": selected === key ? "true" : undefined,
+    tabIndex: stop ? 0 : -1,
     draggable: true,
     onClick: () => gestures.select(key),
     onDoubleClick: (event: MouseEvent<HTMLElement>) => {

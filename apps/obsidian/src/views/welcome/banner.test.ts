@@ -143,6 +143,9 @@ it("keeps the Migration Prompt of a v1 upgrade on screen until a dismissal ackno
   settings.update({ "template.folder": "templates" });
   const el = await open(deps);
   expect(heading(el, m.welcome_migration_title())).toBe(true);
+  // An upgrade from v1 on Zotero 10 needs ZotLit Companion to read recent changes.
+  expect(heading(el, m.welcome_companion_title())).toBe(true);
+  expect(el.textContent).toContain(m.companion_zotero_10_guidance());
   await act(() => dismissButton(el).click());
   expect(el.textContent).toBe("");
   expect(settings.current?.["release.migration-pending"]).toBe(false);

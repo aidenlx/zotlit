@@ -11,7 +11,9 @@ import { createStore } from "zustand/vanilla";
 
 import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
+import { runtime } from "@/lib/i18n/generated/runtime";
 import { getLogger } from "@/lib/log";
+import { showMenuAtButton } from "@/lib/menu";
 import type { LibraryScope } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import { inTextEntry } from "@/services/pdf-annotation-editor/capability-affordance";
@@ -26,25 +28,33 @@ import { WelcomeBanner } from "@/views/welcome/banner";
 import type { WelcomeBannerDeps } from "@/views/welcome/banner";
 import { unavailable } from "@/views/welcome/connection";
 
-import { LIBRARY_LAYOUTS } from "./document";
-import type { LibraryNode, ReadingStateFacet } from "./document";
+import {
+  LIBRARY_LAYOUTS,
+  libraryViewQuery,
+  libraryViewQueryFileLeftOut,
+  libraryViewQueryFileText,
+  vaultPass,
+  withFacets,
+  withNode,
+  withSearch,
+} from "./document";
+import type {
+  LibraryNode,
+  LibraryViewLabels,
+  LibraryViewQuery,
+  ReadingStateFacet,
+} from "./document";
 import { ZOTLIT_MARK_ICON } from "./icon";
 import type { ItemActions } from "./item-actions";
 import { createItemDrag, refuseItemDrop } from "./item-drag";
-import { LibraryTree } from "./library-tree";
+import { FACET_LABELS, LibraryTree } from "./library-tree";
 import type { LibraryTreeDeps } from "./library-tree";
 import { ZoteroNotFound } from "./not-found";
-import {
-  libraryViewQuery,
-  libraryViewQueryFileText,
-  vaultPass,
-} from "./query-text";
-import type { LibraryViewLabels, LibraryViewQuery } from "./query-text";
 import { ReadingCard } from "./reading-card";
 import { rowMenu } from "./row-menu";
 import { LibrarySearch } from "./search-box";
 import type { LibrarySearchDeps, SearchFound } from "./search-box";
-import { libraryViewStorage } from "./storage";
+import { LibraryViewStorage } from "./storage";
 import { libraryOf, sameLibrary } from "./tree";
 import "./style.css";
 
@@ -93,8 +103,10 @@ export class LibraryView extends ItemView {
   readonly search: LibrarySearch;
   /** The Reading Card of the selected row. */
   readonly card: ReadingCard;
+  /** The Welcome View banner above the tree and the list. ADR 0076. */
+  readonly welcome: WelcomeBanner;
   readonly #deps: LibraryViewDeps;
-  readonly #storage: ReturnType<typeof libraryViewStorage>;
+  readonly #storage: LibraryViewStorage;
   /** The not-found state and the Welcome View banner, while the tab is open. */
   readonly #parts: Component[] = [];
   /** What the tab runs: the query of the document as it opened. */
@@ -109,8 +121,8 @@ export class LibraryView extends ItemView {
   #saving: Promise<void> = Promise.resolve();
   /** Keep the search text once typing pauses. */
   readonly #keep = debounce(
-    (text: string) => {
-      this.#saving = this.#storage.search(text).catch((error: unknown) => {
+    () => {
+      this.#saving = this.#storage.save().catch((error: unknown) => {
         logger.warn("The Library View could not keep the search", { error });
       });
     },
@@ -124,22 +136,35 @@ export class LibraryView extends ItemView {
     this.scope = new Scope(deps.app.scope);
     this.contentEl.addClass("zt-root", "zt-library-view");
     this.contentEl.dataset.libraryView = "";
-    this.#storage = libraryViewStorage(deps.settings);
+    // The banner takes at most half the tab.
+    this.welcome = new WelcomeBanner(
+      deps.welcome,
+      this.contentEl.createDiv({
+        cls: "zt:max-h-1/2 zt:shrink-0 zt:overflow-y-auto",
+      }),
+    );
+    this.#storage = new LibraryViewStorage(
+      deps.settings,
+      () => this.query.document.text,
+    );
     const drag = createItemDrag({ app: deps.app, actions: deps.items });
+    const menuOf = (key: string) =>
+      rowMenu(
+        {
+          actions: deps.items,
+          literatureNotes: deps.literatureNotes,
+          workspace: deps.app.workspace,
+        },
+        key,
+      );
     const rows: ItemRowGestures = {
       selection: this.selection,
       select: (key) => this.selection.setState({ key }),
+      first: () =>
+        this.query.state.getState().results?.records[0]?.row.indexedKey ?? null,
       open: (key, event) =>
         void deps.items.openPdf(key, Keymap.isModEvent(event)),
-      menu: (key, event) =>
-        rowMenu(
-          {
-            actions: deps.items,
-            literatureNotes: deps.literatureNotes,
-            workspace: deps.app.workspace,
-          },
-          key,
-        ).showAtMouseEvent(event),
+      menu: (key, event) => menuOf(key).showAtMouseEvent(event),
       drag,
     };
     this.register(() => drag.cancel());
@@ -168,12 +193,16 @@ export class LibraryView extends ItemView {
       rows,
       // Recent says why each row is there; the query runs once the tab set it.
       reason: () => this.#shown!.reason,
-      save: this.#storage.save,
+      // The empty list names the search or the facets, which the derived
+      // text holds as filters the researcher never wrote.
+      empty: () => this.search.empty(this.tree.store),
+      // The document took the change from the toolbar's text already.
+      save: () => this.#storage.save(),
       saveAs: () => void this.#saveAs(),
       layout: { onEscape },
     });
     this.card = new ReadingCard(deps, {
-      menu: (key, event) => rows.menu(key, event),
+      menu: (key, button) => showMenuAtButton(menuOf(key), button),
       openInSidebar: (key) => void showItemInAnnotView(deps.app, key),
       onEscape,
     });
@@ -183,8 +212,12 @@ export class LibraryView extends ItemView {
     });
     this.search = new LibrarySearch(deps, {
       node: () => this.tree.store.getState().node,
+      scope: () => this.#scope(),
       found: (found) => this.#show(found),
-      keep: (text) => this.#keep(text),
+      keep: (text) => {
+        this.#storage.set((doc) => withSearch(doc, text));
+        this.#keep();
+      },
       // ZotLit cannot read Zotero's database: the search box asks nothing.
       readable: () => !unavailable(deps.welcome),
     });
@@ -215,9 +248,7 @@ export class LibraryView extends ItemView {
     const column = this.contentEl.createDiv({
       cls: "zt:flex zt:h-full zt:flex-col",
     });
-    const banner = column.createDiv({
-      cls: "zt:max-h-1/2 zt:shrink-0 zt:overflow-y-auto",
-    });
+    column.append(this.welcome.el);
     const shell = column.createDiv({
       cls: "zt:group zt:@container zt:relative zt:flex zt:min-h-0 zt:flex-1",
     });
@@ -239,7 +270,8 @@ export class LibraryView extends ItemView {
       attr: { "data-library-card": "", hidden: "" },
     });
     const searchEl = main.createDiv({ cls: hidden });
-    const header = main.createDiv({ cls: hidden });
+    const note = main.createDiv();
+    const header = main.createDiv();
     const list = main.createDiv();
     const shown = "zt:hidden zt:group-data-zotero-missing:block";
     this.#parts.push(
@@ -249,11 +281,12 @@ export class LibraryView extends ItemView {
           shell,
           tree: treeEl.createDiv({ cls: shown }),
           list: list.createDiv({ cls: shown }),
+          note,
         },
         // The search the box holds runs again on the database found.
         () => void this.search.run(),
       ),
-      new WelcomeBanner(this.#deps.welcome, banner),
+      this.welcome,
     );
     for (const part of this.#parts) part.load();
     this.tree.load();
@@ -290,6 +323,16 @@ export class LibraryView extends ItemView {
         cardEl.hidden = key === null;
       }),
     );
+    // A selected row that leaves the list takes its selection with it, so
+    // the Reading Card never shows an Item the list does not hold.
+    this.query.register(
+      this.query.state.subscribe(({ phase, results }) => {
+        const { key } = this.selection.getState();
+        if (phase !== "ready" || key === null) return;
+        if (!results?.rows.some((row) => row.indexedKey === key))
+          this.selection.setState({ key: null });
+      }),
+    );
     // A Literature Note added or removed changes what the vault answers.
     this.query.register(
       this.#deps.literatureNotes.on("changed", () => {
@@ -299,6 +342,7 @@ export class LibraryView extends ItemView {
     // A tab that the workspace restores on startup can open before plugin
     // data has loaded.
     await this.#deps.settings.loaded;
+    this.#storage.load();
     const doc = this.#storage.document();
     this.tree.show(doc.node);
     this.tree.showFacets(doc.facets);
@@ -376,10 +420,11 @@ export class LibraryView extends ItemView {
   /**
    * Show the Item `indexedKey` selected, in its first Collection, or in its
    * Library where it is filed in none. A search or a Reading State facet
-   * that may leave the Item out is cleared. It shows nothing where the list
-   * does not hold it.
+   * that may leave the Item out is cleared.
+   * @returns `"not-listed"` where the list does not hold the Item, as past
+   * its row limit: nothing is selected, and the caller says so.
    */
-  async reveal(indexedKey: string): Promise<void> {
+  async reveal(indexedKey: string): Promise<"listed" | "not-listed"> {
     await this.#deps.settings.loaded;
     const node = await this.#itemNode(indexedKey);
     if (this.tree.store.getState().facets.length > 0) this.#filter([]);
@@ -389,7 +434,9 @@ export class LibraryView extends ItemView {
     await this.searched;
     await this.query.settled;
     const row = this.#selectedRow();
-    if (row) this.#focus(row);
+    if (!row) return "not-listed";
+    this.#focus(row);
+    return "listed";
   }
 
   /** The node of the Item's first Collection, or of its Library. */
@@ -442,11 +489,13 @@ export class LibraryView extends ItemView {
     this.selection.setState({ key: null });
     // The document takes the node at once (Recent writes its sort), and the
     // search runs again over the node.
-    this.#storage.select(node).catch((error: unknown) => {
-      logger.warn("The Library View could not keep the tree selection", {
-        error,
+    this.#storage
+      .change((doc) => withNode(doc, node))
+      .catch((error: unknown) => {
+        logger.warn("The Library View could not keep the tree selection", {
+          error,
+        });
       });
-    });
     this.search.narrow();
     void this.search.run();
   }
@@ -455,9 +504,11 @@ export class LibraryView extends ItemView {
   #filter(facets: readonly ReadingStateFacet[]): void {
     this.tree.showFacets(facets);
     // The document takes the facets at once; the search found what it found.
-    this.#storage.setFacets(facets).catch((error: unknown) => {
-      logger.warn("The Library View could not keep the facets", { error });
-    });
+    this.#storage
+      .change((doc) => withFacets(doc, facets))
+      .catch((error: unknown) => {
+        logger.warn("The Library View could not keep the facets", { error });
+      });
     this.#show(this.#found);
   }
 
@@ -468,12 +519,7 @@ export class LibraryView extends ItemView {
   #show(found: SearchFound): void {
     this.#found = found;
     const { text, keys, everywhere } = found;
-    const doc = {
-      ...this.#storage.document(),
-      node: this.tree.store.getState().node,
-      search: text,
-    };
-    this.#shown = libraryViewQuery(doc, {
+    this.#shown = libraryViewQuery(withSearch(this.#storage.document(), text), {
       labels: labels(),
       scope: this.#scope(),
       ...(keys && { keys }),
@@ -501,9 +547,28 @@ export class LibraryView extends ItemView {
   /** "Save as query file": the document as it stands, once the toolbar's last change is in. */
   async #saveAs(): Promise<void> {
     await this.query.flush();
+    const doc = this.#storage.document();
+    const leftOut = libraryViewQueryFileLeftOut(doc);
     await saveAsQueryFile(
       this.app,
-      libraryViewQueryFileText(this.#storage.document(), { labels: labels() }),
+      libraryViewQueryFileText(doc, { labels: labels() }),
+      {
+        name: this.tree.name,
+        leftOut: [
+          ...(leftOut.facets.length === 0
+            ? []
+            : [
+                m.library_view_save_leaves_out_facets({
+                  facets: new Intl.ListFormat(runtime.getLocale(), {
+                    type: "conjunction",
+                  }).format(
+                    leftOut.facets.map((facet) => FACET_LABELS[facet]()),
+                  ),
+                }),
+              ]),
+          ...(leftOut.search ? [m.library_view_save_leaves_out_search()] : []),
+        ],
+      },
     );
   }
 

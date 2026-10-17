@@ -34,7 +34,7 @@ import type { LiteratureNotes } from "@/views/query-view/table-notes";
 
 import { READING_STATE_FACETS } from "./document";
 import type { LibraryNode, ReadingStateFacet } from "./document";
-import { selectionConditions, vaultPass } from "./query-text";
+import { paperCountRequest, unreadCount } from "./document";
 import { collectionTree, findNode, sameLibrary } from "./tree";
 import type { LibraryCounts, TreeCollection, TreeLibrary } from "./tree";
 
@@ -117,6 +117,14 @@ export class LibraryTree extends Component {
       facets: [],
       unread: null,
     }));
+  }
+
+  /** The name of the selected node, as a file saved from it is first called. */
+  get name(): string {
+    const { libraries, node } = this.store.getState();
+    return node.kind === "collection"
+      ? node.path.at(-1)!
+      : nodeLabel(libraries, node);
   }
 
   /**
@@ -233,6 +241,11 @@ export class LibraryTree extends Component {
 
   /** Read the Collections and the counts of the shown Libraries again. */
   refresh(): void {
+    // "Show all libraries" widens the Library Scope the researcher saw: once
+    // no Library lies outside the scope, there is nothing left to widen, and
+    // a later narrower scope starts unwidened.
+    if (this.store.getState().all && !this.canWiden)
+      this.store.setState({ all: false });
     this.#countUnread();
     this.#run?.abort();
     const controller = new AbortController();
@@ -299,24 +312,14 @@ export class LibraryTree extends Component {
     }
   }
 
-  /**
-   * One Library's Items grouped by the Collections they are filed in, each
-   * Item by its Indexed Key alone. One query for each Library, since a path
-   * names a Collection only inside its Library.
-   */
+  /** One Library's Items grouped by the Collections they are filed in. */
   async #counts(
     library: AvailableLibrary,
     signal: AbortSignal,
   ): Promise<LibraryCounts | null> {
     try {
       const outcome = await this.#deps.query.run(
-        {
-          from: "items",
-          fields: [],
-          group: "collections[]",
-          limit: null,
-          libraries: { mode: "selected", libraries: [library.selector] },
-        },
+        paperCountRequest(library.selector),
         signal,
       );
       if (outcome.kind === "result" && outcome.result.groups)
@@ -343,34 +346,20 @@ export class LibraryTree extends Component {
     const { node } = this.store.getState();
     this.store.setState({ unread: null });
     // Recent names no paper count, so it names no unread count either.
-    if (node.kind === "recent") {
+    const unread = unreadCount(node, this.#deps.literatureNotes);
+    if (!unread) {
       this.#unreadRun = null;
       this.#unreadSettled = Promise.resolve();
       return;
     }
-    const { filters, vault } = selectionConditions(node, ["unread"]);
-    const pass = vaultPass(vault, this.#deps.literatureNotes);
     this.#unreadSettled = this.#deps.query
-      .run(
-        {
-          from: "items",
-          fields: [],
-          filter: filters.join(" && "),
-          limit: null,
-          libraries: { mode: "selected", libraries: [node.library] },
-        },
-        controller.signal,
-      )
+      .run(unread.request, controller.signal)
       .then(
         (outcome) => {
           if (controller.signal.aborted) return;
           this.#unreadRun = null;
           if (outcome.kind === "result" && outcome.result.rows)
-            this.store.setState({
-              unread: outcome.result.rows.filter(
-                (row) => pass?.keeps(row) ?? true,
-              ).length,
-            });
+            this.store.setState({ unread: unread.count(outcome.result.rows) });
           else if (outcome.kind === "failed")
             logger.warn("The Library Tree could not count the unread Items", {
               code: outcome.diagnostic.code,
@@ -420,11 +409,17 @@ function nodeLabel(
     : libraryLabel({ selector: node.library, libraryID: 0, name: null });
 }
 
-/** The header's text for the selection named `selection`, given its own `fallback`. */
+/** What the header shows: its text, and a control beside it. */
+export interface HeaderParts {
+  readonly text: ReactNode;
+  readonly action?: ReactNode;
+}
+
+/** The header for the selection named `selection`, given its own text, `fallback`. */
 export type HeaderSummary = (header: {
   selection: string;
   fallback: ReactNode;
-}) => ReactNode;
+}) => HeaderParts;
 
 function ListHeader({
   tree,
@@ -447,8 +442,11 @@ function ListHeader({
       : unread === null
         ? m.library_view_header({ selection, count })
         : `${m.library_view_header({ selection, count })} ${m.library_view_header_unread({ count: unread })}`;
+  const { text: shown, action } = summary
+    ? summary({ selection, fallback: text })
+    : { text };
   return (
-    <div className="zt:flex zt:min-w-0 zt:items-center zt:gap-(--size-2-2) zt:ps-(--zt-query-toolbar-inset-start) zt:pe-(--zt-query-toolbar-inset-end) zt:pt-(--size-4-2)">
+    <div className="zt:flex zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-x-(--size-2-2) zt:gap-y-(--size-2-1) zt:ps-(--zt-query-toolbar-inset-start) zt:pe-(--zt-query-toolbar-inset-end) zt:pt-(--size-4-2)">
       {/* Obsidian's own rule shows a clickable icon, so the narrow pane
           shows and hides a wrapper. */}
       <span className="zt:flex zt:@xl:hidden">
@@ -461,15 +459,17 @@ function ListHeader({
         />
       </span>
       {/* Obsidian styles a bare heading element; the header keeps the UI
-          type scale. */}
+          type scale. While Zotero is not found, the toggle above stays, so
+          a narrow pane still opens the tree and its not-found part. */}
       <div
         role="heading"
         aria-level={2}
         data-library-header=""
-        className="zt:m-0 zt:min-w-0 zt:truncate zt:text-(length:--font-ui-medium) zt:font-(--font-semibold)"
+        className="zt:m-0 zt:min-w-0 zt:truncate zt:text-(length:--font-ui-medium) zt:font-(--font-semibold) zt:group-data-zotero-missing:hidden"
       >
-        {summary ? summary({ selection, fallback: text }) : text}
+        {shown}
       </div>
+      {action}
     </div>
   );
 }
@@ -606,7 +606,7 @@ function TreePane({ tree }: { tree: LibraryTree }) {
                   : -1
               }
               style={{ "--zt-library-depth": row.level - 1 } as CSSProperties}
-              className="zt:flex zt:min-w-0 zt:cursor-(--cursor) zt:items-center zt:gap-(--size-2-1) zt:rounded-(--radius-s) zt:py-(--size-2-2) zt:ps-[calc(var(--zt-library-depth)*var(--size-4-4)+var(--size-2-1))] zt:pe-(--size-4-2) zt:text-(length:--nav-item-size) zt:text-(--nav-item-color) zt:hover:not-aria-selected:bg-(--nav-item-background-hover) zt:aria-selected:bg-(--nav-item-background-selected) zt:aria-selected:text-(--nav-item-color-selected)"
+              className="zt:flex zt:min-w-0 zt:cursor-(--cursor) zt:items-center zt:gap-(--size-2-1) zt:rounded-(--radius-s) zt:py-(--size-2-2) zt:ps-[calc(var(--zt-library-depth)*var(--size-4-4)+var(--size-2-1))] zt:pe-(--size-4-2) zt:text-(length:--nav-item-size) zt:text-(--nav-item-color) zt:outline-none zt:hover:not-aria-selected:bg-(--nav-item-background-hover) zt:focus-visible:shadow-[inset_0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)] zt:aria-selected:bg-(--nav-item-background-selected) zt:aria-selected:text-(--nav-item-color-selected)"
               onClick={() => tree.select(row.node)}
               onKeyDown={(event) => onKeyDown(event, index)}
             >
@@ -661,7 +661,7 @@ function TreePane({ tree }: { tree: LibraryTree }) {
           role="button"
           tabIndex={0}
           data-library-all={all ? "on" : "off"}
-          className="zt:cursor-(--cursor) zt:px-(--size-4-2) zt:text-(length:--font-ui-smaller) zt:text-muted-foreground zt:hover:text-(--text-normal)"
+          className="zt:cursor-(--cursor) zt:self-start zt:rounded-(--radius-s) zt:px-(--size-4-2) zt:text-(length:--font-ui-smaller) zt:text-muted-foreground zt:outline-none zt:hover:text-(--text-normal) zt:focus-visible:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)]"
           onClick={() => tree.showAll(!all)}
           onKeyDown={(event) => {
             if (event.key !== "Enter" && event.key !== " ") return;
@@ -678,7 +678,8 @@ function TreePane({ tree }: { tree: LibraryTree }) {
   );
 }
 
-const FACET_LABELS: Record<ReadingStateFacet, () => string> = {
+/** The name each Reading State facet goes by on screen. */
+export const FACET_LABELS: Record<ReadingStateFacet, () => string> = {
   unread: m.library_view_facet_unread,
   annotated: m.library_view_facet_annotated,
   "has-note": m.library_view_facet_has_note,
@@ -714,7 +715,7 @@ function Facets({ tree }: { tree: LibraryTree }) {
             tabIndex={0}
             data-library-facet={facet}
             aria-pressed={facets.includes(facet)}
-            className="zt:cursor-(--cursor) zt:rounded-(--radius-l) zt:border-(length:--border-width) zt:border-(--background-modifier-border) zt:px-(--size-4-2) zt:py-(--size-2-1) zt:text-(length:--font-ui-smaller) zt:text-muted-foreground zt:hover:bg-(--background-modifier-hover) zt:hover:text-(--text-normal) zt:aria-pressed:border-(--interactive-accent) zt:aria-pressed:bg-(--interactive-accent) zt:aria-pressed:text-(--text-on-accent) zt:aria-pressed:hover:bg-(--interactive-accent-hover) zt:aria-pressed:hover:text-(--text-on-accent)"
+            className="zt:cursor-(--cursor) zt:rounded-(--radius-l) zt:border-(length:--border-width) zt:border-(--background-modifier-border) zt:px-(--size-4-2) zt:py-(--size-2-1) zt:text-(length:--font-ui-smaller) zt:text-muted-foreground zt:outline-none zt:hover:bg-(--background-modifier-hover) zt:hover:text-(--text-normal) zt:focus-visible:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)] zt:aria-pressed:border-(--interactive-accent) zt:aria-pressed:bg-(--interactive-accent) zt:aria-pressed:text-(--text-on-accent) zt:aria-pressed:hover:bg-(--interactive-accent-hover) zt:aria-pressed:hover:text-(--text-on-accent)"
             onClick={() => tree.toggleFacet(facet)}
             onKeyDown={(event) => {
               if (event.key !== "Enter" && event.key !== " ") return;

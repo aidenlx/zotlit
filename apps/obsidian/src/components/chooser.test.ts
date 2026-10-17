@@ -38,7 +38,7 @@ function mount(app: App, trigger: { blocked?: boolean } = {}) {
   host = document.body.appendChild(document.createElement("div"));
   const list = h(Chooser.List<ChooserRow>, {
     groups: [{ items: ROWS }],
-    "aria-label": "Tags",
+    label: "Tags",
     children: (row: ChooserRow) =>
       h(Chooser.Item, { key: row.value, value: row.value }, row.label),
   });
@@ -99,6 +99,15 @@ it("leaves the press of a trigger that is not blocked to the popover", () => {
   const press = new MouseEvent("click", { bubbles: true, cancelable: true });
   button.dispatchEvent(press);
   expect(press.defaultPrevented).toBe(false);
+});
+
+it("names its list box with no tooltip over the rows", async () => {
+  const { popup, toggle } = mount(editorApp());
+  await toggle("open");
+  const list = popup.querySelector<HTMLElement>('[role="listbox"]')!;
+  expect(list.hasAttribute("aria-label")).toBe(false);
+  const name = list.getAttribute("aria-labelledby")!;
+  expect(popup.ownerDocument.getElementById(name)?.textContent).toBe("Tags");
 });
 
 it("draws its rows only while the popup is open", async () => {

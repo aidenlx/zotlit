@@ -466,6 +466,15 @@
   "library_view_tree_label": "文库",
   "library_view_recent": "最近",
   "library_view_recent_edited_in_zotero": "在 Zotero 中编辑",
+  "library_view_reveal_not_listed": [
+    {
+      "declarations": ["input limit", "local formatted = limit: number"],
+      "selectors": ["formatted"],
+      "match": {
+        "formatted=*": "列表只显示前 {formatted} 篇文献，此文献不在其中。搜索其标题即可显示。"
+      }
+    }
+  ],
   "library_view_facets_label": "仅显示",
   "library_view_facet_unread": "未读",
   "library_view_facet_annotated": "有批注",
@@ -509,6 +518,11 @@
   "library_view_show_tree": "显示文库和分类",
   "library_view_not_found_tree": "未找到 Zotero",
   "library_view_locate": "定位数据文件夹",
+  "library_view_refresh_failed": "ZotLit 刚才无法读取 Zotero 数据库，列表显示的是上次读取的文献。",
+  "library_view_empty_search": "没有文献匹配“{query}”。",
+  "library_view_empty_facets": "没有文献符合已开启的筛选条件。",
+  "library_view_save_leaves_out_facets": "查询文件无法检查文献笔记，因此此文件不包含{facets}中的这项检查。",
+  "library_view_save_leaves_out_search": "查询文件无法保存搜索，因此此文件不包含搜索。",
   "library_view_not_found_title": "找不到您的 Zotero 文库",
   "library_view_not_found_body": "ZotLit 会在默认的 Zotero 配置文件中查找。指定您的数据文件夹后，文献会显示在这里。Zotero 无需打开。",
   "library_view_menu_open_pdf": "打开 PDF",
@@ -522,6 +536,7 @@
   "library_view_card_more": "更多操作",
   "library_view_card_open_in_sidebar": "在侧边栏中打开",
   "library_view_card_no_annotations": "还没有批注",
+  "library_view_card_failed": "无法读取此文献的标注。",
   "instruction_show_in_library": "在文库中显示",
   "library_view_search_label": "搜索文献",
   "library_view_search_placeholder": "搜索文献…（用 tag:名称 按标签筛选）",
@@ -1098,6 +1113,7 @@
   "welcome_footer_migration_link": "阅读迁移指南。",
   "welcome_migration_title": "从 ZotLit v1 升级",
   "welcome_migration_body": "在您重命名自定义 Eta 模板并启用 JavaScript 模板门之前，不会加载自定义 Eta 模板。",
+  "welcome_companion_title": "适用于 Zotero 10 的 ZotLit Companion",
   "welcome_template_conversion_title": "转换文献笔记模板",
   "welcome_template_conversion_body": "ZotLit 会将旧版模板文件整理为模板文档：笔记、内容、文件名和批注文件合并为 {path}，cite 与 cite2 文件合并为一个引用文本，每个片段各自成文件。写入任何文件前，它会用一个 Zotero 条目（模板用到时还包括一条批注和一条单条目引用）分别渲染新旧模板并比对输出，同时检查 Frontmatter 字段是否仍能生成值。检查通过后，它会将旧文件移至 Obsidian 设定的回收站。",
   "welcome_template_conversion_completed_files": [
@@ -2534,6 +2550,7 @@
   "query_view_problem_group": "此视图无法按 \"{property}\" 分组。",
   "query_view_problem_no_view": "此文件中没有名为 \"{name}\" 的视图。",
   "query_view_problem_duplicate_view": "此文件中有多个名为 \"{name}\" 的视图。请为每个视图使用不同的名称。",
+  "query_view_toolbar_label": "视图控件",
   "query_view_sort": "排序",
   "query_view_sort_by": "排序依据",
   "query_view_sort_add": "添加排序",

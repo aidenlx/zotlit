@@ -380,6 +380,15 @@
   "library_view_tree_label": "Libraries",
   "library_view_recent": "Recent",
   "library_view_recent_edited_in_zotero": "edited in Zotero",
+  "library_view_reveal_not_listed": [
+    {
+      "declarations": ["input limit", "local formatted = limit: number"],
+      "selectors": ["formatted"],
+      "match": {
+        "formatted=*": "The list shows its first {formatted} papers, and this one is not among them. Search for its title to show it."
+      }
+    }
+  ],
   "library_view_facets_label": "Show only",
   "library_view_facet_unread": "Unread",
   "library_view_facet_annotated": "Annotated",
@@ -423,6 +432,11 @@
   "library_view_show_tree": "Show libraries and collections",
   "library_view_not_found_tree": "Zotero not found",
   "library_view_locate": "Locate data folder",
+  "library_view_refresh_failed": "ZotLit couldn't read Zotero's database just now. The list shows the papers it read last.",
+  "library_view_empty_search": "No papers match “{query}”.",
+  "library_view_empty_facets": "No papers pass the filters you turned on.",
+  "library_view_save_leaves_out_facets": "A Query File can't check for a Literature Note, so this file leaves that check out of {facets}.",
+  "library_view_save_leaves_out_search": "A Query File can't hold the search, so this file leaves it out.",
   "library_view_not_found_title": "We couldn't find your Zotero library",
   "library_view_not_found_body": "ZotLit looks in the default Zotero profile. Point it at your data folder and your papers appear here. Zotero does not need to be open.",
   "library_view_menu_open_pdf": "Open PDF",
@@ -436,6 +450,7 @@
   "library_view_card_more": "More actions",
   "library_view_card_open_in_sidebar": "Open in sidebar",
   "library_view_card_no_annotations": "No annotations yet",
+  "library_view_card_failed": "Couldn't read this paper's annotations.",
   "instruction_show_in_library": "to show in library",
   "library_view_search_label": "Search papers",
   "library_view_search_placeholder": "Search papers… (tag:name for a tag)",
@@ -1328,6 +1343,7 @@
   "welcome_footer_migration_link": "Read the migration guide.",
   "welcome_migration_title": "Upgrading from ZotLit v1",
   "welcome_migration_body": "Custom Eta templates are not loaded until you rename them and enable the JavaScript Templates gate.",
+  "welcome_companion_title": "ZotLit Companion for Zotero 10",
   "welcome_template_conversion_title": "Convert your literature note templates",
   "welcome_template_conversion_body": "ZotLit will fold your legacy template files into template documents: the note, content, filename, and annotation files into {path}, the cite and cite2 files into one citation text, and each partial into its own file. Before it writes anything, it renders one Zotero item (with one annotation and a one-item citation where your templates use them) through the old and the new templates and compares the output, and checks that the frontmatter fields still produce values. When the checks pass, it moves the old files to Obsidian’s configured trash.",
   "welcome_template_conversion_completed_title": "Literature note templates converted",
@@ -2699,6 +2715,7 @@
   "query_view_problem_group": "This view cannot group by \"{property}\".",
   "query_view_problem_no_view": "This file has no view named \"{name}\".",
   "query_view_problem_duplicate_view": "This file has more than one view named \"{name}\". Give each view a different name.",
+  "query_view_toolbar_label": "View controls",
   "query_view_sort": "Sort",
   "query_view_sort_by": "Sort by",
   "query_view_sort_add": "Add sort",

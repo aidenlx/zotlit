@@ -67,14 +67,31 @@ function filePath(folder: string, name: string): string {
 class SaveQueryFileModal extends Modal {
   readonly #folder: string;
   readonly #askRecords: boolean;
+  readonly #leftOut: readonly string[];
+  readonly #name: string;
   readonly #decision = Promise.withResolvers<SaveChoice | null>();
   readonly result = this.#decision.promise;
   #saved = false;
 
-  constructor(app: App, folder: string, askRecords: boolean) {
+  constructor(
+    app: App,
+    {
+      folder,
+      askRecords,
+      leftOut,
+      name,
+    }: {
+      folder: string;
+      askRecords: boolean;
+      leftOut: readonly string[];
+      name: string;
+    },
+  ) {
     super(app);
     this.#folder = folder;
     this.#askRecords = askRecords;
+    this.#leftOut = leftOut;
+    this.#name = name;
   }
 
   override onOpen(): void {
@@ -84,9 +101,10 @@ class SaveQueryFileModal extends Modal {
     const body = this.contentEl.createDiv({
       cls: "zt:flex zt:flex-col zt:gap-4",
     });
-    // The first `Untitled`, `Untitled 1`, … free in the folder.
+    // The first `<name>`, `<name> 1`, … free in the folder.
     let name = untitledName(
-      m.query_file_untitled(),
+      this.#name.replaceAll(new RegExp(FORBIDDEN, "g"), " ").trim() ||
+        m.query_file_untitled(),
       (candidate) =>
         this.app.vault.getAbstractFileByPath(
           filePath(this.#folder, candidate),
@@ -147,6 +165,12 @@ class SaveQueryFileModal extends Modal {
       }
     }
 
+    for (const text of this.#leftOut)
+      body.createEl("p", {
+        cls: NOTE_CLASS,
+        text,
+        attr: { "data-save-left-out": "" },
+      });
     const status = note(body, { status: true });
     const refusal = (): string | null => {
       if (name.trim() === "") return "";
@@ -216,29 +240,54 @@ export function saveSidebarAsQueryFile(
 }
 
 /** Ask where to save `text`, write it as a new Query File, and open it in a tab. */
-export function saveAsQueryFile(app: App, text: string): Promise<void> {
-  return saveQueryFile(app, { askRecords: false, text: () => text });
+export function saveAsQueryFile(
+  app: App,
+  text: string,
+  {
+    leftOut = [],
+    name,
+  }: {
+    /**
+     * What the view shows that `text` cannot hold, one sentence each, for
+     * the dialog to say before the file is written.
+     */
+    leftOut?: readonly string[];
+    /** The name the dialog offers first, in place of "Untitled". */
+    name?: string;
+  } = {},
+): Promise<void> {
+  return saveQueryFile(app, {
+    askRecords: false,
+    leftOut,
+    name,
+    text: () => text,
+  });
 }
 
 async function saveQueryFile(
   app: App,
   {
     askRecords,
+    leftOut = [],
+    name = m.query_file_untitled(),
     text,
   }: {
     /** Whether the dialog asks which records the file shows. */
     askRecords: boolean;
+    leftOut?: readonly string[];
+    name?: string;
     text: (records: SavedRecords) => string;
   },
 ): Promise<void> {
   const parent = app.fileManager.getNewFileParent(
     app.workspace.getActiveFile()?.path ?? "",
   );
-  const modal = new SaveQueryFileModal(
-    app,
-    parent.isRoot() ? "/" : parent.path,
+  const modal = new SaveQueryFileModal(app, {
+    folder: parent.isRoot() ? "/" : parent.path,
     askRecords,
-  );
+    leftOut,
+    name,
+  });
   modal.open();
   const choice = await modal.result;
   if (!choice) return;

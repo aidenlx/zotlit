@@ -31,7 +31,7 @@ const CONNECTION_CHECKING_DELAY_MS = 200;
 
 export interface WelcomeBannerDeps {
   app: App;
-  reads: Pick<ZoteroReadsService, "state" | "ready" | "error" | "on">;
+  reads: Pick<ZoteroReadsService, "state" | "ready" | "error" | "moved" | "on">;
   queries: Pick<QueryClientService, "peek" | "read">;
   zoteroPref: Pick<ZoteroPrefService, "dataDir">;
   settings: Pick<SettingsService, "subscribe" | "update">;
@@ -46,7 +46,8 @@ export interface WelcomeBannerDeps {
 export class WelcomeBanner extends Component {
   readonly #store = createWelcomeStore();
   readonly #deps: WelcomeBannerDeps;
-  readonly #el: HTMLElement;
+  /** Where the banner draws. */
+  readonly el: HTMLElement;
   #root: Root | null = null;
   #stack: DisposableStack | undefined;
   #connectionGen = 0;
@@ -56,7 +57,15 @@ export class WelcomeBanner extends Component {
   constructor(deps: WelcomeBannerDeps, el: HTMLElement) {
     super();
     this.#deps = deps;
-    this.#el = el;
+    this.el = el;
+  }
+
+  /**
+   * Show the banner, its setup steps included, until the researcher
+   * dismisses it, as "Open welcome view" asks.
+   */
+  request(): void {
+    this.#store.setState({ requested: true });
   }
 
   /** Settles once the last connection readout started has landed. */
@@ -109,12 +118,15 @@ export class WelcomeBanner extends Component {
         new BaseNotice(templateMigrationNotice(result));
       },
       convertLiteratureNoteTemplates: async () => {
+        // The banner stays to show the result the researcher asked for.
+        this.#store.setState({ requested: true });
         const result = await this.#deps.templateMigration.convert();
         new BaseNotice(templateMigrationNotice(result));
         return result;
       },
       openExternal: (url) => window.open(url),
       dismiss: () => {
+        this.#store.setState({ requested: false });
         settings.update({ "welcome.dismissed": true });
         release.acknowledgeMigration();
       },
@@ -127,7 +139,7 @@ export class WelcomeBanner extends Component {
       connection: readConnectionSync(this.#deps) ?? { status: "checking" },
     });
 
-    this.#root = createRoot(this.#el);
+    this.#root = createRoot(this.el);
     this.#root.render(
       <WelcomeStoreProvider value={this.#store}>
         <WelcomeActionsContext value={actions}>
@@ -182,7 +194,7 @@ export class WelcomeBanner extends Component {
   #armChecking(gen: number): void {
     this.#clearCheckingTimer();
     if (readConnectionSync(this.#deps) !== null) return;
-    this.#checkingTimer = this.#el.win.setTimeout(() => {
+    this.#checkingTimer = this.el.win.setTimeout(() => {
       this.#checkingTimer = null;
       if (gen === this.#connectionGen) {
         this.#store.setState({ connection: { status: "checking" } });
@@ -192,7 +204,7 @@ export class WelcomeBanner extends Component {
 
   #clearCheckingTimer(): void {
     if (this.#checkingTimer !== null) {
-      this.#el.win.clearTimeout(this.#checkingTimer);
+      this.el.win.clearTimeout(this.#checkingTimer);
       this.#checkingTimer = null;
     }
   }

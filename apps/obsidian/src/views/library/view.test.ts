@@ -2,7 +2,14 @@
 // The Library View tab runs the query its Library View Document derives: the
 // document plugin data holds when the tab opens, and after a toolbar change,
 // the same query when the tab opens again.
-import { Menu, resetMockPlatform, setMockPlatform } from "@mock/obsidian";
+import {
+  Menu,
+  controlsOf,
+  Modal,
+  resetMockPlatform,
+  setMockPlatform,
+  TextComponent,
+} from "@mock/obsidian";
 import type { App, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -15,6 +22,7 @@ import {
   PluginStub,
 } from "@/lib/__fixtures__/obsidian-host";
 import { Effect } from "@/lib/effect";
+import * as m from "@/lib/i18n/generated/messages";
 import type { SearchHit, SearchOptions } from "@/services/item-lookup/service";
 import type {
   QueryViewOutcome,
@@ -31,6 +39,7 @@ import { selectorKey } from "@/services/library-scope/scope";
 import { QueryClientService } from "@/services/query-client/service";
 import { SettingsService } from "@/services/settings/service";
 import { requested } from "@/views/query-view/__fixtures__/query-run";
+import { openWelcomeView } from "@/views/welcome/register";
 
 import type { LibraryNode } from "./document";
 import { nodeKey } from "./library-tree";
@@ -82,6 +91,8 @@ interface SeedItem {
   readonly pdf?: boolean;
   readonly title?: string;
   readonly tags?: readonly string[];
+  /** The Indexed Keys of the Item's Attachments, each titled by its key. */
+  readonly attachments?: readonly string[];
   /** The Item's bibliographic fields, as ZotLit Query gives them. */
   readonly fields?: Readonly<Record<string, QueryViewValue>>;
 }
@@ -158,7 +169,12 @@ const SEED: readonly SeedItem[] = [
     title: "Figures in the lab",
   },
   { key: "GGGGGGGG", libraryID: 2, collections: [] },
-  { key: "HHHHHHHH", libraryID: 3, collections: [] },
+  {
+    key: "HHHHHHHH",
+    libraryID: 3,
+    collections: [],
+    attachments: ["HPDFHPDF"],
+  },
 ];
 
 /** The Literature Notes of the vault: the Items D and A have one. */
@@ -225,20 +241,13 @@ function answer(
   );
   // The fake database holds no Annotation.
   if (request.from === "annotations") return EMPTY;
-  if (request.group !== "collections[]") {
+  if (request.from === "attachments") {
+    // The Attachments of the Item the filter names, in the Libraries read.
+    const parent = /^item\.indexedKey == "(\w+)"$/.exec(request.filter ?? "");
     const rows = items
-      .filter(
-        (item) => ids.has(item.libraryID) && selects(request.filter, item),
-      )
-      // The engine lists an Item's Collections as sorted joined paths.
-      .map(({ key, collections, title, fields }) => ({
-        indexedKey: key,
-        values: {
-          collections: collections.toSorted(),
-          ...(title !== undefined && { title }),
-          ...fields,
-        },
-      }));
+      .filter(({ key, libraryID }) => key === parent?.[1] && ids.has(libraryID))
+      .flatMap(({ attachments }) => attachments ?? [])
+      .map((key) => ({ indexedKey: key, values: { title: key } }));
     return requested(
       {
         kind: "result",
@@ -247,6 +256,38 @@ function answer(
           returnedCount: rows.length,
           matchedCount: rows.length,
           rows,
+        },
+      },
+      request,
+    );
+  }
+  if (request.group !== "collections[]") {
+    const rows = items
+      .filter(
+        (item) => ids.has(item.libraryID) && selects(request.filter, item),
+      )
+      // The engine lists an Item's Collections as sorted joined paths.
+      .map(({ key, collections, title, fields, attachments }) => ({
+        indexedKey: key,
+        values: {
+          collections: collections.toSorted(),
+          ...(attachments && { "attachments[].indexedKey": [...attachments] }),
+          ...(title !== undefined && { title }),
+          ...fields,
+        },
+      }));
+    // The engine returns at most `limit` rows, and counts every match.
+    const returned =
+      request.limit == null ? rows : rows.slice(0, request.limit);
+    return requested(
+      {
+        kind: "result",
+        result: {
+          ...EMPTY.result,
+          returnedCount: returned.length,
+          matchedCount: rows.length,
+          truncated: returned.length < rows.length,
+          rows: returned,
         },
       },
       request,
@@ -310,6 +351,7 @@ function pluginData(stored?: unknown) {
   const database_ = {
     state: "ready" as "ready" | "degraded",
     error: null as Error | null,
+    moved: false,
   };
   const readsDeps = {
     on: reads.on.bind(reads),
@@ -318,6 +360,9 @@ function pluginData(stored?: unknown) {
     },
     get error() {
       return database_.error;
+    },
+    get moved() {
+      return database_.moved;
     },
     ready: Promise.resolve({
       reads: { ConnectionReadout: () => Effect.succeed({ itemCount: 8 }) },
@@ -451,10 +496,26 @@ function pluginData(stored?: unknown) {
     database_.error = new Error("No zotero.sqlite in the data folder");
     reads.emit("degraded");
   };
+  /** A refresh of the database fails; the earlier connection still reads. */
+  const refreshFails = () => {
+    database_.error = new Error("EACCES: zotero.sqlite");
+    database_.moved = false;
+    reads.emit("refresh-failed");
+  };
+  /**
+   * The researcher points ZotLit at a data folder that does not read; the
+   * earlier database still serves.
+   */
+  const moveFails = () => {
+    database_.error = new Error("ENOENT: zotero.sqlite");
+    database_.moved = true;
+    reads.emit("refresh-failed");
+  };
   /** The researcher pointed ZotLit at the data folder, and it reads again. */
   const locate = () => {
     database_.state = "ready";
     database_.error = null;
+    database_.moved = false;
     reads.emit("changed");
   };
   /** The vault gains a Literature Note for `itemKey`. */
@@ -483,6 +544,7 @@ function pluginData(stored?: unknown) {
   };
   return {
     deps,
+    host,
     run,
     settings,
     change,
@@ -491,6 +553,8 @@ function pluginData(stored?: unknown) {
     rescope,
     items,
     lose,
+    refreshFails,
+    moveFails,
     locate,
     setupActions,
   };
@@ -626,6 +690,24 @@ it("opens on the document plugin data holds, once it has loaded", async () => {
   });
 });
 
+it("opens on every field of the document plugin data holds that it can read, where one facet is unknown", async () => {
+  const { deps, run } = pluginData({
+    node: { kind: "library", library: PERSONAL },
+    facets: ["annotated", "starred"],
+    search: "",
+    sort: [{ property: "title", direction: "ASC" }],
+    layout: "table",
+    order: ["title"],
+  });
+  const view = await openTab(deps);
+  expect(listRuns(run).at(-1)).toMatchObject({
+    libraries: { mode: "selected", libraries: [PERSONAL] },
+    filter: "annotations.length > 0",
+    sort: [{ field: "title", direction: "asc" }],
+  });
+  expect(view.query.state.getState().view?.type).toBe("table");
+});
+
 it("opens again on a sort the toolbar changed, and runs the query the toolbar ran", async () => {
   const { deps, run } = pluginData();
   const first = await openTab(deps);
@@ -722,9 +804,42 @@ it("shows the libraries outside the Library Scope on request, and lists one", as
     mode: "selected",
     libraries: [ARCHIVE],
   });
+  // An Item of it expands to its Attachments, read in its Library.
+  await act(() =>
+    view.contentEl
+      .querySelector<HTMLElement>('[data-query-expand="item:HHHHHHHH"]')!
+      .click(),
+  );
+  await vi.waitFor(() =>
+    expect(
+      view.contentEl.querySelector('[data-query-papers-child="attachment"]')
+        ?.textContent,
+    ).toBe("HPDFHPDF"),
+  );
   // The selected library stays in the tree while it shows the scope alone.
   await press(view, all());
   expect(tree(view).at(-1)).toBe("Archive 1");
+});
+
+it("lets go of Show all libraries once the Library Scope holds every Library, and offers it again when the scope narrows", async () => {
+  const { deps, rescope } = pluginData();
+  const view = await openTab(deps);
+  const all = () =>
+    view.contentEl.querySelector<HTMLElement>("[data-library-all]");
+  await press(view, all()!);
+  expect(all()?.dataset.libraryAll).toBe("on");
+  await act(async () => {
+    rescope(LIBRARIES);
+    await view.tree.settled;
+  });
+  // No Library lies outside the scope, so there is nothing to show or hide.
+  expect(all()).toBeNull();
+  await act(async () => {
+    rescope(LIBRARIES.slice(0, 1));
+    await view.tree.settled;
+  });
+  expect(all()?.dataset.libraryAll).toBe("off");
+  expect(tree(view)).not.toContain("Archive 1");
 });
 
 it("opens again on the node the tree selected", async () => {
@@ -813,6 +928,12 @@ it("says where Zotero's data folder cannot be found, offers to locate it, and li
       .querySelector("[data-library-facets]")
       ?.closest(".zt\\:group-data-zotero-missing\\:hidden"),
   ).toBeInstanceOf(HTMLElement);
+  // On a narrow pane the toggle still opens the tree and its not-found part.
+  expect(
+    view.contentEl
+      .querySelector("[data-library-tree-toggle]")
+      ?.closest(".zt\\:group-data-zotero-missing\\:hidden"),
+  ).toBeNull();
   const button = (part: "tree" | "list", text: string) =>
     [...notFound(part).querySelectorAll("button")].find(
       (el) => el.textContent === text,
@@ -832,6 +953,45 @@ it("says where Zotero's data folder cannot be found, offers to locate it, and li
   });
   expect(shell.hasAttribute("data-zotero-missing")).toBe(false);
   expect(tree(view)).toContain("My Library 5");
+});
+
+it("keeps the last rows with a note where a refresh of the database fails, and drops the note once it reads again", async () => {
+  const { deps, refreshFails, locate } = pluginData(ON_MY_LIBRARY);
+  const view = await openTab(deps);
+  const rows = shown(view);
+  const shell = view.contentEl.querySelector(
+    "[data-library-tree]",
+  )!.parentElement!;
+  const note = () =>
+    view.contentEl.querySelector<HTMLElement>("[data-library-refresh-failed]");
+  await act(async () => {
+    refreshFails();
+    await view.query.settled;
+  });
+  expect(shell.hasAttribute("data-zotero-missing")).toBe(false);
+  expect(shown(view)).toEqual(rows);
+  expect(note()?.textContent).toContain("couldn't read Zotero's database");
+  await act(async () => {
+    locate();
+    await view.query.settled;
+  });
+  expect(note()).toBeNull();
+});
+
+it("says Zotero is not found where the data folder changes to one that does not read, though the earlier database still serves", async () => {
+  const { deps, moveFails } = pluginData(ON_MY_LIBRARY);
+  const view = await openTab(deps);
+  const shell = view.contentEl.querySelector(
+    "[data-library-tree]",
+  )!.parentElement!;
+  await act(async () => {
+    moveFails();
+    await view.query.settled;
+  });
+  expect(shell.hasAttribute("data-zotero-missing")).toBe(true);
+  expect(
+    view.contentEl.querySelector("[data-library-refresh-failed]"),
+  ).toBeNull();
 });
 
 it("gives each row on Recent its reason, and none on a Library", async () => {
@@ -898,6 +1058,56 @@ it("keeps Recent selected through a sort change, and selecting it again sorts ne
   expect(settings.current?.["library.document"]).toMatchObject({
     node: RECENT,
     sort: [{ property: "dateModified", direction: "DESC" }],
+  });
+});
+
+/** Two sorts from the toolbar, the second before the first is saved. */
+function sortTwice(view: LibraryView) {
+  view.query.document.editView({
+    sort: [{ property: "title", direction: "ASC" }],
+  });
+  view.query.document.editView({
+    sort: [{ property: "title", direction: "DESC" }],
+  });
+}
+
+it("selects Recent with its own sort after two quick sorts, on screen and in plugin data", async () => {
+  const { deps, run, settings } = pluginData(ON_MY_LIBRARY);
+  const view = await openTab(deps);
+  await act(async () => {
+    sortTwice(view);
+    row(view, RECENT).click();
+    await view.query.flush();
+    await view.searched;
+    await view.query.settled;
+  });
+  expect(listRuns(run).at(-1)!.sort).toEqual([
+    { field: "dateModified", direction: "desc" },
+  ]);
+  await settings.flush();
+  expect(settings.current?.["library.document"]).toMatchObject({
+    node: RECENT,
+    sort: [{ property: "dateModified", direction: "DESC" }],
+  });
+});
+
+it("keeps the last of two quick sorts once the search is cleared", async () => {
+  const { deps, run, settings } = pluginData(ON_MY_LIBRARY);
+  const view = await openTab(deps);
+  await type(view, "figures");
+  await act(async () => {
+    sortTwice(view);
+    view.search.clear();
+    await view.query.flush();
+    await view.searched;
+    await view.query.settled;
+  });
+  expect(listRuns(run).at(-1)!.sort).toEqual([
+    { field: "title", direction: "desc" },
+  ]);
+  await settings.flush();
+  expect(settings.current?.["library.document"]).toMatchObject({
+    sort: [{ property: "title", direction: "DESC" }],
   });
 });
 
@@ -1108,6 +1318,23 @@ const A = "AAAAAAAA";
 const B = "BBBBBBBB";
 const C = "CCCCCCCC";
 
+it("expands a paper whose only child is its Literature Note, to that note", async () => {
+  const { deps } = pluginData();
+  const view = await openTab(deps);
+  // D has a Literature Note, and no Attachment, Child Note or Annotation.
+  await act(() =>
+    view.contentEl
+      .querySelector<HTMLElement>('[data-query-expand="item:DDDDDDDD"]')!
+      .click(),
+  );
+  expect(
+    view.contentEl
+      .querySelector('[data-query-papers-row="DDDDDDDD"]')!
+      .querySelector('[data-query-papers-child="literature-note"]')
+      ?.textContent,
+  ).toContain("DDDDDDDD");
+});
+
 it("selects a row on a click and moves the selection with the arrow keys", async () => {
   const { deps, items } = pluginData();
   const view = await openTab(deps);
@@ -1131,6 +1358,20 @@ it("selects a row on a click and moves the selection with the arrow keys", async
   expect(await pressKey(view, itemRow(view, C), ["ArrowUp"])).toBe(true);
   expect(await pressKey(view, itemRow(view, B), ["ArrowUp"])).toBe(true);
   expect(itemRows(view).slice(0, 3)).toEqual([`${A} *`, B, C]);
+});
+
+it("lets the keyboard enter the list at its first row while none is selected, and names the selected row to assistive technology", async () => {
+  const { deps } = pluginData();
+  const view = await openTab(deps);
+  const stops = () =>
+    [...view.contentEl.querySelectorAll<HTMLElement>("[data-query-item-row]")]
+      .filter((el) => el.tabIndex === 0)
+      .map((el) => el.dataset.queryItemRow);
+  expect(stops()).toEqual([A]);
+  await act(() => itemRow(view, C).click());
+  expect(stops()).toEqual([C]);
+  expect(itemRow(view, C).getAttribute("aria-current")).toBe("true");
+  expect(itemRow(view, A).hasAttribute("aria-current")).toBe(false);
 });
 
 it("answers the quick switcher's keys on the selected row: Enter the note, Mod+Enter the note in a new pane, Shift+Enter the PDF", async () => {
@@ -1213,7 +1454,9 @@ it("lists the row's actions in its menu, which other plugins add to", async () =
 it("shows an Item in its first Collection, selected", async () => {
   const { deps, run } = pluginData();
   const view = await openTab(deps);
-  await act(() => view.reveal(A));
+  await act(async () => {
+    await view.reveal(A);
+  });
   // A is filed in Chapter 1 and Chapter 2 of Thesis; Chapter 1 comes first.
   expect(listRuns(run).at(-1)).toMatchObject({
     libraries: { mode: "selected", libraries: [PERSONAL] },
@@ -1229,7 +1472,9 @@ it("turns the Reading State facets off to show an Item they leave out", async ()
   // A has Annotations, so Unread leaves it out.
   await press(view, facet(view, "unread"));
   await press(view, facet(view, "pdf"));
-  await act(() => view.reveal(A));
+  await act(async () => {
+    await view.reveal(A);
+  });
   expect(listRuns(run).at(-1)).toMatchObject({
     filter: 'collections.within("Thesis/Chapter 1")',
   });
@@ -1240,11 +1485,35 @@ it("turns the Reading State facets off to show an Item they leave out", async ()
   expect(settings.current?.["library.document"]?.facets).toEqual([]);
 });
 
+it("says it cannot show an Item past the rows the list holds, and selects nothing", async () => {
+  const { deps, change } = pluginData();
+  // A thousand Items of My Library come before the one revealed.
+  const octal = (n: number) =>
+    [...n.toString(8).padStart(6, "0")]
+      .map((digit) => "ABCDEFGH"[Number(digit)])
+      .join("");
+  const many = Array.from({ length: 1000 }, (_, n) => ({
+    key: `ZZ${octal(n)}`,
+    libraryID: 1,
+    collections: [] as string[],
+  }));
+  change([...many, { key: "YYYYYYYY", libraryID: 1, collections: [] }]);
+  const view = await openTab(deps);
+  let outcome: unknown;
+  await act(async () => {
+    outcome = await view.reveal("YYYYYYYY");
+  });
+  expect(outcome).toBe("not-listed");
+  expect(view.selection.getState().key).toBeNull();
+});
+
 it("shows an Item filed in no Collection in its Library", async () => {
   const { deps, run } = pluginData();
   const view = await openTab(deps);
   await press(view, row(view, THESIS));
-  await act(() => view.reveal("EEEEEEEE"));
+  await act(async () => {
+    await view.reveal("EEEEEEEE");
+  });
   expect(listRuns(run).at(-1)!.libraries).toEqual({
     mode: "selected",
     libraries: [PERSONAL],
@@ -1262,6 +1531,11 @@ const ON_MY_LIBRARY = {
   layout: "table",
   order: ["title"],
 };
+
+/** The offer to search all libraries beside the header, while it shows. */
+function searchAll(view: LibraryView) {
+  return view.contentEl.querySelector<HTMLElement>("[data-library-search-all]");
+}
 
 /** The search box of the tab. */
 function searchBox(view: LibraryView): HTMLInputElement {
@@ -1285,6 +1559,26 @@ function shown(view: LibraryView) {
     (r) => r.indexedKey,
   );
 }
+
+it("offers no toolbar search of the rows on screen beside its own search box", async () => {
+  const { deps } = pluginData(ON_MY_LIBRARY);
+  const view = await openTab(deps);
+  expect(
+    view.contentEl.querySelector('[data-query-toolbar="search"]'),
+  ).toBeNull();
+});
+
+it("offers no sort while a search lists its hits in rank order, and offers it again once the search is cleared", async () => {
+  const { deps } = pluginData(ON_MY_LIBRARY);
+  const view = await openTab(deps);
+  const sort = () =>
+    view.contentEl.querySelector('[data-query-toolbar="sort"]');
+  expect(sort()).not.toBeNull();
+  await type(view, "figures");
+  expect(sort()).toBeNull();
+  await type(view, "");
+  expect(sort()).not.toBeNull();
+});
 
 it("has the search box focused when the command brings the tab forward", async () => {
   const { deps } = pluginData();
@@ -1314,10 +1608,12 @@ it("lists a search's hits in the rank of the worker search, inside the selected 
   await type(view, "figures");
   expect(searches.at(-1)).toEqual({ query: "figures", libraries: [1] });
   expect(shown(view)).toEqual(["DDDDDDDD", "CCCCCCCC", "AAAAAAAA"]);
-  expect(header(view)).toBe("3 matches in My Library · Search all libraries");
+  expect(header(view)).toBe("3 matches in My Library");
+  expect(searchAll(view)?.textContent).toBe("Search all libraries");
   await press(view, row(view, THESIS));
   expect(shown(view)).toEqual(["CCCCCCCC", "AAAAAAAA"]);
-  expect(header(view)).toBe("2 matches in Thesis · Search all libraries");
+  expect(header(view)).toBe("2 matches in Thesis");
+  expect(searchAll(view)?.textContent).toBe("Search all libraries");
 });
 
 it("searches all libraries in the Library Scope on request, past the selected Collection", async () => {
@@ -1349,6 +1645,23 @@ it("narrows a tag: token to the Items with that tag, in the list's order", async
   expect(shown(view)).toEqual(["CCCCCCCC", "AAAAAAAA"]);
 });
 
+it("asks the search again after a database change, so a renamed Item joins its hits", async () => {
+  const { deps, change } = pluginData(ON_MY_LIBRARY);
+  const view = await openTab(deps);
+  await type(view, "figures");
+  expect(shown(view)).toEqual(["DDDDDDDD", "CCCCCCCC", "AAAAAAAA"]);
+  await act(async () => {
+    change(
+      SEED.map((item) =>
+        item.key === B ? { ...item, title: "Figures of attention" } : item,
+      ),
+    );
+    await view.searched;
+    await view.query.settled;
+  });
+  expect(shown(view)).toEqual(["DDDDDDDD", "CCCCCCCC", B, "AAAAAAAA"]);
+});
+
 it("clears the search on Escape, and lists the selected node again", async () => {
   const { deps, settings } = pluginData(ON_MY_LIBRARY);
   const view = await openTab(deps);
@@ -1373,6 +1686,49 @@ it("clears the search on Escape, and lists the selected node again", async () =>
   expect(settings.current?.["library.document"]?.search).toBe("");
 });
 
+it("says a search that finds nothing found nothing, offers to search all libraries, then to clear it, with no filter hint", async () => {
+  const { deps } = pluginData(ON_MY_LIBRARY);
+  const view = await openTab(deps);
+  const empty = () =>
+    view.contentEl.querySelector<HTMLElement>("[data-query-empty]");
+  await type(view, "Engelbart");
+  expect(shown(view)).toEqual([]);
+  expect(view.contentEl.querySelector("[data-query-empty-hint]")).toBeNull();
+  expect(empty()?.querySelector("[data-library-empty]")?.textContent).toBe(
+    m.library_view_empty_search({ query: "Engelbart" }),
+  );
+  const action = () =>
+    empty()?.querySelector<HTMLElement>("[data-library-empty-action]");
+  expect(action()?.textContent).toBe(m.library_view_search_everywhere());
+  await act(async () => {
+    action()!.click();
+    await view.searched;
+    await view.query.settled;
+  });
+  expect(shown(view)).toEqual([]);
+  expect(action()?.textContent).toBe(m.library_view_search_clear());
+  await act(async () => {
+    action()!.click();
+    await view.searched;
+    await view.query.settled;
+  });
+  expect(searchBox(view).value).toBe("");
+  expect(shown(view)).toHaveLength(5);
+});
+
+it("says the facets left nothing to list where no paper passes them", async () => {
+  const { deps } = pluginData(ON_MY_LIBRARY);
+  const view = await openTab(deps);
+  // An unread paper has no Literature Note, so none passes both.
+  await press(view, facet(view, "has-note"));
+  await press(view, facet(view, "unread"));
+  expect(shown(view)).toEqual([]);
+  expect(view.contentEl.querySelector("[data-query-empty-hint]")).toBeNull();
+  expect(
+    view.contentEl.querySelector("[data-library-empty]")?.textContent,
+  ).toBe(m.library_view_empty_facets());
+});
+
 it("keeps a search inside the active facets, the vault's among them, in the search's rank", async () => {
   const { deps } = pluginData(ON_MY_LIBRARY);
   const view = await openTab(deps);
@@ -1382,7 +1738,8 @@ it("keeps a search inside the active facets, the vault's among them, in the sear
   expect(shown(view)).toEqual(["DDDDDDDD", "AAAAAAAA"]);
   await press(view, facet(view, "annotated"));
   expect(shown(view)).toEqual(["AAAAAAAA"]);
-  expect(header(view)).toBe("1 match in My Library · Search all libraries");
+  expect(header(view)).toBe("1 match in My Library");
+  expect(searchAll(view)?.textContent).toBe("Search all libraries");
 });
 
 it("keeps a search of all libraries inside the active facets", async () => {
@@ -1463,6 +1820,57 @@ it("leaves Enter and the arrow keys to the Welcome View banner's controls", asyn
   expect(itemRows(view)[1]).toBe(`${B} *`);
 });
 
+describe("Welcome View banner once setup is complete", () => {
+  /** The banner's headings on screen. */
+  const banner = (view: LibraryView) =>
+    [
+      ...view.contentEl.querySelectorAll(
+        '[data-welcome-banner] [role="heading"]',
+      ),
+    ].map((el) => el.textContent);
+
+  /** A tab of a vault with the literature-notes folder, its banner settled. */
+  async function setUp() {
+    const harness = pluginData();
+    harness.host.vault.addFile("literatures/Paper.md", "");
+    const view = await openTab(harness.deps);
+    await act(() => view.welcome.settled);
+    return { ...harness, view };
+  }
+
+  it("shows nothing until the researcher asks for it", async () => {
+    const { view } = await setUp();
+    expect(banner(view)).toEqual([]);
+  });
+
+  it("shows the setup steps on Open welcome view", async () => {
+    const { view, settings } = await setUp();
+    const leaf = { view } as unknown as WorkspaceLeaf;
+    await act(() =>
+      openWelcomeView(
+        {
+          workspace: {
+            getLeavesOfType: () => [leaf],
+            setActiveLeaf: () => {},
+            revealLeaf: () => Promise.resolve(),
+          },
+        } as unknown as App,
+        settings,
+      ),
+    );
+    expect(banner(view)).toContain(m.welcome_step_connect_title());
+    expect(banner(view)).toContain(m.welcome_step_library_title());
+  });
+
+  it("offers the template conversion while it is pending", async () => {
+    const { view, settings } = await setUp();
+    await act(() => {
+      settings.update({ "note.template-conversion-pending": true });
+    });
+    expect(banner(view)).toContain(m.welcome_template_conversion_title());
+  });
+});
+
 it("asks the database nothing from the search box while Zotero's data folder is missing, and searches once it is set", async () => {
   const { deps, searches, lose, locate } = pluginData(ON_MY_LIBRARY);
   const view = await openTab(deps);
@@ -1479,6 +1887,36 @@ it("asks the database nothing from the search box while Zotero's data folder is 
   });
   expect(searches.at(-1)).toEqual({ query: "figures", libraries: [1] });
   expect(shown(view)).toEqual(["DDDDDDDD", "CCCCCCCC", "AAAAAAAA"]);
+});
+
+it("lets go of the selected row once a search leaves it out, and hides its Reading Card", async () => {
+  const { deps } = pluginData();
+  const view = await openTab(deps);
+  await act(() => itemRow(view, A).click());
+  expect(view.selection.getState().key).toBe(A);
+  await type(view, "attention");
+  expect(itemRows(view)).toEqual([B]);
+  expect(view.selection.getState().key).toBeNull();
+  expect(
+    view.contentEl.querySelector("[data-library-card]")!.hasAttribute("hidden"),
+  ).toBe(true);
+});
+
+it("draws each row without Recent's reason once My Library is picked, where Recent reads My Library alone", async () => {
+  const { deps, rescope } = pluginData();
+  const view = await openTab(deps);
+  await act(async () => {
+    rescope(LIBRARIES.slice(0, 1));
+    await view.searched;
+    await view.query.settled;
+  });
+  const reasons = () =>
+    [...view.contentEl.querySelectorAll("[data-query-papers-state]")].filter(
+      (el) => el.textContent?.includes("edited in Zotero"),
+    ).length;
+  expect(reasons()).toBe(5);
+  await press(view, row(view, MY_LIBRARY));
+  expect(reasons()).toBe(0);
 });
 
 describe("Reading Card", () => {
@@ -1526,6 +1964,65 @@ describe("Reading Card", () => {
       meta: "",
       abstract: null,
     });
+  });
+
+  it("reads the selected Item again after a database change", async () => {
+    const { deps, change } = pluginData();
+    const view = await openTab(deps);
+    await act(async () => {
+      itemRow(view, B).click();
+      await view.card.settled;
+    });
+    await act(async () => {
+      change(
+        SEED.map((item) =>
+          item.key === B ? { ...item, title: "Attention, renamed" } : item,
+        ),
+      );
+      await view.query.settled;
+      await view.card.settled;
+    });
+    expect(shownCard(view)?.title).toBe("Attention, renamed");
+  });
+
+  it("opens its row menu under the more button", async () => {
+    const { deps } = pluginData();
+    deps.app.workspace.trigger = vi.fn();
+    const view = await openTab(deps);
+    await act(async () => {
+      itemRow(view, B).click();
+      await view.card.settled;
+    });
+    await act(() => button(view, "more").click());
+    const menu = Menu.instances.at(-1)!;
+    expect(menu.parentEl).toBe(button(view, "more"));
+    expect(menu.position).not.toBeNull();
+  });
+
+  it("shows none of the last Item's Annotations while it reads another's, and says so where that read fails", async () => {
+    const { deps, run } = pluginData();
+    const view = await openTab(deps);
+    await act(async () => {
+      itemRow(view, A).click();
+      await view.card.settled;
+    });
+    expect(view.card.query.state.getState().results).not.toBeNull();
+    const failing = Promise.withResolvers<QueryViewOutcome>();
+    run.mockImplementation((request) =>
+      request.from === "annotations" && request.context?.item === B
+        ? failing.promise
+        : Promise.resolve(answer(SEED, request)),
+    );
+    await act(() => itemRow(view, B).click());
+    expect(view.card.query.state.getState().results).toBeNull();
+    await act(async () => {
+      failing.reject(new Error("The database is busy"));
+      await view.card.settled;
+    });
+    expect(view.card.query.state.getState().results).toBeNull();
+    expect(
+      card(view).querySelector("[data-library-card-failed]"),
+    ).not.toBeNull();
   });
 
   it("lists the selected Item's Annotations with the Item as the Query Context, from the Item's Library", async () => {
@@ -1591,4 +2088,63 @@ describe("Reading Card", () => {
     expect(await pressKey(view, inside, ["ArrowDown"])).toBe(false);
     expect(items.openNote).not.toHaveBeenCalled();
   });
+});
+
+it("says in the Save as query file dialog what the file leaves out, and offers the selected Collection's name", async () => {
+  const { deps } = pluginData();
+  Object.assign(deps.app, {
+    fileManager: {
+      getNewFileParent: () => ({ isRoot: () => true, path: "/" }),
+    },
+  });
+  deps.app.workspace.getActiveFile = () => null;
+  Object.assign(deps.app, {
+    keymap: { pushScope: () => {}, popScope: () => {} },
+  });
+  const proto: Partial<HTMLElement> = HTMLElement.prototype;
+  if (!proto.hidePopover) {
+    proto.hidePopover = () => {};
+    cleanup.defer(() => {
+      delete proto.hidePopover;
+    });
+  }
+  const view = await openTab(deps);
+  await press(view, row(view, THESIS));
+  await press(view, facet(view, "has-note"));
+  await type(view, "figures");
+  Modal.instances.length = 0;
+  await act(() => {
+    view.contentEl
+      .querySelector<HTMLElement>("[data-query-view-menu]")!
+      .click();
+    // happy-dom has no popover, so the test sends the event that opens it.
+    document
+      .querySelector("[data-query-view-list]")!
+      .dispatchEvent(
+        Object.assign(new Event("beforetoggle"), { newState: "open" }),
+      );
+  });
+  await act(() =>
+    document
+      .querySelector<HTMLElement>('[data-query-view-action="save-as"]')!
+      .click(),
+  );
+  await vi.waitFor(() => expect(Modal.instances).toHaveLength(1));
+  const modal = Modal.instances[0]!;
+  modal.onOpen();
+  expect(
+    [...modal.contentEl.querySelectorAll("[data-save-left-out]")].map(
+      (el) => el.textContent,
+    ),
+  ).toEqual([
+    m.library_view_save_leaves_out_facets({
+      facets: m.library_view_facet_has_note(),
+    }),
+    m.library_view_save_leaves_out_search(),
+  ]);
+  const name = [...modal.contentEl.querySelectorAll<HTMLElement>("label")]
+    .flatMap((label) => controlsOf(label.lastElementChild as HTMLElement))
+    .find((control) => control instanceof TextComponent);
+  expect(name?.getValue()).toBe("Thesis");
+  modal.close();
 });
