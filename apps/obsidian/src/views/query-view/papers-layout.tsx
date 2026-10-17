@@ -225,21 +225,21 @@ function PaperRow({
   const kind = mainAttachmentKind(values);
   return (
     <li
-      className="zt:border-b-(length:--border-width) zt:border-(--background-modifier-border)"
+      className="zt:border-b-(length:--border-width) zt:border-border"
       data-query-papers-row={item.key}
     >
-      <div className="zt:flex zt:items-start zt:gap-1 zt:rounded-(--radius-s) zt:px-1 zt:py-1.5 zt:hover:bg-(--background-modifier-hover)">
+      <div className="zt:flex zt:items-start zt:gap-1 zt:rounded-sm zt:px-1 zt:py-1.5 zt:hover:bg-(--background-modifier-hover)">
         <Expander record={item} open={open} onToggle={() => toggle(item)} />
         <div className="zt:min-w-0 zt:flex-1">
           <div
-            className="zt:line-clamp-2 zt:text-(length:--font-ui-small) zt:font-(--font-medium) zt:text-(--text-normal)"
+            className="zt:line-clamp-2 zt:text-sm zt:font-(--font-medium) zt:text-foreground"
             data-query-papers-title=""
           >
             {text(values.title)}
           </div>
           {meta !== "" && (
             <div
-              className="zt:truncate zt:text-(length:--font-ui-smaller) zt:text-(--text-muted)"
+              className="zt:truncate zt:text-xs zt:text-muted-foreground"
               data-query-papers-meta=""
             >
               {meta}
@@ -247,7 +247,7 @@ function PaperRow({
           )}
           {state.length > 0 && (
             <div
-              className="zt:flex zt:items-center zt:gap-1 zt:text-(length:--font-ui-smaller) zt:text-(--text-faint)"
+              className="zt:flex zt:items-center zt:gap-1 zt:text-xs zt:text-faint"
               data-query-papers-state=""
             >
               {colors.length > 0 && (
@@ -314,7 +314,7 @@ const indent = (depth: number) =>
   }) as CSSProperties;
 
 const CHILD_ROW =
-  "zt:flex zt:min-w-0 zt:items-center zt:gap-1.5 zt:rounded-(--radius-s) zt:py-0.5 zt:ps-(--zt-indent) zt:pe-1 zt:text-(length:--font-ui-smaller) zt:hover:bg-(--background-modifier-hover)";
+  "zt:flex zt:min-w-0 zt:items-center zt:gap-1.5 zt:rounded-sm zt:py-0.5 zt:ps-(--zt-indent) zt:pe-1 zt:text-xs zt:hover:bg-(--background-modifier-hover)";
 
 /** The rows under one expanded row, and the rows under those that are expanded. */
 function ChildRows({
@@ -329,7 +329,7 @@ function ChildRows({
   if (state.phase !== "ready")
     return (
       <li
-        className={cn(CHILD_ROW, "zt:text-(--text-muted)")}
+        className={cn(CHILD_ROW, "zt:text-muted-foreground")}
         style={indent(depth)}
         data-query-table-status={state.phase}
       >
