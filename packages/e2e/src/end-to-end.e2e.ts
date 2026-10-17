@@ -1340,6 +1340,241 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expectSeedOrder(reloaded, 1);
   });
 
+  it("filters the Library View from the Library Tree, with counts that match the seed and follow a database change", async () => {
+    const services = "app.plugins.plugins.zotlit.services";
+    const snapshot = await obEval(
+      vaultId,
+      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null,scope:${services}.settings.current[${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}]??null})`,
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'library.document':saved.document,${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}:saved.scope});await settings.flush();await app.workspace.changeLayout(saved.layout);return true;})()`,
+      );
+    });
+    // The Library Scope holds My Library alone; the tree opens on the default
+    // document.
+    await obEval(
+      vaultId,
+      `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=${services}.settings;settings.update({'library.document':null,${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}:{mode:'selected',libraries:[{type:'personal'}]}});await settings.flush();return true;})()`,
+    );
+
+    // The seed's oracle: each Library's Items, and the Items a Collection
+    // and its subcollections hold, each once.
+    const library = (type: "user" | number) =>
+      LIBRARIES.find((entry) =>
+        type === "user" ? entry.type === "user" : entry.groupID === type,
+      )!;
+    const personal = library("user");
+    const shared = library(4200309);
+    const indexedKey = (item: FixtureItem) => {
+      const { groupID } = LIBRARIES.find(
+        (entry) => entry.libraryID === item.libraryID,
+      )!;
+      return groupID === null ? item.key : `${item.key}g${groupID}`;
+    };
+    const subtree = (collectionID: number): number[] => [
+      collectionID,
+      ...COLLECTIONS.filter(
+        (entry) => entry.parentCollectionID === collectionID,
+      ).flatMap((child) => subtree(child.collectionID)),
+    ];
+    const collection = (libraryID: number, key: string) =>
+      COLLECTIONS.find(
+        (entry) => entry.libraryID === libraryID && entry.key === key,
+      )!;
+    const filed = (collectionID: number) => {
+      const ids = new Set(subtree(collectionID));
+      return ITEMS.filter(({ collectionIDs }) =>
+        collectionIDs.some((id) => ids.has(id)),
+      );
+    };
+    const inLibrary = (libraryID: number) =>
+      ITEMS.filter((item) => item.libraryID === libraryID);
+    const parent = collection(personal.libraryID, "PERSNAL2");
+    const child = collection(personal.libraryID, "PERSCHLD");
+    const sharedKey = collection(personal.libraryID, "SHAREDCL");
+    const nodeKey = (selector: string, ...path: string[]) =>
+      JSON.stringify([selector, ...path]);
+    const parentKey = nodeKey("personal", parent.name);
+    const childKey = nodeKey("personal", parent.name, child.name);
+    const sharedNode = nodeKey(`group:${shared.groupID}`);
+
+    interface Shown {
+      phase: string;
+      header: string | null;
+      all: string | null;
+      tree: {
+        key: string;
+        level: number;
+        label: string;
+        count: string | null;
+        selected: boolean;
+      }[];
+      count: string | null;
+      rows: string[];
+    }
+    const readShown = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.tree)return 'null';await view.query.settled;await view.tree.settled;const el=view.contentEl;return JSON.stringify({phase:view.query.state.getState().phase,header:el.querySelector('[data-library-header]')?.textContent??null,all:el.querySelector('[data-library-all]')?.getAttribute('data-library-all')??null,tree:[...el.querySelectorAll('[data-library-node]')].map(n=>({key:n.getAttribute('data-library-node'),level:Number(n.getAttribute('aria-level')),label:n.querySelector('[data-library-label]').textContent,count:n.querySelector('[data-library-count]')?.textContent??null,selected:n.getAttribute('aria-selected')==='true'})),count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,rows:[...el.querySelectorAll('tr[data-query-table-row="item"]')].map(n=>n.getAttribute('data-query-key'))});})()`;
+    const shownWhen = async (ready: (shown: Shown) => boolean) => {
+      let shown: Shown | null = null;
+      const settled = await waitFor(async () => {
+        shown = JSON.parse(await obEval(vaultId, readShown)) as Shown | null;
+        return shown !== null && ready(shown);
+      }, 120);
+      if (!settled) throw new Error(`Library View: ${JSON.stringify(shown)}`);
+      return shown!;
+    };
+    /** Whether the list drew every row it counted, for the selection `key`. */
+    const listing = (key: string) => (shown: Shown) =>
+      shown.phase === "ready" &&
+      shown.tree.some((node) => node.key === key && node.selected) &&
+      shown.count !== null &&
+      shown.rows.length === Number(shown.count);
+    const node = (shown: Shown, key: string) =>
+      shown.tree.find((entry) => entry.key === key);
+    /**
+     * Press the element `target` finds in the tree pane. A narrow pane keeps
+     * the tree behind its button, so the press opens it first.
+     */
+    const inTree = (target: string, what: string) =>
+      obEval(
+        vaultId,
+        `(async()=>{${PAGE}const el=app.workspace.getLeavesOfType('zotlit-library')[0].view.contentEl;const pane=el.querySelector('[data-library-tree]');if(getComputedStyle(pane).display==='none'){press(el.querySelector('[data-library-tree-toggle]'),'Library Tree button');await until('Library Tree',()=>getComputedStyle(pane).display!=='none');}press(${target},${JSON.stringify(what)});return true;})()`,
+      );
+    /** Press the node `key`, or its element that `part` selects. */
+    const press = (key: string, part: string, what: string) => {
+      const row = `[...pane.querySelectorAll('[data-library-node]')].find(n=>n.getAttribute('data-library-node')===${JSON.stringify(key)})`;
+      return inTree(
+        part === "" ? row : `${row}.querySelector(${JSON.stringify(part)})`,
+        what,
+      );
+    };
+
+    await obEval(
+      vaultId,
+      "app.commands.executeCommandById('zotlit:open-library-view');true",
+    );
+    // The tree shows the Library Scope: My Library and its Collections, each
+    // counted from the seed, a subcollection's Items inside its parent.
+    const opened = await shownWhen(
+      (shown) =>
+        listing(nodeKey("personal"))(shown) &&
+        node(shown, parentKey)?.count != null,
+    );
+    expect(
+      opened.tree.map(({ key, level, count }) => ({ key, level, count })),
+    ).toEqual([
+      {
+        key: nodeKey("personal"),
+        level: 1,
+        count: String(inLibrary(personal.libraryID).length),
+      },
+      ...[parent, sharedKey]
+        .toSorted((a, b) => a.name.localeCompare(b.name))
+        .map((entry) => ({
+          key: nodeKey("personal", entry.name),
+          level: 2,
+          count: String(filed(entry.collectionID).length),
+        })),
+    ]);
+    expect(opened.header).toBe(
+      m.library_view_header({
+        selection: m.settings_library_scope_personal(),
+        count: inLibrary(personal.libraryID).length,
+      }),
+    );
+    await press(parentKey, "[data-library-expand]", "Collection disclosure");
+    expect(
+      node(
+        await shownWhen((shown) => node(shown, childKey) !== undefined),
+        childKey,
+      ),
+    ).toMatchObject({
+      level: 3,
+      count: String(filed(child.collectionID).length),
+    });
+
+    // "All libraries" shows the group libraries outside the Library Scope;
+    // one lists its own Items.
+    expect(opened.all).toBe("off");
+    await inTree("pane.querySelector('[data-library-all]')", "All libraries");
+    const widened = await shownWhen(
+      (shown) =>
+        shown.all === "on" &&
+        LIBRARIES.every(
+          ({ groupID }) =>
+            groupID === null ||
+            node(shown, nodeKey(`group:${groupID}`))?.count != null,
+        ),
+    );
+    for (const entry of LIBRARIES.filter(({ groupID }) => groupID !== null))
+      expect(node(widened, nodeKey(`group:${entry.groupID}`))).toMatchObject({
+        label: entry.name,
+        count: String(inLibrary(entry.libraryID).length),
+      });
+    await press(sharedNode, "", "group library");
+    const group = await shownWhen(listing(sharedNode));
+    expect(group.rows.toSorted()).toEqual(
+      inLibrary(shared.libraryID).map(indexedKey).toSorted(),
+    );
+
+    // A Collection lists exactly its Items and its subcollection's, and the
+    // header names it with the count.
+    await press(parentKey, "", "Collection");
+    const expected = filed(parent.collectionID).map(indexedKey).toSorted();
+    const chosen = await shownWhen(listing(parentKey));
+    expect(chosen.rows.toSorted()).toEqual(expected);
+    expect(chosen.header).toBe(
+      m.library_view_header({ selection: parent.name, count: expected.length }),
+    );
+
+    // A plugin reload comes back on the Collection.
+    expect(
+      await obEvalUntil(
+        vaultId,
+        "app.plugins.disablePlugin('zotlit').then(function () { return app.plugins.enablePlugin('zotlit'); }).then(function () { return true; })",
+        { expected: "true", tries: 20 },
+      ),
+    ).toBe(true);
+    const reloaded = await shownWhen(listing(parentKey));
+    expect(reloaded.rows.toSorted()).toEqual(expected);
+    expect(reloaded.header).toBe(chosen.header);
+
+    // Zotero files one more Item in the subcollection: the counts up the
+    // tree and the list take it after the database change.
+    const added = inLibrary(personal.libraryID).find(
+      ({ collectionIDs }) =>
+        !collectionIDs.some((id) => subtree(parent.collectionID).includes(id)),
+    )!;
+    const file = (sql: string) => {
+      using database = new DatabaseSync(e2eFixture.databasePath);
+      database.prepare(sql).run(child.collectionID, added.itemID);
+    };
+    file(
+      "insert into collectionItems (collectionID, itemID, orderIndex) values (?, ?, 0)",
+    );
+    cleanup.defer(async () => {
+      file("delete from collectionItems where collectionID = ? and itemID = ?");
+      await signalDatabaseUpdated(vaultId);
+    });
+    await signalDatabaseUpdated(vaultId);
+    const changed = await shownWhen(
+      (shown) =>
+        listing(parentKey)(shown) &&
+        node(shown, parentKey)?.count === String(expected.length + 1),
+    );
+    expect(changed.rows.toSorted()).toEqual(
+      [...expected, indexedKey(added)].toSorted(),
+    );
+    expect(changed.header).toBe(
+      m.library_view_header({
+        selection: parent.name,
+        count: expected.length + 1,
+      }),
+    );
+  });
+
   it("shows a Query File toolbar as icons with tooltips on a narrow pane, and with names on a wide one", async () => {
     const layout = await obEval(
       vaultId,
