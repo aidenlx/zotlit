@@ -194,10 +194,11 @@ function useValueSuggest(
 
 /**
  * A field in a cell: no chrome of its own, only the cell's ring, in the
- * cell's text and padding, as a Bases cell edits. `vault-cell.css` rolls
+ * cell's text and padding, as a Bases cell edits; a date shows at rest in
+ * one too. `vault-cell.css` rolls
  * Obsidian's own field rules back, so these utilities draw it.
  */
-const FIELD =
+export const FIELD =
   "zt:relative zt:block zt:w-full zt:min-w-0 zt:bg-transparent zt:px-2 zt:py-1 zt:text-(--text-normal) zt:outline-none";
 
 export interface VaultEditorProps {
@@ -306,7 +307,6 @@ function FieldEditor({
         ref={field}
         type={type === "date" ? "date" : "datetime-local"}
         max={type === "date" ? "9999-12-31" : "9999-12-31T23:59:59"}
-        step={type === "datetime" ? 1 : undefined}
         // Obsidian places the picker's icon at the start of the field.
         className={cn(
           FIELD,

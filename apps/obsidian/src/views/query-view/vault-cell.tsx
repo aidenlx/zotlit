@@ -42,6 +42,7 @@ import type {
   VaultWrite,
 } from "./table-notes";
 import {
+  FIELD,
   PILL,
   TAG,
   VaultEditor,
@@ -50,7 +51,7 @@ import {
   valueOf,
 } from "./vault-editors";
 import type { VaultDraft, VaultEditEnd } from "./vault-editors";
-import { dateText, linkOf, tagText } from "./vault-value";
+import { dateInputValue, linkOf, tagText } from "./vault-value";
 import "./vault-cell.css";
 
 /** The vault property `name` of the Item `itemKey`, and where it is read. */
@@ -257,20 +258,26 @@ function VaultPreview({
     );
   }
   const text = vaultText(value);
-  if (text !== "" && (type === "date" || type === "datetime"))
+  const date =
+    type === "date" || type === "datetime" ? dateInputValue(type, text) : "";
+  if (date !== "")
+    // The read-only native field shows the date as the field that edits it
+    // does, and as a Bases cell does: in the system's form, with its icon.
     return (
-      <span
+      <input
         data-query-vault={state}
         data-query-vault-date=""
-        className="zt:flex zt:min-w-0 zt:items-center zt:gap-(--size-4-1) zt:tabular-nums"
-      >
-        <Icon
-          name={type === "date" ? "calendar" : "clock"}
-          size="var(--icon-xs)"
-          className="zt:shrink-0 zt:text-(--text-faint)"
-        />
-        <span className="zt:truncate">{dateText(type, text)}</span>
-      </span>
+        type={type === "date" ? "date" : "datetime-local"}
+        value={date}
+        // Inert rather than read-only, which would hide the field's icon:
+        // the cell takes the click and the keys, as for any other value.
+        inert
+        tabIndex={-1}
+        className={cn(
+          FIELD,
+          "zt:pointer-events-none zt:-ms-2 zt:ps-7 zt:tabular-nums",
+        )}
+      />
     );
   const link =
     type === "text" && typeof current === "string" ? linkOf(current) : null;
@@ -425,10 +432,11 @@ export function VaultEditCell(props: VaultCellProps) {
         data-query-vault-cell=""
         data-query-vault-name={name}
         data-query-vault-type={type}
-        // The cell fills the table cell, so an empty value is a target too.
+        // The cell fills the table cell, above its row line, so an empty
+        // value is a target too.
         // An editable cell shows the Bases cell ring on hover and focus.
         className={cn(
-          "zt:group/vault zt:relative zt:h-(--bases-table-row-height) zt:w-full zt:min-w-0 zt:outline-none",
+          "zt:group/vault zt:relative zt:h-[calc(var(--bases-table-row-height)-var(--border-width))] zt:w-full zt:min-w-0 zt:outline-none",
           editable &&
             !editing &&
             "zt:rounded-(--bases-table-cell-radius-active) zt:hover:z-1 zt:hover:shadow-(--bases-table-cell-shadow-active) zt:focus-visible:z-1 zt:focus-visible:shadow-(--bases-table-cell-shadow-active)",

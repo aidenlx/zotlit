@@ -40,7 +40,6 @@ import type {
   VaultValue,
   VaultWrite,
 } from "./table-notes";
-import { dateText } from "./vault-value";
 import { QueryView, RERUN_DELAY_MS } from "./view";
 import type { QueryViewDeps } from "./view";
 
@@ -3965,7 +3964,7 @@ ${order.map((path) => `      - ${path}\n`).join("")}`),
       );
     });
 
-    it("shows a date and time in the locale's form with its icon, edits it in a native field, and writes nothing when it is unchanged", async () => {
+    it("shows a date and time in an inert native field, edits it in one, and writes nothing when it is unchanged", async () => {
       const { cell, input, type, press, literatureNotes, icon } = await typed(
         ["vault.met"],
         { met: "2024-05-01T10:30:00" },
@@ -3973,12 +3972,12 @@ ${order.map((path) => `      - ${path}\n`).join("")}`),
       );
 
       expect(icon("met")).toBe("clock");
-      expect(cell("met").textContent).toBe(
-        dateText("datetime", "2024-05-01T10:30:00"),
+      const shown = cell("met").querySelector<HTMLInputElement>(
+        "[data-query-vault-date]",
       );
-      expect(
-        cell("met").querySelector("[data-query-vault-date] svg"),
-      ).not.toBeNull();
+      expect(shown?.type).toBe("datetime-local");
+      expect(shown?.hasAttribute("inert")).toBe(true);
+      expect(shown?.value).toBe("2024-05-01T10:30");
       await act(() => cell("met").click());
       expect(input()?.type).toBe("datetime-local");
       // The native field leaves out seconds that are none.

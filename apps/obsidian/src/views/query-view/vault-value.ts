@@ -1,8 +1,8 @@
 // How a vault cell reads a value of the frontmatter, as a Bases cell shows
-// it: a value that is one whole link shows as that link, a date or a date
-// and time in the form of the locale, as Chromium's date field shows it, and
-// a tag without its `#`. The native date fields take and give the forms the
-// Properties panel writes: `YYYY-MM-DD`, and `YYYY-MM-DDTHH:mm:ss`.
+// it: a value that is one whole link shows as that link, and a tag without
+// its `#`. A date shows, and edits, in a native date field, in the system's
+// form; the fields take and give the forms the Properties panel writes:
+// `YYYY-MM-DD`, and `YYYY-MM-DDTHH:mm:ss`.
 //
 // @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
 import { regex } from "arkregex";
@@ -61,7 +61,7 @@ function safeDecode(text: string): string {
   }
 }
 
-/** The date types, which show in the locale's form and edit in a native field. */
+/** The date types, which show and edit in a native field. */
 export type DateType = "date" | "datetime";
 
 const DATE = regex(
@@ -90,31 +90,6 @@ function partsOf(type: DateType, value: string) {
   } catch {
     return null;
   }
-}
-
-/**
- * A stored date, or date and time, in the form of `locale`, the app's where
- * none is given; text that is no date stays as it is.
- */
-export function dateText(
-  type: DateType,
-  value: string,
-  locale?: string,
-): string {
-  const parts = partsOf(type, value);
-  if (!parts) return value;
-  const options: Intl.DateTimeFormatOptions = {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  };
-  return type === "date"
-    ? parts.plain.toPlainDate().toLocaleString(locale, options)
-    : parts.plain.toLocaleString(locale, {
-        ...options,
-        hour: "2-digit",
-        minute: "2-digit",
-      });
 }
 
 /** The value a native date field takes for a stored one; empty for no date. */
