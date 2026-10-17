@@ -134,7 +134,7 @@ export interface QueryViewHost {
    * where the text was not saved; the change then stays on screen and the
    * toolbar says that it is not saved. The text comes back through
    * {@link QueryView.setText} as the host reads it again. A host without a
-   * file saves to plugin data through `pluginDataStorage`.
+   * file, such as the Library View, keeps its state in plugin data.
    */
   save: (text: string) => void | Promise<void>;
   /**

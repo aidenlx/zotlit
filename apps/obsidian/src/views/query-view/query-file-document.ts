@@ -78,6 +78,11 @@ export class QueryFileDocument {
     this.#events = events;
   }
 
+  /** The text of the file on screen, a change not yet saved included; `null` until the host gives its text. */
+  get text(): string | null {
+    return this.#text;
+  }
+
   /** The file on screen; `null` until the host gives its text. */
   get file(): QueryFile | null {
     return this.#file;

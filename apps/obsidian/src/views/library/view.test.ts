@@ -626,6 +626,24 @@ it("opens on the document plugin data holds, once it has loaded", async () => {
   });
 });
 
+it("opens on every field of the document plugin data holds that it can read, where one facet is unknown", async () => {
+  const { deps, run } = pluginData({
+    node: { kind: "library", library: PERSONAL },
+    facets: ["annotated", "starred"],
+    search: "",
+    sort: [{ property: "title", direction: "ASC" }],
+    layout: "table",
+    order: ["title"],
+  });
+  const view = await openTab(deps);
+  expect(listRuns(run).at(-1)).toMatchObject({
+    libraries: { mode: "selected", libraries: [PERSONAL] },
+    filter: "annotations.length > 0",
+    sort: [{ field: "title", direction: "asc" }],
+  });
+  expect(view.query.state.getState().view?.type).toBe("table");
+});
+
 it("opens again on a sort the toolbar changed, and runs the query the toolbar ran", async () => {
   const { deps, run } = pluginData();
   const first = await openTab(deps);
@@ -898,6 +916,56 @@ it("keeps Recent selected through a sort change, and selecting it again sorts ne
   expect(settings.current?.["library.document"]).toMatchObject({
     node: RECENT,
     sort: [{ property: "dateModified", direction: "DESC" }],
+  });
+});
+
+/** Two sorts from the toolbar, the second before the first is saved. */
+function sortTwice(view: LibraryView) {
+  view.query.document.editView({
+    sort: [{ property: "title", direction: "ASC" }],
+  });
+  view.query.document.editView({
+    sort: [{ property: "title", direction: "DESC" }],
+  });
+}
+
+it("selects Recent with its own sort after two quick sorts, on screen and in plugin data", async () => {
+  const { deps, run, settings } = pluginData(ON_MY_LIBRARY);
+  const view = await openTab(deps);
+  await act(async () => {
+    sortTwice(view);
+    row(view, RECENT).click();
+    await view.query.flush();
+    await view.searched;
+    await view.query.settled;
+  });
+  expect(listRuns(run).at(-1)!.sort).toEqual([
+    { field: "dateModified", direction: "desc" },
+  ]);
+  await settings.flush();
+  expect(settings.current?.["library.document"]).toMatchObject({
+    node: RECENT,
+    sort: [{ property: "dateModified", direction: "DESC" }],
+  });
+});
+
+it("keeps the last of two quick sorts once the search is cleared", async () => {
+  const { deps, run, settings } = pluginData(ON_MY_LIBRARY);
+  const view = await openTab(deps);
+  await type(view, "figures");
+  await act(async () => {
+    sortTwice(view);
+    view.search.clear();
+    await view.query.flush();
+    await view.searched;
+    await view.query.settled;
+  });
+  expect(listRuns(run).at(-1)!.sort).toEqual([
+    { field: "title", direction: "desc" },
+  ]);
+  await settings.flush();
+  expect(settings.current?.["library.document"]).toMatchObject({
+    sort: [{ property: "title", direction: "DESC" }],
   });
 });
 

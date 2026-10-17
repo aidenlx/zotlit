@@ -34,7 +34,7 @@ import type { LiteratureNotes } from "@/views/query-view/table-notes";
 
 import { READING_STATE_FACETS } from "./document";
 import type { LibraryNode, ReadingStateFacet } from "./document";
-import { selectionConditions, vaultPass } from "./query-text";
+import { paperCountRequest, unreadCount } from "./document";
 import { collectionTree, findNode, sameLibrary } from "./tree";
 import type { LibraryCounts, TreeCollection, TreeLibrary } from "./tree";
 
@@ -299,24 +299,14 @@ export class LibraryTree extends Component {
     }
   }
 
-  /**
-   * One Library's Items grouped by the Collections they are filed in, each
-   * Item by its Indexed Key alone. One query for each Library, since a path
-   * names a Collection only inside its Library.
-   */
+  /** One Library's Items grouped by the Collections they are filed in. */
   async #counts(
     library: AvailableLibrary,
     signal: AbortSignal,
   ): Promise<LibraryCounts | null> {
     try {
       const outcome = await this.#deps.query.run(
-        {
-          from: "items",
-          fields: [],
-          group: "collections[]",
-          limit: null,
-          libraries: { mode: "selected", libraries: [library.selector] },
-        },
+        paperCountRequest(library.selector),
         signal,
       );
       if (outcome.kind === "result" && outcome.result.groups)
@@ -343,34 +333,20 @@ export class LibraryTree extends Component {
     const { node } = this.store.getState();
     this.store.setState({ unread: null });
     // Recent names no paper count, so it names no unread count either.
-    if (node.kind === "recent") {
+    const unread = unreadCount(node, this.#deps.literatureNotes);
+    if (!unread) {
       this.#unreadRun = null;
       this.#unreadSettled = Promise.resolve();
       return;
     }
-    const { filters, vault } = selectionConditions(node, ["unread"]);
-    const pass = vaultPass(vault, this.#deps.literatureNotes);
     this.#unreadSettled = this.#deps.query
-      .run(
-        {
-          from: "items",
-          fields: [],
-          filter: filters.join(" && "),
-          limit: null,
-          libraries: { mode: "selected", libraries: [node.library] },
-        },
-        controller.signal,
-      )
+      .run(unread.request, controller.signal)
       .then(
         (outcome) => {
           if (controller.signal.aborted) return;
           this.#unreadRun = null;
           if (outcome.kind === "result" && outcome.result.rows)
-            this.store.setState({
-              unread: outcome.result.rows.filter(
-                (row) => pass?.keeps(row) ?? true,
-              ).length,
-            });
+            this.store.setState({ unread: unread.count(outcome.result.rows) });
           else if (outcome.kind === "failed")
             logger.warn("The Library Tree could not count the unread Items", {
               code: outcome.diagnostic.code,

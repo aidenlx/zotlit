@@ -1,13 +1,45 @@
-// The Library View Document: what the Library View shows, as one plain value
-// that plugin data keeps per vault. The view's Query File text derives from
-// it (see `query-text.ts`); the document is the only state the view saves.
-//
-// @see apps/obsidian/docs/adr/0070-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
 import * as v from "valibot";
 
-import { librarySelectorSchema } from "@/services/library-scope/scope";
-import type { LibrarySelector } from "@/services/library-scope/scope";
+// The Library View Document: what the Library View shows, as one plain value
+// that plugin data keeps per vault, and the one module that reads, changes
+// and derives it. Its transitions take a tree selection, the facets, the
+// search and a toolbar change; its derivations give the list's query (the
+// tree node and the facets become the filters for all views, Recent adds none
+// and reads the whole Library Scope, a search becomes its ranked key set, and
+// the sort, the Layout and the Visible Properties pass through to the one
+// Items view), the tree's paper and unread counts, the Libraries of a node,
+// and the text "Save as query file" writes. The Library Tree, the search box,
+// the Library View and its storage all call it, so the tree's counts and the
+// list are built one way.
+//
+// @see apps/obsidian/docs/adr/0070-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
+// @see apps/obsidian/docs/adr/0071-the-library-tree-writes-filters.md
+// @see apps/obsidian/docs/adr/0072-search-enters-the-library-view-as-an-ordered-key-set.md
+// @see apps/obsidian/docs/adr/0075-recent-is-a-library-tree-node-that-writes-a-sort.md
+import type { FilterTree } from "@zotlit/filter-expression";
+import { nameDictionary } from "@zotlit/item-query";
+
+import type {
+  QueryViewRequest,
+  QueryViewRow,
+} from "@/services/item-query/query-view";
+import {
+  librarySelectorSchema,
+  selectorKey,
+} from "@/services/library-scope/scope";
+import type {
+  LibraryScope,
+  LibrarySelector,
+} from "@/services/library-scope/scope";
+import {
+  parseQueryFile,
+  serializeQueryFile,
+} from "@/views/query-view/query-file";
 import type { QueryFileSort } from "@/views/query-view/query-file";
+import type { LiteratureNotes } from "@/views/query-view/table-notes";
+import type { QueryRowPass } from "@/views/query-view/view";
+
+import { searchTerms } from "./search";
 
 /** The Reading State facets, in the order the Library Tree shows them. */
 export const READING_STATE_FACETS = [
@@ -65,23 +97,17 @@ const sortSchema = v.array(
   }),
 );
 
-/**
- * The document as plugin data stores it. Strict: the settings that hold it
- * refuse a value that is not one, and {@link parseLibraryViewDocument} reads
- * each field of a stored value alone.
- */
-export const storedLibraryViewDocumentSchema = v.object({
-  node: nodeSchema,
-  facets: v.array(v.picklist(READING_STATE_FACETS)),
-  search: v.string(),
-  sort: sortSchema,
-  layout: v.picklist(LIBRARY_LAYOUTS),
-  order: v.array(v.pipe(v.string(), v.nonEmpty())),
-});
+const orderSchema = v.array(v.pipe(v.string(), v.nonEmpty()));
 
-export type StoredLibraryViewDocument = v.InferOutput<
-  typeof storedLibraryViewDocumentSchema
->;
+/** The document as plugin data stores it: JSON data. */
+export type StoredLibraryViewDocument = {
+  node: v.InferOutput<typeof nodeSchema>;
+  facets: ReadingStateFacet[];
+  search: string;
+  sort: v.InferOutput<typeof sortSchema>;
+  layout: LibraryLayout;
+  order: string[];
+};
 
 /**
  * The sort Recent writes: last activity, newest first. Until ZotLit Query
@@ -107,9 +133,10 @@ export const DEFAULT_LIBRARY_VIEW_DOCUMENT: LibraryViewDocument = Object.freeze(
 );
 
 /**
- * Read the document that plugin data holds. A field this build cannot read
- * takes its default and the other fields stay; a facet it does not know
- * drops out.
+ * Read the document that plugin data holds: the one check of its shape. A
+ * value that is not an object takes the default document; a field this
+ * build cannot read takes its default and the other fields stay; a facet it
+ * does not know drops out.
  */
 export function parseLibraryViewDocument(raw: unknown): LibraryViewDocument {
   const stored =
@@ -130,11 +157,7 @@ export function parseLibraryViewDocument(raw: unknown): LibraryViewDocument {
     search: field(v.string(), "search", defaults.search),
     sort: field(sortSchema, "sort", defaults.sort),
     layout: field(v.picklist(LIBRARY_LAYOUTS), "layout", defaults.layout),
-    order: field(
-      storedLibraryViewDocumentSchema.entries.order,
-      "order",
-      defaults.order,
-    ),
+    order: field(orderSchema, "order", defaults.order),
   };
 }
 
@@ -142,13 +165,32 @@ export function parseLibraryViewDocument(raw: unknown): LibraryViewDocument {
  * `doc` with `node` selected in the tree. Recent writes its sort; a later
  * sort change stays until the researcher selects Recent again.
  */
-export function documentWithNode(
+export function withNode(
   doc: LibraryViewDocument,
   node: LibraryNode,
 ): LibraryViewDocument {
   return node.kind === "recent"
     ? { ...doc, node, sort: RECENT_SORT }
     : { ...doc, node };
+}
+
+/** `doc` with `facets` as the active Reading State facets. */
+export function withFacets(
+  doc: LibraryViewDocument,
+  facets: readonly ReadingStateFacet[],
+): LibraryViewDocument {
+  return {
+    ...doc,
+    facets: READING_STATE_FACETS.filter((facet) => facets.includes(facet)),
+  };
+}
+
+/** `doc` with `search` as the text in the search box. */
+export function withSearch(
+  doc: LibraryViewDocument,
+  search: string,
+): LibraryViewDocument {
+  return { ...doc, search };
 }
 
 /** What {@link parseLibraryViewDocument} reads back, as JSON data. */
@@ -172,4 +214,286 @@ export function serializeLibraryViewDocument(
     layout: doc.layout,
     order: [...doc.order],
   };
+}
+
+/** The names the derived query shows: its view's name, two Display Names and Recent's reason. */
+export interface LibraryViewLabels {
+  readonly papers: string;
+  readonly creators: string;
+  readonly year: string;
+  /** Recent's reason for an Item Zotero changed last. */
+  readonly editedInZotero: string;
+}
+
+/**
+ * A condition on a row that the vault answers, not the query: the view
+ * applies it to the rows the query returns (#1531 decides whether the
+ * engine takes it over).
+ */
+export type VaultCondition = "has-literature-note" | "no-literature-note";
+
+/** What the Library View runs for its document. */
+export interface LibraryViewQuery {
+  /** The Query File text the Query View reads. */
+  readonly text: string;
+  /** The Libraries the query reads: the Library of the tree node, or the Library Scope for Recent. */
+  readonly libraries: LibraryScope;
+  /**
+   * The Indexed Keys of a search, best match first: the order the view shows
+   * the rows in, in place of the sort. `null` while the view browses.
+   */
+  readonly rank: readonly string[] | null;
+  /** The conditions every row passes in the vault, after the query. */
+  readonly vault: readonly VaultCondition[];
+  /**
+   * Why each row is in the list: on Recent, its last activity; `null`
+   * elsewhere. Until ZotLit Query reads `lastRead` and the Obsidian usage
+   * ledger (#1532, #1533), every Item is on Recent for its last change in
+   * Zotero; the reason then names the source and the time of each row.
+   */
+  readonly reason: string | null;
+}
+
+/**
+ * The most rows the view shows: the Table draws every row it gets, and a
+ * library of 10,000 Items takes about two seconds to draw, 50,000 over
+ * half a minute. The toolbar says how many more match; the tree and the
+ * search narrow to them.
+ */
+export const LIBRARY_VIEW_ROW_LIMIT = 1000;
+
+/** What each facet asks of an Item: a filter, a condition in the vault, or both. */
+const FACETS: Readonly<
+  Record<ReadingStateFacet, { filter?: string; vault?: VaultCondition }>
+> = {
+  // `lastRead` joins this once ZotLit Query reads it (#1532, #1533).
+  unread: { filter: "annotations.isEmpty()", vault: "no-literature-note" },
+  annotated: { filter: "annotations.length > 0" },
+  "has-note": { vault: "has-literature-note" },
+  pdf: {
+    filter:
+      'attachments.filter(value.fileType == "pdf" && value.exists).length > 0',
+  },
+};
+
+/**
+ * The query of `doc`.
+ * @param scope the Library Scope in force, which Recent reads.
+ * @param keys the ranked Indexed Keys that the words of `doc.search` found;
+ * absent while the view browses, and for a search of tags alone.
+ * @param everywhere the Libraries a search of all libraries reads, in place
+ * of the tree node; absent while the search keeps to the node.
+ */
+export function libraryViewQuery(
+  doc: LibraryViewDocument,
+  {
+    labels,
+    scope,
+    keys,
+    everywhere,
+  }: {
+    labels: LibraryViewLabels;
+    scope: LibraryScope;
+    keys?: readonly string[];
+    everywhere?: readonly LibrarySelector[];
+  },
+): LibraryViewQuery {
+  const { node } = doc;
+  // A search of every Library leaves the node's Collection behind.
+  const { filters, vault } = selectionConditions(
+    everywhere === undefined ? node : null,
+    doc.facets,
+  );
+  if (keys !== undefined)
+    filters.push(
+      `[${keys.map((key) => JSON.stringify(key)).join(", ")}].contains(indexedKey)`,
+    );
+  for (const tag of searchTerms(doc.search).tags)
+    filters.push(`tags.contains(${JSON.stringify(tag)})`);
+  const recent = node.kind === "recent";
+  const text = serializeQueryFile({
+    ...(filters.length > 0 && { filters: filterTree(filters) }),
+    properties: nameDictionary(
+      new Map([
+        ["creators", { displayName: labels.creators }],
+        ["date.year", { displayName: labels.year }],
+      ]),
+    ),
+    views: [
+      {
+        type: doc.layout,
+        name: labels.papers,
+        from: "items",
+        ...(doc.sort.length > 0 && { sort: doc.sort }),
+        limit: LIBRARY_VIEW_ROW_LIMIT,
+        order: doc.order,
+        problems: [],
+        source: {},
+      },
+    ],
+    problems: [],
+    source: {},
+  });
+  return {
+    text,
+    libraries: everywhere
+      ? { mode: "selected", libraries: [...everywhere] }
+      : librariesOf(node, scope),
+    rank: keys ?? null,
+    vault,
+    reason: recent ? labels.editedInZotero : null,
+  };
+}
+
+/**
+ * `doc` with what a toolbar change set in `text`: the sort, the Layout and
+ * the Visible Properties of its view. The tree node, the facets and the
+ * search stay as `doc` holds them.
+ */
+export function withText(
+  doc: LibraryViewDocument,
+  text: string,
+): LibraryViewDocument {
+  const view = parseQueryFile(text).views[0];
+  if (!view) return doc;
+  return {
+    ...doc,
+    sort: view.sort ?? [],
+    layout: LIBRARY_LAYOUTS.includes(view.type as LibraryLayout)
+      ? (view.type as LibraryLayout)
+      : doc.layout,
+    order: view.order ?? [],
+  };
+}
+
+/**
+ * The Libraries `node` reads: its own Library, or for Recent the Library
+ * Scope in force, `scope`.
+ */
+export function librariesOf(
+  node: LibraryNode,
+  scope: LibraryScope,
+): LibraryScope {
+  return node.kind === "recent"
+    ? scope
+    : { mode: "selected", libraries: [node.library] };
+}
+
+/**
+ * The request that counts the papers of `library` for the tree: its Items,
+ * each by its Indexed Key alone, grouped by the Collections they are filed
+ * in. One Library each, since a path names a Collection only inside its
+ * Library.
+ */
+export function paperCountRequest(library: LibrarySelector): QueryViewRequest {
+  return {
+    from: "items",
+    fields: [],
+    group: "collections[]",
+    limit: null,
+    libraries: { mode: "selected", libraries: [library] },
+  };
+}
+
+/**
+ * How the header counts the unread Items of `node`: the request with no
+ * facet or search beside Unread, as the paper count reads them (ADR 0071),
+ * and the rows of its answer that the vault leaves unread. `null` for
+ * Recent, which counts nothing.
+ */
+export function unreadCount(
+  node: LibraryNode,
+  notes: Pick<LiteratureNotes, "find">,
+): {
+  request: QueryViewRequest;
+  count: (rows: readonly QueryViewRow[]) => number;
+} | null {
+  if (node.kind === "recent") return null;
+  const { filters, vault } = selectionConditions(node, ["unread"]);
+  const pass = vaultPass(vault, notes);
+  return {
+    request: {
+      from: "items",
+      fields: [],
+      filter: filters.join(" && "),
+      limit: null,
+      libraries: librariesOf(node, { mode: "all" }),
+    },
+    count: (rows) => rows.filter((row) => pass?.keeps(row) ?? true).length,
+  };
+}
+
+/**
+ * What the Items of `node` with `facets` pass: the conditions of the query,
+ * and those the vault answers after it. `null`: no node narrows them.
+ */
+export function selectionConditions(
+  node: LibraryNode | null,
+  facets: readonly ReadingStateFacet[],
+): { filters: string[]; vault: VaultCondition[] } {
+  const filters: string[] = [];
+  if (node?.kind === "collection")
+    filters.push(`collections.within(${JSON.stringify(node.path.join("/"))})`);
+  const vault: VaultCondition[] = [];
+  for (const facet of facets) {
+    const { filter, vault: condition } = FACETS[facet];
+    if (filter !== undefined) filters.push(filter);
+    if (condition !== undefined) vault.push(condition);
+  }
+  return { filters, vault };
+}
+
+/**
+ * The rows that pass every one of `vault` as the Note Index has it now;
+ * `null` for no condition.
+ */
+export function vaultPass(
+  vault: readonly VaultCondition[],
+  notes: Pick<LiteratureNotes, "find">,
+): QueryRowPass | null {
+  if (vault.length === 0) return null;
+  return {
+    key: vault.join(" "),
+    keeps: ({ indexedKey }) => {
+      const noted = notes.find(indexedKey) !== null;
+      return vault.every((condition) =>
+        condition === "has-literature-note" ? noted : !noted,
+      );
+    },
+  };
+}
+
+/**
+ * The Query File that "Save as query file" writes for `doc`: the query of
+ * `doc` with the Library of its tree node as a filter, since a Query File
+ * tab reads every Library in the Library Scope. Recent, which reads the
+ * Library Scope too, needs none. The search stays out; a Query File cannot
+ * express it (ADR 0072).
+ */
+export function libraryViewQueryFileText(
+  doc: LibraryViewDocument,
+  { labels }: { labels: LibraryViewLabels },
+): string {
+  // The text names no Libraries: the Query File tab reads its own.
+  const { text } = libraryViewQuery(
+    { ...doc, search: "" },
+    { labels, scope: { mode: "all" } },
+  );
+  if (doc.node.kind === "recent") return text;
+  const file = parseQueryFile(text);
+  const library = `library == ${JSON.stringify(selectorKey(doc.node.library))}`;
+  const rest =
+    file.filters === undefined
+      ? []
+      : typeof file.filters === "object" && "and" in file.filters
+        ? file.filters.and
+        : [file.filters];
+  return serializeQueryFile({
+    ...file,
+    filters: rest.length === 0 ? library : { and: [library, ...rest] },
+  });
+}
+
+function filterTree(filters: readonly string[]): FilterTree {
+  return filters.length === 1 ? filters[0]! : { and: [...filters] };
 }

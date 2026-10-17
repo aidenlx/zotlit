@@ -1,58 +1,78 @@
-// The Library View Document in plugin data: the Library View's Query View
-// saves a toolbar change into it, and a reopened view reads it back.
+// The Library View Document as the tab holds it: one value in memory that
+// every transition changes and plugin data keeps. The document on screen is
+// the one held here; plugin data is read once, as the tab opens, and never
+// again while a write waits.
+//
+// @see apps/obsidian/docs/adr/0070-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
 import type { SettingsService } from "@/services/settings/service";
-import { pluginDataStorage } from "@/views/query-view/plugin-data-storage";
-import type { QueryViewHost } from "@/views/query-view/view";
 
 import {
-  documentWithNode,
+  DEFAULT_LIBRARY_VIEW_DOCUMENT,
   parseLibraryViewDocument,
   serializeLibraryViewDocument,
+  withText,
 } from "./document";
-import type {
-  LibraryNode,
-  LibraryViewDocument,
-  ReadingStateFacet,
-} from "./document";
-import { documentWithText } from "./query-text";
+import type { LibraryViewDocument } from "./document";
 
 const KEY = "library.document";
 
-export interface LibraryViewStorage extends Pick<QueryViewHost, "save"> {
-  /** The document plugin data holds now. */
-  document: () => LibraryViewDocument;
-  /** Keep `node` as the tree selection, with the sort it writes. Settles once plugin data holds it; rejects where the write failed. */
-  select: (node: LibraryNode) => Promise<void>;
-  /** Keep `facets` as the active Reading State facets. Settles and rejects as {@link select} does. */
-  setFacets: (facets: readonly ReadingStateFacet[]) => Promise<void>;
-  /** Keep `text` as the search. Settles once plugin data holds it; rejects where the write failed. */
-  search: (text: string) => Promise<void>;
-}
+export class LibraryViewStorage {
+  readonly #settings: Pick<SettingsService, "update" | "flush" | "current">;
+  readonly #toolbar: () => string | null;
+  #held: LibraryViewDocument = DEFAULT_LIBRARY_VIEW_DOCUMENT;
+  /** The toolbar's text that {@link #held} has taken in. */
+  #taken: string | null = null;
 
-export function libraryViewStorage(
-  settings: Pick<SettingsService, "update" | "flush" | "current">,
-): LibraryViewStorage {
-  const keep = async (
+  /**
+   * @param toolbar the Query View's text as it stands: a toolbar change
+   * shows there at once, before the Query View asks to save it.
+   */
+  constructor(
+    settings: Pick<SettingsService, "update" | "flush" | "current">,
+    toolbar: () => string | null,
+  ) {
+    this.#settings = settings;
+    this.#toolbar = toolbar;
+  }
+
+  /** Read the document plugin data holds. Call it once plugin data has loaded. */
+  load(): void {
+    this.#held = parseLibraryViewDocument(this.#settings.current?.[KEY]);
+    this.#taken = this.#toolbar();
+  }
+
+  /** The document on screen, with the toolbar's last change in it. */
+  document(): LibraryViewDocument {
+    const text = this.#toolbar();
+    if (text !== null && text !== this.#taken) {
+      this.#held = withText(this.#held, text);
+      this.#taken = text;
+    }
+    return this.#held;
+  }
+
+  /** Change the document on screen; {@link save} keeps it. */
+  set(change: (doc: LibraryViewDocument) => LibraryViewDocument): void {
+    this.#held = change(this.document());
+  }
+
+  /**
+   * Keep the document on screen in plugin data. Settles once `data.json`
+   * holds it; rejects where the write failed, so the toolbar says the
+   * change is not saved.
+   */
+  async save(): Promise<void> {
+    this.#settings.update({
+      [KEY]: serializeLibraryViewDocument(this.document()),
+    });
+    await this.#settings.flush();
+  }
+
+  /** {@link set}, then {@link save}. */
+  change(
     change: (doc: LibraryViewDocument) => LibraryViewDocument,
-  ) => {
-    settings.update((current) => ({
-      [KEY]: serializeLibraryViewDocument(
-        change(parseLibraryViewDocument(current[KEY] ?? null)),
-      ),
-    }));
-    await settings.flush();
-  };
-  return {
-    ...pluginDataStorage(settings, {
-      key: KEY,
-      value: (text, stored) =>
-        serializeLibraryViewDocument(
-          documentWithText(parseLibraryViewDocument(stored), text),
-        ),
-    }),
-    document: () => parseLibraryViewDocument(settings.current?.[KEY] ?? null),
-    select: (node) => keep((doc) => documentWithNode(doc, node)),
-    setFacets: (facets) => keep((doc) => ({ ...doc, facets })),
-    search: (search) => keep((doc) => ({ ...doc, search })),
-  };
+  ): Promise<void> {
+    this.set(change);
+    return this.save();
+  }
 }

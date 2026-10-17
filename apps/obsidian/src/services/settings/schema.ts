@@ -21,7 +21,6 @@ import {
   textFontSizeSchema,
 } from "@/services/pdf-annotation-editor/tools";
 import { DEFAULT_FRONTMATTER_FIELDS } from "@/services/template/defaults";
-import { storedLibraryViewDocumentSchema } from "@/views/library/document";
 
 /**
  * JSON-safe values a setting may take. Recursive so structured settings (e.g.
@@ -36,6 +35,18 @@ type SettingsValue =
   | null
   | readonly SettingsValue[]
   | { readonly [key: string]: SettingsValue };
+
+/** Any JSON value, unchecked past its being JSON: its owner reads it. */
+const jsonValueSchema: v.GenericSchema<SettingsValue> = v.lazy(() =>
+  v.union([
+    v.string(),
+    v.number(),
+    v.boolean(),
+    v.null(),
+    v.array(jsonValueSchema),
+    v.record(v.string(), jsonValueSchema),
+  ]),
+);
 
 const frontmatterFieldsSchema = v.pipe(
   v.array(frontmatterFieldSchema),
@@ -202,9 +213,11 @@ export const schema = v.object({
 
   /**
    * What the Library View shows, as its Library View Document; `null` until
-   * the view saves one, and a new view opens on the default. ADR 0070.
+   * the view saves one, and a new view opens on the default. Kept as a plain
+   * JSON object: the Library View Document module reads it field by field,
+   * so one field this build cannot read never resets the rest. ADR 0070.
    */
-  "library.document": v.nullable(storedLibraryViewDocumentSchema),
+  "library.document": v.nullable(v.record(v.string(), jsonValueSchema)),
 
   /**
    * The researcher dismissed the Welcome View banner above the Library View;

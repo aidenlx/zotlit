@@ -18,10 +18,14 @@ import { useUniqueId } from "@zotlit/ui";
 import { SearchInput } from "@/components/obsidian/search-input";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ItemLookup, SearchSession } from "@/services/item-lookup/service";
-import type { LibrarySelector } from "@/services/library-scope/scope";
+import type {
+  LibraryScope,
+  LibrarySelector,
+} from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { QueryViewState } from "@/views/query-view/view";
 
+import { librariesOf } from "./document";
 import type { LibraryNode } from "./document";
 import { searchTerms } from "./search";
 import { sameLibrary } from "./tree";
@@ -50,6 +54,8 @@ export interface SearchFound {
 export interface LibrarySearchHost {
   /** The tree node the search keeps to. */
   node: () => LibraryNode;
+  /** The Library Scope in force, which Recent reads. */
+  scope: () => LibraryScope;
   /** List what the search found. */
   found: (found: SearchFound) => void;
   /** The researcher changed the text: keep it. */
@@ -161,13 +167,14 @@ export class LibrarySearch extends Component {
     const { text, everywhere } = this.store.getState();
     const { words } = searchTerms(text);
     const { libraryScope } = this.#deps;
-    const node = this.#host.node();
-    const libraries =
-      everywhere || node.kind === "recent"
-        ? (libraryScope.current?.available ?? [])
-        : libraryScope.libraries.filter(({ selector }) =>
-            sameLibrary(selector, node.library),
-          );
+    const read = librariesOf(this.#host.node(), this.#host.scope());
+    const libraries = everywhere
+      ? (libraryScope.current?.available ?? [])
+      : libraryScope.libraries.filter(
+          ({ selector }) =>
+            read.mode === "all" ||
+            read.libraries.some((library) => sameLibrary(library, selector)),
+        );
     this.#settled = (async () => {
       const hits =
         words === "" || !this.#session || !this.#host.readable()
