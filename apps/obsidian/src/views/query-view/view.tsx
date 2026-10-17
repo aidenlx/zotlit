@@ -179,6 +179,11 @@ export interface QueryViewHost {
    */
   layouts?: readonly string[];
   /**
+   * Writes what the view shows as a new Query File. Present: the view menu
+   * of a host without views (`displayOnly`) offers "Save as query file".
+   */
+  saveAs?: () => void;
+  /**
    * The Indexed Keys in the order the rows show in, in place of the sort: the
    * Library View's ranked search. `null` or absent: the order of the query.
    *
@@ -609,6 +614,11 @@ export class QueryView extends Component implements HistorySurface {
   /** The Layout types the host offers; `undefined` for every one. */
   get layouts(): readonly string[] | undefined {
     return this.#host.layouts;
+  }
+
+  /** The host's "Save as query file", for the view menu. */
+  get saveAs(): QueryViewHost["saveAs"] {
+    return this.#host.saveAs;
   }
 
   /** The host's link to the Query File, for the toolbar. */
