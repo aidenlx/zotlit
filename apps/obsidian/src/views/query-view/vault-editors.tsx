@@ -20,7 +20,7 @@ import type { KeyboardEvent, RefObject } from "react";
 import { valueText } from "@zotlit/item-query";
 import type { ProjectionJson } from "@zotlit/item-query";
 
-import { IconButton } from "@/components/obsidian/icon-button";
+import { Icon } from "@/components/obsidian/icon";
 import { useObsidianApp } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn, tooltipAttrs } from "@/lib/utils";
@@ -410,7 +410,7 @@ function ListEditor({
     move();
   };
   return (
-    <div className="zt:flex zt:min-h-(--bases-table-row-height) zt:flex-wrap zt:items-center zt:gap-(--size-2-3) zt:px-2 zt:py-1">
+    <div className="zt:flex zt:min-h-(--bases-table-row-height) zt:flex-wrap zt:items-center zt:gap-(--size-2-2) zt:px-2 zt:py-1">
       {draft.items.map((item, at) => (
         <span
           // Items may repeat, so the place keys each.
@@ -423,13 +423,18 @@ function ListEditor({
           className={cn(PILL, type === "tags" && TAG)}
           onKeyDown={(event) => onPillKey(event, at)}
         >
-          <span className="zt:min-w-0 zt:break-words">
+          {/* The cell keeps to one line; an item in the editor wraps instead, so a narrow column never runs it under its x. */}
+          <span className="zt:min-w-0 zt:break-words zt:whitespace-normal">
             {type === "tags" ? tagText(item) : item}
           </span>
-          <IconButton
-            icon="x"
+          {/* Bare rather than an `IconButton`: Obsidian's `clickable-icon`
+              box would pad the x past the line and make the chip taller in
+              the editor than at rest. The x is as tall as the text, so the
+              chip keeps its height; the keys reach it through the pill. */}
+          <span
+            role="button"
             data-query-vault-chip-remove=""
-            className="zt:p-0"
+            className="zt:flex zt:shrink-0 zt:cursor-(--cursor) zt:text-(--text-faint) zt:hover:text-(--text-normal)"
             {...tooltipAttrs(m.query_view_vault_remove_item({ item }))}
             // A press keeps focus in the editor, so the edit goes on.
             onMouseDown={(event) => event.preventDefault()}
@@ -440,7 +445,9 @@ function ListEditor({
                 items: draft.items.filter((_, i) => i !== at),
               });
             }}
-          />
+          >
+            <Icon name="x" size="1em" />
+          </span>
         </span>
       ))}
       <input
@@ -460,11 +467,13 @@ function ListEditor({
 }
 
 /**
- * One item of a list, as a Bases list cell shows it: plain text, parted from
- * the next by the gap, with a ring when the keyboard is on it.
+ * One item of a list, with a ring when the keyboard is on it. A Bases list
+ * cell parts its items by the gap alone, so "thesis hypertext history" reads
+ * as one run of words; each item here is a quiet chip of its own, at rest and
+ * in the editor alike. A tag takes {@link TAG} over it instead.
  */
 export const PILL =
-  "zt:flex zt:max-w-full zt:min-w-0 zt:shrink-0 zt:items-center zt:gap-(--size-2-1) zt:rounded-(--pill-radius) zt:leading-(--line-height-tight) zt:outline-none zt:focus-visible:ring-1 zt:focus-visible:ring-(--background-modifier-border-focus)";
+  "zt:flex zt:max-w-full zt:min-w-0 zt:shrink-0 zt:items-center zt:gap-(--size-2-1) zt:rounded-(--radius-s) zt:bg-(--background-modifier-hover) zt:px-(--size-2-2) zt:py-px zt:leading-(--line-height-tight) zt:outline-none zt:focus-visible:ring-1 zt:focus-visible:ring-(--background-modifier-border-focus)";
 
 /** A tag: Obsidian's tag colours, as a Bases tag cell shows it. */
 export const TAG =

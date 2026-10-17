@@ -242,7 +242,7 @@ function VaultPreview({
     return (
       <span
         data-query-vault={state}
-        className="zt:flex zt:min-w-0 zt:items-center zt:gap-(--size-2-3)"
+        className="zt:flex zt:min-w-0 zt:items-center zt:gap-(--size-2-2)"
       >
         {listItems(current).map((item, at) => (
           <span
