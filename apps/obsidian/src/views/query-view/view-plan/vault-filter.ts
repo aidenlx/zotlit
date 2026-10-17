@@ -9,15 +9,14 @@
 // `limit` to the rows the view shows.
 //
 // @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
-import { parseExpressionAst } from "@zotlit/filter-expression";
-import type { ExpressionNode } from "@zotlit/filter-expression";
 import { planItemFilter } from "@zotlit/item-query";
 
 import * as m from "@/lib/i18n/generated/messages";
+import type { FilterLocation } from "@/views/query-view/query-file";
+import type { ReaderDiagnosticSource } from "@/views/query-view/reader-diagnostic";
+import type { VaultValue } from "@/views/query-view/table-notes";
 
-import type { FilterLocation, VaultCondition } from "./query-file";
-import type { ReaderDiagnosticSource } from "./reader-diagnostic";
-import type { VaultValue } from "./table-notes";
+import type { VaultCondition, VaultRead } from "./filter-split";
 
 /** The Literature Notes a vault filter reads. */
 export interface VaultFilterNotes {
@@ -40,13 +39,6 @@ export type VaultFilter =
         readonly diagnostic: ReaderDiagnosticSource;
       };
     };
-
-/** A vault property in a condition: its name, and where the condition reads it. */
-interface VaultRead {
-  readonly name: string;
-  readonly from: number;
-  readonly to: number;
-}
 
 /** What a view's vault conditions are planned from. */
 export interface VaultFilterInput {
@@ -81,10 +73,12 @@ export function planVaultFilter({
       hint: m.query_view_vault_filter_nested_hint(),
     });
   if (conditions.length === 0) return { condition: null };
-  const planned: { text: string; reads: VaultRead[]; at: FilterLocation }[] =
-    [];
-  for (const { text, section, path } of conditions) {
-    const reads = vaultReads(text);
+  const planned: {
+    text: string;
+    reads: readonly VaultRead[];
+    at: FilterLocation;
+  }[] = [];
+  for (const { text, section, path, reads } of conditions) {
     if (reads === null)
       return fault(
         { section, path },
@@ -145,55 +139,6 @@ function fault(
   diagnostic: ReaderDiagnosticSource,
 ): VaultFilter {
   return { fault: { at: { section, path }, diagnostic } };
-}
-
-/**
- * Where `text` reads a vault property, as `vault.name` or `vault["name"]`;
- * `null` where it reads anything else of the row, such as a Zotero field or
- * `this`, or names a vault property it does not spell out.
- */
-function vaultReads(text: string): VaultRead[] | null {
-  const { ast } = parseExpressionAst(text);
-  if (ast === null) return null;
-  const reads: VaultRead[] = [];
-  const isVault = (node: ExpressionNode) =>
-    node.type === "identifier" && node.name === "vault";
-  const visit = (node: ExpressionNode): boolean => {
-    switch (node.type) {
-      case "identifier":
-        return false;
-      case "object-access":
-        if (isVault(node.object)) {
-          reads.push({ name: node.property, from: node.from, to: node.to });
-          return true;
-        }
-        return visit(node.object);
-      case "array-access":
-        if (isVault(node.object)) {
-          if (node.index.type !== "string") return false;
-          reads.push({ name: node.index.value, from: node.from, to: node.to });
-          return true;
-        }
-        return visit(node.object) && visit(node.index);
-      case "binary":
-        return visit(node.left) && visit(node.right);
-      case "unary":
-        return visit(node.operand);
-      case "call":
-        // A function, such as `date(...)`, is named by its identifier.
-        return (
-          (node.callee.type === "identifier" || visit(node.callee)) &&
-          node.args.every(visit)
-        );
-      case "array":
-        return node.elements.every(visit);
-      case "group":
-        return visit(node.expression);
-      default:
-        return true;
-    }
-  };
-  return visit(ast) ? reads : null;
 }
 
 /** `text` with each vault property it reads replaced by its value. */
