@@ -2710,7 +2710,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
     });
     await inLibrary(
-      `const groupNode=[...el.querySelectorAll('[data-library-node]')].find(n=>n.getAttribute('data-library-node')===${JSON.stringify(JSON.stringify([`group:${unwrittenGroup}`]))});if(!groupNode.checkVisibility())press(el.querySelector('[data-library-tree-toggle]'),'tree toggle');press(groupNode,'group library');await until('group rows',()=>row(${JSON.stringify(unwrittenKey)}),10000);press(row(${JSON.stringify(unwrittenKey)}),'unwritten row');keydown(row(${JSON.stringify(unwrittenKey)}),{key:'Enter'});return true`,
+      `const groupNode=[...el.querySelectorAll('[data-library-node]')].find(n=>n.getAttribute('data-library-node')===${JSON.stringify(JSON.stringify([`group:${unwrittenGroup}`]))});if(!groupNode.checkVisibility())press(el.querySelector('[data-library-tree-toggle]'),'tree toggle');press(groupNode,'group library');await until('group rows',()=>groupNode.getAttribute('aria-selected')==='true'&&leaf.view.query.state.getState().phase==='ready'&&row(${JSON.stringify(unwrittenKey)}),10000);press(row(${JSON.stringify(unwrittenKey)}),'unwritten row');keydown(row(${JSON.stringify(unwrittenKey)}),{key:'Enter'});return true`,
     );
     // The picker reads every Profile's preview before it shows.
     expect(
