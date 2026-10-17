@@ -66,7 +66,7 @@ import {
   waitFor,
   WINDOW_DOCUMENTS,
 } from "./obsidian-cli.ts";
-import { PAGE } from "./page-gestures.ts";
+import { PAGE, pickQueryView } from "./page-gestures.ts";
 import {
   clearVault,
   e2eVaultDir,
@@ -975,13 +975,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
     });
     /** What the active Query File tab shows, once its query settled. */
-    const readTab = `(async()=>{const view=app.workspace.getMostRecentLeaf().view;if(view.getViewType()!=='zotlit-query-file')return 'null';await view.query.settled;const el=view.contentEl;const cards=[...el.querySelectorAll('.zt-annot-card')].map(n=>n.getAttribute('data-zotero-annotation-key'));const headings=[...el.querySelectorAll('[data-query-group]')].map(n=>n.textContent);return JSON.stringify({file:view.file?.path,view:el.querySelector('[data-query-view-menu]')?.textContent??null,count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,cards,headings,diagnostic:el.querySelector('[data-query-diagnostic]')?.getAttribute('data-query-diagnostic')??null,problems:el.querySelector('[data-query-problems]')?.textContent??null,unresolved:el.querySelector('[data-query-unresolved]')?.textContent??null});})()`;
+    const readTab = `(async()=>{const view=app.workspace.getMostRecentLeaf().view;if(view.getViewType()!=='zotlit-query-file')return 'null';await view.query.settled;const el=view.contentEl;const cards=[...el.querySelectorAll('.zt-annot-card')].map(n=>n.getAttribute('data-zotero-annotation-key'));const headings=[...el.querySelectorAll('[data-query-group]')].map(n=>n.textContent);const rows=[...el.querySelectorAll('tr[data-query-table-row="item"]')].map(n=>n.getAttribute('data-query-key'));const columns=[...el.querySelectorAll('th[data-query-column]')].map(n=>({path:n.getAttribute('data-query-column'),label:n.textContent}));return JSON.stringify({file:view.file?.path,view:el.querySelector('[data-query-view-menu]')?.textContent??null,rows,columns,count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,cards,headings,diagnostic:el.querySelector('[data-query-diagnostic]')?.getAttribute('data-query-diagnostic')??null,problems:el.querySelector('[data-query-problems]')?.textContent??null,unresolved:el.querySelector('[data-query-unresolved]')?.textContent??null});})()`;
     interface Tab {
       file: string;
       view: string | null;
       count: string | null;
       cards: string[];
       headings: string[];
+      /** The Indexed Key of each Item row of the Table. */
+      rows: string[];
+      /** The Table's columns: each property path and its header text. */
+      columns: { path: string; label: string }[];
       diagnostic: string | null;
       problems: string | null;
       unresolved: string | null;
@@ -1011,8 +1015,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       return report.rows!;
     };
 
-    // "New query file" from the command palette writes one Annotations view
-    // of the whole library, with a limit, and opens it in a tab.
+    // "New query file" from the command palette writes a Table of the
+    // library's Items, newest first, and opens it in a tab.
     const before = JSON.parse(
       await obEval(
         vaultId,
@@ -1023,23 +1027,61 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       vaultId,
       "app.commands.executeCommandById('zotlit:new-query-file');true",
     );
-    const created = await tabWhen((tab) => tab.count !== null);
+    const created = await tabWhen((tab) => tab.rows.length > 0);
     expect(before).not.toContain(created.file);
     scratchFiles.push(created.file);
     expect(created.file).toMatch(/\.zotquery$/);
-    const text = await obEval(
-      vaultId,
-      `app.vault.cachedRead(app.vault.getFileByPath(${JSON.stringify(created.file)}))`,
-    );
-    expect(text).toContain("from: annotations");
-    expect(text).toContain("limit: 100");
+    // The Items of the Libraries of the Library Scope, from the seed.
+    const scope = JSON.parse(
+      await cliCommand(vaultId, "zotlit:library-scope"),
+    ) as LibraryScopeReport;
+    const newest = itemsByModified(
+      (scope.available ?? []).map(
+        (entry) =>
+          LIBRARIES.find((library) => library.libraryID === entry.libraryID)!,
+      ),
+    ).slice(0, 100);
+    expect(newest.length).toBeGreaterThan(1);
+    expect(created).toMatchObject({
+      view: m.query_file_items_view_name(),
+      count: String(newest.length),
+      rows: newest,
+      columns: [
+        // Zotero's own label for the title field.
+        { path: "title", label: expect.stringContaining("Title") },
+        {
+          path: "creators",
+          label: expect.stringContaining(m.query_view_property_creators()),
+        },
+        {
+          path: "date.year",
+          label: expect.stringContaining(m.query_view_property_year()),
+        },
+        {
+          path: "vault.literatureNote",
+          label: expect.stringContaining(m.query_view_table_literature_note()),
+        },
+      ],
+      diagnostic: null,
+      problems: null,
+      unresolved: null,
+    });
 
-    // The cards come grouped by Item under its title, in query order inside
-    // a group, and the count is the query's own. No Zotero answers this
-    // vault.
+    // Its second view is the Annotations of the whole library: the cards
+    // come grouped by Item under its title, in query order inside a group,
+    // and the count is the query's own. No Zotero answers this vault.
+    const annotationsView = m.query_file_annotations_view_name();
+    await obEval(
+      vaultId,
+      `(async()=>{${PAGE}${pickQueryView("app.workspace.getMostRecentLeaf().view", annotationsView)}return true;})()`,
+    );
     const all = await queryRows();
     expect(all.length).toBeGreaterThan(0);
-    expect(created).toMatchObject({
+    const annotations = await tabWhen(
+      (tab) => tab.view === annotationsView && tab.count !== null,
+    );
+    expect(annotations).toMatchObject({
+      file: created.file,
       count: String(all.length),
       ...byItem(all),
       diagnostic: null,
@@ -7029,30 +7071,6 @@ views:
         : { type: "group", groupID: library.groupID, name: library.name };
     const selectorOf = (library: (typeof LIBRARIES)[number]) =>
       library.groupID === null ? "personal" : `group:${library.groupID}`;
-    /** The Indexed Keys of the Libraries, most recently modified first. */
-    const byModified = (libraries: readonly (typeof LIBRARIES)[number][]) =>
-      libraries
-        .flatMap((library) =>
-          ITEMS.filter((item) => item.libraryID === library.libraryID).map(
-            (item) => ({
-              dateModified: item.dateModified,
-              indexedKey:
-                library.groupID === null
-                  ? item.key
-                  : `${item.key}g${library.groupID}`,
-            }),
-          ),
-        )
-        .toSorted(
-          (a, b) =>
-            b.dateModified.localeCompare(a.dateModified) ||
-            (a.indexedKey < b.indexedKey
-              ? -1
-              : a.indexedKey > b.indexedKey
-                ? 1
-                : 0),
-        )
-        .map((item) => item.indexedKey);
 
     // Dispatched as a registered CLI command with arguments, the way an agent
     // calls it. Without a Library argument, the query reads the available
@@ -7090,7 +7108,7 @@ views:
       truncated: true,
     });
     expect(limited.rows!.map((row) => row.indexedKey)).toEqual(
-      byModified(inScope).slice(0, 3),
+      itemsByModified(inScope).slice(0, 3),
     );
 
     // A named range, in another order than the canonical one.
@@ -7116,7 +7134,7 @@ views:
       truncated: false,
     });
     expect(range.rows!.map((row) => row.indexedKey)).toEqual(
-      byModified([myLibrary!, sharedReading!]),
+      itemsByModified([myLibrary!, sharedReading!]),
     );
 
     const group = JSON.parse(
@@ -7136,7 +7154,7 @@ views:
       truncated: false,
     });
     expect(group.rows!.map((row) => row.indexedKey)).toEqual(
-      byModified([sharedReading!]),
+      itemsByModified([sharedReading!]),
     );
 
     // The Bases helpers through the shipped plugin: a regular expression and
@@ -7149,7 +7167,7 @@ views:
           (item) => item.libraryID === myLibrary!.libraryID && predicate(item),
         ).map((item) => item.key),
       );
-      return byModified([myLibrary!]).filter((key) => keys.has(key));
+      return itemsByModified([myLibrary!]).filter((key) => keys.has(key));
     };
     const fullName = (creator: (typeof ITEMS)[number]["creators"][number]) =>
       creator.fieldMode === 1
@@ -9066,6 +9084,37 @@ views:
  * Rows with `item.title`, grouped by Item as a Query View groups them: the
  * groups from A to Z by the Item's title, the rows of a group in query order.
  */
+/**
+ * The Indexed Keys of the Fixture's Items in `libraries`, most recently
+ * modified first, as ZotLit Query orders them by `-dateModified`.
+ */
+function itemsByModified(
+  libraries: readonly (typeof LIBRARIES)[number][],
+): string[] {
+  return libraries
+    .flatMap((library) =>
+      ITEMS.filter((item) => item.libraryID === library.libraryID).map(
+        (item) => ({
+          dateModified: item.dateModified,
+          indexedKey:
+            library.groupID === null
+              ? item.key
+              : `${item.key}g${library.groupID}`,
+        }),
+      ),
+    )
+    .toSorted(
+      (a, b) =>
+        b.dateModified.localeCompare(a.dateModified) ||
+        (a.indexedKey < b.indexedKey
+          ? -1
+          : a.indexedKey > b.indexedKey
+            ? 1
+            : 0),
+    )
+    .map((item) => item.indexedKey);
+}
+
 function byItem(rows: NonNullable<ItemQueryReport["rows"]>): {
   cards: string[];
   headings: string[];
