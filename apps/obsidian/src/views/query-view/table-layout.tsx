@@ -230,16 +230,16 @@ function expandable(record: TableRecord): boolean {
   });
 }
 
-type ChildState =
+export type ChildState =
   | { readonly phase: "loading" }
   | { readonly phase: "ready"; readonly rows: readonly TableRecord[] }
   | { readonly phase: "failed" };
 
-const id = (record: Pick<TableRecord, "kind" | "key">) =>
+export const id = (record: Pick<TableRecord, "kind" | "key">) =>
   `${record.kind}:${record.key}`;
 
 /** The expanded rows and the rows under them, read when a row expands. */
-function useChildren(query: Pick<QueryService, "run">) {
+export function useChildren(query: Pick<QueryService, "run">) {
   const [children, setChildren] = useState<ReadonlyMap<string, ChildState>>(
     () => new Map(),
   );
@@ -291,7 +291,7 @@ function useChildren(query: Pick<QueryService, "run">) {
   return { children, toggle };
 }
 
-function Expander({
+export function Expander({
   record,
   open,
   onToggle,
@@ -381,7 +381,7 @@ function NoteCell({
  * a new tab, and Cmd/Ctrl+Alt a split. Its address is the Zotero link of the
  * target, which a drag carries out.
  */
-function ReaderLink({
+export function ReaderLink({
   readers,
   target,
   children,

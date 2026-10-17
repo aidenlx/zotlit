@@ -142,6 +142,7 @@ async function mount(
     contextSource,
     libraries,
     displayOnly,
+    layouts,
   }: {
     notes?: Record<string, string>;
     layout?: ConstructorParameters<typeof QueryView>[1]["layout"];
@@ -152,6 +153,7 @@ async function mount(
     contextSource?: ContextSource;
     libraries?: () => LibraryScope;
     displayOnly?: boolean;
+    layouts?: readonly string[];
   } = {},
 ) {
   setMockPlatform({ isMacOS: true });
@@ -261,6 +263,7 @@ async function mount(
     ...(layout && { layout }),
     ...(libraries && { libraries }),
     ...(displayOnly && { displayOnly }),
+    ...(layouts && { layouts }),
   });
   const saved: string[] = [];
   const el = document.createElement("div");
@@ -708,11 +711,65 @@ describe("saving a toolbar edit", () => {
     await act(() => fixed.view.setText(FILE));
     await fixed.settle();
     expect(toolbar(fixed.el)).toEqual([
+      "data-query-view-menu",
       "data-query-results",
       "sort",
       "data-query-properties",
       "search",
     ]);
+  });
+
+  it("switches only between the Layouts the host offers from the view menu, with no view to add or configure, where the host keeps only the Layout of its view", async () => {
+    const { view, el, settle, saved } = await mount(
+      [result([]), result([])],
+      undefined,
+      { displayOnly: true, layouts: ["papers", "table"] },
+    );
+    await act(() =>
+      view.setText(`views:
+  - type: table
+    name: Reading list
+    from: items
+`),
+    );
+    await settle();
+    const trigger = () =>
+      el.querySelector<HTMLElement>("[data-query-view-menu]")!;
+    // The menu names the Layout on screen; the view's own name is the host's.
+    expect(trigger().textContent).toBe("Table");
+    await act(() => {
+      trigger().click();
+      // happy-dom has no popover, so the test sends the event that opens it.
+      document
+        .querySelector("[data-query-view-list]")!
+        .dispatchEvent(
+          Object.assign(new Event("beforetoggle"), { newState: "open" }),
+        );
+    });
+    expect(
+      [...document.querySelectorAll("[data-query-view-layout-option]")].map(
+        (row) => row.getAttribute("data-query-view-layout-option"),
+      ),
+    ).toEqual(["papers", "table"]);
+    expect(document.querySelector("[data-query-view-action]")).toBeNull();
+    expect(document.querySelector("[data-query-view-configure]")).toBeNull();
+
+    const proto: Partial<HTMLElement> = HTMLElement.prototype;
+    if (!proto.hidePopover) {
+      proto.hidePopover = () => {};
+      onTestFinished(() => {
+        delete proto.hidePopover;
+      });
+    }
+    await act(() =>
+      document
+        .querySelector<HTMLElement>('[data-query-view-layout-option="papers"]')!
+        .click(),
+    );
+    await act(() => view.flush());
+    await settle();
+    expect(saved.at(-1)).toContain("type: papers");
+    expect(trigger().textContent).toBe("Papers");
   });
 
   it("leaves the Libraries to the Library Scope where the host selects none", async () => {
@@ -3007,4 +3064,147 @@ it("keeps the row and the page of a typed path in the Properties popover when it
   await settle();
   expect(written.at(-1)).not.toContain("myField");
   expect(page()).not.toBe(null);
+});
+
+const PAPERS_FILE = `views:
+  - type: papers
+    name: Papers
+    from: items
+`;
+
+function paperRow(
+  key: string,
+  values: {
+    title: string;
+    creators?: { family: string; literal?: string; role: string }[];
+    year?: number;
+    publicationTitle?: string;
+    publisher?: string;
+    colors?: string[];
+    fileTypes?: string[];
+    attachments?: string[];
+  },
+): QueryViewRow {
+  return {
+    indexedKey: key,
+    values: {
+      title: values.title,
+      creators: (values.creators ?? []).map(({ family, literal, role }) => ({
+        family: literal ? "" : family,
+        given: "",
+        literal: literal ?? null,
+        role,
+        fullName: literal ?? family,
+      })),
+      date:
+        values.year === undefined
+          ? null
+          : {
+              kind: "year",
+              value: null,
+              year: values.year,
+              month: null,
+              day: null,
+              text: null,
+              raw: `${values.year}-00-00 ${values.year}`,
+            },
+      publicationTitle: values.publicationTitle ?? null,
+      publisher: values.publisher ?? null,
+      "annotations[].color": values.colors ?? [],
+      "attachments[].fileType": values.fileTypes ?? [],
+      "attachments[].indexedKey": values.attachments ?? [],
+    },
+  };
+}
+
+/** Each Papers row on screen, as its lines and end marks read. */
+function papers(el: HTMLElement) {
+  return [...el.querySelectorAll<HTMLElement>("[data-query-papers-row]")].map(
+    (node) => ({
+      key: node.dataset.queryPapersRow,
+      title: node.querySelector("[data-query-papers-title]")?.textContent,
+      meta: node.querySelector("[data-query-papers-meta]")?.textContent,
+      state: node.querySelector("[data-query-papers-state]")?.textContent,
+      dots: [
+        ...node.querySelectorAll<HTMLElement>("[data-query-papers-color]"),
+      ].map((dot) => dot.dataset.queryPapersColor),
+      attachment:
+        node.querySelector<HTMLElement>("[data-query-papers-attachment]")
+          ?.dataset.queryPapersAttachment ?? null,
+      note: node.querySelector("[data-query-papers-note]") !== null,
+    }),
+  );
+}
+
+it("draws each Item of a Papers view as its title, its creators, year and Venue, and a reading-state line, and ends it with its main Attachment kind and its Literature Note", async () => {
+  const { view, el, settle } = await mount(
+    [
+      result([
+        paperRow("ITEMAAAA", {
+          title: "Ten simple rules for better figures",
+          creators: [
+            { family: "Rougier", role: "author" },
+            { family: "Droettboom", role: "author" },
+            { family: "Editor", role: "editor" },
+          ],
+          year: 2014,
+          publicationTitle: "PLOS Computational Biology",
+          publisher: "PLOS",
+          colors: ["#ffd400", "#5fb236", "#ffd400"],
+          fileTypes: ["web", "pdf"],
+          attachments: ["WEBAAAAA", "PDFAAAAA"],
+        }),
+        paperRow("ITEMBBBB", {
+          title: "The structure of scientific revolutions",
+          creators: [
+            { family: "", literal: "Kuhn Society", role: "author" },
+            { family: "B", role: "author" },
+            { family: "C", role: "author" },
+            { family: "D", role: "author" },
+          ],
+          year: 1962,
+          publisher: "University of Chicago Press",
+          fileTypes: ["epub"],
+          attachments: ["EPUBBBBB"],
+        }),
+        paperRow("ITEMCCCC", { title: "A note with no file" }),
+      ]),
+    ],
+    undefined,
+    { notes: { ITEMAAAA: "Rougier 2014.md" } },
+  );
+  await act(() => view.setText(PAPERS_FILE));
+  await settle();
+
+  expect(view.state.getState().problems).toEqual([]);
+  expect(papers(el)).toEqual([
+    {
+      key: "ITEMAAAA",
+      title: "Ten simple rules for better figures",
+      meta: "Rougier, Droettboom · 2014 · PLOS Computational Biology",
+      state: "3 annotations · literature note",
+      dots: ["#ffd400", "#5fb236"],
+      attachment: "pdf",
+      note: true,
+    },
+    {
+      key: "ITEMBBBB",
+      title: "The structure of scientific revolutions",
+      meta: "Kuhn Society, B, C et al. · 1962 · University of Chicago Press",
+      state: undefined,
+      dots: [],
+      attachment: "epub",
+      note: false,
+    },
+    {
+      key: "ITEMCCCC",
+      title: "A note with no file",
+      meta: undefined,
+      state: undefined,
+      dots: [],
+      attachment: null,
+      note: false,
+    },
+  ]);
+  expect(cards(el)).toEqual([]);
 });
