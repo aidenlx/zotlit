@@ -63,6 +63,7 @@ import {
   UPGRADER_PLUGIN_VERSION,
   UPGRADER_SETTINGS_VERSION,
   vaultCaseZoteroData,
+  VAULT_PROPERTY_TYPES,
 } from "./spec.ts";
 import type {
   FixtureAnnotation,
@@ -75,6 +76,7 @@ import type {
   FixtureNote,
   FixtureTemplateEdit,
   FixtureVaultCase,
+  FixtureVaultValue,
   FixtureZoteroData,
   PersistedLibraryScope,
 } from "./spec.ts";
@@ -1291,6 +1293,11 @@ async function writeVaultConfig(
     ...findVaultCase(options.vaultCase ?? DEFAULT_VAULT_CASE).corePlugins,
   });
   await writeJson(join(configDir, "workspace.json"), workspacePreset(options));
+  // The types the vault cells showcase notes need, as the Properties panel
+  // records them once a property's type is set.
+  await writeJson(join(configDir, "types.json"), {
+    types: VAULT_PROPERTY_TYPES,
+  });
   await cp(
     join(VAULT_PLUGINS_DIR, "hot-reload"),
     join(configDir, "plugins", "hot-reload"),
@@ -1528,6 +1535,7 @@ function literatureNote(
       : [`zotlit-profile: ${profile.label} (${profile.id})`]),
     // `citekey` is the compatibility frontmatter key ZotLit still reads.
     ...(item.citationKey === null ? [] : [`citekey: ${item.citationKey}`]),
+    ...vaultPropertyLines(item.vaultProperties ?? {}),
     "---",
     `# ${item.title}`,
     "",
@@ -1557,6 +1565,24 @@ function literatureNote(
     ...(attachments.length === 0 ? [] : [""]),
     ...(item.literatureNoteQueryBlock === true ? QUERY_BLOCK : []),
   ].join("\n");
+}
+
+/**
+ * Frontmatter lines for a note's vault properties: a list as a block list,
+ * `null` as an empty key, a string quoted so YAML keeps it a string.
+ */
+function vaultPropertyLines(
+  properties: Readonly<Record<string, FixtureVaultValue>>,
+): string[] {
+  return Object.entries(properties).flatMap(([name, value]) => {
+    if (value === null) return [`${name}:`];
+    if (typeof value === "object") {
+      return value.length === 0
+        ? [`${name}: []`]
+        : [`${name}:`, ...value.map((entry) => `  - ${JSON.stringify(entry)}`)];
+    }
+    return [`${name}: ${JSON.stringify(value)}`];
+  });
 }
 
 /**
@@ -1623,6 +1649,7 @@ function renderedLiteratureNote(
     `title: ${JSON.stringify(item.title)}`,
     `zotero-key: ${item.key}`,
     ...(item.citationKey === null ? [] : [`citekey: ${item.citationKey}`]),
+    ...vaultPropertyLines(item.vaultProperties ?? {}),
     "---",
     `# ${item.title}`,
     "",

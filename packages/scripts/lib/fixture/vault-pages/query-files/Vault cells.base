@@ -1,0 +1,18 @@
+filters:
+  and:
+    - '["literatures/bushAsWeMayThink1945.md", "literatures/garfieldCitationIndexes1955.md", "literatures/nelsonComplexInformation1965.md", "literatures/smallCoCitationScientific1973.md", "literatures/luhmannCommunicatingSlipBoxes1981.md", "literatures/bernersLeeSemanticWeb2001.md", "literatures/ahrensHowTakeSmartNotes2017.md", "literatures/matuschakTransformativeTools2019.md"].contains(file.path)'
+views:
+  - type: table
+    name: Vault cells
+    order:
+      - file.name
+      - note.status
+      - note.note
+      - note.related
+      - note.done
+      - note.rating
+      - note.finished
+      - note.started
+      - note.projects
+      - note.tags
+      - note.aliases
