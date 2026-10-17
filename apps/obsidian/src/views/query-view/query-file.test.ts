@@ -470,6 +470,73 @@ views:
   });
 });
 
+describe("a filter string of conditions joined by &&", () => {
+  const file = parseQueryFile(`views:
+  - type: table
+    name: Items
+    from: items
+    filters:
+      and:
+        - 'vault["status"] == "read" && itemType == "book" && (vault.rating > 3)'
+        - dat == 1
+`);
+  const view = file.views[0]!;
+
+  it("takes each top-level conjunct of the string as a condition of its own", () => {
+    expect(vaultConditions(file, view)).toEqual([
+      { section: "view", path: [0], text: 'vault["status"] == "read"' },
+      { section: "view", path: [0], text: "vault.rating > 3" },
+    ]);
+    expect(viewFilter(file, view)).toBe('(itemType == "book") && (dat == 1)');
+    expect(strandedVaultConditions(file, view)).toEqual([]);
+  });
+
+  it("finds a fault in the conjunct ZotLit Query runs at the string's place", () => {
+    const text = viewFilter(file, view)!;
+    const at = (needle: string) => {
+      const from = text.indexOf(needle);
+      return { from, to: from + needle.length };
+    };
+    expect(locateFilterFault(file, view, at("itemType"))).toEqual({
+      section: "view",
+      path: [0],
+    });
+    expect(locateFilterFault(file, view, at("dat"))).toEqual({
+      section: "view",
+      path: [1],
+    });
+  });
+
+  it("splits a filter that is one string", () => {
+    const one = parseQueryFile(`views:
+  - type: table
+    name: Items
+    from: items
+    filters: 'itemType == "book" && vault.done == true'
+`);
+    expect(vaultConditions(one, one.views[0]!)).toEqual([
+      { section: "view", path: [0], text: "vault.done == true" },
+    ]);
+    expect(viewFilter(one, one.views[0]!)).toBe('itemType == "book"');
+  });
+
+  it("keeps a conjunct with || or ! whole, so it still reads as one condition", () => {
+    const or = parseQueryFile(`views:
+  - type: table
+    name: Items
+    from: items
+    filters: 'vault.rating > 3 || itemType == "book"'
+`);
+    expect(vaultConditions(or, or.views[0]!)).toEqual([
+      {
+        section: "view",
+        path: [0],
+        text: 'vault.rating > 3 || itemType == "book"',
+      },
+    ]);
+  });
+});
+
 describe("strandedVaultConditions", () => {
   it("finds the conditions that read a vault property but need not hold for every row", () => {
     const file = parseQueryFile(`filters:

@@ -37,6 +37,11 @@ interface NoteIndexEvents {
    * when the note joins or leaves the index by a frontmatter edit.
    */
   "frontmatter-changed": (file: TFile) => void;
+  /**
+   * The Full Scan has indexed the notes: what the index answered before it
+   * may have changed in any way, with no `changed` for each note.
+   */
+  indexed: () => void;
 }
 
 export interface NoteIndexOptions {
@@ -344,7 +349,10 @@ export class NoteIndex extends Service<void> {
       this.#emitter.emit("frontmatter-changed", file);
   }
 
-  /** Silent to consumers: every later mapping change arrives as `changed`. */
+  /**
+   * Reported as one `indexed`, not a `changed` for each note: every later
+   * mapping change arrives as `changed`.
+   */
   #fullScan(): void {
     if (this.#disposed) return;
     this.#clear();
@@ -358,6 +366,7 @@ export class NoteIndex extends Service<void> {
 
     logger.debug("Note index scanned", { count: this.#contribByFile.size });
     this.#indexed.resolve();
+    this.#emitter.emit("indexed");
   }
 
   #applyDiff(file: TFile, diff: ContribDiff): void {

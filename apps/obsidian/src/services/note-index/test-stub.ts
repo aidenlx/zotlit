@@ -1,16 +1,20 @@
 /**
  * Test double for the Note Index, shared by the consumer suites. Holds a
  * fixed key-to-notes table and property names, and lets a test fire
- * `changed` or `frontmatter-changed` by hand.
+ * `changed`, `frontmatter-changed` or `indexed` by hand.
  */
-type NoteIndexStubEvent = "changed" | "frontmatter-changed";
+type NoteIndexStubEvent = "changed" | "frontmatter-changed" | "indexed";
 
 export class NoteIndexStub {
   readonly #notes: Record<string, { path: string }[]>;
   readonly #propertyNames: readonly string[];
-  readonly #listeners: Record<NoteIndexStubEvent, Set<() => void>> = {
+  readonly #listeners: Record<
+    NoteIndexStubEvent,
+    Set<(file?: { path: string }) => void>
+  > = {
     changed: new Set(),
     "frontmatter-changed": new Set(),
+    indexed: new Set(),
   };
 
   constructor(
@@ -37,12 +41,16 @@ export class NoteIndexStub {
     return Promise.resolve();
   }
 
-  on(event: NoteIndexStubEvent, cb: () => void): () => void {
+  on(
+    event: NoteIndexStubEvent,
+    cb: (file?: { path: string }) => void,
+  ): () => void {
     this.#listeners[event].add(cb);
     return () => this.#listeners[event].delete(cb);
   }
 
-  emit(event: NoteIndexStubEvent): void {
-    for (const cb of this.#listeners[event]) cb();
+  /** Fire `event`, for the note `file` where it names one. */
+  emit(event: NoteIndexStubEvent, file?: { path: string }): void {
+    for (const cb of this.#listeners[event]) cb(file);
   }
 }

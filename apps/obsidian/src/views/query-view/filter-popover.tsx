@@ -49,7 +49,7 @@ import {
   PopoverSection,
   ToolbarPopover,
 } from "./toolbar-popover";
-import { useVaultPropertyNames } from "./vault-cell";
+import { useVaultPropertyNames, useVaultVersion } from "./vault-cell";
 import type { QueryView } from "./view";
 import { useViewProperties } from "./view-properties";
 import type { ViewProperties } from "./view-properties";
@@ -68,10 +68,8 @@ const VAULT_FIELD_TYPES: Record<VaultPropertyType, FilterField["type"]> = {
   text: "text",
   multitext: "list",
   number: "number",
-  // A date, or a date and time, compares as the text the frontmatter holds. A checkbox row
-  // compares a string, which never equals the boolean the frontmatter holds;
-  // `vault.done == true` written as text matches it.
-  checkbox: "text",
+  checkbox: "boolean",
+  // A date, or a date and time, compares as the text the frontmatter holds.
   date: "text",
   datetime: "text",
 };
@@ -374,9 +372,12 @@ export function FilterButton({ view }: { view: QueryView }) {
   const { literatureNotes } = view.tableDeps;
   const names = useVaultPropertyNames(literatureNotes);
   const properties = useViewProperties(view, names);
+  // A change of a property's type changes no name, so it is read apart.
+  const vaultVersion = useVaultVersion(literatureNotes);
   const vaultFields = useMemo(
     () => vaultFilterFields(names, literatureNotes, properties),
-    [names, literatureNotes, properties],
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- `vaultVersion` reads the types again
+    [names, literatureNotes, properties, vaultVersion],
   );
   const [values, setValues] = useState<FilterValues>(NO_VALUES);
   if (!file || !shown) return null;

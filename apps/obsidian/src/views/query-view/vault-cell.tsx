@@ -32,6 +32,7 @@ import type {
   VaultHost,
   VaultPropertyType,
   VaultValue,
+  VaultWrite,
 } from "./table-notes";
 import {
   VaultChips,
@@ -125,16 +126,48 @@ export function useVaultValue({
   return JSON.parse(snapshot) as VaultValue;
 }
 
-/** The type of the vault property `name`, as it is now. */
+/**
+ * The type of the vault property `name`, as it is now: of a cell that holds
+ * `value`, where one is given.
+ */
 export function useVaultType(
   notes: Pick<LiteratureNotes, "on" | "propertyType">,
   name: string,
+  value?: unknown,
 ): VaultPropertyType {
   const subscribe = useCallback(
     (listener: () => void) => onVaultChange(notes, listener),
     [notes],
   );
-  return useSyncExternalStore(subscribe, () => notes.propertyType(name));
+  return useSyncExternalStore(subscribe, () => notes.propertyType(name, value));
+}
+
+/** Whether the note's Profile replaces the vault property, as it does now. */
+function useVaultManaged({
+  notes,
+  itemKey,
+  name,
+  host,
+}: VaultCellProps): boolean {
+  const subscribe = useCallback(
+    (listener: () => void) => onVaultChange(notes, listener),
+    [notes],
+  );
+  return useSyncExternalStore(subscribe, () =>
+    notes.managed(itemKey, name, host),
+  );
+}
+
+/** The message a write of the vault property `name` that did not land shows. */
+function unwrittenMessage(result: VaultWrite, name: string): string | null {
+  switch (result) {
+    case "cancelled":
+      return m.query_view_vault_not_written({ name });
+    case "managed":
+      return m.query_view_vault_managed_not_written({ name });
+    default:
+      return null;
+  }
 }
 
 /** One vault cell on screen. */
@@ -160,18 +193,20 @@ export function VaultCell(props: VaultCellProps) {
 const logger = getLogger("QueryView");
 
 /**
- * The vault cell of `name` for the Item `itemKey` in the Table: a click
- * edits it with the editor of its type where the note's Profile does not
- * replace the key, and toggles a checkbox. Enter or leaving the field
- * writes it, creating the note where the Item has none; Escape drops it.
- * The click stops at the cell, so the gesture of the row or the block that
- * holds the view does not run.
+ * The vault cell of `name` for the Item `itemKey` in the Table: the whole
+ * cell is the target of an edit, by a click or by Enter or Space, with the
+ * editor of the type its value takes where the note's Profile does not
+ * replace the key; a click toggles a checkbox. Enter or focus leaving the
+ * editor writes it, creating the note where the Item has none; Escape drops
+ * it. The click stops at the cell, so the gesture of the row or the block
+ * that holds the view does not run.
  */
 export function VaultEditCell(props: VaultCellProps) {
   const { notes, itemKey, name, host } = props;
   const value = useVaultValue(props);
-  const type = useVaultType(notes, name);
-  const managed = value.note && notes.managed(itemKey, name, host);
+  const current = value.note ? value.value : null;
+  const type = useVaultType(notes, name, current);
+  const managed = useVaultManaged(props) && value.note;
   const [draft, setDraft] = useState<VaultDraft | null>(null);
   // Set when Enter or Escape ends the edit, so the blur that follows the
   // field leaving the page does not end it again.
@@ -183,13 +218,12 @@ export function VaultEditCell(props: VaultCellProps) {
   }, [editing]);
   // A row with no note edits too: the first write creates the note.
   const editable = !managed;
-  const current = value.note ? value.value : null;
   const write = (next: unknown) =>
     notes
       .write({ itemKey, name, value: next, host })
       .then((result) => {
-        if (result === "cancelled")
-          new BaseNotice(m.query_view_vault_not_written({ name }));
+        const message = unwrittenMessage(result, name);
+        if (message !== null) new BaseNotice(message);
       })
       .catch((error: unknown) => {
         logger.warn("The Query View could not write a vault property", {
@@ -217,20 +251,44 @@ export function VaultEditCell(props: VaultCellProps) {
     void write(next);
   };
   const checkbox = type === "checkbox";
+  // A checkbox of a note is its own control; any other cell is one.
+  const target = editable && draft === null && !(checkbox && value.note);
+  const activate = () => {
+    if (!editable || draft !== null) return;
+    // A checkbox of a row with no note toggles on, creating the note.
+    if (!checkbox) begin();
+    else if (!value.note) void write(true);
+  };
   return (
     <div
       data-query-vault-cell=""
       data-query-vault-name={name}
+      // The cell fills the table cell, so an empty value is a target too.
       className={cn(
-        "zt:flex zt:min-w-0 zt:items-center zt:gap-1",
-        editable && draft === null && !checkbox && "zt:cursor-text",
+        "zt:flex zt:h-full zt:min-h-7.5 zt:w-full zt:min-w-0 zt:items-center zt:gap-1 zt:px-2 zt:py-1",
+        target && !checkbox && "zt:cursor-text",
       )}
+      role={target ? "button" : undefined}
+      tabIndex={target ? 0 : undefined}
+      aria-label={target ? m.query_view_vault_edit({ name }) : undefined}
       onClick={(event) => {
         event.stopPropagation();
-        if (!editable || draft !== null) return;
-        // A checkbox of a row with no note toggles on, creating the note.
-        if (!checkbox) begin();
-        else if (!value.note) void write(true);
+        activate();
+      }}
+      onKeyDown={(event) => {
+        if (!target || event.target !== event.currentTarget) return;
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        event.stopPropagation();
+        activate();
+      }}
+      // Focus that leaves the whole editor, from its field or a chip's
+      // remove button, ends the edit; focus that moves inside it does not.
+      onBlur={(event) => {
+        if (draft === null) return;
+        if (event.currentTarget.contains(event.relatedTarget as Node | null))
+          return;
+        end(true, draft);
       }}
     >
       {draft === null ? (

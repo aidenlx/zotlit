@@ -9,6 +9,8 @@
 import { Keymap } from "obsidian";
 import type { App, TFile } from "obsidian";
 
+import { createNanoEvents } from "@zotlit/shared/nanoevents";
+
 import { Effect } from "@/lib/effect";
 import { processLiveFrontMatter } from "@/lib/live-text";
 import type { LiveTextApp } from "@/lib/live-text";
@@ -18,6 +20,7 @@ import {
 } from "@/lib/obsidian-private/metadata-type-manager";
 import { createNoteInteractively } from "@/services/note-feature/creation-view";
 import type { InteractiveCreationDeps } from "@/services/note-feature/creation-view";
+import type { NoteFeature } from "@/services/note-feature/operations";
 import type { NoteIndex } from "@/services/note-index/service";
 import type { ProfileService } from "@/services/profile/service";
 import type { TemplateService } from "@/services/template/service";
@@ -71,10 +74,12 @@ export type VaultValue =
 /**
  * What a write of a vault property did: `written` to the note, `created`
  * where the Item had no Literature Note, so the usual creation made one and
- * the key was written to it, or `cancelled` where no note came of that
- * creation, the Profile prompt cancelled, and nothing was written.
+ * the key was written to it, `cancelled` where no note came of that
+ * creation, the Profile prompt cancelled, and nothing was written, or
+ * `managed` where the note's Profile replaces the key on each update, so
+ * nothing was written, though the note may have just been created.
  */
-export type VaultWrite = "written" | "created" | "cancelled";
+export type VaultWrite = "written" | "created" | "cancelled" | "managed";
 
 /** An edit of the vault property `name` of the Item `itemKey` to `value`. */
 export interface VaultEdit {
@@ -91,8 +96,9 @@ export interface LiteratureNotes {
   find(itemKey: string): LiteratureNoteLink | null;
   /**
    * `changed`: a Literature Note was added, changed or removed.
-   * `frontmatter-changed`: the frontmatter of a Literature Note, or the
-   * type Obsidian assigns a property, changed.
+   * `frontmatter-changed`: the frontmatter of a Literature Note, the type
+   * Obsidian assigns a property, or the keys a note's Profile replaces
+   * changed.
    */
   on(
     event: "changed" | "frontmatter-changed",
@@ -105,8 +111,12 @@ export interface LiteratureNotes {
   propertyNames(): readonly string[];
   /** The Indexed Keys of the Items that have a Literature Note. */
   itemKeys(): readonly string[];
-  /** The type of the vault property `name`. */
-  propertyType(name: string): VaultPropertyType;
+  /**
+   * The type of the vault property `name`: the one Obsidian assigns it, else
+   * the one `value`, a cell's value, infers, else the one the property's
+   * first value infers, else text.
+   */
+  propertyType(name: string, value?: unknown): VaultPropertyType;
   /**
    * The vault property `name` of an Item, by its Indexed Key: of `host`
    * where the Item is the one it names, else of the Item's first Literature
@@ -116,6 +126,8 @@ export interface LiteratureNotes {
   /**
    * Whether the Profile of the note {@link read} reads manages `name` with
    * the replace strategy, so that the next update of the note overwrites it.
+   * Until the note's Profile has been read it answers `false`, and tells
+   * `frontmatter-changed` once it has.
    */
   managed(itemKey: string, name: string, host: VaultHost | null): boolean;
   /**
@@ -123,7 +135,8 @@ export interface LiteratureNotes {
    * {@link read} reads, through the note's editor where one has it open.
    * Only that key changes; `null` keeps the key with no value. Where the
    * Item has no note, the usual creation makes one first, asking for a
-   * Profile when more than one fits.
+   * Profile when more than one fits. A key the note's Profile replaces, as
+   * {@link managed} tells, is not written.
    */
   write(edit: VaultEdit): Promise<VaultWrite>;
   /** Open the note; a Cmd/Ctrl press opens it in a new tab. */
@@ -138,39 +151,108 @@ export interface LiteratureNotesDeps extends InteractiveCreationDeps {
     NoteIndex,
     "getNotesByItemKey" | "getIndexedItemKeys" | "getPropertyNames" | "on"
   >;
-  profile: Pick<ProfileService, "profileOf">;
-  template: Pick<
-    TemplateService,
-    "getLiteratureNoteTemplate" | "frontmatterFields"
-  >;
+  noteFeature: InteractiveCreationDeps["noteFeature"] &
+    Pick<NoteFeature, "replacedKeys">;
+  profile: Pick<ProfileService, "on">;
+  template: Pick<TemplateService, "on">;
   zoteroReads: Pick<ZoteroReadsService, "ready">;
 }
 
+/** The keys a note's Profile replaces, or the read of them under way. */
+type Replaced = ReadonlySet<string> | Promise<ReadonlySet<string>>;
+
 /**
  * What the vault properties read across many notes, kept until a note is
- * added, changed or removed.
+ * added, changed or removed, or a Profile or a template changes.
  */
 interface VaultMemo {
   names?: readonly string[];
   /** The type each name's first value infers. */
   inferred?: ReadonlyMap<string, VaultPropertyType>;
   /** The keys each note's Profile replaces, by path. */
-  replaced: Map<string, readonly string[]>;
+  replaced: Map<string, Replaced>;
 }
 
 const freshMemo = (): VaultMemo => ({ replaced: new Map() });
 
+interface VaultEvents {
+  changed: () => void;
+  "frontmatter-changed": () => void;
+}
+
 /** The column's Literature Notes, from the Note Index and the usual creation. */
 export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
-  // The type Obsidian assigns is read live, so only what the notes give is
-  // kept. The Note Index lives as long as these notes, so the subscriptions
-  // need no end; they come first, so a listener reads after the clear.
+  // Every source of a change clears what it makes stale, then tells the
+  // listeners, so a listener reads after the clear. The type Obsidian
+  // assigns is read live, so only what the notes give is kept. The Note
+  // Index, the Profiles and the templates live as long as these notes, so
+  // their subscriptions need no end.
   let memo = freshMemo();
-  const invalidate = () => {
+  const events = createNanoEvents<VaultEvents>();
+  deps.noteIndex.on("changed", () => {
     memo = freshMemo();
+    events.emit("changed");
+  });
+  // The Full Scan reports no `changed` for each note it finds.
+  deps.noteIndex.on("indexed", () => {
+    memo = freshMemo();
+    events.emit("changed");
+  });
+  deps.noteIndex.on("frontmatter-changed", (file) => {
+    // A note's own frontmatter, its Profile stamp among it, decides what its
+    // Profile replaces; the other notes keep theirs.
+    memo = {
+      replaced: new Map(
+        [...memo.replaced].filter(([path]) => path !== file?.path),
+      ),
+    };
+    if (file === undefined) memo.replaced.clear();
+    events.emit("frontmatter-changed");
+  });
+  const profilesChanged = () => {
+    memo = { ...memo, replaced: new Map() };
+    events.emit("frontmatter-changed");
   };
-  deps.noteIndex.on("changed", invalidate);
-  deps.noteIndex.on("frontmatter-changed", invalidate);
+  deps.profile.on("changed", profilesChanged);
+  deps.template.on("compile-status-changed", profilesChanged);
+  // A read of what a note's Profile replaces settles after the cell asked;
+  // the cells read again once for all that settle together.
+  let telling = false;
+  const tellReplaced = () => {
+    if (telling) return;
+    telling = true;
+    queueMicrotask(() => {
+      telling = false;
+      events.emit("frontmatter-changed");
+    });
+  };
+  /** The keys the Profile of `file` replaces, read once until it changes. */
+  const replacedOf = (file: TFile): Replaced => {
+    const known = memo.replaced.get(file.path);
+    if (known !== undefined) return known;
+    const at = memo;
+    const reading = deps.noteFeature.replacedKeys(file).then((keys) => {
+      if (at.replaced.get(file.path) === reading) {
+        at.replaced.set(file.path, keys);
+        if (memo === at) tellReplaced();
+      }
+      return keys;
+    });
+    at.replaced.set(file.path, reading);
+    return reading;
+  };
+  // An assigned type is read live: listened to while any listener listens.
+  let typeListeners = 0;
+  let offTypes = () => {};
+  const listenTypes = () => {
+    if (typeListeners++ === 0)
+      offTypes = onTypesChanged(deps.app, () =>
+        events.emit("frontmatter-changed"),
+      );
+    return () => {
+      if (--typeListeners === 0) offTypes();
+    };
+  };
   const inferredTypes = (): ReadonlyMap<string, VaultPropertyType> => {
     if (memo.inferred) return memo.inferred;
     const inferred = new Map<string, VaultPropertyType>();
@@ -198,10 +280,10 @@ export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
   return {
     find: (itemKey) => deps.noteIndex.getNotesByItemKey(itemKey)[0] ?? null,
     on: (event, listener) => {
-      const off = deps.noteIndex.on(event, () => listener());
+      const off = events.on(event, listener);
       if (event !== "frontmatter-changed") return off;
       // A change of an assigned type shows as a change of the frontmatter.
-      const offTypes = onTypesChanged(deps.app, listener);
+      const offTypes = listenTypes();
       return () => {
         off();
         offTypes();
@@ -212,10 +294,11 @@ export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
         .getPropertyNames()
         .filter((name) => `vault.${name}` !== LITERATURE_NOTE)),
     itemKeys: () => deps.noteIndex.getIndexedItemKeys(),
-    propertyType: (name) => {
+    propertyType: (name, value) => {
       const assigned = assignedWidget(deps.app, name);
       if (assigned !== null && ASSIGNABLE.has(assigned))
         return assigned as VaultPropertyType;
+      if (value !== undefined && value !== null) return inferType(value);
       return inferredTypes().get(name) ?? "text";
     },
     read: (itemKey, name, host) => {
@@ -226,17 +309,15 @@ export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
     managed: (itemKey, name, host) => {
       const file = fileOf(itemKey, host);
       if (file === null) return false;
-      let keys = memo.replaced.get(file.path);
-      if (keys === undefined) {
-        keys = replacedKeys(deps, file);
-        memo.replaced.set(file.path, keys);
-      }
-      return keys.includes(name);
+      const keys = replacedOf(file);
+      return !(keys instanceof Promise) && keys.has(name);
     },
     write: async ({ itemKey, name, value, host }) => {
       const found = fileOf(itemKey, host);
       const file = found ?? (await createNote(itemKey));
       if (file === null) return "cancelled";
+      // The Profile of a note just created is read as the note's own.
+      if ((await replacedOf(file)).has(name)) return "managed";
       await processLiveFrontMatter(deps.app, file, (frontmatter) => {
         frontmatter[name] = value;
       });
@@ -261,34 +342,6 @@ export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
       )
     ).get(itemKey);
     return item ? createNoteInteractively(deps, item) : null;
-  }
-}
-
-/**
- * The keys the Profile of `file` manages with the replace strategy, by the
- * static keys of its Managed Frontmatter; none where its Profile or template
- * cannot be read now, so that a cell stays editable rather than locked on a
- * passing fault. A Spread Entry names no key until it runs, so it names none
- * here.
- */
-function replacedKeys(
-  deps: Pick<LiteratureNotesDeps, "profile" | "template">,
-  file: TFile,
-): readonly string[] {
-  try {
-    const resolved = deps.profile.profileOf(file);
-    if (!resolved.ok) return [];
-    const { document } = resolved.profile;
-    const entries =
-      document === undefined
-        ? deps.template.frontmatterFields
-        : (deps.template.getLiteratureNoteTemplate(document)?.frontmatter
-            ?.compiled ?? []);
-    return entries.flatMap(({ key, merge }) =>
-      key !== undefined && merge === "replace" ? [key] : [],
-    );
-  } catch {
-    return [];
   }
 }
 

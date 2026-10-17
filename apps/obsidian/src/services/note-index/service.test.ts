@@ -282,6 +282,22 @@ describe("NoteIndex", () => {
     expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["paper.md"]);
   });
 
+  it("tells its consumers when the Full Scan has indexed the notes", async () => {
+    const { metadataCache, workspace, service } = await makeHarness(
+      { "paper.md": cache({ itemKey: ITEM_A }) },
+      { enabledAtRuntime: false },
+    );
+    await service.ready;
+    const seen: string[][] = [];
+    service.on("indexed", () =>
+      seen.push(paths(service.getNotesByItemKey(ITEM_A))),
+    );
+
+    startup({ metadataCache, workspace });
+
+    expect(seen).toEqual([["paper.md"]]);
+  });
+
   it("keeps per-file mappings when the cache resolves again after the Full Scan", async () => {
     const { metadataCache, workspace, service } = await makeHarness({
       "paper.md": cache({ itemKey: ITEM_A }),

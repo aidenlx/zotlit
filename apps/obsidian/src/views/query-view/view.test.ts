@@ -44,8 +44,6 @@ import { QueryView, RERUN_DELAY_MS } from "./view";
 import type { QueryViewDeps } from "./view";
 
 vi.mock("zustand", () => import("../__fixtures__/zustand"));
-/** The text of each notice the view shows. */
-const notices = vi.hoisted((): string[] => []);
 vi.mock("obsidian", async (importOriginal) => {
   const obsidian = await importOriginal<typeof import("obsidian")>();
   return {
@@ -53,14 +51,6 @@ vi.mock("obsidian", async (importOriginal) => {
     // A substring match, enough for a search of the Properties popover.
     prepareFuzzySearch: (query: string) => (text: string) =>
       text.includes(query) ? { score: 0, matches: [] } : null,
-    Notice: class extends obsidian.Notice {
-      constructor(message: string | DocumentFragment, duration?: number) {
-        super(message, duration);
-        notices.push(
-          typeof message === "string" ? message : (message.textContent ?? ""),
-        );
-      }
-    },
   };
 });
 
@@ -151,7 +141,6 @@ function emitter() {
 
 let cleanup = new DisposableStack();
 afterEach(() => {
-  notices.length = 0;
   cleanup.dispose();
   cleanup = new DisposableStack();
   document.body.replaceChildren();
@@ -223,8 +212,9 @@ async function mount(
     emit: notesChanged.emit,
     propertyNames: () => propertyNames,
     itemKeys: () => Object.keys(notes),
-    propertyType: (name: string): VaultPropertyType => {
+    propertyType: (name: string, value?: unknown): VaultPropertyType => {
       if (types[name]) return types[name];
+      if (value !== undefined && value !== null) return inferType(value);
       for (const values of Object.values(frontmatter))
         if (values[name] !== undefined && values[name] !== null)
           return inferType(values[name]);
@@ -1189,6 +1179,76 @@ it("offers the vault properties in the Filter popover of an Items view, in brack
   expect(written.at(-1)).toContain(
     'filters:\n      and:\n        - vault["reading-status"] == "unread"',
   );
+});
+
+it("filters by a checkbox vault property as true or false from the Filter popover", async () => {
+  const written: string[] = [];
+  const { view, el, settle } = await mount(
+    [result([itemRow("ITEMAAAA", "Ten simple rules")])],
+    (text) => written.push(text),
+    {
+      propertyNames: ["done"],
+      notes: { ITEMAAAA: "A.md" },
+      frontmatter: { "A.md": { done: true } },
+    },
+  );
+  await act(() =>
+    view.setText(`views:
+  - type: table
+    name: Reading list
+    from: items
+    filters: 'vault["done"] == true'
+`),
+  );
+  await settle();
+
+  const [done] = section(el, "view").querySelectorAll("[data-condition-row]");
+  const [kind, operator] = done!.querySelectorAll<HTMLSelectElement>("select");
+  expect(kind!.selectedOptions[0]?.textContent).toBe("done");
+  expect(operator!.selectedOptions[0]?.textContent).toBe(
+    m.workbench_filter_op_is_true(),
+  );
+  // A boolean has no value to type.
+  expect(done!.querySelector('input[aria-label="Value"]')).toBeNull();
+  await act(() => chooseValue(operator!, "is-false"));
+  await settle();
+  expect(written.at(-1)).toContain(
+    'filters:\n      and:\n        - vault["done"] == false',
+  );
+});
+
+it("offers a vault property's operators by its type, as its type changes", async () => {
+  const types: Record<string, VaultPropertyType> = {};
+  const { view, el, settle, literatureNotes } = await mount(
+    [result([itemRow("ITEMAAAA", "Ten simple rules")])],
+    () => {},
+    {
+      propertyNames: ["pages"],
+      notes: { ITEMAAAA: "A.md" },
+      frontmatter: { "A.md": { pages: "12" } },
+      types,
+    },
+  );
+  await act(() =>
+    view.setText(`views:
+  - type: table
+    name: Reading list
+    from: items
+    filters: 'vault["pages"] == "12"'
+`),
+  );
+  await settle();
+  const operators = () => {
+    const [row] = section(el, "view").querySelectorAll("[data-condition-row]");
+    const [, operator] = row!.querySelectorAll<HTMLSelectElement>("select");
+    return [...operator!.options].map((option) => option.value);
+  };
+  expect(operators()).not.toContain("before");
+
+  types.pages = "number";
+  await act(() => literatureNotes.emit("frontmatter-changed"));
+
+  expect(operators()).toContain("before");
 });
 
 it("names a filter condition by the Display Name of its field", async () => {
@@ -3529,6 +3589,41 @@ ${filters}
       expect(literatureNotes.write).not.toHaveBeenCalled();
     });
 
+    it("turns a cell read-only when its note's Profile comes to replace the key", async () => {
+      const managed: Record<string, string[]> = {};
+      const { cell, input, literatureNotes } = await editable({ managed });
+      expect(
+        cell("ITEMAAAA").querySelector("[data-query-vault-managed]"),
+      ).toBeNull();
+
+      // The note's stamp now names a Profile that replaces the key.
+      managed["A.md"] = ["status"];
+      await act(() => literatureNotes.emit("frontmatter-changed"));
+
+      expect(
+        cell("ITEMAAAA").querySelector("[data-query-vault-managed]"),
+      ).not.toBeNull();
+      await act(() => cell("ITEMAAAA").click());
+      expect(input()).toBeNull();
+    });
+
+    it("makes the whole cell, empty or not, an edit target the keyboard reaches", async () => {
+      const { cell, input } = await editable({ frontmatter: { "A.md": {} } });
+      const target = cell("ITEMAAAA");
+
+      expect(target.getAttribute("role")).toBe("button");
+      expect(target.tabIndex).toBe(0);
+      expect(target.getAttribute("aria-label")).toBe(
+        m.query_view_vault_edit({ name: "status" }),
+      );
+      await act(() => {
+        target.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+        );
+      });
+      expect(input()?.value).toBe("");
+    });
+
     describe("on a row with no note", () => {
       it("opens the editor, empty, and creates nothing", async () => {
         const { cell, input, literatureNotes } = await editable();
@@ -3563,11 +3658,13 @@ ${filters}
           host: null,
         });
         expect(vaultCells(el)[1]).toEqual(["value", "to read"]);
-        expect(notices).toEqual([]);
+        await expect(
+          literatureNotes.write.mock.results[0]!.value,
+        ).resolves.toBe("created");
       });
 
-      it("says nothing was written when the Profile prompt is cancelled", async () => {
-        const { el, cell, type, press } = await editable({
+      it("keeps the row with no note when the Profile prompt is cancelled", async () => {
+        const { el, cell, type, press, literatureNotes } = await editable({
           creation: "cancelled",
         });
 
@@ -3575,12 +3672,12 @@ ${filters}
         await type("to read");
         await press("Enter");
 
+        await expect(
+          literatureNotes.write.mock.results[0]!.value,
+        ).resolves.toBe("cancelled");
         expect(vaultCells(el)[1]).toEqual([
           "no-note",
           m.query_view_vault_no_note(),
-        ]);
-        expect(notices).toEqual([
-          m.query_view_vault_not_written({ name: "status" }),
         ]);
       });
     });
@@ -3824,6 +3921,74 @@ ${order.map((path) => `      - ${path}\n`).join("")}`),
         edit("authors", ["Doe, J", "Poe, E"]),
       );
       expect(chips()).toEqual(["Doe, J", "Poe, E"]);
+    });
+
+    it("commits the list when focus leaves the editor from a chip", async () => {
+      const { cell, type, press, literatureNotes } = await typed(
+        ["vault.authors"],
+        { authors: ["Doe, J"] },
+      );
+
+      await act(() => cell("authors").click());
+      await type("Roe");
+      await press("Enter");
+      // Shift+Tab moved focus to a chip's remove button; a click outside
+      // takes it out of the editor.
+      const remove = cell("authors").querySelector<HTMLElement>(
+        '[data-query-vault-chip="Roe"] [data-query-vault-chip-remove]',
+      )!;
+      await act(() => {
+        remove.dispatchEvent(
+          new FocusEvent("focusout", { bubbles: true, relatedTarget: null }),
+        );
+      });
+
+      expect(literatureNotes.write).toHaveBeenCalledTimes(1);
+      expect(literatureNotes.write).toHaveBeenLastCalledWith(
+        edit("authors", ["Doe, J", "Roe"]),
+      );
+    });
+
+    it("edits each cell with the editor its own value infers, where no type is assigned", async () => {
+      const { view, el, settle } = await mount(
+        [
+          result([
+            itemRow("ITEMAAAA", "Ten simple rules"),
+            itemRow("ITEMBBBB", "Deep learning"),
+          ]),
+        ],
+        undefined,
+        {
+          notes: { ITEMAAAA: "A.md", ITEMBBBB: "B.md" },
+          // The property's first value is a checkbox.
+          frontmatter: { "B.md": { flag: true }, "A.md": { flag: "maybe" } },
+        },
+      );
+      await act(() =>
+        view.setText(`views:
+  - type: table
+    name: Reading list
+    from: items
+    order:
+      - vault.flag
+`),
+      );
+      await settle();
+      const cell = (itemKey: string) =>
+        el.querySelector<HTMLElement>(
+          `[data-query-key="${itemKey}"] [data-query-vault-cell]`,
+        )!;
+
+      expect(
+        cell("ITEMBBBB").querySelector("[data-query-vault-checkbox]"),
+      ).not.toBeNull();
+      expect(
+        cell("ITEMAAAA").querySelector("[data-query-vault-checkbox]"),
+      ).toBeNull();
+      await act(() => cell("ITEMAAAA").click());
+      expect(
+        el.querySelector<HTMLInputElement>("[data-query-vault-input]")?.value,
+      ).toBe("maybe");
     });
 
     it("drops the list's edits on Escape", async () => {
