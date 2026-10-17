@@ -565,13 +565,46 @@ export function withDisplayName(
   return withProperties(file, nameDictionary(properties));
 }
 
-/** The text of a new Query File: one Annotations view of the whole library. */
-export function newQueryFileText(viewName: string): string {
+/** The names a new Query File gives its views and the properties it labels. */
+export interface NewQueryFileLabels {
+  /** The name of the default view, an Items table. */
+  readonly items: string;
+  /** The name of the second view, the Annotations of the whole library. */
+  readonly annotations: string;
+  /** The Display Name of `creators`. */
+  readonly creators: string;
+  /** The Display Name of `date.year`. */
+  readonly year: string;
+}
+
+/**
+ * The text of a new Query File. Its default view is an Items table of the
+ * whole library, newest first by `dateModified`, that shows the title,
+ * creators, year and Literature Note of each Item. Its second view shows the
+ * Annotations of the whole library, grouped by Item.
+ */
+export function newQueryFileText(labels: NewQueryFileLabels): string {
   return serializeQueryFile({
+    properties: nameDictionary(
+      new Map([
+        ["creators", { displayName: labels.creators }],
+        ["date.year", { displayName: labels.year }],
+      ]),
+    ),
     views: [
       {
+        type: "table",
+        name: labels.items,
+        from: "items",
+        sort: [{ property: "dateModified", direction: "DESC" }],
+        order: ["title", "creators", "date.year", "vault.literatureNote"],
+        limit: NEW_QUERY_FILE_LIMIT,
+        problems: [],
+        source: {},
+      },
+      {
         type: "annotations",
-        name: viewName,
+        name: labels.annotations,
         from: "annotations",
         groupBy: { property: "item.indexedKey", direction: "ASC" },
         limit: NEW_QUERY_FILE_LIMIT,

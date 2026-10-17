@@ -1011,8 +1011,34 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       return report.rows!;
     };
 
-    // "New query file" from the command palette writes one Annotations view
-    // of the whole library, with a limit, and opens it in a tab.
+    /**
+     * The Items table of the active Query File tab, once its query settled:
+     * the view name, each column header, and the key of each row.
+     */
+    const readTable = `(async()=>{const view=app.workspace.getMostRecentLeaf().view;if(view.getViewType()!=='zotlit-query-file')return 'null';await view.query.settled;const el=view.contentEl;return JSON.stringify({file:view.file?.path,view:el.querySelector('[data-query-view-menu]')?.textContent??null,table:!!el.querySelector('[data-query-table]'),labels:[...el.querySelectorAll('th[data-query-column]')].map(n=>n.textContent),rows:[...el.querySelectorAll('tr[data-query-table-row="item"]')].map(n=>n.getAttribute('data-query-key'))});})()`;
+    interface Table {
+      file: string;
+      view: string | null;
+      table: boolean;
+      labels: string[];
+      rows: string[];
+    }
+    const tableWhen = async (
+      ready: (table: Table) => boolean,
+    ): Promise<Table> => {
+      let table: Table | null = null;
+      const settled = await waitFor(async () => {
+        table = JSON.parse(await obEval(vaultId, readTable)) as Table | null;
+        return table !== null && ready(table);
+      }, 120);
+      if (!settled)
+        throw new Error(`Query File table: ${JSON.stringify(table)}`);
+      return table!;
+    };
+
+    // "New query file" from the command palette writes a file that opens on
+    // an Items table of the whole library, newest first, and opens it in a
+    // tab.
     const before = JSON.parse(
       await obEval(
         vaultId,
@@ -1023,23 +1049,64 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       vaultId,
       "app.commands.executeCommandById('zotlit:new-query-file');true",
     );
-    const created = await tabWhen((tab) => tab.count !== null);
-    expect(before).not.toContain(created.file);
-    scratchFiles.push(created.file);
-    expect(created.file).toMatch(/\.zotquery$/);
+    const items = await tableWhen(
+      (table) => table.table && table.rows.length > 0,
+    );
+    expect(before).not.toContain(items.file);
+    scratchFiles.push(items.file);
+    expect(items.file).toMatch(/\.zotquery$/);
     const text = await obEval(
       vaultId,
-      `app.vault.cachedRead(app.vault.getFileByPath(${JSON.stringify(created.file)}))`,
+      `app.vault.cachedRead(app.vault.getFileByPath(${JSON.stringify(items.file)}))`,
     );
-    expect(text).toContain("from: annotations");
     expect(text).toContain("limit: 100");
 
-    // The cards come grouped by Item under its title, in query order inside
-    // a group, and the count is the query's own. No Zotero answers this
-    // vault.
+    // The table shows Title, Creators, Year and the Literature Note, and the
+    // Items in the order ZotLit Query gives them newest first.
+    const newest = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query", {
+        args: {
+          from: "items",
+          fields: "title",
+          sort: "-dateModified",
+          limit: "100",
+        },
+      }),
+    ) as ItemQueryReport;
+    expect(newest.ok).toBe(true);
+    expect(newest.rows!.length).toBeGreaterThan(0);
+    expect(items).toMatchObject({
+      view: m.query_file_items_view_name(),
+      labels: [
+        m.query_view_property_title(),
+        m.query_file_creators_property(),
+        m.query_file_year_property(),
+        m.query_view_table_literature_note(),
+      ],
+      rows: newest.rows!.map((row) => row.indexedKey),
+    });
+
+    // The second view is the Annotations view: the cards come grouped by
+    // Item under its title, in query order inside a group, and the count is
+    // the query's own. No Zotero answers this vault.
+    const views = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{${PAGE}const view=app.workspace.getMostRecentLeaf().view;press(view.contentEl.querySelector('[data-query-view-menu]'),'View menu');const rows=await until('view menu rows',()=>{const found=[...view.contentEl.querySelectorAll('[data-query-view-list]:popover-open [data-query-view-row]')];return found.length>0&&found;});const titles=rows.map(n=>n.getAttribute('data-query-view-row'));press(rows[1],'second view');return JSON.stringify(titles);})()`,
+      ),
+    ) as string[];
+    expect(views).toEqual([
+      m.query_file_items_view_name(),
+      m.query_file_annotations_view_name(),
+    ]);
     const all = await queryRows();
     expect(all.length).toBeGreaterThan(0);
+    const created = await tabWhen(
+      (tab) =>
+        tab.view === m.query_file_annotations_view_name() && tab.count !== null,
+    );
     expect(created).toMatchObject({
+      file: items.file,
       count: String(all.length),
       ...byItem(all),
       diagnostic: null,
@@ -1099,14 +1166,27 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       });
     }
 
-    // "New query file" stands in a folder's menu in the file explorer.
+    // "New query file" stands in a folder's menu in the file explorer, and
+    // writes there a file that opens on the same Items table.
     const folderMenu = JSON.parse(
       await obEval(
         vaultId,
-        `(async()=>{${PAGE}app.workspace.leftSplit.expand();const explorer=app.workspace.getLeavesOfType('file-explorer')[0];await app.workspace.revealLeaf(explorer);const title=explorer.view.containerEl.querySelector('.nav-folder-title[data-path="query-files"]');title.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,clientX:10,clientY:10}));await until('folder menu opens',()=>activeDocument.querySelector('.menu .menu-item-title'));const titles=[...activeDocument.querySelectorAll('.menu .menu-item-title')].map(n=>n.textContent);activeDocument.body.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));return JSON.stringify(titles);})()`,
+        `(async()=>{${PAGE}app.workspace.leftSplit.expand();const explorer=app.workspace.getLeavesOfType('file-explorer')[0];await app.workspace.revealLeaf(explorer);const title=explorer.view.containerEl.querySelector('.nav-folder-title[data-path="query-files"]');title.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,clientX:10,clientY:10}));await until('folder menu opens',()=>activeDocument.querySelector('.menu .menu-item-title'));const items=[...activeDocument.querySelectorAll('.menu .menu-item')];const titles=items.map(n=>n.querySelector('.menu-item-title')?.textContent);press(items.find(n=>n.querySelector('.menu-item-title')?.textContent===${JSON.stringify(m.query_file_new())}),'New query file');return JSON.stringify(titles);})()`,
       ),
     ) as string[];
     expect(folderMenu).toContain(m.query_file_new());
+    const fromFolder = await tableWhen(
+      (table) =>
+        table.file !== items.file &&
+        table.file?.startsWith("query-files/") === true &&
+        table.rows.length > 0,
+    );
+    scratchFiles.push(fromFolder.file);
+    expect(fromFolder).toMatchObject({
+      view: items.view,
+      labels: items.labels,
+      rows: items.rows,
+    });
   }, 180000);
 
   it("shows a Query File toolbar as icons with tooltips on a narrow pane, and with names on a wide one", async () => {
