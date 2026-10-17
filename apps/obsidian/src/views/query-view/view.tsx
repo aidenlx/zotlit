@@ -192,9 +192,10 @@ export interface QueryViewHost {
    */
   rows?: ItemRowGestures;
   /**
-   * Why `row` is in the list, such as "edited in Zotero" on the Library
-   * View's Recent; the Papers reading-state line ends with it. `null`: no
-   * reason. Absent: no row gives one.
+   * Why `row` is in the list; the Papers reading-state line ends with it.
+   * The Library View's Recent gives one once last activity is defined
+   * (#1532), such as "read 2 h ago in Obsidian". `null`: no reason. Absent:
+   * no row gives one.
    *
    * @see apps/obsidian/docs/adr/0075-recent-is-a-library-tree-node-that-writes-a-sort.md
    */

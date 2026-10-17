@@ -6,6 +6,7 @@
 //
 // @see apps/obsidian/docs/adr/0072-search-enters-the-library-view-as-an-ordered-key-set.md
 import { Component } from "obsidian";
+import { useSyncExternalStore } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
@@ -217,9 +218,59 @@ export class LibrarySearch extends Component {
    * search all libraries beside it while some match.
    */
   header(query: StoreApi<QueryViewState>): HeaderSearch {
+    const subscribe = (listener: () => void) => {
+      const offText = this.store.subscribe(listener);
+      const offQuery = query.subscribe(listener);
+      return () => {
+        offText();
+        offQuery();
+      };
+    };
+    const header: HeaderSearch = {
+      subscribe,
+      summary: (selection) => {
+        const shown = this.#shown(query);
+        if (!shown || shown.matched === null) return null;
+        if (shown.everywhere && !this.onRecent)
+          return m.library_view_search_matches_everywhere({
+            count: shown.matched,
+          });
+        return m.library_view_search_matches({
+          selection,
+          count: shown.matched,
+        });
+      },
+      action: (
+        <SearchAllButton
+          search={this}
+          subscribe={subscribe}
+          offered={() => {
+            const shown = this.#shown(query);
+            return (
+              shown !== null &&
+              !shown.everywhere &&
+              !this.onRecent &&
+              shown.matched !== 0
+            );
+          }}
+        />
+      ),
+    };
+    return header;
+  }
+
+  /**
+   * The search on screen and the count it matched, `null` while unknown;
+   * `null` itself while the box is empty.
+   */
+  #shown(
+    query: StoreApi<QueryViewState>,
+  ): { everywhere: boolean; matched: number | null } | null {
+    const { text, everywhere } = this.store.getState();
+    if (text.trim() === "") return null;
     return {
-      useSummary: (selection) => useSearchSummary(this, query, selection),
-      action: <SearchAllButton search={this} query={query} />,
+      everywhere,
+      matched: query.getState().results?.matched ?? null,
     };
   }
 
@@ -276,24 +327,6 @@ function SearchBox({ search }: { search: LibrarySearch }) {
   );
 }
 
-/**
- * The match count of the search on screen, as the header and its status say
- * it; `null` while no search is on screen or its count is unknown.
- */
-function useSearchSummary(
-  search: LibrarySearch,
-  query: StoreApi<QueryViewState>,
-  selection: string,
-): string | null {
-  const text = useStore(search.store, (s) => s.text);
-  const everywhere = useStore(search.store, (s) => s.everywhere);
-  const matched = useStore(query, (s) => s.results?.matched ?? null);
-  if (text.trim() === "" || matched === null) return null;
-  if (everywhere && !search.onRecent)
-    return m.library_view_search_matches_everywhere({ count: matched });
-  return m.library_view_search_matches({ selection, count: matched });
-}
-
 function EmptyList({
   search,
   tree,
@@ -343,16 +376,15 @@ function EmptyList({
  */
 function SearchAllButton({
   search,
-  query,
+  subscribe,
+  offered,
 }: {
   search: LibrarySearch;
-  query: StoreApi<QueryViewState>;
+  subscribe: HeaderSearch["subscribe"];
+  /** Whether the search on screen keeps to the node and finds something there. */
+  offered: () => boolean;
 }) {
-  const text = useStore(search.store, (s) => s.text);
-  const everywhere = useStore(search.store, (s) => s.everywhere);
-  const matched = useStore(query, (s) => s.results?.matched ?? null);
-  if (text.trim() === "" || everywhere || search.onRecent || matched === 0)
-    return null;
+  if (!useSyncExternalStore(subscribe, offered)) return null;
   const widen = () => search.widen();
   return (
     <span

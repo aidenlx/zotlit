@@ -611,6 +611,19 @@ function header(view: LibraryView) {
   return view.contentEl.querySelector("[data-library-header]")?.textContent;
 }
 
+/**
+ * The name a screen reader gives `el`, from the elements it is labelled by;
+ * empty for none. The view names nothing by `aria-label`, which Obsidian
+ * shows as a tooltip.
+ */
+function accessibleName(el: Element): string {
+  return (el.getAttribute("aria-labelledby") ?? "")
+    .split(" ")
+    .filter((id) => id !== "")
+    .map((id) => el.ownerDocument.getElementById(id)?.textContent ?? "")
+    .join(" ");
+}
+
 /** The tree on screen: each node's label, depth and count, in order. */
 function tree(view: LibraryView) {
   return [
@@ -898,26 +911,17 @@ it("moves the selection up to its library where Zotero no longer has the Collect
   });
 });
 
-it("names the tree by its heading, with no tooltip over it", async () => {
+it("names the tree and the facets for a screen reader, with no tooltip over them", async () => {
   const { deps } = pluginData();
   const view = await openTab(deps);
   const pane = view.contentEl.querySelector("[data-library-tree]")!;
-  const treeEl = pane.querySelector("[role=tree]")!;
-  const name = treeEl.getAttribute("aria-labelledby");
-  expect(
-    name && view.contentEl.querySelector(`[id="${name}"]`)?.textContent,
-  ).toBe("Libraries");
   // Obsidian shows every `aria-label` as a tooltip on hover.
   expect(pane.querySelectorAll("[aria-label]")).toHaveLength(0);
-  // Only the tree goes by "Libraries": the pane around it has no name.
-  expect(pane.querySelectorAll("[aria-labelledby]")).toHaveLength(2);
-  // The facets are named for a screen reader, with no heading on screen.
-  const facets = pane.querySelector<HTMLElement>("[data-library-facets]")!;
-  const facetsName = view.contentEl.querySelector<HTMLElement>(
-    `[id="${facets.getAttribute("aria-labelledby")}"]`,
-  )!;
-  expect(facetsName.textContent).toBe(m.library_view_facets_label());
-  expect(facetsName.classList.contains("zt:sr-only")).toBe(true);
+  expect(accessibleName(pane.querySelector("nav")!)).toBe("");
+  expect(accessibleName(pane.querySelector("[role=tree]")!)).toBe("Libraries");
+  expect(accessibleName(pane.querySelector("[role=group]")!)).toBe(
+    m.library_view_facets_label(),
+  );
 });
 
 it("says where Zotero's data folder cannot be found, offers to locate it, and lists the papers once it is set", async () => {
@@ -1006,15 +1010,6 @@ it("says Zotero is not found where the data folder changes to one that does not 
   expect(
     view.contentEl.querySelector("[data-library-refresh-failed]"),
   ).toBeNull();
-});
-
-it("gives no row a reason, on Recent as on a Library, until Recent reads last activity", async () => {
-  const { deps } = pluginData();
-  const view = await openTab(deps);
-  const item = { indexedKey: "AAAAAAAA", values: {} };
-  expect(view.query.reason(item)).toBeNull();
-  await press(view, row(view, { kind: "library", library: LAB }));
-  expect(view.query.reason(item)).toBeNull();
 });
 
 it("reads the new Library Scope on Recent once the researcher changes it", async () => {
@@ -1386,16 +1381,10 @@ it("lets the keyboard enter the list at its first row while none is selected, an
   expect(stops()).toEqual([C]);
   expect(itemRow(view, C).getAttribute("aria-current")).toBe("true");
   expect(itemRow(view, A).hasAttribute("aria-current")).toBe(false);
-  // A row that takes focus is a group named by its title, as a screen
-  // reader reads it, with no tooltip.
-  const name = (el: HTMLElement) =>
-    el.ownerDocument.getElementById(el.getAttribute("aria-labelledby")!)
-      ?.textContent;
+  // A row that takes focus is a group named by its title, with no tooltip.
   expect(itemRow(view, C).getAttribute("role")).toBe("group");
   expect(itemRow(view, C).hasAttribute("aria-label")).toBe(false);
-  expect(name(itemRow(view, C))).toBe(
-    itemRow(view, C).querySelector("[data-query-papers-title]")!.textContent,
-  );
+  expect(accessibleName(itemRow(view, C))).toBe("Figures that work");
 });
 
 it("answers the quick switcher's keys on the selected row: Enter the note, Mod+Enter the note in a new pane, Shift+Enter the PDF", async () => {

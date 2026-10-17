@@ -8,7 +8,7 @@
 // @see apps/obsidian/docs/adr/0071-the-library-tree-writes-filters.md
 // @see apps/obsidian/docs/adr/0075-recent-is-a-library-tree-node-that-writes-a-sort.md
 import { Component } from "obsidian";
-import { Fragment } from "react";
+import { Fragment, useSyncExternalStore } from "react";
 import type { CSSProperties, KeyboardEvent, ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
@@ -411,11 +411,13 @@ function nodeLabel(
 
 /** What a search on screen puts in the header. */
 export interface HeaderSearch {
+  /** Calls `listener` whenever the summary may have changed. */
+  subscribe: (listener: () => void) => () => void;
   /**
-   * The search summary for the selection named `selection`, as a hook; `null`
-   * while no search is on screen or its count is unknown.
+   * The search summary for the selection named `selection`; `null` while no
+   * search is on screen or its count is unknown.
    */
-  useSummary: (selection: string) => string | null;
+  summary: (selection: string) => string | null;
   /** The control beside the header. */
   readonly action: ReactNode;
 }
@@ -432,7 +434,9 @@ function ListHeader({
   const open = useStore(tree.store, (s) => s.open);
   const unread = useStore(tree.store, (s) => s.unread);
   const selection = nodeLabel(libraries, node);
-  const summary = search.useSummary(selection);
+  const summary = useSyncExternalStore(search.subscribe, () =>
+    search.summary(selection),
+  );
   // The tree names the selection with its paper count; the header adds the
   // unread count. Recent, which the tree names, has no header text.
   const own =

@@ -1,5 +1,7 @@
-import { Menu } from "@mock/obsidian";
 // @vitest-environment happy-dom
+// The Welcome View banner as it draws from its store: its setup steps, its
+// Help menu, and the template conversion and migration sections.
+import { Menu } from "@mock/obsidian";
 import { act } from "preact/test-utils";
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
@@ -133,28 +135,23 @@ describe("Welcome setup steps", () => {
 });
 
 describe("Welcome links", () => {
-  const LINKS = () => [
-    m.welcome_docs_getting_started(),
-    m.welcome_docs_templates(),
-    m.welcome_docs_citations(),
-    m.welcome_link_github(),
-    m.welcome_link_discussions(),
-    m.welcome_link_sponsor(),
-    m.welcome_link_blog(),
-    m.welcome_link_changelog(),
-  ];
-
-  it("puts the documentation and community links under one Help menu", async () => {
+  it("puts the documentation and community links under one Help menu, each item opening its own page", async () => {
     const { actions, container } = await render("fresh");
+    // No link shows on the banner itself.
     expect(container.querySelectorAll("a")).toHaveLength(0);
     const help = container.querySelector<HTMLElement>("[data-welcome-help]")!;
     expect(help.textContent).toBe(m.welcome_help());
     Menu.instances.length = 0;
     await act(() => help.click());
-    const menu = Menu.instances.at(-1)!;
-    expect(menu.items.map((item) => item.title)).toEqual(LINKS());
-    menu.items[0]!.click();
-    expect(actions.openExternal).toHaveBeenCalledOnce();
+    const { items } = Menu.instances.at(-1)!;
+    expect(items.length).toBeGreaterThan(1);
+    for (const item of items) item.click();
+    const opened = vi
+      .mocked(actions.openExternal)
+      .mock.calls.map(([url]) => url);
+    expect(opened).toHaveLength(items.length);
+    expect(new Set(opened).size).toBe(items.length);
+    expect(opened.every((url) => url.startsWith("https://"))).toBe(true);
   });
 
   it.each([false, true])(

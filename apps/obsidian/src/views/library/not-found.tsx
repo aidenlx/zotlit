@@ -1,7 +1,8 @@
 // The Library View where ZotLit cannot find the Zotero data directory: the
 // tree says so in one line, the list offers to locate the folder or open
-// settings, and the papers come back as soon as the database reads again. Where only a
-// refresh failed, the list keeps the rows it read last under a short note.
+// settings, and the papers come back as soon as the database reads again.
+// Where only a refresh failed, the list keeps the rows it read last under a
+// short note.
 //
 // @see apps/obsidian/docs/adr/0076-the-library-view-is-the-first-screen.md
 import { Component } from "obsidian";

@@ -270,6 +270,26 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   let m: typeof import("@obsidian-messages");
 
   /**
+   * Open the window at 1600 by 1000 with both sidebars collapsed, a wide
+   * desktop; `cleanup` puts the window's size back.
+   */
+  async function wideWindow(cleanup: AsyncDisposableStack): Promise<void> {
+    const size = await obEval(
+      vaultId,
+      "JSON.stringify(require('@electron/remote').getCurrentWindow().getSize())",
+    );
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `require('@electron/remote').getCurrentWindow().setSize(...${size});true`,
+      );
+    });
+    await obEval(
+      vaultId,
+      "app.workspace.leftSplit.collapse();app.workspace.rightSplit.collapse();require('@electron/remote').getCurrentWindow().setSize(1600,1000);true",
+    );
+  }
+  /**
    * The Library View header: the selection and, where some are unread, its
    * unread count. The paper count shows beside the node in the tree.
    */
@@ -1423,6 +1443,22 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const modified = new Map(
       ITEMS.map((item) => [indexedKey(item), item.dateModified]),
     );
+    /** The seeded Annotations of each Item, on any of its Attachments. */
+    const annotationCount = new Map(
+      ITEMS.map((item) => {
+        const attachments = new Set(
+          ATTACHMENTS.filter(
+            ({ parentItemID }) => parentItemID === item.itemID,
+          ).map(({ itemID }) => itemID),
+        );
+        return [
+          indexedKey(item),
+          ANNOTATIONS.filter(({ parentItemID }) =>
+            attachments.has(parentItemID),
+          ).length,
+        ];
+      }),
+    );
     const expectRecent = (
       shown: Shown,
       libraries: readonly (typeof personal)[],
@@ -1438,16 +1474,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           .toSorted((a, b) => direction * a.localeCompare(b)),
       );
       // Until ZotLit Query reads lastRead, Recent gives no row a reason: the
-      // reading-state line holds the Annotation count at most.
-      for (const state of shown.states)
-        expect(
-          state === null ||
-            state ===
-              m.query_view_papers_annotation_count({
-                count: Number.parseInt(state, 10),
-              }),
-          String(state),
-        ).toBe(true);
+      // reading-state line holds each paper's seeded Annotation count alone.
+      expect(shown.states).toEqual(
+        shown.rows.map((key) => {
+          const count = annotationCount.get(key) ?? 0;
+          return count > 0
+            ? m.query_view_papers_annotation_count({ count })
+            : null;
+        }),
+      );
     };
 
     interface Shown {
@@ -2624,14 +2659,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const services = "app.plugins.plugins.zotlit.services";
     const snapshot = await obEval(
       vaultId,
-      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null,size:require('@electron/remote').getCurrentWindow().getSize()})`,
+      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null})`,
     );
     const notePath = "Library row citations.md";
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
       await obEval(
         vaultId,
-        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'library.document':saved.document});await settings.flush();const file=app.vault.getFileByPath(${JSON.stringify(notePath)});if(file)await app.vault.delete(file);require('@electron/remote').getCurrentWindow().setSize(...saved.size);await app.workspace.changeLayout(saved.layout);return true;})()`,
+        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'library.document':saved.document});await settings.flush();const file=app.vault.getFileByPath(${JSON.stringify(notePath)});if(file)await app.vault.delete(file);await app.workspace.changeLayout(saved.layout);return true;})()`,
       );
     });
 
@@ -2673,9 +2708,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // The Library View on My Library, and beside it a note to cite into, in
     // a window wide enough that the Reading Card, which shows over a
     // narrow list, leaves the start of each row in reach.
+    await wideWindow(cleanup);
     await obEval(
       vaultId,
-      `(async()=>{${PAGE}app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());app.workspace.leftSplit.collapse();app.workspace.rightSplit.collapse();require('@electron/remote').getCurrentWindow().setSize(1600,1000);const settings=${services}.settings;settings.update({'library.document':null});await settings.flush();const file=app.vault.getFileByPath(${JSON.stringify(notePath)})??await app.vault.create(${JSON.stringify(notePath)},'LEFT RIGHT');app.commands.executeCommandById('zotlit:open-library-view');await until('library',()=>app.workspace.getLeavesOfType('zotlit-library')[0]);await app.workspace.getLeaf('split').openFile(file);return true;})()`,
+      `(async()=>{${PAGE}app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=${services}.settings;settings.update({'library.document':null});await settings.flush();const file=app.vault.getFileByPath(${JSON.stringify(notePath)})??await app.vault.create(${JSON.stringify(notePath)},'LEFT RIGHT');app.commands.executeCommandById('zotlit:open-library-view');await until('library',()=>app.workspace.getLeavesOfType('zotlit-library')[0]);await app.workspace.getLeaf('split').openFile(file);return true;})()`,
     );
     /**
      * Run `script` with the Library View's tab active and `el` its content.
@@ -3009,14 +3045,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const services = "app.plugins.plugins.zotlit.services";
     const snapshot = await obEval(
       vaultId,
-      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null,dataDir:${services}.zoteroPref.dataDirOverride,size:require('@electron/remote').getCurrentWindow().getSize()})`,
+      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null,dataDir:${services}.zoteroPref.dataDirOverride})`,
     );
     const notePath = "Reading Card citations.md";
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
       await obEval(
         vaultId,
-        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});${services}.zoteroPref.setDataDir(saved.dataDir);const settings=${services}.settings;settings.update({'library.document':saved.document});await settings.flush();const file=app.vault.getFileByPath(${JSON.stringify(notePath)});if(file)await app.vault.delete(file);require('@electron/remote').getCurrentWindow().setSize(...saved.size);await app.workspace.changeLayout(saved.layout);return true;})()`,
+        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});${services}.zoteroPref.setDataDir(saved.dataDir);const settings=${services}.settings;settings.update({'library.document':saved.document});await settings.flush();const file=app.vault.getFileByPath(${JSON.stringify(notePath)});if(file)await app.vault.delete(file);await app.workspace.changeLayout(saved.layout);return true;})()`,
       );
     });
 
@@ -3042,9 +3078,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // The Library View on My Library, wide enough for the card, and a note
     // to cite into that was active last.
+    await wideWindow(cleanup);
     await obEval(
       vaultId,
-      `(async()=>{${PAGE}app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());app.workspace.leftSplit.collapse();app.workspace.rightSplit.collapse();require('@electron/remote').getCurrentWindow().setSize(1600,1000);const settings=${services}.settings;settings.update({'library.document':${JSON.stringify(MY_LIBRARY_DOCUMENT)}});await settings.flush();const file=app.vault.getFileByPath(${JSON.stringify(notePath)})??await app.vault.create(${JSON.stringify(notePath)},'CITE ');const note=app.workspace.getLeaf('tab');await note.openFile(file);app.workspace.setActiveLeaf(note,{focus:true});note.view.editor.setCursor({line:0,ch:'CITE '.length});app.commands.executeCommandById('zotlit:open-library-view');await until('library',()=>app.workspace.getLeavesOfType('zotlit-library')[0]);return true;})()`,
+      `(async()=>{${PAGE}app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=${services}.settings;settings.update({'library.document':${JSON.stringify(MY_LIBRARY_DOCUMENT)}});await settings.flush();const file=app.vault.getFileByPath(${JSON.stringify(notePath)})??await app.vault.create(${JSON.stringify(notePath)},'CITE ');const note=app.workspace.getLeaf('tab');await note.openFile(file);app.workspace.setActiveLeaf(note,{focus:true});note.view.editor.setCursor({line:0,ch:'CITE '.length});app.commands.executeCommandById('zotlit:open-library-view');await until('library',()=>app.workspace.getLeavesOfType('zotlit-library')[0]);return true;})()`,
     );
     /** Run `script` with the Library View's tab active, `el` its content and `card` its Reading Card pane. */
     const inLibrary = (script: string) =>
