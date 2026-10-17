@@ -779,7 +779,8 @@ export default class ZotLitPlugin extends Plugin {
 
   override onunload(): void {
     // Start the last settings write now rather than at the end of disposal, so
-    // an instance enabled straight after reads it.
+    // an instance enabled straight after reads it; a view that saves as it
+    // closes after this hands its write on the same way.
     this.#services?.settings.release();
     // Drop the service bag before async disposal so late callers fail clearly.
     this.#services = undefined;
