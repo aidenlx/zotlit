@@ -109,11 +109,11 @@ export class LibraryView extends ItemView {
     const main = shell.createDiv({
       cls: "zt:flex zt:min-w-0 zt:flex-1 zt:flex-col zt:overflow-y-auto zt:pb-[max(var(--safe-area-inset-bottom),var(--size-4-8))]",
     });
-    const header = main.createDiv();
-    const list = main.createDiv();
     // Where ZotLit cannot read Zotero's database, the tree and the list say
-    // so in place of what they hold.
+    // so in place of what they hold, and the header's count goes with them.
     const hidden = "zt:group-data-zotero-missing:hidden";
+    const header = main.createDiv({ cls: hidden });
+    const list = main.createDiv();
     const shown = "zt:hidden zt:group-data-zotero-missing:block";
     this.#parts.push(
       new ZoteroNotFound(this.#deps.welcome, {
