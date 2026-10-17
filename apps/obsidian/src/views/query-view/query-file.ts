@@ -461,6 +461,11 @@ export function vaultName(property: string): string | null {
     : null;
 }
 
+/** The path of the vault property that reads the frontmatter key `name`. */
+export function vaultProperty(name: string): string {
+  return `${VAULT_PREFIX}${name}`;
+}
+
 /** Whether `property` is a vault property, which ZotLit Query never reads. */
 export function isVaultProperty(property: string): boolean {
   return vaultName(property) !== null;

@@ -28,10 +28,12 @@ import { cn, tooltipAttrs } from "@/lib/utils";
 
 import { propertyIcon } from "./property-icon";
 import { NewFormulaPage, PropertyPage } from "./property-page";
+import { vaultName, vaultProperty } from "./query-file";
 import { ToolbarButtonContent, toolbarButtonClass } from "./toolbar-button";
 import { popoverFallbacks } from "./toolbar-popover";
+import { useVaultPropertyNames } from "./vault-cell";
 import type { QueryView } from "./view";
-import { useViewProperties } from "./view-properties";
+import { isVaultPropertyName, useViewProperties } from "./view-properties";
 import type { PropertyEntry, ViewProperties } from "./view-properties";
 
 /** The page "Add formula" opens; a property's page is named by its path. */
@@ -54,7 +56,10 @@ function reordered(
 
 export function PropertiesMenu({ view }: { view: QueryView }) {
   const current = useStore(view.state, (s) => s.view);
-  const properties = useViewProperties(view);
+  // The popover lists the names the Literature Notes give their properties.
+  const { literatureNotes } = view.tableDeps;
+  const names = useVaultPropertyNames(literatureNotes);
+  const properties = useViewProperties(view, names);
   if (!current || !properties) return null;
   // The popover ticks the properties the Layouts show; a change writes
   // them, with the unused ones the view keeps.
@@ -87,7 +92,12 @@ export function PropertiesMenu({ view }: { view: QueryView }) {
           properties={properties}
           order={order}
           setOrder={setOrder}
-          iconOf={(entry) => propertyIcon(dataset, entry)}
+          iconOf={(entry) =>
+            propertyIcon(dataset, entry, (name) =>
+              literatureNotes.propertyType(name),
+            )
+          }
+          vaults={dataset === "items"}
         />
         <Chooser.Page>
           {(page) => {
@@ -123,6 +133,7 @@ function PropertyList({
   order,
   setOrder,
   iconOf,
+  vaults,
 }: {
   /** The Properties of the view, the visible ones first. */
   properties: ViewProperties;
@@ -130,6 +141,8 @@ function PropertyList({
   setOrder: (next: readonly string[]) => void;
   /** The type icon of a property. */
   iconOf: (entry: PropertyEntry) => string;
+  /** Whether the view can show vault properties: a view of Items. */
+  vaults: boolean;
 }) {
   const query = useChooserQuery().trim();
   const { scope, activeValue } = useChooserScope();
@@ -181,11 +194,29 @@ function PropertyList({
       }),
     );
     const actions: ChooserRow[] = [];
-    if (query !== "" && !byPath.has(query))
+    const typedVault = vaultName(query);
+    if (
+      query !== "" &&
+      !byPath.has(query) &&
+      (typedVault === null || isVaultPropertyName(typedVault))
+    )
       actions.push({
         value: "zt:add-property",
         label: m.query_view_properties_add({ name: query }),
         action: () => setOrder([...order, query]),
+      });
+    // A name typed without the namespace is a new vault property too.
+    const vault = vaultProperty(query);
+    if (
+      vaults &&
+      typedVault === null &&
+      isVaultPropertyName(query) &&
+      !byPath.has(vault)
+    )
+      actions.push({
+        value: "zt:add-vault-property",
+        label: m.query_view_properties_add_vault({ name: query }),
+        action: () => setOrder([...order, vault]),
       });
     actions.push(
       {
@@ -203,7 +234,7 @@ function PropertyList({
       },
     );
     return [{ items }, { items: actions, pinned: true }];
-  }, [rows, byPath, order, query, setOrder, openPage]);
+  }, [rows, byPath, order, query, setOrder, openPage, vaults]);
 
   // Alt with an up or down arrow moves the highlighted visible property one
   // place in the order, as in the Bases Properties menu.

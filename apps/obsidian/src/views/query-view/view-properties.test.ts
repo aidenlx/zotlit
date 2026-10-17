@@ -26,7 +26,7 @@ views:
 const VIEW = FILE.views[0]!;
 
 const entryOf = (path: string, faults = {}) =>
-  viewProperties(FILE, VIEW, faults).entries.find(
+  viewProperties(FILE, VIEW, { formulaIssues: faults }).entries.find(
     (entry) => entry.path === path,
   );
 
@@ -84,7 +84,7 @@ describe("viewProperties entries", () => {
   it("marks a Formula in the Visible Properties that the file does not define with its fault", () => {
     const view = { from: "items" as const, order: ["formula.gone"] };
     const properties = viewProperties(FILE, view, {
-      gone: "The formula gone has no definition.",
+      formulaIssues: { gone: "The formula gone has no definition." },
     });
     expect(properties.entries[0]).toMatchObject({
       path: "formula.gone",

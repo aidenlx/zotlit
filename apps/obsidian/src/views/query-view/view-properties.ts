@@ -14,6 +14,7 @@ import { useStore } from "zustand";
 import { cellProperties } from "@zotlit/item-query";
 import { FIELD_LABELS } from "@zotlit/zotero-types/field-labels";
 
+import { NON_VAULT_PROPERTY_KEYS } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import { runtime } from "@/lib/i18n/generated/runtime";
 
@@ -24,6 +25,7 @@ import {
   formulaName,
   formulaProperty,
   isVaultProperty,
+  vaultProperty,
 } from "./query-file";
 import type { QueryFile, QueryFileDataset, QueryFileView } from "./query-file";
 import { formulaIssuesOf } from "./results";
@@ -36,6 +38,15 @@ import type { QueryView } from "./view";
  * only the Table shows it.
  */
 export const LITERATURE_NOTE = "vault.literatureNote";
+
+/**
+ * Whether a vault property can take the name `name`: not one of Obsidian's
+ * reserved keys, such as `tags`, nor one of ZotLit's system keys, such as
+ * `zotero-key`, which re-key a note or fight Zotero over its tags.
+ */
+export function isVaultPropertyName(name: string): boolean {
+  return name !== "" && !NON_VAULT_PROPERTY_KEYS.has(name);
+}
 
 /**
  * What a Property is, by the namespace of its path: a field of the Query
@@ -121,9 +132,8 @@ export interface ViewProperties {
   readonly visible: readonly PropertyEntry[];
   /**
    * The Visible Properties that ZotLit Query reads, in their order: what the
-   * run asks for, and the columns of copy and CSV export. The Literature
-   * Note Property and the other vault properties are no value of a row, so
-   * they are not among them.
+   * run asks for. The Literature Note Property and the other vault
+   * properties are no value of a row, so they are not among them.
    */
   readonly queried: readonly PropertyEntry[];
   /**
@@ -151,14 +161,22 @@ export interface ViewProperties {
   orderOf(next: readonly string[]): string[];
 }
 
-/**
- * The Properties of `view` in `file`. `formulaIssues` gives, by Formula
- * name, the message of each Formula the last run left out.
- */
+/** What a view knows of its Properties beside its file. */
+export interface KnownProperties {
+  /** By Formula name, the message of each Formula the last run left out. */
+  readonly formulaIssues?: Readonly<Record<string, string>>;
+  /**
+   * The names the vault properties of a view of Items take, which it knows
+   * after the Literature Note Property.
+   */
+  readonly vaultNames?: readonly string[];
+}
+
+/** The Properties of `view` in `file`. */
 export function viewProperties(
   file: QueryFile | null,
   view: PropertySettings,
-  formulaIssues: Readonly<Record<string, string>> = {},
+  { formulaIssues = {}, vaultNames = [] }: KnownProperties = {},
 ): ViewProperties {
   const dataset = view.from ?? "annotations";
   const properties = datasetProperties(dataset);
@@ -215,6 +233,9 @@ export function viewProperties(
     ...shown,
     ...Object.keys(file?.formulas ?? {}).map(formulaProperty),
     ...(showsNote ? [LITERATURE_NOTE] : []),
+    ...(dataset === "items"
+      ? vaultNames.map((name) => vaultProperty(name))
+      : []),
     ...datasetProperties(dataset),
   ]);
   const unused = unusedSettings(view);
@@ -250,14 +271,23 @@ export function viewProperties(
   };
 }
 
-/** The Properties of the view on screen, as the last run marks them. */
-export function useViewProperties(view: QueryView): ViewProperties | null {
+/**
+ * The Properties of the view on screen, as the last run marks them, with the
+ * vault properties of `vaultNames` among those it knows.
+ */
+export function useViewProperties(
+  view: QueryView,
+  vaultNames?: readonly string[],
+): ViewProperties | null {
   const file = useStore(view.state, (s) => s.file);
   const shown = useStore(view.state, (s) => s.view);
   const faults = useStore(view.state, formulaIssuesOf);
   return useMemo(
-    () => (shown ? viewProperties(file, shown, faults) : null),
-    [file, shown, faults],
+    () =>
+      shown
+        ? viewProperties(file, shown, { formulaIssues: faults, vaultNames })
+        : null,
+    [file, shown, faults, vaultNames],
   );
 }
 

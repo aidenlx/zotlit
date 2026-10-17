@@ -55,6 +55,7 @@ import {
   isVaultProperty,
   locateFilterFault,
   vaultConditions,
+  vaultName,
   viewFilter,
 } from "./query-file";
 import type {
@@ -84,12 +85,14 @@ import { SortEditor } from "./sort-control";
 import { resultTable } from "./table";
 import type { ResultTable } from "./table";
 import { TABLE_FIELDS, TableLayout } from "./table-layout";
-import type { LiteratureNotes } from "./table-notes";
+import type { LiteratureNotes, VaultHost } from "./table-notes";
 import type { TableReaders } from "./table-readers";
 import { ToolbarButton } from "./toolbar-button";
 import { ToolbarPopover } from "./toolbar-popover";
+import { vaultText } from "./vault-cell";
 import { ViewMenu } from "./view-menu";
 import {
+  LITERATURE_NOTE,
   unusedSettings,
   useViewProperties,
   viewProperties,
@@ -383,6 +386,17 @@ export class QueryView extends Component implements HistorySurface {
     return this.#deps;
   }
 
+  /**
+   * The note that holds the view and the Item its `zotero-key` names, where a
+   * note holds it: a row of that Item reads that note's vault properties,
+   * whichever note the Note Index ranks first. `null` elsewhere.
+   */
+  vaultHost(): VaultHost | null {
+    if (this.#host.contextSource !== "note") return null;
+    const itemKey = this.#host.context()?.item;
+    return itemKey ? { path: this.#host.sourcePath(), itemKey } : null;
+  }
+
   /** Settles once the cards show the last run the view started. Never rejects. */
   get settled(): Promise<void> {
     return this.#settled.then(() => this.#layout.read);
@@ -605,14 +619,28 @@ export class QueryView extends Component implements HistorySurface {
 
   /**
    * The rows on screen as a table, one column for each visible property in
-   * the view's order: what "Copy to clipboard" and "Export CSV…" write. The
-   * Literature Note Property is no value of a row, so it writes no column.
+   * the view's order: what "Copy to clipboard" and "Export CSV…" write. A
+   * vault property writes the value its Literature Note holds, and no text
+   * where the Item has no note. The Literature Note Property is a link, not
+   * a value, so it writes no column.
    */
   table(): ResultTable {
     const { file, view } = this.state.getState();
+    const notes = this.#deps.literatureNotes;
+    const host = this.vaultHost();
     return resultTable(
       this.state.getState().results?.rows ?? [],
-      view ? viewProperties(file, view).queried : [],
+      view
+        ? viewProperties(file, view).visible.filter(
+            ({ path }) => path !== LITERATURE_NOTE,
+          )
+        : [],
+      (row, path) => {
+        const name = vaultName(path);
+        return name === null
+          ? undefined
+          : vaultText(notes.read(row.indexedKey, name, host));
+      },
     );
   }
 
