@@ -377,6 +377,34 @@
   "command_open_library_view_name": "Open Zotero library",
   "library_view_name": "Zotero library",
   "library_view_papers_view_name": "Papers",
+  "library_view_tree_label": "Libraries",
+  "library_view_tree_count": [
+    {
+      "declarations": ["input count", "local formatted = count: number"],
+      "selectors": ["formatted"],
+      "match": {
+        "formatted=*": "{formatted}"
+      }
+    }
+  ],
+  "library_view_header": [
+    {
+      "declarations": [
+        "input selection",
+        "input count",
+        "local category = count: plural",
+        "local formatted = count: number"
+      ],
+      "selectors": ["category"],
+      "match": {
+        "category=one": "{selection} · 1 paper",
+        "category=*": "{selection} · {formatted} papers"
+      }
+    }
+  ],
+  "library_view_all_libraries": "Show all libraries",
+  "library_view_scope_libraries": "Show only libraries in the library scope",
+  "library_view_show_tree": "Show libraries and collections",
   "annot_view_loading": "Loading…",
   "annot_view_no_attachments": "No attachments available",
   "annot_view_mode_active_tab": "Active tab",

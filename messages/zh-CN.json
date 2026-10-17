@@ -463,6 +463,34 @@
   "command_open_library_view_name": "打开 Zotero 文库",
   "library_view_name": "Zotero 文库",
   "library_view_papers_view_name": "文献",
+  "library_view_tree_label": "文库",
+  "library_view_tree_count": [
+    {
+      "declarations": ["input count", "local formatted = count: number"],
+      "selectors": ["formatted"],
+      "match": {
+        "formatted=*": "{formatted}"
+      }
+    }
+  ],
+  "library_view_header": [
+    {
+      "declarations": [
+        "input selection",
+        "input count",
+        "local category = count: plural",
+        "local formatted = count: number"
+      ],
+      "selectors": ["category"],
+      "match": {
+        "category=one": "{selection} · 1 篇文献",
+        "category=*": "{selection} · {formatted} 篇文献"
+      }
+    }
+  ],
+  "library_view_all_libraries": "显示所有文库",
+  "library_view_scope_libraries": "仅显示文库范围内的文库",
+  "library_view_show_tree": "显示文库和分类",
   "annot_view_loading": "加载中…",
   "annot_view_no_attachments": "没有可用的附件",
   "annot_view_more_tooltip": "更多选项",

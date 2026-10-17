@@ -1,0 +1,10 @@
+/* The Library View runs its tree and its list to the pane's edges, as a
+   Query File tab does; each pane scrolls on its own. Obsidian's rule is
+   unlayered, so a utility on `contentEl` cannot reach it; this rule has the
+   same specificity and loads after it. */
+.view-content.zt-library-view {
+  padding: 0;
+  overflow: hidden;
+  --zt-query-toolbar-inset-start: var(--size-4-2);
+  --zt-query-toolbar-inset-end: var(--size-4-2);
+}

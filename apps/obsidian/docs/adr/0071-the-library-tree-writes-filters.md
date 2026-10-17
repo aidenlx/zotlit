@@ -13,8 +13,9 @@ Proposed on 2026-10-17 with [#1544](https://github.com/aidenlx/zotlit/issues/154
 
 ## Consequences
 
+- "Show all libraries" widens the tree past the Library Scope for the session; it is not part of the Library View Document. A selected Library outside the Library Scope stays in the tree. The toggle shows only when the database holds Libraries outside the Library Scope.
 - The Query View gains a host hook for the Target Libraries, part of its run key (#1545).
 - A Collection name that holds `/` cannot be told from a deeper path in `collections.within`, as everywhere in ZotLit Query.
-- A renamed Collection no longer matches the saved path, so the saved node shows no Items; the Library Tree (#1546) decides what it selects in its place.
-- The paper count of a node is the number of Items its selection lists with no facet and no search: a Collection counts the distinct Items of its subtree, as `collections.within` selects them, so the count in the tree and in the list header agree (#1546).
+- A renamed or deleted Collection no longer matches the saved path. When the Collections of its Library were read without error and the path is not among them, the tree selects that Library in its place and saves it; a failed read changes nothing (#1546).
+- The paper count of a node is the number of Items its selection lists with no facet and no search: a Collection counts the distinct Items of its subtree, as `collections.within` selects them, so the count in the tree and in the list header agree (#1546). The counts come from one grouped Items query per Library the tree shows, grouped by `collections[]`: a group value names a Collection by its path only, and the same path can exist in two Libraries. On a 50,000-Item Stress Build the first count after a database change took about 1.7 s in the worker, with no frame gap over 9 ms in the window, and a repeated count 0.15–0.2 s.
 - Unread gains `lastRead == null` once ZotLit Query reads `lastRead` (#1532, #1533).
