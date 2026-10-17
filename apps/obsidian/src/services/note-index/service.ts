@@ -29,7 +29,8 @@ export { itemKeyFromFrontmatter, noteKeyFromFrontmatter };
 const logger = getLogger("note-index");
 
 interface NoteIndexEvents {
-  changed: (file: TFile) => void;
+  /** The mapping of `file` changed; `null` once the Full Scan read the whole vault. */
+  changed: (file: TFile | null) => void;
 }
 
 export interface NoteIndexOptions {
@@ -293,7 +294,11 @@ export class NoteIndex extends Service<void> {
     return true;
   }
 
-  /** Silent to consumers: every later mapping change arrives as `changed`. */
+  /**
+   * Reads every note at once, then says `changed` for the whole index: a
+   * consumer that read the index before the scan reads it again. Every later
+   * mapping change arrives as `changed` for its file.
+   */
   #fullScan(): void {
     if (this.#disposed) return;
     this.#clear();
@@ -307,6 +312,7 @@ export class NoteIndex extends Service<void> {
 
     logger.debug("Note index scanned", { count: this.#contribByFile.size });
     this.#indexed.resolve();
+    this.#emitter.emit("changed", null);
   }
 
   #applyDiff(file: TFile, diff: ContribDiff): void {
