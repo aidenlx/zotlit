@@ -975,13 +975,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
     });
     /** What the active Query File tab shows, once its query settled. */
-    const readTab = `(async()=>{const view=app.workspace.getMostRecentLeaf().view;if(view.getViewType()!=='zotlit-query-file')return 'null';await view.query.settled;const el=view.contentEl;const cards=[...el.querySelectorAll('.zt-annot-card')].map(n=>n.getAttribute('data-zotero-annotation-key'));const headings=[...el.querySelectorAll('[data-query-group]')].map(n=>n.textContent);return JSON.stringify({file:view.file?.path,view:el.querySelector('[data-query-view-menu]')?.textContent??null,count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,cards,headings,diagnostic:el.querySelector('[data-query-diagnostic]')?.getAttribute('data-query-diagnostic')??null,problems:el.querySelector('[data-query-problems]')?.textContent??null,unresolved:el.querySelector('[data-query-unresolved]')?.textContent??null});})()`;
+    const readTab = `(async()=>{const view=app.workspace.getMostRecentLeaf().view;if(view.getViewType()!=='zotlit-query-file')return 'null';await view.query.settled;const el=view.contentEl;const cards=[...el.querySelectorAll('.zt-annot-card')].map(n=>n.getAttribute('data-zotero-annotation-key'));const headings=[...el.querySelectorAll('[data-query-group]')].map(n=>n.textContent);const rows=[...el.querySelectorAll('tr[data-query-table-row="item"]')].map(n=>n.getAttribute('data-query-key'));const columns=[...el.querySelectorAll('th[data-query-column]')].map(n=>({path:n.getAttribute('data-query-column'),label:n.textContent}));return JSON.stringify({file:view.file?.path,view:el.querySelector('[data-query-view-menu]')?.textContent??null,rows,columns,count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,cards,headings,diagnostic:el.querySelector('[data-query-diagnostic]')?.getAttribute('data-query-diagnostic')??null,problems:el.querySelector('[data-query-problems]')?.textContent??null,unresolved:el.querySelector('[data-query-unresolved]')?.textContent??null});})()`;
     interface Tab {
       file: string;
       view: string | null;
       count: string | null;
       cards: string[];
       headings: string[];
+      /** The Indexed Key of each Item row of the Table. */
+      rows: string[];
+      /** The Table's columns: each property path and its header text. */
+      columns: { path: string; label: string }[];
       diagnostic: string | null;
       problems: string | null;
       unresolved: string | null;
@@ -1011,8 +1015,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       return report.rows!;
     };
 
-    // "New query file" from the command palette writes one Annotations view
-    // of the whole library, with a limit, and opens it in a tab.
+    // "New query file" from the command palette writes a Table of the
+    // library's Items, newest first, and opens it in a tab.
     const before = JSON.parse(
       await obEval(
         vaultId,
@@ -1023,23 +1027,61 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       vaultId,
       "app.commands.executeCommandById('zotlit:new-query-file');true",
     );
-    const created = await tabWhen((tab) => tab.count !== null);
+    const created = await tabWhen((tab) => tab.rows.length > 0);
     expect(before).not.toContain(created.file);
     scratchFiles.push(created.file);
     expect(created.file).toMatch(/\.zotquery$/);
-    const text = await obEval(
-      vaultId,
-      `app.vault.cachedRead(app.vault.getFileByPath(${JSON.stringify(created.file)}))`,
-    );
-    expect(text).toContain("from: annotations");
-    expect(text).toContain("limit: 100");
+    const items = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query", {
+        args: {
+          from: "items",
+          fields: "title",
+          sort: "-dateModified",
+          limit: "100",
+        },
+      }),
+    ) as ItemQueryReport;
+    expect(items.ok).toBe(true);
+    expect(items.rows!.length).toBeGreaterThan(0);
+    expect(created).toMatchObject({
+      view: m.query_file_items_view_name(),
+      count: String(items.rows!.length),
+      rows: items.rows!.map((row) => row.indexedKey),
+      columns: [
+        { path: "title", label: expect.stringContaining("Title") },
+        {
+          path: "creators",
+          label: expect.stringContaining(m.query_file_creators_property()),
+        },
+        {
+          path: "date.year",
+          label: expect.stringContaining(m.query_file_year_property()),
+        },
+        {
+          path: "vault.literatureNote",
+          label: expect.stringContaining(m.query_view_table_literature_note()),
+        },
+      ],
+      diagnostic: null,
+      problems: null,
+      unresolved: null,
+    });
 
-    // The cards come grouped by Item under its title, in query order inside
-    // a group, and the count is the query's own. No Zotero answers this
-    // vault.
+    // Its second view is the Annotations of the whole library: the cards
+    // come grouped by Item under its title, in query order inside a group,
+    // and the count is the query's own. No Zotero answers this vault.
+    const annotationsView = m.query_file_annotations_view_name();
+    await obEval(
+      vaultId,
+      `(async()=>{${PAGE}const view=app.workspace.getMostRecentLeaf().view;press(view.contentEl.querySelector('[data-query-view-menu]'),'View menu');const row=await until('view menu rows',()=>view.contentEl.querySelector('[data-query-view-list]:popover-open [data-query-view-row=${JSON.stringify(annotationsView)}]'));press(row,${JSON.stringify(annotationsView)});return true;})()`,
+    );
     const all = await queryRows();
     expect(all.length).toBeGreaterThan(0);
-    expect(created).toMatchObject({
+    const annotations = await tabWhen(
+      (tab) => tab.view === annotationsView && tab.count !== null,
+    );
+    expect(annotations).toMatchObject({
+      file: created.file,
       count: String(all.length),
       ...byItem(all),
       diagnostic: null,
