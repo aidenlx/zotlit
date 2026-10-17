@@ -18,6 +18,8 @@
 import { useMemo, useRef, useState } from "react";
 import { useStore } from "zustand";
 
+import { useUniqueId } from "@zotlit/ui";
+
 import {
   Chooser,
   chooserIconButton,
@@ -41,10 +43,10 @@ const VIEW_ROW_DRAG_TYPE = "application/x-zotlit-query-view";
 const ADD_ROW = "action:add";
 
 export function ViewMenu({ view }: { view: QueryView }) {
-  return view.displayOnly ? (
-    <LayoutSwitch view={view} />
-  ) : (
+  return view.can.views ? (
     <ViewSwitch view={view} />
+  ) : (
+    <LayoutSwitch view={view} />
   );
 }
 
@@ -98,6 +100,7 @@ function LayoutSwitch({ view }: { view: QueryView }) {
   const file = useStore(view.state, (s) => s.file);
   const current = useStore(view.state, (s) => s.view);
   const popup = useRef<HTMLDivElement>(null);
+  const listName = useUniqueId();
   const offered = view.layouts;
   const layouts = useMemo(
     () => (current ? layoutsFor(current, offered) : []),
@@ -143,7 +146,11 @@ function LayoutSwitch({ view }: { view: QueryView }) {
         className={popoverFallbacks}
         data-query-view-list=""
       >
-        <Chooser.List groups={groups} aria-label={m.query_view_layout()}>
+        {/* Names the list with no tooltip over it (policies/tooltips.md). */}
+        <span id={listName} hidden>
+          {m.query_view_layout()}
+        </span>
+        <Chooser.List groups={groups} aria-labelledby={listName}>
           {(row) => (
             <Chooser.Item
               key={row.value}

@@ -12,7 +12,7 @@ import { resolveVenue } from "@zotlit/db";
 
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
-import { cn, tooltipAttrs } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import type { QueryViewValue } from "@/services/item-query/query-view";
 
 import type { QueryLayout } from "./layouts";
@@ -268,12 +268,10 @@ function PaperRow({
         </div>
         <div className="zt:flex zt:shrink-0 zt:items-center zt:gap-1 zt:pt-0.5 zt:text-(--icon-color)">
           {note !== null && (
-            <span
-              role="img"
-              className="zt:flex"
-              data-query-papers-note=""
-              {...tooltipAttrs(m.query_view_papers_note_marker())}
-            >
+            <span className="zt:flex" data-query-papers-note="">
+              <span className="zt:sr-only">
+                {m.query_view_papers_note_marker()}
+              </span>
               <Icon
                 name="notebook-pen"
                 size="var(--icon-xs)"
@@ -282,12 +280,8 @@ function PaperRow({
             </span>
           )}
           {kind && (
-            <span
-              role="img"
-              className="zt:flex"
-              data-query-papers-attachment={kind.type}
-              {...tooltipAttrs(kind.label())}
-            >
+            <span className="zt:flex" data-query-papers-attachment={kind.type}>
+              <span className="zt:sr-only">{kind.label()}</span>
               <Icon
                 name={kind.icon}
                 size="var(--icon-xs)"

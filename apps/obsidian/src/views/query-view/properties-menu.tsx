@@ -88,7 +88,7 @@ export function PropertiesMenu({ view }: { view: QueryView }) {
           order={order}
           setOrder={setOrder}
           iconOf={(entry) => propertyIcon(dataset, entry)}
-          pages={!view.displayOnly}
+          pages={view.can.propertyPages}
         />
         <Chooser.Page>
           {(page) => {
@@ -315,20 +315,22 @@ function PropertyList({
               </>
             }
             end={
-              <button
-                type="button"
-                tabIndex={-1}
-                className={cn(chooserIconButton, "zt:-m-(--size-2-2)")}
-                data-query-property-more={row.value}
-                {...tooltipAttrs(m.query_view_property_edit())}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  openPage(entry.path);
-                }}
-              >
-                <RowIcon name="chevron-right" />
-              </button>
+              pages && (
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  className={cn(chooserIconButton, "zt:-m-(--size-2-2)")}
+                  data-query-property-more={row.value}
+                  {...tooltipAttrs(m.query_view_property_edit())}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    openPage(entry.path);
+                  }}
+                >
+                  <RowIcon name="chevron-right" />
+                </button>
+              )
             }
           >
             <span data-query-property-name="">{entry.label}</span>

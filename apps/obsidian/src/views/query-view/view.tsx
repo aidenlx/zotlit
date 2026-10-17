@@ -180,6 +180,48 @@ export interface QueryViewHost {
   layouts?: readonly string[];
 }
 
+/**
+ * The changes the toolbar offers. A host that keeps only the shown view's
+ * sort, Layout and Visible Properties (`displayOnly`) takes away every other
+ * one, so no control shows a change that would be gone on reopen. Each
+ * control reads its own flag here.
+ *
+ * @see apps/obsidian/docs/adr/0070-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
+ */
+export interface QueryViewCapabilities {
+  /**
+   * Add, configure, reorder and switch the file's views. Without it the view
+   * menu switches only the Layout of the view on screen (ADR 0074).
+   */
+  readonly views: boolean;
+  readonly group: boolean;
+  readonly filter: boolean;
+  /** Set and clear the row limit. */
+  readonly limit: boolean;
+  /** Resize a Table column and reset its width. */
+  readonly columnWidth: boolean;
+  /** Open a property's page: its Display Name, its Formula, "Add formula". */
+  readonly propertyPages: boolean;
+}
+
+const EVERY_CHANGE: QueryViewCapabilities = Object.freeze({
+  views: true,
+  group: true,
+  filter: true,
+  limit: true,
+  columnWidth: true,
+  propertyPages: true,
+});
+
+const DISPLAY_CHANGES: QueryViewCapabilities = Object.freeze({
+  views: false,
+  group: false,
+  filter: false,
+  limit: false,
+  columnWidth: false,
+  propertyPages: false,
+});
+
 /** What the view shows now, as the toolbar and the host read it. */
 export interface QueryViewState {
   file: QueryFile | null;
@@ -552,9 +594,9 @@ export class QueryView extends Component implements HistorySurface {
     return this.#host.contextSource;
   }
 
-  /** Whether a change can set only the sort, the Layout and the Visible Properties. */
-  get displayOnly(): boolean {
-    return this.#host.displayOnly === true;
+  /** The changes the toolbar offers, as the host keeps them. */
+  get can(): QueryViewCapabilities {
+    return this.#host.displayOnly === true ? DISPLAY_CHANGES : EVERY_CHANGE;
   }
 
   /** The Layout types the host offers; `undefined` for every one. */
@@ -1234,8 +1276,8 @@ function QueryViewBody({ view }: { view: QueryView }) {
         <ViewMenu view={view} />
         <ResultsMenu view={view} />
         <SortButton view={view} />
-        {!view.displayOnly && <GroupButton view={view} />}
-        {!view.displayOnly && <FilterButton view={view} />}
+        {view.can.group && <GroupButton view={view} />}
+        {view.can.filter && <FilterButton view={view} />}
         <PropertiesMenu view={view} />
         <SearchButton bar={search} />
         <OpenFileButton view={view} />

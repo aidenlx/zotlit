@@ -722,6 +722,36 @@ describe("saving a toolbar edit", () => {
     ]);
   });
 
+  it("ticks and orders the Visible Properties with no page to edit a property, where the host keeps only the Visible Properties", async () => {
+    const open = async (displayOnly: boolean) => {
+      const mounted = await mount([], undefined, { displayOnly });
+      await act(() => mounted.view.setText(FILE));
+      await mounted.settle();
+      await act(() => {
+        mounted.el
+          .querySelector<HTMLElement>("[data-query-properties]")!
+          .click();
+        // happy-dom has no popover, so the test sends the event that opens it.
+        mounted.el
+          .querySelector("[data-query-properties-popup]")!
+          .dispatchEvent(
+            Object.assign(new Event("beforetoggle"), { newState: "open" }),
+          );
+      });
+      return mounted.el;
+    };
+    const full = await open(false);
+    expect(full.querySelector("[data-query-property]")).not.toBeNull();
+    expect(full.querySelector("[data-query-property-more]")).not.toBeNull();
+    cleanup.dispose();
+    cleanup = new DisposableStack();
+    document.body.replaceChildren();
+
+    const fixed = await open(true);
+    expect(fixed.querySelector("[data-query-property]")).not.toBeNull();
+    expect(fixed.querySelector("[data-query-property-more]")).toBeNull();
+  });
+
   it("switches only between the Layouts the host offers from the view menu, with no view to add or configure, where the host keeps only the Layout of its view", async () => {
     const { view, el, settle, saved } = await mount(
       [result([]), result([])],

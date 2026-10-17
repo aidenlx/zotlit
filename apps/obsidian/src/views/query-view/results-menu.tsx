@@ -169,11 +169,11 @@ export function ResultsMenu({ view }: { view: QueryView }) {
       >
         {open && (
           <>
-            {!view.displayOnly && <LimitField view={view} close={close} />}
+            {view.can.limit && <LimitField view={view} close={close} />}
             <PopoverActions>
               {/* The row stays in place while no limit is set, dimmed as Bases
                   dims it, so the rows under it hold still as a limit is typed. */}
-              {!view.displayOnly && (
+              {view.can.limit && (
                 <PopoverAction
                   icon="rotate-ccw"
                   data-query-show-all=""

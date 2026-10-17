@@ -399,7 +399,8 @@ function ZoteroNoteLink({
       data-query-open="note"
       onClick={(event) => {
         event.preventDefault();
-        window.open(uri);
+        // The window of the link, which may be a pop-out.
+        event.currentTarget.ownerDocument.defaultView?.open(uri);
       }}
     >
       {children}
