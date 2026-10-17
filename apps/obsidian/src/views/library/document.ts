@@ -410,7 +410,8 @@ export function unreadCount(
       limit: null,
       libraries: librariesOf(node, { mode: "all" }),
     },
-    count: (rows) => rows.filter((row) => pass?.keeps(row) ?? true).length,
+    count: (rows) =>
+      rows.filter(({ indexedKey }) => pass?.keeps(indexedKey) ?? true).length,
   };
 }
 
@@ -445,7 +446,7 @@ export function vaultPass(
   if (vault.length === 0) return null;
   return {
     key: vault.join(" "),
-    keeps: ({ indexedKey }) => {
+    keeps: (indexedKey) => {
       const noted = notes.find(indexedKey) !== null;
       return vault.every((condition) =>
         condition === "has-literature-note" ? noted : !noted,

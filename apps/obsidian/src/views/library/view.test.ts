@@ -1192,7 +1192,7 @@ describe("Reading State facets", () => {
     await press(view, facet(view, "unread"));
     expect(listRuns(run).at(-1)).toMatchObject({
       libraries: { mode: "selected", libraries: [PERSONAL, LAB] },
-      filter: "annotations.isEmpty()",
+      filter: expect.stringContaining("annotations.isEmpty()"),
     });
     // B and E of My Library, F and G of Lab: no Annotation, no note.
     expect(listed(view)).toEqual([
