@@ -511,7 +511,7 @@ The Layout of the Library View for Items, also open to any Query File: two lines
 _Avoid_: paper list, rich list
 
 **Reading Card**:
-The pane on the right of the Library View that shows the selected Item: its bibliographic fields and abstract, the researcher's highlights as Annotation Cards, and the actions to open the PDF, open or write the Literature Note and cite.
+The pane on the right of the Library View that shows the selected Item: its bibliographic fields and abstract, every Annotation of the Item as Annotation Cards, the actions to open the PDF, open or write the Literature Note and cite, and a link that opens the Item in the sidebar Annotation View. It shows while a row is selected and the pane is wide enough.
 _Avoid_: detail pane, inspector, preview
 
 **Reading State**:
