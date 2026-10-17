@@ -7041,6 +7041,16 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       });
       const declare = `const created=${JSON.stringify(created)};`;
 
+      // A new Query File opens on its Items table; its second view shows the
+      // library's Annotations.
+      expect(
+        await obEvalUntil(
+          vaultId!,
+          `(async()=>{${PAGE}${declare}const view=${tab};if(!view)return 'no tab';press(view.contentEl.querySelector('[data-query-view-menu]'),'View menu');const rows=await until('view menu rows',()=>{const found=[...view.contentEl.querySelectorAll('[data-query-view-list]:popover-open [data-query-view-row]')];return found.length>1&&found;});press(rows.find(n=>n.getAttribute('data-query-view-row')===${JSON.stringify(m.query_file_annotations_view_name())}),'Annotations view');return 'chosen';})()`,
+          { expected: "chosen" },
+        ),
+      ).toBe(true);
+
       // The tab shows the seeded Annotation's card among the library's.
       expect(
         await obEvalUntil(

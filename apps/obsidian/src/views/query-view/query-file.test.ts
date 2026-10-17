@@ -16,6 +16,13 @@ import {
   viewFilter,
 } from "./query-file";
 
+const LABELS = {
+  items: "Items",
+  annotations: "Annotations",
+  creators: "Creators",
+  year: "Year",
+};
+
 const TWO_VIEWS = `filters: item.itemType == "journalArticle"
 formulas:
   short: item.title.slice(0, 10)
@@ -199,9 +206,9 @@ describe("editView: order and limit", () => {
   });
 
   it("adds visible properties to a view that had none, after its other keys", () => {
-    const file = parseQueryFile(newQueryFileText("Annotations"));
-    const updated = editView(file, file.views[0]!, { order: ["comment"] });
-    expect(parseQueryFile(serializeQueryFile(updated)).views[0]).toMatchObject({
+    const file = parseQueryFile(newQueryFileText(LABELS));
+    const updated = editView(file, file.views[1]!, { order: ["comment"] });
+    expect(parseQueryFile(serializeQueryFile(updated)).views[1]).toMatchObject({
       order: ["comment"],
       limit: NEW_QUERY_FILE_LIMIT,
     });
@@ -372,8 +379,9 @@ views:
   });
 
   it("gives no filter when the file and the view have none", () => {
-    const file = parseQueryFile(newQueryFileText("Annotations"));
+    const file = parseQueryFile(newQueryFileText(LABELS));
     expect(viewFilter(file, file.views[0]!)).toBeUndefined();
+    expect(viewFilter(file, file.views[1]!)).toBeUndefined();
   });
 });
 
@@ -439,10 +447,29 @@ describe("withFilters", () => {
 });
 
 describe("newQueryFileText", () => {
-  it("writes one Annotations view of the whole library, grouped by Item, with the default limit", () => {
-    const file = parseQueryFile(newQueryFileText("Annotations"));
+  it("opens on an Items table, newest first, with title, creators, year and the Literature Note", () => {
+    const file = parseQueryFile(newQueryFileText(LABELS));
     expect(file.problems).toEqual([]);
-    expect(file.views).toEqual([
+    expect(file.views[0]).toEqual(
+      expect.objectContaining({
+        type: "table",
+        name: "Items",
+        from: "items",
+        sort: [{ property: "dateModified", direction: "DESC" }],
+        order: ["title", "creators", "date.year", "vault.literatureNote"],
+        limit: NEW_QUERY_FILE_LIMIT,
+        problems: [],
+      }),
+    );
+    expect(file.views[0]!.filters).toBeUndefined();
+    expect(displayName(file, "creators")).toBe("Creators");
+    expect(displayName(file, "date.year")).toBe("Year");
+  });
+
+  it("keeps the Annotations view of the whole library, grouped by Item, as the second view", () => {
+    const file = parseQueryFile(newQueryFileText(LABELS));
+    expect(file.views).toHaveLength(2);
+    expect(file.views[1]).toEqual(
       expect.objectContaining({
         type: "annotations",
         name: "Annotations",
@@ -451,8 +478,8 @@ describe("newQueryFileText", () => {
         limit: NEW_QUERY_FILE_LIMIT,
         problems: [],
       }),
-    ]);
-    expect(file.views[0]!.filters).toBeUndefined();
+    );
+    expect(file.views[1]!.filters).toBeUndefined();
   });
 });
 

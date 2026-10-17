@@ -66,8 +66,8 @@ function freePath(app: App, folder: TFolder): string {
 }
 
 /**
- * Create a Query File with one Annotations view of the whole library in
- * `folder`, and open it. A Cmd/Ctrl press opens it in a new tab.
+ * Create a Query File in `folder` that opens on an Items table of the whole
+ * library, with an Annotations view second, and open it. A Cmd/Ctrl press opens it in a new tab.
  */
 export async function createQueryFile(
   app: App,
@@ -76,7 +76,12 @@ export async function createQueryFile(
 ): Promise<TFile> {
   const file = await app.vault.create(
     freePath(app, folder),
-    newQueryFileText(m.query_file_default_view_name()),
+    newQueryFileText({
+      items: m.query_file_items_view_name(),
+      annotations: m.query_file_annotations_view_name(),
+      creators: m.query_file_creators_property(),
+      year: m.query_file_year_property(),
+    }),
   );
   const leaf = app.workspace.getLeaf(event ? Keymap.isModEvent(event) : false);
   await leaf.openFile(file, { active: true });
