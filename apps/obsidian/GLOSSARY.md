@@ -492,6 +492,36 @@ _Avoid_: note column, Literature note column (in code)
 The text a Query View shows for one property in its headers, its labels, its Properties popover, and the header row of copy and CSV export, saved under the Query File's top-level `properties` key. A property without a Display Name shows its field label or its path.
 _Avoid_: alias, column title, rename (the action, not the text)
 
+### Library view
+
+**Library View** _(Obsidian)_:
+A main-area tab that shows the Zotero library read-only, with a Library Tree, a search box, the Item list of a Query View and a Reading Card. It keeps no file: what it shows is its Library View Document, saved per vault in plugin data, and "Save as query file" turns it into a Query File.
+_Avoid_: library tab, browser, library pane
+
+**Library View Document**:
+What the Library View shows, as one value: the selected Library Tree node, the active Reading State facets, the search text, the sort, the Layout and the Visible Properties. The text of its Query View follows from it.
+_Avoid_: library state, view state
+
+**Library Tree**:
+The tree on the left of the Library View: Recent, then each Library in the Library Scope with its Collections nested as in Zotero, each node with its paper count. Selecting a node changes the filters of the list; the tree never holds rows of its own.
+_Avoid_: collection tree, sidebar tree, navigator
+
+**Papers Layout**:
+The Layout of the Library View for Items: two lines of title, creators, year and publication, and a reading-state line, with the same expansion into Attachments, child notes and Annotations as the Table.
+_Avoid_: paper list, rich list
+
+**Reading Card**:
+The pane on the right of the Library View that shows the selected Item: its bibliographic fields and abstract, the researcher's highlights as Annotation Cards, and the actions to open the PDF, open or write the Literature Note and cite.
+_Avoid_: detail pane, inspector, preview
+
+**Reading State**:
+What the researcher has done with an Item: whether it was read and when, its Annotations, and its Literature Note. The Library View shows it on each row and narrows by it with the Reading State facets Unread, Annotated, Has note and PDF.
+_Avoid_: progress, status, read status
+
+**Recent**:
+The node at the top of the Library Tree that lists Items by last activity, newest first, each row with the reason it is there, such as "read 2 h ago in Obsidian".
+_Avoid_: history, recently read (Zotero's name for its own list)
+
 ### Note content
 
 **Annotation Excerpt**:
