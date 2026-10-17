@@ -14,6 +14,7 @@ import type { SettingsService } from "@/services/settings/service";
 import { QueryView } from "@/views/query-view/view";
 import type { QueryViewDeps } from "@/views/query-view/view";
 
+import { LIBRARY_LAYOUTS } from "./document";
 import type { LibraryNode } from "./document";
 import { ZOTLIT_MARK_ICON } from "./icon";
 import { LibraryTree } from "./library-tree";
@@ -73,6 +74,7 @@ export class LibraryView extends ItemView {
       rank: () => this.#shown!.rank,
       // The document keeps the sort, the Layout and the Visible Properties.
       displayOnly: true,
+      layouts: LIBRARY_LAYOUTS,
       save: this.#storage.save,
       layout: {
         // Otherwise Obsidian moves focus to the last navigable leaf, which in

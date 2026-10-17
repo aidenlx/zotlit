@@ -507,7 +507,7 @@ The tree on the left of the Library View: Recent, then each Library in the Libra
 _Avoid_: collection tree, sidebar tree, navigator
 
 **Papers Layout**:
-The Layout of the Library View for Items: two lines of title, creators, year and publication, and a reading-state line, with the same expansion into Attachments, child notes and Annotations as the Table.
+The Layout of the Library View for Items, also open to any Query File: two lines of title, creators, year and publication, and a reading-state line of colour marks, the Annotation count and the Literature Note, with the same expansion into Attachments, child notes and Annotations as the Table.
 _Avoid_: paper list, rich list
 
 **Reading Card**:

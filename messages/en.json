@@ -2548,6 +2548,23 @@
   "query_view_show_page": "Show page",
   "query_view_layout_list": "List",
   "query_view_layout_cards": "Cards",
+  "query_view_layout_papers": "Papers",
+  "query_view_papers_annotation_count": [
+    {
+      "declarations": ["input count", "local category = count: plural"],
+      "selectors": ["category"],
+      "match": {
+        "category=one": "1 annotation",
+        "category=*": "{count} annotations"
+      }
+    }
+  ],
+  "query_view_papers_more_creators": "{names} et al.",
+  "query_view_papers_has_note": "literature note",
+  "query_view_papers_attachment_pdf": "PDF",
+  "query_view_papers_attachment_epub": "EPUB",
+  "query_view_papers_attachment_web": "Web page",
+  "query_view_papers_note_marker": "Has a literature note",
   "query_view_dataset": "Rows",
   "query_view_dataset_desc": "Each row of the view is one Zotero annotation, attachment, or item.",
   "query_view_dataset_annotations": "Annotations",

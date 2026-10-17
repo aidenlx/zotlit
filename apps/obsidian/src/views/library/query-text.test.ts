@@ -329,7 +329,16 @@ describe("documentWithText", () => {
   it("keeps the document's Layout where the text names one the Library View does not offer", () => {
     const text = libraryViewQuery(DEFAULT_LIBRARY_VIEW_DOCUMENT, {
       labels: LABELS,
-    }).text.replace("type: table", "type: cards");
+    }).text.replace("type: papers", "type: cards");
+    expect(documentWithText(DEFAULT_LIBRARY_VIEW_DOCUMENT, text).layout).toBe(
+      "papers",
+    );
+  });
+
+  it("takes the Layout of a switch between Papers and the Table", () => {
+    const text = libraryViewQuery(DEFAULT_LIBRARY_VIEW_DOCUMENT, {
+      labels: LABELS,
+    }).text.replace("type: papers", "type: table");
     expect(documentWithText(DEFAULT_LIBRARY_VIEW_DOCUMENT, text).layout).toBe(
       "table",
     );

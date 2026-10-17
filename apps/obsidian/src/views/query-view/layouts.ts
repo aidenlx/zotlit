@@ -4,6 +4,7 @@ import * as m from "@/lib/i18n/generated/messages";
 
 import { CARDS_LAYOUT } from "./cards-layout";
 import { LIST_LAYOUT } from "./list-layout";
+import { PAPERS_LAYOUT } from "./papers-layout";
 import type { QueryFileDataset, QueryFileView } from "./query-file";
 import { TABLE_LAYOUT } from "./table-layout";
 
@@ -27,6 +28,8 @@ export const QUERY_LAYOUTS: readonly QueryLayout[] = [
   TABLE_LAYOUT,
   LIST_LAYOUT,
   CARDS_LAYOUT,
+  // Last, so a new view of Items opens on the Table.
+  PAPERS_LAYOUT,
 ];
 
 /** The Layout that draws a view; a view with no `type` takes the Annotations layout. */
@@ -35,10 +38,24 @@ export function layoutOf(view: QueryFileView): QueryLayout | undefined {
   return QUERY_LAYOUTS.find((layout) => layout.type === type);
 }
 
-/** The Layouts that can show the view's dataset, as the Layout picker offers them. */
-export function layoutsFor(view: Pick<QueryFileView, "from">): QueryLayout[] {
+/**
+ * The Layouts that can show the view's dataset, as the Layout picker offers
+ * them.
+ * @param offered the Layout types the host offers, in its order; absent, the
+ * host offers every Layout.
+ */
+export function layoutsFor(
+  view: Pick<QueryFileView, "from">,
+  offered?: readonly string[],
+): QueryLayout[] {
   const dataset = view.from ?? "annotations";
-  return QUERY_LAYOUTS.filter((layout) => layout.datasets.includes(dataset));
+  const fitting = QUERY_LAYOUTS.filter((layout) =>
+    layout.datasets.includes(dataset),
+  );
+  if (!offered) return fitting;
+  return offered.flatMap((type) =>
+    fitting.filter((layout) => layout.type === type),
+  );
 }
 
 /** The Annotations layout's options, with their defaults filled in. */

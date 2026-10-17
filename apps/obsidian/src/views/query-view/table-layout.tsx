@@ -14,7 +14,7 @@ import {
 import type { CSSProperties, ReactNode } from "react";
 import { useStore } from "zustand";
 
-import { isPageNumber } from "@zotlit/db";
+import { isPageNumber, itemSelectUri, parseIndexedKey } from "@zotlit/db";
 
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
@@ -149,7 +149,9 @@ export const TABLE_CHILD_SOURCES: readonly TableChildSource[] = [
         return [{ kind: "note", key: text(values.indexedKey), values }];
       });
     },
-    render: ({ key, values }) => text(values.title) || key,
+    render: ({ key, values }) => (
+      <ZoteroNoteLink noteKey={key}>{text(values.title) || key}</ZoteroNoteLink>
+    ),
   },
   {
     parent: "attachment",
@@ -230,16 +232,16 @@ function expandable(record: TableRecord): boolean {
   });
 }
 
-type ChildState =
+export type ChildState =
   | { readonly phase: "loading" }
   | { readonly phase: "ready"; readonly rows: readonly TableRecord[] }
   | { readonly phase: "failed" };
 
-const id = (record: Pick<TableRecord, "kind" | "key">) =>
+export const id = (record: Pick<TableRecord, "kind" | "key">) =>
   `${record.kind}:${record.key}`;
 
 /** The expanded rows and the rows under them, read when a row expands. */
-function useChildren(query: Pick<QueryService, "run">) {
+export function useChildren(query: Pick<QueryService, "run">) {
   const [children, setChildren] = useState<ReadonlyMap<string, ChildState>>(
     () => new Map(),
   );
@@ -291,7 +293,7 @@ function useChildren(query: Pick<QueryService, "run">) {
   return { children, toggle };
 }
 
-function Expander({
+export function Expander({
   record,
   open,
   onToggle,
@@ -376,12 +378,43 @@ function NoteCell({
 }
 
 /**
+ * A link that shows a Child Note in Zotero, which holds it: Obsidian has no
+ * view of a Zotero note. The system starts Zotero from the link where it is
+ * closed.
+ */
+function ZoteroNoteLink({
+  noteKey,
+  children,
+}: {
+  noteKey: string;
+  children: ReactNode;
+}) {
+  const parsed = parseIndexedKey(noteKey);
+  if (!parsed) return children;
+  const uri = itemSelectUri(parsed.key, parsed.groupID);
+  return (
+    <a
+      className="external-link zt:truncate zt:bg-none zt:pe-0"
+      href={uri}
+      data-query-open="note"
+      onClick={(event) => {
+        event.preventDefault();
+        // The window of the link, which may be a pop-out.
+        event.currentTarget.ownerDocument.defaultView?.open(uri);
+      }}
+    >
+      {children}
+    </a>
+  );
+}
+
+/**
  * A link that opens an Attachment or Annotation in its reader, and takes a
  * click as an Obsidian link does: a Cmd/Ctrl press or a middle click opens
  * a new tab, and Cmd/Ctrl+Alt a split. Its address is the Zotero link of the
  * target, which a drag carries out.
  */
-function ReaderLink({
+export function ReaderLink({
   readers,
   target,
   children,

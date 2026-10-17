@@ -2384,6 +2384,22 @@
   "query_view_show_page": "显示页码",
   "query_view_layout_list": "列表",
   "query_view_layout_cards": "卡片",
+  "query_view_layout_papers": "文献",
+  "query_view_papers_annotation_count": [
+    {
+      "declarations": ["input count", "local category = count: plural"],
+      "selectors": ["category"],
+      "match": {
+        "category=*": "{count} 条标注"
+      }
+    }
+  ],
+  "query_view_papers_more_creators": "{names} 等",
+  "query_view_papers_has_note": "文献笔记",
+  "query_view_papers_attachment_pdf": "PDF",
+  "query_view_papers_attachment_epub": "EPUB",
+  "query_view_papers_attachment_web": "网页",
+  "query_view_papers_note_marker": "已有文献笔记",
   "query_view_dataset": "行",
   "query_view_dataset_desc": "视图的每一行是一个 Zotero 标注、附件或条目。",
   "query_view_dataset_annotations": "标注",
