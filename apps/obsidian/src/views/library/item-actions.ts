@@ -5,7 +5,6 @@
 // citation popover.
 //
 // @see apps/obsidian/docs/adr/0073-library-view-rows-act-as-quick-switcher-results.md
-import { MarkdownView } from "obsidian";
 import type { Editor, MarkdownFileInfo, PaneType } from "obsidian";
 
 import { itemSelectUri, parseIndexedKey } from "@zotlit/db";
@@ -29,12 +28,16 @@ import {
 } from "@/views/quick-switch/result-actions";
 import type { NoteResultDeps } from "@/views/quick-switch/result-actions";
 
+import type { LastNote } from "./last-note";
+
 const logger = getLogger(["library-view", "item-actions"]);
 
 export type ItemActionsDeps = NoteResultDeps &
   AttachmentOpenLookupDeps &
   Pick<CitationSuggestDeps, "citationLookup"> & {
     noteFeature: CitationSuggestDeps["noteFeature"];
+    /** The note the researcher was in last, which Insert citation goes to. */
+    lastNote: Pick<LastNote, "editor">;
     /** Show a short message to the researcher. */
     notify: (message: string) => void;
     /**
@@ -148,17 +151,9 @@ export function itemActions(deps: ItemActionsDeps): ItemActions {
  */
 function editorTarget({
   app,
-}: Pick<ItemActionsDeps, "app">): CitationTarget | null {
-  const info =
-    getInsertionEditor(app) ??
-    app.workspace
-      .getLeavesOfType("markdown")
-      .flatMap(({ view, activeTime }) =>
-        view instanceof MarkdownView && view.getMode() === "source"
-          ? [{ view, activeTime }]
-          : [],
-      )
-      .toSorted((a, b) => b.activeTime - a.activeTime)[0]?.view;
+  lastNote,
+}: Pick<ItemActionsDeps, "app" | "lastNote">): CitationTarget | null {
+  const info = getInsertionEditor(app) ?? lastNote.editor();
   if (!info?.file || !info.editor) return null;
   return { editor: info.editor, info };
 }
