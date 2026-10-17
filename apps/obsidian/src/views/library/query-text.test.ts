@@ -260,6 +260,19 @@ describe("libraryViewQuery — search", () => {
     expect(selects(filter, seed("WXYZ6789", [["Other"]]))).toBe(false);
   });
 
+  it("keeps the search inside the active facets, the vault's among them", () => {
+    const { query, file, filter } = derive(
+      { facets: ["annotated", "has-note"], search: "attention" },
+      ["ABCD2345"],
+    );
+    expect(file.filters).toEqual({
+      and: ["annotations.length > 0", '["ABCD2345"].contains(indexedKey)'],
+    });
+    expect(plans(filter)).toBe(true);
+    expect(query.vault).toEqual(["has-literature-note"]);
+    expect(query.rank).toEqual(["ABCD2345"]);
+  });
+
   it("ranks nothing while the view browses", () => {
     expect(derive({}).query.rank).toBeNull();
   });

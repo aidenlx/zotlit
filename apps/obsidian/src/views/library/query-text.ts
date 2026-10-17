@@ -20,10 +20,13 @@ import {
   parseQueryFile,
   serializeQueryFile,
 } from "@/views/query-view/query-file";
+import type { LiteratureNotes } from "@/views/query-view/table-notes";
+import type { QueryRowPass } from "@/views/query-view/view";
 
 import { LIBRARY_LAYOUTS } from "./document";
 import type {
   LibraryLayout,
+  LibraryNode,
   LibraryViewDocument,
   ReadingStateFacet,
 } from "./document";
@@ -112,15 +115,11 @@ export function libraryViewQuery(
   },
 ): LibraryViewQuery {
   const { node } = doc;
-  const filters: string[] = [];
-  if (node.kind === "collection" && everywhere === undefined)
-    filters.push(`collections.within(${JSON.stringify(node.path.join("/"))})`);
-  const vault: VaultCondition[] = [];
-  for (const facet of doc.facets) {
-    const { filter, vault: condition } = FACETS[facet];
-    if (filter !== undefined) filters.push(filter);
-    if (condition !== undefined) vault.push(condition);
-  }
+  // A search of every Library leaves the node's Collection behind.
+  const { filters, vault } = selectionConditions(
+    everywhere === undefined ? node : null,
+    doc.facets,
+  );
   if (keys !== undefined)
     filters.push(
       `[${keys.map((key) => JSON.stringify(key)).join(", ")}].contains(indexedKey)`,
@@ -182,6 +181,46 @@ export function documentWithText(
       ? (view.type as LibraryLayout)
       : doc.layout,
     order: view.order ?? [],
+  };
+}
+
+/**
+ * What the Items of `node` with `facets` pass: the conditions of the query,
+ * and those the vault answers after it. `null`: no node narrows them.
+ */
+export function selectionConditions(
+  node: LibraryNode | null,
+  facets: readonly ReadingStateFacet[],
+): { filters: string[]; vault: VaultCondition[] } {
+  const filters: string[] = [];
+  if (node?.kind === "collection")
+    filters.push(`collections.within(${JSON.stringify(node.path.join("/"))})`);
+  const vault: VaultCondition[] = [];
+  for (const facet of facets) {
+    const { filter, vault: condition } = FACETS[facet];
+    if (filter !== undefined) filters.push(filter);
+    if (condition !== undefined) vault.push(condition);
+  }
+  return { filters, vault };
+}
+
+/**
+ * The rows that pass every one of `vault` as the Note Index has it now;
+ * `null` for no condition.
+ */
+export function vaultPass(
+  vault: readonly VaultCondition[],
+  notes: Pick<LiteratureNotes, "find">,
+): QueryRowPass | null {
+  if (vault.length === 0) return null;
+  return {
+    key: vault.join(" "),
+    keeps: ({ indexedKey }) => {
+      const noted = notes.find(indexedKey) !== null;
+      return vault.every((condition) =>
+        condition === "has-literature-note" ? noted : !noted,
+      );
+    },
   };
 }
 

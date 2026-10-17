@@ -143,6 +143,7 @@ async function mount(
     libraries,
     displayOnly,
     layouts,
+    rowPass,
     reason,
   }: {
     notes?: Record<string, string>;
@@ -155,6 +156,7 @@ async function mount(
     libraries?: () => LibraryScope;
     displayOnly?: boolean;
     layouts?: readonly string[];
+    rowPass?: ConstructorParameters<typeof QueryView>[1]["rowPass"];
     reason?: (row: QueryViewRow) => string | null;
   } = {},
 ) {
@@ -268,6 +270,7 @@ async function mount(
     ...(libraries && { libraries }),
     ...(displayOnly && { displayOnly }),
     ...(layouts && { layouts }),
+    ...(rowPass && { rowPass }),
     ...(reason && { reason }),
   });
   const saved: string[] = [];
@@ -1377,6 +1380,59 @@ function item(key: string, title: string, year: string): QueryViewRow {
     values: { title, "date.year": year, tags: ["thesis"] },
   };
 }
+
+it("shows only the rows the host keeps after the query, cut to the view's limit, and counts them", async () => {
+  // The host answers a condition the query cannot: here, which Items have a
+  // note in the vault.
+  const kept = new Set(["ITEMAAAA", "ITEMCCCC", "ITEMDDDD"]);
+  let pass: { key: string; keeps: (row: QueryViewRow) => boolean } | null = {
+    key: "noted",
+    keeps: (row) => kept.has(row.indexedKey),
+  };
+  const rows = [
+    item("ITEMAAAA", "Ten simple rules", "2021"),
+    item("ITEMBBBB", "Reading at scale", "2019"),
+    item("ITEMCCCC", "Close reading", "2018"),
+    item("ITEMDDDD", "Distant reading", "2013"),
+  ];
+  const { view, el, run, settle } = await mount(
+    [result(rows), result(rows), result(rows)],
+    undefined,
+    { rowPass: () => pass },
+  );
+  await act(() =>
+    view.setText(`views:
+  - type: list
+    name: Sources
+    from: items
+    limit: 2
+    order:
+      - title
+`),
+  );
+  await settle();
+  // The query reads every match, so the limit cuts the kept rows alone.
+  expect(run.mock.calls[0]![0].limit).toBeNull();
+  expect(shownRows(el)).toEqual(["ITEMAAAA", "ITEMCCCC"]);
+  expect(el.querySelector("[data-query-count]")?.textContent).toBe(
+    "2 of 3 results",
+  );
+
+  // Another condition of the host runs again, with the same text.
+  kept.delete("ITEMCCCC");
+  pass = { key: "noted-2", keeps: (row) => kept.has(row.indexedKey) };
+  await act(() => view.contextChanged());
+  await settle();
+  expect(run).toHaveBeenCalledTimes(2);
+  expect(shownRows(el)).toEqual(["ITEMAAAA", "ITEMDDDD"]);
+  expect(el.querySelector("[data-query-count]")?.textContent).toBe("2 results");
+
+  // Without a condition, the query takes the view's limit again.
+  pass = null;
+  await act(() => view.contextChanged());
+  await settle();
+  expect(run.mock.calls[2]![0].limit).toBe(2);
+});
 
 it("lists the Items of an items view, with the visible properties in their order", async () => {
   const { view, el, run, settle } = await mount([
