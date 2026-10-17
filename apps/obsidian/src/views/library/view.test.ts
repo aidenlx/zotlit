@@ -2,7 +2,14 @@
 // The Library View tab runs the query its Library View Document derives: the
 // document plugin data holds when the tab opens, and after a toolbar change,
 // the same query when the tab opens again.
-import { Menu, resetMockPlatform, setMockPlatform } from "@mock/obsidian";
+import {
+  Menu,
+  controlsOf,
+  Modal,
+  resetMockPlatform,
+  setMockPlatform,
+  TextComponent,
+} from "@mock/obsidian";
 import type { App, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -1985,4 +1992,63 @@ describe("Reading Card", () => {
     expect(await pressKey(view, inside, ["ArrowDown"])).toBe(false);
     expect(items.openNote).not.toHaveBeenCalled();
   });
+});
+
+it("says in the Save as query file dialog what the file leaves out, and offers the selected Collection's name", async () => {
+  const { deps } = pluginData();
+  Object.assign(deps.app, {
+    fileManager: {
+      getNewFileParent: () => ({ isRoot: () => true, path: "/" }),
+    },
+  });
+  deps.app.workspace.getActiveFile = () => null;
+  Object.assign(deps.app, {
+    keymap: { pushScope: () => {}, popScope: () => {} },
+  });
+  const proto: Partial<HTMLElement> = HTMLElement.prototype;
+  if (!proto.hidePopover) {
+    proto.hidePopover = () => {};
+    cleanup.defer(() => {
+      delete proto.hidePopover;
+    });
+  }
+  const view = await openTab(deps);
+  await press(view, row(view, THESIS));
+  await press(view, facet(view, "has-note"));
+  await type(view, "figures");
+  Modal.instances.length = 0;
+  await act(() => {
+    view.contentEl
+      .querySelector<HTMLElement>("[data-query-view-menu]")!
+      .click();
+    // happy-dom has no popover, so the test sends the event that opens it.
+    document
+      .querySelector("[data-query-view-list]")!
+      .dispatchEvent(
+        Object.assign(new Event("beforetoggle"), { newState: "open" }),
+      );
+  });
+  await act(() =>
+    document
+      .querySelector<HTMLElement>('[data-query-view-action="save-as"]')!
+      .click(),
+  );
+  await vi.waitFor(() => expect(Modal.instances).toHaveLength(1));
+  const modal = Modal.instances[0]!;
+  modal.onOpen();
+  expect(
+    [...modal.contentEl.querySelectorAll("[data-save-left-out]")].map(
+      (el) => el.textContent,
+    ),
+  ).toEqual([
+    m.library_view_save_leaves_out_facets({
+      facets: m.library_view_facet_has_note(),
+    }),
+    m.library_view_save_leaves_out_search(),
+  ]);
+  const name = [...modal.contentEl.querySelectorAll<HTMLElement>("label")]
+    .flatMap((label) => controlsOf(label.lastElementChild as HTMLElement))
+    .find((control) => control instanceof TextComponent);
+  expect(name?.getValue()).toBe("Thesis");
+  modal.close();
 });

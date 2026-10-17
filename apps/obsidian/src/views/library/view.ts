@@ -11,6 +11,7 @@ import { createStore } from "zustand/vanilla";
 
 import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
+import { runtime } from "@/lib/i18n/generated/runtime";
 import { getLogger } from "@/lib/log";
 import { showMenuAtButton } from "@/lib/menu";
 import type { LibraryScope } from "@/services/library-scope/scope";
@@ -30,6 +31,7 @@ import { unavailable } from "@/views/welcome/connection";
 import {
   LIBRARY_LAYOUTS,
   libraryViewQuery,
+  libraryViewQueryFileLeftOut,
   libraryViewQueryFileText,
   vaultPass,
   withFacets,
@@ -45,7 +47,7 @@ import type {
 import { ZOTLIT_MARK_ICON } from "./icon";
 import type { ItemActions } from "./item-actions";
 import { createItemDrag, refuseItemDrop } from "./item-drag";
-import { LibraryTree } from "./library-tree";
+import { FACET_LABELS, LibraryTree } from "./library-tree";
 import type { LibraryTreeDeps } from "./library-tree";
 import { ZoteroNotFound } from "./not-found";
 import { ReadingCard } from "./reading-card";
@@ -542,9 +544,28 @@ export class LibraryView extends ItemView {
   /** "Save as query file": the document as it stands, once the toolbar's last change is in. */
   async #saveAs(): Promise<void> {
     await this.query.flush();
+    const doc = this.#storage.document();
+    const leftOut = libraryViewQueryFileLeftOut(doc);
     await saveAsQueryFile(
       this.app,
-      libraryViewQueryFileText(this.#storage.document(), { labels: labels() }),
+      libraryViewQueryFileText(doc, { labels: labels() }),
+      {
+        name: this.tree.name,
+        leftOut: [
+          ...(leftOut.facets.length === 0
+            ? []
+            : [
+                m.library_view_save_leaves_out_facets({
+                  facets: new Intl.ListFormat(runtime.getLocale(), {
+                    type: "conjunction",
+                  }).format(
+                    leftOut.facets.map((facet) => FACET_LABELS[facet]()),
+                  ),
+                }),
+              ]),
+          ...(leftOut.search ? [m.library_view_save_leaves_out_search()] : []),
+        ],
+      },
     );
   }
 

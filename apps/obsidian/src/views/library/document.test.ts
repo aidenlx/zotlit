@@ -17,6 +17,7 @@ import {
 import {
   DEFAULT_LIBRARY_VIEW_DOCUMENT,
   libraryViewQuery,
+  libraryViewQueryFileLeftOut,
   libraryViewQueryFileText,
   parseLibraryViewDocument,
   serializeLibraryViewDocument,
@@ -593,6 +594,23 @@ describe("libraryViewQueryFileText — Save as query file", () => {
     const { filter } = saved({ search: "attention" });
     expect(selects(filter, seed("ABCD2345"))).toBe(true);
     expect(filter).not.toContain("indexedKey");
+  });
+
+  it("names what the file leaves out: the search, and the facets whose Literature Note check the vault answers", () => {
+    expect(
+      libraryViewQueryFileLeftOut({
+        ...DEFAULT_LIBRARY_VIEW_DOCUMENT,
+        facets: ["unread", "annotated", "has-note", "pdf"],
+        search: "attention",
+      }),
+    ).toEqual({ facets: ["unread", "has-note"], search: true });
+    expect(
+      libraryViewQueryFileLeftOut({
+        ...DEFAULT_LIBRARY_VIEW_DOCUMENT,
+        facets: ["annotated", "pdf"],
+        search: "  ",
+      }),
+    ).toEqual({ facets: [], search: false });
   });
 
   it("keeps the view as the Library View shows it: sort, Layout, Visible Properties and row limit", () => {

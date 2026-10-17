@@ -433,6 +433,8 @@
   "library_view_not_found_tree": "Zotero not found",
   "library_view_locate": "Locate data folder",
   "library_view_refresh_failed": "ZotLit couldn't read Zotero's database just now. The list shows the papers it read last.",
+  "library_view_save_leaves_out_facets": "A Query File can't check for a Literature Note, so this file leaves that check out of {facets}.",
+  "library_view_save_leaves_out_search": "A Query File can't hold the search, so this file leaves it out.",
   "library_view_not_found_title": "We couldn't find your Zotero library",
   "library_view_not_found_body": "ZotLit looks in the default Zotero profile. Point it at your data folder and your papers appear here. Zotero does not need to be open.",
   "library_view_menu_open_pdf": "Open PDF",

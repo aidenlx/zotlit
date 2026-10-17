@@ -494,6 +494,21 @@ export function libraryViewQueryFileText(
   });
 }
 
+/**
+ * What "Save as query file" leaves out of `doc`, for the dialog to say: the
+ * search, and the facets whose Literature Note check the vault answers after
+ * the query. A Query File can hold neither (ADR 0072).
+ */
+export function libraryViewQueryFileLeftOut(doc: LibraryViewDocument): {
+  facets: ReadingStateFacet[];
+  search: boolean;
+} {
+  return {
+    facets: doc.facets.filter((facet) => FACETS[facet].vault !== undefined),
+    search: doc.search.trim() !== "",
+  };
+}
+
 function filterTree(filters: readonly string[]): FilterTree {
   return filters.length === 1 ? filters[0]! : { and: [...filters] };
 }

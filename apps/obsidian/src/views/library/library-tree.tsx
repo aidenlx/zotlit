@@ -119,6 +119,14 @@ export class LibraryTree extends Component {
     }));
   }
 
+  /** The name of the selected node, as a file saved from it is first called. */
+  get name(): string {
+    const { libraries, node } = this.store.getState();
+    return node.kind === "collection"
+      ? node.path.at(-1)!
+      : nodeLabel(libraries, node);
+  }
+
   /**
    * Settles once the tree shows the last read it started, and not before it
    * shows a first one. Never rejects.
@@ -665,7 +673,8 @@ function TreePane({ tree }: { tree: LibraryTree }) {
   );
 }
 
-const FACET_LABELS: Record<ReadingStateFacet, () => string> = {
+/** The name each Reading State facet goes by on screen. */
+export const FACET_LABELS: Record<ReadingStateFacet, () => string> = {
   unread: m.library_view_facet_unread,
   annotated: m.library_view_facet_annotated,
   "has-note": m.library_view_facet_has_note,
