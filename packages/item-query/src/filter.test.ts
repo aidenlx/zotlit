@@ -1849,8 +1849,8 @@ describe("validation", () => {
     ["custom.isEmpty()", "unfilterable-field", [0, 6]],
     ["min == 1", "unknown-field", [0, 3]],
     ['if == "a"', "unknown-field", [0, 2]],
-    // An unknown member of a creator spans the whole access.
-    ["firstAuthor.surname", "unknown-property", [0, 19]],
+    // An unknown member of a creator spans its name, as title.year does.
+    ["firstAuthor.surname", "unknown-property", [12, 19]],
   ] as const)("rejects %j with %s at %j", (expression, code, [from, to]) => {
     const fault = problem(expression);
     expect(codeOfFault(fault, ITEMS)).toBe(code);
