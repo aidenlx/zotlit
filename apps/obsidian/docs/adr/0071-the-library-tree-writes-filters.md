@@ -16,4 +16,5 @@ Proposed on 2026-10-17 with [#1544](https://github.com/aidenlx/zotlit/issues/154
 - The Query View gains a host hook for the Target Libraries, part of its run key (#1545).
 - A Collection name that holds `/` cannot be told from a deeper path in `collections.within`, as everywhere in ZotLit Query.
 - A renamed Collection no longer matches the saved path, so the saved node shows no Items; the Library Tree (#1546) decides what it selects in its place.
+- The paper count of a node is the number of Items its selection lists with no facet and no search: a Collection counts the distinct Items of its subtree, as `collections.within` selects them, so the count in the tree and in the list header agree (#1546).
 - Unread gains `lastRead == null` once ZotLit Query reads `lastRead` (#1532, #1533).
