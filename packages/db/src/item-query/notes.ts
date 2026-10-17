@@ -8,6 +8,7 @@ import { defineStatement, idSlots } from "./database";
 import type { IdSlot } from "./database";
 import { HYDRATE_CHUNK_SIZE } from "./hydrate-chunk";
 import { recordUniverse } from "./record-universe";
+import { SCAN_PAGE_SIZE } from "./scan-page";
 import type { ScanRow } from "./scan-page";
 
 const parent = alias(items, "noteParent");
@@ -24,9 +25,9 @@ const slots = idSlots(HYDRATE_CHUNK_SIZE);
  * The live Child Notes of a chunk of parent Items, in note key order. An
  * Attachment's own note has no parent in `itemNotes`, so it is not a Child Note.
  */
-const itemNotesStatement = defineStatement<Record<IdSlot, number | null>>(
-  "item-notes",
-)((db, { placeholder }) =>
+const itemNotesStatement = defineStatement<
+  Record<IdSlot, number | null> & { afterKey: string; afterItemID: number }
+>("item-notes")((db, { placeholder }) =>
   db
     .select({
       itemID: items.itemID,
@@ -59,18 +60,28 @@ const itemNotesStatement = defineStatement<Record<IdSlot, number | null>>(
           parent.itemID,
           slots.names.map((name) => placeholder(name)),
         ),
+        sql`(${items.key}, ${items.itemID}) > (${placeholder("afterKey")}, ${placeholder("afterItemID")})`,
         ...recordUniverse(db, [items, parent], false),
       ),
     )
-    .orderBy(asc(items.key)),
+    .orderBy(asc(items.key), asc(items.itemID))
+    .limit(SCAN_PAGE_SIZE),
 );
 
-export function readItemNotes(itemIDs: readonly number[]) {
+/**
+ * One page of the Child Notes of at most {@link HYDRATE_CHUNK_SIZE} parent
+ * Items: at most {@link SCAN_PAGE_SIZE} rows after `after` (absent for the
+ * first page). A shorter page is the last one.
+ */
+export function readItemNotes(itemIDs: readonly number[], after?: NoteScanRow) {
   if (itemIDs.length > HYDRATE_CHUNK_SIZE)
     return Effect.die(
       new RangeError("A relation chunk holds at most 250 parent IDs."),
     );
-  return itemIDs.length
-    ? itemNotesStatement.all(slots.bind(itemIDs))
-    : Effect.succeed([] as NoteScanRow[]);
+  if (!itemIDs.length) return Effect.succeed([] as NoteScanRow[]);
+  return itemNotesStatement.all({
+    ...slots.bind(itemIDs),
+    afterKey: after?.key ?? "",
+    afterItemID: after?.itemID ?? 0,
+  });
 }

@@ -83,10 +83,12 @@ function attachmentReads(events: readonly RunEvent[]): StatementRun[] {
 }
 
 /** The Item IDs that the ID slots of one statement bind. */
+/** The Item IDs in the `id0`, `id1`, … slots; a page cursor is no Item. */
 function itemIDsBound(statement: StatementRun): number[] {
-  return Object.values(statement.params).filter(
-    (param): param is number => typeof param === "number",
-  );
+  return Object.entries(statement.params)
+    .filter(([name]) => /^id\d+$/.test(name))
+    .map(([, param]) => param)
+    .filter((param): param is number => typeof param === "number");
 }
 
 /** Store a built-in field value on a personal Item of the scenario. */

@@ -131,9 +131,9 @@ export function readAttachmentUniverseRows(chunk: {
 
 const slots = idSlots(HYDRATE_CHUNK_SIZE);
 /** The live Attachments of a chunk of parent Items, in Attachment key order. */
-const itemAttachmentsStatement = defineStatement<Record<IdSlot, number | null>>(
-  "item-attachments",
-)((db, { placeholder }) =>
+const itemAttachmentsStatement = defineStatement<
+  Record<IdSlot, number | null> & { afterKey: string; afterItemID: number }
+>("item-attachments")((db, { placeholder }) =>
   selectAttachments(db)
     .where(
       and(
@@ -141,20 +141,33 @@ const itemAttachmentsStatement = defineStatement<Record<IdSlot, number | null>>(
           parent.itemID,
           slots.names.map((name) => placeholder(name)),
         ),
+        sql`(${items.key}, ${items.itemID}) > (${placeholder("afterKey")}, ${placeholder("afterItemID")})`,
         ...universe(db),
       ),
     )
-    .orderBy(asc(items.key)),
+    .orderBy(asc(items.key), asc(items.itemID))
+    .limit(SCAN_PAGE_SIZE),
 );
 
-export function readItemAttachments(itemIDs: readonly number[]) {
+/**
+ * One page of the Attachments of at most {@link HYDRATE_CHUNK_SIZE} parent
+ * Items: at most {@link SCAN_PAGE_SIZE} rows after `after` (absent for the
+ * first page). A shorter page is the last one.
+ */
+export function readItemAttachments(
+  itemIDs: readonly number[],
+  after?: AttachmentScanRow,
+) {
   if (itemIDs.length > HYDRATE_CHUNK_SIZE)
     return Effect.die(
       new RangeError("A relation chunk holds at most 250 parent IDs."),
     );
-  return itemIDs.length
-    ? itemAttachmentsStatement.all(slots.bind(itemIDs))
-    : Effect.succeed([] as AttachmentScanRow[]);
+  if (!itemIDs.length) return Effect.succeed([] as AttachmentScanRow[]);
+  return itemAttachmentsStatement.all({
+    ...slots.bind(itemIDs),
+    afterKey: after?.key ?? "",
+    afterItemID: after?.itemID ?? 0,
+  });
 }
 
 const titleData = alias(itemData, "attachmentTitleData");
