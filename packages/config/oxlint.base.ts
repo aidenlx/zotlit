@@ -47,6 +47,7 @@ export default defineConfig({
     "oxc",
     "import",
     "promise",
+    "vitest",
   ],
   rules: {
     "typescript/no-non-null-assertion": "off",
@@ -58,6 +59,21 @@ export default defineConfig({
     "no-param-reassign": "error",
     "default-param-last": "error",
     "max-params": ["error", { max: 3 }],
+    // A whole-output snapshot pins structure, not behavior: index the
+    // artifact and assert the keys a test owns (policies/tautological-tests.md).
+    // oxlint reads inline snapshots only; packages/scripts/scripts/snapshot-size.ts
+    // checks .snap files.
+    "vitest/no-large-snapshots": ["error", { inlineMaxSize: 50 }],
+    // Default rules of the plugin with an untriaged backlog; enable each one
+    // when its findings are fixed.
+    "vitest/no-conditional-expect": "off",
+    "vitest/valid-expect": "off",
+    "vitest/require-to-throw-message": "off",
+    "vitest/require-mock-type-parameters": "off",
+    "vitest/expect-expect": "off",
+    "vitest/no-standalone-expect": "off",
+    "vitest/valid-describe-callback": "off",
+    "vitest/valid-title": "off",
     "no-else-return": "error",
     "prefer-template": "warn",
     "no-useless-concat": "error",
