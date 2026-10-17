@@ -13,6 +13,8 @@ import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 import type { StoreApi } from "zustand/vanilla";
 
+import { useUniqueId } from "@zotlit/ui";
+
 import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
 import { Effect } from "@/lib/effect";
@@ -416,6 +418,7 @@ function TreePane({ tree }: { tree: LibraryTree }) {
   const all = useStore(tree.store, (s) => s.all);
   const shown = libraries ? rows(libraries, expanded) : [];
   const selected = nodeKey(node);
+  const headingId = useUniqueId();
 
   const open = (row: Row, value: boolean) =>
     row.level === 1
@@ -444,16 +447,21 @@ function TreePane({ tree }: { tree: LibraryTree }) {
   };
 
   return (
+    // Obsidian shows a tooltip for each `aria-label`, so the tree takes its
+    // name from the heading on screen.
     <nav
-      aria-label={m.library_view_tree_label()}
+      aria-labelledby={headingId}
       className="zt:flex zt:flex-col zt:gap-(--size-4-2) zt:p-(--size-4-2)"
     >
-      <div className="zt:px-(--size-4-2) zt:text-(length:--font-ui-smaller) zt:font-(--font-semibold) zt:text-muted-foreground">
+      <div
+        id={headingId}
+        className="zt:px-(--size-4-2) zt:text-(length:--font-ui-smaller) zt:font-(--font-semibold) zt:text-muted-foreground"
+      >
         {m.library_view_tree_label()}
       </div>
       <div
         role="tree"
-        aria-label={m.library_view_tree_label()}
+        aria-labelledby={headingId}
         className="zt:flex zt:flex-col"
       >
         {shown.map((row, index) => (
@@ -471,7 +479,7 @@ function TreePane({ tree }: { tree: LibraryTree }) {
                 : -1
             }
             style={{ "--zt-library-depth": row.level - 1 } as CSSProperties}
-            className="zt:flex zt:min-w-0 zt:cursor-(--cursor) zt:items-center zt:gap-(--size-2-1) zt:rounded-(--radius-s) zt:py-(--size-2-2) zt:ps-[calc(var(--zt-library-depth)*var(--size-4-4)+var(--size-2-1))] zt:pe-(--size-4-2) zt:text-(length:--nav-item-size) zt:text-(--nav-item-color) zt:hover:bg-(--nav-item-background-hover) zt:aria-selected:bg-(--nav-item-background-active) zt:aria-selected:text-(--nav-item-color-active)"
+            className="zt:flex zt:min-w-0 zt:cursor-(--cursor) zt:items-center zt:gap-(--size-2-1) zt:rounded-(--radius-s) zt:py-(--size-2-2) zt:ps-[calc(var(--zt-library-depth)*var(--size-4-4)+var(--size-2-1))] zt:pe-(--size-4-2) zt:text-(length:--nav-item-size) zt:text-(--nav-item-color) zt:hover:not-aria-selected:bg-(--nav-item-background-hover) zt:aria-selected:bg-(--nav-item-background-selected) zt:aria-selected:text-(--nav-item-color-selected)"
             onClick={() => tree.select(row.node)}
             onKeyDown={(event) => onKeyDown(event, index)}
           >

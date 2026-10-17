@@ -18,10 +18,10 @@ import type { LibraryNode, LibraryViewDocument } from "./document";
 import { ZOTLIT_MARK_ICON } from "./icon";
 import { LibraryTree } from "./library-tree";
 import type { LibraryTreeDeps } from "./library-tree";
-import "./library-view.css";
 import { libraryViewQuery } from "./query-text";
 import type { LibraryViewQuery } from "./query-text";
 import { libraryViewStorage } from "./storage";
+import "./style.css";
 
 const logger = getLogger(["library-view"]);
 
@@ -107,9 +107,13 @@ export class LibraryView extends ItemView {
     );
     // A press on the list beside it puts the tree away.
     main.addEventListener("pointerdown", (event) => {
-      const target = event.target as Element;
       if (!this.tree.store.getState().open) return;
-      if (target.closest("[data-library-tree-toggle]")) return;
+      const target = event.target as Node;
+      if (
+        target.instanceOf(HTMLElement) &&
+        target.closest("[data-library-tree-toggle]")
+      )
+        return;
       this.tree.setOpen(false);
     });
     this.query.load();

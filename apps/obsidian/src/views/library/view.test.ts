@@ -477,3 +477,16 @@ it("moves the selection up to its library where Zotero no longer has the Collect
     library: PERSONAL,
   });
 });
+
+it("names the tree by its heading, with no tooltip over it", async () => {
+  const { deps } = pluginData();
+  const view = await openTab(deps);
+  const pane = view.contentEl.querySelector("[data-library-tree]")!;
+  const treeEl = pane.querySelector("[role=tree]")!;
+  const name = treeEl.getAttribute("aria-labelledby");
+  expect(
+    name && view.contentEl.querySelector(`[id="${name}"]`)?.textContent,
+  ).toBe("Libraries");
+  // Obsidian shows every `aria-label` as a tooltip on hover.
+  expect(pane.querySelectorAll("[aria-label]")).toHaveLength(0);
+});
