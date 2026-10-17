@@ -2,16 +2,39 @@
 // frontmatter of an Item's Literature Note, by the Note Index, or of the note
 // that holds the view.
 import type { TFile } from "obsidian";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
+import { Effect } from "@/lib/effect";
+import * as m from "@/lib/i18n/generated/messages";
+import type { CreationProfileSelection } from "@/services/note-feature/operations";
 import { NoteIndexStub } from "@/services/note-index/test-stub";
+import { chooseLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
 
 import { literatureNotes } from "./table-notes";
 import type { LiteratureNotesDeps } from "./table-notes";
 
+/** The text of each notice shown. */
+const notices = vi.hoisted((): string[] => []);
+vi.mock("obsidian", async (importOriginal) => {
+  const obsidian = await importOriginal<typeof import("obsidian")>();
+  return {
+    ...obsidian,
+    Notice: class extends obsidian.Notice {
+      constructor(message: string | DocumentFragment, duration?: number) {
+        super(message, duration);
+        notices.push(
+          typeof message === "string" ? message : (message.textContent ?? ""),
+        );
+      }
+    },
+  };
+});
 vi.mock("@/views/annot-view/register", () => ({
   activateAnnotView: vi.fn(),
+}));
+vi.mock("@/views/quick-switch/profile-picker", () => ({
+  chooseLiteratureNoteProfile: vi.fn(),
 }));
 
 /** A vault of notes by path, each with its frontmatter. */
@@ -123,14 +146,34 @@ describe("literatureNotes vault properties", () => {
 });
 
 describe("literatureNotes vault property writes", () => {
+  afterEach(() => {
+    vi.mocked(chooseLiteratureNoteProfile).mockReset();
+    notices.length = 0;
+  });
   /** A vault of notes on disk, the Note Index over them, and Profiles that manage keys. */
   function vault(
     files: Record<string, string>,
     index: Record<string, { path: string }[]>,
-    managed: Record<string, { key?: string; merge: string }[]> = {},
+    {
+      managed = {},
+      selection = { selector: "default", source: "bound", shouldAsk: false },
+    }: {
+      /** The keys each Profile manages, by its template's name. */
+      managed?: Record<string, { key?: string; merge: string }[]>;
+      /** The Profile the usual creation resolves for an Item. */
+      selection?: CreationProfileSelection;
+    } = {},
   ) {
     const host = createObsidianHost(files);
     const noteIndex = new NoteIndexStub(index);
+    /** The usual creation: a note at `<key>.md`, as the Profile's template writes it. */
+    const createNote = vi.fn(async (item: { indexedKey: string }) => ({
+      outcome: "created" as const,
+      file: host.vault.createFile(
+        `${item.indexedKey}.md`,
+        `---\nzotero-key: ${item.indexedKey}\n---\n`,
+      ),
+    }));
     const deps = {
       app: {
         ...host.app,
@@ -163,8 +206,33 @@ describe("literatureNotes vault property writes", () => {
           return entries && { frontmatter: { compiled: entries } };
         },
       },
+      zoteroReads: {
+        ready: Promise.resolve({
+          reads: {
+            ItemsByIndexedKeys: ({ indexedKeys }: { indexedKeys: string[] }) =>
+              Effect.succeed(
+                new Map(
+                  indexedKeys.map((key) => [key, { indexedKey: key, key }]),
+                ),
+              ),
+          },
+        }),
+      },
+      zoteroPref: { dataDir: null },
+      noteFeature: {
+        createNote,
+        resolveCreationProfile: async () => selection,
+        prepareCreationProfiles: async (item: { indexedKey: string }) => [
+          {
+            selector: "default",
+            label: undefined,
+            path: `${item.indexedKey}.md`,
+            create: () => createNote(item),
+          },
+        ],
+      },
     } as unknown as LiteratureNotesDeps;
-    return { host, notes: literatureNotes(deps) };
+    return { host, notes: literatureNotes(deps), createNote };
   }
 
   it("writes only the edited key of the Item's Literature Note", async () => {
@@ -249,8 +317,8 @@ describe("literatureNotes vault property writes", () => {
     expect(host.text("A.md")).toBe("---\nstatus: unread\n---\n");
   });
 
-  it("writes nothing for an Item with no Literature Note", async () => {
-    const { notes } = vault({}, {});
+  it("creates the Literature Note of an Item with none, then writes the key to it", async () => {
+    const { host, notes, createNote } = vault({}, {});
 
     await expect(
       notes.write({
@@ -259,7 +327,53 @@ describe("literatureNotes vault property writes", () => {
         value: "read",
         host: null,
       }),
-    ).resolves.toBe("no-note");
+    ).resolves.toBe("created");
+
+    expect(createNote).toHaveBeenCalledOnce();
+    expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
+    expect(host.text("ITEMAAAA.md")).toBe(
+      "---\nzotero-key: ITEMAAAA\nstatus: read\n---\n",
+    );
+    await vi.waitFor(() => expect(notices).toEqual([m.notice_created_note()]));
+  });
+
+  describe("where several Profiles fit the Item", () => {
+    const ask: CreationProfileSelection = {
+      selector: "default",
+      source: "headless",
+      shouldAsk: true,
+    };
+    const edit = {
+      itemKey: "ITEMAAAA",
+      name: "status",
+      value: "read",
+      host: null,
+    };
+
+    it("asks for the Profile, then creates the note under it and writes the key", async () => {
+      vi.mocked(chooseLiteratureNoteProfile).mockResolvedValueOnce({
+        id: "default",
+        label: "Default",
+      } as never);
+      const { host, notes } = vault({}, {}, { selection: ask });
+
+      await expect(notes.write(edit)).resolves.toBe("created");
+
+      expect(chooseLiteratureNoteProfile).toHaveBeenCalledOnce();
+      expect(host.text("ITEMAAAA.md")).toBe(
+        "---\nzotero-key: ITEMAAAA\nstatus: read\n---\n",
+      );
+    });
+
+    it("creates and writes nothing when the prompt is cancelled", async () => {
+      vi.mocked(chooseLiteratureNoteProfile).mockResolvedValueOnce(undefined);
+      const { host, notes, createNote } = vault({}, {}, { selection: ask });
+
+      await expect(notes.write(edit)).resolves.toBe("cancelled");
+
+      expect(createNote).not.toHaveBeenCalled();
+      expect(host.vault.getMarkdownFiles()).toEqual([]);
+    });
   });
 
   it("tells a key the note's own Profile replaces from one it keeps, appends or leaves alone", () => {
@@ -275,14 +389,16 @@ describe("literatureNotes vault property writes", () => {
         ITEMCCCC: [{ path: "C.md" }],
       },
       {
-        Books: [
-          { key: "status", merge: "replace" },
-          { key: "topics", merge: "append" },
-          { key: "rating", merge: "keep" },
-          { merge: "replace" },
-        ],
-        Papers: [],
-        legacy: [{ key: "rating", merge: "replace" }],
+        managed: {
+          Books: [
+            { key: "status", merge: "replace" },
+            { key: "topics", merge: "append" },
+            { key: "rating", merge: "keep" },
+            { merge: "replace" },
+          ],
+          Papers: [],
+          legacy: [{ key: "rating", merge: "replace" }],
+        },
       },
     );
 
@@ -305,7 +421,7 @@ describe("literatureNotes vault property writes", () => {
         "A (copy).md": "---\nzotlit-profile: Books\n---\n",
       },
       { ITEMAAAA: [{ path: "A.md" }, { path: "A (copy).md" }] },
-      { Books: [{ key: "status", merge: "replace" }], Papers: [] },
+      { managed: { Books: [{ key: "status", merge: "replace" }], Papers: [] } },
     );
 
     expect(
