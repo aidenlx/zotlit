@@ -1,6 +1,6 @@
 import { basename, dirname, join } from "node:path/posix";
 import { getFrontMatterInfo } from "obsidian";
-import type { TFile } from "obsidian";
+import type { CachedMetadata, TFile } from "obsidian";
 
 import { buildNoteContextFromSource } from "@zotlit/db";
 import type {
@@ -13,6 +13,7 @@ import type {
 import type { UpdateScope } from "@zotlit/protocol";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import type { Emitter } from "@zotlit/shared/nanoevents";
+import { evalManagedFrontmatterEntries } from "@zotlit/templates/frontmatter";
 import { replaceManagedRegion } from "@zotlit/templates/obsidian";
 
 import {
@@ -400,6 +401,8 @@ export interface NoteFeature {
   ): Promise<UpdateResult>;
   /** Imported Notes currently materialized for one Zotero item. */
   getImportedNotesForItem(indexedKey: string): Promise<TFile[]>;
+  /** @see replacedKeys */
+  replacedKeys(file: TFile): Promise<ReadonlySet<string>>;
   /** @see overwriteNote */
   overwriteNote(
     file: TFile,
@@ -526,6 +529,7 @@ export function createNoteFeature(deps: NoteFeatureDeps): NoteFeature {
     switchNoteProfile: (file, options) => switchNoteProfile(ctx, file, options),
     getImportedNotesForItem: (indexedKey) =>
       getImportedNotesForItem(ctx, indexedKey),
+    replacedKeys: (file) => replacedKeys(ctx, file),
     overwriteNote: (file, indexedKey, options) =>
       overwriteNote(ctx, file, { ...options, indexedKey }),
     writeNoteUpdate: (file, options) => writeNoteUpdate(ctx, file, options),
@@ -1150,6 +1154,98 @@ function prepareProfileNote(
 /** The Profile a note moves from: none for an unresolved Profile stamp. */
 function relocationSource(current: NoteProfile): ResolvedProfile | undefined {
   return current.ok ? current.profile : undefined;
+}
+
+const NO_KEYS: ReadonlySet<string> = new Set();
+
+/**
+ * The keys of a Literature Note that its next update replaces: those its
+ * own Profile manages with the replace strategy, a Spread Entry's as it
+ * evaluates for the note's Item now. A note the metadata cache has not
+ * parsed yet, as one just created, is read once it does. None where the
+ * update would refuse, or the Profile, its template or the Item cannot be
+ * read now, so that a key stays editable rather than locked on a passing
+ * fault.
+ */
+async function replacedKeys(
+  ctx: OpsContext,
+  file: TFile,
+): Promise<ReadonlySet<string>> {
+  try {
+    const [settings] = await Promise.all([
+      ctx.settings.loaded,
+      ctx.template.ready,
+      ctx.profile.ready,
+    ]);
+    const cache = await parsedCache(ctx, file);
+    const resolved = ctx.profile.profileOf(file);
+    if (!resolved.ok) return NO_KEYS;
+    const { profile } = resolved;
+    if (conversionRequired(settings, profile.selector)) return NO_KEYS;
+    const document = resolveProfileDocument(ctx, profile);
+    if (document === null) return NO_KEYS;
+    if (document === undefined)
+      return new Set(
+        ctx.template.frontmatterFields.flatMap(({ key, merge }) =>
+          merge === "replace" ? [key] : [],
+        ),
+      );
+    const entries = document.frontmatter?.compiled ?? [];
+    const keys = new Set(
+      entries.flatMap(({ key, merge }) =>
+        key !== undefined && merge === "replace" ? [key] : [],
+      ),
+    );
+    const spreads = entries.filter(
+      ({ key, merge }) => key === undefined && merge === "replace",
+    );
+    const indexedKey = cache && itemKeyFromFrontmatter(cache);
+    if (spreads.length === 0 || !indexedKey) return keys;
+    // A Spread Entry names its keys as it runs for the Item, as the update
+    // runs it; nothing it queues is imported.
+    const attachmentImport = await ctx.attachmentImport.prepare(file.path);
+    try {
+      await using lease = await ctx.zoteroReads.acquireRead();
+      const { context } = await contextForIndexedKey(ctx, indexedKey, {
+        reads: lease.reads,
+        attachmentImport,
+        sourcePath: file.path,
+        settings: profile.settings,
+      });
+      const evaluation = evalManagedFrontmatterEntries(
+        spreads,
+        context,
+        Temporal.Now.instant(),
+      );
+      for (const { key } of evaluation.values) keys.add(key);
+    } finally {
+      attachmentImport.discard();
+    }
+    return keys;
+  } catch (error) {
+    logger.debug("Could not read the keys a note's Profile replaces", {
+      path: file.path,
+      error,
+    });
+    return NO_KEYS;
+  }
+}
+
+/** The metadata of `file`, once the metadata cache has parsed it. */
+function parsedCache(
+  ctx: Pick<NoteFeatureDeps, "app">,
+  file: TFile,
+): Promise<CachedMetadata> {
+  const { metadataCache } = ctx.app;
+  const cache = metadataCache.getFileCache(file);
+  if (cache !== null) return Promise.resolve(cache);
+  return new Promise((resolve) => {
+    const ref = metadataCache.on("changed", (changed, _data, parsed) => {
+      if (changed.path !== file.path) return;
+      metadataCache.offref(ref);
+      resolve(parsed);
+    });
+  });
 }
 
 async function prepareProfileSwitch(

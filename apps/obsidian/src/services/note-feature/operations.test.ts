@@ -4713,6 +4713,91 @@ seedItem(
 );
 const { reads } = await writeFixture.zoteroReads.ready;
 
+describe("replacedKeys", () => {
+  const books = "Bk3Qn7XvT2Lp" as ProfileId;
+  /** A note under the Books Profile, whose document manages `entries`. */
+  function booksNote(
+    entries: Parameters<typeof compileDocumentFrontmatter>[0],
+    frontmatter: Record<string, unknown> = {
+      [FIELD_LITERATURE_NOTE_PROFILE]: books,
+    },
+  ) {
+    stubIndexedKeyUpdate(updateContext());
+    const harness = makeUpdateHarness({
+      content: "",
+      frontmatter,
+      settings: {
+        profiles: [{ id: books, label: "Books", document: "books.md" }],
+      },
+    });
+    harness.deps.template.getLiteratureNoteTemplate = () =>
+      makeDocumentTemplate({
+        frontmatter: compileDocumentFrontmatter(entries),
+      });
+    return harness;
+  }
+
+  it("gives the keys the note's Profile replaces on each update, not those it keeps or appends", async () => {
+    const harness = booksNote([
+      { key: "status", merge: "replace", expr: "zt.title" },
+      { key: "topics", merge: "append", value: ["a"] },
+      { key: "rating", merge: "keep", value: 1 },
+    ]);
+
+    await expect(
+      createNoteFeature(harness.deps).replacedKeys(harness.file("Root.md")),
+    ).resolves.toEqual(new Set(["status"]));
+  });
+
+  it("gives the keys a Spread Entry with replace writes for the note's Item", async () => {
+    const harness = booksNote([
+      { merge: "replace", js: "({ shelf: zt.citationKey, venue: zt.title })" },
+      { merge: "keep", js: "({ kept: 1 })" },
+    ]);
+
+    await expect(
+      createNoteFeature(harness.deps).replacedKeys(harness.file("Root.md")),
+    ).resolves.toEqual(new Set(["shelf", "venue"]));
+  });
+
+  it("gives the default Profile's own fields for a note with no stamp", async () => {
+    const harness = makeUpdateHarness({
+      content: "",
+      frontmatterFields: [
+        { key: "rating", merge: "replace", fn: () => 1 },
+        { key: "tags", merge: "append", fn: () => [] },
+      ],
+    });
+
+    await expect(
+      createNoteFeature(harness.deps).replacedKeys(harness.file("Root.md")),
+    ).resolves.toEqual(new Set(["rating"]));
+  });
+
+  it("reads the stamp of a note the metadata cache has not parsed yet once it does", async () => {
+    const harness = booksNote([
+      { key: "status", merge: "replace", expr: "zt.title" },
+    ]);
+    harness.host.metadataCache.hold();
+    const file = harness.file("Root.md");
+    const keys = createNoteFeature(harness.deps).replacedKeys(file);
+    harness.host.metadataCache.settle();
+
+    await expect(keys).resolves.toEqual(new Set(["status"]));
+  });
+
+  it("gives none where the note's Profile cannot be read", async () => {
+    const harness = booksNote(
+      [{ key: "status", merge: "replace", expr: "zt.title" }],
+      { [FIELD_LITERATURE_NOTE_PROFILE]: "Gone (Zz9Zz9Zz9Zz9)" },
+    );
+
+    await expect(
+      createNoteFeature(harness.deps).replacedKeys(harness.file("Root.md")),
+    ).resolves.toEqual(new Set());
+  });
+});
+
 describe("writeNoteUpdate", () => {
   const writeOptions = (
     scope?: UpdateScope,

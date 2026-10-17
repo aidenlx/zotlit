@@ -22,6 +22,7 @@ import type {
   QueryViewRequest,
 } from "@/services/item-query/query-view";
 
+import { noLiteratureNotes } from "./__fixtures__/literature-notes";
 import { registerQueryBlock } from "./block";
 import { QueryCardFocus } from "./card-focus";
 import { createQueryFileEmbed } from "./embed";
@@ -108,6 +109,7 @@ function setup(kind: HostKind) {
       on: off,
       hold: () => ({ [Symbol.dispose]: () => {} }),
     },
+    literatureNotes: noLiteratureNotes(),
   } as unknown as QueryViewDeps;
 
   type Plugin = Parameters<typeof registerQueryBlock>[0];

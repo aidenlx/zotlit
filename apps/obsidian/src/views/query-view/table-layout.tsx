@@ -28,14 +28,16 @@ import type { QueryService } from "@/services/item-query/service";
 import { useAnnotStore } from "@/views/annot-view/store";
 
 import type { QueryLayout } from "./layouts";
+import { LITERATURE_NOTE, vaultName } from "./query-file";
 import type { ColumnSizes } from "./query-file";
 import { CellContent } from "./record-rows";
 import { NO_RESULTS } from "./results";
 import { TableHeader, sizedMark } from "./table-header";
-import type { LiteratureNotes } from "./table-notes";
+import type { LiteratureNotes, VaultHost } from "./table-notes";
 import { zoteroReaderUri } from "./table-readers";
 import type { ReaderTarget, TableReaders } from "./table-readers";
 import { cellText } from "./value-text";
+import { VaultEditCell } from "./vault-cell";
 import type { QueryView } from "./view";
 import { useViewProperties } from "./view-properties";
 import type { PropertyEntry } from "./view-properties";
@@ -654,6 +656,7 @@ export function TableLayout({ view }: { view: QueryView }) {
                 columns={columns}
                 sizes={sizes}
                 notes={literatureNotes}
+                host={view.vaultHost()}
                 expanded={expanded}
                 toggle={toggle}
                 readers={readers}
@@ -672,6 +675,7 @@ function ItemRow({
   columns,
   sizes,
   notes,
+  host,
   expanded,
   toggle,
   readers,
@@ -682,6 +686,8 @@ function ItemRow({
   /** The widths the researcher set, by property path. */
   sizes: ColumnSizes | undefined;
   notes: LiteratureNotes;
+  /** The note that holds the view, where a note holds it. */
+  host: VaultHost | null;
   expanded: ReadonlyMap<string, ChildState>;
   toggle: (record: TableRecord) => void;
   readers: TableReaders;
@@ -701,16 +707,30 @@ function ItemRow({
             onToggle={() => toggle(record)}
           />
         </td>
-        {columns.map(({ path, kind }, at) => {
-          const note = kind === "literatureNote";
+        {columns.map(({ path }, at) => {
+          const note = path === LITERATURE_NOTE;
+          const name = note ? null : vaultName(path);
           return (
             <td
               key={path}
-              className={cn(CELL, at === 0 ? FIRST : LATER, note && "zt:py-0")}
+              className={cn(
+                CELL,
+                at === 0 ? FIRST : LATER,
+                note && "zt:py-0",
+                // A vault cell fills the cell, so the whole of it edits.
+                name !== null && "zt:p-0",
+              )}
               data-sized={sizedMark(sizes, path)}
             >
               {note ? (
                 <NoteCell notes={notes} itemKey={record.key} />
+              ) : name !== null ? (
+                <VaultEditCell
+                  notes={notes}
+                  itemKey={record.key}
+                  name={name}
+                  host={host}
+                />
               ) : (
                 <CellContent
                   value={record.values[path]}

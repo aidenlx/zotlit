@@ -16,10 +16,14 @@ export interface ResultTable {
 /**
  * The table of `rows`, in their order, with one column for each entry of
  * `columns`. The header names each column by its label, as the view shows it.
+ * `cell` writes the text of a property the row holds no value of, such as a
+ * vault property; where it gives `undefined`, the row's value is written.
  */
 export function resultTable(
   rows: readonly QueryViewRow[],
   columns: readonly Pick<PropertyEntry, "path" | "label">[],
+  cell: (row: QueryViewRow, path: string) => string | undefined = () =>
+    undefined,
 ): ResultTable {
   return {
     header: columns.map(({ label }) => label),
@@ -29,7 +33,9 @@ export function resultTable(
       columns.length === 0
         ? []
         : rows.map((row) =>
-            columns.map(({ path }) => cellText(path, row.values[path])),
+            columns.map(
+              ({ path }) => cell(row, path) ?? cellText(path, row.values[path]),
+            ),
           ),
   };
 }

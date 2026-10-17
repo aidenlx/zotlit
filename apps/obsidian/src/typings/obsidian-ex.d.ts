@@ -192,6 +192,20 @@ declare module "obsidian" {
      * `src/lib/obsidian-private/embed-registry.ts`.
      */
     embedRegistry?: Partial<EmbedRegistry>;
+    /**
+     * Keeps the type each property is assigned. Internal; verified against
+     * Obsidian 1.14.4. Optional, and each member optional: read it only
+     * through `src/lib/obsidian-private/metadata-type-manager.ts`.
+     */
+    metadataTypeManager?: Partial<MetadataTypeManager>;
+  }
+  /** Obsidian's property type manager (`app.metadataTypeManager`). Internal; Obsidian 1.14.4. */
+  interface MetadataTypeManager {
+    /** The widget id assigned to a property, case-insensitive; `null` where none is. */
+    getAssignedWidget(name: string): string | null;
+    /** Fires with the lowercased name of a property whose assigned type changed. */
+    on(event: "changed", callback: (name: string) => void): EventRef;
+    offref(ref: EventRef): void;
   }
   /** Obsidian's embed registry (`app.embedRegistry`). Internal; Obsidian 1.14.4. */
   interface EmbedRegistry {

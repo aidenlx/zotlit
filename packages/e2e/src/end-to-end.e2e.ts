@@ -67,6 +67,7 @@ import {
   WINDOW_DOCUMENTS,
 } from "./obsidian-cli.ts";
 import { PAGE, pickQueryView } from "./page-gestures.ts";
+import { raiseWindow } from "./reader-gestures.ts";
 import {
   clearVault,
   e2eVaultDir,
@@ -4378,6 +4379,255 @@ views:
         `String(app.metadataCache.getFileCache(app.vault.getFileByPath(${JSON.stringify(linked.notes[book])}))?.frontmatter?.['zotero-key'])`,
       ),
     ).toBe(book);
+  }, 180000);
+
+  // Vault properties of Items edit in place in the Table, with trusted
+  // input: a click anywhere in a cell, an empty one too, enters edit; focus
+  // that leaves a list editor from a chip commits it; the first edit of a
+  // row with no note creates it; a vault sort and filter run (#1531).
+  it("edits vault properties in the Table with real input, creates a note on a first edit, and sorts and filters by them", async () => {
+    const path = "query-files/Vault properties.zotquery";
+    // Two My Library Items that tie on their date, each with its seeded
+    // Literature Note, and a Lab Archive Item with no note.
+    const [tieFirst, tieSecond] = [11, 12].map(
+      (itemID) => ITEMS.find((item) => item.itemID === itemID)!.key,
+    ) as [string, string];
+    const lab = LIBRARIES.find(({ libraryID }) => libraryID === 3)!;
+    const fresh = `${ITEMS.find((item) => item.itemID === 9)!.key}g${lab.groupID}`;
+    const notePath = (key: string) => `literatures/${key}.md`;
+    const keys = JSON.stringify([tieFirst, tieSecond, fresh]);
+    const viewText = (extra: string) =>
+      `${[
+        "views:",
+        "  - type: table",
+        "    name: Vault properties",
+        "    from: items",
+        "    filters:",
+        "      and:",
+        `        - '${keys}.contains(indexedKey)'`,
+        extra,
+        "    order:",
+        "      - title",
+        "      - vault.zt-status",
+        "      - vault.zt-done",
+        "      - vault.zt-projects",
+        "",
+      ]
+        .filter((line) => line !== "")
+        .join("\n")}\n`;
+    const layout = await obEval(
+      vaultId,
+      "JSON.stringify(app.workspace.getLayout())",
+    );
+    const seeded = [notePath(tieFirst), notePath(tieSecond)];
+    const originals = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>JSON.stringify(await Promise.all(${JSON.stringify(seeded)}.map(path=>app.vault.read(app.vault.getFileByPath(path))))))()`,
+      ),
+    ) as string[];
+    const created: string[] = [path];
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))leaf.detach();for(const path of ${JSON.stringify(created)}){const file=app.vault.getFileByPath(path);if(file)await app.vault.delete(file);}const originals=${JSON.stringify(originals)};for(const [at,path] of ${JSON.stringify(seeded)}.entries())await app.vault.modify(app.vault.getFileByPath(path),originals[at]);await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+      );
+    });
+    await obEval(
+      vaultId,
+      `(async()=>{const set=(path,props)=>app.fileManager.processFrontMatter(app.vault.getFileByPath(path),fm=>Object.assign(fm,props));await set(${JSON.stringify(notePath(tieFirst))},{'zt-status':'unread','zt-done':false,'zt-projects':['a'],'zt-rank':1});await set(${JSON.stringify(notePath(tieSecond))},{'zt-done':true,'zt-rank':2});await app.vault.create(${JSON.stringify(path)},${JSON.stringify(viewText(""))});return true;})()`,
+    );
+    const noteIndex = "app.plugins.plugins.zotlit.services.noteIndex";
+    let indexed = "";
+    expect(
+      await waitFor(async () => {
+        indexed = await obEval(
+          vaultId,
+          `JSON.stringify([${JSON.stringify(tieFirst)},${JSON.stringify(tieSecond)}].map(key=>[key,${noteIndex}.getNotesByItemKey(key).map(file=>file.path),app.metadataCache.getCache('literatures/'+key+'.md')?.frontmatter?.['zt-rank']??null]))`,
+        );
+        return (JSON.parse(indexed) as [string, string[], unknown][]).every(
+          ([key, paths, rank]) =>
+            paths.join() === notePath(key) && rank !== null,
+        );
+      }),
+      indexed,
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      `(async()=>{const leaf=app.workspace.getLeaf('tab');await leaf.openFile(app.vault.getFileByPath(${JSON.stringify(path)}));app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
+    );
+    await raiseWindow(vaultId);
+    const tab = "app.workspace.getLeavesOfType('zotlit-query-file')[0].view";
+    /** The rows of the Table, and the state and text of each vault cell. */
+    const readTable = `(async()=>{const view=${tab};if(!view)return 'null';await view.query.settled;const el=view.contentEl;return JSON.stringify({rows:[...el.querySelectorAll('[data-query-table-row="item"]')].map(n=>n.getAttribute('data-query-key')),editing:!!el.querySelector('[data-query-vault-input]'),cells:Object.fromEntries([...el.querySelectorAll('[data-query-vault-cell]')].map(n=>[n.closest('tr').getAttribute('data-query-key')+'/'+n.getAttribute('data-query-vault-name'),n.textContent]))});})()`;
+    interface Table {
+      rows: string[];
+      editing: boolean;
+      cells: Record<string, string>;
+    }
+    const tableWhen = async (ready: (table: Table) => boolean) => {
+      let table: Table | null = null;
+      const settled = await waitFor(async () => {
+        table = JSON.parse(await obEval(vaultId, readTable)) as Table | null;
+        return table !== null && ready(table);
+      }, 80);
+      if (!settled) throw new Error(`Vault Table: ${JSON.stringify(table)}`);
+      return table!;
+    };
+    await tableWhen((table) => table.rows.length === 3);
+    const frontmatter = async (path: string) =>
+      JSON.parse(
+        await obEval(
+          vaultId,
+          `JSON.stringify(app.metadataCache.getFileCache(app.vault.getFileByPath(${JSON.stringify(path)}))?.frontmatter??null)`,
+        ),
+      ) as Record<string, unknown> | null;
+    const frontmatterWhen = async (
+      path: string,
+      ready: (properties: Record<string, unknown>) => boolean,
+    ) => {
+      let properties: Record<string, unknown> | null = null;
+      const settled = await waitFor(async () => {
+        properties = await frontmatter(path);
+        return properties !== null && ready(properties);
+      }, 80);
+      if (!settled)
+        throw new Error(`${path} frontmatter: ${JSON.stringify(properties)}`);
+      return properties!;
+    };
+    const cell = (key: string, name: string) =>
+      `${tab}.contentEl.querySelector('[data-query-key="${key}"] [data-query-vault-cell][data-query-vault-name="${name}"]')`;
+    /** A trusted click at the centre of the element `target` evaluates to. */
+    const click = async (target: string) =>
+      expect(
+        await obEval(
+          vaultId,
+          `(function(){const target=${target};if(!target)return 'missing';target.scrollIntoView({block:"center",inline:"nearest",behavior:"instant"});const rect=target.getBoundingClientRect();const zoom=require('electron').webFrame.getZoomFactor();const x=Math.round((rect.left+rect.width/2)*zoom),y=Math.round((rect.top+rect.height/2)*zoom);const contents=require('@electron/remote').getCurrentWebContents();contents.sendInputEvent({type:'mouseMove',x,y});contents.sendInputEvent({type:'mouseDown',x,y,button:'left',clickCount:1});contents.sendInputEvent({type:'mouseUp',x,y,button:'left',clickCount:1});return 'clicked';})()`,
+        ),
+      ).toBe("clicked");
+    /** A trusted key press, with the modifiers held. */
+    const key = async (keyCode: string, modifiers: string[] = []) =>
+      obEval(
+        vaultId,
+        `(function(){const contents=require('@electron/remote').getCurrentWebContents();contents.sendInputEvent({type:'keyDown',keyCode:${JSON.stringify(keyCode)},modifiers:${JSON.stringify(modifiers)}});contents.sendInputEvent({type:'keyUp',keyCode:${JSON.stringify(keyCode)},modifiers:${JSON.stringify(modifiers)}});return true;})()`,
+      );
+    /** Text typed into the focused field, as the keyboard types it. */
+    const typeText = async (text: string) =>
+      obEval(
+        vaultId,
+        `(function(){require('@electron/remote').getCurrentWebContents().insertText(${JSON.stringify(text)});return true;})()`,
+      );
+    const focusedInput = `String(activeDocument.activeElement?.matches('[data-query-vault-input]')??false)`;
+
+    // An empty cell is a click target across the whole cell, so the first
+    // value of a property goes in with one click (bug A).
+    await click(`${cell(tieSecond, "zt-status")}.closest('td')`);
+    expect(await obEvalUntil(vaultId, focusedInput, { expected: "true" })).toBe(
+      true,
+    );
+    await typeText("to-read");
+    await key("Enter");
+    await frontmatterWhen(
+      notePath(tieSecond),
+      (properties) => properties["zt-status"] === "to-read",
+    );
+
+    // A text cell edits its value in place.
+    await click(cell(tieFirst, "zt-status"));
+    expect(await obEvalUntil(vaultId, focusedInput, { expected: "true" })).toBe(
+      true,
+    );
+    // The field's text, selected, is replaced by what is typed.
+    await obEval(
+      vaultId,
+      "(()=>{activeDocument.activeElement.select();return true;})()",
+    );
+    await typeText("read");
+    await key("Enter");
+    await frontmatterWhen(
+      notePath(tieFirst),
+      (properties) => properties["zt-status"] === "read",
+    );
+
+    // A checkbox toggles with one click on it.
+    await click(
+      `${cell(tieFirst, "zt-done")}.querySelector('[data-query-vault-checkbox]')`,
+    );
+    await frontmatterWhen(
+      notePath(tieFirst),
+      (properties) => properties["zt-done"] === true,
+    );
+
+    // A list commits when focus leaves the editor from a chip's remove
+    // button, as a click outside the Table takes it (bug B).
+    await click(cell(tieFirst, "zt-projects"));
+    expect(await obEvalUntil(vaultId, focusedInput, { expected: "true" })).toBe(
+      true,
+    );
+    await typeText("c");
+    await key("Enter");
+    await key("Tab", ["shift"]);
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(activeDocument.activeElement?.matches('[data-query-vault-chip-remove]')??false)`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    // A click on an empty spot of the view, outside the Table.
+    expect(
+      await obEval(
+        vaultId,
+        `(function(){const el=${tab}.contentEl;const table=el.querySelector('[data-query-table]');const box=el.getBoundingClientRect();let x=0,y=0,found=false;for(let dy=8;dy<box.height&&!found;dy+=8)for(let dx=8;dx<box.width&&!found;dx+=16){x=box.left+dx;y=box.bottom-dy;const hit=activeDocument.elementFromPoint(x,y);found=!!hit&&el.contains(hit)&&!table.contains(hit)&&!hit.closest('button,input,select,a,[role],[tabindex],[popover]');}if(!found)return 'no empty space';const zoom=require('electron').webFrame.getZoomFactor();const point={x:Math.round(x*zoom),y:Math.round(y*zoom)};const contents=require('@electron/remote').getCurrentWebContents();contents.sendInputEvent({type:'mouseMove',...point});contents.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...point});contents.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...point});return 'clicked';})()`,
+      ),
+    ).toBe("clicked");
+    await frontmatterWhen(notePath(tieFirst), (properties) =>
+      ["a", "c"].every((item) =>
+        (properties["zt-projects"] as string[] | undefined)?.includes(item),
+      ),
+    );
+    await tableWhen((table) => !table.editing);
+
+    // The first edit of a row with no note creates the note, then writes
+    // the value to it.
+    await click(`${cell(fresh, "zt-status")}.closest('td')`);
+    expect(await obEvalUntil(vaultId, focusedInput, { expected: "true" })).toBe(
+      true,
+    );
+    await typeText("queued");
+    await key("Enter");
+    // Where several Profiles fit the Item, the prompt asks; its first
+    // choice takes it.
+    let createdPath: string | null = null;
+    expect(
+      await waitFor(async () => {
+        const found = await obEval(
+          vaultId,
+          `(()=>{const note=${noteIndex}.getNotesByItemKey(${JSON.stringify(fresh)})[0];if(note)return note.path;const prompt=activeDocument.querySelector('.prompt input');if(prompt)prompt.dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));return 'none';})()`,
+        );
+        if (found !== "none") createdPath = found;
+        return found !== "none";
+      }, 80),
+    ).toBe(true);
+    created.push(createdPath!);
+    await frontmatterWhen(
+      createdPath!,
+      (properties) => properties["zt-status"] === "queued",
+    );
+
+    // A vault filter keeps the Items whose note passes it, and a vault sort
+    // breaks the tie of their dates: the higher rank first.
+    await obEval(
+      vaultId,
+      `(async()=>{await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(path)}),${JSON.stringify(viewText(["        - 'vault[\"zt-done\"] == true'", "    sort:", "      - property: date", "        direction: ASC", "      - property: vault.zt-rank", "        direction: DESC"].join("\n")))});return true;})()`,
+    );
+    const sorted = await tableWhen(
+      (table) =>
+        table.rows.length === 2 &&
+        table.rows.join() === [tieSecond, tieFirst].join(),
+    );
+    expect(sorted.rows).toEqual([tieSecond, tieFirst]);
   }, 180000);
 
   // A List or Cards view of Items gathers its rows by a grouping whose
