@@ -571,16 +571,10 @@ export function withDisplayName(
   return withProperties(file, nameDictionary(properties));
 }
 
-/** The names a new Query File writes, in the researcher's language. */
+/** The view names a new Query File writes, in the researcher's language. */
 export interface NewQueryFileNames {
-  /** The name of the Items view. */
   readonly items: string;
-  /** The name of the Annotations view. */
   readonly annotations: string;
-  /** The Display Name of the `creators` column. */
-  readonly creators: string;
-  /** The Display Name of the `date.year` column. */
-  readonly year: string;
 }
 
 /**
@@ -591,10 +585,6 @@ export interface NewQueryFileNames {
  */
 export function newQueryFileText(names: NewQueryFileNames): string {
   return serializeQueryFile({
-    properties: nameDictionary([
-      ["creators", { displayName: names.creators }],
-      ["date.year", { displayName: names.year }],
-    ]),
     views: [
       {
         type: "table",

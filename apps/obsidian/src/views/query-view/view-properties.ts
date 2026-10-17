@@ -28,8 +28,6 @@ import { formulaIssuesOf } from "./results";
 import { groupPaths } from "./rows";
 import type { QueryView } from "./view";
 
-export { LITERATURE_NOTE };
-
 /**
  * What a Property is, by the namespace of its path: a field of the Query
  * Dataset, read by its Projection Path; a Formula Property, `formula.<name>`;
@@ -329,7 +327,10 @@ export function fieldLabel(property: string): string {
 
 function labelOf(property: string): string | undefined {
   const locale = runtime.getLocale() === "zh-CN" ? "zh-CN" : "en-US";
-  const label = FIELD_LABELS[locale][property] ?? datasetLabel(property);
+  const label =
+    FIELD_LABELS[locale][property] ??
+    OWN_LABELS[property]?.() ??
+    datasetLabel(property);
   if (label) return label;
   for (const [prefix, parent, of] of PARENTS) {
     if (!property.startsWith(prefix)) continue;
@@ -349,6 +350,12 @@ function labelOf(property: string): string | undefined {
 }
 
 /** The parents a dataset reads fields of, by the prefix of their paths. */
+/** ZotLit's labels for the fields that neither Zotero nor a dataset names. */
+const OWN_LABELS: Readonly<Record<string, () => string>> = {
+  creators: m.query_view_property_creators,
+  "date.year": m.query_view_property_year,
+};
+
 const PARENTS = [
   ["item.", m.query_view_property_item, m.query_view_property_of_item],
   [

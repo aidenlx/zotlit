@@ -80,8 +80,6 @@ export async function createQueryFile(
     newQueryFileText({
       items: m.query_file_items_view_name(),
       annotations: m.query_file_annotations_view_name(),
-      creators: m.query_file_creators_property(),
-      year: m.query_file_year_property(),
     }),
   );
   const leaf = app.workspace.getLeaf(event ? Keymap.isModEvent(event) : false);
