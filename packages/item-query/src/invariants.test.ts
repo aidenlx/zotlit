@@ -9,6 +9,7 @@ import {
   BULK_FIFTH_TAG,
   BULK_LIBRARY,
   BULK_TAG,
+  bulkItemKey,
   openScenarioDatabase,
   SCENARIO_LIBRARIES,
   seedBulkLibrary,
@@ -30,41 +31,66 @@ import type { Run, RunEvent, RunOptions } from "./test-helpers";
 const BULK_ITEMS = 2600;
 const BULK_CAP = 650;
 
-let scenario: ScenarioDatabase;
-let annotations: ScenarioDatabase;
-let attachments: ScenarioDatabase;
-let bounded: ScenarioDatabase;
-
-beforeAll(async () => {
-  scenario = openScenarioDatabase();
-  seedBulkLibrary(scenario.sqlite, BULK_ITEMS);
-  // The first statement on a copy runs the layout check. Its two statements
-  // are in the events of that run only, so each test starts after it.
-  resultOf(await run({ fields: [], limit: 1 }));
-  bounded = openScenarioDatabase();
-  seedBulkLibrary(bounded.sqlite, 4_501);
-  seedBulkAnnotations(bounded.sqlite, 6_001);
-  resultOf(await run({ fields: [], limit: 1 }, { bound: true }));
-  attachments = openScenarioDatabase();
-  seedBulkLibrary(attachments.sqlite, BULK_ITEMS);
-  seedBulkAttachments(attachments.sqlite, BULK_ITEMS);
-  resultOf(await run({ fields: [], limit: 1 }, { attachment: true }));
-  annotations = openScenarioDatabase();
-  seedBulkLibrary(annotations.sqlite, BULK_ITEMS);
-  seedBulkAnnotations(annotations.sqlite, BULK_ITEMS);
-  resultOf(await run({ fields: [], limit: 1 }, { annotation: true }));
-});
+const databases = new DisposableStack();
 
 afterAll(() => {
-  scenario.close();
-  annotations.close();
-  attachments.close();
-  bounded.close();
+  databases.dispose();
 });
+
+/**
+ * The copies of the scenario, each seeded on first use: the bulk Library
+ * (`items`), with 4,501 Items and 6,001 Annotations (`bounded`), with an
+ * Attachment for each Item (`attachments`), with an Annotation for each Item
+ * (`annotations`); and the scenario with Annotations and no bulk Library
+ * (`relations`). No test writes to them.
+ */
+type Copy = "items" | "bounded" | "attachments" | "annotations" | "relations";
+
+const copies = new Map<Copy, Promise<ScenarioDatabase>>();
+
+function database(copy: Copy): Promise<ScenarioDatabase> {
+  let opened = copies.get(copy);
+  if (!opened) {
+    opened = open(copy);
+    copies.set(copy, opened);
+  }
+  return opened;
+}
+
+async function open(copy: Copy): Promise<ScenarioDatabase> {
+  const opened = databases.use(
+    openScenarioDatabase({ annotations: copy === "relations" }),
+  );
+  const { sqlite } = opened;
+  if (copy === "relations") return opened;
+  seedBulkLibrary(sqlite, copy === "bounded" ? 4_501 : BULK_ITEMS);
+  if (copy === "bounded") seedBulkAnnotations(sqlite, 6_001);
+  if (copy === "attachments") seedBulkAttachments(sqlite, BULK_ITEMS);
+  if (copy === "annotations") seedBulkAnnotations(sqlite, BULK_ITEMS);
+  // The first statement on a copy runs the layout check. Its two statements
+  // are in the events of that run only, so each test starts after it.
+  const dataset =
+    copy === "attachments"
+      ? ATTACHMENTS
+      : copy === "annotations"
+        ? ANNOTATIONS
+        : ITEMS;
+  resultOf(
+    await runEffect(
+      collectQuery(dataset, {
+        fields: [],
+        limit: 1,
+        libraries: [BULK_LIBRARY],
+      }),
+      { client: opened.db },
+    ),
+  );
+  return opened;
+}
 
 type Request = Omit<ItemQueryRequest, "libraries">;
 
-function run(
+async function run(
   request: Request,
   options: Omit<RunOptions, "client"> & {
     libraries?: ItemQueryRequest["libraries"];
@@ -82,6 +108,13 @@ function run(
     bound = false,
     ...rest
   } = options;
+  const copy = bound
+    ? "bounded"
+    : attachment
+      ? "attachments"
+      : annotation
+        ? "annotations"
+        : "items";
   return runEffect(
     collectQuery(
       relation
@@ -96,16 +129,7 @@ function run(
         libraries,
       },
     ),
-    {
-      client: bound
-        ? bounded.db
-        : attachment
-          ? attachments.db
-          : annotation
-            ? annotations.db
-            : scenario.db,
-      ...rest,
-    },
+    { client: (await database(copy)).db, ...rest },
   );
 }
 
@@ -128,7 +152,42 @@ function itemsRead(events: readonly RunEvent[], reader: string): number[] {
   });
 }
 
+/**
+ * The run options that cancel a run at its event at `index`: in the step of a
+ * statement, or in the host task that ends a pause, while the fiber waits.
+ */
+function cancelAt(
+  index: number,
+): Pick<RunOptions, "signal" | "onEvent" | "onResume"> {
+  const controller = new AbortController();
+  let seen = 0;
+  let inPause = false;
+  return {
+    signal: controller.signal,
+    onEvent: (event) => {
+      if (seen++ !== index) return;
+      if (event.type === "pause") inPause = true;
+      else controller.abort();
+    },
+    onResume: () => {
+      if (inPause) controller.abort();
+    },
+  };
+}
+
 const byTitle = [{ field: "title", direction: "asc" }] as const;
+
+/** The readers of the layout, the Libraries, and the vocabularies: no Item rows. */
+const LOOKUP_READERS: ReadonlySet<string> = new Set([
+  "layout",
+  "libraries",
+  "library-row-count",
+  "attachment-row-count",
+  "annotation-row-count",
+  "field-vocabulary",
+  "collection-paths",
+  "tag-values",
+]);
 
 /** One query for each path of the plan, at the production tuning. */
 const PLAN_PATHS: readonly {
@@ -157,7 +216,16 @@ const PLAN_PATHS: readonly {
     result: { returnedCount: 1, truncated: false },
     reads: {
       "annotation-candidate-set": [501, 501, 501, 501, 501, 501, 501, 501],
+      // Each candidate page maps to one parent: bulk Item 0 holds the PDF.
+      "relation-candidate-set": [1, 1, 1, 1, 1, 1, 1, 1],
       "scan-page": [500, 500, 500, 500, 500, 500, 500, 500, 500, 1],
+      // The Annotations of 4,501 Items in 19 chunks of 250: all 6,001 are on
+      // the PDF of bulk Item 0, in the first chunk, read in 13 pages of 500.
+      "item-annotations": [
+        ...Array<number>(12).fill(500),
+        1,
+        ...Array<number>(18).fill(0),
+      ],
       "annotation-details": [...Array<number>(24).fill(250), 1],
     },
   },
@@ -191,7 +259,10 @@ const PLAN_PATHS: readonly {
     result: { returnedCount: 1, truncated: false },
     reads: {
       "attachment-candidate-set": [1],
+      // ATT22222 is the one Attachment of bulk Item 0.
+      "relation-candidate-set": [1],
       "universe-rows": [1],
+      "item-attachments": [1],
       "hydrate-chunk": [1],
     },
   },
@@ -541,46 +612,26 @@ describe("the Items one statement reads", () => {
       });
       expect(Exit.isSuccess(exit)).toBe(true);
 
-      for (const reader of [
-        "scan-page",
-        "universe-rows",
-        "hydrate-chunk",
-        "candidate-set",
-        "parent-leaf-candidate-set",
-        "parent-child-candidate-set",
-        "attachment-scan-page",
-        "attachment-universe-rows",
-        "attachment-details",
-        "attachment-tags",
-        "annotation-scan-page",
-        "annotation-universe-rows",
-        "annotation-details",
-        "annotation-tags",
-        "annotation-attachment-titles",
-        "attachment-candidate-set",
-        "annotation-candidate-set",
-        "item-notes",
-      ]) {
-        expect(itemsRead(events, reader), reader).toEqual(reads[reader] ?? []);
-      }
-      // A candidate statement reads Item IDs only, the cap plus one at most.
-      for (const reader of [
-        "scan-page",
-        "universe-rows",
-        "hydrate-chunk",
-        "attachment-scan-page",
-        "attachment-universe-rows",
-        "attachment-details",
-        "attachment-tags",
-        "annotation-scan-page",
-        "annotation-universe-rows",
-        "annotation-details",
-        "annotation-tags",
-        "annotation-attachment-titles",
-      ]) {
-        expect(Math.max(0, ...itemsRead(events, reader))).toBeLessThanOrEqual(
-          500,
-        );
+      const readers = new Set(
+        events.flatMap((event) =>
+          event.type === "statement" &&
+          !LOOKUP_READERS.has(event.statement.reader)
+            ? [event.statement.reader]
+            : [],
+        ),
+      );
+      const observed = Object.fromEntries(
+        [...readers].map((reader) => [reader, itemsRead(events, reader)]),
+      );
+      expect(observed).toEqual(reads);
+      // A statement reads one page at most; a candidate statement reads Item
+      // IDs only, the cap plus one at most.
+      for (const reader of readers) {
+        if (reader.endsWith("candidate-set")) continue;
+        expect(
+          Math.max(0, ...itemsRead(events, reader)),
+          reader,
+        ).toBeLessThanOrEqual(500);
       }
       expect(
         Math.max(
@@ -636,8 +687,16 @@ describe("the pauses between two chunks", () => {
     const stepsOf100 = await run(request, { tuning: { mergeStepSize: 100 } });
     const stepsOfOne = await run(request, { tuning: { mergeStepSize: 1 } });
 
-    expect(resultOf(stepsOf100)).toEqual(resultOf(oneStepEach));
-    expect(resultOf(stepsOfOne)).toEqual(resultOf(oneStepEach));
+    // Every fifth bulk Item, in title order, which is index order.
+    const rows = Array.from({ length: 520 }, (_, i) => ({
+      indexedKey: `${bulkItemKey(i * 5)}g${BULK_LIBRARY.groupID}`,
+      values: {},
+    }));
+    for (const merged of [oneStepEach, stepsOf100, stepsOfOne]) {
+      const result = resultOf(merged);
+      expect(result).toMatchObject({ returnedCount: 520, truncated: false });
+      expect(result.rows).toEqual(rows);
+    }
     // Steps of 100 rows: 5 and 6 steps in place of 1 and 1. The test scheduler
     // pauses after each step.
     expect(stepsOf100.pauses - oneStepEach.pauses).toBeGreaterThanOrEqual(9);
@@ -773,20 +832,14 @@ describe("a cancel request", () => {
   const PAUSE_CANCEL_TIMEOUT_MS = 5_000;
 
   /** Run the query and cancel it at the event at `index`. */
-  async function cancelAt(
+  async function cancelQueryAt(
     { request, libraries = [personal] }: (typeof QUERIES)[number],
     index: number,
-    cancel: (controller: AbortController) => void,
   ) {
-    const controller = new AbortController();
-    let seen = 0;
     const cancelled = await run(request, {
       libraries,
       tuning,
-      signal: controller.signal,
-      onEvent: () => {
-        if (seen++ === index) cancel(controller);
-      },
+      ...cancelAt(index),
     });
     return { ...cancelled, after: cancelled.events.slice(index + 1) };
   }
@@ -806,9 +859,7 @@ describe("a cancel request", () => {
       expect(statements.length).toBeGreaterThan(8);
 
       for (const index of statements) {
-        const { exit, after } = await cancelAt(query, index, (controller) =>
-          controller.abort(),
-        );
+        const { exit, after } = await cancelQueryAt(query, index);
 
         expect(
           Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause),
@@ -836,10 +887,7 @@ describe("a cancel request", () => {
       "starts no statement after a cancel request in pause batch %i",
       async (batch) => {
         for (const index of pauses.filter((_, i) => i % 8 === batch)) {
-          // The microtask runs when the slice has ended and the fiber waits.
-          const { exit, after } = await cancelAt(query, index, (controller) =>
-            queueMicrotask(() => controller.abort()),
-          );
+          const { exit, after } = await cancelQueryAt(query, index);
 
           expect(
             Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause),
@@ -933,18 +981,9 @@ describe("Annotation projection and active cancellation", () => {
               ? "pause"
               : "last";
           if (role !== checkpoint) continue;
-          const controller = new AbortController();
-          let seen = 0;
           const cancelled = await run(request, {
             ...options,
-            signal: controller.signal,
-            onEvent: (event) => {
-              if (seen++ === index) {
-                if (event.type === "pause")
-                  queueMicrotask(() => controller.abort());
-                else controller.abort();
-              }
-            },
+            ...cancelAt(index),
           });
           expect(
             Exit.isFailure(cancelled.exit) &&
@@ -1004,18 +1043,9 @@ describe("Attachment active cancellation", () => {
                 ? "pause"
                 : "last";
             if (role !== checkpoint) continue;
-            const controller = new AbortController();
-            let seen = 0;
             const cancelled = await run(request, {
               ...options,
-              signal: controller.signal,
-              onEvent: (event) => {
-                if (seen++ === index) {
-                  if (event.type === "pause")
-                    queueMicrotask(() => controller.abort());
-                  else controller.abort();
-                }
-              },
+              ...cancelAt(index),
             });
             expect(
               Exit.isFailure(cancelled.exit) &&
@@ -1055,7 +1085,7 @@ it.each([
 ] as const)(
   "loads only the named Relation List on $dataset.id: $field",
   async ({ dataset, field, reader, chunks }) => {
-    using source = openScenarioDatabase({ annotations: true });
+    const source = await database("relations");
     const request = {
       libraries: [SCENARIO_LIBRARIES.personal],
       fields: [],
@@ -1112,16 +1142,14 @@ it("reads a mark's sibling list once even when its paper has several hydrate chu
       fields: [],
       limit: 1,
     }),
-    { client: annotations.db },
+    { client: (await database("annotations")).db },
   );
   expect(exit._tag).toBe("Success");
-  expect(
-    events.filter(
-      (event) =>
-        event.type === "statement" &&
-        event.statement.reader === "attachment-annotations",
-    ),
-  ).toHaveLength(1);
+  // One read of the 2,600 marks on the one PDF, in pages of 500.
+  expect(itemsRead(events, "attachment-annotations")).toEqual([
+    ...Array<number>(5).fill(500),
+    100,
+  ]);
   expect(
     events.filter(
       (event) =>
@@ -1143,12 +1171,13 @@ describe("Relation List candidate bounds", () => {
         fields: [],
         limit: 1,
       });
+      const { db } = await database("annotations");
       const actual = await runEffect(query, {
-        client: annotations.db,
+        client: db,
         tuning: { capRatio },
       });
       const scan = await runEffect(query, {
-        client: annotations.db,
+        client: db,
         tuning: { forceScan: true },
       });
       expect(resultOf(actual)).toEqual(resultOf(scan));
@@ -1177,7 +1206,7 @@ describe("Relation List candidate bounds", () => {
   ] as const)(
     "starts no statement after cancellation in %s %s",
     async (dataset, filter) => {
-      using source = openScenarioDatabase({ annotations: true });
+      const source = await database("relations");
       const query = collectQuery(dataset, {
         libraries: [SCENARIO_LIBRARIES.personal],
         filter,
@@ -1194,18 +1223,10 @@ describe("Relation List candidate bounds", () => {
       expect(
         itemsRead(complete.events, "relation-candidate-set").length,
       ).toBeGreaterThan(0);
-      for (const [index, event] of complete.events.entries()) {
-        const controller = new AbortController();
-        let seen = 0;
+      for (const index of complete.events.keys()) {
         const cancelled = await runEffect(query, {
           ...options,
-          signal: controller.signal,
-          onEvent: () => {
-            if (seen++ !== index) return;
-            if (event.type === "pause")
-              queueMicrotask(() => controller.abort());
-            else controller.abort();
-          },
+          ...cancelAt(index),
         });
         expect(
           Exit.isFailure(cancelled.exit) &&
@@ -1228,9 +1249,10 @@ describe("Relation List candidate bounds", () => {
       fields: [],
       limit: 10,
     });
-    const actual = await runEffect(query, { client: annotations.db });
+    const { db } = await database("annotations");
+    const actual = await runEffect(query, { client: db });
     const scan = await runEffect(query, {
-      client: annotations.db,
+      client: db,
       tuning: { forceScan: true },
     });
     expect(resultOf(actual)).toEqual(resultOf(scan));

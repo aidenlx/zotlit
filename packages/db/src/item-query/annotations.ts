@@ -153,9 +153,15 @@ export function readAnnotationUniverseRows(chunk: {
 }
 
 const slots = idSlots(HYDRATE_CHUNK_SIZE);
+type RelationPageParams = Record<IdSlot, number | null> & {
+  afterAttachmentKey: string;
+  afterSortIndex: string;
+  afterKey: string;
+  afterItemID: number;
+};
 /** A Relation List uses the same universe as Annotation Query. */
 const relationStatement = (level: "item" | "attachment") =>
-  defineStatement<Record<IdSlot, number | null>>(
+  defineStatement<RelationPageParams>(
     level === "item" ? "item-annotations" : "attachment-annotations",
   )((db, { placeholder }) =>
     selectAnnotations(db)
@@ -165,6 +171,7 @@ const relationStatement = (level: "item" | "attachment") =>
             level === "item" ? parent.itemID : attachment.itemID,
             slots.names.map((name) => placeholder(name)),
           ),
+          sql`(${attachment.key}, ${itemAnnotations.sortIndex}, ${items.key}, ${items.itemID}) > (${placeholder("afterAttachmentKey")}, ${placeholder("afterSortIndex")}, ${placeholder("afterKey")}, ${placeholder("afterItemID")})`,
           ...universe(db),
         ),
       )
@@ -172,30 +179,48 @@ const relationStatement = (level: "item" | "attachment") =>
         asc(attachment.key),
         asc(itemAnnotations.sortIndex),
         asc(items.key),
-      ),
+        asc(items.itemID),
+      )
+      .limit(SCAN_PAGE_SIZE),
   );
-const itemAnnotationsStatement = relationStatement("item");
-const attachmentAnnotationsStatement = relationStatement("attachment");
+const relationStatements = {
+  item: relationStatement("item"),
+  attachment: relationStatement("attachment"),
+};
 
-export function readItemAnnotations(itemIDs: readonly number[]) {
+/**
+ * One page of the Annotations of at most {@link HYDRATE_CHUNK_SIZE} parents,
+ * in reading order: at most {@link SCAN_PAGE_SIZE} rows after `after` (absent
+ * for the first page). A shorter page is the last one.
+ */
+function readRelationAnnotations(
+  level: "item" | "attachment",
+  itemIDs: readonly number[],
+  after: AnnotationScanRow | undefined,
+) {
   if (itemIDs.length > HYDRATE_CHUNK_SIZE)
     return Effect.die(
       new RangeError("A relation chunk holds at most 250 parent IDs."),
     );
-  return itemIDs.length
-    ? itemAnnotationsStatement.all(slots.bind(itemIDs))
-    : Effect.succeed([] as AnnotationScanRow[]);
+  if (!itemIDs.length) return Effect.succeed([] as AnnotationScanRow[]);
+  return relationStatements[level].all({
+    ...slots.bind(itemIDs),
+    afterAttachmentKey: after?.attachmentKey ?? "",
+    afterSortIndex: after?.sortIndex ?? "",
+    afterKey: after?.key ?? "",
+    afterItemID: after?.itemID ?? 0,
+  });
 }
 
-export function readAttachmentAnnotations(itemIDs: readonly number[]) {
-  if (itemIDs.length > HYDRATE_CHUNK_SIZE)
-    return Effect.die(
-      new RangeError("A relation chunk holds at most 250 parent IDs."),
-    );
-  return itemIDs.length
-    ? attachmentAnnotationsStatement.all(slots.bind(itemIDs))
-    : Effect.succeed([] as AnnotationScanRow[]);
-}
+export const readItemAnnotations = (
+  itemIDs: readonly number[],
+  after?: AnnotationScanRow,
+) => readRelationAnnotations("item", itemIDs, after);
+
+export const readAttachmentAnnotations = (
+  itemIDs: readonly number[],
+  after?: AnnotationScanRow,
+) => readRelationAnnotations("attachment", itemIDs, after);
 
 const details = defineStatement<Record<IdSlot, number | null>>(
   "annotation-details",

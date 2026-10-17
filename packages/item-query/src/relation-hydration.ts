@@ -6,6 +6,7 @@ import {
   readItemAnnotations,
   readAttachmentAnnotations,
   HYDRATE_CHUNK_SIZE,
+  SCAN_PAGE_SIZE,
 } from "@zotlit/db/item-query";
 import type {
   AttachmentScanRow,
@@ -44,17 +45,27 @@ const readCached = Effect.fnUntraced(function* <Row>(
     parentID,
   }: {
     readonly ids: readonly number[];
+    /** One page of at most `SCAN_PAGE_SIZE` rows after `after`. */
     readonly read: (
       ids: readonly number[],
+      after?: Row,
     ) => Effect.Effect<readonly Row[], ItemQueryReaderError, ItemQueryDatabase>;
     readonly parentID: (row: Row) => number;
   },
 ) {
   const missing = [...new Set(ids)].filter((id) => !cache.has(id));
   if (missing.length) {
-    const rows = yield* read(missing);
     const groups = new Map<number, Row[]>(missing.map((id) => [id, []]));
-    for (const row of rows) groups.get(parentID(row))!.push(row);
+    // No page budget: a candidate read may over-approximate, but a Relation
+    // List feeds the evaluator and must be complete. Each page is one
+    // statement, so the scheduler can end a slice between two pages.
+    let after: Row | undefined;
+    for (;;) {
+      const page = yield* read(missing, after);
+      for (const row of page) groups.get(parentID(row))!.push(row);
+      if (page.length < SCAN_PAGE_SIZE) break;
+      after = page.at(-1);
+    }
     for (const [id, list] of groups) cache.set(id, list);
   }
   return ids.flatMap((id) => cache.get(id) ?? []);
