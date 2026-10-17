@@ -120,11 +120,13 @@ To open a PDF in Obsidian from other places, see [Open an item's PDF in Obsidian
 
 ## Read a paper's Reading Card [#reading-card]
 
-When you select a row, the Reading Card opens on the right of the view. It shows the paper's title, creators, year, publication, and abstract, and its buttons run the actions of the row menu: <UiLabel name={m.library_view_menu_open_pdf()} />, <UiLabel name={m.library_view_menu_open_note()} /> or <UiLabel name={m.library_view_menu_write_note()} />, and <UiLabel name={m.library_view_menu_insert_citation()} />. The **More actions** button opens the rest of the row menu.
+When you select a row, the Reading Card opens on the right of the view. It shows the paper's title, creators, year, publication, and abstract, and its buttons run the actions of the row menu: <UiLabel name={m.library_view_menu_open_pdf()} />, <UiLabel name={m.library_view_menu_open_note()} /> or <UiLabel name={m.library_view_menu_write_note()} />, and <UiLabel name={m.library_view_menu_insert_citation()} />. The <UiLabel name={m.library_view_card_more()} /> button opens the full row menu.
 
-Under the buttons, the card lists the paper's annotations as cards, the same cards the annotation view shows. You can edit a comment or tags there as you would in the sidebar; see [Edit PDF annotations in Obsidian](/docs/how-to/edit-pdf-annotations) for what that needs. Select **Open in sidebar** to show them in the <UiLabel name={m.annot_view_name()} /> view instead.
+Under <UiLabel name={m.library_view_card_annotations()} />, the card lists every annotation of the paper, the same cards the annotation view shows. You can edit a comment or tags there as you would in the sidebar; see [Edit PDF annotations in Obsidian](/docs/how-to/edit-pdf-annotations) for what that needs. A paper with none shows <UiLabel name={m.library_view_card_no_annotations()} />.
 
-The card hides when no row is selected, and on a pane too narrow to hold it.
+Select <UiLabel name={m.library_view_card_open_in_sidebar()} /> to show the paper's annotations in the <UiLabel name={m.annot_view_name()} /> view. The sidebar stays pinned to that paper until you unpin it; see [Use the annotation view](/docs/how-to/use-annotation-view).
+
+The card shows only while a row is selected and the Library View is wide enough to hold it. Widen the pane or close the sidebars to see it.
 
 ## Show a quick switcher result in the library [#show-in-library]
 
