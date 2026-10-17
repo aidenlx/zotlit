@@ -101,6 +101,7 @@ import {
   registerTemplateWorkbenchView,
 } from "./views/template-workbench/register";
 import { registerWelcomeView } from "./views/welcome/register";
+import { createSetupActions } from "./views/welcome/setup-actions";
 import "./zt-main.css";
 
 function showInstallerUpdateNotice(): BaseNotice {
@@ -497,6 +498,21 @@ export default class ZotLitPlugin extends Plugin {
       ...queryViewDeps,
       libraryScope: services.libraryScope,
       settings: services.settings,
+      welcome: {
+        app: this.app,
+        reads: services.zoteroReads,
+        queries: services.queryClient,
+        zoteroPref: services.zoteroPref,
+        settings: services.settings,
+        setupActions: createSetupActions({
+          app: this.app,
+          settings: services.settings,
+          zoteroPref: services.zoteroPref,
+          pluginId: this.manifest.id,
+        }),
+        templateMigration: services.templateMigration,
+        release: services.release,
+      },
       items: itemActions({
         app: this.app,
         createProfile: services.createProfile,
@@ -694,14 +710,9 @@ export default class ZotLitPlugin extends Plugin {
     );
 
     registerWelcomeView(this, {
-      app: this.app,
       reads: services.zoteroReads,
       queries: services.queryClient,
-      zoteroPref: services.zoteroPref,
-      noteIndex: services.noteIndex,
       settings: services.settings,
-      templateMigration: services.templateMigration,
-      release: services.release,
     });
 
     stack.defer(

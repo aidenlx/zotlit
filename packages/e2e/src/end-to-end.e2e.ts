@@ -2872,6 +2872,181 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
   }, 180000);
 
+  it("opens the Library View once on a fresh install, shows the Welcome View banner above it until dismissed, and says where Zotero's data folder is missing until it is set", async () => {
+    const services = "app.plugins.plugins.zotlit.services";
+    const dataPath = "app.vault.configDir+'/plugins/zotlit/data.json'";
+    const reload =
+      "app.plugins.disablePlugin('zotlit').then(function () { return app.plugins.enablePlugin('zotlit'); }).then(function () { return true; })";
+    const snapshot = await obEval(
+      vaultId,
+      `(async()=>JSON.stringify({layout:app.workspace.getLayout(),data:await app.vault.adapter.read(${dataPath}),dataDir:${services}.zoteroPref.dataDirOverride}))()`,
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});${services}.zoteroPref.setDataDir(saved.dataDir);await ${services}.settings.flush();await app.plugins.disablePlugin('zotlit');await app.vault.adapter.write(${dataPath},saved.data);await app.plugins.enablePlugin('zotlit');await app.workspace.changeLayout(saved.layout);return true;})()`,
+      );
+    });
+    const libraryLeaves = () =>
+      obEval(
+        vaultId,
+        "String(app.workspace.getLeavesOfType('zotlit-library').length)",
+      );
+    /**
+     * Reload the plugin and let its release check end: the check runs as
+     * soon as the plugin data it awaits has loaded, so one macrotask after
+     * that promise it has opened whatever it opens.
+     */
+    const reloadAndCheck = () =>
+      obEval(
+        vaultId,
+        `(async()=>{await ${reload};await ${services}.settings.loaded;await new Promise(resolve=>setTimeout(resolve,0));return true;})()`,
+      );
+
+    // A fresh install has no plugin data: the release check opens the
+    // Library View, once.
+    await obEval(
+      vaultId,
+      `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());await ${services}.settings.flush();await app.plugins.disablePlugin('zotlit');await app.vault.adapter.remove(${dataPath});return true;})()`,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `(async()=>{await ${reload};return true;})()`,
+        {
+          expected: "true",
+          tries: 20,
+        },
+      ),
+    ).toBe(true);
+    expect(
+      await obEvalUntil(
+        vaultId,
+        "String(app.workspace.getLeavesOfType('zotlit-library').length)",
+        { expected: "1" },
+      ),
+    ).toBe(true);
+    // The release check recorded this launch in plugin data, which the next
+    // launch reads.
+    await obEval(
+      vaultId,
+      `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());await ${services}.settings.flush();return true;})()`,
+    );
+    await reloadAndCheck();
+    expect(await libraryLeaves()).toBe("0");
+
+    // A Welcome tab that a workspace saved before the banner turns into the
+    // Library View, and closes where one is open already.
+    const welcomeTab = (want: string) =>
+      `(async()=>{const leaf=app.workspace.getLeaf('tab');await leaf.setViewState({type:'zotlit-welcome'});${PAGE}await until('the Welcome tab',()=>app.workspace.getLeavesOfType('zotlit-welcome').length===0,5000);return JSON.stringify({library:app.workspace.getLeavesOfType('zotlit-library').length,${want}});})()`;
+    expect(
+      JSON.parse(
+        await obEval(
+          vaultId,
+          welcomeTab("turned:leaf.view.getViewType()==='zotlit-library'"),
+        ),
+      ),
+    ).toEqual({ library: 1, turned: true });
+    expect(
+      JSON.parse(
+        await obEval(
+          vaultId,
+          welcomeTab("closed:!app.workspace.getLeafById(leaf.id)"),
+        ),
+      ),
+    ).toEqual({ library: 1, closed: true });
+    await obEval(
+      vaultId,
+      "app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());true",
+    );
+
+    // Setup is incomplete while the literature-notes folder is missing: the
+    // banner shows the steps above the Library View, and names no Companion.
+    await obEval(
+      vaultId,
+      `(async()=>{${services}.settings.updateDefaultLiteratureNoteProfileBindings({'note.literature-folder':'Not yet created'});await app.commands.executeCommandById('zotlit:open-library-view');return true;})()`,
+    );
+    const banner = `app.workspace.getLeavesOfType('zotlit-library')[0]?.view.contentEl.querySelector('[data-welcome-banner]')`;
+    const readBanner = `(()=>{const el=${banner};if(!el)return 'null';return JSON.stringify({steps:[...el.querySelectorAll('[role=heading][aria-level="3"]')].map(n=>n.textContent),companion:el.textContent.includes('Companion')});})()`;
+    expect(
+      await obEvalUntil(vaultId, readBanner, {
+        expected: JSON.stringify({
+          steps: [
+            m.welcome_step_connect_title(),
+            m.welcome_step_folder_title(),
+            m.welcome_step_library_title(),
+          ],
+          companion: false,
+        }),
+      }),
+    ).toBe(true);
+    // A notice over the tab's corner would cover the dismiss control.
+    await clearNotices(vaultId);
+    await obEval(
+      vaultId,
+      `(async()=>{${PAGE}press(${banner}.querySelector('[data-welcome-dismiss]'),'Dismiss the welcome banner');await until('banner gone',()=>!${banner});return true;})()`,
+    );
+    expect(
+      await obEval(
+        vaultId,
+        `String(${services}.settings.current['welcome.dismissed'])`,
+      ),
+    ).toBe("true");
+    // The Welcome command shows it again.
+    await obEval(
+      vaultId,
+      "app.commands.executeCommandById('zotlit:open-welcome-view');true",
+    );
+    expect(
+      await obEvalUntil(vaultId, `String(!!${banner})`, { expected: "true" }),
+    ).toBe(true);
+
+    // ZotLit reads a folder without Zotero's database: the tree and the
+    // list say so and offer to locate it, in place of the papers. A narrow
+    // pane keeps the tree out of view, and the list says it alone.
+    const readPapers = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0].view;await view.query.settled;const el=view.contentEl;return JSON.stringify({missing:el.querySelector('[data-zotero-missing]')!==null,rows:[...el.querySelectorAll('tr[data-query-table-row="item"], [data-query-papers-row]')].map(n=>n.getAttribute('data-query-key')??n.getAttribute('data-query-papers-row'))});})()`;
+    const listed = JSON.parse(await obEval(vaultId, readPapers)) as {
+      rows: string[];
+    };
+    expect(listed.rows.length).toBeGreaterThan(0);
+    const emptyDir = join(e2eFixture.root, "library-not-found");
+    await mkdir(emptyDir, { recursive: true });
+    cleanup.defer(() => rm(emptyDir, { recursive: true, force: true }));
+    await obEval(
+      vaultId,
+      `${services}.zoteroPref.setDataDir(${JSON.stringify(emptyDir)});true`,
+    );
+    const readNotFound = `(()=>{const el=app.workspace.getLeavesOfType('zotlit-library')[0].view.contentEl;const shown=(n)=>!!n&&n.checkVisibility();const part=(name)=>el.querySelector('[data-library-not-found="'+name+'"]');const pane=el.querySelector('[data-library-tree]');return JSON.stringify({tree:shown(part('tree'))||getComputedStyle(pane).display==='none'?part('tree').textContent:null,list:shown(part('list'))?[...part('list').querySelectorAll('button')].map(b=>b.textContent):null,papers:[...el.querySelectorAll('[data-query-table], [data-query-layout]')].some(shown),search:shown(el.querySelector('[data-library-search]')),nodes:[...el.querySelectorAll('[data-library-node]')].some(shown),facets:[...el.querySelectorAll('[data-library-facet]')].some(shown)});})()`;
+    expect(
+      await obEvalUntil(vaultId, readNotFound, {
+        expected: JSON.stringify({
+          tree: `${m.library_view_tree_label()}${m.library_view_not_found_tree()}${m.library_view_locate()}`,
+          list: [m.library_view_locate(), m.welcome_action_open_settings()],
+          papers: false,
+          search: false,
+          nodes: false,
+          facets: false,
+        }),
+        tries: 120,
+      }),
+    ).toBe(true);
+
+    // "Locate data folder" saves the folder the system dialog returns; the
+    // case sets the same folder, since no reader can press a native dialog.
+    await obEval(
+      vaultId,
+      `${services}.zoteroPref.setDataDir(${JSON.stringify(JSON.parse(snapshot).dataDir)});true`,
+    );
+    // The papers the Library View listed before come back.
+    expect(
+      await obEvalUntil(vaultId, readPapers, {
+        expected: JSON.stringify({ missing: false, rows: listed.rows }),
+        tries: 120,
+      }),
+    ).toBe(true);
+  });
+
   it("shows a Query File toolbar as icons with tooltips on a narrow pane, and with names on a wide one", async () => {
     const layout = await obEval(
       vaultId,

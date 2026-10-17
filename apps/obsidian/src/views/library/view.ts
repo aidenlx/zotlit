@@ -6,7 +6,7 @@
 //
 // @see apps/obsidian/docs/adr/0070-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
 import { debounce, ItemView, Keymap, Scope } from "obsidian";
-import type { Modifier, WorkspaceLeaf } from "obsidian";
+import type { Component, Modifier, WorkspaceLeaf } from "obsidian";
 import { createStore } from "zustand/vanilla";
 
 import { parseIndexedKey } from "@zotlit/db";
@@ -26,6 +26,9 @@ import { ITEM_ROW_ATTRIBUTE } from "@/views/query-view/item-rows";
 import type { ItemRowGestures } from "@/views/query-view/item-rows";
 import { QueryView } from "@/views/query-view/view";
 import type { QueryViewDeps } from "@/views/query-view/view";
+import { WelcomeBanner } from "@/views/welcome/banner";
+import type { WelcomeBannerDeps } from "@/views/welcome/banner";
+import { unavailable } from "@/views/welcome/connection";
 
 import { LIBRARY_LAYOUTS } from "./document";
 import type { LibraryNode, ReadingStateFacet } from "./document";
@@ -34,6 +37,7 @@ import type { ItemActions } from "./item-actions";
 import { createItemDrag, refuseItemDrop } from "./item-drag";
 import { LibraryTree } from "./library-tree";
 import type { LibraryTreeDeps } from "./library-tree";
+import { ZoteroNotFound } from "./not-found";
 import {
   libraryViewQuery,
   libraryViewQueryFileText,
@@ -59,14 +63,17 @@ export interface LibraryViewDeps extends QueryViewDeps {
   lookup: LibrarySearchDeps["lookup"];
   /** What a row does with its Item. */
   items: ItemActions;
+  /** The Welcome View banner above the tab, and its setup actions. ADR 0076. */
+  welcome: WelcomeBannerDeps;
 }
 
 /**
  * The controls in the view that answer Enter and the arrow keys themselves:
- * links, buttons, menus, list boxes, and the Library Tree.
+ * links, buttons (an icon button, such as the Welcome View banner's dismiss,
+ * is a `role="button"`), menus, list boxes, and the Library Tree.
  */
 const OWN_KEYS =
-  'a, button, [role="menu"], [role="menuitem"], [role="listbox"], [role="combobox"], [role="tree"]';
+  'a, button, [role="button"], [role="menu"], [role="menuitem"], [role="listbox"], [role="combobox"], [role="tree"]';
 
 /**
  * What Enter does on the selected row, by its modifiers, as in the quick
@@ -89,6 +96,8 @@ export class LibraryView extends ItemView {
   readonly search: LibrarySearch;
   readonly #deps: LibraryViewDeps;
   readonly #storage: ReturnType<typeof libraryViewStorage>;
+  /** The not-found state and the Welcome View banner, while the tab is open. */
+  readonly #parts: Component[] = [];
   /** What the tab runs: the query of the document as it opened. */
   #shown: LibraryViewQuery | null = null;
   /** What the search last found, which a facet change lists again. */
@@ -173,6 +182,8 @@ export class LibraryView extends ItemView {
       node: () => this.tree.store.getState().node,
       found: (found) => this.#show(found),
       keep: (text) => this.#keep(text),
+      // ZotLit cannot read Zotero's database: the search box asks nothing.
+      readable: () => !unavailable(deps.welcome),
     });
   }
 
@@ -196,8 +207,16 @@ export class LibraryView extends ItemView {
   protected override async onOpen(): Promise<void> {
     // An Item dragged from a row lands in a note, never back in the view.
     this.registerDomEvent(this.contentEl, "dragover", refuseItemDrop);
-    const shell = this.contentEl.createDiv({
-      cls: "zt:group zt:@container zt:relative zt:flex zt:h-full zt:min-h-0",
+    // The Welcome View banner sits above the tree and the list, and takes
+    // at most half the tab.
+    const column = this.contentEl.createDiv({
+      cls: "zt:flex zt:h-full zt:flex-col",
+    });
+    const banner = column.createDiv({
+      cls: "zt:max-h-1/2 zt:shrink-0 zt:overflow-y-auto",
+    });
+    const shell = column.createDiv({
+      cls: "zt:group zt:@container zt:relative zt:flex zt:min-h-0 zt:flex-1",
     });
     const treeEl = shell.createDiv({
       cls: "zt:hidden zt:w-56 zt:shrink-0 zt:overflow-y-auto zt:border-e-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-primary) zt:@xl:block zt:group-data-tree-open:block zt:@max-xl:absolute zt:@max-xl:inset-y-0 zt:@max-xl:start-0 zt:@max-xl:max-w-[85%] zt:@max-xl:z-(--layer-popover) zt:@max-xl:shadow-(--shadow-s)",
@@ -206,11 +225,30 @@ export class LibraryView extends ItemView {
     const main = shell.createDiv({
       cls: "zt:flex zt:min-w-0 zt:flex-1 zt:flex-col zt:overflow-y-auto zt:pb-[max(var(--safe-area-inset-bottom),var(--size-4-8))]",
     });
-    const searchEl = main.createDiv();
-    const header = main.createDiv();
+    // Where ZotLit cannot read Zotero's database, the tree and the list say
+    // so in place of what they hold; the search box and the header's count
+    // go with them.
+    const hidden = "zt:group-data-zotero-missing:hidden";
+    const searchEl = main.createDiv({ cls: hidden });
+    const header = main.createDiv({ cls: hidden });
     const list = main.createDiv();
+    const shown = "zt:hidden zt:group-data-zotero-missing:block";
+    this.#parts.push(
+      new ZoteroNotFound(
+        this.#deps.welcome,
+        {
+          shell,
+          tree: treeEl.createDiv({ cls: shown }),
+          list: list.createDiv({ cls: shown }),
+        },
+        // The search the box holds runs again on the database found.
+        () => void this.search.run(),
+      ),
+      new WelcomeBanner(this.#deps.welcome, banner),
+    );
+    for (const part of this.#parts) part.load();
     this.tree.load();
-    this.tree.render(treeEl);
+    this.tree.render(treeEl.createDiv({ cls: hidden }));
     this.tree.renderHeader(header, (text) =>
       this.search.summary(this.query.state, text),
     );
@@ -234,7 +272,7 @@ export class LibraryView extends ItemView {
       this.tree.setOpen(false);
     });
     this.query.load();
-    this.query.render(list);
+    this.query.render(list.createDiv({ cls: hidden }));
     // A Literature Note added or removed changes what the vault answers.
     this.query.register(
       this.#deps.literatureNotes.on("changed", () => {
@@ -461,6 +499,7 @@ export class LibraryView extends ItemView {
     await this.query.flush();
     this.query.unload();
     this.tree.unload();
+    for (const part of this.#parts.splice(0)) part.unload();
   }
 }
 

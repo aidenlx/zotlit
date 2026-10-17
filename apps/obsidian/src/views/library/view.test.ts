@@ -27,6 +27,7 @@ import type {
   ResolvedLibraryScope,
 } from "@/services/library-scope/scope";
 import { selectorKey } from "@/services/library-scope/scope";
+import { QueryClientService } from "@/services/query-client/service";
 import { SettingsService } from "@/services/settings/service";
 import { requested } from "@/views/query-view/__fixtures__/query-run";
 
@@ -285,7 +286,30 @@ function pluginData(stored?: unknown) {
   const run = vi.fn((request: QueryViewRequest, _signal: AbortSignal) =>
     Promise.resolve(answer(database.items, request)),
   );
-  const reads = createNanoEvents<{ changed: () => void }>();
+  const reads = createNanoEvents<Record<string, () => void>>();
+  /** What the database service says of Zotero's database. */
+  const database_ = {
+    state: "ready" as "ready" | "degraded",
+    error: null as Error | null,
+  };
+  const readsDeps = {
+    on: reads.on.bind(reads),
+    get state() {
+      return database_.state;
+    },
+    get error() {
+      return database_.error;
+    },
+    ready: Promise.resolve({
+      reads: { ConnectionReadout: () => Effect.succeed({ itemCount: 8 }) },
+    }),
+  };
+  const setupActions = {
+    openSettings: vi.fn(),
+    pickFolder: vi.fn(),
+    searchLibrary: vi.fn(),
+    locateZotero: vi.fn(),
+  };
   const notes = new Set(NOTED);
   const notesChanged = createNanoEvents<{ changed: () => void }>();
   const literatureNotes = {
@@ -357,7 +381,7 @@ function pluginData(stored?: unknown) {
       workspace: { ...host.workspace, leftSplit: null, rightSplit: null },
     },
     reads: {
-      on: reads.on.bind(reads),
+      ...readsDeps,
       acquireRead: () =>
         Promise.resolve({
           reads: {
@@ -384,12 +408,34 @@ function pluginData(stored?: unknown) {
     annotations: { on: off, hold: () => ({ [Symbol.dispose]: () => {} }) },
     items,
     settings,
+    welcome: {
+      app: host.app,
+      reads: readsDeps,
+      queries: new QueryClientService(),
+      zoteroPref: { dataDir: "/Zotero" },
+      settings,
+      setupActions,
+      templateMigration: { convert: vi.fn(), retryCleanup: vi.fn() },
+      release: { hasV1Templates: () => false, acknowledgeMigration: vi.fn() },
+    },
     literatureNotes,
     readers: { open: () => Promise.resolve() },
   } as unknown as LibraryViewDeps;
   /** Zotero's database changes to hold `items`, and says so. */
   const change = (items: readonly SeedItem[]) => {
     database.items = items;
+    reads.emit("changed");
+  };
+  /** The data folder ZotLit reads can no longer be found. */
+  const lose = () => {
+    database_.state = "degraded";
+    database_.error = new Error("No zotero.sqlite in the data folder");
+    reads.emit("degraded");
+  };
+  /** The researcher pointed ZotLit at the data folder, and it reads again. */
+  const locate = () => {
+    database_.state = "ready";
+    database_.error = null;
     reads.emit("changed");
   };
   /** The vault gains a Literature Note for `itemKey`. */
@@ -416,7 +462,19 @@ function pluginData(stored?: unknown) {
     };
     scopeEvents.emit("changed");
   };
-  return { deps, run, settings, change, addNote, searches, rescope, items };
+  return {
+    deps,
+    run,
+    settings,
+    change,
+    addNote,
+    searches,
+    rescope,
+    items,
+    lose,
+    locate,
+    setupActions,
+  };
 }
 
 /** The Items requests, without the count requests of the Library Tree, which read no field. */
@@ -699,6 +757,50 @@ it("names the tree by its heading, with no tooltip over it", async () => {
   ).toBe("Libraries");
   // Obsidian shows every `aria-label` as a tooltip on hover.
   expect(pane.querySelectorAll("[aria-label]")).toHaveLength(0);
+});
+
+it("says where Zotero's data folder cannot be found, offers to locate it, and lists the papers once it is set", async () => {
+  const { deps, lose, locate, setupActions } = pluginData();
+  lose();
+  const view = await openTab(deps);
+  const shell = view.contentEl.querySelector(
+    "[data-library-tree]",
+  )!.parentElement!;
+  const notFound = (part: "tree" | "list") =>
+    view.contentEl.querySelector<HTMLElement>(
+      `[data-library-not-found="${part}"]`,
+    )!;
+  // The not-found parts show in place of the tree and the list.
+  expect(shell.hasAttribute("data-zotero-missing")).toBe(true);
+  expect(notFound("tree").textContent).toContain("Zotero not found");
+  expect(notFound("list").textContent).toContain(
+    "We couldn't find your Zotero library",
+  );
+  // The facet chips under the tree hide with it.
+  expect(
+    view.contentEl
+      .querySelector("[data-library-facets]")
+      ?.closest(".zt\\:group-data-zotero-missing\\:hidden"),
+  ).toBeInstanceOf(HTMLElement);
+  const button = (part: "tree" | "list", text: string) =>
+    [...notFound(part).querySelectorAll("button")].find(
+      (el) => el.textContent === text,
+    )!;
+  await press(view, button("tree", "Locate data folder"));
+  await press(view, button("list", "Locate data folder"));
+  await press(view, button("list", "Open settings"));
+  expect(setupActions.locateZotero).toHaveBeenCalledTimes(2);
+  expect(setupActions.openSettings).toHaveBeenCalledOnce();
+  // No setup-time hint names ZotLit Companion or Better BibTeX.
+  expect(view.contentEl.textContent).not.toMatch(/Companion|Better BibTeX/);
+
+  await act(async () => {
+    locate();
+    await view.tree.settled;
+    await view.query.settled;
+  });
+  expect(shell.hasAttribute("data-zotero-missing")).toBe(false);
+  expect(tree(view)).toContain("My Library 5");
 });
 
 it("gives each row on Recent its reason, and none on a Library", async () => {
@@ -1161,6 +1263,7 @@ it("has the search box focused when the command brings the tab forward", async (
   await openLibraryView({
     workspace: {
       getLeavesOfType: () => [leaf],
+      setActiveLeaf: () => {},
       revealLeaf: () => Promise.resolve(),
     },
   } as unknown as App);
@@ -1315,4 +1418,34 @@ it("searches every Library in the Library Scope on Recent, with no offer to wide
   expect(shown(view)).toEqual(["FFFFFFFF", "DDDDDDDD", "CCCCCCCC", "AAAAAAAA"]);
   expect(header(view)).toBe("4 matches in Recent");
   expect(view.contentEl.querySelector("[data-library-search-all]")).toBeNull();
+});
+
+it("leaves Enter and the arrow keys to the Welcome View banner's controls", async () => {
+  const { deps, items } = pluginData();
+  const view = await openTab(deps);
+  await act(() => itemRow(view, B).click());
+  const dismiss = view.contentEl.querySelector("[data-welcome-dismiss]")!;
+  expect(dismiss).not.toBeNull();
+  expect(await pressKey(view, dismiss, ["Enter"])).toBe(false);
+  expect(await pressKey(view, dismiss, ["ArrowDown"])).toBe(false);
+  expect(items.openNote).not.toHaveBeenCalled();
+  expect(itemRows(view)[1]).toBe(`${B} *`);
+});
+
+it("asks the database nothing from the search box while Zotero's data folder is missing, and searches once it is set", async () => {
+  const { deps, searches, lose, locate } = pluginData(ON_MY_LIBRARY);
+  const view = await openTab(deps);
+  lose();
+  await act(async () => {
+    view.search.type("figures");
+    await view.searched;
+  });
+  expect(searches).toEqual([]);
+  await act(async () => {
+    locate();
+    await view.searched;
+    await view.query.settled;
+  });
+  expect(searches.at(-1)).toEqual({ query: "figures", libraries: [1] });
+  expect(shown(view)).toEqual(["DDDDDDDD", "CCCCCCCC", "AAAAAAAA"]);
 });
