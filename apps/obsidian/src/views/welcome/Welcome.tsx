@@ -293,7 +293,6 @@ function ConversionOffer() {
       title={m.welcome_template_conversion_title()}
       action={
         <Button
-          variant="cta"
           icon="combine"
           loading={converting}
           disabled={converting}
@@ -392,7 +391,6 @@ function MigrationGuide() {
       title={m.welcome_migration_title()}
       action={
         <Button
-          variant="cta"
           icon="book-marked"
           onClick={() => actions.openExternal(MIGRATION_GUIDE)}
         >

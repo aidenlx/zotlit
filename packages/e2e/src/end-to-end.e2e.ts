@@ -2624,14 +2624,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const services = "app.plugins.plugins.zotlit.services";
     const snapshot = await obEval(
       vaultId,
-      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null})`,
+      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null,size:require('@electron/remote').getCurrentWindow().getSize()})`,
     );
     const notePath = "Library row citations.md";
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
       await obEval(
         vaultId,
-        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'library.document':saved.document});await settings.flush();const file=app.vault.getFileByPath(${JSON.stringify(notePath)});if(file)await app.vault.delete(file);await app.workspace.changeLayout(saved.layout);return true;})()`,
+        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'library.document':saved.document});await settings.flush();const file=app.vault.getFileByPath(${JSON.stringify(notePath)});if(file)await app.vault.delete(file);require('@electron/remote').getCurrentWindow().setSize(...saved.size);await app.workspace.changeLayout(saved.layout);return true;})()`,
       );
     });
 
@@ -2670,16 +2670,22 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         item.collectionIDs[0] === child.collectionID,
     )!;
 
-    // The Library View on My Library, and beside it a note to cite into.
+    // The Library View on My Library, and beside it a note to cite into, in
+    // a window wide enough that the Reading Card, which shows over a
+    // narrow list, leaves the start of each row in reach.
     await obEval(
       vaultId,
-      `(async()=>{${PAGE}app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=${services}.settings;settings.update({'library.document':null});await settings.flush();const file=app.vault.getFileByPath(${JSON.stringify(notePath)})??await app.vault.create(${JSON.stringify(notePath)},'LEFT RIGHT');app.commands.executeCommandById('zotlit:open-library-view');await until('library',()=>app.workspace.getLeavesOfType('zotlit-library')[0]);await app.workspace.getLeaf('split').openFile(file);return true;})()`,
+      `(async()=>{${PAGE}app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());app.workspace.leftSplit.collapse();app.workspace.rightSplit.collapse();require('@electron/remote').getCurrentWindow().setSize(1600,1000);const settings=${services}.settings;settings.update({'library.document':null});await settings.flush();const file=app.vault.getFileByPath(${JSON.stringify(notePath)})??await app.vault.create(${JSON.stringify(notePath)},'LEFT RIGHT');app.commands.executeCommandById('zotlit:open-library-view');await until('library',()=>app.workspace.getLeavesOfType('zotlit-library')[0]);await app.workspace.getLeaf('split').openFile(file);return true;})()`,
     );
-    /** Run `script` with the Library View's tab active and `el` its content. */
+    /**
+     * Run `script` with the Library View's tab active and `el` its content.
+     * `pressRow` presses a row near its start, where a reader clicks while
+     * the Reading Card over a narrow list covers the row's far end.
+     */
     const inLibrary = (script: string) =>
       obEval(
         vaultId,
-        `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];await app.workspace.revealLeaf(leaf);app.workspace.setActiveLeaf(leaf,{focus:true});await leaf.view.query.settled;const el=leaf.view.contentEl;const row=key=>el.querySelector('[data-query-item-row="'+key+'"]');const keydown=(target,init)=>target.dispatchEvent(new KeyboardEvent('keydown',{bubbles:true,cancelable:true,...init}));${script}})()`,
+        `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];await app.workspace.revealLeaf(leaf);app.workspace.setActiveLeaf(leaf,{focus:true});await leaf.view.query.settled;const el=leaf.view.contentEl;const row=key=>el.querySelector('[data-query-item-row="'+key+'"]');const keydown=(target,init)=>target.dispatchEvent(new KeyboardEvent('keydown',{bubbles:true,cancelable:true,...init}));const pressRow=(el,what)=>{if(!el)throw new Error('Missing: '+what);el.scrollIntoView({block:'center',behavior:'instant'});const r=el.getBoundingClientRect();const hit=el.ownerDocument.elementFromPoint(r.left+24,r.top+r.height/2);if(!hit||!el.contains(hit))throw new Error('Covered: '+what+' (by '+(hit?hit.outerHTML.slice(0,80):'nothing')+')');el.click();return el;};${script}})()`,
       );
     const active = () => activeTab(vaultId);
     const activeWhen = (ready: (shown: ActiveTab) => boolean) =>
@@ -2694,7 +2700,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // next row on screen.
     const { next } = JSON.parse(
       await inLibrary(
-        `await until('rows',()=>row(${JSON.stringify(reading.key)}),10000);press(row(${JSON.stringify(reading.key)}),'reading row');const keys=[...el.querySelectorAll('[data-query-item-row]')].map(n=>n.getAttribute('data-query-item-row'));keydown(row(${JSON.stringify(reading.key)}),{key:'ArrowDown'});return JSON.stringify({next:keys[keys.indexOf(${JSON.stringify(reading.key)})+1]})`,
+        `await until('rows',()=>row(${JSON.stringify(reading.key)}),10000);pressRow(row(${JSON.stringify(reading.key)}),'reading row');const keys=[...el.querySelectorAll('[data-query-item-row]')].map(n=>n.getAttribute('data-query-item-row'));keydown(row(${JSON.stringify(reading.key)}),{key:'ArrowDown'});return JSON.stringify({next:keys[keys.indexOf(${JSON.stringify(reading.key)})+1]})`,
       ),
     ) as { next: string };
     expect(await selected()).toBe(next);
@@ -2703,13 +2709,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // Enter opens the Item's Literature Note; Shift+Enter its PDF in
     // Obsidian.
     await inLibrary(
-      `press(row(${JSON.stringify(reading.key)}),'reading row');keydown(row(${JSON.stringify(reading.key)}),{key:'Enter'});return true`,
+      `pressRow(row(${JSON.stringify(reading.key)}),'reading row');keydown(row(${JSON.stringify(reading.key)}),{key:'Enter'});return true`,
     );
     expect(
       await activeWhen((shown) => shown.type === "markdown"),
     ).toMatchObject({ key: reading.key });
     await inLibrary(
-      `press(row(${JSON.stringify(reading.key)}),'reading row');keydown(row(${JSON.stringify(reading.key)}),{key:'Enter',shiftKey:true});return true`,
+      `pressRow(row(${JSON.stringify(reading.key)}),'reading row');keydown(row(${JSON.stringify(reading.key)}),{key:'Enter',shiftKey:true});return true`,
     );
     expect(await activeWhen((shown) => shown.type === "pdf")).toMatchObject({
       path: annotationAttachment.path,
@@ -2718,7 +2724,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // On an Item with no Literature Note, Enter writes one through the
     // Profile selection, as the quick switcher does.
     await inLibrary(
-      `const groupNode=[...el.querySelectorAll('[data-library-node]')].find(n=>n.getAttribute('data-library-node')===${JSON.stringify(JSON.stringify([`group:${unwrittenGroup}`]))});if(!groupNode.checkVisibility())press(el.querySelector('[data-library-tree-toggle]'),'tree toggle');press(groupNode,'group library');await until('group rows',()=>groupNode.getAttribute('aria-selected')==='true'&&leaf.view.query.state.getState().phase==='ready'&&row(${JSON.stringify(unwrittenKey)}),10000);press(row(${JSON.stringify(unwrittenKey)}),'unwritten row');keydown(row(${JSON.stringify(unwrittenKey)}),{key:'Enter'});return true`,
+      `const groupNode=[...el.querySelectorAll('[data-library-node]')].find(n=>n.getAttribute('data-library-node')===${JSON.stringify(JSON.stringify([`group:${unwrittenGroup}`]))});if(!groupNode.checkVisibility())press(el.querySelector('[data-library-tree-toggle]'),'tree toggle');press(groupNode,'group library');await until('group rows',()=>groupNode.getAttribute('aria-selected')==='true'&&leaf.view.query.state.getState().phase==='ready'&&row(${JSON.stringify(unwrittenKey)}),10000);pressRow(row(${JSON.stringify(unwrittenKey)}),'unwritten row');keydown(row(${JSON.stringify(unwrittenKey)}),{key:'Enter'});return true`,
     );
     // The picker reads every Profile's preview before it shows.
     expect(
