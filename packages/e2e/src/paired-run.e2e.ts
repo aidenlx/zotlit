@@ -1485,6 +1485,16 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               { api, serverID, image: true },
             );
           await eraseAnnotations(rdp, keys);
+          // The page drops an erased mark once Zotero's change reaches ZotLit.
+          // The next case presses where these strokes began, and a mark still
+          // drawn there takes the press from the tool it arms.
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `String(${JSON.stringify(keys)}.every((key)=>!${pdfView}.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key="'+key+'"]')))`,
+              { expected: "true" },
+            ),
+          ).toBe(true);
           await disarmTool(vaultId!, { pdfView, tool: "ink" });
         });
 
@@ -1806,8 +1816,14 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(await obEval(vaultId!, cursors)).toBe("crosshair,crosshair");
 
           // A held capture takes the pointer on the reader, whose own cursor
-          // then shows.
+          // then shows. The rectangle is the proof the press began one.
           await press(CURVE.slice(0, 5));
+          expect(
+            await obEval(
+              vaultId!,
+              `String(!!${pdfView}.containerEl.querySelector('.zt-pdf-capture-rect'))`,
+            ),
+          ).toBe("true");
           expect(await obEval(vaultId!, readerCursor)).toBe("crosshair");
           await escape();
           expect(await obEval(vaultId!, readerCursor)).not.toBe("crosshair");
