@@ -470,7 +470,7 @@
       "declarations": ["input limit", "local formatted = limit: number"],
       "selectors": ["formatted"],
       "match": {
-        "formatted=*": "列表只显示前 {formatted} 篇文献，此文献不在其中。搜索其标题即可显示。"
+        "formatted=*": "不在前 {formatted} 篇文献中。搜索其标题即可显示。"
       }
     }
   ],
@@ -502,7 +502,7 @@
   "library_view_show_tree": "显示文库和分类",
   "library_view_not_found_tree": "未找到 Zotero",
   "library_view_locate": "定位数据文件夹",
-  "library_view_refresh_failed": "ZotLit 刚才无法读取 Zotero 数据库，列表显示的是上次读取的文献。",
+  "library_view_refresh_failed": "无法从 Zotero 刷新。显示的是上次读取的列表。",
   "library_view_empty_search": "没有文献匹配“{query}”。",
   "library_view_empty_facets": "没有文献符合已开启的筛选条件。",
   "library_view_save_leaves_out_facets": "查询文件无法检查文献笔记，因此此文件不包含{facets}中的这项检查。",
@@ -523,7 +523,7 @@
   "library_view_card_failed": "无法读取此文献的标注。",
   "instruction_show_in_library": "在文库中显示",
   "library_view_search_label": "搜索文献",
-  "library_view_search_placeholder": "搜索文献…（用 tag:名称 按标签筛选）",
+  "library_view_search_placeholder": "搜索文献",
   "library_view_search_clear": "清除搜索",
   "library_view_search_matches": [
     {

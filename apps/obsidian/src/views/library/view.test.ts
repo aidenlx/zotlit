@@ -984,7 +984,7 @@ it("keeps the last rows with a note where a refresh of the database fails, and d
   });
   expect(shell.hasAttribute("data-zotero-missing")).toBe(false);
   expect(shown(view)).toEqual(rows);
-  expect(note()?.textContent).toContain("couldn't read Zotero's database");
+  expect(note()?.textContent).toContain("Couldn't refresh from Zotero");
   await act(async () => {
     locate();
     await view.query.settled;

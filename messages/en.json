@@ -384,7 +384,7 @@
       "declarations": ["input limit", "local formatted = limit: number"],
       "selectors": ["formatted"],
       "match": {
-        "formatted=*": "The list shows its first {formatted} papers, and this one is not among them. Search for its title to show it."
+        "formatted=*": "Not in the first {formatted} papers. Search its title to show it."
       }
     }
   ],
@@ -416,7 +416,7 @@
   "library_view_show_tree": "Show libraries and collections",
   "library_view_not_found_tree": "Zotero not found",
   "library_view_locate": "Locate data folder",
-  "library_view_refresh_failed": "ZotLit couldn't read Zotero's database just now. The list shows the papers it read last.",
+  "library_view_refresh_failed": "Couldn't refresh from Zotero. Showing the last list read.",
   "library_view_empty_search": "No papers match “{query}”.",
   "library_view_empty_facets": "No papers pass the filters you turned on.",
   "library_view_save_leaves_out_facets": "A Query File can't check for a Literature Note, so this file leaves that check out of {facets}.",
@@ -437,7 +437,7 @@
   "library_view_card_failed": "Couldn't read this paper's annotations.",
   "instruction_show_in_library": "to show in library",
   "library_view_search_label": "Search papers",
-  "library_view_search_placeholder": "Search papers… (tag:name for a tag)",
+  "library_view_search_placeholder": "Search papers",
   "library_view_search_clear": "Clear search",
   "library_view_search_matches": [
     {
