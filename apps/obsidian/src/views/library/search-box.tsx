@@ -28,7 +28,7 @@ import type { QueryViewState } from "@/views/query-view/view";
 
 import { librariesOf } from "./document";
 import type { LibraryNode } from "./document";
-import type { HeaderParts } from "./library-tree";
+import type { HeaderSearch } from "./library-tree";
 import { searchTerms } from "./search";
 import { sameLibrary } from "./tree";
 
@@ -213,33 +213,26 @@ export class LibrarySearch extends Component {
   }
 
   /**
-   * The header while a search is on screen: its match count as the text,
-   * with the offer to search all libraries beside it; otherwise `fallback`
-   * alone.
+   * What the search puts in the header: its match count, and the offer to
+   * search all libraries beside it while some match.
    */
-  summary(
-    query: StoreApi<QueryViewState>,
-    { selection, fallback }: { selection: string; fallback: ReactNode },
-  ): HeaderParts {
+  header(query: StoreApi<QueryViewState>): HeaderSearch {
     return {
-      text: (
-        <SearchSummary
-          search={this}
-          query={query}
-          selection={selection}
-          fallback={fallback}
-        />
-      ),
-      action: <SearchAllButton search={this} />,
+      useSummary: (selection) => useSearchSummary(this, query, selection),
+      action: <SearchAllButton search={this} query={query} />,
     };
   }
 
   /**
    * What an empty list says left it empty: the search, with the offer to
-   * search all libraries or to clear it, else the facets that are on.
+   * search all libraries or to clear it, else the facets that are on, else
+   * `fallback`, the Query View's own sentence.
    */
-  empty(tree: StoreApi<{ readonly facets: readonly unknown[] }>): ReactNode {
-    return <EmptyList search={this} tree={tree} />;
+  empty(
+    tree: StoreApi<{ readonly facets: readonly unknown[] }>,
+    fallback: string,
+  ): ReactNode {
+    return <EmptyList search={this} tree={tree} fallback={fallback} />;
   }
 
   /** @internal The box's input, for {@link focus}. */
@@ -283,22 +276,19 @@ function SearchBox({ search }: { search: LibrarySearch }) {
   );
 }
 
-function SearchSummary({
-  search,
-  query,
-  selection,
-  fallback,
-}: {
-  search: LibrarySearch;
-  query: StoreApi<QueryViewState>;
-  selection: string;
-  fallback: ReactNode;
-}) {
+/**
+ * The match count of the search on screen, as the header and its status say
+ * it; `null` while no search is on screen or its count is unknown.
+ */
+function useSearchSummary(
+  search: LibrarySearch,
+  query: StoreApi<QueryViewState>,
+  selection: string,
+): string | null {
   const text = useStore(search.store, (s) => s.text);
   const everywhere = useStore(search.store, (s) => s.everywhere);
   const matched = useStore(query, (s) => s.results?.matched ?? null);
-  if (text.trim() === "") return fallback;
-  if (matched === null) return selection;
+  if (text.trim() === "" || matched === null) return null;
   if (everywhere && !search.onRecent)
     return m.library_view_search_matches_everywhere({ count: matched });
   return m.library_view_search_matches({ selection, count: matched });
@@ -307,16 +297,20 @@ function SearchSummary({
 function EmptyList({
   search,
   tree,
+  fallback,
 }: {
   search: LibrarySearch;
   tree: StoreApi<{ readonly facets: readonly unknown[] }>;
+  fallback: string;
 }) {
   const text = useStore(search.store, (s) => s.text.trim());
   const everywhere = useStore(search.store, (s) => s.everywhere);
   const facets = useStore(tree, (s) => s.facets.length);
   if (text === "")
-    return facets === 0 ? null : (
-      <p className="zt:m-0 zt:mt-1" data-library-empty="">
+    return facets === 0 ? (
+      fallback
+    ) : (
+      <p className="zt:m-0" data-library-empty="">
         {m.library_view_empty_facets()}
       </p>
     );
@@ -324,7 +318,7 @@ function EmptyList({
   const widen = !everywhere && !search.onRecent;
   return (
     <>
-      <p className="zt:m-0 zt:mt-1" data-library-empty="">
+      <p className="zt:m-0" data-library-empty="">
         {m.library_view_empty_search({ query: text })}
       </p>
       <button
@@ -343,20 +337,29 @@ function EmptyList({
 
 /**
  * The offer to search all libraries, beside the header, while a search
- * keeps to a Library or a Collection. Recent reads every Library of the
+ * keeps to a Library or a Collection and finds something there: an empty
+ * list makes the same offer itself. Recent reads every Library of the
  * Library Scope already.
  */
-function SearchAllButton({ search }: { search: LibrarySearch }) {
+function SearchAllButton({
+  search,
+  query,
+}: {
+  search: LibrarySearch;
+  query: StoreApi<QueryViewState>;
+}) {
   const text = useStore(search.store, (s) => s.text);
   const everywhere = useStore(search.store, (s) => s.everywhere);
-  if (text.trim() === "" || everywhere || search.onRecent) return null;
+  const matched = useStore(query, (s) => s.results?.matched ?? null);
+  if (text.trim() === "" || everywhere || search.onRecent || matched === 0)
+    return null;
   const widen = () => search.widen();
   return (
     <span
       role="button"
       tabIndex={0}
       data-library-search-all=""
-      className="zt:shrink-0 zt:cursor-(--cursor) zt:rounded-(--radius-s) zt:text-(length:--font-ui-medium) zt:text-(--text-accent) zt:group-data-zotero-missing:hidden zt:hover:text-(--text-accent-hover) zt:focus-visible:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)]"
+      className="zt:shrink-0 zt:cursor-(--cursor) zt:rounded-(--radius-s) zt:text-(length:--font-ui-smaller) zt:text-muted-foreground zt:outline-hidden zt:group-data-zotero-missing:hidden zt:hover:text-(--text-normal) zt:focus-visible:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)]"
       onClick={widen}
       onKeyDown={(event) => {
         if (event.key !== "Enter" && event.key !== " ") return;

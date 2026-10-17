@@ -60,7 +60,11 @@ function CountText({ view }: { view: QueryView }) {
   if (!results) return null;
   const { count, matched, truncated } = results;
   return (
-    <span data-query-count={count} data-query-matched={matched}>
+    <span
+      className="zt:tabular-nums"
+      data-query-count={count}
+      data-query-matched={matched}
+    >
       {truncated
         ? m.query_view_results_limited({ count: matched, shown: count })
         : m.query_view_results({ count })}
@@ -140,7 +144,11 @@ export function ResultsMenu({ view }: { view: QueryView }) {
         popoverTarget={popupId}
         aria-expanded={open}
         data-query-results=""
-        data-active={current.limit !== undefined ? "" : undefined}
+        // A limit shows as set only where the researcher can set it, not
+        // where the host fixes one, as the Library View does.
+        data-active={
+          view.can.limit && current.limit !== undefined ? "" : undefined
+        }
         data-open={open ? "" : undefined}
         className={cn(
           toolbarButtonClass,

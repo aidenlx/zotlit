@@ -191,11 +191,9 @@ export class LibraryView extends ItemView {
       rowPass: () =>
         this.#shown && vaultPass(this.#shown.vault, deps.literatureNotes),
       rows,
-      // Recent says why each row is there; the query runs once the tab set it.
-      reason: () => this.#shown!.reason,
       // The empty list names the search or the facets, which the derived
       // text holds as filters the researcher never wrote.
-      empty: () => this.search.empty(this.tree.store),
+      empty: ({ fallback }) => this.search.empty(this.tree.store, fallback),
       // The document took the change from the toolbar's text already.
       save: () => this.#storage.save(),
       saveAs: () => void this.#saveAs(),
@@ -291,9 +289,7 @@ export class LibraryView extends ItemView {
     for (const part of this.#parts) part.load();
     this.tree.load();
     this.tree.render(treeEl.createDiv({ cls: hidden }));
-    this.tree.renderHeader(header, (text) =>
-      this.search.summary(this.query.state, text),
-    );
+    this.tree.renderHeader(header, this.search.header(this.query.state));
     this.search.load();
     this.search.render(searchEl);
     // On a narrow pane the tree shows over the list while it is open.
@@ -587,6 +583,5 @@ export class LibraryView extends ItemView {
 function labels(): LibraryViewLabels {
   return {
     papers: m.library_view_papers_view_name(),
-    editedInZotero: m.library_view_recent_edited_in_zotero(),
   };
 }

@@ -200,12 +200,13 @@ export interface QueryViewHost {
    */
   reason?: (row: QueryViewRow) => string | null;
   /**
-   * What the empty state says narrowed the rows, in place of the hint to
-   * change a filter: the host's derived text holds filters the researcher
-   * never wrote, so only the host knows what left the list empty. Absent:
-   * the view's own hint.
+   * The whole empty state, in place of the view's own sentence and its hint
+   * to change a filter: the host's derived text holds filters the researcher
+   * never wrote, so only the host knows what left the list empty. `fallback`
+   * is the view's own sentence, for an empty list the host has nothing to
+   * say about. Absent: the view's own sentence and hint.
    */
-  empty?: ComponentType;
+  empty?: ComponentType<{ fallback: string }>;
   /**
    * Writes what the view shows as a new Query File. Present: the view menu
    * of a host without views (`displayOnly`) offers "Save as query file".
@@ -724,8 +725,8 @@ export class QueryView extends Component implements HistorySurface {
     return this.#host.reason?.(row) ?? null;
   }
 
-  /** What the host says narrowed the rows of an empty list, if it says. */
-  get empty(): ComponentType | undefined {
+  /** What the host says left the list empty, if it says. */
+  get empty(): ComponentType<{ fallback: string }> | undefined {
     return this.#host.empty;
   }
 
@@ -1311,17 +1312,20 @@ function NoResults({ view }: { view: QueryView }) {
   );
   if (phase !== "ready" || count > 0) return null;
   const Empty = view.empty;
+  const sentence = datasetSpec(dataset).empty();
   return (
     <div className="pane-empty zt:p-2" data-query-empty="">
-      {datasetSpec(dataset).empty()}
       {Empty ? (
-        <Empty />
+        <Empty fallback={sentence} />
       ) : (
-        filtered && (
-          <p className="zt:m-0 zt:mt-1" data-query-empty-hint="">
-            {m.query_view_no_results_filter_hint()}
-          </p>
-        )
+        <>
+          {sentence}
+          {filtered && (
+            <p className="zt:m-0 zt:mt-1" data-query-empty-hint="">
+              {m.query_view_no_results_filter_hint()}
+            </p>
+          )}
+        </>
       )}
     </div>
   );

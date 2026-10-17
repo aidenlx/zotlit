@@ -379,7 +379,6 @@
   "library_view_papers_view_name": "Papers",
   "library_view_tree_label": "Libraries",
   "library_view_recent": "Recent",
-  "library_view_recent_edited_in_zotero": "edited in Zotero",
   "library_view_reveal_not_listed": [
     {
       "declarations": ["input limit", "local formatted = limit: number"],
@@ -403,21 +402,6 @@
       }
     }
   ],
-  "library_view_header": [
-    {
-      "declarations": [
-        "input selection",
-        "input count",
-        "local category = count: plural",
-        "local formatted = count: number"
-      ],
-      "selectors": ["category"],
-      "match": {
-        "category=one": "{selection} · 1 paper",
-        "category=*": "{selection} · {formatted} papers"
-      }
-    }
-  ],
   "library_view_header_unread": [
     {
       "declarations": ["input count", "local formatted = count: number"],
@@ -428,7 +412,7 @@
     }
   ],
   "library_view_all_libraries": "Show all libraries",
-  "library_view_scope_libraries": "Show only libraries in the library scope",
+  "library_view_scope_libraries": "Hide other libraries",
   "library_view_show_tree": "Show libraries and collections",
   "library_view_not_found_tree": "Zotero not found",
   "library_view_locate": "Locate data folder",
@@ -2597,7 +2581,6 @@
     }
   ],
   "query_view_papers_more_creators": "{names} et al.",
-  "query_view_papers_has_note": "literature note",
   "query_view_papers_attachment_pdf": "PDF",
   "query_view_papers_attachment_epub": "EPUB",
   "query_view_papers_attachment_web": "Web page",

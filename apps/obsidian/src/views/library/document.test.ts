@@ -145,7 +145,6 @@ describe("withNode", () => {
 
 const LABELS = {
   papers: "Papers",
-  editedInZotero: "edited in Zotero",
 };
 /** The Library Scope in force: My Library and one group. */
 const SCOPE = {
@@ -279,23 +278,6 @@ describe("libraryViewQuery — Recent", () => {
       facets: ["annotated"],
     });
     expect(file.filters).toBe("annotations.length > 0");
-  });
-
-  it("gives each row its reason: edited in Zotero", () => {
-    expect(recent().query.reason).toBe("edited in Zotero");
-  });
-
-  it("gives no reason for a Library or a Collection", () => {
-    expect(derive({}).query.reason).toBeNull();
-    expect(
-      derive({
-        node: {
-          kind: "collection",
-          library: { type: "personal" },
-          path: ["A"],
-        },
-      }).query.reason,
-    ).toBeNull();
   });
 });
 

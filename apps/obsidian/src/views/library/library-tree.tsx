@@ -380,11 +380,11 @@ export class LibraryTree extends Component {
 
   /**
    * Draw the list header into `el`.
-   * @param summary the header's text in place of its own `fallback`, as a
-   * search on screen says it.
+   * @param search the search summary that takes the place of the header's own
+   * text while a search is on screen, and the control beside it.
    */
-  renderHeader(el: HTMLElement, summary?: HeaderSummary): void {
-    this.#mount(el, <ListHeader tree={this} summary={summary} />);
+  renderHeader(el: HTMLElement, search: HeaderSearch): void {
+    this.#mount(el, <ListHeader tree={this} search={search} />);
   }
 
   #mount(el: HTMLElement, content: ReactNode): void {
@@ -409,42 +409,39 @@ function nodeLabel(
     : libraryLabel({ selector: node.library, libraryID: 0, name: null });
 }
 
-/** What the header shows: its text, and a control beside it. */
-export interface HeaderParts {
-  readonly text: ReactNode;
-  readonly action?: ReactNode;
+/** What a search on screen puts in the header. */
+export interface HeaderSearch {
+  /**
+   * The search summary for the selection named `selection`, as a hook; `null`
+   * while no search is on screen or its count is unknown.
+   */
+  useSummary: (selection: string) => string | null;
+  /** The control beside the header. */
+  readonly action: ReactNode;
 }
-
-/** The header for the selection named `selection`, given its own text, `fallback`. */
-export type HeaderSummary = (header: {
-  selection: string;
-  fallback: ReactNode;
-}) => HeaderParts;
 
 function ListHeader({
   tree,
-  summary,
+  search,
 }: {
   tree: LibraryTree;
-  summary: HeaderSummary | undefined;
+  search: HeaderSearch;
 }) {
   const libraries = useStore(tree.store, (s) => s.libraries);
   const node = useStore(tree.store, (s) => s.node);
   const open = useStore(tree.store, (s) => s.open);
-  const selection = nodeLabel(libraries, node);
-  const count = libraries ? (findNode(libraries, node)?.count ?? null) : null;
   const unread = useStore(tree.store, (s) => s.unread);
-  // The unread count is part of the header's own text, which a search
-  // summary takes the place of.
-  const text =
-    count === null
-      ? selection
-      : unread === null
-        ? m.library_view_header({ selection, count })
-        : `${m.library_view_header({ selection, count })} ${m.library_view_header_unread({ count: unread })}`;
-  const { text: shown, action } = summary
-    ? summary({ selection, fallback: text })
-    : { text };
+  const selection = nodeLabel(libraries, node);
+  const summary = search.useSummary(selection);
+  // The tree names the selection with its paper count; the header adds the
+  // unread count. Recent, which the tree names, has no header text.
+  const own =
+    node.kind === "recent"
+      ? null
+      : unread
+        ? `${selection} ${m.library_view_header_unread({ count: unread })}`
+        : selection;
+  const text = summary ?? own;
   return (
     <div className="zt:flex zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-x-(--size-2-2) zt:gap-y-(--size-2-1) zt:ps-(--zt-query-toolbar-inset-start) zt:pe-(--zt-query-toolbar-inset-end) zt:pt-(--size-4-2)">
       {/* Obsidian's own rule shows a clickable icon, so the narrow pane
@@ -461,15 +458,23 @@ function ListHeader({
       {/* Obsidian styles a bare heading element; the header keeps the UI
           type scale. While Zotero is not found, the toggle above stays, so
           a narrow pane still opens the tree and its not-found part. */}
-      <div
-        role="heading"
-        aria-level={2}
-        data-library-header=""
-        className="zt:m-0 zt:min-w-0 zt:truncate zt:text-(length:--font-ui-medium) zt:font-(--font-semibold) zt:group-data-zotero-missing:hidden"
-      >
-        {shown}
+      {text !== null && (
+        <div
+          role="heading"
+          aria-level={2}
+          data-library-header=""
+          className="zt:m-0 zt:min-w-0 zt:truncate zt:text-(length:--font-ui-medium) zt:font-(--font-semibold) zt:group-data-zotero-missing:hidden"
+        >
+          {text}
+        </div>
+      )}
+      {search.action}
+      {/* A screen reader hears the search summary as it changes, and not a
+          tree selection, which the tree announces itself. The status is on
+          the page from the start, so the first count is heard too. */}
+      <div role="status" className="zt:sr-only" data-library-search-status="">
+        {summary ?? ""}
       </div>
-      {action}
     </div>
   );
 }
@@ -581,11 +586,8 @@ function TreePane({ tree }: { tree: LibraryTree }) {
 
   return (
     // Obsidian shows a tooltip for each `aria-label`, so the tree takes its
-    // name from the heading on screen.
-    <nav
-      aria-labelledby={headingId}
-      className="zt:flex zt:flex-col zt:gap-(--size-4-2) zt:p-(--size-4-2)"
-    >
+    // name from the heading on screen; the tree alone goes by it.
+    <nav className="zt:flex zt:flex-col zt:gap-(--size-4-2) zt:p-(--size-4-2)">
       <div
         role="tree"
         aria-labelledby={headingId}
@@ -606,7 +608,7 @@ function TreePane({ tree }: { tree: LibraryTree }) {
                   : -1
               }
               style={{ "--zt-library-depth": row.level - 1 } as CSSProperties}
-              className="zt:flex zt:min-w-0 zt:cursor-(--cursor) zt:items-center zt:gap-(--size-2-1) zt:rounded-(--radius-s) zt:py-(--size-2-2) zt:ps-[calc(var(--zt-library-depth)*var(--size-4-4)+var(--size-2-1))] zt:pe-(--size-4-2) zt:text-(length:--nav-item-size) zt:text-(--nav-item-color) zt:outline-none zt:hover:not-aria-selected:bg-(--nav-item-background-hover) zt:focus-visible:shadow-[inset_0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)] zt:aria-selected:bg-(--nav-item-background-selected) zt:aria-selected:text-(--nav-item-color-selected)"
+              className="zt:flex zt:min-w-0 zt:cursor-(--cursor) zt:items-center zt:gap-(--size-2-1) zt:rounded-(--radius-s) zt:py-(--size-2-2) zt:ps-[calc(var(--zt-library-depth)*var(--size-4-4)+var(--size-2-1))] zt:pe-(--size-4-2) zt:text-(length:--nav-item-size) zt:text-(--nav-item-color) zt:outline-hidden zt:hover:not-aria-selected:bg-(--nav-item-background-hover) zt:focus-visible:shadow-[inset_0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)] zt:aria-selected:bg-(--nav-item-background-selected) zt:aria-selected:text-(--nav-item-color-selected)"
               onClick={() => tree.select(row.node)}
               onKeyDown={(event) => onKeyDown(event, index)}
             >
@@ -634,7 +636,7 @@ function TreePane({ tree }: { tree: LibraryTree }) {
               {row.count !== null && (
                 <span
                   data-library-count=""
-                  className="zt:shrink-0 zt:text-(length:--font-ui-smaller) zt:text-faint zt:tabular-nums"
+                  className="zt:shrink-0 zt:text-(length:--font-ui-smaller) zt:text-muted-foreground zt:tabular-nums"
                 >
                   {m.library_view_tree_count({ count: row.count })}
                 </span>
@@ -661,7 +663,7 @@ function TreePane({ tree }: { tree: LibraryTree }) {
           role="button"
           tabIndex={0}
           data-library-all={all ? "on" : "off"}
-          className="zt:cursor-(--cursor) zt:self-start zt:rounded-(--radius-s) zt:px-(--size-4-2) zt:text-(length:--font-ui-smaller) zt:text-muted-foreground zt:outline-none zt:hover:text-(--text-normal) zt:focus-visible:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)]"
+          className="zt:cursor-(--cursor) zt:self-start zt:rounded-(--radius-s) zt:px-(--size-4-2) zt:text-(length:--font-ui-smaller) zt:text-muted-foreground zt:outline-hidden zt:hover:text-(--text-normal) zt:focus-visible:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)]"
           onClick={() => tree.showAll(!all)}
           onKeyDown={(event) => {
             if (event.key !== "Enter" && event.key !== " ") return;
@@ -691,19 +693,17 @@ function Facets({ tree }: { tree: LibraryTree }) {
   const facets = useStore(tree.store, (s) => s.facets);
   const headingId = useUniqueId();
   return (
-    // Named by the heading on screen: an `aria-label` would show a tooltip.
+    // Named by a hidden heading: an `aria-label` would show a tooltip, and
+    // the chips say on screen what they do.
     <div
       role="group"
       aria-labelledby={headingId}
       data-library-facets=""
       className="zt:flex zt:flex-col zt:gap-(--size-2-2)"
     >
-      <div
-        id={headingId}
-        className="zt:px-(--size-4-2) zt:text-(length:--font-ui-smaller) zt:font-(--font-semibold) zt:text-muted-foreground"
-      >
+      <span id={headingId} className="zt:sr-only">
         {m.library_view_facets_label()}
-      </div>
+      </span>
       <div className="zt:flex zt:flex-wrap zt:gap-(--size-2-2) zt:px-(--size-4-2)">
         {READING_STATE_FACETS.map((facet) => (
           // Obsidian's unlayered `button` rules outrank the chip's
@@ -715,7 +715,7 @@ function Facets({ tree }: { tree: LibraryTree }) {
             tabIndex={0}
             data-library-facet={facet}
             aria-pressed={facets.includes(facet)}
-            className="zt:cursor-(--cursor) zt:rounded-(--radius-l) zt:border-(length:--border-width) zt:border-(--background-modifier-border) zt:px-(--size-4-2) zt:py-(--size-2-1) zt:text-(length:--font-ui-smaller) zt:text-muted-foreground zt:outline-none zt:hover:bg-(--background-modifier-hover) zt:hover:text-(--text-normal) zt:focus-visible:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)] zt:aria-pressed:border-(--interactive-accent) zt:aria-pressed:bg-(--interactive-accent) zt:aria-pressed:text-(--text-on-accent) zt:aria-pressed:hover:bg-(--interactive-accent-hover) zt:aria-pressed:hover:text-(--text-on-accent)"
+            className="zt:cursor-(--cursor) zt:rounded-(--radius-l) zt:border-(length:--border-width) zt:border-(--background-modifier-border) zt:px-(--size-4-2) zt:py-(--size-2-1) zt:text-(length:--font-ui-smaller) zt:text-muted-foreground zt:outline-hidden zt:hover:bg-(--background-modifier-hover) zt:hover:text-(--text-normal) zt:focus-visible:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)] zt:aria-pressed:border-(--interactive-accent) zt:aria-pressed:bg-(--interactive-accent) zt:aria-pressed:text-(--text-on-accent) zt:aria-pressed:hover:bg-(--interactive-accent-hover) zt:aria-pressed:hover:text-(--text-on-accent)"
             onClick={() => tree.toggleFacet(facet)}
             onKeyDown={(event) => {
               if (event.key !== "Enter" && event.key !== " ") return;

@@ -269,13 +269,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   let booksNotePath = "";
   let m: typeof import("@obsidian-messages");
 
-  /** The Library View header: the selection, its paper count and its unread count. */
+  /**
+   * The Library View header: the selection and, where some are unread, its
+   * unread count. The paper count shows beside the node in the tree.
+   */
   function libraryHeader(
     selection: string,
     items: readonly FixtureItem[],
     noted?: (item: FixtureItem) => boolean,
   ): string {
-    return `${m.library_view_header({ selection, count: items.length })} ${m.library_view_header_unread({ count: unreadOf(items, noted).length })}`;
+    const unread = unreadOf(items, noted).length;
+    return unread === 0
+      ? selection
+      : `${selection} ${m.library_view_header_unread({ count: unread })}`;
   }
   const articlesProfile = {
     id: "Ar7Kd2QpX9Mn",
@@ -1431,12 +1437,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           .map(({ dateModified }) => dateModified)
           .toSorted((a, b) => direction * a.localeCompare(b)),
       );
-      // Until ZotLit Query reads lastRead, each Item is on Recent for its
-      // last change in Zotero: the reading-state line of each paper ends so.
-      const reason = m.library_view_recent_edited_in_zotero();
+      // Until ZotLit Query reads lastRead, Recent gives no row a reason: the
+      // reading-state line holds the Annotation count at most.
       for (const state of shown.states)
         expect(
-          state === reason || state?.endsWith(` · ${reason}`),
+          state === null ||
+            state ===
+              m.query_view_papers_annotation_count({
+                count: Number.parseInt(state, 10),
+              }),
           String(state),
         ).toBe(true);
     };
@@ -1477,16 +1486,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ).length;
 
     // The new view opens on Recent: every Item of the Library Scope, newest
-    // change first, with no paper count in the header.
+    // change first, with no header text, since the tree names Recent.
     await obEval(
       vaultId,
       "app.commands.executeCommandById('zotlit:open-library-view');true",
     );
     const opened = await shownWhen(listing(size([personal, shared])));
-    expect(opened).toMatchObject({
-      recent: true,
-      header: m.library_view_recent(),
-    });
+    expect(opened).toMatchObject({ recent: true, header: null });
     expectRecent(opened, [personal, shared], -1);
 
     // Another Library Scope changes what Recent lists.
@@ -1832,16 +1838,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       const annotations = annotationsOf(item);
       const kinds = new Set(attachmentsOf(item).map(kindOf));
       const note = !DEMO_ITEMS.includes(item);
-      const state = [
-        annotations.length > 0
-          ? m.query_view_papers_annotation_count({ count: annotations.length })
-          : null,
-        note ? m.query_view_papers_has_note() : null,
-      ].filter((part) => part !== null);
+      // The Literature Note shows as the note icon, not on the line.
       return {
         key: item.key,
         title: item.title,
-        state: state.length > 0 ? state.join(" · ") : null,
+        state:
+          annotations.length > 0
+            ? m.query_view_papers_annotation_count({
+                count: annotations.length,
+              })
+            : null,
         colors: new Set(annotations.map(({ color }) => color)).size,
         attachment:
           ["pdf", "epub", "web"].find((kind) => kinds.has(kind)) ?? null,

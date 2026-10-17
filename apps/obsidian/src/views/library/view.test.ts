@@ -657,10 +657,16 @@ it("opens on Recent, every Library in the Library Scope newest change first, whe
     sort: [{ field: "dateModified", direction: "desc" }],
   });
   expect(row(view, RECENT).getAttribute("aria-selected")).toBe("true");
-  // Recent counts no papers: its list is the whole Library Scope.
-  expect(header(view)).toBe("Recent");
-  // A large library shows its newest rows; the toolbar says how many match.
+  // Recent has no header text: the selected node names it.
+  expect(header(view)).toBeUndefined();
+  // A large library shows its newest rows; the toolbar says how many match,
+  // in plain text: the researcher set no limit.
   expect(request.limit).toBe(1000);
+  expect(
+    view.contentEl
+      .querySelector("[data-query-results]")!
+      .hasAttribute("data-active"),
+  ).toBe(false);
   expect(request).not.toHaveProperty("filter");
   expect(request).not.toHaveProperty("context");
 });
@@ -767,7 +773,7 @@ it("lists a Collection with its subcollections' Items, names it in the header, a
     filter: 'collections.within("Thesis")',
   });
   expect(row(view, THESIS).getAttribute("aria-selected")).toBe("true");
-  expect(header(view)).toBe("Thesis · 3 papers · 1 unread");
+  expect(header(view)).toBe("Thesis · 1 unread");
   await settings.flush();
   expect(settings.current?.["library.document"]?.node).toEqual(THESIS);
 });
@@ -780,7 +786,7 @@ it("lists a group library on its own, with no filter", async () => {
   const last = listRuns(run).at(-1)!;
   expect(last.libraries).toEqual({ mode: "selected", libraries: [LAB] });
   expect(last).not.toHaveProperty("filter");
-  expect(header(view)).toBe("Lab · 2 papers · 2 unread");
+  expect(header(view)).toBe("Lab · 2 unread");
 });
 
 it("shows the libraries outside the Library Scope on request, and lists one", async () => {
@@ -816,6 +822,7 @@ it("shows the libraries outside the Library Scope on request, and lists one", as
         ?.textContent,
     ).toBe("HPDFHPDF"),
   );
+  expect(all().textContent).toBe("Hide other libraries");
   // The selected library stays in the tree while it shows the scope alone.
   await press(view, all());
   expect(tree(view).at(-1)).toBe("Archive 1");
@@ -851,7 +858,7 @@ it("opens again on the node the tree selected", async () => {
   run.mockClear();
   const view = await openTab(deps);
   expect(listRuns(run)).toEqual([selected]);
-  expect(header(view)).toBe("Lab · 2 papers · 2 unread");
+  expect(header(view)).toBe("Lab · 2 unread");
 });
 
 it("counts again after a database change", async () => {
@@ -884,7 +891,7 @@ it("moves the selection up to its library where Zotero no longer has the Collect
   const view = await openTab(deps);
   await act(() => view.query.settled);
   expect(listRuns(run).at(-1)).not.toHaveProperty("filter");
-  expect(header(view)).toBe("My Library · 5 papers · 2 unread");
+  expect(header(view)).toBe("My Library · 2 unread");
   await settings.flush();
   expect(settings.current?.["library.document"]?.node).toEqual({
     kind: "library",
@@ -903,6 +910,15 @@ it("names the tree by its heading, with no tooltip over it", async () => {
   ).toBe("Libraries");
   // Obsidian shows every `aria-label` as a tooltip on hover.
   expect(pane.querySelectorAll("[aria-label]")).toHaveLength(0);
+  // Only the tree goes by "Libraries": the pane around it has no name.
+  expect(pane.querySelectorAll("[aria-labelledby]")).toHaveLength(2);
+  // The facets are named for a screen reader, with no heading on screen.
+  const facets = pane.querySelector<HTMLElement>("[data-library-facets]")!;
+  const facetsName = view.contentEl.querySelector<HTMLElement>(
+    `[id="${facets.getAttribute("aria-labelledby")}"]`,
+  )!;
+  expect(facetsName.textContent).toBe(m.library_view_facets_label());
+  expect(facetsName.classList.contains("zt:sr-only")).toBe(true);
 });
 
 it("says where Zotero's data folder cannot be found, offers to locate it, and lists the papers once it is set", async () => {
@@ -994,11 +1010,11 @@ it("says Zotero is not found where the data folder changes to one that does not 
   ).toBeNull();
 });
 
-it("gives each row on Recent its reason, and none on a Library", async () => {
+it("gives no row a reason, on Recent as on a Library, until Recent reads last activity", async () => {
   const { deps } = pluginData();
   const view = await openTab(deps);
   const item = { indexedKey: "AAAAAAAA", values: {} };
-  expect(view.query.reason(item)).toBe("edited in Zotero");
+  expect(view.query.reason(item)).toBeNull();
   await press(view, row(view, { kind: "library", library: LAB }));
   expect(view.query.reason(item)).toBeNull();
 });
@@ -1053,7 +1069,7 @@ it("keeps Recent selected through a sort change, and selecting it again sorts ne
     libraries: { mode: "selected", libraries: [PERSONAL, LAB] },
     sort: [{ field: "dateModified", direction: "desc" }],
   });
-  expect(header(view)).toBe("Recent");
+  expect(header(view)).toBeUndefined();
   await settings.flush();
   expect(settings.current?.["library.document"]).toMatchObject({
     node: RECENT,
@@ -1216,12 +1232,12 @@ describe("Reading State facets", () => {
   it("counts the unread Items of the selection in the header, once the vault answers for their notes", async () => {
     const { deps, addNote } = pluginData();
     const view = await openTab(deps);
-    // Recent names no paper count, so it names no unread count either.
-    expect(header(view)).toBe("Recent");
+    // Recent has no header text, so it names no unread count either.
+    expect(header(view)).toBeUndefined();
     await press(view, row(view, MY_LIBRARY));
-    expect(header(view)).toBe("My Library · 5 papers · 2 unread");
+    expect(header(view)).toBe("My Library · 2 unread");
     await press(view, row(view, THESIS));
-    expect(header(view)).toBe("Thesis · 3 papers · 1 unread");
+    expect(header(view)).toBe("Thesis · 1 unread");
     await press(view, facet(view, "unread"));
     expect(listed(view)).toEqual(["BBBBBBBB"]);
     // A new Literature Note takes B out of the unread Items.
@@ -1231,7 +1247,7 @@ describe("Reading State facets", () => {
       await view.tree.settled;
     });
     expect(listed(view)).toEqual([]);
-    expect(header(view)).toBe("Thesis · 3 papers · 0 unread");
+    expect(header(view)).toBe("Thesis");
   });
 
   it("opens again with the facets the researcher left on", async () => {
@@ -1372,6 +1388,16 @@ it("lets the keyboard enter the list at its first row while none is selected, an
   expect(stops()).toEqual([C]);
   expect(itemRow(view, C).getAttribute("aria-current")).toBe("true");
   expect(itemRow(view, A).hasAttribute("aria-current")).toBe(false);
+  // A row that takes focus is a group named by its title, as a screen
+  // reader reads it, with no tooltip.
+  const name = (el: HTMLElement) =>
+    el.ownerDocument.getElementById(el.getAttribute("aria-labelledby")!)
+      ?.textContent;
+  expect(itemRow(view, C).getAttribute("role")).toBe("group");
+  expect(itemRow(view, C).hasAttribute("aria-label")).toBe(false);
+  expect(name(itemRow(view, C))).toBe(
+    itemRow(view, C).querySelector("[data-query-papers-title]")!.textContent,
+  );
 });
 
 it("answers the quick switcher's keys on the selected row: Enter the note, Mod+Enter the note in a new pane, Shift+Enter the PDF", async () => {
@@ -1462,7 +1488,7 @@ it("shows an Item in its first Collection, selected", async () => {
     libraries: { mode: "selected", libraries: [PERSONAL] },
     filter: 'collections.within("Thesis/Chapter 1")',
   });
-  expect(header(view)).toBe("Thesis / Chapter 1 · 1 paper · 0 unread");
+  expect(header(view)).toBe("Thesis / Chapter 1");
   expect(itemRows(view)).toContain(`${A} *`);
 });
 
@@ -1616,6 +1642,22 @@ it("lists a search's hits in the rank of the worker search, inside the selected 
   expect(searchAll(view)?.textContent).toBe("Search all libraries");
 });
 
+it("announces the search's match count as a status, and not a tree selection", async () => {
+  const { deps } = pluginData(ON_MY_LIBRARY);
+  const view = await openTab(deps);
+  const status = () =>
+    view.contentEl.querySelectorAll<HTMLElement>('[role="status"]');
+  // The status is on the page, empty, before it has anything to say, so a
+  // screen reader hears the first count too.
+  expect([...status()].map((el) => el.textContent)).toEqual([""]);
+  await press(view, row(view, THESIS));
+  expect(status()[0]!.textContent).toBe("");
+  await type(view, "figures");
+  expect(status()[0]!.textContent).toBe("2 matches in Thesis");
+  await type(view, "");
+  expect(status()[0]!.textContent).toBe("");
+});
+
 it("searches all libraries in the Library Scope on request, past the selected Collection", async () => {
   const { deps, run, searches } = pluginData();
   const view = await openTab(deps);
@@ -1681,7 +1723,7 @@ it("clears the search on Escape, and lists the selected node again", async () =>
     "DDDDDDDD",
     "EEEEEEEE",
   ]);
-  expect(header(view)).toBe("My Library · 5 papers · 2 unread");
+  expect(header(view)).toBe("My Library · 2 unread");
   await act(() => view.close());
   expect(settings.current?.["library.document"]?.search).toBe("");
 });
@@ -1693,10 +1735,13 @@ it("says a search that finds nothing found nothing, offers to search all librari
     view.contentEl.querySelector<HTMLElement>("[data-query-empty]");
   await type(view, "Engelbart");
   expect(shown(view)).toEqual([]);
+  // One sentence and one button: no dataset sentence, no filter hint, and
+  // the header leaves its own offer to the empty list.
   expect(view.contentEl.querySelector("[data-query-empty-hint]")).toBeNull();
-  expect(empty()?.querySelector("[data-library-empty]")?.textContent).toBe(
-    m.library_view_empty_search({ query: "Engelbart" }),
+  expect(empty()?.textContent).toBe(
+    `${m.library_view_empty_search({ query: "Engelbart" })}${m.library_view_search_everywhere()}`,
   );
+  expect(searchAll(view)).toBeNull();
   const action = () =>
     empty()?.querySelector<HTMLElement>("[data-library-empty-action]");
   expect(action()?.textContent).toBe(m.library_view_search_everywhere());
@@ -1724,9 +1769,9 @@ it("says the facets left nothing to list where no paper passes them", async () =
   await press(view, facet(view, "unread"));
   expect(shown(view)).toEqual([]);
   expect(view.contentEl.querySelector("[data-query-empty-hint]")).toBeNull();
-  expect(
-    view.contentEl.querySelector("[data-library-empty]")?.textContent,
-  ).toBe(m.library_view_empty_facets());
+  expect(view.contentEl.querySelector("[data-query-empty]")?.textContent).toBe(
+    m.library_view_empty_facets(),
+  );
 });
 
 it("keeps a search inside the active facets, the vault's among them, in the search's rank", async () => {
@@ -1748,9 +1793,12 @@ it("keeps a search of all libraries inside the active facets", async () => {
   await press(view, row(view, THESIS));
   await press(view, facet(view, "unread"));
   await type(view, "figures");
+  // Nothing in Thesis passes, so the empty list makes the offer.
   await press(
     view,
-    view.contentEl.querySelector<HTMLElement>("[data-library-search-all]")!,
+    view.contentEl.querySelector<HTMLElement>(
+      '[data-library-empty-action="widen"]',
+    )!,
   );
   // Of the four hits in My Library and Lab, F has no Annotation and no
   // note; the others have one or the other.
@@ -1900,23 +1948,6 @@ it("lets go of the selected row once a search leaves it out, and hides its Readi
   expect(
     view.contentEl.querySelector("[data-library-card]")!.hasAttribute("hidden"),
   ).toBe(true);
-});
-
-it("draws each row without Recent's reason once My Library is picked, where Recent reads My Library alone", async () => {
-  const { deps, rescope } = pluginData();
-  const view = await openTab(deps);
-  await act(async () => {
-    rescope(LIBRARIES.slice(0, 1));
-    await view.searched;
-    await view.query.settled;
-  });
-  const reasons = () =>
-    [...view.contentEl.querySelectorAll("[data-query-papers-state]")].filter(
-      (el) => el.textContent?.includes("edited in Zotero"),
-    ).length;
-  expect(reasons()).toBe(5);
-  await press(view, row(view, MY_LIBRARY));
-  expect(reasons()).toBe(0);
 });
 
 describe("Reading Card", () => {

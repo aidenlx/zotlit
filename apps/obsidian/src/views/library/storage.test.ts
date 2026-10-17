@@ -29,7 +29,6 @@ vi.mock("zustand", () => import("../__fixtures__/zustand"));
 
 const LABELS = {
   papers: "Papers",
-  editedInZotero: "edited in Zotero",
 };
 
 const EMPTY: QueryViewOutcome = {

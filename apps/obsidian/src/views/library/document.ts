@@ -215,11 +215,9 @@ export function serializeLibraryViewDocument(
   };
 }
 
-/** The names the derived query shows: its view's name and Recent's reason. */
+/** The names the derived query shows: its view's name. */
 export interface LibraryViewLabels {
   readonly papers: string;
-  /** Recent's reason for an Item Zotero changed last. */
-  readonly editedInZotero: string;
 }
 
 /**
@@ -242,13 +240,6 @@ export interface LibraryViewQuery {
   readonly rank: readonly string[] | null;
   /** The conditions every row passes in the vault, after the query. */
   readonly vault: readonly VaultCondition[];
-  /**
-   * Why each row is in the list: on Recent, its last activity; `null`
-   * elsewhere. Until ZotLit Query reads `lastRead` and the Obsidian usage
-   * ledger (#1532, #1533), every Item is on Recent for its last change in
-   * Zotero; the reason then names the source and the time of each row.
-   */
-  readonly reason: string | null;
 }
 
 /**
@@ -307,7 +298,6 @@ export function libraryViewQuery(
     );
   for (const tag of searchTerms(doc.search).tags)
     filters.push(`tags.contains(${JSON.stringify(tag)})`);
-  const recent = node.kind === "recent";
   const text = serializeQueryFile({
     ...(filters.length > 0 && { filters: filterTree(filters) }),
     views: [
@@ -332,7 +322,6 @@ export function libraryViewQuery(
       : librariesOf(node, scope),
     rank: keys ?? null,
     vault,
-    reason: recent ? labels.editedInZotero : null,
   };
 }
 

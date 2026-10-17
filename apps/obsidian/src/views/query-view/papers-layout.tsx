@@ -9,6 +9,7 @@ import { Fragment, useSyncExternalStore } from "react";
 import type { CSSProperties, ReactNode } from "react";
 
 import { resolveVenue } from "@zotlit/db";
+import { useUniqueId } from "@zotlit/ui";
 
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
@@ -228,13 +229,14 @@ function PaperRow({
   const note = useNotePath(notes, item.key);
   const annotations = list(values["annotations[].color"]);
   const colors = annotationColors(annotations);
+  // The Literature Note shows once, as the note icon at the row's end.
   const state = [
     annotations.length > 0
       ? m.query_view_papers_annotation_count({ count: annotations.length })
       : null,
-    note !== null ? m.query_view_papers_has_note() : null,
     reason,
   ].filter((part) => part !== null);
+  const titleId = useUniqueId();
   const meta = metaText(values);
   const kind = mainAttachmentKind(values);
   return (
@@ -242,9 +244,12 @@ function PaperRow({
       className="zt:border-b-(length:--border-width) zt:border-border"
       data-query-papers-row={item.key}
     >
+      {/* A row the host lets take focus is a group named by its title: an
+          `aria-label` would show a tooltip. */}
       <div
         {...row}
-        className="zt:flex zt:items-start zt:gap-1 zt:rounded-sm zt:px-1 zt:py-1.5 zt:outline-none zt:hover:bg-(--background-modifier-hover) zt:focus-visible:shadow-[inset_0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)] zt:data-selected:bg-(--nav-item-background-selected)"
+        {...(gestures && { role: "group", "aria-labelledby": titleId })}
+        className="zt:flex zt:items-start zt:gap-1 zt:rounded-sm zt:px-1 zt:py-1.5 zt:outline-hidden zt:hover:bg-(--background-modifier-hover) zt:focus-visible:shadow-[inset_0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)] zt:data-selected:bg-(--nav-item-background-selected)"
       >
         <Expander
           record={item}
@@ -254,6 +259,7 @@ function PaperRow({
         />
         <div className="zt:min-w-0 zt:flex-1">
           <div
+            id={titleId}
             className="zt:line-clamp-2 zt:text-sm zt:font-(--font-medium) zt:text-foreground"
             data-query-papers-title=""
           >
@@ -269,7 +275,7 @@ function PaperRow({
           )}
           {state.length > 0 && (
             <div
-              className="zt:flex zt:items-center zt:gap-1 zt:text-xs zt:text-faint"
+              className="zt:flex zt:items-center zt:gap-1 zt:text-xs zt:text-muted-foreground"
               data-query-papers-state=""
             >
               {colors.length > 0 && (

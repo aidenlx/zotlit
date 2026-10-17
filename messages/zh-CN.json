@@ -465,7 +465,6 @@
   "library_view_papers_view_name": "文献",
   "library_view_tree_label": "文库",
   "library_view_recent": "最近",
-  "library_view_recent_edited_in_zotero": "在 Zotero 中编辑",
   "library_view_reveal_not_listed": [
     {
       "declarations": ["input limit", "local formatted = limit: number"],
@@ -489,21 +488,6 @@
       }
     }
   ],
-  "library_view_header": [
-    {
-      "declarations": [
-        "input selection",
-        "input count",
-        "local category = count: plural",
-        "local formatted = count: number"
-      ],
-      "selectors": ["category"],
-      "match": {
-        "category=one": "{selection} · 1 篇文献",
-        "category=*": "{selection} · {formatted} 篇文献"
-      }
-    }
-  ],
   "library_view_header_unread": [
     {
       "declarations": ["input count", "local formatted = count: number"],
@@ -514,7 +498,7 @@
     }
   ],
   "library_view_all_libraries": "显示所有文库",
-  "library_view_scope_libraries": "仅显示文库范围内的文库",
+  "library_view_scope_libraries": "隐藏其他文库",
   "library_view_show_tree": "显示文库和分类",
   "library_view_not_found_tree": "未找到 Zotero",
   "library_view_locate": "定位数据文件夹",
@@ -2432,7 +2416,6 @@
     }
   ],
   "query_view_papers_more_creators": "{names} 等",
-  "query_view_papers_has_note": "文献笔记",
   "query_view_papers_attachment_pdf": "PDF",
   "query_view_papers_attachment_epub": "EPUB",
   "query_view_papers_attachment_web": "网页",
