@@ -14,7 +14,11 @@ import {
 
 import { DEFAULT_LIBRARY_VIEW_DOCUMENT } from "./document";
 import type { LibraryViewDocument } from "./document";
-import { documentWithText, libraryViewQuery } from "./query-text";
+import {
+  documentWithText,
+  libraryViewQuery,
+  libraryViewQueryFileText,
+} from "./query-text";
 
 const LABELS = { papers: "Papers", creators: "Creators", year: "Year" };
 
@@ -269,5 +273,75 @@ describe("documentWithText", () => {
     expect(documentWithText(DEFAULT_LIBRARY_VIEW_DOCUMENT, text).layout).toBe(
       "table",
     );
+  });
+});
+
+describe("libraryViewQueryFileText — Save as query file", () => {
+  /** The saved file, read back as a Query File tab reads it. */
+  function saved(doc: Partial<LibraryViewDocument>) {
+    const file = parseQueryFile(
+      libraryViewQueryFileText(
+        { ...DEFAULT_LIBRARY_VIEW_DOCUMENT, ...doc },
+        { labels: LABELS },
+      ),
+    );
+    expect(file.problems).toEqual([]);
+    expect(file.views).toHaveLength(1);
+    const view = file.views[0]!;
+    expect(view.problems).toEqual([]);
+    return { file, view, filter: viewFilter(file, view) };
+  }
+
+  it("keeps to the Library of the tree node, which a Query File tab does not choose", () => {
+    const { filter } = saved({
+      node: { kind: "library", library: { type: "group", groupID: 118 } },
+    });
+    expect(selects(filter, { ...seed("ABCD2345"), groupID: 118 })).toBe(true);
+    expect(selects(filter, { ...seed("ABCD2345"), groupID: 7 })).toBe(false);
+    expect(selects(filter, seed("ABCD2345"))).toBe(false);
+  });
+
+  it("writes the Library alone as the filter of a Library node", () => {
+    expect(saved({}).file.filters).toBe('library == "personal"');
+  });
+
+  it("keeps to My Library and the selected Collection", () => {
+    const { filter } = saved({
+      node: {
+        kind: "collection",
+        library: { type: "personal" },
+        path: ["Thesis"],
+      },
+    });
+    expect(plans(filter)).toBe(true);
+    expect(selects(filter, seed("ABCD2345", [["Thesis", "Chapter 2"]]))).toBe(
+      true,
+    );
+    expect(
+      selects(filter, { ...seed("ABCD2345", [["Thesis"]]), groupID: 118 }),
+    ).toBe(false);
+    expect(selects(filter, seed("ABCD2345", [["Other"]]))).toBe(false);
+  });
+
+  it("leaves the search out, since a Query File cannot express it", () => {
+    const { filter } = saved({ search: "attention" });
+    expect(selects(filter, seed("ABCD2345"))).toBe(true);
+    expect(filter).not.toContain("indexedKey");
+  });
+
+  it("keeps the view as the Library View shows it: sort, Layout, Visible Properties and row limit", () => {
+    const { view } = saved({
+      sort: [{ property: "title", direction: "ASC" }],
+      layout: "table",
+      order: ["title", "vault.literatureNote"],
+    });
+    expect(view).toMatchObject({
+      type: "table",
+      name: "Papers",
+      from: "items",
+      sort: [{ property: "title", direction: "ASC" }],
+      order: ["title", "vault.literatureNote"],
+      limit: 1000,
+    });
   });
 });
