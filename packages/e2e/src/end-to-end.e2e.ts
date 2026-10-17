@@ -2855,15 +2855,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         vaultId,
         "String(app.workspace.getLeavesOfType('zotlit-library').length)",
       );
-    /**
-     * Reload the plugin and let its release check end: the check runs as
-     * soon as the plugin data it awaits has loaded, so one macrotask after
-     * that promise it has opened whatever it opens.
-     */
+    /** Reload the plugin and wait for its release check to open what it opens. */
     const reloadAndCheck = () =>
       obEval(
         vaultId,
-        `(async()=>{await ${reload};await ${services}.settings.loaded;await new Promise(resolve=>setTimeout(resolve,0));return true;})()`,
+        `(async()=>{await ${reload};await ${services}.release.checked;return true;})()`,
       );
 
     // A fresh install has no plugin data: the release check opens the

@@ -44,8 +44,17 @@ export class ReleaseService extends Service<void> {
   readonly #settings: SettingsService;
   readonly #openFirstScreen?: () => void | Promise<void>;
   #stopped = false;
+  readonly #checked = Promise.withResolvers<void>();
 
   ready: Promise<void>;
+
+  /**
+   * Settles once the launch check has run and opened what it opens, the first
+   * screen included. Never rejects.
+   */
+  get checked(): Promise<void> {
+    return this.#checked.promise;
+  }
 
   constructor(options: ReleaseServiceOptions) {
     super();
@@ -62,10 +71,17 @@ export class ReleaseService extends Service<void> {
     // check on disposal to avoid touching settings after the plugin unloads.
     stack.defer(() => {
       this.#stopped = true;
+      this.#checked.resolve();
     });
     // The launch check needs settings loaded and the workspace ready to open
     // leaves; `ready` settles now, the check runs after layout is ready.
-    this.#app.workspace.onLayoutReady(() => this.#runCheck());
+    this.#app.workspace.onLayoutReady(() =>
+      this.#runCheck()
+        .catch((error: unknown) => {
+          logger.error("Release check failed", { error });
+        })
+        .finally(() => this.#checked.resolve()),
+    );
     this.commit(stack.move());
   }
 
@@ -145,7 +161,7 @@ export class ReleaseService extends Service<void> {
         break;
       case "welcome-fresh":
       case "welcome-upgraded":
-        void this.#openFirstScreen?.();
+        await this.#openFirstScreen?.();
         break;
       case "none":
         break;

@@ -167,6 +167,48 @@ describe("ReleaseService Companion update notice", () => {
   });
 });
 
+describe("ReleaseService checked", () => {
+  it("settles once the launch check has opened the first screen", async () => {
+    let layoutReady: (() => void | Promise<void>) | undefined;
+    const opened = Promise.withResolvers<void>();
+    const settings = {
+      loaded: Promise.resolve({
+        "release.previous-version": null,
+        "release.migration-pending": false,
+        "release.notices-enabled": true,
+        "template.folder": CONFIGURED_TEMPLATE_FOLDER,
+      } as Partial<Settings>),
+      hydrationOrigin: "absent",
+      update: vi.fn(),
+    } as unknown as SettingsService;
+    await using service = new ReleaseService({
+      app: {
+        workspace: {
+          onLayoutReady: (cb: () => void | Promise<void>) => {
+            layoutReady = cb;
+          },
+        },
+        internalPlugins: { getEnabledPluginById: () => null },
+        vault: vaultWith([]),
+      } as unknown as App,
+      version: "2.0.0",
+      settings,
+      openFirstScreen: () => opened.promise,
+    });
+    await service.ready;
+    let checked = false;
+    void service.checked.then(() => {
+      checked = true;
+    });
+    void layoutReady?.();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(checked).toBe(false);
+    opened.resolve();
+    await service.checked;
+    expect(checked).toBe(true);
+  });
+});
+
 describe("ReleaseService templates-only v1 detection", () => {
   it("absent origin + ejected v1 templates opens the first screen, arms the prompt, and reconstructs the folder", async () => {
     const { update, openFirstScreen } = await runCheck({
