@@ -249,6 +249,8 @@ async function settleImport(vaultId: string): Promise<void> {
     vaultId,
     `(()=>{
       const button=document.querySelector('.modal-container .modal .modal-button-container button.mod-destructive');
+      // Answers the overwrite confirm the import may raise: setup the phase
+      // waits through, not the press it measures.
       if(button)button.click();
       return String(!!app.__zotlitExcerptImport?.settled);
     })()`,
@@ -589,6 +591,7 @@ export async function verifyReaderBackedExcerpts(
   cleanup.defer(() =>
     cleanupStep(async () => {
       await settleImport();
+      // Teardown closes whatever modal is left, not a reader's press.
       await obEval(
         vaultId,
         `(()=>{delete app.__zotlitExcerptImport;for(const button of document.querySelectorAll('.modal-container .modal .modal-close-button'))button.click();return true;})()`,

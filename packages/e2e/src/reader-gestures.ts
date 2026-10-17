@@ -7,6 +7,7 @@
 import { expect } from "vitest";
 
 import { obEval, obEvalUntil } from "./obsidian-cli.ts";
+import { PAGE } from "./page-gestures.ts";
 
 /**
  * The Obsidian PDF view showing `attachmentPath` in a laid-out leaf, as an
@@ -94,7 +95,7 @@ export async function armToolOnFirstPage(
   expect(
     await obEval(
       vaultId,
-      `(function(){const tool=${toolButtonOf(pdfView, tool)};if(tool.getAttribute('aria-pressed')!=='true')tool.click();return tool.getAttribute('aria-pressed');})()`,
+      `(function(){${PAGE}const tool=${toolButtonOf(pdfView, tool)};if(tool.getAttribute('aria-pressed')!=='true')press(tool,${JSON.stringify(`tool ${tool}`)});return tool.getAttribute('aria-pressed');})()`,
     ),
   ).toBe("true");
 }
@@ -107,6 +108,7 @@ export async function disarmTool(
   vaultId: string,
   { pdfView, tool }: { pdfView: string; tool: string },
 ): Promise<void> {
+  // Teardown for the next test, not a reader's press: the tool may be gone.
   await obEval(
     vaultId,
     `(function(){const tool=${toolButtonOf(pdfView, tool)};if(tool?.getAttribute('aria-pressed')==='true')tool.click();return true;})()`,
