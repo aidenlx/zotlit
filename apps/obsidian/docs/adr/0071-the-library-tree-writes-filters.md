@@ -13,7 +13,7 @@ Proposed on 2026-10-17 with [#1544](https://github.com/aidenlx/zotlit/issues/154
 
 ## Consequences
 
-- "Show all libraries" widens the tree past the Library Scope for the session; it is not part of the Library View Document. A selected Library outside the Library Scope stays in the tree. The toggle shows only when the database holds Libraries outside the Library Scope.
+- "Show all libraries" widens the tree past the Library Scope for the session, except Recent (ADR 0075); it is not part of the Library View Document. A selected Library outside the Library Scope stays in the tree. The toggle shows only when the database holds Libraries outside the Library Scope.
 - The Query View gains a host hook for the Target Libraries, part of its run key (#1545).
 - A Collection name that holds `/` cannot be told from a deeper path in `collections.within`, as everywhere in ZotLit Query.
 - A renamed or deleted Collection no longer matches the saved path. When the Collections of its Library were read without error and the path is not among them, the tree selects that Library in its place and saves it; a failed read changes nothing (#1546).
