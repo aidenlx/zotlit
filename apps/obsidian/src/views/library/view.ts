@@ -9,18 +9,14 @@ import { debounce, ItemView, Keymap, Scope } from "obsidian";
 import type { Modifier, WorkspaceLeaf } from "obsidian";
 import { createStore } from "zustand/vanilla";
 
-import { parseIndexedKey } from "@zotlit/db";
-
 import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import type {
-  LibraryScope,
-  LibrarySelector,
-} from "@/services/library-scope/scope";
+import type { LibraryScope } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import { inTextEntry } from "@/services/pdf-annotation-editor/capability-affordance";
 import type { SettingsService } from "@/services/settings/service";
+import { showItemInAnnotView } from "@/views/annot-view/register";
 import { saveAsQueryFile } from "@/views/annot-view/save-query-file";
 import { ITEM_ROW_ATTRIBUTE } from "@/views/query-view/item-rows";
 import type { ItemRowGestures } from "@/views/query-view/item-rows";
@@ -40,11 +36,12 @@ import {
   vaultPass,
 } from "./query-text";
 import type { LibraryViewLabels, LibraryViewQuery } from "./query-text";
+import { ReadingCard } from "./reading-card";
 import { rowMenu } from "./row-menu";
 import { LibrarySearch } from "./search-box";
 import type { LibrarySearchDeps, SearchFound } from "./search-box";
 import { libraryViewStorage } from "./storage";
-import { sameLibrary } from "./tree";
+import { libraryOf, sameLibrary } from "./tree";
 import "./style.css";
 
 const logger = getLogger(["library-view"]);
@@ -66,7 +63,7 @@ export interface LibraryViewDeps extends QueryViewDeps {
  * links, buttons, menus, list boxes, and the Library Tree.
  */
 const OWN_KEYS =
-  'a, button, [role="menu"], [role="menuitem"], [role="listbox"], [role="combobox"], [role="tree"]';
+  'a, button, [role="menu"], [role="menuitem"], [role="listbox"], [role="combobox"], [role="tree"], [data-library-card]';
 
 /**
  * What Enter does on the selected row, by its modifiers, as in the quick
@@ -87,6 +84,8 @@ export class LibraryView extends ItemView {
   readonly query: QueryView;
   readonly tree: LibraryTree;
   readonly search: LibrarySearch;
+  /** The Reading Card of the selected row. */
+  readonly card: ReadingCard;
   readonly #deps: LibraryViewDeps;
   readonly #storage: ReturnType<typeof libraryViewStorage>;
   /** What the tab runs: the query of the document as it opened. */
@@ -136,6 +135,14 @@ export class LibraryView extends ItemView {
     };
     this.register(() => drag.cancel());
     this.#registerRowKeys();
+    // Otherwise Obsidian moves focus to the last navigable leaf, which in the
+    // main area switches the tab away from this view.
+    const onEscape = () => {
+      const { leftSplit, rightSplit } = deps.app.workspace;
+      const root = this.leaf.getRoot();
+      if (root === leftSplit || root === rightSplit) return;
+      return false as const;
+    };
     this.query = new QueryView(deps, {
       scope: this.scope,
       sourcePath: () => "",
@@ -154,16 +161,12 @@ export class LibraryView extends ItemView {
       reason: () => this.#shown!.reason,
       save: this.#storage.save,
       saveAs: () => void this.#saveAs(),
-      layout: {
-        // Otherwise Obsidian moves focus to the last navigable leaf, which in
-        // the main area switches the tab away from this view.
-        onEscape: () => {
-          const { leftSplit, rightSplit } = deps.app.workspace;
-          const root = this.leaf.getRoot();
-          if (root === leftSplit || root === rightSplit) return;
-          return false;
-        },
-      },
+      layout: { onEscape },
+    });
+    this.card = new ReadingCard(deps, {
+      menu: (key, event) => rows.menu(key, event),
+      openInSidebar: (key) => void showItemInAnnotView(deps.app, key),
+      onEscape,
     });
     this.tree = new LibraryTree(deps, {
       select: (node) => this.#select(node),
@@ -206,6 +209,12 @@ export class LibraryView extends ItemView {
     const main = shell.createDiv({
       cls: "zt:flex zt:min-w-0 zt:flex-1 zt:flex-col zt:overflow-y-auto zt:pb-[max(var(--safe-area-inset-bottom),var(--size-4-8))]",
     });
+    // The Reading Card shows while a row is selected, on a pane wide enough
+    // to keep the list beside it.
+    const cardEl = shell.createDiv({
+      cls: "zt:hidden zt:w-80 zt:shrink-0 zt:flex-col zt:min-h-0 zt:border-s-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-primary) zt:@4xl:[&:not([hidden])]:flex",
+      attr: { "data-library-card": "", hidden: "" },
+    });
     const searchEl = main.createDiv();
     const header = main.createDiv();
     const list = main.createDiv();
@@ -235,6 +244,14 @@ export class LibraryView extends ItemView {
     });
     this.query.load();
     this.query.render(list);
+    this.card.load();
+    this.card.render(cardEl);
+    this.card.register(
+      this.selection.subscribe(({ key }) => {
+        this.card.show(key);
+        cardEl.hidden = key === null;
+      }),
+    );
     // A Literature Note added or removed changes what the vault answers.
     this.query.register(
       this.#deps.literatureNotes.on("changed", () => {
@@ -339,12 +356,8 @@ export class LibraryView extends ItemView {
 
   /** The node of the Item's first Collection, or of its Library. */
   async #itemNode(indexedKey: string): Promise<LibraryNode | null> {
-    const parsed = parseIndexedKey(indexedKey);
-    if (!parsed) return null;
-    const library: LibrarySelector =
-      parsed.groupID === null
-        ? { type: "personal" }
-        : { type: "group", groupID: parsed.groupID };
+    const library = libraryOf(indexedKey);
+    if (!library) return null;
     const { libraryID } =
       this.#deps.libraryScope.libraries?.find(({ selector }) =>
         sameLibrary(selector, library),
@@ -387,6 +400,8 @@ export class LibraryView extends ItemView {
   /** The researcher picked `node` in the tree: list it, and keep it. */
   #select(node: LibraryNode): void {
     this.tree.show(node);
+    // The selected row leaves the list with its node.
+    this.selection.setState({ key: null });
     // The document takes the node at once (Recent writes its sort), and the
     // search runs again over the node.
     this.#storage.select(node).catch((error: unknown) => {
@@ -460,6 +475,7 @@ export class LibraryView extends ItemView {
     this.search.unload();
     await this.query.flush();
     this.query.unload();
+    this.card.unload();
     this.tree.unload();
   }
 }
