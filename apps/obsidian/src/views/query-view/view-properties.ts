@@ -3,9 +3,11 @@
 // the view's Query Dataset can read it, and its place in the Visible
 // Properties. The Layouts, copy and CSV, the Properties popover, the Sort
 // and Group controls and the Filter conditions all read these entries, so a
-// Property shows the same label and the same marks in each. The Literature
-// Note Property is one the vault answers rather than ZotLit Query; it shows,
-// moves and resizes in the Table as the others do.
+// Property shows the same label and the same marks in each. A vault property,
+// `vault.<name>`, is one the vault answers rather than ZotLit Query; the
+// Literature Note Property is the first of them, and it shows, moves and
+// resizes in the Table as the others do.
+// @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
 import { useMemo } from "react";
 import { useStore } from "zustand";
 
@@ -21,6 +23,7 @@ import {
   displayName,
   formulaName,
   formulaProperty,
+  isVaultProperty,
 } from "./query-file";
 import type { QueryFile, QueryFileDataset, QueryFileView } from "./query-file";
 import { formulaIssuesOf } from "./results";
@@ -28,18 +31,20 @@ import { groupPaths } from "./rows";
 import type { QueryView } from "./view";
 
 /**
- * The path of the Literature Note Property. The vault's Note Index answers
- * it, not ZotLit Query, so no query reads it, and only the Table shows it.
+ * The path of the Literature Note Property, the first vault property. The
+ * vault's Note Index answers it, not ZotLit Query, so no query reads it, and
+ * only the Table shows it.
  */
 export const LITERATURE_NOTE = "vault.literatureNote";
 
 /**
  * What a Property is, by the namespace of its path: a field of the Query
  * Dataset, read by its Projection Path; a Formula Property, `formula.<name>`;
- * or the Literature Note Property, which the vault answers. In the two
- * namespaces of the view a dot only names the namespace.
+ * or a vault property, `vault.<name>`, which the vault answers and ZotLit
+ * Query never reads. In these namespaces of the view a dot only names the
+ * namespace.
  */
-export type PropertyKind = "field" | "formula" | "literatureNote";
+export type PropertyKind = "field" | "formula" | "vault";
 
 /** The settings of a view that decide its Properties. */
 type PropertySettings = Pick<
@@ -53,15 +58,14 @@ function classify(path: string): {
   kind: PropertyKind;
   formula: string | null;
 } {
-  if (path === LITERATURE_NOTE)
-    return { kind: "literatureNote", formula: null };
+  if (isVaultProperty(path)) return { kind: "vault", formula: null };
   const formula = formulaName(path);
   return { kind: formula === null ? "field" : "formula", formula };
 }
 
 /** One Property of a view. */
 export interface PropertyEntry {
-  /** The Projection Path, `formula.<name>` or `vault.literatureNote`, as the file names it. */
+  /** The Projection Path, `formula.<name>` or `vault.<name>`, as the file names it. */
   readonly path: string;
   /** Its Display Name, else its field label, else its path. */
   readonly label: string;
@@ -83,6 +87,7 @@ export interface PropertyEntry {
    * Whether the view's Query Dataset can read it: the dataset lists it, or
    * no dataset does, as for a Formula or a path the researcher typed. The
    * Literature Note Property fits where the Layout shows it: a Table of Items.
+   * Another vault property fits a view of Items.
    */
   readonly fits: boolean;
   /** Its place in the Visible Properties; `null` where the view hides it. */
@@ -117,7 +122,8 @@ export interface ViewProperties {
   /**
    * The Visible Properties that ZotLit Query reads, in their order: what the
    * run asks for, and the columns of copy and CSV export. The Literature
-   * Note Property is no value of a row, so it is not among them.
+   * Note Property and the other vault properties are no value of a row, so
+   * they are not among them.
    */
   readonly queried: readonly PropertyEntry[];
   /**
@@ -160,7 +166,11 @@ export function viewProperties(
   // a view that names no `order` of its own, as it did before it could move.
   const showsNote = view.type === "table" && dataset === "items";
   const fits = (path: string) =>
-    path === LITERATURE_NOTE ? showsNote : fitsDataset(path, dataset);
+    path === LITERATURE_NOTE
+      ? showsNote
+      : isVaultProperty(path)
+        ? dataset === "items"
+        : fitsDataset(path, dataset);
   const defaults = [
     ...DATASETS[dataset].engine.defaultFields.filter((field) =>
       properties.includes(field),
@@ -208,18 +218,18 @@ export function viewProperties(
     ...datasetProperties(dataset),
   ]);
   const unused = unusedSettings(view);
-  // A Layout other than the Table keeps the Literature Note Property in
-  // `order`, so a switch back to the Table shows it again; it is no setting
-  // the dataset lacks, so it is not among the unused ones.
-  const keptForTable =
-    !showsNote && view.order?.includes(LITERATURE_NOTE)
-      ? [LITERATURE_NOTE]
-      : [];
+  // A view that cannot show a vault property keeps it in `order`, so a
+  // switch back to a Table of Items shows it again, as a Layout other than
+  // the Table keeps the Literature Note Property; it is no setting the
+  // dataset lacks, so it is not among the unused ones.
+  const keptForTable = (view.order ?? []).filter(
+    (property) => isVaultProperty(property) && !fits(property),
+  );
   const visible = shown.map(entry);
   const entries = [...paths].map(entry);
   return {
     visible,
-    queried: visible.filter(({ kind }) => kind !== "literatureNote"),
+    queried: visible.filter(({ kind }) => kind !== "vault"),
     entries,
     unused,
     entry,
@@ -314,7 +324,7 @@ export function unusedSettings(
         : null,
     order: (view.order ?? []).filter(
       (property) =>
-        property !== LITERATURE_NOTE && !fitsDataset(property, dataset),
+        !isVaultProperty(property) && !fitsDataset(property, dataset),
     ),
   };
 }

@@ -51,13 +51,19 @@ import { annotationsLayoutOptions, layoutOf } from "./layouts";
 import { ListLayout } from "./list-layout";
 import { groupOptions, sortOptions } from "./properties";
 import { PropertiesMenu } from "./properties-menu";
-import { locateFilterFault, viewFilter } from "./query-file";
+import {
+  isVaultProperty,
+  locateFilterFault,
+  vaultConditions,
+  viewFilter,
+} from "./query-file";
 import type {
   QueryFile,
   QueryFileDataset,
   QueryFileProblem,
   QueryFileSort,
   QueryFileView,
+  VaultCondition,
 } from "./query-file";
 import { QueryFileDocument } from "./query-file-document";
 import {
@@ -247,6 +253,22 @@ function usedGroupBy(view: QueryFileView): QueryFileSort | undefined {
 export const RERUN_DELAY_MS = 300;
 
 /** One run of a view: its request key, and the file and view it ran for. */
+/**
+ * The plan of one view: the request ZotLit Query runs, and apart from it
+ * the sort keys and the conditions that read a vault property, which the
+ * vault answers. `limit` counts the rows the researcher sees, so the view
+ * plans these before ZotLit Query runs, never after its rows come back.
+ */
+interface ViewPlan {
+  readonly request: QueryViewRequest;
+  readonly vault: {
+    /** The sort keys that are vault properties, in the view's order of sort keys. */
+    readonly sort: readonly QueryFileSort[];
+    /** The conditions that must each hold for a row and read a vault property. */
+    readonly conditions: readonly VaultCondition[];
+  };
+}
+
 interface ViewRun {
   key: string;
   file: QueryFile;
@@ -603,15 +625,25 @@ export class QueryView extends Component implements HistorySurface {
     ]);
   }
 
-  /**
-   * What ZotLit Query runs for one view of the file. It sends every Formula
-   * of the file: ZotLit Query plans only those that the view reads.
-   */
+  /** What ZotLit Query runs for one view of the file. */
   #request(file: QueryFile, view: QueryFileView): QueryViewRequest {
+    return this.#plan(file, view).request;
+  }
+
+  /**
+   * The plan of one view of the file: what ZotLit Query runs, and the sort
+   * and the conditions the vault answers, which ZotLit Query never reads.
+   * It sends every Formula of the file: ZotLit Query plans only those that
+   * the view reads.
+   *
+   * @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
+   */
+  #plan(file: QueryFile, view: QueryFileView): ViewPlan {
     const filter = viewFilter(file, view);
     const context = this.#host.context();
     const unused = new Set(unusedSettings(view).sort);
-    const sort = view.sort?.filter(({ property }) => !unused.has(property));
+    const used = view.sort?.filter(({ property }) => !unused.has(property));
+    const sort = used?.filter(({ property }) => !isVaultProperty(property));
     const grouped = view.groupBy && grouping(view.from, view.groupBy.property);
     const fields = [
       ...new Set([
@@ -621,7 +653,7 @@ export class QueryView extends Component implements HistorySurface {
       ]),
     ];
     const formulas = file.formulas ?? {};
-    return {
+    const request: QueryViewRequest = {
       from: view.from ?? "annotations",
       ...(filter === undefined ? {} : { filter }),
       ...(sort &&
@@ -635,6 +667,13 @@ export class QueryView extends Component implements HistorySurface {
       ...(Object.keys(formulas).length > 0 && { formulas }),
       limit: view.limit ?? null,
       ...(context && { context }),
+    };
+    return {
+      request,
+      vault: {
+        sort: used?.filter(({ property }) => isVaultProperty(property)) ?? [],
+        conditions: vaultConditions(file, view),
+      },
     };
   }
 

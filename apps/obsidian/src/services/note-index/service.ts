@@ -9,6 +9,7 @@ import type {
 
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
+import { NON_VAULT_PROPERTY_KEYS } from "@/lib/constants";
 import { registerEvent } from "@/lib/disposables";
 import { getLogger } from "@/lib/log";
 import { DEFAULT_PROFILE, readProfileStamp } from "@/lib/profile-stamp";
@@ -29,7 +30,13 @@ export { itemKeyFromFrontmatter, noteKeyFromFrontmatter };
 const logger = getLogger("note-index");
 
 interface NoteIndexEvents {
+  /** A note's Indexed Key contribution changed: it was added, moved or removed. */
   changed: (file: TFile) => void;
+  /**
+   * The frontmatter of a note the index tracks changed, in any key; also
+   * when the note joins or leaves the index by a frontmatter edit.
+   */
+  "frontmatter-changed": (file: TFile) => void;
 }
 
 export interface NoteIndexOptions {
@@ -94,6 +101,8 @@ export class NoteIndex extends Service<void> {
   readonly #notesByItemKey = new Map<string, Set<TFile>>();
   readonly #notesByNoteKey = new Map<string, Set<TFile>>();
   readonly #contribByFile = new Map<TFile, FileContributions>();
+  /** The frontmatter of each tracked file as last seen, serialized, to tell a frontmatter edit from a body edit. */
+  readonly #frontmatterByFile = new Map<TFile, string>();
   /** Settles once the Full Scan has populated the index. */
   readonly #indexed = Promise.withResolvers<void>();
   #disposed = false;
@@ -149,6 +158,24 @@ export class NoteIndex extends Service<void> {
     return { literatureNotes, importedNotes };
   }
 
+  /**
+   * The frontmatter keys found across the Literature Notes, in locale order,
+   * but Obsidian's reserved keys and ZotLit's system keys: the names a vault
+   * property can take.
+   */
+  getPropertyNames(): string[] {
+    const names = new Set<string>();
+    for (const [file, contribution] of this.#contribByFile) {
+      if (contribution.itemKey === null || contribution.noteKey !== null)
+        continue;
+      const frontmatter =
+        this.#app.metadataCache.getFileCache(file)?.frontmatter;
+      for (const name of Object.keys(frontmatter ?? {}))
+        if (!NON_VAULT_PROPERTY_KEYS.has(name)) names.add(name);
+    }
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }
+
   /** Indexed keys that currently have at least one Literature Note. */
   getIndexedItemKeys(): string[] {
     return [...this.#notesByItemKey.keys()];
@@ -181,7 +208,10 @@ export class NoteIndex extends Service<void> {
     stack.use(
       registerEvent(
         metadataCache.on("changed", (file, _data, cache) => {
-          if (isMarkdownFile(file)) this.#applyFile(file, cache);
+          if (!isMarkdownFile(file)) return;
+          const before = this.#frontmatterByFile.get(file);
+          this.#applyFile(file, cache);
+          this.#applyFrontmatter(file, before, cache);
         }),
       ),
     );
@@ -189,13 +219,16 @@ export class NoteIndex extends Service<void> {
       registerEvent(
         metadataCache.on("deleted", (file) => {
           this.#applyFile(file, null);
+          this.#frontmatterByFile.delete(file);
         }),
       ),
     );
     stack.use(
       registerEvent(
         vault.on("delete", (file) => {
-          if (isMarkdownFile(file)) this.#applyFile(file, null);
+          if (!isMarkdownFile(file)) return;
+          this.#applyFile(file, null);
+          this.#frontmatterByFile.delete(file);
         }),
       ),
     );
@@ -293,6 +326,24 @@ export class NoteIndex extends Service<void> {
     return true;
   }
 
+  /**
+   * Keeps the frontmatter of a tracked file, and reports an edit of it as
+   * `frontmatter-changed`. `before` is its frontmatter as last seen, while
+   * it was tracked.
+   */
+  #applyFrontmatter(
+    file: TFile,
+    before: string | undefined,
+    cache: CachedMetadata | null,
+  ): void {
+    const tracked = this.#contribByFile.has(file);
+    const after = serializeFrontmatter(cache);
+    if (tracked) this.#frontmatterByFile.set(file, after);
+    else this.#frontmatterByFile.delete(file);
+    if ((tracked || before !== undefined) && before !== after)
+      this.#emitter.emit("frontmatter-changed", file);
+  }
+
   /** Silent to consumers: every later mapping change arrives as `changed`. */
   #fullScan(): void {
     if (this.#disposed) return;
@@ -335,14 +386,23 @@ export class NoteIndex extends Service<void> {
       addIndexedFile(this.#notesByNoteKey, contributions.noteKey, file);
     }
     this.#contribByFile.set(file, contributions);
+    this.#frontmatterByFile.set(
+      file,
+      serializeFrontmatter(this.#app.metadataCache.getFileCache(file)),
+    );
   }
 
   #clear(): void {
     this.#notesByItemKey.clear();
     this.#notesByNoteKey.clear();
     this.#contribByFile.clear();
+    this.#frontmatterByFile.clear();
     this.#warnedDuplicatePaths.clear();
   }
+}
+
+function serializeFrontmatter(cache: CachedMetadata | null): string {
+  return JSON.stringify(cache?.frontmatter ?? null);
 }
 
 /** Most-recently-modified first; ties broken by path for stable ordering. */

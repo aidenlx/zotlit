@@ -5,6 +5,7 @@ import { planPath } from "@zotlit/item-query";
 
 import { DATASETS } from "./datasets";
 import type { QueryFileDataset } from "./query-file";
+import { LITERATURE_NOTE } from "./view-properties";
 import type { PropertyEntry } from "./view-properties";
 
 /** The icon of `property` in a view of `dataset`. */
@@ -13,7 +14,8 @@ export function propertyIcon(
   property: Pick<PropertyEntry, "path" | "kind">,
 ): string {
   if (property.kind === "formula") return "square-function";
-  if (property.kind === "literatureNote") return "file";
+  if (property.path === LITERATURE_NOTE) return "file";
+  if (property.kind === "vault") return "text";
   const { engine, sort } = DATASETS[dataset];
   const kind = sort.find(([path]) => path === property.path)?.[2];
   if (kind === "date") return "calendar";
