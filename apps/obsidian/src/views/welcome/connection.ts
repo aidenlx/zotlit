@@ -63,11 +63,12 @@ function connectedReadout(
 }
 
 /**
- * A failed most-recent refresh (a broken or moved data path) keeps the
- * database serving a stale connection; surface that as missing so step 1
- * reflects the broken location instead of stale item data.
+ * ZotLit cannot read the Zotero data directory. A failed most-recent refresh
+ * (a broken or moved data path) keeps the database serving a stale
+ * connection; that counts as missing too, so step 1 and the Library View
+ * reflect the broken location instead of stale item data.
  */
-function unavailable(deps: Pick<ConnectionQueryDeps, "reads">): boolean {
+export function unavailable(deps: Pick<ConnectionQueryDeps, "reads">): boolean {
   return deps.reads.state === "degraded" || deps.reads.error !== null;
 }
 

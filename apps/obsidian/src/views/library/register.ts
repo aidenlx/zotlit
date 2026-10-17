@@ -34,13 +34,22 @@ export function registerLibraryView(
   );
 }
 
-/** Bring the Library View forward, opening it in a new tab when no tab holds it. */
-export async function openLibraryView(app: App): Promise<LibraryView | null> {
+/**
+ * Bring the Library View forward. Where no tab holds it, it opens in a new
+ * tab, or in the active one for `pane: false`, as on a first install.
+ */
+export async function openLibraryView(
+  app: App,
+  { pane = "tab" }: { pane?: "tab" | false } = {},
+): Promise<LibraryView | null> {
   const { workspace } = app;
   let leaf = workspace.getLeavesOfType(LIBRARY_VIEW_TYPE)[0];
   if (!leaf) {
-    leaf = workspace.getLeaf("tab");
+    leaf = workspace.getLeaf(pane);
     await leaf.setViewState({ type: LIBRARY_VIEW_TYPE, active: true });
+  } else {
+    // Revealing a tab shows it but leaves the keyboard in the note.
+    workspace.setActiveLeaf(leaf, { focus: true });
   }
   await workspace.revealLeaf(leaf);
   // Search is the front door: the cursor waits in the box. A tab that the

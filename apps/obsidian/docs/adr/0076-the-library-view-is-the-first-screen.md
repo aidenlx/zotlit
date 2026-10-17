@@ -15,3 +15,7 @@ Proposed on 2026-10-17 with [#1554](https://github.com/aidenlx/zotlit/issues/155
 - An upgrade from v1 still shows the Migration Prompt, now in the banner, until it is acknowledged.
 - The ribbon icon and the command that opens the Library View (#1545) reach it at any time.
 - The getting-started docs start from the Library View (#1555).
+- Dismissing the banner saves `welcome.dismissed` in plugin data and acknowledges a pending Migration Prompt; the "Open welcome view" command shows the banner again. Setup counts as complete when ZotLit reads the Zotero database and the literature-notes folder exists; "Open your library" counts as done once the database reads.
+- When the data folder is missing, the not-found state replaces the tree, the facets, the search box and the list; the search asks the database nothing until the folder is found. The "Zotero wasn't found" notice and "Set up connection" open the Library View.
+- The Welcome View has no tab. The `zotlit-welcome` view type stays registered only to turn a tab restored from an old workspace into the Library View, or to close it when a Library View is already open; it can go in a later release.
+- The Companion step is gone from the banner; the release notice for Companion still reaches users who update.

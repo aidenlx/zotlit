@@ -54,6 +54,8 @@ export interface LibrarySearchHost {
   found: (found: SearchFound) => void;
   /** The researcher changed the text: keep it. */
   keep: (text: string) => void;
+  /** Whether ZotLit reads Zotero's database; a search asks it only then. */
+  readable: () => boolean;
 }
 
 interface SearchState {
@@ -168,7 +170,7 @@ export class LibrarySearch extends Component {
           );
     this.#settled = (async () => {
       const hits =
-        words === "" || !this.#session
+        words === "" || !this.#session || !this.#host.readable()
           ? null
           : await this.#session.search(words, {
               limit: LIBRARY_SEARCH_LIMIT,

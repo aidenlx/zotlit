@@ -1,12 +1,14 @@
-// ItemView orchestrator for the Welcome View: mounts the presentational tree, wires live step actions, and keeps connection status subscribed to database events while open.
-import { ItemView, normalizePath } from "obsidian";
-import type { App, ViewStateResult, WorkspaceLeaf } from "obsidian";
+// The Welcome View as a banner: mounts the presentational tree into an element
+// above the Library View, wires live step actions, and keeps the connection
+// status subscribed to database events while it is loaded.
+//
+// @see apps/obsidian/docs/adr/0076-the-library-view-is-the-first-screen.md
+import { Component, normalizePath } from "obsidian";
+import type { App } from "obsidian";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
-import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
-import type { NoteIndex } from "@/services/note-index/service";
 import type { QueryClientService } from "@/services/query-client/service";
 import type { ReleaseService } from "@/services/release/service";
 import type { SettingsService } from "@/services/settings/service";
@@ -16,97 +18,72 @@ import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { WelcomeActionsContext } from "./actions";
 import type { WelcomeActions } from "./actions";
-import { createCompanionRefresh } from "./companion-refresh";
 import { readConnectionStatus, readConnectionSync } from "./connection";
 import { templateMigrationNotice } from "./migration-notice";
 import type { SetupActions } from "./setup-actions";
 import { createWelcomeStore, WelcomeStoreProvider } from "./store";
 import { Welcome } from "./Welcome";
 
-export const WELCOME_VIEW_TYPE = "zotlit-welcome";
-
 // Delay before the connection spinner appears; a readout that settles faster —
 // the common case, since the DB is usually already loaded on open — resolves
 // straight to connected/missing without ever flashing the spinner.
 const CONNECTION_CHECKING_DELAY_MS = 200;
 
-export interface WelcomeViewDeps {
+export interface WelcomeBannerDeps {
   app: App;
   reads: Pick<ZoteroReadsService, "state" | "ready" | "error" | "on">;
   queries: Pick<QueryClientService, "peek" | "read">;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir" | "companionInstalled" | "on">;
-  noteIndex: Pick<NoteIndex, "getIndexedItemKeys" | "whenIndexed" | "on">;
-  settings: Pick<SettingsService, "subscribe">;
+  zoteroPref: Pick<ZoteroPrefService, "dataDir">;
+  settings: Pick<SettingsService, "subscribe" | "update">;
   setupActions: SetupActions;
   templateMigration: Pick<
     LiteratureNoteTemplateMigrationService,
     "convert" | "retryCleanup"
   >;
-  release: Pick<ReleaseService, "hasV1Templates">;
+  release: Pick<ReleaseService, "hasV1Templates" | "acknowledgeMigration">;
 }
 
-export class WelcomeView extends ItemView {
+export class WelcomeBanner extends Component {
   readonly #store = createWelcomeStore();
-  readonly #deps: WelcomeViewDeps;
+  readonly #deps: WelcomeBannerDeps;
+  readonly #el: HTMLElement;
   #root: Root | null = null;
-  #closed = false;
   #stack: DisposableStack | undefined;
   #connectionGen = 0;
   #checkingTimer: number | null = null;
+  #connection: Promise<void> = Promise.resolve();
 
-  constructor(leaf: WorkspaceLeaf, deps: WelcomeViewDeps) {
-    super(leaf);
-    this.contentEl.addClass("zt-root");
+  constructor(deps: WelcomeBannerDeps, el: HTMLElement) {
+    super();
     this.#deps = deps;
+    this.#el = el;
   }
 
-  override getViewType(): string {
-    return WELCOME_VIEW_TYPE;
+  /** Settles once the last connection readout started has landed. */
+  get settled(): Promise<void> {
+    return this.#connection;
   }
 
-  override getDisplayText(): string {
-    return m.welcome_view_name();
-  }
-
-  override getIcon(): string {
-    return "book-marked";
-  }
-
-  override getState(): Record<string, unknown> {
-    return { mode: this.#store.getState().mode };
-  }
-
-  override async setState(
-    state: unknown,
-    result: ViewStateResult,
-  ): Promise<void> {
-    await super.setState(state, result);
-    if (!state || typeof state !== "object") return;
-    const s = state as Record<string, unknown>;
-    if (s.mode === "fresh" || s.mode === "upgraded") {
-      this.#store.setState({ mode: s.mode });
-    }
-  }
-
-  protected override async onOpen(): Promise<void> {
+  override onload(): void {
     using stack = new DisposableStack();
+    const { app, settings, release } = this.#deps;
 
     const folderExists = (folder: string) =>
-      this.app.vault.getFolderByPath(normalizePath(folder)) !== null;
+      app.vault.getFolderByPath(normalizePath(folder)) !== null;
     stack.defer(
-      this.#deps.settings.subscribe((s) => {
+      settings.subscribe((s) => {
         if (s) {
           const literatureFolder =
             s["note.default-profile"].bindings["note.literature-folder"];
           this.#store.setState({
+            migrationPending: s["release.migration-pending"],
+            dismissed: s["welcome.dismissed"],
             literatureFolder,
             literatureFolderExists: folderExists(literatureFolder),
             templateConversionPending: s["note.template-conversion-pending"],
             templateFolder: s["template.folder"],
             templateConversionResult: s["note.template-conversion-result"],
-            v1TemplatesPresent: this.#deps.release.hasV1Templates(
-              s["template.folder"],
-            ),
+            v1TemplatesPresent: release.hasV1Templates(s["template.folder"]),
           });
         }
       }),
@@ -116,44 +93,15 @@ export class WelcomeView extends ItemView {
       const state = this.#store.getState();
       this.#store.setState({
         literatureFolderExists: folderExists(state.literatureFolder),
-        v1TemplatesPresent: this.#deps.release.hasV1Templates(
-          state.templateFolder,
-        ),
+        v1TemplatesPresent: release.hasV1Templates(state.templateFolder),
       });
     };
-    const created = this.app.vault.on("create", refreshVaultEvidence);
-    stack.defer(() => this.app.vault.offref(created));
-    const deleted = this.app.vault.on("delete", refreshVaultEvidence);
-    stack.defer(() => this.app.vault.offref(deleted));
-    const renamed = this.app.vault.on("rename", refreshVaultEvidence);
-    stack.defer(() => this.app.vault.offref(renamed));
-
-    const refreshNotes = () => {
-      this.#store.setState({
-        hasLiteratureNote: this.#deps.noteIndex.getIndexedItemKeys().length > 0,
-      });
-    };
-    stack.defer(this.#deps.noteIndex.on("changed", refreshNotes));
-    void this.#deps.noteIndex.whenIndexed().then(() => {
-      if (!this.#closed) refreshNotes();
-    });
-
-    // Startup may precede Zotero's add-on list. Later installs still refresh
-    // when the reader returns from Zotero or the connected services change.
-    const companion = stack.use(
-      createCompanionRefresh({
-        readInstalled: () => this.#deps.zoteroPref.companionInstalled(),
-        publish: (companionInstalled) =>
-          this.#store.setState({ companionInstalled }),
-      }),
-    );
-    const refreshCompanion = (): void => void companion.refresh();
-    stack.defer(this.#deps.zoteroPref.on("changed", refreshCompanion));
-    stack.defer(this.#deps.reads.on("changed", refreshCompanion));
-    const win = this.containerEl.win;
-    win.addEventListener("focus", refreshCompanion);
-    stack.defer(() => win.removeEventListener("focus", refreshCompanion));
-    refreshCompanion();
+    const created = app.vault.on("create", refreshVaultEvidence);
+    stack.defer(() => app.vault.offref(created));
+    const deleted = app.vault.on("delete", refreshVaultEvidence);
+    stack.defer(() => app.vault.offref(deleted));
+    const renamed = app.vault.on("rename", refreshVaultEvidence);
+    stack.defer(() => app.vault.offref(renamed));
 
     const actions: WelcomeActions = {
       retryTemplateCleanup: async () => {
@@ -166,6 +114,10 @@ export class WelcomeView extends ItemView {
         return result;
       },
       openExternal: (url) => window.open(url),
+      dismiss: () => {
+        settings.update({ "welcome.dismissed": true });
+        release.acknowledgeMigration();
+      },
       ...this.#deps.setupActions,
     };
 
@@ -175,7 +127,7 @@ export class WelcomeView extends ItemView {
       connection: readConnectionSync(this.#deps) ?? { status: "checking" },
     });
 
-    this.#root = createRoot(this.contentEl);
+    this.#root = createRoot(this.#el);
     this.#root.render(
       <WelcomeStoreProvider value={this.#store}>
         <WelcomeActionsContext value={actions}>
@@ -184,12 +136,13 @@ export class WelcomeView extends ItemView {
       </WelcomeStoreProvider>,
     );
 
-    const reload = (): void => void this.#loadConnection();
-    stack.defer(this.#deps.reads.on("changed", reload));
-    stack.defer(this.#deps.reads.on("degraded", reload));
-    stack.defer(this.#deps.reads.on("refresh-failed", reload));
+    const { reads } = this.#deps;
+    const reload = (): void => this.#loadConnection();
+    stack.defer(reads.on("changed", reload));
+    stack.defer(reads.on("degraded", reload));
+    stack.defer(reads.on("refresh-failed", reload));
     stack.defer(
-      this.#deps.reads.on("refreshing", (active) => {
+      reads.on("refreshing", (active) => {
         if (active) {
           // Invalidate any in-flight readout so its stale result can't land on
           // top of this refresh, then show checking only once the refresh is
@@ -198,26 +151,28 @@ export class WelcomeView extends ItemView {
         }
       }),
     );
-    void this.#loadConnection();
+    this.#loadConnection();
     this.#stack = stack.move();
   }
 
-  protected override async onClose(): Promise<void> {
-    this.#closed = true;
+  override onunload(): void {
     this.#clearCheckingTimer();
+    // Any readout in flight lands on a newer generation and is dropped.
+    this.#connectionGen++;
     this.#stack?.dispose();
     this.#stack = undefined;
     this.#root?.unmount();
     this.#root = null;
   }
 
-  async #loadConnection(): Promise<void> {
+  #loadConnection(): void {
     const gen = ++this.#connectionGen;
     this.#armChecking(gen);
-    const connection = await readConnectionStatus(this.#deps);
-    if (this.#closed || gen !== this.#connectionGen) return;
-    this.#clearCheckingTimer();
-    this.#store.setState({ connection });
+    this.#connection = readConnectionStatus(this.#deps).then((connection) => {
+      if (gen !== this.#connectionGen) return;
+      this.#clearCheckingTimer();
+      this.#store.setState({ connection });
+    });
   }
 
   /**
@@ -227,9 +182,9 @@ export class WelcomeView extends ItemView {
   #armChecking(gen: number): void {
     this.#clearCheckingTimer();
     if (readConnectionSync(this.#deps) !== null) return;
-    this.#checkingTimer = window.setTimeout(() => {
+    this.#checkingTimer = this.#el.win.setTimeout(() => {
       this.#checkingTimer = null;
-      if (!this.#closed && gen === this.#connectionGen) {
+      if (gen === this.#connectionGen) {
         this.#store.setState({ connection: { status: "checking" } });
       }
     }, CONNECTION_CHECKING_DELAY_MS);
@@ -237,7 +192,7 @@ export class WelcomeView extends ItemView {
 
   #clearCheckingTimer(): void {
     if (this.#checkingTimer !== null) {
-      window.clearTimeout(this.#checkingTimer);
+      this.#el.win.clearTimeout(this.#checkingTimer);
       this.#checkingTimer = null;
     }
   }

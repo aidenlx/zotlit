@@ -1,62 +1,35 @@
-// Registers the Welcome View and its open-command, plus the shared open-or-reveal entry point.
-import type { App, Plugin } from "obsidian";
+// The Welcome View's entry points: the command that shows its banner above
+// the Library View again, the held connection readout, and the notice of a
+// Zotero data directory this device does not have.
+//
+// @see apps/obsidian/docs/adr/0076-the-library-view-is-the-first-screen.md
+import { ItemView } from "obsidian";
+import type { App, Plugin, WorkspaceLeaf } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
-import type { NoteIndex } from "@/services/note-index/service";
 import type { QueryClientService } from "@/services/query-client/service";
-import type { ReleaseService } from "@/services/release/service";
 import type { SettingsService } from "@/services/settings/service";
-import type { LiteratureNoteTemplateMigrationService } from "@/services/template/migration";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import { openLibraryView } from "@/views/library/register";
+import { LIBRARY_VIEW_TYPE } from "@/views/library/view";
 
 import { holdConnectionReadout } from "./connection";
-import { createSetupActions } from "./setup-actions";
-import { WELCOME_VIEW_TYPE, WelcomeView } from "./view";
-
-export { WELCOME_VIEW_TYPE };
 
 export interface WelcomeRegistrationDeps {
-  app: App;
-  reads: ZoteroReadsService;
-  queries: QueryClientService;
-  zoteroPref: ZoteroPrefService;
-  noteIndex: NoteIndex;
-  settings: SettingsService;
-  templateMigration: LiteratureNoteTemplateMigrationService;
-  release: ReleaseService;
+  reads: Pick<ZoteroReadsService, "on">;
+  queries: Pick<QueryClientService, "invalidate">;
+  settings: Pick<SettingsService, "update">;
 }
 
 export function registerWelcomeView(
-  plugin: Pick<
-    Plugin,
-    "registerView" | "addCommand" | "app" | "manifest" | "register"
-  >,
+  plugin: Pick<Plugin, "addCommand" | "app" | "register" | "registerView">,
   deps: WelcomeRegistrationDeps,
 ): void {
-  const setupActions = createSetupActions({
-    app: deps.app,
-    settings: deps.settings,
-    zoteroPref: deps.zoteroPref,
-    pluginId: plugin.manifest.id,
-  });
   plugin.registerView(
     WELCOME_VIEW_TYPE,
-    (leaf) =>
-      new WelcomeView(leaf, {
-        app: deps.app,
-        reads: deps.reads,
-        queries: deps.queries,
-        zoteroPref: deps.zoteroPref,
-        noteIndex: deps.noteIndex,
-        settings: deps.settings,
-        setupActions,
-        templateMigration: deps.templateMigration,
-        release: deps.release,
-      }),
+    (leaf) => new WelcomeTab(leaf, plugin.app),
   );
-
   plugin.register(
     holdConnectionReadout({ reads: deps.reads, queries: deps.queries }),
   );
@@ -64,19 +37,14 @@ export function registerWelcomeView(
   plugin.addCommand({
     id: "open-welcome-view",
     name: m.command_open_welcome_name(),
-    callback: () =>
-      void openWelcomeView(plugin.app, {
-        mode: deps.settings.current?.["release.migration-pending"]
-          ? "upgraded"
-          : "fresh",
-        pane: "tab",
-      }),
+    callback: () => void openWelcomeView(plugin.app, deps.settings),
   });
 
   // Fresh-device notice: the database service signals when the resolved DB
   // file is absent (auto-detect missed the install on this device). Attached
   // synchronously during onload — before the db service's first async refresh
-  // can emit — so the one-per-launch signal is never missed.
+  // can emit — so the one-per-launch signal is never missed. The Library View
+  // says the same and offers to locate the folder.
   const unsubscribe = deps.reads.on("db-file-missing", () => {
     new BaseNotice(
       BaseNotice.render((renderer) => {
@@ -84,7 +52,7 @@ export function registerWelcomeView(
         renderer.addAction((button) => {
           button
             .setButtonText(m.notice_db_not_found_action())
-            .onClick(() => void openWelcomeView(deps.app));
+            .onClick(() => void openLibraryView(plugin.app));
         });
       }),
       0,
@@ -93,24 +61,50 @@ export function registerWelcomeView(
   plugin.register(unsubscribe);
 }
 
-/** Reuses Welcome; first launch uses the active leaf, while the command requests a new tab. */
+/** Show the Welcome View banner again, above the Library View brought forward. */
 export async function openWelcomeView(
   app: App,
-  {
-    mode = "fresh",
-    pane = false,
-  }: {
-    mode?: "fresh" | "upgraded";
-    pane?: "tab" | false;
-  } = {},
+  settings: Pick<SettingsService, "update">,
 ): Promise<void> {
-  const { workspace } = app;
-  const leaf =
-    workspace.getLeavesOfType(WELCOME_VIEW_TYPE)[0] ?? workspace.getLeaf(pane);
-  await leaf.setViewState({
-    type: WELCOME_VIEW_TYPE,
-    active: true,
-    state: { mode },
-  });
-  void workspace.revealLeaf(leaf);
+  settings.update({ "welcome.dismissed": false });
+  await openLibraryView(app);
+}
+
+/** The view type of the Welcome tab that ZotLit had before ADR 0076. */
+const WELCOME_VIEW_TYPE = "zotlit-welcome";
+
+/**
+ * A Welcome tab that a workspace saved before the Welcome View became a
+ * banner. It turns into the Library View, or closes where a Library View tab
+ * is already open, so no empty tab is left.
+ */
+class WelcomeTab extends ItemView {
+  readonly #app: App;
+
+  constructor(leaf: WorkspaceLeaf, app: App) {
+    super(leaf);
+    this.#app = app;
+  }
+
+  override getViewType(): string {
+    return WELCOME_VIEW_TYPE;
+  }
+
+  override getDisplayText(): string {
+    return m.library_view_name();
+  }
+
+  protected override async onOpen(): Promise<void> {
+    const { workspace } = this.#app;
+    // A restored tab opens while the workspace still loads its layout, and
+    // the leaf takes no other view until this one has opened: the change
+    // waits for both.
+    workspace.onLayoutReady(() =>
+      this.contentEl.win.setTimeout(() => {
+        if (workspace.getLeavesOfType(LIBRARY_VIEW_TYPE).length > 0)
+          this.leaf.detach();
+        else void this.leaf.setViewState({ type: LIBRARY_VIEW_TYPE });
+      }),
+    );
+  }
 }

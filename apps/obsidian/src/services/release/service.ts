@@ -31,16 +31,18 @@ export interface ReleaseServiceOptions {
   /** The plugin's current version, from the manifest. */
   version: string;
   settings: SettingsService;
-  openWelcomeView?: (mode: "fresh" | "upgraded") => void | Promise<void>;
+  /**
+   * Open the first screen, the Library View, where the Welcome View shows as
+   * a banner; the Migration Prompt in it follows `release.migration-pending`.
+   */
+  openFirstScreen?: () => void | Promise<void>;
 }
 
 export class ReleaseService extends Service<void> {
   readonly #app: App;
   readonly #version: string;
   readonly #settings: SettingsService;
-  readonly #openWelcomeView?: (
-    mode: "fresh" | "upgraded",
-  ) => void | Promise<void>;
+  readonly #openFirstScreen?: () => void | Promise<void>;
   #stopped = false;
 
   ready: Promise<void>;
@@ -50,7 +52,7 @@ export class ReleaseService extends Service<void> {
     this.#app = options.app;
     this.#version = options.version;
     this.#settings = options.settings;
-    this.#openWelcomeView = options.openWelcomeView;
+    this.#openFirstScreen = options.openFirstScreen;
     this.ready = this.#load();
   }
 
@@ -94,8 +96,8 @@ export class ReleaseService extends Service<void> {
 
   /**
    * Clear the Migration Prompt flag by hand. The setting-tab reminder's
-   * "Mark as done" control wires this up; the Welcome View banner no longer
-   * has a dismiss control. No-op when the flag is already clear.
+   * "Mark as done" control and the dismiss control of the Welcome View banner
+   * wire this up. No-op when the flag is already clear.
    */
   acknowledgeMigration(): void {
     if (this.#settings.current?.["release.migration-pending"] !== true) return;
@@ -142,10 +144,8 @@ export class ReleaseService extends Service<void> {
         this.#showUpdateNotice();
         break;
       case "welcome-fresh":
-        void this.#openWelcomeView?.("fresh");
-        break;
       case "welcome-upgraded":
-        void this.#openWelcomeView?.("upgraded");
+        void this.#openFirstScreen?.();
         break;
       case "none":
         break;
