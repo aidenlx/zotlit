@@ -51,6 +51,14 @@ export interface LibraryViewQuery {
   readonly vault: readonly VaultCondition[];
 }
 
+/**
+ * The most rows the view shows: the Table draws every row it gets, and a
+ * library of 10,000 Items takes about two seconds to draw, 50,000 over
+ * half a minute. The toolbar says how many more match; the tree and the
+ * search narrow to them.
+ */
+export const LIBRARY_VIEW_ROW_LIMIT = 1000;
+
 /** What each facet asks of an Item: a filter, a condition in the vault, or both. */
 const FACETS: Readonly<
   Record<ReadingStateFacet, { filter?: string; vault?: VaultCondition }>
@@ -102,6 +110,7 @@ export function libraryViewQuery(
         name: labels.papers,
         from: "items",
         ...(doc.sort.length > 0 && { sort: doc.sort }),
+        limit: LIBRARY_VIEW_ROW_LIMIT,
         order: doc.order,
         problems: [],
         source: {},

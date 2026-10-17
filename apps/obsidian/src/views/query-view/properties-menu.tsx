@@ -88,6 +88,7 @@ export function PropertiesMenu({ view }: { view: QueryView }) {
           order={order}
           setOrder={setOrder}
           iconOf={(entry) => propertyIcon(dataset, entry)}
+          pages={!view.displayOnly}
         />
         <Chooser.Page>
           {(page) => {
@@ -123,6 +124,7 @@ function PropertyList({
   order,
   setOrder,
   iconOf,
+  pages,
 }: {
   /** The Properties of the view, the visible ones first. */
   properties: ViewProperties;
@@ -130,6 +132,11 @@ function PropertyList({
   setOrder: (next: readonly string[]) => void;
   /** The type icon of a property. */
   iconOf: (entry: PropertyEntry) => string;
+  /**
+   * Whether a property opens its page, and a new Formula its own: not where
+   * the host keeps no Display Name and no Formula.
+   */
+  pages: boolean;
 }) {
   const query = useChooserQuery().trim();
   const { scope, activeValue } = useChooserScope();
@@ -177,7 +184,7 @@ function PropertyList({
       (entry): ChooserRow => ({
         ...propertyRow(entry),
         // The right arrow opens the property's page.
-        next: () => openPage(entry.path),
+        ...(pages && { next: () => openPage(entry.path) }),
       }),
     );
     const actions: ChooserRow[] = [];
@@ -187,23 +194,22 @@ function PropertyList({
         label: m.query_view_properties_add({ name: query }),
         action: () => setOrder([...order, query]),
       });
-    actions.push(
-      {
+    if (pages)
+      actions.push({
         value: "zt:add-formula",
         label: m.query_view_formula_add(),
         action: () => openPage(NEW_FORMULA_PAGE),
+      });
+    actions.push({
+      value: "zt:hide-all",
+      label: m.query_view_properties_hide_all(),
+      action: () => {
+        setOrder([]);
+        resort();
       },
-      {
-        value: "zt:hide-all",
-        label: m.query_view_properties_hide_all(),
-        action: () => {
-          setOrder([]);
-          resort();
-        },
-      },
-    );
+    });
     return [{ items }, { items: actions, pinned: true }];
-  }, [rows, byPath, order, query, setOrder, openPage]);
+  }, [rows, byPath, order, query, setOrder, openPage, pages]);
 
   // Alt with an up or down arrow moves the highlighted visible property one
   // place in the order, as in the Bases Properties menu.

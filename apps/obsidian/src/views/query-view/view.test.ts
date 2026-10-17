@@ -24,6 +24,7 @@ import type {
   QueryViewRequest,
   QueryViewRow,
 } from "@/services/item-query/query-view";
+import type { LibraryScope } from "@/services/library-scope/scope";
 import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
 
 import { requested } from "./__fixtures__/query-run";
@@ -139,6 +140,8 @@ async function mount(
     canSave,
     context = () => undefined,
     contextSource,
+    libraries,
+    displayOnly,
   }: {
     notes?: Record<string, string>;
     layout?: ConstructorParameters<typeof QueryView>[1]["layout"];
@@ -147,6 +150,8 @@ async function mount(
     canSave?: () => boolean;
     context?: () => QueryContext | undefined;
     contextSource?: ContextSource;
+    libraries?: () => LibraryScope;
+    displayOnly?: boolean;
   } = {},
 ) {
   setMockPlatform({ isMacOS: true });
@@ -254,6 +259,8 @@ async function mount(
     onSelectView,
     ...(canSave && { canSave }),
     ...(layout && { layout }),
+    ...(libraries && { libraries }),
+    ...(displayOnly && { displayOnly }),
   });
   const saved: string[] = [];
   const el = document.createElement("div");
@@ -635,6 +642,84 @@ describe("saving a toolbar edit", () => {
       limit: 5,
       context: { attachment: "PDFBBBBB" },
     });
+  });
+
+  it("reads the Libraries the host selects, and runs again once the host selects others", async () => {
+    let libraries: LibraryScope = {
+      mode: "selected",
+      libraries: [{ type: "personal" }],
+    };
+    const { view, run, settle } = await mount([], undefined, {
+      libraries: () => libraries,
+    });
+    await act(() => view.setText(FILE));
+    await settle();
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(run.mock.calls[0]![0].libraries).toEqual({
+      mode: "selected",
+      libraries: [{ type: "personal" }],
+    });
+
+    // The same Libraries run nothing.
+    await act(() => view.contextChanged());
+    await settle();
+    expect(run).toHaveBeenCalledTimes(1);
+
+    libraries = {
+      mode: "selected",
+      libraries: [{ type: "group", groupID: 4815 }],
+    };
+    await act(() => view.contextChanged());
+    await settle();
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(run.mock.calls[1]![0].libraries).toEqual({
+      mode: "selected",
+      libraries: [{ type: "group", groupID: 4815 }],
+    });
+  });
+
+  it("offers no change the host does not keep, where it keeps only the sort, the Layout and the Visible Properties", async () => {
+    const toolbar = (el: HTMLElement) =>
+      [
+        ...el.querySelectorAll(
+          "[data-query-view-menu], [data-query-results], [data-query-toolbar], [data-query-properties]",
+        ),
+      ].map(
+        (node) =>
+          node.getAttribute("data-query-toolbar") ??
+          [...node.attributes]
+            .map(({ name }) => name)
+            .find((name) => name.startsWith("data-query-")),
+      );
+    const full = await mount([]);
+    await act(() => full.view.setText(FILE));
+    await full.settle();
+    expect(toolbar(full.el)).toEqual([
+      "data-query-view-menu",
+      "data-query-results",
+      "sort",
+      "group",
+      "filter",
+      "data-query-properties",
+      "search",
+    ]);
+
+    const fixed = await mount([], undefined, { displayOnly: true });
+    await act(() => fixed.view.setText(FILE));
+    await fixed.settle();
+    expect(toolbar(fixed.el)).toEqual([
+      "data-query-results",
+      "sort",
+      "data-query-properties",
+      "search",
+    ]);
+  });
+
+  it("leaves the Libraries to the Library Scope where the host selects none", async () => {
+    const { view, run, settle } = await mount([]);
+    await act(() => view.setText(FILE));
+    await settle();
+    expect(run.mock.calls[0]![0]).not.toHaveProperty("libraries");
   });
 
   it("says a change is not saved when the host cannot write it, until a later save works", async () => {

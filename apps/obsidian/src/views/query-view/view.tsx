@@ -26,6 +26,7 @@ import type {
 } from "@/services/item-query/query-view";
 import type { QueryService } from "@/services/item-query/service";
 import { selectorKey } from "@/services/library-scope/scope";
+import type { LibraryScope } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import { AnnotList } from "@/views/annot-view/AnnotView";
@@ -152,6 +153,23 @@ export interface QueryViewHost {
    * name: the sidebar's own, so its first new Annotation shows at once.
    */
   attachments?: () => readonly string[];
+  /**
+   * The Libraries the query reads: the Library View's selected Library.
+   * Absent: the Library Scope in force. A change runs again through
+   * {@link QueryView.contextChanged}.
+   *
+   * @see apps/obsidian/docs/adr/0071-the-library-tree-writes-filters.md
+   */
+  libraries?: () => LibraryScope;
+  /**
+   * Whether the host keeps only the shown view's sort, Layout and Visible
+   * Properties, as the Library View Document does. The view then offers no
+   * other change: no other view, grouping, filter, limit, column width,
+   * Display Name or Formula, which would show and then be gone on reopen.
+   *
+   * @see apps/obsidian/docs/adr/0070-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
+   */
+  displayOnly?: boolean;
 }
 
 /** What the view shows now, as the toolbar and the host read it. */
@@ -526,6 +544,11 @@ export class QueryView extends Component implements HistorySurface {
     return this.#host.contextSource;
   }
 
+  /** Whether a change can set only the sort, the Layout and the Visible Properties. */
+  get displayOnly(): boolean {
+    return this.#host.displayOnly === true;
+  }
+
   /** The host's link to the Query File, for the toolbar. */
   get openFile(): QueryViewHost["openFile"] {
     return this.#host.openFile;
@@ -611,6 +634,7 @@ export class QueryView extends Component implements HistorySurface {
   #request(file: QueryFile, view: QueryFileView): QueryViewRequest {
     const filter = viewFilter(file, view);
     const context = this.#host.context();
+    const libraries = this.#host.libraries?.();
     const unused = new Set(unusedSettings(view).sort);
     const sort = view.sort?.filter(({ property }) => !unused.has(property));
     const grouped = view.groupBy && grouping(view.from, view.groupBy.property);
@@ -635,6 +659,7 @@ export class QueryView extends Component implements HistorySurface {
       fields,
       ...(Object.keys(formulas).length > 0 && { formulas }),
       limit: view.limit ?? null,
+      ...(libraries && { libraries }),
       ...(context && { context }),
     };
   }
@@ -1179,11 +1204,11 @@ function QueryViewBody({ view }: { view: QueryView }) {
         className="zt:@container zt:flex zt:min-h-(--size-4-10) zt:shrink-0 zt:flex-nowrap zt:items-center zt:gap-(--size-2-2) zt:overflow-hidden zt:border-b-(length:--border-width) zt:border-(--table-border-color) zt:ps-[var(--zt-query-toolbar-inset-start,var(--size-2-1))] zt:pe-[var(--zt-query-toolbar-inset-end,var(--size-2-1))] zt:in-[.is-mobile]:min-h-(--touch-size-l) zt:in-[.print]:hidden"
         role="toolbar"
       >
-        <ViewMenu view={view} />
+        {!view.displayOnly && <ViewMenu view={view} />}
         <ResultsMenu view={view} />
         <SortButton view={view} />
-        <GroupButton view={view} />
-        <FilterButton view={view} />
+        {!view.displayOnly && <GroupButton view={view} />}
+        {!view.displayOnly && <FilterButton view={view} />}
         <PropertiesMenu view={view} />
         <SearchButton bar={search} />
         <OpenFileButton view={view} />
