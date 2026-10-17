@@ -186,8 +186,7 @@ describe("Profile settings", () => {
     const ctx = context();
     expect(
       literatureNoteItems(ctx).filter(
-        (row) =>
-          "name" in row && row.name === m.settings_profile_properties_name(),
+        (row) => "id" in row && /properties/.test(row.id),
       ),
     ).toEqual([]);
     expect(buttonIcons(documentRow(ctx))).toEqual(["pencil"]);

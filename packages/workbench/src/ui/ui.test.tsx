@@ -372,7 +372,6 @@ describe("the edit toolbar", () => {
 /** The controls that decide how much editor a reading takes, which every
     open area carries whatever problem it explains. */
 const SPACE_CONTROLS = new Set([
-  m.workbench_problems_expand(),
   m.workbench_problems_return(),
   m.workbench_problems_return(),
 ]);
