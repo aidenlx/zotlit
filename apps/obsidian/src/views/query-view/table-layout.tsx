@@ -736,6 +736,7 @@ function ItemRow({
         className={cn(
           ROW,
           "zt:data-selected:bg-(--nav-item-background-selected)",
+          "zt:outline-none zt:focus-visible:shadow-[inset_0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)]",
         )}
         data-query-table-row="item"
         data-query-key={record.key}

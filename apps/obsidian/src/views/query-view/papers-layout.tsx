@@ -244,7 +244,7 @@ function PaperRow({
     >
       <div
         {...row}
-        className="zt:flex zt:items-start zt:gap-1 zt:rounded-sm zt:px-1 zt:py-1.5 zt:hover:bg-(--background-modifier-hover) zt:data-selected:bg-(--nav-item-background-selected)"
+        className="zt:flex zt:items-start zt:gap-1 zt:rounded-sm zt:px-1 zt:py-1.5 zt:outline-none zt:hover:bg-(--background-modifier-hover) zt:focus-visible:shadow-[inset_0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)] zt:data-selected:bg-(--nav-item-background-selected)"
       >
         <Expander
           record={item}

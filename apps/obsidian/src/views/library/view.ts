@@ -158,6 +158,8 @@ export class LibraryView extends ItemView {
     const rows: ItemRowGestures = {
       selection: this.selection,
       select: (key) => this.selection.setState({ key }),
+      first: () =>
+        this.query.state.getState().results?.records[0]?.row.indexedKey ?? null,
       open: (key, event) =>
         void deps.items.openPdf(key, Keymap.isModEvent(event)),
       menu: (key, event) => menuOf(key).showAtMouseEvent(event),

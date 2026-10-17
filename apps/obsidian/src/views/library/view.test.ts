@@ -1294,6 +1294,20 @@ it("selects a row on a click and moves the selection with the arrow keys", async
   expect(itemRows(view).slice(0, 3)).toEqual([`${A} *`, B, C]);
 });
 
+it("lets the keyboard enter the list at its first row while none is selected, and names the selected row to assistive technology", async () => {
+  const { deps } = pluginData();
+  const view = await openTab(deps);
+  const stops = () =>
+    [...view.contentEl.querySelectorAll<HTMLElement>("[data-query-item-row]")]
+      .filter((el) => el.tabIndex === 0)
+      .map((el) => el.dataset.queryItemRow);
+  expect(stops()).toEqual([A]);
+  await act(() => itemRow(view, C).click());
+  expect(stops()).toEqual([C]);
+  expect(itemRow(view, C).getAttribute("aria-current")).toBe("true");
+  expect(itemRow(view, A).hasAttribute("aria-current")).toBe(false);
+});
+
 it("answers the quick switcher's keys on the selected row: Enter the note, Mod+Enter the note in a new pane, Shift+Enter the PDF", async () => {
   const { deps, items } = pluginData();
   const view = await openTab(deps);
