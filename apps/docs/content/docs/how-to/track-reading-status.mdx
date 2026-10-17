@@ -146,7 +146,7 @@ you have not marked as read, including the ones you have not opened yet.
 Keep each condition on a vault property as its own row, in a group of <UiLabel name={m.workbench_match_match_all()} />. The view cannot run when such a condition is:
 
 - Inside a group of <UiLabel name={m.workbench_match_match_any()} /> or <UiLabel name={m.workbench_match_match_none()} />. The row shows <UiLabel name={m.query_view_vault_filter_nested()} />
-- In one expression with a Zotero property, such as `vault.rating > 3 && date.year >= 2020`. The row shows <UiLabel name={m.query_view_vault_filter_mixed()} /> Split it into two rows.
+- In one expression with a Zotero property that `||` or `!` joins, such as `vault.rating > 3 || date.year >= 2020`. The row shows <UiLabel name={m.query_view_vault_filter_mixed()} /> An expression of conditions joined by `&&`, such as `vault.rating > 3 && date.year >= 2020`, runs as separate rows would.
 
 For a checkbox property, choose <UiLabel name={m.workbench_filter_op_is_true()} /> or <UiLabel name={m.workbench_filter_op_is_false()} />. The condition reads `vault["done"] == true` as an expression.
 

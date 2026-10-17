@@ -652,20 +652,54 @@ function filterSections(
 }
 
 /**
- * The conditions of a section that must each hold for every row, with their
- * paths: the section itself where it is one condition, else the conditions
- * of its root `and` group. A vault condition is one of these, or it is no
- * vault condition.
+ * A condition of a section that must hold for every row: its text, the path
+ * of the leaf that holds it, and where it sits in the leaf's text.
  */
-function conjuncts(tree: FilterTree): [string, readonly number[]][] {
-  if (typeof tree === "string") return [[tree, [0]]];
+interface Conjunct {
+  readonly text: string;
+  readonly path: readonly number[];
+  readonly from: number;
+  readonly to: number;
+}
+
+/** The place of a conjunct, which one leaf may hold several of. */
+const conjunctKey = ({ path, from }: Conjunct) => `${path.join()}@${from}`;
+
+/**
+ * The conditions of a section that must each hold for every row: the
+ * section itself where it is one condition, else the conditions of its root
+ * `and` group, each condition split at the `&&` of its top level. A vault
+ * condition is one of these, or it is no vault condition.
+ */
+function conjuncts(tree: FilterTree): Conjunct[] {
+  if (typeof tree === "string") return leafConjuncts(tree, [0]);
   const [kind, entries] = filterGroup(tree);
   if (kind !== "and") return [];
   return entries.flatMap((entry, index) =>
-    typeof entry === "string"
-      ? [[entry, [index]] as [string, readonly number[]]]
-      : [],
+    typeof entry === "string" ? leafConjuncts(entry, [index]) : [],
   );
+}
+
+/**
+ * The operands of the `&&` chain at the top level of one leaf, past any
+ * parentheses around them; the whole leaf where it is no such chain or does
+ * not parse.
+ */
+function leafConjuncts(text: string, path: readonly number[]): Conjunct[] {
+  const { ast } = parseExpressionAst(text);
+  if (ast === null) return [{ text, path, from: 0, to: text.length }];
+  const operands = (node: ExpressionNode): ExpressionNode[] =>
+    node.type === "group"
+      ? operands(node.expression)
+      : node.type === "binary" && node.operator === "&&"
+        ? [...operands(node.left), ...operands(node.right)]
+        : [node];
+  return operands(ast).map(({ from, to }) => ({
+    text: text.slice(from, to),
+    path,
+    from,
+    to,
+  }));
 }
 
 /** Whether a condition reads a vault property, as `vault["reading-status"]` or `vault.rating`. */
@@ -716,8 +750,8 @@ export function vaultConditions(
 ): VaultCondition[] {
   return filterSections(file, view).flatMap(([tree, section]) =>
     conjuncts(tree)
-      .filter(([text]) => readsVault(text))
-      .map(([text, path]) => ({ section, path, text })),
+      .filter(({ text }) => readsVault(text))
+      .map(({ text, path }) => ({ section, path, text })),
   );
 }
 
@@ -732,7 +766,7 @@ export function strandedVaultConditions(
 ): VaultCondition[] {
   return filterSections(file, view).flatMap(([tree, section]) => {
     if (typeof tree === "string") return [];
-    const held = new Set(conjuncts(tree).map(([, path]) => path.join()));
+    const held = new Set(conjuncts(tree).map(({ path }) => path.join()));
     const { text, leaves } = composeFilterTree(tree);
     return leaves.flatMap(({ path, from, to }) => {
       const condition = text.slice(from, to);
@@ -756,8 +790,8 @@ function composeView(
   const parts = filterSections(file, view).flatMap(([tree, section]) => {
     const vault = new Set(
       conjuncts(tree)
-        .filter(([text]) => readsVault(text))
-        .map(([, path]) => path.join()),
+        .filter(({ text }) => readsVault(text))
+        .map(conjunctKey),
     );
     const engine = withoutConjuncts(tree, vault);
     if (engine === null) return [];
@@ -774,41 +808,49 @@ function composeView(
 }
 
 /**
- * `tree` composed without the conditions at `dropped` among its
- * {@link conjuncts}, its leaves at their paths in `tree`; `null` where it
- * keeps none.
+ * `tree` composed without the conditions among its {@link conjuncts} whose
+ * {@link conjunctKey} is in `dropped`, its leaves at their paths in `tree`;
+ * `null` where it keeps none. A leaf that keeps some of its conjuncts
+ * composes them alone, each one a leaf at the leaf's path.
  */
 function withoutConjuncts(
   tree: FilterTree,
   dropped: ReadonlySet<string>,
 ): ComposedFilter | null {
   if (dropped.size === 0) return composeFilterTree(tree);
-  if (typeof tree === "string") return null;
-  const [, entries] = filterGroup(tree);
-  const kept = entries.flatMap((entry, index) =>
-    dropped.has(String(index))
-      ? []
-      : [
-          {
-            ...composeFilterTree(entry),
-            index,
-          },
-        ],
-  );
-  if (kept.length === 0) return null;
-  // An entry composed alone counts its paths from itself; in `tree` they
-  // sit under its index.
-  return joinComposed(
-    kept.map(({ text, leaves, index }) => ({
-      text,
-      leaves: leaves.map((leaf) => ({
-        ...leaf,
-        path:
-          typeof entries[index] === "string" ? [index] : [index, ...leaf.path],
+  const leaf = (text: string, path: readonly number[]) => {
+    const all = leafConjuncts(text, path);
+    const kept = all.filter((conjunct) => !dropped.has(conjunctKey(conjunct)));
+    if (kept.length === all.length)
+      return { text, leaves: [{ path, from: 0, to: text.length }] };
+    if (kept.length === 0) return null;
+    return joinComposed(
+      kept.map(({ text, path }) => ({
+        text,
+        leaves: [{ path, from: 0, to: text.length }],
       })),
-    })),
-    " && ",
-  );
+      " && ",
+    );
+  };
+  if (typeof tree === "string") return leaf(tree, [0]);
+  const [, entries] = filterGroup(tree);
+  const kept = entries.flatMap((entry, index) => {
+    if (typeof entry === "string") {
+      const composed = leaf(entry, [index]);
+      return composed === null ? [] : [composed];
+    }
+    // An entry composed alone counts its paths from itself; in `tree` they
+    // sit under its index.
+    const { text, leaves } = composeFilterTree(entry);
+    return [
+      {
+        text,
+        leaves: leaves.map((at) => ({ ...at, path: [index, ...at.path] })),
+      },
+    ];
+  });
+  if (kept.length === 0) return null;
+  return joinComposed(kept, " && ");
 }
 
 /**
