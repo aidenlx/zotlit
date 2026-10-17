@@ -2,6 +2,7 @@ import { configureSync, resetSync } from "@logtape/logtape";
 import type { LogRecord } from "@logtape/logtape";
 import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 
+import { SCAN_PAGE_SIZE } from "@zotlit/db/item-query";
 import {
   BULK_LIBRARY,
   bulkItemKey,
@@ -15,6 +16,7 @@ import {
 import { ANNOTATIONS, ATTACHMENTS, collectQuery } from ".";
 import type { RunEvent } from "./test-helpers";
 import { runEffect } from "./test-helpers";
+import { PRODUCTION_TUNING } from "./tuning";
 
 const logs: LogRecord[] = [];
 beforeEach(() => {
@@ -35,6 +37,12 @@ beforeAll(() =>
 );
 afterAll(() => resetSync());
 
+/** The properties of each plan record the candidate pass logged. */
+const planRecords = () =>
+  logs
+    .filter((record) => "plan" in record.properties)
+    .map((record) => record.properties);
+
 // Failure modes: parent pages grow with Library size, a parent cap hides child
 // matches, or child candidates cross Target Libraries. Count the reader seam.
 const candidateStatements = (events: readonly RunEvent[]) =>
@@ -46,9 +54,15 @@ const candidateStatements = (events: readonly RunEvent[]) =>
 
 // Failure modes: unrelated children consume a selective leaf's work budget,
 // and a partial candidate set loses the selected parent's later children.
-it.each([ATTACHMENTS, ANNOTATIONS])(
-  "$id keeps a selective Parent Record leaf on candidates in a large Library",
-  async (dataset) => {
+// The first bulk Item holds ATT22222 and BULKPDF2. The update below moves the
+// Annotations after ANN22255 (index 3 * 33 + 3 = 102) to ATT22223 of the second
+// Item, so indexes 0 to 102 stay on BULKPDF2.
+it.each([
+  { dataset: ATTACHMENTS, returnedCount: 2 },
+  { dataset: ANNOTATIONS, returnedCount: 103 },
+])(
+  "$dataset.id keeps a selective Parent Record leaf on candidates in a large Library",
+  async ({ dataset, returnedCount }) => {
     using scenario = openScenarioDatabase();
     seedBulkLibrary(scenario.sqlite, 5_001);
     seedBulkAttachments(scenario.sqlite, 5_001);
@@ -66,16 +80,16 @@ it.each([ATTACHMENTS, ANNOTATIONS])(
       client: scenario.db,
       tuning: { capRatio: 1 },
     });
-    expect(logs.at(-1)?.properties).toMatchObject({
-      plan: "candidates",
-      reason: null,
-    });
+    expect(planRecords()).toMatchObject([{ plan: "candidates", reason: null }]);
     const scan = await runEffect(query, {
       client: scenario.db,
       tuning: { forceScan: true },
     });
     expect(actual.exit).toEqual(scan.exit);
-    expect(actual.exit._tag).toBe("Success");
+    expect(actual.exit).toMatchObject({
+      _tag: "Success",
+      value: { returnedCount },
+    });
     expect(candidateStatements(actual.events).length).toBeLessThanOrEqual(3);
     expect(
       actual.events.some(
@@ -87,9 +101,16 @@ it.each([ATTACHMENTS, ANNOTATIONS])(
   },
 );
 
-it.each([ATTACHMENTS, ANNOTATIONS])(
-  "$id reads matching parents and children in each Target Library",
-  async (dataset) => {
+// Each filter selects the personal ART2FULL alone: ALS2CNFL also carries
+// "methods" but has no children, and CHP2YEAR below Thesis has none. ART2FULL
+// holds 4 live Attachments (PDF2LINK, PDF2LIVE, URL2LIVE, WEB2LIVE) and 12 live
+// Annotations, 6 on PDF2LIVE and 6 on PDF2LINK.
+it.each([
+  { dataset: ATTACHMENTS, returnedCount: 4 },
+  { dataset: ANNOTATIONS, returnedCount: 12 },
+])(
+  "$dataset.id reads matching parents and children in each Target Library",
+  async ({ dataset, returnedCount }) => {
     using scenario = openScenarioDatabase({ annotations: true });
     for (const filter of [
       'item.tags.contains("methods")',
@@ -110,7 +131,10 @@ it.each([ATTACHMENTS, ANNOTATIONS])(
         tuning: { forceScan: true },
       });
       expect(actual.exit).toEqual(scan.exit);
-      expect(actual.exit._tag).toBe("Success");
+      expect(actual.exit).toMatchObject({
+        _tag: "Success",
+        value: { returnedCount },
+      });
       expect(candidateStatements(actual.events).length).toBeLessThanOrEqual(4);
     }
   },
@@ -178,12 +202,17 @@ it.each([1, 1_001])(
     seedBulkLibrary(scenario.sqlite, count);
     seedBulkAttachments(scenario.sqlite, count);
     seedBulkAnnotations(scenario.sqlite, 100);
-    for (const dataset of [ATTACHMENTS, ANNOTATIONS]) {
-      for (const filter of [
-        'item.tags.contains("bulk")',
-        'item.collections.within("Bulk collection")',
-        `item.indexedKey == "${bulkItemKey(0)}g2718"`,
-      ]) {
+    // Each filter selects the first Item, which also holds BULKPDF2 and its
+    // 100 Annotations; every fifth Item is in the Bulk collection.
+    for (const [filter, parents] of [
+      ['item.tags.contains("bulk")', count],
+      ['item.collections.within("Bulk collection")', Math.ceil(count / 5)],
+      [`item.indexedKey == "${bulkItemKey(0)}g2718"`, 1],
+    ] as const) {
+      for (const [dataset, returnedCount] of [
+        [ATTACHMENTS, parents + 1],
+        [ANNOTATIONS, 100],
+      ] as const) {
         const query = collectQuery(dataset, {
           libraries: [BULK_LIBRARY],
           filter,
@@ -198,7 +227,10 @@ it.each([1, 1_001])(
           tuning: { forceScan: true },
         });
         expect(actual.exit).toEqual(scan.exit);
-        expect(actual.exit._tag).toBe("Success");
+        expect(actual.exit).toMatchObject({
+          _tag: "Success",
+          value: { returnedCount },
+        });
         expect(candidateStatements(actual.events).length).toBeLessThanOrEqual(
           4,
         );
@@ -226,10 +258,9 @@ it.each([ATTACHMENTS, ANNOTATIONS])(
       client: scenario.db,
       tuning: { capRatio: 1 },
     });
-    expect(logs.at(-1)?.properties).toMatchObject({
-      plan: "scan",
-      reason: "parent-page-budget-exhausted",
-    });
+    expect(planRecords()).toMatchObject([
+      { plan: "scan", reason: "parent-page-budget-exhausted" },
+    ]);
     const scan = await runEffect(query, {
       client: scenario.db,
       tuning: { forceScan: true },
@@ -245,9 +276,11 @@ it.each([ATTACHMENTS, ANNOTATIONS])(
           event.statement.reader.endsWith("scan-page"),
       ),
     ).toBe(true);
+    // The read stops one row past the parent page budget.
+    const budget = PRODUCTION_TUNING.relationPageBudget * SCAN_PAGE_SIZE;
     for (const event of statements) {
       if (event.type === "statement")
-        expect(event.statement.rows.length).toBeLessThanOrEqual(4001);
+        expect(event.statement.rows.length).toBeLessThanOrEqual(budget + 1);
     }
   },
   // Seeds and reads 10,000 records; the default 5000 ms limit fails on CI runners.
@@ -274,10 +307,7 @@ it("keeps other-Library children outside the Parent Record budget", async () => 
     "update items set libraryID = 1 where itemID in (select itemID from itemAttachments where parentItemID is null) and libraryID = 3",
   );
   const actual = await runEffect(query, { client: scenario.db });
-  expect(logs.at(-1)?.properties).toMatchObject({
-    plan: "candidates",
-    reason: null,
-  });
+  expect(planRecords()).toMatchObject([{ plan: "candidates", reason: null }]);
   const scan = await runEffect(query, {
     client: scenario.db,
     tuning: { forceScan: true },

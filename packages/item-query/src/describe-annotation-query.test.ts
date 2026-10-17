@@ -1,22 +1,66 @@
-import { expect, it } from "vitest";
+import { Exit } from "effect";
+import { afterAll, beforeAll, expect, it } from "vitest";
 
 import {
   openScenarioDatabase,
   SCENARIO_LIBRARIES,
 } from "@zotlit/db/test-scenario";
+import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
 import { ANNOTATIONS, collectQuery } from ".";
+import type { ItemQueryRequest } from ".";
 import { describeAnnotationQuery } from "./describe-annotation-query";
-import { runEffect } from "./test-helpers";
+import { faultCode, runEffect } from "./test-helpers";
 
-it("publishes executable Annotation and parent Projection Paths with active-source custom fields", async () => {
-  using scenario = openScenarioDatabase({ annotations: true });
-  const described = await runEffect(describeAnnotationQuery(), {
+// Every test here only reads the scenario.
+let scenario: ScenarioDatabase;
+
+beforeAll(() => {
+  scenario = openScenarioDatabase({ annotations: true });
+});
+
+afterAll(() => {
+  scenario.close();
+});
+
+async function describeSchema() {
+  const { exit } = await runEffect(describeAnnotationQuery(), {
     client: scenario.db,
   });
-  if (described.exit._tag === "Failure")
-    throw new Error(String(described.exit.cause));
-  const schema = described.exit.value;
+  if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
+  return exit.value;
+}
+
+it("accepts every field and Projection Path in the use its capabilities list, and rejects every other use", async () => {
+  const { fields, customFields } = await describeSchema();
+  const failures: string[] = [];
+  const check = async (
+    label: string,
+    request: Omit<ItemQueryRequest, "libraries">,
+    accepted: boolean,
+  ) => {
+    const code = await faultCode(ANNOTATIONS, scenario.db, request);
+    if ((code === null) !== accepted)
+      failures.push(`${label}: ${code ?? "accepted"}`);
+  };
+
+  for (const field of [...fields, ...customFields]) {
+    const { path } = field;
+    await check(`fields ${path}`, { fields: [path] }, field.projection);
+    await check(
+      `sort ${path}`,
+      { sort: [{ field: path, direction: "asc" }] },
+      field.sort,
+    );
+    await check(`group ${path}`, { group: path }, field.group);
+    await check(`filter ${path}`, { filter: path }, field.filter !== null);
+  }
+
+  expect(failures).toEqual([]);
+});
+
+it("publishes executable Annotation and parent Projection Paths with active-source custom fields", async () => {
+  const schema = await describeSchema();
   expect(schema).toHaveProperty("projectionPathGrammar.each.syntax", "[]");
   expect(schema.fields).toContainEqual({
     path: "item.creators[].fullName",

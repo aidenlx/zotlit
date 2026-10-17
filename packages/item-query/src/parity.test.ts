@@ -15,6 +15,7 @@ import { ATTACHMENT_SCENARIO_QUERIES } from "./attachment-scenario-queries";
 import { RELATION_SCENARIO_QUERIES } from "./relation-scenario-queries";
 import {
   GENERATED_FILTER_PARTS,
+  PINNED_FILTERS,
   SCENARIO_QUERIES,
   scenarioFormulas,
 } from "./scenario-queries";
@@ -79,8 +80,12 @@ const PAUSE_METHODS: readonly {
   scheduler: () => ItemQueryScheduler;
 }[] = [
   {
-    name: "the production scheduler on wall time",
-    scheduler: () => new ItemQueryScheduler(),
+    name: "a MessageChannel pause after several operations",
+    scheduler: () => {
+      // A counter in place of the clock, as in the test scheduler.
+      let ticks = 0;
+      return new ItemQueryScheduler({ budgetMs: 10, now: () => ticks++ });
+    },
   },
   {
     name: "no pause",
@@ -109,15 +114,22 @@ const PAUSE_METHOD_TUNING: Tuning = {
   mergeStepSize: 2,
 };
 
+const databases = new DisposableStack();
 let scenario: ScenarioDatabase;
 
 beforeAll(() => {
-  scenario = openScenarioDatabase();
+  scenario = databases.use(openScenarioDatabase());
 });
 
 afterAll(() => {
-  scenario.close();
+  databases.dispose();
 });
+
+let annotated: ScenarioDatabase | undefined;
+
+/** The scenario with Annotations, opened on first use. No test writes to it. */
+const annotatedScenario = (): ScenarioDatabase =>
+  (annotated ??= databases.use(openScenarioDatabase({ annotations: true })));
 
 /**
  * The complete outcome of one run in its wire form: the Query Result, or the
@@ -172,10 +184,27 @@ describe("parity of every plan with the forced scan", () => {
     expect(names.filter((name, i) => names.indexOf(name) !== i)).toEqual([]);
   });
 
+  it("pins the matches of filters of the list only", () => {
+    // Three key-order queries of each pinned filter carry its matches.
+    expect(SCENARIO_QUERIES.filter((query) => query.matches)).toHaveLength(
+      PINNED_FILTERS.length * 3,
+    );
+  });
+
   it.each(SCENARIO_QUERIES)("$name", async (query) => {
-    await expectParity(query);
+    const oracle = await expectParity(query);
+    if (query.matches)
+      expect(indexedKeys(oracle), "the forced scan").toEqual(
+        [...query.matches].sort(),
+      );
   });
 });
+
+/** The Indexed Keys of a Query Result, sorted. */
+function indexedKeys(outcome: unknown): string[] {
+  const { result } = outcome as { result: { rows: { indexedKey: string }[] } };
+  return result.rows.map((row) => row.indexedKey).sort();
+}
 
 describe("parity of every pause method with the forced scan", () => {
   it.each(SCENARIO_QUERIES)("$name", async (query) => {
@@ -378,13 +407,6 @@ it.each(["review.length", "custom.review.length"])(
 );
 
 describe("Attachment parity with the forced scan", () => {
-  let attachments: ScenarioDatabase;
-
-  beforeAll(() => {
-    attachments = openScenarioDatabase({ annotations: true });
-  });
-  afterAll(() => attachments.close());
-
   describe.each([
     { name: "personal", libraries: [SCENARIO_LIBRARIES.personal] },
     { name: "group", libraries: [SCENARIO_LIBRARIES.group] },
@@ -397,7 +419,7 @@ describe("Attachment parity with the forced scan", () => {
       const run = async (tuning: Tuning) => {
         const { exit } = await runEffect(
           collectQuery(ATTACHMENTS, { ...request, libraries }),
-          { client: attachments.db, tuning },
+          { client: annotatedScenario().db, tuning },
         );
         if (exit._tag === "Failure") throw new Error(String(exit.cause));
         return wire(exit.value);
@@ -415,7 +437,7 @@ describe("Attachment parity with the forced scan", () => {
 it.each(RELATION_SCENARIO_QUERIES)(
   "keeps scan parity for $name",
   async ({ dataset, request }) => {
-    using source = openScenarioDatabase({ annotations: true });
+    const source = annotatedScenario();
     for (const libraries of [
       [SCENARIO_LIBRARIES.personal],
       [SCENARIO_LIBRARIES.group],

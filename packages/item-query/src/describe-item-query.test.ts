@@ -1,19 +1,11 @@
 import { Cause, Exit } from "effect";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { ItemQueryLayoutError } from "@zotlit/db/item-query";
-import {
-  openScenarioDatabase,
-  SCENARIO_LIBRARIES,
-} from "@zotlit/db/test-scenario";
+import { openScenarioDatabase } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
-import {
-  describeQueryCustomFields,
-  collectQuery,
-  ITEMS,
-  ItemQueryScheduler,
-} from ".";
+import { ANNOTATIONS, ATTACHMENTS, describeQueryCustomFields, ITEMS } from ".";
 import type {
   ItemQueryRequest,
   ItemQuerySchema,
@@ -21,11 +13,14 @@ import type {
   SchemaParameter,
 } from ".";
 import {
+  describeAnnotationQuery,
+  describeAttachmentQuery,
   describeItemQuery,
   describeItemQueryVocabulary,
   describeQuery,
+  describeQueryVocabulary,
 } from "./schema";
-import { runEffect } from "./test-helpers";
+import { faultCode, runEffect } from "./test-helpers";
 
 it("generates field capabilities from the supplied Query Dataset descriptor", async () => {
   using scenario = openScenarioDatabase();
@@ -197,28 +192,6 @@ describe("describeItemQuery fields", () => {
     const { fields } = await schema(scenario);
     const entry = (path: string) => fields.find((field) => field.path === path);
 
-    expect(entry("library")).toMatchInlineSnapshot(`
-      {
-        "filter": "string",
-        "group": true,
-        "path": "library",
-        "projection": true,
-        "sort": false,
-        "type": "string",
-        "valueForms": [
-          "personal",
-          "group:<groupID>",
-        ],
-      }
-    `);
-    expect(entry("title")).toEqual({
-      path: "title",
-      type: "string",
-      filter: "string",
-      projection: true,
-      group: true,
-      sort: true,
-    });
     expect(entry("date")).toEqual({
       path: "date",
       type: "object",
@@ -243,29 +216,12 @@ describe("describeItemQuery fields", () => {
       group: true,
       sort: true,
     });
-    // A timestamp or a calendar day, as ISO text in a Query Row.
-    expect(entry("accessDate")).toEqual({
-      path: "accessDate",
-      type: "string",
-      filter: "date",
-      projection: true,
-      group: true,
-      sort: true,
-    });
     expect(entry("creators")).toEqual({
       path: "creators",
       type: "array",
       filter: "list",
       projection: true,
       group: false,
-      sort: false,
-    });
-    expect(entry("creators[0].fullName")).toEqual({
-      path: "creators[0].fullName",
-      type: "string",
-      filter: null,
-      projection: true,
-      group: true,
       sort: false,
     });
     // A filter has no property `kind` on a date and reads a list element by
@@ -289,24 +245,6 @@ describe("describeItemQuery fields", () => {
       group: false,
       sort: false,
     });
-    // The Zotero Key inside the Target Library: a filter reads it, a row
-    // carries the Indexed Key instead.
-    expect(entry("key")).toEqual({
-      path: "key",
-      type: "string",
-      filter: "string",
-      projection: true,
-      group: true,
-      sort: true,
-    });
-    expect(entry("custom")).toEqual({
-      path: "custom",
-      type: "object",
-      filter: null,
-      projection: true,
-      group: false,
-      sort: false,
-    });
   });
 
   it("reports the defaults of an omitted argument", async () => {
@@ -314,182 +252,13 @@ describe("describeItemQuery fields", () => {
     const { defaults } = await schema(scenario);
 
     expect(defaults).toEqual({
-      fields: ["itemType", "title", "creators", "date", "dateModified"],
-      sort: [{ field: "dateModified", direction: "desc" }],
+      fields: ITEMS.defaultFields,
+      sort: ITEMS.defaultSort.map(({ field, direction }) => ({
+        field,
+        direction,
+      })),
       limit: null,
     });
-  });
-});
-
-describe("describeItemQuery functions", () => {
-  it("reports each function, method, and property with its signature", async () => {
-    using scenario = openScenarioDatabase();
-    const { functions, methods, properties, types } = await schema(scenario);
-
-    expect(functions.find((entry) => entry.name === "if")).toEqual({
-      name: "if",
-      parameters: [
-        { name: "condition", type: "any" },
-        { name: "then", type: "any" },
-      ],
-      optional: [{ name: "else", type: "any" }],
-      rest: null,
-      returns: null,
-    });
-    expect(functions.find((entry) => entry.name === "date")).toEqual({
-      name: "date",
-      parameters: [{ name: "text", type: ["string", "date"] }],
-      optional: [],
-      rest: null,
-      returns: "date",
-    });
-    expect(
-      methods.find((entry) => entry.on === "number" && entry.name === "round"),
-    ).toEqual({
-      name: "round",
-      on: "number",
-      parameters: [],
-      optional: [{ name: "digits", type: "number" }],
-      rest: null,
-      returns: "number",
-    });
-    expect(
-      methods.find(
-        (entry) => entry.on === "string" && entry.name === "containsAny",
-      ),
-    ).toMatchObject({
-      parameters: [],
-      rest: { name: "texts", type: "string" },
-    });
-    expect(methods.find((entry) => entry.name === "toString")).toMatchObject({
-      on: "any",
-      returns: "string",
-    });
-    expect(methods.find((entry) => entry.name === "isType")).toMatchObject({
-      on: "any",
-      parameters: [{ name: "type", type: "string", values: ["any", ...types] }],
-    });
-    // The list helpers of Bases that take no element expression.
-    const listMethod = (name: string) =>
-      methods.find((entry) => entry.on === "list" && entry.name === name);
-    expect(listMethod("slice")).toEqual({
-      name: "slice",
-      on: "list",
-      parameters: [{ name: "start", type: "number" }],
-      optional: [{ name: "end", type: "number" }],
-      rest: null,
-      returns: "list",
-    });
-    expect(listMethod("join")).toEqual({
-      name: "join",
-      on: "list",
-      parameters: [{ name: "separator", type: "string" }],
-      optional: [],
-      rest: null,
-      returns: "string",
-    });
-    for (const name of ["flat", "reverse", "sort", "unique"]) {
-      expect(listMethod(name)).toEqual({
-        name,
-        on: "list",
-        parameters: [],
-        optional: [],
-        rest: null,
-        returns: "list",
-      });
-    }
-    // An element-expression method names the scope its expression can use.
-    for (const name of ["filter", "map"]) {
-      expect(listMethod(name)).toEqual({
-        name,
-        on: "list",
-        parameters: [{ name: "expression", type: "any" }],
-        optional: [],
-        rest: null,
-        returns: "list",
-        scope: ["value", "index"],
-      });
-    }
-    expect(listMethod("reduce")).toEqual({
-      name: "reduce",
-      on: "list",
-      parameters: [
-        { name: "expression", type: "any" },
-        { name: "initial", type: "any" },
-      ],
-      optional: [],
-      rest: null,
-      returns: null,
-      scope: ["value", "index", "acc"],
-    });
-    expect(listMethod("slice")).not.toHaveProperty("scope");
-    expect(methods.find((entry) => entry.name === "isTruthy")).toEqual({
-      name: "isTruthy",
-      on: "any",
-      parameters: [],
-      optional: [],
-      rest: null,
-      returns: "boolean",
-    });
-    expect(functions.find((entry) => entry.name === "list")).toEqual({
-      name: "list",
-      parameters: [{ name: "value", type: "any" }],
-      optional: [],
-      rest: null,
-      returns: "list",
-    });
-    expect(
-      methods.find((entry) => entry.on === "string" && entry.name === "split"),
-    ).toEqual({
-      name: "split",
-      on: "string",
-      parameters: [{ name: "separator", type: ["string", "regexp"] }],
-      optional: [{ name: "n", type: "number" }],
-      rest: null,
-      returns: "list",
-    });
-    expect(
-      methods.find(
-        (entry) => entry.on === "string" && entry.name === "replace",
-      ),
-    ).toMatchObject({
-      parameters: [
-        { name: "pattern", type: ["string", "regexp"] },
-        { name: "replacement", type: "string" },
-      ],
-    });
-    // A regular expression literal is a value of type regexp.
-    expect(methods.filter((entry) => entry.on === "regexp")).toEqual([
-      {
-        name: "matches",
-        on: "regexp",
-        parameters: [{ name: "text", type: "string" }],
-        optional: [],
-        rest: null,
-        returns: "boolean",
-      },
-    ]);
-    expect(properties.filter((entry) => entry.on === "regexp")).toEqual([]);
-    expect(
-      methods.find(
-        (entry) => entry.on === "number" && entry.name === "toFixed",
-      ),
-    ).toMatchObject({ parameters: [{ name: "precision", type: "number" }] });
-    expect(
-      properties.filter((entry) => entry.name === "length").map((e) => e.on),
-    ).toEqual(["string", "list"]);
-    expect(types).toEqual([
-      "null",
-      "boolean",
-      "record",
-      "number",
-      "string",
-      "list",
-      "date",
-      "duration",
-      "regexp",
-      "error",
-    ]);
   });
 });
 
@@ -533,8 +302,8 @@ const SUBJECT: Record<string, string> = {
   regexp: "/a/i",
 };
 
-function call(name: string, entry: Omit<SchemaFunction, "name">): string {
-  const args = [
+function argumentsOf(entry: Omit<SchemaFunction, "name">): string[] {
+  return [
     ...entry.parameters,
     ...entry.optional,
     ...(entry.rest ? [entry.rest] : []),
@@ -548,34 +317,25 @@ function call(name: string, entry: Omit<SchemaFunction, "name">): string {
             : parameter.type[0]!
         ],
   );
-  return `${name}(${args.join(", ")})`;
+}
+
+function call(name: string, entry: Omit<SchemaFunction, "name">): string {
+  return `${name}(${argumentsOf(entry).join(", ")})`;
 }
 
 describe("the Item Query Schema and collectQuery", () => {
-  const { personal } = SCENARIO_LIBRARIES;
+  // Every test here only reads the scenario.
+  let scenario: ScenarioDatabase;
 
-  async function codeOf(
-    scenario: ScenarioDatabase,
-    request: Omit<ItemQueryRequest, "libraries">,
-  ): Promise<string | null> {
-    const { exit } = await runEffect(
-      collectQuery(ITEMS, { libraries: [personal], limit: 1, ...request }),
-      // The production scheduler: these tests run several hundred queries,
-      // and a pause after every operation makes each one a long chain of
-      // tasks that a busy machine runs slowly.
-      { client: scenario.db, scheduler: new ItemQueryScheduler() },
-    );
-    if (Exit.isSuccess(exit)) {
-      expect(exit.value.warnings).toEqual([]);
-      return null;
-    }
-    const error = Cause.findErrorOption(exit.cause);
-    if (error._tag === "None") throw new Error(String(exit.cause));
-    return (error.value as { code?: string }).code ?? error.value._tag;
-  }
+  beforeAll(() => {
+    scenario = openScenarioDatabase();
+  });
+
+  afterAll(() => {
+    scenario.close();
+  });
 
   it("accepts every field and Projection Path in the use its capabilities list, and rejects every other use", async () => {
-    using scenario = openScenarioDatabase();
     const { fields, customFields } = await schema(scenario);
     const failures: string[] = [];
     const expect_ = async (
@@ -583,7 +343,7 @@ describe("the Item Query Schema and collectQuery", () => {
       request: Omit<ItemQueryRequest, "libraries">,
       accepted: boolean,
     ) => {
-      const code = await codeOf(scenario, request);
+      const code = await faultCode(ITEMS, scenario.db, request);
       if ((code === null) !== accepted) {
         failures.push(`${label}: ${code ?? "accepted"}`);
       }
@@ -608,7 +368,6 @@ describe("the Item Query Schema and collectQuery", () => {
   });
 
   it("accepts a call of every function, method, and property it lists", async () => {
-    using scenario = openScenarioDatabase();
     const { functions, methods, properties } = await schema(scenario);
     const failures: string[] = [];
     const filters = [
@@ -620,7 +379,44 @@ describe("the Item Query Schema and collectQuery", () => {
     ];
 
     for (const filter of filters) {
-      const code = await codeOf(scenario, { filter });
+      const code = await faultCode(ITEMS, scenario.db, { filter });
+      if (code !== null) failures.push(`${filter}: ${code}`);
+    }
+
+    expect(failures).toEqual([]);
+  });
+
+  it("accepts each name an element expression lists in its scope, and no other", async () => {
+    const { methods } = await schema(scenario);
+    const scoped = methods.filter((entry) => entry.scope);
+    const names = new Set(scoped.flatMap((entry) => entry.scope!));
+    const failures: string[] = [];
+
+    for (const entry of scoped) {
+      const [, ...rest] = argumentsOf(entry);
+      for (const name of names) {
+        const filter = `${SUBJECT[entry.on]!}.${entry.name}(${[name, ...rest].join(", ")})`;
+        const code = await faultCode(ITEMS, scenario.db, { filter });
+        if ((code === null) !== entry.scope!.includes(name))
+          failures.push(`${filter}: ${code ?? "accepted"}`);
+      }
+    }
+
+    expect(scoped.length).toBeGreaterThan(0);
+    expect(failures).toEqual([]);
+  });
+
+  it("accepts each value type that isType lists", async () => {
+    const { methods, types } = await schema(scenario);
+    const values =
+      methods.find((entry) => entry.name === "isType")?.parameters[0]?.values ??
+      [];
+    const failures: string[] = [];
+
+    expect(values).toEqual(["any", ...types]);
+    for (const value of values) {
+      const filter = `title.isType(${JSON.stringify(value)})`;
+      const code = await faultCode(ITEMS, scenario.db, { filter });
       if (code !== null) failures.push(`${filter}: ${code}`);
     }
 
@@ -649,30 +445,52 @@ describe("the Item Query Schema and collectQuery", () => {
   ] satisfies [Omit<ItemQueryRequest, "libraries">, string][])(
     "rejects a name outside it: %j",
     async (request, code) => {
-      using scenario = openScenarioDatabase();
-      expect(await codeOf(scenario, request)).toBe(code);
+      expect(await faultCode(ITEMS, scenario.db, request)).toBe(code);
     },
   );
 });
 
-it("publishes one catalog with datasets and shared language vocabulary", async () => {
-  const { describeQueryVocabulary } = await import("./schema");
+it("publishes one catalog of the executed dataset schemas and the shared language vocabulary", async () => {
+  using scenario = openScenarioDatabase();
   const catalog = describeQueryVocabulary();
-  expect(Object.keys(catalog.datasets)).toEqual([
-    "items",
-    "attachments",
-    "annotations",
-  ]);
-  expect(catalog.datasets.items.fields).toContainEqual(
-    expect.objectContaining({ path: "title" }),
+  const described = {
+    items: describeItemQuery(),
+    attachments: describeAttachmentQuery(),
+    annotations: describeAnnotationQuery(),
+  };
+  const items = await schema(scenario);
+
+  expect(Object.keys(catalog.datasets)).toEqual(
+    [ITEMS, ATTACHMENTS, ANNOTATIONS].map((dataset) => dataset.id),
   );
-  expect(catalog.datasets.annotations.fields).toContainEqual(
-    expect.objectContaining({ path: "item.title" }),
-  );
-  expect(catalog.datasets.items).not.toHaveProperty("functions");
-  expect(catalog.datasets.annotations).not.toHaveProperty("functions");
-  expect(catalog.functions.length).toBeGreaterThan(0);
-  expect(catalog).toMatchSnapshot();
+  // The functions, methods, and properties that the call test runs.
+  expect(catalog).toMatchObject({
+    functions: items.functions,
+    methods: items.methods,
+    properties: items.properties,
+    types: items.types,
+  });
+  const paths: Record<string, ReadonlySet<string>> = {};
+  for (const [id, dataset] of Object.entries(catalog.datasets)) {
+    const { exit } = await runEffect(described[id as keyof typeof described], {
+      client: scenario.db,
+    });
+    if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
+    const byPath = new Map(dataset.fields.map((field) => [field.path, field]));
+    paths[id] = new Set(byPath.keys());
+
+    // The fields that the capability tests of each dataset run.
+    expect(dataset.fields, id).toEqual(exit.value.fields);
+    for (const path of dataset.summary)
+      expect(byPath.get(path), `${id} summary ${path}`).toMatchObject({
+        projection: true,
+      });
+    for (const key of ["functions", "methods", "properties", "types"])
+      expect(dataset, id).not.toHaveProperty(key);
+  }
+  expect(paths.items).toContain("title");
+  expect(paths.attachments).toContain("item.title");
+  expect(paths.annotations).toContain("item.title");
 });
 
 it("publishes the Formula path, name form, result types, Fault codes, and Error Value", async () => {

@@ -16,6 +16,11 @@ export interface ScenarioQuery {
   readonly now?: string;
   /** The zone of the Query Clock. Omitted: the test default. */
   readonly timeZone?: string;
+  /**
+   * The Indexed Keys of the Items the query returns, in any order, worked out
+   * from the scenario seed. Omitted: the forced scan is the only oracle.
+   */
+  readonly matches?: readonly string[];
 }
 
 /**
@@ -382,6 +387,107 @@ const FILTERS: readonly string[] = [
   "formula.noSuchFormula > 0",
 ];
 
+/**
+ * The Items that a subset of {@link FILTERS} matches, by Indexed Key, worked
+ * out from the seed of `@zotlit/db/test-scenario`. The live top-level Items
+ * are ten in the personal Library (ART2FULL, BK2MNTH2, CHP2YEAR, CNF2TEXT,
+ * RPT2NDTE, ALS2CNFL, UNI2CDE2, TIE2AAAA, TIE2BBBB, TIE2CCCC) and two in the
+ * group Library (ART2FULLg4815, GRP2BK22g4815). TRS2SHED and GRP2TRSH are in
+ * the trash; PDF2LIVE and the other child rows are no Items.
+ */
+const PERSONAL = [
+  "ART2FULL",
+  "BK2MNTH2",
+  "CHP2YEAR",
+  "CNF2TEXT",
+  "RPT2NDTE",
+  "ALS2CNFL",
+  "UNI2CDE2",
+  "TIE2AAAA",
+  "TIE2BBBB",
+  "TIE2CCCC",
+] as const;
+const GROUP = ["ART2FULLg4815", "GRP2BK22g4815"] as const;
+const EVERY_ITEM = [...PERSONAL, ...GROUP];
+const except = (...keys: string[]) =>
+  EVERY_ITEM.filter((key) => !keys.includes(key));
+
+const FILTER_MATCHES: Readonly<Record<string, readonly string[]>> = {
+  'indexedKey == "ART2FULL"': ["ART2FULL"],
+  '"ART2FULLg4815" == indexedKey': ["ART2FULLg4815"],
+  '["ART2FULL", "ART2FULLg4815"].contains(indexedKey)': [
+    "ART2FULL",
+    "ART2FULLg4815",
+  ],
+  'indexedKey == "bad"': [],
+  '!(indexedKey == "ART2FULL")': except("ART2FULL"),
+  "[].contains(indexedKey)": [],
+  'library == "personal"': PERSONAL,
+  'library == "group:4815"': GROUP,
+  'library == "group:4815" && key == "ART2FULL"': ["ART2FULLg4815"],
+  true: EVERY_ITEM,
+  false: [],
+  'itemType == "book"': ["BK2MNTH2", "GRP2BK22g4815"],
+  'itemType == "book" && key != "ART2FULL"': ["BK2MNTH2", "GRP2BK22g4815"],
+  // Tags: to-read on ART2FULL, BK2MNTH2, and the group ART2FULL; methods on
+  // ART2FULL and ALS2CNFL; tie on the three TIE2 Items; group-only on
+  // GRP2BK22; three Tags on UNI2CDE2; none on CHP2YEAR, CNF2TEXT, RPT2NDTE.
+  'tags.contains("to-read")': ["ART2FULL", "BK2MNTH2", "ART2FULLg4815"],
+  'tags.contains("tie")': ["TIE2AAAA", "TIE2BBBB", "TIE2CCCC"],
+  'tags.contains("methods")': ["ART2FULL", "ALS2CNFL"],
+  'tags.contains("group-only")': ["GRP2BK22g4815"],
+  'tags.containsAny("tie", "methods")': [
+    "ART2FULL",
+    "ALS2CNFL",
+    "TIE2AAAA",
+    "TIE2BBBB",
+    "TIE2CCCC",
+  ],
+  'tags.containsAll("to-read", "methods")': ["ART2FULL"],
+  "tags.isEmpty()": ["CHP2YEAR", "CNF2TEXT", "RPT2NDTE"],
+  "tags.length > 1": ["ART2FULL", "UNI2CDE2"],
+  'tags.contains("to-read") && itemType == "book"': ["BK2MNTH2"],
+  'tags.contains("tie") && key == "TIE2BBBB"': ["TIE2BBBB"],
+  'tags.contains("tie") && !tags.contains("tie")': [],
+  // Zotero Key: ART2FULL in both Libraries.
+  'key == "ART2FULL"': ["ART2FULL", "ART2FULLg4815"],
+  'key == "GRP2BK22"': ["GRP2BK22g4815"],
+  'key == "TRS2SHED"': [],
+  'key == "PDF2LIVE"': [],
+  'key == "NOSUCHKY"': [],
+  'key != "ART2FULL"': except("ART2FULL", "ART2FULLg4815"),
+  'key == "ART2FULL" || key == "BK2MNTH2" || key == "GRP2BK22"': [
+    "ART2FULL",
+    "BK2MNTH2",
+    "ART2FULLg4815",
+    "GRP2BK22g4815",
+  ],
+  // Fields: the TIE2 pair shares a title and TIE2CCCC has none.
+  'title == "Same Title"': ["TIE2AAAA", "TIE2BBBB"],
+  "title == null": ["TIE2CCCC"],
+  'title.startsWith("Lab")': ["RPT2NDTE"],
+  'title == "Trashed Article"': [],
+  'title == "Group Copy of Exact Matching"': ["ART2FULLg4815"],
+  'publisher == "Sage" || publisher == "Academic Press"': [
+    "BK2MNTH2",
+    "CHP2YEAR",
+  ],
+  'mood == "calm"': ["ART2FULL"],
+  // Creators: two on ART2FULL, BK2MNTH2, CHP2YEAR; none on RPT2NDTE,
+  // ALS2CNFL, TIE2CCCC, and GRP2BK22.
+  "creators.length == 2": ["ART2FULL", "BK2MNTH2", "CHP2YEAR"],
+  "creators.isEmpty()": ["RPT2NDTE", "ALS2CNFL", "TIE2CCCC", "GRP2BK22g4815"],
+  'itemType == "report" && creators.isEmpty()': ["RPT2NDTE"],
+  // Collections: ART2FULL and CHP2YEAR in Thesis/Methods, CHP2YEAR in Thesis
+  // too, BK2MNTH2 in Teaching/Methods.
+  'collections.contains("Thesis/Methods")': ["ART2FULL", "CHP2YEAR"],
+  'collections.contains("Teaching/Methods")': ["BK2MNTH2"],
+  'collections.within("Thesis")': ["ART2FULL", "CHP2YEAR"],
+  // PDF2LIVE is the one live Attachment, on ART2FULL.
+  attachments: ["ART2FULL"],
+  "!attachments": except("ART2FULL"),
+};
+
 const byTitleThenVolume: readonly SortSpec[] = [
   { field: "title", direction: "desc" },
   { field: "volume", direction: "asc" },
@@ -709,17 +815,28 @@ const REQUESTS: readonly ScenarioQuery[] = [
  */
 const NAMED_CASES: readonly ScenarioQuery[] = [];
 
+const inLibrary = (
+  matches: readonly string[] | undefined,
+  library: readonly string[],
+): { matches?: readonly string[] } =>
+  matches ? { matches: matches.filter((key) => library.includes(key)) } : {};
+
+/** Each filter with matches is in {@link FILTERS}. */
+export const PINNED_FILTERS: readonly string[] = Object.keys(FILTER_MATCHES);
+
 export const SCENARIO_QUERIES: readonly ScenarioQuery[] = [
   ...FILTERS.flatMap((filter): ScenarioQuery[] => [
     {
       name: `${filter} [personal, key order]`,
       libraries: ["personal"],
       request: { filter, ...scenarioFormulas(filter), fields: [], sort: [] },
+      ...inLibrary(FILTER_MATCHES[filter], PERSONAL),
     },
     {
       name: `${filter} [group, key order]`,
       libraries: ["group"],
       request: { filter, ...scenarioFormulas(filter), fields: [], sort: [] },
+      ...inLibrary(FILTER_MATCHES[filter], GROUP),
     },
     {
       name: `${filter} [personal, sorted, limit 2]`,
@@ -736,6 +853,7 @@ export const SCENARIO_QUERIES: readonly ScenarioQuery[] = [
       name: `${filter} [both Libraries, key order]`,
       libraries: ["personal", "group"],
       request: { filter, ...scenarioFormulas(filter), fields: [], sort: [] },
+      ...inLibrary(FILTER_MATCHES[filter], EVERY_ITEM),
     },
     {
       name: `${filter} [both Libraries, sorted, limit 2]`,

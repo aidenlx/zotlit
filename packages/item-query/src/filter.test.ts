@@ -11,6 +11,7 @@ import type { FilterPlan, FilterProblem } from "./filter-plan";
 import type { FilterValue } from "./filter-values";
 import type { QueryClock } from "./query-clock";
 import { ITEMS } from "./query-items";
+import { TEST_NOW } from "./test-helpers";
 
 interface ItemSpec {
   key?: string;
@@ -123,7 +124,7 @@ function problem(expression: string): FilterProblem {
 
 /** The Query Clock of the vectors: noon UTC, 15 July 2024. */
 const CLOCK: QueryClock = {
-  now: Temporal.Instant.from("2024-07-15T12:00:00Z"),
+  now: Temporal.Instant.from(TEST_NOW),
   timeZone: "UTC",
 };
 
@@ -1134,10 +1135,6 @@ describe("first author", () => {
       matches(plan('firstAuthor.family == "Hopper"').root, HANDBOOK, CLOCK),
     ).toBe(false);
   });
-
-  it("rejects an unknown member", () => {
-    expect(codeOfFault(problem("firstAuthor.surname"), ITEMS)).toBeDefined();
-  });
 });
 
 describe("now() and today()", () => {
@@ -1852,6 +1849,8 @@ describe("validation", () => {
     ["custom.isEmpty()", "unfilterable-field", [0, 6]],
     ["min == 1", "unknown-field", [0, 3]],
     ['if == "a"', "unknown-field", [0, 2]],
+    // An unknown member of a creator spans the whole access.
+    ["firstAuthor.surname", "unknown-property", [0, 19]],
   ] as const)("rejects %j with %s at %j", (expression, code, [from, to]) => {
     const fault = problem(expression);
     expect(codeOfFault(fault, ITEMS)).toBe(code);
@@ -2045,7 +2044,16 @@ it.each([
 it("keeps the Error Value of a warned ordering inside a larger expression", () => {
   const planned = plan('(number("bad") > date("bad")) == null');
   expect(evaluate(planned.root, ARTICLE, CLOCK)).toBe(false);
-  expect(planned.warnings).toHaveLength(1);
+  // Only the ordering warns: `== null` compares with a null literal.
+  expect(planned.warnings).toEqual([
+    expect.objectContaining({
+      kind: "constant",
+      value: false,
+      operator: ">",
+      left: { type: "number", at: { from: 1, to: 14 } },
+      right: { type: "date", at: { from: 17, to: 28 } },
+    }),
+  ]);
 });
 
 it.each([

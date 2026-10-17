@@ -35,24 +35,50 @@ describe("runEffect", () => {
       };
     });
 
-    const first = await runEffect(read);
-    const second = await runEffect(read);
+    const run = await runEffect(read);
 
-    expect(first.exit).toEqual(second.exit);
-    expect(first.exit).toMatchObject({ value: { zone: "UTC" } });
+    expect(run.exit).toEqual(
+      Exit.succeed({
+        // TEST_NOW, 2024-07-15T12:00:00Z: 19,919 days after the epoch, at noon.
+        millis: 1_721_044_800_000,
+        zone: "UTC",
+      }),
+    );
   });
 
-  it("counts the pauses of the test scheduler, which pauses after every operation", async () => {
+  it("counts the pauses of the test scheduler, which pauses between every two operations", async () => {
+    const log: string[] = [];
     const steps = Effect.gen(function* () {
-      let sum = 0;
-      for (let i = 1; i <= 5; i++) sum += yield* Effect.sync(() => i);
-      return sum;
+      for (let i = 1; i <= 5; i++)
+        yield* Effect.sync(() => log.push(`step ${i}`));
     });
 
-    const run = await runEffect(steps);
+    const run = await runEffect(steps, {
+      onEvent: (event) => log.push(event.type),
+    });
 
-    expect(run.exit).toEqual(Exit.succeed(15));
-    expect(run.pauses).toBeGreaterThanOrEqual(5);
+    expect(Exit.isSuccess(run.exit)).toBe(true);
+    // One pause or more between every two steps, in step order.
+    const collapsed = log.filter(
+      (entry, i) => entry !== "pause" || log[i - 1] !== "pause",
+    );
+    expect(
+      collapsed.slice(
+        collapsed.indexOf("step 1"),
+        collapsed.lastIndexOf("step 5") + 1,
+      ),
+    ).toEqual([
+      "step 1",
+      "pause",
+      "step 2",
+      "pause",
+      "step 3",
+      "pause",
+      "step 4",
+      "pause",
+      "step 5",
+    ]);
+    expect(run.pauses).toBe(log.filter((entry) => entry === "pause").length);
   });
 
   it("reports an interrupted exit when the signal aborts between two slices", async () => {

@@ -1,12 +1,7 @@
 import { Effect } from "effect";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { ItemQueryScheduler, ItemQuerySliceObserver } from "./scheduler";
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-  vi.restoreAllMocks();
-});
 
 /** `steps` operations that each take `stepMs` of the fake time `clock`. */
 function work(steps: number, stepMs: number, clock: { now: number }) {
@@ -42,9 +37,9 @@ describe("ItemQueryScheduler", () => {
     const result = await Effect.runPromise(work(40, 3, clock), { scheduler });
 
     expect(result).toBe(40);
-    expect(slices.length).toBeGreaterThanOrEqual(120 / 11);
-    expect(Math.min(...slices)).toBeGreaterThanOrEqual(8);
-    expect(Math.max(...slices)).toBeLessThan(8 + 3);
+    // The third operation of a slice reaches 9 ms >= 8 ms: 40 operations make
+    // 13 full slices and a last one of 3 ms that ends without a pause.
+    expect(slices).toEqual(Array.from({ length: 13 }, () => 9));
   });
 
   it("runs a short query as one slice", async () => {
@@ -62,15 +57,17 @@ describe("ItemQueryScheduler", () => {
 
   it("pauses with a MessageChannel task by default", async () => {
     const clock = { now: 0 };
-    const post = vi.spyOn(MessagePort.prototype, "postMessage");
-    const immediate = vi.spyOn(globalThis, "setImmediate");
-    const timeout = vi.spyOn(globalThis, "setTimeout");
+    using post = vi.spyOn(MessagePort.prototype, "postMessage");
+    using immediate = vi.spyOn(globalThis, "setImmediate");
+    using timeout = vi.spyOn(globalThis, "setTimeout");
     const scheduler = new ItemQueryScheduler({ now: () => clock.now });
 
     const result = await Effect.runPromise(work(40, 3, clock), { scheduler });
 
     expect(result).toBe(40);
-    expect(post.mock.calls.length).toBeGreaterThanOrEqual(10);
+    // The second operation of a slice reaches 6 ms >= SLICE_BUDGET_MS: one
+    // pause for every 2 of the 40 operations, the last one included.
+    expect(post).toHaveBeenCalledTimes(20);
     expect(immediate).not.toHaveBeenCalled();
     expect(timeout).not.toHaveBeenCalled();
   });
@@ -111,6 +108,8 @@ describe("ItemQueryScheduler", () => {
   it("closes each MessageChannel it opens when no resume waits", async () => {
     const clock = { now: 0 };
     let opened = 0;
+    using stubs = new DisposableStack();
+    stubs.defer(() => vi.unstubAllGlobals());
     vi.stubGlobal(
       "MessageChannel",
       class extends MessageChannel {
@@ -120,12 +119,14 @@ describe("ItemQueryScheduler", () => {
         }
       },
     );
-    const close = vi.spyOn(MessagePort.prototype, "close");
+    using close = vi.spyOn(MessagePort.prototype, "close");
     const scheduler = new ItemQueryScheduler({ now: () => clock.now });
 
     await Effect.runPromise(work(40, 3, clock), { scheduler });
 
-    expect(opened).toBeGreaterThanOrEqual(1);
-    expect(close).toHaveBeenCalledTimes(opened);
+    // One fiber waits at each of the 20 pauses, so each pause opens a channel
+    // and its message closes it.
+    expect(opened).toBe(20);
+    expect(close).toHaveBeenCalledTimes(20);
   });
 });

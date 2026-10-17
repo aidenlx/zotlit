@@ -1,5 +1,5 @@
 import { Cause, Effect } from "effect";
-import { expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it } from "vitest";
 
 import {
   BULK_LIBRARY,
@@ -9,6 +9,7 @@ import {
   openScenarioDatabase,
   SCENARIO_LIBRARIES,
 } from "@zotlit/db/test-scenario";
+import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
 import {
   collectQuery,
@@ -18,6 +19,14 @@ import {
   AttachmentFileResolver,
 } from ".";
 import { runEffect } from "./test-helpers";
+import { PRODUCTION_TUNING } from "./tuning";
+
+// Read-only tests share one scenario; a test that writes opens its own.
+let scenario: ScenarioDatabase;
+beforeAll(() => {
+  scenario = openScenarioDatabase({ annotations: true });
+});
+afterAll(() => scenario.close());
 
 it.each([
   [ITEMS, 'custom["review.status"]'],
@@ -27,7 +36,6 @@ it.each([
 ] as const)(
   "reads the source vocabulary once when %s groups by %s",
   async (dataset, group) => {
-    using scenario = openScenarioDatabase({ annotations: true });
     const { exit, events } = await runEffect(
       collectQuery(dataset, {
         libraries: [SCENARIO_LIBRARIES.personal],
@@ -57,7 +65,6 @@ it.each([
   'if(false, attachments, annotations[0].item.attachments).filter(value.title == "Full Text PDF").length > 0',
   'if(true, annotations[0].item.attachments, attachments).filter(value.title == "Full Text PDF").length > 0',
 ])("keeps record navigation and hydration through %s", async (filter) => {
-  using scenario = openScenarioDatabase({ annotations: true });
   const { exit } = await runEffect(
     collectQuery(ITEMS, {
       libraries: [SCENARIO_LIBRARIES.personal],
@@ -72,7 +79,6 @@ it.each([
 });
 
 it("reports a typed Fault for record navigation through incompatible conditional lists", async () => {
-  using scenario = openScenarioDatabase({ annotations: true });
   const { exit } = await runEffect(
     collectQuery(ITEMS, {
       libraries: [SCENARIO_LIBRARIES.personal],
@@ -95,7 +101,6 @@ it.each([
   'attachments.filter(value.annotations.filter(value.color == "yellow").length > 0).length > 0',
   'attachments.map(value.annotations).flat().filter(value.color == "yellow").length > 0',
 ])("keeps Annotation color aliases inside %s", async (filter) => {
-  using scenario = openScenarioDatabase({ annotations: true });
   const libraries = [SCENARIO_LIBRARIES.personal];
   const marks = await runEffect(
     collectQuery(ANNOTATIONS, {
@@ -133,7 +138,6 @@ it.each([
   'annotations.filter(value.attachment.indexedKey == "PDF2LIVEg118").length > 0',
   'annotations.filter(value.item.attachments.filter(value.indexedKey == "PDF2LIVEg118").length > 0).length > 0',
 ])("warns for an out-of-scope Indexed Key inside %s", async (filter) => {
-  using scenario = openScenarioDatabase({ annotations: true });
   const { exit } = await runEffect(
     collectQuery(ITEMS, {
       libraries: [SCENARIO_LIBRARIES.personal],
@@ -156,7 +160,6 @@ it.each([
 });
 
 it("finds papers with no usable PDF on this machine", async () => {
-  using scenario = openScenarioDatabase({ annotations: true });
   const { exit } = await runEffect(
     collectQuery(ITEMS, {
       libraries: [SCENARIO_LIBRARIES.personal],
@@ -175,19 +178,27 @@ it("finds papers with no usable PDF on this machine", async () => {
     { client: scenario.db },
   );
   if (exit._tag === "Failure") throw Cause.squash(exit.cause);
-  expect(exit.value.rows!.length).toBeGreaterThan(0);
-  expect(exit.value.rows!.map((row) => row.indexedKey)).not.toContain(
-    "ART2FULL",
-  );
+  // ART2FULL is the only paper with files, and its PDF2LIVE resolves: every
+  // other live top-level paper of My Library matches, with no file paths.
   expect(
-    exit.value.rows!.every((row) =>
-      Array.isArray(row.values["attachments[].path"]),
-    ),
-  ).toBe(true);
+    exit.value.rows!.map((row) => [
+      row.indexedKey,
+      row.values["attachments[].path"],
+    ]),
+  ).toEqual([
+    ["ALS2CNFL", []],
+    ["BK2MNTH2", []],
+    ["CHP2YEAR", []],
+    ["CNF2TEXT", []],
+    ["RPT2NDTE", []],
+    ["TIE2AAAA", []],
+    ["TIE2BBBB", []],
+    ["TIE2CCCC", []],
+    ["UNI2CDE2", []],
+  ]);
 });
 
 it("finds papers with yellow marks inside their files, with value and index bound at each level", async () => {
-  using scenario = openScenarioDatabase({ annotations: true });
   const { exit } = await runEffect(
     collectQuery(ITEMS, {
       libraries: [SCENARIO_LIBRARIES.personal],
@@ -226,7 +237,6 @@ it("finds papers with yellow marks inside their files, with value and index boun
 });
 
 it("reaches a mark's file and paper from a Relation List", async () => {
-  using scenario = openScenarioDatabase({ annotations: true });
   const { exit } = await runEffect(
     collectQuery(ITEMS, {
       libraries: [SCENARIO_LIBRARIES.personal],
@@ -291,7 +301,6 @@ it.each([
     ["ART2FULL"],
   ],
 ] as const)("finds %s", async (_question, filter, keys) => {
-  using scenario = openScenarioDatabase({ annotations: true });
   const { exit } = await runEffect(
     collectQuery(ITEMS, {
       libraries: [SCENARIO_LIBRARIES.personal],
@@ -306,7 +315,6 @@ it.each([
 });
 
 it("lists the number of marks on each file", async () => {
-  using scenario = openScenarioDatabase({ annotations: true });
   const { exit } = await runEffect(
     collectQuery(ATTACHMENTS, {
       libraries: [SCENARIO_LIBRARIES.personal],
@@ -335,7 +343,6 @@ it("lists the number of marks on each file", async () => {
 });
 
 it("keeps missing paths in place and projects fixed summaries for files and marks", async () => {
-  using scenario = openScenarioDatabase({ annotations: true });
   const { exit } = await runEffect(
     collectQuery(ITEMS, {
       libraries: [SCENARIO_LIBRARIES.personal],
@@ -417,7 +424,6 @@ it("keeps missing paths in place and projects fixed summaries for files and mark
 it.each(["annotations.length", "attachments[].title"])(
   "explains why a paper cannot be sorted by %s",
   async (field) => {
-    using scenario = openScenarioDatabase({ annotations: true });
     const { exit } = await runEffect(
       collectQuery(ITEMS, {
         libraries: [SCENARIO_LIBRARIES.personal],
@@ -434,7 +440,6 @@ it.each(["annotations.length", "attachments[].title"])(
 );
 
 it("uses a paper's custom review status while reading its files", async () => {
-  using scenario = openScenarioDatabase({ annotations: true });
   const { exit } = await runEffect(
     collectQuery(ITEMS, {
       libraries: [SCENARIO_LIBRARIES.personal],
@@ -452,7 +457,6 @@ it("uses a paper's custom review status while reading its files", async () => {
 });
 
 it("recognizes the same file through repeated list reads", async () => {
-  using scenario = openScenarioDatabase({ annotations: true });
   const { exit } = await runEffect(
     collectQuery(ITEMS, {
       libraries: [SCENARIO_LIBRARIES.personal],
@@ -472,7 +476,6 @@ it.each([
 ] as const)(
   "checks the source field in %s through %s",
   async (dataset, field) => {
-    using scenario = openScenarioDatabase({ annotations: true });
     const { exit } = await runEffect(
       collectQuery(dataset, {
         libraries: [SCENARIO_LIBRARIES.personal],
@@ -487,7 +490,6 @@ it.each([
 );
 
 it("reads fewer rows for a selective relation filter than its forced scan", async () => {
-  using scenario = openScenarioDatabase({ annotations: true });
   const request = {
     libraries: [SCENARIO_LIBRARIES.personal],
     filter: 'annotations.filter(value.tags.contains("method")).length > 0',
@@ -519,12 +521,13 @@ it("reads fewer rows for a selective relation filter than its forced scan", asyn
   ).toBe(true);
 });
 
+// ART2FULL is filed in Thesis/Methods and is the only paper with files and
+// marks; CHP2YEAR is filed there too but has neither.
 it.each([
   'attachments.filter(value.item.collections.contains("Thesis/Methods")).length > 0',
   'annotations.filter(value.item.collections.within("Thesis")).length >= 1',
   'attachments.filter(value.annotations.filter(value.item.collections.within("Thesis")).length > 0).length > 0',
 ])("lowers parent Collection paths inside %s", async (filter) => {
-  using scenario = openScenarioDatabase({ annotations: true });
   const request = {
     libraries: [SCENARIO_LIBRARIES.personal],
     filter,
@@ -538,6 +541,10 @@ it.each([
     client: scenario.db,
     tuning: { forceScan: true },
   });
+  if (actual.exit._tag === "Failure") throw Cause.squash(actual.exit.cause);
+  expect(actual.exit.value.rows!.map((row) => row.indexedKey)).toEqual([
+    "ART2FULL",
+  ]);
   expect(actual.exit).toEqual(scan.exit);
   expect(
     actual.events.some(
@@ -548,56 +555,66 @@ it.each([
   ).toBe(true);
 });
 
+// ART2FULL owns every file and mark of My Library. PDF2LINK carries the Tag
+// "attachment-method"; both PDFs hold yellow marks tagged method, ANN2HGHT is on PDF2LIVE.
 it.each([
   [
     ITEMS,
-    'attachments.filter(value.tags.contains("downloaded")).length > 0',
+    'attachments.filter(value.tags.contains("attachment-method")).length > 0',
     "attachment-candidate-set",
+    ["ART2FULL"],
   ],
   [
     ITEMS,
     'attachments.filter(value.indexedKey == "PDF2LIVE").length >= 1',
     "attachment-candidate-set",
+    ["ART2FULL"],
   ],
   [
     ITEMS,
     '!attachments.filter(value.contentType == "application/pdf").isEmpty()',
     "attachment-candidate-set",
+    ["ART2FULL"],
   ],
   [
     ITEMS,
     'attachments.filter(value.linkMode == "linked_file").length > 0',
     "attachment-candidate-set",
+    ["ART2FULL"],
   ],
   [
     ITEMS,
     'annotations.filter(value.color == "#ffd400").length >= 1',
     "annotation-candidate-set",
+    ["ART2FULL"],
   ],
   [
     ITEMS,
     '!annotations.filter(value.type == "highlight").isEmpty()',
     "annotation-candidate-set",
+    ["ART2FULL"],
   ],
   [
     ATTACHMENTS,
     'annotations.filter(value.key == "ANN2HGHT").length > 0',
     "annotation-candidate-set",
+    ["PDF2LIVE"],
   ],
   [
     ATTACHMENTS,
     'annotations.filter(value.tags.contains("method")).length >= 1',
     "annotation-candidate-set",
+    ["PDF2LINK", "PDF2LIVE"],
   ],
   [
     ATTACHMENTS,
     '!annotations.filter(value.color == "#ffd400").isEmpty()',
     "annotation-candidate-set",
+    ["PDF2LINK", "PDF2LIVE"],
   ],
 ] as const)(
   "uses the element dataset's reader for %s %s",
-  async (dataset, filter, reader) => {
-    using scenario = openScenarioDatabase({ annotations: true });
+  async (...[dataset, filter, reader, keys]) => {
     const request = {
       libraries: [SCENARIO_LIBRARIES.personal],
       filter,
@@ -611,6 +628,8 @@ it.each([
       client: scenario.db,
       tuning: { forceScan: true },
     });
+    if (actual.exit._tag === "Failure") throw Cause.squash(actual.exit.cause);
+    expect(actual.exit.value.rows!.map((row) => row.indexedKey)).toEqual(keys);
     expect(actual.exit).toEqual(scan.exit);
     expect(
       actual.events.some(
@@ -630,7 +649,6 @@ it.each([
   'annotations.filter(key == "ART2FULL").length > 0',
   'annotations.filter(value.type == "highlight" || index == 0).length > 0',
 ])("keeps the scan for %s", async (filter) => {
-  using scenario = openScenarioDatabase({ annotations: true });
   const actual = await runEffect(
     collectQuery(ITEMS, {
       libraries: [SCENARIO_LIBRARIES.personal],
@@ -719,7 +737,6 @@ it.each([
 );
 
 it("projects keys through Relation Lists and parents", async () => {
-  using scenario = openScenarioDatabase({ annotations: true });
   const { exit } = await runEffect(
     collectQuery(ITEMS, {
       libraries: [SCENARIO_LIBRARIES.group],
@@ -780,7 +797,6 @@ it("orders parent Indexed Keys as text including group suffixes", async () => {
 });
 
 it("reads file types through Relation Lists and Annotation parents", async () => {
-  using scenario = openScenarioDatabase({ annotations: true });
   const items = await runEffect(
     collectQuery(ITEMS, {
       libraries: [SCENARIO_LIBRARIES.personal],
@@ -821,7 +837,6 @@ it("reads file types through Relation Lists and Annotation parents", async () =>
 });
 
 it("groups papers by each tag name across two Libraries, with overlapping counts and a null group", async () => {
-  using scenario = openScenarioDatabase({ annotations: true });
   const { exit } = await runEffect(
     collectQuery(ITEMS, {
       libraries: [SCENARIO_LIBRARIES.personal, SCENARIO_LIBRARIES.group],
@@ -859,7 +874,6 @@ it("groups papers by each tag name across two Libraries, with overlapping counts
 });
 
 it("puts a paper in a file-type group once, however many files of that type it has", async () => {
-  using scenario = openScenarioDatabase({ annotations: true });
   const { exit } = await runEffect(
     collectQuery(ITEMS, {
       libraries: [SCENARIO_LIBRARIES.personal, SCENARIO_LIBRARIES.group],
@@ -957,7 +971,6 @@ it.each([
 ] as const)(
   "groups the records of $dataset by the element path $group",
   async ({ dataset, group, groups, totalCount }) => {
-    using scenario = openScenarioDatabase({ annotations: true });
     const { exit } = await runEffect(
       collectQuery(DATASETS[dataset], {
         libraries: [SCENARIO_LIBRARIES.personal, SCENARIO_LIBRARIES.group],
@@ -1061,14 +1074,16 @@ it("rejects a group path with two [] and names the one-[] rule", async () => {
 
 // Failure modes: many elements on one paper bypass the parent cap, a budget
 // grows with match count, or an incomplete candidate set changes the result.
+// The production budget reads 8 pages of 500 elements, each page with one
+// parent read: 3,000 elements take 6 pages, and above 4,000 the plan scans.
 it.each([
-  [3_000, 17, false],
-  [4_000, 23, false],
-  [4_001, 23, true],
-  [10_000, 24, true],
+  [3_000, 6, false],
+  [4_000, 8, false],
+  [4_001, 8, true],
+  [10_000, 8, true],
 ] as const)(
   "bounds Relation List candidate statements with %i elements on one paper",
-  async (count, statementCount, scans) => {
+  async (count, pages, scans) => {
     using scenario = openScenarioDatabase();
     seedBulkLibrary(scenario.sqlite, count);
     seedBulkAttachments(scenario.sqlite, count);
@@ -1081,10 +1096,10 @@ it.each([
     from items where libraryID = 3 and key != 'BULKPDF2' and itemTypeID in
       (select itemTypeID from itemTypesCombined where typeName in ('attachment', 'annotation'));
   `);
-    for (const [dataset, relation] of [
-      [ITEMS, "annotations"],
-      [ITEMS, "attachments"],
-      [ATTACHMENTS, "annotations"],
+    for (const [dataset, relation, key] of [
+      [ITEMS, "annotations", "BLK22222g2718"],
+      [ITEMS, "attachments", "BLK22222g2718"],
+      [ATTACHMENTS, "annotations", "BULKPDF2g2718"],
     ] as const) {
       const query = collectQuery(dataset, {
         libraries: [BULK_LIBRARY],
@@ -1097,17 +1112,24 @@ it.each([
         client: scenario.db,
         tuning: { forceScan: true },
       });
+      if (actual.exit._tag === "Failure") throw Cause.squash(actual.exit.cause);
+      expect(actual.exit.value.rows!.map((row) => row.indexedKey)).toEqual([
+        key,
+      ]);
       expect(actual.exit).toEqual(scan.exit);
-      expect(actual.exit).toMatchObject({
-        _tag: "Success",
-        value: { returnedCount: 1 },
-      });
-      const statements = actual.events.filter(
-        (event) =>
-          event.type === "statement" &&
-          event.statement.reader.endsWith("candidate-set"),
+      const readers = actual.events.flatMap((event) =>
+        event.type === "statement" &&
+        event.statement.reader.endsWith("candidate-set")
+          ? [event.statement.reader]
+          : [],
       );
-      expect(statements).toHaveLength(statementCount);
+      expect(
+        readers.filter((reader) => reader === "relation-candidate-set"),
+      ).toHaveLength(pages);
+      // A page reads its elements in at most two statements.
+      expect(readers.length).toBeLessThanOrEqual(
+        3 * PRODUCTION_TUNING.relationPageBudget,
+      );
       expect(
         actual.events.some(
           (event) =>

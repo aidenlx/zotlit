@@ -56,31 +56,38 @@ it("reads Query Sources lazily and keeps completed reads for one query", async (
 
 // Failure modes: nested routes lose Collection paths, read them more than once,
 // or report an existing Collection as unknown. Both passes share the same reads.
+// The live Items below Thesis are ART2FULL (Thesis/Methods) and CHP2YEAR; its
+// one live Attachment is PDF2LIVE of ART2FULL, with the Annotation ANN2HGHT.
+// The group Library has no Thesis Collection, so both passes match the same.
 it.each([
   {
     dataset: ITEMS,
     fields: ["collections"],
     filter: 'collections.within("Thesis")',
+    keys: ["ART2FULL", "CHP2YEAR"],
   },
   {
     dataset: ATTACHMENTS,
     fields: ["item.collections"],
     filter: 'item.collections.within("Thesis")',
+    keys: ["PDF2LIVE"],
   },
   {
     dataset: ANNOTATIONS,
     fields: ["attachment.item.collections", "item.collections"],
     filter: 'attachment.item.collections.within("Thesis")',
+    keys: ["ANN2HGHT"],
   },
   {
     dataset: ITEMS,
     fields: ["collections", "annotations[].attachment.item.collections"],
     filter:
       'annotations.filter(value.attachment.item.collections.within("Thesis")).length > 0',
+    keys: ["ART2FULL"],
   },
 ])(
   "shares Collection paths through $dataset.id: $filter",
-  async ({ dataset, fields, filter }) => {
+  async ({ dataset, fields, filter, keys }) => {
     using scenario = openScenarioDatabase();
     for (const libraries of [[personal], [personal, group]]) {
       const reads: number[] = [];
@@ -110,7 +117,9 @@ it.each([
         },
       );
       if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
-      expect(exit.value.rows!.length).toBeGreaterThan(0);
+      expect(exit.value.rows!.map((row) => row.indexedKey).toSorted()).toEqual(
+        keys,
+      );
       expect(exit.value.warnings).toEqual([]);
       expect(reads).toEqual(libraries.map((library) => library.libraryID));
       // One vocabulary read consists of its field and base-field statements.

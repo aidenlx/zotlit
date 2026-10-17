@@ -70,7 +70,7 @@ it.each([
   ]);
 });
 
-it("suggests paths by the full path and the final segment, then other Libraries", async () => {
+it("suggests paths by the full path and the final segment", async () => {
   using scenario = openScenarioDatabase();
   scenario.sqlite
     .prepare(
@@ -80,7 +80,6 @@ it("suggests paths by the full path and the final segment, then other Libraries"
   for (const [literal, suggestion] of [
     ["Query/Thesis", "Query thesis"],
     ["Other/Methods", "Thesis/Methods"],
-    ["Methods", "library=group:4815"],
   ]) {
     const { exit } = await runEffect(
       collectQuery(ITEMS, {
@@ -93,6 +92,29 @@ it("suggests paths by the full path and the final segment, then other Libraries"
     if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
     expect(exit.value.warnings[0]!.suggestions).toContain(suggestion);
   }
+});
+
+it("lists other Libraries after every near path", async () => {
+  using scenario = openScenarioDatabase();
+  const { exit } = await runEffect(
+    collectQuery(ITEMS, {
+      libraries: [SCENARIO_LIBRARIES.personal],
+      filter: 'collections.within("Methods")',
+      fields: [],
+    }),
+    { client: scenario.db },
+  );
+  if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
+  // The live personal paths are Thesis, Thesis/Methods, Teaching, and
+  // Teaching/Methods. The two Methods leaves match exactly and rank by whole
+  // path distance (7, 9); Thesis (5) is nearer than Teaching (6). The group
+  // Library alone holds the path "Methods".
+  expect(exit.value.warnings[0]!.suggestions).toEqual([
+    "Thesis/Methods",
+    "Teaching/Methods",
+    "Thesis",
+    "library=group:4815",
+  ]);
 });
 
 it.each([
@@ -134,7 +156,11 @@ it("accepts a path held only by the second Target Library", async () => {
   );
   if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
   expect(exit.value.warnings).toEqual([]);
-  expect(exit.value.returnedCount).toBeGreaterThan(0);
+  // GRP2BK22 is the one group Item filed in the root Collection "Methods";
+  // the personal Methods Collections sit below Thesis and Teaching.
+  expect(exit.value.rows!.map((row) => row.indexedKey)).toEqual([
+    "GRP2BK22g4815",
+  ]);
 });
 
 it.each([
