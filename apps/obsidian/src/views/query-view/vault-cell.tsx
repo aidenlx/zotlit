@@ -20,12 +20,13 @@ import {
 
 import { valueText } from "@zotlit/item-query";
 import type { ProjectionJson } from "@zotlit/item-query";
+import { useUniqueId } from "@zotlit/ui";
 
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
-import { cn } from "@/lib/utils";
+import { cn, tooltipAttrs } from "@/lib/utils";
 
 import type {
   LiteratureNotes,
@@ -212,6 +213,7 @@ export function VaultEditCell(props: VaultCellProps) {
   // field leaving the page does not end it again.
   const ended = useRef(false);
   const input = useRef<HTMLInputElement>(null);
+  const labelId = useUniqueId();
   const editing = draft !== null;
   useEffect(() => {
     if (editing) input.current?.focus();
@@ -260,82 +262,91 @@ export function VaultEditCell(props: VaultCellProps) {
     else if (!value.note) void write(true);
   };
   return (
-    <div
-      data-query-vault-cell=""
-      data-query-vault-name={name}
-      // The cell fills the table cell, so an empty value is a target too.
-      className={cn(
-        "zt:flex zt:h-full zt:min-h-7.5 zt:w-full zt:min-w-0 zt:items-center zt:gap-1 zt:px-2 zt:py-1",
-        target && !checkbox && "zt:cursor-text",
-      )}
-      role={target ? "button" : undefined}
-      tabIndex={target ? 0 : undefined}
-      aria-label={target ? m.query_view_vault_edit({ name }) : undefined}
-      onClick={(event) => {
-        event.stopPropagation();
-        activate();
-      }}
-      onKeyDown={(event) => {
-        if (!target || event.target !== event.currentTarget) return;
-        if (event.key !== "Enter" && event.key !== " ") return;
-        event.preventDefault();
-        event.stopPropagation();
-        activate();
-      }}
-      // Focus that leaves the whole editor, from its field or a chip's
-      // remove button, ends the edit; focus that moves inside it does not.
-      onBlur={(event) => {
-        if (draft === null) return;
-        if (event.currentTarget.contains(event.relatedTarget as Node | null))
-          return;
-        end(true, draft);
-      }}
-    >
-      {draft === null ? (
-        <>
-          {!value.note ? (
-            <VaultCellContent value={value} />
-          ) : checkbox ? (
-            <input
-              data-query-vault-checkbox=""
-              type="checkbox"
-              className="task-list-item-checkbox zt:m-0"
-              aria-label={m.query_view_vault_edit({ name })}
-              checked={current === true}
-              disabled={!editable}
-              onChange={() => void write(current !== true)}
-            />
-          ) : type === "multitext" ? (
-            <span
-              data-query-vault={vaultState(value)}
-              className="zt:flex zt:min-w-0 zt:flex-wrap zt:gap-1"
-            >
-              <VaultChips items={listItems(current)} />
-            </span>
-          ) : (
-            <VaultCellContent value={value} />
-          )}
-          {managed && (
-            <span
-              data-query-vault-managed=""
-              className="zt:ms-auto zt:flex zt:shrink-0 zt:text-(--text-faint)"
-              aria-label={m.query_view_vault_managed()}
-              title={m.query_view_vault_managed()}
-            >
-              <Icon name="lock" size="var(--icon-xs)" />
-            </span>
-          )}
-        </>
-      ) : (
-        <VaultEditor
-          type={type}
-          name={name}
-          draft={draft}
-          onDraft={setDraft}
-          onEnd={end}
-          inputRef={input}
-        />
-      )}
-    </div>
+    <>
+      {/* The name of the cell, its checkbox and its field, held apart from
+          them: an `aria-label` would reach the pointer too, and Obsidian
+          would draw it as a tooltip over the next row for the whole edit.
+          `hidden` keeps it out of the cell's text and reading order; a
+          reference still reads it. @see apps/obsidian/policies/tooltips.md */}
+      <span id={labelId} hidden>
+        {m.query_view_vault_edit({ name })}
+      </span>
+      <div
+        data-query-vault-cell=""
+        data-query-vault-name={name}
+        // The cell fills the table cell, so an empty value is a target too.
+        className={cn(
+          "zt:flex zt:h-full zt:min-h-7.5 zt:w-full zt:min-w-0 zt:items-center zt:gap-1 zt:px-2 zt:py-1",
+          target && !checkbox && "zt:cursor-text",
+        )}
+        role={target ? "button" : undefined}
+        tabIndex={target ? 0 : undefined}
+        aria-labelledby={target ? labelId : undefined}
+        onClick={(event) => {
+          event.stopPropagation();
+          activate();
+        }}
+        onKeyDown={(event) => {
+          if (!target || event.target !== event.currentTarget) return;
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          event.stopPropagation();
+          activate();
+        }}
+        // Focus that leaves the whole editor, from its field or a chip's
+        // remove button, ends the edit; focus that moves inside it does not.
+        onBlur={(event) => {
+          if (draft === null) return;
+          if (event.currentTarget.contains(event.relatedTarget as Node | null))
+            return;
+          end(true, draft);
+        }}
+      >
+        {draft === null ? (
+          <>
+            {!value.note ? (
+              <VaultCellContent value={value} />
+            ) : checkbox ? (
+              <input
+                data-query-vault-checkbox=""
+                type="checkbox"
+                className="task-list-item-checkbox zt:m-0"
+                aria-labelledby={labelId}
+                checked={current === true}
+                disabled={!editable}
+                onChange={() => void write(current !== true)}
+              />
+            ) : type === "multitext" ? (
+              <span
+                data-query-vault={vaultState(value)}
+                className="zt:flex zt:min-w-0 zt:flex-wrap zt:gap-1"
+              >
+                <VaultChips items={listItems(current)} />
+              </span>
+            ) : (
+              <VaultCellContent value={value} />
+            )}
+            {managed && (
+              <span
+                data-query-vault-managed=""
+                className="zt:ms-auto zt:flex zt:shrink-0 zt:text-(--text-faint)"
+                {...tooltipAttrs(m.query_view_vault_managed())}
+              >
+                <Icon name="lock" size="var(--icon-xs)" />
+              </span>
+            )}
+          </>
+        ) : (
+          <VaultEditor
+            type={type}
+            labelId={labelId}
+            draft={draft}
+            onDraft={setDraft}
+            onEnd={end}
+            inputRef={input}
+          />
+        )}
+      </div>
+    </>
   );
 }
