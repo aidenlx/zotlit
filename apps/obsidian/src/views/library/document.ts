@@ -18,8 +18,8 @@ export const READING_STATE_FACETS = [
 ] as const;
 export type ReadingStateFacet = (typeof READING_STATE_FACETS)[number];
 
-/** The Layouts the Library View offers. */
-export const LIBRARY_LAYOUTS = ["table"] as const;
+/** The Layouts the Library View offers, in the order its view menu lists them. */
+export const LIBRARY_LAYOUTS = ["papers", "table"] as const;
 export type LibraryLayout = (typeof LIBRARY_LAYOUTS)[number];
 
 /**
@@ -94,14 +94,14 @@ export const RECENT_SORT: readonly QueryFileSort[] = Object.freeze([
   { property: "dateModified", direction: "DESC" },
 ]);
 
-/** What a new Library View shows: Recent on a Table. */
+/** What a new Library View shows: Recent as Papers. */
 export const DEFAULT_LIBRARY_VIEW_DOCUMENT: LibraryViewDocument = Object.freeze(
   {
     node: { kind: "recent" },
     facets: [],
     search: "",
     sort: RECENT_SORT,
-    layout: "table",
+    layout: "papers",
     order: ["title", "creators", "date.year", "vault.literatureNote"],
   } satisfies LibraryViewDocument,
 );

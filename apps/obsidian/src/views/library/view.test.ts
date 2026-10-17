@@ -579,3 +579,19 @@ it("reads only the Library Scope on Recent while the tree shows every Library", 
     libraries: [PERSONAL, LAB],
   });
 });
+
+it("opens on the Papers Layout, offers Papers and the Table only, and opens again on the Table once the researcher switches to it", async () => {
+  const { deps } = pluginData();
+  const first = await openTab(deps);
+  expect(first.query.state.getState().view?.type).toBe("papers");
+  expect(first.query.layouts).toEqual(["papers", "table"]);
+  await act(async () => {
+    first.query.document.setViewLayout(0, "table");
+    await first.query.flush();
+    await first.query.settled;
+  });
+  await act(() => first.close());
+
+  const second = await openTab(deps);
+  expect(second.query.state.getState().view?.type).toBe("table");
+});

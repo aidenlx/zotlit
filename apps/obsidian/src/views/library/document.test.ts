@@ -73,13 +73,13 @@ describe("parseLibraryViewDocument and serializeLibraryViewDocument", () => {
     ).toEqual(doc.node);
   });
 
-  it("opens on Recent in a Table, newest first, when plugin data holds no document", () => {
+  it("opens on Recent as Papers, newest first, when plugin data holds no document", () => {
     expect(parseLibraryViewDocument(null)).toEqual({
       node: { kind: "recent" },
       facets: [],
       search: "",
       sort: [{ property: "dateModified", direction: "DESC" }],
-      layout: "table",
+      layout: "papers",
       order: ["title", "creators", "date.year", "vault.literatureNote"],
     });
   });
