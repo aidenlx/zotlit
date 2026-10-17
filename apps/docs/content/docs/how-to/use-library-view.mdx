@@ -21,11 +21,19 @@ Select the ZotLit icon in the ribbon, or open the command palette and run:
 
 The view opens in a tab titled <UiLabel name={m.library_view_name()} />, with the cursor in its search box. If the tab is already open, ZotLit brings it forward instead of opening a second one.
 
-On a new install, ZotLit opens the Library View for you. A setup banner sits above it until setup is complete. Its three steps are <UiLabel name={m.welcome_step_connect_title()} />, <UiLabel name={m.welcome_step_folder_title()} />, and <UiLabel name={m.welcome_step_library_title()} />. The banner goes away once ZotLit reads your Zotero database and your literature notes folder exists, or when you select <UiLabel name={m.welcome_dismiss()} />. Run <Command inline name={m.command_open_welcome_name()} /> to show it again.
+![The Library View with My Library selected in the tree, two papers in the Papers layout with their annotation colors, and the Reading Card of Ten Simple Rules for Better Figures on the right, with its Open PDF, Write literature note, and Insert citation buttons above its annotations](/img/how-to/library-view.webp)
+
+On a new install, ZotLit opens the Library View for you. A setup banner sits above it until setup is complete. Its three steps are <UiLabel name={m.welcome_step_connect_title()} />, <UiLabel name={m.welcome_step_folder_title()} />, and <UiLabel name={m.welcome_step_library_title()} />. The banner goes away once ZotLit reads your Zotero database and your literature notes folder exists, or when you select <UiLabel name={m.welcome_dismiss()} />. Run <Command inline name={m.command_open_welcome_name()} /> to show it again, even after setup is complete.
 
 ### When ZotLit cannot find Zotero [#not-found]
 
-ZotLit looks for your library in the default Zotero profile. When it finds none, the view shows <UiLabel name={m.library_view_not_found_title()} /> in place of the list. Select <UiLabel name={m.library_view_locate()} /> and choose your Zotero data folder, or select <UiLabel name={m.welcome_action_open_settings()} /> to set the location in settings. Your papers appear as soon as the folder is set.
+ZotLit looks for your library in the default Zotero profile. When it finds no database there, or the data folder you set holds none it can read, the view shows <UiLabel name={m.library_view_not_found_title()} /> in place of the tree, the filters, the search box, and the list. Select <UiLabel name={m.library_view_locate()} /> and choose your Zotero data folder, or select <UiLabel name={m.welcome_action_open_settings()} /> to set the location in settings. Your papers appear as soon as the folder is set.
+
+![The Library View with Zotero not found in the tree pane, and the card "We couldn't find your Zotero library" in place of the list, with Locate data folder and Open settings buttons](/img/how-to/library-view-not-found.webp)
+
+When ZotLit cannot find Zotero, it also shows the notice <UiLabel name={m.notice_db_not_found_on_device()} /> The notice has a <UiLabel name={m.notice_db_not_found_action()} /> button that opens the Library View. Only one such notice shows at a time. It does not show while a Library View is open, and it goes away once ZotLit reads your database again.
+
+If the database was readable and a later read fails, the view keeps the papers it read last. A note above the list says: <UiLabel name={m.library_view_refresh_failed()} /> Its <UiLabel name={m.library_view_locate()} /> button lets you choose the folder again in case it has moved.
 
 ## Pick what the list shows [#tree]
 
@@ -54,13 +62,15 @@ order.
 
 ## Search your papers [#search]
 
-Type in the <UiLabel name={m.library_view_search_label()} /> box at the top of the view. The results are ranked the way the [literature note quick switcher](/docs/reference/commands#quick-switcher) ranks them, best match first, and they stay inside the library or collection you selected. The heading counts the matches, for example <UiLabel name={m.library_view_search_matches({ selection: "Thesis", count: 12 })} />.
+Type in the <UiLabel name={m.library_view_search_label()} /> box at the top of the view. The results are ranked the way the [literature note quick switcher](/docs/reference/commands#quick-switcher) ranks them, best match first, and they stay inside the library or collection you selected. The heading counts the matches, for example <UiLabel name={m.library_view_search_matches({ selection: "Thesis", count: 12 })} />. While the results are ranked, the toolbar hides its sort.
 
 To narrow to a Zotero tag, add a `tag:` token: `tag:methods`, or `tag:"machine learning"` for a tag with spaces. Several tokens narrow to papers that carry every tag. A search made only of `tag:` tokens keeps the list's sort instead of ranking.
 
 To search beyond your selection, select <UiLabel name={m.library_view_search_everywhere()} /> beside the match count. It searches every library in your library scope until you select a node in the tree or clear the search. <UiLabel name={m.library_view_recent()} /> already covers your whole library scope, so it does not offer this.
 
 Press `Escape` in the box to clear the search. Press it again on the empty box to move to the list.
+
+When nothing matches, the list says so, for example: <UiLabel name={m.library_view_empty_search({ query: "glacier" })} /> Under it, <UiLabel name={m.library_view_search_everywhere()} /> repeats the search in every library of your library scope. When the search already covers them, on <UiLabel name={m.library_view_recent()} /> or after <UiLabel name={m.library_view_search_everywhere()} />, the button is <UiLabel name={m.library_view_search_clear()} /> instead.
 
 A search shows at most 500 matches.
 
@@ -75,7 +85,7 @@ The buttons under <UiLabel name={m.library_view_facets_label()} /> in the tree p
 | <UiLabel name={m.library_view_facet_has_note()} />  | Have a literature note in this vault.               |
 | <UiLabel name={m.library_view_facet_pdf()} />       | Have a PDF attachment whose file is on this device. |
 
-Turn on several filters to show only the papers that match all of them. The filters work with any tree selection, including <UiLabel name={m.library_view_recent()} />, and they stay on while you search.
+Turn on several filters to show only the papers that match all of them. The filters work with any tree selection, including <UiLabel name={m.library_view_recent()} />, and they stay on while you search. When no paper passes them, the list shows <UiLabel name={m.library_view_empty_facets()} />
 
 ## Read the list [#layouts]
 
@@ -126,15 +136,17 @@ Under <UiLabel name={m.library_view_card_annotations()} />, the card lists every
 
 Select <UiLabel name={m.library_view_card_open_in_sidebar()} /> to show the paper's annotations in the <UiLabel name={m.annot_view_name()} /> view. The sidebar stays pinned to that paper until you unpin it; see [Use the annotation view](/docs/how-to/use-annotation-view).
 
-The card shows only while a row is selected and the Library View is wide enough to hold it. Widen the pane or close the sidebars to see it.
+The card shows only while a row is selected and the Library View is wide enough to hold it. Widen the pane or close the sidebars to see it. When a search, a filter, or another tree selection takes the selected paper out of the list, the selection goes and the card hides.
 
 ## Show a quick switcher result in the library [#show-in-library]
 
-In the [literature note quick switcher](/docs/reference/commands#quick-switcher), press `Alt+Enter` (`Option+Enter` on macOS) on a result. ZotLit opens the Library View on the paper's first collection, or on its library when the paper is in no collection, and selects its row. The view clears its search and turns off its reading-state filters, so the paper is always in the list.
+In the [literature note quick switcher](/docs/reference/commands#quick-switcher), press `Alt+Enter` (`Option+Enter` on macOS) on a result. ZotLit opens the Library View on the paper's first collection, or on its library when the paper is in no collection, and selects its row. The view clears its search and turns off its reading-state filters, so nothing hides the paper.
+
+The list holds at most 1,000 papers. When the paper falls beyond them, nothing is selected and a notice says <UiLabel name={m.library_view_reveal_not_listed({ limit: 1000 })} />
 
 ## Save the view as a query file [#save-as-query-file]
 
-To keep what the Library View shows as a vault file, open the view menu and choose <UiLabel name={m.annot_view_save_as_query_file()} />. The name starts as the library or collection you selected; change it if you like, and choose a folder. The dialog also says which parts of the view the file leaves out. ZotLit writes a [query file](/docs/how-to/use-query-files) and opens it in a tab.
+To keep what the Library View shows as a vault file, open the view menu and choose <UiLabel name={m.annot_view_save_as_query_file()} />. The name starts as the library or collection you selected; change it if you like, and choose a folder. When the file leaves out part of the view, the dialog says which. ZotLit writes a [query file](/docs/how-to/use-query-files) and opens it in a tab.
 
 The file keeps the library or collection you selected, the sort, the layout, and the table columns, and it lists at most 1,000 papers, as the view does. Some parts of the view do not carry over:
 
