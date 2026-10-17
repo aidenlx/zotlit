@@ -20,7 +20,6 @@ const LABELS = {
   papers: "Papers",
   creators: "Creators",
   year: "Year",
-  lastActivity: "Last activity",
   editedInZotero: "edited in Zotero",
 };
 /** The Library Scope in force: My Library and one group. */
@@ -140,22 +139,21 @@ describe("libraryViewQuery — Recent", () => {
     expect(file.filters).toBe("annotations.length > 0");
   });
 
-  it("shows each row's reason, edited in Zotero, after the Visible Properties", () => {
-    const { file, view } = recent();
-    expect(file.formulas).toEqual({ reason: '"edited in Zotero"' });
-    expect(view.order).toEqual([
-      ...DEFAULT_LIBRARY_VIEW_DOCUMENT.order,
-      "formula.reason",
-    ]);
-    expect(file.properties?.["formula.reason"]).toEqual({
-      displayName: "Last activity",
-    });
+  it("gives each row its reason: edited in Zotero", () => {
+    expect(recent().query.reason).toBe("edited in Zotero");
   });
 
-  it("shows no reason for a Library", () => {
-    const { file, view } = derive({});
-    expect(file.formulas).toBeUndefined();
-    expect(view.order).not.toContain("formula.reason");
+  it("gives no reason for a Library or a Collection", () => {
+    expect(derive({}).query.reason).toBeNull();
+    expect(
+      derive({
+        node: {
+          kind: "collection",
+          library: { type: "personal" },
+          path: ["A"],
+        },
+      }).query.reason,
+    ).toBeNull();
   });
 });
 
@@ -326,21 +324,5 @@ describe("documentWithText", () => {
     expect(documentWithText(DEFAULT_LIBRARY_VIEW_DOCUMENT, text).layout).toBe(
       "table",
     );
-  });
-
-  it("keeps Recent's reason out of the Visible Properties it saves", () => {
-    const doc: LibraryViewDocument = {
-      ...DEFAULT_LIBRARY_VIEW_DOCUMENT,
-      node: { kind: "recent" },
-    };
-    const file = parseQueryFile(
-      libraryViewQuery(doc, { labels: LABELS, scope: SCOPE }).text,
-    );
-    const view = file.views[0]!;
-    const edited = serializeQueryFile({
-      ...file,
-      views: [{ ...view, order: ["formula.reason", "title"] }],
-    });
-    expect(documentWithText(doc, edited).order).toEqual(["title"]);
   });
 });

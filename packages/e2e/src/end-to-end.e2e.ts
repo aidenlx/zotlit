@@ -89,13 +89,13 @@ const runVaultScript = vaultScript(workspaceRoot, e2eFixture.root);
 // needing to filter on libraryID too (key "AAAAAAAA" repeats in library 2).
 const targetItem = ITEMS.find((item) => item.itemID === 1)!;
 
-/** A Library View Document on My Library, newest change first, as stored in plugin data. */
+/** A Library View Document on My Library as Papers, newest change first, as stored in plugin data. */
 const MY_LIBRARY_DOCUMENT = {
   node: { kind: "library", library: { type: "personal" } },
   facets: [],
   search: "",
   sort: [{ property: "dateModified", direction: "DESC" }],
-  layout: "table",
+  layout: "papers",
   order: ["title", "creators", "date.year", "vault.literatureNote"],
 };
 const createTargetItem = ITEMS.find((item) => item.itemID === 2)!;
@@ -1412,10 +1412,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           .toSorted((a, b) => direction * a.localeCompare(b)),
       );
       // Until ZotLit Query reads lastRead, each Item is on Recent for its
-      // last change in Zotero.
-      expect(new Set(shown.reasons)).toEqual(
-        new Set([m.library_view_recent_edited_in_zotero()]),
-      );
+      // last change in Zotero: the reading-state line of each paper ends so.
+      const reason = m.library_view_recent_edited_in_zotero();
+      for (const state of shown.states)
+        expect(
+          state === reason || state?.endsWith(` · ${reason}`),
+          String(state),
+        ).toBe(true);
     };
 
     interface Shown {
@@ -1424,9 +1427,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       recent: boolean;
       count: string | null;
       rows: string[];
-      reasons: (string | null)[];
+      states: (string | null)[];
     }
-    const readShown = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.tree)return 'null';await view.query.settled;await view.tree.settled;const el=view.contentEl;const columns=[...el.querySelectorAll('th[data-query-column]')].map(n=>n.getAttribute('data-query-column'));const reason=columns.indexOf('formula.reason');const rows=[...el.querySelectorAll('tr[data-query-table-row="item"]')];return JSON.stringify({phase:view.query.state.getState().phase,header:el.querySelector('[data-library-header]')?.textContent??null,recent:[...el.querySelectorAll('[data-library-node]')].some(n=>JSON.parse(n.getAttribute('data-library-node'))[0]==='recent'&&n.getAttribute('aria-selected')==='true'),count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,rows:rows.map(n=>n.getAttribute('data-query-key')),reasons:rows.map(n=>reason<0?null:n.children[reason+1]?.textContent??null)});})()`;
+    const readShown = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.tree)return 'null';await view.query.settled;await view.tree.settled;const el=view.contentEl;const rows=[...el.querySelectorAll('[data-query-papers-row]')];return JSON.stringify({phase:view.query.state.getState().phase,header:el.querySelector('[data-library-header]')?.textContent??null,recent:[...el.querySelectorAll('[data-library-node]')].some(n=>JSON.parse(n.getAttribute('data-library-node'))[0]==='recent'&&n.getAttribute('aria-selected')==='true'),count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,rows:rows.map(n=>n.getAttribute('data-query-papers-row')),states:rows.map(n=>n.querySelector('[data-query-papers-state]')?.textContent??null)});})()`;
     const shownWhen = async (ready: (shown: Shown) => boolean) => {
       let shown: Shown | null = null;
       const settled = await waitFor(async () => {
@@ -1756,10 +1759,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         `(async()=>{const settings=app.plugins.plugins.zotlit.services.settings;settings.update({'library.document':${stored}});await settings.flush();await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
       );
     });
-    // A Library View that has never saved a document.
+    // My Library on the Papers Layout, which a new Library View opens on
+    // (the Recent case checks that default).
     await obEval(
       vaultId,
-      "(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=app.plugins.plugins.zotlit.services.settings;settings.update({'library.document':null});await settings.flush();return true;})()",
+      `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=app.plugins.plugins.zotlit.services.settings;settings.update({'library.document':${JSON.stringify(MY_LIBRARY_DOCUMENT)}});await settings.flush();return true;})()`,
     );
 
     /** What the Library View shows once its query settled, or `null` while no tab holds it. */

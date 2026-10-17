@@ -61,6 +61,8 @@ export class LibraryView extends ItemView {
       // The document keeps the sort, the Layout and the Visible Properties.
       displayOnly: true,
       layouts: LIBRARY_LAYOUTS,
+      // Recent says why each row is there; the query runs once the tab set it.
+      reason: () => this.#shown!.reason,
       save: this.#storage.save,
       layout: {
         // Otherwise Obsidian moves focus to the last navigable leaf, which in
@@ -157,7 +159,6 @@ export class LibraryView extends ItemView {
         papers: m.library_view_papers_view_name(),
         creators: m.query_file_creators_property(),
         year: m.query_file_year_property(),
-        lastActivity: m.library_view_recent_reason_property(),
         editedInZotero: m.library_view_recent_edited_in_zotero(),
       },
       scope: this.#deps.libraryScope.effective,

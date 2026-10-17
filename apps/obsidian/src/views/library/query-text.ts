@@ -1,6 +1,6 @@
 // The Query View's text, as the Library View Document derives it: the tree
 // node and the Reading State facets become the filters for all views (Recent
-// adds none and reads the whole Library Scope, with each row's reason), a
+// adds none and reads the whole Library Scope), a
 // search becomes its ranked key set, and the sort, the Layout and the Visible
 // Properties pass through to the one Items view. A toolbar change comes back
 // the other way through `documentWithText`.
@@ -24,23 +24,14 @@ import type {
   ReadingStateFacet,
 } from "./document";
 
-/** The names the derived text shows: its view's name, Display Names and Recent's reason. */
+/** The names the derived query shows: its view's name, two Display Names and Recent's reason. */
 export interface LibraryViewLabels {
   readonly papers: string;
   readonly creators: string;
   readonly year: string;
-  /** The Display Name of Recent's reason. */
-  readonly lastActivity: string;
   /** Recent's reason for an Item Zotero changed last. */
   readonly editedInZotero: string;
 }
-
-/**
- * The Formula that gives each row of Recent its reason. Only the derived text
- * holds it: the document never saves it among the Visible Properties.
- */
-const REASON = "reason";
-const REASON_PROPERTY = `formula.${REASON}`;
 
 /**
  * A condition on a row that the vault answers, not the query: the view
@@ -62,6 +53,13 @@ export interface LibraryViewQuery {
   readonly rank: readonly string[] | null;
   /** The conditions every row passes in the vault, after the query. */
   readonly vault: readonly VaultCondition[];
+  /**
+   * Why each row is in the list: on Recent, its last activity; `null`
+   * elsewhere. Until ZotLit Query reads `lastRead` and the Obsidian usage
+   * ledger (#1532, #1533), every Item is on Recent for its last change in
+   * Zotero; the reason then names the source and the time of each row.
+   */
+  readonly reason: string | null;
 }
 
 /**
@@ -121,20 +119,10 @@ export function libraryViewQuery(
   const recent = node.kind === "recent";
   const text = serializeQueryFile({
     ...(filters.length > 0 && { filters: filterTree(filters) }),
-    // Until #1532 lands, every Item is on Recent for its last change in
-    // Zotero; the reason then names the source and the time.
-    ...(recent && {
-      formulas: nameDictionary([
-        [REASON, JSON.stringify(labels.editedInZotero)],
-      ]),
-    }),
     properties: nameDictionary(
       new Map([
         ["creators", { displayName: labels.creators }],
         ["date.year", { displayName: labels.year }],
-        ...(recent
-          ? [[REASON_PROPERTY, { displayName: labels.lastActivity }] as const]
-          : []),
       ]),
     ),
     views: [
@@ -144,7 +132,7 @@ export function libraryViewQuery(
         from: "items",
         ...(doc.sort.length > 0 && { sort: doc.sort }),
         limit: LIBRARY_VIEW_ROW_LIMIT,
-        order: recent ? [...doc.order, REASON_PROPERTY] : doc.order,
+        order: doc.order,
         problems: [],
         source: {},
       },
@@ -157,6 +145,7 @@ export function libraryViewQuery(
     libraries: recent ? scope : { mode: "selected", libraries: [node.library] },
     rank: keys ?? null,
     vault,
+    reason: recent ? labels.editedInZotero : null,
   };
 }
 
@@ -177,7 +166,7 @@ export function documentWithText(
     layout: LIBRARY_LAYOUTS.includes(view.type as LibraryLayout)
       ? (view.type as LibraryLayout)
       : doc.layout,
-    order: (view.order ?? []).filter((path) => path !== REASON_PROPERTY),
+    order: view.order ?? [],
   };
 }
 

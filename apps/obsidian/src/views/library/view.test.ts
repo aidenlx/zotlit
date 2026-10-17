@@ -513,12 +513,13 @@ it("names the tree by its heading, with no tooltip over it", async () => {
   expect(pane.querySelectorAll("[aria-label]")).toHaveLength(0);
 });
 
-it("shows each row on Recent with the reason it is there", async () => {
-  const { deps, run } = pluginData();
-  await openTab(deps);
-  const [request] = listRuns(run) as [QueryViewRequest];
-  expect(request.formulas).toEqual({ reason: '"edited in Zotero"' });
-  expect(request.fields).toContain("formula.reason");
+it("gives each row on Recent its reason, and none on a Library", async () => {
+  const { deps } = pluginData();
+  const view = await openTab(deps);
+  const item = { indexedKey: "AAAAAAAA", values: {} };
+  expect(view.query.reason(item)).toBe("edited in Zotero");
+  await press(view, row(view, { kind: "library", library: LAB }));
+  expect(view.query.reason(item)).toBeNull();
 });
 
 it("reads the new Library Scope on Recent once the researcher changes it", async () => {

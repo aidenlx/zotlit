@@ -28,7 +28,6 @@ const LABELS = {
   papers: "Papers",
   creators: "Creators",
   year: "Year",
-  lastActivity: "Last activity",
   editedInZotero: "edited in Zotero",
 };
 
