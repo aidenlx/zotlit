@@ -32,11 +32,11 @@ async function schema(): Promise<ItemQuerySchema> {
   return exit.value;
 }
 
-it("publishes Attachment fields, parent paths and defaults in the single catalog", async () => {
+it("publishes Attachment fields and parent paths in the single catalog, and defaults in the live schema", async () => {
   const { fields, defaults } = await schema();
   const entry = (path: string) => fields.find((field) => field.path === path);
 
-  expect(describeQueryVocabulary().datasets.attachments.defaults).toEqual({
+  expect(defaults).toEqual({
     fields: ATTACHMENTS.defaultFields,
     sort: ATTACHMENTS.defaultSort.map(({ field, direction }) => ({
       field,
@@ -44,8 +44,9 @@ it("publishes Attachment fields, parent paths and defaults in the single catalog
     })),
     limit: null,
   });
-  expect(defaults).toEqual(
-    describeQueryVocabulary().datasets.attachments.defaults,
+  // The guide sends a reader to the live response for defaults.
+  expect(describeQueryVocabulary().datasets.attachments).not.toHaveProperty(
+    "defaults",
   );
   expect(entry("item")).toMatchObject({ relation: "items" });
   expect(entry("annotations")).toMatchObject({
