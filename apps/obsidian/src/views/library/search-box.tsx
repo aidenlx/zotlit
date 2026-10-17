@@ -92,10 +92,11 @@ export class LibrarySearch extends Component {
     const session = this.#deps.lookup.openSession();
     this.#session = session;
     this.register(() => session.close());
-    // The Libraries of the Library Scope are what a search of all libraries reads.
+    // The Libraries of the Library Scope are what a search of all libraries
+    // reads, and what Recent lists.
     this.register(
       this.#deps.libraryScope.on("changed", () => {
-        if (this.store.getState().everywhere) void this.run();
+        if (this.store.getState().everywhere || this.onRecent) void this.run();
       }),
     );
   }
@@ -142,6 +143,11 @@ export class LibrarySearch extends Component {
     this.#input?.focus();
   }
 
+  /** Whether the tree node is Recent, which reads the Library Scope already. */
+  get onRecent(): boolean {
+    return this.#host.node().kind === "recent";
+  }
+
   /** Whether the search reads every Library; an empty search reads none. */
   #everywhere(text: string): boolean {
     return text.trim() !== "" && this.store.getState().everywhere;
@@ -154,11 +160,12 @@ export class LibrarySearch extends Component {
     const { words } = searchTerms(text);
     const { libraryScope } = this.#deps;
     const node = this.#host.node();
-    const libraries = everywhere
-      ? (libraryScope.current?.available ?? [])
-      : libraryScope.libraries.filter(({ selector }) =>
-          sameLibrary(selector, node.library),
-        );
+    const libraries =
+      everywhere || node.kind === "recent"
+        ? (libraryScope.current?.available ?? [])
+        : libraryScope.libraries.filter(({ selector }) =>
+            sameLibrary(selector, node.library),
+          );
     this.#settled = (async () => {
       const hits =
         words === "" || !this.#session
@@ -261,6 +268,9 @@ function SearchSummary({
   const matched = useStore(query, (s) => s.results?.matched ?? null);
   if (text.trim() === "") return fallback;
   if (matched === null) return selection;
+  // Recent reads every Library of the Library Scope already.
+  if (search.onRecent)
+    return m.library_view_search_matches({ selection, count: matched });
   if (everywhere)
     return m.library_view_search_matches_everywhere({ count: matched });
   const widen = () => search.widen();

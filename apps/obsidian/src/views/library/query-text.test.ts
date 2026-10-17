@@ -22,7 +22,21 @@ import {
 } from "./query-text";
 import { searchTerms } from "./search";
 
-const LABELS = { papers: "Papers", creators: "Creators", year: "Year" };
+const LABELS = {
+  papers: "Papers",
+  creators: "Creators",
+  year: "Year",
+  editedInZotero: "edited in Zotero",
+};
+/** The Library Scope in force: My Library and one group. */
+const SCOPE = {
+  mode: "selected",
+  libraries: [{ type: "personal" }, { type: "group", groupID: 118 }],
+} as const;
+const MY_LIBRARY = {
+  kind: "library",
+  library: { type: "personal" },
+} as const;
 
 /** An Item of My Library, in the Collections at `paths`, with the tags `tags`. */
 function seed(
@@ -54,9 +68,10 @@ function derive(
   everywhere?: readonly LibrarySelector[],
 ) {
   const query = libraryViewQuery(
-    { ...DEFAULT_LIBRARY_VIEW_DOCUMENT, ...doc },
+    { ...DEFAULT_LIBRARY_VIEW_DOCUMENT, node: MY_LIBRARY, ...doc },
     {
       labels: LABELS,
+      scope: SCOPE,
       ...(keys && { keys }),
       ...(everywhere && { everywhere }),
     },
@@ -123,6 +138,41 @@ describe("libraryViewQuery — the tree node", () => {
     expect(selects(filter, seed("ABCD2345", [["Thesis", "Chapter 20"]]))).toBe(
       false,
     );
+  });
+});
+
+describe("libraryViewQuery — Recent", () => {
+  const recent = () => derive({ node: { kind: "recent" } });
+
+  it("reads every Library in the Library Scope, with no filter", () => {
+    const { query, filter } = recent();
+    expect(query.libraries).toEqual(SCOPE);
+    expect(filter).toBeUndefined();
+  });
+
+  it("keeps the facets as filters", () => {
+    const { file } = derive({
+      node: { kind: "recent" },
+      facets: ["annotated"],
+    });
+    expect(file.filters).toBe("annotations.length > 0");
+  });
+
+  it("gives each row its reason: edited in Zotero", () => {
+    expect(recent().query.reason).toBe("edited in Zotero");
+  });
+
+  it("gives no reason for a Library or a Collection", () => {
+    expect(derive({}).query.reason).toBeNull();
+    expect(
+      derive({
+        node: {
+          kind: "collection",
+          library: { type: "personal" },
+          path: ["A"],
+        },
+      }).query.reason,
+    ).toBeNull();
   });
 });
 
@@ -310,7 +360,11 @@ describe("documentWithText", () => {
       search: "attention",
     };
     const file = parseQueryFile(
-      libraryViewQuery(doc, { labels: LABELS, keys: ["ABCD2345"] }).text,
+      libraryViewQuery(doc, {
+        labels: LABELS,
+        scope: SCOPE,
+        keys: ["ABCD2345"],
+      }).text,
     );
     const view = file.views[0]!;
     const edited = serializeQueryFile({
@@ -333,6 +387,7 @@ describe("documentWithText", () => {
   it("keeps the document's Layout where the text names one the Library View does not offer", () => {
     const text = libraryViewQuery(DEFAULT_LIBRARY_VIEW_DOCUMENT, {
       labels: LABELS,
+      scope: SCOPE,
     }).text.replace("type: papers", "type: cards");
     expect(documentWithText(DEFAULT_LIBRARY_VIEW_DOCUMENT, text).layout).toBe(
       "papers",
@@ -342,6 +397,7 @@ describe("documentWithText", () => {
   it("takes the Layout of a switch between Papers and the Table", () => {
     const text = libraryViewQuery(DEFAULT_LIBRARY_VIEW_DOCUMENT, {
       labels: LABELS,
+      scope: SCOPE,
     }).text.replace("type: papers", "type: table");
     expect(documentWithText(DEFAULT_LIBRARY_VIEW_DOCUMENT, text).layout).toBe(
       "table",
@@ -354,7 +410,7 @@ describe("libraryViewQueryFileText — Save as query file", () => {
   function saved(doc: Partial<LibraryViewDocument>) {
     const file = parseQueryFile(
       libraryViewQueryFileText(
-        { ...DEFAULT_LIBRARY_VIEW_DOCUMENT, ...doc },
+        { ...DEFAULT_LIBRARY_VIEW_DOCUMENT, node: MY_LIBRARY, ...doc },
         { labels: LABELS },
       ),
     );
@@ -372,6 +428,14 @@ describe("libraryViewQueryFileText — Save as query file", () => {
     expect(selects(filter, { ...seed("ABCD2345"), groupID: 118 })).toBe(true);
     expect(selects(filter, { ...seed("ABCD2345"), groupID: 7 })).toBe(false);
     expect(selects(filter, seed("ABCD2345"))).toBe(false);
+  });
+
+  it("writes Recent with no filter, as a Query File tab reads the Library Scope, newest change first", () => {
+    const { file, view } = saved({ node: { kind: "recent" } });
+    expect(file.filters).toBeUndefined();
+    expect(view.sort).toEqual([
+      { property: "dateModified", direction: "DESC" },
+    ]);
   });
 
   it("writes the Library alone as the filter of a Library node", () => {

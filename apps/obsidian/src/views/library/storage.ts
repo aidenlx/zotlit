@@ -5,6 +5,7 @@ import { pluginDataStorage } from "@/views/query-view/plugin-data-storage";
 import type { QueryViewHost } from "@/views/query-view/view";
 
 import {
+  documentWithNode,
   parseLibraryViewDocument,
   serializeLibraryViewDocument,
 } from "./document";
@@ -16,7 +17,7 @@ const KEY = "library.document";
 export interface LibraryViewStorage extends Pick<QueryViewHost, "save"> {
   /** The document plugin data holds now. */
   document: () => LibraryViewDocument;
-  /** Keep `node` as the tree selection. Settles once plugin data holds it; rejects where the write failed. */
+  /** Keep `node` as the tree selection, with the sort it writes. Settles once plugin data holds it; rejects where the write failed. */
   select: (node: LibraryNode) => Promise<void>;
   /** Keep `text` as the search. Settles once plugin data holds it; rejects where the write failed. */
   search: (text: string) => Promise<void>;
@@ -25,12 +26,13 @@ export interface LibraryViewStorage extends Pick<QueryViewHost, "save"> {
 export function libraryViewStorage(
   settings: Pick<SettingsService, "update" | "flush" | "current">,
 ): LibraryViewStorage {
-  const keep = async (patch: Partial<LibraryViewDocument>) => {
+  const keep = async (
+    change: (doc: LibraryViewDocument) => LibraryViewDocument,
+  ) => {
     settings.update((current) => ({
-      [KEY]: serializeLibraryViewDocument({
-        ...parseLibraryViewDocument(current[KEY] ?? null),
-        ...patch,
-      }),
+      [KEY]: serializeLibraryViewDocument(
+        change(parseLibraryViewDocument(current[KEY] ?? null)),
+      ),
     }));
     await settings.flush();
   };
@@ -43,7 +45,7 @@ export function libraryViewStorage(
         ),
     }),
     document: () => parseLibraryViewDocument(settings.current?.[KEY] ?? null),
-    select: (node) => keep({ node }),
-    search: (search) => keep({ search }),
+    select: (node) => keep((doc) => documentWithNode(doc, node)),
+    search: (search) => keep((doc) => ({ ...doc, search })),
   };
 }

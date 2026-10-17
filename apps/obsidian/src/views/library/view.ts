@@ -10,6 +10,8 @@ import type { WorkspaceLeaf } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import type { LibraryScope } from "@/services/library-scope/scope";
+import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { SettingsService } from "@/services/settings/service";
 import { saveAsQueryFile } from "@/views/annot-view/save-query-file";
 import { QueryView } from "@/views/query-view/view";
@@ -33,7 +35,10 @@ export const LIBRARY_VIEW_TYPE = "zotlit-library";
 
 export interface LibraryViewDeps extends QueryViewDeps {
   settings: Pick<SettingsService, "update" | "flush" | "current" | "loaded">;
-  libraryScope: QueryViewDeps["libraryScope"] & LibraryTreeDeps["libraryScope"];
+  libraryScope: QueryViewDeps["libraryScope"] &
+    LibraryTreeDeps["libraryScope"] 
+     &
+    Pick<LibraryScopeService, "effective">;
   lookup: LibrarySearchDeps["lookup"];
 }
 
@@ -76,6 +81,8 @@ export class LibraryView extends ItemView {
       // The document keeps the sort, the Layout and the Visible Properties.
       displayOnly: true,
       layouts: LIBRARY_LAYOUTS,
+      // Recent says why each row is there; the query runs once the tab set it.
+      reason: () => this.#shown!.reason,
       save: this.#storage.save,
       saveAs: () => void this.#saveAs(),
       layout: {
@@ -166,13 +173,15 @@ export class LibraryView extends ItemView {
   /** The researcher picked `node` in the tree: list it, and keep it. */
   #select(node: LibraryNode): void {
     this.tree.show(node);
-    this.search.narrow();
-    void this.search.run();
+    // The document takes the node at once (Recent writes its sort), and the
+    // search runs again over the node.
     this.#storage.select(node).catch((error: unknown) => {
       logger.warn("The Library View could not keep the tree selection", {
         error,
       });
     });
+    this.search.narrow();
+    void this.search.run();
   }
 
   /**
@@ -187,11 +196,27 @@ export class LibraryView extends ItemView {
     };
     this.#shown = libraryViewQuery(doc, {
       labels: labels(),
+      scope: this.#scope(),
       ...(keys && { keys }),
       ...(everywhere && { everywhere }),
     });
     this.query.setText(this.#shown.text);
     this.query.contextChanged();
+  }
+
+  /**
+   * The Libraries of the Library Scope that the database holds, which Recent
+   * reads: a saved scope can name a group the database no longer has, and a
+   * request that names it fails. Where the database holds none of them, the
+   * saved scope itself, so the view says which Library is missing.
+   */
+  #scope(): LibraryScope {
+    const { current, effective } = this.#deps.libraryScope;
+    if (!current || current.available.length === 0) return effective;
+    return {
+      mode: "selected",
+      libraries: current.available.map(({ selector }) => selector),
+    };
   }
 
   /** "Save as query file": the document as it stands, once the toolbar's last change is in. */
@@ -218,5 +243,6 @@ function labels(): LibraryViewLabels {
     papers: m.library_view_papers_view_name(),
     creators: m.query_file_creators_property(),
     year: m.query_file_year_property(),
+    editedInZotero: m.library_view_recent_edited_in_zotero(),
   };
 }
