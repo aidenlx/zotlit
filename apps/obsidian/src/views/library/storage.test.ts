@@ -26,8 +26,6 @@ vi.mock("zustand", () => import("../__fixtures__/zustand"));
 
 const LABELS = {
   papers: "Papers",
-  creators: "Creators",
-  year: "Year",
   editedInZotero: "edited in Zotero",
 };
 
