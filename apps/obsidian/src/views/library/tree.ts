@@ -4,6 +4,8 @@
 // as `collections.within` selects them, so the tree and the list header agree.
 //
 // @see apps/obsidian/docs/adr/0071-the-library-tree-writes-filters.md
+import { parseIndexedKey } from "@zotlit/db";
+
 import type { QueryViewGroup } from "@/services/item-query/query-view";
 import type {
   AvailableLibrary,
@@ -100,4 +102,13 @@ export function findNode(
 
 export function sameLibrary(a: LibrarySelector, b: LibrarySelector): boolean {
   return selectorKey(a) === selectorKey(b);
+}
+
+/** The Library that holds the Item `indexedKey`, as its key names it. */
+export function libraryOf(indexedKey: string): LibrarySelector | null {
+  const parsed = parseIndexedKey(indexedKey);
+  if (!parsed) return null;
+  return parsed.groupID === null
+    ? { type: "personal" }
+    : { type: "group", groupID: parsed.groupID };
 }
