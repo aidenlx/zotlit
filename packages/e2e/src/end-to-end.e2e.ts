@@ -2208,6 +2208,179 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
   }, 180000);
 
+  it("searches the Library View as the quick switcher ranks, inside the tree node, with tag:, Search all libraries and Escape", async () => {
+    const services = "app.plugins.plugins.zotlit.services";
+    const snapshot = await obEval(
+      vaultId,
+      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null,scope:${services}.settings.current[${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}]??null})`,
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'library.document':saved.document,${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}:saved.scope});await settings.flush();await app.workspace.changeLayout(saved.layout);return true;})()`,
+      );
+    });
+    // Every Library is in the Library Scope; the tab opens on My Library.
+    await obEval(
+      vaultId,
+      `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=${services}.settings;settings.update({'library.document':${JSON.stringify(MY_LIBRARY_DOCUMENT)},${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}:{mode:'all'}});await settings.flush();return true;})()`,
+    );
+
+    // The seed's oracle.
+    const personal = LIBRARIES.find((entry) => entry.type === "user")!;
+    const indexedKey = (item: FixtureItem) => {
+      const { groupID } = LIBRARIES.find(
+        (entry) => entry.libraryID === item.libraryID,
+      )!;
+      return groupID === null ? item.key : `${item.key}g${groupID}`;
+    };
+    const inPersonal = ITEMS.filter(
+      (item) => item.libraryID === personal.libraryID,
+    );
+    const subtree = (collectionID: number): number[] => [
+      collectionID,
+      ...COLLECTIONS.filter(
+        (entry) => entry.parentCollectionID === collectionID,
+      ).flatMap((child) => subtree(child.collectionID)),
+    ];
+    const sharedKey = COLLECTIONS.find(
+      (entry) =>
+        entry.libraryID === personal.libraryID && entry.key === "SHAREDCL",
+    )!;
+    const inSharedKey = new Set(
+      inPersonal
+        .filter(({ collectionIDs }) =>
+          collectionIDs.some((id) =>
+            subtree(sharedKey.collectionID).includes(id),
+          ),
+        )
+        .map(indexedKey),
+    );
+    /** The Indexed Keys the quick switcher's search answers, best first. */
+    const lookup = async (query: string, everywhere: boolean) =>
+      JSON.parse(
+        await obEval(
+          vaultId,
+          `(async()=>{const s=${services};const libraries=${everywhere ? "s.libraryScope.current.available" : "s.libraryScope.libraries.filter(l=>l.selector.type==='personal')"};return JSON.stringify((await s.itemLookup.search(${JSON.stringify(query)},{limit:500,libraries})).map(h=>h.item.indexedKey));})()`,
+        ),
+      ) as string[];
+
+    interface Shown {
+      phase: string;
+      header: string | null;
+      value: string;
+      focused: boolean;
+      rows: string[];
+    }
+    const readShown = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.search)return 'null';await view.searched;await view.query.settled;const el=view.contentEl;const input=el.querySelector('[data-library-search] input');return JSON.stringify({phase:view.query.state.getState().phase,header:el.querySelector('[data-library-header]')?.textContent??null,value:input.value,focused:document.activeElement===input,rows:[...el.querySelectorAll('tr[data-query-table-row="item"], [data-query-papers-row]')].map(n=>n.getAttribute('data-query-key')??n.getAttribute('data-query-papers-row'))});})()`;
+    const shownWhen = async (ready: (shown: Shown) => boolean) => {
+      let shown: Shown | null = null;
+      const settled = await waitFor(async () => {
+        shown = JSON.parse(await obEval(vaultId, readShown)) as Shown | null;
+        return shown !== null && shown.phase === "ready" && ready(shown);
+      }, 120);
+      if (!settled) throw new Error(`Library View: ${JSON.stringify(shown)}`);
+      return shown!;
+    };
+    /** Type `text` into the search box, as the keyboard sets an input's value. */
+    const type = (text: string) =>
+      obEval(
+        vaultId,
+        `(()=>{const input=app.workspace.getLeavesOfType('zotlit-library')[0].view.contentEl.querySelector('[data-library-search] input');input.value=${JSON.stringify(text)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+      );
+    const header = (shown: Shown) => shown.header;
+
+    await obEval(
+      vaultId,
+      "app.commands.executeCommandById('zotlit:open-library-view');true",
+    );
+    // The search box has the cursor; the list shows My Library.
+    const opened = await shownWhen(
+      (shown) => shown.rows.length === inPersonal.length,
+    );
+    expect(opened.focused).toBe(true);
+    expect(opened.rows.toSorted()).toEqual(
+      inPersonal.map(indexedKey).toSorted(),
+    );
+
+    // A seeded title ranks its Item first, and the rows keep the order of
+    // the quick switcher's search.
+    const title = "Communicating with Slip Boxes";
+    const wanted = inPersonal.find((item) => item.title.startsWith(title))!;
+    await type(title);
+    const ranked = await shownWhen((shown) => shown.value === title);
+    expect(ranked.rows[0]).toBe(indexedKey(wanted));
+    expect(ranked.rows).toEqual(await lookup(title, false));
+
+    // The search keeps to the selected Collection; Search all libraries
+    // widens it past the Collection, to every Library.
+    await type("duplicate");
+    const library = await shownWhen((shown) => shown.value === "duplicate");
+    expect(library.rows).toEqual(await lookup("duplicate", false));
+    await obEval(
+      vaultId,
+      `(()=>{${PAGE}const el=app.workspace.getLeavesOfType('zotlit-library')[0].view.contentEl;const pane=el.querySelector('[data-library-tree]');const row=[...pane.querySelectorAll('[data-library-node]')].find(n=>n.getAttribute('data-library-node')===${JSON.stringify(JSON.stringify(["personal", sharedKey.name]))});if(getComputedStyle(pane).display==='none')press(el.querySelector('[data-library-tree-toggle]'),'Library Tree button');press(row,'Collection');return true;})()`,
+    );
+    const filed = (await lookup("duplicate", false)).filter((key) =>
+      inSharedKey.has(key),
+    );
+    const collection = await shownWhen(
+      (shown) =>
+        shown.rows.length === filed.length &&
+        header(shown) ===
+          `${m.library_view_search_matches({ selection: sharedKey.name, count: filed.length })} · ${m.library_view_search_everywhere()}`,
+    );
+    expect(collection.rows).toEqual(filed);
+    await obEval(
+      vaultId,
+      `(()=>{${PAGE}press(app.workspace.getLeavesOfType('zotlit-library')[0].view.contentEl.querySelector('[data-library-search-all]'),'Search all libraries');return true;})()`,
+    );
+    const everywhere = await lookup("duplicate", true);
+    expect(
+      everywhere.some((key) => !inPersonal.map(indexedKey).includes(key)),
+    ).toBe(true);
+    const widened = await shownWhen(
+      (shown) =>
+        header(shown) ===
+        m.library_view_search_matches_everywhere({ count: everywhere.length }),
+    );
+    expect(widened.rows).toEqual(everywhere);
+
+    // A tag: token narrows to the seeded Items with that tag.
+    await obEval(
+      vaultId,
+      `(()=>{${PAGE}const el=app.workspace.getLeavesOfType('zotlit-library')[0].view.contentEl;const pane=el.querySelector('[data-library-tree]');const row=[...pane.querySelectorAll('[data-library-node]')].find(n=>n.getAttribute('data-library-node')===${JSON.stringify(JSON.stringify(["personal"]))});if(getComputedStyle(pane).display==='none')press(el.querySelector('[data-library-tree-toggle]'),'Library Tree button');press(row,'My Library');return true;})()`,
+    );
+    await type("tag:fixture-core");
+    const tagged = inPersonal
+      .filter((item) => item.tags?.some(({ name }) => name === "fixture-core"))
+      .map(indexedKey);
+    expect(tagged.length).toBeGreaterThan(0);
+    const byTag = await shownWhen(
+      (shown) =>
+        shown.value === "tag:fixture-core" &&
+        shown.rows.length === tagged.length,
+    );
+    expect(byTag.rows.toSorted()).toEqual(tagged.toSorted());
+
+    // Escape clears the search, and the list shows My Library again.
+    await obEval(
+      vaultId,
+      "(()=>{const input=app.workspace.getLeavesOfType('zotlit-library')[0].view.contentEl.querySelector('[data-library-search] input');input.focus();input.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return true;})()",
+    );
+    const cleared = await shownWhen(
+      (shown) => shown.value === "" && shown.rows.length === inPersonal.length,
+    );
+    expect(cleared.rows).toEqual(opened.rows);
+    expect(cleared.header).toBe(
+      m.library_view_header({
+        selection: m.settings_library_scope_personal(),
+        count: inPersonal.length,
+      }),
+    );
+  });
+
   it("shows a Query File toolbar as icons with tooltips on a narrow pane, and with names on a wide one", async () => {
     const layout = await obEval(
       vaultId,

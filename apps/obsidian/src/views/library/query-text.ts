@@ -12,7 +12,10 @@ import type { FilterTree } from "@zotlit/filter-expression";
 import { nameDictionary } from "@zotlit/item-query";
 
 import { selectorKey } from "@/services/library-scope/scope";
-import type { LibraryScope } from "@/services/library-scope/scope";
+import type {
+  LibraryScope,
+  LibrarySelector,
+} from "@/services/library-scope/scope";
 import {
   parseQueryFile,
   serializeQueryFile,
@@ -24,6 +27,7 @@ import type {
   LibraryViewDocument,
   ReadingStateFacet,
 } from "./document";
+import { searchTerms } from "./search";
 
 /** The names the derived query shows: its view's name, two Display Names and Recent's reason. */
 export interface LibraryViewLabels {
@@ -88,8 +92,10 @@ const FACETS: Readonly<
 /**
  * The query of `doc`.
  * @param scope the Library Scope in force, which Recent reads.
- * @param keys the ranked Indexed Keys that the search of `doc.search` found;
- * absent while the view browses.
+ * @param keys the ranked Indexed Keys that the words of `doc.search` found;
+ * absent while the view browses, and for a search of tags alone.
+ * @param everywhere the Libraries a search of all libraries reads, in place
+ * of the tree node; absent while the search keeps to the node.
  */
 export function libraryViewQuery(
   doc: LibraryViewDocument,
@@ -97,15 +103,17 @@ export function libraryViewQuery(
     labels,
     scope,
     keys,
+    everywhere,
   }: {
     labels: LibraryViewLabels;
     scope: LibraryScope;
     keys?: readonly string[];
+    everywhere?: readonly LibrarySelector[];
   },
 ): LibraryViewQuery {
   const { node } = doc;
   const filters: string[] = [];
-  if (node.kind === "collection")
+  if (node.kind === "collection" && everywhere === undefined)
     filters.push(`collections.within(${JSON.stringify(node.path.join("/"))})`);
   const vault: VaultCondition[] = [];
   for (const facet of doc.facets) {
@@ -117,6 +125,8 @@ export function libraryViewQuery(
     filters.push(
       `[${keys.map((key) => JSON.stringify(key)).join(", ")}].contains(indexedKey)`,
     );
+  for (const tag of searchTerms(doc.search).tags)
+    filters.push(`tags.contains(${JSON.stringify(tag)})`);
   const recent = node.kind === "recent";
   const text = serializeQueryFile({
     ...(filters.length > 0 && { filters: filterTree(filters) }),
@@ -143,7 +153,11 @@ export function libraryViewQuery(
   });
   return {
     text,
-    libraries: recent ? scope : { mode: "selected", libraries: [node.library] },
+    libraries: everywhere
+      ? { mode: "selected", libraries: [...everywhere] }
+      : recent
+        ? scope
+        : { mode: "selected", libraries: [node.library] },
     rank: keys ?? null,
     vault,
     reason: recent ? labels.editedInZotero : null,
@@ -183,7 +197,10 @@ export function libraryViewQueryFileText(
   { labels }: { labels: LibraryViewLabels },
 ): string {
   // The text names no Libraries: the Query File tab reads its own.
-  const { text } = libraryViewQuery(doc, { labels, scope: { mode: "all" } });
+  const { text } = libraryViewQuery(
+    { ...doc, search: "" },
+    { labels, scope: { mode: "all" } },
+  );
   if (doc.node.kind === "recent") return text;
   const file = parseQueryFile(text);
   const library = `library == ${JSON.stringify(selectorKey(doc.node.library))}`;

@@ -495,6 +495,7 @@ export default class ZotLitPlugin extends Plugin {
       ...queryViewDeps,
       libraryScope: services.libraryScope,
       settings: services.settings,
+      lookup: services.itemLookup,
     });
 
     // The Annotation History's own verbs. A bound PDF view and an Annotation
