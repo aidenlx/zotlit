@@ -43,4 +43,6 @@ export async function openLibraryView(app: App): Promise<void> {
     await leaf.setViewState({ type: LIBRARY_VIEW_TYPE, active: true });
   }
   await workspace.revealLeaf(leaf);
+  // Search is the front door, also of a tab that was open already.
+  if (leaf.view instanceof LibraryView) leaf.view.search.focus();
 }

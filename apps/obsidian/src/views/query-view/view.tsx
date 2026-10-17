@@ -170,6 +170,13 @@ export interface QueryViewHost {
    * @see apps/obsidian/docs/adr/0070-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
    */
   displayOnly?: boolean;
+  /**
+   * The Indexed Keys in the order the rows show in, in place of the sort: the
+   * Library View's ranked search. `null` or absent: the order of the query.
+   *
+   * @see apps/obsidian/docs/adr/0072-search-enters-the-library-view-as-an-ordered-key-set.md
+   */
+  rank?: () => readonly string[] | null;
 }
 
 /** What the view shows now, as the toolbar and the host read it. */
@@ -740,10 +747,9 @@ export class QueryView extends Component implements HistorySurface {
             ? "rerun"
             : "new-request";
         if (this.#layout.keepsBack(named, cause)) return;
-        const shown = layoutRows(result.rows ?? [], view);
-        const byKey = new Map(
-          (result.rows ?? []).map((row) => [row.indexedKey, row]),
-        );
+        const rows = ranked(result.rows ?? [], this.#host.rank?.() ?? null);
+        const shown = layoutRows(rows, view);
+        const byKey = new Map(rows.map((row) => [row.indexedKey, row]));
         this.state.setState({
           phase: "ready",
           results: {
@@ -1076,6 +1082,20 @@ function ReadOnlyNote({ view }: { view: QueryView }) {
 /** Whether the view's Layout draws live Annotation Cards. */
 function drawsCards(view: QueryFileView): boolean {
   return layoutOf(view)?.type === "annotations";
+}
+
+/** `rows` in the order of `rank`, where the host gives one. */
+function ranked<Row extends { indexedKey: string }>(
+  rows: readonly Row[],
+  rank: readonly string[] | null,
+): readonly Row[] {
+  if (rank === null) return rows;
+  const place = new Map(rank.map((key, index) => [key, index]));
+  return rows.toSorted(
+    (a, b) =>
+      (place.get(a.indexedKey) ?? rank.length) -
+      (place.get(b.indexedKey) ?? rank.length),
+  );
 }
 
 /** The rows, drawn by the shown view's Layout. */

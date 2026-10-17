@@ -7,6 +7,7 @@ import type { App, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, expect, it, vi } from "vitest";
 
+import { testItemSeed } from "@zotlit/item-query";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import {
@@ -14,6 +15,7 @@ import {
   PluginStub,
 } from "@/lib/__fixtures__/obsidian-host";
 import { Effect } from "@/lib/effect";
+import type { SearchHit, SearchOptions } from "@/services/item-lookup/service";
 import type {
   QueryViewOutcome,
   QueryViewRequest,
@@ -21,6 +23,7 @@ import type {
 import type { AvailableLibrary } from "@/services/library-scope/scope";
 import { selectorKey } from "@/services/library-scope/scope";
 import { SettingsService } from "@/services/settings/service";
+import { requested } from "@/views/query-view/__fixtures__/query-run";
 
 import type { LibraryNode } from "./document";
 import { nodeKey } from "./library-tree";
@@ -64,6 +67,8 @@ interface SeedItem {
   readonly key: string;
   readonly libraryID: number;
   readonly collections: readonly string[];
+  readonly title?: string;
+  readonly tags?: readonly string[];
 }
 
 /**
@@ -94,26 +99,72 @@ const SEED: readonly SeedItem[] = [
     key: "AAAAAAAA",
     libraryID: 1,
     collections: ["Thesis/Chapter 1", "Thesis/Chapter 2"],
+    title: "Graph drawing for figures",
+    tags: ["method"],
   },
-  { key: "BBBBBBBB", libraryID: 1, collections: ["Thesis/Chapter 2"] },
-  { key: "CCCCCCCC", libraryID: 1, collections: ["Thesis"] },
-  { key: "DDDDDDDD", libraryID: 1, collections: ["Reading list"] },
-  { key: "EEEEEEEE", libraryID: 1, collections: [] },
-  { key: "FFFFFFFF", libraryID: 2, collections: ["Thesis"] },
+  {
+    key: "BBBBBBBB",
+    libraryID: 1,
+    collections: ["Thesis/Chapter 2"],
+    title: "Notes on attention",
+  },
+  {
+    key: "CCCCCCCC",
+    libraryID: 1,
+    collections: ["Thesis"],
+    title: "Figures that work",
+    tags: ["method"],
+  },
+  {
+    key: "DDDDDDDD",
+    libraryID: 1,
+    collections: ["Reading list"],
+    title: "Ten rules for better figures",
+  },
+  { key: "EEEEEEEE", libraryID: 1, collections: [], tags: ["method"] },
+  {
+    key: "FFFFFFFF",
+    libraryID: 2,
+    collections: ["Thesis"],
+    title: "Figures in the lab",
+  },
   { key: "GGGGGGGG", libraryID: 2, collections: [] },
   { key: "HHHHHHHH", libraryID: 3, collections: [] },
 ];
 
+/** Whether the engine's filter selects `item`. */
+function selects(filter: string | undefined, item: SeedItem): boolean {
+  if (filter === undefined) return true;
+  const answer = testItemSeed(filter, {
+    scan: {
+      itemID: 1,
+      key: item.key,
+      itemType: "journalArticle",
+      dateAdded: null,
+      dateModified: null,
+    },
+    groupID: null,
+    fields: { title: item.title ?? "" },
+    custom: {},
+    customFieldNames: [],
+    creators: [],
+    tags: (item.tags ?? []).map((name) => ({ name, type: 0 })),
+    collections: item.collections.map((path) => path.split("/")),
+  });
+  if (answer.kind !== "result") throw new Error(JSON.stringify(answer));
+  return answer.matched;
+}
+
 /**
- * ZotLit Query over {@link SEED} for a grouped request, as the engine groups:
- * an Item joins one group for each Collection it is filed in, or the `null`
- * group for none. Any other request finds nothing.
+ * ZotLit Query over {@link SEED}. A grouped request groups as the engine
+ * does: an Item joins one group for each Collection it is filed in, or the
+ * `null` group for none. A list request answers the Items its filter selects,
+ * in seed order.
  */
 function answer(
   items: readonly SeedItem[],
   request: QueryViewRequest,
 ): QueryViewOutcome {
-  if (request.group !== "collections[]") return EMPTY;
   const named =
     request.libraries?.mode === "selected" ? request.libraries.libraries : [];
   const ids = new Set(
@@ -121,6 +172,25 @@ function answer(
       named.some((s) => selectorKey(s) === selectorKey(selector)),
     ).map(({ libraryID }) => libraryID),
   );
+  if (request.group !== "collections[]") {
+    const rows = items
+      .filter(
+        (item) => ids.has(item.libraryID) && selects(request.filter, item),
+      )
+      .map(({ key }) => ({ indexedKey: key, values: {} }));
+    return requested(
+      {
+        kind: "result",
+        result: {
+          ...EMPTY.result,
+          returnedCount: rows.length,
+          matchedCount: rows.length,
+          rows,
+        },
+      },
+      request,
+    );
+  }
   const matched = items.filter(({ libraryID }) => ids.has(libraryID));
   const groups = new Map<string | null, SeedItem[]>();
   for (const item of matched)
@@ -176,6 +246,34 @@ function pluginData(stored?: unknown) {
   );
   const reads = createNanoEvents<{ changed: () => void }>();
   const off = () => () => {};
+  /**
+   * The worker search over the titles of {@link SEED}: each Item whose title
+   * holds every word, the latest seed Item first, so the rank differs from
+   * the list's own order.
+   */
+  const searches: { query: string; libraries: number[] }[] = [];
+  const search = (query: string, opts?: SearchOptions) => {
+    const libraries = (opts?.libraries ?? []).map((l) => l.libraryID);
+    searches.push({ query, libraries });
+    const words = query.toLowerCase().split(" ");
+    return Promise.resolve(
+      database.items
+        .filter(
+          ({ libraryID, title }) =>
+            libraries.includes(libraryID) &&
+            words.every((word) => title?.toLowerCase().includes(word)),
+        )
+        .toReversed()
+        .map(
+          ({ key, libraryID }) =>
+            ({
+              item: { key, indexedKey: key, libraryID },
+              matches: [],
+              library: null,
+            }) as unknown as SearchHit,
+        ),
+    );
+  };
   const deps = {
     app: {
       ...host.app,
@@ -208,6 +306,13 @@ function pluginData(stored?: unknown) {
       libraries: LIBRARIES,
     },
     query: { run },
+    lookup: {
+      openSession: () => ({
+        search,
+        close: () => {},
+        [Symbol.dispose]: () => {},
+      }),
+    },
     cardFocus: { hold: () => ({ [Symbol.dispose]: () => {} }) },
     annotations: { on: off, hold: () => ({ [Symbol.dispose]: () => {} }) },
     settings,
@@ -217,7 +322,7 @@ function pluginData(stored?: unknown) {
     database.items = items;
     reads.emit("changed");
   };
-  return { deps, run, settings, change };
+  return { deps, run, settings, change, searches };
 }
 
 /** The Items requests, without the count requests of the Library Tree. */
@@ -489,4 +594,116 @@ it("names the tree by its heading, with no tooltip over it", async () => {
   ).toBe("Libraries");
   // Obsidian shows every `aria-label` as a tooltip on hover.
   expect(pane.querySelectorAll("[aria-label]")).toHaveLength(0);
+});
+
+/** The search box of the tab. */
+function searchBox(view: LibraryView): HTMLInputElement {
+  return view.contentEl.querySelector("[data-library-search] input")!;
+}
+
+/** Type `text` into the search box, and wait for the list. */
+async function type(view: LibraryView, text: string) {
+  await act(async () => {
+    const input = searchBox(view);
+    input.value = text;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await view.searched;
+    await view.query.settled;
+  });
+}
+
+/** The Indexed Keys of the rows on screen, in order. */
+function shown(view: LibraryView) {
+  return (view.query.state.getState().results?.rows ?? []).map(
+    (r) => r.indexedKey,
+  );
+}
+
+it("has the search box focused when the tab opens", async () => {
+  const { deps } = pluginData();
+  const view = await openTab(deps);
+  expect(document.activeElement).toBe(searchBox(view));
+});
+
+it("lists a search's hits in the rank of the worker search, inside the selected node", async () => {
+  const { deps, searches } = pluginData();
+  const view = await openTab(deps);
+  expect(shown(view)).toEqual([
+    "AAAAAAAA",
+    "BBBBBBBB",
+    "CCCCCCCC",
+    "DDDDDDDD",
+    "EEEEEEEE",
+  ]);
+  await type(view, "figures");
+  expect(searches.at(-1)).toEqual({ query: "figures", libraries: [1] });
+  expect(shown(view)).toEqual(["DDDDDDDD", "CCCCCCCC", "AAAAAAAA"]);
+  expect(header(view)).toBe("3 matches in My Library · Search all libraries");
+  await press(view, row(view, THESIS));
+  expect(shown(view)).toEqual(["CCCCCCCC", "AAAAAAAA"]);
+  expect(header(view)).toBe("2 matches in Thesis · Search all libraries");
+});
+
+it("searches all libraries in the Library Scope on request, past the selected Collection", async () => {
+  const { deps, run, searches } = pluginData();
+  const view = await openTab(deps);
+  await press(view, row(view, THESIS));
+  await type(view, "figures");
+  await press(
+    view,
+    view.contentEl.querySelector<HTMLElement>("[data-library-search-all]")!,
+  );
+  expect(searches.at(-1)).toEqual({ query: "figures", libraries: [1, 2] });
+  expect(shown(view)).toEqual(["FFFFFFFF", "DDDDDDDD", "CCCCCCCC", "AAAAAAAA"]);
+  expect(listRuns(run).at(-1)!.libraries).toEqual({
+    mode: "selected",
+    libraries: [PERSONAL, LAB],
+  });
+  expect(header(view)).toBe("4 matches in all libraries");
+});
+
+it("narrows a tag: token to the Items with that tag, in the list's order", async () => {
+  const { deps, searches } = pluginData();
+  const view = await openTab(deps);
+  const before = searches.length;
+  await type(view, "tag:method");
+  expect(searches).toHaveLength(before);
+  expect(shown(view)).toEqual(["AAAAAAAA", "CCCCCCCC", "EEEEEEEE"]);
+  await type(view, "tag:method figures");
+  expect(shown(view)).toEqual(["CCCCCCCC", "AAAAAAAA"]);
+});
+
+it("clears the search on Escape, and lists the selected node again", async () => {
+  const { deps, settings } = pluginData();
+  const view = await openTab(deps);
+  await type(view, "figures");
+  await act(async () => {
+    searchBox(view).dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+    );
+    await view.searched;
+    await view.query.settled;
+  });
+  expect(searchBox(view).value).toBe("");
+  expect(shown(view)).toEqual([
+    "AAAAAAAA",
+    "BBBBBBBB",
+    "CCCCCCCC",
+    "DDDDDDDD",
+    "EEEEEEEE",
+  ]);
+  expect(header(view)).toBe("My Library · 5 papers");
+  await act(() => view.close());
+  expect(settings.current?.["library.document"]?.search).toBe("");
+});
+
+it("keeps the search text, and opens again on its hits", async () => {
+  const { deps, settings } = pluginData();
+  const first = await openTab(deps);
+  await type(first, "figures");
+  await act(() => first.close());
+  expect(settings.current?.["library.document"]?.search).toBe("figures");
+  const view = await openTab(deps);
+  expect(searchBox(view).value).toBe("figures");
+  expect(shown(view)).toEqual(["DDDDDDDD", "CCCCCCCC", "AAAAAAAA"]);
 });

@@ -405,6 +405,39 @@
   "library_view_all_libraries": "Show all libraries",
   "library_view_scope_libraries": "Show only libraries in the library scope",
   "library_view_show_tree": "Show libraries and collections",
+  "library_view_search_label": "Search papers",
+  "library_view_search_placeholder": "Search papers… (tag:name for a tag)",
+  "library_view_search_clear": "Clear search",
+  "library_view_search_matches": [
+    {
+      "declarations": [
+        "input selection",
+        "input count",
+        "local category = count: plural",
+        "local formatted = count: number"
+      ],
+      "selectors": ["category"],
+      "match": {
+        "category=one": "1 match in {selection}",
+        "category=*": "{formatted} matches in {selection}"
+      }
+    }
+  ],
+  "library_view_search_matches_everywhere": [
+    {
+      "declarations": [
+        "input count",
+        "local category = count: plural",
+        "local formatted = count: number"
+      ],
+      "selectors": ["category"],
+      "match": {
+        "category=one": "1 match in all libraries",
+        "category=*": "{formatted} matches in all libraries"
+      }
+    }
+  ],
+  "library_view_search_everywhere": "Search all libraries",
   "annot_view_loading": "Loading…",
   "annot_view_no_attachments": "No attachments available",
   "annot_view_mode_active_tab": "Active tab",

@@ -292,9 +292,13 @@ export class LibraryTree extends Component {
     this.#mount(el, <TreePane tree={this} />);
   }
 
-  /** Draw the list header into `el`. */
-  renderHeader(el: HTMLElement): void {
-    this.#mount(el, <ListHeader tree={this} />);
+  /**
+   * Draw the list header into `el`.
+   * @param summary the header's text in place of its own `fallback`, as a
+   * search on screen says it.
+   */
+  renderHeader(el: HTMLElement, summary?: HeaderSummary): void {
+    this.#mount(el, <ListHeader tree={this} summary={summary} />);
   }
 
   #mount(el: HTMLElement, content: ReactNode): void {
@@ -318,12 +322,26 @@ function nodeLabel(
     : libraryLabel({ selector: node.library, libraryID: 0, name: null });
 }
 
-function ListHeader({ tree }: { tree: LibraryTree }) {
+/** The header's text for the selection named `selection`, given its own `fallback`. */
+export type HeaderSummary = (header: {
+  selection: string;
+  fallback: ReactNode;
+}) => ReactNode;
+
+function ListHeader({
+  tree,
+  summary,
+}: {
+  tree: LibraryTree;
+  summary: HeaderSummary | undefined;
+}) {
   const libraries = useStore(tree.store, (s) => s.libraries);
   const node = useStore(tree.store, (s) => s.node);
   const open = useStore(tree.store, (s) => s.open);
   const selection = nodeLabel(libraries, node);
   const count = libraries ? (findNode(libraries, node)?.count ?? null) : null;
+  const text =
+    count === null ? selection : m.library_view_header({ selection, count });
   return (
     <div className="zt:flex zt:min-w-0 zt:items-center zt:gap-(--size-2-2) zt:ps-(--zt-query-toolbar-inset-start) zt:pe-(--zt-query-toolbar-inset-end) zt:pt-(--size-4-2)">
       {/* Obsidian's own rule shows a clickable icon, so the narrow pane
@@ -345,9 +363,7 @@ function ListHeader({ tree }: { tree: LibraryTree }) {
         data-library-header=""
         className="zt:m-0 zt:min-w-0 zt:truncate zt:text-(length:--font-ui-medium) zt:font-(--font-semibold)"
       >
-        {count === null
-          ? selection
-          : m.library_view_header({ selection, count })}
+        {summary ? summary({ selection, fallback: text }) : text}
       </div>
     </div>
   );
