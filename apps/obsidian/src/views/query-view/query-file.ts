@@ -722,12 +722,36 @@ export function vaultConditions(
 }
 
 /**
+ * The conditions of a view's filters that read a vault property but need not
+ * hold for every row, such as one inside an `or` or a `not` group. The vault
+ * cannot answer them apart from ZotLit Query, so the view does not run.
+ */
+export function strandedVaultConditions(
+  file: QueryFile,
+  view: QueryFileView,
+): VaultCondition[] {
+  return filterSections(file, view).flatMap(([tree, section]) => {
+    if (typeof tree === "string") return [];
+    const held = new Set(conjuncts(tree).map(([, path]) => path.join()));
+    const { text, leaves } = composeFilterTree(tree);
+    return leaves.flatMap(({ path, from, to }) => {
+      const condition = text.slice(from, to);
+      return !held.has(path.join()) && readsVault(condition)
+        ? [{ section, path, text: condition }]
+        : [];
+    });
+  });
+}
+
+/**
  * The Filter Expression of one view's filters without its vault conditions,
- * with each condition's place.
+ * with each condition's place, and `keys`, the condition on the Indexed Key
+ * that stands for them, on a line of its own after the others.
  */
 function composeView(
   file: QueryFile,
   view: QueryFileView,
+  keys?: string | null,
 ): ComposedFilter<FilterLocation & FilterLeaf> | undefined {
   const parts = filterSections(file, view).flatMap(([tree, section]) => {
     const vault = new Set(
@@ -741,8 +765,12 @@ function composeView(
     const { text, leaves } = engine;
     return [{ text, leaves: leaves.map((leaf) => ({ ...leaf, section })) }];
   });
-  if (parts.length === 0) return undefined;
-  return joinComposed(parts, " && ");
+  const filters = parts.length === 0 ? undefined : joinComposed(parts, " && ");
+  if (!keys) return filters;
+  const condition = { text: keys, leaves: [] };
+  // A long list of keys on a line of its own stays out of the line a fault
+  // in the filters shows.
+  return filters ? joinComposed([filters, condition], "\n&& ") : condition;
 }
 
 /**
@@ -786,26 +814,33 @@ function withoutConjuncts(
 /**
  * The Filter Expression of one view: the filters for all views of its dataset
  * and the view's own filters, both of which must hold, without the
- * conditions that read a vault property. `undefined` where neither names
+ * conditions that read a vault property, and `keys`, the condition on the
+ * Indexed Key that stands for them. `undefined` where neither names
  * one ZotLit Query reads.
  */
 export function viewFilter(
   file: QueryFile,
   view: QueryFileView,
+  keys?: string | null,
 ): string | undefined {
-  return composeView(file, view)?.text;
+  return composeView(file, view, keys)?.text;
 }
 
 /**
  * The condition that a fault at `span` of the view's Filter Expression marks,
- * or `null` when the span does not fall inside one condition.
+ * or `null` when the span does not fall inside one condition. `span.keys` is
+ * the condition on the Indexed Key that the Filter Expression ends with.
  */
 export function locateFilterFault(
   file: QueryFile,
   view: QueryFileView,
-  span: { readonly from: number; readonly to: number },
+  span: {
+    readonly from: number;
+    readonly to: number;
+    readonly keys?: string | null;
+  },
 ): FilterLocation | null {
-  const leaf = composeView(file, view)?.leaves.find(
+  const leaf = composeView(file, view, span.keys)?.leaves.find(
     ({ from, to }) => from <= span.from && span.to <= to,
   );
   return leaf ? { section: leaf.section, path: leaf.path } : null;

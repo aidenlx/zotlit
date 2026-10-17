@@ -1,4 +1,5 @@
 import type {
+  CustomFilterFieldKind,
   FilterDataset,
   FilterField,
   FilterFieldKind,
@@ -46,7 +47,10 @@ export interface FilterValues {
 
 type Label = (m: WorkbenchMessages) => string;
 
-const KIND_LABELS: Record<FilterFieldKind, Label> = {
+const KIND_LABELS: Record<
+  Exclude<FilterFieldKind, CustomFilterFieldKind>,
+  Label
+> = {
   color: (m) => m.workbench_filter_field_color(),
   tags: (m) => m.workbench_filter_field_tag(),
   comment: (m) => m.workbench_filter_field_comment(),
@@ -276,11 +280,17 @@ function FieldIcon({ field }: { field: FilterField }) {
   );
 }
 
+function kindLabel(kind: FilterFieldKind, m: WorkbenchMessages): string {
+  return kind.startsWith("custom:")
+    ? kind.slice("custom:".length)
+    : KIND_LABELS[kind as Exclude<FilterFieldKind, CustomFilterFieldKind>](m);
+}
+
 /**
- * The conditions of one dataset, as the Match editor offers them. A
- * condition shows `label(field)` where it gives one, else the name of its
- * kind, and `icon(field)` where it gives one, else the theme's icon of its
- * value type.
+ * The conditions of one dataset, as the Match editor offers them, then
+ * `extra`, the fields the host adds. A condition shows `label(field)` where
+ * it gives one, else the field's own label, else the name of its kind, and
+ * `icon(field)` where it gives one, else the theme's icon of its value type.
  */
 export function filterVocabulary(
   dataset: FilterDataset,
@@ -290,6 +300,7 @@ export function filterVocabulary(
     issue,
     label,
     icon,
+    extra = [],
   }: {
     m: WorkbenchMessages;
     values: FilterValues;
@@ -299,13 +310,14 @@ export function filterVocabulary(
     ) => string | null;
     label?: (field: FilterField) => string | null | undefined;
     icon?: (field: FilterField) => ReactNode;
+    extra?: readonly FilterField[];
   },
 ): MatchVocabulary<FilterRow> {
-  const fields = filterFields(dataset);
+  const fields = [...filterFields(dataset), ...extra];
   const kinds = fields.map(
     (field): MatchConditionKind<FilterRow> => ({
       kind: field.kind,
-      label: label?.(field) ?? KIND_LABELS[field.kind](m),
+      label: label?.(field) ?? field.label ?? kindLabel(field.kind, m),
       icon: icon ? icon(field) : <FieldIcon field={field} />,
       fresh: () => freshFilterRow(field),
       parse: (text) => {

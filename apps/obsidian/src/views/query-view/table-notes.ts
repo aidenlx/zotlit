@@ -65,6 +65,8 @@ export interface LiteratureNotes {
    * Literature Notes, less the reserved and system keys.
    */
   propertyNames(): readonly string[];
+  /** The Indexed Keys of the Items that have a Literature Note. */
+  itemKeys(): readonly string[];
   /** The type of the vault property `name`. */
   propertyType(name: string): VaultPropertyType;
   /**
@@ -99,6 +101,7 @@ export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
       deps.noteIndex
         .getPropertyNames()
         .filter((name) => `vault.${name}` !== LITERATURE_NOTE),
+    itemKeys: () => deps.noteIndex.getIndexedItemKeys(),
     propertyType: (name) => {
       for (const itemKey of deps.noteIndex.getIndexedItemKeys()) {
         const note = deps.noteIndex.getNotesByItemKey(itemKey)[0];

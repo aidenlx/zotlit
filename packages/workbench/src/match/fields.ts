@@ -32,7 +32,14 @@ export type FilterValueType =
   | "number"
   | "date";
 
+/**
+ * The kind of a field the host adds beside a dataset's own, such as a vault
+ * property of the Query View, named by the host.
+ */
+export type CustomFilterFieldKind = `custom:${string}`;
+
 export type FilterFieldKind =
+  | CustomFilterFieldKind
   | "color"
   | "tags"
   | "comment"
@@ -52,9 +59,14 @@ export type FilterFieldKind =
 
 export interface FilterField {
   readonly kind: FilterFieldKind;
-  /** The field's path in the view's dataset. */
+  /**
+   * The field's path in the view's dataset, as a condition writes it: a
+   * name the dot cannot reach takes bracket access, as `vault["a-b"]` does.
+   */
   readonly path: string;
   readonly type: FilterValueType;
+  /** The name the kind picker shows; a field the host adds gives one. */
+  readonly label?: string;
 }
 
 export type FilterOperator =
@@ -262,6 +274,12 @@ function pathOf(node: ExpressionNode): string | null {
   if (node.type === "object-access") {
     const object = pathOf(node.object);
     return object === null ? null : `${object}.${node.property}`;
+  }
+  if (node.type === "array-access" && node.index.type === "string") {
+    const object = pathOf(node.object);
+    return object === null
+      ? null
+      : `${object}[${JSON.stringify(node.index.value)}]`;
   }
   return null;
 }

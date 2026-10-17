@@ -20,7 +20,11 @@ import {
   WorkbenchThemeProvider,
   filterVocabulary,
 } from "@zotlit/workbench/ui";
-import type { FilterValues, MatchFilter } from "@zotlit/workbench/ui";
+import type {
+  FilterField,
+  FilterValues,
+  MatchFilter,
+} from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
 import { useObsidianApp } from "@/lib/app-context";
@@ -32,18 +36,20 @@ import { matchTheme } from "@/views/template-workbench/match-pane";
 import { matchRows } from "@/views/template-workbench/theme";
 
 import { propertyIcon } from "./property-icon";
-import { allViewsDataset } from "./query-file";
+import { allViewsDataset, vaultProperty } from "./query-file";
 import type {
   ConditionIssue,
   FilterSection,
   QueryFileDataset,
 } from "./query-file";
+import type { LiteratureNotes, VaultPropertyType } from "./table-notes";
 import { toolbarButtonLook } from "./toolbar-button";
 import {
   PopoverHeader,
   PopoverSection,
   ToolbarPopover,
 } from "./toolbar-popover";
+import { useVaultPropertyNames } from "./vault-cell";
 import type { QueryView } from "./view";
 import { useViewProperties } from "./view-properties";
 import type { ViewProperties } from "./view-properties";
@@ -56,6 +62,39 @@ const NO_VALUES: FilterValues = { tags: [], collections: [], libraries: [] };
 
 /** The issue of one condition, as the Query View last found it. */
 export type FilterIssue = ConditionIssue | null;
+
+/** How a condition tests a vault property of each type. */
+const VAULT_FIELD_TYPES: Record<VaultPropertyType, FilterField["type"]> = {
+  text: "text",
+  multitext: "list",
+  number: "number",
+  // A checkbox and a date compare as the text the frontmatter holds.
+  checkbox: "text",
+  date: "text",
+};
+
+/** The kind of the condition on the vault property at `path`. */
+const VAULT_KIND_PREFIX = "custom:";
+
+/**
+ * The conditions on the vault properties `names`. Each reads its property by
+ * bracket access, `vault["reading-status"]`, which a name with a hyphen needs.
+ */
+export function vaultFilterFields(
+  names: readonly string[],
+  notes: Pick<LiteratureNotes, "propertyType">,
+  properties: ViewProperties | null,
+): FilterField[] {
+  return names.map((name) => {
+    const property = vaultProperty(name);
+    return {
+      kind: `${VAULT_KIND_PREFIX}${property}`,
+      path: `vault[${JSON.stringify(name)}]`,
+      type: VAULT_FIELD_TYPES[notes.propertyType(name)],
+      label: properties?.entry(property).displayName ?? name,
+    };
+  });
+}
 
 function samePath(a: readonly number[], b: readonly number[]): boolean {
   return a.length === b.length && a.every((value, at) => value === b[at]);
@@ -138,6 +177,10 @@ export interface FilterEditorProps {
   properties: ViewProperties | null;
   /** The sections that show; both by default. */
   sections?: readonly FilterSection[];
+  /** The conditions on vault properties, which a section of Items offers. */
+  vaultFields?: readonly FilterField[];
+  /** The type of the vault property `name`, for the icon of its condition. */
+  vaultType?: (name: string) => VaultPropertyType;
   /** Save one section's filters; answers whether they were kept. */
   onChange: (section: FilterSection, next: MatchTree | undefined) => boolean;
 }
@@ -152,6 +195,8 @@ export function FilterEditor({
   issue,
   properties,
   sections: shown = ["all", "view"],
+  vaultFields = [],
+  vaultType,
   onChange,
 }: FilterEditorProps) {
   const app = useObsidianApp();
@@ -172,8 +217,9 @@ export function FilterEditor({
     return { ...created, inputSuggestions: undefined };
   }, [app]);
   useEffect(() => () => host[Symbol.dispose](), [host]);
-  const vocabulary = (section: FilterSection) =>
-    filterVocabulary(section === "all" ? shared : dataset, {
+  const vocabulary = (section: FilterSection) => {
+    const of = section === "all" ? shared : dataset;
+    return filterVocabulary(of, {
       m: host.messages,
       values,
       issue: (_, path) =>
@@ -182,16 +228,25 @@ export function FilterEditor({
           : null,
       // A condition shows the Display Name of its field in the view's
       // Properties, and the icon the view's property list shows.
-      label: (field) => properties?.entry(field.path).displayName,
+      label: (field) =>
+        field.label ?? properties?.entry(field.path).displayName,
       icon: (field) => (
         <Icon
-          name={propertyIcon(section === "all" ? shared : dataset, {
-            path: field.path,
-            kind: "field",
-          })}
+          name={propertyIcon(
+            of,
+            field.kind.startsWith(VAULT_KIND_PREFIX)
+              ? {
+                  path: field.kind.slice(VAULT_KIND_PREFIX.length),
+                  kind: "vault",
+                }
+              : { path: field.path, kind: "field" },
+            vaultType,
+          )}
         />
       ),
+      extra: of === "items" ? vaultFields : [],
     });
+  };
   const sections = (
     [
       ["all", m.query_view_filter_all_views(), allViews],
@@ -313,7 +368,13 @@ export function FilterButton({ view }: { view: QueryView }) {
     view.state,
     (s) => s.failure?.filterIssue ?? null,
   );
-  const properties = useViewProperties(view);
+  const { literatureNotes } = view.tableDeps;
+  const names = useVaultPropertyNames(literatureNotes);
+  const properties = useViewProperties(view, names);
+  const vaultFields = useMemo(
+    () => vaultFilterFields(names, literatureNotes, properties),
+    [names, literatureNotes, properties],
+  );
   const [values, setValues] = useState<FilterValues>(NO_VALUES);
   if (!file || !shown) return null;
   return (
@@ -338,6 +399,8 @@ export function FilterButton({ view }: { view: QueryView }) {
         values={values}
         issue={filterIssue}
         properties={properties}
+        vaultFields={vaultFields}
+        vaultType={(name) => literatureNotes.propertyType(name)}
         onChange={(section, next) => view.document.setFilters(section, next)}
       />
     </ToolbarPopover>
