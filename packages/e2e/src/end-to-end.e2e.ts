@@ -2052,7 +2052,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     cleanup.defer(async () => {
       await obEval(
         vaultId,
-        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});${services}.zoteroPref.setDataDir(saved.dataDir);await app.plugins.disablePlugin('zotlit');await app.vault.adapter.write(${dataPath},saved.data);await app.plugins.enablePlugin('zotlit');await app.workspace.changeLayout(saved.layout);return true;})()`,
+        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});${services}.zoteroPref.setDataDir(saved.dataDir);await ${services}.settings.flush();await app.plugins.disablePlugin('zotlit');await app.vault.adapter.write(${dataPath},saved.data);await app.plugins.enablePlugin('zotlit');await app.workspace.changeLayout(saved.layout);return true;})()`,
       );
     });
     const libraryLeaves = () =>
@@ -2075,7 +2075,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // Library View, once.
     await obEval(
       vaultId,
-      `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());await app.plugins.disablePlugin('zotlit');await app.vault.adapter.remove(${dataPath});return true;})()`,
+      `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());await ${services}.settings.flush();await app.plugins.disablePlugin('zotlit');await app.vault.adapter.remove(${dataPath});return true;})()`,
     );
     expect(
       await obEvalUntil(
@@ -2094,9 +2094,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         { expected: "1" },
       ),
     ).toBe(true);
+    // The release check recorded this launch in plugin data, which the next
+    // launch reads.
     await obEval(
       vaultId,
-      "app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());true",
+      `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());await ${services}.settings.flush();return true;})()`,
     );
     await reloadAndCheck();
     expect(await libraryLeaves()).toBe("0");
