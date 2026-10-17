@@ -28,7 +28,12 @@ import {
   isVaultProperty,
   vaultProperty,
 } from "./query-file";
-import type { QueryFile, QueryFileDataset, QueryFileView } from "./query-file";
+import type {
+  QueryFile,
+  QueryFileDataset,
+  QueryFileSort,
+  QueryFileView,
+} from "./query-file";
 import { formulaIssuesOf } from "./results";
 import { groupPaths } from "./rows";
 import type { QueryView } from "./view";
@@ -351,6 +356,13 @@ export function unusedSettings(
         !isVaultProperty(property) && !fitsDataset(property, dataset),
     ),
   };
+}
+
+/** The view's grouping, where its dataset has the group path. */
+export function usedGroupBy(
+  view: Pick<QueryFileView, "from" | "sort" | "groupBy" | "order">,
+): QueryFileSort | undefined {
+  return unusedSettings(view).groupBy === null ? view.groupBy : undefined;
 }
 
 /**

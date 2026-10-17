@@ -2,16 +2,15 @@
 // filters by a vault property, `vault.<name>`, beside a Zotero filter, sort
 // and `limit`. It drives the path the view takes, end to end:
 //
-//   plan     the view's plan (`#plan` in view.tsx, mirrored below with the
-//            same helpers): vault conditions planned against every Literature
-//            Note into a key list in the filter text, and the capped request
-//            of a vault sort;
+//   plan     the View Plan the Query View makes (`ViewPlanner`): vault
+//            conditions planned against every Literature Note into a key
+//            list in the filter text, and the capped request of a vault sort;
 //   engine   `answerView` of the ZoteroReads worker over a real SQLite Zotero
 //            database, with the production scheduler, split by reader from
 //            the statement observer;
 //   transfer the structured clone of the answer across the worker seam;
-//   client   the vault sort and the truncate to `limit` (`vaultSortedLayout`),
-//            or the plain layout of the rows.
+//   client   the plan's layout of the rows: the vault sort and the truncate
+//            to `limit`, or the plain layout.
 //
 // Run with `pnpm --filter @zotlit/obsidian bench`. It stays out of `pnpm test`:
 // it builds Stress Build databases of 10k to 100k Items and runs for minutes.
@@ -60,29 +59,15 @@ import { Scheduler } from "@/lib/effect";
 import { answerView } from "@/services/item-query/answer";
 import { QUERY_COMMAND } from "@/services/item-query/contract";
 import type {
-  QueryViewRequest,
   QueryViewResult,
   QueryViewRow,
 } from "@/services/item-query/query-view";
 import { MY_LIBRARY_SCOPE } from "@/services/library-scope/scope";
 
-import { grouping } from "./datasets";
-import { layoutOf } from "./layouts";
-import {
-  isVaultProperty,
-  parseQueryFile,
-  strandedVaultConditions,
-  vaultConditions,
-  viewFilter,
-} from "./query-file";
-import type { QueryFile, QueryFileView } from "./query-file";
-import { layoutRows } from "./rows";
-import { TABLE_FIELDS } from "./table-layout";
+import { parseQueryFile } from "./query-file";
+import type { QueryFile } from "./query-file";
 import type { VaultValue } from "./table-notes";
-import { planVaultFilter } from "./vault-filter";
-import type { VaultFilterNotes } from "./vault-filter";
-import { vaultSortRequest, vaultSortedLayout } from "./vault-sort";
-import { unusedSettings, viewProperties } from "./view-properties";
+import { ViewPlanner } from "./view-plan/view-plan";
 
 const WORKSPACE = resolve(import.meta.dirname, "../../../../..");
 const SCRATCH = join(WORKSPACE, ".scratch", "mixed-query-bench");
@@ -293,7 +278,7 @@ function readNote(notes: Map<string, Note>) {
 }
 
 // ---------------------------------------------------------------------------
-// The view's plan, as `#plan` in view.tsx makes it
+// The view's Query File
 
 function queryFile(zotero: string, scenario: ScenarioName): QueryFile {
   const { vault, sort } = SCENARIOS[scenario];
@@ -315,63 +300,6 @@ ${sort.map(([property, direction]) => `      - property: ${property}\n        di
       - vault.status
       - vault.rating
 `);
-}
-
-interface Plan {
-  request: QueryViewRequest;
-  sort: NonNullable<QueryFileView["sort"]>;
-  vaultSort: boolean;
-  keys: string | null;
-}
-
-/** Mirrors `QueryView#plan` and `#vaultFilter` for an Items Table. */
-function plan(
-  file: QueryFile,
-  view: QueryFileView,
-  notes: VaultFilterNotes,
-): Plan {
-  const conditions = vaultConditions(file, view);
-  const vaultFilter = planVaultFilter({
-    conditions,
-    stranded: strandedVaultConditions(file, view),
-    notes,
-    keyPath: "indexedKey",
-  });
-  if ("fault" in vaultFilter)
-    throw new Error(`vault filter fault: ${vaultFilter.fault.diagnostic.code}`);
-  const filter = viewFilter(file, view, vaultFilter.condition);
-  const unused = new Set(unusedSettings(view).sort);
-  const used = view.sort?.filter(({ property }) => !unused.has(property));
-  const sort = used?.filter(({ property }) => !isVaultProperty(property));
-  const grouped = view.groupBy && grouping(view.from, view.groupBy.property);
-  const fields = [
-    ...new Set([
-      ...(grouped?.fields ?? []),
-      ...(layoutOf(view)?.type === "table" ? TABLE_FIELDS : []),
-      ...viewProperties(file, view).queried.map(({ path }) => path),
-    ]),
-  ];
-  const vaultSort =
-    used?.filter(({ property }) => isVaultProperty(property)) ?? [];
-  const request: QueryViewRequest = {
-    from: "items",
-    ...(filter === undefined ? {} : { filter }),
-    ...(sort &&
-      sort.length > 0 && {
-        sort: sort.map(({ property, direction }) => ({
-          field: property,
-          direction: direction === "DESC" ? "desc" : "asc",
-        })),
-      }),
-    fields,
-    limit: view.limit ?? null,
-  };
-  return {
-    request: vaultSort.length > 0 ? vaultSortRequest(request) : request,
-    sort: used ?? [],
-    vaultSort: vaultSort.length > 0,
-    keys: vaultFilter.condition,
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -442,13 +370,16 @@ async function runOnce(
 ): Promise<{ measure: Measure; facts: Facts }> {
   const view = file.views[0]!;
   const read = readNote(notes);
-  const vaultNotes: VaultFilterNotes = {
-    itemKeys: () => notes.keys(),
-    read,
-  };
+  const planner = new ViewPlanner({
+    context: () => undefined,
+    host: () => null,
+    notes: { itemKeys: () => notes.keys(), read },
+  });
   const t0 = performance.now();
-  const planned = plan(file, view, vaultNotes);
+  const planned = planner.plan(file, view);
   const t1 = performance.now();
+  if (planned.fault)
+    throw new Error(`vault filter fault: ${planned.fault.diagnostic.code}`);
   // A stand-in for the engine's own parse and plan of the filter text, which
   // runs inside the prelude below as well.
   if (planned.request.filter !== undefined) {
@@ -546,12 +477,7 @@ async function runOnce(
   if (outcome.kind !== "result")
     throw new Error(`query ${outcome.kind}: ${JSON.stringify(outcome)}`);
   const result = outcome.result as QueryViewResult & { rows: QueryViewRow[] };
-  const shown = planned.vaultSort
-    ? vaultSortedLayout(result.rows, view, {
-        sort: planned.sort,
-        read: (row, name) => read(row.indexedKey, name),
-      })
-    : { ...layoutRows(result.rows, view), dropped: false };
+  const shown = planned.layout(result.rows);
   const t5 = performance.now();
 
   const keys = planned.keys;
