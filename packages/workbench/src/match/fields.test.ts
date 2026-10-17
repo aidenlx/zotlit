@@ -178,3 +178,34 @@ describe("parseFilterRow", () => {
     });
   });
 });
+
+describe("a field the host adds", () => {
+  const status = {
+    kind: "custom:reading-status",
+    path: 'vault["reading-status"]',
+    type: "text",
+    label: "reading-status",
+  } as const;
+  const fields = [...filterFields("items"), status];
+
+  it.each([
+    [
+      { kind: status.kind, operator: "is", value: "read", values: [] },
+      'vault["reading-status"] == "read"',
+    ],
+    [
+      { kind: status.kind, operator: "contains", value: "re", values: [] },
+      'vault["reading-status"].contains("re")',
+    ],
+    [
+      { kind: status.kind, operator: "is-not-empty", value: "", values: [] },
+      '!vault["reading-status"].isEmpty()',
+    ],
+  ] as const)(
+    "writes %j in bracket form as %s, and reads it back",
+    (row, text) => {
+      expect(formatFilterRow({ ...row, values: [] }, fields)).toBe(text);
+      expect(parseFilterRow(text, fields)).toEqual({ ...row, values: [] });
+    },
+  );
+});

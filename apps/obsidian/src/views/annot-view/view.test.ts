@@ -18,6 +18,7 @@ import type {
   QueryViewRequest,
   QueryViewRow,
 } from "@/services/item-query/query-view";
+import { noLiteratureNotes } from "@/views/query-view/__fixtures__/literature-notes";
 import { requested } from "@/views/query-view/__fixtures__/query-run";
 import {
   parseQueryFile,
@@ -250,6 +251,7 @@ async function openSidebar(
     excerptDisplay: { open: vi.fn(), refresh: vi.fn(), revalidate: vi.fn() },
     noteFeature: {},
     noteIndex: { getNotesByItemKey: () => [] },
+    literatureNotes: noLiteratureNotes(),
     libraryTagNames: () => Promise.resolve([]),
     allowEditing: vi.fn(),
     reportBlockedGesture: vi.fn(),

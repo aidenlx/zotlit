@@ -6,6 +6,7 @@ export function noLiteratureNotes(): LiteratureNotes {
     find: () => null,
     on: () => () => {},
     propertyNames: () => [],
+    itemKeys: () => [],
     propertyType: () => "text",
     read: () => ({ note: false }),
     managed: () => false,

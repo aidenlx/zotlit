@@ -54,11 +54,13 @@ import { PropertiesMenu } from "./properties-menu";
 import {
   isVaultProperty,
   locateFilterFault,
+  strandedVaultConditions,
   vaultConditions,
   vaultName,
   viewFilter,
 } from "./query-file";
 import type {
+  FilterLocation,
   QueryFile,
   QueryFileDataset,
   QueryFileProblem,
@@ -90,6 +92,8 @@ import type { TableReaders } from "./table-readers";
 import { ToolbarButton } from "./toolbar-button";
 import { ToolbarPopover } from "./toolbar-popover";
 import { useVaultPropertyNames, vaultText } from "./vault-cell";
+import { planVaultFilter } from "./vault-filter";
+import type { VaultFilter } from "./vault-filter";
 import {
   vaultSortOptions,
   vaultSortRequest,
@@ -276,6 +280,8 @@ interface ViewPlan {
     readonly sort: readonly QueryFileSort[];
     /** The conditions that must each hold for a row and read a vault property. */
     readonly conditions: readonly VaultCondition[];
+    /** What the request's filter reads in place of the conditions. */
+    readonly filter: VaultFilter;
   };
 }
 
@@ -283,6 +289,12 @@ interface ViewRun {
   key: string;
   file: QueryFile;
   view: QueryFileView;
+  /** The condition on the Indexed Key that the request's filter ends with. */
+  keys?: string | null;
+  /** The condition the run's failure marks, where it never reached ZotLit Query. */
+  marks?: FilterLocation;
+  /** The plan the run ran. */
+  plan?: ViewPlan;
 }
 
 /** The faults of a filter that reads a Formula it cannot have. */
@@ -459,6 +471,12 @@ export class QueryView extends Component implements HistorySurface {
     subscriptions.defer(reads.on("degraded", rerun));
     subscriptions.defer(reads.on("db-file-missing", rerun));
     subscriptions.defer(libraryScope.on("libraries-changed", rerun));
+    // A Literature Note's frontmatter changes which Items a vault condition
+    // keeps; the view runs again where that changes its request.
+    const replan = () => this.contextChanged();
+    const notes = this.#deps.literatureNotes;
+    subscriptions.defer(notes.on("changed", replan));
+    subscriptions.defer(notes.on("frontmatter-changed", replan));
     subscriptions.defer(() => this.#cancelRerun());
   }
 
@@ -651,9 +669,16 @@ export class QueryView extends Component implements HistorySurface {
     );
   }
 
-  /** What tells one run from another: the request, what the vault answers, the limit, and the grouping the rows are gathered by. */
-  #runKey(file: QueryFile, view: QueryFileView): string {
-    const { request, vault } = this.#plan(file, view);
+  /**
+   * What tells one run from another: the request, what the vault answers
+   * apart from it, the limit, and the grouping the rows are gathered by.
+   */
+  #runKey(
+    file: QueryFile,
+    view: QueryFileView,
+    plan = this.#plan(file, view),
+  ): string {
+    const { request, vault } = plan;
     return JSON.stringify([
       request,
       // A vault sort keeps the view's limit out of the request.
@@ -662,11 +687,6 @@ export class QueryView extends Component implements HistorySurface {
       usedGroupBy(view) ?? null,
       view.groupOrder ?? null,
     ]);
-  }
-
-  /** What ZotLit Query runs for one view of the file. */
-  #request(file: QueryFile, view: QueryFileView): QueryViewRequest {
-    return this.#plan(file, view).request;
   }
 
   /**
@@ -678,7 +698,13 @@ export class QueryView extends Component implements HistorySurface {
    * @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
    */
   #plan(file: QueryFile, view: QueryFileView): ViewPlan {
-    const filter = viewFilter(file, view);
+    const conditions = vaultConditions(file, view);
+    const vaultFilter = this.#vaultFilter(file, view, conditions);
+    const filter = viewFilter(
+      file,
+      view,
+      "condition" in vaultFilter ? vaultFilter.condition : null,
+    );
     const context = this.#host.context();
     const unused = new Set(unusedSettings(view).sort);
     const used = view.sort?.filter(({ property }) => !unused.has(property));
@@ -714,9 +740,32 @@ export class QueryView extends Component implements HistorySurface {
       sort: used ?? [],
       vault: {
         sort: vaultSort,
-        conditions: vaultConditions(file, view),
+        conditions,
+        filter: vaultFilter,
       },
     };
+  }
+
+  /** The vault conditions of a view, planned against its Literature Notes. */
+  #vaultFilter(
+    file: QueryFile,
+    view: QueryFileView,
+    conditions: readonly VaultCondition[],
+  ): VaultFilter {
+    const notes = this.#deps.literatureNotes;
+    const host = this.vaultHost();
+    return planVaultFilter({
+      conditions,
+      stranded: strandedVaultConditions(file, view),
+      notes: {
+        itemKeys: () => notes.itemKeys(),
+        read: (itemKey, name) => notes.read(itemKey, name, host),
+      },
+      keyPath:
+        (view.from ?? "annotations") === "items"
+          ? "indexedKey"
+          : "item.indexedKey",
+    });
   }
 
   /** Run the view's query again, and show its rows. */
@@ -739,36 +788,50 @@ export class QueryView extends Component implements HistorySurface {
       });
       return;
     }
+    const plan = this.#plan(file, view);
+    const key = this.#runKey(file, view, plan);
+    this.#runRequest = key;
+    const { filter: vaultFilter } = plan.vault;
+    if ("fault" in vaultFilter) {
+      // A vault condition the vault cannot answer apart from ZotLit Query
+      // keeps the view from running.
+      const { at, diagnostic } = vaultFilter.fault;
+      this.#fail({ key, file, view, marks: at }, diagnostic, nameDictionary());
+      return;
+    }
+    const run: ViewRun = {
+      key,
+      file,
+      view,
+      keys: vaultFilter.condition,
+      plan,
+    };
     const controller = new AbortController();
     this.#run = controller;
-    const key = this.#runKey(file, view);
-    this.#runRequest = key;
     if (this.#shownRequest !== key) this.state.setState({ phase: "loading" });
     // A Formula with a mistake, and each Formula that reads it, is left out
     // of the rows; the outcome gives the reason for each.
-    this.#settled = this.#deps.query
-      .run(this.#request(file, view), controller.signal)
-      .then(
-        (outcome) => {
-          if (this.#run !== controller) return;
-          this.#run = null;
-          return this.#land({ key, file, view }, outcome, fromList);
-        },
-        (error: unknown) => {
-          if (this.#run !== controller) return;
-          this.#run = null;
-          logger.warn("A Query View could not run its query", { error });
-          this.#fail(
-            { key, file, view },
-            {
-              code: "query-failed",
-              message: error instanceof Error ? error.message : String(error),
-              hint: "",
-            },
-            nameDictionary(),
-          );
-        },
-      );
+    this.#settled = this.#deps.query.run(plan.request, controller.signal).then(
+      (outcome) => {
+        if (this.#run !== controller) return;
+        this.#run = null;
+        return this.#land(run, outcome, fromList);
+      },
+      (error: unknown) => {
+        if (this.#run !== controller) return;
+        this.#run = null;
+        logger.warn("A Query View could not run its query", { error });
+        this.#fail(
+          run,
+          {
+            code: "query-failed",
+            message: error instanceof Error ? error.message : String(error),
+            hint: "",
+          },
+          nameDictionary(),
+        );
+      },
+    );
   }
 
   async #land(
@@ -795,7 +858,7 @@ export class QueryView extends Component implements HistorySurface {
             ? "rerun"
             : "new-request";
         if (this.#layout.keepsBack(named, cause)) return;
-        const plan = this.#plan(file, view);
+        const plan = run.plan ?? this.#plan(file, view);
         const host = this.vaultHost();
         const shown =
           plan.vault.sort.length > 0
@@ -856,7 +919,7 @@ export class QueryView extends Component implements HistorySurface {
    * the run that gave them; `issues` mark the Formulas otherwise.
    */
   #fail(
-    { key, file, view }: ViewRun,
+    { key, file, view, keys, marks }: ViewRun,
     diagnostic: Diagnostic | QueryViewFailure["diagnostic"],
     issues: NameDictionary<string>,
   ): void {
@@ -871,7 +934,8 @@ export class QueryView extends Component implements HistorySurface {
       "location" in diagnostic && diagnostic.location?.argument === "filter"
         ? diagnostic.location.span
         : undefined;
-    const at = span ? locateFilterFault(file, view, span) : null;
+    const at =
+      marks ?? (span ? locateFilterFault(file, view, { ...span, keys }) : null);
     this.state.setState((state) => ({
       phase: "failed",
       results: kept ? state.results : null,

@@ -6,6 +6,7 @@ import {
   allViewsDataset,
   displayName,
   locateFilterFault,
+  strandedVaultConditions,
   vaultConditions,
   newQueryFileText,
   removeFormula,
@@ -466,6 +467,81 @@ views:
     expect(vaultConditions(only, only.views[0]!)).toEqual([
       { section: "view", path: [0], text: "vault.rating > 3" },
     ]);
+  });
+});
+
+describe("strandedVaultConditions", () => {
+  it("finds the conditions that read a vault property but need not hold for every row", () => {
+    const file = parseQueryFile(`filters:
+  or:
+    - vault.rating > 3
+    - itemType == "book"
+views:
+  - type: table
+    name: Items
+    from: items
+    filters:
+      and:
+        - vault.status == "read"
+        - not:
+            - vault["reading-status"] == "read"
+`);
+    expect(strandedVaultConditions(file, file.views[0]!)).toEqual([
+      { section: "all", path: [0], text: "vault.rating > 3" },
+      {
+        section: "view",
+        path: [1, 0],
+        text: 'vault["reading-status"] == "read"',
+      },
+    ]);
+  });
+
+  it("finds none where each vault condition must hold for every row", () => {
+    const file = parseQueryFile(`views:
+  - type: table
+    name: Items
+    from: items
+    filters: vault.rating > 3
+`);
+    expect(strandedVaultConditions(file, file.views[0]!)).toEqual([]);
+  });
+});
+
+describe("viewFilter with the vault's condition", () => {
+  const file = parseQueryFile(`views:
+  - type: table
+    name: Items
+    from: items
+    filters:
+      or:
+        - dat == 1
+        - title != null
+`);
+  const view = file.views[0]!;
+  const keys = '["ITEMAAAA"].contains(indexedKey)';
+
+  it("adds the condition on its own line, which must hold beside the filters", () => {
+    expect(viewFilter(file, view, keys)).toBe(
+      `((dat == 1) || (title != null))\n&& (${keys})`,
+    );
+    expect(viewFilter(file, view, null)).toBe("(dat == 1) || (title != null)");
+  });
+
+  it("gives the condition alone where the filters name nothing else", () => {
+    const bare = parseQueryFile(`views:
+  - type: table
+    name: Items
+    from: items
+`);
+    expect(viewFilter(bare, bare.views[0]!, keys)).toBe(keys);
+  });
+
+  it("finds a fault's condition in the text with the vault's condition", () => {
+    const text = viewFilter(file, view, keys)!;
+    const from = text.indexOf("dat");
+    expect(locateFilterFault(file, view, { from, to: from + 3, keys })).toEqual(
+      { section: "view", path: [0] },
+    );
   });
 });
 
