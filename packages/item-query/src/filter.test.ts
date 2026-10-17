@@ -915,18 +915,16 @@ describe("membership in a literal list", () => {
     ['!["ART2FULL"].contains("ART2FULL")', false],
   ]);
 
-  // A scan costs keys × Items: 200 000 keys over 500 Items take seconds.
-  // A lookup built once per planned filter takes milliseconds.
-  it("tests a long key list in constant time per Item", () => {
+  // Speed is measured by `pnpm --filter @zotlit/obsidian bench`
+  // (mixed-query.bench.ts), not bounded here: a wall-clock bound flakes on a loaded machine.
+  it("finds the Items whose key is in a long key list", () => {
     const keys = Array.from({ length: 200_000 }, (_, i) => `K${i}`);
     const { root } = plan(`${JSON.stringify(keys)}.contains(volume)`);
     const items = Array.from({ length: 500 }, (_, i) =>
       item({ fields: { volume: i % 2 ? `K${i * 7}` : `none${i}` } }),
     );
-    const started = performance.now();
     const found = items.filter((each) => matches(root, each, CLOCK)).length;
     expect(found).toBe(250);
-    expect(performance.now() - started).toBeLessThan(250);
   });
 });
 
