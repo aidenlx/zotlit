@@ -131,6 +131,41 @@ export async function waitFor(
 }
 
 /**
+ * Poll `read` until `ready` accepts its answer, and return that answer. A
+ * `null` answer is "not drawn yet" and never passes. Throws naming `what` and
+ * the last answer once `tries` run out.
+ */
+export async function readUntil<T>(
+  read: () => Promise<T | null>,
+  ready: (value: T) => boolean,
+  { what, tries = 40 }: { what: string; tries?: number },
+): Promise<T> {
+  let value: T | null = null;
+  const settled = await waitFor(async () => {
+    value = await read();
+    return value !== null && ready(value);
+  }, tries);
+  if (!settled) throw new Error(`${what}: ${JSON.stringify(value)}`);
+  return value!;
+}
+
+/** {@link readUntil} over the JSON that `code` answers in the vault's window. */
+export function obReadUntil<T>(
+  vaultId: string,
+  code: string,
+  {
+    ready,
+    ...options
+  }: { ready: (value: T) => boolean; what: string; tries?: number },
+): Promise<T> {
+  return readUntil(
+    async () => JSON.parse(await obEval(vaultId, code)) as T | null,
+    ready,
+    options,
+  );
+}
+
+/**
  * `obEval`, retried until its reply equals `expected`. A window that just
  * opened or reloaded can answer a stray console line ahead of its `=> `
  * reply (or none at all, mid-reload) before its command registry settles —

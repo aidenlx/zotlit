@@ -64,6 +64,8 @@ import {
   cliCommand,
   obEval,
   obEvalUntil,
+  obReadUntil,
+  readUntil,
   waitFor,
   WINDOW_DOCUMENTS,
 } from "./obsidian-cli.ts";
@@ -242,6 +244,23 @@ async function changeNativeAnnotationCallout(
       ),
     ),
   ).toBe(true);
+}
+
+/** The active tab: its view type, its file, and the file's Zotero key. */
+interface ActiveTab {
+  type: string | null;
+  path: string | null;
+  key: string | null;
+}
+
+/** The active tab of the vault's window, as {@link ActiveTab} reads it. */
+async function activeTab(vaultId: string): Promise<ActiveTab> {
+  return JSON.parse(
+    await obEval(
+      vaultId,
+      "(()=>{const view=app.workspace.activeLeaf?.view;const file=view?.file??null;return JSON.stringify({type:view?.getViewType()??null,path:file?.path??null,key:file?app.metadataCache.getFileCache(file)?.frontmatter?.['zotero-key']??null:null});})()",
+    ),
+  ) as ActiveTab;
 }
 
 describe.skipIf(!reachable)("End-to-end Run", () => {
@@ -1240,19 +1259,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       count: string | null;
       rows: string[];
     }
-    const libraryWhen = async (
-      ready: (library: Library) => boolean,
-    ): Promise<Library> => {
-      let library: Library | null = null;
-      const settled = await waitFor(async () => {
-        library = JSON.parse(
-          await obEval(vaultId, readLibrary),
-        ) as Library | null;
-        return library !== null && ready(library);
-      }, 120);
-      if (!settled) throw new Error(`Library View: ${JSON.stringify(library)}`);
-      return library!;
-    };
+    const libraryWhen = (ready: (library: Library) => boolean) =>
+      obReadUntil<Library>(vaultId, readLibrary, {
+        ready,
+        what: "Library View",
+        tries: 120,
+      });
 
     // The seed's My Library Items. Items modified at the same moment may
     // come in either order, so the rows are checked by key set and by the
@@ -1438,15 +1450,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       states: (string | null)[];
     }
     const readShown = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.tree)return 'null';await view.query.settled;await view.tree.settled;const el=view.contentEl;const rows=[...el.querySelectorAll('[data-query-papers-row]')];return JSON.stringify({phase:view.query.state.getState().phase,header:el.querySelector('[data-library-header]')?.textContent??null,recent:[...el.querySelectorAll('[data-library-node]')].some(n=>JSON.parse(n.getAttribute('data-library-node'))[0]==='recent'&&n.getAttribute('aria-selected')==='true'),count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,rows:rows.map(n=>n.getAttribute('data-query-papers-row')),states:rows.map(n=>n.querySelector('[data-query-papers-state]')?.textContent??null)});})()`;
-    const shownWhen = async (ready: (shown: Shown) => boolean) => {
-      let shown: Shown | null = null;
-      const settled = await waitFor(async () => {
-        shown = JSON.parse(await obEval(vaultId, readShown)) as Shown | null;
-        return shown !== null && ready(shown);
-      }, 120);
-      if (!settled) throw new Error(`Library View: ${JSON.stringify(shown)}`);
-      return shown!;
-    };
+    const shownWhen = (ready: (shown: Shown) => boolean) =>
+      obReadUntil<Shown>(vaultId, readShown, {
+        ready,
+        what: "Library View",
+        tries: 120,
+      });
     /** Whether the list drew every row it counted, `count` of them. */
     const listing = (count: number) => (shown: Shown) =>
       shown.phase === "ready" &&
@@ -1590,15 +1599,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       rows: string[];
     }
     const readShown = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.tree)return 'null';await view.query.settled;await view.tree.settled;const el=view.contentEl;return JSON.stringify({phase:view.query.state.getState().phase,header:el.querySelector('[data-library-header]')?.textContent??null,all:el.querySelector('[data-library-all]')?.getAttribute('data-library-all')??null,tree:[...el.querySelectorAll('[data-library-node]')].map(n=>({key:n.getAttribute('data-library-node'),level:Number(n.getAttribute('aria-level')),label:n.querySelector('[data-library-label]').textContent,count:n.querySelector('[data-library-count]')?.textContent??null,selected:n.getAttribute('aria-selected')==='true'})),count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,rows:[...el.querySelectorAll('tr[data-query-table-row="item"], [data-query-papers-row]')].map(n=>n.getAttribute('data-query-key')??n.getAttribute('data-query-papers-row'))});})()`;
-    const shownWhen = async (ready: (shown: Shown) => boolean) => {
-      let shown: Shown | null = null;
-      const settled = await waitFor(async () => {
-        shown = JSON.parse(await obEval(vaultId, readShown)) as Shown | null;
-        return shown !== null && ready(shown);
-      }, 120);
-      if (!settled) throw new Error(`Library View: ${JSON.stringify(shown)}`);
-      return shown!;
-    };
+    const shownWhen = (ready: (shown: Shown) => boolean) =>
+      obReadUntil<Shown>(vaultId, readShown, {
+        ready,
+        what: "Library View",
+        tries: 120,
+      });
     /** Whether the list drew every row it counted, for the selection `key`. */
     const listing = (key: string) => (shown: Shown) =>
       shown.phase === "ready" &&
@@ -1791,17 +1797,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       papers: Paper[];
       tableRows: number;
     }
-    const papersWhen = async (
-      ready: (papers: Papers) => boolean,
-    ): Promise<Papers> => {
-      let papers: Papers | null = null;
-      const settled = await waitFor(async () => {
-        papers = JSON.parse(await obEval(vaultId, readPapers)) as Papers | null;
-        return papers !== null && ready(papers);
-      }, 120);
-      if (!settled) throw new Error(`Library View: ${JSON.stringify(papers)}`);
-      return papers!;
-    };
+    const papersWhen = (ready: (papers: Papers) => boolean) =>
+      obReadUntil<Papers>(vaultId, readPapers, {
+        ready,
+        what: "Library View",
+        tries: 120,
+      });
 
     // The seed's My Library: each Item's Attachments and their Annotations,
     // and the Literature Note the Fixture Vault holds for every Item but the
@@ -2128,18 +2129,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       rows: string[];
       columns: string[];
     }
-    const rowsWhen = async (
-      view: string,
-      ready: (rows: Rows) => boolean,
-    ): Promise<Rows> => {
-      let rows: Rows | null = null;
-      const settled = await waitFor(async () => {
-        rows = JSON.parse(await obEval(vaultId, readRows(view))) as Rows | null;
-        return rows !== null && ready(rows);
-      }, 120);
-      if (!settled) throw new Error(`${view}: ${JSON.stringify(rows)}`);
-      return rows!;
-    };
+    const rowsWhen = (view: string, ready: (rows: Rows) => boolean) =>
+      obReadUntil<Rows>(vaultId, readRows(view), {
+        ready,
+        what: view,
+        tries: 120,
+      });
     const library = "app.workspace.getLeavesOfType('zotlit-library')[0]?.view";
     const drawn = (layout: string) => (rows: Rows) =>
       rows.phase === "ready" &&
@@ -2512,15 +2507,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       rows: string[];
     }
     const readShown = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.search)return 'null';await view.searched;await view.query.settled;const el=view.contentEl;const input=el.querySelector('[data-library-search] input');return JSON.stringify({phase:view.query.state.getState().phase,header:el.querySelector('[data-library-header]')?.textContent??null,value:input.value,focused:document.activeElement===input,rows:[...el.querySelectorAll('tr[data-query-table-row="item"], [data-query-papers-row]')].map(n=>n.getAttribute('data-query-key')??n.getAttribute('data-query-papers-row'))});})()`;
-    const shownWhen = async (ready: (shown: Shown) => boolean) => {
-      let shown: Shown | null = null;
-      const settled = await waitFor(async () => {
-        shown = JSON.parse(await obEval(vaultId, readShown)) as Shown | null;
-        return shown !== null && shown.phase === "ready" && ready(shown);
-      }, 120);
-      if (!settled) throw new Error(`Library View: ${JSON.stringify(shown)}`);
-      return shown!;
-    };
+    const shownWhen = (ready: (shown: Shown) => boolean) =>
+      obReadUntil<Shown>(vaultId, readShown, {
+        ready: (shown) => shown.phase === "ready" && ready(shown),
+        what: "Library View",
+        tries: 120,
+      });
     /** Type `text` into the search box, as the keyboard sets an input's value. */
     const type = (text: string) =>
       obEval(
@@ -2622,13 +2614,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       vaultId,
       `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null})`,
     );
-    const created: string[] = [];
     const notePath = "Library row citations.md";
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
       await obEval(
         vaultId,
-        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'library.document':saved.document});await settings.flush();for(const path of ${JSON.stringify(created)}.concat(${JSON.stringify(notePath)})){const file=app.vault.getFileByPath(path);if(file)await app.vault.delete(file);}await app.workspace.changeLayout(saved.layout);return true;})()`,
+        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'library.document':saved.document});await settings.flush();const file=app.vault.getFileByPath(${JSON.stringify(notePath)});if(file)await app.vault.delete(file);await app.workspace.changeLayout(saved.layout);return true;})()`,
       );
     });
 
@@ -2669,25 +2660,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         vaultId,
         `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];await app.workspace.revealLeaf(leaf);app.workspace.setActiveLeaf(leaf,{focus:true});await leaf.view.query.settled;const el=leaf.view.contentEl;const row=key=>el.querySelector('[data-query-item-row="'+key+'"]');const keydown=(target,init)=>target.dispatchEvent(new KeyboardEvent('keydown',{bubbles:true,cancelable:true,...init}));${script}})()`,
       );
-    /** The active tab: its view type, its file, and the file's Zotero key. */
-    const active = async () =>
-      JSON.parse(
-        await obEval(
-          vaultId,
-          "(()=>{const view=app.workspace.activeLeaf?.view;const file=view?.file??null;return JSON.stringify({type:view?.getViewType()??null,path:file?.path??null,key:file?app.metadataCache.getFileCache(file)?.frontmatter?.['zotero-key']??null:null});})()",
-        ),
-      ) as { type: string | null; path: string | null; key: string | null };
-    const activeWhen = async (
-      ready: (shown: Awaited<ReturnType<typeof active>>) => boolean,
-    ) => {
-      let shown: Awaited<ReturnType<typeof active>> | null = null;
-      const settled = await waitFor(async () => {
-        shown = await active();
-        return ready(shown);
-      }, 60);
-      if (!settled) throw new Error(`Active tab: ${JSON.stringify(shown)}`);
-      return shown!;
-    };
+    const active = () => activeTab(vaultId);
+    const activeWhen = (ready: (shown: ActiveTab) => boolean) =>
+      readUntil(active, ready, { what: "Active tab", tries: 60 });
     /** The selected row's key, waiting until a row of the list is drawn. */
     const selected = () =>
       inLibrary(
@@ -2720,7 +2695,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
 
     // On an Item with no Literature Note, Enter writes one through the
-    // Profile selection, as the quick switcher does.
+    // Profile selection, as the quick switcher does. The note it writes goes
+    // when the test ends, whichever step fails first.
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{for(const file of app.vault.getMarkdownFiles())if(app.metadataCache.getFileCache(file)?.frontmatter?.['zotero-key']===${JSON.stringify(unwrittenKey)})await app.vault.delete(file);return true;})()`,
+      );
+    });
     await inLibrary(
       `const groupNode=[...el.querySelectorAll('[data-library-node]')].find(n=>n.getAttribute('data-library-node')===${JSON.stringify(JSON.stringify([`group:${unwrittenGroup}`]))});if(!groupNode.checkVisibility())press(el.querySelector('[data-library-tree-toggle]'),'tree toggle');press(groupNode,'group library');await until('group rows',()=>row(${JSON.stringify(unwrittenKey)}),10000);press(row(${JSON.stringify(unwrittenKey)}),'unwritten row');keydown(row(${JSON.stringify(unwrittenKey)}),{key:'Enter'});return true`,
     );
@@ -2742,7 +2724,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const written = await activeWhen(
       (shown) => shown.type === "markdown" && shown.key === unwrittenKey,
     );
-    created.push(written.path!);
     expect(written.path).toMatch(/^books\//);
 
     // The row menu lists every action of the Item, and an entry another
@@ -3122,24 +3103,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // The buttons do what the row menu does: Insert citation into the note
     // active last, Open literature note, Open PDF.
-    const active = async () =>
-      JSON.parse(
-        await obEval(
-          vaultId,
-          "(()=>{const view=app.workspace.activeLeaf?.view;const file=view?.file??null;return JSON.stringify({type:view?.getViewType()??null,path:file?.path??null,key:file?app.metadataCache.getFileCache(file)?.frontmatter?.['zotero-key']??null:null});})()",
-        ),
-      ) as { type: string | null; path: string | null; key: string | null };
-    const activeWhen = async (
-      ready: (state: Awaited<ReturnType<typeof active>>) => boolean,
-    ) => {
-      let state: Awaited<ReturnType<typeof active>> | null = null;
-      const settled = await waitFor(async () => {
-        state = await active();
-        return ready(state);
-      }, 60);
-      if (!settled) throw new Error(`Active tab: ${JSON.stringify(state)}`);
-      return state!;
-    };
+    const active = () => activeTab(vaultId);
+    const activeWhen = (ready: (shown: ActiveTab) => boolean) =>
+      readUntil(active, ready, { what: "Active tab", tries: 60 });
     await inLibrary(
       `press(card.querySelector('[data-library-card-action="cite"]'),'Insert citation');return true`,
     );
