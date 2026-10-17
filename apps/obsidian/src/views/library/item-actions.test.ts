@@ -30,8 +30,10 @@ function workspaceFixture() {
       return active?.view instanceof MarkdownView ? active.view : null;
     },
     getMostRecentLeaf: () => active,
-    iterateAllLeaves: (callback: (leaf: WorkspaceLeaf) => void) =>
-      open.forEach((leaf) => callback(leaf)),
+    // As Obsidian's, the iteration stops at a callback that returns a truthy
+    // value.
+    iterateAllLeaves: (callback: (leaf: WorkspaceLeaf) => unknown) =>
+      open.some((leaf) => callback(leaf)),
     onLayoutReady: (callback: () => void) => callback(),
     on: (
       _event: "active-leaf-change",

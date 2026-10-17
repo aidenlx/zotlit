@@ -26,7 +26,10 @@ export class LastNote implements Disposable {
    */
   editor(): MarkdownFileInfo | null {
     const open = new Set<WorkspaceLeaf>();
-    this.#workspace.iterateAllLeaves((leaf) => open.add(leaf));
+    // A callback that returns a truthy value stops the iteration.
+    this.#workspace.iterateAllLeaves((leaf) => {
+      open.add(leaf);
+    });
     this.#leaves = this.#leaves.filter((leaf) => open.has(leaf));
     for (const { view } of this.#leaves)
       if (view instanceof MarkdownView && view.getMode() === "source")
