@@ -106,7 +106,7 @@ Select <UiLabel name={m.query_view_filter()} />. The filter editor has two parts
   </Step>
 </Steps>
 
-The properties depend on the records of the view. An annotations view offers the color, Tags, comment, text, page, and dates of each annotation. Every view offers the paper's title, creators, first author, year, item type, Collection, and library. Annotations and attachments views also offer the file's title and file type.
+The properties depend on the records of the view. An annotations view offers the color, Tags, comment, text, page, and dates of each annotation. Every view offers the paper's title, creators, first author, year, item type, Collection, and library. Annotations and attachments views also offer the file's title and file type. An items view also offers the properties of your Literature Notes, as [Track reading status](/docs/how-to/track-reading-status#filter) shows.
 
 To write a condition as a [Filter Expression](/docs/concepts/how-zotlit-query-works#steps), select <UiLabel name={m.workbench_match_edit_as_expression()} /> on its row. The expression is colored to make its parts easy to read. Select <UiLabel name={m.workbench_match_edit_visually()} /> to return to the visual row.
 
@@ -120,11 +120,11 @@ Select <UiLabel name={m.query_view_sort()} />, then <UiLabel name={m.query_view_
 
 The properties depend on the records of the view:
 
-| Rows        | Sort properties                                                                                                                                |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| Annotations | Position in the file, page, dates, color, annotation type, and the paper's title, first author, and dates, and the file's title and date added |
-| Attachments | Title, dates, and the paper's title, first author, and date                                                                                    |
-| Items       | Title, first author, date, dates added and modified, and item type                                                                             |
+| Rows        | Sort properties                                                                                                                                       |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Annotations | Position in the file, page, dates, color, annotation type, and the paper's title, first author, and dates, and the file's title and date added        |
+| Attachments | Title, dates, and the paper's title, first author, and date                                                                                           |
+| Items       | Title, first author, date, dates added and modified, item type, and the properties of your [Literature Notes](/docs/how-to/track-reading-status#sort) |
 
 ### Group [#group]
 
@@ -148,7 +148,7 @@ A record with several Tags or Collections shows in the group of each one. Record
 
 ## Choose the properties [#properties]
 
-Select <UiLabel name={m.query_view_properties()} />. Select the checkbox of a property to show or hide it, and drag a property to change its place. Type in <UiLabel name={m.query_view_properties_search()} /> to find a property. To add a property that the list does not have, type its path, such as `item.citationKey`, and select the row that adds it.
+Select <UiLabel name={m.query_view_properties()} />. Select the checkbox of a property to show or hide it, and drag a property to change its place. Type in <UiLabel name={m.query_view_properties_search()} /> to find a property. To add a property that the list does not have, type its path, such as `item.citationKey`, and select the row that adds it. In an items view, the menu also offers to add a property of your Literature Notes. See [Track reading status](/docs/how-to/track-reading-status#add-column).
 
 Select the chevron button on any property row (or press the Right arrow key) to open its settings page, where you can set a [display name](#display-names) or edit a [formula](#formulas).
 

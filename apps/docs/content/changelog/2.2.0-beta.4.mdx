@@ -1,0 +1,24 @@
+---
+version: "2.2.0-beta.4"
+date: "2026-10-17"
+description: "Literature Note properties in the Query View"
+---
+
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+This beta lets an items view show, edit, sort, and filter the properties of your Literature Notes, such as a reading status.
+
+## What's New
+
+### Track reading status beside your Zotero fields
+
+An items view can now show any property of each paper's Literature Note as a column, next to the title, authors, and date from Zotero. Type a name such as `reading-status` in <UiLabel name={m.query_view_properties()} /> to add it. The values live in your notes, so Obsidian's Properties panel and Bases show the same values.
+
+In the Table layout, select a cell to change the value without opening the note. The field follows the property type that Obsidian shows: a checkbox toggles with one click, a list edits as chips, and a date opens a date picker. A property that your profile rewrites on every update shows a lock icon and stays read-only.
+
+A paper without a Literature Note shows <UiLabel name={m.query_view_vault_no_note()} />. Type a value there, and ZotLit creates the note through your profile, then saves the value.
+
+Sort a reading list by status, with empty values last, or filter it to the papers you have not read yet. Papers without a note count as having no value, and `limit` still counts the rows you see. Copy and CSV export include the new columns.
+
+See [Track reading status in the Query View](/docs/how-to/track-reading-status) for the steps, and for a starter base that shows the same status in Obsidian Bases.
