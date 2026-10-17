@@ -18,8 +18,11 @@ import {
   useToggleGroupCollapsed,
 } from "@/views/annot-view/store";
 
+import { vaultName } from "./query-file";
 import { NO_RESULTS } from "./results";
+import type { VaultValue } from "./table-notes";
 import { cellText } from "./value-text";
+import { VaultCellContent, useVaultVersion, vaultText } from "./vault-cell";
 import type { QueryView } from "./view";
 import { useViewProperties } from "./view-properties";
 import type { PropertyEntry } from "./view-properties";
@@ -38,7 +41,15 @@ export interface RecordGroup {
   readonly label: string | null;
   readonly collapsed: boolean;
   /** The rows of the group, each with the text of its visible properties. */
-  readonly rows: readonly { row: QueryViewRow; cells: readonly string[] }[];
+  readonly rows: readonly RecordCells[];
+}
+
+/** One row and its visible properties, each as text and, for a vault property, its value. */
+export interface RecordCells {
+  readonly row: QueryViewRow;
+  readonly cells: readonly string[];
+  /** The value of each vault property, by its place among the cells; else `null`. */
+  readonly vault: readonly (VaultValue | null)[];
 }
 
 /**
@@ -59,17 +70,26 @@ export function useRecordGroups(view: QueryView): {
     .trim()
     .toLowerCase();
   const collapsed = useAnnotStore((s) => s.collapsedGroups);
+  const { literatureNotes: notes } = view.tableDeps;
+  // The vault properties read again on a change of the notes, with no run.
+  const vaultVersion = useVaultVersion(notes);
   return useMemo(() => {
+    void vaultVersion;
     const properties = columns ?? [];
+    const names = properties.map(({ path }) => vaultName(path));
+    const host = view.vaultHost();
     const groups: {
       key: string | null;
       label: string | null;
       collapsed: boolean;
-      rows: { row: QueryViewRow; cells: string[] }[];
+      rows: RecordCells[];
     }[] = [];
     for (const { row, group } of records) {
-      const cells = properties.map(({ path }) =>
-        cellText(path, row.values[path]),
+      const vault = names.map((name) =>
+        name === null ? null : notes.read(row.indexedKey, name, host),
+      );
+      const cells = properties.map(({ path }, at) =>
+        vault[at] ? vaultText(vault[at]) : cellText(path, row.values[path]),
       );
       if (
         query !== "" &&
@@ -87,10 +107,10 @@ export function useRecordGroups(view: QueryView): {
         };
         groups.push(last);
       }
-      last.rows.push({ row, cells });
+      last.rows.push({ row, cells, vault });
     }
     return { properties, groups };
-  }, [columns, records, query, collapsed]);
+  }, [columns, records, query, collapsed, notes, view, vaultVersion]);
 }
 
 /**
@@ -124,6 +144,27 @@ export function RecordGroupHeading({ group }: { group: RecordGroup }) {
         <span className="zt:truncate">{group.label}</span>
       </button>
     </div>
+  );
+}
+
+/** The cell of the property at `at` of one row: a vault cell, or the row's value. */
+export function RecordCell({
+  record: { row, cells, vault },
+  properties,
+  at,
+}: {
+  record: RecordCells;
+  properties: readonly PropertyEntry[];
+  at: number;
+}) {
+  const value = vault[at];
+  // An empty vault property is blank, as any blank property is.
+  if (value)
+    return cells[at] === "" && value.note ? null : (
+      <VaultCellContent value={value} />
+    );
+  return (
+    <CellContent value={row.values[properties[at]!.path]} text={cells[at]!} />
   );
 }
 

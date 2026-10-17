@@ -222,3 +222,29 @@ describe("view edits", () => {
     expect(viewNameIssue(file, 0, "Methods")).toBeNull();
   });
 });
+
+describe("a vault property in the file", () => {
+  it("keeps its place in order, its Display Name and its column width through a save", () => {
+    const file = parseQueryFile(`properties:
+  vault.reading-status:
+    displayName: Status
+views:
+  - type: table
+    name: Reading list
+    from: items
+    order:
+      - title
+      - vault.reading-status
+    columnSize:
+      vault.reading-status: 140
+`);
+    const edited = setViewOption(file, 0, { key: "cardSize", value: 240 });
+    const view = saved(edited).views[0]!;
+
+    expect(view.order).toEqual(["title", "vault.reading-status"]);
+    expect(view.columnSize).toEqual({ "vault.reading-status": 140 });
+    expect(saved(edited).properties).toEqual({
+      "vault.reading-status": { displayName: "Status" },
+    });
+  });
+});

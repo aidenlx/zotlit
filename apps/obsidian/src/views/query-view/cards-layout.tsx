@@ -12,11 +12,7 @@ import { cn } from "@/lib/utils";
 
 import type { QueryLayout } from "./layouts";
 import type { QueryFileView } from "./query-file";
-import {
-  CellContent,
-  RecordGroupHeading,
-  useRecordGroups,
-} from "./record-rows";
+import { RecordCell, RecordGroupHeading, useRecordGroups } from "./record-rows";
 import type { QueryView } from "./view";
 
 export const CARDS_LAYOUT: QueryLayout = {
@@ -106,8 +102,9 @@ export function CardsLayout({ view }: { view: QueryView }) {
               }
               data-card-size={options.cardSize}
             >
-              {group.rows.map(({ row, cells }, index) => {
-                const [title = "", ...rest] = cells;
+              {group.rows.map((record, index) => {
+                const { row, cells } = record;
+                const rest = cells.slice(1);
                 return (
                   <div
                     key={`${row.indexedKey}\n${index}`}
@@ -124,13 +121,14 @@ export function CardsLayout({ view }: { view: QueryView }) {
                           CARD_LINE,
                         )}
                       >
-                        <CellContent
-                          value={row.values[properties[0]!.path]}
-                          text={title}
+                        <RecordCell
+                          record={record}
+                          properties={properties}
+                          at={0}
                         />
                       </div>
                     )}
-                    {rest.map((text, at) => (
+                    {rest.map((_, at) => (
                       <div
                         key={properties[at + 1]!.path}
                         className="zt:min-w-0"
@@ -147,9 +145,10 @@ export function CardsLayout({ view }: { view: QueryView }) {
                             CARD_LINE,
                           )}
                         >
-                          <CellContent
-                            value={row.values[properties[at + 1]!.path]}
-                            text={text}
+                          <RecordCell
+                            record={record}
+                            properties={properties}
+                            at={at + 1}
                           />
                         </div>
                       </div>

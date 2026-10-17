@@ -23,6 +23,7 @@ import {
   resizedWidth,
   withColumnWidth,
 } from "./table-columns";
+import { useVaultVersion } from "./vault-cell";
 import "./table-header.css";
 import type { QueryView } from "./view";
 import { viewProperties } from "./view-properties";
@@ -227,6 +228,9 @@ export function TableHeader({
 }) {
   const columns = properties.visible;
   const editable = view.canSave;
+  // A vault column's icon follows the values its notes hold.
+  const { literatureNotes } = view.tableDeps;
+  useVaultVersion(literatureNotes);
   /** The drag on now; the Table that closes ends it. */
   const drag = useRef<AbortController | null>(null);
   useEffect(() => () => drag.current?.abort(), []);
@@ -507,6 +511,9 @@ export function TableHeader({
         <th className={gutter} />
         {columns.map((property, at) => {
           const width = sizes?.[property.path];
+          const icon = propertyIcon(dataset, property, (name) =>
+            literatureNotes.propertyType(name),
+          );
           return (
             <th
               key={property.path}
@@ -541,7 +548,8 @@ export function TableHeader({
               {property.issue === null ? (
                 <span className={LABEL}>
                   <Icon
-                    name={propertyIcon(dataset, property)}
+                    name={icon}
+                    data-query-icon={icon}
                     size="var(--icon-xs)"
                     className={cn(
                       "zt:flex zt:shrink-0",

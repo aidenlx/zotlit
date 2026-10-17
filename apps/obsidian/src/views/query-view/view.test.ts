@@ -32,10 +32,18 @@ import { groupOptions } from "./properties";
 import { QUERY_FILE_DATASETS, serializeQueryFile } from "./query-file";
 import type { QueryFileDataset } from "./query-file";
 import { formulaIssuesOf } from "./results";
+import { inferType } from "./table-notes";
+import type { VaultHost, VaultPropertyType, VaultValue } from "./table-notes";
 import { QueryView, RERUN_DELAY_MS } from "./view";
 import type { QueryViewDeps } from "./view";
 
 vi.mock("zustand", () => import("../__fixtures__/zustand"));
+vi.mock("obsidian", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("obsidian")>()),
+  // A substring match, enough for a search of the Properties popover.
+  prepareFuzzySearch: (query: string) => (text: string) =>
+    text.includes(query) ? { score: 0, matches: [] } : null,
+}));
 
 function record(key: string, parentKey: string): AnnotationRecord {
   return {
@@ -134,6 +142,9 @@ async function mount(
   onWrite?: (text: string) => void,
   {
     notes = {},
+    frontmatter = {},
+    propertyNames = [],
+    sourcePath = "query-files/Reading.zotquery",
     layout,
     write,
     canSave,
@@ -141,6 +152,12 @@ async function mount(
     contextSource,
   }: {
     notes?: Record<string, string>;
+    /** The frontmatter of each note, by path. */
+    frontmatter?: Record<string, Record<string, unknown>>;
+    /** The names the vault properties take. */
+    propertyNames?: string[];
+    /** The note or file that holds the view. */
+    sourcePath?: string;
     layout?: ConstructorParameters<typeof QueryView>[1]["layout"];
     /** The host's write; it rejects where the text was not saved. */
     write?: (text: string) => Promise<void>;
@@ -170,6 +187,22 @@ async function mount(
         : { path, basename: path.replace(/\.md$/, "") };
     },
     on: notesChanged.on,
+    /** Fire one of the Note Index's events. */
+    emit: notesChanged.emit,
+    propertyNames: () => propertyNames,
+    propertyType: (name: string): VaultPropertyType => {
+      for (const values of Object.values(frontmatter))
+        if (values[name] !== undefined && values[name] !== null)
+          return inferType(values[name]);
+      return "text";
+    },
+    read: vi.fn(
+      (itemKey: string, name: string, host: VaultHost | null): VaultValue => {
+        const path = host?.itemKey === itemKey ? host.path : notes[itemKey];
+        if (path === undefined) return { note: false };
+        return { note: true, value: frontmatter[path]?.[name] ?? null };
+      },
+    ),
     open: vi.fn(),
     create: vi.fn(async (itemKey: string) => {
       notes[itemKey] = `${itemKey}.md`;
@@ -242,7 +275,7 @@ async function mount(
   const onSelectView = vi.fn((_name: string) => {});
   const view = new QueryView(deps, {
     scope: new Scope(),
-    sourcePath: () => "query-files/Reading.zotquery",
+    sourcePath: () => sourcePath,
     context,
     contextSource,
     save: (text) => {
@@ -1634,7 +1667,7 @@ views:
   expect(request.filter).toBe('itemType == "book"');
   expect(tableText(el)).toEqual([
     ["", "Title", "vault.reading-status", "Literature note"],
-    ["", "Ten simple rules", "", "Create"],
+    ["", "Ten simple rules", m.query_view_vault_no_note(), "Create"],
   ]);
 });
 
@@ -2961,4 +2994,286 @@ it("keeps the row and the page of a typed path in the Properties popover when it
   await settle();
   expect(written.at(-1)).not.toContain("myField");
   expect(page()).not.toBe(null);
+});
+
+describe("vault properties", () => {
+  const VAULT_FILE = `views:
+  - type: table
+    name: Reading list
+    from: items
+    order:
+      - title
+      - vault.status
+`;
+  /** The vault cell of each row: its state and its text. */
+  const vaultCells = (el: HTMLElement) =>
+    [...el.querySelectorAll("[data-query-vault]")].map((cell) => [
+      cell.getAttribute("data-query-vault"),
+      cell.textContent,
+    ]);
+
+  it("shows each Item's value, an empty cell for a missing or null key, and a placeholder where it has no note", async () => {
+    const { view, el, run, settle } = await mount(
+      [
+        result([
+          itemRow("ITEMAAAA", "Ten simple rules"),
+          itemRow("ITEMBBBB", "Deep learning"),
+          itemRow("ITEMCCCC", "Attention"),
+          itemRow("ITEMDDDD", "Transformers"),
+        ]),
+      ],
+      undefined,
+      {
+        notes: { ITEMAAAA: "A.md", ITEMBBBB: "B.md", ITEMCCCC: "C.md" },
+        frontmatter: {
+          "A.md": { status: "reading" },
+          "B.md": { status: null },
+          "C.md": {},
+        },
+      },
+    );
+    await act(() => view.setText(VAULT_FILE));
+    await settle();
+
+    expect(vaultCells(el)).toEqual([
+      ["value", "reading"],
+      ["empty", ""],
+      ["empty", ""],
+      ["no-note", m.query_view_vault_no_note()],
+    ]);
+    // ZotLit Query is not asked for the vault property.
+    expect(run.mock.calls[0]![0].fields).not.toContain("vault.status");
+  });
+
+  it("reads the note that holds a Query Block for its own Item, though the Note Index ranks another first", async () => {
+    const { view, el, settle, literatureNotes } = await mount(
+      [
+        result([
+          itemRow("ITEMAAAA", "Ten simple rules"),
+          itemRow("ITEMBBBB", "Deep learning"),
+        ]),
+      ],
+      undefined,
+      {
+        notes: { ITEMAAAA: "A.md", ITEMBBBB: "B.md" },
+        frontmatter: {
+          "A.md": { status: "reading" },
+          "A (copy).md": { status: "read" },
+          "B.md": { status: "unread" },
+        },
+        sourcePath: "A (copy).md",
+        context: () => ({ item: "ITEMAAAA" }),
+        contextSource: "note",
+      },
+    );
+    await act(() => view.setText(VAULT_FILE));
+    await settle();
+
+    expect(vaultCells(el)).toEqual([
+      ["value", "read"],
+      ["value", "unread"],
+    ]);
+    expect(literatureNotes.read).toHaveBeenCalledWith("ITEMAAAA", "status", {
+      path: "A (copy).md",
+      itemKey: "ITEMAAAA",
+    });
+  });
+
+  it("shows a value changed in the note's frontmatter without running the query again", async () => {
+    const frontmatter: Record<string, Record<string, unknown>> = {
+      "A.md": { status: "reading" },
+    };
+    const { view, el, run, settle, literatureNotes } = await mount(
+      [result([itemRow("ITEMAAAA", "Ten simple rules")])],
+      undefined,
+      { notes: { ITEMAAAA: "A.md" }, frontmatter },
+    );
+    await act(() => view.setText(VAULT_FILE));
+    await settle();
+
+    frontmatter["A.md"] = { status: "read" };
+    await act(() => literatureNotes.emit("frontmatter-changed"));
+
+    expect(vaultCells(el)).toEqual([["value", "read"]]);
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["cards", "list"])(
+    "shows the value and the placeholder in the %s layout",
+    async (layout) => {
+      const frontmatter: Record<string, Record<string, unknown>> = {
+        "A.md": { status: "reading" },
+      };
+      const { view, el, settle, literatureNotes } = await mount(
+        [
+          result([
+            itemRow("ITEMAAAA", "Ten simple rules"),
+            itemRow("ITEMBBBB", "Deep learning"),
+          ]),
+        ],
+        undefined,
+        { notes: { ITEMAAAA: "A.md" }, frontmatter },
+      );
+      await act(() =>
+        view.setText(VAULT_FILE.replace("type: table", `type: ${layout}`)),
+      );
+      await settle();
+
+      expect(vaultCells(el)).toEqual([
+        ["value", "reading"],
+        ["no-note", m.query_view_vault_no_note()],
+      ]);
+
+      frontmatter["A.md"] = { status: "read" };
+      await act(() => literatureNotes.emit("frontmatter-changed"));
+      expect(vaultCells(el)[0]).toEqual(["value", "read"]);
+    },
+  );
+
+  it("marks a vault column's header with the type its values show as", async () => {
+    const frontmatter: Record<string, Record<string, unknown>> = {
+      "A.md": { status: ["reading"], pages: 12 },
+    };
+    const { view, el, settle, literatureNotes } = await mount(
+      [result([itemRow("ITEMAAAA", "Ten simple rules")])],
+      undefined,
+      { notes: { ITEMAAAA: "A.md" }, frontmatter },
+    );
+    await act(() =>
+      view.setText(`${VAULT_FILE}      - vault.pages
+      - vault.due
+`),
+    );
+    await settle();
+    const icon = (path: string) =>
+      el
+        .querySelector(`[data-query-column="${path}"] [data-query-icon]`)
+        ?.getAttribute("data-query-icon");
+
+    expect(icon("vault.status")).toBe("list");
+    expect(icon("vault.pages")).toBe("binary");
+    expect(icon("vault.due")).toBe("text");
+
+    frontmatter["A.md"] = { ...frontmatter["A.md"], due: "2024-05-01" };
+    await act(() => literatureNotes.emit("frontmatter-changed"));
+    expect(icon("vault.due")).toBe("calendar");
+  });
+
+  it("writes vault values in copy and CSV, and no text where an Item has no note", async () => {
+    const { view, settle } = await mount(
+      [
+        result([
+          itemRow("ITEMAAAA", "Ten simple rules"),
+          itemRow("ITEMBBBB", "Deep learning"),
+        ]),
+      ],
+      undefined,
+      {
+        notes: { ITEMAAAA: "A.md" },
+        frontmatter: { "A.md": { status: ["reading", "to cite"] } },
+      },
+    );
+    await act(() =>
+      view.setText(`${VAULT_FILE}      - vault.literatureNote\n`),
+    );
+    await settle();
+
+    expect(view.table()).toEqual({
+      header: ["Title", "vault.status"],
+      body: [
+        ["Ten simple rules", "reading, to cite"],
+        ["Deep learning", ""],
+      ],
+    });
+  });
+
+  describe("in the Properties popover", () => {
+    async function popover(written: string[]) {
+      const mounted = await mount(
+        [result([itemRow("ITEMAAAA", "Ten simple rules")])],
+        (text) => written.push(text),
+        { propertyNames: ["rating", "status"] },
+      );
+      await act(() => mounted.view.setText(VAULT_FILE));
+      await mounted.settle();
+      await act(() => {
+        mounted.el
+          .querySelector<HTMLElement>("[data-query-properties]")!
+          .click();
+        // happy-dom has no popover, so the test sends the event that opens it.
+        document
+          .querySelector("[data-query-properties-popup]")!
+          .dispatchEvent(
+            Object.assign(new Event("beforetoggle"), { newState: "open" }),
+          );
+      });
+      const type = async (text: string) => {
+        const input = document.querySelector<HTMLInputElement>(
+          "[data-query-properties-popup] input",
+        )!;
+        await act(() => {
+          input.value = text;
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+      };
+      const actions = () =>
+        [
+          ...document.querySelectorAll<HTMLElement>(
+            "[data-query-properties-action]",
+          ),
+        ].map((node) => node.textContent);
+      return { ...mounted, type, actions };
+    }
+
+    it("lists the property names of the Literature Notes", async () => {
+      await popover([]);
+
+      const listed = [
+        ...document.querySelectorAll<HTMLElement>("[data-query-property]"),
+      ].map((row) => [row.dataset.queryProperty, row.dataset.hidden]);
+      expect(listed).toEqual(
+        expect.arrayContaining([
+          ["vault.status", undefined],
+          ["vault.rating", ""],
+        ]),
+      );
+    });
+
+    it("adds a typed new name as a vault property", async () => {
+      const written: string[] = [];
+      const { type, actions, settle } = await popover(written);
+
+      await type("progress");
+      expect(actions()).toContain(
+        m.query_view_properties_add_vault({ name: "progress" }),
+      );
+      await act(() =>
+        document
+          .querySelector<HTMLElement>(
+            '[data-query-properties-action="add-vault-property"]',
+          )!
+          .click(),
+      );
+      await settle();
+      expect(written.at(-1)).toContain(
+        "order:\n      - title\n      - vault.status\n      - vault.progress\n",
+      );
+    });
+
+    it.each(["tags", "zotero-key", "vault.aliases", "vault.zotlit-profile"])(
+      "refuses the reserved or system key %s",
+      async (typed) => {
+        const { type, actions } = await popover([]);
+
+        await type(typed);
+        const name = typed.replace(/^vault\./, "");
+        expect(actions()).not.toContain(
+          m.query_view_properties_add_vault({ name }),
+        );
+        expect(actions()).not.toContain(
+          m.query_view_properties_add({ name: `vault.${name}` }),
+        );
+      },
+    );
+  });
 });
