@@ -1022,6 +1022,7 @@ class Validator<Item, Needs> {
     span: Span,
   ): FilterNode<Item> {
     const member = this.#navigation.get(subject)?.member;
+    const nameSpan = { from: span.to - name.length, to: span.to };
     if (member) {
       const field = member(name);
       if (!field)
@@ -1029,7 +1030,7 @@ class Validator<Item, Needs> {
           unknown({
             role: "property",
             name,
-            at: span,
+            at: nameSpan,
             receiver: receiver(subject),
           }),
         );
@@ -1054,7 +1055,6 @@ class Validator<Item, Needs> {
       );
     }
     const named = propertiesNamed(name);
-    const nameSpan = { from: span.to - name.length, to: span.to };
     if (named.length === 0) {
       return fail(
         unknown({
