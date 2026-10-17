@@ -38,17 +38,31 @@ import type {
   VaultHost,
   VaultPropertyType,
   VaultValue,
+  VaultWrite,
 } from "./table-notes";
 import { QueryView, RERUN_DELAY_MS } from "./view";
 import type { QueryViewDeps } from "./view";
 
 vi.mock("zustand", () => import("../__fixtures__/zustand"));
-vi.mock("obsidian", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("obsidian")>()),
-  // A substring match, enough for a search of the Properties popover.
-  prepareFuzzySearch: (query: string) => (text: string) =>
-    text.includes(query) ? { score: 0, matches: [] } : null,
-}));
+/** The text of each notice the view shows. */
+const notices = vi.hoisted((): string[] => []);
+vi.mock("obsidian", async (importOriginal) => {
+  const obsidian = await importOriginal<typeof import("obsidian")>();
+  return {
+    ...obsidian,
+    // A substring match, enough for a search of the Properties popover.
+    prepareFuzzySearch: (query: string) => (text: string) =>
+      text.includes(query) ? { score: 0, matches: [] } : null,
+    Notice: class extends obsidian.Notice {
+      constructor(message: string | DocumentFragment, duration?: number) {
+        super(message, duration);
+        notices.push(
+          typeof message === "string" ? message : (message.textContent ?? ""),
+        );
+      }
+    },
+  };
+});
 
 function record(key: string, parentKey: string): AnnotationRecord {
   return {
@@ -137,6 +151,7 @@ function emitter() {
 
 let cleanup = new DisposableStack();
 afterEach(() => {
+  notices.length = 0;
   cleanup.dispose();
   cleanup = new DisposableStack();
   document.body.replaceChildren();
@@ -157,6 +172,7 @@ async function mount(
     canSave,
     context = () => undefined,
     contextSource,
+    creation = "created",
   }: {
     notes?: Record<string, string>;
     /** The frontmatter of each note, by path. */
@@ -175,6 +191,11 @@ async function mount(
     canSave?: () => boolean;
     context?: () => QueryContext | undefined;
     contextSource?: ContextSource;
+    /**
+     * What the usual creation does for an edit of an Item with no note:
+     * create its note at `<key>.md`, or have the Profile prompt cancelled.
+     */
+    creation?: "created" | "cancelled";
   } = {},
 ) {
   setMockPlatform({ isMacOS: true });
@@ -219,13 +240,26 @@ async function mount(
       const path = host?.itemKey === itemKey ? host.path : notes[itemKey];
       return path !== undefined && (managed[path]?.includes(name) ?? false);
     },
-    write: vi.fn(async ({ itemKey, name, value, host }: VaultEdit) => {
-      const path = host?.itemKey === itemKey ? host.path : notes[itemKey];
-      if (path === undefined) return "no-note" as const;
-      frontmatter[path] = { ...frontmatter[path], [name]: value };
-      notesChanged.emit("frontmatter-changed");
-      return "written" as const;
-    }),
+    write: vi.fn(
+      async ({
+        itemKey,
+        name,
+        value,
+        host,
+      }: VaultEdit): Promise<VaultWrite> => {
+        let path = host?.itemKey === itemKey ? host.path : notes[itemKey];
+        if (path === undefined) {
+          if (creation === "cancelled") return "cancelled";
+          path = notes[itemKey] = `${itemKey}.md`;
+          frontmatter[path] = { [name]: value };
+          notesChanged.emit("changed");
+          return "created";
+        }
+        frontmatter[path] = { ...frontmatter[path], [name]: value };
+        notesChanged.emit("frontmatter-changed");
+        return "written";
+      },
+    ),
     open: vi.fn(),
     create: vi.fn(async (itemKey: string) => {
       notes[itemKey] = `${itemKey}.md`;
@@ -3344,12 +3378,60 @@ describe("vault properties", () => {
       expect(literatureNotes.write).not.toHaveBeenCalled();
     });
 
-    it("leaves a row with no note read-only", async () => {
-      const { cell, input } = await editable();
+    describe("on a row with no note", () => {
+      it("opens the editor, empty, and creates nothing", async () => {
+        const { cell, input, literatureNotes } = await editable();
 
-      await act(() => cell("ITEMBBBB").click());
+        await act(() => cell("ITEMBBBB").click());
 
-      expect(input()).toBeNull();
+        expect(input()?.value).toBe("");
+        expect(literatureNotes.write).not.toHaveBeenCalled();
+        expect(literatureNotes.create).not.toHaveBeenCalled();
+      });
+
+      it("creates nothing when the editor closes with no value", async () => {
+        const { cell, press, literatureNotes } = await editable();
+
+        await act(() => cell("ITEMBBBB").click());
+        await press("Enter");
+
+        expect(literatureNotes.write).not.toHaveBeenCalled();
+      });
+
+      it("writes on commit, which creates the note, and shows the value", async () => {
+        const { el, cell, type, press, literatureNotes } = await editable();
+
+        await act(() => cell("ITEMBBBB").click());
+        await type("to read");
+        await press("Enter");
+
+        expect(literatureNotes.write).toHaveBeenCalledWith({
+          itemKey: "ITEMBBBB",
+          name: "status",
+          value: "to read",
+          host: null,
+        });
+        expect(vaultCells(el)[1]).toEqual(["value", "to read"]);
+        expect(notices).toEqual([]);
+      });
+
+      it("says nothing was written when the Profile prompt is cancelled", async () => {
+        const { el, cell, type, press } = await editable({
+          creation: "cancelled",
+        });
+
+        await act(() => cell("ITEMBBBB").click());
+        await type("to read");
+        await press("Enter");
+
+        expect(vaultCells(el)[1]).toEqual([
+          "no-note",
+          m.query_view_vault_no_note(),
+        ]);
+        expect(notices).toEqual([
+          m.query_view_vault_not_written({ name: "status" }),
+        ]);
+      });
     });
 
     it("writes the note that holds a Query Block for its own Item", async () => {
@@ -3456,6 +3538,37 @@ ${order.map((path) => `      - ${path}\n`).join("")}`),
       expect(literatureNotes.write).toHaveBeenLastCalledWith(
         edit("read", false),
       );
+    });
+
+    it("checks a checkbox of a row with no note on a click, writing true", async () => {
+      const mounted = await mount(
+        [result([itemRow("ITEMBBBB", "Deep learning")])],
+        undefined,
+        { types: { read: "checkbox" } },
+      );
+      await act(() =>
+        mounted.view.setText(`views:
+  - type: table
+    name: Reading list
+    from: items
+    order:
+      - vault.read
+`),
+      );
+      await mounted.settle();
+
+      await act(() =>
+        mounted.el
+          .querySelector<HTMLElement>('[data-query-vault-name="read"]')!
+          .click(),
+      );
+
+      expect(mounted.literatureNotes.write).toHaveBeenCalledWith({
+        itemKey: "ITEMBBBB",
+        name: "read",
+        value: true,
+        host: null,
+      });
     });
 
     it("writes a number as a number, no value when cleared, and nothing for text that is no number", async () => {

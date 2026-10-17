@@ -2,9 +2,10 @@
 // frontmatter key on the Item's Literature Note, an empty cell where the note
 // lacks the key or holds null, and a placeholder where the Item has no note
 // to read it from. A cell reads again when the note's frontmatter changes,
-// with no new run of the view's query. In the Table a cell of a row with a
-// note edits in place with the editor of the property's type; a key the
-// note's Profile replaces on each update stays read-only.
+// with no new run of the view's query. In the Table a cell edits in place
+// with the editor of the property's type; a key the note's Profile replaces
+// on each update stays read-only. On a row with no note, the commit of an
+// edit creates the note first; opening the editor creates nothing.
 //
 // @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
 import {
@@ -160,11 +161,11 @@ const logger = getLogger("QueryView");
 
 /**
  * The vault cell of `name` for the Item `itemKey` in the Table: a click
- * edits it with the editor of its type where the Item has a note and its
- * Profile does not replace the key, and toggles a checkbox. Enter or
- * leaving the field writes it; Escape drops it. The click stops at the
- * cell, so the gesture of the row or the block that holds the view does
- * not run.
+ * edits it with the editor of its type where the note's Profile does not
+ * replace the key, and toggles a checkbox. Enter or leaving the field
+ * writes it, creating the note where the Item has none; Escape drops it.
+ * The click stops at the cell, so the gesture of the row or the block that
+ * holds the view does not run.
  */
 export function VaultEditCell(props: VaultCellProps) {
   const { notes, itemKey, name, host } = props;
@@ -180,11 +181,16 @@ export function VaultEditCell(props: VaultCellProps) {
   useEffect(() => {
     if (editing) input.current?.focus();
   }, [editing]);
-  const editable = value.note && !managed;
+  // A row with no note edits too: the first write creates the note.
+  const editable = !managed;
   const current = value.note ? value.value : null;
   const write = (next: unknown) =>
     notes
       .write({ itemKey, name, value: next, host })
+      .then((result) => {
+        if (result === "cancelled")
+          new BaseNotice(m.query_view_vault_not_written({ name }));
+      })
       .catch((error: unknown) => {
         logger.warn("The Query View could not write a vault property", {
           error,
@@ -221,7 +227,10 @@ export function VaultEditCell(props: VaultCellProps) {
       )}
       onClick={(event) => {
         event.stopPropagation();
-        if (editable && draft === null && !checkbox) begin();
+        if (!editable || draft !== null) return;
+        // A checkbox of a row with no note toggles on, creating the note.
+        if (!checkbox) begin();
+        else if (!value.note) void write(true);
       }}
     >
       {draft === null ? (
