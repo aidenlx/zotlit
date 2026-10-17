@@ -230,6 +230,8 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
   } | null = null;
   let state: "loading" | "ready" | "degraded" = "loading";
   let lastError: DbUnavailable | null = null;
+  /** The last refresh failed for another database than the one serving. */
+  let moved = false;
   /** `db-file-missing` is raised once per launch, whichever worker saw it. */
   let missingSignalled = false;
   /** The Read Mode of the live worker's connection, while it serves. */
@@ -238,6 +240,7 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
     state,
     error: lastError,
     readMode,
+    moved,
     missing: missingSignalled,
   }));
   const connecting = yield* Semaphore.make(1);
@@ -277,6 +280,7 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
         state = event.state;
         lastError = event.error;
         readMode = event.readMode;
+        moved = event.moved ?? false;
         if (event.state === "ready")
           return publish({
             _tag: "changed",
@@ -289,6 +293,7 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
       case "changed":
         state = "ready";
         lastError = null;
+        moved = false;
         readMode = event.readMode;
         break;
       case "degraded":
@@ -298,6 +303,7 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
         break;
       case "refresh-failed":
         lastError = event.error;
+        moved = event.moved;
         break;
       case "db-file-missing":
         if (missingSignalled) return Effect.void;

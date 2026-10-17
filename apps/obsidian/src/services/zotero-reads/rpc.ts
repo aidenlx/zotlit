@@ -420,13 +420,23 @@ export const ChangeEventSchema = Schema.Union([
     state: Schema.Literals(["loading", "ready", "degraded"]),
     error: Schema.NullOr(DbUnavailable),
     ...readMode,
+    /** As on `refresh-failed`: sent while the last refresh failed. */
+    moved: Schema.optional(Schema.Boolean),
   }),
   /** A new client serves; re-query cached results. */
   Schema.TaggedStruct("changed", readMode),
   /** No client can serve. */
   Schema.TaggedStruct("degraded", { error: DbUnavailable }),
-  /** A refresh failed; the previous client keeps serving. */
-  Schema.TaggedStruct("refresh-failed", { error: DbUnavailable }),
+  /**
+   * A refresh failed; the previous client keeps serving. `moved`: the
+   * refresh was to another database than the serving client reads, as when
+   * the data folder changed, so what serves is no longer what the settings
+   * name.
+   */
+  Schema.TaggedStruct("refresh-failed", {
+    error: DbUnavailable,
+    moved: Schema.Boolean,
+  }),
   Schema.TaggedStruct("refreshing", { active: Schema.Boolean }),
   /** The configured database file is absent. */
   Schema.TaggedStruct("db-file-missing", {}),

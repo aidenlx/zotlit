@@ -227,6 +227,10 @@ export function layerRcRef(opener: ConnectionOpener): Layer.Layer<Connection> {
       let config: ReadsConfig | null = null;
       let state: "loading" | "ready" | "degraded" = "loading";
       let lastError: DbUnavailable | null = null;
+      /** The database file the serving client opened from. */
+      let serving: string | null = null;
+      /** The last refresh failed for another database than `serving`. */
+      let moved = false;
       const databaseGenerations = makeDatabaseGenerations();
       /** Open and validate a client, recording the database it reads. */
       const openRecorded = Effect.suspend(() => {
@@ -239,16 +243,27 @@ export function layerRcRef(opener: ConnectionOpener): Layer.Layer<Connection> {
         );
       });
       const { publish, changes } = yield* makeChangeFeed(() => [
-        { _tag: "state", state, error: lastError },
+        {
+          _tag: "state",
+          state,
+          error: lastError,
+          ...(lastError !== null && state !== "degraded" && { moved }),
+        },
       ]);
 
       /** A direct open (no refresh before it) reports the state it moves to. */
       const openDirect = openRecorded.pipe(
+        Effect.tap((client) =>
+          Effect.sync(() => {
+            serving = databaseGenerations.databaseFile(client);
+          }),
+        ),
         Effect.map(bareClient),
         Effect.tap(() => {
           const wasReady = state === "ready";
           state = "ready";
           lastError = null;
+          moved = false;
           return wasReady ? Effect.void : publish({ _tag: "changed" });
         }),
         Effect.tapError((error) => {
@@ -266,6 +281,8 @@ export function layerRcRef(opener: ConnectionOpener): Layer.Layer<Connection> {
         Effect.flatMap(openRecorded, (client) => {
           state = "ready";
           lastError = null;
+          moved = false;
+          serving = databaseGenerations.databaseFile(client);
           return clients.swap(bareClient(client));
         }),
       );
@@ -275,7 +292,12 @@ export function layerRcRef(opener: ConnectionOpener): Layer.Layer<Connection> {
         const result = yield* Effect.result(swapIn);
         if (result._tag === "Failure") {
           lastError = result.failure;
-          yield* publish({ _tag: "refresh-failed", error: result.failure });
+          moved = (config?.databasePath ?? null) !== serving;
+          yield* publish({
+            _tag: "refresh-failed",
+            error: result.failure,
+            moved,
+          });
           yield* publish({ _tag: "refreshing", active: false });
           return yield* result.failure;
         }

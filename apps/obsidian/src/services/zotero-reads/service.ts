@@ -126,6 +126,7 @@ export class ZoteroReadsService extends Service<ZoteroReadsReady> {
   readonly #emitter = createNanoEvents<ZoteroReadsEvents>();
   #state: "loading" | "ready" | "degraded" = "loading";
   #error: DbUnavailable | null = null;
+  #moved = false;
   #readMode: EffectiveReadMode | null = null;
 
   /** Settles once the client exists and its first state arrived. */
@@ -149,6 +150,15 @@ export class ZoteroReadsService extends Service<ZoteroReadsReady> {
   /** Why the service is degraded, or why the last refresh failed. */
   get error(): DbUnavailable | null {
     return this.#error;
+  }
+
+  /**
+   * The last refresh failed for another database than the one still
+   * serving, as when the data folder changed to one that does not read:
+   * what serves is no longer the library the settings name.
+   */
+  get moved(): boolean {
+    return this.#moved;
   }
 
   /**
@@ -286,11 +296,13 @@ export class ZoteroReadsService extends Service<ZoteroReadsReady> {
       case "state":
         this.#state = event.state;
         this.#error = event.error;
+        this.#moved = event.moved ?? false;
         this.#readMode = event.readMode ?? null;
         return;
       case "changed":
         this.#state = "ready";
         this.#error = null;
+        this.#moved = false;
         this.#readMode = event.readMode ?? null;
         this.#emitter.emit("changed");
         return;
@@ -302,6 +314,7 @@ export class ZoteroReadsService extends Service<ZoteroReadsReady> {
         return;
       case "refresh-failed":
         this.#error = event.error;
+        this.#moved = event.moved;
         this.#emitter.emit("refresh-failed", event.error);
         return;
       case "refreshing":

@@ -19,7 +19,7 @@ import { refreshFailed, unavailable } from "@/views/welcome/connection";
 import type { SetupActions } from "@/views/welcome/setup-actions";
 
 export interface ZoteroNotFoundDeps {
-  reads: Pick<ZoteroReadsService, "on" | "state" | "error">;
+  reads: Pick<ZoteroReadsService, "on" | "state" | "error" | "moved">;
   setupActions: Pick<SetupActions, "locateZotero" | "openSettings">;
 }
 

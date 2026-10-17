@@ -21,13 +21,13 @@ export type ConnectionReadout =
 const ITEM_COUNT_KEY = ["welcome", "connection-readout"] as const;
 
 interface ConnectionQueryDeps {
-  reads: Pick<ZoteroReadsService, "state" | "error">;
+  reads: Pick<ZoteroReadsService, "state" | "error" | "moved">;
   queries: Pick<QueryClientService, "peek">;
   zoteroPref: Pick<ZoteroPrefService, "dataDir">;
 }
 
 export interface ReadConnectionStatusDeps extends ConnectionQueryDeps {
-  reads: Pick<ZoteroReadsService, "state" | "error" | "ready">;
+  reads: Pick<ZoteroReadsService, "state" | "error" | "moved" | "ready">;
   queries: Pick<QueryClientService, "peek" | "read">;
 }
 
@@ -63,20 +63,25 @@ function connectedReadout(
 }
 
 /**
- * ZotLit cannot read the Zotero data directory: no connection serves, as
- * where the folder is missing or unreadable at start. The Library View then
- * says "Zotero not found" in place of its tree and list.
+ * ZotLit cannot read the Zotero data directory the settings name: no
+ * connection serves, as where the folder is missing or unreadable at start,
+ * or the one that serves reads another folder, as where the data folder
+ * changed to one that does not read. The Library View then says "Zotero not
+ * found" in place of its tree and list.
  *
  * @see apps/obsidian/docs/adr/0076-the-library-view-is-the-first-screen.md
  */
 export function unavailable(deps: Pick<ConnectionQueryDeps, "reads">): boolean {
-  return deps.reads.state === "degraded";
+  return (
+    deps.reads.state === "degraded" ||
+    (deps.reads.error !== null && deps.reads.moved)
+  );
 }
 
 /**
- * The last refresh of the database failed, as for a broken or moved data
- * path, while the earlier connection still serves: the Library View keeps
- * its rows and says so.
+ * The last refresh of the database the settings name failed while that
+ * database still serves, as for a locked or briefly unreadable file: the
+ * Library View keeps its rows and says so.
  */
 export function refreshFailed(
   deps: Pick<ConnectionQueryDeps, "reads">,

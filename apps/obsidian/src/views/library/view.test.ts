@@ -351,6 +351,7 @@ function pluginData(stored?: unknown) {
   const database_ = {
     state: "ready" as "ready" | "degraded",
     error: null as Error | null,
+    moved: false,
   };
   const readsDeps = {
     on: reads.on.bind(reads),
@@ -359,6 +360,9 @@ function pluginData(stored?: unknown) {
     },
     get error() {
       return database_.error;
+    },
+    get moved() {
+      return database_.moved;
     },
     ready: Promise.resolve({
       reads: { ConnectionReadout: () => Effect.succeed({ itemCount: 8 }) },
@@ -495,12 +499,23 @@ function pluginData(stored?: unknown) {
   /** A refresh of the database fails; the earlier connection still reads. */
   const refreshFails = () => {
     database_.error = new Error("EACCES: zotero.sqlite");
+    database_.moved = false;
+    reads.emit("refresh-failed");
+  };
+  /**
+   * The researcher points ZotLit at a data folder that does not read; the
+   * earlier database still serves.
+   */
+  const moveFails = () => {
+    database_.error = new Error("ENOENT: zotero.sqlite");
+    database_.moved = true;
     reads.emit("refresh-failed");
   };
   /** The researcher pointed ZotLit at the data folder, and it reads again. */
   const locate = () => {
     database_.state = "ready";
     database_.error = null;
+    database_.moved = false;
     reads.emit("changed");
   };
   /** The vault gains a Literature Note for `itemKey`. */
@@ -539,6 +554,7 @@ function pluginData(stored?: unknown) {
     items,
     lose,
     refreshFails,
+    moveFails,
     locate,
     setupActions,
   };
@@ -939,6 +955,22 @@ it("keeps the last rows with a note where a refresh of the database fails, and d
     await view.query.settled;
   });
   expect(note()).toBeNull();
+});
+
+it("says Zotero is not found where the data folder changes to one that does not read, though the earlier database still serves", async () => {
+  const { deps, moveFails } = pluginData(ON_MY_LIBRARY);
+  const view = await openTab(deps);
+  const shell = view.contentEl.querySelector(
+    "[data-library-tree]",
+  )!.parentElement!;
+  await act(async () => {
+    moveFails();
+    await view.query.settled;
+  });
+  expect(shell.hasAttribute("data-zotero-missing")).toBe(true);
+  expect(
+    view.contentEl.querySelector("[data-library-refresh-failed]"),
+  ).toBeNull();
 });
 
 it("gives each row on Recent its reason, and none on a Library", async () => {

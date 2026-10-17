@@ -31,7 +31,7 @@ const CONNECTION_CHECKING_DELAY_MS = 200;
 
 export interface WelcomeBannerDeps {
   app: App;
-  reads: Pick<ZoteroReadsService, "state" | "ready" | "error" | "on">;
+  reads: Pick<ZoteroReadsService, "state" | "ready" | "error" | "moved" | "on">;
   queries: Pick<QueryClientService, "peek" | "read">;
   zoteroPref: Pick<ZoteroPrefService, "dataDir">;
   settings: Pick<SettingsService, "subscribe" | "update">;

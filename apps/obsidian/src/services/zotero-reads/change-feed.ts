@@ -34,6 +34,8 @@ export interface FeedState {
   readonly error: DbUnavailable | null;
   /** The serving connection's Read Mode; sent only while ready. */
   readonly readMode?: EffectiveReadMode | null | undefined;
+  /** The last refresh failed for another database than the one serving. */
+  readonly moved?: boolean | undefined;
   /**
    * The missing-file signal was raised. A subscriber that arrives after it
    * (the renderer subscribes once the worker is up) still gets it while no
@@ -45,12 +47,13 @@ export interface FeedState {
 /** A {@link makeChangeFeed} seeded from `current()`. */
 export const makeStateFeed = (current: () => FeedState) =>
   makeChangeFeed(() => {
-    const { state, error, readMode, missing } = current();
+    const { state, error, readMode, moved, missing } = current();
     const seed: ChangeEvent = {
       _tag: "state",
       state,
       error,
       ...(state === "ready" && readMode && { readMode }),
+      ...(state === "ready" && error !== null && { moved: moved ?? false }),
     };
     return missing && state !== "ready"
       ? [seed, { _tag: "db-file-missing" }]
