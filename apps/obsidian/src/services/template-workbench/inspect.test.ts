@@ -74,8 +74,16 @@ async function fixture(
       );
       // The Workbench Guide tells a caller to follow `diagnostic.hint` on
       // failure, so every refusal this suite reaches carries one.
-      if (answer.ok === false && answer.diagnostic)
-        expect(answer.diagnostic).toMatchObject({ hint: expect.any(String) });
+      const refusals = [answer].filter(
+        (entry) => entry.ok === false && entry.diagnostic,
+      );
+      expect(refusals).toEqual(
+        refusals.map(() =>
+          expect.objectContaining({
+            diagnostic: expect.objectContaining({ hint: expect.any(String) }),
+          }),
+        ),
+      );
       return answer;
     },
     guide: async () =>
@@ -188,53 +196,48 @@ describe("registered template-inspect", () => {
     });
   });
 
-  it.each(["invalid", "duplicate"])(
-    "resolves the note's stamped Profile through %s document inventory",
-    async (state) => {
-      const files: Record<string, string> =
-        state === "invalid"
-          ? {
-              [BOOKS]: source.replace(
-                "--- zotlit:annotation ---",
-                "No Annotation Section",
-              ),
-            }
-          : {
-              [BOOKS]: source,
-              "templates/zotlit-profile.duplicate.md": source,
-            };
-      await using f = await fixture(files);
-      f.vault.addFile("Reading/Book.md", "Existing note");
-      vi.spyOn(f.app.metadataCache, "getFileCache").mockReturnValue({
-        frontmatter: {
-          "zotero-key": "ABCD2345",
-          "zotlit-profile": "Books (Bk3Qn7XvT2Lp)",
-        },
-      } as never);
-      const response = await f.inspect({
-        note: "Reading/Book.md",
-        source: "full",
-      });
-      if (state === "duplicate")
-        expect(response).toMatchObject({
-          ok: false,
-          diagnostic: { code: "AMBIGUOUS_TARGET" },
-          matches: [
-            { path: BOOKS },
-            { path: "templates/zotlit-profile.duplicate.md" },
-          ],
-        });
-      else {
-        expect(response).toMatchObject({
-          ok: true,
-          note: { key: "ABCD2345" },
-          document: { path: BOOKS, profileIdentity: { id: "Bk3Qn7XvT2Lp" } },
-          source: files[BOOKS],
-        });
-        expect(response.problems.length).toBeGreaterThan(0);
-      }
-    },
-  );
+  async function inspectStampedNote(files: Record<string, string>) {
+    await using f = await fixture(files);
+    f.vault.addFile("Reading/Book.md", "Existing note");
+    vi.spyOn(f.app.metadataCache, "getFileCache").mockReturnValue({
+      frontmatter: {
+        "zotero-key": "ABCD2345",
+        "zotlit-profile": "Books (Bk3Qn7XvT2Lp)",
+      },
+    } as never);
+    return await f.inspect({ note: "Reading/Book.md", source: "full" });
+  }
+
+  it("resolves the note's stamped Profile through invalid document inventory", async () => {
+    const invalid = source.replace(
+      "--- zotlit:annotation ---",
+      "No Annotation Section",
+    );
+    const response = await inspectStampedNote({ [BOOKS]: invalid });
+    expect(response).toMatchObject({
+      ok: true,
+      note: { key: "ABCD2345" },
+      document: { path: BOOKS, profileIdentity: { id: "Bk3Qn7XvT2Lp" } },
+      source: invalid,
+    });
+    expect(response.problems.length).toBeGreaterThan(0);
+  });
+
+  it("resolves the note's stamped Profile through duplicate document inventory", async () => {
+    expect(
+      await inspectStampedNote({
+        [BOOKS]: source,
+        "templates/zotlit-profile.duplicate.md": source,
+      }),
+    ).toMatchObject({
+      ok: false,
+      diagnostic: { code: "AMBIGUOUS_TARGET" },
+      matches: [
+        { path: BOOKS },
+        { path: "templates/zotlit-profile.duplicate.md" },
+      ],
+    });
+  });
 
   it("reads invalid source and built-in Default without creating files", async () => {
     await using f = await fixture({ [BOOKS]: "---\nfilename: [\n---\nBroken" });
@@ -541,27 +544,33 @@ describe("registered template-inspect", () => {
   });
 
   it.each([
-    ["valid", "Original partial", "{% if %}"],
-    ["invalid", "{% if %}", "Repaired partial marker"],
+    {
+      state: "valid",
+      initial: "Original partial",
+      edited: "{% if %}",
+      problems: [expect.objectContaining({ message: expect.any(String) })],
+    },
+    {
+      state: "invalid",
+      initial: "{% if %}",
+      edited: "Repaired partial marker",
+      problems: [],
+    },
   ])(
-    "refreshes dependency problems after an initially %s partial reconciles",
-    async (_state, initial, edited) => {
-      await using f = await fixture({ [BOOKS]: source, [PARTIAL]: initial! });
-      f.disk.set(PARTIAL, edited!);
+    "refreshes dependency problems after an initially $state partial reconciles",
+    async ({ initial, edited, problems }) => {
+      await using f = await fixture({ [BOOKS]: source, [PARTIAL]: initial });
+      f.disk.set(PARTIAL, edited);
       const attempt = f.inspect({ document: BOOKS });
       await f.readSignal.promise;
-      f.vault.modifyFile(PARTIAL, edited!);
+      f.vault.modifyFile(PARTIAL, edited);
       await vi.advanceTimersByTimeAsync(500);
       const result = await attempt;
       expect(result.ok).toBe(true);
       const dependency = result.dependencies.find(
         (entry: { path: string }) => entry.path === PARTIAL,
       );
-      if (edited === "{% if %}")
-        expect(dependency.problems).toEqual([
-          expect.objectContaining({ message: expect.any(String) }),
-        ]);
-      else expect(dependency.problems).toEqual([]);
+      expect(dependency.problems).toEqual(problems);
     },
   );
 });

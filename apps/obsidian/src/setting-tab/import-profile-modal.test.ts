@@ -387,19 +387,19 @@ it("cancels the source suggester without reading or opening consent", async () =
   expect(f.opened).not.toHaveBeenCalled();
 });
 
-it.each(["clipboard", "file"] as const)(
-  "opens consent directly for the menu's %s source",
-  async (source) => {
+it.each([
+  { source: "clipboard", text: "CLIPBOARD SOURCE", dialogs: 0 },
+  { source: "file", text: "FILE SOURCE", dialogs: 1 },
+] as const)(
+  "opens consent directly for the menu's $source source",
+  async ({ source, text, dialogs }) => {
     await using f = await importerFixture("replace");
     const pending = f.run({ source });
     await vi.waitFor(() => expect(f.opened).toHaveBeenCalledOnce());
     expect(f.suggestions).not.toHaveBeenCalled();
     expect(f.acquireRead).not.toHaveBeenCalled();
-    expect(f.prepareImport).toHaveBeenCalledWith(
-      source === "clipboard" ? "CLIPBOARD SOURCE" : "FILE SOURCE",
-      {},
-    );
-    if (source === "file") expect(f.showOpenDialog).toHaveBeenCalledOnce();
+    expect(f.prepareImport).toHaveBeenCalledWith(text, {});
+    expect(f.showOpenDialog).toHaveBeenCalledTimes(dialogs);
     (f.opened.mock.instances[0] as ImportProfileModal).onClose();
     await expect(pending).resolves.toBeUndefined();
     expect(f.save).not.toHaveBeenCalled();
@@ -484,14 +484,25 @@ async function realImportFixture(held: boolean, source = incoming) {
   return { ...f, modal, [Symbol.asyncDispose]: () => cleanup.disposeAsync() };
 }
 
+// A fresh import previews the note it renders; a replacement reports the overwrite instead.
+const fresh = {
+  held: false,
+  consent: "Preview",
+  confirm: m.profile_import_confirm(),
+};
+const replace = {
+  held: true,
+  consent: "Your file (version 1.0.0) is overwritten",
+  confirm: m.profile_import_replace(),
+};
 it.each([
-  { held: false, includeMatch: true },
-  { held: false, includeMatch: false },
-  { held: true, includeMatch: true },
-  { held: true, includeMatch: false },
+  { ...fresh, includeMatch: true },
+  { ...fresh, includeMatch: false },
+  { ...replace, includeMatch: true },
+  { ...replace, includeMatch: false },
 ])(
   "writes consented match bytes for held=$held and includeMatch=$includeMatch",
-  async ({ held, includeMatch }) => {
+  async ({ held, consent, confirm, includeMatch }) => {
     await using f = await realImportFixture(held);
     using buttons = observeButtons();
     f.modal.onOpen();
@@ -499,22 +510,12 @@ it.each([
       'library == "group:987654"',
     );
     expect(matchToggle(f.modal)?.getValue()).toBe(true);
-    if (!held)
-      await vi.waitFor(() =>
-        expect(f.modal.contentEl.textContent).toContain("Preview"),
-      );
-    if (!includeMatch) {
-      matchToggle(f.modal)!.toggle(false);
-      await vi.waitFor(() => {
-        const name = held
-          ? m.profile_import_replace()
-          : m.profile_import_confirm();
-        expect(buttons.disabled(name)).toBe(false);
-      });
-    }
-    await buttons.click(
-      held ? m.profile_import_replace() : m.profile_import_confirm(),
+    await vi.waitFor(() =>
+      expect(f.modal.contentEl.textContent).toContain(consent),
     );
+    matchToggle(f.modal)!.toggle(includeMatch);
+    await vi.waitFor(() => expect(buttons.disabled(confirm)).toBe(false));
+    await buttons.click(confirm);
     await expect(f.modal.result).resolves.toMatchObject({ id });
     expect(f.vault.contents.get(importedPath)).toBe(
       includeMatch ? incoming : incomingPrefix + incomingSuffix,

@@ -123,8 +123,16 @@ async function fixture(
       );
       // The Workbench Guide tells a caller that a failed check answers with
       // `diagnostic.hint`, so every refusal this suite reaches carries one.
-      if (answer.ok === false && answer.diagnostic)
-        expect(answer.diagnostic).toMatchObject({ hint: expect.any(String) });
+      const refusals = [answer].filter(
+        (entry) => entry.ok === false && entry.diagnostic,
+      );
+      expect(refusals).toEqual(
+        refusals.map(() =>
+          expect.objectContaining({
+            diagnostic: expect.objectContaining({ hint: expect.any(String) }),
+          }),
+        ),
+      );
       return answer;
     },
     [Symbol.asyncDispose]: () => cleanup.disposeAsync(),

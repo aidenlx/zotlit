@@ -69,8 +69,7 @@ it.each([false, true])(
     commands[0]!.callback!();
     await revealed;
 
-    if (existing) expect(workspace.getLeaf).not.toHaveBeenCalled();
-    else expect(workspace.getLeaf).toHaveBeenCalledExactlyOnceWith("tab");
+    expect(workspace.getLeaf.mock.calls).toEqual(existing ? [] : [["tab"]]);
     expect(leaf.setViewState).toHaveBeenCalledWith({
       type: "zotlit-welcome",
       active: true,

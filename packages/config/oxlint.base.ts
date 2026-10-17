@@ -64,10 +64,15 @@ export default defineConfig({
     // oxlint reads inline snapshots only; packages/scripts/scripts/snapshot-size.ts
     // checks .snap files.
     "vitest/no-large-snapshots": ["error", { inlineMaxSize: 50 }],
+    // An assertion on one path only lets a test pass without checking it.
+    "vitest/no-conditional-expect": "error",
+    // An unawaited async assertion never fails its test. valid-expect would
+    // also flag the deferred `const rejection = expect(p).rejects…` that
+    // policies/test-timing.md requires; no-floating-promises passes it.
+    "typescript/no-floating-promises": "error",
+    "vitest/valid-expect": "off",
     // Default rules of the plugin with an untriaged backlog; enable each one
     // when its findings are fixed.
-    "vitest/no-conditional-expect": "off",
-    "vitest/valid-expect": "off",
     "vitest/require-to-throw-message": "off",
     "vitest/require-mock-type-parameters": "off",
     "vitest/expect-expect": "off",

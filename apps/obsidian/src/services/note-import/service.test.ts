@@ -427,43 +427,45 @@ describe("createNoteImporter", () => {
     },
   );
 
-  it.each(["existing", "parent"] as const)(
-    "keeps the %s Profile when an orphan choice is supplied",
-    async (source) => {
-      const { app, host, create } = makeApp({
-        "History/Existing.md": { [FIELD_LITERATURE_NOTE_PROFILE]: PROFILE_B },
-      });
-      const target = host.file("History/Existing.md");
-      const service = makeService(
-        app,
-        source === "existing"
-          ? { existing: [target] }
-          : { literatureNotes: [target] },
-      );
-      const prepared = await service.prepareExplicitImport(makeNote(), {
-        reads,
-        orphanProfile: PROFILE_A,
-      });
+  async function importWithOrphanChoice(source: "existing" | "parent") {
+    const { app, host, create } = makeApp({
+      "History/Existing.md": { [FIELD_LITERATURE_NOTE_PROFILE]: PROFILE_B },
+    });
+    const target = host.file("History/Existing.md");
+    const service = makeService(
+      app,
+      source === "existing"
+        ? { existing: [target] }
+        : { literatureNotes: [target] },
+    );
+    const prepared = await service.prepareExplicitImport(makeNote(), {
+      reads,
+      orphanProfile: PROFILE_A,
+    });
 
-      expect(prepared.source).toBe(source);
-      expect(prepared.profile.selector).toBe(PROFILE_B);
-      await prepared.import(makeNote(), {
-        reads,
-        settings: profileSettings(),
-      });
-      if (source === "existing") {
-        expect(prepared.path).toBe(target.path);
-        expect(create).not.toHaveBeenCalled();
-        expect(host.text(target.path)).toContain("History (Rz9Wm4YfH6Kd)");
-      } else {
-        expect(prepared.path.startsWith("History/Imported/Methods_")).toBe(
-          true,
-        );
-        expect(create.mock.calls[0]![0]).toBe(prepared.path);
-        expect(create.mock.calls[0]![1]).toContain("History (Rz9Wm4YfH6Kd)");
-      }
-    },
-  );
+    expect(prepared.source).toBe(source);
+    expect(prepared.profile.selector).toBe(PROFILE_B);
+    await prepared.import(makeNote(), {
+      reads,
+      settings: profileSettings(),
+    });
+    return { host, create, target, prepared };
+  }
+
+  it("keeps the existing Profile when an orphan choice is supplied", async () => {
+    const { host, create, target, prepared } =
+      await importWithOrphanChoice("existing");
+    expect(prepared.path).toBe(target.path);
+    expect(create).not.toHaveBeenCalled();
+    expect(host.text(target.path)).toContain("History (Rz9Wm4YfH6Kd)");
+  });
+
+  it("keeps the parent Profile when an orphan choice is supplied", async () => {
+    const { create, prepared } = await importWithOrphanChoice("parent");
+    expect(prepared.path.startsWith("History/Imported/Methods_")).toBe(true);
+    expect(create.mock.calls[0]![0]).toBe(prepared.path);
+    expect(create.mock.calls[0]![1]).toContain("History (Rz9Wm4YfH6Kd)");
+  });
 
   it("prepares an orphan under its chosen Profile without writes and imports at the previewed path", async () => {
     const { app, create, createFolder } = makeApp();

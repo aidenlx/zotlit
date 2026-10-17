@@ -353,9 +353,22 @@ it("exports the selected Item with the vault targets this vault can answer", asy
   expect(body).not.toContain("PRIVATE CHILD NOTE BODY");
 });
 
-it.each(["owned", "previous", "foreign"] as const)(
-  "exports only referenced immutable images with matching ownership (%s)",
-  async (immutable) => {
+// An asset the previous release named is still the annotation's own image.
+const exported = {
+  annotation: expect.stringContaining("zotlit-excerpt-"),
+  unavailable: expect.not.arrayContaining(["annotations[0].zt.imgLink"]),
+};
+it.each([
+  { immutable: "owned", ...exported },
+  { immutable: "previous", ...exported },
+  {
+    immutable: "foreign",
+    annotation: expect.not.stringContaining("zotlit-excerpt-"),
+    unavailable: expect.arrayContaining(["annotations[0].zt.imgLink"]),
+  },
+] as const)(
+  "exports only referenced immutable images with matching ownership ($immutable)",
+  async ({ immutable, annotation, unavailable }) => {
     await using bridge = await harness({ immutable });
     const res = await bridge.request(LOCAL_BRIDGE_PATHS.selectedItem, {
       method: "POST",
@@ -366,22 +379,8 @@ it.each(["owned", "previous", "foreign"] as const)(
       roots: { annotations: unknown[] };
       unavailable: { path: string }[];
     };
-    if (immutable === "foreign") {
-      expect(JSON.stringify(snapshot.roots.annotations[0])).not.toContain(
-        "zotlit-excerpt-",
-      );
-      expect(snapshot.unavailable.map(({ path }) => path)).toContain(
-        "annotations[0].zt.imgLink",
-      );
-    } else {
-      // An asset the previous release named is still the annotation's own image.
-      expect(JSON.stringify(snapshot.roots.annotations[0])).toContain(
-        "zotlit-excerpt-",
-      );
-      expect(snapshot.unavailable.map(({ path }) => path)).not.toContain(
-        "annotations[0].zt.imgLink",
-      );
-    }
+    expect(JSON.stringify(snapshot.roots.annotations[0])).toEqual(annotation);
+    expect(snapshot.unavailable.map(({ path }) => path)).toEqual(unavailable);
   },
 );
 

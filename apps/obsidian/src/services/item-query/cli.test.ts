@@ -1,4 +1,5 @@
 import { Effect, Scheduler } from "effect";
+import { isDeepStrictEqual } from "node:util";
 import type { CliData, CliHandler, Plugin } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
@@ -336,13 +337,13 @@ describe("zotlit:query-guide", () => {
 
     for (const args of GUIDE_EXAMPLES) {
       const answer = await run(args);
-      if (!answer.ok) failures.push(JSON.stringify({ args, answer }));
-      else expect(answer.warnings).toEqual([]);
+      if (!answer.ok || !isDeepStrictEqual(answer.warnings, []))
+        failures.push(JSON.stringify({ args, answer }));
     }
     for (const filter of GUIDE_FILTERS) {
       const answer = await run({ filter, fields: "[]" });
-      if (!answer.ok) failures.push(JSON.stringify({ filter, answer }));
-      else expect(answer.warnings).toEqual([]);
+      if (!answer.ok || !isDeepStrictEqual(answer.warnings, []))
+        failures.push(JSON.stringify({ filter, answer }));
     }
 
     expect(GUIDE_EXAMPLES.length).toBeGreaterThan(0);

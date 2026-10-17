@@ -1046,6 +1046,18 @@ filename: note
 ${body}`;
 }
 
+function rendersForCreate(
+  facade: TemplateFacade,
+  document: ReturnType<TemplateFacade["parseLiteratureNoteTemplate"]>,
+): boolean {
+  try {
+    facade.renderLiteratureNoteTemplateForCreate(document, {});
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 describe("Annotation Section boundary", () => {
   const facade = new TemplateFacade();
 
@@ -1135,17 +1147,33 @@ describe("Annotation Section boundary", () => {
   });
 
   it.each([
-    { language: "liquid", before: "```markdown\n", after: "\n```" },
-    { language: "liquid", before: "{% raw %}\n", after: "\n{% endraw %}" },
+    {
+      language: "liquid",
+      before: "```markdown\n",
+      after: "\n```",
+      bodyRenders: true,
+    },
+    {
+      language: "liquid",
+      before: "{% raw %}\n",
+      after: "\n{% endraw %}",
+      bodyRenders: false,
+    },
     {
       language: "liquid",
       before: "{% comment %}\n",
       after: "\n{% endcomment %}",
+      bodyRenders: false,
     },
-    { language: "eta", before: "<% const example = `\n", after: "\n`; %>" },
+    {
+      language: "eta",
+      before: "<% const example = `\n",
+      after: "\n`; %>",
+      bodyRenders: false,
+    },
   ])(
     "splits before parsing $language code in $before",
-    ({ language, before, after }) => {
+    ({ language, before, after, bodyRenders }) => {
       const source = blockDocument(
         `${before}--- zotlit:annotation ---\nA${after}`,
         "syntax",
@@ -1160,11 +1188,9 @@ describe("Annotation Section boundary", () => {
       ).toThrowError(
         expect.objectContaining({ code: "duplicate-annotation-section" }),
       );
-      if (language === "liquid" && before.startsWith("{%")) {
-        expect(() =>
-          facade.renderLiteratureNoteTemplateForCreate(document, {}),
-        ).toThrow();
-      }
+      // The split leaves the body's opening construct unclosed; only a body
+      // that is complete without its annotation section still renders.
+      expect(rendersForCreate(facade, document)).toBe(bodyRenders);
     },
   );
 

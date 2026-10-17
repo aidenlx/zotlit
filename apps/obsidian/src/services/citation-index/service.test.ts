@@ -1603,9 +1603,17 @@ describe("CitationIndex citedByOmittedSyntaxes", () => {
 });
 
 describe("CitationIndex one-shot reads", () => {
-  it.each([true, false])(
-    "keeps the requested occurrences while a lookup waits (Pandoc enabled: %s)",
-    async (enabled) => {
+  it.each([
+    {
+      enabled: true,
+      expected: {
+        groups: [{ path: "draft.md", occurrences: [{ raw: "doe2024" }] }],
+      },
+    },
+    { enabled: false, expected: ["citekey"] },
+  ])(
+    "keeps the requested occurrences while a lookup waits (Pandoc enabled: $enabled)",
+    async ({ enabled, expected }) => {
       const db = new DatabaseStub({ readyImmediately: false });
       const { index, workspace, metadataCache, draft } = await makeHarness(
         { "draft.md": "@doe2024." },
@@ -1620,13 +1628,7 @@ describe("CitationIndex one-shot reads", () => {
       metadataCache.change(draft, "@roe2025.");
       db.settle();
 
-      if (enabled) {
-        expect(await pending).toMatchObject({
-          groups: [{ path: "draft.md", occurrences: [{ raw: "doe2024" }] }],
-        });
-      } else {
-        expect(await pending).toEqual(["citekey"]);
-      }
+      expect(await pending).toMatchObject(expected);
     },
   );
 

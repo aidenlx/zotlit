@@ -348,16 +348,17 @@ describe("Citation Popover visits", () => {
     },
   );
 
+  // A visit closed before its delay never showed a card; a later close has one to detach.
   it.each([
-    ["close", 0],
-    ["close", 300],
-    ["remove", 0],
-    ["remove", 300],
-    ["disable", 0],
-    ["disable", 300],
+    ["close", 0, false],
+    ["close", 300, true],
+    ["remove", 0, false],
+    ["remove", 300, true],
+    ["disable", 0, false],
+    ["disable", 300, true],
   ] as const)(
     "closes a graph visit on %s after %i ms",
-    async (action, wait) => {
+    async (action, wait, shown) => {
       await using run = harness();
       const engine = Object.assign(run.parent, {
         options: { "zotlit-citation-popover": true },
@@ -393,6 +394,7 @@ describe("Citation Popover visits", () => {
       );
       await vi.advanceTimersByTimeAsync(wait);
       const card = engine.hoverPopover?.hoverEl;
+      expect(card !== undefined).toBe(shown);
 
       if (action === "close") installed[Symbol.dispose]();
       else {
@@ -404,7 +406,7 @@ describe("Citation Popover visits", () => {
         });
       }
 
-      if (card) expect(card.isConnected).toBe(false);
+      expect(card?.isConnected ?? false).toBe(false);
       expect(engine.hoverPopover).toBeNull();
       await vi.advanceTimersByTimeAsync(1000);
       expect(document.querySelector(".zt-citation-popover")).toBeNull();

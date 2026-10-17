@@ -2028,15 +2028,9 @@ it.each([
   (text, value, warning) => {
     const planned = plan(text);
     expect(evaluate(planned.root, ARTICLE, CLOCK)).toEqual(value);
-    expect(planned.warnings).toEqual(
-      warning === undefined
-        ? []
-        : [
-            expect.objectContaining({
-              kind: "constant",
-              value: warning,
-            }),
-          ],
+    // An array matches only an array of the same length.
+    expect(planned.warnings).toMatchObject(
+      warning === undefined ? [] : [{ kind: "constant", value: warning }],
     );
   },
 );

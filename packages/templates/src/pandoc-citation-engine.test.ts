@@ -70,48 +70,55 @@ describe.each([
     language: "liquid",
     invalidSource: '{{ zt.citations | pandoc_cite: "unknown" }}',
     validSource: "{{ zt.citations | pandoc_cite }}",
+    unknownForm: expect.stringContaining("Unknown Pandoc Citation form"),
+    invalidShape: expect.stringContaining("requires a Citation Item array"),
+    unrepresentable: expect.stringContaining(
+      "citation key Pandoc cannot represent",
+    ),
   },
   {
     name: "Eta",
     language: "eta",
     invalidSource: '<%= pandocCite(zt.citations, "unknown") %>',
     validSource: "<%= pandocCite(zt.citations) %>",
+    unknownForm: expect.objectContaining({
+      name: "PandocCitationError",
+      code: "invalid-input",
+      property: "form",
+    }),
+    invalidShape: expect.objectContaining({
+      name: "PandocCitationError",
+      code: "invalid-input",
+      property: "items",
+    }),
+    unrepresentable: expect.objectContaining({
+      name: "PandocCitationError",
+      code: "unrepresentable-value",
+      property: "citationKey",
+    }),
   },
 ] as const)(
   "$name Pandoc Citation Adapter",
-  ({ language, invalidSource, validSource }) => {
+  ({
+    language,
+    invalidSource,
+    validSource,
+    unknownForm,
+    invalidShape,
+    unrepresentable,
+  }) => {
     it("rejects an unknown form", () => {
       const error = domainErrorOf(language, () =>
         render(language, invalidSource),
       );
-      if (language === "liquid") {
-        expect(error).toContain("Unknown Pandoc Citation form");
-      } else {
-        expect(error).toEqual(
-          expect.objectContaining({
-            name: "PandocCitationError",
-            code: "invalid-input",
-            property: "form",
-          }),
-        );
-      }
+      expect(error).toEqual(unknownForm);
     });
 
     it("rejects an invalid input shape", () => {
       const error = domainErrorOf(language, () =>
         render(language, validSource, {}),
       );
-      if (language === "liquid") {
-        expect(error).toContain("requires a Citation Item array");
-      } else {
-        expect(error).toEqual(
-          expect.objectContaining({
-            name: "PandocCitationError",
-            code: "invalid-input",
-            property: "items",
-          }),
-        );
-      }
+      expect(error).toEqual(invalidShape);
     });
 
     it("propagates domain errors", () => {
@@ -120,17 +127,7 @@ describe.each([
           { ...citation, item: { citationKey: "Doe 2024" } },
         ]),
       );
-      if (language === "liquid") {
-        expect(error).toContain("citation key Pandoc cannot represent");
-      } else {
-        expect(error).toEqual(
-          expect.objectContaining({
-            name: "PandocCitationError",
-            code: "unrepresentable-value",
-            property: "citationKey",
-          }),
-        );
-      }
+      expect(error).toEqual(unrepresentable);
     });
   },
 );

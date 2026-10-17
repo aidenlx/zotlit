@@ -323,7 +323,9 @@ it("labels the retained note name and drops it with the selected item", async ()
   );
   expect(noteName(dom.container)).toBe("literatures/Working.md");
 
-  act(() => mounted.controller.setManifestKey("filename", "{% for a i b %}"));
+  act(() => {
+    mounted.controller.setManifestKey("filename", "{% for a i b %}");
+  });
   act(() => mounted.scheduler.run());
   await act(async () =>
     mounted.host.renders[1]!.answer({

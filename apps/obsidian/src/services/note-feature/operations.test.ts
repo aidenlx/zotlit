@@ -649,7 +649,7 @@ describe("Profile source selection", () => {
 });
 
 describe("createNote", () => {
-  it.each([
+  const excerptModes = [
     "valid",
     "fallback",
     "corrupt-fallback",
@@ -672,423 +672,560 @@ describe("createNote", () => {
     "retain-replaced",
     "reject-truncated",
     "reject-idat",
-  ] as const)(
-    "prepares image and ink before one Eta execution (%s)",
-    async (mode) => {
-      const refreshOperation =
-        mode.startsWith("retain") ||
-        mode.startsWith("reject") ||
-        mode === "refresh" ||
-        mode === "overwrite";
-      const parent = join(
-        await getWorkspaceRoot(import.meta.dirname),
-        ".scratch/excerpt-note-tests",
-      );
-      await mkdir(parent, { recursive: true });
-      const root = await mkdtemp(`${parent}/vault-`);
-      await using cleanup = new AsyncDisposableStack();
-      cleanup.defer(() => rm(root, { recursive: true, force: true }));
-      const { deps } = makeUpdateHarness({
-        content: "",
-        settings: {
-          "attachment.import": mode !== "disabled",
-          "attachment.folder-path": "Images",
+  ] as const;
+  type ExcerptMode = (typeof excerptModes)[number];
+
+  /**
+   * Creates "Paper" (RTKEY234), whose PDF holds an image and an ink
+   * annotation, with excerpt resolution and settings driven by `mode`.
+   */
+  async function createExcerptNote(
+    mode: ExcerptMode,
+    cleanup: AsyncDisposableStack,
+  ) {
+    const parent = join(
+      await getWorkspaceRoot(import.meta.dirname),
+      ".scratch/excerpt-note-tests",
+    );
+    await mkdir(parent, { recursive: true });
+    const root = await mkdtemp(`${parent}/vault-`);
+    cleanup.defer(() => rm(root, { recursive: true, force: true }));
+    const { deps } = makeUpdateHarness({
+      content: "",
+      settings: {
+        "attachment.import": mode !== "disabled",
+        "attachment.folder-path": "Images",
+      },
+    });
+    const client = deps.db.client;
+    const state = { runs: 0, leaseReleased: false };
+    const zoteroReads = deps.zoteroReads;
+    deps.zoteroReads = {
+      ready: zoteroReads.ready,
+      acquireRead: async () => {
+        const lease = await zoteroReads.acquireRead();
+        return {
+          reads: lease.reads,
+          [Symbol.asyncDispose]() {
+            state.leaseReleased = true;
+            return lease[Symbol.asyncDispose]();
+          },
+        };
+      },
+    };
+    // The create seeds the Item "Paper" (RTKEY234) itself; its PDF holds an
+    // image and an ink annotation.
+    client.$client.exec(`
+      insert into itemTypes (itemTypeID, typeName) values (4, 'annotation');
+      insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key) values
+        (90, ${ATTACHMENT_TYPE_ID}, '2025-01-01 00:00:00', '2025-01-01 00:00:00', 1, 'RGRPDF24'),
+        (91, 4, '2025-01-01 00:00:00', '2025-01-01 00:00:00', 1, 'FDRFQ7C2'),
+        (92, 4, '2025-01-01 00:00:00', '2025-01-01 00:00:00', 1, 'TYY6Z6ZF');
+      insert into itemAttachments (itemID, parentItemID, linkMode, contentType, path) values
+        (90, 1, 0, 'application/pdf', 'storage:paper.pdf');
+      insert into itemAnnotations (itemID, parentItemID, type, text, comment, color, pageLabel, sortIndex, position, isExternal) values
+        (91, 90, 3, null, null, '#ffd400', '1', '00000|000000|00001', '{"pageIndex":0,"rects":[[0,0,10,10]]}', 0),
+        (92, 90, 4, null, null, '#ff0000', '1', '00000|000000|00002', '{"pageIndex":0,"width":2,"paths":[[1,2,3,4]]}', 0);
+    `);
+    const actual =
+      await vi.importActual<typeof import("@zotlit/db")>("@zotlit/db");
+    // This case builds its template data from the seeded rows for real.
+    vi.mocked(buildNoteContextFromSource).mockImplementation(
+      actual.buildNoteContextFromSource,
+    );
+    const app = makeApp();
+    app.vault.createFolder = vi.fn(async (path: string) => {
+      await mkdir(`${root}/${path}`, { recursive: true });
+      return Object.assign(new TFolder(), { path });
+    });
+    app.vault.create.mockImplementation(
+      async (path: string, content: string) => {
+        expect(state.leaseReleased).toBe(false);
+        await mkdir(`${root}/Literature`, { recursive: true });
+        await writeFile(`${root}/${path}`, content);
+        return app.vault.createFile(path, content);
+      },
+    );
+    Object.assign(app.vault, {
+      adapter: Object.assign(Object.create(FileSystemAdapter.prototype), {
+        getFullPath: (path: string) => `${root}/${path}`,
+        // Obsidian registers a published excerpt as a vault file.
+        reconcileInternalFile: async (path: string) => {
+          if (!app.vault.getFileByPath(path)) app.vault.addFile(path, "");
         },
-      });
-      const client = deps.db.client;
-      let leaseReleased = false;
-      const zoteroReads = deps.zoteroReads;
-      deps.zoteroReads = {
-        ready: zoteroReads.ready,
-        acquireRead: async () => {
-          const lease = await zoteroReads.acquireRead();
-          return {
-            reads: lease.reads,
-            [Symbol.asyncDispose]() {
-              leaseReleased = true;
-              return lease[Symbol.asyncDispose]();
-            },
-          };
+      }),
+    });
+    deps.app = app;
+    const fallbackService = cleanup.use(
+      new ExcerptImageService({
+        render: async () => {
+          throw new Error("PDF unavailable");
         },
-      };
-      // The create seeds the Item "Paper" (RTKEY234) itself; its PDF holds an
-      // image and an ink annotation.
-      client.$client.exec(`
-        insert into itemTypes (itemTypeID, typeName) values (4, 'annotation');
-        insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key) values
-          (90, ${ATTACHMENT_TYPE_ID}, '2025-01-01 00:00:00', '2025-01-01 00:00:00', 1, 'RGRPDF24'),
-          (91, 4, '2025-01-01 00:00:00', '2025-01-01 00:00:00', 1, 'FDRFQ7C2'),
-          (92, 4, '2025-01-01 00:00:00', '2025-01-01 00:00:00', 1, 'TYY6Z6ZF');
-        insert into itemAttachments (itemID, parentItemID, linkMode, contentType, path) values
-          (90, 1, 0, 'application/pdf', 'storage:paper.pdf');
-        insert into itemAnnotations (itemID, parentItemID, type, text, comment, color, pageLabel, sortIndex, position, isExternal) values
-          (91, 90, 3, null, null, '#ffd400', '1', '00000|000000|00001', '{"pageIndex":0,"rects":[[0,0,10,10]]}', 0),
-          (92, 90, 4, null, null, '#ff0000', '1', '00000|000000|00002', '{"pageIndex":0,"width":2,"paths":[[1,2,3,4]]}', 0);
-      `);
-      const actual =
-        await vi.importActual<typeof import("@zotlit/db")>("@zotlit/db");
-      // This case builds its template data from the seeded rows for real.
-      vi.mocked(buildNoteContextFromSource).mockImplementation(
-        actual.buildNoteContextFromSource,
-      );
-      const app = makeApp();
-      app.vault.createFolder = vi.fn(async (path: string) => {
-        await mkdir(`${root}/${path}`, { recursive: true });
-        return Object.assign(new TFolder(), { path });
-      });
-      app.vault.create.mockImplementation(
-        async (path: string, content: string) => {
-          expect(leaseReleased).toBe(false);
-          await mkdir(`${root}/Literature`, { recursive: true });
-          await writeFile(`${root}/${path}`, content);
-          return app.vault.createFile(path, content);
+        read: async () => corruptPng("truncated"),
+      }),
+    );
+    const resolver = {
+      resolve: vi.fn(
+        async (request: ExcerptRequest): Promise<ExcerptOutcome> => {
+          expect(state.leaseReleased).toBe(false);
+          if (mode === "corrupt-fallback")
+            return fallbackService.resolve(request);
+          if (mode === "partial" && request.annotation.type === "image")
+            throw new Error("Image renderer failed");
+          if (
+            mode === "unavailable" ||
+            mode === "unused" ||
+            mode === "collected"
+          )
+            return { kind: "unavailable" };
+          return availableOutcome({
+            bytes: redPng,
+            format: PNG_FORMAT,
+            provenance: mode === "fallback" ? "zotero" : "rendered",
+            freshness:
+              mode === "fallback"
+                ? "uncertain"
+                : mode === "unchecked"
+                  ? "unchecked"
+                  : "checked",
+          });
         },
-      );
-      Object.assign(app.vault, {
-        adapter: Object.assign(Object.create(FileSystemAdapter.prototype), {
-          getFullPath: (path: string) => `${root}/${path}`,
-          // Obsidian registers a published excerpt as a vault file.
-          reconcileInternalFile: async (path: string) => {
-            if (!app.vault.getFileByPath(path)) app.vault.addFile(path, "");
+      ),
+      operation() {
+        return {
+          resolve: this.resolve,
+          [Symbol.asyncDispose]: async () => {},
+        };
+      },
+    };
+    const prepareExcerpts = createExcerptPreparation({
+      app: app as unknown as App,
+      resolver,
+      paths: deps.zoteroPref,
+    });
+    deps.excerptImages = (options) => prepareExcerpts(options);
+    if (mode === "write-failure") await writeFile(`${root}/Images`, "occupied");
+    const engine = new TemplateEngine();
+    engine.define(
+      "note",
+      mode === "unused"
+        ? "<% zt.countRender() %>Text only"
+        : `<% zt.countRender() %><% for (const a of zt.annotations) { %><%= ${mode === "retain-link" ? "a.imgLink()" : "embed(a.imgLink)"} %>\n<% } %>End of note`,
+    );
+    deps.template = {
+      ...makeTemplate(),
+      render: (name, data) =>
+        engine.render(name, {
+          ...data,
+          countRender: () => {
+            state.runs++;
           },
         }),
-      });
-      deps.app = app;
-      const fallbackService = cleanup.use(
-        new ExcerptImageService({
-          render: async () => {
-            throw new Error("PDF unavailable");
-          },
-          read: async () => corruptPng("truncated"),
-        }),
-      );
-      const resolver = {
-        resolve: vi.fn(
-          async (request: ExcerptRequest): Promise<ExcerptOutcome> => {
-            expect(leaseReleased).toBe(false);
-            if (mode === "corrupt-fallback")
-              return fallbackService.resolve(request);
-            if (mode === "partial" && request.annotation.type === "image")
-              throw new Error("Image renderer failed");
-            if (
-              mode === "unavailable" ||
-              mode === "unused" ||
-              mode === "collected"
-            )
-              return { kind: "unavailable" };
-            return availableOutcome({
-              bytes: redPng,
-              format: PNG_FORMAT,
-              provenance: mode === "fallback" ? "zotero" : "rendered",
-              freshness:
-                mode === "fallback"
-                  ? "uncertain"
-                  : mode === "unchecked"
-                    ? "unchecked"
-                    : "checked",
-            });
-          },
-        ),
-        operation() {
-          return {
-            resolve: this.resolve,
-            [Symbol.asyncDispose]: async () => {},
-          };
-        },
-      };
-      const prepareExcerpts = createExcerptPreparation({
-        app: app as unknown as App,
-        resolver,
-        paths: deps.zoteroPref,
-      });
-      deps.excerptImages = (options) => prepareExcerpts(options);
-      if (mode === "write-failure")
-        await writeFile(`${root}/Images`, "occupied");
-      const engine = new TemplateEngine();
-      engine.define(
-        "note",
-        mode === "unused"
-          ? "<% zt.countRender() %>Text only"
-          : `<% zt.countRender() %><% for (const a of zt.annotations) { %><%= ${mode === "retain-link" ? "a.imgLink()" : "embed(a.imgLink)"} %>\n<% } %>End of note`,
-      );
-      let runs = 0;
-      deps.template = {
-        ...makeTemplate(),
-        render: (name, data) =>
-          engine.render(name, {
-            ...data,
-            countRender: () => {
-              runs++;
-            },
-          }),
-      };
-      const feature = createNoteFeature(deps);
-      const notices: ExcerptSummary[] = [];
-      const collected: ExcerptSummary[] = [];
-      feature.on("excerpt-images-reported", (summary) => notices.push(summary));
-      const result = await feature.createNote(
-        makeItem({
-          key: "RTKEY234",
-          indexedKey: "RTKEY234",
-          title: "Paper",
-          citationKey: "paper2026",
-        }),
-        mode === "collected"
-          ? { reportExcerpts: (summary) => collected.push(summary) }
-          : undefined,
-      );
-      if (mode === "collected") {
-        expect(notices).toEqual([]);
-        expect(collected).toEqual([
-          { zotero: 0, unchecked: 0, unavailable: 2 },
-        ]);
-        feature.reportExcerptImages(collected[0]!);
-      }
-      expect(result.outcome).toBe("created");
-      expect(leaseReleased).toBe(true);
-      expect(runs).toBe(1);
-      const markdown = await readFile(`${root}/Literature/Paper.md`, "utf8");
-      expect(markdown).toContain(
-        mode === "unused" ? "Text only" : "End of note",
-      );
-      if (mode === "partial") {
-        expect(markdown.split("![[Images/zotlit-excerpt-")).toHaveLength(2);
-        expect(markdown).toContain(m.excerpt_image_unavailable());
-        expect(await readdir(`${root}/Images`)).toHaveLength(1);
-      } else if (
-        refreshOperation ||
-        [
-          "valid",
-          "fallback",
-          "unchecked",
-          "refresh",
-          "overwrite",
-          "retain",
-          "retain-disabled",
-          "retain-throw",
-          "retain-write",
-        ].includes(mode)
-      ) {
-        expect(markdown.split("[[Images/zotlit-excerpt-")).toHaveLength(3);
-        const files = await readdir(`${root}/Images`);
-        expect(files).toHaveLength(2);
-        for (const filename of files)
-          expect(await readFile(`${root}/Images/${filename}`)).toEqual(redPng);
-      } else {
-        expect(markdown).not.toContain("![[");
-        expect(markdown).not.toContain("![");
-        if (mode !== "unused") {
-          expect(markdown).toContain(
-            mode === "disabled"
-              ? m.excerpt_image_import_disabled()
-              : m.excerpt_image_unavailable(),
-          );
-          expect(markdown).toContain(
-            "file:///zotero/storage/RGRPDF24/paper.pdf#page=1&zt-annotation=",
-          );
-        }
-      }
-      if (
-        refreshOperation ||
-        [
-          "valid",
-          "unused",
-          "refresh",
-          "overwrite",
-          "retain",
-          "retain-disabled",
-          "retain-throw",
-          "retain-write",
-        ].includes(mode)
-      )
-        expect(notices).toEqual([]);
-      else
-        expect(notices).toEqual([
-          {
-            zotero: mode === "fallback" ? 2 : 0,
-            unchecked: mode === "unchecked" ? 2 : 0,
-            unavailable:
-              mode === "partial"
-                ? 1
-                : [
-                      "disabled",
-                      "unavailable",
-                      "corrupt-fallback",
-                      "write-failure",
-                      "collected",
-                    ].includes(mode)
-                  ? 2
-                  : 0,
-          },
-        ]);
-      expect(resolver.resolve).toHaveBeenCalledTimes(
-        mode === "disabled" ? 0 : 2,
-      );
-      if (mode !== "disabled")
-        expect(
-          resolver.resolve.mock.calls.map(([request]) => ({
-            key: request.annotation.key,
-            type: request.annotation.type,
-            parent: request.attachmentKey,
-            source: request.source.kind,
-            pdf: request.pdfPath,
-          })),
-        ).toEqual([
-          {
-            key: "FDRFQ7C2",
-            type: "image",
-            parent: "RGRPDF24",
-            source: "zotero-db",
-            pdf: "/zotero/storage/RGRPDF24/paper.pdf",
-          },
-          {
-            key: "TYY6Z6ZF",
-            type: "ink",
-            parent: "RGRPDF24",
-            source: "zotero-db",
-            pdf: "/zotero/storage/RGRPDF24/paper.pdf",
-          },
-        ]);
-      if (mode === "disabled")
-        expect(await readdir(root)).toEqual(["Literature"]);
-      if (
-        refreshOperation ||
-        [
-          "refresh",
-          "overwrite",
-          "retain",
-          "retain-disabled",
-          "retain-throw",
-          "retain-write",
-        ].includes(mode)
-      ) {
-        const file = app.host.file("Literature/Paper.md");
-        const priorAssets = await readdir(`${root}/Images`);
-        const properties = "---\nzotero-key: RTKEY234\n---\n";
-        const body = `User introduction\n${formatManagedRegion(markdown)}\nUser conclusion`;
-        const original = `${properties}${body}`;
-        let current =
-          mode === "retain-stale"
-            ? `${properties}New user paragraph before the cached offsets\n${body}`
-            : original;
-        const otherNote = `${root}/Literature/Other.md`;
-        await writeFile(otherNote, original);
-        const retainedAssets: string[] = [];
-        if (mode === "retain-replaced") {
-          for (const [request] of resolver.resolve.mock.calls) {
-            const save = (bytes: Uint8Array) =>
-              materializeExcerpt({
-                app: app as unknown as App,
-                notePath: file.path,
-                settings: deps.settings.current!,
-                request,
-                outcome: availableOutcome({
-                  bytes,
-                  format: PNG_FORMAT,
-                  provenance: "rendered",
-                  freshness: "checked",
-                }),
-              });
-            const oldAsset = await save(redPng),
-              newAsset = await save(bluePng);
-            if (oldAsset.kind !== "saved" || newAsset.kind !== "saved")
-              throw new Error("Fixture asset creation failed");
-            current = current.replace(oldAsset.path, newAsset.path);
-            retainedAssets.push(newAsset.path.slice("Images/".length));
-          }
-        } else retainedAssets.push(...priorAssets);
-        app.vault.modifyFile(file.path, current);
-        // The host's metadata cache has no link resolution: each link
-        // resolves to a file at its own path.
-        Object.assign(app.metadataCache, {
-          getFirstLinkpathDest: (path: string) => makeFile(path),
-        });
-        engine.define(
-          "content",
-          `<% zt.countRender() %><% for (const a of zt.annotations) { %><%= ${mode === "retain-link" ? "a.imgLink()" : "embed(a.imgLink)"} %>\n<% } %>`,
-        );
-        resolver.resolve.mockImplementation(async () =>
-          mode.startsWith("retain") || mode.startsWith("reject")
-            ? { kind: "unavailable" }
-            : availableOutcome({
-                bytes: bluePng,
-                format: PNG_FORMAT,
-                provenance: "rendered",
-                freshness: "checked",
-              }),
-        );
-        if (mode === "retain-corrupt-fallback")
-          resolver.resolve.mockImplementation((request) =>
-            fallbackService.resolve(request),
-          );
-        if (mode === "retain-disabled")
-          deps.settings.update({ "attachment.import": false });
-        if (mode === "retain-throw")
-          resolver.resolve.mockRejectedValue(new Error("Resolver failed"));
-        if (mode === "retain-write")
-          resolver.resolve.mockResolvedValue(
-            availableOutcome({
-              bytes: bluePng,
+    };
+    const feature = createNoteFeature(deps);
+    const notices: ExcerptSummary[] = [];
+    const collected: ExcerptSummary[] = [];
+    feature.on("excerpt-images-reported", (summary) => notices.push(summary));
+    const result = await feature.createNote(
+      makeItem({
+        key: "RTKEY234",
+        indexedKey: "RTKEY234",
+        title: "Paper",
+        citationKey: "paper2026",
+      }),
+      mode === "collected"
+        ? { reportExcerpts: (summary) => collected.push(summary) }
+        : undefined,
+    );
+    const markdown = await readFile(`${root}/Literature/Paper.md`, "utf8");
+    return {
+      root,
+      deps,
+      app,
+      engine,
+      resolver,
+      fallbackService,
+      state,
+      feature,
+      notices,
+      collected,
+      result,
+      markdown,
+    };
+  }
+
+  /**
+   * Creates the note, surrounds its Managed Block with user text, then
+   * refreshes (or overwrites) it with excerpt resolution driven by `mode`.
+   */
+  async function refreshExcerptNote(
+    mode: Exclude<
+      ExcerptMode,
+      | "valid"
+      | "fallback"
+      | "corrupt-fallback"
+      | "unchecked"
+      | "unavailable"
+      | "partial"
+      | "write-failure"
+      | "disabled"
+      | "unused"
+      | "collected"
+    >,
+    cleanup: AsyncDisposableStack,
+  ) {
+    const {
+      root,
+      deps,
+      app,
+      engine,
+      resolver,
+      fallbackService,
+      state,
+      feature,
+      notices,
+      markdown,
+    } = await createExcerptNote(mode, cleanup);
+    const file = app.host.file("Literature/Paper.md");
+    const priorAssets = await readdir(`${root}/Images`);
+    const properties = "---\nzotero-key: RTKEY234\n---\n";
+    const body = `User introduction\n${formatManagedRegion(markdown)}\nUser conclusion`;
+    const original = `${properties}${body}`;
+    let current =
+      mode === "retain-stale"
+        ? `${properties}New user paragraph before the cached offsets\n${body}`
+        : original;
+    const otherNote = `${root}/Literature/Other.md`;
+    await writeFile(otherNote, original);
+    const retainedAssets: string[] = [];
+    if (mode === "retain-replaced") {
+      for (const [request] of resolver.resolve.mock.calls) {
+        const save = (bytes: Uint8Array) =>
+          materializeExcerpt({
+            app: app as unknown as App,
+            notePath: file.path,
+            settings: deps.settings.current!,
+            request,
+            outcome: availableOutcome({
+              bytes,
               format: PNG_FORMAT,
               provenance: "rendered",
               freshness: "checked",
             }),
-          );
-        if (mode.startsWith("reject"))
-          for (const name of priorAssets)
-            await writeFile(
-              `${root}/Images/${name}`,
-              corruptPng(mode === "reject-idat" ? "idat" : "truncated"),
-            );
-        if (mode === "retain-write")
-          Object.assign((app as unknown as App).vault.adapter, {
-            getFullPath: (path: string) => {
-              if (
-                path.endsWith(".png") &&
-                !priorAssets.some((name) => path.endsWith(name))
-              )
-                throw new Error("Destination write failed");
-              return `${root}/${path}`;
-            },
           });
-        leaseReleased = false;
-        if (mode === "overwrite") await feature.overwriteNote(file, "RTKEY234");
-        else await feature.updateNote(file, { indexedKey: "RTKEY234" });
-        current = app.host.text(file.path)!;
-        expect(runs).toBe(2);
-        expect(await readFile(otherNote, "utf8")).toBe(original);
-        for (const name of priorAssets)
-          expect(await readFile(`${root}/Images/${name}`)).toEqual(
-            mode.startsWith("reject")
-              ? corruptPng(mode === "reject-idat" ? "idat" : "truncated")
-              : redPng,
-          );
-        if (mode !== "overwrite") {
-          expect(current).toContain("User introduction");
-          expect(current).toContain("User conclusion");
-        }
-        if (mode.startsWith("retain")) {
-          for (const name of retainedAssets) expect(current).toContain(name);
-          if (mode === "retain-replaced")
-            for (const name of priorAssets) expect(current).not.toContain(name);
-          expect(notices).toEqual([
-            { zotero: 0, unchecked: 0, unavailable: 0, notRefreshed: 2 },
-          ]);
-        } else if (mode.startsWith("reject")) {
-          expect(current).toContain(m.excerpt_image_unavailable());
-          expect(current).toContain(
-            "file:///zotero/storage/RGRPDF24/paper.pdf",
-          );
-          expect(current).not.toContain("zotlit-excerpt-");
-          expect(notices).toEqual([
-            { zotero: 0, unchecked: 0, unavailable: 2 },
-          ]);
-        } else {
-          for (const name of priorAssets) expect(current).not.toContain(name);
-          expect(await readdir(`${root}/Images`)).toHaveLength(4);
-          expect(notices).toEqual([]);
-        }
+        const oldAsset = await save(redPng),
+          newAsset = await save(bluePng);
+        if (oldAsset.kind !== "saved" || newAsset.kind !== "saved")
+          throw new Error("Fixture asset creation failed");
+        current = current.replace(oldAsset.path, newAsset.path);
+        retainedAssets.push(newAsset.path.slice("Images/".length));
       }
+    } else retainedAssets.push(...priorAssets);
+    app.vault.modifyFile(file.path, current);
+    // The host's metadata cache has no link resolution: each link
+    // resolves to a file at its own path.
+    Object.assign(app.metadataCache, {
+      getFirstLinkpathDest: (path: string) => makeFile(path),
+    });
+    engine.define(
+      "content",
+      `<% zt.countRender() %><% for (const a of zt.annotations) { %><%= ${mode === "retain-link" ? "a.imgLink()" : "embed(a.imgLink)"} %>\n<% } %>`,
+    );
+    resolver.resolve.mockImplementation(async () =>
+      mode.startsWith("retain") || mode.startsWith("reject")
+        ? { kind: "unavailable" }
+        : availableOutcome({
+            bytes: bluePng,
+            format: PNG_FORMAT,
+            provenance: "rendered",
+            freshness: "checked",
+          }),
+    );
+    if (mode === "retain-corrupt-fallback")
+      resolver.resolve.mockImplementation((request) =>
+        fallbackService.resolve(request),
+      );
+    if (mode === "retain-disabled")
+      deps.settings.update({ "attachment.import": false });
+    if (mode === "retain-throw")
+      resolver.resolve.mockRejectedValue(new Error("Resolver failed"));
+    if (mode === "retain-write")
+      resolver.resolve.mockResolvedValue(
+        availableOutcome({
+          bytes: bluePng,
+          format: PNG_FORMAT,
+          provenance: "rendered",
+          freshness: "checked",
+        }),
+      );
+    if (mode.startsWith("reject"))
+      for (const name of priorAssets)
+        await writeFile(
+          `${root}/Images/${name}`,
+          corruptPng(mode === "reject-idat" ? "idat" : "truncated"),
+        );
+    if (mode === "retain-write")
+      Object.assign((app as unknown as App).vault.adapter, {
+        getFullPath: (path: string) => {
+          if (
+            path.endsWith(".png") &&
+            !priorAssets.some((name) => path.endsWith(name))
+          )
+            throw new Error("Destination write failed");
+          return `${root}/${path}`;
+        },
+      });
+    state.leaseReleased = false;
+    if (mode === "overwrite") await feature.overwriteNote(file, "RTKEY234");
+    else await feature.updateNote(file, { indexedKey: "RTKEY234" });
+    current = app.host.text(file.path)!;
+    return {
+      root,
+      notices,
+      runs: state.runs,
+      current,
+      original,
+      otherNote,
+      priorAssets,
+      retainedAssets,
+    };
+  }
+
+  /** What the created note and its vault show of the two excerpts. */
+  async function observeExcerpts(root: string, markdown: string) {
+    const images = await readdir(`${root}/Images`).catch(() => null);
+    return {
+      vault: await readdir(root),
+      images:
+        images &&
+        (await Promise.all(
+          images.map((name) => readFile(`${root}/Images/${name}`)),
+        )),
+      embeds: markdown.split("![[Images/zotlit-excerpt-").length - 1,
+      links: markdown.split("[[Images/zotlit-excerpt-").length - 1,
+      wikiEmbed: markdown.includes("![["),
+      embed: markdown.includes("!["),
+      disabledMessage: markdown.includes(m.excerpt_image_import_disabled()),
+      unavailableMessage: markdown.includes(m.excerpt_image_unavailable()),
+      pdfLink: markdown.includes(
+        "file:///zotero/storage/RGRPDF24/paper.pdf#page=1&zt-annotation=",
+      ),
+    };
+  }
+
+  const embedded = { links: 2, images: [redPng, redPng] };
+  const placeholder = (message: "disabledMessage" | "unavailableMessage") => ({
+    wikiEmbed: false,
+    embed: false,
+    [message]: true,
+    pdfLink: true,
+  });
+  const notified = (...summaries: ExcerptSummary[]) => ({
+    noticesAtCreate: summaries,
+    collected: [],
+    notices: summaries,
+  });
+  const bothUnavailable = { zotero: 0, unchecked: 0, unavailable: 2 };
+  const createCases: Record<
+    ExcerptMode,
+    {
+      excerpts: Partial<Awaited<ReturnType<typeof observeExcerpts>>>;
+      noticesAtCreate: ExcerptSummary[];
+      collected: ExcerptSummary[];
+      notices: ExcerptSummary[];
+    }
+  > = {
+    valid: { excerpts: embedded, ...notified() },
+    fallback: {
+      excerpts: embedded,
+      ...notified({ zotero: 2, unchecked: 0, unavailable: 0 }),
+    },
+    "corrupt-fallback": {
+      excerpts: placeholder("unavailableMessage"),
+      ...notified(bothUnavailable),
+    },
+    unchecked: {
+      excerpts: embedded,
+      ...notified({ zotero: 0, unchecked: 2, unavailable: 0 }),
+    },
+    unavailable: {
+      excerpts: placeholder("unavailableMessage"),
+      ...notified(bothUnavailable),
+    },
+    partial: {
+      excerpts: {
+        embeds: 1,
+        unavailableMessage: true,
+        images: [expect.anything()],
+      },
+      ...notified({ zotero: 0, unchecked: 0, unavailable: 1 }),
+    },
+    "write-failure": {
+      excerpts: placeholder("unavailableMessage"),
+      ...notified(bothUnavailable),
+    },
+    disabled: {
+      excerpts: { ...placeholder("disabledMessage"), vault: ["Literature"] },
+      ...notified(bothUnavailable),
+    },
+    unused: { excerpts: { wikiEmbed: false, embed: false }, ...notified() },
+    collected: {
+      excerpts: placeholder("unavailableMessage"),
+      noticesAtCreate: [],
+      collected: [bothUnavailable],
+      notices: [bothUnavailable],
+    },
+    refresh: { excerpts: embedded, ...notified() },
+    overwrite: { excerpts: embedded, ...notified() },
+    retain: { excerpts: embedded, ...notified() },
+    "retain-corrupt-fallback": { excerpts: embedded, ...notified() },
+    "retain-disabled": { excerpts: embedded, ...notified() },
+    "retain-throw": { excerpts: embedded, ...notified() },
+    "retain-write": { excerpts: embedded, ...notified() },
+    "retain-link": { excerpts: embedded, ...notified() },
+    "retain-stale": { excerpts: embedded, ...notified() },
+    "retain-replaced": { excerpts: embedded, ...notified() },
+    "reject-truncated": { excerpts: embedded, ...notified() },
+    "reject-idat": { excerpts: embedded, ...notified() },
+  };
+
+  it.each(excerptModes)(
+    "prepares image and ink before one Eta execution (%s)",
+    async (mode) => {
+      await using cleanup = new AsyncDisposableStack();
+      const {
+        root,
+        resolver,
+        state,
+        feature,
+        notices,
+        collected,
+        result,
+        markdown,
+      } = await createExcerptNote(mode, cleanup);
+      const expected = createCases[mode];
+      expect({ notices: [...notices], collected }).toEqual({
+        notices: expected.noticesAtCreate,
+        collected: expected.collected,
+      });
+      for (const summary of collected) feature.reportExcerptImages(summary);
+      expect(result.outcome).toBe("created");
+      expect(state.leaseReleased).toBe(true);
+      expect(state.runs).toBe(1);
+      expect(markdown).toContain(
+        mode === "unused" ? "Text only" : "End of note",
+      );
+      expect(await observeExcerpts(root, markdown)).toMatchObject(
+        expected.excerpts,
+      );
+      expect(notices).toEqual(expected.notices);
+      expect(resolver.resolve).toHaveBeenCalledTimes(
+        mode === "disabled" ? 0 : 2,
+      );
+      expect(
+        resolver.resolve.mock.calls.map(([request]) => ({
+          key: request.annotation.key,
+          type: request.annotation.type,
+          parent: request.attachmentKey,
+          source: request.source.kind,
+          pdf: request.pdfPath,
+        })),
+      ).toEqual(
+        mode === "disabled"
+          ? []
+          : [
+              {
+                key: "FDRFQ7C2",
+                type: "image",
+                parent: "RGRPDF24",
+                source: "zotero-db",
+                pdf: "/zotero/storage/RGRPDF24/paper.pdf",
+              },
+              {
+                key: "TYY6Z6ZF",
+                type: "ink",
+                parent: "RGRPDF24",
+                source: "zotero-db",
+                pdf: "/zotero/storage/RGRPDF24/paper.pdf",
+              },
+            ],
+      );
+    },
+  );
+
+  it.each([
+    "retain",
+    "retain-corrupt-fallback",
+    "retain-disabled",
+    "retain-throw",
+    "retain-write",
+    "retain-link",
+    "retain-stale",
+    "retain-replaced",
+  ] as const)(
+    "keeps the linked excerpts when a refresh cannot replace them (%s)",
+    async (mode) => {
+      await using cleanup = new AsyncDisposableStack();
+      const r = await refreshExcerptNote(mode, cleanup);
+      expect(r.runs).toBe(2);
+      expect(await readFile(r.otherNote, "utf8")).toBe(r.original);
+      for (const name of r.priorAssets)
+        expect(await readFile(`${r.root}/Images/${name}`)).toEqual(redPng);
+      expect(r.current).toContain("User introduction");
+      expect(r.current).toContain("User conclusion");
+      for (const name of r.retainedAssets) expect(r.current).toContain(name);
+      expect(r.priorAssets.filter((name) => r.current.includes(name))).toEqual(
+        mode === "retain-replaced" ? [] : r.priorAssets,
+      );
+      expect(r.notices).toEqual([
+        { zotero: 0, unchecked: 0, unavailable: 0, notRefreshed: 2 },
+      ]);
+    },
+  );
+
+  it.each([
+    ["reject-truncated", "truncated"],
+    ["reject-idat", "idat"],
+  ] as const)(
+    "falls back to placeholders when the linked excerpts are corrupt (%s)",
+    async (mode, corruption) => {
+      await using cleanup = new AsyncDisposableStack();
+      const r = await refreshExcerptNote(mode, cleanup);
+      expect(r.runs).toBe(2);
+      expect(await readFile(r.otherNote, "utf8")).toBe(r.original);
+      for (const name of r.priorAssets)
+        expect(await readFile(`${r.root}/Images/${name}`)).toEqual(
+          corruptPng(corruption),
+        );
+      expect(r.current).toContain("User introduction");
+      expect(r.current).toContain("User conclusion");
+      expect(r.current).toContain(m.excerpt_image_unavailable());
+      expect(r.current).toContain("file:///zotero/storage/RGRPDF24/paper.pdf");
+      expect(r.current).not.toContain("zotlit-excerpt-");
+      expect(r.notices).toEqual([{ zotero: 0, unchecked: 0, unavailable: 2 }]);
+    },
+  );
+
+  it.each([
+    ["refresh", ["User introduction", "User conclusion"]],
+    ["overwrite", []],
+  ] as const)(
+    "replaces the linked excerpts with fresh ones (%s)",
+    async (mode, userText) => {
+      await using cleanup = new AsyncDisposableStack();
+      const r = await refreshExcerptNote(mode, cleanup);
+      expect(r.runs).toBe(2);
+      expect(await readFile(r.otherNote, "utf8")).toBe(r.original);
+      for (const name of r.priorAssets)
+        expect(await readFile(`${r.root}/Images/${name}`)).toEqual(redPng);
+      expect(
+        ["User introduction", "User conclusion"].filter((text) =>
+          r.current.includes(text),
+        ),
+      ).toEqual(userText);
+      for (const name of r.priorAssets) expect(r.current).not.toContain(name);
+      expect(await readdir(`${r.root}/Images`)).toHaveLength(4);
+      expect(r.notices).toEqual([]);
     },
   );
 
@@ -3523,7 +3660,9 @@ describe("updateNote", () => {
       expect(Object.hasOwn(harness.frontmatter(), "conditional")).toBe(
         preserved,
       );
-      if (preserved) expect(harness.frontmatter().conditional).toBe("existing");
+      expect(harness.frontmatter().conditional).toBe(
+        preserved ? "existing" : undefined,
+      );
     },
   );
 

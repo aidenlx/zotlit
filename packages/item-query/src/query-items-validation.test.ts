@@ -189,7 +189,7 @@ describe.each(DATASETS)(
             location: { argument: "fields", index: 1 },
           });
           // The report marks the whole entry the caller sent.
-          if (path !== "") expect(error.diagnostic.excerpt?.at).toBe(path);
+          expect(error.diagnostic.excerpt?.at).toBe(path);
         },
       );
 
