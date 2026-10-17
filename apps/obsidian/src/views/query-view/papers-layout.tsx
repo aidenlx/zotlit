@@ -121,7 +121,7 @@ function yearText(value: QueryViewValue | undefined): string {
 }
 
 /** The second line: the creators, the year and the Venue. */
-function metaText(values: TableRecord["values"]): string {
+export function metaText(values: TableRecord["values"]): string {
   const venue = resolveVenue({
     publicationTitle: text(values.publicationTitle) || null,
     publisher: text(values.publisher) || null,

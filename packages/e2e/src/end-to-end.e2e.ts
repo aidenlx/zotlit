@@ -3047,6 +3047,238 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
   });
 
+  it("shows the selected row's Reading Card with its seeded fields, abstract and Annotation Cards under the Editing Capability, runs the row menu's actions from its buttons, opens its Annotations in the sidebar, and hides it with no selection, on a narrow pane and while Zotero's data folder is missing", async () => {
+    const services = "app.plugins.plugins.zotlit.services";
+    const snapshot = await obEval(
+      vaultId,
+      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null,dataDir:${services}.zoteroPref.dataDirOverride,size:require('@electron/remote').getCurrentWindow().getSize()})`,
+    );
+    const notePath = "Reading Card citations.md";
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});${services}.zoteroPref.setDataDir(saved.dataDir);const settings=${services}.settings;settings.update({'library.document':saved.document});await settings.flush();const file=app.vault.getFileByPath(${JSON.stringify(notePath)});if(file)await app.vault.delete(file);require('@electron/remote').getCurrentWindow().setSize(...saved.size);await app.workspace.changeLayout(saved.layout);return true;})()`,
+      );
+    });
+
+    // The seed's oracle: the paper, its one PDF, and the Annotations on it.
+    const paper = annotationItem;
+    const abstract = paper.fields?.abstractNote;
+    expect(abstract).toBeTruthy();
+    const pdfs = ATTACHMENTS.filter(
+      ({ parentItemID }) => parentItemID === paper.itemID,
+    );
+    expect(pdfs.map(({ key }) => key)).toEqual([annotationAttachment.key]);
+    const seededCards = attachmentAnnotations
+      .map(({ key, color, pageLabel, comment }) => ({
+        key,
+        color,
+        page: m.annot_view_page({ page: pageLabel }),
+        comment,
+      }))
+      .toSorted((a, b) => a.key.localeCompare(b.key));
+    const authors = paper.creators
+      .filter(({ creatorType }) => creatorType === "author")
+      .map(({ lastName }) => lastName);
+
+    // The Library View on My Library, wide enough for the card, and a note
+    // to cite into that was active last.
+    await obEval(
+      vaultId,
+      `(async()=>{${PAGE}app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());app.workspace.leftSplit.collapse();app.workspace.rightSplit.collapse();require('@electron/remote').getCurrentWindow().setSize(1600,1000);const settings=${services}.settings;settings.update({'library.document':${JSON.stringify(MY_LIBRARY_DOCUMENT)}});await settings.flush();const file=app.vault.getFileByPath(${JSON.stringify(notePath)})??await app.vault.create(${JSON.stringify(notePath)},'CITE ');const note=app.workspace.getLeaf('tab');await note.openFile(file);app.workspace.setActiveLeaf(note,{focus:true});note.view.editor.setCursor({line:0,ch:'CITE '.length});app.commands.executeCommandById('zotlit:open-library-view');await until('library',()=>app.workspace.getLeavesOfType('zotlit-library')[0]);return true;})()`,
+    );
+    /** Run `script` with the Library View's tab active, `el` its content and `card` its Reading Card pane. */
+    const inLibrary = (script: string) =>
+      obEval(
+        vaultId,
+        `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];await app.workspace.revealLeaf(leaf);app.workspace.setActiveLeaf(leaf,{focus:true});await leaf.view.query.settled;const el=leaf.view.contentEl;const card=el.querySelector('[data-library-card]');const row=key=>el.querySelector('[data-query-item-row="'+key+'"]');${script}})()`,
+      );
+    /** What the card shows, `null` while it is out of view. */
+    const readCard = `const part=name=>card.querySelector('[data-library-card-'+name+']')?.textContent??null;return JSON.stringify(card.checkVisibility()?{title:part('title'),meta:part('meta'),abstract:part('abstract'),actions:[...card.querySelectorAll('[data-library-card-action]')].map(b=>b.textContent),cards:[...card.querySelectorAll('.zt-annot-card[data-zotero-annotation-key]')].map(n=>({key:n.getAttribute('data-zotero-annotation-key'),color:n.getAttribute('data-annot-color'),page:n.querySelector('.zt-annot-page-chip')?.textContent??null,text:n.textContent})).toSorted((a,b)=>a.key.localeCompare(b.key))}:null);`;
+
+    // No row is selected: the card is out of view.
+    expect(
+      await inLibrary(
+        `await until('rows',()=>row(${JSON.stringify(paper.key)}),10000);${readCard}`,
+      ),
+    ).toBe("null");
+
+    // A click on the paper's row shows its card: the seeded fields and
+    // abstract, the row menu's actions, and its Annotations as cards.
+    const shown = JSON.parse(
+      await inLibrary(
+        `press(row(${JSON.stringify(paper.key)}),'paper row');await until('card',()=>card.checkVisibility()&&card.querySelectorAll('.zt-annot-card').length>=${seededCards.length},10000);await leaf.view.card.settled;${readCard}`,
+      ),
+    ) as {
+      title: string;
+      meta: string;
+      abstract: string;
+      actions: string[];
+      cards: { key: string; color: string; page: string; text: string }[];
+    };
+    expect({
+      title: shown.title,
+      meta: shown.meta,
+      abstract: shown.abstract,
+      actions: shown.actions,
+    }).toEqual({
+      title: paper.title,
+      meta: `${authors.join(", ")} · ${paper.date} · ${paper.venue}`,
+      abstract,
+      actions: [
+        m.library_view_menu_open_pdf(),
+        m.library_view_menu_open_note(),
+        m.library_view_menu_insert_citation(),
+        "",
+        m.library_view_card_open_in_sidebar(),
+      ],
+    });
+    expect(
+      shown.cards.map(({ key, color, page }) => ({ key, color, page })),
+    ).toEqual(
+      seededCards.map(({ key, color, page }) => ({ key, color, page })),
+    );
+    // Each card shows its seeded comment.
+    const commented = seededCards.filter(({ comment }) => comment);
+    expect(commented.length).toBeGreaterThan(0);
+    expect(
+      commented.map(({ key, comment }) =>
+        shown.cards.find((card) => card.key === key)!.text.includes(comment!),
+      ),
+    ).toEqual(commented.map(() => true));
+
+    // With Zotero closed the Editing Capability is read-only: each card's
+    // colour and tag verbs, and any comment field it shows, say they are
+    // blocked, as in the sidebar.
+    expect(
+      JSON.parse(
+        await inLibrary(
+          `return JSON.stringify({capability:${services}.annotationRepository.capabilityFor(${JSON.stringify(annotationAttachment.key)}),blocked:[...card.querySelectorAll('.zt-annot-card')].every(n=>n.querySelectorAll('.clickable-icon[data-blocked]').length>=2)&&[...card.querySelectorAll('.zt-annot-comment-field[role=textbox]')].every(f=>f.hasAttribute('data-blocked'))});`,
+        ),
+      ),
+    ).toEqual({
+      capability: { kind: "read-only", reason: "zotero-unavailable" },
+      blocked: true,
+    });
+
+    // The buttons do what the row menu does: Insert citation into the note
+    // active last, Open literature note, Open PDF.
+    const active = async () =>
+      JSON.parse(
+        await obEval(
+          vaultId,
+          "(()=>{const view=app.workspace.activeLeaf?.view;const file=view?.file??null;return JSON.stringify({type:view?.getViewType()??null,path:file?.path??null,key:file?app.metadataCache.getFileCache(file)?.frontmatter?.['zotero-key']??null:null});})()",
+        ),
+      ) as { type: string | null; path: string | null; key: string | null };
+    const activeWhen = async (
+      ready: (state: Awaited<ReturnType<typeof active>>) => boolean,
+    ) => {
+      let state: Awaited<ReturnType<typeof active>> | null = null;
+      const settled = await waitFor(async () => {
+        state = await active();
+        return ready(state);
+      }, 60);
+      if (!settled) throw new Error(`Active tab: ${JSON.stringify(state)}`);
+      return state!;
+    };
+    await inLibrary(
+      `press(card.querySelector('[data-library-card-action="cite"]'),'Insert citation');return true`,
+    );
+    expect(
+      await waitFor(async () =>
+        (
+          await obEval(
+            vaultId,
+            `app.workspace.getLeavesOfType('markdown').find(leaf=>leaf.view.file?.path===${JSON.stringify(notePath)}).view.editor.getValue()`,
+          )
+        ).includes(`@${paper.citationKey}`),
+      ),
+    ).toBe(true);
+    await inLibrary(
+      `press(card.querySelector('[data-library-card-action="note"]'),'Open literature note');return true`,
+    );
+    expect(
+      await activeWhen(
+        (state) => state.type === "markdown" && state.key === paper.key,
+      ),
+    ).toMatchObject({ key: paper.key });
+    await inLibrary(
+      `press(card.querySelector('[data-library-card-action="pdf"]'),'Open PDF');return true`,
+    );
+    expect(await activeWhen((state) => state.type === "pdf")).toMatchObject({
+      path: annotationAttachment.path,
+    });
+
+    // "Open in sidebar" pins the paper in the sidebar Annotation View, which
+    // lists its cards.
+    await inLibrary(
+      `press(card.querySelector('[data-library-card-action="sidebar"]'),'Open in sidebar');return true`,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `(async()=>{const view=app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view;if(!view)return 'none';await view.read;return JSON.stringify({pinned:view.getState().pinnedItemKey,cards:[...view.contentEl.querySelectorAll('.zt-annot-card[data-zotero-annotation-key]')].map(n=>n.getAttribute('data-zotero-annotation-key')).toSorted()});})()`,
+        {
+          expected: JSON.stringify({
+            pinned: paper.key,
+            cards: seededCards.map(({ key }) => key),
+          }),
+          tries: 120,
+        },
+      ),
+    ).toBe(true);
+
+    // A narrow pane keeps the list and puts the card away; the row stays
+    // selected, and the card comes back on a wide pane.
+    const narrow = (share: number, card: boolean) =>
+      inLibrary(
+        `app.workspace.rightSplit.collapse();const beside=window.zotlitE2EBeside??=app.workspace.createLeafBySplit(leaf,'vertical');leaf.parent.setDimension(${share});beside.parent.setDimension(${100 - share});await until('card ${card ? "shows" : "hides"} at '+el.clientWidth+'px',()=>card.checkVisibility()===${card},5000);return JSON.stringify({card:card.checkVisibility(),selected:el.querySelector('[data-query-item-row][data-selected]')?.getAttribute('data-query-item-row')??null});`,
+      );
+    cleanup.defer(async () => {
+      await obEval(vaultId, "delete window.zotlitE2EBeside;true");
+    });
+    expect(JSON.parse(await narrow(30, false))).toEqual({
+      card: false,
+      selected: paper.key,
+    });
+    expect(JSON.parse(await narrow(90, true))).toEqual({
+      card: true,
+      selected: paper.key,
+    });
+
+    // While Zotero's data folder is missing the card goes with the list.
+    const emptyDir = join(e2eFixture.root, "reading-card-not-found");
+    await mkdir(emptyDir, { recursive: true });
+    cleanup.defer(() => rm(emptyDir, { recursive: true, force: true }));
+    await obEval(
+      vaultId,
+      `${services}.zoteroPref.setDataDir(${JSON.stringify(emptyDir)});true`,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `(()=>{const el=app.workspace.getLeavesOfType('zotlit-library')[0].view.contentEl;return JSON.stringify({missing:el.querySelector('[data-zotero-missing]')!==null,card:el.querySelector('[data-library-card]').checkVisibility()});})()`,
+        {
+          expected: JSON.stringify({ missing: true, card: false }),
+          tries: 120,
+        },
+      ),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      `${services}.zoteroPref.setDataDir(${JSON.stringify(JSON.parse(snapshot).dataDir)});true`,
+    );
+
+    // Picking another node in the tree leaves no row selected, and the card
+    // goes.
+    expect(
+      await inLibrary(
+        `await until('found',()=>el.querySelector('[data-zotero-missing]')===null,20000);const recent=await until('recent',()=>el.querySelector('[data-library-node=\\'["recent"]\\']'));if(!recent.checkVisibility())press(el.querySelector('[data-library-tree-toggle]'),'tree toggle');press(recent,'Recent');await leaf.view.searched;await leaf.view.query.settled;${readCard}`,
+      ),
+    ).toBe("null");
+  }, 180000);
+
   it("shows a Query File toolbar as icons with tooltips on a narrow pane, and with names on a wide one", async () => {
     const layout = await obEval(
       vaultId,
