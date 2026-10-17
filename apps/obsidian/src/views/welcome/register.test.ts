@@ -18,6 +18,7 @@ it.each([false, true])(
       getLeavesOfType: vi.fn(() => (existing ? [leaf] : [])),
       getLeaf: vi.fn(() => leaf),
       revealLeaf: vi.fn(async () => revealed.resolve()),
+      setActiveLeaf: vi.fn(),
     };
     const app = { workspace } as unknown as App;
     const update = vi.fn();
@@ -44,6 +45,9 @@ it.each([false, true])(
     expect(workspace.getLeaf.mock.calls).toEqual(existing ? [] : [["tab"]]);
     expect(leaf.setViewState.mock.calls).toEqual(
       existing ? [] : [[{ type: "zotlit-library", active: true }]],
+    );
+    expect(workspace.setActiveLeaf.mock.calls).toEqual(
+      existing ? [[leaf, { focus: true }]] : [],
     );
     expect(workspace.revealLeaf).toHaveBeenCalledWith(leaf);
   },

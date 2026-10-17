@@ -47,6 +47,9 @@ export async function openLibraryView(
   if (!leaf) {
     leaf = workspace.getLeaf(pane);
     await leaf.setViewState({ type: LIBRARY_VIEW_TYPE, active: true });
+  } else {
+    // Revealing a tab shows it but leaves the keyboard in the note.
+    workspace.setActiveLeaf(leaf, { focus: true });
   }
   await workspace.revealLeaf(leaf);
 }
