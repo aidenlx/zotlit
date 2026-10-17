@@ -14,6 +14,7 @@ import "@/views/query-view/file-view.css";
 import { QueryView } from "@/views/query-view/view";
 import type { QueryViewDeps } from "@/views/query-view/view";
 
+import { LIBRARY_LAYOUTS } from "./document";
 import { ZOTLIT_MARK_ICON } from "./icon";
 import { libraryViewQuery } from "./query-text";
 import type { LibraryViewQuery } from "./query-text";
@@ -48,6 +49,7 @@ export class LibraryView extends ItemView {
       libraries: () => this.#shown!.libraries,
       // The document keeps the sort, the Layout and the Visible Properties.
       displayOnly: true,
+      layouts: LIBRARY_LAYOUTS,
       save: this.#storage.save,
       layout: {
         // Otherwise Obsidian moves focus to the last navigable leaf, which in

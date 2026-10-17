@@ -62,13 +62,13 @@ describe("parseLibraryViewDocument and serializeLibraryViewDocument", () => {
     ).toEqual(doc.node);
   });
 
-  it("opens My Library on a Table, newest first, when plugin data holds no document", () => {
+  it("opens My Library on Papers, newest first, when plugin data holds no document", () => {
     expect(parseLibraryViewDocument(null)).toEqual({
       node: { kind: "library", library: { type: "personal" } },
       facets: [],
       search: "",
       sort: [{ property: "dateModified", direction: "DESC" }],
-      layout: "table",
+      layout: "papers",
       order: ["title", "creators", "date.year", "vault.literatureNote"],
     });
   });
