@@ -21,6 +21,8 @@ import type {
 import type {
   AvailableLibrary,
   LibraryScope,
+  LibrarySelector,
+  ResolvedLibraryScope,
 } from "@/services/library-scope/scope";
 import { selectorKey } from "@/services/library-scope/scope";
 import { SettingsService } from "@/services/settings/service";
@@ -180,18 +182,22 @@ function pluginData(stored?: unknown) {
   const reads = createNanoEvents<{ changed: () => void }>();
   const scopeEvents = createNanoEvents<{ changed: () => void }>();
   const off = () => () => {};
+  // The saved scope also names a group the database no longer holds.
   const libraryScope = {
     on: scopeEvents.on.bind(scopeEvents),
     effective: {
       mode: "selected",
-      libraries: LIBRARIES.slice(0, 2).map(({ selector }) => selector),
+      libraries: [
+        ...LIBRARIES.slice(0, 2).map(({ selector }) => selector),
+        GONE,
+      ],
     } as LibraryScope,
     current: {
       mode: "selected",
       invalid: false,
       available: LIBRARIES.slice(0, 2),
-      unavailable: [],
-    },
+      unavailable: [GONE],
+    } as ResolvedLibraryScope,
     libraries: LIBRARIES,
   };
   const deps = {
@@ -226,9 +232,23 @@ function pluginData(stored?: unknown) {
     database.items = items;
     reads.emit("changed");
   };
-  /** The researcher saves `scope` as the Library Scope. */
-  const rescope = (scope: LibraryScope) => {
-    libraryScope.effective = scope;
+  /**
+   * The researcher saves a Library Scope of the Libraries `available` and
+   * those `missing` from the database.
+   */
+  const rescope = (
+    available: readonly AvailableLibrary[],
+    missing: readonly LibrarySelector[] = [],
+  ) => {
+    libraryScope.effective = {
+      mode: "selected",
+      libraries: [...available.map(({ selector }) => selector), ...missing],
+    };
+    libraryScope.current = {
+      ...libraryScope.current,
+      available,
+      unavailable: missing,
+    };
     scopeEvents.emit("changed");
   };
   return { deps, run, settings, change, rescope };
@@ -260,6 +280,8 @@ async function press(view: LibraryView, el: HTMLElement) {
 }
 
 const PERSONAL = { type: "personal" } as const;
+/** A group the saved Library Scope names but the database no longer holds. */
+const GONE = { type: "group", groupID: 9999 } as const;
 const LAB = { type: "group", groupID: 4815 } as const;
 const ARCHIVE = { type: "group", groupID: 77 } as const;
 const THESIS: LibraryNode = {
@@ -526,12 +548,25 @@ it("reads the new Library Scope on Recent once the researcher changes it", async
   const { deps, run, rescope } = pluginData();
   const view = await openTab(deps);
   await act(async () => {
-    rescope({ mode: "selected", libraries: [LAB] });
+    rescope([LIBRARIES[1]!]);
     await view.query.settled;
   });
   expect(listRuns(run).at(-1)!.libraries).toEqual({
     mode: "selected",
     libraries: [LAB],
+  });
+});
+
+it("reads the saved Library Scope on Recent where the database holds none of its Libraries, so the view names the one missing", async () => {
+  const { deps, run, rescope } = pluginData();
+  const view = await openTab(deps);
+  await act(async () => {
+    rescope([], [GONE]);
+    await view.query.settled;
+  });
+  expect(listRuns(run).at(-1)!.libraries).toEqual({
+    mode: "selected",
+    libraries: [GONE],
   });
 });
 

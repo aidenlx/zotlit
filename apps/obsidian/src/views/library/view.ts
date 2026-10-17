@@ -10,6 +10,7 @@ import type { WorkspaceLeaf } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import type { LibraryScope } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { SettingsService } from "@/services/settings/service";
 import { QueryView } from "@/views/query-view/view";
@@ -161,10 +162,25 @@ export class LibraryView extends ItemView {
         year: m.query_file_year_property(),
         editedInZotero: m.library_view_recent_edited_in_zotero(),
       },
-      scope: this.#deps.libraryScope.effective,
+      scope: this.#scope(),
     });
     this.query.setText(this.#shown.text);
     this.query.contextChanged();
+  }
+
+  /**
+   * The Libraries of the Library Scope that the database holds, which Recent
+   * reads: a saved scope can name a group the database no longer has, and a
+   * request that names it fails. Where the database holds none of them, the
+   * saved scope itself, so the view says which Library is missing.
+   */
+  #scope(): LibraryScope {
+    const { current, effective } = this.#deps.libraryScope;
+    if (!current || current.available.length === 0) return effective;
+    return {
+      mode: "selected",
+      libraries: current.available.map(({ selector }) => selector),
+    };
   }
 
   protected override async onClose(): Promise<void> {
