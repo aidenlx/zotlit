@@ -13,6 +13,7 @@ import { createStore } from "zustand/vanilla";
 
 import { nameDictionary } from "@zotlit/item-query";
 import type { NameDictionary, QueryContext } from "@zotlit/item-query";
+import { useUniqueId } from "@zotlit/ui";
 
 import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
@@ -169,7 +170,8 @@ export interface QueryViewHost {
    * Whether the host keeps only the shown view's sort, Layout and Visible
    * Properties, as the Library View Document does. The view then offers no
    * other change: no other view, grouping, filter, limit, column width,
-   * Display Name or Formula, which would show and then be gone on reopen.
+   * Display Name or Formula, which would show and then be gone on reopen,
+   * and no toolbar search beside its own (ADR 0072).
    *
    * @see apps/obsidian/docs/adr/0070-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
    */
@@ -249,6 +251,11 @@ export interface QueryViewCapabilities {
   readonly columnWidth: boolean;
   /** Open a property's page: its Display Name, its Formula, "Add formula". */
   readonly propertyPages: boolean;
+  /**
+   * Find text in the rows on screen. A host with a search of its own, as
+   * the Library View's search box, takes it away (ADR 0072).
+   */
+  readonly search: boolean;
 }
 
 const EVERY_CHANGE: QueryViewCapabilities = Object.freeze({
@@ -258,6 +265,7 @@ const EVERY_CHANGE: QueryViewCapabilities = Object.freeze({
   limit: true,
   columnWidth: true,
   propertyPages: true,
+  search: true,
 });
 
 const DISPLAY_CHANGES: QueryViewCapabilities = Object.freeze({
@@ -267,6 +275,7 @@ const DISPLAY_CHANGES: QueryViewCapabilities = Object.freeze({
   limit: false,
   columnWidth: false,
   propertyPages: false,
+  search: false,
 });
 
 /** What the view shows now, as the toolbar and the host read it. */
@@ -890,7 +899,8 @@ export class QueryView extends Component implements HistorySurface {
             ? "rerun"
             : "new-request";
         if (this.#layout.keepsBack(named, cause)) return;
-        const rows = ranked(result.rows ?? [], this.#host.rank?.() ?? null);
+        const rank = this.#host.rank?.() ?? null;
+        const rows = ranked(result.rows ?? [], rank);
         const shown = layoutRows(rows, view);
         const byKey = new Map(rows.map((row) => [row.indexedKey, row]));
         this.state.setState({
@@ -907,6 +917,7 @@ export class QueryView extends Component implements HistorySurface {
             matched: result.matchedCount,
             groups: shown.groups,
             truncated: result.truncated,
+            ranked: rank !== null,
             warnings: [
               ...new Map(
                 result.warnings.map(({ code, message }) => [
@@ -1310,7 +1321,9 @@ function OpenFileButton({ view }: { view: QueryView }) {
 function SortButton({ view }: { view: QueryView }) {
   const current = useQueryViewState(view, (s) => s.view);
   const properties = useViewProperties(view);
-  if (!current || !properties) return null;
+  // Rows in the host's rank do not follow the sort.
+  const ranked = useQueryViewState(view, (s) => s.results?.ranked ?? false);
+  if (!current || !properties || ranked) return null;
   const sort = current.sort ?? [];
   return (
     <ToolbarPopover
@@ -1371,6 +1384,7 @@ function GroupButton({ view }: { view: QueryView }) {
 
 function QueryViewBody({ view }: { view: QueryView }) {
   const search = useSearchBar();
+  const toolbarName = useUniqueId();
   return (
     <div className="zt:flex zt:h-full zt:flex-col zt:in-[.print]:h-auto">
       {/* The toolbar is a size container: on a narrow pane its buttons show
@@ -1380,17 +1394,22 @@ function QueryViewBody({ view }: { view: QueryView }) {
       <div
         className="zt:@container zt:flex zt:min-h-(--size-4-10) zt:shrink-0 zt:flex-nowrap zt:items-center zt:gap-(--size-2-2) zt:overflow-hidden zt:border-b-(length:--border-width) zt:border-(--table-border-color) zt:ps-[var(--zt-query-toolbar-inset-start,var(--size-2-1))] zt:pe-[var(--zt-query-toolbar-inset-end,var(--size-2-1))] zt:in-[.is-mobile]:min-h-(--touch-size-l) zt:in-[.print]:hidden"
         role="toolbar"
+        // Named by a hidden element: an `aria-label` would show a tooltip.
+        aria-labelledby={toolbarName}
       >
+        <span id={toolbarName} className="zt:sr-only">
+          {m.query_view_toolbar_label()}
+        </span>
         <ViewMenu view={view} />
         <ResultsMenu view={view} />
         <SortButton view={view} />
         {view.can.group && <GroupButton view={view} />}
         {view.can.filter && <FilterButton view={view} />}
         <PropertiesMenu view={view} />
-        <SearchButton bar={search} />
+        {view.can.search && <SearchButton bar={search} />}
         <OpenFileButton view={view} />
       </div>
-      <SearchRow view={view} bar={search} />
+      {view.can.search && <SearchRow view={view} bar={search} />}
       <ReadOnlyNote view={view} />
       <UnusedNote view={view} />
       <Problems view={view} />

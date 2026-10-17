@@ -1389,6 +1389,26 @@ function shown(view: LibraryView) {
   );
 }
 
+it("offers no toolbar search of the rows on screen beside its own search box", async () => {
+  const { deps } = pluginData(ON_MY_LIBRARY);
+  const view = await openTab(deps);
+  expect(
+    view.contentEl.querySelector('[data-query-toolbar="search"]'),
+  ).toBeNull();
+});
+
+it("offers no sort while a search lists its hits in rank order, and offers it again once the search is cleared", async () => {
+  const { deps } = pluginData(ON_MY_LIBRARY);
+  const view = await openTab(deps);
+  const sort = () =>
+    view.contentEl.querySelector('[data-query-toolbar="sort"]');
+  expect(sort()).not.toBeNull();
+  await type(view, "figures");
+  expect(sort()).toBeNull();
+  await type(view, "");
+  expect(sort()).not.toBeNull();
+});
+
 it("has the search box focused when the command brings the tab forward", async () => {
   const { deps } = pluginData();
   const view = await openTab(deps);

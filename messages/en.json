@@ -2711,6 +2711,7 @@
   "query_view_problem_group": "This view cannot group by \"{property}\".",
   "query_view_problem_no_view": "This file has no view named \"{name}\".",
   "query_view_problem_duplicate_view": "This file has more than one view named \"{name}\". Give each view a different name.",
+  "query_view_toolbar_label": "View controls",
   "query_view_sort": "Sort",
   "query_view_sort_by": "Sort by",
   "query_view_sort_add": "Add sort",
