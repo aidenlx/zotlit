@@ -494,7 +494,7 @@ _Avoid_: note column, Literature note column (in code)
 
 **View Plan**:
 What a Query View sends ZotLit Query for one view, and what the vault answers apart from it: the request without any Vault Property, the Vault Properties it sorts by, its vault conditions (the top-level `and` conditions that read a Vault Property) planned against the Literature Notes into a list of Indexed Keys, and how the returned rows are sorted and cut to `limit`. It is made before ZotLit Query runs, so `limit` counts the rows the researcher sees ([ADR 0070](docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md)). A vault condition inside an `or` or `not` group, or one mixed with a Zotero field, keeps the view from running, marked at its condition.
-_Avoid_: request planner, query plan (ZotLit Query's own plan of a filter)
+_Avoid_: query plan (ZotLit Query's own plan of a filter)
 
 **Display Name**:
 The text a Query View shows for one property in its headers, its labels, its Properties popover, and the header row of copy and CSV export, saved under the Query File's top-level `properties` key. A property without a Display Name shows its field label or its path.
