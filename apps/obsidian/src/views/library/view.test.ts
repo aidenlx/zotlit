@@ -1686,6 +1686,49 @@ it("clears the search on Escape, and lists the selected node again", async () =>
   expect(settings.current?.["library.document"]?.search).toBe("");
 });
 
+it("says a search that finds nothing found nothing, offers to search all libraries, then to clear it, with no filter hint", async () => {
+  const { deps } = pluginData(ON_MY_LIBRARY);
+  const view = await openTab(deps);
+  const empty = () =>
+    view.contentEl.querySelector<HTMLElement>("[data-query-empty]");
+  await type(view, "Engelbart");
+  expect(shown(view)).toEqual([]);
+  expect(view.contentEl.querySelector("[data-query-empty-hint]")).toBeNull();
+  expect(empty()?.querySelector("[data-library-empty]")?.textContent).toBe(
+    m.library_view_empty_search({ query: "Engelbart" }),
+  );
+  const action = () =>
+    empty()?.querySelector<HTMLElement>("[data-library-empty-action]");
+  expect(action()?.textContent).toBe(m.library_view_search_everywhere());
+  await act(async () => {
+    action()!.click();
+    await view.searched;
+    await view.query.settled;
+  });
+  expect(shown(view)).toEqual([]);
+  expect(action()?.textContent).toBe(m.library_view_search_clear());
+  await act(async () => {
+    action()!.click();
+    await view.searched;
+    await view.query.settled;
+  });
+  expect(searchBox(view).value).toBe("");
+  expect(shown(view)).toHaveLength(5);
+});
+
+it("says the facets left nothing to list where no paper passes them", async () => {
+  const { deps } = pluginData(ON_MY_LIBRARY);
+  const view = await openTab(deps);
+  // An unread paper has no Literature Note, so none passes both.
+  await press(view, facet(view, "has-note"));
+  await press(view, facet(view, "unread"));
+  expect(shown(view)).toEqual([]);
+  expect(view.contentEl.querySelector("[data-query-empty-hint]")).toBeNull();
+  expect(
+    view.contentEl.querySelector("[data-library-empty]")?.textContent,
+  ).toBe(m.library_view_empty_facets());
+});
+
 it("keeps a search inside the active facets, the vault's among them, in the search's rank", async () => {
   const { deps } = pluginData(ON_MY_LIBRARY);
   const view = await openTab(deps);

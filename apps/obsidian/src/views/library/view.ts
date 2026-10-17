@@ -193,6 +193,9 @@ export class LibraryView extends ItemView {
       rows,
       // Recent says why each row is there; the query runs once the tab set it.
       reason: () => this.#shown!.reason,
+      // The empty list names the search or the facets, which the derived
+      // text holds as filters the researcher never wrote.
+      empty: () => this.search.empty(this.tree.store),
       // The document took the change from the toolbar's text already.
       save: () => this.#storage.save(),
       saveAs: () => void this.#saveAs(),

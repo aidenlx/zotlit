@@ -234,6 +234,14 @@ export class LibrarySearch extends Component {
     };
   }
 
+  /**
+   * What an empty list says left it empty: the search, with the offer to
+   * search all libraries or to clear it, else the facets that are on.
+   */
+  empty(tree: StoreApi<{ readonly facets: readonly unknown[] }>): ReactNode {
+    return <EmptyList search={this} tree={tree} />;
+  }
+
   /** @internal The box's input, for {@link focus}. */
   set input(input: HTMLInputElement | null) {
     this.#input = input;
@@ -294,6 +302,43 @@ function SearchSummary({
   if (everywhere && !search.onRecent)
     return m.library_view_search_matches_everywhere({ count: matched });
   return m.library_view_search_matches({ selection, count: matched });
+}
+
+function EmptyList({
+  search,
+  tree,
+}: {
+  search: LibrarySearch;
+  tree: StoreApi<{ readonly facets: readonly unknown[] }>;
+}) {
+  const text = useStore(search.store, (s) => s.text.trim());
+  const everywhere = useStore(search.store, (s) => s.everywhere);
+  const facets = useStore(tree, (s) => s.facets.length);
+  if (text === "")
+    return facets === 0 ? null : (
+      <p className="zt:m-0 zt:mt-1" data-library-empty="">
+        {m.library_view_empty_facets()}
+      </p>
+    );
+  // Recent reads every Library of the Library Scope already.
+  const widen = !everywhere && !search.onRecent;
+  return (
+    <>
+      <p className="zt:m-0 zt:mt-1" data-library-empty="">
+        {m.library_view_empty_search({ query: text })}
+      </p>
+      <button
+        type="button"
+        className="zt:mt-2"
+        data-library-empty-action={widen ? "widen" : "clear"}
+        onClick={() => (widen ? search.widen() : search.clear())}
+      >
+        {widen
+          ? m.library_view_search_everywhere()
+          : m.library_view_search_clear()}
+      </button>
+    </>
+  );
 }
 
 /**

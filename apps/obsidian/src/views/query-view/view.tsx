@@ -8,6 +8,7 @@
 import { Component } from "obsidian";
 import type { Scope } from "obsidian";
 import { useLayoutEffect, useMemo } from "react";
+import type { ComponentType } from "react";
 import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
@@ -198,6 +199,13 @@ export interface QueryViewHost {
    * @see apps/obsidian/docs/adr/0075-recent-is-a-library-tree-node-that-writes-a-sort.md
    */
   reason?: (row: QueryViewRow) => string | null;
+  /**
+   * What the empty state says narrowed the rows, in place of the hint to
+   * change a filter: the host's derived text holds filters the researcher
+   * never wrote, so only the host knows what left the list empty. Absent:
+   * the view's own hint.
+   */
+  empty?: ComponentType;
   /**
    * Writes what the view shows as a new Query File. Present: the view menu
    * of a host without views (`displayOnly`) offers "Save as query file".
@@ -720,6 +728,11 @@ export class QueryView extends Component implements HistorySurface {
   /** Why `row` is in the list, as the host says; `null` for no reason. */
   reason(row: QueryViewRow): string | null {
     return this.#host.reason?.(row) ?? null;
+  }
+
+  /** What the host says narrowed the rows of an empty list, if it says. */
+  get empty(): ComponentType | undefined {
+    return this.#host.empty;
   }
 
   /** The host's "Save as query file", for the view menu. */
@@ -1249,13 +1262,18 @@ function NoResults({ view }: { view: QueryView }) {
     (s) => s.file?.filters !== undefined || s.view?.filters !== undefined,
   );
   if (phase !== "ready" || count > 0) return null;
+  const Empty = view.empty;
   return (
     <div className="pane-empty zt:p-2" data-query-empty="">
       {datasetSpec(dataset).empty()}
-      {filtered && (
-        <p className="zt:m-0 zt:mt-1" data-query-empty-hint="">
-          {m.query_view_no_results_filter_hint()}
-        </p>
+      {Empty ? (
+        <Empty />
+      ) : (
+        filtered && (
+          <p className="zt:m-0 zt:mt-1" data-query-empty-hint="">
+            {m.query_view_no_results_filter_hint()}
+          </p>
+        )
       )}
     </div>
   );
