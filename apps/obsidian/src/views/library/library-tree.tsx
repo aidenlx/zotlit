@@ -659,16 +659,25 @@ function Facets({ tree }: { tree: LibraryTree }) {
       </div>
       <div className="zt:flex zt:flex-wrap zt:gap-(--size-2-2) zt:px-(--size-4-2)">
         {READING_STATE_FACETS.map((facet) => (
-          <button
+          // Obsidian's unlayered `button` rules outrank the chip's
+          // utilities, so the chip is drawn on an element of its own, as the
+          // "Show all libraries" toggle below is.
+          <div
             key={facet}
-            type="button"
+            role="button"
+            tabIndex={0}
             data-library-facet={facet}
             aria-pressed={facets.includes(facet)}
-            className="zt:h-auto zt:cursor-(--cursor) zt:rounded-(--radius-l) zt:border-(length:--border-width) zt:border-(--background-modifier-border) zt:bg-transparent zt:px-(--size-4-2) zt:py-(--size-2-1) zt:text-(length:--font-ui-smaller) zt:text-muted-foreground zt:shadow-none zt:hover:bg-(--background-modifier-hover) zt:hover:text-(--text-normal) zt:aria-pressed:border-(--interactive-accent) zt:aria-pressed:bg-(--interactive-accent) zt:aria-pressed:text-(--text-on-accent) zt:aria-pressed:hover:bg-(--interactive-accent-hover)"
+            className="zt:cursor-(--cursor) zt:rounded-(--radius-l) zt:border-(length:--border-width) zt:border-(--background-modifier-border) zt:px-(--size-4-2) zt:py-(--size-2-1) zt:text-(length:--font-ui-smaller) zt:text-muted-foreground zt:hover:bg-(--background-modifier-hover) zt:hover:text-(--text-normal) zt:aria-pressed:border-(--interactive-accent) zt:aria-pressed:bg-(--interactive-accent) zt:aria-pressed:text-(--text-on-accent) zt:aria-pressed:hover:bg-(--interactive-accent-hover) zt:aria-pressed:hover:text-(--text-on-accent)"
             onClick={() => tree.toggleFacet(facet)}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" && event.key !== " ") return;
+              event.preventDefault();
+              tree.toggleFacet(facet);
+            }}
           >
             {FACET_LABELS[facet]()}
-          </button>
+          </div>
         ))}
       </div>
     </div>
