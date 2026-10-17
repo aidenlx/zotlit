@@ -23,6 +23,7 @@ import type { Diagnostic } from "@/services/item-query/contract";
 import type {
   QueryViewOutcome,
   QueryViewRequest,
+  QueryViewResult,
   QueryViewRow,
 } from "@/services/item-query/query-view";
 import type { QueryService } from "@/services/item-query/service";
@@ -207,6 +208,23 @@ export interface QueryViewHost {
    * @see apps/obsidian/docs/adr/0072-search-enters-the-library-view-as-an-ordered-key-set.md
    */
   rank?: () => readonly string[] | null;
+  /**
+   * A condition on each row that the host answers and the query cannot, such
+   * as the Library View's Has note facet; `null` for none. The query then
+   * reads every match, and the view's limit cuts the rows the condition
+   * keeps, so the count is theirs. A condition with another `key` runs again
+   * through {@link QueryView.contextChanged}.
+   *
+   * @see apps/obsidian/docs/adr/0071-the-library-tree-writes-filters.md
+   */
+  rowPass?: () => QueryRowPass | null;
+}
+
+/** A condition on each row that the host applies after the query. */
+export interface QueryRowPass {
+  /** Tells one condition from another, as part of the run key. */
+  readonly key: string;
+  keeps(row: QueryViewRow): boolean;
 }
 
 /**
@@ -344,11 +362,34 @@ function usedGroupBy(view: QueryFileView): QueryFileSort | undefined {
  */
 export const RERUN_DELAY_MS = 300;
 
+/**
+ * `result` with only the rows `pass` keeps, cut to `limit`, and counted as
+ * the query counts its own matches.
+ */
+function passed(
+  result: QueryViewResult,
+  pass: QueryRowPass | null | undefined,
+  limit: number | undefined,
+): QueryViewResult {
+  if (!pass || !result.rows) return result;
+  const kept = result.rows.filter((row) => pass.keeps(row));
+  const rows = limit === undefined ? kept : kept.slice(0, limit);
+  return {
+    ...result,
+    rows,
+    returnedCount: rows.length,
+    matchedCount: kept.length,
+    truncated: rows.length < kept.length,
+  };
+}
+
 /** One run of a view: its request key, and the file and view it ran for. */
 interface ViewRun {
   key: string;
   file: QueryFile;
   view: QueryFileView;
+  /** The host's condition on the rows as the run started. */
+  pass?: QueryRowPass | null;
 }
 
 /** The faults of a filter that reads a Formula it cannot have. */
@@ -723,6 +764,7 @@ export class QueryView extends Component implements HistorySurface {
       this.#request(file, view),
       usedGroupBy(view) ?? null,
       view.groupOrder ?? null,
+      this.#host.rowPass?.()?.key ?? null,
     ]);
   }
 
@@ -757,7 +799,8 @@ export class QueryView extends Component implements HistorySurface {
         }),
       fields,
       ...(Object.keys(formulas).length > 0 && { formulas }),
-      limit: view.limit ?? null,
+      // A condition after the query cuts the rows to the limit itself.
+      limit: this.#host.rowPass?.() ? null : (view.limit ?? null),
       ...(libraries && { libraries }),
       ...(context && { context }),
     };
@@ -786,6 +829,7 @@ export class QueryView extends Component implements HistorySurface {
     const controller = new AbortController();
     this.#run = controller;
     const key = this.#runKey(file, view);
+    const pass = this.#host.rowPass?.() ?? null;
     this.#runRequest = key;
     if (this.#shownRequest !== key) this.state.setState({ phase: "loading" });
     // A Formula with a mistake, and each Formula that reads it, is left out
@@ -796,7 +840,7 @@ export class QueryView extends Component implements HistorySurface {
         (outcome) => {
           if (this.#run !== controller) return;
           this.#run = null;
-          return this.#land({ key, file, view }, outcome, fromList);
+          return this.#land({ key, file, view, pass }, outcome, fromList);
         },
         (error: unknown) => {
           if (this.#run !== controller) return;
@@ -828,7 +872,7 @@ export class QueryView extends Component implements HistorySurface {
         this.#fail(run, outcome.diagnostic, formulaIssues(outcome));
         return;
       case "result": {
-        const { result } = outcome;
+        const result = passed(outcome.result, run.pass, view.limit);
         // The query reads Zotero's database, which can take a new Annotation
         // after the repository's list does. Such a run keeps the cards on
         // screen, and the database change that follows runs the view again.

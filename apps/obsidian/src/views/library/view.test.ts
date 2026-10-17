@@ -5,7 +5,7 @@
 import { Menu, resetMockPlatform, setMockPlatform } from "@mock/obsidian";
 import type { App, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { testItemSeed } from "@zotlit/item-query";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
@@ -68,11 +68,16 @@ class OpenView extends LibraryView {
   }
 }
 
-/** One Item of the fake Zotero database: its Library and the Collections it is filed in. */
+/**
+ * One Item of the fake Zotero database: its Library, the Collections it is
+ * filed in, its Annotations and whether a PDF of it is on this device.
+ */
 interface SeedItem {
   readonly key: string;
   readonly libraryID: number;
   readonly collections: readonly string[];
+  readonly annotations?: number;
+  readonly pdf?: boolean;
   readonly title?: string;
   readonly tags?: readonly string[];
 }
@@ -105,6 +110,8 @@ const SEED: readonly SeedItem[] = [
     key: "AAAAAAAA",
     libraryID: 1,
     collections: ["Thesis/Chapter 1", "Thesis/Chapter 2"],
+    annotations: 2,
+    pdf: true,
     title: "Graph drawing for figures",
     tags: ["method"],
   },
@@ -112,12 +119,14 @@ const SEED: readonly SeedItem[] = [
     key: "BBBBBBBB",
     libraryID: 1,
     collections: ["Thesis/Chapter 2"],
+    pdf: true,
     title: "Notes on attention",
   },
   {
     key: "CCCCCCCC",
     libraryID: 1,
     collections: ["Thesis"],
+    annotations: 1,
     title: "Figures that work",
     tags: ["method"],
   },
@@ -138,10 +147,32 @@ const SEED: readonly SeedItem[] = [
   { key: "HHHHHHHH", libraryID: 3, collections: [] },
 ];
 
-/** Whether the engine's filter selects `item`. */
+/** The Literature Notes of the vault: the Items D and A have one. */
+const NOTED = ["AAAAAAAA", "DDDDDDDD"];
+
+/**
+ * The conditions of the Library View's filters on an Item, each as ZotLit
+ * Query answers it for a {@link SeedItem}.
+ */
+const CONDITIONS: readonly [string, (item: SeedItem) => boolean][] = [
+  ["annotations.isEmpty()", (item) => (item.annotations ?? 0) === 0],
+  ["annotations.length > 0", (item) => (item.annotations ?? 0) > 0],
+  [
+    'attachments.filter(value.fileType == "pdf" && value.exists).length > 0',
+    (item) => item.pdf === true,
+  ],
+];
+/**
+ * Whether the engine's filter selects `item`. The engine's test seed holds
+ * no Annotation or Attachment, so the facets' conditions are answered first,
+ * as {@link CONDITIONS} says.
+ */
 function selects(filter: string | undefined, item: SeedItem): boolean {
   if (filter === undefined) return true;
-  const answer = testItemSeed(filter, {
+  let answered = filter;
+  for (const [condition, test] of CONDITIONS)
+    answered = answered.replaceAll(condition, String(test(item)));
+  const answer = testItemSeed(answered, {
     scan: {
       itemID: 1,
       key: item.key,
@@ -255,6 +286,15 @@ function pluginData(stored?: unknown) {
     Promise.resolve(answer(database.items, request)),
   );
   const reads = createNanoEvents<{ changed: () => void }>();
+  const notes = new Set(NOTED);
+  const notesChanged = createNanoEvents<{ changed: () => void }>();
+  const literatureNotes = {
+    find: (itemKey: string) =>
+      notes.has(itemKey) ? { path: `${itemKey}.md`, basename: itemKey } : null,
+    on: (_event: "changed", listener: () => void) =>
+      notesChanged.on("changed", listener),
+    open: vi.fn(),
+  };
   const items = {
     openNote: vi.fn(() => Promise.resolve()),
     openPdf: vi.fn(() => Promise.resolve()),
@@ -342,14 +382,20 @@ function pluginData(stored?: unknown) {
     },
     cardFocus: { hold: () => ({ [Symbol.dispose]: () => {} }) },
     annotations: { on: off, hold: () => ({ [Symbol.dispose]: () => {} }) },
-    literatureNotes: { find: () => null, on: off, open: vi.fn() },
     items,
     settings,
+    literatureNotes,
+    readers: { open: () => Promise.resolve() },
   } as unknown as LibraryViewDeps;
   /** Zotero's database changes to hold `items`, and says so. */
   const change = (items: readonly SeedItem[]) => {
     database.items = items;
     reads.emit("changed");
+  };
+  /** The vault gains a Literature Note for `itemKey`. */
+  const addNote = (itemKey: string) => {
+    notes.add(itemKey);
+    notesChanged.emit("changed");
   };
   /**
    * The researcher saves a Library Scope of the Libraries `available` and
@@ -370,14 +416,14 @@ function pluginData(stored?: unknown) {
     };
     scopeEvents.emit("changed");
   };
-  return { deps, run, settings, change, searches, rescope, items };
+  return { deps, run, settings, change, addNote, searches, rescope, items };
 }
 
-/** The Items requests, without the count requests of the Library Tree. */
+/** The Items requests, without the count requests of the Library Tree, which read no field. */
 function listRuns(run: ReturnType<typeof pluginData>["run"]) {
   return run.mock.calls
     .map(([request]) => request)
-    .filter((request) => request.group === undefined);
+    .filter((request) => (request.fields ?? []).length > 0);
 }
 
 /** The tree row of `node`. */
@@ -445,6 +491,7 @@ async function openTab(deps: LibraryViewDeps) {
 }
 
 const RECENT: LibraryNode = { kind: "recent" };
+const MY_LIBRARY: LibraryNode = { kind: "library", library: PERSONAL };
 
 it("opens on Recent, every Library in the Library Scope newest change first, where plugin data holds no document", async () => {
   const { deps, run } = pluginData();
@@ -549,7 +596,7 @@ it("lists a Collection with its subcollections' Items, names it in the header, a
     filter: 'collections.within("Thesis")',
   });
   expect(row(view, THESIS).getAttribute("aria-selected")).toBe("true");
-  expect(header(view)).toBe("Thesis · 3 papers");
+  expect(header(view)).toBe("Thesis · 3 papers · 1 unread");
   await settings.flush();
   expect(settings.current?.["library.document"]?.node).toEqual(THESIS);
 });
@@ -562,7 +609,7 @@ it("lists a group library on its own, with no filter", async () => {
   const last = listRuns(run).at(-1)!;
   expect(last.libraries).toEqual({ mode: "selected", libraries: [LAB] });
   expect(last).not.toHaveProperty("filter");
-  expect(header(view)).toBe("Lab · 2 papers");
+  expect(header(view)).toBe("Lab · 2 papers · 2 unread");
 });
 
 it("shows the libraries outside the Library Scope on request, and lists one", async () => {
@@ -600,7 +647,7 @@ it("opens again on the node the tree selected", async () => {
   run.mockClear();
   const view = await openTab(deps);
   expect(listRuns(run)).toEqual([selected]);
-  expect(header(view)).toBe("Lab · 2 papers");
+  expect(header(view)).toBe("Lab · 2 papers · 2 unread");
 });
 
 it("counts again after a database change", async () => {
@@ -633,7 +680,7 @@ it("moves the selection up to its library where Zotero no longer has the Collect
   const view = await openTab(deps);
   await act(() => view.query.settled);
   expect(listRuns(run).at(-1)).not.toHaveProperty("filter");
-  expect(header(view)).toBe("My Library · 5 papers");
+  expect(header(view)).toBe("My Library · 5 papers · 2 unread");
   await settings.flush();
   expect(settings.current?.["library.document"]?.node).toEqual({
     kind: "library",
@@ -749,6 +796,119 @@ it("opens on the Papers Layout, offers Papers and the Table only, and opens agai
 
   const second = await openTab(deps);
   expect(second.query.state.getState().view?.type).toBe("table");
+});
+
+/** The Items the list shows, by Indexed Key, in order. */
+function listed(view: LibraryView) {
+  return [
+    ...view.contentEl.querySelectorAll<HTMLElement>("[data-query-papers-row]"),
+  ].map((el) => el.dataset.queryPapersRow);
+}
+
+function facet(view: LibraryView, id: string): HTMLElement {
+  const found = view.contentEl.querySelector<HTMLElement>(
+    `[data-library-facet="${id}"]`,
+  );
+  if (!found) throw new Error(`No facet ${id}`);
+  return found;
+}
+
+describe("Reading State facets", () => {
+  // Of My Library's A–E: A and C have Annotations, A and B a PDF on this
+  // device, A and D a Literature Note; B and E have none of the three.
+  it.each([
+    ["unread", ["BBBBBBBB", "EEEEEEEE"]],
+    ["annotated", ["AAAAAAAA", "CCCCCCCC"]],
+    ["has-note", ["AAAAAAAA", "DDDDDDDD"]],
+    ["pdf", ["AAAAAAAA", "BBBBBBBB"]],
+  ])("narrows My Library to the Items %s holds", async (id, keys) => {
+    const { deps } = pluginData();
+    const view = await openTab(deps);
+    await press(view, row(view, MY_LIBRARY));
+    expect(listed(view)).toEqual([
+      "AAAAAAAA",
+      "BBBBBBBB",
+      "CCCCCCCC",
+      "DDDDDDDD",
+      "EEEEEEEE",
+    ]);
+    await press(view, facet(view, id));
+    expect(facet(view, id).getAttribute("aria-pressed")).toBe("true");
+    expect(listed(view)).toEqual(keys);
+    expect(
+      view.contentEl.querySelector("[data-query-count]")?.textContent,
+    ).toBe("2 results");
+    // A second press shows every Item again.
+    await press(view, facet(view, id));
+    expect(listed(view)).toHaveLength(5);
+  });
+
+  it("narrows Recent, over every Library in the Library Scope", async () => {
+    const { deps, run } = pluginData();
+    const view = await openTab(deps);
+    await press(view, facet(view, "unread"));
+    expect(listRuns(run).at(-1)).toMatchObject({
+      libraries: { mode: "selected", libraries: [PERSONAL, LAB] },
+      filter: "annotations.isEmpty()",
+    });
+    // B and E of My Library, F and G of Lab: no Annotation, no note.
+    expect(listed(view)).toEqual([
+      "BBBBBBBB",
+      "EEEEEEEE",
+      "FFFFFFFF",
+      "GGGGGGGG",
+    ]);
+  });
+
+  it("combines with the Collection selected and with each other", async () => {
+    const { deps } = pluginData();
+    const view = await openTab(deps);
+    await press(view, row(view, THESIS));
+    await press(view, facet(view, "pdf"));
+    expect(listed(view)).toEqual(["AAAAAAAA", "BBBBBBBB"]);
+    await press(view, facet(view, "has-note"));
+    expect(listed(view)).toEqual(["AAAAAAAA"]);
+  });
+
+  it("counts the unread Items of the selection in the header, once the vault answers for their notes", async () => {
+    const { deps, addNote } = pluginData();
+    const view = await openTab(deps);
+    // Recent names no paper count, so it names no unread count either.
+    expect(header(view)).toBe("Recent");
+    await press(view, row(view, MY_LIBRARY));
+    expect(header(view)).toBe("My Library · 5 papers · 2 unread");
+    await press(view, row(view, THESIS));
+    expect(header(view)).toBe("Thesis · 3 papers · 1 unread");
+    await press(view, facet(view, "unread"));
+    expect(listed(view)).toEqual(["BBBBBBBB"]);
+    // A new Literature Note takes B out of the unread Items.
+    await act(async () => {
+      addNote("BBBBBBBB");
+      await view.query.settled;
+      await view.tree.settled;
+    });
+    expect(listed(view)).toEqual([]);
+    expect(header(view)).toBe("Thesis · 3 papers · 0 unread");
+  });
+
+  it("opens again with the facets the researcher left on", async () => {
+    const { deps, settings } = pluginData();
+    const first = await openTab(deps);
+    await press(first, facet(first, "pdf"));
+    await press(first, facet(first, "annotated"));
+    await settings.flush();
+    expect(settings.current?.["library.document"]?.facets).toEqual([
+      "annotated",
+      "pdf",
+    ]);
+    await act(() => first.close());
+
+    const view = await openTab(deps);
+    expect(facet(view, "annotated").getAttribute("aria-pressed")).toBe("true");
+    expect(facet(view, "pdf").getAttribute("aria-pressed")).toBe("true");
+    expect(facet(view, "unread").getAttribute("aria-pressed")).toBe("false");
+    expect(listed(view)).toEqual(["AAAAAAAA"]);
+  });
 });
 
 /** The Item rows on screen, by Indexed Key, the selected one marked `*`. */
@@ -926,8 +1086,25 @@ it("shows an Item in its first Collection, selected", async () => {
     libraries: { mode: "selected", libraries: [PERSONAL] },
     filter: 'collections.within("Thesis/Chapter 1")',
   });
-  expect(header(view)).toBe("Thesis / Chapter 1 · 1 paper");
+  expect(header(view)).toBe("Thesis / Chapter 1 · 1 paper · 0 unread");
   expect(itemRows(view)).toContain(`${A} *`);
+});
+
+it("turns the Reading State facets off to show an Item they leave out", async () => {
+  const { deps, run, settings } = pluginData();
+  const view = await openTab(deps);
+  // A has Annotations, so Unread leaves it out.
+  await press(view, facet(view, "unread"));
+  await press(view, facet(view, "pdf"));
+  await act(() => view.reveal(A));
+  expect(listRuns(run).at(-1)).toMatchObject({
+    filter: 'collections.within("Thesis/Chapter 1")',
+  });
+  expect(facet(view, "unread").getAttribute("aria-pressed")).toBe("false");
+  expect(facet(view, "pdf").getAttribute("aria-pressed")).toBe("false");
+  expect(itemRows(view)).toContain(`${A} *`);
+  await settings.flush();
+  expect(settings.current?.["library.document"]?.facets).toEqual([]);
 });
 
 it("shows an Item filed in no Collection in its Library", async () => {
@@ -1057,9 +1234,36 @@ it("clears the search on Escape, and lists the selected node again", async () =>
     "DDDDDDDD",
     "EEEEEEEE",
   ]);
-  expect(header(view)).toBe("My Library · 5 papers");
+  expect(header(view)).toBe("My Library · 5 papers · 2 unread");
   await act(() => view.close());
   expect(settings.current?.["library.document"]?.search).toBe("");
+});
+
+it("keeps a search inside the active facets, the vault's among them, in the search's rank", async () => {
+  const { deps } = pluginData(ON_MY_LIBRARY);
+  const view = await openTab(deps);
+  await type(view, "figures");
+  expect(shown(view)).toEqual(["DDDDDDDD", "CCCCCCCC", "AAAAAAAA"]);
+  await press(view, facet(view, "has-note"));
+  expect(shown(view)).toEqual(["DDDDDDDD", "AAAAAAAA"]);
+  await press(view, facet(view, "annotated"));
+  expect(shown(view)).toEqual(["AAAAAAAA"]);
+  expect(header(view)).toBe("1 match in My Library · Search all libraries");
+});
+
+it("keeps a search of all libraries inside the active facets", async () => {
+  const { deps } = pluginData();
+  const view = await openTab(deps);
+  await press(view, row(view, THESIS));
+  await press(view, facet(view, "unread"));
+  await type(view, "figures");
+  await press(
+    view,
+    view.contentEl.querySelector<HTMLElement>("[data-library-search-all]")!,
+  );
+  // Of the four hits in My Library and Lab, F has no Annotation and no
+  // note; the others have one or the other.
+  expect(shown(view)).toEqual(["FFFFFFFF"]);
 });
 
 it("lists nothing more once the tab closed during a search", async () => {

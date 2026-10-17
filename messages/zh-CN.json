@@ -466,6 +466,11 @@
   "library_view_tree_label": "文库",
   "library_view_recent": "最近",
   "library_view_recent_edited_in_zotero": "在 Zotero 中编辑",
+  "library_view_facets_label": "仅显示",
+  "library_view_facet_unread": "未读",
+  "library_view_facet_annotated": "有批注",
+  "library_view_facet_has_note": "有笔记",
+  "library_view_facet_pdf": "PDF",
   "library_view_tree_count": [
     {
       "declarations": ["input count", "local formatted = count: number"],
@@ -487,6 +492,15 @@
       "match": {
         "category=one": "{selection} · 1 篇文献",
         "category=*": "{selection} · {formatted} 篇文献"
+      }
+    }
+  ],
+  "library_view_header_unread": [
+    {
+      "declarations": ["input count", "local formatted = count: number"],
+      "selectors": ["formatted"],
+      "match": {
+        "formatted=*": "· {formatted} 篇未读"
       }
     }
   ],

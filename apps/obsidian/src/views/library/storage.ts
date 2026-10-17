@@ -9,7 +9,11 @@ import {
   parseLibraryViewDocument,
   serializeLibraryViewDocument,
 } from "./document";
-import type { LibraryNode, LibraryViewDocument } from "./document";
+import type {
+  LibraryNode,
+  LibraryViewDocument,
+  ReadingStateFacet,
+} from "./document";
 import { documentWithText } from "./query-text";
 
 const KEY = "library.document";
@@ -19,6 +23,8 @@ export interface LibraryViewStorage extends Pick<QueryViewHost, "save"> {
   document: () => LibraryViewDocument;
   /** Keep `node` as the tree selection, with the sort it writes. Settles once plugin data holds it; rejects where the write failed. */
   select: (node: LibraryNode) => Promise<void>;
+  /** Keep `facets` as the active Reading State facets. Settles and rejects as {@link select} does. */
+  setFacets: (facets: readonly ReadingStateFacet[]) => Promise<void>;
   /** Keep `text` as the search. Settles once plugin data holds it; rejects where the write failed. */
   search: (text: string) => Promise<void>;
 }
@@ -46,6 +52,7 @@ export function libraryViewStorage(
     }),
     document: () => parseLibraryViewDocument(settings.current?.[KEY] ?? null),
     select: (node) => keep((doc) => documentWithNode(doc, node)),
+    setFacets: (facets) => keep((doc) => ({ ...doc, facets })),
     search: (search) => keep((doc) => ({ ...doc, search })),
   };
 }

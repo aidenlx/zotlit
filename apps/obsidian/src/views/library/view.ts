@@ -28,13 +28,17 @@ import { QueryView } from "@/views/query-view/view";
 import type { QueryViewDeps } from "@/views/query-view/view";
 
 import { LIBRARY_LAYOUTS } from "./document";
-import type { LibraryNode } from "./document";
+import type { LibraryNode, ReadingStateFacet } from "./document";
 import { ZOTLIT_MARK_ICON } from "./icon";
 import type { ItemActions } from "./item-actions";
 import { createItemDrag, refuseItemDrop } from "./item-drag";
 import { LibraryTree } from "./library-tree";
 import type { LibraryTreeDeps } from "./library-tree";
-import { libraryViewQuery, libraryViewQueryFileText } from "./query-text";
+import {
+  libraryViewQuery,
+  libraryViewQueryFileText,
+  vaultPass,
+} from "./query-text";
 import type { LibraryViewLabels, LibraryViewQuery } from "./query-text";
 import { rowMenu } from "./row-menu";
 import { LibrarySearch } from "./search-box";
@@ -87,6 +91,8 @@ export class LibraryView extends ItemView {
   readonly #storage: ReturnType<typeof libraryViewStorage>;
   /** What the tab runs: the query of the document as it opened. */
   #shown: LibraryViewQuery | null = null;
+  /** What the search last found, which a facet change lists again. */
+  #found: SearchFound = { text: "" };
   /** The selected row, by its Item's Indexed Key. */
   readonly selection = createStore<{ key: string | null }>(() => ({
     key: null,
@@ -140,6 +146,9 @@ export class LibraryView extends ItemView {
       // The document keeps the sort, the Layout and the Visible Properties.
       displayOnly: true,
       layouts: LIBRARY_LAYOUTS,
+      // Has note, and the Literature Note half of Unread, the vault answers.
+      rowPass: () =>
+        this.#shown && vaultPass(this.#shown.vault, deps.literatureNotes),
       rows,
       // Recent says why each row is there; the query runs once the tab set it.
       reason: () => this.#shown!.reason,
@@ -156,7 +165,10 @@ export class LibraryView extends ItemView {
         },
       },
     });
-    this.tree = new LibraryTree(deps, { select: (node) => this.#select(node) });
+    this.tree = new LibraryTree(deps, {
+      select: (node) => this.#select(node),
+      filter: (facets) => this.#filter(facets),
+    });
     this.search = new LibrarySearch(deps, {
       node: () => this.tree.store.getState().node,
       found: (found) => this.#show(found),
@@ -223,11 +235,18 @@ export class LibraryView extends ItemView {
     });
     this.query.load();
     this.query.render(list);
+    // A Literature Note added or removed changes what the vault answers.
+    this.query.register(
+      this.#deps.literatureNotes.on("changed", () => {
+        if (this.#shown && this.#shown.vault.length > 0) this.query.refresh();
+      }),
+    );
     // A tab that the workspace restores on startup can open before plugin
     // data has loaded.
     await this.#deps.settings.loaded;
     const doc = this.#storage.document();
     this.tree.show(doc.node);
+    this.tree.showFacets(doc.facets);
     this.tree.refresh();
     await this.search.open(doc.search);
   }
@@ -301,12 +320,14 @@ export class LibraryView extends ItemView {
 
   /**
    * Show the Item `indexedKey` selected, in its first Collection, or in its
-   * Library where it is filed in none. A search that may leave the Item out
-   * is cleared. It shows nothing where the list does not hold it.
+   * Library where it is filed in none. A search or a Reading State facet
+   * that may leave the Item out is cleared. It shows nothing where the list
+   * does not hold it.
    */
   async reveal(indexedKey: string): Promise<void> {
     await this.#deps.settings.loaded;
     const node = await this.#itemNode(indexedKey);
+    if (this.tree.store.getState().facets.length > 0) this.#filter([]);
     if (this.search.store.getState().text !== "") this.search.clear();
     if (node) this.#select(node);
     this.selection.setState({ key: indexedKey });
@@ -377,11 +398,23 @@ export class LibraryView extends ItemView {
     void this.search.run();
   }
 
+  /** The researcher turned a facet on or off: list the Items `facets` hold, and keep them. */
+  #filter(facets: readonly ReadingStateFacet[]): void {
+    this.tree.showFacets(facets);
+    // The document takes the facets at once; the search found what it found.
+    this.#storage.setFacets(facets).catch((error: unknown) => {
+      logger.warn("The Library View could not keep the facets", { error });
+    });
+    this.#show(this.#found);
+  }
+
   /**
    * Run the query of the tree node and of what the search `found`; the
    * Libraries change apart from the text.
    */
-  #show({ text, keys, everywhere }: SearchFound): void {
+  #show(found: SearchFound): void {
+    this.#found = found;
+    const { text, keys, everywhere } = found;
     const doc = {
       ...this.#storage.document(),
       node: this.tree.store.getState().node,

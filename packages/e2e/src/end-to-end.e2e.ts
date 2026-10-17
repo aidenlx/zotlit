@@ -34,6 +34,7 @@ import {
   ANNOTATIONS,
   ATTACHMENTS,
   COLLECTIONS,
+  DEMO_ATTACHMENTS,
   DEMO_ITEMS,
   discardFixture,
   findScopeCase,
@@ -145,6 +146,42 @@ const settingsContent = "app.setting.containerEl";
 /** The byte order mark that starts a CSV file. */
 const BYTE_ORDER_MARK = String.fromCharCode(0xfeff);
 
+/**
+ * The Reading State of a Fixture Item, from the seed: its Annotations, the
+ * Literature Note the Fixture Vault holds for every Item but the demo papers,
+ * and a PDF the build writes to this device. The build writes a file for
+ * each Attachment with a source, except the demo papers' linked PDFs, which
+ * only the demo vault holds.
+ */
+const readingState = {
+  annotated: (item: FixtureItem) => {
+    const ids = new Set(
+      ATTACHMENTS.filter(
+        ({ parentItemID }) => parentItemID === item.itemID,
+      ).map(({ itemID }) => itemID),
+    );
+    return ANNOTATIONS.some(({ parentItemID }) => ids.has(parentItemID));
+  },
+  noted: (item: FixtureItem) => !DEMO_ITEMS.includes(item),
+  pdf: (item: FixtureItem) =>
+    ATTACHMENTS.some(
+      (attachment) =>
+        attachment.parentItemID === item.itemID &&
+        attachment.contentType === "application/pdf" &&
+        attachment.linkMode !== "linked_url" &&
+        attachment.sourceAsset !== null &&
+        !DEMO_ATTACHMENTS.includes(attachment),
+    ),
+};
+
+/** The Items of `items` with no Annotation and no Literature Note. */
+function unreadOf(
+  items: readonly FixtureItem[],
+  noted: (item: FixtureItem) => boolean = readingState.noted,
+): FixtureItem[] {
+  return items.filter((item) => !readingState.annotated(item) && !noted(item));
+}
+
 async function openProfilesSettings(
   vaultId: string,
   pageId:
@@ -212,6 +249,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   const offlineZotero = createServer((socket) => socket.destroy());
   let booksNotePath = "";
   let m: typeof import("@obsidian-messages");
+
+  /** The Library View header: the selection, its paper count and its unread count. */
+  function libraryHeader(
+    selection: string,
+    items: readonly FixtureItem[],
+    noted?: (item: FixtureItem) => boolean,
+  ): string {
+    return `${m.library_view_header({ selection, count: items.length })} ${m.library_view_header_unread({ count: unreadOf(items, noted).length })}`;
+  }
   const articlesProfile = {
     id: "Ar7Kd2QpX9Mn",
     label: "Articles",
@@ -1647,10 +1693,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         })),
     ]);
     expect(opened.header).toBe(
-      m.library_view_header({
-        selection: m.settings_library_scope_personal(),
-        count: inLibrary(personal.libraryID).length,
-      }),
+      libraryHeader(
+        m.settings_library_scope_personal(),
+        inLibrary(personal.libraryID),
+      ),
     );
     await press(parentKey, "[data-library-expand]", "Collection disclosure");
     expect(
@@ -1694,7 +1740,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const chosen = await shownWhen(listing(parentKey));
     expect(chosen.rows.toSorted()).toEqual(expected);
     expect(chosen.header).toBe(
-      m.library_view_header({ selection: parent.name, count: expected.length }),
+      libraryHeader(parent.name, filed(parent.collectionID)),
     );
 
     // A plugin reload comes back on the Collection.
@@ -1736,10 +1782,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       [...expected, indexedKey(added)].toSorted(),
     );
     expect(changed.header).toBe(
-      m.library_view_header({
-        selection: parent.name,
-        count: expected.length + 1,
-      }),
+      libraryHeader(parent.name, [...filed(parent.collectionID), added]),
     );
   });
 
@@ -2208,6 +2251,239 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
   }, 180000);
 
+  it("narrows the Library View by each Reading State facet to the seed's Items, with a Collection, counts the unread papers after the vault's pass, and keeps the facets across a plugin reload", async () => {
+    const services = "app.plugins.plugins.zotlit.services";
+    const snapshot = await obEval(
+      vaultId,
+      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null})`,
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'library.document':saved.document});await settings.flush();await app.workspace.changeLayout(saved.layout);return true;})()`,
+      );
+    });
+    // A Library View on My Library, with no facet.
+    await obEval(
+      vaultId,
+      `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=${services}.settings;settings.update({'library.document':${JSON.stringify(MY_LIBRARY_DOCUMENT)}});await settings.flush();return true;})()`,
+    );
+
+    const personal = ITEMS.filter(({ libraryID }) => libraryID === 1);
+    const sharedKey = COLLECTIONS.find(
+      (entry) => entry.libraryID === 1 && entry.key === "SHAREDCL",
+    )!;
+    const filed = personal.filter(({ collectionIDs }) =>
+      collectionIDs.includes(sharedKey.collectionID),
+    );
+    const keys = (items: readonly FixtureItem[]) =>
+      items.map(({ key }) => key).toSorted();
+    const sharedNode = JSON.stringify(["personal", sharedKey.name]);
+
+    interface Shown {
+      phase: string;
+      header: string | null;
+      facets: Record<string, boolean>;
+      selected: string | null;
+      search: string;
+      count: string | null;
+      rows: string[];
+    }
+    const readShown = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.tree)return 'null';await view.searched;await view.query.settled;await view.tree.settled;const el=view.contentEl;return JSON.stringify({phase:view.query.state.getState().phase,header:el.querySelector('[data-library-header]')?.textContent??null,facets:Object.fromEntries([...el.querySelectorAll('[data-library-facet]')].map(n=>[n.getAttribute('data-library-facet'),n.getAttribute('aria-pressed')==='true'])),selected:el.querySelector('[data-library-node][aria-selected="true"]')?.getAttribute('data-library-node')??null,search:el.querySelector('[data-library-search] input').value,count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,rows:[...el.querySelectorAll('[data-query-papers-row]')].map(n=>n.getAttribute('data-query-papers-row'))});})()`;
+    /** What the view shows once it lists every row it counts with `facets` on. */
+    const shownWith = async (
+      facets: readonly string[],
+      ready: (shown: Shown) => boolean = () => true,
+    ) => {
+      let shown: Shown | null = null;
+      const settled = await waitFor(async () => {
+        shown = JSON.parse(await obEval(vaultId, readShown)) as Shown | null;
+        return (
+          shown !== null &&
+          shown.phase === "ready" &&
+          shown.count !== null &&
+          shown.rows.length === Number(shown.count) &&
+          Object.entries(shown.facets).every(
+            ([id, on]) => on === facets.includes(id),
+          ) &&
+          ready(shown)
+        );
+      }, 120);
+      if (!settled) throw new Error(`Library View: ${JSON.stringify(shown)}`);
+      return shown!;
+    };
+    /**
+     * Press the element `target` finds in the tree pane. A narrow pane keeps
+     * the tree behind its button, so the press opens it first.
+     */
+    const inTree = (target: string, what: string) =>
+      obEval(
+        vaultId,
+        `(async()=>{${PAGE}const el=app.workspace.getLeavesOfType('zotlit-library')[0].view.contentEl;const pane=el.querySelector('[data-library-tree]');if(getComputedStyle(pane).display==='none'){press(el.querySelector('[data-library-tree-toggle]'),'Library Tree button');await until('Library Tree',()=>getComputedStyle(pane).display!=='none');}press(${target},${JSON.stringify(what)});return true;})()`,
+      );
+    const facet = (id: string) =>
+      inTree(
+        `pane.querySelector('[data-library-facet="${id}"]')`,
+        `${id} facet`,
+      );
+
+    await obEval(
+      vaultId,
+      "app.commands.executeCommandById('zotlit:open-library-view');true",
+    );
+    const opened = await shownWith([]);
+    expect(opened.rows.toSorted()).toEqual(keys(personal));
+
+    // Each facet narrows My Library to the Items the seed gives it.
+    const oracle: Record<string, (item: FixtureItem) => boolean> = {
+      unread: (item) => unreadOf([item]).length === 1,
+      annotated: readingState.annotated,
+      "has-note": readingState.noted,
+      pdf: readingState.pdf,
+    };
+    for (const [id, keeps] of Object.entries(oracle)) {
+      await facet(id);
+      const narrowed = await shownWith([id]);
+      expect(narrowed.rows.toSorted(), id).toEqual(
+        keys(personal.filter(keeps)),
+      );
+      await facet(id);
+      await shownWith([]);
+    }
+
+    // Facets combine with the Collection selected and with each other.
+    await inTree(
+      `[...pane.querySelectorAll('[data-library-node]')].find(n=>n.getAttribute('data-library-node')===${JSON.stringify(sharedNode)})`,
+      "Collection",
+    );
+    await shownWith([], (shown) => shown.selected === sharedNode);
+    await facet("annotated");
+    const annotated = filed.filter(readingState.annotated);
+    expect(annotated.length).toBeGreaterThan(0);
+    expect((await shownWith(["annotated"])).rows.toSorted()).toEqual(
+      keys(annotated),
+    );
+    await facet("pdf");
+    const both = annotated.filter(readingState.pdf);
+    expect(both.length).toBeGreaterThan(0);
+    expect((await shownWith(["annotated", "pdf"])).rows.toSorted()).toEqual(
+      keys(both),
+    );
+    await facet("annotated");
+    await facet("pdf");
+    await shownWith([]);
+
+    // The vault loses the Literature Note of an Item with no Annotation: the
+    // Item becomes unread, in the list and in the header's count.
+    const reader = filed.find(
+      (item) => !readingState.annotated(item) && readingState.noted(item),
+    )!;
+    const notePath = await obEval(
+      vaultId,
+      `${services}.noteIndex.getNotesByItemKey(${JSON.stringify(reader.key)})[0]?.path??''`,
+    );
+    expect(notePath).not.toBe("");
+    const moveNote = (from: string, to: string) =>
+      obEval(
+        vaultId,
+        `(async()=>{await app.vault.rename(app.vault.getAbstractFileByPath(${JSON.stringify(from)}),${JSON.stringify(to)});return true;})()`,
+      );
+    const away = `${notePath}.away`;
+    await moveNote(notePath, away);
+    cleanup.defer(async () => {
+      await moveNote(away, notePath);
+    });
+    const noted = (item: FixtureItem) =>
+      item !== reader && readingState.noted(item);
+    await facet("unread");
+    const unread = await shownWith(
+      ["unread"],
+      (shown) => shown.header === libraryHeader(sharedKey.name, filed, noted),
+    );
+    expect(unread.rows.toSorted()).toEqual(keys(unreadOf(filed, noted)));
+    expect(unread.rows).toContain(reader.key);
+
+    // A search keeps to the facets: in the Collection, then in every
+    // Library, each in the quick switcher's rank.
+    const lookup = async (query: string, everywhere: boolean) =>
+      JSON.parse(
+        await obEval(
+          vaultId,
+          `(async()=>{const s=${services};const libraries=${everywhere ? "s.libraryScope.current.available" : "s.libraryScope.libraries.filter(l=>l.selector.type==='personal')"};return JSON.stringify((await s.itemLookup.search(${JSON.stringify(query)},{limit:500,libraries})).map(h=>h.item.indexedKey));})()`,
+        ),
+      ) as string[];
+    const type = (text: string) =>
+      obEval(
+        vaultId,
+        `(()=>{const input=app.workspace.getLeavesOfType('zotlit-library')[0].view.contentEl.querySelector('[data-library-search] input');input.value=${JSON.stringify(text)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+      );
+    const indexedKey = (item: FixtureItem) => {
+      const { groupID } = LIBRARIES.find(
+        (entry) => entry.libraryID === item.libraryID,
+      )!;
+      return groupID === null ? item.key : `${item.key}g${groupID}`;
+    };
+    const unreadHere = new Set(unreadOf(filed, noted).map(indexedKey));
+    const unreadAnywhere = new Set(unreadOf(ITEMS, noted).map(indexedKey));
+    await type(reader.title);
+    const here = (await lookup(reader.title, false)).filter((key) =>
+      unreadHere.has(key),
+    );
+    expect(here).toContain(reader.key);
+    expect(
+      (
+        await shownWith(
+          ["unread"],
+          (shown) =>
+            shown.search === reader.title && shown.rows.length === here.length,
+        )
+      ).rows,
+    ).toEqual(here);
+    await obEval(
+      vaultId,
+      `(()=>{${PAGE}press(app.workspace.getLeavesOfType('zotlit-library')[0].view.contentEl.querySelector('[data-library-search-all]'),'Search all libraries');return true;})()`,
+    );
+    const anywhere = (await lookup(reader.title, true)).filter((key) =>
+      unreadAnywhere.has(key),
+    );
+    expect(
+      (
+        await shownWith(
+          ["unread"],
+          (shown) =>
+            shown.header ===
+            m.library_view_search_matches_everywhere({
+              count: anywhere.length,
+            }),
+        )
+      ).rows,
+    ).toEqual(anywhere);
+    await type("");
+    await shownWith(
+      ["unread"],
+      (shown) =>
+        shown.search === "" &&
+        shown.header === libraryHeader(sharedKey.name, filed, noted),
+    );
+
+    // A plugin reload comes back on the Collection with the facet on.
+    expect(
+      await obEvalUntil(
+        vaultId,
+        "app.plugins.disablePlugin('zotlit').then(function () { return app.plugins.enablePlugin('zotlit'); }).then(function () { return true; })",
+        { expected: "true", tries: 20 },
+      ),
+    ).toBe(true);
+    const reloaded = await shownWith(
+      ["unread"],
+      (shown) =>
+        shown.selected === sharedNode &&
+        shown.header === libraryHeader(sharedKey.name, filed, noted),
+    );
+    expect(reloaded.rows.toSorted()).toEqual(unread.rows.toSorted());
+  }, 180000);
+
   it("searches the Library View as the quick switcher ranks, inside the tree node, with tag:, Search all libraries and Escape", async () => {
     const services = "app.plugins.plugins.zotlit.services";
     const snapshot = await obEval(
@@ -2374,10 +2650,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     expect(cleared.rows).toEqual(opened.rows);
     expect(cleared.header).toBe(
-      m.library_view_header({
-        selection: m.settings_library_scope_personal(),
-        count: inPersonal.length,
-      }),
+      libraryHeader(m.settings_library_scope_personal(), inPersonal),
     );
   });
 
