@@ -183,6 +183,7 @@ async function mount(
       notesChanged.emit("changed");
     }),
   };
+  const readers = { open: vi.fn(() => Promise.resolve()) };
   const deps = {
     app: editorApp() as unknown as App,
     reads: {
@@ -244,6 +245,7 @@ async function mount(
     allowEditing: vi.fn(),
     reportBlockedGesture: vi.fn(),
     literatureNotes,
+    readers,
   } as unknown as QueryViewDeps;
   const save = vi.fn((_text: string) => {});
   const onSelectView = vi.fn((_name: string) => {});
@@ -293,6 +295,7 @@ async function mount(
     onSelectView,
     saved,
     literatureNotes,
+    readers,
   };
 }
 
@@ -3207,4 +3210,115 @@ it("draws each Item of a Papers view as its title, its creators, year and Venue,
     },
   ]);
   expect(cards(el)).toEqual([]);
+});
+
+it("expands a Papers row into its Attachments, Child Notes and Literature Note, and an Attachment into its Annotations, each opening its own target", async () => {
+  const openWindow = vi.spyOn(window, "open").mockImplementation(() => null);
+  onTestFinished(() => openWindow.mockRestore());
+  const item = paperRow("ITEMAAAA", {
+    title: "Ten simple rules for better figures",
+    attachments: ["PDFAAAAA"],
+  });
+  const { view, el, run, settle, readers, literatureNotes } = await mount(
+    [
+      result([
+        {
+          ...item,
+          values: {
+            ...item.values,
+            notes: [{ indexedKey: "NXTEAAAA", title: "Reading notes" }],
+          },
+        },
+        paperRow("ITEMBBBB", { title: "Nothing under it" }),
+      ]),
+      result([
+        {
+          indexedKey: "PDFAAAAA",
+          values: {
+            title: "Rougier et al. - 2014.pdf",
+            "annotations[].indexedKey": ["ANNOTAAA"],
+          },
+        },
+      ]),
+      result([
+        {
+          indexedKey: "ANNOTAAA",
+          values: {
+            text: "Rule 1: know your audience",
+            color: "#ffd400",
+            pageLabel: "3",
+            pageIndex: 2,
+          },
+        },
+      ]),
+    ],
+    undefined,
+    { notes: { ITEMAAAA: "Rougier 2014.md" } },
+  );
+  await act(() => view.setText(PAPERS_FILE));
+  await settle();
+  const children = () =>
+    [...el.querySelectorAll<HTMLElement>("[data-query-papers-child]")].map(
+      (node) => [node.dataset.queryPapersChild, node.textContent?.trim()],
+    );
+
+  // Only an Item with something under it can expand.
+  expect(
+    [...el.querySelectorAll("[data-query-expand]")].map((node) =>
+      node.getAttribute("data-query-expand"),
+    ),
+  ).toEqual(["item:ITEMAAAA"]);
+  await act(async () => {
+    el.querySelector<HTMLElement>(
+      '[data-query-expand="item:ITEMAAAA"]',
+    )!.click();
+  });
+  await act(async () => {});
+  expect(run.mock.calls[1]![0]).toMatchObject({
+    from: "attachments",
+    filter: 'item.indexedKey == "ITEMAAAA"',
+  });
+  await act(async () => {
+    el.querySelector<HTMLElement>(
+      '[data-query-expand="attachment:PDFAAAAA"]',
+    )!.click();
+  });
+  await act(async () => {});
+  expect(children()).toEqual([
+    ["attachment", "Rougier et al. - 2014.pdf"],
+    ["annotation", "Rule 1: know your audiencePage 3"],
+    ["note", "Reading notes"],
+    ["literature-note", "Rougier 2014"],
+  ]);
+
+  const child = (kind: string) =>
+    el.querySelector<HTMLElement>(
+      `[data-query-papers-child="${kind}"] a, [data-query-papers-child="${kind}"] [data-query-note]`,
+    )!;
+  await act(() => child("attachment").click());
+  expect(readers.open).toHaveBeenLastCalledWith(
+    { kind: "attachment", attachmentKey: "PDFAAAAA" },
+    false,
+  );
+  await act(() => child("annotation").click());
+  expect(readers.open).toHaveBeenLastCalledWith(
+    {
+      kind: "annotation",
+      attachmentKey: "PDFAAAAA",
+      annotationKey: "ANNOTAAA",
+      pageIndex: 2,
+      pageLabel: "3",
+    },
+    false,
+  );
+  // A Child Note lives in Zotero, which shows it from its link.
+  await act(() => child("note").click());
+  expect(openWindow).toHaveBeenCalledWith(
+    "zotero://select/library/items/NXTEAAAA",
+  );
+  await act(() => child("literature-note").click());
+  expect(literatureNotes.open).toHaveBeenCalledWith(
+    expect.objectContaining({ path: "Rougier 2014.md" }),
+    expect.anything(),
+  );
 });

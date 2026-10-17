@@ -5,21 +5,29 @@
 // the Table expands into.
 //
 // @see apps/obsidian/docs/adr/0074-the-papers-layout-is-a-query-view-layout-the-library-view-offers-with-the-table.md
-import { useSyncExternalStore } from "react";
-import type { CSSProperties } from "react";
+import { Fragment, useSyncExternalStore } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 import { resolveVenue } from "@zotlit/db";
 
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
-import { tooltipAttrs } from "@/lib/utils";
+import { cn, tooltipAttrs } from "@/lib/utils";
 import type { QueryViewValue } from "@/services/item-query/query-view";
 
 import type { QueryLayout } from "./layouts";
 import { RecordGroupHeading, useRecordGroups } from "./record-rows";
-import { Expander, TABLE_FIELDS, useChildren } from "./table-layout";
-import type { TableRecord } from "./table-layout";
+import {
+  Expander,
+  ReaderLink,
+  TABLE_CHILD_SOURCES,
+  TABLE_FIELDS,
+  id,
+  useChildren,
+} from "./table-layout";
+import type { ChildState, TableRecord } from "./table-layout";
 import type { LiteratureNotes } from "./table-notes";
+import type { ReaderTarget, TableReaders } from "./table-readers";
 import type { QueryView } from "./view";
 
 export const PAPERS_LAYOUT: QueryLayout = {
@@ -152,7 +160,7 @@ function useNotePath(notes: LiteratureNotes, itemKey: string): string | null {
 /** The rows of the shown view as a reading list, under their group headings. */
 export function PapersLayout({ view }: { view: QueryView }) {
   const { groups } = useRecordGroups(view);
-  const { query, literatureNotes } = view.tableDeps;
+  const { query, literatureNotes, readers } = view.tableDeps;
   const { children: expanded, toggle } = useChildren(query);
   return (
     <div
@@ -175,8 +183,9 @@ export function PapersLayout({ view }: { view: QueryView }) {
                     key={`${row.indexedKey}\n${index}`}
                     item={item}
                     notes={literatureNotes}
-                    open={expanded.has(`item:${item.key}`)}
-                    onToggle={() => toggle(item)}
+                    readers={readers}
+                    expanded={expanded}
+                    toggle={toggle}
                   />
                 );
               })}
@@ -188,17 +197,20 @@ export function PapersLayout({ view }: { view: QueryView }) {
   );
 }
 
+interface Expansion {
+  readonly expanded: ReadonlyMap<string, ChildState>;
+  readonly toggle: (record: TableRecord) => void;
+  readonly readers: TableReaders;
+}
+
 function PaperRow({
   item,
   notes,
-  open,
-  onToggle,
-}: {
-  item: TableRecord;
-  notes: LiteratureNotes;
-  open: boolean;
-  onToggle: () => void;
-}) {
+  readers,
+  expanded,
+  toggle,
+}: Expansion & { item: TableRecord; notes: LiteratureNotes }) {
+  const open = expanded.has(id(item));
   const { values } = item;
   const note = useNotePath(notes, item.key);
   const annotations = list(values["annotations[].color"]);
@@ -217,7 +229,7 @@ function PaperRow({
       data-query-papers-row={item.key}
     >
       <div className="zt:flex zt:items-start zt:gap-1 zt:rounded-(--radius-s) zt:px-1 zt:py-1.5 zt:hover:bg-(--background-modifier-hover)">
-        <Expander record={item} open={open} onToggle={onToggle} />
+        <Expander record={item} open={open} onToggle={() => toggle(item)} />
         <div className="zt:min-w-0 zt:flex-1">
           <div
             className="zt:line-clamp-2 zt:text-(length:--font-ui-small) zt:font-(--font-medium) zt:text-(--text-normal)"
@@ -285,6 +297,135 @@ function PaperRow({
           )}
         </div>
       </div>
+      {open && (
+        <ul className="zt:m-0 zt:list-none zt:p-0 zt:pb-1">
+          <ChildRows
+            parent={item}
+            depth={1}
+            expanded={expanded}
+            toggle={toggle}
+            readers={readers}
+          />
+          {note !== null && <LiteratureNoteRow notes={notes} item={item} />}
+        </ul>
+      )}
+    </li>
+  );
+}
+
+/** The inset of a row `depth` levels under its Item, past the Item's chevron. */
+const indent = (depth: number) =>
+  ({
+    "--zt-indent": `calc(${depth} * var(--size-4-5))`,
+  }) as CSSProperties;
+
+const CHILD_ROW =
+  "zt:flex zt:min-w-0 zt:items-center zt:gap-1.5 zt:rounded-(--radius-s) zt:py-0.5 zt:ps-(--zt-indent) zt:pe-1 zt:text-(length:--font-ui-smaller) zt:hover:bg-(--background-modifier-hover)";
+
+/** The rows under one expanded row, and the rows under those that are expanded. */
+function ChildRows({
+  parent,
+  depth,
+  expanded,
+  toggle,
+  readers,
+}: Expansion & { parent: TableRecord; depth: number }) {
+  const state = expanded.get(id(parent));
+  if (!state) return null;
+  if (state.phase !== "ready")
+    return (
+      <li
+        className={cn(CHILD_ROW, "zt:text-(--text-muted)")}
+        style={indent(depth)}
+        data-query-table-status={state.phase}
+      >
+        {state.phase === "loading"
+          ? m.query_view_table_loading()
+          : m.query_view_table_children_failed()}
+      </li>
+    );
+  const link = (target: ReaderTarget, children: ReactNode) => (
+    <ReaderLink readers={readers} target={target}>
+      {children}
+    </ReaderLink>
+  );
+  return state.rows.map((record) => {
+    const source = TABLE_CHILD_SOURCES.find(
+      (candidate) => candidate.kind === record.kind,
+    )!;
+    return (
+      <Fragment key={id(record)}>
+        <li
+          className={CHILD_ROW}
+          style={indent(depth)}
+          data-query-papers-child={record.kind}
+          data-query-key={record.key}
+        >
+          <Expander
+            record={record}
+            open={expanded.has(id(record))}
+            onToggle={() => toggle(record)}
+          />
+          <Icon
+            name={source.icon}
+            size="var(--icon-xs)"
+            strokeWidth="var(--icon-xs-stroke-width)"
+            className="zt:shrink-0 zt:text-(--icon-color)"
+          />
+          {source.render(record, { parent, link })}
+        </li>
+        <ChildRows
+          parent={record}
+          depth={depth + 1}
+          expanded={expanded}
+          toggle={toggle}
+          readers={readers}
+        />
+      </Fragment>
+    );
+  });
+}
+
+/** The Item's Literature Note, last under it, which opens as a link does. */
+function LiteratureNoteRow({
+  notes,
+  item,
+}: {
+  notes: LiteratureNotes;
+  item: TableRecord;
+}) {
+  const note = notes.find(item.key);
+  if (!note) return null;
+  return (
+    <li
+      className={CHILD_ROW}
+      style={indent(1)}
+      data-query-papers-child="literature-note"
+    >
+      {/* A row with nothing under it holds the place of a chevron, so the
+          icon lines up with the rows above. */}
+      <Expander
+        record={{ kind: "note", key: note.path, values: {} }}
+        open={false}
+        onToggle={() => {}}
+      />
+      <Icon
+        name="notebook-pen"
+        size="var(--icon-xs)"
+        strokeWidth="var(--icon-xs-stroke-width)"
+        className="zt:shrink-0 zt:text-(--icon-color)"
+      />
+      <a
+        className="internal-link zt:truncate"
+        href={note.path}
+        data-query-note={note.path}
+        onClick={(event) => {
+          event.preventDefault();
+          notes.open(note, event.nativeEvent);
+        }}
+      >
+        {note.basename}
+      </a>
     </li>
   );
 }
