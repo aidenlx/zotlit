@@ -2644,6 +2644,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ({ libraryID }) => libraryID === unwritten.libraryID,
     )!.groupID!;
     const unwrittenKey = `${unwritten.key}g${unwrittenGroup}`;
+    // The Literature Note that Enter writes below goes when the test ends,
+    // whichever step fails first, and the test fails while one stays: by the
+    // Note Index or by its frontmatter.
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{${PAGE}const key=${JSON.stringify(unwrittenKey)};const written=()=>[...new Set([...${services}.noteIndex.getNotesByItemKey(key),...app.vault.getMarkdownFiles().filter(file=>app.metadataCache.getFileCache(file)?.frontmatter?.['zotero-key']===key)])];for(const file of written())await app.vault.delete(file);await until('no Literature Note of '+key+' left',()=>written().length===0,10000);return true;})()`,
+      );
+    });
     const child = COLLECTIONS.find(({ key }) => key === "PERSCHLD")!;
     const parent = COLLECTIONS.find(
       ({ collectionID }) => collectionID === child.parentCollectionID,
@@ -2701,14 +2710,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
 
     // On an Item with no Literature Note, Enter writes one through the
-    // Profile selection, as the quick switcher does. The note it writes goes
-    // when the test ends, whichever step fails first.
-    cleanup.defer(async () => {
-      await obEval(
-        vaultId,
-        `(async()=>{for(const file of app.vault.getMarkdownFiles())if(app.metadataCache.getFileCache(file)?.frontmatter?.['zotero-key']===${JSON.stringify(unwrittenKey)})await app.vault.delete(file);return true;})()`,
-      );
-    });
+    // Profile selection, as the quick switcher does.
     await inLibrary(
       `const groupNode=[...el.querySelectorAll('[data-library-node]')].find(n=>n.getAttribute('data-library-node')===${JSON.stringify(JSON.stringify([`group:${unwrittenGroup}`]))});if(!groupNode.checkVisibility())press(el.querySelector('[data-library-tree-toggle]'),'tree toggle');press(groupNode,'group library');await until('group rows',()=>groupNode.getAttribute('aria-selected')==='true'&&leaf.view.query.state.getState().phase==='ready'&&row(${JSON.stringify(unwrittenKey)}),10000);press(row(${JSON.stringify(unwrittenKey)}),'unwritten row');keydown(row(${JSON.stringify(unwrittenKey)}),{key:'Enter'});return true`,
     );
