@@ -12,6 +12,10 @@ import type { App, TFile } from "obsidian";
 import { Effect } from "@/lib/effect";
 import { processLiveFrontMatter } from "@/lib/live-text";
 import type { LiveTextApp } from "@/lib/live-text";
+import {
+  assignedWidget,
+  onTypesChanged,
+} from "@/lib/obsidian-private/metadata-type-manager";
 import { createNoteInteractively } from "@/services/note-feature/creation-view";
 import type { InteractiveCreationDeps } from "@/services/note-feature/creation-view";
 import type { NoteIndex } from "@/services/note-index/service";
@@ -26,14 +30,26 @@ export type LiteratureNoteLink = Pick<TFile, "path" | "basename">;
 
 /**
  * The type of a vault property, by the id of the Obsidian property widget
- * that shows it: one inferred from a value it holds, else text.
+ * that shows it: the one Obsidian assigns the property, else one inferred
+ * from a value it holds, else text.
  */
 export type VaultPropertyType =
   | "text"
   | "multitext"
   | "number"
   | "checkbox"
-  | "date";
+  | "date"
+  | "datetime";
+
+/** The assigned widgets a vault property takes as its type; others infer. */
+const ASSIGNABLE: ReadonlySet<string> = new Set<VaultPropertyType>([
+  "text",
+  "multitext",
+  "number",
+  "checkbox",
+  "date",
+  "datetime",
+]);
 
 /**
  * The note that holds a Query View, and the Item its `zotero-key` names: a
@@ -75,7 +91,8 @@ export interface LiteratureNotes {
   find(itemKey: string): LiteratureNoteLink | null;
   /**
    * `changed`: a Literature Note was added, changed or removed.
-   * `frontmatter-changed`: the frontmatter of a Literature Note changed.
+   * `frontmatter-changed`: the frontmatter of a Literature Note, or the
+   * type Obsidian assigns a property, changed.
    */
   on(
     event: "changed" | "frontmatter-changed",
@@ -129,8 +146,44 @@ export interface LiteratureNotesDeps extends InteractiveCreationDeps {
   zoteroReads: Pick<ZoteroReadsService, "ready">;
 }
 
+/**
+ * What the vault properties read across many notes, kept until a note is
+ * added, changed or removed.
+ */
+interface VaultMemo {
+  names?: readonly string[];
+  /** The type each name's first value infers. */
+  inferred?: ReadonlyMap<string, VaultPropertyType>;
+  /** The keys each note's Profile replaces, by path. */
+  replaced: Map<string, readonly string[]>;
+}
+
+const freshMemo = (): VaultMemo => ({ replaced: new Map() });
+
 /** The column's Literature Notes, from the Note Index and the usual creation. */
 export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
+  // The type Obsidian assigns is read live, so only what the notes give is
+  // kept. The Note Index lives as long as these notes, so the subscriptions
+  // need no end; they come first, so a listener reads after the clear.
+  let memo = freshMemo();
+  const invalidate = () => {
+    memo = freshMemo();
+  };
+  deps.noteIndex.on("changed", invalidate);
+  deps.noteIndex.on("frontmatter-changed", invalidate);
+  const inferredTypes = (): ReadonlyMap<string, VaultPropertyType> => {
+    if (memo.inferred) return memo.inferred;
+    const inferred = new Map<string, VaultPropertyType>();
+    for (const itemKey of deps.noteIndex.getIndexedItemKeys()) {
+      const note = deps.noteIndex.getNotesByItemKey(itemKey)[0];
+      if (!note) continue;
+      for (const [name, value] of Object.entries(frontmatterOf(note.path)))
+        if (!inferred.has(name) && value !== undefined && value !== null)
+          inferred.set(name, inferType(value));
+    }
+    memo.inferred = inferred;
+    return inferred;
+  };
   const frontmatterOf = (path: string): Readonly<Record<string, unknown>> =>
     deps.app.metadataCache.getCache(path)?.frontmatter ?? {};
   /** The path of the note an Item's vault properties are of. */
@@ -144,19 +197,26 @@ export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
   };
   return {
     find: (itemKey) => deps.noteIndex.getNotesByItemKey(itemKey)[0] ?? null,
-    on: (event, listener) => deps.noteIndex.on(event, () => listener()),
+    on: (event, listener) => {
+      const off = deps.noteIndex.on(event, () => listener());
+      if (event !== "frontmatter-changed") return off;
+      // A change of an assigned type shows as a change of the frontmatter.
+      const offTypes = onTypesChanged(deps.app, listener);
+      return () => {
+        off();
+        offTypes();
+      };
+    },
     propertyNames: () =>
-      deps.noteIndex
+      (memo.names ??= deps.noteIndex
         .getPropertyNames()
-        .filter((name) => `vault.${name}` !== LITERATURE_NOTE),
+        .filter((name) => `vault.${name}` !== LITERATURE_NOTE)),
     itemKeys: () => deps.noteIndex.getIndexedItemKeys(),
     propertyType: (name) => {
-      for (const itemKey of deps.noteIndex.getIndexedItemKeys()) {
-        const note = deps.noteIndex.getNotesByItemKey(itemKey)[0];
-        const value = note && frontmatterOf(note.path)[name];
-        if (value !== undefined && value !== null) return inferType(value);
-      }
-      return "text";
+      const assigned = assignedWidget(deps.app, name);
+      if (assigned !== null && ASSIGNABLE.has(assigned))
+        return assigned as VaultPropertyType;
+      return inferredTypes().get(name) ?? "text";
     },
     read: (itemKey, name, host) => {
       const path = pathOf(itemKey, host);
@@ -165,7 +225,13 @@ export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
     },
     managed: (itemKey, name, host) => {
       const file = fileOf(itemKey, host);
-      return file !== null && replacedKeys(deps, file).includes(name);
+      if (file === null) return false;
+      let keys = memo.replaced.get(file.path);
+      if (keys === undefined) {
+        keys = replacedKeys(deps, file);
+        memo.replaced.set(file.path, keys);
+      }
+      return keys.includes(name);
     },
     write: async ({ itemKey, name, value, host }) => {
       const found = fileOf(itemKey, host);
@@ -228,7 +294,8 @@ function replacedKeys(
 
 /**
  * The type a value shows as, as Obsidian infers one for a property it has no
- * type for: a list, a number, a checkbox, a date, else text.
+ * type for: a list, a number, a checkbox, a date, a date and time to the
+ * minute, else text.
  */
 export function inferType(value: unknown): VaultPropertyType {
   if (Array.isArray(value)) return "multitext";
@@ -236,5 +303,10 @@ export function inferType(value: unknown): VaultPropertyType {
   if (typeof value === "boolean") return "checkbox";
   if (typeof value === "string" && /^\d{4}-[01]\d-[0-3]\d$/.test(value))
     return "date";
+  if (
+    typeof value === "string" &&
+    /^\d{4}-[01]\d-[0-3]\dT[0-2]\d:[0-5]\d$/.test(value)
+  )
+    return "datetime";
   return "text";
 }

@@ -68,11 +68,12 @@ const VAULT_FIELD_TYPES: Record<VaultPropertyType, FilterField["type"]> = {
   text: "text",
   multitext: "list",
   number: "number",
-  // A date compares as the text the frontmatter holds. A checkbox row
+  // A date, or a date and time, compares as the text the frontmatter holds. A checkbox row
   // compares a string, which never equals the boolean the frontmatter holds;
   // `vault.done == true` written as text matches it.
   checkbox: "text",
   date: "text",
+  datetime: "text",
 };
 
 /** The kind of the condition on the vault property at `path`. */

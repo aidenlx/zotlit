@@ -164,6 +164,7 @@ async function mount(
     notes = {},
     frontmatter = {},
     managed = {},
+    types = {},
     propertyNames = [],
     sourcePath = "query-files/Reading.zotquery",
     layout,
@@ -178,6 +179,8 @@ async function mount(
     frontmatter?: Record<string, Record<string, unknown>>;
     /** The keys each note's Profile manages with replace, by path. */
     managed?: Record<string, string[]>;
+    /** The type Obsidian assigns each property, by name. */
+    types?: Record<string, VaultPropertyType>;
     /** The names the vault properties take. */
     propertyNames?: string[];
     /** The note or file that holds the view. */
@@ -221,6 +224,7 @@ async function mount(
     propertyNames: () => propertyNames,
     itemKeys: () => Object.keys(notes),
     propertyType: (name: string): VaultPropertyType => {
+      if (types[name]) return types[name];
       for (const values of Object.values(frontmatter))
         if (values[name] !== undefined && values[name] !== null)
           return inferType(values[name]);
@@ -3602,6 +3606,263 @@ ${filters}
         value: "read",
         host: { path: "A (copy).md", itemKey: "ITEMAAAA" },
       });
+    });
+  });
+
+  describe("edited in place by type", () => {
+    /** One row of Item ITEMAAAA, whose note `A.md` holds `frontmatter`. */
+    async function typed(
+      order: string[],
+      frontmatter: Record<string, unknown>,
+      types: Record<string, VaultPropertyType> = {},
+    ) {
+      const mounted = await mount(
+        [result([itemRow("ITEMAAAA", "Ten simple rules")])],
+        undefined,
+        {
+          notes: { ITEMAAAA: "A.md" },
+          frontmatter: { "A.md": frontmatter },
+          types,
+        },
+      );
+      await act(() =>
+        mounted.view.setText(`views:
+  - type: table
+    name: Reading list
+    from: items
+    order:
+${order.map((path) => `      - ${path}\n`).join("")}`),
+      );
+      await mounted.settle();
+      const cell = (name: string) =>
+        mounted.el.querySelector<HTMLElement>(
+          `[data-query-vault-cell][data-query-vault-name="${name}"]`,
+        )!;
+      const input = () =>
+        mounted.el.querySelector<HTMLInputElement>("[data-query-vault-input]");
+      const type = (text: string) =>
+        act(() => {
+          const field = input()!;
+          field.value = text;
+          field.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+      const press = (key: string) =>
+        act(() => {
+          input()!.dispatchEvent(
+            new KeyboardEvent("keydown", { key, bubbles: true }),
+          );
+        });
+      const icon = (name: string) =>
+        mounted.el
+          .querySelector(
+            `[data-query-column="vault.${name}"] [data-query-icon]`,
+          )
+          ?.getAttribute("data-query-icon");
+      return { ...mounted, cell, input, type, press, icon };
+    }
+    const edit = (name: string, value: unknown) => ({
+      itemKey: "ITEMAAAA",
+      name,
+      value,
+      host: null,
+    });
+
+    it("toggles a checkbox on a click, without entering edit, and writes a boolean", async () => {
+      const { cell, input, literatureNotes } = await typed(["vault.read"], {
+        read: false,
+      });
+      const box = () =>
+        cell("read").querySelector<HTMLInputElement>(
+          "[data-query-vault-checkbox]",
+        )!;
+
+      expect(box().checked).toBe(false);
+      await act(() => box().click());
+
+      expect(input()).toBeNull();
+      expect(literatureNotes.write).toHaveBeenLastCalledWith(
+        edit("read", true),
+      );
+      expect(box().checked).toBe(true);
+
+      await act(() => box().click());
+      expect(literatureNotes.write).toHaveBeenLastCalledWith(
+        edit("read", false),
+      );
+    });
+
+    it("checks a checkbox of a row with no note on a click, writing true", async () => {
+      const mounted = await mount(
+        [result([itemRow("ITEMBBBB", "Deep learning")])],
+        undefined,
+        { types: { read: "checkbox" } },
+      );
+      await act(() =>
+        mounted.view.setText(`views:
+  - type: table
+    name: Reading list
+    from: items
+    order:
+      - vault.read
+`),
+      );
+      await mounted.settle();
+
+      await act(() =>
+        mounted.el
+          .querySelector<HTMLElement>('[data-query-vault-name="read"]')!
+          .click(),
+      );
+
+      expect(mounted.literatureNotes.write).toHaveBeenCalledWith({
+        itemKey: "ITEMBBBB",
+        name: "read",
+        value: true,
+        host: null,
+      });
+    });
+
+    it("writes a number as a number, no value when cleared, and nothing for text that is no number", async () => {
+      const { cell, input, type, press, literatureNotes } = await typed(
+        ["vault.pages"],
+        { pages: 12 },
+        // A cleared value shows no type, so the number type is assigned.
+        { pages: "number" },
+      );
+
+      await act(() => cell("pages").click());
+      expect(input()?.inputMode).toBe("decimal");
+      expect(input()?.value).toBe("12");
+      await type("320");
+      await press("Enter");
+      expect(literatureNotes.write).toHaveBeenLastCalledWith(
+        edit("pages", 320),
+      );
+
+      await act(() => cell("pages").click());
+      await type("");
+      await press("Enter");
+      expect(literatureNotes.write).toHaveBeenLastCalledWith(
+        edit("pages", null),
+      );
+
+      literatureNotes.write.mockClear();
+      await act(() => cell("pages").click());
+      await type("many");
+      await press("Enter");
+      expect(literatureNotes.write).not.toHaveBeenCalled();
+    });
+
+    it("writes a date as the date string the Properties panel reads", async () => {
+      const { cell, input, type, press, literatureNotes, icon } = await typed(
+        ["vault.due"],
+        { due: "2024-05-01" },
+      );
+
+      expect(icon("due")).toBe("calendar");
+      await act(() => cell("due").click());
+      expect(input()?.type).toBe("date");
+      expect(input()?.value).toBe("2024-05-01");
+      await type("2024-06-30");
+      await press("Enter");
+
+      expect(literatureNotes.write).toHaveBeenLastCalledWith(
+        edit("due", "2024-06-30"),
+      );
+    });
+
+    it("shows and edits a date and time as text, and writes nothing when it is unchanged", async () => {
+      const { cell, input, type, press, literatureNotes, icon } = await typed(
+        ["vault.met"],
+        { met: "2024-05-01T10:30:00" },
+        { met: "datetime" },
+      );
+
+      expect(icon("met")).toBe("clock");
+      expect(cell("met").textContent).toBe("2024-05-01T10:30:00");
+      await act(() => cell("met").click());
+      expect(input()?.type).toBe("text");
+      expect(input()?.value).toBe("2024-05-01T10:30:00");
+      await press("Enter");
+      expect(literatureNotes.write).not.toHaveBeenCalled();
+
+      await act(() => cell("met").click());
+      await type("2024-05-02T09:00:00");
+      await press("Enter");
+      expect(literatureNotes.write).toHaveBeenLastCalledWith(
+        edit("met", "2024-05-02T09:00:00"),
+      );
+    });
+
+    it("shows a list as chips, keeps an item with a comma whole, and adds and removes items", async () => {
+      const { cell, type, press, literatureNotes } = await typed(
+        ["vault.authors"],
+        { authors: ["Doe, J", "Roe"] },
+      );
+      const chips = () =>
+        [...cell("authors").querySelectorAll("[data-query-vault-chip]")].map(
+          (chip) => chip.getAttribute("data-query-vault-chip"),
+        );
+
+      expect(chips()).toEqual(["Doe, J", "Roe"]);
+
+      await act(() => cell("authors").click());
+      await type("Poe, E");
+      await press("Enter");
+      expect(chips()).toEqual(["Doe, J", "Roe", "Poe, E"]);
+      await act(() =>
+        cell("authors")
+          .querySelector<HTMLElement>(
+            '[data-query-vault-chip="Roe"] [data-query-vault-chip-remove]',
+          )!
+          .click(),
+      );
+      await press("Enter");
+
+      expect(literatureNotes.write).toHaveBeenCalledTimes(1);
+      expect(literatureNotes.write).toHaveBeenLastCalledWith(
+        edit("authors", ["Doe, J", "Poe, E"]),
+      );
+      expect(chips()).toEqual(["Doe, J", "Poe, E"]);
+    });
+
+    it("drops the list's edits on Escape", async () => {
+      const { cell, type, press, literatureNotes } = await typed(
+        ["vault.authors"],
+        { authors: ["Doe, J"] },
+      );
+
+      await act(() => cell("authors").click());
+      await type("Roe");
+      await press("Enter");
+      await press("Escape");
+
+      expect(literatureNotes.write).not.toHaveBeenCalled();
+      expect(
+        cell("authors").querySelectorAll("[data-query-vault-chip]"),
+      ).toHaveLength(1);
+    });
+
+    it("gives a property the editor and icon of its assigned type, whatever its value shows as", async () => {
+      const { cell, input, type, press, literatureNotes, icon } = await typed(
+        ["vault.pages", "vault.read"],
+        { pages: "12", read: "yes" },
+        { pages: "number", read: "checkbox" },
+      );
+
+      expect(icon("pages")).toBe("binary");
+      expect(icon("read")).toBe("check-square");
+      expect(
+        cell("read").querySelector<HTMLInputElement>(
+          "[data-query-vault-checkbox]",
+        )?.checked,
+      ).toBe(false);
+
+      await act(() => cell("pages").click());
+      expect(input()?.inputMode).toBe("decimal");
+      await type("13");
+      await press("Enter");
+      expect(literatureNotes.write).toHaveBeenLastCalledWith(edit("pages", 13));
     });
   });
 

@@ -18,6 +18,7 @@ const VAULT_ICONS: Record<VaultPropertyType, string> = {
   number: "binary",
   checkbox: "check-square",
   date: "calendar",
+  datetime: "clock",
 };
 
 /**
