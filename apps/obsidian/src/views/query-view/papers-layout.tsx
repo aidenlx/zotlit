@@ -184,6 +184,7 @@ export function PapersLayout({ view }: { view: QueryView }) {
                   <PaperRow
                     key={`${row.indexedKey}\n${index}`}
                     item={item}
+                    reason={view.reason(row)}
                     notes={literatureNotes}
                     readers={readers}
                     expanded={expanded}
@@ -212,10 +213,13 @@ function PaperRow({
   readers,
   expanded,
   toggle,
+  reason,
   gestures,
 }: Expansion & {
   item: TableRecord;
   notes: LiteratureNotes;
+  /** Why the row is in the list, last on its reading-state line. */
+  reason: string | null;
   gestures: ItemRowGestures | undefined;
 }) {
   const row = useItemRow(gestures, item.key);
@@ -229,6 +233,7 @@ function PaperRow({
       ? m.query_view_papers_annotation_count({ count: annotations.length })
       : null,
     note !== null ? m.query_view_papers_has_note() : null,
+    reason,
   ].filter((part) => part !== null);
   const meta = metaText(values);
   const kind = mainAttachmentKind(values);

@@ -43,6 +43,9 @@ export async function openLibraryView(app: App): Promise<LibraryView | null> {
     await leaf.setViewState({ type: LIBRARY_VIEW_TYPE, active: true });
   }
   await workspace.revealLeaf(leaf);
+  // Search is the front door: the cursor waits in the box. A tab that the
+  // workspace restores on startup leaves the cursor where it was.
+  if (leaf.view instanceof LibraryView) leaf.view.search.focus();
   return leaf.view instanceof LibraryView ? leaf.view : null;
 }
 

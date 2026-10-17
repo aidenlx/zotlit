@@ -509,6 +509,7 @@ export default class ZotLitPlugin extends Plugin {
         citationLookup: services.citationLookup,
         notify: (message) => new BaseNotice(message),
       }),
+      lookup: services.itemLookup,
     });
 
     // The Annotation History's own verbs. A bound PDF view and an Annotation

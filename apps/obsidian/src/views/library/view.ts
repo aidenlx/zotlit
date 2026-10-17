@@ -5,7 +5,7 @@
 // reads Zotero's database only, so Zotero does not need to run.
 //
 // @see apps/obsidian/docs/adr/0070-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
-import { ItemView, Keymap, Scope } from "obsidian";
+import { debounce, ItemView, Keymap, Scope } from "obsidian";
 import type { Modifier, WorkspaceLeaf } from "obsidian";
 import { createStore } from "zustand/vanilla";
 
@@ -14,24 +14,31 @@ import { parseIndexedKey } from "@zotlit/db";
 import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import type { LibrarySelector } from "@/services/library-scope/scope";
+import type {
+  LibraryScope,
+  LibrarySelector,
+} from "@/services/library-scope/scope";
+import type { LibraryScopeService } from "@/services/library-scope/service";
 import { inTextEntry } from "@/services/pdf-annotation-editor/capability-affordance";
 import type { SettingsService } from "@/services/settings/service";
+import { saveAsQueryFile } from "@/views/annot-view/save-query-file";
 import { ITEM_ROW_ATTRIBUTE } from "@/views/query-view/item-rows";
 import type { ItemRowGestures } from "@/views/query-view/item-rows";
 import { QueryView } from "@/views/query-view/view";
 import type { QueryViewDeps } from "@/views/query-view/view";
 
 import { LIBRARY_LAYOUTS } from "./document";
-import type { LibraryNode, LibraryViewDocument } from "./document";
+import type { LibraryNode } from "./document";
 import { ZOTLIT_MARK_ICON } from "./icon";
 import type { ItemActions } from "./item-actions";
 import { createItemDrag, refuseItemDrop } from "./item-drag";
 import { LibraryTree } from "./library-tree";
 import type { LibraryTreeDeps } from "./library-tree";
-import { libraryViewQuery } from "./query-text";
-import type { LibraryViewQuery } from "./query-text";
+import { libraryViewQuery, libraryViewQueryFileText } from "./query-text";
+import type { LibraryViewLabels, LibraryViewQuery } from "./query-text";
 import { rowMenu } from "./row-menu";
+import { LibrarySearch } from "./search-box";
+import type { LibrarySearchDeps, SearchFound } from "./search-box";
 import { libraryViewStorage } from "./storage";
 import { sameLibrary } from "./tree";
 import "./style.css";
@@ -42,7 +49,10 @@ export const LIBRARY_VIEW_TYPE = "zotlit-library";
 
 export interface LibraryViewDeps extends QueryViewDeps {
   settings: Pick<SettingsService, "update" | "flush" | "current" | "loaded">;
-  libraryScope: QueryViewDeps["libraryScope"] & LibraryTreeDeps["libraryScope"];
+  libraryScope: QueryViewDeps["libraryScope"] &
+    LibraryTreeDeps["libraryScope"] &
+    Pick<LibraryScopeService, "effective">;
+  lookup: LibrarySearchDeps["lookup"];
   /** What a row does with its Item. */
   items: ItemActions;
 }
@@ -72,6 +82,7 @@ export class LibraryView extends ItemView {
   override scope: Scope;
   readonly query: QueryView;
   readonly tree: LibraryTree;
+  readonly search: LibrarySearch;
   readonly #deps: LibraryViewDeps;
   readonly #storage: ReturnType<typeof libraryViewStorage>;
   /** What the tab runs: the query of the document as it opened. */
@@ -80,6 +91,18 @@ export class LibraryView extends ItemView {
   readonly selection = createStore<{ key: string | null }>(() => ({
     key: null,
   }));
+  /** The write of the search text that the box last asked for. */
+  #saving: Promise<void> = Promise.resolve();
+  /** Keep the search text once typing pauses. */
+  readonly #keep = debounce(
+    (text: string) => {
+      this.#saving = this.#storage.search(text).catch((error: unknown) => {
+        logger.warn("The Library View could not keep the search", { error });
+      });
+    },
+    500,
+    true,
+  );
 
   constructor(leaf: WorkspaceLeaf, deps: LibraryViewDeps) {
     super(leaf);
@@ -113,11 +136,15 @@ export class LibraryView extends ItemView {
       context: () => undefined,
       // The view runs once the tab has set its text, after the query.
       libraries: () => this.#shown!.libraries,
+      rank: () => this.#shown!.rank,
       // The document keeps the sort, the Layout and the Visible Properties.
       displayOnly: true,
       layouts: LIBRARY_LAYOUTS,
       rows,
+      // Recent says why each row is there; the query runs once the tab set it.
+      reason: () => this.#shown!.reason,
       save: this.#storage.save,
+      saveAs: () => void this.#saveAs(),
       layout: {
         // Otherwise Obsidian moves focus to the last navigable leaf, which in
         // the main area switches the tab away from this view.
@@ -130,6 +157,16 @@ export class LibraryView extends ItemView {
       },
     });
     this.tree = new LibraryTree(deps, { select: (node) => this.#select(node) });
+    this.search = new LibrarySearch(deps, {
+      node: () => this.tree.store.getState().node,
+      found: (found) => this.#show(found),
+      keep: (text) => this.#keep(text),
+    });
+  }
+
+  /** Settles once the list shows the newest search. Never rejects. */
+  get searched(): Promise<void> {
+    return this.search.settled;
   }
 
   override getViewType(): string {
@@ -157,11 +194,16 @@ export class LibraryView extends ItemView {
     const main = shell.createDiv({
       cls: "zt:flex zt:min-w-0 zt:flex-1 zt:flex-col zt:overflow-y-auto zt:pb-[max(var(--safe-area-inset-bottom),var(--size-4-8))]",
     });
+    const searchEl = main.createDiv();
     const header = main.createDiv();
     const list = main.createDiv();
     this.tree.load();
     this.tree.render(treeEl);
-    this.tree.renderHeader(header);
+    this.tree.renderHeader(header, (text) =>
+      this.search.summary(this.query.state, text),
+    );
+    this.search.load();
+    this.search.render(searchEl);
     // On a narrow pane the tree shows over the list while it is open.
     this.tree.register(
       this.tree.store.subscribe(({ open }) =>
@@ -187,7 +229,7 @@ export class LibraryView extends ItemView {
     const doc = this.#storage.document();
     this.tree.show(doc.node);
     this.tree.refresh();
-    this.#show(doc);
+    await this.search.open(doc.search);
   }
 
   /**
@@ -259,14 +301,16 @@ export class LibraryView extends ItemView {
 
   /**
    * Show the Item `indexedKey` selected, in its first Collection, or in its
-   * Library where it is filed in none. It shows nothing where the list does
-   * not hold it.
+   * Library where it is filed in none. A search that may leave the Item out
+   * is cleared. It shows nothing where the list does not hold it.
    */
   async reveal(indexedKey: string): Promise<void> {
     await this.#deps.settings.loaded;
     const node = await this.#itemNode(indexedKey);
+    if (this.search.store.getState().text !== "") this.search.clear();
     if (node) this.#select(node);
     this.selection.setState({ key: indexedKey });
+    await this.searched;
     await this.query.settled;
     const row = this.#selectedRow();
     if (row) this.#focus(row);
@@ -322,30 +366,76 @@ export class LibraryView extends ItemView {
   /** The researcher picked `node` in the tree: list it, and keep it. */
   #select(node: LibraryNode): void {
     this.tree.show(node);
-    this.#show({ ...this.#storage.document(), node });
+    // The document takes the node at once (Recent writes its sort), and the
+    // search runs again over the node.
     this.#storage.select(node).catch((error: unknown) => {
       logger.warn("The Library View could not keep the tree selection", {
         error,
       });
     });
+    this.search.narrow();
+    void this.search.run();
   }
 
-  /** Run the query of `doc`; the Libraries change apart from the text. */
-  #show(doc: LibraryViewDocument): void {
+  /**
+   * Run the query of the tree node and of what the search `found`; the
+   * Libraries change apart from the text.
+   */
+  #show({ text, keys, everywhere }: SearchFound): void {
+    const doc = {
+      ...this.#storage.document(),
+      node: this.tree.store.getState().node,
+      search: text,
+    };
     this.#shown = libraryViewQuery(doc, {
-      labels: {
-        papers: m.library_view_papers_view_name(),
-        creators: m.query_file_creators_property(),
-        year: m.query_file_year_property(),
-      },
+      labels: labels(),
+      scope: this.#scope(),
+      ...(keys && { keys }),
+      ...(everywhere && { everywhere }),
     });
     this.query.setText(this.#shown.text);
     this.query.contextChanged();
   }
 
+  /**
+   * The Libraries of the Library Scope that the database holds, which Recent
+   * reads: a saved scope can name a group the database no longer has, and a
+   * request that names it fails. Where the database holds none of them, the
+   * saved scope itself, so the view says which Library is missing.
+   */
+  #scope(): LibraryScope {
+    const { current, effective } = this.#deps.libraryScope;
+    if (!current || current.available.length === 0) return effective;
+    return {
+      mode: "selected",
+      libraries: current.available.map(({ selector }) => selector),
+    };
+  }
+
+  /** "Save as query file": the document as it stands, once the toolbar's last change is in. */
+  async #saveAs(): Promise<void> {
+    await this.query.flush();
+    await saveAsQueryFile(
+      this.app,
+      libraryViewQueryFileText(this.#storage.document(), { labels: labels() }),
+    );
+  }
+
   protected override async onClose(): Promise<void> {
+    this.#keep.run();
+    await this.#saving;
+    this.search.unload();
     await this.query.flush();
     this.query.unload();
     this.tree.unload();
   }
+}
+
+function labels(): LibraryViewLabels {
+  return {
+    papers: m.library_view_papers_view_name(),
+    creators: m.query_file_creators_property(),
+    year: m.query_file_year_property(),
+    editedInZotero: m.library_view_recent_edited_in_zotero(),
+  };
 }

@@ -378,6 +378,8 @@
   "library_view_name": "Zotero library",
   "library_view_papers_view_name": "Papers",
   "library_view_tree_label": "Libraries",
+  "library_view_recent": "Recent",
+  "library_view_recent_edited_in_zotero": "edited in Zotero",
   "library_view_tree_count": [
     {
       "declarations": ["input count", "local formatted = count: number"],
@@ -413,6 +415,39 @@
   "library_view_menu_show_in_zotero": "Show in Zotero",
   "library_view_cite_no_note": "Open a note to insert the citation into it",
   "instruction_show_in_library": "to show in library",
+  "library_view_search_label": "Search papers",
+  "library_view_search_placeholder": "Search papers… (tag:name for a tag)",
+  "library_view_search_clear": "Clear search",
+  "library_view_search_matches": [
+    {
+      "declarations": [
+        "input selection",
+        "input count",
+        "local category = count: plural",
+        "local formatted = count: number"
+      ],
+      "selectors": ["category"],
+      "match": {
+        "category=one": "1 match in {selection}",
+        "category=*": "{formatted} matches in {selection}"
+      }
+    }
+  ],
+  "library_view_search_matches_everywhere": [
+    {
+      "declarations": [
+        "input count",
+        "local category = count: plural",
+        "local formatted = count: number"
+      ],
+      "selectors": ["category"],
+      "match": {
+        "category=one": "1 match in all libraries",
+        "category=*": "{formatted} matches in all libraries"
+      }
+    }
+  ],
+  "library_view_search_everywhere": "Search all libraries",
   "annot_view_loading": "Loading…",
   "annot_view_no_attachments": "No attachments available",
   "annot_view_mode_active_tab": "Active tab",

@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { planItemFilter, testItemSeed } from "@zotlit/item-query";
 import type { QueryItemSeed } from "@zotlit/item-query";
 
+import type { LibrarySelector } from "@/services/library-scope/scope";
 import {
   parseQueryFile,
   serializeQueryFile,
@@ -14,12 +15,35 @@ import {
 
 import { DEFAULT_LIBRARY_VIEW_DOCUMENT } from "./document";
 import type { LibraryViewDocument } from "./document";
-import { documentWithText, libraryViewQuery } from "./query-text";
+import {
+  documentWithText,
+  libraryViewQuery,
+  libraryViewQueryFileText,
+} from "./query-text";
+import { searchTerms } from "./search";
 
-const LABELS = { papers: "Papers", creators: "Creators", year: "Year" };
+const LABELS = {
+  papers: "Papers",
+  creators: "Creators",
+  year: "Year",
+  editedInZotero: "edited in Zotero",
+};
+/** The Library Scope in force: My Library and one group. */
+const SCOPE = {
+  mode: "selected",
+  libraries: [{ type: "personal" }, { type: "group", groupID: 118 }],
+} as const;
+const MY_LIBRARY = {
+  kind: "library",
+  library: { type: "personal" },
+} as const;
 
-/** An Item of My Library, in the Collections at `paths`. */
-function seed(key: string, paths: string[][] = []): QueryItemSeed {
+/** An Item of My Library, in the Collections at `paths`, with the tags `tags`. */
+function seed(
+  key: string,
+  paths: string[][] = [],
+  tags: string[] = [],
+): QueryItemSeed {
   return {
     scan: {
       itemID: 1,
@@ -33,15 +57,24 @@ function seed(key: string, paths: string[][] = []): QueryItemSeed {
     custom: {},
     customFieldNames: [],
     creators: [],
-    tags: [],
+    tags: tags.map((name) => ({ name, type: 0 })),
     collections: paths,
   };
 }
 
-function derive(doc: Partial<LibraryViewDocument>, keys?: readonly string[]) {
+function derive(
+  doc: Partial<LibraryViewDocument>,
+  keys?: readonly string[],
+  everywhere?: readonly LibrarySelector[],
+) {
   const query = libraryViewQuery(
-    { ...DEFAULT_LIBRARY_VIEW_DOCUMENT, ...doc },
-    { labels: LABELS, ...(keys && { keys }) },
+    { ...DEFAULT_LIBRARY_VIEW_DOCUMENT, node: MY_LIBRARY, ...doc },
+    {
+      labels: LABELS,
+      scope: SCOPE,
+      ...(keys && { keys }),
+      ...(everywhere && { everywhere }),
+    },
   );
   const file = parseQueryFile(query.text);
   expect(file.problems).toEqual([]);
@@ -105,6 +138,41 @@ describe("libraryViewQuery — the tree node", () => {
     expect(selects(filter, seed("ABCD2345", [["Thesis", "Chapter 20"]]))).toBe(
       false,
     );
+  });
+});
+
+describe("libraryViewQuery — Recent", () => {
+  const recent = () => derive({ node: { kind: "recent" } });
+
+  it("reads every Library in the Library Scope, with no filter", () => {
+    const { query, filter } = recent();
+    expect(query.libraries).toEqual(SCOPE);
+    expect(filter).toBeUndefined();
+  });
+
+  it("keeps the facets as filters", () => {
+    const { file } = derive({
+      node: { kind: "recent" },
+      facets: ["annotated"],
+    });
+    expect(file.filters).toBe("annotations.length > 0");
+  });
+
+  it("gives each row its reason: edited in Zotero", () => {
+    expect(recent().query.reason).toBe("edited in Zotero");
+  });
+
+  it("gives no reason for a Library or a Collection", () => {
+    expect(derive({}).query.reason).toBeNull();
+    expect(
+      derive({
+        node: {
+          kind: "collection",
+          library: { type: "personal" },
+          path: ["A"],
+        },
+      }).query.reason,
+    ).toBeNull();
   });
 });
 
@@ -195,6 +263,65 @@ describe("libraryViewQuery — search", () => {
   it("ranks nothing while the view browses", () => {
     expect(derive({}).query.rank).toBeNull();
   });
+
+  it("narrows a tag: token to the Items with that tag, beside the ranked keys", () => {
+    const { filter } = derive({ search: "attention tag:method" }, [
+      "ABCD2345",
+      "WXYZ6789",
+    ]);
+    expect(selects(filter, seed("ABCD2345", [], ["method"]))).toBe(true);
+    expect(selects(filter, seed("WXYZ6789", [], ["methods"]))).toBe(false);
+    expect(selects(filter, seed("QRST2345", [], ["method"]))).toBe(false);
+  });
+
+  it("lists every Item with the tag of a search that holds only a tag: token, in the sort", () => {
+    const { query, filter, view } = derive({ search: 'tag:"to read"' });
+    expect(selects(filter, seed("ABCD2345", [], ["to read"]))).toBe(true);
+    expect(selects(filter, seed("WXYZ6789", [], ["to"]))).toBe(false);
+    expect(query.rank).toBeNull();
+    expect(view.sort).toEqual(DEFAULT_LIBRARY_VIEW_DOCUMENT.sort);
+  });
+
+  it("searches all libraries: their Items, with no Collection filter", () => {
+    const lab = { type: "group", groupID: 4815 } as const;
+    const { query, filter } = derive(
+      {
+        node: {
+          kind: "collection",
+          library: { type: "personal" },
+          path: ["Thesis"],
+        },
+        search: "attention",
+      },
+      ["ABCD2345", "WXYZ6789"],
+      [{ type: "personal" }, lab],
+    );
+    expect(query.libraries).toEqual({
+      mode: "selected",
+      libraries: [{ type: "personal" }, lab],
+    });
+    expect(selects(filter, seed("WXYZ6789", [["Other"]]))).toBe(true);
+  });
+});
+
+describe("searchTerms", () => {
+  it("splits the tag: tokens from the words the search ranks by", () => {
+    expect(searchTerms("rougier tag:method  fig")).toEqual({
+      words: "rougier fig",
+      tags: ["method"],
+    });
+  });
+
+  it('reads a quoted tag with spaces, and "Tag:" as tag:', () => {
+    expect(searchTerms('Tag:"to read" tag:a')).toEqual({
+      words: "",
+      tags: ["to read", "a"],
+    });
+  });
+
+  it("keeps a bare tag: as a word", () => {
+    expect(searchTerms("tag: fig")).toEqual({ words: "tag: fig", tags: [] });
+  });
 });
 
 describe("libraryViewQuery — sort, Layout and Visible Properties", () => {
@@ -233,7 +360,11 @@ describe("documentWithText", () => {
       search: "attention",
     };
     const file = parseQueryFile(
-      libraryViewQuery(doc, { labels: LABELS, keys: ["ABCD2345"] }).text,
+      libraryViewQuery(doc, {
+        labels: LABELS,
+        scope: SCOPE,
+        keys: ["ABCD2345"],
+      }).text,
     );
     const view = file.views[0]!;
     const edited = serializeQueryFile({
@@ -256,6 +387,7 @@ describe("documentWithText", () => {
   it("keeps the document's Layout where the text names one the Library View does not offer", () => {
     const text = libraryViewQuery(DEFAULT_LIBRARY_VIEW_DOCUMENT, {
       labels: LABELS,
+      scope: SCOPE,
     }).text.replace("type: papers", "type: cards");
     expect(documentWithText(DEFAULT_LIBRARY_VIEW_DOCUMENT, text).layout).toBe(
       "papers",
@@ -265,9 +397,88 @@ describe("documentWithText", () => {
   it("takes the Layout of a switch between Papers and the Table", () => {
     const text = libraryViewQuery(DEFAULT_LIBRARY_VIEW_DOCUMENT, {
       labels: LABELS,
+      scope: SCOPE,
     }).text.replace("type: papers", "type: table");
     expect(documentWithText(DEFAULT_LIBRARY_VIEW_DOCUMENT, text).layout).toBe(
       "table",
     );
+  });
+});
+
+describe("libraryViewQueryFileText — Save as query file", () => {
+  /** The saved file, read back as a Query File tab reads it. */
+  function saved(doc: Partial<LibraryViewDocument>) {
+    const file = parseQueryFile(
+      libraryViewQueryFileText(
+        { ...DEFAULT_LIBRARY_VIEW_DOCUMENT, node: MY_LIBRARY, ...doc },
+        { labels: LABELS },
+      ),
+    );
+    expect(file.problems).toEqual([]);
+    expect(file.views).toHaveLength(1);
+    const view = file.views[0]!;
+    expect(view.problems).toEqual([]);
+    return { file, view, filter: viewFilter(file, view) };
+  }
+
+  it("keeps to the Library of the tree node, which a Query File tab does not choose", () => {
+    const { filter } = saved({
+      node: { kind: "library", library: { type: "group", groupID: 118 } },
+    });
+    expect(selects(filter, { ...seed("ABCD2345"), groupID: 118 })).toBe(true);
+    expect(selects(filter, { ...seed("ABCD2345"), groupID: 7 })).toBe(false);
+    expect(selects(filter, seed("ABCD2345"))).toBe(false);
+  });
+
+  it("writes Recent with no filter, as a Query File tab reads the Library Scope, newest change first", () => {
+    const { file, view } = saved({ node: { kind: "recent" } });
+    expect(file.filters).toBeUndefined();
+    expect(view.sort).toEqual([
+      { property: "dateModified", direction: "DESC" },
+    ]);
+  });
+
+  it("writes the Library alone as the filter of a Library node", () => {
+    expect(saved({}).file.filters).toBe('library == "personal"');
+  });
+
+  it("keeps to My Library and the selected Collection", () => {
+    const { filter } = saved({
+      node: {
+        kind: "collection",
+        library: { type: "personal" },
+        path: ["Thesis"],
+      },
+    });
+    expect(plans(filter)).toBe(true);
+    expect(selects(filter, seed("ABCD2345", [["Thesis", "Chapter 2"]]))).toBe(
+      true,
+    );
+    expect(
+      selects(filter, { ...seed("ABCD2345", [["Thesis"]]), groupID: 118 }),
+    ).toBe(false);
+    expect(selects(filter, seed("ABCD2345", [["Other"]]))).toBe(false);
+  });
+
+  it("leaves the search out, since a Query File cannot express it", () => {
+    const { filter } = saved({ search: "attention" });
+    expect(selects(filter, seed("ABCD2345"))).toBe(true);
+    expect(filter).not.toContain("indexedKey");
+  });
+
+  it("keeps the view as the Library View shows it: sort, Layout, Visible Properties and row limit", () => {
+    const { view } = saved({
+      sort: [{ property: "title", direction: "ASC" }],
+      layout: "table",
+      order: ["title", "vault.literatureNote"],
+    });
+    expect(view).toMatchObject({
+      type: "table",
+      name: "Papers",
+      from: "items",
+      sort: [{ property: "title", direction: "ASC" }],
+      order: ["title", "vault.literatureNote"],
+      limit: 1000,
+    });
   });
 });
