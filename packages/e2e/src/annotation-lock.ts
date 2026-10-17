@@ -16,6 +16,7 @@ import {
   waitFor,
   WINDOW_DOCUMENTS,
 } from "./obsidian-cli.ts";
+import { PAGE } from "./page-gestures.ts";
 import type { ZoteroRdp } from "./paired-zotero.ts";
 import {
   FIRE,
@@ -184,6 +185,8 @@ export async function verifyExternalAnnotationLock({
   const reason = m.annot_view_lock_external();
   /** Selects the card alone, in whichever window its view stands. */
   const selectCardAlone = async () => {
+    // Setup inside a poll that retries until the card shows, not the press
+    // under test.
     expect(
       await obEvalUntil(
         vaultId,
@@ -236,7 +239,10 @@ export async function verifyExternalAnnotationLock({
   for (const [verb, node] of Object.entries(cardVerbs)) {
     expect(await dimmed(node), `${verb} is not dimmed`).toBe("true");
     await clearNotices(vaultId);
-    await obEval(vaultId, `((${node}).click(),true)`);
+    await obEval(
+      vaultId,
+      `(function(){${PAGE}press(${node},${JSON.stringify(verb)});return true;})()`,
+    );
     // The press says the Lock Reason, and offers nothing to press: a lock
     // is not lifted from here.
     expect(
@@ -266,7 +272,7 @@ export async function verifyExternalAnnotationLock({
   await clearNotices(vaultId);
   await obEval(
     vaultId,
-    `((${card}).querySelector('.clickable-icon:has(svg.lucide-more-horizontal)').click(),true)`,
+    `(function(){${PAGE}press((${card}).querySelector('.clickable-icon:has(svg.lucide-more-horizontal)'),'card menu');return true;})()`,
   );
   const deleteEntry = `[...document.querySelectorAll('.menu .menu-item')].find((node)=>node.textContent.trim()===${JSON.stringify(m.annot_view_menu_delete())})`;
   expect(
@@ -275,7 +281,10 @@ export async function verifyExternalAnnotationLock({
     }),
     "the card menu has no delete entry",
   ).toBe(true);
-  await obEval(vaultId, `(${deleteEntry}.click(),true)`);
+  await obEval(
+    vaultId,
+    `(function(){${PAGE}press(${deleteEntry},'delete entry');return true;})()`,
+  );
   expect(
     await obEvalUntil(vaultId, `String(${noticeShown}.length)`, {
       expected: "1",
@@ -351,7 +360,7 @@ export async function verifyExternalAnnotationLock({
     await clearNotices(vaultId);
     await obEval(
       vaultId,
-      `(document.querySelector('.zt-pdf-mark-popup [data-zt-verb=${verb}]').click(),true)`,
+      `(function(){${PAGE}press(document.querySelector('.zt-pdf-mark-popup [data-zt-verb=${verb}]'),'popup ${verb}');return true;})()`,
     );
     // The press and whatever it would open are done: the gesture settles.
     await settledGesture(vaultId, attachmentPath);
@@ -404,7 +413,10 @@ export async function verifyExternalAnnotationLock({
     "colour is not dimmed in the pop-out window",
   ).toBe("true");
   await clearNotices(vaultId);
-  await obEval(vaultId, `((${cardVerbs.colour}).click(),true)`);
+  await obEval(
+    vaultId,
+    `(function(){${PAGE}press(${cardVerbs.colour},'colour');return true;})()`,
+  );
   expect(
     await obEvalUntil(vaultId, `String(${noticeShown}.length)`, {
       expected: "1",

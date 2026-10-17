@@ -298,6 +298,7 @@ export async function clickAuthorizationDialog(
   const clicked = await rdp.json<boolean>(`(() => {
     const dialog = ${FIND_DIALOG};
     if (!dialog) return false;
+    // A Zotero dialog over RDP: the Obsidian page helpers do not reach it.
     dialog.document.getElementById("commonDialog").getButton(${JSON.stringify(button)}).click();
     return true;
   })()`);
@@ -335,6 +336,7 @@ export async function denyAnyAuthorizationDialog(
   return await rdp.json<boolean>(`(() => {
     const dialog = ${FIND_DIALOG};
     if (!dialog) return false;
+    // Teardown in a Zotero dialog over RDP, not a reader's press.
     dialog.document.getElementById("commonDialog").getButton("extra1").click();
     return true;
   })()`);
@@ -486,6 +488,7 @@ export async function readerSettled(
       const reader = ${openReader(attachmentKey)};
       const main = Zotero.getMainWindow();
       const started = Date.now();
+      // The 50 ms timer measures the main window's timer lag, not a wait.
       await new Promise((resolve) => main.setTimeout(resolve, 50));
       return {
         timerLagMs: Date.now() - started - 50,

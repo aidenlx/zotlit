@@ -6,6 +6,7 @@ import { expect } from "vitest";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
 import { cli, obEval, obEvalUntil } from "./obsidian-cli.ts";
+import { PAGE } from "./page-gestures.ts";
 
 export async function verifyAnnotationInsert(
   vaultId: string,
@@ -81,7 +82,7 @@ export async function verifyAnnotationInsert(
     ] as const) {
       await obEval(
         vaultId,
-        `(async()=>{
+        `(async()=>{${PAGE}
         const s=${state};s.editor=s.leaf.view.editor;s.editor.setValue('before TARGET after');s.editor.setSelection({line:0,ch:7},{line:0,ch:13});
         await app.workspace.revealLeaf(s.viewLeaf);await app.workspace.revealLeaf(s.leaf);s.leaf.getContainer().focus();
         app.workspace.setActiveLeaf(s.leaf,{focus:true});s.started=false;s.finished=0;s.error=null;
@@ -94,17 +95,16 @@ export async function verifyAnnotationInsert(
             ? `
         const button=s.view.contentEl.querySelector('.zt-annot-card[data-zotero-annotation-key="FDRFQ7C2"] [aria-label="More options"]');
         if(!button)throw new Error('Annotation card menu missing');
-        button.scrollIntoView({block:'center'});await new Promise(resolve=>setTimeout(resolve,100));
+        button.scrollIntoView({block:'center',behavior:'instant'});
         const rect=button.getBoundingClientRect(),wc=s.view.contentEl.win.electronWindow.webContents;
         const point={x:Math.round(rect.x+rect.width/2),y:Math.round(rect.y+rect.height/2)};
         wc.sendInputEvent({type:'mouseMove',...point});wc.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...point});wc.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...point});
-        await new Promise(resolve=>setTimeout(resolve,150));
-        if(app.workspace.activeEditor?.editor)throw new Error('Mouse did not move focus to the sidebar');
+        await until('Mouse did not move focus to the sidebar',()=>!app.workspace.activeEditor?.editor);
         `
             : `const button=s.view.contentEl.querySelector('button');s.view.gestures.onMoreOptions({currentTarget:button},a);`
         }
         const menu=Array.from(s.view.contentEl.doc.querySelectorAll('.menu-item')).find(el=>el.textContent.trim()==='Insert into note');
-        if(!menu||menu.classList.contains('is-disabled'))throw new Error('Insert menu unavailable');menu.click();return true;
+        if(!menu||menu.classList.contains('is-disabled'))throw new Error('Insert menu unavailable');press(menu,'Insert into note');return true;
       })()`,
       );
       expect(
@@ -114,9 +114,9 @@ export async function verifyAnnotationInsert(
       ).toBe(true);
       await obEval(
         vaultId,
-        `(()=>{const s=${state};
+        `(()=>{${PAGE}const s=${state};
         ${mode === "edit" ? "s.editor.cm.dispatch({changes:{from:0,insert:'user '}});s.editor.setCursor({line:0,ch:0});" : ""}
-        ${mode === "supersede" ? "s.view.gestures.onMoreOptions({currentTarget:s.view.contentEl.querySelector('button')},s.view.snapshot.annotations.find(a=>a.key==='FDRFQ7C2'));Array.from(s.view.contentEl.doc.querySelectorAll('.menu-item')).find(el=>el.textContent.trim()==='Insert into note').click();" : ""}
+        ${mode === "supersede" ? "s.view.gestures.onMoreOptions({currentTarget:s.view.contentEl.querySelector('button')},s.view.snapshot.annotations.find(a=>a.key==='FDRFQ7C2'));press(Array.from(s.view.contentEl.doc.querySelectorAll('.menu-item')).find(el=>el.textContent.trim()==='Insert into note'),'Insert into note');" : ""}
         ${mode === "escape" ? "const win=s.editor.cm.dom.ownerDocument.defaultView;win.dispatchEvent(new win.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));" : ""}
         ${mode === "switch" ? "s.other=app.workspace.getLeaf('tab');s.other.openFile(s.otherFile).then(()=>{app.workspace.setActiveLeaf(s.other,{focus:true});s.release();});return true;" : ""}
         ${mode === "close" ? "s.leaf.detach();" : ""}
