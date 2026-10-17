@@ -20,6 +20,7 @@
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
     "lint": "oxlint",
     "test": "vitest run",
+    "bench": "vitest run --config vitest.bench.config.ts",
     "test:lua-filter": "node scripts/check-lua-filter.ts"
   },
   "dependencies": {
