@@ -43,22 +43,40 @@ export function registerWelcomeView(
   // Fresh-device notice: the database service signals when the resolved DB
   // file is absent (auto-detect missed the install on this device). Attached
   // synchronously during onload — before the db service's first async refresh
-  // can emit — so the one-per-launch signal is never missed. The Library View
-  // says the same and offers to locate the folder.
-  const unsubscribe = deps.reads.on("db-file-missing", () => {
-    new BaseNotice(
-      BaseNotice.render((renderer) => {
-        renderer.setTitle(m.notice_db_not_found_on_device());
-        renderer.addAction((button) => {
-          button
-            .setButtonText(m.notice_db_not_found_action())
-            .onClick(() => void openLibraryView(plugin.app));
-        });
-      }),
-      0,
-    );
+  // can emit — so the signal is never missed. The notice is the state "Zotero
+  // is not found", not one per signal: at most one shows, it goes once the
+  // database reads again, and none shows while a Library View is open, whose
+  // not-found card says the same and offers to locate the folder.
+  let notice: BaseNotice | null = null;
+  const hide = () => {
+    notice?.hide();
+    notice = null;
+  };
+  const libraryOpen = () =>
+    plugin.app.workspace.getLeavesOfType(LIBRARY_VIEW_TYPE).length > 0;
+  plugin.register(
+    deps.reads.on("db-file-missing", () => {
+      if (notice?.noticeEl.isConnected || libraryOpen()) return;
+      notice = new BaseNotice(
+        BaseNotice.render((renderer) => {
+          renderer.setTitle(m.notice_db_not_found_on_device());
+          renderer.addAction((button) => {
+            button.setButtonText(m.notice_db_not_found_action()).onClick(() => {
+              hide();
+              void openLibraryView(plugin.app);
+            });
+          });
+        }),
+        0,
+      );
+    }),
+  );
+  plugin.register(deps.reads.on("changed", hide));
+  // A Library View opened another way takes over from the notice.
+  const layout = plugin.app.workspace.on("layout-change", () => {
+    if (libraryOpen()) hide();
   });
-  plugin.register(unsubscribe);
+  plugin.register(() => plugin.app.workspace.offref(layout));
 }
 
 /** Show the Welcome View banner again, above the Library View brought forward. */
