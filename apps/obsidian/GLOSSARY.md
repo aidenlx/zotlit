@@ -507,11 +507,11 @@ The tree on the left of the Library View: Recent, then each Library in the Libra
 _Avoid_: collection tree, sidebar tree, navigator
 
 **Papers Layout**:
-The Layout of the Library View for Items, also open to any Query File: two lines of title, creators, year and publication, and a reading-state line of colour marks, the Annotation count and the Literature Note, with the same expansion into Attachments, child notes and Annotations as the Table.
+The Layout of the Library View for Items, also open to any Query File: two lines of title, creators, year and publication, and a reading-state line of colour marks and the Annotation count, a note icon for the Literature Note, with the same expansion into Attachments, child notes and Annotations as the Table.
 _Avoid_: paper list, rich list
 
 **Reading Card**:
-The pane on the right of the Library View that shows the selected Item: its bibliographic fields and abstract, every Annotation of the Item as Annotation Cards, the actions to open the PDF, open or write the Literature Note and cite, and a link that opens the Item in the sidebar Annotation View. It shows while a row is selected and the pane is wide enough.
+The pane on the right of the Library View that shows the selected Item: its bibliographic fields and abstract, every Annotation of the Item as Annotation Cards, the actions to open the PDF, open or write the Literature Note and cite, and a link that opens the Item in the sidebar Annotation View. It shows while a row is selected, beside the list in a wide pane and over it in a narrow one.
 _Avoid_: detail pane, inspector, preview
 
 **Reading State**:

@@ -1,6 +1,6 @@
 # Recent is a Library Tree node that writes a sort
 
-Recent, at the top of the Library Tree, writes a sort, not a filter: it selects every Item of the Libraries in the Library Scope, sorted by last activity, newest first, and gives each row a reason, such as "read 2 h ago in Obsidian". Last activity is defined once, by #1532: the newest of the Item's `lastRead` across its Attachments, its `dateModified`, its newest child note and the Obsidian usage ledger. Until that lands, Recent sorts by `dateModified` and the reason reads "edited in Zotero"; the sort expression and the source of the reason are the only parts that change. Recent is the selection of a new Library View.
+Recent, at the top of the Library Tree, writes a sort, not a filter: it selects every Item of the Libraries in the Library Scope, sorted by last activity, newest first, and gives each row a reason, such as "read 2 h ago in Obsidian". Last activity is defined once, by #1532: the newest of the Item's `lastRead` across its Attachments, its `dateModified`, its newest child note and the Obsidian usage ledger. Until that lands, Recent sorts by `dateModified` and gives no reason: every row would read "edited in Zotero", which the sort already says (amended after the interface review); the sort expression and the source of the reason are the only parts that change. Recent is the selection of a new Library View.
 
 Proposed on 2026-10-17 with [#1550](https://github.com/aidenlx/zotlit/issues/1550).
 
