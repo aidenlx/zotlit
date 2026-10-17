@@ -27,6 +27,7 @@ import { requested } from "@/views/query-view/__fixtures__/query-run";
 
 import type { LibraryNode } from "./document";
 import { nodeKey } from "./library-tree";
+import { openLibraryView } from "./register";
 import { LibraryView } from "./view";
 import type { LibraryViewDeps } from "./view";
 
@@ -619,9 +620,17 @@ function shown(view: LibraryView) {
   );
 }
 
-it("has the search box focused when the tab opens", async () => {
+it("has the search box focused when the command brings the tab forward", async () => {
   const { deps } = pluginData();
   const view = await openTab(deps);
+  expect(document.activeElement).not.toBe(searchBox(view));
+  const leaf = { view } as unknown as WorkspaceLeaf;
+  await openLibraryView({
+    workspace: {
+      getLeavesOfType: () => [leaf],
+      revealLeaf: () => Promise.resolve(),
+    },
+  } as unknown as App);
   expect(document.activeElement).toBe(searchBox(view));
 });
 

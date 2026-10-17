@@ -31,9 +31,7 @@ export const LIBRARY_VIEW_TYPE = "zotlit-library";
 
 export interface LibraryViewDeps extends QueryViewDeps {
   settings: Pick<SettingsService, "update" | "flush" | "current" | "loaded">;
-  libraryScope: QueryViewDeps["libraryScope"] &
-    LibraryTreeDeps["libraryScope"] 
-    ;
+  libraryScope: QueryViewDeps["libraryScope"] & LibraryTreeDeps["libraryScope"];
   lookup: LibrarySearchDeps["lookup"];
 }
 
@@ -133,8 +131,6 @@ export class LibraryView extends ItemView {
     );
     this.search.load();
     this.search.render(searchEl);
-    // Search is the front door: the cursor waits in the box.
-    this.search.focus();
     // On a narrow pane the tree shows over the list while it is open.
     this.tree.register(
       this.tree.store.subscribe(({ open }) =>
