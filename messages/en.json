@@ -378,6 +378,11 @@
   "library_view_name": "Zotero library",
   "library_view_papers_view_name": "Papers",
   "library_view_tree_label": "Libraries",
+  "library_view_facets_label": "Show only",
+  "library_view_facet_unread": "Unread",
+  "library_view_facet_annotated": "Annotated",
+  "library_view_facet_has_note": "Has note",
+  "library_view_facet_pdf": "PDF",
   "library_view_tree_count": [
     {
       "declarations": ["input count", "local formatted = count: number"],
@@ -399,6 +404,15 @@
       "match": {
         "category=one": "{selection} · 1 paper",
         "category=*": "{selection} · {formatted} papers"
+      }
+    }
+  ],
+  "library_view_header_unread": [
+    {
+      "declarations": ["input count", "local formatted = count: number"],
+      "selectors": ["formatted"],
+      "match": {
+        "formatted=*": "· {formatted} unread"
       }
     }
   ],

@@ -1,8 +1,9 @@
 // The Library Tree of the Library View: the Libraries in the Library Scope
-// with their nested Collections, each with its paper count, and the header
-// of the list that names the selection. The tree reads its Collections and
-// counts again on every database change; a selection goes to the host, which
-// makes it the query of the list.
+// with their nested Collections, each with its paper count, the Reading
+// State facets under them, and the header of the list that names the
+// selection with its unread count. The tree reads its Collections and counts
+// again on every database change; a selection or a facet goes to the host,
+// which makes it the query of the list.
 //
 // @see apps/obsidian/docs/adr/0071-the-library-tree-writes-filters.md
 import { Component } from "obsidian";
@@ -27,8 +28,11 @@ import { selectorKey } from "@/services/library-scope/scope";
 import type { AvailableLibrary } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { LiteratureNotes } from "@/views/query-view/table-notes";
 
-import type { LibraryNode } from "./document";
+import { READING_STATE_FACETS } from "./document";
+import type { LibraryNode, ReadingStateFacet } from "./document";
+import { selectionConditions, vaultPass } from "./query-text";
 import { collectionTree, findNode, sameLibrary } from "./tree";
 import type { LibraryCounts, TreeCollection, TreeLibrary } from "./tree";
 
@@ -38,11 +42,15 @@ export interface LibraryTreeDeps {
   reads: Pick<ZoteroReadsService, "on" | "acquireRead">;
   query: Pick<QueryService, "run">;
   libraryScope: Pick<LibraryScopeService, "on" | "current" | "libraries">;
+  /** The Literature Notes the unread count leaves out. */
+  literatureNotes: Pick<LiteratureNotes, "find" | "on">;
 }
 
 export interface LibraryTreeHost {
   /** The researcher picked `node`, or the tree no longer holds the one selected. */
   select: (node: LibraryNode) => void;
+  /** The researcher turned a facet on or off: `facets` are those active now. */
+  filter: (facets: readonly ReadingStateFacet[]) => void;
 }
 
 interface TreeState {
@@ -55,6 +63,10 @@ interface TreeState {
   readonly expanded: ReadonlySet<string>;
   /** Whether a narrow pane shows the tree over the list. */
   readonly open: boolean;
+  /** The active Reading State facets, in {@link READING_STATE_FACETS} order. */
+  readonly facets: readonly ReadingStateFacet[];
+  /** The unread Items of the selected node; `null` while unknown. */
+  readonly unread: number | null;
 }
 
 /** One identity for a node, whatever its names hold. */
@@ -82,6 +94,8 @@ export class LibraryTree extends Component {
   readonly #deps: LibraryTreeDeps;
   readonly #host: LibraryTreeHost;
   #run: AbortController | null = null;
+  #unreadRun: AbortController | null = null;
+  #unreadSettled: Promise<void> = Promise.resolve();
   /** Settles once a read first lands, so a caller can wait for it before it starts. */
   readonly #first = Promise.withResolvers<void>();
   #settled: Promise<void> = this.#first.promise;
@@ -97,6 +111,8 @@ export class LibraryTree extends Component {
       all: false,
       expanded: new Set(),
       open: false,
+      facets: [],
+      unread: null,
     }));
   }
 
@@ -105,7 +121,9 @@ export class LibraryTree extends Component {
    * shows a first one. Never rejects.
    */
   get settled(): Promise<void> {
-    return this.#settled.then(() => this.#first.promise);
+    return Promise.all([this.#settled, this.#unreadSettled]).then(
+      () => this.#first.promise,
+    );
   }
 
   override onload(): void {
@@ -118,11 +136,17 @@ export class LibraryTree extends Component {
     this.register(reads.on("db-file-missing", refresh));
     this.register(libraryScope.on("changed", refresh));
     this.register(libraryScope.on("libraries-changed", refresh));
+    // A Literature Note added or removed makes an Item read or unread.
+    this.register(
+      this.#deps.literatureNotes.on("changed", () => this.#countUnread()),
+    );
   }
 
   override onunload(): void {
     this.#run?.abort();
     this.#run = null;
+    this.#unreadRun?.abort();
+    this.#unreadRun = null;
     this.#first.resolve();
     for (const root of this.#roots) root.unmount();
     this.#roots = [];
@@ -130,12 +154,28 @@ export class LibraryTree extends Component {
 
   /** Show `node` as the selection, with the Collections above it open. */
   show(node: LibraryNode): void {
-    const { expanded } = this.store.getState();
+    const { expanded, node: shown } = this.store.getState();
     this.store.setState({
       node,
       open: false,
       expanded: new Set([...expanded, ...ancestors(node)]),
     });
+    if (nodeKey(node) !== nodeKey(shown)) this.#countUnread();
+  }
+
+  /** Show `facets` as the active ones. */
+  showFacets(facets: readonly ReadingStateFacet[]): void {
+    this.store.setState({ facets });
+  }
+
+  /** The researcher turned `facet` on or off. */
+  toggleFacet(facet: ReadingStateFacet): void {
+    const { facets } = this.store.getState();
+    this.#host.filter(
+      READING_STATE_FACETS.filter((each) =>
+        each === facet ? !facets.includes(each) : facets.includes(each),
+      ),
+    );
   }
 
   /** The researcher picked `node`. */
@@ -190,6 +230,7 @@ export class LibraryTree extends Component {
 
   /** Read the Collections and the counts of the shown Libraries again. */
   refresh(): void {
+    this.#countUnread();
     this.#run?.abort();
     const controller = new AbortController();
     this.#run = controller;
@@ -287,6 +328,52 @@ export class LibraryTree extends Component {
     }
   }
 
+  /**
+   * Count the unread Items of the selected node again: those the query finds
+   * with no Annotation, less those with a Literature Note in the vault.
+   */
+  #countUnread(): void {
+    this.#unreadRun?.abort();
+    const controller = new AbortController();
+    this.#unreadRun = controller;
+    const { node } = this.store.getState();
+    const { filters, vault } = selectionConditions(node, ["unread"]);
+    const pass = vaultPass(vault, this.#deps.literatureNotes);
+    this.store.setState({ unread: null });
+    this.#unreadSettled = this.#deps.query
+      .run(
+        {
+          from: "items",
+          fields: [],
+          filter: filters.join(" && "),
+          limit: null,
+          libraries: { mode: "selected", libraries: [node.library] },
+        },
+        controller.signal,
+      )
+      .then(
+        (outcome) => {
+          if (controller.signal.aborted) return;
+          this.#unreadRun = null;
+          if (outcome.kind === "result" && outcome.result.rows)
+            this.store.setState({
+              unread: outcome.result.rows.filter(
+                (row) => pass?.keeps(row) ?? true,
+              ).length,
+            });
+          else if (outcome.kind === "failed")
+            logger.warn("The Library Tree could not count the unread Items", {
+              code: outcome.diagnostic.code,
+            });
+        },
+        (error: unknown) => {
+          logger.warn("The Library Tree could not count the unread Items", {
+            error,
+          });
+        },
+      );
+  }
+
   /** Draw the tree into `el`. */
   render(el: HTMLElement): void {
     this.#mount(el, <TreePane tree={this} />);
@@ -324,6 +411,7 @@ function ListHeader({ tree }: { tree: LibraryTree }) {
   const open = useStore(tree.store, (s) => s.open);
   const selection = nodeLabel(libraries, node);
   const count = libraries ? (findNode(libraries, node)?.count ?? null) : null;
+  const unread = useStore(tree.store, (s) => s.unread);
   return (
     <div className="zt:flex zt:min-w-0 zt:items-center zt:gap-(--size-2-2) zt:ps-(--zt-query-toolbar-inset-start) zt:pe-(--zt-query-toolbar-inset-end) zt:pt-(--size-4-2)">
       {/* Obsidian's own rule shows a clickable icon, so the narrow pane
@@ -348,6 +436,12 @@ function ListHeader({ tree }: { tree: LibraryTree }) {
         {count === null
           ? selection
           : m.library_view_header({ selection, count })}
+        {count !== null && unread !== null && (
+          <span data-library-unread={unread}>
+            {" "}
+            {m.library_view_header_unread({ count: unread })}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -515,6 +609,7 @@ function TreePane({ tree }: { tree: LibraryTree }) {
           </div>
         ))}
       </div>
+      <Facets tree={tree} />
       {(all || tree.canWiden) && (
         <div
           role="button"
@@ -534,5 +629,48 @@ function TreePane({ tree }: { tree: LibraryTree }) {
         </div>
       )}
     </nav>
+  );
+}
+
+const FACET_LABELS: Record<ReadingStateFacet, () => string> = {
+  unread: m.library_view_facet_unread,
+  annotated: m.library_view_facet_annotated,
+  "has-note": m.library_view_facet_has_note,
+  pdf: m.library_view_facet_pdf,
+};
+
+/** The Reading State facets, each a toggle that narrows the list. */
+function Facets({ tree }: { tree: LibraryTree }) {
+  const facets = useStore(tree.store, (s) => s.facets);
+  const headingId = useUniqueId();
+  return (
+    // Named by the heading on screen: an `aria-label` would show a tooltip.
+    <div
+      role="group"
+      aria-labelledby={headingId}
+      data-library-facets=""
+      className="zt:flex zt:flex-col zt:gap-(--size-2-2)"
+    >
+      <div
+        id={headingId}
+        className="zt:px-(--size-4-2) zt:text-(length:--font-ui-smaller) zt:font-(--font-semibold) zt:text-muted-foreground"
+      >
+        {m.library_view_facets_label()}
+      </div>
+      <div className="zt:flex zt:flex-wrap zt:gap-(--size-2-2) zt:px-(--size-4-2)">
+        {READING_STATE_FACETS.map((facet) => (
+          <button
+            key={facet}
+            type="button"
+            data-library-facet={facet}
+            aria-pressed={facets.includes(facet)}
+            className="zt:h-auto zt:cursor-(--cursor) zt:rounded-(--radius-l) zt:border-(length:--border-width) zt:border-(--background-modifier-border) zt:bg-transparent zt:px-(--size-4-2) zt:py-(--size-2-1) zt:text-(length:--font-ui-smaller) zt:text-muted-foreground zt:shadow-none zt:hover:bg-(--background-modifier-hover) zt:hover:text-(--text-normal) zt:aria-pressed:border-(--interactive-accent) zt:aria-pressed:bg-(--interactive-accent) zt:aria-pressed:text-(--text-on-accent) zt:aria-pressed:hover:bg-(--interactive-accent-hover)"
+            onClick={() => tree.toggleFacet(facet)}
+          >
+            {FACET_LABELS[facet]()}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }

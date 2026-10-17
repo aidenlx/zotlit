@@ -15,11 +15,15 @@ import { QueryView } from "@/views/query-view/view";
 import type { QueryViewDeps } from "@/views/query-view/view";
 
 import { LIBRARY_LAYOUTS } from "./document";
-import type { LibraryNode, LibraryViewDocument } from "./document";
+import type {
+  LibraryNode,
+  LibraryViewDocument,
+  ReadingStateFacet,
+} from "./document";
 import { ZOTLIT_MARK_ICON } from "./icon";
 import { LibraryTree } from "./library-tree";
 import type { LibraryTreeDeps } from "./library-tree";
-import { libraryViewQuery } from "./query-text";
+import { libraryViewQuery, vaultPass } from "./query-text";
 import type { LibraryViewQuery } from "./query-text";
 import { libraryViewStorage } from "./storage";
 import "./style.css";
@@ -58,6 +62,9 @@ export class LibraryView extends ItemView {
       // The document keeps the sort, the Layout and the Visible Properties.
       displayOnly: true,
       layouts: LIBRARY_LAYOUTS,
+      // Has note, and the Literature Note half of Unread, the vault answers.
+      rowPass: () =>
+        this.#shown && vaultPass(this.#shown.vault, deps.literatureNotes),
       save: this.#storage.save,
       layout: {
         // Otherwise Obsidian moves focus to the last navigable leaf, which in
@@ -70,7 +77,10 @@ export class LibraryView extends ItemView {
         },
       },
     });
-    this.tree = new LibraryTree(deps, { select: (node) => this.#select(node) });
+    this.tree = new LibraryTree(deps, {
+      select: (node) => this.#select(node),
+      filter: (facets) => this.#filter(facets),
+    });
   }
 
   override getViewType(): string {
@@ -120,11 +130,18 @@ export class LibraryView extends ItemView {
     });
     this.query.load();
     this.query.render(list);
+    // A Literature Note added or removed changes what the vault answers.
+    this.query.register(
+      this.#deps.literatureNotes.on("changed", () => {
+        if (this.#shown && this.#shown.vault.length > 0) this.query.refresh();
+      }),
+    );
     // A tab that the workspace restores on startup can open before plugin
     // data has loaded.
     await this.#deps.settings.loaded;
     const doc = this.#storage.document();
     this.tree.show(doc.node);
+    this.tree.showFacets(doc.facets);
     this.tree.refresh();
     this.#show(doc);
   }
@@ -137,6 +154,15 @@ export class LibraryView extends ItemView {
       logger.warn("The Library View could not keep the tree selection", {
         error,
       });
+    });
+  }
+
+  /** The researcher turned a facet on or off: list the Items `facets` hold, and keep them. */
+  #filter(facets: readonly ReadingStateFacet[]): void {
+    this.tree.showFacets(facets);
+    this.#show({ ...this.#storage.document(), facets });
+    this.#storage.setFacets(facets).catch((error: unknown) => {
+      logger.warn("The Library View could not keep the facets", { error });
     });
   }
 
