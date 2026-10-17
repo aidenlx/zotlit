@@ -1189,6 +1189,155 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
   }, 180000);
 
+  it("opens the Library View from the ribbon and the command, lists My Library newest first, and keeps a sort change across a plugin reload, with Zotero closed", async () => {
+    const layout = await obEval(
+      vaultId,
+      "JSON.stringify(app.workspace.getLayout())",
+    );
+    const stored = await obEval(
+      vaultId,
+      "JSON.stringify(app.plugins.plugins.zotlit.services.settings.current['library.document'])",
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{const settings=app.plugins.plugins.zotlit.services.settings;settings.update({'library.document':${stored}});await settings.flush();await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+      );
+    });
+    await obEval(
+      vaultId,
+      "app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());true",
+    );
+
+    /** What the Library View shows once its query settled, or `null` while no tab holds it. */
+    const readLibrary = `(async()=>{const leaves=app.workspace.getLeavesOfType('zotlit-library');const view=leaves[0]?.view;if(!view?.query)return 'null';await view.query.settled;const el=view.contentEl;const state=view.query.state.getState();return JSON.stringify({leaves:leaves.length,active:app.workspace.getMostRecentLeaf()?.view.getViewType()??null,title:view.getDisplayText(),phase:state.phase,failure:state.failure?.diagnostic.code??null,count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,rows:[...el.querySelectorAll('tr[data-query-table-row="item"]')].map(n=>n.getAttribute('data-query-key'))});})()`;
+    interface Library {
+      leaves: number;
+      active: string | null;
+      title: string;
+      phase: string;
+      failure: string | null;
+      count: string | null;
+      rows: string[];
+    }
+    const libraryWhen = async (
+      ready: (library: Library) => boolean,
+    ): Promise<Library> => {
+      let library: Library | null = null;
+      const settled = await waitFor(async () => {
+        library = JSON.parse(
+          await obEval(vaultId, readLibrary),
+        ) as Library | null;
+        return library !== null && ready(library);
+      }, 120);
+      if (!settled) throw new Error(`Library View: ${JSON.stringify(library)}`);
+      return library!;
+    };
+
+    // The seed's My Library Items. Items modified at the same moment may
+    // come in either order, so the rows are checked by key set and by the
+    // modification time at each place.
+    const personal = ITEMS.filter(
+      ({ libraryID }) =>
+        libraryID === LIBRARIES.find(({ type }) => type === "user")!.libraryID,
+    );
+    const modified = new Map(
+      personal.map(({ key, dateModified }) => [key, dateModified]),
+    );
+    const times = (direction: 1 | -1) =>
+      personal
+        .map(({ dateModified }) => dateModified)
+        .toSorted((a, b) => direction * a.localeCompare(b));
+    const expectSeedOrder = (library: Library, direction: 1 | -1) => {
+      expect(library.count).toBe(String(personal.length));
+      expect(library.rows.toSorted()).toEqual(
+        personal.map(({ key }) => key).toSorted(),
+      );
+      expect(library.rows.map((key) => modified.get(key))).toEqual(
+        times(direction),
+      );
+    };
+
+    // The ribbon icon opens the view in a main-area tab, on My Library in a
+    // Table, newest change first. No Zotero answers this vault.
+    await obEval(
+      vaultId,
+      `(()=>{${PAGE}press(document.querySelector(${JSON.stringify(`.side-dock-ribbon-action[aria-label="${m.command_open_library_view_name()}"]`)}),'Library View ribbon icon');return true;})()`,
+    );
+    const opened = await libraryWhen((library) => library.phase === "ready");
+    expect(opened).toMatchObject({
+      leaves: 1,
+      active: "zotlit-library",
+      title: m.library_view_name(),
+      failure: null,
+    });
+    expectSeedOrder(opened, -1);
+
+    // With another tab in front, the command and the ribbon icon each bring
+    // the one Library View tab back.
+    for (const invoke of [
+      "app.commands.executeCommandById('zotlit:open-library-view')",
+      `(()=>{${PAGE}press(document.querySelector(${JSON.stringify(`.side-dock-ribbon-action[aria-label="${m.command_open_library_view_name()}"]`)}),'Library View ribbon icon')})()`,
+    ]) {
+      await obEval(
+        vaultId,
+        "(async()=>{await app.workspace.getLeaf('tab').openFile(app.vault.getMarkdownFiles()[0]);return true;})()",
+      );
+      expect(
+        (await libraryWhen((library) => library.active !== "zotlit-library"))
+          .leaves,
+      ).toBe(1);
+      await obEval(vaultId, `${invoke};true`);
+      expect(
+        await libraryWhen((library) => library.active === "zotlit-library"),
+      ).toMatchObject({ leaves: 1 });
+    }
+
+    // The Sort popover turns the order to oldest change first, and plugin
+    // data keeps it as the Library View Document's sort.
+    const inLibrary = (script: string) =>
+      obEval(
+        vaultId,
+        `(async()=>{${PAGE}const el=app.workspace.getLeavesOfType('zotlit-library')[0].view.contentEl;${script};return true;})()`,
+      );
+    await inLibrary(
+      "press(el.querySelector('[data-query-toolbar=\"sort\"]'),'Sort');const select=await until('sort direction',()=>el.querySelector('[data-query-popover=\"sort\"] [data-sort-direction]'));select.value='ASC';select.dispatchEvent(new Event('change',{bubbles:true}))",
+    );
+    expectSeedOrder(
+      await libraryWhen(
+        (library) =>
+          library.phase === "ready" && library.rows[0] !== opened.rows[0],
+      ),
+      1,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        "JSON.stringify(app.plugins.plugins.zotlit.services.settings.current['library.document']?.sort)",
+        {
+          expected: JSON.stringify([
+            { property: "dateModified", direction: "ASC" },
+          ]),
+        },
+      ),
+    ).toBe(true);
+
+    // A plugin reload brings the tab back with the sort it kept.
+    expect(
+      await obEvalUntil(
+        vaultId,
+        "app.plugins.disablePlugin('zotlit').then(function () { return app.plugins.enablePlugin('zotlit'); }).then(function () { return true; })",
+        { expected: "true", tries: 20 },
+      ),
+    ).toBe(true);
+    const reloaded = await libraryWhen(
+      (library) => library.phase === "ready" && library.count !== null,
+    );
+    expect(reloaded).toMatchObject({ leaves: 1, failure: null });
+    expectSeedOrder(reloaded, 1);
+  });
+
   it("shows a Query File toolbar as icons with tooltips on a narrow pane, and with names on a wide one", async () => {
     const layout = await obEval(
       vaultId,

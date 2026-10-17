@@ -74,6 +74,7 @@ import {
 } from "./views/citation-presentation/register";
 import { registerCitationSuggest } from "./views/citation-suggest/register";
 import { registerCitedByView } from "./views/cited-by/register";
+import { registerLibraryView } from "./views/library/register";
 import { registerNotePreview } from "./views/note-preview/register";
 import { registerPandocExport } from "./views/pandoc-export/register";
 import { registerQueryBlock } from "./views/query-view/block";
@@ -490,6 +491,10 @@ export default class ZotLitPlugin extends Plugin {
     });
     registerQueryFileView(this, queryViewDeps);
     registerQueryBlock(this, queryViewDeps);
+    registerLibraryView(this, {
+      ...queryViewDeps,
+      settings: services.settings,
+    });
 
     // The Annotation History's own verbs. A bound PDF view and an Annotation
     // View each step the Attachment they show, and a Query View the

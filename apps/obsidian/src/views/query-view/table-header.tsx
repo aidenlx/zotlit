@@ -227,6 +227,8 @@ export function TableHeader({
 }) {
   const columns = properties.visible;
   const editable = view.canSave;
+  // A host that keeps no column widths offers no resize.
+  const resizable = editable && !view.displayOnly;
   /** The drag on now; the Table that closes ends it. */
   const drag = useRef<AbortController | null>(null);
   useEffect(() => () => drag.current?.abort(), []);
@@ -473,7 +475,7 @@ export function TableHeader({
     const toEnd = at < 0 || at >= columns.length - 1;
     // Left and right as the researcher sees them, in either direction.
     const rtl = isRTL(th);
-    new Menu()
+    const menu = new Menu()
       .addItem((item) =>
         item
           .setTitle(m.query_view_table_move_column_left())
@@ -487,17 +489,16 @@ export function TableHeader({
           .setIcon("lucide-arrow-right")
           .setDisabled(rtl ? toStart : toEnd)
           .onClick(() => stepColumn(path, rtl ? -1 : 1)),
-      )
-      .addSeparator()
-      .addItem((item) =>
+      );
+    if (!view.displayOnly)
+      menu.addSeparator().addItem((item) =>
         item
           .setTitle(m.query_view_table_reset_column_width())
           .setIcon("lucide-rotate-ccw")
           .setDisabled(sizes?.[path] === undefined)
           .onClick(() => resetColumn(path)),
-      )
-      .setParentElement(th)
-      .showAtMouseEvent(event.nativeEvent);
+      );
+    menu.setParentElement(th).showAtMouseEvent(event.nativeEvent);
   };
 
   const { gutter, cell, first, later } = classes;
@@ -571,7 +572,7 @@ export function TableHeader({
                   <span className="zt:truncate">{property.label}</span>
                 </span>
               )}
-              {editable && (
+              {resizable && (
                 <span
                   className={RESIZER}
                   data-query-column-resizer={property.path}

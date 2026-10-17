@@ -64,6 +64,12 @@ function plans(filter: string | undefined): boolean {
   return filter !== undefined && "matches" in planItemFilter(filter);
 }
 
+describe("libraryViewQuery — the rows", () => {
+  it("shows at most a thousand rows, so a large library opens at once", () => {
+    expect(derive({}).view.limit).toBe(1000);
+  });
+});
+
 describe("libraryViewQuery — the tree node", () => {
   it("reads a Library as the query's library, with no filter", () => {
     const { query, filter } = derive({
