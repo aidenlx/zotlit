@@ -206,6 +206,12 @@ export const schema = v.object({
    */
   "library.document": v.nullable(storedLibraryViewDocumentSchema),
 
+  /**
+   * The researcher dismissed the Welcome View banner above the Library View;
+   * the open-welcome command shows it again. ADR 0076.
+   */
+  "welcome.dismissed": v.boolean(),
+
   "release.previous-version": v.nullable(v.string()),
   "release.notices-enabled": v.boolean(),
   "release.migration-pending": v.boolean(),
@@ -262,6 +268,7 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "reader.ink-width": DEFAULT_INK_WIDTH,
   "reader.text-font-size": DEFAULT_TEXT_FONT_SIZE,
   "library.document": null,
+  "welcome.dismissed": false,
   // Absent until the release check records a launch; see the release service.
   "release.previous-version": null,
   "release.notices-enabled": true,

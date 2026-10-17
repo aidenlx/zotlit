@@ -6,18 +6,21 @@
 //
 // @see apps/obsidian/docs/adr/0070-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
 import { ItemView, Scope } from "obsidian";
-import type { WorkspaceLeaf } from "obsidian";
+import type { Component, WorkspaceLeaf } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import type { SettingsService } from "@/services/settings/service";
 import { QueryView } from "@/views/query-view/view";
 import type { QueryViewDeps } from "@/views/query-view/view";
+import { WelcomeBanner } from "@/views/welcome/banner";
+import type { WelcomeBannerDeps } from "@/views/welcome/banner";
 
 import type { LibraryNode, LibraryViewDocument } from "./document";
 import { ZOTLIT_MARK_ICON } from "./icon";
 import { LibraryTree } from "./library-tree";
 import type { LibraryTreeDeps } from "./library-tree";
+import { ZoteroNotFound } from "./not-found";
 import { libraryViewQuery } from "./query-text";
 import type { LibraryViewQuery } from "./query-text";
 import { libraryViewStorage } from "./storage";
@@ -30,6 +33,8 @@ export const LIBRARY_VIEW_TYPE = "zotlit-library";
 export interface LibraryViewDeps extends QueryViewDeps {
   settings: Pick<SettingsService, "update" | "flush" | "current" | "loaded">;
   libraryScope: QueryViewDeps["libraryScope"] & LibraryTreeDeps["libraryScope"];
+  /** The Welcome View banner above the tab, and its setup actions. ADR 0076. */
+  welcome: WelcomeBannerDeps;
 }
 
 export class LibraryView extends ItemView {
@@ -38,6 +43,8 @@ export class LibraryView extends ItemView {
   readonly tree: LibraryTree;
   readonly #deps: LibraryViewDeps;
   readonly #storage: ReturnType<typeof libraryViewStorage>;
+  /** The not-found state and the Welcome View banner, while the tab is open. */
+  readonly #parts: Component[] = [];
   /** What the tab runs: the query of the document as it opened. */
   #shown: LibraryViewQuery | null = null;
 
@@ -84,8 +91,16 @@ export class LibraryView extends ItemView {
   }
 
   protected override async onOpen(): Promise<void> {
-    const shell = this.contentEl.createDiv({
-      cls: "zt:group zt:@container zt:relative zt:flex zt:h-full zt:min-h-0",
+    // The Welcome View banner sits above the tree and the list, and takes
+    // at most half the tab.
+    const column = this.contentEl.createDiv({
+      cls: "zt:flex zt:h-full zt:flex-col",
+    });
+    const banner = column.createDiv({
+      cls: "zt:max-h-1/2 zt:shrink-0 zt:overflow-y-auto",
+    });
+    const shell = column.createDiv({
+      cls: "zt:group zt:@container zt:relative zt:flex zt:min-h-0 zt:flex-1",
     });
     const treeEl = shell.createDiv({
       cls: "zt:hidden zt:w-56 zt:shrink-0 zt:overflow-y-auto zt:border-e-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-primary) zt:@xl:block zt:group-data-tree-open:block zt:@max-xl:absolute zt:@max-xl:inset-y-0 zt:@max-xl:start-0 zt:@max-xl:max-w-[85%] zt:@max-xl:z-(--layer-popover) zt:@max-xl:shadow-(--shadow-s)",
@@ -96,8 +111,21 @@ export class LibraryView extends ItemView {
     });
     const header = main.createDiv();
     const list = main.createDiv();
+    // Where ZotLit cannot read Zotero's database, the tree and the list say
+    // so in place of what they hold.
+    const hidden = "zt:group-data-zotero-missing:hidden";
+    const shown = "zt:hidden zt:group-data-zotero-missing:block";
+    this.#parts.push(
+      new ZoteroNotFound(this.#deps.welcome, {
+        shell,
+        tree: treeEl.createDiv({ cls: shown }),
+        list: list.createDiv({ cls: shown }),
+      }),
+      new WelcomeBanner(this.#deps.welcome, banner),
+    );
+    for (const part of this.#parts) part.load();
     this.tree.load();
-    this.tree.render(treeEl);
+    this.tree.render(treeEl.createDiv({ cls: hidden }));
     this.tree.renderHeader(header);
     // On a narrow pane the tree shows over the list while it is open.
     this.tree.register(
@@ -117,7 +145,7 @@ export class LibraryView extends ItemView {
       this.tree.setOpen(false);
     });
     this.query.load();
-    this.query.render(list);
+    this.query.render(list.createDiv({ cls: hidden }));
     // A tab that the workspace restores on startup can open before plugin
     // data has loaded.
     await this.#deps.settings.loaded;
@@ -155,5 +183,6 @@ export class LibraryView extends ItemView {
     await this.query.flush();
     this.query.unload();
     this.tree.unload();
+    for (const part of this.#parts.splice(0)) part.unload();
   }
 }

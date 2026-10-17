@@ -12,6 +12,7 @@ import {
   annotationCardShown,
   revealAnnotationInView,
 } from "@/views/annot-view/register";
+import { openLibraryView } from "@/views/library/register";
 import { openWelcomeView } from "@/views/welcome/register";
 import type ZotLitPlugin from "@/zt-main";
 
@@ -136,7 +137,8 @@ export function buildServices(
           app: plugin.app,
           version: plugin.manifest.version,
           settings,
-          openWelcomeView: (mode) => openWelcomeView(plugin.app, { mode }),
+          // A first install opens the Library View in place of the empty tab.
+          openFirstScreen: () => openLibraryView(plugin.app, { pane: false }),
         }),
     })
     .use({
@@ -393,7 +395,7 @@ export function buildServices(
               },
               options,
             ),
-          openPrompt: () => openWelcomeView(plugin.app, { mode: "upgraded" }),
+          openPrompt: () => openWelcomeView(plugin.app, settings),
         }),
     })
     .use({

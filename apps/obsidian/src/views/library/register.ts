@@ -34,12 +34,18 @@ export function registerLibraryView(
   );
 }
 
-/** Bring the Library View forward, opening it in a new tab when no tab holds it. */
-export async function openLibraryView(app: App): Promise<void> {
+/**
+ * Bring the Library View forward. Where no tab holds it, it opens in a new
+ * tab, or in the active one for `pane: false`, as on a first install.
+ */
+export async function openLibraryView(
+  app: App,
+  { pane = "tab" }: { pane?: "tab" | false } = {},
+): Promise<void> {
   const { workspace } = app;
   let leaf = workspace.getLeavesOfType(LIBRARY_VIEW_TYPE)[0];
   if (!leaf) {
-    leaf = workspace.getLeaf("tab");
+    leaf = workspace.getLeaf(pane);
     await leaf.setViewState({ type: LIBRARY_VIEW_TYPE, active: true });
   }
   await workspace.revealLeaf(leaf);
