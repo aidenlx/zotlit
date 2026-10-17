@@ -40,6 +40,7 @@ import type {
   VaultValue,
   VaultWrite,
 } from "./table-notes";
+import { dateText } from "./vault-value";
 import { QueryView, RERUN_DELAY_MS } from "./view";
 import type { QueryViewDeps } from "./view";
 
@@ -3335,6 +3336,51 @@ describe("vault properties", () => {
     expect(icon("vault.due")).toBe("calendar");
   });
 
+  it("finds an Item by its vault values from the Table's toolbar search, those of the note that holds the view for its own Item", async () => {
+    const { view, el, settle } = await mount(
+      [
+        result([
+          itemRow("ITEMAAAA", "Ten simple rules"),
+          itemRow("ITEMBBBB", "Deep learning"),
+          itemRow("ITEMCCCC", "Attention"),
+        ]),
+      ],
+      undefined,
+      {
+        notes: { ITEMAAAA: "A.md", ITEMBBBB: "B.md" },
+        frontmatter: {
+          "A.md": { status: "skimmed" },
+          "A (copy).md": { status: "reading" },
+          "B.md": { status: "reading" },
+        },
+        sourcePath: "A (copy).md",
+        context: () => ({ item: "ITEMAAAA" }),
+        contextSource: "note",
+      },
+    );
+    await act(() => view.setText(VAULT_FILE));
+    await settle();
+
+    await act(() =>
+      el.querySelector<HTMLElement>('[data-query-toolbar="search"]')!.click(),
+    );
+    const input = el.querySelector<HTMLInputElement>("[data-query-search]")!;
+    const search = (text: string) =>
+      act(() => {
+        input.value = text;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    const rows = () =>
+      [...el.querySelectorAll('[data-query-table-row="item"]')].map((row) =>
+        row.getAttribute("data-query-key"),
+      );
+
+    await search("READING");
+    expect(rows()).toEqual(["ITEMAAAA", "ITEMBBBB"]);
+    await search("skimmed");
+    expect(rows()).toEqual([]);
+  });
+
   it("names a vault column's header by the property name, as Bases does, with the icon of tags and aliases", async () => {
     const { view, el, settle } = await mount(
       [result([itemRow("ITEMAAAA", "Ten simple rules")])],
@@ -3794,10 +3840,10 @@ ${order.map((path) => `      - ${path}\n`).join("")}`),
           field.value = text;
           field.dispatchEvent(new Event("input", { bubbles: true }));
         });
-      const press = (key: string) =>
+      const press = (key: string, init: KeyboardEventInit = {}) =>
         act(() => {
           input()!.dispatchEvent(
-            new KeyboardEvent("keydown", { key, bubbles: true }),
+            new KeyboardEvent("keydown", { key, bubbles: true, ...init }),
           );
         });
       const icon = (name: string) =>
@@ -3919,7 +3965,7 @@ ${order.map((path) => `      - ${path}\n`).join("")}`),
       );
     });
 
-    it("shows and edits a date and time as text, and writes nothing when it is unchanged", async () => {
+    it("shows a date and time in the locale's form with its icon, edits it in a native field, and writes nothing when it is unchanged", async () => {
       const { cell, input, type, press, literatureNotes, icon } = await typed(
         ["vault.met"],
         { met: "2024-05-01T10:30:00" },
@@ -3927,19 +3973,154 @@ ${order.map((path) => `      - ${path}\n`).join("")}`),
       );
 
       expect(icon("met")).toBe("clock");
-      expect(cell("met").textContent).toBe("2024-05-01T10:30:00");
+      expect(cell("met").textContent).toBe(
+        dateText("datetime", "2024-05-01T10:30:00"),
+      );
+      expect(
+        cell("met").querySelector("[data-query-vault-date] svg"),
+      ).not.toBeNull();
       await act(() => cell("met").click());
-      expect(input()?.type).toBe("text");
-      expect(input()?.value).toBe("2024-05-01T10:30:00");
+      expect(input()?.type).toBe("datetime-local");
+      // The native field leaves out seconds that are none.
+      expect(input()?.value).toBe("2024-05-01T10:30");
       await press("Enter");
       expect(literatureNotes.write).not.toHaveBeenCalled();
 
       await act(() => cell("met").click());
-      await type("2024-05-02T09:00:00");
+      await type("2024-05-02T09:00");
       await press("Enter");
       expect(literatureNotes.write).toHaveBeenLastCalledWith(
         edit("met", "2024-05-02T09:00:00"),
       );
+    });
+
+    it("shows a missing or null checkbox as indeterminate, and false as an empty box", async () => {
+      const { view, el, settle } = await mount(
+        [
+          result([
+            itemRow("ITEMAAAA", "Ten simple rules"),
+            itemRow("ITEMBBBB", "Deep learning"),
+            itemRow("ITEMCCCC", "Attention"),
+          ]),
+        ],
+        undefined,
+        {
+          notes: { ITEMAAAA: "A.md", ITEMBBBB: "B.md", ITEMCCCC: "C.md" },
+          frontmatter: { "A.md": { done: false }, "B.md": { done: null } },
+          types: { done: "checkbox" },
+        },
+      );
+      await act(() =>
+        view.setText(`views:
+  - type: table
+    name: Reading list
+    from: items
+    order:
+      - vault.done
+`),
+      );
+      await settle();
+      const box = (itemKey: string) =>
+        el.querySelector<HTMLInputElement>(
+          `[data-query-key="${itemKey}"] [data-query-vault-checkbox]`,
+        )!;
+
+      expect(box("ITEMAAAA").checked).toBe(false);
+      expect(box("ITEMAAAA").hasAttribute("data-indeterminate")).toBe(false);
+      for (const key of ["ITEMBBBB", "ITEMCCCC"]) {
+        expect(box(key).checked).toBe(false);
+        expect(box(key).getAttribute("data-indeterminate")).toBe("true");
+        expect(box(key).getAttribute("aria-checked")).toBe("mixed");
+      }
+    });
+
+    it("shows a whole link as a link that opens its note, and a click on it starts no edit", async () => {
+      const mounted = await mount(
+        [result([itemRow("ITEMAAAA", "Ten simple rules")])],
+        undefined,
+        {
+          notes: { ITEMAAAA: "A.md" },
+          frontmatter: {
+            "A.md": { related: "[[Memex|the memex]]", other: "[[Nowhere]]" },
+          },
+          notePaths: ["Memex"],
+        },
+      );
+      await act(() =>
+        mounted.view.setText(`views:
+  - type: table
+    name: Reading list
+    from: items
+    order:
+      - vault.related
+      - vault.other
+`),
+      );
+      await mounted.settle();
+      const link = (name: string) =>
+        mounted.el.querySelector<HTMLAnchorElement>(
+          `[data-query-vault-name="${name}"] a.internal-link`,
+        )!;
+
+      expect(link("related").textContent).toBe("the memex");
+      expect(link("related").hasAttribute("data-unresolved")).toBe(false);
+      expect(link("other").hasAttribute("data-unresolved")).toBe(true);
+      await act(() => link("related").click());
+
+      expect(mounted.literatureNotes.openLink).toHaveBeenCalledWith(
+        { target: "Memex", itemKey: "ITEMAAAA", host: null },
+        expect.any(MouseEvent),
+      );
+      expect(mounted.el.querySelector("[data-query-vault-input]")).toBeNull();
+    });
+
+    it("shows tags without their #, and aliases as items", async () => {
+      const { cell } = await typed(
+        ["vault.tags", "vault.aliases"],
+        { tags: ["#reading/done", "hci"], aliases: ["Memex essay"] },
+        { tags: "tags", aliases: "aliases" },
+      );
+      const shown = (name: string) =>
+        [...cell(name).querySelectorAll("[data-query-vault-chip]")].map(
+          (chip) => chip.textContent,
+        );
+
+      expect(shown("tags")).toEqual(["reading/done", "hci"]);
+      expect(shown("aliases")).toEqual(["Memex essay"]);
+    });
+
+    it("commits on Tab and moves to the next vault cell of the row, and returns focus to the cell after Enter", async () => {
+      const { cell, type, press, input, literatureNotes } = await typed(
+        ["vault.status", "vault.note"],
+        { status: "unread", note: "" },
+      );
+
+      await act(() => cell("status").click());
+      await type("read");
+      await press("Tab");
+      expect(literatureNotes.write).toHaveBeenLastCalledWith(
+        edit("status", "read"),
+      );
+      expect(input()).toBeNull();
+      expect(document.activeElement).toBe(cell("note"));
+
+      await act(() => cell("note").click());
+      await type("short");
+      await press("Enter");
+      expect(literatureNotes.write).toHaveBeenLastCalledWith(
+        edit("note", "short"),
+      );
+      expect(document.activeElement).toBe(cell("note"));
+
+      // Shift+Tab goes back, and Escape drops the edit and stays.
+      await act(() => cell("note").click());
+      await press("Tab", { shiftKey: true });
+      expect(document.activeElement).toBe(cell("status"));
+      await act(() => cell("status").click());
+      await type("unread");
+      await press("Escape");
+      expect(literatureNotes.write).toHaveBeenCalledTimes(2);
+      expect(document.activeElement).toBe(cell("status"));
     });
 
     it("shows a list as chips, keeps an item with a comma whole, and adds and removes items", async () => {
@@ -4042,7 +4223,7 @@ ${order.map((path) => `      - ${path}\n`).join("")}`),
       ).toBe("maybe");
     });
 
-    it("drops the list's edits on Escape", async () => {
+    it("keeps the list's edits on Escape, with what was typed added, as Bases does", async () => {
       const { cell, type, press, literatureNotes } = await typed(
         ["vault.authors"],
         { authors: ["Doe, J"] },
@@ -4051,12 +4232,51 @@ ${order.map((path) => `      - ${path}\n`).join("")}`),
       await act(() => cell("authors").click());
       await type("Roe");
       await press("Enter");
+      await type("Poe");
       await press("Escape");
 
-      expect(literatureNotes.write).not.toHaveBeenCalled();
-      expect(
-        cell("authors").querySelectorAll("[data-query-vault-chip]"),
-      ).toHaveLength(1);
+      expect(literatureNotes.write).toHaveBeenLastCalledWith(
+        edit("authors", ["Doe, J", "Roe", "Poe"]),
+      );
+      expect(document.activeElement).toBe(cell("authors"));
+    });
+
+    it("moves between pills with the arrows, and removes the last with Backspace from an empty field", async () => {
+      const { cell, input, press, literatureNotes } = await typed(
+        ["vault.authors"],
+        { authors: ["Doe, J", "Roe", "Poe"] },
+      );
+      const pill = (item: string) =>
+        cell("authors").querySelector<HTMLElement>(
+          `[data-query-vault-chip="${item}"]`,
+        )!;
+      const pressOn = (el: Element, key: string) =>
+        act(() => {
+          el.dispatchEvent(
+            new KeyboardEvent("keydown", { key, bubbles: true }),
+          );
+        });
+
+      await act(() => cell("authors").click());
+      await press("Backspace");
+      expect(document.activeElement).toBe(pill("Poe"));
+      await pressOn(pill("Poe"), "ArrowLeft");
+      expect(document.activeElement).toBe(pill("Roe"));
+      await pressOn(pill("Roe"), "ArrowRight");
+      expect(document.activeElement).toBe(pill("Poe"));
+      await pressOn(pill("Poe"), "ArrowRight");
+      expect(document.activeElement).toBe(input());
+
+      await press("Backspace");
+      await pressOn(pill("Poe"), "Backspace");
+      expect(document.activeElement).toBe(pill("Roe"));
+      await pressOn(pill("Roe"), "ArrowDown");
+      expect(document.activeElement).toBe(input());
+      await press("Enter");
+
+      expect(literatureNotes.write).toHaveBeenLastCalledWith(
+        edit("authors", ["Doe, J", "Roe"]),
+      );
     });
 
     it("gives a property the editor and icon of its assigned type, whatever its value shows as", async () => {

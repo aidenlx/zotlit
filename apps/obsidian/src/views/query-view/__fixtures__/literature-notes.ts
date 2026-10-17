@@ -11,6 +11,9 @@ export function noLiteratureNotes(): LiteratureNotes {
     read: () => ({ note: false }),
     managed: () => false,
     write: () => Promise.resolve("cancelled"),
+    suggestions: () => [],
+    resolves: () => false,
+    openLink: () => {},
     open: () => {},
     create: () => Promise.resolve(),
   };
