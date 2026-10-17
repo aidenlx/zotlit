@@ -2,7 +2,9 @@
 // frontmatter key on the Item's Literature Note, an empty cell where the note
 // lacks the key or holds null, and a placeholder where the Item has no note
 // to read it from. A cell reads again when the note's frontmatter changes,
-// with no new run of the view's query.
+// with no new run of the view's query. In the Table a cell of a row with a
+// note edits in place, as text; a key the note's Profile replaces on each
+// update stays read-only.
 //
 // @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
 import {
@@ -10,13 +12,20 @@ import {
   useEffect,
   useMemo,
   useReducer,
+  useRef,
+  useState,
   useSyncExternalStore,
 } from "react";
+import type { KeyboardEvent } from "react";
 
 import { valueText } from "@zotlit/item-query";
 import type { ProjectionJson } from "@zotlit/item-query";
 
+import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
+import { getLogger } from "@/lib/log";
+import { BaseNotice } from "@/lib/notice";
+import { cn } from "@/lib/utils";
 
 import type { LiteratureNotes, VaultHost, VaultValue } from "./table-notes";
 
@@ -121,4 +130,107 @@ export function VaultCellContent({ value }: { value: VaultValue }) {
 /** The vault cell of `name` for the Item `itemKey`. */
 export function VaultCell(props: VaultCellProps) {
   return <VaultCellContent value={useVaultValue(props)} />;
+}
+
+const logger = getLogger("QueryView");
+
+/**
+ * The value a cell's text writes: the text, or no value where it is cleared,
+ * so the key stays with no value as the Properties panel leaves it.
+ */
+function textValue(text: string): string | null {
+  return text === "" ? null : text;
+}
+
+/**
+ * The vault cell of `name` for the Item `itemKey` in the Table: a click
+ * edits it as text where the Item has a note and its Profile does not
+ * replace the key. Enter or leaving the field writes it; Escape drops it.
+ * The click stops at the cell, so the gesture of the row or the block that
+ * holds the view does not run.
+ */
+export function VaultEditCell(props: VaultCellProps) {
+  const { notes, itemKey, name, host } = props;
+  const value = useVaultValue(props);
+  const managed = value.note && notes.managed(itemKey, name, host);
+  const [draft, setDraft] = useState<string | null>(null);
+  // Set when Enter or Escape ends the edit, so the blur that follows the
+  // field leaving the page does not end it again.
+  const ended = useRef(false);
+  const input = useRef<HTMLInputElement>(null);
+  const editing = draft !== null;
+  useEffect(() => {
+    if (editing) input.current?.focus();
+  }, [editing]);
+  const editable = value.note && !managed;
+  const begin = () => {
+    ended.current = false;
+    setDraft(vaultText(value));
+  };
+  const end = (commit: boolean) => {
+    if (ended.current || draft === null) return;
+    ended.current = true;
+    setDraft(null);
+    if (!commit || draft === vaultText(value)) return;
+    notes
+      .write({ itemKey, name, value: textValue(draft), host })
+      .catch((error: unknown) => {
+        logger.warn("The Query View could not write a vault property", {
+          error,
+          name,
+        });
+        new BaseNotice(m.query_view_vault_write_failed({ name }));
+      });
+  };
+  const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    event.stopPropagation();
+    if (event.key === "Enter") {
+      event.preventDefault();
+      end(true);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      end(false);
+    }
+  };
+  return (
+    <div
+      data-query-vault-cell=""
+      className={cn(
+        "zt:flex zt:min-w-0 zt:items-center zt:gap-1",
+        editable && draft === null && "zt:cursor-text",
+      )}
+      onClick={(event) => {
+        event.stopPropagation();
+        if (editable && draft === null) begin();
+      }}
+    >
+      {draft === null ? (
+        <>
+          <VaultCellContent value={value} />
+          {managed && (
+            <span
+              data-query-vault-managed=""
+              className="zt:ms-auto zt:flex zt:shrink-0 zt:text-(--text-faint)"
+              aria-label={m.query_view_vault_managed()}
+              title={m.query_view_vault_managed()}
+            >
+              <Icon name="lock" size="var(--icon-xs)" />
+            </span>
+          )}
+        </>
+      ) : (
+        <input
+          data-query-vault-input=""
+          type="text"
+          className="zt:w-full zt:min-w-0"
+          aria-label={m.query_view_vault_edit({ name })}
+          value={draft}
+          ref={input}
+          onInput={(event) => setDraft(event.currentTarget.value)}
+          onKeyDown={onKeyDown}
+          onBlur={() => end(true)}
+        />
+      )}
+    </div>
+  );
 }

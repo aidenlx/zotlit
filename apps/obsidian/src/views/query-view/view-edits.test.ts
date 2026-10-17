@@ -270,4 +270,24 @@ views:
       and: ['itemType == "book"', "vault.rating > 3"],
     });
   });
+
+  it("keeps a sort by a vault property, mixed with a Zotero field, through a save", () => {
+    const file = parseQueryFile(`views:
+  - type: table
+    name: Reading list
+    from: items
+    sort:
+      - property: vault.reading-status
+        direction: DESC
+      - property: dateAdded
+        direction: ASC
+`);
+    const edited = setViewOption(file, 0, { key: "cardSize", value: 240 });
+
+    expect(saved(edited).views[0]!.sort).toEqual([
+      { property: "vault.reading-status", direction: "DESC" },
+      { property: "dateAdded", direction: "ASC" },
+    ]);
+    expect(unusedSettings(saved(edited).views[0]!).sort).toEqual([]);
+  });
 });

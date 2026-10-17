@@ -33,7 +33,12 @@ import { QUERY_FILE_DATASETS, serializeQueryFile } from "./query-file";
 import type { QueryFileDataset } from "./query-file";
 import { formulaIssuesOf } from "./results";
 import { inferType } from "./table-notes";
-import type { VaultHost, VaultPropertyType, VaultValue } from "./table-notes";
+import type {
+  VaultEdit,
+  VaultHost,
+  VaultPropertyType,
+  VaultValue,
+} from "./table-notes";
 import { QueryView, RERUN_DELAY_MS } from "./view";
 import type { QueryViewDeps } from "./view";
 
@@ -143,6 +148,7 @@ async function mount(
   {
     notes = {},
     frontmatter = {},
+    managed = {},
     propertyNames = [],
     sourcePath = "query-files/Reading.zotquery",
     layout,
@@ -154,6 +160,8 @@ async function mount(
     notes?: Record<string, string>;
     /** The frontmatter of each note, by path. */
     frontmatter?: Record<string, Record<string, unknown>>;
+    /** The keys each note's Profile manages with replace, by path. */
+    managed?: Record<string, string[]>;
     /** The names the vault properties take. */
     propertyNames?: string[];
     /** The note or file that holds the view. */
@@ -204,6 +212,17 @@ async function mount(
         return { note: true, value: frontmatter[path]?.[name] ?? null };
       },
     ),
+    managed: (itemKey: string, name: string, host: VaultHost | null) => {
+      const path = host?.itemKey === itemKey ? host.path : notes[itemKey];
+      return path !== undefined && (managed[path]?.includes(name) ?? false);
+    },
+    write: vi.fn(async ({ itemKey, name, value, host }: VaultEdit) => {
+      const path = host?.itemKey === itemKey ? host.path : notes[itemKey];
+      if (path === undefined) return "no-note" as const;
+      frontmatter[path] = { ...frontmatter[path], [name]: value };
+      notesChanged.emit("frontmatter-changed");
+      return "written" as const;
+    }),
     open: vi.fn(),
     create: vi.fn(async (itemKey: string) => {
       notes[itemKey] = `${itemKey}.md`;
@@ -3338,6 +3357,172 @@ ${filters}
     });
   });
 
+  describe("edited in place in the Table", () => {
+    /** One row of Item ITEMAAAA, whose note `A.md` has `status: unread`. */
+    async function editable(options: Parameters<typeof mount>[2] = {}) {
+      const mounted = await mount(
+        [
+          result([
+            itemRow("ITEMAAAA", "Ten simple rules"),
+            itemRow("ITEMBBBB", "Deep learning"),
+          ]),
+        ],
+        undefined,
+        {
+          notes: { ITEMAAAA: "A.md" },
+          frontmatter: { "A.md": { status: "unread" } },
+          ...options,
+        },
+      );
+      await act(() => mounted.view.setText(VAULT_FILE));
+      await mounted.settle();
+      const cell = (itemKey: string) =>
+        mounted.el.querySelector<HTMLElement>(
+          `[data-query-key="${itemKey}"] [data-query-vault-cell]`,
+        )!;
+      const input = () =>
+        mounted.el.querySelector<HTMLInputElement>("[data-query-vault-input]");
+      const type = (text: string) =>
+        act(() => {
+          const field = input()!;
+          field.value = text;
+          field.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+      const press = (key: string) =>
+        act(() => {
+          input()!.dispatchEvent(
+            new KeyboardEvent("keydown", { key, bubbles: true }),
+          );
+        });
+      return { ...mounted, cell, input, type, press };
+    }
+
+    it("enters edit on a click, which goes no further than the cell, and commits on Enter", async () => {
+      const { el, cell, input, type, press, literatureNotes } =
+        await editable();
+      const outside = vi.fn();
+      el.addEventListener("click", outside);
+
+      await act(() => cell("ITEMAAAA").click());
+      expect(input()?.value).toBe("unread");
+      expect(outside).not.toHaveBeenCalled();
+
+      await type("read");
+      await press("Enter");
+
+      expect(literatureNotes.write).toHaveBeenCalledWith({
+        itemKey: "ITEMAAAA",
+        name: "status",
+        value: "read",
+        host: null,
+      });
+      expect(input()).toBeNull();
+      expect(vaultCells(el)[0]).toEqual(["value", "read"]);
+    });
+
+    it("commits when the cell loses focus", async () => {
+      const { cell, input, type, literatureNotes } = await editable();
+
+      await act(() => cell("ITEMAAAA").click());
+      await type("read");
+      await act(() => {
+        input()!.dispatchEvent(new FocusEvent("blur"));
+        input()!.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+      });
+
+      expect(literatureNotes.write).toHaveBeenCalledTimes(1);
+      expect(literatureNotes.write).toHaveBeenCalledWith({
+        itemKey: "ITEMAAAA",
+        name: "status",
+        value: "read",
+        host: null,
+      });
+    });
+
+    it("cancels on Escape, and writes nothing", async () => {
+      const { el, cell, input, type, press, literatureNotes } =
+        await editable();
+
+      await act(() => cell("ITEMAAAA").click());
+      await type("read");
+      await press("Escape");
+
+      expect(input()).toBeNull();
+      expect(vaultCells(el)[0]).toEqual(["value", "unread"]);
+      expect(literatureNotes.write).not.toHaveBeenCalled();
+    });
+
+    it("writes no value, keeping the key, when the cell is cleared", async () => {
+      const { el, cell, type, press, literatureNotes } = await editable();
+
+      await act(() => cell("ITEMAAAA").click());
+      await type("");
+      await press("Enter");
+
+      expect(literatureNotes.write).toHaveBeenCalledWith({
+        itemKey: "ITEMAAAA",
+        name: "status",
+        value: null,
+        host: null,
+      });
+      expect(vaultCells(el)[0]).toEqual(["empty", ""]);
+    });
+
+    it("writes nothing when the text is unchanged", async () => {
+      const { cell, press, literatureNotes } = await editable();
+
+      await act(() => cell("ITEMAAAA").click());
+      await press("Enter");
+
+      expect(literatureNotes.write).not.toHaveBeenCalled();
+    });
+
+    it("keeps a key the note's Profile replaces read-only, with the managed marker", async () => {
+      const { cell, input, literatureNotes } = await editable({
+        managed: { "A.md": ["status"] },
+      });
+
+      expect(
+        cell("ITEMAAAA").querySelector("[data-query-vault-managed]"),
+      ).not.toBeNull();
+      await act(() => cell("ITEMAAAA").click());
+
+      expect(input()).toBeNull();
+      expect(literatureNotes.write).not.toHaveBeenCalled();
+    });
+
+    it("leaves a row with no note read-only", async () => {
+      const { cell, input } = await editable();
+
+      await act(() => cell("ITEMBBBB").click());
+
+      expect(input()).toBeNull();
+    });
+
+    it("writes the note that holds a Query Block for its own Item", async () => {
+      const { cell, type, press, literatureNotes } = await editable({
+        frontmatter: {
+          "A.md": { status: "unread" },
+          "A (copy).md": { status: "unread" },
+        },
+        sourcePath: "A (copy).md",
+        context: () => ({ item: "ITEMAAAA" }),
+        contextSource: "note",
+      });
+
+      await act(() => cell("ITEMAAAA").click());
+      await type("read");
+      await press("Enter");
+
+      expect(literatureNotes.write).toHaveBeenCalledWith({
+        itemKey: "ITEMAAAA",
+        name: "status",
+        value: "read",
+        host: { path: "A (copy).md", itemKey: "ITEMAAAA" },
+      });
+    });
+  });
+
   describe("in the Properties popover", () => {
     async function popover(written: string[]) {
       const mounted = await mount(
@@ -3426,5 +3611,208 @@ ${filters}
         );
       },
     );
+  });
+});
+
+describe("sorted by a vault property", () => {
+  const sortedFile = (sort: string, extra = "") => `views:
+  - type: table
+    name: Reading list
+    from: items
+    limit: 2
+${extra}    order:
+      - title
+      - vault.status
+    sort:
+${sort}`;
+  const BY_STATUS = `      - property: vault.status
+        direction: ASC
+`;
+  const FOUR = () =>
+    result([
+      itemRow("ITEMAAAA", "Ten simple rules"),
+      itemRow("ITEMBBBB", "Deep learning"),
+      itemRow("ITEMCCCC", "Attention"),
+      itemRow("ITEMDDDD", "Transformers"),
+    ]);
+  const VAULT = {
+    notes: { ITEMAAAA: "A.md", ITEMBBBB: "B.md", ITEMCCCC: "C.md" },
+    frontmatter: {
+      "A.md": { status: "unread" },
+      "B.md": { status: "reading" },
+      "C.md": { status: "done" },
+    },
+  };
+  /** The titles of the rows on screen, in order. */
+  const titles = (view: QueryView) =>
+    (view.state.getState().results?.rows ?? []).map(
+      (row) => row.values["title"],
+    );
+
+  it("asks ZotLit Query for every match up to the cap, and shows exactly `limit` rows in the vault order", async () => {
+    const { view, run, settle } = await mount([FOUR()], undefined, VAULT);
+    await act(() =>
+      view.setText(
+        sortedFile(`${BY_STATUS}      - property: dateAdded
+        direction: DESC
+`),
+      ),
+    );
+    await settle();
+
+    const request = run.mock.calls[0]![0];
+    expect(request.limit).toBe(5000);
+    expect(request.sort).toEqual([{ field: "dateAdded", direction: "desc" }]);
+    // The engine sort field comes back, though no column shows it.
+    expect(request.fields).toContain("dateAdded");
+    expect(request.fields).not.toContain("vault.status");
+    expect(titles(view)).toEqual(["Attention", "Deep learning"]);
+    expect(view.state.getState().results).toMatchObject({
+      count: 2,
+      matched: 4,
+      truncated: true,
+    });
+  });
+
+  it("puts an Item with no note or no value last, descending as well", async () => {
+    const { view, settle } = await mount([FOUR()], undefined, {
+      ...VAULT,
+      frontmatter: { ...VAULT.frontmatter, "B.md": { status: null } },
+    });
+    await act(() =>
+      view.setText(
+        sortedFile(BY_STATUS.replace("ASC", "DESC")).replace(
+          "limit: 2",
+          "limit: 10",
+        ),
+      ),
+    );
+    await settle();
+
+    expect(titles(view)).toEqual([
+      "Ten simple rules",
+      "Attention",
+      "Deep learning",
+      "Transformers",
+    ]);
+    expect(view.state.getState().results?.truncated).toBe(false);
+  });
+
+  it("keeps `limit` rows in each group after the sort", async () => {
+    const rows = [
+      itemRow("ITEMAAAA", "Ten simple rules"),
+      itemRow("ITEMBBBB", "Deep learning"),
+      itemRow("ITEMCCCC", "Attention"),
+      {
+        ...itemRow("ITEMDDDD", "Transformers"),
+        values: {
+          ...itemRow("ITEMDDDD", "Transformers").values,
+          itemType: "book",
+        },
+      },
+    ];
+    const { view, settle } = await mount([result(rows)], undefined, VAULT);
+    await act(() =>
+      view.setText(
+        sortedFile(
+          BY_STATUS,
+          `    groupBy:
+      property: itemType
+      direction: ASC
+`,
+        ).replace("limit: 2", "limit: 1"),
+      ),
+    );
+    await settle();
+
+    expect(
+      view.state
+        .getState()
+        .results?.records.map(({ row, group }) => [
+          row.values["title"],
+          group?.key,
+        ]),
+    ).toEqual([
+      ["Transformers", "book"],
+      ["Attention", "journalArticle"],
+    ]);
+  });
+
+  it("shows that more matched when ZotLit Query stops at the cap", async () => {
+    const { view, settle } = await mount(
+      [result([itemRow("ITEMAAAA", "Ten simple rules")], 5001)],
+      undefined,
+      VAULT,
+    );
+    await act(() =>
+      view.setText(sortedFile(BY_STATUS).replace("limit: 2", "limit: 10")),
+    );
+    await settle();
+
+    expect(view.state.getState().results).toMatchObject({
+      count: 1,
+      matched: 5001,
+      truncated: true,
+    });
+  });
+
+  it("sends the view's limit when no sort key is a vault property", async () => {
+    const { view, run, settle } = await mount([FOUR()], undefined, VAULT);
+    await act(() =>
+      view.setText(
+        sortedFile(`      - property: title
+        direction: ASC
+`),
+      ),
+    );
+    await settle();
+
+    expect(run.mock.calls[0]![0].limit).toBe(2);
+  });
+
+  it("runs again when the limit changes", async () => {
+    const { view, run, settle } = await mount(
+      [FOUR(), FOUR()],
+      undefined,
+      VAULT,
+    );
+    await act(() => view.setText(sortedFile(BY_STATUS)));
+    await settle();
+    await act(() =>
+      view.setText(sortedFile(BY_STATUS).replace("limit: 2", "limit: 3")),
+    );
+    await settle();
+
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(titles(view)).toEqual([
+      "Attention",
+      "Deep learning",
+      "Ten simple rules",
+    ]);
+  });
+
+  it("offers the vault properties in the Sort control of an Items view", async () => {
+    const { view, el, settle } = await mount([FOUR()], undefined, {
+      ...VAULT,
+      propertyNames: ["status", "pages"],
+    });
+    await act(() => view.setText(sortedFile(BY_STATUS)));
+    await settle();
+    await act(() =>
+      el.querySelector<HTMLElement>('[data-query-toolbar="sort"]')!.click(),
+    );
+
+    const select = document.body.querySelector<HTMLSelectElement>(
+      '[data-sort-row="vault.status"] [data-sort-property]',
+    )!;
+    const options = [...select.options].map((o) => o.value);
+    expect(options).toContain("vault.status");
+    expect(options).toContain("vault.pages");
+    expect(options).not.toContain("vault.literatureNote");
+    expect(
+      document.body
+        .querySelector('[data-sort-row="vault.status"]')
+        ?.hasAttribute("data-sort-unused"),
+    ).toBe(false);
   });
 });
