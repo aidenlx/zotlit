@@ -8,11 +8,11 @@ import { Callout } from "@/components/callout";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-ZotLit reads your library from the Zotero database. ZotLit Companion, the Zotero add-on, keeps recent changes available and connects Zotero actions to Obsidian. Live updates provide an optional third connection.
+ZotLit reads your library from the Zotero database. Browsing and reading need the database only: the Library View, search, and opening a PDF in Obsidian work with Zotero closed and with no add-on in Zotero. ZotLit Companion, the Zotero add-on, keeps recent changes available and connects Zotero actions to Obsidian. Live updates provide an optional third connection.
 
-ZotLit supports Zotero 9 or later and requires the Companion. To save annotation changes from Obsidian, you need Zotero 10 or later. With Zotero 9, you can read PDFs and their annotations, but you cannot edit them.
+ZotLit supports Zotero 9 or later. To save annotation changes from Obsidian, you need Zotero 10 or later. With Zotero 9, you can read PDFs and their annotations, but you cannot edit them.
 
-## Reading the Zotero database
+## Reading the Zotero database [#reading-the-zotero-database]
 
 Zotero can keep recent changes in a separate database file while it is running. ZotLit uses a read mode to access your library without interfering with Zotero.
 
@@ -102,7 +102,7 @@ This connection does not use protocol links or the ZotLit server. For the steps,
 
 ## How the pieces fit together
 
-ZotLit can read the database while Zotero is closed. Install the Companion in Zotero to keep data current after changes. Protocol links and live updates also depend on the Companion.
+ZotLit can read the database while Zotero is closed, and that is all browsing and reading need. Install the Companion in Zotero to keep data current after changes, especially where ZotLit reads in <UiLabel name={m.settings_db_read_mode_immutable()} /> mode. Protocol links and live updates also depend on the Companion. [Keep Zotero and Obsidian in sync](/docs/how-to/keep-zotero-and-obsidian-in-sync) walks through the setup.
 
 ## See also
 
@@ -119,7 +119,7 @@ ZotLit can read the database while Zotero is closed. Install the Companion in Zo
   />
   <Card
     title="Install ZotLit Companion"
-    description="Download and install the required Zotero add-on."
+    description="Download and install the Zotero add-on."
     href="/docs/install-companion"
   />
   <Card
