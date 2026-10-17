@@ -1,6 +1,6 @@
 // The Library View where ZotLit cannot find the Zotero data directory: the
-// tree and the list say so and offer to locate the folder or open settings,
-// and the papers come back as soon as the database reads again. Where only a
+// tree says so in one line, the list offers to locate the folder or open
+// settings, and the papers come back as soon as the database reads again. Where only a
 // refresh failed, the list keeps the rows it read last under a short note.
 //
 // @see apps/obsidian/docs/adr/0076-the-library-view-is-the-first-screen.md
@@ -75,7 +75,7 @@ export class ZoteroNotFound extends Component {
     this.register(reads.on("refresh-failed", update));
     this.register(reads.on("db-file-missing", update));
     update();
-    this.#mount(tree, <TreeNotFound actions={setupActions} />);
+    this.#mount(tree, <TreeNotFound />);
     this.#mount(list, <ListNotFound actions={setupActions} />);
   }
 
@@ -95,26 +95,15 @@ export class ZoteroNotFound extends Component {
 
 type Actions = ZoteroNotFoundDeps["setupActions"];
 
-function TreeNotFound({ actions }: { actions: Actions }) {
+/** One line in place of the tree: the list says the rest and offers the actions. */
+function TreeNotFound() {
   return (
     <div
       data-library-not-found="tree"
-      className="zt:flex zt:flex-col zt:gap-(--size-4-2) zt:p-(--size-4-2)"
+      className="zt:flex zt:items-center zt:gap-(--size-2-2) zt:p-(--size-4-2) zt:px-(--size-4-4) zt:text-(length:--nav-item-size) zt:text-warning"
     >
-      <div className="zt:px-(--size-4-2) zt:text-(length:--font-ui-smaller) zt:font-(--font-semibold) zt:text-muted-foreground">
-        {m.library_view_tree_label()}
-      </div>
-      <div className="zt:flex zt:items-center zt:gap-(--size-2-2) zt:px-(--size-4-2) zt:text-(length:--nav-item-size) zt:text-warning">
-        <Icon name="triangle-alert" size="var(--icon-s)" />
-        {m.library_view_not_found_tree()}
-      </div>
-      <Button
-        icon="folder-search"
-        className="zt:mx-(--size-4-2) zt:self-start"
-        onClick={actions.locateZotero}
-      >
-        {m.library_view_locate()}
-      </Button>
+      <Icon name="triangle-alert" size="var(--icon-s)" />
+      {m.library_view_not_found_tree()}
     </div>
   );
 }

@@ -72,7 +72,6 @@ async function setup(data: Record<string, unknown> = {}) {
     setupActions: {
       openSettings: vi.fn(),
       pickFolder: vi.fn(),
-      searchLibrary: vi.fn(),
       locateZotero: vi.fn(),
     },
     templateMigration: { convert: vi.fn(), retryCleanup: vi.fn() },
@@ -111,9 +110,16 @@ it("shows the setup steps while setup is incomplete, with no Companion step", as
   const el = await open(deps);
   expect(heading(el, m.welcome_step_connect_title())).toBe(true);
   expect(heading(el, m.welcome_step_folder_title())).toBe(true);
-  expect(heading(el, m.welcome_step_library_title())).toBe(true);
   // ZotLit Companion is named at the action that needs it, not here.
   expect(el.textContent).not.toContain("Companion");
+});
+
+it("leaves out the Connect step while ZotLit cannot read the Zotero data folder, which the Library View says itself", async () => {
+  const { deps } = await setup();
+  Object.assign(deps.reads, { state: "degraded" });
+  const el = await open(deps);
+  expect(heading(el, m.welcome_step_connect_title())).toBe(false);
+  expect(heading(el, m.welcome_step_folder_title())).toBe(true);
 });
 
 it("goes away on dismissal, and stays away when the view opens again", async () => {

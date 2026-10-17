@@ -2928,7 +2928,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           steps: [
             m.welcome_step_connect_title(),
             m.welcome_step_folder_title(),
-            m.welcome_step_library_title(),
           ],
           companion: false,
         }),
@@ -2974,7 +2973,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEvalUntil(vaultId, readNotFound, {
         expected: JSON.stringify({
-          tree: `${m.library_view_tree_label()}${m.library_view_not_found_tree()}${m.library_view_locate()}`,
+          tree: m.library_view_not_found_tree(),
           list: [m.library_view_locate(), m.welcome_action_open_settings()],
           papers: false,
           search: false,

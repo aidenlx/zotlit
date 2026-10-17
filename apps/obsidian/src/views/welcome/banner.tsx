@@ -18,7 +18,11 @@ import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { WelcomeActionsContext } from "./actions";
 import type { WelcomeActions } from "./actions";
-import { readConnectionStatus, readConnectionSync } from "./connection";
+import {
+  readConnectionStatus,
+  readConnectionSync,
+  unavailable,
+} from "./connection";
 import { templateMigrationNotice } from "./migration-notice";
 import type { SetupActions } from "./setup-actions";
 import { createWelcomeStore, WelcomeStoreProvider } from "./store";
@@ -153,6 +157,7 @@ export class WelcomeBanner extends Component {
     stack.defer(reads.on("changed", reload));
     stack.defer(reads.on("degraded", reload));
     stack.defer(reads.on("refresh-failed", reload));
+    stack.defer(reads.on("db-file-missing", reload));
     stack.defer(
       reads.on("refreshing", (active) => {
         if (active) {
@@ -178,6 +183,8 @@ export class WelcomeBanner extends Component {
   }
 
   #loadConnection(): void {
+    // The Library View shows its not-found card on the same reading.
+    this.#store.setState({ notFound: unavailable(this.#deps) });
     const gen = ++this.#connectionGen;
     this.#armChecking(gen);
     this.#connection = readConnectionStatus(this.#deps).then((connection) => {

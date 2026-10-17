@@ -371,7 +371,6 @@ function pluginData(stored?: unknown) {
   const setupActions = {
     openSettings: vi.fn(),
     pickFolder: vi.fn(),
-    searchLibrary: vi.fn(),
     locateZotero: vi.fn(),
   };
   const notes = new Set(NOTED);
@@ -934,10 +933,10 @@ it("says where Zotero's data folder cannot be found, offers to locate it, and li
     )!;
   // The not-found parts show in place of the tree and the list.
   expect(shell.hasAttribute("data-zotero-missing")).toBe(true);
-  expect(notFound("tree").textContent).toContain("Zotero not found");
-  expect(notFound("list").textContent).toContain(
-    "We couldn't find your Zotero library",
-  );
+  // The tree part is one line; the list says the rest, once.
+  expect(notFound("tree").textContent).toBe("Zotero not found");
+  expect(notFound("tree").querySelectorAll("button")).toHaveLength(0);
+  expect(notFound("list").textContent).toContain("Zotero library not found");
   // The facet chips under the tree hide with it.
   expect(
     view.contentEl
@@ -954,10 +953,9 @@ it("says where Zotero's data folder cannot be found, offers to locate it, and li
     [...notFound(part).querySelectorAll("button")].find(
       (el) => el.textContent === text,
     )!;
-  await press(view, button("tree", "Locate data folder"));
   await press(view, button("list", "Locate data folder"));
   await press(view, button("list", "Open settings"));
-  expect(setupActions.locateZotero).toHaveBeenCalledTimes(2);
+  expect(setupActions.locateZotero).toHaveBeenCalledOnce();
   expect(setupActions.openSettings).toHaveBeenCalledOnce();
   // No setup-time hint names ZotLit Companion or Better BibTeX.
   expect(view.contentEl.textContent).not.toMatch(/Companion|Better BibTeX/);
@@ -1907,7 +1905,7 @@ describe("Welcome View banner once setup is complete", () => {
       ),
     );
     expect(banner(view)).toContain(m.welcome_step_connect_title());
-    expect(banner(view)).toContain(m.welcome_step_library_title());
+    expect(banner(view)).toContain(m.welcome_step_folder_title());
   });
 
   it("offers the template conversion while it is pending", async () => {

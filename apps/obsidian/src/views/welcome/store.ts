@@ -31,12 +31,22 @@ export interface WelcomeState {
   templateFolder: string;
   templateConversionResult: Settings["note.template-conversion-result"];
   v1TemplatesPresent: boolean;
+  /**
+   * ZotLit cannot read the Zotero data folder the settings name, so the
+   * Library View under the banner shows its not-found card.
+   */
+  notFound: boolean;
 }
 
 /** What the banner shows, section by section; each is absent while it does not apply. */
 export interface BannerSections {
-  /** The setup steps, with the links under them. */
+  /** The setup steps. */
   readonly steps: boolean;
+  /**
+   * The Connect step, among the steps: left out while the Library View
+   * shows its not-found card, which says the same.
+   */
+  readonly connect: boolean;
   /** The template conversion: its offer while it is pending, else its result. */
   readonly conversion: "offer" | "result" | null;
   /** The Migration Prompt: the guide to the v1 templates still in the vault. */
@@ -50,7 +60,8 @@ export interface BannerSections {
  * upgrade shows until a dismissal acknowledges it. Otherwise nothing shows
  * once the researcher dismissed the banner. The setup steps show while setup
  * is incomplete (once the connection is known, so a complete setup never
- * flashes), and whenever the researcher asked for the banner; the template
+ * flashes), and whenever the researcher asked for the banner, the Connect
+ * step only while the Library View does not say Zotero is not found; the template
  * conversion offer shows while it is pending, and its result while cleanup
  * remains or the steps show.
  *
@@ -71,6 +82,7 @@ export function bannerSections(state: WelcomeState): BannerSections | null {
       : null;
   const sections: BannerSections = {
     steps,
+    connect: steps && !state.notFound,
     conversion,
     migration: steps && conversion === null && state.v1TemplatesPresent,
     companion: state.migrationPending,
@@ -92,6 +104,7 @@ export function createWelcomeStore() {
     templateFolder: "",
     templateConversionResult: null,
     v1TemplatesPresent: false,
+    notFound: false,
   }));
 }
 

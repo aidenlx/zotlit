@@ -1,3 +1,4 @@
+import { Menu } from "@mock/obsidian";
 // @vitest-environment happy-dom
 import { act } from "preact/test-utils";
 import { createElement } from "react";
@@ -92,6 +93,10 @@ it.each([false, true])(
 );
 
 describe("Welcome setup steps", () => {
+  const headings = (container: HTMLElement) =>
+    [...container.querySelectorAll('[role="heading"]')].map(
+      (el) => el.textContent,
+    );
   /** The timeline node a step heading belongs to, which carries its state. */
   function isDone(container: HTMLElement, title: string): boolean {
     const heading = [...container.querySelectorAll('[role="heading"]')].find(
@@ -102,30 +107,67 @@ describe("Welcome setup steps", () => {
     return node.classList.contains("zt:border-green");
   }
 
+  it("shows two steps, Connect and the folder, under the name alone", async () => {
+    const { container } = await render("fresh");
+    expect(headings(container)).toEqual([
+      "ZotLit",
+      m.welcome_step_connect_title(),
+      m.welcome_step_folder_title(),
+    ]);
+  });
+
   it("marks the folder step done once the folder exists", async () => {
     const { container } = await render("fresh", {
       literatureFolderExists: true,
     });
     expect(isDone(container, m.welcome_step_folder_title())).toBe(true);
-    expect(isDone(container, m.welcome_step_library_title())).toBe(false);
   });
 
-  it("marks the library step done once ZotLit reads the library", async () => {
-    const { container } = await render("fresh", {
-      connection: { status: "connected", path: "~/Zotero", itemCount: 3 },
-    });
-    expect(isDone(container, m.welcome_step_library_title())).toBe(true);
-    expect(isDone(container, m.welcome_step_folder_title())).toBe(false);
-  });
-
-  it("keeps each step to do until it is complete", async () => {
-    const { container } = await render("fresh");
-    for (const title of [
+  it("leaves out the Connect step while the Library View says Zotero is not found", async () => {
+    const { container } = await render("fresh", { notFound: true });
+    expect(headings(container)).toEqual([
+      "ZotLit",
       m.welcome_step_folder_title(),
-      m.welcome_step_library_title(),
-    ])
-      expect(isDone(container, title)).toBe(false);
+    ]);
   });
+});
+
+describe("Welcome links", () => {
+  const LINKS = () => [
+    m.welcome_docs_getting_started(),
+    m.welcome_docs_templates(),
+    m.welcome_docs_citations(),
+    m.welcome_link_github(),
+    m.welcome_link_discussions(),
+    m.welcome_link_sponsor(),
+    m.welcome_link_blog(),
+    m.welcome_link_changelog(),
+  ];
+
+  it("puts the documentation and community links under one Help menu", async () => {
+    const { actions, container } = await render("fresh");
+    expect(container.querySelectorAll("a")).toHaveLength(0);
+    const help = container.querySelector<HTMLElement>("[data-welcome-help]")!;
+    expect(help.textContent).toBe(m.welcome_help());
+    Menu.instances.length = 0;
+    await act(() => help.click());
+    const menu = Menu.instances.at(-1)!;
+    expect(menu.items.map((item) => item.title)).toEqual(LINKS());
+    menu.items[0]!.click();
+    expect(actions.openExternal).toHaveBeenCalledOnce();
+  });
+
+  it.each([false, true])(
+    "shows the migration line only while a Migration Prompt is pending (%s)",
+    async (migrationPending) => {
+      const { container } = await render(
+        migrationPending ? "upgraded" : "fresh",
+      );
+      expect(
+        container.textContent?.includes(m.welcome_footer_migration_link()),
+      ).toBe(migrationPending);
+    },
+  );
 });
 
 it("replaces the pending prompt with the persisted result after conversion", async () => {
@@ -238,7 +280,6 @@ async function render(
     openExternal: vi.fn(),
     openSettings: vi.fn(),
     pickFolder: vi.fn(),
-    searchLibrary: vi.fn(),
   };
   const container = document.createElement("div");
   document.body.append(container);
