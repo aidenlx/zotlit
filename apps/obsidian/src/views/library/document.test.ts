@@ -145,8 +145,6 @@ describe("withNode", () => {
 
 const LABELS = {
   papers: "Papers",
-  creators: "Creators",
-  year: "Year",
   editedInZotero: "edited in Zotero",
 };
 /** The Library Scope in force: My Library and one group. */
@@ -221,6 +219,10 @@ function plans(filter: string | undefined): boolean {
 describe("libraryViewQuery — the rows", () => {
   it("shows at most a thousand rows, so a large library opens at once", () => {
     expect(derive({}).view.limit).toBe(1000);
+  });
+
+  it("names no Properties, as the Query View labels Creators and Year itself", () => {
+    expect(derive({}).file.properties).toBeUndefined();
   });
 });
 
@@ -566,6 +568,10 @@ describe("libraryViewQueryFileText — Save as query file", () => {
     expect(view.sort).toEqual([
       { property: "dateModified", direction: "DESC" },
     ]);
+  });
+
+  it("writes no Display Names for Creators and Year", () => {
+    expect(saved({}).file.properties).toBeUndefined();
   });
 
   it("writes the Library alone as the filter of a Library node", () => {

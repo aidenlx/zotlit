@@ -17,7 +17,6 @@ import * as v from "valibot";
 // @see apps/obsidian/docs/adr/0072-search-enters-the-library-view-as-an-ordered-key-set.md
 // @see apps/obsidian/docs/adr/0075-recent-is-a-library-tree-node-that-writes-a-sort.md
 import type { FilterTree } from "@zotlit/filter-expression";
-import { nameDictionary } from "@zotlit/item-query";
 
 import type {
   QueryViewRequest,
@@ -216,11 +215,9 @@ export function serializeLibraryViewDocument(
   };
 }
 
-/** The names the derived query shows: its view's name, two Display Names and Recent's reason. */
+/** The names the derived query shows: its view's name and Recent's reason. */
 export interface LibraryViewLabels {
   readonly papers: string;
-  readonly creators: string;
-  readonly year: string;
   /** Recent's reason for an Item Zotero changed last. */
   readonly editedInZotero: string;
 }
@@ -313,12 +310,6 @@ export function libraryViewQuery(
   const recent = node.kind === "recent";
   const text = serializeQueryFile({
     ...(filters.length > 0 && { filters: filterTree(filters) }),
-    properties: nameDictionary(
-      new Map([
-        ["creators", { displayName: labels.creators }],
-        ["date.year", { displayName: labels.year }],
-      ]),
-    ),
     views: [
       {
         type: doc.layout,

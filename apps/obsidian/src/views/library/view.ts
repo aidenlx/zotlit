@@ -584,8 +584,6 @@ export class LibraryView extends ItemView {
 function labels(): LibraryViewLabels {
   return {
     papers: m.library_view_papers_view_name(),
-    creators: m.query_file_creators_property(),
-    year: m.query_file_year_property(),
     editedInZotero: m.library_view_recent_edited_in_zotero(),
   };
 }
