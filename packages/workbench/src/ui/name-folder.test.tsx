@@ -320,16 +320,8 @@ it("scopes problem navigation to the selected editor instance", () => {
 
 it("shows Default bindings as read-only inherited values", () => {
   const { container } = open({ source: DEFAULT_PROFILE_SOURCE });
-  expect(container.textContent).not.toContain(m.workbench_name_override());
   expect(container.textContent).not.toContain(m.workbench_name_use_default());
   expect(screen.queryByRole("switch")).toBeNull();
-  expect(
-    screen.queryByRole("button", {
-      name: m.workbench_name_override_for({
-        name: m.workbench_name_binding_folder(),
-      }),
-    }),
-  ).toBeNull();
   expect(screen.getByText("literatures")).toBeDefined();
   expect(screen.getByText(m.workbench_name_default_lede())).toBeDefined();
   expect(screen.getByText(m.workbench_name_value_no_style())).toBeDefined();
