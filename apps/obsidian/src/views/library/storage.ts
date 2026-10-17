@@ -5,6 +5,7 @@ import { pluginDataStorage } from "@/views/query-view/plugin-data-storage";
 import type { QueryViewHost } from "@/views/query-view/view";
 
 import {
+  documentWithNode,
   parseLibraryViewDocument,
   serializeLibraryViewDocument,
 } from "./document";
@@ -16,7 +17,7 @@ const KEY = "library.document";
 export interface LibraryViewStorage extends Pick<QueryViewHost, "save"> {
   /** The document plugin data holds now. */
   document: () => LibraryViewDocument;
-  /** Keep `node` as the tree selection. Settles once plugin data holds it; rejects where the write failed. */
+  /** Keep `node` as the tree selection, with the sort it writes. Settles once plugin data holds it; rejects where the write failed. */
   select: (node: LibraryNode) => Promise<void>;
 }
 
@@ -34,10 +35,12 @@ export function libraryViewStorage(
     document: () => parseLibraryViewDocument(settings.current?.[KEY] ?? null),
     select: async (node) => {
       settings.update((current) => ({
-        [KEY]: serializeLibraryViewDocument({
-          ...parseLibraryViewDocument(current[KEY] ?? null),
-          node,
-        }),
+        [KEY]: serializeLibraryViewDocument(
+          documentWithNode(
+            parseLibraryViewDocument(current[KEY] ?? null),
+            node,
+          ),
+        ),
       }));
       await settings.flush();
     },
