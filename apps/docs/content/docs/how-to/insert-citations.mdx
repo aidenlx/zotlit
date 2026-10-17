@@ -19,7 +19,7 @@ Citation insertion works independently of the Document Citation Set and In-text 
 
 ## Give your items citation keys [#citation-keys]
 
-A citation names a Zotero item by its citation key, such as `smith2024`. ZotLit reads each item's key from Zotero, whether Zotero's own citation key field or Better BibTeX holds it.
+A citation names a Zotero item by its citation key, such as `smith2024`. ZotLit reads each item's key from Zotero's native citation key field. Better BibTeX writes the keys it generates into that field, so ZotLit sees them as well. In a group library you cannot edit, Better BibTeX keeps its keys to itself, and ZotLit sees only the keys already in the field.
 
 [Better BibTeX](https://retorque.re/zotero-better-bibtex/installation/), a Zotero add-on, is recommended once you start citing. It generates [stable citation keys](https://retorque.re/zotero-better-bibtex/citing/) from a pattern for every item, and it can keep a bibliography file up to date with [automatic exports](https://retorque.re/zotero-better-bibtex/exporting/auto/) for [native Pandoc export](/docs/how-to/export-with-native-pandoc). ZotLit does not require it.
 
