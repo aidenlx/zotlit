@@ -3000,7 +3000,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
   });
 
-  it("shows the selected row's Reading Card with its seeded fields, abstract and Annotation Cards under the Editing Capability, runs the row menu's actions from its buttons, opens its Annotations in the sidebar, and hides it with no selection, on a narrow pane and while Zotero's data folder is missing", async () => {
+  it("shows the selected row's Reading Card with its seeded fields, abstract and Annotation Cards under the Editing Capability, runs the row menu's actions from its buttons, opens its Annotations in the sidebar, shows it over the list on a narrow pane, and hides it with no selection and while Zotero's data folder is missing", async () => {
     const services = "app.plugins.plugins.zotlit.services";
     const snapshot = await obEval(
       vaultId,
@@ -3048,7 +3048,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];await app.workspace.revealLeaf(leaf);app.workspace.setActiveLeaf(leaf,{focus:true});await leaf.view.query.settled;const el=leaf.view.contentEl;const card=el.querySelector('[data-library-card]');const row=key=>el.querySelector('[data-query-item-row="'+key+'"]');${script}})()`,
       );
     /** What the card shows, `null` while it is out of view. */
-    const readCard = `const part=name=>card.querySelector('[data-library-card-'+name+']')?.textContent??null;return JSON.stringify(card.checkVisibility()?{title:part('title'),meta:part('meta'),abstract:part('abstract'),actions:[...card.querySelectorAll('[data-library-card-action]')].map(b=>b.textContent),cards:[...card.querySelectorAll('.zt-annot-card[data-zotero-annotation-key]')].map(n=>({key:n.getAttribute('data-zotero-annotation-key'),color:n.getAttribute('data-annot-color'),page:n.querySelector('.zt-annot-page-chip')?.textContent??null,text:n.textContent})).toSorted((a,b)=>a.key.localeCompare(b.key))}:null);`;
+    const readCard = `const part=name=>card.querySelector('[data-library-card-'+name+']')?.textContent??null;return JSON.stringify(card.checkVisibility()?{title:part('title'),meta:part('meta'),abstract:part('abstract'),actions:[...card.querySelectorAll('[data-library-card-action]')].map(b=>b.textContent||b.getAttribute('aria-label')),cards:[...card.querySelectorAll('.zt-annot-card[data-zotero-annotation-key]')].map(n=>({key:n.getAttribute('data-zotero-annotation-key'),color:n.getAttribute('data-annot-color'),page:n.querySelector('.zt-annot-page-chip')?.textContent??null,text:n.textContent})).toSorted((a,b)=>a.key.localeCompare(b.key))}:null);`;
 
     // No row is selected: the card is out of view.
     expect(
@@ -3079,11 +3079,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       title: paper.title,
       meta: `${authors.join(", ")} · ${paper.date} · ${paper.venue}`,
       abstract,
+      // Two buttons; the rest of the row menu under More, and the sidebar
+      // as an icon.
       actions: [
         m.library_view_menu_open_pdf(),
         m.library_view_menu_open_note(),
-        m.library_view_menu_insert_citation(),
-        "",
+        m.library_view_card_more(),
         m.library_view_card_open_in_sidebar(),
       ],
     });
@@ -3115,13 +3116,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       blocked: true,
     });
 
-    // The buttons do what the row menu does: Insert citation into the note
-    // active last, Open literature note, Open PDF.
+    // The buttons do what the row menu does: Insert citation, from the More
+    // menu, into the note active last, Open literature note, Open PDF.
     const active = () => activeTab(vaultId);
     const activeWhen = (ready: (shown: ActiveTab) => boolean) =>
       readUntil(active, ready, { what: "Active tab", tries: 60 });
     await inLibrary(
-      `press(card.querySelector('[data-library-card-action="cite"]'),'Insert citation');return true`,
+      `press(card.querySelector('[data-library-card-action="more"]'),'More actions');const item=await until('Insert citation',()=>[...activeDocument.querySelectorAll('.menu .menu-item')].find(n=>n.querySelector('.menu-item-title')?.textContent===${JSON.stringify(m.library_view_menu_insert_citation())}));press(item,'Insert citation');return true`,
     );
     expect(
       await waitFor(async () =>
@@ -3167,21 +3168,34 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     ).toBe(true);
 
-    // A narrow pane keeps the list and puts the card away; the row stays
-    // selected, and the card comes back on a wide pane.
-    const narrow = (share: number, card: boolean) =>
+    // A narrow pane shows the card over the list, and a wide one beside it;
+    // the row stays selected.
+    const narrow = (share: number, over: boolean) =>
       inLibrary(
-        `app.workspace.rightSplit.collapse();const beside=window.zotlitE2EBeside??=app.workspace.createLeafBySplit(leaf,'vertical');leaf.parent.setDimension(${share});beside.parent.setDimension(${100 - share});await until('card ${card ? "shows" : "hides"} at '+el.clientWidth+'px',()=>card.checkVisibility()===${card},5000);return JSON.stringify({card:card.checkVisibility(),selected:el.querySelector('[data-query-item-row][data-selected]')?.getAttribute('data-query-item-row')??null});`,
+        `app.workspace.rightSplit.collapse();const beside=window.zotlitE2EBeside??=app.workspace.createLeafBySplit(leaf,'vertical');leaf.parent.setDimension(${share});beside.parent.setDimension(${100 - share});await until('card ${over ? "over" : "beside"} the list at '+el.clientWidth+'px',()=>card.checkVisibility()&&(getComputedStyle(card).position==='absolute')===${over},5000);return JSON.stringify({card:card.checkVisibility(),over:getComputedStyle(card).position==='absolute',selected:el.querySelector('[data-query-item-row][data-selected]')?.getAttribute('data-query-item-row')??null});`,
       );
     cleanup.defer(async () => {
       await obEval(vaultId, "delete window.zotlitE2EBeside;true");
     });
-    expect(JSON.parse(await narrow(30, false))).toEqual({
-      card: false,
+    expect(JSON.parse(await narrow(30, true))).toEqual({
+      card: true,
+      over: true,
       selected: paper.key,
     });
-    expect(JSON.parse(await narrow(90, true))).toEqual({
+    // Its close button puts it away, and the row takes the focus back.
+    expect(
+      JSON.parse(
+        await inLibrary(
+          `press(card.querySelector('[data-library-card-close]'),'Close');await until('card hides',()=>!card.checkVisibility());return JSON.stringify({selected:el.querySelector('[data-query-item-row][data-selected]')?.getAttribute('data-query-item-row')??null,focused:activeDocument.activeElement?.getAttribute('data-query-item-row')??null});`,
+        ),
+      ),
+    ).toEqual({ selected: null, focused: paper.key });
+    await inLibrary(
+      `press(row(${JSON.stringify(paper.key)}),'paper row');await until('card',()=>card.checkVisibility());return true`,
+    );
+    expect(JSON.parse(await narrow(90, false))).toEqual({
       card: true,
+      over: false,
       selected: paper.key,
     });
 

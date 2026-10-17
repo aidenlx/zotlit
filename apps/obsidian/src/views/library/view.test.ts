@@ -2086,25 +2086,67 @@ describe("Reading Card", () => {
     expect(shownCard(view)).toBeNull();
   });
 
-  it("opens the PDF, opens or writes the Literature Note and cites, as the row menu does", async () => {
+  it("opens the PDF and opens or writes the Literature Note, and cites from its More menu, as the row menu does", async () => {
     const { deps, items, addNote } = pluginData();
+    deps.app.workspace.trigger = vi.fn();
     const view = await openTab(deps);
     await act(async () => {
       itemRow(view, B).click();
       await view.card.settled;
     });
+    // Two buttons, and the rest of the row menu under More.
+    expect(
+      [
+        ...card(view).querySelectorAll<HTMLElement>(
+          "[data-library-card-action]",
+        ),
+      ].map((el) => el.dataset.libraryCardAction),
+    ).toEqual(["pdf", "note", "more"]);
     // B has no Literature Note yet.
     expect(button(view, "note").textContent).toBe("Write literature note");
     await act(() => {
       button(view, "pdf").click();
       button(view, "note").click();
-      button(view, "cite").click();
+      button(view, "more").click();
     });
     expect(items.openPdf).toHaveBeenCalledExactlyOnceWith(B, false);
     expect(items.openNote).toHaveBeenCalledExactlyOnceWith(B, false);
+    Menu.instances
+      .at(-1)!
+      .items.find((item) => item.title === "Insert citation")!
+      .click();
     expect(items.insertCitation).toHaveBeenCalledExactlyOnceWith(B);
     await act(() => addNote(B));
     expect(button(view, "note").textContent).toBe("Open literature note");
+  });
+
+  it("puts itself away from its close button, which a narrow pane shows, and gives the focus back to the row", async () => {
+    const { deps } = pluginData();
+    const view = await openTab(deps);
+    await act(async () => {
+      itemRow(view, B).click();
+      await view.card.settled;
+    });
+    const close = card(view).querySelector<HTMLElement>(
+      "[data-library-card-close]",
+    )!;
+    expect(close.getAttribute("aria-label")).toBe(m.library_view_card_close());
+    await act(() => close.click());
+    expect(shownCard(view)).toBeNull();
+    expect(view.selection.getState().key).toBeNull();
+    expect(document.activeElement).toBe(itemRow(view, B));
+  });
+
+  it("shows no Annotations section for an Item with none", async () => {
+    const { deps } = pluginData();
+    const view = await openTab(deps);
+    await act(async () => {
+      itemRow(view, B).click();
+      await view.card.settled;
+    });
+    expect(view.card.query.state.getState().results?.count).toBe(0);
+    expect(card(view).querySelectorAll('[aria-level="3"]')).toHaveLength(0);
+    expect(card(view).textContent).not.toContain("Annotations");
   });
 
   it("leaves Enter and the arrow keys inside the card to the card", async () => {

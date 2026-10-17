@@ -17,7 +17,7 @@ import { Button } from "@/components/obsidian/button";
 import { IconButton } from "@/components/obsidian/icon-button";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import { tooltipAttrs } from "@/lib/utils";
+import { cn, tooltipAttrs } from "@/lib/utils";
 import type { QueryViewValue } from "@/services/item-query/query-view";
 import type { LibraryScope } from "@/services/library-scope/scope";
 import { AnnotList } from "@/views/annot-view/AnnotView";
@@ -68,6 +68,8 @@ export interface ReadingCardHost {
   menu: (indexedKey: string, button: HTMLElement) => void;
   /** Show the Item's Annotations in the sidebar Annotation View. */
   openInSidebar: (indexedKey: string) => void;
+  /** Put away the card that shows over the list on a narrow pane. */
+  close: () => void;
   onEscape: NonNullable<QueryViewHost["layout"]>["onEscape"];
 }
 
@@ -253,15 +255,34 @@ function CardBody({ card }: { card: ReadingCard }) {
       className="zt:flex zt:h-full zt:min-h-0 zt:flex-col"
       aria-labelledby={titleId}
     >
-      <div className="zt:flex zt:max-h-1/2 zt:shrink-0 zt:flex-col zt:gap-(--size-4-2) zt:overflow-y-auto zt:px-(--size-4-3) zt:pt-(--size-4-3) zt:pb-(--size-4-2)">
-        <div
-          role="heading"
-          aria-level={2}
-          id={titleId}
-          className="zt:m-0 zt:text-(length:--font-ui-medium) zt:leading-(--line-height-tight) zt:font-(--font-semibold)"
-          data-library-card-title=""
-        >
-          {item?.title}
+      {/* The Annotations take the lower half; with none, the Item takes it all. */}
+      <div
+        className={cn(
+          "zt:flex zt:min-h-0 zt:flex-col zt:gap-(--size-4-2) zt:overflow-y-auto zt:px-(--size-4-3) zt:pt-(--size-4-3) zt:pb-(--size-4-2)",
+          count !== 0 && "zt:max-h-1/2 zt:shrink-0",
+        )}
+      >
+        <div className="zt:flex zt:items-start zt:gap-(--size-2-2)">
+          <div
+            role="heading"
+            aria-level={2}
+            id={titleId}
+            className="zt:m-0 zt:min-w-0 zt:flex-1 zt:text-(length:--font-ui-medium) zt:leading-(--line-height-tight) zt:font-(--font-semibold)"
+            data-library-card-title=""
+          >
+            {item?.title}
+          </div>
+          {/* On a narrow pane the card shows over the list, and puts itself
+              away here. Obsidian's own rule shows a clickable icon, so the
+              wide pane hides a wrapper. */}
+          <span className="zt:flex zt:@4xl:hidden">
+            <IconButton
+              icon="x"
+              data-library-card-close=""
+              {...tooltipAttrs(m.library_view_card_close())}
+              onClick={host.close}
+            />
+          </span>
         </div>
         <div
           className="zt:text-(length:--font-ui-small) zt:text-(--text-muted)"
@@ -287,13 +308,6 @@ function CardBody({ card }: { card: ReadingCard }) {
               ? m.library_view_menu_open_note()
               : m.library_view_menu_write_note()}
           </Button>
-          <Button
-            icon="quote"
-            data-library-card-action="cite"
-            onClick={() => void items.insertCitation(key)}
-          >
-            {m.library_view_menu_insert_citation()}
-          </Button>
           <IconButton
             icon="more-horizontal"
             {...tooltipAttrs(m.library_view_card_more())}
@@ -312,25 +326,7 @@ function CardBody({ card }: { card: ReadingCard }) {
           </p>
         )}
       </div>
-      <div className="zt:flex zt:shrink-0 zt:items-center zt:justify-between zt:gap-(--size-2-2) zt:border-t-(length:--border-width) zt:border-(--divider-color) zt:px-(--size-4-3) zt:pt-(--size-4-2)">
-        <div
-          role="heading"
-          aria-level={3}
-          className="zt:m-0 zt:text-(length:--font-ui-smaller) zt:font-(--font-semibold) zt:text-(--text-muted)"
-        >
-          {m.library_view_card_annotations()}
-          {count !== null && count > 0 && ` · ${count}`}
-        </div>
-        {count !== null && count > 0 && (
-          <Button
-            icon="panel-right"
-            data-library-card-action="sidebar"
-            onClick={() => host.openInSidebar(key)}
-          >
-            {m.library_view_card_open_in_sidebar()}
-          </Button>
-        )}
-      </div>
+      {/* An Item with no Annotation shows no Annotations section. */}
       {failed ? (
         <div
           role="alert"
@@ -339,15 +335,30 @@ function CardBody({ card }: { card: ReadingCard }) {
         >
           {m.library_view_card_failed()}
         </div>
-      ) : count === 0 ? (
-        <div
-          className="zt:px-(--size-4-3) zt:py-(--size-4-2) zt:text-(length:--font-ui-small) zt:text-(--text-faint)"
-          data-library-card-empty=""
-        >
-          {m.library_view_card_no_annotations()}
-        </div>
       ) : (
-        <AnnotList collapsed />
+        count !== 0 && (
+          <>
+            <div className="zt:flex zt:shrink-0 zt:items-center zt:justify-between zt:gap-(--size-2-2) zt:border-t-(length:--border-width) zt:border-(--divider-color) zt:px-(--size-4-3) zt:pt-(--size-4-2)">
+              <div
+                role="heading"
+                aria-level={3}
+                className="zt:m-0 zt:text-(length:--font-ui-smaller) zt:font-(--font-semibold) zt:text-(--text-muted)"
+              >
+                {m.library_view_card_annotations()}
+                {count !== null && ` · ${count}`}
+              </div>
+              {count !== null && (
+                <IconButton
+                  icon="panel-right"
+                  data-library-card-action="sidebar"
+                  {...tooltipAttrs(m.library_view_card_open_in_sidebar())}
+                  onClick={() => host.openInSidebar(key)}
+                />
+              )}
+            </div>
+            <AnnotList collapsed />
+          </>
+        )
       )}
     </section>
   );

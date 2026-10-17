@@ -117,6 +117,8 @@ export class LibraryView extends ItemView {
   readonly selection = createStore<{ key: string | null }>(() => ({
     key: null,
   }));
+  /** The Reading Card's pane, once the tab has opened. */
+  #cardEl: HTMLElement | null = null;
   /** The write of the search text that the box last asked for. */
   #saving: Promise<void> = Promise.resolve();
   /** Keep the search text once typing pauses. */
@@ -202,7 +204,13 @@ export class LibraryView extends ItemView {
     this.card = new ReadingCard(deps, {
       menu: (key, button) => showMenuAtButton(menuOf(key), button),
       openInSidebar: (key) => void showItemInAnnotView(deps.app, key),
-      onEscape,
+      close: () => this.#closeCard(),
+      // Escape puts away a card that shows over the list.
+      onEscape: () => {
+        if (!this.#cardOverList()) return onEscape();
+        this.#closeCard();
+        return false;
+      },
     });
     this.tree = new LibraryTree(deps, {
       select: (node) => this.#select(node),
@@ -261,12 +269,13 @@ export class LibraryView extends ItemView {
     // so in place of what they hold; the search box and the header's count
     // go with them.
     const hidden = "zt:group-data-zotero-missing:hidden";
-    // The Reading Card shows while a row is selected, on a pane wide enough
-    // to keep the list beside it.
+    // The Reading Card shows while a row is selected: beside the list on a
+    // wide pane, and over it on a narrow one, as the tree does.
     const cardEl = shell.createDiv({ cls: `zt:contents ${hidden}` }).createDiv({
-      cls: "zt:hidden zt:w-80 zt:shrink-0 zt:flex-col zt:min-h-0 zt:border-s-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-primary) zt:@4xl:[&:not([hidden])]:flex",
+      cls: "zt:hidden zt:w-80 zt:shrink-0 zt:flex-col zt:min-h-0 zt:border-s-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-primary) zt:[&:not([hidden])]:flex zt:@max-4xl:absolute zt:@max-4xl:inset-y-0 zt:@max-4xl:end-0 zt:@max-4xl:max-w-[85%] zt:@max-4xl:z-(--layer-popover) zt:@max-4xl:shadow-(--shadow-s)",
       attr: { "data-library-card": "", hidden: "" },
     });
+    this.#cardEl = cardEl;
     const searchEl = main.createDiv({ cls: hidden });
     const note = main.createDiv();
     const header = main.createDiv();
@@ -344,6 +353,24 @@ export class LibraryView extends ItemView {
     this.tree.showFacets(doc.facets);
     this.tree.refresh();
     await this.search.open(doc.search);
+  }
+
+  /** Whether the Reading Card shows over the list, as on a narrow pane. */
+  #cardOverList(): boolean {
+    const el = this.#cardEl;
+    return (
+      !!el && !el.hidden && el.win.getComputedStyle(el).position === "absolute"
+    );
+  }
+
+  /**
+   * Put the Reading Card away: the row lets go of its selection, so the card
+   * shows again once a row is selected, and the row takes the focus back.
+   */
+  #closeCard(): void {
+    const row = this.#selectedRow();
+    this.selection.setState({ key: null });
+    row?.focus();
   }
 
   /**
