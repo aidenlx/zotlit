@@ -399,6 +399,8 @@ interface ViewRun {
   view: QueryFileView;
   /** The host's condition on the rows as the run started. */
   pass?: QueryRowPass | null;
+  /** The Query Context and the Libraries the run read, as {@link QueryView} keys them. */
+  binding: string;
 }
 
 /** The faults of a filter that reads a Formula it cannot have. */
@@ -445,6 +447,12 @@ export class QueryView extends Component implements HistorySurface {
   #shownViewName: string | null = null;
   /** The dataset of the rows on screen. */
   #shownDataset: QueryFileDataset | null = null;
+  /**
+   * The Query Context and the Libraries of the rows on screen. Rows of
+   * another Item or other Libraries are another list: a run for a new one
+   * shows none of them while it loads, nor after it fails.
+   */
+  #shownBinding: string | null = null;
   #settled: Promise<void> = Promise.resolve();
   #subscriptions: DisposableStack | null = null;
   /** Whether the view draws into an element; until then no card waits to show. */
@@ -788,6 +796,14 @@ export class QueryView extends Component implements HistorySurface {
     );
   }
 
+  /** The Query Context and the Libraries the host binds now, as one key. */
+  #binding(): string {
+    return JSON.stringify([
+      this.#host.context() ?? null,
+      this.#host.libraries?.() ?? null,
+    ]);
+  }
+
   /** What tells one run from another: the request, and the grouping the rows are gathered by. */
   #runKey(file: QueryFile, view: QueryFileView): string {
     return JSON.stringify([
@@ -860,7 +876,12 @@ export class QueryView extends Component implements HistorySurface {
     this.#run = controller;
     const key = this.#runKey(file, view);
     const pass = this.#host.rowPass?.() ?? null;
+    const binding = this.#binding();
     this.#runRequest = key;
+    if (this.#shownRequest !== null && this.#shownBinding !== binding) {
+      void this.#show(null);
+      this.state.setState({ results: null });
+    }
     if (this.#shownRequest !== key) this.state.setState({ phase: "loading" });
     // A Formula with a mistake, and each Formula that reads it, is left out
     // of the rows; the outcome gives the reason for each.
@@ -870,14 +891,18 @@ export class QueryView extends Component implements HistorySurface {
         (outcome) => {
           if (this.#run !== controller) return;
           this.#run = null;
-          return this.#land({ key, file, view, pass }, outcome, fromList);
+          return this.#land(
+            { key, file, view, pass, binding },
+            outcome,
+            fromList,
+          );
         },
         (error: unknown) => {
           if (this.#run !== controller) return;
           this.#run = null;
           logger.warn("A Query View could not run its query", { error });
           this.#fail(
-            { key, file, view },
+            { key, file, view, binding },
             {
               code: "query-failed",
               message: error instanceof Error ? error.message : String(error),
@@ -949,6 +974,7 @@ export class QueryView extends Component implements HistorySurface {
         await this.#show(key, drawsCards(current) ? shown.rows : null);
         this.#shownViewName = view.name;
         this.#shownDataset = view.from ?? "annotations";
+        this.#shownBinding = run.binding;
         return;
       }
       default:
@@ -966,7 +992,7 @@ export class QueryView extends Component implements HistorySurface {
    * the run that gave them; `issues` mark the Formulas otherwise.
    */
   #fail(
-    { key, file, view }: ViewRun,
+    { key, file, view, binding }: ViewRun,
     diagnostic: Diagnostic | QueryViewFailure["diagnostic"],
     issues: NameDictionary<string>,
   ): void {
@@ -975,7 +1001,8 @@ export class QueryView extends Component implements HistorySurface {
       (this.#shownRequest === key ||
         (this.#shownRequest !== null &&
           this.#shownViewName === view.name &&
-          this.#shownDataset === (view.from ?? "annotations")));
+          this.#shownDataset === (view.from ?? "annotations") &&
+          this.#shownBinding === binding));
     if (!kept) void this.#show(null);
     const span =
       "location" in diagnostic && diagnostic.location?.argument === "filter"
@@ -1006,7 +1033,10 @@ export class QueryView extends Component implements HistorySurface {
     rows: Parameters<AnnotationsLayout["showRows"]>[0] | null = [],
   ): Promise<void> {
     this.#shownRequest = key;
-    if (key === null) this.#shownViewName = null;
+    if (key === null) {
+      this.#shownViewName = null;
+      this.#shownBinding = null;
+    }
     this.#cardsShown = key !== null && rows !== null;
     if (key === null || rows === null) {
       this.#layout.clear();

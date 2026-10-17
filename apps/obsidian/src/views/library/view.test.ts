@@ -1789,6 +1789,65 @@ describe("Reading Card", () => {
     });
   });
 
+  it("reads the selected Item again after a database change", async () => {
+    const { deps, change } = pluginData();
+    const view = await openTab(deps);
+    await act(async () => {
+      itemRow(view, B).click();
+      await view.card.settled;
+    });
+    await act(async () => {
+      change(
+        SEED.map((item) =>
+          item.key === B ? { ...item, title: "Attention, renamed" } : item,
+        ),
+      );
+      await view.query.settled;
+      await view.card.settled;
+    });
+    expect(shownCard(view)?.title).toBe("Attention, renamed");
+  });
+
+  it("opens its row menu under the more button", async () => {
+    const { deps } = pluginData();
+    deps.app.workspace.trigger = vi.fn();
+    const view = await openTab(deps);
+    await act(async () => {
+      itemRow(view, B).click();
+      await view.card.settled;
+    });
+    await act(() => button(view, "more").click());
+    const menu = Menu.instances.at(-1)!;
+    expect(menu.parentEl).toBe(button(view, "more"));
+    expect(menu.position).not.toBeNull();
+  });
+
+  it("shows none of the last Item's Annotations while it reads another's, and says so where that read fails", async () => {
+    const { deps, run } = pluginData();
+    const view = await openTab(deps);
+    await act(async () => {
+      itemRow(view, A).click();
+      await view.card.settled;
+    });
+    expect(view.card.query.state.getState().results).not.toBeNull();
+    const failing = Promise.withResolvers<QueryViewOutcome>();
+    run.mockImplementation((request) =>
+      request.from === "annotations" && request.context?.item === B
+        ? failing.promise
+        : Promise.resolve(answer(SEED, request)),
+    );
+    await act(() => itemRow(view, B).click());
+    expect(view.card.query.state.getState().results).toBeNull();
+    await act(async () => {
+      failing.reject(new Error("The database is busy"));
+      await view.card.settled;
+    });
+    expect(view.card.query.state.getState().results).toBeNull();
+    expect(
+      card(view).querySelector("[data-library-card-failed]"),
+    ).not.toBeNull();
+  });
+
   it("lists the selected Item's Annotations with the Item as the Query Context, from the Item's Library", async () => {
     const { deps, run } = pluginData();
     const view = await openTab(deps);

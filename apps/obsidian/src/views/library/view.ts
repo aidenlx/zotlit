@@ -12,6 +12,7 @@ import { createStore } from "zustand/vanilla";
 import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import { showMenuAtButton } from "@/lib/menu";
 import type { LibraryScope } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import { inTextEntry } from "@/services/pdf-annotation-editor/capability-affordance";
@@ -145,20 +146,21 @@ export class LibraryView extends ItemView {
       () => this.query.document.text,
     );
     const drag = createItemDrag({ app: deps.app, actions: deps.items });
+    const menuOf = (key: string) =>
+      rowMenu(
+        {
+          actions: deps.items,
+          literatureNotes: deps.literatureNotes,
+          workspace: deps.app.workspace,
+        },
+        key,
+      );
     const rows: ItemRowGestures = {
       selection: this.selection,
       select: (key) => this.selection.setState({ key }),
       open: (key, event) =>
         void deps.items.openPdf(key, Keymap.isModEvent(event)),
-      menu: (key, event) =>
-        rowMenu(
-          {
-            actions: deps.items,
-            literatureNotes: deps.literatureNotes,
-            workspace: deps.app.workspace,
-          },
-          key,
-        ).showAtMouseEvent(event),
+      menu: (key, event) => menuOf(key).showAtMouseEvent(event),
       drag,
     };
     this.register(() => drag.cancel());
@@ -193,7 +195,7 @@ export class LibraryView extends ItemView {
       layout: { onEscape },
     });
     this.card = new ReadingCard(deps, {
-      menu: (key, event) => rows.menu(key, event),
+      menu: (key, button) => showMenuAtButton(menuOf(key), button),
       openInSidebar: (key) => void showItemInAnnotView(deps.app, key),
       onEscape,
     });

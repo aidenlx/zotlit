@@ -445,6 +445,7 @@
   "library_view_card_more": "More actions",
   "library_view_card_open_in_sidebar": "Open in sidebar",
   "library_view_card_no_annotations": "No annotations yet",
+  "library_view_card_failed": "Couldn't read this paper's annotations.",
   "instruction_show_in_library": "to show in library",
   "library_view_search_label": "Search papers",
   "library_view_search_placeholder": "Search papers… (tag:name for a tag)",
