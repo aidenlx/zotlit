@@ -830,6 +830,106 @@ describe("list methods", () => {
   ]);
 });
 
+/**
+ * A literal list answers membership as the evaluator's linear scan of
+ * `equals` does. `.filter(true)` gives the same list through a node that is
+ * not a literal, so it is the reference.
+ */
+describe("membership in a literal list", () => {
+  const LISTS = [
+    '["ART2FULL", "B", "B", "C"]',
+    '[1, "1", 2, true, false, null, ""]',
+    "[0, -0, 12]",
+    '["12", 12, null, null]',
+    "[]",
+    // Not literal elements only: the existing path.
+    '[volume, "x", 1]',
+    "[-1, 1]",
+    '[date("2024-07-15"), "2024-07-15"]',
+    '[today(), "x"]',
+    '[/a/, "a"]',
+    '[["a"], "a"]',
+  ];
+  const ARGS = [
+    '"ART2FULL"',
+    '"art2full"',
+    '"B"',
+    '"1"',
+    "1",
+    "-1",
+    "0",
+    "2",
+    "true",
+    "false",
+    "null",
+    '""',
+    "volume",
+    "publisher",
+    "title.lower()",
+    '"x"',
+    "12",
+    '"12"',
+    '["a"]',
+    "[]",
+    'date("2024-07-15")',
+    "today()",
+    '"2024-07-15"',
+    "/a/",
+    'date("x")',
+    "tags",
+  ];
+  const calls = [
+    ...ARGS.map((arg) => `contains(${arg})`),
+    ...ARGS.map((arg) => `containsAny(${arg})`),
+    ...ARGS.map((arg) => `containsAll(${arg})`),
+    "containsAny()",
+    "containsAll()",
+    'containsAny("q", "B", 2)',
+    'containsAll("B", "C", "ART2FULL")',
+    'containsAll("B", "q")',
+    'containsAny(["q", null])',
+    'containsAll([1, "1", true])',
+    'containsAny("q", date("x"))',
+  ];
+  const cases = LISTS.flatMap((list) =>
+    calls.map((call) => [list, call] as const),
+  );
+  it.each(cases)("%s.%s answers as the scan", (list, call) => {
+    const reference = valueOf(`${list}.filter(true).${call}`);
+    expect(valueOf(`${list}.${call}`)).toEqual(reference);
+  });
+
+  vectors([
+    ['["ART2FULL", "B"].contains("B")', true],
+    ['["ART2FULL", "B"].contains("b")', false],
+    ['[1, 2].contains("1")', false],
+    ['["1", "2"].contains(1)', false],
+    ["[0].contains(-0)", true],
+    ["[null].contains(null)", true],
+    ['["a"].contains(null)', false],
+    ["[true].contains(1)", false],
+    ['["B", "B"].containsAll("B")', true],
+    ['["a"].contains(["a"])', false],
+    ['["2024-07-15"].contains(date("2024-07-15"))', false],
+    ['["a"].contains(date("x"))', error("unparseable-text")],
+    ['!["ART2FULL"].contains("ART2FULL")', false],
+  ]);
+
+  // A scan costs keys × Items: 200 000 keys over 500 Items take seconds.
+  // A lookup built once per planned filter takes milliseconds.
+  it("tests a long key list in constant time per Item", () => {
+    const keys = Array.from({ length: 200_000 }, (_, i) => `K${i}`);
+    const { root } = plan(`${JSON.stringify(keys)}.contains(volume)`);
+    const items = Array.from({ length: 500 }, (_, i) =>
+      item({ fields: { volume: i % 2 ? `K${i * 7}` : `none${i}` } }),
+    );
+    const started = performance.now();
+    const found = items.filter((each) => matches(root, each, CLOCK)).length;
+    expect(found).toBe(250);
+    expect(performance.now() - started).toBeLessThan(250);
+  });
+});
+
 describe("list helpers", () => {
   vectors([
     // flat opens one level of nested lists.
