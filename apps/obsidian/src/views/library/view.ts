@@ -266,7 +266,7 @@ export class LibraryView extends ItemView {
     });
     const searchEl = main.createDiv({ cls: hidden });
     const note = main.createDiv();
-    const header = main.createDiv({ cls: hidden });
+    const header = main.createDiv();
     const list = main.createDiv();
     const shown = "zt:hidden zt:group-data-zotero-missing:block";
     this.#parts.push(

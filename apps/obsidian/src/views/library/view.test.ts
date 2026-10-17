@@ -884,6 +884,12 @@ it("says where Zotero's data folder cannot be found, offers to locate it, and li
       .querySelector("[data-library-facets]")
       ?.closest(".zt\\:group-data-zotero-missing\\:hidden"),
   ).toBeInstanceOf(HTMLElement);
+  // On a narrow pane the toggle still opens the tree and its not-found part.
+  expect(
+    view.contentEl
+      .querySelector("[data-library-tree-toggle]")
+      ?.closest(".zt\\:group-data-zotero-missing\\:hidden"),
+  ).toBeNull();
   const button = (part: "tree" | "list", text: string) =>
     [...notFound(part).querySelectorAll("button")].find(
       (el) => el.textContent === text,
@@ -1466,6 +1472,11 @@ const ON_MY_LIBRARY = {
   order: ["title"],
 };
 
+/** The offer to search all libraries beside the header, while it shows. */
+function searchAll(view: LibraryView) {
+  return view.contentEl.querySelector<HTMLElement>("[data-library-search-all]");
+}
+
 /** The search box of the tab. */
 function searchBox(view: LibraryView): HTMLInputElement {
   return view.contentEl.querySelector("[data-library-search] input")!;
@@ -1537,10 +1548,12 @@ it("lists a search's hits in the rank of the worker search, inside the selected 
   await type(view, "figures");
   expect(searches.at(-1)).toEqual({ query: "figures", libraries: [1] });
   expect(shown(view)).toEqual(["DDDDDDDD", "CCCCCCCC", "AAAAAAAA"]);
-  expect(header(view)).toBe("3 matches in My Library · Search all libraries");
+  expect(header(view)).toBe("3 matches in My Library");
+  expect(searchAll(view)?.textContent).toBe("Search all libraries");
   await press(view, row(view, THESIS));
   expect(shown(view)).toEqual(["CCCCCCCC", "AAAAAAAA"]);
-  expect(header(view)).toBe("2 matches in Thesis · Search all libraries");
+  expect(header(view)).toBe("2 matches in Thesis");
+  expect(searchAll(view)?.textContent).toBe("Search all libraries");
 });
 
 it("searches all libraries in the Library Scope on request, past the selected Collection", async () => {
@@ -1622,7 +1635,8 @@ it("keeps a search inside the active facets, the vault's among them, in the sear
   expect(shown(view)).toEqual(["DDDDDDDD", "AAAAAAAA"]);
   await press(view, facet(view, "annotated"));
   expect(shown(view)).toEqual(["AAAAAAAA"]);
-  expect(header(view)).toBe("1 match in My Library · Search all libraries");
+  expect(header(view)).toBe("1 match in My Library");
+  expect(searchAll(view)?.textContent).toBe("Search all libraries");
 });
 
 it("keeps a search of all libraries inside the active facets", async () => {

@@ -28,6 +28,7 @@ import type { QueryViewState } from "@/views/query-view/view";
 
 import { librariesOf } from "./document";
 import type { LibraryNode } from "./document";
+import type { HeaderParts } from "./library-tree";
 import { searchTerms } from "./search";
 import { sameLibrary } from "./tree";
 
@@ -212,21 +213,25 @@ export class LibrarySearch extends Component {
   }
 
   /**
-   * The header's text while a search is on screen: its match count with the
-   * offer to search all libraries; otherwise `fallback`.
+   * The header while a search is on screen: its match count as the text,
+   * with the offer to search all libraries beside it; otherwise `fallback`
+   * alone.
    */
   summary(
     query: StoreApi<QueryViewState>,
     { selection, fallback }: { selection: string; fallback: ReactNode },
-  ): ReactNode {
-    return (
-      <SearchSummary
-        search={this}
-        query={query}
-        selection={selection}
-        fallback={fallback}
-      />
-    );
+  ): HeaderParts {
+    return {
+      text: (
+        <SearchSummary
+          search={this}
+          query={query}
+          selection={selection}
+          fallback={fallback}
+        />
+      ),
+      action: <SearchAllButton search={this} />,
+    };
   }
 
   /** @internal The box's input, for {@link focus}. */
@@ -286,30 +291,35 @@ function SearchSummary({
   const matched = useStore(query, (s) => s.results?.matched ?? null);
   if (text.trim() === "") return fallback;
   if (matched === null) return selection;
-  // Recent reads every Library of the Library Scope already.
-  if (search.onRecent)
-    return m.library_view_search_matches({ selection, count: matched });
-  if (everywhere)
+  if (everywhere && !search.onRecent)
     return m.library_view_search_matches_everywhere({ count: matched });
+  return m.library_view_search_matches({ selection, count: matched });
+}
+
+/**
+ * The offer to search all libraries, beside the header, while a search
+ * keeps to a Library or a Collection. Recent reads every Library of the
+ * Library Scope already.
+ */
+function SearchAllButton({ search }: { search: LibrarySearch }) {
+  const text = useStore(search.store, (s) => s.text);
+  const everywhere = useStore(search.store, (s) => s.everywhere);
+  if (text.trim() === "" || everywhere || search.onRecent) return null;
   const widen = () => search.widen();
   return (
-    <>
-      {m.library_view_search_matches({ selection, count: matched })}
-      <span aria-hidden="true"> · </span>
-      <span
-        role="button"
-        tabIndex={0}
-        data-library-search-all=""
-        className="zt:cursor-(--cursor) zt:font-(--font-normal) zt:text-(--text-accent) zt:hover:text-(--text-accent-hover)"
-        onClick={widen}
-        onKeyDown={(event) => {
-          if (event.key !== "Enter" && event.key !== " ") return;
-          event.preventDefault();
-          widen();
-        }}
-      >
-        {m.library_view_search_everywhere()}
-      </span>
-    </>
+    <span
+      role="button"
+      tabIndex={0}
+      data-library-search-all=""
+      className="zt:shrink-0 zt:cursor-(--cursor) zt:rounded-(--radius-s) zt:text-(length:--font-ui-medium) zt:text-(--text-accent) zt:group-data-zotero-missing:hidden zt:hover:text-(--text-accent-hover) zt:focus-visible:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)]"
+      onClick={widen}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        widen();
+      }}
+    >
+      {m.library_view_search_everywhere()}
+    </span>
   );
 }
