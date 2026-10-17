@@ -89,10 +89,10 @@ it("reports a typed Fault for record navigation through incompatible conditional
     { client: scenario.db },
   );
   expect(exit._tag).toBe("Failure");
-  if (exit._tag === "Failure")
-    expect(Cause.squash(exit.cause)).toMatchObject({
-      code: "unknown-property",
-    });
+  if (exit._tag !== "Failure") throw new Error("Expected the query to fail");
+  expect(Cause.squash(exit.cause)).toMatchObject({
+    code: "unknown-property",
+  });
 });
 
 it.each([
@@ -432,10 +432,10 @@ it.each(["annotations.length", "attachments[].title"])(
       { client: scenario.db },
     );
     expect(exit._tag).toBe("Failure");
-    if (exit._tag === "Failure")
-      expect(Cause.squash(exit.cause)).toMatchObject({
-        code: "unsortable-field",
-      });
+    if (exit._tag !== "Failure") throw new Error("Expected the query to fail");
+    expect(Cause.squash(exit.cause)).toMatchObject({
+      code: "unsortable-field",
+    });
   },
 );
 
@@ -484,8 +484,8 @@ it.each([
       { client: scenario.db },
     );
     expect(exit._tag).toBe("Failure");
-    if (exit._tag === "Failure")
-      expect(Cause.squash(exit.cause)).toMatchObject({ code: "unknown-field" });
+    if (exit._tag !== "Failure") throw new Error("Expected the query to fail");
+    expect(Cause.squash(exit.cause)).toMatchObject({ code: "unknown-field" });
   },
 );
 
@@ -1179,11 +1179,10 @@ it("reports an unknown Child Note field as a typed Fault", async () => {
     }),
     { client: scenario.db },
   );
-  expect(exit._tag).toBe("Failure");
-  if (exit._tag === "Failure")
-    expect(Cause.squash(exit.cause)).toMatchObject({
-      code: "unknown-property",
-    });
+  if (exit._tag !== "Failure") throw new Error("the query did not fail.");
+  expect(Cause.squash(exit.cause)).toMatchObject({
+    code: "unknown-property",
+  });
 });
 
 it("lists the live Child Notes of each Item, without trashed notes", async () => {

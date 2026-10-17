@@ -197,10 +197,11 @@ it("sorts parent scalar fields and rejects a file path sort", async () => {
   ]);
   const rejected = await run([{ field: "path", direction: "asc" }]);
   expect(rejected.exit._tag).toBe("Failure");
-  if (rejected.exit._tag === "Failure")
-    expect(Cause.findErrorOption(rejected.exit.cause)).toMatchObject({
-      value: { code: "unsortable-field" },
-    });
+  if (rejected.exit._tag !== "Failure")
+    throw new Error("Expected sorting by path to fail");
+  expect(Cause.findErrorOption(rejected.exit.cause)).toMatchObject({
+    value: { code: "unsortable-field" },
+  });
 });
 
 it.each([
@@ -400,8 +401,9 @@ it("caps parent Indexed Key expansion and falls back to the Attachment scan", as
       event.statement.reader === "parent-child-candidate-set",
   );
   expect(candidate).toMatchObject({ statement: { rows: expect.any(Array) } });
-  if (candidate?.type === "statement")
-    expect(candidate.statement.rows).toHaveLength(2);
+  if (candidate?.type !== "statement")
+    throw new Error("Expected a parent-child candidate statement");
+  expect(candidate.statement.rows).toHaveLength(2);
 });
 
 // Failure modes: counting only returned files, applying a global limit, losing
@@ -531,7 +533,7 @@ it("groups and sorts Attachment file types in text order", async () => {
       "update itemAttachments set contentType = null where itemID = (select itemID from items where key = 'WEB2LIVE')",
     )
     .run();
-  for (const group of [undefined, "fileType"]) {
+  const read = async (group?: string) => {
     const { exit } = await runEffect(
       collectQuery(ATTACHMENTS, {
         libraries: [SCENARIO_LIBRARIES.personal],
@@ -542,21 +544,20 @@ it("groups and sorts Attachment file types in text order", async () => {
       { client: scenario.db },
     );
     if (exit._tag === "Failure") throw new Error(String(exit.cause));
-    if (group)
-      expect(
-        exit.value.groups!.map(({ value, count }) => [value, count]),
-      ).toEqual([
-        ["epub", 1],
-        ["other", 1],
-        ["pdf", 1],
-        ["web", 1],
-      ]);
-    else
-      expect(exit.value.rows!.map((row) => row.values.fileType)).toEqual([
-        "epub",
-        "other",
-        "pdf",
-        "web",
-      ]);
-  }
+    return exit.value;
+  };
+  const rows = await read();
+  expect(rows.rows!.map((row) => row.values.fileType)).toEqual([
+    "epub",
+    "other",
+    "pdf",
+    "web",
+  ]);
+  const grouped = await read("fileType");
+  expect(grouped.groups!.map(({ value, count }) => [value, count])).toEqual([
+    ["epub", 1],
+    ["other", 1],
+    ["pdf", 1],
+    ["web", 1],
+  ]);
 });

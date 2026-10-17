@@ -478,12 +478,27 @@ it.each(["load", "page", "render", "encode"] as const)(
 );
 
 it.each([
-  { phase: "pdf-reading", stage: "" },
-  { phase: "document-loading", stage: "load" },
-  { phase: "page-rendering", stage: "render" },
+  { phase: "pdf-reading", stage: "", active: { fileOpen: true }, released: {} },
+  {
+    phase: "document-loading",
+    stage: "load",
+    active: { fileOpen: true, documentOpen: true, worker: "pending" },
+    released: {},
+  },
+  {
+    phase: "page-rendering",
+    stage: "render",
+    active: {
+      fileOpen: false,
+      documentOpen: true,
+      renderTaskActive: true,
+      canvas: { width: 400, height: 200 },
+    },
+    released: { lastCanvas: { width: 0, height: 0 } },
+  },
 ] as const)(
   "reports and releases the $phase diagnostic lifecycle",
-  async ({ phase, stage }) => {
+  async ({ phase, stage, active: expected, released }) => {
     await using f = fixture();
     f.state.stage = stage;
     f.renderer.diagnostics.hold(phase);
@@ -497,18 +512,7 @@ it.each([
     });
     const active = f.renderer.diagnostics.snapshot();
     expect(active.jobActive).toBe(true);
-    expect(active.fileOpen).toBe(phase !== "page-rendering");
-    if (phase === "document-loading") {
-      expect(active.documentOpen).toBe(true);
-      expect(active.worker).toBe("pending");
-    }
-    if (phase === "page-rendering") {
-      expect(active).toMatchObject({
-        documentOpen: true,
-        renderTaskActive: true,
-        canvas: { width: 400, height: 200 },
-      });
-    }
+    expect(active).toMatchObject(expected);
     controller.abort();
     f.renderer.diagnostics.release();
     await rejected;
@@ -519,12 +523,8 @@ it.each([
       documentOpen: false,
       renderTaskActive: false,
       canvas: null,
+      ...released,
     });
-    if (phase === "page-rendering")
-      expect(f.renderer.diagnostics.snapshot().lastCanvas).toEqual({
-        width: 0,
-        height: 0,
-      });
   },
 );
 

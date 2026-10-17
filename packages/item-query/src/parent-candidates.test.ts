@@ -278,10 +278,11 @@ it.each([ATTACHMENTS, ANNOTATIONS])(
     ).toBe(true);
     // The read stops one row past the parent page budget.
     const budget = PRODUCTION_TUNING.relationPageBudget * SCAN_PAGE_SIZE;
-    for (const event of statements) {
-      if (event.type === "statement")
-        expect(event.statement.rows.length).toBeLessThanOrEqual(budget + 1);
-    }
+    const rowCounts = statements.flatMap((event) =>
+      event.type === "statement" ? [event.statement.rows.length] : [],
+    );
+    expect(rowCounts).toHaveLength(1);
+    expect(rowCounts[0]).toBeLessThanOrEqual(budget + 1);
   },
   // Seeds and reads 10,000 records; the default 5000 ms limit fails on CI runners.
   20_000,

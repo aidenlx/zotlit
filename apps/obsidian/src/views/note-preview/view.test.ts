@@ -1607,9 +1607,12 @@ Annotation`,
     );
   });
 
-  it.each(["Show problem", "Run"])(
+  it.each([
+    ["Show problem", "automatic"],
+    ["Run", "explicit"],
+  ])(
     "selects and copies the occurrence requested by a second Preview through %s",
-    async (action) => {
+    async (action, trigger) => {
       const copied = stubClipboard();
       const source = PROFILE_SOURCE;
       const broken = source.replace(
@@ -1654,8 +1657,7 @@ Annotation`,
           previewButton(second, m.workbench_problem_show()),
         );
       expect(reportFields(report())["Selection"]).toContain("item=sample:book");
-      if (action === "Run")
-        expect(reportFields(report())["Trigger"]).toBe("explicit");
+      expect(reportFields(report())["Trigger"]).toBe(trigger);
       await act(async () =>
         problemsButton(test.editor, m.workbench_problems_copy()),
       );

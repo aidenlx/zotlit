@@ -1,5 +1,5 @@
 import { Effect, Stream } from "effect";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 
 import type { AttachmentWithParentKey } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
@@ -477,7 +477,10 @@ async function setup(stack: AsyncDisposableStack, options: SetupOptions = {}) {
   if (seeds[0] !== null) {
     const { reads: initial } = await reads.ready;
     await Effect.runPromise(initial.Libraries({}));
-    await expect.poll(() => reads.state).toBe("ready");
+    await vi.waitFor(() => {
+      if (reads.state !== "ready")
+        throw new Error(`reads state is ${reads.state}, not ready`);
+    });
   }
   let now = Temporal.Now.instant();
   const queries = stack.use(new QueryClientService({ now: () => now }));

@@ -3463,16 +3463,23 @@ views:
       if (!settled) throw new Error(`${name} view: ${JSON.stringify(shown)}`);
       return shown!;
     };
+    // The Annotation's row carries the mark and no "Error" text; every
+    // other row shows its year and no mark.
+    const marked = {
+      errors: [["unparseable-text", message, true]],
+      text: expect.not.stringContaining("Error"),
+    };
+    const unmarked = {
+      errors: [],
+      text: expect.stringContaining(positionDocumentItem.date.slice(0, 4)),
+    };
     const expectMarks = (shown: Shown[]) => {
-      for (const row of shown) {
-        if (row.key === annotationItem.key) {
-          expect(row.errors).toEqual([["unparseable-text", message, true]]);
-          expect(row.text).not.toContain("Error");
-        } else {
-          expect(row.errors).toEqual([]);
-          expect(row.text).toContain(positionDocumentItem.date.slice(0, 4));
-        }
-      }
+      expect(shown).toEqual(
+        shown.map((row) => ({
+          key: row.key,
+          ...(row.key === annotationItem.key ? marked : unmarked),
+        })),
+      );
     };
     expectMarks(await showView("Table", '[data-query-table-row="item"]'));
     expectMarks(
@@ -8141,126 +8148,113 @@ views:
   // Failure modes: CLI serialization must preserve syntax corrections, ranked
   // names, and successful warnings; report boundaries must match legacy fields.
   it("reports zotlit:query syntax, unknown names, and never-true warnings", async () => {
+    const query = async (filter: string) =>
+      JSON.parse(
+        await cliCommand(vaultId, "zotlit:query", {
+          args: { filter, fields: "[]", limit: "1" },
+        }),
+      ) as ItemQueryReport;
     for (const probe of [
       {
         filter: 'itemType == "book" AND date.year > 2010',
-        ok: false,
         code: "invalid-filter",
         at: "AND",
         suggestion: 'itemType == "book" && date.year > 2010',
       },
       {
         filter: "year > 2015",
-        ok: false,
         code: "unknown-field",
         at: "year",
         suggestion: "date.year",
       },
-      {
-        filter: 'tags == "bulk"',
-        ok: true,
-        code: "never-true",
-        at: 'tags == "bulk"',
-        suggestion: 'tags.contains("bulk")',
-      },
     ]) {
-      const answer = JSON.parse(
-        await cliCommand(vaultId, "zotlit:query", {
-          args: { filter: probe.filter, fields: "[]", limit: "1" },
-        }),
-      ) as ItemQueryReport;
+      const answer = await query(probe.filter);
       expect(answer).toMatchObject({
         contractVersion: 3,
         command: "zotlit:query",
-        ok: probe.ok,
+        ok: false,
       });
-      const diagnostic = probe.ok ? answer.warnings?.[0] : answer.diagnostic;
-      expect(diagnostic).toMatchObject({
-        code: probe.code,
-        severity: probe.ok ? "warning" : "error",
-        excerpt: { at: probe.at },
-      });
-      expect(diagnostic!.suggestions[0]).toBe(probe.suggestion);
-      expect(diagnostic!.message).not.toBe("");
-      expect(diagnostic!.hint).not.toBe("");
-      expect(diagnostic!.report[0]).toBe(diagnostic!.message);
-      expect(diagnostic!.report.at(-1)).toBe(diagnostic!.hint);
-      if (probe.ok) {
-        expect(answer.warnings).toHaveLength(1);
-        expect(answer).toMatchObject({
-          returnedCount: 0,
-          rows: [],
-          truncated: false,
-        });
-        expect(Object.keys(answer).indexOf("warnings")).toBeLessThan(
-          Object.keys(answer).indexOf("rows"),
-        );
-      }
+      expectQueryDiagnostic(answer.diagnostic, { ...probe, severity: "error" });
     }
+
+    const probe = {
+      filter: 'tags == "bulk"',
+      code: "never-true",
+      at: 'tags == "bulk"',
+      suggestion: 'tags.contains("bulk")',
+    };
+    const answer = await query(probe.filter);
+    expect(answer).toMatchObject({
+      contractVersion: 3,
+      command: "zotlit:query",
+      ok: true,
+      returnedCount: 0,
+      rows: [],
+      truncated: false,
+    });
+    expect(answer.warnings).toHaveLength(1);
+    expectQueryDiagnostic(answer.warnings?.[0], {
+      ...probe,
+      severity: "warning",
+    });
+    expect(Object.keys(answer).indexOf("warnings")).toBeLessThan(
+      Object.keys(answer).indexOf("rows"),
+    );
   });
 
   it("reports zotlit:query from=annotations syntax, unknown names, and never-true warnings", async () => {
+    const query = async (filter: string) =>
+      JSON.parse(
+        await cliCommand(vaultId, "zotlit:query", {
+          args: { from: "annotations", filter, fields: "[]", limit: "1" },
+        }),
+      ) as ItemQueryReport;
     for (const probe of [
       {
         filter: 'type == "image" AND item.date.year > 2010',
-        ok: false,
         code: "invalid-filter",
         at: "AND",
         suggestion: 'type == "image" && item.date.year > 2010',
       },
       {
         filter: "pageLable == 1",
-        ok: false,
         code: "unknown-field",
         at: "pageLable",
         suggestion: "pageLabel",
       },
-      {
-        filter: 'tags == "bulk"',
-        ok: true,
-        code: "never-true",
-        at: 'tags == "bulk"',
-        suggestion: 'tags.contains("bulk")',
-      },
     ]) {
-      const answer = JSON.parse(
-        await cliCommand(vaultId, "zotlit:query", {
-          args: {
-            from: "annotations",
-            filter: probe.filter,
-            fields: "[]",
-            limit: "1",
-          },
-        }),
-      ) as ItemQueryReport;
+      const answer = await query(probe.filter);
       expect(answer).toMatchObject({
         contractVersion: 3,
         command: "zotlit:query",
-        ok: probe.ok,
+        ok: false,
       });
-      const diagnostic = probe.ok ? answer.warnings?.[0] : answer.diagnostic;
-      expect(diagnostic).toMatchObject({
-        code: probe.code,
-        severity: probe.ok ? "warning" : "error",
-        excerpt: { at: probe.at },
-      });
-      expect(diagnostic!.suggestions[0]).toBe(probe.suggestion);
-      expect(diagnostic!.message).not.toBe("");
-      expect(diagnostic!.hint).not.toBe("");
-      expect(diagnostic!.report[0]).toBe(diagnostic!.message);
-      expect(diagnostic!.report.at(-1)).toBe(diagnostic!.hint);
-      if (probe.ok) {
-        expect(answer.warnings).toHaveLength(1);
-        expect(answer).toMatchObject({
-          returnedCount: 0,
-          rows: [],
-          truncated: false,
-        });
-        expect(Object.keys(answer).indexOf("warnings")).toBeLessThan(
-          Object.keys(answer).indexOf("rows"),
-        );
-      }
+      expectQueryDiagnostic(answer.diagnostic, { ...probe, severity: "error" });
     }
+
+    const probe = {
+      filter: 'tags == "bulk"',
+      code: "never-true",
+      at: 'tags == "bulk"',
+      suggestion: 'tags.contains("bulk")',
+    };
+    const answer = await query(probe.filter);
+    expect(answer).toMatchObject({
+      contractVersion: 3,
+      command: "zotlit:query",
+      ok: true,
+      returnedCount: 0,
+      rows: [],
+      truncated: false,
+    });
+    expect(answer.warnings).toHaveLength(1);
+    expectQueryDiagnostic(answer.warnings?.[0], {
+      ...probe,
+      severity: "warning",
+    });
+    expect(Object.keys(answer).indexOf("warnings")).toBeLessThan(
+      Object.keys(answer).indexOf("rows"),
+    );
   });
 
   it("rejects retired ZotLit Query selectors with filter guidance", async () => {
@@ -8932,19 +8926,19 @@ views:
     }
 
     expect(scope.ok).toBe(true);
-    expect(scope.mode).toBe(availableCase.scope.mode);
-    if (availableCase.scope.mode === "selected") {
-      expect(scope.available).toHaveLength(
-        availableCase.scope.libraries.length,
-      );
-      expect(scope.unavailable ?? []).toHaveLength(0);
-      const gotLibraryIDs = (scope.available ?? [])
-        .map((entry) => entry.libraryID)
-        .toSorted((a, b) => a - b);
-      expect(gotLibraryIDs).toEqual(
-        expectedLibraryIDs(availableCase.scope.libraries),
+    expect(scope.mode).toBe("selected");
+    const availableScope = availableCase.scope;
+    if (availableScope.mode !== "selected") {
+      throw new Error(
+        `Scope Case "available" must select Libraries, got mode "${availableScope.mode}"`,
       );
     }
+    expect(scope.available).toHaveLength(availableScope.libraries.length);
+    expect(scope.unavailable ?? []).toHaveLength(0);
+    const gotLibraryIDs = (scope.available ?? [])
+      .map((entry) => entry.libraryID)
+      .toSorted((a, b) => a - b);
+    expect(gotLibraryIDs).toEqual(expectedLibraryIDs(availableScope.libraries));
 
     {
       // The load spawned one database worker, and it serves.
@@ -9122,6 +9116,28 @@ interface ItemQueryReport {
   }[];
   diagnostic?: ItemQueryDiagnostic;
   warnings?: ItemQueryDiagnostic[];
+}
+
+/** Asserts one `zotlit:query` diagnostic of a syntax or name probe. */
+function expectQueryDiagnostic(
+  diagnostic: ItemQueryDiagnostic | undefined,
+  probe: {
+    code: string;
+    severity: ItemQueryDiagnostic["severity"];
+    at: string;
+    suggestion: string;
+  },
+): void {
+  expect(diagnostic).toMatchObject({
+    code: probe.code,
+    severity: probe.severity,
+    excerpt: { at: probe.at },
+  });
+  expect(diagnostic!.suggestions[0]).toBe(probe.suggestion);
+  expect(diagnostic!.message).not.toBe("");
+  expect(diagnostic!.hint).not.toBe("");
+  expect(diagnostic!.report[0]).toBe(diagnostic!.message);
+  expect(diagnostic!.report.at(-1)).toBe(diagnostic!.hint);
 }
 
 interface ItemQueryDiagnostic {

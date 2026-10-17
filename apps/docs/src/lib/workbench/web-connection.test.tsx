@@ -245,13 +245,14 @@ describe("a Workbench Connection", () => {
       page.press(m.workbench_restore_accept());
       await page.settle();
       expect(title(page.host)).toBe("Kept work");
-      expect(
-        renderInThread.mock.calls.at(-1)?.[0].snapshot.provenance.kind,
-      ).toBe(retained ? "sample" : "connected");
-      if (retained)
-        expect(renderInThread.mock.calls.at(-1)?.[0].snapshot.item.key).toBe(
-          SAMPLE_ITEMS[2]!.item.key,
-        );
+      expect(renderInThread.mock.calls.at(-1)?.[0].snapshot).toMatchObject(
+        retained
+          ? {
+              provenance: { kind: "sample" },
+              item: { key: SAMPLE_ITEMS[2]!.item.key },
+            }
+          : { provenance: { kind: "connected" } },
+      );
     },
   );
 

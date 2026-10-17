@@ -748,14 +748,20 @@ it("waits for the first API list before writing an Annotation already shown from
   await expect(running).resolves.toEqual({ kind: "idle" });
 });
 
+// A PATCH needs its record readback; a DELETE is confirmed by its acknowledgement.
+const settledDelete = { settled: { kind: "idle" }, record: undefined };
+const settledColour = {
+  settled: { kind: "failed", failure: { kind: "unreachable" } },
+  record: expect.objectContaining({ color: "#2ea8e5", version: 11 }),
+};
 it.each([
-  { handoff: true, write: "delete" },
-  { handoff: true, write: "colour" },
-  { handoff: false, write: "delete" },
-  { handoff: false, write: "colour" },
+  { handoff: true, write: "delete", ...settledDelete },
+  { handoff: true, write: "colour", ...settledColour },
+  { handoff: false, write: "delete", ...settledDelete },
+  { handoff: false, write: "colour", ...settledColour },
 ] as const)(
   "settles $write across API loss (first handoff: $handoff)",
-  async ({ handoff, write }) => {
+  async ({ handoff, write, settled, record: expected }) => {
     await using stack = new AsyncDisposableStack();
     const children = Promise.withResolvers<Response>();
     const requested = Promise.withResolvers<void>();
@@ -799,19 +805,11 @@ it.each([
         : repository.patchColor("PUPR5FG5", "#5fb236");
     children.resolve(annotationPage(ROUGIER_ANNOTATIONS));
     await reading;
-    await expect(running).resolves.toEqual(
-      write === "delete"
-        ? { kind: "idle" }
-        : { kind: "failed", failure: { kind: "unreachable" } },
-    );
+    await expect(running).resolves.toEqual(settled);
     const record = repository
       .peek("RGRPDF24")
       ?.value.annotations.find(({ key }) => key === "PUPR5FG5");
-    if (write === "delete") expect(record).toBeUndefined();
-    else {
-      // A PATCH needs its record readback; a DELETE is confirmed by its acknowledgement.
-      expect(record).toMatchObject({ color: "#2ea8e5", version: 11 });
-    }
+    expect(record).toEqual(expected);
   },
 );
 

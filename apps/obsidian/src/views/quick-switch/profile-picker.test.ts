@@ -225,9 +225,20 @@ it("imports from the secondary action without choosing a Profile or starting cre
   expect(onNew).not.toHaveBeenCalled();
 });
 
-it.each(["item", "batch"] as const)(
-  "puts every overlap candidate first with a %s match reason",
-  async (matchContext) => {
+it.each([
+  {
+    matchContext: "item",
+    reason: m.modal_profile_match_candidate(),
+    other: m.modal_profile_match_batch_candidate(),
+  },
+  {
+    matchContext: "batch",
+    reason: m.modal_profile_match_batch_candidate(),
+    other: m.modal_profile_match_candidate(),
+  },
+] as const)(
+  "puts every overlap candidate first with a $matchContext match reason",
+  async ({ matchContext, reason, other }) => {
     using opened = vi.spyOn(SuggestModal.prototype, "open");
     const papers = "Rz9Wm4YfH6Kd" as ProfileId;
     const choice = chooseLiteratureNoteProfile({} as App, {
@@ -273,13 +284,8 @@ it.each(["item", "batch"] as const)(
     for (const row of rows.slice(0, 2)) {
       const el = document.createElement("div");
       modal.renderSuggestion(row, el);
-      expect(el.textContent).toContain(
-        matchContext === "batch"
-          ? m.modal_profile_match_batch_candidate()
-          : m.modal_profile_match_candidate(),
-      );
-      if (matchContext === "batch")
-        expect(el.textContent).not.toContain(m.modal_profile_match_candidate());
+      expect(el.textContent).toContain(reason);
+      expect(el.textContent).not.toContain(other);
       expect(el.textContent).toContain(
         m.modal_profile_problem_overlap({ profiles: "Books, Papers" }),
       );

@@ -191,12 +191,23 @@ describe("parity of every plan with the forced scan", () => {
     );
   });
 
-  it.each(SCENARIO_QUERIES)("$name", async (query) => {
+  it.each(SCENARIO_QUERIES.filter((query) => !query.matches))(
+    "$name",
+    async (query) => {
+      await expectParity(query);
+    },
+  );
+
+  // A query with pinned matches also checks the forced scan against the seed.
+  it.each(
+    SCENARIO_QUERIES.flatMap(({ matches, ...query }) =>
+      matches ? [{ ...query, matches }] : [],
+    ),
+  )("$name", async (query) => {
     const oracle = await expectParity(query);
-    if (query.matches)
-      expect(indexedKeys(oracle), "the forced scan").toEqual(
-        [...query.matches].sort(),
-      );
+    expect(indexedKeys(oracle), "the forced scan").toEqual(
+      [...query.matches].sort(),
+    );
   });
 });
 

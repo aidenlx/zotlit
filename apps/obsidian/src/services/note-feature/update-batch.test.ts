@@ -392,17 +392,14 @@ describe("batchCreateOutcome", () => {
       },
     };
 
-    try {
-      batchCreateOutcome(refusal);
-      throw new Error("Expected the batch create to be refused");
-    } catch (error) {
-      expect(error).toBeInstanceOf(BatchCreateRefusedError);
-      expect(error).toMatchObject({
+    expect(() => batchCreateOutcome(refusal)).toThrow(BatchCreateRefusedError);
+    expect(() => batchCreateOutcome(refusal)).toThrow(
+      expect.objectContaining({
         message:
           "Multiple literature notes use this Zotero key: Literature/Newer.md, Archive/Older.md; resolve the duplicates before you create another note.",
         diagnostic: refusal.diagnostic,
-      });
-    }
+      }),
+    );
   });
 });
 

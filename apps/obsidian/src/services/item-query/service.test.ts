@@ -750,17 +750,22 @@ describe("Item Query worker jobs", () => {
       expect(leases()).toBe(0);
       const files = await readdir(dirname(output));
       expect(files.filter((name) => name.endsWith(".tmp"))).toEqual([]);
-      if ("answer" in settled) {
-        // Completion won: the export is published, also after a cancel request.
-        expect(settled.answer.ok).toBe(true);
-        expect(files).toContain(`race-${turns}.json`);
-        outcomes.add("answered");
-      } else {
-        expect(requested).toBe(true);
-        expect(settled.error).toMatchObject({ name: "AbortError" });
-        expect(files).not.toContain(`race-${turns}.json`);
-        outcomes.add("cancelled");
-      }
+      const published = files.includes(`race-${turns}.json`);
+      const outcome =
+        "answer" in settled
+          ? { kind: "answered", ok: settled.answer.ok, published }
+          : { kind: "cancelled", requested, error: settled.error, published };
+      expect(outcome).toMatchObject(
+        outcome.kind === "answered"
+          ? // Completion won: the export is published, also after a cancel request.
+            { ok: true, published: true }
+          : {
+              requested: true,
+              error: { name: "AbortError" },
+              published: false,
+            },
+      );
+      outcomes.add(outcome.kind);
     }
     expect([...outcomes].toSorted()).toEqual(["answered", "cancelled"]);
   });

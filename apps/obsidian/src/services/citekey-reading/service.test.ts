@@ -219,7 +219,10 @@ async function makeHarness({
   await citationText.ready;
   if (!formatCitations) {
     citationText.peek("note.md");
-    await vi.waitFor(() => expect(citationText.peek("note.md")).not.toBeNull());
+    await vi.waitFor(() => {
+      if (citationText.peek("note.md") === null)
+        throw new Error("citation text for note.md is not settled");
+    });
   }
 
   const service = stack.use(

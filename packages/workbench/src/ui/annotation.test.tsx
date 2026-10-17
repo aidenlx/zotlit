@@ -372,7 +372,9 @@ it("keeps the annotation editor position and history while Help opens and closes
   fireEvent.click(help);
   fireEvent.click(help);
   expect(document.activeElement).toBe(help);
-  act(() => controller.undo());
+  act(() => {
+    controller.undo();
+  });
   expect(controller.source).toBe(DEFAULT_PROFILE_SOURCE);
 });
 

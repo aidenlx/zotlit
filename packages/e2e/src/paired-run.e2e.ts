@@ -912,6 +912,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 },
                 body: JSON.stringify({ version: current.version, ...seed }),
               });
+              // oxlint-disable-next-line vitest/no-conditional-expect -- only a Reader that rewrote the seed in the live Zotero needs the restoring PATCH; the unconditional check below proves the seed is back either way.
               expect(restored.status).toBe(204);
               await settled();
             }
@@ -6506,24 +6507,31 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       for (const pending of ["unsent draft", "in-flight write"] as const) {
         it(`reloads with an ${pending} and reads Zotero without replay`, async () => {
           const baseline = await readAnnotationState(api, serverID, createdKey);
+          const before = await annotationState(api, serverID, createdKey);
           const color = "#a28ae5";
           if (pending === "in-flight write") {
             await installClosingPaneProbe(vaultId!, createdKey, color);
-            await expect
-              .poll(
-                () =>
-                  obJson(
-                    vaultId!,
-                    `JSON.stringify({reached:window.__zotlitWriteOutcomeProbe?.reached,outcome:window.__zotlitWriteOutcomeProbe?.outcome})`,
-                  ),
-                { timeout: 10_000 },
-              )
-              .toEqual({ reached: true, outcome: null });
           }
+          // The in-flight write has reached Zotero and holds its reply; an
+          // unsent draft has no write probe at all.
+          await expect
+            .poll(
+              () =>
+                obJson(
+                  vaultId!,
+                  `JSON.stringify({reached:window.__zotlitWriteOutcomeProbe?.reached,outcome:window.__zotlitWriteOutcomeProbe?.outcome})`,
+                ),
+              { timeout: 10_000 },
+            )
+            .toEqual(
+              pending === "in-flight write"
+                ? { reached: true, outcome: null }
+                : {},
+            );
           const stored = await annotationState(api, serverID, createdKey);
-          if (pending === "in-flight write") {
-            expect(stored.color).toBe(color);
-          }
+          expect(stored.color).toBe(
+            pending === "in-flight write" ? color : before.color,
+          );
 
           // Start the real plugin lifecycle in the same renderer turn as the
           // draft edit, before its idle timer can fire. The plugin's unload

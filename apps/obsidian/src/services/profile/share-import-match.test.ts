@@ -101,10 +101,10 @@ it.each([
     expect(f.vault.contents).toEqual(before);
     const imported = await plan.import();
     expect(f.vault.contents.get(imported.path)).toBe(expected);
-    if (includeMatch === false) expect(imported.match.state).toBe("absent");
-    else
-      // An unknown Library is an ordinary nonmatch.
-      expect(imported.match.state).toBe("evaluable");
+    // An unknown Library is an ordinary nonmatch.
+    expect(imported.match.state).toBe(
+      includeMatch === false ? "absent" : "evaluable",
+    );
   },
 );
 

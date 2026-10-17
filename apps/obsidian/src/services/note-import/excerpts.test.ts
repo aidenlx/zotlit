@@ -280,9 +280,64 @@ it("finishes mixed content when one live excerpt throws", async () => {
   expect(f.render).toHaveBeenCalledTimes(2);
 });
 
-it.each(["disabled", "unavailable", "unused", "blank", "frozen", "missing"])(
-  "preserves parser and image outcomes (%s)",
-  async (mode) => {
+const live = [
+  "![[Images/SNAP2345-snapshot.png]]",
+  "![[Images/SNAP3456-snapshot.png]]",
+];
+const unavailableReport = [{ zotero: 0, unchecked: 0, unavailable: 2 }];
+// `expect.any` leaves a count or report unconstrained for that mode.
+it.each([
+  {
+    mode: "disabled",
+    contains: ["paper.pdf"],
+    excludes: ["zotlit-excerpt-"],
+    reports: unavailableReport,
+    resolves: 0,
+    renders: 2,
+  },
+  {
+    mode: "unavailable",
+    contains: ["paper.pdf"],
+    excludes: ["zotlit-excerpt-"],
+    reports: unavailableReport,
+    resolves: expect.any(Number),
+    renders: 2,
+  },
+  {
+    mode: "unused",
+    contains: ["No image requested"],
+    excludes: [],
+    reports: [{ zotero: 0, unchecked: 0, unavailable: 0 }],
+    resolves: expect.any(Number),
+    renders: 2,
+  },
+  {
+    mode: "blank",
+    contains: live,
+    excludes: [],
+    reports: expect.any(Array),
+    resolves: expect.any(Number),
+    renders: 2,
+  },
+  {
+    mode: "frozen",
+    contains: live,
+    excludes: [],
+    reports: expect.any(Array),
+    resolves: 0,
+    renders: expect.any(Number),
+  },
+  {
+    mode: "missing",
+    contains: live,
+    excludes: [],
+    reports: expect.any(Array),
+    resolves: 0,
+    renders: expect.any(Number),
+  },
+])(
+  "preserves parser and image outcomes ($mode)",
+  async ({ mode, contains, excludes, reports, resolves, renders }) => {
     await using f = await fixture(mode);
     if (mode === "unavailable" || mode === "unused")
       f.setOutcome({ kind: "unavailable" });
@@ -291,20 +346,10 @@ it.each(["disabled", "unavailable", "unused", "blank", "frozen", "missing"])(
     await f.import();
     const content = await f.app.vault.read(f.note());
     expect(content).toContain("Keep this prose.");
-    if (mode === "disabled" || mode === "unavailable") {
-      expect(content).not.toContain("zotlit-excerpt-");
-      expect(content).toContain("paper.pdf");
-      expect(f.reports).toEqual([{ zotero: 0, unchecked: 0, unavailable: 2 }]);
-      if (mode === "disabled") expect(f.resolve).not.toHaveBeenCalled();
-    } else if (mode === "unused") {
-      expect(content).toContain("No image requested");
-      expect(f.reports).toEqual([{ zotero: 0, unchecked: 0, unavailable: 0 }]);
-    } else {
-      expect(content).toContain("![[Images/SNAP2345-snapshot.png]]");
-      expect(content).toContain("![[Images/SNAP3456-snapshot.png]]");
-      if (mode !== "blank") expect(f.resolve).not.toHaveBeenCalled();
-    }
-    if (mode !== "frozen" && mode !== "missing")
-      expect(f.render).toHaveBeenCalledTimes(2);
+    for (const text of contains) expect(content).toContain(text);
+    for (const text of excludes) expect(content).not.toContain(text);
+    expect(f.reports).toEqual(reports);
+    expect(f.resolve.mock.calls.length).toEqual(resolves);
+    expect(f.render.mock.calls.length).toEqual(renders);
   },
 );

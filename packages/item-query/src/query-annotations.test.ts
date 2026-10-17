@@ -846,12 +846,13 @@ it.each(["tags", "item.tags[]", "item.tags", "attachment"])(
     );
     if (exit._tag !== "Failure") throw new Error("Expected a request Fault");
     const error = Cause.findErrorOption(exit.cause);
-    expect(error._tag === "Some" && error.value).toMatchObject({
+    if (error._tag !== "Some" || !(error.value instanceof ItemQueryError))
+      throw new Error(String(exit.cause));
+    expect(error.value).toMatchObject({
       code: "invalid-group",
       location: { argument: "group" },
     });
-    if (error._tag === "Some" && error.value instanceof ItemQueryError)
-      expect(error.value.diagnostic.report.join("\n")).toContain("scalar");
+    expect(error.value.diagnostic.report.join("\n")).toContain("scalar");
   },
 );
 

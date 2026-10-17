@@ -77,8 +77,12 @@ it.each([false, true])(
       controller.undo();
     });
     expect(controller.source).toBe(source);
-    if (!advanced) expect(viewText(editor)).toBe('{\n  "$eval": "zt.ti"\n}');
-    const original = advanced ? '{"$eval":"zt.ti"}' : viewText(editor);
+    // The entry slice shows the rule formatted; Advanced shows the whole
+    // source, the rule inline.
+    const original = advanced
+      ? '{"$eval":"zt.ti"}'
+      : '{\n  "$eval": "zt.ti"\n}';
+    expect(viewText(editor)).toBe(advanced ? source : original);
     const replacement = JSON.stringify(
       // oxlint-disable-next-line unicorn/no-thenable -- JSON-e names the branch then.
       { $if: "true", then: "${zt.title}", else: "literal" },

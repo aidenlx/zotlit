@@ -186,34 +186,44 @@ async function fixture(mode: string) {
 }
 
 it.each([
-  "success",
-  "fallback",
-  "disabled",
-  "unavailable",
-  "throw",
-  "write-failure",
-])("renders the API-ahead card once after preparation (%s)", async (mode) => {
-  await using f = await fixture(mode);
-  const result = await prepareAnnotationInsert(f.ctx, f.options);
-  expect(f.render).toHaveBeenCalledTimes(1);
-  if (mode === "success" || mode === "fallback") {
+  ["success", 0],
+  ["fallback", 1],
+] as const)(
+  "renders the API-ahead card once after preparation and embeds the saved excerpt (%s)",
+  async (mode, zotero) => {
+    await using f = await fixture(mode);
+    const result = await prepareAnnotationInsert(f.ctx, f.options);
+    expect(f.render).toHaveBeenCalledTimes(1);
     const names = await readdir(join(f.root, "Images"));
     expect(names).toHaveLength(1);
     expect(result?.text).toContain(`![[Images/${names[0]}]]`);
     expect(await readFile(join(f.root, "Images", names[0]!))).toEqual(redPng);
-    expect(result?.summary).toEqual({
-      zotero: mode === "fallback" ? 1 : 0,
-      unchecked: 0,
-      unavailable: 0,
-    });
-  } else {
+    expect(result?.summary).toEqual({ zotero, unchecked: 0, unavailable: 0 });
+    expect(
+      f.resolver.resolve.mock.calls.map(([request]) => request.annotation),
+    ).toEqual([card]);
+  },
+);
+
+it.each([
+  ["disabled", []],
+  ["unavailable", [card]],
+  ["throw", [card]],
+  ["write-failure", [card]],
+] as const)(
+  "renders the API-ahead card once after preparation and leaves the excerpt unavailable (%s)",
+  async (mode, resolved) => {
+    await using f = await fixture(mode);
+    const result = await prepareAnnotationInsert(f.ctx, f.options);
+    expect(f.render).toHaveBeenCalledTimes(1);
     expect(result?.text).toContain("zt-annotation=FDRFQ7C2");
     expect(result?.text).not.toContain("![[");
     expect(result?.summary.unavailable).toBe(1);
-  }
-  if (mode === "disabled") expect(f.resolver.resolve).not.toHaveBeenCalled();
-  else expect(f.resolver.resolve.mock.calls[0]?.[0].annotation).toBe(card);
-});
+    expect(
+      f.resolver.resolve.mock.calls.map(([request]) => request.annotation),
+    ).toEqual(resolved);
+  },
+);
 
 it("cancels between resolution and materialization", async () => {
   await using f = await fixture("success");

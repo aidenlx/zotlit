@@ -4,6 +4,7 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import { openScenarioDatabase } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
+import type { QueryDataset } from "./dataset";
 import { diagnose, diagnoseDecode, renderDiagnostic } from "./diagnose";
 import reports from "./diagnostic-reports.json";
 import { ItemQueryError } from "./error";
@@ -11,7 +12,7 @@ import { collectQuery } from "./query";
 import { ANNOTATIONS } from "./query-annotations";
 import { ATTACHMENTS } from "./query-attachments";
 import { ITEMS } from "./query-items";
-import type { ItemQueryRequest } from "./request";
+import type { ItemQueryRequest, QueryResult } from "./request";
 import { describeQueryVocabulary } from "./schema";
 import { runEffect } from "./test-helpers";
 
@@ -374,45 +375,60 @@ it.each(reports)("reports $name", async ({ request, report, ...setup }) => {
   const { exit } = await runEffect(collectQuery(dataset, query), {
     client: scenario.db,
   });
-  if (Exit.isSuccess(exit)) {
-    expect(exit.value.warnings).toHaveLength(1);
-    const diagnostic = exit.value.warnings[0]!;
-    expect(diagnostic.report).toEqual(report);
-    expect(diagnostic.severity).toBe("warning");
-    return;
-  }
-  const error = Cause.findErrorOption(exit.cause);
-  if (error._tag === "None" || error.value._tag !== "ItemQueryError")
-    throw new Error("Expected an Item Query fault");
-  expect(error.value.dataset).toBe(dataset);
-  const diagnostic = error.value.diagnostic;
+  const outcome = goldenOutcome(exit, dataset);
+  // A read that succeeds reports one warning; a read that fails, its Fault.
+  expect(outcome.diagnostics).toHaveLength(1);
+  const diagnostic = outcome.diagnostics[0]!;
+  expect(outcome.dataset).toBe(dataset);
   expect(diagnostic.report).toEqual(report);
-  expect(diagnostic.severity).toBe("error");
-  if (error.value.fault.kind === "plain") {
-    expect(diagnostic).toMatchObject({
-      found: "",
-      expected: [],
-      suggestions: [],
-    });
-  } else if (error.value.fault.kind === "unknown") {
-    expect(diagnostic.found).toBe(
-      error.value.fault.pathResolution?.found ?? error.value.fault.name,
-    );
-  }
-  const span = diagnostic.location?.span;
-  const argument =
-    diagnostic.location?.argument === "group" ? query.group : query.filter;
-  if (span)
-    expect(diagnostic.excerpt?.at).toBe(argument?.slice(span.from, span.to));
-  else if (diagnostic.excerpt && diagnostic.location?.index !== undefined) {
-    const index = diagnostic.location.index;
-    expect(diagnostic.excerpt.at).toBe(
-      diagnostic.location.argument === "sort"
-        ? query.sort?.[index]?.field
-        : query.fields?.[index],
-    );
-  } else expect(diagnostic.excerpt).toBeUndefined();
+  expect(diagnostic.severity).toBe(outcome.severity);
+  expect(diagnostic).toMatchObject(faultFields(outcome.fault));
+  // The excerpt shows the source span, else the indexed entry, else nothing.
+  const location = diagnostic.location;
+  const span = location?.span;
+  const argument = location?.argument === "group" ? query.group : query.filter;
+  const index = diagnostic.excerpt && location?.index;
+  const entry =
+    location?.argument === "sort"
+      ? query.sort?.[index ?? -1]?.field
+      : query.fields?.[index ?? -1];
+  const excerpted = Boolean(span) || index !== undefined;
+  expect(excerpted ? diagnostic.excerpt?.at : diagnostic.excerpt).toBe(
+    span ? argument?.slice(span.from, span.to) : excerpted ? entry : undefined,
+  );
 });
+
+/** The diagnostics of a golden case: the warnings of a read of the dataset, or its Fault. */
+function goldenOutcome(
+  exit: Exit.Exit<QueryResult, unknown>,
+  dataset: QueryDataset,
+) {
+  if (Exit.isSuccess(exit))
+    return {
+      severity: "warning",
+      diagnostics: exit.value.warnings,
+      dataset,
+      fault: undefined,
+    } as const;
+  const error = Cause.findErrorOption(exit.cause);
+  if (error._tag === "None" || !(error.value instanceof ItemQueryError))
+    throw new Error("Expected an Item Query fault");
+  return {
+    severity: "error",
+    diagnostics: [error.value.diagnostic],
+    dataset: error.value.dataset,
+    fault: error.value.fault,
+  } as const;
+}
+
+/** The diagnostic fields a Fault fixes regardless of its report. */
+function faultFields(fault: ItemQueryError["fault"] | undefined) {
+  if (fault?.kind === "plain")
+    return { found: "", expected: [], suggestions: [] };
+  if (fault?.kind === "unknown")
+    return { found: fault.pathResolution?.found ?? fault.name };
+  return {};
+}
 
 // Failure modes: escaped prefixes must not shift carets, zero-width spans
 // need a visible marker, and context must remain bounded on both sides.

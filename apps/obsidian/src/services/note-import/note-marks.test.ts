@@ -74,9 +74,8 @@ describe("parseNoteSchema", () => {
     const schema = parseNoteSchema(root);
     expect(schema.supported).toBe(true);
     expect(schema).toMatchObject({ version: 9 });
-    if (schema.supported) {
-      expect(schema.container.innerHTML).toBe("<p>x</p>");
-    }
+    if (!schema.supported) throw new Error("schema is unsupported");
+    expect(schema.container.innerHTML).toBe("<p>x</p>");
   });
 
   it("accepts the unwrapped container returned by the API", () => {
