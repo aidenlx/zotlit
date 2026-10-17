@@ -181,6 +181,11 @@ export interface QueryViewHost {
    */
   layouts?: readonly string[];
   /**
+   * Writes what the view shows as a new Query File. Present: the view menu
+   * of a host without views (`displayOnly`) offers "Save as query file".
+   */
+  saveAs?: () => void;
+  /**
    * A condition on each row that the host answers and the query cannot, such
    * as the Library View's Has note facet; `null` for none. The query then
    * reads every match, and the view's limit cuts the rows the condition
@@ -644,6 +649,11 @@ export class QueryView extends Component implements HistorySurface {
   /** The Layout types the host offers; `undefined` for every one. */
   get layouts(): readonly string[] | undefined {
     return this.#host.layouts;
+  }
+
+  /** The host's "Save as query file", for the view menu. */
+  get saveAs(): QueryViewHost["saveAs"] {
+    return this.#host.saveAs;
   }
 
   /** The host's link to the Query File, for the toolbar. */

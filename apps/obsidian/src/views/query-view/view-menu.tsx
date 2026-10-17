@@ -8,7 +8,8 @@
 //
 // A host that keeps only the Layout of its one view (`displayOnly`, ADR 0070)
 // gets the menu as a Layout switch: a row per Layout the host offers, and no
-// view to add or configure (ADR 0074).
+// view to add or configure (ADR 0074). Below them, a host that can write what
+// it shows as a Query File offers "Save as query file".
 //
 // It stands on the Chooser, the one popover that filters as the user types
 // (ADR 0044).
@@ -41,6 +42,7 @@ import type { QueryView } from "./view";
 const VIEW_ROW_DRAG_TYPE = "application/x-zotlit-query-view";
 
 const ADD_ROW = "action:add";
+const SAVE_AS_ROW = "action:save-as";
 
 export function ViewMenu({ view }: { view: QueryView }) {
   return view.can.views ? (
@@ -102,6 +104,7 @@ function LayoutSwitch({ view }: { view: QueryView }) {
   const popup = useRef<HTMLDivElement>(null);
   const listName = useUniqueId();
   const offered = view.layouts;
+  const { saveAs } = view;
   const layouts = useMemo(
     () => (current ? layoutsFor(current, offered) : []),
     [current, offered],
@@ -114,8 +117,24 @@ function LayoutSwitch({ view }: { view: QueryView }) {
           label: layout.name(),
         })),
       },
+      ...(saveAs
+        ? [
+            {
+              items: [
+                {
+                  value: SAVE_AS_ROW,
+                  label: m.annot_view_save_as_query_file(),
+                  action: () => {
+                    popup.current?.hidePopover();
+                    saveAs();
+                  },
+                },
+              ],
+            },
+          ]
+        : []),
     ],
-    [layouts],
+    [layouts, saveAs],
   );
   if (!file || !current) return null;
   const index = file.views.indexOf(current);
@@ -151,20 +170,32 @@ function LayoutSwitch({ view }: { view: QueryView }) {
           {m.query_view_layout()}
         </span>
         <Chooser.List groups={groups} aria-labelledby={listName}>
-          {(row) => (
-            <Chooser.Item
-              key={row.value}
-              value={row.value}
-              icon={
-                layoutsFor(current).find((layout) => layout.type === row.value)
-                  ?.icon
-              }
-              className="zt:data-selected:[font-weight:var(--font-medium)]"
-              data-query-view-layout-option={row.value}
-            >
-              {row.label}
-            </Chooser.Item>
-          )}
+          {(row) =>
+            row.action ? (
+              <Chooser.Action
+                key={row.value}
+                value={row.value}
+                icon="file-plus"
+                data-query-view-action={row.value.slice("action:".length)}
+              >
+                {row.label}
+              </Chooser.Action>
+            ) : (
+              <Chooser.Item
+                key={row.value}
+                value={row.value}
+                icon={
+                  layoutsFor(current).find(
+                    (layout) => layout.type === row.value,
+                  )?.icon
+                }
+                className="zt:data-selected:[font-weight:var(--font-medium)]"
+                data-query-view-layout-option={row.value}
+              >
+                {row.label}
+              </Chooser.Item>
+            )
+          }
         </Chooser.List>
       </Chooser.Popup>
     </Chooser>
