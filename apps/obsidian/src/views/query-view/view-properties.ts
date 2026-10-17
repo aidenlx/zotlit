@@ -17,6 +17,7 @@ import { runtime } from "@/lib/i18n/generated/runtime";
 
 import { DATASETS } from "./datasets";
 import {
+  LITERATURE_NOTE,
   QUERY_FILE_DATASETS,
   displayName,
   formulaName,
@@ -27,11 +28,7 @@ import { formulaIssuesOf } from "./results";
 import { groupPaths } from "./rows";
 import type { QueryView } from "./view";
 
-/**
- * The path of the Literature Note Property. The vault's Note Index answers
- * it, not ZotLit Query, so no query reads it, and only the Table shows it.
- */
-export const LITERATURE_NOTE = "vault.literatureNote";
+export { LITERATURE_NOTE };
 
 /**
  * What a Property is, by the namespace of its path: a field of the Query

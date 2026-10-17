@@ -20,7 +20,18 @@ Use one of these:
 
 ZotLit creates a file named `Untitled.zotquery` and opens it in a tab. Hold `Ctrl` (Windows and Linux) or `Command` (macOS) when you select the menu item to open it in a new tab. Rename the file as you rename any note.
 
-The new file has one view, <UiLabel name={m.query_file_default_view_name()} />. It shows the annotations of your whole library, grouped by paper, at most 100 at a time.
+The new file has two views:
+
+- <UiLabel name={m.query_file_items_view_name()} /> is the default view. It is a
+  Table of the papers in your whole library, newest first by date modified, at
+  most 100 at a time. It shows the Title,
+  <UiLabel name={m.query_file_creators_property()} />,
+  <UiLabel name={m.query_file_year_property()} />, and
+  <UiLabel name={m.query_view_table_literature_note()} /> columns.
+- <UiLabel name={m.query_file_annotations_view_name()} /> shows the annotations
+  of your whole library, grouped by paper, at most 100 at a time.
+
+To see the annotations, select the view menu and select <UiLabel name={m.query_file_annotations_view_name()} />. See [Switch, add, and arrange views](#view-menu).
 
 ## Work with views [#views]
 
