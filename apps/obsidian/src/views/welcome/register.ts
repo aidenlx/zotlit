@@ -3,7 +3,8 @@
 // Zotero data directory this device does not have.
 //
 // @see apps/obsidian/docs/adr/0076-the-library-view-is-the-first-screen.md
-import type { App, Plugin } from "obsidian";
+import { ItemView } from "obsidian";
+import type { App, Plugin, WorkspaceLeaf } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
@@ -11,6 +12,7 @@ import type { QueryClientService } from "@/services/query-client/service";
 import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import { openLibraryView } from "@/views/library/register";
+import { LIBRARY_VIEW_TYPE } from "@/views/library/view";
 
 import { holdConnectionReadout } from "./connection";
 
@@ -21,9 +23,13 @@ export interface WelcomeRegistrationDeps {
 }
 
 export function registerWelcomeView(
-  plugin: Pick<Plugin, "addCommand" | "app" | "register">,
+  plugin: Pick<Plugin, "addCommand" | "app" | "register" | "registerView">,
   deps: WelcomeRegistrationDeps,
 ): void {
+  plugin.registerView(
+    WELCOME_VIEW_TYPE,
+    (leaf) => new WelcomeTab(leaf, plugin.app),
+  );
   plugin.register(
     holdConnectionReadout({ reads: deps.reads, queries: deps.queries }),
   );
@@ -62,4 +68,39 @@ export async function openWelcomeView(
 ): Promise<void> {
   settings.update({ "welcome.dismissed": false });
   await openLibraryView(app);
+}
+
+/** The view type of the Welcome tab that ZotLit had before ADR 0076. */
+const WELCOME_VIEW_TYPE = "zotlit-welcome";
+
+/**
+ * A Welcome tab that a workspace saved before the Welcome View became a
+ * banner. It turns into the Library View, or closes where a Library View tab
+ * is already open, so no empty tab is left.
+ */
+class WelcomeTab extends ItemView {
+  readonly #app: App;
+
+  constructor(leaf: WorkspaceLeaf, app: App) {
+    super(leaf);
+    this.#app = app;
+  }
+
+  override getViewType(): string {
+    return WELCOME_VIEW_TYPE;
+  }
+
+  override getDisplayText(): string {
+    return m.library_view_name();
+  }
+
+  protected override async onOpen(): Promise<void> {
+    const { workspace } = this.#app;
+    // A restored tab opens while the workspace still loads its layout.
+    workspace.onLayoutReady(() => {
+      if (workspace.getLeavesOfType(LIBRARY_VIEW_TYPE).length > 0)
+        this.leaf.detach();
+      else void this.leaf.setViewState({ type: LIBRARY_VIEW_TYPE });
+    });
+  }
 }

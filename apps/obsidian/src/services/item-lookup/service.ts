@@ -5,7 +5,7 @@
  * identity); this facade only
  *
  * - resolves the current Library Scope to local `libraryIDs`, in canonical
- *   order, and asks `SearchItems`;
+ *   order, and asks `SearchItems`; a search may name its own Libraries;
  * - labels each hit with its Library from the scope it asked with, when two
  *   or more Libraries are in scope, so a group rename shows without a rebuild;
  * - runs the searches of each Search Session in one `FiberHandle`, so the
@@ -32,6 +32,13 @@ import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 const logger = getLogger(["item-lookup"]);
 export const DEFAULT_LIMIT = 50;
 
+export interface SearchOptions {
+  /** The most hits; {@link DEFAULT_LIMIT} where absent. */
+  limit?: number;
+  /** The Libraries to search in place of the Library Scope in force. */
+  libraries?: readonly AvailableLibrary[];
+}
+
 export interface SearchHit extends ReadsSearchHit {
   /**
    * The Library this hit came from, for a muted label on the result row, or
@@ -51,7 +58,7 @@ export interface ItemLookupDeps {
  * interrupts the pending search, and every later `search` answers empty.
  */
 export interface SearchSession extends Disposable {
-  search(query: string, opts?: { limit?: number }): Promise<SearchHit[]>;
+  search(query: string, opts?: SearchOptions): Promise<SearchHit[]>;
   close(): void;
 }
 
@@ -77,12 +84,12 @@ export class ItemLookup extends Service<ItemLookupReady> {
   }
 
   /**
-   * The Items in Library Scope that match `query`, best first, at most
+   * The Items in Library Scope, or in the Libraries `opts` names, that match `query`, best first, at most
    * `limit`: a one-shot search, which runs beside every other search. A
    * Library Scope change that changes the Libraries interrupts it, and it
    * then answers empty.
    */
-  async search(query: string, opts?: { limit?: number }): Promise<SearchHit[]> {
+  async search(query: string, opts?: SearchOptions): Promise<SearchHit[]> {
     const { runOnce } = await this.ready;
     return this.#run(runOnce, query, opts).catch((error: unknown) => {
       // A scope change interrupted this search, or the service closed.
@@ -136,10 +143,11 @@ export class ItemLookup extends Service<ItemLookupReady> {
   async #run(
     run: RunSearch,
     query: string,
-    opts: { limit?: number } | undefined,
+    opts: SearchOptions | undefined,
   ): Promise<SearchHit[]> {
     const limit = opts?.limit ?? DEFAULT_LIMIT;
-    const libraries = this.#libraryScope.current?.available ?? [];
+    const libraries =
+      opts?.libraries ?? this.#libraryScope.current?.available ?? [];
     if (limit <= 0 || libraries.length === 0) return [];
     return run(this.#searchItems(libraries, query, limit));
   }

@@ -41,7 +41,7 @@ export function registerLibraryView(
 export async function openLibraryView(
   app: App,
   { pane = "tab" }: { pane?: "tab" | false } = {},
-): Promise<void> {
+): Promise<LibraryView | null> {
   const { workspace } = app;
   let leaf = workspace.getLeavesOfType(LIBRARY_VIEW_TYPE)[0];
   if (!leaf) {
@@ -52,4 +52,19 @@ export async function openLibraryView(
     workspace.setActiveLeaf(leaf, { focus: true });
   }
   await workspace.revealLeaf(leaf);
+  // Search is the front door: the cursor waits in the box. A tab that the
+  // workspace restores on startup leaves the cursor where it was.
+  if (leaf.view instanceof LibraryView) leaf.view.search.focus();
+  return leaf.view instanceof LibraryView ? leaf.view : null;
+}
+
+/**
+ * Open the Library View on the Item `indexedKey`, selected in its first
+ * Collection: the quick switcher's "Show in Library".
+ */
+export async function showInLibrary(
+  app: App,
+  indexedKey: string,
+): Promise<void> {
+  await (await openLibraryView(app))?.reveal(indexedKey);
 }

@@ -425,3 +425,50 @@ describe("QuickSwitchModal Profile creation", () => {
 function makeQuickSwitchModal(deps: QuickSwitchDeps): QuickSwitchModal {
   return new QuickSwitchModal(deps);
 }
+
+describe("QuickSwitchModal Show in Library chord", () => {
+  it("opens the Library View on the Item at Alt+Enter, and nothing else", async () => {
+    onPlatform(true);
+    const showInLibrary = vi.fn(() => Promise.resolve());
+    const getNotesByItemKey = vi.fn().mockReturnValue([]);
+    const modal = new QuickSwitchModal({
+      app: {},
+      lookup: { openSession: vi.fn() },
+      noteFeature: { createNote: vi.fn() },
+      noteIndex: { getNotesByItemKey, whenIndexed: vi.fn() },
+      settings: { current: {} },
+      showInLibrary,
+    } as unknown as QuickSwitchDeps);
+    const select = vi
+      .spyOn(modal, "selectActiveSuggestion")
+      .mockImplementation(() => {});
+    const evt = { altKey: true } as KeyboardEvent;
+    expect(findExactHandler(modal, ["Alt"])?.(evt)).toBe(false);
+    expect(select).toHaveBeenCalledWith(evt);
+
+    await modal.onChooseSuggestion(
+      { item: { indexedKey: "ABCD2345g7" } } as never,
+      evt,
+    );
+    expect(showInLibrary).toHaveBeenCalledExactlyOnceWith("ABCD2345g7");
+    expect(getNotesByItemKey).not.toHaveBeenCalled();
+    expect(resolveLiteratureNoteAttachments).not.toHaveBeenCalled();
+  });
+
+  it("advertises the chord with the option glyph on macOS and Alt elsewhere", () => {
+    const commands = (isMacOS: boolean) => {
+      onPlatform(isMacOS);
+      let captured: Instruction[] = [];
+      vi.spyOn(
+        QuickSwitchModal.prototype,
+        "setInstructions",
+      ).mockImplementation((instructions: Instruction[]) => {
+        captured = instructions;
+      });
+      makeModal();
+      return captured.map((i) => `${i.command} ${i.purpose}`);
+    };
+    expect(commands(true)).toContain("⌥↵ to show in library");
+    expect(commands(false)).toContain("Alt↵ to show in library");
+  });
+});

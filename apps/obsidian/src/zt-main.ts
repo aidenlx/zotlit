@@ -74,7 +74,8 @@ import {
 } from "./views/citation-presentation/register";
 import { registerCitationSuggest } from "./views/citation-suggest/register";
 import { registerCitedByView } from "./views/cited-by/register";
-import { registerLibraryView } from "./views/library/register";
+import { itemActions } from "./views/library/item-actions";
+import { registerLibraryView, showInLibrary } from "./views/library/register";
 import { registerNotePreview } from "./views/note-preview/register";
 import { registerPandocExport } from "./views/pandoc-export/register";
 import { registerQueryBlock } from "./views/query-view/block";
@@ -427,6 +428,7 @@ export default class ZotLitPlugin extends Plugin {
       noteFeature: services.noteFeature,
       settings: services.settings,
       zoteroPref: services.zoteroPref,
+      showInLibrary: (indexedKey) => showInLibrary(this.app, indexedKey),
     });
 
     void stack.use(
@@ -511,6 +513,19 @@ export default class ZotLitPlugin extends Plugin {
         templateMigration: services.templateMigration,
         release: services.release,
       },
+      items: itemActions({
+        app: this.app,
+        createProfile: services.createProfile,
+        importProfile: services.importProfile,
+        noteFeature: services.noteFeature,
+        noteIndex: services.noteIndex,
+        reads: services.zoteroReads,
+        zoteroPref: services.zoteroPref,
+        settings: services.settings,
+        citationLookup: services.citationLookup,
+        notify: (message) => new BaseNotice(message),
+      }),
+      lookup: services.itemLookup,
     });
 
     // The Annotation History's own verbs. A bound PDF view and an Annotation

@@ -497,6 +497,40 @@
   "library_view_locate": "定位数据文件夹",
   "library_view_not_found_title": "找不到您的 Zotero 文库",
   "library_view_not_found_body": "ZotLit 会在默认的 Zotero 配置文件中查找。指定您的数据文件夹后，文献会显示在这里。Zotero 无需打开。",
+  "library_view_menu_open_pdf": "打开 PDF",
+  "library_view_menu_open_pdf_right": "在右侧打开 PDF",
+  "library_view_menu_open_note": "打开文献笔记",
+  "library_view_menu_write_note": "撰写文献笔记",
+  "library_view_menu_insert_citation": "插入引用",
+  "library_view_menu_show_in_zotero": "在 Zotero 中显示",
+  "library_view_cite_no_note": "请先打开一篇笔记，再插入引用。",
+  "instruction_show_in_library": "在文库中显示",
+  "library_view_search_label": "搜索文献",
+  "library_view_search_placeholder": "搜索文献…（用 tag:名称 按标签筛选）",
+  "library_view_search_clear": "清除搜索",
+  "library_view_search_matches": [
+    {
+      "declarations": [
+        "input selection",
+        "input count",
+        "local formatted = count: number"
+      ],
+      "selectors": ["formatted"],
+      "match": {
+        "formatted=*": "{selection}中有 {formatted} 个结果"
+      }
+    }
+  ],
+  "library_view_search_matches_everywhere": [
+    {
+      "declarations": ["input count", "local formatted = count: number"],
+      "selectors": ["formatted"],
+      "match": {
+        "formatted=*": "所有文库中有 {formatted} 个结果"
+      }
+    }
+  ],
+  "library_view_search_everywhere": "搜索所有文库",
   "annot_view_loading": "加载中…",
   "annot_view_no_attachments": "没有可用的附件",
   "annot_view_more_tooltip": "更多选项",

@@ -138,7 +138,9 @@ export function buildServices(
           version: plugin.manifest.version,
           settings,
           // A first install opens the Library View in place of the empty tab.
-          openFirstScreen: () => openLibraryView(plugin.app, { pane: false }),
+          openFirstScreen: async () => {
+            await openLibraryView(plugin.app, { pane: false });
+          },
         }),
     })
     .use({

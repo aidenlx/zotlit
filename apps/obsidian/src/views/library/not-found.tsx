@@ -34,12 +34,19 @@ export interface ZoteroNotFoundSlots {
 export class ZoteroNotFound extends Component {
   readonly #deps: ZoteroNotFoundDeps;
   readonly #slots: ZoteroNotFoundSlots;
+  readonly #found: () => void;
   #roots: Root[] = [];
 
-  constructor(deps: ZoteroNotFoundDeps, slots: ZoteroNotFoundSlots) {
+  /** `found` runs when the database reads again after it could not. */
+  constructor(
+    deps: ZoteroNotFoundDeps,
+    slots: ZoteroNotFoundSlots,
+    found: () => void,
+  ) {
     super();
     this.#deps = deps;
     this.#slots = slots;
+    this.#found = found;
   }
 
   override onload(): void {
@@ -47,8 +54,12 @@ export class ZoteroNotFound extends Component {
     const { shell, tree, list } = this.#slots;
     // Read from the database service on each of its changes, so a folder
     // that is set brings the papers back.
-    const update = () =>
-      shell.toggleAttribute("data-zotero-missing", unavailable(this.#deps));
+    const update = () => {
+      const missing = unavailable(this.#deps);
+      const was = shell.hasAttribute("data-zotero-missing");
+      shell.toggleAttribute("data-zotero-missing", missing);
+      if (was && !missing) this.#found();
+    };
     this.register(reads.on("changed", update));
     this.register(reads.on("degraded", update));
     this.register(reads.on("refresh-failed", update));

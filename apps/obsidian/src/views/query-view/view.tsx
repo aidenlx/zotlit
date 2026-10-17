@@ -49,6 +49,7 @@ import { datasetSpec, grouping } from "./datasets";
 import { FilterButton } from "./filter-popover";
 import type { FilterValues } from "./filter-popover";
 import { GroupEditor } from "./group-control";
+import type { ItemRowGestures } from "./item-rows";
 import { annotationsLayoutOptions, layoutOf } from "./layouts";
 import { ListLayout } from "./list-layout";
 import { PAPERS_FIELDS, PapersLayout } from "./papers-layout";
@@ -180,6 +181,13 @@ export interface QueryViewHost {
    */
   layouts?: readonly string[];
   /**
+   * What a click, a double click, the context menu and a drag do on an Item
+   * row of the Papers and Table Layouts. Absent: the rows take no gesture.
+   *
+   * @see apps/obsidian/docs/adr/0073-library-view-rows-act-as-quick-switcher-results.md
+   */
+  rows?: ItemRowGestures;
+  /**
    * Why `row` is in the list, such as "edited in Zotero" on the Library
    * View's Recent; the Papers reading-state line ends with it. `null`: no
    * reason. Absent: no row gives one.
@@ -192,6 +200,13 @@ export interface QueryViewHost {
    * of a host without views (`displayOnly`) offers "Save as query file".
    */
   saveAs?: () => void;
+  /**
+   * The Indexed Keys in the order the rows show in, in place of the sort: the
+   * Library View's ranked search. `null` or absent: the order of the query.
+   *
+   * @see apps/obsidian/docs/adr/0072-search-enters-the-library-view-as-an-ordered-key-set.md
+   */
+  rank?: () => readonly string[] | null;
 }
 
 /**
@@ -618,6 +633,11 @@ export class QueryView extends Component implements HistorySurface {
     return this.#host.layouts;
   }
 
+  /** What the host does on the gestures over an Item row. */
+  get rows(): ItemRowGestures | undefined {
+    return this.#host.rows;
+  }
+
   /** Why `row` is in the list, as the host says; `null` for no reason. */
   reason(row: QueryViewRow): string | null {
     return this.#host.reason?.(row) ?? null;
@@ -819,10 +839,9 @@ export class QueryView extends Component implements HistorySurface {
             ? "rerun"
             : "new-request";
         if (this.#layout.keepsBack(named, cause)) return;
-        const shown = layoutRows(result.rows ?? [], view);
-        const byKey = new Map(
-          (result.rows ?? []).map((row) => [row.indexedKey, row]),
-        );
+        const rows = ranked(result.rows ?? [], this.#host.rank?.() ?? null);
+        const shown = layoutRows(rows, view);
+        const byKey = new Map(rows.map((row) => [row.indexedKey, row]));
         this.state.setState({
           phase: "ready",
           results: {
@@ -1167,6 +1186,20 @@ function layoutFields(view: QueryFileView): readonly string[] {
 /** Whether the view's Layout draws live Annotation Cards. */
 function drawsCards(view: QueryFileView): boolean {
   return layoutOf(view)?.type === "annotations";
+}
+
+/** `rows` in the order of `rank`, where the host gives one. */
+function ranked<Row extends { indexedKey: string }>(
+  rows: readonly Row[],
+  rank: readonly string[] | null,
+): readonly Row[] {
+  if (rank === null) return rows;
+  const place = new Map(rank.map((key, index) => [key, index]));
+  return rows.toSorted(
+    (a, b) =>
+      (place.get(a.indexedKey) ?? rank.length) -
+      (place.get(b.indexedKey) ?? rank.length),
+  );
 }
 
 /** The rows, drawn by the shown view's Layout. */

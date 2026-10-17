@@ -518,6 +518,10 @@ _Avoid_: detail pane, inspector, preview
 What the researcher has done with an Item: whether it was read and when, its Annotations, and its Literature Note. The Library View shows it on each row and narrows by it with the Reading State facets Unread, Annotated, Has note and PDF.
 _Avoid_: progress, status, read status
 
+**Show in Library**:
+The quick switcher action, Alt+Enter, that opens the Library View on an Item's first Collection with its row selected.
+_Avoid_: reveal in library, locate
+
 **Recent**:
 The node at the top of the Library Tree that lists Items by last activity, newest first, each row with the reason it is there, such as "read 2 h ago in Obsidian". It writes a sort, not a filter, over the whole Library Scope, and is the selection of a new Library View.
 _Avoid_: history, recently read (Zotero's name for its own list)
