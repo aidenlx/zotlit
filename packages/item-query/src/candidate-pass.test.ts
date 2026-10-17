@@ -279,13 +279,19 @@ it.each([
 );
 
 it("uses a Relation List candidate through the fake descriptor's reader", async () => {
-  const { dataset, reads } = fake(12, [1]);
+  // Elements 1 and 2 share the parent 7; element 3 has the parent 9.
+  const { dataset, reads } = fake(12, [1, 2, 3]);
+  const parentReads: (readonly number[])[] = [];
   const root: CandidateDataset = {
     ...dataset,
     candidateRelations: {
       attachments: {
         dataset: () => dataset,
-        readParents: () => Effect.succeed([7]),
+        readParents: ({ itemIDs }) =>
+          Effect.sync(() => {
+            parentReads.push(itemIDs);
+            return itemIDs.map((id) => (id < 3 ? 7 : 9));
+          }),
       },
     },
   };
@@ -294,11 +300,12 @@ it("uses a Relation List candidate through the fake descriptor's reader", async 
       root,
       'attachments.filter(value.tags.contains("selected")).length > 0',
     ),
-  ).toEqual(new Set([7]));
+  ).toEqual(new Set([7, 9]));
   expect(reads).toEqual([1]);
+  expect(parentReads).toEqual([[1, 2, 3]]);
   expect(logs[0]?.properties).toMatchObject({
     plan: "candidates",
-    candidateCount: 1,
+    candidateCount: 2,
     reason: null,
   });
 });
@@ -462,7 +469,7 @@ it.each([false, true])(
   async (exhausted) => {
     const { ATTACHMENTS } = await import("./query-attachments");
     const parent = fake(40_000, []);
-    const reads: number[] = [];
+    const reads: { budget: number; limit: number }[] = [];
     const dataset: CandidateDataset = {
       ...parent.dataset,
       id: "attachments",
@@ -470,9 +477,9 @@ it.each([false, true])(
       candidateRelations: {
         item: {
           dataset: () => parent.dataset,
-          readChildren: ({ budget }) =>
+          readChildren: ({ budget, limit }) =>
             Effect.sync(() => {
-              reads.push(budget);
+              reads.push({ budget, limit });
               return {
                 itemIDs: [7],
                 exhausted,
@@ -498,8 +505,12 @@ it.each([false, true])(
         tuning: PRODUCTION_TUNING,
       }),
     );
-    expect(run.exit).toEqual(Exit.succeed(exhausted ? null : new Set([7])));
-    expect(reads).toEqual([4000]);
+    // An exhausted budget scans; otherwise the children are the candidates.
+    if (!Exit.isSuccess(run.exit)) throw new Error(String(run.exit.cause));
+    expect(run.exit.value === null).toBe(exhausted);
+    // Budget: 8 pages of 500 Items. Limit: the cap of 40,000 rows at 0.25,
+    // plus one.
+    expect(reads).toEqual([{ budget: 4000, limit: 10_001 }]);
     expect(logs[0]?.properties).toMatchObject({
       reason: exhausted ? "parent-page-budget-exhausted" : null,
     });

@@ -1,7 +1,8 @@
 import { Cause, Exit } from "effect";
-import { expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { openScenarioDatabase } from "@zotlit/db/test-scenario";
+import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
 import { diagnose, diagnoseDecode, renderDiagnostic } from "./diagnose";
 import reports from "./diagnostic-reports.json";
@@ -14,12 +15,34 @@ import type { ItemQueryRequest } from "./request";
 import { describeQueryVocabulary } from "./schema";
 import { runEffect } from "./test-helpers";
 
+// Read-only scenarios; a test that changes the database opens its own.
+let shared: ScenarioDatabase;
+let sharedAnnotations: ScenarioDatabase;
+
+beforeAll(() => {
+  shared = openScenarioDatabase();
+  sharedAnnotations = openScenarioDatabase({ annotations: true });
+});
+
+afterAll(() => {
+  shared.close();
+  sharedAnnotations.close();
+});
+
+const vocabulary = describeQueryVocabulary();
+
+/** The hint line of a golden report, the canonical text of that diagnostic. */
+function goldenHint(name: string): string {
+  const entry = reports.find((report) => report.name === name);
+  if (!entry) throw new Error(`No golden report named ${name}`);
+  return entry.report.at(-1)!;
+}
+
 it("accepts every suggested correction for group Faults", async () => {
-  using scenario = openScenarioDatabase();
-  const catalog = describeQueryVocabulary();
   const failures: string[] = [];
+  let checked = 0;
   for (const dataset of [ITEMS, ATTACHMENTS, ANNOTATIONS]) {
-    const paths = catalog.datasets[dataset.id].fields
+    const paths = vocabulary.datasets[dataset.id].fields
       .filter((field) => !field.group)
       .map((field) => field.path);
     if (dataset === ITEMS)
@@ -31,7 +54,7 @@ it("accepts every suggested correction for group Faults", async () => {
     for (const group of paths) {
       const { exit } = await runEffect(
         collectQuery(dataset, { libraries: [], fields: [], group }),
-        { client: scenario.db },
+        { client: shared.db },
       );
       if (!Exit.isFailure(exit))
         throw new Error(`Expected a Fault for ${group}`);
@@ -40,6 +63,7 @@ it("accepts every suggested correction for group Faults", async () => {
         throw new Error(String(exit.cause));
       if (error.value.fault.kind !== "group") continue;
       for (const suggestion of error.value.diagnostic.suggestions) {
+        checked++;
         expect(suggestion.startsWith("group='")).toBe(true);
         expect(suggestion.endsWith("'")).toBe(true);
         const corrected = suggestion.slice("group='".length, -1);
@@ -49,13 +73,14 @@ it("accepts every suggested correction for group Faults", async () => {
             fields: [],
             group: corrected,
           }),
-          { client: scenario.db },
+          { client: shared.db },
         );
         if (Exit.isFailure(result))
           failures.push(`${dataset.id}: ${group} → ${suggestion}`);
       }
     }
   }
+  expect(checked).toBeGreaterThan(0);
   expect(failures).toEqual([]);
 });
 
@@ -112,21 +137,9 @@ it("reports an unknown global from the function registry", () => {
   expect(diagnostic).toMatchObject({
     code: "unknown-function",
     found: "contains",
-    expected: [
-      "if",
-      "number",
-      "min",
-      "max",
-      "now",
-      "today",
-      "date",
-      "duration",
-      "list",
-    ],
+    expected: vocabulary.functions.map((entry) => entry.name),
     suggestions: [],
   });
-  expect(diagnostic.report[0]).toBe(diagnostic.message);
-  expect(diagnostic.report.at(-1)).toBe(diagnostic.hint);
 });
 
 it("ranks field name corrections", () => {
@@ -151,8 +164,6 @@ it("ranks field name corrections", () => {
     { argument: "filter", dataset: ITEMS },
   );
 
-  expect(title.report.at(-1)).toBe(title.hint);
-  expect(year.report.at(-1)).toBe(year.hint);
   expect(title.suggestions).toEqual(["title"]);
   expect(year.suggestions).toEqual([
     "date.year",
@@ -193,27 +204,16 @@ it("uses only the receiver type's registered names without aliases", () => {
     { argument: "filter", dataset: ITEMS },
   );
 
-  expect(includes.expected).toEqual([
-    "toString",
-    "isType",
-    "isTruthy",
-    "isEmpty",
-    "lower",
-    "startsWith",
-    "endsWith",
-    "contains",
-    "containsAny",
-    "containsAll",
-    "trim",
-    "title",
-    "repeat",
-    "reverse",
-    "slice",
-    "replace",
-    "split",
-  ]);
+  const methodsOf = (type: string) => [
+    ...new Set(
+      vocabulary.methods
+        .filter((entry) => entry.on === "any" || entry.on === type)
+        .map((entry) => entry.name),
+    ),
+  ];
+  expect(includes.expected).toEqual(methodsOf("string"));
   expect(includes.suggestions).toEqual([]);
-  expect(some.expected).toContain("filter");
+  expect(some.expected).toEqual(methodsOf("list"));
   expect(some.suggestions).toEqual([]);
 });
 
@@ -231,8 +231,7 @@ it("keeps legacy diagnostic fields without source text", () => {
 
   const diagnostic = error.diagnostic;
   expect(diagnostic).toMatchObject({ code: "unknown-field", found: "now" });
-  expect(diagnostic.report[0]).toBe(error.message);
-  expect(diagnostic.report.at(-1)).toBe(error.hint);
+  expect(error.hint).toBe(goldenHint("F13-function-as-field"));
 });
 
 it("names a method and property used in the other form", () => {
@@ -264,8 +263,8 @@ it("names a method and property used in the other form", () => {
     { argument: "filter", dataset: ITEMS },
   );
 
-  expect(methodCall.report.at(-1)).toBe(methodCall.hint);
-  expect(propertyRead.report.at(-1)).toBe(propertyRead.hint);
+  expect(methodCall.hint).toBe(goldenHint("property called as method"));
+  expect(propertyRead.hint).toBe(goldenHint("method read as property"));
 });
 
 it("uses a registered global signature for a global called as a method", () => {
@@ -285,7 +284,7 @@ it("uses a registered global signature for a global called as a method", () => {
     { argument: "filter", dataset: ITEMS },
   );
 
-  expect(diagnostic.report.at(-1)).toBe(diagnostic.hint);
+  expect(diagnostic.hint).toBe(goldenHint("title.number()"));
 });
 
 it("prefers an exact cross-role action to an unrelated near match", () => {
@@ -306,7 +305,6 @@ it("prefers an exact cross-role action to an unrelated near match", () => {
   );
 
   expect(diagnostic.suggestions).toEqual(["map"]);
-  expect(diagnostic.report.at(-1)).toBe(diagnostic.hint);
 });
 
 it("swaps a receiver with the one argument when the registered method fits", () => {
@@ -330,13 +328,12 @@ it("swaps a receiver with the one argument when the registered method fits", () 
 });
 
 it("lists attachment.indexedKey among the Annotation Sortable Fields", async () => {
-  using scenario = openScenarioDatabase({ annotations: true });
   const { exit } = await runEffect(
     collectQuery(ANNOTATIONS, {
       libraries: [{ libraryID: 1, groupID: null }],
       sort: [{ field: "noSuchField", direction: "asc" }],
     }),
-    { client: scenario.db },
+    { client: sharedAnnotations.db },
   );
   const error = Exit.isFailure(exit) ? Cause.findErrorOption(exit.cause) : null;
   if (error?._tag !== "Some" || error.value._tag !== "ItemQueryError")
@@ -353,17 +350,23 @@ it("lists attachment.indexedKey among the Annotation Sortable Fields", async () 
 it.each(reports)("reports $name", async ({ request, report, ...setup }) => {
   const dataset =
     "dataset" in setup && setup.dataset === "annotations" ? ANNOTATIONS : ITEMS;
-  using scenario = openScenarioDatabase({
-    annotations: dataset === ANNOTATIONS,
-  });
-  if ("withoutCustomFields" in setup && setup.withoutCustomFields)
-    scenario.sqlite.exec("update fieldsCombined set custom = 0");
-  if (setup.customFieldName !== undefined)
-    scenario.sqlite
+  const withoutCustomFields =
+    "withoutCustomFields" in setup && setup.withoutCustomFields;
+  // A case that changes the source opens its own copy.
+  using changed =
+    withoutCustomFields || setup.customFieldName !== undefined
+      ? openScenarioDatabase({ annotations: dataset === ANNOTATIONS })
+      : undefined;
+  if (changed && withoutCustomFields)
+    changed.sqlite.exec("update fieldsCombined set custom = 0");
+  if (changed && setup.customFieldName !== undefined)
+    changed.sqlite
       .prepare(
         "update fieldsCombined set fieldName = ? where fieldName = 'review.status'",
       )
       .run(setup.customFieldName);
+  const scenario =
+    changed ?? (dataset === ANNOTATIONS ? sharedAnnotations : shared);
   const query: ItemQueryRequest = {
     libraries: [{ libraryID: 1, groupID: null }],
     ...request,
@@ -375,8 +378,6 @@ it.each(reports)("reports $name", async ({ request, report, ...setup }) => {
     expect(exit.value.warnings).toHaveLength(1);
     const diagnostic = exit.value.warnings[0]!;
     expect(diagnostic.report).toEqual(report);
-    expect(diagnostic.report[0]).toBe(diagnostic.message);
-    expect(diagnostic.report.at(-1)).toBe(diagnostic.hint);
     expect(diagnostic.severity).toBe("warning");
     return;
   }
@@ -386,8 +387,6 @@ it.each(reports)("reports $name", async ({ request, report, ...setup }) => {
   expect(error.value.dataset).toBe(dataset);
   const diagnostic = error.value.diagnostic;
   expect(diagnostic.report).toEqual(report);
-  expect(diagnostic.report[0]).toBe(diagnostic.message);
-  expect(diagnostic.report.at(-1)).toBe(diagnostic.hint);
   expect(diagnostic.severity).toBe("error");
   if (error.value.fault.kind === "plain") {
     expect(diagnostic).toMatchObject({
@@ -439,6 +438,8 @@ it.each([
       },
       text,
     );
+    expect(diagnostic.report[0]).toBe("message");
+    expect(diagnostic.report.at(-1)).toBe("action");
     expect(diagnostic.report[2]).toBe(" ".repeat(column) + "^".repeat(width));
     expect(diagnostic.excerpt?.at).toBe(text.slice(from, to));
     expect(diagnostic.excerpt!.before.length).toBeLessThanOrEqual(40);
@@ -484,13 +485,12 @@ it("keeps syntax suggestions empty without source text", () => {
 // Failure modes: successful warnings must reach the result, suggest membership,
 // and mark both operands without changing the matching rows.
 it("returns a membership warning with an empty successful result", async () => {
-  using scenario = openScenarioDatabase();
   const { exit } = await runEffect(
     collectQuery(ITEMS, {
       libraries: [{ libraryID: 1, groupID: null }],
       filter: 'tags == "bulk"',
     }),
-    { client: scenario.db },
+    { client: shared.db },
   );
   if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
   expect(exit.value.rows).toEqual([]);
@@ -522,13 +522,12 @@ it.each([
 ] as const)(
   "offers only a valid correction: %s",
   async (filter, correction) => {
-    using scenario = openScenarioDatabase();
     const { exit } = await runEffect(
       collectQuery(ITEMS, {
         libraries: [{ libraryID: 1, groupID: null }],
         filter,
       }),
-      { client: scenario.db },
+      { client: shared.db },
     );
     if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
     expect(exit.value.warnings).toHaveLength(1);
@@ -538,14 +537,13 @@ it.each([
 );
 
 it("keeps source order and aligns escaped operand markers", async () => {
-  using scenario = openScenarioDatabase();
   const filter = '"a\\tb" == 3 || tags != "x"';
   const { exit } = await runEffect(
     collectQuery(ITEMS, {
       libraries: [{ libraryID: 1, groupID: null }],
       filter,
     }),
-    { client: scenario.db },
+    { client: shared.db },
   );
   if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
   expect(exit.value.warnings.map((warning) => warning.code)).toEqual([
@@ -643,8 +641,6 @@ it.each([
       "Correct sort.",
     );
     expect(diagnostic.report).toEqual(report);
-    expect(diagnostic.report[0]).toBe(diagnostic.message);
-    expect(diagnostic.report.at(-1)).toBe(diagnostic.hint);
   },
 );
 

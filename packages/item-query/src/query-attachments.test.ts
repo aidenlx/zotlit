@@ -111,8 +111,7 @@ it("reads only the requested relations and resolves files only for path or exist
           Effect.sync(() => {
             resolved.push(attachment.key);
             return {
-              path:
-                attachment.key === "PDF2LINK" ? "/missing.pdf" : "/paper.pdf",
+              path: `/files/${attachment.key}.pdf`,
               exists: attachment.key !== "PDF2LINK",
             };
           }),
@@ -149,11 +148,15 @@ it("reads only the requested relations and resolves files only for path or exist
       itemIndexedKey: "ART2FULL",
       values: {
         title: "linkedAttachment",
-        path: "/missing.pdf",
+        path: "/files/PDF2LINK.pdf",
         exists: false,
       },
     },
   ]);
+  // The linkMode candidate holds the one linked_file Attachment of the
+  // personal Library: the scan pass resolves it for `exists`, and the
+  // projection pass again for `path` and `exists`.
+  expect(resolved).toEqual(["PDF2LINK", "PDF2LINK"]);
   resolved.length = 0;
   const urls = await query(
     ["path", "exists", "url"],

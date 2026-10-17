@@ -1,5 +1,6 @@
-import { Clock, Context, Effect } from "effect";
-import type { Exit, Scheduler } from "effect";
+import { Cause, Clock, Context, Effect, Exit } from "effect";
+import type { Scheduler } from "effect";
+import { expect } from "vitest";
 
 // The test helper of the package: plain Vitest, no `@effect/vitest`.
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
@@ -8,8 +9,12 @@ import {
   ItemQueryStatementObserver,
 } from "@zotlit/db/item-query";
 import type { StatementRun } from "@zotlit/db/item-query";
+import { SCENARIO_LIBRARIES } from "@zotlit/db/test-scenario";
 
+import type { QueryDataset } from "./dataset";
+import { collectQuery } from "./query";
 import { QueryTimeZone } from "./query-clock";
+import type { ItemQueryRequest } from "./request";
 import { ItemQueryScheduler, ItemQuerySliceObserver } from "./scheduler";
 import { ItemQueryTuning, PRODUCTION_TUNING } from "./tuning";
 import type { Tuning } from "./tuning";
@@ -36,6 +41,11 @@ export interface RunOptions {
   scheduler?: Scheduler.Scheduler;
   /** Called with each event of the run, in the step that produces it. */
   onEvent?: (event: RunEvent) => void;
+  /**
+   * Called in the host task that ends each pause, before the fiber resumes:
+   * the fiber has handed control back and waits.
+   */
+  onResume?: () => void;
   /**
    * `false` keeps no statement in `Run.events`, so the run holds no row that
    * the engine has released.
@@ -100,7 +110,7 @@ export async function runEffect<A, E>(
     .pipe(
       Context.add(ItemQuerySliceObserver, {
         paused: () => record({ type: "pause" }),
-        resumed: () => {},
+        resumed: () => options.onResume?.(),
       }),
     );
   const exit = await Effect.runPromiseExit(
@@ -134,4 +144,32 @@ function fixedClock(now: string): Clock.Clock {
     monotonicTimeNanos: Effect.succeed(nanos),
     sleep: () => Effect.void,
   };
+}
+
+/**
+ * The Fault code of a request on My Library, or null when it runs without a
+ * warning. It runs on the production scheduler: a capability sweep runs a
+ * thousand queries, and a pause after every operation makes each one a long
+ * chain of tasks that a busy machine runs slowly.
+ */
+export async function faultCode(
+  dataset: QueryDataset<any>,
+  client: NodeDatabaseClient,
+  request: Omit<ItemQueryRequest, "libraries">,
+): Promise<string | null> {
+  const { exit } = await runEffect(
+    collectQuery(dataset, {
+      libraries: [SCENARIO_LIBRARIES.personal],
+      limit: 1,
+      ...request,
+    }),
+    { client, scheduler: new ItemQueryScheduler() },
+  );
+  if (Exit.isSuccess(exit)) {
+    expect(exit.value.warnings).toEqual([]);
+    return null;
+  }
+  const error = Cause.findErrorOption(exit.cause);
+  if (error._tag === "None") throw new Error(String(exit.cause));
+  return (error.value as { code?: string }).code ?? error.value._tag;
 }

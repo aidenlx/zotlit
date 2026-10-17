@@ -20,8 +20,14 @@ import { ItemQueryError } from "./error";
 import type { RunOptions } from "./test-helpers";
 import { runEffect } from "./test-helpers";
 
+// Read-only tests share one scenario; a test that writes opens its own.
+let scenario: ScenarioDatabase;
+beforeAll(() => {
+  scenario = openScenarioDatabase({ annotations: true });
+});
+afterAll(() => scenario.close());
+
 it("projects every parent creator and Annotation Tag with []", async () => {
-  using scenario = openScenarioDatabase({ annotations: true });
   const { exit } = await runEffect(
     collectQuery(ANNOTATIONS, {
       libraries: [SCENARIO_LIBRARIES.personal],
@@ -48,7 +54,6 @@ it("projects every parent creator and Annotation Tag with []", async () => {
 });
 
 it("returns the reading record of one Item, with three identities and default fields", async () => {
-  using scenario = openScenarioDatabase({ annotations: true });
   const { exit } = await runEffect(
     collectQuery(ANNOTATIONS, {
       libraries: [SCENARIO_LIBRARIES.personal],
@@ -143,7 +148,9 @@ it("filters and projects the Library selector of Annotations with the same bare 
     rows.find((row) => row.indexedKey === "ANN2HGHTg4815")?.values,
   ).toEqual({ library: "group:4815", "item.library": "group:4815" });
   const personalRows = await query('library == "personal"');
-  expect(personalRows).toHaveLength(rows.length - 1);
+  // The twelve Annotations of My Library; the group holds one.
+  expect(rows).toHaveLength(13);
+  expect(personalRows).toHaveLength(12);
   expect(new Set(personalRows.map((row) => row.values.library))).toEqual(
     new Set(["personal"]),
   );
@@ -160,7 +167,6 @@ it("filters and projects the Library selector of Annotations with the same bare 
 });
 
 it("projects each PDF position kind and preserves an unknown stored position", async () => {
-  using scenario = openScenarioDatabase({ annotations: true });
   const { exit } = await runEffect(
     collectQuery(ANNOTATIONS, {
       libraries: [SCENARIO_LIBRARIES.personal],
@@ -199,7 +205,6 @@ it("projects each PDF position kind and preserves an unknown stored position", a
 });
 
 it("limits all Libraries as one set and projects only identities for fields=[]", async () => {
-  using scenario = openScenarioDatabase({ annotations: true });
   const request = {
     libraries: [SCENARIO_LIBRARIES.personal, SCENARIO_LIBRARIES.group],
     fields: [],
@@ -236,7 +241,6 @@ it("limits all Libraries as one set and projects only identities for fields=[]",
 });
 
 it("combines Annotation fields with parent dates, Tags, and projections", async () => {
-  using scenario = openScenarioDatabase({ annotations: true });
   const { exit } = await runEffect(
     collectQuery(ANNOTATIONS, {
       libraries: [SCENARIO_LIBRARIES.personal],
@@ -252,10 +256,28 @@ it("combines Annotation fields with parent dates, Tags, and projections", async 
   expect(exit.value.rows![0]?.values["item.date.year"]).toBe(2020);
 });
 
-it.each(["title", "fileType", "dateAdded"])(
-  "orders Annotations by the parent Attachment %s as Attachment Query orders their Attachments",
-  async (name) => {
-    using scenario = openScenarioDatabase({ annotations: true });
+// The three files with marks: PDF2LIVE ("Full Text PDF", added 2020-03-16),
+// PDF2LINK ("linkedAttachment") and PDF2GRUPg4815 ("groupAttachment"), both
+// added 2021-01-01. All three are PDFs; the Indexed Key breaks each tie.
+it.each([
+  {
+    name: "title",
+    asc: ["PDF2LIVE", "PDF2GRUPg4815", "PDF2LINK"],
+    desc: ["PDF2LINK", "PDF2GRUPg4815", "PDF2LIVE"],
+  },
+  {
+    name: "fileType",
+    asc: ["PDF2GRUPg4815", "PDF2LINK", "PDF2LIVE"],
+    desc: ["PDF2GRUPg4815", "PDF2LINK", "PDF2LIVE"],
+  },
+  {
+    name: "dateAdded",
+    asc: ["PDF2LIVE", "PDF2GRUPg4815", "PDF2LINK"],
+    desc: ["PDF2GRUPg4815", "PDF2LINK", "PDF2LIVE"],
+  },
+])(
+  "orders Annotations by the parent Attachment $name as Attachment Query orders their Attachments",
+  async ({ name, ...expected }) => {
     const libraries = Object.values(SCENARIO_LIBRARIES);
     for (const direction of ["asc", "desc"] as const) {
       const annotations = await runEffect(
@@ -288,16 +310,17 @@ it.each(["title", "fileType", "dateAdded"])(
       const parents = annotations.exit.value.rows!.map(
         (row) => row.values["attachment.indexedKey"],
       );
-      expect(new Set(parents).size).toBeGreaterThan(1);
       expect(
         parents.filter((key, index) => key !== parents[index - 1]),
-      ).toEqual(attachments.exit.value.rows!.map((row) => row.indexedKey));
+      ).toEqual(expected[direction]);
+      expect(attachments.exit.value.rows!.map((row) => row.indexedKey)).toEqual(
+        expected[direction],
+      );
     }
   },
 );
 
 it("reads parent custom fields, relations, timestamps and identities through their Item semantics", async () => {
-  using scenario = openScenarioDatabase({ annotations: true });
   const { exit } = await runEffect(
     collectQuery(ANNOTATIONS, {
       libraries: [SCENARIO_LIBRARIES.personal],
@@ -329,13 +352,6 @@ it("reads parent custom fields, relations, timestamps and identities through the
 });
 
 describe("Annotation parity with the forced scan", () => {
-  let scenario: ScenarioDatabase;
-
-  beforeAll(() => {
-    scenario = openScenarioDatabase({ annotations: true });
-  });
-  afterAll(() => scenario.close());
-
   describe.each([
     { name: "personal", libraries: [SCENARIO_LIBRARIES.personal] },
     { name: "group", libraries: [SCENARIO_LIBRARIES.group] },
@@ -383,7 +399,6 @@ describe("Annotation parity with the forced scan", () => {
 });
 
 it("caps after parent expansion and uses a bounded Annotation candidate when available", async () => {
-  using scenario = openScenarioDatabase({ annotations: true });
   const run = (filter: string, capRatio: number) =>
     runEffect(
       collectQuery(ANNOTATIONS, {
@@ -403,9 +418,11 @@ it("caps after parent expansion and uses a bounded Annotation candidate when ava
       event.type === "statement" &&
       event.statement.reader === "parent-child-candidate-set",
   );
+  // The cap is a quarter of the twelve Annotations of My Library, 3: the read
+  // stops at the fourth of ART2FULL's twelve, and the scan answers.
   expect(candidateReads).toHaveLength(1);
   expect(candidateReads[0]).toMatchObject({
-    statement: { rows: expect.any(Array) },
+    statement: { rows: { length: 4 } },
   });
   expect(
     overflow.events.some(
@@ -438,7 +455,6 @@ it("caps after parent expansion and uses a bounded Annotation candidate when ava
 it.each(["asc", "desc"] as const)(
   "keeps missing pages last and uses Sort Index then Indexed Key for a %s page sort",
   async (direction) => {
-    using scenario = openScenarioDatabase({ annotations: true });
     const { exit } = await runEffect(
       collectQuery(ANNOTATIONS, {
         libraries: [SCENARIO_LIBRARIES.personal],
@@ -467,7 +483,6 @@ it.each(["asc", "desc"] as const)(
 );
 
 it("reports a never-true comparison before returning an empty Annotation result", async () => {
-  using scenario = openScenarioDatabase({ annotations: true });
   const { exit } = await runEffect(
     collectQuery(ANNOTATIONS, {
       libraries: [SCENARIO_LIBRARIES.personal],
@@ -490,7 +505,6 @@ it("reports a never-true comparison before returning an empty Annotation result"
 });
 
 it("corrects a dotted parent custom field with the source spelling and item prefix", async () => {
-  using scenario = openScenarioDatabase({ annotations: true });
   const filter = 'item.review.status == "done"';
   const { exit } = await runEffect(
     collectQuery(ANNOTATIONS, {
@@ -516,7 +530,6 @@ it("corrects a dotted parent custom field with the source spelling and item pref
 });
 
 it("warns on definite cross-type inequality while preserving every evaluated match", async () => {
-  using scenario = openScenarioDatabase({ annotations: true });
   const request = { libraries: [SCENARIO_LIBRARIES.personal], fields: [] };
   const all = await runEffect(collectQuery(ANNOTATIONS, request), {
     client: scenario.db,
@@ -527,6 +540,7 @@ it("warns on definite cross-type inequality while preserving every evaluated mat
   );
   if (all.exit._tag === "Failure" || comparison.exit._tag === "Failure")
     throw new Error("Expected success");
+  expect(all.exit.value.rows!).toHaveLength(12);
   expect(comparison.exit.value.rows!).toEqual(all.exit.value.rows!);
   expect(comparison.exit.value.warnings).toMatchObject([
     { code: "always-true", suggestions: ['!tags.contains("figure")'] },
@@ -538,7 +552,6 @@ async function passReaders(
   request: Omit<ItemQueryRequest, "libraries">,
   resolve: (indexedKey: string) => void = () => {},
 ) {
-  using scenario = openScenarioDatabase({ annotations: true });
   const scan: string[] = [];
   const projection: string[] = [];
   let projecting = false;
@@ -585,11 +598,12 @@ describe("the statements of each pass", () => {
       filter: 'tags.contains("method")',
       fields: [],
     });
-    // The Tag candidate set is above the cap of the Library: the scan reads it.
-    expect(scan).toEqual([
-      "annotation-row-count",
-      "annotation-candidate-set",
-      "annotation-candidate-set",
+    // Seven of the twelve Annotations of My Library carry the Tag, above the
+    // cap of a quarter (3): the plan reads the candidate set, then scans.
+    const planning = (reader: string) =>
+      reader === "annotation-row-count" || reader.endsWith("candidate-set");
+    expect(scan).toContain("annotation-candidate-set");
+    expect(scan.filter((reader) => !planning(reader))).toEqual([
       "annotation-scan-page",
       "annotation-tags",
     ]);
@@ -647,7 +661,6 @@ it.each([
 ] as const)(
   "selects Annotations across two Libraries with %s",
   async (filter, expected) => {
-    using scenario = openScenarioDatabase({ annotations: true });
     for (const forceScan of [false, true]) {
       const { exit } = await runEffect(
         collectQuery(ANNOTATIONS, {
@@ -669,7 +682,6 @@ it.each([
 it.each(["indexedKey", "item.indexedKey", "attachment.indexedKey"])(
   "keeps Target Libraries and warns for %s selections",
   async (field) => {
-    using scenario = openScenarioDatabase({ annotations: true });
     const key =
       field === "indexedKey"
         ? "ANN2GRUPg4815"
@@ -708,7 +720,6 @@ it.each(["indexedKey", "item.indexedKey", "attachment.indexedKey"])(
 it.each(["indexedKey", "item.indexedKey", "attachment.indexedKey"])(
   "warns for a bare %s in a group-only list selection",
   async (field) => {
-    using scenario = openScenarioDatabase({ annotations: true });
     const key =
       field === "indexedKey"
         ? "ANN2GRUP"
@@ -740,7 +751,6 @@ it.each(["indexedKey", "item.indexedKey", "attachment.indexedKey"])(
 );
 
 it("groups marks by a parent scalar with exact counts and the three most recent marks per paper", async () => {
-  using scenario = openScenarioDatabase({ annotations: true });
   const { exit } = await runEffect(
     collectQuery(ANNOTATIONS, {
       libraries: [SCENARIO_LIBRARIES.personal, SCENARIO_LIBRARIES.group],
@@ -770,37 +780,63 @@ it("groups marks by a parent scalar with exact counts and the three most recent 
   expect(exit.value).not.toHaveProperty("rows");
 });
 
+// Twelve Annotations sit on ART2FULL (2020, review status "done") and one on
+// its group copy (2020, no review status). Nine marks are #ffd400 (yellow);
+// the four ANL2 marks are #123456, which has no color name.
 it.each([
-  "item.citationKey",
-  "item.date.year",
-  'item.custom["review.status"]',
-  "colorName",
-  "library",
-])("groups Annotation scalar path %s without a limit", async (group) => {
-  using scenario = openScenarioDatabase({ annotations: true });
-  const { exit } = await runEffect(
-    collectQuery(ANNOTATIONS, {
-      libraries: [SCENARIO_LIBRARIES.personal, SCENARIO_LIBRARIES.group],
-      group,
-      fields: [group],
-      limit: null,
-    }),
-    { client: scenario.db },
-  );
-  if (exit._tag === "Failure") throw new Error(String(exit.cause));
-  expect(exit.value).toMatchObject({
-    totalCount: 13,
-    returnedCount: 13,
-    truncated: false,
-  });
-  for (const bucket of exit.value.groups!) {
-    expect(bucket.count).toBe(bucket.rows.length);
-    for (const row of bucket.rows)
-      expect(row.values[group]).toEqual(bucket.value);
-  }
-  if (group === "colorName")
-    expect(exit.value.groups?.at(-1)?.value).toBeNull();
-});
+  { group: "item.citationKey", groups: [[null, 13]] },
+  { group: "item.date.year", groups: [[2020, 13]] },
+  {
+    group: 'item.custom["review.status"]',
+    groups: [
+      ["done", 12],
+      [null, 1],
+    ],
+  },
+  {
+    group: "colorName",
+    groups: [
+      ["yellow", 9],
+      [null, 4],
+    ],
+  },
+  {
+    group: "library",
+    groups: [
+      ["group:4815", 1],
+      ["personal", 12],
+    ],
+  },
+])(
+  "groups Annotation scalar path $group without a limit",
+  async ({ group, groups }) => {
+    const { exit } = await runEffect(
+      collectQuery(ANNOTATIONS, {
+        libraries: [SCENARIO_LIBRARIES.personal, SCENARIO_LIBRARIES.group],
+        group,
+        fields: [group],
+        limit: null,
+      }),
+      { client: scenario.db },
+    );
+    if (exit._tag === "Failure") throw new Error(String(exit.cause));
+    expect(exit.value).toMatchObject({
+      totalCount: 13,
+      returnedCount: 13,
+      truncated: false,
+    });
+    expect(
+      exit.value.groups!.map(({ value, count, rows }) => [
+        value,
+        count,
+        rows.length,
+      ]),
+    ).toEqual(groups.map(([value, count]) => [value, count, count]));
+    for (const bucket of exit.value.groups!)
+      for (const row of bucket.rows)
+        expect(row.values[group]).toEqual(bucket.value);
+  },
+);
 
 it.each(["tags", "item.tags[]", "item.tags", "attachment"])(
   "rejects an Annotation group path that is not scalar: %s",
@@ -819,24 +855,46 @@ it.each(["tags", "item.tags[]", "item.tags", "attachment"])(
   },
 );
 
+/** The six Annotations on PDF2LINK. */
+const LINKED_MARKS = [
+  "ANL2IMAG",
+  "ANL2INK2",
+  "ANL2TEXT",
+  "ANL2UNDR",
+  "ANN2BAD2",
+  "ANN2LINK",
+];
+/** Every Annotation of My Library: PDF2LINK's six and PDF2LIVE's six. */
+const PERSONAL_MARKS = [
+  ...LINKED_MARKS,
+  "ANN2HGHT",
+  "ANN2IMAG",
+  "ANN2INK2",
+  "ANN2NOTE",
+  "ANN2TEXT",
+  "ANN2UNDR",
+].toSorted();
+
+// The write below turns PDF2LINK into an embedded image, which Attachment
+// Query leaves out; its marks still reach it as their Parent Record.
 it.each([
-  ['attachment.item.collections.within("Thesis")', 12],
-  ['attachment.linkMode == "embedded_image"', 6],
-  ['attachment.key == "PDF2LINK"', 6],
-  ['attachment.indexedKey == "PDF2LINK"', 6],
-  ['attachment.title == "linkedAttachment"', 6],
-  ['attachment.contentType == "application/pdf"', 12],
-  ['attachment.fileType == "pdf"', 12],
-  ["attachment.path == null", 12],
-  ["attachment.exists == false", 12],
-  ['attachment.tags.contains("attachment-method")', 6],
-  ['attachment.library == "personal"', 12],
-  ["attachment.dateAdded == attachment.dateAdded", 12],
-  ["attachment.dateModified == attachment.dateModified", 12],
-  ["attachment.annotations.length > 0", 12],
+  ['attachment.item.collections.within("Thesis")', PERSONAL_MARKS],
+  ['attachment.linkMode == "embedded_image"', LINKED_MARKS],
+  ['attachment.key == "PDF2LINK"', LINKED_MARKS],
+  ['attachment.indexedKey == "PDF2LINK"', LINKED_MARKS],
+  ['attachment.title == "linkedAttachment"', LINKED_MARKS],
+  ['attachment.contentType == "application/pdf"', PERSONAL_MARKS],
+  ['attachment.fileType == "pdf"', PERSONAL_MARKS],
+  ["attachment.path == null", PERSONAL_MARKS],
+  ["attachment.exists == false", PERSONAL_MARKS],
+  ['attachment.tags.contains("attachment-method")', LINKED_MARKS],
+  ['attachment.library == "personal"', PERSONAL_MARKS],
+  ["attachment.dateAdded == attachment.dateAdded", PERSONAL_MARKS],
+  ["attachment.dateModified == attachment.dateModified", PERSONAL_MARKS],
+  ["attachment.annotations.length > 0", PERSONAL_MARKS],
 ])(
   "keeps Annotation Parent Records outside Attachment Query: %s",
-  async (filter, returnedCount) => {
+  async (filter, keys) => {
     using scenario = openScenarioDatabase({ annotations: true });
     scenario.sqlite
       .prepare(
@@ -853,10 +911,10 @@ it.each([
       client: scenario.db,
       tuning: { forceScan: true },
     });
-    expect(scan.exit).toMatchObject({
-      _tag: "Success",
-      value: { returnedCount },
-    });
+    if (scan.exit._tag === "Failure") throw new Error(String(scan.exit.cause));
+    expect(
+      scan.exit.value.rows!.map((row) => row.indexedKey).toSorted(),
+    ).toEqual(keys);
     for (const tuning of [
       {},
       { capRatio: 1 },

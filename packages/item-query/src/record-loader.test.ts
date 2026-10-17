@@ -277,7 +277,9 @@ describe("Record Loader", () => {
     ];
     expect(pathsOf(personal)).toContainEqual(["Thesis", "Methods"]);
     expect(pathsOf(group)).not.toContainEqual(["Thesis", "Methods"]);
-    expect(sources.candidateContext(personal).vocabulary).not.toBeNull();
+    expect(
+      sources.candidateContext(personal).vocabulary?.customFieldNames,
+    ).toEqual(CUSTOM_FIELDS);
   });
 
   it.each([
@@ -346,7 +348,10 @@ it.each(["review.status", "custom.review.status"])(
     });
     const diagnostic = error.diagnostic;
     expect(diagnostic.suggestions[0]).toBe('custom["review.status"]');
-    expect(diagnostic.report.at(-1)).toBe(diagnostic.hint);
+    // The hint rewrites the filter with the suggestion in place of the access.
+    const hint = 'Try: custom["review.status"] == "include"';
+    expect(diagnostic.hint).toBe(hint);
+    expect(diagnostic.report.at(-1)).toBe(hint);
   },
 );
 
@@ -465,7 +470,9 @@ it.each(["review.length", "custom.review.length"])(
     const diagnostic = error.diagnostic;
     expect(diagnostic.suggestions).toEqual(['custom["review.length"]']);
     expect(diagnostic.location?.span).toEqual({ from: 0, to: access.length });
-    expect(diagnostic.report.at(-1)).toBe(diagnostic.hint);
+    const hint = 'Try: custom["review.length"] == 4';
+    expect(diagnostic.hint).toBe(hint);
+    expect(diagnostic.report.at(-1)).toBe(hint);
     expect(diagnostic.found).toBe("review.length");
   },
 );

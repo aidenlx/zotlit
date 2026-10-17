@@ -33,22 +33,22 @@ const collectGarbage = runInNewContext("gc") as () => void;
 
 /** The bulk Library: 2,600 top-level Items, 520 of them with `BULK_FIFTH_TAG`. */
 const BULK_ITEMS = 2600;
+/** The live top-level Items of the personal scenario Library. */
+const PERSONAL_ITEMS = 10;
 
+const databases = new DisposableStack();
 let scenario: ScenarioDatabase;
 let attachments: ScenarioDatabase;
 
 beforeAll(() => {
-  scenario = openScenarioDatabase();
+  scenario = databases.use(openScenarioDatabase());
   seedBulkLibrary(scenario.sqlite, BULK_ITEMS);
-  attachments = openScenarioDatabase();
+  attachments = databases.use(openScenarioDatabase());
   seedBulkLibrary(attachments.sqlite, BULK_ITEMS);
   seedBulkAttachments(attachments.sqlite, BULK_ITEMS);
 });
 
-afterAll(() => {
-  scenario.close();
-  attachments.close();
-});
+afterAll(() => databases.dispose());
 
 /** A request of the bulk Library, or of the Libraries it names. */
 type Request = Omit<ItemQueryRequest, "libraries"> &
@@ -73,6 +73,8 @@ describe("the rows a limited query retains", () => {
     attachment?: boolean;
     relation?: boolean;
     groups?: number;
+    /** The sample at the last hydrate statement, when it is not one group's. */
+    last?: { rows: number; hydratedItems: number };
   }[] = [
     {
       name: "a selective Relation List candidate set",
@@ -94,8 +96,17 @@ describe("the rows a limited query retains", () => {
         group: "library",
         limit: LIMIT,
       },
-      items: 10 + BULK_ITEMS,
+      items: PERSONAL_ITEMS + BULK_ITEMS,
       groups: 2,
+      // Each group keeps the limit plus one of its matches: all 10 personal
+      // Items and 11 bulk Items. "group:2718" orders before "personal", so the
+      // last hydrate chunk is the 10 returned personal Items, and the
+      // hydrate-chunk statement has rows for the 9 of them with a title
+      // ("TIE2CCCC" has none).
+      last: {
+        rows: Math.min(LIMIT + 1, PERSONAL_ITEMS) + (LIMIT + 1),
+        hydratedItems: Math.min(LIMIT, PERSONAL_ITEMS) - 1,
+      },
     },
     {
       name: "an Attachment scan",
@@ -169,13 +180,13 @@ describe("the rows a limited query retains", () => {
         sort: byTitle,
         limit: LIMIT,
       },
-      items: 10 + BULK_ITEMS,
+      items: PERSONAL_ITEMS + BULK_ITEMS,
     },
   ];
 
   it.each(QUERIES)(
     "holds the limit plus one row, one page, and one hydrate chunk at most in $name",
-    async ({ request, items, attachment, relation, groups = 1 }) => {
+    async ({ request, items, attachment, relation, groups = 1, last }) => {
       // The rows of the query universe and the rows of the hydrate statements
       // that the collector has not freed.
       const scanned: WeakRef<object>[] = [];
@@ -241,8 +252,10 @@ describe("the rows a limited query retains", () => {
       // The projection starts with the matches only: the pages are released.
       expect(samples.at(-1)).toEqual({
         at: attachment && !relation ? "attachment-details" : "hydrate-chunk",
-        rows: groups === 1 ? Math.min(LIMIT + 1, items) : LIMIT * groups + 1,
-        hydratedItems: groups === 1 ? Math.min(LIMIT, items) : 9,
+        ...(last ?? {
+          rows: Math.min(LIMIT + 1, items),
+          hydratedItems: Math.min(LIMIT, items),
+        }),
       });
     },
   );
@@ -320,11 +333,27 @@ it("releases a paper's file records with each chunk of a limited query", async (
   expect(run.exit._tag).toBe("Success");
   expect(related).toHaveLength(BULK_ITEMS);
   expect(peak).toBe(250);
-  await new Promise<void>((resolve) => setImmediate(resolve));
-  collectGarbage();
-  collectGarbage();
-  expect(related.filter((row) => row.deref())).toEqual([]);
+  // The run has resolved, but the runtime can hold its last chunk until a
+  // later task; the test cannot name that task, so it polls a bounded number.
+  await expectReleased(related);
 });
+
+/** Yield one task, collect, and expect every row released; retry, then throw. */
+async function expectReleased(rows: readonly WeakRef<object>[]) {
+  let failure: unknown;
+  for (let attempt = 0; attempt < 10; attempt++) {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    collectGarbage();
+    collectGarbage();
+    try {
+      expect(rows.filter((row) => row.deref())).toEqual([]);
+      return;
+    } catch (error) {
+      failure = error;
+    }
+  }
+  throw failure;
+}
 
 it("keeps the limit plus one row per group when papers fan out to many Tag groups", async () => {
   // Each bulk paper has the Tags "bulk" and "bulk-fifth" of the seed, and two
