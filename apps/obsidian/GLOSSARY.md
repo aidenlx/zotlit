@@ -503,7 +503,7 @@ What the Library View shows, as one value: the selected Library Tree node, the a
 _Avoid_: library state, view state
 
 **Library Tree**:
-The tree on the left of the Library View: Recent, then each Library in the Library Scope with its Collections nested as in Zotero, each node with its paper count. Selecting a node changes the filters of the list; the tree never holds rows of its own.
+The tree on the left of the Library View: Recent, then each Library in the Library Scope with its Collections nested as in Zotero, each node with its paper count. Selecting a node changes the filters of the list; the tree never holds rows of its own. "Show all libraries" adds the Libraries outside the Library Scope for the session.
 _Avoid_: collection tree, sidebar tree, navigator
 
 **Papers Layout**:
