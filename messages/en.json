@@ -2444,6 +2444,7 @@
   "pdf_adjust_failed": "The annotation was not adjusted. {reason}",
   "command_new_query_file_name": "Create new query file",
   "query_file_new": "New query file",
+  "empty_state_new_query": "New Zotero query table",
   "query_file_untitled": "Untitled",
   "query_file_items_view_name": "Items",
   "query_file_annotations_view_name": "Annotations",

@@ -1151,6 +1151,103 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(folderMenu).toContain(m.query_file_new());
   }, 180000);
 
+  // The pill patches Obsidian's internal empty view and copies its pills'
+  // markup, so an Obsidian upgrade that moves either shows up here.
+  it("shows New Zotero query table with its hotkey after Obsidian's New pills on a new tab, and creates a Query File there ready to rename", async () => {
+    const command = "zotlit:new-query-file";
+    const layout = await obEval(
+      vaultId,
+      "JSON.stringify(app.workspace.getLayout())",
+    );
+    const hotkeys = await obEval(
+      vaultId,
+      `JSON.stringify(app.hotkeyManager.getHotkeys(${JSON.stringify(command)})??null)`,
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{const id=${JSON.stringify(command)};const saved=${hotkeys};if(saved)app.hotkeyManager.setHotkeys(id,saved);else app.hotkeyManager.removeHotkeys(id);await app.hotkeyManager.save();return true;})()`,
+      );
+    });
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+      );
+    });
+    const scratchFiles: string[] = [];
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{for(const path of ${JSON.stringify(scratchFiles)}){const file=app.vault.getFileByPath(path);if(file)await app.vault.delete(file);}return true;})()`,
+      );
+    });
+
+    const printed = await obEval(
+      vaultId,
+      `(()=>{const id=${JSON.stringify(command)};app.hotkeyManager.setHotkeys(id,[{modifiers:['Mod','Shift'],key:'Q'}]);return app.hotkeyManager.printHotkeyForCommand(id);})()`,
+    );
+    expect(printed).not.toBe("");
+    await obEval(
+      vaultId,
+      "app.commands.executeCommandById('workspace:new-tab');true",
+    );
+    /** Each pill of the active empty tab: its icon, label, hotkey and classes. */
+    const readPills = `(()=>{const view=app.workspace.getMostRecentLeaf().view;if(view.getViewType()!=='empty')return 'null';return JSON.stringify([...view.actionListEl.children].map(b=>({icon:[...b.querySelector('.text-button-icon svg')?.classList??[]].find(c=>c.startsWith('lucide-'))??null,label:b.querySelector('.text-button-label')?.textContent??null,hotkey:b.querySelector('.empty-state-hotkey')?.textContent??null,classes:[...b.classList].filter(c=>c!=='zt-empty-state-new-query').sort(),ours:b.classList.contains('zt-empty-state-new-query')})));})()`;
+    interface Pill {
+      icon: string | null;
+      label: string | null;
+      hotkey: string | null;
+      classes: string[];
+      ours: boolean;
+    }
+    let pills: Pill[] = [];
+    const shown = await waitFor(async () => {
+      pills = (JSON.parse(await obEval(vaultId, readPills)) ?? []) as Pill[];
+      return pills.some((pill) => pill.ours);
+    });
+    expect(shown, JSON.stringify(pills)).toBe(true);
+    // Right after New note, New base and New canvas, before Go to file.
+    expect(pills.map((pill) => pill.icon)).toEqual([
+      "lucide-square-pen",
+      "lucide-layout-list",
+      "lucide-layout-dashboard",
+      "lucide-list-filter",
+      "lucide-search",
+    ]);
+    const ours = pills.find((pill) => pill.ours)!;
+    const newNote = pills[0]!;
+    expect(ours).toMatchObject({
+      label: m.empty_state_new_query(),
+      // Printed the way Obsidian prints New note's own hotkey.
+      hotkey: ` ${printed}`,
+      classes: newNote.classes,
+    });
+    expect(newNote.hotkey).toMatch(/^ \S/);
+
+    // A click opens a new Query File in this tab, its title selected to rename.
+    const opened = await obEval(
+      vaultId,
+      `(async()=>{${PAGE}const leaf=app.workspace.getMostRecentLeaf();press(leaf.view.actionListEl.querySelector('.zt-empty-state-new-query'),'New Zotero query table');await until('Query File opens',()=>leaf.view.getViewType()==='zotlit-query-file'&&leaf.view.file,10000);const view=leaf.view;const title=view.titleEl;const selection=title.win.getSelection();return JSON.stringify({sameTab:app.workspace.getMostRecentLeaf()===leaf,file:view.file.path,title:title.textContent,focused:title.doc.activeElement===title,selected:title.contains(selection.anchorNode)?selection.toString():null});})()`,
+    );
+    const created = JSON.parse(opened) as {
+      sameTab: boolean;
+      file: string;
+      title: string;
+      focused: boolean;
+      selected: string | null;
+    };
+    scratchFiles.push(created.file);
+    expect(created.file).toMatch(/\.zotquery$/);
+    expect(created).toMatchObject({
+      sameTab: true,
+      title: created.file.replace(/^.*\//, "").replace(/\.zotquery$/, ""),
+      focused: true,
+      selected: created.title,
+    });
+  }, 120000);
+
   it("shows a Query File toolbar as icons with tooltips on a narrow pane, and with names on a wide one", async () => {
     const layout = await obEval(
       vaultId,
