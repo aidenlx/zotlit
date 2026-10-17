@@ -58,7 +58,7 @@ If you sync a vault to a computer where Zotero is not in the default location an
 
 > Zotero wasn't found on this device
 
-The notice includes a <UiLabel name={m.notice_db_not_found_action()} /> action that opens the Welcome View. The first quick-start step displays live connection status and a locate action to pick the correct path. The notice reappears on each launch while the connection is unresolved; it does not appear when auto-detection succeeds or a working Device Override is in place.
+The notice includes a <UiLabel name={m.notice_db_not_found_action()} /> action that opens the Library View. Where it cannot find Zotero, the view offers <UiLabel name={m.library_view_locate()} /> to pick the correct path. The notice reappears on each launch while the connection is unresolved; it does not appear when auto-detection succeeds or a working Device Override is in place.
 
 You can also set the path directly from <SettingsPath page={m.settings_page_zotero()} setting={m.settings_page_zotero_location()} />, as described above.
 
