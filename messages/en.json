@@ -432,6 +432,7 @@
   "library_view_show_tree": "Show libraries and collections",
   "library_view_not_found_tree": "Zotero not found",
   "library_view_locate": "Locate data folder",
+  "library_view_refresh_failed": "ZotLit couldn't read Zotero's database just now. The list shows the papers it read last.",
   "library_view_not_found_title": "We couldn't find your Zotero library",
   "library_view_not_found_body": "ZotLit looks in the default Zotero profile. Point it at your data folder and your papers appear here. Zotero does not need to be open.",
   "library_view_menu_open_pdf": "Open PDF",

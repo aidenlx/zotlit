@@ -485,6 +485,11 @@ function pluginData(stored?: unknown) {
     database_.error = new Error("No zotero.sqlite in the data folder");
     reads.emit("degraded");
   };
+  /** A refresh of the database fails; the earlier connection still reads. */
+  const refreshFails = () => {
+    database_.error = new Error("EACCES: zotero.sqlite");
+    reads.emit("refresh-failed");
+  };
   /** The researcher pointed ZotLit at the data folder, and it reads again. */
   const locate = () => {
     database_.state = "ready";
@@ -526,6 +531,7 @@ function pluginData(stored?: unknown) {
     rescope,
     items,
     lose,
+    refreshFails,
     locate,
     setupActions,
   };
@@ -897,6 +903,29 @@ it("says where Zotero's data folder cannot be found, offers to locate it, and li
   });
   expect(shell.hasAttribute("data-zotero-missing")).toBe(false);
   expect(tree(view)).toContain("My Library 5");
+});
+
+it("keeps the last rows with a note where a refresh of the database fails, and drops the note once it reads again", async () => {
+  const { deps, refreshFails, locate } = pluginData(ON_MY_LIBRARY);
+  const view = await openTab(deps);
+  const rows = shown(view);
+  const shell = view.contentEl.querySelector(
+    "[data-library-tree]",
+  )!.parentElement!;
+  const note = () =>
+    view.contentEl.querySelector<HTMLElement>("[data-library-refresh-failed]");
+  await act(async () => {
+    refreshFails();
+    await view.query.settled;
+  });
+  expect(shell.hasAttribute("data-zotero-missing")).toBe(false);
+  expect(shown(view)).toEqual(rows);
+  expect(note()?.textContent).toContain("couldn't read Zotero's database");
+  await act(async () => {
+    locate();
+    await view.query.settled;
+  });
+  expect(note()).toBeNull();
 });
 
 it("gives each row on Recent its reason, and none on a Library", async () => {

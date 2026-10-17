@@ -263,6 +263,7 @@ export class LibraryView extends ItemView {
       attr: { "data-library-card": "", hidden: "" },
     });
     const searchEl = main.createDiv({ cls: hidden });
+    const note = main.createDiv();
     const header = main.createDiv({ cls: hidden });
     const list = main.createDiv();
     const shown = "zt:hidden zt:group-data-zotero-missing:block";
@@ -273,6 +274,7 @@ export class LibraryView extends ItemView {
           shell,
           tree: treeEl.createDiv({ cls: shown }),
           list: list.createDiv({ cls: shown }),
+          note,
         },
         // The search the box holds runs again on the database found.
         () => void this.search.run(),

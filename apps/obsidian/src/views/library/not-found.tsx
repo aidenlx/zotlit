@@ -1,6 +1,7 @@
 // The Library View where ZotLit cannot find the Zotero data directory: the
 // tree and the list say so and offer to locate the folder or open settings,
-// and the papers come back as soon as the database reads again.
+// and the papers come back as soon as the database reads again. Where only a
+// refresh failed, the list keeps the rows it read last under a short note.
 //
 // @see apps/obsidian/docs/adr/0076-the-library-view-is-the-first-screen.md
 import { Component } from "obsidian";
@@ -14,7 +15,7 @@ import { Button } from "@/components/obsidian/button";
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
-import { unavailable } from "@/views/welcome/connection";
+import { refreshFailed, unavailable } from "@/views/welcome/connection";
 import type { SetupActions } from "@/views/welcome/setup-actions";
 
 export interface ZoteroNotFoundDeps {
@@ -29,6 +30,8 @@ export interface ZoteroNotFoundSlots {
   tree: HTMLElement;
   /** Where the list's part goes. */
   list: HTMLElement;
+  /** Where the note of a failed refresh goes, above the list. */
+  note: HTMLElement;
 }
 
 export class ZoteroNotFound extends Component {
@@ -36,6 +39,7 @@ export class ZoteroNotFound extends Component {
   readonly #slots: ZoteroNotFoundSlots;
   readonly #found: () => void;
   #roots: Root[] = [];
+  #note: Root | null = null;
 
   /** `found` runs when the database reads again after it could not. */
   constructor(
@@ -51,13 +55,19 @@ export class ZoteroNotFound extends Component {
 
   override onload(): void {
     const { reads, setupActions } = this.#deps;
-    const { shell, tree, list } = this.#slots;
+    const { shell, tree, list, note } = this.#slots;
+    this.#note = this.#mount(note, null);
     // Read from the database service on each of its changes, so a folder
     // that is set brings the papers back.
     const update = () => {
       const missing = unavailable(this.#deps);
       const was = shell.hasAttribute("data-zotero-missing");
       shell.toggleAttribute("data-zotero-missing", missing);
+      this.#note?.render(
+        refreshFailed(this.#deps) ? (
+          <RefreshFailedNote actions={setupActions} />
+        ) : null,
+      );
       if (was && !missing) this.#found();
     };
     this.register(reads.on("changed", update));
@@ -69,15 +79,17 @@ export class ZoteroNotFound extends Component {
     this.#mount(list, <ListNotFound actions={setupActions} />);
   }
 
-  #mount(el: HTMLElement, content: ReactNode): void {
+  #mount(el: HTMLElement, content: ReactNode): Root {
     const root = createRoot(el);
     root.render(content);
     this.#roots.push(root);
+    return root;
   }
 
   override onunload(): void {
     for (const root of this.#roots) root.unmount();
     this.#roots = [];
+    this.#note = null;
   }
 }
 
@@ -101,6 +113,28 @@ function TreeNotFound({ actions }: { actions: Actions }) {
         className="zt:mx-(--size-4-2) zt:self-start"
         onClick={actions.locateZotero}
       >
+        {m.library_view_locate()}
+      </Button>
+    </div>
+  );
+}
+
+function RefreshFailedNote({ actions }: { actions: Actions }) {
+  return (
+    <div
+      role="status"
+      data-library-refresh-failed=""
+      className="zt:mx-(--zt-query-toolbar-inset-start) zt:mt-(--size-4-2) zt:flex zt:flex-wrap zt:items-center zt:gap-(--size-4-2) zt:rounded-(--radius-m) zt:border-(length:--border-width) zt:border-(--background-modifier-border) zt:px-(--size-4-3) zt:py-(--size-4-2) zt:text-(length:--font-ui-small) zt:text-muted-foreground"
+    >
+      <Icon
+        name="triangle-alert"
+        size="var(--icon-s)"
+        className="zt:text-warning"
+      />
+      <span className="zt:min-w-0 zt:flex-1">
+        {m.library_view_refresh_failed()}
+      </span>
+      <Button icon="folder-search" onClick={actions.locateZotero}>
         {m.library_view_locate()}
       </Button>
     </div>

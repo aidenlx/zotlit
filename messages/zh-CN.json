@@ -518,6 +518,7 @@
   "library_view_show_tree": "显示文库和分类",
   "library_view_not_found_tree": "未找到 Zotero",
   "library_view_locate": "定位数据文件夹",
+  "library_view_refresh_failed": "ZotLit 刚才无法读取 Zotero 数据库，列表显示的是上次读取的文献。",
   "library_view_not_found_title": "找不到您的 Zotero 文库",
   "library_view_not_found_body": "ZotLit 会在默认的 Zotero 配置文件中查找。指定您的数据文件夹后，文献会显示在这里。Zotero 无需打开。",
   "library_view_menu_open_pdf": "打开 PDF",
