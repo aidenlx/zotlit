@@ -4383,7 +4383,7 @@ views:
 
   // Vault properties of Items edit in place in the Table, with trusted
   // input: a click anywhere in a cell, an empty one too, enters edit; focus
-  // that leaves a list editor from a chip commits it; the first edit of a
+  // that leaves a list editor from an item commits it; the first edit of a
   // row with no note creates it; a vault sort and filter run (#1531).
   it("edits vault properties in the Table with real input, creates a note on a first edit, and sorts and filters by them", async () => {
     const path = "query-files/Vault properties.zotquery";
@@ -4559,19 +4559,20 @@ views:
       (properties) => properties["zt-done"] === true,
     );
 
-    // A list commits when focus leaves the editor from a chip's remove
-    // button, as a click outside the Table takes it (bug B).
+    // A list commits when focus leaves the editor from an item, as a click
+    // outside the Table takes it (bug B). Backspace in the empty field
+    // selects the last item, as in a Bases list cell.
     await click(cell(tieFirst, "zt-projects"));
     expect(await obEvalUntil(vaultId, focusedInput, { expected: "true" })).toBe(
       true,
     );
     await typeText("c");
     await key("Enter");
-    await key("Tab", ["shift"]);
+    await key("Backspace");
     expect(
       await obEvalUntil(
         vaultId,
-        `String(activeDocument.activeElement?.matches('[data-query-vault-chip-remove]')??false)`,
+        `String(activeDocument.activeElement?.matches('[data-query-vault-chip="c"]')??false)`,
         { expected: "true" },
       ),
     ).toBe(true);
