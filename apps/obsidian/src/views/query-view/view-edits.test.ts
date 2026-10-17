@@ -248,6 +248,29 @@ views:
     });
   });
 
+  it("keeps a vault condition of the filters in bracket form through a save", () => {
+    const file = parseQueryFile(`filters:
+  and:
+    - vault["reading-status"] == "read"
+views:
+  - type: table
+    name: Reading list
+    from: items
+    filters:
+      and:
+        - itemType == "book"
+        - vault.rating > 3
+`);
+    const edited = setViewOption(file, 0, { key: "cardSize", value: 240 });
+
+    expect(saved(edited).filters).toEqual({
+      and: ['vault["reading-status"] == "read"'],
+    });
+    expect(saved(edited).views[0]!.filters).toEqual({
+      and: ['itemType == "book"', "vault.rating > 3"],
+    });
+  });
+
   it("keeps a sort by a vault property, mixed with a Zotero field, through a save", () => {
     const file = parseQueryFile(`views:
   - type: table

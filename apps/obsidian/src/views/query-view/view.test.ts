@@ -222,6 +222,7 @@ async function mount(
     /** Fire one of the Note Index's events. */
     emit: notesChanged.emit,
     propertyNames: () => propertyNames,
+    itemKeys: () => Object.keys(notes),
     propertyType: (name: string): VaultPropertyType => {
       if (types[name]) return types[name];
       for (const values of Object.values(frontmatter))
@@ -1152,6 +1153,44 @@ it("edits the filters for all views and for this view from the Filter popover", 
   );
 });
 
+it("offers the vault properties in the Filter popover of an Items view, in bracket form", async () => {
+  const written: string[] = [];
+  const { view, el, settle } = await mount(
+    [result([itemRow("ITEMAAAA", "Ten simple rules")])],
+    (text) => written.push(text),
+    {
+      propertyNames: ["reading-status"],
+      notes: { ITEMAAAA: "A.md" },
+      frontmatter: { "A.md": { "reading-status": "read" } },
+    },
+  );
+  await act(() =>
+    view.setText(`views:
+  - type: table
+    name: Reading list
+    from: items
+    filters: 'vault["reading-status"] == "read"'
+`),
+  );
+  await settle();
+
+  const [status] = section(el, "view").querySelectorAll("[data-condition-row]");
+  const kind = status!.querySelector<HTMLSelectElement>("select")!;
+  expect(kind.selectedOptions[0]?.textContent).toBe("reading-status");
+  const input = status!.querySelector<HTMLInputElement>(
+    'input[aria-label="Value"]',
+  )!;
+  expect(input.value).toBe("read");
+  await act(() => {
+    input.value = "unread";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await settle();
+  expect(written.at(-1)).toContain(
+    'filters:\n      and:\n        - vault["reading-status"] == "unread"',
+  );
+});
+
 it("names a filter condition by the Display Name of its field", async () => {
   const { view, el, settle } = await mount(
     [result([row("ANNOTBBB")])],
@@ -1721,7 +1760,11 @@ views:
     [],
   );
   expect(request.sort).toEqual([{ field: "title", direction: "desc" }]);
-  expect(request.filter).toBe('itemType == "book"');
+  // The vault conditions reach ZotLit Query only as the Items they keep:
+  // here none, since no Item has a Literature Note.
+  expect(request.filter).toBe(
+    '(itemType == "book")\n&& ([].contains(indexedKey))',
+  );
   expect(tableText(el)).toEqual([
     ["", "Title", "vault.reading-status", "Literature note"],
     ["", "Ten simple rules", m.query_view_vault_no_note(), "Create"],
@@ -3241,6 +3284,114 @@ describe("vault properties", () => {
         ["Ten simple rules", "reading, to cite"],
         ["Deep learning", ""],
       ],
+    });
+  });
+
+  describe("in the filters", () => {
+    const filtered = (filters: string) => `views:
+  - type: table
+    name: Reading list
+    from: items
+    limit: 20
+    filters:
+${filters}
+`;
+    const NOTES = {
+      notes: { ITEMAAAA: "A.md", ITEMBBBB: "B.md" },
+      frontmatter: {
+        "A.md": { "reading-status": "read" },
+        "B.md": { "reading-status": "unread" },
+      },
+    };
+
+    it("asks ZotLit Query for the Items whose note passes, beside the Zotero condition and under the limit", async () => {
+      const { view, run, settle } = await mount([], undefined, NOTES);
+      await act(() =>
+        view.setText(
+          filtered(`      and:
+        - itemType == "book"
+        - vault["reading-status"] == "read"`),
+        ),
+      );
+      await settle();
+
+      const request = run.mock.calls[0]![0];
+      expect(request.filter).toBe(
+        '(itemType == "book")\n&& (["ITEMAAAA"].contains(indexedKey))',
+      );
+      expect(request.limit).toBe(20);
+    });
+
+    it.each([
+      [
+        'vault["reading-status"] == null',
+        '!["ITEMAAAA", "ITEMBBBB"].contains(indexedKey)',
+      ],
+      [
+        'vault["reading-status"] != "read"',
+        '!["ITEMAAAA"].contains(indexedKey)',
+      ],
+    ])("keeps the Items without a note for %s", async (condition, expected) => {
+      const { view, run, settle } = await mount([], undefined, NOTES);
+      await act(() =>
+        view.setText(
+          filtered(`      - ${JSON.stringify(condition)}`.replace("- ", "")),
+        ),
+      );
+      await settle();
+
+      expect(run.mock.calls[0]![0].filter).toBe(expected);
+    });
+
+    it("runs again with the Items whose note passes once a note's frontmatter changes", async () => {
+      const frontmatter: Record<string, Record<string, unknown>> = {
+        ...NOTES.frontmatter,
+      };
+      const { view, run, settle, literatureNotes } = await mount(
+        [],
+        undefined,
+        { notes: NOTES.notes, frontmatter },
+      );
+      await act(() =>
+        view.setText(filtered(`      'vault["reading-status"] == "read"'`)),
+      );
+      await settle();
+      await act(() => literatureNotes.emit("frontmatter-changed"));
+      await settle();
+      expect(run).toHaveBeenCalledTimes(1);
+
+      frontmatter["B.md"] = { "reading-status": "read" };
+      await act(() => literatureNotes.emit("frontmatter-changed"));
+      await settle();
+
+      expect(run).toHaveBeenCalledTimes(2);
+      expect(run.mock.calls[1]![0].filter).toBe(
+        '["ITEMAAAA", "ITEMBBBB"].contains(indexedKey)',
+      );
+    });
+
+    it("marks a vault condition inside an or group and runs nothing", async () => {
+      const { view, el, run, settle } = await mount([], undefined, NOTES);
+      await act(() =>
+        view.setText(
+          filtered(`      or:
+        - itemType == "book"
+        - vault["reading-status"] == "read"`),
+        ),
+      );
+      await settle();
+
+      expect(run).not.toHaveBeenCalled();
+      expect(view.state.getState().failure?.filterIssue).toEqual({
+        section: "view",
+        path: [1],
+        message: `${m.query_view_vault_filter_nested()} ${m.query_view_vault_filter_nested_hint()}`,
+      });
+      expect(
+        el
+          .querySelector("[data-query-diagnostic]")
+          ?.getAttribute("data-query-diagnostic"),
+      ).toBe("vault-filter-nested");
     });
   });
 
