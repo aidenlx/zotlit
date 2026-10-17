@@ -1265,7 +1265,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       vaultId,
       `(()=>{${PAGE}press(document.querySelector(${JSON.stringify(`.side-dock-ribbon-action[aria-label="${m.command_open_library_view_name()}"]`)}),'Library View ribbon icon');return true;})()`,
     );
-    const opened = await libraryWhen((library) => library.phase === "ready");
+    /** Whether the Table drew every row the count names. */
+    const drawn = (library: Library) =>
+      library.phase === "ready" &&
+      library.count !== null &&
+      library.rows.length === Number(library.count);
+    const opened = await libraryWhen(drawn);
     expect(opened).toMatchObject({
       leaves: 1,
       active: "zotlit-library",
@@ -1306,8 +1311,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     expectSeedOrder(
       await libraryWhen(
-        (library) =>
-          library.phase === "ready" && library.rows[0] !== opened.rows[0],
+        (library) => drawn(library) && library.rows[0] !== opened.rows[0],
       ),
       1,
     );
@@ -1331,9 +1335,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         { expected: "true", tries: 20 },
       ),
     ).toBe(true);
-    const reloaded = await libraryWhen(
-      (library) => library.phase === "ready" && library.count !== null,
-    );
+    const reloaded = await libraryWhen(drawn);
     expect(reloaded).toMatchObject({ leaves: 1, failure: null });
     expectSeedOrder(reloaded, 1);
   });
