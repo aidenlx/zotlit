@@ -461,7 +461,7 @@ One named view of a Query File or Query Block: a Layout with its own filters, so
 _Avoid_: tab, page, saved search
 
 **Layout**:
-How a Query View draws its rows: Annotations (Annotation Cards), Table (Item rows that expand into Attachments, Annotations and notes, as in Zotero's item list), List, or Cards.
+How a Query View draws its rows: Annotations (Annotation Cards), Table (Item rows that expand into Attachments, Annotations and notes, as in Zotero's item list), Papers (two-line Item rows with a reading-state line, expanding as the Table does), List, or Cards. A host may offer only some of them; the Library View offers Papers and Table.
 _Avoid_: view type, mode
 
 **Grouping**:
@@ -519,7 +519,7 @@ What the researcher has done with an Item: whether it was read and when, its Ann
 _Avoid_: progress, status, read status
 
 **Recent**:
-The node at the top of the Library Tree that lists Items by last activity, newest first, each row with the reason it is there, such as "read 2 h ago in Obsidian".
+The node at the top of the Library Tree that lists Items by last activity, newest first, each row with the reason it is there, such as "read 2 h ago in Obsidian". It writes a sort, not a filter, over the whole Library Scope, and is the selection of a new Library View.
 _Avoid_: history, recently read (Zotero's name for its own list)
 
 ### Note content
@@ -891,7 +891,7 @@ The agent-facing reference for ZotLit's part of native Pandoc export: obtaining 
 _Avoid_: Pandoc installer, Pandoc setup command
 
 **Welcome View** _(Obsidian)_:
-The onboarding tab opened directly in the active leaf on the plugin's first launch in a vault — in its fresh state on a first install, or in its upgraded state when Legacy Data was detected. Combines quick-start steps, live setup actions, a Zotero connection status readout, documentation links, and (in the upgraded state) the Migration Prompt.
+The onboarding steps of ZotLit — in its fresh state on a first install, or in its upgraded state when Legacy Data was detected. It renders as a dismissable banner above the Library View, the first screen, while setup is incomplete. Combines quick-start steps, live setup actions, a Zotero connection status readout, documentation links, and (in the upgraded state) the Migration Prompt.
 
 **Release Note**:
 The per-version changelog page on the docs site (`/changelog/<version>`) surfaced after a plugin update. An update raises a durable notice; the page opens only on user action — in a Web Viewer leaf when available, else the system browser. Authoring the page is part of each release.
