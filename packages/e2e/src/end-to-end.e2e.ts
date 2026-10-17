@@ -2504,9 +2504,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       header: string | null;
       value: string;
       focused: boolean;
+      /** The offer beside the header to search all libraries, while it shows. */
+      searchAll: string | null;
       rows: string[];
     }
-    const readShown = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.search)return 'null';await view.searched;await view.query.settled;const el=view.contentEl;const input=el.querySelector('[data-library-search] input');return JSON.stringify({phase:view.query.state.getState().phase,header:el.querySelector('[data-library-header]')?.textContent??null,value:input.value,focused:document.activeElement===input,rows:[...el.querySelectorAll('tr[data-query-table-row="item"], [data-query-papers-row]')].map(n=>n.getAttribute('data-query-key')??n.getAttribute('data-query-papers-row'))});})()`;
+    const readShown = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.search)return 'null';await view.searched;await view.query.settled;const el=view.contentEl;const input=el.querySelector('[data-library-search] input');return JSON.stringify({phase:view.query.state.getState().phase,header:el.querySelector('[data-library-header]')?.textContent??null,value:input.value,focused:document.activeElement===input,searchAll:el.querySelector('[data-library-search-all]')?.textContent??null,rows:[...el.querySelectorAll('tr[data-query-table-row="item"], [data-query-papers-row]')].map(n=>n.getAttribute('data-query-key')??n.getAttribute('data-query-papers-row'))});})()`;
     const shownWhen = (ready: (shown: Shown) => boolean) =>
       obReadUntil<Shown>(vaultId, readShown, {
         ready: (shown) => shown.phase === "ready" && ready(shown),
@@ -2559,7 +2561,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       (shown) =>
         shown.rows.length === filed.length &&
         header(shown) ===
-          `${m.library_view_search_matches({ selection: sharedKey.name, count: filed.length })} · ${m.library_view_search_everywhere()}`,
+          m.library_view_search_matches({
+            selection: sharedKey.name,
+            count: filed.length,
+          }) &&
+        shown.searchAll === m.library_view_search_everywhere(),
     );
     expect(collection.rows).toEqual(filed);
     await obEval(
