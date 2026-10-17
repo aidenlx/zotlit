@@ -40,7 +40,7 @@ export interface LayoutRows {
 }
 
 /** The string order of ZotLit Query, so groups order as its sort does. */
-const COLLATOR = new Intl.Collator("en", {
+export const COLLATOR = new Intl.Collator("en", {
   usage: "sort",
   sensitivity: "variant",
   numeric: false,
