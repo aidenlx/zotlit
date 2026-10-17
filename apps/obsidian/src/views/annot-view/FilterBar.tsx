@@ -328,10 +328,7 @@ function ColorChooser({
         {/* No empty message: the list carries no search field, so nothing
             narrows it and the palette is never empty — a trigger with no colour
             is blocked and opens nothing. */}
-        <Chooser.List
-          groups={groups}
-          aria-label={m.annot_view_filter_color_list()}
-        >
+        <Chooser.List groups={groups} label={m.annot_view_filter_color_list()}>
           {(row) =>
             row.action ? (
               <Chooser.Action key={row.value} value={row.value} icon="x">
@@ -454,7 +451,7 @@ function TagChooser({
         />
         <Chooser.List
           groups={groups}
-          aria-label={m.annot_view_filter_tag_list()}
+          label={m.annot_view_filter_tag_list()}
           emptyLabel={m.annot_view_filter_tag_empty()}
         >
           {(row) =>

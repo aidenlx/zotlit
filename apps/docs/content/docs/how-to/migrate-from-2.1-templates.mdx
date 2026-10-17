@@ -36,13 +36,13 @@ Your 2.1 files keep loading and rendering after the update. ZotLit converts and 
   <Step>
     ### Open the conversion offer
 
-    The Welcome view opens once, the first time you launch Obsidian after the update. The offer sits above the quick-start timeline, titled <UiLabel name={m.welcome_template_conversion_title()} />. Open the view again later with <Command inline name={m.command_open_welcome_name()} />, or use the reminder row at the top of <SettingsPath />.
+    The offer sits in the setup banner above the [Library View](/docs/how-to/use-library-view), titled <UiLabel name={m.welcome_template_conversion_title()} />. Show the banner with <Command inline name={m.command_open_welcome_name()} />, or use the reminder row at the top of <SettingsPath />.
 
   </Step>
   <Step>
     ### Select Convert templates
 
-    Select <UiLabel name={m.welcome_template_conversion_action()} /> and wait for the conversion to finish. Closing the Welcome view without converting leaves everything as it was, and the reminder row stays at the top of <SettingsPath /> with a <UiLabel name={m.settings_template_conversion_reminder_action()} /> action.
+    Select <UiLabel name={m.welcome_template_conversion_action()} /> and wait for the conversion to finish. Dismissing the banner without converting leaves everything as it was, and the reminder row stays at the top of <SettingsPath /> with a <UiLabel name={m.settings_template_conversion_reminder_action()} /> action.
 
   </Step>
 </Steps>
@@ -51,7 +51,7 @@ Your 2.1 files keep loading and rendering after the update. ZotLit converts and 
 
 ZotLit builds the new documents in memory and renders them against one item from your Zotero library. It compares the note, the update, the note name, the annotation, and both citation outputs against what your 2.1 files produce. It writes nothing unless every output matches byte for byte.
 
-When the outputs match, ZotLit writes `zotlit-profile.default.md`, `zotlit-citation.md`, and one file per partial. It then moves your 2.1 files to Obsidian's configured trash. That trash is the only backup: ZotLit keeps no copy of the old files. If a file cannot be moved to the trash, the conversion still stands and the converted documents are active. A notice names the files left behind: <UiLabel name={m.notice_literature_note_template_conversion_pending_cleanup({ files: "…" })} /> The Welcome view shows the same list, headed <UiLabel name={m.welcome_template_cleanup_body()} /> Select <UiLabel name={m.welcome_template_cleanup_retry()} /> in the Welcome view to move them again. A file that still cannot be moved stays on the list.
+When the outputs match, ZotLit writes `zotlit-profile.default.md`, `zotlit-citation.md`, and one file per partial. It then moves your 2.1 files to Obsidian's configured trash. That trash is the only backup: ZotLit keeps no copy of the old files. If a file cannot be moved to the trash, the conversion still stands and the converted documents are active. A notice names the files left behind: <UiLabel name={m.notice_literature_note_template_conversion_pending_cleanup({ files: "…" })} /> The setup banner shows the same list, headed <UiLabel name={m.welcome_template_cleanup_body()} /> Select <UiLabel name={m.welcome_template_cleanup_retry()} /> in the banner to move them again. A file that still cannot be moved stays on the list.
 
 One case keeps a file in place. If your two citation files use different languages, the citation text converts as Liquid and the Eta file stays where it is; ZotLit names the files through <UiLabel name={m.notice_literature_note_template_conversion_kept({ files: "…" })} />.
 

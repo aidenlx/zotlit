@@ -11,7 +11,7 @@ Proposed on 2026-10-14 with [#1459](https://github.com/aidenlx/zotlit/issues/145
 
 ## Consequences
 
-- `this` carries an Item and, when there is one, an Attachment, read as `this.item` and `this.attachment`. It is the note that embeds the file or holds the block, and the Item and Attachment the sidebar follows. In a Query File's own tab `this` has no value, and a filter that uses it shows a diagnostic.
+- `this` carries an Item and, when there is one, an Attachment, read as `this.item` and `this.attachment`. It is the note that embeds the file or holds the block, and the Item and Attachment the sidebar follows. It is also the Item selected in the Library View, for its Reading Card (ADR 0070). In a Query File's own tab `this` has no value, and a filter that uses it shows a diagnostic.
 - The sidebar keeps the per-Attachment scope of the Annotation View, so the daily workflow does not change; "Save as query file" can save the Attachment or the whole Item.
 - The query reads the Zotero database and can lag behind a Local API write. The Annotations Layout shows live records from the Annotation Repository in the order and groups the query gives, so a card edit shows at once.
 - [ADR 0047](0047-annotation-reading-is-continuous-and-editing-is-an-added-capability.md) still holds in every host: reading never waits for the Editing Capability.

@@ -255,6 +255,19 @@ describe("NoteIndex", () => {
     expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["paper.md"]);
   });
 
+  it("says it changed once the Full Scan has read the notes the cache held at startup", async () => {
+    const { metadataCache, workspace, service } = await makeHarness(
+      { "paper.md": cache({ itemKey: ITEM_A }) },
+      { enabledAtRuntime: false },
+    );
+    await service.ready;
+    const changed: (string | null)[] = [];
+    service.on("changed", (file) => changed.push(file?.path ?? null));
+    startup({ metadataCache, workspace });
+    // The whole index changed, not one file.
+    expect(changed).toEqual([null]);
+  });
+
   it("whenIndexed resolves immediately once the Full Scan has run", async () => {
     const { service } = await makeHarness(
       { "paper.md": cache({ itemKey: ITEM_A }) },
@@ -302,7 +315,7 @@ describe("NoteIndex", () => {
     });
     startup({ metadataCache, workspace });
     const changed: string[] = [];
-    service.on("changed", (file) => changed.push(file.path));
+    service.on("changed", (file) => changed.push(file!.path));
 
     metadataCache.change(
       vault.files.get("paper.md")!,
@@ -319,7 +332,7 @@ describe("NoteIndex", () => {
     });
     startup({ metadataCache, workspace });
     const changed: string[] = [];
-    service.on("changed", (file) => changed.push(file.path));
+    service.on("changed", (file) => changed.push(file!.path));
 
     metadataCache.change(
       vault.files.get("paper.md")!,
@@ -388,7 +401,7 @@ describe("NoteIndex", () => {
     });
     startup({ metadataCache, workspace });
     const changed: string[] = [];
-    service.on("changed", (file) => changed.push(file.path));
+    service.on("changed", (file) => changed.push(file!.path));
 
     vault.renameFile("paper.md", "Notes/paper.md");
 
@@ -404,7 +417,7 @@ describe("NoteIndex", () => {
     });
     startup({ metadataCache, workspace });
     const changed: string[] = [];
-    service.on("changed", (file) => changed.push(file.path));
+    service.on("changed", (file) => changed.push(file!.path));
 
     vault.renameFile("plain.md", "Notes/plain.md");
 

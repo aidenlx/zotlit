@@ -460,6 +460,110 @@
   "settings_library_scope_db_unavailable": "打开 Zotero 数据库以编辑文库范围。",
   "command_open_annot_view_name": "打开 Zotero 标注",
   "annot_view_name": "Zotero 标注",
+  "command_open_library_view_name": "打开 Zotero 文库",
+  "library_view_name": "Zotero 文库",
+  "library_view_papers_view_name": "文献",
+  "library_view_tree_label": "文库",
+  "library_view_recent": "最近",
+  "library_view_recent_edited_in_zotero": "在 Zotero 中编辑",
+  "library_view_reveal_not_listed": [
+    {
+      "declarations": ["input limit", "local formatted = limit: number"],
+      "selectors": ["formatted"],
+      "match": {
+        "formatted=*": "列表只显示前 {formatted} 篇文献，此文献不在其中。搜索其标题即可显示。"
+      }
+    }
+  ],
+  "library_view_facets_label": "仅显示",
+  "library_view_facet_unread": "未读",
+  "library_view_facet_annotated": "有批注",
+  "library_view_facet_has_note": "有笔记",
+  "library_view_facet_pdf": "PDF",
+  "library_view_tree_count": [
+    {
+      "declarations": ["input count", "local formatted = count: number"],
+      "selectors": ["formatted"],
+      "match": {
+        "formatted=*": "{formatted}"
+      }
+    }
+  ],
+  "library_view_header": [
+    {
+      "declarations": [
+        "input selection",
+        "input count",
+        "local category = count: plural",
+        "local formatted = count: number"
+      ],
+      "selectors": ["category"],
+      "match": {
+        "category=one": "{selection} · 1 篇文献",
+        "category=*": "{selection} · {formatted} 篇文献"
+      }
+    }
+  ],
+  "library_view_header_unread": [
+    {
+      "declarations": ["input count", "local formatted = count: number"],
+      "selectors": ["formatted"],
+      "match": {
+        "formatted=*": "· {formatted} 篇未读"
+      }
+    }
+  ],
+  "library_view_all_libraries": "显示所有文库",
+  "library_view_scope_libraries": "仅显示文库范围内的文库",
+  "library_view_show_tree": "显示文库和分类",
+  "library_view_not_found_tree": "未找到 Zotero",
+  "library_view_locate": "定位数据文件夹",
+  "library_view_refresh_failed": "ZotLit 刚才无法读取 Zotero 数据库，列表显示的是上次读取的文献。",
+  "library_view_empty_search": "没有文献匹配“{query}”。",
+  "library_view_empty_facets": "没有文献符合已开启的筛选条件。",
+  "library_view_save_leaves_out_facets": "查询文件无法检查文献笔记，因此此文件不包含{facets}中的这项检查。",
+  "library_view_save_leaves_out_search": "查询文件无法保存搜索，因此此文件不包含搜索。",
+  "library_view_not_found_title": "找不到您的 Zotero 文库",
+  "library_view_not_found_body": "ZotLit 会在默认的 Zotero 配置文件中查找。指定您的数据文件夹后，文献会显示在这里。Zotero 无需打开。",
+  "library_view_menu_open_pdf": "打开 PDF",
+  "library_view_menu_open_pdf_right": "在右侧打开 PDF",
+  "library_view_menu_open_note": "打开文献笔记",
+  "library_view_menu_write_note": "撰写文献笔记",
+  "library_view_menu_insert_citation": "插入引用",
+  "library_view_menu_show_in_zotero": "在 Zotero 中显示",
+  "library_view_cite_no_note": "请先打开一篇笔记，再插入引用。",
+  "library_view_card_annotations": "批注",
+  "library_view_card_more": "更多操作",
+  "library_view_card_open_in_sidebar": "在侧边栏中打开",
+  "library_view_card_no_annotations": "还没有批注",
+  "library_view_card_failed": "无法读取此文献的标注。",
+  "instruction_show_in_library": "在文库中显示",
+  "library_view_search_label": "搜索文献",
+  "library_view_search_placeholder": "搜索文献…（用 tag:名称 按标签筛选）",
+  "library_view_search_clear": "清除搜索",
+  "library_view_search_matches": [
+    {
+      "declarations": [
+        "input selection",
+        "input count",
+        "local formatted = count: number"
+      ],
+      "selectors": ["formatted"],
+      "match": {
+        "formatted=*": "{selection}中有 {formatted} 个结果"
+      }
+    }
+  ],
+  "library_view_search_matches_everywhere": [
+    {
+      "declarations": ["input count", "local formatted = count: number"],
+      "selectors": ["formatted"],
+      "match": {
+        "formatted=*": "所有文库中有 {formatted} 个结果"
+      }
+    }
+  ],
+  "library_view_search_everywhere": "搜索所有文库",
   "annot_view_loading": "加载中…",
   "annot_view_no_attachments": "没有可用的附件",
   "annot_view_more_tooltip": "更多选项",
@@ -968,7 +1072,6 @@
   "template_data_explorer_menu_explore": "探索模板数据",
   "template_data_explorer_menu_export_json": "将模板数据保存为 JSON",
   "template_data_explorer_export_failed": "保存模板数据失败",
-  "welcome_view_name": "欢迎来到 ZotLit",
   "command_open_welcome_name": "打开欢迎视图",
   "welcome_badge": "让我们开始吧",
   "welcome_tagline": "在 Obsidian 中使用您的 Zotero 文库。",
@@ -990,25 +1093,17 @@
   ],
   "welcome_action_open_settings": "打开设置",
   "welcome_action_locate": "手动定位",
-  "welcome_step_companion_installed_title": "已安装 ZotLit Companion",
-  "welcome_step_companion_title": "安装 ZotLit Companion",
-  "welcome_step_companion_upgrade_title": "在 ZotLit 中获取 Zotero 10 的最新更改",
-  "welcome_step_companion_body": "ZotLit Companion（Zotero 扩展）可让 ZotLit 读取 Zotero 中的最新更改。请在创建第一个文献笔记前安装它。",
-  "welcome_action_install_companion": "打开安装指南",
   "welcome_step_folder_title": "选择文献笔记的存放位置",
   "welcome_step_folder_body": "新笔记默认保存在 {folder} 文件夹中。随时更改。",
   "welcome_action_pick_folder": "选择文件夹",
   "welcome_pick_folder_placeholder": "为新的文献笔记选择一个文件夹",
-  "welcome_step_note_title": "创建您的第一个文献笔记",
-  "welcome_step_note_body": "搜索文库，将任意条目转换为完整的模板化笔记。",
+  "welcome_step_library_title": "打开您的文库",
+  "welcome_step_library_body": "您的文献列在下方。打开 PDF 阅读，需要时再撰写文献笔记。",
+  "welcome_dismiss": "关闭",
   "welcome_action_search": "搜索文库",
-  "welcome_keep_going_title": "继续探索",
-  "welcome_keep_going_body": "通过指南和参考资料进一步了解 ZotLit。",
   "welcome_docs_getting_started": "入门",
   "welcome_docs_templates": "模板",
   "welcome_docs_citations": "引文",
-  "welcome_group_community": "社区",
-  "welcome_group_news": "消息",
   "welcome_link_github": "GitHub",
   "welcome_link_discussions": "聊天和讨论",
   "welcome_link_sponsor": "赞助",
@@ -1018,6 +1113,7 @@
   "welcome_footer_migration_link": "阅读迁移指南。",
   "welcome_migration_title": "从 ZotLit v1 升级",
   "welcome_migration_body": "在您重命名自定义 Eta 模板并启用 JavaScript 模板门之前，不会加载自定义 Eta 模板。",
+  "welcome_companion_title": "适用于 Zotero 10 的 ZotLit Companion",
   "welcome_template_conversion_title": "转换文献笔记模板",
   "welcome_template_conversion_body": "ZotLit 会将旧版模板文件整理为模板文档：笔记、内容、文件名和批注文件合并为 {path}，cite 与 cite2 文件合并为一个引用文本，每个片段各自成文件。写入任何文件前，它会用一个 Zotero 条目（模板用到时还包括一条批注和一条单条目引用）分别渲染新旧模板并比对输出，同时检查 Frontmatter 字段是否仍能生成值。检查通过后，它会将旧文件移至 Obsidian 设定的回收站。",
   "welcome_template_conversion_completed_files": [
@@ -2325,6 +2421,22 @@
   "query_view_show_page": "显示页码",
   "query_view_layout_list": "列表",
   "query_view_layout_cards": "卡片",
+  "query_view_layout_papers": "文献",
+  "query_view_papers_annotation_count": [
+    {
+      "declarations": ["input count", "local category = count: plural"],
+      "selectors": ["category"],
+      "match": {
+        "category=*": "{count} 条标注"
+      }
+    }
+  ],
+  "query_view_papers_more_creators": "{names} 等",
+  "query_view_papers_has_note": "文献笔记",
+  "query_view_papers_attachment_pdf": "PDF",
+  "query_view_papers_attachment_epub": "EPUB",
+  "query_view_papers_attachment_web": "网页",
+  "query_view_papers_note_marker": "已有文献笔记",
   "query_view_dataset": "行",
   "query_view_dataset_desc": "视图的每一行是一个 Zotero 标注、附件或条目。",
   "query_view_dataset_annotations": "标注",
@@ -2438,6 +2550,7 @@
   "query_view_problem_group": "此视图无法按 \"{property}\" 分组。",
   "query_view_problem_no_view": "此文件中没有名为 \"{name}\" 的视图。",
   "query_view_problem_duplicate_view": "此文件中有多个名为 \"{name}\" 的视图。请为每个视图使用不同的名称。",
+  "query_view_toolbar_label": "视图控件",
   "query_view_sort": "排序",
   "query_view_sort_by": "排序依据",
   "query_view_sort_add": "添加排序",

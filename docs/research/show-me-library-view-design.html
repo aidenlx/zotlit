@@ -1,0 +1,1030 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ZotLit · Library view design</title>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --bg2: #f6f6f6;
+        --bg3: #ededed;
+        --bd: #e0e0e0;
+        --bd2: #cfcfcf;
+        --tx: #222;
+        --tx2: #5c5c5c;
+        --tx3: #8a8a8a;
+        --acc: #7c3aed;
+        --acc-bg: #efe9fc;
+        --navy: #1e3a5f;
+        --orange: #e8622c;
+        --ok: #2f855a;
+        --warn: #b7791f;
+        --y: #ffd400;
+        --g: #5fb236;
+        --b: #2ea8e5;
+        --r: #ff6666;
+        --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+        --sans:
+          -apple-system, "Inter", "Segoe UI", Helvetica, Arial, sans-serif;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1e1e1e;
+          --bg2: #262626;
+          --bg3: #2f2f2f;
+          --bd: #363636;
+          --bd2: #444;
+          --tx: #dcdcdc;
+          --tx2: #a0a0a0;
+          --tx3: #777;
+          --acc: #a78bfa;
+          --acc-bg: #2d2640;
+          --navy: #8fb3e0;
+          --orange: #f08a5a;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font: 14px/1.5 var(--sans);
+        color: var(--tx);
+        background: var(--bg2);
+      }
+      main {
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: 32px 20px 80px;
+      }
+      h1 {
+        font-size: 26px;
+        margin: 0 0 4px;
+      }
+      h1 span {
+        color: var(--orange);
+      }
+      h2 {
+        font-size: 18px;
+        margin: 48px 0 10px;
+      }
+      h3 {
+        font-size: 14px;
+        margin: 18px 0 6px;
+        color: var(--tx2);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      p.lead {
+        color: var(--tx2);
+        margin: 0 0 16px;
+        max-width: 760px;
+      }
+      p {
+        max-width: 760px;
+      }
+      code {
+        font: 12px var(--mono);
+        background: var(--bg3);
+        padding: 1px 5px;
+        border-radius: 4px;
+      }
+      pre {
+        font: 12px/1.5 var(--mono);
+        background: var(--bg);
+        border: 1px solid var(--bd);
+        border-radius: 8px;
+        padding: 12px 14px;
+        overflow: auto;
+      }
+      .grid {
+        display: grid;
+        gap: 16px;
+      }
+      .g2 {
+        grid-template-columns: 1fr 1fr;
+      }
+      .g3 {
+        grid-template-columns: repeat(3, 1fr);
+      }
+      @media (max-width: 820px) {
+        .g2,
+        .g3 {
+          grid-template-columns: 1fr;
+        }
+      }
+      .card {
+        background: var(--bg);
+        border: 1px solid var(--bd);
+        border-radius: 10px;
+        padding: 14px 16px;
+      }
+      .card h4 {
+        margin: 0 0 6px;
+        font-size: 14px;
+      }
+      .card p,
+      .card li {
+        font-size: 13px;
+        color: var(--tx2);
+        margin: 4px 0;
+      }
+      .card ul {
+        padding-left: 18px;
+        margin: 6px 0;
+      }
+      .tag {
+        display: inline-block;
+        font-size: 11px;
+        padding: 1px 7px;
+        border-radius: 999px;
+        background: var(--bg3);
+        color: var(--tx2);
+        margin-left: 6px;
+        vertical-align: middle;
+      }
+      .tag.rec {
+        background: var(--acc-bg);
+        color: var(--acc);
+      }
+      .tag.keep {
+        background: #e6f4ea;
+        color: var(--ok);
+      }
+      .tag.new {
+        background: #fdf2e9;
+        color: var(--orange);
+      }
+      @media (prefers-color-scheme: dark) {
+        .tag.keep {
+          background: #1f3326;
+        }
+        .tag.new {
+          background: #3a2a20;
+        }
+      }
+
+      /* ---------- Obsidian-like window mock ---------- */
+      .win {
+        background: var(--bg);
+        border: 1px solid var(--bd2);
+        border-radius: 10px;
+        overflow: hidden;
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+        font-size: 13px;
+      }
+      .tabs {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        background: var(--bg2);
+        border-bottom: 1px solid var(--bd);
+        font-size: 12px;
+        color: var(--tx2);
+      }
+      .tab {
+        padding: 3px 10px;
+        border-radius: 6px;
+      }
+      .tab.on {
+        background: var(--bg);
+        color: var(--tx);
+        box-shadow: 0 0 0 1px var(--bd);
+      }
+      .lib {
+        display: grid;
+        grid-template-columns: 200px 1fr 300px;
+        min-height: 440px;
+      }
+      .lib.two {
+        grid-template-columns: 200px 1fr;
+      }
+      @media (max-width: 820px) {
+        .lib,
+        .lib.two {
+          grid-template-columns: 1fr;
+        }
+        .pane.right {
+          border-left: 0;
+          border-top: 1px solid var(--bd);
+        }
+      }
+      .pane {
+        padding: 10px;
+      }
+      .pane.left {
+        background: var(--bg2);
+        border-right: 1px solid var(--bd);
+      }
+      .pane.right {
+        border-left: 1px solid var(--bd);
+        background: var(--bg2);
+      }
+      .search {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid var(--bd2);
+        border-radius: 8px;
+        padding: 6px 10px;
+        background: var(--bg);
+        color: var(--tx3);
+        margin-bottom: 10px;
+      }
+      .search b {
+        color: var(--tx);
+        font-weight: 500;
+      }
+      .search .kbd {
+        margin-left: auto;
+        font: 11px var(--mono);
+        border: 1px solid var(--bd2);
+        border-radius: 4px;
+        padding: 0 5px;
+        color: var(--tx3);
+      }
+      .tree div {
+        padding: 3px 6px;
+        border-radius: 5px;
+        color: var(--tx2);
+        white-space: nowrap;
+      }
+      .tree .sec {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--tx3);
+        margin-top: 10px;
+      }
+      .tree .on {
+        background: var(--acc-bg);
+        color: var(--acc);
+        font-weight: 500;
+      }
+      .tree .i1 {
+        padding-left: 18px;
+      }
+      .tree .i2 {
+        padding-left: 30px;
+      }
+      .tree .n {
+        float: right;
+        color: var(--tx3);
+        font-size: 11px;
+      }
+      .facet {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-top: 6px;
+      }
+      .facet span {
+        font-size: 11px;
+        border: 1px solid var(--bd2);
+        border-radius: 999px;
+        padding: 1px 8px;
+        color: var(--tx2);
+      }
+      .facet span.on {
+        border-color: var(--acc);
+        color: var(--acc);
+        background: var(--acc-bg);
+      }
+      .head {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        margin: 2px 4px 8px;
+      }
+      .head b {
+        font-weight: 600;
+      }
+      .head small {
+        color: var(--tx3);
+      }
+      .head .sort {
+        margin-left: auto;
+        color: var(--tx2);
+        font-size: 12px;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 16px 1fr auto;
+        gap: 8px;
+        padding: 7px 8px;
+        border-radius: 7px;
+        border: 1px solid transparent;
+      }
+      .row:hover {
+        background: var(--bg2);
+      }
+      .row.sel {
+        background: var(--acc-bg);
+        border-color: color-mix(in srgb, var(--acc) 30%, transparent);
+      }
+      .row .tri {
+        color: var(--tx3);
+        font-size: 11px;
+        padding-top: 3px;
+      }
+      .row .t {
+        font-weight: 500;
+      }
+      .row .m {
+        color: var(--tx2);
+        font-size: 12px;
+      }
+      .row .s {
+        color: var(--tx3);
+        font-size: 12px;
+        margin-top: 1px;
+      }
+      .row .s i {
+        font-style: normal;
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 2px;
+        vertical-align: middle;
+        margin-right: 3px;
+      }
+      .row .ico {
+        color: var(--tx3);
+        font-size: 12px;
+        text-align: right;
+      }
+      .row .ico b {
+        color: var(--orange);
+        font-weight: 600;
+      }
+      .child {
+        margin-left: 32px;
+        padding: 3px 8px;
+        color: var(--tx2);
+        font-size: 12px;
+      }
+      .child u {
+        text-decoration: none;
+        color: var(--acc);
+      }
+      .rc h5 {
+        margin: 0 0 2px;
+        font-size: 14px;
+      }
+      .rc .m {
+        color: var(--tx2);
+        font-size: 12px;
+      }
+      .rc p {
+        font-size: 12px;
+        color: var(--tx2);
+        margin: 8px 0;
+      }
+      .rc .acts {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin: 10px 0;
+      }
+      .btn {
+        font-size: 12px;
+        padding: 4px 10px;
+        border-radius: 6px;
+        border: 1px solid var(--bd2);
+        background: var(--bg);
+        color: var(--tx);
+      }
+      .btn.pri {
+        background: var(--acc);
+        color: #fff;
+        border-color: var(--acc);
+      }
+      .hl {
+        border-left: 3px solid var(--y);
+        background: var(--bg);
+        border-radius: 0 6px 6px 0;
+        padding: 6px 8px;
+        font-size: 12px;
+        margin: 6px 0;
+      }
+      .hl.g {
+        border-left-color: var(--g);
+      }
+      .hl.b {
+        border-left-color: var(--b);
+      }
+      .hl small {
+        display: block;
+        color: var(--tx3);
+      }
+      .empty {
+        text-align: center;
+        color: var(--tx2);
+        padding: 60px 20px;
+      }
+      .empty b {
+        display: block;
+        color: var(--tx);
+        margin-bottom: 4px;
+      }
+      .note {
+        position: relative;
+      }
+      .callout {
+        position: absolute;
+        font-size: 11px;
+        background: var(--navy);
+        color: #fff;
+        padding: 2px 7px;
+        border-radius: 4px;
+        white-space: nowrap;
+      }
+      @media (prefers-color-scheme: dark) {
+        .callout {
+          background: var(--orange);
+          color: #111;
+        }
+      }
+      .mini .win {
+        font-size: 12px;
+      }
+      .mini .lib {
+        min-height: 300px;
+      }
+      table.cmp {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 13px;
+        background: var(--bg);
+        border: 1px solid var(--bd);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      .cmp th,
+      .cmp td {
+        text-align: left;
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--bd);
+        vertical-align: top;
+      }
+      .cmp th {
+        background: var(--bg2);
+        font-weight: 600;
+      }
+      .cmp td:first-child {
+        font-weight: 500;
+      }
+      .phase {
+        display: grid;
+        grid-template-columns: 90px 1fr;
+        gap: 10px;
+        padding: 10px 0;
+        border-top: 1px solid var(--bd);
+      }
+      .phase b {
+        color: var(--acc);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Library view <span>design</span></h1>
+      <p class="lead">
+        A read-only library browser inside Obsidian. Not a replacement for
+        Zotero's main window: it keeps three familiarity anchors so a Zotero
+        user is never lost, and redesigns the rest around the four things an
+        academic actually does here while writing.
+      </p>
+
+      <div class="grid g3">
+        <div class="card">
+          <h4>Jobs it serves</h4>
+          <ul>
+            <li><b>Resume</b> · where was I</li>
+            <li><b>Find</b> · that paper by X about Y</li>
+            <li><b>Browse</b> · what do I have on this</li>
+            <li><b>Pick</b> · what do I cite or read next</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>Familiarity anchors <span class="tag keep">keep</span></h4>
+          <ul>
+            <li>Tree on the left: My Library, collections, groups</li>
+            <li>Rows show title · creators · year</li>
+            <li>Disclosure triangle reveals files, notes, highlights</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>Not here, on purpose</h4>
+          <ul>
+            <li>No add, edit, delete, move. Zotero owns its data.</li>
+            <li>No trash, unfiled, duplicates, tag pane</li>
+            <li>Column grid only as an alternate layout</li>
+          </ul>
+        </div>
+      </div>
+
+      <h2>1 · Default state: Recent, first open</h2>
+      <p>
+        Opens from the ribbon, a command, or on startup when it was open last
+        time. Search has focus. "Recent" mirrors Zotero 9's Recently Read
+        (per-attachment <code>lastRead</code>) and adds Obsidian usage (#1532,
+        #1533). Nothing is ever empty on first run.
+      </p>
+
+      <div class="win note">
+        <div class="tabs">
+          <span class="tab on">Library</span><span class="tab">rougier2014</span
+          ><span class="tab">Chapter 1 draft</span>
+        </div>
+        <div class="lib">
+          <div class="pane left">
+            <div class="tree">
+              <div class="on">◷ Recent <span class="n">18</span></div>
+              <div class="sec">Libraries</div>
+              <div>▾ My Library <span class="n">1,204</span></div>
+              <div class="i1">▾ Thesis <span class="n">88</span></div>
+              <div class="i2">Chapter 1 <span class="n">23</span></div>
+              <div class="i2">Chapter 2 <span class="n">41</span></div>
+              <div class="i1">▸ Reading list <span class="n">12</span></div>
+              <div>▸ Lab group <span class="n">310</span></div>
+              <div class="sec">Show only</div>
+            </div>
+            <div class="facet">
+              <span>Unread</span><span>Annotated</span><span>Has note</span
+              ><span>PDF</span>
+            </div>
+          </div>
+          <div class="pane">
+            <div class="search">
+              🔍
+              <span
+                >Search papers…
+                <small style="color: var(--tx3)"
+                  >title, author, year, tag:method</small
+                ></span
+              ><span class="kbd">⌘ ⇧ L</span>
+            </div>
+            <div class="head">
+              <b>Recent</b><small>18 papers · read in the last two weeks</small
+              ><span class="sort">Sort: Last read ▾</span>
+            </div>
+            <div class="row sel">
+              <span class="tri">▾</span>
+              <div>
+                <div class="t">Ten simple rules for better figures</div>
+                <div class="m">
+                  Rougier, Droettboom, Bourne · 2014 · PLOS Computational
+                  Biology
+                </div>
+                <div class="s">
+                  <i style="background: var(--y)"></i>14 highlights · ✎ note ·
+                  read 2 h ago in Obsidian
+                </div>
+              </div>
+              <div class="ico"><b>✎</b> 📄</div>
+            </div>
+            <div class="child">
+              📄 <u>Rougier et al. - 2014.pdf</u> · 14 highlights
+            </div>
+            <div class="child">
+              📝 <u>rougier2014</u> · literature note · edited yesterday
+            </div>
+            <div class="row">
+              <span class="tri">▸</span>
+              <div>
+                <div class="t">Attention is all you need</div>
+                <div class="m">
+                  Vaswani, Shazeer, Parmar, et al. · 2017 · NeurIPS
+                </div>
+                <div class="s">unread · read yesterday in Zotero</div>
+              </div>
+              <div class="ico">📄</div>
+            </div>
+            <div class="row">
+              <span class="tri">▸</span>
+              <div>
+                <div class="t">
+                  Deep residual learning for image recognition
+                </div>
+                <div class="m">He, Zhang, Ren, Sun · 2016 · CVPR</div>
+                <div class="s">
+                  <i style="background: var(--g)"></i
+                  ><i style="background: var(--b)"></i>6 highlights · read 3
+                  days ago
+                </div>
+              </div>
+              <div class="ico"><b>✎</b> 📄</div>
+            </div>
+            <div class="row">
+              <span class="tri">▸</span>
+              <div>
+                <div class="t">The structure of scientific revolutions</div>
+                <div class="m">Kuhn · 1962 · University of Chicago Press</div>
+                <div class="s">epub · read last week</div>
+              </div>
+              <div class="ico">📖</div>
+            </div>
+          </div>
+          <div class="pane right rc">
+            <h5>Ten simple rules for better figures</h5>
+            <div class="m">
+              Rougier, Droettboom &amp; Bourne · 2014<br />PLOS Computational
+              Biology 10(9)
+            </div>
+            <div class="acts">
+              <span class="btn pri">Open PDF</span
+              ><span class="btn">Open note</span><span class="btn">Cite</span
+              ><span class="btn">⋯</span>
+            </div>
+            <p>
+              Scientific visualization is classically defined as the process of
+              graphically displaying scientific data. However, this process is
+              far from direct or automatic…
+            </p>
+            <h3>Your highlights</h3>
+            <div class="hl">Know your audience<small>p. 2 · yellow</small></div>
+            <div class="hl g">
+              Captions are not optional<small
+                >p. 4 · green · "use this in §2.3"</small
+              >
+            </div>
+            <div class="hl b">
+              Do not trust the defaults<small>p. 5 · blue</small>
+            </div>
+            <div class="m" style="margin-top: 8px">
+              + 11 more · <span style="color: var(--acc)">open in sidebar</span>
+            </div>
+          </div>
+        </div>
+        <span class="callout" style="left: 14px; top: 50px">anchor: tree</span>
+        <span class="callout" style="left: 230px; top: 50px"
+          >new: search is the front door</span
+        >
+        <span class="callout" style="left: 230px; top: 116px"
+          >anchor: title · creators · year + triangle</span
+        >
+        <span class="callout" style="right: 14px; top: 50px"
+          >new: reading card, not metadata form</span
+        >
+        <span class="callout" style="left: 14px; top: 300px"
+          >new: reading-state facets</span
+        >
+      </div>
+
+      <h2>2 · Other states</h2>
+      <div class="grid g2 mini">
+        <div>
+          <h3>Search typed · whole-library ranking</h3>
+          <div class="win">
+            <div class="lib two">
+              <div class="pane left">
+                <div class="tree">
+                  <div>◷ Recent</div>
+                  <div class="sec">Libraries</div>
+                  <div class="on">▾ My Library</div>
+                  <div class="i1">▸ Thesis</div>
+                  <div>▸ Lab group</div>
+                </div>
+              </div>
+              <div class="pane">
+                <div class="search">
+                  🔍 <b>rougier fig</b><span class="kbd">esc</span>
+                </div>
+                <div class="head">
+                  <small
+                    >2 matches in My Library ·
+                    <span style="color: var(--acc)"
+                      >search all libraries</span
+                    ></small
+                  >
+                </div>
+                <div class="row sel">
+                  <span class="tri">▸</span>
+                  <div>
+                    <div class="t">
+                      <mark>Fig</mark>ures that work: a field guide
+                    </div>
+                    <div class="m"><mark>Rougier</mark> · 2021</div>
+                  </div>
+                  <div class="ico">📄</div>
+                </div>
+                <div class="row">
+                  <span class="tri">▸</span>
+                  <div>
+                    <div class="t">
+                      Ten simple rules for better <mark>fig</mark>ures
+                    </div>
+                    <div class="m">
+                      <mark>Rougier</mark>, Droettboom, Bourne · 2014
+                    </div>
+                  </div>
+                  <div class="ico"><b>✎</b> 📄</div>
+                </div>
+                <div
+                  class="m"
+                  style="padding: 8px; color: var(--tx3); font-size: 12px"
+                >
+                  ↑↓ move · ⏎ open PDF · ⇧⏎ open note · ⌘⏎ cite
+                </div>
+              </div>
+            </div>
+          </div>
+          <p style="font-size: 12px; color: var(--tx2)">
+            Same ranking as the quick switcher. The tree still scopes the
+            search. Keys match the quick switcher so the two feel like one
+            surface.
+          </p>
+        </div>
+        <div>
+          <h3>Zotero data not found · first run</h3>
+          <div class="win">
+            <div class="lib two">
+              <div class="pane left">
+                <div class="tree">
+                  <div class="sec">Libraries</div>
+                  <div style="color: var(--warn)">⚠ Zotero not found</div>
+                </div>
+                <div class="facet">
+                  <span class="on">Locate data folder…</span>
+                </div>
+              </div>
+              <div class="pane">
+                <div class="empty">
+                  <b>We couldn't find your Zotero library</b>ZotLit looks in the
+                  default Zotero profile. Point it at your data folder and your
+                  papers appear here. Zotero does not need to be open.
+                  <div style="margin-top: 12px">
+                    <span class="btn pri">Locate data folder</span>
+                    <span class="btn">Open settings</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p style="font-size: 12px; color: var(--tx2)">
+            The Library view <em>is</em> the welcome. Companion, Better BibTeX
+            and the server are never mentioned here; they appear at the action
+            that needs them.
+          </p>
+        </div>
+        <div>
+          <h3>Collection selected · no highlights yet</h3>
+          <div class="win">
+            <div class="lib two">
+              <div class="pane left">
+                <div class="tree">
+                  <div>◷ Recent</div>
+                  <div class="sec">Libraries</div>
+                  <div>▾ My Library</div>
+                  <div class="i1">▾ Thesis</div>
+                  <div class="i2 on">Chapter 2 <span class="n">41</span></div>
+                </div>
+                <div class="facet">
+                  <span class="on">Unread</span><span>Annotated</span>
+                </div>
+              </div>
+              <div class="pane">
+                <div class="search">🔍 <span>Search in Chapter 2…</span></div>
+                <div class="head">
+                  <b>Thesis / Chapter 2</b><small>41 papers · 29 unread</small
+                  ><span class="sort">Sort: Date added ▾</span>
+                </div>
+                <div class="row">
+                  <span class="tri">▸</span>
+                  <div>
+                    <div class="t">Scaling laws for neural language models</div>
+                    <div class="m">Kaplan et al. · 2020</div>
+                    <div class="s">unread · added 3 days ago</div>
+                  </div>
+                  <div class="ico">📄</div>
+                </div>
+                <div class="row">
+                  <span class="tri">▸</span>
+                  <div>
+                    <div class="t">Language models are few-shot learners</div>
+                    <div class="m">Brown et al. · 2020</div>
+                    <div class="s">unread</div>
+                  </div>
+                  <div class="ico">📄</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p style="font-size: 12px; color: var(--tx2)">
+            Facets narrow by reading state. "Unread" = no <code>lastRead</code>,
+            no highlights, no note. Zotero cannot show this; it is the view's
+            main value add.
+          </p>
+        </div>
+        <div>
+          <h3>Row context menu · Zotero stays closed</h3>
+          <div class="win">
+            <div class="lib two">
+              <div class="pane left">
+                <div class="tree">
+                  <div class="on">◷ Recent</div>
+                  <div class="sec">Libraries</div>
+                  <div>▾ My Library</div>
+                </div>
+              </div>
+              <div class="pane" style="position: relative">
+                <div class="row sel">
+                  <span class="tri">▸</span>
+                  <div>
+                    <div class="t">Attention is all you need</div>
+                    <div class="m">Vaswani et al. · 2017</div>
+                  </div>
+                  <div class="ico">📄</div>
+                </div>
+                <div
+                  style="
+                    position: absolute;
+                    left: 140px;
+                    top: 44px;
+                    background: var(--bg);
+                    border: 1px solid var(--bd2);
+                    border-radius: 8px;
+                    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+                    padding: 4px;
+                    min-width: 220px;
+                    font-size: 12px;
+                  "
+                >
+                  <div style="padding: 4px 10px">
+                    Open PDF
+                    <span style="float: right; color: var(--tx3)">⏎</span>
+                  </div>
+                  <div style="padding: 4px 10px">Open PDF to the right</div>
+                  <div style="padding: 4px 10px">
+                    Write literature note
+                    <span style="float: right; color: var(--tx3)">⇧⏎</span>
+                  </div>
+                  <div style="padding: 4px 10px">
+                    Insert citation
+                    <span style="float: right; color: var(--tx3)">⌘⏎</span>
+                  </div>
+                  <div style="padding: 4px 10px">Copy citation key</div>
+                  <div
+                    style="border-top: 1px solid var(--bd); margin: 4px 0"
+                  ></div>
+                  <div style="padding: 4px 10px; color: var(--tx3)">
+                    Show in Zotero
+                    <span style="float: right">needs Zotero</span>
+                  </div>
+                </div>
+                <div style="height: 170px"></div>
+              </div>
+            </div>
+          </div>
+          <p style="font-size: 12px; color: var(--tx2)">
+            Every action reads the database. Only "Show in Zotero" needs a
+            running Zotero and says so in place, instead of at setup time.
+          </p>
+        </div>
+      </div>
+
+      <h2>3 · What it is made of</h2>
+      <p>
+        The centre is the existing Query View, hosted without a file, the same
+        way the annotation sidebar already hosts one. The tree and the reading
+        card are new. The "Papers" layout is new; Table stays as an alternate.
+      </p>
+      <pre><code>&lt;LibraryView&gt; (views/library/view.tsx, ItemView, main area)         <span style="color:var(--orange)">new</span>
+  &lt;SearchBox&gt;             SearchItems ranking → key set            <span style="color:var(--orange)">new</span>
+  &lt;LibraryTree&gt;           Recent · libraries · collections · facets <span style="color:var(--orange)">new</span>
+    counts: one grouped query  group='collections[]' fields='[]'
+  &lt;QueryView host="library"&gt; (views/query-view/view.tsx)           <span style="color:var(--ok)">exists</span>
+    QueryViewHost           saves to plugin data per vault, not a file
+    layout "papers"         two-line rows + reading-state line     <span style="color:var(--orange)">new</span>
+    layout "table"          Zotero-style grid, columns, resize     <span style="color:var(--ok)">exists</span>
+    expand row              files · child notes · annotations      <span style="color:var(--ok)">exists</span>
+    Literature Note column  open / create                          <span style="color:var(--ok)">exists</span>
+  &lt;ReadingCard&gt;           abstract · highlights · actions          <span style="color:var(--orange)">new</span>
+    Annotations layout      highlight cards                        <span style="color:var(--ok)">exists</span>
+  "Save as query file"    sidebar already does this               <span style="color:var(--ok)">exists</span></code></pre>
+
+      <h3>How a click becomes a query</h3>
+      <pre><code>tree.select("Thesis/Chapter 2")   →  filters.all  = collections.within("Thesis/Chapter 2")
+facet.toggle("Unread")            →  filters.view += lastRead == null &amp;&amp; annotations.isEmpty() &amp;&amp; vault.literatureNote == null
+search.type("rougier fig")        →  SearchItems(scope) → keys  →  filters.search = indexedKey in [...]   (or search("rougier fig"), see Q2)
+sort                               →  -lastActivity   = max(lastRead, dateModified, childNotes[].dateModified)
+
+Zotero running?  never required on this screen.
+  Show in Zotero · edit a highlight  →  just-in-time notice with Launch</code></pre>
+
+      <h2>4 · Zotero habit → what happens here</h2>
+      <table class="cmp">
+        <tr>
+          <th>What a Zotero user tries</th>
+          <th>Here</th>
+          <th></th>
+        </tr>
+        <tr>
+          <td>Click a collection on the left</td>
+          <td>Filters the list; counts match Zotero</td>
+          <td><span class="tag keep">keep</span></td>
+        </tr>
+        <tr>
+          <td>Type in the search box</td>
+          <td>
+            Searches the whole scope by title, creator, year, tag. One mode plus
+            tokens
+          </td>
+          <td><span class="tag new">changed</span></td>
+        </tr>
+        <tr>
+          <td>Click the disclosure triangle</td>
+          <td>Files, notes, highlights inline</td>
+          <td><span class="tag keep">keep</span></td>
+        </tr>
+        <tr>
+          <td>Double-click a row</td>
+          <td>Opens the PDF in Obsidian with Zotero's highlights</td>
+          <td><span class="tag keep">keep</span></td>
+        </tr>
+        <tr>
+          <td>Look right for the item pane</td>
+          <td>
+            Reading card: abstract, your highlights, actions. Shown on selection
+          </td>
+          <td><span class="tag new">changed</span></td>
+        </tr>
+        <tr>
+          <td>Sort by clicking a column header</td>
+          <td>Sort menu in the list header; headers in Table layout</td>
+          <td><span class="tag new">changed</span></td>
+        </tr>
+        <tr>
+          <td>Drag a row to a collection</td>
+          <td>
+            Nothing; cursor says read-only. Drag into a note inserts a citation
+          </td>
+          <td><span class="tag new">changed</span></td>
+        </tr>
+        <tr>
+          <td>Open "Recently Read"</td>
+          <td>"Recent" node, same semantics plus Obsidian reads</td>
+          <td><span class="tag keep">keep</span></td>
+        </tr>
+      </table>
+
+      <h2>5 · Open questions</h2>
+      <div class="grid g2">
+        <div class="card">
+          <h4>Q1 · Where does the tree live?</h4>
+          <p>
+            <b>A · Same leaf</b> <span class="tag rec">recommended</span
+            ><br />Three panes in one main tab, as in Zotero. Simple state, one
+            thing to open, resembles Zotero.
+          </p>
+          <p>
+            <b>B · Left-sidebar leaf</b><br />Tree drives whichever Library tab
+            is active, like the file explorer. Always visible, but two leaves to
+            manage and no Zotero resemblance.
+          </p>
+        </div>
+        <div class="card">
+          <h4>Q2 · How does search reach the engine?</h4>
+          <p>
+            <b>A · Key set</b> <span class="tag rec">recommended first</span
+            ><br />Worker's <code>SearchItems</code> ranks, the view filters by
+            <code>indexedKey in [...]</code>. No engine change; not expressible
+            in a query file.
+          </p>
+          <p>
+            <b>B · <code>search("…")</code> filter function</b
+            ><br />Engine-level, so a query file can carry a search. Needs
+            ranking inside the engine. Can follow A.
+          </p>
+        </div>
+      </div>
+
+      <h2>6 · Phases</h2>
+      <div class="phase">
+        <b>Phase 1</b>
+        <div>
+          Fileless host · ribbon + command · tree with counts · Recent node
+          (#1532, #1533) · Papers layout · whole-scope search · row context menu
+          · persisted state. Replaces Zotero for browsing and reading.
+        </div>
+      </div>
+      <div class="phase">
+        <b>Phase 2</b>
+        <div>
+          Reading card · facets (needs vault-side filter decision from #1531) ·
+          "Save as query file".
+        </div>
+      </div>
+      <div class="phase">
+        <b>Phase 3</b>
+        <div>
+          Pin a query file as a tree node · tag tokens with completion · Welcome
+          collapses into a banner above this view.
+        </div>
+      </div>
+    </main>
+  </body>
+</html>

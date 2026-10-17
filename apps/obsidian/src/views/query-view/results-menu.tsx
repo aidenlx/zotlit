@@ -169,22 +169,24 @@ export function ResultsMenu({ view }: { view: QueryView }) {
       >
         {open && (
           <>
-            <LimitField view={view} close={close} />
+            {view.can.limit && <LimitField view={view} close={close} />}
             <PopoverActions>
               {/* The row stays in place while no limit is set, dimmed as Bases
                   dims it, so the rows under it hold still as a limit is typed. */}
-              <PopoverAction
-                icon="rotate-ccw"
-                data-query-show-all=""
-                disabled={current.limit === undefined || phase !== "ready"}
-                className="zt:disabled:cursor-default zt:disabled:text-faint zt:disabled:hover:bg-transparent zt:disabled:[&_svg]:text-faint"
-                onClick={() => {
-                  view.document.editView({ limit: undefined });
-                  close();
-                }}
-              >
-                {m.query_view_show_all({ count: matched })}
-              </PopoverAction>
+              {view.can.limit && (
+                <PopoverAction
+                  icon="rotate-ccw"
+                  data-query-show-all=""
+                  disabled={current.limit === undefined || phase !== "ready"}
+                  className="zt:disabled:cursor-default zt:disabled:text-faint zt:disabled:hover:bg-transparent zt:disabled:[&_svg]:text-faint"
+                  onClick={() => {
+                    view.document.editView({ limit: undefined });
+                    close();
+                  }}
+                >
+                  {m.query_view_show_all({ count: matched })}
+                </PopoverAction>
+              )}
               <PopoverAction
                 icon="copy"
                 data-query-copy=""

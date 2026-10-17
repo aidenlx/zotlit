@@ -90,7 +90,7 @@ export interface TemplateItemBaseData {
    * `publicationTitle`, which stays accessible — both names work.
    */
   containerTitle: string | null;
-  /** Citation key, from Better BibTeX or Zotero's native citation key. */
+  /** Citation key, from Zotero's native citation key field, where Better BibTeX writes the keys it generates. */
   citationKey: string | null;
   /** Alias for {@link citationKey}; both stay accessible on `zt.*`. */
   citekey: string | null;

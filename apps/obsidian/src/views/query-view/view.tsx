@@ -8,11 +8,13 @@
 import { Component } from "obsidian";
 import type { Scope } from "obsidian";
 import { useLayoutEffect, useMemo } from "react";
+import type { ComponentType } from "react";
 import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
 import { nameDictionary } from "@zotlit/item-query";
 import type { NameDictionary, QueryContext } from "@zotlit/item-query";
+import { useUniqueId } from "@zotlit/ui";
 
 import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
@@ -23,9 +25,12 @@ import type { Diagnostic } from "@/services/item-query/contract";
 import type {
   QueryViewOutcome,
   QueryViewRequest,
+  QueryViewResult,
+  QueryViewRow,
 } from "@/services/item-query/query-view";
 import type { QueryService } from "@/services/item-query/service";
 import { selectorKey } from "@/services/library-scope/scope";
+import type { LibraryScope } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import { AnnotList } from "@/views/annot-view/AnnotView";
@@ -47,8 +52,10 @@ import { datasetSpec, grouping } from "./datasets";
 import { FilterButton } from "./filter-popover";
 import type { FilterValues } from "./filter-popover";
 import { GroupEditor } from "./group-control";
+import type { ItemRowGestures } from "./item-rows";
 import { annotationsLayoutOptions, layoutOf } from "./layouts";
 import { ListLayout } from "./list-layout";
+import { PAPERS_FIELDS, PapersLayout } from "./papers-layout";
 import { groupOptions, sortOptions } from "./properties";
 import { PropertiesMenu } from "./properties-menu";
 import { locateFilterFault, viewFilter } from "./query-file";
@@ -128,7 +135,8 @@ export interface QueryViewHost {
    * Write the file's new text after a toolbar change, at once. It rejects
    * where the text was not saved; the change then stays on screen and the
    * toolbar says that it is not saved. The text comes back through
-   * {@link QueryView.setText} as the host reads it again.
+   * {@link QueryView.setText} as the host reads it again. A host without a
+   * file, such as the Library View, keeps its state in plugin data.
    */
   save: (text: string) => void | Promise<void>;
   /**
@@ -151,7 +159,134 @@ export interface QueryViewHost {
    * name: the sidebar's own, so its first new Annotation shows at once.
    */
   attachments?: () => readonly string[];
+  /**
+   * The Libraries the query reads: the Library View's selected Library.
+   * Absent: the Library Scope in force. A change runs again through
+   * {@link QueryView.contextChanged}.
+   *
+   * @see apps/obsidian/docs/adr/0071-the-library-tree-writes-filters.md
+   */
+  libraries?: () => LibraryScope;
+  /**
+   * Whether the host keeps only the shown view's sort, Layout and Visible
+   * Properties, as the Library View Document does. The view then offers no
+   * other change: no other view, grouping, filter, limit, column width,
+   * Display Name or Formula, which would show and then be gone on reopen,
+   * and no toolbar search beside its own (ADR 0072).
+   *
+   * @see apps/obsidian/docs/adr/0070-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
+   */
+  displayOnly?: boolean;
+  /**
+   * The Layout types the host offers, in the order its view menu lists them.
+   * Absent: every Layout of the view's dataset.
+   *
+   * @see apps/obsidian/docs/adr/0074-the-papers-layout-is-a-query-view-layout-the-library-view-offers-with-the-table.md
+   */
+  layouts?: readonly string[];
+  /**
+   * What a click, a double click, the context menu and a drag do on an Item
+   * row of the Papers and Table Layouts. Absent: the rows take no gesture.
+   *
+   * @see apps/obsidian/docs/adr/0073-library-view-rows-act-as-quick-switcher-results.md
+   */
+  rows?: ItemRowGestures;
+  /**
+   * Why `row` is in the list, such as "edited in Zotero" on the Library
+   * View's Recent; the Papers reading-state line ends with it. `null`: no
+   * reason. Absent: no row gives one.
+   *
+   * @see apps/obsidian/docs/adr/0075-recent-is-a-library-tree-node-that-writes-a-sort.md
+   */
+  reason?: (row: QueryViewRow) => string | null;
+  /**
+   * What the empty state says narrowed the rows, in place of the hint to
+   * change a filter: the host's derived text holds filters the researcher
+   * never wrote, so only the host knows what left the list empty. Absent:
+   * the view's own hint.
+   */
+  empty?: ComponentType;
+  /**
+   * Writes what the view shows as a new Query File. Present: the view menu
+   * of a host without views (`displayOnly`) offers "Save as query file".
+   */
+  saveAs?: () => void;
+  /**
+   * The Indexed Keys in the order the rows show in, in place of the sort: the
+   * Library View's ranked search. `null` or absent: the order of the query.
+   *
+   * @see apps/obsidian/docs/adr/0072-search-enters-the-library-view-as-an-ordered-key-set.md
+   */
+  rank?: () => readonly string[] | null;
+  /**
+   * A condition on each row that the host answers and the query cannot, such
+   * as the Library View's Has note facet; `null` for none. The query then
+   * reads the Indexed Key of every match, the view's limit cuts the keys the
+   * condition keeps, so the count is theirs, and only those rows are read
+   * with their fields. A condition with another `key` runs again through
+   * {@link QueryView.contextChanged}.
+   *
+   * @see apps/obsidian/docs/adr/0071-the-library-tree-writes-filters.md
+   */
+  rowPass?: () => QueryRowPass | null;
 }
+
+/** A condition on each row that the host applies after the query. */
+export interface QueryRowPass {
+  /** Tells one condition from another, as part of the run key. */
+  readonly key: string;
+  /** Whether the row of the Item with `indexedKey` stays. */
+  keeps(indexedKey: string): boolean;
+}
+
+/**
+ * The changes the toolbar offers. A host that keeps only the shown view's
+ * sort, Layout and Visible Properties (`displayOnly`) takes away every other
+ * one, so no control shows a change that would be gone on reopen. Each
+ * control reads its own flag here.
+ *
+ * @see apps/obsidian/docs/adr/0070-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
+ */
+export interface QueryViewCapabilities {
+  /**
+   * Add, configure, reorder and switch the file's views. Without it the view
+   * menu switches only the Layout of the view on screen (ADR 0074).
+   */
+  readonly views: boolean;
+  readonly group: boolean;
+  readonly filter: boolean;
+  /** Set and clear the row limit. */
+  readonly limit: boolean;
+  /** Resize a Table column and reset its width. */
+  readonly columnWidth: boolean;
+  /** Open a property's page: its Display Name, its Formula, "Add formula". */
+  readonly propertyPages: boolean;
+  /**
+   * Find text in the rows on screen. A host with a search of its own, as
+   * the Library View's search box, takes it away (ADR 0072).
+   */
+  readonly search: boolean;
+}
+
+const EVERY_CHANGE: QueryViewCapabilities = Object.freeze({
+  views: true,
+  group: true,
+  filter: true,
+  limit: true,
+  columnWidth: true,
+  propertyPages: true,
+  search: true,
+});
+
+const DISPLAY_CHANGES: QueryViewCapabilities = Object.freeze({
+  views: false,
+  group: false,
+  filter: false,
+  limit: false,
+  columnWidth: false,
+  propertyPages: false,
+  search: false,
+});
 
 /** What the view shows now, as the toolbar and the host read it. */
 export interface QueryViewState {
@@ -246,11 +381,28 @@ function usedGroupBy(view: QueryFileView): QueryFileSort | undefined {
  */
 export const RERUN_DELAY_MS = 300;
 
+/** `result` as a list of `rows`, with the counts and warnings in `change`. */
+function listed(
+  result: QueryViewResult,
+  change: Pick<
+    QueryViewResult,
+    "returnedCount" | "matchedCount" | "truncated"
+  > & {
+    rows: readonly QueryViewRow[];
+    warnings?: QueryViewResult["warnings"];
+  },
+): QueryViewResult {
+  const { groups: _groups, totalCount: _totalCount, ...list } = result;
+  return { ...list, ...change };
+}
+
 /** One run of a view: its request key, and the file and view it ran for. */
 interface ViewRun {
   key: string;
   file: QueryFile;
   view: QueryFileView;
+  /** The Query Context and the Libraries the run read, as {@link QueryView} keys them. */
+  binding: string;
 }
 
 /** The faults of a filter that reads a Formula it cannot have. */
@@ -297,6 +449,12 @@ export class QueryView extends Component implements HistorySurface {
   #shownViewName: string | null = null;
   /** The dataset of the rows on screen. */
   #shownDataset: QueryFileDataset | null = null;
+  /**
+   * The Query Context and the Libraries of the rows on screen. Rows of
+   * another Item or other Libraries are another list: a run for a new one
+   * shows none of them while it loads, nor after it fails.
+   */
+  #shownBinding: string | null = null;
   #settled: Promise<void> = Promise.resolve();
   #subscriptions: DisposableStack | null = null;
   /** Whether the view draws into an element; until then no card waits to show. */
@@ -351,14 +509,28 @@ export class QueryView extends Component implements HistorySurface {
   }
 
   /**
-   * What the Table reads beside the rows: the queries of its child rows, its
-   * notes, and the readers its links open.
+   * What the Table and Papers read beside the rows: the queries of their
+   * child rows, which read the Libraries the view reads, as a child lives in
+   * its parent's Library; their notes; and the readers their links open.
    */
   get tableDeps(): Pick<
     QueryViewDeps,
     "query" | "literatureNotes" | "readers"
   > {
-    return this.#deps;
+    const { query, literatureNotes, readers } = this.#deps;
+    return {
+      query: {
+        run: (request, signal) => {
+          const libraries = this.#host.libraries?.();
+          return query.run(
+            libraries ? { ...request, libraries } : request,
+            signal,
+          );
+        },
+      },
+      literatureNotes,
+      readers,
+    };
   }
 
   /** Settles once the cards show the last run the view started. Never rejects. */
@@ -465,13 +637,20 @@ export class QueryView extends Component implements HistorySurface {
   }
 
   /**
-   * The host's Query Context may have changed: run again where the view's
-   * query reads another one.
+   * What the host derives may have changed: run again where the view's
+   * query reads another Query Context or other Libraries, and otherwise draw
+   * the rows again, since a hook such as {@link QueryViewHost.reason} may
+   * say something else of them.
    */
   contextChanged(): void {
     const { file, view, problems } = this.state.getState();
     if (!file || !view || problems.length > 0) return;
     if (this.#runKey(file, view) !== this.#runRequest) this.refresh();
+    // The Layouts draw from the records, so a new list of them redraws.
+    else
+      this.state.setState(({ results }) => ({
+        results: results && { ...results, records: [...results.records] },
+      }));
   }
 
   /**
@@ -523,6 +702,36 @@ export class QueryView extends Component implements HistorySurface {
   /** The surface the host is, by what it binds to `this`. */
   get contextSource(): ContextSource | undefined {
     return this.#host.contextSource;
+  }
+
+  /** The changes the toolbar offers, as the host keeps them. */
+  get can(): QueryViewCapabilities {
+    return this.#host.displayOnly === true ? DISPLAY_CHANGES : EVERY_CHANGE;
+  }
+
+  /** The Layout types the host offers; `undefined` for every one. */
+  get layouts(): readonly string[] | undefined {
+    return this.#host.layouts;
+  }
+
+  /** What the host does on the gestures over an Item row. */
+  get rows(): ItemRowGestures | undefined {
+    return this.#host.rows;
+  }
+
+  /** Why `row` is in the list, as the host says; `null` for no reason. */
+  reason(row: QueryViewRow): string | null {
+    return this.#host.reason?.(row) ?? null;
+  }
+
+  /** What the host says narrowed the rows of an empty list, if it says. */
+  get empty(): ComponentType | undefined {
+    return this.#host.empty;
+  }
+
+  /** The host's "Save as query file", for the view menu. */
+  get saveAs(): QueryViewHost["saveAs"] {
+    return this.#host.saveAs;
   }
 
   /** The host's link to the Query File, for the toolbar. */
@@ -594,12 +803,21 @@ export class QueryView extends Component implements HistorySurface {
     );
   }
 
+  /** The Query Context and the Libraries the host binds now, as one key. */
+  #binding(): string {
+    return JSON.stringify([
+      this.#host.context() ?? null,
+      this.#host.libraries?.() ?? null,
+    ]);
+  }
+
   /** What tells one run from another: the request, and the grouping the rows are gathered by. */
   #runKey(file: QueryFile, view: QueryFileView): string {
     return JSON.stringify([
       this.#request(file, view),
       usedGroupBy(view) ?? null,
       view.groupOrder ?? null,
+      this.#host.rowPass?.()?.key ?? null,
     ]);
   }
 
@@ -610,13 +828,14 @@ export class QueryView extends Component implements HistorySurface {
   #request(file: QueryFile, view: QueryFileView): QueryViewRequest {
     const filter = viewFilter(file, view);
     const context = this.#host.context();
+    const libraries = this.#host.libraries?.();
     const unused = new Set(unusedSettings(view).sort);
     const sort = view.sort?.filter(({ property }) => !unused.has(property));
     const grouped = view.groupBy && grouping(view.from, view.groupBy.property);
     const fields = [
       ...new Set([
         ...(grouped?.fields ?? []),
-        ...(layoutOf(view)?.type === "table" ? TABLE_FIELDS : []),
+        ...layoutFields(view),
         ...viewProperties(file, view).queried.map(({ path }) => path),
       ]),
     ];
@@ -634,7 +853,65 @@ export class QueryView extends Component implements HistorySurface {
       fields,
       ...(Object.keys(formulas).length > 0 && { formulas }),
       limit: view.limit ?? null,
+      ...(libraries && { libraries }),
       ...(context && { context }),
+    };
+  }
+
+  /**
+   * The answer to `request`, with only the rows `pass` keeps. With a pass the
+   * query first reads the Indexed Key of every match, since the pass may keep
+   * any of them; the request's limit cuts the kept keys, and only those rows
+   * are read with their fields, in the order of the keys. The answer counts
+   * the kept rows as the query counts its own matches.
+   */
+  async #read(
+    request: QueryViewRequest,
+    pass: QueryRowPass | null,
+    signal: AbortSignal,
+  ): Promise<QueryViewOutcome> {
+    if (!pass) return this.#deps.query.run(request, signal);
+    const keys = await this.#deps.query.run(
+      { ...request, fields: [], limit: null },
+      signal,
+    );
+    if (keys.kind !== "result") return keys;
+    const kept = (keys.result.rows ?? [])
+      .map((row) => row.indexedKey)
+      .filter((key) => pass.keeps(key));
+    const page =
+      request.limit === null || request.limit === undefined
+        ? kept
+        : kept.slice(0, request.limit);
+    const counts = {
+      returnedCount: page.length,
+      matchedCount: kept.length,
+      truncated: page.length < kept.length,
+    };
+    if (page.length === 0)
+      return { ...keys, result: listed(keys.result, { ...counts, rows: [] }) };
+    const read = await this.#deps.query.run(
+      {
+        ...request,
+        filter: [
+          `${JSON.stringify(page)}.contains(indexedKey)`,
+          ...(request.filter === undefined ? [] : [`(${request.filter})`]),
+        ].join(" && "),
+        limit: null,
+      },
+      signal,
+    );
+    if (read.kind !== "result") return read;
+    const byKey = new Map(
+      (read.result.rows ?? []).map((row) => [row.indexedKey, row]),
+    );
+    return {
+      ...read,
+      result: listed(read.result, {
+        ...counts,
+        rows: page.flatMap((key) => byKey.get(key) ?? []),
+        warnings: [...keys.result.warnings, ...read.result.warnings],
+      }),
     };
   }
 
@@ -661,33 +938,41 @@ export class QueryView extends Component implements HistorySurface {
     const controller = new AbortController();
     this.#run = controller;
     const key = this.#runKey(file, view);
+    const pass = this.#host.rowPass?.() ?? null;
+    const binding = this.#binding();
     this.#runRequest = key;
+    if (this.#shownRequest !== null && this.#shownBinding !== binding) {
+      void this.#show(null);
+      this.state.setState({ results: null });
+    }
     if (this.#shownRequest !== key) this.state.setState({ phase: "loading" });
     // A Formula with a mistake, and each Formula that reads it, is left out
     // of the rows; the outcome gives the reason for each.
-    this.#settled = this.#deps.query
-      .run(this.#request(file, view), controller.signal)
-      .then(
-        (outcome) => {
-          if (this.#run !== controller) return;
-          this.#run = null;
-          return this.#land({ key, file, view }, outcome, fromList);
-        },
-        (error: unknown) => {
-          if (this.#run !== controller) return;
-          this.#run = null;
-          logger.warn("A Query View could not run its query", { error });
-          this.#fail(
-            { key, file, view },
-            {
-              code: "query-failed",
-              message: error instanceof Error ? error.message : String(error),
-              hint: "",
-            },
-            nameDictionary(),
-          );
-        },
-      );
+    this.#settled = this.#read(
+      this.#request(file, view),
+      pass,
+      controller.signal,
+    ).then(
+      (outcome) => {
+        if (this.#run !== controller) return;
+        this.#run = null;
+        return this.#land({ key, file, view, binding }, outcome, fromList);
+      },
+      (error: unknown) => {
+        if (this.#run !== controller) return;
+        this.#run = null;
+        logger.warn("A Query View could not run its query", { error });
+        this.#fail(
+          { key, file, view, binding },
+          {
+            code: "query-failed",
+            message: error instanceof Error ? error.message : String(error),
+            hint: "",
+          },
+          nameDictionary(),
+        );
+      },
+    );
   }
 
   async #land(
@@ -703,7 +988,7 @@ export class QueryView extends Component implements HistorySurface {
         this.#fail(run, outcome.diagnostic, formulaIssues(outcome));
         return;
       case "result": {
-        const { result } = outcome;
+        const result = outcome.result;
         // The query reads Zotero's database, which can take a new Annotation
         // after the repository's list does. Such a run keeps the cards on
         // screen, and the database change that follows runs the view again.
@@ -714,10 +999,10 @@ export class QueryView extends Component implements HistorySurface {
             ? "rerun"
             : "new-request";
         if (this.#layout.keepsBack(named, cause)) return;
-        const shown = layoutRows(result.rows ?? [], view);
-        const byKey = new Map(
-          (result.rows ?? []).map((row) => [row.indexedKey, row]),
-        );
+        const rank = this.#host.rank?.() ?? null;
+        const rows = ranked(result.rows ?? [], rank);
+        const shown = layoutRows(rows, view);
+        const byKey = new Map(rows.map((row) => [row.indexedKey, row]));
         this.state.setState({
           phase: "ready",
           results: {
@@ -732,6 +1017,7 @@ export class QueryView extends Component implements HistorySurface {
             matched: result.matchedCount,
             groups: shown.groups,
             truncated: result.truncated,
+            ranked: rank !== null,
             warnings: [
               ...new Map(
                 result.warnings.map(({ code, message }) => [
@@ -749,6 +1035,7 @@ export class QueryView extends Component implements HistorySurface {
         await this.#show(key, drawsCards(current) ? shown.rows : null);
         this.#shownViewName = view.name;
         this.#shownDataset = view.from ?? "annotations";
+        this.#shownBinding = run.binding;
         return;
       }
       default:
@@ -766,7 +1053,7 @@ export class QueryView extends Component implements HistorySurface {
    * the run that gave them; `issues` mark the Formulas otherwise.
    */
   #fail(
-    { key, file, view }: ViewRun,
+    { key, file, view, binding }: ViewRun,
     diagnostic: Diagnostic | QueryViewFailure["diagnostic"],
     issues: NameDictionary<string>,
   ): void {
@@ -775,7 +1062,8 @@ export class QueryView extends Component implements HistorySurface {
       (this.#shownRequest === key ||
         (this.#shownRequest !== null &&
           this.#shownViewName === view.name &&
-          this.#shownDataset === (view.from ?? "annotations")));
+          this.#shownDataset === (view.from ?? "annotations") &&
+          this.#shownBinding === binding));
     if (!kept) void this.#show(null);
     const span =
       "location" in diagnostic && diagnostic.location?.argument === "filter"
@@ -806,7 +1094,10 @@ export class QueryView extends Component implements HistorySurface {
     rows: Parameters<AnnotationsLayout["showRows"]>[0] | null = [],
   ): Promise<void> {
     this.#shownRequest = key;
-    if (key === null) this.#shownViewName = null;
+    if (key === null) {
+      this.#shownViewName = null;
+      this.#shownBinding = null;
+    }
     this.#cardsShown = key !== null && rows !== null;
     if (key === null || rows === null) {
       this.#layout.clear();
@@ -1019,13 +1310,18 @@ function NoResults({ view }: { view: QueryView }) {
     (s) => s.file?.filters !== undefined || s.view?.filters !== undefined,
   );
   if (phase !== "ready" || count > 0) return null;
+  const Empty = view.empty;
   return (
     <div className="pane-empty zt:p-2" data-query-empty="">
       {datasetSpec(dataset).empty()}
-      {filtered && (
-        <p className="zt:m-0 zt:mt-1" data-query-empty-hint="">
-          {m.query_view_no_results_filter_hint()}
-        </p>
+      {Empty ? (
+        <Empty />
+      ) : (
+        filtered && (
+          <p className="zt:m-0 zt:mt-1" data-query-empty-hint="">
+            {m.query_view_no_results_filter_hint()}
+          </p>
+        )
       )}
     </div>
   );
@@ -1047,9 +1343,35 @@ function ReadOnlyNote({ view }: { view: QueryView }) {
   );
 }
 
+/** The paths the view's Layout reads from each row beside the visible properties. */
+function layoutFields(view: QueryFileView): readonly string[] {
+  switch (layoutOf(view)?.type) {
+    case "table":
+      return TABLE_FIELDS;
+    case "papers":
+      return PAPERS_FIELDS;
+    default:
+      return [];
+  }
+}
+
 /** Whether the view's Layout draws live Annotation Cards. */
 function drawsCards(view: QueryFileView): boolean {
   return layoutOf(view)?.type === "annotations";
+}
+
+/** `rows` in the order of `rank`, where the host gives one. */
+function ranked<Row extends { indexedKey: string }>(
+  rows: readonly Row[],
+  rank: readonly string[] | null,
+): readonly Row[] {
+  if (rank === null) return rows;
+  const place = new Map(rank.map((key, index) => [key, index]));
+  return rows.toSorted(
+    (a, b) =>
+      (place.get(a.indexedKey) ?? rank.length) -
+      (place.get(b.indexedKey) ?? rank.length),
+  );
 }
 
 /** The rows, drawn by the shown view's Layout. */
@@ -1064,6 +1386,8 @@ function LayoutBody({ view }: { view: QueryView }) {
       return <CardsLayout view={view} />;
     case "table":
       return <TableLayout view={view} />;
+    case "papers":
+      return <PapersLayout view={view} />;
     default:
       return <AnnotationsCards view={view} />;
   }
@@ -1107,7 +1431,9 @@ function OpenFileButton({ view }: { view: QueryView }) {
 function SortButton({ view }: { view: QueryView }) {
   const current = useQueryViewState(view, (s) => s.view);
   const properties = useViewProperties(view);
-  if (!current || !properties) return null;
+  // Rows in the host's rank do not follow the sort.
+  const ranked = useQueryViewState(view, (s) => s.results?.ranked ?? false);
+  if (!current || !properties || ranked) return null;
   const sort = current.sort ?? [];
   return (
     <ToolbarPopover
@@ -1168,6 +1494,7 @@ function GroupButton({ view }: { view: QueryView }) {
 
 function QueryViewBody({ view }: { view: QueryView }) {
   const search = useSearchBar();
+  const toolbarName = useUniqueId();
   return (
     <div className="zt:flex zt:h-full zt:flex-col zt:in-[.print]:h-auto">
       {/* The toolbar is a size container: on a narrow pane its buttons show
@@ -1177,17 +1504,22 @@ function QueryViewBody({ view }: { view: QueryView }) {
       <div
         className="zt:@container zt:flex zt:min-h-(--size-4-10) zt:shrink-0 zt:flex-nowrap zt:items-center zt:gap-(--size-2-2) zt:overflow-hidden zt:border-b-(length:--border-width) zt:border-(--table-border-color) zt:ps-[var(--zt-query-toolbar-inset-start,var(--size-2-1))] zt:pe-[var(--zt-query-toolbar-inset-end,var(--size-2-1))] zt:in-[.is-mobile]:min-h-(--touch-size-l) zt:in-[.print]:hidden"
         role="toolbar"
+        // Named by a hidden element: an `aria-label` would show a tooltip.
+        aria-labelledby={toolbarName}
       >
+        <span id={toolbarName} className="zt:sr-only">
+          {m.query_view_toolbar_label()}
+        </span>
         <ViewMenu view={view} />
         <ResultsMenu view={view} />
         <SortButton view={view} />
-        <GroupButton view={view} />
-        <FilterButton view={view} />
+        {view.can.group && <GroupButton view={view} />}
+        {view.can.filter && <FilterButton view={view} />}
         <PropertiesMenu view={view} />
-        <SearchButton bar={search} />
+        {view.can.search && <SearchButton bar={search} />}
         <OpenFileButton view={view} />
       </div>
-      <SearchRow view={view} bar={search} />
+      {view.can.search && <SearchRow view={view} bar={search} />}
       <ReadOnlyNote view={view} />
       <UnusedNote view={view} />
       <Problems view={view} />

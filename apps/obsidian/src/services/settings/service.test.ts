@@ -1432,6 +1432,91 @@ describe("SettingsService mutations", () => {
 });
 
 describe("SettingsService persistence", () => {
+  it("hands a change made just before the plugin unloads to the instance that loads next", async () => {
+    const plugin = new PluginStub();
+    const handoff = {};
+    const { service: before } = makeService({ plugin, handoff });
+    await before.ready;
+    let finishWrite!: () => void;
+    vi.spyOn(plugin, "saveData").mockImplementationOnce(
+      (data) =>
+        new Promise<void>((resolve) => {
+          finishWrite = () => {
+            plugin.__data = data;
+            resolve();
+          };
+        }),
+    );
+    before.update({ "citation.at-trigger": true });
+    before.release();
+    const { service: after } = makeService({ plugin, handoff });
+    finishWrite();
+    await after.ready;
+    expect(after.current?.["citation.at-trigger"]).toBe(true);
+  });
+
+  it("hands the next instance a change made after the unload began, as a closing view saves its state", async () => {
+    const plugin = new PluginStub();
+    const handoff = {};
+    const { service: before } = makeService({ plugin, handoff });
+    await before.ready;
+    // Each write lands only when the test lets it, in the order it began.
+    const writes: (() => void)[] = [];
+    vi.spyOn(plugin, "saveData").mockImplementation(
+      (data) =>
+        new Promise<void>((resolve) => {
+          writes.push(() => {
+            plugin.__data = data;
+            resolve();
+          });
+        }),
+    );
+    before.update({ "citation.at-trigger": true });
+    before.release();
+    // The Library View closes after the plugin began to unload, and keeps
+    // its document then.
+    before.update({ "server.enabled": true });
+    const { service: after } = makeService({ plugin, handoff });
+    let loaded = false;
+    void after.ready.then(() => {
+      loaded = true;
+    });
+    // Each write lands as it begins, until the next instance has loaded.
+    await vi.waitFor(() => {
+      for (const write of writes.splice(0)) write();
+      expect(loaded).toBe(true);
+    });
+    expect(after.current?.["citation.at-trigger"]).toBe(true);
+    expect(after.current?.["server.enabled"]).toBe(true);
+  });
+
+  it("keeps the last change on disk where an earlier write would land after it", async () => {
+    const plugin = new PluginStub();
+    const { service } = makeService({ plugin });
+    await service.ready;
+    // A disk that lands the newest of the writes in flight first.
+    const writes: (() => void)[] = [];
+    vi.spyOn(plugin, "saveData").mockImplementation(
+      (data) =>
+        new Promise<void>((resolve) => {
+          writes.unshift(() => {
+            plugin.__data = data;
+            resolve();
+          });
+        }),
+    );
+    service.update({ "server.hostname": "/a" });
+    const first = service.flush();
+    service.update({ "server.hostname": "/b" });
+    const second = service.flush();
+    await vi.waitFor(() => {
+      for (const write of writes.splice(0)) write();
+      expect(plugin.__data).toMatchObject({ "server.hostname": "/b" });
+    });
+    await Promise.all([first, second]);
+    expect(plugin.__data).toMatchObject({ "server.hostname": "/b" });
+  });
+
   it("save output is sparse (only overrides + version)", async () => {
     const { service, plugin } = makeService();
     await service.ready;

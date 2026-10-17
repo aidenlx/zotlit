@@ -55,6 +55,20 @@ export async function revealAnnotationInView(
 }
 
 /**
+ * Opens the Annotation View pinned to one Item, from a gesture on that Item
+ * in another view: the Library View's Reading Card.
+ *
+ * @param itemKey the Item's Indexed Key.
+ */
+export async function showItemInAnnotView(
+  app: App,
+  itemKey: string,
+): Promise<void> {
+  await activateAnnotView(app);
+  targetView(app)?.pinItem(itemKey);
+}
+
+/**
  * Whether an Annotation View on screen already holds one Annotation's card.
  *
  * What it answers is whether the user can already see the card — so a Write

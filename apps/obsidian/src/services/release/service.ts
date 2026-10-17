@@ -31,26 +31,37 @@ export interface ReleaseServiceOptions {
   /** The plugin's current version, from the manifest. */
   version: string;
   settings: SettingsService;
-  openWelcomeView?: (mode: "fresh" | "upgraded") => void | Promise<void>;
+  /**
+   * Open the first screen, the Library View, where the Welcome View shows as
+   * a banner; the Migration Prompt in it follows `release.migration-pending`.
+   */
+  openFirstScreen?: () => void | Promise<void>;
 }
 
 export class ReleaseService extends Service<void> {
   readonly #app: App;
   readonly #version: string;
   readonly #settings: SettingsService;
-  readonly #openWelcomeView?: (
-    mode: "fresh" | "upgraded",
-  ) => void | Promise<void>;
+  readonly #openFirstScreen?: () => void | Promise<void>;
   #stopped = false;
+  readonly #checked = Promise.withResolvers<void>();
 
   ready: Promise<void>;
+
+  /**
+   * Settles once the launch check has run and opened what it opens, the first
+   * screen included. Never rejects.
+   */
+  get checked(): Promise<void> {
+    return this.#checked.promise;
+  }
 
   constructor(options: ReleaseServiceOptions) {
     super();
     this.#app = options.app;
     this.#version = options.version;
     this.#settings = options.settings;
-    this.#openWelcomeView = options.openWelcomeView;
+    this.#openFirstScreen = options.openFirstScreen;
     this.ready = this.#load();
   }
 
@@ -60,10 +71,17 @@ export class ReleaseService extends Service<void> {
     // check on disposal to avoid touching settings after the plugin unloads.
     stack.defer(() => {
       this.#stopped = true;
+      this.#checked.resolve();
     });
     // The launch check needs settings loaded and the workspace ready to open
     // leaves; `ready` settles now, the check runs after layout is ready.
-    this.#app.workspace.onLayoutReady(() => this.#runCheck());
+    this.#app.workspace.onLayoutReady(() =>
+      this.#runCheck()
+        .catch((error: unknown) => {
+          logger.error("Release check failed", { error });
+        })
+        .finally(() => this.#checked.resolve()),
+    );
     this.commit(stack.move());
   }
 
@@ -94,8 +112,8 @@ export class ReleaseService extends Service<void> {
 
   /**
    * Clear the Migration Prompt flag by hand. The setting-tab reminder's
-   * "Mark as done" control wires this up; the Welcome View banner no longer
-   * has a dismiss control. No-op when the flag is already clear.
+   * "Mark as done" control and the dismiss control of the Welcome View banner
+   * wire this up. No-op when the flag is already clear.
    */
   acknowledgeMigration(): void {
     if (this.#settings.current?.["release.migration-pending"] !== true) return;
@@ -142,10 +160,8 @@ export class ReleaseService extends Service<void> {
         this.#showUpdateNotice();
         break;
       case "welcome-fresh":
-        void this.#openWelcomeView?.("fresh");
-        break;
       case "welcome-upgraded":
-        void this.#openWelcomeView?.("upgraded");
+        await this.#openFirstScreen?.();
         break;
       case "none":
         break;

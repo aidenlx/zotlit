@@ -54,11 +54,13 @@ The chosen paths apply to this device only. Other devices that sync the same vau
 
 ## When a new device cannot find Zotero
 
-If you sync a vault to a computer where Zotero is not in the default location and no Device Override is set, ZotLit cannot locate the database. At launch, it shows a notice:
+If you sync a vault to a computer where Zotero is not in the default location and no Device Override is set, ZotLit cannot locate the database. The [Library View](/docs/how-to/use-library-view#not-found) then shows <UiLabel name={m.library_view_not_found_title()} /> and offers <UiLabel name={m.library_view_locate()} /> to pick the correct path.
 
-> Zotero wasn't found on this device
+While no Library View is open, ZotLit shows a notice instead:
 
-The notice includes a <UiLabel name={m.notice_db_not_found_action()} /> action that opens the Welcome View. The first quick-start step displays live connection status and a locate action to pick the correct path. The notice reappears on each launch while the connection is unresolved; it does not appear when auto-detection succeeds or a working Device Override is in place.
+> <UiLabel name={m.notice_db_not_found_on_device()} />
+
+The notice includes a <UiLabel name={m.notice_db_not_found_action()} /> action that opens the Library View. Only one such notice shows at a time, and it goes away once ZotLit reads the database again. It shows on each launch while the connection is unresolved, and not when auto-detection succeeds or a working Device Override is in place.
 
 You can also set the path directly from <SettingsPath page={m.settings_page_zotero()} setting={m.settings_page_zotero_location()} />, as described above.
 

@@ -36,6 +36,18 @@ type SettingsValue =
   | readonly SettingsValue[]
   | { readonly [key: string]: SettingsValue };
 
+/** Any JSON value, unchecked past its being JSON: its owner reads it. */
+const jsonValueSchema: v.GenericSchema<SettingsValue> = v.lazy(() =>
+  v.union([
+    v.string(),
+    v.number(),
+    v.boolean(),
+    v.null(),
+    v.array(jsonValueSchema),
+    v.record(v.string(), jsonValueSchema),
+  ]),
+);
+
 const frontmatterFieldsSchema = v.pipe(
   v.array(frontmatterFieldSchema),
   v.checkItems(
@@ -199,6 +211,20 @@ export const schema = v.object({
   /** The font size the PDF reader's text tool types at, in PDF points. */
   "reader.text-font-size": textFontSizeSchema,
 
+  /**
+   * What the Library View shows, as its Library View Document; `null` until
+   * the view saves one, and a new view opens on the default. Kept as a plain
+   * JSON object: the Library View Document module reads it field by field,
+   * so one field this build cannot read never resets the rest. ADR 0070.
+   */
+  "library.document": v.nullable(v.record(v.string(), jsonValueSchema)),
+
+  /**
+   * The researcher dismissed the Welcome View banner above the Library View;
+   * the open-welcome command shows it again. ADR 0076.
+   */
+  "welcome.dismissed": v.boolean(),
+
   "release.previous-version": v.nullable(v.string()),
   "release.notices-enabled": v.boolean(),
   "release.migration-pending": v.boolean(),
@@ -254,6 +280,8 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "reader.recent-colors": [],
   "reader.ink-width": DEFAULT_INK_WIDTH,
   "reader.text-font-size": DEFAULT_TEXT_FONT_SIZE,
+  "library.document": null,
+  "welcome.dismissed": false,
   // Absent until the release check records a launch; see the release service.
   "release.previous-version": null,
   "release.notices-enabled": true,

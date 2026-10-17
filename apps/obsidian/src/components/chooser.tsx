@@ -827,17 +827,26 @@ function Input({ placeholder, clearLabel }: ChooserInputProps) {
   );
 }
 
-export interface ChooserListProps<Row extends ChooserRow> extends Omit<
+/**
+ * What the list box is called. Required rather than optional: a list box
+ * carries no name of its own, and an unnamed one is announced as a bare
+ * "list box" — the caller is the only one that knows whether its rows are
+ * tags or colours. Either name reaches it through `aria-labelledby`: `label`
+ * is held in a hidden element the list draws, and `aria-labelledby` points at
+ * text the popover already shows. An `aria-label` would put a hover tooltip
+ * over the rows (policies/tooltips.md).
+ */
+type ChooserListName =
+  | { label: string; "aria-labelledby"?: undefined }
+  | { "aria-labelledby": string; label?: undefined };
+
+export type ChooserListProps<Row extends ChooserRow> = ChooserListFields<Row> &
+  ChooserListName;
+
+interface ChooserListFields<Row extends ChooserRow> extends Omit<
   HTMLAttributes<HTMLDivElement>,
-  "children" | "aria-label"
+  "children" | "aria-label" | "aria-labelledby"
 > {
-  /**
-   * What the list box is called. Required rather than optional: a list box
-   * carries no name of its own, and an unnamed one is announced as a bare
-   * "list box" — the caller is the only one that knows whether its rows are
-   * tags or colours.
-   */
-  "aria-label": string;
   /**
    * Every row the caller offers, in the order it wants them read, split into
    * the groups it wants them drawn in. A group is a heading and a separator,
@@ -875,6 +884,8 @@ function List<Row extends ChooserRow>({
   emptyLabel,
   children,
   className,
+  label,
+  "aria-labelledby": labelledBy,
   ...rest
 }: ChooserListProps<Row>) {
   const { listId, listRef } = useChooser();
@@ -963,6 +974,11 @@ function List<Row extends ChooserRow>({
       {/* The tab index is programmatic: the popup focuses this element when the
           caller rendered no search field, and a Chooser still holds exactly
           one tab stop either way. */}
+      {label !== undefined && (
+        <span id={`${listId}-name`} hidden>
+          {label}
+        </span>
+      )}
       <div
         ref={listRef}
         id={listId}
@@ -970,6 +986,7 @@ function List<Row extends ChooserRow>({
         tabIndex={-1}
         aria-multiselectable
         aria-activedescendant={activeOptionId ?? undefined}
+        aria-labelledby={labelledBy ?? `${listId}-name`}
         {...rest}
         className={cn(
           pinned.length === 0
@@ -1526,6 +1543,7 @@ function PageMenu({ label, items }: ChooserPageMenuProps) {
     <>
       <button
         type="button"
+        id={`${id}-button`}
         popoverTarget={id}
         className={cn(
           chooserIconButton,
@@ -1546,7 +1564,8 @@ function PageMenu({ label, items }: ChooserPageMenuProps) {
         id={id}
         popover="auto"
         role="menu"
-        aria-label={label}
+        // Named by its button: an `aria-label` would show a tooltip.
+        aria-labelledby={`${id}-button`}
         className={cn(
           "zt:inset-auto zt:my-1 zt:min-w-45 zt:flex-col zt:p-(--size-4-1) zt:[&:popover-open]:flex",
           "zt:border-(length:--menu-border-width) zt:border-(--menu-border-color) zt:bg-(--menu-background) zt:text-foreground zt:shadow-(--menu-shadow)",

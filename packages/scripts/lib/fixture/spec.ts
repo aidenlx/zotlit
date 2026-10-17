@@ -137,6 +137,7 @@ export const FIXTURE_ITEM_FIELDS = [
   "issue",
   "pages",
   "place",
+  "abstractNote",
 ] as const;
 
 export type FixtureItemField = (typeof FIXTURE_ITEM_FIELDS)[number];
@@ -191,7 +192,7 @@ export interface FixtureItem {
    */
   publisher?: string;
   /**
-   * Locator and imprint fields under their canonical Zotero names. The build
+   * Locator, imprint and abstract fields under their canonical Zotero names. The build
    * fails when {@link itemType} has no such field.
    */
   fields?: Readonly<Partial<Record<FixtureItemField, string>>>;
@@ -584,6 +585,11 @@ export const ITEMS: readonly FixtureItem[] = [
       author("Michael", "Droettboom"),
       author("Philip E.", "Bourne"),
     ],
+    // The Library View's Reading Card shows it.
+    fields: {
+      abstractNote:
+        "Fixture abstract: a figure carries the argument of a paper at a glance, so each rule keeps one message per figure.",
+    },
     dateModified: "2025-02-05 12:00:00",
     collectionIDs: [1],
     literatureNoteRendered: true,

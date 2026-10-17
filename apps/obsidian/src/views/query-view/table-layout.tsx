@@ -14,7 +14,7 @@ import {
 import type { CSSProperties, ReactNode } from "react";
 import { useStore } from "zustand";
 
-import { isPageNumber } from "@zotlit/db";
+import { isPageNumber, itemSelectUri, parseIndexedKey } from "@zotlit/db";
 
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
@@ -27,6 +27,8 @@ import type {
 import type { QueryService } from "@/services/item-query/service";
 import { useAnnotStore } from "@/views/annot-view/store";
 
+import { useItemRow } from "./item-rows";
+import type { ItemRowGestures } from "./item-rows";
 import type { QueryLayout } from "./layouts";
 import type { ColumnSizes } from "./query-file";
 import { CellContent } from "./record-rows";
@@ -149,7 +151,9 @@ export const TABLE_CHILD_SOURCES: readonly TableChildSource[] = [
         return [{ kind: "note", key: text(values.indexedKey), values }];
       });
     },
-    render: ({ key, values }) => text(values.title) || key,
+    render: ({ key, values }) => (
+      <ZoteroNoteLink noteKey={key}>{text(values.title) || key}</ZoteroNoteLink>
+    ),
   },
   {
     parent: "attachment",
@@ -230,16 +234,16 @@ function expandable(record: TableRecord): boolean {
   });
 }
 
-type ChildState =
+export type ChildState =
   | { readonly phase: "loading" }
   | { readonly phase: "ready"; readonly rows: readonly TableRecord[] }
   | { readonly phase: "failed" };
 
-const id = (record: Pick<TableRecord, "kind" | "key">) =>
+export const id = (record: Pick<TableRecord, "kind" | "key">) =>
   `${record.kind}:${record.key}`;
 
 /** The expanded rows and the rows under them, read when a row expands. */
-function useChildren(query: Pick<QueryService, "run">) {
+export function useChildren(query: Pick<QueryService, "run">) {
   const [children, setChildren] = useState<ReadonlyMap<string, ChildState>>(
     () => new Map(),
   );
@@ -291,14 +295,17 @@ function useChildren(query: Pick<QueryService, "run">) {
   return { children, toggle };
 }
 
-function Expander({
+export function Expander({
   record,
   open,
   onToggle,
+  holdsMore = false,
 }: {
   record: TableRecord;
   open: boolean;
   onToggle: () => void;
+  /** Whether the row holds a child that Zotero does not, as Papers' Literature Note. */
+  holdsMore?: boolean;
 }) {
   // The chevron takes the icon button's own padding, and a row with nothing
   // under it holds a hidden one, so every row's text starts at one edge.
@@ -309,7 +316,7 @@ function Expander({
       strokeWidth="var(--icon-xs-stroke-width)"
     />
   );
-  if (!expandable(record))
+  if (!holdsMore && !expandable(record))
     return (
       <span className="clickable-icon zt:invisible zt:shrink-0">{chevron}</span>
     );
@@ -376,12 +383,43 @@ function NoteCell({
 }
 
 /**
+ * A link that shows a Child Note in Zotero, which holds it: Obsidian has no
+ * view of a Zotero note. The system starts Zotero from the link where it is
+ * closed.
+ */
+function ZoteroNoteLink({
+  noteKey,
+  children,
+}: {
+  noteKey: string;
+  children: ReactNode;
+}) {
+  const parsed = parseIndexedKey(noteKey);
+  if (!parsed) return children;
+  const uri = itemSelectUri(parsed.key, parsed.groupID);
+  return (
+    <a
+      className="external-link zt:truncate zt:bg-none zt:pe-0"
+      href={uri}
+      data-query-open="note"
+      onClick={(event) => {
+        event.preventDefault();
+        // The window of the link, which may be a pop-out.
+        event.currentTarget.win.open(uri);
+      }}
+    >
+      {children}
+    </a>
+  );
+}
+
+/**
  * A link that opens an Attachment or Annotation in its reader, and takes a
  * click as an Obsidian link does: a Cmd/Ctrl press or a middle click opens
  * a new tab, and Cmd/Ctrl+Alt a split. Its address is the Zotero link of the
  * target, which a drag carries out.
  */
-function ReaderLink({
+export function ReaderLink({
   readers,
   target,
   children,
@@ -657,6 +695,7 @@ export function TableLayout({ view }: { view: QueryView }) {
                 expanded={expanded}
                 toggle={toggle}
                 readers={readers}
+                gestures={view.rows}
               />
             );
           })}
@@ -675,6 +714,7 @@ function ItemRow({
   expanded,
   toggle,
   readers,
+  gestures,
 }: {
   heading: ReactNode;
   record: TableRecord;
@@ -685,12 +725,19 @@ function ItemRow({
   expanded: ReadonlyMap<string, ChildState>;
   toggle: (record: TableRecord) => void;
   readers: TableReaders;
+  gestures: ItemRowGestures | undefined;
 }) {
+  const row = useItemRow(gestures, record.key);
   return (
     <>
       {heading}
       <tr
-        className={ROW}
+        {...row}
+        className={cn(
+          ROW,
+          "zt:data-selected:bg-(--nav-item-background-selected)",
+          "zt:outline-none zt:focus-visible:shadow-[inset_0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)]",
+        )}
         data-query-table-row="item"
         data-query-key={record.key}
       >

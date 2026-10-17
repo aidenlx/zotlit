@@ -1,4 +1,4 @@
-import { rm, writeFile } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -68,58 +68,6 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         `String(Array.from(document.querySelectorAll('.status-bar [aria-label]')).some(el=>el.getAttribute('aria-label')==='Uninitialized'))`,
       ),
     ).toBe("false");
-  });
-
-  it("detects a late Companion installation without another focus event", async () => {
-    const m = await import("@obsidian-messages");
-    const profilePath = join(fixture, "zotero-profile");
-    expect(
-      await obEval(
-        vaultId,
-        "app.plugins.plugins.zotlit.services.zoteroPref.resolvedProfileDir",
-      ),
-    ).toBe(profilePath);
-    await using cleanup = new AsyncDisposableStack();
-    const addonsPath = join(profilePath, "extensions.json");
-    await writeFile(addonsPath, JSON.stringify({ addons: [] }), { flag: "wx" });
-    cleanup.defer(() => rm(addonsPath));
-    const step = `(()=>{const content=app.workspace.getLeavesOfType('zotlit-welcome')[0]?.view.contentEl;const heading=[...content?.querySelectorAll('[role=heading]')??[]].find(el=>[${JSON.stringify(m.welcome_step_companion_title())},${JSON.stringify(m.welcome_step_companion_installed_title())}].includes(el.textContent));return heading?.parentElement;})()`;
-    await obEval(
-      vaultId,
-      "for(const leaf of app.workspace.getLeavesOfType('zotlit-welcome'))leaf.detach();app.commands.executeCommandById('zotlit:open-welcome-view');true",
-    );
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String(!!(${step})?.querySelector('button'))`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    const result = JSON.parse(
-      await obEval(
-        vaultId,
-        `(async()=>{
-      ${browserWaits}
-      const step=()=>${step};
-      using events=new DisposableStack();
-      const win=step().ownerDocument.defaultView;
-      let focusEvents=0;
-      const onFocus=()=>focusEvents++;
-      win.addEventListener('focus',onFocus);
-      events.defer(()=>win.removeEventListener('focus',onFocus));
-      await require('node:fs/promises').writeFile(${JSON.stringify(addonsPath)},${JSON.stringify(JSON.stringify({ addons: [{ id: "zotlit@aidenlx.site", active: true }] }))});
-      await waitFor(()=>!!step()?.previousElementSibling.querySelector('.lucide-check'),true,'Installed Companion step');
-      const current=step();
-      return JSON.stringify({title:current.querySelector('[role=heading]').textContent,description:current.querySelector('p').textContent,installAction:!!current.querySelector('button'),focusEvents});
-    })()`,
-      ),
-    );
-    expect(result).toEqual({
-      title: m.welcome_step_companion_installed_title(),
-      description: m.settings_db_companion_desc(),
-      installAction: false,
-      focusEvents: 0,
-    });
   });
 
   it("shows Cited by counts only while following a literature note", async () => {
@@ -204,12 +152,12 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     expect(result.absolutePathShown).toBe(false);
   });
 
-  it("opens Welcome beside the active note and reuses its tab", async () => {
+  it("opens the Library View with the Welcome View beside the active note and reuses its tab", async () => {
     const notePath = "Welcome navigation.md";
     const noteId = await obEval(
       vaultId,
       `(async()=>{
-        for(const leaf of app.workspace.getLeavesOfType('zotlit-welcome'))leaf.detach();
+        for(const leaf of app.workspace.getLeavesOfType('zotlit-library'))leaf.detach();
         const file=await app.vault.create(${JSON.stringify(notePath)},'Keep this note open.');
         const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);
         app.workspace.setActiveLeaf(leaf,{focus:true});
@@ -226,7 +174,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     expect(
       await obEvalUntil(
         vaultId,
-        `String(app.workspace.activeLeaf?.view.getViewType()==='zotlit-welcome')`,
+        `String(app.workspace.activeLeaf?.view.getViewType()==='zotlit-library')`,
         { expected: "true" },
       ),
     ).toBe(true);
@@ -249,7 +197,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     expect(
       await obEval(
         vaultId,
-        "String(app.workspace.getLeavesOfType('zotlit-welcome').length)",
+        "String(app.workspace.getLeavesOfType('zotlit-library').length)",
       ),
     ).toBe("1");
   });
@@ -261,8 +209,8 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       `(async()=>{
         const file=await app.vault.create(${JSON.stringify(notePath)},'---\\nzotero-key: DMRGRART\\n---\\nExisting literature note');
         const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);
-        const welcome=app.workspace.getLeavesOfType('zotlit-welcome')[0]??app.workspace.getLeaf('tab');
-        await welcome.setViewState({type:'zotlit-welcome',active:true});
+        const welcome=app.workspace.getLeavesOfType('zotlit-library')[0]??app.workspace.getLeaf('tab');
+        await welcome.setViewState({type:'zotlit-library',active:true});
         app.workspace.setActiveLeaf(welcome,{focus:true});return leaf.id;
       })()`,
     );

@@ -24,6 +24,7 @@ import type {
   QueryViewRequest,
   QueryViewRow,
 } from "@/services/item-query/query-view";
+import type { LibraryScope } from "@/services/library-scope/scope";
 import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
 
 import { requested } from "./__fixtures__/query-run";
@@ -139,6 +140,11 @@ async function mount(
     canSave,
     context = () => undefined,
     contextSource,
+    libraries,
+    displayOnly,
+    layouts,
+    rowPass,
+    reason,
   }: {
     notes?: Record<string, string>;
     layout?: ConstructorParameters<typeof QueryView>[1]["layout"];
@@ -147,6 +153,11 @@ async function mount(
     canSave?: () => boolean;
     context?: () => QueryContext | undefined;
     contextSource?: ContextSource;
+    libraries?: () => LibraryScope;
+    displayOnly?: boolean;
+    layouts?: readonly string[];
+    rowPass?: ConstructorParameters<typeof QueryView>[1]["rowPass"];
+    reason?: (row: QueryViewRow) => string | null;
   } = {},
 ) {
   setMockPlatform({ isMacOS: true });
@@ -176,6 +187,7 @@ async function mount(
       notesChanged.emit("changed");
     }),
   };
+  const readers = { open: vi.fn(() => Promise.resolve()) };
   const deps = {
     app: editorApp() as unknown as App,
     reads: {
@@ -237,6 +249,7 @@ async function mount(
     allowEditing: vi.fn(),
     reportBlockedGesture: vi.fn(),
     literatureNotes,
+    readers,
   } as unknown as QueryViewDeps;
   const save = vi.fn((_text: string) => {});
   const onSelectView = vi.fn((_name: string) => {});
@@ -254,6 +267,11 @@ async function mount(
     onSelectView,
     ...(canSave && { canSave }),
     ...(layout && { layout }),
+    ...(libraries && { libraries }),
+    ...(displayOnly && { displayOnly }),
+    ...(layouts && { layouts }),
+    ...(rowPass && { rowPass }),
+    ...(reason && { reason }),
   });
   const saved: string[] = [];
   const el = document.createElement("div");
@@ -283,6 +301,7 @@ async function mount(
     onSelectView,
     saved,
     literatureNotes,
+    readers,
   };
 }
 
@@ -635,6 +654,168 @@ describe("saving a toolbar edit", () => {
       limit: 5,
       context: { attachment: "PDFBBBBB" },
     });
+  });
+
+  it("reads the Libraries the host selects, and runs again once the host selects others", async () => {
+    let libraries: LibraryScope = {
+      mode: "selected",
+      libraries: [{ type: "personal" }],
+    };
+    const { view, run, settle } = await mount([], undefined, {
+      libraries: () => libraries,
+    });
+    await act(() => view.setText(FILE));
+    await settle();
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(run.mock.calls[0]![0].libraries).toEqual({
+      mode: "selected",
+      libraries: [{ type: "personal" }],
+    });
+
+    // The same Libraries run nothing.
+    await act(() => view.contextChanged());
+    await settle();
+    expect(run).toHaveBeenCalledTimes(1);
+
+    libraries = {
+      mode: "selected",
+      libraries: [{ type: "group", groupID: 4815 }],
+    };
+    await act(() => view.contextChanged());
+    await settle();
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(run.mock.calls[1]![0].libraries).toEqual({
+      mode: "selected",
+      libraries: [{ type: "group", groupID: 4815 }],
+    });
+  });
+
+  it("offers no change the host does not keep, where it keeps only the sort, the Layout and the Visible Properties", async () => {
+    const toolbar = (el: HTMLElement) =>
+      [
+        ...el.querySelectorAll(
+          "[data-query-view-menu], [data-query-results], [data-query-toolbar], [data-query-properties]",
+        ),
+      ].map(
+        (node) =>
+          node.getAttribute("data-query-toolbar") ??
+          [...node.attributes]
+            .map(({ name }) => name)
+            .find((name) => name.startsWith("data-query-")),
+      );
+    const full = await mount([]);
+    await act(() => full.view.setText(FILE));
+    await full.settle();
+    expect(toolbar(full.el)).toEqual([
+      "data-query-view-menu",
+      "data-query-results",
+      "sort",
+      "group",
+      "filter",
+      "data-query-properties",
+      "search",
+    ]);
+
+    const fixed = await mount([], undefined, { displayOnly: true });
+    await act(() => fixed.view.setText(FILE));
+    await fixed.settle();
+    // A host that keeps only these has a search of its own (ADR 0072).
+    expect(toolbar(fixed.el)).toEqual([
+      "data-query-view-menu",
+      "data-query-results",
+      "sort",
+      "data-query-properties",
+    ]);
+  });
+
+  it("ticks and orders the Visible Properties with no page to edit a property, where the host keeps only the Visible Properties", async () => {
+    const open = async (displayOnly: boolean) => {
+      const mounted = await mount([], undefined, { displayOnly });
+      await act(() => mounted.view.setText(FILE));
+      await mounted.settle();
+      await act(() => {
+        mounted.el
+          .querySelector<HTMLElement>("[data-query-properties]")!
+          .click();
+        // happy-dom has no popover, so the test sends the event that opens it.
+        mounted.el
+          .querySelector("[data-query-properties-popup]")!
+          .dispatchEvent(
+            Object.assign(new Event("beforetoggle"), { newState: "open" }),
+          );
+      });
+      return mounted.el;
+    };
+    const full = await open(false);
+    expect(full.querySelector("[data-query-property]")).not.toBeNull();
+    expect(full.querySelector("[data-query-property-more]")).not.toBeNull();
+    cleanup.dispose();
+    cleanup = new DisposableStack();
+    document.body.replaceChildren();
+
+    const fixed = await open(true);
+    expect(fixed.querySelector("[data-query-property]")).not.toBeNull();
+    expect(fixed.querySelector("[data-query-property-more]")).toBeNull();
+  });
+
+  it("switches only between the Layouts the host offers from the view menu, with no view to add or configure, where the host keeps only the Layout of its view", async () => {
+    const { view, el, settle, saved } = await mount(
+      [result([]), result([])],
+      undefined,
+      { displayOnly: true, layouts: ["papers", "table"] },
+    );
+    await act(() =>
+      view.setText(`views:
+  - type: table
+    name: Reading list
+    from: items
+`),
+    );
+    await settle();
+    const trigger = () =>
+      el.querySelector<HTMLElement>("[data-query-view-menu]")!;
+    // The menu names the Layout on screen; the view's own name is the host's.
+    expect(trigger().textContent).toBe("Table");
+    await act(() => {
+      trigger().click();
+      // happy-dom has no popover, so the test sends the event that opens it.
+      document
+        .querySelector("[data-query-view-list]")!
+        .dispatchEvent(
+          Object.assign(new Event("beforetoggle"), { newState: "open" }),
+        );
+    });
+    expect(
+      [...document.querySelectorAll("[data-query-view-layout-option]")].map(
+        (row) => row.getAttribute("data-query-view-layout-option"),
+      ),
+    ).toEqual(["papers", "table"]);
+    expect(document.querySelector("[data-query-view-action]")).toBeNull();
+    expect(document.querySelector("[data-query-view-configure]")).toBeNull();
+
+    const proto: Partial<HTMLElement> = HTMLElement.prototype;
+    if (!proto.hidePopover) {
+      proto.hidePopover = () => {};
+      onTestFinished(() => {
+        delete proto.hidePopover;
+      });
+    }
+    await act(() =>
+      document
+        .querySelector<HTMLElement>('[data-query-view-layout-option="papers"]')!
+        .click(),
+    );
+    await act(() => view.flush());
+    await settle();
+    expect(saved.at(-1)).toContain("type: papers");
+    expect(trigger().textContent).toBe("Papers");
+  });
+
+  it("leaves the Libraries to the Library Scope where the host selects none", async () => {
+    const { view, run, settle } = await mount([]);
+    await act(() => view.setText(FILE));
+    await settle();
+    expect(run.mock.calls[0]![0]).not.toHaveProperty("libraries");
   });
 
   it("says a change is not saved when the host cannot write it, until a later save works", async () => {
@@ -1199,6 +1380,95 @@ function item(key: string, title: string, year: string): QueryViewRow {
     values: { title, "date.year": year, tags: ["thesis"] },
   };
 }
+
+it("shows only the rows the host keeps after the query, cut to the view's limit, and counts them, reading the fields of those rows alone", async () => {
+  // The host answers a condition the query cannot: here, which Items have a
+  // note in the vault.
+  const kept = new Set(["ITEMAAAA", "ITEMCCCC", "ITEMDDDD"]);
+  let pass: { key: string; keeps: (indexedKey: string) => boolean } | null = {
+    key: "noted",
+    keeps: (indexedKey) => kept.has(indexedKey),
+  };
+  const rows = [
+    item("ITEMAAAA", "Ten simple rules", "2021"),
+    item("ITEMBBBB", "Reading at scale", "2019"),
+    item("ITEMCCCC", "Close reading", "2018"),
+    item("ITEMDDDD", "Distant reading", "2013"),
+  ];
+  const [a, , c, d] = rows as [
+    QueryViewRow,
+    QueryViewRow,
+    QueryViewRow,
+    QueryViewRow,
+  ];
+  // Each condition reads every match by key, then the rows it keeps; the
+  // engine gives those back in an order of its own.
+  const { view, el, run, settle } = await mount(
+    [result(rows), result([c, a]), result(rows), result([d, a]), result(rows)],
+    undefined,
+    { rowPass: () => pass },
+  );
+  await act(() =>
+    view.setText(`views:
+  - type: list
+    name: Sources
+    from: items
+    limit: 2
+    order:
+      - title
+`),
+  );
+  await settle();
+  // The query reads the key of every match, so the limit cuts the kept rows
+  // alone; only the rows on screen are read with their fields.
+  const [keys, page] = run.mock.calls.map(([request]) => request);
+  expect(keys).toMatchObject({ fields: [], limit: null });
+  expect(page!.fields).toEqual(expect.arrayContaining(["title"]));
+  expect(page!.filter).toBe('["ITEMAAAA","ITEMCCCC"].contains(indexedKey)');
+  expect(shownRows(el)).toEqual(["ITEMAAAA", "ITEMCCCC"]);
+  expect(el.querySelector("[data-query-row]")?.textContent).toContain(
+    "Ten simple rules",
+  );
+  expect(el.querySelector("[data-query-count]")?.textContent).toBe(
+    "2 of 3 results",
+  );
+
+  // Another condition of the host runs again, with the same text.
+  kept.delete("ITEMCCCC");
+  pass = { key: "noted-2", keeps: (indexedKey) => kept.has(indexedKey) };
+  await act(() => view.contextChanged());
+  await settle();
+  expect(run).toHaveBeenCalledTimes(4);
+  expect(shownRows(el)).toEqual(["ITEMAAAA", "ITEMDDDD"]);
+  expect(el.querySelector("[data-query-count]")?.textContent).toBe("2 results");
+
+  // Without a condition, the query takes the view's limit again.
+  pass = null;
+  await act(() => view.contextChanged());
+  await settle();
+  expect(run).toHaveBeenCalledTimes(5);
+  expect(run.mock.calls[4]![0]).toMatchObject({ limit: 2 });
+});
+
+it("reads no rows where the host keeps none of the matches", async () => {
+  const { view, el, run, settle } = await mount(
+    [result([item("ITEMAAAA", "Ten simple rules", "2021")])],
+    undefined,
+    { rowPass: () => ({ key: "none", keeps: () => false }) },
+  );
+  await act(() =>
+    view.setText(`views:
+  - type: list
+    name: Sources
+    from: items
+    order:
+      - title
+`),
+  );
+  await settle();
+  expect(run).toHaveBeenCalledTimes(1);
+  expect(shownRows(el)).toEqual([]);
+});
 
 it("lists the Items of an items view, with the visible properties in their order", async () => {
   const { view, el, run, settle } = await mount([
@@ -2922,4 +3192,282 @@ it("keeps the row and the page of a typed path in the Properties popover when it
   await settle();
   expect(written.at(-1)).not.toContain("myField");
   expect(page()).not.toBe(null);
+});
+
+const PAPERS_FILE = `views:
+  - type: papers
+    name: Papers
+    from: items
+`;
+
+function paperRow(
+  key: string,
+  values: {
+    title: string;
+    creators?: { family: string; literal?: string; role: string }[];
+    year?: number;
+    publicationTitle?: string;
+    publisher?: string;
+    colors?: string[];
+    fileTypes?: string[];
+    attachments?: string[];
+  },
+): QueryViewRow {
+  return {
+    indexedKey: key,
+    values: {
+      title: values.title,
+      creators: (values.creators ?? []).map(({ family, literal, role }) => ({
+        family: literal ? "" : family,
+        given: "",
+        literal: literal ?? null,
+        role,
+        fullName: literal ?? family,
+      })),
+      date:
+        values.year === undefined
+          ? null
+          : {
+              kind: "year",
+              value: null,
+              year: values.year,
+              month: null,
+              day: null,
+              text: null,
+              raw: `${values.year}-00-00 ${values.year}`,
+            },
+      publicationTitle: values.publicationTitle ?? null,
+      publisher: values.publisher ?? null,
+      "annotations[].color": values.colors ?? [],
+      "attachments[].fileType": values.fileTypes ?? [],
+      "attachments[].indexedKey": values.attachments ?? [],
+    },
+  };
+}
+
+/** Each Papers row on screen, as its lines and end marks read. */
+function papers(el: HTMLElement) {
+  return [...el.querySelectorAll<HTMLElement>("[data-query-papers-row]")].map(
+    (node) => ({
+      key: node.dataset.queryPapersRow,
+      title: node.querySelector("[data-query-papers-title]")?.textContent,
+      meta: node.querySelector("[data-query-papers-meta]")?.textContent,
+      state: node.querySelector("[data-query-papers-state]")?.textContent,
+      dots: [
+        ...node.querySelectorAll<HTMLElement>("[data-query-papers-color]"),
+      ].map((dot) => dot.dataset.queryPapersColor),
+      attachment:
+        node.querySelector<HTMLElement>("[data-query-papers-attachment]")
+          ?.dataset.queryPapersAttachment ?? null,
+      note: node.querySelector("[data-query-papers-note]") !== null,
+    }),
+  );
+}
+
+it("draws each Item of a Papers view as its title, its creators, year and Venue, and a reading-state line, and ends it with its main Attachment kind and its Literature Note", async () => {
+  const { view, el, settle } = await mount(
+    [
+      result([
+        paperRow("ITEMAAAA", {
+          title: "Ten simple rules for better figures",
+          creators: [
+            { family: "Rougier", role: "author" },
+            { family: "Droettboom", role: "author" },
+            { family: "Editor", role: "editor" },
+          ],
+          year: 2014,
+          publicationTitle: "PLOS Computational Biology",
+          publisher: "PLOS",
+          colors: ["#ffd400", "#5fb236", "#ffd400"],
+          fileTypes: ["web", "pdf"],
+          attachments: ["WEBAAAAA", "PDFAAAAA"],
+        }),
+        paperRow("ITEMBBBB", {
+          title: "The structure of scientific revolutions",
+          creators: [
+            { family: "", literal: "Kuhn Society", role: "author" },
+            { family: "B", role: "author" },
+            { family: "C", role: "author" },
+            { family: "D", role: "author" },
+          ],
+          year: 1962,
+          publisher: "University of Chicago Press",
+          fileTypes: ["epub"],
+          attachments: ["EPUBBBBB"],
+        }),
+        paperRow("ITEMCCCC", { title: "A note with no file" }),
+      ]),
+    ],
+    undefined,
+    { notes: { ITEMAAAA: "Rougier 2014.md" } },
+  );
+  await act(() => view.setText(PAPERS_FILE));
+  await settle();
+
+  expect(view.state.getState().problems).toEqual([]);
+  expect(papers(el)).toEqual([
+    {
+      key: "ITEMAAAA",
+      title: "Ten simple rules for better figures",
+      meta: "Rougier, Droettboom · 2014 · PLOS Computational Biology",
+      state: "3 annotations · literature note",
+      dots: ["#ffd400", "#5fb236"],
+      attachment: "pdf",
+      note: true,
+    },
+    {
+      key: "ITEMBBBB",
+      title: "The structure of scientific revolutions",
+      meta: "Kuhn Society, B, C et al. · 1962 · University of Chicago Press",
+      state: undefined,
+      dots: [],
+      attachment: "epub",
+      note: false,
+    },
+    {
+      key: "ITEMCCCC",
+      title: "A note with no file",
+      meta: undefined,
+      state: undefined,
+      dots: [],
+      attachment: null,
+      note: false,
+    },
+  ]);
+  expect(cards(el)).toEqual([]);
+});
+
+it("ends a Papers row's reading-state line with the reason its host gives for the row", async () => {
+  const { view, el, settle } = await mount(
+    [
+      result([
+        paperRow("ITEMAAAA", { title: "Annotated", colors: ["#ffd400"] }),
+        paperRow("ITEMBBBB", { title: "Untouched" }),
+        paperRow("ITEMCCCC", { title: "No reason" }),
+      ]),
+    ],
+    undefined,
+    {
+      reason: ({ indexedKey }) =>
+        indexedKey === "ITEMCCCC" ? null : `edited ${indexedKey}`,
+    },
+  );
+  await act(() => view.setText(PAPERS_FILE));
+  await settle();
+  expect(papers(el).map(({ state }) => state)).toEqual([
+    "1 annotation · edited ITEMAAAA",
+    "edited ITEMBBBB",
+    undefined,
+  ]);
+});
+
+it("expands a Papers row into its Attachments, Child Notes and Literature Note, and an Attachment into its Annotations, each opening its own target", async () => {
+  const openWindow = vi.spyOn(window, "open").mockImplementation(() => null);
+  onTestFinished(() => openWindow.mockRestore());
+  const item = paperRow("ITEMAAAA", {
+    title: "Ten simple rules for better figures",
+    attachments: ["PDFAAAAA"],
+  });
+  const { view, el, run, settle, readers, literatureNotes } = await mount(
+    [
+      result([
+        {
+          ...item,
+          values: {
+            ...item.values,
+            notes: [{ indexedKey: "NXTEAAAA", title: "Reading notes" }],
+          },
+        },
+        paperRow("ITEMBBBB", { title: "Nothing under it" }),
+      ]),
+      result([
+        {
+          indexedKey: "PDFAAAAA",
+          values: {
+            title: "Rougier et al. - 2014.pdf",
+            "annotations[].indexedKey": ["ANNOTAAA"],
+          },
+        },
+      ]),
+      result([
+        {
+          indexedKey: "ANNOTAAA",
+          values: {
+            text: "Rule 1: know your audience",
+            color: "#ffd400",
+            pageLabel: "3",
+            pageIndex: 2,
+          },
+        },
+      ]),
+    ],
+    undefined,
+    { notes: { ITEMAAAA: "Rougier 2014.md" } },
+  );
+  await act(() => view.setText(PAPERS_FILE));
+  await settle();
+  const children = () =>
+    [...el.querySelectorAll<HTMLElement>("[data-query-papers-child]")].map(
+      (node) => [node.dataset.queryPapersChild, node.textContent?.trim()],
+    );
+
+  // Only an Item with something under it can expand.
+  expect(
+    [...el.querySelectorAll("[data-query-expand]")].map((node) =>
+      node.getAttribute("data-query-expand"),
+    ),
+  ).toEqual(["item:ITEMAAAA"]);
+  await act(async () => {
+    el.querySelector<HTMLElement>(
+      '[data-query-expand="item:ITEMAAAA"]',
+    )!.click();
+  });
+  await act(async () => {});
+  expect(run.mock.calls[1]![0]).toMatchObject({
+    from: "attachments",
+    filter: 'item.indexedKey == "ITEMAAAA"',
+  });
+  await act(async () => {
+    el.querySelector<HTMLElement>(
+      '[data-query-expand="attachment:PDFAAAAA"]',
+    )!.click();
+  });
+  await act(async () => {});
+  expect(children()).toEqual([
+    ["attachment", "Rougier et al. - 2014.pdf"],
+    ["annotation", "Rule 1: know your audiencePage 3"],
+    ["note", "Reading notes"],
+    ["literature-note", "Rougier 2014"],
+  ]);
+
+  const child = (kind: string) =>
+    el.querySelector<HTMLElement>(
+      `[data-query-papers-child="${kind}"] a, [data-query-papers-child="${kind}"] [data-query-note]`,
+    )!;
+  await act(() => child("attachment").click());
+  expect(readers.open).toHaveBeenLastCalledWith(
+    { kind: "attachment", attachmentKey: "PDFAAAAA" },
+    false,
+  );
+  await act(() => child("annotation").click());
+  expect(readers.open).toHaveBeenLastCalledWith(
+    {
+      kind: "annotation",
+      attachmentKey: "PDFAAAAA",
+      annotationKey: "ANNOTAAA",
+      pageIndex: 2,
+      pageLabel: "3",
+    },
+    false,
+  );
+  // A Child Note lives in Zotero, which shows it from its link.
+  await act(() => child("note").click());
+  expect(openWindow).toHaveBeenCalledWith(
+    "zotero://select/library/items/NXTEAAAA",
+  );
+  await act(() => child("literature-note").click());
+  expect(literatureNotes.open).toHaveBeenCalledWith(
+    expect.objectContaining({ path: "Rougier 2014.md" }),
+    expect.anything(),
+  );
 });

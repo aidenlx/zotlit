@@ -1006,6 +1006,16 @@ export class AnnotationView extends ItemView implements HistorySurface {
     this.#layout.revealAnnotation(annotationKey);
   }
 
+  /**
+   * Pin the Item `itemKey`, as the researcher asked from another view: the
+   * Library View's Reading Card opens an Item's Annotations here.
+   *
+   * @see apps/obsidian/docs/adr/0041-the-annotation-view-changes-its-follow-mode-only-on-a-user-gesture.md
+   */
+  pinItem(itemKey: string): void {
+    this.#pin(itemKey);
+  }
+
   /** The reader this view's Follow Mode is driven by, while one answers. */
   #followedSession(): ReaderSession | null {
     switch (this.#followMode) {
