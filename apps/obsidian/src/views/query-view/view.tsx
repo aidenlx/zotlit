@@ -187,6 +187,11 @@ export interface QueryViewHost {
    * @see apps/obsidian/docs/adr/0075-recent-is-a-library-tree-node-that-writes-a-sort.md
    */
   reason?: (row: QueryViewRow) => string | null;
+  /**
+   * Writes what the view shows as a new Query File. Present: the view menu
+   * of a host without views (`displayOnly`) offers "Save as query file".
+   */
+  saveAs?: () => void;
 }
 
 /**
@@ -616,6 +621,11 @@ export class QueryView extends Component implements HistorySurface {
   /** Why `row` is in the list, as the host says; `null` for no reason. */
   reason(row: QueryViewRow): string | null {
     return this.#host.reason?.(row) ?? null;
+  }
+
+  /** The host's "Save as query file", for the view menu. */
+  get saveAs(): QueryViewHost["saveAs"] {
+    return this.#host.saveAs;
   }
 
   /** The host's link to the Query File, for the toolbar. */

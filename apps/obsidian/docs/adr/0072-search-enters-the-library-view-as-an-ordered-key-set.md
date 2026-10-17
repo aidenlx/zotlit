@@ -16,3 +16,4 @@ Proposed on 2026-10-17 with [#1544](https://github.com/aidenlx/zotlit/issues/154
 - ZotLit Query has no order "by a given key list"; the host puts the rows in rank order after the query.
 - The search has the result limit of `SearchItems`; an Item past it does not show, even when it matches the tree node.
 - The `tag:` token is a `tags.contains` condition next to the key set (#1548).
+- "Save as query file" leaves the key set out (#1553): it is a snapshot of one search, and a Query File has no `search(...)` to say it.

@@ -2059,6 +2059,155 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
   }, 180000);
 
+  it("saves the Library View's Collection as a Query File whose tab lists the same papers, after a switch to the Table with its Literature Note column and back to Papers, with Zotero closed", async () => {
+    const services = "app.plugins.plugins.zotlit.services";
+    const savedPath = "query-files/Saved library.zotquery";
+    const snapshot = await obEval(
+      vaultId,
+      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null,scope:${services}.settings.current[${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}]??null})`,
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'library.document':saved.document,${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}:saved.scope});await settings.flush();await app.workspace.changeLayout(saved.layout);const file=app.vault.getFileByPath(${JSON.stringify(savedPath)});if(file)await app.vault.delete(file);return true;})()`,
+      );
+    });
+
+    // The seed's "Shared key" Collection of My Library. A Collection of that
+    // name holds Items in other Libraries too, which the Library Scope
+    // reads, so the saved file has to keep to My Library.
+    const personal = LIBRARIES.find(({ type }) => type === "user")!;
+    const sharedKey = COLLECTIONS.find(
+      (entry) =>
+        entry.libraryID === personal.libraryID && entry.key === "SHAREDCL",
+    )!;
+    const filedIn = (collectionIDs: Set<number>) =>
+      ITEMS.filter((item) =>
+        item.collectionIDs.some((id) => collectionIDs.has(id)),
+      );
+    const subtree = (collectionID: number): number[] => [
+      collectionID,
+      ...COLLECTIONS.filter(
+        (entry) => entry.parentCollectionID === collectionID,
+      ).flatMap((child) => subtree(child.collectionID)),
+    ];
+    const expected = filedIn(new Set(subtree(sharedKey.collectionID)))
+      .map(({ key }) => key)
+      .toSorted();
+    expect(expected.length).toBeGreaterThan(0);
+    const namesakes = COLLECTIONS.filter(
+      (entry) =>
+        entry.name === sharedKey.name && entry.libraryID !== personal.libraryID,
+    );
+    expect(
+      filedIn(new Set(namesakes.map(({ collectionID }) => collectionID)))
+        .length,
+      "another Library files Items in a Collection of the same name",
+    ).toBeGreaterThan(0);
+
+    await obEval(
+      vaultId,
+      `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=${services}.settings;settings.update({'library.document':{node:{kind:'collection',library:{type:'personal'},path:[${JSON.stringify(sharedKey.name)}]},facets:[],search:'',sort:[{property:'dateModified',direction:'DESC'}],layout:'papers',order:['title','creators','date.year','vault.literatureNote']},${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}:{mode:'all'}});await settings.flush();app.commands.executeCommandById('zotlit:open-library-view');return true;})()`,
+    );
+
+    /** What a view shows once its query settled: its Layout, rows and Table columns. */
+    const readRows = (view: string) =>
+      `(async()=>{const view=${view};if(!view?.query)return 'null';await view.query.settled;const el=view.contentEl;return JSON.stringify({type:view.getViewType(),file:view.file?.path??null,phase:view.query.state.getState().phase,layout:el.querySelector('[data-query-layout]')?.getAttribute('data-query-layout')??(el.querySelector('[data-query-table]')?'table':null),count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,rows:[...el.querySelectorAll('[data-query-papers-row], tr[data-query-table-row="item"]')].map(n=>n.getAttribute('data-query-papers-row')??n.getAttribute('data-query-key')),columns:[...el.querySelectorAll('th[data-query-column]')].map(n=>n.getAttribute('data-query-column'))});})()`;
+    interface Rows {
+      type: string;
+      file: string | null;
+      phase: string;
+      layout: string | null;
+      count: string | null;
+      rows: string[];
+      columns: string[];
+    }
+    const rowsWhen = async (
+      view: string,
+      ready: (rows: Rows) => boolean,
+    ): Promise<Rows> => {
+      let rows: Rows | null = null;
+      const settled = await waitFor(async () => {
+        rows = JSON.parse(await obEval(vaultId, readRows(view))) as Rows | null;
+        return rows !== null && ready(rows);
+      }, 120);
+      if (!settled) throw new Error(`${view}: ${JSON.stringify(rows)}`);
+      return rows!;
+    };
+    const library = "app.workspace.getLeavesOfType('zotlit-library')[0]?.view";
+    const drawn = (layout: string) => (rows: Rows) =>
+      rows.phase === "ready" &&
+      rows.layout === layout &&
+      rows.count !== null &&
+      rows.rows.length === Number(rows.count);
+    const papers = await rowsWhen(library, drawn("papers"));
+    expect(papers.rows.toSorted()).toEqual(expected);
+
+    /** Opens the view menu of the Library View and presses the row `selector` names. */
+    const pressMenuRow = (selector: string, what: string) =>
+      obEval(
+        vaultId,
+        `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];await app.workspace.revealLeaf(leaf);app.workspace.setActiveLeaf(leaf,{focus:true});press(leaf.view.contentEl.querySelector('[data-query-view-menu]'),'View menu');const row=await until(${JSON.stringify(what)},()=>activeDocument.querySelector('[data-query-view-list]:popover-open ${selector}'));press(row,${JSON.stringify(what)});return true;})()`,
+      );
+
+    // The Table shows Zotero's grid with the Literature Note column, and
+    // Papers comes back with the same rows.
+    await pressMenuRow('[data-query-view-layout-option="table"]', "Table");
+    const table = await rowsWhen(library, drawn("table"));
+    expect(table.columns).toContain("vault.literatureNote");
+    expect(table.rows.toSorted()).toEqual(expected);
+    await pressMenuRow('[data-query-view-layout-option="papers"]', "Papers");
+    expect((await rowsWhen(library, drawn("papers"))).rows.toSorted()).toEqual(
+      expected,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(${services}.settings.current['library.document']?.layout)`,
+        { expected: "papers" },
+      ),
+    ).toBe(true);
+
+    // "Save as query file" asks the name and the folder only.
+    await pressMenuRow(
+      '[data-query-view-action="save-as"]',
+      "Save as query file",
+    );
+    const modal = "document.querySelector('.modal.zt-save-query-file-modal')";
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `(function(){const modal=${modal};return JSON.stringify(modal?{title:modal.querySelector('.modal-title')?.textContent??null,fields:[...modal.querySelectorAll('[data-save-field]')].map(n=>n.getAttribute('data-save-field')),records:modal.querySelectorAll('[data-save-records]').length}:null);})()`,
+        {
+          expected: JSON.stringify({
+            title: m.annot_view_save_title(),
+            fields: ["name", "folder"],
+            records: 0,
+          }),
+        },
+      ),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      `(function(){${PAGE}const modal=${modal};const set=(field,value)=>{const input=modal.querySelector('[data-save-field="'+field+'"]');input.value=value;input.dispatchEvent(new Event('input',{bubbles:true}));};set('name','Saved library');set('folder','query-files');press(modal.querySelector('.modal-button-container button.mod-cta'),'Save');return true;})()`,
+    );
+
+    // The file opens in a tab that lists the Library View's papers, in its
+    // order, and only those of My Library.
+    const tab = `(()=>{const view=app.workspace.getMostRecentLeaf()?.view;return view?.getViewType()==='zotlit-query-file'&&view.file?.path===${JSON.stringify(savedPath)}?view:null;})()`;
+    const saved = await rowsWhen(tab, drawn("papers"));
+    expect(saved.rows).toEqual(papers.rows);
+    const text = await obEval(
+      vaultId,
+      `app.vault.read(app.vault.getFileByPath(${JSON.stringify(savedPath)}))`,
+    );
+    expect(text).toContain('library == "personal"');
+    expect(text).toContain(
+      `collections.within(${JSON.stringify(sharedKey.name)})`,
+    );
+  }, 180000);
+
   it("shows a Query File toolbar as icons with tooltips on a narrow pane, and with names on a wide one", async () => {
     const layout = await obEval(
       vaultId,
