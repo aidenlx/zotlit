@@ -378,6 +378,9 @@
   "library_view_name": "Zotero library",
   "library_view_papers_view_name": "Papers",
   "library_view_tree_label": "Libraries",
+  "library_view_recent": "Recent",
+  "library_view_recent_reason_property": "Last activity",
+  "library_view_recent_edited_in_zotero": "edited in Zotero",
   "library_view_tree_count": [
     {
       "declarations": ["input count", "local formatted = count: number"],

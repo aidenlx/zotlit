@@ -23,11 +23,12 @@ export const LIBRARY_LAYOUTS = ["table"] as const;
 export type LibraryLayout = (typeof LIBRARY_LAYOUTS)[number];
 
 /**
- * The node selected in the Library Tree: a Library, or a Collection by its
- * root-first name path in one Library. The path stays a list of names, since
- * a name may hold a `/`.
+ * The node selected in the Library Tree: Recent, a Library, or a Collection by
+ * its root-first name path in one Library. The path stays a list of names,
+ * since a name may hold a `/`. Recent reads every Library in the Library Scope.
  */
 export type LibraryNode =
+  | { readonly kind: "recent" }
   | { readonly kind: "library"; readonly library: LibrarySelector }
   | {
       readonly kind: "collection";
@@ -48,6 +49,7 @@ export interface LibraryViewDocument {
 }
 
 const nodeSchema = v.variant("kind", [
+  v.object({ kind: v.literal("recent") }),
   v.object({ kind: v.literal("library"), library: librarySelectorSchema }),
   v.object({
     kind: v.literal("collection"),
@@ -81,13 +83,24 @@ export type StoredLibraryViewDocument = v.InferOutput<
   typeof storedLibraryViewDocumentSchema
 >;
 
-/** What a new Library View shows: My Library on a Table, newest first. */
+/**
+ * The sort Recent writes: last activity, newest first. Until ZotLit Query
+ * reads `lastRead` and the Obsidian usage ledger (#1532, #1533), last
+ * activity is the Item's last change in Zotero.
+ *
+ * @see apps/obsidian/docs/adr/0075-recent-is-a-library-tree-node-that-writes-a-sort.md
+ */
+export const RECENT_SORT: readonly QueryFileSort[] = Object.freeze([
+  { property: "dateModified", direction: "DESC" },
+]);
+
+/** What a new Library View shows: Recent on a Table. */
 export const DEFAULT_LIBRARY_VIEW_DOCUMENT: LibraryViewDocument = Object.freeze(
   {
-    node: { kind: "library", library: { type: "personal" } },
+    node: { kind: "recent" },
     facets: [],
     search: "",
-    sort: [{ property: "dateModified", direction: "DESC" }],
+    sort: RECENT_SORT,
     layout: "table",
     order: ["title", "creators", "date.year", "vault.literatureNote"],
   } satisfies LibraryViewDocument,
@@ -125,19 +138,34 @@ export function parseLibraryViewDocument(raw: unknown): LibraryViewDocument {
   };
 }
 
+/**
+ * `doc` with `node` selected in the tree. Recent writes its sort; a later
+ * sort change stays until the researcher selects Recent again.
+ */
+export function documentWithNode(
+  doc: LibraryViewDocument,
+  node: LibraryNode,
+): LibraryViewDocument {
+  return node.kind === "recent"
+    ? { ...doc, node, sort: RECENT_SORT }
+    : { ...doc, node };
+}
+
 /** What {@link parseLibraryViewDocument} reads back, as JSON data. */
 export function serializeLibraryViewDocument(
   doc: LibraryViewDocument,
 ): StoredLibraryViewDocument {
   return {
     node:
-      doc.node.kind === "library"
-        ? { kind: "library", library: { ...doc.node.library } }
-        : {
-            kind: "collection",
-            library: { ...doc.node.library },
-            path: [...doc.node.path],
-          },
+      doc.node.kind === "recent"
+        ? { kind: "recent" }
+        : doc.node.kind === "library"
+          ? { kind: "library", library: { ...doc.node.library } }
+          : {
+              kind: "collection",
+              library: { ...doc.node.library },
+              path: [...doc.node.path],
+            },
     facets: [...doc.facets],
     search: doc.search,
     sort: doc.sort.map(({ property, direction }) => ({ property, direction })),

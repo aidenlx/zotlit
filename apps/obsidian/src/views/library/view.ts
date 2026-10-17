@@ -10,10 +10,12 @@ import type { WorkspaceLeaf } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { SettingsService } from "@/services/settings/service";
 import { QueryView } from "@/views/query-view/view";
 import type { QueryViewDeps } from "@/views/query-view/view";
 
+import { documentWithNode } from "./document";
 import type { LibraryNode, LibraryViewDocument } from "./document";
 import { ZOTLIT_MARK_ICON } from "./icon";
 import { LibraryTree } from "./library-tree";
@@ -29,7 +31,9 @@ export const LIBRARY_VIEW_TYPE = "zotlit-library";
 
 export interface LibraryViewDeps extends QueryViewDeps {
   settings: Pick<SettingsService, "update" | "flush" | "current" | "loaded">;
-  libraryScope: QueryViewDeps["libraryScope"] & LibraryTreeDeps["libraryScope"];
+  libraryScope: QueryViewDeps["libraryScope"] &
+    LibraryTreeDeps["libraryScope"] &
+    Pick<LibraryScopeService, "effective">;
 }
 
 export class LibraryView extends ItemView {
@@ -125,12 +129,19 @@ export class LibraryView extends ItemView {
     this.tree.show(doc.node);
     this.tree.refresh();
     this.#show(doc);
+    // Recent reads the Library Scope, so another scope lists other Items.
+    this.register(
+      this.#deps.libraryScope.on("changed", () => {
+        const current = this.#storage.document();
+        if (current.node.kind === "recent") this.#show(current);
+      }),
+    );
   }
 
   /** The researcher picked `node` in the tree: list it, and keep it. */
   #select(node: LibraryNode): void {
     this.tree.show(node);
-    this.#show({ ...this.#storage.document(), node });
+    this.#show(documentWithNode(this.#storage.document(), node));
     this.#storage.select(node).catch((error: unknown) => {
       logger.warn("The Library View could not keep the tree selection", {
         error,
@@ -145,7 +156,10 @@ export class LibraryView extends ItemView {
         papers: m.library_view_papers_view_name(),
         creators: m.query_file_creators_property(),
         year: m.query_file_year_property(),
+        lastActivity: m.library_view_recent_reason_property(),
+        editedInZotero: m.library_view_recent_edited_in_zotero(),
       },
+      scope: this.#deps.libraryScope.effective,
     });
     this.query.setText(this.#shown.text);
     this.query.contextChanged();

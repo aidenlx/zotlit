@@ -16,7 +16,22 @@ import { DEFAULT_LIBRARY_VIEW_DOCUMENT } from "./document";
 import type { LibraryViewDocument } from "./document";
 import { documentWithText, libraryViewQuery } from "./query-text";
 
-const LABELS = { papers: "Papers", creators: "Creators", year: "Year" };
+const LABELS = {
+  papers: "Papers",
+  creators: "Creators",
+  year: "Year",
+  lastActivity: "Last activity",
+  editedInZotero: "edited in Zotero",
+};
+/** The Library Scope in force: My Library and one group. */
+const SCOPE = {
+  mode: "selected",
+  libraries: [{ type: "personal" }, { type: "group", groupID: 118 }],
+} as const;
+const MY_LIBRARY = {
+  kind: "library",
+  library: { type: "personal" },
+} as const;
 
 /** An Item of My Library, in the Collections at `paths`. */
 function seed(key: string, paths: string[][] = []): QueryItemSeed {
@@ -40,8 +55,8 @@ function seed(key: string, paths: string[][] = []): QueryItemSeed {
 
 function derive(doc: Partial<LibraryViewDocument>, keys?: readonly string[]) {
   const query = libraryViewQuery(
-    { ...DEFAULT_LIBRARY_VIEW_DOCUMENT, ...doc },
-    { labels: LABELS, ...(keys && { keys }) },
+    { ...DEFAULT_LIBRARY_VIEW_DOCUMENT, node: MY_LIBRARY, ...doc },
+    { labels: LABELS, scope: SCOPE, ...(keys && { keys }) },
   );
   const file = parseQueryFile(query.text);
   expect(file.problems).toEqual([]);
@@ -105,6 +120,42 @@ describe("libraryViewQuery — the tree node", () => {
     expect(selects(filter, seed("ABCD2345", [["Thesis", "Chapter 20"]]))).toBe(
       false,
     );
+  });
+});
+
+describe("libraryViewQuery — Recent", () => {
+  const recent = () => derive({ node: { kind: "recent" } });
+
+  it("reads every Library in the Library Scope, with no filter", () => {
+    const { query, filter } = recent();
+    expect(query.libraries).toEqual(SCOPE);
+    expect(filter).toBeUndefined();
+  });
+
+  it("keeps the facets as filters", () => {
+    const { file } = derive({
+      node: { kind: "recent" },
+      facets: ["annotated"],
+    });
+    expect(file.filters).toBe("annotations.length > 0");
+  });
+
+  it("shows each row's reason, edited in Zotero, after the Visible Properties", () => {
+    const { file, view } = recent();
+    expect(file.formulas).toEqual({ reason: '"edited in Zotero"' });
+    expect(view.order).toEqual([
+      ...DEFAULT_LIBRARY_VIEW_DOCUMENT.order,
+      "formula.reason",
+    ]);
+    expect(file.properties?.["formula.reason"]).toEqual({
+      displayName: "Last activity",
+    });
+  });
+
+  it("shows no reason for a Library", () => {
+    const { file, view } = derive({});
+    expect(file.formulas).toBeUndefined();
+    expect(view.order).not.toContain("formula.reason");
   });
 });
 
@@ -233,7 +284,11 @@ describe("documentWithText", () => {
       search: "attention",
     };
     const file = parseQueryFile(
-      libraryViewQuery(doc, { labels: LABELS, keys: ["ABCD2345"] }).text,
+      libraryViewQuery(doc, {
+        labels: LABELS,
+        scope: SCOPE,
+        keys: ["ABCD2345"],
+      }).text,
     );
     const view = file.views[0]!;
     const edited = serializeQueryFile({
@@ -256,9 +311,26 @@ describe("documentWithText", () => {
   it("keeps the document's Layout where the text names one the Library View does not offer", () => {
     const text = libraryViewQuery(DEFAULT_LIBRARY_VIEW_DOCUMENT, {
       labels: LABELS,
+      scope: SCOPE,
     }).text.replace("type: table", "type: cards");
     expect(documentWithText(DEFAULT_LIBRARY_VIEW_DOCUMENT, text).layout).toBe(
       "table",
     );
+  });
+
+  it("keeps Recent's reason out of the Visible Properties it saves", () => {
+    const doc: LibraryViewDocument = {
+      ...DEFAULT_LIBRARY_VIEW_DOCUMENT,
+      node: { kind: "recent" },
+    };
+    const file = parseQueryFile(
+      libraryViewQuery(doc, { labels: LABELS, scope: SCOPE }).text,
+    );
+    const view = file.views[0]!;
+    const edited = serializeQueryFile({
+      ...file,
+      views: [{ ...view, order: ["formula.reason", "title"] }],
+    });
+    expect(documentWithText(doc, edited).order).toEqual(["title"]);
   });
 });

@@ -464,6 +464,9 @@
   "library_view_name": "Zotero 文库",
   "library_view_papers_view_name": "文献",
   "library_view_tree_label": "文库",
+  "library_view_recent": "最近",
+  "library_view_recent_reason_property": "最近活动",
+  "library_view_recent_edited_in_zotero": "在 Zotero 中编辑",
   "library_view_tree_count": [
     {
       "declarations": ["input count", "local formatted = count: number"],

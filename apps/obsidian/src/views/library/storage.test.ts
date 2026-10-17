@@ -24,7 +24,13 @@ import { libraryViewStorage } from "./storage";
 
 vi.mock("zustand", () => import("../__fixtures__/zustand"));
 
-const LABELS = { papers: "Papers", creators: "Creators", year: "Year" };
+const LABELS = {
+  papers: "Papers",
+  creators: "Creators",
+  year: "Year",
+  lastActivity: "Last activity",
+  editedInZotero: "edited in Zotero",
+};
 
 const EMPTY: QueryViewOutcome = {
   kind: "result",
@@ -112,7 +118,10 @@ async function openLibrary() {
   cleanup.defer(() => query.unload());
   await act(async () => {
     query.setText(
-      libraryViewQuery(storage.document(), { labels: LABELS }).text,
+      libraryViewQuery(storage.document(), {
+        labels: LABELS,
+        scope: { mode: "all" },
+      }).text,
     );
     await query.settled;
   });
@@ -176,4 +185,20 @@ it("says a change is not saved when the write fails, until a later write succeed
     await query.flush();
   });
   expect(query.state.getState().saveFailed).toBe(false);
+});
+
+it("keeps Recent as the tree selection with its sort, newest change first", async () => {
+  const { query, plugin, storage } = await openLibrary();
+  await act(async () => {
+    query.document.editView({
+      sort: [{ property: "title", direction: "ASC" }],
+    });
+    await query.flush();
+  });
+  await storage.select({ kind: "recent" });
+  expect(saved(plugin)).toEqual({
+    ...STORED,
+    node: { kind: "recent" },
+    sort: [{ property: "dateModified", direction: "DESC" }],
+  });
 });
