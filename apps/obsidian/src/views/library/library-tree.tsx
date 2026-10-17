@@ -80,7 +80,9 @@ export class LibraryTree extends Component {
   readonly #deps: LibraryTreeDeps;
   readonly #host: LibraryTreeHost;
   #run: AbortController | null = null;
-  #settled: Promise<void> = Promise.resolve();
+  /** Settles once a read first lands, so a caller can wait for it before it starts. */
+  readonly #first = Promise.withResolvers<void>();
+  #settled: Promise<void> = this.#first.promise;
   #roots: Root[] = [];
 
   constructor(deps: LibraryTreeDeps, host: LibraryTreeHost) {
@@ -96,9 +98,12 @@ export class LibraryTree extends Component {
     }));
   }
 
-  /** Settles once the tree shows the last read it started. Never rejects. */
+  /**
+   * Settles once the tree shows the last read it started, and not before it
+   * shows a first one. Never rejects.
+   */
   get settled(): Promise<void> {
-    return this.#settled;
+    return this.#settled.then(() => this.#first.promise);
   }
 
   override onload(): void {
@@ -116,6 +121,7 @@ export class LibraryTree extends Component {
   override onunload(): void {
     this.#run?.abort();
     this.#run = null;
+    this.#first.resolve();
     for (const root of this.#roots) root.unmount();
     this.#roots = [];
   }
@@ -190,6 +196,7 @@ export class LibraryTree extends Component {
         if (controller.signal.aborted) return;
         this.#run = null;
         this.store.setState({ libraries: libraries.map(({ tree }) => tree) });
+        this.#first.resolve();
         // A Collection renamed or removed in Zotero leaves its saved path
         // with nothing to list: the selection moves up to its Library.
         const { node } = this.store.getState();
@@ -317,22 +324,29 @@ function ListHeader({ tree }: { tree: LibraryTree }) {
   const count = libraries ? (findNode(libraries, node)?.count ?? null) : null;
   return (
     <div className="zt:flex zt:min-w-0 zt:items-center zt:gap-(--size-2-2) zt:ps-(--zt-query-toolbar-inset-start) zt:pe-(--zt-query-toolbar-inset-end) zt:pt-(--size-4-2)">
-      <IconButton
-        icon="library"
-        className="zt:@xl:hidden"
-        data-library-tree-toggle=""
-        pressed={open}
-        {...tooltipAttrs(m.library_view_show_tree())}
-        onClick={() => tree.setOpen(!open)}
-      />
-      <h2
+      {/* Obsidian's own rule shows a clickable icon, so the narrow pane
+          shows and hides a wrapper. */}
+      <span className="zt:flex zt:@xl:hidden">
+        <IconButton
+          icon="library"
+          data-library-tree-toggle=""
+          pressed={open}
+          {...tooltipAttrs(m.library_view_show_tree())}
+          onClick={() => tree.setOpen(!open)}
+        />
+      </span>
+      {/* Obsidian styles a bare heading element; the header keeps the UI
+          type scale. */}
+      <div
+        role="heading"
+        aria-level={2}
         data-library-header=""
         className="zt:m-0 zt:min-w-0 zt:truncate zt:text-(length:--font-ui-medium) zt:font-(--font-semibold)"
       >
         {count === null
           ? selection
           : m.library_view_header({ selection, count })}
-      </h2>
+      </div>
     </div>
   );
 }
@@ -417,6 +431,8 @@ function TreePane({ tree }: { tree: LibraryTree }) {
       items?.[to]?.focus();
     };
     if (event.key === "Enter" || event.key === " ") tree.select(row.node);
+    else if (event.key === "Escape" && tree.store.getState().open)
+      tree.setOpen(false);
     else if (event.key === "ArrowDown") focus(index + 1);
     else if (event.key === "ArrowUp") focus(index - 1);
     else if (event.key === "ArrowRight" && row.expanded === false)
@@ -461,9 +477,9 @@ function TreePane({ tree }: { tree: LibraryTree }) {
           >
             <span
               data-library-expand={row.expanded === null ? undefined : ""}
-              data-expanded={row.expanded ? "" : undefined}
+              data-collapsed={row.expanded === false ? "" : undefined}
               className={cn(
-                "zt:flex zt:size-(--size-4-4) zt:shrink-0 zt:items-center zt:justify-center zt:text-faint zt:transition-transform zt:data-expanded:rotate-90",
+                "zt:flex zt:size-(--size-4-4) zt:shrink-0 zt:items-center zt:justify-center zt:text-faint zt:transition-transform zt:data-collapsed:-rotate-90",
                 row.expanded === null && "zt:invisible",
               )}
               onClick={(event) => {

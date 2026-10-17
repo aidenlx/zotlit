@@ -88,7 +88,7 @@ export class LibraryView extends ItemView {
       cls: "zt:group zt:@container zt:relative zt:flex zt:h-full zt:min-h-0",
     });
     const treeEl = shell.createDiv({
-      cls: "zt:hidden zt:w-56 zt:shrink-0 zt:overflow-y-auto zt:border-e-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-primary) zt:@xl:block zt:group-data-tree-open:block zt:@max-xl:absolute zt:@max-xl:inset-y-0 zt:@max-xl:start-0 zt:@max-xl:z-(--layer-popover) zt:@max-xl:shadow-(--shadow-s)",
+      cls: "zt:hidden zt:w-56 zt:shrink-0 zt:overflow-y-auto zt:border-e-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-primary) zt:@xl:block zt:group-data-tree-open:block zt:@max-xl:absolute zt:@max-xl:inset-y-0 zt:@max-xl:start-0 zt:@max-xl:max-w-[85%] zt:@max-xl:z-(--layer-popover) zt:@max-xl:shadow-(--shadow-s)",
       attr: { "data-library-tree": "" },
     });
     const main = shell.createDiv({
@@ -105,6 +105,13 @@ export class LibraryView extends ItemView {
         shell.toggleAttribute("data-tree-open", open),
       ),
     );
+    // A press on the list beside it puts the tree away.
+    main.addEventListener("pointerdown", (event) => {
+      const target = event.target as Element;
+      if (!this.tree.store.getState().open) return;
+      if (target.closest("[data-library-tree-toggle]")) return;
+      this.tree.setOpen(false);
+    });
     this.query.load();
     this.query.render(list);
     // A tab that the workspace restores on startup can open before plugin
