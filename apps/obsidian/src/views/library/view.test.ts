@@ -3,11 +3,11 @@
 // document plugin data holds when the tab opens, and after a toolbar change,
 // the same query when the tab opens again.
 import { resetMockPlatform, setMockPlatform } from "@mock/obsidian";
-import { regex } from "arkregex";
 import type { App, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { testItemSeed } from "@zotlit/item-query";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import {
@@ -15,6 +15,7 @@ import {
   PluginStub,
 } from "@/lib/__fixtures__/obsidian-host";
 import { Effect } from "@/lib/effect";
+import type { SearchHit, SearchOptions } from "@/services/item-lookup/service";
 import type {
   QueryViewOutcome,
   QueryViewRequest,
@@ -27,9 +28,11 @@ import type {
 } from "@/services/library-scope/scope";
 import { selectorKey } from "@/services/library-scope/scope";
 import { SettingsService } from "@/services/settings/service";
+import { requested } from "@/views/query-view/__fixtures__/query-run";
 
 import type { LibraryNode } from "./document";
 import { nodeKey } from "./library-tree";
+import { openLibraryView } from "./register";
 import { LibraryView } from "./view";
 import type { LibraryViewDeps } from "./view";
 
@@ -75,6 +78,8 @@ interface SeedItem {
   readonly collections: readonly string[];
   readonly annotations?: number;
   readonly pdf?: boolean;
+  readonly title?: string;
+  readonly tags?: readonly string[];
 }
 
 /**
@@ -107,17 +112,37 @@ const SEED: readonly SeedItem[] = [
     collections: ["Thesis/Chapter 1", "Thesis/Chapter 2"],
     annotations: 2,
     pdf: true,
+    title: "Graph drawing for figures",
+    tags: ["method"],
   },
   {
     key: "BBBBBBBB",
     libraryID: 1,
     collections: ["Thesis/Chapter 2"],
     pdf: true,
+    title: "Notes on attention",
   },
-  { key: "CCCCCCCC", libraryID: 1, collections: ["Thesis"], annotations: 1 },
-  { key: "DDDDDDDD", libraryID: 1, collections: ["Reading list"] },
-  { key: "EEEEEEEE", libraryID: 1, collections: [] },
-  { key: "FFFFFFFF", libraryID: 2, collections: ["Thesis"] },
+  {
+    key: "CCCCCCCC",
+    libraryID: 1,
+    collections: ["Thesis"],
+    annotations: 1,
+    title: "Figures that work",
+    tags: ["method"],
+  },
+  {
+    key: "DDDDDDDD",
+    libraryID: 1,
+    collections: ["Reading list"],
+    title: "Ten rules for better figures",
+  },
+  { key: "EEEEEEEE", libraryID: 1, collections: [], tags: ["method"] },
+  {
+    key: "FFFFFFFF",
+    libraryID: 2,
+    collections: ["Thesis"],
+    title: "Figures in the lab",
+  },
   { key: "GGGGGGGG", libraryID: 2, collections: [] },
   { key: "HHHHHHHH", libraryID: 3, collections: [] },
 ];
@@ -137,33 +162,41 @@ const CONDITIONS: readonly [string, (item: SeedItem) => boolean][] = [
     (item) => item.pdf === true,
   ],
 ];
-const WITHIN = regex('collections\\.within\\((?<path>"[^"]*")\\)');
-
-/** Whether `item` passes `filter`, a conjunction of the conditions above. */
-function passes(item: SeedItem, filter = ""): boolean {
-  let rest = filter;
-  let ok = true;
+/**
+ * Whether the engine's filter selects `item`. The engine's test seed holds
+ * no Annotation or Attachment, so the facets' conditions are answered first,
+ * as {@link CONDITIONS} says.
+ */
+function selects(filter: string | undefined, item: SeedItem): boolean {
+  if (filter === undefined) return true;
+  let answered = filter;
   for (const [condition, test] of CONDITIONS)
-    if (rest.includes(condition)) {
-      ok &&= test(item);
-      rest = rest.replace(condition, "");
-    }
-  const within = WITHIN.exec(rest);
-  if (within) {
-    const path = JSON.parse(within.groups.path) as string;
-    ok &&= item.collections.some((c) => c === path || c.startsWith(`${path}/`));
-    rest = rest.replace(within[0], "");
-  }
-  if (/[^\s()&]/.test(rest))
-    throw new Error(`The fake cannot answer ${filter}`);
-  return ok;
+    answered = answered.replaceAll(condition, String(test(item)));
+  const answer = testItemSeed(answered, {
+    scan: {
+      itemID: 1,
+      key: item.key,
+      itemType: "journalArticle",
+      dateAdded: null,
+      dateModified: null,
+    },
+    groupID: null,
+    fields: { title: item.title ?? "" },
+    custom: {},
+    customFieldNames: [],
+    creators: [],
+    tags: (item.tags ?? []).map((name) => ({ name, type: 0 })),
+    collections: item.collections.map((path) => path.split("/")),
+  });
+  if (answer.kind !== "result") throw new Error(JSON.stringify(answer));
+  return answer.matched;
 }
 
 /**
  * ZotLit Query over {@link SEED}. A grouped request groups as the engine
  * does: an Item joins one group for each Collection it is filed in, or the
- * `null` group for none. A list request gives the Items that pass its
- * filter, up to its limit, each with no values.
+ * `null` group for none. A list request answers the Items its filter selects,
+ * in seed order.
  */
 function answer(
   items: readonly SeedItem[],
@@ -177,22 +210,23 @@ function answer(
     ).map(({ libraryID }) => libraryID),
   );
   if (request.group !== "collections[]") {
-    const found = items.filter(
-      (item) => ids.has(item.libraryID) && passes(item, request.filter),
-    );
-    const rows = found
-      .slice(0, request.limit ?? undefined)
+    const rows = items
+      .filter(
+        (item) => ids.has(item.libraryID) && selects(request.filter, item),
+      )
       .map(({ key }) => ({ indexedKey: key, values: {} }));
-    return {
-      kind: "result",
-      result: {
-        ...EMPTY.result,
-        returnedCount: rows.length,
-        matchedCount: found.length,
-        truncated: rows.length < found.length,
-        rows,
+    return requested(
+      {
+        kind: "result",
+        result: {
+          ...EMPTY.result,
+          returnedCount: rows.length,
+          matchedCount: rows.length,
+          rows,
+        },
       },
-    };
+      request,
+    );
   }
   const matched = items.filter(({ libraryID }) => ids.has(libraryID));
   const groups = new Map<string | null, SeedItem[]>();
@@ -276,6 +310,34 @@ function pluginData(stored?: unknown) {
     } as ResolvedLibraryScope,
     libraries: LIBRARIES,
   };
+  /**
+   * The worker search over the titles of {@link SEED}: each Item whose title
+   * holds every word, the latest seed Item first, so the rank differs from
+   * the list's own order.
+   */
+  const searches: { query: string; libraries: number[] }[] = [];
+  const search = (query: string, opts?: SearchOptions) => {
+    const libraries = (opts?.libraries ?? []).map((l) => l.libraryID);
+    searches.push({ query, libraries });
+    const words = query.toLowerCase().split(" ");
+    return Promise.resolve(
+      database.items
+        .filter(
+          ({ libraryID, title }) =>
+            libraries.includes(libraryID) &&
+            words.every((word) => title?.toLowerCase().includes(word)),
+        )
+        .toReversed()
+        .map(
+          ({ key, libraryID }) =>
+            ({
+              item: { key, indexedKey: key, libraryID },
+              matches: [],
+              library: null,
+            }) as unknown as SearchHit,
+        ),
+    );
+  };
   const deps = {
     app: {
       ...host.app,
@@ -299,6 +361,13 @@ function pluginData(stored?: unknown) {
     },
     libraryScope,
     query: { run },
+    lookup: {
+      openSession: () => ({
+        search,
+        close: () => {},
+        [Symbol.dispose]: () => {},
+      }),
+    },
     cardFocus: { hold: () => ({ [Symbol.dispose]: () => {} }) },
     annotations: { on: off, hold: () => ({ [Symbol.dispose]: () => {} }) },
     settings,
@@ -334,7 +403,7 @@ function pluginData(stored?: unknown) {
     };
     scopeEvents.emit("changed");
   };
-  return { deps, run, settings, change, addNote, rescope };
+  return { deps, run, settings, change, addNote, searches, rescope };
 }
 
 /** The Items requests, without the count requests of the Library Tree, which read no field. */
@@ -827,4 +896,201 @@ describe("Reading State facets", () => {
     expect(facet(view, "unread").getAttribute("aria-pressed")).toBe("false");
     expect(listed(view)).toEqual(["AAAAAAAA"]);
   });
+});
+
+/** A document of plugin data that lists My Library. */
+const ON_MY_LIBRARY = {
+  node: { kind: "library", library: PERSONAL },
+  facets: [],
+  search: "",
+  sort: [{ property: "dateModified", direction: "DESC" }],
+  layout: "table",
+  order: ["title"],
+};
+
+/** The search box of the tab. */
+function searchBox(view: LibraryView): HTMLInputElement {
+  return view.contentEl.querySelector("[data-library-search] input")!;
+}
+
+/** Type `text` into the search box, and wait for the list. */
+async function type(view: LibraryView, text: string) {
+  await act(async () => {
+    const input = searchBox(view);
+    input.value = text;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await view.searched;
+    await view.query.settled;
+  });
+}
+
+/** The Indexed Keys of the rows on screen, in order. */
+function shown(view: LibraryView) {
+  return (view.query.state.getState().results?.rows ?? []).map(
+    (r) => r.indexedKey,
+  );
+}
+
+it("has the search box focused when the command brings the tab forward", async () => {
+  const { deps } = pluginData();
+  const view = await openTab(deps);
+  expect(document.activeElement).not.toBe(searchBox(view));
+  const leaf = { view } as unknown as WorkspaceLeaf;
+  await openLibraryView({
+    workspace: {
+      getLeavesOfType: () => [leaf],
+      revealLeaf: () => Promise.resolve(),
+    },
+  } as unknown as App);
+  expect(document.activeElement).toBe(searchBox(view));
+});
+
+it("lists a search's hits in the rank of the worker search, inside the selected node", async () => {
+  const { deps, searches } = pluginData(ON_MY_LIBRARY);
+  const view = await openTab(deps);
+  expect(shown(view)).toEqual([
+    "AAAAAAAA",
+    "BBBBBBBB",
+    "CCCCCCCC",
+    "DDDDDDDD",
+    "EEEEEEEE",
+  ]);
+  await type(view, "figures");
+  expect(searches.at(-1)).toEqual({ query: "figures", libraries: [1] });
+  expect(shown(view)).toEqual(["DDDDDDDD", "CCCCCCCC", "AAAAAAAA"]);
+  expect(header(view)).toBe("3 matches in My Library · Search all libraries");
+  await press(view, row(view, THESIS));
+  expect(shown(view)).toEqual(["CCCCCCCC", "AAAAAAAA"]);
+  expect(header(view)).toBe("2 matches in Thesis · Search all libraries");
+});
+
+it("searches all libraries in the Library Scope on request, past the selected Collection", async () => {
+  const { deps, run, searches } = pluginData();
+  const view = await openTab(deps);
+  await press(view, row(view, THESIS));
+  await type(view, "figures");
+  await press(
+    view,
+    view.contentEl.querySelector<HTMLElement>("[data-library-search-all]")!,
+  );
+  expect(searches.at(-1)).toEqual({ query: "figures", libraries: [1, 2] });
+  expect(shown(view)).toEqual(["FFFFFFFF", "DDDDDDDD", "CCCCCCCC", "AAAAAAAA"]);
+  expect(listRuns(run).at(-1)!.libraries).toEqual({
+    mode: "selected",
+    libraries: [PERSONAL, LAB],
+  });
+  expect(header(view)).toBe("4 matches in all libraries");
+});
+
+it("narrows a tag: token to the Items with that tag, in the list's order", async () => {
+  const { deps, searches } = pluginData(ON_MY_LIBRARY);
+  const view = await openTab(deps);
+  const before = searches.length;
+  await type(view, "tag:method");
+  expect(searches).toHaveLength(before);
+  expect(shown(view)).toEqual(["AAAAAAAA", "CCCCCCCC", "EEEEEEEE"]);
+  await type(view, "tag:method figures");
+  expect(shown(view)).toEqual(["CCCCCCCC", "AAAAAAAA"]);
+});
+
+it("clears the search on Escape, and lists the selected node again", async () => {
+  const { deps, settings } = pluginData(ON_MY_LIBRARY);
+  const view = await openTab(deps);
+  await type(view, "figures");
+  await act(async () => {
+    searchBox(view).dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+    );
+    await view.searched;
+    await view.query.settled;
+  });
+  expect(searchBox(view).value).toBe("");
+  expect(shown(view)).toEqual([
+    "AAAAAAAA",
+    "BBBBBBBB",
+    "CCCCCCCC",
+    "DDDDDDDD",
+    "EEEEEEEE",
+  ]);
+  expect(header(view)).toBe("My Library · 5 papers · 2 unread");
+  await act(() => view.close());
+  expect(settings.current?.["library.document"]?.search).toBe("");
+});
+
+it("keeps a search inside the active facets, the vault's among them, in the search's rank", async () => {
+  const { deps } = pluginData(ON_MY_LIBRARY);
+  const view = await openTab(deps);
+  await type(view, "figures");
+  expect(shown(view)).toEqual(["DDDDDDDD", "CCCCCCCC", "AAAAAAAA"]);
+  await press(view, facet(view, "has-note"));
+  expect(shown(view)).toEqual(["DDDDDDDD", "AAAAAAAA"]);
+  await press(view, facet(view, "annotated"));
+  expect(shown(view)).toEqual(["AAAAAAAA"]);
+  expect(header(view)).toBe("1 match in My Library · Search all libraries");
+});
+
+it("keeps a search of all libraries inside the active facets", async () => {
+  const { deps } = pluginData();
+  const view = await openTab(deps);
+  await press(view, row(view, THESIS));
+  await press(view, facet(view, "unread"));
+  await type(view, "figures");
+  await press(
+    view,
+    view.contentEl.querySelector<HTMLElement>("[data-library-search-all]")!,
+  );
+  // Of the four hits in My Library and Lab, F has no Annotation and no
+  // note; the others have one or the other.
+  expect(shown(view)).toEqual(["FFFFFFFF"]);
+});
+
+it("lists nothing more once the tab closed during a search", async () => {
+  const { deps, run } = pluginData();
+  // The worker answers once the tab has closed.
+  const gate = Promise.withResolvers<void>();
+  const open = deps.lookup.openSession.bind(deps.lookup);
+  deps.lookup = {
+    openSession: () => {
+      const session = open();
+      return {
+        ...session,
+        search: async (query, opts) => {
+          await gate.promise;
+          return session.search(query, opts);
+        },
+      };
+    },
+  };
+  const view = await openTab(deps);
+  const before = listRuns(run).length;
+  await act(async () => {
+    const input = searchBox(view);
+    input.value = "figures";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await view.close();
+    gate.resolve();
+    await view.searched;
+  });
+  expect(listRuns(run)).toHaveLength(before);
+});
+
+it("keeps the search text, and opens again on its hits", async () => {
+  const { deps, settings } = pluginData(ON_MY_LIBRARY);
+  const first = await openTab(deps);
+  await type(first, "figures");
+  await act(() => first.close());
+  expect(settings.current?.["library.document"]?.search).toBe("figures");
+  const view = await openTab(deps);
+  expect(searchBox(view).value).toBe("figures");
+  expect(shown(view)).toEqual(["DDDDDDDD", "CCCCCCCC", "AAAAAAAA"]);
+});
+
+it("searches every Library in the Library Scope on Recent, with no offer to widen", async () => {
+  const { deps, searches } = pluginData();
+  const view = await openTab(deps);
+  await type(view, "figures");
+  expect(searches.at(-1)).toEqual({ query: "figures", libraries: [1, 2] });
+  expect(shown(view)).toEqual(["FFFFFFFF", "DDDDDDDD", "CCCCCCCC", "AAAAAAAA"]);
+  expect(header(view)).toBe("4 matches in Recent");
+  expect(view.contentEl.querySelector("[data-library-search-all]")).toBeNull();
 });

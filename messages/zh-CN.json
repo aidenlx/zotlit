@@ -507,6 +507,32 @@
   "library_view_all_libraries": "显示所有文库",
   "library_view_scope_libraries": "仅显示文库范围内的文库",
   "library_view_show_tree": "显示文库和分类",
+  "library_view_search_label": "搜索文献",
+  "library_view_search_placeholder": "搜索文献…（用 tag:名称 按标签筛选）",
+  "library_view_search_clear": "清除搜索",
+  "library_view_search_matches": [
+    {
+      "declarations": [
+        "input selection",
+        "input count",
+        "local formatted = count: number"
+      ],
+      "selectors": ["formatted"],
+      "match": {
+        "formatted=*": "{selection}中有 {formatted} 个结果"
+      }
+    }
+  ],
+  "library_view_search_matches_everywhere": [
+    {
+      "declarations": ["input count", "local formatted = count: number"],
+      "selectors": ["formatted"],
+      "match": {
+        "formatted=*": "所有文库中有 {formatted} 个结果"
+      }
+    }
+  ],
+  "library_view_search_everywhere": "搜索所有文库",
   "annot_view_loading": "加载中…",
   "annot_view_no_attachments": "没有可用的附件",
   "annot_view_more_tooltip": "更多选项",

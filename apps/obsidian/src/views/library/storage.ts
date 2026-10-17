@@ -25,11 +25,23 @@ export interface LibraryViewStorage extends Pick<QueryViewHost, "save"> {
   select: (node: LibraryNode) => Promise<void>;
   /** Keep `facets` as the active Reading State facets. Settles and rejects as {@link select} does. */
   setFacets: (facets: readonly ReadingStateFacet[]) => Promise<void>;
+  /** Keep `text` as the search. Settles once plugin data holds it; rejects where the write failed. */
+  search: (text: string) => Promise<void>;
 }
 
 export function libraryViewStorage(
   settings: Pick<SettingsService, "update" | "flush" | "current">,
 ): LibraryViewStorage {
+  const keep = async (
+    change: (doc: LibraryViewDocument) => LibraryViewDocument,
+  ) => {
+    settings.update((current) => ({
+      [KEY]: serializeLibraryViewDocument(
+        change(parseLibraryViewDocument(current[KEY] ?? null)),
+      ),
+    }));
+    await settings.flush();
+  };
   return {
     ...pluginDataStorage(settings, {
       key: KEY,
@@ -41,16 +53,6 @@ export function libraryViewStorage(
     document: () => parseLibraryViewDocument(settings.current?.[KEY] ?? null),
     select: (node) => keep((doc) => documentWithNode(doc, node)),
     setFacets: (facets) => keep((doc) => ({ ...doc, facets })),
+    search: (search) => keep((doc) => ({ ...doc, search })),
   };
-
-  async function keep(
-    change: (doc: LibraryViewDocument) => LibraryViewDocument,
-  ): Promise<void> {
-    settings.update((current) => ({
-      [KEY]: serializeLibraryViewDocument(
-        change(parseLibraryViewDocument(current[KEY] ?? null)),
-      ),
-    }));
-    await settings.flush();
-  }
 }

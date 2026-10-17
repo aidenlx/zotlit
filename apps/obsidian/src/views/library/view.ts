@@ -5,7 +5,7 @@
 // reads Zotero's database only, so Zotero does not need to run.
 //
 // @see apps/obsidian/docs/adr/0070-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
-import { ItemView, Scope } from "obsidian";
+import { debounce, ItemView, Scope } from "obsidian";
 import type { WorkspaceLeaf } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -17,12 +17,8 @@ import { saveAsQueryFile } from "@/views/annot-view/save-query-file";
 import { QueryView } from "@/views/query-view/view";
 import type { QueryViewDeps } from "@/views/query-view/view";
 
-import { documentWithNode, LIBRARY_LAYOUTS } from "./document";
-import type {
-  LibraryNode,
-  LibraryViewDocument,
-  ReadingStateFacet,
-} from "./document";
+import { LIBRARY_LAYOUTS } from "./document";
+import type { LibraryNode, ReadingStateFacet } from "./document";
 import { ZOTLIT_MARK_ICON } from "./icon";
 import { LibraryTree } from "./library-tree";
 import type { LibraryTreeDeps } from "./library-tree";
@@ -32,6 +28,8 @@ import {
   vaultPass,
 } from "./query-text";
 import type { LibraryViewLabels, LibraryViewQuery } from "./query-text";
+import { LibrarySearch } from "./search-box";
+import type { LibrarySearchDeps, SearchFound } from "./search-box";
 import { libraryViewStorage } from "./storage";
 import "./style.css";
 
@@ -44,16 +42,32 @@ export interface LibraryViewDeps extends QueryViewDeps {
   libraryScope: QueryViewDeps["libraryScope"] &
     LibraryTreeDeps["libraryScope"] &
     Pick<LibraryScopeService, "effective">;
+  lookup: LibrarySearchDeps["lookup"];
 }
 
 export class LibraryView extends ItemView {
   override scope: Scope;
   readonly query: QueryView;
   readonly tree: LibraryTree;
+  readonly search: LibrarySearch;
   readonly #deps: LibraryViewDeps;
   readonly #storage: ReturnType<typeof libraryViewStorage>;
   /** What the tab runs: the query of the document as it opened. */
   #shown: LibraryViewQuery | null = null;
+  /** What the search last found, which a facet change lists again. */
+  #found: SearchFound = { text: "" };
+  /** The write of the search text that the box last asked for. */
+  #saving: Promise<void> = Promise.resolve();
+  /** Keep the search text once typing pauses. */
+  readonly #keep = debounce(
+    (text: string) => {
+      this.#saving = this.#storage.search(text).catch((error: unknown) => {
+        logger.warn("The Library View could not keep the search", { error });
+      });
+    },
+    500,
+    true,
+  );
 
   constructor(leaf: WorkspaceLeaf, deps: LibraryViewDeps) {
     super(leaf);
@@ -68,6 +82,7 @@ export class LibraryView extends ItemView {
       context: () => undefined,
       // The view runs once the tab has set its text, after the query.
       libraries: () => this.#shown!.libraries,
+      rank: () => this.#shown!.rank,
       // The document keeps the sort, the Layout and the Visible Properties.
       displayOnly: true,
       layouts: LIBRARY_LAYOUTS,
@@ -93,6 +108,16 @@ export class LibraryView extends ItemView {
       select: (node) => this.#select(node),
       filter: (facets) => this.#filter(facets),
     });
+    this.search = new LibrarySearch(deps, {
+      node: () => this.tree.store.getState().node,
+      found: (found) => this.#show(found),
+      keep: (text) => this.#keep(text),
+    });
+  }
+
+  /** Settles once the list shows the newest search. Never rejects. */
+  get searched(): Promise<void> {
+    return this.search.settled;
   }
 
   override getViewType(): string {
@@ -118,11 +143,16 @@ export class LibraryView extends ItemView {
     const main = shell.createDiv({
       cls: "zt:flex zt:min-w-0 zt:flex-1 zt:flex-col zt:overflow-y-auto zt:pb-[max(var(--safe-area-inset-bottom),var(--size-4-8))]",
     });
+    const searchEl = main.createDiv();
     const header = main.createDiv();
     const list = main.createDiv();
     this.tree.load();
     this.tree.render(treeEl);
-    this.tree.renderHeader(header);
+    this.tree.renderHeader(header, (text) =>
+      this.search.summary(this.query.state, text),
+    );
+    this.search.load();
+    this.search.render(searchEl);
     // On a narrow pane the tree shows over the list while it is open.
     this.tree.register(
       this.tree.store.subscribe(({ open }) =>
@@ -155,41 +185,50 @@ export class LibraryView extends ItemView {
     this.tree.show(doc.node);
     this.tree.showFacets(doc.facets);
     this.tree.refresh();
-    this.#show(doc);
-    // Recent reads the Library Scope, so another scope lists other Items.
-    this.register(
-      this.#deps.libraryScope.on("changed", () => {
-        const current = this.#storage.document();
-        if (current.node.kind === "recent") this.#show(current);
-      }),
-    );
+    await this.search.open(doc.search);
   }
 
   /** The researcher picked `node` in the tree: list it, and keep it. */
   #select(node: LibraryNode): void {
     this.tree.show(node);
-    this.#show(documentWithNode(this.#storage.document(), node));
+    // The document takes the node at once (Recent writes its sort), and the
+    // search runs again over the node.
     this.#storage.select(node).catch((error: unknown) => {
       logger.warn("The Library View could not keep the tree selection", {
         error,
       });
     });
+    this.search.narrow();
+    void this.search.run();
   }
 
   /** The researcher turned a facet on or off: list the Items `facets` hold, and keep them. */
   #filter(facets: readonly ReadingStateFacet[]): void {
     this.tree.showFacets(facets);
-    this.#show({ ...this.#storage.document(), facets });
+    // The document takes the facets at once; the search found what it found.
     this.#storage.setFacets(facets).catch((error: unknown) => {
       logger.warn("The Library View could not keep the facets", { error });
     });
+    this.#show(this.#found);
   }
 
-  /** Run the query of `doc`; the Libraries change apart from the text. */
-  #show(doc: LibraryViewDocument): void {
+  /**
+   * Run the query of the tree node and of what the search `found`; the
+   * Libraries change apart from the text.
+   */
+  #show(found: SearchFound): void {
+    this.#found = found;
+    const { text, keys, everywhere } = found;
+    const doc = {
+      ...this.#storage.document(),
+      node: this.tree.store.getState().node,
+      search: text,
+    };
     this.#shown = libraryViewQuery(doc, {
       labels: labels(),
       scope: this.#scope(),
+      ...(keys && { keys }),
+      ...(everywhere && { everywhere }),
     });
     this.query.setText(this.#shown.text);
     this.query.contextChanged();
@@ -220,6 +259,9 @@ export class LibraryView extends ItemView {
   }
 
   protected override async onClose(): Promise<void> {
+    this.#keep.run();
+    await this.#saving;
+    this.search.unload();
     await this.query.flush();
     this.query.unload();
     this.tree.unload();
