@@ -380,6 +380,15 @@
   "library_view_tree_label": "Libraries",
   "library_view_recent": "Recent",
   "library_view_recent_edited_in_zotero": "edited in Zotero",
+  "library_view_reveal_not_listed": [
+    {
+      "declarations": ["input limit", "local formatted = limit: number"],
+      "selectors": ["formatted"],
+      "match": {
+        "formatted=*": "The list shows its first {formatted} papers, and this one is not among them. Search for its title to show it."
+      }
+    }
+  ],
   "library_view_facets_label": "Show only",
   "library_view_facet_unread": "Unread",
   "library_view_facet_annotated": "Annotated",

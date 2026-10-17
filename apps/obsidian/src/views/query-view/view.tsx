@@ -604,13 +604,20 @@ export class QueryView extends Component implements HistorySurface {
   }
 
   /**
-   * The host's Query Context may have changed: run again where the view's
-   * query reads another one.
+   * What the host derives may have changed: run again where the view's
+   * query reads another Query Context or other Libraries, and otherwise draw
+   * the rows again, since a hook such as {@link QueryViewHost.reason} may
+   * say something else of them.
    */
   contextChanged(): void {
     const { file, view, problems } = this.state.getState();
     if (!file || !view || problems.length > 0) return;
     if (this.#runKey(file, view) !== this.#runRequest) this.refresh();
+    // The Layouts draw from the records, so a new list of them redraws.
+    else
+      this.state.setState(({ results }) => ({
+        results: results && { ...results, records: [...results.records] },
+      }));
   }
 
   /**

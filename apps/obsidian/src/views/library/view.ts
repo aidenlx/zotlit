@@ -312,6 +312,16 @@ export class LibraryView extends ItemView {
         cardEl.hidden = key === null;
       }),
     );
+    // A selected row that leaves the list takes its selection with it, so
+    // the Reading Card never shows an Item the list does not hold.
+    this.query.register(
+      this.query.state.subscribe(({ phase, results }) => {
+        const { key } = this.selection.getState();
+        if (phase !== "ready" || key === null) return;
+        if (!results?.rows.some((row) => row.indexedKey === key))
+          this.selection.setState({ key: null });
+      }),
+    );
     // A Literature Note added or removed changes what the vault answers.
     this.query.register(
       this.#deps.literatureNotes.on("changed", () => {
@@ -399,10 +409,11 @@ export class LibraryView extends ItemView {
   /**
    * Show the Item `indexedKey` selected, in its first Collection, or in its
    * Library where it is filed in none. A search or a Reading State facet
-   * that may leave the Item out is cleared. It shows nothing where the list
-   * does not hold it.
+   * that may leave the Item out is cleared.
+   * @returns `"not-listed"` where the list does not hold the Item, as past
+   * its row limit: nothing is selected, and the caller says so.
    */
-  async reveal(indexedKey: string): Promise<void> {
+  async reveal(indexedKey: string): Promise<"listed" | "not-listed"> {
     await this.#deps.settings.loaded;
     const node = await this.#itemNode(indexedKey);
     if (this.tree.store.getState().facets.length > 0) this.#filter([]);
@@ -412,7 +423,9 @@ export class LibraryView extends ItemView {
     await this.searched;
     await this.query.settled;
     const row = this.#selectedRow();
-    if (row) this.#focus(row);
+    if (!row) return "not-listed";
+    this.#focus(row);
+    return "listed";
   }
 
   /** The node of the Item's first Collection, or of its Library. */

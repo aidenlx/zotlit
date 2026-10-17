@@ -466,6 +466,15 @@
   "library_view_tree_label": "文库",
   "library_view_recent": "最近",
   "library_view_recent_edited_in_zotero": "在 Zotero 中编辑",
+  "library_view_reveal_not_listed": [
+    {
+      "declarations": ["input limit", "local formatted = limit: number"],
+      "selectors": ["formatted"],
+      "match": {
+        "formatted=*": "列表只显示前 {formatted} 篇文献，此文献不在其中。搜索其标题即可显示。"
+      }
+    }
+  ],
   "library_view_facets_label": "仅显示",
   "library_view_facet_unread": "未读",
   "library_view_facet_annotated": "有批注",

@@ -5,7 +5,9 @@ import { addIcon } from "obsidian";
 import type { App, Plugin } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { BaseNotice } from "@/lib/notice";
 
+import { LIBRARY_VIEW_ROW_LIMIT } from "./document";
 import { ZOTLIT_MARK_ICON, ZOTLIT_MARK_SVG } from "./icon";
 import { LIBRARY_VIEW_TYPE, LibraryView } from "./view";
 import type { LibraryViewDeps } from "./view";
@@ -66,5 +68,9 @@ export async function showInLibrary(
   app: App,
   indexedKey: string,
 ): Promise<void> {
-  await (await openLibraryView(app))?.reveal(indexedKey);
+  const view = await openLibraryView(app);
+  if ((await view?.reveal(indexedKey)) === "not-listed")
+    new BaseNotice(
+      m.library_view_reveal_not_listed({ limit: LIBRARY_VIEW_ROW_LIMIT }),
+    );
 }

@@ -241,14 +241,18 @@ function answer(
           ...fields,
         },
       }));
+    // The engine returns at most `limit` rows, and counts every match.
+    const returned =
+      request.limit == null ? rows : rows.slice(0, request.limit);
     return requested(
       {
         kind: "result",
         result: {
           ...EMPTY.result,
-          returnedCount: rows.length,
+          returnedCount: returned.length,
           matchedCount: rows.length,
-          rows,
+          truncated: returned.length < rows.length,
+          rows: returned,
         },
       },
       request,
@@ -1284,7 +1288,9 @@ it("lists the row's actions in its menu, which other plugins add to", async () =
 it("shows an Item in its first Collection, selected", async () => {
   const { deps, run } = pluginData();
   const view = await openTab(deps);
-  await act(() => view.reveal(A));
+  await act(async () => {
+    await view.reveal(A);
+  });
   // A is filed in Chapter 1 and Chapter 2 of Thesis; Chapter 1 comes first.
   expect(listRuns(run).at(-1)).toMatchObject({
     libraries: { mode: "selected", libraries: [PERSONAL] },
@@ -1300,7 +1306,9 @@ it("turns the Reading State facets off to show an Item they leave out", async ()
   // A has Annotations, so Unread leaves it out.
   await press(view, facet(view, "unread"));
   await press(view, facet(view, "pdf"));
-  await act(() => view.reveal(A));
+  await act(async () => {
+    await view.reveal(A);
+  });
   expect(listRuns(run).at(-1)).toMatchObject({
     filter: 'collections.within("Thesis/Chapter 1")',
   });
@@ -1311,11 +1319,35 @@ it("turns the Reading State facets off to show an Item they leave out", async ()
   expect(settings.current?.["library.document"]?.facets).toEqual([]);
 });
 
+it("says it cannot show an Item past the rows the list holds, and selects nothing", async () => {
+  const { deps, change } = pluginData();
+  // A thousand Items of My Library come before the one revealed.
+  const octal = (n: number) =>
+    [...n.toString(8).padStart(6, "0")]
+      .map((digit) => "ABCDEFGH"[Number(digit)])
+      .join("");
+  const many = Array.from({ length: 1000 }, (_, n) => ({
+    key: `ZZ${octal(n)}`,
+    libraryID: 1,
+    collections: [] as string[],
+  }));
+  change([...many, { key: "YYYYYYYY", libraryID: 1, collections: [] }]);
+  const view = await openTab(deps);
+  let outcome: unknown;
+  await act(async () => {
+    outcome = await view.reveal("YYYYYYYY");
+  });
+  expect(outcome).toBe("not-listed");
+  expect(view.selection.getState().key).toBeNull();
+});
+
 it("shows an Item filed in no Collection in its Library", async () => {
   const { deps, run } = pluginData();
   const view = await openTab(deps);
   await press(view, row(view, THESIS));
-  await act(() => view.reveal("EEEEEEEE"));
+  await act(async () => {
+    await view.reveal("EEEEEEEE");
+  });
   expect(listRuns(run).at(-1)!.libraries).toEqual({
     mode: "selected",
     libraries: [PERSONAL],
@@ -1601,6 +1633,36 @@ it("asks the database nothing from the search box while Zotero's data folder is 
   });
   expect(searches.at(-1)).toEqual({ query: "figures", libraries: [1] });
   expect(shown(view)).toEqual(["DDDDDDDD", "CCCCCCCC", "AAAAAAAA"]);
+});
+
+it("lets go of the selected row once a search leaves it out, and hides its Reading Card", async () => {
+  const { deps } = pluginData();
+  const view = await openTab(deps);
+  await act(() => itemRow(view, A).click());
+  expect(view.selection.getState().key).toBe(A);
+  await type(view, "attention");
+  expect(itemRows(view)).toEqual([B]);
+  expect(view.selection.getState().key).toBeNull();
+  expect(
+    view.contentEl.querySelector("[data-library-card]")!.hasAttribute("hidden"),
+  ).toBe(true);
+});
+
+it("draws each row without Recent's reason once My Library is picked, where Recent reads My Library alone", async () => {
+  const { deps, rescope } = pluginData();
+  const view = await openTab(deps);
+  await act(async () => {
+    rescope(LIBRARIES.slice(0, 1));
+    await view.searched;
+    await view.query.settled;
+  });
+  const reasons = () =>
+    [...view.contentEl.querySelectorAll("[data-query-papers-state]")].filter(
+      (el) => el.textContent?.includes("edited in Zotero"),
+    ).length;
+  expect(reasons()).toBe(5);
+  await press(view, row(view, MY_LIBRARY));
+  expect(reasons()).toBe(0);
 });
 
 describe("Reading Card", () => {
