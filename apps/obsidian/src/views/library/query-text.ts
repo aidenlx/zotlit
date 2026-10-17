@@ -9,7 +9,10 @@
 import type { FilterTree } from "@zotlit/filter-expression";
 import { nameDictionary } from "@zotlit/item-query";
 
-import type { LibraryScope } from "@/services/library-scope/scope";
+import type {
+  LibraryScope,
+  LibrarySelector,
+} from "@/services/library-scope/scope";
 import {
   parseQueryFile,
   serializeQueryFile,
@@ -21,6 +24,7 @@ import type {
   LibraryViewDocument,
   ReadingStateFacet,
 } from "./document";
+import { searchTerms } from "./search";
 
 /** The names the derived text shows: its view's name and two Display Names. */
 export interface LibraryViewLabels {
@@ -75,16 +79,26 @@ const FACETS: Readonly<
 
 /**
  * The query of `doc`.
- * @param keys the ranked Indexed Keys that the search of `doc.search` found;
- * absent while the view browses.
+ * @param keys the ranked Indexed Keys that the words of `doc.search` found;
+ * absent while the view browses, and for a search of tags alone.
+ * @param everywhere the Libraries a search of all libraries reads, in place
+ * of the tree node; absent while the search keeps to the node.
  */
 export function libraryViewQuery(
   doc: LibraryViewDocument,
-  { labels, keys }: { labels: LibraryViewLabels; keys?: readonly string[] },
+  {
+    labels,
+    keys,
+    everywhere,
+  }: {
+    labels: LibraryViewLabels;
+    keys?: readonly string[];
+    everywhere?: readonly LibrarySelector[];
+  },
 ): LibraryViewQuery {
   const { node } = doc;
   const filters: string[] = [];
-  if (node.kind === "collection")
+  if (node.kind === "collection" && everywhere === undefined)
     filters.push(`collections.within(${JSON.stringify(node.path.join("/"))})`);
   const vault: VaultCondition[] = [];
   for (const facet of doc.facets) {
@@ -96,6 +110,8 @@ export function libraryViewQuery(
     filters.push(
       `[${keys.map((key) => JSON.stringify(key)).join(", ")}].contains(indexedKey)`,
     );
+  for (const tag of searchTerms(doc.search).tags)
+    filters.push(`tags.contains(${JSON.stringify(tag)})`);
   const text = serializeQueryFile({
     ...(filters.length > 0 && { filters: filterTree(filters) }),
     properties: nameDictionary(
@@ -121,7 +137,10 @@ export function libraryViewQuery(
   });
   return {
     text,
-    libraries: { mode: "selected", libraries: [node.library] },
+    libraries: {
+      mode: "selected",
+      libraries: everywhere ? [...everywhere] : [node.library],
+    },
     rank: keys ?? null,
     vault,
   };
