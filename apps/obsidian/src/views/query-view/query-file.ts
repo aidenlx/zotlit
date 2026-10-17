@@ -10,11 +10,14 @@ import { parse, stringify } from "yaml";
 
 import {
   composeFilterTree,
+  filterGroup,
   joinComposed,
+  parseExpressionAst,
   readFilterTree,
 } from "@zotlit/filter-expression";
 import type {
   ComposedFilter,
+  ExpressionNode,
   FilterLeaf,
   FilterTree,
 } from "@zotlit/filter-expression";
@@ -443,6 +446,26 @@ export function formulaName(property: string): string | null {
     : null;
 }
 
+/** The namespace of the vault properties: `vault.<name>`. */
+const VAULT_PREFIX = "vault.";
+
+/**
+ * The name after `vault.` of a vault property, as it is, which is the
+ * frontmatter key it reads; `null` for a path of another kind.
+ *
+ * @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
+ */
+export function vaultName(property: string): string | null {
+  return property.startsWith(VAULT_PREFIX)
+    ? property.slice(VAULT_PREFIX.length)
+    : null;
+}
+
+/** Whether `property` is a vault property, which ZotLit Query never reads. */
+export function isVaultProperty(property: string): boolean {
+  return vaultName(property) !== null;
+}
+
 /**
  * The file with the Formula `name` set to `text`: an existing one changes in
  * place, a new one goes after the others.
@@ -608,11 +631,11 @@ export interface ConditionIssue extends FilterLocation {
   readonly message: string;
 }
 
-/** The Filter Expression of one view's filters, with each condition's place. */
-function composeView(
+/** The filters of one view: the file's for all views of its dataset, then its own. */
+function filterSections(
   file: QueryFile,
   view: QueryFileView,
-): ComposedFilter<FilterLocation & FilterLeaf> | undefined {
+): [FilterTree, FilterSection][] {
   const sections: [FilterTree, FilterSection][] = [];
   if (
     file.filters !== undefined &&
@@ -620,19 +643,146 @@ function composeView(
   )
     sections.push([file.filters, "all"]);
   if (view.filters !== undefined) sections.push([view.filters, "view"]);
-  if (sections.length === 0) return undefined;
-  // Each section's leaves carry their section, so the joined text keeps it.
-  const parts = sections.map(([tree, section]) => {
-    const { text, leaves } = composeFilterTree(tree);
-    return { text, leaves: leaves.map((leaf) => ({ ...leaf, section })) };
+  return sections;
+}
+
+/**
+ * The conditions of a section that must each hold for every row, with their
+ * paths: the section itself where it is one condition, else the conditions
+ * of its root `and` group. A vault condition is one of these, or it is no
+ * vault condition.
+ */
+function conjuncts(tree: FilterTree): [string, readonly number[]][] {
+  if (typeof tree === "string") return [[tree, [0]]];
+  const [kind, entries] = filterGroup(tree);
+  if (kind !== "and") return [];
+  return entries.flatMap((entry, index) =>
+    typeof entry === "string"
+      ? [[entry, [index]] as [string, readonly number[]]]
+      : [],
+  );
+}
+
+/** Whether a condition reads a vault property, as `vault["reading-status"]` or `vault.rating`. */
+function readsVault(condition: string): boolean {
+  const { ast } = parseExpressionAst(condition);
+  return ast !== null && namesVault(ast);
+}
+
+function namesVault(node: ExpressionNode): boolean {
+  switch (node.type) {
+    case "identifier":
+      return node.name === "vault";
+    case "binary":
+      return namesVault(node.left) || namesVault(node.right);
+    case "unary":
+      return namesVault(node.operand);
+    case "call":
+      return namesVault(node.callee) || node.args.some(namesVault);
+    case "array-access":
+      return namesVault(node.object) || namesVault(node.index);
+    case "object-access":
+      return namesVault(node.object);
+    case "array":
+      return node.elements.some(namesVault);
+    case "group":
+      return namesVault(node.expression);
+    default:
+      return false;
+  }
+}
+
+/** One condition of a view's filters that reads a vault property, where the Match editor shows it. */
+export interface VaultCondition extends FilterLocation {
+  /** Its Filter Expression. */
+  readonly text: string;
+}
+
+/**
+ * The conditions of a view's filters that the vault answers: each one that
+ * reads a vault property and must hold for every row. ZotLit Query never
+ * reads them; the view plans them before it runs.
+ *
+ * @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
+ */
+export function vaultConditions(
+  file: QueryFile,
+  view: QueryFileView,
+): VaultCondition[] {
+  return filterSections(file, view).flatMap(([tree, section]) =>
+    conjuncts(tree)
+      .filter(([text]) => readsVault(text))
+      .map(([text, path]) => ({ section, path, text })),
+  );
+}
+
+/**
+ * The Filter Expression of one view's filters without its vault conditions,
+ * with each condition's place.
+ */
+function composeView(
+  file: QueryFile,
+  view: QueryFileView,
+): ComposedFilter<FilterLocation & FilterLeaf> | undefined {
+  const parts = filterSections(file, view).flatMap(([tree, section]) => {
+    const vault = new Set(
+      conjuncts(tree)
+        .filter(([text]) => readsVault(text))
+        .map(([, path]) => path.join()),
+    );
+    const engine = withoutConjuncts(tree, vault);
+    if (engine === null) return [];
+    // Each section's leaves carry their section, so the joined text keeps it.
+    const { text, leaves } = engine;
+    return [{ text, leaves: leaves.map((leaf) => ({ ...leaf, section })) }];
   });
+  if (parts.length === 0) return undefined;
   return joinComposed(parts, " && ");
 }
 
 /**
+ * `tree` composed without the conditions at `dropped` among its
+ * {@link conjuncts}, its leaves at their paths in `tree`; `null` where it
+ * keeps none.
+ */
+function withoutConjuncts(
+  tree: FilterTree,
+  dropped: ReadonlySet<string>,
+): ComposedFilter | null {
+  if (dropped.size === 0) return composeFilterTree(tree);
+  if (typeof tree === "string") return null;
+  const [, entries] = filterGroup(tree);
+  const kept = entries.flatMap((entry, index) =>
+    dropped.has(String(index))
+      ? []
+      : [
+          {
+            ...composeFilterTree(entry),
+            index,
+          },
+        ],
+  );
+  if (kept.length === 0) return null;
+  // An entry composed alone counts its paths from itself; in `tree` they
+  // sit under its index.
+  return joinComposed(
+    kept.map(({ text, leaves, index }) => ({
+      text,
+      leaves: leaves.map((leaf) => ({
+        ...leaf,
+        path:
+          typeof entries[index] === "string" ? [index] : [index, ...leaf.path],
+      })),
+    })),
+    " && ",
+  );
+}
+
+/**
  * The Filter Expression of one view: the filters for all views of its dataset
- * and the view's own filters, both of which must hold. `undefined` where
- * neither names one.
+ * and the view's own filters, both of which must hold, without the
+ * conditions that read a vault property. `undefined` where neither names
+ * one ZotLit Query reads.
  */
 export function viewFilter(
   file: QueryFile,

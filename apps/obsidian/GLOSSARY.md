@@ -473,7 +473,7 @@ The Item, and the Attachment when there is one, that a Query View is relative to
 _Avoid_: current note, scope
 
 **Property**:
-One value that a Query View can show, sort, group, filter and name for each record: a field of its Query Dataset, read by its path, a Formula Property, or the Literature Note Property.
+One value that a Query View can show, sort, group, filter and name for each record: a field of its Query Dataset, read by its path, a Formula Property, or a Vault Property.
 _Avoid_: column, field (on the view side), attribute
 
 **Visible Properties**:
@@ -484,8 +484,12 @@ _Avoid_: columns (alone), fields, shown properties
 A property of a Query File that a Formula under its top-level `formulas` key yields, named `formula.<name>`, added, edited and removed from the Properties popover. It is shown and exported like any other property; a record on which its Formula gives an Error Value shows that error in its cell. On a view whose Query Dataset cannot read its Formula, it is a problem of that view's property; a filter that reads such a Formula is a problem of that condition too.
 _Avoid_: computed property, calculated property, formula column
 
+**Vault Property**:
+A property `vault.<name>` of a view of Items: the value of the frontmatter key `<name>` on the Item's Literature Note, which the vault answers rather than ZotLit Query ([ADR 0070](docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md)). The Literature Note Property is the first of them.
+_Avoid_: note property, frontmatter column
+
 **Literature Note Property**:
-The property `vault.literatureNote` of a Table view: the Item's Literature Note, which the Note Index answers. Each Item row shows it as a link to the note, or as a button that creates the note. It shows, moves, resizes and takes a Display Name like any other property, and the Properties popover lists it as a top-level property. The Table is the Layout that shows it; Cards and List keep it in `order` for a switch back to the Table. ZotLit Query reads the other Visible Properties, which are also the columns of copy and CSV export. Sorting, grouping and filtering use the fields of the Query Dataset. A Table without `order` shows it after the default fields.
+The Vault Property `vault.literatureNote` of a Table view: the Item's Literature Note, which the Note Index answers. Each Item row shows it as a link to the note, or as a button that creates the note. It shows, moves, resizes and takes a Display Name like any other property, and the Properties popover lists it as a top-level property. The Table is the Layout that shows it; Cards and List keep it in `order` for a switch back to the Table. ZotLit Query reads the Visible Properties that are no Vault Property, which are also the columns of copy and CSV export. Sorting, grouping and filtering use the fields of the Query Dataset. A Table without `order` shows it after the default fields.
 _Avoid_: note column, Literature note column (in code)
 
 **Display Name**:

@@ -1599,6 +1599,45 @@ it("shows the Literature Note Property where the view's order places it, at the 
   expect(view.table().header).toEqual(["Title"]);
 });
 
+it("asks ZotLit Query for no vault property: none among the fields, the sort or the filter, and the view still runs", async () => {
+  const { view, el, run, settle } = await mount([
+    result([itemRow("ITEMAAAA", "Ten simple rules")]),
+  ]);
+  await act(() =>
+    view.setText(`filters:
+  and:
+    - vault["reading-status"] == "read"
+    - itemType == "book"
+views:
+  - type: table
+    name: Reading list
+    from: items
+    filters: 'vault.rating > 3'
+    sort:
+      - property: vault.reading-status
+        direction: ASC
+      - property: title
+        direction: DESC
+    order:
+      - title
+      - vault.reading-status
+      - vault.literatureNote
+`),
+  );
+  await settle();
+  expect(view.state.getState().problems).toEqual([]);
+  const request = run.mock.calls[0]![0];
+  expect(request.fields?.filter((field) => field.startsWith("vault"))).toEqual(
+    [],
+  );
+  expect(request.sort).toEqual([{ field: "title", direction: "desc" }]);
+  expect(request.filter).toBe('itemType == "book"');
+  expect(tableText(el)).toEqual([
+    ["", "Title", "vault.reading-status", "Literature note"],
+    ["", "Ten simple rules", "", "Create"],
+  ]);
+});
+
 it("expands an Item row into its Attachments, and an Attachment row into its Annotations", async () => {
   const { view, el, run, settle } = await mount([
     result([

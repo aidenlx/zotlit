@@ -6,6 +6,7 @@ import {
   allViewsDataset,
   displayName,
   locateFilterFault,
+  vaultConditions,
   newQueryFileText,
   removeFormula,
   withDisplayName,
@@ -406,6 +407,65 @@ describe("locateFilterFault", () => {
 
   it("finds no condition for a fault between conditions", () => {
     expect(locateFilterFault(file, view, at(") && ("))).toBeNull();
+  });
+});
+
+describe("vaultConditions", () => {
+  const file = parseQueryFile(`filters:
+  and:
+    - itemType == "book"
+    - vault["reading-status"] == "read"
+views:
+  - type: table
+    name: Items
+    from: items
+    filters:
+      and:
+        - or:
+            - vault.rating > 3
+            - title != null
+        - vault.rating > 3
+        - dat == 1
+`);
+  const view = file.views[0]!;
+
+  it("takes the conditions that read a vault property and must each hold apart from the filter ZotLit Query runs", () => {
+    expect(vaultConditions(file, view)).toEqual([
+      { section: "all", path: [1], text: 'vault["reading-status"] == "read"' },
+      { section: "view", path: [1], text: "vault.rating > 3" },
+    ]);
+    expect(viewFilter(file, view)).toBe(
+      '(itemType == "book") && (((vault.rating > 3) || (title != null)) && (dat == 1))',
+    );
+  });
+
+  it("finds the conditions ZotLit Query runs at their places in the filters", () => {
+    const text = viewFilter(file, view)!;
+    const at = (needle: string) => {
+      const from = text.indexOf(needle);
+      return { from, to: from + needle.length };
+    };
+    expect(locateFilterFault(file, view, at("dat"))).toEqual({
+      section: "view",
+      path: [2],
+    });
+    expect(locateFilterFault(file, view, at("title"))).toEqual({
+      section: "view",
+      path: [0, 1],
+    });
+  });
+
+  it("gives no filter to ZotLit Query when every condition reads a vault property", () => {
+    const only = parseQueryFile(`views:
+  - type: table
+    name: Items
+    from: items
+    filters: vault.rating > 3
+`);
+    expect(viewFilter(only, only.views[0]!)).toBeUndefined();
+    expect(vaultConditions(only, only.views[0]!)).toEqual([
+      { section: "view", path: [0], text: "vault.rating > 3" },
+    ]);
   });
 });
 

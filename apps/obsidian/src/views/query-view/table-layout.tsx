@@ -37,7 +37,7 @@ import { zoteroReaderUri } from "./table-readers";
 import type { ReaderTarget, TableReaders } from "./table-readers";
 import { cellText } from "./value-text";
 import type { QueryView } from "./view";
-import { useViewProperties } from "./view-properties";
+import { LITERATURE_NOTE, useViewProperties } from "./view-properties";
 import type { PropertyEntry } from "./view-properties";
 
 export const TABLE_LAYOUT: QueryLayout = {
@@ -701,8 +701,8 @@ function ItemRow({
             onToggle={() => toggle(record)}
           />
         </td>
-        {columns.map(({ path, kind }, at) => {
-          const note = kind === "literatureNote";
+        {columns.map(({ path }, at) => {
+          const note = path === LITERATURE_NOTE;
           return (
             <td
               key={path}
