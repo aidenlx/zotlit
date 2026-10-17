@@ -30,8 +30,8 @@ function workspaceFixture() {
       return active?.view instanceof MarkdownView ? active.view : null;
     },
     getMostRecentLeaf: () => active,
-    getLeavesOfType: (type: string) =>
-      open.filter((leaf) => leaf.view.getViewType() === type),
+    iterateAllLeaves: (callback: (leaf: WorkspaceLeaf) => void) =>
+      open.forEach((leaf) => callback(leaf)),
     onLayoutReady: (callback: () => void) => callback(),
     on: (
       _event: "active-leaf-change",
@@ -130,6 +130,23 @@ it("inserts a row's citation into the note active last before the Library View, 
   env.close(second);
   await env.actions.insertCitation(KEY);
   expect(first.text()).toBe("[@vaswani2017]LEFT RIGHT");
+});
+
+it("inserts into a new tab that became active before it opened its note", async () => {
+  using env = setup();
+  const earlier = env.note("Earlier.md");
+  env.activate(earlier);
+  // A new tab is active while it is empty, then opens the note.
+  const fresh = env.note("Fresh.md");
+  const view = fresh.leaf.view;
+  Object.assign(fresh.leaf, { view: { getViewType: () => "empty" } });
+  env.activate(fresh);
+  Object.assign(fresh.leaf, { view });
+  env.activate(env.library);
+
+  await env.actions.insertCitation(KEY);
+  expect(fresh.text()).toBe("[@vaswani2017]LEFT RIGHT");
+  expect(earlier.text()).toBe("LEFT RIGHT");
 });
 
 it("passes over a note in Reading view, which shows no editor, and says where it finds no note", async () => {
