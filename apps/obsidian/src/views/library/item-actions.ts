@@ -5,6 +5,7 @@
 // citation popover.
 //
 // @see apps/obsidian/docs/adr/0073-library-view-rows-act-as-quick-switcher-results.md
+import { MarkdownView } from "obsidian";
 import type { Editor, MarkdownFileInfo, PaneType } from "obsidian";
 
 import { itemSelectUri, parseIndexedKey } from "@zotlit/db";
@@ -140,11 +141,24 @@ export function itemActions(deps: ItemActionsDeps): ItemActions {
   };
 }
 
-/** The note the researcher was last in, as an annotation insert finds it. */
-function editorTarget(
-  deps: Pick<ItemActionsDeps, "app">,
-): CitationTarget | null {
-  const info = getInsertionEditor(deps.app);
+/**
+ * The note the researcher was last in: the one an annotation insert finds,
+ * else, while the Library View is the active tab, the note in Source mode
+ * or Live Preview that was active last.
+ */
+function editorTarget({
+  app,
+}: Pick<ItemActionsDeps, "app">): CitationTarget | null {
+  const info =
+    getInsertionEditor(app) ??
+    app.workspace
+      .getLeavesOfType("markdown")
+      .flatMap(({ view, activeTime }) =>
+        view instanceof MarkdownView && view.getMode() === "source"
+          ? [{ view, activeTime }]
+          : [],
+      )
+      .toSorted((a, b) => b.activeTime - a.activeTime)[0]?.view;
   if (!info?.file || !info.editor) return null;
   return { editor: info.editor, info };
 }
