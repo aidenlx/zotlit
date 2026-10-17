@@ -3607,6 +3607,23 @@ ${filters}
       expect(input()).toBeNull();
     });
 
+    it("makes the whole cell, empty or not, an edit target the keyboard reaches", async () => {
+      const { cell, input } = await editable({ frontmatter: { "A.md": {} } });
+      const target = cell("ITEMAAAA");
+
+      expect(target.getAttribute("role")).toBe("button");
+      expect(target.tabIndex).toBe(0);
+      expect(target.getAttribute("aria-label")).toBe(
+        m.query_view_vault_edit({ name: "status" }),
+      );
+      await act(() => {
+        target.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+        );
+      });
+      expect(input()?.value).toBe("");
+    });
+
     describe("on a row with no note", () => {
       it("opens the editor, empty, and creates nothing", async () => {
         const { cell, input, literatureNotes } = await editable();
@@ -3904,6 +3921,32 @@ ${order.map((path) => `      - ${path}\n`).join("")}`),
         edit("authors", ["Doe, J", "Poe, E"]),
       );
       expect(chips()).toEqual(["Doe, J", "Poe, E"]);
+    });
+
+    it("commits the list when focus leaves the editor from a chip", async () => {
+      const { cell, type, press, literatureNotes } = await typed(
+        ["vault.authors"],
+        { authors: ["Doe, J"] },
+      );
+
+      await act(() => cell("authors").click());
+      await type("Roe");
+      await press("Enter");
+      // Shift+Tab moved focus to a chip's remove button; a click outside
+      // takes it out of the editor.
+      const remove = cell("authors").querySelector<HTMLElement>(
+        '[data-query-vault-chip="Roe"] [data-query-vault-chip-remove]',
+      )!;
+      await act(() => {
+        remove.dispatchEvent(
+          new FocusEvent("focusout", { bubbles: true, relatedTarget: null }),
+        );
+      });
+
+      expect(literatureNotes.write).toHaveBeenCalledTimes(1);
+      expect(literatureNotes.write).toHaveBeenLastCalledWith(
+        edit("authors", ["Doe, J", "Roe"]),
+      );
     });
 
     it("edits each cell with the editor its own value infers, where no type is assigned", async () => {

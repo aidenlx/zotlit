@@ -6,7 +6,7 @@
 // of strings, and no value for a cleared field.
 //
 // @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
-import type { FocusEvent, KeyboardEvent, RefObject } from "react";
+import type { KeyboardEvent, RefObject } from "react";
 
 import { valueText } from "@zotlit/item-query";
 import type { ProjectionJson } from "@zotlit/item-query";
@@ -101,7 +101,10 @@ export interface VaultEditorProps {
   readonly name: string;
   readonly draft: VaultDraft;
   readonly onDraft: (draft: VaultDraft) => void;
-  /** End the edit, writing it or dropping it. */
+  /**
+   * End the edit, writing it or dropping it, on Enter or Escape. Focus that
+   * leaves the editor is the cell's to tell.
+   */
   readonly onEnd: (commit: boolean, draft: VaultDraft) => void;
   readonly inputRef: RefObject<HTMLInputElement | null>;
 }
@@ -128,12 +131,6 @@ export function VaultEditor({
       onEnd(false, draft);
     }
   };
-  const onBlur = (event: FocusEvent<HTMLInputElement>) => {
-    // Focus that moves to a chip's remove button stays in the edit.
-    const cell = event.currentTarget.closest("[data-query-vault-cell]");
-    if (cell?.contains(event.relatedTarget as Node | null)) return;
-    onEnd(true, draft);
-  };
   const field = (
     <input
       data-query-vault-input=""
@@ -147,7 +144,6 @@ export function VaultEditor({
         onDraft({ ...draft, text: event.currentTarget.value })
       }
       onKeyDown={onKeyDown}
-      onBlur={onBlur}
     />
   );
   if (!list) return field;

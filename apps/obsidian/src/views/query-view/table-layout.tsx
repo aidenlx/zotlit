@@ -713,7 +713,13 @@ function ItemRow({
           return (
             <td
               key={path}
-              className={cn(CELL, at === 0 ? FIRST : LATER, note && "zt:py-0")}
+              className={cn(
+                CELL,
+                at === 0 ? FIRST : LATER,
+                note && "zt:py-0",
+                // A vault cell fills the cell, so the whole of it edits.
+                name !== null && "zt:p-0",
+              )}
               data-sized={sizedMark(sizes, path)}
             >
               {note ? (
