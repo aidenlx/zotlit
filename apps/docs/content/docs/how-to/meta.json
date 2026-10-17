@@ -1,6 +1,7 @@
 {
   "title": "How-to guides",
   "pages": [
+    "use-library-view",
     "create-and-open-notes",
     "insert-citations",
     "review-copy-troubleshoot-references",
@@ -14,6 +15,7 @@
     "use-annotation-view",
     "use-query-files",
     "query-zotero-library",
+    "keep-zotero-and-obsidian-in-sync",
     "set-up-live-updates",
     "sync-across-devices",
     "customize-a-template",
