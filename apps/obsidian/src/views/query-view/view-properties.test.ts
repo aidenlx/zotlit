@@ -4,7 +4,8 @@ import * as m from "@/lib/i18n/generated/messages";
 
 import { DATASETS } from "./datasets";
 import { parseQueryFile } from "./query-file";
-import { LITERATURE_NOTE, fieldLabel, viewProperties } from "./view-properties";
+import { LITERATURE_NOTE } from "./query-file";
+import { fieldLabel, viewProperties } from "./view-properties";
 
 const FILE = parseQueryFile(`formulas:
   year: date.year
@@ -263,6 +264,10 @@ describe("fieldLabel", () => {
     ["colorName", "Color"],
     ["attachment.title", "Attachment title"],
     ["tags", "Tag"],
+    // ZotLit's label for a field that neither Zotero nor a dataset names.
+    ["creators", "Creators"],
+    ["date.year", "Year"],
+    ["item.creators", "Item creators"],
     // A field of the Item or the Attachment, under its parent's name.
     ["item.publicationTitle", "Item publication"],
     ["item.DOI", "Item DOI"],

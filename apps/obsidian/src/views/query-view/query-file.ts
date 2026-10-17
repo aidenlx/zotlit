@@ -38,6 +38,12 @@ export function untitledName(
   }
 }
 
+/**
+ * The path of the Literature Note Property. The vault's Note Index answers
+ * it, not ZotLit Query, so no query reads it, and only the Table shows it.
+ */
+export const LITERATURE_NOTE = "vault.literatureNote";
+
 /** The most rows a new Query File's view shows. */
 export const NEW_QUERY_FILE_LIMIT = 100;
 
@@ -593,13 +599,36 @@ export function withDisplayName(
   return withProperties(file, nameDictionary(properties));
 }
 
-/** The text of a new Query File: one Annotations view of the whole library. */
-export function newQueryFileText(viewName: string): string {
+/** The view names a new Query File writes, in the researcher's language. */
+export interface NewQueryFileNames {
+  readonly items: string;
+  readonly annotations: string;
+}
+
+/**
+ * The text of a new Query File. Its default view is a Table of the Items of
+ * the whole library, newest first, so a library without highlights still
+ * shows something; the Annotations of the whole library, grouped by Item,
+ * follow as the second view.
+ */
+export function newQueryFileText(names: NewQueryFileNames): string {
   return serializeQueryFile({
     views: [
       {
+        type: "table",
+        name: names.items,
+        from: "items",
+        // The Library View's Recent sort, which falls back to dateModified
+        // until last activity is an Item field (#1532).
+        sort: [{ property: "dateModified", direction: "DESC" }],
+        order: ["title", "creators", "date.year", LITERATURE_NOTE],
+        limit: NEW_QUERY_FILE_LIMIT,
+        problems: [],
+        source: {},
+      },
+      {
         type: "annotations",
-        name: viewName,
+        name: names.annotations,
         from: "annotations",
         groupBy: { property: "item.indexedKey", direction: "ASC" },
         limit: NEW_QUERY_FILE_LIMIT,

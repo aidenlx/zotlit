@@ -45,7 +45,7 @@ import {
   waitFor,
   WINDOW_DOCUMENTS,
 } from "./obsidian-cli.ts";
-import { PAGE } from "./page-gestures.ts";
+import { PAGE, pickQueryView } from "./page-gestures.ts";
 import type {} from "./paired-setup.ts";
 import {
   authorizationCount,
@@ -7040,6 +7040,19 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         );
       });
       const declare = `const created=${JSON.stringify(created)};`;
+
+      // The file opens on its Items; its Annotations are the second view.
+      expect(
+        await obEvalUntil(
+          vaultId!,
+          `(function(){${declare}return String(!!${tab}?.contentEl.querySelector('[data-query-view-menu]'));})()`,
+          { expected: "true", tries: 120 },
+        ),
+      ).toBe(true);
+      await obEval(
+        vaultId!,
+        `(async()=>{${PAGE}${declare}${pickQueryView(tab, m.query_file_annotations_view_name())}return true;})()`,
+      );
 
       // The tab shows the seeded Annotation's card among the library's.
       expect(

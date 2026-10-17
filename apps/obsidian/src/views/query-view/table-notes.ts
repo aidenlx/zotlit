@@ -26,7 +26,7 @@ import type { ProfileService } from "@/services/profile/service";
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
-import { LITERATURE_NOTE } from "./view-properties";
+import { LITERATURE_NOTE } from "./query-file";
 
 /** A Literature Note as the column links it. */
 export type LiteratureNoteLink = Pick<TFile, "path" | "basename">;

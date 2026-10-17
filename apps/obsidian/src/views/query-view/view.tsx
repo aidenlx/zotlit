@@ -52,6 +52,7 @@ import { ListLayout } from "./list-layout";
 import { groupOptions, sortOptions } from "./properties";
 import { PropertiesMenu } from "./properties-menu";
 import {
+  LITERATURE_NOTE,
   isVaultProperty,
   locateFilterFault,
   strandedVaultConditions,
@@ -101,7 +102,6 @@ import {
 } from "./vault-sort";
 import { ViewMenu } from "./view-menu";
 import {
-  LITERATURE_NOTE,
   unusedSettings,
   useViewProperties,
   viewProperties,

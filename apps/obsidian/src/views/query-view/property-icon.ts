@@ -5,10 +5,9 @@
 import { planPath } from "@zotlit/item-query";
 
 import { DATASETS } from "./datasets";
-import { vaultName } from "./query-file";
+import { LITERATURE_NOTE, vaultName } from "./query-file";
 import type { QueryFileDataset } from "./query-file";
 import type { VaultPropertyType } from "./table-notes";
-import { LITERATURE_NOTE } from "./view-properties";
 import type { PropertyEntry } from "./view-properties";
 
 /** The Lucide icon Obsidian draws for each property type. */

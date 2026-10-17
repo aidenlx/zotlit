@@ -28,7 +28,7 @@ import type { QueryService } from "@/services/item-query/service";
 import { useAnnotStore } from "@/views/annot-view/store";
 
 import type { QueryLayout } from "./layouts";
-import { vaultName } from "./query-file";
+import { LITERATURE_NOTE, vaultName } from "./query-file";
 import type { ColumnSizes } from "./query-file";
 import { CellContent } from "./record-rows";
 import { NO_RESULTS } from "./results";
@@ -39,7 +39,7 @@ import type { ReaderTarget, TableReaders } from "./table-readers";
 import { cellText } from "./value-text";
 import { VaultEditCell } from "./vault-cell";
 import type { QueryView } from "./view";
-import { LITERATURE_NOTE, useViewProperties } from "./view-properties";
+import { useViewProperties } from "./view-properties";
 import type { PropertyEntry } from "./view-properties";
 
 export const TABLE_LAYOUT: QueryLayout = {
