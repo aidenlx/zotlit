@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   editView,
+  LITERATURE_NOTE,
   NEW_QUERY_FILE_LIMIT,
   allViewsDataset,
   displayName,
@@ -16,11 +17,9 @@ import {
   viewFilter,
 } from "./query-file";
 
-const LABELS = {
+const NEW_FILE_NAMES = {
   items: "Items",
   annotations: "Annotations",
-  creators: "Creators",
-  year: "Year",
 };
 
 const TWO_VIEWS = `filters: item.itemType == "journalArticle"
@@ -206,7 +205,7 @@ describe("editView: order and limit", () => {
   });
 
   it("adds visible properties to a view that had none, after its other keys", () => {
-    const file = parseQueryFile(newQueryFileText(LABELS));
+    const file = parseQueryFile(newQueryFileText(NEW_FILE_NAMES));
     const updated = editView(file, file.views[1]!, { order: ["comment"] });
     expect(parseQueryFile(serializeQueryFile(updated)).views[1]).toMatchObject({
       order: ["comment"],
@@ -379,9 +378,8 @@ views:
   });
 
   it("gives no filter when the file and the view have none", () => {
-    const file = parseQueryFile(newQueryFileText(LABELS));
+    const file = parseQueryFile(newQueryFileText(NEW_FILE_NAMES));
     expect(viewFilter(file, file.views[0]!)).toBeUndefined();
-    expect(viewFilter(file, file.views[1]!)).toBeUndefined();
   });
 });
 
@@ -447,39 +445,35 @@ describe("withFilters", () => {
 });
 
 describe("newQueryFileText", () => {
-  it("opens on an Items table, newest first, with title, creators, year and the Literature Note", () => {
-    const file = parseQueryFile(newQueryFileText(LABELS));
+  it("opens on a Table of Items, newest first, with title, creators, year and the Literature Note", () => {
+    const file = parseQueryFile(newQueryFileText(NEW_FILE_NAMES));
     expect(file.problems).toEqual([]);
-    expect(file.views[0]).toEqual(
-      expect.objectContaining({
-        type: "table",
-        name: "Items",
-        from: "items",
-        sort: [{ property: "dateModified", direction: "DESC" }],
-        order: ["title", "creators", "date.year", "vault.literatureNote"],
-        limit: NEW_QUERY_FILE_LIMIT,
-        problems: [],
-      }),
-    );
+    expect(file.views[0]).toMatchObject({
+      type: "table",
+      name: "Items",
+      from: "items",
+      sort: [{ property: "dateModified", direction: "DESC" }],
+      order: ["title", "creators", "date.year", LITERATURE_NOTE],
+      limit: NEW_QUERY_FILE_LIMIT,
+      problems: [],
+    });
     expect(file.views[0]!.filters).toBeUndefined();
-    expect(displayName(file, "creators")).toBe("Creators");
-    expect(displayName(file, "date.year")).toBe("Year");
+    expect(file.properties).toBeUndefined();
   });
 
-  it("keeps the Annotations view of the whole library, grouped by Item, as the second view", () => {
-    const file = parseQueryFile(newQueryFileText(LABELS));
+  it("keeps the Annotations of the whole library, grouped by Item, as the second view", () => {
+    const file = parseQueryFile(newQueryFileText(NEW_FILE_NAMES));
     expect(file.views).toHaveLength(2);
-    expect(file.views[1]).toEqual(
-      expect.objectContaining({
-        type: "annotations",
-        name: "Annotations",
-        from: "annotations",
-        groupBy: { property: "item.indexedKey", direction: "ASC" },
-        limit: NEW_QUERY_FILE_LIMIT,
-        problems: [],
-      }),
-    );
+    expect(file.views[1]).toMatchObject({
+      type: "annotations",
+      name: "Annotations",
+      from: "annotations",
+      groupBy: { property: "item.indexedKey", direction: "ASC" },
+      limit: NEW_QUERY_FILE_LIMIT,
+      problems: [],
+    });
     expect(file.views[1]!.filters).toBeUndefined();
+    expect(file.filters).toBeUndefined();
   });
 });
 

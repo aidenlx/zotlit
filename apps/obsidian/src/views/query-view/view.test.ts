@@ -1538,7 +1538,7 @@ it("draws the List and Cards options at once, and saves them to the file", async
   );
   await settle();
   const card = el.querySelector("[data-query-row]")!;
-  expect(card.textContent).toBe("Ten simple rulesdate.year2021");
+  expect(card.textContent).toBe("Ten simple rulesYear2021");
   expect(
     el.querySelector("[data-card-size]")?.getAttribute("data-card-size"),
   ).toBe("200");

@@ -66,8 +66,9 @@ function freePath(app: App, folder: TFolder): string {
 }
 
 /**
- * Create a Query File in `folder` that opens on an Items table of the whole
- * library, with an Annotations view second, and open it. A Cmd/Ctrl press opens it in a new tab.
+ * Create a Query File in `folder` that opens on a Table of the library's
+ * Items, with its Annotations as a second view, and open it. A Cmd/Ctrl press
+ * opens it in a new tab.
  */
 export async function createQueryFile(
   app: App,
@@ -79,8 +80,6 @@ export async function createQueryFile(
     newQueryFileText({
       items: m.query_file_items_view_name(),
       annotations: m.query_file_annotations_view_name(),
-      creators: m.query_file_creators_property(),
-      year: m.query_file_year_property(),
     }),
   );
   const leaf = app.workspace.getLeaf(event ? Keymap.isModEvent(event) : false);

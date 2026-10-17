@@ -166,11 +166,6 @@ The display name shows in every view of the file: the Table header, the Cards la
 A query file that you [create from the command palette or the file explorer](/docs/how-to/use-query-files#create) holds this text:
 
 ```yaml
-properties:
-  creators:
-    displayName: Creators
-  date.year:
-    displayName: Year
 views:
   - type: table
     name: Items
@@ -193,7 +188,7 @@ views:
     limit: 100
 ```
 
-The first view is the default view: a table of every item, newest first by the date it last changed in Zotero. The second view shows every annotation, grouped by item. With Obsidian in another language, the view names and the display names are in that language.
+ZotLit writes the view names in the app's language.
 
 ## See also
 
