@@ -105,7 +105,7 @@
         },
         "citationKey": {
           "type": ["string", "null"],
-          "description": "Citation key, from Better BibTeX or Zotero's native citation key."
+          "description": "Citation key, from Zotero's native citation key field, where Better BibTeX writes the keys it generates."
         },
         "citekey": {
           "type": ["string", "null"],
