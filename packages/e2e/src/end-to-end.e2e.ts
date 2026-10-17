@@ -1890,6 +1890,224 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
   }, 180000);
 
+  it("answers the quick switcher's keys on a Library View row, lists its actions in a menu other plugins add to, inserts its citation by menu and by drag, and shows it in the Library View from the quick switcher, with Zotero closed", async () => {
+    const services = "app.plugins.plugins.zotlit.services";
+    const snapshot = await obEval(
+      vaultId,
+      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null})`,
+    );
+    const created: string[] = [];
+    const notePath = "Library row citations.md";
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'library.document':saved.document});await settings.flush();for(const path of ${JSON.stringify(created)}.concat(${JSON.stringify(notePath)})){const file=app.vault.getFileByPath(path);if(file)await app.vault.delete(file);}await app.workspace.changeLayout(saved.layout);return true;})()`,
+      );
+    });
+
+    // The seed's oracle: an Item with its Literature Note and one PDF, an
+    // Item with no Literature Note that two Profiles fit, and an Item filed
+    // in one subcollection.
+    const reading = annotationItem;
+    const readingPdf = ATTACHMENTS.filter(
+      ({ parentItemID }) => parentItemID === reading.itemID,
+    );
+    expect(readingPdf.map(({ key }) => key)).toEqual([
+      annotationAttachment.key,
+    ]);
+    const unwritten = booksProfileTargetItem;
+    const unwrittenGroup = LIBRARIES.find(
+      ({ libraryID }) => libraryID === unwritten.libraryID,
+    )!.groupID!;
+    const unwrittenKey = `${unwritten.key}g${unwrittenGroup}`;
+    const child = COLLECTIONS.find(({ key }) => key === "PERSCHLD")!;
+    const parent = COLLECTIONS.find(
+      ({ collectionID }) => collectionID === child.parentCollectionID,
+    )!;
+    const filed = ITEMS.find(
+      (item) =>
+        item.libraryID === child.libraryID &&
+        item.collectionIDs.length === 1 &&
+        item.collectionIDs[0] === child.collectionID,
+    )!;
+
+    // The Library View on My Library, and beside it a note to cite into.
+    await obEval(
+      vaultId,
+      `(async()=>{${PAGE}app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=${services}.settings;settings.update({'library.document':null});await settings.flush();const file=app.vault.getFileByPath(${JSON.stringify(notePath)})??await app.vault.create(${JSON.stringify(notePath)},'LEFT RIGHT');app.commands.executeCommandById('zotlit:open-library-view');await until('library',()=>app.workspace.getLeavesOfType('zotlit-library')[0]);await app.workspace.getLeaf('split').openFile(file);return true;})()`,
+    );
+    /** Run `script` with the Library View's tab active and `el` its content. */
+    const inLibrary = (script: string) =>
+      obEval(
+        vaultId,
+        `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];await app.workspace.revealLeaf(leaf);app.workspace.setActiveLeaf(leaf,{focus:true});await leaf.view.query.settled;const el=leaf.view.contentEl;const row=key=>el.querySelector('[data-query-item-row="'+key+'"]');const keydown=(target,init)=>target.dispatchEvent(new KeyboardEvent('keydown',{bubbles:true,cancelable:true,...init}));${script}})()`,
+      );
+    /** The active tab: its view type, its file, and the file's Zotero key. */
+    const active = async () =>
+      JSON.parse(
+        await obEval(
+          vaultId,
+          "(()=>{const view=app.workspace.activeLeaf?.view;const file=view?.file??null;return JSON.stringify({type:view?.getViewType()??null,path:file?.path??null,key:file?app.metadataCache.getFileCache(file)?.frontmatter?.['zotero-key']??null:null});})()",
+        ),
+      ) as { type: string | null; path: string | null; key: string | null };
+    const activeWhen = async (
+      ready: (shown: Awaited<ReturnType<typeof active>>) => boolean,
+    ) => {
+      let shown: Awaited<ReturnType<typeof active>> | null = null;
+      const settled = await waitFor(async () => {
+        shown = await active();
+        return ready(shown);
+      }, 60);
+      if (!settled) throw new Error(`Active tab: ${JSON.stringify(shown)}`);
+      return shown!;
+    };
+    /** The selected row's key, waiting until a row of the list is drawn. */
+    const selected = () =>
+      inLibrary(
+        `await until('rows',()=>el.querySelector('[data-query-item-row]'),10000);return el.querySelector('[data-query-item-row][data-selected]')?.getAttribute('data-query-item-row')??'none'`,
+      );
+
+    // A click selects a row and opens nothing; ↓ moves the selection to the
+    // next row on screen.
+    const { next } = JSON.parse(
+      await inLibrary(
+        `await until('rows',()=>row(${JSON.stringify(reading.key)}),10000);press(row(${JSON.stringify(reading.key)}),'reading row');const keys=[...el.querySelectorAll('[data-query-item-row]')].map(n=>n.getAttribute('data-query-item-row'));keydown(row(${JSON.stringify(reading.key)}),{key:'ArrowDown'});return JSON.stringify({next:keys[keys.indexOf(${JSON.stringify(reading.key)})+1]})`,
+      ),
+    ) as { next: string };
+    expect(await selected()).toBe(next);
+    expect((await active()).type).toBe("zotlit-library");
+
+    // Enter opens the Item's Literature Note; Shift+Enter its PDF in
+    // Obsidian.
+    await inLibrary(
+      `press(row(${JSON.stringify(reading.key)}),'reading row');keydown(row(${JSON.stringify(reading.key)}),{key:'Enter'});return true`,
+    );
+    expect(
+      await activeWhen((shown) => shown.type === "markdown"),
+    ).toMatchObject({ key: reading.key });
+    await inLibrary(
+      `press(row(${JSON.stringify(reading.key)}),'reading row');keydown(row(${JSON.stringify(reading.key)}),{key:'Enter',shiftKey:true});return true`,
+    );
+    expect(await activeWhen((shown) => shown.type === "pdf")).toMatchObject({
+      path: annotationAttachment.path,
+    });
+
+    // On an Item with no Literature Note, Enter writes one through the
+    // Profile selection, as the quick switcher does.
+    await inLibrary(
+      `const groupNode=[...el.querySelectorAll('[data-library-node]')].find(n=>n.getAttribute('data-library-node')===${JSON.stringify(JSON.stringify([`group:${unwrittenGroup}`]))});if(!groupNode.checkVisibility())press(el.querySelector('[data-library-tree-toggle]'),'tree toggle');press(groupNode,'group library');await until('group rows',()=>row(${JSON.stringify(unwrittenKey)}),10000);press(row(${JSON.stringify(unwrittenKey)}),'unwritten row');keydown(row(${JSON.stringify(unwrittenKey)}),{key:'Enter'});return true`,
+    );
+    // The picker reads every Profile's preview before it shows.
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(Array.from(activeDocument.querySelectorAll('.prompt .suggestion-item')).some(el=>el.textContent.includes(${JSON.stringify(booksProfile.label)})))`,
+        { expected: "true", tries: 120 },
+      ),
+    ).toBe(true);
+    expect(await selectSuggestion(vaultId, booksProfile.label)).toContain(
+      booksProfile.label,
+    );
+    await obEval(
+      vaultId,
+      "Array.from(activeDocument.querySelectorAll('.prompt')).at(-1).querySelector('input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
+    );
+    const written = await activeWhen(
+      (shown) => shown.type === "markdown" && shown.key === unwrittenKey,
+    );
+    created.push(written.path!);
+    expect(written.path).toMatch(/^books\//);
+
+    // The row menu lists every action of the Item, and an entry another
+    // plugin adds through `zotlit:item-menu`. The note to cite into is the
+    // one active last; the notes and the PDF opened above took the tab
+    // beside the view, so it opens again.
+    await obEval(
+      vaultId,
+      `(async()=>{const leaf=app.workspace.getLeaf('split');await leaf.openFile(app.vault.getFileByPath(${JSON.stringify(notePath)}));app.workspace.setActiveLeaf(leaf,{focus:true});leaf.view.editor.setCursor({line:0,ch:'LEFT '.length});return true;})()`,
+    );
+    const menu = JSON.parse(
+      await inLibrary(
+        `const ref=app.workspace.on('zotlit:item-menu',(menu,info)=>menu.addItem(item=>item.setTitle('Listener: '+info.source+' '+info.indexedKey).setIcon('star')));try{const target=row(${JSON.stringify(unwrittenKey)});const r=target.getBoundingClientRect();target.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:r.left+20,clientY:r.top+10}));const menu=await until('row menu',()=>activeDocument.querySelector('.menu'));return JSON.stringify([...menu.querySelectorAll('.menu-item')].map(item=>item.textContent));}finally{app.workspace.offref(ref);}`,
+      ),
+    ) as string[];
+    expect(menu).toEqual([
+      m.library_view_menu_open_pdf(),
+      m.library_view_menu_open_pdf_right(),
+      m.library_view_menu_open_note(),
+      m.library_view_menu_insert_citation(),
+      m.graph_citations_menu_copy_citekey(),
+      m.library_view_menu_show_in_zotero(),
+      `Listener: library-view ${unwrittenKey}`,
+    ]);
+
+    // Insert citation puts the Item's citation into the note last active.
+    await inLibrary(
+      `press([...activeDocument.querySelectorAll('.menu .menu-item')].find(item=>item.textContent===${JSON.stringify(m.library_view_menu_insert_citation())}),'Insert citation');return true`,
+    );
+    const noteText = () =>
+      obEval(
+        vaultId,
+        `app.workspace.getLeavesOfType('markdown').find(leaf=>leaf.view.file?.path===${JSON.stringify(notePath)}).view.editor.getValue()`,
+      );
+    const cited = (text: string) =>
+      text.split(`@${unwritten.citationKey}`).length - 1;
+    expect(await waitFor(async () => cited(await noteText()) === 1)).toBe(true);
+    // At the cursor, between the words.
+    expect(await noteText()).toMatch(/^LEFT .+RIGHT$/);
+
+    // A row dragged over the view is refused; dropped into the note, it
+    // inserts its citation where it lands.
+    const drag = JSON.parse(
+      await inLibrary(
+        `const note=app.workspace.getLeavesOfType('markdown').find(leaf=>leaf.view.file?.path===${JSON.stringify(notePath)});const cm=note.view.editor.cm;const transfer=new DataTransfer();const source=row(${JSON.stringify(unwrittenKey)});source.dispatchEvent(new DragEvent('dragstart',{bubbles:true,cancelable:true,dataTransfer:transfer}));const over=new DragEvent('dragover',{bubbles:true,cancelable:true,dataTransfer:transfer});el.querySelector('[data-library-node]').dispatchEvent(over);const refused=over.defaultPrevented&&transfer.dropEffect==='none';const at=cm.coordsAtPos(0);cm.contentDOM.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:transfer,clientX:Math.floor(at.left+1),clientY:Math.floor((at.top+at.bottom)/2)}));source.dispatchEvent(new DragEvent('dragend',{bubbles:true}));return JSON.stringify({refused,types:[...transfer.types]});`,
+      ),
+    ) as { refused: boolean; types: string[] };
+    expect(drag).toEqual({
+      refused: true,
+      types: ["text/plain", "application/x-zotlit-item"],
+    });
+    expect(await waitFor(async () => cited(await noteText()) === 2)).toBe(true);
+    // At the start, where it landed.
+    expect(await noteText()).not.toMatch(/^LEFT/);
+
+    // "Show in Library" in the quick switcher opens the view on the Item's
+    // Collection, with its row selected.
+    await obEval(
+      vaultId,
+      `(async()=>{const leaf=app.workspace.getLeavesOfType('markdown').find(leaf=>leaf.view.file?.path===${JSON.stringify(notePath)});await app.workspace.revealLeaf(leaf);app.workspace.setActiveLeaf(leaf,{focus:true});app.commands.executeCommandById('zotlit:note-quick-switcher');return true;})()`,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        "String(!!activeDocument.querySelector('.prompt input'))",
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      `(function(){var input=activeDocument.querySelector('.prompt input');input.value=${JSON.stringify(filed.title)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+    );
+    await selectSuggestion(vaultId, filed.title);
+    await obEval(
+      vaultId,
+      "activeDocument.querySelector('.prompt input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,altKey:true,bubbles:true}));true",
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(app.workspace.activeLeaf?.view!==view)return 'not active';await view.query.settled;const el=view.contentEl;return JSON.stringify({node:el.querySelector('[data-library-node][aria-selected=true]')?.getAttribute('data-library-node'),row:el.querySelector('[data-query-item-row][data-selected]')?.getAttribute('data-query-item-row')});})()`,
+        {
+          expected: JSON.stringify({
+            node: JSON.stringify(["personal", parent.name, child.name]),
+            row: filed.key,
+          }),
+        },
+      ),
+    ).toBe(true);
+  }, 180000);
+
   it("shows a Query File toolbar as icons with tooltips on a narrow pane, and with names on a wide one", async () => {
     const layout = await obEval(
       vaultId,
