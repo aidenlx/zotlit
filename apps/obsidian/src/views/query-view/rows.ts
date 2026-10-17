@@ -2,6 +2,8 @@
 // order, and, for a grouped view, gathered under one heading per group. A row
 // with several values of a list path, such as two tags, stands in each of
 // their groups.
+import { compareStrings } from "@zotlit/item-query";
+
 import type { QueryViewRow } from "@/services/item-query/query-view";
 import type { LayoutRow } from "@/views/annot-view/layout";
 
@@ -38,15 +40,6 @@ export interface LayoutRows {
   /** The rows shown, each once however many groups it stands in. */
   count: number;
 }
-
-/** The string order of ZotLit Query, so groups order as its sort does. */
-export const COLLATOR = new Intl.Collator("en", {
-  usage: "sort",
-  sensitivity: "variant",
-  numeric: false,
-  caseFirst: "false",
-  ignorePunctuation: false,
-});
 
 /**
  * The rows the layout shows. Groups order by the name each one shows under,
@@ -90,8 +83,9 @@ export function layoutRows(
     .sort(
       (a, b) =>
         sign *
-        (COLLATOR.compare(groups.get(a)!.label, groups.get(b)!.label) ||
-          COLLATOR.compare(a!, b!)),
+        // The string order of ZotLit Query, so groups order as its sort does.
+        (compareStrings(groups.get(a)!.label, groups.get(b)!.label) ||
+          compareStrings(a!, b!)),
     );
   if (groups.has(null)) order.push(null);
   let hidden: QueryFileGroupValue[] = [];

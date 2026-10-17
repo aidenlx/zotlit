@@ -43,6 +43,7 @@ import { annotationVocabulary } from "./record-vocabularies";
 import { attachmentVocabulary } from "./record-vocabularies";
 import { noteVocabulary } from "./record-vocabularies";
 import type { ProjectionValue } from "./request";
+import type { ProjectionJson } from "./value-text";
 
 /**
  * One Item while the engine reads it: its scan row and the values hydration
@@ -125,6 +126,12 @@ export interface FieldDefinition<Item = QueryItem, Needs = FieldNeeds> {
    * `accessDate` at its start in the query time zone.
    */
   readonly sortKey?: (item: Item, clock: QueryClock) => SortKey;
+  /**
+   * Present on a Sortable Field whose sort key is another value than the one
+   * it projects: the key, from the projected value. {@link sortKey} reads
+   * the key through it, so the two cannot differ.
+   */
+  readonly valueSortKey?: (value: ProjectionJson) => SortKey;
   /**
    * Present on a field that a Filter Expression can read. Hydration loads
    * `needs([])` before it runs.
@@ -221,7 +228,8 @@ function zoteroField(name: string): FieldDefinition {
     shape: DATE_SHAPE,
     needs: () => ({ builtIn }),
     read: (item) => dateValue(read(item)),
-    sortKey: (item) => firstDay(read(item)),
+    sortKey: (item) => firstDay(dateValue(read(item)) as ProjectionJson),
+    valueSortKey: firstDay,
     // A calendar date at the precision the Item gives.
     filter: {
       type: "date",
@@ -279,17 +287,37 @@ function dateValue(raw: string | null): ProjectionValue {
 }
 
 /**
- * The first day a Zotero date can mean, as the number `yyyymmdd`: a year sorts
- * as its 1 January. `null` for a date without a year and for no date.
+ * The first day a Zotero date, as {@link dateValue} gives it, can mean, as
+ * the number `yyyymmdd`: a year sorts as its 1 January. `null` for a date
+ * without a year and for no date.
  */
-function firstDay(raw: string | null): SortKey {
-  const date = parseItemDate(raw);
-  if (!date || date.year === null) return null;
+function firstDay(date: ProjectionJson): SortKey {
+  if (!isJsonRecord(date) || typeof date.year !== "number") return null;
   return dayKey({
     year: date.year,
-    month: date.month ?? 1,
-    day: date.day ?? 1,
+    month: typeof date.month === "number" ? date.month : 1,
+    day: typeof date.day === "number" ? date.day : 1,
   });
+}
+
+function isJsonRecord(
+  value: ProjectionJson,
+): value is { readonly [key: string]: ProjectionJson } {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * The key the engine sorts the Sortable Field `name` by, from the value it
+ * projects for a record: two records tie on the field where their keys are
+ * equal, though their values may show differently, as the dates `2024` and
+ * `2024-01-01` do. A key the Query Clock places, as a calendar-day
+ * `accessDate`'s, is the projected value itself.
+ */
+export function projectedSortKey(name: string, value: ProjectionJson): SortKey {
+  const definition = FIELDS.get(name);
+  if (definition?.valueSortKey) return definition.valueSortKey(value);
+  if (value === null || typeof value !== "object") return value;
+  return JSON.stringify(value);
 }
 
 /** The shape of the value of one custom field. */
@@ -382,6 +410,20 @@ function firstAuthor(item: QueryItem): HydratedCreator | undefined {
   return undefined;
 }
 
+/**
+ * A Creator, as {@link templateCreator} gives it, as it sorts: the family
+ * name then the given name; a one-field name sorts as a family.
+ */
+function creatorSortKey(creator: ProjectionJson): SortKey {
+  if (!isJsonRecord(creator)) return null;
+  const { family, given, literal } = creator;
+  if (typeof literal === "string") return literal;
+  if (typeof family !== "string") return null;
+  return typeof given === "string" && given !== ""
+    ? `${family}, ${given}`
+    : family;
+}
+
 const CREATOR_NEEDS = (): FieldNeeds => ({ relations: ["creators"] });
 
 const firstAuthorField: FieldDefinition = {
@@ -391,13 +433,13 @@ const firstAuthorField: FieldDefinition = {
     const creator = firstAuthor(item);
     return creator ? templateCreator(creator) : null;
   },
-  // The family name then the given name; a one-field name sorts as a family.
   sortKey: (item) => {
     const creator = firstAuthor(item);
-    if (!creator) return null;
-    if (isOneFieldName(creator) || !creator.firstName) return creator.lastName;
-    return `${creator.lastName}, ${creator.firstName}`;
+    return creator
+      ? creatorSortKey(templateCreator(creator) as ProjectionJson)
+      : null;
   },
+  valueSortKey: creatorSortKey,
   filter: {
     type: "record",
     read: (item) => {

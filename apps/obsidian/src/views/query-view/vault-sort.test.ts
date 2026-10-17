@@ -117,6 +117,40 @@ describe("sortByVault", () => {
     ]);
   });
 
+  it("breaks a tie of the engine's sort key with the vault property, where the dates show differently", () => {
+    // `2024` sorts as its 1 January in the engine, so it ties `2024-01-01`.
+    const date = (raw: string, month: number | null, day: number | null) =>
+      ({
+        kind: day === null ? "year" : "day",
+        value: raw,
+        year: 2024,
+        month,
+        day,
+        text: null,
+        raw,
+      }) as QueryViewValue;
+    const rows = [
+      item("ITEMAAAA", { date: date("2024", null, null) }),
+      item("ITEMBBBB", { date: date("2024-01-01", 1, 1) }),
+      item("ITEMCCCC", { date: date("2024-02-01", 2, 1) }),
+    ];
+    const sort: QueryFileSort[] = [
+      { property: "date", direction: "ASC" },
+      { property: "vault.rating", direction: "ASC" },
+    ];
+    const rating = reader({
+      ITEMAAAA: { rating: 5 },
+      ITEMBBBB: { rating: 1 },
+      ITEMCCCC: { rating: 0 },
+    });
+
+    expect(keys(sortByVault(rows, sort, rating))).toEqual([
+      "ITEMBBBB",
+      "ITEMAAAA",
+      "ITEMCCCC",
+    ]);
+  });
+
   it("orders a vault property then a Zotero field: the field as the engine ordered it, inside each vault value", () => {
     const sort: QueryFileSort[] = [
       { property: "vault.status", direction: "DESC" },

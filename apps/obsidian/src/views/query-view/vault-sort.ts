@@ -6,7 +6,11 @@
 // a grouped view, so `limit` still counts the rows the researcher sees.
 //
 // @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
-import { valueText } from "@zotlit/item-query";
+import {
+  compareScalars,
+  projectedSortKey,
+  valueText,
+} from "@zotlit/item-query";
 import type { ProjectionJson } from "@zotlit/item-query";
 
 import type {
@@ -22,7 +26,7 @@ import type {
   QueryFileSort,
   QueryFileView,
 } from "./query-file";
-import { COLLATOR, layoutRows } from "./rows";
+import { layoutRows } from "./rows";
 import type { LayoutRows } from "./rows";
 import type { VaultPropertyType, VaultValue } from "./table-notes";
 
@@ -56,25 +60,16 @@ function sortValue(value: VaultValue): string | number | boolean | null {
   return text === "" ? null : text;
 }
 
-/** The scalar order of ZotLit Query: booleans, numbers, strings. */
-function compareScalars(
-  a: string | number | boolean,
-  b: string | number | boolean,
-): number {
-  if (typeof a !== typeof b) return COLLATOR.compare(typeof a, typeof b);
-  if (typeof a === "string") return COLLATOR.compare(a, b as string);
-  return Number(a) - Number(b);
-}
-
 /**
  * `rows`, which come in ZotLit Query's order of the view's Zotero sort
  * fields, in the order of the view's whole `sort`. A vault property
  * compares in ZotLit Query's string order, an empty value last in both
- * directions. A Zotero field keeps ZotLit Query's own order of it, which
- * may sort by another key than the value a row shows, such as the first day
- * of a date: of two rows that tie on the sort keys before it, the one whose
- * values of the Zotero fields so far came first in ZotLit Query's rows
- * comes first. Rows that tie on every key keep ZotLit Query's order.
+ * directions. A Zotero field keeps ZotLit Query's own order of it, by the
+ * key ZotLit Query sorts it by, which may be another value than the one a
+ * row shows, such as the first day of a date: of two rows that tie on the
+ * sort keys before it, the one whose keys of the Zotero fields so far came
+ * first in ZotLit Query's rows comes first. Rows that tie on every key keep
+ * ZotLit Query's order.
  */
 export function sortByVault<R extends QueryViewRow>(
   rows: readonly R[],
@@ -83,7 +78,7 @@ export function sortByVault<R extends QueryViewRow>(
 ): R[] {
   const fields = sort.filter(({ property }) => !isVaultProperty(property));
   // The rank of each row on each Zotero field: where the run of rows that
-  // share its values of that field and the fields before it begins.
+  // share its sort keys of that field and the fields before it begins.
   const ranks = new Map<R, number[]>();
   const firsts = fields.map(() => new Map<string, number>());
   rows.forEach((row, index) => {
@@ -91,7 +86,12 @@ export function sortByVault<R extends QueryViewRow>(
     ranks.set(
       row,
       fields.map(({ property }, i) => {
-        prefix.push(row.values[property] ?? null);
+        prefix.push(
+          projectedSortKey(
+            property,
+            (row.values[property] ?? null) as ProjectionJson,
+          ),
+        );
         const key = JSON.stringify(prefix);
         if (!firsts[i]!.has(key)) firsts[i]!.set(key, index);
         return firsts[i]!.get(key)!;
