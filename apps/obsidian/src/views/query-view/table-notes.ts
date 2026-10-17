@@ -53,10 +53,12 @@ export type VaultValue =
   | { readonly note: true; readonly value: unknown };
 
 /**
- * What a write of a vault property did: `written` to the note, or nothing
- * where the Item has no Literature Note to write to.
+ * What a write of a vault property did: `written` to the note, `created`
+ * where the Item had no Literature Note, so the usual creation made one and
+ * the key was written to it, or `cancelled` where no note came of that
+ * creation, the Profile prompt cancelled, and nothing was written.
  */
-export type VaultWrite = "written" | "no-note";
+export type VaultWrite = "written" | "created" | "cancelled";
 
 /** An edit of the vault property `name` of the Item `itemKey` to `value`. */
 export interface VaultEdit {
@@ -102,7 +104,9 @@ export interface LiteratureNotes {
   /**
    * Set the vault property `name` of an Item to `value` on the note
    * {@link read} reads, through the note's editor where one has it open.
-   * Only that key changes; `null` keeps the key with no value.
+   * Only that key changes; `null` keeps the key with no value. Where the
+   * Item has no note, the usual creation makes one first, asking for a
+   * Profile when more than one fits.
    */
   write(edit: VaultEdit): Promise<VaultWrite>;
   /** Open the note; a Cmd/Ctrl press opens it in a new tab. */
@@ -164,12 +168,13 @@ export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
       return file !== null && replacedKeys(deps, file).includes(name);
     },
     write: async ({ itemKey, name, value, host }) => {
-      const file = fileOf(itemKey, host);
-      if (file === null) return "no-note";
+      const found = fileOf(itemKey, host);
+      const file = found ?? (await createNote(itemKey));
+      if (file === null) return "cancelled";
       await processLiveFrontMatter(deps.app, file, (frontmatter) => {
         frontmatter[name] = value;
       });
-      return "written";
+      return found === null ? "created" : "written";
     },
     open: (note, event) =>
       void deps.app.workspace.openLinkText(
@@ -178,15 +183,19 @@ export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
         Keymap.isModEvent(event),
       ),
     create: async (itemKey) => {
-      const { reads } = await deps.zoteroReads.ready;
-      const item = (
-        await Effect.runPromise(
-          reads.ItemsByIndexedKeys({ indexedKeys: [itemKey] }),
-        )
-      ).get(itemKey);
-      if (item) await createNoteInteractively(deps, item);
+      await createNote(itemKey);
     },
   };
+  /** The usual creation of an Item's note; `null` where none came of it. */
+  async function createNote(itemKey: string): Promise<TFile | null> {
+    const { reads } = await deps.zoteroReads.ready;
+    const item = (
+      await Effect.runPromise(
+        reads.ItemsByIndexedKeys({ indexedKeys: [itemKey] }),
+      )
+    ).get(itemKey);
+    return item ? createNoteInteractively(deps, item) : null;
+  }
 }
 
 /**
