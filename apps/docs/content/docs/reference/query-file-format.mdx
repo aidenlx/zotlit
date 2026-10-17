@@ -167,6 +167,18 @@ A query file that you [create from the command palette or the file explorer](/do
 
 ```yaml
 views:
+  - type: table
+    name: Items
+    from: items
+    sort:
+      - property: dateModified
+        direction: DESC
+    limit: 100
+    order:
+      - title
+      - creators
+      - date.year
+      - vault.literatureNote
   - type: annotations
     name: Annotations
     from: annotations
@@ -175,6 +187,8 @@ views:
       direction: ASC
     limit: 100
 ```
+
+ZotLit writes the view names in the app's language.
 
 ## See also
 
