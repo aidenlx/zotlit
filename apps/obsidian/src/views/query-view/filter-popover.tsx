@@ -68,7 +68,9 @@ const VAULT_FIELD_TYPES: Record<VaultPropertyType, FilterField["type"]> = {
   text: "text",
   multitext: "list",
   number: "number",
-  // A checkbox and a date compare as the text the frontmatter holds.
+  // A date compares as the text the frontmatter holds. A checkbox row
+  // compares a string, which never equals the boolean the frontmatter holds;
+  // `vault.done == true` written as text matches it.
   checkbox: "text",
   date: "text",
 };
