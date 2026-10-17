@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import type { App, Command } from "obsidian";
 import { expect, it, vi } from "vitest";
 

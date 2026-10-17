@@ -96,11 +96,15 @@ class WelcomeTab extends ItemView {
 
   protected override async onOpen(): Promise<void> {
     const { workspace } = this.#app;
-    // A restored tab opens while the workspace still loads its layout.
-    workspace.onLayoutReady(() => {
-      if (workspace.getLeavesOfType(LIBRARY_VIEW_TYPE).length > 0)
-        this.leaf.detach();
-      else void this.leaf.setViewState({ type: LIBRARY_VIEW_TYPE });
-    });
+    // A restored tab opens while the workspace still loads its layout, and
+    // the leaf takes no other view until this one has opened: the change
+    // waits for both.
+    workspace.onLayoutReady(() =>
+      this.contentEl.win.setTimeout(() => {
+        if (workspace.getLeavesOfType(LIBRARY_VIEW_TYPE).length > 0)
+          this.leaf.detach();
+        else void this.leaf.setViewState({ type: LIBRARY_VIEW_TYPE });
+      }),
+    );
   }
 }
