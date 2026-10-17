@@ -200,7 +200,7 @@ export type CitationInsertOutcome =
  */
 export async function resolveCitationInsert(
   deps: Pick<CitationSuggestDeps, "noteFeature" | "citationLookup">,
-  hit: SearchHit,
+  hit: Pick<SearchHit, "item">,
   variant: CitationVariant,
 ): Promise<CitationInsertOutcome> {
   const citationKey =
