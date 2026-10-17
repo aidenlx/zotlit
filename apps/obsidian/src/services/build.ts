@@ -123,6 +123,7 @@ export function buildServices(
           migrateV7: migrateV7ToV8,
           migrateV8: migrateV8ToV9,
           migrateV9: migrateV9ToV10,
+          handoff: plugin.app,
         }),
     })
     .use({

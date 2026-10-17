@@ -1432,6 +1432,29 @@ describe("SettingsService mutations", () => {
 });
 
 describe("SettingsService persistence", () => {
+  it("hands a change made just before the plugin unloads to the instance that loads next", async () => {
+    const plugin = new PluginStub();
+    const handoff = {};
+    const { service: before } = makeService({ plugin, handoff });
+    await before.ready;
+    let finishWrite!: () => void;
+    vi.spyOn(plugin, "saveData").mockImplementationOnce(
+      (data) =>
+        new Promise<void>((resolve) => {
+          finishWrite = () => {
+            plugin.__data = data;
+            resolve();
+          };
+        }),
+    );
+    before.update({ "citation.at-trigger": true });
+    before.release();
+    const { service: after } = makeService({ plugin, handoff });
+    finishWrite();
+    await after.ready;
+    expect(after.current?.["citation.at-trigger"]).toBe(true);
+  });
+
   it("save output is sparse (only overrides + version)", async () => {
     const { service, plugin } = makeService();
     await service.ready;
