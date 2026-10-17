@@ -1529,6 +1529,23 @@ it("narrows a tag: token to the Items with that tag, in the list's order", async
   expect(shown(view)).toEqual(["CCCCCCCC", "AAAAAAAA"]);
 });
 
+it("asks the search again after a database change, so a renamed Item joins its hits", async () => {
+  const { deps, change } = pluginData(ON_MY_LIBRARY);
+  const view = await openTab(deps);
+  await type(view, "figures");
+  expect(shown(view)).toEqual(["DDDDDDDD", "CCCCCCCC", "AAAAAAAA"]);
+  await act(async () => {
+    change(
+      SEED.map((item) =>
+        item.key === B ? { ...item, title: "Figures of attention" } : item,
+      ),
+    );
+    await view.searched;
+    await view.query.settled;
+  });
+  expect(shown(view)).toEqual(["DDDDDDDD", "CCCCCCCC", B, "AAAAAAAA"]);
+});
+
 it("clears the search on Escape, and lists the selected node again", async () => {
   const { deps, settings } = pluginData(ON_MY_LIBRARY);
   const view = await openTab(deps);

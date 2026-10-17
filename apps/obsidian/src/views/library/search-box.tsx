@@ -23,6 +23,7 @@ import type {
   LibrarySelector,
 } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import type { QueryViewState } from "@/views/query-view/view";
 
 import { librariesOf } from "./document";
@@ -38,6 +39,7 @@ export const LIBRARY_SEARCH_LIMIT = 500;
 
 export interface LibrarySearchDeps {
   lookup: Pick<ItemLookup, "openSession">;
+  reads: Pick<ZoteroReadsService, "on">;
   libraryScope: Pick<LibraryScopeService, "on" | "current" | "libraries">;
 }
 
@@ -105,6 +107,13 @@ export class LibrarySearch extends Component {
     this.register(
       this.#deps.libraryScope.on("changed", () => {
         if (this.store.getState().everywhere || this.onRecent) void this.run();
+      }),
+    );
+    // A changed database may rank other Items for the same words (ADR 0072).
+    this.register(
+      this.#deps.reads.on("changed", () => {
+        if (searchTerms(this.store.getState().text).words !== "")
+          void this.run();
       }),
     );
   }
