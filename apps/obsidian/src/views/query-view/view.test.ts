@@ -1831,7 +1831,7 @@ views:
     '(itemType == "book")\n&& ([].contains(indexedKey))',
   );
   expect(tableText(el)).toEqual([
-    ["", "Title", "vault.reading-status", "Literature note"],
+    ["", "Title", "reading-status", "Literature note"],
     ["", "Ten simple rules", m.query_view_vault_no_note(), "Create"],
   ]);
 });
@@ -3322,6 +3322,34 @@ describe("vault properties", () => {
     frontmatter["A.md"] = { ...frontmatter["A.md"], due: "2024-05-01" };
     await act(() => literatureNotes.emit("frontmatter-changed"));
     expect(icon("vault.due")).toBe("calendar");
+  });
+
+  it("names a vault column's header by the property name, as Bases does, with the icon of tags and aliases", async () => {
+    const { view, el, settle } = await mount(
+      [result([itemRow("ITEMAAAA", "Ten simple rules")])],
+      undefined,
+      {
+        notes: { ITEMAAAA: "A.md" },
+        frontmatter: { "A.md": { status: "read", tags: ["hci"] } },
+        types: { tags: "tags", aliases: "aliases" },
+      },
+    );
+    await act(() =>
+      view.setText(`${VAULT_FILE}      - vault.tags
+      - vault.aliases
+`),
+    );
+    await settle();
+    const header = (path: string) =>
+      el.querySelector(`[data-query-column="${path}"]`);
+    const icon = (path: string) =>
+      header(path)
+        ?.querySelector("[data-query-icon]")
+        ?.getAttribute("data-query-icon");
+
+    expect(header("vault.status")?.textContent).toBe("status");
+    expect(icon("vault.tags")).toBe("tags");
+    expect(icon("vault.aliases")).toBe("forward");
   });
 
   it("writes vault values in copy and CSV, and no text where an Item has no note", async () => {

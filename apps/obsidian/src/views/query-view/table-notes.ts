@@ -42,7 +42,16 @@ export type VaultPropertyType =
   | "number"
   | "checkbox"
   | "date"
-  | "datetime";
+  | "datetime"
+  | "tags"
+  | "aliases";
+
+/** The types whose value is a list of strings, shown as pills. */
+export const LIST_TYPES: ReadonlySet<VaultPropertyType> = new Set([
+  "multitext",
+  "tags",
+  "aliases",
+]);
 
 /** The assigned widgets a vault property takes as its type; others infer. */
 const ASSIGNABLE: ReadonlySet<string> = new Set<VaultPropertyType>([
@@ -52,6 +61,8 @@ const ASSIGNABLE: ReadonlySet<string> = new Set<VaultPropertyType>([
   "checkbox",
   "date",
   "datetime",
+  "tags",
+  "aliases",
 ]);
 
 /**
