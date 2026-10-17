@@ -32,6 +32,7 @@ import type {
   VaultHost,
   VaultPropertyType,
   VaultValue,
+  VaultWrite,
 } from "./table-notes";
 import {
   VaultChips,
@@ -125,16 +126,48 @@ export function useVaultValue({
   return JSON.parse(snapshot) as VaultValue;
 }
 
-/** The type of the vault property `name`, as it is now. */
+/**
+ * The type of the vault property `name`, as it is now: of a cell that holds
+ * `value`, where one is given.
+ */
 export function useVaultType(
   notes: Pick<LiteratureNotes, "on" | "propertyType">,
   name: string,
+  value?: unknown,
 ): VaultPropertyType {
   const subscribe = useCallback(
     (listener: () => void) => onVaultChange(notes, listener),
     [notes],
   );
-  return useSyncExternalStore(subscribe, () => notes.propertyType(name));
+  return useSyncExternalStore(subscribe, () => notes.propertyType(name, value));
+}
+
+/** Whether the note's Profile replaces the vault property, as it does now. */
+function useVaultManaged({
+  notes,
+  itemKey,
+  name,
+  host,
+}: VaultCellProps): boolean {
+  const subscribe = useCallback(
+    (listener: () => void) => onVaultChange(notes, listener),
+    [notes],
+  );
+  return useSyncExternalStore(subscribe, () =>
+    notes.managed(itemKey, name, host),
+  );
+}
+
+/** The message a write of the vault property `name` that did not land shows. */
+function unwrittenMessage(result: VaultWrite, name: string): string | null {
+  switch (result) {
+    case "cancelled":
+      return m.query_view_vault_not_written({ name });
+    case "managed":
+      return m.query_view_vault_managed_not_written({ name });
+    default:
+      return null;
+  }
 }
 
 /** One vault cell on screen. */
@@ -170,8 +203,9 @@ const logger = getLogger("QueryView");
 export function VaultEditCell(props: VaultCellProps) {
   const { notes, itemKey, name, host } = props;
   const value = useVaultValue(props);
-  const type = useVaultType(notes, name);
-  const managed = value.note && notes.managed(itemKey, name, host);
+  const current = value.note ? value.value : null;
+  const type = useVaultType(notes, name, current);
+  const managed = useVaultManaged(props) && value.note;
   const [draft, setDraft] = useState<VaultDraft | null>(null);
   // Set when Enter or Escape ends the edit, so the blur that follows the
   // field leaving the page does not end it again.
@@ -183,13 +217,12 @@ export function VaultEditCell(props: VaultCellProps) {
   }, [editing]);
   // A row with no note edits too: the first write creates the note.
   const editable = !managed;
-  const current = value.note ? value.value : null;
   const write = (next: unknown) =>
     notes
       .write({ itemKey, name, value: next, host })
       .then((result) => {
-        if (result === "cancelled")
-          new BaseNotice(m.query_view_vault_not_written({ name }));
+        const message = unwrittenMessage(result, name);
+        if (message !== null) new BaseNotice(message);
       })
       .catch((error: unknown) => {
         logger.warn("The Query View could not write a vault property", {

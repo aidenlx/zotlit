@@ -49,7 +49,7 @@ import {
   PopoverSection,
   ToolbarPopover,
 } from "./toolbar-popover";
-import { useVaultPropertyNames } from "./vault-cell";
+import { useVaultPropertyNames, useVaultVersion } from "./vault-cell";
 import type { QueryView } from "./view";
 import { useViewProperties } from "./view-properties";
 import type { ViewProperties } from "./view-properties";
@@ -372,9 +372,12 @@ export function FilterButton({ view }: { view: QueryView }) {
   const { literatureNotes } = view.tableDeps;
   const names = useVaultPropertyNames(literatureNotes);
   const properties = useViewProperties(view, names);
+  // A change of a property's type changes no name, so it is read apart.
+  const vaultVersion = useVaultVersion(literatureNotes);
   const vaultFields = useMemo(
     () => vaultFilterFields(names, literatureNotes, properties),
-    [names, literatureNotes, properties],
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- `vaultVersion` reads the types again
+    [names, literatureNotes, properties, vaultVersion],
   );
   const [values, setValues] = useState<FilterValues>(NO_VALUES);
   if (!file || !shown) return null;

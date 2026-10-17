@@ -2321,6 +2321,7 @@
   "query_view_vault_write_failed": "无法将“{name}”保存到笔记。",
   "query_view_vault_remove_item": "移除 {item}",
   "query_view_vault_not_written": "未创建笔记，因此未保存“{name}”。",
+  "query_view_vault_managed_not_written": "未保存“{name}”：笔记的配置方案会在每次更新时设置此值。",
   "query_view_table_expand": "展开",
   "query_view_table_collapse": "折叠",
   "query_view_table_loading": "正在加载…",

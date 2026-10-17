@@ -2478,6 +2478,7 @@
   "query_view_vault_write_failed": "Could not save “{name}” to the note.",
   "query_view_vault_remove_item": "Remove {item}",
   "query_view_vault_not_written": "No note was created, so “{name}” was not saved.",
+  "query_view_vault_managed_not_written": "“{name}” was not saved: the note’s profile sets it on each update.",
   "query_view_table_expand": "Expand",
   "query_view_table_collapse": "Collapse",
   "query_view_table_loading": "Loading…",

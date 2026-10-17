@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import { Effect } from "@/lib/effect";
-import * as m from "@/lib/i18n/generated/messages";
 import type { CreationProfileSelection } from "@/services/note-feature/operations";
 import { NoteIndexStub } from "@/services/note-index/test-stub";
 import { chooseLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
@@ -14,22 +13,6 @@ import { chooseLiteratureNoteProfile } from "@/views/quick-switch/profile-picker
 import { literatureNotes } from "./table-notes";
 import type { LiteratureNotesDeps } from "./table-notes";
 
-/** The text of each notice shown. */
-const notices = vi.hoisted((): string[] => []);
-vi.mock("obsidian", async (importOriginal) => {
-  const obsidian = await importOriginal<typeof import("obsidian")>();
-  return {
-    ...obsidian,
-    Notice: class extends obsidian.Notice {
-      constructor(message: string | DocumentFragment, duration?: number) {
-        super(message, duration);
-        notices.push(
-          typeof message === "string" ? message : (message.textContent ?? ""),
-        );
-      }
-    },
-  };
-});
 vi.mock("@/views/annot-view/register", () => ({
   activateAnnotView: vi.fn(),
 }));
@@ -70,6 +53,9 @@ function setup(
       }),
     },
     noteIndex,
+    profile: { on: () => () => {} },
+    template: { on: () => () => {} },
+    noteFeature: { replacedKeys: async () => new Set() },
   } as unknown as LiteratureNotesDeps;
   /** Assign `widget` to `name`, as the Properties panel does. */
   const setType = (name: string, widget: string) => {
@@ -169,6 +155,34 @@ describe("literatureNotes vault properties", () => {
     expect(notes.propertyType("stamp")).toBe("text");
   });
 
+  it("infers an unassigned type from the cell's own value, and from the column's first value for no value", () => {
+    const { notes } = setup(
+      { "A.md": { flag: true }, "B.md": { flag: "maybe" } },
+      { ITEMAAAA: [{ path: "A.md" }], ITEMBBBB: [{ path: "B.md" }] },
+    );
+
+    expect(notes.propertyType("flag", "maybe")).toBe("text");
+    expect(notes.propertyType("flag", true)).toBe("checkbox");
+    expect(notes.propertyType("flag", null)).toBe("checkbox");
+    expect(notes.propertyType("flag")).toBe("checkbox");
+  });
+
+  it("reads the property names again once the Note Index has indexed the notes", () => {
+    const names: string[] = [];
+    const { notes, noteIndex } = setup({}, {}, { names });
+    const listener = vi.fn();
+    const off = notes.on("changed", listener);
+    // A view's first render, before the Full Scan.
+    expect(notes.propertyNames()).toEqual([]);
+
+    names.push("status");
+    noteIndex.emit("indexed");
+    off();
+
+    expect(listener).toHaveBeenCalledOnce();
+    expect(notes.propertyNames()).toEqual(["status"]);
+  });
+
   it("takes the type Obsidian assigns a property over the one its values show", () => {
     const { notes } = setup(
       { "A.md": { pages: "12", due: "soon", tags2: "x", stamp: "a" } },
@@ -186,6 +200,7 @@ describe("literatureNotes vault properties", () => {
     );
 
     expect(notes.propertyType("pages")).toBe("number");
+    expect(notes.propertyType("pages", "12")).toBe("number");
     expect(notes.propertyType("due")).toBe("date");
     expect(notes.propertyType("tags2")).toBe("multitext");
     expect(notes.propertyType("stamp")).toBe("datetime");
@@ -270,34 +285,35 @@ describe("literatureNotes vault properties", () => {
 describe("literatureNotes vault property writes", () => {
   afterEach(() => {
     vi.mocked(chooseLiteratureNoteProfile).mockReset();
-    notices.length = 0;
   });
-  /** A vault of notes on disk, the Note Index over them, and Profiles that manage keys. */
+  /** A vault of notes on disk, the Note Index over them, and the keys each note's Profile replaces. */
   function vault(
     files: Record<string, string>,
     index: Record<string, { path: string }[]>,
     {
-      managed = {},
+      replaced = {},
       selection = { selector: "default", source: "bound", shouldAsk: false },
     }: {
-      /** The keys each Profile manages, by its template's name. */
-      managed?: Record<string, { key?: string; merge: string }[]>;
+      /** The keys each note's Profile replaces on each update, by path. */
+      replaced?: Record<string, string[]>;
       /** The Profile the usual creation resolves for an Item. */
       selection?: CreationProfileSelection;
     } = {},
   ) {
     const host = createObsidianHost(files);
     const noteIndex = new NoteIndexStub(index);
-    const profileOf = vi.fn((file?: TFile) => {
-      const stamp = file
-        ? host.metadataCache.getFileCache(file)?.frontmatter?.["zotlit-profile"]
-        : undefined;
-      return {
-        ok: true,
-        profile: {
-          document: stamp === undefined ? undefined : `${stamp}.md`,
-        },
-      };
+    const replacedKeys = vi.fn(
+      async (file: TFile) => new Set(replaced[file.path] ?? []),
+    );
+    const sources = {
+      profile: new Set<() => void>(),
+      template: new Set<() => void>(),
+    };
+    const source = (listeners: Set<() => void>) => ({
+      on: (_event: string, cb: () => void) => {
+        listeners.add(cb);
+        return () => listeners.delete(cb);
+      },
     });
     /** The usual creation: a note at `<key>.md`, as the Profile's template writes it. */
     const createNote = vi.fn(async (item: { indexedKey: string }) => ({
@@ -317,16 +333,8 @@ describe("literatureNotes vault property writes", () => {
         },
       },
       noteIndex,
-      profile: {
-        profileOf,
-      },
-      template: {
-        frontmatterFields: managed.legacy ?? [],
-        getLiteratureNoteTemplate: (document: string) => {
-          const entries = managed[document.replace(/\.md$/, "")];
-          return entries && { frontmatter: { compiled: entries } };
-        },
-      },
+      profile: source(sources.profile),
+      template: source(sources.template),
       zoteroReads: {
         ready: Promise.resolve({
           reads: {
@@ -351,12 +359,18 @@ describe("literatureNotes vault property writes", () => {
             create: () => createNote(item),
           },
         ],
+        replacedKeys,
       },
     } as unknown as LiteratureNotesDeps;
     return {
       host,
       noteIndex,
-      profileOf,
+      replaced,
+      replacedKeys,
+      /** Fire a change of the Profiles, or of the templates. */
+      changed: (of: "profile" | "template") => {
+        for (const cb of sources[of]) cb();
+      },
       notes: literatureNotes(deps),
       createNote,
     };
@@ -461,7 +475,44 @@ describe("literatureNotes vault property writes", () => {
     expect(host.text("ITEMAAAA.md")).toBe(
       "---\nzotero-key: ITEMAAAA\nstatus: read\n---\n",
     );
-    await vi.waitFor(() => expect(notices).toEqual([m.notice_created_note()]));
+  });
+
+  it("creates the note but writes no key its Profile replaces", async () => {
+    const { host, notes } = vault(
+      {},
+      {},
+      { replaced: { "ITEMAAAA.md": ["status"] } },
+    );
+
+    await expect(
+      notes.write({
+        itemKey: "ITEMAAAA",
+        name: "status",
+        value: "read",
+        host: null,
+      }),
+    ).resolves.toBe("managed");
+
+    expect(host.text("ITEMAAAA.md")).toBe("---\nzotero-key: ITEMAAAA\n---\n");
+  });
+
+  it("writes no key the note's Profile replaces", async () => {
+    const { host, notes } = vault(
+      { "A.md": "---\nstatus: unread\n---\n" },
+      { ITEMAAAA: [{ path: "A.md" }] },
+      { replaced: { "A.md": ["status"] } },
+    );
+
+    await expect(
+      notes.write({
+        itemKey: "ITEMAAAA",
+        name: "status",
+        value: "read",
+        host: null,
+      }),
+    ).resolves.toBe("managed");
+
+    expect(host.text("A.md")).toBe("---\nstatus: unread\n---\n");
   });
 
   describe("where several Profiles fit the Item", () => {
@@ -503,75 +554,97 @@ describe("literatureNotes vault property writes", () => {
     });
   });
 
-  it("tells a key the note's own Profile replaces from one it keeps, appends or leaves alone", () => {
+  it("tells a key the note's own Profile replaces, once its Profile is read, and says so", async () => {
     const { notes } = vault(
-      {
-        "A.md": "---\nzotlit-profile: Books\n---\n",
-        "B.md": "---\nzotlit-profile: Papers\n---\n",
-        "C.md": "---\n---\n",
-      },
-      {
-        ITEMAAAA: [{ path: "A.md" }],
-        ITEMBBBB: [{ path: "B.md" }],
-        ITEMCCCC: [{ path: "C.md" }],
-      },
-      {
-        managed: {
-          Books: [
-            { key: "status", merge: "replace" },
-            { key: "topics", merge: "append" },
-            { key: "rating", merge: "keep" },
-            { merge: "replace" },
-          ],
-          Papers: [],
-          legacy: [{ key: "rating", merge: "replace" }],
-        },
-      },
+      { "A.md": "---\n---\n", "B.md": "---\n---\n" },
+      { ITEMAAAA: [{ path: "A.md" }], ITEMBBBB: [{ path: "B.md" }] },
+      { replaced: { "A.md": ["status"] } },
     );
+    const listener = vi.fn();
+    const off = notes.on("frontmatter-changed", listener);
+
+    // A cell reads before the Profile is read, and reads again when told.
+    expect(notes.managed("ITEMAAAA", "status", null)).toBe(false);
+    await vi.waitFor(() => expect(listener).toHaveBeenCalled());
+    off();
 
     expect(notes.managed("ITEMAAAA", "status", null)).toBe(true);
-    expect(notes.managed("ITEMAAAA", "topics", null)).toBe(false);
     expect(notes.managed("ITEMAAAA", "rating", null)).toBe(false);
-    expect(notes.managed("ITEMAAAA", "other", null)).toBe(false);
     // The same key on a note of another Profile.
-    expect(notes.managed("ITEMBBBB", "status", null)).toBe(false);
-    // A note with no stamp, under the default Profile's own fields.
-    expect(notes.managed("ITEMCCCC", "rating", null)).toBe(true);
+    notes.managed("ITEMBBBB", "status", null);
+    await vi.waitFor(() =>
+      expect(notes.managed("ITEMBBBB", "status", null)).toBe(false),
+    );
     // No note: nothing manages the key.
     expect(notes.managed("ITEMDDDD", "status", null)).toBe(false);
   });
 
-  it("reads a note's Profile once until a note changes", () => {
-    const { notes, noteIndex, profileOf } = vault(
-      { "A.md": "---\nzotlit-profile: Books\n---\n" },
-      { ITEMAAAA: [{ path: "A.md" }] },
-      { managed: { Books: [{ key: "status", merge: "replace" }] } },
+  it("reads a note's Profile once, and again when that note's frontmatter changes", async () => {
+    const { notes, noteIndex, replaced, replacedKeys } = vault(
+      { "A.md": "---\n---\n", "B.md": "---\n---\n" },
+      { ITEMAAAA: [{ path: "A.md" }], ITEMBBBB: [{ path: "B.md" }] },
+      { replaced: { "A.md": ["status"] } },
     );
+    const read = async (itemKey: string) => {
+      notes.managed(itemKey, "status", null);
+      await vi.waitFor(() =>
+        expect(replacedKeys.mock.results.at(-1)?.value).toBeDefined(),
+      );
+      await replacedKeys.mock.results.at(-1)!.value;
+    };
+    await read("ITEMAAAA");
+    await read("ITEMBBBB");
     expect(notes.managed("ITEMAAAA", "status", null)).toBe(true);
     expect(notes.managed("ITEMAAAA", "rating", null)).toBe(false);
-    expect(profileOf).toHaveBeenCalledTimes(1);
+    expect(replacedKeys).toHaveBeenCalledTimes(2);
 
-    noteIndex.emit("frontmatter-changed");
-    notes.managed("ITEMAAAA", "status", null);
+    // The note's stamp names another Profile now.
+    replaced["A.md"] = [];
+    noteIndex.emit("frontmatter-changed", { path: "A.md" });
+    await read("ITEMAAAA");
 
-    expect(profileOf).toHaveBeenCalledTimes(2);
+    expect(notes.managed("ITEMAAAA", "status", null)).toBe(false);
+    // Only that note is read again.
+    notes.managed("ITEMBBBB", "status", null);
+    expect(replacedKeys).toHaveBeenCalledTimes(3);
   });
 
-  it("reads the host note's own Profile for its Item", () => {
-    const { notes } = vault(
-      {
-        "A.md": "---\nzotlit-profile: Papers\n---\n",
-        "A (copy).md": "---\nzotlit-profile: Books\n---\n",
-      },
-      { ITEMAAAA: [{ path: "A.md" }, { path: "A (copy).md" }] },
-      { managed: { Books: [{ key: "status", merge: "replace" }], Papers: [] } },
-    );
+  it.each(["profile", "template"] as const)(
+    "reads every note's Profile again when a %s changes, and says so",
+    async (of) => {
+      const { notes, replaced, changed } = vault(
+        { "A.md": "---\n---\n" },
+        { ITEMAAAA: [{ path: "A.md" }] },
+        { replaced: { "A.md": [] } },
+      );
+      notes.managed("ITEMAAAA", "status", null);
+      await vi.waitFor(() => {});
+      const listener = vi.fn();
+      const off = notes.on("frontmatter-changed", listener);
 
-    expect(
-      notes.managed("ITEMAAAA", "status", {
-        path: "A (copy).md",
-        itemKey: "ITEMAAAA",
-      }),
-    ).toBe(true);
+      // The field is set to the replace strategy.
+      replaced["A.md"] = ["status"];
+      changed(of);
+      expect(listener).toHaveBeenCalled();
+      notes.managed("ITEMAAAA", "status", null);
+      await vi.waitFor(() =>
+        expect(notes.managed("ITEMAAAA", "status", null)).toBe(true),
+      );
+      off();
+    },
+  );
+
+  it("reads the host note's own Profile for its Item", async () => {
+    const { notes } = vault(
+      { "A.md": "---\n---\n", "A (copy).md": "---\n---\n" },
+      { ITEMAAAA: [{ path: "A.md" }, { path: "A (copy).md" }] },
+      { replaced: { "A (copy).md": ["status"] } },
+    );
+    const host = { path: "A (copy).md", itemKey: "ITEMAAAA" };
+
+    notes.managed("ITEMAAAA", "status", host);
+    await vi.waitFor(() =>
+      expect(notes.managed("ITEMAAAA", "status", host)).toBe(true),
+    );
   });
 });
