@@ -162,6 +162,8 @@ async function mount(
     context = () => undefined,
     contextSource,
     creation = "created",
+    values = {},
+    notePaths = [],
   }: {
     notes?: Record<string, string>;
     /** The frontmatter of each note, by path. */
@@ -185,6 +187,10 @@ async function mount(
      * create its note at `<key>.md`, or have the Profile prompt cancelled.
      */
     creation?: "created" | "cancelled";
+    /** The values the vault holds for each property, by name. */
+    values?: Record<string, string[]>;
+    /** The notes a link reaches, by link text. */
+    notePaths?: string[];
   } = {},
 ) {
   setMockPlatform({ isMacOS: true });
@@ -251,6 +257,11 @@ async function mount(
         return "written";
       },
     ),
+    suggestions: vi.fn(
+      (name: string, _type: VaultPropertyType) => values[name] ?? [],
+    ),
+    resolves: ({ target }: { target: string }) => notePaths.includes(target),
+    openLink: vi.fn(),
     open: vi.fn(),
     create: vi.fn(async (itemKey: string) => {
       notes[itemKey] = `${itemKey}.md`;

@@ -6,7 +6,7 @@
 // that note for its own Item, whichever note the Note Index ranks first.
 //
 // @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
-import { Keymap } from "obsidian";
+import { Keymap, parseLinktext } from "obsidian";
 import type { App, TFile } from "obsidian";
 
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
@@ -18,6 +18,10 @@ import {
   assignedWidget,
   onTypesChanged,
 } from "@/lib/obsidian-private/metadata-type-manager";
+import {
+  propertyValues,
+  vaultTags,
+} from "@/lib/obsidian-private/property-values";
 import { createNoteInteractively } from "@/services/note-feature/creation-view";
 import type { InteractiveCreationDeps } from "@/services/note-feature/creation-view";
 import type { NoteFeature } from "@/services/note-feature/operations";
@@ -101,6 +105,16 @@ export interface VaultEdit {
   readonly host: VaultHost | null;
 }
 
+/**
+ * The link text `target`, held in a vault property of the Item `itemKey`,
+ * which resolves from the note {@link LiteratureNotes.read} reads.
+ */
+export interface VaultLinkRef {
+  readonly target: string;
+  readonly itemKey: string;
+  readonly host: VaultHost | null;
+}
+
 /** What the "Literature note" column and the vault properties read and do. */
 export interface LiteratureNotes {
   /** The Literature Note of an Item, by its Indexed Key; `null` where it has none. */
@@ -150,6 +164,15 @@ export interface LiteratureNotes {
    * {@link managed} tells, is not written.
    */
   write(edit: VaultEdit): Promise<VaultWrite>;
+  /**
+   * The values the vault holds for the property `name`, each once, which an
+   * edit of it suggests: the vault's tags for a property of tags.
+   */
+  suggestions(name: string, type: VaultPropertyType): readonly string[];
+  /** Whether a link in a vault property reaches a note. */
+  resolves(link: VaultLinkRef): boolean;
+  /** Open a link in a vault property; a Cmd/Ctrl press opens a new tab. */
+  openLink(link: VaultLinkRef, event: MouseEvent): void;
   /** Open the note; a Cmd/Ctrl press opens it in a new tab. */
   open(note: LiteratureNoteLink, event: MouseEvent): void;
   /** Create the Item's Literature Note, as the usual creation does. */
@@ -334,6 +357,19 @@ export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
       });
       return found === null ? "created" : "written";
     },
+    suggestions: (name, type) =>
+      type === "tags" ? vaultTags(deps.app) : propertyValues(deps.app, name),
+    resolves: ({ target, itemKey, host }) =>
+      deps.app.metadataCache.getFirstLinkpathDest(
+        parseLinktext(target).path,
+        pathOf(itemKey, host) ?? "",
+      ) !== null,
+    openLink: ({ target, itemKey, host }, event) =>
+      void deps.app.workspace.openLinkText(
+        target,
+        pathOf(itemKey, host) ?? "",
+        Keymap.isModEvent(event),
+      ),
     open: (note, event) =>
       void deps.app.workspace.openLinkText(
         note.path,
