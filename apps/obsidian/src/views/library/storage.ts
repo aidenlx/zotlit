@@ -8,7 +8,7 @@ import {
   parseLibraryViewDocument,
   serializeLibraryViewDocument,
 } from "./document";
-import type { LibraryViewDocument } from "./document";
+import type { LibraryNode, LibraryViewDocument } from "./document";
 import { documentWithText } from "./query-text";
 
 const KEY = "library.document";
@@ -16,6 +16,8 @@ const KEY = "library.document";
 export interface LibraryViewStorage extends Pick<QueryViewHost, "save"> {
   /** The document plugin data holds now. */
   document: () => LibraryViewDocument;
+  /** Keep `node` as the tree selection. Settles once plugin data holds it; rejects where the write failed. */
+  select: (node: LibraryNode) => Promise<void>;
 }
 
 export function libraryViewStorage(
@@ -30,5 +32,14 @@ export function libraryViewStorage(
         ),
     }),
     document: () => parseLibraryViewDocument(settings.current?.[KEY] ?? null),
+    select: async (node) => {
+      settings.update((current) => ({
+        [KEY]: serializeLibraryViewDocument({
+          ...parseLibraryViewDocument(current[KEY] ?? null),
+          node,
+        }),
+      }));
+      await settings.flush();
+    },
   };
 }
