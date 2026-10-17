@@ -181,6 +181,14 @@ export interface QueryViewHost {
    */
   layouts?: readonly string[];
   /**
+   * Why `row` is in the list, such as "edited in Zotero" on the Library
+   * View's Recent; the Papers reading-state line ends with it. `null`: no
+   * reason. Absent: no row gives one.
+   *
+   * @see apps/obsidian/docs/adr/0075-recent-is-a-library-tree-node-that-writes-a-sort.md
+   */
+  reason?: (row: QueryViewRow) => string | null;
+  /**
    * Writes what the view shows as a new Query File. Present: the view menu
    * of a host without views (`displayOnly`) offers "Save as query file".
    */
@@ -649,6 +657,11 @@ export class QueryView extends Component implements HistorySurface {
   /** The Layout types the host offers; `undefined` for every one. */
   get layouts(): readonly string[] | undefined {
     return this.#host.layouts;
+  }
+
+  /** Why `row` is in the list, as the host says; `null` for no reason. */
+  reason(row: QueryViewRow): string | null {
+    return this.#host.reason?.(row) ?? null;
   }
 
   /** The host's "Save as query file", for the view menu. */

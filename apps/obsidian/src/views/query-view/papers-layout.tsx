@@ -182,6 +182,7 @@ export function PapersLayout({ view }: { view: QueryView }) {
                   <PaperRow
                     key={`${row.indexedKey}\n${index}`}
                     item={item}
+                    reason={view.reason(row)}
                     notes={literatureNotes}
                     readers={readers}
                     expanded={expanded}
@@ -209,7 +210,13 @@ function PaperRow({
   readers,
   expanded,
   toggle,
-}: Expansion & { item: TableRecord; notes: LiteratureNotes }) {
+  reason,
+}: Expansion & {
+  item: TableRecord;
+  notes: LiteratureNotes;
+  /** Why the row is in the list, last on its reading-state line. */
+  reason: string | null;
+}) {
   const open = expanded.has(id(item));
   const { values } = item;
   const note = useNotePath(notes, item.key);
@@ -220,6 +227,7 @@ function PaperRow({
       ? m.query_view_papers_annotation_count({ count: annotations.length })
       : null,
     note !== null ? m.query_view_papers_has_note() : null,
+    reason,
   ].filter((part) => part !== null);
   const meta = metaText(values);
   const kind = mainAttachmentKind(values);

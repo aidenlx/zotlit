@@ -10,12 +10,14 @@ import type { WorkspaceLeaf } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import type { LibraryScope } from "@/services/library-scope/scope";
+import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { SettingsService } from "@/services/settings/service";
 import { saveAsQueryFile } from "@/views/annot-view/save-query-file";
 import { QueryView } from "@/views/query-view/view";
 import type { QueryViewDeps } from "@/views/query-view/view";
 
-import { LIBRARY_LAYOUTS } from "./document";
+import { documentWithNode, LIBRARY_LAYOUTS } from "./document";
 import type {
   LibraryNode,
   LibraryViewDocument,
@@ -39,7 +41,9 @@ export const LIBRARY_VIEW_TYPE = "zotlit-library";
 
 export interface LibraryViewDeps extends QueryViewDeps {
   settings: Pick<SettingsService, "update" | "flush" | "current" | "loaded">;
-  libraryScope: QueryViewDeps["libraryScope"] & LibraryTreeDeps["libraryScope"];
+  libraryScope: QueryViewDeps["libraryScope"] &
+    LibraryTreeDeps["libraryScope"] &
+    Pick<LibraryScopeService, "effective">;
 }
 
 export class LibraryView extends ItemView {
@@ -70,6 +74,8 @@ export class LibraryView extends ItemView {
       // Has note, and the Literature Note half of Unread, the vault answers.
       rowPass: () =>
         this.#shown && vaultPass(this.#shown.vault, deps.literatureNotes),
+      // Recent says why each row is there; the query runs once the tab set it.
+      reason: () => this.#shown!.reason,
       save: this.#storage.save,
       saveAs: () => void this.#saveAs(),
       layout: {
@@ -150,12 +156,19 @@ export class LibraryView extends ItemView {
     this.tree.showFacets(doc.facets);
     this.tree.refresh();
     this.#show(doc);
+    // Recent reads the Library Scope, so another scope lists other Items.
+    this.register(
+      this.#deps.libraryScope.on("changed", () => {
+        const current = this.#storage.document();
+        if (current.node.kind === "recent") this.#show(current);
+      }),
+    );
   }
 
   /** The researcher picked `node` in the tree: list it, and keep it. */
   #select(node: LibraryNode): void {
     this.tree.show(node);
-    this.#show({ ...this.#storage.document(), node });
+    this.#show(documentWithNode(this.#storage.document(), node));
     this.#storage.select(node).catch((error: unknown) => {
       logger.warn("The Library View could not keep the tree selection", {
         error,
@@ -174,9 +187,27 @@ export class LibraryView extends ItemView {
 
   /** Run the query of `doc`; the Libraries change apart from the text. */
   #show(doc: LibraryViewDocument): void {
-    this.#shown = libraryViewQuery(doc, { labels: labels() });
+    this.#shown = libraryViewQuery(doc, {
+      labels: labels(),
+      scope: this.#scope(),
+    });
     this.query.setText(this.#shown.text);
     this.query.contextChanged();
+  }
+
+  /**
+   * The Libraries of the Library Scope that the database holds, which Recent
+   * reads: a saved scope can name a group the database no longer has, and a
+   * request that names it fails. Where the database holds none of them, the
+   * saved scope itself, so the view says which Library is missing.
+   */
+  #scope(): LibraryScope {
+    const { current, effective } = this.#deps.libraryScope;
+    if (!current || current.available.length === 0) return effective;
+    return {
+      mode: "selected",
+      libraries: current.available.map(({ selector }) => selector),
+    };
   }
 
   /** "Save as query file": the document as it stands, once the toolbar's last change is in. */
@@ -200,5 +231,6 @@ function labels(): LibraryViewLabels {
     papers: m.library_view_papers_view_name(),
     creators: m.query_file_creators_property(),
     year: m.query_file_year_property(),
+    editedInZotero: m.library_view_recent_edited_in_zotero(),
   };
 }

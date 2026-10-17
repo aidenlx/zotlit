@@ -19,7 +19,12 @@ import type {
   QueryViewOutcome,
   QueryViewRequest,
 } from "@/services/item-query/query-view";
-import type { AvailableLibrary } from "@/services/library-scope/scope";
+import type {
+  AvailableLibrary,
+  LibraryScope,
+  LibrarySelector,
+  ResolvedLibraryScope,
+} from "@/services/library-scope/scope";
 import { selectorKey } from "@/services/library-scope/scope";
 import { SettingsService } from "@/services/settings/service";
 
@@ -251,7 +256,26 @@ function pluginData(stored?: unknown) {
     on: (_event: "changed", listener: () => void) =>
       notesChanged.on("changed", listener),
   };
+  const scopeEvents = createNanoEvents<{ changed: () => void }>();
   const off = () => () => {};
+  // The saved scope also names a group the database no longer holds.
+  const libraryScope = {
+    on: scopeEvents.on.bind(scopeEvents),
+    effective: {
+      mode: "selected",
+      libraries: [
+        ...LIBRARIES.slice(0, 2).map(({ selector }) => selector),
+        GONE,
+      ],
+    } as LibraryScope,
+    current: {
+      mode: "selected",
+      invalid: false,
+      available: LIBRARIES.slice(0, 2),
+      unavailable: [GONE],
+    } as ResolvedLibraryScope,
+    libraries: LIBRARIES,
+  };
   const deps = {
     app: {
       ...host.app,
@@ -273,16 +297,7 @@ function pluginData(stored?: unknown) {
           [Symbol.asyncDispose]: () => Promise.resolve(),
         }),
     },
-    libraryScope: {
-      on: off,
-      current: {
-        mode: "selected",
-        invalid: false,
-        available: LIBRARIES.slice(0, 2),
-        unavailable: [],
-      },
-      libraries: LIBRARIES,
-    },
+    libraryScope,
     query: { run },
     cardFocus: { hold: () => ({ [Symbol.dispose]: () => {} }) },
     annotations: { on: off, hold: () => ({ [Symbol.dispose]: () => {} }) },
@@ -300,7 +315,26 @@ function pluginData(stored?: unknown) {
     notes.add(itemKey);
     notesChanged.emit("changed");
   };
-  return { deps, run, settings, change, addNote };
+  /**
+   * The researcher saves a Library Scope of the Libraries `available` and
+   * those `missing` from the database.
+   */
+  const rescope = (
+    available: readonly AvailableLibrary[],
+    missing: readonly LibrarySelector[] = [],
+  ) => {
+    libraryScope.effective = {
+      mode: "selected",
+      libraries: [...available.map(({ selector }) => selector), ...missing],
+    };
+    libraryScope.current = {
+      ...libraryScope.current,
+      available,
+      unavailable: missing,
+    };
+    scopeEvents.emit("changed");
+  };
+  return { deps, run, settings, change, addNote, rescope };
 }
 
 /** The Items requests, without the count requests of the Library Tree, which read no field. */
@@ -329,6 +363,8 @@ async function press(view: LibraryView, el: HTMLElement) {
 }
 
 const PERSONAL = { type: "personal" } as const;
+/** A group the saved Library Scope names but the database no longer holds. */
+const GONE = { type: "group", groupID: 9999 } as const;
 const LAB = { type: "group", groupID: 4815 } as const;
 const ARCHIVE = { type: "group", groupID: 77 } as const;
 const THESIS: LibraryNode = {
@@ -349,7 +385,7 @@ function tree(view: LibraryView) {
     (node) =>
       `${"  ".repeat(Number(node.getAttribute("aria-level")) - 1)}${
         node.querySelector("[data-library-label]")!.textContent
-      } ${node.querySelector("[data-library-count]")?.textContent ?? "…"}`,
+      }${[...node.querySelectorAll("[data-library-count]")].map((count) => ` ${count.textContent}`).join("")}`,
   );
 }
 
@@ -372,16 +408,22 @@ async function openTab(deps: LibraryViewDeps) {
   return view;
 }
 
-it("opens on My Library, newest change first, where plugin data holds no document", async () => {
+const RECENT: LibraryNode = { kind: "recent" };
+const MY_LIBRARY: LibraryNode = { kind: "library", library: PERSONAL };
+
+it("opens on Recent, every Library in the Library Scope newest change first, where plugin data holds no document", async () => {
   const { deps, run } = pluginData();
-  await openTab(deps);
+  const view = await openTab(deps);
   expect(listRuns(run)).toHaveLength(1);
   const [request] = listRuns(run) as [QueryViewRequest];
   expect(request).toMatchObject({
     from: "items",
-    libraries: { mode: "selected", libraries: [{ type: "personal" }] },
+    libraries: { mode: "selected", libraries: [PERSONAL, LAB] },
     sort: [{ field: "dateModified", direction: "desc" }],
   });
+  expect(row(view, RECENT).getAttribute("aria-selected")).toBe("true");
+  // Recent counts no papers: its list is the whole Library Scope.
+  expect(header(view)).toBe("Recent");
   // A large library shows its newest rows; the toolbar says how many match.
   expect(request.limit).toBe(1000);
   expect(request).not.toHaveProperty("filter");
@@ -438,6 +480,7 @@ it("lists the libraries in the Library Scope with their Collections, each counti
   // A Collection's count holds the Items of its subcollections, each once:
   // "Thesis" holds A, B and C, though its Collections hold four memberships.
   expect(tree(view)).toEqual([
+    "Recent",
     "My Library 5",
     "  Reading list 1",
     "  Thesis 3",
@@ -451,6 +494,7 @@ it("opens a Collection to its subcollections, each counted alone", async () => {
   const view = await openTab(deps);
   await press(view, row(view, THESIS).querySelector("[data-library-expand]")!);
   expect(tree(view)).toEqual([
+    "Recent",
     "My Library 5",
     "  Reading list 1",
     "  Thesis 3",
@@ -464,7 +508,6 @@ it("opens a Collection to its subcollections, each counted alone", async () => {
 it("lists a Collection with its subcollections' Items, names it in the header, and keeps it", async () => {
   const { deps, run, settings } = pluginData();
   const view = await openTab(deps);
-  expect(header(view)).toBe("My Library · 5 papers · 2 unread");
   await press(view, row(view, THESIS));
   expect(listRuns(run).at(-1)).toMatchObject({
     libraries: { mode: "selected", libraries: [PERSONAL] },
@@ -495,6 +538,7 @@ it("shows the libraries outside the Library Scope on request, and lists one", as
   expect(all().textContent).toBe("Show all libraries");
   await press(view, all());
   expect(tree(view)).toEqual([
+    "Recent",
     "My Library 5",
     "  Reading list 1",
     "  Thesis 3",
@@ -534,7 +578,8 @@ it("counts again after a database change", async () => {
     ]);
     await view.tree.settled;
   });
-  expect(tree(view).slice(0, 3)).toEqual([
+  expect(tree(view).slice(0, 4)).toEqual([
+    "Recent",
     "My Library 6",
     "  Reading list 1",
     "  Thesis 4",
@@ -572,6 +617,87 @@ it("names the tree by its heading, with no tooltip over it", async () => {
   ).toBe("Libraries");
   // Obsidian shows every `aria-label` as a tooltip on hover.
   expect(pane.querySelectorAll("[aria-label]")).toHaveLength(0);
+});
+
+it("gives each row on Recent its reason, and none on a Library", async () => {
+  const { deps } = pluginData();
+  const view = await openTab(deps);
+  const item = { indexedKey: "AAAAAAAA", values: {} };
+  expect(view.query.reason(item)).toBe("edited in Zotero");
+  await press(view, row(view, { kind: "library", library: LAB }));
+  expect(view.query.reason(item)).toBeNull();
+});
+
+it("reads the new Library Scope on Recent once the researcher changes it", async () => {
+  const { deps, run, rescope } = pluginData();
+  const view = await openTab(deps);
+  await act(async () => {
+    rescope([LIBRARIES[1]!]);
+    await view.query.settled;
+  });
+  expect(listRuns(run).at(-1)!.libraries).toEqual({
+    mode: "selected",
+    libraries: [LAB],
+  });
+});
+
+it("reads the saved Library Scope on Recent where the database holds none of its Libraries, so the view names the one missing", async () => {
+  const { deps, run, rescope } = pluginData();
+  const view = await openTab(deps);
+  await act(async () => {
+    rescope([], [GONE]);
+    await view.query.settled;
+  });
+  expect(listRuns(run).at(-1)!.libraries).toEqual({
+    mode: "selected",
+    libraries: [GONE],
+  });
+});
+
+it("keeps Recent selected through a sort change, and selecting it again sorts newest change first", async () => {
+  const { deps, run, settings } = pluginData();
+  const view = await openTab(deps);
+  await act(async () => {
+    view.query.document.editView({
+      sort: [{ property: "title", direction: "ASC" }],
+    });
+    await view.query.flush();
+    await view.query.settled;
+  });
+  expect(row(view, RECENT).getAttribute("aria-selected")).toBe("true");
+  expect(listRuns(run).at(-1)!.sort).toEqual([
+    { field: "title", direction: "asc" },
+  ]);
+  // A Library keeps the sort the researcher chose.
+  await press(view, row(view, { kind: "library", library: LAB }));
+  expect(listRuns(run).at(-1)!.sort).toEqual([
+    { field: "title", direction: "asc" },
+  ]);
+  await press(view, row(view, RECENT));
+  expect(listRuns(run).at(-1)).toMatchObject({
+    libraries: { mode: "selected", libraries: [PERSONAL, LAB] },
+    sort: [{ field: "dateModified", direction: "desc" }],
+  });
+  expect(header(view)).toBe("Recent");
+  await settings.flush();
+  expect(settings.current?.["library.document"]).toMatchObject({
+    node: RECENT,
+    sort: [{ property: "dateModified", direction: "DESC" }],
+  });
+});
+
+it("reads only the Library Scope on Recent while the tree shows every Library", async () => {
+  const { deps, run } = pluginData();
+  const view = await openTab(deps);
+  await press(
+    view,
+    view.contentEl.querySelector<HTMLElement>("[data-library-all]")!,
+  );
+  await press(view, row(view, RECENT));
+  expect(listRuns(run).at(-1)!.libraries).toEqual({
+    mode: "selected",
+    libraries: [PERSONAL, LAB],
+  });
 });
 
 it("opens on the Papers Layout, offers Papers and the Table only, and opens again on the Table once the researcher switches to it", async () => {
@@ -616,6 +742,7 @@ describe("Reading State facets", () => {
   ])("narrows My Library to the Items %s holds", async (id, keys) => {
     const { deps } = pluginData();
     const view = await openTab(deps);
+    await press(view, row(view, MY_LIBRARY));
     expect(listed(view)).toEqual([
       "AAAAAAAA",
       "BBBBBBBB",
@@ -634,6 +761,23 @@ describe("Reading State facets", () => {
     expect(listed(view)).toHaveLength(5);
   });
 
+  it("narrows Recent, over every Library in the Library Scope", async () => {
+    const { deps, run } = pluginData();
+    const view = await openTab(deps);
+    await press(view, facet(view, "unread"));
+    expect(listRuns(run).at(-1)).toMatchObject({
+      libraries: { mode: "selected", libraries: [PERSONAL, LAB] },
+      filter: "annotations.isEmpty()",
+    });
+    // B and E of My Library, F and G of Lab: no Annotation, no note.
+    expect(listed(view)).toEqual([
+      "BBBBBBBB",
+      "EEEEEEEE",
+      "FFFFFFFF",
+      "GGGGGGGG",
+    ]);
+  });
+
   it("combines with the Collection selected and with each other", async () => {
     const { deps } = pluginData();
     const view = await openTab(deps);
@@ -647,6 +791,9 @@ describe("Reading State facets", () => {
   it("counts the unread Items of the selection in the header, once the vault answers for their notes", async () => {
     const { deps, addNote } = pluginData();
     const view = await openTab(deps);
+    // Recent names no paper count, so it names no unread count either.
+    expect(header(view)).toBe("Recent");
+    await press(view, row(view, MY_LIBRARY));
     expect(header(view)).toBe("My Library · 5 papers · 2 unread");
     await press(view, row(view, THESIS));
     expect(header(view)).toBe("Thesis · 3 papers · 1 unread");

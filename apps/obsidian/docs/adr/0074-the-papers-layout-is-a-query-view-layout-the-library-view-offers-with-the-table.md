@@ -15,5 +15,5 @@ Proposed on 2026-10-17 with [#1547](https://github.com/aidenlx/zotlit/issues/154
 - The Query View host contract gains the list of Layouts it offers; a host that names none offers every Layout of the dataset, as today. Under `displayOnly` (ADR 0070) the view menu shows only this Layout switch, with no Add view or Configure view. A host that gives `saveAs` adds "Save as query file" below the Layout rows (#1553).
 - The reading-state line omits when the Item was last read until ZotLit Query reads `lastRead` (#1532, #1533).
 - The Library View Document stores `papers` or `table`; a stored Layout this build does not offer takes the default.
-- The reading-state line counts every Annotation type and reads "N annotations", as the Annotated facet counts them, with up to five colour marks; a line with nothing to say is left out.
+- The reading-state line counts every Annotation type and reads "N annotations", as the Annotated facet counts them, with up to five colour marks; it ends with the reason the host gives the row, such as Recent's "edited in Zotero" (ADR 0075); a line with nothing to say is left out.
 - In the Table and Papers Layouts, a child note row links to the note in Zotero through `zotero://select`, the link Show in Zotero opens (ADR 0073).

@@ -1,12 +1,14 @@
-// The Library Tree of the Library View: the Libraries in the Library Scope
-// with their nested Collections, each with its paper count, the Reading
-// State facets under them, and the header of the list that names the
+// The Library Tree of the Library View: Recent, then the Libraries in the
+// Library Scope with their nested Collections, each with its paper count, the
+// Reading State facets under them, and the header of the list that names the
 // selection with its unread count. The tree reads its Collections and counts
 // again on every database change; a selection or a facet goes to the host,
 // which makes it the query of the list.
 //
 // @see apps/obsidian/docs/adr/0071-the-library-tree-writes-filters.md
+// @see apps/obsidian/docs/adr/0075-recent-is-a-library-tree-node-that-writes-a-sort.md
 import { Component } from "obsidian";
+import { Fragment } from "react";
 import type { CSSProperties, KeyboardEvent, ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
@@ -71,6 +73,7 @@ interface TreeState {
 
 /** One identity for a node, whatever its names hold. */
 export function nodeKey(node: LibraryNode): string {
+  if (node.kind === "recent") return JSON.stringify(["recent"]);
   return JSON.stringify([
     selectorKey(node.library),
     ...(node.kind === "collection" ? node.path : []),
@@ -79,7 +82,7 @@ export function nodeKey(node: LibraryNode): string {
 
 /** The node and the Libraries above a Collection: what stays open to show it. */
 function ancestors(node: LibraryNode): string[] {
-  if (node.kind === "library") return [];
+  if (node.kind !== "collection") return [];
   return node.path.slice(0, -1).map((_, index) =>
     nodeKey({
       kind: "collection",
@@ -223,7 +226,7 @@ export class LibraryTree extends Component {
     return this.#deps.libraryScope.libraries.filter(
       ({ selector }) =>
         all ||
-        sameLibrary(selector, node.library) ||
+        (node.kind !== "recent" && sameLibrary(selector, node.library)) ||
         scope.some((library) => sameLibrary(library.selector, selector)),
     );
   }
@@ -243,10 +246,11 @@ export class LibraryTree extends Component {
         // A Collection renamed or removed in Zotero leaves its saved path
         // with nothing to list: the selection moves up to its Library.
         const { node } = this.store.getState();
+        if (node.kind !== "collection") return;
         const read = libraries.find(({ tree }) =>
           sameLibrary(tree.library.selector, node.library),
         );
-        if (node.kind === "collection" && read?.complete)
+        if (read?.complete)
           if (!findNode([read.tree], node))
             this.#host.select({ kind: "library", library: node.library });
       },
@@ -337,9 +341,15 @@ export class LibraryTree extends Component {
     const controller = new AbortController();
     this.#unreadRun = controller;
     const { node } = this.store.getState();
+    this.store.setState({ unread: null });
+    // Recent names no paper count, so it names no unread count either.
+    if (node.kind === "recent") {
+      this.#unreadRun = null;
+      this.#unreadSettled = Promise.resolve();
+      return;
+    }
     const { filters, vault } = selectionConditions(node, ["unread"]);
     const pass = vaultPass(vault, this.#deps.literatureNotes);
-    this.store.setState({ unread: null });
     this.#unreadSettled = this.#deps.query
       .run(
         {
@@ -391,11 +401,12 @@ export class LibraryTree extends Component {
   }
 }
 
-/** The name of a node: its Library's, or its Collection path. */
+/** The name of a node: Recent, its Library's, or its Collection path. */
 function nodeLabel(
   libraries: readonly TreeLibrary[] | null,
   node: LibraryNode,
 ): string {
+  if (node.kind === "recent") return m.library_view_recent();
   if (node.kind === "collection") return node.path.join(" / ");
   const library = libraries?.find((entry) =>
     sameLibrary(entry.library.selector, node.library),
@@ -458,6 +469,9 @@ interface Row {
   readonly expanded: boolean | null;
 }
 
+/** Recent, at the top of the tree: it lists the whole Library Scope and counts nothing. */
+const RECENT: LibraryNode = { kind: "recent" };
+
 function rows(
   libraries: readonly TreeLibrary[],
   expanded: ReadonlySet<string>,
@@ -510,7 +524,16 @@ function TreePane({ tree }: { tree: LibraryTree }) {
   const node = useStore(tree.store, (s) => s.node);
   const expanded = useStore(tree.store, (s) => s.expanded);
   const all = useStore(tree.store, (s) => s.all);
-  const shown = libraries ? rows(libraries, expanded) : [];
+  const recent: Row = {
+    key: nodeKey(RECENT),
+    node: RECENT,
+    label: m.library_view_recent(),
+    count: null,
+    level: 1,
+    expanded: null,
+  };
+  // Recent shows before the first read lands: it needs no read of its own.
+  const shown = [recent, ...(libraries ? rows(libraries, expanded) : [])];
   const selected = nodeKey(node);
   const headingId = useUniqueId();
 
@@ -548,65 +571,72 @@ function TreePane({ tree }: { tree: LibraryTree }) {
       className="zt:flex zt:flex-col zt:gap-(--size-4-2) zt:p-(--size-4-2)"
     >
       <div
-        id={headingId}
-        className="zt:px-(--size-4-2) zt:text-(length:--font-ui-smaller) zt:font-(--font-semibold) zt:text-muted-foreground"
-      >
-        {m.library_view_tree_label()}
-      </div>
-      <div
         role="tree"
         aria-labelledby={headingId}
         className="zt:flex zt:flex-col"
       >
         {shown.map((row, index) => (
-          <div
-            key={row.key}
-            role="treeitem"
-            data-library-node={row.key}
-            aria-level={row.level}
-            aria-selected={row.key === selected}
-            aria-expanded={row.expanded ?? undefined}
-            tabIndex={
-              row.key === selected ||
-              (index === 0 && !shown.some((r) => r.key === selected))
-                ? 0
-                : -1
-            }
-            style={{ "--zt-library-depth": row.level - 1 } as CSSProperties}
-            className="zt:flex zt:min-w-0 zt:cursor-(--cursor) zt:items-center zt:gap-(--size-2-1) zt:rounded-(--radius-s) zt:py-(--size-2-2) zt:ps-[calc(var(--zt-library-depth)*var(--size-4-4)+var(--size-2-1))] zt:pe-(--size-4-2) zt:text-(length:--nav-item-size) zt:text-(--nav-item-color) zt:hover:not-aria-selected:bg-(--nav-item-background-hover) zt:aria-selected:bg-(--nav-item-background-selected) zt:aria-selected:text-(--nav-item-color-selected)"
-            onClick={() => tree.select(row.node)}
-            onKeyDown={(event) => onKeyDown(event, index)}
-          >
-            <span
-              data-library-expand={row.expanded === null ? undefined : ""}
-              data-collapsed={row.expanded === false ? "" : undefined}
-              className={cn(
-                "zt:flex zt:size-(--size-4-4) zt:shrink-0 zt:items-center zt:justify-center zt:text-faint zt:transition-transform zt:data-collapsed:-rotate-90",
-                row.expanded === null && "zt:invisible",
-              )}
-              onClick={(event) => {
-                if (row.expanded === null) return;
-                event.stopPropagation();
-                open(row, !row.expanded);
-              }}
+          <Fragment key={row.key}>
+            <div
+              role="treeitem"
+              data-library-node={row.key}
+              aria-level={row.level}
+              aria-selected={row.key === selected}
+              aria-expanded={row.expanded ?? undefined}
+              tabIndex={
+                row.key === selected ||
+                (index === 0 && !shown.some((r) => r.key === selected))
+                  ? 0
+                  : -1
+              }
+              style={{ "--zt-library-depth": row.level - 1 } as CSSProperties}
+              className="zt:flex zt:min-w-0 zt:cursor-(--cursor) zt:items-center zt:gap-(--size-2-1) zt:rounded-(--radius-s) zt:py-(--size-2-2) zt:ps-[calc(var(--zt-library-depth)*var(--size-4-4)+var(--size-2-1))] zt:pe-(--size-4-2) zt:text-(length:--nav-item-size) zt:text-(--nav-item-color) zt:hover:not-aria-selected:bg-(--nav-item-background-hover) zt:aria-selected:bg-(--nav-item-background-selected) zt:aria-selected:text-(--nav-item-color-selected)"
+              onClick={() => tree.select(row.node)}
+              onKeyDown={(event) => onKeyDown(event, index)}
             >
-              <Icon name="right-triangle" size="var(--size-4-3)" />
-            </span>
-            <span
-              data-library-label=""
-              className="zt:min-w-0 zt:flex-1 zt:truncate"
-            >
-              {row.label}
-            </span>
-            {row.count !== null && (
               <span
-                data-library-count=""
-                className="zt:shrink-0 zt:text-(length:--font-ui-smaller) zt:text-faint zt:tabular-nums"
+                data-library-expand={row.expanded === null ? undefined : ""}
+                data-collapsed={row.expanded === false ? "" : undefined}
+                className={cn(
+                  "zt:flex zt:size-(--size-4-4) zt:shrink-0 zt:items-center zt:justify-center zt:text-faint zt:transition-transform zt:data-collapsed:-rotate-90",
+                  row.expanded === null && "zt:invisible",
+                )}
+                onClick={(event) => {
+                  if (row.expanded === null) return;
+                  event.stopPropagation();
+                  open(row, !row.expanded);
+                }}
               >
-                {m.library_view_tree_count({ count: row.count })}
+                <Icon name="right-triangle" size="var(--size-4-3)" />
               </span>
+              <span
+                data-library-label=""
+                className="zt:min-w-0 zt:flex-1 zt:truncate"
+              >
+                {row.label}
+              </span>
+              {row.count !== null && (
+                <span
+                  data-library-count=""
+                  className="zt:shrink-0 zt:text-(length:--font-ui-smaller) zt:text-faint zt:tabular-nums"
+                >
+                  {m.library_view_tree_count({ count: row.count })}
+                </span>
+              )}
+            </div>
+            {/* The heading over the Libraries names the tree, Recent above it
+                included; assistive technology reads it as that name alone,
+                not as an item of the tree. */}
+            {index === 0 && (
+              <div
+                id={headingId}
+                aria-hidden="true"
+                className="zt:mt-(--size-4-2) zt:mb-(--size-2-1) zt:px-(--size-4-2) zt:text-(length:--font-ui-smaller) zt:font-(--font-semibold) zt:text-muted-foreground"
+              >
+                {m.library_view_tree_label()}
+              </div>
             )}
-          </div>
+          </Fragment>
         ))}
       </div>
       <Facets tree={tree} />

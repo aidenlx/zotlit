@@ -464,6 +464,8 @@
   "library_view_name": "Zotero 文库",
   "library_view_papers_view_name": "文献",
   "library_view_tree_label": "文库",
+  "library_view_recent": "最近",
+  "library_view_recent_edited_in_zotero": "在 Zotero 中编辑",
   "library_view_facets_label": "仅显示",
   "library_view_facet_unread": "未读",
   "library_view_facet_annotated": "有批注",

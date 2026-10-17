@@ -5,6 +5,7 @@ import { pluginDataStorage } from "@/views/query-view/plugin-data-storage";
 import type { QueryViewHost } from "@/views/query-view/view";
 
 import {
+  documentWithNode,
   parseLibraryViewDocument,
   serializeLibraryViewDocument,
 } from "./document";
@@ -20,7 +21,7 @@ const KEY = "library.document";
 export interface LibraryViewStorage extends Pick<QueryViewHost, "save"> {
   /** The document plugin data holds now. */
   document: () => LibraryViewDocument;
-  /** Keep `node` as the tree selection. Settles once plugin data holds it; rejects where the write failed. */
+  /** Keep `node` as the tree selection, with the sort it writes. Settles once plugin data holds it; rejects where the write failed. */
   select: (node: LibraryNode) => Promise<void>;
   /** Keep `facets` as the active Reading State facets. Settles and rejects as {@link select} does. */
   setFacets: (facets: readonly ReadingStateFacet[]) => Promise<void>;
@@ -38,18 +39,17 @@ export function libraryViewStorage(
         ),
     }),
     document: () => parseLibraryViewDocument(settings.current?.[KEY] ?? null),
-    select: (node) => keep({ node }),
-    setFacets: (facets) => keep({ facets }),
+    select: (node) => keep((doc) => documentWithNode(doc, node)),
+    setFacets: (facets) => keep((doc) => ({ ...doc, facets })),
   };
 
   async function keep(
-    patch: Partial<Pick<LibraryViewDocument, "node" | "facets">>,
+    change: (doc: LibraryViewDocument) => LibraryViewDocument,
   ): Promise<void> {
     settings.update((current) => ({
-      [KEY]: serializeLibraryViewDocument({
-        ...parseLibraryViewDocument(current[KEY] ?? null),
-        ...patch,
-      }),
+      [KEY]: serializeLibraryViewDocument(
+        change(parseLibraryViewDocument(current[KEY] ?? null)),
+      ),
     }));
     await settings.flush();
   }

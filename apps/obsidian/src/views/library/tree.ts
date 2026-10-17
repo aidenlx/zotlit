@@ -82,6 +82,8 @@ export function findNode(
   libraries: readonly TreeLibrary[],
   node: LibraryNode,
 ): TreeLibrary | TreeCollection | null {
+  // Recent is no node of a Library, and counts nothing.
+  if (node.kind === "recent") return null;
   const library = libraries.find((entry) =>
     sameLibrary(entry.library.selector, node.library),
   );

@@ -16,3 +16,7 @@ Proposed on 2026-10-17 with [#1550](https://github.com/aidenlx/zotlit/issues/155
 - While Recent is selected, the sort control shows the last-activity sort, and changing it selects nothing else in the tree.
 - Recent shows no paper count.
 - The quick switcher's empty query and Recent share one last-activity sort once #1532 lands.
+- The reason is text the host gives each row through `QueryViewHost.reason(row)`, not a filter, a sort, a Formula or a Visible Property: the #1532 ledger reason has no Formula form. The Papers reading-state line ends with it; the Table shows none.
+- Recent reads the Libraries of the Library Scope that the database holds; "Show all libraries" does not widen it.
+- Selecting Recent writes its sort (`RECENT_SORT`, `dateModified DESC` until #1532). A later sort change is saved and Recent stays selected; selecting Recent again writes its sort again.
+- "Save as query file" on Recent writes no `library ==` filter, so the file reads the Library Scope as Recent does.

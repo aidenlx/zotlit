@@ -144,6 +144,7 @@ async function mount(
     displayOnly,
     layouts,
     rowPass,
+    reason,
   }: {
     notes?: Record<string, string>;
     layout?: ConstructorParameters<typeof QueryView>[1]["layout"];
@@ -156,6 +157,7 @@ async function mount(
     displayOnly?: boolean;
     layouts?: readonly string[];
     rowPass?: ConstructorParameters<typeof QueryView>[1]["rowPass"];
+    reason?: (row: QueryViewRow) => string | null;
   } = {},
 ) {
   setMockPlatform({ isMacOS: true });
@@ -269,6 +271,7 @@ async function mount(
     ...(displayOnly && { displayOnly }),
     ...(layouts && { layouts }),
     ...(rowPass && { rowPass }),
+    ...(reason && { reason }),
   });
   const saved: string[] = [];
   const el = document.createElement("div");
@@ -3296,6 +3299,30 @@ it("draws each Item of a Papers view as its title, its creators, year and Venue,
     },
   ]);
   expect(cards(el)).toEqual([]);
+});
+
+it("ends a Papers row's reading-state line with the reason its host gives for the row", async () => {
+  const { view, el, settle } = await mount(
+    [
+      result([
+        paperRow("ITEMAAAA", { title: "Annotated", colors: ["#ffd400"] }),
+        paperRow("ITEMBBBB", { title: "Untouched" }),
+        paperRow("ITEMCCCC", { title: "No reason" }),
+      ]),
+    ],
+    undefined,
+    {
+      reason: ({ indexedKey }) =>
+        indexedKey === "ITEMCCCC" ? null : `edited ${indexedKey}`,
+    },
+  );
+  await act(() => view.setText(PAPERS_FILE));
+  await settle();
+  expect(papers(el).map(({ state }) => state)).toEqual([
+    "1 annotation · edited ITEMAAAA",
+    "edited ITEMBBBB",
+    undefined,
+  ]);
 });
 
 it("expands a Papers row into its Attachments, Child Notes and Literature Note, and an Attachment into its Annotations, each opening its own target", async () => {
