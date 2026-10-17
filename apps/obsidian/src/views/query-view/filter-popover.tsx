@@ -148,9 +148,16 @@ const filterTheme = {
         "zt:[&_[data-part=wrapper]>select]:[field-sizing:content] zt:[&_[data-part=wrapper]>select]:w-full",
         "zt:[&>[data-part=actions]]:h-(--input-height) zt:[&>[data-part=actions]]:shrink-0 zt:[&>[data-part=actions]]:flex-nowrap zt:[&>[data-part=actions]]:px-(--size-2-1)",
       ),
+      // A condition keeps one line, as in Bases, at any depth: a nested
+      // group is narrower, so the property select gives up width first and
+      // the value keeps room for a few characters.
+      fields:
+        "zt:flex zt:min-w-0 zt:flex-1 zt:flex-nowrap zt:items-stretch zt:overflow-hidden",
+      value: cn(matchTheme.classes.match?.value, "zt:min-w-[8ch]"),
       // The property select carries the icon of the property's type, as the
       // Bases property picker does, and is capped as Bases caps it.
       predicate: cn(
+        "zt:[&>[data-part=wrapper]:not(:first-of-type)]:shrink-0",
         "zt:flex zt:max-w-full zt:min-w-0 zt:[&>[data-part=wrapper]]:border-border zt:[&>[data-part=wrapper]+[data-part=wrapper]]:border-s-(length:--border-width)",
         "zt:[&>[data-part=wrapper]:first-of-type]:max-w-[14em]",
         // The icon takes the select's start padding, so the name follows it

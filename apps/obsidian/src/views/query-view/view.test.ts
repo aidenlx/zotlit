@@ -1559,11 +1559,16 @@ function itemRow(
 }
 
 /** The Table's rows as text: each cell of each row, the header first. */
+/** The text of the Table as it shows: a `hidden` name of a cell is not. */
 function tableText(el: HTMLElement): string[][] {
+  const shown = (node: Node): string =>
+    node.instanceOf(HTMLElement) && node.hidden
+      ? ""
+      : node.nodeType === Node.TEXT_NODE
+        ? (node.textContent ?? "")
+        : [...node.childNodes].map(shown).join("");
   return [...el.querySelectorAll("[data-query-table] tr")].map((tr) =>
-    [...tr.querySelectorAll("th, td")].map(
-      (cell) => cell.textContent?.trim() ?? "",
-    ),
+    [...tr.querySelectorAll("th, td")].map((cell) => shown(cell).trim()),
   );
 }
 
@@ -3613,15 +3618,22 @@ ${filters}
 
       expect(target.getAttribute("role")).toBe("button");
       expect(target.tabIndex).toBe(0);
-      expect(target.getAttribute("aria-label")).toBe(
-        m.query_view_vault_edit({ name: "status" }),
-      );
+      // Named without an `aria-label`, which Obsidian would show as a
+      // tooltip over the next row.
+      const name = (el: Element | null | undefined) =>
+        el?.ownerDocument.getElementById(
+          el.getAttribute("aria-labelledby") ?? "",
+        )?.textContent;
+      expect(target.hasAttribute("aria-label")).toBe(false);
+      expect(name(target)).toBe(m.query_view_vault_edit({ name: "status" }));
       await act(() => {
         target.dispatchEvent(
           new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
         );
       });
       expect(input()?.value).toBe("");
+      expect(input()?.hasAttribute("aria-label")).toBe(false);
+      expect(name(input())).toBe(m.query_view_vault_edit({ name: "status" }));
     });
 
     describe("on a row with no note", () => {

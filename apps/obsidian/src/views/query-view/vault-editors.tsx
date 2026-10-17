@@ -13,6 +13,7 @@ import type { ProjectionJson } from "@zotlit/item-query";
 
 import { IconButton } from "@/components/obsidian/icon-button";
 import * as m from "@/lib/i18n/generated/messages";
+import { tooltipAttrs } from "@/lib/utils";
 
 import type { VaultPropertyType } from "./table-notes";
 
@@ -86,7 +87,7 @@ export function VaultChips({
               icon="x"
               data-query-vault-chip-remove=""
               className="multi-select-pill-remove-button"
-              aria-label={m.query_view_vault_remove_item({ item })}
+              {...tooltipAttrs(m.query_view_vault_remove_item({ item }))}
               onClick={() => onRemove(at)}
             />
           )}
@@ -98,7 +99,8 @@ export function VaultChips({
 
 export interface VaultEditorProps {
   readonly type: VaultPropertyType;
-  readonly name: string;
+  /** The element that names the field, so the name shows no tooltip. */
+  readonly labelId: string;
   readonly draft: VaultDraft;
   readonly onDraft: (draft: VaultDraft) => void;
   /**
@@ -112,7 +114,7 @@ export interface VaultEditorProps {
 /** The field a vault property edits in, by its type; a checkbox has none. */
 export function VaultEditor({
   type,
-  name,
+  labelId,
   draft,
   onDraft,
   onEnd,
@@ -137,7 +139,7 @@ export function VaultEditor({
       type={type === "date" ? "date" : "text"}
       inputMode={type === "number" ? "decimal" : undefined}
       className="zt:w-full zt:min-w-0"
-      aria-label={m.query_view_vault_edit({ name })}
+      aria-labelledby={labelId}
       value={draft.text}
       ref={inputRef}
       onInput={(event) =>
