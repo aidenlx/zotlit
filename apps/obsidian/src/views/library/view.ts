@@ -300,11 +300,11 @@ export class LibraryView extends ItemView {
       cls: "zt:group zt:@container zt:relative zt:flex zt:min-h-0 zt:flex-1",
     });
     const treeEl = shell.createDiv({
-      cls: "zt:hidden zt:w-56 zt:shrink-0 zt:overflow-y-auto zt:border-e-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-primary) zt:@xl:block zt:group-data-tree-open:block zt:@max-xl:absolute zt:@max-xl:inset-y-0 zt:@max-xl:start-0 zt:@max-xl:max-w-[85%] zt:@max-xl:z-(--layer-popover) zt:@max-xl:shadow-(--shadow-s)",
+      cls: "zt:hidden zt:w-56 zt:shrink-0 zt:overflow-y-auto zt:scroll-gutter zt:border-e-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-primary) zt:@xl:block zt:group-data-tree-open:block zt:@max-xl:absolute zt:@max-xl:inset-y-0 zt:@max-xl:start-0 zt:@max-xl:max-w-[85%] zt:@max-xl:z-(--layer-popover) zt:@max-xl:shadow-(--shadow-s)",
       attr: { "data-library-tree": "" },
     });
     const main = shell.createDiv({
-      cls: "zt:flex zt:min-w-0 zt:flex-1 zt:flex-col zt:overflow-y-auto zt:pb-[max(var(--safe-area-inset-bottom),var(--size-4-8))]",
+      cls: "zt:flex zt:min-w-0 zt:flex-1 zt:flex-col",
     });
     // Where ZotLit cannot read Zotero's database, the tree and the list say
     // so in place of what they hold; the search box and the header's count
@@ -332,9 +332,12 @@ export class LibraryView extends ItemView {
     });
     const note = main.createDiv();
     const header = main.createDiv();
-    // The list takes the rest of the column, so an empty or not-found state
-    // centres in it; a long list still scrolls with the column.
-    const list = main.createDiv({ cls: "zt:flex zt:grow zt:flex-col" });
+    // The search row, the note and the header stay at their own height above
+    // the list, which takes the rest of the column: its rows scroll there,
+    // under the toolbar, and an empty or not-found state centres there.
+    const list = main.createDiv({
+      cls: "zt:flex zt:min-h-0 zt:flex-1 zt:flex-col",
+    });
     const shown = "zt:hidden zt:group-data-zotero-missing:block";
     this.#parts.push(
       new ZoteroNotFound(
@@ -343,7 +346,7 @@ export class LibraryView extends ItemView {
           shell,
           tree: treeEl.createDiv({ cls: shown }),
           list: list.createDiv({
-            cls: "zt:hidden zt:grow zt:flex-col zt:group-data-zotero-missing:flex",
+            cls: "zt:hidden zt:min-h-0 zt:flex-1 zt:flex-col zt:group-data-zotero-missing:flex",
           }),
           note,
         },
@@ -378,7 +381,9 @@ export class LibraryView extends ItemView {
     });
     this.query.load();
     this.query.render(
-      list.createDiv({ cls: `zt:flex zt:grow zt:flex-col ${hidden}` }),
+      list.createDiv({
+        cls: `zt:flex zt:min-h-0 zt:flex-1 zt:flex-col ${hidden}`,
+      }),
     );
     this.card.load();
     this.card.render(cardEl);

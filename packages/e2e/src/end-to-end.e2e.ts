@@ -2233,6 +2233,73 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(`zotero://select/library/items/${notes[0]!.key}`);
   }, 180000);
 
+  it("scrolls the Library View's rows alone, under a search box, header and toolbar that stay put, keeps each row's trailing icons clear of the scrollbar, and keeps a row the arrow keys select in view under them, on a wide and a narrow pane", async () => {
+    const services = "app.plugins.plugins.zotlit.services";
+    const snapshot = await obEval(
+      vaultId,
+      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null})`,
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'library.document':saved.document});await settings.flush();await app.workspace.changeLayout(saved.layout);return true;})()`,
+      );
+    });
+    // My Library: more papers than the pane holds.
+    await wideWindow(cleanup);
+    await obEval(
+      vaultId,
+      `(async()=>{${PAGE}app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=${services}.settings;settings.update({'library.document':${JSON.stringify(MY_LIBRARY_DOCUMENT)}});await settings.flush();app.commands.executeCommandById('zotlit:open-library-view');await until('library',()=>app.workspace.getLeavesOfType('zotlit-library')[0]);return true;})()`,
+    );
+
+    interface Pane {
+      /** Whether the rows overflow the list, so there is a scroll to test. */
+      overflows: boolean;
+      /** How far the list scrolled. */
+      scrolled: number;
+      /** The on-screen tops of the search box and the toolbar, before and after the scroll. */
+      tops: { before: number[]; after: number[] };
+      /** The room between the rows' rightmost icon and the list's edges, in px. */
+      icon: { toClient: number; toEdge: number };
+      /** Obsidian's scrollbar width, in px. */
+      scrollbar: number;
+      /** The row the arrow keys selected, against the list and the toolbar. */
+      moved: {
+        up: { selected: boolean; inList: boolean; underToolbar: boolean };
+        down: { selected: boolean; inList: boolean; underToolbar: boolean };
+      };
+    }
+    /** Lay the tab out `width` px wide, scroll its list, and move the selection with the arrow keys. */
+    const measure = async (width: number) =>
+      JSON.parse(
+        await obEval(
+          vaultId,
+          `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];await app.workspace.revealLeaf(leaf);app.workspace.setActiveLeaf(leaf,{focus:true});await leaf.view.query.settled;const el=leaf.view.contentEl;const width=el.style.width;el.style.width='${width}px';const frame=()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));try{await until('rows',()=>el.querySelectorAll('[data-query-papers-row]').length>10,10000);await frame();const list=el.querySelector('[data-query-layout]');const input=el.querySelector('[data-library-search] input');const toolbar=el.querySelector('[role="toolbar"]');const tops=()=>[input,toolbar].map(n=>n.getBoundingClientRect().top);list.scrollTop=0;await frame();const before=tops();list.scrollTop=list.scrollHeight;await frame();const after=tops();const scrolled=list.scrollTop;const box=list.getBoundingClientRect();const clientRight=box.left+list.clientLeft+list.clientWidth;const iconRight=Math.max(...[...list.querySelectorAll('[data-query-papers-note],[data-query-papers-attachment]')].filter(n=>n.checkVisibility()).map(n=>n.getBoundingClientRect().right));const rows=()=>[...list.querySelectorAll('[data-query-item-row]')];const place=row=>{const r=row.getBoundingClientRect();const b=list.getBoundingClientRect();return{selected:row.hasAttribute('data-selected'),inList:r.top>=b.top-0.5&&r.bottom<=b.bottom+0.5,underToolbar:r.top>=toolbar.getBoundingClientRect().bottom-0.5};};const arrow=async(key,from,to)=>{const start=rows()[from];leaf.view.selection.setState({key:start.getAttribute('data-query-item-row'),card:false});await until('row selected',()=>start.hasAttribute('data-selected'));start.focus({preventScroll:true});list.scrollTop=key==='ArrowDown'?list.scrollHeight:0;await frame();activeDocument.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key,bubbles:true,cancelable:true}));await until('selection moves',()=>rows()[to].hasAttribute('data-selected'));await frame();return place(rows()[to]);};const n=rows().length;const down=await arrow('ArrowDown',0,1);const up=await arrow('ArrowUp',n-1,n-2);leaf.view.selection.setState({key:null,card:false});return JSON.stringify({overflows:list.scrollHeight>list.clientHeight,scrolled,tops:{before,after},icon:{toClient:clientRight-iconRight,toEdge:box.right-iconRight},scrollbar:parseFloat(getComputedStyle(document.body).getPropertyValue('--scrollbar-width')),moved:{down,up}});}finally{el.style.width=width;}})()`,
+        ),
+      ) as Pane;
+
+    for (const width of [1600, 528]) {
+      const pane = await measure(width);
+      expect(pane.overflows, `${width}px`).toBe(true);
+      expect(pane.scrolled, `${width}px`).toBeGreaterThan(0);
+      // The search box and the toolbar keep their place as the rows scroll.
+      expect(pane.tops.after, `${width}px`).toEqual(pane.tops.before);
+      // The rows' icons end inside the list's client box, and at least a
+      // scrollbar's width short of its edge, so neither an overlay
+      // scrollbar nor one that takes room draws over them.
+      expect(pane.icon.toClient, `${width}px`).toBeGreaterThan(0);
+      expect(pane.icon.toEdge, `${width}px`).toBeGreaterThanOrEqual(
+        pane.scrollbar,
+      );
+      // ArrowDown from a row scrolled off the top, and ArrowUp from one
+      // scrolled off the bottom, bring the row they select whole into the
+      // list, under the toolbar.
+      const whole = { selected: true, inList: true, underToolbar: true };
+      expect(pane.moved, `${width}px`).toEqual({ down: whole, up: whole });
+    }
+  }, 120000);
+
   it("opens a Library View Document an earlier build stored with the Table on Papers, and saves its Collection from the toolbar as a Query File whose tab lists the same papers with every control, with Zotero closed", async () => {
     const services = "app.plugins.plugins.zotlit.services";
     const savedPath = "query-files/Saved library.zotquery";
