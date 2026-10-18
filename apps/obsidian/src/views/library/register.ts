@@ -38,16 +38,22 @@ export function registerLibraryView(
 
 /**
  * Bring the Library View forward. Where no tab holds it, it opens in a new
- * tab, or in the active one for `pane: false`, as on a first install.
+ * tab; the first screen (a first install, an update) takes the active leaf
+ * only while it is empty, so it never replaces the note open there.
  */
 export async function openLibraryView(
   app: App,
-  { pane = "tab" }: { pane?: "tab" | false } = {},
+  { pane = "tab" }: { pane?: "tab" | "first-screen" } = {},
 ): Promise<LibraryView | null> {
   const { workspace } = app;
   let leaf = workspace.getLeavesOfType(LIBRARY_VIEW_TYPE)[0];
   if (!leaf) {
-    leaf = workspace.getLeaf(pane);
+    const active =
+      pane === "first-screen" ? workspace.getMostRecentLeaf() : null;
+    leaf =
+      active?.view.getViewType() === "empty"
+        ? active
+        : workspace.getLeaf("tab");
     await leaf.setViewState({ type: LIBRARY_VIEW_TYPE, active: true });
   } else {
     // Revealing a tab shows it but leaves the keyboard in the note.

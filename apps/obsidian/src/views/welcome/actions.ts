@@ -13,8 +13,13 @@ export interface WelcomeBannerHost {
 
 export interface WelcomeActions extends SetupActions, WelcomeBannerHost {
   openExternal: (url: string) => void;
-  /** Put the banner away; in the upgraded state this acknowledges the Migration Prompt. */
+  /**
+   * Put the banner away; this acknowledges the Migration Prompt of the
+   * upgraded state and the update of the running version.
+   */
   dismiss: () => void;
+  /** Open the Release Note of the running version, acknowledging its update. */
+  openReleaseNote: () => void;
   retryTemplateCleanup: () => Promise<void>;
   /** Resolves with the outcome so the banner can keep a refusal in view. */
   convertLiteratureNoteTemplates: () => Promise<LiteratureNoteTemplateMigrationResult>;

@@ -1,4 +1,4 @@
-// Per-instance store for one Welcome View banner: the Migration Prompt flag, the dismissal, the request to show it, the connection readout, and the seeded literature-notes folder, with the one decision of which sections the banner shows.
+// Per-instance store for one Welcome View banner: the Migration Prompt flag, the pending update, the dismissal, the request to show it, the connection readout, and the seeded literature-notes folder, with the one decision of which sections the banner shows.
 import { createContext, useContext } from "react";
 import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
@@ -36,6 +36,12 @@ export interface WelcomeState {
    * Library View under the banner shows its not-found card.
    */
   notFound: boolean;
+  /** The running version of ZotLit, which the update section names. */
+  version: string;
+  /** `release.update-pending`: the running version is an update not yet seen. */
+  updatePending: boolean;
+  /** `release.notices-enabled`: the researcher wants to hear of updates. */
+  noticesEnabled: boolean;
 }
 
 /** What the banner shows, section by section; each is absent while it does not apply. */
@@ -53,6 +59,8 @@ export interface BannerSections {
   readonly migration: boolean;
   /** The Zotero 10 guidance for ZotLit Companion, for a v1 upgrade. */
   readonly companion: boolean;
+  /** "ZotLit updated to <version>", until "What's new" or a dismissal. */
+  readonly update: boolean;
 }
 
 /**
@@ -63,13 +71,27 @@ export interface BannerSections {
  * flashes), and whenever the researcher asked for the banner, the Connect
  * step only while the Library View does not say Zotero is not found; the template
  * conversion offer shows while it is pending, and its result while cleanup
- * remains or the steps show.
+ * remains or the steps show. An update shows until "What's new" or a
+ * dismissal acknowledges it, beside whatever else shows, while release
+ * notices are on; a dismissal from before it leaves it to show alone.
  *
  * @returns `null` where the banner shows nothing.
  * @see apps/obsidian/docs/adr/0077-the-library-view-is-the-first-screen.md
  */
 export function bannerSections(state: WelcomeState): BannerSections | null {
-  if (state.dismissed && !state.migrationPending) return null;
+  const update = state.updatePending && state.noticesEnabled;
+  if (state.dismissed && !state.migrationPending) {
+    return update
+      ? {
+          steps: false,
+          connect: false,
+          conversion: null,
+          migration: false,
+          companion: false,
+          update,
+        }
+      : null;
+  }
   const incomplete =
     state.connection.status !== "checking" &&
     !(state.connection.status === "connected" && state.literatureFolderExists);
@@ -86,8 +108,9 @@ export function bannerSections(state: WelcomeState): BannerSections | null {
     conversion,
     migration: steps && conversion === null && state.v1TemplatesPresent,
     companion: state.migrationPending,
+    update,
   };
-  return steps || conversion !== null ? sections : null;
+  return steps || conversion !== null || update ? sections : null;
 }
 
 export type WelcomeStore = ReturnType<typeof createWelcomeStore>;
@@ -105,6 +128,9 @@ export function createWelcomeStore() {
     templateConversionResult: null,
     v1TemplatesPresent: false,
     notFound: false,
+    version: "",
+    updatePending: false,
+    noticesEnabled: true,
   }));
 }
 

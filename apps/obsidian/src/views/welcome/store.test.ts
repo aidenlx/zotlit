@@ -17,6 +17,9 @@ const SET_UP: WelcomeState = {
   templateConversionResult: null,
   v1TemplatesPresent: false,
   notFound: false,
+  version: "2.2.0",
+  updatePending: false,
+  noticesEnabled: true,
 };
 const RESULT = { document: "templates/Default.md", trashed: 4 };
 
@@ -32,6 +35,7 @@ describe("bannerSections", () => {
         conversion: null,
         migration: false,
         companion: false,
+        update: false,
       },
     ],
     [
@@ -47,6 +51,7 @@ describe("bannerSections", () => {
         conversion: null,
         migration: false,
         companion: false,
+        update: false,
       },
     ],
     [
@@ -58,6 +63,7 @@ describe("bannerSections", () => {
         conversion: null,
         migration: false,
         companion: false,
+        update: false,
       },
     ],
     [
@@ -79,6 +85,7 @@ describe("bannerSections", () => {
         conversion: null,
         migration: false,
         companion: false,
+        update: false,
       },
     ],
     [
@@ -90,6 +97,7 @@ describe("bannerSections", () => {
         conversion: "offer",
         migration: false,
         companion: false,
+        update: false,
       },
     ],
     [
@@ -101,6 +109,7 @@ describe("bannerSections", () => {
         conversion: "result",
         migration: false,
         companion: false,
+        update: false,
       },
     ],
     [
@@ -120,6 +129,7 @@ describe("bannerSections", () => {
         conversion: "result",
         migration: false,
         companion: false,
+        update: false,
       },
     ],
     [
@@ -131,6 +141,7 @@ describe("bannerSections", () => {
         conversion: null,
         migration: true,
         companion: true,
+        update: false,
       },
     ],
     [
@@ -146,6 +157,60 @@ describe("bannerSections", () => {
         conversion: "offer",
         migration: false,
         companion: true,
+        update: false,
+      },
+    ],
+    [
+      "the update alone, setup complete",
+      { updatePending: true },
+      {
+        steps: false,
+        connect: false,
+        conversion: null,
+        migration: false,
+        companion: false,
+        update: true,
+      },
+    ],
+    [
+      "the update alone after a dismissal, setup incomplete",
+      { updatePending: true, dismissed: true, literatureFolderExists: false },
+      {
+        steps: false,
+        connect: false,
+        conversion: null,
+        migration: false,
+        companion: false,
+        update: true,
+      },
+    ],
+    [
+      "nothing for an update while release notices are off",
+      { updatePending: true, noticesEnabled: false },
+      null,
+    ],
+    [
+      "the update with the steps while setup is incomplete",
+      { updatePending: true, literatureFolderExists: false },
+      {
+        steps: true,
+        connect: true,
+        conversion: null,
+        migration: false,
+        companion: false,
+        update: true,
+      },
+    ],
+    [
+      "the update with the Migration Prompt of a v1 upgrade",
+      { updatePending: true, migrationPending: true, v1TemplatesPresent: true },
+      {
+        steps: true,
+        connect: true,
+        conversion: null,
+        migration: true,
+        companion: true,
+        update: true,
       },
     ],
   ])("shows %s", (_, state, sections) => {
