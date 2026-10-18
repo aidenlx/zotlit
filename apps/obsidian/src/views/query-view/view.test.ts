@@ -4278,6 +4278,192 @@ ${order.map((path) => `      - ${path}\n`).join("")}`),
       );
     });
 
+    describe("a chip's menu", () => {
+      /** The list `authors`, and the gestures on its chips. */
+      async function chips(authors: string[]) {
+        const mounted = await typed(["vault.authors"], { authors });
+        const chip = (item: string) =>
+          mounted
+            .cell("authors")
+            .querySelector<HTMLElement>(`[data-query-vault-chip="${item}"]`)!;
+        const shown = () =>
+          [
+            ...mounted
+              .cell("authors")
+              .querySelectorAll("[data-query-vault-chip]"),
+          ].map((el) => el.getAttribute("data-query-vault-chip"));
+        /** Right-click `item`, or press the menu key on it, and read the menu. */
+        const menuOn = (item: string, init: MouseEventInit = {}) => {
+          Menu.instances.length = 0;
+          void act(() => {
+            chip(item).dispatchEvent(
+              new MouseEvent("contextmenu", {
+                bubbles: true,
+                cancelable: true,
+                ...init,
+              }),
+            );
+          });
+          return Menu.instances.at(-1);
+        };
+        const choose = (item: string, title: string) =>
+          act(() => {
+            menuOn(item, { clientX: 10, clientY: 10 })!
+              .items.find((entry) => entry.title === title)!
+              .click();
+          });
+        const chipInput = () =>
+          mounted.el.querySelector<HTMLInputElement>(
+            "[data-query-vault-chip-input]",
+          );
+        const typeChip = (text: string) =>
+          act(() => {
+            const field = chipInput()!;
+            field.value = text;
+            field.dispatchEvent(new Event("input", { bubbles: true }));
+          });
+        const pressChip = (key: string) =>
+          act(() => {
+            chipInput()!.dispatchEvent(
+              new KeyboardEvent("keydown", { key, bubbles: true }),
+            );
+          });
+        return {
+          ...mounted,
+          chip,
+          shown,
+          menuOn,
+          choose,
+          chipInput,
+          typeChip,
+          pressChip,
+        };
+      }
+
+      it("offers Edit, Copy and Remove from list, at the pointer or under the chip", async () => {
+        const { cell, menuOn, chip } = await chips(["Doe, J", "Roe"]);
+        using clipboard = vi
+          .spyOn(navigator.clipboard, "writeText")
+          .mockResolvedValue();
+
+        // At rest, as on a Bases list cell.
+        const atRest = menuOn("Roe", { clientX: 10, clientY: 10 })!;
+        expect(
+          atRest.items.map((item) => [item.title, item.icon] as const),
+        ).toEqual([
+          ["Edit", "pencil"],
+          ["Copy", "copy"],
+          ["Remove from list", "trash-2"],
+        ]);
+        expect(atRest.mouseEvent).not.toBeNull();
+        atRest.items.find((item) => item.title === "Copy")!.click();
+        expect(clipboard).toHaveBeenLastCalledWith("Roe");
+
+        // In the editor, the menu key on a focused chip opens it under the
+        // chip, as no pointer says where.
+        await act(() => cell("authors").click());
+        chip("Roe").focus();
+        const byKey = menuOn("Roe")!;
+        expect(byKey.items.map((item) => item.title)).toEqual([
+          "Edit",
+          "Copy",
+          "Remove from list",
+        ]);
+        expect(byKey.mouseEvent).toBeNull();
+        expect(byKey.position).not.toBeNull();
+      });
+
+      it("removes the item at rest, writing the list at once", async () => {
+        const { choose, literatureNotes } = await chips(["Doe, J", "Roe"]);
+
+        await choose("Roe", "Remove from list");
+
+        expect(literatureNotes.write).toHaveBeenLastCalledWith(
+          edit("authors", ["Doe, J"]),
+        );
+      });
+
+      it("removes the item in the editor, which writes with the edit", async () => {
+        const { cell, choose, shown, press, literatureNotes } = await chips([
+          "Doe, J",
+          "Roe",
+        ]);
+
+        await act(() => cell("authors").click());
+        await choose("Doe, J", "Remove from list");
+        expect(shown()).toEqual(["Roe"]);
+        expect(literatureNotes.write).not.toHaveBeenCalled();
+        await press("Enter");
+
+        expect(literatureNotes.write).toHaveBeenLastCalledWith(
+          edit("authors", ["Roe"]),
+        );
+      });
+
+      it("edits a chip in place: Enter keeps a comma inside the item, Escape reverts, and an empty value removes it", async () => {
+        const {
+          cell,
+          choose,
+          shown,
+          chipInput,
+          typeChip,
+          pressChip,
+          press,
+          literatureNotes,
+        } = await chips(["Doe, J", "Roe", "Poe"]);
+
+        await act(() => cell("authors").click());
+        await choose("Roe", "Edit");
+        expect(chipInput()?.value).toBe("Roe");
+        expect(document.activeElement).toBe(chipInput());
+        // The chip keeps its place in the list while it edits.
+        expect(shown()).toEqual(["Doe, J", "Roe", "Poe"]);
+        await typeChip("Roe, R");
+        await pressChip("Enter");
+        expect(chipInput()).toBeNull();
+        expect(shown()).toEqual(["Doe, J", "Roe, R", "Poe"]);
+
+        await choose("Poe", "Edit");
+        await typeChip("Moe");
+        await pressChip("Escape");
+        expect(shown()).toEqual(["Doe, J", "Roe, R", "Poe"]);
+
+        await choose("Doe, J", "Edit");
+        await typeChip("  ");
+        await pressChip("Enter");
+        expect(shown()).toEqual(["Roe, R", "Poe"]);
+
+        expect(literatureNotes.write).not.toHaveBeenCalled();
+        await press("Enter");
+        expect(literatureNotes.write).toHaveBeenCalledTimes(1);
+        expect(literatureNotes.write).toHaveBeenLastCalledWith(
+          edit("authors", ["Roe, R", "Poe"]),
+        );
+      });
+
+      it("edits a chip at rest in place, and writes the edit when focus leaves", async () => {
+        const { cell, choose, chipInput, typeChip, literatureNotes } =
+          await chips(["Doe, J", "Roe"]);
+
+        await choose("Roe", "Edit");
+        expect(chipInput()?.value).toBe("Roe");
+        expect(document.activeElement).toBe(chipInput());
+        await typeChip("Roe, Rita");
+        await act(() => {
+          chipInput()!.dispatchEvent(
+            new FocusEvent("focusout", { bubbles: true, relatedTarget: null }),
+          );
+        });
+
+        expect(literatureNotes.write).toHaveBeenLastCalledWith(
+          edit("authors", ["Doe, J", "Roe, Rita"]),
+        );
+        expect(
+          cell("authors").querySelector("[data-query-vault-editor]"),
+        ).toBeNull();
+      });
+    });
+
     it("gives a property the editor and icon of its assigned type, whatever its value shows as", async () => {
       const { cell, input, type, press, literatureNotes, icon } = await typed(
         ["vault.pages", "vault.read"],

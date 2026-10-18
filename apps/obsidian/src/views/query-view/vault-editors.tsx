@@ -10,12 +10,13 @@
 // @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
 import {
   AbstractInputSuggest,
+  Menu,
   prepareSimpleSearch,
   renderMatches,
 } from "obsidian";
 import type { App } from "obsidian";
 import { useEffect, useLayoutEffect, useRef } from "react";
-import type { KeyboardEvent, RefObject } from "react";
+import type { KeyboardEvent, MouseEvent, RefObject } from "react";
 
 import { valueText } from "@zotlit/item-query";
 import type { ProjectionJson } from "@zotlit/item-query";
@@ -23,16 +24,23 @@ import type { ProjectionJson } from "@zotlit/item-query";
 import { Icon } from "@/components/obsidian/icon";
 import { useObsidianApp } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
+import { getLogger } from "@/lib/log";
+import { hasActiveMenu, showMenuAtButton } from "@/lib/menu";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
 import { LIST_TYPES } from "./table-notes";
 import type { VaultPropertyType } from "./table-notes";
 import { dateInputValue, dateValue, tagText } from "./vault-value";
 
-/** What an edit holds: the field's text, and a list's items. */
+/**
+ * What an edit holds: the field's text, and a list's items, with the item
+ * that edits in place, where one does.
+ */
 export interface VaultDraft {
   readonly text: string;
   readonly items: readonly string[];
+  /** The item at `at`, edited in place to `text`. */
+  readonly chip?: { readonly at: number; readonly text: string };
 }
 
 /**
@@ -70,7 +78,7 @@ export function draftOf(type: VaultPropertyType, value: unknown): VaultDraft {
  */
 export function valueOf(type: VaultPropertyType, draft: VaultDraft): unknown {
   if (LIST_TYPES.has(type)) {
-    const items = withPending(draft).items;
+    const items = withPending(withChip(draft)).items;
     return items.length === 0 ? null : items;
   }
   if (isDate(type)) return dateValue(type, draft.text);
@@ -92,6 +100,86 @@ function withPending(draft: VaultDraft): VaultDraft {
   if (text === "") return draft;
   if (draft.items.includes(text)) return { ...draft, text: "" };
   return { text: "", items: [...draft.items, text] };
+}
+
+/**
+ * The draft with the item it edits in place put back: the edited text in
+ * the item's place, or no item for no text, or for text the list holds
+ * already.
+ */
+function withChip(draft: VaultDraft): VaultDraft {
+  const { chip, ...rest } = draft;
+  if (!chip) return draft;
+  const text = chip.text.trim();
+  const taken = draft.items.some((item, at) => at !== chip.at && item === text);
+  return {
+    ...rest,
+    items: draft.items.flatMap((item, at) =>
+      at !== chip.at ? [item] : text === "" || taken ? [] : [text],
+    ),
+  };
+}
+
+/** The draft with the edit of the item in place dropped. */
+function withoutChip({ chip: _, ...rest }: VaultDraft): VaultDraft {
+  return rest;
+}
+
+const logger = getLogger(["views", "query-view", "vault"]);
+
+/** A list item's menu: the item it copies, and what else it does. */
+export interface ChipMenu {
+  readonly item: string;
+  /** Edit the item in place; none where the list is read-only. */
+  readonly edit?: () => void;
+  /** Remove the item from the list; none where the list is read-only. */
+  readonly remove?: () => void;
+}
+
+/**
+ * The menu of a list item, as a Bases list cell offers it: Edit, Copy and
+ * Remove from list. A right click opens it at the pointer; the menu key or
+ * Shift+F10, which report no pointer, open it under the item.
+ */
+export function openChipMenu(
+  chip: HTMLElement,
+  pointer: globalThis.MouseEvent | null,
+  { item, edit, remove }: ChipMenu,
+): void {
+  const menu = new Menu();
+  if (edit)
+    menu.addItem((entry) =>
+      entry
+        .setTitle(m.query_view_vault_chip_edit())
+        .setIcon("pencil")
+        .onClick(edit),
+    );
+  menu.addItem((entry) =>
+    entry
+      .setTitle(m.query_view_vault_chip_copy())
+      .setIcon("copy")
+      .onClick(() => {
+        navigator.clipboard.writeText(item).catch((error: unknown) => {
+          logger.warn("The Query View could not copy a list item", { error });
+        });
+      }),
+  );
+  if (remove)
+    menu.addItem((entry) =>
+      entry
+        .setTitle(m.query_view_vault_chip_remove())
+        .setIcon("trash-2")
+        .setWarning(true)
+        .onClick(remove),
+    );
+  if (!pointer || (pointer.clientX === 0 && pointer.clientY === 0))
+    showMenuAtButton(menu, chip);
+  else menu.setParentElement(chip).showAtMouseEvent(pointer);
+}
+
+/** Whether `event` asks for the menu of what has focus: the menu key or Shift+F10. */
+function asksForMenu(event: KeyboardEvent): boolean {
+  return event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey);
 }
 
 /**
@@ -340,15 +428,46 @@ function ListEditor({
 }: VaultEditorProps) {
   const field = useRef<HTMLInputElement>(null);
   const pills = useRef<(HTMLElement | null)[]>([]);
+  const root = useRef<HTMLDivElement>(null);
+  const chipBox = useRef<HTMLSpanElement>(null);
+  const chipField = useRef<HTMLInputElement>(null);
   /** The pill to focus once the list renders again; -1 for the field. */
   const focusAfter = useRef<number | null>(null);
-  useLayoutEffect(() => field.current?.focus(), []);
+  // The latest draft, for a menu that acts after the list renders again.
+  const latest = useRef(draft);
+  latest.current = draft;
+  /** Set when a key ends the edit in place, so the blur after does not. */
+  const chipEnded = useRef(false);
+  const editingAt = draft.chip?.at;
+  // An edit that opens on an item from its menu starts in that item.
+  useLayoutEffect(() => {
+    if (latest.current.chip === undefined) field.current?.focus();
+  }, []);
   useLayoutEffect(() => {
     const at = focusAfter.current;
     if (at === null) return;
     focusAfter.current = null;
     (at < 0 ? field.current : pills.current[at])?.focus();
   });
+  // The item that edits in place grows with its text from where it stands,
+  // over its neighbours, up to the cell's edge.
+  useLayoutEffect(() => {
+    const box = chipBox.current;
+    const el = root.current;
+    const input = chipField.current;
+    if (editingAt === undefined || !box || !el || !input) return;
+    const style = getComputedStyle(el);
+    const edge = el.getBoundingClientRect();
+    const start = box.getBoundingClientRect();
+    const room =
+      style.direction === "rtl"
+        ? start.right - edge.left - Number.parseFloat(style.paddingInlineEnd)
+        : edge.right - Number.parseFloat(style.paddingInlineEnd) - start.left;
+    box.style.setProperty("--zt-chip-room", `${Math.max(room, 0)}px`);
+    chipEnded.current = false;
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }, [editingAt]);
   const add = (text: string) => onDraft(withPending({ ...draft, text }));
   useValueSuggest(field, {
     values: suggestions,
@@ -361,9 +480,49 @@ function ListEditor({
     else pills.current[at]?.focus();
   };
   const remove = (at: number) => {
+    const current = latest.current;
     focusAfter.current = at - 1;
-    onDraft({ ...draft, items: draft.items.filter((_, i) => i !== at) });
+    onDraft({ ...current, items: current.items.filter((_, i) => i !== at) });
   };
+  const editChip = (at: number) => {
+    const current = withChip(latest.current);
+    const item = current.items[at];
+    if (item !== undefined) onDraft({ ...current, chip: { at, text: item } });
+  };
+  /** End the edit in place, keeping it or dropping it; focus stays near. */
+  const endChip = (keep: boolean) => {
+    const at = latest.current.chip?.at;
+    if (at === undefined) return;
+    chipEnded.current = true;
+    const next = keep ? withChip(latest.current) : withoutChip(latest.current);
+    focusAfter.current =
+      next.items.length === latest.current.items.length ? at : at - 1;
+    onDraft(next);
+  };
+  const onChipKey = (event: KeyboardEvent<HTMLInputElement>) => {
+    // The keys are the field's, not the pill's around it.
+    event.stopPropagation();
+    if (event.defaultPrevented) return;
+    if (tabEnd(event, end)) return;
+    if (event.key === "Enter") {
+      // A comma is text in the item; only Enter ends it.
+      event.preventDefault();
+      endChip(true);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      endChip(false);
+    }
+  };
+  const chipMenu = (
+    chip: HTMLElement,
+    pointer: MouseEvent | null,
+    at: number,
+  ) =>
+    openChipMenu(chip, pointer?.nativeEvent ?? null, {
+      item: draft.items[at] ?? "",
+      edit: () => editChip(at),
+      remove: () => remove(at),
+    });
   const end = (how: VaultEditEnd) => onEnd(true, draft, how);
   const onFieldKey = (event: KeyboardEvent<HTMLInputElement>) => {
     event.stopPropagation();
@@ -394,6 +553,13 @@ function ListEditor({
   };
   const onPillKey = (event: KeyboardEvent<HTMLElement>, at: number) => {
     event.stopPropagation();
+    // While the pill's menu stands, the keys are the menu's.
+    if (hasActiveMenu(event.currentTarget)) return;
+    if (asksForMenu(event)) {
+      event.preventDefault();
+      chipMenu(event.currentTarget, null, at);
+      return;
+    }
     if (tabEnd(event, end)) return;
     const moves: Record<string, () => void> = {
       Backspace: () => remove(at),
@@ -415,6 +581,7 @@ function ListEditor({
     // pills of the next row, and a pill sits where it sits at rest.
     // A press on the space between them goes to the field.
     <div
+      ref={root}
       className="zt:min-h-full zt:px-2 zt:leading-(--bases-table-row-height) zt:whitespace-normal"
       onMouseDown={(event) => {
         if (event.target !== event.currentTarget) return;
@@ -435,8 +602,17 @@ function ListEditor({
             PILL,
             "zt:me-(--size-2-2) zt:inline-flex",
             type === "tags" && TAG,
+            // The item that edits in place holds its width, under its field.
+            at === editingAt && "zt:invisible zt:relative",
           )}
           onKeyDown={(event) => onPillKey(event, at)}
+          onContextMenu={(event) => {
+            // The field of an item in edit keeps the field's own menu.
+            if (at === editingAt) return;
+            event.preventDefault();
+            event.stopPropagation();
+            chipMenu(event.currentTarget, event, at);
+          }}
         >
           {/* An item too long for the column truncates before its x, as it
               does at rest, so a pill stays one line and a row tall. */}
@@ -464,6 +640,48 @@ function ListEditor({
           >
             <Icon name="x" size="1em" />
           </span>
+          {at === editingAt &&
+            draft.chip && (
+              // An opaque base under the pill, so the neighbours it grows
+              // over do not show through.
+              <span
+                ref={chipBox}
+                className="zt:visible zt:absolute zt:inset-y-0 zt:start-0 zt:z-1 zt:flex zt:max-w-(--zt-chip-room) zt:min-w-full zt:rounded-(--radius-s) zt:bg-(--background-primary)"
+              >
+                <span
+                  className={cn(
+                    PILL,
+                    "zt:max-w-none zt:flex-1 zt:ring-1 zt:ring-(--background-modifier-border-focus)",
+                    type === "tags" && TAG,
+                  )}
+                >
+                  <input
+                    ref={chipField}
+                    data-query-vault-chip-input=""
+                    type="text"
+                    aria-labelledby={labelId}
+                    value={draft.chip.text}
+                    className="zt:[field-sizing:content] zt:w-full zt:min-w-0 zt:bg-transparent zt:p-0 zt:outline-none"
+                    onInput={(event) =>
+                      onDraft({
+                        ...draft,
+                        chip: { at, text: event.currentTarget.value },
+                      })
+                    }
+                    onKeyDown={onChipKey}
+                    // Focus that moves on inside the editor keeps the edit;
+                    // focus that leaves it is the cell's to end.
+                    onBlur={(event) => {
+                      if (chipEnded.current) return;
+                      if (!root.current?.contains(event.relatedTarget as Node))
+                        return;
+                      chipEnded.current = true;
+                      onDraft(withChip(latest.current));
+                    }}
+                  />
+                </span>
+              </span>
+            )}
         </span>
       ))}
       <input
