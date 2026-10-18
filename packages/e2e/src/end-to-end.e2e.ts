@@ -2607,6 +2607,154 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(reloaded.rows.toSorted()).toEqual(unread.rows.toSorted());
   }, 180000);
 
+  it("narrows the Library View by the tags selected in the Tag Selector to the seed's Items with every one, filters the tag names alone, deselects them all, and keeps them across a plugin reload", async () => {
+    const services = "app.plugins.plugins.zotlit.services";
+    const snapshot = await obEval(
+      vaultId,
+      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null})`,
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'library.document':saved.document});await settings.flush();await app.workspace.changeLayout(saved.layout);return true;})()`,
+      );
+    });
+    // A Library View on My Library, with no tag selected: a document of an
+    // earlier build, which stored none.
+    await obEval(
+      vaultId,
+      `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=${services}.settings;settings.update({'library.document':${JSON.stringify(MY_LIBRARY_DOCUMENT)}});await settings.flush();return true;})()`,
+    );
+
+    const personal = ITEMS.filter(({ libraryID }) => libraryID === 1);
+    const tagsOf = (item: FixtureItem) =>
+      (item.tags ?? []).map(({ name }) => name);
+    const withEvery = (tags: readonly string[]) =>
+      personal.filter((item) =>
+        tags.every((tag) => tagsOf(item).includes(tag)),
+      );
+    const namesOf = (items: readonly FixtureItem[]) =>
+      [...new Set(items.flatMap(tagsOf))].toSorted();
+    const keys = (items: readonly FixtureItem[]) =>
+      items.map(({ key }) => key).toSorted();
+
+    interface Shown {
+      phase: string;
+      header: string | null;
+      tags: string[];
+      pressed: string[];
+      count: string | null;
+      rows: string[];
+    }
+    const readShown = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.tree)return 'null';await view.searched;await view.query.settled;await view.tree.settled;const el=view.contentEl;const tags=[...el.querySelectorAll('[data-library-tag]')];return JSON.stringify({phase:view.query.state.getState().phase,header:el.querySelector('[data-library-header]')?.textContent??null,tags:tags.map(n=>n.getAttribute('data-library-tag')),pressed:tags.filter(n=>n.getAttribute('aria-pressed')==='true').map(n=>n.getAttribute('data-library-tag')),count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,rows:[...el.querySelectorAll('[data-query-papers-row]')].map(n=>n.getAttribute('data-query-papers-row'))});})()`;
+    /** What the view shows once it lists every row it counts with `pressed` selected. */
+    const shownWith = async (
+      pressed: readonly string[],
+      ready: (shown: Shown) => boolean = () => true,
+    ) => {
+      let shown: Shown | null = null;
+      const settled = await waitFor(async () => {
+        shown = JSON.parse(await obEval(vaultId, readShown)) as Shown | null;
+        return (
+          shown !== null &&
+          shown.phase === "ready" &&
+          shown.count !== null &&
+          shown.rows.length === Number(shown.count) &&
+          JSON.stringify(shown.pressed) === JSON.stringify(pressed) &&
+          ready(shown)
+        );
+      }, 120);
+      if (!settled) throw new Error(`Library View: ${JSON.stringify(shown)}`);
+      return shown!;
+    };
+    /** Press `target` in the tree pane, opening the tree first on a narrow pane. */
+    const inTree = (target: string, what: string) =>
+      obEval(
+        vaultId,
+        `(async()=>{${PAGE}const el=app.workspace.getLeavesOfType('zotlit-library')[0].view.contentEl;const pane=el.querySelector('[data-library-tree]');if(getComputedStyle(pane).display==='none'){press(el.querySelector('[data-library-tree-toggle]'),'Library Tree button');await until('Library Tree',()=>getComputedStyle(pane).display!=='none');}press(${target},${JSON.stringify(what)});return true;})()`,
+      );
+    const tag = (name: string) =>
+      inTree(
+        `[...pane.querySelectorAll('[data-library-tag]')].find(n=>n.getAttribute('data-library-tag')===${JSON.stringify(name)})`,
+        `${name} tag`,
+      );
+    /** What the header adds while `tags` are selected. */
+    const tagged = (tags: readonly string[]) =>
+      m.library_view_header_tags({
+        tags: new Intl.ListFormat("en", { type: "conjunction" }).format(tags),
+      });
+
+    await obEval(
+      vaultId,
+      "app.commands.executeCommandById('zotlit:open-library-view');true",
+    );
+    // The Tag Selector lists the tags of My Library's Items.
+    const opened = await shownWith([], (shown) => shown.tags.length > 0);
+    expect(opened.rows.toSorted()).toEqual(keys(personal));
+    expect(opened.tags.toSorted()).toEqual(namesOf(personal));
+
+    // A tag narrows the list to its Items, and the tags to theirs.
+    const first = "fixture-core";
+    await tag(first);
+    const one = await shownWith([first]);
+    expect(withEvery([first]).length).toBeGreaterThan(0);
+    expect(one.rows.toSorted()).toEqual(keys(withEvery([first])));
+    expect(one.tags.toSorted()).toEqual(namesOf(withEvery([first])));
+
+    // A second tag narrows to the Items with both, and the header names them.
+    const second = one.tags.find((name) => name !== first)!;
+    expect(second).toBeDefined();
+    await tag(second);
+    const both = [first, second].toSorted();
+    const two = await shownWith(
+      both,
+      (shown) => shown.header?.endsWith(` ${tagged(both)}`) === true,
+    );
+    expect(withEvery(both).length).toBeGreaterThan(0);
+    expect(two.rows.toSorted()).toEqual(keys(withEvery(both)));
+
+    // The "Filter tags" box narrows the names it shows, never the papers.
+    await obEval(
+      vaultId,
+      `(()=>{const input=app.workspace.getLeavesOfType('zotlit-library')[0].view.contentEl.querySelector('[data-library-tags-filter]');input.value='zzz-no-tag';input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+    );
+    const filtered = await shownWith(
+      both,
+      (shown) => shown.tags.length === both.length,
+    );
+    expect(filtered.tags).toEqual(both);
+    expect(filtered.rows).toEqual(two.rows);
+
+    // A plugin reload comes back with the tags selected.
+    expect(
+      await obEvalUntil(
+        vaultId,
+        "app.plugins.disablePlugin('zotlit').then(function () { return app.plugins.enablePlugin('zotlit'); }).then(function () { return true; })",
+        { expected: "true", tries: 20 },
+      ),
+    ).toBe(true);
+    const reloaded = await shownWith(both);
+    expect(reloaded.rows).toEqual(two.rows);
+
+    // Deselect all lists every Item of My Library again.
+    await inTree(
+      "pane.querySelector('[data-library-tags-clear]')",
+      "Deselect all",
+    );
+    const cleared = await shownWith(
+      [],
+      (shown) => shown.rows.length === personal.length,
+    );
+    expect(cleared.rows.toSorted()).toEqual(keys(personal));
+    expect(
+      await obEval(
+        vaultId,
+        `JSON.stringify(${services}.settings.current['library.document'].tags)`,
+      ),
+    ).toBe("[]");
+  }, 180000);
+
   it("searches the Library View as the quick switcher ranks, inside the tree node, with tag:, Search all libraries and Escape", async () => {
     const services = "app.plugins.plugins.zotlit.services";
     const snapshot = await obEval(
