@@ -19,24 +19,36 @@ export interface RowMenuDeps {
   workspace: Pick<Workspace, "trigger">;
 }
 
+/** The Item a menu acts on. */
+export interface MenuItem {
+  readonly indexedKey: string;
+  /** Whether the Item has a PDF to open; the menu offers none without one. */
+  readonly pdf: boolean;
+}
+
 /** The menu of the row that lists the Item `indexedKey`. */
-export function rowMenu(deps: RowMenuDeps, indexedKey: string): Menu {
+export function rowMenu(
+  deps: RowMenuDeps,
+  { indexedKey, pdf }: MenuItem,
+): Menu {
   const { actions } = deps;
   const menu = new Menu();
-  menu.addItem((item) =>
-    item
-      .setSection(SECTION.open)
-      .setTitle(m.library_view_menu_open_pdf())
-      .setIcon("file-text")
-      .onClick(() => void actions.openPdf(indexedKey, false)),
-  );
-  menu.addItem((item) =>
-    item
-      .setSection(SECTION.open)
-      .setTitle(m.library_view_menu_open_pdf_right())
-      .setIcon("separator-vertical")
-      .onClick(() => void actions.openPdf(indexedKey, "split")),
-  );
+  if (pdf) {
+    menu.addItem((item) =>
+      item
+        .setSection(SECTION.open)
+        .setTitle(m.library_view_menu_open_pdf())
+        .setIcon("file-text")
+        .onClick(() => void actions.openPdf(indexedKey, false)),
+    );
+    menu.addItem((item) =>
+      item
+        .setSection(SECTION.open)
+        .setTitle(m.library_view_menu_open_pdf_right())
+        .setIcon("separator-vertical")
+        .onClick(() => void actions.openPdf(indexedKey, "split")),
+    );
+  }
   const note = deps.literatureNotes.find(indexedKey);
   menu.addItem((item) =>
     item

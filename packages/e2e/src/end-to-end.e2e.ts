@@ -3749,7 +3749,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(written.path).toMatch(/^books\//);
 
     // The row menu lists every action of the Item, and an entry another
-    // plugin adds through `zotlit:item-menu`. The note to cite into is the
+    // plugin adds through `zotlit:item-menu`. This Item holds no PDF, so the
+    // menu offers no Open PDF. The note to cite into is the
     // one active last; the notes and the PDF opened above took the tab
     // beside the view, so it opens again.
     await obEval(
@@ -3762,8 +3763,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     ) as string[];
     expect(menu).toEqual([
-      m.library_view_menu_open_pdf(),
-      m.library_view_menu_open_pdf_right(),
       m.library_view_menu_open_note(),
       m.library_view_menu_insert_citation(),
       m.graph_citations_menu_copy_citekey(),
@@ -4018,7 +4017,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEvalUntil(vaultId, readNotFound, {
         expected: JSON.stringify({
-          tree: m.library_view_not_found_tree(),
+          tree: m.library_view_not_found(),
           list: [m.library_view_locate(), m.welcome_action_open_settings()],
           papers: false,
           search: false,

@@ -1557,11 +1557,12 @@ export function SortButton({ view }: { view: QueryView }) {
   const { literatureNotes } = view.tableDeps;
   const names = useVaultPropertyNames(literatureNotes);
   const properties = useViewProperties(view, names);
-  // Rows in the host's rank do not follow the sort.
+  // Rows in the host's rank do not follow the sort: Sort stays in place,
+  // off, so the toolbar never shifts as a search starts or ends.
   const ranked = useQueryViewState(view, (s) => s.results?.ranked ?? false);
   // A sort the host writes itself, as Recent does, shows as not set.
   useQueryViewState(view, (s) => s.defaults);
-  if (!current || !properties || ranked) return null;
+  if (!current || !properties) return null;
   const sort = current.sort ?? [];
   const set = view.setByResearcher(current).sort;
   const labelOf = (path: string) => properties.entry(path).label;
@@ -1572,6 +1573,7 @@ export function SortButton({ view }: { view: QueryView }) {
       active={set.length > 0}
       count={set.length}
       hook="sort"
+      {...(ranked && { off: m.query_view_sort_ranked() })}
     >
       <SortEditor
         value={sort}

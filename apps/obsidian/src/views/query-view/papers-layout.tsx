@@ -67,6 +67,10 @@ export const PAPERS_FIELDS: readonly string[] = [
   ...TABLE_FIELDS,
 ];
 
+/** A row-end slot, one extra-small icon wide, kept where it holds no mark. */
+const MARK_SLOT =
+  "zt:flex zt:w-(--icon-xs) zt:shrink-0 zt:items-center zt:justify-center";
+
 /** The most creators the second line names before "et al.". */
 const SHOWN_CREATORS = 3;
 
@@ -148,6 +152,14 @@ export function metaText(values: TableRecord["values"]): string {
 function mainAttachmentKind(values: TableRecord["values"]) {
   const types = list(values["attachments[].fileType"]);
   return ATTACHMENT_KINDS.find((kind) => types.includes(kind.type)) ?? null;
+}
+
+/**
+ * Whether the Item has a PDF to open: the one rule for every surface that
+ * offers Open PDF, read from the Attachment kinds a Papers row reads.
+ */
+export function holdsPdf(values: Readonly<Record<string, QueryViewValue>>) {
+  return list(values["attachments[].fileType"]).includes("pdf");
 }
 
 /** The path of the Item's Literature Note, as the Note Index has it now. */
@@ -279,21 +291,32 @@ function PaperRow({
             </div>
           )}
         </div>
-        <FirstLine className="zt:gap-1 zt:text-sm zt:text-(--icon-color)">
-          {note !== null && (
-            <span className="zt:flex" data-query-papers-note="">
-              <span className="zt:sr-only">
-                {m.query_view_papers_note_marker()}
+        {/* Two fixed slots, the note's then the Attachment's, each holding
+            its place where the row has no mark, so every mark of a kind
+            lines up in one column. The title, cut short, stops 8 px before
+            them. */}
+        <FirstLine className="zt:ms-(--size-2-1) zt:gap-1 zt:text-sm zt:text-(--icon-color)">
+          <span className={MARK_SLOT} data-query-papers-slot="note">
+            {note !== null && (
+              <span className="zt:flex" data-query-papers-note="">
+                <span className="zt:sr-only">
+                  {m.query_view_papers_note_marker()}
+                </span>
+                <Icon name="notebook-pen" size="xs" />
               </span>
-              <Icon name="notebook-pen" size="xs" />
-            </span>
-          )}
-          {kind && (
-            <span className="zt:flex" data-query-papers-attachment={kind.type}>
-              <span className="zt:sr-only">{kind.label()}</span>
-              <Icon name={kind.icon} size="xs" />
-            </span>
-          )}
+            )}
+          </span>
+          <span className={MARK_SLOT} data-query-papers-slot="attachment">
+            {kind && (
+              <span
+                className="zt:flex"
+                data-query-papers-attachment={kind.type}
+              >
+                <span className="zt:sr-only">{kind.label()}</span>
+                <Icon name={kind.icon} size="xs" />
+              </span>
+            )}
+          </span>
         </FirstLine>
       </div>
       {open && (

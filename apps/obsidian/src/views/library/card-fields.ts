@@ -11,6 +11,7 @@ import { ITEM_TYPES } from "@zotlit/zotero-types/item-types";
 import * as m from "@/lib/i18n/generated/messages";
 import { runtime } from "@/lib/i18n/generated/runtime";
 import type { QueryViewValue } from "@/services/item-query/query-view";
+import { holdsPdf } from "@/views/query-view/papers-layout";
 import { fieldLabel } from "@/views/query-view/view-properties";
 
 type Values = Readonly<Record<string, QueryViewValue>>;
@@ -202,6 +203,8 @@ export interface CardHeader {
   readonly venue: string;
   readonly doi: { readonly text: string; readonly href: string } | null;
   readonly citationKey: string | null;
+  /** Whether the Item has a PDF, which the card's primary button opens. */
+  readonly pdf: boolean;
 }
 
 /** The base fields the header and the abstract show, which All fields leaves out. */
@@ -245,6 +248,7 @@ export function cardHeader(values: Values): CardHeader {
         ? null
         : { text: doi, href: WEB.test(doi) ? doi : `https://doi.org/${doi}` },
     citationKey: citationKey === "" ? null : citationKey,
+    pdf: holdsPdf(values),
   };
 }
 

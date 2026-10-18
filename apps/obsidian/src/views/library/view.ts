@@ -14,6 +14,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { runtime } from "@/lib/i18n/generated/runtime";
 import { getLogger } from "@/lib/log";
 import { showMenuAtButton } from "@/lib/menu";
+import type { QueryViewValue } from "@/services/item-query/query-view";
 import type { LibraryScope } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import { inTextEntry } from "@/services/pdf-annotation-editor/capability-affordance";
@@ -22,6 +23,7 @@ import { showItemInAnnotView } from "@/views/annot-view/register";
 import { saveAsQueryFile } from "@/views/annot-view/save-query-file";
 import { ITEM_ROW_ATTRIBUTE } from "@/views/query-view/item-rows";
 import type { ItemRowGestures } from "@/views/query-view/item-rows";
+import { holdsPdf } from "@/views/query-view/papers-layout";
 import { QueryView } from "@/views/query-view/view";
 import type { QueryViewDeps } from "@/views/query-view/view";
 import { WelcomeBanner } from "@/views/welcome/banner";
@@ -57,6 +59,7 @@ import type { LibraryTreeDeps } from "./library-tree";
 import { ZoteroNotFound } from "./not-found";
 import { ReadingCard } from "./reading-card";
 import { rowMenu } from "./row-menu";
+import type { MenuItem } from "./row-menu";
 import { LibrarySearch } from "./search-box";
 import type { LibrarySearchDeps, SearchFound } from "./search-box";
 import { LibraryViewStorage } from "./storage";
@@ -169,14 +172,14 @@ export class LibraryView extends ItemView {
       () => this.query.document.text,
     );
     const drag = createItemDrag({ app: deps.app, actions: deps.items });
-    const menuOf = (key: string) =>
+    const menuOf = (item: MenuItem) =>
       rowMenu(
         {
           actions: deps.items,
           literatureNotes: deps.literatureNotes,
           workspace: deps.app.workspace,
         },
-        key,
+        item,
       );
     const rows: ItemRowGestures = {
       selection: this.selection,
@@ -203,7 +206,11 @@ export class LibraryView extends ItemView {
           key,
           card: now.key === key && now.card,
         }));
-        menuOf(key).showAtMouseEvent(event);
+        const values = this.#rowValues(key);
+        menuOf({
+          indexedKey: key,
+          pdf: values !== null && holdsPdf(values),
+        }).showAtMouseEvent(event);
       },
       drag,
     };
@@ -251,7 +258,7 @@ export class LibraryView extends ItemView {
       layout: { onEscape },
     });
     this.card = new ReadingCard(deps, {
-      menu: (key, button) => showMenuAtButton(menuOf(key), button),
+      menu: (item, button) => showMenuAtButton(menuOf(item), button),
       openInSidebar: (key) => void showItemInAnnotView(deps.app, key),
       close: () => this.#closeCard(),
       // A disclosure is a view state the document keeps; a failed write
@@ -270,10 +277,7 @@ export class LibraryView extends ItemView {
           this.tree.toggleTag(name);
       },
       // The card shows the header of an Item it is reading from its row.
-      row: (key) =>
-        this.query.state
-          .getState()
-          .results?.rows.find((row) => row.indexedKey === key)?.values ?? null,
+      row: (key) => this.#rowValues(key),
       onEscape,
     });
     this.tree = new LibraryTree(deps, {
@@ -293,6 +297,16 @@ export class LibraryView extends ItemView {
       // ZotLit cannot read Zotero's database: the search box asks nothing.
       readable: () => !unavailable(deps.welcome),
     });
+  }
+
+  /**
+   * The researcher brought the tab forward. Search is the front door: the
+   * cursor waits in the box, except under the Welcome View banner, whose
+   * focus ring would wrap the box right under it; the banner's "Search your
+   * library" puts the cursor there on purpose.
+   */
+  arrive(): void {
+    if (!this.welcome.shown) this.search.focus();
   }
 
   /** Settles once the list shows the newest search. Never rejects. */
@@ -470,6 +484,15 @@ export class LibraryView extends ItemView {
     this.tree.showTags(doc.tags);
     this.tree.refresh();
     await this.search.open(doc.search);
+  }
+
+  /** The values of the list's row of the Item `key`, where the list shows it. */
+  #rowValues(key: string): Readonly<Record<string, QueryViewValue>> | null {
+    return (
+      this.query.state
+        .getState()
+        .results?.rows.find((row) => row.indexedKey === key)?.values ?? null
+    );
   }
 
   /** Whether the Reading Card shows over the list, as on a narrow pane. */
@@ -747,6 +770,8 @@ export class LibraryView extends ItemView {
       ...(keys && { keys }),
       ...(everywhere && { everywhere }),
     });
+    // The tree marks the node the list shows, and none past it.
+    this.tree.showListed(this.#shown.node !== null);
     this.query.setText(this.#shown.text);
     this.query.contextChanged();
   }

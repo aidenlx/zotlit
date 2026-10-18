@@ -352,6 +352,7 @@ function answer(
               "attachments[].indexedKey": [...attachments],
             }),
             ...(title !== undefined && { title }),
+            ...(item.pdf && { "attachments[].fileType": ["pdf"] }),
             ...fields,
             // The Reading Card reads its one Item, and more of it.
             ...(request.limit === 1 && cardValues(item)),
@@ -938,6 +939,8 @@ it("shows the libraries outside the Library Scope on request, and lists one", as
   const all = () =>
     view.contentEl.querySelector<HTMLElement>("[data-library-all]")!;
   expect(all().textContent).toBe("Show all libraries");
+  // It ends the Libraries it widens, before the facets.
+  expect(all().previousElementSibling?.getAttribute("role")).toBe("tree");
   await press(view, all());
   expect(tree(view)).toEqual([
     "Recent",
@@ -1081,7 +1084,10 @@ it("says where Zotero's data folder cannot be found, offers to locate it, and li
   // The tree part is one line; the list says the rest, once.
   expect(notFound("tree").textContent).toBe("Zotero not found");
   expect(notFound("tree").querySelectorAll("button")).toHaveLength(0);
-  expect(notFound("list").textContent).toContain("Zotero library not found");
+  // Both name it in the same words.
+  expect(notFound("list").querySelector('[role="heading"]')?.textContent).toBe(
+    "Zotero not found",
+  );
   // The list's card stands centred in the list, as an empty list does; the
   // tree's line stays at the top of the tree.
   expect(notFound("list").closest("[data-pane-state]")).not.toBeNull();
@@ -1735,7 +1741,7 @@ it("lists the row's actions in its menu, which other plugins add to", async () =
   deps.app.workspace.trigger = trigger;
   const view = await openTab(deps);
   await act(() => {
-    itemRow(view, C).dispatchEvent(
+    itemRow(view, B).dispatchEvent(
       new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
     );
   });
@@ -1751,16 +1757,33 @@ it("lists the row's actions in its menu, which other plugins add to", async () =
   expect(menu.items.every((item) => item.icon !== null)).toBe(true);
   expect(trigger).toHaveBeenCalledExactlyOnceWith("zotlit:item-menu", menu, {
     source: "library-view",
-    indexedKey: C,
+    indexedKey: B,
   });
   // The menu acts on the row it opened over, which it selects without
   // opening its Reading Card.
-  expect(itemRows(view)[2]).toBe(`${C} *`);
-  expect(view.selection.getState()).toEqual({ key: C, card: false });
+  expect(itemRows(view)[1]).toBe(`${B} *`);
+  expect(view.selection.getState()).toEqual({ key: B, card: false });
   menu.items[1]!.click();
-  expect(items.openPdf).toHaveBeenCalledExactlyOnceWith(C, "split");
+  expect(items.openPdf).toHaveBeenCalledExactlyOnceWith(B, "split");
   menu.items[5]!.click();
-  expect(items.showInZotero).toHaveBeenCalledExactlyOnceWith(C);
+  expect(items.showInZotero).toHaveBeenCalledExactlyOnceWith(B);
+});
+
+it("offers no PDF to open in the menu of a row whose Item has no PDF", async () => {
+  const { deps } = pluginData();
+  deps.app.workspace.trigger = vi.fn();
+  const view = await openTab(deps);
+  await act(() => {
+    itemRow(view, C).dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+    );
+  });
+  expect(Menu.instances.at(-1)!.items.map((item) => item.title)).toEqual([
+    "Write literature note",
+    "Insert citation",
+    "Copy citation key",
+    "Show in Zotero",
+  ]);
 });
 
 it("shows an Item in its first Collection, selected, with its Reading Card", async () => {
@@ -1883,22 +1906,29 @@ it("offers no toolbar search of the rows on screen beside its own search box", a
   ).toBeNull();
 });
 
-it("offers no sort while a search lists its hits in rank order, and offers it again once the search is cleared", async () => {
+it("keeps Sort in place but off while a search lists its hits in rank order, and turns it on again once the search is cleared", async () => {
   const { deps } = pluginData(ON_MY_LIBRARY);
   const view = await openTab(deps);
   const sort = () =>
-    view.contentEl.querySelector('[data-query-toolbar="sort"]');
-  expect(sort()).not.toBeNull();
+    view.contentEl.querySelector<HTMLElement>('[data-query-toolbar="sort"]');
+  const state = () =>
+    sort() === null
+      ? "gone"
+      : sort()!.getAttribute("aria-disabled") === "true"
+        ? "off"
+        : "on";
+  expect(state()).toBe("on");
   await type(view, "figures");
-  expect(sort()).toBeNull();
+  expect(state()).toBe("off");
+  // It says why, and opens nothing.
+  expect(sort()!.getAttribute("aria-label")).toBe(m.query_view_sort_ranked());
+  expect(sort()!.hasAttribute("popovertarget")).toBe(false);
   await type(view, "");
-  expect(sort()).not.toBeNull();
+  expect(state()).toBe("on");
 });
 
-it("has the search box focused when the command brings the tab forward", async () => {
-  const { deps } = pluginData();
-  const view = await openTab(deps);
-  expect(document.activeElement).not.toBe(searchBox(view));
+/** Bring `view`'s tab forward, as the command that opens the Library View does. */
+async function bringForward(view: LibraryView) {
   const leaf = { view } as unknown as WorkspaceLeaf;
   await openLibraryView({
     workspace: {
@@ -1907,7 +1937,26 @@ it("has the search box focused when the command brings the tab forward", async (
       revealLeaf: () => Promise.resolve(),
     },
   } as unknown as App);
+}
+
+it("has the search box focused when the command brings the tab forward", async () => {
+  const { deps, host } = pluginData();
+  // Setup is complete, so no Welcome View banner shows.
+  host.vault.addFile("literatures/Paper.md", "");
+  const view = await openTab(deps);
+  await act(() => view.welcome.settled);
+  expect(document.activeElement).not.toBe(searchBox(view));
+  await bringForward(view);
   expect(document.activeElement).toBe(searchBox(view));
+});
+
+it("leaves the search box unfocused when the command brings the tab forward under the Welcome View banner", async () => {
+  const { deps } = pluginData();
+  const view = await openTab(deps);
+  await act(() => view.welcome.settled);
+  expect(view.contentEl.querySelector("[data-welcome-banner]")).not.toBeNull();
+  await bringForward(view);
+  expect(document.activeElement).not.toBe(searchBox(view));
 });
 
 it("puts the cursor in its own search box from the Welcome View banner's Search your library", async () => {
@@ -1982,6 +2031,22 @@ it("searches all libraries in the Library Scope on request, past the selected Co
     libraries: [PERSONAL, LAB],
   });
   expect(header(view)).toBe("All libraries› | 4 matches for “figures”");
+  // The tree marks no node while the list reads every Library, and marks
+  // the node again once the search keeps to it.
+  const selected = () =>
+    [
+      ...view.contentEl.querySelectorAll<HTMLElement>(
+        '[role="treeitem"][aria-selected="true"]',
+      ),
+    ].map((el) => el.dataset.libraryNode);
+  expect(selected()).toEqual([]);
+  // The node keeps the tree's one stop for Tab.
+  expect(
+    view.contentEl.querySelector<HTMLElement>('[role="treeitem"][tabindex="0"]')
+      ?.dataset.libraryNode,
+  ).toBe(nodeKey(THESIS));
+  await type(view, "");
+  expect(selected()).toEqual([nodeKey(THESIS)]);
 });
 
 it("narrows a tag: token to the Items with that tag, in the list's order", async () => {
@@ -2036,18 +2101,19 @@ it("clears the search on Escape, and lists the selected node again", async () =>
   expect(settings.current?.["library.document"]?.search).toBe("");
 });
 
-it("says a search that finds nothing found nothing, offers to search all libraries, then to clear it, with no filter hint", async () => {
+it("says how to recover from a search that finds nothing, offering to search all libraries, then to clear it, with no filter hint", async () => {
   const { deps } = pluginData(ON_MY_LIBRARY);
   const view = await openTab(deps);
   const empty = () =>
     view.contentEl.querySelector<HTMLElement>("[data-query-empty]");
   await type(view, "Engelbart");
   expect(shown(view)).toEqual([]);
-  // One sentence and one button: no dataset sentence, no filter hint, and
+  // One sentence and one action: the heading says nothing matched, so the
+  // list says how to recover, with no dataset sentence, no filter hint, and
   // the header leaves its own offer to the empty list.
   expect(view.contentEl.querySelector("[data-query-empty-hint]")).toBeNull();
   expect(empty()?.textContent).toBe(
-    `${m.library_view_empty_search({ query: "Engelbart" })}${m.library_view_search_everywhere()}`,
+    `${m.library_view_empty_search_widen()}${m.library_view_search_everywhere()}`,
   );
   expect(searchAll(view)).toBeNull();
   // The empty list stands centred in the space under the header.
@@ -2061,6 +2127,9 @@ it("says a search that finds nothing found nothing, offers to search all librari
     await view.query.settled;
   });
   expect(shown(view)).toEqual([]);
+  expect(empty()?.textContent).toBe(
+    `${m.library_view_empty_search_clear()}${m.library_view_search_clear()}`,
+  );
   expect(action()?.textContent).toBe(m.library_view_search_clear());
   await act(async () => {
     action()!.click();
@@ -2467,6 +2536,39 @@ describe("Reading Card", () => {
     expect(items.insertCitation).toHaveBeenCalledExactlyOnceWith(B);
     await act(() => addNote(B));
     expect(button(view, "note").textContent).toBe("Open literature note");
+  });
+
+  it("offers no Open PDF for an Item with no PDF, and makes its Literature Note the primary button, from the row's header on", async () => {
+    const { deps, addNote } = pluginData();
+    deps.app.workspace.trigger = vi.fn();
+    const view = await openTab(deps);
+    const actions = () =>
+      [
+        ...card(view).querySelectorAll<HTMLElement>(
+          "[data-library-card-action]",
+        ),
+      ].map(
+        (el) =>
+          `${el.dataset.libraryCardAction}${el.classList.contains("mod-cta") ? " (primary)" : ""}`,
+      );
+    // While the card reads C, it shows C's header from its row.
+    await act(() => itemRow(view, C).click());
+    expect(actions()).toEqual(["note (primary)", "more", "sidebar"]);
+    await act(() => view.card.settled);
+    expect(actions()).toEqual(["note (primary)", "more", "sidebar"]);
+    await act(() => button(view, "more").click());
+    expect(
+      Menu.instances.at(-1)!.items.map((item) => item.title),
+    ).not.toContain("Open PDF");
+    await act(() => addNote(C));
+    expect(actions()).toEqual(["note (primary)", "more", "sidebar"]);
+    expect(button(view, "note").textContent).toBe("Open literature note");
+    // An Item with a PDF keeps Open PDF first, as the primary button.
+    await act(async () => {
+      itemRow(view, B).click();
+      await view.card.settled;
+    });
+    expect(actions()).toEqual(["pdf (primary)", "note", "more", "sidebar"]);
   });
 
   it("puts itself away from its close button, which a narrow pane shows, and gives the focus back to the row", async () => {

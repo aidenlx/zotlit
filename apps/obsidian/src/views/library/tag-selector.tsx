@@ -12,7 +12,7 @@ import { useUniqueId } from "@zotlit/ui";
 
 import * as m from "@/lib/i18n/generated/messages";
 
-import { FILTER_CHIP_CLASS } from "./chip";
+import { TAG_CHIP_CLASS } from "./chip";
 import type { LibraryTree } from "./library-tree";
 
 /**
@@ -112,7 +112,7 @@ export function TagSelector({ tree }: { tree: LibraryTree }) {
             tabIndex={name === stop ? 0 : -1}
             data-library-tag={name}
             aria-pressed={selected.includes(name)}
-            className={`${FILTER_CHIP_CLASS} zt:max-w-full zt:[overflow-wrap:anywhere]`}
+            className={TAG_CHIP_CLASS}
             onClick={() => {
               setCurrent(name);
               tree.toggleTag(name);

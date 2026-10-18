@@ -33,7 +33,7 @@ import {
   withTags,
   withText,
 } from "./document";
-import type { LibraryViewDocument } from "./document";
+import type { LibraryNode, LibraryViewDocument } from "./document";
 import { searchTerms } from "./search";
 
 /** The filter ZotLit Query runs for a view that holds no vault condition. */
@@ -313,6 +313,24 @@ describe("libraryViewQuery — the rows", () => {
 });
 
 describe("libraryViewQuery — the tree node", () => {
+  it("names the node it lists, and none while a search reads every Library past it, Recent aside", () => {
+    const thesis: LibraryNode = {
+      kind: "collection",
+      library: { type: "personal" },
+      path: ["Thesis"],
+    };
+    const all = [
+      { type: "personal" },
+      { type: "group", groupID: 118 },
+    ] as const;
+    expect(derive({ node: thesis }).query.node).toEqual(thesis);
+    expect(derive({ node: thesis }, ["ABCD2345"], all).query.node).toBeNull();
+    // Recent reads every Library of the Library Scope already.
+    expect(
+      derive({ node: { kind: "recent" } }, ["ABCD2345"], all).query.node,
+    ).toEqual({ kind: "recent" });
+  });
+
   it("reads a Library as the query's library, with no filter", () => {
     const { query, filter } = derive({
       node: { kind: "library", library: { type: "group", groupID: 118 } },
