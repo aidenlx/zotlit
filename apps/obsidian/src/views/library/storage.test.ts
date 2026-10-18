@@ -166,8 +166,10 @@ it("writes a toolbar change to the document in plugin data at once", async () =>
     });
     await query.flush();
   });
+  // The stored document, of an earlier build, selected no tags.
   expect(saved(plugin)).toEqual({
     ...STORED,
+    tags: [],
     sort: [{ property: "title", direction: "ASC" }],
   });
   expect(storage.document().sort).toEqual([
@@ -211,8 +213,10 @@ it("keeps Recent as the tree selection with its sort, newest change first", asyn
     await query.flush();
   });
   await storage.change((doc) => withNode(doc, { kind: "recent" }));
+  // The stored document, of an earlier build, selected no tags.
   expect(saved(plugin)).toEqual({
     ...STORED,
+    tags: [],
     node: { kind: "recent" },
     sort: [{ property: "dateModified", direction: "DESC" }],
   });

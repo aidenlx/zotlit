@@ -1,12 +1,14 @@
 // The Library Tree of the Library View: Recent, then the Libraries in the
 // Library Scope with their nested Collections, each with its paper count, the
-// Reading State facets under them, and the header of the list that names the
-// selection with its unread count. The tree reads its Collections and counts
-// again on every database change; a selection or a facet goes to the host,
+// Reading State facets under them, the Tag Selector at its foot, and the
+// header of the list that names the selection with its unread count and its
+// selected tags. The tree reads its Collections, counts and tags again on
+// every database change; a selection, a facet or a tag goes to the host,
 // which makes it the query of the list.
 //
 // @see apps/obsidian/docs/adr/0072-the-library-tree-writes-filters.md
 // @see apps/obsidian/docs/adr/0076-recent-is-a-library-tree-node-that-writes-a-sort.md
+// @see apps/obsidian/docs/adr/0078-the-tag-selector-writes-tag-filters.md
 import { Component } from "obsidian";
 import type { IconName } from "obsidian";
 import { Fragment, useSyncExternalStore } from "react";
@@ -23,19 +25,30 @@ import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
 import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
+import { runtime } from "@/lib/i18n/generated/runtime";
 import { getLogger } from "@/lib/log";
 import { cn, tooltipAttrs } from "@/lib/utils";
 import type { QueryService } from "@/services/item-query/service";
 import { libraryLabel } from "@/services/library-scope/label";
 import { selectorKey } from "@/services/library-scope/scope";
-import type { AvailableLibrary } from "@/services/library-scope/scope";
+import type {
+  AvailableLibrary,
+  LibraryScope,
+} from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import type { LiteratureNotes } from "@/views/query-view/table-notes";
 
-import { READING_STATE_FACETS } from "./document";
+import { FILTER_CHIP_CLASS } from "./chip";
+import { READING_STATE_FACETS, sortTags } from "./document";
 import type { LibraryNode, ReadingStateFacet } from "./document";
-import { paperCountRequest, unreadCount } from "./document";
+import {
+  paperCountRequest,
+  tagListRequest,
+  tagNames,
+  unreadCount,
+} from "./document";
+import { TagSelector } from "./tag-selector";
 import { collectionTree, findNode, sameLibrary } from "./tree";
 import type { LibraryCounts, TreeCollection, TreeLibrary } from "./tree";
 
@@ -54,6 +67,10 @@ export interface LibraryTreeHost {
   select: (node: LibraryNode) => void;
   /** The researcher turned a facet on or off: `facets` are those active now. */
   filter: (facets: readonly ReadingStateFacet[]) => void;
+  /** The researcher selected or let go of a tag: `tags` are those selected now. */
+  tag: (tags: readonly string[]) => void;
+  /** The Library Scope in force, which Recent reads. */
+  scope: () => LibraryScope;
 }
 
 interface TreeState {
@@ -70,6 +87,15 @@ interface TreeState {
   readonly facets: readonly ReadingStateFacet[];
   /** The unread Items of the selected node; `null` while unknown. */
   readonly unread: number | null;
+  /** The tags selected in the Tag Selector, sorted by name. */
+  readonly tags: readonly string[];
+  /**
+   * The tags the Tag Selector lists, the selected ones among them; `null`
+   * before the first list lands. A new list replaces it once it lands.
+   */
+  readonly tagList: readonly string[] | null;
+  /** The text in the "Filter tags" box, which narrows the names shown. */
+  readonly tagFilter: string;
 }
 
 /** One identity for a node, whatever its names hold. */
@@ -100,6 +126,8 @@ export class LibraryTree extends Component {
   #run: AbortController | null = null;
   #unreadRun: AbortController | null = null;
   #unreadSettled: Promise<void> = Promise.resolve();
+  #tagRun: AbortController | null = null;
+  #tagSettled: Promise<void> = Promise.resolve();
   /** Settles once a read first lands, so a caller can wait for it before it starts. */
   readonly #first = Promise.withResolvers<void>();
   #settled: Promise<void> = this.#first.promise;
@@ -117,6 +145,9 @@ export class LibraryTree extends Component {
       open: false,
       facets: [],
       unread: null,
+      tags: [],
+      tagList: null,
+      tagFilter: "",
     }));
   }
 
@@ -133,9 +164,11 @@ export class LibraryTree extends Component {
    * shows a first one. Never rejects.
    */
   get settled(): Promise<void> {
-    return Promise.all([this.#settled, this.#unreadSettled]).then(
-      () => this.#first.promise,
-    );
+    return Promise.all([
+      this.#settled,
+      this.#unreadSettled,
+      this.#tagSettled,
+    ]).then(() => this.#first.promise);
   }
 
   override onload(): void {
@@ -159,6 +192,8 @@ export class LibraryTree extends Component {
     this.#run = null;
     this.#unreadRun?.abort();
     this.#unreadRun = null;
+    this.#tagRun?.abort();
+    this.#tagRun = null;
     this.#first.resolve();
     for (const root of this.#roots) root.unmount();
     this.#roots = [];
@@ -172,7 +207,37 @@ export class LibraryTree extends Component {
       open: false,
       expanded: new Set([...expanded, ...ancestors(node)]),
     });
-    if (nodeKey(node) !== nodeKey(shown)) this.#countUnread();
+    if (nodeKey(node) !== nodeKey(shown)) {
+      this.#countUnread();
+      this.#listTags();
+    }
+  }
+
+  /** Show `tags` as the selected ones, and list the tags they leave. */
+  showTags(tags: readonly string[]): void {
+    const now = this.store.getState().tags;
+    this.store.setState({ tags });
+    if (tags.join("\0") !== now.join("\0")) this.#listTags();
+  }
+
+  /** The researcher selected or let go of the tag `name`. */
+  toggleTag(name: string): void {
+    const { tags } = this.store.getState();
+    this.#host.tag(
+      tags.includes(name)
+        ? tags.filter((tag) => tag !== name)
+        : sortTags([...tags, name]),
+    );
+  }
+
+  /** The researcher let go of every selected tag. */
+  clearTags(): void {
+    this.#host.tag([]);
+  }
+
+  /** Narrow the tag names shown to those that hold `text`. */
+  setTagFilter(text: string): void {
+    this.store.setState({ tagFilter: text });
   }
 
   /** Show `facets` as the active ones. */
@@ -248,6 +313,7 @@ export class LibraryTree extends Component {
     if (this.store.getState().all && !this.canWiden)
       this.store.setState({ all: false });
     this.#countUnread();
+    this.#listTags();
     this.#run?.abort();
     const controller = new AbortController();
     this.#run = controller;
@@ -374,6 +440,41 @@ export class LibraryTree extends Component {
       );
   }
 
+  /**
+   * List the tags of the selected node again, as the paper count reads its
+   * Items, narrowed to those with every selected tag.
+   */
+  #listTags(): void {
+    this.#tagRun?.abort();
+    const controller = new AbortController();
+    this.#tagRun = controller;
+    const { node, tags } = this.store.getState();
+    this.#tagSettled = this.#deps.query
+      .run(tagListRequest(node, tags, this.#host.scope()), controller.signal)
+      .then(
+        (outcome) => {
+          if (controller.signal.aborted) return;
+          this.#tagRun = null;
+          const { tags: selected } = this.store.getState();
+          if (outcome.kind === "result" && outcome.result.groups) {
+            this.store.setState({
+              tagList: tagNames(outcome.result.groups, selected),
+            });
+            return;
+          }
+          if (outcome.kind === "failed")
+            logger.warn("The Library Tree could not list the tags", {
+              code: outcome.diagnostic.code,
+            });
+          this.store.setState({ tagList: tagNames(null, selected) });
+        },
+        (error: unknown) => {
+          if (controller.signal.aborted) return;
+          logger.warn("The Library Tree could not list the tags", { error });
+        },
+      );
+  }
+
   /** Draw the tree into `el`. */
   render(el: HTMLElement): void {
     this.#mount(el, <TreePane tree={this} />);
@@ -441,6 +542,7 @@ function ListHeader({
   const libraries = useStore(tree.store, (s) => s.libraries);
   const node = useStore(tree.store, (s) => s.node);
   const unread = useStore(tree.store, (s) => s.unread);
+  const tags = useStore(tree.store, (s) => s.tags);
   const selection = nodeLabel(libraries, node);
   const summary = useSyncExternalStore(search.subscribe, () =>
     search.summary(selection),
@@ -453,7 +555,18 @@ function ListHeader({
       : unread
         ? `${selection} ${m.library_view_header_unread({ count: unread })}`
         : selection;
-  const text = summary ?? own;
+  // The selected tags narrow the list too, so the header names them while
+  // any are selected, on Recent as well.
+  const tagged =
+    tags.length > 0
+      ? m.library_view_header_tags({
+          tags: new Intl.ListFormat(runtime.getLocale(), {
+            type: "conjunction",
+          }).format(tags),
+        })
+      : null;
+  const base = summary ?? own ?? (tagged === null ? null : selection);
+  const text = base !== null && tagged !== null ? `${base} ${tagged}` : base;
   return (
     <div className="zt:flex zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-x-(--size-2-2) zt:gap-y-(--size-2-1) zt:ps-(--zt-query-toolbar-inset-start) zt:pe-(--zt-query-toolbar-inset-end) zt:pt-(--size-4-2)">
       {/* Obsidian styles a bare heading element; the header keeps the UI
@@ -708,6 +821,7 @@ function TreePane({ tree }: { tree: LibraryTree }) {
             : m.library_view_all_libraries()}
         </div>
       )}
+      <TagSelector tree={tree} />
     </nav>
   );
 }
@@ -738,16 +852,15 @@ function Facets({ tree }: { tree: LibraryTree }) {
       </span>
       <div className="zt:flex zt:flex-wrap zt:gap-(--size-2-2) zt:px-(--size-4-2)">
         {READING_STATE_FACETS.map((facet) => (
-          // Obsidian's unlayered `button` rules outrank the chip's
-          // utilities, so the chip is drawn on an element of its own, as the
-          // "Show all libraries" toggle below is.
+          // Drawn as the tags of the Tag Selector are, as the "Show all
+          // libraries" toggle below is: on an element of its own.
           <div
             key={facet}
             role="button"
             tabIndex={0}
             data-library-facet={facet}
             aria-pressed={facets.includes(facet)}
-            className="zt:cursor-(--cursor) zt:rounded-(--radius-l) zt:border-(length:--border-width) zt:border-(--background-modifier-border) zt:px-(--size-4-2) zt:py-(--size-2-1) zt:text-(length:--font-ui-smaller) zt:text-muted-foreground zt:outline-hidden zt:hover:bg-(--background-modifier-hover) zt:hover:text-(--text-normal) zt:focus-visible:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)] zt:aria-pressed:border-(--interactive-accent) zt:aria-pressed:bg-(--interactive-accent) zt:aria-pressed:text-(--text-on-accent) zt:aria-pressed:hover:bg-(--interactive-accent-hover) zt:aria-pressed:hover:text-(--text-on-accent)"
+            className={FILTER_CHIP_CLASS}
             onClick={() => tree.toggleFacet(facet)}
             onKeyDown={(event) => {
               if (event.key !== "Enter" && event.key !== " ") return;

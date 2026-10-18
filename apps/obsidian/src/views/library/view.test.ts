@@ -129,7 +129,7 @@ const SEED: readonly SeedItem[] = [
     annotations: 2,
     pdf: true,
     title: "Graph drawing for figures",
-    tags: ["method"],
+    tags: ["method", "figure"],
   },
   {
     key: "BBBBBBBB",
@@ -137,6 +137,7 @@ const SEED: readonly SeedItem[] = [
     collections: ["Thesis/Chapter 2"],
     pdf: true,
     title: "Notes on attention",
+    tags: ["talk"],
     fields: {
       creators: [
         { role: "author", family: "Vaswani", given: "Ashish", literal: null },
@@ -161,6 +162,7 @@ const SEED: readonly SeedItem[] = [
     libraryID: 1,
     collections: ["Reading list"],
     title: "Ten rules for better figures",
+    tags: ["figure"],
   },
   { key: "EEEEEEEE", libraryID: 1, collections: [], tags: ["method"] },
   {
@@ -168,6 +170,7 @@ const SEED: readonly SeedItem[] = [
     libraryID: 2,
     collections: ["Thesis"],
     title: "Figures in the lab",
+    tags: ["lab-meeting"],
   },
   { key: "GGGGGGGG", libraryID: 2, collections: [] },
   {
@@ -224,10 +227,11 @@ function selects(filter: string | undefined, item: SeedItem): boolean {
 }
 
 /**
- * ZotLit Query over {@link SEED}. A grouped request groups as the engine
- * does: an Item joins one group for each Collection it is filed in, or the
- * `null` group for none. A list request answers the Items its filter selects,
- * in seed order.
+ * ZotLit Query over {@link SEED}. A grouped request groups the Items its
+ * filter selects as the engine does: an Item joins one group for each
+ * Collection it is filed in, or for each of its tags, or the `null` group
+ * for none, and each group returns at most `limit` rows. A list request
+ * answers the Items its filter selects, in seed order.
  */
 function answer(
   items: readonly SeedItem[],
@@ -262,7 +266,7 @@ function answer(
       request,
     );
   }
-  if (request.group !== "collections[]") {
+  if (request.group === undefined) {
     const rows = items
       .filter(
         (item) => ids.has(item.libraryID) && selects(request.filter, item),
@@ -294,11 +298,17 @@ function answer(
       request,
     );
   }
-  const matched = items.filter(({ libraryID }) => ids.has(libraryID));
+  const valuesOf = GROUPS[request.group];
+  if (!valuesOf) throw new Error(`The fake cannot group by ${request.group}`);
+  const matched = items.filter(
+    (item) => ids.has(item.libraryID) && selects(request.filter, item),
+  );
   const groups = new Map<string | null, SeedItem[]>();
-  for (const item of matched)
-    for (const value of item.collections.length > 0 ? item.collections : [null])
+  for (const item of matched) {
+    const values = valuesOf(item);
+    for (const value of values.length > 0 ? values : [null])
       groups.set(value, [...(groups.get(value) ?? []), item]);
+  }
   return {
     kind: "result",
     result: {
@@ -313,11 +323,20 @@ function answer(
         value,
         count: rows.length,
         // Each row holds the fields the request names: the counts name none.
-        rows: rows.map(({ key }) => ({ indexedKey: key, values: {} })),
+        rows: (request.limit == null ? rows : rows.slice(0, request.limit)).map(
+          ({ key }) => ({ indexedKey: key, values: {} }),
+        ),
       })),
     },
   };
 }
+
+/** The group values of an Item for each group path the fake answers. */
+const GROUPS: Readonly<Record<string, (item: SeedItem) => readonly string[]>> =
+  {
+    "collections[]": (item) => item.collections,
+    "tags[].name": (item) => item.tags ?? [],
+  };
 
 /** Plugin data with `stored` as its Library View Document, still loading. */
 function pluginData(stored?: unknown) {
@@ -2406,4 +2425,204 @@ it("says in the Save as query file dialog, from the toolbar button, what the fil
     .find((control) => control instanceof TextComponent);
   expect(name?.getValue()).toBe("Thesis");
   modal.close();
+});
+
+describe("Tag Selector", () => {
+  // Of My Library's A–E: A has method and figure, B talk, C method, D
+  // figure, E method. Lab's F has lab-meeting.
+  /** The tag names on screen, in order. */
+  function tags(view: LibraryView) {
+    return [
+      ...view.contentEl.querySelectorAll<HTMLElement>("[data-library-tag]"),
+    ].map((el) => el.dataset.libraryTag);
+  }
+
+  /** The selected tags on screen. */
+  function pressed(view: LibraryView) {
+    return [
+      ...view.contentEl.querySelectorAll<HTMLElement>(
+        '[data-library-tag][aria-pressed="true"]',
+      ),
+    ].map((el) => el.dataset.libraryTag);
+  }
+
+  function tag(view: LibraryView, name: string): HTMLElement {
+    const found = [
+      ...view.contentEl.querySelectorAll<HTMLElement>("[data-library-tag]"),
+    ].find((el) => el.dataset.libraryTag === name);
+    if (!found) throw new Error(`No tag ${name}`);
+    return found;
+  }
+
+  function deselectAll(view: LibraryView) {
+    return view.contentEl.querySelector<HTMLElement>(
+      "[data-library-tags-clear]",
+    );
+  }
+
+  /** Type `text` into the "Filter tags" box. */
+  async function filterTags(view: LibraryView, text: string) {
+    await act(async () => {
+      const input = view.contentEl.querySelector<HTMLInputElement>(
+        "[data-library-tags-filter]",
+      )!;
+      input.value = text;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await view.tree.settled;
+    });
+  }
+
+  it("lists the tags of the Items the selected node lists, by name", async () => {
+    const { deps } = pluginData();
+    const view = await openTab(deps);
+    // Recent reads My Library and Lab, the Library Scope.
+    expect(tags(view)).toEqual(["figure", "lab-meeting", "method", "talk"]);
+    await press(view, row(view, MY_LIBRARY));
+    expect(tags(view)).toEqual(["figure", "method", "talk"]);
+    await press(view, row(view, { ...THESIS, path: ["Reading list"] }));
+    expect(tags(view)).toEqual(["figure"]);
+  });
+
+  it("narrows the list to the Items with a tag, and with every tag selected", async () => {
+    const { deps } = pluginData();
+    const view = await openTab(deps);
+    await press(view, row(view, MY_LIBRARY));
+    await press(view, tag(view, "method"));
+    expect(pressed(view)).toEqual(["method"]);
+    expect(listed(view)).toEqual(["AAAAAAAA", "CCCCCCCC", "EEEEEEEE"]);
+    // Only the tags of A, C and E are left to narrow by.
+    expect(tags(view)).toEqual(["figure", "method"]);
+    await press(view, tag(view, "figure"));
+    expect(pressed(view)).toEqual(["figure", "method"]);
+    expect(listed(view)).toEqual(["AAAAAAAA"]);
+    // A second press lets go of a tag.
+    await press(view, tag(view, "method"));
+    expect(listed(view)).toEqual(["AAAAAAAA", "DDDDDDDD"]);
+  });
+
+  it("names the selected tags in the list header, on Recent too", async () => {
+    const { deps } = pluginData();
+    const view = await openTab(deps);
+    await press(view, tag(view, "method"));
+    expect(header(view)).toBe("Recent · tagged method");
+    await press(view, row(view, MY_LIBRARY));
+    await press(view, tag(view, "figure"));
+    expect(header(view)).toBe(
+      "My Library · 2 unread · tagged figure and method",
+    );
+  });
+
+  it("deselects every tag at once, and offers that only while one is selected", async () => {
+    const { deps } = pluginData(ON_MY_LIBRARY);
+    const view = await openTab(deps);
+    expect(deselectAll(view)).toBeNull();
+    await press(view, tag(view, "method"));
+    await press(view, tag(view, "figure"));
+    await press(view, deselectAll(view)!);
+    expect(pressed(view)).toEqual([]);
+    expect(listed(view)).toHaveLength(5);
+    expect(header(view)).toBe("My Library · 2 unread");
+    expect(deselectAll(view)).toBeNull();
+  });
+
+  it("filters the tag names it shows, never the papers, and keeps a selected tag in view", async () => {
+    const { deps, run } = pluginData(ON_MY_LIBRARY);
+    const view = await openTab(deps);
+    await press(view, tag(view, "talk"));
+    const runs = listRuns(run).length;
+    await filterTags(view, "FIG");
+    expect(tags(view)).toEqual(["talk"]);
+    await press(view, deselectAll(view)!);
+    await filterTags(view, "FIG");
+    expect(tags(view)).toEqual(["figure"]);
+    expect(listed(view)).toHaveLength(5);
+    // The box asked the list nothing.
+    expect(listRuns(run)).toHaveLength(runs + 1);
+  });
+
+  it("keeps the selected tags on another node, where they still show though no Item there has them", async () => {
+    const { deps, settings } = pluginData(ON_MY_LIBRARY);
+    const view = await openTab(deps);
+    await press(view, tag(view, "talk"));
+    await press(view, row(view, { ...THESIS, path: ["Reading list"] }));
+    expect(listed(view)).toEqual([]);
+    expect(tags(view)).toEqual(["talk"]);
+    expect(pressed(view)).toEqual(["talk"]);
+    expect(
+      view.contentEl.querySelector("[data-query-empty]")?.textContent,
+    ).toBe(m.library_view_empty_facets());
+    await settings.flush();
+    expect(settings.current?.["library.document"]?.tags).toEqual(["talk"]);
+  });
+
+  it("opens again with the tags the researcher left selected", async () => {
+    const { deps } = pluginData({
+      ...ON_MY_LIBRARY,
+      tags: ["figure", "method"],
+    });
+    const view = await openTab(deps);
+    expect(pressed(view)).toEqual(["figure", "method"]);
+    expect(listed(view)).toEqual(["AAAAAAAA"]);
+  });
+
+  it("lists the tags again after a database change", async () => {
+    const { deps, change } = pluginData(ON_MY_LIBRARY);
+    const view = await openTab(deps);
+    await act(async () => {
+      change([
+        ...SEED,
+        { key: "JJJJJJJJ", libraryID: 1, collections: [], tags: ["pitfall"] },
+      ]);
+      await view.tree.settled;
+    });
+    expect(tags(view)).toEqual(["figure", "method", "pitfall", "talk"]);
+  });
+
+  it("lets go of the selected tags to show an Item they leave out", async () => {
+    const { deps } = pluginData(ON_MY_LIBRARY);
+    const view = await openTab(deps);
+    await press(view, tag(view, "talk"));
+    await act(async () => {
+      await view.reveal(A);
+    });
+    expect(pressed(view)).toEqual([]);
+    expect(itemRows(view)).toContain(`${A} *`);
+  });
+
+  it("names the tags for a screen reader by their heading, each a toggle button, with one stop for Tab and the arrow keys between them", async () => {
+    const { deps } = pluginData(ON_MY_LIBRARY);
+    const view = await openTab(deps);
+    const pane = view.contentEl.querySelector("[data-library-tree]")!;
+    expect(pane.querySelectorAll("[aria-label]")).toHaveLength(0);
+    const group = pane.querySelector("[data-library-tags]")!;
+    expect(group.getAttribute("role")).toBe("group");
+    expect(accessibleName(group)).toBe(m.library_view_tags_label());
+    const names = [
+      ...group.querySelectorAll<HTMLElement>("[data-library-tag]"),
+    ];
+    expect(names.map((el) => el.getAttribute("role"))).toEqual([
+      "button",
+      "button",
+      "button",
+    ]);
+    expect(names.map((el) => el.tabIndex)).toEqual([0, -1, -1]);
+    const input = pane.querySelector("[data-library-tags-filter]")!;
+    expect(accessibleName(input)).toBe(m.library_view_tags_filter());
+    await act(async () => {
+      names[0]!.focus();
+      names[0]!.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }),
+      );
+    });
+    expect(document.activeElement).toBe(tag(view, "method"));
+    expect(tag(view, "method").tabIndex).toBe(0);
+    await act(async () => {
+      tag(view, "method").dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+      );
+      await view.query.settled;
+      await view.tree.settled;
+    });
+    expect(pressed(view)).toEqual(["method"]);
+  });
 });

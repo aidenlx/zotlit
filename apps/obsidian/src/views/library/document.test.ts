@@ -4,7 +4,12 @@
 // selects.
 import { describe, expect, it } from "vitest";
 
-import { planItemFilter, testItemSeed } from "@zotlit/item-query";
+import {
+  ITEMS,
+  planItemFilter,
+  planPath,
+  testItemSeed,
+} from "@zotlit/item-query";
 import type { QueryItemSeed } from "@zotlit/item-query";
 
 import type { LibrarySelector } from "@/services/library-scope/scope";
@@ -22,7 +27,10 @@ import {
   libraryViewQueryFileText,
   parseLibraryViewDocument,
   serializeLibraryViewDocument,
+  tagListRequest,
+  tagNames,
   withNode,
+  withTags,
   withText,
 } from "./document";
 import type { LibraryViewDocument } from "./document";
@@ -40,6 +48,7 @@ const CHAPTER: LibraryViewDocument = {
     path: ["Thesis", "Chapter 2"],
   },
   facets: ["annotated", "pdf"],
+  tags: ["figure", "read-later"],
   search: "attention tag:method",
   sort: [
     { property: "title", direction: "ASC" },
@@ -99,9 +108,23 @@ describe("parseLibraryViewDocument and serializeLibraryViewDocument", () => {
     expect(parseLibraryViewDocument(null)).toEqual({
       node: { kind: "recent" },
       facets: [],
+      tags: [],
       search: "",
       sort: [{ property: "dateModified", direction: "DESC" }],
     });
+  });
+
+  it("reads a document an earlier build stored, with no tags, as one with none selected", () => {
+    const { tags: _, ...earlier } = serializeLibraryViewDocument(CHAPTER);
+    expect(parseLibraryViewDocument(earlier)).toEqual({ ...CHAPTER, tags: [] });
+  });
+
+  it("reads each tag once, by name, and drops what is not a tag name", () => {
+    expect(
+      parseLibraryViewDocument({
+        tags: ["read-later", "", 7, "Data", "read-later", "figure"],
+      }).tags,
+    ).toEqual(["Data", "figure", "read-later"]);
   });
 
   it("takes the default for each field it cannot read, keeps the others and drops a facet it does not know", () => {
@@ -134,6 +157,22 @@ describe("parseLibraryViewDocument and serializeLibraryViewDocument", () => {
         facets: ["pdf", "unread", "pdf", "has-note"],
       }).facets,
     ).toEqual(["unread", "has-note", "pdf"]);
+  });
+});
+
+describe("withTags", () => {
+  it("selects the tags by name, each once, and keeps the rest", () => {
+    expect(withTags(CHAPTER, ["talk", "figure", "talk"])).toEqual({
+      ...CHAPTER,
+      tags: ["figure", "talk"],
+    });
+  });
+
+  it("keeps the selected tags when another node is selected", () => {
+    expect(withNode(CHAPTER, { kind: "recent" }).tags).toEqual([
+      "figure",
+      "read-later",
+    ]);
   });
 });
 
@@ -364,6 +403,110 @@ describe("libraryViewQuery — the Reading State facets", () => {
   });
 });
 
+describe("libraryViewQuery — the selected tags", () => {
+  it("lists the Items with every selected tag, inside the Collection and beside the facets", () => {
+    const { file, filter } = derive({
+      node: {
+        kind: "collection",
+        library: { type: "personal" },
+        path: ["Thesis"],
+      },
+      facets: ["annotated"],
+      tags: ["figure", "to read"],
+    });
+    expect(file.filters).toEqual({
+      and: [
+        'collections.within("Thesis")',
+        "annotations.length > 0",
+        'tags.contains("figure")',
+        'tags.contains("to read")',
+      ],
+    });
+    expect(plans(filter)).toBe(true);
+  });
+
+  it("selects an Item that has both tags, and not one with only one of them", () => {
+    const { filter } = derive({ tags: ["figure", "to read"] });
+    expect(selects(filter, seed("ABCD2345", [], ["to read", "figure"]))).toBe(
+      true,
+    );
+    expect(selects(filter, seed("WXYZ6789", [], ["figure"]))).toBe(false);
+    expect(selects(filter, seed("QRST2345", [], ["to", "read"]))).toBe(false);
+  });
+
+  it("narrows Recent too, over every Library in the Library Scope", () => {
+    const { query, file } = derive({
+      node: { kind: "recent" },
+      tags: ["talk"],
+    });
+    expect(query.libraries).toEqual(SCOPE);
+    expect(file.filters).toBe('tags.contains("talk")');
+  });
+});
+
+describe("tagListRequest and tagNames — the Tag Selector", () => {
+  it("groups the Items of the selected Collection by tag, as the paper count reads them, with no facet or search", () => {
+    const request = tagListRequest(
+      {
+        kind: "collection",
+        library: { type: "personal" },
+        path: ["Thesis"],
+      },
+      [],
+      SCOPE,
+    );
+    expect(request).toMatchObject({
+      from: "items",
+      fields: [],
+      group: "tags[].name",
+      libraries: { mode: "selected", libraries: [{ type: "personal" }] },
+    });
+    expect(request.filter).toBe('collections.within("Thesis")');
+    // The engine groups by one value of each tag: its name, a string.
+    expect(planPath(request.group!, ITEMS.resolvePath)).toMatchObject({
+      each: 1,
+      shape: { kind: "scalar", type: "string" },
+    });
+  });
+
+  it("reads every Library in the Library Scope on Recent, with no filter", () => {
+    const request = tagListRequest({ kind: "recent" }, [], SCOPE);
+    expect(request.libraries).toEqual(SCOPE);
+    expect(request.filter).toBeUndefined();
+  });
+
+  it("asks only for the Items with every selected tag while tags are selected", () => {
+    const { filter } = tagListRequest(MY_LIBRARY, ["figure", "talk"], SCOPE);
+    expect(selects(filter, seed("ABCD2345", [], ["talk", "figure", "x"]))).toBe(
+      true,
+    );
+    expect(selects(filter, seed("WXYZ6789", [], ["figure"]))).toBe(false);
+    expect(plans(filter)).toBe(true);
+  });
+
+  it("names each tag once, by name, without the Items that have none", () => {
+    expect(
+      tagNames(
+        [
+          { value: "read-later" },
+          { value: null },
+          { value: "Data" },
+          { value: "figure" },
+        ],
+        [],
+      ),
+    ).toEqual(["Data", "figure", "read-later"]);
+  });
+
+  it("always names a selected tag, even where no Item listed has it", () => {
+    expect(tagNames([{ value: "figure" }], ["talk", "figure"])).toEqual([
+      "figure",
+      "talk",
+    ]);
+    expect(tagNames(null, ["talk"])).toEqual(["talk"]);
+  });
+});
+
 describe("libraryViewQuery — search", () => {
   it("reads the ranked keys of a search as the Items the view shows, in rank order", () => {
     const { query, filter } = derive({ search: "attention" }, [
@@ -591,6 +734,15 @@ describe("libraryViewQueryFileText — Save as query file", () => {
       selects(filter, { ...seed("ABCD2345", [["Thesis"]]), groupID: 118 }),
     ).toBe(false);
     expect(selects(filter, seed("ABCD2345", [["Other"]]))).toBe(false);
+  });
+
+  it("writes the selected tags with the rest of the filters", () => {
+    const { file, filter } = saved({ tags: ["figure"] });
+    expect(file.filters).toEqual({
+      and: ['library == "personal"', 'tags.contains("figure")'],
+    });
+    expect(selects(filter, seed("ABCD2345", [], ["figure"]))).toBe(true);
+    expect(selects(filter, seed("WXYZ6789", [], ["talk"]))).toBe(false);
   });
 
   it("leaves the search out, since a Query File cannot express it", () => {
