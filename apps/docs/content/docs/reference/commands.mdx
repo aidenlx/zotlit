@@ -426,12 +426,12 @@ Four entries join the pane menu outside the **zotlit** section. <UiLabel name={m
 
 <Command name={m.command_open_welcome_name()} />
 
-Opens the [Library View](#library-view) and shows the setup banner above it, even after you dismissed it or setup is complete. The banner holds the setup steps and, after a v1-to-v2 upgrade, the link to the migration guide.
+Opens the [Library View](#library-view) and shows the setup banner above it, even after you dismissed it or setup is complete. The banner holds the setup steps, after a v1-to-v2 upgrade the link to the migration guide, and after ZotLit updates the link to the release notes.
 
-| Entry point     | Details                                                                                                                         |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| Command palette | Always available                                                                                                                |
-| Automatic       | The banner shows over the Library View on a new install and after a v1-to-v2 upgrade, until you dismiss it or setup is complete |
+| Entry point     | Details                                                                                                                                                   |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Command palette | Always available                                                                                                                                          |
+| Automatic       | The banner shows over the Library View on a new install, after a v1-to-v2 upgrade, and after ZotLit updates, until you dismiss it or what it says is done |
 
 <Command name={m.command_open_release_note_name()} />
 
@@ -441,7 +441,7 @@ Opens the release notes for the installed ZotLit version.
 | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Command palette | Always available                                                                                                                                                              |
 | Settings        | The <UiLabel name={m.settings_resources_whats_new_button()} /> button in the <UiLabel name={m.settings_resources_whats_new_name({ version: "…" })} /> row of the settings tab |
-| Update notice   | The <UiLabel name={m.notice_update_see_whats_new()} /> button on the notice shown after ZotLit updates                                                                        |
+| Welcome banner  | The <UiLabel name={m.welcome_update_action()} /> button on the banner shown above the Library View after ZotLit updates                                                       |
 
 ## Entry-point summary
 
