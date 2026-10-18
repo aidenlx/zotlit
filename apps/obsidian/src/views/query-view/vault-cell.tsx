@@ -42,9 +42,11 @@ import type {
   VaultWrite,
 } from "./table-notes";
 import {
+  CHIPS,
   FIELD,
-  PILL,
-  TAG,
+  LINE,
+  ONE_LINE,
+  VaultChip,
   VaultEditor,
   draftOf,
   listItems,
@@ -52,7 +54,7 @@ import {
   valueOf,
 } from "./vault-editors";
 import type { VaultDraft, VaultEditEnd } from "./vault-editors";
-import { dateInputValue, linkOf, tagText } from "./vault-value";
+import { dateInputValue, linkOf } from "./vault-value";
 import "./vault-cell.css";
 
 /** The vault property `name` of the Item `itemKey`, and where it is read. */
@@ -203,12 +205,14 @@ export function VaultCell(props: VaultCellProps) {
 const logger = getLogger("QueryView");
 
 /**
- * The line a Table cell shows at rest: one line at the row's height, which
- * clips what does not fit. A column the researcher sized takes its width
- * from its header; another stops at the width of a Bases column.
+ * The line a Table cell shows at rest: one line a row tall, which clips what
+ * does not fit. What it holds takes the {@link LINE} the editor takes, so
+ * the text does not move when an edit opens. A column the researcher sized
+ * takes its width from its header; another stops at the width of a Bases
+ * column.
  */
 const REST =
-  "zt:flex zt:h-full zt:max-w-75 zt:min-w-0 zt:items-center zt:overflow-hidden zt:px-2 zt:whitespace-nowrap zt:group-data-sized/cell:w-0 zt:group-data-sized/cell:max-w-none zt:group-data-sized/cell:min-w-full";
+  "zt:flex zt:h-(--bases-table-row-height) zt:max-w-75 zt:min-w-0 zt:items-center zt:overflow-hidden zt:whitespace-nowrap zt:group-data-sized/cell:w-0 zt:group-data-sized/cell:max-w-none zt:group-data-sized/cell:min-w-full";
 
 /** What a Table cell shows of its value at rest, by the property's type. */
 function VaultPreview({
@@ -234,7 +238,7 @@ function VaultPreview({
     return (
       <span
         data-query-vault={state}
-        className="zt:truncate zt:text-(--text-faint)"
+        className={cn(LINE, "zt:truncate zt:text-(--text-faint)")}
       >
         {m.query_view_vault_no_note()}
       </span>
@@ -246,18 +250,17 @@ function VaultPreview({
     return (
       <span
         data-query-vault={state}
-        className="zt:flex zt:min-w-0 zt:items-center zt:gap-(--size-2-2)"
+        className={cn(CHIPS, "zt:min-w-0 zt:overflow-hidden")}
       >
         {listItems(current).map((item, at) => (
-          <span
+          <VaultChip
             // Items may repeat, so the place keys each.
             key={at}
+            item={item}
+            tags={tags}
             data-query-vault-chip={editing ? undefined : item}
-            className={cn(PILL, tags && TAG)}
             onContextMenu={(event) => chipMenu(event, at)}
-          >
-            {tags ? tagText(item) : item}
-          </span>
+          />
         ))}
       </span>
     );
@@ -280,7 +283,8 @@ function VaultPreview({
         tabIndex={-1}
         className={cn(
           FIELD,
-          "zt:pointer-events-none zt:-ms-2 zt:ps-7 zt:tabular-nums",
+          ONE_LINE,
+          "zt:pointer-events-none zt:ps-7 zt:tabular-nums",
         )}
       />
     );
@@ -291,7 +295,10 @@ function VaultPreview({
     return (
       <a
         data-query-vault={state}
-        className="internal-link zt:truncate zt:data-unresolved:opacity-(--link-unresolved-opacity)"
+        className={cn(
+          LINE,
+          "internal-link zt:truncate zt:data-unresolved:opacity-(--link-unresolved-opacity)",
+        )}
         href={link.target}
         data-href={link.target}
         data-unresolved={notes.resolves(ref) ? undefined : ""}
@@ -310,7 +317,7 @@ function VaultPreview({
     return (
       <a
         data-query-vault={state}
-        className="external-link zt:truncate"
+        className={cn(LINE, "external-link zt:truncate")}
         href={link.target}
         target="_blank"
         rel="noopener nofollow"
@@ -322,7 +329,11 @@ function VaultPreview({
   return (
     <span
       data-query-vault={state}
-      className={cn("zt:truncate", type === "number" && "zt:tabular-nums")}
+      className={cn(
+        LINE,
+        "zt:truncate",
+        type === "number" && "zt:tabular-nums",
+      )}
     >
       {text}
     </span>
@@ -502,7 +513,8 @@ export function VaultEditCell(props: VaultCellProps) {
             REST,
             type === "number" && "zt:justify-end",
             checkbox && value.note && "zt:justify-center",
-            managed && "zt:group-hover/vault:pe-6",
+            // Room for the lock, past the end padding of the line.
+            managed && "zt:group-hover/vault:pe-4",
             editing && "zt:invisible",
           )}
           aria-hidden={editing || undefined}
@@ -543,7 +555,7 @@ export function VaultEditCell(props: VaultCellProps) {
         {draft !== null && (
           <div
             data-query-vault-editor=""
-            className="zt:absolute zt:inset-x-0 zt:top-0 zt:z-1 zt:min-h-full zt:rounded-(--bases-table-cell-radius-focus) zt:bg-(--background-primary) zt:shadow-(--bases-table-cell-shadow-focus)"
+            className="zt:absolute zt:inset-x-0 zt:top-0 zt:z-1 zt:min-h-(--bases-table-row-height) zt:rounded-(--bases-table-cell-radius-focus) zt:bg-(--background-primary) zt:shadow-(--bases-table-cell-shadow-focus)"
           >
             <VaultEditor
               type={type}
