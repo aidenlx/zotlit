@@ -67,7 +67,9 @@ function Header({ titleId }: { titleId: string }) {
           >
             ZotLit
           </span>
-          <span className="zt:rounded-full zt:bg-primary zt:px-2 zt:py-0.5 zt:text-xs zt:text-primary-foreground">
+          {/* Text on the accent fill reads below 4.5:1 in either theme, so
+              the accent keeps to the border. */}
+          <span className="zt:rounded-full zt:border zt:border-primary zt:bg-muted zt:px-2 zt:py-0.5 zt:text-xs zt:text-foreground">
             {m.welcome_badge()}
           </span>
         </div>
@@ -296,7 +298,7 @@ function KeepGoing() {
 function LinkGroup({ name, children }: { name: string; children: ReactNode }) {
   return (
     <div className="zt:grid zt:grid-cols-[96px_1fr] zt:items-center zt:gap-3">
-      <div className="zt:text-xs zt:tracking-wider zt:text-faint zt:uppercase">
+      <div className="zt:text-xs zt:tracking-wider zt:text-muted-foreground zt:uppercase">
         {name}
       </div>
       <div className="zt:flex zt:flex-wrap zt:gap-2">{children}</div>
@@ -334,7 +336,7 @@ function FooterGroups() {
 function FooterLink() {
   const actions = useWelcomeActions();
   return (
-    <p className="zt:mt-3 zt:mb-0 zt:text-xs zt:text-faint">
+    <p className="zt:mt-3 zt:mb-0 zt:text-xs zt:text-muted-foreground">
       {m.welcome_footer_migration_lead()}{" "}
       <a
         href={MIGRATION_GUIDE}
