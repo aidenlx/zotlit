@@ -5,12 +5,13 @@
 // edit. Each writes the value as the Properties panel does: a number, a
 // boolean, a `YYYY-MM-DD` date, a `YYYY-MM-DDTHH:mm:ss` date and time, a list
 // of strings, and no value for a cleared field. Text, lists and tags suggest
-// the values the vault holds for the property.
+// the values the vault holds for the property as their edit starts, as a
+// Bases cell does; aliases suggest none, as in Bases.
 //
 // @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
 import {
   AbstractInputSuggest,
-  prepareSimpleSearch,
+  prepareFuzzySearch,
   renderMatches,
 } from "obsidian";
 import type { App } from "obsidian";
@@ -29,6 +30,7 @@ import type { ProjectionJson } from "@zotlit/item-query";
 import { Icon } from "@/components/obsidian/icon";
 import { useObsidianApp } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
+import { clearSuggestHighlight } from "@/lib/obsidian-private/suggest-highlight";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
 import { LIST_TYPES } from "./table-notes";
@@ -100,25 +102,39 @@ function withPending(draft: VaultDraft): VaultDraft {
   return { text: "", items: [...draft.items, text] };
 }
 
+const collator = new Intl.Collator(undefined, {
+  usage: "sort",
+  sensitivity: "base",
+  numeric: true,
+});
+
+/** The order Obsidian lists vault values and tags in. */
+const byName = (a: string, b: string) => collator.compare(a, b);
+
 /**
- * The values to suggest for `query`: the typed text first, so Enter keeps
- * what was typed until another value is picked, then each value that
- * matches it, less those in `taken`. Nothing is suggested before a key is
- * typed.
+ * The values to suggest for `query`, less those in `taken`, as a Bases cell
+ * suggests them: every value, in order, before a key is typed; then those
+ * that match it, the best match first. The typed text itself is no
+ * suggestion: Shift+Enter keeps it.
  */
 export function suggestionsFor(
   values: readonly string[],
   query: string,
   taken: readonly string[] = [],
 ): string[] {
+  const listed = [...new Set(values)]
+    .filter((value) => !taken.includes(value))
+    .sort(byName);
   const text = query.trim();
-  if (text === "") return [];
-  const search = prepareSimpleSearch(text);
-  const matches = values.filter(
-    (value) =>
-      value !== text && !taken.includes(value) && search(value) !== null,
-  );
-  return taken.includes(text) ? matches : [text, ...matches];
+  if (text === "") return listed;
+  const search = prepareFuzzySearch(text);
+  return listed
+    .flatMap((value) => {
+      const match = search(value);
+      return match ? [{ value, score: match.score }] : [];
+    })
+    .sort((a, b) => b.score - a.score)
+    .map(({ value }) => value);
 }
 
 /** Where a {@link ValueSuggest} reads its values and hands its pick. */
@@ -133,6 +149,9 @@ interface ValueSuggestSource {
  * Obsidian's suggestion popup over a vault field, with the values the vault
  * holds for the property. A text field is a `<textarea>`, which Obsidian's
  * suggest would read as a contenteditable, so it is told the field's value.
+ * As in a Bases cell, nothing is highlighted before a key is typed, so
+ * Enter takes no value until one is chosen, and Shift+Enter takes the typed
+ * text over the highlighted value.
  */
 class ValueSuggest extends AbstractInputSuggest<string> {
   readonly #source: ValueSuggestSource;
@@ -147,6 +166,18 @@ class ValueSuggest extends AbstractInputSuggest<string> {
     super(app, field as HTMLInputElement);
     this.#field = field;
     this.#source = source;
+    // Obsidian's own look of a property value suggest: its smaller rows.
+    this.suggestEl.classList.add("mod-property-value");
+    this.scope.register(["Shift"], "Enter", (event) => {
+      if (event.isComposing) return;
+      this.selectSuggestion(this.getValue());
+      return false;
+    });
+  }
+
+  override open(): void {
+    super.open();
+    if (this.getValue() === "") clearSuggestHighlight(this);
   }
 
   override getValue(): string {
@@ -163,10 +194,14 @@ class ValueSuggest extends AbstractInputSuggest<string> {
   }
 
   override renderSuggestion(value: string, el: HTMLElement): void {
+    // A long value truncates within the popover, as a Bases cell's does.
+    el.classList.add("mod-nowrap");
     renderMatches(
       el,
       value,
-      prepareSimpleSearch(this.#query)(value)?.matches ?? null,
+      this.#query === ""
+        ? null
+        : (prepareFuzzySearch(this.#query)(value)?.matches ?? null),
     );
   }
 
@@ -176,7 +211,20 @@ class ValueSuggest extends AbstractInputSuggest<string> {
   }
 }
 
-/** Attach a {@link ValueSuggest} to `field` while it is on the page. */
+/**
+ * Show the suggestions of the {@link ValueSuggest} on `field` again, as
+ * Obsidian shows them when the field takes focus: if the field holds focus.
+ */
+function showAgain(field: HTMLElement | null) {
+  if (field && field.ownerDocument.activeElement === field)
+    field.dispatchEvent(new FocusEvent("focus"));
+}
+
+/**
+ * Attach a {@link ValueSuggest} to `field` while it is on the page. The
+ * editor focuses its field as it opens, before the suggest listens, so the
+ * suggestions show then, as they show on focus.
+ */
 function useValueSuggest(
   field: RefObject<HTMLInputElement | HTMLTextAreaElement | null>,
   source: ValueSuggestSource | null,
@@ -194,6 +242,7 @@ function useValueSuggest(
       taken: () => latest.current?.taken() ?? [],
       pick: (value) => latest.current?.pick(value),
     });
+    showAgain(el);
     return () => suggest.close();
   }, [app, field, suggests]);
 }
@@ -372,11 +421,28 @@ function ListEditor({
     (at < 0 ? field.current : pills.current[at])?.focus();
   });
   const add = (text: string) => onDraft(withPending({ ...draft, text }));
-  useValueSuggest(field, {
-    values: suggestions,
-    taken: () => draft.items,
-    pick: add,
+  /** Whether a value was just picked, so the suggestions show again. */
+  const picked = useRef(false);
+  useLayoutEffect(() => {
+    if (!picked.current) return;
+    picked.current = false;
+    showAgain(field.current);
   });
+  // As in Bases, an alias suggests no value.
+  useValueSuggest(
+    field,
+    type === "aliases"
+      ? null
+      : {
+          values: suggestions,
+          taken: () => draft.items,
+          // As in Bases, the rest show again once one is added.
+          pick: (value) => {
+            picked.current = true;
+            add(value);
+          },
+        },
+  );
   const focusPill = (at: number) => {
     if (at < 0) return;
     if (at >= draft.items.length) field.current?.focus();
