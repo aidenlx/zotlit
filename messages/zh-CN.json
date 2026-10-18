@@ -2363,6 +2363,7 @@
   "pdf_adjust_failed": "标注未调整。{reason}",
   "command_new_query_file_name": "新建查询文件",
   "query_file_new": "新建查询文件",
+  "empty_state_new_query": "新建 Zotero 查询表格",
   "query_file_untitled": "未命名",
   "query_file_items_view_name": "条目",
   "query_file_annotations_view_name": "标注",

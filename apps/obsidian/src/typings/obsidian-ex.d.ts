@@ -61,6 +61,35 @@ declare module "obsidian" {
     /** Native link and pin state, serialized by the workspace (Obsidian 1.14). */
     group: string | null;
     pinned: boolean;
+    /**
+     * The leaf's own empty view, shown while it holds no other. Every leaf
+     * makes one, so any leaf leads to the class. Internal; verified against
+     * Obsidian 1.14.4.
+     */
+    _empty?: EmptyView;
+  }
+  /**
+   * The view of a "New tab", view type `"empty"`. Internal; verified against
+   * Obsidian 1.14.4.
+   *
+   * @see apps/obsidian/src/views/query-view/empty-view-action.ts — the one
+   *   module that reads it, through a structural probe.
+   */
+  interface EmptyView {
+    getViewType(): string;
+    /**
+     * The pill buttons, filled by `onOpen` in a fixed order: New note, New
+     * base and New canvas while their core plugins are on, Go to file unless
+     * the vault is empty, Open web viewer while that core plugin is on.
+     */
+    actionListEl: HTMLElement;
+    /** Empties `actionListEl` and fills it again. */
+    onOpen(): Promise<void>;
+  }
+  /** Members of `Platform` its declaration leaves out. Internal; verified against Obsidian 1.14.4. */
+  interface PlatformInternals {
+    /** Obsidian prints a command's hotkey beside a button only when true. */
+    hasPhysicalKeyboard: boolean;
   }
   interface PopoverSuggest<T> {
     /**
@@ -495,6 +524,8 @@ declare module "obsidian" {
       /** The user's own hotkeys for a command; `undefined` when never customised. */
       getHotkeys(id: string): ExtendedHotkey[] | undefined;
       getDefaultHotkeys(id: string): ExtendedHotkey[] | undefined;
+      /** The command's first hotkey as Obsidian prints it, e.g. `⌘ N`; `""` when unbound. */
+      printHotkeyForCommand(id: string): string;
     };
   }
   /**
