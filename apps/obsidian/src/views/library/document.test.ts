@@ -4,7 +4,12 @@
 // selects.
 import { describe, expect, it } from "vitest";
 
-import { planItemFilter, testItemSeed } from "@zotlit/item-query";
+import {
+  ITEMS,
+  planItemFilter,
+  planPath,
+  testItemSeed,
+} from "@zotlit/item-query";
 import type { QueryItemSeed } from "@zotlit/item-query";
 
 import type { LibrarySelector } from "@/services/library-scope/scope";
@@ -453,10 +458,15 @@ describe("tagListRequest and tagNames — the Tag Selector", () => {
     expect(request).toMatchObject({
       from: "items",
       fields: [],
-      group: "tags[]",
+      group: "tags[].name",
       libraries: { mode: "selected", libraries: [{ type: "personal" }] },
     });
     expect(request.filter).toBe('collections.within("Thesis")');
+    // The engine groups by one value of each tag: its name, a string.
+    expect(planPath(request.group!, ITEMS.resolvePath)).toMatchObject({
+      each: 1,
+      shape: { kind: "scalar", type: "string" },
+    });
   });
 
   it("reads every Library in the Library Scope on Recent, with no filter", () => {

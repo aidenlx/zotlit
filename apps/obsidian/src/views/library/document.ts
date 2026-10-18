@@ -433,7 +433,7 @@ export function tagListRequest(
   return {
     from: "items",
     fields: [],
-    group: "tags[]",
+    group: "tags[].name",
     ...(filters.length > 0 && { filter: filters.join(" && ") }),
     limit: 1,
     libraries: librariesOf(node, scope),

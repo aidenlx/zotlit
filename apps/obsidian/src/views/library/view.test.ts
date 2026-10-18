@@ -335,7 +335,7 @@ function answer(
 const GROUPS: Readonly<Record<string, (item: SeedItem) => readonly string[]>> =
   {
     "collections[]": (item) => item.collections,
-    "tags[]": (item) => item.tags ?? [],
+    "tags[].name": (item) => item.tags ?? [],
   };
 
 /** Plugin data with `stored` as its Library View Document, still loading. */
