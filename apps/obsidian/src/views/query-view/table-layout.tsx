@@ -347,11 +347,7 @@ export function useChildren(query: Pick<QueryService, "run">) {
 export function ExpanderSpace() {
   return (
     <span className="clickable-icon zt:invisible zt:shrink-0">
-      <Icon
-        name="chevron-right"
-        size="var(--icon-xs)"
-        strokeWidth="var(--icon-xs-stroke-width)"
-      />
+      <Icon name="chevron-right" size="xs" />
     </span>
   );
 }
@@ -371,11 +367,7 @@ export function Expander({
   // The chevron takes the icon button's own padding, and a row with nothing
   // under it holds a hidden one, so every row's text starts at one edge.
   const chevron = (
-    <Icon
-      name={open ? "chevron-down" : "chevron-right"}
-      size="var(--icon-xs)"
-      strokeWidth="var(--icon-xs-stroke-width)"
-    />
+    <Icon name={open ? "chevron-down" : "chevron-right"} size="xs" />
   );
   if (!holdsMore && !expandable(record)) return <ExpanderSpace />;
   return (
@@ -434,7 +426,7 @@ function NoteCell({
         void notes.create(itemKey).finally(() => setCreating(false));
       }}
     >
-      <Icon name="file-plus" size="var(--icon-xs)" />
+      <Icon name="file-plus" size="xs" />
       {m.query_view_table_create_note()}
     </button>
   );
@@ -592,8 +584,7 @@ function ChildRows({
             <ExpanderSpace />
             <Icon
               name={childSource(child.kind).icon}
-              size="var(--icon-xs)"
-              strokeWidth="var(--icon-xs-stroke-width)"
+              size="xs"
               className="zt:shrink-0"
             />
             {at === 0 && (
@@ -682,12 +673,7 @@ function ChildRow({
               open={expanded.has(id(record))}
               onToggle={() => toggle(record)}
             />
-            <Icon
-              name={source.icon}
-              size="var(--icon-xs)"
-              strokeWidth="var(--icon-xs-stroke-width)"
-              className="zt:shrink-0"
-            />
+            <Icon name={source.icon} size="xs" className="zt:shrink-0" />
             {source.render(record, { parent, link })}
           </span>
         </td>

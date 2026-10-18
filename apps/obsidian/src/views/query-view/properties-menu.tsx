@@ -378,14 +378,7 @@ function PropertyList({
 
 /** An icon of a row, at the size Obsidian draws a menu icon. */
 function RowIcon({ name, className }: { name: IconName; className?: string }) {
-  return (
-    <Icon
-      name={name}
-      size="var(--icon-s)"
-      strokeWidth="var(--icon-s-stroke-width)"
-      className={cn("zt:shrink-0", className)}
-    />
-  );
+  return <Icon name={name} size="s" className={cn("zt:shrink-0", className)} />;
 }
 
 /**

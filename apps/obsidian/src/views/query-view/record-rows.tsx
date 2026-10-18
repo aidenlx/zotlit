@@ -159,8 +159,7 @@ export function RecordGroupHeading({ group }: { group: RecordGroup }) {
       >
         <Icon
           name={group.collapsed ? "chevron-right" : "chevron-down"}
-          size="var(--icon-xs)"
-          strokeWidth="var(--icon-xs-stroke-width)"
+          size="xs"
           className="zt:shrink-0 zt:self-center zt:text-(--collapse-icon-color)"
         />
         <span className="zt:truncate">{group.label}</span>
@@ -219,11 +218,7 @@ export function CellContent({
         data-query-error={error.code}
         {...tooltipAttrs(error.message)}
       >
-        <Icon
-          name="alert-triangle"
-          size="var(--icon-xs)"
-          strokeWidth="var(--icon-xs-stroke-width)"
-        />
+        <Icon name="alert-triangle" size="xs" />
       </span>
     );
   if (!Array.isArray(value) || !holdsError(value)) return text;

@@ -320,7 +320,7 @@ function ChromeIcon({ name }: { name: IconName }) {
   return (
     <Icon
       name={name}
-      size="var(--icon-xs)"
+      size="xs"
       className="zt:shrink-0 zt:text-muted-foreground"
     />
   );
@@ -638,7 +638,7 @@ function GroupHeading({
         >
           <Icon
             name={expanded ? "chevron-down" : "chevron-right"}
-            size="var(--icon-xs)"
+            size="xs"
             className="zt:shrink-0 zt:text-(--collapse-icon-color) zt:group-data-collapsed/heading:text-(--collapse-icon-color-collapsed)"
           />
           <span className="zt:truncate zt:text-sm zt:font-(weight:--font-semibold) zt:text-foreground">

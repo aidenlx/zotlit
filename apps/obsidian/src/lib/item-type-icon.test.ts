@@ -26,7 +26,7 @@ describe("itemTypeIcon", () => {
       hearing: "landmark",
       instantMessage: "message-square-text",
       interview: "mic",
-      journalArticle: "file-text",
+      journalArticle: "newspaper",
       letter: "mail",
       magazineArticle: "newspaper",
       manuscript: "scroll-text",

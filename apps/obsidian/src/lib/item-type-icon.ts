@@ -1,5 +1,7 @@
 // The Lucide icon of each Zotero item type, as Zotero's item list starts each
-// row with one. Every name is in the Lucide set Obsidian bundles.
+// row with one. Every name is in the Lucide set Obsidian bundles. `file-text`
+// is a PDF's, as Obsidian draws one and as the row's end marks it, so no type
+// takes it: a journal article is a periodical's, as a magazine article is.
 //
 // @see apps/obsidian/docs/adr/0075-the-papers-layout-is-a-query-view-layout-the-library-view-offers-with-the-table.md
 import type { IconName } from "obsidian";
@@ -28,7 +30,7 @@ export const ITEM_TYPE_ICONS: Readonly<Record<string, IconName>> = {
   hearing: "landmark",
   instantMessage: "message-square-text",
   interview: "mic",
-  journalArticle: "file-text",
+  journalArticle: "newspaper",
   letter: "mail",
   magazineArticle: "newspaper",
   manuscript: "scroll-text",
