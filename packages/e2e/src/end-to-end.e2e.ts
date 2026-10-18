@@ -3410,7 +3410,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
   });
 
-  it("opens the Library View after an update of ZotLit, with no notice, and announces the update in the banner beside the Help Links until What's new acknowledges it", async () => {
+  it("opens the Library View after an update of ZotLit in its own tab beside the open note, with no notice, and announces the update in the banner beside the Help Links until What's new acknowledges it", async () => {
     const services = "app.plugins.plugins.zotlit.services";
     const dataPath = "app.vault.configDir+'/plugins/zotlit/data.json'";
     const snapshot = await obEval(
@@ -3439,10 +3439,24 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       "release.notices-enabled": true,
       "welcome.dismissed": true,
     };
+    // The researcher has a note open in the active leaf.
+    const note = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const file=app.vault.getMarkdownFiles()[0];const leaf=app.workspace.getLeaf(false);await leaf.openFile(file);app.workspace.setActiveLeaf(leaf);return JSON.stringify({id:leaf.id,path:file.path});})()`,
+      ),
+    ) as { id: string; path: string };
     await clearNotices(vaultId);
     await reloadAndCheck(
       `await app.vault.adapter.write(${dataPath},${JSON.stringify(JSON.stringify(seeded))});`,
     );
+    // The Library View opens in its own tab: the note's leaf keeps its note.
+    expect(
+      await obEval(
+        vaultId,
+        `JSON.stringify({note:app.workspace.getLeafById(${JSON.stringify(note.id)})?.view.file?.path,library:app.workspace.getLeavesOfType('zotlit-library').map(leaf=>leaf.id!==${JSON.stringify(note.id)})})`,
+      ),
+    ).toBe(JSON.stringify({ note: note.path, library: [true] }));
 
     const banner = `app.workspace.getLeavesOfType('zotlit-library')[0]?.view.contentEl.querySelector('[data-welcome-banner]')`;
     const readBanner = `(()=>{const el=${banner};return JSON.stringify({library:app.workspace.getLeavesOfType('zotlit-library').length,banner:!!el&&{badge:el.querySelector('[data-welcome-badge]')?.textContent,headings:[...el.querySelectorAll('[role=heading][aria-level="3"]')].map(n=>n.textContent),buttons:[...el.querySelectorAll('button')].map(n=>n.textContent).filter(Boolean),help:el.querySelectorAll('[data-welcome-help] a').length},notices:activeDocument.querySelectorAll('.notice').length});})()`;
