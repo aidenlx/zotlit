@@ -17,7 +17,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { testItemSeed } from "@zotlit/item-query";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
-import { shimPopover } from "@/components/__fixtures__/popover";
 import {
   createObsidianHost,
   PluginStub,
@@ -697,8 +696,6 @@ it("opens on the document plugin data holds, once it has loaded", async () => {
     facets: [],
     search: "",
     sort: [{ property: "title", direction: "ASC" }],
-    layout: "table",
-    order: ["title"],
   });
   await openTab(deps);
   expect(listRuns(run)).toHaveLength(1);
@@ -712,7 +709,7 @@ it("opens on the document plugin data holds, once it has loaded", async () => {
   });
 });
 
-it("opens on every field of the document plugin data holds that it can read, where one facet is unknown", async () => {
+it("opens on every field of the document plugin data holds that it can read, where one facet is unknown, and on Papers where an earlier build stored the Table", async () => {
   const { deps, run } = pluginData({
     node: { kind: "library", library: PERSONAL },
     facets: ["annotated", "starred"],
@@ -727,7 +724,8 @@ it("opens on every field of the document plugin data holds that it can read, whe
     filter: "annotations.length > 0",
     sort: [{ field: "title", direction: "asc" }],
   });
-  expect(view.query.state.getState().view?.type).toBe("table");
+  expect(view.query.state.getState().view?.type).toBe("papers");
+  expect(view.query.state.getState().view?.order).toBeUndefined();
 });
 
 it("opens again on a sort the toolbar changed, and runs the query the toolbar ran", async () => {
@@ -901,8 +899,6 @@ it("moves the selection up to its library where Zotero no longer has the Collect
     facets: [],
     search: "",
     sort: [{ property: "dateModified", direction: "DESC" }],
-    layout: "table",
-    order: ["title"],
   });
   const view = await openTab(deps);
   await act(() => view.query.settled);
@@ -1220,20 +1216,21 @@ it("reads only the Library Scope on Recent while the tree shows every Library", 
   });
 });
 
-it("opens on the Papers Layout, offers Papers and the Table only, and opens again on the Table once the researcher switches to it", async () => {
+it("opens on the Papers Layout with a toolbar of the result count, Sort and Save as query file alone", async () => {
   const { deps } = pluginData();
-  const first = await openTab(deps);
-  expect(first.query.state.getState().view?.type).toBe("papers");
-  expect(first.query.layouts).toEqual(["papers", "table"]);
-  await act(async () => {
-    first.query.document.setViewLayout(0, "table");
-    await first.query.flush();
-    await first.query.settled;
-  });
-  await act(() => first.close());
-
-  const second = await openTab(deps);
-  expect(second.query.state.getState().view?.type).toBe("table");
+  const view = await openTab(deps);
+  await act(() => view.query.settled);
+  expect(view.query.state.getState().view?.type).toBe("papers");
+  const toolbar = view.contentEl.querySelector('[role="toolbar"]')!;
+  expect(
+    [...toolbar.querySelectorAll(":scope > button")].map(
+      (button) =>
+        button.getAttribute("data-query-toolbar") ??
+        [...button.attributes]
+          .map(({ name }) => name)
+          .find((name) => name.startsWith("data-query-")),
+    ),
+  ).toEqual(["data-query-results", "sort", "data-query-save-as"]);
 });
 
 /** The Items the list shows, by Indexed Key, in order. */
@@ -1655,8 +1652,6 @@ const ON_MY_LIBRARY = {
   facets: [],
   search: "",
   sort: [{ property: "dateModified", direction: "DESC" }],
-  layout: "table",
-  order: ["title"],
 };
 
 /** The offer to search all libraries beside the header, while it shows. */
@@ -2284,7 +2279,7 @@ describe("Reading Card", () => {
   });
 });
 
-it("says in the Save as query file dialog what the file leaves out, and offers the selected Collection's name", async () => {
+it("says in the Save as query file dialog, from the toolbar button, what the file leaves out, and offers the selected Collection's name", async () => {
   const { deps } = pluginData();
   Object.assign(deps.app, {
     fileManager: {
@@ -2301,17 +2296,7 @@ it("says in the Save as query file dialog what the file leaves out, and offers t
   await type(view, "figures");
   Modal.instances.length = 0;
   await act(() =>
-    view.contentEl
-      .querySelector<HTMLElement>("[data-query-view-menu]")!
-      .click(),
-  );
-  await shimPopover(
-    document.querySelector<HTMLElement>("[data-query-view-list]")!,
-  ).open();
-  await act(() =>
-    document
-      .querySelector<HTMLElement>('[data-query-view-action="save-as"]')!
-      .click(),
+    view.contentEl.querySelector<HTMLElement>("[data-query-save-as]")!.click(),
   );
   await vi.waitFor(() => expect(Modal.instances).toHaveLength(1));
   const modal = Modal.instances[0]!;

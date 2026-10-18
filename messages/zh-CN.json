@@ -2424,15 +2424,6 @@
   "query_view_layout_list": "列表",
   "query_view_layout_cards": "卡片",
   "query_view_layout_papers": "文献",
-  "query_view_papers_annotation_count": [
-    {
-      "declarations": ["input count", "local category = count: plural"],
-      "selectors": ["category"],
-      "match": {
-        "category=*": "{count} 条标注"
-      }
-    }
-  ],
   "query_view_papers_more_creators": "{names} 等",
   "query_view_papers_attachment_pdf": "PDF",
   "query_view_papers_attachment_epub": "EPUB",

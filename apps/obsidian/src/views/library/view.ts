@@ -226,7 +226,8 @@ export class LibraryView extends ItemView {
       // The view runs once the tab has set its text, after the query.
       libraries: () => this.#shown!.libraries,
       rank: () => this.#shown!.rank,
-      // The document keeps the sort, the Layout and the Visible Properties.
+      // The document keeps the sort alone, and Papers is the one Layout, so
+      // the toolbar shows the result count, Sort and Save as query file.
       displayOnly: true,
       layouts: LIBRARY_LAYOUTS,
       // The selected node's sort and the row limit are the view's own.
@@ -240,6 +241,7 @@ export class LibraryView extends ItemView {
       empty: ({ fallback }) => this.search.empty(this.tree.store, fallback),
       // The document took the change from the toolbar's text already.
       save: () => this.#storage.save(),
+      // The way to the full Query View: a Query File of the list.
       saveAs: () => void this.#saveAs(),
       layout: { onEscape },
     });

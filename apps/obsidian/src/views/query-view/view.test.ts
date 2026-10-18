@@ -172,6 +172,7 @@ async function mount(
     libraries,
     displayOnly,
     layouts,
+    saveAs,
     rowPass,
     reason,
     creation = "created",
@@ -198,6 +199,7 @@ async function mount(
     libraries?: () => LibraryScope;
     displayOnly?: boolean;
     layouts?: readonly string[];
+    saveAs?: () => void;
     rowPass?: ConstructorParameters<typeof QueryView>[1]["rowPass"];
     reason?: (row: QueryViewRow) => string | null;
     /**
@@ -369,6 +371,7 @@ async function mount(
     ...(libraries && { libraries }),
     ...(displayOnly && { displayOnly }),
     ...(layouts && { layouts }),
+    ...(saveAs && { saveAs }),
     ...(rowPass && { rowPass }),
     ...(reason && { reason }),
   });
@@ -789,11 +792,11 @@ describe("saving a toolbar edit", () => {
     });
   });
 
-  it("offers no change the host does not keep, where it keeps only the sort, the Layout and the Visible Properties", async () => {
+  it("offers only the result count, Sort and Save as query file where the host keeps only the sort and offers one Layout, and every control where it keeps the file", async () => {
     const toolbar = (el: HTMLElement) =>
       [
         ...el.querySelectorAll(
-          "[data-query-view-menu], [data-query-results], [data-query-toolbar], [data-query-properties]",
+          "[data-query-view-menu], [data-query-results], [data-query-toolbar], [data-query-properties], [data-query-save-as]",
         ),
       ].map(
         (node) =>
@@ -814,44 +817,39 @@ describe("saving a toolbar edit", () => {
       "data-query-properties",
       "search",
     ]);
-
-    const fixed = await mount([], undefined, { displayOnly: true });
-    await act(() => fixed.view.setText(FILE));
-    await fixed.settle();
-    // A host that keeps only these has a search of its own (ADR 0073).
-    expect(toolbar(fixed.el)).toEqual([
-      "data-query-view-menu",
-      "data-query-results",
-      "sort",
-      "data-query-properties",
-    ]);
-  });
-
-  it("ticks and orders the Visible Properties with no page to edit a property, where the host keeps only the Visible Properties", async () => {
-    const open = async (displayOnly: boolean) => {
-      const mounted = await mount([], undefined, { displayOnly });
-      await act(() => mounted.view.setText(FILE));
-      await mounted.settle();
-      await act(() =>
-        mounted.el
-          .querySelector<HTMLElement>("[data-query-properties]")!
-          .click(),
-      );
-      await shimPopover(
-        mounted.el.querySelector<HTMLElement>("[data-query-properties-popup]")!,
-      ).open();
-      return mounted.el;
-    };
-    const full = await open(false);
-    expect(full.querySelector("[data-query-property]")).not.toBeNull();
-    expect(full.querySelector("[data-query-property-more]")).not.toBeNull();
     cleanup.dispose();
     cleanup = new DisposableStack();
     document.body.replaceChildren();
 
-    const fixed = await open(true);
-    expect(fixed.querySelector("[data-query-property]")).not.toBeNull();
-    expect(fixed.querySelector("[data-query-property-more]")).toBeNull();
+    const saveAs = vi.fn();
+    const fixed = await mount([], undefined, {
+      displayOnly: true,
+      layouts: ["papers"],
+      saveAs,
+    });
+    await act(() => fixed.view.setText(PAPERS_FILE));
+    await fixed.settle();
+    // A host that keeps only the sort has a search of its own (ADR 0073).
+    expect(toolbar(fixed.el)).toEqual([
+      "data-query-results",
+      "sort",
+      "data-query-save-as",
+    ]);
+    const button = fixed.el.querySelector<HTMLElement>("[data-query-save-as]")!;
+    // A labelled button: its name is its tooltip, and shows on a wide pane.
+    expect(button.getAttribute("aria-label")).toBe(
+      m.annot_view_save_as_query_file(),
+    );
+    await act(() => button.click());
+    expect(saveAs).toHaveBeenCalledOnce();
+
+    // The result count still opens its menu, with no limit to set.
+    await shimPopover(
+      fixed.el.querySelector<HTMLElement>("[data-query-results-popup]")!,
+    ).open();
+    expect(fixed.el.querySelector("[data-query-copy]")).not.toBeNull();
+    expect(fixed.el.querySelector("[data-query-export]")).not.toBeNull();
+    expect(fixed.el.querySelector("[data-query-limit]")).toBeNull();
   });
 
   it("switches only between the Layouts the host offers from the view menu, with no view to add or configure, where the host keeps only the Layout of its view", async () => {
@@ -3478,7 +3476,6 @@ function paperRow(
     year?: number;
     publicationTitle?: string;
     publisher?: string;
-    colors?: string[];
     fileTypes?: string[];
     attachments?: string[];
   },
@@ -3508,7 +3505,6 @@ function paperRow(
             },
       publicationTitle: values.publicationTitle ?? null,
       publisher: values.publisher ?? null,
-      "annotations[].color": values.colors ?? [],
       "attachments[].fileType": values.fileTypes ?? [],
       "attachments[].indexedKey": values.attachments ?? [],
     },
@@ -3522,10 +3518,8 @@ function papers(el: HTMLElement) {
       key: node.dataset.queryPapersRow,
       title: node.querySelector("[data-query-papers-title]")?.textContent,
       meta: node.querySelector("[data-query-papers-meta]")?.textContent,
-      state: node.querySelector("[data-query-papers-state]")?.textContent,
-      dots: [
-        ...node.querySelectorAll<HTMLElement>("[data-query-papers-color]"),
-      ].map((dot) => dot.dataset.queryPapersColor),
+      lines: node.querySelector("[data-query-papers-title]")?.parentElement
+        ?.childElementCount,
       attachment:
         node.querySelector<HTMLElement>("[data-query-papers-attachment]")
           ?.dataset.queryPapersAttachment ?? null,
@@ -3534,8 +3528,8 @@ function papers(el: HTMLElement) {
   );
 }
 
-it("draws each Item of a Papers view as its title, its creators, year and Venue, and a reading-state line, and ends it with its main Attachment kind and its Literature Note", async () => {
-  const { view, el, settle } = await mount(
+it("draws each Item of a Papers view in two lines, its title and its creators, year and Venue, and ends it with its main Attachment kind and its Literature Note", async () => {
+  const { view, el, run, settle } = await mount(
     [
       result([
         paperRow("ITEMAAAA", {
@@ -3548,7 +3542,6 @@ it("draws each Item of a Papers view as its title, its creators, year and Venue,
           year: 2014,
           publicationTitle: "PLOS Computational Biology",
           publisher: "PLOS",
-          colors: ["#ffd400", "#5fb236", "#ffd400"],
           fileTypes: ["web", "pdf"],
           attachments: ["WEBAAAAA", "PDFAAAAA"],
         }),
@@ -3580,8 +3573,7 @@ it("draws each Item of a Papers view as its title, its creators, year and Venue,
       key: "ITEMAAAA",
       title: "Ten simple rules for better figures",
       meta: "Rougier, Droettboom · 2014 · PLOS Computational Biology",
-      state: "3 annotations",
-      dots: ["#ffd400", "#5fb236"],
+      lines: 2,
       attachment: "pdf",
       note: true,
     },
@@ -3589,8 +3581,7 @@ it("draws each Item of a Papers view as its title, its creators, year and Venue,
       key: "ITEMBBBB",
       title: "The structure of scientific revolutions",
       meta: "Kuhn Society, B, C et al. · 1962 · University of Chicago Press",
-      state: undefined,
-      dots: [],
+      lines: 2,
       attachment: "epub",
       note: false,
     },
@@ -3598,20 +3589,29 @@ it("draws each Item of a Papers view as its title, its creators, year and Venue,
       key: "ITEMCCCC",
       title: "A note with no file",
       meta: undefined,
-      state: undefined,
-      dots: [],
+      lines: 1,
       attachment: null,
       note: false,
     },
   ]);
+  // The row reads no Annotation: the Reading Card and the facets carry it.
+  expect(
+    (run.mock.calls[0]![0].fields ?? []).filter((field) =>
+      field.startsWith("annotations"),
+    ),
+  ).toEqual([]);
   expect(cards(el)).toEqual([]);
 });
 
-it("ends a Papers row's reading-state line with the reason its host gives for the row", async () => {
+it("ends a Papers row's second line with the reason its host gives for the row", async () => {
   const { view, el, settle } = await mount(
     [
       result([
-        paperRow("ITEMAAAA", { title: "Annotated", colors: ["#ffd400"] }),
+        paperRow("ITEMAAAA", {
+          title: "Annotated",
+          creators: [{ family: "Rougier", role: "author" }],
+          year: 2014,
+        }),
         paperRow("ITEMBBBB", { title: "Untouched" }),
         paperRow("ITEMCCCC", { title: "No reason" }),
       ]),
@@ -3624,10 +3624,10 @@ it("ends a Papers row's reading-state line with the reason its host gives for th
   );
   await act(() => view.setText(PAPERS_FILE));
   await settle();
-  expect(papers(el).map(({ state }) => state)).toEqual([
-    "1 annotation · edited ITEMAAAA",
-    "edited ITEMBBBB",
-    undefined,
+  expect(papers(el).map(({ meta, lines }) => [meta, lines])).toEqual([
+    ["Rougier · 2014 · edited ITEMAAAA", 2],
+    ["edited ITEMBBBB", 2],
+    [undefined, 1],
   ]);
 });
 

@@ -173,11 +173,12 @@ export interface QueryViewHost {
    */
   libraries?: () => LibraryScope;
   /**
-   * Whether the host keeps only the shown view's sort, Layout and Visible
-   * Properties, as the Library View Document does. The view then offers no
-   * other change: no other view, grouping, filter, limit, column width,
-   * Display Name or Formula, which would show and then be gone on reopen,
-   * and no toolbar search beside its own (ADR 0073).
+   * Whether the host keeps only the shown view's sort, as the Library View
+   * Document does. The view then offers no other change: no other view,
+   * grouping, filter, limit, Visible Property, column width, Display Name or
+   * Formula, which would show and then be gone on reopen, and no toolbar
+   * search beside its own (ADR 0073). A host that offers one Layout shows no
+   * view menu at all (ADR 0075).
    *
    * @see apps/obsidian/docs/adr/0071-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
    */
@@ -206,7 +207,7 @@ export interface QueryViewHost {
    */
   rows?: ItemRowGestures;
   /**
-   * Why `row` is in the list; the Papers reading-state line ends with it.
+   * Why `row` is in the list; the second line of a Papers row ends with it.
    * The Library View's Recent gives one once last activity is defined
    * (#1532), such as "read 2 h ago in Obsidian". `null`: no reason. Absent:
    * no row gives one.
@@ -223,8 +224,9 @@ export interface QueryViewHost {
    */
   empty?: ComponentType<{ fallback: string }>;
   /**
-   * Writes what the view shows as a new Query File. Present: the view menu
-   * of a host without views (`displayOnly`) offers "Save as query file".
+   * Writes what the view shows as a new Query File. Present: the toolbar
+   * shows a "Save as query file" button, the way to the full Query View for
+   * a host that keeps only the sort (`displayOnly`, ADR 0075).
    */
   saveAs?: () => void;
   /**
@@ -263,22 +265,24 @@ export interface QueryRowPass {
 
 /**
  * The changes the toolbar offers. A host that keeps only the shown view's
- * sort, Layout and Visible Properties (`displayOnly`) takes away every other
- * one, so no control shows a change that would be gone on reopen. Each
- * control reads its own flag here.
+ * sort (`displayOnly`) takes away every other one, so no control shows a
+ * change that would be gone on reopen. Each control reads its own flag here.
  *
  * @see apps/obsidian/docs/adr/0071-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
  */
 export interface QueryViewCapabilities {
   /**
    * Add, configure, reorder and switch the file's views. Without it the view
-   * menu switches only the Layout of the view on screen (ADR 0075).
+   * menu switches only the Layout of the view on screen, and shows only
+   * where the host offers more than one (ADR 0075).
    */
   readonly views: boolean;
   readonly group: boolean;
   readonly filter: boolean;
   /** Set and clear the row limit. */
   readonly limit: boolean;
+  /** Choose and order the Visible Properties: the Properties menu. */
+  readonly properties: boolean;
   /** Resize a Table column and reset its width. */
   readonly columnWidth: boolean;
   /** Open a property's page: its Display Name, its Formula, "Add formula". */
@@ -295,6 +299,7 @@ const EVERY_CHANGE: QueryViewCapabilities = Object.freeze({
   group: true,
   filter: true,
   limit: true,
+  properties: true,
   columnWidth: true,
   propertyPages: true,
   search: true,
@@ -305,6 +310,7 @@ const DISPLAY_CHANGES: QueryViewCapabilities = Object.freeze({
   group: false,
   filter: false,
   limit: false,
+  properties: false,
   columnWidth: false,
   propertyPages: false,
   search: false,
@@ -803,7 +809,7 @@ export class QueryView extends Component implements HistorySurface {
     return this.#host.empty;
   }
 
-  /** The host's "Save as query file", for the view menu. */
+  /** The host's "Save as query file", for the toolbar. */
   get saveAs(): QueryViewHost["saveAs"] {
     return this.#host.saveAs;
   }
@@ -1493,6 +1499,23 @@ function OpenFileButton({ view }: { view: QueryView }) {
   );
 }
 
+/**
+ * "Save as query file", for a host that writes what it shows as a new Query
+ * File: the way to the full Query View. Its name shows on a wide toolbar.
+ */
+function SaveAsButton({ view }: { view: QueryView }) {
+  const { saveAs } = view;
+  if (!saveAs) return null;
+  return (
+    <ToolbarButton
+      icon="file-plus"
+      label={m.annot_view_save_as_query_file()}
+      data-query-save-as=""
+      onClick={() => saveAs()}
+    />
+  );
+}
+
 function SortButton({ view }: { view: QueryView }) {
   const current = useQueryViewState(view, (s) => s.view);
   const { literatureNotes } = view.tableDeps;
@@ -1589,9 +1612,10 @@ function QueryViewBody({ view }: { view: QueryView }) {
         <SortButton view={view} />
         {view.can.group && <GroupButton view={view} />}
         {view.can.filter && <FilterButton view={view} />}
-        <PropertiesMenu view={view} />
+        {view.can.properties && <PropertiesMenu view={view} />}
         {view.can.search && <SearchButton bar={search} />}
         <OpenFileButton view={view} />
+        <SaveAsButton view={view} />
       </div>
       {view.can.search && <SearchRow view={view} bar={search} />}
       <ReadOnlyNote view={view} />

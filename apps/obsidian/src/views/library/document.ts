@@ -6,8 +6,8 @@ import * as v from "valibot";
 // search and a toolbar change; its derivations give the list's query (the
 // tree node and the facets become the filters for all views, Recent adds none
 // and reads the whole Library Scope, a search becomes its ranked key set, and
-// the sort, the Layout and the Visible Properties pass through to the one
-// Items view), the tree's paper and unread counts, the Libraries of a node,
+// the sort passes through to the one Items view, always in the Papers
+// Layout), the tree's paper and unread counts, the Libraries of a node,
 // and the text "Save as query file" writes. The Library Tree, the search box,
 // the Library View and its storage all call it, so the tree's counts and the
 // list are built one way.
@@ -50,9 +50,13 @@ export const READING_STATE_FACETS = [
 ] as const;
 export type ReadingStateFacet = (typeof READING_STATE_FACETS)[number];
 
-/** The Layouts the Library View offers, in the order its view menu lists them. */
-export const LIBRARY_LAYOUTS = ["papers", "table"] as const;
-export type LibraryLayout = (typeof LIBRARY_LAYOUTS)[number];
+/**
+ * The Layouts the Library View offers: Papers alone, so it shows no Layout
+ * switch. The full Query View is a "Save as query file" away.
+ *
+ * @see apps/obsidian/docs/adr/0075-the-papers-layout-is-a-query-view-layout-the-library-view-offers-with-the-table.md
+ */
+export const LIBRARY_LAYOUTS = ["papers"] as const;
 
 /**
  * The node selected in the Library Tree: Recent, a Library, or a Collection by
@@ -75,9 +79,6 @@ export interface LibraryViewDocument {
   /** The text in the search box; empty while the view browses. */
   readonly search: string;
   readonly sort: readonly QueryFileSort[];
-  readonly layout: LibraryLayout;
-  /** The Visible Properties, in the order the view shows them. */
-  readonly order: readonly string[];
 }
 
 const nodeSchema = v.variant("kind", [
@@ -97,16 +98,12 @@ const sortSchema = v.array(
   }),
 );
 
-const orderSchema = v.array(v.pipe(v.string(), v.nonEmpty()));
-
 /** The document as plugin data stores it: JSON data. */
 export type StoredLibraryViewDocument = {
   node: v.InferOutput<typeof nodeSchema>;
   facets: ReadingStateFacet[];
   search: string;
   sort: v.InferOutput<typeof sortSchema>;
-  layout: LibraryLayout;
-  order: string[];
 };
 
 /**
@@ -127,8 +124,6 @@ export const DEFAULT_LIBRARY_VIEW_DOCUMENT: LibraryViewDocument = Object.freeze(
     facets: [],
     search: "",
     sort: RECENT_SORT,
-    layout: "papers",
-    order: ["title", "creators", "date.year", "vault.literatureNote"],
   } satisfies LibraryViewDocument,
 );
 
@@ -136,7 +131,8 @@ export const DEFAULT_LIBRARY_VIEW_DOCUMENT: LibraryViewDocument = Object.freeze(
  * Read the document that plugin data holds: the one check of its shape. A
  * value that is not an object takes the default document; a field this
  * build cannot read takes its default and the other fields stay; a facet it
- * does not know drops out.
+ * does not know drops out. A field it no longer reads, such as the `layout`
+ * and `order` of an earlier build, is ignored.
  */
 export function parseLibraryViewDocument(raw: unknown): LibraryViewDocument {
   const stored =
@@ -156,8 +152,6 @@ export function parseLibraryViewDocument(raw: unknown): LibraryViewDocument {
     facets: READING_STATE_FACETS.filter((facet) => facets.includes(facet)),
     search: field(v.string(), "search", defaults.search),
     sort: field(sortSchema, "sort", defaults.sort),
-    layout: field(v.picklist(LIBRARY_LAYOUTS), "layout", defaults.layout),
-    order: field(orderSchema, "order", defaults.order),
   };
 }
 
@@ -231,8 +225,6 @@ export function serializeLibraryViewDocument(
     facets: [...doc.facets],
     search: doc.search,
     sort: doc.sort.map(({ property, direction }) => ({ property, direction })),
-    layout: doc.layout,
-    order: [...doc.order],
   };
 }
 
@@ -264,7 +256,7 @@ export interface LibraryViewQuery {
 }
 
 /**
- * The most rows the view shows: the Table draws every row it gets, and a
+ * The most rows the view shows: a Layout draws every row it gets, and a
  * library of 10,000 Items takes about two seconds to draw, 50,000 over
  * half a minute. The toolbar says how many more match; the tree and the
  * search narrow to them.
@@ -323,12 +315,11 @@ export function libraryViewQuery(
     ...(filters.length > 0 && { filters: filterTree(filters) }),
     views: [
       {
-        type: doc.layout,
+        type: LIBRARY_LAYOUTS[0],
         name: labels.papers,
         from: "items",
         ...(doc.sort.length > 0 && { sort: doc.sort }),
         limit: LIBRARY_VIEW_ROW_LIMIT,
-        order: doc.order,
         problems: [],
         source: {},
       },
@@ -347,8 +338,8 @@ export function libraryViewQuery(
 }
 
 /**
- * `doc` with what a toolbar change set in `text`: the sort, the Layout and
- * the Visible Properties of its view. The tree node, the facets and the
+ * `doc` with what a toolbar change set in `text`: the sort of its view, the
+ * one toolbar change the document keeps. The tree node, the facets and the
  * search stay as `doc` holds them.
  */
 export function withText(
@@ -357,14 +348,7 @@ export function withText(
 ): LibraryViewDocument {
   const view = parseQueryFile(text).views[0];
   if (!view) return doc;
-  return {
-    ...doc,
-    sort: view.sort ?? [],
-    layout: LIBRARY_LAYOUTS.includes(view.type as LibraryLayout)
-      ? (view.type as LibraryLayout)
-      : doc.layout,
-    order: view.order ?? [],
-  };
+  return { ...doc, sort: view.sort ?? [] };
 }
 
 /**

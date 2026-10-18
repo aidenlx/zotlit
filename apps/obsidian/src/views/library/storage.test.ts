@@ -55,6 +55,11 @@ const STORED = {
   facets: ["annotated"],
   search: "",
   sort: [{ property: "dateModified", direction: "DESC" }],
+};
+
+/** {@link STORED} as an earlier build wrote it, with a Layout and Visible Properties. */
+const STORED_EARLIER = {
+  ...STORED,
   layout: "table",
   order: ["title", "creators"],
 };
@@ -77,7 +82,7 @@ async function openLibrary() {
   const host = createObsidianHost({});
   const plugin = new PluginStub(host.app as unknown as App, {
     __VERSION__: 10,
-    "library.document": STORED,
+    "library.document": STORED_EARLIER,
   });
   const settings = cleanup.use(
     new SettingsService({
@@ -147,8 +152,6 @@ it("reads the document that plugin data holds", async () => {
       path: ["Thesis", "Chapter 2"],
     },
     facets: ["annotated"],
-    layout: "table",
-    order: ["title", "creators"],
   });
   expect(query.state.getState().file?.filters).toEqual({
     and: ['collections.within("Thesis/Chapter 2")', "annotations.length > 0"],
@@ -180,14 +183,20 @@ it("says a change is not saved when the write fails, until a later write succeed
   const { query, saveData } = await openLibrary();
   saveData.mockRejectedValueOnce(new Error("disk full"));
   await act(async () => {
-    query.document.editView({ order: ["title"] });
+    query.document.editView({
+      sort: [{ property: "title", direction: "ASC" }],
+    });
     await query.flush();
   });
   expect(query.state.getState().saveFailed).toBe(true);
-  expect(query.state.getState().view?.order).toEqual(["title"]);
+  expect(query.state.getState().view?.sort).toEqual([
+    { property: "title", direction: "ASC" },
+  ]);
 
   await act(async () => {
-    query.document.editView({ order: ["title", "date.year"] });
+    query.document.editView({
+      sort: [{ property: "title", direction: "DESC" }],
+    });
     await query.flush();
   });
   expect(query.state.getState().saveFailed).toBe(false);

@@ -1,8 +1,10 @@
-// The Papers layout: the Items of a view as a reading list. Each row shows
-// the title; the creators, the year and the Venue on a second line; and a
-// reading-state line under them. It ends with the kind of the Item's main
-// Attachment and a mark for its Literature Note, and expands into the rows
-// the Table expands into.
+// The Papers layout: the Items of a view as a reading list, two lines per
+// Item. The title, cut to one line; then the creators, the year and the
+// Venue, ending with the reason the host gives for the row. The row ends
+// with the kind of the Item's main Attachment and a mark for its Literature
+// Note, and expands into the rows the Table expands into. It reads no
+// Annotation: the Reading Card and the Reading State facets carry the rest
+// of the Reading State.
 //
 // @see apps/obsidian/docs/adr/0075-the-papers-layout-is-a-query-view-layout-the-library-view-offers-with-the-table.md
 import { Fragment, useSyncExternalStore } from "react";
@@ -42,7 +44,7 @@ export const PAPERS_LAYOUT: QueryLayout = {
 
 /**
  * The paths each Papers row reads beside the visible properties: its lines,
- * its reading state, its Attachment kinds and what it expands into.
+ * its Attachment kinds and what it expands into.
  */
 export const PAPERS_FIELDS: readonly string[] = [
   "title",
@@ -50,15 +52,12 @@ export const PAPERS_FIELDS: readonly string[] = [
   "date",
   "publicationTitle",
   "publisher",
-  "annotations[].color",
   "attachments[].fileType",
   ...TABLE_FIELDS,
 ];
 
 /** The most creators the second line names before "et al.". */
 const SHOWN_CREATORS = 3;
-/** The most colours the reading-state line shows. */
-const SHOWN_COLORS = 5;
 
 /** The Attachment kinds a row's end mark shows, the first one an Item has winning. */
 const ATTACHMENT_KINDS = [
@@ -135,18 +134,6 @@ export function metaText(values: TableRecord["values"]): string {
     .join(" · ");
 }
 
-/** The colours of the Item's Annotations, the most used first. */
-function annotationColors(colors: readonly QueryViewValue[]): string[] {
-  const counts = new Map<string, number>();
-  for (const color of colors)
-    if (typeof color === "string" && color !== "")
-      counts.set(color, (counts.get(color) ?? 0) + 1);
-  return [...counts]
-    .sort(([, a], [, b]) => b - a)
-    .slice(0, SHOWN_COLORS)
-    .map(([color]) => color);
-}
-
 function mainAttachmentKind(values: TableRecord["values"]) {
   const types = list(values["attachments[].fileType"]);
   return ATTACHMENT_KINDS.find((kind) => types.includes(kind.type)) ?? null;
@@ -219,7 +206,7 @@ function PaperRow({
 }: Expansion & {
   item: TableRecord;
   notes: LiteratureNotes;
-  /** Why the row is in the list, last on its reading-state line. */
+  /** Why the row is in the list, last on its second line. */
   reason: string | null;
   gestures: ItemRowGestures | undefined;
 }) {
@@ -227,17 +214,10 @@ function PaperRow({
   const open = expanded.has(id(item));
   const { values } = item;
   const note = useNotePath(notes, item.key);
-  const annotations = list(values["annotations[].color"]);
-  const colors = annotationColors(annotations);
-  // The Literature Note shows once, as the note icon at the row's end.
-  const state = [
-    annotations.length > 0
-      ? m.query_view_papers_annotation_count({ count: annotations.length })
-      : null,
-    reason,
-  ].filter((part) => part !== null);
   const titleId = useUniqueId();
-  const meta = metaText(values);
+  const meta = [metaText(values), reason ?? ""]
+    .filter((part) => part !== "")
+    .join(" · ");
   const kind = mainAttachmentKind(values);
   return (
     <li
@@ -260,7 +240,7 @@ function PaperRow({
         <div className="zt:min-w-0 zt:flex-1">
           <div
             id={titleId}
-            className="zt:line-clamp-2 zt:text-sm zt:font-(--font-medium) zt:text-foreground"
+            className="zt:truncate zt:text-sm zt:font-(--font-medium) zt:text-foreground"
             data-query-papers-title=""
           >
             {text(values.title)}
@@ -271,26 +251,6 @@ function PaperRow({
               data-query-papers-meta=""
             >
               {meta}
-            </div>
-          )}
-          {state.length > 0 && (
-            <div
-              className="zt:flex zt:items-center zt:gap-1 zt:text-xs zt:text-muted-foreground"
-              data-query-papers-state=""
-            >
-              {colors.length > 0 && (
-                <span className="zt:flex zt:shrink-0 zt:gap-0.5">
-                  {colors.map((color) => (
-                    <span
-                      key={color}
-                      className="zt:inline-block zt:size-2 zt:rounded-xs zt:bg-(--zt-annot-color)"
-                      style={{ "--zt-annot-color": color } as CSSProperties}
-                      data-query-papers-color={color}
-                    />
-                  ))}
-                </span>
-              )}
-              <span className="zt:truncate">{state.join(" · ")}</span>
             </div>
           )}
         </div>

@@ -45,8 +45,6 @@ const CHAPTER: LibraryViewDocument = {
     { property: "title", direction: "ASC" },
     { property: "dateAdded", direction: "DESC" },
   ],
-  layout: "table",
-  order: ["title", "firstAuthor", "vault.literatureNote"],
 };
 
 describe("parseLibraryViewDocument and serializeLibraryViewDocument", () => {
@@ -103,8 +101,6 @@ describe("parseLibraryViewDocument and serializeLibraryViewDocument", () => {
       facets: [],
       search: "",
       sort: [{ property: "dateModified", direction: "DESC" }],
-      layout: "papers",
-      order: ["title", "creators", "date.year", "vault.literatureNote"],
     });
   });
 
@@ -114,14 +110,22 @@ describe("parseLibraryViewDocument and serializeLibraryViewDocument", () => {
       facets: ["annotated", "starred"],
       search: 42,
       sort: [{ property: "title", direction: "sideways" }],
-      layout: "papyrus",
-      order: ["title"],
     });
     expect(parsed).toEqual({
       ...DEFAULT_LIBRARY_VIEW_DOCUMENT,
       facets: ["annotated"],
-      order: ["title"],
     });
+  });
+
+  it("ignores the Layout and the Visible Properties an earlier build stored, and keeps the rest", () => {
+    const parsed = parseLibraryViewDocument({
+      ...serializeLibraryViewDocument(CHAPTER),
+      layout: "table",
+      order: ["title", "firstAuthor"],
+    });
+    expect(parsed).toEqual(CHAPTER);
+    expect(serializeLibraryViewDocument(parsed)).not.toHaveProperty("layout");
+    expect(serializeLibraryViewDocument(parsed)).not.toHaveProperty("order");
   });
 
   it("reads each facet once, in the order the tree shows them", () => {
@@ -471,31 +475,29 @@ describe("searchTerms", () => {
   });
 });
 
-describe("libraryViewQuery — sort, Layout and Visible Properties", () => {
-  it("passes the sort, the Layout and the Visible Properties to the one Items view", () => {
+describe("libraryViewQuery — the sort and the Layout", () => {
+  it("passes the sort to the one Items view, always in the Papers Layout", () => {
     const { view } = derive({
       sort: [
         { property: "title", direction: "ASC" },
         { property: "dateAdded", direction: "DESC" },
       ],
-      layout: "table",
-      order: ["title", "firstAuthor"],
     });
     expect(view).toMatchObject({
-      type: "table",
+      type: "papers",
       name: "Papers",
       from: "items",
       sort: [
         { property: "title", direction: "ASC" },
         { property: "dateAdded", direction: "DESC" },
       ],
-      order: ["title", "firstAuthor"],
     });
+    expect(view.order).toBeUndefined();
   });
 });
 
 describe("withText", () => {
-  it("takes the sort, the Layout and the Visible Properties of a toolbar change, and keeps the node, facets and search", () => {
+  it("takes only the sort of a toolbar change, and keeps the node, facets and search", () => {
     const doc: LibraryViewDocument = {
       ...DEFAULT_LIBRARY_VIEW_DOCUMENT,
       node: {
@@ -519,6 +521,7 @@ describe("withText", () => {
       views: [
         {
           ...view,
+          type: "table",
           sort: [{ property: "title", direction: "ASC" }],
           order: ["title", "date.year"],
         },
@@ -527,24 +530,7 @@ describe("withText", () => {
     expect(withText(doc, edited)).toEqual({
       ...doc,
       sort: [{ property: "title", direction: "ASC" }],
-      order: ["title", "date.year"],
     });
-  });
-
-  it("keeps the document's Layout where the text names one the Library View does not offer", () => {
-    const text = libraryViewQuery(DEFAULT_LIBRARY_VIEW_DOCUMENT, {
-      labels: LABELS,
-      scope: SCOPE,
-    }).text.replace("type: papers", "type: cards");
-    expect(withText(DEFAULT_LIBRARY_VIEW_DOCUMENT, text).layout).toBe("papers");
-  });
-
-  it("takes the Layout of a switch between Papers and the Table", () => {
-    const text = libraryViewQuery(DEFAULT_LIBRARY_VIEW_DOCUMENT, {
-      labels: LABELS,
-      scope: SCOPE,
-    }).text.replace("type: papers", "type: table");
-    expect(withText(DEFAULT_LIBRARY_VIEW_DOCUMENT, text).layout).toBe("table");
   });
 });
 
@@ -630,18 +616,15 @@ describe("libraryViewQueryFileText — Save as query file", () => {
     ).toEqual({ facets: [], search: false });
   });
 
-  it("keeps the view as the Library View shows it: sort, Layout, Visible Properties and row limit", () => {
+  it("keeps the view as the Library View shows it: the Papers Layout, the sort and the row limit", () => {
     const { view } = saved({
       sort: [{ property: "title", direction: "ASC" }],
-      layout: "table",
-      order: ["title", "vault.literatureNote"],
     });
     expect(view).toMatchObject({
-      type: "table",
+      type: "papers",
       name: "Papers",
       from: "items",
       sort: [{ property: "title", direction: "ASC" }],
-      order: ["title", "vault.literatureNote"],
       limit: 1000,
     });
   });
