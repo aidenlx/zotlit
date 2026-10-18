@@ -511,7 +511,7 @@ export function VaultEditCell(props: VaultCellProps) {
         {draft !== null && (
           <div
             data-query-vault-editor=""
-            className="zt:absolute zt:inset-x-0 zt:top-0 zt:z-1 zt:min-h-full zt:rounded-(--bases-table-cell-radius-focus) zt:bg-(--bases-table-cell-background-active) zt:shadow-(--bases-table-cell-shadow-focus)"
+            className="zt:absolute zt:inset-x-0 zt:top-0 zt:z-1 zt:min-h-full zt:rounded-(--bases-table-cell-radius-focus) zt:bg-(--background-primary) zt:shadow-(--bases-table-cell-shadow-focus)"
           >
             <VaultEditor
               type={type}

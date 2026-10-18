@@ -410,7 +410,18 @@ function ListEditor({
     move();
   };
   return (
-    <div className="zt:flex zt:min-h-(--bases-table-row-height) zt:flex-wrap zt:items-center zt:gap-(--size-2-2) zt:px-2 zt:py-1">
+    // The pills flow as inline boxes on lines a row tall, so the editor
+    // that grows over the rows below ends on a row's edge, never across the
+    // pills of the next row, and a pill sits where it sits at rest.
+    // A press on the space between them goes to the field.
+    <div
+      className="zt:min-h-full zt:px-2 zt:leading-(--bases-table-row-height) zt:whitespace-normal"
+      onMouseDown={(event) => {
+        if (event.target !== event.currentTarget) return;
+        event.preventDefault();
+        field.current?.focus();
+      }}
+    >
       {draft.items.map((item, at) => (
         <span
           // Items may repeat, so the place keys each.
@@ -420,11 +431,16 @@ function ListEditor({
           }}
           tabIndex={-1}
           data-query-vault-chip={item}
-          className={cn(PILL, type === "tags" && TAG)}
+          className={cn(
+            PILL,
+            "zt:me-(--size-2-2) zt:inline-flex",
+            type === "tags" && TAG,
+          )}
           onKeyDown={(event) => onPillKey(event, at)}
         >
-          {/* The cell keeps to one line; an item in the editor wraps instead, so a narrow column never runs it under its x. */}
-          <span className="zt:min-w-0 zt:break-words zt:whitespace-normal">
+          {/* An item too long for the column truncates before its x, as it
+              does at rest, so a pill stays one line and a row tall. */}
+          <span className="zt:min-w-0 zt:truncate">
             {type === "tags" ? tagText(item) : item}
           </span>
           {/* Bare rather than an `IconButton`: Obsidian's `clickable-icon`
@@ -456,7 +472,10 @@ function ListEditor({
         ref={field}
         aria-labelledby={labelId}
         value={draft.text}
-        className={cn(FIELD, "zt:w-auto zt:min-w-16 zt:flex-1 zt:p-0")}
+        className={cn(
+          FIELD,
+          "zt:inline-block zt:[field-sizing:content] zt:w-auto zt:max-w-full zt:min-w-16 zt:p-0",
+        )}
         onInput={(event) =>
           onDraft({ ...draft, text: event.currentTarget.value })
         }
