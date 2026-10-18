@@ -122,19 +122,39 @@ const byName = (a: string, b: string) => collator.compare(a, b);
 
 /**
  * The draft with the item it edits in place put back: the edited text in
- * the item's place, or no item for no text, or for text the list holds
- * already.
+ * the item's place, or no item for no text. An item left as it was stays,
+ * though the list repeats it; text that repeats another item puts the item
+ * back as it was.
  */
 function withChip(draft: VaultDraft): VaultDraft {
   const { chip, ...rest } = draft;
   if (!chip) return draft;
   const text = chip.text.trim();
-  const taken = draft.items.some((item, at) => at !== chip.at && item === text);
+  const repeats = draft.items.some(
+    (item, at) => at !== chip.at && item === text,
+  );
   return {
     ...rest,
-    items: draft.items.flatMap((item, at) =>
-      at !== chip.at ? [item] : text === "" || taken ? [] : [text],
-    ),
+    items: draft.items.flatMap((item, at) => {
+      if (at !== chip.at) return [item];
+      if (text === "") return [];
+      return text === item || repeats ? [item] : [text];
+    }),
+  };
+}
+
+/**
+ * The draft less the item at `at`. The item that edits in place keeps its
+ * edit, where it now stands; its edit is dropped with it, where it goes.
+ */
+function withoutItem(draft: VaultDraft, at: number): VaultDraft {
+  const { chip, ...rest } = draft;
+  const items = draft.items.filter((_, i) => i !== at);
+  if (!chip || chip.at === at) return { ...rest, items };
+  return {
+    ...rest,
+    items,
+    chip: { ...chip, at: chip.at > at ? chip.at - 1 : chip.at },
   };
 }
 
@@ -529,7 +549,14 @@ function ListEditor({
     const at = focusAfter.current;
     if (at === null) return;
     focusAfter.current = null;
-    (at < 0 ? field.current : pills.current[at])?.focus();
+    if (at >= 0) {
+      pills.current[at]?.focus();
+      return;
+    }
+    field.current?.focus();
+    // The field that held focus already shows the suggestions of the list
+    // before it changed.
+    showAgain(field.current);
   });
   // The item that edits in place grows with its text from where it stands,
   // over its neighbours, up to the cell's edge.
@@ -586,10 +613,24 @@ function ListEditor({
    */
   const focusNow = (at: number) =>
     (at < 0 ? field.current : pills.current[at])?.focus();
-  const remove = (at: number) => {
-    const current = latest.current;
-    focusNow(at - 1);
-    onDraft({ ...current, items: current.items.filter((_, i) => i !== at) });
+  /**
+   * Remove the item at `at`, and focus the item before it, or the field
+   * where none is before it or `toField` asks. An item that edits in place
+   * ends its edit, which is kept, as focus leaving it keeps it.
+   */
+  const remove = (at: number, toField = false) => {
+    const rest = withoutItem(latest.current, at);
+    const next = withChip(rest);
+    let before = toField ? -1 : at - 1;
+    // An item emptied in its edit leaves the list too.
+    const emptied = next.items.length < rest.items.length;
+    if (emptied && rest.chip && rest.chip.at <= before) before -= 1;
+    chipEnded.current = true;
+    // A pill that holds focus takes it there before the list renders again;
+    // the field takes it after, so its suggestions read the list as it is.
+    if (before < 0) focusAfter.current = -1;
+    else focusNow(before);
+    onDraft(next);
   };
   const editChip = (at: number) => {
     const current = withChip(latest.current);
@@ -743,13 +784,7 @@ function ListEditor({
             {...tooltipAttrs(m.query_view_vault_remove_item({ item }))}
             // A press keeps focus in the editor, so the edit goes on.
             onMouseDown={(event) => event.preventDefault()}
-            onClick={() => {
-              focusAfter.current = -1;
-              onDraft({
-                ...draft,
-                items: draft.items.filter((_, i) => i !== at),
-              });
-            }}
+            onClick={() => remove(at, true)}
           >
             <Icon name="x" size="1em" />
           </span>

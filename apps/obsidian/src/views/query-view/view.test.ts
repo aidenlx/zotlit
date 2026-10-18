@@ -4450,6 +4450,69 @@ ${order.map((path) => `      - ${path}\n`).join("")}`),
         );
       });
 
+      it("keeps an item that edits in place when another item is removed, by its x or its menu", async () => {
+        const { cell, choose, typeChip, shown, press, literatureNotes } =
+          await chips(["A", "B", "C", "D"]);
+        const removeButton = (item: string) =>
+          cell("authors").querySelector<HTMLElement>(
+            `[data-query-vault-chip="${item}"] [data-query-vault-chip-remove]`,
+          )!;
+
+        await act(() => cell("authors").click());
+        await choose("B", "Edit");
+        await typeChip("BB");
+        await act(() => removeButton("A").click());
+        expect(shown()).toEqual(["BB", "C", "D"]);
+
+        await choose("D", "Edit");
+        await typeChip("DD");
+        await choose("BB", "Remove from list");
+        expect(shown()).toEqual(["C", "DD"]);
+
+        await press("Enter");
+        expect(literatureNotes.write).toHaveBeenLastCalledWith(
+          edit("authors", ["C", "DD"]),
+        );
+      });
+
+      it("keeps an item edited unchanged, a repeated one too, and puts back one edited to repeat another", async () => {
+        const { cell, choose, typeChip, pressChip, shown, chip } = await chips([
+          "A",
+          "A",
+          "B",
+        ]);
+
+        await act(() => cell("authors").click());
+        // The second A: its menu opens on the pill in its place.
+        Menu.instances.length = 0;
+        await act(() => {
+          cell("authors")
+            .querySelectorAll<HTMLElement>('[data-query-vault-chip="A"]')[1]!
+            .dispatchEvent(
+              new MouseEvent("contextmenu", {
+                bubbles: true,
+                cancelable: true,
+                clientX: 10,
+                clientY: 10,
+              }),
+            );
+        });
+        await act(() => {
+          Menu.instances
+            .at(-1)!
+            .items.find((entry) => entry.title === "Edit")!
+            .click();
+        });
+        await pressChip("Enter");
+        expect(shown()).toEqual(["A", "A", "B"]);
+
+        await choose("B", "Edit");
+        await typeChip("A");
+        await pressChip("Enter");
+        expect(shown()).toEqual(["A", "A", "B"]);
+        expect(chip("B")).not.toBeNull();
+      });
+
       it("edits a chip at rest in place, and writes the edit when focus leaves", async () => {
         const { cell, choose, chipInput, typeChip, literatureNotes } =
           await chips(["Doe, J", "Roe"]);
@@ -4564,6 +4627,42 @@ ${order.map((path) => `      - ${path}\n`).join("")}`),
         expect(literatureNotes.write).toHaveBeenLastCalledWith(
           edit("projects", ["zettelkasten", "citations", "hyp"]),
         );
+      });
+
+      it("suggests a removed item again, whichever item is removed and however", async () => {
+        const { cell, press } = await typed(
+          ["vault.projects"],
+          { projects: ["zettelkasten", "memex", "citations"] },
+          { types: { projects: "multitext" }, values: { projects: PROJECTS } },
+        );
+        const pill = (item: string) =>
+          cell("projects").querySelector<HTMLElement>(
+            `[data-query-vault-chip="${item}"]`,
+          )!;
+        const pressOn = (el: Element, key: string) =>
+          act(() => {
+            el.dispatchEvent(
+              new KeyboardEvent("keydown", { key, bubbles: true }),
+            );
+          });
+
+        await act(() => cell("projects").click());
+        expect(suggested()).not.toContain("zettelkasten");
+        // The first item, by its x.
+        await act(() =>
+          pill("zettelkasten")
+            .querySelector<HTMLElement>("[data-query-vault-chip-remove]")!
+            .click(),
+        );
+        expect(suggested()).toContain("zettelkasten");
+
+        // The first item again, from the keyboard: focus goes back to the
+        // field, whose suggestions hold it.
+        await press("Backspace");
+        await pressOn(pill("citations"), "ArrowUp");
+        expect(document.activeElement).toBe(pill("memex"));
+        await pressOn(pill("memex"), "Backspace");
+        expect(suggested()).toContain("memex");
       });
 
       it("adds a value clicked in the suggestions", async () => {
