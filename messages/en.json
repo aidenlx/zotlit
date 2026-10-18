@@ -2835,6 +2835,7 @@
   "query_view_problem_duplicate_view": "This file has more than one view named \"{name}\". Give each view a different name.",
   "query_view_toolbar_label": "View controls",
   "query_view_sort": "Sort",
+  "query_view_sort_ranked": "Sort is off while search results show the best match first",
   "query_view_sort_by": "Sort by",
   "query_view_sort_add": "Add sort",
   "query_view_sort_remove": "Remove sort",

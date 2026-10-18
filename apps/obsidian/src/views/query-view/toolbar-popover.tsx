@@ -36,7 +36,7 @@ import type {
 import { useUniqueId } from "@zotlit/ui";
 
 import { Icon } from "@/components/obsidian/icon";
-import { cn } from "@/lib/utils";
+import { cn, tooltipAttrs } from "@/lib/utils";
 
 import { ToolbarButton } from "./toolbar-button";
 
@@ -75,6 +75,11 @@ export interface ToolbarPopoverProps {
   hook: string;
   /** Called each time the popover opens. */
   onOpen?: () => void;
+  /**
+   * Why the control does nothing now: the button stays in place, off, with
+   * this as its tooltip, and opens no popover.
+   */
+  off?: string;
   /** Classes for the popover, after its own. */
   className?: string;
   children: ReactNode;
@@ -87,6 +92,7 @@ export function ToolbarPopover({
   count,
   hook,
   onOpen,
+  off,
   className,
   children,
 }: ToolbarPopoverProps) {
@@ -101,10 +107,12 @@ export function ToolbarPopover({
         active={active}
         count={count}
         open={open}
-        popoverTarget={id}
-        aria-expanded={open}
+        {...(off === undefined
+          ? { popoverTarget: id, "aria-expanded": open }
+          : // Off, it keeps its focus stop, so its tooltip says why.
+            { "aria-disabled": true, ...tooltipAttrs(off) })}
         data-query-toolbar={hook}
-        className="zt:[anchor-name:var(--zt-query-popover-anchor)]"
+        className="zt:[anchor-name:var(--zt-query-popover-anchor)] zt:aria-disabled:cursor-default zt:aria-disabled:opacity-50 zt:aria-disabled:hover:bg-transparent zt:aria-disabled:hover:text-muted-foreground"
         style={anchor}
       />
       <div

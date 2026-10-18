@@ -64,7 +64,7 @@ order.
 
 ## Search your papers [#search]
 
-Type in the <UiLabel name={m.library_view_search_label()} /> box at the top of the view. The results are ranked the way the [literature note quick switcher](/docs/reference/commands#quick-switcher) ranks them, best match first, and they stay inside the library or collection you selected. The heading becomes the match count, for example <UiLabel name={m.library_view_heading_search({ count: 12, query: "figure" })} />, with the library or collection searched above it, and screen readers announce the count as it changes. While the results are ranked, the heading hides <UiLabel name={m.query_view_sort()} />.
+Type in the <UiLabel name={m.library_view_search_label()} /> box at the top of the view. The results are ranked the way the [literature note quick switcher](/docs/reference/commands#quick-switcher) ranks them, best match first, and they stay inside the library or collection you selected. The heading becomes the match count, for example <UiLabel name={m.library_view_heading_search({ count: 12, query: "figure" })} />, with the library or collection searched above it, and screen readers announce the count as it changes. While the results are ranked, <UiLabel name={m.query_view_sort()} /> in the heading stays in place but is off; clear the search to sort the list again.
 
 To narrow to a Zotero tag, add a `tag:` token: `tag:methods`, or `tag:"machine learning"` for a tag with spaces. Several tokens narrow to papers that carry every tag. A search made only of `tag:` tokens keeps the list's sort instead of ranking.
 

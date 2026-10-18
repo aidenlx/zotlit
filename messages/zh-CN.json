@@ -2671,6 +2671,7 @@
   "query_view_problem_duplicate_view": "此文件中有多个名为 \"{name}\" 的视图。请为每个视图使用不同的名称。",
   "query_view_toolbar_label": "视图控件",
   "query_view_sort": "排序",
+  "query_view_sort_ranked": "搜索结果按最佳匹配排列时无法排序",
   "query_view_sort_by": "排序依据",
   "query_view_sort_add": "添加排序",
   "query_view_sort_remove": "移除排序",

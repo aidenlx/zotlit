@@ -1906,16 +1906,25 @@ it("offers no toolbar search of the rows on screen beside its own search box", a
   ).toBeNull();
 });
 
-it("offers no sort while a search lists its hits in rank order, and offers it again once the search is cleared", async () => {
+it("keeps Sort in place but off while a search lists its hits in rank order, and turns it on again once the search is cleared", async () => {
   const { deps } = pluginData(ON_MY_LIBRARY);
   const view = await openTab(deps);
   const sort = () =>
-    view.contentEl.querySelector('[data-query-toolbar="sort"]');
-  expect(sort()).not.toBeNull();
+    view.contentEl.querySelector<HTMLElement>('[data-query-toolbar="sort"]');
+  const state = () =>
+    sort() === null
+      ? "gone"
+      : sort()!.getAttribute("aria-disabled") === "true"
+        ? "off"
+        : "on";
+  expect(state()).toBe("on");
   await type(view, "figures");
-  expect(sort()).toBeNull();
+  expect(state()).toBe("off");
+  // It says why, and opens nothing.
+  expect(sort()!.getAttribute("aria-label")).toBe(m.query_view_sort_ranked());
+  expect(sort()!.hasAttribute("popovertarget")).toBe(false);
   await type(view, "");
-  expect(sort()).not.toBeNull();
+  expect(state()).toBe("on");
 });
 
 /** Bring `view`'s tab forward, as the command that opens the Library View does. */
