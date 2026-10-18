@@ -124,7 +124,6 @@ function Header({ titleId }: { titleId: string }) {
 interface Step {
   id: string;
   state: StepState;
-  icon: IconName;
   title: string;
   /** What a done step settled on, after its title on the same line. */
   summary?: ReactNode;
@@ -133,36 +132,67 @@ interface Step {
   action?: ReactNode;
 }
 
+const MARK_ICON: Record<Exclude<StepState, "todo">, IconName> = {
+  done: "check",
+  warn: "circle-alert",
+  checking: "loader",
+};
+
 /**
- * One row of the checklist. The next step opens into a card with its text
- * and action; every other row keeps to one line, its action at the end of it,
- * so a done step can still be changed.
+ * The accent surface of the next setup step and of a callout that asks for an
+ * action: one tint, so the banner's calls to act read as one family.
  */
-function StepRow({ step, open }: { step: Step; open: boolean }) {
+const ACCENT_SURFACE = {
+  background: "hsla(var(--interactive-accent-hsl), 0.07)",
+  borderColor: "hsla(var(--interactive-accent-hsl), 0.35)",
+};
+
+/**
+ * One row of the checklist: its mark, its title and its action at the end of
+ * the line, so a done step can still be changed. A step that isn't done shows
+ * its number; the next one wears the accent and adds its text under the title.
+ */
+function StepRow({
+  step,
+  number,
+  open,
+}: {
+  step: Step;
+  number: number;
+  open: boolean;
+}) {
   return (
     <li
       data-welcome-step={step.state}
       data-open={open ? "" : undefined}
-      className="zt:flex zt:flex-col zt:gap-1.5"
+      // A flex box, not a list item: Obsidian's unlayered `ol` rule sets a
+      // decimal marker that `zt:list-none` cannot reach, and the mark already
+      // carries the number.
+      className="zt:flex zt:flex-col zt:gap-0.5 zt:rounded-lg zt:border zt:border-transparent zt:px-3 zt:py-1.5"
+      style={open ? ACCENT_SURFACE : undefined}
     >
       <div className="zt:flex zt:min-h-7 zt:items-center zt:gap-2">
         <span
           className={cn(
-            "zt:flex zt:size-5 zt:shrink-0 zt:items-center zt:justify-center zt:rounded-full zt:border-2",
+            "zt:flex zt:size-5 zt:shrink-0 zt:items-center zt:justify-center zt:rounded-full zt:border-2 zt:text-xs zt:font-semibold zt:tabular-nums",
             markClass(step.state, open),
           )}
         >
-          <Icon
-            name={step.icon}
-            size="var(--icon-xs)"
-            className={
-              step.state === "checking" ? "zt:animate-spin" : undefined
-            }
-          />
+          {step.state === "todo" ? (
+            <span aria-hidden="true">{number}</span>
+          ) : (
+            <Icon
+              name={MARK_ICON[step.state]}
+              size="var(--icon-xs)"
+              className={
+                step.state === "checking" ? "zt:animate-spin" : undefined
+              }
+            />
+          )}
         </span>
         {/* One line however narrow the pane: the title keeps its width and
-            the summary takes what is left, so it gives way first; the open
-            card and the step's action reach the full value. */}
+            the summary takes what is left, so it gives way first; the step's
+            action reaches the full value. */}
         <div className="zt:flex zt:min-w-0 zt:flex-1 zt:items-baseline zt:gap-x-2 zt:overflow-hidden zt:whitespace-nowrap">
           <StepHeading className="zt:max-w-full zt:shrink-0 zt:truncate">
             {step.title}
@@ -176,16 +206,11 @@ function StepRow({ step, open }: { step: Step; open: boolean }) {
             </span>
           ) : null}
         </div>
-        {!open && step.action ? (
-          <div className="zt:shrink-0">{step.action}</div>
-        ) : null}
+        {step.action ? <div className="zt:shrink-0">{step.action}</div> : null}
       </div>
       {open ? (
-        <div className="zt:ms-7 zt:rounded-lg zt:border zt:border-primary zt:bg-background zt:px-3 zt:py-2.5">
-          <div className="zt:text-sm zt:text-pretty zt:text-muted-foreground">
-            {step.body}
-          </div>
-          {step.action ? <div className="zt:mt-2">{step.action}</div> : null}
+        <div className="zt:ms-7 zt:text-sm zt:text-pretty zt:text-muted-foreground">
+          {step.body}
         </div>
       ) : null}
     </li>
@@ -216,12 +241,6 @@ function Checklist({ connect }: { connect: boolean }) {
           : connection.status === "missing"
             ? "warn"
             : "checking",
-      icon:
-        connection.status === "connected"
-          ? "check"
-          : connection.status === "missing"
-            ? "circle-alert"
-            : "loader",
       title: m.welcome_step_connect_title(),
       summary:
         connection.status === "connected" ? (
@@ -230,7 +249,9 @@ function Checklist({ connect }: { connect: boolean }) {
               {connection.path}
             </code>
             <span aria-hidden="true">·</span>
-            <span className="zt:min-w-0 zt:truncate">
+            {/* The count is short and says more than the path, so the path
+                gives way first and the count keeps every character. */}
+            <span className="zt:shrink-0">
               {m.welcome_step_connect_connected({
                 count: connection.itemCount,
               })}
@@ -260,7 +281,6 @@ function Checklist({ connect }: { connect: boolean }) {
   steps.push({
     id: "folder",
     state: folderDone ? "done" : "todo",
-    icon: folderDone ? "check" : "folder",
     title: m.welcome_step_folder_title(),
     summary: <span className="zt:truncate">{literatureFolder}</span>,
     body: (
@@ -277,7 +297,6 @@ function Checklist({ connect }: { connect: boolean }) {
   steps.push({
     id: "library",
     state: connected ? "done" : "todo",
-    icon: connected ? "check" : "library",
     title: m.welcome_step_library_title(),
     summary: connected ? (
       <span className="zt:truncate">{m.welcome_step_library_done()}</span>
@@ -294,9 +313,14 @@ function Checklist({ connect }: { connect: boolean }) {
   const next = steps.findIndex((step) => step.state !== "done");
 
   return (
-    <ol className="zt:m-0 zt:flex zt:list-none zt:flex-col zt:gap-1.5 zt:p-0">
+    <ol className="zt:m-0 zt:flex zt:list-none zt:flex-col zt:gap-0.5 zt:p-0">
       {steps.map((step, index) => (
-        <StepRow key={step.id} step={step} open={index === next} />
+        <StepRow
+          key={step.id}
+          step={step}
+          number={index + 1}
+          open={index === next}
+        />
       ))}
     </ol>
   );
@@ -464,20 +488,12 @@ function HelpLinks() {
 }
 
 /**
- * The accent surface a callout that carries an action wears: the accent at the
- * two opacities the Help Links' icon squares use, so it reads as the same
- * palette.
- */
-const ACCENT_CALLOUT_SURFACE = {
-  background: "hsla(var(--interactive-accent-hsl), 0.14)",
-  borderColor: "hsla(var(--interactive-accent-hsl), 0.35)",
-};
-
-/**
- * A titled callout. The body runs the full width of the card and the action
- * takes the row below it, the same order the open setup step reads in. Holding
- * the action in a side column instead costs the body the width of one button
- * for every line it wraps, and leaves that column empty below the first line.
+ * A titled callout, in the shape of the open setup step: its title and its
+ * action on one line, the action at the end, and its text underneath at the
+ * full width of the card, so no column stands empty beside a short body. Where
+ * the title and the action don't fit on one line, the action wraps under the
+ * title. One that asks for an action wears the accent; one that informs sits on
+ * the surface of the Help Links.
  */
 function Callout({
   tone,
@@ -493,16 +509,18 @@ function Callout({
   return (
     <div
       className={cn(
-        "zt:relative zt:rounded-lg zt:border zt:px-4 zt:py-3",
-        tone === "muted" && "zt:border-border zt:bg-muted",
+        "zt:flex zt:flex-col zt:gap-0.5 zt:rounded-lg zt:border zt:px-3 zt:py-2",
+        tone === "muted" && "zt:border-border zt:bg-background",
       )}
-      style={tone === "accent" ? ACCENT_CALLOUT_SURFACE : undefined}
+      style={tone === "accent" ? ACCENT_SURFACE : undefined}
     >
-      <StepHeading>{title}</StepHeading>
-      <div className="zt:mt-1 zt:text-sm zt:text-pretty zt:text-muted-foreground">
+      <div className="zt:flex zt:min-h-7 zt:flex-wrap zt:items-center zt:justify-between zt:gap-x-3 zt:gap-y-1.5">
+        <StepHeading className="zt:min-w-0">{title}</StepHeading>
+        {action ? <div className="zt:shrink-0">{action}</div> : null}
+      </div>
+      <div className="zt:text-sm zt:text-pretty zt:text-muted-foreground">
         {children}
       </div>
-      {action ? <div className="zt:mt-3">{action}</div> : null}
     </div>
   );
 }
@@ -587,6 +605,7 @@ function ConversionResult() {
       action={
         retained.length > 0 ? (
           <Button
+            icon="rotate-ccw"
             loading={retrying}
             disabled={retrying}
             onClick={() => {
@@ -702,8 +721,9 @@ export function Welcome() {
     >
       <Header titleId={titleId} />
       {/* A wide pane holds the Help Links in a column beside the checklist
-          and the callouts; a narrow one puts them underneath. */}
-      <div className="zt:mt-3 zt:grid zt:grid-cols-1 zt:gap-4 zt:@2xl:grid-cols-[minmax(0,1fr)_340px] zt:@2xl:gap-6">
+          and the callouts; a narrow one puts them underneath. The checklist
+          stops at a reading width, so a step's action stays near its title. */}
+      <div className="zt:mt-3 zt:grid zt:grid-cols-1 zt:gap-4 zt:@2xl:grid-cols-[minmax(0,40rem)_340px] zt:@2xl:gap-6">
         <div className="zt:flex zt:min-w-0 zt:flex-col zt:gap-3">
           {update && <UpdateCallout />}
           {conversion === "offer" && <ConversionOffer />}
