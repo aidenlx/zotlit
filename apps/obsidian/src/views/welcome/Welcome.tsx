@@ -183,7 +183,7 @@ function StepRow({
           ) : (
             <Icon
               name={MARK_ICON[step.state]}
-              size="var(--icon-xs)"
+              size="xs"
               className={
                 step.state === "checking"
                   ? "zt:motion-safe:animate-spin"
@@ -387,7 +387,7 @@ function HelpTile({
           primary ? "zt:row-span-2 zt:size-8" : "zt:size-6",
         )}
       >
-        <Icon name={icon} size={primary ? undefined : "var(--icon-xs)"} />
+        <Icon name={icon} size={primary ? "s" : "xs"} />
       </span>
       <span id={titleId} className="zt:truncate zt:text-sm zt:font-semibold">
         {title}
@@ -473,7 +473,7 @@ function HelpLinks() {
         <TextLink url={BLOG}>{m.welcome_link_blog()}</TextLink>
         <TextLink url={CHANGELOG}>{m.welcome_link_changelog()}</TextLink>
         <TextLink url={SPONSOR}>
-          <Icon name="heart" className="zt:text-pink" />
+          <Icon name="heart" size="xs" className="zt:text-pink" />
           {m.welcome_link_sponsor()}
         </TextLink>
         {migrationPending ? null : (
