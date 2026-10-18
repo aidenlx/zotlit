@@ -4142,23 +4142,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // An update beside the template conversion: the badge still says
     // Updated, the done steps fold into one line, and the conversion's long
-    // explanation waits behind How it works. The conversion stays pending
-    // while a legacy template file is in the template folder.
-    const legacyTemplate = `${services}.settings.current['template.folder']+'/zotlit-filename.liquid.md'`;
-    cleanup.defer(async () => {
-      await obEval(
-        vaultId,
-        `(async()=>{const p=${legacyTemplate};if(await app.vault.adapter.exists(p))await app.vault.adapter.remove(p);return true;})()`,
-      );
-    });
-    await obEval(
-      vaultId,
-      `(async()=>{const p=${legacyTemplate};const dir=p.slice(0,p.lastIndexOf('/'));if(!(await app.vault.adapter.exists(dir)))await app.vault.createFolder(dir);if(!app.vault.getFileByPath(p))await app.vault.create(p,'{{title}}');return true;})()`,
-    );
+    // explanation waits behind How it works. The vault holds converted
+    // templates, so the load clears a saved offer; the offer is armed after
+    // it, as the template service does.
     await reloadAndCheck(
       `await app.vault.adapter.write(${dataPath},${JSON.stringify(
-        JSON.stringify({ ...seeded, "note.template-conversion-pending": true }),
+        JSON.stringify({ ...seeded, "welcome.dismissed": false }),
       )});`,
+    );
+    await obEval(
+      vaultId,
+      `(${services}.settings.update({'note.template-conversion-pending':true}),true)`,
     );
     expect(
       await obEvalUntil(
