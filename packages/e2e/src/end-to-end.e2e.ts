@@ -3410,6 +3410,90 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
   });
 
+  it("opens the Library View after an update of ZotLit, with no notice, and announces the update in the banner beside the Help Links until What's new acknowledges it", async () => {
+    const services = "app.plugins.plugins.zotlit.services";
+    const dataPath = "app.vault.configDir+'/plugins/zotlit/data.json'";
+    const snapshot = await obEval(
+      vaultId,
+      `(async()=>{await ${services}.settings.flush();return JSON.stringify({layout:app.workspace.getLayout(),data:await app.vault.adapter.read(${dataPath})});})()`,
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});await ${services}.settings.flush();await app.plugins.disablePlugin('zotlit');await app.vault.adapter.write(${dataPath},saved.data);await app.plugins.enablePlugin('zotlit');await app.workspace.changeLayout(saved.layout);return true;})()`,
+      );
+    });
+    /** Reload the plugin and wait for its release check to open what it opens. */
+    const reloadAndCheck = (before = "") =>
+      obEval(
+        vaultId,
+        `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());await ${services}.settings.flush();await app.plugins.disablePlugin('zotlit');${before}await app.plugins.enablePlugin('zotlit');await ${services}.release.checked;return true;})()`,
+      );
+
+    // The plugin data of a set-up vault that last ran an older release and
+    // put the banner away after setup.
+    const seeded = {
+      ...(JSON.parse(JSON.parse(snapshot).data) as Record<string, unknown>),
+      "release.previous-version": "2.1.0",
+      "release.notices-enabled": true,
+      "welcome.dismissed": true,
+    };
+    await clearNotices(vaultId);
+    await reloadAndCheck(
+      `await app.vault.adapter.write(${dataPath},${JSON.stringify(JSON.stringify(seeded))});`,
+    );
+
+    const banner = `app.workspace.getLeavesOfType('zotlit-library')[0]?.view.contentEl.querySelector('[data-welcome-banner]')`;
+    const readBanner = `(()=>{const el=${banner};return JSON.stringify({library:app.workspace.getLeavesOfType('zotlit-library').length,banner:!!el&&{badge:el.querySelector('[data-welcome-badge]')?.textContent,headings:[...el.querySelectorAll('[role=heading][aria-level="3"]')].map(n=>n.textContent),buttons:[...el.querySelectorAll('button')].map(n=>n.textContent).filter(Boolean),help:el.querySelectorAll('[data-welcome-help] a').length},notices:activeDocument.querySelectorAll('.notice').length});})()`;
+    const version = await obEval(vaultId, `${services}.release.version`);
+    expect(
+      await obEvalUntil(vaultId, readBanner, {
+        expected: JSON.stringify({
+          library: 1,
+          banner: {
+            badge: m.welcome_badge_updated(),
+            // The update alone: setup is done.
+            headings: [m.welcome_update_title({ version })],
+            buttons: [m.welcome_update_action()],
+            help: 9,
+          },
+          // The banner says it in place of the update notice.
+          notices: 0,
+        }),
+      }),
+    ).toBe(true);
+    expect(
+      await obEval(
+        vaultId,
+        `String(${services}.settings.current['release.update-pending'])`,
+      ),
+    ).toBe("true");
+
+    // "What's new" opens the Release Note and acknowledges the update.
+    expect(
+      await obEval(
+        vaultId,
+        `(async()=>{${PAGE}const opened=[];const open=window.open;window.open=(url)=>{opened.push(url);return null;};const before=new Set(app.workspace.getLeavesOfType('webviewer'));try{press([...${banner}.querySelectorAll('button')].find(n=>n.textContent===${JSON.stringify(m.welcome_update_action())}),"What's new");await until('banner gone',()=>!${banner});}finally{window.open=open;}const leaves=app.workspace.getLeavesOfType('webviewer').filter(leaf=>!before.has(leaf));const urls=[...opened,...leaves.map(leaf=>leaf.view.getState().url)];leaves.forEach(leaf=>leaf.detach());return JSON.stringify({urls,pending:${services}.settings.current['release.update-pending']});})()`,
+      ),
+    ).toBe(
+      JSON.stringify({
+        urls: [`https://zotlit.aidenlx.site/changelog/${version}`],
+        pending: false,
+      }),
+    );
+
+    // The next launch announces nothing: no Library View opens, and the one
+    // the command opens shows no banner.
+    await reloadAndCheck();
+    expect(
+      await obEval(
+        vaultId,
+        `(async()=>{const opened=app.workspace.getLeavesOfType('zotlit-library').length;await app.commands.executeCommandById('zotlit:open-library-view');${PAGE}await until('library view',()=>app.workspace.getLeavesOfType('zotlit-library')[0]?.view.contentEl);await new Promise(r=>setTimeout(r,500));return JSON.stringify({opened,banner:!!${banner}});})()`,
+      ),
+    ).toBe(JSON.stringify({ opened: 0, banner: false }));
+  });
+
   it("shows the selected row's Reading Card with its seeded fields, abstract and, once opened, Annotation Cards under the Editing Capability, runs the row menu's actions from its buttons, opens its Annotations in the sidebar, shows it over the list on a narrow pane on a click or Space and puts it away on Escape, keeps a double click on the row for the PDF, selects the row the keyboard enters the list at, shows it beside a wide list as the arrow keys move, and hides it with no selection and while Zotero's data folder is missing", async () => {
     const services = "app.plugins.plugins.zotlit.services";
     const snapshot = await obEval(
