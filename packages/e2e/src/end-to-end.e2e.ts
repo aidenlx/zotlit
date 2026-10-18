@@ -3087,13 +3087,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
 
     // Setup is incomplete while the literature-notes folder is missing: the
-    // banner shows the steps above the Library View, and names no Companion.
+    // banner shows the checklist and the Help Links above the Library View,
+    // and names no Companion.
     await obEval(
       vaultId,
       `(async()=>{${services}.settings.updateDefaultLiteratureNoteProfileBindings({'note.literature-folder':'Not yet created'});await app.commands.executeCommandById('zotlit:open-library-view');return true;})()`,
     );
     const banner = `app.workspace.getLeavesOfType('zotlit-library')[0]?.view.contentEl.querySelector('[data-welcome-banner]')`;
-    const readBanner = `(()=>{const el=${banner};if(!el)return 'null';return JSON.stringify({steps:[...el.querySelectorAll('[role=heading][aria-level="3"]')].map(n=>n.textContent),companion:el.textContent.includes('Companion')});})()`;
+    const readBanner = `(()=>{const el=${banner};if(!el)return 'null';return JSON.stringify({steps:[...el.querySelectorAll('[role=heading][aria-level="3"]')].map(n=>n.textContent),open:el.querySelector('[data-welcome-step][data-open] [role=heading]')?.textContent,help:[...el.querySelectorAll('[data-welcome-help] a')].map(a=>a.getAttribute('href')),companion:el.textContent.includes('Companion')});})()`;
     expect(
       await obEvalUntil(vaultId, readBanner, {
         expected: JSON.stringify({
@@ -3101,7 +3102,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             m.welcome_step_connect_title(),
             m.welcome_step_folder_title(),
             m.welcome_step_library_title(),
-            m.welcome_keep_going_title(),
+          ],
+          // Zotero reads, so the folder is the one step still open.
+          open: m.welcome_step_folder_title(),
+          // The Help Links show beside the checklist.
+          help: [
+            "https://zotlit.aidenlx.site/docs",
+            "https://zotlit.aidenlx.site/community",
+            "https://github.com/aidenlx/zotlit",
+            "https://zotlit.aidenlx.site/docs/reference/templates",
+            "https://zotlit.aidenlx.site/docs/how-to/insert-citations",
+            "https://zotlit.aidenlx.site/blog",
+            "https://zotlit.aidenlx.site/changelog",
+            "https://github.com/sponsors/aidenlx",
+            "https://zotlit.aidenlx.site/docs/how-to/migrate-from-v1",
           ],
           companion: false,
         }),

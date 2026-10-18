@@ -99,6 +99,14 @@ const heading = (el: HTMLElement, text: string) =>
     (node) => node.textContent === text,
   );
 
+/** The Help Link the banner names `name`, the title its `aria-labelledby` points at. */
+const helpLink = (el: HTMLElement, name: string) =>
+  [...el.querySelectorAll("a")].find(
+    (a) =>
+      el.ownerDocument.getElementById(a.getAttribute("aria-labelledby") ?? "")
+        ?.textContent === name,
+  );
+
 function dismissButton(el: HTMLElement): HTMLElement {
   const button = el.querySelector<HTMLElement>("[data-welcome-dismiss]");
   if (!button) throw new Error("No dismiss control");
@@ -120,10 +128,7 @@ it("opens a documentation link in the browser", async () => {
   const el = await open(deps);
   const opened = vi.spyOn(window, "open").mockReturnValue(null);
   cleanup.defer(() => opened.mockRestore());
-  const link = [...el.querySelectorAll("a")].find(
-    (a) => a.textContent === m.welcome_docs_getting_started(),
-  );
-  await act(() => link?.click());
+  await act(() => helpLink(el, "Getting started")?.click());
   expect(opened.mock.calls).toEqual([["https://zotlit.aidenlx.site/docs"]]);
 });
 
@@ -165,6 +170,10 @@ it("keeps the Migration Prompt of a v1 upgrade on screen until a dismissal ackno
   // An upgrade from v1 on Zotero 10 needs ZotLit Companion to read recent changes.
   expect(heading(el, m.welcome_companion_title())).toBe(true);
   expect(el.textContent).toContain(m.companion_zotero_10_guidance());
+  // The Help Links show with the Migration Prompt once setup is done.
+  expect(helpLink(el, "Star on GitHub")?.getAttribute("href")).toBe(
+    "https://github.com/aidenlx/zotlit",
+  );
   await act(() => dismissButton(el).click());
   expect(el.textContent).toBe("");
   expect(settings.current?.["release.migration-pending"]).toBe(false);

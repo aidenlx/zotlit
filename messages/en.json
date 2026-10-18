@@ -562,7 +562,7 @@
   "annot_view_color_orange": "Orange",
   "annot_view_color_gray": "Gray",
   "annot_view_color_plum": "Plum",
-  "annot_view_page": "p.\u00a0{page}",
+  "annot_view_page": "p. {page}",
   "annot_view_open_page": "Open in Zotero",
   "annot_view_unsupported_type": "Unsupported annotation type: {type}",
   "annot_view_menu_copy_backlink": "Copy backlink",
@@ -871,7 +871,7 @@
   "graph_citations_citekey_copied": "Citation key copied.",
   "graph_citations_citekey_copy_failed": "Failed to copy citation key.",
   "graph_citations_add_literature_notes_group": "Add literature notes group",
-  "graph_citations_core_plugin_disabled": "The Graph view core plugin is disabled. Turn it on in Settings \u2192 Core plugins.",
+  "graph_citations_core_plugin_disabled": "The Graph view core plugin is disabled. Turn it on in Settings → Core plugins.",
   "graph_citations_unavailable": "Citation graph is not available.",
   "graph_citations_disabled": "“Show citations in graph view” is turned off. Turn it on in Settings → ZotLit → Citations.",
   "settings_citation_editor_heading": "In-text citations",
@@ -1315,16 +1315,20 @@
   "welcome_step_library_title": "Open your library",
   "welcome_step_library_body": "Your papers are listed below. Open a PDF to read it, and write a literature note when you need one.",
   "welcome_action_search": "Search your library",
-  "welcome_keep_going_title": "Keep going",
-  "welcome_keep_going_body": "Guides and references for when you want to go deeper.",
+  "welcome_step_done": "Done",
+  "welcome_step_library_done": "Listed below",
+  "welcome_help_links_name": "Help and community",
+  "welcome_help_getting_started_subtitle": "Set up ZotLit and write your first note",
+  "welcome_help_discussions_subtitle": "Ask the community",
+  "welcome_help_github_title": "Star on GitHub",
+  "welcome_help_github_subtitle": "Like ZotLit? Leave a star",
+  "welcome_help_templates_subtitle": "Shape your notes",
+  "welcome_help_citations_subtitle": "Cite while you write",
   "welcome_docs_getting_started": "Getting started",
   "welcome_docs_templates": "Templates",
   "welcome_docs_citations": "Citations",
-  "welcome_group_community": "Community",
-  "welcome_link_github": "GitHub",
   "welcome_link_discussions": "Chat & discuss",
   "welcome_link_sponsor": "Sponsor",
-  "welcome_group_news": "News",
   "welcome_link_blog": "Blog",
   "welcome_link_changelog": "Changelog",
   "welcome_footer_migration_lead": "Upgrading from v1?",
@@ -1877,10 +1881,18 @@
     "prefs_pane_label": "ZotLit",
     "prefs_open_section": "Opening in Obsidian",
     "prefs_pane_type": "Open notes in",
-    "prefs_pane_type_active": { "label": "Active tab" },
-    "prefs_pane_type_tab": { "label": "New tab" },
-    "prefs_pane_type_split": { "label": "New tab group" },
-    "prefs_pane_type_window": { "label": "New window" },
+    "prefs_pane_type_active": {
+      "label": "Active tab"
+    },
+    "prefs_pane_type_tab": {
+      "label": "New tab"
+    },
+    "prefs_pane_type_split": {
+      "label": "New tab group"
+    },
+    "prefs_pane_type_window": {
+      "label": "New window"
+    },
     "prefs_pane_type_description": "Where a literature note or the template data explorer opens in Obsidian. New window is desktop only.",
     "prefs_notify_section": "Obsidian Notifications",
     "prefs_notify_enable": {
