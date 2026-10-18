@@ -903,7 +903,11 @@ The agent-facing reference for ZotLit's part of native Pandoc export: obtaining 
 _Avoid_: Pandoc installer, Pandoc setup command
 
 **Welcome View** _(Obsidian)_:
-The onboarding steps of ZotLit, as a dismissable banner above the Library View, the first screen — in its fresh state on a first install, or in its upgraded state when Legacy Data was detected. It keeps the components of the Welcome View that once had its own tab: the header with its badge and tagline, the steps Connect to Zotero, Choose where literature notes live and Open your library as a timeline, the "Keep going" documentation links, the Community and News link groups, and, in the upgraded state, the Migration Prompt. It shows until dismissed or until ZotLit reads the Zotero database and the literature-notes folder exists; the "Open welcome view" command shows it again. It has no tab of its own.
+The onboarding steps of ZotLit, as a dismissable banner above the Library View, the first screen — in its fresh state on a first install, or in its upgraded state when Legacy Data was detected. It shows a header with its badge and tagline, the steps Connect to Zotero, Choose where literature notes live and Open your library as a checklist that opens only the next step, the Help Links beside them, and, in the upgraded state, the Migration Prompt. It shows until dismissed or until ZotLit reads the Zotero database and the literature-notes folder exists; the "Open welcome view" command shows it again. It has no tab of its own.
+
+**Help Links**:
+The documentation and community links of the Welcome View: Getting started, Chat & discuss, GitHub, Templates and Citations as tiles, Blog, Changelog and Sponsor as text links. They show whenever the Welcome View banner shows, whatever its mode or sections.
+_Avoid_: footer links, resources
 
 **Release Note**:
 The per-version changelog page on the docs site (`/changelog/<version>`) surfaced after a plugin update. An update raises a durable notice; the page opens only on user action — in a Web Viewer leaf when available, else the system browser. Authoring the page is part of each release.
