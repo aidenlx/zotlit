@@ -35,6 +35,7 @@ import {
   libraryViewQueryFileLeftOut,
   libraryViewQueryFileText,
   vaultPass,
+  withCardDisclosure,
   withFacets,
   withNode,
   withSearch,
@@ -251,6 +252,17 @@ export class LibraryView extends ItemView {
       menu: (key, button) => showMenuAtButton(menuOf(key), button),
       openInSidebar: (key) => void showItemInAnnotView(deps.app, key),
       close: () => this.#closeCard(),
+      // A disclosure is a view state the document keeps; a failed write
+      // leaves it open on screen and says nothing in the toolbar.
+      keepDisclosure: (name, open) => {
+        this.#storage
+          .change((doc) => withCardDisclosure(doc, name, open))
+          .catch((error: unknown) => {
+            logger.warn("The Library View could not keep the Reading Card", {
+              error,
+            });
+          });
+      },
       onEscape,
     });
     this.tree = new LibraryTree(deps, {
@@ -410,6 +422,7 @@ export class LibraryView extends ItemView {
     await this.#deps.settings.loaded;
     this.#storage.load();
     const doc = this.#storage.document();
+    this.card.showDisclosures(doc.card);
     this.tree.show(doc.node);
     this.tree.showFacets(doc.facets);
     this.tree.refresh();

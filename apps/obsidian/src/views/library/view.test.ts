@@ -96,6 +96,29 @@ interface SeedItem {
   readonly attachments?: readonly string[];
   /** The Item's bibliographic fields, as ZotLit Query gives them. */
   readonly fields?: Readonly<Record<string, QueryViewValue>>;
+  /** Zotero's item type; a journal article where absent. */
+  readonly itemType?: string;
+  /**
+   * The values only the Reading Card reads, such as its other fields, its
+   * Attachments' titles and kinds, and its Child Notes.
+   */
+  readonly card?: Readonly<Record<string, QueryViewValue>>;
+}
+
+/**
+ * What ZotLit Query gives the Reading Card's one read of `item` beside its
+ * fields: its type, tags, the keys of its Annotations, and its own values.
+ */
+function cardValues(item: SeedItem): Record<string, QueryViewValue> {
+  return {
+    itemType: item.itemType ?? "journalArticle",
+    tags: (item.tags ?? []).map((name) => ({ name, type: "manual" })),
+    "annotations[].indexedKey": Array.from(
+      { length: item.annotations ?? 0 },
+      (_, index) => `${item.key.slice(0, 7)}${index}`,
+    ),
+    ...item.card,
+  };
 }
 
 /**
@@ -268,15 +291,22 @@ function answer(
         (item) => ids.has(item.libraryID) && selects(request.filter, item),
       )
       // The engine lists an Item's Collections as sorted joined paths.
-      .map(({ key, collections, title, fields, attachments }) => ({
-        indexedKey: key,
-        values: {
-          collections: collections.toSorted(),
-          ...(attachments && { "attachments[].indexedKey": [...attachments] }),
-          ...(title !== undefined && { title }),
-          ...fields,
-        },
-      }));
+      .map((item) => {
+        const { key, collections, title, fields, attachments } = item;
+        return {
+          indexedKey: key,
+          values: {
+            collections: collections.toSorted(),
+            ...(attachments && {
+              "attachments[].indexedKey": [...attachments],
+            }),
+            ...(title !== undefined && { title }),
+            ...fields,
+            // The Reading Card reads its one Item, and more of it.
+            ...(request.limit === 1 && cardValues(item)),
+          },
+        };
+      });
     // The engine returns at most `limit` rows, and counts every match.
     const returned =
       request.limit == null ? rows : rows.slice(0, request.limit);
@@ -1426,6 +1456,8 @@ async function pressKey(
 const A = "AAAAAAAA";
 const B = "BBBBBBBB";
 const C = "CCCCCCCC";
+const D = "DDDDDDDD";
+const E = "EEEEEEEE";
 
 it("expands a paper whose only child is its Literature Note, to that note", async () => {
   const { deps } = pluginData();
@@ -2161,18 +2193,24 @@ describe("Reading Card", () => {
   });
 
   it("shows none of the last Item's Annotations while it reads another's, and says so where that read fails", async () => {
-    const { deps, run } = pluginData();
+    const { deps, run, change } = pluginData();
     const view = await openTab(deps);
+    // B has an Annotation here, so its card offers it.
+    const annotated = SEED.map((item) =>
+      item.key === B ? { ...item, annotations: 1 } : item,
+    );
     await act(async () => {
-      itemRow(view, A).click();
-      await view.card.settled;
+      change(annotated);
+      await view.query.settled;
     });
+    await select(view, A);
+    await open(view, "annotations");
     expect(view.card.query.state.getState().results).not.toBeNull();
     const failing = Promise.withResolvers<QueryViewOutcome>();
     run.mockImplementation((request) =>
       request.from === "annotations" && request.context?.item === B
         ? failing.promise
-        : Promise.resolve(answer(SEED, request)),
+        : Promise.resolve(answer(annotated, request)),
     );
     await act(() => itemRow(view, B).click());
     expect(view.card.query.state.getState().results).toBeNull();
@@ -2189,17 +2227,16 @@ describe("Reading Card", () => {
   it("lists the selected Item's Annotations with the Item as the Query Context, from the Item's Library", async () => {
     const { deps, run } = pluginData();
     const view = await openTab(deps);
-    await act(async () => {
-      itemRow(view, B).click();
-      await view.card.settled;
-    });
+    await select(view, A);
+    await open(view, "annotations");
+    await select(view, C);
     const annotations = run.mock.calls
       .map(([request]) => request)
       .filter((request) => request.from === "annotations");
     expect(annotations.at(-1)).toMatchObject({
       filter: "item == this.item",
-      context: { item: B },
-      // Recent reads every Library in the Library Scope; the card, B's own.
+      context: { item: C },
+      // Recent reads every Library in the Library Scope; the card, C's own.
       libraries: { mode: "selected", libraries: [PERSONAL] },
     });
   });
@@ -2231,7 +2268,7 @@ describe("Reading Card", () => {
           "[data-library-card-action]",
         ),
       ].map((el) => el.dataset.libraryCardAction),
-    ).toEqual(["pdf", "note", "more"]);
+    ).toEqual(["pdf", "note", "more", "sidebar"]);
     // B has no Literature Note yet.
     expect(button(view, "note").textContent).toBe("Write literature note");
     await act(() => {
@@ -2294,9 +2331,378 @@ describe("Reading Card", () => {
       itemRow(view, B).click();
       await view.card.settled;
     });
-    expect(view.card.query.state.getState().results?.count).toBe(0);
-    expect(card(view).querySelectorAll('[aria-level="3"]')).toHaveLength(0);
-    expect(card(view).textContent).not.toContain("Annotations");
+    expect(
+      card(view).querySelector('[data-library-card-part="annotations"]'),
+    ).toBeNull();
+    expect(card(view).textContent).not.toMatch(/annotation/i);
+  });
+
+  /** The parts the card shows under its buttons, in order. */
+  const parts = (view: LibraryView) =>
+    [
+      ...card(view).querySelectorAll<HTMLElement>("[data-library-card-part]"),
+    ].map((el) => el.dataset.libraryCardPart);
+  const toggle = (view: LibraryView, name: string) =>
+    card(view).querySelector<HTMLElement>(
+      `[data-library-card-toggle="${name}"]`,
+    );
+  /** Each label and value of a list of fields, `null` where the list is not shown. */
+  const pairs = (view: LibraryView, part: string) => {
+    const list = card(view).querySelector(`[data-library-card-part="${part}"]`);
+    if (!list) return null;
+    return [...list.querySelectorAll("dt")].map((dt) => [
+      dt.textContent,
+      dt.nextElementSibling?.textContent,
+    ]);
+  };
+  const annotationRuns = (run: ReturnType<typeof pluginData>["run"]) =>
+    run.mock.calls.filter(([request]) => request.from === "annotations");
+  async function select(view: LibraryView, key: string) {
+    await act(async () => {
+      itemRow(view, key).click();
+      await view.card.settled;
+    });
+  }
+  async function open(view: LibraryView, name: string) {
+    await act(async () => {
+      toggle(view, name)!.click();
+      await view.card.settled;
+    });
+  }
+
+  /** A journal article with its files, Zotero notes and Collections, and a letter. */
+  const FILLED: readonly SeedItem[] = SEED.map((item): SeedItem => {
+    if (item.key === A)
+      return {
+        ...item,
+        card: {
+          "attachments[].indexedKey": ["APDFAPDF", "AWEBAWEB"],
+          "attachments[].title": ["Full text PDF", "Snapshot"],
+          "attachments[].fileType": ["pdf", "web"],
+          notes: [{ indexedKey: "ANTEANTE", title: "Reading notes" }],
+          abstractNote: "Drawing graphs for figures.",
+          citationKey: "drawing2020",
+          language: "en",
+        },
+      };
+    if (item.key === B)
+      return {
+        ...item,
+        card: {
+          volume: "30",
+          issue: "1",
+          pages: "5998–6008",
+          DOI: "10.5555/attention",
+          url: "",
+          citationKey: "vaswani2017",
+          ISSN: "1049-5258",
+          journalAbbreviation: "NeurIPS",
+          language: "en",
+          // A field a journal article does not have.
+          eventPlace: "Long Beach",
+          dateAdded: "2024-03-10T12:00:00Z",
+        },
+      };
+    if (item.key === C) return { ...item, card: { language: "de" } };
+    if (item.key === D)
+      return {
+        ...item,
+        itemType: "letter",
+        fields: {
+          creators: [
+            {
+              role: "author",
+              family: "Darwin",
+              given: "Charles",
+              literal: null,
+              fullName: "Charles Darwin",
+            },
+          ],
+          date: {
+            kind: "date",
+            value: "1859-11-24",
+            year: 1859,
+            month: 11,
+            day: 24,
+            text: null,
+            raw: "1859-11-24 24 November 1859",
+          },
+        },
+        card: {
+          letterType: "Personal letter",
+          // The base field the engine also gives the letter's Type under.
+          type: "Personal letter",
+          eventPlace: "Down House",
+          DOI: "10.1000/letter",
+          url: "https://example.org/letter",
+          accessDate: "2024-05-01",
+          archive: "Darwin Correspondence Project",
+          archiveLocation: "DCP-LETT-2575",
+          citationKey: "darwin1859",
+          language: "en",
+          rights: "CC BY",
+          extra: "Original in Cambridge",
+          // A field a letter does not have.
+          volume: "3",
+          dateAdded: "2024-05-01T12:00:00Z",
+          dateModified: "2024-06-02T12:00:00Z",
+        },
+      };
+    return item;
+  });
+
+  it("shows its parts in order under the buttons, with All fields and Annotations closed and the Annotations unread until opened", async () => {
+    const { deps, run, change } = pluginData();
+    const view = await openTab(deps);
+    await act(async () => {
+      change(FILLED);
+      await view.query.settled;
+    });
+    await select(view, A);
+    expect(parts(view)).toEqual([
+      "type",
+      "facts",
+      "abstract",
+      "where",
+      "tags",
+      "files",
+      "notes",
+      "annotations",
+    ]);
+    expect(
+      card(view).querySelector('[data-library-card-part="type"]')!.textContent,
+    ).toBe("Journal Article");
+    // Two disclosures, both native buttons that say they are closed and
+    // name the body they control.
+    for (const name of ["fields", "annotations"]) {
+      const button = toggle(view, name)!;
+      expect(button.tagName).toBe("BUTTON");
+      expect(button.getAttribute("aria-expanded")).toBe("false");
+      expect(button.getAttribute("aria-controls")).toBeTruthy();
+    }
+    expect(toggle(view, "annotations")!.textContent).toBe("2 annotations");
+    // Selecting a paper reads none of its Annotations.
+    expect(annotationRuns(run)).toEqual([]);
+    expect(
+      card(view).querySelector("[data-library-card-annotations]"),
+    ).toBeNull();
+
+    await open(view, "annotations");
+    const button = toggle(view, "annotations")!;
+    expect(button.getAttribute("aria-expanded")).toBe("true");
+    expect(
+      document.getElementById(button.getAttribute("aria-controls")!),
+    ).not.toBeNull();
+    expect(annotationRuns(run).at(-1)?.[0]).toMatchObject({
+      filter: "item == this.item",
+      context: { item: A },
+    });
+  });
+
+  it("lists the files, which open in their reader, the Zotero notes, which link to Zotero, and the tags as chips", async () => {
+    const { deps, change } = pluginData();
+    const open = vi.fn(() => Promise.resolve());
+    Object.assign(deps, { readers: { open } });
+    const view = await openTab(deps);
+    await act(async () => {
+      change(FILLED);
+      await view.query.settled;
+    });
+    await select(view, A);
+    const files = [
+      ...card(view).querySelectorAll<HTMLAnchorElement>(
+        '[data-library-card-part="files"] a',
+      ),
+    ];
+    expect(files.map((a) => a.textContent)).toEqual([
+      "Full text PDF",
+      "Snapshot",
+    ]);
+    await act(() => files[0]!.click());
+    expect(open).toHaveBeenCalledExactlyOnceWith(
+      { kind: "attachment", attachmentKey: "APDFAPDF" },
+      false,
+    );
+    const note = card(view).querySelector<HTMLAnchorElement>(
+      '[data-library-card-part="notes"] a',
+    )!;
+    expect(note.textContent).toBe("Reading notes");
+    expect(note.getAttribute("href")).toBe(
+      "zotero://select/library/items/ANTEANTE",
+    );
+    expect(
+      [
+        ...card(view).querySelectorAll('[data-library-card-part="tags"] li'),
+      ].map((el) => el.textContent),
+    ).toEqual(["method"]);
+  });
+
+  it("shows where the Item sits as its Library and each Collection path", async () => {
+    const { deps } = pluginData();
+    const view = await openTab(deps);
+    await select(view, A);
+    expect(
+      [...card(view).querySelectorAll("[data-library-card-path]")].map(
+        (el) => el.textContent,
+      ),
+    ).toEqual([
+      "My Library › Thesis › Chapter 1",
+      "My Library › Thesis › Chapter 2",
+    ]);
+    // An Item in no Collection sits in its Library.
+    await select(view, E);
+    expect(
+      [...card(view).querySelectorAll("[data-library-card-path]")].map(
+        (el) => el.textContent,
+      ),
+    ).toEqual(["My Library"]);
+  });
+
+  it("shows a journal article's key facts, and its other filled fields under All fields with Zotero's labels", async () => {
+    const { deps, change, items } = pluginData();
+    const view = await openTab(deps);
+    await act(async () => {
+      change(FILLED);
+      await view.query.settled;
+    });
+    await select(view, B);
+    expect(pairs(view, "facts")).toEqual([
+      [
+        "Published in",
+        "Advances in Neural Information Processing Systems, 30(1), 5998–6008",
+      ],
+      ["Date", "2017"],
+      ["DOI", "10.5555/attention"],
+      ["Citation Key", "vaswani2017"],
+      ["Date Added", "March 10, 2024"],
+    ]);
+    const doi = card(view).querySelector<HTMLAnchorElement>(
+      '[data-library-card-part="facts"] a',
+    )!;
+    expect(doi.getAttribute("href")).toBe("https://doi.org/10.5555/attention");
+    await act(() =>
+      card(view)
+        .querySelector<HTMLElement>("[data-library-card-copy]")!
+        .click(),
+    );
+    expect(items.copyCitationKey).toHaveBeenCalledExactlyOnceWith(B);
+    expect(pairs(view, "fields")).toBeNull();
+    await open(view, "fields");
+    expect(pairs(view, "fields")).toEqual([
+      ["Creators", "Ashish Vaswani; Noam Shazeer; Isabelle Guyon"],
+      ["Journal Abbr", "NeurIPS"],
+      ["ISSN", "1049-5258"],
+      ["Language", "en"],
+    ]);
+  });
+
+  it("shows a letter's key facts, and its other filled fields in a letter's order", async () => {
+    const { deps, change } = pluginData();
+    const view = await openTab(deps);
+    await act(async () => {
+      change(FILLED);
+      await view.query.settled;
+    });
+    await select(view, D);
+    expect(
+      card(view).querySelector('[data-library-card-part="type"]')!.textContent,
+    ).toBe("Letter");
+    expect(pairs(view, "facts")).toEqual([
+      ["Date", "November 24, 1859"],
+      ["DOI", "10.1000/letter"],
+      ["URL", "https://example.org/letter"],
+      ["Citation Key", "darwin1859"],
+      ["Date Added", "May 1, 2024"],
+    ]);
+    await open(view, "fields");
+    expect(pairs(view, "fields")).toEqual([
+      ["Creators", "Charles Darwin"],
+      ["Type", "Personal letter"],
+      ["Event Place", "Down House"],
+      ["Accessed", "May 1, 2024"],
+      ["Archive", "Darwin Correspondence Project"],
+      ["Loc. in Archive", "DCP-LETT-2575"],
+      ["Language", "en"],
+      ["License", "CC BY"],
+      ["Extra", "Original in Cambridge"],
+      ["Modified", "June 2, 2024"],
+    ]);
+  });
+
+  it("remembers All fields and Annotations open for the Library View, across Items and when the tab opens again", async () => {
+    const { deps, settings, run, change } = pluginData();
+    const view = await openTab(deps);
+    await act(async () => {
+      change(FILLED);
+      await view.query.settled;
+    });
+    await select(view, A);
+    await open(view, "fields");
+    await open(view, "annotations");
+    await select(view, C);
+    expect(toggle(view, "fields")!.getAttribute("aria-expanded")).toBe("true");
+    expect(toggle(view, "annotations")!.getAttribute("aria-expanded")).toBe(
+      "true",
+    );
+    // Open, the Annotations of the next Item are read as it shows.
+    expect(annotationRuns(run).at(-1)?.[0]).toMatchObject({
+      context: { item: C },
+    });
+    await act(() => settings.flush());
+    expect(settings.current?.["library.document"]).toMatchObject({
+      card: { allFields: true, annotations: true },
+    });
+    await act(() => view.close());
+    const again = await openTab(deps);
+    await select(again, A);
+    expect(toggle(again, "fields")!.getAttribute("aria-expanded")).toBe("true");
+    await open(again, "fields");
+    expect(toggle(again, "fields")!.getAttribute("aria-expanded")).toBe(
+      "false",
+    );
+  });
+
+  it("leaves out every part an Item has nothing for", async () => {
+    const { deps } = pluginData();
+    const view = await openTab(deps);
+    // E has a tag and nothing else: no fields, abstract, file, note or Annotation.
+    await select(view, E);
+    expect(parts(view)).toEqual(["type", "where", "tags"]);
+    expect(toggle(view, "fields")).toBeNull();
+    expect(toggle(view, "annotations")).toBeNull();
+    expect(card(view).textContent).not.toMatch(/\b0\b/);
+  });
+
+  it("cuts a long abstract to a few lines, with Show more and Show less", async () => {
+    const { deps, change } = pluginData();
+    const view = await openTab(deps);
+    await act(async () => {
+      change(
+        SEED.map((item) =>
+          item.key === B
+            ? {
+                ...item,
+                card: {
+                  abstractNote:
+                    "Attention alone carries a sequence model. ".repeat(8),
+                },
+              }
+            : item,
+        ),
+      );
+      await view.query.settled;
+    });
+    await select(view, B);
+    const abstract = card(view).querySelector<HTMLElement>(
+      "[data-library-card-abstract]",
+    )!;
+    expect(abstract.className).toContain("line-clamp-4");
+    const more = toggle(view, "abstract")!;
+    expect(more.textContent).toBe("Show more");
+    expect(more.getAttribute("aria-expanded")).toBe("false");
+    await act(() => more.click());
+    expect(abstract.className).not.toContain("line-clamp-4");
+    expect(toggle(view, "abstract")!.textContent).toBe("Show less");
   });
 
   it("leaves Enter and the arrow keys inside the card to the card", async () => {

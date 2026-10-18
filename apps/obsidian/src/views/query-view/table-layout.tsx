@@ -389,7 +389,7 @@ function NoteCell({
  * view of a Zotero note. The system starts Zotero from the link where it is
  * closed.
  */
-function ZoteroNoteLink({
+export function ZoteroNoteLink({
   noteKey,
   children,
 }: {

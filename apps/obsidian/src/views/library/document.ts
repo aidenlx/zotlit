@@ -79,7 +79,23 @@ export interface LibraryViewDocument {
   /** The text in the search box; empty while the view browses. */
   readonly search: string;
   readonly sort: readonly QueryFileSort[];
+  /** Which disclosures of the Reading Card are open, for every Item it shows. */
+  readonly card: ReadingCardDisclosures;
 }
+
+/** The Reading Card's disclosures, open or closed. */
+export interface ReadingCardDisclosures {
+  /** "All fields": the fields beside the key facts. */
+  readonly allFields: boolean;
+  /** The Item's Annotation Cards. */
+  readonly annotations: boolean;
+}
+
+/** Both disclosures closed, so a selected paper draws no Annotation Card. */
+const CLOSED_CARD: ReadingCardDisclosures = Object.freeze({
+  allFields: false,
+  annotations: false,
+});
 
 const nodeSchema = v.variant("kind", [
   v.object({ kind: v.literal("recent") }),
@@ -104,6 +120,7 @@ export type StoredLibraryViewDocument = {
   facets: ReadingStateFacet[];
   search: string;
   sort: v.InferOutput<typeof sortSchema>;
+  card: { allFields: boolean; annotations: boolean };
 };
 
 /**
@@ -124,6 +141,7 @@ export const DEFAULT_LIBRARY_VIEW_DOCUMENT: LibraryViewDocument = Object.freeze(
     facets: [],
     search: "",
     sort: RECENT_SORT,
+    card: CLOSED_CARD,
   } satisfies LibraryViewDocument,
 );
 
@@ -152,7 +170,30 @@ export function parseLibraryViewDocument(raw: unknown): LibraryViewDocument {
     facets: READING_STATE_FACETS.filter((facet) => facets.includes(facet)),
     search: field(v.string(), "search", defaults.search),
     sort: field(sortSchema, "sort", defaults.sort),
+    card: field(cardSchema, "card", defaults.card),
   };
+}
+
+/** A disclosure this build cannot read stays closed; the other keeps its state. */
+const cardSchema = v.pipe(
+  v.unknown(),
+  v.transform((raw): ReadingCardDisclosures => {
+    const stored =
+      raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+    return {
+      allFields: stored.allFields === true,
+      annotations: stored.annotations === true,
+    };
+  }),
+);
+
+/** `doc` with the Reading Card's disclosure `name` open or closed. */
+export function withCardDisclosure(
+  doc: LibraryViewDocument,
+  name: keyof ReadingCardDisclosures,
+  open: boolean,
+): LibraryViewDocument {
+  return { ...doc, card: { ...doc.card, [name]: open } };
 }
 
 /** The sort that selecting `node` writes; `null` for a node that keeps the sort. */
@@ -225,6 +266,7 @@ export function serializeLibraryViewDocument(
     facets: [...doc.facets],
     search: doc.search,
     sort: doc.sort.map(({ property, direction }) => ({ property, direction })),
+    card: { ...doc.card },
   };
 }
 

@@ -55,6 +55,7 @@ const STORED = {
   facets: ["annotated"],
   search: "",
   sort: [{ property: "dateModified", direction: "DESC" }],
+  card: { allFields: false, annotations: false },
 };
 
 /** {@link STORED} as an earlier build wrote it, with a Layout and Visible Properties. */

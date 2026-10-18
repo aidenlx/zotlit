@@ -435,6 +435,26 @@
   "library_view_card_open_in_sidebar": "Open in sidebar",
   "library_view_card_close": "Close",
   "library_view_card_failed": "Couldn't read this paper's annotations.",
+  "library_view_card_annotation_count": [
+    {
+      "declarations": ["input count", "local countPlural = count: plural"],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "1 annotation",
+        "countPlural=*": "{count} annotations"
+      }
+    }
+  ],
+  "library_view_card_venue": "Published in",
+  "library_view_card_copy_citation_key": "Copy citation key",
+  "library_view_card_all_fields": "All fields",
+  "library_view_card_abstract": "Abstract",
+  "library_view_card_show_more": "Show more",
+  "library_view_card_show_less": "Show less",
+  "library_view_card_where": "Saved in",
+  "library_view_card_tags": "Tags",
+  "library_view_card_files": "Files",
+  "library_view_card_notes": "Zotero notes",
   "instruction_show_in_library": "to show in library",
   "library_view_search_label": "Search papers",
   "library_view_search_placeholder": "Search papers",
