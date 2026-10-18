@@ -76,6 +76,24 @@ export const ANNOT_VIEW_TYPE = "zotero-annotation-view";
 
 const logger = getLogger(["views", "annot-view"]);
 
+/**
+ * How long the view keeps the last Item while it reads the next one, before
+ * it shows the next one's name over its cards loading.
+ */
+const STAGED_LOADING_MS = 150;
+
+/** The next Item while its reads run, and what the store takes to show it. */
+interface Staged {
+  load: object;
+  /** The store's state that shows the next Item. */
+  patch: Partial<AnnotState>;
+  /** The Item and Attachment the query reads for it, once its attachments are read. */
+  bound: { itemKey: string | null; attachmentKey: string | null } | null;
+  /** Whether its reads have taken {@link STAGED_LOADING_MS}. */
+  late: boolean;
+  timer: { win: Window; id: number } | null;
+}
+
 const STORAGE_KEY_PREFIX = "zotlit-annot-atch-";
 const FILTER_STORAGE_KEY_PREFIX = "zotlit-annot-filter-";
 
@@ -157,6 +175,12 @@ export class AnnotationView extends ItemView implements HistorySurface {
   #reading = Promise.resolve();
   /** Whether the view has closed, which the work it started away reads. */
   #closed = false;
+  /**
+   * The next Item while its reads run. The view keeps the Item it shows,
+   * its name, its attachments and its cards, until the next one's cards are
+   * read, and then shows the next one whole; `null` with none waiting.
+   */
+  #staged: Staged | null = null;
 
   /**
    * Settles once the list on screen matches the last read this view started.
@@ -180,22 +204,35 @@ export class AnnotationView extends ItemView implements HistorySurface {
       scope: this.scope,
       sourcePath: () => this.#sourcePath(),
       context: () => {
-        const { itemKey, selectedAttachmentKey } = this.#store.getState();
+        const { itemKey, attachmentKey } = this.#bound();
         return {
           item: itemKey ?? undefined,
-          attachment: selectedAttachmentKey ?? undefined,
+          attachment: attachmentKey ?? undefined,
         };
       },
       contextSource: "sidebar",
+      // The header names the Item the cards belong to, and changes with them.
+      keepsRowsOnRebind: true,
       save: (text) => {
         this.#queryText = text;
         void this.#deps.app.workspace.requestSaveLayout();
       },
-      layout: { ...this.#layoutHost(), showNewRecords: true },
+      layout: {
+        ...this.#layoutHost(),
+        showNewRecords: true,
+        // The next Item shows with its cards, in the render that draws them.
+        publishing: (attachmentKeys) => {
+          const staged = this.#staged;
+          const key = staged?.bound?.attachmentKey;
+          return staged && key && attachmentKeys.includes(key)
+            ? this.#takeStaged(staged)
+            : null;
+        },
+      },
       // The followed Attachment's own list, so its first new Annotation shows
       // as the write starts, before the database has it.
       attachments: () => {
-        const key = this.#store.getState().selectedAttachmentKey;
+        const key = this.#bound().attachmentKey;
         return key === null ? [] : [key];
       },
     });
@@ -207,8 +244,11 @@ export class AnnotationView extends ItemView implements HistorySurface {
   #layoutHost(): QueryViewHost["layout"] {
     return {
       gestures: {
-        setSelectedAttachmentKey: (key) =>
-          this.#store.setState({ selectedAttachmentKey: key }),
+        // The last Item's attachments choose nothing while the next one reads.
+        setSelectedAttachmentKey: (key) => {
+          if (!this.#staged)
+            this.#store.setState({ selectedAttachmentKey: key });
+        },
         onSetFollowMode: (mode) => this.#setFollowMode(mode),
         onPinCurrentItem: () => this.#pinCurrentItem(),
         onPinItem: () => this.#pickItemToPin(),
@@ -391,7 +431,19 @@ export class AnnotationView extends ItemView implements HistorySurface {
     this.register(() => this.#zoteroReader?.[Symbol.dispose]());
 
     this.#query.load();
-    this.register(this.#query.state.subscribe(() => this.#syncQueryProblem()));
+    this.register(
+      this.#query.state.subscribe(({ phase }, last) => {
+        // A run for the next Item that fails shows the next Item, and says
+        // so. A run that had failed before it says nothing of the next one.
+        if (
+          phase === "failed" &&
+          last.phase !== "failed" &&
+          this.#staged?.bound
+        )
+          this.#commitStaged(this.#staged);
+        this.#syncQueryProblem();
+      }),
+    );
 
     this.#store.setState({
       liveUpdatesOn: this.#deps.liveUpdate.available,
@@ -500,6 +552,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
   protected override async onClose(): Promise<void> {
     this.#closed = true;
     this.#loading = null;
+    this.#cancelStaged();
     this.#loadDisposables?.[Symbol.dispose]();
     this.#loadDisposables = null;
     this.#leafSession?.();
@@ -783,11 +836,11 @@ export class AnnotationView extends ItemView implements HistorySurface {
 
     // A new Item disposes the previous load's subscriptions before any state
     // mutation of this load: `subscribeWithSelector` fires synchronously, so
-    // the reset below would otherwise trigger the old save subscription
-    // (closed over the previous item's key) and wipe its persisted filter.
-    // Its Annotation reads still running are superseded too. A reload of the
-    // same Item keeps them until the new list lands, so a choice made while
-    // it reads is still read and saved.
+    // the next Item's state would otherwise trigger the old save
+    // subscription (closed over the previous item's key) and wipe its
+    // persisted filter. Its Annotation reads still running are superseded
+    // too. A reload of the same Item keeps them until the new list lands, so
+    // a choice made while it reads is still read and saved.
     if (memoryChanged) {
       this.#loadDisposables?.[Symbol.dispose]();
       this.#loadDisposables = null;
@@ -795,41 +848,145 @@ export class AnnotationView extends ItemView implements HistorySurface {
     }
     const load = {};
     this.#loading = load;
-    const sameItem = itemKey === this.#store.getState().itemKey;
-
-    // What is on screen stays while this load reads: the attachments and
-    // their Annotations until the new list lands, and the identity block
-    // while the same Item reads again.
-    this.#store.setState({
-      ...(memoryChanged ? INITIAL_FILTER_STATE : null),
+    this.#cancelStaged();
+    const state = {
       groupID,
       itemKey,
       attachmentLock: lock,
       pinnable: itemKey,
+    } satisfies Partial<AnnotState>;
+
+    if (memoryChanged) {
+      this.#reading = this.#stage(target, load, {
+        ...INITIAL_FILTER_STATE,
+        ...state,
+      });
+      return;
+    }
+
+    // The same Item reads again: what is on screen stays while it reads,
+    // the attachments and their Annotations until the new list lands.
+    const sameItem = itemKey === this.#store.getState().itemKey;
+    this.#store.setState({
+      ...state,
       ...(!sameItem && { itemDisplay: null }),
     });
-
     void this.#resolveItemSummary(target).then((itemDisplay) => {
       if (this.#loading === load) this.#store.setState({ itemDisplay });
     });
     this.#reading = this.#readAttachments(target).then(
       (attachments) => {
         if (this.#loading !== load) return;
-        this.#loadDisposables?.[Symbol.dispose]();
-        this.#loadDisposables = new DisposableStack();
-        return this.#showAttachments(target, attachments, {
-          load: this.#loadDisposables,
-          memoryKey,
-          memoryChanged,
+        this.#store.setState({ attachments });
+        const activeKey = this.#activeAttachment(target, attachments);
+        this.#store.setState({ selectedAttachmentKey: activeKey });
+        return this.#followAttachment(target, activeKey, {
+          attachments,
+          memoryChanged: false,
         });
       },
       (err: unknown) => {
         if (this.#loading !== load) return;
         logger.warn("Failed to load annot view data", { key, error: err });
-        // A reload of the same Item keeps what is on screen.
-        if (memoryChanged) this.#clearState();
       },
     );
+  }
+
+  /**
+   * Read the next Item while the one on screen stays: its name and its
+   * attachments, then its cards, through the query bound to it. The next
+   * Item shows whole once its cards are read, or with its cards loading
+   * once the reads take {@link STAGED_LOADING_MS}.
+   */
+  async #stage(
+    target: LoadTarget,
+    load: object,
+    patch: Partial<AnnotState>,
+  ): Promise<void> {
+    const staged: Staged = {
+      load,
+      patch,
+      bound: null,
+      late: false,
+      timer: null,
+    };
+    this.#staged = staged;
+    const win = this.contentEl.win;
+    staged.timer = {
+      win,
+      id: win.setTimeout(() => {
+        staged.timer = null;
+        staged.late = true;
+        // The next Item's name, over its cards loading, once it is read.
+        if (staged.bound) this.#commitStaged(staged, true);
+      }, STAGED_LOADING_MS),
+    };
+    let attachments: AnnotViewAttachment[];
+    let itemDisplay: ItemSummary | null;
+    try {
+      [itemDisplay, attachments] = await Promise.all([
+        this.#resolveItemSummary(target),
+        this.#readAttachments(target),
+      ]);
+    } catch (err) {
+      if (this.#loading !== load) return;
+      logger.warn("Failed to load annot view data", {
+        key: target.key,
+        error: err,
+      });
+      this.#clearState();
+      return;
+    }
+    if (this.#loading !== load) return;
+    const activeKey = this.#activeAttachment(target, attachments);
+    staged.patch = {
+      ...staged.patch,
+      itemDisplay,
+      attachments,
+      selectedAttachmentKey: activeKey,
+    };
+    if (activeKey === null) {
+      // No cards to wait for: the next Item shows at once, with none.
+      this.#commitStaged(staged);
+      this.#query.clear();
+      return;
+    }
+    staged.bound = { itemKey: target.itemKey, attachmentKey: activeKey };
+    if (staged.late) this.#commitStaged(staged, true);
+    return this.#followAttachment(target, activeKey, {
+      attachments,
+      memoryChanged: true,
+    });
+  }
+
+  /** The Item and Attachment the query reads: the next Item's while it waits. */
+  #bound(): { itemKey: string | null; attachmentKey: string | null } {
+    const { itemKey, selectedAttachmentKey } = this.#store.getState();
+    return (
+      this.#staged?.bound ?? { itemKey, attachmentKey: selectedAttachmentKey }
+    );
+  }
+
+  /** The state that shows the waiting Item, which then waits no more. */
+  #takeStaged(staged: Staged): Partial<AnnotState> {
+    if (staged.timer) staged.timer.win.clearTimeout(staged.timer.id);
+    staged.timer = null;
+    if (this.#staged === staged) this.#staged = null;
+    return staged.patch;
+  }
+
+  /**
+   * Show the waiting Item now, before its cards: with none of the last
+   * Item's, which never show under the next one's name.
+   */
+  #commitStaged(staged: Staged, loading = false): void {
+    if (this.#staged !== staged) return;
+    this.#store.setState(this.#takeStaged(staged));
+    if (loading) this.#layout.clear();
+  }
+
+  #cancelStaged(): void {
+    if (this.#staged) this.#takeStaged(this.#staged);
   }
 
   /** The attachments the view lists for `target`. */
@@ -848,45 +1005,60 @@ export class AnnotationView extends ItemView implements HistorySurface {
     );
   }
 
-  /** Shows the attachments one load read, and the active one's Annotations. */
-  #showAttachments(
-    { lockedAttachmentKey, key, libraryID }: LoadTarget,
-    attachments: AnnotViewAttachment[],
-    {
-      load,
-      memoryKey,
-      memoryChanged,
-    }: { load: DisposableStack; memoryKey: string; memoryChanged: boolean },
-  ): Promise<void> | undefined {
-    this.#store.setState({ attachments });
-
+  /** The Attachment of `attachments` the view shows first: the locked, the saved, or the first. */
+  #activeAttachment(
+    { lockedAttachmentKey }: LoadTarget,
+    attachments: readonly AnnotViewAttachment[],
+  ): string | null {
     const held = (k: string | null): string | null =>
       k !== null && attachments.some((a) => a.indexedKey === k) ? k : null;
     const saved =
-      lockedAttachmentKey === null
-        ? this.#loadAttachmentSelection(memoryKey)
+      lockedAttachmentKey === null && this.#memoryKey !== null
+        ? this.#loadAttachmentSelection(this.#memoryKey)
         : null;
-    const activeKey =
+    return (
       held(lockedAttachmentKey) ??
       held(saved) ??
       attachments[0]?.indexedKey ??
-      null;
+      null
+    );
+  }
 
-    if (activeKey === null) {
-      this.#store.setState({ selectedAttachmentKey: null });
+  /**
+   * Shows the active Attachment's Annotations, and follows the choice of
+   * Attachment and of filter, which are remembered for the Item.
+   */
+  #followAttachment(
+    { lockedAttachmentKey, key, libraryID }: LoadTarget,
+    activeKey: string | null,
+    {
+      attachments,
+      memoryChanged,
+    }: { attachments: readonly AnnotViewAttachment[]; memoryChanged: boolean },
+  ): Promise<void> | undefined {
+    const memoryKey = this.#memoryKey;
+    if (activeKey === null || memoryKey === null) {
       this.#query.clear();
       return;
     }
-
-    this.#store.setState({ selectedAttachmentKey: activeKey });
+    this.#loadDisposables?.[Symbol.dispose]();
+    const load = new DisposableStack();
+    this.#loadDisposables = load;
     const reading = this.#showAnnotations(activeKey, {
       restoreFilter: memoryChanged,
     });
 
+    // A new Item takes its place on screen after this: its Attachment
+    // showing is no choice.
+    let placing = memoryChanged && this.#staged !== null;
     load.defer(
       this.#store.subscribe(
         (s) => s.selectedAttachmentKey,
         (attachmentKey) => {
+          if (placing) {
+            placing = false;
+            if (attachmentKey === activeKey) return;
+          }
           if (attachmentKey === null) return;
           if (lockedAttachmentKey === null) {
             this.#saveAttachmentSelection(memoryKey, attachmentKey);
@@ -1049,6 +1221,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
   }
 
   #clearState(): void {
+    this.#cancelStaged();
     this.#loadDisposables?.[Symbol.dispose]();
     this.#loadDisposables = null;
     this.#loading = null;

@@ -219,6 +219,14 @@ export interface AnnotationsLayoutHost {
    * so the query can run again and give the rows that list holds now.
    */
   onListChanged?: () => void;
+  /**
+   * What the host shows with the cards of the Attachments `attachmentKeys`,
+   * in the render that puts them on screen: the name of the Item they
+   * belong to, as the sidebar changes it with them. `null` for nothing.
+   */
+  publishing?: (
+    attachmentKeys: readonly string[],
+  ) => Partial<AnnotState> | null;
 }
 
 /** One Attachment's list as the layout last took it, or `null` where its read failed. */
@@ -710,7 +718,12 @@ export class AnnotationsLayout extends Component {
         return draft ? [[annotation.key, draft] as const] : [];
       }),
     );
-    this.store.setState({ ...composed, fieldDrafts, tagDrafts });
+    this.store.setState({
+      ...composed,
+      fieldDrafts,
+      tagDrafts,
+      ...this.#host.publishing?.(this.#shown),
+    });
   }
 
   /**

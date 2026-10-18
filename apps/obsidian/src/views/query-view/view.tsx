@@ -135,6 +135,14 @@ export interface QueryViewHost {
    * File's own tab, which binds nothing.
    */
   contextSource?: ContextSource;
+  /**
+   * Whether the rows of the last binding stay on screen while a run for a
+   * new one reads, until its rows land. Only a host that names the Item
+   * the rows belong to, and changes that name in the same render as the
+   * rows, keeps them (ADR 0071): rows never show under another Item.
+   * Otherwise the view clears its rows as the binding changes.
+   */
+  keepsRowsOnRebind?: boolean;
   /** The user chose another view of the file; the host may remember it. */
   onSelectView?: (name: string) => void;
   /**
@@ -158,7 +166,7 @@ export interface QueryViewHost {
    */
   layout?: Pick<
     AnnotationsLayoutHost,
-    "gestures" | "onList" | "onEscape" | "showNewRecords"
+    "gestures" | "onList" | "onEscape" | "showNewRecords" | "publishing"
   >;
   /**
    * The Attachments whose live lists the cards read beside those the rows
@@ -1004,7 +1012,11 @@ export class QueryView extends Component implements HistorySurface {
     }
     const controller = new AbortController();
     this.#run = controller;
-    if (this.#shownRequest !== null && this.#shownBinding !== binding) {
+    if (
+      this.#shownRequest !== null &&
+      this.#shownBinding !== binding &&
+      !this.#host.keepsRowsOnRebind
+    ) {
       void this.#show(null);
       this.state.setState({ results: null });
     }

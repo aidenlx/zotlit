@@ -191,7 +191,9 @@ export function AnnotView() {
         <AnnotList collapsed={collapsed} />
       ) : body.kind === "loading" ? (
         // Loading gives way to the cards at the top, so it waits there.
-        <div className="pane-empty zt:p-2">{m.annot_view_loading()}</div>
+        <div className="pane-empty zt:p-2" data-annot-view-loading="">
+          {m.annot_view_loading()}
+        </div>
       ) : (
         <PaneState>
           {body.kind === "problem" ? (
@@ -283,7 +285,10 @@ function Masthead({
     <>
       <span className="zt:flex zt:min-w-0 zt:items-center zt:gap-1">
         <ChromeIcon name={shape.modeIcon} />
-        <span className="zt:min-w-0 zt:text-sm zt:font-semibold zt:text-balance">
+        <span
+          className="zt:min-w-0 zt:text-sm zt:font-semibold zt:text-balance"
+          data-annot-header-title=""
+        >
           {shape.title}
         </span>
       </span>

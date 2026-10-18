@@ -2706,6 +2706,185 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await switches("narrow", true);
   }, 240000);
 
+  it("swaps the sidebar Annotation View from one Item to the next in one step, as it follows the active tab from one Literature Note to another and as the Item picker pins another Item, whether ZotLit Query answers at once or late, with Zotero closed", async () => {
+    const layout = await obEval(
+      vaultId,
+      "JSON.stringify(app.workspace.getLayout())",
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{const view=app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view;if(view?.getState().followMode==='pinned')app.commands.executeCommandById('zotlit:annot-view-unpin');app.commands.executeCommandById('zotlit:annot-view-follow-active-tab');await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+      );
+    });
+    await wideWindow(cleanup);
+    // Two Literature Notes of Items whose Annotations differ.
+    const items = [annotationItem, positionDocumentItem];
+    const notes = items.map(
+      (item) => `literatures/${item.literatureNoteName ?? item.key}.md`,
+    );
+    await obEval(
+      vaultId,
+      `(async()=>{const leaf=app.workspace.getLeaf('tab');await leaf.openFile(app.vault.getFileByPath(${JSON.stringify(notes[0])}));app.workspace.setActiveLeaf(leaf,{focus:true});app.commands.executeCommandById('zotlit:open-annot-view');app.commands.executeCommandById('zotlit:annot-view-follow-active-tab');app.workspace.rightSplit.expand();return true;})()`,
+    );
+
+    interface Frame {
+      /** The Item the header names, `null` while it names none. */
+      title: string | null;
+      /** The keys of the cards drawn. */
+      cards: string[];
+      /** Whether the body says it is loading. */
+      loading: boolean;
+      /** Milliseconds since the step began; none for the settled view before it. */
+      at?: number;
+    }
+    interface Step {
+      /** The view settled before the step, then as each animation frame draws it. */
+      frames: Frame[];
+      /** The view after each batch of mutations of it. */
+      mutations: Frame[];
+    }
+    const sidebar =
+      "app.workspace.getLeavesOfType('zotero-annotation-view')[0].view";
+    /**
+     * Settle the view after `prepare`, then run `trigger`, with each ZotLit
+     * Query run held `delay` ms first, and read each frame the window draws
+     * until 600 ms after that and the view settles.
+     */
+    const step = async (prepare: string, trigger: string, delay: number) =>
+      JSON.parse(
+        await obEval(
+          vaultId,
+          `(async()=>{${PAGE}const view=${sidebar};${prepare}await until('cards',()=>view.contentEl.querySelector('.zt-annot-card'),10000);await view.read;const frame=()=>new Promise(r=>requestAnimationFrame(r));await frame();await frame();const el=view.contentEl;const cards=()=>[...el.querySelectorAll('.zt-annot-card[data-zotero-annotation-key]')].map(n=>n.getAttribute('data-zotero-annotation-key'));const sample=()=>({title:el.querySelector('[data-annot-header-title]')?.textContent??null,cards:cards(),loading:!!el.querySelector('[data-annot-view-loading]')});const mutations=[];let start=performance.now();const observer=new MutationObserver(()=>mutations.push({...sample(),at:Math.round(performance.now()-start)}));observer.observe(el,{childList:true,subtree:true});const frames=[sample()];const service=${"app.plugins.plugins.zotlit.services"}.query;const run=service.run;if(${delay}>0)service.run=function(...args){return new Promise(r=>setTimeout(r,${delay})).then(()=>run.apply(this,args));};try{start=performance.now();${trigger}const first=frames[0].cards.join();const moved=()=>{const now=frames.at(-1);return now.cards.length>0&&now.cards.join()!==first;};while(performance.now()-start<${delay}+600||(!moved()&&performance.now()-start<5000)){await frame();frames.push({...sample(),at:Math.round(performance.now()-start)});}await view.read;await frame();frames.push({...sample(),at:Math.round(performance.now()-start)});}finally{service.run=run;observer.disconnect();}return JSON.stringify({frames,mutations});})()`,
+        ),
+      ) as Step;
+
+    /**
+     * The view goes from one Item to the next in one step: the last Item's
+     * cards stay until the next Item's are read, and never show under the
+     * next one's name; the next one's show whole. A read that takes longer
+     * than 150 ms may show the next Item's name over a loading body first.
+     */
+    const oneStep = (
+      what: string,
+      { frames, mutations }: Step,
+      { named, slow }: { named: boolean; slow: boolean },
+    ) => {
+      const before = frames[0]!;
+      const after = frames.at(-1)!;
+      // A read held past 150 ms shows the next Item over its cards loading.
+      expect
+        .soft(
+          !slow ||
+            frames.some(
+              ({ loading, title }) =>
+                loading && (!named || title === after.title),
+            ),
+          `${what}: the next Item loading`,
+        )
+        .toBe(true);
+      expect.soft(before.cards.length, what).toBeGreaterThan(0);
+      expect.soft(after.cards.length, what).toBeGreaterThan(0);
+      expect.soft(after.cards.join(), what).not.toBe(before.cards.join());
+      const seen = <T>(list: T[]) =>
+        list.filter((value, at) => at === 0 || value !== list[at - 1]);
+      const shown = (cards: string[]) =>
+        cards.length === 0
+          ? "none"
+          : cards.join() === before.cards.join()
+            ? "last"
+            : cards.join() === after.cards.join()
+              ? "next"
+              : `other: ${cards.join()}`;
+      for (const [kind, samples] of [
+        ["frames", frames],
+        ["mutations", mutations],
+      ] as const) {
+        const where = `${what}, ${kind}`;
+        // The cards go from the last Item's to the next Item's, with at
+        // most a loading body between, once the read has taken 150 ms.
+        expect
+          .soft(
+            [
+              ["last", "next"],
+              ["last", "none", "next"],
+            ],
+            where,
+          )
+          .toContainEqual(
+            seen([before, ...samples].map(({ cards }) => shown(cards))),
+          );
+        expect
+          .soft(
+            samples.filter(
+              ({ cards, loading, at }) =>
+                cards.length === 0 && (!loading || (at ?? 0) < 150),
+            ),
+            `${where}: no cards before 150 ms, or with no loading body`,
+          )
+          .toEqual([]);
+        if (!named) continue;
+        // The header names one Item at a time, never goes blank, and never
+        // names one Item over the other's cards.
+        expect
+          .soft(
+            samples.filter(({ title }) => !title),
+            where,
+          )
+          .toEqual([]);
+        expect
+          .soft(seen([before, ...samples].map(({ title }) => title)), where)
+          .toEqual([before.title, after.title]);
+        expect
+          .soft(
+            samples.filter(
+              ({ title, cards }) =>
+                (title === before.title && shown(cards) !== "last") ||
+                (title === after.title && shown(cards) === "last"),
+            ),
+            `${where}: cards under another Item's name`,
+          )
+          .toEqual([]);
+      }
+      if (!named) return;
+      expect.soft(before.title, what).toBeTruthy();
+      expect.soft(before.title, what).not.toBe(after.title);
+    };
+
+    for (const delay of [0, 400]) {
+      const pace = delay === 0 ? "fast read" : "slow read";
+      // Following the active tab from one Literature Note to the other.
+      for (const [from, to] of [
+        [notes[0]!, notes[1]!],
+        [notes[1]!, notes[0]!],
+      ] as const)
+        oneStep(
+          `active tab, ${from} → ${to}, ${pace}`,
+          await step(
+            `if(view.getState().followMode!=='active-tab'){app.commands.executeCommandById('zotlit:annot-view-unpin');app.commands.executeCommandById('zotlit:annot-view-follow-active-tab');await until('active tab',()=>view.getState().followMode==='active-tab');}const leaf=app.workspace.getMostRecentLeaf(app.workspace.rootSplit);if(leaf.view.file?.path!==${JSON.stringify(from)})await leaf.openFile(app.vault.getFileByPath(${JSON.stringify(from)}));`,
+            `void app.workspace.getMostRecentLeaf(app.workspace.rootSplit).openFile(app.vault.getFileByPath(${JSON.stringify(to)}));`,
+            delay,
+          ),
+          { named: false, slow: delay > 0 },
+        );
+      // Pinned, the Item picker pins the other Item.
+      for (const [from, to] of [
+        [items[0]!, items[1]!],
+        [items[1]!, items[0]!],
+      ] as const)
+        oneStep(
+          `pinned, picker ${from.key} → ${to.key}, ${pace}`,
+          await step(
+            `view.pinItem(${JSON.stringify(from.key)});await until('pinned',()=>view.getState().pinnedItemKey===${JSON.stringify(from.key)});app.commands.executeCommandById('zotlit:annot-view-pin-item');const input=await until('picker',()=>activeDocument.querySelector('.prompt .prompt-input'),5000);input.value=${JSON.stringify(to.title)};input.dispatchEvent(new Event('input',{bubbles:true}));const choice=await until('suggestion',()=>[...activeDocument.querySelectorAll('.prompt .suggestion-item')].find(n=>n.textContent.includes(${JSON.stringify(to.title)})),10000);`,
+            "choice.click();",
+            delay,
+          ),
+          { named: true, slow: delay > 0 },
+        );
+    }
+  }, 240000);
+
   it("opens a Library View Document an earlier build stored with the Table on Papers, and saves its Collection from the toolbar as a Query File whose tab lists the same papers with every control, with Zotero closed", async () => {
     const services = "app.plugins.plugins.zotlit.services";
     const savedPath = "query-files/Saved library.zotquery";
