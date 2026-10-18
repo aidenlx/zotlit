@@ -144,14 +144,34 @@ describe("Welcome links", () => {
     Menu.instances.length = 0;
     await act(() => help.click());
     const { items } = Menu.instances.at(-1)!;
-    expect(items.length).toBeGreaterThan(1);
-    for (const item of items) item.click();
-    const opened = vi
-      .mocked(actions.openExternal)
-      .mock.calls.map(([url]) => url);
-    expect(opened).toHaveLength(items.length);
-    expect(new Set(opened).size).toBe(items.length);
-    expect(opened.every((url) => url.startsWith("https://"))).toBe(true);
+    const opened = items.map((item) => {
+      vi.mocked(actions.openExternal).mockClear();
+      item.click();
+      return [item.title, vi.mocked(actions.openExternal).mock.calls];
+    });
+    // The docs site of the test build is https://zotlit.aidenlx.site.
+    expect(opened).toEqual([
+      [
+        m.welcome_docs_getting_started(),
+        [["https://zotlit.aidenlx.site/docs"]],
+      ],
+      [
+        m.welcome_docs_templates(),
+        [["https://zotlit.aidenlx.site/docs/reference/templates"]],
+      ],
+      [
+        m.welcome_docs_citations(),
+        [["https://zotlit.aidenlx.site/docs/how-to/insert-citations"]],
+      ],
+      [m.welcome_link_github(), [["https://github.com/aidenlx/zotlit"]]],
+      [
+        m.welcome_link_discussions(),
+        [["https://zotlit.aidenlx.site/community"]],
+      ],
+      [m.welcome_link_sponsor(), [["https://github.com/sponsors/aidenlx"]]],
+      [m.welcome_link_blog(), [["https://zotlit.aidenlx.site/blog"]]],
+      [m.welcome_link_changelog(), [["https://zotlit.aidenlx.site/changelog"]]],
+    ]);
   });
 
   it.each([false, true])(
