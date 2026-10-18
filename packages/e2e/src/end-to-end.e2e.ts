@@ -4412,6 +4412,8 @@ views:
         "      - vault.zt-status",
         "      - vault.zt-done",
         "      - vault.zt-projects",
+        "      - vault.zt-rank",
+        "      - vault.zt-due",
         "",
       ]
         .filter((line) => line !== "")
@@ -4437,7 +4439,7 @@ views:
     });
     await obEval(
       vaultId,
-      `(async()=>{const set=(path,props)=>app.fileManager.processFrontMatter(app.vault.getFileByPath(path),fm=>Object.assign(fm,props));await set(${JSON.stringify(notePath(tieFirst))},{'zt-status':'unread','zt-done':false,'zt-projects':['a'],'zt-rank':1});await set(${JSON.stringify(notePath(tieSecond))},{'zt-done':true,'zt-rank':2});await app.vault.create(${JSON.stringify(path)},${JSON.stringify(viewText(""))});return true;})()`,
+      `(async()=>{const set=(path,props)=>app.fileManager.processFrontMatter(app.vault.getFileByPath(path),fm=>Object.assign(fm,props));await set(${JSON.stringify(notePath(tieFirst))},{'zt-status':'unread','zt-done':false,'zt-projects':['a'],'zt-rank':1,'zt-due':'2024-05-01'});await set(${JSON.stringify(notePath(tieSecond))},{'zt-done':true,'zt-rank':2});await app.vault.create(${JSON.stringify(path)},${JSON.stringify(viewText(""))});return true;})()`,
     );
     const noteIndex = "app.plugins.plugins.zotlit.services.noteIndex";
     let indexed = "";
@@ -4534,20 +4536,48 @@ views:
       (properties) => properties["zt-status"] === "to-read",
     );
 
-    // A text cell edits its value in place, its first line where it was at
-    // rest (#1531).
-    /** The top of the first line of the text cell, from the top of its row. */
-    const firstLine = `(function(){const el=${cell(tieFirst, "zt-status")};const row=el.closest('tr').getBoundingClientRect().top;const field=el.querySelector('[data-query-vault-editor] textarea');if(field){const style=getComputedStyle(field);return String(field.getBoundingClientRect().top+parseFloat(style.borderTopWidth)+parseFloat(style.paddingTop)-row);}const walker=activeDocument.createTreeWalker(el,NodeFilter.SHOW_TEXT,{acceptNode:n=>n.textContent.trim()?1:3});const text=walker.nextNode();const range=activeDocument.createRange();range.selectNodeContents(text);const rect=range.getClientRects()[0];return String(rect.top-(parseFloat(getComputedStyle(text.parentElement).lineHeight)-rect.height)/2-row);})()`;
-    const restLine = Number(await obEval(vaultId, firstLine));
-    await click(cell(tieFirst, "zt-status"));
-    expect(await obEvalUntil(vaultId, focusedInput, { expected: "true" })).toBe(
-      true,
-    );
-    const editLine = Number(await obEval(vaultId, firstLine));
+    // A cell edits its value in place, its first line where it was at rest,
+    // for each type of property (#1531).
+    /**
+     * The top of the first line of a vault cell, from the top of its row: of
+     * its first item for a list, of the field's content box for a field
+     * (and a date at rest, a native field too), else of its first text.
+     */
+    const firstLine = (name: string) =>
+      `(function(){const el=${cell(tieFirst, name)};const row=el.closest('tr').getBoundingClientRect().top;const editor=el.querySelector('[data-query-vault-editor]');const chip=(editor??el).querySelector('[data-query-vault-chip]');if(chip)return String(chip.getBoundingClientRect().top-row);const field=editor?editor.querySelector('textarea,input'):el.querySelector('[data-query-vault-date]');if(field){const style=getComputedStyle(field);return String(field.getBoundingClientRect().top+parseFloat(style.borderTopWidth)+parseFloat(style.paddingTop)-row);}const walker=activeDocument.createTreeWalker(el,NodeFilter.SHOW_TEXT,{acceptNode:n=>n.textContent.trim()?1:3});const text=walker.nextNode();const range=activeDocument.createRange();range.selectNodeContents(text);const rect=range.getClientRects()[0];return String(rect.top-(parseFloat(getComputedStyle(text.parentElement).lineHeight)-rect.height)/2-row);})()`;
+    const editing = `String(!!activeDocument.querySelector('[data-query-vault-editor]'))`;
+    /** Open the edit of the cell `name`, and compare its first line with the cell's at rest. */
+    const sameLine = async (name: string) => {
+      const restLine = Number(await obEval(vaultId, firstLine(name)));
+      await click(cell(tieFirst, name));
+      expect(
+        await obEvalUntil(vaultId, focusedInput, { expected: "true" }),
+      ).toBe(true);
+      const editLine = Number(await obEval(vaultId, firstLine(name)));
+      expect(
+        Math.abs(editLine - restLine),
+        `${name}: first line ${restLine} at rest, ${editLine} editing`,
+      ).toBeLessThan(0.5);
+    };
+    // A number, a date and a list, each left unchanged: Escape closes the
+    // suggestions of a list first, then ends the edit, writing nothing.
     expect(
-      Math.abs(editLine - restLine),
-      `first line ${restLine} at rest, ${editLine} editing`,
-    ).toBeLessThan(0.5);
+      await obEval(
+        vaultId,
+        `${JSON.stringify(["zt-rank", "zt-due", "zt-projects"])}.map(name=>${tab}.contentEl.querySelector('[data-query-key="${tieFirst}"] [data-query-vault-name="'+name+'"]')?.getAttribute('data-query-vault-type')).join()`,
+      ),
+    ).toBe("number,date,multitext");
+    for (const name of ["zt-rank", "zt-due", "zt-projects"]) {
+      await sameLine(name);
+      await key("Escape");
+      if (await obEvalUntil(vaultId, editing, { expected: "false", tries: 5 }))
+        continue;
+      await key("Escape");
+      expect(await obEvalUntil(vaultId, editing, { expected: "false" })).toBe(
+        true,
+      );
+    }
+    await sameLine("zt-status");
     // The vault's values for the property show as the edit starts, before
     // a key is typed, as in a Bases cell (#1531): those that match the text.
     expect(
