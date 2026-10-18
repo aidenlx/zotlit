@@ -507,15 +507,19 @@ A main-area tab that shows the Zotero library read-only, with a Library Tree, a 
 _Avoid_: library tab, browser, library pane
 
 **Library View Document**:
-What the Library View shows, as one value: the selected Library Tree node, the active Reading State facets, the search text and the sort. The text of its Query View follows from it, always in the Papers Layout.
+What the Library View shows, as one value: the selected Library Tree node, the active Reading State facets, the selected tags of the Tag Selector, the search text and the sort. The text of its Query View follows from it, always in the Papers Layout.
 _Avoid_: library state, view state
 
 **Library Tree**:
 The tree on the left of the Library View: Recent, then each Library in the Library Scope with its Collections nested as in Zotero, each node with its paper count. Selecting a node changes the filters of the list; the tree never holds rows of its own. "Show all libraries" adds the Libraries outside the Library Scope for the session.
 _Avoid_: collection tree, sidebar tree, navigator
 
+**Tag Selector**:
+The tags under the Library Tree, as in Zotero's main window: the tag names of the Items the selected node lists, with a box that filters the names. Selecting tags narrows the list to the Items with every selected tag ([ADR 0078](docs/adr/0078-the-tag-selector-writes-tag-filters.md)).
+_Avoid_: tag cloud, tag pane, tag filter (alone)
+
 **Papers Layout**:
-The Layout of the Library View for Items, also open to any Query File: two lines per Item, the title on one and the creators, year and publication on the other, ending with the main Attachment's kind and a note icon for the Literature Note, with the same expansion into Attachments, child notes and Annotations as the Table.
+The Layout of the Library View for Items, also open to any Query File: two lines per Item after the icon of its Item type, the title on one and the creators, year and publication on the other, ending with the main Attachment's kind and a note icon for the Literature Note, with the same expansion into Attachments, child notes and Annotations as the Table.
 _Avoid_: paper list, rich list
 
 **Reading Card**:
