@@ -21,7 +21,7 @@ Select the ZotLit icon in the ribbon, or open the command palette and run:
 
 The view opens in a tab titled <UiLabel name={m.library_view_name()} />, with the cursor in its search box. If the tab is already open, ZotLit brings it forward instead of opening a second one.
 
-![The Library View with My Library selected in the tree, two papers in the Papers layout with their annotation colors, and the Reading Card of Ten Simple Rules for Better Figures on the right, with its Open PDF, Write literature note, and Insert citation buttons above its annotations](/img/how-to/library-view.webp)
+![The Library View with My Library selected in the tree, two papers in the Papers layout, each with its annotation colors and count on a third line, and the Reading Card of Ten Simple Rules for Better Figures beside the list, with its Open PDF and Write literature note buttons and a more button above its annotations](/img/how-to/library-view.webp)
 
 On a new install, ZotLit opens the Library View for you. A setup banner sits above it until setup is complete. Its two steps are <UiLabel name={m.welcome_step_connect_title()} /> and <UiLabel name={m.welcome_step_folder_title()} />. Its <UiLabel name={m.welcome_help()} /> button lists the documentation and community links. The banner goes away once ZotLit reads your Zotero database and your literature notes folder exists, or when you select <UiLabel name={m.welcome_dismiss()} />. Run <Command inline name={m.command_open_welcome_name()} /> to show it again, even after setup is complete.
 
@@ -29,7 +29,7 @@ On a new install, ZotLit opens the Library View for you. A setup banner sits abo
 
 ZotLit looks for your library in the default Zotero profile. When it finds no database there, or the data folder you set holds none it can read, the list shows <UiLabel name={m.library_view_not_found_title()} /> in place of the filters, the search box, and the papers, and the tree pane shows <UiLabel name={m.library_view_not_found_tree()} />. The setup banner leaves out its <UiLabel name={m.welcome_step_connect_title()} /> step meanwhile, since the list says the same. Select <UiLabel name={m.library_view_locate()} /> and choose your Zotero data folder, or select <UiLabel name={m.welcome_action_open_settings()} /> to set the location in settings. Your papers appear as soon as the folder is set.
 
-![The Library View with Zotero not found in the tree pane, and the card "We couldn't find your Zotero library" in place of the list, with Locate data folder and Open settings buttons](/img/how-to/library-view-not-found.webp)
+![The Library View with a one-line Zotero not found warning in the tree pane, and the card "Zotero library not found" in place of the list, with Locate data folder and Open settings buttons](/img/how-to/library-view-not-found.webp)
 
 When ZotLit cannot find Zotero, it also shows the notice <UiLabel name={m.notice_db_not_found_on_device()} /> The notice has a <UiLabel name={m.notice_db_not_found_action()} /> button that opens the Library View. Only one such notice shows at a time. It does not show while a Library View is open, and it goes away once ZotLit reads your database again.
 
@@ -39,7 +39,7 @@ If the database was readable and a later read fails, the view keeps the papers i
 
 The tree on the left lists <UiLabel name={m.library_view_recent()} /> first, then each library in your [library scope](/docs/reference/settings#library-scope) with its collections nested as in Zotero. Each library and collection shows how many papers it holds.
 
-Select a library or a collection to list its papers. A collection also lists the papers in its subcollections. The heading above the list names your selection, followed by the number of unread papers, for example "Thesis / Chapter 2 <UiLabel name={m.library_view_header_unread({ count: 3 })} />". A paper counts as unread when it has no annotations and no literature note. The unread count, like the paper count in the tree, ignores search and the reading-state filters.
+Select a library or a collection to list its papers. A collection also lists the papers in its subcollections. The heading above the list names your selection, followed by the number of unread papers when it holds any, for example "Thesis / Chapter 2 <UiLabel name={m.library_view_header_unread({ count: 3 })} />". A paper counts as unread when it has no annotations and no literature note. The unread count, like the paper count in the tree, ignores search and the reading-state filters.
 
 When your Zotero database holds libraries outside your library scope, <UiLabel name={m.library_view_all_libraries()} /> below the tree adds them for the current session. <UiLabel name={m.library_view_scope_libraries()} /> hides them again.
 
@@ -89,7 +89,7 @@ Turn on several filters to show only the papers that match all of them. The filt
 
 ## Read the list [#layouts]
 
-The list draws each paper in the <UiLabel name={m.library_view_papers_view_name()} /> layout by default: the title, then the creators, year, and publication. A third line shows the paper's reading state: the colors of its annotations and their number. A note icon at the end of the row shows that the paper has a literature note. Expand a paper to see its attachments, its child notes, its annotations, and its literature note.
+The list draws each paper in the <UiLabel name={m.library_view_papers_view_name()} /> layout by default: the title, then the creators, year, and publication. A paper with annotations gets a third line: the colors of its annotations and their number. A note icon at the end of the row shows that the paper has a literature note. Expand a paper to see its attachments, its child notes, its annotations, and its literature note.
 
 To see the papers as a table, open the view menu at the start of the toolbar, which is labeled with the current layout, and choose <UiLabel name={m.query_view_layout_table()} />. The table shows a column for the literature note, with a link to the note or a button that creates it. Choose <UiLabel name={m.library_view_papers_view_name()} /> to switch back.
 
