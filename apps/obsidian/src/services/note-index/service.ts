@@ -1,11 +1,5 @@
 import { TFile } from "obsidian";
-import type {
-  App,
-  CachedMetadata,
-  EventRef,
-  Plugin,
-  TAbstractFile,
-} from "obsidian";
+import type { App, EventRef, Plugin, TAbstractFile } from "obsidian";
 
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
@@ -27,6 +21,10 @@ import type { ContribDiff, FileContributions } from "./parse";
 export { itemKeyFromFrontmatter, noteKeyFromFrontmatter };
 
 const logger = getLogger("note-index");
+
+/** The metadata cache holds no entry for the file's path yet. */
+const UNREAD = Symbol("unread");
+type Reading = FileContributions | typeof UNREAD;
 
 interface NoteIndexEvents {
   /** The mapping of `file` changed; `null` once the Full Scan read the whole vault. */
@@ -182,39 +180,47 @@ export class NoteIndex extends Service<void> {
     stack.use(
       registerEvent(
         metadataCache.on("changed", (file, _data, cache) => {
-          if (isMarkdownFile(file)) this.#applyFile(file, cache);
+          if (isMarkdownFile(file)) this.#apply(file, fileContributions(cache));
         }),
       ),
     );
     stack.use(
       registerEvent(
         metadataCache.on("deleted", (file) => {
-          this.#applyFile(file, null);
+          this.#apply(file, EMPTY_CONTRIBUTIONS);
         }),
       ),
     );
     stack.use(
       registerEvent(
         vault.on("delete", (file) => {
-          if (isMarkdownFile(file)) this.#applyFile(file, null);
+          if (isMarkdownFile(file)) this.#apply(file, EMPTY_CONTRIBUTIONS);
         }),
       ),
     );
-    // The metadata cache fires neither `changed` nor `deleted` on rename: it
-    // rekeys its entries by path and mutates the `TFile` in place, so the maps
-    // here already hold the renamed file. Consumers still see a moved mapping,
-    // since the link target path changed under them.
+    // A rename changes the file's identity, not its content. Obsidian moves the
+    // same `TFile` to the new path in place, so the maps here already hold the
+    // renamed file; consumers still hear the moved mapping, since the link
+    // target path changed under them. The metadata cache follows a rename as
+    // one more vault `rename` listener, in registration order, and only
+    // rekeys its entry: it fires no `changed`. It subscribes when its initial
+    // load is done, so a plugin loaded during startup hears the rename before
+    // the cache rekeys, and `getFileCache` has nothing for the new path yet
+    // (Obsidian 1.14.4). The vault calls its listeners synchronously, so the
+    // file is read once that dispatch is over.
     stack.use(
       registerEvent(
         vault.on("rename", (file) => {
           if (!(file instanceof TFile)) return;
-          const cache = isMarkdownFile(file)
-            ? metadataCache.getFileCache(file)
-            : null;
-          const applied = this.#applyFile(file, cache);
-          if (!applied && this.#contribByFile.has(file)) {
-            this.#emitter.emit("changed", file);
+          if (!isMarkdownFile(file)) {
+            this.#apply(file, EMPTY_CONTRIBUTIONS);
+            return;
           }
+          if (this.#contribByFile.has(file))
+            this.#emitter.emit("changed", file);
+          queueMicrotask(() => {
+            if (!this.#disposed) this.#apply(file, this.#read(file));
+          });
         }),
       ),
     );
@@ -275,22 +281,39 @@ export class NoteIndex extends Service<void> {
   }
 
   /**
-   * Applies the file's contribution diff and reports it as `changed`.
-   * @returns false when nothing moved, so no `changed` went out.
+   * What the metadata cache holds for the file now: its contributions, or
+   * {@link UNREAD} while the cache has no entry for its path. A non-Markdown
+   * file contributes nothing.
    */
-  #applyFile(file: TFile, cache: CachedMetadata | null): boolean {
+  #read(file: TFile): Reading {
+    if (!isMarkdownFile(file)) return EMPTY_CONTRIBUTIONS;
+    const cache = this.#app.metadataCache.getFileCache(file);
+    return cache ? fileContributions(cache) : UNREAD;
+  }
+
+  /** Settles the file's mappings to `reading` and reports a move as `changed`. */
+  #apply(file: TFile, reading: Reading): void {
+    if (this.#settle(file, reading)) this.#emitter.emit("changed", file);
+  }
+
+  /**
+   * The one step that changes the index. An {@link UNREAD} file keeps what
+   * the index holds for it, and the cache's next `changed` or `deleted`
+   * settles it.
+   * @returns false when nothing moved.
+   */
+  #settle(file: TFile, reading: Reading): boolean {
+    if (reading === UNREAD) return false;
     const prev = this.#contribByFile.get(file) ?? EMPTY_CONTRIBUTIONS;
-    const next = cache ? fileContributions(cache) : EMPTY_CONTRIBUTIONS;
-    const diff = diffContributions(prev, next);
+    const diff = diffContributions(prev, reading);
     if (diff.empty) return false;
 
     this.#applyDiff(file, diff);
-    if (hasContributions(next)) {
-      this.#contribByFile.set(file, next);
+    if (hasContributions(reading)) {
+      this.#contribByFile.set(file, reading);
     } else {
       this.#contribByFile.delete(file);
     }
-    this.#emitter.emit("changed", file);
     return true;
   }
 
@@ -304,10 +327,7 @@ export class NoteIndex extends Service<void> {
     this.#clear();
 
     for (const file of this.#app.vault.getMarkdownFiles()) {
-      const cache = this.#app.metadataCache.getFileCache(file);
-      if (!cache) continue;
-      const contributions = fileContributions(cache);
-      this.#insertContributions(file, contributions);
+      this.#settle(file, this.#read(file));
     }
 
     logger.debug("Note index scanned", { count: this.#contribByFile.size });
@@ -329,18 +349,6 @@ export class NoteIndex extends Service<void> {
     if (diff.noteKey.add) {
       addIndexedFile(this.#notesByNoteKey, diff.noteKey.add, file);
     }
-  }
-
-  #insertContributions(file: TFile, contributions: FileContributions): void {
-    if (!hasContributions(contributions)) return;
-
-    if (contributions.itemKey) {
-      addIndexedFile(this.#notesByItemKey, contributions.itemKey, file);
-    }
-    if (contributions.noteKey) {
-      addIndexedFile(this.#notesByNoteKey, contributions.noteKey, file);
-    }
-    this.#contribByFile.set(file, contributions);
   }
 
   #clear(): void {
