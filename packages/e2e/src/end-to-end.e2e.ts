@@ -1531,7 +1531,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expectSeedOrder(reloaded, 1);
   });
 
-  it("opens a new Library View on Recent, lists the Library Scope newest change first with no reason on its rows, sorts that way again when Recent is selected again, and leaves Recent's own sort behind on a Collection", async () => {
+  it("opens a new Library View on Recent, lists the Library Scope newest change first in rows of two lines at most, sorts that way again when Recent is selected again, and leaves Recent's own sort behind on a Collection", async () => {
     const services = "app.plugins.plugins.zotlit.services";
     const snapshot = await obEval(
       vaultId,
